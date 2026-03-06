@@ -68,6 +68,29 @@ run_ok "$TESTDIR/struct_field_assign.con" 33
 run_ok "$TESTDIR/linear_consume.con"     42
 run_ok "$TESTDIR/linear_branch_agree.con" 42
 run_ok "$TESTDIR/linear_loop_inner.con"  3
+run_ok "$TESTDIR/enum_basic.con"        2
+run_ok "$TESTDIR/enum_fields.con"       12
+run_ok "$TESTDIR/enum_linear.con"       42
+run_ok "$TESTDIR/borrow_read.con"      10
+run_ok "$TESTDIR/borrow_mut.con"       42
+run_ok "$TESTDIR/borrow_no_consume.con" 42
+run_ok "$TESTDIR/generic_fn.con"       42
+run_ok "$TESTDIR/generic_struct.con"   30
+run_ok "$TESTDIR/string_basic.con"    5
+run_ok "$TESTDIR/string_borrow.con"   10
+run_ok "$TESTDIR/result_ok.con"      42
+run_ok "$TESTDIR/result_err.con"     99
+run_ok "$TESTDIR/module_basic.con"   42
+run_ok "$TESTDIR/module_struct.con"  30
+run_ok "$TESTDIR/array_basic.con"   20
+run_ok "$TESTDIR/array_assign.con"  5
+run_ok "$TESTDIR/cast_basic.con"    42
+run_ok "$TESTDIR/cast_float.con"    7
+run_ok "$TESTDIR/impl_method.con"   30
+run_ok "$TESTDIR/impl_mut_method.con" 42
+run_ok "$TESTDIR/impl_static.con"   7
+run_ok "$TESTDIR/trait_basic.con"   30
+run_ok "$TESTDIR/trait_multiple.con" 50
 
 echo ""
 echo "=== Negative tests (expected errors) ==="
@@ -77,6 +100,25 @@ run_err "$TESTDIR/error_branch_disagree.con"   "consumed in one branch"
 run_err "$TESTDIR/error_loop_consume.con"      "inside a loop"
 run_err "$TESTDIR/error_type_mismatch.con"     "type mismatch"
 run_err "$TESTDIR/error_no_else_consume.con"   "no else branch"
+run_err "$TESTDIR/error_enum_nonexhaustive.con"   "non-exhaustive match"
+run_err "$TESTDIR/error_enum_match_disagree.con"   "match arms disagree"
+run_err "$TESTDIR/error_enum_unknown_variant.con"  "unknown variant"
+run_err "$TESTDIR/error_borrow_after_move.con"    "used after move"
+run_err "$TESTDIR/error_double_mut_borrow.con"    "already mutably borrowed"
+run_err "$TESTDIR/error_deref_non_ref.con"        "cannot dereference"
+run_err "$TESTDIR/error_generic_count.con"       "expects 2 arguments"
+run_err "$TESTDIR/error_generic_type.con"        "type mismatch"
+run_err "$TESTDIR/error_string_unconsumed.con"   "was never consumed"
+run_err "$TESTDIR/error_try_non_result.con"      "requires a Result enum"
+run_err "$TESTDIR/error_try_wrong_return.con"    "function must return same Result type"
+run_err "$TESTDIR/error_import_private.con"      "is not public"
+run_err "$TESTDIR/error_private_field.con"       "is not public"
+run_err "$TESTDIR/error_array_type.con"          "type mismatch"
+run_err "$TESTDIR/error_array_index.con"         "type mismatch"
+run_err "$TESTDIR/error_cast_invalid.con"        "cannot cast"
+run_err "$TESTDIR/error_unknown_method.con"      "no method"
+run_err "$TESTDIR/error_trait_missing_method.con" "missing method"
+run_err "$TESTDIR/error_trait_wrong_sig.con"     "signature does not match"
 
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="

@@ -7,6 +7,12 @@ inductive Ty where
   | float64
   | unit
   | named (name : String)
+  | string                -- String type
+  | ref (inner : Ty)      -- &T
+  | refMut (inner : Ty)   -- &mut T
+  | generic (name : String) (args : List Ty)  -- e.g. Pair<Int, Bool>
+  | typeVar (name : String)                   -- e.g. T
+  | array (elem : Ty) (size : Nat)            -- [T; N]
   deriving Repr, BEq
 
 inductive BinOp where
@@ -19,17 +25,32 @@ inductive UnaryOp where
   | neg | not_
   deriving Repr, BEq
 
+mutual
 inductive Expr where
   | intLit (val : Int)
   | boolLit (val : Bool)
+  | strLit (val : String)
   | ident (name : String)
   | binOp (op : BinOp) (lhs rhs : Expr)
   | unaryOp (op : UnaryOp) (operand : Expr)
-  | call (fn : String) (args : List Expr)
+  | call (fn : String) (typeArgs : List Ty) (args : List Expr)
   | paren (inner : Expr)
-  | structLit (name : String) (fields : List (String × Expr))
+  | structLit (name : String) (typeArgs : List Ty) (fields : List (String × Expr))
   | fieldAccess (obj : Expr) (field : String)
-  deriving Repr
+  | enumLit (enumName variant : String) (typeArgs : List Ty) (fields : List (String × Expr))
+  | match_ (scrutinee : Expr) (arms : List MatchArm)
+  | borrow (inner : Expr)      -- &expr
+  | borrowMut (inner : Expr)   -- &mut expr
+  | deref (inner : Expr)       -- *expr
+  | try_ (inner : Expr)       -- expr?
+  | arrayLit (elems : List Expr)              -- [1, 2, 3]
+  | arrayIndex (arr : Expr) (index : Expr)    -- arr[i]
+  | cast (inner : Expr) (targetTy : Ty)       -- expr as Type
+  | methodCall (obj : Expr) (method : String) (typeArgs : List Ty) (args : List Expr)
+  | staticMethodCall (typeName method : String) (typeArgs : List Ty) (args : List Expr)
+
+inductive MatchArm where
+  | mk (enumName : String) (variant : String) (bindings : List String) (body : List Stmt)
 
 inductive Stmt where
   | letDecl (name : String) (mutable : Bool) (ty : Option Ty) (value : Expr)
@@ -39,6 +60,13 @@ inductive Stmt where
   | ifElse (cond : Expr) (then_ : List Stmt) (else_ : Option (List Stmt))
   | while_ (cond : Expr) (body : List Stmt)
   | fieldAssign (obj : Expr) (field : String) (value : Expr)
+  | derefAssign (target : Expr) (value : Expr)  -- *expr = expr
+  | arrayIndexAssign (arr : Expr) (index : Expr) (value : Expr)  -- arr[i] = val
+end
+
+structure ImportDecl where
+  moduleName : String
+  symbols : List String
   deriving Repr
 
 structure Param where
@@ -51,22 +79,72 @@ structure StructField where
   ty : Ty
   deriving Repr
 
-structure StructDef where
+structure EnumVariant where
   name : String
   fields : List StructField
+  deriving Repr, Inhabited
+
+structure EnumDef where
+  name : String
+  typeParams : List String := []
+  variants : List EnumVariant
+  isPublic : Bool := false
+  deriving Repr
+
+structure StructDef where
+  name : String
+  typeParams : List String := []
+  fields : List StructField
+  isPublic : Bool := false
   deriving Repr
 
 structure FnDef where
   name : String
+  typeParams : List String := []
   params : List Param
   retTy : Ty
   body : List Stmt
+  isPublic : Bool := false
+
+inductive SelfKind where
+  | value    -- self
+  | ref      -- &self
+  | refMut   -- &mut self
+  deriving Repr, BEq
+
+structure FnSigDef where
+  name : String
+  params : List Param
+  retTy : Ty
+  selfKind : Option SelfKind := none
   deriving Repr
+
+structure ImplBlock where
+  typeName : String
+  typeParams : List String := []
+  methods : List FnDef
+
+structure TraitDef where
+  name : String
+  typeParams : List String := []
+  methods : List FnSigDef
+  isPublic : Bool := false
+  deriving Repr
+
+structure ImplTraitBlock where
+  traitName : String
+  typeName : String
+  typeParams : List String := []
+  methods : List FnDef
 
 structure Module where
   name : String
   structs : List StructDef
+  enums : List EnumDef
   functions : List FnDef
-  deriving Repr
+  imports : List ImportDecl := []
+  implBlocks : List ImplBlock := []
+  traits : List TraitDef := []
+  traitImpls : List ImplTraitBlock := []
 
 end Concrete

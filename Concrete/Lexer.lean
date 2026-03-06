@@ -41,6 +41,13 @@ def lookupKeyword : String → Option TokenKind
   | "false" => some .false_
   | "mod" => some .«mod»
   | "struct" => some .struct_
+  | "enum" => some .enum_
+  | "match" => some .match_
+  | "pub" => some .pub_
+  | "import" => some .import_
+  | "as" => some .as_
+  | "impl" => some .impl_
+  | "trait" => some .trait_
   | _ => none
 
 private def isIdentStart (c : Char) : Bool :=
@@ -88,6 +95,22 @@ partial def lexNumberLoop (s : LexerState) (acc : Nat) : LexerState × TokenKind
       (s, .intLit acc)
   | none => (s, .intLit acc)
 
+/-- Lex a string literal (after opening quote). -/
+partial def lexStringLoop (s : LexerState) (acc : String) : LexerState × TokenKind :=
+  match s.peek with
+  | some '"' => (s.advance, .strLit acc)
+  | some '\\' =>
+    let s := s.advance
+    match s.peek with
+    | some 'n' => lexStringLoop s.advance (acc.push '\n')
+    | some 't' => lexStringLoop s.advance (acc.push '\t')
+    | some '\\' => lexStringLoop s.advance (acc.push '\\')
+    | some '"' => lexStringLoop s.advance (acc.push '"')
+    | some c => lexStringLoop s.advance (acc.push c)
+    | none => (s, .strLit acc)
+  | some c => lexStringLoop s.advance (acc.push c)
+  | none => (s, .strLit acc)
+
 /-- Lex a single token. -/
 partial def lexToken (s : LexerState) : LexerState × TokenKind :=
   let s := skipWhitespace s
@@ -97,6 +120,7 @@ partial def lexToken (s : LexerState) : LexerState × TokenKind :=
     | some c =>
       if isIdentStart c then lexIdentLoop s.advance (String.singleton c)
       else if c.isDigit then lexNumberLoop s.advance (c.toNat - '0'.toNat)
+      else if c == '"' then lexStringLoop s.advance ""
       else
         let s := s.advance
         match c with
@@ -108,17 +132,25 @@ partial def lexToken (s : LexerState) : LexerState × TokenKind :=
         | ')' => (s, .rparen)
         | '{' => (s, .lbrace)
         | '}' => (s, .rbrace)
+        | '[' => (s, .lbracket)
+        | ']' => (s, .rbracket)
         | ',' => (s, .comma)
-        | ':' => (s, .colon)
+        | ':' =>
+          match s.peek with
+          | some ':' => (s.advance, .doubleColon)
+          | _ => (s, .colon)
         | ';' => (s, .semicolon)
         | '.' => (s, .dot)
         | '-' =>
           match s.peek with
           | some '>' => (s.advance, .arrow)
           | _ => (s, .minus)
+        | '#' => (s, .hash)
+        | '?' => (s, .question)
         | '=' =>
           match s.peek with
           | some '=' => (s.advance, .eq)
+          | some '>' => (s.advance, .fatArrow)
           | _ => (s, .assign)
         | '!' =>
           match s.peek with
@@ -135,7 +167,7 @@ partial def lexToken (s : LexerState) : LexerState × TokenKind :=
         | '&' =>
           match s.peek with
           | some '&' => (s.advance, .and_)
-          | _ => (s, .eof)
+          | _ => (s, .ampersand)
         | '|' =>
           match s.peek with
           | some '|' => (s.advance, .or_)

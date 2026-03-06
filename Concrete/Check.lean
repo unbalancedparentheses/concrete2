@@ -37,14 +37,18 @@ structure VarInfo where
   state : VarState
   isCopy : Bool
   loopDepth : Nat
+  borrowCount : Nat := 0
+  mutBorrowed : Bool := false
   deriving Repr
 
 structure TypeEnv where
   vars : List (String × VarInfo)
   structs : List StructDef
+  enums : List EnumDef
   functions : List FnSig
   fnNames : List (String × Nat)
   loopDepth : Nat
+  currentRetTy : Ty := .unit
   deriving Repr
 
 abbrev CheckM := ExceptT String (StateM TypeEnv)
@@ -70,7 +74,13 @@ private def tyToString : Ty → String
   | .bool => "Bool"
   | .float64 => "Float64"
   | .unit => "()"
+  | .string => "String"
   | .named n => n
+  | .ref inner => "&" ++ tyToString inner
+  | .refMut inner => "&mut " ++ tyToString inner
+  | .generic name args => name ++ "<" ++ ", ".intercalate (args.map tyToString) ++ ">"
+  | .typeVar name => name
+  | .array elem size => "[" ++ tyToString elem ++ "; " ++ toString size ++ "]"
 
 def getEnv : CheckM TypeEnv := get
 def setEnv (env : TypeEnv) : CheckM Unit := set env
@@ -79,7 +89,13 @@ def setEnv (env : TypeEnv) : CheckM Unit := set env
 def isCopyType (ty : Ty) : CheckM Bool := do
   match ty with
   | .int | .uint | .bool | .float64 | .unit => return true
+  | .string => return false    -- String is linear
+  | .ref _ => return true      -- References are Copy
+  | .refMut _ => return false  -- Mutable refs are not Copy (exclusive)
   | .named _ => return false
+  | .generic _ _ => return false  -- Generic instantiations are linear
+  | .typeVar _ => return false
+  | .array t _ => isCopyType t  -- Array of copy types is copy
 
 def lookupVarInfo (name : String) : CheckM (Option VarInfo) := do
   let env ← getEnv
@@ -106,6 +122,15 @@ def lookupStructField (structName : String) (fieldName : String) : CheckM (Optio
     match sd.fields.find? fun f => f.name == fieldName with
     | some f => return some f.ty
     | none => return none
+  | none => return none
+
+def lookupEnum (name : String) : CheckM (Option EnumDef) := do
+  let env ← getEnv
+  return env.enums.find? fun ed => ed.name == name
+
+def lookupEnumVariant (enumName : String) (variantName : String) : CheckM (Option EnumVariant) := do
+  match ← lookupEnum enumName with
+  | some ed => return ed.variants.find? fun v => v.name == variantName
   | none => return none
 
 def lookupFn (name : String) : CheckM (Option FnSig) := do
@@ -164,6 +189,7 @@ partial def checkExpr (e : Expr) : CheckM Ty := do
   match e with
   | .intLit _ => return .int
   | .boolLit _ => return .bool
+  | .strLit _ => return .string
   | .ident name =>
     match ← lookupVarInfo name with
     | some info =>
@@ -196,7 +222,7 @@ partial def checkExpr (e : Expr) : CheckM Ty := do
     | .not_ =>
       expectTy .bool ty "not operand"
       return .bool
-  | .call fnName args =>
+  | .call fnName _typeArgs args =>
     match ← lookupFn fnName with
     | some sig =>
       if args.length != sig.params.length then
@@ -212,7 +238,7 @@ partial def checkExpr (e : Expr) : CheckM Ty := do
       return sig.retTy
     | none => throw s!"call to undeclared function '{fnName}'"
   | .paren inner => checkExpr inner
-  | .structLit name fields =>
+  | .structLit name _typeArgs fields =>
     match ← lookupStruct name with
     | some sd =>
       for sf in sd.fields do
@@ -229,13 +255,245 @@ partial def checkExpr (e : Expr) : CheckM Ty := do
     | none => throw s!"unknown struct type '{name}'"
   | .fieldAccess obj field =>
     let objTy ← checkExpr obj
-    match objTy with
+    -- Auto-deref through references
+    let innerTy := match objTy with
+      | .ref t => t
+      | .refMut t => t
+      | t => t
+    match innerTy with
     | .named structName =>
       -- Field access does NOT consume the struct (Phase 1 simplification)
       match ← lookupStructField structName field with
       | some ty => return ty
       | none => throw s!"struct '{structName}' has no field '{field}'"
     | _ => throw s!"field access on non-struct type"
+  | .enumLit enumName variant _typeArgs fields =>
+    match ← lookupEnum enumName with
+    | some ed =>
+      match ed.variants.find? fun v => v.name == variant with
+      | some ev =>
+        for sf in ev.fields do
+          match fields.find? fun (fn, _) => fn == sf.name with
+          | some (_, expr) =>
+            let exprTy ← checkExpr expr
+            expectTy sf.ty exprTy s!"field '{sf.name}' of {enumName}#{variant}"
+          | none => throw s!"missing field '{sf.name}' in {enumName}#{variant}"
+        for (fn, _) in fields do
+          match ev.fields.find? fun sf => sf.name == fn with
+          | some _ => pure ()
+          | none => throw s!"unknown field '{fn}' in {enumName}#{variant}"
+        return .named enumName
+      | none => throw s!"unknown variant '{variant}' in enum '{enumName}'"
+    | none => throw s!"unknown enum type '{enumName}'"
+  | .match_ scrutinee arms =>
+    let scrTy ← checkExpr scrutinee
+    match scrTy with
+    | .named enumName =>
+      match ← lookupEnum enumName with
+      | some ed =>
+        -- Consume scrutinee if it's a linear ident
+        match scrutinee with
+        | .ident varName => consumeVar varName
+        | _ => pure ()
+        -- Check exhaustiveness: every variant must appear, no duplicates
+        let mut seenVariants : List String := []
+        for arm in arms do
+          match arm with
+          | .mk armEnum armVariant bindings body =>
+            if armEnum != enumName then
+              throw s!"match arm has enum '{armEnum}' but scrutinee is '{enumName}'"
+            match ed.variants.find? fun v => v.name == armVariant with
+            | some ev =>
+              if seenVariants.contains armVariant then
+                throw s!"duplicate match arm for variant '{armVariant}'"
+              seenVariants := seenVariants ++ [armVariant]
+              if bindings.length != ev.fields.length then
+                throw s!"variant '{armVariant}' has {ev.fields.length} fields but arm binds {bindings.length}"
+            | none => throw s!"unknown variant '{armVariant}' in enum '{enumName}'"
+        -- Check all variants covered
+        for v in ed.variants do
+          if !seenVariants.contains v.name then
+            throw s!"non-exhaustive match: missing variant '{v.name}'"
+        -- Linearity across arms: snapshot env, check each arm, ensure all agree
+        let envBefore ← getEnv
+        let mut firstArmVars : Option (List (String × VarInfo)) := none
+        for arm in arms do
+          match arm with
+          | .mk _armEnum armVariant bindings body =>
+            setEnv envBefore
+            -- Bind variant fields in scope
+            let ev := (ed.variants.find? fun v => v.name == armVariant).get!
+            for (binding, sf) in bindings.zip ev.fields do
+              addVar binding sf.ty
+            let curEnv ← getEnv
+            checkStmts body curEnv.currentRetTy
+            let envAfterArm ← getEnv
+            match firstArmVars with
+            | none => firstArmVars := some envAfterArm.vars
+            | some firstVars =>
+              -- Check agreement on pre-existing variables
+              for (name, infoBefore) in envBefore.vars do
+                if infoBefore.isCopy then continue
+                let state1 := match firstVars.lookup name with
+                  | some info => info.state
+                  | none => infoBefore.state
+                let state2 := match envAfterArm.vars.lookup name with
+                  | some info => info.state
+                  | none => infoBefore.state
+                if state1 != state2 then
+                  throw s!"match arms disagree on consumption of '{name}'"
+        -- Apply the final state from first arm (they all agree)
+        match firstArmVars with
+        | some vars =>
+          let env ← getEnv
+          -- Restore env with agreed-upon states for pre-existing vars
+          let vars' := env.vars.map fun (n, vi) =>
+            match vars.lookup n with
+            | some info => (n, { vi with state := info.state })
+            | none => (n, vi)
+          setEnv { envBefore with vars := vars' }
+        | none => setEnv envBefore
+        return .named enumName  -- match returns the enum type; TODO: infer from arms
+      | none => throw s!"unknown enum type '{enumName}'"
+    | _ => throw s!"match scrutinee must be an enum type"
+  | .borrow inner =>
+    let innerTy ← checkExpr inner
+    -- Check the variable is not moved or already mutably borrowed
+    match inner with
+    | .ident varName =>
+      match ← lookupVarInfo varName with
+      | some info =>
+        if !info.isCopy && info.state == .consumed then
+          throw s!"cannot borrow '{varName}': already moved"
+        if info.mutBorrowed then
+          throw s!"cannot borrow '{varName}': already mutably borrowed"
+        -- Increment borrow count
+        let env ← getEnv
+        let vars' := env.vars.map fun (n, vi) =>
+          if n == varName then (n, { vi with borrowCount := vi.borrowCount + 1 })
+          else (n, vi)
+        setEnv { env with vars := vars' }
+      | none => throw s!"use of undeclared variable '{varName}'"
+    | _ => pure ()
+    return .ref innerTy
+  | .borrowMut inner =>
+    let innerTy ← checkExpr inner
+    match inner with
+    | .ident varName =>
+      match ← lookupVarInfo varName with
+      | some info =>
+        if !info.isCopy && info.state == .consumed then
+          throw s!"cannot borrow '{varName}': already moved"
+        if info.borrowCount > 0 then
+          throw s!"cannot mutably borrow '{varName}': already borrowed"
+        if info.mutBorrowed then
+          throw s!"cannot mutably borrow '{varName}': already mutably borrowed"
+        let env ← getEnv
+        let vars' := env.vars.map fun (n, vi) =>
+          if n == varName then (n, { vi with mutBorrowed := true })
+          else (n, vi)
+        setEnv { env with vars := vars' }
+      | none => throw s!"use of undeclared variable '{varName}'"
+    | _ => pure ()
+    return .refMut innerTy
+  | .deref inner =>
+    let innerTy ← checkExpr inner
+    match innerTy with
+    | .ref t => return t
+    | .refMut t => return t
+    | _ => throw s!"cannot dereference non-reference type"
+  | .try_ inner =>
+    let innerTy ← checkExpr inner
+    -- Consume the inner expression if it's a variable
+    match inner with
+    | .ident name => consumeVar name
+    | _ => pure ()
+    match innerTy with
+    | .named enumName =>
+      match ← lookupEnum enumName with
+      | some ed =>
+        let okVariant := ed.variants.find? fun v => v.name == "Ok"
+        let errVariant := ed.variants.find? fun v => v.name == "Err"
+        match okVariant, errVariant with
+        | some ok, some _ =>
+          -- Function must return the same Result type
+          let env ← getEnv
+          expectTy innerTy env.currentRetTy "try (?) operator: function must return same Result type"
+          -- Return the type of the first field in Ok variant
+          match ok.fields.head? with
+          | some f => return f.ty
+          | none => throw s!"Ok variant of '{enumName}' has no value field"
+        | _, _ => throw s!"? operator requires an enum with Ok and Err variants"
+      | none => throw s!"unknown enum type '{enumName}'"
+    | _ => throw "? operator requires a Result enum type"
+  | .arrayLit elems =>
+    match elems with
+    | [] => throw "array literal cannot be empty"
+    | first :: rest =>
+      let firstTy ← checkExpr first
+      for e in rest do
+        let eTy ← checkExpr e
+        expectTy firstTy eTy "array element"
+      return .array firstTy elems.length
+  | .arrayIndex arr index =>
+    let arrTy ← checkExpr arr
+    let idxTy ← checkExpr index
+    expectTy .int idxTy "array index"
+    match arrTy with
+    | .array elemTy _ => return elemTy
+    | _ => throw s!"type mismatch: indexing into non-array type {tyToString arrTy}"
+  | .cast inner targetTy =>
+    let innerTy ← checkExpr inner
+    let valid := match innerTy, targetTy with
+      | .int, .uint | .uint, .int => true
+      | .int, .bool | .bool, .int => true
+      | .int, .float64 | .float64, .int => true
+      | .uint, .float64 | .float64, .uint => true
+      | .bool, .uint | .uint, .bool => true
+      | _, _ => false
+    if !valid then throw s!"cannot cast {tyToString innerTy} to {tyToString targetTy}"
+    return targetTy
+  | .methodCall obj methodName _typeArgs args =>
+    let objTy ← checkExpr obj
+    -- Auto-deref through references
+    let innerTy := match objTy with
+      | .ref t => t
+      | .refMut t => t
+      | t => t
+    let typeName := match innerTy with
+      | .named n => n
+      | _ => ""
+    if typeName == "" then throw s!"method call on non-named type"
+    -- Look up method in function table (mangled name: TypeName_method)
+    let mangledName := typeName ++ "_" ++ methodName
+    match ← lookupFn mangledName with
+    | some sig =>
+      -- First param is self; check remaining args
+      let methodParams := sig.params.drop 1
+      if args.length != methodParams.length then
+        throw s!"method '{methodName}' expects {methodParams.length} arguments, got {args.length}"
+      for (arg, (pName, pTy)) in args.zip methodParams do
+        let argTy ← checkExpr arg
+        expectTy pTy argTy s!"argument '{pName}' of '{methodName}'"
+        match arg with
+        | .ident varName => consumeVar varName
+        | _ => pure ()
+      return sig.retTy
+    | none => throw s!"no method '{methodName}' on type '{typeName}'"
+  | .staticMethodCall typeName methodName _typeArgs args =>
+    let mangledName := typeName ++ "_" ++ methodName
+    match ← lookupFn mangledName with
+    | some sig =>
+      if args.length != sig.params.length then
+        throw s!"static method '{methodName}' expects {sig.params.length} arguments, got {args.length}"
+      for (arg, (pName, pTy)) in args.zip sig.params do
+        let argTy ← checkExpr arg
+        expectTy pTy argTy s!"argument '{pName}' of '{typeName}::{methodName}'"
+        match arg with
+        | .ident varName => consumeVar varName
+        | _ => pure ()
+      return sig.retTy
+    | none => throw s!"no method '{methodName}' on type '{typeName}'"
 
 partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
   match stmt with
@@ -296,7 +554,12 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
     setEnv { env' with loopDepth := env.loopDepth }
   | .fieldAssign obj field value =>
     let objTy ← checkExpr obj
-    match objTy with
+    -- Auto-deref through references
+    let innerTy := match objTy with
+      | .ref t => t
+      | .refMut t => t
+      | t => t
+    match innerTy with
     | .named structName =>
       match ← lookupStructField structName field with
       | some fieldTy =>
@@ -304,6 +567,22 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
         expectTy fieldTy valTy s!"field assignment '{structName}.{field}'"
       | none => throw s!"struct '{structName}' has no field '{field}'"
     | _ => throw s!"field assignment on non-struct type"
+  | .derefAssign target value =>
+    let targetTy ← checkExpr target
+    match targetTy with
+    | .refMut inner =>
+      let valTy ← checkExpr value
+      expectTy inner valTy "deref assignment"
+    | _ => throw s!"cannot assign through non-mutable reference"
+  | .arrayIndexAssign arr index value =>
+    let arrTy ← checkExpr arr
+    let idxTy ← checkExpr index
+    expectTy .int idxTy "array index"
+    match arrTy with
+    | .array elemTy _ =>
+      let valTy ← checkExpr value
+      expectTy elemTy valTy "array element assignment"
+    | _ => throw s!"type mismatch: indexing into non-array type"
 
 partial def checkStmts (stmts : List Stmt) (retTy : Ty) : CheckM Unit := do
   for stmt in stmts do
@@ -353,6 +632,8 @@ end
 def checkFn (f : FnDef) : CheckM Unit := do
   -- Save env state (vars from previous functions shouldn't leak)
   let envBefore ← getEnv
+  -- Set current return type
+  setEnv { envBefore with currentRetTy := f.retTy }
   -- Add params to env. Linear params are "consumed" by being received —
   -- the caller consumed them by passing them, so the function body
   -- doesn't need to further consume them.
@@ -372,15 +653,120 @@ def checkFn (f : FnDef) : CheckM Unit := do
   -- Restore env (remove this function's locals)
   setEnv envBefore
 
-def checkModule (m : Module) : Except String Unit :=
+def checkModule (m : Module) (importedFnSigs : List (String × FnSig) := [])
+    (importedStructs : List StructDef := []) (importedEnums : List EnumDef := [])
+    (importedImplBlocks : List ImplBlock := []) (importedTraitImpls : List ImplTraitBlock := [])
+    : Except String Unit :=
   let fnSigs : List FnSig := m.functions.map fun f =>
     { params := f.params.map fun p => (p.name, p.ty), retTy := f.retTy }
-  let fnNames : List (String × Nat) := enumerateList m.functions |>.map fun (idx, f) => (f.name, idx)
+  let importedSigList := importedFnSigs.map Prod.snd
+  let baseOffset := importedSigList.length
+  -- Built-in functions for strings
+  let builtinSigs : List FnSig := [
+    { params := [("s", .ref .string)], retTy := .int },           -- string_length
+    { params := [("a", .string), ("b", .string)], retTy := .string },  -- string_concat
+    { params := [("s", .ref .string)], retTy := .unit },          -- print_string
+    { params := [("s", .string)], retTy := .unit }                -- drop_string
+  ]
+  let builtinOffset := baseOffset + fnSigs.length
+  let builtinNames : List (String × Nat) := [
+    ("string_length", builtinOffset),
+    ("string_concat", builtinOffset + 1),
+    ("print_string", builtinOffset + 2),
+    ("drop_string", builtinOffset + 3)
+  ]
+  -- Collect all impl block methods (inherent + trait impls) as mangled functions
+  let allImplBlocks := importedImplBlocks ++ m.implBlocks
+  let allTraitImpls := importedTraitImpls ++ m.traitImpls
+  let implMethodSigs : List (String × FnSig) := allImplBlocks.foldl (fun acc ib =>
+    acc ++ ib.methods.map fun f =>
+      let mangledName := ib.typeName ++ "_" ++ f.name
+      let sig : FnSig := { params := f.params.map fun p => (p.name, p.ty), retTy := f.retTy }
+      (mangledName, sig)
+  ) []
+  let traitImplMethodSigs : List (String × FnSig) := allTraitImpls.foldl (fun acc tb =>
+    acc ++ tb.methods.map fun f =>
+      let mangledName := tb.typeName ++ "_" ++ f.name
+      let sig : FnSig := { params := f.params.map fun p => (p.name, p.ty), retTy := f.retTy }
+      (mangledName, sig)
+  ) []
+  let implSigList := (implMethodSigs ++ traitImplMethodSigs).map Prod.snd
+  let implOffset := builtinOffset + builtinSigs.length
+  let implNames : List (String × Nat) :=
+    (enumerateList (implMethodSigs ++ traitImplMethodSigs)).map fun (idx, (name, _)) => (name, implOffset + idx)
+  let allSigs := importedSigList ++ fnSigs ++ builtinSigs ++ implSigList
+  let importedNames : List (String × Nat) :=
+    (enumerateList importedFnSigs).map fun (idx, (name, _)) => (name, idx)
+  let fnNames : List (String × Nat) :=
+    (enumerateList m.functions).map fun (idx, f) => (f.name, baseOffset + idx)
+  let allNames := importedNames ++ fnNames ++ builtinNames ++ implNames
+  let allStructs := importedStructs ++ m.structs
+  let allEnums := importedEnums ++ m.enums
   let initEnv : TypeEnv :=
-    { vars := [], structs := m.structs, functions := fnSigs, fnNames := fnNames, loopDepth := 0 }
-  let result := m.functions.foldlM (fun () f => checkFn f) () |>.run initEnv |>.run
+    { vars := [], structs := allStructs, enums := allEnums, functions := allSigs, fnNames := allNames, loopDepth := 0 }
+  -- Validate trait impls
+  let traitCheck := m.traitImpls.foldlM (init := ()) fun () tb => do
+    match m.traits.find? fun (td : TraitDef) => td.name == tb.traitName with
+    | none => Except.error s!"unknown trait '{tb.traitName}'"
+    | some td =>
+      -- Check all trait methods are implemented
+      td.methods.foldlM (init := ()) fun () (sig : FnSigDef) =>
+        match tb.methods.find? fun (f : FnDef) => f.name == sig.name with
+        | none => Except.error s!"trait impl for '{tb.typeName}' is missing method '{sig.name}'"
+        | some f =>
+          if sig.retTy != f.retTy then
+            Except.error s!"method '{sig.name}' signature does not match trait definition: expected return type {tyToString sig.retTy}, got {tyToString f.retTy}"
+          else Except.ok ()
+  match traitCheck with
+  | .error e => .error e
+  | .ok () =>
+  -- Collect all impl methods for type checking
+  let allImplMethods := allImplBlocks.foldl (fun acc ib => acc ++ ib.methods) []
+  let allTraitImplMethods := allTraitImpls.foldl (fun acc tb => acc ++ tb.methods) []
+  let allMethodDefs := allImplMethods ++ allTraitImplMethods
+  let result := (m.functions ++ allMethodDefs).foldlM (fun () f => checkFn f) () |>.run initEnv |>.run
   match result with
   | (.ok (), _) => .ok ()
   | (.error e, _) => .error e
+
+abbrev ExportEntry := List (String × FnSig) × List StructDef × List EnumDef × List ImplBlock × List ImplTraitBlock
+
+/-- Resolve imports for a module: find requested symbols in export tables. -/
+private def resolveImports (m : Module)
+    (exportTable : List (String × ExportEntry))
+    : Except String (List (String × FnSig) × List StructDef × List EnumDef × List ImplBlock × List ImplTraitBlock) :=
+  m.imports.foldlM (init := ([], [], [], [], [])) fun (fns, structs, enums, impls, trImpls) imp =>
+    match exportTable.lookup imp.moduleName with
+    | none => .error s!"unknown module '{imp.moduleName}'"
+    | some (pubFns, pubStructs, pubEnums, pubImpls, pubTraitImpls) =>
+      imp.symbols.foldlM (init := (fns, structs, enums, impls, trImpls)) fun (fns, structs, enums, impls, trImpls) sym =>
+        match pubFns.find? fun (n, _) => n == sym with
+        | some pair => .ok (fns ++ [pair], structs, enums, impls, trImpls)
+        | none =>
+          match pubStructs.find? fun sd => sd.name == sym with
+          | some sd =>
+            -- Also import impl blocks and trait impls for this struct
+            let structImpls := pubImpls.filter fun ib => ib.typeName == sym
+            let structTraitImpls := pubTraitImpls.filter fun tb => tb.typeName == sym
+            .ok (fns, structs ++ [sd], enums, impls ++ structImpls, trImpls ++ structTraitImpls)
+          | none =>
+            match pubEnums.find? fun ed => ed.name == sym with
+            | some ed => .ok (fns, structs, enums ++ [ed], impls, trImpls)
+            | none => .error s!"'{sym}' is not public in module '{imp.moduleName}'"
+
+/-- Check a multi-module program. Processes modules in order, building export tables. -/
+def checkProgram (modules : List Module) : Except String Unit :=
+  let go := modules.foldlM
+    (init := ([] : List (String × ExportEntry)))
+    fun exportTable m => do
+      let (impFns, impStructs, impEnums, impImpls, impTraitImpls) ← resolveImports m exportTable
+      checkModule m impFns impStructs impEnums impImpls impTraitImpls
+      -- Record this module's public exports
+      let pubFns := (m.functions.filter fun (f : FnDef) => f.isPublic).map fun (f : FnDef) =>
+        (f.name, { params := f.params.map fun (p : Param) => (p.name, p.ty), retTy := f.retTy : FnSig })
+      let pubStructs := m.structs.filter fun (s : StructDef) => s.isPublic
+      let pubEnums := m.enums.filter fun (e : EnumDef) => e.isPublic
+      return exportTable ++ [(m.name, (pubFns, pubStructs, pubEnums, m.implBlocks, m.traitImpls))]
+  go.map fun _ => ()
 
 end Concrete
