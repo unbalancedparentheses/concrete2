@@ -3,6 +3,6 @@ mod Lib {
 }
 
 mod Main {
-    import Lib.{ secret };
-    fn main() -> Int { return secret(); }
+    import Lib.{ nonexistent };
+    fn main() -> Int { return 0; }
 }

@@ -4,5 +4,5 @@ struct Resource {
 
 fn main() -> Int {
     let r: Resource = Resource { value: 42 };
-    return r.value;
+    return 0;
 }

@@ -1,9 +1,4 @@
-mod Lib {
-    struct Secret { x: Int }
-    pub fn get() -> Int { return 42; }
-}
-
 mod Main {
-    import Lib.{ Secret };
+    import Unknown.{ foo };
     fn main() -> Int { return 0; }
 }

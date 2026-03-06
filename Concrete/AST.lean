@@ -59,6 +59,8 @@ inductive Expr where
 
 inductive MatchArm where
   | mk (enumName : String) (variant : String) (bindings : List String) (body : List Stmt)
+  | litArm (value : Expr) (body : List Stmt)           -- literal pattern: 0 -> ...
+  | varArm (binding : String) (body : List Stmt)        -- variable pattern: n -> ...
 
 inductive Stmt where
   | letDecl (name : String) (mutable : Bool) (ty : Option Ty) (value : Expr)
@@ -105,6 +107,7 @@ structure StructDef where
   typeParams : List String := []
   fields : List StructField
   isPublic : Bool := false
+  isUnion : Bool := false
   deriving Repr
 
 structure FnDef where

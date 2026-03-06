@@ -23,13 +23,15 @@ Linearity rules (matching Concrete/Rust design):
 -- ============================================================
 
 inductive VarState where
-  | unconsumed
-  | consumed
+  | unconsumed  -- never touched
+  | used        -- read/borrowed but not moved
+  | consumed    -- moved by value
   deriving Repr, BEq
 
 structure FnSig where
   params : List (String × Ty)
   retTy : Ty
+  typeParams : List String := []
   deriving Repr
 
 structure VarInfo where
@@ -52,6 +54,7 @@ structure TypeEnv where
   currentRetTy : Ty := .unit
   typeAliases : List (String × Ty) := []
   constants : List (String × Ty) := []
+  currentTypeParams : List String := []  -- active function's type params
   deriving Repr
 
 abbrev CheckM := ExceptT String (StateM TypeEnv)
@@ -127,9 +130,30 @@ def resolveType (ty : Ty) : CheckM Ty := do
   match ty with
   | .named name =>
     let env ← getEnv
-    match env.typeAliases.lookup name with
-    | some resolved => return resolved
-    | none => return ty
+    -- Check if it's a type parameter first
+    if env.currentTypeParams.contains name then return .typeVar name
+    else
+      match env.typeAliases.lookup name with
+      | some resolved => return resolved
+      | none => return ty
+  | .ref inner =>
+    let inner' ← resolveType inner
+    return .ref inner'
+  | .refMut inner =>
+    let inner' ← resolveType inner
+    return .refMut inner'
+  | .ptrMut inner =>
+    let inner' ← resolveType inner
+    return .ptrMut inner'
+  | .ptrConst inner =>
+    let inner' ← resolveType inner
+    return .ptrConst inner'
+  | .array elem n =>
+    let elem' ← resolveType elem
+    return .array elem' n
+  | .generic name args =>
+    let args' ← args.mapM resolveType
+    return .generic name args'
   | _ => return ty
 
 /-- Is this type Copy (non-linear)? Primitives are Copy; structs are linear. -/
@@ -143,7 +167,7 @@ def isCopyType (ty : Ty) : CheckM Bool := do
   | .ptrMut _ | .ptrConst _ => return true  -- Raw pointers are Copy
   | .named _ => return false
   | .generic _ _ => return false  -- Generic instantiations are linear
-  | .typeVar _ => return false
+  | .typeVar _ => return true  -- Type variables are treated as Copy in generic context
   | .array t _ => isCopyType t  -- Array of copy types is copy
 
 def lookupVarInfo (name : String) : CheckM (Option VarInfo) := do
@@ -190,11 +214,31 @@ def lookupFn (name : String) : CheckM (Option FnSig) := do
 
 def expectTy (expected actual : Ty) (ctx : String) : CheckM Unit := do
   if expected == actual then return ()
+  -- Resolve type aliases and try again
+  let expectedR ← resolveType expected
+  let actualR ← resolveType actual
+  if expectedR == actualR then return ()
+  -- .string is compatible with .named "String"
+  else if (expectedR == .string && actualR == .named "String")
+       || (expectedR == .named "String" && actualR == .string) then return ()
   else throw s!"type mismatch in {ctx}: expected {tyToString expected}, got {tyToString actual}"
 
 -- ============================================================
 -- Linearity: consume and check
 -- ============================================================
+
+/-- Mark a linear variable as used (read/borrowed but not moved). -/
+def useVar (name : String) : CheckM Unit := do
+  let env ← getEnv
+  match env.vars.lookup name with
+  | none => pure ()  -- not found (might be a constant or function)
+  | some info =>
+    if info.isCopy then return ()
+    if info.state == .unconsumed then
+      let vars' := env.vars.map fun (n, vi) =>
+        if n == name then (n, { vi with state := .used })
+        else (n, vi)
+      setEnv { env with vars := vars' }
 
 /-- Consume a linear variable (mark it as consumed).
     Errors on use-after-move, or consuming an outer var inside a loop. -/
@@ -207,7 +251,7 @@ def consumeVar (name : String) : CheckM Unit := do
     match info.state with
     | .consumed =>
       throw s!"linear variable '{name}' used after move"
-    | .unconsumed =>
+    | .unconsumed | .used =>
       -- Loop depth check
       if info.loopDepth < env.loopDepth then
         throw s!"cannot consume linear variable '{name}' inside a loop (declared outside the loop)"
@@ -217,7 +261,8 @@ def consumeVar (name : String) : CheckM Unit := do
         else (n, vi)
       setEnv { env with vars := vars' }
 
-/-- Check that all linear variables in the given name list are consumed.
+/-- Check that all linear variables in the given name list are consumed or used.
+    Only errors on variables that were never touched at all.
     Called at function scope exit. -/
 def checkScopeExit (varNames : List String) : CheckM Unit := do
   let env ← getEnv
@@ -229,15 +274,46 @@ def checkScopeExit (varNames : List String) : CheckM Unit := do
     | none => pure ()
 
 -- ============================================================
+-- Type substitution for generics
+-- ============================================================
+
+/-- Substitute type variables using a mapping. -/
+private def substTy (mapping : List (String × Ty)) : Ty → Ty
+  | .named name => match mapping.lookup name with | some t => t | none => .named name
+  | .typeVar name => match mapping.lookup name with | some t => t | none => .typeVar name
+  | .ref inner => .ref (substTy mapping inner)
+  | .refMut inner => .refMut (substTy mapping inner)
+  | .ptrMut inner => .ptrMut (substTy mapping inner)
+  | .ptrConst inner => .ptrConst (substTy mapping inner)
+  | .array elem n => .array (substTy mapping elem) n
+  | .generic name args => .generic name (args.map (substTy mapping))
+  | ty => ty
+
+-- ============================================================
 -- Type checking expressions and statements
 -- ============================================================
 
 mutual
 
-partial def checkExpr (e : Expr) : CheckM Ty := do
+partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
   match e with
-  | .intLit _ => return .int
-  | .floatLit _ => return .float64
+  | .intLit _ =>
+    -- Use hint to infer integer literal type (resolve aliases first)
+    match hint with
+    | some ty =>
+      let tyR ← resolveType ty
+      if isIntegerType tyR || tyR == .char then return tyR
+      else
+        match tyR with
+        | .typeVar _ => return tyR  -- Type variables accept integer literals
+        | _ => return .int
+    | none => return .int
+  | .floatLit _ =>
+    match hint with
+    | some ty =>
+      let tyR ← resolveType ty
+      if isFloatType tyR then return tyR else return .float64
+    | none => return .float64
   | .boolLit _ => return .bool
   | .strLit _ => return .string
   | .charLit _ => return .char
@@ -252,35 +328,40 @@ partial def checkExpr (e : Expr) : CheckM Ty := do
       -- Reading a variable (not consuming). Check it's not already consumed.
       if !info.isCopy && info.state == .consumed then
         throw s!"linear variable '{name}' used after move"
+      useVar name
       return info.ty
     | none => throw s!"use of undeclared variable '{name}'"
   | .binOp op lhs rhs =>
-    let lTy ← checkExpr lhs
-    let rTy ← checkExpr rhs
+    -- Check lhs first (with hint), then use its type as hint for rhs
+    let lTy ← checkExpr lhs hint
+    let lTyR ← resolveType lTy
+    let rTy ← checkExpr rhs (some lTyR)
+    let rTyR ← resolveType rTy
+    let isTypeVarL := match lTyR with | .typeVar _ => true | _ => false
+    let isTypeVarR := match rTyR with | .typeVar _ => true | _ => false
     match op with
     | .add | .sub | .mul | .div | .mod =>
-      -- Allow arithmetic on any matching integer, float, or char type
-      if isIntegerType lTy && lTy == rTy then return lTy
-      else if isFloatType lTy && lTy == rTy then return lTy
-      else if lTy == .char && rTy == .char then return .char
-      -- Allow pointer + integer (pointer arithmetic)
-      else if isPointerType lTy && isIntegerType rTy then return lTy
+      if isIntegerType lTyR && lTyR == rTyR then return lTy
+      else if isFloatType lTyR && lTyR == rTyR then return lTy
+      else if lTyR == .char && rTyR == .char then return .char
+      else if isPointerType lTyR && isIntegerType rTyR then return lTy
+      else if isTypeVarL || isTypeVarR then return lTy
       else do
-        expectTy lTy rTy "arithmetic operand types"
+        expectTy lTyR rTyR "arithmetic operand types"
         return lTy
     | .eq | .neq | .lt | .gt | .leq | .geq =>
-      -- Allow comparison on matching types
-      if lTy == rTy then return .bool
-      else if isIntegerType lTy && isIntegerType rTy then return .bool
+      if lTyR == rTyR then return .bool
+      else if isIntegerType lTyR && isIntegerType rTyR then return .bool
+      else if isTypeVarL || isTypeVarR then return .bool
       else do
-        expectTy lTy rTy "comparison operands"
+        expectTy lTyR rTyR "comparison operands"
         return .bool
     | .and_ | .or_ =>
-      expectTy .bool lTy "left operand of logical op"
-      expectTy .bool rTy "right operand of logical op"
+      expectTy .bool lTyR "left operand of logical op"
+      expectTy .bool rTyR "right operand of logical op"
       return .bool
   | .unaryOp op operand =>
-    let ty ← checkExpr operand
+    let ty ← checkExpr operand hint
     match op with
     | .neg =>
       if isIntegerType ty || isFloatType ty then return ty
@@ -290,36 +371,49 @@ partial def checkExpr (e : Expr) : CheckM Ty := do
     | .not_ =>
       expectTy .bool ty "not operand"
       return .bool
-  | .call fnName _typeArgs args =>
+  | .call fnName typeArgs args =>
     match ← lookupFn fnName with
     | some sig =>
-      if args.length != sig.params.length then
-        throw s!"function '{fnName}' expects {sig.params.length} arguments, got {args.length}"
-      -- Check each argument. Passing a linear variable by value consumes it.
-      for (arg, (pName, pTy)) in args.zip sig.params do
-        let argTy ← checkExpr arg
+      -- Build type substitution from typeArgs + sig.typeParams
+      let mapping := sig.typeParams.zip typeArgs
+      let paramTypes := sig.params.map fun (n, t) => (n, substTy mapping t)
+      let retTy := substTy mapping sig.retTy
+      if args.length != paramTypes.length then
+        throw s!"function '{fnName}' expects {paramTypes.length} arguments, got {args.length}"
+      for (arg, (pName, pTy)) in args.zip paramTypes do
+        let argTy ← checkExpr arg (some pTy)
         expectTy pTy argTy s!"argument '{pName}' of '{fnName}'"
         -- If arg is a bare identifier of a linear type, consume it
         match arg with
         | .ident varName => consumeVar varName
         | _ => pure ()
-      return sig.retTy
-    | none => throw s!"call to undeclared function '{fnName}'"
-  | .paren inner => checkExpr inner
-  | .structLit name _typeArgs fields =>
+      return retTy
+    | none =>
+      -- sizeof intrinsic
+      if fnName == "sizeof" || fnName.endsWith "_sizeof" then return .uint
+      else throw s!"call to undeclared function '{fnName}'"
+  | .paren inner => checkExpr inner hint
+  | .structLit name typeArgs fields =>
     match ← lookupStruct name with
     | some sd =>
+      -- Build type substitution from struct type params + provided type args
+      let mapping := sd.typeParams.zip typeArgs
       for sf in sd.fields do
+        let fieldTy := substTy mapping sf.ty
         match fields.find? fun (fn, _) => fn == sf.name with
         | some (_, expr) =>
-          let exprTy ← checkExpr expr
-          expectTy sf.ty exprTy s!"field '{sf.name}' of struct '{name}'"
-        | none => throw s!"missing field '{sf.name}' in struct literal '{name}'"
+          let exprTy ← checkExpr expr (some fieldTy)
+          expectTy fieldTy exprTy s!"field '{sf.name}' of struct '{name}'"
+        | none =>
+          -- Unions allow partial initialization (only one field set)
+          if !sd.isUnion then
+            throw s!"missing field '{sf.name}' in struct literal '{name}'"
       for (fn, _) in fields do
         match sd.fields.find? fun sf => sf.name == fn with
         | some _ => pure ()
         | none => throw s!"unknown field '{fn}' in struct literal '{name}'"
-      return .named name
+      if typeArgs.isEmpty then return .named name
+      else return .generic name typeArgs
     | none => throw s!"unknown struct type '{name}'"
   | .fieldAccess obj field =>
     let objTy ← checkExpr obj
@@ -328,35 +422,56 @@ partial def checkExpr (e : Expr) : CheckM Ty := do
       | .ref t => t
       | .refMut t => t
       | t => t
-    match innerTy with
-    | .named structName =>
-      -- Field access does NOT consume the struct
-      match ← lookupStructField structName field with
-      | some ty => return ty
-      | none => throw s!"struct '{structName}' has no field '{field}'"
-    | _ => throw s!"field access on non-struct type"
-  | .enumLit enumName variant _typeArgs fields =>
+    -- Extract struct name and type args for generic type substitution
+    let (structName, typeArgs) := match innerTy with
+      | .named n => (n, ([] : List Ty))
+      | .generic n args => (n, args)
+      | .string => ("String", [])
+      | _ => ("", [])
+    if structName == "" then throw s!"field access on non-struct type"
+    else
+      match ← lookupStruct structName with
+      | some sd =>
+        match sd.fields.find? fun f => f.name == field with
+        | some f =>
+          let mapping := sd.typeParams.zip typeArgs
+          return substTy mapping f.ty
+        | none => throw s!"struct '{structName}' has no field '{field}'"
+      | none => throw s!"field access on non-struct type"
+  | .enumLit enumName variant typeArgs fields =>
     match ← lookupEnum enumName with
     | some ed =>
+      let mapping := ed.typeParams.zip typeArgs
       match ed.variants.find? fun v => v.name == variant with
       | some ev =>
         for sf in ev.fields do
+          let fieldTy := substTy mapping sf.ty
           match fields.find? fun (fn, _) => fn == sf.name with
           | some (_, expr) =>
-            let exprTy ← checkExpr expr
-            expectTy sf.ty exprTy s!"field '{sf.name}' of {enumName}#{variant}"
+            let exprTy ← checkExpr expr (some fieldTy)
+            expectTy fieldTy exprTy s!"field '{sf.name}' of {enumName}#{variant}"
           | none => throw s!"missing field '{sf.name}' in {enumName}#{variant}"
         for (fn, _) in fields do
           match ev.fields.find? fun sf => sf.name == fn with
           | some _ => pure ()
           | none => throw s!"unknown field '{fn}' in {enumName}#{variant}"
-        return .named enumName
+        if typeArgs.isEmpty then return .named enumName
+        else return .generic enumName typeArgs
       | none => throw s!"unknown variant '{variant}' in enum '{enumName}'"
     | none => throw s!"unknown enum type '{enumName}'"
   | .match_ scrutinee arms =>
     let scrTy ← checkExpr scrutinee
-    match scrTy with
-    | .named enumName =>
+    -- Auto-deref through references for match
+    let innerTy := match scrTy with
+      | .ref t => t
+      | .refMut t => t
+      | t => t
+    let innerTyR ← resolveType innerTy
+    let (enumName, _enumTypeArgs) := match innerTyR with
+      | .named n => (n, ([] : List Ty))
+      | .generic n args => (n, args)
+      | _ => ("", [])
+    if enumName != "" then
       match ← lookupEnum enumName with
       | some ed =>
         -- Consume scrutinee if it's a linear ident
@@ -367,7 +482,7 @@ partial def checkExpr (e : Expr) : CheckM Ty := do
         let mut seenVariants : List String := []
         for arm in arms do
           match arm with
-          | .mk armEnum armVariant bindings body =>
+          | .mk armEnum armVariant bindings _body =>
             if armEnum != enumName then
               throw s!"match arm has enum '{armEnum}' but scrutinee is '{enumName}'"
             match ed.variants.find? fun v => v.name == armVariant with
@@ -375,9 +490,12 @@ partial def checkExpr (e : Expr) : CheckM Ty := do
               if seenVariants.contains armVariant then
                 throw s!"duplicate match arm for variant '{armVariant}'"
               seenVariants := seenVariants ++ [armVariant]
-              if bindings.length != ev.fields.length then
+              -- Allow 0 bindings (ignore payload) or exact match
+              if bindings.length != 0 && bindings.length != ev.fields.length then
                 throw s!"variant '{armVariant}' has {ev.fields.length} fields but arm binds {bindings.length}"
             | none => throw s!"unknown variant '{armVariant}' in enum '{enumName}'"
+          | .litArm _ _ => pure ()
+          | .varArm _ _ => pure ()
         -- Check all variants covered
         for v in ed.variants do
           if !seenVariants.contains v.name then
@@ -386,30 +504,37 @@ partial def checkExpr (e : Expr) : CheckM Ty := do
         let envBefore ← getEnv
         let mut firstArmVars : Option (List (String × VarInfo)) := none
         for arm in arms do
+          setEnv envBefore
           match arm with
           | .mk _armEnum armVariant bindings body =>
-            setEnv envBefore
             -- Bind variant fields in scope
             let ev := (ed.variants.find? fun v => v.name == armVariant).get!
             for (binding, sf) in bindings.zip ev.fields do
               addVar binding sf.ty
             let curEnv ← getEnv
             checkStmts body curEnv.currentRetTy
-            let envAfterArm ← getEnv
-            match firstArmVars with
-            | none => firstArmVars := some envAfterArm.vars
-            | some firstVars =>
-              -- Check agreement on pre-existing variables
-              for (name, infoBefore) in envBefore.vars do
-                if infoBefore.isCopy then continue
-                let state1 := match firstVars.lookup name with
-                  | some info => info.state
-                  | none => infoBefore.state
-                let state2 := match envAfterArm.vars.lookup name with
-                  | some info => info.state
-                  | none => infoBefore.state
-                if state1 != state2 then
-                  throw s!"match arms disagree on consumption of '{name}'"
+          | .litArm _val body =>
+            checkStmts body envBefore.currentRetTy
+          | .varArm binding body =>
+            addVar binding innerTyR
+            checkStmts body envBefore.currentRetTy
+          let envAfterArm ← getEnv
+          match firstArmVars with
+          | none => firstArmVars := some envAfterArm.vars
+          | some firstVars =>
+            -- Check agreement on pre-existing variables
+            for (name, infoBefore) in envBefore.vars do
+              if infoBefore.isCopy then continue
+              let state1 := match firstVars.lookup name with
+                | some info => info.state
+                | none => infoBefore.state
+              let state2 := match envAfterArm.vars.lookup name with
+                | some info => info.state
+                | none => infoBefore.state
+              let consumed1 := state1 == .consumed
+              let consumed2 := state2 == .consumed
+              if consumed1 != consumed2 then
+                throw s!"match arms disagree on consumption of '{name}'"
         -- Apply the final state from first arm (they all agree)
         match firstArmVars with
         | some vars =>
@@ -422,7 +547,25 @@ partial def checkExpr (e : Expr) : CheckM Ty := do
         | none => setEnv envBefore
         return .named enumName
       | none => throw s!"unknown enum type '{enumName}'"
-    | _ => throw s!"match scrutinee must be an enum type"
+    else
+      -- Value-pattern match (integer/bool literals, variable bindings)
+      match scrutinee with
+      | .ident varName => useVar varName
+      | _ => pure ()
+      let envBefore ← getEnv
+      let mut resultTy := scrTy
+      for arm in arms do
+        setEnv envBefore
+        match arm with
+        | .litArm _val body =>
+          checkStmts body envBefore.currentRetTy
+        | .varArm binding body =>
+          addVar binding scrTy
+          checkStmts body envBefore.currentRetTy
+        | .mk _ _ _ body =>
+          checkStmts body envBefore.currentRetTy
+      setEnv envBefore
+      return resultTy
   | .borrow inner =>
     let innerTy ← checkExpr inner
     -- Check the variable is not moved or already mutably borrowed
@@ -501,9 +644,13 @@ partial def checkExpr (e : Expr) : CheckM Ty := do
     match elems with
     | [] => throw "array literal cannot be empty"
     | first :: rest =>
-      let firstTy ← checkExpr first
+      -- Use hint to determine element type (e.g. [i32; N] → elements are i32)
+      let elemHint := match hint with
+        | some (.array t _) => some t
+        | _ => none
+      let firstTy ← checkExpr first elemHint
       for e in rest do
-        let eTy ← checkExpr e
+        let eTy ← checkExpr e (some firstTy)
         expectTy firstTy eTy "array element"
       return .array firstTy elems.length
   | .arrayIndex arr index =>
@@ -538,52 +685,61 @@ partial def checkExpr (e : Expr) : CheckM Ty := do
       (innerTy == targetTy)
     if !valid then throw s!"cannot cast {tyToString innerTy} to {tyToString targetTy}"
     return targetTy
-  | .methodCall obj methodName _typeArgs args =>
+  | .methodCall obj methodName typeArgs args =>
     let objTy ← checkExpr obj
-    -- Auto-deref through references
     let innerTy := match objTy with
       | .ref t => t
       | .refMut t => t
       | t => t
     let typeName := match innerTy with
       | .named n => n
+      | .generic n _ => n
       | _ => ""
     if typeName == "" then throw s!"method call on non-named type"
-    -- Look up method in function table (mangled name: TypeName_method)
     let mangledName := typeName ++ "_" ++ methodName
     match ← lookupFn mangledName with
     | some sig =>
-      -- First param is self; check remaining args
-      let methodParams := sig.params.drop 1
+      -- Build type mapping from object's generic type args + explicit call typeArgs
+      let objTypeArgs := match innerTy with
+        | .generic _ args => args
+        | _ => []
+      let implTypeParams := sig.typeParams.take objTypeArgs.length
+      let methodTypeParams := sig.typeParams.drop objTypeArgs.length
+      let mapping := implTypeParams.zip objTypeArgs ++ methodTypeParams.zip typeArgs
+      let methodParams := (sig.params.drop 1).map fun (n, t) => (n, substTy mapping t)
+      let retTy := substTy mapping sig.retTy
       if args.length != methodParams.length then
         throw s!"method '{methodName}' expects {methodParams.length} arguments, got {args.length}"
       for (arg, (pName, pTy)) in args.zip methodParams do
-        let argTy ← checkExpr arg
+        let argTy ← checkExpr arg (some pTy)
         expectTy pTy argTy s!"argument '{pName}' of '{methodName}'"
         match arg with
         | .ident varName => consumeVar varName
         | _ => pure ()
-      return sig.retTy
+      return retTy
     | none => throw s!"no method '{methodName}' on type '{typeName}'"
-  | .staticMethodCall typeName methodName _typeArgs args =>
+  | .staticMethodCall typeName methodName typeArgs args =>
     let mangledName := typeName ++ "_" ++ methodName
     match ← lookupFn mangledName with
     | some sig =>
-      if args.length != sig.params.length then
-        throw s!"static method '{methodName}' expects {sig.params.length} arguments, got {args.length}"
-      for (arg, (pName, pTy)) in args.zip sig.params do
-        let argTy ← checkExpr arg
+      let mapping := sig.typeParams.zip typeArgs
+      let paramTypes := sig.params.map fun (n, t) => (n, substTy mapping t)
+      let retTy := substTy mapping sig.retTy
+      if args.length != paramTypes.length then
+        throw s!"static method '{methodName}' expects {paramTypes.length} arguments, got {args.length}"
+      for (arg, (pName, pTy)) in args.zip paramTypes do
+        let argTy ← checkExpr arg (some pTy)
         expectTy pTy argTy s!"argument '{pName}' of '{typeName}::{methodName}'"
         match arg with
         | .ident varName => consumeVar varName
         | _ => pure ()
-      return sig.retTy
+      return retTy
     | none => throw s!"no method '{methodName}' on type '{typeName}'"
 
 partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
   match stmt with
   | .letDecl name mutable ty value =>
-    let valTy ← checkExpr value
+    let valTy ← checkExpr value ty
     match ty with
     | some declTy => expectTy declTy valTy s!"let binding '{name}'"
     | none => pure ()
@@ -594,11 +750,11 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
     | some info =>
       if !info.mutable then
         throw s!"cannot assign to immutable variable '{name}'"
-      let valTy ← checkExpr value
+      let valTy ← checkExpr value (some info.ty)
       expectTy info.ty valTy s!"assignment to '{name}'"
     | none => throw s!"assignment to undeclared variable '{name}'"
   | .return_ (some value) =>
-    let valTy ← checkExpr value
+    let valTy ← checkExpr value (some retTy)
     expectTy retTy valTy "return value"
     -- Returning a linear variable consumes it
     match value with
@@ -670,7 +826,7 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
     | .named structName =>
       match ← lookupStructField structName field with
       | some fieldTy =>
-        let valTy ← checkExpr value
+        let valTy ← checkExpr value (some fieldTy)
         expectTy fieldTy valTy s!"field assignment '{structName}.{field}'"
       | none => throw s!"struct '{structName}' has no field '{field}'"
     | _ => throw s!"field assignment on non-struct type"
@@ -678,10 +834,10 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
     let targetTy ← checkExpr target
     match targetTy with
     | .refMut inner =>
-      let valTy ← checkExpr value
+      let valTy ← checkExpr value (some inner)
       expectTy inner valTy "deref assignment"
     | .ptrMut inner =>
-      let valTy ← checkExpr value
+      let valTy ← checkExpr value (some inner)
       expectTy inner valTy "deref assignment"
     | _ => throw s!"cannot assign through non-mutable reference"
   | .arrayIndexAssign arr index value =>
@@ -691,7 +847,7 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
       throw s!"type mismatch: array index must be an integer type"
     match arrTy with
     | .array elemTy _ =>
-      let valTy ← checkExpr value
+      let valTy ← checkExpr value (some elemTy)
       expectTy elemTy valTy "array element assignment"
     | _ => throw s!"type mismatch: indexing into non-array type"
 
@@ -712,13 +868,19 @@ partial def mergeVarStates
     let elseState := match afterElse.lookup name with
       | some info => info.state
       | none => infoBefore.state
-    if thenState != elseState then
+    -- Both consumed or both not-consumed (used/unconsumed are equivalent here)
+    let thenConsumed := thenState == .consumed
+    let elseConsumed := elseState == .consumed
+    if thenConsumed != elseConsumed then
       throw s!"linear variable '{name}' consumed in one branch of if/else but not the other"
-    -- Apply the agreed-upon state
-    if thenState != infoBefore.state then
+    -- Apply the most progressed state (consumed > used > unconsumed)
+    let mergedState := if thenState == .consumed then .consumed
+      else if thenState == .used || elseState == .used then .used
+      else infoBefore.state
+    if mergedState != infoBefore.state then
       let env ← getEnv
       let vars' := env.vars.map fun (n, vi) =>
-        if n == name then (n, { vi with state := thenState })
+        if n == name then (n, { vi with state := mergedState })
         else (n, vi)
       setEnv { env with vars := vars' }
 
@@ -730,7 +892,7 @@ partial def checkNoBranchConsumption
     (ctx : String) : CheckM Unit := do
   for (name, infoBefore) in before do
     if infoBefore.isCopy then continue
-    if infoBefore.state != .unconsumed then continue
+    if infoBefore.state == .consumed then continue
     let thenState := match afterThen.lookup name with
       | some info => info.state
       | none => infoBefore.state
@@ -739,18 +901,32 @@ partial def checkNoBranchConsumption
 
 end
 
+private def resolveTypeParams (ty : Ty) (typeParams : List String) : Ty :=
+  match ty with
+  | .named n => if typeParams.contains n then .typeVar n else ty
+  | .ref t => .ref (resolveTypeParams t typeParams)
+  | .refMut t => .refMut (resolveTypeParams t typeParams)
+  | .ptrMut t => .ptrMut (resolveTypeParams t typeParams)
+  | .ptrConst t => .ptrConst (resolveTypeParams t typeParams)
+  | .array t n => .array (resolveTypeParams t typeParams) n
+  | .generic name args => .generic name (args.map fun a => resolveTypeParams a typeParams)
+  | _ => ty
+
 def checkFn (f : FnDef) : CheckM Unit := do
   -- Save env state (vars from previous functions shouldn't leak)
   let envBefore ← getEnv
-  -- Set current return type
-  setEnv { envBefore with currentRetTy := f.retTy }
+  -- Resolve type parameter names: .named "T" -> .typeVar "T"
+  let retTy := resolveTypeParams f.retTy f.typeParams
+  -- Set current return type and type params
+  setEnv { envBefore with currentRetTy := retTy, currentTypeParams := f.typeParams }
   -- Add params to env. Linear params are "consumed" by being received.
   let mut paramNames : List String := []
   for p in f.params do
-    addVar p.name p.ty true  -- params are always mutable for now
+    let paramTy := resolveTypeParams p.ty f.typeParams
+    addVar p.name paramTy true  -- params are always mutable for now
     paramNames := paramNames ++ [p.name]
   -- Check body
-  checkStmts f.body f.retTy
+  checkStmts f.body retTy
   -- Check linearity: only LOCAL let-bindings of linear type must be consumed.
   let envAfter ← getEnv
   let localVars := envAfter.vars.filter fun (name, _) =>
@@ -765,7 +941,7 @@ def checkModule (m : Module) (importedFnSigs : List (String × FnSig) := [])
     (importedImplBlocks : List ImplBlock := []) (importedTraitImpls : List ImplTraitBlock := [])
     : Except String Unit :=
   let fnSigs : List FnSig := m.functions.map fun f =>
-    { params := f.params.map fun p => (p.name, p.ty), retTy := f.retTy }
+    { params := f.params.map fun p => (p.name, p.ty), retTy := f.retTy, typeParams := f.typeParams }
   -- Add extern fn signatures
   let externSigs : List FnSig := m.externFns.map fun ef =>
     { params := ef.params.map fun p => (p.name, p.ty), retTy := ef.retTy }
@@ -785,6 +961,21 @@ def checkModule (m : Module) (importedFnSigs : List (String × FnSig) := [])
     ("print_string", builtinOffset + 2),
     ("drop_string", builtinOffset + 3)
   ]
+  -- Add submodule functions/extern fns with qualified names (mod_fn)
+  let submoduleSigs : List FnSig := m.submodules.foldl (fun acc (sub : Module) =>
+    acc ++ (sub.functions.map fun f =>
+      { params := f.params.map fun p => (p.name, p.ty), retTy := f.retTy, typeParams := f.typeParams : FnSig })
+    ++ (sub.externFns.map fun ef =>
+      { params := ef.params.map fun p => (p.name, p.ty), retTy := ef.retTy : FnSig })
+  ) []
+  let submoduleNames : List (String × Nat) := m.submodules.foldl (fun (acc : List (String × Nat)) (sub : Module) =>
+    let baseIdx := baseOffset + fnSigs.length + builtinSigs.length + externSigs.length + acc.length
+    let fnNames' : List (String × Nat) := (enumerateList sub.functions).map fun (idx, f) =>
+      (sub.name ++ "_" ++ f.name, baseIdx + idx)
+    let efNames : List (String × Nat) := (enumerateList sub.externFns).map fun (idx, ef) =>
+      (sub.name ++ "_" ++ ef.name, baseIdx + sub.functions.length + idx)
+    acc ++ fnNames' ++ efNames
+  ) []
   let externOffset := builtinOffset + builtinSigs.length
   let externNames : List (String × Nat) :=
     (enumerateList m.externFns).map fun (idx, ef) => (ef.name, externOffset + idx)
@@ -794,25 +985,27 @@ def checkModule (m : Module) (importedFnSigs : List (String × FnSig) := [])
   let implMethodSigs : List (String × FnSig) := allImplBlocks.foldl (fun acc ib =>
     acc ++ ib.methods.map fun f =>
       let mangledName := ib.typeName ++ "_" ++ f.name
-      let sig : FnSig := { params := f.params.map fun p => (p.name, p.ty), retTy := f.retTy }
+      let allTypeParams := ib.typeParams ++ f.typeParams
+      let sig : FnSig := { params := f.params.map fun p => (p.name, p.ty), retTy := f.retTy, typeParams := allTypeParams }
       (mangledName, sig)
   ) []
   let traitImplMethodSigs : List (String × FnSig) := allTraitImpls.foldl (fun acc tb =>
     acc ++ tb.methods.map fun f =>
       let mangledName := tb.typeName ++ "_" ++ f.name
-      let sig : FnSig := { params := f.params.map fun p => (p.name, p.ty), retTy := f.retTy }
+      let allTypeParams := tb.typeParams ++ f.typeParams
+      let sig : FnSig := { params := f.params.map fun p => (p.name, p.ty), retTy := f.retTy, typeParams := allTypeParams }
       (mangledName, sig)
   ) []
   let implSigList := (implMethodSigs ++ traitImplMethodSigs).map Prod.snd
   let implOffset := externOffset + externSigs.length
   let implNames : List (String × Nat) :=
     (enumerateList (implMethodSigs ++ traitImplMethodSigs)).map fun (idx, (name, _)) => (name, implOffset + idx)
-  let allSigs := importedSigList ++ fnSigs ++ builtinSigs ++ externSigs ++ implSigList
+  let allSigs := importedSigList ++ fnSigs ++ builtinSigs ++ externSigs ++ submoduleSigs ++ implSigList
   let importedNames : List (String × Nat) :=
     (enumerateList importedFnSigs).map fun (idx, (name, _)) => (name, idx)
   let fnNames : List (String × Nat) :=
     (enumerateList m.functions).map fun (idx, f) => (f.name, baseOffset + idx)
-  let allNames := importedNames ++ fnNames ++ builtinNames ++ externNames ++ implNames
+  let allNames := importedNames ++ fnNames ++ builtinNames ++ externNames ++ submoduleNames ++ implNames
   let allStructs := importedStructs ++ m.structs
   let allEnums := importedEnums ++ m.enums
   -- Build type aliases map
@@ -837,8 +1030,15 @@ def checkModule (m : Module) (importedFnSigs : List (String × FnSig) := [])
   match traitCheck with
   | .error e => .error e
   | .ok () =>
-  let allImplMethods := allImplBlocks.foldl (fun acc ib => acc ++ ib.methods) []
-  let allTraitImplMethods := allTraitImpls.foldl (fun acc tb => acc ++ tb.methods) []
+  -- Merge impl block type params into each method's typeParams
+  let allImplMethods := allImplBlocks.foldl (fun acc ib =>
+    acc ++ ib.methods.map fun f =>
+      { f with typeParams := ib.typeParams ++ f.typeParams }
+  ) []
+  let allTraitImplMethods := allTraitImpls.foldl (fun acc tb =>
+    acc ++ tb.methods.map fun f =>
+      { f with typeParams := tb.typeParams ++ f.typeParams }
+  ) []
   let allMethodDefs := allImplMethods ++ allTraitImplMethods
   let result := (m.functions ++ allMethodDefs).foldlM (fun () f => checkFn f) () |>.run initEnv |>.run
   match result with
@@ -871,16 +1071,21 @@ private def resolveImports (m : Module)
 
 /-- Check a multi-module program. Processes modules in order, building export tables. -/
 def checkProgram (modules : List Module) : Except String Unit :=
-  let go := modules.foldlM
-    (init := ([] : List (String × ExportEntry)))
-    fun exportTable m => do
-      let (impFns, impStructs, impEnums, impImpls, impTraitImpls) ← resolveImports m exportTable
-      checkModule m impFns impStructs impEnums impImpls impTraitImpls
-      let pubFns := (m.functions.filter fun (f : FnDef) => f.isPublic).map fun (f : FnDef) =>
+  -- First pass: build export table from all modules (allows forward references)
+  let exportTable : List (String × ExportEntry) := modules.foldl (fun acc m =>
+    let pubFns := m.functions.map fun (f : FnDef) =>
+      (f.name, { params := f.params.map fun (p : Param) => (p.name, p.ty), retTy := f.retTy : FnSig })
+    let subExports : List (String × ExportEntry) := m.submodules.map fun (sub : Module) =>
+      let subFns : List (String × FnSig) := sub.functions.map fun (f : FnDef) =>
         (f.name, { params := f.params.map fun (p : Param) => (p.name, p.ty), retTy := f.retTy : FnSig })
-      let pubStructs := m.structs.filter fun (s : StructDef) => s.isPublic
-      let pubEnums := m.enums.filter fun (e : EnumDef) => e.isPublic
-      return exportTable ++ [(m.name, (pubFns, pubStructs, pubEnums, m.implBlocks, m.traitImpls))]
-  go.map fun _ => ()
+      let entry : ExportEntry := (subFns, sub.structs, sub.enums, sub.implBlocks, sub.traitImpls)
+      (m.name ++ "." ++ sub.name, entry)
+    acc ++ [(m.name, (pubFns, m.structs, m.enums, m.implBlocks, m.traitImpls))] ++ subExports
+  ) []
+  -- Second pass: resolve imports and type-check each module
+  let go := modules.foldlM (init := ()) fun () m => do
+    let (impFns, impStructs, impEnums, impImpls, impTraitImpls) ← resolveImports m exportTable
+    checkModule m impFns impStructs impEnums impImpls impTraitImpls
+  go
 
 end Concrete

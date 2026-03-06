@@ -212,22 +212,41 @@ partial def parsePrimary : ParseM Expr := do
   | .false_ => advance; return .boolLit false
   | .ident name =>
     advance
-    -- Check for turbofish: name::<Type, ...>
+    -- Check for turbofish or module path: name::<Type, ...> or mod::name(...)
     let next ← peek
-    let typeArgs ← if next == .doubleColon then
-      advance
-      expect .lt
-      let targs ← parseTypeArgList
-      expect .gt
-      pure targs
-    else
-      pure []
+    let mut qualName := name
+    let mut typeArgs : List Ty := []
+    if next == .doubleColon then
+      let s ← get
+      advance  -- consume '::'
+      let afterDC ← peek
+      if afterDC == .lt then
+        -- Turbofish: name::<Type, ...>
+        advance
+        typeArgs ← parseTypeArgList
+        expect .gt
+      else
+        match afterDC with
+        | .ident nextName =>
+          -- Module path: mod::name
+          advance
+          qualName := name ++ "_" ++ nextName
+          -- Check for turbofish after module path: mod::name::<T>
+          let next3 ← peek
+          if next3 == .doubleColon then
+            advance
+            expect .lt
+            typeArgs ← parseTypeArgList
+            expect .gt
+        | _ =>
+          -- Not turbofish and not module path, restore
+          set s
     let next2 ← peek
     if next2 == .lparen then
       advance
       let args ← parseCallArgs
       expect .rparen
-      return .call name typeArgs args
+      return .call qualName typeArgs args
     else if next2 == .hash then
       -- Enum literal or static method call: Name#Variant { ... } or Name#method(args)
       advance
@@ -247,6 +266,32 @@ partial def parsePrimary : ParseM Expr := do
       else
         -- Fieldless enum literal: Name#Variant (no braces)
         return .enumLit name variant typeArgs []
+    else if next2 == .dot && name.length > 0 && (name.toList.head!).isUpper && typeArgs.isEmpty then
+      -- Could be enum literal with dot syntax: EnumName.Variant
+      -- Save position in case this is not an enum literal
+      let s ← get
+      advance  -- consume '.'
+      let variantTk ← peek
+      match variantTk with
+      | .ident variant =>
+        if variant.length > 0 && (variant.toList.head!).isUpper then
+          advance  -- consume variant name
+          let next3 ← peek
+          if next3 == .lbrace then
+            expect .lbrace
+            let fields ← parseStructLitFields
+            expect .rbrace
+            return .enumLit name variant [] fields
+          else
+            return .enumLit name variant [] []
+        else
+          -- Not an enum variant (lowercase after dot), restore and return as ident
+          set s
+          return .ident name
+      | _ =>
+        -- Not an ident after dot, restore
+        set s
+        return .ident name
     else if next2 == .lbrace then
       -- Could be struct literal: Name[::<Type>] { field: val, ... }
       if name.length > 0 && (name.toList.head!).isUpper then
@@ -506,8 +551,13 @@ partial def parseWhile : ParseM Stmt := do
 
 partial def parseFor : ParseM Stmt := do
   expect .for_
+  let tk ← peek
+  -- for { body } — infinite loop (no parens, no cond)
+  if tk == .lbrace then
+    let body ← parseBlock
+    return .while_ (.boolLit true) body
+  -- for (cond) or for (init; cond; step)
   expect .lparen
-  -- Check if this is a for(cond) or for(init; cond; step)
   let tk ← peek
   if tk == .«let» then
     -- C-style for: for (let mut i: T = init; cond; step) { body }
@@ -578,41 +628,96 @@ partial def parseMatchArms : ParseM (List MatchArm) := do
     tk ← peek
   return arms
 
+/-- Parse a match arm body: block or single statement (where comma can end the stmt instead of semicolon) -/
+partial def parseMatchArmBody : ParseM (List Stmt) := do
+  let bodyTk ← peek
+  if bodyTk == .lbrace then
+    parseBlock
+  else if bodyTk == .return_ then
+    advance
+    let tk ← peek
+    let value ← if tk == .semicolon || tk == .comma || tk == .rbrace then
+      pure none
+    else
+      let e ← parseExpr
+      pure (some e)
+    -- Accept semicolon, comma, or nothing (rbrace will be consumed by caller)
+    let tk2 ← peek
+    if tk2 == .semicolon then advance
+    pure [.return_ value]
+  else do
+    let stmt ← parseStmt
+    pure [stmt]
+
 partial def parseMatchArm : ParseM MatchArm := do
-  let enumName ← expectIdent
-  -- Check for turbofish: EnumName::<T>#Variant
-  let next0 ← peek
-  let _typeArgs ← if next0 == .doubleColon then
+  let firstTk ← peek
+  -- Check for literal pattern (integer)
+  match firstTk with
+  | .intLit n =>
     advance
-    expect .lt
-    let targs ← parseTypeArgList
-    expect .gt
-    pure targs
-  else
-    pure []
-  expect .hash
-  let variant ← expectIdent
-  -- Check for field bindings (optional - fieldless variants have no braces)
-  let next ← peek
-  let bindings ← if next == .lbrace then
+    let arrowTk ← peek
+    if arrowTk == .fatArrow then advance
+    else if arrowTk == .arrow then advance
+    else throw s!"expected => or -> in match arm, got {arrowTk}"
+    let body ← parseMatchArmBody
+    let tk2 ← peek
+    if tk2 == .comma then advance
+    return .litArm (.intLit n) body
+  | .ident name =>
     advance
-    let mut bindings : List String := []
-    let mut tk ← peek
-    while tk != .rbrace && tk != .eof do
-      let name ← expectIdent
-      bindings := bindings ++ [name]
-      tk ← peek
-      if tk == .comma then advance; tk ← peek
-    expect .rbrace
-    pure bindings
-  else
-    pure []
-  expect .fatArrow
-  let body ← parseBlock
-  -- Optional trailing comma after the arm block
-  let tk2 ← peek
-  if tk2 == .comma then advance
-  return .mk enumName variant bindings body
+    let next ← peek
+    -- Check if this is EnumName#Variant or EnumName.Variant
+    if next == .hash || next == .dot || next == .doubleColon then
+      let enumName := name
+      -- Check for turbofish: EnumName::<T>#Variant
+      let _typeArgs ← if next == .doubleColon then
+        advance
+        expect .lt
+        let targs ← parseTypeArgList
+        expect .gt
+        pure targs
+      else
+        pure []
+      -- Support both # and . as enum separator
+      let sep ← peek
+      if sep == .hash then advance
+      else if sep == .dot then advance
+      else throw s!"expected # or . in match pattern, got {sep}"
+      let variant ← expectIdent
+      -- Check for field bindings
+      let next2 ← peek
+      let bindings ← if next2 == .lbrace then
+        advance
+        let mut bindings : List String := []
+        let mut tk ← peek
+        while tk != .rbrace && tk != .eof do
+          let bindName ← expectIdent
+          bindings := bindings ++ [bindName]
+          tk ← peek
+          if tk == .comma then advance; tk ← peek
+        expect .rbrace
+        pure bindings
+      else
+        pure []
+      let arrowTk ← peek
+      if arrowTk == .fatArrow then advance
+      else if arrowTk == .arrow then advance
+      else throw s!"expected => or -> in match arm, got {arrowTk}"
+      let body ← parseMatchArmBody
+      let tk2 ← peek
+      if tk2 == .comma then advance
+      return .mk enumName variant bindings body
+    else
+      -- Variable binding pattern: name -> body
+      let arrowTk := next
+      if arrowTk == .fatArrow then advance
+      else if arrowTk == .arrow then advance
+      else throw s!"expected => or -> in match arm, got {arrowTk}"
+      let body ← parseMatchArmBody
+      let tk2 ← peek
+      if tk2 == .comma then advance
+      return .varArm name body
+  | _ => throw s!"expected match pattern, got {firstTk}"
 
 partial def parseExprOrAssign : ParseM Stmt := do
   let e ← parseExpr
@@ -850,6 +955,28 @@ partial def parseFnDef : ParseM FnDef := do
   let body ← parseBlock
   return { name, typeParams, params, retTy, body }
 
+/-- Parse a fn that may have a body ({...}) or be a declaration (;). -/
+partial def parseFnDefOrDecl : ParseM (FnDef ⊕ ExternFnDecl) := do
+  expect .fn
+  let name ← expectIdent
+  let typeParams ← parseTypeParams
+  expect .lparen
+  let params ← parseParamList
+  expect .rparen
+  let tk ← peek
+  let retTy ← if tk == .arrow then
+    advance
+    parseType
+  else
+    pure .unit
+  let tk2 ← peek
+  if tk2 == .semicolon then
+    advance  -- consume ';'
+    return .inr { name, params, retTy }
+  else
+    let body ← parseBlock
+    return .inl { name, typeParams, params, retTy, body }
+
 partial def parseStructDef : ParseM StructDef := do
   expect .struct_
   let name ← expectIdent
@@ -893,6 +1020,11 @@ partial def parseEnumDef : ParseM EnumDef := do
         if tk3 == .comma then advance; tk3 ← peek
       expect .rbrace
       variants := variants ++ [{ name := variantName, fields }]
+    else if tk2 == .assign then
+      -- Discriminant value: Variant = 3
+      advance  -- consume '='
+      let _ ← parseExpr  -- parse and discard the discriminant value
+      variants := variants ++ [{ name := variantName, fields := [] }]
     else
       -- Fieldless variant
       variants := variants ++ [{ name := variantName, fields := [] }]
@@ -995,11 +1127,10 @@ partial def parseModuleBody (stopToken : TokenKind) : ParseM Module := do
   let mut submodules : List Module := []
   let mut tk ← peek
   while tk != stopToken && tk != .eof do
-    -- Skip attributes
+    -- Skip attributes (but don't continue — let the next token be parsed)
     if tk == .hash then
       skipAttribute
       tk ← peek
-      continue
     if tk == .import_ then
       let imp ← parseImport
       imports := imports ++ [imp]
@@ -1047,9 +1178,32 @@ partial def parseModuleBody (stopToken : TokenKind) : ParseM Module := do
       else if tk == .hash then
         -- Attribute before a declaration
         skipAttribute
+      else if tk == .fn then
+        -- Check if function has a body or is body-less (intrinsic/declaration)
+        let f ← parseFnDefOrDecl
+        match f with
+        | .inl fnDef => fns := fns ++ [{ fnDef with isPublic := isPub }]
+        | .inr extDef => externFns := externFns ++ [{ extDef with isPublic := isPub }]
+      else if tk == .ident "union" then
+        -- Parse union as a struct (all fields share memory)
+        advance  -- consume 'union'
+        let name ← expectIdent
+        let typeParams ← parseTypeParams
+        expect .lbrace
+        let mut fields : List StructField := []
+        let mut tk3 ← peek
+        while tk3 != .rbrace && tk3 != .eof do
+          let fieldName ← expectIdent
+          expect .colon
+          let ty ← parseType
+          fields := fields ++ [{ name := fieldName, ty }]
+          tk3 ← peek
+          if tk3 == .comma then advance; tk3 ← peek
+        expect .rbrace
+        structs := structs ++ [{ name, typeParams, fields, isPublic := isPub, isUnion := true }]
       else
-        let f ← parseFnDef
-        fns := fns ++ [{ f with isPublic := isPub }]
+        let sp ← peekSpan
+        throw s!"unexpected token {tk} at {sp.line}:{sp.col}"
     tk ← peek
   return { name := "", structs, enums, functions := fns, imports, implBlocks, traits,
            traitImpls, constants, typeAliases, externFns, submodules }
