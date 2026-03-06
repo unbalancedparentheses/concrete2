@@ -769,12 +769,8 @@ partial def genExpr (s : CodegenState) (e : Expr) (hintTy : Option Ty := none) :
     -- Enum match
     let enumName := if enumName == "" then "unknown" else enumName
     let enumTy := "%enum." ++ enumName
-    let (s, scrPtr) := match scrTy with
-      | .ref _ | .refMut _ =>
-        let (s2, innerPtr) := s.freshLocal
-        let s2 := s2.emit ("  " ++ innerPtr ++ " = load ptr, ptr " ++ scrReg)
-        (s2, innerPtr)
-      | _ => (s, scrReg)
+    -- For references, genExpr already returns the pointer to the target
+    let (s, scrPtr) := (s, scrReg)
     let (s, tagPtr) := s.freshLocal
     let s := s.emit ("  " ++ tagPtr ++ " = getelementptr inbounds " ++ enumTy
       ++ ", ptr " ++ scrPtr ++ ", i32 0, i32 0")

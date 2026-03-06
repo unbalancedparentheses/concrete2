@@ -1,17 +1,15 @@
 mod Example {
-    fn main() -> i64 {
+    fn main() -> Int {
         return sum_to(4);
     }
 
-    fn sum_to(limit: i64) -> i64 {
-        let mut result: i64 = 0;
-
-        let n: i64 = 1;
-        for {
+    fn sum_to(limit: Int) -> Int {
+        let mut result: Int = 0;
+        let mut n: Int = 1;
+        while n <= limit {
             result = result + n;
             n = n + 1;
         }
-
         return result;
     }
 }
