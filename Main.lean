@@ -30,13 +30,13 @@ def compile (inputPath : String) (outputPath : String) (emitLLVM : Bool) : IO UI
   | .error e =>
     IO.eprintln s!"Parse error: {e}"
     return 1
-  | .ok module =>
-    match checkModule module with
+  | .ok modules =>
+    match checkProgram modules with
     | .error e =>
       IO.eprintln s!"Type error: {e}"
       return 1
     | .ok () =>
-    let llvmIR := genModule module
+    let llvmIR := genProgram modules
     let llPath := inputPath ++ ".ll"
     writeFile llPath llvmIR
     if emitLLVM then

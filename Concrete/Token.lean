@@ -3,14 +3,16 @@ namespace Concrete
 inductive TokenKind where
   -- Literals
   | intLit (val : Int)
+  | floatLit (val : Float)
   | boolLit (val : Bool)
   | strLit (val : String)
+  | charLit (val : Char)
   -- Identifier
   | ident (name : String)
   -- Keywords
   | fn | «let» | mut | if_ | else_ | while_ | for_ | return_
   | true_ | false_ | «mod» | struct_ | enum_ | match_ | pub_ | import_
-  | as_ | impl_ | trait_
+  | as_ | impl_ | trait_ | const_ | type_ | extern_
   -- Types
   | arrow  -- ->
   -- Operators
@@ -42,8 +44,10 @@ structure Token where
 
 def TokenKind.toString : TokenKind → String
   | .intLit v => s!"int({v})"
+  | .floatLit v => s!"float({v})"
   | .boolLit v => s!"bool({v})"
   | .strLit v => s!"str(\"{v}\")"
+  | .charLit v => s!"char('{v}')"
   | .ident n => s!"ident({n})"
   | .fn => "fn"
   | .«let» => "let"
@@ -64,6 +68,9 @@ def TokenKind.toString : TokenKind → String
   | .as_ => "as"
   | .impl_ => "impl"
   | .trait_ => "trait"
+  | .const_ => "const"
+  | .type_ => "type"
+  | .extern_ => "extern"
   | .arrow => "->"
   | .plus => "+"
   | .minus => "-"

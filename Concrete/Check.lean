@@ -7,7 +7,7 @@ namespace Concrete
 Pipeline: Source → Lexer → Parser → AST → **Check** → Codegen → LLVM IR → clang
 
 Linearity rules (matching Concrete/Rust design):
-- Primitives (Int, Bool, Uint, Float64) are implicitly Copy.
+- Primitives (Int, Bool, Uint, Float64, i32, etc.) are implicitly Copy.
 - Struct-typed variables are linear by default.
 - A linear variable must be consumed exactly once before scope exit.
 - Consuming = passing as a function argument (by value).
@@ -39,6 +39,7 @@ structure VarInfo where
   loopDepth : Nat
   borrowCount : Nat := 0
   mutBorrowed : Bool := false
+  mutable : Bool := true  -- whether the variable was declared with mut
   deriving Repr
 
 structure TypeEnv where
@@ -49,6 +50,8 @@ structure TypeEnv where
   fnNames : List (String × Nat)
   loopDepth : Nat
   currentRetTy : Ty := .unit
+  typeAliases : List (String × Ty) := []
+  constants : List (String × Ty) := []
   deriving Repr
 
 abbrev CheckM := ExceptT String (StateM TypeEnv)
@@ -69,10 +72,18 @@ private def listGetIdx (l : List α) (idx : Nat) : Option α :=
   | _ :: rest, n + 1 => listGetIdx rest n
 
 private def tyToString : Ty → String
-  | .int => "Int"
-  | .uint => "Uint"
-  | .bool => "Bool"
-  | .float64 => "Float64"
+  | .int => "i64"
+  | .uint => "u64"
+  | .i8 => "i8"
+  | .i16 => "i16"
+  | .i32 => "i32"
+  | .u8 => "u8"
+  | .u16 => "u16"
+  | .u32 => "u32"
+  | .bool => "bool"
+  | .float64 => "f64"
+  | .float32 => "f32"
+  | .char => "char"
   | .unit => "()"
   | .string => "String"
   | .named n => n
@@ -81,17 +92,55 @@ private def tyToString : Ty → String
   | .generic name args => name ++ "<" ++ ", ".intercalate (args.map tyToString) ++ ">"
   | .typeVar name => name
   | .array elem size => "[" ++ tyToString elem ++ "; " ++ toString size ++ "]"
+  | .ptrMut inner => "*mut " ++ tyToString inner
+  | .ptrConst inner => "*const " ++ tyToString inner
+
+/-- Is this an integer type (any size)? -/
+def isIntegerType : Ty → Bool
+  | .int | .uint | .i8 | .i16 | .i32 | .u8 | .u16 | .u32 => true
+  | _ => false
+
+/-- Is this a signed integer type? -/
+def isSignedInt : Ty → Bool
+  | .int | .i8 | .i16 | .i32 => true
+  | _ => false
+
+/-- Is this a float type? -/
+def isFloatType : Ty → Bool
+  | .float32 | .float64 => true
+  | _ => false
+
+/-- Is this a numeric type (int or float)? -/
+def isNumericType : Ty → Bool
+  | ty => isIntegerType ty || isFloatType ty
+
+/-- Is this a pointer type? -/
+def isPointerType : Ty → Bool
+  | .ptrMut _ | .ptrConst _ => true
+  | _ => false
 
 def getEnv : CheckM TypeEnv := get
 def setEnv (env : TypeEnv) : CheckM Unit := set env
 
+/-- Resolve type aliases. -/
+def resolveType (ty : Ty) : CheckM Ty := do
+  match ty with
+  | .named name =>
+    let env ← getEnv
+    match env.typeAliases.lookup name with
+    | some resolved => return resolved
+    | none => return ty
+  | _ => return ty
+
 /-- Is this type Copy (non-linear)? Primitives are Copy; structs are linear. -/
 def isCopyType (ty : Ty) : CheckM Bool := do
   match ty with
-  | .int | .uint | .bool | .float64 | .unit => return true
+  | .int | .uint | .i8 | .i16 | .i32 | .u8 | .u16 | .u32 => return true
+  | .bool | .float64 | .float32 | .char | .unit => return true
   | .string => return false    -- String is linear
   | .ref _ => return true      -- References are Copy
   | .refMut _ => return false  -- Mutable refs are not Copy (exclusive)
+  | .ptrMut _ | .ptrConst _ => return true  -- Raw pointers are Copy
   | .named _ => return false
   | .generic _ _ => return false  -- Generic instantiations are linear
   | .typeVar _ => return false
@@ -106,10 +155,10 @@ def lookupVarTy (name : String) : CheckM (Option Ty) := do
   | some info => return some info.ty
   | none => return none
 
-def addVar (name : String) (ty : Ty) : CheckM Unit := do
+def addVar (name : String) (ty : Ty) (mutable : Bool := true) : CheckM Unit := do
   let env ← getEnv
   let copy ← isCopyType ty
-  let info : VarInfo := { ty, state := .unconsumed, isCopy := copy, loopDepth := env.loopDepth }
+  let info : VarInfo := { ty, state := .unconsumed, isCopy := copy, loopDepth := env.loopDepth, mutable }
   setEnv { env with vars := (name, info) :: env.vars }
 
 def lookupStruct (name : String) : CheckM (Option StructDef) := do
@@ -188,9 +237,16 @@ mutual
 partial def checkExpr (e : Expr) : CheckM Ty := do
   match e with
   | .intLit _ => return .int
+  | .floatLit _ => return .float64
   | .boolLit _ => return .bool
   | .strLit _ => return .string
+  | .charLit _ => return .char
   | .ident name =>
+    -- First check if it's a constant
+    let env ← getEnv
+    match env.constants.lookup name with
+    | some ty => return ty
+    | none =>
     match ← lookupVarInfo name with
     | some info =>
       -- Reading a variable (not consuming). Check it's not already consumed.
@@ -203,12 +259,22 @@ partial def checkExpr (e : Expr) : CheckM Ty := do
     let rTy ← checkExpr rhs
     match op with
     | .add | .sub | .mul | .div | .mod =>
-      expectTy .int lTy "left operand of arithmetic"
-      expectTy .int rTy "right operand of arithmetic"
-      return .int
+      -- Allow arithmetic on any matching integer, float, or char type
+      if isIntegerType lTy && lTy == rTy then return lTy
+      else if isFloatType lTy && lTy == rTy then return lTy
+      else if lTy == .char && rTy == .char then return .char
+      -- Allow pointer + integer (pointer arithmetic)
+      else if isPointerType lTy && isIntegerType rTy then return lTy
+      else do
+        expectTy lTy rTy "arithmetic operand types"
+        return lTy
     | .eq | .neq | .lt | .gt | .leq | .geq =>
-      expectTy lTy rTy "comparison operands"
-      return .bool
+      -- Allow comparison on matching types
+      if lTy == rTy then return .bool
+      else if isIntegerType lTy && isIntegerType rTy then return .bool
+      else do
+        expectTy lTy rTy "comparison operands"
+        return .bool
     | .and_ | .or_ =>
       expectTy .bool lTy "left operand of logical op"
       expectTy .bool rTy "right operand of logical op"
@@ -217,8 +283,10 @@ partial def checkExpr (e : Expr) : CheckM Ty := do
     let ty ← checkExpr operand
     match op with
     | .neg =>
-      expectTy .int ty "negation operand"
-      return .int
+      if isIntegerType ty || isFloatType ty then return ty
+      else do
+        expectTy .int ty "negation operand"
+        return .int
     | .not_ =>
       expectTy .bool ty "not operand"
       return .bool
@@ -262,7 +330,7 @@ partial def checkExpr (e : Expr) : CheckM Ty := do
       | t => t
     match innerTy with
     | .named structName =>
-      -- Field access does NOT consume the struct (Phase 1 simplification)
+      -- Field access does NOT consume the struct
       match ← lookupStructField structName field with
       | some ty => return ty
       | none => throw s!"struct '{structName}' has no field '{field}'"
@@ -346,14 +414,13 @@ partial def checkExpr (e : Expr) : CheckM Ty := do
         match firstArmVars with
         | some vars =>
           let env ← getEnv
-          -- Restore env with agreed-upon states for pre-existing vars
           let vars' := env.vars.map fun (n, vi) =>
             match vars.lookup n with
             | some info => (n, { vi with state := info.state })
             | none => (n, vi)
           setEnv { envBefore with vars := vars' }
         | none => setEnv envBefore
-        return .named enumName  -- match returns the enum type; TODO: infer from arms
+        return .named enumName
       | none => throw s!"unknown enum type '{enumName}'"
     | _ => throw s!"match scrutinee must be an enum type"
   | .borrow inner =>
@@ -388,6 +455,8 @@ partial def checkExpr (e : Expr) : CheckM Ty := do
           throw s!"cannot mutably borrow '{varName}': already borrowed"
         if info.mutBorrowed then
           throw s!"cannot mutably borrow '{varName}': already mutably borrowed"
+        if !info.mutable then
+          throw s!"cannot take mutable borrow of immutable variable '{varName}'"
         let env ← getEnv
         let vars' := env.vars.map fun (n, vi) =>
           if n == varName then (n, { vi with mutBorrowed := true })
@@ -401,6 +470,8 @@ partial def checkExpr (e : Expr) : CheckM Ty := do
     match innerTy with
     | .ref t => return t
     | .refMut t => return t
+    | .ptrMut t => return t
+    | .ptrConst t => return t
     | _ => throw s!"cannot dereference non-reference type"
   | .try_ inner =>
     let innerTy ← checkExpr inner
@@ -438,19 +509,33 @@ partial def checkExpr (e : Expr) : CheckM Ty := do
   | .arrayIndex arr index =>
     let arrTy ← checkExpr arr
     let idxTy ← checkExpr index
-    expectTy .int idxTy "array index"
+    if !isIntegerType idxTy then
+      throw s!"type mismatch: array index must be an integer type, got {tyToString idxTy}"
     match arrTy with
     | .array elemTy _ => return elemTy
     | _ => throw s!"type mismatch: indexing into non-array type {tyToString arrTy}"
   | .cast inner targetTy =>
     let innerTy ← checkExpr inner
-    let valid := match innerTy, targetTy with
-      | .int, .uint | .uint, .int => true
-      | .int, .bool | .bool, .int => true
-      | .int, .float64 | .float64, .int => true
-      | .uint, .float64 | .float64, .uint => true
-      | .bool, .uint | .uint, .bool => true
-      | _, _ => false
+    -- Allow casts between: integers (any size), bool, floats, pointers, char
+    let valid :=
+      (isIntegerType innerTy && isIntegerType targetTy) ||
+      (isIntegerType innerTy && targetTy == .bool) ||
+      (innerTy == .bool && isIntegerType targetTy) ||
+      (isIntegerType innerTy && isFloatType targetTy) ||
+      (isFloatType innerTy && isIntegerType targetTy) ||
+      (isFloatType innerTy && isFloatType targetTy) ||
+      (isIntegerType innerTy && targetTy == .char) ||
+      (innerTy == .char && isIntegerType targetTy) ||
+      (isPointerType innerTy && isPointerType targetTy) ||
+      (isPointerType innerTy && isIntegerType targetTy) ||
+      (isIntegerType innerTy && isPointerType targetTy) ||
+      -- Allow array to pointer cast
+      (match innerTy with | .array _ _ => isPointerType targetTy | _ => false) ||
+      -- Allow pointer to reference cast
+      (isPointerType innerTy && match targetTy with | .ref _ | .refMut _ => true | _ => false) ||
+      -- Allow reference to pointer cast
+      (match innerTy with | .ref _ | .refMut _ => isPointerType targetTy | _ => false) ||
+      (innerTy == targetTy)
     if !valid then throw s!"cannot cast {tyToString innerTy} to {tyToString targetTy}"
     return targetTy
   | .methodCall obj methodName _typeArgs args =>
@@ -497,18 +582,20 @@ partial def checkExpr (e : Expr) : CheckM Ty := do
 
 partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
   match stmt with
-  | .letDecl name _mutable ty value =>
+  | .letDecl name mutable ty value =>
     let valTy ← checkExpr value
     match ty with
     | some declTy => expectTy declTy valTy s!"let binding '{name}'"
     | none => pure ()
     let finalTy := match ty with | some t => t | none => valTy
-    addVar name finalTy
+    addVar name finalTy mutable
   | .assign name value =>
-    match ← lookupVarTy name with
-    | some varTy =>
+    match ← lookupVarInfo name with
+    | some info =>
+      if !info.mutable then
+        throw s!"cannot assign to immutable variable '{name}'"
       let valTy ← checkExpr value
-      expectTy varTy valTy s!"assignment to '{name}'"
+      expectTy info.ty valTy s!"assignment to '{name}'"
     | none => throw s!"assignment to undeclared variable '{name}'"
   | .return_ (some value) =>
     let valTy ← checkExpr value
@@ -524,7 +611,9 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
     pure ()
   | .ifElse cond thenBody elseBody =>
     let condTy ← checkExpr cond
-    expectTy .bool condTy "if condition"
+    -- Allow bool or integer types as conditions
+    if condTy != .bool && !isIntegerType condTy then
+      throw s!"if condition must be bool, got {tyToString condTy}"
     -- Snapshot variable states before branches
     let envBefore ← getEnv
     -- Check then branch
@@ -540,16 +629,34 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
       mergeVarStates envBefore.vars envAfterThen.vars envAfterElse.vars
     | none =>
       -- No else branch: then branch must not consume any linear var
-      -- (because the implicit else branch leaves them unconsumed)
       checkNoBranchConsumption envBefore.vars envAfterThen.vars "if-without-else"
   | .while_ cond body =>
     let condTy ← checkExpr cond
-    expectTy .bool condTy "while condition"
+    if condTy != .bool && !isIntegerType condTy then
+      throw s!"while condition must be bool, got {tyToString condTy}"
     -- Increment loop depth for the body
     let env ← getEnv
     setEnv { env with loopDepth := env.loopDepth + 1 }
     checkStmts body retTy
     -- Restore loop depth
+    let env' ← getEnv
+    setEnv { env' with loopDepth := env.loopDepth }
+  | .forLoop init cond step body =>
+    -- Init
+    match init with
+    | some initStmt => checkStmt initStmt retTy
+    | none => pure ()
+    -- Condition
+    let condTy ← checkExpr cond
+    if condTy != .bool && !isIntegerType condTy then
+      throw s!"for condition must be bool, got {tyToString condTy}"
+    -- Body + step in loop scope
+    let env ← getEnv
+    setEnv { env with loopDepth := env.loopDepth + 1 }
+    checkStmts body retTy
+    match step with
+    | some stepStmt => checkStmt stepStmt retTy
+    | none => pure ()
     let env' ← getEnv
     setEnv { env' with loopDepth := env.loopDepth }
   | .fieldAssign obj field value =>
@@ -573,11 +680,15 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
     | .refMut inner =>
       let valTy ← checkExpr value
       expectTy inner valTy "deref assignment"
+    | .ptrMut inner =>
+      let valTy ← checkExpr value
+      expectTy inner valTy "deref assignment"
     | _ => throw s!"cannot assign through non-mutable reference"
   | .arrayIndexAssign arr index value =>
     let arrTy ← checkExpr arr
     let idxTy ← checkExpr index
-    expectTy .int idxTy "array index"
+    if !isIntegerType idxTy then
+      throw s!"type mismatch: array index must be an integer type"
     match arrTy with
     | .array elemTy _ =>
       let valTy ← checkExpr value
@@ -588,8 +699,7 @@ partial def checkStmts (stmts : List Stmt) (retTy : Ty) : CheckM Unit := do
   for stmt in stmts do
     checkStmt stmt retTy
 
-/-- After if/else, check both branches agree on linear var consumption.
-    Both must have consumed the same set of linear variables. -/
+/-- After if/else, check both branches agree on linear var consumption. -/
 partial def mergeVarStates
     (before : List (String × VarInfo))
     (afterThen : List (String × VarInfo))
@@ -634,17 +744,14 @@ def checkFn (f : FnDef) : CheckM Unit := do
   let envBefore ← getEnv
   -- Set current return type
   setEnv { envBefore with currentRetTy := f.retTy }
-  -- Add params to env. Linear params are "consumed" by being received —
-  -- the caller consumed them by passing them, so the function body
-  -- doesn't need to further consume them.
+  -- Add params to env. Linear params are "consumed" by being received.
   let mut paramNames : List String := []
   for p in f.params do
-    addVar p.name p.ty
+    addVar p.name p.ty true  -- params are always mutable for now
     paramNames := paramNames ++ [p.name]
   -- Check body
   checkStmts f.body f.retTy
   -- Check linearity: only LOCAL let-bindings of linear type must be consumed.
-  -- Function parameters are already consumed by being received (ownership transfer).
   let envAfter ← getEnv
   let localVars := envAfter.vars.filter fun (name, _) =>
     !paramNames.contains name && (envBefore.vars.lookup name).isNone
@@ -659,14 +766,17 @@ def checkModule (m : Module) (importedFnSigs : List (String × FnSig) := [])
     : Except String Unit :=
   let fnSigs : List FnSig := m.functions.map fun f =>
     { params := f.params.map fun p => (p.name, p.ty), retTy := f.retTy }
+  -- Add extern fn signatures
+  let externSigs : List FnSig := m.externFns.map fun ef =>
+    { params := ef.params.map fun p => (p.name, p.ty), retTy := ef.retTy }
   let importedSigList := importedFnSigs.map Prod.snd
   let baseOffset := importedSigList.length
   -- Built-in functions for strings
   let builtinSigs : List FnSig := [
-    { params := [("s", .ref .string)], retTy := .int },           -- string_length
-    { params := [("a", .string), ("b", .string)], retTy := .string },  -- string_concat
-    { params := [("s", .ref .string)], retTy := .unit },          -- print_string
-    { params := [("s", .string)], retTy := .unit }                -- drop_string
+    { params := [("s", .ref .string)], retTy := .int },
+    { params := [("a", .string), ("b", .string)], retTy := .string },
+    { params := [("s", .ref .string)], retTy := .unit },
+    { params := [("s", .string)], retTy := .unit }
   ]
   let builtinOffset := baseOffset + fnSigs.length
   let builtinNames : List (String × Nat) := [
@@ -675,7 +785,10 @@ def checkModule (m : Module) (importedFnSigs : List (String × FnSig) := [])
     ("print_string", builtinOffset + 2),
     ("drop_string", builtinOffset + 3)
   ]
-  -- Collect all impl block methods (inherent + trait impls) as mangled functions
+  let externOffset := builtinOffset + builtinSigs.length
+  let externNames : List (String × Nat) :=
+    (enumerateList m.externFns).map fun (idx, ef) => (ef.name, externOffset + idx)
+  -- Collect all impl block methods
   let allImplBlocks := importedImplBlocks ++ m.implBlocks
   let allTraitImpls := importedTraitImpls ++ m.traitImpls
   let implMethodSigs : List (String × FnSig) := allImplBlocks.foldl (fun acc ib =>
@@ -691,25 +804,29 @@ def checkModule (m : Module) (importedFnSigs : List (String × FnSig) := [])
       (mangledName, sig)
   ) []
   let implSigList := (implMethodSigs ++ traitImplMethodSigs).map Prod.snd
-  let implOffset := builtinOffset + builtinSigs.length
+  let implOffset := externOffset + externSigs.length
   let implNames : List (String × Nat) :=
     (enumerateList (implMethodSigs ++ traitImplMethodSigs)).map fun (idx, (name, _)) => (name, implOffset + idx)
-  let allSigs := importedSigList ++ fnSigs ++ builtinSigs ++ implSigList
+  let allSigs := importedSigList ++ fnSigs ++ builtinSigs ++ externSigs ++ implSigList
   let importedNames : List (String × Nat) :=
     (enumerateList importedFnSigs).map fun (idx, (name, _)) => (name, idx)
   let fnNames : List (String × Nat) :=
     (enumerateList m.functions).map fun (idx, f) => (f.name, baseOffset + idx)
-  let allNames := importedNames ++ fnNames ++ builtinNames ++ implNames
+  let allNames := importedNames ++ fnNames ++ builtinNames ++ externNames ++ implNames
   let allStructs := importedStructs ++ m.structs
   let allEnums := importedEnums ++ m.enums
+  -- Build type aliases map
+  let typeAliasMap : List (String × Ty) := m.typeAliases.map fun ta => (ta.name, ta.targetTy)
+  -- Build constants map
+  let constantsMap : List (String × Ty) := m.constants.map fun c => (c.name, c.ty)
   let initEnv : TypeEnv :=
-    { vars := [], structs := allStructs, enums := allEnums, functions := allSigs, fnNames := allNames, loopDepth := 0 }
+    { vars := [], structs := allStructs, enums := allEnums, functions := allSigs,
+      fnNames := allNames, loopDepth := 0, typeAliases := typeAliasMap, constants := constantsMap }
   -- Validate trait impls
   let traitCheck := m.traitImpls.foldlM (init := ()) fun () tb => do
     match m.traits.find? fun (td : TraitDef) => td.name == tb.traitName with
     | none => Except.error s!"unknown trait '{tb.traitName}'"
     | some td =>
-      -- Check all trait methods are implemented
       td.methods.foldlM (init := ()) fun () (sig : FnSigDef) =>
         match tb.methods.find? fun (f : FnDef) => f.name == sig.name with
         | none => Except.error s!"trait impl for '{tb.typeName}' is missing method '{sig.name}'"
@@ -720,7 +837,6 @@ def checkModule (m : Module) (importedFnSigs : List (String × FnSig) := [])
   match traitCheck with
   | .error e => .error e
   | .ok () =>
-  -- Collect all impl methods for type checking
   let allImplMethods := allImplBlocks.foldl (fun acc ib => acc ++ ib.methods) []
   let allTraitImplMethods := allTraitImpls.foldl (fun acc tb => acc ++ tb.methods) []
   let allMethodDefs := allImplMethods ++ allTraitImplMethods
@@ -745,7 +861,6 @@ private def resolveImports (m : Module)
         | none =>
           match pubStructs.find? fun sd => sd.name == sym with
           | some sd =>
-            -- Also import impl blocks and trait impls for this struct
             let structImpls := pubImpls.filter fun ib => ib.typeName == sym
             let structTraitImpls := pubTraitImpls.filter fun tb => tb.typeName == sym
             .ok (fns, structs ++ [sd], enums, impls ++ structImpls, trImpls ++ structTraitImpls)
@@ -761,7 +876,6 @@ def checkProgram (modules : List Module) : Except String Unit :=
     fun exportTable m => do
       let (impFns, impStructs, impEnums, impImpls, impTraitImpls) ← resolveImports m exportTable
       checkModule m impFns impStructs impEnums impImpls impTraitImpls
-      -- Record this module's public exports
       let pubFns := (m.functions.filter fun (f : FnDef) => f.isPublic).map fun (f : FnDef) =>
         (f.name, { params := f.params.map fun (p : Param) => (p.name, p.ty), retTy := f.retTy : FnSig })
       let pubStructs := m.structs.filter fun (s : StructDef) => s.isPublic

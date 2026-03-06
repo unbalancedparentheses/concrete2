@@ -1,10 +1,14 @@
 namespace Concrete
 
 inductive Ty where
-  | int
-  | uint
+  | int          -- Int or i64
+  | uint         -- Uint or u64
+  | i8 | i16 | i32   -- smaller signed integers
+  | u8 | u16 | u32   -- smaller unsigned integers
   | bool
-  | float64
+  | float64      -- f64 or Float64
+  | float32      -- f32
+  | char         -- char (i8 in LLVM)
   | unit
   | named (name : String)
   | string                -- String type
@@ -13,6 +17,8 @@ inductive Ty where
   | generic (name : String) (args : List Ty)  -- e.g. Pair<Int, Bool>
   | typeVar (name : String)                   -- e.g. T
   | array (elem : Ty) (size : Nat)            -- [T; N]
+  | ptrMut (inner : Ty)   -- *mut T
+  | ptrConst (inner : Ty) -- *const T
   deriving Repr, BEq
 
 inductive BinOp where
@@ -28,8 +34,10 @@ inductive UnaryOp where
 mutual
 inductive Expr where
   | intLit (val : Int)
+  | floatLit (val : Float)
   | boolLit (val : Bool)
   | strLit (val : String)
+  | charLit (val : Char)
   | ident (name : String)
   | binOp (op : BinOp) (lhs rhs : Expr)
   | unaryOp (op : UnaryOp) (operand : Expr)
@@ -59,6 +67,7 @@ inductive Stmt where
   | expr (e : Expr)
   | ifElse (cond : Expr) (then_ : List Stmt) (else_ : Option (List Stmt))
   | while_ (cond : Expr) (body : List Stmt)
+  | forLoop (init : Option Stmt) (cond : Expr) (step : Option Stmt) (body : List Stmt)
   | fieldAssign (obj : Expr) (field : String) (value : Expr)
   | derefAssign (target : Expr) (value : Expr)  -- *expr = expr
   | arrayIndexAssign (arr : Expr) (index : Expr) (value : Expr)  -- arr[i] = val
@@ -106,6 +115,25 @@ structure FnDef where
   body : List Stmt
   isPublic : Bool := false
 
+structure ConstDef where
+  name : String
+  ty : Ty
+  value : Expr
+  isPublic : Bool := false
+
+structure TypeAlias where
+  name : String
+  targetTy : Ty
+  isPublic : Bool := false
+  deriving Repr
+
+structure ExternFnDecl where
+  name : String
+  params : List Param
+  retTy : Ty
+  isPublic : Bool := false
+  deriving Repr
+
 inductive SelfKind where
   | value    -- self
   | ref      -- &self
@@ -146,5 +174,9 @@ structure Module where
   implBlocks : List ImplBlock := []
   traits : List TraitDef := []
   traitImpls : List ImplTraitBlock := []
+  constants : List ConstDef := []
+  typeAliases : List TypeAlias := []
+  externFns : List ExternFnDecl := []
+  submodules : List Module := []
 
 end Concrete

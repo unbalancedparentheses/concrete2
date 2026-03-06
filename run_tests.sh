@@ -23,7 +23,7 @@ run_ok() {
         return
     fi
     local actual
-    actual=$("$out" 2>&1)
+    actual=$("$out" 2>&1) || true
     if [ "$actual" = "$expected" ]; then
         echo "  ok  $file => $expected"
         PASS=$((PASS + 1))
