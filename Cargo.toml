@@ -23,7 +23,7 @@ anyhow = "1.0.95"
 git2 = "0.20.1"
 owo-colors = "4.1.0"
 clap = { version = "4.5.35", features = ["derive"] }
-tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
 serde = { version = "1.0.217", features = ["derive"] }
 toml = "0.8.19"
 test-case = "3.3.1"
