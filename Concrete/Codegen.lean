@@ -2,15 +2,29 @@ import Concrete.AST
 
 namespace Concrete
 
+structure FieldInfo where
+  name : String
+  ty : Ty
+  index : Nat
+  deriving Repr
+
+structure StructInfo where
+  name : String
+  fields : List FieldInfo
+  deriving Repr
+
 structure CodegenState where
   output : String
   labelCounter : Nat
   localCounter : Nat
   vars : List (String × String)
+  varTypes : List (String × Ty)
+  structDefs : List StructInfo
   deriving Repr, Inhabited
 
 def CodegenState.init : CodegenState :=
-  { output := "", labelCounter := 0, localCounter := 0, vars := [] }
+  { output := "", labelCounter := 0, localCounter := 0,
+    vars := [], varTypes := [], structDefs := [] }
 
 def CodegenState.emit (s : CodegenState) (line : String) : CodegenState :=
   { s with output := s.output ++ line ++ "\n" }
@@ -29,13 +43,49 @@ def CodegenState.lookupVar (s : CodegenState) (name : String) : Option String :=
 def CodegenState.addVar (s : CodegenState) (name : String) (reg : String) : CodegenState :=
   { s with vars := (name, reg) :: s.vars }
 
-def tyToLLVM : Ty → String
+def CodegenState.addVarType (s : CodegenState) (name : String) (ty : Ty) : CodegenState :=
+  { s with varTypes := (name, ty) :: s.varTypes }
+
+def CodegenState.lookupVarType (s : CodegenState) (name : String) : Option Ty :=
+  s.varTypes.lookup name
+
+def CodegenState.lookupStruct (s : CodegenState) (name : String) : Option StructInfo :=
+  s.structDefs.find? fun si => si.name == name
+
+def CodegenState.lookupFieldIndex (s : CodegenState) (structName : String) (fieldName : String) : Option (Nat × Ty) :=
+  match s.lookupStruct structName with
+  | some si =>
+    match si.fields.find? fun fi => fi.name == fieldName with
+    | some fi => some (fi.index, fi.ty)
+    | none => none
+  | none => none
+
+def tyToLLVM (s : CodegenState) : Ty → String
   | .int => "i64"
   | .uint => "i64"
   | .bool => "i1"
   | .float64 => "double"
   | .unit => "void"
-  | .named _ => "i64"
+  | .named name =>
+    match s.lookupStruct name with
+    | some _ => "%struct." ++ name
+    | none => "i64"
+
+def fieldTyToLLVM (s : CodegenState) (ty : Ty) : String :=
+  tyToLLVM s ty
+
+/-- LLVM type for function parameters and call arguments.
+    Structs are passed as ptr (by pointer). -/
+def paramTyToLLVM (s : CodegenState) : Ty → String
+  | .named name =>
+    match s.lookupStruct name with
+    | some _ => "ptr"
+    | none => "i64"
+  | ty => tyToLLVM s ty
+
+def isStructTy (s : CodegenState) : Ty → Bool
+  | .named name => (s.lookupStruct name).isSome
+  | _ => false
 
 private partial def stmtListHasReturn (stmts : List Stmt) : Bool :=
   stmts.any fun s => match s with
@@ -44,8 +94,35 @@ private partial def stmtListHasReturn (stmts : List Stmt) : Bool :=
       stmtListHasReturn thenBody && stmtListHasReturn elseBody
     | _ => false
 
+/-- Infer the type of an expression from codegen state. -/
+private def inferExprTy (s : CodegenState) (e : Expr) : Ty :=
+  match e with
+  | .intLit _ => .int
+  | .boolLit _ => .bool
+  | .ident name => (s.lookupVarType name).getD .int
+  | .fieldAccess obj field =>
+    let objTy := inferExprTy s obj
+    match objTy with
+    | .named structName =>
+      match s.lookupFieldIndex structName field with
+      | some (_, ty) => ty
+      | none => .int
+    | _ => .int
+  | .structLit name _ => .named name
+  | .call _ _ => .int  -- TODO: track function return types
+  | .binOp op _ _ =>
+    match op with
+    | .eq | .neq | .lt | .gt | .leq | .geq | .and_ | .or_ => .bool
+    | _ => .int
+  | .unaryOp .not_ _ => .bool
+  | .unaryOp .neg _ => .int
+  | .paren inner => inferExprTy s inner
+
 mutual
 
+/-- Generate an expression, returning the LLVM register holding the value.
+    For struct values, this loads the whole struct (not useful for GEP).
+    Use genExprAsPtr for struct pointer access. -/
 partial def genExpr (s : CodegenState) (e : Expr) : CodegenState × String :=
   match e with
   | .intLit v =>
@@ -60,9 +137,22 @@ partial def genExpr (s : CodegenState) (e : Expr) : CodegenState × String :=
   | .ident name =>
     match s.lookupVar name with
     | some alloca =>
-      let (s, loaded) := s.freshLocal
-      let s := s.emit ("  " ++ loaded ++ " = load i64, ptr " ++ alloca)
-      (s, loaded)
+      let ty := (s.lookupVarType name).getD .int
+      match ty with
+      | .named structName =>
+        match s.lookupStruct structName with
+        | some _ =>
+          -- For struct variables, return the pointer (alloca) directly
+          (s, alloca)
+        | none =>
+          let (s, loaded) := s.freshLocal
+          let s := s.emit ("  " ++ loaded ++ " = load i64, ptr " ++ alloca)
+          (s, loaded)
+      | _ =>
+        let (s, loaded) := s.freshLocal
+        let llTy := tyToLLVM s ty
+        let s := s.emit ("  " ++ loaded ++ " = load " ++ llTy ++ ", ptr " ++ alloca)
+        (s, loaded)
     | none => (s, "%" ++ name)
   | .binOp op lhs rhs =>
     let (s, lReg) := genExpr s lhs
@@ -96,11 +186,90 @@ partial def genExpr (s : CodegenState) (e : Expr) : CodegenState × String :=
       (s, result)
   | .call fnName args =>
     let (s, argRegs) := genExprList s args
-    let argStr := ", ".intercalate (argRegs.map fun r => "i64 " ++ r)
+    -- Figure out the LLVM type for each argument
+    let argTys := args.map fun arg => paramTyToLLVM s (inferExprTy s arg)
+    let argPairs := argTys.zip argRegs
+    let argStr := ", ".intercalate (argPairs.map fun (ty, r) => ty ++ " " ++ r)
     let (s, result) := s.freshLocal
     let s := s.emit ("  " ++ result ++ " = call i64 @" ++ fnName ++ "(" ++ argStr ++ ")")
     (s, result)
   | .paren inner => genExpr s inner
+  | .structLit name fields =>
+    match s.lookupStruct name with
+    | some si =>
+      let structTy := "%struct." ++ name
+      let (s, alloca) := s.freshLocal
+      let s := s.emit ("  " ++ alloca ++ " = alloca " ++ structTy)
+      -- Store each field via GEP
+      let s := fields.foldl (fun s (fieldName, fieldExpr) =>
+        match si.fields.find? fun fi => fi.name == fieldName with
+        | some fi =>
+          let (s, valReg) := genExpr s fieldExpr
+          let (s, gepReg) := s.freshLocal
+          let fieldLLTy := fieldTyToLLVM s fi.ty
+          let s := s.emit ("  " ++ gepReg ++ " = getelementptr inbounds " ++ structTy
+            ++ ", ptr " ++ alloca ++ ", i32 0, i32 " ++ toString fi.index)
+          s.emit ("  store " ++ fieldLLTy ++ " " ++ valReg ++ ", ptr " ++ gepReg)
+        | none => s
+      ) s
+      (s, alloca)
+    | none =>
+      -- Fallback: treat as i64
+      let (s, reg) := s.freshLocal
+      let s := s.emit ("  " ++ reg ++ " = add i64 0, 0 ; unknown struct " ++ name)
+      (s, reg)
+  | .fieldAccess obj field =>
+    let objTy := inferExprTy s obj
+    match objTy with
+    | .named structName =>
+      match s.lookupFieldIndex structName field with
+      | some (idx, fieldTy) =>
+        let structTy := "%struct." ++ structName
+        let (s, objPtr) := genExprAsPtr s obj
+        let (s, gepReg) := s.freshLocal
+        let fieldLLTy := fieldTyToLLVM s fieldTy
+        let s := s.emit ("  " ++ gepReg ++ " = getelementptr inbounds " ++ structTy
+          ++ ", ptr " ++ objPtr ++ ", i32 0, i32 " ++ toString idx)
+        let (s, loaded) := s.freshLocal
+        let s := s.emit ("  " ++ loaded ++ " = load " ++ fieldLLTy ++ ", ptr " ++ gepReg)
+        (s, loaded)
+      | none =>
+        let (s, reg) := s.freshLocal
+        let s := s.emit ("  " ++ reg ++ " = add i64 0, 0 ; unknown field " ++ field)
+        (s, reg)
+    | _ =>
+      let (s, reg) := s.freshLocal
+      let s := s.emit ("  " ++ reg ++ " = add i64 0, 0 ; field access on non-struct")
+      (s, reg)
+
+/-- Get a pointer to an expression's storage (for struct GEP). -/
+partial def genExprAsPtr (s : CodegenState) (e : Expr) : CodegenState × String :=
+  match e with
+  | .ident name =>
+    match s.lookupVar name with
+    | some alloca => (s, alloca)
+    | none => (s, "%" ++ name)
+  | .fieldAccess obj field =>
+    let objTy := inferExprTy s obj
+    match objTy with
+    | .named structName =>
+      match s.lookupFieldIndex structName field with
+      | some (idx, _) =>
+        let structTy := "%struct." ++ structName
+        let (s, objPtr) := genExprAsPtr s obj
+        let (s, gepReg) := s.freshLocal
+        let s := s.emit ("  " ++ gepReg ++ " = getelementptr inbounds " ++ structTy
+          ++ ", ptr " ++ objPtr ++ ", i32 0, i32 " ++ toString idx)
+        (s, gepReg)
+      | none => (s, "%undef")
+    | _ => (s, "%undef")
+  | _ =>
+    -- For non-lvalue expressions, generate and store to a temp
+    let (s, reg) := genExpr s e
+    let (s, tmp) := s.freshLocal
+    let s := s.emit ("  " ++ tmp ++ " = alloca i64")
+    let s := s.emit ("  store i64 " ++ reg ++ ", ptr " ++ tmp)
+    (s, tmp)
 
 partial def genExprList (s : CodegenState) (args : List Expr) : CodegenState × List String :=
   match args with
@@ -117,17 +286,41 @@ partial def genStmts (s : CodegenState) (stmts : List Stmt) : CodegenState :=
 
 partial def genStmt (s : CodegenState) (stmt : Stmt) : CodegenState :=
   match stmt with
-  | .letDecl name _mutable _ty value =>
-    let (s, alloca) := s.freshLocal
-    let s := s.emit ("  " ++ alloca ++ " = alloca i64")
-    let (s, valReg) := genExpr s value
-    let s := s.emit ("  store i64 " ++ valReg ++ ", ptr " ++ alloca)
-    s.addVar name alloca
+  | .letDecl name _mutable ty value =>
+    let exprTy := match ty with
+      | some t => t
+      | none => inferExprTy s value
+    match exprTy with
+    | .named structName =>
+      match s.lookupStruct structName with
+      | some _ =>
+        -- Struct: generate the value (which returns a pointer to alloca'd struct)
+        let (s, valPtr) := genExpr s value
+        -- The struct literal already created an alloca, just use that pointer
+        let s := s.addVar name valPtr
+        s.addVarType name (.named structName)
+      | none =>
+        let (s, alloca) := s.freshLocal
+        let s := s.emit ("  " ++ alloca ++ " = alloca i64")
+        let (s, valReg) := genExpr s value
+        let s := s.emit ("  store i64 " ++ valReg ++ ", ptr " ++ alloca)
+        let s := s.addVar name alloca
+        s.addVarType name exprTy
+    | _ =>
+      let llTy := tyToLLVM s exprTy
+      let (s, alloca) := s.freshLocal
+      let s := s.emit ("  " ++ alloca ++ " = alloca " ++ llTy)
+      let (s, valReg) := genExpr s value
+      let s := s.emit ("  store " ++ llTy ++ " " ++ valReg ++ ", ptr " ++ alloca)
+      let s := s.addVar name alloca
+      s.addVarType name exprTy
   | .assign name value =>
     match s.lookupVar name with
     | some alloca =>
+      let ty := (s.lookupVarType name).getD .int
+      let llTy := tyToLLVM s ty
       let (s, valReg) := genExpr s value
-      s.emit ("  store i64 " ++ valReg ++ ", ptr " ++ alloca)
+      s.emit ("  store " ++ llTy ++ " " ++ valReg ++ ", ptr " ++ alloca)
     | none => s.emit ("; ERROR: unknown variable " ++ name)
   | .return_ (some value) =>
     let (s, reg) := genExpr s value
@@ -158,9 +351,24 @@ partial def genStmt (s : CodegenState) (stmt : Stmt) : CodegenState :=
         if elseReturns then s
         else s.emit ("  br label %" ++ mergeLabel)
       | none => s.emit ("  br label %" ++ mergeLabel)
-    -- Only emit merge block if at least one branch doesn't return
     if thenReturns && elseReturns then s
     else s.emit (mergeLabel ++ ":")
+  | .fieldAssign obj field value =>
+    let objTy := inferExprTy s obj
+    match objTy with
+    | .named structName =>
+      match s.lookupFieldIndex structName field with
+      | some (idx, fieldTy) =>
+        let structTy := "%struct." ++ structName
+        let (s, objPtr) := genExprAsPtr s obj
+        let (s, gepReg) := s.freshLocal
+        let fieldLLTy := fieldTyToLLVM s fieldTy
+        let s := s.emit ("  " ++ gepReg ++ " = getelementptr inbounds " ++ structTy
+          ++ ", ptr " ++ objPtr ++ ", i32 0, i32 " ++ toString idx)
+        let (s, valReg) := genExpr s value
+        s.emit ("  store " ++ fieldLLTy ++ " " ++ valReg ++ ", ptr " ++ gepReg)
+      | none => s.emit ("; ERROR: unknown field " ++ field)
+    | _ => s.emit ("; ERROR: field assign on non-struct")
   | .while_ cond body =>
     let (s, condLabel) := s.freshLabel "while.cond"
     let (s, bodyLabel) := s.freshLabel "while.body"
@@ -180,26 +388,53 @@ def genFnParams (s : CodegenState) (params : List Param) : CodegenState :=
   match params with
   | [] => s
   | p :: rest =>
-    let (s, alloca) := s.freshLocal
-    let s := s.emit ("  " ++ alloca ++ " = alloca i64")
-    let s := s.emit ("  store i64 %" ++ p.name ++ ", ptr " ++ alloca)
-    let s := s.addVar p.name alloca
-    genFnParams s rest
+    if isStructTy s p.ty then
+      -- Struct params are passed as ptr — use directly, no alloca needed
+      let s := s.addVar p.name ("%" ++ p.name)
+      let s := s.addVarType p.name p.ty
+      genFnParams s rest
+    else
+      let llTy := tyToLLVM s p.ty
+      let (s, alloca) := s.freshLocal
+      let s := s.emit ("  " ++ alloca ++ " = alloca " ++ llTy)
+      let s := s.emit ("  store " ++ llTy ++ " %" ++ p.name ++ ", ptr " ++ alloca)
+      let s := s.addVar p.name alloca
+      let s := s.addVarType p.name p.ty
+      genFnParams s rest
 
 def genFn (s : CodegenState) (f : FnDef) (hasMainWrapper : Bool := false) : CodegenState :=
-  let retTy := tyToLLVM f.retTy
+  let retTy := tyToLLVM s f.retTy
   let fnName := if f.name == "main" && hasMainWrapper then "concrete_main" else f.name
-  let paramStr := ", ".intercalate (f.params.map fun p => "i64 %" ++ p.name)
+  let paramStr := ", ".intercalate (f.params.map fun p => paramTyToLLVM s p.ty ++ " %" ++ p.name)
   let s := s.emit ("define " ++ retTy ++ " @" ++ fnName ++ "(" ++ paramStr ++ ") {")
   let s := genFnParams s f.params
   let s := genStmts s f.body
   s.emit "}\n"
 
+private def enumerateFields (fields : List StructField) (idx : Nat := 0) : List FieldInfo :=
+  match fields with
+  | [] => []
+  | f :: rest => { name := f.name, ty := f.ty, index := idx } :: enumerateFields rest (idx + 1)
+
+def buildStructDefs (structs : List StructDef) : List StructInfo :=
+  structs.map fun sd =>
+    { name := sd.name, fields := enumerateFields sd.fields }
+
+def genStructTypes (s : CodegenState) (structs : List StructDef) : CodegenState :=
+  structs.foldl (fun s sd =>
+    let fieldTypes := ", ".intercalate (sd.fields.map fun f => tyToLLVM s f.ty)
+    s.emit ("%struct." ++ sd.name ++ " = type { " ++ fieldTypes ++ " }")
+  ) s
+
 def genModule (m : Module) : String :=
-  let s := CodegenState.init
+  let structInfos := buildStructDefs m.structs
+  let s := { CodegenState.init with structDefs := structInfos }
   let s := s.emit "; Generated by Concrete compiler"
   let s := s.emit ("; Module: " ++ m.name)
   let s := s.emit ""
+  -- Emit struct type definitions
+  let s := genStructTypes s m.structs
+  let s := if m.structs.isEmpty then s else s.emit ""
   let hasMain := m.functions.any (fun f => f.name == "main")
   let s := m.functions.foldl (fun s f => genFn s f hasMain) s
   if hasMain then

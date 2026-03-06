@@ -97,6 +97,16 @@ partial def parsePrimary : ParseM Expr := do
       let args ← parseCallArgs
       expect .rparen
       return .call name args
+    else if next == .lbrace then
+      -- Could be struct literal: Name { field: val, ... }
+      -- Only if name starts with uppercase (convention)
+      if name.length > 0 && (name.toList.head!).isUpper then
+        advance
+        let fields ← parseStructLitFields
+        expect .rbrace
+        return .structLit name fields
+      else
+        return .ident name
     else
       return .ident name
   | .lparen =>
@@ -116,6 +126,36 @@ partial def parsePrimary : ParseM Expr := do
     let sp ← peekSpan
     throw ("expected expression, got " ++ toString other ++
            " at " ++ toString sp.line ++ ":" ++ toString sp.col)
+
+partial def parseStructLitFields : ParseM (List (String × Expr)) := do
+  let tk ← peek
+  if tk == .rbrace then return []
+  let mut fields : List (String × Expr) := []
+  let firstName ← expectIdent
+  expect .colon
+  let firstVal ← parseExpr
+  fields := [(firstName, firstVal)]
+  let mut tk ← peek
+  while tk == .comma do
+    advance
+    tk ← peek
+    if tk == .rbrace then break  -- trailing comma
+    let fieldName ← expectIdent
+    expect .colon
+    let fieldVal ← parseExpr
+    fields := fields ++ [(fieldName, fieldVal)]
+    tk ← peek
+  return fields
+
+partial def parsePostfix (e : Expr) : ParseM Expr := do
+  let mut result := e
+  let mut tk ← peek
+  while tk == .dot do
+    advance
+    let fieldName ← expectIdent
+    result := .fieldAccess result fieldName
+    tk ← peek
+  return result
 
 partial def parseCallArgs : ParseM (List Expr) := do
   let tk ← peek
@@ -148,7 +188,7 @@ partial def binOpPrec (tk : TokenKind) : Option (Nat × BinOp) :=
   | _ => none
 
 partial def parseExprPrec (minPrec : Nat) : ParseM Expr := do
-  let mut lhs ← parsePrimary
+  let mut lhs ← parsePrimary >>= parsePostfix
   let mut tk ← peek
   while true do
     match binOpPrec tk with
@@ -247,6 +287,11 @@ partial def parseExprOrAssign : ParseM Stmt := do
       let value ← parseExpr
       expect .semicolon
       return .assign name value
+    | .fieldAccess obj field =>
+      advance
+      let value ← parseExpr
+      expect .semicolon
+      return .fieldAssign obj field value
     | _ =>
       let sp ← peekSpan
       throw ("invalid assignment target at " ++ toString sp.line ++ ":" ++ toString sp.col)
@@ -275,31 +320,59 @@ partial def parseFnDef : ParseM FnDef := do
   let body ← parseBlock
   return { name, params, retTy, body }
 
+partial def parseStructDef : ParseM StructDef := do
+  expect .struct_
+  let name ← expectIdent
+  expect .lbrace
+  let mut fields : List StructField := []
+  let mut tk ← peek
+  while tk != .rbrace && tk != .eof do
+    let fieldName ← expectIdent
+    expect .colon
+    let ty ← parseType
+    fields := fields ++ [{ name := fieldName, ty }]
+    tk ← peek
+    if tk == .comma then
+      advance
+      tk ← peek
+  expect .rbrace
+  return { name, fields }
+
 partial def parseModule : ParseM Module := do
   expect .«mod»
   let name ← expectIdent
   expect .lbrace
+  let mut structs : List StructDef := []
   let mut fns : List FnDef := []
   let mut tk ← peek
   while tk != .rbrace && tk != .eof do
-    let f ← parseFnDef
-    fns := fns ++ [f]
+    if tk == .struct_ then
+      let s ← parseStructDef
+      structs := structs ++ [s]
+    else
+      let f ← parseFnDef
+      fns := fns ++ [f]
     tk ← peek
   expect .rbrace
-  return { name, functions := fns }
+  return { name, structs, functions := fns }
 
 partial def parseToplevel : ParseM Module := do
   let tk ← peek
   match tk with
   | .«mod» => parseModule
   | _ =>
+    let mut structs : List StructDef := []
     let mut fns : List FnDef := []
     let mut tk ← peek
     while tk != .eof do
-      let f ← parseFnDef
-      fns := fns ++ [f]
+      if tk == .struct_ then
+        let s ← parseStructDef
+        structs := structs ++ [s]
+      else
+        let f ← parseFnDef
+        fns := fns ++ [f]
       tk ← peek
-    return { name := "main", functions := fns }
+    return { name := "main", structs, functions := fns }
 
 def parse (source : String) : Except String Module :=
   let tokens := tokenize source

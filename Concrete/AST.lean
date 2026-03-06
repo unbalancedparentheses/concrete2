@@ -27,6 +27,8 @@ inductive Expr where
   | unaryOp (op : UnaryOp) (operand : Expr)
   | call (fn : String) (args : List Expr)
   | paren (inner : Expr)
+  | structLit (name : String) (fields : List (String × Expr))
+  | fieldAccess (obj : Expr) (field : String)
   deriving Repr
 
 inductive Stmt where
@@ -36,11 +38,22 @@ inductive Stmt where
   | expr (e : Expr)
   | ifElse (cond : Expr) (then_ : List Stmt) (else_ : Option (List Stmt))
   | while_ (cond : Expr) (body : List Stmt)
+  | fieldAssign (obj : Expr) (field : String) (value : Expr)
   deriving Repr
 
 structure Param where
   name : String
   ty : Ty
+  deriving Repr
+
+structure StructField where
+  name : String
+  ty : Ty
+  deriving Repr
+
+structure StructDef where
+  name : String
+  fields : List StructField
   deriving Repr
 
 structure FnDef where
@@ -52,6 +65,7 @@ structure FnDef where
 
 structure Module where
   name : String
+  structs : List StructDef
   functions : List FnDef
   deriving Repr
 
