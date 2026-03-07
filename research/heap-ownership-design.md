@@ -209,20 +209,53 @@ Knowing that line 47 does `p.x` through a heap pointer vs. a stack pointer doesn
 
 ---
 
-## Current Recommendation
+## The LLM Argument
 
-**Option A (transparent access)**, for these reasons:
+Most code will be written by LLMs. This changes the calculus:
 
-1. The codegen is identical — there is no real difference between stack and heap field access at the machine level
-2. The safety guarantees are identical — linearity + borrow checking handle everything
-3. Concrete's philosophy is about preventing hidden **effects** (allocation, IO, destruction), not about marking every pointer dereference
-4. It matches Zig's design, which is the primary influence for Concrete's explicit allocation system
-5. It avoids the ergonomic problems Austral runs into with explicit load/store threading
+| Factor | Human-written code | LLM-written code |
+|--------|-------------------|-----------------|
+| Writing verbosity | Hurts (A wins) | Irrelevant |
+| Reading clarity | Slight edge to B | B wins — more context per line |
+| Auditing / review | Both fine | B wins — every heap access greppable |
+| Automated analysis | Both fine | B wins — simpler AST patterns |
 
-The transparency is limited and controlled:
-- Only `Heap<T>` has this behavior (built-in, not user-extensible)
-- Only for field access and borrowing (not arbitrary operations)
-- The type `Heap<T>` is always visible — you always know what you're working with
+**Option A optimizes for writing. Option B optimizes for reading.** In an LLM world, writing is free and reading is the bottleneck.
+
+When an LLM generates code, it will write `.borrow()` without complaint. When a human reviews that code, `.borrow()` tells them "this line touches the heap" without checking declarations. When an LLM audits code, explicit borrow sites are unambiguous patterns.
+
+The ergonomic argument against Option B ("too verbose") was always about writing cost. If writing cost is zero, only reading cost matters. And Option B is strictly better for reading.
+
+## Recommendation Update
+
+Previous recommendation was Option A. **Revised recommendation: Option B (explicit borrow)**, based on the LLM-written-code argument.
+
+To avoid Austral's extreme verbosity (pointer threading through every operation), we use Concrete's existing borrow syntax rather than load/store:
+
+```
+let p: Heap<Point> = alloc(Point { x: 1.0, y: 2.0 }) with(Alloc = arena);
+defer destroy(p);
+
+// Read — explicit borrow
+let x: Float64 = (&p).x;            // inline borrow, gives &Point
+
+// Or with borrow block for multiple accesses
+borrow p as pr in R {
+    let x: Float64 = pr.x;
+    let y: Float64 = pr.y;
+    compute(pr);
+}
+
+// Mutate — explicit mutable borrow
+borrow mut p as pmr in R {
+    pmr.x = 3.0;
+    pmr.y = 4.0;
+}
+```
+
+This is NOT Austral's threading pattern. `Heap<T>` stays in scope (it's linear, not consumed by borrowing). The `borrow` mechanism already exists in the language. The only difference from Option A is that `p.x` directly on a `Heap<Point>` is a type error — you must go through `&p` or `borrow`.
+
+Key ergonomic point: **`(&p).x` is one extra character pair compared to `p.x`.** The borrow block form (`borrow p as pr in R { ... }`) is used when you need multiple accesses in a block, avoiding repeated `(&p)`. Neither is onerous, especially when LLMs write the code.
 
 ---
 
