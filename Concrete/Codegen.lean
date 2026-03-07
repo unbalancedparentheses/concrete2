@@ -147,6 +147,7 @@ def tyToLLVM (s : CodegenState) : Ty → String
   | .generic name _ => "%struct." ++ name
   | .typeVar _ => "i64"
   | .array elem n => "[" ++ toString n ++ " x " ++ tyToLLVM s elem ++ "]"
+  | .fn_ _ _ _ => "ptr"  -- Function types are pointers
   | .named name =>
     match s.lookupStruct name with
     | some _ => "%struct." ++ name
@@ -363,6 +364,7 @@ private def tySize : Ty → Nat
   | .ref _ | .refMut _ => 8
   | .ptrMut _ | .ptrConst _ => 8
   | .generic _ _ | .typeVar _ => 8
+  | .fn_ _ _ _ => 8  -- Function pointer
   | .array elem n => tySize elem * n
 
 mutual

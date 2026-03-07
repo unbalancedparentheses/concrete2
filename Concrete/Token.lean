@@ -12,7 +12,7 @@ inductive TokenKind where
   -- Keywords
   | fn | «let» | mut | if_ | else_ | while_ | for_ | return_
   | true_ | false_ | «mod» | struct_ | enum_ | match_ | pub_ | import_
-  | as_ | impl_ | trait_ | const_ | type_ | extern_
+  | as_ | impl_ | trait_ | const_ | type_ | extern_ | with_ | cap_
   -- Types
   | arrow  -- ->
   -- Operators
@@ -71,6 +71,8 @@ def TokenKind.toString : TokenKind → String
   | .const_ => "const"
   | .type_ => "type"
   | .extern_ => "extern"
+  | .with_ => "with"
+  | .cap_ => "cap"
   | .arrow => "->"
   | .plus => "+"
   | .minus => "-"

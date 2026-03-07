@@ -32,6 +32,8 @@ structure FnSig where
   params : List (String × Ty)
   retTy : Ty
   typeParams : List String := []
+  capParams : List String := []    -- capability variables
+  capSet : CapSet := .empty        -- declared capabilities
   deriving Repr
 
 structure VarInfo where
@@ -55,6 +57,8 @@ structure TypeEnv where
   typeAliases : List (String × Ty) := []
   constants : List (String × Ty) := []
   currentTypeParams : List String := []  -- active function's type params
+  currentCapSet : CapSet := .empty       -- current function's capability set
+  currentFnName : String := ""           -- current function name (for error messages)
   deriving Repr
 
 abbrev CheckM := ExceptT String (StateM TypeEnv)
@@ -97,6 +101,14 @@ private def tyToString : Ty → String
   | .array elem size => "[" ++ tyToString elem ++ "; " ++ toString size ++ "]"
   | .ptrMut inner => "*mut " ++ tyToString inner
   | .ptrConst inner => "*const " ++ tyToString inner
+  | .fn_ params capSet retTy =>
+    let paramStr := ", ".intercalate (params.map tyToString)
+    let capStr := match capSet with
+      | .empty => ""
+      | .concrete caps => " with(" ++ ", ".intercalate caps ++ ")"
+      | .var name => " with(" ++ name ++ ")"
+      | _ => " with(...)"
+    "fn(" ++ paramStr ++ ")" ++ capStr ++ " -> " ++ tyToString retTy
 
 /-- Is this an integer type (any size)? -/
 def isIntegerType : Ty → Bool
@@ -154,6 +166,10 @@ def resolveType (ty : Ty) : CheckM Ty := do
   | .generic name args =>
     let args' ← args.mapM resolveType
     return .generic name args'
+  | .fn_ params capSet retTy =>
+    let params' ← params.mapM resolveType
+    let retTy' ← resolveType retTy
+    return .fn_ params' capSet retTy'
   | _ => return ty
 
 /-- Is this type Copy (non-linear)? Primitives are Copy; structs are linear. -/
@@ -165,6 +181,7 @@ def isCopyType (ty : Ty) : CheckM Bool := do
   | .ref _ => return true      -- References are Copy
   | .refMut _ => return false  -- Mutable refs are not Copy (exclusive)
   | .ptrMut _ | .ptrConst _ => return true  -- Raw pointers are Copy
+  | .fn_ _ _ _ => return true  -- Function types are Copy (they're pointers)
   | .named _ => return false
   | .generic _ _ => return false  -- Generic instantiations are linear
   | .typeVar _ => return true  -- Type variables are treated as Copy in generic context
@@ -222,6 +239,24 @@ def expectTy (expected actual : Ty) (ctx : String) : CheckM Unit := do
   else if (expectedR == .string && actualR == .named "String")
        || (expectedR == .named "String" && actualR == .string) then return ()
   else throw s!"type mismatch in {ctx}: expected {tyToString expected}, got {tyToString actual}"
+
+-- ============================================================
+-- Capability checking
+-- ============================================================
+
+/-- Check that caller's capabilities are a superset of callee's capabilities.
+    This is the core of the effect system: if f calls g, f must have g's caps. -/
+def checkCapabilities (calleeName : String) (calleeCapSet : CapSet) : CheckM Unit := do
+  let env ← getEnv
+  let callerCapSet := env.currentCapSet
+  -- Get concrete caps from callee
+  let (calleeCaps, _calleeVars) := calleeCapSet.normalize
+  -- Get concrete caps from caller
+  let (callerCaps, _callerVars) := callerCapSet.normalize
+  -- Check each callee cap exists in caller
+  for cap in calleeCaps do
+    unless callerCaps.contains cap do
+      throw s!"function '{calleeName}' requires capability '{cap}' but '{env.currentFnName}' does not declare it"
 
 -- ============================================================
 -- Linearity: consume and check
@@ -374,6 +409,8 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
   | .call fnName typeArgs args =>
     match ← lookupFn fnName with
     | some sig =>
+      -- Check capabilities: caller must have callee's caps
+      checkCapabilities fnName sig.capSet
       -- Build type substitution from typeArgs + sig.typeParams
       let mapping := sig.typeParams.zip typeArgs
       let paramTypes := sig.params.map fun (n, t) => (n, substTy mapping t)
@@ -699,6 +736,8 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
     let mangledName := typeName ++ "_" ++ methodName
     match ← lookupFn mangledName with
     | some sig =>
+      -- Check capabilities
+      checkCapabilities (typeName ++ "." ++ methodName) sig.capSet
       -- Build type mapping from object's generic type args + explicit call typeArgs
       let objTypeArgs := match innerTy with
         | .generic _ args => args
@@ -722,6 +761,8 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
     let mangledName := typeName ++ "_" ++ methodName
     match ← lookupFn mangledName with
     | some sig =>
+      -- Check capabilities
+      checkCapabilities (typeName ++ "::" ++ methodName) sig.capSet
       let mapping := sig.typeParams.zip typeArgs
       let paramTypes := sig.params.map fun (n, t) => (n, substTy mapping t)
       let retTy := substTy mapping sig.retTy
@@ -917,8 +958,10 @@ def checkFn (f : FnDef) : CheckM Unit := do
   let envBefore ← getEnv
   -- Resolve type parameter names: .named "T" -> .typeVar "T"
   let retTy := resolveTypeParams f.retTy f.typeParams
-  -- Set current return type and type params
-  setEnv { envBefore with currentRetTy := retTy, currentTypeParams := f.typeParams }
+  -- Set current return type, type params, and capability context
+  let env1 := { envBefore with currentRetTy := retTy, currentTypeParams := f.typeParams }
+  let env2 := { env1 with currentCapSet := f.capSet }
+  setEnv { env2 with currentFnName := f.name }
   -- Add params to env. Linear params are "consumed" by being received.
   let mut paramNames : List String := []
   for p in f.params do
@@ -941,7 +984,8 @@ def checkModule (m : Module) (importedFnSigs : List (String × FnSig) := [])
     (importedImplBlocks : List ImplBlock := []) (importedTraitImpls : List ImplTraitBlock := [])
     : Except String Unit :=
   let fnSigs : List FnSig := m.functions.map fun f =>
-    { params := f.params.map fun p => (p.name, p.ty), retTy := f.retTy, typeParams := f.typeParams }
+    { params := f.params.map fun p => (p.name, p.ty), retTy := f.retTy, typeParams := f.typeParams,
+      capParams := f.capParams, capSet := f.capSet }
   -- Add extern fn signatures
   let externSigs : List FnSig := m.externFns.map fun ef =>
     { params := ef.params.map fun p => (p.name, p.ty), retTy := ef.retTy }
@@ -964,7 +1008,8 @@ def checkModule (m : Module) (importedFnSigs : List (String × FnSig) := [])
   -- Add submodule functions/extern fns with qualified names (mod_fn)
   let submoduleSigs : List FnSig := m.submodules.foldl (fun acc (sub : Module) =>
     acc ++ (sub.functions.map fun f =>
-      { params := f.params.map fun p => (p.name, p.ty), retTy := f.retTy, typeParams := f.typeParams : FnSig })
+      { params := f.params.map fun p => (p.name, p.ty), retTy := f.retTy, typeParams := f.typeParams,
+        capParams := f.capParams, capSet := f.capSet : FnSig })
     ++ (sub.externFns.map fun ef =>
       { params := ef.params.map fun p => (p.name, p.ty), retTy := ef.retTy : FnSig })
   ) []
@@ -986,14 +1031,16 @@ def checkModule (m : Module) (importedFnSigs : List (String × FnSig) := [])
     acc ++ ib.methods.map fun f =>
       let mangledName := ib.typeName ++ "_" ++ f.name
       let allTypeParams := ib.typeParams ++ f.typeParams
-      let sig : FnSig := { params := f.params.map fun p => (p.name, p.ty), retTy := f.retTy, typeParams := allTypeParams }
+      let sig : FnSig := { params := f.params.map fun p => (p.name, p.ty), retTy := f.retTy,
+                            typeParams := allTypeParams, capParams := f.capParams, capSet := f.capSet }
       (mangledName, sig)
   ) []
   let traitImplMethodSigs : List (String × FnSig) := allTraitImpls.foldl (fun acc tb =>
     acc ++ tb.methods.map fun f =>
       let mangledName := tb.typeName ++ "_" ++ f.name
       let allTypeParams := tb.typeParams ++ f.typeParams
-      let sig : FnSig := { params := f.params.map fun p => (p.name, p.ty), retTy := f.retTy, typeParams := allTypeParams }
+      let sig : FnSig := { params := f.params.map fun p => (p.name, p.ty), retTy := f.retTy,
+                            typeParams := allTypeParams, capParams := f.capParams, capSet := f.capSet }
       (mangledName, sig)
   ) []
   let implSigList := (implMethodSigs ++ traitImplMethodSigs).map Prod.snd
@@ -1074,10 +1121,12 @@ def checkProgram (modules : List Module) : Except String Unit :=
   -- First pass: build export table from all modules (allows forward references)
   let exportTable : List (String × ExportEntry) := modules.foldl (fun acc m =>
     let pubFns := m.functions.map fun (f : FnDef) =>
-      (f.name, { params := f.params.map fun (p : Param) => (p.name, p.ty), retTy := f.retTy : FnSig })
+      (f.name, { params := f.params.map fun (p : Param) => (p.name, p.ty), retTy := f.retTy,
+                  capParams := f.capParams, capSet := f.capSet : FnSig })
     let subExports : List (String × ExportEntry) := m.submodules.map fun (sub : Module) =>
       let subFns : List (String × FnSig) := sub.functions.map fun (f : FnDef) =>
-        (f.name, { params := f.params.map fun (p : Param) => (p.name, p.ty), retTy := f.retTy : FnSig })
+        (f.name, { params := f.params.map fun (p : Param) => (p.name, p.ty), retTy := f.retTy,
+                    capParams := f.capParams, capSet := f.capSet : FnSig })
       let entry : ExportEntry := (subFns, sub.structs, sub.enums, sub.implBlocks, sub.traitImpls)
       (m.name ++ "." ++ sub.name, entry)
     acc ++ [(m.name, (pubFns, m.structs, m.enums, m.implBlocks, m.traitImpls))] ++ subExports

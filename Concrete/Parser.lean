@@ -51,6 +51,52 @@ def expectIdent : ParseM String := do
 partial def parseType : ParseM Ty := do
   let tk ← peek
   match tk with
+  | .fn =>
+    -- Function type: fn(T, U) with(C) -> R
+    advance
+    expect .lparen
+    let mut paramTys : List Ty := []
+    let ptk ← peek
+    if ptk != .rparen then
+      let first ← parseType
+      paramTys := [first]
+      let mut ptk2 ← peek
+      while ptk2 == .comma do
+        advance
+        let ty ← parseType
+        paramTys := paramTys ++ [ty]
+        ptk2 ← peek
+    expect .rparen
+    -- Inline with() parsing (parseWithCaps not yet in scope)
+    let wtk ← peek
+    let capSet ← if wtk == .with_ then
+      advance
+      expect .lparen
+      let mut caps : List String := []
+      let ctk ← peek
+      if ctk != .rparen then
+        let firstName ← expectIdent
+        caps := [firstName]
+        let mut ctk2 ← peek
+        while ctk2 == .comma do
+          advance
+          let capName ← expectIdent
+          caps := caps ++ [capName]
+          ctk2 ← peek
+      expect .rparen
+      -- Expand Std
+      let expanded := caps.flatMap fun c =>
+        if c == "Std" then stdCaps else [c]
+      pure (CapSet.concrete expanded)
+    else
+      pure CapSet.empty
+    let tk2 ← peek
+    let retTy ← if tk2 == .arrow then
+      advance
+      parseType
+    else
+      pure .unit
+    return .fn_ paramTys capSet retTy
   | .ident "Int" | .ident "i64" => advance; return .int
   | .ident "Uint" | .ident "u64" => advance; return .uint
   | .ident "i8" => advance; return .i8
@@ -190,6 +236,9 @@ partial def parseTypeParams : ParseM (List String) := do
     let mut tk2 ← peek
     while tk2 == .comma do
       advance
+      -- Stop if next is `cap` (that's a cap param, handled by parseTypeAndCapParams)
+      tk2 ← peek
+      if tk2 == .cap_ then break
       let name ← expectIdent
       params := params ++ [name]
       tk2 ← peek
@@ -197,6 +246,66 @@ partial def parseTypeParams : ParseM (List String) := do
     return params
   else
     return []
+
+/-- Parse type params and cap params together: <T, U, cap C, cap D> -/
+partial def parseTypeAndCapParams : ParseM (List String × List String) := do
+  let tk ← peek
+  if tk == .lt then
+    advance
+    let mut typeParams : List String := []
+    let mut capParams : List String := []
+    -- Parse first item
+    let mut tk2 ← peek
+    if tk2 == .cap_ then
+      -- First item is a cap param
+      advance
+      let capName ← expectIdent
+      capParams := [capName]
+    else if tk2 != .gt then
+      let firstName ← expectIdent
+      typeParams := [firstName]
+    tk2 ← peek
+    while tk2 == .comma do
+      advance
+      tk2 ← peek
+      if tk2 == .cap_ then
+        advance
+        let capName ← expectIdent
+        capParams := capParams ++ [capName]
+      else
+        let name ← expectIdent
+        typeParams := typeParams ++ [name]
+      tk2 ← peek
+    expect .gt
+    return (typeParams, capParams)
+  else
+    return ([], [])
+
+/-- Parse with(Cap1, Cap2, ...) capability set. Returns CapSet.empty if no with(). -/
+partial def parseWithCaps : ParseM CapSet := do
+  let tk ← peek
+  if tk == .with_ then
+    advance
+    expect .lparen
+    let mut caps : List String := []
+    let tk2 ← peek
+    if tk2 != .rparen then
+      let firstName ← expectIdent
+      -- Validate it's a known cap name or a cap variable (uppercase single letter is typically a cap var)
+      caps := [firstName]
+      let mut tk3 ← peek
+      while tk3 == .comma do
+        advance
+        let capName ← expectIdent
+        caps := caps ++ [capName]
+        tk3 ← peek
+    expect .rparen
+    -- Expand "Std" to the full set
+    let expanded := caps.flatMap fun c =>
+      if c == "Std" then stdCaps else [c]
+    return .concrete expanded
+  else
+    return .empty
 
 mutual
 
@@ -816,6 +925,8 @@ partial def parseMethodDef : ParseM (FnDef × Option SelfKind) := do
     let params ← parseParamList
     pure (none, params)
   expect .rparen
+  -- Parse with(...) capabilities on methods
+  let capSet ← parseWithCaps
   let tk ← peek
   let retTy ← if tk == .arrow then
     advance
@@ -823,7 +934,7 @@ partial def parseMethodDef : ParseM (FnDef × Option SelfKind) := do
   else
     pure .unit
   let body ← parseBlock
-  return ({ name, typeParams, params, retTy, body }, selfKind)
+  return ({ name, typeParams, params, retTy, body, capSet }, selfKind)
 
 partial def parseImplBlock : ParseM (ImplBlock ⊕ ImplTraitBlock) := do
   expect .impl_
@@ -926,6 +1037,8 @@ partial def parseTraitDef : ParseM TraitDef := do
       let params ← parseParamList
       pure (none, params)
     expect .rparen
+    -- Parse with(...) on trait method signatures
+    let capSet ← parseWithCaps
     let tk3 ← peek
     let retTy ← if tk3 == .arrow then
       advance
@@ -934,7 +1047,7 @@ partial def parseTraitDef : ParseM TraitDef := do
       pure .unit
     expect .semicolon
     let _ := methodTypeParams  -- unused for now
-    methods := methods ++ [{ name := methodName, params, retTy, selfKind }]
+    methods := methods ++ [{ name := methodName, params, retTy, selfKind, capSet }]
     tk ← peek
   expect .rbrace
   return { name, typeParams, methods }
@@ -942,10 +1055,20 @@ partial def parseTraitDef : ParseM TraitDef := do
 partial def parseFnDef : ParseM FnDef := do
   expect .fn
   let name ← expectIdent
-  let typeParams ← parseTypeParams
+  -- Check for ! sugar (fn main!())
+  let tk0 ← peek
+  let hasBang := tk0 == .not_
+  if hasBang then advance
+  let (typeParams, capParams) ← parseTypeAndCapParams
   expect .lparen
   let params ← parseParamList
   expect .rparen
+  -- Parse with(...) capabilities
+  let withCaps ← parseWithCaps
+  -- Check ! and with() are not both present
+  if hasBang && !withCaps.isEmpty then
+    throw "cannot combine ! sugar with explicit with()"
+  let capSet := if hasBang then CapSet.concrete stdCaps else withCaps
   let tk ← peek
   let retTy ← if tk == .arrow then
     advance
@@ -953,16 +1076,25 @@ partial def parseFnDef : ParseM FnDef := do
   else
     pure .unit
   let body ← parseBlock
-  return { name, typeParams, params, retTy, body }
+  return { name, typeParams, capParams, params, retTy, body, capSet, hasBang }
 
 /-- Parse a fn that may have a body ({...}) or be a declaration (;). -/
 partial def parseFnDefOrDecl : ParseM (FnDef ⊕ ExternFnDecl) := do
   expect .fn
   let name ← expectIdent
-  let typeParams ← parseTypeParams
+  -- Check for ! sugar
+  let tk0 ← peek
+  let hasBang := tk0 == .not_
+  if hasBang then advance
+  let (typeParams, capParams) ← parseTypeAndCapParams
   expect .lparen
   let params ← parseParamList
   expect .rparen
+  -- Parse with(...) capabilities
+  let withCaps ← parseWithCaps
+  if hasBang && !withCaps.isEmpty then
+    throw "cannot combine ! sugar with explicit with()"
+  let capSet := if hasBang then CapSet.concrete stdCaps else withCaps
   let tk ← peek
   let retTy ← if tk == .arrow then
     advance
@@ -975,7 +1107,7 @@ partial def parseFnDefOrDecl : ParseM (FnDef ⊕ ExternFnDecl) := do
     return .inr { name, params, retTy }
   else
     let body ← parseBlock
-    return .inl { name, typeParams, params, retTy, body }
+    return .inl { name, typeParams, capParams, params, retTy, body, capSet, hasBang }
 
 partial def parseStructDef : ParseM StructDef := do
   expect .struct_

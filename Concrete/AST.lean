@@ -1,5 +1,47 @@
 namespace Concrete
 
+-- ============================================================
+-- Capability Sets
+-- ============================================================
+
+inductive CapSet where
+  | empty                              -- no capabilities (pure)
+  | concrete (caps : List String)      -- concrete set, e.g., ["File", "Network"]
+  | var (name : String)                -- capability variable, e.g., "C"
+  | union (a b : CapSet)               -- union of two sets
+  deriving Repr, BEq
+
+/-- The standard capability set (Std = everything except Unsafe). -/
+def stdCaps : List String :=
+  ["File", "Network", "Clock", "Env", "Random", "Process", "Console", "Alloc"]
+
+/-- All valid capability names. -/
+def validCaps : List String :=
+  ["File", "Network", "Clock", "Env", "Random", "Process", "Console", "Alloc", "Unsafe"]
+
+/-- Normalize a CapSet to a flat sorted list of concrete caps + list of cap variables. -/
+def CapSet.normalize : CapSet → List String × List String
+  | .empty => ([], [])
+  | .concrete caps => (caps.mergeSort (· < ·), [])
+  | .var name => ([], [name])
+  | .union a b =>
+    let (ac, av) := a.normalize
+    let (bc, bv) := b.normalize
+    ((ac ++ bc).mergeSort (· < ·) |>.eraseDups, (av ++ bv).eraseDups)
+
+/-- Get the concrete capabilities from a CapSet (ignoring variables). -/
+def CapSet.concreteCaps : CapSet → List String
+  | .empty => []
+  | .concrete caps => caps
+  | .var _ => []
+  | .union a b => a.concreteCaps ++ b.concreteCaps
+
+/-- Check if a CapSet is empty (pure). -/
+def CapSet.isEmpty : CapSet → Bool
+  | .empty => true
+  | .concrete caps => caps.isEmpty
+  | _ => false
+
 inductive Ty where
   | int          -- Int or i64
   | uint         -- Uint or u64
@@ -19,6 +61,7 @@ inductive Ty where
   | array (elem : Ty) (size : Nat)            -- [T; N]
   | ptrMut (inner : Ty)   -- *mut T
   | ptrConst (inner : Ty) -- *const T
+  | fn_ (params : List Ty) (capSet : CapSet) (retTy : Ty)  -- fn(T, U) with(C) -> R
   deriving Repr, BEq
 
 inductive BinOp where
@@ -113,10 +156,13 @@ structure StructDef where
 structure FnDef where
   name : String
   typeParams : List String := []
+  capParams : List String := []    -- capability variables: cap C, cap D
   params : List Param
   retTy : Ty
   body : List Stmt
   isPublic : Bool := false
+  capSet : CapSet := .empty        -- with(File, Network, ...)
+  hasBang : Bool := false          -- fn main!() sugar
 
 structure ConstDef where
   name : String
@@ -148,6 +194,7 @@ structure FnSigDef where
   params : List Param
   retTy : Ty
   selfKind : Option SelfKind := none
+  capSet : CapSet := .empty
   deriving Repr
 
 structure ImplBlock where
@@ -167,6 +214,7 @@ structure ImplTraitBlock where
   typeName : String
   typeParams : List String := []
   methods : List FnDef
+  capSet : CapSet := .empty        -- capabilities on the impl (used by Destroy in Phase 3)
 
 structure Module where
   name : String

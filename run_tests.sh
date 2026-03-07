@@ -91,6 +91,9 @@ run_ok "$TESTDIR/impl_mut_method.con" 42
 run_ok "$TESTDIR/impl_static.con"   7
 run_ok "$TESTDIR/trait_basic.con"   30
 run_ok "$TESTDIR/trait_multiple.con" 50
+run_ok "$TESTDIR/cap_basic.con"    0
+run_ok "$TESTDIR/cap_bang.con"     30
+run_ok "$TESTDIR/cap_method.con"   0
 
 echo ""
 echo "=== Negative tests (expected errors) ==="
@@ -119,6 +122,9 @@ run_err "$TESTDIR/error_cast_invalid.con"        "cannot cast"
 run_err "$TESTDIR/error_unknown_method.con"      "no method"
 run_err "$TESTDIR/error_trait_missing_method.con" "missing method"
 run_err "$TESTDIR/error_trait_wrong_sig.con"     "signature does not match"
+run_err "$TESTDIR/error_cap_pure.con"            "requires capability"
+run_err "$TESTDIR/error_cap_propagation.con"     "requires capability"
+run_err "$TESTDIR/error_cap_method.con"          "requires capability"
 
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="

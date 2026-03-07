@@ -56,6 +56,8 @@ def lookupKeyword : String → Option TokenKind
   | "const" => some .const_
   | "type" => some .type_
   | "extern" => some .extern_
+  | "with" => some .with_
+  | "cap" => some .cap_
   | _ => none
 
 private def isIdentStart (c : Char) : Bool :=
