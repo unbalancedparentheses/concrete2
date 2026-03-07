@@ -1,6 +1,6 @@
 # Heap Ownership Design: `Heap<T>` Access Model
 
-**Status:** Open decision
+**Status:** Decided — Option B (explicit borrow)
 **Affects:** Phase 5 (Allocator system), Phase 9 (Standard library)
 **Date:** 2026-03-07
 

@@ -42,6 +42,9 @@ Syntax choices that diverge from the [spec blog post](https://federicocarrone.co
 | `fn malloc(...) = foreign("malloc")` | `extern fn malloc(...)` | Already implemented; Rust/C-style. Same semantics. |
 | `destroy File with(File) { ... }` (standalone declaration) | `impl Destroy for File with(File) { ... }` (trait impl) | Reuses existing trait/impl machinery. Destroy is a built-in trait instead of a special declaration form. Same philosophy: explicit destruction, no implicit RAII. |
 | `.concrete` file extension | `.con` | Shorter. Can revisit later. |
+| Allocator returns `&mut [T]` (borrow-checked reference) | Allocator returns `Heap<T>` (linear owned type) | Allocated memory is owned, not borrowed. `Heap<T>` avoids circular dependency with borrow regions (Phase 6). Access requires explicit borrow. See [research/heap-ownership-design.md](research/heap-ownership-design.md). |
+| Cap polymorphism deferred as "future work" | Cap polymorphism in Phase 1 | Without it, generic combinators (map, filter, fold) require duplication per capability set. The spec says "the theory is well-understood (Koka, Eff, Frank)." |
+| Spec shows `with &x, &y { ... }` as borrow block syntax | `borrow x as xr in R { ... }` only | Earlier draft included `with &x { ... }` but this clashes with `with(Cap)` capability syntax. We use only the spec's `borrow ... as ... in R` form. |
 
 **Spec blog post also shows `import X as Y` alias syntax** — not yet implemented, will add to the module system when needed.
 
@@ -52,20 +55,45 @@ Syntax choices that diverge from the [spec blog post](https://federicocarrone.co
 These rules apply across all phases. They come directly from the spec and must never be violated.
 
 1. **Pure by default.** A function without `with()` is pure. It cannot call any function that has `with()`. This is the core invariant.
-2. **True linear types, not affine.** Every linear value must be consumed exactly once. Not zero (leak = compile error). Not twice (double-use = compile error). Unlike Rust (at most once), forgetting a resource is rejected.
-3. **No hidden control flow.** `a + b` on integers is primitive addition, not a method call. The compiler never inserts destructor calls. If it allocates, you see `with(Alloc)`. Errors propagate only where `?` appears.
-4. **No variable shadowing.** Each variable name must be unique within its scope.
+
+2. **True linear types, not affine.** Every linear value must be consumed exactly once. Not zero (leak = compile error). Not twice (double-use = compile error). Unlike Rust (at most once), forgetting a resource is rejected. **What counts as "consuming" a value** — this is the canonical list, referenced by all phases:
+   - Passing it as a by-value argument to a function or method (including `destroy(x)`)
+   - Returning it from a function (`return x`)
+   - Moving it into a struct field during construction (`Point { x: val }`)
+   - Moving it into a closure capture (Phase 2)
+   - `break val` inside a loop-as-expression (Phase 4)
+   - Destructuring via `match` or `let` (the original is consumed, the fields become new bindings)
+   - Storing into an array element during array literal construction (`[val1, val2]`)
+   - Each phase that adds a new consumption form must update this list.
+   - **NOT consumption**: borrowing (`&x`, `&mut x`), taking address for raw pointer (`&x as *const T`), deferring (`defer destroy(x)` reserves but does not consume until execution).
+
+3. **No hidden control flow.** `a + b` on integers is primitive addition, not a method call. The compiler never inserts destructor calls — you write `defer destroy(x)` explicitly. If it allocates, you see `with(Alloc)`. Errors propagate only where `?` appears. **Note on `defer`:** `defer` schedules code at scope exit, but the programmer writes `defer` explicitly at the point of scheduling. The compiler emits the deferred call at the point of scope exit — this is the ONE mechanism where the compiler inserts code you didn't write at that exact source location. It does not violate the invariant because (a) the programmer wrote the `defer` statement, (b) the execution point (scope exit) is deterministic and visible from the block structure, and (c) no implicit function dispatch occurs — the exact function being called is the one written in the `defer` statement.
+
+4. **No variable shadowing.** Each variable name must be unique within its scope. This extends to region names in borrow blocks (Phase 6) — `borrow x as xr in R` introduces `xr` and `R` into scope, and neither may shadow existing names.
+
 5. **No uninitialized variables.** All variables must be initialized at declaration.
-6. **No operator overloading.** Operators on primitives are built-in. They are not trait method calls.
-7. **No implicit conversions.** No silent coercion between types. Explicit `as` casts only.
+
+6. **No operator overloading.** Operators (`+`, `-`, `*`, `/`, `%`, `==`, `!=`, `<`, `>`, `<=`, `>=`, `&&`, `||`, `!`) on primitives (Int, Uint, i8-i64, u8-u64, f32, f64, Bool) are built-in. They are not trait method calls. User-defined types (structs, enums) cannot use these operators — you must write named functions (e.g., `fn eq(a: &Point, b: &Point) -> Bool`). There is no `Eq` trait, no `Ord` trait, no `Add` trait.
+
+7. **No implicit conversions.** No silent coercion between types. Explicit `as` casts only. `Int` and `i64` are distinct types even if both are 64-bit — cast between them explicitly.
+
 8. **No null.** Optional values use `Option<T>`.
+
 9. **No exceptions.** Errors are values (`Result<T, E>`), propagated with `?`.
+
 10. **No global mutable state.** All global interactions mediated through capabilities.
-11. **No interior mutability** in safe code. All mutation flows through `&mut`. Exception: `UnsafeCell<T>` in the standard library, gated by `Unsafe` capability.
-12. **Local-only type inference.** Function signatures must be fully annotated (parameters and return type). Inside function bodies, local variable types may be inferred. You can always understand a function's interface without reading its body.
+
+11. **No interior mutability** in safe code. All mutation flows through `&mut`. Exception: `UnsafeCell<T>` in Phase 9 (standard library), gated by `Unsafe` capability. **Before Phase 9, interior mutability simply does not exist** — the borrow checker is closed with no escape hatches.
+
+12. **Local-only type inference.** Function signatures must be fully annotated (parameters and return type). Inside function bodies, local variable types may be inferred from the right-hand side of `let` bindings. Inference direction: **right-to-left only** — the type of `let x = expr;` is the type of `expr`. There is no constraint solving or unification across statements. Exception: closure parameter types may be inferred bidirectionally when the closure appears as an argument to a function with a known signature (Phase 2). You can always understand a function's interface without reading its body.
+
 13. **LL(1) grammar.** Every parsing decision with a single token of lookahead. No ambiguity, no backtracking. This is a permanent constraint — future evolution is bounded by LL(1).
-14. **`abort()` is immediate process termination.** Deferred cleanup does NOT run on abort. Out-of-memory and stack overflow trigger abort. This is outside the language's semantic model.
+
+14. **`abort()` is immediate process termination.** Deferred cleanup does NOT run on abort. Out-of-memory and stack overflow trigger abort. This is outside the language's semantic model. **Exit code:** `abort()` calls the C `abort()` function, which raises `SIGABRT`. On POSIX systems this produces exit code 134. The exact exit code is platform-dependent — tests should check for nonzero exit, not a specific code.
+
 15. **Reproducible builds.** Same source + same compiler = identical binary. No timestamps, random seeds, or environment-dependent data in output.
+
+16. **First error stops compilation.** The compiler reports the first error it encounters and stops. It does not attempt error recovery or multi-error reporting. The `CheckM` monad is `ExceptT String (StateM TypeEnv)` — a single error halts checking. This simplifies the implementation and produces clear, actionable error messages.
 
 ---
 
@@ -99,11 +127,15 @@ fn main!() { ... }
 - `Std` = `File + Network + Clock + Env + Random + Process + Console + Alloc`. Excludes `Unsafe`.
 - `Std` is a flat shorthand, not a hierarchy. You cannot request "half of Std."
 - `!` on a function name is sugar for `with(Std)`: `fn main!()` = `fn main() with(Std)`
+- `!` is mutually exclusive with explicit `with()`. You cannot write `fn foo!() with(Unsafe)`. Instead write `fn foo() with(Std, Unsafe)`. The `!` sugar only expands to exactly `Std`, no more.
+- `with(Std, Unsafe)` is valid — it means "all standard capabilities plus Unsafe." `Std` always expands to its 8 members during checking; there is no `Std` constructor in `CapSet` at the checker level.
 - Users cannot define new capabilities
 - Capabilities are not runtime values — type-level only, erased before codegen
 - Capabilities are checked before monomorphization — generic functions don't change capability requirements at different instantiations
 - Changing a public function's capability set is a breaking API change (in both directions)
 - Each method in an `impl` block or `trait impl` declares its own capabilities independently
+- Mutually recursive functions: each function's declared caps are trusted. If `f with(File)` calls `g with(Network)` and `g` calls `f`, both declarations are trusted — the checker does not compute a fixed-point. If `f` doesn't declare `Network` but calls `g`, that's an error at the call site in `f`.
+- `fn main!()` has `Std` which includes `Alloc` but excludes `Unsafe`. A `main!()` that needs FFI must call through a wrapper: `fn ffi_helper() with(Unsafe) { ... }` — and `main!()` cannot call it directly because `Std` does not include `Unsafe`. For FFI from main, use `fn main() with(Std, Unsafe) { ... }` (no `!` sugar).
 
 ### Capability polymorphism
 
@@ -142,31 +174,54 @@ Rules:
 - The caller must have at least the inferred set: if `C = {File, Alloc}`, caller needs `with(File, Alloc)`
 - Multiple cap vars allowed: `fn foo<T, cap C, cap D>(...)` for functions taking multiple function arguments with different effects
 - `C` cannot be constructed or passed as a value — exists only in signatures
+- `!` and `cap` variables do not interact. If a function has `cap C`, the caller's `!` (Std) counts as having those capabilities for the superset check. `C` is inferred from the argument, not from `!`.
+- If a function-typed argument itself has a cap variable (e.g., `fn zip_with<T, U, V, cap C, cap D>(f: fn(T) with(C) -> U, g: fn(U) with(D) -> V) with(C, D)`), each cap variable is inferred independently from its respective argument. If the same cap variable appears in two positions, the sets must be equal (not unioned).
 
 ### Implementation
 
 **Prerequisites:** This phase also adds `Ty.fn` (function type) to the `Ty` inductive, since capability polymorphism requires representing `fn(T) with(C) -> U` as a type. This is also needed by Phase 2 (closures).
 
 - **AST**:
-  - Add `Ty.fn_ (params : List Ty) (capSet : CapSet) (retTy : Ty)` — function type with capabilities
-  - `FnDef` gets `capParams : List String` and `capSet : CapSet`
-  - `FnSigDef` (trait method signatures) gets `capSet : CapSet`
-  - `ImplTraitBlock` gets `capSet : CapSet` (for capabilities on the impl, used by `destroy`)
-  - New `CapSet` type: `empty | concrete (caps : List String) | var (name : String) | union (a b : CapSet)`
+  - Add `Ty.fn_ (params : List Ty) (capSet : CapSet) (retTy : Ty)` — function type with capabilities. Pretty-print as `fn(Int, Bool) -> String` (pure) or `fn(Int, Bool) with(File) -> String` (effectful).
+  - `FnDef` gets `capParams : List String := []` and `capSet : CapSet := CapSet.empty`
+  - `FnSigDef` (trait method signatures) gets `capSet : CapSet := CapSet.empty`
+  - `ImplTraitBlock` gets `capSet : CapSet := CapSet.empty` (for capabilities on the impl, used by `destroy` in Phase 3). **Note:** Phase 3 references this same field — do NOT add a separate `implCapSet` field. It is the same `capSet` field on `ImplTraitBlock`.
+  - New `CapSet` inductive type:
+    ```
+    inductive CapSet where
+      | empty                              -- no capabilities (pure)
+      | concrete (caps : List String)      -- concrete set, e.g., ["File", "Network"]
+      | var (name : String)                -- capability variable, e.g., "C"
+      | union (a b : CapSet)               -- union of two sets
+    ```
+  - **CapSet normalization:** Before any comparison, normalize `CapSet` to a flat `List String` (for concrete caps) + `List String` (for cap variables). `union (concrete ["File"]) (concrete ["Network"])` normalizes to `concrete ["File", "Network"]`. `union (var "C") (concrete ["File"])` stays as a union. `Std` is NOT a CapSet constructor — the parser expands `!` and `Std` to `concrete ["File", "Network", "Clock", "Env", "Random", "Process", "Console", "Alloc"]` at parse time.
+  - Also modify `FnSig` (the checker's internal representation, currently at Check.lean lines ~31-35) to add `capSet : CapSet := CapSet.empty`. This is how the checker tracks capabilities for registered functions.
 - **Token/Lexer**: Add `with_` keyword. Add `cap_` keyword. `!` after an identifier in function position is not a new token — the parser handles it (see below).
 - **Parser**:
   - Parse `with(Cap1, Cap2)` after params and before `->` on function declarations
   - Parse `cap C` in generic param lists (after type params): `<T, U, cap C>`
-  - `!` sugar: after parsing `fn` + identifier, if next token is `!`, consume it and set capSet to `CapSet.concrete ["File", "Network", "Clock", "Env", "Random", "Process", "Console", "Alloc"]` (i.e., `Std` minus `Unsafe`). The `!` is NOT a separate identifier — it's consumed by the parser as a modifier.
-  - Parse `fn(T, U) with(C) -> R` as a type (`Ty.fn_`)
+  - `!` sugar: after parsing `fn` + identifier, if next token is `!`, consume it and set capSet to `CapSet.concrete ["File", "Network", "Clock", "Env", "Random", "Process", "Console", "Alloc"]` (i.e., `Std` minus `Unsafe`). The `!` is NOT a separate identifier — it's consumed by the parser as a modifier. If `!` appears AND there is also a `with(...)`, that is a parse error: "cannot combine ! sugar with explicit with()"
+  - Parse `fn(T, U) with(C) -> R` as a type (`Ty.fn_`). If no `with()`, use `CapSet.empty`.
 - **Check.lean**:
-  - Store each function's cap set in `FnDef.capSet` and `FnSigDef.capSet`
-  - At call sites: check `callerCaps ⊇ calleeCaps`. Error: "function 'f' requires capability 'Network' but caller 'g' does not declare it"
-  - For cap variables: at each call site, collect concrete caps from the function-typed arguments, unify `C` with that set, check caller has the unified set
-  - Recursive functions: each function's declared caps are trusted (no fixed-point). If `f` declares `with(File)` and calls itself, that's fine.
+  - Store each function's cap set in `FnDef.capSet`, `FnSigDef.capSet`, and `FnSig.capSet`
+  - **Superset check algorithm:** To check `callerCaps ⊇ calleeCaps`:
+    1. Normalize both to flat lists of concrete cap names and cap variables
+    2. For each concrete cap in callee: verify it exists in caller's concrete caps. If missing, error: `"function '{calleeName}' requires capability '{missingCap}' but caller '{callerName}' does not declare it"`
+    3. For each cap variable in callee: it was already inferred at this call site (see below). The inferred concrete caps are checked against the caller via step 2.
+  - **Cap variable inference algorithm:** When calling a function with `cap C` parameter:
+    1. Find the function-typed argument corresponding to `C` (the argument whose type is `fn(...) with(C) -> ...`)
+    2. Look at the actual argument's type — if it's a closure or function reference, extract its concrete cap set
+    3. `C` is bound to that concrete set for this call site
+    4. If `C` appears in the function's own `with()` clause, the inferred concrete caps are added to the callee's requirements and checked against the caller
+    5. If the actual argument has an unresolved cap variable (e.g., the argument is itself cap-polymorphic), that is an error: `"cannot infer capability variable '{C}' from polymorphic argument"`
+  - Recursive functions: each function's declared caps are trusted (no fixed-point). If `f` declares `with(File)` and calls itself, that's fine. Same for mutually recursive functions.
   - Method calls: look up the method's cap set from the impl block, check against caller's caps
-  - Trait method calls: cap set comes from the trait impl (not the trait definition — the impl may be more specific)
+  - Trait method calls: cap set comes from the trait impl, not the trait definition. **Matching rule:** the trait impl's method cap set must be a **subset** of the trait definition's method cap set (the impl can require fewer capabilities, not more). This is because callers rely on the trait's declared capabilities as an upper bound. If the trait says `fn read(&self) with(File)` and the impl says `fn read(&self)` (pure), that's valid — the impl is more restricted. If the impl says `fn read(&self) with(File, Network)`, error: `"impl method 'read' declares capability 'Network' not declared in trait"`
 - **Codegen**: No change. Capabilities are erased at compile time.
+
+### Backward compatibility
+
+Adding capabilities to the compiler will cause existing tests and examples to fail if they call `extern fn` or other effectful operations without `with()`. **Strategy:** Phase 1 adds the capability system but does NOT gate `extern fn` calls behind `Unsafe` yet — that is Phase 7's job. Phase 1 only gates: calling functions that explicitly declare `with(Cap)`. Existing functions without `with()` remain pure and continue to work. Existing `extern fn` calls remain unchecked until Phase 7. All 59 existing tests must continue to pass after Phase 1.
 
 ### Tests
 
@@ -178,6 +233,7 @@ Rules:
 - `cap_poly_multi.con`: `fn zip_with<T, U, V, cap C, cap D>(...)` with two cap vars → ok
 - `error_cap_poly_fail.con`: caller doesn't have inferred cap set → error
 - `cap_method.con`: method with `with(File)` on impl, called from `with(File)` function → ok
+- `error_cap_method.con`: method with `with(File)`, called from pure function → error "requires capability 'File'"
 
 ---
 
@@ -209,46 +265,71 @@ let shifted: List<Int> = map(data, fn(x) { return x + offset; });
 
 - Closures capture variables from the enclosing scope (implicit capture, not explicit)
 - Capture rules follow linearity:
-  - Capturing a linear value **moves** it into the closure (original is consumed)
-  - Capturing a primitive type (Int, Bool, etc.) **copies** it (primitives are always Copy)
+  - Capturing a linear value **moves** it into the closure (original is consumed in the enclosing scope — its `VarState` becomes `consumed`)
+  - Capturing a primitive type (Int, Bool, etc.) **copies** it (primitives are always Copy). Original stays live in enclosing scope.
   - Capturing a `Copy`-marked type copies it (once Phase 3 adds the `Copy` marker; until then, all structs are linear and capturing moves)
   - Capturing a `&T` borrows it — closure cannot outlive the borrow region
   - Capturing a `&mut T` borrows exclusively — no other borrows while closure exists
-- Closures that capture linear values are themselves linear (must be called exactly once)
-- Closures that capture only copyable values (primitives, Copy types) can be called multiple times
-- Closure capabilities: if the body uses `with(File)`, the closure type carries `with(File)`
-- Closures that escape their defining scope cannot capture capabilities from the enclosing function — they must declare their own
+- **Closure linearity:** A closure is linear (must be called exactly once) if it captures any linear values. A closure is non-linear (can be called zero or more times) if it captures only copyable values or nothing. The linearity of a closure is NOT part of `Ty.fn_` — it is tracked separately in the checker via a `isLinear : Bool` annotation on the closure expression. A linear closure assigned to a variable makes that variable linear.
+- Closure capabilities: if the body calls functions requiring capabilities, the closure type carries those capabilities in `Ty.fn_`'s `capSet`. The checker computes this from the body.
+- **Escaping closures:** A closure "escapes" its defining scope if it is returned from a function, stored in a struct field, or passed to a function whose parameter type outlives the current scope. Escaping closures cannot capture references (`&T`, `&mut T`) — only owned values. Error: `"closure captures reference '&{name}' that would escape its borrow region"`
+- Closures that escape cannot capture the enclosing function's capability context implicitly — they must declare their own capabilities with `with(...)`.
 - Function types: `fn(Int) -> Bool` (pure), `fn(Int) with(File) -> Bool` (effectful)
+- Closures cannot be recursive — a closure cannot call itself because it has no name to reference. (Named functions can be recursive; closures cannot.)
 - Disambiguation: `fn` followed by `(` in expression position (not after `pub`, not at top level of module) is a closure. At top level, `fn` starts a function definition.
+- **Mutable variables and capture:** If a `let mut` variable is captured, the capture follows the same rules as above (copy if Copy, move if linear). The closure captures the current value at the point of capture, not a reference to the variable. After a move-capture, the original variable cannot be assigned to or read in the enclosing scope.
 
 ### Implementation
 
 **Prerequisite:** `Ty.fn_` from Phase 1 must exist.
 
-- **AST**: `Expr.closure (params : List Param) (capSet : CapSet) (retTy : Option Ty) (body : List Stmt) (captures : List String)`. The `captures` field is filled in by the checker, not the parser.
+- **AST**:
+  ```
+  inductive CaptureMode where
+    | copy    -- value is copied, original stays live
+    | move    -- value is moved, original is consumed
+
+  Expr.closure (params : List Param)
+               (capSet : CapSet)
+               (retTy : Option Ty)
+               (body : List Stmt)
+               (captures : List (String × CaptureMode))
+               (isLinear : Bool)
+  ```
+  The `captures` and `isLinear` fields are filled in by the checker, not the parser. The parser sets `captures := []` and `isLinear := false`.
 - **Parser**: When `fn` appears in expression position (after `=`, `,`, `(`, `return`), parse as closure. If params have type annotations, use them; if not, leave types as `Ty.unknown` for bidirectional inference.
 - **Check.lean**:
-  - Analyze closure body for free variables → those are captures
-  - For each capture: if the captured variable's type is a primitive or `Copy` type, mark as copy-capture (original stays live); otherwise, mark as move-capture (original is consumed in enclosing scope)
-  - Bidirectional type inference for untyped closure params: if the closure is an argument to a function expecting `fn(T) -> U`, infer param types from `T`
-  - Compute closure's cap set from its body. Check capability propagation.
-  - Linear captures → the closure itself is linear (must be used exactly once)
+  - Analyze closure body for free variables (variables referenced in the body that are not parameters of the closure and not global functions) → those are captures
+  - For each capture: look up the variable's type in the enclosing scope.
+    - If the type is a primitive or `Copy` type → `CaptureMode.copy`, original stays live
+    - Otherwise → `CaptureMode.move`, mark original as `consumed` in enclosing scope
+  - The closure's linearity: `isLinear = true` if any capture is `CaptureMode.move`
+  - If `isLinear = true`, the variable holding the closure is tracked as linear (must be used exactly once — i.e., called exactly once). Calling a linear closure consumes it. Error if called twice: `"linear closure '{name}' already called"`. Error if never called: `"linear closure '{name}' was never consumed"`
+  - **Bidirectional type inference for closure params:** works in two positions:
+    1. Function argument: if closure is argument `i` of a function call, and the function's parameter `i` has type `fn(T1, T2) with(C) -> R`, infer closure param types from `T1, T2` and cap set from `C`
+    2. Variable with explicit type: if `let f: fn(Int) -> Bool = fn(x) { ... };`, infer `x: Int`
+    3. Otherwise (standalone closure with no type context): all untyped params are errors. Error: `"cannot infer type of closure parameter '{name}' without type context"`
+  - Compute closure's cap set from its body (same capability checking as regular functions). If the closure body calls `with(File)` functions, the closure's type is `fn(...) with(File) -> ...`. Verify the expected type (from bidirectional inference) has a compatible cap set.
   - Check captured borrows don't escape their region
+  - Inside the closure body, create a fresh linearity scope where each captured variable starts as `unconsumed`. Move-captured variables are linear in the closure body (must be consumed exactly once within the body). Copy-captured variables follow their type's rules.
 - **Codegen**:
-  - No captures: closure compiles to a plain function pointer
-  - With captures: generate a struct containing captured values + a function pointer. The generated function takes `ptr %env` as hidden first param, loads captures from the struct.
-  - Calling a closure: if `Ty.fn_`, check if env pointer is null (no captures) or non-null (has captures). Pass env as first arg.
-  - LLVM representation: `{ ptr fn, ptr env }` (fat pointer). For no-capture closures, `env = null`.
+  - **All closures use fat pointer representation:** `{ ptr fn, ptr env }`. For no-capture closures, `env = null`. This uniform representation means `Ty.fn_` always has the same LLVM type regardless of captures. Do NOT generate plain function pointers for no-capture closures — always use the fat pointer for consistency.
+  - With captures: generate a struct `%closure_env.N` containing each captured value. Allocate it (stack `alloca` if non-escaping, heap if escaping via Phase 5). The generated function takes `ptr %env` as first param, bitcasts to `%closure_env.N*`, loads each field.
+  - Without captures: generate the function body as a normal function. Set `env = null` in the fat pointer.
+  - Calling a closure: load `fn` and `env` from the fat pointer. Call `fn(env, arg1, arg2, ...)`. The callee ignores `env` if it's null (no captures case — the function just doesn't use the first param).
 
 ### Tests
 
 - `closure_basic.con`: simple closure, no captures → ok
 - `closure_capture_copy.con`: capture Int (primitive, always Copy) → ok, original still usable
-- `closure_capture_move.con`: capture linear struct → original consumed
+- `closure_capture_move.con`: capture linear struct → original consumed, error if used after
 - `closure_linear.con`: closure with linear capture must be called exactly once
 - `closure_cap.con`: closure with `with(File)` captures + capability → ok
+- `closure_generic.con`: closure as argument to generic `map<T, U, cap C>` with type inference → ok
 - `error_closure_escape_borrow.con`: capture &T that escapes → error
 - `error_closure_double_call.con`: call linear closure twice → error
+- `error_closure_uncalled.con`: linear closure never called → error "was never consumed"
+- `error_closure_infer.con`: standalone closure with untyped params and no context → error
 
 ---
 
@@ -306,73 +387,142 @@ fn out_of_memory!() {
 ### Explicit `Copy` marker
 
 ```
-type Copy Point {
+// Structs: add Copy keyword after struct
+struct Copy Point {
     x: Float64,
     y: Float64
 }
+
+// Enums: add Copy keyword after enum
+enum Copy Direction {
+    North,
+    South,
+    East,
+    West
+}
+
+// Generic Copy type: only Copy if T is Copy
+struct Copy Pair<T> {    // error if T is not Copy at instantiation
+    first: T,
+    second: T
+}
 ```
+
+Note: The spec uses `type Copy Name { ... }` (unified `type` keyword). Since we use separate `struct`/`enum` keywords (see Design Decisions), our syntax is `struct Copy Name { ... }` and `enum Copy Name { ... }`.
 
 ### Rules
 
 **Destroy:**
 - `Destroy` is a built-in trait with one method: `fn destroy(self) -> Unit`
-- `destroy(x)` is syntactic sugar that resolves to the `Destroy` impl for `x`'s type — it is NOT a keyword or built-in function, it is a normal function call that the checker resolves via trait lookup
+- **`destroy` is a reserved identifier.** The parser parses `destroy(x)` as a normal function call `Expr.call "destroy" [] [x]`. The checker intercepts calls to the identifier `destroy` and resolves them via `Destroy` trait lookup. Users cannot define a function named `destroy` — error: `"'destroy' is a reserved identifier"`.
 - `with()` on the `impl Destroy for T` declares capabilities the destructor needs
-- Calling `destroy(x)` requires the caller to have those capabilities
-- `destroy(x)` is only valid if the type implements `Destroy`
+- Calling `destroy(x)` requires the caller to have those capabilities. Error: `"calling 'destroy' on type 'File' requires capability 'File'"`
+- `destroy(x)` is only valid if the type implements `Destroy`. Error: `"type 'Point' does not implement Destroy"`
 - Types without `Destroy` must be consumed by moving, returning, or destructuring
+- **Generic types and Destroy:** `impl Destroy for Container<T>` can destructure `self` to access inner fields and consume them. If the inner `T` is linear, the destroy implementation must consume it (e.g., call `destroy(self.data)` if `T: Destroy`, or move it elsewhere). The impl does NOT require `T: Destroy` by default — it requires whatever the body needs.
+
+```
+struct Wrapper<T> { inner: T }
+
+impl Destroy for Wrapper<T> {
+    fn destroy(self) -> Unit {
+        let inner: T = self.inner;  // destructure, consuming self
+        destroy(inner);              // only works if T: Destroy
+    }
+}
+```
 
 **Defer:**
 - `defer` is **block-scoped** (like Zig, NOT function-scoped like Go). It runs when the enclosing `{ }` block exits.
+
+```
+fn example!() {
+    let f: File = open("a");
+    defer destroy(f);        // runs when outer block exits
+
+    {
+        let g: File = open("b");
+        defer destroy(g);    // runs when inner block exits
+        // ... use g ...
+    }  // ← destroy(g) runs here
+
+    // f is still live here, g is gone
+}  // ← destroy(f) runs here
+```
+
 - `defer` runs in LIFO order at scope exit
-- `defer destroy(x)` reserves the value: cannot move `x` after deferring, cannot destroy again, cannot re-defer
+- `defer destroy(x)` reserves the value: cannot move `x` after deferring, cannot destroy again, cannot re-defer. The variable's `VarState` becomes `reserved`. Error on move: `"variable '{name}' is reserved by defer"`. Error on re-defer: `"variable '{name}' is already deferred"`.
 - `defer` runs on normal exit, early return, and `?` error propagation
+- **`defer` and `?` ordering:** When `?` encounters an error, deferred statements from **all enclosing scopes within the current function** run first (innermost scope first, LIFO within each scope), then the error value is returned. This means `defer destroy(f)` before a `?` will clean up `f` even if `?` propagates an error.
 - `defer` does NOT run on `abort()`
-- `defer` can only defer expression statements (function calls, method calls, `destroy()`). `defer let x = ...` or `defer return` are parse errors.
+- `defer` can only defer expression statements (function calls, method calls, `destroy()`). `defer let x = ...` or `defer return` are parse errors. Error: `"defer can only defer expression statements"`
 - `defer` inside a loop body: each iteration that executes the `defer` adds a deferred action to that iteration's scope. The deferred action runs when the loop body block exits (at end of each iteration, or on `break`/`continue`).
 - `break`/`continue` inside `defer` is forbidden (Phase 4 check)
+- **`defer` in `if/else` branches:** If `defer destroy(x)` appears in only one branch, both branches must still agree on `x`'s consumption. Example:
+
+```
+let x: Resource = make_resource();
+if cond {
+    defer destroy(x);  // x is reserved+deferred here
+    // ... use x ...
+}  // destroy(x) runs on true branch exit
+else {
+    consume(x);         // x is consumed here
+}
+// Both branches consumed x — valid
+```
+
+If one branch defers and the other does nothing with `x`, that's a linearity error (one path consumes, other doesn't).
+
+- **`defer` closures (Phase 2 interaction):** `defer my_closure();` is valid if `my_closure` is a closure variable. If the closure is linear, the `defer` guarantees it's called exactly once at scope exit. However, if the scope exits via `abort()`, the deferred closure does NOT run — this means a linear closure may not be consumed on the abort path. This is acceptable because `abort()` is outside the semantic model (see Invariant 14).
 
 **Copy:**
-- `Copy` is explicit and opt-in via `type Copy`
-- A type implementing `Destroy` cannot be `Copy`
-- A `Copy` type cannot implement `Destroy` and cannot contain linear fields
-- Primitive types (Int, Bool, Float64, etc.) are built-in `Copy`
+- `Copy` is explicit and opt-in via `struct Copy` / `enum Copy`
+- A type implementing `Destroy` cannot be `Copy`. Error: `"type 'File' implements Destroy and cannot be Copy"`
+- A `Copy` type cannot implement `Destroy` and cannot contain linear fields. Error: `"Copy type 'Wrapper' contains linear field 'inner' of type 'Resource'"`
+- Primitive types (Int, Uint, i8-i64, u8-u64, f32, f64, Bool, Char) are built-in `Copy`
 - `String` is linear (not `Copy`)
 - `&T` is `Copy`; `&mut T` is not `Copy`
 - Arrays of `Copy` types are `Copy`; arrays of linear types are linear
+- Enums can be `Copy` if all variant fields are `Copy`. `enum Copy Option<T>` requires `T` to be `Copy` at every instantiation.
+- `Heap<T>` and `HeapArray<T>` are always linear, never `Copy`.
 
 **Abort:**
 - `abort()` is a built-in function that immediately terminates the process
 - Deferred cleanup does NOT run on abort
 - Out-of-memory triggers abort. Stack overflow triggers abort.
 - `abort()` does not require any capability — it is always available
+- `abort()` returns type `Never` (bottom type) — it can appear anywhere any type is expected
 
 ### Implementation
 
 - **AST**:
   - `Stmt.defer (body : Stmt)` — the body must be an expression statement
-  - `StructDef` gets `isCopy : Bool` — true for `type Copy` definitions
-  - `ImplTraitBlock` gets `implCapSet : CapSet` — for `impl Destroy for File with(File) { ... }`
+  - `StructDef` gets `isCopy : Bool := false` — true for `struct Copy` definitions
+  - `EnumDef` gets `isCopy : Bool := false` — true for `enum Copy` definitions
+  - Phase 1 already added `ImplTraitBlock.capSet : CapSet` — this same field is used for `impl Destroy for T with(Cap) { ... }`. Do NOT add a separate `implCapSet` field.
   - `Expr.abort` — built-in abort expression
-- **Token/Lexer**: Add `defer_` keyword. Add `abort_` as built-in identifier.
+  - Add `Ty.never` to the `Ty` inductive — the bottom type. In the checker, `Ty.never` is compatible with any expected type (it can unify with anything). In codegen, code after `abort()` is `unreachable`.
+- **Token/Lexer**: Add `defer_` keyword. `abort` is recognized as a built-in identifier (not a keyword — it parses as a function call). `Copy` is recognized as a keyword `copy_` when it appears after `struct` or `enum`.
 - **Parser**:
   - Parse `defer <expr-stmt>;` — only allow expression statements after `defer`
-  - Parse `type Copy Name { ... }` as a struct definition with `isCopy = true`
-  - `impl Destroy for T with(Cap) { ... }` already parses via existing impl-trait parsing; extend to capture `with(Cap)` on the `impl` line
-  - `destroy(x)` parses as a normal function call — the checker resolves it
+  - Parse `struct Copy Name { ... }` and `enum Copy Name { ... }` — after `struct`/`enum`, if next token is `Copy` (capitalized identifier), consume it and set `isCopy = true`, then parse the rest normally
+  - `impl Destroy for T with(Cap) { ... }` already parses via existing impl-trait parsing; the `with(Cap)` on the `impl` line is stored in `ImplTraitBlock.capSet` (added in Phase 1)
+  - `destroy(x)` parses as a normal function call `Expr.call "destroy" [] [x]`
 - **Check.lean**:
-  - Pre-register `Destroy` trait in the type environment (not user-declarable)
-  - When checking `destroy(x)`: look up `Destroy` impl for `x`'s type. If found, treat as consuming `x`. If not found, error: "type T does not implement Destroy"
-  - Track deferred values as "reserved" (not movable, not destroyable, not re-deferable)
-  - When exiting a block scope: verify all deferred actions reference valid reserved values
-  - Verify `Copy`/`Destroy` mutual exclusivity: if a type has `isCopy = true` and also has an `impl Destroy`, error
-  - For `Copy` types: verify all fields are themselves `Copy` (recursive check)
-  - `abort()` is always allowed, returns `Never` (bottom type)
+  - **Pre-register `Destroy` trait:** At initialization, add a hardcoded `TraitDef { name := "Destroy", typeParams := [], methods := [FnSigDef { name := "destroy", params := [Param "self" Ty.selfTy], retTy := Ty.unit, selfKind := some SelfKind.value, ... }], isPublic := true }` to the type environment. If a user writes `trait Destroy { ... }`, error: `"'Destroy' is a built-in trait and cannot be redeclared"`
+  - **Intercept `destroy` calls:** When checking `Expr.call "destroy" [] [x]`, do not look up a normal function named `destroy`. Instead, look up the `Destroy` impl for the type of `x`. If found, check the impl's `capSet` against the caller's capabilities. Mark `x` as `consumed`. If not found, error: `"type '{typeName}' does not implement Destroy"`. If a user defines `fn destroy(...)`, error: `"'destroy' is a reserved identifier"`
+  - Track deferred values as "reserved" in `VarState` — add a `reserved` state (not movable, not destroyable, not re-deferable)
+  - When exiting a block scope: the codegen handles emitting deferred calls. The checker verifies that reserved values are still valid at scope exit.
+  - Verify `Copy`/`Destroy` mutual exclusivity: if a type has `isCopy = true` and also has an `impl Destroy`, error: `"type '{name}' implements Destroy and cannot be Copy"`
+  - For `Copy` types: verify all fields are themselves `Copy` (recursive check). For generic `Copy` types, defer the check to instantiation — `struct Copy Pair<T>` is only valid if the actual `T` is `Copy`.
+  - `abort()` is always allowed, returns `Ty.never`. Any code after `abort()` in the same block is dead code (the checker can skip it or warn).
 - **Codegen**:
-  - Track deferred statements per block scope (stack of deferred lists)
+  - Track deferred statements per block scope (stack of deferred lists: `List (List Stmt)`)
+  - At block exit: emit all deferred statements in that scope, LIFO order
   - Before every `ret` instruction: emit all deferred statements from all enclosing scopes, innermost first, LIFO within each scope
-  - Before `?` propagation branch (the error path): emit all deferred statements from the current function's scopes
-  - `destroy(x)` compiles to `call void @TypeName_destroy(ptr %x)`
+  - Before `?` propagation branch (the error path): emit all deferred statements from all enclosing scopes within the current function, innermost first, LIFO within each scope. Then branch to return the error.
+  - `destroy(x)` compiles to `call void @TypeName_destroy(ptr %x)` (where TypeName is the type that implements Destroy)
   - `abort()` compiles to `call void @abort()` followed by `unreachable`
 
 ### Tests
@@ -384,13 +534,16 @@ type Copy Point {
 - `defer_block_scope.con`: defer in inner block runs at block exit, not function exit → ok
 - `defer_loop.con`: defer inside loop runs at end of each iteration → ok
 - `destroy_trait.con`: implement Destroy, call destroy() → ok
-- `copy_marker.con`: Copy type can be used multiple times → ok
+- `destroy_generic.con`: Destroy impl for generic type, destructures and consumes inner → ok
+- `copy_struct.con`: `struct Copy` type can be used multiple times → ok
+- `copy_enum.con`: `enum Copy` type can be used multiple times → ok
 - `abort_basic.con`: abort() terminates immediately → ok (exit code nonzero)
-- `error_defer_move.con`: move after defer → error "variable reserved by defer"
+- `error_defer_move.con`: move after defer → error "variable 'x' is reserved by defer"
 - `error_defer_not_expr.con`: `defer let x = 5;` → error "defer can only defer expression statements"
-- `error_copy_destroy.con`: Copy type with Destroy impl → error
-- `error_copy_linear_field.con`: Copy type containing linear field → error
-- `error_destroy_no_impl.con`: destroy(x) on type without Destroy → error
+- `error_copy_destroy.con`: Copy type with Destroy impl → error "implements Destroy and cannot be Copy"
+- `error_copy_linear_field.con`: Copy type containing linear field → error "contains linear field"
+- `error_destroy_no_impl.con`: destroy(x) on type without Destroy → error "does not implement Destroy"
+- `error_destroy_reserved.con`: user defines `fn destroy(...)` → error "'destroy' is a reserved identifier"
 
 ---
 
@@ -426,36 +579,81 @@ while i < n {
 - `break` exits the innermost loop (applies to both `while` and `for` loops)
 - `break expr` exits and produces a value (loop-as-expression)
 - `continue` skips to the next iteration
-- **Linear types**: `break`/`continue` must not skip over unconsumed linear values declared between the start of the current iteration and the break/continue point. Linear variables from outside the loop remain live. Example: `let x = LinearStruct {}; if cond { continue; }` → error, `x` not consumed on the continue path.
-- `break` inside `defer` is forbidden — compile error
-- `continue` inside `defer` is forbidden — compile error
+- **Linear types and break/continue:** Before executing `break` or `continue`, the checker verifies that all linear variables declared within the **loop body block** (from the start of the block to the break/continue point) are consumed. This includes variables in nested blocks inside the loop body. Variables from outside the loop remain live and are not affected. Specifically:
+
+```
+while cond {
+    let x: LinearStruct = make();    // declared in loop body
+    {
+        let y: LinearStruct = make(); // declared in nested block inside loop body
+        if done {
+            consume(y);
+            consume(x);
+            break;                    // ok: both x and y consumed before break
+        }
+    }
+    consume(x);
+}
+```
+
+```
+while cond {
+    let x: LinearStruct = make();
+    if done { break; }               // error: "break would skip unconsumed linear variable 'x'"
+    consume(x);
+}
+```
+
+- **Match bindings inside loops:** Variables bound in `match` arms are scoped to that arm's block. If `break` or `continue` appears inside a match arm, the bound variables must be consumed within that arm before the break/continue.
+
+```
+while cond {
+    match val {
+        Foo#A { x } => {
+            consume(x);              // x must be consumed before break
+            break;
+        },
+        Foo#B { y } => {
+            consume(y);
+            continue;
+        },
+    }
+}
+```
+
+- `break` inside `defer` is forbidden — compile error: `"break is not allowed inside defer"`
+- `continue` inside `defer` is forbidden — compile error: `"continue is not allowed inside defer"`
 - Applies to innermost loop only (no labeled breaks in v1)
 - For `break val`, all break expressions and the `else` clause must agree on type
+- **`for` loops and break:** `break` and `break val` work in `for` loops identically to `while` loops. However, `for`-as-expression (using `break val` to produce a value) is NOT supported — only `while`-as-expression exists. `for` loops are always statements.
 - While-as-expression: `while` in expression position (RHS of `let`, argument, etc.) produces a value. The `else` clause is mandatory when using `break val` — it provides the value when the loop condition becomes false without breaking. A `while` without `break val` or without `else` in expression position is a type error.
+- The `else` clause is a block `{ ... }` whose **last expression** is the produced value (no `return` needed — it is the value of the block). Same rule as `break val` — the expression at the end of the else block is the produced value.
 - `break` (without value) in expression-position while is also valid if `else` is present — both produce `Unit`.
+- **`break` and `defer` interaction:** When `break` exits a loop, deferred statements from the current iteration's scopes run before the loop exits. This is tested in `break_defer.con`.
 
 ### Implementation
 
-- **AST**: `Stmt.break_ (value : Option Expr)`, `Stmt.continue_`. `Expr.whileExpr (cond : Expr) (body : List Stmt) (elseBody : List Stmt)` for while-as-expression.
+- **AST**: `Stmt.break_ (value : Option Expr)`, `Stmt.continue_`. `Expr.whileExpr (cond : Expr) (body : List Stmt) (elseBody : List Stmt)` for while-as-expression. No `Expr.forExpr` — for loops are statements only.
 - **Token/Lexer**: Add `break_` and `continue_` keywords.
-- **Parser**: Parse `break;`, `break expr;`, `continue;` inside loops. In expression position, parse `while cond { ... } else { ... }` as `Expr.whileExpr`.
+- **Parser**: Parse `break;`, `break expr;`, `continue;` inside loops. In expression position, parse `while cond { ... } else { ... }` as `Expr.whileExpr`. Error if `for` loop appears in expression position: `"for loops cannot be used as expressions; use while-as-expression instead"`
 - **Check.lean**:
-  - Track loop nesting depth. `break`/`continue` outside loop → error
-  - Track whether we're inside a `defer` body. `break`/`continue` inside defer → error
-  - Before `break`/`continue`: scan linear variables declared in the current iteration scope, verify all consumed. Error: "break would skip unconsumed linear variable 'x'"
-  - For `break expr`: collect all break expression types + else clause type, verify agreement
-- **Codegen**: `break` → `br label %loop.exit`. `continue` → `br label %loop.header`. For `break val`: pre-allocate result slot (`alloca`) before loop, each `break val` stores to the slot before jumping, `else` clause stores to the same slot. After loop, load from slot.
+  - Track loop nesting depth. `break`/`continue` outside loop → error: `"break outside of loop"`
+  - Track whether we're inside a `defer` body. `break`/`continue` inside defer → error: `"break is not allowed inside defer"`
+  - Before `break`/`continue`: collect all linear variables declared since the start of the current loop body block (including nested blocks), verify all consumed. Error: `"break would skip unconsumed linear variable '{name}'"`
+  - For `break expr`: collect all break expression types + else clause type, verify agreement. Error: `"break expression type 'Int' does not match else clause type 'Bool'"`
+- **Codegen**: `break` → emit deferred statements for loop body scopes, then `br label %loop.exit`. `continue` → emit deferred statements for loop body scopes, then `br label %loop.header`. For `break val`: pre-allocate result slot (`alloca`) before loop, each `break val` stores to the slot before jumping, `else` clause stores to the same slot. After loop, load from slot.
 
 ### Tests
 
 - `break_basic.con`: break exits loop → ok
 - `break_value.con`: break with value, loop as expression → ok
+- `break_defer.con`: break inside loop with defer — defer runs before loop exit → ok
 - `continue_basic.con`: continue skips iteration → ok
 - `break_for.con`: break inside for loop → ok
-- `error_break_outside.con`: break outside loop → error
+- `error_break_outside.con`: break outside loop → error "break outside of loop"
 - `error_break_linear.con`: break skips unconsumed linear variable → error
 - `error_continue_linear.con`: continue skips unconsumed linear variable → error
-- `error_break_in_defer.con`: break inside defer → error
+- `error_break_in_defer.con`: break inside defer → error "break is not allowed inside defer"
 
 ---
 
@@ -577,13 +775,14 @@ fn main!() {
 **Why explicit borrow (not transparent access):** In a world where most code is LLM-generated, writing cost is zero and reading cost is the bottleneck. Explicit borrow makes every heap access visible — you can grep for all heap dereferences, and code reviewers (human or LLM) see exactly when heap memory is touched without checking declarations. See [research/heap-ownership-design.md](research/heap-ownership-design.md) for the full design rationale.
 
 **Rules:**
-- `p.x` directly on `Heap<Point>` is a type error — you must borrow first
-- `&p` where `p: Heap<T>` gives `&T` (pointer to the heap value)
+- `p.x` directly on `Heap<Point>` is a type error — you must borrow first. Error: `"cannot access field 'x' on Heap<Point> directly; borrow first with (&p).x or a borrow block"`
+- `&p` where `p: Heap<T>` gives `&T` (pointer to the heap value). This is a built-in compiler rule, not a trait.
 - `&mut p` where `p: Heap<T>` gives `&mut T`
-- `borrow p as pr in R { ... }` works on `Heap<T>` — `pr` has type `&T`
+- `borrow p as pr in R { ... }` works on `Heap<T>` — `pr` has type `&T`. **Note on Phase 6 dependency:** The `borrow ... as ... in R` syntax is defined in Phase 6 (borrow regions). Phase 5 can be implemented before Phase 6 using only inline borrows `(&p).x` and `(&mut p).x`. The `borrow` block form becomes available after Phase 6. Both use the same underlying AST and checking logic for `Heap<T>`.
 - `borrow mut p as pmr in R { ... }` — `pmr` has type `&mut T`
-- `HeapArray<T>` supports indexing: `(&arr)[i]` or via borrow block
+- `HeapArray<T>` supports indexing: `(&arr)[i]` returns `&T` (a reference to the element, not a copy). `(&mut arr)[i]` returns `&mut T`. `(&mut arr)[i] = val` assigns to the element. Bounds checking is performed at runtime — out-of-bounds access calls `abort()`.
 - While borrowed, `Heap<T>` is frozen (cannot move, destroy, or re-borrow mutably) — same as any borrow
+- **Allocator identity:** The type system does NOT track which allocator a `Heap<T>` was allocated from. If you allocate with arena A and destroy with arena B, that is a runtime bug but not a compile-time error. This is an intentional limitation — tracking allocator provenance would require dependent types. In practice, the `defer` pattern (`alloc → defer destroy → use`) naturally pairs allocation and deallocation.
 
 ### Collections
 
@@ -608,38 +807,75 @@ impl Destroy for Vec<T> with(Alloc) {
 
 `Vec<T>` is linear because it contains `HeapArray<T>` (linear). Implements `Destroy with(Alloc)`.
 
+### `alloc()` and `free()` as built-in functions
+
+`alloc(val)` and `free(ptr)` are **built-in functions** that the checker resolves through the bound allocator, similar to how `destroy(x)` resolves through the Destroy trait. They are NOT methods on a specific allocator object. The dispatching happens through the hidden allocator parameter.
+
+```
+// alloc(val) is sugar for: <bound allocator>.alloc(val)
+let p: Heap<Point> = alloc(Point { x: 1.0, y: 2.0 }) with(Alloc = arena);
+
+// free(ptr) is sugar for: <bound allocator>.free(ptr)
+let val: Point = free(p) with(Alloc = arena);
+
+// alloc_array, free_array, realloc_array follow the same pattern
+let arr: HeapArray<Int> = alloc_array<Int>(100) with(Alloc = arena);
+```
+
+The identifiers `alloc`, `free`, `alloc_array`, `free_array`, and `realloc_array` are **reserved identifiers** (like `destroy`). The checker intercepts calls to these names and routes them through the `Allocator` trait impl for the bound allocator's type.
+
 ### Rules
 
 - `with(Alloc)` in signature means the function may allocate
 - `with(Alloc = expr)` at call site binds a specific allocator for that call and all nested `with(Alloc)` calls
-- Inside a `with(Alloc)` function: nested calls to `with(Alloc)` functions forward the received allocator automatically (no explicit binding needed)
-- If a function calls two `with(Alloc)` functions with different allocators, it binds each separately at each call site
+- **Allocator propagation in detail:** When a function `f with(Alloc)` calls another function `g with(Alloc)` without explicit `with(Alloc = expr)`:
+  1. The allocator that was bound when `f` was called is automatically forwarded to `g`
+  2. This forwarding is transitive: if `g` calls `h with(Alloc)` without binding, `h` also gets the same allocator
+  3. An explicit `with(Alloc = other)` at any point in the chain overrides the forwarded allocator for that call and its nested calls
+  4. Different calls within the same function can use different allocators: `g() with(Alloc = arena1)` then `h() with(Alloc = arena2)` is valid
+  5. At the codegen level, the allocator is a hidden `ptr %allocator` parameter — always the **last** parameter (after `self` if present, after regular params). Forwarding means passing this param through unchanged.
 - Stack allocation does not require `Alloc`
 - A function without `with(Alloc)` cannot call anything with `with(Alloc)` — always explicit
+- **`with()` at call site is ONLY for `Alloc`.** You cannot write `foo() with(File = f)` — only `Alloc` has call-site binding. Mixing capabilities and bindings in one `with()` at a call site is a parse error: `foo() with(File, Alloc = arena)` is invalid. The call-site `with()` can only contain `Alloc = expr`.
+- **Closures and Alloc (Phase 2 interaction):** A closure inside a `with(Alloc)` function can call `with(Alloc)` functions — it captures the allocator parameter from its environment (same as any other captured value). The closure's type must include `Alloc` in its cap set. If the closure escapes, the allocator must still be valid when the closure runs (the programmer's responsibility — same as allocator identity issue).
 
 ### Parser disambiguation
 
 The `with(...)` syntax appears in two contexts:
-1. **Declaration**: `fn foo() with(File, Alloc) -> T { ... }` — capability declaration on function signature
-2. **Call site**: `foo() with(Alloc = arena)` — allocator binding on function call
+1. **Declaration**: `fn foo() with(File, Alloc) -> T { ... }` — capability declaration on function signature. Contains capability names, no `=`.
+2. **Call site**: `foo() with(Alloc = arena)` — allocator binding on function call. Contains `Alloc = expr`.
 
 The parser distinguishes them by position: after `)` of a function *declaration* (before `->` or `{`), it's a capability declaration. After `)` of a function *call expression*, it's a call-site binding. The `=` inside `with()` also disambiguates — declarations never have `=`.
 
 ### Implementation
 
-- **AST**: `Expr.call` gets `allocBind : Option Expr`. `Expr.methodCall` also gets `allocBind : Option Expr`.
-- **Parser**: After `)` of a function call, if next tokens are `with` `(` `Alloc` `=`, parse the expression and store in `allocBind`.
-- **Check.lean**: If calling a function with `Alloc` in its cap set, caller must either (a) have `Alloc` in its own cap set AND be inside a call chain that propagates an allocator, or (b) provide `with(Alloc = expr)` at the call site. Verify expr's type implements `Allocator`. Error: "function 'f' requires Alloc but no allocator is bound"
-- **Codegen**: Functions with `Alloc` in their cap set get a hidden `ptr %allocator` as the first parameter. `with(Alloc = arena)` → pass arena's pointer. Inside a `with(Alloc)` function calling another `with(Alloc)` function without explicit binding → forward `%allocator`.
+- **AST**:
+  - `Expr.call` gets `allocBind : Option Expr := none`. `Expr.methodCall` also gets `allocBind : Option Expr := none`.
+  - Add `Ty.heap (inner : Ty)` and `Ty.heapArray (inner : Ty)` to the `Ty` inductive — these are the types for `Heap<T>` and `HeapArray<T>`.
+  - `Heap<T>` and `HeapArray<T>` are always linear (never Copy). `isCopyType (.heap _) => false`, `isCopyType (.heapArray _) => false`.
+- **Parser**: After `)` of a function call, if next tokens are `with` `(` `Alloc` `=`, parse the expression and store in `allocBind`. Error if call-site `with()` contains anything other than `Alloc = expr`: `"call-site with() can only bind Alloc"`.
+- **Check.lean**:
+  - If calling a function with `Alloc` in its cap set, caller must either (a) have `Alloc` in its own cap set (allocator is forwarded from caller's hidden param), or (b) provide `with(Alloc = expr)` at the call site. Verify expr's type implements `Allocator` trait. Error: `"function '{name}' requires Alloc but no allocator is bound"`
+  - **Intercept built-in allocator functions:** `alloc`, `free`, `alloc_array`, `free_array`, `realloc_array` are reserved identifiers. When checking a call to these names, resolve through the `Allocator` trait impl for the bound allocator type. Error if user defines these: `"'{name}' is a reserved identifier"`
+  - Type check `alloc(val)`: return type is `Result<Heap<T>, AllocError>` where `T` is the type of `val`. `free(ptr)`: takes `Heap<T>`, returns `T`. `alloc_array<T>(count)`: returns `Result<HeapArray<T>, AllocError>`.
+- **Codegen**: Functions with `Alloc` in their cap set get a hidden `ptr %allocator` as the last parameter. `with(Alloc = arena)` → pass arena's pointer. Inside a `with(Alloc)` function calling another `with(Alloc)` function without explicit binding → forward `%allocator`.
+
+### Testing strategy
+
+Phase 5 depends on having at least one `Allocator` implementation for tests. Since `Arena`, `GeneralPurposeAllocator`, etc. are in Phase 9 (standard library), Phase 5 tests use a **built-in test allocator**: a simple wrapper around `malloc`/`free` that implements the `Allocator` trait. This test allocator is NOT part of the language — it exists only in test code and uses `Unsafe` internally.
 
 ### Tests
 
-- `alloc_basic.con`: bind allocator at call site → ok
+- `alloc_basic.con`: bind allocator at call site, allocate and free → ok
 - `alloc_propagate.con`: allocator propagates through nested calls → ok
 - `alloc_different.con`: different allocators for different calls → ok
 - `alloc_method.con`: method call with allocator binding → ok
-- `error_alloc_missing.con`: call with(Alloc) function without binding → error
+- `heap_borrow.con`: `(&p).x` on `Heap<Point>` → ok
+- `heap_borrow_mut.con`: `(&mut p).x = val` on `Heap<Point>` → ok
+- `error_alloc_missing.con`: call with(Alloc) function without binding → error "requires Alloc but no allocator is bound"
 - `error_alloc_no_cap.con`: function without Alloc calls with(Alloc) function → error
+- `error_heap_direct_access.con`: `p.x` on `Heap<Point>` without borrow → error "cannot access field"
+- `error_heap_leak.con`: allocate `Heap<T>` without consuming → error "linear variable was never consumed"
 
 ---
 
@@ -672,37 +908,61 @@ Note: The spec blog post shows `borrow f as fref in R { ... }` as the explicit f
 
 ### Rules
 
-- Level 1 (`&x` in expression): anonymous region spanning that expression. Already implemented.
+- Level 1 (`&x` in expression): anonymous region spanning that expression. Already implemented. The anonymous region is scoped to the single expression — e.g., `length(&f)` creates a region that ends when `length` returns.
 - Level 2 (`borrow x as y in R { ... }`): named region, named reference. Required when you need the region name in a type or when you need a borrow that spans multiple statements.
 - While borrowed, the original is frozen (unusable for Level 1; frozen for the block in Level 2)
 - Multiple immutable borrows allowed; mutable borrows exclusive
-- References cannot escape their region (cannot be returned, stored in a struct that outlives the region, or captured by an escaping closure)
-- Closures cannot capture references that outlive the borrow region
-- Functions are implicitly generic over regions — no lifetime params in function signatures
-- Region inference for function calls: when a function takes `&T` and returns `&U`, the compiler assumes the output's region is the same as the input's. Multiple input regions → ambiguity → require explicit borrow block.
+- References cannot escape their region. Specifically:
+  - Cannot be returned from a function
+  - Cannot be stored in a struct field that outlives the region
+  - Cannot be assigned to a variable declared outside the borrow block
+  - Cannot be captured by a closure that escapes the borrow block
+  - Error: `"reference with region '{R}' cannot escape its borrow block"`
+- Region names follow the no-shadowing rule (Invariant 4). `borrow x as xr in R` introduces `xr` (the reference) and `R` (the region) into scope. Neither may shadow existing names. Error: `"region name '{R}' shadows existing name"`
+- Nested borrow blocks with different region names are fine:
+
+```
+borrow x as xr in R1 {
+    borrow y as yr in R2 {
+        // xr: &[X, R1], yr: &[Y, R2]
+        // both usable here
+    }
+}
+```
+
+- Functions are implicitly generic over regions — **no lifetime params in function signatures**. The surface syntax for function parameters uses `&T` and `&mut T` without region annotations. The checker internally assigns anonymous regions.
+- **Region inference for function calls:** When a function takes `&T` and returns `&U`, the compiler assumes the output reference's region is the intersection (most restrictive) of the input reference regions. Concretely:
+  - One input ref → output gets the same region. `fn first(list: &List<T>) -> &T` — the returned `&T` has the same region as the input `&List<T>`.
+  - Multiple input refs of the same region → output gets that region.
+  - Multiple input refs with different regions → error: `"ambiguous output region: function takes references from regions '{R1}' and '{R2}'; use an explicit borrow block to disambiguate"`. The programmer must restructure using a borrow block.
+- **`&[T, R]` is not surface syntax.** Region-annotated reference types exist only in the checker's internal representation. The programmer never writes `&[T, R]` — they write `&T`. Region annotations are inferred from the borrow block structure. This keeps the surface language simple.
+- **`Heap<T>` and borrow blocks (Phase 5 interaction):** The `borrow p as pr in R { ... }` syntax works on `Heap<T>` — it borrows the heap value, giving `pr: &T` (or `&mut T`). This uses the same AST node (`Stmt.borrowIn`) as borrowing stack values. The only difference is in codegen: borrowing a stack value takes the address of an alloca; borrowing a `Heap<T>` loads the inner pointer from the `Heap<T>` wrapper.
+- **Closures and regions (Phase 2 interaction):** A closure can capture a reference `&T` from an enclosing borrow block, but the closure cannot escape that block. The checker verifies this via the escape analysis. If a closure captures a reference with region `R` and the closure's type is assigned to a variable outside region `R`'s scope, error: `"closure captures reference from region '{R}' that would escape"`. Non-escaping closures (called within the borrow block, not stored or returned) can freely capture references.
 
 ### Implementation
 
 - **AST**:
-  - Add `Ty.refRegion (inner : Ty) (region : String)` and `Ty.refMutRegion (inner : Ty) (region : String)` — region-annotated reference types
+  - Add `Ty.refRegion (inner : Ty) (region : String)` and `Ty.refMutRegion (inner : Ty) (region : String)` — region-annotated reference types (checker-internal, not surface syntax)
   - `Stmt.borrowIn (var : String) (ref : String) (region : String) (isMut : Bool) (body : List Stmt)` for `borrow [mut] x as y in R { ... }`
-- **Token/Lexer**: Add `borrow_` keyword.
-- **Parser**: Parse `borrow x as y in R { ... }` and `borrow mut x as y in R { ... }`.
+- **Token/Lexer**: Add `borrow_` keyword. Add `in_` keyword (or reuse existing `in` if already tokenized for `for` loops). Add `as_` keyword.
+- **Parser**: Parse `borrow x as y in R { ... }` and `borrow mut x as y in R { ... }`. `x` must be an identifier (the variable to borrow). `y` is the reference name. `R` is the region name. All three are identifiers.
 - **Check.lean**:
   - For Level 1 (`&x`): existing behavior — freeze `x` for the expression, create anonymous region
-  - For Level 2: register region name `R` in scope, freeze original `var`, create reference binding `ref` with type `&[T, R]` or `&mut [T, R]`, check body, unfreeze original at block exit
-  - Escape check: any reference with region `R` cannot appear in the return type, cannot be stored in a binding that's live after the borrow block exits
-  - Region inference for function calls: match input/output region names, infer when unambiguous
-- **Codegen**: All forms produce same IR as current `&x` — pointer to the alloca/storage. Regions are type-checker only, completely erased in codegen.
+  - For Level 2: check that `R` and `y` don't shadow existing names. Register region `R` in scope. Freeze original `var`. Create reference binding `ref` with internal type `Ty.refRegion T R` (or `Ty.refMutRegion T R`). Check body. At block exit: unfreeze original, remove `R` and `y` from scope.
+  - **Escape check algorithm:** When a reference with region `R` would be assigned to a variable, the checker verifies that the variable's scope is enclosed within region `R`'s scope. This is a simple scope-nesting check: region `R` is introduced by a `borrow` block, and any variable declared outside that block cannot hold a reference tagged with `R`. Also check: return statements cannot return values that contain references with non-anonymous regions; struct construction cannot store region-tagged references in fields.
+  - Region inference for function calls: match input/output region names, infer when unambiguous. When ambiguous, error.
+- **Codegen**: All forms produce same IR as current `&x` — pointer to the alloca/storage (for stack values) or pointer to the heap memory (for `Heap<T>`). Regions are type-checker only, completely erased in codegen.
 
 ### Tests
 
 - `borrow_named.con`: named region, named reference → ok
 - `borrow_mut_named.con`: mutable borrow in named region → ok
 - `borrow_multi.con`: multiple borrows of different variables in nested regions → ok
-- `error_borrow_escape.con`: reference escapes region → error
+- `borrow_heap.con`: borrow block on `Heap<T>` (Phase 5 interaction) → ok
+- `error_borrow_escape.con`: reference escapes region → error "cannot escape its borrow block"
 - `error_borrow_frozen.con`: use original inside borrow block → error
 - `error_borrow_closure_escape.con`: closure captures reference from borrow region and escapes → error
+- `error_borrow_shadow.con`: region name shadows existing variable → error "shadows existing name"
 
 ---
 
@@ -745,26 +1005,35 @@ fn reinterpret(x: u32) with(Unsafe) -> f32 {
 ### Rules
 
 - `extern fn` declares a function with C ABI, no body
-- Calling an `extern fn` requires `with(Unsafe)` — FFI is never silent
-- Only C-compatible types in extern signatures: integer types (i8-i64, u8-u64, Int, Uint), float types (f32, f64), `Bool` (maps to C `_Bool` / `i8` in ABI), raw pointers (`*mut T`, `*const T`)
-- Structs with `#[repr(C)]` attribute get C-compatible memory layout (fields in declaration order, platform alignment)
-- Structs without `#[repr(C)]` cannot be passed to extern functions by value
-- No automatic string conversion — pass `*const u8` and length explicitly
-- Raw pointer dereference (`*ptr`) requires `with(Unsafe)`
-- `transmute<T>(expr)` requires `with(Unsafe)` and `size_of(typeof(expr)) == size_of(T)`. Reinterprets bits as target type.
+- Calling an `extern fn` requires `with(Unsafe)` — FFI is never silent. Error: `"calling extern function '{name}' requires Unsafe capability"`
+- Only C-compatible types in extern signatures: integer types (i8-i64, u8-u64, Int, Uint), float types (f32, f64), `Bool`, raw pointers (`*mut T`, `*const T`). Error: `"type '{type}' is not C-compatible and cannot be used in extern function signatures"`
+- **`Bool` ABI:** Concrete's `Bool` maps to LLVM `i1` internally. In extern function signatures, `Bool` is promoted to `i8` for C ABI compatibility (C's `_Bool` is typically `i8`). The codegen emits `zext i1 to i8` before passing to extern and `trunc i8 to i1` when receiving.
+- Structs with `#[repr(C)]` attribute get C-compatible memory layout (fields in declaration order, platform alignment). **`#[repr(C)]` is the only attribute in Concrete.** No general attribute system exists — `#[repr(C)]` is parsed as a special form before struct definitions. Other attributes are not supported.
+- Structs without `#[repr(C)]` cannot be passed to extern functions by value. Error: `"struct '{name}' cannot be passed to extern function; add #[repr(C)] for C-compatible layout"`
+- **No automatic string conversion.** Concrete's `String` is a linear type and cannot be passed to C. To pass string data to C: obtain a `*const u8` pointer and a length. The mechanism depends on `String`'s internal representation (Phase 9). Until Phase 9, use `extern fn` with raw pointers and test with string literals via array-of-u8.
+- Raw pointer dereference (`*ptr`) requires `with(Unsafe)`. Error: `"dereferencing raw pointer requires Unsafe capability"`
+- **Raw pointer operations:** Pointers support these operations:
+  - `*ptr` — dereference (requires `Unsafe`). Returns `T` (copy for Copy types, move for linear types).
+  - `&x as *const T` / `&mut x as *mut T` — create pointer from reference (safe, no `Unsafe` needed)
+  - `ptr as *const U` / `ptr as *mut U` — pointer cast (requires `Unsafe`)
+  - No pointer arithmetic in safe code. Pointer arithmetic requires `Unsafe` and is provided via `extern fn` or `transmute`.
+- `transmute<T>(expr)` requires `with(Unsafe)`. Size check: `size_of(typeof(expr)) == size_of(T)`. Error: `"cannot transmute between types of different sizes: '{source}' ({n} bytes) and '{target}' ({m} bytes)"`. **`transmute` only works on concrete (non-generic) types.** You cannot `transmute<T>(x)` where `T` is a type parameter — the size is not known at compile time. Error: `"cannot transmute to generic type '{T}'"`
 - Creating a raw pointer (`&x as *const T`) is safe — using one is not
+- **Callback function pointers to C:** Only no-capture closures (plain function pointers) can be passed to C as callback pointers. Closures with captures use a fat pointer `{ ptr fn, ptr env }` which is not C-compatible. If a captured closure is passed to an extern function parameter typed as a function pointer, error: `"closure with captures cannot be passed to C; use a function without captures"`. The C-compatible function pointer type for extern signatures is `*const fn(T) -> U` (a raw pointer to a function).
 
 ### Migration
 
-Existing `extern fn` calls in examples and tests do NOT currently require `Unsafe`. After Phase 1 (capabilities) and Phase 7 are implemented, these will need updating to declare `with(Unsafe)`. Affected examples: `malloc.con`, any example using `extern fn`.
+Existing `extern fn` calls in examples and tests do NOT currently require `Unsafe`. After Phase 1 (capabilities) and Phase 7 are implemented, these will need updating to declare `with(Unsafe)`. Affected examples: `malloc.con`, any example using `extern fn`. **Migration steps per affected test/example:**
+1. Add `with(Unsafe)` to any function that calls `extern fn`
+2. If called from `main!()`, either change to `fn main() with(Std, Unsafe)` or wrap in a helper
 
 ### Implementation
 
-- **AST**: `ExternFn` already exists. Add `Attr.reprC : Bool` to `StructDef`. Add `Expr.transmute (targetTy : Ty) (inner : Expr)`. Add `Expr.ptrDeref (inner : Expr)`.
-- **Token/Lexer**: `Unsafe` is recognized as a capability name (just an identifier). `#[repr(C)]` requires parsing: `#` already tokenized as `hash`; parser handles `[`, `repr`, `(`, `C`, `)`, `]` as an attribute.
-- **Parser**: Parse `#[repr(C)]` before struct definitions, set `reprC = true`. Parse `transmute<T>(expr)` — `transmute` is a keyword or built-in identifier, followed by `<`, type, `>`, `(`, expr, `)`. Parse `*expr` as `Expr.ptrDeref`.
-- **Check.lean**: Verify all `extern fn` call sites have `with(Unsafe)`. Verify extern param/return types are C-compatible (reject structs without repr(C), reject String, reject enums). Verify `*ptr` deref has `with(Unsafe)`. Verify `transmute` has `with(Unsafe)` and sizes match. Error: "calling extern function 'malloc' requires Unsafe capability"
-- **Codegen**: `extern fn` emits `declare` (already works). `#[repr(C)]` structs use C layout rules (fields in order, natural alignment, struct padding). `transmute` → `bitcast` for pointers, or store-to-alloca + load-with-different-type for value types. `*ptr` → `load T, ptr %val`.
+- **AST**: `ExternFn` already exists. Add `StructDef.reprC : Bool := false`. Add `Expr.transmute (targetTy : Ty) (inner : Expr)`. Add `Expr.ptrDeref (inner : Expr)`.
+- **Token/Lexer**: `Unsafe` is recognized as a capability name (just an identifier). `transmute` is a built-in identifier (reserved, like `destroy`). `#[repr(C)]` parsing: `#` already tokenized as `hash`; parser handles the sequence `# [ repr ( C ) ]` as a special form.
+- **Parser**: Parse `#[repr(C)]` before struct definitions, set `reprC = true`. If `#[` is followed by anything other than `repr(C)]`, error: `"unknown attribute; only #[repr(C)] is supported"`. Parse `transmute<T>(expr)` — `transmute` is a reserved identifier followed by `<`, type, `>`, `(`, expr, `)`. Parse `*expr` as `Expr.ptrDeref`.
+- **Check.lean**: Verify all `extern fn` call sites have `with(Unsafe)`. Verify extern param/return types are C-compatible (reject structs without repr(C), reject String, reject enums, reject closures with captures). Verify `*ptr` deref has `with(Unsafe)`. Verify `transmute` has `with(Unsafe)`, types are concrete (not generic), and sizes match. For size computation: maintain a `sizeOf : Ty → Option Nat` function for primitive types and `#[repr(C)]` structs.
+- **Codegen**: `extern fn` emits `declare` (already works). `#[repr(C)]` structs use C layout rules (fields in order, natural alignment, struct padding). `Bool` in extern signatures: `zext i1 to i8` on call, `trunc i8 to i1` on return. `transmute` → `bitcast` for pointers, or store-to-alloca + load-with-different-type for value types. `*ptr` → `load T, ptr %val`.
 
 ### Tests
 
@@ -772,10 +1041,11 @@ Existing `extern fn` calls in examples and tests do NOT currently require `Unsaf
 - `ffi_repr_c.con`: pass #[repr(C)] struct to extern → ok
 - `ffi_transmute.con`: transmute u32 to f32 with Unsafe → ok
 - `ffi_ptr_deref.con`: dereference raw pointer with Unsafe → ok
-- `error_ffi_no_unsafe.con`: call extern fn without Unsafe → error
-- `error_ffi_bad_type.con`: pass non-C-compatible type to extern → error
+- `error_ffi_no_unsafe.con`: call extern fn without Unsafe → error "requires Unsafe capability"
+- `error_ffi_bad_type.con`: pass non-C-compatible type to extern → error "not C-compatible"
 - `error_ptr_deref_no_unsafe.con`: dereference raw pointer without Unsafe → error
 - `error_transmute_size.con`: transmute between types of different sizes → error
+- `error_transmute_generic.con`: transmute to generic type → error "cannot transmute to generic type"
 
 ---
 
@@ -999,6 +1269,79 @@ Parallel with everything above. Start early, grow incrementally.
 - Cross-compilation
 - WebAssembly target (via MLIR after Phase 8)
 - C codegen target (via MLIR after Phase 8)
+
+---
+
+## Error Message Conventions
+
+All compiler error messages follow these conventions for consistency:
+
+- **Format:** `"<description>"` — lowercase first letter, no period at end, single quotes around identifiers and types
+- **Type names:** Use the surface syntax: `'Int'`, `'Heap<Point>'`, `'fn(Int) -> Bool'`
+- **Variable names:** Use the source name: `'x'`, `'my_var'`
+- **Function names:** Use the source name: `'foo'`, `'main'`
+- **Examples of exact error strings:**
+  - Type mismatch: `"type mismatch: expected 'Int', got 'Bool'"`
+  - Linearity: `"linear variable 'x' was never consumed"`
+  - Linearity: `"linear variable 'x' used after move"`
+  - Capability: `"function 'read_file' requires capability 'File' but caller 'process' does not declare it"`
+  - Borrow: `"cannot borrow 'x' as mutable because it is already borrowed"`
+  - Destroy: `"type 'Point' does not implement Destroy"`
+  - Defer: `"variable 'f' is reserved by defer"`
+  - Heap: `"cannot access field 'x' on Heap<Point> directly; borrow first with (&p).x or a borrow block"`
+
+When implementing a new phase, follow this format exactly. Tests assert on substrings of error messages (e.g., the test checks that the error contains `"requires capability"`, not the full string), so the exact wording matters but minor variations are tolerable.
+
+---
+
+## Backward Compatibility Per Phase
+
+Each phase must preserve all existing tests. Here is what changes per phase:
+
+| Phase | Existing tests affected? | Migration needed? |
+|-------|------------------------|-------------------|
+| **1** (Capabilities) | No — Phase 1 adds `with()` syntax but does NOT gate existing functions. Existing pure functions remain pure. Existing `extern fn` calls are NOT gated by Unsafe until Phase 7. | None |
+| **2** (Closures) | No — adds new syntax, no existing syntax changes | None |
+| **3** (defer/destroy/Copy) | No — adds new syntax, no existing syntax changes. Existing structs default to `isCopy = false` (linear), which is already the behavior. | None |
+| **4** (break/continue) | No — adds new keywords, existing loops don't use them | None |
+| **5** (Allocator) | No — adds new types and syntax | None |
+| **6** (Borrow regions) | No — extends existing borrow checking, adds `borrow` block syntax | None |
+| **7** (FFI) | **Yes** — existing `extern fn` calls now require `with(Unsafe)`. | Update affected tests/examples to add `with(Unsafe)` to calling functions |
+
+---
+
+## Cross-Phase Interaction Rules
+
+These rules govern how features from different phases interact. An LLM implementing Phase N must understand these interactions if the dependent phase is already implemented.
+
+### Closures + Capabilities (Phase 2 + Phase 1)
+- A closure inherits the capability context of its defining scope. If the closure body calls `with(File)` functions, the closure's type carries `with(File)`.
+- A closure assigned to a variable or passed as an argument has a `Ty.fn_` type with a concrete `capSet`. The caller must have those capabilities.
+- Closures cannot "upgrade" capabilities — a closure in a pure function cannot have `with(File)` even if the closure declares it (the containing function would need `File` too).
+
+### Closures + Allocators (Phase 2 + Phase 5)
+- A closure inside a `with(Alloc)` function can call `with(Alloc)` functions — it captures the hidden allocator parameter like any other capture.
+- The closure's type must include `Alloc` in its `capSet`.
+- If the closure escapes, the captured allocator must still be valid when the closure runs — this is the programmer's responsibility (no compile-time tracking of allocator lifetime across escaping closures).
+
+### Defer + Closures (Phase 3 + Phase 2)
+- `defer my_closure();` is valid — it schedules a closure call at scope exit.
+- If the closure is linear (must be called exactly once), `defer` guarantees it's called at scope exit — satisfying the linearity requirement.
+- Exception: `abort()` skips deferred calls, so a linear closure may not be consumed on the abort path. This is acceptable per Invariant 14 (abort is outside the semantic model).
+
+### Defer + Break (Phase 3 + Phase 4)
+- When `break` exits a loop, all deferred actions from the current iteration's scopes execute before the loop exits.
+- When `continue` skips to the next iteration, all deferred actions from the current iteration's scopes execute before the next iteration starts.
+- `break` and `continue` inside a `defer` body are forbidden.
+
+### Heap<T> + Borrow Regions (Phase 5 + Phase 6)
+- `borrow p as pr in R { ... }` on `Heap<T>` uses the same AST node as borrowing stack values (`Stmt.borrowIn`).
+- In codegen, borrowing a stack value takes `&alloca`; borrowing `Heap<T>` loads the inner pointer from the Heap wrapper.
+- The region `R` governs the reference lifetime identically for stack and heap borrows.
+
+### Allocator + Closures (Phase 5 + Phase 2)
+- When a closure captures an allocator parameter and later calls `alloc()`, it uses the captured allocator.
+- If the call site binds a different allocator (`closure_call() with(Alloc = other)`), the explicit binding takes precedence.
 
 ---
 
