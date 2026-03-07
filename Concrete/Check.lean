@@ -63,6 +63,8 @@ structure TypeEnv where
   currentFnName : String := ""           -- current function name (for error messages)
   lastExprIsLinearClosure : Bool := false  -- set by closure checking, read by letDecl
   borrowRefs : List String := []          -- names of refs created by borrow blocks (for escape analysis)
+  loopBreakTy : Option Ty := none         -- collects type from break-with-value in while-as-expression
+  inDeferBody : Bool := false             -- true when checking inside a defer body
   deriving Repr
 
 abbrev CheckM := ExceptT String (StateM TypeEnv)
@@ -592,6 +594,43 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
     let _allocTy ← checkExpr allocExpr
     -- Check the inner call expression
     checkExpr inner hint
+  | .whileExpr cond body elseBody =>
+    -- while-as-expression: while cond { body } else { elseBody }
+    let condTy ← checkExpr cond
+    if condTy != .bool && !isIntegerType condTy then
+      throw s!"while condition must be bool, got {tyToString condTy}"
+    -- Save and set up loop context
+    let env ← getEnv
+    let savedLoopDepth := env.loopDepth
+    let savedBreakTy := env.loopBreakTy
+    setEnv { env with loopDepth := env.loopDepth + 1, loopBreakTy := none }
+    -- Check body
+    checkStmts body env.currentRetTy
+    -- Get break type if any
+    let envAfterBody ← getEnv
+    let breakTy := envAfterBody.loopBreakTy
+    -- Restore loop depth and break ty
+    setEnv { envAfterBody with loopDepth := savedLoopDepth, loopBreakTy := savedBreakTy }
+    -- Check else body: all stmts except the last, then check last for its type
+    let elseInit := elseBody.dropLast
+    checkStmts elseInit env.currentRetTy
+    let elseTy ← match elseBody.getLast? with
+      | some (.expr e) => checkExpr e hint
+      | some (.return_ v) =>
+        match v with
+        | some rv => let _ ← checkExpr rv; pure Ty.never
+        | none => pure Ty.never
+      | some other =>
+        checkStmt other env.currentRetTy
+        pure Ty.unit
+      | none => pure Ty.unit
+    -- The result type: if break had a value, verify it matches else type
+    match breakTy with
+    | some bTy =>
+      if bTy != elseTy && elseTy != .never && bTy != .never then
+        throw s!"while-expression break type '{tyToString bTy}' does not match else type '{tyToString elseTy}'"
+      return elseTy
+    | none => return elseTy
   | .call fnName typeArgs args =>
     -- Intercept abort() calls
     if fnName == "abort" then
@@ -1228,6 +1267,8 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
     | some info =>
       if !info.mutable then
         throw s!"cannot assign to immutable variable '{name}'"
+      if info.state == .frozen then
+        throw s!"cannot assign to '{name}': variable is frozen by borrow block"
       let valTy ← checkExpr value (some info.ty)
       expectTy info.ty valTy s!"assignment to '{name}'"
     | none => throw s!"assignment to undeclared variable '{name}'"
@@ -1419,16 +1460,31 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
       let valTy ← checkExpr value (some fieldTy)
       expectTy fieldTy valTy s!"arrow field assignment '{structName}->{field}'"
     | none => throw s!"struct '{structName}' has no field '{field}'"
-  | .break_ _value =>
+  | .break_ value =>
     let env ← getEnv
+    if env.inDeferBody then
+      throw "break is not allowed inside defer"
     if env.loopDepth == 0 then
       throw "break outside of loop"
     -- Check all linear variables declared in the loop body are consumed
     for (name, info) in env.vars do
       if !info.isCopy && info.state != .consumed && info.loopDepth >= env.loopDepth then
         throw s!"break would skip unconsumed linear variable '{name}'"
+    -- Check break value if present (for while-as-expression)
+    match value with
+    | some expr =>
+      let valTy ← checkExpr expr
+      let env2 ← getEnv
+      match env2.loopBreakTy with
+      | none => setEnv { env2 with loopBreakTy := some valTy }
+      | some prevTy =>
+        if prevTy != valTy then
+          throw s!"break value type '{tyToString valTy}' does not match previous break type '{tyToString prevTy}'"
+    | none => pure ()
   | .continue_ =>
     let env ← getEnv
+    if env.inDeferBody then
+      throw "continue is not allowed inside defer"
     if env.loopDepth == 0 then
       throw "continue outside of loop"
     -- Check all linear variables declared in the loop body are consumed

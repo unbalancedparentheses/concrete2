@@ -1,0 +1,14 @@
+// Test: linear closure called twice -> "used after move"
+struct Data { value: Int }
+
+fn consume(d: Data) -> Int {
+    return d.value;
+}
+
+fn main!() -> Int {
+    let d: Data = Data { value: 42 };
+    let f: fn() -> Int = fn() -> Int { return consume(d); };
+    let a: Int = f();
+    let b: Int = f();
+    return a + b;
+}

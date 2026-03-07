@@ -162,6 +162,41 @@ run_ok "$TESTDIR/complex_borrow_compute.con" 170
 run_ok "$TESTDIR/complex_generic_container.con" 42
 run_ok "$TESTDIR/complex_loop_accumulate.con" 50
 
+# Phase 4: while-as-expression
+run_ok "$TESTDIR/while_expr_basic.con" 5
+run_ok "$TESTDIR/while_expr_no_break.con" 99
+run_ok "$TESTDIR/while_expr_nested.con" 6
+run_ok "$TESTDIR/break_accumulate.con" 10
+run_ok "$TESTDIR/while_nested_break.con" 6
+
+# Additional capability tests
+run_ok "$TESTDIR/cap_std_expand.con" 0
+run_ok "$TESTDIR/cap_nested_call.con" 42
+
+# Additional closure tests
+run_ok "$TESTDIR/closure_higher_order.con" 15
+run_ok "$TESTDIR/closure_identity.con" 42
+
+# Additional defer/Copy tests
+run_ok "$TESTDIR/defer_nested_scope.con" 42
+run_ok "$TESTDIR/defer_try.con" 42
+run_ok "$TESTDIR/copy_multiple_use.con" 50
+
+# Additional allocator tests
+run_ok "$TESTDIR/heap_struct_method.con" 30
+run_ok "$TESTDIR/alloc_free_loop.con" 45
+
+# Additional borrow region tests
+run_ok "$TESTDIR/borrow_sequential.con" 30
+run_ok "$TESTDIR/borrow_copy_in_block.con" 42
+
+# Additional complex tests
+run_ok "$TESTDIR/complex_fibonacci_closure.con" 55
+run_ok "$TESTDIR/complex_state_machine.con" 42
+run_ok "$TESTDIR/complex_builder_pattern.con" 60
+run_ok "$TESTDIR/complex_error_chain.con" 40
+run_ok "$TESTDIR/complex_defer_cleanup.con" 30
+
 echo ""
 echo "=== Negative tests (expected errors) ==="
 run_err "$TESTDIR/error_unconsumed.con"        "was never consumed"
@@ -215,6 +250,17 @@ run_err "$TESTDIR/error_borrow_mut_conflict.con" "is frozen by borrow block"
 # Additional escape analysis errors
 run_err "$TESTDIR/error_escape_return.con"     "cannot escape its borrow block"
 run_err "$TESTDIR/error_escape_field.con"      "cannot escape its borrow block"
+# While-as-expression errors
+run_err "$TESTDIR/error_while_expr_type.con"   "does not match else type"
+# Additional break/continue errors
+run_err "$TESTDIR/error_break_linear_skip.con" "break would skip unconsumed linear variable"
+# Additional closure errors
+run_err "$TESTDIR/error_closure_double_call.con" "used after move"
+# Additional capability errors
+run_err "$TESTDIR/error_cap_closure_context.con" "requires capability"
+# Additional borrow errors
+run_err "$TESTDIR/error_borrow_double_mut.con"   "is frozen by borrow block"
+run_err "$TESTDIR/error_borrow_assign_frozen.con" "frozen by borrow block"
 
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="

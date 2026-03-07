@@ -1,0 +1,23 @@
+// Test: fibonacci via closure + while loop
+// Expected: 55
+fn apply(f: fn(Int) -> Int, x: Int) -> Int {
+    return f(x);
+}
+
+fn fib(n: Int) -> Int {
+    let mut a: Int = 0;
+    let mut b: Int = 1;
+    let mut i: Int = 0;
+    while i < n {
+        let tmp: Int = b;
+        b = a + b;
+        a = tmp;
+        i = i + 1;
+    }
+    return a;
+}
+
+fn main!() -> Int {
+    let f: fn(Int) -> Int = fn(n: Int) -> Int { return fib(n); };
+    return apply(f, 10);
+}

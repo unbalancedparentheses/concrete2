@@ -329,6 +329,14 @@ partial def parsePrimary : ParseM Expr := do
   | .charLit v => advance; return .charLit v
   | .true_ => advance; return .boolLit true
   | .false_ => advance; return .boolLit false
+  | .while_ =>
+    -- while-as-expression: while cond { body } else { elseBody }
+    advance
+    let cond ← parseExpr
+    let body ← parseBlock
+    expect .else_
+    let elseBody ← parseBlock
+    return .whileExpr cond body elseBody
   | .ident name =>
     advance
     -- Check for turbofish or module path: name::<Type, ...> or mod::name(...)

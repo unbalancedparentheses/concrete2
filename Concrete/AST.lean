@@ -117,6 +117,7 @@ inductive Expr where
             (captures : List (String × CaptureMode)) (isLinear : Bool)
   | arrowAccess (obj : Expr) (field : String)   -- p->x
   | allocCall (inner : Expr) (allocExpr : Expr)  -- call() with(Alloc = expr)
+  | whileExpr (cond : Expr) (body : List Stmt) (elseBody : List Stmt)  -- while cond { body } else { elseBody }
 
 inductive MatchArm where
   | mk (enumName : String) (variant : String) (bindings : List String) (body : List Stmt)
@@ -295,6 +296,10 @@ partial def collectFreeVarsExpr (e : Expr) (bound : List String) : List String :
   | .arrowAccess obj _ => collectFreeVarsExpr obj bound
   | .allocCall inner allocExpr =>
     collectFreeVarsExpr inner bound ++ collectFreeVarsExpr allocExpr bound
+  | .whileExpr cond body elseBody =>
+    collectFreeVarsExpr cond bound ++
+    collectFreeVarsStmts body bound ++
+    collectFreeVarsStmts elseBody bound
 
 partial def collectFreeVarsStmts (stmts : List Stmt) (bound : List String) : List String :=
   match stmts with

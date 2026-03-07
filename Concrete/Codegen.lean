@@ -45,6 +45,7 @@ structure CodegenState where
   closureTypeDefs : String := ""
   closureFnDefs : String := ""
   deferStack : List (List Expr) := [[]]  -- stack of deferred expressions per scope
+  loopResultSlot : Option String := none  -- alloca slot for while-as-expression result
 
 instance : Inhabited CodegenState where
   default := {
@@ -405,6 +406,11 @@ private def inferExprTy (s : CodegenState) (e : Expr) (hint : Option Ty := none)
     | some (_, ty) => ty
     | none => .int
   | .allocCall inner _ => inferExprTy s inner hint
+  | .whileExpr _cond _body _elseBody =>
+    -- Result type comes from hint (set by checker) or defaults to Int
+    match hint with
+    | some t => t
+    | none => .int
 
 /-- Convert a float to LLVM literal format. -/
 private def floatToLLVM (f : Float) : String :=
@@ -1225,6 +1231,55 @@ partial def genExpr (s : CodegenState) (e : Expr) (hintTy : Option Ty := none) :
   | .allocCall inner _allocExpr =>
     -- For now, just generate the inner call
     genExpr s inner hintTy
+  | .whileExpr cond body elseBody =>
+    -- while-as-expression: alloca result slot, loop with break storing value, else stores default
+    let resultTy := inferExprTy s (.whileExpr cond body elseBody) hintTy
+    let resultLLTy := tyToLLVM s resultTy
+    let (s, resultSlot) := s.freshLocal
+    let s := s.emit ("  " ++ resultSlot ++ " = alloca " ++ resultLLTy)
+    let (s, condLabel) := s.freshLabel "wexpr.cond"
+    let (s, bodyLabel) := s.freshLabel "wexpr.body"
+    let (s, elseLabel) := s.freshLabel "wexpr.else"
+    let (s, exitLabel) := s.freshLabel "wexpr.exit"
+    let savedExit := s.loopExitLabel
+    let savedCont := s.loopContLabel
+    let savedSlot := s.loopResultSlot
+    let s := { s with loopExitLabel := some exitLabel, loopContLabel := some condLabel, loopResultSlot := some resultSlot }
+    let s := s.emit ("  br label %" ++ condLabel)
+    let s := s.emit (condLabel ++ ":")
+    let (s, condReg) := genExpr s cond
+    let condTy := inferExprTy s cond
+    let (s, condBool) := if condTy != .bool then
+      let (s, cmp) := s.freshLocal
+      let llTy := intTyToLLVM condTy
+      let s := s.emit ("  " ++ cmp ++ " = icmp ne " ++ llTy ++ " " ++ condReg ++ ", 0")
+      (s, cmp)
+    else
+      (s, condReg)
+    let s := s.emit ("  br i1 " ++ condBool ++ ", label %" ++ bodyLabel ++ ", label %" ++ elseLabel)
+    -- Body
+    let s := s.emit (bodyLabel ++ ":")
+    let s := genStmts s body
+    let s := s.emit ("  br label %" ++ condLabel)
+    -- Else: generate all stmts except the last (which is the value expression)
+    let s := s.emit (elseLabel ++ ":")
+    let elseInit := elseBody.dropLast
+    let s := genStmts s elseInit
+    -- Get the value from the last expression in else body
+    let (s, elseVal) := match elseBody.getLast? with
+      | some (.expr e) => genExpr s e (some resultTy)
+      | _ =>
+        let (s, dummy) := s.freshLocal
+        let s := s.emit ("  " ++ dummy ++ " = add i64 0, 0")
+        (s, dummy)
+    let s := s.emit ("  store " ++ resultLLTy ++ " " ++ elseVal ++ ", ptr " ++ resultSlot)
+    let s := s.emit ("  br label %" ++ exitLabel)
+    -- Exit
+    let s := s.emit (exitLabel ++ ":")
+    let (s, result) := s.freshLocal
+    let s := s.emit ("  " ++ result ++ " = load " ++ resultLLTy ++ ", ptr " ++ resultSlot)
+    let s := { s with loopExitLabel := savedExit, loopContLabel := savedCont, loopResultSlot := savedSlot }
+    (s, result)
   | .closure params capSet retTy body _captures _isLinear =>
     -- Generate a closure: { ptr fn, ptr env }
     let closureId := s.labelCounter
@@ -1784,7 +1839,15 @@ partial def genStmt (s : CodegenState) (stmt : Stmt) : CodegenState :=
     let s := s.emit ("  br label %" ++ condLabel)
     let s := s.emit (exitLabel ++ ":")
     { s with loopExitLabel := savedExit, loopContLabel := savedCont }
-  | .break_ _value =>
+  | .break_ value =>
+    -- Store break value to result slot if present (while-as-expression)
+    let s := match value, s.loopResultSlot with
+    | some expr, some slot =>
+      let resultTy := inferExprTy s expr
+      let resultLLTy := tyToLLVM s resultTy
+      let (s, valReg) := genExpr s expr
+      s.emit ("  store " ++ resultLLTy ++ " " ++ valReg ++ ", ptr " ++ slot)
+    | _, _ => s
     match s.loopExitLabel with
     | some lbl =>
       let s := s.emit ("  br label %" ++ lbl)
