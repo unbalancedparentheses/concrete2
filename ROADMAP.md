@@ -510,32 +510,103 @@ fn main!() {
 
 There is NO default allocator. If `main!()` calls a `with(Alloc)` function without `with(Alloc = expr)`, that is a compile error. Having `Alloc` in your capability set means you're *allowed* to allocate, not that you *have* an allocator. The binding provides the allocator.
 
-### Allocator trait
+### `Heap<T>`: linear owned heap allocation
 
-The spec defines the allocator trait with borrow-checked, typed references:
+The spec's allocator trait returns `&mut [T]` — a borrow-checked reference. But allocated memory is **owned**, not borrowed. You get it, you must free it. That's linear ownership.
+
+`Heap<T>` is a built-in linear type representing heap-allocated ownership of a `T`:
 
 ```
-// Spec version (target — requires borrow regions + slices):
+// Built-in linear types (not user-definable)
+Heap<T>          // single heap-allocated value
+HeapArray<T>     // dynamically-sized heap-allocated array
+
 trait Allocator {
-    fn alloc<T>(&mut self, count: Uint) -> Result<&mut [T], AllocError>;
-    fn free<T>(&mut self, ptr: &mut [T]);
-    fn realloc<T>(&mut self, ptr: &mut [T], new_count: Uint) -> Result<&mut [T], AllocError>;
+    fn alloc<T>(&mut self, val: T) -> Result<Heap<T>, AllocError>;
+    fn alloc_array<T>(&mut self, count: Uint) -> Result<HeapArray<T>, AllocError>;
+    fn free<T>(&mut self, ptr: Heap<T>) -> T;
+    fn free_array<T>(&mut self, arr: HeapArray<T>);
+    fn realloc_array<T>(&mut self, arr: HeapArray<T>, new_count: Uint) -> Result<HeapArray<T>, AllocError>;
+}
+
+impl Destroy for Heap<T> with(Alloc) {
+    fn destroy(self) -> Unit { /* frees via bound allocator */ }
+}
+
+impl Destroy for HeapArray<T> with(Alloc) {
+    fn destroy(self) -> Unit { /* frees via bound allocator */ }
 }
 ```
 
-This is the correct design — memory from the allocator immediately enters the borrow-checked world. However, it requires borrow regions (Phase 6) and slice types, which don't exist yet when we build the allocator (Phase 5).
+**Why `Heap<T>` instead of `&mut [T]` or `*mut u8`:**
+- **No raw pointers** in the allocator API — fully type-safe
+- **No borrow regions needed** — `Heap<T>` is owned, not borrowed. No circular dependency with Phase 6.
+- **Linearity enforces cleanup** — forget to free a `Heap<T>`? Compile error.
+- **No `Unsafe` boundary** — the entire allocator interface is safe
 
-**Bootstrap version** (used until borrow regions land):
+### Accessing heap values: explicit borrow
+
+`Heap<T>` is opaque. To access the value inside, you must borrow explicitly:
 
 ```
-trait Allocator {
-    fn alloc(&mut self, size: Uint, align: Uint) -> Result<*mut u8, AllocError>;
-    fn free(&mut self, ptr: *mut u8, size: Uint, align: Uint);
-    fn realloc(&mut self, ptr: *mut u8, old_size: Uint, new_size: Uint, align: Uint) -> Result<*mut u8, AllocError>;
+fn main!() {
+    let arena: Arena = Arena.new();
+    defer arena.deinit();
+
+    let p: Heap<Point> = alloc(Point { x: 1.0, y: 2.0 }) with(Alloc = arena);
+    defer destroy(p);
+
+    // Read — inline borrow (already exists in the language)
+    let x: Float64 = (&p).x;
+
+    // Multiple reads — borrow block
+    borrow p as pr in R {
+        let x: Float64 = pr.x;
+        let y: Float64 = pr.y;
+        compute(pr);
+    }
+
+    // Mutate — mutable borrow block
+    borrow mut p as pmr in R {
+        pmr.x = 3.0;
+        pmr.y = 4.0;
+    }
 }
 ```
 
-> **This is temporary scaffolding.** Once Phase 6 (borrow regions) and slice types are implemented, the Allocator trait MUST be updated to match the spec's typed version. The raw pointer version pushes an `Unsafe` boundary into allocation, which weakens the spec's guarantee that allocated memory is immediately type-safe. Safe wrappers (`alloc_one<T>()`, etc.) in the standard library (Phase 9) will bridge the gap in the interim.
+**Why explicit borrow (not transparent access):** In a world where most code is LLM-generated, writing cost is zero and reading cost is the bottleneck. Explicit borrow makes every heap access visible — you can grep for all heap dereferences, and code reviewers (human or LLM) see exactly when heap memory is touched without checking declarations. See [research/heap-ownership-design.md](research/heap-ownership-design.md) for the full design rationale.
+
+**Rules:**
+- `p.x` directly on `Heap<Point>` is a type error — you must borrow first
+- `&p` where `p: Heap<T>` gives `&T` (pointer to the heap value)
+- `&mut p` where `p: Heap<T>` gives `&mut T`
+- `borrow p as pr in R { ... }` works on `Heap<T>` — `pr` has type `&T`
+- `borrow mut p as pmr in R { ... }` — `pmr` has type `&mut T`
+- `HeapArray<T>` supports indexing: `(&arr)[i]` or via borrow block
+- While borrowed, `Heap<T>` is frozen (cannot move, destroy, or re-borrow mutably) — same as any borrow
+
+### Collections
+
+`Vec<T>` wraps `HeapArray<T>`:
+
+```
+struct Vec<T> {
+    buf: HeapArray<T>,
+    len: Uint,
+    cap: Uint,
+}
+
+impl Vec<T> {
+    fn push(&mut self, val: T) with(Alloc) { ... }
+    fn get(&self, index: Uint) -> &T { ... }
+}
+
+impl Destroy for Vec<T> with(Alloc) {
+    fn destroy(self) -> Unit { /* destroy elements, free buf */ }
+}
+```
+
+`Vec<T>` is linear because it contains `HeapArray<T>` (linear). Implements `Destroy with(Alloc)`.
 
 ### Rules
 
