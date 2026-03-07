@@ -4,7 +4,7 @@ This is the implementation plan for the Concrete programming language. For the f
 
 ## What's Built
 
-The Lean 4 compiler implements the core surface language in ~4,700 lines. All 59 tests pass. 58 of 59 legacy examples compile and run in the current implementation.
+The Lean 4 compiler implements the core surface language in ~5,000 lines. All 65 tests pass. 58 of 59 legacy examples compile and run in the current implementation.
 
 **Done:**
 - Lexer, LL(1) parser, AST
@@ -22,9 +22,10 @@ The Lean 4 compiler implements the core surface language in ~4,700 lines. All 59
 - Control flow: while, for (C-style and condition-only), if/else, match
 - Constants, type aliases, extern fn declarations
 - Direct LLVM IR text emission, compiled via clang to native binaries
-- CI: build warnings check, 59 test suite, example compilation, runtime crash detection
+- Capabilities: `with(File, Network, Alloc)` effect declarations, `!` sugar, capability checking
+- CI: build warnings check, 65 test suite, example compilation, runtime crash detection
 
-**Not yet implemented:** Capabilities, closures, `defer`/`destroy`, `break`/`continue`, explicit `Copy` marker, allocator system, borrow regions, FFI safety (Unsafe gating), MLIR backend, kernel formalization, standard library, runtime.
+**Not yet implemented:** Closures, `defer`/`destroy`, `break`/`continue`, explicit `Copy` marker, allocator system, borrow regions, FFI safety (Unsafe gating), MLIR backend, kernel formalization, standard library, runtime.
 
 ---
 

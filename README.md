@@ -17,6 +17,8 @@ Concrete is a systems programming language designed around a single organizing p
 
 The compiler is written entirely in [Lean 4](https://leanprover.github.io/lean4/doc/setup.html), a theorem prover. This is not an implementation detail — it's the point. The goal is a language whose core type system is mechanically verified: proofs of progress, preservation, linearity soundness, and effect soundness, checked by Lean itself.
 
+**No other language combines all four: linear types, a capability-based effect system, a compiler written in a theorem prover, and a design optimized for machine-generated code.**
+
 For the full language specification, see [The Concrete Programming Language: Systems Programming for Formal Reasoning](https://federicocarrone.com/series/concrete/the-concrete-programming-language-systems-programming-for-formal-reasoning/).
 
 ## Try It Now
@@ -199,9 +201,9 @@ Concrete is built for code that must be inspectable, auditable, and eventually m
 
 ## Current Status
 
-The compiler implements the core surface language in ~4,700 lines of Lean 4. All 59 tests pass. 58 of 59 legacy examples compile and run in the current implementation.
+The compiler implements the core surface language in ~4,700 lines of Lean 4. All 65 tests pass. 58 of 59 legacy examples compile and run in the current implementation.
 
-**Capabilities, `defer`/`destroy`, explicit allocation, borrow regions, FFI safety, MLIR backend, and the kernel formalization are not yet implemented.** See the full [ROADMAP.md](ROADMAP.md) for the implementation plan. What works today:
+**`defer`/`destroy`, explicit allocation, borrow regions, closures, FFI safety, MLIR backend, and the kernel formalization are not yet implemented.** See the full [ROADMAP.md](ROADMAP.md) for the implementation plan. What works today:
 
 - **Types**: Int, Uint, i8-i32, u8-u32, f32, f64, Bool, Char, String, arrays `[T; N]`, raw pointers
 - **Structs** with field access and mutation
@@ -214,6 +216,7 @@ The compiler implements the core surface language in ~4,700 lines of Lean 4. All
 - **Modules** with `pub` visibility and imports
 - **Result type** with `?` operator for error propagation
 - **Cast expressions** (`as`) between numeric types
+- **Capabilities**: `with(File, Network, Alloc)` effect declarations, `!` sugar for Std, capability checking at all call sites
 - **Control flow**: while loops, for loops, if/else, match
 
 ## Roadmap
@@ -273,7 +276,7 @@ Requires [Lean 4](https://leanprover.github.io/lean4/doc/setup.html) (v4.28.0+) 
 
 ```bash
 make build    # or: lake build
-make test     # runs all 59 tests
+make test     # runs all 65 tests
 make clean    # or: lake clean
 ```
 
@@ -288,7 +291,7 @@ Concrete/
   Check.lean     -- Type checker + linearity checker + borrow checker
   Codegen.lean   -- LLVM IR code generation
 Main.lean        -- Entry point
-lean_tests/      -- 59 tests (34 positive, 25 negative)
+lean_tests/      -- 65 tests (37 positive, 28 negative)
 examples/        -- 59 example programs (superset of lambdaclass/concrete examples)
 ```
 
