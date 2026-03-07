@@ -161,7 +161,7 @@ What a type-checked program guarantees:
 
 The compiler implements the core surface language in ~4,700 lines of Lean 4. All 59 tests pass. 58 of 59 examples from the [original Rust compiler](https://github.com/lambdaclass/concrete) compile and run.
 
-**Capabilities, `defer`/`destroy`, explicit allocation, borrow regions, and the kernel formalization are not yet implemented.** They are the [roadmap](#roadmap) below. What works today:
+**Capabilities, `defer`/`destroy`, explicit allocation, borrow regions, FFI safety, MLIR backend, and the kernel formalization are not yet implemented.** See the full [ROADMAP.md](ROADMAP.md) for the implementation plan. What works today:
 
 - **Types**: Int, Uint, i8-i32, u8-u32, f32, f64, Bool, Char, String, arrays `[T; N]`, raw pointers
 - **Structs** with field access and mutation
@@ -178,131 +178,24 @@ The compiler implements the core surface language in ~4,700 lines of Lean 4. All
 
 ## Roadmap
 
-### Phase 1: Capabilities (effect system)
+See [ROADMAP.md](ROADMAP.md) for the full implementation plan with syntax, rules, and implementation details for each phase.
 
-Every function declares which effects it may perform. No declaration = pure.
+| Phase | Feature | Parallel? |
+|-------|---------|-----------|
+| **1** | Capabilities + cap polymorphism | — |
+| **2** | Closures | — |
+| **3** | `defer` + `destroy` + `Copy` | — |
+| **4** | `break` / `continue` | Yes, with 1-3 |
+| **5** | Allocator system | — |
+| **6** | Borrow regions | Yes, with 1-5 |
+| **7** | FFI + C interop | Yes, with 2-6 |
+| **8** | MLIR backend + optimization | Yes, anytime |
+| **9** | Standard library | — |
+| **10** | Runtime (C, then Concrete) | — |
+| **11** | Kernel formalization + proofs | Yes, anytime |
+| **12** | Tooling | Yes, ongoing |
 
-```
-// Pure: no capabilities
-fn add(a: Int, b: Int) -> Int { return a + b; }
-
-// Declares File capability
-fn read_config(path: String) with(File) -> String { ... }
-
-// Multiple capabilities
-fn sync_data(url: String) with(File, Network, Alloc) -> Result<Data, Error> { ... }
-
-// ! is sugar for with(Std)
-fn main!() { ... }
-```
-
-**Rules:**
-- A function without `with()` is pure — it cannot call any function that has `with()`
-- If `f` calls `g`, and `g` requires `Network`, then `f` must declare `Network`
-- Capabilities propagate monotonically through the call graph
-- `Unsafe` capability gates FFI, raw pointer deref, transmute
-- Users cannot define new capabilities
-
-**Implementation:** New `CapSet` type in AST, parsed from `with(...)` clause after params and before `->`. Check.lean enforces propagation — if a callee requires caps the caller doesn't have, type error. Codegen is unaffected (capabilities are erased at compile time).
-
-### Phase 2: Explicit resource management (`defer` + `destroy`)
-
-Linear types that hold resources define a destructor. Cleanup is always explicit and visible.
-
-```
-struct File { handle: FileHandle }
-
-destroy File with(File) {
-    close_handle(self.handle)
-}
-
-fn process!() {
-    let f = open("data.txt")
-    defer destroy(f)        // schedules cleanup at scope exit
-
-    let content = read(&f)
-    // When scope exits: destroy(f) runs
-}
-```
-
-**Rules:**
-- `defer` schedules a statement to run at scope exit (LIFO order, like Zig/Go)
-- `defer destroy(x)` reserves the value: cannot move, cannot destroy again, cannot re-defer
-- `destroy(x)` is only valid if the type defines a destructor
-- Types without a destructor must be consumed by moving, returning, or destructuring
-- `defer` runs on early return and on `?` error propagation
-- `Copy` is explicit and opt-in: `type Copy Point { x: Float64, y: Float64 }`
-- A `Copy` type cannot have a destructor and cannot contain linear fields
-
-**Implementation:** New `Stmt.defer` AST node. New `DestroyDef` top-level declaration. Parser handles `defer <stmt>` and `destroy TypeName with(...) { body }`. Check.lean tracks deferred values as "reserved" (not movable). Codegen emits deferred cleanup in reverse order before every `ret`, early return, and `?` propagation.
-
-### Phase 3: Allocator system
-
-Allocation is a capability with explicit allocator binding at call sites.
-
-```
-fn create_list<T>() with(Alloc) -> List<T> { ... }
-
-fn main!() {
-    let arena = Arena.new()
-    defer arena.deinit()
-
-    let list = create_list<Int>() with(Alloc = arena)
-    push(&mut list, 42) with(Alloc = arena)
-}
-```
-
-**Rules:**
-- `with(Alloc)` means the function may allocate — which allocator is bound by the caller
-- `with(Alloc = expr)` at call site binds a specific allocator
-- Allocator binding is lexically scoped and propagates to nested calls
-- Stack allocation does not require `Alloc`
-- All allocators implement the `Allocator` trait: `alloc`, `free`, `realloc`
-
-**Implementation:** `Alloc` is a special capability. `Expr.call` gets an optional allocator binding field. Codegen threads the bound allocator as a hidden first parameter to `with(Alloc)` functions.
-
-### Phase 4: Kernel formalization in Lean 4
-
-Formalize the core calculus as a Lean 4 inductive type and prove key properties.
-
-**Kernel IR** — a small typed lambda calculus with linear types and effects:
-- Types: primitives, products (structs), sums (enums), functions with capability sets, references with regions
-- Terms: let, application, match, borrow-in-region, destroy
-- Typing rules formalized as an inductive relation in Lean
-
-**Proofs:**
-- **Progress**: well-typed terms are values or can step
-- **Preservation**: stepping preserves types
-- **Linearity soundness**: linear values consumed exactly once across all execution paths
-- **Effect soundness**: runtime effects are subset of declared capabilities
-
-**Implementation:** New `Concrete/Kernel/` directory with `Syntax.lean` (kernel IR AST), `Typing.lean` (typing judgment as inductive), `Reduction.lean` (small-step semantics), `Soundness.lean` (progress + preservation + linearity + effect soundness theorems). Check.lean becomes an elaborator that produces kernel terms. Kernel checker verifies independently.
-
-### Phase 5: Borrow regions
-
-Explicit lexical regions that bound reference lifetimes, simpler than Rust's lifetime annotations.
-
-```
-borrow f as fref in R {
-    // fref has type &[File, R]
-    // f is unusable in this block
-    let len = length(fref)
-}
-// f is usable again
-
-// Short form: anonymous region for single expression
-let len = length(&f)
-```
-
-**Rules:**
-- References exist within lexical regions that bound their lifetime
-- No lifetime parameters in function signatures — functions are implicitly generic over regions
-- While borrowed, the original is unusable
-- Multiple immutable borrows allowed; mutable borrows are exclusive
-- References cannot escape their region
-- Closures cannot capture references that outlive the borrow region
-
-**Implementation:** New `Ty.refRegion` with region parameter. New `Stmt.borrowIn` AST node. Parser handles `borrow x as y in R { ... }`. Check.lean tracks region scopes and ensures references don't escape. Short-form `&x` desugars to an anonymous region spanning the enclosing expression.
+Critical path: **1 → 3 → 5** (capabilities → resource management → allocators). Formalization (Phase 11) and MLIR (Phase 8) can start in parallel at any time.
 
 ## Compilation Pipeline
 
@@ -328,10 +221,10 @@ Source (.con)
   clang -- LLVM IR -> native binary
 ```
 
-Target pipeline after Phase 4:
+Target pipeline after Phase 8 (MLIR) and Phase 11 (formalization):
 
 ```
-Surface AST → Elaboration → Kernel IR → Kernel Checker (proven sound in Lean) → Codegen
+Surface AST → Elaboration → Kernel IR → Kernel Checker (proven sound) → MLIR Codegen → LLVM → binary
 ```
 
 ## Building
