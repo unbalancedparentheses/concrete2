@@ -19,7 +19,7 @@ Concrete is a systems programming language with **linear types** and a compiler 
 1. **Linear by default** - Struct-typed values must be consumed exactly once. No leaks, no use-after-free.
 2. **Pure by default** - Functions are pure unless they take mutable references or perform I/O.
 3. **Explicit is better than implicit** - No hidden control flow, no implicit conversions, no implicit destruction.
-4. **Fits in your head** - Small language, small compiler (~3,500 lines of Lean 4).
+4. **Fits in your head** - Small language, small compiler (~4,700 lines of Lean 4).
 5. **LL(1) grammar** - Parseable with single token lookahead, no ambiguity.
 
 ## Compilation Pipeline
@@ -130,13 +130,13 @@ Concrete/
   Codegen.lean   -- LLVM IR code generation
 Main.lean        -- Entry point
 lean_tests/      -- Test suite (59 tests)
-examples/        -- Example .con programs
+examples/        -- 59 example .con programs (superset of lambdaclass/concrete examples)
 std/             -- Standard library .con files
 ```
 
 ## Tests
 
-59 tests: 34 positive (compile + run + check output) and 25 negative (expected type/linearity errors).
+59 tests: 34 positive (compile + run + check output) and 25 negative (expected type/linearity errors). Additionally, 58 of 59 examples from the original [lambdaclass/concrete](https://github.com/lambdaclass/concrete) compiler compile and run successfully.
 
 ```bash
 ./run_tests.sh
