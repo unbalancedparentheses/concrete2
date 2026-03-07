@@ -107,6 +107,8 @@ fn main!() { ... }
 
 ### Capability polymorphism
 
+> **Note:** The spec blog post defers capability polymorphism as "future work" because it "adds complexity to the type system and the Lean formalization." We promote it to Phase 1 because without it, generic combinators (map, filter, fold) must be duplicated per capability set, which makes the language impractical. The spec says "the theory is well-understood (Koka, Eff, Frank)" — we build on that. The formalization (Phase 11) must account for cap vars from the start.
+
 Without this, generic combinators can't work:
 
 ```
@@ -510,6 +512,21 @@ There is NO default allocator. If `main!()` calls a `with(Alloc)` function witho
 
 ### Allocator trait
 
+The spec defines the allocator trait with borrow-checked, typed references:
+
+```
+// Spec version (target — requires borrow regions + slices):
+trait Allocator {
+    fn alloc<T>(&mut self, count: Uint) -> Result<&mut [T], AllocError>;
+    fn free<T>(&mut self, ptr: &mut [T]);
+    fn realloc<T>(&mut self, ptr: &mut [T], new_count: Uint) -> Result<&mut [T], AllocError>;
+}
+```
+
+This is the correct design — memory from the allocator immediately enters the borrow-checked world. However, it requires borrow regions (Phase 6) and slice types, which don't exist yet when we build the allocator (Phase 5).
+
+**Bootstrap version** (used until borrow regions land):
+
 ```
 trait Allocator {
     fn alloc(&mut self, size: Uint, align: Uint) -> Result<*mut u8, AllocError>;
@@ -518,7 +535,7 @@ trait Allocator {
 }
 ```
 
-Note: The allocator interface uses raw pointers (`*mut u8`), not references. This avoids a circular dependency with borrow regions (Phase 6). Generic allocation helpers (like `alloc_one<T>()`) are standard library wrappers (Phase 9) that call the raw `alloc` with `size_of::<T>()` and `align_of::<T>()`.
+> **This is temporary scaffolding.** Once Phase 6 (borrow regions) and slice types are implemented, the Allocator trait MUST be updated to match the spec's typed version. The raw pointer version pushes an `Unsafe` boundary into allocation, which weakens the spec's guarantee that allocated memory is immediately type-safe. Safe wrappers (`alloc_one<T>()`, etc.) in the standard library (Phase 9) will bridge the gap in the interim.
 
 ### Rules
 
