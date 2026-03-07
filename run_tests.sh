@@ -104,6 +104,46 @@ run_ok "$TESTDIR/closure_capture_move.con" 30
 run_ok "$TESTDIR/closure_multiple_captures.con" 60
 run_ok "$TESTDIR/closure_nested.con" 15
 run_ok "$TESTDIR/closure_no_capture.con" 100
+# Phase 3: defer/destroy/Copy
+run_ok "$TESTDIR/defer_basic.con" 10
+run_ok "$TESTDIR/defer_lifo.con" 42
+run_ok "$TESTDIR/defer_early_return.con" 10
+run_ok "$TESTDIR/defer_loop.con" 42
+run_ok "$TESTDIR/destroy_trait.con" 42
+run_ok "$TESTDIR/copy_struct.con" 42
+run_ok "$TESTDIR/copy_enum.con" 42
+
+# abort test: compiles but exits with nonzero (signal)
+run_abort() {
+    local file="$1"
+    local name
+    name=$(basename "$file" .con)
+    local out="$TMPDIR/$name"
+    if ! $COMPILER "$file" -o "$out" > /dev/null 2>&1; then
+        echo "FAIL  $file — compilation failed"
+        FAIL=$((FAIL + 1))
+        return
+    fi
+    if "$out" > /dev/null 2>&1; then
+        echo "FAIL  $file — expected nonzero exit"
+        FAIL=$((FAIL + 1))
+    else
+        echo "  ok  $file => nonzero exit"
+        PASS=$((PASS + 1))
+    fi
+}
+run_abort "$TESTDIR/abort_basic.con"
+
+# Phase 5: Allocator system
+run_ok "$TESTDIR/alloc_basic.con" 30
+run_ok "$TESTDIR/alloc_propagate.con" 30
+run_ok "$TESTDIR/heap_arrow.con" 20
+run_ok "$TESTDIR/heap_arrow_mut.con" 42
+
+# Phase 6: Borrow regions
+run_ok "$TESTDIR/borrow_named.con" 30
+run_ok "$TESTDIR/borrow_mut_named.con" 42
+run_ok "$TESTDIR/borrow_multi.con" 35
 
 echo ""
 echo "=== Negative tests (expected errors) ==="
@@ -139,6 +179,22 @@ run_err "$TESTDIR/error_break_outside.con"       "break outside of loop"
 run_err "$TESTDIR/error_continue_outside.con"    "continue outside of loop"
 run_err "$TESTDIR/error_closure_uncalled.con"    "was never consumed"
 run_err "$TESTDIR/error_closure_use_after_move.con" "used after move"
+# Phase 3: defer/destroy/Copy errors
+run_err "$TESTDIR/error_defer_move.con"          "reserved by defer"
+run_err "$TESTDIR/error_copy_destroy.con"        "implements Destroy and cannot be Copy"
+run_err "$TESTDIR/error_copy_linear_field.con"   "contains non-copy field"
+run_err "$TESTDIR/error_destroy_no_impl.con"     "does not implement Destroy"
+run_err "$TESTDIR/error_destroy_reserved.con"    "is a reserved identifier"
+# Phase 5: Allocator errors
+run_err "$TESTDIR/error_alloc_no_cap.con"       "requires capability"
+run_err "$TESTDIR/error_heap_direct_access.con"  "use '->' for heap access"
+run_err "$TESTDIR/error_heap_leak.con"           "was never consumed"
+run_err "$TESTDIR/error_alloc_reserved.con"      "is a reserved identifier"
+# Phase 6: Borrow region errors
+run_err "$TESTDIR/error_borrow_escape.con"     "cannot escape its borrow block"
+run_err "$TESTDIR/error_borrow_frozen.con"     "is frozen by borrow block"
+run_err "$TESTDIR/error_borrow_shadow.con"     "shadows existing name"
+run_err "$TESTDIR/error_borrow_mut_conflict.con" "is frozen by borrow block"
 
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="

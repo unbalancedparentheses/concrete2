@@ -26,6 +26,8 @@ inductive VarState where
   | unconsumed  -- never touched
   | used        -- read/borrowed but not moved
   | consumed    -- moved by value
+  | reserved    -- reserved by defer (cannot be moved, can be read)
+  | frozen      -- frozen by borrow block (cannot be used at all)
   deriving Repr, BEq
 
 structure FnSig where
@@ -60,6 +62,7 @@ structure TypeEnv where
   currentCapSet : CapSet := .empty       -- current function's capability set
   currentFnName : String := ""           -- current function name (for error messages)
   lastExprIsLinearClosure : Bool := false  -- set by closure checking, read by letDecl
+  borrowRefs : List String := []          -- names of refs created by borrow blocks (for escape analysis)
   deriving Repr
 
 abbrev CheckM := ExceptT String (StateM TypeEnv)
@@ -110,6 +113,9 @@ private def tyToString : Ty → String
       | .var name => " with(" ++ name ++ ")"
       | _ => " with(...)"
     "fn(" ++ paramStr ++ ")" ++ capStr ++ " -> " ++ tyToString retTy
+  | .never => "!"
+  | .heap inner => "Heap<" ++ tyToString inner ++ ">"
+  | .heapArray inner => "HeapArray<" ++ tyToString inner ++ ">"
   | .unknown => "<unknown>"
 
 /-- Is this an integer type (any size)? -/
@@ -165,6 +171,12 @@ def resolveType (ty : Ty) : CheckM Ty := do
   | .array elem n =>
     let elem' ← resolveType elem
     return .array elem' n
+  | .generic "Heap" [inner] =>
+    let inner' ← resolveType inner
+    return .heap inner'
+  | .generic "HeapArray" [inner] =>
+    let inner' ← resolveType inner
+    return .heapArray inner'
   | .generic name args =>
     let args' ← args.mapM resolveType
     return .generic name args'
@@ -185,7 +197,18 @@ def isCopyType (ty : Ty) : CheckM Bool := do
   | .ptrMut _ | .ptrConst _ => return true  -- Raw pointers are Copy
   | .fn_ _ _ _ => return true  -- Function types: Copy by default, linear closures tracked separately
   | .unknown => return true
-  | .named _ => return false
+  | .never => return true      -- Never type is compatible with anything
+  | .heap _ => return false    -- Heap pointers are linear
+  | .heapArray _ => return false
+  | .named name =>
+    -- Check if the struct/enum has isCopy = true
+    let env ← getEnv
+    match env.structs.find? fun sd => sd.name == name with
+    | some sd => return sd.isCopy
+    | none =>
+      match env.enums.find? fun ed => ed.name == name with
+      | some ed => return ed.isCopy
+      | none => return false
   | .generic _ _ => return false  -- Generic instantiations are linear
   | .typeVar _ => return true  -- Type variables are treated as Copy in generic context
   | .array t _ => isCopyType t  -- Array of copy types is copy
@@ -239,6 +262,8 @@ def lookupFn (name : String) : CheckM (Option FnSig) := do
 
 def expectTy (expected actual : Ty) (ctx : String) : CheckM Unit := do
   if expected == actual then return ()
+  -- Never type is compatible with anything (bottom type)
+  if actual == .never then return ()
   -- Resolve type aliases and try again
   let expectedR ← resolveType expected
   let actualR ← resolveType actual
@@ -276,10 +301,12 @@ def useVar (name : String) : CheckM Unit := do
   match env.vars.lookup name with
   | none => pure ()  -- not found (might be a constant or function)
   | some info =>
+    if info.state == .frozen then
+      throw s!"variable '{name}' is frozen by borrow block"
     if info.isCopy then return ()
-    if info.state == .unconsumed then
+    if info.state == .unconsumed || info.state == .reserved then
       let vars' := env.vars.map fun (n, vi) =>
-        if n == name then (n, { vi with state := .used })
+        if n == name then (n, { vi with state := if info.state == .reserved then .reserved else .used })
         else (n, vi)
       setEnv { env with vars := vars' }
 
@@ -294,6 +321,10 @@ def consumeVar (name : String) : CheckM Unit := do
     match info.state with
     | .consumed =>
       throw s!"linear variable '{name}' used after move"
+    | .reserved =>
+      throw s!"variable '{name}' is reserved by defer"
+    | .frozen =>
+      throw s!"variable '{name}' is frozen by borrow block"
     | .unconsumed | .used =>
       -- Loop depth check
       if info.loopDepth < env.loopDepth then
@@ -314,6 +345,7 @@ def checkScopeExit (varNames : List String) : CheckM Unit := do
     | some info =>
       if !info.isCopy && info.state == .unconsumed then
         throw s!"linear variable '{name}' was never consumed"
+      -- reserved is OK — defer will handle it
     | none => pure ()
 
 -- ============================================================
@@ -414,7 +446,81 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
     | .not_ =>
       expectTy .bool ty "not operand"
       return .bool
+  | .arrowAccess obj field =>
+    let objTy ← checkExpr obj
+    -- obj must be Heap<T> or HeapArray<T>
+    let innerTy := match objTy with
+      | .heap t => t
+      | .heapArray t => t
+      | .ref (.heap t) => t
+      | .refMut (.heap t) => t
+      | _ => .unknown
+    if innerTy == .unknown then
+      throw s!"arrow access '->' requires Heap<T> or HeapArray<T> type, got {tyToString objTy}"
+    -- Look up field on the inner type
+    let structName := match innerTy with
+      | .named n => n
+      | .generic n _ => n
+      | _ => ""
+    if structName == "" then throw s!"arrow access '->' on non-struct inner type"
+    match ← lookupStruct structName with
+    | some sd =>
+      match sd.fields.find? fun f => f.name == field with
+      | some f => return f.ty
+      | none => throw s!"struct '{structName}' has no field '{field}'"
+    | none => throw s!"unknown struct type '{structName}'"
+  | .allocCall inner _allocExpr =>
+    -- For now, just check the inner expression
+    checkExpr inner hint
   | .call fnName typeArgs args =>
+    -- Intercept abort() calls
+    if fnName == "abort" then
+      if args.length != 0 then throw "abort() takes no arguments"
+      return .never
+    -- Intercept destroy() calls
+    if fnName == "destroy" then
+      if args.length != 1 then throw "destroy() takes exactly 1 argument"
+      let arg := match args with | a :: _ => a | [] => Expr.intLit 0
+      let argTy ← checkExpr arg
+      -- Look up impl Destroy for the type
+      let typeName := match argTy with
+        | .named n => n
+        | .generic n _ => n
+        | _ => ""
+      if typeName == "" then throw s!"destroy() requires a named type, got {tyToString argTy}"
+      -- Search function signatures for TypeName_destroy
+      let destroyFn ← lookupFn (typeName ++ "_destroy")
+      match destroyFn with
+      | some _ =>
+        -- Consume the argument
+        match arg with
+        | .ident varName => consumeVar varName
+        | _ => pure ()
+        return .unit
+      | none => throw s!"type '{typeName}' does not implement Destroy"
+    -- Intercept alloc(val) calls
+    if fnName == "alloc" then
+      if args.length != 1 then throw "alloc() takes exactly 1 argument"
+      -- Require Alloc capability
+      checkCapabilities "alloc" (.concrete ["Alloc"])
+      let arg := match args with | a :: _ => a | [] => Expr.intLit 0
+      let argTy ← checkExpr arg
+      return .heap argTy
+    -- Intercept free(ptr) calls
+    if fnName == "free" then
+      if args.length != 1 then throw "free() takes exactly 1 argument"
+      -- Require Alloc capability
+      checkCapabilities "free" (.concrete ["Alloc"])
+      let arg := match args with | a :: _ => a | [] => Expr.intLit 0
+      let argTy ← checkExpr arg
+      match argTy with
+      | .heap innerTy =>
+        -- Consume the argument (Heap<T> is linear)
+        match arg with
+        | .ident varName => consumeVar varName
+        | _ => pure ()
+        return innerTy
+      | _ => throw s!"free() requires Heap<T> type, got {tyToString argTy}"
     -- Check if this is a closure call (variable with fn_ type)
     let closureVarTy ← lookupVarTy fnName
     match closureVarTy with
@@ -482,6 +588,11 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
     | none => throw s!"unknown struct type '{name}'"
   | .fieldAccess obj field =>
     let objTy ← checkExpr obj
+    -- Prevent direct field access on Heap<T> — must use ->
+    match objTy with
+    | .heap _ => throw s!"cannot access field '{field}' on {tyToString objTy} with '.'; use '->' for heap access"
+    | .heapArray _ => throw s!"cannot access field '{field}' on {tyToString objTy} with '.'; use '->' for heap access"
+    | _ => pure ()
     -- Auto-deref through references
     let innerTy := match objTy with
       | .ref t => t
@@ -895,13 +1006,29 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
 partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
   match stmt with
   | .letDecl name mutable ty value =>
+    -- Escape analysis: prevent storing a borrow ref into a new binding
+    let env ← getEnv
+    match value with
+    | .ident vn =>
+      if env.borrowRefs.contains vn then
+        throw s!"reference '{vn}' cannot escape its borrow block"
+    | _ => pure ()
     let valTy ← checkExpr value ty
     match ty with
     | some declTy => expectTy declTy valTy s!"let binding '{name}'"
     | none => pure ()
-    let finalTy := match ty with | some t => t | none => valTy
+    let finalTy ← match ty with
+      | some t => resolveType t
+      | none => pure valTy
     addVar name finalTy mutable
   | .assign name value =>
+    -- Escape analysis: prevent storing a borrow ref into an outer variable
+    let env ← getEnv
+    match value with
+    | .ident vn =>
+      if env.borrowRefs.contains vn then
+        throw s!"reference '{vn}' cannot escape its borrow block"
+    | _ => pure ()
     match ← lookupVarInfo name with
     | some info =>
       if !info.mutable then
@@ -1006,6 +1133,83 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
       let valTy ← checkExpr value (some elemTy)
       expectTy elemTy valTy "array element assignment"
     | _ => throw s!"type mismatch: indexing into non-array type"
+  | .defer body =>
+    -- Verify body is a call expression
+    match body with
+    | .call _ _ _ => pure ()
+    | _ => throw "defer body must be a function call"
+    let _ ← checkExpr body
+    -- If it's destroy(varName), mark varName as reserved
+    match body with
+    | .call "destroy" _ args =>
+      match args.head? with
+      | some (.ident varName) =>
+        let env ← getEnv
+        let vars' := env.vars.map fun (n, vi) =>
+          if n == varName then (n, { vi with state := .reserved })
+          else (n, vi)
+        setEnv { env with vars := vars' }
+      | _ => pure ()
+    | _ => pure ()
+  | .borrowIn var ref region isMut body =>
+    -- Check that var exists
+    match ← lookupVarInfo var with
+    | none => throw s!"use of undeclared variable '{var}'"
+    | some varInfo =>
+      -- Check no shadowing of ref and region names
+      let env ← getEnv
+      if (env.vars.lookup ref).isSome then
+        throw s!"borrow ref '{ref}' shadows existing name"
+      if (env.vars.lookup region).isSome then
+        throw s!"borrow region '{region}' shadows existing name"
+      -- Check if variable is frozen (already inside another borrow block)
+      if varInfo.state == .frozen then
+        throw s!"variable '{var}' is frozen by borrow block"
+      -- Check for mutable borrow conflict: if var is already mutably borrowed, error
+      if isMut && varInfo.mutBorrowed then
+        throw s!"variable '{var}' is already mutably borrowed"
+      if isMut && varInfo.borrowCount > 0 then
+        throw s!"cannot mutably borrow '{var}': already immutably borrowed"
+      if !isMut && varInfo.mutBorrowed then
+        throw s!"cannot immutably borrow '{var}': already mutably borrowed"
+      -- Save state and freeze the original variable
+      let savedState := varInfo.state
+      let vars' := env.vars.map fun (n, vi) =>
+        if n == var then (n, { vi with state := .frozen })
+        else (n, vi)
+      setEnv { env with vars := vars' }
+      -- Add reference binding and track for escape analysis
+      let refTy := if isMut then Ty.refMut varInfo.ty else Ty.ref varInfo.ty
+      addVar ref refTy true
+      let envWithRef ← getEnv
+      setEnv { envWithRef with borrowRefs := ref :: envWithRef.borrowRefs }
+      -- Check body
+      checkStmts body env.currentRetTy
+      -- Clean up: remove ref from borrowRefs and unfreeze original variable
+      let env' ← getEnv
+      let vars'' := env'.vars.map fun (n, vi) =>
+        if n == var then (n, { vi with state := savedState })
+        else (n, vi)
+      let cleanedRefs := env'.borrowRefs.filter (· != ref)
+      setEnv { env' with vars := vars'', borrowRefs := cleanedRefs }
+  | .arrowAssign obj field value =>
+    let objTy ← checkExpr obj
+    let innerTy := match objTy with
+      | .heap t => t
+      | .heapArray t => t
+      | .ref (.heap t) | .refMut (.heap t) => t
+      | _ => .unknown
+    if innerTy == .unknown then
+      throw s!"arrow assign '->' requires Heap<T> type, got {tyToString objTy}"
+    let structName := match innerTy with
+      | .named n => n
+      | _ => ""
+    if structName == "" then throw s!"arrow assign on non-struct inner type"
+    match ← lookupStructField structName field with
+    | some fieldTy =>
+      let valTy ← checkExpr value (some fieldTy)
+      expectTy fieldTy valTy s!"arrow field assignment '{structName}->{field}'"
+    | none => throw s!"struct '{structName}' has no field '{field}'"
   | .break_ _value =>
     let env ← getEnv
     if env.loopDepth == 0 then
@@ -1193,9 +1397,79 @@ def checkModule (m : Module) (importedFnSigs : List (String × FnSig) := [])
   let initEnv : TypeEnv :=
     { vars := [], structs := allStructs, enums := allEnums, functions := allSigs,
       fnNames := allNames, loopDepth := 0, typeAliases := typeAliasMap, constants := constantsMap }
+  -- Helper: check if a type is copy (pure context, uses struct/enum defs)
+  let isCopyTyPure : Ty → Bool := fun ty =>
+    match ty with
+    | .int | .uint | .i8 | .i16 | .i32 | .u8 | .u16 | .u32 => true
+    | .bool | .float64 | .float32 | .char | .unit => true
+    | .ref _ => true
+    | .ptrMut _ | .ptrConst _ => true
+    | .never => true
+    | .named name =>
+      match m.structs.find? fun sd => sd.name == name with
+      | some sd => sd.isCopy
+      | none => match m.enums.find? fun ed => ed.name == name with
+        | some ed => ed.isCopy
+        | none => false
+    | _ => false
+  -- Validate Copy structs/enums don't implement Destroy, and all fields are copy
+  let copyStructCheck := m.structs.foldl (init := (Except.ok () : Except String Unit)) fun acc sd =>
+    match acc with
+    | .error e => .error e
+    | .ok () =>
+      if sd.isCopy then
+        if m.traitImpls.any fun tb => tb.traitName == "Destroy" && tb.typeName == sd.name then
+          .error s!"type '{sd.name}' implements Destroy and cannot be Copy"
+        else
+          -- Check all fields are copy types
+          match sd.fields.find? fun f => !isCopyTyPure f.ty with
+          | some f => .error s!"Copy struct '{sd.name}' contains non-copy field '{f.name}'"
+          | none => .ok ()
+      else .ok ()
+  match copyStructCheck with
+  | .error e => .error e
+  | .ok () =>
+  let copyEnumCheck := m.enums.foldl (init := (Except.ok () : Except String Unit)) fun acc ed =>
+    match acc with
+    | .error e => .error e
+    | .ok () =>
+      if ed.isCopy && (m.traitImpls.any fun tb => tb.traitName == "Destroy" && tb.typeName == ed.name) then
+        .error s!"type '{ed.name}' implements Destroy and cannot be Copy"
+      else .ok ()
+  match copyEnumCheck with
+  | .error e => .error e
+  | .ok () =>
+  -- Check user doesn't declare trait Destroy
+  let destroyTraitCheck := m.traits.foldl (init := (Except.ok () : Except String Unit)) fun acc td =>
+    match acc with
+    | .error e => .error e
+    | .ok () =>
+      if td.name == "Destroy" then .error "'Destroy' is a built-in trait"
+      else .ok ()
+  match destroyTraitCheck with
+  | .error e => .error e
+  | .ok () =>
+  -- Reserved top-level function names
+  let reservedNameCheck := m.functions.foldl (init := (Except.ok () : Except String Unit)) fun acc f =>
+    match acc with
+    | .error e => .error e
+    | .ok () =>
+      if f.name == "destroy" || f.name == "abort" || f.name == "alloc" || f.name == "free"
+         || f.name == "alloc_array" || f.name == "free_array" || f.name == "realloc_array" then
+        .error s!"'{f.name}' is a reserved identifier"
+      else .ok ()
+  match reservedNameCheck with
+  | .error e => .error e
+  | .ok () =>
+  -- Built-in Destroy trait (users don't declare it, just impl it)
+  let builtinDestroyTrait : TraitDef := {
+    name := "Destroy"
+    methods := [{ name := "destroy", params := [], retTy := .unit, selfKind := some .ref }]
+  }
+  let allTraits := builtinDestroyTrait :: m.traits
   -- Validate trait impls
   let traitCheck := m.traitImpls.foldlM (init := ()) fun () tb => do
-    match m.traits.find? fun (td : TraitDef) => td.name == tb.traitName with
+    match allTraits.find? fun (td : TraitDef) => td.name == tb.traitName with
     | none => Except.error s!"unknown trait '{tb.traitName}'"
     | some td =>
       td.methods.foldlM (init := ()) fun () (sig : FnSigDef) =>

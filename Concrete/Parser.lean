@@ -365,7 +365,20 @@ partial def parsePrimary : ParseM Expr := do
       advance
       let args ← parseCallArgs
       expect .rparen
-      return .call qualName typeArgs args
+      -- Check for with(Alloc = expr) after call
+      let wtk ← peek
+      if wtk == .with_ then
+        advance
+        expect .lparen
+        let allocName ← expectIdent
+        if allocName != "Alloc" then
+          throw "call-site with() can only bind Alloc"
+        expect .assign
+        let allocExpr ← parseExpr
+        expect .rparen
+        return .allocCall (.call qualName typeArgs args) allocExpr
+      else
+        return .call qualName typeArgs args
     else if next2 == .hash then
       -- Enum literal or static method call: Name#Variant { ... } or Name#method(args)
       advance
@@ -532,7 +545,7 @@ partial def parseStructLitFields : ParseM (List (String × Expr)) := do
 partial def parsePostfix (e : Expr) : ParseM Expr := do
   let mut result := e
   let mut tk ← peek
-  while tk == .dot || tk == .question || tk == .lbracket || tk == .as_ do
+  while tk == .dot || tk == .question || tk == .lbracket || tk == .as_ || tk == .arrow do
     if tk == .dot then
       advance
       let fieldName ← expectIdent
@@ -564,6 +577,11 @@ partial def parsePostfix (e : Expr) : ParseM Expr := do
       let index ← parseExpr
       expect .rbracket
       result := .arrayIndex result index
+    else if tk == .arrow then
+      -- Arrow access: expr->field
+      advance
+      let fieldName ← expectIdent
+      result := .arrowAccess result fieldName
     else  -- .as_
       advance
       let targetTy ← parseType
@@ -656,6 +674,24 @@ partial def parseStmt : ParseM Stmt := do
     advance
     expect .semicolon
     return .continue_
+  | .defer_ =>
+    advance
+    let body ← parseExpr
+    expect .semicolon
+    return .defer body
+  | .borrow_ =>
+    advance
+    -- borrow [mut] var as ref in region { ... }
+    let tk2 ← peek
+    let isMut := tk2 == .mut
+    if isMut then advance
+    let var ← expectIdent
+    expect .as_
+    let ref ← expectIdent
+    expect .in_
+    let region ← expectIdent
+    let body ← parseBlock
+    return .borrowIn var ref region isMut body
   | _ => parseExprOrAssign
 
 partial def parseLet : ParseM Stmt := do
@@ -908,6 +944,11 @@ partial def parseExprOrAssign : ParseM Stmt := do
       let value ← parseExpr
       expect .semicolon
       return .arrayIndexAssign arr index value
+    | .arrowAccess obj field =>
+      advance
+      let value ← parseExpr
+      expect .semicolon
+      return .arrowAssign obj field value
     | _ =>
       let sp ← peekSpan
       throw ("invalid assignment target at " ++ toString sp.line ++ ":" ++ toString sp.col)
@@ -1006,9 +1047,10 @@ partial def parseImplBlock : ParseM (ImplBlock ⊕ ImplTraitBlock) := do
   let tk ← peek
   match tk with
   | .for_ =>
-    -- Trait impl: impl TraitName for TypeName { ... }
+    -- Trait impl: impl TraitName for TypeName with(Caps) { ... }
     advance
     let typeName ← expectIdent
+    let implCapSet ← parseWithCaps
     expect .lbrace
     let mut methods : List FnDef := []
     let mut tk ← peek
@@ -1025,7 +1067,7 @@ partial def parseImplBlock : ParseM (ImplBlock ⊕ ImplTraitBlock) := do
       methods := methods ++ [f]
       tk ← peek
     expect .rbrace
-    return .inr { traitName := firstName, typeName, typeParams, methods }
+    return .inr { traitName := firstName, typeName, typeParams, methods, capSet := implCapSet }
   | _ =>
     -- Inherent impl: impl TypeName { ... }
     let typeName := firstName
@@ -1165,6 +1207,11 @@ partial def parseFnDefOrDecl : ParseM (FnDef ⊕ ExternFnDecl) := do
 
 partial def parseStructDef : ParseM StructDef := do
   expect .struct_
+  -- Check for "Copy" marker: struct Copy Name { ... }
+  let tk0 ← peek
+  let isCopy ← match tk0 with
+    | .ident "Copy" => advance; pure true
+    | _ => pure false
   let name ← expectIdent
   let typeParams ← parseTypeParams
   expect .lbrace
@@ -1180,10 +1227,15 @@ partial def parseStructDef : ParseM StructDef := do
       advance
       tk ← peek
   expect .rbrace
-  return { name, typeParams, fields }
+  return { name, typeParams, fields, isCopy }
 
 partial def parseEnumDef : ParseM EnumDef := do
   expect .enum_
+  -- Check for "Copy" marker: enum Copy Name { ... }
+  let tk0 ← peek
+  let isCopy ← match tk0 with
+    | .ident "Copy" => advance; pure true
+    | _ => pure false
   let name ← expectIdent
   let typeParams ← parseTypeParams
   expect .lbrace
@@ -1217,7 +1269,7 @@ partial def parseEnumDef : ParseM EnumDef := do
     tk ← peek
     if tk == .comma then advance; tk ← peek
   expect .rbrace
-  return { name, typeParams, variants }
+  return { name, typeParams, variants, isCopy }
 
 partial def parseImport : ParseM ImportDecl := do
   expect .import_

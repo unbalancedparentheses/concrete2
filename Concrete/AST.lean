@@ -62,6 +62,9 @@ inductive Ty where
   | ptrMut (inner : Ty)   -- *mut T
   | ptrConst (inner : Ty) -- *const T
   | fn_ (params : List Ty) (capSet : CapSet) (retTy : Ty)  -- fn(T, U) with(C) -> R
+  | never     -- bottom type (abort, unreachable)
+  | heap (inner : Ty)       -- Heap<T> (pointer to heap-allocated T)
+  | heapArray (inner : Ty)  -- HeapArray<T>
   | unknown  -- placeholder for untyped closure params, resolved by checker
   deriving Repr, BEq
 
@@ -112,6 +115,8 @@ inductive Expr where
   | staticMethodCall (typeName method : String) (typeArgs : List Ty) (args : List Expr)
   | closure (params : List Param) (capSet : CapSet) (retTy : Option Ty) (body : List Stmt)
             (captures : List (String × CaptureMode)) (isLinear : Bool)
+  | arrowAccess (obj : Expr) (field : String)   -- p->x
+  | allocCall (inner : Expr) (allocExpr : Expr)  -- call() with(Alloc = expr)
 
 inductive MatchArm where
   | mk (enumName : String) (variant : String) (bindings : List String) (body : List Stmt)
@@ -131,6 +136,9 @@ inductive Stmt where
   | arrayIndexAssign (arr : Expr) (index : Expr) (value : Expr)  -- arr[i] = val
   | break_ (value : Option Expr)  -- break; or break expr;
   | continue_                     -- continue;
+  | defer (body : Expr)           -- defer expr;
+  | borrowIn (var : String) (ref : String) (region : String) (isMut : Bool) (body : List Stmt)
+  | arrowAssign (obj : Expr) (field : String) (value : Expr)  -- p->x = val
 end
 
 structure ImportDecl where
@@ -153,6 +161,7 @@ structure EnumDef where
   typeParams : List String := []
   variants : List EnumVariant
   isPublic : Bool := false
+  isCopy : Bool := false
   deriving Repr
 
 structure StructDef where
@@ -161,6 +170,7 @@ structure StructDef where
   fields : List StructField
   isPublic : Bool := false
   isUnion : Bool := false
+  isCopy : Bool := false
   deriving Repr
 
 structure FnDef where
@@ -282,6 +292,9 @@ partial def collectFreeVarsExpr (e : Expr) (bound : List String) : List String :
   | .closure params _ _ body _ _ =>
     let closureBound := bound ++ params.map (fun p => p.name)
     collectFreeVarsStmts body closureBound
+  | .arrowAccess obj _ => collectFreeVarsExpr obj bound
+  | .allocCall inner allocExpr =>
+    collectFreeVarsExpr inner bound ++ collectFreeVarsExpr allocExpr bound
 
 partial def collectFreeVarsStmts (stmts : List Stmt) (bound : List String) : List String :=
   match stmts with
@@ -323,6 +336,11 @@ partial def collectFreeVarsStmts (stmts : List Stmt) (bound : List String) : Lis
       | .break_ (some e) => (collectFreeVarsExpr e bound, bound)
       | .break_ none => ([], bound)
       | .continue_ => ([], bound)
+      | .defer body => (collectFreeVarsExpr body bound, bound)
+      | .borrowIn var _ref _region _isMut body =>
+        (collectFreeVarsExpr (.ident var) bound ++ collectFreeVarsStmts body bound, bound)
+      | .arrowAssign obj _ value =>
+        (collectFreeVarsExpr obj bound ++ collectFreeVarsExpr value bound, bound)
     freeVars ++ collectFreeVarsStmts rest newBound
 end
 

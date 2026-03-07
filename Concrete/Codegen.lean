@@ -44,6 +44,7 @@ structure CodegenState where
   loopContLabel : Option String := none
   closureTypeDefs : String := ""
   closureFnDefs : String := ""
+  deferStack : List (List Expr) := [[]]  -- stack of deferred expressions per scope
 
 instance : Inhabited CodegenState where
   default := {
@@ -128,6 +129,16 @@ private def escapeCharForLLVM (c : Char) : String :=
 private def escapeStringForLLVM (s : String) : String :=
   s.foldl (fun acc c => acc ++ escapeCharForLLVM c) ""
 
+/-- Normalize Ty.generic "Heap"/"HeapArray" to Ty.heap/Ty.heapArray. -/
+private def normalizeTy : Ty → Ty
+  | .generic "Heap" args => match args with
+    | [inner] => .heap (normalizeTy inner)
+    | _ => .generic "Heap" args
+  | .generic "HeapArray" args => match args with
+    | [inner] => .heapArray (normalizeTy inner)
+    | _ => .generic "HeapArray" args
+  | t => t
+
 /-- Map a Concrete type to its LLVM IR type string. -/
 def tyToLLVM (s : CodegenState) : Ty → String
   | .int => "i64"
@@ -152,6 +163,9 @@ def tyToLLVM (s : CodegenState) : Ty → String
   | .typeVar _ => "i64"
   | .array elem n => "[" ++ toString n ++ " x " ++ tyToLLVM s elem ++ "]"
   | .fn_ _ _ _ => "%struct.Closure"  -- Closures are fat pointers { ptr fn, ptr env }
+  | .never => "void"
+  | .heap _ => "ptr"
+  | .heapArray _ => "ptr"
   | .unknown => "i64"  -- Should not appear after checking
   | .named name =>
     match s.lookupStruct name with
@@ -173,6 +187,8 @@ def paramTyToLLVM (s : CodegenState) : Ty → String
   | .ptrMut _ => "ptr"
   | .ptrConst _ => "ptr"
   | .fn_ _ _ _ => "ptr"  -- Closures passed as pointer to { ptr fn, ptr env }
+  | .heap _ => "ptr"
+  | .heapArray _ => "ptr"
   | .named name =>
     if (s.lookupStruct name).isSome || (s.lookupEnum name).isSome then "ptr"
     else "i64"
@@ -192,6 +208,8 @@ def isPassByPtr (s : CodegenState) (ty : Ty) : Bool :=
   | .ref _ | .refMut _ => true
   | .array _ _ => true
   | .fn_ _ _ _ => true  -- Closures are fat pointers, pass by ptr
+  | .heap _ => false     -- Heap pointers are simple ptrs, not passed by ptr
+  | .heapArray _ => false
   | .named name => (s.lookupStruct name).isSome || (s.lookupEnum name).isSome
   | .generic name _ => (s.lookupStruct name).isSome || (s.lookupEnum name).isSome
   | _ => false
@@ -261,8 +279,8 @@ private def inferExprTy (s : CodegenState) (e : Expr) (hint : Option Ty := none)
   | .ident name =>
     -- Check constants first
     match s.constants.lookup name with
-    | some (ty, _) => ty
-    | none => (s.lookupVarType name).getD .int
+    | some (ty, _) => normalizeTy ty
+    | none => normalizeTy ((s.lookupVarType name).getD .int)
   | .fieldAccess obj field =>
     let objTy := inferExprTy s obj hint
     let innerTy := match objTy with
@@ -291,11 +309,28 @@ private def inferExprTy (s : CodegenState) (e : Expr) (hint : Option Ty := none)
   | .structLit name _ _ => .named name
   | .enumLit name _ _ _ => .named name
   | .match_ _ _ => .int
-  | .call fnName _typeArgs _ =>
+  | .call fnName _typeArgs args =>
     if fnName == "sizeof" then match hint with
       | some t => t
       | none => .uint
-    else (s.fnRetTypes.lookup fnName).getD .int
+    else if fnName == "alloc" then
+      -- Infer arg type without recursion to avoid termination issues
+      match args.head? with
+      | some (Expr.structLit name _ _) => Ty.heap (Ty.named name)
+      | some (Expr.enumLit name _ _ _) => Ty.heap (Ty.named name)
+      | some (Expr.ident name) => Ty.heap ((s.lookupVarType name).getD Ty.int)
+      | some (Expr.intLit _) => Ty.heap Ty.int
+      | _ => match hint with
+        | some t => t
+        | none => Ty.heap Ty.int
+    else if fnName == "free" then
+      match args.head? with
+      | some (Expr.ident name) =>
+        match s.lookupVarType name with
+        | some (Ty.heap inner) => inner
+        | _ => Ty.int
+      | _ => Ty.int
+    else normalizeTy ((s.fnRetTypes.lookup fnName).getD .int)
   | .binOp op lhs _ =>
     match op with
     | .eq | .neq | .lt | .gt | .leq | .geq | .and_ | .or_ => .bool
@@ -345,16 +380,28 @@ private def inferExprTy (s : CodegenState) (e : Expr) (hint : Option Ty := none)
       | .generic n _ => n
       | _ => ""
     let mangledName := typeName ++ "_" ++ methodName
-    (s.fnRetTypes.lookup mangledName).getD .int
+    normalizeTy ((s.fnRetTypes.lookup mangledName).getD .int)
   | .staticMethodCall typeName methodName _ _ =>
     let mangledName := typeName ++ "_" ++ methodName
-    (s.fnRetTypes.lookup mangledName).getD .int
+    normalizeTy ((s.fnRetTypes.lookup mangledName).getD .int)
   | .closure params capSet retTy _ _ _ =>
     let paramTys := params.map (fun p => p.ty)
     let ret := match retTy with
       | some t => t
       | none => .unit
     .fn_ paramTys capSet ret
+  | .arrowAccess obj field =>
+    let objTy := inferExprTy s obj hint
+    let innerTy := match objTy with
+      | .heap t | .heapArray t => t
+      | _ => objTy
+    let structName := match innerTy with
+      | .named n | .generic n _ => n
+      | _ => ""
+    match s.lookupFieldIndex structName field with
+    | some (_, ty) => ty
+    | none => .int
+  | .allocCall inner _ => inferExprTy s inner hint
 
 /-- Convert a float to LLVM literal format. -/
 private def floatToLLVM (f : Float) : String :=
@@ -378,6 +425,9 @@ private def tySize : Ty → Nat
   | .ptrMut _ | .ptrConst _ => 8
   | .generic _ _ | .typeVar _ => 8
   | .fn_ _ _ _ => 16  -- Closure fat pointer: { ptr fn, ptr env }
+  | .never => 0
+  | .heap _ => 8
+  | .heapArray _ => 8
   | .unknown => 8
   | .array elem n => tySize elem * n
 
@@ -551,6 +601,83 @@ partial def genExpr (s : CodegenState) (e : Expr) (hintTy : Option Ty := none) :
       let s := s.emit ("  " ++ result ++ " = xor i1 " ++ reg ++ ", 1")
       (s, result)
   | .call fnName typeArgs args =>
+    -- Intercept abort()
+    if fnName == "abort" then
+      let s := s.emit "  call void @abort()"
+      let s := s.emit "  unreachable"
+      let (s, deadLabel) := s.freshLabel "abort.dead"
+      let s := s.emit (deadLabel ++ ":")
+      let (s, dummy) := s.freshLocal
+      let s := s.emit ("  " ++ dummy ++ " = add i64 0, 0")
+      (s, dummy)
+    -- Intercept destroy(x)
+    else if fnName == "destroy" then
+      match args.head? with
+      | some arg =>
+        let argTy := inferExprTy s arg
+        let typeName := match argTy with
+          | .named n => n
+          | .generic n _ => n
+          | _ => ""
+        let mangledName := typeName ++ "_destroy"
+        let (s, argReg) := genExpr s arg
+        let argLLTy := paramTyToLLVM s argTy
+        let s := s.emit ("  call void @" ++ mangledName ++ "(" ++ argLLTy ++ " " ++ argReg ++ ")")
+        (s, "0")
+      | none => (s, "0")
+    -- Intercept alloc(val)
+    else if fnName == "alloc" then
+      match args.head? with
+      | some arg =>
+        let argTy := inferExprTy s arg
+        let szVal := tySizeOf s argTy
+        -- Malloc the heap memory
+        let (s, heapPtr) := s.freshLocal
+        let s := s.emit ("  " ++ heapPtr ++ " = call ptr @malloc(i64 " ++ toString szVal ++ ")")
+        -- Generate the value and store it at the heap location
+        -- For pass-by-ptr types (structs), genExpr returns a ptr to the alloca
+        -- We load the full value from the alloca and store it to the heap
+        if isPassByPtr s argTy then
+          let (s, valPtr) := genExpr s arg
+          let argLLTy := tyToLLVM s argTy
+          let (s, loaded) := s.freshLocal
+          let s := s.emit ("  " ++ loaded ++ " = load " ++ argLLTy ++ ", ptr " ++ valPtr)
+          let s := s.emit ("  store " ++ argLLTy ++ " " ++ loaded ++ ", ptr " ++ heapPtr)
+          (s, heapPtr)
+        else
+          let (s, valReg) := genExpr s arg
+          let argLLTy := tyToLLVM s argTy
+          let s := s.emit ("  store " ++ argLLTy ++ " " ++ valReg ++ ", ptr " ++ heapPtr)
+          (s, heapPtr)
+      | none => (s, "0")
+    -- Intercept free(ptr)
+    else if fnName == "free" then
+      match args.head? with
+      | some arg =>
+        let argTy := inferExprTy s arg
+        let innerTy := match argTy with
+          | .heap t => t
+          | _ => argTy
+        let innerLLTy := tyToLLVM s innerTy
+        -- Get the heap pointer
+        let (s, heapPtr) := genExpr s arg
+        if isPassByPtr s innerTy then
+          -- Load the struct value from heap, free, return via alloca
+          let (s, loaded) := s.freshLocal
+          let s := s.emit ("  " ++ loaded ++ " = load " ++ innerLLTy ++ ", ptr " ++ heapPtr)
+          let s := s.emit ("  call void @free(ptr " ++ heapPtr ++ ")")
+          let (s, alloca) := s.freshLocal
+          let s := s.emit ("  " ++ alloca ++ " = alloca " ++ innerLLTy)
+          let s := s.emit ("  store " ++ innerLLTy ++ " " ++ loaded ++ ", ptr " ++ alloca)
+          (s, alloca)
+        else
+          -- Load the scalar value from heap, free, return value
+          let (s, loaded) := s.freshLocal
+          let s := s.emit ("  " ++ loaded ++ " = load " ++ innerLLTy ++ ", ptr " ++ heapPtr)
+          let s := s.emit ("  call void @free(ptr " ++ heapPtr ++ ")")
+          (s, loaded)
+      | none => (s, "0")
+    else
     -- Check if this is a closure call (variable with fn_ type)
     let isClosureCall := match s.lookupVarType fnName with
       | some (.fn_ _ _ _) => true
@@ -613,7 +740,7 @@ partial def genExpr (s : CodegenState) (e : Expr) (hintTy : Option Ty := none) :
     else argTys
     let argPairs := argTys.zip argRegs
     let argStr := ", ".intercalate (argPairs.map fun (ty, r) => ty ++ " " ++ r)
-    let retTy := (s.fnRetTypes.lookup fnName).getD .int
+    let retTy := normalizeTy ((s.fnRetTypes.lookup fnName).getD .int)
     let retLLTy := tyToLLVM s retTy
     if retLLTy == "void" then
       let s := s.emit ("  call void @" ++ fnName ++ "(" ++ argStr ++ ")")
@@ -1024,7 +1151,7 @@ partial def genExpr (s : CodegenState) (e : Expr) (hintTy : Option Ty := none) :
     let allArgTys := "ptr" :: argTys
     let argPairs := allArgTys.zip allArgRegs
     let argStr := ", ".intercalate (argPairs.map fun (ty, r) => ty ++ " " ++ r)
-    let retTy := (s.fnRetTypes.lookup mangledName).getD .int
+    let retTy := normalizeTy ((s.fnRetTypes.lookup mangledName).getD .int)
     let retLLTy := tyToLLVM s retTy
     if retLLTy == "void" then
       let s := s.emit ("  call void @" ++ mangledName ++ "(" ++ argStr ++ ")")
@@ -1046,7 +1173,7 @@ partial def genExpr (s : CodegenState) (e : Expr) (hintTy : Option Ty := none) :
     let argTys := args.map fun arg => paramTyToLLVM s (inferExprTy s arg)
     let argPairs := argTys.zip argRegs
     let argStr := ", ".intercalate (argPairs.map fun (ty, r) => ty ++ " " ++ r)
-    let retTy := (s.fnRetTypes.lookup mangledName).getD .int
+    let retTy := normalizeTy ((s.fnRetTypes.lookup mangledName).getD .int)
     let retLLTy := tyToLLVM s retTy
     if retLLTy == "void" then
       let s := s.emit ("  call void @" ++ mangledName ++ "(" ++ argStr ++ ")")
@@ -1062,6 +1189,39 @@ partial def genExpr (s : CodegenState) (e : Expr) (hintTy : Option Ty := none) :
       let (s, result) := s.freshLocal
       let s := s.emit ("  " ++ result ++ " = call " ++ retLLTy ++ " @" ++ mangledName ++ "(" ++ argStr ++ ")")
       (s, result)
+  | .arrowAccess obj field =>
+    -- p->x: load pointer from variable, GEP to field, load
+    let objTy := inferExprTy s obj
+    let innerTy := match objTy with
+      | .heap t => t
+      | .heapArray t => t
+      | _ => objTy
+    let structName := match innerTy with
+      | .named n => n
+      | .generic n _ => n
+      | _ => ""
+    match s.lookupFieldIndex structName field with
+    | some (idx, fieldTy) =>
+      let structTy := "%struct." ++ structName
+      -- Get the heap pointer (ptr value stored in the variable)
+      let (s, heapPtr) := genExpr s obj
+      let (s, gepReg) := s.freshLocal
+      let fieldLLTy := fieldTyToLLVM s fieldTy
+      let s := s.emit ("  " ++ gepReg ++ " = getelementptr inbounds " ++ structTy
+        ++ ", ptr " ++ heapPtr ++ ", i32 0, i32 " ++ toString idx)
+      if isPassByPtr s fieldTy then
+        (s, gepReg)
+      else
+        let (s, loaded) := s.freshLocal
+        let s := s.emit ("  " ++ loaded ++ " = load " ++ fieldLLTy ++ ", ptr " ++ gepReg)
+        (s, loaded)
+    | none =>
+      let (s, reg) := s.freshLocal
+      let s := s.emit ("  " ++ reg ++ " = add i64 0, 0 ; unknown field " ++ field)
+      (s, reg)
+  | .allocCall inner _allocExpr =>
+    -- For now, just generate the inner call
+    genExpr s inner hintTy
   | .closure params capSet retTy body _captures _isLinear =>
     -- Generate a closure: { ptr fn, ptr env }
     let closureId := s.labelCounter
@@ -1339,7 +1499,7 @@ partial def genExprAsPtr (s : CodegenState) (e : Expr) : CodegenState × String 
   | .arrayIndex _ _ =>
     let (s, ptr) := genExpr s e
     (s, ptr)
-  | .methodCall _ _ _ _ | .staticMethodCall _ _ _ _ | .cast _ _ =>
+  | .methodCall _ _ _ _ | .staticMethodCall _ _ _ _ | .cast _ _ | .arrowAccess _ _ | .allocCall _ _ =>
     let (s, ptr) := genExpr s e
     (s, ptr)
   | _ =>
@@ -1380,9 +1540,9 @@ partial def genStmts (s : CodegenState) (stmts : List Stmt) : CodegenState :=
 partial def genStmt (s : CodegenState) (stmt : Stmt) : CodegenState :=
   match stmt with
   | .letDecl name _mutable ty value =>
-    let exprTy := match ty with
+    let exprTy := normalizeTy (match ty with
       | some t => t
-      | none => inferExprTy s value
+      | none => inferExprTy s value)
     if isPassByPtr s exprTy then
       let (s, valPtr) := genExpr s value (some exprTy)
       let s := s.addVar name valPtr
@@ -1431,6 +1591,8 @@ partial def genStmt (s : CodegenState) (stmt : Stmt) : CodegenState :=
   | .return_ (some value) =>
     let retTy := s.currentRetTy
     let (s, reg) := genExpr s value (some retTy)
+    -- Emit all deferred expressions before returning
+    let s := emitAllDeferred s
     if isPassByPtr s retTy then
       let llTy := tyToLLVM s retTy
       let (s, val) := s.freshLocal
@@ -1456,6 +1618,7 @@ partial def genStmt (s : CodegenState) (stmt : Stmt) : CodegenState :=
       else (s, reg)
       s.emit ("  ret " ++ llTy ++ " " ++ finalReg)
   | .return_ none =>
+    let s := emitAllDeferred s
     s.emit "  ret void"
   | .expr e =>
     let (s, _) := genExpr s e
@@ -1632,6 +1795,62 @@ partial def genStmt (s : CodegenState) (stmt : Stmt) : CodegenState :=
       let (s, deadLabel) := s.freshLabel "cont.dead"
       s.emit (deadLabel ++ ":")
     | none => s
+  | .defer body =>
+    -- Push deferred expression onto current scope's defer list
+    let deferStack := s.deferStack
+    match deferStack with
+    | current :: rest =>
+      { s with deferStack := (body :: current) :: rest }
+    | [] =>
+      { s with deferStack := [[body]] }
+  | .borrowIn _var ref _region _isMut body =>
+    -- Regions are erased at codegen — ref = pointer to var's alloca
+    -- The var name is in _var, but we need to find the ref source
+    -- For stack values: ref = pointer to var's alloca
+    let varName := _var
+    let refPtr := match s.lookupVar varName with
+      | some alloca => alloca
+      | none => "%undef"
+    -- Map ref to the same alloca
+    let s := s.addVar ref refPtr
+    let varTy := (s.lookupVarType varName).getD .int
+    let refTy := if _isMut then Ty.refMut varTy else Ty.ref varTy
+    let s := s.addVarType ref refTy
+    genStmts s body
+  | .arrowAssign obj field value =>
+    -- p->x = val: load heap ptr, GEP to field, store
+    let objTy := inferExprTy s obj
+    let innerTy := match objTy with
+      | .heap t => t
+      | .heapArray t => t
+      | _ => objTy
+    let structName := match innerTy with
+      | .named n => n
+      | .generic n _ => n
+      | _ => ""
+    match s.lookupFieldIndex structName field with
+    | some (idx, fieldTy) =>
+      let structTy := "%struct." ++ structName
+      let (s, heapPtr) := genExpr s obj
+      let (s, gepReg) := s.freshLocal
+      let fieldLLTy := fieldTyToLLVM s fieldTy
+      let s := s.emit ("  " ++ gepReg ++ " = getelementptr inbounds " ++ structTy
+        ++ ", ptr " ++ heapPtr ++ ", i32 0, i32 " ++ toString idx)
+      let (s, valReg) := genExpr s value (some fieldTy)
+      s.emit ("  store " ++ fieldLLTy ++ " " ++ valReg ++ ", ptr " ++ gepReg)
+    | none => s.emit ("; ERROR: unknown field " ++ field)
+
+/-- Emit all deferred expressions in the current scope (LIFO order). -/
+partial def emitDeferred (s : CodegenState) (deferred : List Expr) : CodegenState :=
+  match deferred with
+  | [] => s
+  | e :: rest =>
+    let (s, _) := genExpr s e
+    emitDeferred s rest
+
+/-- Emit all deferred expressions from ALL scope levels, innermost first. -/
+partial def emitAllDeferred (s : CodegenState) : CodegenState :=
+  s.deferStack.foldl (fun s scope => emitDeferred s scope) s
 
 end
 
@@ -1639,31 +1858,36 @@ def genFnParams (s : CodegenState) (params : List Param) : CodegenState :=
   match params with
   | [] => s
   | p :: rest =>
-    if isPassByPtr s p.ty then
+    let pty := normalizeTy p.ty
+    if isPassByPtr s pty then
       let s := s.addVar p.name ("%" ++ p.name)
-      let s := s.addVarType p.name p.ty
+      let s := s.addVarType p.name pty
       genFnParams s rest
     else
-      let llTy := tyToLLVM s p.ty
+      let llTy := tyToLLVM s pty
       let (s, alloca) := s.freshLocal
       let s := s.emit ("  " ++ alloca ++ " = alloca " ++ llTy)
       let s := s.emit ("  store " ++ llTy ++ " %" ++ p.name ++ ", ptr " ++ alloca)
       let s := s.addVar p.name alloca
-      let s := s.addVarType p.name p.ty
+      let s := s.addVarType p.name pty
       genFnParams s rest
 
 def genFn (s : CodegenState) (f : FnDef) (hasMainWrapper : Bool := false) : CodegenState :=
-  let retTy := tyToLLVM s f.retTy
+  let normalizedRetTy := normalizeTy f.retTy
+  let retTy := tyToLLVM s normalizedRetTy
   let fnName := if f.name == "main" && hasMainWrapper then "concrete_main" else f.name
-  let paramStr := ", ".intercalate (f.params.map fun p => paramTyToLLVM s p.ty ++ " %" ++ p.name)
+  let paramStr := ", ".intercalate (f.params.map fun p => paramTyToLLVM s (normalizeTy p.ty) ++ " %" ++ p.name)
   let s := s.emit ("define " ++ retTy ++ " @" ++ fnName ++ "(" ++ paramStr ++ ") {")
-  let s := { s with currentRetTy := f.retTy }
+  let savedDeferStack := s.deferStack
+  let s := { s with currentRetTy := normalizedRetTy, deferStack := [[]] }
   let s := genFnParams s f.params
   let s := genStmts s f.body
   let s := if !stmtListHasReturn f.body then
+    let s := emitAllDeferred s
     if retTy == "void" then s.emit "  ret void"
     else s.emit ("  ret " ++ retTy ++ " 0")
   else s
+  let s := { s with deferStack := savedDeferStack }
   s.emit "}\n"
 
 private def enumerateFields (fields : List StructField) (idx : Nat := 0) : List FieldInfo :=
@@ -1766,6 +1990,7 @@ def genModule (m : Module) : String :=
   let s := s.emit "declare void @free(ptr)"
   let s := s.emit "declare void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)"
   let s := s.emit "declare i64 @write(i32, ptr, i64)"
+  let s := s.emit "declare void @abort()"
   -- Extern function declarations from the source
   let s := m.externFns.foldl (fun s ef =>
     let retLLTy := tyToLLVM s ef.retTy

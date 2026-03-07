@@ -60,6 +60,9 @@ def lookupKeyword : String → Option TokenKind
   | "cap" => some .cap_
   | "break" => some .break_
   | "continue" => some .continue_
+  | "defer" => some .defer_
+  | "borrow" => some .borrow_
+  | "in" => some .in_
   | _ => none
 
 private def isIdentStart (c : Char) : Bool :=
