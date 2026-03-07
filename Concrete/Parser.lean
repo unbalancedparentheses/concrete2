@@ -602,6 +602,20 @@ partial def parseStmt : ParseM Stmt := do
   | .while_ => parseWhile
   | .for_ => parseFor
   | .match_ => parseMatchStmt
+  | .break_ =>
+    advance
+    let tk2 ← peek
+    if tk2 == .semicolon then
+      advance
+      return .break_ none
+    else
+      let val ← parseExpr
+      expect .semicolon
+      return .break_ (some val)
+  | .continue_ =>
+    advance
+    expect .semicolon
+    return .continue_
   | _ => parseExprOrAssign
 
 partial def parseLet : ParseM Stmt := do

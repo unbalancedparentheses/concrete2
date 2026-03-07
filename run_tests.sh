@@ -94,6 +94,10 @@ run_ok "$TESTDIR/trait_multiple.con" 50
 run_ok "$TESTDIR/cap_basic.con"    0
 run_ok "$TESTDIR/cap_bang.con"     30
 run_ok "$TESTDIR/cap_method.con"   0
+run_ok "$TESTDIR/break_basic.con"  5
+run_ok "$TESTDIR/continue_basic.con" 25
+run_ok "$TESTDIR/break_for.con"    10
+run_ok "$TESTDIR/continue_for.con" 27
 
 echo ""
 echo "=== Negative tests (expected errors) ==="
@@ -125,6 +129,8 @@ run_err "$TESTDIR/error_trait_wrong_sig.con"     "signature does not match"
 run_err "$TESTDIR/error_cap_pure.con"            "requires capability"
 run_err "$TESTDIR/error_cap_propagation.con"     "requires capability"
 run_err "$TESTDIR/error_cap_method.con"          "requires capability"
+run_err "$TESTDIR/error_break_outside.con"       "break outside of loop"
+run_err "$TESTDIR/error_continue_outside.con"    "continue outside of loop"
 
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="

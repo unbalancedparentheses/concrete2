@@ -40,6 +40,8 @@ structure CodegenState where
   constants : List (String × (Ty × Expr))
   currentRetTy : Ty := .unit
   fnParamTypes : List (String × List Ty) := []
+  loopExitLabel : Option String := none
+  loopContLabel : Option String := none
 
 instance : Inhabited CodegenState where
   default := {
@@ -1369,6 +1371,9 @@ partial def genStmt (s : CodegenState) (stmt : Stmt) : CodegenState :=
     let (s, condLabel) := s.freshLabel "while.cond"
     let (s, bodyLabel) := s.freshLabel "while.body"
     let (s, exitLabel) := s.freshLabel "while.exit"
+    let savedExit := s.loopExitLabel
+    let savedCont := s.loopContLabel
+    let s := { s with loopExitLabel := some exitLabel, loopContLabel := some condLabel }
     let s := s.emit ("  br label %" ++ condLabel)
     let s := s.emit (condLabel ++ ":")
     let (s, condReg) := genExpr s cond
@@ -1384,7 +1389,8 @@ partial def genStmt (s : CodegenState) (stmt : Stmt) : CodegenState :=
     let s := s.emit (bodyLabel ++ ":")
     let s := genStmts s body
     let s := s.emit ("  br label %" ++ condLabel)
-    s.emit (exitLabel ++ ":")
+    let s := s.emit (exitLabel ++ ":")
+    { s with loopExitLabel := savedExit, loopContLabel := savedCont }
   | .forLoop init cond step body =>
     -- Generate init
     let s := match init with
@@ -1393,7 +1399,11 @@ partial def genStmt (s : CodegenState) (stmt : Stmt) : CodegenState :=
     -- for loop = while with step
     let (s, condLabel) := s.freshLabel "for.cond"
     let (s, bodyLabel) := s.freshLabel "for.body"
+    let (s, stepLabel) := s.freshLabel "for.step"
     let (s, exitLabel) := s.freshLabel "for.exit"
+    let savedExit := s.loopExitLabel
+    let savedCont := s.loopContLabel
+    let s := { s with loopExitLabel := some exitLabel, loopContLabel := some stepLabel }
     let s := s.emit ("  br label %" ++ condLabel)
     let s := s.emit (condLabel ++ ":")
     let (s, condReg) := genExpr s cond
@@ -1408,12 +1418,29 @@ partial def genStmt (s : CodegenState) (stmt : Stmt) : CodegenState :=
     let s := s.emit ("  br i1 " ++ condBool ++ ", label %" ++ bodyLabel ++ ", label %" ++ exitLabel)
     let s := s.emit (bodyLabel ++ ":")
     let s := genStmts s body
+    let s := s.emit ("  br label %" ++ stepLabel)
     -- Generate step
+    let s := s.emit (stepLabel ++ ":")
     let s := match step with
       | some stepStmt => genStmt s stepStmt
       | none => s
     let s := s.emit ("  br label %" ++ condLabel)
-    s.emit (exitLabel ++ ":")
+    let s := s.emit (exitLabel ++ ":")
+    { s with loopExitLabel := savedExit, loopContLabel := savedCont }
+  | .break_ _value =>
+    match s.loopExitLabel with
+    | some lbl =>
+      let s := s.emit ("  br label %" ++ lbl)
+      let (s, deadLabel) := s.freshLabel "break.dead"
+      s.emit (deadLabel ++ ":")
+    | none => s
+  | .continue_ =>
+    match s.loopContLabel with
+    | some lbl =>
+      let s := s.emit ("  br label %" ++ lbl)
+      let (s, deadLabel) := s.freshLabel "cont.dead"
+      s.emit (deadLabel ++ ":")
+    | none => s
 
 end
 

@@ -891,6 +891,22 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
       let valTy ← checkExpr value (some elemTy)
       expectTy elemTy valTy "array element assignment"
     | _ => throw s!"type mismatch: indexing into non-array type"
+  | .break_ _value =>
+    let env ← getEnv
+    if env.loopDepth == 0 then
+      throw "break outside of loop"
+    -- Check all linear variables declared in the loop body are consumed
+    for (name, info) in env.vars do
+      if !info.isCopy && info.state != .consumed && info.loopDepth >= env.loopDepth then
+        throw s!"break would skip unconsumed linear variable '{name}'"
+  | .continue_ =>
+    let env ← getEnv
+    if env.loopDepth == 0 then
+      throw "continue outside of loop"
+    -- Check all linear variables declared in the loop body are consumed
+    for (name, info) in env.vars do
+      if !info.isCopy && info.state != .consumed && info.loopDepth >= env.loopDepth then
+        throw s!"continue would skip unconsumed linear variable '{name}'"
 
 partial def checkStmts (stmts : List Stmt) (retTy : Ty) : CheckM Unit := do
   for stmt in stmts do

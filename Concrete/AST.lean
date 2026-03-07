@@ -116,6 +116,8 @@ inductive Stmt where
   | fieldAssign (obj : Expr) (field : String) (value : Expr)
   | derefAssign (target : Expr) (value : Expr)  -- *expr = expr
   | arrayIndexAssign (arr : Expr) (index : Expr) (value : Expr)  -- arr[i] = val
+  | break_ (value : Option Expr)  -- break; or break expr;
+  | continue_                     -- continue;
 end
 
 structure ImportDecl where
