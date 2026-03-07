@@ -12,7 +12,7 @@
 
 >Most ideas come from previous ideas - Alan C. Kay, The Early History Of Smalltalk
 
-Concrete is a systems programming language with **linear types** and a compiler written entirely in **Lean 4**. It compiles to LLVM IR via textual emission, producing native binaries through clang.
+Concrete is a systems programming language with **linear types** and a compiler written entirely in **Lean 4**. It compiles to LLVM IR via textual emission, producing native binaries through clang. This is a reimplementation of the [original Rust-based Concrete compiler](https://github.com/lambdaclass/concrete).
 
 ## Design Principles
 
@@ -141,6 +141,24 @@ std/             -- Standard library .con files
 ```bash
 ./run_tests.sh
 ```
+
+## Lean 4 vs Rust Implementation
+
+This is a reimplementation of the [lambdaclass/concrete](https://github.com/lambdaclass/concrete) compiler. The two implementations have different tradeoffs:
+
+**This Lean 4 implementation is stronger in:**
+- **Conciseness**: ~4,700 lines vs the Rust version which is significantly larger (many more files and abstractions)
+- **Simplicity**: Direct textual LLVM IR emission — no MLIR intermediate layer, no complex lowering passes
+- **Correctness guarantees**: Lean 4's type system catches more bugs at compile time than Rust's
+- **Readability**: The whole compiler fits in 6 files with a clean pipeline (Lexer -> Parser -> AST -> Check -> Codegen)
+
+**The Rust implementation is stronger in:**
+- **MLIR integration**: Real MLIR-based lowering pipeline, which is the standard for production compilers
+- **Extensibility**: More modular architecture designed to scale to a full language
+- **Tooling**: Better debugging, LSP support, incremental compilation infrastructure
+- **Feature completeness**: Build system (`Concrete.toml`), standard library, proper FFI, and MLIR-based optimizations
+
+This Lean version is essentially a proof that the entire Concrete language can be implemented in under 5k lines with full feature parity on the language surface. It's a great reference implementation. The Rust one is more of a production-oriented compiler infrastructure.
 
 ## License
 
