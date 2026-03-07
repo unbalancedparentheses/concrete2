@@ -8,11 +8,72 @@ on:
 
 jobs:
   build:
+    name: Build & Test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: leanprover/lean-action@v1
+
+      - name: Install Lean (via lean-action)
+        uses: leanprover/lean-action@v1
+        with:
+          build-args: "--log-level=warning"
+
+      - name: Check for build warnings
+        run: |
+          OUTPUT=$(lake build 2>&1)
+          if echo "$OUTPUT" | grep -i "warning"; then
+            echo "::error::Build produced warnings"
+            echo "$OUTPUT"
+            exit 1
+          fi
+
       - name: Install clang
-        run: sudo apt-get install -y clang
-      - name: Run tests
+        run: sudo apt-get update && sudo apt-get install -y clang
+
+      - name: Run test suite (59 tests)
         run: ./run_tests.sh
+
+      - name: Compile all examples
+        run: |
+          BIN=".lake/build/bin/concrete"
+          PASS=0
+          FAIL=0
+          EXPECTED_FAIL="check_errors"
+          for f in examples/*.con; do
+            name=$(basename "$f" .con)
+            if [ "$name" = "$EXPECTED_FAIL" ]; then
+              continue
+            fi
+            if $BIN "$f" -o "/tmp/${name}" > /dev/null 2>&1; then
+              PASS=$((PASS + 1))
+            else
+              echo "FAIL: $f"
+              $BIN "$f" -o "/tmp/${name}" 2>&1 | head -5
+              FAIL=$((FAIL + 1))
+            fi
+          done
+          echo ""
+          echo "=== Examples: $PASS compiled, $FAIL failed (skipped: $EXPECTED_FAIL) ==="
+          if [ "$FAIL" -gt 0 ]; then
+            exit 1
+          fi
+
+      - name: Run compiled examples (smoke test)
+        run: |
+          CRASH=0
+          for f in examples/*.con; do
+            name=$(basename "$f" .con)
+            if [ "$name" = "check_errors" ]; then continue; fi
+            if [ -f "/tmp/${name}" ]; then
+              timeout 5 /tmp/${name} > /dev/null 2>&1 || rc=$?
+              rc=${rc:-0}
+              if [ "$rc" -eq 139 ] || [ "$rc" -eq 134 ] || [ "$rc" -eq 136 ]; then
+                echo "CRASH (exit $rc): $name"
+                CRASH=$((CRASH + 1))
+              fi
+            fi
+          done
+          echo "=== Runtime crashes: $CRASH ==="
+          if [ "$CRASH" -gt 0 ]; then
+            exit 1
+          fi
