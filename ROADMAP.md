@@ -981,7 +981,7 @@ borrow x as xr in R1 {
 
 ## Phase 7: FFI and C interop
 
-Needed before the runtime (Phase 10a is written in C) and for any real-world systems programming use.
+Needed before the runtime (Phase 12a is written in C) and for any real-world systems programming use.
 
 Basic `extern fn` declarations already exist. This phase adds safety gating through the `Unsafe` capability and C-compatible struct layout.
 
@@ -1139,30 +1139,7 @@ Written in Concrete itself, exercising capabilities, linear types, and allocator
 
 ---
 
-## Phase 10: Runtime
-
-### Phase 10a: Runtime in C
-
-Needed for real-world use. Written in C, called via FFI (Phase 7).
-
-- Green threads (stack allocation, context switching)
-- Preemptive scheduler (timer-based via signals)
-- Copy-only message passing between threads (the `Copy` marker from Phase 3 determines what can be sent)
-- Deterministic replay (record inputs via capability boundaries, replay execution)
-- Built-in profiling and tracing (low overhead when disabled, structured output for tooling)
-
-### Phase 10b: Runtime in Concrete
-
-Once the compiler is mature, rewrite the runtime in Concrete using `Unsafe`. If writing the runtime is painful, the language design has a problem.
-
-- Scheduler logic with `Unsafe` for system calls
-- Message passing (type-checked at compile time, copy-only)
-- Allocator pools for thread stacks
-- Keep only assembly stubs in C (~20 lines per architecture for stack switching)
-
----
-
-## Phase 11: Kernel formalization in Lean 4
+## Phase 10: Kernel formalization in Lean 4
 
 **This phase can start in parallel with any of the above.** The formal model is independent of the surface language implementation — it only needs the language *design* to be stable, not the compiler.
 
@@ -1172,7 +1149,7 @@ Broken into subphases that each deliver value independently.
 
 The kernel is versioned separately from the surface language. Once the kernel reaches 1.0, it is **frozen** — no new constructs. New surface features must elaborate to existing kernel constructs. If a proposed surface feature cannot be expressed in the kernel, the feature does not ship. This is the key constraint that keeps the verified core tractable.
 
-### Phase 11a: Kernel syntax + type checker (no proofs)
+### Phase 10a: Kernel syntax + type checker (no proofs)
 
 Define the kernel IR and write an independent type checker. Even without proofs, two independent checkers catching disagreements is valuable.
 
@@ -1211,7 +1188,7 @@ Define the kernel IR and write an independent type checker. Even without proofs,
 
 **Trust boundary:** The kernel checker and its proofs are mechanically verified by Lean. What remains trusted: Lean's proof checker itself, the elaborator (surface → kernel), and the code generator (kernel → machine code).
 
-### Phase 11b: Linearity proof
+### Phase 10b: Linearity proof
 
 Most tractable proof and most novel claim. Essentially a counting argument on the typing derivation.
 
@@ -1222,7 +1199,7 @@ Most tractable proof and most novel claim. Essentially a counting argument on th
 - Theorem: `∀ (t : KernelTerm) (τ : KernelType), hasType t τ → linearValuesConsumedOnce t`
 - Lean verifies proof at build time
 
-### Phase 11c: Progress + preservation
+### Phase 10c: Progress + preservation
 
 Standard PL theory proofs for the linear lambda calculus fragment.
 
@@ -1236,7 +1213,7 @@ Standard PL theory proofs for the linear lambda calculus fragment.
 - `Concrete/Kernel/Soundness/Progress.lean`
 - `Concrete/Kernel/Soundness/Preservation.lean`
 
-### Phase 11d: Effect soundness
+### Phase 10d: Effect soundness
 
 Add capability sets to kernel, prove runtime effects ⊆ declared capabilities.
 
@@ -1246,7 +1223,7 @@ Relatively straightforward once progress/preservation exist — capabilities are
 - Extend `Kernel/Syntax.lean` with capability sets
 - `Concrete/Kernel/Soundness/Effects.lean`
 
-### Phase 11e: Regions and generics
+### Phase 10e: Regions and generics
 
 The hardest part. May require restricting kernel relative to surface.
 
@@ -1258,7 +1235,7 @@ The hardest part. May require restricting kernel relative to surface.
 - `Concrete/Kernel/Soundness/Regions.lean`
 - `Concrete/Kernel/Soundness/Generics.lean`
 
-### Phase 11f: Connect proofs to compiler
+### Phase 10f: Connect proofs to compiler
 
 Wire the kernel checker into the compilation pipeline so that every compiled program is checked against the proven-sound kernel.
 
@@ -1269,7 +1246,7 @@ Wire the kernel checker into the compilation pipeline so that every compiled pro
 
 ---
 
-## Phase 12: Tooling
+## Phase 11: Tooling
 
 Parallel with everything above. Start early, grow incrementally.
 
@@ -1282,6 +1259,29 @@ Parallel with everything above. Start early, grow incrementally.
 - Cross-compilation
 - WebAssembly target (via MLIR after Phase 8)
 - C codegen target (via MLIR after Phase 8)
+
+---
+
+## Phase 12: Runtime
+
+### Phase 12a: Runtime in C
+
+Needed for real-world use. Written in C, called via FFI (Phase 7).
+
+- Green threads (stack allocation, context switching)
+- Preemptive scheduler (timer-based via signals)
+- Copy-only message passing between threads (the `Copy` marker from Phase 3 determines what can be sent)
+- Deterministic replay (record inputs via capability boundaries, replay execution)
+- Built-in profiling and tracing (low overhead when disabled, structured output for tooling)
+
+### Phase 12b: Runtime in Concrete
+
+Once the compiler is mature, rewrite the runtime in Concrete using `Unsafe`. If writing the runtime is painful, the language design has a problem.
+
+- Scheduler logic with `Unsafe` for system calls
+- Message passing (type-checked at compile time, copy-only)
+- Allocator pools for thread stacks
+- Keep only assembly stubs in C (~20 lines per architecture for stack switching)
 
 ---
 
