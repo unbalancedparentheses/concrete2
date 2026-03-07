@@ -260,6 +260,22 @@ def lookupFn (name : String) : CheckM (Option FnSig) := do
   | some idx => return listGetIdx env.functions idx
   | none => return none
 
+/-- Normalize a type for comparison (normalize empty capsets in fn types). -/
+private def normalizeTyForCmp : Ty → Ty
+  | .fn_ params capSet retTy =>
+    let normCap := match capSet with
+      | .concrete [] => .empty
+      | .empty => .empty
+      | cs => cs
+    .fn_ (params.map normalizeTyForCmp) normCap (normalizeTyForCmp retTy)
+  | .ref t => .ref (normalizeTyForCmp t)
+  | .refMut t => .refMut (normalizeTyForCmp t)
+  | .heap t => .heap (normalizeTyForCmp t)
+  | .heapArray t => .heapArray (normalizeTyForCmp t)
+  | .generic n args => .generic n (args.map normalizeTyForCmp)
+  | .array t n => .array (normalizeTyForCmp t) n
+  | t => t
+
 def expectTy (expected actual : Ty) (ctx : String) : CheckM Unit := do
   if expected == actual then return ()
   -- Never type is compatible with anything (bottom type)
@@ -268,6 +284,10 @@ def expectTy (expected actual : Ty) (ctx : String) : CheckM Unit := do
   let expectedR ← resolveType expected
   let actualR ← resolveType actual
   if expectedR == actualR then return ()
+  -- Normalize fn types (empty capsets) and try again
+  let expectedN := normalizeTyForCmp expectedR
+  let actualN := normalizeTyForCmp actualR
+  if expectedN == actualN then return ()
   -- .string is compatible with .named "String"
   else if (expectedR == .string && actualR == .named "String")
        || (expectedR == .named "String" && actualR == .string) then return ()
@@ -352,7 +372,93 @@ def checkScopeExit (varNames : List String) : CheckM Unit := do
 -- Type substitution for generics
 -- ============================================================
 
-/-- Substitute type variables using a mapping. -/
+/-- Peek at an expression's type without consuming any linear variables. -/
+def peekExprType (e : Expr) : CheckM Ty := do
+  match e with
+  | .intLit _ => return .int
+  | .floatLit _ => return .float64
+  | .boolLit _ => return .bool
+  | .strLit _ => return .string
+  | .charLit _ => return .char
+  | .ident name =>
+    let env ← getEnv
+    match env.constants.lookup name with
+    | some ty => return ty
+    | none =>
+    match env.vars.lookup name with
+    | some info => return info.ty
+    | none =>
+      match ← lookupFn name with
+      | some sig =>
+        let paramTys := sig.params.map fun (_, t) => t
+        return .fn_ paramTys sig.capSet sig.retTy
+      | none => return .unknown
+  | .structLit name typeArgs _ =>
+    if typeArgs.isEmpty then return .named name
+    else return .generic name typeArgs
+  | .enumLit enumName _ typeArgs _ =>
+    if typeArgs.isEmpty then return .named enumName
+    else return .generic enumName typeArgs
+  | .closure params capSet retTy _body _captures _isLinear =>
+    let paramTys := params.map fun p => p.ty
+    let closureRetTy := match retTy with | some t => t | none => .unit
+    let closureCapSet := if capSet != .empty then capSet else .empty
+    return .fn_ paramTys closureCapSet closureRetTy
+  | _ => return .unknown
+
+/-- Unify a pattern type with an actual type to discover type variable bindings. -/
+private partial def unifyTypes (pattern actual : Ty) (typeParams : List String) : List (String × Ty) :=
+  match pattern with
+  | .named name =>
+    if typeParams.contains name then [(name, actual)]
+    else []
+  | .typeVar name =>
+    if typeParams.contains name then [(name, actual)]
+    else []
+  | .ref inner =>
+    match actual with
+    | .ref aInner => unifyTypes inner aInner typeParams
+    | _ => []
+  | .refMut inner =>
+    match actual with
+    | .refMut aInner => unifyTypes inner aInner typeParams
+    | _ => []
+  | .fn_ pParams pCapSet pRet =>
+    match actual with
+    | .fn_ aParams _aCapSet aRet =>
+      let paramBindings := (pParams.zip aParams).foldl (fun acc (pp, ap) =>
+        acc ++ unifyTypes pp ap typeParams) []
+      let retBindings := unifyTypes pRet aRet typeParams
+      -- Also try to unify cap set names
+      let capBindings := match pCapSet with
+        | .concrete _ => []  -- concrete caps don't bind type vars
+        | _ => []
+      paramBindings ++ retBindings ++ capBindings
+    | _ => []
+  | .generic _name pArgs =>
+    match actual with
+    | .generic _aName aArgs =>
+      (pArgs.zip aArgs).foldl (fun acc (pp, ap) =>
+        acc ++ unifyTypes pp ap typeParams) []
+    | _ => []
+  | .heap inner =>
+    match actual with
+    | .heap aInner => unifyTypes inner aInner typeParams
+    | _ => []
+  | .array elem _ =>
+    match actual with
+    | .array aElem _ => unifyTypes elem aElem typeParams
+    | _ => []
+  | _ => []
+
+private def substCapSet (mapping : List (String × Ty)) : CapSet → CapSet
+  | .concrete caps =>
+    -- Cap variable names that map to types are not relevant here, keep as-is
+    .concrete caps
+  | .var name => .var name
+  | .union a b => .union (substCapSet mapping a) (substCapSet mapping b)
+  | .empty => .empty
+
 private def substTy (mapping : List (String × Ty)) : Ty → Ty
   | .named name => match mapping.lookup name with | some t => t | none => .named name
   | .typeVar name => match mapping.lookup name with | some t => t | none => .typeVar name
@@ -362,6 +468,10 @@ private def substTy (mapping : List (String × Ty)) : Ty → Ty
   | .ptrConst inner => .ptrConst (substTy mapping inner)
   | .array elem n => .array (substTy mapping elem) n
   | .generic name args => .generic name (args.map (substTy mapping))
+  | .fn_ params capSet retTy =>
+    .fn_ (params.map (substTy mapping)) (substCapSet mapping capSet) (substTy mapping retTy)
+  | .heap inner => .heap (substTy mapping inner)
+  | .heapArray inner => .heapArray (substTy mapping inner)
   | ty => ty
 
 -- ============================================================
@@ -405,7 +515,13 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
         throw s!"linear variable '{name}' used after move"
       useVar name
       return info.ty
-    | none => throw s!"use of undeclared variable '{name}'"
+    | none =>
+      -- Check if it's a function name (first-class function reference)
+      match ← lookupFn name with
+      | some sig =>
+        let paramTys := sig.params.map fun (_, t) => t
+        return .fn_ paramTys sig.capSet sig.retTy
+      | none => throw s!"use of undeclared variable '{name}'"
   | .binOp op lhs rhs =>
     -- Check lhs first (with hint), then use its type as hint for rhs
     let lTy ← checkExpr lhs hint
@@ -469,8 +585,12 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       | some f => return f.ty
       | none => throw s!"struct '{structName}' has no field '{field}'"
     | none => throw s!"unknown struct type '{structName}'"
-  | .allocCall inner _allocExpr =>
-    -- For now, just check the inner expression
+  | .allocCall inner allocExpr =>
+    -- Check that caller has Alloc capability (needed to forward)
+    checkCapabilities "with(Alloc)" (.concrete ["Alloc"])
+    -- Check the allocator expression is valid
+    let _allocTy ← checkExpr allocExpr
+    -- Check the inner call expression
     checkExpr inner hint
   | .call fnName typeArgs args =>
     -- Intercept abort() calls
@@ -543,12 +663,87 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
     | _ =>
     match ← lookupFn fnName with
     | some sig =>
-      -- Check capabilities: caller must have callee's caps
-      checkCapabilities fnName sig.capSet
-      -- Build type substitution from typeArgs + sig.typeParams
-      let mapping := sig.typeParams.zip typeArgs
+      -- Infer type arguments if not explicitly provided
+      let inferredTypeArgs ← do
+        if !typeArgs.isEmpty || sig.typeParams.isEmpty then
+          pure typeArgs
+        else
+          -- Infer types from argument types (without consuming)
+          let mut inferred : List (String × Ty) := []
+          for (arg, (_, pTy)) in args.zip sig.params do
+            let argTy ← peekExprType arg
+            -- Try to unify pTy with argTy to learn type variables
+            let bindings := unifyTypes pTy argTy sig.typeParams
+            for (name, ty) in bindings do
+              if !(inferred.any fun (n, _) => n == name) then
+                inferred := inferred ++ [(name, ty)]
+          -- Build ordered type args from inferred mapping
+          pure (sig.typeParams.map fun tp =>
+            match inferred.lookup tp with
+            | some ty => ty
+            | none => .typeVar tp)
+      -- Build type substitution
+      let mapping := sig.typeParams.zip inferredTypeArgs
       let paramTypes := sig.params.map fun (n, t) => (n, substTy mapping t)
       let retTy := substTy mapping sig.retTy
+      -- Resolve capability variables from argument types
+      let resolvedCapSet ← do
+        if sig.capParams.isEmpty then
+          pure sig.capSet
+        else
+          let mut capBindings : List (String × List String) := []
+          -- Infer cap variable bindings from fn-typed arguments
+          for (arg, (_, pTy)) in args.zip paramTypes do
+            match pTy with
+            | .fn_ _ (.concrete caps) _ =>
+              for cap in caps do
+                if sig.capParams.contains cap then
+                  -- Get actual argument's cap set
+                  let argCapSet ← do
+                    match arg with
+                    | .ident varName =>
+                      match ← lookupVarTy varName with
+                      | some (.fn_ _ cs _) => pure cs
+                      | none =>
+                        match ← lookupFn varName with
+                        | some argSig => pure argSig.capSet
+                        | none => pure CapSet.empty
+                      | _ => pure CapSet.empty
+                    | _ => pure CapSet.empty
+                  let (argCaps, _) := argCapSet.normalize
+                  capBindings := capBindings ++ [(cap, argCaps)]
+            | _ => pure ()
+          -- Build resolved capSet
+          let (concreteCaps, _) := sig.capSet.normalize
+          let mut resolvedCaps : List String := []
+          for cap in concreteCaps do
+            if sig.capParams.contains cap then
+              match capBindings.find? fun (name, _) => name == cap with
+              | some (_, caps) => resolvedCaps := resolvedCaps ++ caps
+              | none => pure ()  -- Unresolved cap var = empty
+            else
+              resolvedCaps := resolvedCaps ++ [cap]
+          pure (CapSet.concrete resolvedCaps)
+      -- Resolve cap variables in parameter types for type comparison
+      let capBindings' := if sig.capParams.isEmpty then [] else
+        sig.capParams.map fun cp =>
+          match resolvedCapSet with
+          | .concrete caps => (cp, caps.filter fun c => !sig.capParams.contains c)
+          | _ => (cp, ([] : List String))
+      let resolveCapInTy : Ty → Ty := fun ty =>
+        match ty with
+        | .fn_ params (.concrete caps) ret =>
+          let newCaps := caps.foldl (fun acc cap =>
+            if sig.capParams.contains cap then
+              match capBindings'.find? fun (n, _) => n == cap with
+              | some (_, resolved) => acc ++ resolved
+              | none => acc
+            else acc ++ [cap]) []
+          .fn_ params (.concrete newCaps) ret
+        | t => t
+      let paramTypes := paramTypes.map fun (n, t) => (n, resolveCapInTy t)
+      -- Check capabilities with resolved set
+      checkCapabilities fnName resolvedCapSet
       if args.length != paramTypes.length then
         throw s!"function '{fnName}' expects {paramTypes.length} arguments, got {args.length}"
       for (arg, (pName, pTy)) in args.zip paramTypes do
@@ -1037,6 +1232,13 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
       expectTy info.ty valTy s!"assignment to '{name}'"
     | none => throw s!"assignment to undeclared variable '{name}'"
   | .return_ (some value) =>
+    -- Escape analysis: prevent returning a borrow ref
+    let env ← getEnv
+    match value with
+    | .ident vn =>
+      if env.borrowRefs.contains vn then
+        throw s!"reference '{vn}' cannot escape its borrow block"
+    | _ => pure ()
     let valTy ← checkExpr value (some retTy)
     expectTy retTy valTy "return value"
     -- Returning a linear variable consumes it
@@ -1099,6 +1301,13 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
     let env' ← getEnv
     setEnv { env' with loopDepth := env.loopDepth }
   | .fieldAssign obj field value =>
+    -- Escape analysis: prevent storing a borrow ref into a struct field
+    let env ← getEnv
+    match value with
+    | .ident vn =>
+      if env.borrowRefs.contains vn then
+        throw s!"reference '{vn}' cannot escape its borrow block"
+    | _ => pure ()
     let objTy ← checkExpr obj
     -- Auto-deref through references
     let innerTy := match objTy with

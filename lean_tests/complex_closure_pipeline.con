@@ -1,0 +1,16 @@
+// Complex test: closure pipeline — chain multiple closures
+fn apply<T, U, cap C>(f: fn(T) with(C) -> U, x: T) with(C) -> U {
+    return f(x);
+}
+
+fn main() -> Int {
+    let add10: fn(Int) -> Int = fn(x: Int) -> Int { return x + 10; };
+    let mul2: fn(Int) -> Int = fn(x: Int) -> Int { return x * 2; };
+    let sub3: fn(Int) -> Int = fn(x: Int) -> Int { return x - 3; };
+
+    // Pipeline: 5 -> +10 = 15 -> *2 = 30 -> -3 = 27
+    let step1: Int = apply(add10, 5);
+    let step2: Int = apply(mul2, step1);
+    let step3: Int = apply(sub3, step2);
+    return step3;
+}

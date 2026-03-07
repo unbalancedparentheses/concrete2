@@ -145,6 +145,23 @@ run_ok "$TESTDIR/borrow_named.con" 30
 run_ok "$TESTDIR/borrow_mut_named.con" 42
 run_ok "$TESTDIR/borrow_multi.con" 35
 
+# Capability polymorphism
+run_ok "$TESTDIR/cap_poly.con" 42
+run_ok "$TESTDIR/cap_poly_chain.con" 42
+
+# Borrow escape (positive — deref value is OK)
+run_ok "$TESTDIR/escape_return.con" 10
+
+# Complex multi-feature programs
+run_ok "$TESTDIR/complex_linked_list.con" 42
+run_ok "$TESTDIR/complex_closure_pipeline.con" 27
+run_ok "$TESTDIR/complex_struct_methods.con" 42
+run_ok "$TESTDIR/complex_defer_destroy.con" 42
+run_ok "$TESTDIR/complex_enum_result.con" 25
+run_ok "$TESTDIR/complex_borrow_compute.con" 170
+run_ok "$TESTDIR/complex_generic_container.con" 42
+run_ok "$TESTDIR/complex_loop_accumulate.con" 50
+
 echo ""
 echo "=== Negative tests (expected errors) ==="
 run_err "$TESTDIR/error_unconsumed.con"        "was never consumed"
@@ -195,6 +212,9 @@ run_err "$TESTDIR/error_borrow_escape.con"     "cannot escape its borrow block"
 run_err "$TESTDIR/error_borrow_frozen.con"     "is frozen by borrow block"
 run_err "$TESTDIR/error_borrow_shadow.con"     "shadows existing name"
 run_err "$TESTDIR/error_borrow_mut_conflict.con" "is frozen by borrow block"
+# Additional escape analysis errors
+run_err "$TESTDIR/error_escape_return.con"     "cannot escape its borrow block"
+run_err "$TESTDIR/error_escape_field.con"      "cannot escape its borrow block"
 
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="

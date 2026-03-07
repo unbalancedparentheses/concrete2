@@ -1,0 +1,9 @@
+// Test: chained capability polymorphism — apply a closure multiple times
+fn apply<T, U, cap C>(f: fn(T) with(C) -> U, x: T) with(C) -> U {
+    return f(x);
+}
+
+fn main() -> Int {
+    let step1: Int = apply(fn(x: Int) -> Int { return x + 21; }, 21);
+    return step1;
+}

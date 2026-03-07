@@ -1,0 +1,8 @@
+// Test: capability polymorphism with cap C
+fn apply<T, U, cap C>(f: fn(T) with(C) -> U, x: T) with(C) -> U {
+    return f(x);
+}
+
+fn main() -> Int {
+    return apply(fn(x: Int) -> Int { return x + 1; }, 41);
+}

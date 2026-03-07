@@ -192,6 +192,9 @@ def paramTyToLLVM (s : CodegenState) : Ty → String
   | .named name =>
     if (s.lookupStruct name).isSome || (s.lookupEnum name).isSome then "ptr"
     else "i64"
+  | .generic name _ =>
+    if (s.lookupStruct name).isSome || (s.lookupEnum name).isSome then "ptr"
+    else "i64"
   | ty => tyToLLVM s ty
 
 def isStructTy (s : CodegenState) : Ty → Bool
