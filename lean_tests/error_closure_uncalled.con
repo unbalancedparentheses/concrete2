@@ -1,0 +1,14 @@
+// Error: linear closure (captures linear struct) never called
+// Expected error: "was never consumed"
+
+struct Pair { x: Int, y: Int }
+
+fn consume_pair(p: Pair) -> Int {
+    return p.x + p.y;
+}
+
+fn main!() -> Int {
+    let p: Pair = Pair { x: 10, y: 20 };
+    let f: fn(Int) -> Int = fn(x: Int) -> Int { return consume_pair(p); };
+    return 0;
+}

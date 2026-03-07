@@ -1,0 +1,12 @@
+// Test closure capturing a copy type (Int)
+// Expected: 52 (42 + 10)
+
+fn apply(f: fn(Int) -> Int, x: Int) -> Int {
+    return f(x);
+}
+
+fn main!() -> Int {
+    let offset: Int = 10;
+    let result: Int = apply(fn(x: Int) -> Int { return x + offset; }, 42);
+    return result;
+}

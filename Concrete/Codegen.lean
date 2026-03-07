@@ -42,6 +42,8 @@ structure CodegenState where
   fnParamTypes : List (String × List Ty) := []
   loopExitLabel : Option String := none
   loopContLabel : Option String := none
+  closureTypeDefs : String := ""
+  closureFnDefs : String := ""
 
 instance : Inhabited CodegenState where
   default := {
@@ -149,7 +151,8 @@ def tyToLLVM (s : CodegenState) : Ty → String
   | .generic name _ => "%struct." ++ name
   | .typeVar _ => "i64"
   | .array elem n => "[" ++ toString n ++ " x " ++ tyToLLVM s elem ++ "]"
-  | .fn_ _ _ _ => "ptr"  -- Function types are pointers
+  | .fn_ _ _ _ => "%struct.Closure"  -- Closures are fat pointers { ptr fn, ptr env }
+  | .unknown => "i64"  -- Should not appear after checking
   | .named name =>
     match s.lookupStruct name with
     | some _ => "%struct." ++ name
@@ -169,6 +172,7 @@ def paramTyToLLVM (s : CodegenState) : Ty → String
   | .refMut _ => "ptr"
   | .ptrMut _ => "ptr"
   | .ptrConst _ => "ptr"
+  | .fn_ _ _ _ => "ptr"  -- Closures passed as pointer to { ptr fn, ptr env }
   | .named name =>
     if (s.lookupStruct name).isSome || (s.lookupEnum name).isSome then "ptr"
     else "i64"
@@ -187,6 +191,7 @@ def isPassByPtr (s : CodegenState) (ty : Ty) : Bool :=
   | .string => true
   | .ref _ | .refMut _ => true
   | .array _ _ => true
+  | .fn_ _ _ _ => true  -- Closures are fat pointers, pass by ptr
   | .named name => (s.lookupStruct name).isSome || (s.lookupEnum name).isSome
   | .generic name _ => (s.lookupStruct name).isSome || (s.lookupEnum name).isSome
   | _ => false
@@ -344,6 +349,12 @@ private def inferExprTy (s : CodegenState) (e : Expr) (hint : Option Ty := none)
   | .staticMethodCall typeName methodName _ _ =>
     let mangledName := typeName ++ "_" ++ methodName
     (s.fnRetTypes.lookup mangledName).getD .int
+  | .closure params capSet retTy _ _ _ =>
+    let paramTys := params.map (fun p => p.ty)
+    let ret := match retTy with
+      | some t => t
+      | none => .unit
+    .fn_ paramTys capSet ret
 
 /-- Convert a float to LLVM literal format. -/
 private def floatToLLVM (f : Float) : String :=
@@ -366,8 +377,25 @@ private def tySize : Ty → Nat
   | .ref _ | .refMut _ => 8
   | .ptrMut _ | .ptrConst _ => 8
   | .generic _ _ | .typeVar _ => 8
-  | .fn_ _ _ _ => 8  -- Function pointer
+  | .fn_ _ _ _ => 16  -- Closure fat pointer: { ptr fn, ptr env }
+  | .unknown => 8
   | .array elem n => tySize elem * n
+
+/-- Compute type size with access to struct/enum definitions. -/
+private partial def tySizeOf (s : CodegenState) : Ty → Nat
+  | .named name =>
+    match s.lookupStruct name with
+    | some si => si.fields.foldl (fun acc fi => acc + tySizeOf s fi.ty) 0
+    | none => match s.lookupEnum name with
+      | some ei =>
+        -- Enum: tag (i32=4) + max variant size
+        let maxPayload := ei.variants.foldl (fun acc vi =>
+          let sz := vi.fields.foldl (fun a fi => a + tySizeOf s fi.ty) 0
+          Nat.max acc sz) 0
+        4 + maxPayload
+      | none => 8
+  | .array elem n => tySizeOf s elem * n
+  | other => tySize other
 
 mutual
 
@@ -523,6 +551,45 @@ partial def genExpr (s : CodegenState) (e : Expr) (hintTy : Option Ty := none) :
       let s := s.emit ("  " ++ result ++ " = xor i1 " ++ reg ++ ", 1")
       (s, result)
   | .call fnName typeArgs args =>
+    -- Check if this is a closure call (variable with fn_ type)
+    let isClosureCall := match s.lookupVarType fnName with
+      | some (.fn_ _ _ _) => true
+      | _ => false
+    if isClosureCall then
+      -- Closure call: load fn ptr and env from the fat pointer
+      let closurePtr := (s.lookupVar fnName).getD "%undef"
+      let (s, fnPtrGep) := s.freshLocal
+      let s := s.emit ("  " ++ fnPtrGep ++ " = getelementptr %struct.Closure, ptr " ++ closurePtr ++ ", i32 0, i32 0")
+      let (s, fnPtr) := s.freshLocal
+      let s := s.emit ("  " ++ fnPtr ++ " = load ptr, ptr " ++ fnPtrGep)
+      let (s, envPtrGep) := s.freshLocal
+      let s := s.emit ("  " ++ envPtrGep ++ " = getelementptr %struct.Closure, ptr " ++ closurePtr ++ ", i32 0, i32 1")
+      let (s, envPtr) := s.freshLocal
+      let s := s.emit ("  " ++ envPtr ++ " = load ptr, ptr " ++ envPtrGep)
+      -- Generate args
+      let (s, argRegs) := genExprList s args
+      let argTys := args.map fun arg => paramTyToLLVM s (inferExprTy s arg)
+      let envArg := "ptr " ++ envPtr
+      let argPairs := argTys.zip argRegs
+      let normalArgs := argPairs.map fun (ty, r) => ty ++ " " ++ r
+      let allArgs := envArg :: normalArgs
+      let argStr := ", ".intercalate allArgs
+      -- Determine return type
+      let retTy := match s.lookupVarType fnName with
+        | some (.fn_ _ _ ret) => ret
+        | _ => .int
+      let retLLTy := tyToLLVM s retTy
+      -- Build function type for indirect call
+      let paramTyStrs := "ptr" :: argTys  -- env ptr + arg types
+      let fnTyStr := retLLTy ++ " (" ++ ", ".intercalate paramTyStrs ++ ")"
+      if retLLTy == "void" then
+        let s := s.emit ("  call void " ++ fnPtr ++ "(" ++ argStr ++ ")")
+        (s, "0")
+      else
+        let (s, result) := s.freshLocal
+        let s := s.emit ("  " ++ result ++ " = call " ++ retLLTy ++ " " ++ fnPtr ++ "(" ++ argStr ++ ")")
+        (s, result)
+    else
     -- sizeof intrinsic: emit compile-time constant
     if (fnName == "sizeof" || fnName.endsWith "_sizeof") && !typeArgs.isEmpty then
       let ty := typeArgs.headD .int
@@ -995,6 +1062,130 @@ partial def genExpr (s : CodegenState) (e : Expr) (hintTy : Option Ty := none) :
       let (s, result) := s.freshLocal
       let s := s.emit ("  " ++ result ++ " = call " ++ retLLTy ++ " @" ++ mangledName ++ "(" ++ argStr ++ ")")
       (s, result)
+  | .closure params capSet retTy body _captures _isLinear =>
+    -- Generate a closure: { ptr fn, ptr env }
+    let closureId := s.labelCounter
+    let s := { s with labelCounter := s.labelCounter + 1 }
+    let closureFnName := "__closure_" ++ toString closureId
+    -- Determine return type
+    let closureRetTy := match retTy with
+      | some t => t
+      | none => .unit
+    -- Compute captures: find variables used in body that are in scope but not params
+    let paramNames := params.map fun p => p.name
+    let freeVars := collectFreeVarsStmts body paramNames
+    let captures := freeVars.eraseDups.filterMap fun name =>
+      match s.lookupVar name with
+      | some _ => some (name, CaptureMode.copy)  -- codegen doesn't distinguish copy/move
+      | none => none
+    -- Build the closure environment struct type
+    let envTypeName := "%closure_env." ++ toString closureId
+    let hasCaps := !captures.isEmpty
+    -- Emit the env struct definition (will be prepended to output)
+    let envFields := captures.map fun (name, _) =>
+      let ty := (s.lookupVarType name).getD .int
+      tyToLLVM s ty
+    let envStructDef := if hasCaps then
+      envTypeName ++ " = type { " ++ ", ".intercalate envFields ++ " }\n"
+    else ""
+    -- Build LLVM function signature for the closure function
+    let retLLTy := tyToLLVM s closureRetTy
+    let envParam := "ptr %env"
+    let paramStrs := params.map fun p =>
+      paramTyToLLVM s p.ty ++ " %" ++ p.name
+    let allParams := envParam :: paramStrs
+    let paramStr := ", ".intercalate allParams
+    -- Save outer scope var types for capture type lookups
+    let outerVarTypes := s.varTypes
+    -- Generate the function body
+    let fnState := { s with output := "", vars := [], varTypes := [] }
+    let fnState := fnState.emit ("define private " ++ retLLTy ++ " @" ++ closureFnName ++ "(" ++ paramStr ++ ") {")
+    let fnState := fnState.emit "entry:"
+    -- Load captures from env
+    let indexedCaptures := (List.range captures.length).zip captures
+    let fnState := if hasCaps then
+      indexedCaptures.foldl (fun (s : CodegenState) (idxAndCap : Nat × (String × CaptureMode)) =>
+        let (idx, (name, _)) := idxAndCap
+        -- Look up capture type from outer scope, not the (empty) inner scope
+        let capTy := match outerVarTypes.find? (fun (n, _) => n == name) with
+          | some (_, ty) => ty
+          | none => .int
+        let llCapTy := tyToLLVM s capTy
+        let (s, gepReg) := s.freshLocal
+        let s := s.emit ("  " ++ gepReg ++ " = getelementptr " ++ envTypeName ++ ", ptr %env, i32 0, i32 " ++ toString idx)
+        if isPassByPtr s capTy then
+          (s.addVar name gepReg).addVarType name capTy
+        else
+          let (s, loadReg) := s.freshLocal
+          let s := s.emit ("  " ++ loadReg ++ " = load " ++ llCapTy ++ ", ptr " ++ gepReg)
+          let (s, alloca) := s.freshLocal
+          let s := s.emit ("  " ++ alloca ++ " = alloca " ++ llCapTy)
+          let s := s.emit ("  store " ++ llCapTy ++ " " ++ loadReg ++ ", ptr " ++ alloca)
+          (s.addVar name alloca).addVarType name capTy
+      ) fnState
+    else fnState
+    -- Set up parameters (inline instead of calling genFnParams which is outside mutual block)
+    let fnState := params.foldl (fun (s : CodegenState) (p : Param) =>
+      if isPassByPtr s p.ty then
+        (s.addVar p.name ("%" ++ p.name)).addVarType p.name p.ty
+      else
+        let llTy := tyToLLVM s p.ty
+        let (s, alloca) := s.freshLocal
+        let s := s.emit ("  " ++ alloca ++ " = alloca " ++ llTy)
+        let s := s.emit ("  store " ++ llTy ++ " %" ++ p.name ++ ", ptr " ++ alloca)
+        (s.addVar p.name alloca).addVarType p.name p.ty
+    ) fnState
+    -- Set return type
+    let fnState := { fnState with currentRetTy := closureRetTy }
+    -- Generate body
+    let fnState := genStmts fnState body
+    -- Add implicit return if needed
+    let fnState := if retLLTy == "void" then
+      fnState.emit "  ret void"
+    else fnState
+    let fnState := fnState.emit "}"
+    let closureFnBody := fnState.output
+    -- Allocate closure struct { ptr fn, ptr env } on stack
+    let s := { s with
+      closureTypeDefs := s.closureTypeDefs ++ envStructDef
+      closureFnDefs := s.closureFnDefs ++ closureFnBody ++ "\n"
+      labelCounter := fnState.labelCounter
+      localCounter := fnState.localCounter }
+    -- Allocate env on stack and store captures
+    let (s, envPtr) := if hasCaps then
+      let (s, envAlloca) := s.freshLocal
+      let s := s.emit ("  " ++ envAlloca ++ " = alloca " ++ envTypeName)
+      let indexedCaptures2 := (List.range captures.length).zip captures
+      let s := indexedCaptures2.foldl (fun (s : CodegenState) (idxAndCap : Nat × (String × CaptureMode)) =>
+        let (idx, (name, _)) := idxAndCap
+        let capTy := (s.lookupVarType name).getD .int
+        let llCapTy := tyToLLVM s capTy
+        let (s, gepReg) := s.freshLocal
+        let s := s.emit ("  " ++ gepReg ++ " = getelementptr " ++ envTypeName ++ ", ptr " ++ envAlloca ++ ", i32 0, i32 " ++ toString idx)
+        let varReg := (s.lookupVar name).getD "%undef"
+        if isPassByPtr s capTy then
+          let szBytes := tySizeOf s capTy
+          s.emit ("  call void @llvm.memcpy.p0.p0.i64(ptr " ++ gepReg ++ ", ptr " ++ varReg ++ ", i64 " ++ toString szBytes ++ ", i1 false)")
+        else
+          let (s, valReg) := s.freshLocal
+          let s := s.emit ("  " ++ valReg ++ " = load " ++ llCapTy ++ ", ptr " ++ varReg)
+          s.emit ("  store " ++ llCapTy ++ " " ++ valReg ++ ", ptr " ++ gepReg)
+      ) s
+      (s, envAlloca)
+    else
+      let (s, nullReg) := s.freshLocal
+      let s := s.emit ("  " ++ nullReg ++ " = inttoptr i64 0 to ptr")
+      (s, nullReg)
+    -- Build the fat pointer { ptr fn, ptr env }
+    let (s, closureAlloca) := s.freshLocal
+    let s := s.emit ("  " ++ closureAlloca ++ " = alloca %struct.Closure")
+    let (s, fnGep) := s.freshLocal
+    let s := s.emit ("  " ++ fnGep ++ " = getelementptr %struct.Closure, ptr " ++ closureAlloca ++ ", i32 0, i32 0")
+    let s := s.emit ("  store ptr @" ++ closureFnName ++ ", ptr " ++ fnGep)
+    let (s, envGep) := s.freshLocal
+    let s := s.emit ("  " ++ envGep ++ " = getelementptr %struct.Closure, ptr " ++ closureAlloca ++ ", i32 0, i32 1")
+    let s := s.emit ("  store ptr " ++ envPtr ++ ", ptr " ++ envGep)
+    (s, closureAlloca)
 
 /-- Generate a type cast in LLVM IR. -/
 partial def genCast (s : CodegenState) (reg : String) (fromTy : Ty) (toTy : Ty) : CodegenState × String :=
@@ -1559,12 +1750,17 @@ def genModule (m : Module) : String :=
   let hasUserString := m.structs.any fun sd => sd.name == "String"
   let s := if !hasUserString then
     let s := s.emit "%struct.String = type { ptr, i64 }"
+    let s := s.emit "%struct.Closure = type { ptr, ptr }"
     s.emit ""
-  else s
+  else
+    let s := s.emit "%struct.Closure = type { ptr, ptr }"
+    s
   let s := genStructTypes s m.structs
   let s := if m.structs.isEmpty then s else s.emit ""
   let s := genEnumTypes s m.enums
   let s := if m.enums.isEmpty then s else s.emit ""
+  -- Placeholder for closure type definitions (filled in after codegen)
+  let closureTypeDefsInsertionPoint := s.output.length
   -- External declarations
   let s := s.emit "declare ptr @malloc(i64)"
   let s := s.emit "declare void @free(ptr)"
@@ -1622,6 +1818,15 @@ def genModule (m : Module) : String :=
   -- String literal globals
   let s := if s.stringGlobals.isEmpty then s
     else { s with output := s.output ++ s.stringGlobals ++ "\n" }
+  -- Closure function definitions (emitted after main functions)
+  let s := if s.closureFnDefs.isEmpty then s
+    else { s with output := s.output ++ s.closureFnDefs ++ "\n" }
+  -- Insert closure type definitions at the insertion point (before external declarations)
+  let s := if s.closureTypeDefs.isEmpty then s
+    else
+      let before := (s.output.take closureTypeDefsInsertionPoint).toString
+      let after := (s.output.drop closureTypeDefsInsertionPoint).toString
+      { s with output := before ++ s.closureTypeDefs ++ after }
   if hasMain then
     -- Find main function signature
     let mainFn := m.functions.find? fun f => f.name == "main"

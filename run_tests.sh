@@ -98,6 +98,12 @@ run_ok "$TESTDIR/break_basic.con"  5
 run_ok "$TESTDIR/continue_basic.con" 25
 run_ok "$TESTDIR/break_for.con"    10
 run_ok "$TESTDIR/continue_for.con" 27
+run_ok "$TESTDIR/closure_basic.con" 42
+run_ok "$TESTDIR/closure_capture_copy.con" 52
+run_ok "$TESTDIR/closure_capture_move.con" 30
+run_ok "$TESTDIR/closure_multiple_captures.con" 60
+run_ok "$TESTDIR/closure_nested.con" 15
+run_ok "$TESTDIR/closure_no_capture.con" 100
 
 echo ""
 echo "=== Negative tests (expected errors) ==="
@@ -131,6 +137,8 @@ run_err "$TESTDIR/error_cap_propagation.con"     "requires capability"
 run_err "$TESTDIR/error_cap_method.con"          "requires capability"
 run_err "$TESTDIR/error_break_outside.con"       "break outside of loop"
 run_err "$TESTDIR/error_continue_outside.con"    "continue outside of loop"
+run_err "$TESTDIR/error_closure_uncalled.con"    "was never consumed"
+run_err "$TESTDIR/error_closure_use_after_move.con" "used after move"
 
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="

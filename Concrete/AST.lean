@@ -62,6 +62,12 @@ inductive Ty where
   | ptrMut (inner : Ty)   -- *mut T
   | ptrConst (inner : Ty) -- *const T
   | fn_ (params : List Ty) (capSet : CapSet) (retTy : Ty)  -- fn(T, U) with(C) -> R
+  | unknown  -- placeholder for untyped closure params, resolved by checker
+  deriving Repr, BEq
+
+inductive CaptureMode where
+  | copy    -- value is copied, original stays live
+  | move    -- value is moved, original is consumed
   deriving Repr, BEq
 
 inductive BinOp where
@@ -73,6 +79,11 @@ inductive BinOp where
 inductive UnaryOp where
   | neg | not_
   deriving Repr, BEq
+
+structure Param where
+  name : String
+  ty : Ty
+  deriving Repr
 
 mutual
 inductive Expr where
@@ -99,6 +110,8 @@ inductive Expr where
   | cast (inner : Expr) (targetTy : Ty)       -- expr as Type
   | methodCall (obj : Expr) (method : String) (typeArgs : List Ty) (args : List Expr)
   | staticMethodCall (typeName method : String) (typeArgs : List Ty) (args : List Expr)
+  | closure (params : List Param) (capSet : CapSet) (retTy : Option Ty) (body : List Stmt)
+            (captures : List (String × CaptureMode)) (isLinear : Bool)
 
 inductive MatchArm where
   | mk (enumName : String) (variant : String) (bindings : List String) (body : List Stmt)
@@ -123,11 +136,6 @@ end
 structure ImportDecl where
   moduleName : String
   symbols : List String
-  deriving Repr
-
-structure Param where
-  name : String
-  ty : Ty
   deriving Repr
 
 structure StructField where
@@ -231,5 +239,94 @@ structure Module where
   typeAliases : List TypeAlias := []
   externFns : List ExternFnDecl := []
   submodules : List Module := []
+
+-- ============================================================
+-- Free Variable Analysis (used by both Check and Codegen)
+-- ============================================================
+
+mutual
+partial def collectFreeVarsExpr (e : Expr) (bound : List String) : List String :=
+  match e with
+  | .ident name => if bound.contains name then [] else [name]
+  | .intLit _ | .floatLit _ | .boolLit _ | .strLit _ | .charLit _ => []
+  | .binOp _ lhs rhs =>
+    collectFreeVarsExpr lhs bound ++ collectFreeVarsExpr rhs bound
+  | .unaryOp _ operand => collectFreeVarsExpr operand bound
+  | .call fn _typeArgs args =>
+    let fnFree := if bound.contains fn then [fn] else []
+    fnFree ++ args.flatMap (fun a => collectFreeVarsExpr a bound)
+  | .paren inner => collectFreeVarsExpr inner bound
+  | .structLit _ _ fields =>
+    fields.flatMap (fun (_, e) => collectFreeVarsExpr e bound)
+  | .fieldAccess obj _ => collectFreeVarsExpr obj bound
+  | .enumLit _ _ _ fields =>
+    fields.flatMap (fun (_, e) => collectFreeVarsExpr e bound)
+  | .match_ scrutinee arms =>
+    collectFreeVarsExpr scrutinee bound ++
+    arms.flatMap (fun arm => match arm with
+      | .mk _ _ bindings body =>
+        let newBound := bound ++ bindings
+        collectFreeVarsStmts body newBound
+      | .litArm _ body => collectFreeVarsStmts body bound
+      | .varArm binding body => collectFreeVarsStmts body (binding :: bound))
+  | .borrow inner | .borrowMut inner | .deref inner | .try_ inner =>
+    collectFreeVarsExpr inner bound
+  | .arrayLit elems => elems.flatMap (fun e => collectFreeVarsExpr e bound)
+  | .arrayIndex arr idx =>
+    collectFreeVarsExpr arr bound ++ collectFreeVarsExpr idx bound
+  | .cast inner _ => collectFreeVarsExpr inner bound
+  | .methodCall obj _ _ args =>
+    collectFreeVarsExpr obj bound ++ args.flatMap (fun a => collectFreeVarsExpr a bound)
+  | .staticMethodCall _ _ _ args =>
+    args.flatMap (fun a => collectFreeVarsExpr a bound)
+  | .closure params _ _ body _ _ =>
+    let closureBound := bound ++ params.map (fun p => p.name)
+    collectFreeVarsStmts body closureBound
+
+partial def collectFreeVarsStmts (stmts : List Stmt) (bound : List String) : List String :=
+  match stmts with
+  | [] => []
+  | stmt :: rest =>
+    let (freeVars, newBound) := match stmt with
+      | .letDecl name _ _ value =>
+        (collectFreeVarsExpr value bound, name :: bound)
+      | .assign name value =>
+        (collectFreeVarsExpr value bound ++ (if bound.contains name then [] else [name]), bound)
+      | .return_ (some value) => (collectFreeVarsExpr value bound, bound)
+      | .return_ none => ([], bound)
+      | .expr e => (collectFreeVarsExpr e bound, bound)
+      | .ifElse cond thenBody elseBody =>
+        let condFree := collectFreeVarsExpr cond bound
+        let thenFree := collectFreeVarsStmts thenBody bound
+        let elseFree := match elseBody with
+          | some body => collectFreeVarsStmts body bound
+          | none => []
+        (condFree ++ thenFree ++ elseFree, bound)
+      | .while_ cond body =>
+        (collectFreeVarsExpr cond bound ++ collectFreeVarsStmts body bound, bound)
+      | .forLoop init cond step body =>
+        let initFree := match init with
+          | some s => collectFreeVarsStmts [s] bound
+          | none => []
+        let condFree := collectFreeVarsExpr cond bound
+        let stepFree := match step with
+          | some s => collectFreeVarsStmts [s] bound
+          | none => []
+        (initFree ++ condFree ++ stepFree ++ collectFreeVarsStmts body bound, bound)
+      | .fieldAssign obj _ value =>
+        (collectFreeVarsExpr obj bound ++ collectFreeVarsExpr value bound, bound)
+      | .derefAssign target value =>
+        (collectFreeVarsExpr target bound ++ collectFreeVarsExpr value bound, bound)
+      | .arrayIndexAssign arr idx value =>
+        (collectFreeVarsExpr arr bound ++ collectFreeVarsExpr idx bound ++
+         collectFreeVarsExpr value bound, bound)
+      | .break_ (some e) => (collectFreeVarsExpr e bound, bound)
+      | .break_ none => ([], bound)
+      | .continue_ => ([], bound)
+    freeVars ++ collectFreeVarsStmts rest newBound
+end
+
+def collectFreeVars (stmts : List Stmt) (paramNames : List String) : List String :=
+  (collectFreeVarsStmts stmts paramNames).eraseDups
 
 end Concrete

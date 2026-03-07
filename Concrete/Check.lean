@@ -59,6 +59,7 @@ structure TypeEnv where
   currentTypeParams : List String := []  -- active function's type params
   currentCapSet : CapSet := .empty       -- current function's capability set
   currentFnName : String := ""           -- current function name (for error messages)
+  lastExprIsLinearClosure : Bool := false  -- set by closure checking, read by letDecl
   deriving Repr
 
 abbrev CheckM := ExceptT String (StateM TypeEnv)
@@ -109,6 +110,7 @@ private def tyToString : Ty → String
       | .var name => " with(" ++ name ++ ")"
       | _ => " with(...)"
     "fn(" ++ paramStr ++ ")" ++ capStr ++ " -> " ++ tyToString retTy
+  | .unknown => "<unknown>"
 
 /-- Is this an integer type (any size)? -/
 def isIntegerType : Ty → Bool
@@ -181,7 +183,8 @@ def isCopyType (ty : Ty) : CheckM Bool := do
   | .ref _ => return true      -- References are Copy
   | .refMut _ => return false  -- Mutable refs are not Copy (exclusive)
   | .ptrMut _ | .ptrConst _ => return true  -- Raw pointers are Copy
-  | .fn_ _ _ _ => return true  -- Function types are Copy (they're pointers)
+  | .fn_ _ _ _ => return true  -- Function types: Copy by default, linear closures tracked separately
+  | .unknown => return true
   | .named _ => return false
   | .generic _ _ => return false  -- Generic instantiations are linear
   | .typeVar _ => return true  -- Type variables are treated as Copy in generic context
@@ -198,8 +201,13 @@ def lookupVarTy (name : String) : CheckM (Option Ty) := do
 
 def addVar (name : String) (ty : Ty) (mutable : Bool := true) : CheckM Unit := do
   let env ← getEnv
-  let copy ← isCopyType ty
+  let mut copy ← isCopyType ty
+  -- If the last expression was a linear closure, override copy to false
+  if env.lastExprIsLinearClosure then
+    copy := false
+    modify fun env => { env with lastExprIsLinearClosure := false }
   let info : VarInfo := { ty, state := .unconsumed, isCopy := copy, loopDepth := env.loopDepth, mutable }
+  let env ← getEnv
   setEnv { env with vars := (name, info) :: env.vars }
 
 def lookupStruct (name : String) : CheckM (Option StructDef) := do
@@ -407,6 +415,26 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       expectTy .bool ty "not operand"
       return .bool
   | .call fnName typeArgs args =>
+    -- Check if this is a closure call (variable with fn_ type)
+    let closureVarTy ← lookupVarTy fnName
+    match closureVarTy with
+    | some (.fn_ paramTys closureCapSet closureRetTy) =>
+      -- Closure call: check capabilities
+      checkCapabilities fnName closureCapSet
+      -- Check argument count
+      if args.length != paramTys.length then
+        throw s!"closure '{fnName}' expects {paramTys.length} arguments, got {args.length}"
+      -- Check each argument type
+      for (arg, pTy) in args.zip paramTys do
+        let argTy ← checkExpr arg (some pTy)
+        expectTy pTy argTy s!"argument of closure call '{fnName}'"
+        match arg with
+        | .ident varName => consumeVar varName
+        | _ => pure ()
+      -- Calling a closure consumes it (if linear)
+      consumeVar fnName
+      return closureRetTy
+    | _ =>
     match ← lookupFn fnName with
     | some sig =>
       -- Check capabilities: caller must have callee's caps
@@ -776,6 +804,93 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
         | _ => pure ()
       return retTy
     | none => throw s!"no method '{methodName}' on type '{typeName}'"
+  | .closure params capSet retTy body _captures _isLinear =>
+    let env ← getEnv
+    -- Determine expected types from hint (bidirectional inference)
+    let expectedParamTys : List Ty := match hint with
+      | some (.fn_ eTys _ _) => eTys
+      | _ => []
+    let expectedCapSet : Option CapSet := match hint with
+      | some (.fn_ _ eCapSet _) => some eCapSet
+      | _ => none
+    let expectedRetTy : Option Ty := match hint with
+      | some (.fn_ _ _ eRetTy) => some eRetTy
+      | _ => none
+    -- Resolve params: use explicit types or infer from hint
+    let mut resolvedParams : List Param := []
+    for (idx, p) in enumerateList params do
+      if p.ty == .unknown then
+        match listGetIdx expectedParamTys idx with
+        | some eTy => resolvedParams := resolvedParams ++ [{ name := p.name, ty := eTy }]
+        | none => throw s!"cannot infer type of closure parameter '{p.name}' without type context"
+      else
+        resolvedParams := resolvedParams ++ [{ name := p.name, ty := p.ty }]
+    -- Determine the return type
+    let closureRetTy := match retTy with
+      | some t => t
+      | none => match expectedRetTy with
+        | some t => t
+        | none => .unit
+    -- Determine capabilities
+    let closureCapSet := if capSet != .empty then capSet
+      else match expectedCapSet with
+        | some cs => cs
+        | none => .empty
+    -- Analyze captures: find free variables in the body
+    let paramNames := resolvedParams.map (fun p => p.name)
+    let freeVars := collectFreeVars body paramNames
+    let mut captureList : List (String × CaptureMode) := []
+    let mut closureIsLinear := false
+    for varName in freeVars do
+      match env.vars.lookup varName with
+      | some info =>
+        if info.isCopy then
+          captureList := captureList ++ [(varName, .copy)]
+        else
+          captureList := captureList ++ [(varName, .move)]
+          closureIsLinear := true
+          -- Mark the original variable as consumed
+          consumeVar varName
+      | none => pure ()  -- Must be a global function, ignore
+    -- Create a fresh scope for the closure body
+    let savedEnv ← getEnv
+    -- Add closure params as variables
+    for p in resolvedParams do
+      addVar p.name p.ty true
+    -- Add captures as variables in the closure scope
+    for (capName, capMode) in captureList do
+      match savedEnv.vars.lookup capName with
+      | some info =>
+        let isCopy := capMode == .copy
+        let varInfo : VarInfo := {
+          ty := info.ty, state := .unconsumed, isCopy := isCopy,
+          loopDepth := 0, mutable := false
+        }
+        modify fun env => { env with vars := (capName, varInfo) :: env.vars }
+      | none => pure ()
+    -- Set capability context for the closure body
+    let bodyEnv ← getEnv
+    let env1 := { bodyEnv with currentCapSet := closureCapSet }
+    modify fun _ => { env1 with currentFnName := "<closure>", currentRetTy := closureRetTy }
+    -- Check the body
+    checkStmts body closureRetTy
+    -- Check unconsumed linear captures
+    let envAfter ← getEnv
+    for (capName, capMode) in captureList do
+      if capMode == .move then
+        match envAfter.vars.lookup capName with
+        | some info =>
+          if info.state != .consumed then
+            throw s!"linear capture '{capName}' was never consumed in closure"
+        | none => pure ()
+    -- Restore the environment (but keep consumed state for move-captures)
+    modify fun _ => savedEnv
+    -- Signal to letDecl that this closure is linear
+    if closureIsLinear then
+      modify fun env => { env with lastExprIsLinearClosure := true }
+    -- Build the function type
+    let paramTys := resolvedParams.map (fun p => p.ty)
+    return .fn_ paramTys closureCapSet closureRetTy
 
 partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
   match stmt with

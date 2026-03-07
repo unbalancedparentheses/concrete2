@@ -202,6 +202,16 @@ def parseParam : ParseM Param := do
   let ty ← parseType
   return { name, ty }
 
+def parseClosureParam : ParseM Param := do
+  let name ← expectIdent
+  let tk ← peek
+  if tk == .colon then
+    advance
+    let ty ← parseType
+    return { name, ty }
+  else
+    return { name, ty := .unknown }
+
 partial def parseParamList : ParseM (List Param) := do
   let tk ← peek
   if tk == .rparen then return []
@@ -464,6 +474,36 @@ partial def parsePrimary : ParseM Expr := do
         tk2 ← peek
     expect .rbracket
     return .arrayLit elems
+  | .fn =>
+    -- Closure: fn(params) [with(caps)] [-> RetTy] { body }
+    advance
+    expect .lparen
+    let mut params : List Param := []
+    let ptk ← peek
+    if ptk != .rparen then
+      let p ← parseClosureParam
+      params := [p]
+      let mut tk2 ← peek
+      while tk2 == .comma do
+        advance
+        let p2 ← parseClosureParam
+        params := params ++ [p2]
+        tk2 ← peek
+    expect .rparen
+    -- Optional with(caps)
+    let mut capSet : CapSet := .empty
+    let wtk ← peek
+    if wtk == .with_ then
+      capSet ← parseWithCaps
+    -- Optional return type
+    let mut retTy : Option Ty := none
+    let rtk ← peek
+    if rtk == .arrow then
+      advance
+      let t ← parseType
+      retTy := some t
+    let body ← parseBlock
+    return .closure params capSet retTy body [] false
   | other =>
     let sp ← peekSpan
     throw ("expected expression, got " ++ toString other ++

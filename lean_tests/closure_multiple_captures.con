@@ -1,0 +1,13 @@
+// Test closure capturing multiple values
+// Expected: 60 (10 + 20 + 30)
+
+fn apply(f: fn(Int) -> Int, x: Int) -> Int {
+    return f(x);
+}
+
+fn main!() -> Int {
+    let a: Int = 10;
+    let b: Int = 20;
+    let result: Int = apply(fn(x: Int) -> Int { return x + a + b; }, 30);
+    return result;
+}
