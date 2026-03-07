@@ -4,7 +4,7 @@ This is the implementation plan for the Concrete programming language. For the f
 
 ## What's Built
 
-The Lean 4 compiler implements the core surface language in ~4,700 lines. All 59 tests pass. 58 of 59 examples from the [original Rust compiler](https://github.com/lambdaclass/concrete) compile and run.
+The Lean 4 compiler implements the core surface language in ~4,700 lines. All 59 tests pass. 58 of 59 legacy examples compile and run in the current implementation.
 
 **Done:**
 - Lexer, LL(1) parser, AST
@@ -34,12 +34,12 @@ Syntax choices that diverge from the [spec blog post](https://federicocarrone.co
 
 | Spec says | We use | Why |
 |-----------|--------|-----|
-| `type Point { x: Float64, y: Float64 }` (unified `type` keyword) | `struct Point { ... }` / `enum Option<T> { ... }` (separate keywords) | Already implemented; Rust/Zig familiarity. Same semantics. |
-| `[100]Uint8` (size before type) | `[Uint8; 100]` a.k.a. `[T; N]` | Already implemented; Rust-style. Same semantics. |
+| `type Point { x: Float64, y: Float64 }` (unified `type` keyword) | `struct Point { ... }` / `enum Option<T> { ... }` (separate keywords) | Already implemented; separate declarations are clearer in the current parser. Same semantics. |
+| `[100]Uint8` (size before type) | `[Uint8; 100]` a.k.a. `[T; N]` | Already implemented; matches the rest of the current type grammar. Same semantics. |
 | `public` / `private` | `pub` / (default private) | Already implemented; more concise. Same semantics. |
 | `module Main` (declaration) | `mod Main { ... }` (block) | Already implemented. Same semantics. |
-| `Address[T]` (raw pointer) | `*mut T` / `*const T` | Already implemented; Rust-style, distinguishes mutability. |
-| `fn malloc(...) = foreign("malloc")` | `extern fn malloc(...)` | Already implemented; Rust/C-style. Same semantics. |
+| `Address[T]` (raw pointer) | `*mut T` / `*const T` | Already implemented; distinguishes mutability directly in the type. |
+| `fn malloc(...) = foreign("malloc")` | `extern fn malloc(...)` | Already implemented; concise foreign-function declaration. Same semantics. |
 | `destroy File with(File) { ... }` (standalone declaration) | `impl Destroy for File with(File) { ... }` (trait impl) | Reuses existing trait/impl machinery. Destroy is a built-in trait instead of a special declaration form. Same philosophy: explicit destruction, no implicit RAII. |
 | `.concrete` file extension | `.con` | Shorter. Can revisit later. |
 | Allocator returns `&mut [T]` (borrow-checked reference) | Allocator returns `Heap<T>` (linear owned type) | Allocated memory is owned, not borrowed. `Heap<T>` avoids circular dependency with borrow regions (Phase 6). Access requires explicit borrow. See [research/heap-ownership-design.md](research/heap-ownership-design.md). |
@@ -56,7 +56,7 @@ These rules apply across all phases. They come directly from the spec and must n
 
 1. **Pure by default.** A function without `with()` is pure. It cannot call any function that has `with()`. This is the core invariant.
 
-2. **True linear types, not affine.** Every linear value must be consumed exactly once. Not zero (leak = compile error). Not twice (double-use = compile error). Unlike Rust (at most once), forgetting a resource is rejected. **What counts as "consuming" a value** — this is the canonical list, referenced by all phases:
+2. **True linear types.** Every linear value must be consumed exactly once. Not zero (leak = compile error). Not twice (double-use = compile error). Forgetting a resource is rejected. **What counts as "consuming" a value** — this is the canonical list, referenced by all phases:
    - Passing it as a by-value argument to a function or method (including `destroy(x)`)
    - Returning it from a function (`return x`)
    - Moving it into a struct field during construction (`Point { x: val }`)
@@ -742,9 +742,9 @@ impl Destroy for HeapArray<T> with(Alloc) {
 - **Linearity enforces cleanup** — forget to free a `Heap<T>`? Compile error.
 - **No `Unsafe` boundary** — the entire allocator interface is safe
 
-### Accessing heap values: explicit borrow
+### Accessing heap values: `->` operator
 
-`Heap<T>` is opaque. To access the value inside, you must borrow explicitly:
+`Heap<T>` is opaque. To access the value inside, use the `->` arrow operator (like C/C++):
 
 ```
 fn main!() {
@@ -754,34 +754,45 @@ fn main!() {
     let p: Heap<Point> = alloc(Point { x: 1.0, y: 2.0 }) with(Alloc = arena);
     defer destroy(p);
 
-    // Read — inline borrow (already exists in the language)
-    let x: Float64 = (&p).x;
+    // Read — arrow operator borrows and accesses the field
+    let x: Float64 = p->x;
+    let y: Float64 = p->y;
 
-    // Multiple reads — borrow block
+    // Write — arrow operator with mutable borrow
+    p->x = 3.0;
+    p->y = 4.0;
+
+    // Method call on inner value
+    let s: Float64 = p->sum();
+
+    // Pass reference to function
+    compute(&p);
+
+    // Multiple accesses — borrow block (Phase 6)
     borrow p as pr in R {
-        let x: Float64 = pr.x;
+        let x: Float64 = pr.x;     // pr is &Point, normal dot
         let y: Float64 = pr.y;
         compute(pr);
-    }
-
-    // Mutate — mutable borrow block
-    borrow mut p as pmr in R {
-        pmr.x = 3.0;
-        pmr.y = 4.0;
     }
 }
 ```
 
-**Why explicit borrow (not transparent access):** In a world where most code is LLM-generated, writing cost is zero and reading cost is the bottleneck. Explicit borrow makes every heap access visible — you can grep for all heap dereferences, and code reviewers (human or LLM) see exactly when heap memory is touched without checking declarations. See [research/heap-ownership-design.md](research/heap-ownership-design.md) for the full design rationale.
+**Why `->` (not transparent `p.x`):** In a world where most code is LLM-generated, writing cost is zero and reading cost is the bottleneck. The `->` operator makes every heap access visible — you can grep for `->` to find all heap dereferences, and code reviewers (human or LLM) see exactly when heap memory is touched without checking declarations. This is the same distinction C/C++ has maintained for 50 years with `.` vs `->`. See [research/heap-ownership-design.md](research/heap-ownership-design.md) for the full design rationale.
+
+**`->` semantics:** `p->x` on `Heap<T>` is sugar for "borrow `p` to get `&T`, then access field `x`." For writes, `p->x = val` is sugar for "mutably borrow `p` to get `&mut T`, then assign to field `x`." The `->` is NOT a user-extensible operator — it is a built-in compiler rule that only works on `Heap<T>` and `HeapArray<T>`.
+
+**Token note:** `->` is already used for return types in function signatures (`fn foo() -> Int`). In expression position, `->` means heap field access. The parser distinguishes by context: after a function parameter list `)`, `->` is a return type arrow; after an expression, `->` is heap access. This is unambiguous in an LL(1) grammar.
 
 **Rules:**
-- `p.x` directly on `Heap<Point>` is a type error — you must borrow first. Error: `"cannot access field 'x' on Heap<Point> directly; borrow first with (&p).x or a borrow block"`
-- `&p` where `p: Heap<T>` gives `&T` (pointer to the heap value). This is a built-in compiler rule, not a trait.
-- `&mut p` where `p: Heap<T>` gives `&mut T`
-- `borrow p as pr in R { ... }` works on `Heap<T>` — `pr` has type `&T`. **Note on Phase 6 dependency:** The `borrow ... as ... in R` syntax is defined in Phase 6 (borrow regions). Phase 5 can be implemented before Phase 6 using only inline borrows `(&p).x` and `(&mut p).x`. The `borrow` block form becomes available after Phase 6. Both use the same underlying AST and checking logic for `Heap<T>`.
-- `borrow mut p as pmr in R { ... }` — `pmr` has type `&mut T`
-- `HeapArray<T>` supports indexing: `(&arr)[i]` returns `&T` (a reference to the element, not a copy). `(&mut arr)[i]` returns `&mut T`. `(&mut arr)[i] = val` assigns to the element. Bounds checking is performed at runtime — out-of-bounds access calls `abort()`.
-- While borrowed, `Heap<T>` is frozen (cannot move, destroy, or re-borrow mutably) — same as any borrow
+- `p.x` directly on `Heap<Point>` is a type error — you must use `->`. Error: `"cannot access field 'x' on Heap<Point> with '.'; use '->' for heap access: p->x"`
+- `p->x` where `p: Heap<T>` borrows `p` as `&T` and accesses field `x`. Returns the field's type.
+- `p->x = val` where `p: Heap<T>` mutably borrows `p` as `&mut T` and assigns to field `x`.
+- `p->method(args)` where `p: Heap<T>` borrows `p` and calls `method` on the inner `&T` (or `&mut T` for `&mut self` methods).
+- `&p` where `p: Heap<T>` gives `&T` (pointer to the heap value). This is for passing to functions that take `&T`.
+- `&mut p` where `p: Heap<T>` gives `&mut T`.
+- `borrow p as pr in R { ... }` works on `Heap<T>` — `pr` has type `&T`, uses normal `.` syntax. **Note on Phase 6 dependency:** The `borrow ... as ... in R` syntax is defined in Phase 6 (borrow regions). Phase 5 can be implemented before Phase 6 using `->` for field access and `&p` for function arguments. The `borrow` block form becomes available after Phase 6.
+- `HeapArray<T>` supports indexing via `->`: `arr->[i]` returns `&T`. `arr->[i] = val` assigns to the element. Bounds checking is performed at runtime — out-of-bounds access calls `abort()`.
+- While any borrow is active (from `->`, `&p`, or `borrow` block), `Heap<T>` is frozen (cannot move, destroy, or re-borrow mutably) — same as any borrow. For `->`, the borrow is scoped to the single expression.
 - **Allocator identity:** The type system does NOT track which allocator a `Heap<T>` was allocated from. If you allocate with arena A and destroy with arena B, that is a runtime bug but not a compile-time error. This is an intentional limitation — tracking allocator provenance would require dependent types. In practice, the `defer` pattern (`alloc → defer destroy → use`) naturally pairs allocation and deallocation.
 
 ### Collections
@@ -870,8 +881,8 @@ Phase 5 depends on having at least one `Allocator` implementation for tests. Sin
 - `alloc_propagate.con`: allocator propagates through nested calls → ok
 - `alloc_different.con`: different allocators for different calls → ok
 - `alloc_method.con`: method call with allocator binding → ok
-- `heap_borrow.con`: `(&p).x` on `Heap<Point>` → ok
-- `heap_borrow_mut.con`: `(&mut p).x = val` on `Heap<Point>` → ok
+- `heap_arrow.con`: `p->x` on `Heap<Point>` → ok
+- `heap_arrow_mut.con`: `p->x = val` on `Heap<Point>` → ok
 - `error_alloc_missing.con`: call with(Alloc) function without binding → error "requires Alloc but no allocator is bound"
 - `error_alloc_no_cap.con`: function without Alloc calls with(Alloc) function → error
 - `error_heap_direct_access.con`: `p.x` on `Heap<Point>` without borrow → error "cannot access field"
@@ -881,7 +892,7 @@ Phase 5 depends on having at least one `Allocator` implementation for tests. Sin
 
 ## Phase 6: Borrow regions
 
-Explicit lexical regions that bound reference lifetimes. Simpler than Rust — no lifetime annotations in function signatures.
+Explicit lexical regions that bound reference lifetimes. No lifetime annotations in function signatures.
 
 ### Two levels of explicitness
 
@@ -1069,7 +1080,7 @@ Target:   Surface AST → Check → Codegen.lean (MLIR API calls) → MLIR Modul
 Build Lean 4 `@[extern]` bindings to the MLIR C API.
 
 - Wrap core types: `MLIRContext`, `MLIRModule`, `MLIRBlock`, `MLIROperation`, `MLIRType`, `MLIRValue`
-- Use [melior](https://github.com/raviqqe/melior) (Rust MLIR bindings) as design reference for API surface
+- Use [melior](https://github.com/raviqqe/melior) as a design reference for the API surface
 - Build system: link against MLIR/LLVM shared libraries via `lakefile.lean`
 - New file: `Concrete/MLIR/Bindings.lean`
 
@@ -1288,7 +1299,7 @@ All compiler error messages follow these conventions for consistency:
   - Borrow: `"cannot borrow 'x' as mutable because it is already borrowed"`
   - Destroy: `"type 'Point' does not implement Destroy"`
   - Defer: `"variable 'f' is reserved by defer"`
-  - Heap: `"cannot access field 'x' on Heap<Point> directly; borrow first with (&p).x or a borrow block"`
+  - Heap: `"cannot access field 'x' on Heap<Point> directly; use p->x or a borrow block"`
 
 When implementing a new phase, follow this format exactly. Tests assert on substrings of error messages (e.g., the test checks that the error contains `"requires capability"`, not the full string), so the exact wording matters but minor variations are tolerable.
 

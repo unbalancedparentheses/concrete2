@@ -17,7 +17,7 @@ Concrete is a systems programming language designed around a single organizing p
 
 The compiler is written entirely in [Lean 4](https://leanprover.github.io/lean4/doc/setup.html), a theorem prover. This is not an implementation detail — it's the point. The goal is a language whose core type system is mechanically verified: proofs of progress, preservation, linearity soundness, and effect soundness, checked by Lean itself.
 
-This is a reimplementation of the [original Rust-based Concrete compiler](https://github.com/lambdaclass/concrete). For the full language specification, see [The Concrete Programming Language: Systems Programming for Formal Reasoning](https://federicocarrone.com/series/concrete/the-concrete-programming-language-systems-programming-for-formal-reasoning/).
+For the full language specification, see [The Concrete Programming Language: Systems Programming for Formal Reasoning](https://federicocarrone.com/series/concrete/the-concrete-programming-language-systems-programming-for-formal-reasoning/).
 
 ## Try It Now
 
@@ -116,9 +116,9 @@ Functions without capability annotations are pure — no side effects, no alloca
 
 Predefined capabilities: `File`, `Network`, `Clock`, `Env`, `Random`, `Alloc`, `Unsafe`. `Std` includes all except `Unsafe`. Users cannot define new capabilities.
 
-### True linear types, not affine
+### True linear types
 
-Rust has affine types: use at most once, silently drop the rest. Concrete has linear types: use **exactly** once. Forgetting a resource is a compile error, not a silent destructor call.
+Concrete has linear types: use **exactly** once. Forgetting a resource is a compile error, not silent cleanup inserted behind your back.
 
 - `defer destroy(x)` schedules cleanup at scope exit (LIFO order, like Zig/Go)
 - `defer` reserves the value: cannot move `x` after deferring its destruction
@@ -159,52 +159,47 @@ What a type-checked program guarantees:
 
 ## Why Concrete
 
-Concrete is not a better Rust. It's a different bet:
+Concrete is built for code that must be inspectable, auditable, and eventually mechanically verified.
 
-- **Rust** bets that programmers write code and need maximum expressiveness with safety guardrails
-- **Concrete** bets that machines write code and humans/machines need maximum auditability with formal guarantees
+### Clarity guarantees
 
-### Clarity: Concrete vs Rust
-
-| Question | Rust | Concrete |
-|----------|------|----------|
-| Can you tell if a function allocates? | No | Yes — `with(Alloc)` in signature |
-| Can you tell if a function does I/O? | No | Yes — `with(File)`, `with(Network)` |
-| Can you tell where cleanup happens? | No — Drop runs invisibly at scope end | Yes — `defer destroy(x)` is explicit |
-| Can you tell if `a + b` calls a function? | No — might call `Add::add` | Yes — always primitive addition |
-| Can you tell if a value is forgotten? | No — Rust silently drops | Yes — compile error (linear types) |
-| Can you audit all unsafe code? | `grep unsafe` — blocks can be large | `grep with(Unsafe)` — per function |
-
-Rust gives you more **expressiveness** (trait objects, lifetime annotations, operator overloading, dynamic dispatch). Concrete gives you more **visibility** (every behavior is visible in source text).
+| Question | Concrete |
+|----------|----------|
+| Can you tell if a function allocates? | Yes — `with(Alloc)` in signature |
+| Can you tell if a function does I/O? | Yes — `with(File)`, `with(Network)` |
+| Can you tell where cleanup happens? | Yes — `defer destroy(x)` is explicit |
+| Can you tell if `a + b` calls a function? | Yes — primitive operators are always primitive |
+| Can you tell if a value is forgotten? | Yes — linearity makes it a compile error |
+| Can you audit unsafe code? | Yes — `grep with(Unsafe)` at the function boundary |
 
 ### Critical software
 
-| Need | Rust | Concrete |
-|------|------|----------|
-| Memory safety proofs | No formal proofs | Mechanically verified in Lean 4 |
-| "This module can't touch the network" | Manual audit | `grep with(Network)` — provable |
-| "This JSON parser can't phone home" | Trust + audit | No capabilities = provably pure |
-| "No resource leaks" | Hope that Drop is correct | Compile error if not consumed |
-| "Where does this allocate?" | Profile + guess | `grep with(Alloc)` — exact list |
-| Deterministic resource ordering | Implicit Drop (sometimes surprising) | Explicit `defer` in LIFO order |
-| Ecosystem / libraries | Massive | Zero (early stage) |
-| Battle-tested compiler | 10+ years | Research stage |
+| Need | Concrete |
+|------|----------|
+| Memory safety proofs | Mechanically verified in Lean 4 |
+| "This module can't touch the network" | `grep with(Network)` — provable |
+| "This JSON parser can't phone home" | No capabilities = provably pure |
+| "No resource leaks" | Compile error if not consumed |
+| "Where does this allocate?" | `grep with(Alloc)` — exact list |
+| Deterministic resource ordering | Explicit `defer` in LIFO order |
+| Ecosystem / libraries | Early stage |
+| Compiler maturity | Research stage |
 
 ### LLM-friendly design
 
-| LLM task | Rust | Concrete |
-|----------|------|----------|
-| Generate correct code | Hard — implicit rules, lifetimes, trait resolution | Easier — everything explicit, LL(1) grammar |
-| Read/audit generated code | Must understand implicit Drop, trait dispatch | What you see is what executes |
-| Find all I/O in a codebase | Search every possible I/O function by name | `grep with(File)` or `grep with(Network)` |
-| Find all allocations | Impossible without deep analysis | `grep with(Alloc)` |
-| Verify no resource leaks | Requires understanding Drop semantics | Compiler does it — linear types |
-| Verify security boundaries | Manual analysis of every dependency | Capabilities propagate through call graph |
-| Fix compilation errors | Rust errors can be cryptic (lifetimes, trait bounds) | One error at a time, explicit cause |
+| LLM task | Concrete |
+|----------|----------|
+| Generate correct code | Explicit effects, explicit cleanup, LL(1) grammar |
+| Read/audit generated code | What you see is what executes |
+| Find all I/O in a codebase | `grep with(File)` or `grep with(Network)` |
+| Find all allocations | `grep with(Alloc)` |
+| Verify no resource leaks | Compiler-enforced linearity |
+| Verify security boundaries | Capabilities propagate through call graph |
+| Fix compilation errors | One error at a time, explicit cause |
 
 ## Current Status
 
-The compiler implements the core surface language in ~4,700 lines of Lean 4. All 59 tests pass. 58 of 59 examples from the [original Rust compiler](https://github.com/lambdaclass/concrete) compile and run.
+The compiler implements the core surface language in ~4,700 lines of Lean 4. All 59 tests pass. 58 of 59 legacy examples compile and run in the current implementation.
 
 **Capabilities, `defer`/`destroy`, explicit allocation, borrow regions, FFI safety, MLIR backend, and the kernel formalization are not yet implemented.** See the full [ROADMAP.md](ROADMAP.md) for the implementation plan. What works today:
 
@@ -300,7 +295,6 @@ examples/        -- 59 example programs (superset of lambdaclass/concrete exampl
 ## Influences
 
 - **[Austral](https://austral-lang.org/)** — Linear types, capability system, the most direct influence
-- **Rust** — Borrowing, traits, `Result<T, E>`, pattern matching
 - **Zig** — Explicit allocator passing, `defer`
 - **[Koka](https://koka-lang.github.io/)** / Eff / Frank — Algebraic effect systems
 - **Lean 4** — Theorem prover for kernel formalization
@@ -325,20 +319,18 @@ Things Concrete deliberately does not have:
 | Implicit conversions | No silent data loss |
 | Undefined behavior (safe code) | Kernel semantics fully defined |
 
-## Lean 4 vs Rust Implementation
+## Implementation Snapshot
 
-This is a reimplementation of the [lambdaclass/concrete](https://github.com/lambdaclass/concrete) compiler.
-
-**Lean 4 implementation:**
+**Current Lean 4 implementation:**
 - ~4,700 lines — the whole compiler fits in 6 files
 - Direct textual LLVM IR emission — no MLIR, no complex lowering passes
 - Path to formal verification of the type system using Lean's proof system
 - Clean pipeline: Lexer -> Parser -> AST -> Check -> Codegen
 
-**Rust implementation:**
-- MLIR-based lowering pipeline (production compiler infrastructure)
-- More modular architecture designed to scale
+**Next major build-out:**
+- MLIR-based lowering pipeline
 - Build system (`Concrete.toml`), standard library, LSP support
+- Kernel formalization and proof development in Lean
 
 ## License
 

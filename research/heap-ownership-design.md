@@ -1,6 +1,6 @@
 # Heap Ownership Design: `Heap<T>` Access Model
 
-**Status:** Decided — Option B (explicit borrow)
+**Status:** Decided — Option B (explicit borrow) with `->` syntax
 **Affects:** Phase 5 (Allocator system), Phase 9 (Standard library)
 **Date:** 2026-03-07
 
@@ -104,7 +104,7 @@ defer allocator.destroy(ptr);
 2. **The codegen is literally identical.** All structs are already pointers under the hood. `Heap<T>` is just a different pointer. The machine instruction for `p.x` is the same regardless of stack vs heap.
 3. **No hidden control flow.** Field access is a primitive operation (pointer + offset load), not a function call. The spec says "no implicit function calls" — this is not a function call. `a + b` is primitive addition; `p.x` is primitive field access. Same category.
 4. **The type is visible.** You know `p` is heap-allocated because its type is `Heap<Point>`, not `Point`. The allocation site (`alloc(...)`) and cleanup (`defer destroy(p)`) are explicit. Nothing is hidden.
-5. **Consistent with how every systems language works.** C, Zig, Rust (`Box<T>`) all allow transparent field access through heap pointers.
+5. **Consistent with common systems-language practice.** C, Zig, and C++ all allow direct field access through heap pointers.
 
 ### Arguments against
 
@@ -222,22 +222,22 @@ Most code will be written by LLMs. This changes the calculus:
 
 **Option A optimizes for writing. Option B optimizes for reading.** In an LLM world, writing is free and reading is the bottleneck.
 
-When an LLM generates code, it will write `.borrow()` without complaint. When a human reviews that code, `.borrow()` tells them "this line touches the heap" without checking declarations. When an LLM audits code, explicit borrow sites are unambiguous patterns.
+When an LLM generates code, it will write `->` without complaint. When a human reviews that code, `->` tells them "this line touches the heap" without checking declarations. When an LLM audits code, explicit heap access sites via `->` are unambiguous patterns.
 
 The ergonomic argument against Option B ("too verbose") was always about writing cost. If writing cost is zero, only reading cost matters. And Option B is strictly better for reading.
 
 ## Recommendation Update
 
-Previous recommendation was Option A. **Revised recommendation: Option B (explicit borrow)**, based on the LLM-written-code argument.
+Previous recommendation was Option A. **Revised recommendation: Option B (explicit borrow) with `->` syntax**, based on the LLM-written-code argument and C/C++ precedent.
 
-To avoid Austral's extreme verbosity (pointer threading through every operation), we use Concrete's existing borrow syntax rather than load/store:
+The `->` operator (arrow) is a well-known heap access marker from C/C++, where `.` vs `->` has distinguished stack from heap access for 50 years. We adopt the same convention: `p->x` on `Heap<T>` borrows `p` and accesses field `x`. For writes, `p->x = val` mutably borrows `p` and assigns. The `->` token is dual-use: return type in declarations (`fn foo() -> Int`) and heap access in expressions (`p->x`). The parser distinguishes by context.
 
 ```
 let p: Heap<Point> = alloc(Point { x: 1.0, y: 2.0 }) with(Alloc = arena);
 defer destroy(p);
 
-// Read — explicit borrow
-let x: Float64 = (&p).x;            // inline borrow, gives &Point
+// Read — arrow operator borrows and accesses the field
+let x: Float64 = p->x;
 
 // Or with borrow block for multiple accesses
 borrow p as pr in R {
@@ -246,16 +246,22 @@ borrow p as pr in R {
     compute(pr);
 }
 
-// Mutate — explicit mutable borrow
-borrow mut p as pmr in R {
-    pmr.x = 3.0;
-    pmr.y = 4.0;
-}
+// Mutate — arrow operator with mutable borrow
+p->x = 3.0;
+p->y = 4.0;
+
+// Method call on inner value
+let s: Float64 = p->sum();
+
+// HeapArray indexing
+let arr: HeapArray<Int> = alloc_array(10) with(Alloc = arena);
+let val: Int = arr->[0];
+arr->[3] = 42;
 ```
 
-This is NOT Austral's threading pattern. `Heap<T>` stays in scope (it's linear, not consumed by borrowing). The `borrow` mechanism already exists in the language. The only difference from Option A is that `p.x` directly on a `Heap<Point>` is a type error — you must go through `&p` or `borrow`.
+This is NOT Austral's threading pattern. `Heap<T>` stays in scope (it's linear, not consumed by borrowing). The `borrow` mechanism already exists in the language. The `->` operator is a built-in compiler rule that only works on `Heap<T>` and `HeapArray<T>` — it is NOT user-extensible.
 
-Key ergonomic point: **`(&p).x` is one extra character pair compared to `p.x`.** The borrow block form (`borrow p as pr in R { ... }`) is used when you need multiple accesses in a block, avoiding repeated `(&p)`. Neither is onerous, especially when LLMs write the code.
+Key ergonomic point: **`p->x` is the same number of characters as `p.x` plus one.** The borrow block form (`borrow p as pr in R { ... }`) is used when you need multiple accesses in a block, avoiding repeated `p->`. For function arguments, you still write `&p` explicitly. Neither is onerous, especially when LLMs write the code.
 
 ---
 
@@ -276,9 +282,7 @@ trait Allocator {
 }
 ```
 
-`HeapArray<T>` supports indexing (`arr[i]`) transparently, like fixed-size arrays `[T; N]`. Same argument: indexing is a primitive operation (pointer + index * element_size), not a function call.
-
-`Vec<T>` would wrap `HeapArray<T>` + length + capacity:
+`HeapArray<T>` supports indexing via `arr->[i]`, consistent with the `->` heap access pattern. `Vec<T>` would wrap `HeapArray<T>` + length + capacity:
 
 ```
 struct Vec<T> {
@@ -294,7 +298,7 @@ struct Vec<T> {
 
 ## Open Questions
 
-1. **Should `Heap<T>` be the exact name?** Alternatives: `Own<T>`, `Box<T>`, `Ptr<T>`. `Heap<T>` is most descriptive. `Box<T>` has Rust connotations.
+1. **Should `Heap<T>` be the exact name?** Alternatives: `Own<T>`, `Box<T>`, `Ptr<T>`. `Heap<T>` is the most descriptive today.
 2. **Should `free` return the value (`fn free<T>(&mut self, ptr: Heap<T>) -> T`) or consume it (`fn free<T>(&mut self, ptr: Heap<T>)`)?** Returning it is more flexible (you can move a value from heap to stack). Consuming it is simpler.
 3. **Can you move a value out of `Heap<T>` without freeing?** E.g., `let val: T = unbox(p) with(Alloc);` — takes the value, frees the memory. This is what `free` returning `T` would do.
 4. **Update the spec blog post** once this decision is finalized — the allocator trait definition should reflect `Heap<T>` instead of `&mut [T]`.
