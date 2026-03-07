@@ -157,6 +157,51 @@ What a type-checked program guarantees:
 - **Resource safety**: linear values consumed exactly once, no leaks
 - **Effect correctness**: declared capabilities match actual effects
 
+## Why Concrete
+
+Concrete is not a better Rust. It's a different bet:
+
+- **Rust** bets that programmers write code and need maximum expressiveness with safety guardrails
+- **Concrete** bets that machines write code and humans/machines need maximum auditability with formal guarantees
+
+### Clarity: Concrete vs Rust
+
+| Question | Rust | Concrete |
+|----------|------|----------|
+| Can you tell if a function allocates? | No | Yes — `with(Alloc)` in signature |
+| Can you tell if a function does I/O? | No | Yes — `with(File)`, `with(Network)` |
+| Can you tell where cleanup happens? | No — Drop runs invisibly at scope end | Yes — `defer destroy(x)` is explicit |
+| Can you tell if `a + b` calls a function? | No — might call `Add::add` | Yes — always primitive addition |
+| Can you tell if a value is forgotten? | No — Rust silently drops | Yes — compile error (linear types) |
+| Can you audit all unsafe code? | `grep unsafe` — blocks can be large | `grep with(Unsafe)` — per function |
+
+Rust gives you more **expressiveness** (trait objects, lifetime annotations, operator overloading, dynamic dispatch). Concrete gives you more **visibility** (every behavior is visible in source text).
+
+### Critical software
+
+| Need | Rust | Concrete |
+|------|------|----------|
+| Memory safety proofs | No formal proofs | Mechanically verified in Lean 4 |
+| "This module can't touch the network" | Manual audit | `grep with(Network)` — provable |
+| "This JSON parser can't phone home" | Trust + audit | No capabilities = provably pure |
+| "No resource leaks" | Hope that Drop is correct | Compile error if not consumed |
+| "Where does this allocate?" | Profile + guess | `grep with(Alloc)` — exact list |
+| Deterministic resource ordering | Implicit Drop (sometimes surprising) | Explicit `defer` in LIFO order |
+| Ecosystem / libraries | Massive | Zero (early stage) |
+| Battle-tested compiler | 10+ years | Research stage |
+
+### LLM-friendly design
+
+| LLM task | Rust | Concrete |
+|----------|------|----------|
+| Generate correct code | Hard — implicit rules, lifetimes, trait resolution | Easier — everything explicit, LL(1) grammar |
+| Read/audit generated code | Must understand implicit Drop, trait dispatch | What you see is what executes |
+| Find all I/O in a codebase | Search every possible I/O function by name | `grep with(File)` or `grep with(Network)` |
+| Find all allocations | Impossible without deep analysis | `grep with(Alloc)` |
+| Verify no resource leaks | Requires understanding Drop semantics | Compiler does it — linear types |
+| Verify security boundaries | Manual analysis of every dependency | Capabilities propagate through call graph |
+| Fix compilation errors | Rust errors can be cryptic (lifetimes, trait bounds) | One error at a time, explicit cause |
+
 ## Current Status
 
 The compiler implements the core surface language in ~4,700 lines of Lean 4. All 59 tests pass. 58 of 59 examples from the [original Rust compiler](https://github.com/lambdaclass/concrete) compile and run.
