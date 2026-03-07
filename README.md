@@ -19,50 +19,32 @@ The compiler is written entirely in [Lean 4](https://leanprover.github.io/lean4/
 
 This is a reimplementation of the [original Rust-based Concrete compiler](https://github.com/lambdaclass/concrete). For the full language specification, see [The Concrete Programming Language: Systems Programming for Formal Reasoning](https://federicocarrone.com/series/concrete/the-concrete-programming-language-systems-programming-for-formal-reasoning/).
 
-## What Makes Concrete Different
+## Try It Now
 
-Most languages treat verification as something bolted on after the fact. Concrete inverts this: the language is *designed around* a verified core.
+```
+struct Point { x: Int, y: Int }
 
-### Pure by default, effects declared
-
-Functions without capability annotations are pure — no side effects, no allocation, no I/O. When a function needs effects, it says so:
-
-```rust
-fn transform(data: &List<Row>) -> String {
-    // pure: computes a result from its inputs, nothing more
+impl Point {
+    fn sum(&self) -> Int {
+        return self.x + self.y;
+    }
 }
 
-fn read_file(path: String) with(File) -> String {
-    // declares File capability: can do file I/O
-}
-
-fn process(input: String) with(File, Network, Alloc) -> Result<Data, Error> {
-    // declares exactly which effects it performs
-}
-
-fn main!() {
-    // ! is shorthand for with(Std) — all standard capabilities
+fn main() -> Int {
+    let p: Point = Point { x: 10, y: 20 };
+    let s: Int = p.sum();
+    return s;  // => 30
 }
 ```
 
-Capabilities propagate: if `f` calls `g`, and `g` requires `File`, then `f` must declare `File` too. `grep with(Network)` finds every function that touches the network. Your JSON parser has no capabilities? Then it *provably* can't phone home.
-
-### True linear types, not affine
-
-Rust has affine types: use at most once, silently drop the rest. Concrete has linear types: use **exactly** once. You can't forget a resource.
-
-```rust
-fn process_file!() {
-    let f = open("data.txt")
-    defer destroy(f)           // cleanup is visible in source
-    let content = read(&f)
-    // destroy(f) runs here because of defer
-}
+```bash
+make build
+.lake/build/bin/concrete input.con -o output && ./output
 ```
 
-If `f` isn't consumed on all paths, the compiler rejects the program. No implicit destructors, no hidden `drop()` calls. Every resource acquisition and release is visible in the source.
+Linear types work today — the compiler rejects programs that forget or reuse resources:
 
-```rust
+```
 struct Resource { value: Int }
 
 fn consume(r: Resource) -> Int {
@@ -78,6 +60,72 @@ fn main() -> Int {
 }
 ```
 
+## The Vision
+
+Most languages treat verification as something bolted on after the fact. Concrete inverts this: the language is *designed around* a verified core. Here is what a Concrete program will look like when the language is complete:
+
+```
+module Main
+
+import FileSystem.{open, read, write}
+import Parse.{parse_csv}
+
+// Pure: no capabilities, computes result from inputs
+fn transform(data: &List<Row>) -> String {
+    ...
+}
+
+// Declares exactly which effects it performs
+fn process_file(input: String, output: String) with(File, Alloc) -> Result<Unit, Error> {
+    let in_file = open(input)?
+    defer destroy(in_file)             // cleanup visible in source, runs at scope exit
+
+    let content = read(&in_file)
+    let data = parse_csv(content)?
+    let result = transform(&data)
+
+    let out_file = open(output)?
+    defer destroy(out_file)
+
+    write(&mut out_file, result)
+    Ok(())
+}
+
+fn main!() {                           // ! is sugar for with(Std)
+    let arena = Arena.new()
+    defer arena.deinit()
+
+    match process_file("in.csv", "out.txt") with(Alloc = arena) {
+        Ok(()) => println("Done"),
+        Err(e) => println("Error: " + e.message())
+    }
+}
+```
+
+Everything is visible: resource acquisition, cleanup scheduling, error propagation, effect declarations, allocator binding. Nothing happens behind your back.
+
+### Pure by default, effects declared
+
+Functions without capability annotations are pure — no side effects, no allocation, no I/O. When a function needs effects, it declares them with `with()`:
+
+- A function without `with()` is pure — it cannot call any function that has `with()`
+- If `f` calls `g`, and `g` requires `Network`, then `f` must declare `Network`
+- Capabilities propagate monotonically through the call graph
+- `grep with(Network)` finds every function that touches the network
+- Your JSON parser has no capabilities? Then it *provably* can't phone home
+
+Predefined capabilities: `File`, `Network`, `Clock`, `Env`, `Random`, `Alloc`, `Unsafe`. `Std` includes all except `Unsafe`. Users cannot define new capabilities.
+
+### True linear types, not affine
+
+Rust has affine types: use at most once, silently drop the rest. Concrete has linear types: use **exactly** once. Forgetting a resource is a compile error, not a silent destructor call.
+
+- `defer destroy(x)` schedules cleanup at scope exit (LIFO order, like Zig/Go)
+- `defer` reserves the value: cannot move `x` after deferring its destruction
+- `destroy(x)` is only valid if the type defines a destructor
+- Types without a destructor must be consumed by moving, returning, or destructuring
+- `Copy` is explicit and opt-in — a `Copy` type cannot have a destructor and cannot contain linear fields
+
 ### No hidden control flow
 
 When you read Concrete code, what you see is what executes:
@@ -89,23 +137,16 @@ When you read Concrete code, what you see is what executes:
 
 ### Explicit allocation
 
-Allocation is a capability. Functions that allocate declare `with(Alloc)`. The call site binds which allocator:
+Allocation is a capability with explicit allocator binding at call sites:
 
-```rust
-fn main!() {
-    let arena = Arena.new()
-    defer arena.deinit()
-
-    let list = create_list<Int>() with(Alloc = arena)
-    push(&mut list, 42) with(Alloc = arena)
-}
-```
-
-Allocation-free code is provably allocation-free.
+- `with(Alloc)` in a function signature means it may allocate
+- `with(Alloc = arena)` at the call site binds a specific allocator
+- Stack allocation does not require `Alloc`
+- Allocation-free code is provably allocation-free
 
 ### Compiler as proof artifact
 
-The compiler is written in Lean 4 so that the core type system can be formally verified. The goal:
+The compiler is in Lean 4 so the core type system can be formally verified:
 
 1. **Kernel calculus** formalized in Lean with mechanically-checked proofs
 2. **Surface language** elaborates into the kernel — if elaboration succeeds, the program is sound
@@ -116,13 +157,11 @@ What a type-checked program guarantees:
 - **Resource safety**: linear values consumed exactly once, no leaks
 - **Effect correctness**: declared capabilities match actual effects
 
-These are mechanical guarantees from a proven type system, not conventions.
-
 ## Current Status
 
-The compiler currently implements the core surface language (~4,700 lines of Lean 4). All 59 tests pass, and 58 of 59 examples from the [original Rust compiler](https://github.com/lambdaclass/concrete) compile and run.
+The compiler implements the core surface language in ~4,700 lines of Lean 4. All 59 tests pass. 58 of 59 examples from the [original Rust compiler](https://github.com/lambdaclass/concrete) compile and run.
 
-### What's implemented
+**Capabilities, `defer`/`destroy`, explicit allocation, borrow regions, and the kernel formalization are not yet implemented.** They are the [roadmap](#roadmap) below. What works today:
 
 - **Types**: Int, Uint, i8-i32, u8-u32, f32, f64, Bool, Char, String, arrays `[T; N]`, raw pointers
 - **Structs** with field access and mutation
@@ -137,23 +176,23 @@ The compiler currently implements the core surface language (~4,700 lines of Lea
 - **Cast expressions** (`as`) between numeric types
 - **Control flow**: while loops, for loops, if/else, match
 
-### Roadmap
+## Roadmap
 
-#### Phase 1: Capabilities (effect system)
+### Phase 1: Capabilities (effect system)
 
 Every function declares which effects it may perform. No declaration = pure.
 
-```rust
-// Pure: no capabilities, no side effects, computes result from inputs
+```
+// Pure: no capabilities
 fn add(a: Int, b: Int) -> Int { return a + b; }
 
-// Declares File capability: can do file I/O
+// Declares File capability
 fn read_config(path: String) with(File) -> String { ... }
 
 // Multiple capabilities
 fn sync_data(url: String) with(File, Network, Alloc) -> Result<Data, Error> { ... }
 
-// ! is sugar for with(Std) — includes File, Network, Clock, Env, Random, Alloc
+// ! is sugar for with(Std)
 fn main!() { ... }
 ```
 
@@ -162,16 +201,15 @@ fn main!() { ... }
 - If `f` calls `g`, and `g` requires `Network`, then `f` must declare `Network`
 - Capabilities propagate monotonically through the call graph
 - `Unsafe` capability gates FFI, raw pointer deref, transmute
-- Predefined capabilities: `File`, `Network`, `Clock`, `Env`, `Random`, `Alloc`, `Unsafe`, `Std`
 - Users cannot define new capabilities
 
-**Implementation:** New `CapSet` type in AST, parsed from `with(...)` clause. Check.lean enforces propagation — if a callee requires caps the caller doesn't have, type error. Codegen is unaffected (capabilities are erased).
+**Implementation:** New `CapSet` type in AST, parsed from `with(...)` clause after params and before `->`. Check.lean enforces propagation — if a callee requires caps the caller doesn't have, type error. Codegen is unaffected (capabilities are erased at compile time).
 
-#### Phase 2: Explicit resource management (`defer` + `destroy`)
+### Phase 2: Explicit resource management (`defer` + `destroy`)
 
 Linear types that hold resources define a destructor. Cleanup is always explicit and visible.
 
-```rust
+```
 struct File { handle: FileHandle }
 
 destroy File with(File) {
@@ -189,27 +227,26 @@ fn process!() {
 
 **Rules:**
 - `defer` schedules a statement to run at scope exit (LIFO order, like Zig/Go)
-- `defer destroy(x)` reserves the value: cannot move `x`, cannot destroy again, cannot re-defer
+- `defer destroy(x)` reserves the value: cannot move, cannot destroy again, cannot re-defer
 - `destroy(x)` is only valid if the type defines a destructor
 - Types without a destructor must be consumed by moving, returning, or destructuring
 - `defer` runs on early return and on `?` error propagation
 - `Copy` is explicit and opt-in: `type Copy Point { x: Float64, y: Float64 }`
 - A `Copy` type cannot have a destructor and cannot contain linear fields
 
-**Implementation:** New `Stmt.defer` in AST. Parser handles `defer <stmt>`. Check.lean tracks deferred values as "reserved" (not movable). Codegen emits deferred statements in reverse order before every `ret` and scope exit.
+**Implementation:** New `Stmt.defer` AST node. New `DestroyDef` top-level declaration. Parser handles `defer <stmt>` and `destroy TypeName with(...) { body }`. Check.lean tracks deferred values as "reserved" (not movable). Codegen emits deferred cleanup in reverse order before every `ret`, early return, and `?` propagation.
 
-#### Phase 3: Allocator system
+### Phase 3: Allocator system
 
 Allocation is a capability with explicit allocator binding at call sites.
 
-```rust
+```
 fn create_list<T>() with(Alloc) -> List<T> { ... }
 
 fn main!() {
     let arena = Arena.new()
     defer arena.deinit()
 
-    // Bind allocator at call site
     let list = create_list<Int>() with(Alloc = arena)
     push(&mut list, 42) with(Alloc = arena)
 }
@@ -222,13 +259,13 @@ fn main!() {
 - Stack allocation does not require `Alloc`
 - All allocators implement the `Allocator` trait: `alloc`, `free`, `realloc`
 
-**Implementation:** `Alloc` is a special capability. Call expressions get optional allocator binding. Codegen threads the allocator pointer as a hidden parameter to `with(Alloc)` functions.
+**Implementation:** `Alloc` is a special capability. `Expr.call` gets an optional allocator binding field. Codegen threads the bound allocator as a hidden first parameter to `with(Alloc)` functions.
 
-#### Phase 4: Kernel formalization in Lean 4
+### Phase 4: Kernel formalization in Lean 4
 
 Formalize the core calculus as a Lean 4 inductive type and prove key properties.
 
-**Kernel IR:** A small typed lambda calculus with linear types and effects:
+**Kernel IR** — a small typed lambda calculus with linear types and effects:
 - Types: primitives, products (structs), sums (enums), functions with capability sets, references with regions
 - Terms: let, application, match, borrow-in-region, destroy
 - Typing rules formalized as an inductive relation in Lean
@@ -239,13 +276,13 @@ Formalize the core calculus as a Lean 4 inductive type and prove key properties.
 - **Linearity soundness**: linear values consumed exactly once across all execution paths
 - **Effect soundness**: runtime effects are subset of declared capabilities
 
-**Implementation:** New `Concrete/Kernel/` directory with `Syntax.lean`, `Typing.lean`, `Reduction.lean`, `Soundness.lean`. The elaborator (`Check.lean`) produces kernel terms. The kernel checker verifies them independently.
+**Implementation:** New `Concrete/Kernel/` directory with `Syntax.lean` (kernel IR AST), `Typing.lean` (typing judgment as inductive), `Reduction.lean` (small-step semantics), `Soundness.lean` (progress + preservation + linearity + effect soundness theorems). Check.lean becomes an elaborator that produces kernel terms. Kernel checker verifies independently.
 
-#### Phase 5: Borrow regions
+### Phase 5: Borrow regions
 
 Explicit lexical regions that bound reference lifetimes, simpler than Rust's lifetime annotations.
 
-```rust
+```
 borrow f as fref in R {
     // fref has type &[File, R]
     // f is unusable in this block
@@ -265,26 +302,7 @@ let len = length(&f)
 - References cannot escape their region
 - Closures cannot capture references that outlive the borrow region
 
-## Quick Example
-
-```rust
-struct Point {
-    x: Int,
-    y: Int
-}
-
-impl Point {
-    fn sum(&self) -> Int {
-        return self.x + self.y;
-    }
-}
-
-fn main() -> Int {
-    let p: Point = Point { x: 10, y: 20 };
-    let s: Int = p.sum();
-    return s;
-}
-```
+**Implementation:** New `Ty.refRegion` with region parameter. New `Stmt.borrowIn` AST node. Parser handles `borrow x as y in R { ... }`. Check.lean tracks region scopes and ensures references don't escape. Short-form `&x` desugars to an anonymous region spanning the enclosing expression.
 
 ## Compilation Pipeline
 
@@ -310,7 +328,7 @@ Source (.con)
   clang -- LLVM IR -> native binary
 ```
 
-The target pipeline (after Phase 4) adds a kernel checkpoint between elaboration and codegen:
+Target pipeline after Phase 4:
 
 ```
 Surface AST → Elaboration → Kernel IR → Kernel Checker (proven sound in Lean) → Codegen
@@ -324,13 +342,6 @@ Requires [Lean 4](https://leanprover.github.io/lean4/doc/setup.html) (v4.28.0+) 
 make build    # or: lake build
 make test     # runs all 59 tests
 make clean    # or: lake clean
-```
-
-## Usage
-
-```bash
-.lake/build/bin/concrete input.con -o output
-./output
 ```
 
 ## Project Structure
