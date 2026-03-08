@@ -191,14 +191,11 @@ run_ok "$TESTDIR/hex_literal.con" 255
 run_ok "$TESTDIR/bin_oct_literal.con" 73
 
 # Phase 7b: Print / basic I/O
-run_ok "$TESTDIR/print_int_basic.con" "42
-0"
-run_ok "$TESTDIR/print_bool_basic.con" "true
-0"
+run_ok "$TESTDIR/print_int_basic.con" "42"
+run_ok "$TESTDIR/print_bool_basic.con" "true"
 run_ok "$TESTDIR/print_in_loop.con" "0
 1
-2
-0"
+2"
 
 # Phase 7c: Module file resolution
 run_ok "$TESTDIR/module_file/main.con" 42

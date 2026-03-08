@@ -97,6 +97,69 @@ private partial def substStmts (sub : Ty → Ty) : List CStmt → List CStmt :=
 end
 
 -- ============================================================
+-- Rewrite trait-method call names after type substitution
+-- ============================================================
+
+-- Given a mapping from type-parameter names to concrete types, rewrite
+-- function names like "T_method" to "Point_method" in all call nodes.
+-- This is needed because the elaborator emits `TypeVar_method` for
+-- trait method calls on generic type parameters.
+mutual
+private partial def rewriteCallNames (nameMap : List (String × String)) : CExpr → CExpr
+  | .call fn targs args ty =>
+    let fn' := nameMap.foldl (fun acc (paramName, concreteName) =>
+      let pfx := paramName ++ "_"
+      if acc.startsWith pfx then concreteName ++ "_" ++ acc.drop pfx.length
+      else acc
+    ) fn
+    .call fn' targs (args.map (rewriteCallNames nameMap)) ty
+  | .binOp op l r ty => .binOp op (rewriteCallNames nameMap l) (rewriteCallNames nameMap r) ty
+  | .unaryOp op e ty => .unaryOp op (rewriteCallNames nameMap e) ty
+  | .structLit n ta fs ty => .structLit n ta (fs.map fun (n, e) => (n, rewriteCallNames nameMap e)) ty
+  | .fieldAccess obj f ty => .fieldAccess (rewriteCallNames nameMap obj) f ty
+  | .enumLit en v ta fs ty => .enumLit en v ta (fs.map fun (n, e) => (n, rewriteCallNames nameMap e)) ty
+  | .match_ scrut arms ty => .match_ (rewriteCallNames nameMap scrut) (arms.map (rewriteCallNamesArm nameMap)) ty
+  | .borrow inner ty => .borrow (rewriteCallNames nameMap inner) ty
+  | .borrowMut inner ty => .borrowMut (rewriteCallNames nameMap inner) ty
+  | .deref inner ty => .deref (rewriteCallNames nameMap inner) ty
+  | .arrayLit elems ty => .arrayLit (elems.map (rewriteCallNames nameMap)) ty
+  | .arrayIndex arr idx ty => .arrayIndex (rewriteCallNames nameMap arr) (rewriteCallNames nameMap idx) ty
+  | .cast inner t => .cast (rewriteCallNames nameMap inner) t
+  | .try_ inner ty => .try_ (rewriteCallNames nameMap inner) ty
+  | .allocCall inner alloc ty => .allocCall (rewriteCallNames nameMap inner) (rewriteCallNames nameMap alloc) ty
+  | .whileExpr cond body elseBody ty =>
+    .whileExpr (rewriteCallNames nameMap cond) (rewriteCallNamesStmts nameMap body) (rewriteCallNamesStmts nameMap elseBody) ty
+  | e => e
+
+private partial def rewriteCallNamesArm (nameMap : List (String × String)) : CMatchArm → CMatchArm
+  | .enumArm en v binds body => .enumArm en v binds (rewriteCallNamesStmts nameMap body)
+  | .litArm val body => .litArm (rewriteCallNames nameMap val) (rewriteCallNamesStmts nameMap body)
+  | .varArm b ty body => .varArm b ty (rewriteCallNamesStmts nameMap body)
+
+private partial def rewriteCallNamesStmt (nameMap : List (String × String)) : CStmt → CStmt
+  | .letDecl n m ty val => .letDecl n m ty (rewriteCallNames nameMap val)
+  | .assign n val => .assign n (rewriteCallNames nameMap val)
+  | .return_ (some v) ty => .return_ (some (rewriteCallNames nameMap v)) ty
+  | .expr e => .expr (rewriteCallNames nameMap e)
+  | .ifElse c t el =>
+    .ifElse (rewriteCallNames nameMap c) (rewriteCallNamesStmts nameMap t) (el.map (rewriteCallNamesStmts nameMap))
+  | .while_ c body lbl step =>
+    .while_ (rewriteCallNames nameMap c) (rewriteCallNamesStmts nameMap body) lbl (rewriteCallNamesStmts nameMap step)
+  | .fieldAssign obj f val => .fieldAssign (rewriteCallNames nameMap obj) f (rewriteCallNames nameMap val)
+  | .derefAssign target val => .derefAssign (rewriteCallNames nameMap target) (rewriteCallNames nameMap val)
+  | .arrayIndexAssign arr idx val =>
+    .arrayIndexAssign (rewriteCallNames nameMap arr) (rewriteCallNames nameMap idx) (rewriteCallNames nameMap val)
+  | .break_ (some v) lbl => .break_ (some (rewriteCallNames nameMap v)) lbl
+  | .defer body => .defer (rewriteCallNames nameMap body)
+  | .borrowIn v r reg isMut ty body =>
+    .borrowIn v r reg isMut ty (rewriteCallNamesStmts nameMap body)
+  | s => s
+
+private partial def rewriteCallNamesStmts (nameMap : List (String × String)) : List CStmt → List CStmt :=
+  List.map (rewriteCallNamesStmt nameMap)
+end
+
+-- ============================================================
 -- Monomorphized name computation
 -- ============================================================
 
@@ -171,12 +234,17 @@ partial def monoExpr (e : CExpr) : MonoM CExpr := do
       let name := monoNameFor fn typeArgs
       let mapping := fnDef.typeParams.zip typeArgs
       let sub := substTy fnDef.typeParams mapping
+      -- Build a name map for rewriting trait method calls like T_describe → Point_describe
+      let callNameMap := mapping.filterMap fun (paramName, ty) =>
+        let concreteName := match ty with
+          | .named n => some n | .generic n _ => some n | _ => none
+        concreteName.map fun cn => (paramName, cn)
       let monoFn : CFnDef := {
         name := name
         typeParams := []
         params := fnDef.params.map fun (n, t) => (n, sub t)
         retTy := sub fnDef.retTy
-        body := substStmts sub fnDef.body
+        body := rewriteCallNamesStmts callNameMap (substStmts sub fnDef.body)
         isPublic := false
         capSet := fnDef.capSet
       }
@@ -250,6 +318,9 @@ end
 -- ============================================================
 
 private def monoFn (f : CFnDef) : MonoM CFnDef := do
+  -- Skip generic functions; they are templates, not concrete code.
+  -- Only their monomorphized specializations should be processed.
+  if !f.typeParams.isEmpty then return f
   let body' ← monoStmts f.body
   return { f with body := body' }
 

@@ -199,6 +199,14 @@ def genModule (m : Module) : String :=
     let mainHasParams := match mainFn with
       | some f => !f.params.isEmpty
       | none => false
+    if mainRetLLTy == "void" then
+      -- Unit/void return: just call, no print
+      let s := s.emit "define i32 @main() {"
+      let s := s.emit "  call void @concrete_main()"
+      let s := s.emit "  ret i32 0"
+      let s := s.emit "}"
+      s.output
+    else
     let s := s.emit "@.fmt = private constant [5 x i8] c\"%ld\\0A\\00\""
     let s := s.emit ""
     if mainHasParams then

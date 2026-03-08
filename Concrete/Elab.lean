@@ -531,7 +531,20 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
         let mapping := implTypeParams.zip objTypeArgs ++ methodTypeParams.zip typeArgs
         let methodParams := (sig.params.drop 1).map fun (_, t) => (substTy mapping t)
         let retTy := substTy mapping sig.retTy
-        let mut cArgs : List CExpr := [cObj]
+        -- Wrap object with borrow/borrowMut if method expects a reference self
+        -- and the object is not already a reference
+        let selfArg := match sig.params.head? with
+          | some (_, selfTy) =>
+            let resolvedSelfTy := substTy mapping selfTy
+            match resolvedSelfTy, objTy with
+            | .ref _, .ref _ => cObj          -- already a ref, pass as-is
+            | .ref _, .refMut _ => cObj       -- already a ref, pass as-is
+            | .refMut _, .refMut _ => cObj    -- already a mut ref, pass as-is
+            | .ref _, _ => CExpr.borrow cObj (.ref objTy)
+            | .refMut _, _ => CExpr.borrowMut cObj (.refMut objTy)
+            | _, _ => cObj                    -- by-value self, pass as-is
+          | none => cObj
+        let mut cArgs : List CExpr := [selfArg]
         for (arg, pTy) in args.zip methodParams do
           let cArg ← elabExpr arg (some pTy)
           cArgs := cArgs ++ [cArg]

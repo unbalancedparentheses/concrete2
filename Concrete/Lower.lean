@@ -154,11 +154,12 @@ private def variantFields (enumName : String) (variantName : String) : LowerM (L
     | none => return []
   | none => return []
 
-/-- Extract struct type name from a Ty. -/
+/-- Extract struct type name from a Ty, unwrapping references/pointers. -/
 private def structNameFromTy (ty : Ty) : String :=
   match ty with
   | .named n => n
   | .generic n _ => n
+  | .ref inner | .refMut inner | .ptrMut inner | .ptrConst inner => structNameFromTy inner
   | _ => ""
 
 /-- Compute byte size of a type (for malloc). -/
@@ -235,6 +236,13 @@ private def addContinueEdge (vars : List (String × SVal)) (label : String) : Lo
     let info' := { info with continueEdges := info.continueEdges ++ [(vars, label)] }
     setState { s with loopStack := info' :: rest }
   | [] => pure ()
+
+/-- Peek at the continue edges of the innermost loop without popping. -/
+private def peekContinueEdges : LowerM (List (List (String × SVal) × String)) := do
+  let s ← getState
+  match s.loopStack with
+  | info :: _ => return info.continueEdges
+  | [] => return []
 
 /-- Prepend instructions to an already-finalized block. -/
 private def prependInstsToBlock (label : String) (newInsts : List SInst) : LowerM Unit := do
@@ -318,16 +326,39 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
           return .reg loadDst innerTy
       | none => return .unit
     else
+    -- Track borrowMut args that need write-back after the call
     let mut aVals : List SVal := []
+    let mut mutBorrows : List (String × String × Ty) := []  -- (varName, allocaReg, innerTy)
     for arg in args do
-      let v ← lowerExpr arg
-      aVals := aVals ++ [v]
+      match arg with
+      | .borrowMut (.ident varName innerTy) _ =>
+        -- For &mut borrows of variables: alloca, store current value, pass ptr
+        -- After the call we'll load back to propagate mutations
+        let curVal ← lowerExpr (.ident varName innerTy)
+        let slot ← freshReg "mutref."
+        emit (.alloca slot innerTy)
+        emit (.store curVal (.reg slot innerTy))
+        aVals := aVals ++ [.reg slot (.refMut innerTy)]
+        mutBorrows := mutBorrows ++ [(varName, slot, innerTy)]
+      | _ =>
+        let v ← lowerExpr arg
+        aVals := aVals ++ [v]
     if ty == .unit || ty == .never then
       emit (.call none fn aVals ty)
+      -- Write back mutably borrowed variables
+      for (varName, slot, innerTy) in mutBorrows do
+        let loadBack ← freshReg "wb."
+        emit (.load loadBack (.reg slot innerTy) innerTy)
+        setVar varName (.reg loadBack innerTy)
       return .unit
     else
       let dst ← freshReg
       emit (.call (some dst) fn aVals ty)
+      -- Write back mutably borrowed variables
+      for (varName, slot, innerTy) in mutBorrows do
+        let loadBack ← freshReg "wb."
+        emit (.load loadBack (.reg slot innerTy) innerTy)
+        setVar varName (.reg loadBack innerTy)
       return .reg dst ty
 
   | .structLit name _typeArgs fields ty =>
@@ -595,7 +626,7 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
     return .reg dst targetTy
 
   | .fnRef name ty =>
-    return .reg name ty
+    return .reg ("@fnref." ++ name) ty
 
   | .try_ inner ty =>
     -- Try operator: unwrap Ok value or early-return Err
@@ -785,23 +816,65 @@ partial def lowerStmt (stmt : CStmt) : LowerM Unit := do
     let thenLabel ← freshLabel "then"
     let elseLabel ← freshLabel "else"
     let mergeLabel ← freshLabel "merge"
+    let preIfVars ← snapshotVars
     terminateBlock (.condBr condVal thenLabel elseLabel)
     -- Then block
     startBlock thenLabel
     lowerStmts then_
+    let thenEndVars ← snapshotVars
+    let thenEndLabel ← getCurrentLabel
     let term1 ← currentBlockTerminated
     if !term1 then
       terminateBlock (.br mergeLabel)
     -- Else block
+    -- Restore pre-if vars so else branch starts from same state
+    for (name, val) in preIfVars do
+      setVar name val
     startBlock elseLabel
     match else_ with
     | some stmts => lowerStmts stmts
     | none => pure ()
+    let elseEndVars ← snapshotVars
+    let elseEndLabel ← getCurrentLabel
     let term2 ← currentBlockTerminated
     if !term2 then
       terminateBlock (.br mergeLabel)
-    -- Merge
+    -- Merge with phi nodes for variables that differ between branches
     startBlock mergeLabel
+    if !term1 || !term2 then
+      for (name, preVal) in preIfVars do
+        let thenVal := if term1 then none
+          else (thenEndVars.find? fun (n, _) => n == name).map (·.2)
+        let elseVal := if term2 then none
+          else (elseEndVars.find? fun (n, _) => n == name).map (·.2)
+        let ty := preVal.ty
+        -- Check if any branch modified this variable
+        let thenChanged := match thenVal with
+          | some v => match v, preVal with
+            | .reg n1 _, .reg n2 _ => n1 != n2
+            | _, _ => true
+          | none => false
+        let elseChanged := match elseVal with
+          | some v => match v, preVal with
+            | .reg n1 _, .reg n2 _ => n1 != n2
+            | _, _ => true
+          | none => false
+        if thenChanged || elseChanged then
+          let mut incoming : List (SVal × String) := []
+          match thenVal with
+          | some v => incoming := incoming ++ [(v, thenEndLabel)]
+          | none => pure ()
+          match elseVal with
+          | some v => incoming := incoming ++ [(v, elseEndLabel)]
+          | none => pure ()
+          if incoming.length >= 2 then
+            let phiReg ← freshReg "if.phi."
+            emit (.phi phiReg incoming ty)
+            setVar name (.reg phiReg ty)
+          else if incoming.length == 1 then
+            match incoming.head? with
+            | some (v, _) => setVar name v
+            | none => pure ()
 
   | .while_ cond body _label step =>
     let headerLabel ← freshLabel "while.hdr"
@@ -848,9 +921,28 @@ partial def lowerStmt (stmt : CStmt) : LowerM Unit := do
         terminateBlock (.br stepLabel)
       else
         terminateBlock (.br headerLabel)
-    -- If for-loop has step, create the step block
+    -- If for-loop has step, create the step block with phi nodes
     if hasStep then
       startBlock stepLabel
+      -- Build phi nodes at step block for continue edges
+      let continueEdges ← peekContinueEdges
+      if !continueEdges.isEmpty then
+        for (name, phiReg, _, ty) in headerPhis do
+          let bodyVal := (bodyEndVars.find? fun (n, _) => n == name).map (·.2) |>.getD (.reg phiReg ty)
+          let mut incoming : List (SVal × String) := []
+          if !term then
+            incoming := incoming ++ [(bodyVal, bodyEndLabel)]
+          for (contVars, contLabel) in continueEdges do
+            let contVal := (contVars.find? fun (n, _) => n == name).map (·.2) |>.getD (.reg phiReg ty)
+            incoming := incoming ++ [(contVal, contLabel)]
+          if incoming.length >= 2 then
+            let stepPhiReg ← freshReg "step.phi."
+            emit (.phi stepPhiReg incoming ty)
+            setVar name (.reg stepPhiReg ty)
+          else if incoming.length == 1 then
+            match incoming.head? with
+            | some (val, _) => setVar name val
+            | none => pure ()
       lowerStmts step
       let stepEndVars ← snapshotVars
       let stepEndLabel ← getCurrentLabel
@@ -936,14 +1028,34 @@ partial def lowerStmt (stmt : CStmt) : LowerM Unit := do
           setVar name (.reg exitPhiReg ty)
 
   | .fieldAssign obj field value =>
-    -- Bug #2 fix: look up actual field index instead of hardcoded 0
     let oVal ← lowerExpr obj
     let fVal ← lowerExpr value
     let tyName := structNameFromTy obj.ty
     let idx ← fieldIndex tyName field
-    let gepDst ← freshReg
-    emit (.gep gepDst oVal [.intConst (Int.ofNat idx) .int] value.ty)
-    emit (.store fVal (.reg gepDst value.ty))
+    -- Check if the object is a reference/pointer type (e.g. &mut self)
+    let isRefTy := match obj.ty with
+      | .ref _ | .refMut _ | .ptrMut _ | .ptrConst _ => true
+      | _ => false
+    if isRefTy then
+      -- oVal is already a pointer to the struct; GEP + store directly
+      let gepDst ← freshReg
+      emit (.gep gepDst oVal [.intConst (Int.ofNat idx) .int] value.ty)
+      emit (.store fVal (.reg gepDst value.ty))
+    else
+      -- Struct value: alloca a temporary, mutate the field, load back,
+      -- and update the variable map with the new struct value.
+      let structTy := obj.ty
+      let tmpSlot ← freshReg
+      emit (.alloca tmpSlot structTy)
+      emit (.store oVal (.reg tmpSlot structTy))
+      let gepDst ← freshReg
+      emit (.gep gepDst (.reg tmpSlot structTy) [.intConst (Int.ofNat idx) .int] value.ty)
+      emit (.store fVal (.reg gepDst value.ty))
+      let newVal ← freshReg
+      emit (.load newVal (.reg tmpSlot structTy) structTy)
+      match obj with
+      | .ident name _ => setVar name (.reg newVal structTy)
+      | _ => pure ()
 
   | .derefAssign target value =>
     let tVal ← lowerExpr target
@@ -979,16 +1091,31 @@ partial def lowerStmt (stmt : CStmt) : LowerM Unit := do
       let target := if info.continueTarget != "" then info.continueTarget else info.headerLabel
       let vars ← snapshotVars
       let label ← getCurrentLabel
-      if target == info.headerLabel then
-        addContinueEdge vars label
+      addContinueEdge vars label
       terminateBlock (.br target)
     | none => pure ()
 
   | .defer body =>
     let _ ← lowerExpr body
 
-  | .borrowIn _var _ref _region _isMut _refTy body =>
+  | .borrowIn var ref _region isMut refTy body =>
+    -- Create a memory slot for the borrowed variable, set ref to point to it
+    let curVal ← lookupVar var
+    let innerTy := match refTy with
+      | .ref t | .refMut t | .ptrMut t | .ptrConst t => t
+      | _ => refTy
+    let slot ← freshReg "borrow."
+    emit (.alloca slot innerTy)
+    match curVal with
+    | some cv => emit (.store cv (.reg slot innerTy))
+    | none => pure ()
+    setVar ref (.reg slot innerTy)
     lowerStmts body
+    -- For mutable borrows, load back the value and update the original variable
+    if isMut then
+      let loadBack ← freshReg "wb."
+      emit (.load loadBack (.reg slot innerTy) innerTy)
+      setVar var (.reg loadBack innerTy)
 
 partial def lowerStmts (stmts : List CStmt) : LowerM Unit := do
   for s in stmts do
@@ -1037,12 +1164,15 @@ def lowerFn (f : CFnDef) (structDefs : List CStructDef) (enumDefs : List CEnumDe
   | ((.error e), _) => .error e
 
 def lowerModule (m : CModule) : SModule :=
-  let fns := m.functions.filterMap fun f =>
+  -- Skip generic functions (non-empty typeParams); only their monomorphized
+  -- specializations should be lowered.
+  let concreteFns := m.functions.filter fun f => f.typeParams.isEmpty
+  let fns := concreteFns.filterMap fun f =>
     match lowerFn f m.structs m.enums with
     | .ok sfn => some sfn
     | .error _ => none
   -- Collect string literals from lowered functions
-  let globals := m.functions.foldl (fun acc f =>
+  let globals := concreteFns.foldl (fun acc f =>
     let initState : LowerState := {
       blocks := [], currentLabel := "entry", currentInsts := []
       labelCounter := 0, regCounter := 0

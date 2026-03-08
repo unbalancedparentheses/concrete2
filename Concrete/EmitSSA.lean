@@ -31,6 +31,8 @@ structure EmitSSAState where
   emittedTypes : List String := []
   /-- String literal name → length (for building %struct.String at use sites). -/
   stringLengths : List (String × Nat) := []
+  /-- Parameter names of the current function (for indirect call detection). -/
+  fnParams : List (String × Ty) := []
 
 private def emit (s : EmitSSAState) (line : String) : EmitSSAState :=
   { s with output := s.output ++ line ++ "\n" }
@@ -198,11 +200,15 @@ private def materializeStrConst (s : EmitSSAState) (name : String) : EmitSSAStat
   let arrLen := strLen + 1  -- includes null terminator in the global
   let (s, gepTmp) := freshLocal s
   let s := emit s s!"  {gepTmp} = getelementptr [{arrLen} x i8], ptr @{name}, i32 0, i32 0"
+  -- Heap-allocate a copy so drop_string can safely free it
+  let (s, heapBuf) := freshLocal s
+  let s := emit s s!"  {heapBuf} = call ptr @malloc(i64 {arrLen})"
+  let s := emit s s!"  call void @llvm.memcpy.p0.p0.i64(ptr {heapBuf}, ptr {gepTmp}, i64 {arrLen}, i1 false)"
   let (s, strTmp) := freshLocal s
   let s := emit s s!"  {strTmp} = alloca %struct.String"
   let (s, ptrField) := freshLocal s
   let s := emit s s!"  {ptrField} = getelementptr %struct.String, ptr {strTmp}, i32 0, i32 0"
-  let s := emit s s!"  store ptr {gepTmp}, ptr {ptrField}"
+  let s := emit s s!"  store ptr {heapBuf}, ptr {ptrField}"
   let (s, lenField) := freshLocal s
   let s := emit s s!"  {lenField} = getelementptr %struct.String, ptr {strTmp}, i32 0, i32 1"
   let s := emit s s!"  store i64 {strLen}, ptr {lenField}"
@@ -305,22 +311,32 @@ private def emitSInst (s : EmitSSAState) (inst : SInst) : EmitSSAState :=
       | _ =>
       let valLLTy := ssaTyToLLVM s a.ty
       if paramLLTy == "ptr" && valLLTy != "ptr" then
-        let (s, tmp) := freshLocal s
-        let s := emit s s!"  {tmp} = alloca {valLLTy}"
-        let s := emit s s!"  store {valLLTy} {emitSVal s a}, ptr {tmp}"
-        (s, parts ++ [s!"ptr {tmp}"])
+        -- If the register is already known to be a pointer (e.g. a struct
+        -- parameter passed by ptr), pass it directly instead of
+        -- alloca+store which would misuse the ptr as a struct value.
+        if isKnownPtr s a then
+          (s, parts ++ [s!"ptr {emitSVal s a}"])
+        else
+          let (s, tmp) := freshLocal s
+          let s := emit s s!"  {tmp} = alloca {valLLTy}"
+          let s := emit s s!"  store {valLLTy} {emitSVal s a}, ptr {tmp}"
+          (s, parts ++ [s!"ptr {tmp}"])
       else
         (s, parts ++ [s!"{paramLLTy} {emitSVal s a}"])
     ) (s, ([] : List String))
     let argStr := ", ".intercalate argParts
     let retLLTy := ssaTyToLLVM s retTy
+    -- Indirect call: function is a parameter with fn type
+    let isIndirect := s.fnParams.any fun (n, t) =>
+      n == fn && match t with | .fn_ _ _ _ => true | _ => false
+    let callTarget := if isIndirect then "%" ++ fn else "@" ++ fn
     match dst with
     | some d =>
-      let s := emit s s!"  %{d} = call {retLLTy} @{fn}({argStr})"
+      let s := emit s s!"  %{d} = call {retLLTy} {callTarget}({argStr})"
       -- If return type is pass-by-ptr, the result is actually a value, not ptr
       s
     | none =>
-      emit s s!"  call {retLLTy} @{fn}({argStr})"
+      emit s s!"  call {retLLTy} {callTarget}({argStr})"
   | .alloca dst ty =>
     let s := emit s s!"  %{dst} = alloca {ssaTyToLLVM s ty}"
     markPtr s dst
@@ -336,7 +352,14 @@ private def emitSInst (s : EmitSSAState) (inst : SInst) : EmitSSAState :=
       let s := emit s s!"  call void @llvm.memcpy.p0.p0.i64(ptr {ptrStr}, ptr {srcPtr}, i64 16, i1 false)"
       s
     | _ =>
-    emit s s!"  store {ssaTyToLLVM s val.ty} {emitSVal s val}, ptr {ptrStr}"
+    -- If the value is a known pointer but typed as a struct, it is
+    -- actually a pointer to the struct (e.g. a pass-by-ptr param).
+    -- Use memcpy rather than a store that would misinterpret ptr as struct.
+    if isKnownPtr s val && ssaIsPassByPtr s val.ty then
+      let sz := ssaTySize val.ty
+      emit s s!"  call void @llvm.memcpy.p0.p0.i64(ptr {ptrStr}, ptr {emitSVal s val}, i64 {sz}, i1 false)"
+    else
+      emit s s!"  store {ssaTyToLLVM s val.ty} {emitSVal s val}, ptr {ptrStr}"
   | .gep dst base indices ty =>
     let (s, basePtr) := ensurePtr s base
     let idxStr := ", ".intercalate (indices.map fun i => ssaTyToLLVM s i.ty ++ " " ++ emitSVal s i)
@@ -423,6 +446,12 @@ private def emitSTerm (s : EmitSSAState) (t : STerm) : EmitSSAState :=
   | .ret (some v) =>
     let tyStr := ssaTyToLLVM s v.ty
     if tyStr == "void" then emit s "  ret void"
+    else if isKnownPtr s v && ssaIsPassByPtr s v.ty then
+      -- Value is a pointer to a struct (e.g. pass-by-ptr param); load it
+      -- so we return the struct by value as the LLVM signature expects.
+      let (s, tmp) := freshLocal s
+      let s := emit s s!"  {tmp} = load {tyStr}, ptr {emitSVal s v}"
+      emit s s!"  ret {tyStr} {tmp}"
     else emit s s!"  ret {tyStr} {emitSVal s v}"
   | .ret none => emit s "  ret void"
   | .br lbl => emit s s!"  br label %{lbl}"
@@ -444,14 +473,15 @@ private def emitSFnDef (s : EmitSSAState) (f : SFnDef) (isUserMain : Bool) : Emi
   let fnName := if isUserMain then "user_main" else f.name
   let paramStr := ", ".intercalate (f.params.map fun (n, t) => ssaParamTyToLLVM s t ++ " %" ++ n)
   let s := emit s s!"define {retTy} @{fnName}({paramStr}) \{"
-  -- Mark struct-type params as pointers
+  -- Mark struct-type params as pointers, track fn params for indirect calls
+  let s := { s with fnParams := f.params }
   let s := f.params.foldl (fun s (n, t) =>
     if ssaIsPassByPtr s t then markPtr s n else s
   ) s
   let s := f.blocks.foldl emitSBlock s
   let s := emit s "}\n"
-  -- Reset ptrRegs for next function
-  { s with ptrRegs := [] }
+  -- Reset per-function state
+  { s with ptrRegs := [], fnParams := [] }
 
 -- ============================================================
 -- Emit struct/enum type definitions
@@ -504,6 +534,26 @@ private def emitExternDecls (s : EmitSSAState) (externFns : List (String × List
   let s := emit s "declare i64 @ftell(ptr)"
   let s := emit s "declare ptr @memset(ptr, i32, i64)"
   let s := emit s "declare i32 @memcmp(ptr, ptr, i64)"
+  -- Conversion builtin dependencies
+  let s := emit s "declare i32 @snprintf(ptr, i64, ptr, ...)"
+  let s := emit s "declare i64 @strtol(ptr, ptr, i32)"
+  let s := emit s "declare i64 @read(i32, ptr, i64)"
+  let s := emit s "declare i32 @putchar(i32)"
+  let s := emit s "declare ptr @getenv(ptr)"
+  let s := emit s "declare void @exit(i32)"
+  -- Network builtin dependencies
+  let s := emit s "declare i32 @socket(i32, i32, i32)"
+  let s := emit s "declare i32 @connect(i32, ptr, i32)"
+  let s := emit s "declare i32 @bind(i32, ptr, i32)"
+  let s := emit s "declare i32 @listen(i32, i32)"
+  let s := emit s "declare i32 @accept(i32, ptr, ptr)"
+  let s := emit s "declare i64 @send(i32, ptr, i64, i32)"
+  let s := emit s "declare i64 @recv(i32, ptr, i64, i32)"
+  let s := emit s "declare i32 @close(i32)"
+  let s := emit s "declare i32 @getaddrinfo(ptr, ptr, ptr, ptr)"
+  let s := emit s "declare void @freeaddrinfo(ptr)"
+  let s := emit s "declare i16 @htons(i16)"
+  let s := emit s "declare i32 @setsockopt(i32, i32, i32, ptr, i32)"
   let s := emit s ""
   -- User extern function declarations
   externFns.foldl (fun s (name, params, retTy) =>
@@ -514,11 +564,34 @@ private def emitExternDecls (s : EmitSSAState) (externFns : List (String × List
       emit s s!"declare {retLLTy} @{name}({paramStr})"
   ) s
 
-/-- Emit the main wrapper that calls user_main and prints the result. -/
+/-- Emit the main wrapper that calls user_main and prints the result.
+    For void/unit return types, the wrapper just calls user_main without printing.
+    For int/bool/other scalar types, it prints the result. -/
 private def emitMainWrapper (s : EmitSSAState) (retTy : Ty) : EmitSSAState :=
   let retLLTy := ssaTyToLLVM s retTy
-  if retLLTy == "i64" then
-    -- @fmt.main = private constant [6 x i8] c"%lld\0A\00"
+  if retLLTy == "void" then
+    -- Unit/void return: just call, no print
+    let s := emit s "define i32 @main() {"
+    let s := emit s "  call void @user_main()"
+    let s := emit s "  ret i32 0"
+    emit s "}\n"
+  else if retLLTy == "i1" then
+    -- Bool return: print "true" or "false"
+    let s := emit s "@fmt.true = private constant [5 x i8] c\"true\\00\""
+    let s := emit s "@fmt.false = private constant [6 x i8] c\"false\\00\""
+    let s := emit s "@fmt.main.s = private constant [4 x i8] c\"%s\\0A\\00\""
+    let s := emit s ""
+    let s := emit s "define i32 @main() {"
+    let s := emit s "  %result = call i1 @user_main()"
+    let s := emit s "  %true_str = getelementptr [5 x i8], ptr @fmt.true, i32 0, i32 0"
+    let s := emit s "  %false_str = getelementptr [6 x i8], ptr @fmt.false, i32 0, i32 0"
+    let s := emit s "  %str = select i1 %result, ptr %true_str, ptr %false_str"
+    let s := emit s "  %fmt = getelementptr [4 x i8], ptr @fmt.main.s, i32 0, i32 0"
+    let s := emit s "  call i32 (ptr, ...) @printf(ptr %fmt, ptr %str)"
+    let s := emit s "  ret i32 0"
+    emit s "}\n"
+  else if retLLTy == "i64" then
+    -- i64 return: print with %lld
     let s := emit s "@fmt.main = private constant [6 x i8] c\"%lld\\0A\\00\""
     let s := emit s ""
     let s := emit s "define i32 @main() {"
@@ -527,13 +600,20 @@ private def emitMainWrapper (s : EmitSSAState) (retTy : Ty) : EmitSSAState :=
     let s := emit s "  call i32 (ptr, ...) @printf(ptr %fmt, i64 %result)"
     let s := emit s "  ret i32 0"
     emit s "}\n"
-  else if retLLTy == "void" then
+  else if retLLTy == "i32" || retLLTy == "i16" || retLLTy == "i8" then
+    -- Smaller integer return: widen to i64, then print
+    let s := emit s "@fmt.main = private constant [6 x i8] c\"%lld\\0A\\00\""
+    let s := emit s ""
     let s := emit s "define i32 @main() {"
-    let s := emit s "  call void @user_main()"
+    let s := emit s s!"  %result = call {retLLTy} @user_main()"
+    let ext := if ssaIsSignedInt retTy then "sext" else "zext"
+    let s := emit s s!"  %result64 = {ext} {retLLTy} %result to i64"
+    let s := emit s "  %fmt = getelementptr [6 x i8], ptr @fmt.main, i32 0, i32 0"
+    let s := emit s "  call i32 (ptr, ...) @printf(ptr %fmt, i64 %result64)"
     let s := emit s "  ret i32 0"
     emit s "}\n"
   else
-    -- For other types, just call and return 0
+    -- For other types (structs, strings, etc.), just call and return 0
     let s := emit s s!"define i32 @main() \{"
     let s := emit s s!"  %result = call {retLLTy} @user_main()"
     let s := emit s "  ret i32 0"
@@ -546,12 +626,122 @@ private def emitMainWrapper (s : EmitSSAState) (retTy : Ty) : EmitSSAState :=
 /-- Generate all builtin function implementations by reusing the old codegen's Builtins. -/
 private def getBuiltinsIR : String :=
   let initState : CodegenState := default
-  let finalState := genBuiltinFunctions initState
-  finalState.output
+  let s := genBuiltinFunctions initState
+  let s := genConversionBuiltins s
+  let s := genNetworkBuiltins s
+  let s := genHashMapFunctions s
+  s.output
+
+/-- Generate standalone Vec builtin function definitions for the SSA path.
+    The old codegen inlines vec operations at each call site, but the SSA path
+    lowers them to function calls that need actual definitions. -/
+private def getVecBuiltinsIR : String :=
+  let es := 8  -- element size (i64 = 8 bytes)
+  let ic := 8  -- initial capacity
+  let ib := ic * es  -- initial buffer bytes
+  let ir := s!"define %struct.Vec @vec_new() \{\n"
+    ++ s!"  %buf = call ptr @malloc(i64 {ib})\n"
+    ++ s!"  %v = alloca %struct.Vec\n"
+    ++ s!"  %bp = getelementptr inbounds %struct.Vec, ptr %v, i32 0, i32 0\n"
+    ++ s!"  store ptr %buf, ptr %bp\n"
+    ++ s!"  %lp = getelementptr inbounds %struct.Vec, ptr %v, i32 0, i32 1\n"
+    ++ s!"  store i64 0, ptr %lp\n"
+    ++ s!"  %cp = getelementptr inbounds %struct.Vec, ptr %v, i32 0, i32 2\n"
+    ++ s!"  store i64 {ic}, ptr %cp\n"
+    ++ s!"  %r = load %struct.Vec, ptr %v\n"
+    ++ s!"  ret %struct.Vec %r\n"
+    ++ s!"}\n\n"
+    -- vec_push
+    ++ s!"define void @vec_push(ptr %vec, i64 %val) \{\n"
+    ++ s!"  %lp = getelementptr inbounds %struct.Vec, ptr %vec, i32 0, i32 1\n"
+    ++ s!"  %len = load i64, ptr %lp\n"
+    ++ s!"  %cp = getelementptr inbounds %struct.Vec, ptr %vec, i32 0, i32 2\n"
+    ++ s!"  %cap = load i64, ptr %cp\n"
+    ++ s!"  %full = icmp eq i64 %len, %cap\n"
+    ++ s!"  br i1 %full, label %grow, label %store\n"
+    ++ s!"grow:\n"
+    ++ s!"  %newcap = mul i64 %cap, 2\n"
+    ++ s!"  %newbytes = mul i64 %newcap, {es}\n"
+    ++ s!"  %dp = getelementptr inbounds %struct.Vec, ptr %vec, i32 0, i32 0\n"
+    ++ s!"  %data = load ptr, ptr %dp\n"
+    ++ s!"  %newbuf = call ptr @realloc(ptr %data, i64 %newbytes)\n"
+    ++ s!"  store ptr %newbuf, ptr %dp\n"
+    ++ s!"  store i64 %newcap, ptr %cp\n"
+    ++ s!"  br label %store\n"
+    ++ s!"store:\n"
+    ++ s!"  %dp2 = getelementptr inbounds %struct.Vec, ptr %vec, i32 0, i32 0\n"
+    ++ s!"  %data2 = load ptr, ptr %dp2\n"
+    ++ s!"  %offset = mul i64 %len, {es}\n"
+    ++ s!"  %slot = getelementptr i8, ptr %data2, i64 %offset\n"
+    ++ s!"  store i64 %val, ptr %slot\n"
+    ++ s!"  %newlen = add i64 %len, 1\n"
+    ++ s!"  store i64 %newlen, ptr %lp\n"
+    ++ s!"  ret void\n"
+    ++ s!"}\n\n"
+    -- vec_get
+    ++ s!"define i64 @vec_get(ptr %vec, i64 %idx) \{\n"
+    ++ s!"  %dp = getelementptr inbounds %struct.Vec, ptr %vec, i32 0, i32 0\n"
+    ++ s!"  %data = load ptr, ptr %dp\n"
+    ++ s!"  %offset = mul i64 %idx, {es}\n"
+    ++ s!"  %slot = getelementptr i8, ptr %data, i64 %offset\n"
+    ++ s!"  %val = load i64, ptr %slot\n"
+    ++ s!"  ret i64 %val\n"
+    ++ s!"}\n\n"
+    -- vec_len
+    ++ s!"define i64 @vec_len(ptr %vec) \{\n"
+    ++ s!"  %lp = getelementptr inbounds %struct.Vec, ptr %vec, i32 0, i32 1\n"
+    ++ s!"  %len = load i64, ptr %lp\n"
+    ++ s!"  ret i64 %len\n"
+    ++ s!"}\n\n"
+    -- vec_free
+    ++ s!"define void @vec_free(ptr %vec) \{\n"
+    ++ s!"  %dp = getelementptr inbounds %struct.Vec, ptr %vec, i32 0, i32 0\n"
+    ++ s!"  %data = load ptr, ptr %dp\n"
+    ++ s!"  call void @free(ptr %data)\n"
+    ++ s!"  ret void\n"
+    ++ s!"}\n\n"
+    -- vec_pop
+    ++ s!"define %enum.Option @vec_pop(ptr %vec) \{\n"
+    ++ s!"  %lp = getelementptr inbounds %struct.Vec, ptr %vec, i32 0, i32 1\n"
+    ++ s!"  %len = load i64, ptr %lp\n"
+    ++ s!"  %empty = icmp eq i64 %len, 0\n"
+    ++ s!"  br i1 %empty, label %none, label %some\n"
+    ++ s!"some:\n"
+    ++ s!"  %newlen = sub i64 %len, 1\n"
+    ++ s!"  store i64 %newlen, ptr %lp\n"
+    ++ s!"  %dp = getelementptr inbounds %struct.Vec, ptr %vec, i32 0, i32 0\n"
+    ++ s!"  %data = load ptr, ptr %dp\n"
+    ++ s!"  %offset = mul i64 %newlen, {es}\n"
+    ++ s!"  %slot = getelementptr i8, ptr %data, i64 %offset\n"
+    ++ s!"  %val = load i64, ptr %slot\n"
+    ++ s!"  %res = alloca %enum.Option\n"
+    ++ s!"  %tag = getelementptr inbounds %enum.Option, ptr %res, i32 0, i32 0\n"
+    ++ s!"  store i32 0, ptr %tag\n"
+    ++ s!"  %payload = getelementptr inbounds %enum.Option, ptr %res, i32 0, i32 1\n"
+    ++ s!"  store i64 %val, ptr %payload\n"
+    ++ s!"  %r = load %enum.Option, ptr %res\n"
+    ++ s!"  ret %enum.Option %r\n"
+    ++ s!"none:\n"
+    ++ s!"  %res2 = alloca %enum.Option\n"
+    ++ s!"  %tag2 = getelementptr inbounds %enum.Option, ptr %res2, i32 0, i32 0\n"
+    ++ s!"  store i32 1, ptr %tag2\n"
+    ++ s!"  %r2 = load %enum.Option, ptr %res2\n"
+    ++ s!"  ret %enum.Option %r2\n"
+    ++ s!"}\n\n"
+    -- vec_set
+    ++ s!"define void @vec_set(ptr %vec, i64 %idx, i64 %val) \{\n"
+    ++ s!"  %dp = getelementptr inbounds %struct.Vec, ptr %vec, i32 0, i32 0\n"
+    ++ s!"  %data = load ptr, ptr %dp\n"
+    ++ s!"  %offset = mul i64 %idx, {es}\n"
+    ++ s!"  %slot = getelementptr i8, ptr %data, i64 %offset\n"
+    ++ s!"  store i64 %val, ptr %slot\n"
+    ++ s!"  ret void\n"
+    ++ s!"}\n"
+  ir
 
 /-- Emit builtin implementations needed by the program. -/
 private def emitBuiltins (s : EmitSSAState) : EmitSSAState :=
-  { s with output := s.output ++ getBuiltinsIR }
+  { s with output := s.output ++ getBuiltinsIR ++ getVecBuiltinsIR }
 
 -- ============================================================
 -- Entry point: emit full SSA program as LLVM IR
@@ -613,11 +803,25 @@ def emitSSAProgram (modules : List SModule) : String :=
   -- Collect all structs and enums for type resolution
   let allStructs := modules.foldl (fun acc m => acc ++ m.structs) []
   let allEnums := modules.foldl (fun acc m => acc ++ m.enums) []
-  let s := { s with structDefs := allStructs, enumDefs := allEnums }
+  -- Add builtin enums (Option, Result) so ssaLookupEnum resolves them to %enum.X
+  let builtinEnums : List CEnumDef := [
+    { name := "Option", variants := [("Some", [("value", .int)]), ("None", [])] },
+    { name := "Result", variants := [("Ok", [("value", .int)]), ("Err", [("value", .int)])] }
+  ]
+  let s := { s with structDefs := allStructs, enumDefs := builtinEnums ++ allEnums }
   -- Well-known types
   let s := emit s "%struct.String = type { ptr, i64 }"
   let s := emit s "%struct.Vec = type { ptr, i64, i64 }"
   let s := emit s "%struct.HashMap = type { ptr, ptr, ptr, i64, i64 }"
+  -- Builtin enum types used by string_to_int, get_env, etc.
+  let s := emit s "%variant.Result.Ok = type { i64 }"
+  let s := emit s "%variant.Result.Err = type { i64 }"
+  let s := emit s "%enum.Result = type { i32, [8 x i8] }"
+  let s := emit s "%variant.Option.Some = type { i64 }"
+  let s := emit s "%variant.Option.None = type {}"
+  let s := emit s "%enum.Option = type { i32, [8 x i8] }"
+  -- Mark these as emitted so user enums with the same names won't duplicate
+  let s := { s with emittedTypes := ["Result", "Option"] ++ s.emittedTypes }
   let s := emit s ""
   -- External declarations
   let allExternFns := modules.foldl (fun acc m => acc ++ m.externFns) []
