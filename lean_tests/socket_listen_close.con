@@ -1,0 +1,6 @@
+// Test: listen on port 0 (OS assigns) + close, return 0
+fn main!() -> Int {
+    let fd: Int = tcp_listen(0, 5);
+    socket_close(fd);
+    return 0;
+}

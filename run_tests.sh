@@ -256,6 +256,20 @@ run_ok "$TESTDIR/string_to_int_basic.con" 123
 run_ok "$TESTDIR/string_trim_basic.con" 5
 run_ok "$TESTDIR/print_char_basic.con" "A0"
 
+# Vec<T> tests
+run_ok "$TESTDIR/vec_basic.con" 23
+run_ok "$TESTDIR/vec_push_get.con" 500
+run_ok "$TESTDIR/vec_pop.con" 42
+
+# Networking tests
+run_ok "$TESTDIR/tcp_basic.con" 1
+run_ok "$TESTDIR/socket_listen_close.con" 0
+
+# HashMap tests
+run_ok "$TESTDIR/hashmap_int_int.con" 102
+run_ok "$TESTDIR/hashmap_string_int.con" 42
+run_ok "$TESTDIR/hashmap_remove.con" 0
+
 # Phase 7: FFI / Unsafe
 run_ok "$TESTDIR/ffi_basic.con" 42
 
@@ -340,6 +354,12 @@ run_err "$TESTDIR/error_trait_dispatch_missing.con" "no method"
 run_err "$TESTDIR/error_file_no_cap.con" "requires capability"
 # FFI errors
 run_err "$TESTDIR/error_ffi_no_unsafe.con" "requires capability"
+# Vec errors
+run_err "$TESTDIR/error_vec_no_alloc.con" "requires capability"
+# Network errors
+run_err "$TESTDIR/error_network_no_cap.con" "requires capability"
+# HashMap errors
+run_err "$TESTDIR/error_hashmap_no_alloc.con" "requires capability"
 
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="

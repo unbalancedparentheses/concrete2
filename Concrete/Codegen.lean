@@ -53,6 +53,7 @@ structure CodegenState where
   allFnDefs : List FnDef := []  -- all function definitions (for monomorphization lookup)
   monoQueue : List (String × FnDef) := []  -- (monoName, substituted FnDef) to generate
   monoGenerated : List String := []  -- already-generated monomorphized function names
+  hashMapInstantiations : List String := []  -- already-generated HashMap helper sets (e.g. "Int_Int")
 
 instance : Inhabited CodegenState where
   default := {
@@ -169,6 +170,8 @@ def tyToLLVM (s : CodegenState) : Ty → String
   | .ptrConst _ => "ptr"
   | .generic "Heap" _ => "ptr"
   | .generic "HeapArray" _ => "ptr"
+  | .generic "Vec" _ => "%struct.Vec"
+  | .generic "HashMap" _ => "%struct.HashMap"
   | .generic name _ =>
     match s.lookupEnum name with
     | some _ => "%enum." ++ name
@@ -207,6 +210,8 @@ def paramTyToLLVM (s : CodegenState) : Ty → String
     else "i64"
   | .generic "Heap" _ => "ptr"
   | .generic "HeapArray" _ => "ptr"
+  | .generic "Vec" _ => "ptr"
+  | .generic "HashMap" _ => "ptr"
   | .generic name _ =>
     if (s.lookupStruct name).isSome || (s.lookupEnum name).isSome then "ptr"
     else "i64"
@@ -229,6 +234,8 @@ def isPassByPtr (s : CodegenState) (ty : Ty) : Bool :=
   | .heap _ => false     -- Heap pointers are simple ptrs, not passed by ptr
   | .heapArray _ => false
   | .named name => (s.lookupStruct name).isSome || (s.lookupEnum name).isSome
+  | .generic "Vec" _ => true
+  | .generic "HashMap" _ => true
   | .generic name _ => (s.lookupStruct name).isSome || (s.lookupEnum name).isSome
   | _ => false
 
@@ -358,6 +365,45 @@ private def inferExprTy (s : CodegenState) (e : Expr) (hint : Option Ty := none)
         | some (Ty.heap inner) => inner
         | _ => Ty.int
       | _ => Ty.int
+    else if fnName == "vec_new" then
+      match _typeArgs.head? with
+      | some elemTy => .generic "Vec" [elemTy]
+      | none => match hint with | some t => t | none => .generic "Vec" [.int]
+    else if fnName == "vec_push" || fnName == "vec_set" || fnName == "vec_free" then .unit
+    else if fnName == "vec_get" then
+      match args.head? with
+      | some (Expr.ident name) =>
+        match s.lookupVarType name with
+        | some (.refMut (.generic "Vec" [et])) => et
+        | some (.ref (.generic "Vec" [et])) => et
+        | some (.generic "Vec" [et]) => et
+        | _ => match hint with | some t => t | none => .int
+      | _ => match hint with | some t => t | none => .int
+    else if fnName == "vec_len" then .int
+    else if fnName == "vec_pop" then
+      match args.head? with
+      | some (Expr.ident name) =>
+        match s.lookupVarType name with
+        | some (.refMut (.generic "Vec" [et])) => .generic "Option" [et]
+        | some (.generic "Vec" [et]) => .generic "Option" [et]
+        | _ => match hint with | some t => t | none => .int
+      | _ => match hint with | some t => t | none => .int
+    else if fnName == "map_new" then
+      match _typeArgs with
+      | [kTy, vTy] => .generic "HashMap" [kTy, vTy]
+      | _ => match hint with | some t => t | none => .generic "HashMap" [.int, .int]
+    else if fnName == "map_insert" || fnName == "map_free" then .unit
+    else if fnName == "map_get" || fnName == "map_remove" then
+      match args.head? with
+      | some (Expr.ident name) =>
+        match s.lookupVarType name with
+        | some (.ref (.generic "HashMap" [_, vt])) => .generic "Option" [vt]
+        | some (.refMut (.generic "HashMap" [_, vt])) => .generic "Option" [vt]
+        | some (.generic "HashMap" [_, vt]) => .generic "Option" [vt]
+        | _ => match hint with | some t => t | none => .int
+      | _ => match hint with | some t => t | none => .int
+    else if fnName == "map_contains" then .bool
+    else if fnName == "map_len" then .int
     else normalizeTy ((s.fnRetTypes.lookup fnName).getD .int)
   | .binOp op lhs _ =>
     match op with
@@ -458,6 +504,8 @@ private def tySize : Ty → Nat
   | .named _ => 8
   | .ref _ | .refMut _ => 8
   | .ptrMut _ | .ptrConst _ => 8
+  | .generic "Vec" _ => 24      -- ptr + i64 + i64
+  | .generic "HashMap" _ => 40  -- ptr + ptr + ptr + i64 + i64
   | .generic _ _ | .typeVar _ => 8
   | .fn_ _ _ _ => 8   -- Function pointer: single ptr
   | .never => 0
@@ -481,6 +529,8 @@ private partial def tySizeOf (s : CodegenState) : Ty → Nat
       | none => 8
   | .generic "Heap" _ => 8    -- pointer
   | .generic "HeapArray" _ => 8  -- pointer
+  | .generic "Vec" _ => 24      -- ptr + i64 + i64
+  | .generic "HashMap" _ => 40  -- ptr + ptr + ptr + i64 + i64
   | .generic name _ =>
     -- Generic struct/enum: look up base definition
     match s.lookupStruct name with
@@ -798,6 +848,16 @@ partial def genExpr (s : CodegenState) (e : Expr) (hintTy : Option Ty := none) :
           let s := s.emit ("  call void @free(ptr " ++ heapPtr ++ ")")
           (s, loaded)
       | none => (s, "0")
+    -- Intercept vec_* calls
+    else if fnName == "vec_new" || fnName == "vec_push" || fnName == "vec_get" ||
+            fnName == "vec_set" || fnName == "vec_len" || fnName == "vec_pop" ||
+            fnName == "vec_free" then
+      genVecBuiltinCall s fnName typeArgs args hintTy
+    -- Intercept map_* calls
+    else if fnName == "map_new" || fnName == "map_insert" || fnName == "map_get" ||
+            fnName == "map_contains" || fnName == "map_remove" || fnName == "map_len" ||
+            fnName == "map_free" then
+      genHashMapBuiltinCall s fnName typeArgs args hintTy
     else
     -- Check if this is a function pointer call (variable with fn_ type)
     let isFnPtrCall := match s.lookupVarType fnName with
@@ -1671,6 +1731,375 @@ partial def genExprListWithHints (s : CodegenState) (args : List Expr) (hints : 
     let (s, reg) := genExpr s e
     let (s, regs) := genExprListWithHints s rest []
     (s, reg :: regs)
+
+/-- Generate LLVM IR for Vec<T> builtin calls. Returns (state, result_register). -/
+partial def genVecBuiltinCall (s : CodegenState) (fnName : String) (typeArgs : List Ty) (args : List Expr) (hintTy : Option Ty := none) : CodegenState × String :=
+  if fnName == "vec_new" then
+    let elemTy := match typeArgs.head? with | some t => t | none => Ty.int
+    let elemSize := tySizeOf s elemTy
+    let initCap := 8
+    let initBytes := initCap * elemSize
+    -- Allocate initial buffer
+    let (s, buf) := s.freshLocal
+    let s := s.emit ("  " ++ buf ++ " = call ptr @malloc(i64 " ++ toString initBytes ++ ")")
+    -- Build Vec struct on stack: { buf, 0, 8 }
+    let (s, vecAlloca) := s.freshLocal
+    let s := s.emit ("  " ++ vecAlloca ++ " = alloca %struct.Vec")
+    let (s, bufPtr) := s.freshLocal
+    let s := s.emit ("  " ++ bufPtr ++ " = getelementptr inbounds %struct.Vec, ptr " ++ vecAlloca ++ ", i32 0, i32 0")
+    let s := s.emit ("  store ptr " ++ buf ++ ", ptr " ++ bufPtr)
+    let (s, lenPtr) := s.freshLocal
+    let s := s.emit ("  " ++ lenPtr ++ " = getelementptr inbounds %struct.Vec, ptr " ++ vecAlloca ++ ", i32 0, i32 1")
+    let s := s.emit ("  store i64 0, ptr " ++ lenPtr)
+    let (s, capPtr) := s.freshLocal
+    let s := s.emit ("  " ++ capPtr ++ " = getelementptr inbounds %struct.Vec, ptr " ++ vecAlloca ++ ", i32 0, i32 2")
+    let s := s.emit ("  store i64 " ++ toString initCap ++ ", ptr " ++ capPtr)
+    (s, vecAlloca)
+  else if fnName == "vec_push" then
+    let vecArg := match args with | a :: _ => a | [] => Expr.intLit 0
+    let valArg := match args with | _ :: b :: _ => b | _ => Expr.intLit 0
+    -- Determine element type from vec arg
+    let vecArgTy := inferExprTy s vecArg
+    let elemTy := match vecArgTy with
+      | .refMut (.generic "Vec" [et]) => et
+      | .generic "Vec" [et] => et
+      | _ => .int
+    let elemSize := tySizeOf s elemTy
+    -- Get vec pointer (it's &mut Vec<T> so genExpr gives a ptr)
+    let (s, vecPtr) := genExpr s vecArg
+    -- Load len and cap
+    let (s, lenPtr) := s.freshLocal
+    let s := s.emit ("  " ++ lenPtr ++ " = getelementptr inbounds %struct.Vec, ptr " ++ vecPtr ++ ", i32 0, i32 1")
+    let (s, len) := s.freshLocal
+    let s := s.emit ("  " ++ len ++ " = load i64, ptr " ++ lenPtr)
+    let (s, capPtr) := s.freshLocal
+    let s := s.emit ("  " ++ capPtr ++ " = getelementptr inbounds %struct.Vec, ptr " ++ vecPtr ++ ", i32 0, i32 2")
+    let (s, cap) := s.freshLocal
+    let s := s.emit ("  " ++ cap ++ " = load i64, ptr " ++ capPtr)
+    -- Check if we need to grow: len >= cap
+    let (s, needGrow) := s.freshLocal
+    let s := s.emit ("  " ++ needGrow ++ " = icmp uge i64 " ++ len ++ ", " ++ cap)
+    let (s, growLabel) := s.freshLabel "vec.grow"
+    let (s, doneLabel) := s.freshLabel "vec.grow.done"
+    let s := s.emit ("  br i1 " ++ needGrow ++ ", label %" ++ growLabel ++ ", label %" ++ doneLabel)
+    -- Grow path: realloc to 2x capacity
+    let s := s.emit (growLabel ++ ":")
+    let (s, newCap) := s.freshLocal
+    let s := s.emit ("  " ++ newCap ++ " = mul i64 " ++ cap ++ ", 2")
+    let (s, newBytes) := s.freshLocal
+    let s := s.emit ("  " ++ newBytes ++ " = mul i64 " ++ newCap ++ ", " ++ toString elemSize)
+    let (s, bufPtr) := s.freshLocal
+    let s := s.emit ("  " ++ bufPtr ++ " = getelementptr inbounds %struct.Vec, ptr " ++ vecPtr ++ ", i32 0, i32 0")
+    let (s, oldBuf) := s.freshLocal
+    let s := s.emit ("  " ++ oldBuf ++ " = load ptr, ptr " ++ bufPtr)
+    let (s, newBuf) := s.freshLocal
+    let s := s.emit ("  " ++ newBuf ++ " = call ptr @realloc(ptr " ++ oldBuf ++ ", i64 " ++ newBytes ++ ")")
+    let s := s.emit ("  store ptr " ++ newBuf ++ ", ptr " ++ bufPtr)
+    let s := s.emit ("  store i64 " ++ newCap ++ ", ptr " ++ capPtr)
+    let s := s.emit ("  br label %" ++ doneLabel)
+    -- Done path: store value at buf[len]
+    let s := s.emit (doneLabel ++ ":")
+    let (s, bufPtr2) := s.freshLocal
+    let s := s.emit ("  " ++ bufPtr2 ++ " = getelementptr inbounds %struct.Vec, ptr " ++ vecPtr ++ ", i32 0, i32 0")
+    let (s, curBuf) := s.freshLocal
+    let s := s.emit ("  " ++ curBuf ++ " = load ptr, ptr " ++ bufPtr2)
+    -- Reload len (same register is valid due to SSA dominance since both paths converge)
+    let (s, curLen) := s.freshLocal
+    let s := s.emit ("  " ++ curLen ++ " = load i64, ptr " ++ lenPtr)
+    let (s, offset) := s.freshLocal
+    let s := s.emit ("  " ++ offset ++ " = mul i64 " ++ curLen ++ ", " ++ toString elemSize)
+    let (s, elemPtr) := s.freshLocal
+    let s := s.emit ("  " ++ elemPtr ++ " = getelementptr i8, ptr " ++ curBuf ++ ", i64 " ++ offset)
+    -- Generate value and store
+    if isPassByPtr s elemTy then
+      let (s, valPtr) := genExpr s valArg (some elemTy)
+      let elemLLTy := tyToLLVM s elemTy
+      let (s, valLoaded) := s.freshLocal
+      let s := s.emit ("  " ++ valLoaded ++ " = load " ++ elemLLTy ++ ", ptr " ++ valPtr)
+      let s := s.emit ("  store " ++ elemLLTy ++ " " ++ valLoaded ++ ", ptr " ++ elemPtr)
+      -- Increment len
+      let (s, newLen) := s.freshLocal
+      let s := s.emit ("  " ++ newLen ++ " = add i64 " ++ curLen ++ ", 1")
+      let s := s.emit ("  store i64 " ++ newLen ++ ", ptr " ++ lenPtr)
+      (s, "0")
+    else
+      let (s, valReg) := genExpr s valArg (some elemTy)
+      let elemLLTy := tyToLLVM s elemTy
+      let s := s.emit ("  store " ++ elemLLTy ++ " " ++ valReg ++ ", ptr " ++ elemPtr)
+      -- Increment len
+      let (s, newLen) := s.freshLocal
+      let s := s.emit ("  " ++ newLen ++ " = add i64 " ++ curLen ++ ", 1")
+      let s := s.emit ("  store i64 " ++ newLen ++ ", ptr " ++ lenPtr)
+      (s, "0")
+  else if fnName == "vec_get" then
+    let vecArg := match args with | a :: _ => a | [] => Expr.intLit 0
+    let idxArg := match args with | _ :: b :: _ => b | _ => Expr.intLit 0
+    let vecArgTy := inferExprTy s vecArg
+    let elemTy := match vecArgTy with
+      | .ref (.generic "Vec" [et]) => et
+      | .refMut (.generic "Vec" [et]) => et
+      | .generic "Vec" [et] => et
+      | _ => .int
+    let elemSize := tySizeOf s elemTy
+    let elemLLTy := tyToLLVM s elemTy
+    let (s, vecPtr) := genExpr s vecArg
+    let (s, idxReg) := genExpr s idxArg (some .int)
+    -- Load data buffer
+    let (s, bufPtr) := s.freshLocal
+    let s := s.emit ("  " ++ bufPtr ++ " = getelementptr inbounds %struct.Vec, ptr " ++ vecPtr ++ ", i32 0, i32 0")
+    let (s, buf) := s.freshLocal
+    let s := s.emit ("  " ++ buf ++ " = load ptr, ptr " ++ bufPtr)
+    -- Compute offset
+    let (s, offset) := s.freshLocal
+    let s := s.emit ("  " ++ offset ++ " = mul i64 " ++ idxReg ++ ", " ++ toString elemSize)
+    let (s, elemPtr) := s.freshLocal
+    let s := s.emit ("  " ++ elemPtr ++ " = getelementptr i8, ptr " ++ buf ++ ", i64 " ++ offset)
+    if isPassByPtr s elemTy then
+      -- Return pointer to element (caller will load if needed)
+      (s, elemPtr)
+    else
+      let (s, loaded) := s.freshLocal
+      let s := s.emit ("  " ++ loaded ++ " = load " ++ elemLLTy ++ ", ptr " ++ elemPtr)
+      (s, loaded)
+  else if fnName == "vec_set" then
+    let vecArg := match args with | a :: _ => a | [] => Expr.intLit 0
+    let idxArg := match args with | _ :: b :: _ => b | _ => Expr.intLit 0
+    let valArg := match args with | _ :: _ :: c :: _ => c | _ => Expr.intLit 0
+    let vecArgTy := inferExprTy s vecArg
+    let elemTy := match vecArgTy with
+      | .refMut (.generic "Vec" [et]) => et
+      | .generic "Vec" [et] => et
+      | _ => .int
+    let elemSize := tySizeOf s elemTy
+    let elemLLTy := tyToLLVM s elemTy
+    let (s, vecPtr) := genExpr s vecArg
+    let (s, idxReg) := genExpr s idxArg (some .int)
+    let (s, bufPtr) := s.freshLocal
+    let s := s.emit ("  " ++ bufPtr ++ " = getelementptr inbounds %struct.Vec, ptr " ++ vecPtr ++ ", i32 0, i32 0")
+    let (s, buf) := s.freshLocal
+    let s := s.emit ("  " ++ buf ++ " = load ptr, ptr " ++ bufPtr)
+    let (s, offset) := s.freshLocal
+    let s := s.emit ("  " ++ offset ++ " = mul i64 " ++ idxReg ++ ", " ++ toString elemSize)
+    let (s, elemPtr) := s.freshLocal
+    let s := s.emit ("  " ++ elemPtr ++ " = getelementptr i8, ptr " ++ buf ++ ", i64 " ++ offset)
+    if isPassByPtr s elemTy then
+      let (s, valPtr) := genExpr s valArg (some elemTy)
+      let (s, valLoaded) := s.freshLocal
+      let s := s.emit ("  " ++ valLoaded ++ " = load " ++ elemLLTy ++ ", ptr " ++ valPtr)
+      let s := s.emit ("  store " ++ elemLLTy ++ " " ++ valLoaded ++ ", ptr " ++ elemPtr)
+      (s, "0")
+    else
+      let (s, valReg) := genExpr s valArg (some elemTy)
+      let s := s.emit ("  store " ++ elemLLTy ++ " " ++ valReg ++ ", ptr " ++ elemPtr)
+      (s, "0")
+  else if fnName == "vec_len" then
+    let vecArg := match args with | a :: _ => a | [] => Expr.intLit 0
+    let (s, vecPtr) := genExpr s vecArg
+    let (s, lenPtr) := s.freshLocal
+    let s := s.emit ("  " ++ lenPtr ++ " = getelementptr inbounds %struct.Vec, ptr " ++ vecPtr ++ ", i32 0, i32 1")
+    let (s, len) := s.freshLocal
+    let s := s.emit ("  " ++ len ++ " = load i64, ptr " ++ lenPtr)
+    (s, len)
+  else if fnName == "vec_pop" then
+    let vecArg := match args with | a :: _ => a | [] => Expr.intLit 0
+    let vecArgTy := inferExprTy s vecArg
+    let elemTy := match vecArgTy with
+      | .refMut (.generic "Vec" [et]) => et
+      | .generic "Vec" [et] => et
+      | _ => .int
+    let elemSize := tySizeOf s elemTy
+    let elemLLTy := tyToLLVM s elemTy
+    -- Look up Option enum info for payload size
+    let optPayloadSize := match s.lookupEnum "Option" with
+      | some ei => ei.payloadSize
+      | none => 8
+    let actualPayloadSize := if tySizeOf s elemTy > optPayloadSize then tySizeOf s elemTy else optPayloadSize
+    let optTotalSize := 4 + actualPayloadSize
+    let (s, vecPtr) := genExpr s vecArg
+    -- Load len
+    let (s, lenPtr) := s.freshLocal
+    let s := s.emit ("  " ++ lenPtr ++ " = getelementptr inbounds %struct.Vec, ptr " ++ vecPtr ++ ", i32 0, i32 1")
+    let (s, len) := s.freshLocal
+    let s := s.emit ("  " ++ len ++ " = load i64, ptr " ++ lenPtr)
+    -- Alloca for result Option
+    let (s, optAlloca) := s.freshLocal
+    let s := s.emit ("  " ++ optAlloca ++ " = alloca [" ++ toString optTotalSize ++ " x i8]")
+    -- Check if len == 0
+    let (s, isEmpty) := s.freshLocal
+    let s := s.emit ("  " ++ isEmpty ++ " = icmp eq i64 " ++ len ++ ", 0")
+    let (s, emptyLabel) := s.freshLabel "vec.pop.empty"
+    let (s, someLabel) := s.freshLabel "vec.pop.some"
+    let (s, doneLabel) := s.freshLabel "vec.pop.done"
+    let s := s.emit ("  br i1 " ++ isEmpty ++ ", label %" ++ emptyLabel ++ ", label %" ++ someLabel)
+    -- Empty: return None (tag=1)
+    let s := s.emit (emptyLabel ++ ":")
+    let s := s.emit ("  store i32 1, ptr " ++ optAlloca)
+    let s := s.emit ("  br label %" ++ doneLabel)
+    -- Some: decrement len, load last element, return Some
+    let s := s.emit (someLabel ++ ":")
+    let (s, newLen) := s.freshLocal
+    let s := s.emit ("  " ++ newLen ++ " = sub i64 " ++ len ++ ", 1")
+    let s := s.emit ("  store i64 " ++ newLen ++ ", ptr " ++ lenPtr)
+    -- Load data buf
+    let (s, bufPtr) := s.freshLocal
+    let s := s.emit ("  " ++ bufPtr ++ " = getelementptr inbounds %struct.Vec, ptr " ++ vecPtr ++ ", i32 0, i32 0")
+    let (s, buf) := s.freshLocal
+    let s := s.emit ("  " ++ buf ++ " = load ptr, ptr " ++ bufPtr)
+    -- Load element at newLen offset
+    let (s, offset) := s.freshLocal
+    let s := s.emit ("  " ++ offset ++ " = mul i64 " ++ newLen ++ ", " ++ toString elemSize)
+    let (s, elemPtr) := s.freshLocal
+    let s := s.emit ("  " ++ elemPtr ++ " = getelementptr i8, ptr " ++ buf ++ ", i64 " ++ offset)
+    -- Write tag=0 (Some)
+    let s := s.emit ("  store i32 0, ptr " ++ optAlloca)
+    -- Write payload at offset 4
+    let (s, payloadPtr) := s.freshLocal
+    let s := s.emit ("  " ++ payloadPtr ++ " = getelementptr i8, ptr " ++ optAlloca ++ ", i64 4")
+    if isPassByPtr s elemTy then
+      let s := s.emit ("  call void @llvm.memcpy.p0.p0.i64(ptr " ++ payloadPtr ++ ", ptr " ++ elemPtr ++ ", i64 " ++ toString elemSize ++ ", i1 false)")
+      let s := s.emit ("  br label %" ++ doneLabel)
+      let s := s.emit (doneLabel ++ ":")
+      (s, optAlloca)
+    else
+      let (s, valLoaded) := s.freshLocal
+      let s := s.emit ("  " ++ valLoaded ++ " = load " ++ elemLLTy ++ ", ptr " ++ elemPtr)
+      let s := s.emit ("  store " ++ elemLLTy ++ " " ++ valLoaded ++ ", ptr " ++ payloadPtr)
+      let s := s.emit ("  br label %" ++ doneLabel)
+      let s := s.emit (doneLabel ++ ":")
+      (s, optAlloca)
+  else if fnName == "vec_free" then
+    let vecArg := match args with | a :: _ => a | [] => Expr.intLit 0
+    let (s, vecPtr) := genExpr s vecArg
+    -- Load data buf and free it
+    let (s, bufPtr) := s.freshLocal
+    let s := s.emit ("  " ++ bufPtr ++ " = getelementptr inbounds %struct.Vec, ptr " ++ vecPtr ++ ", i32 0, i32 0")
+    let (s, buf) := s.freshLocal
+    let s := s.emit ("  " ++ buf ++ " = load ptr, ptr " ++ bufPtr)
+    let s := s.emit ("  call void @free(ptr " ++ buf ++ ")")
+    (s, "0")
+  else
+    (s, "0")
+
+/-- Generate LLVM IR for HashMap<K,V> builtin calls.
+    Calls pre-emitted helper functions __hashmap_int_* or __hashmap_str_*. -/
+partial def genHashMapBuiltinCall (s : CodegenState) (fnName : String) (typeArgs : List Ty) (args : List Expr) (_hintTy : Option Ty := none) : CodegenState × String :=
+  if fnName == "map_new" then
+    let kTy := match typeArgs with | t :: _ => t | [] => Ty.int
+    let vTy := match typeArgs with | _ :: t :: _ => t | _ => Ty.int
+    let kSize := tySizeOf s kTy
+    let vSize := tySizeOf s vTy
+    let pfx := match kTy with | .string => "str" | _ => "int"
+    -- Call __hashmap_<pfx>_new(kSize, vSize) → returns ptr to HashMap on heap
+    let (s, mapAlloca) := s.freshLocal
+    let s := s.emit ("  " ++ mapAlloca ++ " = alloca %struct.HashMap")
+    let (s, _ret) := s.freshLocal
+    let s := s.emit ("  call void @__hashmap_" ++ pfx ++ "_new(ptr " ++ mapAlloca ++ ", i64 " ++ toString kSize ++ ", i64 " ++ toString vSize ++ ")")
+    (s, mapAlloca)
+  else if fnName == "map_insert" then
+    let mapArg := match args with | a :: _ => a | [] => Expr.intLit 0
+    let keyArg := match args with | _ :: b :: _ => b | _ => Expr.intLit 0
+    let valArg := match args with | _ :: _ :: c :: _ => c | _ => Expr.intLit 0
+    let mapArgTy := inferExprTy s mapArg
+    let (kTy, vTy) := match mapArgTy with
+      | .refMut (.generic "HashMap" [k, v]) => (k, v)
+      | _ => (.int, .int)
+    let kSize := tySizeOf s kTy
+    let vSize := tySizeOf s vTy
+    let pfx := match kTy with | .string => "str" | _ => "int"
+    let (s, mapPtr) := genExpr s mapArg
+    let (s, keyReg) := genExpr s keyArg (some kTy)
+    let (s, valReg) := genExpr s valArg (some vTy)
+    -- For scalar keys, store to temp alloca so we can pass ptr
+    let (s, keyPtr) := if isPassByPtr s kTy then (s, keyReg) else
+      let (s2, tmp) := s.freshLocal
+      let s2 := s2.emit ("  " ++ tmp ++ " = alloca " ++ tyToLLVM s kTy)
+      let s2 := s2.emit ("  store " ++ tyToLLVM s kTy ++ " " ++ keyReg ++ ", ptr " ++ tmp)
+      (s2, tmp)
+    let (s, valPtr) := if isPassByPtr s vTy then (s, valReg) else
+      let (s2, tmp) := s.freshLocal
+      let s2 := s2.emit ("  " ++ tmp ++ " = alloca " ++ tyToLLVM s vTy)
+      let s2 := s2.emit ("  store " ++ tyToLLVM s vTy ++ " " ++ valReg ++ ", ptr " ++ tmp)
+      (s2, tmp)
+    let s := s.emit ("  call void @__hashmap_" ++ pfx ++ "_insert(ptr " ++ mapPtr ++ ", ptr " ++ keyPtr ++ ", ptr " ++ valPtr ++ ", i64 " ++ toString kSize ++ ", i64 " ++ toString vSize ++ ")")
+    (s, "0")
+  else if fnName == "map_get" || fnName == "map_remove" then
+    let mapArg := match args with | a :: _ => a | [] => Expr.intLit 0
+    let keyArg := match args with | _ :: b :: _ => b | _ => Expr.intLit 0
+    let mapArgTy := inferExprTy s mapArg
+    let (kTy, vTy) := match mapArgTy with
+      | .ref (.generic "HashMap" [k, v]) => (k, v)
+      | .refMut (.generic "HashMap" [k, v]) => (k, v)
+      | _ => (.int, .int)
+    let kSize := tySizeOf s kTy
+    let vSize := tySizeOf s vTy
+    let pfx := match kTy with | .string => "str" | _ => "int"
+    let (s, mapPtr) := genExpr s mapArg
+    let (s, keyReg) := genExpr s keyArg (some kTy)
+    let (s, keyPtr) := if isPassByPtr s kTy then (s, keyReg) else
+      let (s2, tmp) := s.freshLocal
+      let s2 := s2.emit ("  " ++ tmp ++ " = alloca " ++ tyToLLVM s kTy)
+      let s2 := s2.emit ("  store " ++ tyToLLVM s kTy ++ " " ++ keyReg ++ ", ptr " ++ tmp)
+      (s2, tmp)
+    -- Allocate result Option (tag + payload)
+    let optPayloadSize := match s.lookupEnum "Option" with
+      | some ei => ei.payloadSize
+      | none => 8
+    let actualPSize := if vSize > optPayloadSize then vSize else optPayloadSize
+    let optSize := 4 + actualPSize
+    let (s, optAlloca) := s.freshLocal
+    let s := s.emit ("  " ++ optAlloca ++ " = alloca [" ++ toString optSize ++ " x i8]")
+    let opName := if fnName == "map_remove" then "remove" else "get"
+    let s := s.emit ("  call void @__hashmap_" ++ pfx ++ "_" ++ opName ++ "(ptr " ++ mapPtr ++ ", ptr " ++ keyPtr ++ ", ptr " ++ optAlloca ++ ", i64 " ++ toString kSize ++ ", i64 " ++ toString vSize ++ ")")
+    (s, optAlloca)
+  else if fnName == "map_contains" then
+    let mapArg := match args with | a :: _ => a | [] => Expr.intLit 0
+    let keyArg := match args with | _ :: b :: _ => b | _ => Expr.intLit 0
+    let mapArgTy := inferExprTy s mapArg
+    let kTy := match mapArgTy with
+      | .ref (.generic "HashMap" [k, _]) => k
+      | .refMut (.generic "HashMap" [k, _]) => k
+      | _ => .int
+    let kSize := tySizeOf s kTy
+    let pfx := match kTy with | .string => "str" | _ => "int"
+    let (s, mapPtr) := genExpr s mapArg
+    let (s, keyReg) := genExpr s keyArg (some kTy)
+    let (s, keyPtr) := if isPassByPtr s kTy then (s, keyReg) else
+      let (s2, tmp) := s.freshLocal
+      let s2 := s2.emit ("  " ++ tmp ++ " = alloca " ++ tyToLLVM s kTy)
+      let s2 := s2.emit ("  store " ++ tyToLLVM s kTy ++ " " ++ keyReg ++ ", ptr " ++ tmp)
+      (s2, tmp)
+    let (s, result) := s.freshLocal
+    let s := s.emit ("  " ++ result ++ " = call i1 @__hashmap_" ++ pfx ++ "_contains(ptr " ++ mapPtr ++ ", ptr " ++ keyPtr ++ ", i64 " ++ toString kSize ++ ")")
+    (s, result)
+  else if fnName == "map_len" then
+    let mapArg := match args with | a :: _ => a | [] => Expr.intLit 0
+    let (s, mapPtr) := genExpr s mapArg
+    let (s, lenFld) := s.freshLocal
+    let s := s.emit ("  " ++ lenFld ++ " = getelementptr inbounds %struct.HashMap, ptr " ++ mapPtr ++ ", i32 0, i32 3")
+    let (s, len) := s.freshLocal
+    let s := s.emit ("  " ++ len ++ " = load i64, ptr " ++ lenFld)
+    (s, len)
+  else if fnName == "map_free" then
+    let mapArg := match args with | a :: _ => a | [] => Expr.intLit 0
+    let (s, mapPtr) := genExpr s mapArg
+    let (s, kFld) := s.freshLocal
+    let s := s.emit ("  " ++ kFld ++ " = getelementptr inbounds %struct.HashMap, ptr " ++ mapPtr ++ ", i32 0, i32 0")
+    let (s, kBuf) := s.freshLocal
+    let s := s.emit ("  " ++ kBuf ++ " = load ptr, ptr " ++ kFld)
+    let s := s.emit ("  call void @free(ptr " ++ kBuf ++ ")")
+    let (s, vFld) := s.freshLocal
+    let s := s.emit ("  " ++ vFld ++ " = getelementptr inbounds %struct.HashMap, ptr " ++ mapPtr ++ ", i32 0, i32 1")
+    let (s, vBuf) := s.freshLocal
+    let s := s.emit ("  " ++ vBuf ++ " = load ptr, ptr " ++ vFld)
+    let s := s.emit ("  call void @free(ptr " ++ vBuf ++ ")")
+    let (s, fFld) := s.freshLocal
+    let s := s.emit ("  " ++ fFld ++ " = getelementptr inbounds %struct.HashMap, ptr " ++ mapPtr ++ ", i32 0, i32 2")
+    let (s, fBuf) := s.freshLocal
+    let s := s.emit ("  " ++ fBuf ++ " = load ptr, ptr " ++ fFld)
+    let s := s.emit ("  call void @free(ptr " ++ fBuf ++ ")")
+    (s, "0")
+  else
+    (s, "0")
 
 partial def genStmts (s : CodegenState) (stmts : List Stmt) : CodegenState :=
   match stmts with
@@ -2615,6 +3044,823 @@ def genConversionBuiltins (s : CodegenState) : CodegenState :=
   let s := s.emit ""
   s
 
+set_option maxRecDepth 8192 in
+/-- Emit LLVM IR for HashMap helper functions (Int and String key variants). -/
+def genHashMapFunctions (s : CodegenState) : CodegenState :=
+  -- Helper: __hashmap_int_new(ptr map_out, i64 ksize, i64 vsize)
+  -- Initializes a HashMap struct at map_out with capacity 16
+  let s := s.emit "define void @__hashmap_int_new(ptr %mo, i64 %ks, i64 %vs) {"
+  let s := s.emit "  %kb = mul i64 16, %ks"
+  let s := s.emit "  %kbuf = call ptr @malloc(i64 %kb)"
+  let s := s.emit "  %vb = mul i64 16, %vs"
+  let s := s.emit "  %vbuf = call ptr @malloc(i64 %vb)"
+  let s := s.emit "  %fbuf = call ptr @malloc(i64 16)"
+  -- Zero flags
+  let s := s.emit "  br label %zl"
+  let s := s.emit "zl:"
+  let s := s.emit "  %zi = phi i64 [ 0, %0 ], [ %zi1, %zl ]"
+  let s := s.emit "  %zp = getelementptr i8, ptr %fbuf, i64 %zi"
+  let s := s.emit "  store i8 0, ptr %zp"
+  let s := s.emit "  %zi1 = add i64 %zi, 1"
+  let s := s.emit "  %zd = icmp uge i64 %zi1, 16"
+  let s := s.emit "  br i1 %zd, label %zx, label %zl"
+  let s := s.emit "zx:"
+  let s := s.emit "  %f0 = getelementptr inbounds %struct.HashMap, ptr %mo, i32 0, i32 0"
+  let s := s.emit "  store ptr %kbuf, ptr %f0"
+  let s := s.emit "  %f1 = getelementptr inbounds %struct.HashMap, ptr %mo, i32 0, i32 1"
+  let s := s.emit "  store ptr %vbuf, ptr %f1"
+  let s := s.emit "  %f2 = getelementptr inbounds %struct.HashMap, ptr %mo, i32 0, i32 2"
+  let s := s.emit "  store ptr %fbuf, ptr %f2"
+  let s := s.emit "  %f3 = getelementptr inbounds %struct.HashMap, ptr %mo, i32 0, i32 3"
+  let s := s.emit "  store i64 0, ptr %f3"
+  let s := s.emit "  %f4 = getelementptr inbounds %struct.HashMap, ptr %mo, i32 0, i32 4"
+  let s := s.emit "  store i64 16, ptr %f4"
+  let s := s.emit "  ret void"
+  let s := s.emit "}"
+  let s := s.emit ""
+  -- __hashmap_str_new: same implementation as int (structure is identical)
+  let s := s.emit "define void @__hashmap_str_new(ptr %mo, i64 %ks, i64 %vs) {"
+  let s := s.emit "  %kb = mul i64 16, %ks"
+  let s := s.emit "  %kbuf = call ptr @malloc(i64 %kb)"
+  let s := s.emit "  %vb = mul i64 16, %vs"
+  let s := s.emit "  %vbuf = call ptr @malloc(i64 %vb)"
+  let s := s.emit "  %fbuf = call ptr @malloc(i64 16)"
+  let s := s.emit "  br label %zl"
+  let s := s.emit "zl:"
+  let s := s.emit "  %zi = phi i64 [ 0, %0 ], [ %zi1, %zl ]"
+  let s := s.emit "  %zp = getelementptr i8, ptr %fbuf, i64 %zi"
+  let s := s.emit "  store i8 0, ptr %zp"
+  let s := s.emit "  %zi1 = add i64 %zi, 1"
+  let s := s.emit "  %zd = icmp uge i64 %zi1, 16"
+  let s := s.emit "  br i1 %zd, label %zx, label %zl"
+  let s := s.emit "zx:"
+  let s := s.emit "  %f0 = getelementptr inbounds %struct.HashMap, ptr %mo, i32 0, i32 0"
+  let s := s.emit "  store ptr %kbuf, ptr %f0"
+  let s := s.emit "  %f1 = getelementptr inbounds %struct.HashMap, ptr %mo, i32 0, i32 1"
+  let s := s.emit "  store ptr %vbuf, ptr %f1"
+  let s := s.emit "  %f2 = getelementptr inbounds %struct.HashMap, ptr %mo, i32 0, i32 2"
+  let s := s.emit "  store ptr %fbuf, ptr %f2"
+  let s := s.emit "  %f3 = getelementptr inbounds %struct.HashMap, ptr %mo, i32 0, i32 3"
+  let s := s.emit "  store i64 0, ptr %f3"
+  let s := s.emit "  %f4 = getelementptr inbounds %struct.HashMap, ptr %mo, i32 0, i32 4"
+  let s := s.emit "  store i64 16, ptr %f4"
+  let s := s.emit "  ret void"
+  let s := s.emit "}"
+  let s := s.emit ""
+  -- Int hash function: multiplicative hash with xorshift
+  let s := s.emit "define i64 @__hash_int(i64 %k) {"
+  let s := s.emit "  %m = mul i64 %k, -7046029254386353131"
+  let s := s.emit "  %s = lshr i64 %m, 33"
+  let s := s.emit "  %h = xor i64 %m, %s"
+  let s := s.emit "  ret i64 %h"
+  let s := s.emit "}"
+  let s := s.emit ""
+  -- String hash function: FNV-1a
+  let s := s.emit "define i64 @__hash_str(ptr %sp) {"
+  let s := s.emit "  %dp = getelementptr inbounds %struct.String, ptr %sp, i32 0, i32 0"
+  let s := s.emit "  %d = load ptr, ptr %dp"
+  let s := s.emit "  %lp = getelementptr inbounds %struct.String, ptr %sp, i32 0, i32 1"
+  let s := s.emit "  %l = load i64, ptr %lp"
+  let s := s.emit "  %empty = icmp eq i64 %l, 0"
+  let s := s.emit "  br i1 %empty, label %done, label %loop"
+  let s := s.emit "loop:"
+  let s := s.emit "  %i = phi i64 [ 0, %0 ], [ %i1, %loop ]"
+  let s := s.emit "  %h = phi i64 [ -3750763034362895579, %0 ], [ %h3, %loop ]"
+  let s := s.emit "  %bp = getelementptr i8, ptr %d, i64 %i"
+  let s := s.emit "  %b = load i8, ptr %bp"
+  let s := s.emit "  %bx = zext i8 %b to i64"
+  let s := s.emit "  %h2 = xor i64 %h, %bx"
+  let s := s.emit "  %h3 = mul i64 %h2, 1099511628211"
+  let s := s.emit "  %i1 = add i64 %i, 1"
+  let s := s.emit "  %c = icmp uge i64 %i1, %l"
+  let s := s.emit "  br i1 %c, label %done, label %loop"
+  let s := s.emit "done:"
+  let s := s.emit "  %r = phi i64 [ -3750763034362895579, %0 ], [ %h3, %loop ]"
+  let s := s.emit "  ret i64 %r"
+  let s := s.emit "}"
+  let s := s.emit ""
+  -- Int key equality
+  let s := s.emit "define i1 @__keq_int(ptr %a, ptr %b, i64 %ks) {"
+  let s := s.emit "  %av = load i64, ptr %a"
+  let s := s.emit "  %bv = load i64, ptr %b"
+  let s := s.emit "  %eq = icmp eq i64 %av, %bv"
+  let s := s.emit "  ret i1 %eq"
+  let s := s.emit "}"
+  let s := s.emit ""
+  -- String key equality (compare length then memcmp)
+  let s := s.emit "define i1 @__keq_str(ptr %a, ptr %b, i64 %ks) {"
+  let s := s.emit "  %alp = getelementptr inbounds %struct.String, ptr %a, i32 0, i32 1"
+  let s := s.emit "  %al = load i64, ptr %alp"
+  let s := s.emit "  %blp = getelementptr inbounds %struct.String, ptr %b, i32 0, i32 1"
+  let s := s.emit "  %bl = load i64, ptr %blp"
+  let s := s.emit "  %le = icmp eq i64 %al, %bl"
+  let s := s.emit "  br i1 %le, label %cmp, label %ne"
+  let s := s.emit "cmp:"
+  let s := s.emit "  %adp = getelementptr inbounds %struct.String, ptr %a, i32 0, i32 0"
+  let s := s.emit "  %ad = load ptr, ptr %adp"
+  let s := s.emit "  %bdp = getelementptr inbounds %struct.String, ptr %b, i32 0, i32 0"
+  let s := s.emit "  %bd = load ptr, ptr %bdp"
+  let s := s.emit "  %mc = call i32 @memcmp(ptr %ad, ptr %bd, i64 %al)"
+  let s := s.emit "  %eq = icmp eq i32 %mc, 0"
+  let s := s.emit "  br label %done"
+  let s := s.emit "ne:"
+  let s := s.emit "  br label %done"
+  let s := s.emit "done:"
+  let s := s.emit "  %r = phi i1 [ %eq, %cmp ], [ false, %ne ]"
+  let s := s.emit "  ret i1 %r"
+  let s := s.emit "}"
+  let s := s.emit ""
+  -- Generic insert: __hashmap_int_insert(ptr map, ptr key, ptr val, i64 ksize, i64 vsize)
+  -- Uses __hash_int for hashing, __keq_int for comparison
+  let s := s.emit "define void @__hashmap_int_insert(ptr %m, ptr %key, ptr %val, i64 %ks, i64 %vs) {"
+  let s := s.emit "  %lenp = getelementptr inbounds %struct.HashMap, ptr %m, i32 0, i32 3"
+  let s := s.emit "  %len = load i64, ptr %lenp"
+  let s := s.emit "  %capp = getelementptr inbounds %struct.HashMap, ptr %m, i32 0, i32 4"
+  let s := s.emit "  %cap = load i64, ptr %capp"
+  -- Check load factor: len*4 > cap*3
+  let s := s.emit "  %l4 = mul i64 %len, 4"
+  let s := s.emit "  %c3 = mul i64 %cap, 3"
+  let s := s.emit "  %ng = icmp ugt i64 %l4, %c3"
+  let s := s.emit "  br i1 %ng, label %grow, label %ins"
+  let s := s.emit "grow:"
+  let s := s.emit "  %nc = mul i64 %cap, 2"
+  let s := s.emit "  %nkb = mul i64 %nc, %ks"
+  let s := s.emit "  %nkbuf = call ptr @malloc(i64 %nkb)"
+  let s := s.emit "  %nvb = mul i64 %nc, %vs"
+  let s := s.emit "  %nvbuf = call ptr @malloc(i64 %nvb)"
+  let s := s.emit "  %nfbuf = call ptr @malloc(i64 %nc)"
+  -- Zero new flags
+  let s := s.emit "  br label %gz"
+  let s := s.emit "gz:"
+  let s := s.emit "  %gi = phi i64 [ 0, %grow ], [ %gi1, %gz ]"
+  let s := s.emit "  %gp = getelementptr i8, ptr %nfbuf, i64 %gi"
+  let s := s.emit "  store i8 0, ptr %gp"
+  let s := s.emit "  %gi1 = add i64 %gi, 1"
+  let s := s.emit "  %gd = icmp uge i64 %gi1, %nc"
+  let s := s.emit "  br i1 %gd, label %rehash, label %gz"
+  -- Rehash old entries into new buffers
+  let s := s.emit "rehash:"
+  let s := s.emit "  %okp = getelementptr inbounds %struct.HashMap, ptr %m, i32 0, i32 0"
+  let s := s.emit "  %okb = load ptr, ptr %okp"
+  let s := s.emit "  %ovp = getelementptr inbounds %struct.HashMap, ptr %m, i32 0, i32 1"
+  let s := s.emit "  %ovb = load ptr, ptr %ovp"
+  let s := s.emit "  %ofp = getelementptr inbounds %struct.HashMap, ptr %m, i32 0, i32 2"
+  let s := s.emit "  %ofb = load ptr, ptr %ofp"
+  let s := s.emit "  %nm = sub i64 %nc, 1"
+  let s := s.emit "  br label %rl"
+  let s := s.emit "rl:"
+  let s := s.emit "  %ri = phi i64 [ 0, %rehash ], [ %ri1, %rnext ]"
+  let s := s.emit "  %rfp = getelementptr i8, ptr %ofb, i64 %ri"
+  let s := s.emit "  %rf = load i8, ptr %rfp"
+  let s := s.emit "  %rocc = icmp eq i8 %rf, 1"
+  let s := s.emit "  br i1 %rocc, label %rins, label %rnext"
+  let s := s.emit "rins:"
+  let s := s.emit "  %rko = mul i64 %ri, %ks"
+  let s := s.emit "  %rkp = getelementptr i8, ptr %okb, i64 %rko"
+  let s := s.emit "  %rkv = load i64, ptr %rkp"
+  let s := s.emit "  %rh = call i64 @__hash_int(i64 %rkv)"
+  let s := s.emit "  %rs = and i64 %rh, %nm"
+  let s := s.emit "  br label %rpl"
+  let s := s.emit "rpl:"
+  let s := s.emit "  %rj = phi i64 [ %rs, %rins ], [ %rj1w, %rpl ]"
+  let s := s.emit "  %rpfp = getelementptr i8, ptr %nfbuf, i64 %rj"
+  let s := s.emit "  %rpf = load i8, ptr %rpfp"
+  let s := s.emit "  %rpe = icmp eq i8 %rpf, 0"
+  let s := s.emit "  %rj1 = add i64 %rj, 1"
+  let s := s.emit "  %rj1w = and i64 %rj1, %nm"
+  let s := s.emit "  br i1 %rpe, label %rstore, label %rpl"
+  let s := s.emit "rstore:"
+  let s := s.emit "  %nko = mul i64 %rj, %ks"
+  let s := s.emit "  %nkp = getelementptr i8, ptr %nkbuf, i64 %nko"
+  let s := s.emit "  call void @llvm.memcpy.p0.p0.i64(ptr %nkp, ptr %rkp, i64 %ks, i1 false)"
+  let s := s.emit "  %rvo = mul i64 %ri, %vs"
+  let s := s.emit "  %rvp = getelementptr i8, ptr %ovb, i64 %rvo"
+  let s := s.emit "  %nvo = mul i64 %rj, %vs"
+  let s := s.emit "  %nvp = getelementptr i8, ptr %nvbuf, i64 %nvo"
+  let s := s.emit "  call void @llvm.memcpy.p0.p0.i64(ptr %nvp, ptr %rvp, i64 %vs, i1 false)"
+  let s := s.emit "  store i8 1, ptr %rpfp"
+  let s := s.emit "  br label %rnext"
+  let s := s.emit "rnext:"
+  let s := s.emit "  %ri1 = add i64 %ri, 1"
+  let s := s.emit "  %rd = icmp uge i64 %ri1, %cap"
+  let s := s.emit "  br i1 %rd, label %rdone, label %rl"
+  let s := s.emit "rdone:"
+  let s := s.emit "  call void @free(ptr %okb)"
+  let s := s.emit "  call void @free(ptr %ovb)"
+  let s := s.emit "  call void @free(ptr %ofb)"
+  let s := s.emit "  store ptr %nkbuf, ptr %okp"
+  let s := s.emit "  store ptr %nvbuf, ptr %ovp"
+  let s := s.emit "  store ptr %nfbuf, ptr %ofp"
+  let s := s.emit "  store i64 %nc, ptr %capp"
+  let s := s.emit "  br label %ins"
+  -- Insert the actual key/value
+  let s := s.emit "ins:"
+  let s := s.emit "  %ic = load i64, ptr %capp"
+  let s := s.emit "  %im = sub i64 %ic, 1"
+  let s := s.emit "  %ikp2 = getelementptr inbounds %struct.HashMap, ptr %m, i32 0, i32 0"
+  let s := s.emit "  %ikb = load ptr, ptr %ikp2"
+  let s := s.emit "  %ivp2 = getelementptr inbounds %struct.HashMap, ptr %m, i32 0, i32 1"
+  let s := s.emit "  %ivb = load ptr, ptr %ivp2"
+  let s := s.emit "  %ifp2 = getelementptr inbounds %struct.HashMap, ptr %m, i32 0, i32 2"
+  let s := s.emit "  %ifb = load ptr, ptr %ifp2"
+  let s := s.emit "  %ikv = load i64, ptr %key"
+  let s := s.emit "  %ih = call i64 @__hash_int(i64 %ikv)"
+  let s := s.emit "  %is = and i64 %ih, %im"
+  let s := s.emit "  br label %ipl"
+  let s := s.emit "ipl:"
+  let s := s.emit "  %ij = phi i64 [ %is, %ins ], [ %ij1w, %ipc ]"
+  let s := s.emit "  %ipfp = getelementptr i8, ptr %ifb, i64 %ij"
+  let s := s.emit "  %ipf = load i8, ptr %ipfp"
+  let s := s.emit "  %ipe = icmp ne i8 %ipf, 1"
+  let s := s.emit "  br i1 %ipe, label %istore, label %imatch"
+  let s := s.emit "imatch:"
+  let s := s.emit "  %iko = mul i64 %ij, %ks"
+  let s := s.emit "  %ikpp = getelementptr i8, ptr %ikb, i64 %iko"
+  let s := s.emit "  %ieq = call i1 @__keq_int(ptr %ikpp, ptr %key, i64 %ks)"
+  let s := s.emit "  br i1 %ieq, label %istore, label %ipc"
+  let s := s.emit "ipc:"
+  let s := s.emit "  %ij1 = add i64 %ij, 1"
+  let s := s.emit "  %ij1w = and i64 %ij1, %im"
+  let s := s.emit "  br label %ipl"
+  let s := s.emit "istore:"
+  let s := s.emit "  %wo = icmp eq i8 %ipf, 1"
+  let s := s.emit "  %sko = mul i64 %ij, %ks"
+  let s := s.emit "  %skp = getelementptr i8, ptr %ikb, i64 %sko"
+  let s := s.emit "  call void @llvm.memcpy.p0.p0.i64(ptr %skp, ptr %key, i64 %ks, i1 false)"
+  let s := s.emit "  %svo = mul i64 %ij, %vs"
+  let s := s.emit "  %svp = getelementptr i8, ptr %ivb, i64 %svo"
+  let s := s.emit "  call void @llvm.memcpy.p0.p0.i64(ptr %svp, ptr %val, i64 %vs, i1 false)"
+  let s := s.emit "  store i8 1, ptr %ipfp"
+  let s := s.emit "  %cl = load i64, ptr %lenp"
+  let s := s.emit "  %nl = add i64 %cl, 1"
+  let s := s.emit "  %sl = select i1 %wo, i64 %cl, i64 %nl"
+  let s := s.emit "  store i64 %sl, ptr %lenp"
+  let s := s.emit "  ret void"
+  let s := s.emit "}"
+  let s := s.emit ""
+  -- __hashmap_str_insert: same structure but uses __hash_str and __keq_str
+  let s := s.emit "define void @__hashmap_str_insert(ptr %m, ptr %key, ptr %val, i64 %ks, i64 %vs) {"
+  let s := s.emit "  %lenp = getelementptr inbounds %struct.HashMap, ptr %m, i32 0, i32 3"
+  let s := s.emit "  %len = load i64, ptr %lenp"
+  let s := s.emit "  %capp = getelementptr inbounds %struct.HashMap, ptr %m, i32 0, i32 4"
+  let s := s.emit "  %cap = load i64, ptr %capp"
+  let s := s.emit "  %l4 = mul i64 %len, 4"
+  let s := s.emit "  %c3 = mul i64 %cap, 3"
+  let s := s.emit "  %ng = icmp ugt i64 %l4, %c3"
+  let s := s.emit "  br i1 %ng, label %grow, label %ins"
+  let s := s.emit "grow:"
+  let s := s.emit "  %nc = mul i64 %cap, 2"
+  let s := s.emit "  %nkb = mul i64 %nc, %ks"
+  let s := s.emit "  %nkbuf = call ptr @malloc(i64 %nkb)"
+  let s := s.emit "  %nvb = mul i64 %nc, %vs"
+  let s := s.emit "  %nvbuf = call ptr @malloc(i64 %nvb)"
+  let s := s.emit "  %nfbuf = call ptr @malloc(i64 %nc)"
+  let s := s.emit "  br label %gz"
+  let s := s.emit "gz:"
+  let s := s.emit "  %gi = phi i64 [ 0, %grow ], [ %gi1, %gz ]"
+  let s := s.emit "  %gp = getelementptr i8, ptr %nfbuf, i64 %gi"
+  let s := s.emit "  store i8 0, ptr %gp"
+  let s := s.emit "  %gi1 = add i64 %gi, 1"
+  let s := s.emit "  %gd = icmp uge i64 %gi1, %nc"
+  let s := s.emit "  br i1 %gd, label %rehash, label %gz"
+  let s := s.emit "rehash:"
+  let s := s.emit "  %okp = getelementptr inbounds %struct.HashMap, ptr %m, i32 0, i32 0"
+  let s := s.emit "  %okb = load ptr, ptr %okp"
+  let s := s.emit "  %ovp = getelementptr inbounds %struct.HashMap, ptr %m, i32 0, i32 1"
+  let s := s.emit "  %ovb = load ptr, ptr %ovp"
+  let s := s.emit "  %ofp = getelementptr inbounds %struct.HashMap, ptr %m, i32 0, i32 2"
+  let s := s.emit "  %ofb = load ptr, ptr %ofp"
+  let s := s.emit "  %nm = sub i64 %nc, 1"
+  let s := s.emit "  br label %rl"
+  let s := s.emit "rl:"
+  let s := s.emit "  %ri = phi i64 [ 0, %rehash ], [ %ri1, %rnext ]"
+  let s := s.emit "  %rfp = getelementptr i8, ptr %ofb, i64 %ri"
+  let s := s.emit "  %rf = load i8, ptr %rfp"
+  let s := s.emit "  %rocc = icmp eq i8 %rf, 1"
+  let s := s.emit "  br i1 %rocc, label %rins, label %rnext"
+  let s := s.emit "rins:"
+  let s := s.emit "  %rko = mul i64 %ri, %ks"
+  let s := s.emit "  %rkp = getelementptr i8, ptr %okb, i64 %rko"
+  let s := s.emit "  %rh = call i64 @__hash_str(ptr %rkp)"
+  let s := s.emit "  %rs = and i64 %rh, %nm"
+  let s := s.emit "  br label %rpl"
+  let s := s.emit "rpl:"
+  let s := s.emit "  %rj = phi i64 [ %rs, %rins ], [ %rj1w, %rpl ]"
+  let s := s.emit "  %rpfp = getelementptr i8, ptr %nfbuf, i64 %rj"
+  let s := s.emit "  %rpf = load i8, ptr %rpfp"
+  let s := s.emit "  %rpe = icmp eq i8 %rpf, 0"
+  let s := s.emit "  %rj1 = add i64 %rj, 1"
+  let s := s.emit "  %rj1w = and i64 %rj1, %nm"
+  let s := s.emit "  br i1 %rpe, label %rstore, label %rpl"
+  let s := s.emit "rstore:"
+  let s := s.emit "  %nko = mul i64 %rj, %ks"
+  let s := s.emit "  %nkp = getelementptr i8, ptr %nkbuf, i64 %nko"
+  let s := s.emit "  call void @llvm.memcpy.p0.p0.i64(ptr %nkp, ptr %rkp, i64 %ks, i1 false)"
+  let s := s.emit "  %rvo = mul i64 %ri, %vs"
+  let s := s.emit "  %rvp = getelementptr i8, ptr %ovb, i64 %rvo"
+  let s := s.emit "  %nvo = mul i64 %rj, %vs"
+  let s := s.emit "  %nvp = getelementptr i8, ptr %nvbuf, i64 %nvo"
+  let s := s.emit "  call void @llvm.memcpy.p0.p0.i64(ptr %nvp, ptr %rvp, i64 %vs, i1 false)"
+  let s := s.emit "  store i8 1, ptr %rpfp"
+  let s := s.emit "  br label %rnext"
+  let s := s.emit "rnext:"
+  let s := s.emit "  %ri1 = add i64 %ri, 1"
+  let s := s.emit "  %rd = icmp uge i64 %ri1, %cap"
+  let s := s.emit "  br i1 %rd, label %rdone, label %rl"
+  let s := s.emit "rdone:"
+  let s := s.emit "  call void @free(ptr %okb)"
+  let s := s.emit "  call void @free(ptr %ovb)"
+  let s := s.emit "  call void @free(ptr %ofb)"
+  let s := s.emit "  store ptr %nkbuf, ptr %okp"
+  let s := s.emit "  store ptr %nvbuf, ptr %ovp"
+  let s := s.emit "  store ptr %nfbuf, ptr %ofp"
+  let s := s.emit "  store i64 %nc, ptr %capp"
+  let s := s.emit "  br label %ins"
+  let s := s.emit "ins:"
+  let s := s.emit "  %ic = load i64, ptr %capp"
+  let s := s.emit "  %im = sub i64 %ic, 1"
+  let s := s.emit "  %ikp2 = getelementptr inbounds %struct.HashMap, ptr %m, i32 0, i32 0"
+  let s := s.emit "  %ikb = load ptr, ptr %ikp2"
+  let s := s.emit "  %ivp2 = getelementptr inbounds %struct.HashMap, ptr %m, i32 0, i32 1"
+  let s := s.emit "  %ivb = load ptr, ptr %ivp2"
+  let s := s.emit "  %ifp2 = getelementptr inbounds %struct.HashMap, ptr %m, i32 0, i32 2"
+  let s := s.emit "  %ifb = load ptr, ptr %ifp2"
+  let s := s.emit "  %ih = call i64 @__hash_str(ptr %key)"
+  let s := s.emit "  %is = and i64 %ih, %im"
+  let s := s.emit "  br label %ipl"
+  let s := s.emit "ipl:"
+  let s := s.emit "  %ij = phi i64 [ %is, %ins ], [ %ij1w, %ipc ]"
+  let s := s.emit "  %ipfp = getelementptr i8, ptr %ifb, i64 %ij"
+  let s := s.emit "  %ipf = load i8, ptr %ipfp"
+  let s := s.emit "  %ipe = icmp ne i8 %ipf, 1"
+  let s := s.emit "  br i1 %ipe, label %istore, label %imatch"
+  let s := s.emit "imatch:"
+  let s := s.emit "  %iko = mul i64 %ij, %ks"
+  let s := s.emit "  %ikpp = getelementptr i8, ptr %ikb, i64 %iko"
+  let s := s.emit "  %ieq = call i1 @__keq_str(ptr %ikpp, ptr %key, i64 %ks)"
+  let s := s.emit "  br i1 %ieq, label %istore, label %ipc"
+  let s := s.emit "ipc:"
+  let s := s.emit "  %ij1 = add i64 %ij, 1"
+  let s := s.emit "  %ij1w = and i64 %ij1, %im"
+  let s := s.emit "  br label %ipl"
+  let s := s.emit "istore:"
+  let s := s.emit "  %wo = icmp eq i8 %ipf, 1"
+  let s := s.emit "  %sko = mul i64 %ij, %ks"
+  let s := s.emit "  %skp = getelementptr i8, ptr %ikb, i64 %sko"
+  let s := s.emit "  call void @llvm.memcpy.p0.p0.i64(ptr %skp, ptr %key, i64 %ks, i1 false)"
+  let s := s.emit "  %svo = mul i64 %ij, %vs"
+  let s := s.emit "  %svp = getelementptr i8, ptr %ivb, i64 %svo"
+  let s := s.emit "  call void @llvm.memcpy.p0.p0.i64(ptr %svp, ptr %val, i64 %vs, i1 false)"
+  let s := s.emit "  store i8 1, ptr %ipfp"
+  let s := s.emit "  %cl = load i64, ptr %lenp"
+  let s := s.emit "  %nl = add i64 %cl, 1"
+  let s := s.emit "  %sl = select i1 %wo, i64 %cl, i64 %nl"
+  let s := s.emit "  store i64 %sl, ptr %lenp"
+  let s := s.emit "  ret void"
+  let s := s.emit "}"
+  let s := s.emit ""
+  -- __hashmap_int_get(ptr map, ptr key, ptr result_opt, i64 ks, i64 vs)
+  -- Writes Option to result_opt: tag=0 (Some) + payload, or tag=1 (None)
+  let s := s.emit "define void @__hashmap_int_get(ptr %m, ptr %key, ptr %opt, i64 %ks, i64 %vs) {"
+  let s := s.emit "  %capp = getelementptr inbounds %struct.HashMap, ptr %m, i32 0, i32 4"
+  let s := s.emit "  %cap = load i64, ptr %capp"
+  let s := s.emit "  %mask = sub i64 %cap, 1"
+  let s := s.emit "  %kbp = getelementptr inbounds %struct.HashMap, ptr %m, i32 0, i32 0"
+  let s := s.emit "  %kb = load ptr, ptr %kbp"
+  let s := s.emit "  %vbp = getelementptr inbounds %struct.HashMap, ptr %m, i32 0, i32 1"
+  let s := s.emit "  %vb = load ptr, ptr %vbp"
+  let s := s.emit "  %fbp = getelementptr inbounds %struct.HashMap, ptr %m, i32 0, i32 2"
+  let s := s.emit "  %fb = load ptr, ptr %fbp"
+  let s := s.emit "  %kv = load i64, ptr %key"
+  let s := s.emit "  %h = call i64 @__hash_int(i64 %kv)"
+  let s := s.emit "  %s = and i64 %h, %mask"
+  let s := s.emit "  br label %pl"
+  let s := s.emit "pl:"
+  let s := s.emit "  %j = phi i64 [ %s, %0 ], [ %j1w, %pc ]"
+  let s := s.emit "  %fp = getelementptr i8, ptr %fb, i64 %j"
+  let s := s.emit "  %f = load i8, ptr %fp"
+  let s := s.emit "  %empty = icmp eq i8 %f, 0"
+  let s := s.emit "  br i1 %empty, label %nf, label %occ"
+  let s := s.emit "occ:"
+  let s := s.emit "  %isocc = icmp eq i8 %f, 1"
+  let s := s.emit "  br i1 %isocc, label %ck, label %pc"
+  let s := s.emit "ck:"
+  let s := s.emit "  %ko = mul i64 %j, %ks"
+  let s := s.emit "  %kp = getelementptr i8, ptr %kb, i64 %ko"
+  let s := s.emit "  %eq = call i1 @__keq_int(ptr %kp, ptr %key, i64 %ks)"
+  let s := s.emit "  br i1 %eq, label %found, label %pc"
+  let s := s.emit "pc:"
+  let s := s.emit "  %j1 = add i64 %j, 1"
+  let s := s.emit "  %j1w = and i64 %j1, %mask"
+  let s := s.emit "  br label %pl"
+  let s := s.emit "nf:"
+  let s := s.emit "  store i32 1, ptr %opt"
+  let s := s.emit "  ret void"
+  let s := s.emit "found:"
+  let s := s.emit "  store i32 0, ptr %opt"
+  let s := s.emit "  %pp = getelementptr i8, ptr %opt, i64 4"
+  let s := s.emit "  %vo = mul i64 %j, %vs"
+  let s := s.emit "  %vp = getelementptr i8, ptr %vb, i64 %vo"
+  let s := s.emit "  call void @llvm.memcpy.p0.p0.i64(ptr %pp, ptr %vp, i64 %vs, i1 false)"
+  let s := s.emit "  ret void"
+  let s := s.emit "}"
+  let s := s.emit ""
+  -- __hashmap_str_get: same but with __hash_str / __keq_str
+  let s := s.emit "define void @__hashmap_str_get(ptr %m, ptr %key, ptr %opt, i64 %ks, i64 %vs) {"
+  let s := s.emit "  %capp = getelementptr inbounds %struct.HashMap, ptr %m, i32 0, i32 4"
+  let s := s.emit "  %cap = load i64, ptr %capp"
+  let s := s.emit "  %mask = sub i64 %cap, 1"
+  let s := s.emit "  %kbp = getelementptr inbounds %struct.HashMap, ptr %m, i32 0, i32 0"
+  let s := s.emit "  %kb = load ptr, ptr %kbp"
+  let s := s.emit "  %vbp = getelementptr inbounds %struct.HashMap, ptr %m, i32 0, i32 1"
+  let s := s.emit "  %vb = load ptr, ptr %vbp"
+  let s := s.emit "  %fbp = getelementptr inbounds %struct.HashMap, ptr %m, i32 0, i32 2"
+  let s := s.emit "  %fb = load ptr, ptr %fbp"
+  let s := s.emit "  %h = call i64 @__hash_str(ptr %key)"
+  let s := s.emit "  %s = and i64 %h, %mask"
+  let s := s.emit "  br label %pl"
+  let s := s.emit "pl:"
+  let s := s.emit "  %j = phi i64 [ %s, %0 ], [ %j1w, %pc ]"
+  let s := s.emit "  %fp = getelementptr i8, ptr %fb, i64 %j"
+  let s := s.emit "  %f = load i8, ptr %fp"
+  let s := s.emit "  %empty = icmp eq i8 %f, 0"
+  let s := s.emit "  br i1 %empty, label %nf, label %occ"
+  let s := s.emit "occ:"
+  let s := s.emit "  %isocc = icmp eq i8 %f, 1"
+  let s := s.emit "  br i1 %isocc, label %ck, label %pc"
+  let s := s.emit "ck:"
+  let s := s.emit "  %ko = mul i64 %j, %ks"
+  let s := s.emit "  %kp = getelementptr i8, ptr %kb, i64 %ko"
+  let s := s.emit "  %eq = call i1 @__keq_str(ptr %kp, ptr %key, i64 %ks)"
+  let s := s.emit "  br i1 %eq, label %found, label %pc"
+  let s := s.emit "pc:"
+  let s := s.emit "  %j1 = add i64 %j, 1"
+  let s := s.emit "  %j1w = and i64 %j1, %mask"
+  let s := s.emit "  br label %pl"
+  let s := s.emit "nf:"
+  let s := s.emit "  store i32 1, ptr %opt"
+  let s := s.emit "  ret void"
+  let s := s.emit "found:"
+  let s := s.emit "  store i32 0, ptr %opt"
+  let s := s.emit "  %pp = getelementptr i8, ptr %opt, i64 4"
+  let s := s.emit "  %vo = mul i64 %j, %vs"
+  let s := s.emit "  %vp = getelementptr i8, ptr %vb, i64 %vo"
+  let s := s.emit "  call void @llvm.memcpy.p0.p0.i64(ptr %pp, ptr %vp, i64 %vs, i1 false)"
+  let s := s.emit "  ret void"
+  let s := s.emit "}"
+  let s := s.emit ""
+  -- __hashmap_int_contains(ptr map, ptr key, i64 ks) -> i1
+  let s := s.emit "define i1 @__hashmap_int_contains(ptr %m, ptr %key, i64 %ks) {"
+  let s := s.emit "  %capp = getelementptr inbounds %struct.HashMap, ptr %m, i32 0, i32 4"
+  let s := s.emit "  %cap = load i64, ptr %capp"
+  let s := s.emit "  %mask = sub i64 %cap, 1"
+  let s := s.emit "  %kbp = getelementptr inbounds %struct.HashMap, ptr %m, i32 0, i32 0"
+  let s := s.emit "  %kb = load ptr, ptr %kbp"
+  let s := s.emit "  %fbp = getelementptr inbounds %struct.HashMap, ptr %m, i32 0, i32 2"
+  let s := s.emit "  %fb = load ptr, ptr %fbp"
+  let s := s.emit "  %kv = load i64, ptr %key"
+  let s := s.emit "  %h = call i64 @__hash_int(i64 %kv)"
+  let s := s.emit "  %s = and i64 %h, %mask"
+  let s := s.emit "  br label %pl"
+  let s := s.emit "pl:"
+  let s := s.emit "  %j = phi i64 [ %s, %0 ], [ %j1w, %pc ]"
+  let s := s.emit "  %fp = getelementptr i8, ptr %fb, i64 %j"
+  let s := s.emit "  %f = load i8, ptr %fp"
+  let s := s.emit "  %empty = icmp eq i8 %f, 0"
+  let s := s.emit "  br i1 %empty, label %nf, label %occ"
+  let s := s.emit "occ:"
+  let s := s.emit "  %isocc = icmp eq i8 %f, 1"
+  let s := s.emit "  br i1 %isocc, label %ck, label %pc"
+  let s := s.emit "ck:"
+  let s := s.emit "  %ko = mul i64 %j, %ks"
+  let s := s.emit "  %kp = getelementptr i8, ptr %kb, i64 %ko"
+  let s := s.emit "  %eq = call i1 @__keq_int(ptr %kp, ptr %key, i64 %ks)"
+  let s := s.emit "  br i1 %eq, label %found, label %pc"
+  let s := s.emit "pc:"
+  let s := s.emit "  %j1 = add i64 %j, 1"
+  let s := s.emit "  %j1w = and i64 %j1, %mask"
+  let s := s.emit "  br label %pl"
+  let s := s.emit "nf:"
+  let s := s.emit "  ret i1 false"
+  let s := s.emit "found:"
+  let s := s.emit "  ret i1 true"
+  let s := s.emit "}"
+  let s := s.emit ""
+  -- __hashmap_str_contains
+  let s := s.emit "define i1 @__hashmap_str_contains(ptr %m, ptr %key, i64 %ks) {"
+  let s := s.emit "  %capp = getelementptr inbounds %struct.HashMap, ptr %m, i32 0, i32 4"
+  let s := s.emit "  %cap = load i64, ptr %capp"
+  let s := s.emit "  %mask = sub i64 %cap, 1"
+  let s := s.emit "  %kbp = getelementptr inbounds %struct.HashMap, ptr %m, i32 0, i32 0"
+  let s := s.emit "  %kb = load ptr, ptr %kbp"
+  let s := s.emit "  %fbp = getelementptr inbounds %struct.HashMap, ptr %m, i32 0, i32 2"
+  let s := s.emit "  %fb = load ptr, ptr %fbp"
+  let s := s.emit "  %h = call i64 @__hash_str(ptr %key)"
+  let s := s.emit "  %s = and i64 %h, %mask"
+  let s := s.emit "  br label %pl"
+  let s := s.emit "pl:"
+  let s := s.emit "  %j = phi i64 [ %s, %0 ], [ %j1w, %pc ]"
+  let s := s.emit "  %fp = getelementptr i8, ptr %fb, i64 %j"
+  let s := s.emit "  %f = load i8, ptr %fp"
+  let s := s.emit "  %empty = icmp eq i8 %f, 0"
+  let s := s.emit "  br i1 %empty, label %nf, label %occ"
+  let s := s.emit "occ:"
+  let s := s.emit "  %isocc = icmp eq i8 %f, 1"
+  let s := s.emit "  br i1 %isocc, label %ck, label %pc"
+  let s := s.emit "ck:"
+  let s := s.emit "  %ko = mul i64 %j, %ks"
+  let s := s.emit "  %kp = getelementptr i8, ptr %kb, i64 %ko"
+  let s := s.emit "  %eq = call i1 @__keq_str(ptr %kp, ptr %key, i64 %ks)"
+  let s := s.emit "  br i1 %eq, label %found, label %pc"
+  let s := s.emit "pc:"
+  let s := s.emit "  %j1 = add i64 %j, 1"
+  let s := s.emit "  %j1w = and i64 %j1, %mask"
+  let s := s.emit "  br label %pl"
+  let s := s.emit "nf:"
+  let s := s.emit "  ret i1 false"
+  let s := s.emit "found:"
+  let s := s.emit "  ret i1 true"
+  let s := s.emit "}"
+  let s := s.emit ""
+  -- __hashmap_int_remove: like get but sets flag to tombstone and decrements len
+  let s := s.emit "define void @__hashmap_int_remove(ptr %m, ptr %key, ptr %opt, i64 %ks, i64 %vs) {"
+  let s := s.emit "  %capp = getelementptr inbounds %struct.HashMap, ptr %m, i32 0, i32 4"
+  let s := s.emit "  %cap = load i64, ptr %capp"
+  let s := s.emit "  %mask = sub i64 %cap, 1"
+  let s := s.emit "  %kbp = getelementptr inbounds %struct.HashMap, ptr %m, i32 0, i32 0"
+  let s := s.emit "  %kb = load ptr, ptr %kbp"
+  let s := s.emit "  %vbp = getelementptr inbounds %struct.HashMap, ptr %m, i32 0, i32 1"
+  let s := s.emit "  %vb = load ptr, ptr %vbp"
+  let s := s.emit "  %fbp = getelementptr inbounds %struct.HashMap, ptr %m, i32 0, i32 2"
+  let s := s.emit "  %fb = load ptr, ptr %fbp"
+  let s := s.emit "  %kv = load i64, ptr %key"
+  let s := s.emit "  %h = call i64 @__hash_int(i64 %kv)"
+  let s := s.emit "  %s = and i64 %h, %mask"
+  let s := s.emit "  br label %pl"
+  let s := s.emit "pl:"
+  let s := s.emit "  %j = phi i64 [ %s, %0 ], [ %j1w, %pc ]"
+  let s := s.emit "  %fp = getelementptr i8, ptr %fb, i64 %j"
+  let s := s.emit "  %f = load i8, ptr %fp"
+  let s := s.emit "  %empty = icmp eq i8 %f, 0"
+  let s := s.emit "  br i1 %empty, label %nf, label %occ"
+  let s := s.emit "occ:"
+  let s := s.emit "  %isocc = icmp eq i8 %f, 1"
+  let s := s.emit "  br i1 %isocc, label %ck, label %pc"
+  let s := s.emit "ck:"
+  let s := s.emit "  %ko = mul i64 %j, %ks"
+  let s := s.emit "  %kp = getelementptr i8, ptr %kb, i64 %ko"
+  let s := s.emit "  %eq = call i1 @__keq_int(ptr %kp, ptr %key, i64 %ks)"
+  let s := s.emit "  br i1 %eq, label %found, label %pc"
+  let s := s.emit "pc:"
+  let s := s.emit "  %j1 = add i64 %j, 1"
+  let s := s.emit "  %j1w = and i64 %j1, %mask"
+  let s := s.emit "  br label %pl"
+  let s := s.emit "nf:"
+  let s := s.emit "  store i32 1, ptr %opt"
+  let s := s.emit "  ret void"
+  let s := s.emit "found:"
+  let s := s.emit "  store i32 0, ptr %opt"
+  let s := s.emit "  %pp = getelementptr i8, ptr %opt, i64 4"
+  let s := s.emit "  %vo = mul i64 %j, %vs"
+  let s := s.emit "  %vp = getelementptr i8, ptr %vb, i64 %vo"
+  let s := s.emit "  call void @llvm.memcpy.p0.p0.i64(ptr %pp, ptr %vp, i64 %vs, i1 false)"
+  let s := s.emit "  store i8 2, ptr %fp"
+  let s := s.emit "  %lp = getelementptr inbounds %struct.HashMap, ptr %m, i32 0, i32 3"
+  let s := s.emit "  %l = load i64, ptr %lp"
+  let s := s.emit "  %l1 = sub i64 %l, 1"
+  let s := s.emit "  store i64 %l1, ptr %lp"
+  let s := s.emit "  ret void"
+  let s := s.emit "}"
+  let s := s.emit ""
+  -- __hashmap_str_remove
+  let s := s.emit "define void @__hashmap_str_remove(ptr %m, ptr %key, ptr %opt, i64 %ks, i64 %vs) {"
+  let s := s.emit "  %capp = getelementptr inbounds %struct.HashMap, ptr %m, i32 0, i32 4"
+  let s := s.emit "  %cap = load i64, ptr %capp"
+  let s := s.emit "  %mask = sub i64 %cap, 1"
+  let s := s.emit "  %kbp = getelementptr inbounds %struct.HashMap, ptr %m, i32 0, i32 0"
+  let s := s.emit "  %kb = load ptr, ptr %kbp"
+  let s := s.emit "  %vbp = getelementptr inbounds %struct.HashMap, ptr %m, i32 0, i32 1"
+  let s := s.emit "  %vb = load ptr, ptr %vbp"
+  let s := s.emit "  %fbp = getelementptr inbounds %struct.HashMap, ptr %m, i32 0, i32 2"
+  let s := s.emit "  %fb = load ptr, ptr %fbp"
+  let s := s.emit "  %h = call i64 @__hash_str(ptr %key)"
+  let s := s.emit "  %s = and i64 %h, %mask"
+  let s := s.emit "  br label %pl"
+  let s := s.emit "pl:"
+  let s := s.emit "  %j = phi i64 [ %s, %0 ], [ %j1w, %pc ]"
+  let s := s.emit "  %fp = getelementptr i8, ptr %fb, i64 %j"
+  let s := s.emit "  %f = load i8, ptr %fp"
+  let s := s.emit "  %empty = icmp eq i8 %f, 0"
+  let s := s.emit "  br i1 %empty, label %nf, label %occ"
+  let s := s.emit "occ:"
+  let s := s.emit "  %isocc = icmp eq i8 %f, 1"
+  let s := s.emit "  br i1 %isocc, label %ck, label %pc"
+  let s := s.emit "ck:"
+  let s := s.emit "  %ko = mul i64 %j, %ks"
+  let s := s.emit "  %kp = getelementptr i8, ptr %kb, i64 %ko"
+  let s := s.emit "  %eq = call i1 @__keq_str(ptr %kp, ptr %key, i64 %ks)"
+  let s := s.emit "  br i1 %eq, label %found, label %pc"
+  let s := s.emit "pc:"
+  let s := s.emit "  %j1 = add i64 %j, 1"
+  let s := s.emit "  %j1w = and i64 %j1, %mask"
+  let s := s.emit "  br label %pl"
+  let s := s.emit "nf:"
+  let s := s.emit "  store i32 1, ptr %opt"
+  let s := s.emit "  ret void"
+  let s := s.emit "found:"
+  let s := s.emit "  store i32 0, ptr %opt"
+  let s := s.emit "  %pp = getelementptr i8, ptr %opt, i64 4"
+  let s := s.emit "  %vo = mul i64 %j, %vs"
+  let s := s.emit "  %vp = getelementptr i8, ptr %vb, i64 %vo"
+  let s := s.emit "  call void @llvm.memcpy.p0.p0.i64(ptr %pp, ptr %vp, i64 %vs, i1 false)"
+  let s := s.emit "  store i8 2, ptr %fp"
+  let s := s.emit "  %lp = getelementptr inbounds %struct.HashMap, ptr %m, i32 0, i32 3"
+  let s := s.emit "  %l = load i64, ptr %lp"
+  let s := s.emit "  %l1 = sub i64 %l, 1"
+  let s := s.emit "  store i64 %l1, ptr %lp"
+  let s := s.emit "  ret void"
+  let s := s.emit "}"
+  let s := s.emit ""
+  s
+
+/-- Emit LLVM IR for networking builtin functions. -/
+def genNetworkBuiltins (s : CodegenState) : CodegenState :=
+  -- tcp_connect(host: &String, port: Int) -> Int
+  -- Uses getaddrinfo for DNS resolution, then connects
+  let s := s.emit "@.port_fmt = private constant [5 x i8] c\"%lld\\00\""
+  let s := s.emit "define i64 @tcp_connect(ptr %host, i64 %port) {"
+  -- Extract C-string from host String
+  let s := s.emit "  %h_data_ptr = getelementptr inbounds %struct.String, ptr %host, i32 0, i32 0"
+  let s := s.emit "  %h_data = load ptr, ptr %h_data_ptr"
+  let s := s.emit "  %h_len_ptr = getelementptr inbounds %struct.String, ptr %host, i32 0, i32 1"
+  let s := s.emit "  %h_len = load i64, ptr %h_len_ptr"
+  let s := s.emit "  %h_clen = add i64 %h_len, 1"
+  let s := s.emit "  %h_cstr = call ptr @malloc(i64 %h_clen)"
+  let s := s.emit "  call void @llvm.memcpy.p0.p0.i64(ptr %h_cstr, ptr %h_data, i64 %h_len, i1 false)"
+  let s := s.emit "  %h_null = getelementptr i8, ptr %h_cstr, i64 %h_len"
+  let s := s.emit "  store i8 0, ptr %h_null"
+  -- Convert port to C-string
+  let s := s.emit "  %port_buf = alloca [16 x i8]"
+  let s := s.emit "  %port_fmt = getelementptr [5 x i8], ptr @.port_fmt, i64 0, i64 0"
+  let s := s.emit "  %port_written = call i32 (ptr, i64, ptr, ...) @snprintf(ptr %port_buf, i64 16, ptr %port_fmt, i64 %port)"
+  -- Setup hints for getaddrinfo: AF_INET=2, SOCK_STREAM=1
+  let s := s.emit "  %hints = alloca [48 x i8]"
+  let s := s.emit "  call void @llvm.memcpy.p0.p0.i64(ptr %hints, ptr %hints, i64 0, i1 false)"
+  -- zero out hints
+  let s := s.emit "  %h_i0 = getelementptr i8, ptr %hints, i64 0"
+  let s := s.emit "  store i64 0, ptr %h_i0"
+  let s := s.emit "  %h_i8 = getelementptr i8, ptr %hints, i64 8"
+  let s := s.emit "  store i64 0, ptr %h_i8"
+  let s := s.emit "  %h_i16 = getelementptr i8, ptr %hints, i64 16"
+  let s := s.emit "  store i64 0, ptr %h_i16"
+  let s := s.emit "  %h_i24 = getelementptr i8, ptr %hints, i64 24"
+  let s := s.emit "  store i64 0, ptr %h_i24"
+  let s := s.emit "  %h_i32 = getelementptr i8, ptr %hints, i64 32"
+  let s := s.emit "  store i64 0, ptr %h_i32"
+  let s := s.emit "  %h_i40 = getelementptr i8, ptr %hints, i64 40"
+  let s := s.emit "  store i64 0, ptr %h_i40"
+  -- ai_family = AF_INET (2) at offset 4, ai_socktype = SOCK_STREAM (1) at offset 8
+  let s := s.emit "  %hint_family = getelementptr i8, ptr %hints, i64 4"
+  let s := s.emit "  store i32 2, ptr %hint_family"
+  let s := s.emit "  %hint_socktype = getelementptr i8, ptr %hints, i64 8"
+  let s := s.emit "  store i32 1, ptr %hint_socktype"
+  -- Call getaddrinfo
+  let s := s.emit "  %res_ptr = alloca ptr"
+  let s := s.emit "  %gai_ret = call i32 @getaddrinfo(ptr %h_cstr, ptr %port_buf, ptr %hints, ptr %res_ptr)"
+  let s := s.emit "  call void @free(ptr %h_cstr)"
+  let s := s.emit "  %gai_fail = icmp ne i32 %gai_ret, 0"
+  let s := s.emit "  br i1 %gai_fail, label %tc_err, label %tc_ok"
+  let s := s.emit "tc_err:"
+  let s := s.emit "  ret i64 -1"
+  let s := s.emit "tc_ok:"
+  let s := s.emit "  %res = load ptr, ptr %res_ptr"
+  -- res->ai_family at offset 4 (i32), res->ai_socktype at offset 8 (i32), res->ai_protocol at offset 12 (i32)
+  -- res->ai_addrlen at offset 16 (i32), res->ai_addr at offset 32 (ptr on macOS 64-bit)
+  let s := s.emit "  %ai_family = getelementptr i8, ptr %res, i64 4"
+  let s := s.emit "  %fam = load i32, ptr %ai_family"
+  let s := s.emit "  %ai_socktype = getelementptr i8, ptr %res, i64 8"
+  let s := s.emit "  %styp = load i32, ptr %ai_socktype"
+  let s := s.emit "  %ai_protocol = getelementptr i8, ptr %res, i64 12"
+  let s := s.emit "  %proto = load i32, ptr %ai_protocol"
+  let s := s.emit "  %sockfd = call i32 @socket(i32 %fam, i32 %styp, i32 %proto)"
+  let s := s.emit "  %ai_addrlen = getelementptr i8, ptr %res, i64 16"
+  let s := s.emit "  %addrlen = load i32, ptr %ai_addrlen"
+  let s := s.emit "  %ai_addr = getelementptr i8, ptr %res, i64 32"
+  let s := s.emit "  %addr = load ptr, ptr %ai_addr"
+  let s := s.emit "  %conn_ret = call i32 @connect(i32 %sockfd, ptr %addr, i32 %addrlen)"
+  let s := s.emit "  call void @freeaddrinfo(ptr %res)"
+  let s := s.emit "  %conn_fail = icmp slt i32 %conn_ret, 0"
+  let s := s.emit "  br i1 %conn_fail, label %tc_conn_err, label %tc_conn_ok"
+  let s := s.emit "tc_conn_err:"
+  let s := s.emit "  %sockfd_close = call i32 @close(i32 %sockfd)"
+  let s := s.emit "  ret i64 -1"
+  let s := s.emit "tc_conn_ok:"
+  let s := s.emit "  %sockfd64 = sext i32 %sockfd to i64"
+  let s := s.emit "  ret i64 %sockfd64"
+  let s := s.emit "}"
+  let s := s.emit ""
+  -- tcp_listen(port: Int, backlog: Int) -> Int
+  let s := s.emit "define i64 @tcp_listen(i64 %port, i64 %backlog) {"
+  -- socket(AF_INET=2, SOCK_STREAM=1, 0)
+  let s := s.emit "  %lsock = call i32 @socket(i32 2, i32 1, i32 0)"
+  -- setsockopt SO_REUSEADDR: SOL_SOCKET=0xFFFF, SO_REUSEADDR=4 on macOS
+  let s := s.emit "  %reuse = alloca i32"
+  let s := s.emit "  store i32 1, ptr %reuse"
+  let s := s.emit "  %sso_ret = call i32 @setsockopt(i32 %lsock, i32 65535, i32 4, ptr %reuse, i32 4)"
+  -- Build sockaddr_in on stack (macOS: 16 bytes)
+  -- { u8 sin_len=16, u8 sin_family=2, u16 sin_port, u32 sin_addr=0, u8[8] zero }
+  let s := s.emit "  %saddr = alloca [16 x i8]"
+  -- Zero it out
+  let s := s.emit "  %sa0 = getelementptr i8, ptr %saddr, i64 0"
+  let s := s.emit "  store i64 0, ptr %sa0"
+  let s := s.emit "  %sa8 = getelementptr i8, ptr %saddr, i64 8"
+  let s := s.emit "  store i64 0, ptr %sa8"
+  -- sin_len = 16
+  let s := s.emit "  store i8 16, ptr %saddr"
+  -- sin_family = AF_INET (2)
+  let s := s.emit "  %sf = getelementptr i8, ptr %saddr, i64 1"
+  let s := s.emit "  store i8 2, ptr %sf"
+  -- sin_port = htons(port)
+  let s := s.emit "  %port16 = trunc i64 %port to i16"
+  let s := s.emit "  %port_n = call i16 @htons(i16 %port16)"
+  let s := s.emit "  %sp = getelementptr i8, ptr %saddr, i64 2"
+  let s := s.emit "  store i16 %port_n, ptr %sp"
+  -- sin_addr = INADDR_ANY (0) — already zeroed
+  -- bind
+  let s := s.emit "  %bind_ret = call i32 @bind(i32 %lsock, ptr %saddr, i32 16)"
+  let s := s.emit "  %bind_fail = icmp slt i32 %bind_ret, 0"
+  let s := s.emit "  br i1 %bind_fail, label %tl_err, label %tl_listen"
+  let s := s.emit "tl_err:"
+  let s := s.emit "  %cl_ret = call i32 @close(i32 %lsock)"
+  let s := s.emit "  ret i64 -1"
+  let s := s.emit "tl_listen:"
+  let s := s.emit "  %backlog32 = trunc i64 %backlog to i32"
+  let s := s.emit "  %listen_ret = call i32 @listen(i32 %lsock, i32 %backlog32)"
+  let s := s.emit "  %listen_fail = icmp slt i32 %listen_ret, 0"
+  let s := s.emit "  br i1 %listen_fail, label %tl_err2, label %tl_ok"
+  let s := s.emit "tl_err2:"
+  let s := s.emit "  %cl2 = call i32 @close(i32 %lsock)"
+  let s := s.emit "  ret i64 -1"
+  let s := s.emit "tl_ok:"
+  let s := s.emit "  %lsock64 = sext i32 %lsock to i64"
+  let s := s.emit "  ret i64 %lsock64"
+  let s := s.emit "}"
+  let s := s.emit ""
+  -- tcp_accept(sockfd: Int) -> Int
+  let s := s.emit "define i64 @tcp_accept(i64 %sockfd) {"
+  let s := s.emit "  %fd32 = trunc i64 %sockfd to i32"
+  let s := s.emit "  %newfd = call i32 @accept(i32 %fd32, ptr null, ptr null)"
+  let s := s.emit "  %newfd64 = sext i32 %newfd to i64"
+  let s := s.emit "  ret i64 %newfd64"
+  let s := s.emit "}"
+  let s := s.emit ""
+  -- socket_send(sockfd: Int, data: &String) -> Int
+  let s := s.emit "define i64 @socket_send(i64 %sockfd, ptr %data) {"
+  let s := s.emit "  %fd32s = trunc i64 %sockfd to i32"
+  let s := s.emit "  %sd_ptr = getelementptr inbounds %struct.String, ptr %data, i32 0, i32 0"
+  let s := s.emit "  %sd_data = load ptr, ptr %sd_ptr"
+  let s := s.emit "  %sl_ptr = getelementptr inbounds %struct.String, ptr %data, i32 0, i32 1"
+  let s := s.emit "  %sd_len = load i64, ptr %sl_ptr"
+  let s := s.emit "  %sent = call i64 @send(i32 %fd32s, ptr %sd_data, i64 %sd_len, i32 0)"
+  let s := s.emit "  ret i64 %sent"
+  let s := s.emit "}"
+  let s := s.emit ""
+  -- socket_recv(sockfd: Int, bufsize: Int) -> String
+  let s := s.emit "define %struct.String @socket_recv(i64 %sockfd, i64 %bufsize) {"
+  let s := s.emit "  %fd32r = trunc i64 %sockfd to i32"
+  let s := s.emit "  %rbuf = call ptr @malloc(i64 %bufsize)"
+  let s := s.emit "  %recvd = call i64 @recv(i32 %fd32r, ptr %rbuf, i64 %bufsize, i32 0)"
+  let s := s.emit "  %recv_fail = icmp sle i64 %recvd, 0"
+  let s := s.emit "  br i1 %recv_fail, label %sr_empty, label %sr_ok"
+  let s := s.emit "sr_empty:"
+  let s := s.emit "  call void @free(ptr %rbuf)"
+  let s := s.emit "  %empty_buf = call ptr @malloc(i64 1)"
+  let s := s.emit "  %sr_e = alloca %struct.String"
+  let s := s.emit "  %sr_ed = getelementptr inbounds %struct.String, ptr %sr_e, i32 0, i32 0"
+  let s := s.emit "  store ptr %empty_buf, ptr %sr_ed"
+  let s := s.emit "  %sr_el = getelementptr inbounds %struct.String, ptr %sr_e, i32 0, i32 1"
+  let s := s.emit "  store i64 0, ptr %sr_el"
+  let s := s.emit "  %sr_er = load %struct.String, ptr %sr_e"
+  let s := s.emit "  ret %struct.String %sr_er"
+  let s := s.emit "sr_ok:"
+  let s := s.emit "  %sr_a = alloca %struct.String"
+  let s := s.emit "  %sr_ad = getelementptr inbounds %struct.String, ptr %sr_a, i32 0, i32 0"
+  let s := s.emit "  store ptr %rbuf, ptr %sr_ad"
+  let s := s.emit "  %sr_al = getelementptr inbounds %struct.String, ptr %sr_a, i32 0, i32 1"
+  let s := s.emit "  store i64 %recvd, ptr %sr_al"
+  let s := s.emit "  %sr_ar = load %struct.String, ptr %sr_a"
+  let s := s.emit "  ret %struct.String %sr_ar"
+  let s := s.emit "}"
+  let s := s.emit ""
+  -- socket_close(sockfd: Int) -> ()
+  let s := s.emit "define void @socket_close(i64 %sockfd) {"
+  let s := s.emit "  %fd32c = trunc i64 %sockfd to i32"
+  let s := s.emit "  %cl_ret2 = call i32 @close(i32 %fd32c)"
+  let s := s.emit "  ret void"
+  let s := s.emit "}"
+  let s := s.emit ""
+  s
+
 def genModule (m : Module) : String :=
   -- Add built-in Option<T> enum if not user-defined
   let builtinOptionEnum : EnumDef := {
@@ -2663,7 +3909,13 @@ def genModule (m : Module) : String :=
     ("get_env", Ty.generic "Option" [.string]),
     ("get_args", Ty.heapArray .string),
     ("exit_process", Ty.unit),
-    ("string_trim", Ty.string)
+    ("string_trim", Ty.string),
+    ("tcp_connect", Ty.int),
+    ("tcp_listen", Ty.int),
+    ("tcp_accept", Ty.int),
+    ("socket_send", Ty.int),
+    ("socket_recv", Ty.string),
+    ("socket_close", Ty.unit)
   ]
   let implRetTypes := m.implBlocks.foldl (fun acc ib =>
     acc ++ ib.methods.map fun f => (ib.typeName ++ "_" ++ f.name, f.retTy)
@@ -2703,6 +3955,9 @@ def genModule (m : Module) : String :=
     let s := s.emit "%struct.String = type { ptr, i64 }"
     s.emit ""
   else s
+  let s := s.emit "%struct.Vec = type { ptr, i64, i64 }"
+  let s := s.emit "%struct.HashMap = type { ptr, ptr, ptr, i64, i64 }"
+  let s := s.emit ""
   let s := genStructTypes s m.structs
   let s := if m.structs.isEmpty then s else s.emit ""
   let s := genEnumTypes s allEnums
@@ -2731,6 +3986,19 @@ def genModule (m : Module) : String :=
   let s := s.emit "declare i64 @read(i32, ptr, i64)"
   let s := s.emit "declare i32 @putchar(i32)"
   let s := s.emit "declare void @exit(i32)"
+  -- POSIX socket declarations
+  let s := s.emit "declare i32 @socket(i32, i32, i32)"
+  let s := s.emit "declare i32 @connect(i32, ptr, i32)"
+  let s := s.emit "declare i32 @bind(i32, ptr, i32)"
+  let s := s.emit "declare i32 @listen(i32, i32)"
+  let s := s.emit "declare i32 @accept(i32, ptr, ptr)"
+  let s := s.emit "declare i64 @send(i32, ptr, i64, i32)"
+  let s := s.emit "declare i64 @recv(i32, ptr, i64, i32)"
+  let s := s.emit "declare i32 @close(i32)"
+  let s := s.emit "declare i32 @getaddrinfo(ptr, ptr, ptr, ptr)"
+  let s := s.emit "declare void @freeaddrinfo(ptr)"
+  let s := s.emit "declare i16 @htons(i16)"
+  let s := s.emit "declare i32 @setsockopt(i32, i32, i32, ptr, i32)"
   -- Extern function declarations from the source
   let s := m.externFns.foldl (fun s ef =>
     let retLLTy := tyToLLVM s ef.retTy
@@ -2743,6 +4011,8 @@ def genModule (m : Module) : String :=
   -- Emit all builtin function implementations
   let s := genBuiltinFunctions s
   let s := genConversionBuiltins s
+  let s := genNetworkBuiltins s
+  let s := genHashMapFunctions s
   -- Impl block methods
   let s := m.implBlocks.foldl (fun s ib =>
     ib.methods.foldl (fun s f =>

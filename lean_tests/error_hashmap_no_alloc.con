@@ -1,0 +1,6 @@
+// Test: map_new without Alloc capability should error
+fn main() -> Int {
+    let map: HashMap<Int, Int> = map_new::<Int, Int>();
+    map_free(map);
+    return 0;
+}

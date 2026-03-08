@@ -1,0 +1,17 @@
+// Test: HashMap<String, Int> insert and get
+fn extract_or(opt: Option<Int>, default: Int) -> Int {
+    match opt {
+        Option#Some { value } => { return value; },
+        Option#None => { return default; },
+    }
+}
+
+fn main!() -> Int {
+    let mut map: HashMap<String, Int> = map_new::<String, Int>();
+    map_insert(&mut map, "hello", 42);
+    map_insert(&mut map, "world", 99);
+    let v: Option<Int> = map_get(&map, "hello");
+    let result: Int = extract_or(v, 0);
+    map_free(map);
+    return result;
+}

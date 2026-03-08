@@ -1,0 +1,10 @@
+// Test: create a listening socket, verify fd >= 0, close it
+fn main!() -> Int {
+    let fd: Int = tcp_listen(0, 1);
+    socket_close(fd);
+    if fd >= 0 {
+        return 1;
+    } else {
+        return 0;
+    }
+}

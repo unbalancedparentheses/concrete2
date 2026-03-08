@@ -749,6 +749,209 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
         | _ => pure ()
         return innerTy
       | _ => throw s!"free() requires Heap<T> type, got {tyToString argTy}"
+    -- Intercept vec_new::<T>()
+    if fnName == "vec_new" then
+      if args.length != 0 then throw "vec_new() takes no arguments"
+      if typeArgs.length != 1 then throw "vec_new requires exactly 1 type argument: vec_new::<T>()"
+      checkCapabilities "vec_new" (.concrete ["Alloc"])
+      let elemTy := match typeArgs with | t :: _ => t | [] => Ty.int
+      return .generic "Vec" [elemTy]
+    -- Intercept vec_push(&mut v, val)
+    if fnName == "vec_push" then
+      if args.length != 2 then throw "vec_push() takes exactly 2 arguments"
+      checkCapabilities "vec_push" (.concrete ["Alloc"])
+      let vecArg := match args with | a :: _ => a | [] => Expr.intLit 0
+      let valArg := match args with | _ :: b :: _ => b | _ => Expr.intLit 0
+      let vecTy ← checkExpr vecArg
+      let elemTy := match vecTy with
+        | .refMut (.generic "Vec" [et]) => et
+        | _ => Ty.placeholder
+      if elemTy == .placeholder then throw s!"vec_push() requires &mut Vec<T> as first argument, got {tyToString vecTy}"
+      let valTy ← checkExpr valArg (some elemTy)
+      expectTy elemTy valTy "vec_push() element argument"
+      match valArg with
+      | .ident varName => consumeVarIfExists varName
+      | _ => pure ()
+      return .unit
+    -- Intercept vec_get(&v, idx)
+    if fnName == "vec_get" then
+      if args.length != 2 then throw "vec_get() takes exactly 2 arguments"
+      let vecArg := match args with | a :: _ => a | [] => Expr.intLit 0
+      let idxArg := match args with | _ :: b :: _ => b | _ => Expr.intLit 0
+      let vecTy ← checkExpr vecArg
+      let elemTy := match vecTy with
+        | .ref (.generic "Vec" [et]) => et
+        | .refMut (.generic "Vec" [et]) => et
+        | _ => Ty.placeholder
+      if elemTy == .placeholder then throw s!"vec_get() requires &Vec<T> or &mut Vec<T> as first argument, got {tyToString vecTy}"
+      let idxTy ← checkExpr idxArg (some .int)
+      expectTy .int idxTy "vec_get() index argument"
+      return elemTy
+    -- Intercept vec_set(&mut v, idx, val)
+    if fnName == "vec_set" then
+      if args.length != 3 then throw "vec_set() takes exactly 3 arguments"
+      let vecArg := match args with | a :: _ => a | [] => Expr.intLit 0
+      let idxArg := match args with | _ :: b :: _ => b | _ => Expr.intLit 0
+      let valArg := match args with | _ :: _ :: c :: _ => c | _ => Expr.intLit 0
+      let vecTy ← checkExpr vecArg
+      let elemTy := match vecTy with
+        | .refMut (.generic "Vec" [et]) => et
+        | _ => Ty.placeholder
+      if elemTy == .placeholder then throw s!"vec_set() requires &mut Vec<T> as first argument, got {tyToString vecTy}"
+      let idxTy ← checkExpr idxArg (some .int)
+      expectTy .int idxTy "vec_set() index argument"
+      let valTy ← checkExpr valArg (some elemTy)
+      expectTy elemTy valTy "vec_set() value argument"
+      match valArg with
+      | .ident varName => consumeVarIfExists varName
+      | _ => pure ()
+      return .unit
+    -- Intercept vec_len(&v)
+    if fnName == "vec_len" then
+      if args.length != 1 then throw "vec_len() takes exactly 1 argument"
+      let vecArg := match args with | a :: _ => a | [] => Expr.intLit 0
+      let vecTy ← checkExpr vecArg
+      let ok := match vecTy with
+        | .ref (.generic "Vec" _) => true
+        | .refMut (.generic "Vec" _) => true
+        | _ => false
+      if !ok then throw s!"vec_len() requires &Vec<T> or &mut Vec<T> as argument, got {tyToString vecTy}"
+      return .int
+    -- Intercept vec_pop(&mut v)
+    if fnName == "vec_pop" then
+      if args.length != 1 then throw "vec_pop() takes exactly 1 argument"
+      checkCapabilities "vec_pop" (.concrete ["Alloc"])
+      let vecArg := match args with | a :: _ => a | [] => Expr.intLit 0
+      let vecTy ← checkExpr vecArg
+      let elemTy := match vecTy with
+        | .refMut (.generic "Vec" [et]) => et
+        | _ => Ty.placeholder
+      if elemTy == .placeholder then throw s!"vec_pop() requires &mut Vec<T> as argument, got {tyToString vecTy}"
+      return .generic "Option" [elemTy]
+    -- Intercept vec_free(v)
+    if fnName == "vec_free" then
+      if args.length != 1 then throw "vec_free() takes exactly 1 argument"
+      checkCapabilities "vec_free" (.concrete ["Alloc"])
+      let vecArg := match args with | a :: _ => a | [] => Expr.intLit 0
+      let vecTy ← checkExpr vecArg
+      let ok := match vecTy with
+        | .generic "Vec" _ => true
+        | _ => false
+      if !ok then throw s!"vec_free() requires Vec<T> as argument, got {tyToString vecTy}"
+      match vecArg with
+      | .ident varName => consumeVarIfExists varName
+      | _ => pure ()
+      return .unit
+    -- Intercept map_new::<K, V>()
+    if fnName == "map_new" then
+      if args.length != 0 then throw "map_new() takes no arguments"
+      if typeArgs.length != 2 then throw "map_new requires exactly 2 type arguments: map_new::<K, V>()"
+      checkCapabilities "map_new" (.concrete ["Alloc"])
+      let kTy := match typeArgs with | t :: _ => t | [] => Ty.int
+      let vTy := match typeArgs with | _ :: t :: _ => t | _ => Ty.int
+      -- Validate key type is Int or String
+      let keyOk := match kTy with | .int => true | .string => true | _ => false
+      if !keyOk then throw s!"map_new() key type must be Int or String, got {tyToString kTy}"
+      return .generic "HashMap" [kTy, vTy]
+    -- Intercept map_insert(&mut m, key, val)
+    if fnName == "map_insert" then
+      if args.length != 3 then throw "map_insert() takes exactly 3 arguments"
+      checkCapabilities "map_insert" (.concrete ["Alloc"])
+      let mapArg := match args with | a :: _ => a | [] => Expr.intLit 0
+      let keyArg := match args with | _ :: b :: _ => b | _ => Expr.intLit 0
+      let valArg := match args with | _ :: _ :: c :: _ => c | _ => Expr.intLit 0
+      let mapTy ← checkExpr mapArg
+      let (kTy, vTy) := match mapTy with
+        | .refMut (.generic "HashMap" [k, v]) => (k, v)
+        | _ => (Ty.placeholder, Ty.placeholder)
+      if kTy == .placeholder then throw s!"map_insert() requires &mut HashMap<K,V> as first argument, got {tyToString mapTy}"
+      let keyTy ← checkExpr keyArg (some kTy)
+      expectTy kTy keyTy "map_insert() key argument"
+      match keyArg with
+      | .ident varName => consumeVarIfExists varName
+      | _ => pure ()
+      let valTy ← checkExpr valArg (some vTy)
+      expectTy vTy valTy "map_insert() value argument"
+      match valArg with
+      | .ident varName => consumeVarIfExists varName
+      | _ => pure ()
+      return .unit
+    -- Intercept map_get(&m, key)
+    if fnName == "map_get" then
+      if args.length != 2 then throw "map_get() takes exactly 2 arguments"
+      let mapArg := match args with | a :: _ => a | [] => Expr.intLit 0
+      let keyArg := match args with | _ :: b :: _ => b | _ => Expr.intLit 0
+      let mapTy ← checkExpr mapArg
+      let (kTy, vTy) := match mapTy with
+        | .ref (.generic "HashMap" [k, v]) => (k, v)
+        | .refMut (.generic "HashMap" [k, v]) => (k, v)
+        | _ => (Ty.placeholder, Ty.placeholder)
+      if kTy == .placeholder then throw s!"map_get() requires &HashMap<K,V> or &mut HashMap<K,V> as first argument, got {tyToString mapTy}"
+      let keyTy ← checkExpr keyArg (some kTy)
+      expectTy kTy keyTy "map_get() key argument"
+      match keyArg with
+      | .ident varName => consumeVarIfExists varName
+      | _ => pure ()
+      return .generic "Option" [vTy]
+    -- Intercept map_contains(&m, key)
+    if fnName == "map_contains" then
+      if args.length != 2 then throw "map_contains() takes exactly 2 arguments"
+      let mapArg := match args with | a :: _ => a | [] => Expr.intLit 0
+      let keyArg := match args with | _ :: b :: _ => b | _ => Expr.intLit 0
+      let mapTy ← checkExpr mapArg
+      let kTy := match mapTy with
+        | .ref (.generic "HashMap" [k, _]) => k
+        | .refMut (.generic "HashMap" [k, _]) => k
+        | _ => Ty.placeholder
+      if kTy == .placeholder then throw s!"map_contains() requires &HashMap<K,V> or &mut HashMap<K,V> as first argument, got {tyToString mapTy}"
+      let keyTy ← checkExpr keyArg (some kTy)
+      expectTy kTy keyTy "map_contains() key argument"
+      match keyArg with
+      | .ident varName => consumeVarIfExists varName
+      | _ => pure ()
+      return .bool
+    -- Intercept map_remove(&mut m, key)
+    if fnName == "map_remove" then
+      if args.length != 2 then throw "map_remove() takes exactly 2 arguments"
+      checkCapabilities "map_remove" (.concrete ["Alloc"])
+      let mapArg := match args with | a :: _ => a | [] => Expr.intLit 0
+      let keyArg := match args with | _ :: b :: _ => b | _ => Expr.intLit 0
+      let mapTy ← checkExpr mapArg
+      let (kTy, vTy) := match mapTy with
+        | .refMut (.generic "HashMap" [k, v]) => (k, v)
+        | _ => (Ty.placeholder, Ty.placeholder)
+      if kTy == .placeholder then throw s!"map_remove() requires &mut HashMap<K,V> as first argument, got {tyToString mapTy}"
+      let keyTy ← checkExpr keyArg (some kTy)
+      expectTy kTy keyTy "map_remove() key argument"
+      match keyArg with
+      | .ident varName => consumeVarIfExists varName
+      | _ => pure ()
+      return .generic "Option" [vTy]
+    -- Intercept map_len(&m)
+    if fnName == "map_len" then
+      if args.length != 1 then throw "map_len() takes exactly 1 argument"
+      let mapArg := match args with | a :: _ => a | [] => Expr.intLit 0
+      let mapTy ← checkExpr mapArg
+      let ok := match mapTy with
+        | .ref (.generic "HashMap" _) => true
+        | .refMut (.generic "HashMap" _) => true
+        | _ => false
+      if !ok then throw s!"map_len() requires &HashMap<K,V> or &mut HashMap<K,V> as argument, got {tyToString mapTy}"
+      return .int
+    -- Intercept map_free(m)
+    if fnName == "map_free" then
+      if args.length != 1 then throw "map_free() takes exactly 1 argument"
+      checkCapabilities "map_free" (.concrete ["Alloc"])
+      let mapArg := match args with | a :: _ => a | [] => Expr.intLit 0
+      let mapTy ← checkExpr mapArg
+      let ok := match mapTy with
+        | .generic "HashMap" _ => true
+        | _ => false
+      if !ok then throw s!"map_free() requires HashMap<K,V> as argument, got {tyToString mapTy}"
+      match mapArg with
+      | .ident varName => consumeVarIfExists varName
+      | _ => pure ()
+      return .unit
     -- Check if this is a function pointer call (variable with fn_ type)
     let fnPtrVarTy ← lookupVarTy fnName
     match fnPtrVarTy with
@@ -1737,7 +1940,19 @@ def checkModule (m : Module) (importedFnSigs : List (String × FnSig) := [])
     -- 21: exit_process
     { params := [("code", .int)], retTy := .unit, capSet := .concrete ["Process"] },
     -- 22: string_trim
-    { params := [("s", .ref .string)], retTy := .string }
+    { params := [("s", .ref .string)], retTy := .string },
+    -- 23: tcp_connect
+    { params := [("host", .ref .string), ("port", .int)], retTy := .int, capSet := .concrete ["Network"] },
+    -- 24: tcp_listen
+    { params := [("port", .int), ("backlog", .int)], retTy := .int, capSet := .concrete ["Network"] },
+    -- 25: tcp_accept
+    { params := [("sockfd", .int)], retTy := .int, capSet := .concrete ["Network"] },
+    -- 26: socket_send
+    { params := [("sockfd", .int), ("data", .ref .string)], retTy := .int, capSet := .concrete ["Network"] },
+    -- 27: socket_recv
+    { params := [("sockfd", .int), ("bufsize", .int)], retTy := .string, capSet := .concrete ["Network"] },
+    -- 28: socket_close
+    { params := [("sockfd", .int)], retTy := .unit, capSet := .concrete ["Network"] }
   ]
   let builtinOffset := baseOffset + fnSigs.length
   let builtinNames : List (String × Nat) := [
@@ -1763,7 +1978,13 @@ def checkModule (m : Module) (importedFnSigs : List (String × FnSig) := [])
     ("get_env", builtinOffset + 19),
     ("get_args", builtinOffset + 20),
     ("exit_process", builtinOffset + 21),
-    ("string_trim", builtinOffset + 22)
+    ("string_trim", builtinOffset + 22),
+    ("tcp_connect", builtinOffset + 23),
+    ("tcp_listen", builtinOffset + 24),
+    ("tcp_accept", builtinOffset + 25),
+    ("socket_send", builtinOffset + 26),
+    ("socket_recv", builtinOffset + 27),
+    ("socket_close", builtinOffset + 28)
   ]
   -- Add submodule functions/extern fns with qualified names (mod_fn)
   let submoduleSigs : List FnSig := m.submodules.foldl (fun acc (sub : Module) =>

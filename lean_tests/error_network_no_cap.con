@@ -1,0 +1,11 @@
+// Error: tcp_connect in pure function requires Network capability
+fn try_connect() -> Int {
+    let host: String = "localhost";
+    let fd: Int = tcp_connect(&host, 80);
+    drop_string(host);
+    return fd;
+}
+
+fn main() -> Int {
+    return 0;
+}

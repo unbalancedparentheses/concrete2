@@ -4,7 +4,7 @@ This is the implementation plan for the Concrete programming language. For the f
 
 ## What's Built
 
-The Lean 4 compiler implements the core surface language. All 188 tests pass (131 positive, 57 negative).
+The Lean 4 compiler implements the core surface language. All 201 tests pass.
 
 **Done:**
 - Lexer, LL(1) parser, AST
@@ -33,8 +33,13 @@ The Lean 4 compiler implements the core surface language. All 188 tests pass (13
 - Constants, type aliases, extern fn declarations, `abort()`
 - Capabilities: `with(File, Network, Alloc)` effect declarations, `!` sugar, capability polymorphism, capability checking
 - Direct LLVM IR text emission, compiled via clang to native binaries
+- Standard library builtins: string operations (length, concat, slice, char_at, index_of, contains, replace, split, to_upper, to_lower, trim), type conversions (int↔string, float↔string, char↔string, int↔float), stdin (read_line)
+- `Vec<T>`: vec_new, vec_push, vec_get, vec_set, vec_len, vec_pop, vec_free (generic intercepted calls, require Alloc)
+- `HashMap<K,V>`: map_new, map_insert, map_get, map_contains, map_remove, map_len, map_free (keys: Int or String, require Alloc)
+- Networking: tcp_connect, tcp_listen, tcp_accept, socket_send, socket_recv, socket_close (require Network)
+- FFI: `extern fn` declarations, `Unsafe` capability gating
 
-**Not yet implemented:** FFI safety (Unsafe gating, `#[repr(C)]`, transmute), MLIR backend, standard library (`Vec<T>`, `HashMap<K,V>`, String operations, stdin, int↔string conversion), networking, env vars/process args, kernel formalization, runtime.
+**Not yet implemented:** `#[repr(C)]`, transmute, newtype, MLIR backend, env vars/process args, kernel formalization, runtime, compiler architecture refactoring (core IR, elaboration phase, phase separation — see Architecture Work Phases below).
 
 ---
 
@@ -104,6 +109,255 @@ These rules apply across all phases. They come directly from the spec and must n
 15. **Reproducible builds.** Same source + same compiler = identical binary. No timestamps, random seeds, or environment-dependent data in output.
 
 16. **First error stops compilation.** The compiler reports the first error it encounters and stops. It does not attempt error recovery or multi-error reporting. The `CheckM` monad is `ExceptT String (StateM TypeEnv)` — a single error halts checking. This simplifies the implementation and produces clear, actionable error messages.
+
+---
+
+## Compiler Architecture
+
+### Current Pipeline
+
+```
+Source → Lex/Parse → Surface AST → Check.lean → Codegen.lean → LLVM IR text → clang → binary
+```
+
+Check.lean currently handles: name resolution, type checking, linearity, borrow checking, capability propagation, generic substitution, trait/method dispatch, special-case builtins, and pieces of semantic lowering. Codegen.lean directly consumes the surface AST. This works but concentrates too much semantic work in too few places. Every new feature is expensive to add, hard to test in isolation, and hard to prove sound later.
+
+### Target Pipeline
+
+```
+Source → Parse → Resolve → Elaborate → Validate Core → Monomorphize → Lower → Codegen
+```
+
+Each pass has a single job, a well-defined input type, and a well-defined output type.
+
+### Pass Definitions
+
+#### 1. Parse
+
+**Input:** Source text
+**Output:** Surface AST with source spans
+
+Lexing, parsing, syntax error reporting. Preserves user-written structure. LL(1), no semantic reasoning.
+
+Does not do: type reasoning, name resolution, capability/linearity checks.
+
+#### 2. Resolve
+
+**Input:** Surface AST
+**Output:** Resolved AST (identifiers bound to declarations)
+
+Resolve imports and modules. Bind identifiers to declarations. Distinguish type names from value names. Resolve trait names, method candidates, impl scopes, `Self`. Resolve aliases and qualified names.
+
+Does not do: borrow checking, linearity, final typing decisions.
+
+This phase answers: **"what does each name refer to?"**
+
+#### 3. Elaborate
+
+**Input:** Resolved AST
+**Output:** Typed Core IR
+
+The most important new phase. This is where surface language ends.
+
+- Remove surface sugar (`!` → `with(Std)`, `?` → explicit control flow)
+- Lower method calls into explicit function/impl dispatch
+- Normalize pattern matching, borrow-region syntax, struct/enum constructors
+- Attach concrete types to all expressions and bindings
+- Build explicit semantic forms instead of user syntax forms
+
+Does not produce: unresolved identifiers, sugar, multiple representations of the same meaning.
+
+This phase answers: **"what does the program mean in the language's semantic core?"**
+
+#### 4. Validate Core
+
+**Input:** Typed Core IR
+**Output:** Validated Core IR
+
+Type consistency, linearity rules, borrow rules, capability discipline, branch agreement, loop restrictions, trait bound satisfaction.
+
+Much smaller and cleaner than current Check.lean because the input is already desugared and explicit. This is the phase closest to formal proofs.
+
+This phase answers: **"is this meaning legal?"**
+
+#### 5. Monomorphize
+
+**Input:** Validated Core IR (with generics)
+**Output:** Monomorphic Core IR
+
+Instantiate generic functions/types. Specialize trait-dispatch calls. Produce concrete copies used by the program. May be partially intertwined with elaboration initially, but should be its own step long-term.
+
+This phase answers: **"what concrete instantiations exist in this program?"**
+
+#### 6. Lower
+
+**Input:** Monomorphic Core IR
+**Output:** Backend IR
+
+Flatten high-level structured semantics into explicit control flow. Make data layout decisions explicit. Prepare memory operations. Later: SSA form for optimization.
+
+This phase answers: **"how will this be represented operationally?"**
+
+#### 7. Codegen
+
+**Input:** Backend IR
+**Output:** LLVM IR text (or other targets later)
+
+Emit target code only. No high-level semantic reasoning. No hidden language interpretation beyond target layout.
+
+This phase answers: **"how do I encode this in the target backend?"**
+
+### Core IR Design
+
+The core IR is a smaller, stricter language — not another AST. Defined in `Concrete/Core.lean`.
+
+**Includes:**
+- Literals, locals, calls
+- Explicit borrows and moves/consumption
+- Struct/enum construction and field projection
+- Explicit match, loops, branches
+- Explicit destroy/defer-lowered cleanup
+- Explicit heap operations
+- Capability-bearing calls
+
+**Excludes:**
+- Parser sugar (`!`, `?`, inline borrows)
+- Unresolved identifiers
+- Multiple ways to express the same meaning
+- Frontend convenience forms
+
+### Boundary Rules
+
+**Codegen should not know:**
+- Whether something came from method-call syntax
+- Whether `?` was used
+- Surface borrow syntax details
+- `!` sugar, alias syntax, most trait syntax
+
+All of that should already be gone before codegen.
+
+**Parser should not know:**
+- Whether a borrow is legal
+- Whether a capability is available
+- Whether a move is allowed
+- Trait coherence decisions
+
+It should only know syntax.
+
+**Builtin vs stdlib boundary:**
+
+| Category | Lives in | Examples |
+|----------|----------|----------|
+| Syntax features | Parser | `if`, `match`, `fn`, `struct`, `enum` |
+| Checker/elaboration intrinsics | Elaborate + Validate | intercepted calls (alloc, free, vec_*, map_*), type constructors |
+| Runtime/codegen intrinsics | Lower + Codegen | memory layout, calling conventions, POSIX wrappers |
+| Ordinary library code | `std/` source files | string utilities, I/O wrappers, collection helpers |
+
+### Internal Semantic Spec
+
+These implementation invariants must be written down alongside the code, not just in the roadmap:
+
+- What counts as consumption (canonical list in Language Invariants §2)
+- What counts as borrowing
+- What gets elaborated away vs what remains explicit in the core
+- What codegen is allowed to assume about its input
+- Pass input/output contracts: each pass promises something precise about its output
+
+### Why This Structure
+
+This gives:
+- Easier reasoning about each phase in isolation
+- Easier testing (unit tests per pass, not just end-to-end)
+- Easier refactoring (change one pass without breaking others)
+- Easier proofs later (Validate Core is the proof target)
+- Clearer ownership of responsibilities
+- Less accidental coupling between features
+
+It also makes new features cheaper because you know where they belong:
+- Syntax feature → Parse + Elaborate
+- Semantic rule → Validate Core
+- Optimization/backend → Lower + Codegen
+- Library feature → `std/` only
+
+---
+
+## Architecture Work Phases
+
+Incremental steps to reach the target pipeline. These interleave with and support language feature work.
+
+### A1: Define Core IR
+
+New file: `Concrete/Core.lean`
+
+Define `CoreTy`, `CoreExpr`, `CoreStmt`, `CoreFn`, `CoreModule`. Start minimal: literals, locals, calls, returns, structs, if/while. Expand incrementally.
+
+### A2: Elaboration Phase
+
+New file: `Concrete/Elab.lean`
+
+Convert resolved AST → Core IR for the initial subset. Expand coverage gradually: enums/match, borrows, capabilities, traits, generics, heap ops, defer.
+
+### A3: Resolution Phase
+
+New file: `Concrete/Resolve.lean`
+
+Extract name resolution, module resolution, and symbol binding from Check.lean into a dedicated pass.
+
+### A4: Core Validation
+
+New file: `Concrete/CoreCheck.lean`
+
+Type check, linearity, borrow, and capability validation on Core IR. Replaces semantic checking currently in Check.lean. Much simpler because the input is already desugared and explicit.
+
+### A5: Codegen on Core IR
+
+Modify `Concrete/Codegen.lean` to consume Core IR instead of Surface AST. Codegen no longer needs to understand surface forms.
+
+### A6: Structured Diagnostics
+
+Replace string-based errors with typed diagnostic data:
+- Error kind/code
+- Primary source span
+- Message
+- Secondary notes
+- Fix suggestions
+
+### A7: Builtin vs Stdlib Boundary
+
+Write down and enforce a hard rule for what lives in syntax, checker/elaboration, codegen/runtime, vs stdlib. Migrate stdlib-appropriate code out of compiler intrinsics where possible.
+
+### A8: Monomorphization as Separate Pass
+
+Extract monomorphization from elaboration/codegen into its own explicit pass operating on Core IR.
+
+### A9: Lower / SSA
+
+Add a lowering pass that produces backend-oriented IR (explicit control flow, data layout, memory operations). Later, convert to SSA form for optimization.
+
+### A10: Formal Kernel Proofs
+
+Build mechanized proofs over the validated Core IR. This is existing Phase 9, now grounded in the architecture's Core IR rather than a separate kernel language.
+
+### Architecture Priority
+
+| Priority | Phase | Description | New files |
+|----------|-------|-------------|-----------|
+| 1 | A1 | Core IR definition | `Concrete/Core.lean` |
+| 2 | A2 | Elaboration phase | `Concrete/Elab.lean` |
+| 3 | A3 | Resolution phase cleanup | `Concrete/Resolve.lean` |
+| 4 | A4 | Core validation (split from checker) | `Concrete/CoreCheck.lean` |
+| 5 | A5 | Codegen consumes Core IR | modify `Concrete/Codegen.lean` |
+| 6 | A6 | Structured diagnostics | modify error infrastructure |
+| 7 | A7 | Builtin vs stdlib boundary | documentation + migration |
+| 8 | A8 | Monomorphization cleanup | `Concrete/Mono.lean` |
+| 9 | A9 | SSA / lowering IR | `Concrete/Lower.lean` |
+| 10 | A10 | Formal kernel proofs | `Concrete/Kernel/*.lean` |
+
+---
+
+## Language Feature Phases
+
+The following phases describe language features. They are numbered historically and many are already implemented. Architecture work (above) interleaves with and supports these phases.
 
 ---
 
@@ -1583,42 +1837,59 @@ These do not block any phase above:
 
 ## Summary
 
-| Phase | Feature | Depends on | Parallel? |
-|-------|---------|------------|-----------|
-| **1** | Capabilities + cap polymorphism | — | — |
-| **2** | Closures | 1 (Ty.fn) | — |
-| **3** | `defer` + `destroy` + `Copy` + `abort` | 1 | — |
-| **4** | `break` / `continue` / labeled loops | — | Yes, with 1-3 |
-| **5** | Allocator system | 1, 3 | — |
-| **6** | Borrow regions | — | Yes, with 1-5 |
-| **7** | FFI + C interop | 1 (Unsafe cap) | Yes, with 2-6 |
-| **7b** | Monomorphized trait dispatch | 7 (traits) | — |
-| **7c** | Heap dereference | 5 (Heap<T>) | — |
-| **8a** | String operations | 1-6 | — |
-| **8b** | int↔string conversion | 8a | — |
-| **8c** | stdin / Console I/O | 1 (Console cap) | — |
-| **8d** | Vec<T> | 5 (HeapArray) | — |
-| **8e** | HashMap<K, V> | 8d (Vec) | — |
-| **8f** | Environment / process | 1 (Env, Process caps) | — |
-| **8g** | Networking | 1 (Network cap), 7 (FFI) | — |
-| **8h** | Other stdlib | 8a-8g | — |
-| **9a** | Kernel IR + checker | — | Yes, anytime |
-| **9b** | Linearity proof | 9a | Yes, ongoing |
-| **9c** | Progress + preservation | 9b | Yes, ongoing |
-| **9d** | Effect soundness | 9c | Yes, ongoing |
-| **9e** | Regions + generics | 9d | Yes, ongoing |
-| **9f** | Connect proofs to compiler | 6, 9e | — |
-| **10** | Tooling | — | Yes, ongoing |
-| **11a** | MLIR FFI bindings | — | Yes, anytime |
-| **11b** | MLIR LLVM dialect codegen | 11a | — |
-| **11c** | MLIR optimization passes | 11b | — |
-| **12a** | Runtime in C | 7 (FFI) | — |
-| **12b** | Runtime in Concrete | 8, 12a | — |
+### Architecture Work
 
-**Critical path for language features:** 1 → 3 → 5 (capabilities → resource management → allocators). Phases 4, 6 are independent and can be done in parallel. Phase 2 depends on Phase 1 for `Ty.fn`.
+| Priority | Phase | Description | Depends on |
+|----------|-------|-------------|------------|
+| 1 | **A1** | Core IR definition | — |
+| 2 | **A2** | Elaboration phase | A1 |
+| 3 | **A3** | Resolution phase cleanup | — (parallel with A2) |
+| 4 | **A4** | Core validation (split from checker) | A1, A2 |
+| 5 | **A5** | Codegen consumes Core IR | A1, A2, A4 |
+| 6 | **A6** | Structured diagnostics | — (parallel with A1-A5) |
+| 7 | **A7** | Builtin vs stdlib boundary | A2, A4 |
+| 8 | **A8** | Monomorphization cleanup | A4 |
+| 9 | **A9** | SSA / lowering IR | A5, A8 |
+| 10 | **A10** | Formal kernel proofs | A4 |
 
-**Critical path for production use:** 1-7 → 8 → 12a (language features → stdlib → runtime).
+**Critical path for architecture:** A1 → A2 → A4 → A5 → A9 (core IR → elaboration → validation → codegen migration → SSA). A3 and A6 are independent and can run in parallel.
 
-**MLIR** (Phase 11) is independent of language features — can start anytime, biggest win is after language features stabilize.
+### Language Features
 
-**Formalization** (Phase 9) is independent of the compiler — can start anytime, needs only the language design (not the implementation) to be stable. Kernel is frozen at 1.0.
+| Phase | Feature | Status | Depends on |
+|-------|---------|--------|------------|
+| **1** | Capabilities + cap polymorphism | Done | — |
+| **2** | Closures | Done | 1 |
+| **3** | `defer` + `destroy` + `Copy` + `abort` | Done | 1 |
+| **4** | `break` / `continue` / labeled loops | Done | — |
+| **5** | Allocator system | Done | 1, 3 |
+| **6** | Borrow regions | Done | — |
+| **7** | FFI + C interop | Done | 1 |
+| **7b** | Monomorphized trait dispatch | Done | 7 |
+| **7c** | Heap dereference | Done | 5 |
+| **8a** | String operations | Done | — |
+| **8b** | int↔string conversion | Done | 8a |
+| **8c** | stdin / Console I/O | Done | 1 |
+| **8d** | Vec\<T\> | Done | — |
+| **8e** | HashMap\<K, V\> | Done | — |
+| **8f** | Environment / process | Not started | 1 |
+| **8g** | Networking | Done | 1 |
+| **8h** | Other stdlib | Not started | 8a-8g |
+| **9a** | Kernel IR + checker | Not started | A4 |
+| **9b** | Linearity proof | Not started | 9a |
+| **9c** | Progress + preservation | Not started | 9b |
+| **9d** | Effect soundness | Not started | 9c |
+| **9e** | Regions + generics | Not started | 9d |
+| **9f** | Connect proofs to compiler | Not started | A5, 9e |
+| **10** | Tooling | Not started | — |
+| **11a** | MLIR FFI bindings | Not started | — |
+| **11b** | MLIR LLVM dialect codegen | Not started | 11a |
+| **11c** | MLIR optimization passes | Not started | 11b |
+| **12a** | Runtime in C | Not started | 7 |
+| **12b** | Runtime in Concrete | Not started | 8, 12a |
+
+**Next priorities:** Architecture work (A1-A5) before new language features. The architecture refactoring makes every subsequent feature cheaper to add, easier to test, and easier to prove sound.
+
+**Critical path for production use:** Architecture (A1-A5) → remaining stdlib (8f, 8h) → runtime (12a).
+
+**Formalization** (Phase 9) now depends on architecture phase A4 (Core Validation) — the proofs target the Core IR, not the surface AST.
