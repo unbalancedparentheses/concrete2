@@ -150,14 +150,27 @@ private partial def eliminateTrivialPhis (blocks : List SBlock) : List SBlock :=
 -- Pass 3: Empty block folding
 -- ============================================================
 
+/-- Check if a label is referenced in any phi incoming of a block. -/
+private def isPhiSource (b : SBlock) (label : String) : Bool :=
+  b.insts.any fun inst =>
+    match inst with
+    | .phi _ incoming _ => incoming.any fun (_, lbl) => lbl == label
+    | _ => false
+
 /-- Find blocks that only contain a br (no instructions, just jump).
     Returns list of (emptyLabel, targetLabel).
-    Skips the entry block (first block) — folding it corrupts phi node semantics. -/
+    Skips the entry block and blocks whose target has phis referencing them
+    (folding those requires complex phi predecessor updates). -/
 private def findEmptyBlocks (blocks : List SBlock) : List (String × String) :=
   let nonEntry := blocks.drop 1
   nonEntry.filterMap fun b =>
     match b.insts, b.term with
-    | [], .br target => some (b.label, target)
+    | [], .br target =>
+      -- Skip folding if the target block has phis that reference this block
+      let targetBlock := blocks.find? fun tb => tb.label == target
+      match targetBlock with
+      | some tb => if isPhiSource tb b.label then none else some (b.label, target)
+      | none => some (b.label, target)
     | _, _ => none
 
 /-- Redirect branches from empty blocks to their targets. -/

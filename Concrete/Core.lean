@@ -57,6 +57,7 @@ inductive CStmt where
   | expr (e : CExpr)
   | ifElse (cond : CExpr) (then_ : List CStmt) (else_ : Option (List CStmt))
   | while_ (cond : CExpr) (body : List CStmt) (label : Option String)
+           (step : List CStmt)
   | fieldAssign (obj : CExpr) (field : String) (value : CExpr)
   | derefAssign (target : CExpr) (value : CExpr)
   | arrayIndexAssign (arr : CExpr) (index : CExpr) (value : CExpr)
@@ -249,7 +250,7 @@ partial def ppCStmt (ind : Nat) (s : CStmt) : String :=
       | none => ""
       | some stmts => s!" else \{\n{"\n".intercalate (stmts.map (ppCStmt (ind + 1)))}\n{pfx}}"
     s!"{pfx}if {ppCExpr c} \{\n{"\n".intercalate thenStr}\n{pfx}}{elseStr}"
-  | .while_ c body lbl =>
+  | .while_ c body lbl _ =>
     let lblStr := match lbl with | some l => s!"'{l}: " | none => ""
     s!"{pfx}{lblStr}while {ppCExpr c} \{\n{"\n".intercalate (body.map (ppCStmt (ind + 1)))}\n{pfx}}"
   | .fieldAssign obj f v => s!"{pfx}{ppCExpr obj}.{f} = {ppCExpr v};"

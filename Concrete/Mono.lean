@@ -80,7 +80,7 @@ private partial def substStmt (sub : Ty → Ty) : CStmt → CStmt
   | .expr e => .expr (substExpr sub e)
   | .ifElse c t el =>
     .ifElse (substExpr sub c) (substStmts sub t) (el.map (substStmts sub))
-  | .while_ c body lbl => .while_ (substExpr sub c) (substStmts sub body) lbl
+  | .while_ c body lbl step => .while_ (substExpr sub c) (substStmts sub body) lbl (substStmts sub step)
   | .fieldAssign obj f val => .fieldAssign (substExpr sub obj) f (substExpr sub val)
   | .derefAssign target val => .derefAssign (substExpr sub target) (substExpr sub val)
   | .arrayIndexAssign arr idx val =>
@@ -229,7 +229,7 @@ partial def monoStmt (s : CStmt) : MonoM CStmt := do
       | none => pure none
       | some stmts => do pure (some (← monoStmts stmts))
     return .ifElse (← monoExpr c) (← monoStmts t) el'
-  | .while_ c body lbl => return .while_ (← monoExpr c) (← monoStmts body) lbl
+  | .while_ c body lbl step => return .while_ (← monoExpr c) (← monoStmts body) lbl (← monoStmts step)
   | .fieldAssign obj f val => return .fieldAssign (← monoExpr obj) f (← monoExpr val)
   | .derefAssign target val => return .derefAssign (← monoExpr target) (← monoExpr val)
   | .arrayIndexAssign arr idx val =>

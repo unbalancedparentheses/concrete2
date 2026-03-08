@@ -203,7 +203,7 @@ Concrete is built for code that must be inspectable and mechanically verified.
 
 The compiler implements the core surface language and the new internal IR pipeline in Lean 4. All 201 tests pass.
 
-**MLIR backend, kernel formalization, and the runtime are not yet implemented.** The compiler now has Core IR, elaboration, and SSA lowering, but Core validation and backend unification are still in progress. See the full [ROADMAP.md](ROADMAP.md) for the implementation plan. What works today:
+**MLIR backend, kernel formalization, and the runtime are not yet implemented.** The compiler now has Core IR, elaboration, Core validation, and SSA lowering, but the legacy AST-based codegen path is still the authoritative compilation path. Backend unification onto SSA is still in progress. See the full [ROADMAP.md](ROADMAP.md) for the implementation plan. What works today:
 
 - **Types**: Int, Uint, i8-i32, u8-u32, f32, f64, Bool, Char, String, arrays `[T; N]`, raw pointers
 - **Structs** with field access, mutation, and `Heap<T>` fields
@@ -238,7 +238,6 @@ The current surface language is intentionally conservative. The highest-value de
 - **Explicit representation/layout control** for ABI-sensitive low-level code (`repr(C)`, alignment, packed layout)
 - **A sharper `unsafe` model** that clearly states which invariants move from the compiler to the programmer
 - **A more explicit value/reference model** so pass-by-value, borrows, raw pointers, and heap ownership stay operationally obvious
-- **Possibly `union` later**, but only with explicit unsafe rules and no implicit magic
 
 ## Roadmap
 
@@ -263,7 +262,7 @@ See [ROADMAP.md](ROADMAP.md) for the full implementation plan with syntax, rules
 | **13** | Tooling | Not started |
 | **14** | Runtime (C, then Concrete) | Not started |
 
-Next critical path: **Core validation + migration out of `Check.lean`** so the new IR pipeline becomes the semantic source of truth. After that: backend unification/optimization and kernel formalization.
+Next critical path: **backend unification onto SSA + migration out of `Check.lean`** so the new IR pipeline becomes the semantic and backend source of truth. After that: optimization, a real `Resolve` pass, and kernel formalization.
 
 ### What fits the philosophy and what does not
 
@@ -297,19 +296,28 @@ Source (.con)
   AST (Concrete/AST.lean)
     |
     v
-  Type Checker (Concrete/Check.lean) -- types + linearity + borrowing + capabilities
+  Check.lean -- current frontend checker / resolver
     |
     v
-  Code Generator (Concrete/Codegen.lean) -- emits LLVM IR text
+  Elab.lean -- surface AST -> Core IR
+    |
+    v
+  CoreCheck.lean -- Core validation
+    |
+    v
+  Lower.lean -- Core IR -> SSA IR
+    |
+    v
+  Codegen.lean -- current LLVM codegen (legacy path still authoritative)
     |
     v
   clang -- LLVM IR -> native binary
 ```
 
-Target pipeline after Phase 11 (MLIR) and Phase 12 (formalization):
+Target pipeline:
 
 ```
-Surface AST → Elaboration → Kernel IR → Kernel Checker (proven sound) → MLIR Codegen → LLVM → binary
+Surface AST → Resolve → Elaborate → CoreCanonicalize → CoreCheck → Monomorphize → Lower → SSAVerify → SSACleanup → SSA Codegen → LLVM/MLIR backend → binary
 ```
 
 ## Building
@@ -318,7 +326,7 @@ Requires [Lean 4](https://leanprover.github.io/lean4/doc/setup.html) (v4.28.0+) 
 
 ```bash
 make build    # or: lake build
-make test     # runs all 190 tests
+make test     # runs all 201 tests
 make clean    # or: lake clean
 ```
 
@@ -330,10 +338,15 @@ Concrete/
   Lexer.lean     -- Tokenizer
   AST.lean       -- Abstract syntax tree
   Parser.lean    -- LL(1) recursive descent parser
-  Check.lean     -- Type checker + linearity checker + borrow checker
+  Check.lean     -- Current frontend checker / resolver
+  Core.lean      -- Core IR
+  Elab.lean      -- Surface AST -> Core IR
+  CoreCheck.lean -- Core validation
+  Lower.lean     -- Core IR -> SSA IR
+  SSA.lean       -- SSA IR
   Codegen.lean   -- LLVM IR code generation
 Main.lean        -- Entry point
-lean_tests/      -- 190 tests (127 positive, 64 negative)
+lean_tests/      -- 201 tests
 examples/        -- 62 example programs
 ```
 

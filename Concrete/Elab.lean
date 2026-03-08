@@ -768,7 +768,7 @@ partial def elabStmt (stmt : Stmt) : ElabM (List CStmt) := do
   | .while_ cond body label =>
     let cCond ← elabExpr cond (some .bool)
     let cBody ← elabStmts body
-    return [.while_ cCond cBody label]
+    return [.while_ cCond cBody label []]
 
   | .forLoop init cond step body label =>
     -- Desugar: for (init; cond; step) { body } → init; while cond { body; step }
@@ -784,7 +784,7 @@ partial def elabStmt (stmt : Stmt) : ElabM (List CStmt) := do
       | some stepStmt => elabStmt stepStmt
       | none => pure []
     let whileBody := cBody ++ cStep
-    result := result ++ [.while_ cCond whileBody label]
+    result := result ++ [.while_ cCond whileBody label cStep]
     return result
 
   | .fieldAssign obj field value =>

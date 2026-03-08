@@ -112,7 +112,7 @@ partial def canonStmt (structs : List CStructDef) : CStmt → CStmt
   | .expr e => .expr (canonExpr structs e)
   | .ifElse c t el =>
     .ifElse (canonExpr structs c) (canonStmts structs t) (el.map (canonStmts structs))
-  | .while_ c body lbl => .while_ (canonExpr structs c) (canonStmts structs body) lbl
+  | .while_ c body lbl step => .while_ (canonExpr structs c) (canonStmts structs body) lbl (canonStmts structs step)
   | .fieldAssign obj f val =>
     .fieldAssign (canonExpr structs obj) f (canonExpr structs val)
   | .derefAssign target val =>

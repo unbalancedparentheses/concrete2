@@ -36,6 +36,8 @@ structure LoopInfo where
   resultTy : Ty := .unit
   /-- Var snapshots at each continue: (varsSnapshot, sourceLabel) -/
   continueEdges : List (List (String × SVal) × String) := []
+  /-- Target label for continue (step block for for-loops, header for while-loops). -/
+  continueTarget : String := ""
 
 structure LowerState where
   blocks : List SBlock
@@ -364,16 +366,23 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
     let dst ← freshReg
     emit (.alloca dst ty)
     let baseVal := SVal.reg dst ty
-    -- Store tag at index 0
-    let tagGep ← freshReg
-    emit (.gep tagGep baseVal [.intConst 0 .int] .int)
-    emit (.store (.intConst (Int.ofNat vidx) .int) (.reg tagGep .int))
-    -- Store fields starting at index 1
-    for (idx, (_, fieldExpr)) in enumerate fields do
+    -- Store tag as i32 at offset 0
+    emit (.store (.intConst (Int.ofNat vidx) .i32) baseVal)
+    -- Store fields starting at byte offset 4 (after i32 tag)
+    -- First GEP past the tag: gep i32, ptr, 1 → offset 4
+    let payloadPtr ← freshReg
+    emit (.gep payloadPtr baseVal [.intConst 1 .int] .i32)
+    let mut fieldOffset : Int := 0
+    for (_, (_, fieldExpr)) in enumerate fields do
       let fVal ← lowerExpr fieldExpr
       let gepDst ← freshReg
-      emit (.gep gepDst baseVal [.intConst (Int.ofNat (idx + 1)) .int] fieldExpr.ty)
+      if fieldOffset == 0 then
+        -- First field is right at the payload pointer
+        emit (.gep gepDst (.reg payloadPtr .i32) [.intConst 0 .int] .i8)
+      else
+        emit (.gep gepDst (.reg payloadPtr .i32) [.intConst fieldOffset .int] .i8)
       emit (.store fVal (.reg gepDst fieldExpr.ty))
+      fieldOffset := fieldOffset + Int.ofNat (← computeTySize fieldExpr.ty)
     let loadDst ← freshReg
     emit (.load loadDst baseVal ty)
     return .reg loadDst ty
@@ -393,11 +402,11 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
       | _ => false
 
     if isEnumMatch then
-      -- Extract discriminant tag from scrutinee (at index 0)
-      let tagGep ← freshReg
-      emit (.gep tagGep scrVal [.intConst 0 .int] .int)
+      -- Load tag as i32 from offset 0, then extend to i64 for comparison
+      let tagRaw ← freshReg
+      emit (.load tagRaw scrVal .i32)
       let tagVal ← freshReg
-      emit (.load tagVal (.reg tagGep .int) .int)
+      emit (.cast tagVal (.reg tagRaw .i32) .int)
 
       -- Generate comparison chain
       for (idx, arm) in enumerate arms do
@@ -410,12 +419,20 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
           emit (.binOp cmpDst .eq (.reg tagVal .int) (.intConst (Int.ofNat vidx) .int) .bool)
           terminateBlock (.condBr (.reg cmpDst .bool) armLabel nextCheck)
           startBlock armLabel
-          for (bidx, (bname, bty)) in enumerate bindings do
+          -- GEP past i32 tag to reach payload
+          let payloadGep ← freshReg
+          emit (.gep payloadGep scrVal [.intConst 1 .int] .i32)
+          let mut fieldOffset : Int := 0
+          for (_, (bname, bty)) in enumerate bindings do
             let gepDst ← freshReg
-            emit (.gep gepDst scrVal [.intConst (Int.ofNat (bidx + 1)) .int] bty)
+            if fieldOffset == 0 then
+              emit (.gep gepDst (.reg payloadGep .i32) [.intConst 0 .int] .i8)
+            else
+              emit (.gep gepDst (.reg payloadGep .i32) [.intConst fieldOffset .int] .i8)
             let loadDst ← freshReg
             emit (.load loadDst (.reg gepDst bty) bty)
             setVar bname (.reg loadDst bty)
+            fieldOffset := fieldOffset + Int.ofNat (← computeTySize bty)
           lowerStmts body
           let bodyVal ← lastExprVal body ty
           let term ← currentBlockTerminated
@@ -581,10 +598,31 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
     return .reg name ty
 
   | .try_ inner ty =>
+    -- Try operator: unwrap Ok value or early-return Err
     let iVal ← lowerExpr inner
-    let dst ← freshReg
-    emit (.cast dst iVal ty)
-    return .reg dst ty
+    -- Load tag as i32 from offset 0
+    let tagRaw ← freshReg
+    emit (.load tagRaw iVal .i32)
+    let tagVal ← freshReg
+    emit (.cast tagVal (.reg tagRaw .i32) .int)
+    -- Compare tag == 0 (Ok variant)
+    let cmpDst ← freshReg
+    emit (.binOp cmpDst .eq (.reg tagVal .int) (.intConst 0 .int) .bool)
+    let okLabel ← freshLabel "try.ok"
+    let errLabel ← freshLabel "try.err"
+    terminateBlock (.condBr (.reg cmpDst .bool) okLabel errLabel)
+    -- Err path: return the whole enum
+    startBlock errLabel
+    terminateBlock (.ret (some iVal))
+    -- Ok path: extract the Ok value from payload
+    startBlock okLabel
+    let payloadGep ← freshReg
+    emit (.gep payloadGep iVal [.intConst 1 .int] .i32)
+    let valueGep ← freshReg
+    emit (.gep valueGep (.reg payloadGep .i32) [.intConst 0 .int] .i8)
+    let loadDst ← freshReg
+    emit (.load loadDst (.reg valueGep ty) ty)
+    return .reg loadDst ty
 
   | .allocCall inner _allocExpr _ty =>
     lowerExpr inner
@@ -765,10 +803,13 @@ partial def lowerStmt (stmt : CStmt) : LowerM Unit := do
     -- Merge
     startBlock mergeLabel
 
-  | .while_ cond body _label =>
+  | .while_ cond body _label step =>
     let headerLabel ← freshLabel "while.hdr"
     let bodyLabel ← freshLabel "while.body"
     let exitLabel ← freshLabel "while.exit"
+    -- For for-loops with a step, create a step block that continue targets
+    let hasStep := !step.isEmpty
+    let stepLabel ← if hasStep then freshLabel "for.step" else pure headerLabel
     -- Snapshot pre-loop state
     let preLoopVars ← snapshotVars
     let preLoopLabel ← getCurrentLabel
@@ -785,19 +826,70 @@ partial def lowerStmt (stmt : CStmt) : LowerM Unit := do
       headerLabel := headerLabel
       exitLabel := exitLabel
       headerPhis := headerPhis
+      continueTarget := stepLabel
     }
     pushLoop loopInfo
     -- Lower condition (uses phi values)
     let condVal ← lowerExpr cond
     terminateBlock (.condBr condVal bodyLabel exitLabel)
-    -- Lower body
+    -- Lower body (without step, since step is separate for for-loops)
     startBlock bodyLabel
-    lowerStmts body
+    if hasStep then
+      -- Lower only non-step body
+      let bodyWithoutStep := body.take (body.length - step.length)
+      lowerStmts bodyWithoutStep
+    else
+      lowerStmts body
     let bodyEndVars ← snapshotVars
     let bodyEndLabel ← getCurrentLabel
     let term ← currentBlockTerminated
     if !term then
-      terminateBlock (.br headerLabel)
+      if hasStep then
+        terminateBlock (.br stepLabel)
+      else
+        terminateBlock (.br headerLabel)
+    -- If for-loop has step, create the step block
+    if hasStep then
+      startBlock stepLabel
+      lowerStmts step
+      let stepEndVars ← snapshotVars
+      let stepEndLabel ← getCurrentLabel
+      let stepTerm ← currentBlockTerminated
+      if !stepTerm then
+        terminateBlock (.br headerLabel)
+      -- Pop loop to get break/continue edges
+      let loopInfoFinal ← popLoop
+      -- Build header phi instructions (step block is the back-edge source)
+      let mut headerPhiInsts : List SInst := []
+      for (name, phiReg, preVal, ty) in headerPhis do
+        let mut incoming : List (SVal × String) := [(preVal, preLoopLabel)]
+        if !stepTerm then
+          let stepVal := (stepEndVars.find? fun (n, _) => n == name).map (·.2) |>.getD (.reg phiReg ty)
+          incoming := incoming ++ [(stepVal, stepEndLabel)]
+        headerPhiInsts := headerPhiInsts ++ [.phi phiReg incoming ty]
+      prependInstsToBlock headerLabel headerPhiInsts
+      -- Build exit block
+      startBlock exitLabel
+      let breakEdges := match loopInfoFinal with
+        | some info => info.breakEdges
+        | none => []
+      for (name, phiReg, _, ty) in headerPhis do
+        setVar name (.reg phiReg ty)
+      if !breakEdges.isEmpty then
+        for (name, phiReg, _, ty) in headerPhis do
+          let headerVal := SVal.reg phiReg ty
+          let mut exitIncoming : List (SVal × String) := [(headerVal, headerLabel)]
+          for (breakVars, breakLabel) in breakEdges do
+            let breakVal := (breakVars.find? fun (n, _) => n == name).map (·.2) |>.getD headerVal
+            exitIncoming := exitIncoming ++ [(breakVal, breakLabel)]
+          let allSame := exitIncoming.all fun (v, _) => match v, headerVal with
+            | .reg n1 _, .reg n2 _ => n1 == n2
+            | _, _ => false
+          if !allSame then
+            let exitPhiReg ← freshReg "exit."
+            emit (.phi exitPhiReg exitIncoming ty)
+            setVar name (.reg exitPhiReg ty)
+    else do
     -- Pop loop to get break/continue edges
     let loopInfoFinal ← popLoop
     -- Build header phi instructions
@@ -884,10 +976,12 @@ partial def lowerStmt (stmt : CStmt) : LowerM Unit := do
   | .continue_ _label =>
     match ← currentLoop with
     | some info =>
+      let target := if info.continueTarget != "" then info.continueTarget else info.headerLabel
       let vars ← snapshotVars
       let label ← getCurrentLabel
-      addContinueEdge vars label
-      terminateBlock (.br info.headerLabel)
+      if target == info.headerLabel then
+        addContinueEdge vars label
+      terminateBlock (.br target)
     | none => pure ()
 
   | .defer body =>

@@ -267,7 +267,7 @@ partial def ccCheckStmt (stmt : CStmt) : StateM CoreCheckEnv Unit := do
     | some stmts => for s in stmts do ccCheckStmt s
     | none => pure ()
 
-  | .while_ cond body _label =>
+  | .while_ cond body _label _ =>
     ccCheckExpr cond
     if cond.ty != .bool then
       addError s!"while condition must be Bool, got {repr cond.ty}"
