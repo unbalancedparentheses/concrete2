@@ -38,6 +38,8 @@ structure LoopInfo where
   continueEdges : List (List (String × SVal) × String) := []
   /-- Target label for continue (step block for for-loops, header for while-loops). -/
   continueTarget : String := ""
+  /-- Optional loop label for labeled break/continue. -/
+  loopLabel : Option String := none
 
 structure LowerState where
   blocks : List SBlock
@@ -219,6 +221,25 @@ private def currentLoop : LowerM (Option LoopInfo) := do
   let s ← getState
   return s.loopStack.head?
 
+/-- Find a loop by label, returning it and its index in the stack. -/
+private def findLoopByLabel (label : Option String) : LowerM (Option LoopInfo) := do
+  match label with
+  | none => currentLoop
+  | some lbl =>
+    let s ← getState
+    match s.loopStack.find? fun info => info.loopLabel == some lbl with
+    | some info => return some info
+    | none => currentLoop
+
+/-- Record a break edge on a specific loop (identified by exitLabel). -/
+private def addBreakEdgeToLoop (vars : List (String × SVal)) (srcLabel : String) (targetExitLabel : String) : LowerM Unit := do
+  let s ← getState
+  let newStack := s.loopStack.map fun info =>
+    if info.exitLabel == targetExitLabel then
+      { info with breakEdges := info.breakEdges ++ [(vars, srcLabel)] }
+    else info
+  setState { s with loopStack := newStack }
+
 /-- Record a break edge on the innermost loop. -/
 private def addBreakEdge (vars : List (String × SVal)) (label : String) : LowerM Unit := do
   let s ← getState
@@ -277,7 +298,11 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
   | .ident name ty =>
     match ← lookupVar name with
     | some val => return val
-    | none => return .reg name ty
+    | none =>
+      -- If it's a function type and not a local var, treat as global function reference
+      match ty with
+      | .fn_ _ _ _ => return .reg ("@fnref." ++ name) ty
+      | _ => return .reg name ty
 
   | .binOp op lhs rhs ty =>
     let lVal ← lowerExpr lhs
@@ -606,9 +631,8 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
       let gepDst ← freshReg
       emit (.gep gepDst baseVal [.intConst (Int.ofNat idx) .int] elemTy)
       emit (.store eVal (.reg gepDst elemTy))
-    let loadDst ← freshReg
-    emit (.load loadDst baseVal ty)
-    return .reg loadDst ty
+    -- Return alloca pointer directly (don't load) so mutations work
+    return baseVal
 
   | .arrayIndex arr index ty =>
     let aVal ← lowerExpr arr
@@ -876,7 +900,7 @@ partial def lowerStmt (stmt : CStmt) : LowerM Unit := do
             | some (v, _) => setVar name v
             | none => pure ()
 
-  | .while_ cond body _label step =>
+  | .while_ cond body whileLabel step =>
     let headerLabel ← freshLabel "while.hdr"
     let bodyLabel ← freshLabel "while.body"
     let exitLabel ← freshLabel "while.exit"
@@ -900,6 +924,7 @@ partial def lowerStmt (stmt : CStmt) : LowerM Unit := do
       exitLabel := exitLabel
       headerPhis := headerPhis
       continueTarget := stepLabel
+      loopLabel := whileLabel
     }
     pushLoop loopInfo
     -- Lower condition (uses phi values)
@@ -1028,10 +1053,18 @@ partial def lowerStmt (stmt : CStmt) : LowerM Unit := do
           setVar name (.reg exitPhiReg ty)
 
   | .fieldAssign obj field value =>
-    let oVal ← lowerExpr obj
     let fVal ← lowerExpr value
     let tyName := structNameFromTy obj.ty
     let idx ← fieldIndex tyName field
+    -- Check if obj is a deref expression (e.g., *p.field = val → GEP into p directly)
+    match obj with
+    | .deref inner _ =>
+      let ptrVal ← lowerExpr inner
+      let gepDst ← freshReg
+      emit (.gep gepDst ptrVal [.intConst (Int.ofNat idx) .int] value.ty)
+      emit (.store fVal (.reg gepDst value.ty))
+    | _ =>
+    let oVal ← lowerExpr obj
     -- Check if the object is a reference/pointer type (e.g. &mut self)
     let isRefTy := match obj.ty with
       | .ref _ | .refMut _ | .ptrMut _ | .ptrConst _ => true
@@ -1070,8 +1103,8 @@ partial def lowerStmt (stmt : CStmt) : LowerM Unit := do
     emit (.gep gepDst aVal [iVal] value.ty)
     emit (.store vVal (.reg gepDst value.ty))
 
-  | .break_ value _label =>
-    match ← currentLoop with
+  | .break_ value breakLabel =>
+    match ← findLoopByLabel breakLabel with
     | some info =>
       -- Store break value into result slot (for while-as-expression)
       match value, info.resultSlot with
@@ -1081,12 +1114,12 @@ partial def lowerStmt (stmt : CStmt) : LowerM Unit := do
       | _, _ => pure ()
       let vars ← snapshotVars
       let label ← getCurrentLabel
-      addBreakEdge vars label
+      addBreakEdgeToLoop vars label info.exitLabel
       terminateBlock (.br info.exitLabel)
     | none => pure ()
 
-  | .continue_ _label =>
-    match ← currentLoop with
+  | .continue_ contLabel =>
+    match ← findLoopByLabel contLabel with
     | some info =>
       let target := if info.continueTarget != "" then info.continueTarget else info.headerLabel
       let vars ← snapshotVars

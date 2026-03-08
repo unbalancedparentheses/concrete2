@@ -1115,7 +1115,11 @@ partial def elabModule (m : Module)
     .ok {
       name := m.name
       structs := cStructs
-      enums := cEnums
+      enums := allEnums.map fun ed =>
+        { name := ed.name, typeParams := ed.typeParams,
+          variants := ed.variants.map fun v =>
+            (v.name, v.fields.map fun f => (f.name, f.ty)),
+          isPublic := ed.isPublic, isCopy := ed.isCopy : CEnumDef }
       functions := fns
       externFns := cExterns
       constants := cConstants

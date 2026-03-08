@@ -167,6 +167,7 @@ private def checkUsesAreDefined (ctx : VerifyCtx) (b : SBlock) : VerifyCtx :=
   let uses := nonPhiInsts.foldl (fun acc i => acc ++ instUses i) [] ++ termUses b.term
   let ctx := uses.foldl (fun ctx u =>
     if ctx.paramNames.contains u then ctx
+    else if u.startsWith "@fnref." then ctx  -- global function references
     else
       -- Register must be defined in a block that dominates this one
       match regDefBlock ctx.blocks u with
