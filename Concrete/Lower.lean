@@ -249,6 +249,15 @@ private def addBreakEdge (vars : List (String × SVal)) (label : String) : Lower
     setState { s with loopStack := info' :: rest }
   | [] => pure ()
 
+/-- Record a continue edge on a specific loop (identified by headerLabel). -/
+private def addContinueEdgeToLoop (vars : List (String × SVal)) (srcLabel : String) (targetHeaderLabel : String) : LowerM Unit := do
+  let s ← getState
+  let newStack := s.loopStack.map fun info =>
+    if info.headerLabel == targetHeaderLabel then
+      { info with continueEdges := info.continueEdges ++ [(vars, srcLabel)] }
+    else info
+  setState { s with loopStack := newStack }
+
 /-- Record a continue edge on the innermost loop. -/
 private def addContinueEdge (vars : List (String × SVal)) (label : String) : LowerM Unit := do
   let s ← getState
@@ -1124,7 +1133,7 @@ partial def lowerStmt (stmt : CStmt) : LowerM Unit := do
       let target := if info.continueTarget != "" then info.continueTarget else info.headerLabel
       let vars ← snapshotVars
       let label ← getCurrentLabel
-      addContinueEdge vars label
+      addContinueEdgeToLoop vars label info.headerLabel
       terminateBlock (.br target)
     | none => pure ()
 
@@ -1196,12 +1205,36 @@ def lowerFn (f : CFnDef) (structDefs : List CStructDef) (enumDefs : List CEnumDe
     }
   | ((.error e), _) => .error e
 
+private partial def collectAllFunctions (m : CModule) : List CFnDef :=
+  let own := m.functions
+  let sub := m.submodules.foldl (fun acc s => acc ++ collectAllFunctions s) []
+  own ++ sub
+
+private partial def collectAllStructs (m : CModule) : List CStructDef :=
+  let own := m.structs
+  let sub := m.submodules.foldl (fun acc s => acc ++ collectAllStructs s) []
+  own ++ sub
+
+private partial def collectAllEnums (m : CModule) : List CEnumDef :=
+  let own := m.enums
+  let sub := m.submodules.foldl (fun acc s => acc ++ collectAllEnums s) []
+  own ++ sub
+
+private partial def collectAllExterns (m : CModule) : List (String × List (String × Ty) × Ty) :=
+  let own := m.externFns
+  let sub := m.submodules.foldl (fun acc s => acc ++ collectAllExterns s) []
+  own ++ sub
+
 def lowerModule (m : CModule) : SModule :=
+  let allFunctions := collectAllFunctions m
+  let allStructs := collectAllStructs m
+  let allEnums := collectAllEnums m
+  let allExterns := collectAllExterns m
   -- Skip generic functions (non-empty typeParams); only their monomorphized
   -- specializations should be lowered.
-  let concreteFns := m.functions.filter fun f => f.typeParams.isEmpty
+  let concreteFns := allFunctions.filter fun f => f.typeParams.isEmpty
   let fns := concreteFns.filterMap fun f =>
-    match lowerFn f m.structs m.enums with
+    match lowerFn f allStructs allEnums with
     | .ok sfn => some sfn
     | .error _ => none
   -- Collect string literals from lowered functions
@@ -1211,8 +1244,8 @@ def lowerModule (m : CModule) : SModule :=
       labelCounter := 0, regCounter := 0
       vars := f.params.map fun (n, ty) => (n, SVal.reg n ty)
       stringLits := []
-      structDefs := m.structs
-      enumDefs := m.enums
+      structDefs := allStructs
+      enumDefs := allEnums
       loopStack := []
     }
     let result := (do
@@ -1225,10 +1258,10 @@ def lowerModule (m : CModule) : SModule :=
     | _ => acc
   ) ([] : List (String × String))
   { name := m.name
-    structs := m.structs
-    enums := m.enums
+    structs := allStructs
+    enums := allEnums
     functions := fns
-    externFns := m.externFns
+    externFns := allExterns
     globals := globals }
 
 end Concrete

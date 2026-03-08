@@ -11,9 +11,27 @@ PASS=0
 FAIL=0
 TOTAL=0
 
-while IFS= read -r line; do
-    file=$(echo "$line" | sed 's/^run_ok "\$TESTDIR\//lean_tests\//;s/".*//')
-    expected=$(echo "$line" | sed 's/^run_ok "[^"]*"[[:space:]]*//' | sed 's/^"//;s/"$//')
+# Extract test cases handling multiline expected values, output as individual files
+python3 -c '
+import re, sys, os
+content = open("run_tests.sh").read()
+pattern = r"""run_ok\s+"([^"]+)"\s+("([^"]*(?:\n[^"]*)*?)"|(\S+))"""
+resdir = sys.argv[1]
+for i, m in enumerate(re.finditer(pattern, content)):
+    path = m.group(1).replace("$TESTDIR/", "lean_tests/")
+    if m.group(3) is not None:
+        expected = m.group(3)
+    else:
+        expected = m.group(4)
+    with open(os.path.join(resdir, f"test_{i:04d}.spec"), "w") as f:
+        f.write(path + "\n")
+        f.write(expected)
+' "$RESDIR"
+
+for spec in "$RESDIR"/test_*.spec; do
+    [ -f "$spec" ] || continue
+    file=$(head -1 "$spec")
+    expected=$(tail -n +2 "$spec")
     name=$(basename "$file" .con)
 
     (
@@ -36,7 +54,7 @@ while IFS= read -r line; do
     if [ $((TOTAL % 8)) -eq 0 ]; then
         wait
     fi
-done < <(grep '^run_ok ' run_tests.sh)
+done
 
 wait
 

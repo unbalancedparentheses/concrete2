@@ -649,14 +649,20 @@ partial def elabCall (fnName : String) (typeArgs : List Ty) (args : List Expr)
   if fnName == "map_new" then
     let kTy := match typeArgs with | t :: _ => t | [] => .int
     let vTy := match typeArgs with | _ :: t :: _ => t | _ => .int
-    return .call "map_new" typeArgs [] (.generic "HashMap" [kTy, vTy])
+    let suffix := if kTy == .string then "_str" else ""
+    return .call ("map_new" ++ suffix) typeArgs [] (.generic "HashMap" [kTy, vTy])
   -- Intercept map_insert
   if fnName == "map_insert" then
     let mut cArgs : List CExpr := []
     for arg in args do
       let cArg ← elabExpr arg
       cArgs := cArgs ++ [cArg]
-    return .call "map_insert" [] cArgs .unit
+    -- Detect string key from the map type
+    let isStrKey := match (cArgs.head?.map CExpr.ty) with
+      | some (.refMut (.generic "HashMap" [.string, _])) => true
+      | _ => false
+    let suffix := if isStrKey then "_str" else ""
+    return .call ("map_insert" ++ suffix) [] cArgs .unit
   -- Intercept map_get
   if fnName == "map_get" then
     let mut cArgs : List CExpr := []
@@ -667,14 +673,24 @@ partial def elabCall (fnName : String) (typeArgs : List Ty) (args : List Expr)
       | some (.ref (.generic "HashMap" [_, v])) => v
       | some (.refMut (.generic "HashMap" [_, v])) => v
       | _ => .placeholder
-    return .call "map_get" [] cArgs (.generic "Option" [vTy])
+    let isStrKey := match (cArgs.head?.map CExpr.ty) with
+      | some (.ref (.generic "HashMap" [.string, _])) => true
+      | some (.refMut (.generic "HashMap" [.string, _])) => true
+      | _ => false
+    let suffix := if isStrKey then "_str" else ""
+    return .call ("map_get" ++ suffix) [] cArgs (.generic "Option" [vTy])
   -- Intercept map_contains
   if fnName == "map_contains" then
     let mut cArgs : List CExpr := []
     for arg in args do
       let cArg ← elabExpr arg
       cArgs := cArgs ++ [cArg]
-    return .call "map_contains" [] cArgs .bool
+    let isStrKey := match (cArgs.head?.map CExpr.ty) with
+      | some (.ref (.generic "HashMap" [.string, _])) => true
+      | some (.refMut (.generic "HashMap" [.string, _])) => true
+      | _ => false
+    let suffix := if isStrKey then "_str" else ""
+    return .call ("map_contains" ++ suffix) [] cArgs .bool
   -- Intercept map_remove
   if fnName == "map_remove" then
     let mut cArgs : List CExpr := []
@@ -684,7 +700,11 @@ partial def elabCall (fnName : String) (typeArgs : List Ty) (args : List Expr)
     let vTy := match (cArgs.head?.map CExpr.ty) with
       | some (.refMut (.generic "HashMap" [_, v])) => v
       | _ => .placeholder
-    return .call "map_remove" [] cArgs (.generic "Option" [vTy])
+    let isStrKey := match (cArgs.head?.map CExpr.ty) with
+      | some (.refMut (.generic "HashMap" [.string, _])) => true
+      | _ => false
+    let suffix := if isStrKey then "_str" else ""
+    return .call ("map_remove" ++ suffix) [] cArgs (.generic "Option" [vTy])
   -- Intercept map_len
   if fnName == "map_len" then
     let mut cArgs : List CExpr := []
