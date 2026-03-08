@@ -46,6 +46,7 @@ structure VarInfo where
   loopDepth : Nat
   borrowCount : Nat := 0
   mutBorrowed : Bool := false
+  borrowedFrom : Option String := none
   mutable : Bool := true  -- whether the variable was declared with mut
   deriving Repr
 
@@ -62,7 +63,7 @@ structure TypeEnv where
   currentTypeParams : List String := []  -- active function's type params
   currentCapSet : CapSet := .empty       -- current function's capability set
   currentFnName : String := ""           -- current function name (for error messages)
-  lastExprIsLinearClosure : Bool := false  -- set by closure checking, read by letDecl
+  allFnSigs : List (String × FnSig) := []  -- all function signatures for fnRef resolution
   borrowRefs : List String := []          -- names of refs created by borrow blocks (for escape analysis)
   loopBreakTy : Option Ty := none         -- collects type from break-with-value in while-as-expression
   inDeferBody : Bool := false             -- true when checking inside a defer body
@@ -124,7 +125,7 @@ private def tyToString : Ty → String
   | .never => "!"
   | .heap inner => "Heap<" ++ tyToString inner ++ ">"
   | .heapArray inner => "HeapArray<" ++ tyToString inner ++ ">"
-  | .unknown => "<unknown>"
+  | .placeholder => "<unknown>"
 
 /-- Is this an integer type (any size)? -/
 def isIntegerType : Ty → Bool
@@ -208,8 +209,8 @@ def isCopyType (ty : Ty) : CheckM Bool := do
   | .ref _ => return true      -- References are Copy
   | .refMut _ => return false  -- Mutable refs are not Copy (exclusive)
   | .ptrMut _ | .ptrConst _ => return true  -- Raw pointers are Copy
-  | .fn_ _ _ _ => return true  -- Function types: Copy by default, linear closures tracked separately
-  | .unknown => return true
+  | .fn_ _ _ _ => return true  -- Function pointers are Copy (no captures, just a code address)
+  | .placeholder => return true
   | .never => return true      -- Never type is compatible with anything
   | .heap _ => return false    -- Heap pointers are linear
   | .heapArray _ => return false
@@ -223,7 +224,7 @@ def isCopyType (ty : Ty) : CheckM Bool := do
       | some ed => return ed.isCopy
       | none => return false
   | .generic _ _ => return false  -- Generic instantiations are linear
-  | .typeVar _ => return true  -- Type variables are treated as Copy in generic context
+  | .typeVar _ => return false  -- Generic values remain linear unless proven Copy
   | .array t _ => isCopyType t  -- Array of copy types is copy
 
 def lookupVarInfo (name : String) : CheckM (Option VarInfo) := do
@@ -237,14 +238,26 @@ def lookupVarTy (name : String) : CheckM (Option Ty) := do
 
 def addVar (name : String) (ty : Ty) (mutable : Bool := true) : CheckM Unit := do
   let env ← getEnv
-  let mut copy ← isCopyType ty
-  -- If the last expression was a linear closure, override copy to false
-  if env.lastExprIsLinearClosure then
-    copy := false
-    modify fun env => { env with lastExprIsLinearClosure := false }
+  let copy ← isCopyType ty
   let info : VarInfo := { ty, state := .unconsumed, isCopy := copy, loopDepth := env.loopDepth, mutable }
   let env ← getEnv
   setEnv { env with vars := (name, info) :: env.vars }
+
+private def activeBorrowRefs (env : TypeEnv) (varName : String) : List VarInfo :=
+  env.vars.foldl (fun acc (_, info) =>
+    match info.borrowedFrom with
+    | some sourceName =>
+      if sourceName == varName && info.state != .consumed then info :: acc else acc
+    | none => acc) []
+
+private partial def tyContainsTypeVar : Ty → Bool
+  | .typeVar _ => true
+  | .ref inner | .refMut inner | .ptrMut inner | .ptrConst inner | .heap inner | .heapArray inner =>
+    tyContainsTypeVar inner
+  | .array elem _ => tyContainsTypeVar elem
+  | .generic _ args => args.any tyContainsTypeVar
+  | .fn_ params _ retTy => params.any tyContainsTypeVar || tyContainsTypeVar retTy
+  | _ => false
 
 def lookupStruct (name : String) : CheckM (Option StructDef) := do
   let env ← getEnv
@@ -351,6 +364,9 @@ def consumeVar (name : String) : CheckM Unit := do
   | none => throw s!"use of undeclared variable '{name}'"
   | some info =>
     if info.isCopy then return ()  -- Copy types are never consumed
+    let activeRefs := activeBorrowRefs env name
+    if activeRefs.any (fun refInfo => match refInfo.ty with | .ref _ | .refMut _ => true | _ => false) then
+      throw s!"cannot move linear variable '{name}': variable is borrowed"
     match info.state with
     | .consumed =>
       throw s!"linear variable '{name}' used after move"
@@ -368,17 +384,21 @@ def consumeVar (name : String) : CheckM Unit := do
         else (n, vi)
       setEnv { env with vars := vars' }
 
-/-- Check that all linear variables in the given name list are consumed or used.
-    Only errors on variables that were never touched at all.
-    Called at function scope exit. -/
+/-- Consume a variable if it exists. Skips function names (not in var scope). -/
+def consumeVarIfExists (name : String) : CheckM Unit := do
+  match ← lookupVarInfo name with
+  | some _ => consumeVar name
+  | none => pure ()  -- function reference, not a variable
+
+/-- Check that all tracked linear variables in the given name list are consumed.
+    `reserved` is allowed because the deferred destroy will run at scope exit. -/
 def checkScopeExit (varNames : List String) : CheckM Unit := do
   let env ← getEnv
   for name in varNames do
     match env.vars.lookup name with
     | some info =>
-      if !info.isCopy && info.state == .unconsumed then
+      if !info.isCopy && info.state != .consumed && info.state != .reserved then
         throw s!"linear variable '{name}' was never consumed"
-      -- reserved is OK — defer will handle it
     | none => pure ()
 
 -- ============================================================
@@ -405,19 +425,22 @@ def peekExprType (e : Expr) : CheckM Ty := do
       | some sig =>
         let paramTys := sig.params.map fun (_, t) => t
         return .fn_ paramTys sig.capSet sig.retTy
-      | none => return .unknown
+      | none => return .placeholder
   | .structLit name typeArgs _ =>
     if typeArgs.isEmpty then return .named name
     else return .generic name typeArgs
   | .enumLit enumName _ typeArgs _ =>
     if typeArgs.isEmpty then return .named enumName
     else return .generic enumName typeArgs
-  | .closure params capSet retTy _body _captures _isLinear =>
-    let paramTys := params.map fun p => p.ty
-    let closureRetTy := match retTy with | some t => t | none => .unit
-    let closureCapSet := if capSet != .empty then capSet else .empty
-    return .fn_ paramTys closureCapSet closureRetTy
-  | _ => return .unknown
+  | .fnRef name =>
+    let env ← getEnv
+    match env.allFnSigs.lookup name with
+    | some sig =>
+      let paramTys := sig.params.map Prod.snd
+      return .fn_ paramTys sig.capSet sig.retTy
+    | none => return .placeholder
+  | .paren inner => peekExprType inner
+  | _ => return .placeholder
 
 /-- Unify a pattern type with an actual type to discover type variable bindings. -/
 private partial def unifyTypes (pattern actual : Ty) (typeParams : List String) : List (String × Ty) :=
@@ -614,8 +637,8 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       | .heapArray t => t
       | .ref (.heap t) => t
       | .refMut (.heap t) => t
-      | _ => .unknown
-    if innerTy == .unknown then
+      | _ => .placeholder
+    if innerTy == .placeholder then
       throw s!"arrow access '->' requires Heap<T> or HeapArray<T> type, got {tyToString objTy}"
     -- Look up field on the inner type
     let structName := match innerTy with
@@ -695,7 +718,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       | some _ =>
         -- Consume the argument
         match arg with
-        | .ident varName => consumeVar varName
+        | .ident varName => consumeVarIfExists varName
         | _ => pure ()
         return .unit
       | none => throw s!"type '{typeName}' does not implement Destroy"
@@ -706,6 +729,10 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       checkCapabilities "alloc" (.concrete ["Alloc"])
       let arg := match args with | a :: _ => a | [] => Expr.intLit 0
       let argTy ← checkExpr arg
+      -- Consume linear variables passed to alloc (ownership moves to heap)
+      match arg with
+      | .ident varName => consumeVarIfExists varName
+      | _ => pure ()
       return .heap argTy
     -- Intercept free(ptr) calls
     if fnName == "free" then
@@ -718,29 +745,29 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       | .heap innerTy =>
         -- Consume the argument (Heap<T> is linear)
         match arg with
-        | .ident varName => consumeVar varName
+        | .ident varName => consumeVarIfExists varName
         | _ => pure ()
         return innerTy
       | _ => throw s!"free() requires Heap<T> type, got {tyToString argTy}"
-    -- Check if this is a closure call (variable with fn_ type)
-    let closureVarTy ← lookupVarTy fnName
-    match closureVarTy with
-    | some (.fn_ paramTys closureCapSet closureRetTy) =>
-      -- Closure call: check capabilities
-      checkCapabilities fnName closureCapSet
+    -- Check if this is a function pointer call (variable with fn_ type)
+    let fnPtrVarTy ← lookupVarTy fnName
+    match fnPtrVarTy with
+    | some (.fn_ paramTys fnPtrCapSet fnPtrRetTy) =>
+      -- Function pointer call: check capabilities
+      checkCapabilities fnName fnPtrCapSet
       -- Check argument count
       if args.length != paramTys.length then
-        throw s!"closure '{fnName}' expects {paramTys.length} arguments, got {args.length}"
+        throw s!"function pointer '{fnName}' expects {paramTys.length} arguments, got {args.length}"
       -- Check each argument type
       for (arg, pTy) in args.zip paramTys do
         let argTy ← checkExpr arg (some pTy)
-        expectTy pTy argTy s!"argument of closure call '{fnName}'"
+        expectTy pTy argTy s!"argument of function pointer call '{fnName}'"
         match arg with
-        | .ident varName => consumeVar varName
+        | .ident varName => consumeVarIfExists varName
         | _ => pure ()
-      -- Calling a closure consumes it (if linear)
-      consumeVar fnName
-      return closureRetTy
+      -- Function pointers are Copy, no need to consume
+      useVar fnName
+      return fnPtrRetTy
     | _ =>
     match ← lookupFn fnName with
     | some sig =>
@@ -784,16 +811,16 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
                 if sig.capParams.contains cap then
                   -- Get actual argument's cap set
                   let argCapSet ← do
-                    match arg with
-                    | .ident varName =>
-                      match ← lookupVarTy varName with
-                      | some (.fn_ _ cs _) => pure cs
-                      | none =>
+                    let argTy ← peekExprType arg
+                    match argTy with
+                    | .fn_ _ cs _ => pure cs
+                    | _ =>
+                      match arg with
+                      | .ident varName =>
                         match ← lookupFn varName with
                         | some argSig => pure argSig.capSet
                         | none => pure CapSet.empty
                       | _ => pure CapSet.empty
-                    | _ => pure CapSet.empty
                   let (argCaps, _) := argCapSet.normalize
                   capBindings := capBindings ++ [(cap, argCaps)]
             | _ => pure ()
@@ -804,7 +831,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
             if sig.capParams.contains cap then
               match capBindings.find? fun (name, _) => name == cap with
               | some (_, caps) => resolvedCaps := resolvedCaps ++ caps
-              | none => pure ()  -- Unresolved cap var = empty
+              | none => throw s!"cannot infer capability variable '{cap}' for call to '{fnName}'"
             else
               resolvedCaps := resolvedCaps ++ [cap]
           pure (CapSet.concrete resolvedCaps)
@@ -835,7 +862,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
         expectTy pTy argTy s!"argument '{pName}' of '{fnName}'"
         -- If arg is a bare identifier of a linear type, consume it
         match arg with
-        | .ident varName => consumeVar varName
+        | .ident varName => consumeVarIfExists varName
         | _ => pure ()
       return retTy
     | none =>
@@ -854,6 +881,10 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
         | some (_, expr) =>
           let exprTy ← checkExpr expr (some fieldTy)
           expectTy fieldTy exprTy s!"field '{sf.name}' of struct '{name}'"
+          -- Consume linear variables used as struct fields
+          match expr with
+          | .ident varName => consumeVarIfExists varName
+          | _ => pure ()
         | none =>
           -- Unions allow partial initialization (only one field set)
           if !sd.isUnion then
@@ -911,6 +942,10 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
           | some (_, expr) =>
             let exprTy ← checkExpr expr (some fieldTy)
             expectTy fieldTy exprTy s!"field '{sf.name}' of {enumName}#{variant}"
+            -- Consume linear variables used as enum fields
+            match expr with
+            | .ident varName => consumeVarIfExists varName
+            | _ => pure ()
           | none => throw s!"missing field '{sf.name}' in {enumName}#{variant}"
         for (fn, _) in fields do
           match ev.fields.find? fun sf => sf.name == fn with
@@ -937,7 +972,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       | some ed =>
         -- Consume scrutinee if it's a linear ident
         match scrutinee with
-        | .ident varName => consumeVar varName
+        | .ident varName => consumeVarIfExists varName
         | _ => pure ()
         -- Check exhaustiveness: every variant must appear, no duplicates
         let mut seenVariants : List String := []
@@ -1037,14 +1072,10 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       | some info =>
         if !info.isCopy && info.state == .consumed then
           throw s!"cannot borrow '{varName}': already moved"
-        if info.mutBorrowed then
-          throw s!"cannot borrow '{varName}': already mutably borrowed"
-        -- Increment borrow count
         let env ← getEnv
-        let vars' := env.vars.map fun (n, vi) =>
-          if n == varName then (n, { vi with borrowCount := vi.borrowCount + 1 })
-          else (n, vi)
-        setEnv { env with vars := vars' }
+        let activeRefs := activeBorrowRefs env varName
+        if info.mutBorrowed || activeRefs.any (fun refInfo => match refInfo.ty with | .refMut _ => true | _ => false) then
+          throw s!"cannot borrow '{varName}': already mutably borrowed"
       | none => throw s!"use of undeclared variable '{varName}'"
     | _ => pure ()
     return .ref innerTy
@@ -1056,17 +1087,14 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       | some info =>
         if !info.isCopy && info.state == .consumed then
           throw s!"cannot borrow '{varName}': already moved"
-        if info.borrowCount > 0 then
+        let env ← getEnv
+        let activeRefs := activeBorrowRefs env varName
+        if info.borrowCount > 0 || activeRefs.any (fun refInfo => match refInfo.ty with | .ref _ | .refMut _ => true | _ => false) then
           throw s!"cannot mutably borrow '{varName}': already borrowed"
         if info.mutBorrowed then
           throw s!"cannot mutably borrow '{varName}': already mutably borrowed"
         if !info.mutable then
           throw s!"cannot take mutable borrow of immutable variable '{varName}'"
-        let env ← getEnv
-        let vars' := env.vars.map fun (n, vi) =>
-          if n == varName then (n, { vi with mutBorrowed := true })
-          else (n, vi)
-        setEnv { env with vars := vars' }
       | none => throw s!"use of undeclared variable '{varName}'"
     | _ => pure ()
     return .refMut innerTy
@@ -1192,7 +1220,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
             let argTy ← checkExpr arg (some p.ty)
             expectTy p.ty argTy s!"argument '{p.name}' of '{methodName}'"
             match arg with
-            | .ident varName => consumeVar varName
+            | .ident varName => consumeVarIfExists varName
             | _ => pure ()
           return sig.retTy
       | _ => throw s!"method call on non-named type"
@@ -1217,7 +1245,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
         let argTy ← checkExpr arg (some pTy)
         expectTy pTy argTy s!"argument '{pName}' of '{methodName}'"
         match arg with
-        | .ident varName => consumeVar varName
+        | .ident varName => consumeVarIfExists varName
         | _ => pure ()
       return retTy
     | none => throw s!"no method '{methodName}' on type '{typeName}'"
@@ -1236,97 +1264,18 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
         let argTy ← checkExpr arg (some pTy)
         expectTy pTy argTy s!"argument '{pName}' of '{typeName}::{methodName}'"
         match arg with
-        | .ident varName => consumeVar varName
+        | .ident varName => consumeVarIfExists varName
         | _ => pure ()
       return retTy
     | none => throw s!"no method '{methodName}' on type '{typeName}'"
-  | .closure params capSet retTy body _captures _isLinear =>
+  | .fnRef fnName =>
+    -- Look up the function signature to build the fn pointer type
     let env ← getEnv
-    -- Determine expected types from hint (bidirectional inference)
-    let expectedParamTys : List Ty := match hint with
-      | some (.fn_ eTys _ _) => eTys
-      | _ => []
-    let expectedCapSet : Option CapSet := match hint with
-      | some (.fn_ _ eCapSet _) => some eCapSet
-      | _ => none
-    let expectedRetTy : Option Ty := match hint with
-      | some (.fn_ _ _ eRetTy) => some eRetTy
-      | _ => none
-    -- Resolve params: use explicit types or infer from hint
-    let mut resolvedParams : List Param := []
-    for (idx, p) in enumerateList params do
-      if p.ty == .unknown then
-        match listGetIdx expectedParamTys idx with
-        | some eTy => resolvedParams := resolvedParams ++ [{ name := p.name, ty := eTy }]
-        | none => throw s!"cannot infer type of closure parameter '{p.name}' without type context"
-      else
-        resolvedParams := resolvedParams ++ [{ name := p.name, ty := p.ty }]
-    -- Determine the return type
-    let closureRetTy := match retTy with
-      | some t => t
-      | none => match expectedRetTy with
-        | some t => t
-        | none => .unit
-    -- Determine capabilities
-    let closureCapSet := if capSet != .empty then capSet
-      else match expectedCapSet with
-        | some cs => cs
-        | none => .empty
-    -- Analyze captures: find free variables in the body
-    let paramNames := resolvedParams.map (fun p => p.name)
-    let freeVars := collectFreeVars body paramNames
-    let mut captureList : List (String × CaptureMode) := []
-    let mut closureIsLinear := false
-    for varName in freeVars do
-      match env.vars.lookup varName with
-      | some info =>
-        if info.isCopy then
-          captureList := captureList ++ [(varName, .copy)]
-        else
-          captureList := captureList ++ [(varName, .move)]
-          closureIsLinear := true
-          -- Mark the original variable as consumed
-          consumeVar varName
-      | none => pure ()  -- Must be a global function, ignore
-    -- Create a fresh scope for the closure body
-    let savedEnv ← getEnv
-    -- Add closure params as variables
-    for p in resolvedParams do
-      addVar p.name p.ty true
-    -- Add captures as variables in the closure scope
-    for (capName, capMode) in captureList do
-      match savedEnv.vars.lookup capName with
-      | some info =>
-        let isCopy := capMode == .copy
-        let varInfo : VarInfo := {
-          ty := info.ty, state := .unconsumed, isCopy := isCopy,
-          loopDepth := 0, mutable := false
-        }
-        modify fun env => { env with vars := (capName, varInfo) :: env.vars }
-      | none => pure ()
-    -- Set capability context for the closure body
-    let bodyEnv ← getEnv
-    let env1 := { bodyEnv with currentCapSet := closureCapSet }
-    modify fun _ => { env1 with currentFnName := "<closure>", currentRetTy := closureRetTy }
-    -- Check the body
-    checkStmts body closureRetTy
-    -- Check unconsumed linear captures
-    let envAfter ← getEnv
-    for (capName, capMode) in captureList do
-      if capMode == .move then
-        match envAfter.vars.lookup capName with
-        | some info =>
-          if info.state != .consumed then
-            throw s!"linear capture '{capName}' was never consumed in closure"
-        | none => pure ()
-    -- Restore the environment (but keep consumed state for move-captures)
-    modify fun _ => savedEnv
-    -- Signal to letDecl that this closure is linear
-    if closureIsLinear then
-      modify fun env => { env with lastExprIsLinearClosure := true }
-    -- Build the function type
-    let paramTys := resolvedParams.map (fun p => p.ty)
-    return .fn_ paramTys closureCapSet closureRetTy
+    match env.allFnSigs.lookup fnName with
+    | some sig =>
+      let paramTys := sig.params.map Prod.snd
+      return .fn_ paramTys sig.capSet sig.retTy
+    | none => throw s!"unknown function '{fnName}' in function reference"
 
 partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
   match stmt with
@@ -1346,6 +1295,16 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
       | some t => resolveType t
       | none => pure valTy
     addVar name finalTy mutable
+    match value with
+    | .borrow (.ident sourceName) =>
+      modify fun env =>
+        { env with vars := env.vars.map fun (n, info) =>
+            if n == name then (n, { info with borrowedFrom := some sourceName }) else (n, info) }
+    | .borrowMut (.ident sourceName) =>
+      modify fun env =>
+        { env with vars := env.vars.map fun (n, info) =>
+            if n == name then (n, { info with borrowedFrom := some sourceName }) else (n, info) }
+    | _ => pure ()
   | .assign name value =>
     -- Escape analysis: prevent storing a borrow ref into an outer variable
     let env ← getEnv
@@ -1360,6 +1319,10 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
         throw s!"cannot assign to immutable variable '{name}'"
       if info.state == .frozen then
         throw s!"cannot assign to '{name}': variable is frozen by borrow block"
+      let env ← getEnv
+      let activeRefs := activeBorrowRefs env name
+      if activeRefs.any (fun refInfo => match refInfo.ty with | .ref _ | .refMut _ => true | _ => false) then
+        throw s!"cannot assign to '{name}': variable is borrowed"
       let valTy ← checkExpr value (some info.ty)
       expectTy info.ty valTy s!"assignment to '{name}'"
     | none => throw s!"assignment to undeclared variable '{name}'"
@@ -1534,9 +1497,9 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
       checkStmts body env.currentRetTy
       -- Clean up: remove ref from borrowRefs and unfreeze original variable
       let env' ← getEnv
-      let vars'' := env'.vars.map fun (n, vi) =>
+      let vars'' := (env'.vars.map fun (n, vi) =>
         if n == var then (n, { vi with state := savedState })
-        else (n, vi)
+        else (n, vi)).filter fun (n, _) => n != ref
       let cleanedRefs := env'.borrowRefs.filter (· != ref)
       setEnv { env' with vars := vars'', borrowRefs := cleanedRefs }
   | .arrowAssign obj field value =>
@@ -1545,8 +1508,8 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
       | .heap t => t
       | .heapArray t => t
       | .ref (.heap t) | .refMut (.heap t) => t
-      | _ => .unknown
-    if innerTy == .unknown then
+      | _ => .placeholder
+    if innerTy == .placeholder then
       throw s!"arrow assign '->' requires Heap<T> type, got {tyToString objTy}"
     let structName := match innerTy with
       | .named n => n
@@ -1684,10 +1647,19 @@ def checkFn (f : FnDef) : CheckM Unit := do
     paramNames := paramNames ++ [p.name]
   -- Check body
   checkStmts f.body retTy
-  -- Check linearity: only LOCAL let-bindings of linear type must be consumed.
+  -- Check local bindings, plus generic by-value params whose linearity is otherwise erased.
   let envAfter ← getEnv
   let localVars := envAfter.vars.filter fun (name, _) =>
-    !paramNames.contains name && (envBefore.vars.lookup name).isNone
+    match envBefore.vars.lookup name with
+    | some _ => false
+    | none =>
+      if paramNames.contains name then
+        -- For params with generic types, only flag if completely untouched (.unconsumed).
+        -- .used is acceptable — the function used the parameter (borrowed, field-accessed, etc).
+        match envAfter.vars.lookup name with
+        | some info => tyContainsTypeVar info.ty && info.state == .unconsumed
+        | none => false
+      else true
   let localNames := localVars.map fun (name, _) => name
   checkScopeExit localNames
   -- Restore env (remove this function's locals)
@@ -1793,6 +1765,12 @@ def checkModule (m : Module) (importedFnSigs : List (String × FnSig) := [])
   let fnNames : List (String × Nat) :=
     (enumerateList m.functions).map fun (idx, f) => (f.name, baseOffset + idx)
   let allNames := importedNames ++ fnNames ++ builtinNames ++ externNames ++ submoduleNames ++ implNames
+  -- Build named function signature map for fnRef resolution
+  let fnSigPairs : List (String × FnSig) :=
+    (m.functions.map fun f => (f.name, { params := f.params.map fun p => (p.name, p.ty),
+                                          retTy := f.retTy, typeParams := f.typeParams,
+                                          capParams := f.capParams, capSet := f.capSet })) ++
+    (implMethodSigs ++ traitImplMethodSigs)
   let allStructs := importedStructs ++ m.structs
   -- Built-in Option<T> enum (Some { value: T }, None {})
   let builtinOptionEnum : EnumDef := {
@@ -1814,7 +1792,7 @@ def checkModule (m : Module) (importedFnSigs : List (String × FnSig) := [])
   let initEnv : TypeEnv :=
     { vars := [], structs := allStructs, enums := allEnums, functions := allSigs,
       fnNames := allNames, loopDepth := 0, typeAliases := typeAliasMap, constants := constantsMap,
-      traitImpls := traitImplPairs }
+      traitImpls := traitImplPairs, allFnSigs := fnSigPairs }
   -- Helper: check if a type is copy (pure context, uses struct/enum defs)
   let isCopyTyPure : Ty → Bool := fun ty =>
     match ty with

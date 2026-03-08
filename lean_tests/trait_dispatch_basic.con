@@ -3,7 +3,7 @@ trait Describe {
     fn describe(&self) -> Int;
 }
 
-struct Point { x: Int, y: Int }
+struct Copy Point { x: Int, y: Int }
 
 impl Describe for Point {
     fn describe(&self) -> Int {

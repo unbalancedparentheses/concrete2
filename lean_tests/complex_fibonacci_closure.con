@@ -1,4 +1,4 @@
-// Test: fibonacci via closure + while loop
+// Test: fibonacci via function pointer + while loop
 // Expected: 55
 fn apply(f: fn(Int) -> Int, x: Int) -> Int {
     return f(x);
@@ -17,7 +17,6 @@ fn fib(n: Int) -> Int {
     return a;
 }
 
-fn main!() -> Int {
-    let f: fn(Int) -> Int = fn(n: Int) -> Int { return fib(n); };
-    return apply(f, 10);
+fn main() -> Int {
+    return apply(fib, 10);
 }

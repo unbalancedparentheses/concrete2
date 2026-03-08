@@ -3,8 +3,8 @@ trait Measure {
     fn measure(&self) -> Int;
 }
 
-struct Box { w: Int, h: Int }
-struct Circle { radius: Int }
+struct Copy Box { w: Int, h: Int }
+struct Copy Circle { radius: Int }
 
 impl Measure for Box {
     fn measure(&self) -> Int {

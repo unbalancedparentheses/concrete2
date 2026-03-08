@@ -74,6 +74,7 @@ run_ok "$TESTDIR/enum_linear.con"       42
 run_ok "$TESTDIR/borrow_read.con"      10
 run_ok "$TESTDIR/borrow_mut.con"       42
 run_ok "$TESTDIR/borrow_no_consume.con" 42
+run_ok "$TESTDIR/sequential_mut_borrow.con" 43
 run_ok "$TESTDIR/generic_fn.con"       42
 run_ok "$TESTDIR/generic_struct.con"   30
 run_ok "$TESTDIR/string_basic.con"    5
@@ -98,12 +99,6 @@ run_ok "$TESTDIR/break_basic.con"  5
 run_ok "$TESTDIR/continue_basic.con" 25
 run_ok "$TESTDIR/break_for.con"    10
 run_ok "$TESTDIR/continue_for.con" 27
-run_ok "$TESTDIR/closure_basic.con" 42
-run_ok "$TESTDIR/closure_capture_copy.con" 52
-run_ok "$TESTDIR/closure_capture_move.con" 30
-run_ok "$TESTDIR/closure_multiple_captures.con" 60
-run_ok "$TESTDIR/closure_nested.con" 15
-run_ok "$TESTDIR/closure_no_capture.con" 100
 # Phase 3: defer/destroy/Copy
 run_ok "$TESTDIR/defer_basic.con" 10
 run_ok "$TESTDIR/defer_lifo.con" 42
@@ -172,10 +167,6 @@ run_ok "$TESTDIR/while_nested_break.con" 6
 # Additional capability tests
 run_ok "$TESTDIR/cap_std_expand.con" 0
 run_ok "$TESTDIR/cap_nested_call.con" 42
-
-# Additional closure tests
-run_ok "$TESTDIR/closure_higher_order.con" 15
-run_ok "$TESTDIR/closure_identity.con" 42
 
 # Additional defer/Copy tests
 run_ok "$TESTDIR/defer_nested_scope.con" 42
@@ -267,10 +258,11 @@ run_err "$TESTDIR/error_enum_nonexhaustive.con"   "non-exhaustive match"
 run_err "$TESTDIR/error_enum_match_disagree.con"   "match arms disagree"
 run_err "$TESTDIR/error_enum_unknown_variant.con"  "unknown variant"
 run_err "$TESTDIR/error_borrow_after_move.con"    "used after move"
-run_err "$TESTDIR/error_double_mut_borrow.con"    "already mutably borrowed"
+run_err "$TESTDIR/error_linear_used_not_consumed.con" "was never consumed"
 run_err "$TESTDIR/error_deref_non_ref.con"        "cannot dereference"
 run_err "$TESTDIR/error_generic_count.con"       "expects 2 arguments"
 run_err "$TESTDIR/error_generic_type.con"        "type mismatch"
+run_err "$TESTDIR/error_generic_unused_linear.con" "was never consumed"
 run_err "$TESTDIR/error_string_unconsumed.con"   "was never consumed"
 run_err "$TESTDIR/error_try_non_result.con"      "requires a Result enum"
 run_err "$TESTDIR/error_try_wrong_return.con"    "function must return same Result type"
@@ -285,10 +277,9 @@ run_err "$TESTDIR/error_trait_wrong_sig.con"     "signature does not match"
 run_err "$TESTDIR/error_cap_pure.con"            "requires capability"
 run_err "$TESTDIR/error_cap_propagation.con"     "requires capability"
 run_err "$TESTDIR/error_cap_method.con"          "requires capability"
+run_err "$TESTDIR/error_cap_poly_inline.con"     "requires capability"
 run_err "$TESTDIR/error_break_outside.con"       "break outside of loop"
 run_err "$TESTDIR/error_continue_outside.con"    "continue outside of loop"
-run_err "$TESTDIR/error_closure_uncalled.con"    "was never consumed"
-run_err "$TESTDIR/error_closure_use_after_move.con" "used after move"
 # Phase 3: defer/destroy/Copy errors
 run_err "$TESTDIR/error_defer_move.con"          "reserved by defer"
 run_err "$TESTDIR/error_copy_destroy.con"        "implements Destroy and cannot be Copy"
@@ -305,6 +296,7 @@ run_err "$TESTDIR/error_borrow_escape.con"     "cannot escape its borrow block"
 run_err "$TESTDIR/error_borrow_frozen.con"     "is frozen by borrow block"
 run_err "$TESTDIR/error_borrow_shadow.con"     "shadows existing name"
 run_err "$TESTDIR/error_borrow_mut_conflict.con" "is frozen by borrow block"
+run_err "$TESTDIR/error_named_ref_mut_conflict.con" "already borrowed"
 # Additional escape analysis errors
 run_err "$TESTDIR/error_escape_return.con"     "cannot escape its borrow block"
 run_err "$TESTDIR/error_escape_field.con"      "cannot escape its borrow block"
@@ -312,10 +304,6 @@ run_err "$TESTDIR/error_escape_field.con"      "cannot escape its borrow block"
 run_err "$TESTDIR/error_while_expr_type.con"   "does not match else type"
 # Additional break/continue errors
 run_err "$TESTDIR/error_break_linear_skip.con" "break would skip unconsumed linear variable"
-# Additional closure errors
-run_err "$TESTDIR/error_closure_double_call.con" "used after move"
-# Additional capability errors
-run_err "$TESTDIR/error_cap_closure_context.con" "requires capability"
 # Additional borrow errors
 run_err "$TESTDIR/error_borrow_double_mut.con"   "is frozen by borrow block"
 run_err "$TESTDIR/error_borrow_assign_frozen.con" "frozen by borrow block"

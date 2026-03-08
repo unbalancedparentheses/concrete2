@@ -61,16 +61,11 @@ inductive Ty where
   | array (elem : Ty) (size : Nat)            -- [T; N]
   | ptrMut (inner : Ty)   -- *mut T
   | ptrConst (inner : Ty) -- *const T
-  | fn_ (params : List Ty) (capSet : CapSet) (retTy : Ty)  -- fn(T, U) with(C) -> R
+  | fn_ (params : List Ty) (capSet : CapSet) (retTy : Ty)  -- fn(T, U) with(C) -> R  (function pointer, no captures)
   | never     -- bottom type (abort, unreachable)
   | heap (inner : Ty)       -- Heap<T> (pointer to heap-allocated T)
   | heapArray (inner : Ty)  -- HeapArray<T>
-  | unknown  -- placeholder for untyped closure params, resolved by checker
-  deriving Repr, BEq
-
-inductive CaptureMode where
-  | copy    -- value is copied, original stays live
-  | move    -- value is moved, original is consumed
+  | placeholder             -- internal placeholder during checking/inference
   deriving Repr, BEq
 
 inductive BinOp where
@@ -114,8 +109,7 @@ inductive Expr where
   | cast (inner : Expr) (targetTy : Ty)       -- expr as Type
   | methodCall (obj : Expr) (method : String) (typeArgs : List Ty) (args : List Expr)
   | staticMethodCall (typeName method : String) (typeArgs : List Ty) (args : List Expr)
-  | closure (params : List Param) (capSet : CapSet) (retTy : Option Ty) (body : List Stmt)
-            (captures : List (String × CaptureMode)) (isLinear : Bool)
+  | fnRef (name : String)                      -- function reference: double (as a value of fn pointer type)
   | arrowAccess (obj : Expr) (field : String)   -- p->x
   | allocCall (inner : Expr) (allocExpr : Expr)  -- call() with(Alloc = expr)
   | whileExpr (cond : Expr) (body : List Stmt) (elseBody : List Stmt)  -- while cond { body } else { elseBody }
@@ -294,9 +288,7 @@ partial def collectFreeVarsExpr (e : Expr) (bound : List String) : List String :
     collectFreeVarsExpr obj bound ++ args.flatMap (fun a => collectFreeVarsExpr a bound)
   | .staticMethodCall _ _ _ args =>
     args.flatMap (fun a => collectFreeVarsExpr a bound)
-  | .closure params _ _ body _ _ =>
-    let closureBound := bound ++ params.map (fun p => p.name)
-    collectFreeVarsStmts body closureBound
+  | .fnRef _ => []
   | .arrowAccess obj _ => collectFreeVarsExpr obj bound
   | .allocCall inner allocExpr =>
     collectFreeVarsExpr inner bound ++ collectFreeVarsExpr allocExpr bound

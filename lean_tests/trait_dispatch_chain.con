@@ -3,7 +3,7 @@ trait Summable {
     fn total(&self) -> Int;
 }
 
-struct Pair { a: Int, b: Int }
+struct Copy Pair { a: Int, b: Int }
 
 impl Summable for Pair {
     fn total(&self) -> Int {

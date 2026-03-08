@@ -1,4 +1,4 @@
-// Complex test: loops with break/continue, closures, and arrays
+// Complex test: loops with break/continue and arrays
 fn main() -> Int {
     let mut arr: [Int; 5] = [10, 20, 30, 40, 50];
     let mut sum: Int = 0;

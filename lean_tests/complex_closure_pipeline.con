@@ -1,13 +1,13 @@
-// Complex test: closure pipeline — chain multiple closures
-fn apply<T, U, cap C>(f: fn(T) with(C) -> U, x: T) with(C) -> U {
+// Complex test: function pointer pipeline — chain multiple function pointers
+fn apply(f: fn(Int) -> Int, x: Int) -> Int {
     return f(x);
 }
 
-fn main() -> Int {
-    let add10: fn(Int) -> Int = fn(x: Int) -> Int { return x + 10; };
-    let mul2: fn(Int) -> Int = fn(x: Int) -> Int { return x * 2; };
-    let sub3: fn(Int) -> Int = fn(x: Int) -> Int { return x - 3; };
+fn add10(x: Int) -> Int { return x + 10; }
+fn mul2(x: Int) -> Int { return x * 2; }
+fn sub3(x: Int) -> Int { return x - 3; }
 
+fn main() -> Int {
     // Pipeline: 5 -> +10 = 15 -> *2 = 30 -> -3 = 27
     let step1: Int = apply(add10, 5);
     let step2: Int = apply(mul2, step1);

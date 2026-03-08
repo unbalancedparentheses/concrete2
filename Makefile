@@ -5,7 +5,7 @@ NIX_DEVELOP = XDG_CACHE_HOME=$(CURDIR)/.cache nix --extra-experimental-features 
 build:
 	$(NIX_DEVELOP) lake build
 
-test:
+test: build
 	$(NIX_DEVELOP) sh ./run_tests.sh
 
 clean:
