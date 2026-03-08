@@ -1,0 +1,8 @@
+// Error: read_file requires File capability
+fn main() -> Int {
+    let path: String = "/tmp/test.txt";
+    let data: String = read_file(&path);
+    drop_string(data);
+    drop_string(path);
+    return 0;
+}

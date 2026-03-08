@@ -1724,7 +1724,9 @@ def checkModule (m : Module) (importedFnSigs : List (String × FnSig) := [])
     { params := [("s", .ref .string)], retTy := .unit },
     { params := [("s", .string)], retTy := .unit },
     { params := [("x", .int)], retTy := .unit, capSet := .concrete ["Console"] },
-    { params := [("x", .bool)], retTy := .unit, capSet := .concrete ["Console"] }
+    { params := [("x", .bool)], retTy := .unit, capSet := .concrete ["Console"] },
+    { params := [("path", .ref .string)], retTy := .string, capSet := .concrete ["File"] },
+    { params := [("path", .ref .string), ("data", .ref .string)], retTy := .int, capSet := .concrete ["File"] }
   ]
   let builtinOffset := baseOffset + fnSigs.length
   let builtinNames : List (String × Nat) := [
@@ -1733,7 +1735,9 @@ def checkModule (m : Module) (importedFnSigs : List (String × FnSig) := [])
     ("print_string", builtinOffset + 2),
     ("drop_string", builtinOffset + 3),
     ("print_int", builtinOffset + 4),
-    ("print_bool", builtinOffset + 5)
+    ("print_bool", builtinOffset + 5),
+    ("read_file", builtinOffset + 6),
+    ("write_file", builtinOffset + 7)
   ]
   -- Add submodule functions/extern fns with qualified names (mod_fn)
   let submoduleSigs : List FnSig := m.submodules.foldl (fun acc (sub : Module) =>

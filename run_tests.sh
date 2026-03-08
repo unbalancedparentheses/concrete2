@@ -246,6 +246,10 @@ run_ok "$TESTDIR/heap_deref_recursive.con" 42
 run_ok "$TESTDIR/option_basic.con" 52
 run_ok "$TESTDIR/option_heap.con" 42
 
+# Phase 11: File I/O builtins
+run_ok "$TESTDIR/file_write_read.con" 5
+run_ok "$TESTDIR/file_read_basic.con" 12
+
 # Phase 10: Monomorphized trait dispatch
 run_ok "$TESTDIR/trait_dispatch_basic.con" 30
 run_ok "$TESTDIR/trait_dispatch_multi.con" 47
@@ -331,6 +335,8 @@ run_err "$TESTDIR/error_label_not_loop.con" "label can only precede while or for
 run_err "$TESTDIR/error_trait_bound_missing.con" "does not implement trait"
 # Trait dispatch errors
 run_err "$TESTDIR/error_trait_dispatch_missing.con" "no method"
+# File I/O errors
+run_err "$TESTDIR/error_file_no_cap.con" "requires capability"
 
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="

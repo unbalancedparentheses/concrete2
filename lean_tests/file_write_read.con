@@ -1,0 +1,12 @@
+// File I/O: write a string to a file, read it back, check length
+fn main!() -> Int {
+    let path: String = "/tmp/concrete_test_io.txt";
+    let data: String = "hello";
+    let written: Int = write_file(&path, &data);
+    drop_string(data);
+    let contents: String = read_file(&path);
+    let len: Int = string_length(&contents);
+    drop_string(contents);
+    drop_string(path);
+    return len;
+}

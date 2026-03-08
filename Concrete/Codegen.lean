@@ -2243,7 +2243,9 @@ def genModule (m : Module) : String :=
     ("print_string", Ty.unit),
     ("string_concat", Ty.string),
     ("print_int", Ty.unit),
-    ("print_bool", Ty.unit)
+    ("print_bool", Ty.unit),
+    ("read_file", Ty.string),
+    ("write_file", Ty.int)
   ]
   let implRetTypes := m.implBlocks.foldl (fun acc ib =>
     acc ++ ib.methods.map fun f => (ib.typeName ++ "_" ++ f.name, f.retTy)
@@ -2299,6 +2301,13 @@ def genModule (m : Module) : String :=
   let s := s.emit "declare i64 @write(i32, ptr, i64)"
   let s := s.emit "declare void @abort()"
   let s := s.emit "declare i32 @printf(ptr, ...)"
+  -- C file I/O declarations
+  let s := s.emit "declare ptr @fopen(ptr, ptr)"
+  let s := s.emit "declare i64 @fread(ptr, i64, i64, ptr)"
+  let s := s.emit "declare i64 @fwrite(ptr, i64, i64, ptr)"
+  let s := s.emit "declare i32 @fclose(ptr)"
+  let s := s.emit "declare i32 @fseek(ptr, i64, i32)"
+  let s := s.emit "declare i64 @ftell(ptr)"
   -- Extern function declarations from the source
   let s := m.externFns.foldl (fun s ef =>
     let retLLTy := tyToLLVM s ef.retTy
@@ -2353,6 +2362,75 @@ def genModule (m : Module) : String :=
   let s := s.emit "  br label %done_br"
   let s := s.emit "done_br:"
   let s := s.emit "  ret void"
+  let s := s.emit "}"
+  let s := s.emit ""
+  -- read_file(path: &String) -> String
+  -- Opens file with fopen, seeks to get size, reads contents, returns String{ptr, len}
+  let s := s.emit "@.read_mode = private constant [2 x i8] c\"r\\00\""
+  let s := s.emit "@.write_mode = private constant [2 x i8] c\"w\\00\""
+  let s := s.emit ""
+  let s := s.emit "define %struct.String @read_file(ptr %path) {"
+  let s := s.emit "  ; Extract path data from String struct"
+  let s := s.emit "  %path_data_ptr = getelementptr inbounds %struct.String, ptr %path, i32 0, i32 0"
+  let s := s.emit "  %path_data = load ptr, ptr %path_data_ptr"
+  let s := s.emit "  %path_len_ptr = getelementptr inbounds %struct.String, ptr %path, i32 0, i32 1"
+  let s := s.emit "  %path_len = load i64, ptr %path_len_ptr"
+  let s := s.emit "  ; Allocate null-terminated copy for fopen()"
+  let s := s.emit "  %path_buf_sz = add i64 %path_len, 1"
+  let s := s.emit "  %path_buf = call ptr @malloc(i64 %path_buf_sz)"
+  let s := s.emit "  call void @llvm.memcpy.p0.p0.i64(ptr %path_buf, ptr %path_data, i64 %path_len, i1 false)"
+  let s := s.emit "  %null_pos = getelementptr i8, ptr %path_buf, i64 %path_len"
+  let s := s.emit "  store i8 0, ptr %null_pos"
+  let s := s.emit "  ; Open file for reading"
+  let s := s.emit "  %mode_r = getelementptr [2 x i8], ptr @.read_mode, i64 0, i64 0"
+  let s := s.emit "  %fp = call ptr @fopen(ptr %path_buf, ptr %mode_r)"
+  let s := s.emit "  call void @free(ptr %path_buf)"
+  let s := s.emit "  ; Seek to end to get file size (SEEK_END = 2)"
+  let s := s.emit "  %seek1 = call i32 @fseek(ptr %fp, i64 0, i32 2)"
+  let s := s.emit "  %size = call i64 @ftell(ptr %fp)"
+  let s := s.emit "  ; Seek back to start (SEEK_SET = 0)"
+  let s := s.emit "  %seek2 = call i32 @fseek(ptr %fp, i64 0, i32 0)"
+  let s := s.emit "  ; Allocate buffer and read"
+  let s := s.emit "  %buf = call ptr @malloc(i64 %size)"
+  let s := s.emit "  %bytes_read = call i64 @fread(ptr %buf, i64 1, i64 %size, ptr %fp)"
+  let s := s.emit "  %unused_close = call i32 @fclose(ptr %fp)"
+  let s := s.emit "  ; Build String struct {ptr, len}"
+  let s := s.emit "  %str_alloca = alloca %struct.String"
+  let s := s.emit "  %str_data_ptr = getelementptr inbounds %struct.String, ptr %str_alloca, i32 0, i32 0"
+  let s := s.emit "  store ptr %buf, ptr %str_data_ptr"
+  let s := s.emit "  %str_len_ptr = getelementptr inbounds %struct.String, ptr %str_alloca, i32 0, i32 1"
+  let s := s.emit "  store i64 %bytes_read, ptr %str_len_ptr"
+  let s := s.emit "  %result = load %struct.String, ptr %str_alloca"
+  let s := s.emit "  ret %struct.String %result"
+  let s := s.emit "}"
+  let s := s.emit ""
+  -- write_file(path: &String, data: &String) -> Int
+  -- Opens/creates file with fopen("w"), writes data, returns bytes written
+  let s := s.emit "define i64 @write_file(ptr %path, ptr %data) {"
+  let s := s.emit "  ; Extract path"
+  let s := s.emit "  %wf_path_data_ptr = getelementptr inbounds %struct.String, ptr %path, i32 0, i32 0"
+  let s := s.emit "  %wf_path_data = load ptr, ptr %wf_path_data_ptr"
+  let s := s.emit "  %wf_path_len_ptr = getelementptr inbounds %struct.String, ptr %path, i32 0, i32 1"
+  let s := s.emit "  %wf_path_len = load i64, ptr %wf_path_len_ptr"
+  let s := s.emit "  ; Null-terminated copy"
+  let s := s.emit "  %wf_buf_sz = add i64 %wf_path_len, 1"
+  let s := s.emit "  %wf_buf = call ptr @malloc(i64 %wf_buf_sz)"
+  let s := s.emit "  call void @llvm.memcpy.p0.p0.i64(ptr %wf_buf, ptr %wf_path_data, i64 %wf_path_len, i1 false)"
+  let s := s.emit "  %wf_null_pos = getelementptr i8, ptr %wf_buf, i64 %wf_path_len"
+  let s := s.emit "  store i8 0, ptr %wf_null_pos"
+  let s := s.emit "  ; Open file for writing"
+  let s := s.emit "  %mode_w = getelementptr [2 x i8], ptr @.write_mode, i64 0, i64 0"
+  let s := s.emit "  %wf_fp = call ptr @fopen(ptr %wf_buf, ptr %mode_w)"
+  let s := s.emit "  call void @free(ptr %wf_buf)"
+  let s := s.emit "  ; Extract data"
+  let s := s.emit "  %wf_data_ptr = getelementptr inbounds %struct.String, ptr %data, i32 0, i32 0"
+  let s := s.emit "  %wf_data_buf = load ptr, ptr %wf_data_ptr"
+  let s := s.emit "  %wf_data_len_ptr = getelementptr inbounds %struct.String, ptr %data, i32 0, i32 1"
+  let s := s.emit "  %wf_data_len = load i64, ptr %wf_data_len_ptr"
+  let s := s.emit "  ; Write data"
+  let s := s.emit "  %wf_written = call i64 @fwrite(ptr %wf_data_buf, i64 1, i64 %wf_data_len, ptr %wf_fp)"
+  let s := s.emit "  %wf_unused = call i32 @fclose(ptr %wf_fp)"
+  let s := s.emit "  ret i64 %wf_written"
   let s := s.emit "}"
   let s := s.emit ""
   -- Impl block methods
