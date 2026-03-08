@@ -10,7 +10,7 @@ No linearity checking, no borrow checking, no capability validation.
 -/
 
 -- ============================================================
--- Elaboration function signature (reused from Check.lean's FnSig)
+-- Elaboration function signature
 -- ============================================================
 
 structure ElabFnSig where
@@ -37,27 +37,810 @@ structure ElabEnv where
   currentRetTy : Ty := .unit
   currentImplType : Option Ty := none
   traits : List TraitDef := []
+  allFnSigPairs : List (String × ElabFnSig) := []
 
 abbrev ElabM := ExceptT String (StateM ElabEnv)
 
-private def getEnv : ElabM ElabEnv := do
-  return (← get)
-
-private def setEnv (env : ElabEnv) : ElabM Unit :=
-  set env
-
-private def throwElab (msg : String) : ElabM α :=
-  throw msg
+private def getEnv : ElabM ElabEnv := get
+private def setEnv (env : ElabEnv) : ElabM Unit := set env
 
 -- ============================================================
--- Stub functions (Phase 1 — all return "not yet implemented")
+-- Helpers
 -- ============================================================
+
+private def isIntegerType : Ty → Bool
+  | .int | .uint | .i8 | .i16 | .i32 | .u8 | .u16 | .u32 => true
+  | _ => false
+
+private def isFloatType : Ty → Bool
+  | .float32 | .float64 => true
+  | _ => false
+
+private def isPointerType : Ty → Bool
+  | .ptrMut _ | .ptrConst _ => true
+  | _ => false
+
+private def resolveTypeE (ty : Ty) : ElabM Ty := do
+  match ty with
+  | .named name =>
+    let env ← getEnv
+    if name == "Self" then
+      match env.currentImplType with
+      | some t => return t
+      | none => throw "Self can only be used inside impl blocks"
+    else if env.currentTypeParams.contains name then return .typeVar name
+    else
+      match env.typeAliases.lookup name with
+      | some resolved => return resolved
+      | none => return ty
+  | .ref inner => return .ref (← resolveTypeE inner)
+  | .refMut inner => return .refMut (← resolveTypeE inner)
+  | .ptrMut inner => return .ptrMut (← resolveTypeE inner)
+  | .ptrConst inner => return .ptrConst (← resolveTypeE inner)
+  | .array elem n => return .array (← resolveTypeE elem) n
+  | .generic "Heap" [inner] => return .heap (← resolveTypeE inner)
+  | .generic "HeapArray" [inner] => return .heapArray (← resolveTypeE inner)
+  | .generic name args => return .generic name (← args.mapM resolveTypeE)
+  | .fn_ params capSet retTy =>
+    return .fn_ (← params.mapM resolveTypeE) capSet (← resolveTypeE retTy)
+  | _ => return ty
+
+private def lookupVar (name : String) : ElabM (Option Ty) := do
+  let env ← getEnv
+  return env.vars.lookup name
+
+private def lookupFnSig (name : String) : ElabM (Option ElabFnSig) := do
+  let env ← getEnv
+  return (env.fnSigs.find? fun (n, _) => n == name).map Prod.snd
+
+private def lookupStruct (name : String) : ElabM (Option StructDef) := do
+  let env ← getEnv
+  return env.structs.find? fun sd => sd.name == name
+
+private def lookupEnum (name : String) : ElabM (Option EnumDef) := do
+  let env ← getEnv
+  return env.enums.find? fun ed => ed.name == name
+
+private def addVar (name : String) (ty : Ty) : ElabM Unit := do
+  let env ← getEnv
+  setEnv { env with vars := (name, ty) :: env.vars }
+
+/-- Substitute type variables in a type. -/
+private def substTy (mapping : List (String × Ty)) : Ty → Ty
+  | .named name => match mapping.lookup name with | some t => t | none => .named name
+  | .typeVar name => match mapping.lookup name with | some t => t | none => .typeVar name
+  | .ref inner => .ref (substTy mapping inner)
+  | .refMut inner => .refMut (substTy mapping inner)
+  | .ptrMut inner => .ptrMut (substTy mapping inner)
+  | .ptrConst inner => .ptrConst (substTy mapping inner)
+  | .array elem n => .array (substTy mapping elem) n
+  | .generic name args => .generic name (args.map (substTy mapping))
+  | .fn_ params capSet retTy => .fn_ (params.map (substTy mapping)) capSet (substTy mapping retTy)
+  | .heap inner => .heap (substTy mapping inner)
+  | .heapArray inner => .heapArray (substTy mapping inner)
+  | ty => ty
+
+/-- Resolve Self to concrete impl type in a type. -/
+private def resolveSelf : Ty → Ty → Ty
+  | .named "Self", implTy => implTy
+  | .ref inner, implTy => .ref (resolveSelf inner implTy)
+  | .refMut inner, implTy => .refMut (resolveSelf inner implTy)
+  | .ptrMut inner, implTy => .ptrMut (resolveSelf inner implTy)
+  | .ptrConst inner, implTy => .ptrConst (resolveSelf inner implTy)
+  | .generic name args, implTy => .generic name (args.map (resolveSelf · implTy))
+  | .array elem n, implTy => .array (resolveSelf elem implTy) n
+  | .fn_ params cs ret, implTy => .fn_ (params.map (resolveSelf · implTy)) cs (resolveSelf ret implTy)
+  | .heap inner, implTy => .heap (resolveSelf inner implTy)
+  | .heapArray inner, implTy => .heapArray (resolveSelf inner implTy)
+  | other, _ => other
+
+/-- Unify a pattern type with an actual type to discover type variable bindings. -/
+private partial def unifyTypes (pattern actual : Ty) (typeParams : List String) : List (String × Ty) :=
+  match pattern with
+  | .named name => if typeParams.contains name then [(name, actual)] else []
+  | .typeVar name => if typeParams.contains name then [(name, actual)] else []
+  | .ref inner => match actual with
+    | .ref a => unifyTypes inner a typeParams
+    | _ => []
+  | .refMut inner => match actual with
+    | .refMut a => unifyTypes inner a typeParams
+    | _ => []
+  | .generic _ pArgs => match actual with
+    | .generic _ aArgs =>
+      (pArgs.zip aArgs).foldl (fun acc (pp, ap) => acc ++ unifyTypes pp ap typeParams) []
+    | _ => []
+  | .heap inner => match actual with
+    | .heap a => unifyTypes inner a typeParams
+    | _ => []
+  | .array elem _ => match actual with
+    | .array aElem _ => unifyTypes elem aElem typeParams
+    | _ => []
+  | .fn_ pParams _ pRet => match actual with
+    | .fn_ aParams _ aRet =>
+      let pb := (pParams.zip aParams).foldl (fun acc (pp, ap) => acc ++ unifyTypes pp ap typeParams) []
+      pb ++ unifyTypes pRet aRet typeParams
+    | _ => []
+  | _ => []
+
+/-- Peek at an expression's type without any side effects, for type inference. -/
+private partial def peekExprType (e : Expr) : ElabM Ty := do
+  match e with
+  | .intLit _ => return .int
+  | .floatLit _ => return .float64
+  | .boolLit _ => return .bool
+  | .strLit _ => return .string
+  | .charLit _ => return .char
+  | .ident name =>
+    let env ← getEnv
+    match env.constants.lookup name with
+    | some ty => return ty
+    | none =>
+    match env.vars.lookup name with
+    | some ty => return ty
+    | none =>
+      match ← lookupFnSig name with
+      | some sig =>
+        let paramTys := sig.params.map Prod.snd
+        return .fn_ paramTys sig.capSet sig.retTy
+      | none => return .placeholder
+  | .structLit name typeArgs _ =>
+    if typeArgs.isEmpty then return .named name else return .generic name typeArgs
+  | .enumLit enumName _ typeArgs _ =>
+    if typeArgs.isEmpty then return .named enumName else return .generic enumName typeArgs
+  | .fnRef name =>
+    let env ← getEnv
+    match env.allFnSigPairs.lookup name with
+    | some sig => return .fn_ (sig.params.map Prod.snd) sig.capSet sig.retTy
+    | none => return .placeholder
+  | .paren inner => peekExprType inner
+  | _ => return .placeholder
+
+-- ============================================================
+-- Core elaboration
+-- ============================================================
+
+mutual
 
 partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
-  throwElab "elabExpr not yet implemented"
+  match e with
+  | .intLit v =>
+    let ty := match hint with
+      | some ty =>
+        let tyR := ty  -- skip resolve in elab for perf; already resolved at let/call sites
+        if isIntegerType tyR || tyR == .char then tyR
+        else match tyR with | .typeVar _ => tyR | _ => .int
+      | none => .int
+    return .intLit v ty
+  | .floatLit v =>
+    let ty := match hint with
+      | some ty => if isFloatType ty then ty else .float64
+      | none => .float64
+    return .floatLit v ty
+  | .boolLit b => return .boolLit b
+  | .strLit s => return .strLit s
+  | .charLit c => return .charLit c
 
-partial def elabStmt (_stmt : Stmt) : ElabM (List CStmt) := do
-  throwElab "elabStmt not yet implemented"
+  | .ident name =>
+    let env ← getEnv
+    match env.constants.lookup name with
+    | some ty => return .ident name ty
+    | none =>
+    match env.vars.lookup name with
+    | some ty => return .ident name ty
+    | none =>
+      match ← lookupFnSig name with
+      | some sig =>
+        let paramTys := sig.params.map Prod.snd
+        return .ident name (.fn_ paramTys sig.capSet sig.retTy)
+      | none => throw s!"use of undeclared variable '{name}'"
+
+  | .paren inner => elabExpr inner hint
+
+  | .binOp op lhs rhs =>
+    let cLhs ← elabExpr lhs hint
+    let lTy := cLhs.ty
+    let cRhs ← elabExpr rhs (some lTy)
+    let resultTy := match op with
+      | .eq | .neq | .lt | .gt | .leq | .geq => .bool
+      | .and_ | .or_ => .bool
+      | _ => lTy
+    return .binOp op cLhs cRhs resultTy
+
+  | .unaryOp op operand =>
+    let cOp ← elabExpr operand hint
+    let resultTy := match op with
+      | .not_ => Ty.bool
+      | _ => cOp.ty
+    return .unaryOp op cOp resultTy
+
+  | .arrowAccess obj field =>
+    -- Desugar: p->field → (*p).field
+    let cObj ← elabExpr obj
+    let objTy := cObj.ty
+    let innerTy := match objTy with
+      | .heap t => t | .heapArray t => t
+      | .ref (.heap t) => t | .refMut (.heap t) => t
+      | _ => .placeholder
+    let derefTy := innerTy
+    let cDeref := CExpr.deref cObj derefTy
+    let structName := match innerTy with
+      | .named n => n | .generic n _ => n | _ => ""
+    match ← lookupStruct structName with
+    | some sd =>
+      let typeArgs := match innerTy with | .generic _ args => args | _ => []
+      let mapping := sd.typeParams.zip typeArgs
+      match sd.fields.find? fun f => f.name == field with
+      | some f =>
+        let fieldTy := substTy mapping f.ty
+        let fieldTy ← resolveTypeE fieldTy
+        return .fieldAccess cDeref field fieldTy
+      | none => throw s!"struct '{structName}' has no field '{field}'"
+    | none => throw s!"arrow access on unknown struct type '{structName}'"
+
+  | .allocCall inner allocExpr =>
+    let cInner ← elabExpr inner hint
+    let cAlloc ← elabExpr allocExpr
+    return .allocCall cInner cAlloc cInner.ty
+
+  | .whileExpr cond body elseBody =>
+    let cCond ← elabExpr cond
+    let cBody ← elabStmts body
+    let cElse ← elabStmts elseBody
+    -- Result type comes from else body (last expression)
+    let resultTy := match hint with | some t => t | none => .unit
+    return .whileExpr cCond cBody cElse resultTy
+
+  | .call fnName typeArgs args =>
+    elabCall fnName typeArgs args hint
+
+  | .structLit name typeArgs fields =>
+    match ← lookupStruct name with
+    | some sd =>
+      let mapping := sd.typeParams.zip typeArgs
+      let mut cFields : List (String × CExpr) := []
+      for sf in sd.fields do
+        let fieldTy := substTy mapping sf.ty
+        match fields.find? fun (fn, _) => fn == sf.name with
+        | some (_, expr) =>
+          let cExpr ← elabExpr expr (some fieldTy)
+          cFields := cFields ++ [(sf.name, cExpr)]
+        | none => pure ()  -- union partial init
+      let resultTy := if typeArgs.isEmpty then Ty.named name else Ty.generic name typeArgs
+      return .structLit name typeArgs cFields resultTy
+    | none => throw s!"unknown struct type '{name}'"
+
+  | .fieldAccess obj field =>
+    let cObj ← elabExpr obj
+    let objTy := cObj.ty
+    let innerTy := match objTy with
+      | .ref t => t | .refMut t => t | t => t
+    let (structName, typeArgs) := match innerTy with
+      | .named n => (n, ([] : List Ty))
+      | .generic n args => (n, args)
+      | .string => ("String", [])
+      | _ => ("", [])
+    match ← lookupStruct structName with
+    | some sd =>
+      let mapping := sd.typeParams.zip typeArgs
+      match sd.fields.find? fun f => f.name == field with
+      | some f =>
+        let fieldTy := substTy mapping f.ty
+        let fieldTy ← resolveTypeE fieldTy
+        return .fieldAccess cObj field fieldTy
+      | none => throw s!"struct '{structName}' has no field '{field}'"
+    | none => throw s!"field access on non-struct type"
+
+  | .enumLit enumName variant typeArgs fields =>
+    match ← lookupEnum enumName with
+    | some ed =>
+      let effectiveTypeArgs := if typeArgs.isEmpty && !ed.typeParams.isEmpty then
+        match hint with
+        | some (.generic n args) => if n == enumName then args else []
+        | some (.named n) => if n == enumName then [] else []
+        | _ => []
+      else typeArgs
+      let mapping := ed.typeParams.zip effectiveTypeArgs
+      match ed.variants.find? fun v => v.name == variant with
+      | some ev =>
+        let mut cFields : List (String × CExpr) := []
+        for sf in ev.fields do
+          let fieldTy := substTy mapping sf.ty
+          match fields.find? fun (fn, _) => fn == sf.name with
+          | some (_, expr) =>
+            let cExpr ← elabExpr expr (some fieldTy)
+            cFields := cFields ++ [(sf.name, cExpr)]
+          | none => throw s!"missing field '{sf.name}' in {enumName}::{variant}"
+        let resultTy := if effectiveTypeArgs.isEmpty then Ty.named enumName
+                         else Ty.generic enumName effectiveTypeArgs
+        return .enumLit enumName variant effectiveTypeArgs cFields resultTy
+      | none => throw s!"unknown variant '{variant}' in enum '{enumName}'"
+    | none => throw s!"unknown enum type '{enumName}'"
+
+  | .match_ scrutinee arms =>
+    let cScrut ← elabExpr scrutinee
+    let scrTy := cScrut.ty
+    let innerTy := match scrTy with
+      | .ref t => t | .refMut t => t | t => t
+    let innerTyR ← resolveTypeE innerTy
+    let (enumName, enumTypeArgs) := match innerTyR with
+      | .named n => (n, ([] : List Ty))
+      | .generic n args => (n, args)
+      | _ => ("", [])
+    let mut cArms : List CMatchArm := []
+    if enumName != "" then
+      match ← lookupEnum enumName with
+      | some ed =>
+        let envBefore ← getEnv
+        for arm in arms do
+          setEnv envBefore
+          match arm with
+          | .mk _armEnum armVariant bindings body =>
+            let ev := (ed.variants.find? fun v => v.name == armVariant).getD
+              { name := armVariant, fields := [] }
+            let typeMapping := ed.typeParams.zip enumTypeArgs
+            let mut typedBindings : List (String × Ty) := []
+            for (binding, sf) in bindings.zip ev.fields do
+              let bty := substTy typeMapping sf.ty
+              typedBindings := typedBindings ++ [(binding, bty)]
+              addVar binding bty
+            let cBody ← elabStmts body
+            cArms := cArms ++ [.enumArm enumName armVariant typedBindings cBody]
+          | .litArm val body =>
+            let cVal ← elabExpr val
+            let cBody ← elabStmts body
+            cArms := cArms ++ [.litArm cVal cBody]
+          | .varArm binding body =>
+            addVar binding innerTyR
+            let cBody ← elabStmts body
+            cArms := cArms ++ [.varArm binding innerTyR cBody]
+        setEnv envBefore
+      | none =>
+        let envBefore ← getEnv
+        for arm in arms do
+          setEnv envBefore
+          match arm with
+          | .litArm val body =>
+            let cVal ← elabExpr val
+            let cBody ← elabStmts body
+            cArms := cArms ++ [.litArm cVal cBody]
+          | .varArm binding body =>
+            addVar binding innerTyR
+            let cBody ← elabStmts body
+            cArms := cArms ++ [.varArm binding innerTyR cBody]
+          | .mk en v _ body =>
+            let cBody ← elabStmts body
+            cArms := cArms ++ [.enumArm en v [] cBody]
+        setEnv envBefore
+    else
+      let envBefore ← getEnv
+      for arm in arms do
+        setEnv envBefore
+        match arm with
+        | .litArm val body =>
+          let cVal ← elabExpr val (some innerTyR)
+          let cBody ← elabStmts body
+          cArms := cArms ++ [.litArm cVal cBody]
+        | .varArm binding body =>
+          addVar binding innerTyR
+          let cBody ← elabStmts body
+          cArms := cArms ++ [.varArm binding innerTyR cBody]
+        | .mk en v _ body =>
+          let cBody ← elabStmts body
+          cArms := cArms ++ [.enumArm en v [] cBody]
+      setEnv envBefore
+    let resultTy := if enumName != "" then
+      if enumTypeArgs.isEmpty then Ty.named enumName else Ty.generic enumName enumTypeArgs
+    else innerTyR
+    return .match_ cScrut cArms resultTy
+
+  | .borrow inner =>
+    let cInner ← elabExpr inner
+    return .borrow cInner (.ref cInner.ty)
+
+  | .borrowMut inner =>
+    let cInner ← elabExpr inner
+    return .borrowMut cInner (.refMut cInner.ty)
+
+  | .deref inner =>
+    let cInner ← elabExpr inner
+    let resultTy := match cInner.ty with
+      | .ref t => t | .refMut t => t
+      | .ptrMut t => t | .ptrConst t => t | .heap t => t
+      | _ => .placeholder
+    return .deref cInner resultTy
+
+  | .try_ inner =>
+    let cInner ← elabExpr inner
+    let resultTy := match cInner.ty with
+      | .named _enumName => .placeholder  -- would need enum lookup for Ok field
+      | .generic _ [okTy, _] => okTy
+      | _ => .placeholder
+    return .try_ cInner resultTy
+
+  | .arrayLit elems =>
+    match elems with
+    | [] => throw "array literal cannot be empty"
+    | first :: rest =>
+      let elemHint := match hint with | some (.array t _) => some t | _ => none
+      let cFirst ← elabExpr first elemHint
+      let elemTy := cFirst.ty
+      let mut cElems : List CExpr := [cFirst]
+      for e in rest do
+        let cE ← elabExpr e (some elemTy)
+        cElems := cElems ++ [cE]
+      return .arrayLit cElems (.array elemTy elems.length)
+
+  | .arrayIndex arr index =>
+    let cArr ← elabExpr arr
+    let cIdx ← elabExpr index (some .int)
+    let elemTy := match cArr.ty with
+      | .array t _ => t
+      | _ => .placeholder
+    return .arrayIndex cArr cIdx elemTy
+
+  | .cast inner targetTy =>
+    let cInner ← elabExpr inner
+    return .cast cInner targetTy
+
+  | .fnRef fnName =>
+    let env ← getEnv
+    match env.allFnSigPairs.lookup fnName with
+    | some sig =>
+      let paramTys := sig.params.map Prod.snd
+      return .fnRef fnName (.fn_ paramTys sig.capSet sig.retTy)
+    | none => throw s!"unknown function '{fnName}' in function reference"
+
+  | .methodCall obj methodName typeArgs args =>
+    -- Desugar: obj.method(args) → Type_method(&obj, args) or Type_method(&mut obj, args)
+    let cObj ← elabExpr obj
+    let objTy := cObj.ty
+    let innerTy := match objTy with
+      | .ref t => t | .refMut t => t | t => t
+    let typeName := match innerTy with
+      | .named n => n | .generic n _ => n | _ => ""
+    if typeName == "" then
+      -- Type variable with trait bounds
+      match innerTy with
+      | .typeVar n =>
+        let env ← getEnv
+        let bounds := (env.currentTypeBounds.find? fun (name, _) => name == n).map Prod.snd |>.getD []
+        let mut foundSig : Option FnSigDef := none
+        for traitName in bounds do
+          match env.traits.find? fun td => td.name == traitName with
+          | some td =>
+            match td.methods.find? fun ms => ms.name == methodName with
+            | some ms => foundSig := some ms; break
+            | none => pure ()
+          | none => pure ()
+        match foundSig with
+        | none => throw s!"no method '{methodName}' for type variable '{n}'"
+        | some sig =>
+          let mut cArgs : List CExpr := [cObj]
+          for (arg, p) in args.zip sig.params do
+            let cArg ← elabExpr arg (some p.ty)
+            cArgs := cArgs ++ [cArg]
+          return .call (n ++ "_" ++ methodName) typeArgs cArgs sig.retTy
+      | _ => throw s!"method call on non-named type"
+    else
+      let mangledName := typeName ++ "_" ++ methodName
+      match ← lookupFnSig mangledName with
+      | some sig =>
+        let objTypeArgs := match innerTy with | .generic _ args => args | _ => []
+        let implTypeParams := sig.typeParams.take objTypeArgs.length
+        let methodTypeParams := sig.typeParams.drop objTypeArgs.length
+        let mapping := implTypeParams.zip objTypeArgs ++ methodTypeParams.zip typeArgs
+        let methodParams := (sig.params.drop 1).map fun (_, t) => (substTy mapping t)
+        let retTy := substTy mapping sig.retTy
+        let mut cArgs : List CExpr := [cObj]
+        for (arg, pTy) in args.zip methodParams do
+          let cArg ← elabExpr arg (some pTy)
+          cArgs := cArgs ++ [cArg]
+        return .call mangledName (objTypeArgs ++ typeArgs) cArgs retTy
+      | none => throw s!"no method '{methodName}' on type '{typeName}'"
+
+  | .staticMethodCall typeName methodName typeArgs args =>
+    let mangledName := typeName ++ "_" ++ methodName
+    match ← lookupFnSig mangledName with
+    | some sig =>
+      let mapping := sig.typeParams.zip typeArgs
+      let paramTypes := sig.params.map fun (_, t) => substTy mapping t
+      let retTy := substTy mapping sig.retTy
+      let mut cArgs : List CExpr := []
+      for (arg, pTy) in args.zip paramTypes do
+        let cArg ← elabExpr arg (some pTy)
+        cArgs := cArgs ++ [cArg]
+      return .call mangledName typeArgs cArgs retTy
+    | none => throw s!"no method '{methodName}' on type '{typeName}'"
+
+/-- Elaborate a function call (regular, builtins, intercepted). -/
+partial def elabCall (fnName : String) (typeArgs : List Ty) (args : List Expr)
+    (hint : Option Ty) : ElabM CExpr := do
+  -- Intercept abort()
+  if fnName == "abort" then
+    return .call "abort" [] [] .never
+  -- Intercept destroy(arg)
+  if fnName == "destroy" then
+    let arg := match args with | a :: _ => a | [] => Expr.intLit 0
+    let cArg ← elabExpr arg
+    let typeName := match cArg.ty with
+      | .named n => n | .generic n _ => n | _ => ""
+    return .call (typeName ++ "_destroy") [] [cArg] .unit
+  -- Intercept alloc(val)
+  if fnName == "alloc" then
+    let arg := match args with | a :: _ => a | [] => Expr.intLit 0
+    let cArg ← elabExpr arg
+    return .call "alloc" [] [cArg] (.heap cArg.ty)
+  -- Intercept free(ptr)
+  if fnName == "free" then
+    let arg := match args with | a :: _ => a | [] => Expr.intLit 0
+    let cArg ← elabExpr arg
+    let innerTy := match cArg.ty with | .heap t => t | _ => .placeholder
+    return .call "free" [] [cArg] innerTy
+  -- Intercept sizeof
+  if fnName == "sizeof" || fnName.endsWith "_sizeof" then
+    return .call fnName typeArgs [] .uint
+  -- Intercept vec_new::<T>()
+  if fnName == "vec_new" then
+    let elemTy := match typeArgs with | t :: _ => t | [] => .int
+    return .call "vec_new" typeArgs [] (.generic "Vec" [elemTy])
+  -- Intercept vec_push
+  if fnName == "vec_push" then
+    let mut cArgs : List CExpr := []
+    for arg in args do
+      let cArg ← elabExpr arg
+      cArgs := cArgs ++ [cArg]
+    return .call "vec_push" [] cArgs .unit
+  -- Intercept vec_get
+  if fnName == "vec_get" then
+    let mut cArgs : List CExpr := []
+    for arg in args do
+      let cArg ← elabExpr arg
+      cArgs := cArgs ++ [cArg]
+    let elemTy := match (cArgs.head?.map CExpr.ty) with
+      | some (.ref (.generic "Vec" [et])) => et
+      | some (.refMut (.generic "Vec" [et])) => et
+      | _ => .placeholder
+    return .call "vec_get" [] cArgs elemTy
+  -- Intercept vec_set
+  if fnName == "vec_set" then
+    let mut cArgs : List CExpr := []
+    for arg in args do
+      let cArg ← elabExpr arg
+      cArgs := cArgs ++ [cArg]
+    return .call "vec_set" [] cArgs .unit
+  -- Intercept vec_len
+  if fnName == "vec_len" then
+    let mut cArgs : List CExpr := []
+    for arg in args do
+      let cArg ← elabExpr arg
+      cArgs := cArgs ++ [cArg]
+    return .call "vec_len" [] cArgs .int
+  -- Intercept vec_pop
+  if fnName == "vec_pop" then
+    let mut cArgs : List CExpr := []
+    for arg in args do
+      let cArg ← elabExpr arg
+      cArgs := cArgs ++ [cArg]
+    let elemTy := match (cArgs.head?.map CExpr.ty) with
+      | some (.refMut (.generic "Vec" [et])) => et
+      | _ => .placeholder
+    return .call "vec_pop" [] cArgs (.generic "Option" [elemTy])
+  -- Intercept vec_free
+  if fnName == "vec_free" then
+    let mut cArgs : List CExpr := []
+    for arg in args do
+      let cArg ← elabExpr arg
+      cArgs := cArgs ++ [cArg]
+    return .call "vec_free" [] cArgs .unit
+  -- Intercept map_new::<K, V>()
+  if fnName == "map_new" then
+    let kTy := match typeArgs with | t :: _ => t | [] => .int
+    let vTy := match typeArgs with | _ :: t :: _ => t | _ => .int
+    return .call "map_new" typeArgs [] (.generic "HashMap" [kTy, vTy])
+  -- Intercept map_insert
+  if fnName == "map_insert" then
+    let mut cArgs : List CExpr := []
+    for arg in args do
+      let cArg ← elabExpr arg
+      cArgs := cArgs ++ [cArg]
+    return .call "map_insert" [] cArgs .unit
+  -- Intercept map_get
+  if fnName == "map_get" then
+    let mut cArgs : List CExpr := []
+    for arg in args do
+      let cArg ← elabExpr arg
+      cArgs := cArgs ++ [cArg]
+    let vTy := match (cArgs.head?.map CExpr.ty) with
+      | some (.ref (.generic "HashMap" [_, v])) => v
+      | some (.refMut (.generic "HashMap" [_, v])) => v
+      | _ => .placeholder
+    return .call "map_get" [] cArgs (.generic "Option" [vTy])
+  -- Intercept map_contains
+  if fnName == "map_contains" then
+    let mut cArgs : List CExpr := []
+    for arg in args do
+      let cArg ← elabExpr arg
+      cArgs := cArgs ++ [cArg]
+    return .call "map_contains" [] cArgs .bool
+  -- Intercept map_remove
+  if fnName == "map_remove" then
+    let mut cArgs : List CExpr := []
+    for arg in args do
+      let cArg ← elabExpr arg
+      cArgs := cArgs ++ [cArg]
+    let vTy := match (cArgs.head?.map CExpr.ty) with
+      | some (.refMut (.generic "HashMap" [_, v])) => v
+      | _ => .placeholder
+    return .call "map_remove" [] cArgs (.generic "Option" [vTy])
+  -- Intercept map_len
+  if fnName == "map_len" then
+    let mut cArgs : List CExpr := []
+    for arg in args do
+      let cArg ← elabExpr arg
+      cArgs := cArgs ++ [cArg]
+    return .call "map_len" [] cArgs .int
+  -- Intercept map_free
+  if fnName == "map_free" then
+    let mut cArgs : List CExpr := []
+    for arg in args do
+      let cArg ← elabExpr arg
+      cArgs := cArgs ++ [cArg]
+    return .call "map_free" [] cArgs .unit
+  -- Check if function pointer call
+  match ← lookupVar fnName with
+  | some (.fn_ paramTys _ retTy) =>
+    let mut cArgs : List CExpr := []
+    for (arg, pTy) in args.zip paramTys do
+      let cArg ← elabExpr arg (some pTy)
+      cArgs := cArgs ++ [cArg]
+    return .call fnName [] cArgs retTy
+  | _ => pure ()
+  -- Regular function call
+  match ← lookupFnSig fnName with
+  | some sig =>
+    -- Infer type arguments if not explicitly provided
+    let inferredTypeArgs ← do
+      if !typeArgs.isEmpty || sig.typeParams.isEmpty then
+        pure typeArgs
+      else
+        let mut inferred : List (String × Ty) := []
+        for (arg, (_, pTy)) in args.zip sig.params do
+          let argTy ← peekExprType arg
+          let bindings := unifyTypes pTy argTy sig.typeParams
+          for (name, ty) in bindings do
+            if !(inferred.any fun (n, _) => n == name) then
+              inferred := inferred ++ [(name, ty)]
+        pure (sig.typeParams.map fun tp =>
+          match inferred.lookup tp with
+          | some ty => ty
+          | none => .typeVar tp)
+    let mapping := sig.typeParams.zip inferredTypeArgs
+    let paramTypes := sig.params.map fun (_, t) => substTy mapping t
+    let retTy := substTy mapping sig.retTy
+    let mut cArgs : List CExpr := []
+    for (arg, pTy) in args.zip paramTypes do
+      let cArg ← elabExpr arg (some pTy)
+      cArgs := cArgs ++ [cArg]
+    return .call fnName inferredTypeArgs cArgs retTy
+  | none => throw s!"call to undeclared function '{fnName}'"
+
+partial def elabStmt (stmt : Stmt) : ElabM (List CStmt) := do
+  match stmt with
+  | .letDecl name mutable ty value =>
+    let valHint ← match ty with
+      | some t => do let t' ← resolveTypeE t; pure (some t')
+      | none => pure none
+    let cVal ← elabExpr value valHint
+    let finalTy ← match ty with
+      | some t => resolveTypeE t
+      | none => pure cVal.ty
+    addVar name finalTy
+    return [.letDecl name mutable finalTy cVal]
+
+  | .assign name value =>
+    match ← lookupVar name with
+    | some varTy =>
+      let cVal ← elabExpr value (some varTy)
+      return [.assign name cVal]
+    | none => throw s!"assignment to undeclared variable '{name}'"
+
+  | .return_ (some value) =>
+    let env ← getEnv
+    let cVal ← elabExpr value (some env.currentRetTy)
+    return [.return_ (some cVal) env.currentRetTy]
+
+  | .return_ none =>
+    let env ← getEnv
+    return [.return_ none env.currentRetTy]
+
+  | .expr e =>
+    let cE ← elabExpr e
+    return [.expr cE]
+
+  | .ifElse cond then_ else_ =>
+    let cCond ← elabExpr cond (some .bool)
+    let cThen ← elabStmts then_
+    let cElse ← match else_ with
+      | some stmts => do let cs ← elabStmts stmts; pure (some cs)
+      | none => pure none
+    return [.ifElse cCond cThen cElse]
+
+  | .while_ cond body label =>
+    let cCond ← elabExpr cond (some .bool)
+    let cBody ← elabStmts body
+    return [.while_ cCond cBody label]
+
+  | .forLoop init cond step body label =>
+    -- Desugar: for (init; cond; step) { body } → init; while cond { body; step }
+    let mut result : List CStmt := []
+    match init with
+    | some initStmt =>
+      let cInit ← elabStmt initStmt
+      result := result ++ cInit
+    | none => pure ()
+    let cCond ← elabExpr cond (some .bool)
+    let cBody ← elabStmts body
+    let cStep ← match step with
+      | some stepStmt => elabStmt stepStmt
+      | none => pure []
+    let whileBody := cBody ++ cStep
+    result := result ++ [.while_ cCond whileBody label]
+    return result
+
+  | .fieldAssign obj field value =>
+    let cObj ← elabExpr obj
+    let cVal ← elabExpr value
+    return [.fieldAssign cObj field cVal]
+
+  | .derefAssign target value =>
+    let cTarget ← elabExpr target
+    let innerTy := match cTarget.ty with
+      | .ref t => t | .refMut t => t
+      | .ptrMut t => t | .ptrConst t => t
+      | _ => .placeholder
+    let cVal ← elabExpr value (some innerTy)
+    return [.derefAssign cTarget cVal]
+
+  | .arrayIndexAssign arr index value =>
+    let cArr ← elabExpr arr
+    let cIdx ← elabExpr index (some .int)
+    let cVal ← elabExpr value
+    return [.arrayIndexAssign cArr cIdx cVal]
+
+  | .break_ value label =>
+    match value with
+    | some v =>
+      let cV ← elabExpr v
+      return [.break_ (some cV) label]
+    | none => return [.break_ none label]
+
+  | .continue_ label =>
+    return [.continue_ label]
+
+  | .defer body =>
+    let cBody ← elabExpr body
+    return [.defer cBody]
+
+  | .borrowIn var ref region isMut body =>
+    let varTy ← match ← lookupVar var with
+      | some ty => pure ty
+      | none => throw s!"borrow: undeclared variable '{var}'"
+    let refTy := if isMut then Ty.refMut varTy else Ty.ref varTy
+    addVar ref refTy
+    let cBody ← elabStmts body
+    return [.borrowIn var ref region isMut refTy cBody]
+
+  | .arrowAssign obj field value =>
+    -- Desugar: p->field = val → (*p).field = val
+    let cObj ← elabExpr obj
+    let objTy := cObj.ty
+    let innerTy := match objTy with
+      | .heap t => t | .heapArray t => t
+      | .ref (.heap t) => t | .refMut (.heap t) => t
+      | _ => .placeholder
+    let cDeref := CExpr.deref cObj innerTy
+    let cVal ← elabExpr value
+    return [.fieldAssign cDeref field cVal]
 
 partial def elabStmts (stmts : List Stmt) : ElabM (List CStmt) := do
   let mut result : List CStmt := []
@@ -66,19 +849,313 @@ partial def elabStmts (stmts : List Stmt) : ElabM (List CStmt) := do
     result := result ++ cs
   return result
 
-def elabFn (_f : FnDef) (_implTy : Option Ty := none) : ElabM CFnDef := do
-  throwElab "elabFn not yet implemented"
+end
 
-def elabModule (_m : Module)
-    (_importedFnSigs : List (String × ElabFnSig) := [])
-    (_importedStructs : List StructDef := [])
-    (_importedEnums : List EnumDef := [])
-    (_importedImplBlocks : List ImplBlock := [])
-    (_importedTraitImpls : List ImplTraitBlock := [])
+-- ============================================================
+-- Function and module elaboration
+-- ============================================================
+
+def elabFn (f : FnDef) (implTy : Option Ty := none) : ElabM CFnDef := do
+  let env ← getEnv
+  -- Set up type params and return type
+  let allTypeParams := f.typeParams
+  let params := f.params.map fun p =>
+    let pty := match implTy with | some it => resolveSelf p.ty it | none => p.ty
+    (p.name, pty)
+  let retTy := match implTy with | some it => resolveSelf f.retTy it | none => f.retTy
+  -- Resolve type params in param/return types
+  let resolveTP (ty : Ty) : Ty :=
+    let rec go : Ty → Ty
+      | .named n => if allTypeParams.contains n then .typeVar n else .named n
+      | .ref t => .ref (go t)
+      | .refMut t => .refMut (go t)
+      | .ptrMut t => .ptrMut (go t)
+      | .ptrConst t => .ptrConst (go t)
+      | .generic "Heap" [inner] => .heap (go inner)
+      | .generic "HeapArray" [inner] => .heapArray (go inner)
+      | .generic n args => .generic n (args.map go)
+      | .array t n => .array (go t) n
+      | .fn_ ps cs rt => .fn_ (ps.map go) cs (go rt)
+      | .heap t => .heap (go t)
+      | .heapArray t => .heapArray (go t)
+      | t => t
+    go ty
+  let params := params.map fun (n, t) => (n, resolveTP t)
+  let retTy := resolveTP retTy
+  setEnv { env with
+    currentTypeParams := allTypeParams
+    currentTypeBounds := f.typeBounds
+    currentRetTy := retTy
+    currentImplType := implTy }
+  -- Add parameters to scope
+  for (pname, pty) in params do
+    addVar pname pty
+  -- Elaborate body
+  let cBody ← elabStmts f.body
+  -- Restore env
+  let envAfter ← getEnv
+  setEnv { envAfter with
+    vars := env.vars
+    currentTypeParams := env.currentTypeParams
+    currentTypeBounds := env.currentTypeBounds
+    currentRetTy := env.currentRetTy
+    currentImplType := env.currentImplType }
+  return {
+    name := f.name
+    typeParams := allTypeParams
+    params := params
+    retTy := retTy
+    body := cBody
+    isPublic := f.isPublic
+    capSet := f.capSet
+  }
+
+-- ============================================================
+-- Build environment from module (mirrors checkModule setup)
+-- ============================================================
+
+private def buildBuiltinSigs : List (String × ElabFnSig) := [
+  ("string_length", { params := [("s", .ref .string)], retTy := .int }),
+  ("string_concat", { params := [("a", .string), ("b", .string)], retTy := .string }),
+  ("print_string", { params := [("s", .ref .string)], retTy := .unit, capSet := .concrete ["Console"] }),
+  ("drop_string", { params := [("s", .string)], retTy := .unit }),
+  ("print_int", { params := [("x", .int)], retTy := .unit, capSet := .concrete ["Console"] }),
+  ("print_bool", { params := [("x", .bool)], retTy := .unit, capSet := .concrete ["Console"] }),
+  ("read_file", { params := [("path", .ref .string)], retTy := .string, capSet := .concrete ["File"] }),
+  ("write_file", { params := [("path", .ref .string), ("data", .ref .string)], retTy := .int, capSet := .concrete ["File"] }),
+  ("string_slice", { params := [("s", .ref .string), ("start", .int), ("end_", .int)], retTy := .string }),
+  ("string_char_at", { params := [("s", .ref .string), ("index", .int)], retTy := .int }),
+  ("string_contains", { params := [("haystack", .ref .string), ("needle", .ref .string)], retTy := .bool }),
+  ("string_eq", { params := [("a", .ref .string), ("b", .ref .string)], retTy := .bool }),
+  ("int_to_string", { params := [("n", .int)], retTy := .string }),
+  ("string_to_int", { params := [("s", .ref .string)], retTy := .generic "Result" [.int, .int] }),
+  ("bool_to_string", { params := [("b", .bool)], retTy := .string }),
+  ("float_to_string", { params := [("f", .float64)], retTy := .string }),
+  ("read_line", { params := [], retTy := .string, capSet := .concrete ["Console"] }),
+  ("print_char", { params := [("c", .int)], retTy := .unit, capSet := .concrete ["Console"] }),
+  ("eprint_string", { params := [("s", .ref .string)], retTy := .unit, capSet := .concrete ["Console"] }),
+  ("get_env", { params := [("name", .ref .string)], retTy := .generic "Option" [.string], capSet := .concrete ["Env"] }),
+  ("get_args", { params := [], retTy := .heapArray .string, capSet := .concrete ["Process"] }),
+  ("exit_process", { params := [("code", .int)], retTy := .unit, capSet := .concrete ["Process"] }),
+  ("string_trim", { params := [("s", .ref .string)], retTy := .string }),
+  ("tcp_connect", { params := [("host", .ref .string), ("port", .int)], retTy := .int, capSet := .concrete ["Network"] }),
+  ("tcp_listen", { params := [("port", .int), ("backlog", .int)], retTy := .int, capSet := .concrete ["Network"] }),
+  ("tcp_accept", { params := [("sockfd", .int)], retTy := .int, capSet := .concrete ["Network"] }),
+  ("socket_send", { params := [("sockfd", .int), ("data", .ref .string)], retTy := .int, capSet := .concrete ["Network"] }),
+  ("socket_recv", { params := [("sockfd", .int), ("bufsize", .int)], retTy := .string, capSet := .concrete ["Network"] }),
+  ("socket_close", { params := [("sockfd", .int)], retTy := .unit, capSet := .concrete ["Network"] })
+]
+
+partial def elabModule (m : Module)
+    (importedFnSigs : List (String × ElabFnSig) := [])
+    (importedStructs : List StructDef := [])
+    (importedEnums : List EnumDef := [])
+    (importedImplBlocks : List ImplBlock := [])
+    (importedTraitImpls : List ImplTraitBlock := [])
     : Except String CModule :=
-  .error "elabModule not yet implemented"
+  -- Build fn sigs from module functions
+  let userFnSigs : List (String × ElabFnSig) := m.functions.map fun f =>
+    (f.name, { params := f.params.map fun p => (p.name, p.ty), retTy := f.retTy,
+               typeParams := f.typeParams, typeBounds := f.typeBounds,
+               capParams := f.capParams, capSet := f.capSet })
+  -- Extern fn sigs
+  let externSigs : List (String × ElabFnSig) := m.externFns.map fun ef =>
+    (ef.name, { params := ef.params.map fun p => (p.name, p.ty), retTy := ef.retTy,
+                capSet := .concrete ["Unsafe"] })
+  -- Submodule fn sigs
+  let submoduleSigs : List (String × ElabFnSig) := m.submodules.foldl (fun acc sub =>
+    acc ++ (sub.functions.map fun f =>
+      (sub.name ++ "_" ++ f.name,
+       { params := f.params.map fun p => (p.name, p.ty), retTy := f.retTy,
+         typeParams := f.typeParams, typeBounds := f.typeBounds,
+         capParams := f.capParams, capSet := f.capSet }))
+    ++ (sub.externFns.map fun ef =>
+      (sub.name ++ "_" ++ ef.name,
+       { params := ef.params.map fun p => (p.name, p.ty), retTy := ef.retTy }))
+  ) []
+  -- Impl method sigs
+  let allImplBlocks := importedImplBlocks ++ m.implBlocks
+  let allTraitImpls := importedTraitImpls ++ m.traitImpls
+  let implMethodSigs : List (String × ElabFnSig) := allImplBlocks.foldl (fun acc ib =>
+    let implTy := if ib.typeParams.isEmpty then Ty.named ib.typeName
+                  else Ty.generic ib.typeName (ib.typeParams.map Ty.typeVar)
+    acc ++ ib.methods.map fun f =>
+      let mangledName := ib.typeName ++ "_" ++ f.name
+      let allTypeParams := ib.typeParams ++ f.typeParams
+      (mangledName, { params := f.params.map fun p => (p.name, resolveSelf p.ty implTy),
+                       retTy := resolveSelf f.retTy implTy,
+                       typeParams := allTypeParams, capParams := f.capParams, capSet := f.capSet })
+  ) []
+  let traitImplMethodSigs : List (String × ElabFnSig) := allTraitImpls.foldl (fun acc tb =>
+    let implTy := if tb.typeParams.isEmpty then Ty.named tb.typeName
+                  else Ty.generic tb.typeName (tb.typeParams.map Ty.typeVar)
+    acc ++ tb.methods.map fun f =>
+      let mangledName := tb.typeName ++ "_" ++ f.name
+      let allTypeParams := tb.typeParams ++ f.typeParams
+      (mangledName, { params := f.params.map fun p => (p.name, resolveSelf p.ty implTy),
+                       retTy := resolveSelf f.retTy implTy,
+                       typeParams := allTypeParams, capParams := f.capParams, capSet := f.capSet })
+  ) []
+  -- Combine all sigs
+  let allSigs := importedFnSigs ++ userFnSigs ++ buildBuiltinSigs ++ externSigs
+                 ++ submoduleSigs ++ implMethodSigs ++ traitImplMethodSigs
+  -- Build structs / enums
+  let builtinOptionEnum : EnumDef := {
+    name := "Option", typeParams := ["T"],
+    variants := [
+      { name := "Some", fields := [{ name := "value", ty := .typeVar "T" }] },
+      { name := "None", fields := [] }
+    ], isCopy := false
+  }
+  let builtinResultEnum : EnumDef := {
+    name := "Result", typeParams := ["T", "E"],
+    variants := [
+      { name := "Ok", fields := [{ name := "value", ty := .typeVar "T" }] },
+      { name := "Err", fields := [{ name := "value", ty := .typeVar "E" }] }
+    ], isCopy := false
+  }
+  let hasUserResult := m.enums.any fun ed => ed.name == "Result"
+  let builtinEnumList := [builtinOptionEnum] ++ (if hasUserResult then [] else [builtinResultEnum])
+  let allStructs := importedStructs ++ m.structs
+  let allEnums := builtinEnumList ++ importedEnums ++ m.enums
+  let typeAliasMap := m.typeAliases.map fun ta => (ta.name, ta.targetTy)
+  let constantsMap := m.constants.map fun c => (c.name, c.ty)
+  let builtinDestroyTrait : TraitDef := {
+    name := "Destroy"
+    methods := [{ name := "destroy", params := [], retTy := .unit, selfKind := some .ref }]
+  }
+  let allTraits := builtinDestroyTrait :: m.traits
+  -- All named fn sigs for fnRef
+  let fnSigPairs : List (String × ElabFnSig) :=
+    userFnSigs ++ implMethodSigs ++ traitImplMethodSigs
+  let initEnv : ElabEnv := {
+    vars := []
+    structs := allStructs
+    enums := allEnums
+    fnSigs := allSigs
+    typeAliases := typeAliasMap
+    constants := constantsMap
+    traits := allTraits
+    allFnSigPairs := fnSigPairs
+  }
+  -- Elaborate all functions
+  let regularFns := m.functions.map fun f => (f, (none : Option Ty))
+  let implMethodPairs := allImplBlocks.foldl (fun acc ib =>
+    let implTy := if ib.typeParams.isEmpty then Ty.named ib.typeName
+                  else Ty.generic ib.typeName (ib.typeParams.map Ty.typeVar)
+    acc ++ ib.methods.map fun f =>
+      ({ f with typeParams := ib.typeParams ++ f.typeParams }, some implTy)
+  ) ([] : List (FnDef × Option Ty))
+  let traitImplMethodPairs := allTraitImpls.foldl (fun acc tb =>
+    let implTy := if tb.typeParams.isEmpty then Ty.named tb.typeName
+                  else Ty.generic tb.typeName (tb.typeParams.map Ty.typeVar)
+    acc ++ tb.methods.map fun f =>
+      ({ f with typeParams := tb.typeParams ++ f.typeParams }, some implTy)
+  ) ([] : List (FnDef × Option Ty))
+  let allFnPairs := regularFns ++ implMethodPairs ++ traitImplMethodPairs
+  let result := allFnPairs.foldlM (init := ([] : List CFnDef)) (fun acc (f, implTy) => do
+    let env ← getEnv
+    setEnv { env with currentImplType := implTy, traits := allTraits }
+    let cfn ← elabFn f implTy
+    -- For impl methods, mangle the name
+    let finalName := match implTy with
+      | some it =>
+        let typeName := match it with
+          | .named n => n | .generic n _ => n | _ => ""
+        if typeName != "" then typeName ++ "_" ++ f.name else f.name
+      | none => f.name
+    return acc ++ [{ cfn with name := finalName }]
+  ) |>.run initEnv |>.run
+  match result with
+  | ((.ok fns), _) =>
+    -- Build Core structs
+    let cStructs := m.structs.map fun sd =>
+      { name := sd.name, typeParams := sd.typeParams,
+        fields := sd.fields.map fun f => (f.name, f.ty),
+        isPublic := sd.isPublic, isCopy := sd.isCopy : CStructDef }
+    -- Build Core enums
+    let cEnums := m.enums.map fun ed =>
+      { name := ed.name, typeParams := ed.typeParams,
+        variants := ed.variants.map fun v =>
+          (v.name, v.fields.map fun f => (f.name, f.ty)),
+        isPublic := ed.isPublic, isCopy := ed.isCopy : CEnumDef }
+    -- Build extern fns
+    let cExterns := m.externFns.map fun ef =>
+      (ef.name, ef.params.map fun p => (p.name, p.ty), ef.retTy)
+    -- Build constants
+    let cConstants := m.constants.map fun c =>
+      let constResult := (elabExpr c.value (some c.ty)).run initEnv |>.run
+      match constResult with
+      | ((.ok cExpr), _) => (c.name, c.ty, cExpr)
+      | ((.error _), _) => (c.name, c.ty, CExpr.intLit 0 c.ty)
+    -- Elaborate submodules recursively
+    let cSubmodules := m.submodules.foldl (init := (Except.ok [] : Except String (List CModule))) fun acc sub =>
+      match acc with
+      | .error e => .error e
+      | .ok lst =>
+        match elabModule sub with
+        | .ok csub => .ok (lst ++ [csub])
+        | .error e => .error s!"in submodule '{sub.name}': {e}"
+    match cSubmodules with
+    | .error e => .error e
+    | .ok subs =>
+    .ok {
+      name := m.name
+      structs := cStructs
+      enums := cEnums
+      functions := fns
+      externFns := cExterns
+      constants := cConstants
+      submodules := subs
+    }
+  | ((.error e), _) => .error e
 
-def elabProgram (_modules : List Module) : Except String (List CModule) :=
-  .error "elabProgram not yet implemented"
+-- ============================================================
+-- Program elaboration
+-- ============================================================
+
+/-- Build export sigs for cross-module import resolution. -/
+private def buildExportSigs (m : Module) : List (String × ElabFnSig) :=
+  m.functions.map fun f =>
+    (f.name, { params := f.params.map fun p => (p.name, p.ty), retTy := f.retTy,
+               typeBounds := f.typeBounds, capParams := f.capParams, capSet := f.capSet })
+
+private def resolveImportsE (m : Module)
+    (exportTable : List (String × (List (String × ElabFnSig) × List StructDef × List EnumDef × List ImplBlock × List ImplTraitBlock)))
+    : Except String (List (String × ElabFnSig) × List StructDef × List EnumDef × List ImplBlock × List ImplTraitBlock) :=
+  m.imports.foldlM (init := ([], [], [], [], [])) fun (fns, structs, enums, impls, trImpls) imp =>
+    match exportTable.lookup imp.moduleName with
+    | none => .error s!"unknown module '{imp.moduleName}'"
+    | some (pubFns, pubStructs, pubEnums, pubImpls, pubTraitImpls) =>
+      imp.symbols.foldlM (init := (fns, structs, enums, impls, trImpls)) fun (fns, structs, enums, impls, trImpls) sym =>
+        match pubFns.find? fun (n, _) => n == sym with
+        | some pair => .ok (fns ++ [pair], structs, enums, impls, trImpls)
+        | none =>
+          match pubStructs.find? fun sd => sd.name == sym with
+          | some sd =>
+            let structImpls := pubImpls.filter fun ib => ib.typeName == sym
+            let structTraitImpls := pubTraitImpls.filter fun tb => tb.typeName == sym
+            .ok (fns, structs ++ [sd], enums, impls ++ structImpls, trImpls ++ structTraitImpls)
+          | none =>
+            match pubEnums.find? fun ed => ed.name == sym with
+            | some ed => .ok (fns, structs, enums ++ [ed], impls, trImpls)
+            | none => .error s!"'{sym}' is not public in module '{imp.moduleName}'"
+
+def elabProgram (modules : List Module) : Except String (List CModule) := do
+  -- Build export table
+  let exportTable := modules.foldl (fun acc m =>
+    let pubFns := buildExportSigs m
+    let subExports := m.submodules.foldl (fun acc2 sub =>
+      let subFns := buildExportSigs sub
+      let entry := (subFns, sub.structs, sub.enums, sub.implBlocks, sub.traitImpls)
+      acc2 ++ [(m.name ++ "." ++ sub.name, entry), (sub.name, entry)]
+    ) []
+    acc ++ [(m.name, (pubFns, m.structs, m.enums, m.implBlocks, m.traitImpls))] ++ subExports
+  ) []
+  -- Elaborate each module
+  modules.foldlM (init := []) fun acc m => do
+    let (impFns, impStructs, impEnums, impImpls, impTraitImpls) ← resolveImportsE m exportTable
+    let cm ← elabModule m impFns impStructs impEnums impImpls impTraitImpls
+    return acc ++ [cm]
 
 end Concrete
