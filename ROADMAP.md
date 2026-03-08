@@ -23,7 +23,7 @@ The Lean 4 compiler implements the core surface language. All 201 tests pass.
 - Result type with `?` operator for error propagation
 - Cast expressions (`as`) between numeric types
 - Control flow: while (including while-as-expression), for (C-style), if/else, match, break/continue (with labeled loops `'label:`)
-- Closures: fat pointer representation, copy/move captures, free variable analysis, bidirectional type inference, linear closure tracking
+- Function pointers: first-class values, `Copy` semantics, no closures
 - Heap allocation: `alloc`/`free`, `Heap<T>` with `->` field access, `HeapArray<T>`, heap dereference (`*heap_ptr`)
 - Monomorphized trait dispatch: calling trait methods on generic type variables generates specialized copies at compile time (no vtables, no runtime dispatch)
 - `Option<T>` builtin enum with `Some`/`None` variants
@@ -39,7 +39,7 @@ The Lean 4 compiler implements the core surface language. All 201 tests pass.
 - Networking: tcp_connect, tcp_listen, tcp_accept, socket_send, socket_recv, socket_close (require Network)
 - FFI: `extern fn` declarations, `Unsafe` capability gating
 
-**Not yet implemented:** `#[repr(C)]`, transmute, newtype, MLIR backend, env vars/process args, kernel formalization, runtime, compiler architecture refactoring (core IR, elaboration phase, phase separation — see Architecture Work Phases below).
+**Not yet implemented:** `#[repr(C)]`, transmute, newtype, MLIR backend, env vars/process args, kernel formalization, runtime, Core validation, resolution split, and backend unification onto the new IR pipeline.
 
 ---
 
@@ -63,6 +63,25 @@ Syntax choices that diverge from the [spec blog post](https://federicocarrone.co
 
 **Spec blog post also shows `import X as Y` alias syntax** — not yet implemented, will add to the module system when needed.
 
+## Design Priorities After The New IR Pipeline
+
+Now that Core IR, elaboration, and SSA lowering exist, the most important design-level additions are:
+
+1. **`newtype`**
+Nominal wrappers over existing representations with no implicit conversions. This gives alias-like ergonomics with struct-level type separation.
+
+2. **Explicit representation/layout control**
+Low-level code eventually needs representation guarantees. `#[repr(C)]` is the first step, followed later by explicit alignment/packing choices where justified.
+
+3. **A sharper `unsafe` boundary**
+Unsafe operations should have a small, explicit rule set: what is permitted, what invariants shift to the programmer, and how this interacts with raw pointers, FFI, and capabilities.
+
+4. **A stricter value/reference model**
+The language should stay very clear about when values are passed by value, when borrows are first-class references, and how raw pointers and `Heap<T>` differ operationally.
+
+5. **`union` only if needed, and only explicitly**
+This is useful for some low-level interop cases, but it should come after `repr(C)` and only with explicit unsafe rules.
+
 ---
 
 ## Language Invariants
@@ -75,7 +94,6 @@ These rules apply across all phases. They come directly from the spec and must n
    - Passing it as a by-value argument to a function or method (including `destroy(x)`)
    - Returning it from a function (`return x`)
    - Moving it into a struct field during construction (`Point { x: val }`)
-   - Moving it into a closure capture (Phase 2)
    - `break val` inside a loop-as-expression (Phase 4)
    - Destructuring via `match` or `let` (the original is consumed, the fields become new bindings)
    - Storing into an array element during array literal construction (`[val1, val2]`)
@@ -100,7 +118,7 @@ These rules apply across all phases. They come directly from the spec and must n
 
 11. **No interior mutability** in safe code. All mutation flows through `&mut`. Exception: `UnsafeCell<T>` in Phase 8 (standard library), gated by `Unsafe` capability. **Before Phase 8, interior mutability simply does not exist** — the borrow checker is closed with no escape hatches.
 
-12. **Local-only type inference.** Function signatures must be fully annotated (parameters and return type). Inside function bodies, local variable types may be inferred from the right-hand side of `let` bindings. Inference direction: **right-to-left only** — the type of `let x = expr;` is the type of `expr`. There is no constraint solving or unification across statements. Exception: closure parameter types may be inferred bidirectionally when the closure appears as an argument to a function with a known signature (Phase 2). You can always understand a function's interface without reading its body.
+12. **Local-only type inference.** Function signatures must be fully annotated (parameters and return type). Inside function bodies, local variable types may be inferred from the right-hand side of `let` bindings. Inference direction: **right-to-left only** — the type of `let x = expr;` is the type of `expr`. There is no constraint solving or unification across statements. Function pointers do not add bidirectional inference.
 
 13. **LL(1) grammar.** Every parsing decision with a single token of lookahead. No ambiguity, no backtracking. This is a permanent constraint — future evolution is bounded by LL(1).
 
@@ -291,11 +309,15 @@ New file: `Concrete/Core.lean`
 
 Define `CoreTy`, `CoreExpr`, `CoreStmt`, `CoreFn`, `CoreModule`. Start minimal: literals, locals, calls, returns, structs, if/while. Expand incrementally.
 
+**Status:** Done. Core IR exists and is inspectable via `--emit-core`.
+
 ### A2: Elaboration Phase
 
 New file: `Concrete/Elab.lean`
 
 Convert resolved AST → Core IR for the initial subset. Expand coverage gradually: enums/match, borrows, capabilities, traits, generics, heap ops, defer.
+
+**Status:** Done for the implemented language. Current focus is correctness and moving semantic authority onto the elaborated Core IR.
 
 ### A3: Resolution Phase
 
@@ -303,15 +325,21 @@ New file: `Concrete/Resolve.lean`
 
 Extract name resolution, module resolution, and symbol binding from Check.lean into a dedicated pass.
 
+**Status:** Not started. This is still mixed into the frontend/checker path.
+
 ### A4: Core Validation
 
 New file: `Concrete/CoreCheck.lean`
 
 Type check, linearity, borrow, and capability validation on Core IR. Replaces semantic checking currently in Check.lean. Much simpler because the input is already desugared and explicit.
 
+**Status:** Next major architecture task.
+
 ### A5: Codegen on Core IR
 
 Modify `Concrete/Codegen.lean` to consume Core IR instead of Surface AST. Codegen no longer needs to understand surface forms.
+
+**Status:** Not started. Existing LLVM codegen still largely follows the older path.
 
 ### A6: Structured Diagnostics
 
@@ -443,7 +471,7 @@ Rules:
 
 ### Implementation
 
-**Prerequisites:** This phase also adds `Ty.fn` (function type) to the `Ty` inductive, since capability polymorphism requires representing `fn(T) with(C) -> U` as a type. This is also needed by Phase 2 (closures).
+**Prerequisites:** This phase also adds `Ty.fn` (function type) to the `Ty` inductive, since capability polymorphism requires representing `fn(T) with(C) -> U` as a type.
 
 - **AST**:
   - Add `Ty.fn_ (params : List Ty) (capSet : CapSet) (retTy : Ty)` — function type with capabilities. Pretty-print as `fn(Int, Bool) -> String` (pure) or `fn(Int, Bool) with(File) -> String` (effectful).
@@ -474,7 +502,7 @@ Rules:
     3. For each cap variable in callee: it was already inferred at this call site (see below). The inferred concrete caps are checked against the caller via step 2.
   - **Cap variable inference algorithm:** When calling a function with `cap C` parameter:
     1. Find the function-typed argument corresponding to `C` (the argument whose type is `fn(...) with(C) -> ...`)
-    2. Look at the actual argument's type — if it's a closure or function reference, extract its concrete cap set
+    2. Look at the actual argument's type — if it's a function reference, extract its concrete cap set
     3. `C` is bound to that concrete set for this call site
     4. If `C` appears in the function's own `with()` clause, the inferred concrete caps are added to the callee's requirements and checked against the caller
     5. If the actual argument has an unresolved cap variable (e.g., the argument is itself cap-polymorphic), that is an error: `"cannot infer capability variable '{C}' from polymorphic argument"`
@@ -501,99 +529,53 @@ Adding capabilities to the compiler will cause existing tests and examples to fa
 
 ---
 
-## Phase 2: Closures
+## Phase 2: Function pointers
 
-Needed before `defer` and allocators because those features benefit from passing behavior as values.
+Concrete supports first-class function pointers, but not closures.
 
 ### Syntax
 
 ```
-// Anonymous function
-let doubled: List<Int> = map(data, fn(x: Int) -> Int { return x * 2; });
+fn double(x: Int) -> Int {
+    return x * 2;
+}
 
-// Type inference for closure params (bidirectional from expected type)
-let doubled: List<Int> = map(data, fn(x) { return x * 2; });
+fn map_one(x: Int, f: fn(Int) -> Int) -> Int {
+    return f(x);
+}
 
-// Closures with capabilities
-let handler: fn(Request) with(File) -> Response = fn(req: Request) with(File) -> Response {
-    let data: String = read_file(req.path);
-    return Response { body: data };
-};
-
-// Capture from enclosing scope
-let offset: Int = 10;
-let shifted: List<Int> = map(data, fn(x) { return x + offset; });
+fn main() -> Int {
+    return map_one(21, double);
+}
 ```
 
 ### Rules
 
-- Closures capture variables from the enclosing scope (implicit capture, not explicit)
-- Capture rules follow linearity:
-  - Capturing a linear value **moves** it into the closure (original is consumed in the enclosing scope — its `VarState` becomes `consumed`)
-  - Capturing a primitive type (Int, Bool, etc.) **copies** it (primitives are always Copy). Original stays live in enclosing scope.
-  - Capturing a `Copy`-marked type copies it (once Phase 3 adds the `Copy` marker; until then, all structs are linear and capturing moves)
-  - Capturing a `&T` borrows it — closure cannot outlive the borrow region
-  - Capturing a `&mut T` borrows exclusively — no other borrows while closure exists
-- **Closure linearity:** A closure is linear (must be called exactly once) if it captures any linear values. A closure is non-linear (can be called zero or more times) if it captures only copyable values or nothing. The linearity of a closure is NOT part of `Ty.fn_` — it is tracked separately in the checker via a `isLinear : Bool` annotation on the closure expression. A linear closure assigned to a variable makes that variable linear.
-- Closure capabilities: if the body calls functions requiring capabilities, the closure type carries those capabilities in `Ty.fn_`'s `capSet`. The checker computes this from the body.
-- **Escaping closures:** A closure "escapes" its defining scope if it is returned from a function, stored in a struct field, or passed to a function whose parameter type outlives the current scope. Escaping closures cannot capture references (`&T`, `&mut T`) — only owned values. Error: `"closure captures reference '&{name}' that would escape its borrow region"`
-- Closures that escape cannot capture the enclosing function's capability context implicitly — they must declare their own capabilities with `with(...)`.
-- Function types: `fn(Int) -> Bool` (pure), `fn(Int) with(File) -> Bool` (effectful)
-- Closures cannot be recursive — a closure cannot call itself because it has no name to reference. (Named functions can be recursive; closures cannot.)
-- Disambiguation: `fn` followed by `(` in expression position (not after `pub`, not at top level of module) is a closure. At top level, `fn` starts a function definition.
-- **Mutable variables and capture:** If a `let mut` variable is captured, the capture follows the same rules as above (copy if Copy, move if linear). The closure captures the current value at the point of capture, not a reference to the variable. After a move-capture, the original variable cannot be assigned to or read in the enclosing scope.
+- Function values refer to named functions only
+- Function types are `fn(Int) -> Bool` (pure) and `fn(Int) with(File) -> Bool` (effectful)
+- Function pointers are `Copy`
+- Function pointers do not capture local variables, references, allocators, or capabilities implicitly
+- If extra state is needed, pass it explicitly as a normal argument or in an explicit context struct
 
 ### Implementation
 
 **Prerequisite:** `Ty.fn_` from Phase 1 must exist.
 
-- **AST**:
-  ```
-  inductive CaptureMode where
-    | copy    -- value is copied, original stays live
-    | move    -- value is moved, original is consumed
-
-  Expr.closure (params : List Param)
-               (capSet : CapSet)
-               (retTy : Option Ty)
-               (body : List Stmt)
-               (captures : List (String × CaptureMode))
-               (isLinear : Bool)
-  ```
-  The `captures` and `isLinear` fields are filled in by the checker, not the parser. The parser sets `captures := []` and `isLinear := false`.
-- **Parser**: When `fn` appears in expression position (after `=`, `,`, `(`, `return`), parse as closure. If params have type annotations, use them; if not, leave types as `Ty.unknown` for bidirectional inference.
+- **AST**: no closure node; function references are ordinary expressions
+- **Parser**: parses function types, but no anonymous `fn(...) { ... }` expression form
 - **Check.lean**:
-  - Analyze closure body for free variables (variables referenced in the body that are not parameters of the closure and not global functions) → those are captures
-  - For each capture: look up the variable's type in the enclosing scope.
-    - If the type is a primitive or `Copy` type → `CaptureMode.copy`, original stays live
-    - Otherwise → `CaptureMode.move`, mark original as `consumed` in enclosing scope
-  - The closure's linearity: `isLinear = true` if any capture is `CaptureMode.move`
-  - If `isLinear = true`, the variable holding the closure is tracked as linear (must be used exactly once — i.e., called exactly once). Calling a linear closure consumes it. Error if called twice: `"linear closure '{name}' already called"`. Error if never called: `"linear closure '{name}' was never consumed"`
-  - **Bidirectional type inference for closure params:** works in two positions:
-    1. Function argument: if closure is argument `i` of a function call, and the function's parameter `i` has type `fn(T1, T2) with(C) -> R`, infer closure param types from `T1, T2` and cap set from `C`
-    2. Variable with explicit type: if `let f: fn(Int) -> Bool = fn(x) { ... };`, infer `x: Int`
-    3. Otherwise (standalone closure with no type context): all untyped params are errors. Error: `"cannot infer type of closure parameter '{name}' without type context"`
-  - Compute closure's cap set from its body (same capability checking as regular functions). If the closure body calls `with(File)` functions, the closure's type is `fn(...) with(File) -> ...`. Verify the expected type (from bidirectional inference) has a compatible cap set.
-  - Check captured borrows don't escape their region
-  - Inside the closure body, create a fresh linearity scope where each captured variable starts as `unconsumed`. Move-captured variables are linear in the closure body (must be consumed exactly once within the body). Copy-captured variables follow their type's rules.
+  - type-check function references against `Ty.fn_`
+  - verify capability compatibility when passing function-typed arguments
+  - no capture analysis is needed
 - **Codegen**:
-  - **All closures use fat pointer representation:** `{ ptr fn, ptr env }`. For no-capture closures, `env = null`. This uniform representation means `Ty.fn_` always has the same LLVM type regardless of captures. Do NOT generate plain function pointers for no-capture closures — always use the fat pointer for consistency.
-  - With captures: generate a struct `%closure_env.N` containing each captured value. Allocate it (stack `alloca` if non-escaping, heap if escaping via Phase 5). The generated function takes `ptr %env` as first param, bitcasts to `%closure_env.N*`, loads each field.
-  - Without captures: generate the function body as a normal function. Set `env = null` in the fat pointer.
-  - Calling a closure: load `fn` and `env` from the fat pointer. Call `fn(env, arg1, arg2, ...)`. The callee ignores `env` if it's null (no captures case — the function just doesn't use the first param).
+  - function values lower to plain code pointers
+  - calls through function pointers are explicit indirect calls
 
 ### Tests
 
-- `closure_basic.con`: simple closure, no captures → ok
-- `closure_capture_copy.con`: capture Int (primitive, always Copy) → ok, original still usable
-- `closure_capture_move.con`: capture linear struct → original consumed, error if used after
-- `closure_linear.con`: closure with linear capture must be called exactly once
-- `closure_cap.con`: closure with `with(File)` captures + capability → ok
-- `closure_generic.con`: closure as argument to generic `map<T, U, cap C>` with type inference → ok
-- `error_closure_escape_borrow.con`: capture &T that escapes → error
-- `error_closure_double_call.con`: call linear closure twice → error
-- `error_closure_uncalled.con`: linear closure never called → error "was never consumed"
-- `error_closure_infer.con`: standalone closure with untyped params and no context → error
+- `generic_fn.con`: function pointer passed to generic higher-order function → ok
+- `cap_poly.con`: capability-polymorphic function pointer argument → ok
+- `error_cap_poly_inline.con`: inline non-function argument cannot satisfy function-pointer capability requirements → error
 
 ---
 
@@ -738,7 +720,7 @@ else {
 
 If one branch defers and the other does nothing with `x`, that's a linearity error (one path consumes, other doesn't).
 
-- **`defer` closures (Phase 2 interaction):** `defer my_closure();` is valid if `my_closure` is a closure variable. If the closure is linear, the `defer` guarantees it's called exactly once at scope exit. However, if the scope exits via `abort()`, the deferred closure does NOT run — this means a linear closure may not be consumed on the abort path. This is acceptable because `abort()` is outside the semantic model (see Invariant 14).
+- **Deferred function-pointer calls:** `defer cleanup();` may call a named function directly or through a function pointer. There is no closure-specific behavior because closures do not exist.
 
 **Copy:**
 - `Copy` is explicit and opt-in via `struct Copy` / `enum Copy`
@@ -1112,7 +1094,7 @@ The identifiers `alloc`, `free`, `alloc_array`, `free_array`, and `realloc_array
 - Stack allocation does not require `Alloc`
 - A function without `with(Alloc)` cannot call anything with `with(Alloc)` — always explicit
 - **`with()` at call site is ONLY for `Alloc`.** You cannot write `foo() with(File = f)` — only `Alloc` has call-site binding. Mixing capabilities and bindings in one `with()` at a call site is a parse error: `foo() with(File, Alloc = arena)` is invalid. The call-site `with()` can only contain `Alloc = expr`.
-- **Closures and Alloc (Phase 2 interaction):** A closure inside a `with(Alloc)` function can call `with(Alloc)` functions — it captures the allocator parameter from its environment (same as any other captured value). The closure's type must include `Alloc` in its cap set. If the closure escapes, the allocator must still be valid when the closure runs (the programmer's responsibility — same as allocator identity issue).
+- **Function pointers and Alloc (Phase 2 interaction):** A function pointer may point to a function with `with(Alloc)`, but any allocator state must be passed explicitly. There is no captured allocator environment.
 
 ### Parser disambiguation
 
@@ -1191,7 +1173,7 @@ Note: The spec blog post shows `borrow f as fref in R { ... }` as the explicit f
   - Cannot be returned from a function
   - Cannot be stored in a struct field that outlives the region
   - Cannot be assigned to a variable declared outside the borrow block
-  - Cannot be captured by a closure that escapes the borrow block
+  - Cannot be stored in a value that escapes the borrow block
   - Error: `"reference with region '{R}' cannot escape its borrow block"`
 - Region names follow the no-shadowing rule (Invariant 4). `borrow x as xr in R` introduces `xr` (the reference) and `R` (the region) into scope. Neither may shadow existing names. Error: `"region name '{R}' shadows existing name"`
 - Nested borrow blocks with different region names are fine:
@@ -1212,7 +1194,7 @@ borrow x as xr in R1 {
   - Multiple input refs with different regions → error: `"ambiguous output region: function takes references from regions '{R1}' and '{R2}'; use an explicit borrow block to disambiguate"`. The programmer must restructure using a borrow block.
 - **`&[T, R]` is not surface syntax.** Region-annotated reference types exist only in the checker's internal representation. The programmer never writes `&[T, R]` — they write `&T`. Region annotations are inferred from the borrow block structure. This keeps the surface language simple.
 - **`Heap<T>` and borrow blocks (Phase 5 interaction):** The `borrow p as pr in R { ... }` syntax works on `Heap<T>` — it borrows the heap value, giving `pr: &T` (or `&mut T`). This uses the same AST node (`Stmt.borrowIn`) as borrowing stack values. The only difference is in codegen: borrowing a stack value takes the address of an alloca; borrowing a `Heap<T>` loads the inner pointer from the `Heap<T>` wrapper.
-- **Closures and regions (Phase 2 interaction):** A closure can capture a reference `&T` from an enclosing borrow block, but the closure cannot escape that block. The checker verifies this via the escape analysis. If a closure captures a reference with region `R` and the closure's type is assigned to a variable outside region `R`'s scope, error: `"closure captures reference from region '{R}' that would escape"`. Non-escaping closures (called within the borrow block, not stored or returned) can freely capture references.
+- **Function pointers and regions (Phase 2 interaction):** Function pointers do not capture references, so borrow-region interaction stays simpler. References still cannot escape their borrow block through returns, fields, or stored values.
 
 ### Implementation
 
@@ -1236,7 +1218,7 @@ borrow x as xr in R1 {
 - `borrow_heap.con`: borrow block on `Heap<T>` (Phase 5 interaction) → ok
 - `error_borrow_escape.con`: reference escapes region → error "cannot escape its borrow block"
 - `error_borrow_frozen.con`: use original inside borrow block → error
-- `error_borrow_closure_escape.con`: closure captures reference from borrow region and escapes → error
+- `error_borrow_escape.con`: reference from borrow region escapes → error
 - `error_borrow_shadow.con`: region name shadows existing variable → error "shadows existing name"
 
 ---
@@ -1294,7 +1276,7 @@ fn reinterpret(x: u32) with(Unsafe) -> f32 {
   - No pointer arithmetic in safe code. Pointer arithmetic requires `Unsafe` and is provided via `extern fn` or `transmute`.
 - `transmute<T>(expr)` requires `with(Unsafe)`. Size check: `size_of(typeof(expr)) == size_of(T)`. Error: `"cannot transmute between types of different sizes: '{source}' ({n} bytes) and '{target}' ({m} bytes)"`. **`transmute` only works on concrete (non-generic) types.** You cannot `transmute<T>(x)` where `T` is a type parameter — the size is not known at compile time. Error: `"cannot transmute to generic type '{T}'"`
 - Creating a raw pointer (`&x as *const T`) is safe — using one is not
-- **Callback function pointers to C:** Only no-capture closures (plain function pointers) can be passed to C as callback pointers. Closures with captures use a fat pointer `{ ptr fn, ptr env }` which is not C-compatible. If a captured closure is passed to an extern function parameter typed as a function pointer, error: `"closure with captures cannot be passed to C; use a function without captures"`. The C-compatible function pointer type for extern signatures is `*const fn(T) -> U` (a raw pointer to a function).
+- **Callback function pointers to C:** Named functions can be passed to C as callback pointers when their signatures are C-compatible. The C-compatible function pointer type for extern signatures is `*const fn(T) -> U` (a raw pointer to a function).
 
 ### Migration
 
@@ -1307,7 +1289,7 @@ Existing `extern fn` calls in examples and tests do NOT currently require `Unsaf
 - **AST**: `ExternFn` already exists. Add `StructDef.reprC : Bool := false`. Add `Expr.transmute (targetTy : Ty) (inner : Expr)`. Add `Expr.ptrDeref (inner : Expr)`.
 - **Token/Lexer**: `Unsafe` is recognized as a capability name (just an identifier). `transmute` is a built-in identifier (reserved, like `destroy`). `#[repr(C)]` parsing: `#` already tokenized as `hash`; parser handles the sequence `# [ repr ( C ) ]` as a special form.
 - **Parser**: Parse `#[repr(C)]` before struct definitions, set `reprC = true`. If `#[` is followed by anything other than `repr(C)]`, error: `"unknown attribute; only #[repr(C)] is supported"`. Parse `transmute<T>(expr)` — `transmute` is a reserved identifier followed by `<`, type, `>`, `(`, expr, `)`. Parse `*expr` as `Expr.ptrDeref`.
-- **Check.lean**: Verify all `extern fn` call sites have `with(Unsafe)`. Verify extern param/return types are C-compatible (reject structs without repr(C), reject String, reject enums, reject closures with captures). Verify `*ptr` deref has `with(Unsafe)`. Verify `transmute` has `with(Unsafe)`, types are concrete (not generic), and sizes match. For size computation: maintain a `sizeOf : Ty → Option Nat` function for primitive types and `#[repr(C)]` structs.
+- **Check.lean**: Verify all `extern fn` call sites have `with(Unsafe)`. Verify extern param/return types are C-compatible (reject structs without repr(C), reject String, reject enums, reject non-C-compatible function types). Verify `*ptr` deref has `with(Unsafe)`. Verify `transmute` has `with(Unsafe)`, types are concrete (not generic), and sizes match. For size computation: maintain a `sizeOf : Ty → Option Nat` function for primitive types and `#[repr(C)]` structs.
 - **Codegen**: `extern fn` emits `declare` (already works). `#[repr(C)]` structs use C layout rules (fields in order, natural alignment, struct padding). `Bool` in extern signatures: `zext i1 to i8` on call, `trunc i8 to i1` on return. `transmute` → `bitcast` for pointers, or store-to-alloca + load-with-different-type for value types. `*ptr` → `load T, ptr %val`.
 
 ### Tests
@@ -1580,7 +1562,7 @@ Define the kernel IR and write an independent type checker. Even without proofs,
 | `&f` inline borrow | Named region introduction + borrow |
 | `with(Alloc = arena)` | Explicit allocator parameter |
 | `type Copy T` | Type with `Copy` qualifier in kind |
-| Closures | Lambda with explicit environment product type |
+| Function pointers | Named function references only |
 
 **Trust boundary:** The kernel checker and its proofs are mechanically verified by Lean. What remains trusted: Lean's proof checker itself, the elaborator (surface → kernel), and the code generator (kernel → machine code).
 
@@ -1588,7 +1570,7 @@ Define the kernel IR and write an independent type checker. Even without proofs,
 
 Most tractable proof and most novel claim. Essentially a counting argument on the typing derivation.
 
-**Scope:** Primitives, let, application, match, destroy. No closures, no generics.
+**Scope:** Primitives, let, application, match, destroy. No generics.
 
 **Implementation:**
 - `Concrete/Kernel/Soundness/Linearity.lean`
@@ -1771,7 +1753,7 @@ Each phase must preserve all existing tests. Here is what changes per phase:
 | Phase | Existing tests affected? | Migration needed? |
 |-------|------------------------|-------------------|
 | **1** (Capabilities) | No — Phase 1 adds `with()` syntax but does NOT gate existing functions. Existing pure functions remain pure. Existing `extern fn` calls are NOT gated by Unsafe until Phase 7. | None |
-| **2** (Closures) | No — adds new syntax, no existing syntax changes | None |
+| **2** (Function pointers) | No — adds function pointer support without changing existing syntax | None |
 | **3** (defer/destroy/Copy) | No — adds new syntax, no existing syntax changes. Existing structs default to `isCopy = false` (linear), which is already the behavior. | None |
 | **4** (break/continue) | No — adds new keywords, existing loops don't use them | None |
 | **5** (Allocator) | No — adds new types and syntax | None |
@@ -1791,20 +1773,18 @@ Each phase must preserve all existing tests. Here is what changes per phase:
 
 These rules govern how features from different phases interact. An LLM implementing Phase N must understand these interactions if the dependent phase is already implemented.
 
-### Closures + Capabilities (Phase 2 + Phase 1)
-- A closure inherits the capability context of its defining scope. If the closure body calls `with(File)` functions, the closure's type carries `with(File)`.
-- A closure assigned to a variable or passed as an argument has a `Ty.fn_` type with a concrete `capSet`. The caller must have those capabilities.
-- Closures cannot "upgrade" capabilities — a closure in a pure function cannot have `with(File)` even if the closure declares it (the containing function would need `File` too).
+### Function Pointers + Capabilities (Phase 2 + Phase 1)
+- A function pointer's `Ty.fn_` carries a concrete capability set.
+- The caller must have those capabilities.
+- Function pointers cannot "upgrade" capabilities because they refer to named functions with already-declared effects.
 
-### Closures + Allocators (Phase 2 + Phase 5)
-- A closure inside a `with(Alloc)` function can call `with(Alloc)` functions — it captures the hidden allocator parameter like any other capture.
-- The closure's type must include `Alloc` in its `capSet`.
-- If the closure escapes, the captured allocator must still be valid when the closure runs — this is the programmer's responsibility (no compile-time tracking of allocator lifetime across escaping closures).
+### Function Pointers + Allocators (Phase 2 + Phase 5)
+- A function pointer may refer to a function with `with(Alloc)`.
+- Any allocator state must be passed explicitly; function pointers do not capture it.
 
-### Defer + Closures (Phase 3 + Phase 2)
-- `defer my_closure();` is valid — it schedules a closure call at scope exit.
-- If the closure is linear (must be called exactly once), `defer` guarantees it's called at scope exit — satisfying the linearity requirement.
-- Exception: `abort()` skips deferred calls, so a linear closure may not be consumed on the abort path. This is acceptable per Invariant 14 (abort is outside the semantic model).
+### Defer + Function Pointers (Phase 3 + Phase 2)
+- `defer cleanup();` is valid for ordinary calls, including calls through function pointers.
+- There is no closure-specific capture behavior because closures do not exist.
 
 ### Defer + Break (Phase 3 + Phase 4)
 - When `break` exits a loop, all deferred actions from the current iteration's scopes execute before the loop exits.
@@ -1816,9 +1796,9 @@ These rules govern how features from different phases interact. An LLM implement
 - In codegen, borrowing a stack value takes `&alloca`; borrowing `Heap<T>` loads the inner pointer from the Heap wrapper.
 - The region `R` governs the reference lifetime identically for stack and heap borrows.
 
-### Allocator + Closures (Phase 5 + Phase 2)
-- When a closure captures an allocator parameter and later calls `alloc()`, it uses the captured allocator.
-- If the call site binds a different allocator (`closure_call() with(Alloc = other)`), the explicit binding takes precedence.
+### Allocator + Function Pointers (Phase 5 + Phase 2)
+- A higher-order API may accept a function pointer whose type includes `with(Alloc)`.
+- Allocator identity remains explicit at the call boundary.
 
 ---
 
@@ -1831,7 +1811,7 @@ These do not block any phase above:
 - **Macros**: if added, must be hygienic, phase-separated, and capability-tracked. No macros is also a valid final answer.
 - **Variance**: covariance/contravariance for generic types with linearity
 - **Module functors**: module-level capability restrictions, separate compilation units
-- **Trait objects / dynamic dispatch**: permanently excluded. All dispatch is static (monomorphization) or explicitly indirect (closures, struct of closures). See [research/no-trait-objects.md](research/no-trait-objects.md).
+- **Trait objects / dynamic dispatch**: permanently excluded. All dispatch is static (monomorphization) or explicitly indirect through function pointers and explicit context structs. See [research/no-trait-objects.md](research/no-trait-objects.md).
 
 ---
 
@@ -1859,7 +1839,7 @@ These do not block any phase above:
 | Phase | Feature | Status | Depends on |
 |-------|---------|--------|------------|
 | **1** | Capabilities + cap polymorphism | Done | — |
-| **2** | Closures | Done | 1 |
+| **2** | Function pointers | Done | 1 |
 | **3** | `defer` + `destroy` + `Copy` + `abort` | Done | 1 |
 | **4** | `break` / `continue` / labeled loops | Done | — |
 | **5** | Allocator system | Done | 1, 3 |

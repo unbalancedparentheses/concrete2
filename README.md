@@ -201,9 +201,9 @@ Concrete is built for code that must be inspectable and mechanically verified.
 
 ## Current Status
 
-The compiler implements the core surface language in ~7,500 lines of Lean 4. All 190 tests pass (127 positive, 64 negative).
+The compiler implements the core surface language and the new internal IR pipeline in Lean 4. All 201 tests pass.
 
-**MLIR backend, kernel formalization, and the runtime are not yet implemented.** See the full [ROADMAP.md](ROADMAP.md) for the implementation plan. What works today:
+**MLIR backend, kernel formalization, and the runtime are not yet implemented.** The compiler now has Core IR, elaboration, and SSA lowering, but Core validation and backend unification are still in progress. See the full [ROADMAP.md](ROADMAP.md) for the implementation plan. What works today:
 
 - **Types**: Int, Uint, i8-i32, u8-u32, f32, f64, Bool, Char, String, arrays `[T; N]`, raw pointers
 - **Structs** with field access, mutation, and `Heap<T>` fields
@@ -222,12 +222,23 @@ The compiler implements the core surface language in ~7,500 lines of Lean 4. All
 - **Function pointers**: first-class values, `Copy` semantics, no closures (explicit design choice)
 - **Bitwise operators**: `&`, `|`, `^`, `<<`, `>>`, `~` with hex/binary/octal literals
 - **FFI**: `extern fn` declarations with `Unsafe` capability gating
+- **Compiler pipeline**: Core IR (`--emit-core`), elaboration, SSA lowering (`--emit-ssa`)
 - **Standard library builtins**:
   - **Strings**: `string_length`, `string_concat`, `string_slice`, `string_char_at`, `string_contains`, `string_eq`, `string_trim`, `drop_string`
   - **Conversions**: `int_to_string`, `string_to_int`, `bool_to_string`, `float_to_string`
   - **I/O**: `print_int`, `print_bool`, `print_string`, `print_char`, `eprint_string`, `read_line` (require Console)
   - **File**: `read_file`, `write_file` (require File)
   - **System**: `get_env` (requires Env), `exit_process` (requires Process)
+
+## Near-Term Design Priorities
+
+The current surface language is intentionally conservative. The highest-value design additions after the architecture work are:
+
+- **`newtype`** for nominal zero-cost wrappers over existing representations
+- **Explicit representation/layout control** for ABI-sensitive low-level code (`repr(C)`, alignment, packed layout)
+- **A sharper `unsafe` model** that clearly states which invariants move from the compiler to the programmer
+- **A more explicit value/reference model** so pass-by-value, borrows, raw pointers, and heap ownership stay operationally obvious
+- **Possibly `union` later**, but only with explicit unsafe rules and no implicit magic
 
 ## Roadmap
 
@@ -252,7 +263,7 @@ See [ROADMAP.md](ROADMAP.md) for the full implementation plan with syntax, rules
 | **13** | Tooling | Not started |
 | **14** | Runtime (C, then Concrete) | Not started |
 
-Next critical path: **MLIR backend** (Phase 11) for optimization and **kernel formalization** (Phase 12) for verified soundness. These can proceed in parallel.
+Next critical path: **Core validation + migration out of `Check.lean`** so the new IR pipeline becomes the semantic source of truth. After that: backend unification/optimization and kernel formalization.
 
 ### What fits the philosophy and what does not
 
@@ -350,7 +361,7 @@ Things Concrete deliberately does not have:
 | Variable shadowing | Clarity, fewer subtle bugs |
 | Null | Type safety via `Option<T>` |
 | Exceptions | Errors as values, explicit propagation |
-| Closures | Hidden captures are implicit allocation and implicit data flow |
+| Closures | Not supported by design |
 | Implicit conversions | No silent data loss |
 | Undefined behavior (safe code) | Kernel semantics fully defined |
 

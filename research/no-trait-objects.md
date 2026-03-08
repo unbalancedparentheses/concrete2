@@ -34,14 +34,9 @@ Two language invariants are violated:
 
 **2. "No hidden control flow."** The call `x.describe()` on a trait object looks syntactically identical to `x.describe()` on a concrete type `Point`. The indirection is invisible at the call site. The programmer cannot tell from reading the code whether this is a direct call or a runtime dispatch.
 
-## Why Closures Are Different
+## Function Pointers Instead
 
-Concrete has closures, which are also implemented as function pointers. But closures don't violate the same invariants:
-
-- A closure's type is `fn(Int) -> Int` — the type signature **explicitly says** "this is a function pointer, the target is decided at runtime." The indirection is visible **in the type**.
-- A trait object method call `x.describe()` on `dyn Describe` looks identical to `x.describe()` on a concrete `Point`. The indirection is **invisible at the call site**.
-
-Same implementation (function pointer), different visibility to the programmer. The philosophy cares about visibility.
+Concrete does not have closures. When explicit indirect dispatch is needed, it uses plain function pointers and explicit context values passed as ordinary arguments.
 
 ## What Concrete Does Instead
 
@@ -87,7 +82,7 @@ let result: Int = show(myPoint);  // generates show_for_Point
 
 The compiler generates a specialized copy of `show` for each concrete type. No runtime dispatch. Every call target is a direct, known function.
 
-### 3. Closures (explicit indirect dispatch)
+### 3. Function pointers (explicit indirect dispatch)
 
 For pluggable single-method behavior:
 
@@ -96,20 +91,20 @@ fn apply(x: Int, f: fn(Int) -> Int) -> Int {
     return f(x);  // indirect call — visible from the type
 }
 
-let doubled: Int = apply(21, fn(x: Int) -> Int { return x * 2; });
+let doubled: Int = apply(21, double);
 ```
 
-The type `fn(Int) -> Int` makes the indirection explicit. No hidden dispatch.
+The type `fn(Int) -> Int` makes the indirection explicit. No hidden dispatch, no hidden environment.
 
 ## Coverage Analysis
 
 | Use case | Mechanism | Works? |
 |---|---|---|
 | Heterogeneous collection (known types) | Enum + match | Yes — exhaustiveness checked |
-| Strategy / callback (single method) | Closure | Yes — explicit in the type |
+| Strategy / callback (single method) | Function pointer | Yes — explicit in the type |
 | AST / expression tree | Enum + Heap for recursion | Yes — natural fit |
 | Multiple backends (DB, format, protocol) | Enum | Yes — known set at compile time |
-| Multi-method pluggable interface | Struct of closures | Yes — verbose but explicit |
+| Multi-method pluggable interface | Struct of function pointers plus explicit context | Yes — verbose but explicit |
 | Library extensible by downstream users | **No** | Must modify the enum |
 | Runtime plugin loading | **No** | Needs dynamic linking |
 
@@ -130,7 +125,7 @@ Over:
 
 ### The manual vtable escape hatch
 
-If you truly need multi-method runtime dispatch, a struct of closures is a manual vtable:
+If you truly need multi-method runtime dispatch, a struct of function pointers plus explicit context is a manual vtable:
 
 ```
 struct Renderer {
@@ -150,4 +145,4 @@ This is what C does (Linux kernel VFS, GTK, etc.). It works, it's explicit, and 
 
 ## Decision
 
-No trait objects. Monomorphization + enums + closures. This is a permanent language constraint, not a "not yet implemented" feature. The formal verification story (Phase 10) depends on all dispatch being statically resolvable or explicitly indirect through typed function pointers.
+No trait objects. Monomorphization + enums + function pointers. This is a permanent language constraint, not a "not yet implemented" feature. The formal verification story depends on all dispatch being statically resolvable or explicitly indirect through typed function pointers.
