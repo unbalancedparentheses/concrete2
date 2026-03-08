@@ -1,0 +1,4 @@
+fn main!() -> Int {
+    print_int(42);
+    return 0;
+}

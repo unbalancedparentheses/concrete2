@@ -34,6 +34,7 @@ structure FnSig where
   params : List (String × Ty)
   retTy : Ty
   typeParams : List String := []
+  typeBounds : List (String × List String) := []  -- type param bounds
   capParams : List String := []    -- capability variables
   capSet : CapSet := .empty        -- declared capabilities
   deriving Repr
@@ -65,6 +66,9 @@ structure TypeEnv where
   borrowRefs : List String := []          -- names of refs created by borrow blocks (for escape analysis)
   loopBreakTy : Option Ty := none         -- collects type from break-with-value in while-as-expression
   inDeferBody : Bool := false             -- true when checking inside a defer body
+  currentImplType : Option Ty := none     -- the Self type when inside an impl block
+  loopLabels : List String := []          -- stack of active loop labels
+  traitImpls : List (String × String) := []  -- (typeName, traitName) pairs for bound checking
   deriving Repr
 
 abbrev CheckM := ExceptT String (StateM TypeEnv)
@@ -152,8 +156,13 @@ def resolveType (ty : Ty) : CheckM Ty := do
   match ty with
   | .named name =>
     let env ← getEnv
+    -- Resolve Self to the current impl type
+    if name == "Self" then
+      match env.currentImplType with
+      | some t => return t
+      | none => throw "Self can only be used inside impl blocks"
     -- Check if it's a type parameter first
-    if env.currentTypeParams.contains name then return .typeVar name
+    else if env.currentTypeParams.contains name then return .typeVar name
     else
       match env.typeAliases.lookup name with
       | some resolved => return resolved
@@ -476,6 +485,25 @@ private def substTy (mapping : List (String × Ty)) : Ty → Ty
   | .heapArray inner => .heapArray (substTy mapping inner)
   | ty => ty
 
+/-- Check trait bounds: for each type param with bounds, verify the concrete type implements the required traits. -/
+private def checkTraitBounds (bounds : List (String × List String)) (mapping : List (String × Ty))
+    (context : String) : CheckM Unit := do
+  let env ← getEnv
+  for (paramName, requiredTraits) in bounds do
+    match mapping.lookup paramName with
+    | some concreteType =>
+      let typeName := match concreteType with
+        | .named n => some n
+        | .generic n _ => some n
+        | _ => none
+      match typeName with
+      | some tn =>
+        for traitName in requiredTraits do
+          if !(env.traitImpls.any fun (t, tr) => t == tn && tr == traitName) then
+            throw s!"type '{tn}' does not implement trait '{traitName}' required by {context}"
+      | none => pure ()  -- primitive types, skip bound checking
+    | none => pure ()
+
 -- ============================================================
 -- Type checking expressions and statements
 -- ============================================================
@@ -553,6 +581,14 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       expectTy .bool lTyR "left operand of logical op"
       expectTy .bool rTyR "right operand of logical op"
       return .bool
+    | .bitand | .bitor | .bitxor | .shl | .shr =>
+      if isIntegerType lTyR && lTyR == rTyR then return lTy
+      else if isTypeVarL || isTypeVarR then return lTy
+      else do
+        if !isIntegerType lTyR then
+          throw s!"type mismatch in bitwise op: expected integer type, got {tyToString lTyR}"
+        expectTy lTyR rTyR "bitwise operand types"
+        return lTy
   | .unaryOp op operand =>
     let ty ← checkExpr operand hint
     match op with
@@ -564,6 +600,10 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
     | .not_ =>
       expectTy .bool ty "not operand"
       return .bool
+    | .bitnot =>
+      if isIntegerType ty then return ty
+      else do
+        throw s!"type mismatch in bitwise not: expected integer type, got {tyToString ty}"
   | .arrowAccess obj field =>
     let objTy ← checkExpr obj
     -- obj must be Heap<T> or HeapArray<T>
@@ -584,7 +624,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
     match ← lookupStruct structName with
     | some sd =>
       match sd.fields.find? fun f => f.name == field with
-      | some f => return f.ty
+      | some f => resolveType f.ty
       | none => throw s!"struct '{structName}' has no field '{field}'"
     | none => throw s!"unknown struct type '{structName}'"
   | .allocCall inner allocExpr =>
@@ -723,6 +763,9 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
             | none => .typeVar tp)
       -- Build type substitution
       let mapping := sig.typeParams.zip inferredTypeArgs
+      -- Check trait bounds
+      if !sig.typeBounds.isEmpty then
+        checkTraitBounds sig.typeBounds mapping s!"generic function '{fnName}'"
       let paramTypes := sig.params.map fun (n, t) => (n, substTy mapping t)
       let retTy := substTy mapping sig.retTy
       -- Resolve capability variables from argument types
@@ -804,7 +847,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       -- Build type substitution from struct type params + provided type args
       let mapping := sd.typeParams.zip typeArgs
       for sf in sd.fields do
-        let fieldTy := substTy mapping sf.ty
+        let fieldTy ← resolveType (substTy mapping sf.ty)
         match fields.find? fun (fn, _) => fn == sf.name with
         | some (_, expr) =>
           let exprTy ← checkExpr expr (some fieldTy)
@@ -845,7 +888,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
         match sd.fields.find? fun f => f.name == field with
         | some f =>
           let mapping := sd.typeParams.zip typeArgs
-          return substTy mapping f.ty
+          resolveType (substTy mapping f.ty)
         | none => throw s!"struct '{structName}' has no field '{field}'"
       | none => throw s!"field access on non-struct type"
   | .enumLit enumName variant typeArgs fields =>
@@ -1312,18 +1355,21 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
     | none =>
       -- No else branch: then branch must not consume any linear var
       checkNoBranchConsumption envBefore.vars envAfterThen.vars "if-without-else"
-  | .while_ cond body =>
+  | .while_ cond body lbl =>
     let condTy ← checkExpr cond
     if condTy != .bool && !isIntegerType condTy then
       throw s!"while condition must be bool, got {tyToString condTy}"
-    -- Increment loop depth for the body
+    -- Increment loop depth for the body, push label if present
     let env ← getEnv
-    setEnv { env with loopDepth := env.loopDepth + 1 }
+    let labels := match lbl with
+      | some l => l :: env.loopLabels
+      | none => env.loopLabels
+    setEnv { env with loopDepth := env.loopDepth + 1, loopLabels := labels }
     checkStmts body retTy
-    -- Restore loop depth
+    -- Restore loop depth and labels
     let env' ← getEnv
-    setEnv { env' with loopDepth := env.loopDepth }
-  | .forLoop init cond step body =>
+    setEnv { env' with loopDepth := env.loopDepth, loopLabels := env.loopLabels }
+  | .forLoop init cond step body lbl =>
     -- Init
     match init with
     | some initStmt => checkStmt initStmt retTy
@@ -1332,15 +1378,18 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
     let condTy ← checkExpr cond
     if condTy != .bool && !isIntegerType condTy then
       throw s!"for condition must be bool, got {tyToString condTy}"
-    -- Body + step in loop scope
+    -- Body + step in loop scope, push label if present
     let env ← getEnv
-    setEnv { env with loopDepth := env.loopDepth + 1 }
+    let labels := match lbl with
+      | some l => l :: env.loopLabels
+      | none => env.loopLabels
+    setEnv { env with loopDepth := env.loopDepth + 1, loopLabels := labels }
     checkStmts body retTy
     match step with
     | some stepStmt => checkStmt stepStmt retTy
     | none => pure ()
     let env' ← getEnv
-    setEnv { env' with loopDepth := env.loopDepth }
+    setEnv { env' with loopDepth := env.loopDepth, loopLabels := env.loopLabels }
   | .fieldAssign obj field value =>
     -- Escape analysis: prevent storing a borrow ref into a struct field
     let env ← getEnv
@@ -1460,12 +1509,18 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
       let valTy ← checkExpr value (some fieldTy)
       expectTy fieldTy valTy s!"arrow field assignment '{structName}->{field}'"
     | none => throw s!"struct '{structName}' has no field '{field}'"
-  | .break_ value =>
+  | .break_ value lbl =>
     let env ← getEnv
     if env.inDeferBody then
       throw "break is not allowed inside defer"
     if env.loopDepth == 0 then
       throw "break outside of loop"
+    -- Validate label if present
+    match lbl with
+    | some l =>
+      if !env.loopLabels.contains l then
+        throw s!"unknown loop label '{l}'"
+    | none => pure ()
     -- Check all linear variables declared in the loop body are consumed
     for (name, info) in env.vars do
       if !info.isCopy && info.state != .consumed && info.loopDepth >= env.loopDepth then
@@ -1481,12 +1536,18 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
         if prevTy != valTy then
           throw s!"break value type '{tyToString valTy}' does not match previous break type '{tyToString prevTy}'"
     | none => pure ()
-  | .continue_ =>
+  | .continue_ lbl =>
     let env ← getEnv
     if env.inDeferBody then
       throw "continue is not allowed inside defer"
     if env.loopDepth == 0 then
       throw "continue outside of loop"
+    -- Validate label if present
+    match lbl with
+    | some l =>
+      if !env.loopLabels.contains l then
+        throw s!"unknown loop label '{l}'"
+    | none => pure ()
     -- Check all linear variables declared in the loop body are consumed
     for (name, info) in env.vars do
       if !info.isCopy && info.state != .consumed && info.loopDepth >= env.loopDepth then
@@ -1557,15 +1618,19 @@ def checkFn (f : FnDef) : CheckM Unit := do
   -- Save env state (vars from previous functions shouldn't leak)
   let envBefore ← getEnv
   -- Resolve type parameter names: .named "T" -> .typeVar "T"
-  let retTy := resolveTypeParams f.retTy f.typeParams
+  let retTyRaw := resolveTypeParams f.retTy f.typeParams
   -- Set current return type, type params, and capability context
-  let env1 := { envBefore with currentRetTy := retTy, currentTypeParams := f.typeParams }
+  let env1 := { envBefore with currentRetTy := retTyRaw, currentTypeParams := f.typeParams }
   let env2 := { env1 with currentCapSet := f.capSet }
   setEnv { env2 with currentFnName := f.name }
+  -- Resolve Self in return type (needs currentImplType from env)
+  let retTy ← resolveType retTyRaw
+  modify fun env => { env with currentRetTy := retTy }
   -- Add params to env. Linear params are "consumed" by being received.
   let mut paramNames : List String := []
   for p in f.params do
-    let paramTy := resolveTypeParams p.ty f.typeParams
+    let paramTyRaw := resolveTypeParams p.ty f.typeParams
+    let paramTy ← resolveType paramTyRaw
     addVar p.name paramTy true  -- params are always mutable for now
     paramNames := paramNames ++ [p.name]
   -- Check body
@@ -1579,37 +1644,53 @@ def checkFn (f : FnDef) : CheckM Unit := do
   -- Restore env (remove this function's locals)
   setEnv envBefore
 
+/-- Resolve Self to the concrete impl type in a Ty (pure, for signature building). -/
+private def resolveSelf (ty : Ty) (implTy : Ty) : Ty :=
+  match ty with
+  | .named "Self" => implTy
+  | .ref inner => .ref (resolveSelf inner implTy)
+  | .refMut inner => .refMut (resolveSelf inner implTy)
+  | .generic name args => .generic name (args.map fun a => resolveSelf a implTy)
+  | .array elem n => .array (resolveSelf elem implTy) n
+  | .heap inner => .heap (resolveSelf inner implTy)
+  | .heapArray inner => .heapArray (resolveSelf inner implTy)
+  | other => other
+
 def checkModule (m : Module) (importedFnSigs : List (String × FnSig) := [])
     (importedStructs : List StructDef := []) (importedEnums : List EnumDef := [])
     (importedImplBlocks : List ImplBlock := []) (importedTraitImpls : List ImplTraitBlock := [])
     : Except String Unit :=
   let fnSigs : List FnSig := m.functions.map fun f =>
     { params := f.params.map fun p => (p.name, p.ty), retTy := f.retTy, typeParams := f.typeParams,
-      capParams := f.capParams, capSet := f.capSet }
+      typeBounds := f.typeBounds, capParams := f.capParams, capSet := f.capSet }
   -- Add extern fn signatures
   let externSigs : List FnSig := m.externFns.map fun ef =>
     { params := ef.params.map fun p => (p.name, p.ty), retTy := ef.retTy }
   let importedSigList := importedFnSigs.map Prod.snd
   let baseOffset := importedSigList.length
-  -- Built-in functions for strings
+  -- Built-in functions for strings and I/O
   let builtinSigs : List FnSig := [
     { params := [("s", .ref .string)], retTy := .int },
     { params := [("a", .string), ("b", .string)], retTy := .string },
     { params := [("s", .ref .string)], retTy := .unit },
-    { params := [("s", .string)], retTy := .unit }
+    { params := [("s", .string)], retTy := .unit },
+    { params := [("x", .int)], retTy := .unit, capSet := .concrete ["Console"] },
+    { params := [("x", .bool)], retTy := .unit, capSet := .concrete ["Console"] }
   ]
   let builtinOffset := baseOffset + fnSigs.length
   let builtinNames : List (String × Nat) := [
     ("string_length", builtinOffset),
     ("string_concat", builtinOffset + 1),
     ("print_string", builtinOffset + 2),
-    ("drop_string", builtinOffset + 3)
+    ("drop_string", builtinOffset + 3),
+    ("print_int", builtinOffset + 4),
+    ("print_bool", builtinOffset + 5)
   ]
   -- Add submodule functions/extern fns with qualified names (mod_fn)
   let submoduleSigs : List FnSig := m.submodules.foldl (fun acc (sub : Module) =>
     acc ++ (sub.functions.map fun f =>
       { params := f.params.map fun p => (p.name, p.ty), retTy := f.retTy, typeParams := f.typeParams,
-        capParams := f.capParams, capSet := f.capSet : FnSig })
+        typeBounds := f.typeBounds, capParams := f.capParams, capSet := f.capSet : FnSig })
     ++ (sub.externFns.map fun ef =>
       { params := ef.params.map fun p => (p.name, p.ty), retTy := ef.retTy : FnSig })
   ) []
@@ -1628,18 +1709,24 @@ def checkModule (m : Module) (importedFnSigs : List (String × FnSig) := [])
   let allImplBlocks := importedImplBlocks ++ m.implBlocks
   let allTraitImpls := importedTraitImpls ++ m.traitImpls
   let implMethodSigs : List (String × FnSig) := allImplBlocks.foldl (fun acc ib =>
+    let implTy := if ib.typeParams.isEmpty then Ty.named ib.typeName
+                  else Ty.generic ib.typeName (ib.typeParams.map Ty.typeVar)
     acc ++ ib.methods.map fun f =>
       let mangledName := ib.typeName ++ "_" ++ f.name
       let allTypeParams := ib.typeParams ++ f.typeParams
-      let sig : FnSig := { params := f.params.map fun p => (p.name, p.ty), retTy := f.retTy,
+      let sig : FnSig := { params := f.params.map fun p => (p.name, resolveSelf p.ty implTy),
+                            retTy := resolveSelf f.retTy implTy,
                             typeParams := allTypeParams, capParams := f.capParams, capSet := f.capSet }
       (mangledName, sig)
   ) []
   let traitImplMethodSigs : List (String × FnSig) := allTraitImpls.foldl (fun acc tb =>
+    let implTy := if tb.typeParams.isEmpty then Ty.named tb.typeName
+                  else Ty.generic tb.typeName (tb.typeParams.map Ty.typeVar)
     acc ++ tb.methods.map fun f =>
       let mangledName := tb.typeName ++ "_" ++ f.name
       let allTypeParams := tb.typeParams ++ f.typeParams
-      let sig : FnSig := { params := f.params.map fun p => (p.name, p.ty), retTy := f.retTy,
+      let sig : FnSig := { params := f.params.map fun p => (p.name, resolveSelf p.ty implTy),
+                            retTy := resolveSelf f.retTy implTy,
                             typeParams := allTypeParams, capParams := f.capParams, capSet := f.capSet }
       (mangledName, sig)
   ) []
@@ -1659,9 +1746,12 @@ def checkModule (m : Module) (importedFnSigs : List (String × FnSig) := [])
   let typeAliasMap : List (String × Ty) := m.typeAliases.map fun ta => (ta.name, ta.targetTy)
   -- Build constants map
   let constantsMap : List (String × Ty) := m.constants.map fun c => (c.name, c.ty)
+  -- Build trait impl pairs for bound checking
+  let traitImplPairs : List (String × String) := allTraitImpls.map fun tb => (tb.typeName, tb.traitName)
   let initEnv : TypeEnv :=
     { vars := [], structs := allStructs, enums := allEnums, functions := allSigs,
-      fnNames := allNames, loopDepth := 0, typeAliases := typeAliasMap, constants := constantsMap }
+      fnNames := allNames, loopDepth := 0, typeAliases := typeAliasMap, constants := constantsMap,
+      traitImpls := traitImplPairs }
   -- Helper: check if a type is copy (pure context, uses struct/enum defs)
   let isCopyTyPure : Ty → Bool := fun ty =>
     match ty with
@@ -1747,17 +1837,26 @@ def checkModule (m : Module) (importedFnSigs : List (String × FnSig) := [])
   match traitCheck with
   | .error e => .error e
   | .ok () =>
-  -- Merge impl block type params into each method's typeParams
-  let allImplMethods := allImplBlocks.foldl (fun acc ib =>
+  -- Merge impl block type params into each method's typeParams, track impl type for Self
+  let regularFns : List (FnDef × Option Ty) := m.functions.map fun f => (f, none)
+  let implMethodPairs : List (FnDef × Option Ty) := allImplBlocks.foldl (fun acc ib =>
+    let implTy := if ib.typeParams.isEmpty then Ty.named ib.typeName
+                  else Ty.generic ib.typeName (ib.typeParams.map Ty.typeVar)
     acc ++ ib.methods.map fun f =>
-      { f with typeParams := ib.typeParams ++ f.typeParams }
+      ({ f with typeParams := ib.typeParams ++ f.typeParams }, some implTy)
   ) []
-  let allTraitImplMethods := allTraitImpls.foldl (fun acc tb =>
+  let traitImplMethodPairs : List (FnDef × Option Ty) := allTraitImpls.foldl (fun acc tb =>
+    let implTy := if tb.typeParams.isEmpty then Ty.named tb.typeName
+                  else Ty.generic tb.typeName (tb.typeParams.map Ty.typeVar)
     acc ++ tb.methods.map fun f =>
-      { f with typeParams := tb.typeParams ++ f.typeParams }
+      ({ f with typeParams := tb.typeParams ++ f.typeParams }, some implTy)
   ) []
-  let allMethodDefs := allImplMethods ++ allTraitImplMethods
-  let result := (m.functions ++ allMethodDefs).foldlM (fun () f => checkFn f) () |>.run initEnv |>.run
+  let allFnPairs := regularFns ++ implMethodPairs ++ traitImplMethodPairs
+  let result := allFnPairs.foldlM (fun () (f, implTy) => do
+    let env ← getEnv
+    setEnv { env with currentImplType := implTy }
+    checkFn f
+  ) () |>.run initEnv |>.run
   match result with
   | (.ok (), _) => .ok ()
   | (.error e, _) => .error e
@@ -1792,13 +1891,15 @@ def checkProgram (modules : List Module) : Except String Unit :=
   let exportTable : List (String × ExportEntry) := modules.foldl (fun acc m =>
     let pubFns := m.functions.map fun (f : FnDef) =>
       (f.name, { params := f.params.map fun (p : Param) => (p.name, p.ty), retTy := f.retTy,
-                  capParams := f.capParams, capSet := f.capSet : FnSig })
-    let subExports : List (String × ExportEntry) := m.submodules.map fun (sub : Module) =>
+                  typeBounds := f.typeBounds, capParams := f.capParams, capSet := f.capSet : FnSig })
+    let subExports : List (String × ExportEntry) := m.submodules.foldl (fun acc2 (sub : Module) =>
       let subFns : List (String × FnSig) := sub.functions.map fun (f : FnDef) =>
         (f.name, { params := f.params.map fun (p : Param) => (p.name, p.ty), retTy := f.retTy,
-                    capParams := f.capParams, capSet := f.capSet : FnSig })
+                    typeBounds := f.typeBounds, capParams := f.capParams, capSet := f.capSet : FnSig })
       let entry : ExportEntry := (subFns, sub.structs, sub.enums, sub.implBlocks, sub.traitImpls)
-      (m.name ++ "." ++ sub.name, entry)
+      -- Register under both qualified (parent.sub) and unqualified (sub) names
+      acc2 ++ [(m.name ++ "." ++ sub.name, entry), (sub.name, entry)]
+    ) ([] : List (String × ExportEntry))
     acc ++ [(m.name, (pubFns, m.structs, m.enums, m.implBlocks, m.traitImpls))] ++ subExports
   ) []
   -- Second pass: resolve imports and type-check each module

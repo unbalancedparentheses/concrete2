@@ -100,26 +100,69 @@ partial def lexIdentLoop (s : LexerState) (acc : String) : LexerState × TokenKi
   | none =>
     (s, (lookupKeyword acc).getD (.ident acc))
 
-/-- Lex a number literal (integer or float). -/
-partial def lexNumberLoop (s : LexerState) (acc : Nat) : LexerState × TokenKind :=
+/-- Lex hex digits after 0x/0X prefix. -/
+partial def lexHexLoop (s : LexerState) (acc : Nat) : LexerState × TokenKind :=
   match s.peek with
   | some c =>
     if c.isDigit then
-      lexNumberLoop s.advance (acc * 10 + (c.toNat - '0'.toNat))
-    else if c == '.' then
-      -- Check next char is a digit (to distinguish from field access)
-      match s.peekAt 1 with
-      | some c2 =>
-        if c2.isDigit then
-          -- Float literal
-          lexFloatFrac s.advance (Float.ofNat acc) 0.1
-        else
-          (s, .intLit acc)
-      | none => (s, .intLit acc)
+      lexHexLoop s.advance (acc * 16 + (c.toNat - '0'.toNat))
+    else if c >= 'a' && c <= 'f' then
+      lexHexLoop s.advance (acc * 16 + (c.toNat - 'a'.toNat + 10))
+    else if c >= 'A' && c <= 'F' then
+      lexHexLoop s.advance (acc * 16 + (c.toNat - 'A'.toNat + 10))
     else
       (s, .intLit acc)
   | none => (s, .intLit acc)
+
+/-- Lex binary digits after 0b/0B prefix. -/
+partial def lexBinLoop (s : LexerState) (acc : Nat) : LexerState × TokenKind :=
+  match s.peek with
+  | some c =>
+    if c == '0' || c == '1' then
+      lexBinLoop s.advance (acc * 2 + (c.toNat - '0'.toNat))
+    else
+      (s, .intLit acc)
+  | none => (s, .intLit acc)
+
+/-- Lex octal digits after 0o/0O prefix. -/
+partial def lexOctLoop (s : LexerState) (acc : Nat) : LexerState × TokenKind :=
+  match s.peek with
+  | some c =>
+    if c >= '0' && c <= '7' then
+      lexOctLoop s.advance (acc * 8 + (c.toNat - '0'.toNat))
+    else
+      (s, .intLit acc)
+  | none => (s, .intLit acc)
+
+/-- Lex a number literal (integer or float), including hex/bin/oct. -/
+partial def lexNumberLoop (s : LexerState) (acc : Nat) : LexerState × TokenKind :=
+  -- If acc is 0, check for hex/bin/oct prefix
+  if acc == 0 then
+    match s.peek with
+    | some 'x' | some 'X' => lexHexLoop s.advance 0
+    | some 'b' | some 'B' => lexBinLoop s.advance 0
+    | some 'o' | some 'O' => lexOctLoop s.advance 0
+    | _ => lexDecLoop s acc
+  else
+    lexDecLoop s acc
 where
+  lexDecLoop (s : LexerState) (acc : Nat) : LexerState × TokenKind :=
+    match s.peek with
+    | some c =>
+      if c.isDigit then
+        lexDecLoop s.advance (acc * 10 + (c.toNat - '0'.toNat))
+      else if c == '.' then
+        -- Check next char is a digit (to distinguish from field access)
+        match s.peekAt 1 with
+        | some c2 =>
+          if c2.isDigit then
+            lexFloatFrac s.advance (Float.ofNat acc) 0.1
+          else
+            (s, .intLit acc)
+        | none => (s, .intLit acc)
+      else
+        (s, .intLit acc)
+    | none => (s, .intLit acc)
   lexFloatFrac (s : LexerState) (acc : Float) (place : Float) : LexerState × TokenKind :=
     match s.peek with
     | some c =>
@@ -186,6 +229,21 @@ def lexCharLit (s : LexerState) : LexerState × TokenKind :=
     | _ => (s, .eof)
   | none => (s, .eof)
 
+/-- Lex a label after the opening tick: 'name -/
+partial def lexLabel (s : LexerState) : LexerState × TokenKind :=
+  match s.peek with
+  | some c =>
+    if isIdentStart c then lexLabelLoop s.advance (String.singleton c)
+    else (s, .eof)
+  | none => (s, .eof)
+where
+  lexLabelLoop (s : LexerState) (acc : String) : LexerState × TokenKind :=
+    match s.peek with
+    | some c =>
+      if isIdentCont c then lexLabelLoop s.advance (acc.push c)
+      else (s, .label acc)
+    | none => (s, .label acc)
+
 /-- Lex a single token. -/
 partial def lexToken (s : LexerState) : LexerState × TokenKind :=
   let s := skipWhitespace s
@@ -196,7 +254,16 @@ partial def lexToken (s : LexerState) : LexerState × TokenKind :=
       if isIdentStart c then lexIdentLoop s.advance (String.singleton c)
       else if c.isDigit then lexNumberLoop s.advance (c.toNat - '0'.toNat)
       else if c == '"' then lexStringLoop s.advance ""
-      else if c == '\'' then lexCharLit s.advance
+      else if c == '\'' then
+        -- Disambiguate: 'c' is char literal, 'ident is a label
+        match s.peekAt 1 with
+        | some c1 =>
+          if isIdentStart c1 then
+            match s.peekAt 2 with
+            | some '\'' => lexCharLit s.advance  -- 'c' is a char literal
+            | _ => lexLabel s.advance            -- 'ident is a label
+          else lexCharLit s.advance
+        | none => lexCharLit s.advance
       else
         let s := s.advance
         match c with
@@ -234,10 +301,12 @@ partial def lexToken (s : LexerState) : LexerState × TokenKind :=
           | _ => (s, .not_)
         | '<' =>
           match s.peek with
+          | some '<' => (s.advance, .shl)
           | some '=' => (s.advance, .leq)
           | _ => (s, .lt)
         | '>' =>
           match s.peek with
+          | some '>' => (s.advance, .shr)
           | some '=' => (s.advance, .geq)
           | _ => (s, .gt)
         | '&' =>
@@ -247,7 +316,9 @@ partial def lexToken (s : LexerState) : LexerState × TokenKind :=
         | '|' =>
           match s.peek with
           | some '|' => (s.advance, .or_)
-          | _ => (s, .eof)
+          | _ => (s, .pipe)
+        | '^' => (s, .caret)
+        | '~' => (s, .tilde)
         | _ => (s, .eof)
     | none => (s, .eof)
 

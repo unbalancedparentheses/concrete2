@@ -1,0 +1,4 @@
+fn main!() -> Int {
+    print_bool(true);
+    return 0;
+}

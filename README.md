@@ -13,9 +13,9 @@
 
 >Most ideas come from previous ideas - Alan C. Kay, The Early History Of Smalltalk
 
-Concrete is a systems programming language designed around a single organizing principle: **every design choice must answer the question, can a machine reason about this?**
+Concrete is a systems programming language designed around a single organizing principle: **every design choice must answer the question, can a machine reason about this?** All code is explicit, machine-verifiable, LL(1)-parseable, with no hidden control flow.
 
-The compiler is written entirely in [Lean 4](https://leanprover.github.io/lean4/doc/setup.html), a theorem prover. This is not an implementation detail — it's the point. The goal is a language whose core type system is mechanically verified: proofs of progress, preservation, linearity soundness, and effect soundness, checked by Lean itself.
+The compiler is written in [Lean 4](https://leanprover.github.io/lean4/doc/setup.html), a theorem prover. The goal is a language whose core type system is mechanically verified: proofs of progress, preservation, linearity soundness, and effect soundness, checked by Lean itself.
 
 **No other language combines all four: linear types, a capability-based effect system, a compiler written in a theorem prover, and a design optimized for machine-generated code.**
 
@@ -44,7 +44,7 @@ make build
 .lake/build/bin/concrete input.con -o output && ./output
 ```
 
-Linear types work today — the compiler rejects programs that forget or reuse resources:
+Linear types work today. The compiler rejects programs that forget or reuse resources:
 
 ```
 struct Resource { value: Int }
@@ -64,7 +64,7 @@ fn main() -> Int {
 
 ## The Vision
 
-Most languages treat verification as something bolted on after the fact. Concrete inverts this: the language is *designed around* a verified core. Here is what a Concrete program will look like when the language is complete:
+Concrete is designed around a verified core. Here is what a Concrete program will look like when the language is complete:
 
 ```
 module Main
@@ -104,13 +104,13 @@ fn main!() {                           // ! is sugar for with(Std)
 }
 ```
 
-Everything is visible: resource acquisition, cleanup scheduling, error propagation, effect declarations, allocator binding. Nothing happens behind your back.
+Resource acquisition, cleanup, error propagation, effect declarations, and allocator binding are all visible in the source.
 
 ### Pure by default, effects declared
 
-Functions without capability annotations are pure — no side effects, no allocation, no I/O. When a function needs effects, it declares them with `with()`:
+Functions without capability annotations are pure. No side effects, no allocation, no I/O. When a function needs effects, it declares them with `with()`:
 
-- A function without `with()` is pure — it cannot call any function that has `with()`
+- A function without `with()` is pure. It cannot call any function that has `with()`
 - If `f` calls `g`, and `g` requires `Network`, then `f` must declare `Network`
 - Capabilities propagate monotonically through the call graph
 - `grep with(Network)` finds every function that touches the network
@@ -118,22 +118,22 @@ Functions without capability annotations are pure — no side effects, no alloca
 
 Predefined capabilities: `File`, `Network`, `Clock`, `Env`, `Random`, `Alloc`, `Unsafe`. `Std` includes all except `Unsafe`. Users cannot define new capabilities.
 
-### True linear types
+### Linear types
 
-Concrete has linear types: use **exactly** once. Forgetting a resource is a compile error, not silent cleanup inserted behind your back.
+Concrete has linear types: use **exactly** once. Forgetting a resource is a compile error, not silent cleanup.
 
-- `defer destroy(x)` schedules cleanup at scope exit (LIFO order, like Zig/Go)
+- `defer destroy(x)` schedules cleanup at scope exit, LIFO order (like Zig/Go)
 - `defer` reserves the value: cannot move `x` after deferring its destruction
 - `destroy(x)` is only valid if the type defines a destructor
 - Types without a destructor must be consumed by moving, returning, or destructuring
-- `Copy` is explicit and opt-in — a `Copy` type cannot have a destructor and cannot contain linear fields
+- `Copy` is explicit and opt-in. A `Copy` type cannot have a destructor and cannot contain linear fields
 
 ### No hidden control flow
 
 When you read Concrete code, what you see is what executes:
 
 - **No implicit function calls.** `a + b` on integers is primitive addition, not `Add::add`
-- **No implicit destruction.** The compiler never inserts destructor calls — you write `defer destroy(x)`
+- **No implicit destruction.** The compiler never inserts destructor calls. You write `defer destroy(x)`
 - **No implicit allocation.** If it allocates, you see `with(Alloc)` in the signature
 - **No invisible error handling.** Errors propagate only where `?` appears
 
@@ -151,8 +151,8 @@ Allocation is a capability with explicit allocator binding at call sites:
 The compiler is in Lean 4 so the core type system can be formally verified:
 
 1. **Kernel calculus** formalized in Lean with mechanically-checked proofs
-2. **Surface language** elaborates into the kernel — if elaboration succeeds, the program is sound
-3. **Kernel is versioned separately** — once 1.0, it's frozen. New features must elaborate to existing kernel constructs
+2. **Surface language** elaborates into the kernel. If elaboration succeeds, the program is sound
+3. **Kernel is versioned separately.** Once 1.0, it's frozen. New features must elaborate to existing kernel constructs
 
 What a type-checked program guarantees:
 - **Memory safety**: no use-after-free, no double-free, no dangling references
@@ -161,28 +161,28 @@ What a type-checked program guarantees:
 
 ## Why Concrete
 
-Concrete is built for code that must be inspectable, auditable, and eventually mechanically verified.
+Concrete is built for code that must be inspectable and mechanically verified.
 
 ### Clarity guarantees
 
 | Question | Concrete |
 |----------|----------|
-| Can you tell if a function allocates? | Yes — `with(Alloc)` in signature |
-| Can you tell if a function does I/O? | Yes — `with(File)`, `with(Network)` |
-| Can you tell where cleanup happens? | Yes — `defer destroy(x)` is explicit |
-| Can you tell if `a + b` calls a function? | Yes — primitive operators are always primitive |
-| Can you tell if a value is forgotten? | Yes — linearity makes it a compile error |
-| Can you audit unsafe code? | Yes — `grep with(Unsafe)` at the function boundary |
+| Can you tell if a function allocates? | Yes.`with(Alloc)` in signature |
+| Can you tell if a function does I/O? | Yes.`with(File)`, `with(Network)` |
+| Can you tell where cleanup happens? | Yes.`defer destroy(x)` is explicit |
+| Can you tell if `a + b` calls a function? | Yes.primitive operators are always primitive |
+| Can you tell if a value is forgotten? | Yes.linearity makes it a compile error |
+| Can you audit unsafe code? | Yes.`grep with(Unsafe)` at the function boundary |
 
 ### Critical software
 
 | Need | Concrete |
 |------|----------|
 | Memory safety proofs | Mechanically verified in Lean 4 |
-| "This module can't touch the network" | `grep with(Network)` — provable |
+| "This module can't touch the network" | `grep with(Network)`, provable |
 | "This JSON parser can't phone home" | No capabilities = provably pure |
 | "No resource leaks" | Compile error if not consumed |
-| "Where does this allocate?" | `grep with(Alloc)` — exact list |
+| "Where does this allocate?" | `grep with(Alloc)`, exact list |
 | Deterministic resource ordering | Explicit `defer` in LIFO order |
 | Ecosystem / libraries | Early stage |
 | Compiler maturity | Research stage |
@@ -225,16 +225,16 @@ See [ROADMAP.md](ROADMAP.md) for the full implementation plan with syntax, rules
 
 | Phase | Feature | Parallel? |
 |-------|---------|-----------|
-| **1** | Capabilities + cap polymorphism | — |
-| **2** | Closures | — |
-| **3** | `defer` + `destroy` + `Copy` | — |
+| **1** | Capabilities + cap polymorphism | No |
+| **2** | Closures | No |
+| **3** | `defer` + `destroy` + `Copy` | No |
 | **4** | `break` / `continue` | Yes, with 1-3 |
-| **5** | Allocator system | — |
+| **5** | Allocator system | No |
 | **6** | Borrow regions | Yes, with 1-5 |
 | **7** | FFI + C interop | Yes, with 2-6 |
 | **8** | MLIR backend + optimization | Yes, anytime |
-| **9** | Standard library | — |
-| **10** | Runtime (C, then Concrete) | — |
+| **9** | Standard library | No |
+| **10** | Runtime (C, then Concrete) | No |
 | **11** | Kernel formalization + proofs | Yes, anytime |
 | **12** | Tooling | Yes, ongoing |
 
@@ -297,12 +297,12 @@ examples/        -- 59 example programs (superset of lambdaclass/concrete exampl
 
 ## Influences
 
-- **[Austral](https://austral-lang.org/)** — Linear types, capability system, the most direct influence
-- **Zig** — Explicit allocator passing, `defer`
-- **[Koka](https://koka-lang.github.io/)** / Eff / Frank — Algebraic effect systems
-- **Lean 4** — Theorem prover for kernel formalization
-- **[Roc](https://www.roc-lang.org/)** — `!` syntax for impure functions
-- **Ada/SPARK** — Formal verification in production systems
+- **[Austral](https://austral-lang.org/)**: linear types, capability system, the most direct influence
+- **Zig**: explicit allocator passing, `defer`
+- **[Koka](https://koka-lang.github.io/)** / Eff / Frank: algebraic effect systems
+- **Lean 4**: theorem prover for kernel formalization
+- **[Roc](https://www.roc-lang.org/)**: `!` syntax for impure functions
+- **Ada/SPARK**: formal verification in production systems
 
 ## Anti-Features
 
@@ -325,8 +325,8 @@ Things Concrete deliberately does not have:
 ## Implementation Snapshot
 
 **Current Lean 4 implementation:**
-- ~4,700 lines — the whole compiler fits in 6 files
-- Direct textual LLVM IR emission — no MLIR, no complex lowering passes
+- ~4,700 lines, the whole compiler fits in 6 files
+- Direct textual LLVM IR emission, no MLIR, no complex lowering passes
 - Path to formal verification of the type system using Lean's proof system
 - Clean pipeline: Lexer -> Parser -> AST -> Check -> Codegen
 

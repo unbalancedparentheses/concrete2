@@ -190,12 +190,51 @@ run_ok "$TESTDIR/alloc_free_loop.con" 45
 run_ok "$TESTDIR/borrow_sequential.con" 30
 run_ok "$TESTDIR/borrow_copy_in_block.con" 42
 
+# Phase 7: Bitwise operators + hex/bin/oct literals
+run_ok "$TESTDIR/bitwise_and.con" 15
+run_ok "$TESTDIR/bitwise_or.con" 255
+run_ok "$TESTDIR/bitwise_xor.con" 240
+run_ok "$TESTDIR/bitwise_shift.con" 1056
+run_ok "$TESTDIR/bitwise_not.con" -1
+run_ok "$TESTDIR/hex_literal.con" 255
+run_ok "$TESTDIR/bin_oct_literal.con" 73
+
+# Phase 7b: Print / basic I/O
+run_ok "$TESTDIR/print_int_basic.con" "42
+0"
+run_ok "$TESTDIR/print_bool_basic.con" "true
+0"
+run_ok "$TESTDIR/print_in_loop.con" "0
+1
+2
+0"
+
+# Phase 7c: Module file resolution
+run_ok "$TESTDIR/module_file/main.con" 42
+
 # Additional complex tests
 run_ok "$TESTDIR/complex_fibonacci_closure.con" 55
 run_ok "$TESTDIR/complex_state_machine.con" 42
 run_ok "$TESTDIR/complex_builder_pattern.con" 60
 run_ok "$TESTDIR/complex_error_chain.con" 40
 run_ok "$TESTDIR/complex_defer_cleanup.con" 30
+
+# Phase C: Self keyword
+run_ok "$TESTDIR/self_type_basic.con" 42
+run_ok "$TESTDIR/self_type_method.con" 42
+
+# Phase D: Labeled loops
+run_ok "$TESTDIR/labeled_break.con" 42
+run_ok "$TESTDIR/labeled_continue.con" 0
+
+# Phase E: Trait bounds
+run_ok "$TESTDIR/trait_bound_basic.con" 30
+run_ok "$TESTDIR/trait_bound_multiple.con" 50
+
+# Phase G: Recursive data structure tests
+run_ok "$TESTDIR/complex_recursive_list.con" 42
+run_ok "$TESTDIR/complex_recursive_tree.con" 42
+run_ok "$TESTDIR/complex_recursive_mutual.con" 42
 
 echo ""
 echo "=== Negative tests (expected errors) ==="
@@ -261,6 +300,20 @@ run_err "$TESTDIR/error_cap_closure_context.con" "requires capability"
 # Additional borrow errors
 run_err "$TESTDIR/error_borrow_double_mut.con"   "is frozen by borrow block"
 run_err "$TESTDIR/error_borrow_assign_frozen.con" "frozen by borrow block"
+# Bitwise errors
+run_err "$TESTDIR/error_bitwise_float.con" "type mismatch"
+# Print errors
+run_err "$TESTDIR/error_print_no_cap.con" "requires capability"
+# Module errors
+run_err "$TESTDIR/error_module_not_found.con" "module file not found"
+run_err "$TESTDIR/module_circular/main.con" "circular module import"
+# Self keyword errors
+run_err "$TESTDIR/error_self_outside_impl.con" "Self can only be used inside impl blocks"
+# Labeled loop errors
+run_err "$TESTDIR/error_unknown_label.con" "unknown loop label"
+run_err "$TESTDIR/error_label_not_loop.con" "label can only precede while or for"
+# Trait bound errors
+run_err "$TESTDIR/error_trait_bound_missing.con" "does not implement trait"
 
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="

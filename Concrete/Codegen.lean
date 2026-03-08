@@ -46,6 +46,7 @@ structure CodegenState where
   closureFnDefs : String := ""
   deferStack : List (List Expr) := [[]]  -- stack of deferred expressions per scope
   loopResultSlot : Option String := none  -- alloca slot for while-as-expression result
+  loopLabelMap : List (String × String × String) := []  -- label → (exitLabel, contLabel)
 
 instance : Inhabited CodegenState where
   default := {
@@ -160,6 +161,8 @@ def tyToLLVM (s : CodegenState) : Ty → String
   | .refMut _ => "ptr"
   | .ptrMut _ => "ptr"
   | .ptrConst _ => "ptr"
+  | .generic "Heap" _ => "ptr"
+  | .generic "HeapArray" _ => "ptr"
   | .generic name _ => "%struct." ++ name
   | .typeVar _ => "i64"
   | .array elem n => "[" ++ toString n ++ " x " ++ tyToLLVM s elem ++ "]"
@@ -193,6 +196,8 @@ def paramTyToLLVM (s : CodegenState) : Ty → String
   | .named name =>
     if (s.lookupStruct name).isSome || (s.lookupEnum name).isSome then "ptr"
     else "i64"
+  | .generic "Heap" _ => "ptr"
+  | .generic "HeapArray" _ => "ptr"
   | .generic name _ =>
     if (s.lookupStruct name).isSome || (s.lookupEnum name).isSome then "ptr"
     else "i64"
@@ -341,6 +346,7 @@ private def inferExprTy (s : CodegenState) (e : Expr) (hint : Option Ty := none)
     | _ => inferExprTy s lhs
   | .unaryOp .not_ _ => .bool
   | .unaryOp .neg operand => inferExprTy s operand
+  | .unaryOp .bitnot operand => inferExprTy s operand
   | .paren inner => inferExprTy s inner
   | .borrow inner => .ref (inferExprTy s inner)
   | .borrowMut inner => .refMut (inferExprTy s inner)
@@ -558,6 +564,9 @@ partial def genExpr (s : CodegenState) (e : Expr) (hintTy : Option Ty := none) :
         | .geq => "fcmp oge " ++ llTy ++ " " ++ lReg ++ ", " ++ rReg
         | .and_ => "and i1 " ++ lReg ++ ", " ++ rReg
         | .or_ => "or i1 " ++ lReg ++ ", " ++ rReg
+        | .bitand | .bitor | .bitxor | .shl | .shr =>
+          -- Bitwise on float: shouldn't happen (checker rejects), fallback
+          "fadd " ++ llTy ++ " " ++ lReg ++ ", " ++ rReg
       let s := s.emit ("  " ++ result ++ " = " ++ instr)
       (s, result)
     else if isPtr then
@@ -589,6 +598,12 @@ partial def genExpr (s : CodegenState) (e : Expr) (hintTy : Option Ty := none) :
                   else "icmp uge " ++ llTy ++ " " ++ lReg ++ ", " ++ rReg
         | .and_ => "and i1 " ++ lReg ++ ", " ++ rReg
         | .or_ => "or i1 " ++ lReg ++ ", " ++ rReg
+        | .bitand => "and " ++ llTy ++ " " ++ lReg ++ ", " ++ rReg
+        | .bitor => "or " ++ llTy ++ " " ++ lReg ++ ", " ++ rReg
+        | .bitxor => "xor " ++ llTy ++ " " ++ lReg ++ ", " ++ rReg
+        | .shl => "shl " ++ llTy ++ " " ++ lReg ++ ", " ++ rReg
+        | .shr => if isSigned then "ashr " ++ llTy ++ " " ++ lReg ++ ", " ++ rReg
+                  else "lshr " ++ llTy ++ " " ++ lReg ++ ", " ++ rReg
       let s := s.emit ("  " ++ result ++ " = " ++ instr)
       (s, result)
   | .unaryOp op operand =>
@@ -608,6 +623,10 @@ partial def genExpr (s : CodegenState) (e : Expr) (hintTy : Option Ty := none) :
         (s, result)
     | .not_ =>
       let s := s.emit ("  " ++ result ++ " = xor i1 " ++ reg ++ ", 1")
+      (s, result)
+    | .bitnot =>
+      let llTy := intTyToLLVM opTy
+      let s := s.emit ("  " ++ result ++ " = xor " ++ llTy ++ " " ++ reg ++ ", -1")
       (s, result)
   | .call fnName typeArgs args =>
     -- Intercept abort()
@@ -717,7 +736,7 @@ partial def genExpr (s : CodegenState) (e : Expr) (hintTy : Option Ty := none) :
       let retLLTy := tyToLLVM s retTy
       -- Build function type for indirect call
       let paramTyStrs := "ptr" :: argTys  -- env ptr + arg types
-      let fnTyStr := retLLTy ++ " (" ++ ", ".intercalate paramTyStrs ++ ")"
+      let _fnTyStr := retLLTy ++ " (" ++ ", ".intercalate paramTyStrs ++ ")"
       if retLLTy == "void" then
         let s := s.emit ("  call void " ++ fnPtr ++ "(" ++ argStr ++ ")")
         (s, "0")
@@ -1280,7 +1299,7 @@ partial def genExpr (s : CodegenState) (e : Expr) (hintTy : Option Ty := none) :
     let s := s.emit ("  " ++ result ++ " = load " ++ resultLLTy ++ ", ptr " ++ resultSlot)
     let s := { s with loopExitLabel := savedExit, loopContLabel := savedCont, loopResultSlot := savedSlot }
     (s, result)
-  | .closure params capSet retTy body _captures _isLinear =>
+  | .closure params _capSet retTy body _captures _isLinear =>
     -- Generate a closure: { ptr fn, ptr env }
     let closureId := s.labelCounter
     let s := { s with labelCounter := s.labelCounter + 1 }
@@ -1779,13 +1798,17 @@ partial def genStmt (s : CodegenState) (stmt : Stmt) : CodegenState :=
     else
       let (s, valReg) := genExpr s value (some elemTy)
       s.emit ("  store " ++ elemLLTy ++ " " ++ valReg ++ ", ptr " ++ gepReg)
-  | .while_ cond body =>
+  | .while_ cond body lbl =>
     let (s, condLabel) := s.freshLabel "while.cond"
     let (s, bodyLabel) := s.freshLabel "while.body"
     let (s, exitLabel) := s.freshLabel "while.exit"
     let savedExit := s.loopExitLabel
     let savedCont := s.loopContLabel
+    let savedLabelMap := s.loopLabelMap
     let s := { s with loopExitLabel := some exitLabel, loopContLabel := some condLabel }
+    let s := match lbl with
+      | some l => { s with loopLabelMap := (l, exitLabel, condLabel) :: s.loopLabelMap }
+      | none => s
     let s := s.emit ("  br label %" ++ condLabel)
     let s := s.emit (condLabel ++ ":")
     let (s, condReg) := genExpr s cond
@@ -1802,8 +1825,8 @@ partial def genStmt (s : CodegenState) (stmt : Stmt) : CodegenState :=
     let s := genStmts s body
     let s := s.emit ("  br label %" ++ condLabel)
     let s := s.emit (exitLabel ++ ":")
-    { s with loopExitLabel := savedExit, loopContLabel := savedCont }
-  | .forLoop init cond step body =>
+    { s with loopExitLabel := savedExit, loopContLabel := savedCont, loopLabelMap := savedLabelMap }
+  | .forLoop init cond step body lbl =>
     -- Generate init
     let s := match init with
       | some initStmt => genStmt s initStmt
@@ -1815,7 +1838,11 @@ partial def genStmt (s : CodegenState) (stmt : Stmt) : CodegenState :=
     let (s, exitLabel) := s.freshLabel "for.exit"
     let savedExit := s.loopExitLabel
     let savedCont := s.loopContLabel
+    let savedLabelMap := s.loopLabelMap
     let s := { s with loopExitLabel := some exitLabel, loopContLabel := some stepLabel }
+    let s := match lbl with
+      | some l => { s with loopLabelMap := (l, exitLabel, stepLabel) :: s.loopLabelMap }
+      | none => s
     let s := s.emit ("  br label %" ++ condLabel)
     let s := s.emit (condLabel ++ ":")
     let (s, condReg) := genExpr s cond
@@ -1838,8 +1865,8 @@ partial def genStmt (s : CodegenState) (stmt : Stmt) : CodegenState :=
       | none => s
     let s := s.emit ("  br label %" ++ condLabel)
     let s := s.emit (exitLabel ++ ":")
-    { s with loopExitLabel := savedExit, loopContLabel := savedCont }
-  | .break_ value =>
+    { s with loopExitLabel := savedExit, loopContLabel := savedCont, loopLabelMap := savedLabelMap }
+  | .break_ value lbl =>
     -- Store break value to result slot if present (while-as-expression)
     let s := match value, s.loopResultSlot with
     | some expr, some slot =>
@@ -1848,16 +1875,27 @@ partial def genStmt (s : CodegenState) (stmt : Stmt) : CodegenState :=
       let (s, valReg) := genExpr s expr
       s.emit ("  store " ++ resultLLTy ++ " " ++ valReg ++ ", ptr " ++ slot)
     | _, _ => s
-    match s.loopExitLabel with
-    | some lbl =>
-      let s := s.emit ("  br label %" ++ lbl)
+    -- Find the target label: if labeled, look up in loopLabelMap; otherwise use current loop
+    let targetExit := match lbl with
+    | some l => match s.loopLabelMap.find? fun (name, _, _) => name == l with
+      | some (_, exit, _) => some exit
+      | none => s.loopExitLabel
+    | none => s.loopExitLabel
+    match targetExit with
+    | some target =>
+      let s := s.emit ("  br label %" ++ target)
       let (s, deadLabel) := s.freshLabel "break.dead"
       s.emit (deadLabel ++ ":")
     | none => s
-  | .continue_ =>
-    match s.loopContLabel with
-    | some lbl =>
-      let s := s.emit ("  br label %" ++ lbl)
+  | .continue_ lbl =>
+    let targetCont := match lbl with
+    | some l => match s.loopLabelMap.find? fun (name, _, _) => name == l with
+      | some (_, _, cont) => some cont
+      | none => s.loopContLabel
+    | none => s.loopContLabel
+    match targetCont with
+    | some target =>
+      let s := s.emit ("  br label %" ++ target)
       let (s, deadLabel) := s.freshLabel "cont.dead"
       s.emit (deadLabel ++ ":")
     | none => s
@@ -1956,10 +1994,21 @@ def genFn (s : CodegenState) (f : FnDef) (hasMainWrapper : Bool := false) : Code
   let s := { s with deferStack := savedDeferStack }
   s.emit "}\n"
 
+private def normalizeFieldTy : Ty → Ty
+  | .generic "Heap" [t] => .heap (normalizeFieldTy t)
+  | .generic "HeapArray" [t] => .heapArray (normalizeFieldTy t)
+  | .ref t => .ref (normalizeFieldTy t)
+  | .refMut t => .refMut (normalizeFieldTy t)
+  | .heap t => .heap (normalizeFieldTy t)
+  | .heapArray t => .heapArray (normalizeFieldTy t)
+  | .array t n => .array (normalizeFieldTy t) n
+  | .generic name args => .generic name (args.map normalizeFieldTy)
+  | t => t
+
 private def enumerateFields (fields : List StructField) (idx : Nat := 0) : List FieldInfo :=
   match fields with
   | [] => []
-  | f :: rest => { name := f.name, ty := f.ty, index := idx } :: enumerateFields rest (idx + 1)
+  | f :: rest => { name := f.name, ty := normalizeFieldTy f.ty, index := idx } :: enumerateFields rest (idx + 1)
 
 def buildStructDefs (structs : List StructDef) : List StructInfo :=
   structs.map fun sd =>
@@ -2012,7 +2061,9 @@ def genModule (m : Module) : String :=
     ("string_length", Ty.int),
     ("drop_string", Ty.unit),
     ("print_string", Ty.unit),
-    ("string_concat", Ty.string)
+    ("string_concat", Ty.string),
+    ("print_int", Ty.unit),
+    ("print_bool", Ty.unit)
   ]
   let implRetTypes := m.implBlocks.foldl (fun acc ib =>
     acc ++ ib.methods.map fun f => (ib.typeName ++ "_" ++ f.name, f.retTy)
@@ -2021,16 +2072,16 @@ def genModule (m : Module) : String :=
     acc ++ tb.methods.map fun f => (tb.typeName ++ "_" ++ f.name, f.retTy)
   ) ([] : List (String × Ty))
   let externRetTypes := m.externFns.map fun ef => (ef.name, ef.retTy)
-  let fnRetTypes := (m.functions.map fun f => (f.name, f.retTy)) ++ builtinRetTypes ++ implRetTypes ++ traitImplRetTypes ++ externRetTypes
+  let fnRetTypes := ((m.functions.map fun f => (f.name, normalizeFieldTy f.retTy)) ++ builtinRetTypes ++ implRetTypes ++ traitImplRetTypes ++ externRetTypes).map fun (n, t) => (n, normalizeFieldTy t)
   let fnParamTypes : List (String × List Ty) := (m.functions.map fun f =>
-    (f.name, f.params.map fun p => p.ty)) ++
+    (f.name, f.params.map fun p => normalizeFieldTy p.ty)) ++
     (m.implBlocks.foldl (fun acc ib =>
-      acc ++ ib.methods.map fun f => (ib.typeName ++ "_" ++ f.name, f.params.map fun p => p.ty)
+      acc ++ ib.methods.map fun f => (ib.typeName ++ "_" ++ f.name, f.params.map fun p => normalizeFieldTy p.ty)
     ) []) ++
     (m.traitImpls.foldl (fun acc tb =>
-      acc ++ tb.methods.map fun f => (tb.typeName ++ "_" ++ f.name, f.params.map fun p => p.ty)
+      acc ++ tb.methods.map fun f => (tb.typeName ++ "_" ++ f.name, f.params.map fun p => normalizeFieldTy p.ty)
     ) []) ++
-    (m.externFns.map fun ef => (ef.name, ef.params.map fun p => p.ty))
+    (m.externFns.map fun ef => (ef.name, ef.params.map fun p => normalizeFieldTy p.ty))
   let constList := m.constants.map fun c => (c.name, (c.ty, c.value))
   let s := { CodegenState.init with structDefs := structInfos, enumDefs := enumInfos, fnRetTypes, fnParamTypes, constants := constList }
   let s := s.emit "; Generated by Concrete compiler"
@@ -2057,6 +2108,7 @@ def genModule (m : Module) : String :=
   let s := s.emit "declare void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)"
   let s := s.emit "declare i64 @write(i32, ptr, i64)"
   let s := s.emit "declare void @abort()"
+  let s := s.emit "declare i32 @printf(ptr, ...)"
   -- Extern function declarations from the source
   let s := m.externFns.foldl (fun s ef =>
     let retLLTy := tyToLLVM s ef.retTy
@@ -2086,6 +2138,30 @@ def genModule (m : Module) : String :=
   let s := s.emit "  %len_ptr.ps = getelementptr inbounds %struct.String, ptr %s, i32 0, i32 1"
   let s := s.emit "  %len.ps = load i64, ptr %len_ptr.ps"
   let s := s.emit "  %unused = call i64 @write(i32 1, ptr %data.ps, i64 %len.ps)"
+  let s := s.emit "  ret void"
+  let s := s.emit "}"
+  let s := s.emit ""
+  let s := s.emit "@.fmt_int = private constant [5 x i8] c\"%ld\\0A\\00\""
+  let s := s.emit "@.fmt_true = private constant [6 x i8] c\"true\\0A\\00\""
+  let s := s.emit "@.fmt_false = private constant [7 x i8] c\"false\\0A\\00\""
+  let s := s.emit ""
+  let s := s.emit "define void @print_int(i64 %x) {"
+  let s := s.emit "  %fmt = getelementptr [5 x i8], ptr @.fmt_int, i64 0, i64 0"
+  let s := s.emit "  call i32 (ptr, ...) @printf(ptr %fmt, i64 %x)"
+  let s := s.emit "  ret void"
+  let s := s.emit "}"
+  let s := s.emit ""
+  let s := s.emit "define void @print_bool(i1 %x) {"
+  let s := s.emit "  br i1 %x, label %true_br, label %false_br"
+  let s := s.emit "true_br:"
+  let s := s.emit "  %fmt_t = getelementptr [6 x i8], ptr @.fmt_true, i64 0, i64 0"
+  let s := s.emit "  call i32 (ptr, ...) @printf(ptr %fmt_t)"
+  let s := s.emit "  br label %done_br"
+  let s := s.emit "false_br:"
+  let s := s.emit "  %fmt_f = getelementptr [7 x i8], ptr @.fmt_false, i64 0, i64 0"
+  let s := s.emit "  call i32 (ptr, ...) @printf(ptr %fmt_f)"
+  let s := s.emit "  br label %done_br"
+  let s := s.emit "done_br:"
   let s := s.emit "  ret void"
   let s := s.emit "}"
   let s := s.emit ""
@@ -2128,8 +2204,6 @@ def genModule (m : Module) : String :=
     let mainHasParams := match mainFn with
       | some f => !f.params.isEmpty
       | none => false
-    let s := s.emit "declare i32 @printf(ptr, ...)"
-    let s := s.emit ""
     let s := s.emit "@.fmt = private constant [5 x i8] c\"%ld\\0A\\00\""
     let s := s.emit ""
     if mainHasParams then
@@ -2207,6 +2281,122 @@ private def flattenModule (m : Module) : Module :=
     typeAliases := m.typeAliases ++ subTypeAliases,
     submodules := [] }
 
+/-- Resolve Self to the concrete impl type in a Ty. -/
+private def resolveSelfTy (ty : Ty) (implTy : Ty) : Ty :=
+  match ty with
+  | .named "Self" => implTy
+  | .ref inner => .ref (resolveSelfTy inner implTy)
+  | .refMut inner => .refMut (resolveSelfTy inner implTy)
+  | .generic name args => .generic name (args.map fun a => resolveSelfTy a implTy)
+  | .array elem n => .array (resolveSelfTy elem implTy) n
+  | .heap inner => .heap (resolveSelfTy inner implTy)
+  | .heapArray inner => .heapArray (resolveSelfTy inner implTy)
+  | .ptrMut inner => .ptrMut (resolveSelfTy inner implTy)
+  | .ptrConst inner => .ptrConst (resolveSelfTy inner implTy)
+  | .fn_ params capSet retTy => .fn_ (params.map fun p => resolveSelfTy p implTy) capSet (resolveSelfTy retTy implTy)
+  | other => other
+
+mutual
+private partial def resolveSelfExpr (e : Expr) (implTy : Ty) : Expr :=
+  match e with
+  | .structLit name targs fields =>
+    .structLit name (targs.map fun t => resolveSelfTy t implTy)
+      (fields.map fun (n, v) => (n, resolveSelfExpr v implTy))
+  | .enumLit ename vname targs fields =>
+    .enumLit ename vname (targs.map fun t => resolveSelfTy t implTy)
+      (fields.map fun (n, v) => (n, resolveSelfExpr v implTy))
+  | .cast inner targetTy => .cast (resolveSelfExpr inner implTy) (resolveSelfTy targetTy implTy)
+  | .call fn targs args =>
+    .call fn (targs.map fun t => resolveSelfTy t implTy)
+      (args.map fun a => resolveSelfExpr a implTy)
+  | .methodCall obj m targs args =>
+    .methodCall (resolveSelfExpr obj implTy) m (targs.map fun t => resolveSelfTy t implTy)
+      (args.map fun a => resolveSelfExpr a implTy)
+  | .staticMethodCall tn m targs args =>
+    .staticMethodCall tn m (targs.map fun t => resolveSelfTy t implTy)
+      (args.map fun a => resolveSelfExpr a implTy)
+  | .binOp op l r => .binOp op (resolveSelfExpr l implTy) (resolveSelfExpr r implTy)
+  | .unaryOp op e => .unaryOp op (resolveSelfExpr e implTy)
+  | .paren inner => .paren (resolveSelfExpr inner implTy)
+  | .borrow inner => .borrow (resolveSelfExpr inner implTy)
+  | .borrowMut inner => .borrowMut (resolveSelfExpr inner implTy)
+  | .deref inner => .deref (resolveSelfExpr inner implTy)
+  | .try_ inner => .try_ (resolveSelfExpr inner implTy)
+  | .fieldAccess obj f => .fieldAccess (resolveSelfExpr obj implTy) f
+  | .arrowAccess obj f => .arrowAccess (resolveSelfExpr obj implTy) f
+  | .arrayLit elems => .arrayLit (elems.map fun e => resolveSelfExpr e implTy)
+  | .arrayIndex arr idx => .arrayIndex (resolveSelfExpr arr implTy) (resolveSelfExpr idx implTy)
+  | .allocCall inner alloc => .allocCall (resolveSelfExpr inner implTy) (resolveSelfExpr alloc implTy)
+  | .match_ scrut arms => .match_ (resolveSelfExpr scrut implTy) (arms.map fun arm =>
+      match arm with
+      | .mk en vn bs body => .mk en vn bs (resolveSelfStmts body implTy)
+      | .litArm v body => .litArm (resolveSelfExpr v implTy) (resolveSelfStmts body implTy)
+      | .varArm b body => .varArm b (resolveSelfStmts body implTy))
+  | .closure params cs retTy body caps isLin =>
+    .closure (params.map fun p => { p with ty := resolveSelfTy p.ty implTy }) cs
+      (retTy.map fun t => resolveSelfTy t implTy)
+      (resolveSelfStmts body implTy) caps isLin
+  | .whileExpr cond body elseBody =>
+    .whileExpr (resolveSelfExpr cond implTy) (resolveSelfStmts body implTy)
+      (resolveSelfStmts elseBody implTy)
+  | other => other
+
+private partial def resolveSelfStmts (stmts : List Stmt) (implTy : Ty) : List Stmt :=
+  stmts.map fun s => resolveSelfStmt s implTy
+
+private partial def resolveSelfStmt (s : Stmt) (implTy : Ty) : Stmt :=
+  match s with
+  | .letDecl name isMut ty val =>
+    .letDecl name isMut (ty.map fun t => resolveSelfTy t implTy) (resolveSelfExpr val implTy)
+  | .assign name val => .assign name (resolveSelfExpr val implTy)
+  | .return_ (some val) => .return_ (some (resolveSelfExpr val implTy))
+  | .return_ none => .return_ none
+  | .expr e => .expr (resolveSelfExpr e implTy)
+  | .ifElse cond th el =>
+    .ifElse (resolveSelfExpr cond implTy) (resolveSelfStmts th implTy)
+      (el.map fun b => resolveSelfStmts b implTy)
+  | .while_ cond body lbl => .while_ (resolveSelfExpr cond implTy) (resolveSelfStmts body implTy) lbl
+  | .forLoop init cond step body lbl =>
+    .forLoop (init.map fun s => resolveSelfStmt s implTy)
+      (resolveSelfExpr cond implTy)
+      (step.map fun s => resolveSelfStmt s implTy)
+      (resolveSelfStmts body implTy) lbl
+  | .fieldAssign obj f val =>
+    .fieldAssign (resolveSelfExpr obj implTy) f (resolveSelfExpr val implTy)
+  | .derefAssign target val =>
+    .derefAssign (resolveSelfExpr target implTy) (resolveSelfExpr val implTy)
+  | .arrayIndexAssign arr idx val =>
+    .arrayIndexAssign (resolveSelfExpr arr implTy) (resolveSelfExpr idx implTy)
+      (resolveSelfExpr val implTy)
+  | .break_ (some e) lbl => .break_ (some (resolveSelfExpr e implTy)) lbl
+  | .break_ none lbl => .break_ none lbl
+  | .continue_ lbl => .continue_ lbl
+  | .defer body => .defer (resolveSelfExpr body implTy)
+  | .borrowIn v r reg isMut body =>
+    .borrowIn v r reg isMut (resolveSelfStmts body implTy)
+  | .arrowAssign obj f val =>
+    .arrowAssign (resolveSelfExpr obj implTy) f (resolveSelfExpr val implTy)
+end
+
+/-- Resolve Self in a FnDef given the impl's type. -/
+private def resolveSelfInFnDef (f : FnDef) (implTy : Ty) : FnDef :=
+  { f with
+    retTy := resolveSelfTy f.retTy implTy,
+    params := f.params.map fun p => { p with ty := resolveSelfTy p.ty implTy },
+    body := resolveSelfStmts f.body implTy }
+
+/-- Resolve Self in all impl blocks and trait impls of a module. -/
+private def resolveSelfInModule (m : Module) : Module :=
+  { m with
+    implBlocks := m.implBlocks.map fun ib =>
+      let implTy := if ib.typeParams.isEmpty then Ty.named ib.typeName
+                    else Ty.generic ib.typeName (ib.typeParams.map Ty.typeVar)
+      { ib with methods := ib.methods.map fun f => resolveSelfInFnDef f implTy },
+    traitImpls := m.traitImpls.map fun tb =>
+      let implTy := if tb.typeParams.isEmpty then Ty.named tb.typeName
+                    else Ty.generic tb.typeName (tb.typeParams.map Ty.typeVar)
+      { tb with methods := tb.methods.map fun f => resolveSelfInFnDef f implTy } }
+
 def genProgram (modules : List Module) : String :=
   -- Build qualified name → original name aliases from submodules
   let aliases : List (String × String) := modules.foldl (fun acc m =>
@@ -2215,7 +2405,7 @@ def genProgram (modules : List Module) : String :=
       ++ (sub.externFns.map fun ef => (sub.name ++ "_" ++ ef.name, ef.name))
     ) ([] : List (String × String))
   ) []
-  let flatModules := modules.map flattenModule
+  let flatModules := modules.map (resolveSelfInModule ∘ flattenModule)
   let combined : Module := {
     name := "combined",
     structs := flatModules.foldl (fun acc m => acc ++ m.structs) [],

@@ -77,10 +77,11 @@ inductive BinOp where
   | add | sub | mul | div | mod
   | eq | neq | lt | gt | leq | geq
   | and_ | or_
+  | bitand | bitor | bitxor | shl | shr
   deriving Repr, BEq
 
 inductive UnaryOp where
-  | neg | not_
+  | neg | not_ | bitnot
   deriving Repr, BEq
 
 structure Param where
@@ -130,13 +131,13 @@ inductive Stmt where
   | return_ (value : Option Expr)
   | expr (e : Expr)
   | ifElse (cond : Expr) (then_ : List Stmt) (else_ : Option (List Stmt))
-  | while_ (cond : Expr) (body : List Stmt)
-  | forLoop (init : Option Stmt) (cond : Expr) (step : Option Stmt) (body : List Stmt)
+  | while_ (cond : Expr) (body : List Stmt) (label : Option String)
+  | forLoop (init : Option Stmt) (cond : Expr) (step : Option Stmt) (body : List Stmt) (label : Option String)
   | fieldAssign (obj : Expr) (field : String) (value : Expr)
   | derefAssign (target : Expr) (value : Expr)  -- *expr = expr
   | arrayIndexAssign (arr : Expr) (index : Expr) (value : Expr)  -- arr[i] = val
-  | break_ (value : Option Expr)  -- break; or break expr;
-  | continue_                     -- continue;
+  | break_ (value : Option Expr) (label : Option String)  -- break; or break 'label; or break expr;
+  | continue_ (label : Option String)                    -- continue; or continue 'label;
   | defer (body : Expr)           -- defer expr;
   | borrowIn (var : String) (ref : String) (region : String) (isMut : Bool) (body : List Stmt)
   | arrowAssign (obj : Expr) (field : String) (value : Expr)  -- p->x = val
@@ -160,6 +161,7 @@ structure EnumVariant where
 structure EnumDef where
   name : String
   typeParams : List String := []
+  typeBounds : List (String × List String) := []  -- type param bounds
   variants : List EnumVariant
   isPublic : Bool := false
   isCopy : Bool := false
@@ -168,6 +170,7 @@ structure EnumDef where
 structure StructDef where
   name : String
   typeParams : List String := []
+  typeBounds : List (String × List String) := []  -- type param bounds: T -> [Trait1, Trait2]
   fields : List StructField
   isPublic : Bool := false
   isUnion : Bool := false
@@ -177,6 +180,7 @@ structure StructDef where
 structure FnDef where
   name : String
   typeParams : List String := []
+  typeBounds : List (String × List String) := []  -- type param bounds: T -> [Trait1, Trait2]
   capParams : List String := []    -- capability variables: cap C, cap D
   params : List Param
   retTy : Ty
@@ -320,9 +324,9 @@ partial def collectFreeVarsStmts (stmts : List Stmt) (bound : List String) : Lis
           | some body => collectFreeVarsStmts body bound
           | none => []
         (condFree ++ thenFree ++ elseFree, bound)
-      | .while_ cond body =>
+      | .while_ cond body _ =>
         (collectFreeVarsExpr cond bound ++ collectFreeVarsStmts body bound, bound)
-      | .forLoop init cond step body =>
+      | .forLoop init cond step body _ =>
         let initFree := match init with
           | some s => collectFreeVarsStmts [s] bound
           | none => []
@@ -338,9 +342,9 @@ partial def collectFreeVarsStmts (stmts : List Stmt) (bound : List String) : Lis
       | .arrayIndexAssign arr idx value =>
         (collectFreeVarsExpr arr bound ++ collectFreeVarsExpr idx bound ++
          collectFreeVarsExpr value bound, bound)
-      | .break_ (some e) => (collectFreeVarsExpr e bound, bound)
-      | .break_ none => ([], bound)
-      | .continue_ => ([], bound)
+      | .break_ (some e) _ => (collectFreeVarsExpr e bound, bound)
+      | .break_ none _ => ([], bound)
+      | .continue_ _ => ([], bound)
       | .defer body => (collectFreeVarsExpr body bound, bound)
       | .borrowIn var _ref _region _isMut body =>
         (collectFreeVarsExpr (.ident var) bound ++ collectFreeVarsStmts body bound, bound)

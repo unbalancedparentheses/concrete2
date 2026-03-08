@@ -14,6 +14,7 @@ inductive TokenKind where
   | true_ | false_ | «mod» | struct_ | enum_ | match_ | pub_ | import_
   | as_ | impl_ | trait_ | const_ | type_ | extern_ | with_ | cap_ | break_ | continue_
   | defer_ | borrow_ | in_
+  | label (name : String)  -- 'outer (labeled loop)
   -- Types
   | arrow  -- ->
   -- Operators
@@ -21,6 +22,11 @@ inductive TokenKind where
   | eq | neq | lt | gt | leq | geq
   | and_ | or_ | not_
   | ampersand  -- &
+  | pipe       -- |
+  | caret      -- ^
+  | tilde      -- ~
+  | shl        -- <<
+  | shr        -- >>
   | assign  -- =
   -- Delimiters
   | lparen | rparen | lbrace | rbrace | lbracket | rbracket
@@ -79,6 +85,7 @@ def TokenKind.toString : TokenKind → String
   | .defer_ => "defer"
   | .borrow_ => "borrow"
   | .in_ => "in"
+  | .label n => s!"'{n}"
   | .arrow => "->"
   | .plus => "+"
   | .minus => "-"
@@ -95,6 +102,11 @@ def TokenKind.toString : TokenKind → String
   | .or_ => "||"
   | .not_ => "!"
   | .ampersand => "&"
+  | .pipe => "|"
+  | .caret => "^"
+  | .tilde => "~"
+  | .shl => "<<"
+  | .shr => ">>"
   | .assign => "="
   | .lparen => "("
   | .rparen => ")"

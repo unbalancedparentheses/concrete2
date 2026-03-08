@@ -236,14 +236,33 @@ partial def parseTypeArgList : ParseM (List Ty) := do
     tk ← peek
   return args
 
-partial def parseTypeParams : ParseM (List String) := do
+partial def parseTypeBounds : ParseM (List String) := do
+  let mut bounds : List String := []
+  let first ← expectIdent
+  bounds := [first]
+  let mut tk ← peek
+  while tk == .plus do
+    advance
+    let name ← expectIdent
+    bounds := bounds ++ [name]
+    tk ← peek
+  return bounds
+
+partial def parseTypeParams : ParseM (List String × List (String × List String)) := do
   let tk ← peek
   if tk == .lt then
     advance
     let mut params : List String := []
+    let mut bounds : List (String × List String) := []
     let firstName ← expectIdent
     params := [firstName]
+    -- Check for bounds: T: Trait1 + Trait2
     let mut tk2 ← peek
+    if tk2 == .colon then
+      advance
+      let bs ← parseTypeBounds
+      bounds := [(firstName, bs)]
+    tk2 ← peek
     while tk2 == .comma do
       advance
       -- Stop if next is `cap` (that's a cap param, handled by parseTypeAndCapParams)
@@ -251,18 +270,25 @@ partial def parseTypeParams : ParseM (List String) := do
       if tk2 == .cap_ then break
       let name ← expectIdent
       params := params ++ [name]
+      -- Check for bounds
+      tk2 ← peek
+      if tk2 == .colon then
+        advance
+        let bs ← parseTypeBounds
+        bounds := bounds ++ [(name, bs)]
       tk2 ← peek
     expect .gt
-    return params
+    return (params, bounds)
   else
-    return []
+    return ([], [])
 
-/-- Parse type params and cap params together: <T, U, cap C, cap D> -/
-partial def parseTypeAndCapParams : ParseM (List String × List String) := do
+/-- Parse type params and cap params together: <T: Bound, U, cap C, cap D> -/
+partial def parseTypeAndCapParams : ParseM (List String × List (String × List String) × List String) := do
   let tk ← peek
   if tk == .lt then
     advance
     let mut typeParams : List String := []
+    let mut typeBounds : List (String × List String) := []
     let mut capParams : List String := []
     -- Parse first item
     let mut tk2 ← peek
@@ -274,6 +300,12 @@ partial def parseTypeAndCapParams : ParseM (List String × List String) := do
     else if tk2 != .gt then
       let firstName ← expectIdent
       typeParams := [firstName]
+      -- Check for bounds
+      tk2 ← peek
+      if tk2 == .colon then
+        advance
+        let bs ← parseTypeBounds
+        typeBounds := [(firstName, bs)]
     tk2 ← peek
     while tk2 == .comma do
       advance
@@ -285,11 +317,17 @@ partial def parseTypeAndCapParams : ParseM (List String × List String) := do
       else
         let name ← expectIdent
         typeParams := typeParams ++ [name]
+        -- Check for bounds
+        tk2 ← peek
+        if tk2 == .colon then
+          advance
+          let bs ← parseTypeBounds
+          typeBounds := typeBounds ++ [(name, bs)]
       tk2 ← peek
     expect .gt
-    return (typeParams, capParams)
+    return (typeParams, typeBounds, capParams)
   else
-    return ([], [])
+    return ([], [], [])
 
 /-- Parse with(Cap1, Cap2, ...) capability set. Returns CapSet.empty if no with(). -/
 partial def parseWithCaps : ParseM CapSet := do
@@ -477,6 +515,10 @@ partial def parsePrimary : ParseM Expr := do
     advance
     let operand ← parsePrimary
     return .unaryOp .not_ operand
+  | .tilde =>
+    advance
+    let operand ← parsePrimary
+    return .unaryOp .bitnot operand
   | .lbracket =>
     -- Array literal: [expr, expr, ...]
     advance
@@ -620,11 +662,16 @@ partial def binOpPrec (tk : TokenKind) : Option (Nat × BinOp) :=
   | .gt => some (4, .gt)
   | .leq => some (4, .leq)
   | .geq => some (4, .geq)
-  | .plus => some (5, .add)
-  | .minus => some (5, .sub)
-  | .star => some (6, .mul)
-  | .slash => some (6, .div)
-  | .percent => some (6, .mod)
+  | .pipe => some (5, .bitor)
+  | .caret => some (6, .bitxor)
+  | .ampersand => some (7, .bitand)
+  | .shl => some (8, .shl)
+  | .shr => some (8, .shr)
+  | .plus => some (9, .add)
+  | .minus => some (9, .sub)
+  | .star => some (10, .mul)
+  | .slash => some (10, .div)
+  | .percent => some (10, .mod)
   | _ => none
 
 partial def parseExprPrec (minPrec : Nat) : ParseM Expr := do
@@ -665,23 +712,43 @@ partial def parseStmt : ParseM Stmt := do
   | .«let» => parseLet
   | .return_ => parseReturn
   | .if_ => parseIf
-  | .while_ => parseWhile
-  | .for_ => parseFor
+  | .while_ => parseWhile none
+  | .for_ => parseFor none
+  | .label name =>
+    advance
+    expect .colon
+    let tk2 ← peek
+    match tk2 with
+    | .while_ => parseWhile (some name)
+    | .for_ => parseFor (some name)
+    | _ => throw "label can only precede while or for loops"
   | .match_ => parseMatchStmt
   | .break_ =>
     advance
     let tk2 ← peek
-    if tk2 == .semicolon then
+    match tk2 with
+    | .label name =>
       advance
-      return .break_ none
-    else
+      expect .semicolon
+      return .break_ none (some name)
+    | .semicolon =>
+      advance
+      return .break_ none none
+    | _ =>
       let val ← parseExpr
       expect .semicolon
-      return .break_ (some val)
+      return .break_ (some val) none
   | .continue_ =>
     advance
-    expect .semicolon
-    return .continue_
+    let tk2 ← peek
+    match tk2 with
+    | .label name =>
+      advance
+      expect .semicolon
+      return .continue_ (some name)
+    | _ =>
+      expect .semicolon
+      return .continue_ none
   | .defer_ =>
     advance
     let body ← parseExpr
@@ -750,19 +817,19 @@ partial def parseIf : ParseM Stmt := do
     pure none
   return .ifElse cond thenBody elseBody
 
-partial def parseWhile : ParseM Stmt := do
+partial def parseWhile (lbl : Option String) : ParseM Stmt := do
   expect .while_
   let cond ← parseExpr
   let body ← parseBlock
-  return .while_ cond body
+  return .while_ cond body lbl
 
-partial def parseFor : ParseM Stmt := do
+partial def parseFor (lbl : Option String) : ParseM Stmt := do
   expect .for_
   let tk ← peek
   -- for { body } — infinite loop (no parens, no cond)
   if tk == .lbrace then
     let body ← parseBlock
-    return .while_ (.boolLit true) body
+    return .while_ (.boolLit true) body lbl
   -- for (cond) or for (init; cond; step)
   expect .lparen
   let tk ← peek
@@ -774,7 +841,7 @@ partial def parseFor : ParseM Stmt := do
     let step ← parseExprOrAssignNoSemicolon
     expect .rparen
     let body ← parseBlock
-    return .forLoop (some initStmt) cond (some step) body
+    return .forLoop (some initStmt) cond (some step) body lbl
   else
     -- Could be for(cond) { body } or for(existingVar; cond; step) { body }
     let expr ← parseExpr
@@ -783,7 +850,7 @@ partial def parseFor : ParseM Stmt := do
       -- for (cond) { body } - like while
       advance
       let body ← parseBlock
-      return .forLoop none expr none body
+      return .forLoop none expr none body lbl
     else if tk2 == .semicolon then
       -- for(existing_assignment; cond; step)
       -- Wait, if we're here the init was an expression, not a let.
@@ -986,7 +1053,7 @@ partial def parseMethodParamList (selfKind : Option SelfKind) : ParseM (List Par
 partial def parseMethodDef : ParseM (FnDef × Option SelfKind) := do
   expect .fn
   let name ← expectIdent
-  let typeParams ← parseTypeParams
+  let (typeParams, typeBounds) ← parseTypeParams
   expect .lparen
   -- Check for self, &self, &mut self
   let tk ← peek
@@ -1037,11 +1104,11 @@ partial def parseMethodDef : ParseM (FnDef × Option SelfKind) := do
   else
     pure .unit
   let body ← parseBlock
-  return ({ name, typeParams, params, retTy, body, capSet }, selfKind)
+  return ({ name, typeParams, typeBounds, params, retTy, body, capSet }, selfKind)
 
 partial def parseImplBlock : ParseM (ImplBlock ⊕ ImplTraitBlock) := do
   expect .impl_
-  let typeParams ← parseTypeParams
+  let (typeParams, _typeBounds) ← parseTypeParams
   let firstName ← expectIdent
   -- Check for turbofish on impl type: impl<T> Name<T> { ... }
   let next0 ← peek
@@ -1101,14 +1168,14 @@ partial def parseImplBlock : ParseM (ImplBlock ⊕ ImplTraitBlock) := do
 partial def parseTraitDef : ParseM TraitDef := do
   expect .trait_
   let name ← expectIdent
-  let typeParams ← parseTypeParams
+  let (typeParams, _typeBounds) ← parseTypeParams
   expect .lbrace
   let mut methods : List FnSigDef := []
   let mut tk ← peek
   while tk != .rbrace && tk != .eof do
     expect .fn
     let methodName ← expectIdent
-    let methodTypeParams ← parseTypeParams
+    let (_methodTypeParams, _methodBounds) ← parseTypeParams
     expect .lparen
     -- Check for self variants
     let tk2 ← peek
@@ -1150,7 +1217,6 @@ partial def parseTraitDef : ParseM TraitDef := do
     else
       pure .unit
     expect .semicolon
-    let _ := methodTypeParams  -- unused for now
     methods := methods ++ [{ name := methodName, params, retTy, selfKind, capSet }]
     tk ← peek
   expect .rbrace
@@ -1163,7 +1229,7 @@ partial def parseFnDef : ParseM FnDef := do
   let tk0 ← peek
   let hasBang := tk0 == .not_
   if hasBang then advance
-  let (typeParams, capParams) ← parseTypeAndCapParams
+  let (typeParams, typeBounds, capParams) ← parseTypeAndCapParams
   expect .lparen
   let params ← parseParamList
   expect .rparen
@@ -1180,7 +1246,7 @@ partial def parseFnDef : ParseM FnDef := do
   else
     pure .unit
   let body ← parseBlock
-  return { name, typeParams, capParams, params, retTy, body, capSet, hasBang }
+  return { name, typeParams, typeBounds, capParams, params, retTy, body, capSet, hasBang }
 
 /-- Parse a fn that may have a body ({...}) or be a declaration (;). -/
 partial def parseFnDefOrDecl : ParseM (FnDef ⊕ ExternFnDecl) := do
@@ -1190,7 +1256,7 @@ partial def parseFnDefOrDecl : ParseM (FnDef ⊕ ExternFnDecl) := do
   let tk0 ← peek
   let hasBang := tk0 == .not_
   if hasBang then advance
-  let (typeParams, capParams) ← parseTypeAndCapParams
+  let (typeParams, typeBounds, capParams) ← parseTypeAndCapParams
   expect .lparen
   let params ← parseParamList
   expect .rparen
@@ -1211,7 +1277,7 @@ partial def parseFnDefOrDecl : ParseM (FnDef ⊕ ExternFnDecl) := do
     return .inr { name, params, retTy }
   else
     let body ← parseBlock
-    return .inl { name, typeParams, capParams, params, retTy, body, capSet, hasBang }
+    return .inl { name, typeParams, typeBounds, capParams, params, retTy, body, capSet, hasBang }
 
 partial def parseStructDef : ParseM StructDef := do
   expect .struct_
@@ -1221,7 +1287,7 @@ partial def parseStructDef : ParseM StructDef := do
     | .ident "Copy" => advance; pure true
     | _ => pure false
   let name ← expectIdent
-  let typeParams ← parseTypeParams
+  let (typeParams, typeBounds) ← parseTypeParams
   expect .lbrace
   let mut fields : List StructField := []
   let mut tk ← peek
@@ -1235,7 +1301,7 @@ partial def parseStructDef : ParseM StructDef := do
       advance
       tk ← peek
   expect .rbrace
-  return { name, typeParams, fields, isCopy }
+  return { name, typeParams, typeBounds, fields, isCopy }
 
 partial def parseEnumDef : ParseM EnumDef := do
   expect .enum_
@@ -1245,7 +1311,7 @@ partial def parseEnumDef : ParseM EnumDef := do
     | .ident "Copy" => advance; pure true
     | _ => pure false
   let name ← expectIdent
-  let typeParams ← parseTypeParams
+  let (typeParams, typeBounds) ← parseTypeParams
   expect .lbrace
   let mut variants : List EnumVariant := []
   let mut tk ← peek
@@ -1277,7 +1343,7 @@ partial def parseEnumDef : ParseM EnumDef := do
     tk ← peek
     if tk == .comma then advance; tk ← peek
   expect .rbrace
-  return { name, typeParams, variants, isCopy }
+  return { name, typeParams, typeBounds, variants, isCopy }
 
 partial def parseImport : ParseM ImportDecl := do
   expect .import_
@@ -1434,7 +1500,7 @@ partial def parseModuleBody (stopToken : TokenKind) : ParseM Module := do
         -- Parse union as a struct (all fields share memory)
         advance  -- consume 'union'
         let name ← expectIdent
-        let typeParams ← parseTypeParams
+        let (typeParams, _typeBounds) ← parseTypeParams
         expect .lbrace
         let mut fields : List StructField := []
         let mut tk3 ← peek
@@ -1471,13 +1537,26 @@ partial def parseModule : ParseM Module := do
 partial def parseProgram : ParseM (List Module) := do
   let tk ← peek
   if tk == .«mod» then
-    let mut modules : List Module := []
-    let mut tk ← peek
-    while tk == .«mod» do
-      let m ← parseModule
-      modules := modules ++ [m]
-      tk ← peek
-    return modules
+    -- Peek ahead: if after 'mod ident' we see '{', it's an inline module block.
+    -- If we see ';', it's a mod import declaration inside the main module body.
+    let s ← get
+    advance  -- consume 'mod'
+    let _ ← expectIdent  -- consume name
+    let tk2 ← peek
+    set s  -- restore parser state
+    if tk2 == .lbrace then
+      -- Inline module blocks: mod Name { ... }
+      let mut modules : List Module := []
+      let mut tk ← peek
+      while tk == .«mod» do
+        let m ← parseModule
+        modules := modules ++ [m]
+        tk ← peek
+      return modules
+    else
+      -- 'mod X;' is a module import, part of the main module body
+      let m ← parseModuleBody .eof
+      return [{ m with name := "main" }]
   else
     let m ← parseModuleBody .eof
     return [{ m with name := "main" }]
