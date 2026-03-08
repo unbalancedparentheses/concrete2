@@ -1195,6 +1195,15 @@ partial def parseTraitDef : ParseM TraitDef := do
   expect .rbrace
   return { name, typeParams, methods }
 
+/-- Resolve capability variables: caps matching capParams become `.var`, rest stay `.concrete`. -/
+private def resolveCapVars (capParams : List String) (cs : CapSet) : CapSet :=
+  match cs with
+  | .concrete caps =>
+    let (vars, concretes) := caps.partition fun c => capParams.contains c
+    let base := if concretes.isEmpty then CapSet.empty else CapSet.concrete concretes
+    vars.foldl (fun acc v => match acc with | .empty => .var v | other => .union other (.var v)) base
+  | other => other
+
 partial def parseFnDef : ParseM FnDef := do
   expect .fn
   let name ← expectIdent
@@ -1211,7 +1220,7 @@ partial def parseFnDef : ParseM FnDef := do
   -- Check ! and with() are not both present
   if hasBang && !withCaps.isEmpty then
     throw "cannot combine ! sugar with explicit with()"
-  let capSet := if hasBang then CapSet.concrete stdCaps else withCaps
+  let capSet := if hasBang then CapSet.concrete stdCaps else resolveCapVars capParams withCaps
   let tk ← peek
   let retTy ← if tk == .arrow then
     advance
@@ -1237,7 +1246,7 @@ partial def parseFnDefOrDecl : ParseM (FnDef ⊕ ExternFnDecl) := do
   let withCaps ← parseWithCaps
   if hasBang && !withCaps.isEmpty then
     throw "cannot combine ! sugar with explicit with()"
-  let capSet := if hasBang then CapSet.concrete stdCaps else withCaps
+  let capSet := if hasBang then CapSet.concrete stdCaps else resolveCapVars capParams withCaps
   let tk ← peek
   let retTy ← if tk == .arrow then
     advance

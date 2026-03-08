@@ -328,13 +328,14 @@ def expectTy (expected actual : Ty) (ctx : String) : CheckM Unit := do
 def checkCapabilities (calleeName : String) (calleeCapSet : CapSet) : CheckM Unit := do
   let env ← getEnv
   let callerCapSet := env.currentCapSet
-  -- Get concrete caps from callee
-  let (calleeCaps, _calleeVars) := calleeCapSet.normalize
-  -- Get concrete caps from caller
-  let (callerCaps, _callerVars) := callerCapSet.normalize
-  -- Check each callee cap exists in caller
+  -- Get concrete caps and cap variables from both sides
+  let (calleeCaps, calleeVars) := calleeCapSet.normalize
+  let (callerCaps, callerVars) := callerCapSet.normalize
+  -- If callee has cap variables, they are satisfied by matching caller cap variables
+  -- If caller has cap variables, they can satisfy any callee cap (polymorphic)
+  -- Check each callee concrete cap exists in caller (concrete or variable)
   for cap in calleeCaps do
-    unless callerCaps.contains cap do
+    unless callerCaps.contains cap || callerVars.contains cap do
       throw s!"function '{calleeName}' requires capability '{cap}' but '{env.currentFnName}' does not declare it"
 
 -- ============================================================
@@ -1028,7 +1029,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
                   capBindings := capBindings ++ [(cap, argCaps)]
             | _ => pure ()
           -- Build resolved capSet
-          let (concreteCaps, _) := sig.capSet.normalize
+          let (concreteCaps, capVars) := sig.capSet.normalize
           let mut resolvedCaps : List String := []
           for cap in concreteCaps do
             if sig.capParams.contains cap then
@@ -1037,6 +1038,11 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
               | none => throw s!"cannot infer capability variable '{cap}' for call to '{fnName}'"
             else
               resolvedCaps := resolvedCaps ++ [cap]
+          -- Also resolve cap variables (e.g. .var "C" → bound caps)
+          for cv in capVars do
+            match capBindings.find? fun (name, _) => name == cv with
+            | some (_, caps) => resolvedCaps := resolvedCaps ++ caps
+            | none => throw s!"cannot infer capability variable '{cv}' for call to '{fnName}'"
           pure (CapSet.concrete resolvedCaps)
       -- Resolve cap variables in parameter types for type comparison
       let capBindings' := if sig.capParams.isEmpty then [] else
