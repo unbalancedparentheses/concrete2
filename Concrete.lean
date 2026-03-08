@@ -4,3 +4,7 @@ import Concrete.Lexer
 import Concrete.Parser
 import Concrete.Check
 import Concrete.Codegen
+import Concrete.Core
+import Concrete.Elab
+import Concrete.SSA
+import Concrete.Lower

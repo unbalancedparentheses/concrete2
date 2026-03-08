@@ -3,7 +3,7 @@ import Concrete
 open Concrete
 
 def usage : String :=
-  "Usage: concrete <file.con> [-o output] [--emit-llvm]"
+  "Usage: concrete <file.con> [-o output] [--emit-llvm] [--emit-core] [--emit-ssa]"
 
 def writeFile (path : String) (content : String) : IO Unit := do
   IO.FS.writeFile ⟨path⟩ content
@@ -122,6 +122,38 @@ def compile (inputPath : String) (outputPath : String) (emitLLVM : Bool) : IO UI
     IO.println s!"Compiled {inputPath} -> {outputPath}"
     return 0
 
+def compileAndEmit (inputPath : String) (mode : String) : IO UInt32 := do
+  let source ← readFile inputPath
+  match parse source with
+  | .error e =>
+    IO.eprintln s!"Parse error: {e}"
+    return 1
+  | .ok parsedModules =>
+  let baseDir := dirOf inputPath
+  match ← resolveAllModules baseDir parsedModules inputPath with
+  | .error e =>
+    IO.eprintln s!"Parse error: {e}"
+    return 1
+  | .ok modules =>
+    match checkProgram modules with
+    | .error e =>
+      IO.eprintln s!"Type error: {e}"
+      return 1
+    | .ok () =>
+    match elabProgram modules with
+    | .error e =>
+      IO.eprintln s!"Elaboration error: {e}"
+      return 1
+    | .ok coreModules =>
+      if mode == "core" then
+        for cm in coreModules do
+          IO.println (ppCModule cm)
+        return 0
+      let ssaModules := coreModules.map lowerModule
+      for sm in ssaModules do
+        IO.println (ppSModule sm)
+      return 0
+
 def main (args : List String) : IO UInt32 := do
   match args with
   | [] =>
@@ -132,6 +164,10 @@ def main (args : List String) : IO UInt32 := do
     compile inputPath outputPath false
   | [inputPath, "--emit-llvm"] =>
     compile inputPath "" true
+  | [inputPath, "--emit-core"] =>
+    compileAndEmit inputPath "core"
+  | [inputPath, "--emit-ssa"] =>
+    compileAndEmit inputPath "ssa"
   | [inputPath, "-o", outputPath] =>
     compile inputPath outputPath false
   | _ =>
