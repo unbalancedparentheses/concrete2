@@ -14,5 +14,6 @@ build/
 # Editor
 .vscode/
 .env
+.cache/
 # Compiled example binaries (keep .con sources)
 /tmp/

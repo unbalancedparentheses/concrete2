@@ -1,10 +1,12 @@
 .PHONY: build test clean
 
-build:
-	lake build
+NIX_DEVELOP = XDG_CACHE_HOME=$(CURDIR)/.cache nix --extra-experimental-features "nix-command flakes" develop --command
 
-test: build
-	./run_tests.sh
+build:
+	$(NIX_DEVELOP) lake build
+
+test:
+	$(NIX_DEVELOP) sh ./run_tests.sh
 
 clean:
-	lake clean
+	$(NIX_DEVELOP) lake clean
