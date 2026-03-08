@@ -93,7 +93,7 @@ These rules apply across all phases. They come directly from the spec and must n
 
 10. **No global mutable state.** All global interactions mediated through capabilities.
 
-11. **No interior mutability** in safe code. All mutation flows through `&mut`. Exception: `UnsafeCell<T>` in Phase 9 (standard library), gated by `Unsafe` capability. **Before Phase 9, interior mutability simply does not exist** — the borrow checker is closed with no escape hatches.
+11. **No interior mutability** in safe code. All mutation flows through `&mut`. Exception: `UnsafeCell<T>` in Phase 8 (standard library), gated by `Unsafe` capability. **Before Phase 8, interior mutability simply does not exist** — the borrow checker is closed with no escape hatches.
 
 12. **Local-only type inference.** Function signatures must be fully annotated (parameters and return type). Inside function bodies, local variable types may be inferred from the right-hand side of `let` bindings. Inference direction: **right-to-left only** — the type of `let x = expr;` is the type of `expr`. There is no constraint solving or unification across statements. Exception: closure parameter types may be inferred bidirectionally when the closure appears as an argument to a function with a known signature (Phase 2). You can always understand a function's interface without reading its body.
 
@@ -149,7 +149,7 @@ fn main!() { ... }
 
 ### Capability polymorphism
 
-> **Note:** The spec blog post defers capability polymorphism as "future work" because it "adds complexity to the type system and the Lean formalization." We promote it to Phase 1 because without it, generic combinators (map, filter, fold) must be duplicated per capability set, which makes the language impractical. The spec says "the theory is well-understood (Koka, Eff, Frank)" — we build on that. The formalization (Phase 11) must account for cap vars from the start.
+> **Note:** The spec blog post defers capability polymorphism as "future work" because it "adds complexity to the type system and the Lean formalization." We promote it to Phase 1 because without it, generic combinators (map, filter, fold) must be duplicated per capability set, which makes the language impractical. The spec says "the theory is well-understood (Koka, Eff, Frank)" — we build on that. The formalization (Phase 9) must account for cap vars from the start.
 
 Without this, generic combinators can't work:
 
@@ -633,7 +633,7 @@ while cond {
 
 - `break` inside `defer` is forbidden — compile error: `"break is not allowed inside defer"`
 - `continue` inside `defer` is forbidden — compile error: `"continue is not allowed inside defer"`
-- Applies to innermost loop only (no labeled breaks in v1)
+- Applies to innermost loop only by default. Labeled loops (`'label: while ...`) allow `break 'label` and `continue 'label` to target outer loops.
 - For `break val`, all break expressions and the `else` clause must agree on type
 - **`for` loops and break:** `break` and `break val` work in `for` loops identically to `while` loops. However, `for`-as-expression (using `break val` to produce a value) is NOT supported — only `while`-as-expression exists. `for` loops are always statements.
 - While-as-expression: `while` in expression position (RHS of `let`, argument, etc.) produces a value. The `else` clause is mandatory when using `break val` — it provides the value when the loop condition becomes false without breaking. A `while` without `break val` or without `else` in expression position is a type error.
@@ -883,7 +883,7 @@ The parser distinguishes them by position: after `)` of a function *declaration*
 
 ### Testing strategy
 
-Phase 5 depends on having at least one `Allocator` implementation for tests. Since `Arena`, `GeneralPurposeAllocator`, etc. are in Phase 9 (standard library), Phase 5 tests use a **built-in test allocator**: a simple wrapper around `malloc`/`free` that implements the `Allocator` trait. This test allocator is NOT part of the language — it exists only in test code and uses `Unsafe` internally.
+Phase 5 depends on having at least one `Allocator` implementation for tests. Since `Arena`, `GeneralPurposeAllocator`, etc. are in Phase 8 (standard library), Phase 5 tests use a **built-in test allocator**: a simple wrapper around `malloc`/`free` that implements the `Allocator` trait. This test allocator is NOT part of the language — it exists only in test code and uses `Unsafe` internally.
 
 ### Tests
 
@@ -1031,7 +1031,7 @@ fn reinterpret(x: u32) with(Unsafe) -> f32 {
 - **`Bool` ABI:** Concrete's `Bool` maps to LLVM `i1` internally. In extern function signatures, `Bool` is promoted to `i8` for C ABI compatibility (C's `_Bool` is typically `i8`). The codegen emits `zext i1 to i8` before passing to extern and `trunc i8 to i1` when receiving.
 - Structs with `#[repr(C)]` attribute get C-compatible memory layout (fields in declaration order, platform alignment). **`#[repr(C)]` is the only attribute in Concrete.** No general attribute system exists — `#[repr(C)]` is parsed as a special form before struct definitions. Other attributes are not supported.
 - Structs without `#[repr(C)]` cannot be passed to extern functions by value. Error: `"struct '{name}' cannot be passed to extern function; add #[repr(C)] for C-compatible layout"`
-- **No automatic string conversion.** Concrete's `String` is a linear type and cannot be passed to C. To pass string data to C: obtain a `*const u8` pointer and a length. The mechanism depends on `String`'s internal representation (Phase 9). Until Phase 9, use `extern fn` with raw pointers and test with string literals via array-of-u8.
+- **No automatic string conversion.** Concrete's `String` is a linear type and cannot be passed to C. To pass string data to C: obtain a `*const u8` pointer and a length. The mechanism depends on `String`'s internal representation (Phase 8). Until Phase 8, use `extern fn` with raw pointers and test with string literals via array-of-u8.
 - Raw pointer dereference (`*ptr`) requires `with(Unsafe)`. Error: `"dereferencing raw pointer requires Unsafe capability"`
 - **Raw pointer operations:** Pointers support these operations:
   - `*ptr` — dereference (requires `Unsafe`). Returns `T` (copy for Copy types, move for linear types).
@@ -1271,7 +1271,7 @@ Written in Concrete itself (or as compiler builtins where necessary), exercising
 
 ### Phase 8h: Other standard library
 
-- `Option<T>`, `Result<T, E>` — promote to stdlib with methods (Result already exists as built-in; `Option<T>` added in Phase 9a of implementation)
+- `Option<T>`, `Result<T, E>` — promote to stdlib with methods (Result already exists as built-in; `Option<T>` already implemented as compiler builtin)
 - `List<T>` — linked list with `Alloc` capability
 - `Arena`, `GeneralPurposeAllocator`, `FixedBufferAllocator` — implementing `Allocator` trait
 - `UnsafeCell<T>` — interior mutability, gated by `Unsafe`
@@ -1523,6 +1523,13 @@ Each phase must preserve all existing tests. Here is what changes per phase:
 | **5** (Allocator) | No — adds new types and syntax | None |
 | **6** (Borrow regions) | No — extends existing borrow checking, adds `borrow` block syntax | None |
 | **7** (FFI) | **Yes** — existing `extern fn` calls now require `with(Unsafe)`. | Update affected tests/examples to add `with(Unsafe)` to calling functions |
+| **7b** (Trait dispatch) | No — adds monomorphization for generic trait calls | None |
+| **7c** (Heap deref) | No — adds `*heap_ptr` syntax | None |
+| **8** (Stdlib) | No — adds new builtins and types | None |
+| **9** (Kernel) | No — parallel formalization, does not change compiler behavior | None |
+| **10** (Tooling) | No — separate tools | None |
+| **11** (MLIR) | No — alternative backend, textual backend kept as fallback | None |
+| **12** (Concurrency) | No — adds runtime, does not change existing language semantics | None |
 
 ---
 
@@ -1570,7 +1577,7 @@ These do not block any phase above:
 - **Macros**: if added, must be hygienic, phase-separated, and capability-tracked. No macros is also a valid final answer.
 - **Variance**: covariance/contravariance for generic types with linearity
 - **Module functors**: module-level capability restrictions, separate compilation units
-- **Trait objects / dynamic dispatch**: currently all dispatch is static. If `dyn Trait` is ever added, it must interact correctly with capabilities and linearity.
+- **Trait objects / dynamic dispatch**: permanently excluded. All dispatch is static (monomorphization) or explicitly indirect (closures, struct of closures). See [research/no-trait-objects.md](research/no-trait-objects.md).
 
 ---
 
@@ -1581,28 +1588,37 @@ These do not block any phase above:
 | **1** | Capabilities + cap polymorphism | — | — |
 | **2** | Closures | 1 (Ty.fn) | — |
 | **3** | `defer` + `destroy` + `Copy` + `abort` | 1 | — |
-| **4** | `break` / `continue` | — | Yes, with 1-3 |
+| **4** | `break` / `continue` / labeled loops | — | Yes, with 1-3 |
 | **5** | Allocator system | 1, 3 | — |
 | **6** | Borrow regions | — | Yes, with 1-5 |
 | **7** | FFI + C interop | 1 (Unsafe cap) | Yes, with 2-6 |
-| **8a** | MLIR FFI bindings | — | Yes, anytime |
-| **8b** | MLIR LLVM dialect codegen | 8a | — |
-| **8c** | MLIR optimization passes | 8b | — |
-| **9** | Standard library | 1-6 | — |
-| **10a** | Runtime in C | 7 (FFI) | — |
-| **10b** | Runtime in Concrete | 9, 10a | — |
-| **11a** | Kernel IR + checker | — | Yes, anytime |
-| **11b** | Linearity proof | 11a | Yes, ongoing |
-| **11c** | Progress + preservation | 11b | Yes, ongoing |
-| **11d** | Effect soundness | 11c | Yes, ongoing |
-| **11e** | Regions + generics | 11d | Yes, ongoing |
-| **11f** | Connect proofs to compiler | 6, 11e | — |
-| **12** | Tooling | — | Yes, ongoing |
+| **7b** | Monomorphized trait dispatch | 7 (traits) | — |
+| **7c** | Heap dereference | 5 (Heap<T>) | — |
+| **8a** | String operations | 1-6 | — |
+| **8b** | int↔string conversion | 8a | — |
+| **8c** | stdin / Console I/O | 1 (Console cap) | — |
+| **8d** | Vec<T> | 5 (HeapArray) | — |
+| **8e** | HashMap<K, V> | 8d (Vec) | — |
+| **8f** | Environment / process | 1 (Env, Process caps) | — |
+| **8g** | Networking | 1 (Network cap), 7 (FFI) | — |
+| **8h** | Other stdlib | 8a-8g | — |
+| **9a** | Kernel IR + checker | — | Yes, anytime |
+| **9b** | Linearity proof | 9a | Yes, ongoing |
+| **9c** | Progress + preservation | 9b | Yes, ongoing |
+| **9d** | Effect soundness | 9c | Yes, ongoing |
+| **9e** | Regions + generics | 9d | Yes, ongoing |
+| **9f** | Connect proofs to compiler | 6, 9e | — |
+| **10** | Tooling | — | Yes, ongoing |
+| **11a** | MLIR FFI bindings | — | Yes, anytime |
+| **11b** | MLIR LLVM dialect codegen | 11a | — |
+| **11c** | MLIR optimization passes | 11b | — |
+| **12a** | Runtime in C | 7 (FFI) | — |
+| **12b** | Runtime in Concrete | 8, 12a | — |
 
 **Critical path for language features:** 1 → 3 → 5 (capabilities → resource management → allocators). Phases 4, 6 are independent and can be done in parallel. Phase 2 depends on Phase 1 for `Ty.fn`.
 
-**Critical path for production use:** 1-6 → 7 → 10a (language features → FFI → runtime).
+**Critical path for production use:** 1-7 → 8 → 12a (language features → stdlib → runtime).
 
-**MLIR** (Phase 8) is independent of language features — can start anytime, biggest win is after language features stabilize.
+**MLIR** (Phase 11) is independent of language features — can start anytime, biggest win is after language features stabilize.
 
-**Formalization** (Phase 11) is independent of the compiler — can start anytime, needs only the language design (not the implementation) to be stable. Kernel is frozen at 1.0.
+**Formalization** (Phase 9) is independent of the compiler — can start anytime, needs only the language design (not the implementation) to be stable. Kernel is frozen at 1.0.
