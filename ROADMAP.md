@@ -4,7 +4,7 @@ This is the implementation plan for the Concrete programming language. For the f
 
 ## What's Built
 
-The Lean 4 compiler implements the core surface language in ~6,800 lines. All 175 tests pass (117 positive, 58 negative).
+The Lean 4 compiler implements the core surface language. All 188 tests pass (131 positive, 57 negative).
 
 **Done:**
 - Lexer, LL(1) parser, AST
@@ -24,14 +24,17 @@ The Lean 4 compiler implements the core surface language in ~6,800 lines. All 17
 - Cast expressions (`as`) between numeric types
 - Control flow: while (including while-as-expression), for (C-style), if/else, match, break/continue (with labeled loops `'label:`)
 - Closures: fat pointer representation, copy/move captures, free variable analysis, bidirectional type inference, linear closure tracking
-- Heap allocation: `alloc`/`free`, `Heap<T>` with `->` field access, `HeapArray<T>`
+- Heap allocation: `alloc`/`free`, `Heap<T>` with `->` field access, `HeapArray<T>`, heap dereference (`*heap_ptr`)
+- Monomorphized trait dispatch: calling trait methods on generic type variables generates specialized copies at compile time (no vtables, no runtime dispatch)
+- `Option<T>` builtin enum with `Some`/`None` variants
+- File I/O: `read_file`/`write_file` builtins (require File capability)
 - Bitwise operators (`&`, `|`, `^`, `<<`, `>>`, `~`) and hex/binary/octal literals
 - `print_int`/`print_bool` builtins (require Console capability)
 - Constants, type aliases, extern fn declarations, `abort()`
 - Capabilities: `with(File, Network, Alloc)` effect declarations, `!` sugar, capability polymorphism, capability checking
 - Direct LLVM IR text emission, compiled via clang to native binaries
 
-**Not yet implemented:** monomorphized trait dispatch (calling trait methods on generic type variables), heap dereference (`*heap_ptr`), FFI safety (Unsafe gating, `#[repr(C)]`, transmute), MLIR backend, standard library (`Option<T>`, `Vec<T>`, IO, String operations), kernel formalization, runtime.
+**Not yet implemented:** FFI safety (Unsafe gating, `#[repr(C)]`, transmute), MLIR backend, standard library (`Vec<T>`, `HashMap<K,V>`, String operations, stdin, int↔string conversion), networking, env vars/process args, kernel formalization, runtime.
 
 ---
 
@@ -986,7 +989,7 @@ borrow x as xr in R1 {
 
 ## Phase 7: FFI and C interop
 
-Needed before the runtime (Phase 12a is written in C) and for any real-world systems programming use.
+Needed before the runtime (Phase 12 is written in C) and for any real-world systems programming use.
 
 Basic `extern fn` declarations already exist. This phase adds safety gating through the `Unsafe` capability and C-compatible struct layout.
 
@@ -1180,75 +1183,96 @@ fn sum_list!(head: Heap<List>) -> Int {
 
 ---
 
-## Phase 8: MLIR backend
+## Phase 8: Standard library
 
-Replace direct LLVM IR text emission with MLIR-based compilation pipeline. This gives proper optimization passes, better diagnostics, and a foundation for multiple backends.
+Written in Concrete itself (or as compiler builtins where necessary), exercising capabilities, linear types, and allocators.
 
-### Why
+### Phase 8a: String operations
 
-The current codegen emits LLVM IR as text strings — it works but has no optimization (every variable is an `alloca`, no inlining, no constant folding). MLIR provides structured IR construction, dialect-based lowering, and access to LLVM's full optimization pipeline.
+**Priority: highest** — blocks any text-processing program.
 
-### Architecture
+- `string_concat(a: &String, b: &String) -> String` — concatenation, requires `Alloc`
+- `string_slice(s: &String, start: Int, end: Int) -> String` — substring, requires `Alloc`
+- `string_char_at(s: &String, index: Int) -> Int` — returns char code at index (or -1)
+- `string_contains(haystack: &String, needle: &String) -> Bool` — substring search
+- `string_split(s: &String, delim: &String) -> HeapArray<String>` — split into parts, requires `Alloc`
+- `string_trim(s: &String) -> String` — trim whitespace, requires `Alloc`
+- `string_eq(a: &String, b: &String) -> Bool` — string equality comparison
+- All take borrows to avoid consuming the original strings (linear ownership preserved)
 
-```
-Current:  Surface AST → Check → Codegen.lean (text emission) → .ll file → clang → binary
-Target:   Surface AST → Check → Codegen.lean (MLIR API calls) → MLIR Module → LLVM IR → binary
-```
+### Phase 8b: int↔string conversion
 
-### Phase 8a: Lean-MLIR FFI bindings
+**Priority: highest** — blocks any program that formats output or parses input.
 
-Build Lean 4 `@[extern]` bindings to the MLIR C API.
+- `int_to_string(n: Int) -> String` — requires `Alloc` (allocates the result)
+- `string_to_int(s: &String) -> Result<Int, Int>` — returns `Result#Ok` with the parsed value or `Result#Err` with error code
+- `bool_to_string(b: Bool) -> String` — requires `Alloc`
+- `float_to_string(f: f64) -> String` — requires `Alloc`
 
-- Wrap core types: `MLIRContext`, `MLIRModule`, `MLIRBlock`, `MLIROperation`, `MLIRType`, `MLIRValue`
-- Use [melior](https://github.com/raviqqe/melior) as a design reference for the API surface
-- Build system: link against MLIR/LLVM shared libraries via `lakefile.lean`
-- New file: `Concrete/MLIR/Bindings.lean`
+### Phase 8c: stdin / Console I/O
 
-### Phase 8b: LLVM dialect codegen
+**Priority: high** — blocks any interactive program.
 
-Replace `Codegen.lean` text emission with MLIR operation construction.
+- `read_line() -> String` — read a line from stdin, requires `Console` capability
+- `print_string(s: &String)` — print a string to stdout, requires `Console`
+- `print_char(c: Int)` — print a single character, requires `Console`
+- `eprint_string(s: &String)` — print to stderr, requires `Console`
 
-- Target LLVM dialect directly (1:1 mapping with current textual IR)
-- Same semantics, structured construction instead of string concatenation
-- New file: `Concrete/MLIR/Codegen.lean` (parallel to existing `Codegen.lean`)
-- Validate: all existing tests pass with MLIR backend
-- Keep textual backend as fallback during transition
-- Compiler flag: `--backend=text` (default initially) vs `--backend=mlir`
+### Phase 8d: Vec<T>
 
-### Phase 8c: Optimization passes
+**Priority: high** — blocks any program that needs dynamic-size collections.
 
-Wire up LLVM optimization passes through MLIR's pass manager.
+- `Vec<T>` wraps `HeapArray<T>` with length tracking and growth
+- `Vec.new() -> Vec<T>` — requires `Alloc`
+- `Vec.push(&mut self, item: T)` — append, requires `Alloc` (may reallocate)
+- `Vec.pop(&mut self) -> Option<T>` — remove last element
+- `Vec.get(&self, index: Int) -> Option<&T>` — bounds-checked access
+- `Vec.len(&self) -> Int` — current length
+- `Vec.capacity(&self) -> Int` — current capacity
+- Linear: `Vec<T>` must be consumed (via `destroy` or `free`)
+- If `T` is linear, dropping a non-empty `Vec<T>` is an error — must drain first
 
-- `mem2reg` — promotes allocas to SSA registers (biggest single win)
-- Dead code elimination, constant folding, inlining
-- Add compiler flags: `-O0` (default, current behavior), `-O1`, `-O2`
-- Benchmark: compare output binary performance textual vs MLIR
+### Phase 8e: HashMap<K, V>
 
-### Phase 8d: Custom Concrete dialect (future, optional)
+**Priority: medium** — needed for many real programs, buildable once Vec exists.
 
-A Concrete-specific MLIR dialect for domain-specific optimizations.
+- `HashMap<K, V>` — open addressing or separate chaining using `Vec`
+- Requires a `Hash` trait: `trait Hash { fn hash(&self) -> Int; }`
+- Requires `Eq` as a method (not operator overload — consistent with Concrete philosophy): `fn eq(&K, &K) -> Bool`
+- `HashMap.new() -> HashMap<K, V>` — requires `Alloc`
+- `HashMap.insert(&mut self, key: K, value: V) -> Option<V>` — returns old value if key existed
+- `HashMap.get(&self, key: &K) -> Option<&V>` — lookup
+- `HashMap.remove(&mut self, key: &K) -> Option<V>` — remove and return
+- `HashMap.len(&self) -> Int`
+- Linear: must be consumed. If `V` is linear, must drain before destroy.
+- **Philosophy note:** No operator overloading means no `map[key]` syntax. Use `map.get(&key)` and `map.insert(key, value)`. This is explicit and consistent with language invariant #6.
 
-- Linear type annotations in IR for linearity-aware optimization
-- Capability annotations for effect-guided dead code elimination
-- Lower: Concrete dialect → LLVM dialect
-- This is speculative — only pursue if 8a-8c reveal clear benefits
+### Phase 8f: Environment and process
 
-### Tests
+**Priority: medium** — needed for CLI tools and system programs.
 
-- All existing tests must pass with MLIR backend (`--backend=mlir`)
-- Binary output must be functionally equivalent (same exit codes, same behavior)
-- Performance regression tests for -O2 vs -O0
+- `get_env(name: &String) -> Option<String>` — requires `Env` capability
+- `set_env(name: &String, value: &String)` — requires `Env` capability
+- `get_args() -> HeapArray<String>` — requires `Process` capability, returns command-line arguments
+- `exit(code: Int)` — requires `Process` capability, terminates with exit code
 
----
+### Phase 8g: Networking
 
-## Phase 9: Standard library
+**Priority: medium** — needed for servers, HTTP clients, distributed systems.
 
-Written in Concrete itself, exercising capabilities, linear types, and allocators.
+- TCP socket API gated by `Network` capability
+- `tcp_connect(host: &String, port: Int) -> Result<Socket, Int>` — requires `Network`
+- `tcp_listen(host: &String, port: Int) -> Result<Listener, Int>` — requires `Network`
+- `tcp_accept(listener: &Listener) -> Result<Socket, Int>` — requires `Network`
+- `socket_read(sock: &mut Socket, buf: &mut HeapArray<u8>, max: Int) -> Result<Int, Int>` — requires `Network`
+- `socket_write(sock: &mut Socket, data: &HeapArray<u8>) -> Result<Int, Int>` — requires `Network`
+- `socket_close(sock: Socket)` — consumes the socket (linear)
+- `Socket` and `Listener` are linear types — must be explicitly closed
 
-- `Option<T>`, `Result<T, E>` — algebraic types with methods (Result already exists as a built-in; promote to stdlib)
-- `List<T>`, `Vec<T>` — with `Alloc` capability
-- `String` operations — linear, with `Alloc` for concatenation
-- `IO` — file (`with(File)`), network (`with(Network)`), console (`with(Console)`), behind capabilities
+### Phase 8h: Other standard library
+
+- `Option<T>`, `Result<T, E>` — promote to stdlib with methods (Result already exists as built-in; `Option<T>` added in Phase 9a of implementation)
+- `List<T>` — linked list with `Alloc` capability
 - `Arena`, `GeneralPurposeAllocator`, `FixedBufferAllocator` — implementing `Allocator` trait
 - `UnsafeCell<T>` — interior mutability, gated by `Unsafe`
 - `Math` — pure functions, no capabilities
@@ -1257,7 +1281,7 @@ Written in Concrete itself, exercising capabilities, linear types, and allocator
 
 ---
 
-## Phase 10: Kernel formalization in Lean 4
+## Phase 9: Kernel formalization in Lean 4
 
 **This phase can start in parallel with any of the above.** The formal model is independent of the surface language implementation — it only needs the language *design* to be stable, not the compiler.
 
@@ -1267,7 +1291,7 @@ Broken into subphases that each deliver value independently.
 
 The kernel is versioned separately from the surface language. Once the kernel reaches 1.0, it is **frozen** — no new constructs. New surface features must elaborate to existing kernel constructs. If a proposed surface feature cannot be expressed in the kernel, the feature does not ship. This is the key constraint that keeps the verified core tractable.
 
-### Phase 10a: Kernel syntax + type checker (no proofs)
+### Phase 9a: Kernel syntax + type checker (no proofs)
 
 Define the kernel IR and write an independent type checker. Even without proofs, two independent checkers catching disagreements is valuable.
 
@@ -1306,7 +1330,7 @@ Define the kernel IR and write an independent type checker. Even without proofs,
 
 **Trust boundary:** The kernel checker and its proofs are mechanically verified by Lean. What remains trusted: Lean's proof checker itself, the elaborator (surface → kernel), and the code generator (kernel → machine code).
 
-### Phase 10b: Linearity proof
+### Phase 9b: Linearity proof
 
 Most tractable proof and most novel claim. Essentially a counting argument on the typing derivation.
 
@@ -1317,7 +1341,7 @@ Most tractable proof and most novel claim. Essentially a counting argument on th
 - Theorem: `∀ (t : KernelTerm) (τ : KernelType), hasType t τ → linearValuesConsumedOnce t`
 - Lean verifies proof at build time
 
-### Phase 10c: Progress + preservation
+### Phase 9c: Progress + preservation
 
 Standard PL theory proofs for the linear lambda calculus fragment.
 
@@ -1331,7 +1355,7 @@ Standard PL theory proofs for the linear lambda calculus fragment.
 - `Concrete/Kernel/Soundness/Progress.lean`
 - `Concrete/Kernel/Soundness/Preservation.lean`
 
-### Phase 10d: Effect soundness
+### Phase 9d: Effect soundness
 
 Add capability sets to kernel, prove runtime effects ⊆ declared capabilities.
 
@@ -1341,7 +1365,7 @@ Relatively straightforward once progress/preservation exist — capabilities are
 - Extend `Kernel/Syntax.lean` with capability sets
 - `Concrete/Kernel/Soundness/Effects.lean`
 
-### Phase 10e: Regions and generics
+### Phase 9e: Regions and generics
 
 The hardest part. May require restricting kernel relative to surface.
 
@@ -1353,7 +1377,7 @@ The hardest part. May require restricting kernel relative to surface.
 - `Concrete/Kernel/Soundness/Regions.lean`
 - `Concrete/Kernel/Soundness/Generics.lean`
 
-### Phase 10f: Connect proofs to compiler
+### Phase 9f: Connect proofs to compiler
 
 Wire the kernel checker into the compilation pipeline so that every compiled program is checked against the proven-sound kernel.
 
@@ -1364,7 +1388,7 @@ Wire the kernel checker into the compilation pipeline so that every compiled pro
 
 ---
 
-## Phase 11: Tooling
+## Phase 10: Tooling
 
 Parallel with everything above. Start early, grow incrementally.
 
@@ -1375,12 +1399,73 @@ Parallel with everything above. Start early, grow incrementally.
 - REPL
 - Language server (LSP — editor integration)
 - Cross-compilation
-- WebAssembly target (via MLIR after Phase 8)
-- C codegen target (via MLIR after Phase 8)
+- WebAssembly target (via MLIR after Phase 11)
+- C codegen target (via MLIR after Phase 11)
 
 ---
 
-## Phase 12: Runtime
+## Phase 11: MLIR backend
+
+Replace direct LLVM IR text emission with MLIR-based compilation pipeline. This gives proper optimization passes, better diagnostics, and a foundation for multiple backends.
+
+### Why
+
+The current codegen emits LLVM IR as text strings — it works but has no optimization (every variable is an `alloca`, no inlining, no constant folding). MLIR provides structured IR construction, dialect-based lowering, and access to LLVM's full optimization pipeline.
+
+### Architecture
+
+```
+Current:  Surface AST → Check → Codegen.lean (text emission) → .ll file → clang → binary
+Target:   Surface AST → Check → Codegen.lean (MLIR API calls) → MLIR Module → LLVM IR → binary
+```
+
+### Phase 11a: Lean-MLIR FFI bindings
+
+Build Lean 4 `@[extern]` bindings to the MLIR C API.
+
+- Wrap core types: `MLIRContext`, `MLIRModule`, `MLIRBlock`, `MLIROperation`, `MLIRType`, `MLIRValue`
+- Use [melior](https://github.com/raviqqe/melior) as a design reference for the API surface
+- Build system: link against MLIR/LLVM shared libraries via `lakefile.lean`
+- New file: `Concrete/MLIR/Bindings.lean`
+
+### Phase 11b: LLVM dialect codegen
+
+Replace `Codegen.lean` text emission with MLIR operation construction.
+
+- Target LLVM dialect directly (1:1 mapping with current textual IR)
+- Same semantics, structured construction instead of string concatenation
+- New file: `Concrete/MLIR/Codegen.lean` (parallel to existing `Codegen.lean`)
+- Validate: all existing tests pass with MLIR backend
+- Keep textual backend as fallback during transition
+- Compiler flag: `--backend=text` (default initially) vs `--backend=mlir`
+
+### Phase 11c: Optimization passes
+
+Wire up LLVM optimization passes through MLIR's pass manager.
+
+- `mem2reg` — promotes allocas to SSA registers (biggest single win)
+- Dead code elimination, constant folding, inlining
+- Add compiler flags: `-O0` (default, current behavior), `-O1`, `-O2`
+- Benchmark: compare output binary performance textual vs MLIR
+
+### Phase 11d: Custom Concrete dialect (future, optional)
+
+A Concrete-specific MLIR dialect for domain-specific optimizations.
+
+- Linear type annotations in IR for linearity-aware optimization
+- Capability annotations for effect-guided dead code elimination
+- Lower: Concrete dialect → LLVM dialect
+- This is speculative — only pursue if 11a-11c reveal clear benefits
+
+### Tests
+
+- All existing tests must pass with MLIR backend (`--backend=mlir`)
+- Binary output must be functionally equivalent (same exit codes, same behavior)
+- Performance regression tests for -O2 vs -O0
+
+---
+
+## Phase 12: Concurrency and Runtime
 
 ### Phase 12a: Runtime in C
 
