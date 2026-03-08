@@ -256,6 +256,9 @@ run_ok "$TESTDIR/string_to_int_basic.con" 123
 run_ok "$TESTDIR/string_trim_basic.con" 5
 run_ok "$TESTDIR/print_char_basic.con" "A0"
 
+# Phase 7: FFI / Unsafe
+run_ok "$TESTDIR/ffi_basic.con" 42
+
 echo ""
 echo "=== Negative tests (expected errors) ==="
 run_err "$TESTDIR/error_unconsumed.con"        "was never consumed"
@@ -335,6 +338,8 @@ run_err "$TESTDIR/error_trait_bound_missing.con" "does not implement trait"
 run_err "$TESTDIR/error_trait_dispatch_missing.con" "no method"
 # File I/O errors
 run_err "$TESTDIR/error_file_no_cap.con" "requires capability"
+# FFI errors
+run_err "$TESTDIR/error_ffi_no_unsafe.con" "requires capability"
 
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="

@@ -1686,7 +1686,8 @@ def checkModule (m : Module) (importedFnSigs : List (String × FnSig) := [])
       typeBounds := f.typeBounds, capParams := f.capParams, capSet := f.capSet }
   -- Add extern fn signatures
   let externSigs : List FnSig := m.externFns.map fun ef =>
-    { params := ef.params.map fun p => (p.name, p.ty), retTy := ef.retTy }
+    { params := ef.params.map fun p => (p.name, p.ty), retTy := ef.retTy,
+      capSet := .concrete ["Unsafe"] }
   let importedSigList := importedFnSigs.map Prod.snd
   let baseOffset := importedSigList.length
   -- Built-in functions for strings and I/O
