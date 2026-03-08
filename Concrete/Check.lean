@@ -894,7 +894,13 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
   | .enumLit enumName variant typeArgs fields =>
     match ← lookupEnum enumName with
     | some ed =>
-      let mapping := ed.typeParams.zip typeArgs
+      -- Infer type args from hint if not explicitly provided
+      let effectiveTypeArgs := if typeArgs.isEmpty && !ed.typeParams.isEmpty then
+        match hint with
+        | some (.generic n args) => if n == enumName then args else []
+        | _ => []
+      else typeArgs
+      let mapping := ed.typeParams.zip effectiveTypeArgs
       match ed.variants.find? fun v => v.name == variant with
       | some ev =>
         for sf in ev.fields do
@@ -908,8 +914,8 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
           match ev.fields.find? fun sf => sf.name == fn with
           | some _ => pure ()
           | none => throw s!"unknown field '{fn}' in {enumName}#{variant}"
-        if typeArgs.isEmpty then return .named enumName
-        else return .generic enumName typeArgs
+        if effectiveTypeArgs.isEmpty then return .named enumName
+        else return .generic enumName effectiveTypeArgs
       | none => throw s!"unknown variant '{variant}' in enum '{enumName}'"
     | none => throw s!"unknown enum type '{enumName}'"
   | .match_ scrutinee arms =>
@@ -920,7 +926,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       | .refMut t => t
       | t => t
     let innerTyR ← resolveType innerTy
-    let (enumName, _enumTypeArgs) := match innerTyR with
+    let (enumName, enumTypeArgs) := match innerTyR with
       | .named n => (n, ([] : List Ty))
       | .generic n args => (n, args)
       | _ => ("", [])
@@ -960,10 +966,11 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
           setEnv envBefore
           match arm with
           | .mk _armEnum armVariant bindings body =>
-            -- Bind variant fields in scope
+            -- Bind variant fields in scope (substitute generic type args)
             let ev := (ed.variants.find? fun v => v.name == armVariant).get!
+            let typeMapping := ed.typeParams.zip enumTypeArgs
             for (binding, sf) in bindings.zip ev.fields do
-              addVar binding sf.ty
+              addVar binding (substTy typeMapping sf.ty)
             let curEnv ← getEnv
             checkStmts body curEnv.currentRetTy
           | .litArm _val body =>
@@ -1068,6 +1075,14 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
     | .refMut t => return t
     | .ptrMut t => return t
     | .ptrConst t => return t
+    | .heap t =>
+      -- *heap_ptr: loads value from heap, frees memory, consumes the Heap<T>
+      -- Requires Alloc capability (heap deallocation)
+      checkCapabilities "*heap_ptr" (.concrete ["Alloc"])
+      match inner with
+      | .ident varName => consumeVar varName
+      | _ => pure ()
+      return t
     | _ => throw s!"cannot dereference non-reference type"
   | .try_ inner =>
     let innerTy ← checkExpr inner
@@ -1741,7 +1756,17 @@ def checkModule (m : Module) (importedFnSigs : List (String × FnSig) := [])
     (enumerateList m.functions).map fun (idx, f) => (f.name, baseOffset + idx)
   let allNames := importedNames ++ fnNames ++ builtinNames ++ externNames ++ submoduleNames ++ implNames
   let allStructs := importedStructs ++ m.structs
-  let allEnums := importedEnums ++ m.enums
+  -- Built-in Option<T> enum (Some { value: T }, None {})
+  let builtinOptionEnum : EnumDef := {
+    name := "Option"
+    typeParams := ["T"]
+    variants := [
+      { name := "Some", fields := [{ name := "value", ty := .typeVar "T" }] },
+      { name := "None", fields := [] }
+    ]
+    isCopy := false
+  }
+  let allEnums := [builtinOptionEnum] ++ importedEnums ++ m.enums
   -- Build type aliases map
   let typeAliasMap : List (String × Ty) := m.typeAliases.map fun ta => (ta.name, ta.targetTy)
   -- Build constants map

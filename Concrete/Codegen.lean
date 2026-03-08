@@ -24,6 +24,7 @@ structure EnumInfo where
   name : String
   variants : List EnumVariantInfo
   payloadSize : Nat  -- size in bytes of largest variant payload
+  typeParams : List String := []
   deriving Repr, Inhabited
 
 structure CodegenState where
@@ -163,7 +164,10 @@ def tyToLLVM (s : CodegenState) : Ty → String
   | .ptrConst _ => "ptr"
   | .generic "Heap" _ => "ptr"
   | .generic "HeapArray" _ => "ptr"
-  | .generic name _ => "%struct." ++ name
+  | .generic name _ =>
+    match s.lookupEnum name with
+    | some _ => "%enum." ++ name
+    | none => "%struct." ++ name
   | .typeVar _ => "i64"
   | .array elem n => "[" ++ toString n ++ " x " ++ tyToLLVM s elem ++ "]"
   | .fn_ _ _ _ => "%struct.Closure"  -- Closures are fat pointers { ptr fn, ptr env }
@@ -316,7 +320,8 @@ private def inferExprTy (s : CodegenState) (e : Expr) (hint : Option Ty := none)
       | none => .int
     else .int
   | .structLit name _ _ => .named name
-  | .enumLit name _ _ _ => .named name
+  | .enumLit name _ typeArgs _ =>
+    if typeArgs.isEmpty then .named name else .generic name typeArgs
   | .match_ _ _ => .int
   | .call fnName _typeArgs args =>
     if fnName == "sizeof" then match hint with
@@ -356,6 +361,7 @@ private def inferExprTy (s : CodegenState) (e : Expr) (hint : Option Ty := none)
     | .refMut t => t
     | .ptrMut t => t
     | .ptrConst t => t
+    | .heap t => t
     | _ => .int
   | .try_ inner =>
     match inferExprTy s inner with
@@ -459,8 +465,46 @@ private partial def tySizeOf (s : CodegenState) : Ty → Nat
           Nat.max acc sz) 0
         4 + maxPayload
       | none => 8
+  | .generic "Heap" _ => 8    -- pointer
+  | .generic "HeapArray" _ => 8  -- pointer
+  | .generic name _ =>
+    -- Generic struct/enum: look up base definition
+    match s.lookupStruct name with
+    | some si => si.fields.foldl (fun acc fi => acc + tySizeOf s fi.ty) 0
+    | none => match s.lookupEnum name with
+      | some ei =>
+        let maxPayload := ei.variants.foldl (fun acc vi =>
+          let sz := vi.fields.foldl (fun a fi => a + tySizeOf s fi.ty) 0
+          Nat.max acc sz) 0
+        4 + maxPayload
+      | none => 8
   | .array elem n => tySizeOf s elem * n
   | other => tySize other
+
+/-- Substitute type variables using a mapping (for generic enum/struct instantiation). -/
+private def substTyCodegen (mapping : List (String × Ty)) : Ty → Ty
+  | .typeVar name => match mapping.lookup name with
+    | some t => t
+    | none => .typeVar name
+  | .ref t => .ref (substTyCodegen mapping t)
+  | .refMut t => .refMut (substTyCodegen mapping t)
+  | .heap t => .heap (substTyCodegen mapping t)
+  | .heapArray t => .heapArray (substTyCodegen mapping t)
+  | .array t n => .array (substTyCodegen mapping t) n
+  | .generic name args => .generic name (args.map (substTyCodegen mapping))
+  | t => t
+
+/-- Normalize Ty.generic "Heap"/"HeapArray" to Ty.heap/Ty.heapArray in field types. -/
+private def normalizeFieldTy : Ty → Ty
+  | .generic "Heap" [t] => .heap (normalizeFieldTy t)
+  | .generic "HeapArray" [t] => .heapArray (normalizeFieldTy t)
+  | .ref t => .ref (normalizeFieldTy t)
+  | .refMut t => .refMut (normalizeFieldTy t)
+  | .heap t => .heap (normalizeFieldTy t)
+  | .heapArray t => .heapArray (normalizeFieldTy t)
+  | .array t n => .array (normalizeFieldTy t) n
+  | .generic name args => .generic name (args.map normalizeFieldTy)
+  | t => t
 
 mutual
 
@@ -805,7 +849,14 @@ partial def genExpr (s : CodegenState) (e : Expr) (hintTy : Option Ty := none) :
           let fieldLLTy := fieldTyToLLVM s fieldTy
           let s := s.emit ("  " ++ gepReg ++ " = getelementptr inbounds " ++ structTy
             ++ ", ptr " ++ alloca ++ ", i32 0, i32 " ++ toString fi.index)
-          s.emit ("  store " ++ fieldLLTy ++ " " ++ valReg ++ ", ptr " ++ gepReg)
+          -- For pass-by-ptr field types (enums, structs), load value from pointer before storing
+          if isPassByPtr s fieldTy && fieldLLTy != "ptr" then
+            let resolvedFieldLLTy := tyToLLVM s fieldTy
+            let (s, loaded) := s.freshLocal
+            let s := s.emit ("  " ++ loaded ++ " = load " ++ resolvedFieldLLTy ++ ", ptr " ++ valReg)
+            s.emit ("  store " ++ resolvedFieldLLTy ++ " " ++ loaded ++ ", ptr " ++ gepReg)
+          else
+            s.emit ("  store " ++ fieldLLTy ++ " " ++ valReg ++ ", ptr " ++ gepReg)
         | none => s
       ) s
       (s, alloca)
@@ -867,24 +918,52 @@ partial def genExpr (s : CodegenState) (e : Expr) (hintTy : Option Ty := none) :
   | .deref inner =>
     let (s, ptr) := genExpr s inner
     let innerTy := inferExprTy s inner
-    let pointeeTy := match innerTy with
-      | .ref t => t
-      | .refMut t => t
-      | .ptrMut t => t
-      | .ptrConst t => t
-      | _ => .int
-    let llTy := tyToLLVM s pointeeTy
-    if llTy == "ptr" || isPassByPtr s pointeeTy then
-      (s, ptr)
-    else
-      let (s, loaded) := s.freshLocal
-      let s := s.emit ("  " ++ loaded ++ " = load " ++ llTy ++ ", ptr " ++ ptr)
-      (s, loaded)
-  | .enumLit enumName variant _typeArgs fields =>
+    match innerTy with
+    | .heap t =>
+      -- *heap_ptr: load value from heap, then free the allocation
+      let innerLLTy := tyToLLVM s t
+      if isPassByPtr s t then
+        -- Struct/enum: load full value, free heap, store to new stack alloc
+        let (s, loaded) := s.freshLocal
+        let s := s.emit ("  " ++ loaded ++ " = load " ++ innerLLTy ++ ", ptr " ++ ptr)
+        let s := s.emit ("  call void @free(ptr " ++ ptr ++ ")")
+        let (s, alloca) := s.freshLocal
+        let s := s.emit ("  " ++ alloca ++ " = alloca " ++ innerLLTy)
+        let s := s.emit ("  store " ++ innerLLTy ++ " " ++ loaded ++ ", ptr " ++ alloca)
+        (s, alloca)
+      else
+        -- Scalar: load value, free heap, return value
+        let (s, loaded) := s.freshLocal
+        let s := s.emit ("  " ++ loaded ++ " = load " ++ innerLLTy ++ ", ptr " ++ ptr)
+        let s := s.emit ("  call void @free(ptr " ++ ptr ++ ")")
+        (s, loaded)
+    | _ =>
+      let pointeeTy := match innerTy with
+        | .ref t => t
+        | .refMut t => t
+        | .ptrMut t => t
+        | .ptrConst t => t
+        | _ => .int
+      let llTy := tyToLLVM s pointeeTy
+      if llTy == "ptr" || isPassByPtr s pointeeTy then
+        (s, ptr)
+      else
+        let (s, loaded) := s.freshLocal
+        let s := s.emit ("  " ++ loaded ++ " = load " ++ llTy ++ ", ptr " ++ ptr)
+        (s, loaded)
+  | .enumLit enumName variant typeArgs fields =>
     match s.lookupEnum enumName with
     | some ei =>
       match ei.variants.find? fun v => v.name == variant with
       | some vi =>
+        -- Build type substitution for generic enums
+        -- If typeArgs empty but enum is generic, infer from hint
+        let effectiveTypeArgs := if typeArgs.isEmpty && !ei.typeParams.isEmpty then
+          match hintTy with
+          | some (.generic n args) => if n == enumName then args else []
+          | _ => []
+        else typeArgs
+        let enumTypeMapping := ei.typeParams.zip effectiveTypeArgs
         let enumTy := "%enum." ++ enumName
         let (s, alloca) := s.freshLocal
         let s := s.emit ("  " ++ alloca ++ " = alloca " ++ enumTy)
@@ -900,9 +979,10 @@ partial def genExpr (s : CodegenState) (e : Expr) (hintTy : Option Ty := none) :
           let s := fields.foldl (fun s (fieldName, fieldExpr) =>
             match vi.fields.find? fun fi => fi.name == fieldName with
             | some fi =>
-              let (s, valReg) := genExpr s fieldExpr (some fi.ty)
+              let resolvedTy := normalizeFieldTy (substTyCodegen enumTypeMapping fi.ty)
+              let (s, valReg) := genExpr s fieldExpr (some resolvedTy)
               let (s, gepReg) := s.freshLocal
-              let fieldLLTy := fieldTyToLLVM s fi.ty
+              let fieldLLTy := fieldTyToLLVM s resolvedTy
               let s := s.emit ("  " ++ gepReg ++ " = getelementptr inbounds " ++ variantTy
                 ++ ", ptr " ++ payloadPtr ++ ", i32 0, i32 " ++ toString fi.index)
               s.emit ("  store " ++ fieldLLTy ++ " " ++ valReg ++ ", ptr " ++ gepReg)
@@ -1013,6 +1093,12 @@ partial def genExpr (s : CodegenState) (e : Expr) (hintTy : Option Ty := none) :
       (s, labels ++ [label])
     ) (s, [])
     let ei := (s.lookupEnum enumName).get!
+    -- Build type substitution for generic enums (e.g., Option<Heap<Node>>)
+    let enumTypeArgs := match innerScrTy with
+      | .generic _ args => args
+      | _ => []
+    let enumTypeMapping : List (String × Ty) :=
+      ei.typeParams.zip enumTypeArgs
     let cases := arms.zip armLabels |>.filterMap fun (arm, label) =>
       match arm with
       | .mk _ variant _ _ =>
@@ -1029,8 +1115,10 @@ partial def genExpr (s : CodegenState) (e : Expr) (hintTy : Option Ty := none) :
         let variantTy := "%variant." ++ enumName ++ "." ++ variant
         let vi := (ei.variants.find? fun v => v.name == variant).get!
         let s := (bindings.zip vi.fields).foldl (fun s (binding, fi) =>
+          -- Substitute generic type args for the field type
+          let resolvedTy := normalizeFieldTy (substTyCodegen enumTypeMapping fi.ty)
           let (s, gepReg) := s.freshLocal
-          let fieldLLTy := fieldTyToLLVM s fi.ty
+          let fieldLLTy := fieldTyToLLVM s resolvedTy
           let s := s.emit ("  " ++ gepReg ++ " = getelementptr inbounds " ++ variantTy
             ++ ", ptr " ++ payloadPtr ++ ", i32 0, i32 " ++ toString fi.index)
           let (s, loaded) := s.freshLocal
@@ -1039,7 +1127,7 @@ partial def genExpr (s : CodegenState) (e : Expr) (hintTy : Option Ty := none) :
           let s := s.emit ("  " ++ alloca ++ " = alloca " ++ fieldLLTy)
           let s := s.emit ("  store " ++ fieldLLTy ++ " " ++ loaded ++ ", ptr " ++ alloca)
           let s := s.addVar binding alloca
-          s.addVarType binding fi.ty
+          s.addVarType binding resolvedTy
         ) s
         let s := genStmts s body
         let hasRet := stmtListHasReturn body
@@ -1994,17 +2082,7 @@ def genFn (s : CodegenState) (f : FnDef) (hasMainWrapper : Bool := false) : Code
   let s := { s with deferStack := savedDeferStack }
   s.emit "}\n"
 
-private def normalizeFieldTy : Ty → Ty
-  | .generic "Heap" [t] => .heap (normalizeFieldTy t)
-  | .generic "HeapArray" [t] => .heapArray (normalizeFieldTy t)
-  | .ref t => .ref (normalizeFieldTy t)
-  | .refMut t => .refMut (normalizeFieldTy t)
-  | .heap t => .heap (normalizeFieldTy t)
-  | .heapArray t => .heapArray (normalizeFieldTy t)
-  | .array t n => .array (normalizeFieldTy t) n
-  | .generic name args => .generic name (args.map normalizeFieldTy)
-  | t => t
-
+/-- Substitute type variables using a mapping (for generic enum/struct instantiation). -/
 private def enumerateFields (fields : List StructField) (idx : Nat := 0) : List FieldInfo :=
   match fields with
   | [] => []
@@ -2030,7 +2108,7 @@ def buildEnumDefs (enums : List EnumDef) : List EnumInfo :=
       let sz := v.fields.foldl (fun (a : Nat) f => a + tySize f.ty) 0
       if sz > acc then sz else acc
     ) (0 : Nat)
-    { name := ed.name, variants, payloadSize := maxPayload }
+    { name := ed.name, variants, payloadSize := maxPayload, typeParams := ed.typeParams }
 
 def genStructTypes (s : CodegenState) (structs : List StructDef) : CodegenState :=
   structs.foldl (fun s sd =>
@@ -2055,8 +2133,19 @@ def genEnumTypes (s : CodegenState) (enums : List EnumDef) : CodegenState :=
   ) s
 
 def genModule (m : Module) : String :=
+  -- Add built-in Option<T> enum if not user-defined
+  let builtinOptionEnum : EnumDef := {
+    name := "Option"
+    typeParams := ["T"]
+    variants := [
+      { name := "Some", fields := [{ name := "value", ty := .typeVar "T" }] },
+      { name := "None", fields := [] }
+    ]
+  }
+  let hasUserOption := m.enums.any fun ed => ed.name == "Option"
+  let allEnums := if hasUserOption then m.enums else builtinOptionEnum :: m.enums
   let structInfos := buildStructDefs m.structs
-  let enumInfos := buildEnumDefs m.enums
+  let enumInfos := buildEnumDefs allEnums
   let builtinRetTypes := [
     ("string_length", Ty.int),
     ("drop_string", Ty.unit),
@@ -2098,8 +2187,8 @@ def genModule (m : Module) : String :=
     s
   let s := genStructTypes s m.structs
   let s := if m.structs.isEmpty then s else s.emit ""
-  let s := genEnumTypes s m.enums
-  let s := if m.enums.isEmpty then s else s.emit ""
+  let s := genEnumTypes s allEnums
+  let s := if allEnums.isEmpty then s else s.emit ""
   -- Placeholder for closure type definitions (filled in after codegen)
   let closureTypeDefsInsertionPoint := s.output.length
   -- External declarations

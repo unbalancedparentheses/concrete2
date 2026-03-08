@@ -7,6 +7,7 @@ namespace Concrete
 structure ParserState where
   tokens : Array Token
   pos : Nat
+  pendingGt : Bool := false  -- true when >> was split and one > remains
   deriving Repr, Inhabited
 
 abbrev ParseM := ExceptT String (StateM ParserState)
@@ -18,6 +19,7 @@ def mkParserState (tokens : List Token) : ParserState :=
 
 def peek : ParseM TokenKind := do
   let s ← get
+  if s.pendingGt then return .gt
   if h : s.pos < s.tokens.size then
     return s.tokens[s.pos].kind
   else
@@ -31,12 +33,19 @@ def peekSpan : ParseM Span := do
     return { line := 0, col := 0 }
 
 def advance : ParseM Unit := do
-  modify fun s => { s with pos := s.pos + 1 }
+  let s ← get
+  if s.pendingGt then
+    modify fun s => { s with pendingGt := false }
+  else
+    modify fun s => { s with pos := s.pos + 1 }
 
 def expect (expected : TokenKind) : ParseM Unit := do
   let actual ← peek
   let sp ← peekSpan
   if actual == expected then advance
+  else if expected == .gt && actual == .shr then
+    -- Split >> into > + pending >, for nested generics like Option<Heap<T>>
+    modify fun s => { s with pos := s.pos + 1, pendingGt := true }
   else throw ("expected " ++ toString expected ++ ", got " ++ toString actual ++
               " at " ++ toString sp.line ++ ":" ++ toString sp.col)
 

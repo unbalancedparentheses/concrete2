@@ -236,6 +236,16 @@ run_ok "$TESTDIR/complex_recursive_list.con" 42
 run_ok "$TESTDIR/complex_recursive_tree.con" 42
 run_ok "$TESTDIR/complex_recursive_mutual.con" 42
 
+# Phase 7c: Heap dereference
+run_ok "$TESTDIR/heap_deref_basic.con" 30
+run_ok "$TESTDIR/heap_deref_int.con" 42
+run_ok "$TESTDIR/heap_deref_enum.con" 42
+run_ok "$TESTDIR/heap_deref_recursive.con" 42
+
+# Phase 9a: Option<T>
+run_ok "$TESTDIR/option_basic.con" 52
+run_ok "$TESTDIR/option_heap.con" 42
+
 echo ""
 echo "=== Negative tests (expected errors) ==="
 run_err "$TESTDIR/error_unconsumed.con"        "was never consumed"
