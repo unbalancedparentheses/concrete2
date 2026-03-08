@@ -202,6 +202,15 @@ private partial def computeTySize (ty : Ty) : LowerM Nat := do
     return elemSz * n
   | _ => return 8
 
+/-- Get byte offset of a field within a struct definition. -/
+private partial def fieldByteOffset (tyName : String) (fieldName : String) : LowerM Nat := do
+  let fields ← lookupStructFields tyName
+  let mut offset := 0
+  for (n, t) in fields do
+    if n == fieldName then return offset
+    offset := offset + (← computeTySize t)
+  return offset
+
 /-- Push loop info onto the loop stack. -/
 private def pushLoop (info : LoopInfo) : LowerM Unit := do
   let s ← getState
@@ -405,22 +414,24 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
     let dst ← freshReg
     emit (.alloca dst ty)
     let baseVal := SVal.reg dst ty
-    for (idx, (_, fieldExpr)) in enumerate actualFields do
+    let mut byteOffset : Nat := 0
+    for (_, fieldExpr) in actualFields do
       let fVal ← lowerExpr fieldExpr
       let gepDst ← freshReg
-      emit (.gep gepDst baseVal [.intConst (Int.ofNat idx) .int] fieldExpr.ty)
+      emit (.gep gepDst baseVal [.intConst (Int.ofNat byteOffset) .int] .i8)
       emit (.store fVal (.reg gepDst fieldExpr.ty))
+      byteOffset := byteOffset + (← computeTySize fieldExpr.ty)
     let loadDst ← freshReg
     emit (.load loadDst baseVal ty)
     return .reg loadDst ty
 
   | .fieldAccess obj field ty =>
-    -- Bug #1 fix: look up actual field index instead of hardcoded 0
     let oVal ← lowerExpr obj
     let tyName := structNameFromTy obj.ty
-    let idx ← fieldIndex tyName field
+    let byteOff ← fieldByteOffset tyName field
     let dst ← freshReg
-    emit (.gep dst oVal [.intConst (Int.ofNat idx) .int] ty)
+    -- Use byte-offset GEP: gep i8, ptr, byteOffset
+    emit (.gep dst oVal [.intConst (Int.ofNat byteOff) .int] .i8)
     let loadDst ← freshReg
     emit (.load loadDst (.reg dst ty) ty)
     return .reg loadDst ty
@@ -1064,13 +1075,13 @@ partial def lowerStmt (stmt : CStmt) : LowerM Unit := do
   | .fieldAssign obj field value =>
     let fVal ← lowerExpr value
     let tyName := structNameFromTy obj.ty
-    let idx ← fieldIndex tyName field
+    let byteOff ← fieldByteOffset tyName field
     -- Check if obj is a deref expression (e.g., *p.field = val → GEP into p directly)
     match obj with
     | .deref inner _ =>
       let ptrVal ← lowerExpr inner
       let gepDst ← freshReg
-      emit (.gep gepDst ptrVal [.intConst (Int.ofNat idx) .int] value.ty)
+      emit (.gep gepDst ptrVal [.intConst (Int.ofNat byteOff) .int] .i8)
       emit (.store fVal (.reg gepDst value.ty))
     | _ =>
     let oVal ← lowerExpr obj
@@ -1081,7 +1092,7 @@ partial def lowerStmt (stmt : CStmt) : LowerM Unit := do
     if isRefTy then
       -- oVal is already a pointer to the struct; GEP + store directly
       let gepDst ← freshReg
-      emit (.gep gepDst oVal [.intConst (Int.ofNat idx) .int] value.ty)
+      emit (.gep gepDst oVal [.intConst (Int.ofNat byteOff) .int] .i8)
       emit (.store fVal (.reg gepDst value.ty))
     else
       -- Struct value: alloca a temporary, mutate the field, load back,
@@ -1091,7 +1102,7 @@ partial def lowerStmt (stmt : CStmt) : LowerM Unit := do
       emit (.alloca tmpSlot structTy)
       emit (.store oVal (.reg tmpSlot structTy))
       let gepDst ← freshReg
-      emit (.gep gepDst (.reg tmpSlot structTy) [.intConst (Int.ofNat idx) .int] value.ty)
+      emit (.gep gepDst (.reg tmpSlot structTy) [.intConst (Int.ofNat byteOff) .int] .i8)
       emit (.store fVal (.reg gepDst value.ty))
       let newVal ← freshReg
       emit (.load newVal (.reg tmpSlot structTy) structTy)
