@@ -201,44 +201,66 @@ Concrete is built for code that must be inspectable and mechanically verified.
 
 ## Current Status
 
-The compiler implements the core surface language in ~4,700 lines of Lean 4. All 65 tests pass. 58 of 59 legacy examples compile and run in the current implementation.
+The compiler implements the core surface language in ~6,800 lines of Lean 4. All 175 tests pass (117 positive, 58 negative).
 
-**`defer`/`destroy`, explicit allocation, borrow regions, closures, FFI safety, MLIR backend, and the kernel formalization are not yet implemented.** See the full [ROADMAP.md](ROADMAP.md) for the implementation plan. What works today:
+**FFI safety, MLIR backend, standard library, kernel formalization, and the runtime are not yet implemented.** See the full [ROADMAP.md](ROADMAP.md) for the implementation plan. What works today:
 
 - **Types**: Int, Uint, i8-i32, u8-u32, f32, f64, Bool, Char, String, arrays `[T; N]`, raw pointers
-- **Structs** with field access and mutation
+- **Structs** with field access, mutation, and `Heap<T>` fields
 - **Enums** with pattern matching (exhaustiveness checked)
-- **Impl blocks** with methods (`&self`, `&mut self`, `self`) and static methods
-- **Traits** with static dispatch
+- **Impl blocks** with methods (`&self`, `&mut self`, `self`), static methods, and `Self` keyword
+- **Traits** with static dispatch, signature checking, and trait bounds (`<T: Trait1 + Trait2>`)
 - **Generics** on functions, structs, and enums
-- **Borrowing**: `&T` (shared) and `&mut T` (exclusive), with borrow checking
-- **Linear type system**: structs consumed exactly once, branches must agree
-- **Modules** with `pub` visibility and imports
+- **Borrowing**: `&T` (shared) and `&mut T` (exclusive), with borrow checking and named regions
+- **Linear type system**: structs consumed exactly once, branches must agree, `defer`/`destroy`/`Copy`
+- **Heap allocation**: `alloc`/`free`, `Heap<T>` with `->` field access, `HeapArray<T>`
+- **Modules** with `pub` visibility, imports, multi-file resolution, circular import detection
 - **Result type** with `?` operator for error propagation
 - **Cast expressions** (`as`) between numeric types
-- **Capabilities**: `with(File, Network, Alloc)` effect declarations, `!` sugar for Std, capability checking at all call sites
-- **Control flow**: while loops, for loops, if/else, match
+- **Capabilities**: `with(File, Network, Alloc)` effect declarations, `!` sugar, capability polymorphism
+- **Control flow**: while (including as expression), for, if/else, match, break/continue with labeled loops
+- **Closures**: fat pointer representation, copy/move captures, bidirectional type inference
+- **Bitwise operators**: `&`, `|`, `^`, `<<`, `>>`, `~` with hex/binary/octal literals
+- **I/O**: `print_int`, `print_bool` (require Console capability)
 
 ## Roadmap
 
 See [ROADMAP.md](ROADMAP.md) for the full implementation plan with syntax, rules, and implementation details for each phase.
 
-| Phase | Feature | Parallel? |
-|-------|---------|-----------|
-| **1** | Capabilities + cap polymorphism | No |
-| **2** | Closures | No |
-| **3** | `defer` + `destroy` + `Copy` | No |
-| **4** | `break` / `continue` | Yes, with 1-3 |
-| **5** | Allocator system | No |
-| **6** | Borrow regions | Yes, with 1-5 |
-| **7** | FFI + C interop | Yes, with 2-6 |
-| **8** | MLIR backend + optimization | Yes, anytime |
-| **9** | Standard library | No |
-| **10** | Runtime (C, then Concrete) | No |
-| **11** | Kernel formalization + proofs | Yes, anytime |
-| **12** | Tooling | Yes, ongoing |
+| Phase | Feature | Status |
+|-------|---------|--------|
+| **1** | Capabilities + cap polymorphism | Done |
+| **2** | Closures | Done |
+| **3** | `defer` + `destroy` + `Copy` | Done |
+| **4** | `break` / `continue` / while-as-expression | Done |
+| **5** | Allocator system (`Heap<T>`, `->`) | Done |
+| **6** | Borrow regions | Done |
+| **7** | FFI + C interop (Unsafe gating) | Not started |
+| **7b** | Monomorphized trait dispatch | Not started |
+| **7c** | Heap dereference (`*heap_ptr`) | Not started |
+| **8** | MLIR backend + optimization | Not started |
+| **9** | Standard library (`Option<T>`, `Vec<T>`, IO) | Not started |
+| **10** | Kernel formalization + proofs | Not started |
+| **11** | Tooling | Not started |
+| **12** | Runtime (C, then Concrete) | Not started |
 
-Critical path: **1 → 3 → 5** (capabilities → resource management → allocators). Formalization (Phase 11) and MLIR (Phase 8) can start in parallel at any time.
+Next critical path: **7b → 7c → 9** (trait dispatch on generics, heap dereference, then standard library). These unblock writing real programs. Formalization (Phase 10) and MLIR (Phase 8) can start in parallel at any time.
+
+### What fits the philosophy and what does not
+
+Every feature must answer: **can a machine reason about this?**
+
+| Feature | Fits? | Why |
+|---------|-------|-----|
+| Monomorphized trait dispatch | Yes | Compile-time specialization, all code paths known statically |
+| Heap dereference (`*heap_ptr`) | Yes | Just loading a value through a pointer, fully explicit |
+| `Option<T>` | Yes | Stated replacement for Null (anti-features table), just an enum |
+| `Vec<T>` with explicit `Alloc` | Yes | Library type, every allocation visible via `with(Alloc)` |
+| File/Network IO via capabilities | Yes | The capability system was designed for this |
+| String operations (pure functions) | Yes | Pure functions, IO goes through capabilities |
+| General iterator protocol | **No** | Hidden `next()` calls violate "no implicit function calls" |
+| Trait objects / dynamic dispatch | **No** | Function target not statically known, violates "all code paths known at compile time" |
+| Operator overloading | **No** | Explicitly rejected: "`a + b` on integers is primitive addition, not `Add::add`" |
 
 ## Compilation Pipeline
 
@@ -276,7 +298,7 @@ Requires [Lean 4](https://leanprover.github.io/lean4/doc/setup.html) (v4.28.0+) 
 
 ```bash
 make build    # or: lake build
-make test     # runs all 65 tests
+make test     # runs all 175 tests
 make clean    # or: lake clean
 ```
 
@@ -291,7 +313,7 @@ Concrete/
   Check.lean     -- Type checker + linearity checker + borrow checker
   Codegen.lean   -- LLVM IR code generation
 Main.lean        -- Entry point
-lean_tests/      -- 65 tests (37 positive, 28 negative)
+lean_tests/      -- 175 tests (117 positive, 58 negative)
 examples/        -- 59 example programs (superset of lambdaclass/concrete examples)
 ```
 
@@ -325,14 +347,15 @@ Things Concrete deliberately does not have:
 ## Implementation Snapshot
 
 **Current Lean 4 implementation:**
-- ~4,700 lines, the whole compiler fits in 6 files
+- ~6,800 lines, the whole compiler fits in 6 files
 - Direct textual LLVM IR emission, no MLIR, no complex lowering passes
 - Path to formal verification of the type system using Lean's proof system
 - Clean pipeline: Lexer -> Parser -> AST -> Check -> Codegen
 
-**Next major build-out:**
+**Next steps:**
+- Monomorphized trait dispatch and heap dereference (unblocks real programs)
+- Standard library: `Option<T>`, `Vec<T>`, IO, String operations
 - MLIR-based lowering pipeline
-- Build system (`Concrete.toml`), standard library, LSP support
 - Kernel formalization and proof development in Lean
 
 ## License

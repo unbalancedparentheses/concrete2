@@ -4,29 +4,34 @@ This is the implementation plan for the Concrete programming language. For the f
 
 ## What's Built
 
-The Lean 4 compiler implements the core surface language in ~5,500 lines. All 79 tests pass. 58 of 59 legacy examples compile and run in the current implementation.
+The Lean 4 compiler implements the core surface language in ~6,800 lines. All 175 tests pass (117 positive, 58 negative).
 
 **Done:**
 - Lexer, LL(1) parser, AST
 - Types: Int, Uint, i8-i32, u8-u32, f32, f64, Bool, Char, String, arrays `[T; N]`, raw pointers `*mut T` / `*const T`
-- Structs with field access, mutation, and pass-by-pointer
+- Structs with field access, mutation, pass-by-pointer, `Heap<T>` fields
 - Enums with pattern matching (exhaustiveness checked, literal and variable patterns)
 - Impl blocks with methods (`&self`, `&mut self`, `self`) and static methods
-- Traits with static dispatch and signature checking
+- `Self` keyword in impl blocks (resolved to the implementing type)
+- Traits with static dispatch, signature checking, and trait bounds on generics (`<T: Trait1 + Trait2>`)
 - Generics on functions, structs, and enums
 - Borrowing: `&T` (shared) and `&mut T` (exclusive), with borrow checking
+- Borrow regions: `borrow x as xr in R { ... }` with escape analysis
 - Linear type system: structs consumed exactly once, branches must agree, loop restrictions
-- Modules with `pub` visibility, imports, submodules, forward references
+- `defer`/`destroy`/`Copy`: explicit resource management, LIFO deferred cleanup, opt-in Copy marker
+- Modules with `pub` visibility, imports, submodules, forward references, multi-file resolution (`mod X;` reads `X.con`), circular import detection
 - Result type with `?` operator for error propagation
 - Cast expressions (`as`) between numeric types
-- Control flow: while, for (C-style and condition-only), if/else, match, break, continue
+- Control flow: while (including while-as-expression), for (C-style), if/else, match, break/continue (with labeled loops `'label:`)
 - Closures: fat pointer representation, copy/move captures, free variable analysis, bidirectional type inference, linear closure tracking
-- Constants, type aliases, extern fn declarations
+- Heap allocation: `alloc`/`free`, `Heap<T>` with `->` field access, `HeapArray<T>`
+- Bitwise operators (`&`, `|`, `^`, `<<`, `>>`, `~`) and hex/binary/octal literals
+- `print_int`/`print_bool` builtins (require Console capability)
+- Constants, type aliases, extern fn declarations, `abort()`
+- Capabilities: `with(File, Network, Alloc)` effect declarations, `!` sugar, capability polymorphism, capability checking
 - Direct LLVM IR text emission, compiled via clang to native binaries
-- Capabilities: `with(File, Network, Alloc)` effect declarations, `!` sugar, capability checking
-- CI: build warnings check, 79 test suite, example compilation, runtime crash detection
 
-**Not yet implemented:** `defer`/`destroy`, explicit `Copy` marker, allocator system, borrow regions, FFI safety (Unsafe gating), MLIR backend, kernel formalization, standard library, runtime.
+**Not yet implemented:** monomorphized trait dispatch (calling trait methods on generic type variables), heap dereference (`*heap_ptr`), FFI safety (Unsafe gating, `#[repr(C)]`, transmute), MLIR backend, standard library (`Option<T>`, `Vec<T>`, IO, String operations), kernel formalization, runtime.
 
 ---
 
@@ -1059,6 +1064,119 @@ Existing `extern fn` calls in examples and tests do NOT currently require `Unsaf
 - `error_ptr_deref_no_unsafe.con`: dereference raw pointer without Unsafe → error
 - `error_transmute_size.con`: transmute between types of different sizes → error
 - `error_transmute_generic.con`: transmute to generic type → error "cannot transmute to generic type"
+
+---
+
+## Phase 7b: Monomorphized trait dispatch on generics
+
+Trait bounds (`<T: Describe>`) are checked but you cannot call trait methods on generic type variables. This phase adds monomorphized dispatch: `val.describe()` where `val: T` and `T: Describe` compiles to a direct call to the concrete type's implementation at compile time.
+
+### Why this fits the philosophy
+
+- **No hidden control flow.** Monomorphization generates a separate copy of the function for each concrete type. The call `val.describe()` compiles to `Point_describe(val)` — a direct, statically-known function call. No vtable, no indirection, no runtime dispatch.
+- **All code paths known at compile time.** The compiler knows exactly which function is called at every instantiation. `grep describe` finds every implementation.
+- **No trait objects.** Dynamic dispatch (`dyn Trait`) is explicitly excluded — it violates "all code paths known at compile time" and "no implicit function calls." Concrete uses monomorphization only.
+
+### Syntax
+
+```
+trait Describe {
+    fn describe(&self) -> Int;
+}
+
+struct Point { x: Int, y: Int }
+
+impl Describe for Point {
+    fn describe(&self) -> Int {
+        return self.x + self.y;
+    }
+}
+
+// T: Describe means we can call .describe() on values of type T
+fn show<T: Describe>(val: &T) -> Int {
+    return val.describe();
+}
+
+fn main() -> Int {
+    let p: Point = Point { x: 10, y: 20 };
+    return show::<Point>(&p);  // compiles to show_Point(&p) which calls Point_describe
+}
+```
+
+### Rules
+
+- Trait method calls on generic type variables are resolved at monomorphization time
+- For `<T: Describe>`, calling `val.describe()` where `val: &T` resolves to `ConcreteType_describe(val)` based on the type argument at the call site
+- Multiple bounds (`<T: A + B>`) allow calling methods from any bound trait
+- Monomorphization generates a specialized function for each concrete type instantiation
+- If a function `fn foo<T: Describe>(x: &T)` is called as `foo::<Point>(&p)` and `foo::<Counter>(&c)`, the compiler generates `foo_Point` and `foo_Counter`
+- Error if the concrete type at instantiation does not implement the required trait (already implemented in Phase E)
+
+### Implementation
+
+- **Check.lean**: When checking a method call on a type variable `T` that has trait bounds, look up the method in the bound traits. Verify the method signature matches. Return the method's return type. The concrete dispatch is resolved during codegen.
+- **Codegen.lean**: During monomorphization, when generating code for a trait method call on a type variable, substitute the concrete type's method name. `val.describe()` where `T = Point` becomes `call @Point_describe(ptr %val)`.
+
+### Tests
+
+- `trait_dispatch_basic.con`: call trait method on generic type variable → ok
+- `trait_dispatch_multi.con`: multiple trait bounds, call methods from both → ok
+- `trait_dispatch_chain.con`: generic function calls another generic function → ok
+- `error_trait_dispatch_missing.con`: call method not in any bound trait → error "no method"
+
+---
+
+## Phase 7c: Heap dereference
+
+Currently `Heap<T>` only supports `->` for struct field access. This phase adds `*heap_ptr` to load the full value from a `Heap<T>`, which is needed for pattern matching on heap-allocated enums and for recursive data structures.
+
+### Why this fits the philosophy
+
+- **Fully explicit.** `*ptr` is visible in the source — you see every heap read.
+- **No hidden control flow.** Loading a value from a pointer is a single LLVM `load` instruction.
+- **Linear types enforced.** If `T` is linear, `*heap_ptr` moves the value out. The `Heap<T>` wrapper is consumed (must still be freed, but the inner value is now owned separately).
+
+### Syntax
+
+```
+enum List {
+    Cons { value: Int, next: Heap<List> },
+    Nil {}
+}
+
+fn sum_list!(head: Heap<List>) -> Int {
+    let node: List = *head;  // load value from heap
+    free(head);               // free the heap wrapper (inner value already moved out)
+    match node {
+        List#Cons { value, next } => {
+            return value + sum_list(next);
+        },
+        List#Nil {} => {
+            return 0;
+        },
+    }
+}
+```
+
+### Rules
+
+- `*heap_ptr` where `heap_ptr: Heap<T>` loads and returns a value of type `T`
+- If `T` is `Copy`, the value is copied and the `Heap<T>` remains valid (still must be freed)
+- If `T` is linear, the value is moved out. The `Heap<T>` wrapper transitions to a "hollow" state — it must still be freed (to release the memory) but the inner value is now owned by the caller
+- `*heap_ptr` does NOT require `Unsafe` — it is safe because `Heap<T>` is always valid (no null, no dangling pointers in safe code)
+- This is distinct from `*raw_ptr` on raw pointers (`*mut T`, `*const T`), which DOES require `Unsafe` (Phase 7)
+
+### Implementation
+
+- **Check.lean**: In `checkExpr` for `.deref`, add case: if inner expression has type `.heap t`, return `t`. Mark the heap variable as partially consumed (hollow — must still be freed). Currently `.deref` only handles `.ref` and `.refMut`.
+- **Codegen.lean**: In `genExpr` for `.deref`, add case: if inner type is `.heap t`, emit `load` of the inner struct/enum from the heap pointer. For struct types, load the full struct. For enum types, load the tag + payload.
+
+### Tests
+
+- `heap_deref_basic.con`: `*heap_ptr` to get value from `Heap<T>` → ok
+- `heap_deref_enum.con`: `*heap_ptr` on `Heap<EnumType>`, then match → ok
+- `heap_deref_recursive.con`: recursive linked list via `Heap<List>` with `*` and match → ok
+- `error_heap_deref_no_free.con`: deref heap but don't free wrapper → error "was never consumed"
 
 ---
 
