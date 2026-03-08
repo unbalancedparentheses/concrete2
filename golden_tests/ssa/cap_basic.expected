@@ -1,0 +1,12 @@
+; module main
+define void @greet() {
+entry:
+  call void @print_int(i64 42)
+  ret void
+}
+
+define i64 @main() {
+entry:
+  call void @greet()
+  ret i64 0
+}

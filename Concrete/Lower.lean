@@ -23,6 +23,20 @@ private def enumerate {α : Type} (l : List α) : List (Nat × α) :=
 -- Lowering state
 -- ============================================================
 
+structure LoopInfo where
+  headerLabel : String
+  exitLabel : String
+  /-- Phi registers created at header: (varName, phiReg, preLoopVal, ty) -/
+  headerPhis : List (String × String × SVal × Ty) := []
+  /-- Var snapshots at each break: (varsSnapshot, sourceLabel) -/
+  breakEdges : List (List (String × SVal) × String) := []
+  /-- Alloca slot for while-as-expression result (break stores value here). -/
+  resultSlot : Option String := none
+  /-- Type for the result slot. -/
+  resultTy : Ty := .unit
+  /-- Var snapshots at each continue: (varsSnapshot, sourceLabel) -/
+  continueEdges : List (List (String × SVal) × String) := []
+
 structure LowerState where
   blocks : List SBlock
   currentLabel : String
@@ -31,6 +45,9 @@ structure LowerState where
   regCounter : Nat
   vars : List (String × SVal)
   stringLits : List (String × String)
+  structDefs : List CStructDef
+  enumDefs : List CEnumDef
+  loopStack : List LoopInfo
 
 abbrev LowerM := ExceptT String (StateM LowerState)
 
@@ -86,10 +103,149 @@ private def internString (val : String) : LowerM String := do
 /-- Check if current block already has a terminator in the blocks list. -/
 private def currentBlockTerminated : LowerM Bool := do
   let s ← getState
-  -- If the current label matches the last completed block's label, it was terminated
   match s.blocks.getLast? with
   | some b => return b.label == s.currentLabel && s.currentInsts.isEmpty
   | none => return false
+
+/-- Get the current block label (may differ from startBlock label after lowering body). -/
+private def getCurrentLabel : LowerM String := do
+  let s ← getState
+  -- If the current block was terminated, the last block's label is where we ended up
+  -- Otherwise, we're still building the current label
+  return s.currentLabel
+
+-- ============================================================
+-- Struct/enum definition lookup helpers
+-- ============================================================
+
+/-- Look up a struct definition's fields by type name. -/
+private def lookupStructFields (tyName : String) : LowerM (List (String × Ty)) := do
+  let s ← getState
+  match s.structDefs.find? fun sd => sd.name == tyName with
+  | some sd => return sd.fields
+  | none => return []
+
+/-- Get field index within a struct definition. Returns 0 if not found. -/
+private def fieldIndex (tyName : String) (fieldName : String) : LowerM Nat := do
+  let fields ← lookupStructFields tyName
+  match (enumerate fields).find? fun (_, (n, _)) => n == fieldName with
+  | some (idx, _) => return idx
+  | none => return 0
+
+/-- Get variant index within an enum definition. Returns 0 if not found. -/
+private def variantIndex (enumName : String) (variantName : String) : LowerM Nat := do
+  let s ← getState
+  match s.enumDefs.find? fun ed => ed.name == enumName with
+  | some ed =>
+    match (enumerate ed.variants).find? fun (_, (vn, _)) => vn == variantName with
+    | some (idx, _) => return idx
+    | none => return 0
+  | none => return 0
+
+/-- Get variant fields within an enum definition. -/
+private def variantFields (enumName : String) (variantName : String) : LowerM (List (String × Ty)) := do
+  let s ← getState
+  match s.enumDefs.find? fun ed => ed.name == enumName with
+  | some ed =>
+    match ed.variants.find? fun (vn, _) => vn == variantName with
+    | some (_, fields) => return fields
+    | none => return []
+  | none => return []
+
+/-- Extract struct type name from a Ty. -/
+private def structNameFromTy (ty : Ty) : String :=
+  match ty with
+  | .named n => n
+  | .generic n _ => n
+  | _ => ""
+
+/-- Compute byte size of a type (for malloc). -/
+private partial def computeTySize (ty : Ty) : LowerM Nat := do
+  match ty with
+  | .int | .uint | .float64 => return 8
+  | .i32 | .u32 | .float32 => return 4
+  | .i16 | .u16 => return 2
+  | .i8 | .u8 | .char | .bool => return 1
+  | .unit => return 0
+  | .string => return 16  -- ptr + i64
+  | .ref _ | .refMut _ | .ptrMut _ | .ptrConst _ => return 8
+  | .fn_ _ _ _ | .heap _ | .heapArray _ => return 8
+  | .generic "Heap" _ | .generic "HeapArray" _ => return 8
+  | .generic "Vec" _ => return 24
+  | .generic "HashMap" _ => return 40
+  | .named name | .generic name _ =>
+    let fields ← lookupStructFields name
+    if !fields.isEmpty then
+      let mut total := 0
+      for (_, ft) in fields do
+        total := total + (← computeTySize ft)
+      return total
+    else
+      let s ← getState
+      match s.enumDefs.find? fun ed => ed.name == name with
+      | some ed =>
+        let mut maxPayload := 0
+        for (_, vfields) in ed.variants do
+          let mut sz := 0
+          for (_, ft) in vfields do
+            sz := sz + (← computeTySize ft)
+          maxPayload := Nat.max maxPayload sz
+        return 4 + maxPayload  -- i32 tag + payload
+      | none => return 8
+  | .array elem n => do
+    let elemSz ← computeTySize elem
+    return elemSz * n
+  | _ => return 8
+
+/-- Push loop info onto the loop stack. -/
+private def pushLoop (info : LoopInfo) : LowerM Unit := do
+  let s ← getState
+  setState { s with loopStack := info :: s.loopStack }
+
+/-- Pop loop info from the loop stack, returning it. -/
+private def popLoop : LowerM (Option LoopInfo) := do
+  let s ← getState
+  match s.loopStack with
+  | info :: rest =>
+    setState { s with loopStack := rest }
+    return some info
+  | [] => return none
+
+/-- Get the innermost loop info. -/
+private def currentLoop : LowerM (Option LoopInfo) := do
+  let s ← getState
+  return s.loopStack.head?
+
+/-- Record a break edge on the innermost loop. -/
+private def addBreakEdge (vars : List (String × SVal)) (label : String) : LowerM Unit := do
+  let s ← getState
+  match s.loopStack with
+  | info :: rest =>
+    let info' := { info with breakEdges := info.breakEdges ++ [(vars, label)] }
+    setState { s with loopStack := info' :: rest }
+  | [] => pure ()
+
+/-- Record a continue edge on the innermost loop. -/
+private def addContinueEdge (vars : List (String × SVal)) (label : String) : LowerM Unit := do
+  let s ← getState
+  match s.loopStack with
+  | info :: rest =>
+    let info' := { info with continueEdges := info.continueEdges ++ [(vars, label)] }
+    setState { s with loopStack := info' :: rest }
+  | [] => pure ()
+
+/-- Prepend instructions to an already-finalized block. -/
+private def prependInstsToBlock (label : String) (newInsts : List SInst) : LowerM Unit := do
+  let s ← getState
+  let blocks' := s.blocks.map fun b =>
+    if b.label == label then { b with insts := newInsts ++ b.insts }
+    else b
+  setState { s with blocks := blocks' }
+
+/-- Get current var map snapshot. -/
+private def snapshotVars : LowerM (List (String × SVal)) := do
+  let s ← getState
+  return s.vars
 
 -- ============================================================
 -- Expression and statement lowering
@@ -127,6 +283,39 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
     return .reg dst ty
 
   | .call fn _typeArgs args ty =>
+    -- Handle alloc(val) → malloc + store
+    if fn == "alloc" then
+      match args.head? with
+      | some arg =>
+        let aVal ← lowerExpr arg
+        let innerTy := arg.ty
+        let szDst ← freshReg
+        let sz ← computeTySize innerTy
+        emit (.call (some szDst) "malloc" [.intConst (Int.ofNat sz) .int] (.ptrMut innerTy))
+        let ptrVal := SVal.reg szDst (.ptrMut innerTy)
+        emit (.store aVal ptrVal)
+        return ptrVal
+      | none => return .unit
+    -- Handle free(ptr) → free the pointer, return loaded value
+    else if fn == "free" then
+      match args.head? with
+      | some arg =>
+        let ptrVal ← lowerExpr arg
+        let innerTy := match arg.ty with
+          | .heap t => t
+          | .generic "Heap" [t] => t
+          | t => t
+        if ty == .unit || ty == .never then
+          emit (.call none "free" [ptrVal] .unit)
+          return .unit
+        else
+          -- Load value before freeing
+          let loadDst ← freshReg
+          emit (.load loadDst ptrVal innerTy)
+          emit (.call none "free" [ptrVal] .unit)
+          return .reg loadDst innerTy
+      | none => return .unit
+    else
     let mut aVals : List SVal := []
     for arg in args do
       let v ← lowerExpr arg
@@ -139,11 +328,17 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
       emit (.call (some dst) fn aVals ty)
       return .reg dst ty
 
-  | .structLit _name _typeArgs fields ty =>
+  | .structLit name _typeArgs fields ty =>
+    -- Bug #7 fix: reorder fields to match struct definition's canonical order
+    let defFields ← lookupStructFields name
+    let orderedFields := if defFields.isEmpty then fields
+      else defFields.filterMap fun (defName, _) =>
+        fields.find? fun (fname, _) => fname == defName
+    let actualFields := if orderedFields.length == fields.length then orderedFields else fields
     let dst ← freshReg
     emit (.alloca dst ty)
     let baseVal := SVal.reg dst ty
-    for (idx, (_, fieldExpr)) in enumerate fields do
+    for (idx, (_, fieldExpr)) in enumerate actualFields do
       let fVal ← lowerExpr fieldExpr
       let gepDst ← freshReg
       emit (.gep gepDst baseVal [.intConst (Int.ofNat idx) .int] fieldExpr.ty)
@@ -152,71 +347,187 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
     emit (.load loadDst baseVal ty)
     return .reg loadDst ty
 
-  | .fieldAccess obj _field ty =>
+  | .fieldAccess obj field ty =>
+    -- Bug #1 fix: look up actual field index instead of hardcoded 0
     let oVal ← lowerExpr obj
+    let tyName := structNameFromTy obj.ty
+    let idx ← fieldIndex tyName field
     let dst ← freshReg
-    emit (.gep dst oVal [.intConst 0 .int] ty)
+    emit (.gep dst oVal [.intConst (Int.ofNat idx) .int] ty)
     let loadDst ← freshReg
     emit (.load loadDst (.reg dst ty) ty)
     return .reg loadDst ty
 
-  | .enumLit _enumName _variant _typeArgs fields ty =>
+  | .enumLit enumName variant _typeArgs fields ty =>
+    -- Bug #5 fix: store discriminant tag at index 0, fields starting at index 1
+    let vidx ← variantIndex enumName variant
     let dst ← freshReg
     emit (.alloca dst ty)
     let baseVal := SVal.reg dst ty
+    -- Store tag at index 0
+    let tagGep ← freshReg
+    emit (.gep tagGep baseVal [.intConst 0 .int] .int)
+    emit (.store (.intConst (Int.ofNat vidx) .int) (.reg tagGep .int))
+    -- Store fields starting at index 1
     for (idx, (_, fieldExpr)) in enumerate fields do
       let fVal ← lowerExpr fieldExpr
       let gepDst ← freshReg
-      emit (.gep gepDst baseVal [.intConst (Int.ofNat idx) .int] fieldExpr.ty)
+      emit (.gep gepDst baseVal [.intConst (Int.ofNat (idx + 1)) .int] fieldExpr.ty)
       emit (.store fVal (.reg gepDst fieldExpr.ty))
     let loadDst ← freshReg
     emit (.load loadDst baseVal ty)
     return .reg loadDst ty
 
   | .match_ scrutinee arms ty =>
+    -- Bug #3 fix: actual pattern comparison dispatch
+    -- Bug #4 fix: capture real result values for phi nodes
     let scrVal ← lowerExpr scrutinee
     let mergeLabel ← freshLabel "merge"
     let mergeDst ← freshReg
     let mut phiIncoming : List (SVal × String) := []
-    -- Chain arms sequentially (simplified v1)
-    for (idx, arm) in enumerate arms do
-      let armLabel ← freshLabel s!"arm{idx}"
-      let terminated ← currentBlockTerminated
-      if !terminated then
-        terminateBlock (.br armLabel)
-      startBlock armLabel
-      match arm with
-      | .enumArm _ _ bindings body =>
-        for (bidx, (bname, bty)) in enumerate bindings do
-          let gepDst ← freshReg
-          emit (.gep gepDst scrVal [.intConst (Int.ofNat bidx) .int] bty)
-          let loadDst ← freshReg
-          emit (.load loadDst (.reg gepDst bty) bty)
-          setVar bname (.reg loadDst bty)
-        lowerStmts body
-        let curLabel := armLabel
-        phiIncoming := phiIncoming ++ [(.unit, curLabel)]
-        let term ← currentBlockTerminated
-        if !term then
+    let mut allArmsTerminated := true
+
+    -- Determine if this is an enum match (check first arm)
+    let isEnumMatch := arms.any fun arm => match arm with
+      | .enumArm .. => true
+      | _ => false
+
+    if isEnumMatch then
+      -- Extract discriminant tag from scrutinee (at index 0)
+      let tagGep ← freshReg
+      emit (.gep tagGep scrVal [.intConst 0 .int] .int)
+      let tagVal ← freshReg
+      emit (.load tagVal (.reg tagGep .int) .int)
+
+      -- Generate comparison chain
+      for (idx, arm) in enumerate arms do
+        let armLabel ← freshLabel s!"arm{idx}"
+        let nextCheck ← freshLabel s!"check{idx + 1}"
+        match arm with
+        | .enumArm enumName variant bindings body =>
+          let vidx ← variantIndex enumName variant
+          let cmpDst ← freshReg
+          emit (.binOp cmpDst .eq (.reg tagVal .int) (.intConst (Int.ofNat vidx) .int) .bool)
+          terminateBlock (.condBr (.reg cmpDst .bool) armLabel nextCheck)
+          startBlock armLabel
+          for (bidx, (bname, bty)) in enumerate bindings do
+            let gepDst ← freshReg
+            emit (.gep gepDst scrVal [.intConst (Int.ofNat (bidx + 1)) .int] bty)
+            let loadDst ← freshReg
+            emit (.load loadDst (.reg gepDst bty) bty)
+            setVar bname (.reg loadDst bty)
+          lowerStmts body
+          let bodyVal ← lastExprVal body ty
+          let term ← currentBlockTerminated
+          if !term then
+            allArmsTerminated := false
+            let curLabel ← getCurrentLabel
+            phiIncoming := phiIncoming ++ [(bodyVal, curLabel)]
+            terminateBlock (.br mergeLabel)
+          startBlock nextCheck
+        | .varArm binding _bindTy body =>
+          terminateBlock (.br armLabel)
+          startBlock armLabel
+          setVar binding scrVal
+          lowerStmts body
+          let bodyVal ← lastExprVal body ty
+          let term ← currentBlockTerminated
+          if !term then
+            allArmsTerminated := false
+            let curLabel ← getCurrentLabel
+            phiIncoming := phiIncoming ++ [(bodyVal, curLabel)]
+            terminateBlock (.br mergeLabel)
+          startBlock nextCheck
+        | .litArm litVal body =>
+          let litSVal ← lowerExpr litVal
+          let cmpDst ← freshReg
+          emit (.binOp cmpDst .eq scrVal litSVal .bool)
+          terminateBlock (.condBr (.reg cmpDst .bool) armLabel nextCheck)
+          startBlock armLabel
+          lowerStmts body
+          let bodyVal ← lastExprVal body ty
+          let term ← currentBlockTerminated
+          if !term then
+            allArmsTerminated := false
+            let curLabel ← getCurrentLabel
+            phiIncoming := phiIncoming ++ [(bodyVal, curLabel)]
+            terminateBlock (.br mergeLabel)
+          startBlock nextCheck
+      -- After all checks: if all arms terminated, fallthrough is unreachable
+      let term ← currentBlockTerminated
+      if !term then
+        if allArmsTerminated then
+          terminateBlock .unreachable
+        else
+          let curLabel ← getCurrentLabel
+          phiIncoming := phiIncoming ++ [(.unit, curLabel)]
           terminateBlock (.br mergeLabel)
-      | .litArm _val body =>
-        lowerStmts body
-        phiIncoming := phiIncoming ++ [(.unit, armLabel)]
-        let term ← currentBlockTerminated
-        if !term then
+    else
+      -- Non-enum match (literal/variable patterns)
+      for (idx, arm) in enumerate arms do
+        let armLabel ← freshLabel s!"arm{idx}"
+        let nextCheck ← freshLabel s!"check{idx + 1}"
+        match arm with
+        | .litArm litVal body =>
+          let litSVal ← lowerExpr litVal
+          let cmpDst ← freshReg
+          emit (.binOp cmpDst .eq scrVal litSVal .bool)
+          terminateBlock (.condBr (.reg cmpDst .bool) armLabel nextCheck)
+          startBlock armLabel
+          lowerStmts body
+          let bodyVal ← lastExprVal body ty
+          let term ← currentBlockTerminated
+          if !term then
+            allArmsTerminated := false
+            let curLabel ← getCurrentLabel
+            phiIncoming := phiIncoming ++ [(bodyVal, curLabel)]
+            terminateBlock (.br mergeLabel)
+          startBlock nextCheck
+        | .varArm binding _bindTy body =>
+          terminateBlock (.br armLabel)
+          startBlock armLabel
+          setVar binding scrVal
+          lowerStmts body
+          let bodyVal ← lastExprVal body ty
+          let term ← currentBlockTerminated
+          if !term then
+            allArmsTerminated := false
+            let curLabel ← getCurrentLabel
+            phiIncoming := phiIncoming ++ [(bodyVal, curLabel)]
+            terminateBlock (.br mergeLabel)
+          startBlock nextCheck
+        | .enumArm _ _ _ body =>
+          terminateBlock (.br armLabel)
+          startBlock armLabel
+          lowerStmts body
+          let bodyVal ← lastExprVal body ty
+          let term ← currentBlockTerminated
+          if !term then
+            allArmsTerminated := false
+            let curLabel ← getCurrentLabel
+            phiIncoming := phiIncoming ++ [(bodyVal, curLabel)]
+            terminateBlock (.br mergeLabel)
+          startBlock nextCheck
+      let term ← currentBlockTerminated
+      if !term then
+        if allArmsTerminated then
+          terminateBlock .unreachable
+        else
+          let curLabel ← getCurrentLabel
+          phiIncoming := phiIncoming ++ [(.unit, curLabel)]
           terminateBlock (.br mergeLabel)
-      | .varArm binding _bindTy body =>
-        setVar binding scrVal
-        lowerStmts body
-        phiIncoming := phiIncoming ++ [(.unit, armLabel)]
-        let term ← currentBlockTerminated
-        if !term then
-          terminateBlock (.br mergeLabel)
+
     startBlock mergeLabel
     if phiIncoming.length > 1 then
       emit (.phi mergeDst phiIncoming ty)
       return .reg mergeDst ty
+    else if phiIncoming.length == 1 then
+      match phiIncoming with
+      | [(val, _)] => return val
+      | _ => return .unit
     else
+      -- All arms terminated (e.g. all return) — merge is unreachable
+      terminateBlock .unreachable
       return .unit
 
   | .borrow inner ty =>
@@ -282,17 +593,133 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
     let headerLabel ← freshLabel "while.hdr"
     let bodyLabel ← freshLabel "while.body"
     let exitLabel ← freshLabel "while.exit"
+    -- Create result slot for while-as-expression
+    let resultSlot ← freshReg "wslot."
+    emit (.alloca resultSlot _ty)
+    let preLoopVars ← snapshotVars
+    let preLoopLabel ← getCurrentLabel
+    let mut headerPhis : List (String × String × SVal × Ty) := []
     terminateBlock (.br headerLabel)
     startBlock headerLabel
+    for (name, val) in preLoopVars do
+      let ty := val.ty
+      let phiReg ← freshReg "phi."
+      setVar name (.reg phiReg ty)
+      headerPhis := headerPhis ++ [(name, phiReg, val, ty)]
+    let loopInfo : LoopInfo := {
+      headerLabel := headerLabel
+      exitLabel := exitLabel
+      headerPhis := headerPhis
+      resultSlot := some resultSlot
+      resultTy := _ty
+    }
+    pushLoop loopInfo
     let condVal ← lowerExpr cond
     terminateBlock (.condBr condVal bodyLabel exitLabel)
     startBlock bodyLabel
     lowerStmts body
+    let bodyEndVars ← snapshotVars
+    let bodyEndLabel ← getCurrentLabel
     let term ← currentBlockTerminated
     if !term then
       terminateBlock (.br headerLabel)
-    startBlock exitLabel
-    return .unit
+    let loopInfoFinal ← popLoop
+    let mut headerPhiInsts : List SInst := []
+    for (name, phiReg, preVal, ty) in headerPhis do
+      let mut incoming : List (SVal × String) := [(preVal, preLoopLabel)]
+      if !term then
+        let backVal := (bodyEndVars.find? fun (n, _) => n == name).map (·.2) |>.getD (.reg phiReg ty)
+        incoming := incoming ++ [(backVal, bodyEndLabel)]
+      match loopInfoFinal with
+      | some info =>
+        for (contVars, contLabel) in info.continueEdges do
+          let contVal := (contVars.find? fun (n, _) => n == name).map (·.2) |>.getD (.reg phiReg ty)
+          incoming := incoming ++ [(contVal, contLabel)]
+      | none => pure ()
+      headerPhiInsts := headerPhiInsts ++ [.phi phiReg incoming ty]
+    prependInstsToBlock headerLabel headerPhiInsts
+    -- For while-as-expression: route normal exit through else block, break goes to final
+    let hasBreaks := match loopInfoFinal with
+      | some info => !info.breakEdges.isEmpty
+      | none => false
+    let breakEdges := match loopInfoFinal with
+      | some info => info.breakEdges
+      | none => []
+    if hasBreaks then
+      -- Normal exit from header → else block → store else value → final
+      -- Break exit → already stored break value → final
+      let elseBlockLabel ← freshLabel "while.else"
+      let finalLabel ← freshLabel "while.final"
+      -- Rewrite: exitLabel becomes the "else" path (from header only)
+      -- Break edges already branch to exitLabel, so we need a different approach:
+      -- exitLabel receives both paths. Use the resultSlot to distinguish.
+      startBlock exitLabel
+      for (name, phiReg, _, ty) in headerPhis do
+        setVar name (.reg phiReg ty)
+      if !breakEdges.isEmpty then
+        for (name, phiReg, _, ty) in headerPhis do
+          let headerVal := SVal.reg phiReg ty
+          let mut exitIncoming : List (SVal × String) := [(headerVal, headerLabel)]
+          for (breakVars, breakLabel) in breakEdges do
+            let breakVal := (breakVars.find? fun (n, _) => n == name).map (·.2) |>.getD headerVal
+            exitIncoming := exitIncoming ++ [(breakVal, breakLabel)]
+          let allSame := exitIncoming.all fun (v, _) => match v, headerVal with
+            | .reg n1 _, .reg n2 _ => n1 == n2
+            | _, _ => false
+          if !allSame then
+            let exitPhiReg ← freshReg "exit."
+            emit (.phi exitPhiReg exitIncoming ty)
+            setVar name (.reg exitPhiReg ty)
+      -- Use a flag phi: 0 from header (normal), 1 from break
+      let flagReg ← freshReg "bflag."
+      let mut flagIncoming : List (SVal × String) := [(.intConst 0 .int, headerLabel)]
+      for (_, breakLabel) in breakEdges do
+        flagIncoming := flagIncoming ++ [(.intConst 1 .int, breakLabel)]
+      emit (.phi flagReg flagIncoming .int)
+      let flagCmp ← freshReg "bfcmp."
+      emit (.binOp flagCmp .eq (.reg flagReg .int) (.intConst 1 .int) .bool)
+      terminateBlock (.condBr (.reg flagCmp .bool) finalLabel elseBlockLabel)
+      -- Else block: store else value
+      startBlock elseBlockLabel
+      if !_elseBody.isEmpty then
+        lowerStmts _elseBody
+        let elseVal ← lastExprVal _elseBody _ty
+        emit (.store elseVal (.reg resultSlot _ty))
+      terminateBlock (.br finalLabel)
+      -- Final block: load result
+      startBlock finalLabel
+      let loadDst ← freshReg "wload."
+      emit (.load loadDst (.reg resultSlot _ty) _ty)
+      return .reg loadDst _ty
+    else
+      -- No breaks: simple exit
+      startBlock exitLabel
+      for (name, phiReg, _, ty) in headerPhis do
+        setVar name (.reg phiReg ty)
+      -- Store else value into result slot (loop ended without break)
+      if !_elseBody.isEmpty then
+        lowerStmts _elseBody
+        let elseVal ← lastExprVal _elseBody _ty
+        emit (.store elseVal (.reg resultSlot _ty))
+      -- Load result from slot
+      let loadDst ← freshReg "wload."
+      emit (.load loadDst (.reg resultSlot _ty) _ty)
+      return .reg loadDst _ty
+
+/-- Extract a value from the last statement of a body, for phi nodes.
+    Uses the __last_expr var that lowerStmt(.expr) sets. -/
+partial def lastExprVal (body : List CStmt) (ty : Ty) : LowerM SVal := do
+  match body.getLast? with
+  | some (.expr _) =>
+    match ← lookupVar "__last_expr" with
+    | some val => pure val
+    | none => pure .unit
+  | some (.return_ (some _) _) => pure .unit  -- arm returned, won't reach phi
+  | some (.letDecl name _ _ _) =>
+    match ← lookupVar name with
+    | some val => pure val
+    | none => pure .unit
+  | _ => pure .unit
 
 partial def lowerStmt (stmt : CStmt) : LowerM Unit := do
   match stmt with
@@ -312,7 +739,8 @@ partial def lowerStmt (stmt : CStmt) : LowerM Unit := do
     terminateBlock (.ret none)
 
   | .expr e =>
-    let _ ← lowerExpr e
+    let v ← lowerExpr e
+    setVar "__last_expr" v
 
   | .ifElse cond then_ else_ =>
     let condVal ← lowerExpr cond
@@ -341,22 +769,88 @@ partial def lowerStmt (stmt : CStmt) : LowerM Unit := do
     let headerLabel ← freshLabel "while.hdr"
     let bodyLabel ← freshLabel "while.body"
     let exitLabel ← freshLabel "while.exit"
+    -- Snapshot pre-loop state
+    let preLoopVars ← snapshotVars
+    let preLoopLabel ← getCurrentLabel
+    -- Create header phis for all live variables
+    let mut headerPhis : List (String × String × SVal × Ty) := []
     terminateBlock (.br headerLabel)
     startBlock headerLabel
+    for (name, val) in preLoopVars do
+      let ty := val.ty
+      let phiReg ← freshReg "phi."
+      setVar name (.reg phiReg ty)
+      headerPhis := headerPhis ++ [(name, phiReg, val, ty)]
+    let loopInfo : LoopInfo := {
+      headerLabel := headerLabel
+      exitLabel := exitLabel
+      headerPhis := headerPhis
+    }
+    pushLoop loopInfo
+    -- Lower condition (uses phi values)
     let condVal ← lowerExpr cond
     terminateBlock (.condBr condVal bodyLabel exitLabel)
+    -- Lower body
     startBlock bodyLabel
     lowerStmts body
+    let bodyEndVars ← snapshotVars
+    let bodyEndLabel ← getCurrentLabel
     let term ← currentBlockTerminated
     if !term then
       terminateBlock (.br headerLabel)
+    -- Pop loop to get break/continue edges
+    let loopInfoFinal ← popLoop
+    -- Build header phi instructions
+    -- Incoming edges: (preLoopLabel, preLoopVars) + (bodyEndLabel, bodyEndVars) + continue edges
+    let mut headerPhiInsts : List SInst := []
+    for (name, phiReg, preVal, ty) in headerPhis do
+      let mut incoming : List (SVal × String) := [(preVal, preLoopLabel)]
+      -- Back-edge from body end (only if body didn't fully terminate)
+      if !term then
+        let backVal := (bodyEndVars.find? fun (n, _) => n == name).map (·.2) |>.getD (.reg phiReg ty)
+        incoming := incoming ++ [(backVal, bodyEndLabel)]
+      -- Continue edges
+      match loopInfoFinal with
+      | some info =>
+        for (contVars, contLabel) in info.continueEdges do
+          let contVal := (contVars.find? fun (n, _) => n == name).map (·.2) |>.getD (.reg phiReg ty)
+          incoming := incoming ++ [(contVal, contLabel)]
+      | none => pure ()
+      headerPhiInsts := headerPhiInsts ++ [.phi phiReg incoming ty]
+    prependInstsToBlock headerLabel headerPhiInsts
+    -- Build exit phis if there are break edges
     startBlock exitLabel
+    let breakEdges := match loopInfoFinal with
+      | some info => info.breakEdges
+      | none => []
+    -- Restore vars to header phi values (which dominate exit)
+    for (name, phiReg, _, ty) in headerPhis do
+      setVar name (.reg phiReg ty)
+    -- If break edges exist, insert exit phis
+    if !breakEdges.isEmpty then
+      for (name, phiReg, _, ty) in headerPhis do
+        let headerVal := SVal.reg phiReg ty
+        let mut exitIncoming : List (SVal × String) := [(headerVal, headerLabel)]
+        for (breakVars, breakLabel) in breakEdges do
+          let breakVal := (breakVars.find? fun (n, _) => n == name).map (·.2) |>.getD headerVal
+          exitIncoming := exitIncoming ++ [(breakVal, breakLabel)]
+        -- Only emit phi if values actually differ
+        let allSame := exitIncoming.all fun (v, _) => match v, headerVal with
+          | .reg n1 _, .reg n2 _ => n1 == n2
+          | _, _ => false
+        if !allSame then
+          let exitPhiReg ← freshReg "exit."
+          emit (.phi exitPhiReg exitIncoming ty)
+          setVar name (.reg exitPhiReg ty)
 
-  | .fieldAssign obj _field value =>
+  | .fieldAssign obj field value =>
+    -- Bug #2 fix: look up actual field index instead of hardcoded 0
     let oVal ← lowerExpr obj
     let fVal ← lowerExpr value
+    let tyName := structNameFromTy obj.ty
+    let idx ← fieldIndex tyName field
     let gepDst ← freshReg
-    emit (.gep gepDst oVal [.intConst 0 .int] value.ty)
+    emit (.gep gepDst oVal [.intConst (Int.ofNat idx) .int] value.ty)
     emit (.store fVal (.reg gepDst value.ty))
 
   | .derefAssign target value =>
@@ -372,11 +866,29 @@ partial def lowerStmt (stmt : CStmt) : LowerM Unit := do
     emit (.gep gepDst aVal [iVal] value.ty)
     emit (.store vVal (.reg gepDst value.ty))
 
-  | .break_ _value _label =>
-    pure ()  -- simplified for v1
+  | .break_ value _label =>
+    match ← currentLoop with
+    | some info =>
+      -- Store break value into result slot (for while-as-expression)
+      match value, info.resultSlot with
+      | some valExpr, some slot =>
+        let bVal ← lowerExpr valExpr
+        emit (.store bVal (.reg slot info.resultTy))
+      | _, _ => pure ()
+      let vars ← snapshotVars
+      let label ← getCurrentLabel
+      addBreakEdge vars label
+      terminateBlock (.br info.exitLabel)
+    | none => pure ()
 
   | .continue_ _label =>
-    pure ()  -- simplified for v1
+    match ← currentLoop with
+    | some info =>
+      let vars ← snapshotVars
+      let label ← getCurrentLabel
+      addContinueEdge vars label
+      terminateBlock (.br info.headerLabel)
+    | none => pure ()
 
   | .defer body =>
     let _ ← lowerExpr body
@@ -397,7 +909,7 @@ end
 -- Function and module lowering
 -- ============================================================
 
-def lowerFn (f : CFnDef) : Except String SFnDef :=
+def lowerFn (f : CFnDef) (structDefs : List CStructDef) (enumDefs : List CEnumDef) : Except String SFnDef :=
   let initState : LowerState := {
     blocks := []
     currentLabel := "entry"
@@ -406,6 +918,9 @@ def lowerFn (f : CFnDef) : Except String SFnDef :=
     regCounter := 0
     vars := f.params.map fun (n, ty) => (n, SVal.reg n ty)
     stringLits := []
+    structDefs := structDefs
+    enumDefs := enumDefs
+    loopStack := []
   }
   let result := (do
     lowerStmts f.body
@@ -429,16 +944,19 @@ def lowerFn (f : CFnDef) : Except String SFnDef :=
 
 def lowerModule (m : CModule) : SModule :=
   let fns := m.functions.filterMap fun f =>
-    match lowerFn f with
+    match lowerFn f m.structs m.enums with
     | .ok sfn => some sfn
     | .error _ => none
-  -- Collect string literals
+  -- Collect string literals from lowered functions
   let globals := m.functions.foldl (fun acc f =>
     let initState : LowerState := {
       blocks := [], currentLabel := "entry", currentInsts := []
       labelCounter := 0, regCounter := 0
       vars := f.params.map fun (n, ty) => (n, SVal.reg n ty)
       stringLits := []
+      structDefs := m.structs
+      enumDefs := m.enums
+      loopStack := []
     }
     let result := (do
       lowerStmts f.body

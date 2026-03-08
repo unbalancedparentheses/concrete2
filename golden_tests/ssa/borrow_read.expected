@@ -1,0 +1,28 @@
+; module main
+define i64 @read_a(ptr(%Pair) %p) {
+entry:
+  %t0 = gep i64 %p, i64 0
+  %t1 = load i64, %t0
+  ret i64 %t1
+}
+
+define i64 @consume(%Pair %p) {
+entry:
+  %t0 = gep i64 %p, i64 0
+  %t1 = load i64, %t0
+  ret i64 %t1
+}
+
+define i64 @main() {
+entry:
+  %t0 = alloca %Pair
+  %t1 = gep i64 %t0, i64 0
+  store i64 10, %t1
+  %t2 = gep i64 %t0, i64 1
+  store i64 20, %t2
+  %t3 = load %Pair, %t0
+  %t4 = cast %Pair %t3 to ptr(%Pair)
+  %t5 = call i64 @read_a(ptr(%Pair) %t4)
+  %t6 = call i64 @consume(%Pair %t3)
+  ret i64 %t5
+}

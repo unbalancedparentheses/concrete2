@@ -4,7 +4,7 @@ This is the implementation plan for the Concrete programming language. For the f
 
 ## What's Built
 
-The Lean 4 compiler implements the core surface language. All 201 tests pass.
+The Lean 4 compiler implements the core surface language plus the new internal IR pipeline pieces: Core IR, elaboration, Core validation, and SSA lowering. All 201 tests pass.
 
 **Done:**
 - Lexer, LL(1) parser, AST
@@ -39,7 +39,7 @@ The Lean 4 compiler implements the core surface language. All 201 tests pass.
 - Networking: tcp_connect, tcp_listen, tcp_accept, socket_send, socket_recv, socket_close (require Network)
 - FFI: `extern fn` declarations, `Unsafe` capability gating
 
-**Not yet implemented:** `#[repr(C)]`, transmute, newtype, MLIR backend, env vars/process args, kernel formalization, runtime, Core validation, resolution split, and backend unification onto the new IR pipeline.
+**Not yet implemented:** `#[repr(C)]`, transmute, newtype, MLIR backend, env vars/process args, kernel formalization, runtime, resolution split, monomorphization cleanup, and full backend unification onto the new IR pipeline.
 
 ---
 
@@ -78,9 +78,6 @@ Unsafe operations should have a small, explicit rule set: what is permitted, wha
 
 4. **A stricter value/reference model**
 The language should stay very clear about when values are passed by value, when borrows are first-class references, and how raw pointers and `Heap<T>` differ operationally.
-
-5. **`union` only if needed, and only explicitly**
-This is useful for some low-level interop cases, but it should come after `repr(C)` and only with explicit unsafe rules.
 
 ---
 
@@ -294,7 +291,7 @@ This gives:
 It also makes new features cheaper because you know where they belong:
 - Syntax feature → Parse + Elaborate
 - Semantic rule → Validate Core
-- Optimization/backend → Lower + Codegen
+- Optimization/backend → Lower + SSA + Codegen
 - Library feature → `std/` only
 
 ---
@@ -333,13 +330,13 @@ New file: `Concrete/CoreCheck.lean`
 
 Type check, linearity, borrow, and capability validation on Core IR. Replaces semantic checking currently in Check.lean. Much simpler because the input is already desugared and explicit.
 
-**Status:** Next major architecture task.
+**Status:** In progress. Initial version (`CoreCheck.lean`) validates capability discipline, type consistency (operators, calls, conditions), match exhaustiveness, and structural invariants (break/continue inside loops). Integrated into the pipeline after elaboration. Runs on all elaborated programs without false positives.
 
-### A5: Codegen on Core IR
+### A5: Codegen on SSA IR
 
-Modify `Concrete/Codegen.lean` to consume Core IR instead of Surface AST. Codegen no longer needs to understand surface forms.
+Modify `Concrete/Codegen.lean` to consume SSA IR instead of Surface AST. Codegen becomes a pure target-emission step over the lowered SSA representation. This makes the pipeline: AST → Elab → CoreCheck → Mono → Lower → SSA → Codegen.
 
-**Status:** Not started. Existing LLVM codegen still largely follows the older path.
+**Status:** Not started. Existing LLVM codegen still consumes the surface AST directly.
 
 ### A6: Structured Diagnostics
 
@@ -360,7 +357,9 @@ Extract monomorphization from elaboration/codegen into its own explicit pass ope
 
 ### A9: Lower / SSA
 
-Add a lowering pass that produces backend-oriented IR (explicit control flow, data layout, memory operations). Later, convert to SSA form for optimization.
+Add and stabilize the lowering pass that produces SSA as the backend-oriented IR (explicit control flow, data layout, memory operations). SSA becomes the input to codegen.
+
+**Status:** Done. `Lower.lean` converts Core IR → SSA IR with correct field indexing, enum tag layout, match dispatch via conditional branches, and break/continue via loop label tracking. Inspectable via `--emit-ssa`. Golden tests cover 19 programs × 2 modes.
 
 ### A10: Formal Kernel Proofs
 
@@ -368,18 +367,48 @@ Build mechanized proofs over the validated Core IR. This is existing Phase 9, no
 
 ### Architecture Priority
 
-| Priority | Phase | Description | New files |
-|----------|-------|-------------|-----------|
-| 1 | A1 | Core IR definition | `Concrete/Core.lean` |
-| 2 | A2 | Elaboration phase | `Concrete/Elab.lean` |
-| 3 | A3 | Resolution phase cleanup | `Concrete/Resolve.lean` |
-| 4 | A4 | Core validation (split from checker) | `Concrete/CoreCheck.lean` |
-| 5 | A5 | Codegen consumes Core IR | modify `Concrete/Codegen.lean` |
-| 6 | A6 | Structured diagnostics | modify error infrastructure |
-| 7 | A7 | Builtin vs stdlib boundary | documentation + migration |
-| 8 | A8 | Monomorphization cleanup | `Concrete/Mono.lean` |
-| 9 | A9 | SSA / lowering IR | `Concrete/Lower.lean` |
-| 10 | A10 | Formal kernel proofs | `Concrete/Kernel/*.lean` |
+| Priority | Phase | Description | New files | Status |
+|----------|-------|-------------|-----------|--------|
+| 1 | A1 | Core IR definition | `Concrete/Core.lean` | **DONE** |
+| 2 | A2 | Elaboration phase | `Concrete/Elab.lean` | **DONE** |
+| 3 | A3 | Resolution phase cleanup | `Concrete/Resolve.lean` | Not started |
+| 4 | A4 | Core validation (split from checker) | `Concrete/CoreCheck.lean` | **IN PROGRESS** |
+| 5 | A5 | Codegen consumes SSA IR | modify `Concrete/Codegen.lean` | Not started |
+| 6 | A6 | Structured diagnostics | modify error infrastructure | Not started |
+| 7 | A7 | Builtin vs stdlib boundary | documentation + migration | Not started |
+| 8 | A8 | Monomorphization cleanup | `Concrete/Mono.lean` | Not started |
+| 9 | A9 | SSA / lowering IR | `Concrete/Lower.lean` | **DONE** |
+| 10 | A10 | Formal kernel proofs | `Concrete/Kernel/*.lean` | Not started |
+
+### Pass Invariants
+
+Each pass guarantees specific properties about its output:
+
+| Pass | Guarantees |
+|------|-----------|
+| **Parse** | Syntactically valid AST. LL(1), no ambiguity. |
+| **Check** | Types resolve. Linearity holds. Borrows valid. Capabilities propagated. |
+| **Elab** | No surface sugar. Every `CExpr` has concrete `Ty`. Method calls desugared to mangled function calls. For loops desugared to while. |
+| **CoreCheck** | Types consistent across operators and calls. Capabilities satisfied. Break/continue only inside loops. Match arms cover all enum variants. |
+| **Lower** | Explicit control flow only (no structured if/while). Every block has exactly one terminator. Enum discriminants stored at index 0. Field indices match struct definitions. Break/continue resolved to branch targets. |
+
+### Monomorphization Placement
+
+**Target:** Core → Core pass in a separate `Mono.lean`.
+**Interim:** Monomorphization lives in codegen (it works, just coupled).
+SSA already assumes monomorphic input — `SInst.call` has no `typeArgs`.
+
+### Maturity Roadmap
+
+Longer-term items beyond current batch:
+
+1. **Codegen consumes SSA** — `Codegen.lean` should consume SSA IR, not bypass it. This makes SSA part of the trusted compilation path rather than a debug artifact.
+2. **Structured diagnostics** — spans, notes, error codes, phase-aware reporting.
+3. **Resolution infrastructure** — cleaner module/trait/impl/name resolution layer (`Resolve.lean`).
+4. **Internal semantic spec** — ownership states, borrow meaning, capability propagation, lowering guarantees documented alongside code.
+5. **Backend-neutral lowering boundary** — keep SSA generic enough for multiple targets (LLVM, MLIR, etc.).
+6. **Formal kernel decision** — Core as proof kernel vs. smaller kernel later.
+7. **Per-phase test layering** — separate suites for parser, elab, core validation, lowering, codegen, integration.
 
 ---
 

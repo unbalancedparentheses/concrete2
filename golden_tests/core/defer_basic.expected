@@ -1,0 +1,18 @@
+// module main
+struct Resource {
+  value: Int,
+}
+
+fn use_resource() -> Int {
+  let mut r: Resource = Resource { value: 10 };
+  defer Resource_destroy(r);
+  return r.value;
+}
+
+fn main() -> Int {
+  return use_resource();
+}
+
+fn Resource_destroy(self: &Resource) -> () {
+
+}

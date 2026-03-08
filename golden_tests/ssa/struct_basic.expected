@@ -1,0 +1,22 @@
+; module main
+define i64 @sum_point(%Point %p) {
+entry:
+  %t0 = gep i64 %p, i64 0
+  %t1 = load i64, %t0
+  %t2 = gep i64 %p, i64 1
+  %t3 = load i64, %t2
+  %t4 = add i64 %t1, %t3
+  ret i64 %t4
+}
+
+define i64 @main() {
+entry:
+  %t0 = alloca %Point
+  %t1 = gep i64 %t0, i64 0
+  store i64 3, %t1
+  %t2 = gep i64 %t0, i64 1
+  store i64 4, %t2
+  %t3 = load %Point, %t0
+  %t4 = call i64 @sum_point(%Point %t3)
+  ret i64 %t4
+}

@@ -1,0 +1,12 @@
+; module main
+define i64 @main() {
+entry:
+  %t0 = add i64 10, 3
+  %t1 = sub i64 10, 3
+  %t2 = mul i64 10, 3
+  %t3 = sdiv i64 10, 3
+  %t4 = add i64 %t0, %t1
+  %t5 = add i64 %t4, %t2
+  %t6 = add i64 %t5, %t3
+  ret i64 %t6
+}

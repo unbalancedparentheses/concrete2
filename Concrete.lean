@@ -8,3 +8,9 @@ import Concrete.Core
 import Concrete.Elab
 import Concrete.SSA
 import Concrete.Lower
+import Concrete.CoreCheck
+import Concrete.CoreCanonicalize
+import Concrete.Mono
+import Concrete.SSAVerify
+import Concrete.SSACleanup
+import Concrete.EmitSSA
