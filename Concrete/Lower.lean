@@ -1,5 +1,6 @@
 import Concrete.Core
 import Concrete.SSA
+import Concrete.Layout
 
 namespace Concrete
 
@@ -164,52 +165,20 @@ private def structNameFromTy (ty : Ty) : String :=
   | .ref inner | .refMut inner | .ptrMut inner | .ptrConst inner => structNameFromTy inner
   | _ => ""
 
-/-- Compute byte size of a type (for malloc). -/
-private partial def computeTySize (ty : Ty) : LowerM Nat := do
-  match ty with
-  | .int | .uint | .float64 => return 8
-  | .i32 | .u32 | .float32 => return 4
-  | .i16 | .u16 => return 2
-  | .i8 | .u8 | .char | .bool => return 1
-  | .unit => return 0
-  | .string => return 16  -- ptr + i64
-  | .ref _ | .refMut _ | .ptrMut _ | .ptrConst _ => return 8
-  | .fn_ _ _ _ | .heap _ | .heapArray _ => return 8
-  | .generic "Heap" _ | .generic "HeapArray" _ => return 8
-  | .generic "Vec" _ => return 24
-  | .generic "HashMap" _ => return 40
-  | .named name | .generic name _ =>
-    let fields ← lookupStructFields name
-    if !fields.isEmpty then
-      let mut total := 0
-      for (_, ft) in fields do
-        total := total + (← computeTySize ft)
-      return total
-    else
-      let s ← getState
-      match s.enumDefs.find? fun ed => ed.name == name with
-      | some ed =>
-        let mut maxPayload := 0
-        for (_, vfields) in ed.variants do
-          let mut sz := 0
-          for (_, ft) in vfields do
-            sz := sz + (← computeTySize ft)
-          maxPayload := Nat.max maxPayload sz
-        return 4 + maxPayload  -- i32 tag + payload
-      | none => return 8
-  | .array elem n => do
-    let elemSz ← computeTySize elem
-    return elemSz * n
-  | _ => return 8
+/-- Build a Layout.Ctx from the current LowerState. -/
+private def getLayoutCtx : LowerM Layout.Ctx := do
+  let s ← getState
+  return { structDefs := s.structDefs, enumDefs := s.enumDefs }
 
-/-- Get byte offset of a field within a struct definition. -/
-private partial def fieldByteOffset (tyName : String) (fieldName : String) : LowerM Nat := do
-  let fields ← lookupStructFields tyName
-  let mut offset := 0
-  for (n, t) in fields do
-    if n == fieldName then return offset
-    offset := offset + (← computeTySize t)
-  return offset
+/-- Compute byte size of a type (for malloc). Delegates to Layout.tySize. -/
+private def computeTySize (ty : Ty) : LowerM Nat := do
+  let ctx ← getLayoutCtx
+  return Layout.tySize ctx ty
+
+/-- Get byte offset of a field within a struct definition. Delegates to Layout.fieldOffset. -/
+private def fieldByteOffset (tyName : String) (fieldName : String) : LowerM Nat := do
+  let ctx ← getLayoutCtx
+  return Layout.fieldOffset ctx tyName fieldName
 
 /-- Push loop info onto the loop stack. -/
 private def pushLoop (info : LoopInfo) : LowerM Unit := do

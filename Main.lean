@@ -3,7 +3,7 @@ import Concrete
 open Concrete
 
 def usage : String :=
-  "Usage: concrete <file.con> [-o output] [--emit-llvm] [--emit-core] [--emit-ssa] [--compile-ssa]"
+  "Usage: concrete <file.con> [-o output] [--emit-llvm] [--emit-core] [--emit-ssa] [--compile-legacy]"
 
 def writeFile (path : String) (content : String) : IO Unit := do
   IO.FS.writeFile ⟨path⟩ content
@@ -126,42 +126,48 @@ def compile (inputPath : String) (outputPath : String) (emitLLVM : Bool) : IO UI
 /-- Compile via SSA pipeline: Parse → Check → Elab → CoreCanonicalize → CoreCheck → Mono → Lower → SSAVerify → SSACleanup → EmitSSA → clang -/
 def compileSSA (inputPath : String) (outputPath : String) (emitLLVM : Bool) : IO UInt32 := do
   let source ← readFile inputPath
-  match parse source with
-  | .error e =>
-    IO.eprintln s!"Parse error: {e}"
+  match liftStringError "parse" (parse source) with
+  | .error ds =>
+    IO.eprintln (renderDiagnostics ds)
     return 1
   | .ok parsedModules =>
   let baseDir := dirOf inputPath
   match ← resolveAllModules baseDir parsedModules inputPath with
   | .error e =>
-    IO.eprintln s!"Parse error: {e}"
+    IO.eprintln (renderDiagnostics [{ severity := .error, message := e, pass := "resolve", span := none, hint := none }])
     return 1
   | .ok modules =>
-    match checkProgram modules with
-    | .error e =>
-      IO.eprintln s!"Type error: {e}"
+    -- Name resolution (catches undeclared names early)
+    match liftStringError "resolve" (resolveProgram modules) with
+    | .error ds =>
+      IO.eprintln (renderDiagnostics ds)
+      return 1
+    | .ok _ =>
+    match liftStringError "check" (checkProgram modules) with
+    | .error ds =>
+      IO.eprintln (renderDiagnostics ds)
       return 1
     | .ok () =>
-    match elabProgram modules with
-    | .error e =>
-      IO.eprintln s!"Elaboration error: {e}"
+    match liftStringError "elab" (elabProgram modules) with
+    | .error ds =>
+      IO.eprintln (renderDiagnostics ds)
       return 1
     | .ok coreModules =>
       let coreModules := canonicalizeProgram coreModules
-      match coreCheckProgram coreModules with
-      | .error e =>
-        IO.eprintln s!"Core validation error: {e}"
+      match liftStringError "core-check" (coreCheckProgram coreModules) with
+      | .error ds =>
+        IO.eprintln (renderDiagnostics ds)
         return 1
       | .ok () =>
-      match monoProgram coreModules with
-      | .error e =>
-        IO.eprintln s!"Monomorphization error: {e}"
+      match liftStringError "mono" (monoProgram coreModules) with
+      | .error ds =>
+        IO.eprintln (renderDiagnostics ds)
         return 1
       | .ok monoModules =>
       let ssaModules := monoModules.map lowerModule
-      match ssaVerifyProgram ssaModules with
-      | .error e =>
-        IO.eprintln s!"SSA verification error: {e}"
+      match liftStringError "ssa-verify" (ssaVerifyProgram ssaModules) with
+      | .error ds =>
+        IO.eprintln (renderDiagnostics ds)
         return 1
       | .ok () =>
       let ssaModules := ssaCleanupProgram ssaModules
@@ -178,7 +184,7 @@ def compileSSA (inputPath : String) (outputPath : String) (emitLLVM : Bool) : IO
         return exitCode
       -- Clean up .ll file
       IO.FS.removeFile ⟨llPath⟩
-      IO.println s!"Compiled {inputPath} -> {outputPath} (SSA path)"
+      IO.println s!"Compiled {inputPath} -> {outputPath}"
       return 0
 
 /-- Emit Core or SSA IR for inspection. Runs full pipeline including new passes. -/
@@ -237,9 +243,9 @@ def main (args : List String) : IO UInt32 := do
     return 1
   | [inputPath] =>
     let outputPath := if inputPath.endsWith ".con" then String.ofList (inputPath.toList.take (inputPath.length - 4)) else inputPath ++ ".out"
-    compile inputPath outputPath false
+    compileSSA inputPath outputPath false
   | [inputPath, "--emit-llvm"] =>
-    compile inputPath "" true
+    compileSSA inputPath "" true
   | [inputPath, "--emit-core"] =>
     compileAndEmit inputPath "core"
   | [inputPath, "--emit-ssa"] =>
@@ -250,9 +256,16 @@ def main (args : List String) : IO UInt32 := do
   | [inputPath, "--compile-ssa", "--emit-llvm"] =>
     compileSSA inputPath "" true
   | [inputPath, "-o", outputPath] =>
-    compile inputPath outputPath false
+    compileSSA inputPath outputPath false
   | [inputPath, "--compile-ssa", "-o", outputPath] =>
     compileSSA inputPath outputPath false
+  | [inputPath, "--compile-legacy"] =>
+    let outputPath := if inputPath.endsWith ".con" then String.ofList (inputPath.toList.take (inputPath.length - 4)) else inputPath ++ ".out"
+    compile inputPath outputPath false
+  | [inputPath, "--compile-legacy", "-o", outputPath] =>
+    compile inputPath outputPath false
+  | [inputPath, "--compile-legacy", "--emit-llvm"] =>
+    compile inputPath "" true
   | _ =>
     IO.eprintln usage
     return 1

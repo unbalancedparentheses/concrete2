@@ -1,4 +1,5 @@
 import Concrete.SSA
+import Concrete.Diagnostic
 
 namespace Concrete
 
@@ -30,10 +31,16 @@ structure VerifyCtx where
   dominators : List (String × List String)
   /-- All blocks in the current function. -/
   blocks : List SBlock
-  errors : List String
+  /-- Register → type mapping (params + instruction defs). -/
+  regTypes : List (String × Ty)
+  /-- Known function signatures: name → (paramTypes, returnType). -/
+  fnSigs : List (String × List Ty × Ty)
+  /-- Return type of the current function. -/
+  retTy : Ty
+  errors : Diagnostics
 
 private def addError (ctx : VerifyCtx) (msg : String) : VerifyCtx :=
-  { ctx with errors := ctx.errors ++ [s!"{ctx.fnName}: {msg}"] }
+  { ctx with errors := ctx.errors ++ [{ severity := .error, message := s!"{ctx.fnName}: {msg}", pass := "ssa-verify", span := none, hint := none }] }
 
 -- ============================================================
 -- Collect defined registers
@@ -220,18 +227,118 @@ private def checkPhiNodes (ctx : VerifyCtx) (b : SBlock) : VerifyCtx :=
   ) ctx
 
 -- ============================================================
+-- Register type collection
+-- ============================================================
+
+/-- Get the type produced by an instruction (for its dst register). -/
+private def instDefType : SInst → Option (String × Ty)
+  | .binOp dst _ _ _ ty => some (dst, ty)
+  | .unaryOp dst _ _ ty => some (dst, ty)
+  | .call (some dst) _ _ retTy => some (dst, retTy)
+  | .call none _ _ _ => none
+  | .alloca dst ty => some (dst, .ptrMut ty)
+  | .load dst _ ty => some (dst, ty)
+  | .store _ _ => none
+  | .gep dst _ _ ty => some (dst, ty)
+  | .phi dst _ ty => some (dst, ty)
+  | .cast dst _ tgt => some (dst, tgt)
+  | .memcpy _ _ _ => none
+
+/-- Build register type map from params and all block instructions. -/
+private def buildRegTypes (params : List (String × Ty)) (blocks : List SBlock) : List (String × Ty) :=
+  let paramTypes := params
+  let instTypes := blocks.foldl (fun acc b =>
+    acc ++ b.insts.filterMap instDefType) []
+  paramTypes ++ instTypes
+
+/-- Build function signature map from module functions + extern declarations. -/
+private def buildFnSigs (modules : List SModule) : List (String × List Ty × Ty) :=
+  modules.foldl (fun acc m =>
+    let fnSigs := m.functions.map fun f => (f.name, f.params.map (·.2), f.retTy)
+    let externSigs := m.externFns.map fun (name, params, retTy) =>
+      (name, params.map (·.2), retTy)
+    acc ++ fnSigs ++ externSigs) []
+
+-- ============================================================
+-- New validation checks
+-- ============================================================
+
+/-- Look up a register's type. -/
+private def lookupRegType (ctx : VerifyCtx) (name : String) : Option Ty :=
+  ctx.regTypes.find? (fun (n, _) => n == name) |>.map (·.2)
+
+/-- Check phi type consistency: all incoming values should be compatible with the phi's type. -/
+private def checkPhiTypes (ctx : VerifyCtx) (b : SBlock) : VerifyCtx :=
+  b.insts.foldl (fun ctx inst =>
+    match inst with
+    | .phi dst incoming phiTy =>
+      incoming.foldl (fun ctx (v, _srcLabel) =>
+        let vTy := v.ty
+        -- Skip unit/void values and bool↔i1 equivalence
+        if phiTy == .unit || vTy == .unit then ctx
+        else if phiTy == vTy then ctx
+        -- Allow numeric width promotions and ref equivalences
+        else if phiTy == .bool && vTy == .bool then ctx
+        else addError ctx s!"block '{b.label}': phi %{dst} expects type {repr phiTy} but incoming value has type {repr vTy}"
+      ) ctx
+    | _ => ctx
+  ) ctx
+
+/-- Check call arity: argument count must match declared parameter count. -/
+private def checkCallArity (ctx : VerifyCtx) (b : SBlock) : VerifyCtx :=
+  b.insts.foldl (fun ctx inst =>
+    match inst with
+    | .call _ fn args _ =>
+      match ctx.fnSigs.find? fun (n, _, _) => n == fn with
+      | some (_, paramTys, _) =>
+        if args.length != paramTys.length then
+          addError ctx s!"block '{b.label}': call @{fn} has {args.length} args but function expects {paramTys.length}"
+        else ctx
+      | none => ctx  -- unknown function (e.g. indirect call, builtin), skip
+    | _ => ctx
+  ) ctx
+
+/-- Check return coverage: non-void functions must return `some v` in every .ret. -/
+private def checkReturnCoverage (ctx : VerifyCtx) (b : SBlock) : VerifyCtx :=
+  match b.term with
+  | .ret none =>
+    if ctx.retTy != .unit && ctx.retTy != .never then
+      addError ctx s!"block '{b.label}': `ret void` in function returning {repr ctx.retTy}"
+    else ctx
+  | .ret (some v) =>
+    if ctx.retTy == .unit then
+      addError ctx s!"block '{b.label}': `ret {repr v.ty}` in void function"
+    else ctx
+  | _ => ctx
+
+/-- Check binop type consistency: both operands should have compatible types. -/
+private def checkBinOpTypes (ctx : VerifyCtx) (b : SBlock) : VerifyCtx :=
+  b.insts.foldl (fun ctx inst =>
+    match inst with
+    | .binOp dst _op lhs rhs _ty =>
+      let lTy := lhs.ty
+      let rTy := rhs.ty
+      -- Skip if either is a constant (constants may have generic int type)
+      if lTy == rTy then ctx
+      else if lTy == .unit || rTy == .unit then ctx
+      else addError ctx s!"block '{b.label}': binop %{dst} has mismatched operand types: {repr lTy} vs {repr rTy}"
+    | _ => ctx
+  ) ctx
+
+-- ============================================================
 -- Function and module validation
 -- ============================================================
 
-private def verifyFn (f : SFnDef) : List String :=
+private def verifyFn (f : SFnDef) (fnSigs : List (String × List Ty × Ty)) : Diagnostics :=
   if f.blocks.isEmpty then
-    [s!"{f.name}: function has no blocks"]
+    [{ severity := .error, message := s!"{f.name}: function has no blocks", pass := "ssa-verify", span := none, hint := none }]
   else
     let blockLabels := f.blocks.map (·.label)
     let predecessors := buildPredecessors f.blocks
     let allDefs := f.blocks.foldl (fun acc b => acc ++ blockDefs b) []
     let paramNames := f.params.map (·.1)
     let dominators := computeDominators f.blocks predecessors
+    let regTypes := buildRegTypes f.params f.blocks
     let ctx : VerifyCtx := {
       fnName := f.name
       blockLabels := blockLabels
@@ -240,6 +347,9 @@ private def verifyFn (f : SFnDef) : List String :=
       paramNames := paramNames
       dominators := dominators
       blocks := f.blocks
+      regTypes := regTypes
+      fnSigs := fnSigs
+      retTy := f.retTy
       errors := []
     }
     let ctx := f.blocks.foldl (fun ctx b =>
@@ -247,16 +357,21 @@ private def verifyFn (f : SFnDef) : List String :=
       let ctx := checkUsesAreDefined ctx b
       let ctx := checkBranchTargets ctx b
       let ctx := checkPhiNodes ctx b
+      let ctx := checkPhiTypes ctx b
+      let ctx := checkCallArity ctx b
+      let ctx := checkReturnCoverage ctx b
+      let ctx := checkBinOpTypes ctx b
       ctx
     ) ctx
     ctx.errors
 
-private def verifyModule (m : SModule) : List String :=
-  m.functions.foldl (fun acc f => acc ++ verifyFn f) []
+private def verifyModule (m : SModule) (fnSigs : List (String × List Ty × Ty)) : Diagnostics :=
+  m.functions.foldl (fun acc f => acc ++ verifyFn f fnSigs) []
 
 def ssaVerifyProgram (modules : List SModule) : Except String Unit :=
-  let errors := modules.foldl (fun acc m => acc ++ verifyModule m) []
+  let fnSigs := buildFnSigs modules
+  let errors := modules.foldl (fun acc m => acc ++ verifyModule m fnSigs) []
   if errors.isEmpty then .ok ()
-  else .error ("SSA verification errors:\n" ++ "\n".intercalate errors)
+  else .error ("SSA verification errors:\n" ++ renderDiagnostics errors)
 
 end Concrete

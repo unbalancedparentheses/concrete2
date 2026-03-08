@@ -36,8 +36,8 @@ for spec in "$RESDIR"/test_*.spec; do
 
     (
         out="$OUTDIR/$name"
-        if ! $COMPILER "$file" --compile-ssa -o "$out" > /dev/null 2>&1; then
-            msg=$($COMPILER "$file" --compile-ssa -o "$out" 2>&1 | head -1)
+        if ! $COMPILER "$file" -o "$out" > /dev/null 2>&1; then
+            msg=$($COMPILER "$file" -o "$out" 2>&1 | head -1)
             echo "FAIL $name: $msg"
             exit 1
         fi

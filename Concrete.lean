@@ -1,5 +1,7 @@
 import Concrete.Token
+import Concrete.Diagnostic
 import Concrete.AST
+import Concrete.Resolve
 import Concrete.Lexer
 import Concrete.Parser
 import Concrete.Check
@@ -7,6 +9,7 @@ import Concrete.Codegen
 import Concrete.Core
 import Concrete.Elab
 import Concrete.SSA
+import Concrete.Layout
 import Concrete.Lower
 import Concrete.CoreCheck
 import Concrete.CoreCanonicalize

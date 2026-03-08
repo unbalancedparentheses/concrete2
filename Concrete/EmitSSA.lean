@@ -1,5 +1,6 @@
 import Concrete.SSA
 import Concrete.Core
+import Concrete.Layout
 import Concrete.Codegen.Builtins
 
 namespace Concrete
@@ -53,63 +54,27 @@ private def isKnownPtr (s : EmitSSAState) (v : SVal) : Bool :=
 -- Ty → LLVM type string
 -- ============================================================
 
+/-- Build a Layout.Ctx from the current emit state. -/
+private def layoutCtxOf (s : EmitSSAState) : Layout.Ctx :=
+  { structDefs := s.structDefs, enumDefs := s.enumDefs }
+
 private def ssaLookupStruct (s : EmitSSAState) (name : String) : Option CStructDef :=
-  s.structDefs.find? fun sd => sd.name == name
+  Layout.lookupStruct (layoutCtxOf s) name
 
 private def ssaLookupEnum (s : EmitSSAState) (name : String) : Option CEnumDef :=
-  s.enumDefs.find? fun ed => ed.name == name
+  Layout.lookupEnum (layoutCtxOf s) name
 
-/-- Map a Concrete type to its LLVM IR type string. -/
-def ssaTyToLLVM (s : EmitSSAState) : Ty → String
-  | .int => "i64"
-  | .uint => "i64"
-  | .i8 | .u8 => "i8"
-  | .i16 | .u16 => "i16"
-  | .i32 | .u32 => "i32"
-  | .bool => "i1"
-  | .float64 => "double"
-  | .float32 => "float"
-  | .char => "i8"
-  | .unit => "void"
-  | .string => "%struct.String"
-  | .ref _ | .refMut _ | .ptrMut _ | .ptrConst _ => "ptr"
-  | .generic "Heap" _ | .heap _ => "ptr"
-  | .generic "HeapArray" _ | .heapArray _ => "ptr"
-  | .generic "Vec" _ => "%struct.Vec"
-  | .generic "HashMap" _ => "%struct.HashMap"
-  | .generic name _ =>
-    match ssaLookupEnum s name with
-    | some _ => "%enum." ++ name
-    | none => "%struct." ++ name
-  | .typeVar _ => "i64"
-  | .array elem n => "[" ++ toString n ++ " x " ++ ssaTyToLLVM s elem ++ "]"
-  | .fn_ _ _ _ => "ptr"
-  | .never => "void"
-  | .placeholder => "i64"
-  | .named name =>
-    match ssaLookupStruct s name with
-    | some _ => "%struct." ++ name
-    | none =>
-      match ssaLookupEnum s name with
-      | some _ => "%enum." ++ name
-      | none => "i64"
+/-- Map a Concrete type to its LLVM IR type string. Delegates to Layout.tyToLLVM. -/
+def ssaTyToLLVM (s : EmitSSAState) (ty : Ty) : String :=
+  Layout.tyToLLVM (layoutCtxOf s) ty
 
-/-- Is this type passed by pointer in function calls? -/
+/-- Is this type passed by pointer in function calls? Delegates to Layout.isPassByPtr. -/
 private def ssaIsPassByPtr (s : EmitSSAState) (ty : Ty) : Bool :=
-  match ty with
-  | .string => true
-  | .ref _ | .refMut _ => true
-  | .array _ _ => true
-  | .fn_ _ _ _ | .heap _ | .heapArray _ => false
-  | .named name => (ssaLookupStruct s name).isSome || (ssaLookupEnum s name).isSome
-  | .generic "Vec" _ | .generic "HashMap" _ => true
-  | .generic name _ => (ssaLookupStruct s name).isSome || (ssaLookupEnum s name).isSome
-  | _ => false
+  Layout.isPassByPtr (layoutCtxOf s) ty
 
-/-- LLVM type for function parameters (structs passed as ptr). -/
+/-- LLVM type for function parameters (structs passed as ptr). Delegates to Layout.paramTyToLLVM. -/
 private def ssaParamTyToLLVM (s : EmitSSAState) (ty : Ty) : String :=
-  if ssaIsPassByPtr s ty then "ptr"
-  else ssaTyToLLVM s ty
+  Layout.paramTyToLLVM (layoutCtxOf s) ty
 
 /-- Integer LLVM type for arithmetic. -/
 private def ssaIntTyToLLVM : Ty → String
@@ -138,22 +103,9 @@ private def isFloatTy : Ty → Bool
   | .float32 | .float64 => true
   | _ => false
 
-/-- Get byte size of a type for enum layout. -/
-private def ssaTySize : Ty → Nat
-  | .int | .uint | .float64 => 8
-  | .i32 | .u32 | .float32 => 4
-  | .i16 | .u16 => 2
-  | .i8 | .u8 | .char | .bool => 1
-  | .unit => 0
-  | .string => 16
-  | .named _ => 8
-  | .ref _ | .refMut _ | .ptrMut _ | .ptrConst _ => 8
-  | .generic "Vec" _ => 24
-  | .generic "HashMap" _ => 40
-  | .generic _ _ | .typeVar _ => 8
-  | .fn_ _ _ _ | .heap _ | .heapArray _ => 8
-  | .never | .placeholder => 0
-  | .array elem n => ssaTySize elem * n
+/-- Get byte size of a type. Delegates to Layout.tySize with current state's defs. -/
+private def ssaTySize (s : EmitSSAState) (ty : Ty) : Nat :=
+  Layout.tySize (layoutCtxOf s) ty
 
 private def ssaEscapeCharForLLVM (c : Char) : String :=
   if c == '\n' then "\\0A"
@@ -358,7 +310,7 @@ private def emitSInst (s : EmitSSAState) (inst : SInst) : EmitSSAState :=
     -- actually a pointer to the struct (e.g. a pass-by-ptr param).
     -- Use memcpy rather than a store that would misinterpret ptr as struct.
     if isKnownPtr s val && ssaIsPassByPtr s val.ty then
-      let sz := ssaTySize val.ty
+      let sz := ssaTySize s val.ty
       emit s s!"  call void @llvm.memcpy.p0.p0.i64(ptr {ptrStr}, ptr {emitSVal s val}, i64 {sz}, i1 false)"
     else
       emit s s!"  store {ssaTyToLLVM s val.ty} {emitSVal s val}, ptr {ptrStr}"
@@ -499,7 +451,7 @@ private def emitEnumTypes (s : EmitSSAState) : EmitSSAState :=
   s.enumDefs.foldl (fun s ed =>
     -- Compute max payload size
     let maxPayload := ed.variants.foldl (fun (acc : Nat) (_, fields) =>
-      let sz := fields.foldl (fun (a : Nat) (_, ft) => a + ssaTySize ft) 0
+      let sz := fields.foldl (fun (a : Nat) (_, ft) => a + ssaTySize s ft) 0
       if sz > acc then sz else acc
     ) (0 : Nat)
     -- Emit variant types
@@ -840,7 +792,7 @@ def emitSModule (s : EmitSSAState) (m : SModule) : EmitSSAState :=
     else
       let s := { s with emittedTypes := ed.name :: s.emittedTypes }
       let maxPayload := ed.variants.foldl (fun (acc : Nat) (_, fields) =>
-        let sz := fields.foldl (fun (a : Nat) (_, ft) => a + ssaTySize ft) 0
+        let sz := fields.foldl (fun (a : Nat) (_, ft) => a + ssaTySize s ft) 0
         if sz > acc then sz else acc
       ) (0 : Nat)
       let s := ed.variants.foldl (fun s (vn, fields) =>

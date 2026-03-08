@@ -1,5 +1,6 @@
 import Concrete.Core
 import Concrete.AST
+import Concrete.Diagnostic
 
 namespace Concrete
 
@@ -23,7 +24,7 @@ structure CoreCheckEnv where
   currentCapSet : CapSet
   currentRetTy : Ty
   inLoop : Bool
-  errors : List String
+  errors : Diagnostics
 
 abbrev CoreCheckM := StateM CoreCheckEnv Unit
 
@@ -32,7 +33,7 @@ private def setEnv (env : CoreCheckEnv) : StateM CoreCheckEnv Unit := set env
 
 private def addError (msg : String) : StateM CoreCheckEnv Unit := do
   let env ← getEnv
-  setEnv { env with errors := env.errors ++ [msg] }
+  setEnv { env with errors := env.errors ++ [{ severity := .error, message := msg, pass := "core-check", span := none, hint := none }] }
 
 private def addVar (name : String) (ty : Ty) : StateM CoreCheckEnv Unit := do
   let env ← getEnv
@@ -322,7 +323,7 @@ def ccCheckFn (f : CFnDef) : StateM CoreCheckEnv Unit := do
   for s in f.body do
     ccCheckStmt s
 
-def ccCheckModule (m : CModule) : List String :=
+def ccCheckModule (m : CModule) : Diagnostics :=
   let fnSigs := m.functions.map fun f =>
     (f.name, f.capSet, f.params, f.retTy)
   let initEnv : CoreCheckEnv := {
@@ -344,9 +345,9 @@ def ccCheckModule (m : CModule) : List String :=
 /-- Validate all Core modules. Returns the first error or Ok. -/
 def coreCheckProgram (modules : List CModule) : Except String Unit :=
   let allErrors := modules.foldl (fun acc m =>
-    acc ++ (ccCheckModule m).map fun e => s!"[{m.name}] {e}"
-  ) ([] : List String)
+    acc ++ (ccCheckModule m).map fun d => { d with message := s!"[{m.name}] {d.message}" }
+  ) ([] : Diagnostics)
   if allErrors.isEmpty then .ok ()
-  else .error (allErrors.head!)
+  else .error (renderDiagnostics allErrors)
 
 end Concrete
