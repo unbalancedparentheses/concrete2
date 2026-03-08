@@ -116,7 +116,7 @@ Functions without capability annotations are pure. No side effects, no allocatio
 - `grep with(Network)` finds every function that touches the network
 - Your JSON parser has no capabilities? Then it *provably* can't phone home
 
-Predefined capabilities: `File`, `Network`, `Clock`, `Env`, `Random`, `Alloc`, `Unsafe`. `Std` includes all except `Unsafe`. Users cannot define new capabilities.
+Predefined capabilities: `File`, `Network`, `Console`, `Env`, `Process`, `Alloc`, `Unsafe`. `Std` includes all except `Unsafe`. Users cannot define new capabilities.
 
 ### Linear types
 
@@ -201,27 +201,33 @@ Concrete is built for code that must be inspectable and mechanically verified.
 
 ## Current Status
 
-The compiler implements the core surface language in ~6,800 lines of Lean 4. All 175 tests pass (117 positive, 58 negative).
+The compiler implements the core surface language in ~7,500 lines of Lean 4. All 190 tests pass (127 positive, 64 negative).
 
-**FFI safety, MLIR backend, standard library, kernel formalization, and the runtime are not yet implemented.** See the full [ROADMAP.md](ROADMAP.md) for the implementation plan. What works today:
+**MLIR backend, kernel formalization, and the runtime are not yet implemented.** See the full [ROADMAP.md](ROADMAP.md) for the implementation plan. What works today:
 
 - **Types**: Int, Uint, i8-i32, u8-u32, f32, f64, Bool, Char, String, arrays `[T; N]`, raw pointers
 - **Structs** with field access, mutation, and `Heap<T>` fields
-- **Enums** with pattern matching (exhaustiveness checked)
+- **Enums** with pattern matching (exhaustiveness checked), built-in `Option<T>` and `Result<T, E>`
 - **Impl blocks** with methods (`&self`, `&mut self`, `self`), static methods, and `Self` keyword
-- **Traits** with static dispatch, signature checking, and trait bounds (`<T: Trait1 + Trait2>`)
-- **Generics** on functions, structs, and enums
+- **Traits** with monomorphized static dispatch (no vtables), signature checking, and trait bounds (`<T: Trait1 + Trait2>`)
+- **Generics** on functions, structs, and enums with monomorphization
 - **Borrowing**: `&T` (shared) and `&mut T` (exclusive), with borrow checking and named regions
 - **Linear type system**: structs consumed exactly once, branches must agree, `defer`/`destroy`/`Copy`
-- **Heap allocation**: `alloc`/`free`, `Heap<T>` with `->` field access, `HeapArray<T>`
+- **Heap allocation**: `alloc`/`free`, `Heap<T>` with `->` field access, `*heap_ptr` dereference, `HeapArray<T>`
 - **Modules** with `pub` visibility, imports, multi-file resolution, circular import detection
 - **Result type** with `?` operator for error propagation
 - **Cast expressions** (`as`) between numeric types
-- **Capabilities**: `with(File, Network, Alloc)` effect declarations, `!` sugar, capability polymorphism
+- **Capabilities**: `with(File, Network, Alloc, Console, Env, Process, Unsafe)` effect declarations, `!` sugar, capability polymorphism
 - **Control flow**: while (including as expression), for, if/else, match, break/continue with labeled loops
-- **Closures**: fat pointer representation, copy/move captures, bidirectional type inference
+- **Function pointers**: first-class values, `Copy` semantics, no closures (explicit design choice)
 - **Bitwise operators**: `&`, `|`, `^`, `<<`, `>>`, `~` with hex/binary/octal literals
-- **I/O**: `print_int`, `print_bool` (require Console capability)
+- **FFI**: `extern fn` declarations with `Unsafe` capability gating
+- **Standard library builtins**:
+  - **Strings**: `string_length`, `string_concat`, `string_slice`, `string_char_at`, `string_contains`, `string_eq`, `string_trim`, `drop_string`
+  - **Conversions**: `int_to_string`, `string_to_int`, `bool_to_string`, `float_to_string`
+  - **I/O**: `print_int`, `print_bool`, `print_string`, `print_char`, `eprint_string`, `read_line` (require Console)
+  - **File**: `read_file`, `write_file` (require File)
+  - **System**: `get_env` (requires Env), `exit_process` (requires Process)
 
 ## Roadmap
 
@@ -230,21 +236,23 @@ See [ROADMAP.md](ROADMAP.md) for the full implementation plan with syntax, rules
 | Phase | Feature | Status |
 |-------|---------|--------|
 | **1** | Capabilities + cap polymorphism | Done |
-| **2** | Closures | Done |
+| **2** | Function pointers (closures removed by design) | Done |
 | **3** | `defer` + `destroy` + `Copy` | Done |
-| **4** | `break` / `continue` / while-as-expression | Done |
-| **5** | Allocator system (`Heap<T>`, `->`) | Done |
+| **4** | `break` / `continue` / while-as-expression / labeled loops | Done |
+| **5** | Allocator system (`Heap<T>`, `->`, `*heap_ptr`) | Done |
 | **6** | Borrow regions | Done |
-| **7** | FFI + C interop (Unsafe gating) | Not started |
-| **7b** | Monomorphized trait dispatch | Not started |
-| **7c** | Heap dereference (`*heap_ptr`) | Not started |
-| **8** | MLIR backend + optimization | Not started |
-| **9** | Standard library (`Option<T>`, `Vec<T>`, IO) | Not started |
-| **10** | Kernel formalization + proofs | Not started |
-| **11** | Tooling | Not started |
-| **12** | Runtime (C, then Concrete) | Not started |
+| **7** | FFI + C interop (Unsafe gating) | Done |
+| **7b** | Monomorphized trait dispatch + trait bounds | Done |
+| **7c** | Heap dereference + `Option<T>` + `Result<T,E>` | Done |
+| **8** | Standard library builtins (strings, I/O, conversions, env) | Done |
+| **9** | Bitwise operators + hex/bin/oct literals | Done |
+| **10** | `Self` keyword + multi-file modules | Done |
+| **11** | MLIR backend + optimization | Not started |
+| **12** | Kernel formalization + proofs | Not started |
+| **13** | Tooling | Not started |
+| **14** | Runtime (C, then Concrete) | Not started |
 
-Next critical path: **7b → 7c → 9** (trait dispatch on generics, heap dereference, then standard library). These unblock writing real programs. Formalization (Phase 10) and MLIR (Phase 8) can start in parallel at any time.
+Next critical path: **MLIR backend** (Phase 11) for optimization and **kernel formalization** (Phase 12) for verified soundness. These can proceed in parallel.
 
 ### What fits the philosophy and what does not
 
@@ -253,12 +261,13 @@ Every feature must answer: **can a machine reason about this?**
 | Feature | Fits? | Why |
 |---------|-------|-----|
 | Monomorphized trait dispatch | Yes | Compile-time specialization, all code paths known statically |
-| Heap dereference (`*heap_ptr`) | Yes | Just loading a value through a pointer, fully explicit |
-| `Option<T>` | Yes | Stated replacement for Null (anti-features table), just an enum |
+| Function pointers (no closures) | Yes | Bare code addresses, no hidden captures, no implicit allocation |
+| `Option<T>` / `Result<T,E>` | Yes | Stated replacement for Null/exceptions, just enums |
+| FFI with `Unsafe` capability | Yes | Foreign calls explicitly gated, `grep with(Unsafe)` finds them all |
+| String/IO builtins via capabilities | Yes | Pure string ops need no capabilities; I/O requires Console/File |
 | `Vec<T>` with explicit `Alloc` | Yes | Library type, every allocation visible via `with(Alloc)` |
-| File/Network IO via capabilities | Yes | The capability system was designed for this |
-| String operations (pure functions) | Yes | Pure functions, IO goes through capabilities |
 | General iterator protocol | **No** | Hidden `next()` calls violate "no implicit function calls" |
+| Closures | **No** | Hidden captures are implicit allocation and implicit data flow |
 | Trait objects / dynamic dispatch | **No** | Function target not statically known, violates "all code paths known at compile time" |
 | Operator overloading | **No** | Explicitly rejected: "`a + b` on integers is primitive addition, not `Add::add`" |
 
@@ -286,7 +295,7 @@ Source (.con)
   clang -- LLVM IR -> native binary
 ```
 
-Target pipeline after Phase 8 (MLIR) and Phase 11 (formalization):
+Target pipeline after Phase 11 (MLIR) and Phase 12 (formalization):
 
 ```
 Surface AST → Elaboration → Kernel IR → Kernel Checker (proven sound) → MLIR Codegen → LLVM → binary
@@ -298,7 +307,7 @@ Requires [Lean 4](https://leanprover.github.io/lean4/doc/setup.html) (v4.28.0+) 
 
 ```bash
 make build    # or: lake build
-make test     # runs all 175 tests
+make test     # runs all 190 tests
 make clean    # or: lake clean
 ```
 
@@ -313,8 +322,8 @@ Concrete/
   Check.lean     -- Type checker + linearity checker + borrow checker
   Codegen.lean   -- LLVM IR code generation
 Main.lean        -- Entry point
-lean_tests/      -- 175 tests (117 positive, 58 negative)
-examples/        -- 59 example programs (superset of lambdaclass/concrete examples)
+lean_tests/      -- 190 tests (127 positive, 64 negative)
+examples/        -- 62 example programs
 ```
 
 ## Influences
@@ -341,22 +350,23 @@ Things Concrete deliberately does not have:
 | Variable shadowing | Clarity, fewer subtle bugs |
 | Null | Type safety via `Option<T>` |
 | Exceptions | Errors as values, explicit propagation |
+| Closures | Hidden captures are implicit allocation and implicit data flow |
 | Implicit conversions | No silent data loss |
 | Undefined behavior (safe code) | Kernel semantics fully defined |
 
 ## Implementation Snapshot
 
 **Current Lean 4 implementation:**
-- ~6,800 lines, the whole compiler fits in 6 files
+- ~7,500 lines, the whole compiler fits in 6 files
 - Direct textual LLVM IR emission, no MLIR, no complex lowering passes
 - Path to formal verification of the type system using Lean's proof system
 - Clean pipeline: Lexer -> Parser -> AST -> Check -> Codegen
 
 **Next steps:**
-- Monomorphized trait dispatch and heap dereference (unblocks real programs)
-- Standard library: `Option<T>`, `Vec<T>`, IO, String operations
-- MLIR-based lowering pipeline
+- MLIR-based lowering pipeline for optimization
 - Kernel formalization and proof development in Lean
+- Generic data structures: `Vec<T>`, `HashMap<K,V>`
+- Networking capabilities
 
 ## License
 
