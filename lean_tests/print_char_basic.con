@@ -1,0 +1,5 @@
+// print_char: print 'A' (char code 65), return 0
+fn main!() -> Int {
+    print_char(65);
+    return 0;
+}

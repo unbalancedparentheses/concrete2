@@ -246,6 +246,16 @@ run_ok "$TESTDIR/trait_dispatch_basic.con" 30
 run_ok "$TESTDIR/trait_dispatch_multi.con" 47
 run_ok "$TESTDIR/trait_dispatch_chain.con" 42
 
+# Phase 12: New stdlib builtins
+run_ok "$TESTDIR/string_slice_basic.con" 5
+run_ok "$TESTDIR/string_char_at_basic.con" 65
+run_ok "$TESTDIR/string_contains_basic.con" 1
+run_ok "$TESTDIR/string_eq_basic.con" 1
+run_ok "$TESTDIR/int_to_string_basic.con" 2
+run_ok "$TESTDIR/string_to_int_basic.con" 123
+run_ok "$TESTDIR/string_trim_basic.con" 5
+run_ok "$TESTDIR/print_char_basic.con" "A0"
+
 echo ""
 echo "=== Negative tests (expected errors) ==="
 run_err "$TESTDIR/error_unconsumed.con"        "was never consumed"

@@ -1691,14 +1691,52 @@ def checkModule (m : Module) (importedFnSigs : List (String × FnSig) := [])
   let baseOffset := importedSigList.length
   -- Built-in functions for strings and I/O
   let builtinSigs : List FnSig := [
+    -- 0: string_length
     { params := [("s", .ref .string)], retTy := .int },
+    -- 1: string_concat
     { params := [("a", .string), ("b", .string)], retTy := .string },
-    { params := [("s", .ref .string)], retTy := .unit },
+    -- 2: print_string
+    { params := [("s", .ref .string)], retTy := .unit, capSet := .concrete ["Console"] },
+    -- 3: drop_string
     { params := [("s", .string)], retTy := .unit },
+    -- 4: print_int
     { params := [("x", .int)], retTy := .unit, capSet := .concrete ["Console"] },
+    -- 5: print_bool
     { params := [("x", .bool)], retTy := .unit, capSet := .concrete ["Console"] },
+    -- 6: read_file
     { params := [("path", .ref .string)], retTy := .string, capSet := .concrete ["File"] },
-    { params := [("path", .ref .string), ("data", .ref .string)], retTy := .int, capSet := .concrete ["File"] }
+    -- 7: write_file
+    { params := [("path", .ref .string), ("data", .ref .string)], retTy := .int, capSet := .concrete ["File"] },
+    -- 8: string_slice
+    { params := [("s", .ref .string), ("start", .int), ("end_", .int)], retTy := .string },
+    -- 9: string_char_at
+    { params := [("s", .ref .string), ("index", .int)], retTy := .int },
+    -- 10: string_contains
+    { params := [("haystack", .ref .string), ("needle", .ref .string)], retTy := .bool },
+    -- 11: string_eq
+    { params := [("a", .ref .string), ("b", .ref .string)], retTy := .bool },
+    -- 12: int_to_string
+    { params := [("n", .int)], retTy := .string },
+    -- 13: string_to_int
+    { params := [("s", .ref .string)], retTy := .generic "Result" [.int, .int] },
+    -- 14: bool_to_string
+    { params := [("b", .bool)], retTy := .string },
+    -- 15: float_to_string
+    { params := [("f", .float64)], retTy := .string },
+    -- 16: read_line
+    { params := [], retTy := .string, capSet := .concrete ["Console"] },
+    -- 17: print_char
+    { params := [("c", .int)], retTy := .unit, capSet := .concrete ["Console"] },
+    -- 18: eprint_string
+    { params := [("s", .ref .string)], retTy := .unit, capSet := .concrete ["Console"] },
+    -- 19: get_env
+    { params := [("name", .ref .string)], retTy := .generic "Option" [.string], capSet := .concrete ["Env"] },
+    -- 20: get_args
+    { params := [], retTy := .heapArray .string, capSet := .concrete ["Process"] },
+    -- 21: exit_process
+    { params := [("code", .int)], retTy := .unit, capSet := .concrete ["Process"] },
+    -- 22: string_trim
+    { params := [("s", .ref .string)], retTy := .string }
   ]
   let builtinOffset := baseOffset + fnSigs.length
   let builtinNames : List (String × Nat) := [
@@ -1709,7 +1747,22 @@ def checkModule (m : Module) (importedFnSigs : List (String × FnSig) := [])
     ("print_int", builtinOffset + 4),
     ("print_bool", builtinOffset + 5),
     ("read_file", builtinOffset + 6),
-    ("write_file", builtinOffset + 7)
+    ("write_file", builtinOffset + 7),
+    ("string_slice", builtinOffset + 8),
+    ("string_char_at", builtinOffset + 9),
+    ("string_contains", builtinOffset + 10),
+    ("string_eq", builtinOffset + 11),
+    ("int_to_string", builtinOffset + 12),
+    ("string_to_int", builtinOffset + 13),
+    ("bool_to_string", builtinOffset + 14),
+    ("float_to_string", builtinOffset + 15),
+    ("read_line", builtinOffset + 16),
+    ("print_char", builtinOffset + 17),
+    ("eprint_string", builtinOffset + 18),
+    ("get_env", builtinOffset + 19),
+    ("get_args", builtinOffset + 20),
+    ("exit_process", builtinOffset + 21),
+    ("string_trim", builtinOffset + 22)
   ]
   -- Add submodule functions/extern fns with qualified names (mod_fn)
   let submoduleSigs : List FnSig := m.submodules.foldl (fun acc (sub : Module) =>
@@ -1782,7 +1835,18 @@ def checkModule (m : Module) (importedFnSigs : List (String × FnSig) := [])
     ]
     isCopy := false
   }
-  let allEnums := [builtinOptionEnum] ++ importedEnums ++ m.enums
+  let builtinResultEnum : EnumDef := {
+    name := "Result"
+    typeParams := ["T", "E"]
+    variants := [
+      { name := "Ok", fields := [{ name := "value", ty := .typeVar "T" }] },
+      { name := "Err", fields := [{ name := "value", ty := .typeVar "E" }] }
+    ]
+    isCopy := false
+  }
+  let hasUserResult := m.enums.any fun ed => ed.name == "Result"
+  let builtinEnumList := [builtinOptionEnum] ++ (if hasUserResult then [] else [builtinResultEnum])
+  let allEnums := builtinEnumList ++ importedEnums ++ m.enums
   -- Build type aliases map
   let typeAliasMap : List (String × Ty) := m.typeAliases.map fun ta => (ta.name, ta.targetTy)
   -- Build constants map
