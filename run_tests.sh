@@ -246,6 +246,11 @@ run_ok "$TESTDIR/heap_deref_recursive.con" 42
 run_ok "$TESTDIR/option_basic.con" 52
 run_ok "$TESTDIR/option_heap.con" 42
 
+# Phase 10: Monomorphized trait dispatch
+run_ok "$TESTDIR/trait_dispatch_basic.con" 30
+run_ok "$TESTDIR/trait_dispatch_multi.con" 47
+run_ok "$TESTDIR/trait_dispatch_chain.con" 42
+
 echo ""
 echo "=== Negative tests (expected errors) ==="
 run_err "$TESTDIR/error_unconsumed.con"        "was never consumed"
@@ -324,6 +329,8 @@ run_err "$TESTDIR/error_unknown_label.con" "unknown loop label"
 run_err "$TESTDIR/error_label_not_loop.con" "label can only precede while or for"
 # Trait bound errors
 run_err "$TESTDIR/error_trait_bound_missing.con" "does not implement trait"
+# Trait dispatch errors
+run_err "$TESTDIR/error_trait_dispatch_missing.con" "no method"
 
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="

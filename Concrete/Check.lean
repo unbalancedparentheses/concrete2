@@ -69,6 +69,8 @@ structure TypeEnv where
   currentImplType : Option Ty := none     -- the Self type when inside an impl block
   loopLabels : List String := []          -- stack of active loop labels
   traitImpls : List (String × String) := []  -- (typeName, traitName) pairs for bound checking
+  traits : List TraitDef := []             -- all trait definitions (for method lookup on type vars)
+  currentTypeBounds : List (String × List String) := []  -- current function's type param bounds
   deriving Repr
 
 abbrev CheckM := ExceptT String (StateM TypeEnv)
@@ -1163,7 +1165,38 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       | .named n => n
       | .generic n _ => n
       | _ => ""
-    if typeName == "" then throw s!"method call on non-named type"
+    if typeName == "" then
+      -- Check if this is a type variable with trait bounds
+      match innerTy with
+      | .typeVar n =>
+        let env ← getEnv
+        let bounds := (env.currentTypeBounds.find? fun (name, _) => name == n).map Prod.snd |>.getD []
+        -- Find the method in one of the bound traits
+        let mut foundSig : Option FnSigDef := none
+        for traitName in bounds do
+          match env.traits.find? fun td => td.name == traitName with
+          | some td =>
+            match td.methods.find? fun ms => ms.name == methodName with
+            | some ms => foundSig := some ms; break
+            | none => pure ()
+          | none => pure ()
+        match foundSig with
+        | none => throw s!"no method '{methodName}' for type variable '{n}'"
+        | some sig =>
+          -- Check capabilities from trait method
+          checkCapabilities (n ++ "." ++ methodName) sig.capSet
+          -- Type check arguments (params in FnSigDef excludes self)
+          if args.length != sig.params.length then
+            throw s!"method '{methodName}' expects {sig.params.length} arguments, got {args.length}"
+          for (arg, p) in args.zip sig.params do
+            let argTy ← checkExpr arg (some p.ty)
+            expectTy p.ty argTy s!"argument '{p.name}' of '{methodName}'"
+            match arg with
+            | .ident varName => consumeVar varName
+            | _ => pure ()
+          return sig.retTy
+      | _ => throw s!"method call on non-named type"
+    else
     let mangledName := typeName ++ "_" ++ methodName
     match ← lookupFn mangledName with
     | some sig =>
@@ -1634,10 +1667,11 @@ def checkFn (f : FnDef) : CheckM Unit := do
   let envBefore ← getEnv
   -- Resolve type parameter names: .named "T" -> .typeVar "T"
   let retTyRaw := resolveTypeParams f.retTy f.typeParams
-  -- Set current return type, type params, and capability context
+  -- Set current return type, type params, capability context, and type bounds
   let env1 := { envBefore with currentRetTy := retTyRaw, currentTypeParams := f.typeParams }
   let env2 := { env1 with currentCapSet := f.capSet }
-  setEnv { env2 with currentFnName := f.name }
+  let env3 := { env2 with currentTypeBounds := f.typeBounds }
+  setEnv { env3 with currentFnName := f.name }
   -- Resolve Self in return type (needs currentImplType from env)
   let retTy ← resolveType retTyRaw
   modify fun env => { env with currentRetTy := retTy }
@@ -1879,7 +1913,7 @@ def checkModule (m : Module) (importedFnSigs : List (String × FnSig) := [])
   let allFnPairs := regularFns ++ implMethodPairs ++ traitImplMethodPairs
   let result := allFnPairs.foldlM (fun () (f, implTy) => do
     let env ← getEnv
-    setEnv { env with currentImplType := implTy }
+    setEnv { env with currentImplType := implTy, traits := allTraits }
     checkFn f
   ) () |>.run initEnv |>.run
   match result with

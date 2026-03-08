@@ -48,6 +48,12 @@ structure CodegenState where
   deferStack : List (List Expr) := [[]]  -- stack of deferred expressions per scope
   loopResultSlot : Option String := none  -- alloca slot for while-as-expression result
   loopLabelMap : List (String × String × String) := []  -- label → (exitLabel, contLabel)
+  typeVarMapping : List (String × String) := []  -- type var → concrete type name (for monomorphization)
+  fnTypeParams : List (String × List String) := []  -- fn name → type param names
+  fnTypeBounds : List (String × List (String × List String)) := []  -- fn name → type bounds
+  allFnDefs : List FnDef := []  -- all function definitions (for monomorphization lookup)
+  monoQueue : List (String × FnDef) := []  -- (monoName, substituted FnDef) to generate
+  monoGenerated : List String := []  -- already-generated monomorphized function names
 
 instance : Inhabited CodegenState where
   default := {
@@ -394,6 +400,7 @@ private def inferExprTy (s : CodegenState) (e : Expr) (hint : Option Ty := none)
     let typeName := match innerTy with
       | .named n => n
       | .generic n _ => n
+      | .typeVar n => (s.typeVarMapping.lookup n).getD ""
       | _ => ""
     let mangledName := typeName ++ "_" ++ methodName
     normalizeTy ((s.fnRetTypes.lookup mangledName).getD .int)
@@ -505,6 +512,35 @@ private def normalizeFieldTy : Ty → Ty
   | .array t n => .array (normalizeFieldTy t) n
   | .generic name args => .generic name (args.map normalizeFieldTy)
   | t => t
+
+/-- Substitute type variables for monomorphization. Handles both .named and .typeVar since
+    the parser produces .named "T" for type params. -/
+private def substTyMono (typeParams : List String) (mapping : List (String × Ty)) : Ty → Ty
+  | .named n => if typeParams.contains n then
+      match mapping.lookup n with
+      | some t => t
+      | none => .named n
+    else .named n
+  | .typeVar n => match mapping.lookup n with
+    | some t => t
+    | none => .typeVar n
+  | .ref t => .ref (substTyMono typeParams mapping t)
+  | .refMut t => .refMut (substTyMono typeParams mapping t)
+  | .heap t => .heap (substTyMono typeParams mapping t)
+  | .heapArray t => .heapArray (substTyMono typeParams mapping t)
+  | .array t n => .array (substTyMono typeParams mapping t) n
+  | .generic name args => .generic name (args.map (substTyMono typeParams mapping))
+  | t => t
+
+/-- Create a monomorphized copy of a FnDef by substituting type params with concrete types. -/
+private def monoFnDef (origFn : FnDef) (monoName : String) (mapping : List (String × Ty)) : FnDef :=
+  let subst := substTyMono origFn.typeParams mapping
+  { origFn with
+    name := monoName
+    params := origFn.params.map fun p => { p with ty := subst p.ty }
+    retTy := subst origFn.retTy
+    typeParams := []
+    typeBounds := [] }
 
 mutual
 
@@ -800,8 +836,62 @@ partial def genExpr (s : CodegenState) (e : Expr) (hintTy : Option Ty := none) :
       let s := s.emit ("  " ++ reg ++ " = add " ++ retLLTy ++ " 0, " ++ toString sz)
       (s, reg)
     else
+    -- Monomorphization: redirect calls to generic functions with trait bounds
+    let fnBounds := (s.fnTypeBounds.lookup fnName).getD []
+    let (s, effectiveName) := if !fnBounds.isEmpty then
+      let fnTyParams := (s.fnTypeParams.lookup fnName).getD []
+      -- Infer type var mapping from arguments
+      let origParamTys := (s.fnParamTypes.lookup fnName).getD []
+      let argTypes := args.map fun arg => inferExprTy s arg
+      let inferredMapping := origParamTys.zip argTypes |>.foldl (fun acc (paramTy, argTy) =>
+        let paramName := match paramTy with
+          | .named n => if fnTyParams.contains n then some n else none
+          | _ => none
+        match paramName with
+        | some n =>
+          let concreteName := match argTy with
+            | .named name => some name
+            | .generic name _ => some name
+            | _ => none
+          match concreteName with
+          | some cn => if acc.any fun (k, _) => k == n then acc else acc ++ [(n, cn)]
+          | none => acc
+        | none => acc
+      ) ([] : List (String × String))
+      -- Also use explicit typeArgs if provided
+      let mapping := if !typeArgs.isEmpty then
+        fnTyParams.zip typeArgs |>.foldl (fun acc (param, ty) =>
+          let concreteName := match ty with
+            | .named name => some name
+            | .generic name _ => some name
+            | _ => none
+          match concreteName with
+          | some cn => if acc.any fun (k, _) => k == param then acc else acc ++ [(param, cn)]
+          | none => acc
+        ) inferredMapping
+      else inferredMapping
+      -- Compute monomorphized name
+      let typeNames := fnTyParams.map fun p => (mapping.lookup p).getD "unknown"
+      let monoName := fnName ++ "_for_" ++ "_".intercalate typeNames
+      -- Register monomorphized function if not already generated
+      let s := if s.monoGenerated.contains monoName then s
+        else
+          match s.allFnDefs.find? fun f => f.name == fnName with
+          | some origFn =>
+            let tyMapping := mapping.map fun (k, v) => (k, Ty.named v)
+            let monoFn := monoFnDef origFn monoName tyMapping
+            let monoRetTy := normalizeFieldTy monoFn.retTy
+            let monoParamTys := monoFn.params.map fun p => normalizeFieldTy p.ty
+            { s with
+              monoQueue := s.monoQueue ++ [(monoName, monoFn)]
+              monoGenerated := monoName :: s.monoGenerated
+              fnRetTypes := (monoName, monoRetTy) :: s.fnRetTypes
+              fnParamTypes := (monoName, monoParamTys) :: s.fnParamTypes }
+          | none => s
+      (s, monoName)
+    else (s, fnName)
     -- Use the raw (un-substituted) param types for generating argument values
-    let rawParamTys := (s.fnParamTypes.lookup fnName).getD []
+    let rawParamTys := (s.fnParamTypes.lookup effectiveName).getD []
     -- But use hinted types for actually generating argument code
     let (s, argRegs) := genExprListWithHints s args rawParamTys
     -- For LLVM call, use the function's declared param types (i64 for type vars)
@@ -812,21 +902,21 @@ partial def genExpr (s : CodegenState) (e : Expr) (hintTy : Option Ty := none) :
     else argTys
     let argPairs := argTys.zip argRegs
     let argStr := ", ".intercalate (argPairs.map fun (ty, r) => ty ++ " " ++ r)
-    let retTy := normalizeTy ((s.fnRetTypes.lookup fnName).getD .int)
+    let retTy := normalizeTy ((s.fnRetTypes.lookup effectiveName).getD .int)
     let retLLTy := tyToLLVM s retTy
     if retLLTy == "void" then
-      let s := s.emit ("  call void @" ++ fnName ++ "(" ++ argStr ++ ")")
+      let s := s.emit ("  call void @" ++ effectiveName ++ "(" ++ argStr ++ ")")
       (s, "0")
     else if isPassByPtr s retTy then
       let (s, result) := s.freshLocal
-      let s := s.emit ("  " ++ result ++ " = call " ++ retLLTy ++ " @" ++ fnName ++ "(" ++ argStr ++ ")")
+      let s := s.emit ("  " ++ result ++ " = call " ++ retLLTy ++ " @" ++ effectiveName ++ "(" ++ argStr ++ ")")
       let (s, alloca) := s.freshLocal
       let s := s.emit ("  " ++ alloca ++ " = alloca " ++ retLLTy)
       let s := s.emit ("  store " ++ retLLTy ++ " " ++ result ++ ", ptr " ++ alloca)
       (s, alloca)
     else
       let (s, result) := s.freshLocal
-      let s := s.emit ("  " ++ result ++ " = call " ++ retLLTy ++ " @" ++ fnName ++ "(" ++ argStr ++ ")")
+      let s := s.emit ("  " ++ result ++ " = call " ++ retLLTy ++ " @" ++ effectiveName ++ "(" ++ argStr ++ ")")
       (s, result)
   | .paren inner => genExpr s inner hintTy
   | .structLit name typeArgs fields =>
@@ -1258,6 +1348,7 @@ partial def genExpr (s : CodegenState) (e : Expr) (hintTy : Option Ty := none) :
     let typeName := match innerTy with
       | .named n => n
       | .generic n _ => n
+      | .typeVar n => (s.typeVarMapping.lookup n).getD ""
       | _ => ""
     let mangledName := typeName ++ "_" ++ methodName
     let (s, selfPtr) := genExprAsPtr s obj
@@ -2172,7 +2263,17 @@ def genModule (m : Module) : String :=
     ) []) ++
     (m.externFns.map fun ef => (ef.name, ef.params.map fun p => normalizeFieldTy p.ty))
   let constList := m.constants.map fun c => (c.name, (c.ty, c.value))
-  let s := { CodegenState.init with structDefs := structInfos, enumDefs := enumInfos, fnRetTypes, fnParamTypes, constants := constList }
+  -- Build type param and type bound maps for monomorphization
+  let fnTypeParams : List (String × List String) := m.functions.map fun f => (f.name, f.typeParams)
+  let fnTypeBounds : List (String × List (String × List String)) := m.functions.filter (fun f => !f.typeBounds.isEmpty) |>.map fun f => (f.name, f.typeBounds)
+  let s0 := { CodegenState.init with
+    structDefs := structInfos, enumDefs := enumInfos,
+    fnRetTypes := fnRetTypes, fnParamTypes := fnParamTypes,
+    constants := constList }
+  let s := { s0 with
+    fnTypeParams := fnTypeParams,
+    fnTypeBounds := fnTypeBounds,
+    allFnDefs := m.functions }
   let s := s.emit "; Generated by Concrete compiler"
   let s := s.emit ("; Module: " ++ m.name)
   let s := s.emit ""
@@ -2268,9 +2369,24 @@ def genModule (m : Module) : String :=
       genFn s mangledF
     ) s
   ) s
-  -- User functions
+  -- User functions (skip generic functions with trait bounds — they get monomorphized)
   let hasMain := m.functions.any (fun f => f.name == "main")
-  let s := m.functions.foldl (fun s f => genFn s f hasMain) s
+  let s := m.functions.foldl (fun s f =>
+    if !f.typeBounds.isEmpty then s  -- skip: will be monomorphized at call sites
+    else genFn s f hasMain
+  ) s
+  -- Process monomorphization queue: generate specialized copies of generic functions
+  let s := Id.run do
+    let mut s := s
+    let mut processed : Nat := 0
+    -- Iterate until queue is exhausted (mono fns may enqueue more)
+    while processed < s.monoQueue.length do
+      match s.monoQueue.drop processed with
+      | (_, monoFn) :: _ =>
+        s := genFn s monoFn
+        processed := processed + 1
+      | [] => break
+    return s
   -- String literal globals
   let s := if s.stringGlobals.isEmpty then s
     else { s with output := s.output ++ s.stringGlobals ++ "\n" }
