@@ -280,7 +280,7 @@ structure Module where
   submodules : List Module := []
 
 -- ============================================================
--- Free Variable Analysis (used by both Check and Codegen)
+-- Free Variable Analysis (used by Check)
 -- ============================================================
 
 mutual

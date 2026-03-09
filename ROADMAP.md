@@ -39,7 +39,7 @@ The Lean 4 compiler implements the core surface language plus the new internal I
 - Networking: tcp_connect, tcp_listen, tcp_accept, socket_send, socket_recv, socket_close (require Network)
 - FFI: `extern fn` declarations, `Unsafe` capability gating
 
-**Not yet implemented:** `#[repr(C)]`, transmute, newtype, MLIR backend, env vars/process args, kernel formalization, runtime, fully authoritative standalone resolution, per-pass structured diagnostics across the compiler, and removal of the legacy AST backend.
+**Not yet implemented:** `#[repr(C)]`, transmute, newtype, MLIR backend, env vars/process args, kernel formalization, runtime, fully authoritative standalone resolution.
 
 ---
 
@@ -336,7 +336,7 @@ Type check, linearity, borrow, and capability validation on Core IR. Replaces se
 
 Modify `Concrete/Codegen.lean` to consume SSA IR instead of Surface AST. Codegen becomes a pure target-emission step over the lowered SSA representation. This makes the pipeline: AST → Elab → CoreCheck → Mono → Lower → SSA → Codegen.
 
-**Status:** In progress. `EmitSSA.lean` exists and the default compile path uses the SSA backend. The remaining work is confidence hardening and keeping the legacy AST backend only as a temporary fallback while diagnostics finish migrating. After that, it should be deleted.
+**Status:** Done. `EmitSSA.lean` is the sole codegen path. The legacy AST→Codegen backend has been removed. Only shared runtime builtin IR generation (`Codegen/Builtins.lean`) is retained for use by `EmitSSA`.
 
 ### A6: Structured Diagnostics
 
@@ -415,7 +415,7 @@ SSA already assumes monomorphic input — `SInst.call` has no `typeArgs`.
 
 Longer-term items beyond current batch:
 
-1. **Remove the legacy backend** — the SSA backend is now the default path; the old AST backend should remain only as a short-term fallback during the diagnostics migration, then be deleted.
+1. **~~Remove the legacy backend~~** — **DONE.** The old AST→Codegen path (`--compile-legacy`, `Concrete/Codegen/Emit.lean`, `Module.lean`, `Types.lean`) has been deleted. Only `Builtins.lean`, `Helpers.lean`, and `State.lean` remain in `Codegen/` as shared runtime IR generation used by `EmitSSA`.
 2. **Structured diagnostics** — per-pass error kinds done for all semantic passes (Resolve, Check, Elab, CoreCheck, SSAVerify). Remaining: notes, fix suggestions, and phase-aware reporting.
 3. **Resolution infrastructure** — keep tightening the module/trait/impl/name resolution layer (`Resolve.lean`) while leaving type-directed method dispatch in `Check`.
 4. **Internal semantic spec** — ownership states, borrow meaning, capability propagation, lowering guarantees documented alongside code.
@@ -445,12 +445,7 @@ Longer-term items beyond current batch:
 
 #### Simplification
 
-4. **Delete the legacy backend**
-- Remove `Concrete/Codegen/` and the `--compile-legacy` flag.
-- Do this only after:
-  - the main and SSA suites stay green
-  - the SSA path remains stable beyond the standard suite
-  - the diagnostics migration is far enough along that the fallback is no longer useful for isolating regressions
+4. **~~Delete the legacy backend~~** — **DONE.** Legacy AST codegen (`Emit.lean`, `Module.lean`, `Types.lean`) and `--compile-legacy` flag removed. Shared builtin IR generation retained in `Codegen/Builtins.lean`.
 
 5. **Harden `docs/PASSES.md`**
 - Keep tightening pass contracts so each phase guarantees something downstream can rely on.

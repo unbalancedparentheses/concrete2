@@ -4,7 +4,7 @@ namespace Concrete
 
 /-! ## Type Checker with Linear Variable Tracking
 
-Pipeline: Source → Lexer → Parser → AST → **Check** → Codegen → LLVM IR → clang
+Pipeline: Source → Parse → Resolve → **Check** → Elab → CoreCheck → Mono → Lower → SSAVerify → EmitSSA → clang
 
 Linearity rules (matching Concrete/Rust design):
 - Primitives (Int, Bool, Uint, Float64, i32, etc.) are implicitly Copy.

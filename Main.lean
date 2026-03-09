@@ -3,7 +3,7 @@ import Concrete
 open Concrete
 
 def usage : String :=
-  "Usage: concrete <file.con> [-o output] [--emit-llvm] [--emit-core] [--emit-ssa] [--compile-legacy]"
+  "Usage: concrete <file.con> [-o output] [--emit-llvm] [--emit-core] [--emit-ssa]"
 
 def writeFile (path : String) (content : String) : IO Unit := do
   IO.FS.writeFile ⟨path⟩ content
@@ -88,42 +88,7 @@ def resolveAllModules (baseDir : String) (modules : List Module) (inputPath : St
     | .error e => return .error e
   return .ok resolved
 
-/-- Compile via old AST→Codegen path (default). -/
-def compile (inputPath : String) (outputPath : String) (emitLLVM : Bool) : IO UInt32 := do
-  let source ← readFile inputPath
-  match parse source with
-  | .error e =>
-    IO.eprintln s!"Parse error: {e}"
-    return 1
-  | .ok parsedModules =>
-  let baseDir := dirOf inputPath
-  match ← resolveAllModules baseDir parsedModules inputPath with
-  | .error e =>
-    IO.eprintln s!"Parse error: {e}"
-    return 1
-  | .ok modules =>
-    match checkProgram modules with
-    | .error e =>
-      IO.eprintln s!"Type error: {e}"
-      return 1
-    | .ok () =>
-    let llvmIR := genProgram modules
-    let llPath := inputPath ++ ".ll"
-    writeFile llPath llvmIR
-    if emitLLVM then
-      IO.println llvmIR
-      return 0
-    -- Compile with clang
-    let exitCode ← runCmd "clang" #[llPath, "-o", outputPath, "-Wno-override-module"]
-    if exitCode != 0 then
-      IO.eprintln "clang compilation failed"
-      return exitCode
-    -- Clean up .ll file
-    IO.FS.removeFile ⟨llPath⟩
-    IO.println s!"Compiled {inputPath} -> {outputPath}"
-    return 0
-
-/-- Compile via SSA pipeline: Parse → Check → Elab → CoreCanonicalize → CoreCheck → Mono → Lower → SSAVerify → SSACleanup → EmitSSA → clang -/
+/-- Compile via SSA pipeline: Parse → Resolve → Check → Elab → CoreCanonicalize → CoreCheck → Mono → Lower → SSAVerify → SSACleanup → EmitSSA → clang -/
 def compileSSA (inputPath : String) (outputPath : String) (emitLLVM : Bool) : IO UInt32 := do
   let source ← readFile inputPath
   match liftStringError "parse" (parse source) with
@@ -255,22 +220,8 @@ def main (args : List String) : IO UInt32 := do
     compileAndEmit inputPath "core"
   | [inputPath, "--emit-ssa"] =>
     compileAndEmit inputPath "ssa"
-  | [inputPath, "--compile-ssa"] =>
-    let outputPath := if inputPath.endsWith ".con" then String.ofList (inputPath.toList.take (inputPath.length - 4)) else inputPath ++ ".out"
-    compileSSA inputPath outputPath false
-  | [inputPath, "--compile-ssa", "--emit-llvm"] =>
-    compileSSA inputPath "" true
   | [inputPath, "-o", outputPath] =>
     compileSSA inputPath outputPath false
-  | [inputPath, "--compile-ssa", "-o", outputPath] =>
-    compileSSA inputPath outputPath false
-  | [inputPath, "--compile-legacy"] =>
-    let outputPath := if inputPath.endsWith ".con" then String.ofList (inputPath.toList.take (inputPath.length - 4)) else inputPath ++ ".out"
-    compile inputPath outputPath false
-  | [inputPath, "--compile-legacy", "-o", outputPath] =>
-    compile inputPath outputPath false
-  | [inputPath, "--compile-legacy", "--emit-llvm"] =>
-    compile inputPath "" true
   | _ =>
     IO.eprintln usage
     return 1

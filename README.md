@@ -13,11 +13,13 @@
 
 >Most ideas come from previous ideas - Alan C. Kay, The Early History Of Smalltalk
 
-Concrete is a systems programming language designed around a single organizing principle: **every design choice must answer the question, can a machine reason about this?** All code is explicit, machine-verifiable, LL(1)-parseable, with no hidden control flow.
+Concrete is a systems programming language for **correctness-focused low-level work**. It is designed around a single organizing principle: **every design choice must answer the question, can a machine reason about this?** All code is explicit, machine-verifiable, LL(1)-parseable, with no hidden control flow.
 
 The compiler is written in [Lean 4](https://leanprover.github.io/lean4/doc/setup.html), a theorem prover. The goal is a language whose core type system is mechanically verified: proofs of progress, preservation, linearity soundness, and effect soundness, checked by Lean itself.
 
 **No other language combines all four: linear types, a capability-based effect system, a compiler written in a theorem prover, and a design optimized for machine-generated code.**
+
+In practical terms, Concrete is trying to give low-level programmers something unusual: the control and auditability of systems programming, but with much stronger guarantees about resources, effects, and compiler meaning.
 
 For the full language specification, see [The Concrete Programming Language: Systems Programming for Formal Reasoning](https://federicocarrone.com/series/concrete/the-concrete-programming-language-systems-programming-for-formal-reasoning/).
 
@@ -94,6 +96,21 @@ Concrete is trying to make five things obvious in source code:
 5. where unsafe or foreign code begins
 
 That drives the whole surface language.
+
+## Why This Matters For Low-Level Work
+
+Concrete is not trying to be “safe” by hiding the machine. It is trying to make low-level code easier to trust.
+
+For low-level programming, that means:
+
+- FFI boundaries stay explicit
+- resource destruction stays explicit
+- allocation stays explicit
+- side effects stay explicit
+- unsafe operations stay explicit
+- ownership and borrowing are checked instead of left to convention
+
+The goal is not convenience-first systems programming. The goal is code that is still close to the machine, but substantially easier to audit, reason about, and eventually verify.
 
 ### Pure by default, effects declared
 
@@ -208,9 +225,9 @@ Concrete is built for code that must be inspectable and mechanically verified.
 
 ## Current Status
 
-The compiler implements the core surface language and the new internal IR pipeline in Lean 4. All 201 main tests pass, and the SSA-specific suite passes as well.
+The compiler implements the core surface language and the internal IR pipeline in Lean 4. All 210 main tests and 141 SSA tests pass.
 
-**MLIR backend, kernel formalization, and the runtime are not yet implemented.** The compiler now has a real staged pipeline in Lean 4: Parse → Resolve → Check → Elab → CoreCheck → Mono → Lower → SSAVerify → SSACleanup → EmitSSA → clang. The default compile path uses the SSA backend. The legacy AST backend still exists temporarily behind `--compile-legacy`, but only as a short-term fallback while the diagnostics migration finishes. The frontend carries source spans through the AST, and diagnostics have started moving from raw strings to structured per-pass errors. See the full [ROADMAP.md](ROADMAP.md) for the implementation plan. What works today:
+**MLIR backend, kernel formalization, and the runtime are not yet implemented.** The compiler has a single staged pipeline in Lean 4: Parse → Resolve → Check → Elab → CoreCheck → Mono → Lower → SSAVerify → SSACleanup → EmitSSA → clang. All semantic passes use structured error kinds (ResolveError, CheckError, ElabError, CoreCheckError, SSAVerifyError). The frontend carries source spans through the AST. See the full [ROADMAP.md](ROADMAP.md) for the implementation plan. What works today:
 
 - **Types**: Int, Uint, i8-i32, u8-u32, f32, f64, Bool, Char, String, arrays `[T; N]`, raw pointers
 - **Structs** with field access, mutation, and `Heap<T>` fields
@@ -248,6 +265,8 @@ Concrete is already usable for small low-level programs that need:
 - predictable control flow
 - direct FFI and raw-pointer escape hatches
 - inspectable internal stages (`--emit-core`, `--emit-ssa`)
+
+That already makes it more than a language-design experiment. The current implementation is moving toward a compiler and language that are specifically strong for auditable, correctness-sensitive systems code.
 
 It is not finished in the places that matter for broader adoption:
 
@@ -289,7 +308,7 @@ See [ROADMAP.md](ROADMAP.md) for the full implementation plan with syntax, rules
 | **13** | Tooling | Not started |
 | **14** | Runtime (C, then Concrete) | Not started |
 
-Next critical path: **finish structured diagnostics across `Check`/`Elab`/`CoreCheck`/`SSAVerify`, then delete the legacy backend** so the SSA pipeline is the only semantic and backend path. After that: optimization, ABI/layout refinement, and kernel formalization.
+Next critical path: **optimization, ABI/layout refinement, and kernel formalization.** Structured diagnostics are complete across all semantic passes. The legacy AST backend has been removed.
 
 ### What fits the philosophy and what does not
 
@@ -429,10 +448,9 @@ Things Concrete deliberately does not have:
 - Clear path to formal verification because the compiler is already implemented in Lean and now has explicit internal IR boundaries
 
 **Next steps:**
-- Finish structured diagnostics in `CoreCheck` and `SSAVerify`
-- Delete the legacy AST backend fallback
 - Tighten ABI/layout features (`repr(C)`, sharper unsafe boundary)
 - MLIR-based optimization pipeline
+- Kernel formalization
 - Kernel formalization and proof development in Lean
 
 ## License
