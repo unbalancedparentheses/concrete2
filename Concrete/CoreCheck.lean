@@ -139,7 +139,7 @@ partial def ccCheckExpr (e : CExpr) : StateM CoreCheckEnv Unit := do
       if !isInteger lTy then
         addError s!"bitwise operator on non-integer type: {repr lTy}"
 
-  | .unaryOp op operand ty =>
+  | .unaryOp op operand _ty =>
     ccCheckExpr operand
     match op with
     | .neg =>
@@ -152,7 +152,7 @@ partial def ccCheckExpr (e : CExpr) : StateM CoreCheckEnv Unit := do
       if !isInteger operand.ty then
         addError s!"bitwise not on non-integer type: {repr operand.ty}"
 
-  | .call fn _typeArgs args ty =>
+  | .call fn _typeArgs args _ty =>
     -- Check capability discipline
     match ← lookupFnCaps fn with
     | some calleeCaps =>
@@ -180,7 +180,7 @@ partial def ccCheckExpr (e : CExpr) : StateM CoreCheckEnv Unit := do
     for (_, fieldExpr) in fields do
       ccCheckExpr fieldExpr
 
-  | .match_ scrutinee arms ty =>
+  | .match_ scrutinee arms _ty =>
     ccCheckExpr scrutinee
     -- Check match arm coverage for enums
     let scrTy := scrutinee.ty
@@ -249,10 +249,10 @@ partial def ccCheckStmt (stmt : CStmt) : StateM CoreCheckEnv Unit := do
     ccCheckExpr value
     addVar name ty
 
-  | .assign name value =>
+  | .assign _name value =>
     ccCheckExpr value
 
-  | .return_ (some value) retTy =>
+  | .return_ (some value) _retTy =>
     ccCheckExpr value
 
   | .return_ none _ => pure ()

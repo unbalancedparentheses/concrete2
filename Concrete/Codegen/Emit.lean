@@ -1137,7 +1137,7 @@ partial def genExprListWithHints (s : CodegenState) (args : List Expr) (hints : 
     (s, reg :: regs)
 
 /-- Generate LLVM IR for Vec<T> builtin calls. Returns (state, result_register). -/
-partial def genVecBuiltinCall (s : CodegenState) (fnName : String) (typeArgs : List Ty) (args : List Expr) (hintTy : Option Ty := none) : CodegenState × String :=
+partial def genVecBuiltinCall (s : CodegenState) (fnName : String) (typeArgs : List Ty) (args : List Expr) (_hintTy : Option Ty := none) : CodegenState × String :=
   if fnName == "vec_new" then
     let elemTy := match typeArgs.head? with | some t => t | none => Ty.int
     let elemSize := tySizeOf s elemTy

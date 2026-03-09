@@ -532,7 +532,7 @@ def checkCapabilities (calleeName : String) (calleeCapSet : CapSet) : CheckM Uni
   let env ← getEnv
   let callerCapSet := env.currentCapSet
   -- Get concrete caps and cap variables from both sides
-  let (calleeCaps, calleeVars) := calleeCapSet.normalize
+  let (calleeCaps, _calleeVars) := calleeCapSet.normalize
   let (callerCaps, callerVars) := callerCapSet.normalize
   -- If callee has cap variables, they are satisfied by matching caller cap variables
   -- If caller has cap variables, they can satisfy any callee cap (polymorphic)

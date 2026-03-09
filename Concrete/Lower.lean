@@ -802,7 +802,7 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
 
 /-- Extract a value from the last statement of a body, for phi nodes.
     Uses the __last_expr var that lowerStmt(.expr) sets. -/
-partial def lastExprVal (body : List CStmt) (ty : Ty) : LowerM SVal := do
+partial def lastExprVal (body : List CStmt) (_ty : Ty) : LowerM SVal := do
   match body.getLast? with
   | some (.expr _) =>
     match ← lookupVar "__last_expr" with

@@ -567,7 +567,7 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
 
 /-- Elaborate a function call (regular, builtins, intercepted). -/
 partial def elabCall (fnName : String) (typeArgs : List Ty) (args : List Expr)
-    (hint : Option Ty) : ElabM CExpr := do
+    (_hint : Option Ty) : ElabM CExpr := do
   -- Intercept abort()
   if fnName == "abort" then
     return .call "abort" [] [] .never
@@ -1106,12 +1106,6 @@ partial def elabModule (m : Module)
       { name := sd.name, typeParams := sd.typeParams,
         fields := sd.fields.map fun f => (f.name, f.ty),
         isPublic := sd.isPublic, isCopy := sd.isCopy : CStructDef }
-    -- Build Core enums
-    let cEnums := m.enums.map fun ed =>
-      { name := ed.name, typeParams := ed.typeParams,
-        variants := ed.variants.map fun v =>
-          (v.name, v.fields.map fun f => (f.name, f.ty)),
-        isPublic := ed.isPublic, isCopy := ed.isCopy : CEnumDef }
     -- Build extern fns
     let cExterns := m.externFns.map fun ef =>
       (ef.name, ef.params.map fun p => (p.name, p.ty), ef.retTy)
