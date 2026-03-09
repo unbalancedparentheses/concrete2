@@ -85,6 +85,7 @@ Before the standard library grows much further, move the frontend toward file su
 - shallow/interface resolution split from body-level resolution is already landed in `Resolve`
 - shallow resolution now consumes summaries directly
 - summary-driven import/export now includes extern signatures
+- `Check` and `Elab` now share a single export/import path built from summaries
 - next: make summaries stable reusable frontend artifacts
 - make import/export validation consume summaries directly
 - keep method/type-directed body checking in `Check`
@@ -94,6 +95,7 @@ Before the standard library grows much further, move the frontend toward file su
 Continue moving semantic ownership out of surface-AST checking and into elaborated/validated Core:
 - keep elaboration as the place where surface sugar disappears
 - make `CoreCheck` the main home for post-elaboration semantic rules
+- `CoreCheck` now already owns more validation, including return-type checking after elaboration
 - reduce duplicated semantic reasoning between `Check` and Core validation
 - keep the proof target centered on validated Core rather than surface syntax
 
@@ -119,6 +121,8 @@ Keep this deliberately modest at first:
 - CFG cleanup
 - trivial copy/phi cleanup
 - use ownership/linearity facts when they directly simplify lowering or cleanup
+- treat this as a small cross-backend cleanup layer over SSA, not as an LLVM-only optimization project
+- the goal is to simplify and normalize SSA before any backend emission (LLVM today, C/MLIR/Wasm later), so every backend sees cleaner IR and shares the same semantics
 
 6. **Diagnostics infrastructure**
 Build on the structured errors with stronger shared compiler infrastructure for:
@@ -433,13 +437,14 @@ Planned direction:
 - shallow/interface resolution and body resolution are now separate in `Resolve`
 - shallow resolution now consumes summaries directly
 - summary-driven import/export now includes extern signatures
+- `Check` and `Elab` now share the same summary-driven export/import path
 - next: make `FileSummary` a stable reusable frontend artifact
 - keep cross-file dependencies declaration-level where possible
 - split shallow/interface work from body-level resolution
 
 This keeps the frontend explicit and batch-oriented without moving to a query-first architecture.
 
-**Status:** In progress. `Resolve` now has a shallow phase (`resolveShallow`) and a body phase (`resolveBodies`), `FileSummary` exists as the declaration-level interface artifact, shallow resolution consumes summaries directly, and summary-driven import/export includes extern signatures. The next step is to turn summaries into stable reusable frontend artifacts that other stages can cache and consume explicitly.
+**Status:** In progress. `Resolve` now has a shallow phase (`resolveShallow`) and a body phase (`resolveBodies`), `FileSummary` exists as the declaration-level interface artifact, shallow resolution consumes summaries directly, and summary-driven import/export includes extern signatures through a shared `Check`/`Elab` path. The next step is to turn summaries into stable reusable frontend artifacts that other stages can cache and consume explicitly.
 
 ### A4: Core Validation
 
@@ -447,7 +452,7 @@ New file: `Concrete/CoreCheck.lean`
 
 Type check, linearity, borrow, and capability validation on Core IR. Replaces semantic checking currently in Check.lean. Much simpler because the input is already desugared and explicit.
 
-**Status:** In progress. `CoreCheck.lean` is integrated into the pipeline and validates capability discipline, type consistency, match exhaustiveness, and structural invariants. The remaining work is to continue moving semantic authority out of `Check.lean`.
+**Status:** In progress. `CoreCheck.lean` is integrated into the pipeline and validates capability discipline, type consistency, return-type correctness, match exhaustiveness, and structural invariants. The remaining work is to continue moving semantic authority out of `Check.lean`.
 
 ### A4b: Core As Semantic Authority
 
@@ -2165,7 +2170,7 @@ These do not block any phase above:
 | **12a** | Runtime in C | Not started | 7 |
 | **12b** | Runtime in Concrete | Not started | 8, 12a |
 
-**Next priorities:** keep pushing the summary-based frontend (`FileSummary` as the declaration-level interface artifact, shallow vs body resolution, and extern-aware import/export), continue moving semantic authority into Core, then deepen ABI/layout, modest SSA optimizations, formalization, and stdlib growth.
+**Next priorities:** keep pushing the summary-based frontend (`FileSummary` as the declaration-level interface artifact, shallow vs body resolution, and shared extern-aware export/import), continue moving semantic authority into `CoreCheck`, then deepen ABI/layout, modest SSA optimizations, formalization, and stdlib growth.
 
 **Critical path for production use:** Architecture (A1-A5) → remaining stdlib (8f, 8h) → runtime (12a).
 
