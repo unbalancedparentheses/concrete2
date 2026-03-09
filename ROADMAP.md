@@ -39,7 +39,7 @@ The Lean 4 compiler implements the core surface language plus the new internal I
 - Networking: tcp_connect, tcp_listen, tcp_accept, socket_send, socket_recv, socket_close (require Network)
 - FFI: `extern fn` declarations, `Unsafe` capability gating
 
-**Not yet implemented:** `#[repr(C)]`, transmute, newtype, MLIR backend, env vars/process args, kernel formalization, runtime, a deeper standalone resolution phase, richer structured diagnostics, and removal of the legacy AST backend.
+**Not yet implemented:** `#[repr(C)]`, transmute, newtype, MLIR backend, env vars/process args, kernel formalization, runtime, fully authoritative standalone resolution, per-pass structured diagnostics across the compiler, and removal of the legacy AST backend.
 
 ---
 
@@ -322,7 +322,7 @@ New file: `Concrete/Resolve.lean`
 
 Extract name resolution, module resolution, and symbol binding from Check.lean into a dedicated pass.
 
-**Status:** In progress. `Resolve.lean` exists and runs in the compile path, but currently focuses on early name/scope checks rather than full function/type/module resolution.
+**Status:** In progress. `Resolve.lean` runs in the compile path and now validates imports, exports, deep type references, `Self`, function/static-method names, enum variants, and trait-impl completeness. Method-call resolution still remains with `Check.lean` because it needs receiver type information.
 
 ### A4: Core Validation
 
@@ -336,7 +336,7 @@ Type check, linearity, borrow, and capability validation on Core IR. Replaces se
 
 Modify `Concrete/Codegen.lean` to consume SSA IR instead of Surface AST. Codegen becomes a pure target-emission step over the lowered SSA representation. This makes the pipeline: AST → Elab → CoreCheck → Mono → Lower → SSA → Codegen.
 
-**Status:** In progress. `EmitSSA.lean` exists and the default compile path uses the SSA backend. The remaining work is confidence hardening and eventual removal of the legacy AST backend.
+**Status:** In progress. `EmitSSA.lean` exists and the default compile path uses the SSA backend. The remaining work is confidence hardening and keeping the legacy AST backend only as a temporary fallback while diagnostics finish migrating. After that, it should be deleted.
 
 ### A6: Structured Diagnostics
 
@@ -347,7 +347,7 @@ Replace string-based errors with typed diagnostic data:
 - Secondary notes
 - Fix suggestions
 
-**Status:** In progress. `Diagnostic.lean` exists and the compile path can render structured diagnostics, but spans and per-pass structured error kinds are still incomplete.
+**Status:** In progress. `Diagnostic.lean` exists, AST/source spans are threaded through the parser, and Resolve now emits located diagnostics with a structured `ResolveError` layer. The remaining work is to move `Check`, `Elab`, `CoreCheck`, and `SSAVerify` off raw string errors.
 
 ### A7: Builtin vs Stdlib Boundary
 
@@ -415,9 +415,9 @@ SSA already assumes monomorphic input — `SInst.call` has no `typeArgs`.
 
 Longer-term items beyond current batch:
 
-1. **Codegen consumes SSA** — `Codegen.lean` should consume SSA IR, not bypass it. This makes SSA part of the trusted compilation path rather than a debug artifact.
-2. **Structured diagnostics** — spans, notes, error codes, phase-aware reporting.
-3. **Resolution infrastructure** — cleaner module/trait/impl/name resolution layer (`Resolve.lean`).
+1. **Remove the legacy backend** — the SSA backend is now the default path; the old AST backend should remain only as a short-term fallback during the diagnostics migration, then be deleted.
+2. **Structured diagnostics** — finish per-pass error kinds, notes, and phase-aware reporting beyond Resolve.
+3. **Resolution infrastructure** — keep tightening the module/trait/impl/name resolution layer (`Resolve.lean`) while leaving type-directed method dispatch in `Check`.
 4. **Internal semantic spec** — ownership states, borrow meaning, capability propagation, lowering guarantees documented alongside code.
 5. **Backend-neutral lowering boundary** — keep SSA generic enough for multiple targets (LLVM, MLIR, etc.).
 6. **Formal kernel decision** — Core as proof kernel vs. smaller kernel later.

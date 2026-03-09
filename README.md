@@ -201,9 +201,9 @@ Concrete is built for code that must be inspectable and mechanically verified.
 
 ## Current Status
 
-The compiler implements the core surface language and the new internal IR pipeline in Lean 4. All 201 tests pass.
+The compiler implements the core surface language and the new internal IR pipeline in Lean 4. All 201 main tests pass, and the SSA-specific suite passes as well.
 
-**MLIR backend, kernel formalization, and the runtime are not yet implemented.** The compiler now has Core IR, elaboration, Core validation, monomorphization, SSA lowering, SSA verification/cleanup, and SSA codegen. The default compile path uses the SSA pipeline, while the legacy AST backend remains available behind `--compile-legacy` during the transition. See the full [ROADMAP.md](ROADMAP.md) for the implementation plan. What works today:
+**MLIR backend, kernel formalization, and the runtime are not yet implemented.** The compiler now has Core IR, elaboration, Core validation, monomorphization, SSA lowering, SSA verification/cleanup, and SSA codegen. The default compile path uses the SSA pipeline. The legacy AST backend still exists temporarily behind `--compile-legacy`, but only as a short-term fallback while the diagnostics migration finishes. After that, it should be removed. The frontend also now carries source spans through the AST, and diagnostics have started moving from raw strings to structured per-pass errors. See the full [ROADMAP.md](ROADMAP.md) for the implementation plan. What works today:
 
 - **Types**: Int, Uint, i8-i32, u8-u32, f32, f64, Bool, Char, String, arrays `[T; N]`, raw pointers
 - **Structs** with field access, mutation, and `Heap<T>` fields
@@ -222,7 +222,7 @@ The compiler implements the core surface language and the new internal IR pipeli
 - **Function pointers**: first-class values, `Copy` semantics, no closures (explicit design choice)
 - **Bitwise operators**: `&`, `|`, `^`, `<<`, `>>`, `~` with hex/binary/octal literals
 - **FFI**: `extern fn` declarations with `Unsafe` capability gating
-- **Compiler pipeline**: Core IR (`--emit-core`), elaboration, Core validation, SSA lowering (`--emit-ssa`), SSA-based compilation
+- **Compiler pipeline**: source spans in the AST, Resolve, Core IR (`--emit-core`), elaboration, Core validation, monomorphization, SSA lowering (`--emit-ssa`), SSA verification/cleanup, SSA-based compilation
 - **Standard library builtins**:
   - **Strings**: `string_length`, `string_concat`, `string_slice`, `string_char_at`, `string_contains`, `string_eq`, `string_trim`, `drop_string`
   - **Conversions**: `int_to_string`, `string_to_int`, `bool_to_string`, `float_to_string`
@@ -235,7 +235,7 @@ The compiler implements the core surface language and the new internal IR pipeli
 The current surface language is intentionally conservative. The highest-value design additions after the architecture work are:
 
 - **`newtype`** for nominal zero-cost wrappers over existing representations
-- **Explicit representation/layout control** for ABI-sensitive low-level code (`repr(C)`, alignment, packed layout)
+- **Explicit representation/layout control** for ABI-sensitive low-level code (`repr(C)`, alignment, and carefully-scoped layout controls)
 - **A sharper `unsafe` model** that clearly states which invariants move from the compiler to the programmer
 - **A more explicit value/reference model** so pass-by-value, borrows, raw pointers, and heap ownership stay operationally obvious
 
@@ -262,7 +262,7 @@ See [ROADMAP.md](ROADMAP.md) for the full implementation plan with syntax, rules
 | **13** | Tooling | Not started |
 | **14** | Runtime (C, then Concrete) | Not started |
 
-Next critical path: **deepen `Resolve` + remove the legacy backend** so the new pipeline is the only semantic and backend path. After that: structured diagnostics, optimization, and kernel formalization.
+Next critical path: **finish structured diagnostics across `Check`/`Elab`/`CoreCheck`/`SSAVerify`, then delete the legacy backend** so the SSA pipeline is the only semantic and backend path. After that: optimization, ABI/layout refinement, and kernel formalization.
 
 ### What fits the philosophy and what does not
 

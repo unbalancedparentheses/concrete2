@@ -27,6 +27,38 @@ inductive SymKind where
   | const (ty : Ty)
   | implMethod (typeName : String) (params : List Param) (retTy : Ty)
 
+inductive ResolveError where
+  | undeclaredVariable (name : String)
+  | unknownFunction (name : String)
+  | unknownStructType (name : String)
+  | unknownEnumVariant (variant : String) (enumName : String)
+  | notAnEnum (name : String)
+  | unknownEnum (name : String)
+  | unknownStaticMethod (typeName : String) (method : String)
+  | unknownFunctionRef (name : String)
+  | unknownType (name : String)
+  | selfOutsideImpl
+  | unknownTrait (name : String)
+  | missingTraitMethod (traitName : String) (typeName : String) (method : String)
+  | unknownModule (name : String)
+  | notPublicInModule (symbol : String) (moduleName : String)
+
+def ResolveError.message : ResolveError → String
+  | .undeclaredVariable name => s!"undeclared variable '{name}'"
+  | .unknownFunction name => s!"unknown function '{name}'"
+  | .unknownStructType name => s!"unknown struct type '{name}'"
+  | .unknownEnumVariant variant enumName => s!"unknown variant '{variant}' in enum '{enumName}'"
+  | .notAnEnum name => s!"'{name}' is not an enum"
+  | .unknownEnum name => s!"unknown enum '{name}'"
+  | .unknownStaticMethod typeName method => s!"unknown static method '{typeName}::{method}'"
+  | .unknownFunctionRef name => s!"unknown function reference '{name}'"
+  | .unknownType name => s!"unknown type '{name}'"
+  | .selfOutsideImpl => "Self can only be used inside impl blocks"
+  | .unknownTrait name => s!"impl references unknown trait '{name}'"
+  | .missingTraitMethod traitName typeName method => s!"impl {traitName} for {typeName}: missing method '{method}'"
+  | .unknownModule name => s!"unknown module '{name}'"
+  | .notPublicInModule symbol moduleName => s!"'{symbol}' is not public in module '{moduleName}'"
+
 structure Scope where
   symbols : List (String × SymKind)
 
@@ -51,8 +83,11 @@ structure ResolveCtx where
   /-- (typeName, traitName) pairs from trait impl blocks. -/
   traitImpls : List (String × String) := []
 
-private def addError (ctx : ResolveCtx) (msg : String) (span : Option Span := none) : ResolveCtx :=
-  { ctx with errors := ctx.errors ++ [{ severity := .error, message := msg, pass := "resolve", span := span, hint := none }] }
+private def addError (ctx : ResolveCtx) (err : ResolveError) (span : Option Span := none) : ResolveCtx :=
+  { ctx with errors := ctx.errors ++ [{ severity := .error, message := err.message, pass := "resolve", span := span, hint := none }] }
+
+private def mkResolveDiag (err : ResolveError) (span : Option Span := none) : Diagnostic :=
+  { severity := .error, message := err.message, pass := "resolve", span := span, hint := none }
 
 private def pushScope (ctx : ResolveCtx) : ResolveCtx :=
   { ctx with localScopes := [] :: ctx.localScopes }
@@ -128,12 +163,12 @@ private def checkTyDeep (ctx : ResolveCtx) (ty : Ty) (span : Option Span := none
     if name == "Self" then
       match ctx.currentImplType with
       | some _ => ctx
-      | none => addError ctx s!"Self can only be used inside impl blocks" span
+      | none => addError ctx .selfOutsideImpl span
     else if isKnownType ctx name then ctx
-    else addError ctx s!"unknown type '{name}'" span
+    else addError ctx (.unknownType name) span
   | .generic name args =>
     let ctx := if isKnownType ctx name then ctx
-               else addError ctx s!"unknown type '{name}'" span
+               else addError ctx (.unknownType name) span
     args.foldl (fun ctx ty => checkTyDeep ctx ty span) ctx
   | .ref inner | .refMut inner | .ptrMut inner | .ptrConst inner
   | .heap inner | .heapArray inner => checkTyDeep ctx inner span
@@ -154,28 +189,28 @@ partial def resolveExpr (ctx : ResolveCtx) (e : Expr) : ResolveCtx :=
   | .ident sp name =>
     -- Only flag identifiers that aren't in any scope and aren't known functions
     if lookupName ctx name || builtinFns.contains name then ctx
-    else addError ctx s!"undeclared variable '{name}'" (some sp)
+    else addError ctx (.undeclaredVariable name) (some sp)
   | .intLit _ _ | .floatLit _ _ | .boolLit _ _ | .strLit _ _ | .charLit _ _ => ctx
   | .binOp _ _ lhs rhs => resolveExpr (resolveExpr ctx lhs) rhs
   | .unaryOp _ _ operand => resolveExpr ctx operand
   | .call sp fn _typeArgs args =>
     let ctx := if lookupName ctx fn || builtinFns.contains fn then ctx
-               else addError ctx s!"unknown function '{fn}'" (some sp)
+               else addError ctx (.unknownFunction fn) (some sp)
     args.foldl resolveExpr ctx
   | .paren _ inner => resolveExpr ctx inner
   | .structLit sp name _typeArgs fields =>
     let ctx := if isKnownType ctx name then ctx
-               else addError ctx s!"unknown struct type '{name}'" (some sp)
+               else addError ctx (.unknownStructType name) (some sp)
     fields.foldl (fun ctx (_, e) => resolveExpr ctx e) ctx
   | .fieldAccess _ obj _ => resolveExpr ctx obj
   | .enumLit sp enumName variant _typeArgs fields =>
     let ctx := match lookupSymKind ctx enumName with
       | some (.enum def_) =>
         if def_.variants.any (fun v => v.name == variant) then ctx
-        else addError ctx s!"unknown variant '{variant}' in enum '{enumName}'" (some sp)
-      | some _ => addError ctx s!"'{enumName}' is not an enum" (some sp)
+        else addError ctx (.unknownEnumVariant variant enumName) (some sp)
+      | some _ => addError ctx (.notAnEnum enumName) (some sp)
       | none => if isKnownType ctx enumName then ctx
-                else addError ctx s!"unknown enum '{enumName}'" (some sp)
+                else addError ctx (.unknownEnum enumName) (some sp)
     fields.foldl (fun ctx (_, e) => resolveExpr ctx e) ctx
   | .match_ _ scrutinee arms =>
     let ctx := resolveExpr ctx scrutinee
@@ -207,11 +242,11 @@ partial def resolveExpr (ctx : ResolveCtx) (e : Expr) : ResolveCtx :=
   | .staticMethodCall sp typeName method _ args =>
     let mangledName := s!"{typeName}_{method}"
     let ctx := if lookupName ctx mangledName then ctx
-               else addError ctx s!"unknown static method '{typeName}::{method}'" (some sp)
+               else addError ctx (.unknownStaticMethod typeName method) (some sp)
     args.foldl resolveExpr ctx
   | .fnRef sp name =>
     if lookupName ctx name || builtinFns.contains name then ctx
-    else addError ctx s!"unknown function reference '{name}'" (some sp)
+    else addError ctx (.unknownFunctionRef name) (some sp)
   | .arrowAccess _ obj _ => resolveExpr ctx obj
   | .allocCall _ inner allocExpr =>
     resolveExpr (resolveExpr ctx inner) allocExpr
@@ -235,7 +270,7 @@ partial def resolveStmt (ctx : ResolveCtx) (stmt : Stmt) : ResolveCtx :=
     addLocal ctx name (.var ty _mutable)
   | .assign sp name value =>
     let ctx := if lookupName ctx name then ctx
-               else addError ctx s!"undeclared variable '{name}'" (some sp)
+               else addError ctx (.undeclaredVariable name) (some sp)
     resolveExpr ctx value
   | .return_ _ (some e) => resolveExpr ctx e
   | .return_ _ none => ctx
@@ -362,12 +397,12 @@ private def checkTraitImpls (ctx : ResolveCtx) (m : Module) : ResolveCtx :=
     match ctx.traitMethods.find? (fun (n, _) => n == ti.traitName) with
     | none =>
       if builtinTraits.contains ti.traitName then ctx
-      else addError ctx s!"impl references unknown trait '{ti.traitName}'"
+      else addError ctx (.unknownTrait ti.traitName)
     | some (_, expectedMethods) =>
       let providedMethods := ti.methods.map (·.name)
       expectedMethods.foldl (fun ctx methodName =>
         if providedMethods.contains methodName then ctx
-        else addError ctx s!"impl {ti.traitName} for {ti.typeName}: missing method '{methodName}'"
+        else addError ctx (.missingTraitMethod ti.traitName ti.typeName methodName)
       ) ctx
   ) ctx
 
@@ -470,11 +505,11 @@ def resolveProgram (modules : List Module) : Except Diagnostics (List ResolvedMo
   let importErrors := modules.foldl (fun errs m =>
     m.imports.foldl (fun errs imp =>
       match fullExportTable.find? (fun (n, _) => n == imp.moduleName) with
-      | none => errs ++ [{ severity := .error, message := s!"unknown module '{imp.moduleName}'", pass := "resolve", span := some imp.span, hint := none }]
+      | none => errs ++ [mkResolveDiag (.unknownModule imp.moduleName) (some imp.span)]
       | some (_, pubNames) =>
         imp.symbols.foldl (fun errs sym =>
           if pubNames.contains sym then errs
-          else errs ++ [{ severity := .error, message := s!"'{sym}' is not public in module '{imp.moduleName}'", pass := "resolve", span := some imp.span, hint := none }]
+          else errs ++ [mkResolveDiag (.notPublicInModule sym imp.moduleName) (some imp.span)]
         ) errs
     ) errs
   ) []
