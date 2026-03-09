@@ -444,7 +444,10 @@ private def emitSFnDef (s : EmitSSAState) (f : SFnDef) (isUserMain : Bool) : Emi
 private def emitStructTypes (s : EmitSSAState) : EmitSSAState :=
   s.structDefs.foldl (fun s sd =>
     let fieldTypes := ", ".intercalate (sd.fields.map fun (_, t) => ssaTyToLLVM s t)
-    emit s s!"%struct.{sd.name} = type \{ {fieldTypes} }"
+    if sd.isPacked then
+      emit s s!"%struct.{sd.name} = type <\{ {fieldTypes} }>"
+    else
+      emit s s!"%struct.{sd.name} = type \{ {fieldTypes} }"
   ) s
 
 private def emitEnumTypes (s : EmitSSAState) : EmitSSAState :=
@@ -781,7 +784,10 @@ def emitSModule (s : EmitSSAState) (m : SModule) : EmitSSAState :=
     else
       let s := { s with emittedTypes := sd.name :: s.emittedTypes }
       let fieldTypes := ", ".intercalate (sd.fields.map fun (_, t) => ssaTyToLLVM s t)
-      emit s s!"%struct.{sd.name} = type \{ {fieldTypes} }"
+      if sd.isPacked then
+        emit s s!"%struct.{sd.name} = type <\{ {fieldTypes} }>"
+      else
+        emit s s!"%struct.{sd.name} = type \{ {fieldTypes} }"
   ) s
   let ctx := layoutCtxOf s
   let s := m.enums.foldl (fun s ed =>

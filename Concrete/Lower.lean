@@ -305,6 +305,15 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
     return .reg dst ty
 
   | .call fn _typeArgs args ty =>
+    -- Handle sizeof::<T>() and alignof::<T>() → compile-time constants
+    if fn == "sizeof" then
+      let argTy := match _typeArgs with | t :: _ => t | [] => Ty.int
+      let sz ← computeTySize argTy
+      return .intConst (Int.ofNat sz) .uint
+    if fn == "alignof" then
+      let argTy := match _typeArgs with | t :: _ => t | [] => Ty.int
+      let ctx ← getLayoutCtx
+      return .intConst (Int.ofNat (Layout.tyAlign ctx argTy)) .uint
     -- Handle alloc(val) → malloc + store
     if fn == "alloc" then
       match args.head? with

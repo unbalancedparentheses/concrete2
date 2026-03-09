@@ -38,6 +38,7 @@ structure ElabEnv where
   currentImplType : Option Ty := none
   traits : List TraitDef := []
   allFnSigPairs : List (String × ElabFnSig) := []
+  newtypes : List NewtypeDef := []
 
 abbrev ElabM := ExceptT String (StateM ElabEnv)
 
@@ -112,7 +113,22 @@ private def isPointerType : Ty → Bool
   | .ptrMut _ | .ptrConst _ => true
   | _ => false
 
-private def resolveTypeE (ty : Ty) : ElabM Ty := do
+/-- Substitute type variables in a type. -/
+private def substTy (mapping : List (String × Ty)) : Ty → Ty
+  | .named name => match mapping.lookup name with | some t => t | none => .named name
+  | .typeVar name => match mapping.lookup name with | some t => t | none => .typeVar name
+  | .ref inner => .ref (substTy mapping inner)
+  | .refMut inner => .refMut (substTy mapping inner)
+  | .ptrMut inner => .ptrMut (substTy mapping inner)
+  | .ptrConst inner => .ptrConst (substTy mapping inner)
+  | .array elem n => .array (substTy mapping elem) n
+  | .generic name args => .generic name (args.map (substTy mapping))
+  | .fn_ params capSet retTy => .fn_ (params.map (substTy mapping)) capSet (substTy mapping retTy)
+  | .heap inner => .heap (substTy mapping inner)
+  | .heapArray inner => .heapArray (substTy mapping inner)
+  | ty => ty
+
+private partial def resolveTypeE (ty : Ty) : ElabM Ty := do
   match ty with
   | .named name =>
     let env ← getEnv
@@ -124,7 +140,11 @@ private def resolveTypeE (ty : Ty) : ElabM Ty := do
     else
       match env.typeAliases.lookup name with
       | some resolved => return resolved
-      | none => return ty
+      | none =>
+        -- Erase newtypes: resolve to inner type
+        match env.newtypes.find? fun nt => nt.name == name with
+        | some nt => resolveTypeE nt.innerTy
+        | none => return ty
   | .ref inner => return .ref (← resolveTypeE inner)
   | .refMut inner => return .refMut (← resolveTypeE inner)
   | .ptrMut inner => return .ptrMut (← resolveTypeE inner)
@@ -132,7 +152,14 @@ private def resolveTypeE (ty : Ty) : ElabM Ty := do
   | .array elem n => return .array (← resolveTypeE elem) n
   | .generic "Heap" [inner] => return .heap (← resolveTypeE inner)
   | .generic "HeapArray" [inner] => return .heapArray (← resolveTypeE inner)
-  | .generic name args => return .generic name (← args.mapM resolveTypeE)
+  | .generic name args =>
+    let env ← getEnv
+    match env.newtypes.find? fun nt => nt.name == name with
+    | some nt =>
+      let resolvedArgs ← args.mapM resolveTypeE
+      let mapping := nt.typeParams.zip resolvedArgs
+      resolveTypeE (substTy mapping nt.innerTy)
+    | none => return .generic name (← args.mapM resolveTypeE)
   | .fn_ params capSet retTy =>
     return .fn_ (← params.mapM resolveTypeE) capSet (← resolveTypeE retTy)
   | _ => return ty
@@ -157,20 +184,6 @@ private def addVar (name : String) (ty : Ty) : ElabM Unit := do
   let env ← getEnv
   setEnv { env with vars := (name, ty) :: env.vars }
 
-/-- Substitute type variables in a type. -/
-private def substTy (mapping : List (String × Ty)) : Ty → Ty
-  | .named name => match mapping.lookup name with | some t => t | none => .named name
-  | .typeVar name => match mapping.lookup name with | some t => t | none => .typeVar name
-  | .ref inner => .ref (substTy mapping inner)
-  | .refMut inner => .refMut (substTy mapping inner)
-  | .ptrMut inner => .ptrMut (substTy mapping inner)
-  | .ptrConst inner => .ptrConst (substTy mapping inner)
-  | .array elem n => .array (substTy mapping elem) n
-  | .generic name args => .generic name (args.map (substTy mapping))
-  | .fn_ params capSet retTy => .fn_ (params.map (substTy mapping)) capSet (substTy mapping retTy)
-  | .heap inner => .heap (substTy mapping inner)
-  | .heapArray inner => .heapArray (substTy mapping inner)
-  | ty => ty
 
 /-- Resolve Self to concrete impl type in a type. -/
 private def resolveSelf : Ty → Ty → Ty
@@ -379,8 +392,14 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
         let fieldTy := substTy mapping f.ty
         let fieldTy ← resolveTypeE fieldTy
         return .fieldAccess cObj field fieldTy
-      | none => throwElab (.structHasNoField structName field)
-    | none => throwElab .fieldAccessNonStruct
+      | none =>
+        -- Erased newtype wrapping a struct: .0 is identity
+        if field == "0" then return cObj
+        else throwElab (.structHasNoField structName field)
+    | none =>
+      -- Erased newtype: .0 on a primitive type is identity
+      if field == "0" then return cObj
+      else throwElab .fieldAccessNonStruct
 
   | .enumLit _ enumName variant typeArgs fields =>
     match ← lookupEnum enumName with
@@ -641,8 +660,23 @@ partial def elabCall (fnName : String) (typeArgs : List Ty) (args : List Expr)
     let cArg ← elabExpr arg
     let innerTy := match cArg.ty with | .heap t => t | _ => .placeholder
     return .call "free" [] [cArg] innerTy
-  -- Intercept sizeof
-  if fnName == "sizeof" || fnName.endsWith "_sizeof" then
+  -- Intercept newtype constructor: erase to inner expression
+  let env ← getEnv
+  match env.newtypes.find? fun nt => nt.name == fnName with
+  | some _nt =>
+    let arg := match args with | a :: _ => a | [] => Expr.intLit default 0
+    let cArg ← elabExpr arg
+    return cArg  -- newtype erasure: just return the inner value
+  | none => pure ()
+  -- Intercept unwrap(x): erase to inner expression (only if not a user-defined function)
+  if fnName == "unwrap" && args.length == 1 then
+    let isUserFn ← lookupFnSig "unwrap"
+    if isUserFn.isNone then
+      let arg := match args with | a :: _ => a | [] => Expr.intLit default 0
+      let cArg ← elabExpr arg
+      return cArg  -- newtype erasure: just return the inner value
+  -- Intercept sizeof/alignof
+  if fnName == "sizeof" || fnName == "alignof" || fnName.endsWith "_sizeof" then
     return .call fnName typeArgs [] .uint
   -- Intercept vec_new::<T>()
   if fnName == "vec_new" then
@@ -1122,6 +1156,7 @@ partial def elabModule (m : Module)
     constants := constantsMap
     traits := allTraits
     allFnSigPairs := fnSigPairs
+    newtypes := m.newtypes
   }
   -- Elaborate all functions
   let regularFns := m.functions.map fun f => (f, (none : Option Ty))
@@ -1157,7 +1192,8 @@ partial def elabModule (m : Module)
     let cStructs := m.structs.map fun sd =>
       { name := sd.name, typeParams := sd.typeParams,
         fields := sd.fields.map fun f => (f.name, f.ty),
-        isPublic := sd.isPublic, isCopy := sd.isCopy, isReprC := sd.isReprC : CStructDef }
+        isPublic := sd.isPublic, isCopy := sd.isCopy, isReprC := sd.isReprC,
+        isPacked := sd.isPacked, reprAlign := sd.reprAlign : CStructDef }
     -- Build extern fns
     let cExterns := m.externFns.map fun ef =>
       (ef.name, ef.params.map fun p => (p.name, p.ty), ef.retTy)

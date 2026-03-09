@@ -72,6 +72,7 @@ structure TypeEnv where
   traitImpls : List (String × String) := []  -- (typeName, traitName) pairs for bound checking
   traits : List TraitDef := []             -- all trait definitions (for method lookup on type vars)
   currentTypeBounds : List (String × List String) := []  -- current function's type param bounds
+  newtypes : List NewtypeDef := []         -- all newtype definitions
   deriving Repr
 
 abbrev CheckM := ExceptT String (StateM TypeEnv)
@@ -182,6 +183,9 @@ inductive CheckError where
   | rawPtrDerefRequiresUnsafe
   | rawPtrAssignRequiresUnsafe
   | unsafeCastRequiresUnsafe (fromTy : String) (toTy : String)
+  -- Slice 9: repr(align/packed) validation
+  | reprPackedAndAlignConflict (structName : String)
+  | reprAlignNotPowerOfTwo (structName : String) (n : Nat)
 
 def CheckError.message : CheckError → String
   -- Slice 1
@@ -294,6 +298,9 @@ def CheckError.message : CheckError → String
   | .rawPtrDerefRequiresUnsafe => "dereferencing raw pointer requires Unsafe capability"
   | .rawPtrAssignRequiresUnsafe => "assigning through raw pointer requires Unsafe capability"
   | .unsafeCastRequiresUnsafe fromTy toTy => s!"cast from {fromTy} to {toTy} requires Unsafe capability"
+  -- Slice 9
+  | .reprPackedAndAlignConflict structName => s!"struct '{structName}' cannot have both #[repr(packed)] and #[repr(align(...))]"
+  | .reprAlignNotPowerOfTwo structName n => s!"#[repr(align({n}))] on struct '{structName}' must be a power of two"
 
 def throwCheck (e : CheckError) : CheckM α := throw e.message
 
@@ -427,7 +434,7 @@ def resolveType (ty : Ty) : CheckM Ty := do
   | _ => return ty
 
 /-- Is this type Copy (non-linear)? Primitives are Copy; structs are linear. -/
-def isCopyType (ty : Ty) : CheckM Bool := do
+partial def isCopyType (ty : Ty) : CheckM Bool := do
   match ty with
   | .int | .uint | .i8 | .i16 | .i32 | .u8 | .u16 | .u32 => return true
   | .bool | .float64 | .float32 | .char | .unit => return true
@@ -441,14 +448,17 @@ def isCopyType (ty : Ty) : CheckM Bool := do
   | .heap _ => return false    -- Heap pointers are linear
   | .heapArray _ => return false
   | .named name =>
-    -- Check if the struct/enum has isCopy = true
+    -- Check if the struct/enum has isCopy = true, or newtype wraps a Copy type
     let env ← getEnv
     match env.structs.find? fun sd => sd.name == name with
     | some sd => return sd.isCopy
     | none =>
       match env.enums.find? fun ed => ed.name == name with
       | some ed => return ed.isCopy
-      | none => return false
+      | none =>
+        match env.newtypes.find? fun nt => nt.name == name with
+        | some nt => isCopyType nt.innerTy
+        | none => return false
   | .generic _ _ => return false  -- Generic instantiations are linear
   | .typeVar _ => return false  -- Generic values remain linear unless proven Copy
   | .array t _ => isCopyType t  -- Array of copy types is copy
@@ -505,6 +515,10 @@ def lookupEnumVariant (enumName : String) (variantName : String) : CheckM (Optio
   match ← lookupEnum enumName with
   | some ed => return ed.variants.find? fun v => v.name == variantName
   | none => return none
+
+def lookupNewtype (name : String) : CheckM (Option NewtypeDef) := do
+  let env ← getEnv
+  return env.newtypes.find? fun nt => nt.name == name
 
 def lookupFn (name : String) : CheckM (Option FnSig) := do
   let env ← getEnv
@@ -923,7 +937,50 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
         throwCheck (.whileBreakTypeMismatch (tyToString bTy) (tyToString elseTy))
       return elseTy
     | none => return elseTy
-  | .call _ fnName typeArgs args =>
+  | .call _sp fnName typeArgs args =>
+    -- Intercept newtype wrapping: NewtypeName(expr)
+    match ← lookupNewtype fnName with
+    | some nt =>
+      if args.length != 1 then throw s!"newtype '{fnName}' constructor takes exactly 1 argument"
+      if !typeArgs.isEmpty then throw s!"newtype '{fnName}' constructor does not take type arguments"
+      -- For generic newtypes, infer type args from hint
+      let inferredTypeArgs := if nt.typeParams.isEmpty then []
+        else match hint with
+          | some (.generic n hintArgs) => if n == fnName then hintArgs else []
+          | _ => []
+      let mapping := nt.typeParams.zip inferredTypeArgs
+      let resolvedInnerTy := substTy mapping nt.innerTy
+      let arg := match args with | a :: _ => a | [] => Expr.intLit default 0
+      let argTy ← checkExpr arg (some resolvedInnerTy)
+      expectTy resolvedInnerTy argTy s!"newtype '{fnName}' constructor"
+      -- Consume linear variables passed to newtype constructor (ownership moves)
+      match arg with
+      | .ident _ varName => consumeVarIfExists varName
+      | _ => pure ()
+      if inferredTypeArgs.isEmpty then return .named fnName
+      else return .generic fnName inferredTypeArgs
+    | none =>
+    -- Intercept sizeof::<T>() and alignof::<T>() builtins
+    if fnName == "sizeof" || fnName == "alignof" then
+      if args.length != 0 then throw s!"{fnName} takes no value arguments"
+      if typeArgs.length != 1 then throw s!"{fnName} requires exactly 1 type argument: {fnName}::<T>()"
+      return .uint
+    -- Intercept unwrap(x) for newtype unwrapping (only if not a user-defined function)
+    if fnName == "unwrap" && args.length == 1 then
+      -- Check if unwrap is a user-defined function; if so, skip this intercept
+      let isUserFn ← lookupFn "unwrap"
+      if isUserFn.isNone then
+        let arg := match args with | a :: _ => a | [] => Expr.intLit default 0
+        let argTy ← checkExpr arg
+        let ntName := match argTy with | .named n => n | _ => ""
+        if ntName == "" then throw s!"unwrap() requires a newtype argument, got {tyToString argTy}"
+        match ← lookupNewtype ntName with
+        | some nt =>
+          match arg with
+          | .ident _ varName => consumeVarIfExists varName
+          | _ => pure ()
+          return nt.innerTy
+        | none => throw s!"unwrap() requires a newtype argument, '{ntName}' is not a newtype"
     -- Intercept abort() calls
     if fnName == "abort" then
       if args.length != 0 then throwCheck (.builtinWrongArgCount "abort" 0)
@@ -1351,6 +1408,19 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       | _ => ("", [])
     if structName == "" then throwCheck .fieldAccessNonStruct
     else
+      -- Check for newtype .0 unwrap
+      match ← lookupNewtype structName with
+      | some nt =>
+        if field == "0" then
+          -- Consume the newtype variable if linear
+          match obj with
+          | .ident _ varName => consumeVarIfExists varName
+          | _ => pure ()
+          -- Substitute type params for generic newtypes
+          let mapping := nt.typeParams.zip typeArgs
+          return substTy mapping nt.innerTy
+        else throw s!"newtype '{structName}' only supports .0 field access"
+      | none =>
       match ← lookupStruct structName with
       | some sd =>
         match sd.fields.find? fun f => f.name == field with
@@ -2318,10 +2388,12 @@ def checkModule (m : Module) (importedFnSigs : List (String × FnSig) := [])
   let constantsMap : List (String × Ty) := m.constants.map fun c => (c.name, c.ty)
   -- Build trait impl pairs for bound checking
   let traitImplPairs : List (String × String) := allTraitImpls.map fun tb => (tb.typeName, tb.traitName)
+  -- Collect newtypes from module and submodules
+  let allNewtypes := m.newtypes ++ m.submodules.foldl (fun acc sub => acc ++ sub.newtypes) []
   let initEnv : TypeEnv :=
     { vars := [], structs := allStructs, enums := allEnums, functions := allSigs,
       fnNames := allNames, loopDepth := 0, typeAliases := typeAliasMap, constants := constantsMap,
-      traitImpls := traitImplPairs, allFnSigs := fnSigPairs }
+      traitImpls := traitImplPairs, allFnSigs := fnSigPairs, newtypes := allNewtypes }
   -- Helper: check if a type is copy (pure context, uses struct/enum defs)
   let isCopyTyPure : Ty → Bool := fun ty =>
     match ty with
@@ -2387,6 +2459,22 @@ def checkModule (m : Module) (importedFnSigs : List (String × FnSig) := [])
           | none => .ok ()
       else .ok ()
   match reprCCheck with
+  | .error e => .error e
+  | .ok () =>
+  -- Validate repr(packed) + repr(align) conflict and align power-of-2
+  let reprAttrCheck := m.structs.foldl (init := (Except.ok () : Except String Unit)) fun acc sd =>
+    match acc with
+    | .error e => .error e
+    | .ok () =>
+      if sd.isPacked && sd.reprAlign.isSome then
+        .error (CheckError.message (.reprPackedAndAlignConflict sd.name))
+      else match sd.reprAlign with
+        | some n =>
+          if n == 0 || (n &&& (n - 1)) != 0 then
+            .error (CheckError.message (.reprAlignNotPowerOfTwo sd.name n))
+          else .ok ()
+        | none => .ok ()
+  match reprAttrCheck with
   | .error e => .error e
   | .ok () =>
   -- Validate extern fn params and return types are FFI-safe

@@ -26,6 +26,7 @@ inductive SymKind where
   | externFn (params : List Param) (retTy : Ty)
   | const (ty : Ty)
   | implMethod (typeName : String) (params : List Param) (retTy : Ty)
+  | newtype (def_ : NewtypeDef)
 
 inductive ResolveError where
   | undeclaredVariable (name : String)
@@ -139,7 +140,7 @@ private def builtinFns : List String :=
     "int_to_string", "string_to_int", "string_length", "string_char_at",
     "string_contains", "string_slice", "string_trim",
     "print_int", "print_bool", "print_char",
-    "socket_close", "add",
+    "socket_close", "add", "sizeof", "alignof", "unwrap",
     -- Additional builtins registered by Check
     "print_string", "eprint_string", "read_line",
     "bool_to_string", "float_to_string",
@@ -346,6 +347,9 @@ private def buildGlobalScope (m : Module) : Scope × List String :=
   -- Type aliases
   let symbols := symbols ++ m.typeAliases.map fun ta => (ta.name, SymKind.typeAlias ta.targetTy)
   let types := types ++ m.typeAliases.map (·.name)
+  -- Newtypes
+  let symbols := symbols ++ m.newtypes.map fun nt => (nt.name, SymKind.newtype nt)
+  let types := types ++ m.newtypes.map (·.name)
   -- Extern functions
   let symbols := symbols ++ m.externFns.map fun ef => (ef.name, SymKind.externFn ef.params ef.retTy)
   -- Impl block methods (mangled name only: TypeName_methodName)

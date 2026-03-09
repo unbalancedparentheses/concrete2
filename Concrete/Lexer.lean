@@ -63,6 +63,7 @@ def lookupKeyword : String → Option TokenKind
   | "defer" => some .defer_
   | "borrow" => some .borrow_
   | "in" => some .in_
+  | "newtype" => some .newtype_
   | _ => none
 
 private def isIdentStart (c : Char) : Bool :=

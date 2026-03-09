@@ -29,7 +29,7 @@ def isModuleStub (m : Module) : Bool :=
   m.functions.isEmpty && m.structs.isEmpty && m.enums.isEmpty &&
   m.imports.isEmpty && m.implBlocks.isEmpty && m.traits.isEmpty &&
   m.traitImpls.isEmpty && m.constants.isEmpty && m.typeAliases.isEmpty &&
-  m.externFns.isEmpty && m.submodules.isEmpty
+  m.externFns.isEmpty && m.newtypes.isEmpty && m.submodules.isEmpty
 
 /-- Get directory of a file path. -/
 def dirOf (path : String) : String :=

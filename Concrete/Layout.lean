@@ -42,7 +42,13 @@ partial def tyAlign (ctx : Ctx) : Ty → Nat
   | .generic "HashMap" _ => 8
   | .named name | .generic name _ =>
     match lookupStruct ctx name with
-    | some sd => sd.fields.foldl (fun maxA (_, ft) => Nat.max maxA (tyAlign ctx ft)) 1
+    | some sd =>
+      if sd.isPacked then 1
+      else
+        let natural := sd.fields.foldl (fun maxA (_, ft) => Nat.max maxA (tyAlign ctx ft)) 1
+        match sd.reprAlign with
+        | some a => Nat.max natural a
+        | none => natural
     | none =>
       match lookupEnum ctx name with
       | some ed => Nat.max 4 (ed.variants.foldl (fun maxA (_, vfields) =>
@@ -73,10 +79,17 @@ partial def tySize (ctx : Ctx) : Ty → Nat
   | .named name | .generic name _ =>
     match lookupStruct ctx name with
     | some sd =>
-      let (sz, _) := sd.fields.foldl (fun (acc, _) (_, ft) =>
-        let aligned := alignUp acc (tyAlign ctx ft)
-        (aligned + tySize ctx ft, ())) (0, ())
-      alignUp sz (sd.fields.foldl (fun maxA (_, ft) => Nat.max maxA (tyAlign ctx ft)) 1)
+      if sd.isPacked then
+        -- Packed: no padding between fields, alignment = 1
+        sd.fields.foldl (fun acc (_, ft) => acc + tySize ctx ft) 0
+      else
+        let (sz, _) := sd.fields.foldl (fun (acc, _) (_, ft) =>
+          let aligned := alignUp acc (tyAlign ctx ft)
+          (aligned + tySize ctx ft, ())) (0, ())
+        let structAlign := match sd.reprAlign with
+          | some a => Nat.max (sd.fields.foldl (fun maxA (_, ft) => Nat.max maxA (tyAlign ctx ft)) 1) a
+          | none => sd.fields.foldl (fun maxA (_, ft) => Nat.max maxA (tyAlign ctx ft)) 1
+        alignUp sz structAlign
     | none =>
       match lookupEnum ctx name with
       | some ed =>
@@ -98,14 +111,23 @@ partial def tySize (ctx : Ctx) : Ty → Nat
 def fieldOffset (ctx : Ctx) (structName fieldName : String) : Nat :=
   match lookupStruct ctx structName with
   | some sd =>
-    let (offset, _) := sd.fields.foldl (fun (acc : Nat × Bool) (n, t) =>
-      let (off, found) := acc
-      if found then (off, true)
-      else
-        let aligned := alignUp off (tyAlign ctx t)
-        if n == fieldName then (aligned, true)
-        else (aligned + tySize ctx t, false)) (0, false)
-    offset
+    if sd.isPacked then
+      -- Packed: no alignment padding
+      let (offset, _) := sd.fields.foldl (fun (acc : Nat × Bool) (n, t) =>
+        let (off, found) := acc
+        if found then (off, true)
+        else if n == fieldName then (off, true)
+        else (off + tySize ctx t, false)) (0, false)
+      offset
+    else
+      let (offset, _) := sd.fields.foldl (fun (acc : Nat × Bool) (n, t) =>
+        let (off, found) := acc
+        if found then (off, true)
+        else
+          let aligned := alignUp off (tyAlign ctx t)
+          if n == fieldName then (aligned, true)
+          else (aligned + tySize ctx t, false)) (0, false)
+      offset
   | none => 0
 
 /-- Maximum payload size across all variants of an enum. -/

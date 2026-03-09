@@ -88,6 +88,8 @@ structure CStructDef where
   isPublic : Bool := false
   isCopy : Bool := false
   isReprC : Bool := false
+  isPacked : Bool := false
+  reprAlign : Option Nat := none
 
 structure CEnumDef where
   name : String

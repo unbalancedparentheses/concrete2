@@ -4,7 +4,7 @@ This is the implementation plan for the Concrete programming language. For the f
 
 ## What's Built
 
-The Lean 4 compiler implements the core surface language plus the new internal IR pipeline pieces: Core IR, elaboration, Core validation, monomorphization, SSA lowering, SSA verification/cleanup, and SSA codegen. All 243 main tests pass, and the SSA-specific suite passes as well (`155/155`).
+The Lean 4 compiler implements the core surface language plus the new internal IR pipeline pieces: Core IR, elaboration, Core validation, monomorphization, SSA lowering, SSA verification/cleanup, and SSA codegen. All 255 main tests pass, and the SSA-specific suite passes as well (`163/163`).
 
 **Done:**
 - Lexer, LL(1) parser, AST
@@ -39,8 +39,11 @@ The Lean 4 compiler implements the core surface language plus the new internal I
 - Networking: tcp_connect, tcp_listen, tcp_accept, socket_send, socket_recv, socket_close (require Network)
 - FFI: `extern fn` declarations, `Unsafe` capability gating (extern calls, raw pointer deref, raw pointer assign, unsafe casts)
 - `#[repr(C)]` attribute for structs with FFI-safe type validation at extern boundaries
+- `newtype`: zero-cost nominal wrappers (`newtype UserId = Int;`), no implicit conversions, wrap via `Name(expr)`, unwrap via `.0`, generic newtypes, Copy/linear propagation
+- `sizeof::<T>()`/`alignof::<T>()` compile-time intrinsics
+- `#[repr(packed)]` and `#[repr(align(N))]` struct layout attributes
 
-**Not yet implemented:** transmute, newtype, MLIR backend, kernel formalization, runtime, fully authoritative standalone resolution.
+**Not yet implemented:** transmute, MLIR backend, kernel formalization, runtime, fully authoritative standalone resolution.
 
 ---
 
@@ -111,16 +114,18 @@ Once `FileSummary` exists, make the main compiler products explicit and reusable
 - SSA module
 
 8. **Diagnostics infrastructure**
-Build on the structured errors with stronger shared machinery for:
+Build on the structured errors with stronger shared compiler infrastructure for:
 - range-aware spans
 - secondary labels/notes
 - phase-aware rendering
 - cleaner multi-diagnostic presentation
+- reusable diagnostic data/formatting paths across passes
 
-9. **Backend boundary discipline**
+9. **Multi-backend boundary over SSA**
 Keep SSA as the backend boundary and make that architectural rule explicit:
 - `EmitSSA` remains one backend over verified/cleaned SSA
-- any future MLIR backend should consume the same boundary
+- any future MLIR backend should consume the same SSA boundary
+- future backends should differ only after SSA, not by introducing parallel semantic lowering paths
 - avoid introducing a second semantic backend path
 
 10. **Stdlib growth**

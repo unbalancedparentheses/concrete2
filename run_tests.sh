@@ -416,6 +416,22 @@ run_err "$TESTDIR/error_ptr_assign_no_unsafe.con" "requires capability"
 run_err "$TESTDIR/error_ptr_cast_no_unsafe.con" "requires capability"
 run_err "$TESTDIR/error_int_to_ptr_no_unsafe.con" "requires capability"
 
+# === Newtype tests ===
+run_ok "$TESTDIR/newtype_basic.con" 42
+run_ok "$TESTDIR/newtype_copy.con" 20
+run_ok "$TESTDIR/newtype_linear.con" 7
+run_ok "$TESTDIR/newtype_generic.con" 100
+run_err "$TESTDIR/error_newtype_no_implicit.con" "type mismatch"
+run_err "$TESTDIR/error_newtype_wrong_inner.con" "type mismatch"
+
+# === ABI / Layout tests ===
+run_ok "$TESTDIR/sizeof_basic.con" 12
+run_ok "$TESTDIR/alignof_basic.con" 12
+run_ok "$TESTDIR/repr_packed.con" 7
+run_ok "$TESTDIR/repr_align.con" 16
+run_err "$TESTDIR/error_repr_packed_align.con" "cannot have both"
+run_err "$TESTDIR/error_repr_align_not_pow2.con" "must be a power of two"
+
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 if [ "$FAIL" -gt 0 ]; then

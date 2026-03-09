@@ -581,7 +581,11 @@ partial def parsePostfix (e : Expr) : ParseM Expr := do
   while tk == .dot || tk == .question || tk == .lbracket || tk == .as_ || tk == .arrow do
     if tk == .dot then
       advance
-      let fieldName ← expectIdent
+      -- Handle .0 (numeric tuple/newtype field access)
+      let nextTk ← peek
+      let fieldName ← match nextTk with
+        | .intLit n => advance; pure (toString n)
+        | _ => expectIdent
       -- Check if this is a method call: .name(args) or .name::<T>(args)
       let next ← peek
       if next == .doubleColon then
@@ -1377,9 +1381,15 @@ partial def parseImport : ParseM ImportDecl := do
   expect .semicolon
   return { moduleName := modPath, symbols, span := sp }
 
-/-- Parse an attribute like #[repr(C)], #[intrinsic = "sizeof"], or #[foo].
-    Returns (key, optional value). -/
-partial def parseAttribute : ParseM (String × Option String) := do
+/-- Repr attribute result: isReprC, reprAlign, isPacked. -/
+structure ReprOpts where
+  isReprC : Bool := false
+  reprAlign : Option Nat := none
+  isPacked : Bool := false
+
+/-- Parse an attribute like #[repr(C, align(16), packed)], #[intrinsic = "sizeof"], or #[foo].
+    Returns (key, optional value, optional repr opts). -/
+partial def parseAttribute : ParseM (String × Option String × Option ReprOpts) := do
   expect .hash
   expect .lbracket
   let key ← expectIdent
@@ -1394,17 +1404,58 @@ partial def parseAttribute : ParseM (String × Option String) := do
         let sp ← peekSpan
         throw s!"expected string literal in attribute value at {sp.line}:{sp.col}"
     expect .rbracket
-    return (key, some val)
+    return (key, some val, none)
+  else if tk == .lparen && key == "repr" then
+    -- #[repr(C, align(16), packed)]
+    advance
+    let mut opts : ReprOpts := {}
+    let mut tk2 ← peek
+    while tk2 != .rparen && tk2 != .eof do
+      let arg ← expectIdent
+      if arg == "C" then
+        opts := { opts with isReprC := true }
+      else if arg == "packed" then
+        opts := { opts with isPacked := true }
+      else if arg == "align" then
+        expect .lparen
+        let alignTk ← peek
+        match alignTk with
+        | .intLit n =>
+          advance
+          opts := { opts with reprAlign := some n.toNat }
+        | _ =>
+          let sp ← peekSpan
+          throw s!"expected integer literal in align() at {sp.line}:{sp.col}"
+        expect .rparen
+      else
+        let sp ← peekSpan
+        throw s!"unknown repr option '{arg}' at {sp.line}:{sp.col}"
+      tk2 ← peek
+      if tk2 == .comma then advance; tk2 ← peek
+    expect .rparen
+    expect .rbracket
+    return ("repr", none, some opts)
   else if tk == .lparen then
     -- #[key(value)]
     advance
     let val ← expectIdent
     expect .rparen
     expect .rbracket
-    return (key, some val)
+    return (key, some val, none)
   else
     expect .rbracket
-    return (key, none)
+    return (key, none, none)
+
+/-- Parse a newtype definition: newtype Name = Type; or newtype Name<T> = Type; -/
+partial def parseNewtypeDef : ParseM NewtypeDef := do
+  let sp ← peekSpan
+  expect .newtype_
+  let name ← expectIdent
+  let (typeParams, typeBounds) ← parseTypeParams
+  expect .assign
+  let innerTy ← parseType
+  expect .semicolon
+  return { name, innerTy, typeParams, typeBounds, span := sp }
 
 /-- Parse a const declaration: const name: Type = value; -/
 partial def parseConstDef : ParseM ConstDef := do
@@ -1455,40 +1506,44 @@ partial def parseModuleBody (stopToken : TokenKind) : ParseM Module := do
   let mut constants : List ConstDef := []
   let mut typeAliases : List TypeAlias := []
   let mut externFns : List ExternFnDecl := []
+  let mut newtypes : List NewtypeDef := []
   let mut submodules : List Module := []
-  let mut pendingReprC := false
+  let mut pendingRepr : Option ReprOpts := none
   let mut tk ← peek
   while tk != stopToken && tk != .eof do
     -- Parse attributes (but don't continue — let the next token be parsed)
     if tk == .hash then
-      let (key, val) ← parseAttribute
-      if key == "repr" && val == some "C" then
-        pendingReprC := true
+      let (key, _, reprOpts) ← parseAttribute
+      if key == "repr" then
+        pendingRepr := reprOpts
       tk ← peek
     if tk == .import_ then
-      if pendingReprC then
+      if pendingRepr.isSome then
         let sp ← peekSpan
-        throw s!"#[repr(C)] can only be applied to struct definitions, at {sp.line}:{sp.col}"
+        throw s!"#[repr(...)] can only be applied to struct definitions, at {sp.line}:{sp.col}"
       let imp ← parseImport
       imports := imports ++ [imp]
     else
       let isPub := tk == .pub_
       if isPub then advance; tk ← peek
-      -- Check for pub extern fn
       if tk == .struct_ then
         let s ← parseStructDef
-        structs := structs ++ [{ s with isPublic := isPub, isReprC := pendingReprC }]
-        pendingReprC := false
+        let reprC := pendingRepr.map (·.isReprC) |>.getD false
+        let packed := pendingRepr.map (·.isPacked) |>.getD false
+        let reprA := pendingRepr.bind (·.reprAlign)
+        structs := structs ++ [{ s with isPublic := isPub, isReprC := reprC,
+                                        isPacked := packed, reprAlign := reprA }]
+        pendingRepr := none
       else if tk == .hash then
         -- Attribute before a declaration (after pub)
-        let (key, val) ← parseAttribute
-        if key == "repr" && val == some "C" then
-          pendingReprC := true
+        let (key, _, reprOpts) ← parseAttribute
+        if key == "repr" then
+          pendingRepr := reprOpts
       else
-        -- Any non-struct declaration: reject dangling #[repr(C)]
-        if pendingReprC then
+        -- Any non-struct declaration: reject dangling #[repr(...)]
+        if pendingRepr.isSome then
           let sp ← peekSpan
-          throw s!"#[repr(C)] can only be applied to struct definitions, at {sp.line}:{sp.col}"
+          throw s!"#[repr(...)] can only be applied to struct definitions, at {sp.line}:{sp.col}"
         if tk == .extern_ then
           let ext ← parseExternFn
           externFns := externFns ++ [{ ext with isPublic := isPub }]
@@ -1509,6 +1564,9 @@ partial def parseModuleBody (stopToken : TokenKind) : ParseM Module := do
         else if tk == .type_ then
           let ta ← parseTypeAlias
           typeAliases := typeAliases ++ [{ ta with isPublic := isPub }]
+        else if tk == .newtype_ then
+          let nt ← parseNewtypeDef
+          newtypes := newtypes ++ [{ nt with isPublic := isPub }]
         else if tk == .«mod» then
           -- Nested submodule (or mod declaration)
           advance  -- consume 'mod'
@@ -1551,7 +1609,7 @@ partial def parseModuleBody (stopToken : TokenKind) : ParseM Module := do
           throw s!"unexpected token {tk} at {sp.line}:{sp.col}"
     tk ← peek
   return { name := "", structs, enums, functions := fns, imports, implBlocks, traits,
-           traitImpls, constants, typeAliases, externFns, submodules }
+           traitImpls, constants, typeAliases, externFns, newtypes, submodules }
 
 partial def parseModule : ParseM Module := do
   expect .«mod»

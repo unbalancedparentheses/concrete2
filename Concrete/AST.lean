@@ -192,6 +192,17 @@ structure StructDef where
   isUnion : Bool := false
   isCopy : Bool := false
   isReprC : Bool := false
+  isPacked : Bool := false
+  reprAlign : Option Nat := none
+  span : Span := default
+  deriving Repr
+
+structure NewtypeDef where
+  name : String
+  innerTy : Ty
+  typeParams : List String := []
+  typeBounds : List (String × List String) := []
+  isPublic : Bool := false
   span : Span := default
   deriving Repr
 
@@ -278,6 +289,7 @@ structure Module where
   constants : List ConstDef := []
   typeAliases : List TypeAlias := []
   externFns : List ExternFnDecl := []
+  newtypes : List NewtypeDef := []
   submodules : List Module := []
 
 -- ============================================================
