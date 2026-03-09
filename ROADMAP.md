@@ -69,43 +69,38 @@ Syntax choices that diverge from the [spec blog post](https://federicocarrone.co
 
 ## Design Priorities After The New IR Pipeline
 
-Now that Core IR, elaboration, Core validation, monomorphization, SSA lowering, SSA verification/cleanup, and SSA codegen are in place, the next design-level work is:
+Now that Core IR, elaboration, Core validation, monomorphization, SSA lowering, SSA verification/cleanup, and SSA codegen are in place, the next work should prioritize compiler architecture first, then library/runtime growth.
 
-1. **Deepen ABI/layout**
-Build on the current `#[repr(C)]` and `Unsafe` baseline:
-- make layout/size/alignment guarantees explicit
-- tighten extern compatibility rules
-- define FFI-safe boundaries more sharply
-- add more edge-case ABI/layout tests
+Already completed in this arc:
 
-2. **`newtype`**
-Nominal wrappers over existing representations with no implicit conversions. This gives alias-like ergonomics with struct-level type separation.
+- **ABI/layout language surface**: `sizeof::<T>()`, `alignof::<T>()`, `#[repr(packed)]`, `#[repr(align(N))]`
+- **`newtype`**: zero-cost nominal wrappers, generic newtypes, Copy/linear propagation
+- **Value/reference model writeup**: documented in [`docs/VALUE_MODEL.md`](docs/VALUE_MODEL.md)
 
-3. **A stricter value/reference model**
-The language should stay very clear about when values are passed by value, when borrows are first-class references, and how raw pointers and `Heap<T>` differ operationally.
+Remaining architecture work, in order:
 
-4. **Small SSA optimizations**
+1. **Small SSA optimizations**
 Keep this deliberately modest at first:
 - constant folding
 - dead code elimination
 - CFG cleanup
 - trivial copy/phi cleanup
 
-5. **Summary-based frontend**
+2. **Summary-based frontend**
 Before the standard library grows much further, move the frontend toward file summaries as the main cross-file interface:
 - introduce an explicit `FileSummary` pass
 - make import/export validation consume summaries
 - keep method/type-directed body checking in `Check`
 - preserve the simple pass pipeline instead of moving to a query-first frontend
 
-6. **ABI/layout subsystem boundary**
+3. **ABI/layout subsystem boundary**
 Make layout and FFI concerns a clearer compiler subsystem instead of just scattered helpers:
 - centralize size/alignment/field-offset logic
 - make enum layout and payload rules explicit
 - separate extern ABI decisions from general type checking
 - keep FFI-safe validation tied to the same source of truth
 
-7. **Cacheable compiler artifacts**
+4. **Cacheable compiler artifacts**
 Once `FileSummary` exists, make the main compiler products explicit and reusable:
 - parsed file
 - file summary
@@ -113,7 +108,7 @@ Once `FileSummary` exists, make the main compiler products explicit and reusable
 - monomorphized Core
 - SSA module
 
-8. **Diagnostics infrastructure**
+5. **Diagnostics infrastructure**
 Build on the structured errors with stronger shared compiler infrastructure for:
 - range-aware spans
 - secondary labels/notes
@@ -121,14 +116,16 @@ Build on the structured errors with stronger shared compiler infrastructure for:
 - cleaner multi-diagnostic presentation
 - reusable diagnostic data/formatting paths across passes
 
-9. **Multi-backend boundary over SSA**
+6. **Multi-backend boundary over SSA**
 Keep SSA as the backend boundary and make that architectural rule explicit:
 - `EmitSSA` remains one backend over verified/cleaned SSA
 - any future MLIR backend should consume the same SSA boundary
 - future backends should differ only after SSA, not by introducing parallel semantic lowering paths
 - avoid introducing a second semantic backend path
 
-10. **Stdlib growth**
+After the architecture layer above:
+
+7. **Stdlib growth**
 Focus on the areas that pressure-test the language:
 - bytes / buffers
 - borrowed slices and text views
@@ -136,7 +133,7 @@ Focus on the areas that pressure-test the language:
 - a real networking layer
 - small formatting and test support improvements
 
-11. **Formalization**
+8. **Formalization**
 The cleaned pipeline is now stable enough that proof work over Core and the backend boundary is more valuable than more architecture churn.
 
 ---
