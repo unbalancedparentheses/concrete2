@@ -2590,6 +2590,9 @@ def checkProgram (modules : List Module) (summaryTable : List (String × FileSum
     let fnSigs := summary.functions.map fun (n, fs) =>
       (n, { params := fs.params, retTy := fs.retTy, typeParams := fs.typeParams,
             typeBounds := fs.typeBounds, capParams := fs.capParams, capSet := fs.capSet : FnSig })
+    let externSigs := summary.externFns.map fun ef =>
+      (ef.name, { params := ef.params.map fun p => (p.name, p.ty), retTy := ef.retTy : FnSig })
+    let fnSigs := fnSigs ++ externSigs
     (name, (fnSigs, summary.structs, summary.enums, summary.implBlocks, summary.traitImpls))
   -- Second pass: resolve imports and type-check each module
   let go := modules.foldlM (init := ()) fun () m => do

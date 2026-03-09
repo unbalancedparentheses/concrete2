@@ -432,6 +432,16 @@ run_ok "$TESTDIR/repr_align.con" 16
 run_err "$TESTDIR/error_repr_packed_align.con" "cannot have both"
 run_err "$TESTDIR/error_repr_align_not_pow2.con" "must be a power of two"
 
+# === Summary-path tests ===
+run_ok "$TESTDIR/summary_import_pub_fn.con" 42
+run_ok "$TESTDIR/summary_import_pub_constant.con" 42
+run_ok "$TESTDIR/summary_import_pub_extern.con" 42
+run_ok "$TESTDIR/summary_import_pub_newtype.con" 42
+run_ok "$TESTDIR/summary_import_type_alias.con" 42
+run_ok "$TESTDIR/summary_submodule.con" 42
+run_ok "$TESTDIR/summary_trait_impl_cross_module.con" 42
+run_err "$TESTDIR/error_summary_trait_missing_cross.con" "missing method"
+
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 if [ "$FAIL" -gt 0 ]; then

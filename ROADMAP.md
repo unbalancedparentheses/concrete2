@@ -81,9 +81,10 @@ Remaining architecture work, in order:
 
 1. **Summary-based frontend**
 Before the standard library grows much further, move the frontend toward file summaries as the main cross-file interface:
-- `FileSummary` exists
+- `FileSummary` exists as the declaration-level interface artifact
 - shallow/interface resolution split from body-level resolution is already landed in `Resolve`
 - shallow resolution now consumes summaries directly
+- summary-driven import/export now includes extern signatures
 - next: make summaries stable reusable frontend artifacts
 - make import/export validation consume summaries directly
 - keep method/type-directed body checking in `Check`
@@ -428,16 +429,17 @@ Planned compiler products:
 - checked/elaborated file
 
 Planned direction:
-- `FileSummary` now exists in `Concrete/FileSummary.lean`
+- `FileSummary` now exists in `Concrete/FileSummary.lean` as the declaration-level interface artifact
 - shallow/interface resolution and body resolution are now separate in `Resolve`
 - shallow resolution now consumes summaries directly
+- summary-driven import/export now includes extern signatures
 - next: make `FileSummary` a stable reusable frontend artifact
 - keep cross-file dependencies declaration-level where possible
 - split shallow/interface work from body-level resolution
 
 This keeps the frontend explicit and batch-oriented without moving to a query-first architecture.
 
-**Status:** In progress. `Resolve` now has a shallow phase (`resolveShallow`) and a body phase (`resolveBodies`), `FileSummary` exists, and shallow resolution consumes summaries directly. The next step is to turn summaries into stable reusable frontend artifacts that other stages can cache and consume explicitly.
+**Status:** In progress. `Resolve` now has a shallow phase (`resolveShallow`) and a body phase (`resolveBodies`), `FileSummary` exists as the declaration-level interface artifact, shallow resolution consumes summaries directly, and summary-driven import/export includes extern signatures. The next step is to turn summaries into stable reusable frontend artifacts that other stages can cache and consume explicitly.
 
 ### A4: Core Validation
 
@@ -2163,7 +2165,7 @@ These do not block any phase above:
 | **12a** | Runtime in C | Not started | 7 |
 | **12b** | Runtime in Concrete | Not started | 8, 12a |
 
-**Next priorities:** fix the labeled-break PHI bug, sharpen `unsafe`, push the summary-based frontend (`FileSummary`, shallow vs body resolution), continue moving semantic authority into Core, then deepen ABI/layout, modest SSA optimizations, formalization, and stdlib growth.
+**Next priorities:** keep pushing the summary-based frontend (`FileSummary` as the declaration-level interface artifact, shallow vs body resolution, and extern-aware import/export), continue moving semantic authority into Core, then deepen ABI/layout, modest SSA optimizations, formalization, and stdlib growth.
 
 **Critical path for production use:** Architecture (A1-A5) → remaining stdlib (8f, 8h) → runtime (12a).
 

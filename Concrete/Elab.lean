@@ -1261,6 +1261,9 @@ def elabProgram (modules : List Module) (summaryTable : List (String × FileSumm
     let fnSigs := summary.functions.map fun (n, fs) =>
       (n, { params := fs.params, retTy := fs.retTy, typeParams := fs.typeParams,
             typeBounds := fs.typeBounds, capParams := fs.capParams, capSet := fs.capSet : ElabFnSig })
+    let externSigs := summary.externFns.map fun ef =>
+      (ef.name, { params := ef.params.map fun p => (p.name, p.ty), retTy := ef.retTy : ElabFnSig })
+    let fnSigs := fnSigs ++ externSigs
     (name, (fnSigs, summary.structs, summary.enums, summary.implBlocks, summary.traitImpls))
   -- Elaborate each module
   modules.foldlM (init := []) fun acc m => do

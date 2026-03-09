@@ -2,9 +2,11 @@ import Concrete.AST
 
 namespace Concrete
 
-/-! ## FileSummary — single cross-file interface
+/-! ## FileSummary — stable cross-file interface artifact
 
-Computes per-module export information once, consumed by Resolve, Check, and Elab.
+Built once by `buildSummaryTable`, consumed by Resolve, Check, and Elab.
+Each module's summary is computed exactly once; submodule summaries are reused
+from the parent's `submoduleSummaries` field (no redundant rebuilds).
 -/
 
 structure ConstSummary where
@@ -81,9 +83,8 @@ partial def buildFileSummary (m : Module) : FileSummary :=
 def buildSummaryTable (modules : List Module) : List (String × FileSummary) :=
   modules.foldl (fun acc m =>
     let summary := buildFileSummary m
-    let subEntries := m.submodules.foldl (fun acc2 sub =>
-      let subSummary := buildFileSummary sub
-      acc2 ++ [(m.name ++ "." ++ sub.name, subSummary), (sub.name, subSummary)]
+    let subEntries := summary.submoduleSummaries.foldl (fun acc2 (subName, subSummary) =>
+      acc2 ++ [(m.name ++ "." ++ subName, subSummary), (subName, subSummary)]
     ) []
     acc ++ [(m.name, summary)] ++ subEntries
   ) []
