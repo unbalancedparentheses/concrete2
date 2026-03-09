@@ -336,6 +336,24 @@ private def eliminateConstantBranches (blocks : List SBlock) : List SBlock :=
     | _ => b
 
 -- ============================================================
+-- Pass 7: Stale PHI entry cleanup
+-- ============================================================
+
+/-- For each block, remove PHI incoming entries whose source label is not
+    an actual predecessor (i.e., no block with that label has a terminator
+    targeting this block). This is needed after constant branch elimination
+    removes edges without updating PHIs in the target blocks. -/
+private def stripStalePhiEntries (blocks : List SBlock) : List SBlock :=
+  blocks.map fun b =>
+    let predLabels := blocks.filter (fun pred =>
+      (termSuccessors pred.term).contains b.label) |>.map (·.label)
+    { b with insts := b.insts.map fun inst =>
+      match inst with
+      | .phi dst incoming ty =>
+        .phi dst (incoming.filter fun (_, lbl) => predLabels.contains lbl) ty
+      | other => other }
+
+-- ============================================================
 -- Combined cleanup
 -- ============================================================
 
@@ -344,6 +362,8 @@ private def cleanupFn (f : SFnDef) : SFnDef :=
   let blocks := eliminateTrivialPhis blocks
   let blocks := foldConstants blocks
   let blocks := eliminateConstantBranches blocks
+  let blocks := stripStalePhiEntries blocks
+  let blocks := eliminateTrivialPhis blocks
   let blocks := eliminateDeadInstsFixpoint blocks
   let blocks := foldEmptyBlocks blocks
   let blocks := eliminateDeadBlocks blocks  -- re-run after branch elimination

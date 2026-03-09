@@ -1377,17 +1377,34 @@ partial def parseImport : ParseM ImportDecl := do
   expect .semicolon
   return { moduleName := modPath, symbols, span := sp }
 
-/-- Skip an attribute like #[intrinsic = "sizeof"] or #[langitem = "String"] -/
-partial def skipAttribute : ParseM Unit := do
+/-- Parse an attribute like #[repr(C)], #[intrinsic = "sizeof"], or #[foo].
+    Returns (key, optional value). -/
+partial def parseAttribute : ParseM (String × Option String) := do
   expect .hash
   expect .lbracket
-  let _key ← expectIdent
+  let key ← expectIdent
   let tk ← peek
   if tk == .assign then
+    -- #[key = "value"]
     advance
-    let _val ← peek  -- expect string
+    let valTk ← peek
+    let val ← match valTk with
+      | .strLit s => advance; pure s
+      | _ =>
+        let sp ← peekSpan
+        throw s!"expected string literal in attribute value at {sp.line}:{sp.col}"
+    expect .rbracket
+    return (key, some val)
+  else if tk == .lparen then
+    -- #[key(value)]
     advance
-  expect .rbracket
+    let val ← expectIdent
+    expect .rparen
+    expect .rbracket
+    return (key, some val)
+  else
+    expect .rbracket
+    return (key, none)
 
 /-- Parse a const declaration: const name: Type = value; -/
 partial def parseConstDef : ParseM ConstDef := do
@@ -1439,85 +1456,99 @@ partial def parseModuleBody (stopToken : TokenKind) : ParseM Module := do
   let mut typeAliases : List TypeAlias := []
   let mut externFns : List ExternFnDecl := []
   let mut submodules : List Module := []
+  let mut pendingReprC := false
   let mut tk ← peek
   while tk != stopToken && tk != .eof do
-    -- Skip attributes (but don't continue — let the next token be parsed)
+    -- Parse attributes (but don't continue — let the next token be parsed)
     if tk == .hash then
-      skipAttribute
+      let (key, val) ← parseAttribute
+      if key == "repr" && val == some "C" then
+        pendingReprC := true
       tk ← peek
     if tk == .import_ then
+      if pendingReprC then
+        let sp ← peekSpan
+        throw s!"#[repr(C)] can only be applied to struct definitions, at {sp.line}:{sp.col}"
       let imp ← parseImport
       imports := imports ++ [imp]
     else
       let isPub := tk == .pub_
       if isPub then advance; tk ← peek
       -- Check for pub extern fn
-      if tk == .extern_ then
-        let ext ← parseExternFn
-        externFns := externFns ++ [{ ext with isPublic := isPub }]
-      else if tk == .struct_ then
+      if tk == .struct_ then
         let s ← parseStructDef
-        structs := structs ++ [{ s with isPublic := isPub }]
-      else if tk == .enum_ then
-        let e ← parseEnumDef
-        enums := enums ++ [{ e with isPublic := isPub }]
-      else if tk == .impl_ then
-        let result ← parseImplBlock
-        match result with
-        | .inl ib => implBlocks := implBlocks ++ [ib]
-        | .inr tb => traitImpls := traitImpls ++ [tb]
-      else if tk == .trait_ then
-        let t ← parseTraitDef
-        traits := traits ++ [{ t with isPublic := isPub }]
-      else if tk == .const_ then
-        let c ← parseConstDef
-        constants := constants ++ [{ c with isPublic := isPub }]
-      else if tk == .type_ then
-        let ta ← parseTypeAlias
-        typeAliases := typeAliases ++ [{ ta with isPublic := isPub }]
-      else if tk == .«mod» then
-        -- Nested submodule (or mod declaration)
-        advance  -- consume 'mod'
-        let subName ← expectIdent
-        let tk2 ← peek
-        if tk2 == .lbrace then
-          expect .lbrace
-          let sub ← parseModuleBody .rbrace
-          expect .rbrace
-          submodules := submodules ++ [{ sub with name := subName }]
-        else
-          -- "mod other;" - module declaration
-          expect .semicolon
-          submodules := submodules ++ [{ name := subName, structs := [], enums := [], functions := [] }]
+        structs := structs ++ [{ s with isPublic := isPub, isReprC := pendingReprC }]
+        pendingReprC := false
       else if tk == .hash then
-        -- Attribute before a declaration
-        skipAttribute
-      else if tk == .fn then
-        -- Check if function has a body or is body-less (intrinsic/declaration)
-        let f ← parseFnDefOrDecl
-        match f with
-        | .inl fnDef => fns := fns ++ [{ fnDef with isPublic := isPub }]
-        | .inr extDef => externFns := externFns ++ [{ extDef with isPublic := isPub }]
-      else if tk == .ident "union" then
-        -- Parse union as a struct (all fields share memory)
-        advance  -- consume 'union'
-        let name ← expectIdent
-        let (typeParams, _typeBounds) ← parseTypeParams
-        expect .lbrace
-        let mut fields : List StructField := []
-        let mut tk3 ← peek
-        while tk3 != .rbrace && tk3 != .eof do
-          let fieldName ← expectIdent
-          expect .colon
-          let ty ← parseType
-          fields := fields ++ [{ name := fieldName, ty }]
-          tk3 ← peek
-          if tk3 == .comma then advance; tk3 ← peek
-        expect .rbrace
-        structs := structs ++ [{ name, typeParams, fields, isPublic := isPub, isUnion := true }]
+        -- Attribute before a declaration (after pub)
+        let (key, val) ← parseAttribute
+        if key == "repr" && val == some "C" then
+          pendingReprC := true
       else
-        let sp ← peekSpan
-        throw s!"unexpected token {tk} at {sp.line}:{sp.col}"
+        -- Any non-struct declaration: reject dangling #[repr(C)]
+        if pendingReprC then
+          let sp ← peekSpan
+          throw s!"#[repr(C)] can only be applied to struct definitions, at {sp.line}:{sp.col}"
+        if tk == .extern_ then
+          let ext ← parseExternFn
+          externFns := externFns ++ [{ ext with isPublic := isPub }]
+        else if tk == .enum_ then
+          let e ← parseEnumDef
+          enums := enums ++ [{ e with isPublic := isPub }]
+        else if tk == .impl_ then
+          let result ← parseImplBlock
+          match result with
+          | .inl ib => implBlocks := implBlocks ++ [ib]
+          | .inr tb => traitImpls := traitImpls ++ [tb]
+        else if tk == .trait_ then
+          let t ← parseTraitDef
+          traits := traits ++ [{ t with isPublic := isPub }]
+        else if tk == .const_ then
+          let c ← parseConstDef
+          constants := constants ++ [{ c with isPublic := isPub }]
+        else if tk == .type_ then
+          let ta ← parseTypeAlias
+          typeAliases := typeAliases ++ [{ ta with isPublic := isPub }]
+        else if tk == .«mod» then
+          -- Nested submodule (or mod declaration)
+          advance  -- consume 'mod'
+          let subName ← expectIdent
+          let tk2 ← peek
+          if tk2 == .lbrace then
+            expect .lbrace
+            let sub ← parseModuleBody .rbrace
+            expect .rbrace
+            submodules := submodules ++ [{ sub with name := subName }]
+          else
+            -- "mod other;" - module declaration
+            expect .semicolon
+            submodules := submodules ++ [{ name := subName, structs := [], enums := [], functions := [] }]
+        else if tk == .fn then
+          -- Check if function has a body or is body-less (intrinsic/declaration)
+          let f ← parseFnDefOrDecl
+          match f with
+          | .inl fnDef => fns := fns ++ [{ fnDef with isPublic := isPub }]
+          | .inr extDef => externFns := externFns ++ [{ extDef with isPublic := isPub }]
+        else if tk == .ident "union" then
+          -- Parse union as a struct (all fields share memory)
+          advance  -- consume 'union'
+          let name ← expectIdent
+          let (typeParams, _typeBounds) ← parseTypeParams
+          expect .lbrace
+          let mut fields : List StructField := []
+          let mut tk3 ← peek
+          while tk3 != .rbrace && tk3 != .eof do
+            let fieldName ← expectIdent
+            expect .colon
+            let ty ← parseType
+            fields := fields ++ [{ name := fieldName, ty }]
+            tk3 ← peek
+            if tk3 == .comma then advance; tk3 ← peek
+          expect .rbrace
+          structs := structs ++ [{ name, typeParams, fields, isPublic := isPub, isUnion := true }]
+        else
+          let sp ← peekSpan
+          throw s!"unexpected token {tk} at {sp.line}:{sp.col}"
     tk ← peek
   return { name := "", structs, enums, functions := fns, imports, implBlocks, traits,
            traitImpls, constants, typeAliases, externFns, submodules }

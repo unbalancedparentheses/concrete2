@@ -118,7 +118,13 @@ Source Text
 - Missing capability for effect-requiring calls.
 - Invalid borrow nesting, consuming borrowed references.
 
-**Invariant established:** Types consistent, linearity valid, capabilities valid. All names resolve within module scopes.
+**Invariant established:** Types consistent, linearity valid, capabilities valid, FFI-safe types at extern boundaries. All names resolve within module scopes.
+
+**FFI safety validation:**
+- `#[repr(C)]` structs cannot have type parameters.
+- All fields of `#[repr(C)]` structs must be FFI-safe types.
+- All `extern fn` parameters and return types must be FFI-safe.
+- FFI-safe types: integer types, float types, Bool, Char, `()`, raw pointers (`*mut T`, `*const T`), and `#[repr(C)]` structs.
 
 ---
 

@@ -173,6 +173,11 @@ inductive CheckError where
   | traitMethodRetTyMismatch (methodName : String) (expectedRetTy : String) (actualRetTy : String)
   | unknownModule (name : String)
   | notPublicInModule (symbol : String) (moduleName : String)
+  -- Slice 7: repr(C) / FFI safety
+  | reprCHasGenerics (structName : String)
+  | reprCFieldNotFFISafe (structName : String) (fieldName : String) (fieldTy : String)
+  | externFnParamNotFFISafe (fnName : String) (paramName : String) (paramTy : String)
+  | externFnReturnNotFFISafe (fnName : String) (retTy : String)
 
 def CheckError.message : CheckError → String
   -- Slice 1
@@ -276,6 +281,11 @@ def CheckError.message : CheckError → String
   | .traitMethodRetTyMismatch methodName expectedRetTy actualRetTy => s!"method '{methodName}' signature does not match trait definition: expected return type {expectedRetTy}, got {actualRetTy}"
   | .unknownModule name => s!"unknown module '{name}'"
   | .notPublicInModule symbol moduleName => s!"'{symbol}' is not public in module '{moduleName}'"
+  -- Slice 7
+  | .reprCHasGenerics structName => s!"#[repr(C)] struct '{structName}' cannot have type parameters"
+  | .reprCFieldNotFFISafe structName fieldName fieldTy => s!"#[repr(C)] struct '{structName}' has non-FFI-safe field '{fieldName}' of type {fieldTy}"
+  | .externFnParamNotFFISafe fnName paramName paramTy => s!"extern fn '{fnName}' has non-FFI-safe parameter '{paramName}' of type {paramTy}"
+  | .externFnReturnNotFFISafe fnName retTy => s!"extern fn '{fnName}' has non-FFI-safe return type {retTy}"
 
 def throwCheck (e : CheckError) : CheckM α := throw e.message
 
@@ -2328,6 +2338,45 @@ def checkModule (m : Module) (importedFnSigs : List (String × FnSig) := [])
         .error (CheckError.message (.copyDestroyConflict ed.name))
       else .ok ()
   match copyEnumCheck with
+  | .error e => .error e
+  | .ok () =>
+  -- FFI safety: isFFISafe predicate (uses allStructs to include imported structs)
+  let isFFISafe : Ty → Bool := fun ty =>
+    match ty with
+    | .int | .uint | .i8 | .i16 | .i32 | .u8 | .u16 | .u32 => true
+    | .float32 | .float64 => true
+    | .bool | .char | .unit => true
+    | .ptrMut _ | .ptrConst _ => true
+    | .named name => (allStructs.find? fun sd => sd.name == name).any fun sd => sd.isReprC
+    | _ => false
+  -- Validate repr(C) structs: no generics, all fields FFI-safe
+  let reprCCheck := m.structs.foldl (init := (Except.ok () : Except String Unit)) fun acc sd =>
+    match acc with
+    | .error e => .error e
+    | .ok () =>
+      if sd.isReprC then
+        if !sd.typeParams.isEmpty then
+          .error (CheckError.message (.reprCHasGenerics sd.name))
+        else
+          match sd.fields.find? fun f => !isFFISafe f.ty with
+          | some f => .error (CheckError.message (.reprCFieldNotFFISafe sd.name f.name (tyToString f.ty)))
+          | none => .ok ()
+      else .ok ()
+  match reprCCheck with
+  | .error e => .error e
+  | .ok () =>
+  -- Validate extern fn params and return types are FFI-safe
+  let externFnCheck := m.externFns.foldl (init := (Except.ok () : Except String Unit)) fun acc ef =>
+    match acc with
+    | .error e => .error e
+    | .ok () =>
+      match ef.params.find? fun (p : Param) => !isFFISafe p.ty with
+      | some p => .error (CheckError.message (.externFnParamNotFFISafe ef.name p.name (tyToString p.ty)))
+      | none =>
+        if !isFFISafe ef.retTy && ef.retTy != .unit then
+          .error (CheckError.message (.externFnReturnNotFFISafe ef.name (tyToString ef.retTy)))
+        else .ok ()
+  match externFnCheck with
   | .error e => .error e
   | .ok () =>
   -- Check user doesn't declare trait Destroy

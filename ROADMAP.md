@@ -38,8 +38,9 @@ The Lean 4 compiler implements the core surface language plus the new internal I
 - `HashMap<K,V>`: map_new, map_insert, map_get, map_contains, map_remove, map_len, map_free (keys: Int or String, require Alloc)
 - Networking: tcp_connect, tcp_listen, tcp_accept, socket_send, socket_recv, socket_close (require Network)
 - FFI: `extern fn` declarations, `Unsafe` capability gating
+- `#[repr(C)]` attribute for structs with FFI-safe type validation at extern boundaries
 
-**Not yet implemented:** `#[repr(C)]`, transmute, newtype, MLIR backend, env vars/process args, kernel formalization, runtime, fully authoritative standalone resolution.
+**Not yet implemented:** transmute, newtype, MLIR backend, env vars/process args, kernel formalization, runtime, fully authoritative standalone resolution.
 
 ---
 
@@ -70,8 +71,8 @@ Now that Core IR, elaboration, and SSA lowering exist, the most important design
 1. **`newtype`**
 Nominal wrappers over existing representations with no implicit conversions. This gives alias-like ergonomics with struct-level type separation.
 
-2. **Explicit representation/layout control**
-Low-level code eventually needs representation guarantees. `#[repr(C)]` is the first step, followed later by explicit alignment/packing choices where justified.
+2. **Explicit representation/layout control** *(done: `#[repr(C)]` + FFI-safe validation)*
+`#[repr(C)]` is implemented with compile-time validation: no generics on repr(C) structs, all fields must be FFI-safe, and extern fn boundaries require FFI-safe types. Explicit alignment/packing choices may follow later.
 
 3. **A sharper `unsafe` boundary**
 Unsafe operations should have a small, explicit rule set: what is permitted, what invariants shift to the programmer, and how this interacts with raw pointers, FFI, and capabilities.

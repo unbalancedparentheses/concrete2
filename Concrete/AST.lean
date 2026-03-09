@@ -191,6 +191,7 @@ structure StructDef where
   isPublic : Bool := false
   isUnion : Bool := false
   isCopy : Bool := false
+  isReprC : Bool := false
   span : Span := default
   deriving Repr
 

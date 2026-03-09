@@ -290,6 +290,11 @@ run_ok "$TESTDIR/complex_trait_hierarchy.con" 45
 run_ok "$TESTDIR/cap_propagation_deep.con" "1
 42"
 
+# repr(C) / FFI safety
+run_ok "$TESTDIR/repr_c_basic.con" 42
+run_ok "$TESTDIR/repr_c_nested.con" 42
+run_ok "$TESTDIR/repr_c_cross_module.con" 30
+
 echo ""
 echo "=== Negative tests (expected errors) ==="
 run_err "$TESTDIR/error_unconsumed.con"        "was never consumed"
@@ -396,6 +401,12 @@ run_err "$TESTDIR/error_resolve_unknown_enum.con" "unknown enum 'Phantom'"
 # Check error variants
 run_err "$TESTDIR/error_assign_immutable.con" "cannot assign to immutable"
 run_err "$TESTDIR/error_arrow_not_heap.con" "arrow access"
+# repr(C) / FFI safety errors
+run_err "$TESTDIR/error_repr_c_generic.con" "cannot have type parameters"
+run_err "$TESTDIR/error_repr_c_string_field.con" "non-FFI-safe field"
+run_err "$TESTDIR/error_extern_string_param.con" "non-FFI-safe parameter"
+run_err "$TESTDIR/error_extern_non_repr_struct.con" "non-FFI-safe parameter"
+run_err "$TESTDIR/error_repr_c_on_enum.con" "can only be applied to struct"
 
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="

@@ -87,6 +87,7 @@ structure CStructDef where
   fields : List (String × Ty)
   isPublic : Bool := false
   isCopy : Bool := false
+  isReprC : Bool := false
 
 structure CEnumDef where
   name : String

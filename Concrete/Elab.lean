@@ -1157,7 +1157,7 @@ partial def elabModule (m : Module)
     let cStructs := m.structs.map fun sd =>
       { name := sd.name, typeParams := sd.typeParams,
         fields := sd.fields.map fun f => (f.name, f.ty),
-        isPublic := sd.isPublic, isCopy := sd.isCopy : CStructDef }
+        isPublic := sd.isPublic, isCopy := sd.isCopy, isReprC := sd.isReprC : CStructDef }
     -- Build extern fns
     let cExterns := m.externFns.map fun ef =>
       (ef.name, ef.params.map fun p => (p.name, p.ty), ef.retTy)
