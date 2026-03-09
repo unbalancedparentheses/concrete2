@@ -463,7 +463,7 @@ Make the architecture rule explicit:
 
 This is the internal compiler analogue of Concrete's source-level explicitness: one clear semantic form, one clear validation boundary.
 
-**Status:** A5 refactor complete. `checkCapabilities` removed from Check.lean (was 21 call sites). Operator type checks, condition type checks, match validation all moved to CoreCheck. CoreCheck has a builtin capability table and extern-fn awareness. Check.lean retains only what requires surface-syntax context: linearity/borrow tracking, type inference, cap-poly resolution. Next step: continue migrating post-elaboration legality checks where the rule no longer needs surface-syntax or type-inference context.
+**Status:** A5 refactor complete, continued migration in progress. `checkCapabilities` removed from Check.lean (was 21 call sites). Operator type checks, condition type checks, match validation all moved to CoreCheck. CoreCheck has a builtin capability table and extern-fn awareness. Cast validity, array index type checks, array literal emptiness, and deref-assign target validation also moved to CoreCheck. Check.lean retains only what requires surface-syntax context: linearity/borrow tracking, type inference, cap-poly resolution, and `cannotDerefNonRef` (needed for type inference — Check must know the result type to continue). Next step: continue migrating post-elaboration legality checks where the rule no longer needs surface-syntax or type-inference context.
 
 ### A5: Codegen on SSA IR
 

@@ -103,18 +103,19 @@ def compileSSA (inputPath : String) (outputPath : String) (emitLLVM : Bool) : IO
     return 1
   | .ok modules =>
     let summaryTable := buildSummaryTable modules
+    let exportTable := buildExportTable summaryTable
     -- Name resolution (catches undeclared names early)
     match resolveProgram modules summaryTable with
     | .error ds =>
       IO.eprintln (renderDiagnostics ds)
       return 1
     | .ok _ =>
-    match liftStringError "check" (checkProgram modules summaryTable) with
+    match liftStringError "check" (checkProgram modules exportTable) with
     | .error ds =>
       IO.eprintln (renderDiagnostics ds)
       return 1
     | .ok () =>
-    match liftStringError "elab" (elabProgram modules summaryTable) with
+    match liftStringError "elab" (elabProgram modules exportTable) with
     | .error ds =>
       IO.eprintln (renderDiagnostics ds)
       return 1
@@ -168,17 +169,18 @@ def compileAndEmit (inputPath : String) (mode : String) : IO UInt32 := do
     return 1
   | .ok modules =>
     let summaryTable := buildSummaryTable modules
+    let exportTable := buildExportTable summaryTable
     match resolveProgram modules summaryTable with
     | .error ds =>
       IO.eprintln (renderDiagnostics ds)
       return 1
     | .ok _ =>
-    match checkProgram modules summaryTable with
+    match checkProgram modules exportTable with
     | .error e =>
       IO.eprintln s!"Type error: {e}"
       return 1
     | .ok () =>
-    match elabProgram modules summaryTable with
+    match elabProgram modules exportTable with
     | .error e =>
       IO.eprintln s!"Elaboration error: {e}"
       return 1

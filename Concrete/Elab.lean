@@ -11,18 +11,6 @@ No linearity checking, no borrow checking, no capability validation.
 -/
 
 -- ============================================================
--- Elaboration function signature
--- ============================================================
-
-structure ElabFnSig where
-  params : List (String × Ty)
-  retTy : Ty
-  typeParams : List String := []
-  typeBounds : List (String × List String) := []
-  capParams : List String := []
-  capSet : CapSet := .empty
-
--- ============================================================
 -- Elaboration environment
 -- ============================================================
 
@@ -30,7 +18,7 @@ structure ElabEnv where
   vars : List (String × Ty)
   structs : List StructDef
   enums : List EnumDef
-  fnSigs : List (String × ElabFnSig)
+  fnSigs : List (String × FnSummary)
   typeAliases : List (String × Ty)
   constants : List (String × Ty)
   currentTypeParams : List String := []
@@ -38,7 +26,7 @@ structure ElabEnv where
   currentRetTy : Ty := .unit
   currentImplType : Option Ty := none
   traits : List TraitDef := []
-  allFnSigPairs : List (String × ElabFnSig) := []
+  allFnSigPairs : List (String × FnSummary) := []
   newtypes : List NewtypeDef := []
 
 abbrev ElabM := ExceptT String (StateM ElabEnv)
@@ -169,7 +157,7 @@ private def lookupVar (name : String) : ElabM (Option Ty) := do
   let env ← getEnv
   return env.vars.lookup name
 
-private def lookupFnSig (name : String) : ElabM (Option ElabFnSig) := do
+private def lookupFnSig (name : String) : ElabM (Option FnSummary) := do
   let env ← getEnv
   return (env.fnSigs.find? fun (n, _) => n == name).map Prod.snd
 
@@ -1034,7 +1022,7 @@ def elabFn (f : FnDef) (implTy : Option Ty := none) : ElabM CFnDef := do
 -- Build environment from module (mirrors checkModule setup)
 -- ============================================================
 
-private def buildBuiltinSigs : List (String × ElabFnSig) := [
+private def buildBuiltinSigs : List (String × FnSummary) := [
   ("string_length", { params := [("s", .ref .string)], retTy := .int }),
   ("string_concat", { params := [("a", .string), ("b", .string)], retTy := .string }),
   ("print_string", { params := [("s", .ref .string)], retTy := .unit, capSet := .concrete ["Console"] }),
@@ -1067,23 +1055,23 @@ private def buildBuiltinSigs : List (String × ElabFnSig) := [
 ]
 
 partial def elabModule (m : Module)
-    (importedFnSigs : List (String × ElabFnSig) := [])
+    (importedFnSigs : List (String × FnSummary) := [])
     (importedStructs : List StructDef := [])
     (importedEnums : List EnumDef := [])
     (importedImplBlocks : List ImplBlock := [])
     (importedTraitImpls : List ImplTraitBlock := [])
     : Except String CModule :=
   -- Build fn sigs from module functions
-  let userFnSigs : List (String × ElabFnSig) := m.functions.map fun f =>
+  let userFnSigs : List (String × FnSummary) := m.functions.map fun f =>
     (f.name, { params := f.params.map fun p => (p.name, p.ty), retTy := f.retTy,
                typeParams := f.typeParams, typeBounds := f.typeBounds,
                capParams := f.capParams, capSet := f.capSet })
   -- Extern fn sigs
-  let externSigs : List (String × ElabFnSig) := m.externFns.map fun ef =>
+  let externSigs : List (String × FnSummary) := m.externFns.map fun ef =>
     (ef.name, { params := ef.params.map fun p => (p.name, p.ty), retTy := ef.retTy,
                 capSet := .concrete ["Unsafe"] })
   -- Submodule fn sigs
-  let submoduleSigs : List (String × ElabFnSig) := m.submodules.foldl (fun acc sub =>
+  let submoduleSigs : List (String × FnSummary) := m.submodules.foldl (fun acc sub =>
     acc ++ (sub.functions.map fun f =>
       (sub.name ++ "_" ++ f.name,
        { params := f.params.map fun p => (p.name, p.ty), retTy := f.retTy,
@@ -1096,7 +1084,7 @@ partial def elabModule (m : Module)
   -- Impl method sigs
   let allImplBlocks := importedImplBlocks ++ m.implBlocks
   let allTraitImpls := importedTraitImpls ++ m.traitImpls
-  let implMethodSigs : List (String × ElabFnSig) := allImplBlocks.foldl (fun acc ib =>
+  let implMethodSigs : List (String × FnSummary) := allImplBlocks.foldl (fun acc ib =>
     let implTy := if ib.typeParams.isEmpty then Ty.named ib.typeName
                   else Ty.generic ib.typeName (ib.typeParams.map Ty.typeVar)
     acc ++ ib.methods.map fun f =>
@@ -1106,7 +1094,7 @@ partial def elabModule (m : Module)
                        retTy := resolveSelf f.retTy implTy,
                        typeParams := allTypeParams, capParams := f.capParams, capSet := f.capSet })
   ) []
-  let traitImplMethodSigs : List (String × ElabFnSig) := allTraitImpls.foldl (fun acc tb =>
+  let traitImplMethodSigs : List (String × FnSummary) := allTraitImpls.foldl (fun acc tb =>
     let implTy := if tb.typeParams.isEmpty then Ty.named tb.typeName
                   else Ty.generic tb.typeName (tb.typeParams.map Ty.typeVar)
     acc ++ tb.methods.map fun f =>
@@ -1146,7 +1134,7 @@ partial def elabModule (m : Module)
   }
   let allTraits := builtinDestroyTrait :: m.traits
   -- All named fn sigs for fnRef
-  let fnSigPairs : List (String × ElabFnSig) :=
+  let fnSigPairs : List (String × FnSummary) :=
     userFnSigs ++ implMethodSigs ++ traitImplMethodSigs
   let initEnv : ElabEnv := {
     vars := []
@@ -1234,40 +1222,12 @@ partial def elabModule (m : Module)
 -- Program elaboration
 -- ============================================================
 
-private def resolveImportsE (m : Module)
-    (exportTable : List (String × (List (String × ElabFnSig) × List StructDef × List EnumDef × List ImplBlock × List ImplTraitBlock)))
-    : Except String (List (String × ElabFnSig) × List StructDef × List EnumDef × List ImplBlock × List ImplTraitBlock) :=
-  m.imports.foldlM (init := ([], [], [], [], [])) fun (fns, structs, enums, impls, trImpls) imp =>
-    match exportTable.lookup imp.moduleName with
-    | none => .error (ElabError.message (.unknownModule imp.moduleName))
-    | some (pubFns, pubStructs, pubEnums, pubImpls, pubTraitImpls) =>
-      imp.symbols.foldlM (init := (fns, structs, enums, impls, trImpls)) fun (fns, structs, enums, impls, trImpls) sym =>
-        match pubFns.find? fun (n, _) => n == sym with
-        | some pair => .ok (fns ++ [pair], structs, enums, impls, trImpls)
-        | none =>
-          match pubStructs.find? fun sd => sd.name == sym with
-          | some sd =>
-            let structImpls := pubImpls.filter fun ib => ib.typeName == sym
-            let structTraitImpls := pubTraitImpls.filter fun tb => tb.typeName == sym
-            .ok (fns, structs ++ [sd], enums, impls ++ structImpls, trImpls ++ structTraitImpls)
-          | none =>
-            match pubEnums.find? fun ed => ed.name == sym with
-            | some ed => .ok (fns, structs, enums ++ [ed], impls, trImpls)
-            | none => .error (ElabError.message (.notPublicInModule sym imp.moduleName))
-
-def elabProgram (modules : List Module) (summaryTable : List (String × FileSummary) := []) : Except String (List CModule) := do
-  -- Build export table from summaryTable
-  let exportTable := summaryTable.map fun (name, summary) =>
-    let fnSigs := summary.functions.map fun (n, fs) =>
-      (n, { params := fs.params, retTy := fs.retTy, typeParams := fs.typeParams,
-            typeBounds := fs.typeBounds, capParams := fs.capParams, capSet := fs.capSet : ElabFnSig })
-    let externSigs := summary.externFns.map fun ef =>
-      (ef.name, { params := ef.params.map fun p => (p.name, p.ty), retTy := ef.retTy : ElabFnSig })
-    let fnSigs := fnSigs ++ externSigs
-    (name, (fnSigs, summary.structs, summary.enums, summary.implBlocks, summary.traitImpls))
-  -- Elaborate each module
+def elabProgram (modules : List Module) (exportTable : List (String × ExportEntry) := []) : Except String (List CModule) := do
   modules.foldlM (init := []) fun acc m => do
-    let (impFns, impStructs, impEnums, impImpls, impTraitImpls) ← resolveImportsE m exportTable
+    let (impFns, impStructs, impEnums, impImpls, impTraitImpls) ←
+      resolveImportsFromExports m.imports exportTable
+        (fun modName => ElabError.message (.unknownModule modName))
+        (fun sym modName => ElabError.message (.notPublicInModule sym modName))
     let cm ← elabModule m impFns impStructs impEnums impImpls impTraitImpls
     return acc ++ [cm]
 

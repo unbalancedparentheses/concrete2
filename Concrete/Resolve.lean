@@ -534,7 +534,10 @@ def resolveBodies (modules : List Module) (shallow : ShallowResult) : Except Dia
 
 /-- Resolve all modules. Returns resolved modules or diagnostics on failure. -/
 def resolveProgram (modules : List Module) (summaryTable : List (String × FileSummary) := []) : Except Diagnostics (List ResolvedModule) :=
-  let moduleSummaries := modules.map buildFileSummary
+  let moduleSummaries := modules.map fun m =>
+    match summaryTable.find? fun (n, _) => n == m.name with
+    | some (_, s) => s
+    | none => buildFileSummary m
   let shallow := resolveShallow moduleSummaries summaryTable
   resolveBodies modules shallow
 

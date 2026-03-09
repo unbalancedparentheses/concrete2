@@ -21,6 +21,7 @@ structure FnSummary where
   typeBounds : List (String × List String) := []
   capParams : List String := []
   capSet : CapSet := .empty
+  deriving Repr
 
 structure FileSummary where
   name : String
@@ -88,5 +89,45 @@ def buildSummaryTable (modules : List Module) : List (String × FileSummary) :=
     ) []
     acc ++ [(m.name, summary)] ++ subEntries
   ) []
+
+-- ============================================================
+-- Export table: shared across Check and Elab
+-- ============================================================
+
+abbrev ExportEntry := List (String × FnSummary) × List StructDef × List EnumDef × List ImplBlock × List ImplTraitBlock
+
+/-- Build export table from summary table. Each module's public functions,
+    structs, enums, impl blocks, and trait impls are collected once. -/
+def buildExportTable (summaryTable : List (String × FileSummary)) : List (String × ExportEntry) :=
+  summaryTable.map fun (name, summary) =>
+    let fnSigs := summary.functions
+    let externSigs := summary.externFns.map fun ef =>
+      (ef.name, { params := ef.params.map fun p => (p.name, p.ty), retTy := ef.retTy : FnSummary })
+    (name, (fnSigs ++ externSigs, summary.structs, summary.enums, summary.implBlocks, summary.traitImpls))
+
+/-- Resolve imports for a module by looking up symbols in a pre-built export table.
+    Used by both Check and Elab. -/
+def resolveImportsFromExports (imports : List ImportDecl)
+    (exportTable : List (String × ExportEntry))
+    (unknownModuleMsg : String → String)
+    (notPublicMsg : String → String → String)
+    : Except String (List (String × FnSummary) × List StructDef × List EnumDef × List ImplBlock × List ImplTraitBlock) :=
+  imports.foldlM (init := ([], [], [], [], [])) fun (fns, structs, enums, impls, trImpls) imp =>
+    match exportTable.lookup imp.moduleName with
+    | none => .error (unknownModuleMsg imp.moduleName)
+    | some (pubFns, pubStructs, pubEnums, pubImpls, pubTraitImpls) =>
+      imp.symbols.foldlM (init := (fns, structs, enums, impls, trImpls)) fun (fns, structs, enums, impls, trImpls) sym =>
+        match pubFns.find? fun (n, _) => n == sym with
+        | some pair => .ok (fns ++ [pair], structs, enums, impls, trImpls)
+        | none =>
+          match pubStructs.find? fun sd => sd.name == sym with
+          | some sd =>
+            let structImpls := pubImpls.filter fun ib => ib.typeName == sym
+            let structTraitImpls := pubTraitImpls.filter fun tb => tb.typeName == sym
+            .ok (fns, structs ++ [sd], enums, impls ++ structImpls, trImpls ++ structTraitImpls)
+          | none =>
+            match pubEnums.find? fun ed => ed.name == sym with
+            | some ed => .ok (fns, structs, enums ++ [ed], impls, trImpls)
+            | none => .error (notPublicMsg sym imp.moduleName)
 
 end Concrete

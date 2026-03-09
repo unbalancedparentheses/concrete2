@@ -1,5 +1,6 @@
 import Concrete.AST
 import Concrete.FileSummary
+import Concrete.Shared
 
 namespace Concrete
 
@@ -31,14 +32,6 @@ inductive VarState where
   | frozen      -- frozen by borrow block (cannot be used at all)
   deriving Repr, BEq
 
-structure FnSig where
-  params : List (String × Ty)
-  retTy : Ty
-  typeParams : List String := []
-  typeBounds : List (String × List String) := []  -- type param bounds
-  capParams : List String := []    -- capability variables
-  capSet : CapSet := .empty        -- declared capabilities
-  deriving Repr
 
 structure VarInfo where
   ty : Ty
@@ -55,7 +48,7 @@ structure TypeEnv where
   vars : List (String × VarInfo)
   structs : List StructDef
   enums : List EnumDef
-  functions : List FnSig
+  functions : List FnSummary
   fnNames : List (String × Nat)
   loopDepth : Nat
   currentRetTy : Ty := .unit
@@ -64,7 +57,7 @@ structure TypeEnv where
   currentTypeParams : List String := []  -- active function's type params
   currentCapSet : CapSet := .empty       -- current function's capability set
   currentFnName : String := ""           -- current function name (for error messages)
-  allFnSigs : List (String × FnSig) := []  -- all function signatures for fnRef resolution
+  allFnSummarys : List (String × FnSummary) := []  -- all function signatures for fnRef resolution
   borrowRefs : List String := []          -- names of refs created by borrow blocks (for escape analysis)
   loopBreakTy : Option Ty := none         -- collects type from break-with-value in while-as-expression
   inDeferBody : Bool := false             -- true when checking inside a defer body
@@ -102,17 +95,10 @@ inductive CheckError where
   | assignToBorrowed (name : String)
   -- Slice 2: Type mismatch / operator
   | typeMismatch (ctx : String) (expected : String) (actual : String)
-  | bitwiseOpNotInteger (ty : String)
-  | bitwiseNotNotInteger (ty : String)
-  | conditionNotBool (ctx : String) (ty : String)
-  | arrayIndexNotInteger (ty : Option String)
-  | indexingNonArray (ty : Option String)
-  | cannotCast (fromTy : String) (toTy : String)
   | cannotDerefNonRef
   | whileBreakTypeMismatch (breakTy : String) (elseTy : String)
   | breakTypeMismatch (valTy : String) (prevTy : String)
-  | cannotAssignThroughNonMutRef
-  | arrayLiteralEmpty
+  -- arrayLiteralEmpty, cannotAssignThroughNonMutRef moved to CoreCheck
   -- Slice 3: Borrow/escape/freeze
   | cannotBorrowMoved (name : String)
   | cannotBorrowMutablyBorrowed (name : String)
@@ -123,7 +109,7 @@ inductive CheckError where
   | variableAlreadyMutBorrowed (name : String)
   | cannotMutBorrowImmBorrowed (name : String)
   | cannotImmBorrowMutBorrowed (name : String)
-  -- Slice 4: Capability
+  -- Slice 4: Capability (only cap-poly resolution, simple checks in CoreCheck)
   | missingCapability (callee : String) (cap : String) (caller : String)
   | traitBoundNotSatisfied (typeName : String) (traitName : String) (context : String)
   | cannotInferCapVariable (cap : String) (fnName : String)
@@ -140,10 +126,6 @@ inductive CheckError where
   | arrowAssignNonStruct
   | unknownVariant (variant : String) (enumName : String)
   | unknownEnumType (name : String)
-  | matchArmWrongEnum (armEnum : String) (scrutineeEnum : String)
-  | duplicateMatchArm (variant : String)
-  | variantFieldCountMismatch (variant : String) (expected : Nat) (actual : Nat)
-  | nonExhaustiveMatch (missingVariant : String)
   | wrongArgCount (calleeDesc : String) (expected : Nat) (actual : Nat)
   | undeclaredFunction (name : String)
   | noMethodOnType (method : String) (typeName : String)
@@ -180,10 +162,7 @@ inductive CheckError where
   | reprCFieldNotFFISafe (structName : String) (fieldName : String) (fieldTy : String)
   | externFnParamNotFFISafe (fnName : String) (paramName : String) (paramTy : String)
   | externFnReturnNotFFISafe (fnName : String) (retTy : String)
-  -- Slice 8: Unsafe boundary
-  | rawPtrDerefRequiresUnsafe
-  | rawPtrAssignRequiresUnsafe
-  | unsafeCastRequiresUnsafe (fromTy : String) (toTy : String)
+  -- Slice 8: Unsafe boundary (capability checks moved to CoreCheck)
   -- Slice 9: repr(align/packed) validation
   | reprPackedAndAlignConflict (structName : String)
   | reprAlignNotPowerOfTwo (structName : String) (n : Nat)
@@ -212,19 +191,11 @@ def CheckError.message : CheckError → String
   | .assignToBorrowed name => s!"cannot assign to '{name}': variable is borrowed"
   -- Slice 2
   | .typeMismatch ctx expected actual => s!"type mismatch in {ctx}: expected {expected}, got {actual}"
-  | .bitwiseOpNotInteger ty => s!"type mismatch in bitwise op: expected integer type, got {ty}"
-  | .bitwiseNotNotInteger ty => s!"type mismatch in bitwise not: expected integer type, got {ty}"
-  | .conditionNotBool ctx ty => s!"{ctx} condition must be bool, got {ty}"
-  | .arrayIndexNotInteger (some ty) => s!"type mismatch: array index must be an integer type, got {ty}"
-  | .arrayIndexNotInteger none => "type mismatch: array index must be an integer type"
-  | .indexingNonArray (some ty) => s!"type mismatch: indexing into non-array type {ty}"
-  | .indexingNonArray none => "type mismatch: indexing into non-array type"
-  | .cannotCast fromTy toTy => s!"cannot cast {fromTy} to {toTy}"
+  -- arrayIndexNotInteger, indexingNonArray, cannotCast moved to CoreCheck
   | .cannotDerefNonRef => "cannot dereference non-reference type"
   | .whileBreakTypeMismatch breakTy elseTy => s!"while-expression break type '{breakTy}' does not match else type '{elseTy}'"
   | .breakTypeMismatch valTy prevTy => s!"break value type '{valTy}' does not match previous break type '{prevTy}'"
-  | .cannotAssignThroughNonMutRef => "cannot assign through non-mutable reference"
-  | .arrayLiteralEmpty => "array literal cannot be empty"
+  -- cannotAssignThroughNonMutRef, arrayLiteralEmpty moved to CoreCheck
   -- Slice 3
   | .cannotBorrowMoved name => s!"cannot borrow '{name}': already moved"
   | .cannotBorrowMutablyBorrowed name => s!"cannot borrow '{name}': already mutably borrowed"
@@ -252,10 +223,6 @@ def CheckError.message : CheckError → String
   | .arrowAssignNonStruct => "arrow assign on non-struct inner type"
   | .unknownVariant variant enumName => s!"unknown variant '{variant}' in enum '{enumName}'"
   | .unknownEnumType name => s!"unknown enum type '{name}'"
-  | .matchArmWrongEnum armEnum scrutineeEnum => s!"match arm has enum '{armEnum}' but scrutinee is '{scrutineeEnum}'"
-  | .duplicateMatchArm variant => s!"duplicate match arm for variant '{variant}'"
-  | .variantFieldCountMismatch variant expected actual => s!"variant '{variant}' has {expected} fields but arm binds {actual}"
-  | .nonExhaustiveMatch missingVariant => s!"non-exhaustive match: missing variant '{missingVariant}'"
   | .wrongArgCount calleeDesc expected actual => s!"{calleeDesc} expects {expected} arguments, got {actual}"
   | .undeclaredFunction name => s!"call to undeclared function '{name}'"
   | .noMethodOnType method typeName => s!"no method '{method}' on type '{typeName}'"
@@ -295,10 +262,7 @@ def CheckError.message : CheckError → String
   | .reprCFieldNotFFISafe structName fieldName fieldTy => s!"#[repr(C)] struct '{structName}' has non-FFI-safe field '{fieldName}' of type {fieldTy}"
   | .externFnParamNotFFISafe fnName paramName paramTy => s!"extern fn '{fnName}' has non-FFI-safe parameter '{paramName}' of type {paramTy}"
   | .externFnReturnNotFFISafe fnName retTy => s!"extern fn '{fnName}' has non-FFI-safe return type {retTy}"
-  -- Slice 8
-  | .rawPtrDerefRequiresUnsafe => "dereferencing raw pointer requires Unsafe capability"
-  | .rawPtrAssignRequiresUnsafe => "assigning through raw pointer requires Unsafe capability"
-  | .unsafeCastRequiresUnsafe fromTy toTy => s!"cast from {fromTy} to {toTy} requires Unsafe capability"
+  -- Slice 8 (capability checks moved to CoreCheck)
   -- Slice 9
   | .reprPackedAndAlignConflict structName => s!"struct '{structName}' cannot have both #[repr(packed)] and #[repr(align(...))]"
   | .reprAlignNotPowerOfTwo structName n => s!"#[repr(align({n}))] on struct '{structName}' must be a power of two"
@@ -356,11 +320,6 @@ private def tyToString : Ty → String
   | .heapArray inner => "HeapArray<" ++ tyToString inner ++ ">"
   | .placeholder => "<unknown>"
 
-/-- Is this an integer type (any size)? -/
-def isIntegerType : Ty → Bool
-  | .int | .uint | .i8 | .i16 | .i32 | .u8 | .u16 | .u32 => true
-  | _ => false
-
 /-- Is this a signed integer type? -/
 def isSignedInt : Ty → Bool
   | .int | .i8 | .i16 | .i32 => true
@@ -370,10 +329,6 @@ def isSignedInt : Ty → Bool
 def isFloatType : Ty → Bool
   | .float32 | .float64 => true
   | _ => false
-
-/-- Is this a numeric type (int or float)? -/
-def isNumericType : Ty → Bool
-  | ty => isIntegerType ty || isFloatType ty
 
 /-- Is this a pointer type? -/
 def isPointerType : Ty → Bool
@@ -521,7 +476,7 @@ def lookupNewtype (name : String) : CheckM (Option NewtypeDef) := do
   let env ← getEnv
   return env.newtypes.find? fun nt => nt.name == name
 
-def lookupFn (name : String) : CheckM (Option FnSig) := do
+def lookupFn (name : String) : CheckM (Option FnSummary) := do
   let env ← getEnv
   match env.fnNames.lookup name with
   | some idx => return listGetIdx env.functions idx
@@ -560,24 +515,6 @@ def expectTy (expected actual : Ty) (ctx : String) : CheckM Unit := do
        || (expectedR == .named "String" && actualR == .string) then return ()
   else throwCheck (.typeMismatch ctx (tyToString expected) (tyToString actual))
 
--- ============================================================
--- Capability checking
--- ============================================================
-
-/-- Check that caller's capabilities are a superset of callee's capabilities.
-    This is the core of the effect system: if f calls g, f must have g's caps. -/
-def checkCapabilities (calleeName : String) (calleeCapSet : CapSet) : CheckM Unit := do
-  let env ← getEnv
-  let callerCapSet := env.currentCapSet
-  -- Get concrete caps and cap variables from both sides
-  let (calleeCaps, _calleeVars) := calleeCapSet.normalize
-  let (callerCaps, callerVars) := callerCapSet.normalize
-  -- If callee has cap variables, they are satisfied by matching caller cap variables
-  -- If caller has cap variables, they can satisfy any callee cap (polymorphic)
-  -- Check each callee concrete cap exists in caller (concrete or variable)
-  for cap in calleeCaps do
-    unless callerCaps.contains cap || callerVars.contains cap do
-      throwCheck (.missingCapability calleeName cap env.currentFnName)
 
 -- ============================================================
 -- Linearity: consume and check
@@ -676,7 +613,7 @@ def peekExprType (e : Expr) : CheckM Ty := do
     else return .generic enumName typeArgs
   | .fnRef _ name =>
     let env ← getEnv
-    match env.allFnSigs.lookup name with
+    match env.allFnSummarys.lookup name with
     | some sig =>
       let paramTys := sig.params.map Prod.snd
       return .fn_ paramTys sig.capSet sig.retTy
@@ -784,7 +721,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
     match hint with
     | some ty =>
       let tyR ← resolveType ty
-      if isIntegerType tyR || tyR == .char then return tyR
+      if isInteger tyR || tyR == .char then return tyR
       else
         match tyR with
         | .typeVar _ => return tyR  -- Type variables accept integer literals
@@ -829,48 +766,31 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
     let isTypeVarR := match rTyR with | .typeVar _ => true | _ => false
     match op with
     | .add | .sub | .mul | .div | .mod =>
-      if isIntegerType lTyR && lTyR == rTyR then return lTy
+      if isInteger lTyR && lTyR == rTyR then return lTy
       else if isFloatType lTyR && lTyR == rTyR then return lTy
       else if lTyR == .char && rTyR == .char then return .char
-      else if isPointerType lTyR && isIntegerType rTyR then return lTy
+      else if isPointerType lTyR && isInteger rTyR then return lTy
       else if isTypeVarL || isTypeVarR then return lTy
-      else do
-        expectTy lTyR rTyR "arithmetic operand types"
-        return lTy
+      else return lTy  -- CoreCheck validates operator type constraints
     | .eq | .neq | .lt | .gt | .leq | .geq =>
-      if lTyR == rTyR then return .bool
-      else if isIntegerType lTyR && isIntegerType rTyR then return .bool
-      else if isTypeVarL || isTypeVarR then return .bool
-      else do
-        expectTy lTyR rTyR "comparison operands"
-        return .bool
+      return .bool  -- CoreCheck validates operand type compatibility
     | .and_ | .or_ =>
-      expectTy .bool lTyR "left operand of logical op"
-      expectTy .bool rTyR "right operand of logical op"
-      return .bool
+      return .bool  -- CoreCheck validates logical operator types
     | .bitand | .bitor | .bitxor | .shl | .shr =>
-      if isIntegerType lTyR && lTyR == rTyR then return lTy
+      if isInteger lTyR && lTyR == rTyR then return lTy
       else if isTypeVarL || isTypeVarR then return lTy
-      else do
-        if !isIntegerType lTyR then
-          throwCheck (.bitwiseOpNotInteger (tyToString lTyR))
-        expectTy lTyR rTyR "bitwise operand types"
-        return lTy
+      else return lTy  -- CoreCheck validates bitwise operator types
   | .unaryOp _ op operand =>
     let ty ← checkExpr operand hint
     match op with
     | .neg =>
-      if isIntegerType ty || isFloatType ty then return ty
-      else do
-        expectTy .int ty "negation operand"
-        return .int
+      if isInteger ty || isFloatType ty then return ty
+      else return ty  -- CoreCheck validates negation types
     | .not_ =>
-      expectTy .bool ty "not operand"
-      return .bool
+      return .bool  -- CoreCheck validates logical not types
     | .bitnot =>
-      if isIntegerType ty then return ty
-      else do
-        throwCheck (.bitwiseNotNotInteger (tyToString ty))
+      if isInteger ty then return ty
+      else return ty  -- CoreCheck validates bitwise not types
   | .arrowAccess _ obj field =>
     let objTy ← checkExpr obj
     -- obj must be Heap<T> or HeapArray<T>
@@ -895,17 +815,13 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       | none => throwCheck (.structHasNoField structName field)
     | none => throwCheck (.unknownStructType structName)
   | .allocCall _ inner allocExpr =>
-    -- Check that caller has Alloc capability (needed to forward)
-    checkCapabilities "with(Alloc)" (.concrete ["Alloc"])
     -- Check the allocator expression is valid
     let _allocTy ← checkExpr allocExpr
     -- Check the inner call expression
     checkExpr inner hint
   | .whileExpr _ cond body elseBody =>
     -- while-as-expression: while cond { body } else { elseBody }
-    let condTy ← checkExpr cond
-    if condTy != .bool && !isIntegerType condTy then
-      throwCheck (.conditionNotBool "while" (tyToString condTy))
+    let _condTy ← checkExpr cond
     -- Save and set up loop context
     let env ← getEnv
     let savedLoopDepth := env.loopDepth
@@ -1010,8 +926,6 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
     -- Intercept alloc(val) calls
     if fnName == "alloc" then
       if args.length != 1 then throwCheck (.builtinWrongArgCount "alloc" 1)
-      -- Require Alloc capability
-      checkCapabilities "alloc" (.concrete ["Alloc"])
       let arg := match args with | a :: _ => a | [] => Expr.intLit default 0
       let argTy ← checkExpr arg
       -- Consume linear variables passed to alloc (ownership moves to heap)
@@ -1022,8 +936,6 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
     -- Intercept free(ptr) calls
     if fnName == "free" then
       if args.length != 1 then throwCheck (.builtinWrongArgCount "free" 1)
-      -- Require Alloc capability
-      checkCapabilities "free" (.concrete ["Alloc"])
       let arg := match args with | a :: _ => a | [] => Expr.intLit default 0
       let argTy ← checkExpr arg
       match argTy with
@@ -1038,13 +950,11 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
     if fnName == "vec_new" then
       if args.length != 0 then throwCheck (.builtinWrongArgCount "vec_new" 0)
       if typeArgs.length != 1 then throwCheck (.builtinWrongTypeArgCount "vec_new" "1 type argument: vec_new::<T>()")
-      checkCapabilities "vec_new" (.concrete ["Alloc"])
       let elemTy := match typeArgs with | t :: _ => t | [] => Ty.int
       return .generic "Vec" [elemTy]
     -- Intercept vec_push(&mut v, val)
     if fnName == "vec_push" then
       if args.length != 2 then throwCheck (.builtinWrongArgCount "vec_push" 2)
-      checkCapabilities "vec_push" (.concrete ["Alloc"])
       let vecArg := match args with | a :: _ => a | [] => Expr.intLit default 0
       let valArg := match args with | _ :: b :: _ => b | _ => Expr.intLit default 0
       let vecTy ← checkExpr vecArg
@@ -1105,7 +1015,6 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
     -- Intercept vec_pop(&mut v)
     if fnName == "vec_pop" then
       if args.length != 1 then throwCheck (.builtinWrongArgCount "vec_pop" 1)
-      checkCapabilities "vec_pop" (.concrete ["Alloc"])
       let vecArg := match args with | a :: _ => a | [] => Expr.intLit default 0
       let vecTy ← checkExpr vecArg
       let elemTy := match vecTy with
@@ -1116,7 +1025,6 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
     -- Intercept vec_free(v)
     if fnName == "vec_free" then
       if args.length != 1 then throwCheck (.builtinWrongArgCount "vec_free" 1)
-      checkCapabilities "vec_free" (.concrete ["Alloc"])
       let vecArg := match args with | a :: _ => a | [] => Expr.intLit default 0
       let vecTy ← checkExpr vecArg
       let ok := match vecTy with
@@ -1131,7 +1039,6 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
     if fnName == "map_new" then
       if args.length != 0 then throwCheck (.builtinWrongArgCount "map_new" 0)
       if typeArgs.length != 2 then throwCheck (.builtinWrongTypeArgCount "map_new" "2 type arguments: map_new::<K, V>()")
-      checkCapabilities "map_new" (.concrete ["Alloc"])
       let kTy := match typeArgs with | t :: _ => t | [] => Ty.int
       let vTy := match typeArgs with | _ :: t :: _ => t | _ => Ty.int
       -- Validate key type is Int or String
@@ -1141,7 +1048,6 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
     -- Intercept map_insert(&mut m, key, val)
     if fnName == "map_insert" then
       if args.length != 3 then throwCheck (.builtinWrongArgCount "map_insert" 3)
-      checkCapabilities "map_insert" (.concrete ["Alloc"])
       let mapArg := match args with | a :: _ => a | [] => Expr.intLit default 0
       let keyArg := match args with | _ :: b :: _ => b | _ => Expr.intLit default 0
       let valArg := match args with | _ :: _ :: c :: _ => c | _ => Expr.intLit default 0
@@ -1198,7 +1104,6 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
     -- Intercept map_remove(&mut m, key)
     if fnName == "map_remove" then
       if args.length != 2 then throwCheck (.builtinWrongArgCount "map_remove" 2)
-      checkCapabilities "map_remove" (.concrete ["Alloc"])
       let mapArg := match args with | a :: _ => a | [] => Expr.intLit default 0
       let keyArg := match args with | _ :: b :: _ => b | _ => Expr.intLit default 0
       let mapTy ← checkExpr mapArg
@@ -1226,7 +1131,6 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
     -- Intercept map_free(m)
     if fnName == "map_free" then
       if args.length != 1 then throwCheck (.builtinWrongArgCount "map_free" 1)
-      checkCapabilities "map_free" (.concrete ["Alloc"])
       let mapArg := match args with | a :: _ => a | [] => Expr.intLit default 0
       let mapTy ← checkExpr mapArg
       let ok := match mapTy with
@@ -1240,9 +1144,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
     -- Check if this is a function pointer call (variable with fn_ type)
     let fnPtrVarTy ← lookupVarTy fnName
     match fnPtrVarTy with
-    | some (.fn_ paramTys fnPtrCapSet fnPtrRetTy) =>
-      -- Function pointer call: check capabilities
-      checkCapabilities fnName fnPtrCapSet
+    | some (.fn_ paramTys _fnPtrCapSet fnPtrRetTy) =>
       -- Check argument count
       if args.length != paramTys.length then
         throwCheck (.wrongArgCount s!"function pointer '{fnName}'" paramTys.length args.length)
@@ -1346,8 +1248,14 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
           .fn_ params (.concrete newCaps) ret
         | t => t
       let paramTypes := paramTypes.map fun (n, t) => (n, resolveCapInTy t)
-      -- Check capabilities with resolved set
-      checkCapabilities fnName resolvedCapSet
+      -- Check resolved capabilities for cap-polymorphic calls (cap variable inference)
+      if !sig.capParams.isEmpty then
+        let env ← getEnv
+        let (resolvedCaps, _) := resolvedCapSet.normalize
+        let (callerCaps, callerVars) := env.currentCapSet.normalize
+        for cap in resolvedCaps do
+          unless callerCaps.contains cap || callerVars.contains cap do
+            throwCheck (.missingCapability fnName cap env.currentFnName)
       if args.length != paramTypes.length then
         throwCheck (.wrongArgCount s!"function '{fnName}'" paramTypes.length args.length)
       for (arg, (pName, pTy)) in args.zip paramTypes do
@@ -1480,28 +1388,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
         match scrutinee with
         | .ident _ varName => consumeVarIfExists varName
         | _ => pure ()
-        -- Check exhaustiveness: every variant must appear, no duplicates
-        let mut seenVariants : List String := []
-        for arm in arms do
-          match arm with
-          | .mk _ armEnum armVariant bindings _body =>
-            if armEnum != enumName then
-              throwCheck (.matchArmWrongEnum armEnum enumName)
-            match ed.variants.find? fun v => v.name == armVariant with
-            | some ev =>
-              if seenVariants.contains armVariant then
-                throwCheck (.duplicateMatchArm armVariant)
-              seenVariants := seenVariants ++ [armVariant]
-              -- Allow 0 bindings (ignore payload) or exact match
-              if bindings.length != 0 && bindings.length != ev.fields.length then
-                throwCheck (.variantFieldCountMismatch armVariant ev.fields.length bindings.length)
-            | none => throwCheck (.unknownVariant armVariant enumName)
-          | .litArm _ _ _ => pure ()
-          | .varArm _ _ _ => pure ()
-        -- Check all variants covered
-        for v in ed.variants do
-          if !seenVariants.contains v.name then
-            throwCheck (.nonExhaustiveMatch v.name)
+        -- CoreCheck validates exhaustiveness, duplicates, field counts, wrong-enum
         -- Linearity across arms: snapshot env, check each arm, ensure all agree
         let envBefore ← getEnv
         let mut firstArmVars : Option (List (String × VarInfo)) := none
@@ -1610,15 +1497,11 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
     | .ref t => return t
     | .refMut t => return t
     | .ptrMut t =>
-      checkCapabilities "*raw_ptr" (.concrete ["Unsafe"])
       return t
     | .ptrConst t =>
-      checkCapabilities "*raw_ptr" (.concrete ["Unsafe"])
       return t
     | .heap t =>
       -- *heap_ptr: loads value from heap, frees memory, consumes the Heap<T>
-      -- Requires Alloc capability (heap deallocation)
-      checkCapabilities "*heap_ptr" (.concrete ["Alloc"])
       match inner with
       | .ident _ varName => consumeVar varName
       | _ => pure ()
@@ -1650,7 +1533,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
     | _ => throwCheck .tryRequiresResult
   | .arrayLit _ elems =>
     match elems with
-    | [] => throwCheck .arrayLiteralEmpty
+    | [] => return .array .placeholder 0  -- CoreCheck validates empty array literals
     | first :: rest =>
       -- Use hint to determine element type (e.g. [i32; N] → elements are i32)
       let elemHint := match hint with
@@ -1663,41 +1546,14 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       return .array firstTy elems.length
   | .arrayIndex _ arr index =>
     let arrTy ← checkExpr arr
-    let idxTy ← checkExpr index
-    if !isIntegerType idxTy then
-      throwCheck (.arrayIndexNotInteger (some (tyToString idxTy)))
+    let _idxTy ← checkExpr index
+    -- CoreCheck validates index type and array type
     match arrTy with
     | .array elemTy _ => return elemTy
-    | _ => throwCheck (.indexingNonArray (some (tyToString arrTy)))
+    | _ => return .placeholder
   | .cast _ inner targetTy =>
-    let innerTy ← checkExpr inner
-    -- Allow casts between: integers (any size), bool, floats, pointers, char
-    let valid :=
-      (isIntegerType innerTy && isIntegerType targetTy) ||
-      (isIntegerType innerTy && targetTy == .bool) ||
-      (innerTy == .bool && isIntegerType targetTy) ||
-      (isIntegerType innerTy && isFloatType targetTy) ||
-      (isFloatType innerTy && isIntegerType targetTy) ||
-      (isFloatType innerTy && isFloatType targetTy) ||
-      (isIntegerType innerTy && targetTy == .char) ||
-      (innerTy == .char && isIntegerType targetTy) ||
-      (isPointerType innerTy && isPointerType targetTy) ||
-      (isPointerType innerTy && isIntegerType targetTy) ||
-      (isIntegerType innerTy && isPointerType targetTy) ||
-      -- Allow array to pointer cast
-      (match innerTy with | .array _ _ => isPointerType targetTy | _ => false) ||
-      -- Allow pointer to reference cast
-      (isPointerType innerTy && match targetTy with | .ref _ | .refMut _ => true | _ => false) ||
-      -- Allow reference to pointer cast
-      (match innerTy with | .ref _ | .refMut _ => isPointerType targetTy | _ => false) ||
-      (innerTy == targetTy)
-    if !valid then throwCheck (.cannotCast (tyToString innerTy) (tyToString targetTy))
-    -- Unsafe capability check for pointer-involving casts (except safe ref-to-ptr)
-    let isRefToPtr := isReferenceType innerTy && isPointerType targetTy
-    let involvesPointer := isPointerType innerTy || isPointerType targetTy ||
-                           (match innerTy with | .array _ _ => isPointerType targetTy | _ => false)
-    if involvesPointer && !isRefToPtr then
-      checkCapabilities "unsafe_cast" (.concrete ["Unsafe"])
+    let _innerTy ← checkExpr inner
+    -- CoreCheck validates cast legality and capability requirements
     return targetTy
   | .methodCall _ obj methodName typeArgs args =>
     let objTy ← checkExpr obj
@@ -1727,8 +1583,6 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
         match foundSig with
         | none => throwCheck (.noMethodOnTypeVar methodName n)
         | some sig =>
-          -- Check capabilities from trait method
-          checkCapabilities (n ++ "." ++ methodName) sig.capSet
           -- Type check arguments (params in FnSigDef excludes self)
           if args.length != sig.params.length then
             throwCheck (.wrongArgCount s!"method '{methodName}'" sig.params.length args.length)
@@ -1744,8 +1598,6 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
     let mangledName := typeName ++ "_" ++ methodName
     match ← lookupFn mangledName with
     | some sig =>
-      -- Check capabilities
-      checkCapabilities (typeName ++ "." ++ methodName) sig.capSet
       -- Build type mapping from object's generic type args + explicit call typeArgs
       let objTypeArgs := match innerTy with
         | .generic _ args => args
@@ -1769,8 +1621,6 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
     let mangledName := typeName ++ "_" ++ methodName
     match ← lookupFn mangledName with
     | some sig =>
-      -- Check capabilities
-      checkCapabilities (typeName ++ "::" ++ methodName) sig.capSet
       let mapping := sig.typeParams.zip typeArgs
       let paramTypes := sig.params.map fun (n, t) => (n, substTy mapping t)
       let retTy := substTy mapping sig.retTy
@@ -1787,7 +1637,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
   | .fnRef _ fnName =>
     -- Look up the function signature to build the fn pointer type
     let env ← getEnv
-    match env.allFnSigs.lookup fnName with
+    match env.allFnSummarys.lookup fnName with
     | some sig =>
       let paramTys := sig.params.map Prod.snd
       return .fn_ paramTys sig.capSet sig.retTy
@@ -1862,10 +1712,7 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
     let _ ← checkExpr e
     pure ()
   | .ifElse _ cond thenBody elseBody =>
-    let condTy ← checkExpr cond
-    -- Allow bool or integer types as conditions
-    if condTy != .bool && !isIntegerType condTy then
-      throwCheck (.conditionNotBool "if" (tyToString condTy))
+    let _condTy ← checkExpr cond
     -- Snapshot variable states before branches
     let envBefore ← getEnv
     -- Check then branch
@@ -1883,9 +1730,7 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
       -- No else branch: then branch must not consume any linear var
       checkNoBranchConsumption envBefore.vars envAfterThen.vars "if-without-else"
   | .while_ _ cond body lbl =>
-    let condTy ← checkExpr cond
-    if condTy != .bool && !isIntegerType condTy then
-      throwCheck (.conditionNotBool "while" (tyToString condTy))
+    let _condTy ← checkExpr cond
     -- Increment loop depth for the body, push label if present
     let env ← getEnv
     let labels := match lbl with
@@ -1902,9 +1747,7 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
     | some initStmt => checkStmt initStmt retTy
     | none => pure ()
     -- Condition
-    let condTy ← checkExpr cond
-    if condTy != .bool && !isIntegerType condTy then
-      throwCheck (.conditionNotBool "for" (tyToString condTy))
+    let _condTy ← checkExpr cond
     -- Body + step in loop scope, push label if present
     let env ← getEnv
     let labels := match lbl with
@@ -1946,20 +1789,18 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
       let valTy ← checkExpr value (some inner)
       expectTy inner valTy "deref assignment"
     | .ptrMut inner =>
-      checkCapabilities "*raw_ptr=" (.concrete ["Unsafe"])
       let valTy ← checkExpr value (some inner)
       expectTy inner valTy "deref assignment"
-    | _ => throwCheck .cannotAssignThroughNonMutRef
+    | _ => pure ()  -- CoreCheck validates deref-assign target type
   | .arrayIndexAssign _ arr index value =>
     let arrTy ← checkExpr arr
-    let idxTy ← checkExpr index
-    if !isIntegerType idxTy then
-      throwCheck (.arrayIndexNotInteger none)
+    let _idxTy ← checkExpr index
+    -- CoreCheck validates index type and array type
     match arrTy with
     | .array elemTy _ =>
       let valTy ← checkExpr value (some elemTy)
       expectTy elemTy valTy "array element assignment"
-    | _ => throwCheck (.indexingNonArray none)
+    | _ => let _ ← checkExpr value; pure ()
   | .defer _ body =>
     -- Verify body is a call expression
     match body with
@@ -2194,21 +2035,21 @@ private def resolveSelf (ty : Ty) (implTy : Ty) : Ty :=
   | .heapArray inner => .heapArray (resolveSelf inner implTy)
   | other => other
 
-def checkModule (m : Module) (importedFnSigs : List (String × FnSig) := [])
+def checkModule (m : Module) (importedFnSummarys : List (String × FnSummary) := [])
     (importedStructs : List StructDef := []) (importedEnums : List EnumDef := [])
     (importedImplBlocks : List ImplBlock := []) (importedTraitImpls : List ImplTraitBlock := [])
     : Except String Unit :=
-  let fnSigs : List FnSig := m.functions.map fun f =>
+  let fnSigs : List FnSummary := m.functions.map fun f =>
     { params := f.params.map fun p => (p.name, p.ty), retTy := f.retTy, typeParams := f.typeParams,
       typeBounds := f.typeBounds, capParams := f.capParams, capSet := f.capSet }
   -- Add extern fn signatures
-  let externSigs : List FnSig := m.externFns.map fun ef =>
+  let externSigs : List FnSummary := m.externFns.map fun ef =>
     { params := ef.params.map fun p => (p.name, p.ty), retTy := ef.retTy,
       capSet := .concrete ["Unsafe"] }
-  let importedSigList := importedFnSigs.map Prod.snd
+  let importedSigList := importedFnSummarys.map Prod.snd
   let baseOffset := importedSigList.length
   -- Built-in functions for strings and I/O
-  let builtinSigs : List FnSig := [
+  let builtinSigs : List FnSummary := [
     -- 0: string_length
     { params := [("s", .ref .string)], retTy := .int },
     -- 1: string_concat
@@ -2301,12 +2142,12 @@ def checkModule (m : Module) (importedFnSigs : List (String × FnSig) := [])
     ("socket_close", builtinOffset + 28)
   ]
   -- Add submodule functions/extern fns with qualified names (mod_fn)
-  let submoduleSigs : List FnSig := m.submodules.foldl (fun acc (sub : Module) =>
+  let submoduleSigs : List FnSummary := m.submodules.foldl (fun acc (sub : Module) =>
     acc ++ (sub.functions.map fun f =>
       { params := f.params.map fun p => (p.name, p.ty), retTy := f.retTy, typeParams := f.typeParams,
-        typeBounds := f.typeBounds, capParams := f.capParams, capSet := f.capSet : FnSig })
+        typeBounds := f.typeBounds, capParams := f.capParams, capSet := f.capSet : FnSummary })
     ++ (sub.externFns.map fun ef =>
-      { params := ef.params.map fun p => (p.name, p.ty), retTy := ef.retTy : FnSig })
+      { params := ef.params.map fun p => (p.name, p.ty), retTy := ef.retTy : FnSummary })
   ) []
   let submoduleNames : List (String × Nat) := m.submodules.foldl (fun (acc : List (String × Nat)) (sub : Module) =>
     let baseIdx := baseOffset + fnSigs.length + builtinSigs.length + externSigs.length + acc.length
@@ -2322,26 +2163,28 @@ def checkModule (m : Module) (importedFnSigs : List (String × FnSig) := [])
   -- Collect all impl block methods
   let allImplBlocks := importedImplBlocks ++ m.implBlocks
   let allTraitImpls := importedTraitImpls ++ m.traitImpls
-  let implMethodSigs : List (String × FnSig) := allImplBlocks.foldl (fun acc ib =>
+  let implMethodSigs : List (String × FnSummary) := allImplBlocks.foldl (fun acc ib =>
     let implTy := if ib.typeParams.isEmpty then Ty.named ib.typeName
                   else Ty.generic ib.typeName (ib.typeParams.map Ty.typeVar)
     acc ++ ib.methods.map fun f =>
       let mangledName := ib.typeName ++ "_" ++ f.name
       let allTypeParams := ib.typeParams ++ f.typeParams
-      let sig : FnSig := { params := f.params.map fun p => (p.name, resolveSelf p.ty implTy),
-                            retTy := resolveSelf f.retTy implTy,
-                            typeParams := allTypeParams, capParams := f.capParams, capSet := f.capSet }
+      let paramList := f.params.map fun p => (p.name, resolveSelf p.ty implTy)
+      let sig := ({ params := paramList,
+                     retTy := resolveSelf f.retTy implTy,
+                     typeParams := allTypeParams, capParams := f.capParams, capSet := f.capSet : FnSummary })
       (mangledName, sig)
   ) []
-  let traitImplMethodSigs : List (String × FnSig) := allTraitImpls.foldl (fun acc tb =>
+  let traitImplMethodSigs : List (String × FnSummary) := allTraitImpls.foldl (fun acc tb =>
     let implTy := if tb.typeParams.isEmpty then Ty.named tb.typeName
                   else Ty.generic tb.typeName (tb.typeParams.map Ty.typeVar)
     acc ++ tb.methods.map fun f =>
       let mangledName := tb.typeName ++ "_" ++ f.name
       let allTypeParams := tb.typeParams ++ f.typeParams
-      let sig : FnSig := { params := f.params.map fun p => (p.name, resolveSelf p.ty implTy),
-                            retTy := resolveSelf f.retTy implTy,
-                            typeParams := allTypeParams, capParams := f.capParams, capSet := f.capSet }
+      let paramList := f.params.map fun p => (p.name, resolveSelf p.ty implTy)
+      let sig := ({ params := paramList,
+                     retTy := resolveSelf f.retTy implTy,
+                     typeParams := allTypeParams, capParams := f.capParams, capSet := f.capSet : FnSummary })
       (mangledName, sig)
   ) []
   let implSigList := (implMethodSigs ++ traitImplMethodSigs).map Prod.snd
@@ -2350,12 +2193,12 @@ def checkModule (m : Module) (importedFnSigs : List (String × FnSig) := [])
     (enumerateList (implMethodSigs ++ traitImplMethodSigs)).map fun (idx, (name, _)) => (name, implOffset + idx)
   let allSigs := importedSigList ++ fnSigs ++ builtinSigs ++ externSigs ++ submoduleSigs ++ implSigList
   let importedNames : List (String × Nat) :=
-    (enumerateList importedFnSigs).map fun (idx, (name, _)) => (name, idx)
+    (enumerateList importedFnSummarys).map fun (idx, (name, _)) => (name, idx)
   let fnNames : List (String × Nat) :=
     (enumerateList m.functions).map fun (idx, f) => (f.name, baseOffset + idx)
   let allNames := importedNames ++ fnNames ++ builtinNames ++ externNames ++ submoduleNames ++ implNames
   -- Build named function signature map for fnRef resolution
-  let fnSigPairs : List (String × FnSig) :=
+  let fnSigPairs : List (String × FnSummary) :=
     (m.functions.map fun f => (f.name, { params := f.params.map fun p => (p.name, p.ty),
                                           retTy := f.retTy, typeParams := f.typeParams,
                                           capParams := f.capParams, capSet := f.capSet })) ++
@@ -2394,7 +2237,7 @@ def checkModule (m : Module) (importedFnSigs : List (String × FnSig) := [])
   let initEnv : TypeEnv :=
     { vars := [], structs := allStructs, enums := allEnums, functions := allSigs,
       fnNames := allNames, loopDepth := 0, typeAliases := typeAliasMap, constants := constantsMap,
-      traitImpls := traitImplPairs, allFnSigs := fnSigPairs, newtypes := allNewtypes }
+      traitImpls := traitImplPairs, allFnSummarys := fnSigPairs, newtypes := allNewtypes }
   -- Helper: check if a type is copy (pure context, uses struct/enum defs)
   let isCopyTyPure : Ty → Bool := fun ty =>
     match ty with
@@ -2559,44 +2402,13 @@ def checkModule (m : Module) (importedFnSigs : List (String × FnSig) := [])
   | (.ok (), _) => .ok ()
   | (.error e, _) => .error e
 
-abbrev ExportEntry := List (String × FnSig) × List StructDef × List EnumDef × List ImplBlock × List ImplTraitBlock
-
-/-- Resolve imports for a module: find requested symbols in export tables. -/
-private def resolveImports (m : Module)
-    (exportTable : List (String × ExportEntry))
-    : Except String (List (String × FnSig) × List StructDef × List EnumDef × List ImplBlock × List ImplTraitBlock) :=
-  m.imports.foldlM (init := ([], [], [], [], [])) fun (fns, structs, enums, impls, trImpls) imp =>
-    match exportTable.lookup imp.moduleName with
-    | none => .error (CheckError.message (.unknownModule imp.moduleName))
-    | some (pubFns, pubStructs, pubEnums, pubImpls, pubTraitImpls) =>
-      imp.symbols.foldlM (init := (fns, structs, enums, impls, trImpls)) fun (fns, structs, enums, impls, trImpls) sym =>
-        match pubFns.find? fun (n, _) => n == sym with
-        | some pair => .ok (fns ++ [pair], structs, enums, impls, trImpls)
-        | none =>
-          match pubStructs.find? fun sd => sd.name == sym with
-          | some sd =>
-            let structImpls := pubImpls.filter fun ib => ib.typeName == sym
-            let structTraitImpls := pubTraitImpls.filter fun tb => tb.typeName == sym
-            .ok (fns, structs ++ [sd], enums, impls ++ structImpls, trImpls ++ structTraitImpls)
-          | none =>
-            match pubEnums.find? fun ed => ed.name == sym with
-            | some ed => .ok (fns, structs, enums ++ [ed], impls, trImpls)
-            | none => .error (CheckError.message (.notPublicInModule sym imp.moduleName))
-
-/-- Check a multi-module program. Processes modules in order, building export tables. -/
-def checkProgram (modules : List Module) (summaryTable : List (String × FileSummary) := []) : Except String Unit :=
-  -- Build export table from summaryTable
-  let exportTable : List (String × ExportEntry) := summaryTable.map fun (name, summary) =>
-    let fnSigs := summary.functions.map fun (n, fs) =>
-      (n, { params := fs.params, retTy := fs.retTy, typeParams := fs.typeParams,
-            typeBounds := fs.typeBounds, capParams := fs.capParams, capSet := fs.capSet : FnSig })
-    let externSigs := summary.externFns.map fun ef =>
-      (ef.name, { params := ef.params.map fun p => (p.name, p.ty), retTy := ef.retTy : FnSig })
-    let fnSigs := fnSigs ++ externSigs
-    (name, (fnSigs, summary.structs, summary.enums, summary.implBlocks, summary.traitImpls))
-  -- Second pass: resolve imports and type-check each module
+/-- Check a multi-module program. Uses a pre-built export table for import resolution. -/
+def checkProgram (modules : List Module) (exportTable : List (String × ExportEntry) := []) : Except String Unit :=
   let go := modules.foldlM (init := ()) fun () m => do
-    let (impFns, impStructs, impEnums, impImpls, impTraitImpls) ← resolveImports m exportTable
+    let (impFns, impStructs, impEnums, impImpls, impTraitImpls) ←
+      resolveImportsFromExports m.imports exportTable
+        (fun modName => CheckError.message (.unknownModule modName))
+        (fun sym modName => CheckError.message (.notPublicInModule sym modName))
     checkModule m impFns impStructs impEnums impImpls impTraitImpls
   go
 
