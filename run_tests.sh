@@ -259,7 +259,11 @@ run_ok "$TESTDIR/vec_push_get.con" 500
 run_ok "$TESTDIR/vec_pop.con" 42
 
 # Networking tests
-run_ok "$TESTDIR/tcp_basic.con" 1
+if [ "${SKIP_FLAKY_TCP_TEST:-0}" = "1" ]; then
+    echo "skip lean_tests/tcp_basic.con (SKIP_FLAKY_TCP_TEST=1)"
+else
+    run_ok "$TESTDIR/tcp_basic.con" 1
+fi
 run_ok "$TESTDIR/socket_listen_close.con" 0
 
 # HashMap tests

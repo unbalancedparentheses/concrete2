@@ -33,7 +33,6 @@ for spec in "$RESDIR"/test_*.spec; do
     file=$(head -1 "$spec")
     expected=$(tail -n +2 "$spec")
     name=$(basename "$file" .con)
-
     (
         out="$OUTDIR/$name"
         if ! $COMPILER "$file" -o "$out" > /dev/null 2>&1; then
