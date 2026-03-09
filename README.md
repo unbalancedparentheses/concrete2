@@ -338,7 +338,7 @@ The current surface language is intentionally conservative. The highest-leverage
 In order, the strongest next improvements are:
 
 - **Summary-based frontend**: introduce `FileSummary`, move cross-file dependencies to summaries, and keep the frontend simple instead of query-first
-- **Summary-based frontend**: continue the migration already started in `Resolve` by separating shallow/interface work from body resolution, then make the summary artifact explicit and reusable
+- **Summary-based frontend**: `FileSummary` now exists and shallow resolution already consumes summaries; the next step is making summaries stable reusable frontend artifacts
 - **Core as semantic authority**: keep semantic meaning centered in elaborated/validated Core rather than duplicated in surface-AST checking
 - **ABI/layout subsystem clarity**: centralize size, alignment, field-offset, enum-layout, and FFI-safe rules
 - **Audit-focused compiler outputs**: capability summaries, `Unsafe` summaries, allocation/layout reports, and better pass-boundary inspection
@@ -385,7 +385,7 @@ See [ROADMAP.md](ROADMAP.md) for the full implementation plan with syntax, rules
 | **13** | Tooling | Not started |
 | **14** | Runtime (C, then Concrete) | Not started |
 
-Next critical path: **continue the summary-based frontend migration (shallow/body split is already landed), then Core authority, ABI/layout subsystem cleanup, audit-focused outputs, and small SSA optimization before broader stdlib growth.** Structured diagnostics are complete across all semantic passes. The legacy AST backend has been removed.
+Next critical path: **continue the summary-based frontend migration (`FileSummary` exists and shallow resolution already consumes summaries), then Core authority, ABI/layout subsystem cleanup, audit-focused outputs, and small SSA optimization before broader stdlib growth.** Structured diagnostics are complete across all semantic passes. The legacy AST backend has been removed.
 
 ### What fits the philosophy and what does not
 
@@ -526,8 +526,7 @@ Things Concrete deliberately does not have:
 - Clear path to formal verification because the compiler is already implemented in Lean and now has explicit internal IR boundaries
 
 **Next steps:**
-- Move toward a summary-based frontend with explicit `FileSummary` boundaries
-- Keep pushing the summary-based frontend migration from the current shallow/body resolution split toward an explicit reusable `FileSummary`
+- Keep pushing the summary-based frontend from the current `FileSummary` + summary-driven shallow resolution toward stable reusable frontend artifacts
 - Continue shifting semantic authority toward validated Core IR
 - Tighten the ABI/layout subsystem and expose more audit-focused compiler outputs
 - Grow a sharp stdlib in bytes/buffers, views, file/path/process/env, networking, and formatting
