@@ -1,4 +1,4 @@
-# Feature Admission Checklist
+# Design Filters
 
 **Status:** Process guideline
 **Affects:** Language design, compiler architecture, roadmap decisions
@@ -6,16 +6,16 @@
 
 ## Purpose
 
-Use this checklist as a gate before adopting any language feature, compiler feature, or borrowed idea from another language.
+Use this note as the gate before adopting any language feature, compiler feature, or borrowed idea.
 
-Concrete is not trying to maximize shorthand or copy fashionable features. The standard should be higher:
+Concrete is not trying to maximize shorthand or track trends. The standard should be higher:
 
-- does this preserve simplicity?
-- does this improve reliability?
-- does this fit the verification story?
-- does this keep semantics explicit?
+- preserve simplicity
+- improve reliability
+- fit the verification story
+- keep semantics explicit
 
-If a proposal only improves ergonomics while making the compiler harder to explain, it is probably a bad fit.
+If an idea improves ergonomics while making the compiler harder to explain, it is probably a bad fit.
 
 ## Feature Admission Checklist
 
@@ -99,33 +99,60 @@ Reject ideas that are:
 
 A feature is promising if it makes the compiler and the language easier to explain at the same time.
 
-## Applying This To Borrowed Ideas
+## High-Leverage Priorities
 
-The best ideas to borrow from other languages are usually not convenience features. They are usually constraints, interfaces, or compiler boundaries.
+The highest-leverage improvements for Concrete are likely to be:
 
-Examples of strong fits:
+1. summary-based frontend
+2. Core as semantic authority
+3. ABI/layout subsystem clarity
+4. audit-focused tooling and compiler outputs
+5. small but excellent standard library
+6. explicit project/build model
+7. proof-driven narrowing
 
-- file-summary or declaration-only import models
-- explicit proof-obligation discipline for new features
-- a single semantic IR as the main authority
-- clear monomorphization boundaries
-- internal analyses that simplify reasoning without changing the user model
+These are high leverage because they improve several things at once:
 
-Examples of risky fits:
+- compiler structure
+- user trust
+- auditability
+- proof tractability
+- future tooling/performance options
 
-- hidden convenience syntax
-- broad inference that crosses phase boundaries
-- source-generating macro systems
-- implicit global lookup rules
-- features whose main benefit is reducing keystrokes
+## Main Rule For Borrowed Ideas
 
-## Relationship To Other Research Notes
+**Copy constraints before copying features.**
 
-This checklist is meant to complement:
+Zig, Austral, SPARK, and Odin are often most useful because they say "no" in structurally helpful places.
 
+Concrete should borrow:
+
+- explicit compiler boundaries
+- summary-based interfaces
+- proof-oriented design discipline
+- simple whole-program lowering constraints
+
+Concrete should be conservative about:
+
+- ergonomic sugar
+- inference-heavy abstraction systems
+- hidden dispatch or allocation
+- features that broaden cross-file coupling
+
+## Recommendation
+
+Concrete should spend effort first on improvements that multiply clarity across the whole project:
+
+- architecture before ornament
+- tooling visibility before convenience syntax
+- ABI/layout credibility before feature expansion
+- proof-friendly boundaries before richer abstractions
+
+Concrete gets stronger by becoming sharper, not merely bigger.
+
+## Related Notes
+
+- [candidate-ideas.md](candidate-ideas.md)
+- [external-ideas.md](external-ideas.md)
 - [file-summary-frontend.md](file-summary-frontend.md)
-- [no-closures.md](no-closures.md)
-- [no-trait-objects.md](no-trait-objects.md)
-- [derived-equality-design.md](derived-equality-design.md)
-
-Those notes analyze specific design choices. This document is the general filter to apply before writing notes like those in the first place.
+- [mlir-backend-shape.md](mlir-backend-shape.md)
