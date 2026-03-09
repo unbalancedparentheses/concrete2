@@ -138,7 +138,7 @@ def compileSSA (inputPath : String) (outputPath : String) (emitLLVM : Bool) : IO
     return 1
   | .ok modules =>
     -- Name resolution (catches undeclared names early)
-    match liftStringError "resolve" (resolveProgram modules) with
+    match resolveProgram modules with
     | .error ds =>
       IO.eprintln (renderDiagnostics ds)
       return 1
