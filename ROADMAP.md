@@ -4,7 +4,7 @@ This is the implementation plan for the Concrete programming language. For the f
 
 ## What's Built
 
-The Lean 4 compiler implements the core surface language plus the new internal IR pipeline pieces: Core IR, elaboration, Core validation, monomorphization, SSA lowering, SSA verification/cleanup, and SSA codegen. All 201 tests pass, and the SSA-specific suite passes as well.
+The Lean 4 compiler implements the core surface language plus the new internal IR pipeline pieces: Core IR, elaboration, Core validation, monomorphization, SSA lowering, SSA verification/cleanup, and SSA codegen. All 222 main tests pass, and the SSA-specific suite passes as well (`151/151`).
 
 **Done:**
 - Lexer, LL(1) parser, AST
@@ -385,8 +385,8 @@ Build mechanized proofs over the validated Core IR. This is existing Phase 9, no
 | 2 | A2 | Elaboration phase | `Concrete/Elab.lean` | **DONE** |
 | 3 | A3 | Resolution phase cleanup | `Concrete/Resolve.lean` | **IN PROGRESS** |
 | 4 | A4 | Core validation (split from checker) | `Concrete/CoreCheck.lean` | **IN PROGRESS** |
-| 5 | A5 | Codegen consumes SSA IR | `Concrete/EmitSSA.lean` | **IN PROGRESS** |
-| 6 | A6 | Structured diagnostics | `Concrete/Diagnostic.lean` | **IN PROGRESS** |
+| 5 | A5 | Codegen consumes SSA IR | `Concrete/EmitSSA.lean` | **DONE** |
+| 6 | A6 | Structured diagnostics | `Concrete/Diagnostic.lean` | **DONE** |
 | 7 | A7 | Builtin vs stdlib boundary | documentation + migration | Not started |
 | 8 | A8 | Monomorphization cleanup | `Concrete/Mono.lean` | **DONE** |
 | 9 | A9 | SSA / lowering IR | `Concrete/Lower.lean` | **DONE** |
@@ -453,10 +453,10 @@ Longer-term items beyond current batch:
 
 #### Diagnostics
 
-6. **Span tracking** — mostly done for the surface language.
+6. **Span tracking** — done for the current compiler surface.
 - AST nodes carry source spans and the parser populates them from token positions.
-- `Resolve` diagnostics now render with source locations.
-- Remaining work is to use the same plumbing across the rest of the semantic passes and eventually move to range spans.
+- Semantic diagnostics now render with source locations.
+- Remaining future work is range spans and richer highlighting, not basic span plumbing.
 
 7. **Structured error kinds** — done for all semantic passes.
 - `Resolve` now has a structured `ResolveError` layer with stable rendered messages.
@@ -1915,14 +1915,14 @@ These do not block any phase above:
 | 2 | **A2** | Elaboration phase | A1 |
 | 3 | **A3** | Resolution phase cleanup | — (parallel with A2) |
 | 4 | **A4** | Core validation (split from checker) | A1, A2 |
-| 5 | **A5** | Codegen consumes Core IR | A1, A2, A4 |
-| 6 | **A6** | Structured diagnostics | — (parallel with A1-A5) |
+| 5 | **A5** | Codegen consumes SSA IR | A1, A2, A4, A9 |
+| 6 | **A6** | Structured diagnostics | — |
 | 7 | **A7** | Builtin vs stdlib boundary | A2, A4 |
 | 8 | **A8** | Monomorphization cleanup | A4 |
 | 9 | **A9** | SSA / lowering IR | A5, A8 |
 | 10 | **A10** | Formal kernel proofs | A4 |
 
-**Critical path for architecture:** A1 → A2 → A4 → A5 → A9 (core IR → elaboration → validation → codegen migration → SSA). A3 and A6 are independent and can run in parallel.
+**Critical path for architecture:** A1 → A2 → A4 → A9 → A5 (core IR → elaboration → validation → SSA lowering → SSA codegen).
 
 ### Language Features
 
@@ -1958,7 +1958,7 @@ These do not block any phase above:
 | **12a** | Runtime in C | Not started | 7 |
 | **12b** | Runtime in Concrete | Not started | 8, 12a |
 
-**Next priorities:** Architecture work (A1-A5) before new language features. The architecture refactoring makes every subsequent feature cheaper to add, easier to test, and easier to prove sound.
+**Next priorities:** ABI/layout rigor, `#[repr(C)]`, sharper `unsafe`, SSA optimization, and formalization work.
 
 **Critical path for production use:** Architecture (A1-A5) → remaining stdlib (8f, 8h) → runtime (12a).
 

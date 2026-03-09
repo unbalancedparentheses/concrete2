@@ -225,7 +225,7 @@ Concrete is built for code that must be inspectable and mechanically verified.
 
 ## Current Status
 
-The compiler implements the core surface language and the internal IR pipeline in Lean 4. All 210 main tests and 141 SSA tests pass.
+The compiler implements the core surface language and the internal IR pipeline in Lean 4. All 222 main tests and 151 SSA tests pass.
 
 **MLIR backend, kernel formalization, and the runtime are not yet implemented.** The compiler has a single staged pipeline in Lean 4: Parse → Resolve → Check → Elab → CoreCheck → Mono → Lower → SSAVerify → SSACleanup → EmitSSA → clang. All semantic passes use structured error kinds (ResolveError, CheckError, ElabError, CoreCheckError, SSAVerifyError). The frontend carries source spans through the AST. See the full [ROADMAP.md](ROADMAP.md) for the implementation plan. What works today:
 
@@ -273,7 +273,6 @@ It is not finished in the places that matter for broader adoption:
 - no verified kernel yet
 - no finalized `repr(C)` / layout-control surface
 - no optimizer/MLIR pipeline yet
-- diagnostics migration still in progress
 - runtime story still incomplete
 
 ## Near-Term Design Priorities
@@ -381,7 +380,7 @@ Requires [Lean 4](https://leanprover.github.io/lean4/doc/setup.html) (v4.28.0+) 
 
 ```bash
 make build    # or: lake build
-make test     # runs all 201 tests
+make test     # runs all 222 tests
 make clean    # or: lake clean
 ```
 
@@ -404,9 +403,8 @@ Concrete/
   SSAVerify.lean -- SSA validation
   SSACleanup.lean -- SSA cleanup
   EmitSSA.lean   -- LLVM IR from SSA
-  Codegen.lean   -- Legacy AST-based LLVM backend
 Main.lean        -- Entry point
-lean_tests/      -- 204 test programs (201 in main suite)
+lean_tests/      -- 222 test programs
 examples/        -- 66 example programs
 ```
 
@@ -444,13 +442,12 @@ Things Concrete deliberately does not have:
 - ~15,500 lines of Lean across parser, checker, Core IR, SSA pipeline, and backends
 - Direct textual LLVM IR emission from the SSA backend, compiled with `clang`
 - Real staged pipeline: Parse -> Resolve -> Check -> Elab -> CoreCheck -> Mono -> Lower -> SSAVerify -> SSACleanup -> EmitSSA
-- Structured diagnostics migration underway, with source spans in the AST and typed errors already in `Resolve`, `Check`, and `Elab`
+- Structured diagnostics across the semantic pipeline, with source spans in the AST and typed errors in `Resolve`, `Check`, `Elab`, `CoreCheck`, and `SSAVerify`
 - Clear path to formal verification because the compiler is already implemented in Lean and now has explicit internal IR boundaries
 
 **Next steps:**
 - Tighten ABI/layout features (`repr(C)`, sharper unsafe boundary)
 - MLIR-based optimization pipeline
-- Kernel formalization
 - Kernel formalization and proof development in Lean
 
 ## License
