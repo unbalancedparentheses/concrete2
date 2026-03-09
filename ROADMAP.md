@@ -4,7 +4,7 @@ This is the implementation plan for the Concrete programming language. For the f
 
 ## What's Built
 
-The Lean 4 compiler implements the core surface language plus the new internal IR pipeline pieces: Core IR, elaboration, Core validation, and SSA lowering. All 201 tests pass.
+The Lean 4 compiler implements the core surface language plus the new internal IR pipeline pieces: Core IR, elaboration, Core validation, monomorphization, SSA lowering, SSA verification/cleanup, and SSA codegen. All 201 tests pass, and the SSA-specific suite passes as well.
 
 **Done:**
 - Lexer, LL(1) parser, AST
@@ -39,7 +39,7 @@ The Lean 4 compiler implements the core surface language plus the new internal I
 - Networking: tcp_connect, tcp_listen, tcp_accept, socket_send, socket_recv, socket_close (require Network)
 - FFI: `extern fn` declarations, `Unsafe` capability gating
 
-**Not yet implemented:** `#[repr(C)]`, transmute, newtype, MLIR backend, env vars/process args, kernel formalization, runtime, resolution split, monomorphization cleanup, and full backend unification onto the new IR pipeline.
+**Not yet implemented:** `#[repr(C)]`, transmute, newtype, MLIR backend, env vars/process args, kernel formalization, runtime, a deeper standalone resolution phase, richer structured diagnostics, and removal of the legacy AST backend.
 
 ---
 
@@ -322,7 +322,7 @@ New file: `Concrete/Resolve.lean`
 
 Extract name resolution, module resolution, and symbol binding from Check.lean into a dedicated pass.
 
-**Status:** Not started. This is still mixed into the frontend/checker path.
+**Status:** In progress. `Resolve.lean` exists and runs in the compile path, but currently focuses on early name/scope checks rather than full function/type/module resolution.
 
 ### A4: Core Validation
 
@@ -330,13 +330,13 @@ New file: `Concrete/CoreCheck.lean`
 
 Type check, linearity, borrow, and capability validation on Core IR. Replaces semantic checking currently in Check.lean. Much simpler because the input is already desugared and explicit.
 
-**Status:** In progress. Initial version (`CoreCheck.lean`) validates capability discipline, type consistency (operators, calls, conditions), match exhaustiveness, and structural invariants (break/continue inside loops). Integrated into the pipeline after elaboration. Runs on all elaborated programs without false positives.
+**Status:** In progress. `CoreCheck.lean` is integrated into the pipeline and validates capability discipline, type consistency, match exhaustiveness, and structural invariants. The remaining work is to continue moving semantic authority out of `Check.lean`.
 
 ### A5: Codegen on SSA IR
 
 Modify `Concrete/Codegen.lean` to consume SSA IR instead of Surface AST. Codegen becomes a pure target-emission step over the lowered SSA representation. This makes the pipeline: AST → Elab → CoreCheck → Mono → Lower → SSA → Codegen.
 
-**Status:** Not started. Existing LLVM codegen still consumes the surface AST directly.
+**Status:** In progress. `EmitSSA.lean` exists and the default compile path uses the SSA backend. The remaining work is confidence hardening and eventual removal of the legacy AST backend.
 
 ### A6: Structured Diagnostics
 
@@ -347,6 +347,8 @@ Replace string-based errors with typed diagnostic data:
 - Secondary notes
 - Fix suggestions
 
+**Status:** In progress. `Diagnostic.lean` exists and the compile path can render structured diagnostics, but spans and per-pass structured error kinds are still incomplete.
+
 ### A7: Builtin vs Stdlib Boundary
 
 Write down and enforce a hard rule for what lives in syntax, checker/elaboration, codegen/runtime, vs stdlib. Migrate stdlib-appropriate code out of compiler intrinsics where possible.
@@ -355,11 +357,21 @@ Write down and enforce a hard rule for what lives in syntax, checker/elaboration
 
 Extract monomorphization from elaboration/codegen into its own explicit pass operating on Core IR.
 
+**Status:** Done. `Mono.lean` exists and runs before lowering.
+
 ### A9: Lower / SSA
 
 Add and stabilize the lowering pass that produces SSA as the backend-oriented IR (explicit control flow, data layout, memory operations). SSA becomes the input to codegen.
 
-**Status:** Done. `Lower.lean` converts Core IR → SSA IR with correct field indexing, enum tag layout, match dispatch via conditional branches, and break/continue via loop label tracking. Inspectable via `--emit-ssa`. Golden tests cover 19 programs × 2 modes.
+**Status:** Done. `Lower.lean` converts Core IR → SSA IR with correct aligned field indexing, enum payload layout, match dispatch via conditional branches, and break/continue via loop label tracking. Inspectable via `--emit-ssa`. Golden tests cover 19 programs × 2 modes.
+
+### A9b: SSA Verify / Cleanup
+
+New files: `Concrete/SSAVerify.lean`, `Concrete/SSACleanup.lean`
+
+Validate SSA invariants and perform structural cleanup before codegen.
+
+**Status:** Done. Both passes are integrated into the SSA compile path.
 
 ### A10: Formal Kernel Proofs
 
@@ -371,13 +383,14 @@ Build mechanized proofs over the validated Core IR. This is existing Phase 9, no
 |----------|-------|-------------|-----------|--------|
 | 1 | A1 | Core IR definition | `Concrete/Core.lean` | **DONE** |
 | 2 | A2 | Elaboration phase | `Concrete/Elab.lean` | **DONE** |
-| 3 | A3 | Resolution phase cleanup | `Concrete/Resolve.lean` | Not started |
+| 3 | A3 | Resolution phase cleanup | `Concrete/Resolve.lean` | **IN PROGRESS** |
 | 4 | A4 | Core validation (split from checker) | `Concrete/CoreCheck.lean` | **IN PROGRESS** |
-| 5 | A5 | Codegen consumes SSA IR | modify `Concrete/Codegen.lean` | Not started |
-| 6 | A6 | Structured diagnostics | modify error infrastructure | Not started |
+| 5 | A5 | Codegen consumes SSA IR | `Concrete/EmitSSA.lean` | **IN PROGRESS** |
+| 6 | A6 | Structured diagnostics | `Concrete/Diagnostic.lean` | **IN PROGRESS** |
 | 7 | A7 | Builtin vs stdlib boundary | documentation + migration | Not started |
-| 8 | A8 | Monomorphization cleanup | `Concrete/Mono.lean` | Not started |
+| 8 | A8 | Monomorphization cleanup | `Concrete/Mono.lean` | **DONE** |
 | 9 | A9 | SSA / lowering IR | `Concrete/Lower.lean` | **DONE** |
+| 10 | A9b | SSA verify / cleanup | `Concrete/SSAVerify.lean`, `Concrete/SSACleanup.lean` | **DONE** |
 | 10 | A10 | Formal kernel proofs | `Concrete/Kernel/*.lean` | Not started |
 
 ### Pass Invariants

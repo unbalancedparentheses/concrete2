@@ -23,8 +23,6 @@ structure VerifyCtx where
   blockLabels : List String
   /-- Map from block label to its predecessor labels. -/
   predecessors : List (String × List String)
-  /-- All defined registers across all blocks (for use-before-def). -/
-  allDefs : List String
   /-- Function parameter names. -/
   paramNames : List String
   /-- Dominator map: label → list of labels that dominate it. -/
@@ -62,6 +60,13 @@ private def instDst : SInst → Option String
 /-- Collect all registers defined in a block's instructions (including phis). -/
 private def blockDefs (b : SBlock) : List String :=
   b.insts.filterMap instDst
+
+/-- Collect registers defined by phi nodes in a block. -/
+private def blockPhiDefs (b : SBlock) : List String :=
+  b.insts.filterMap fun inst =>
+    match inst with
+    | .phi dst _ _ => some dst
+    | _ => none
 
 /-- Collect all registers used in an SVal. -/
 private def svalRegs : SVal → List String
@@ -151,6 +156,13 @@ private def dominatedBy (doms : List (String × List String)) (block : String) :
 private def regDefBlock (blocks : List SBlock) (reg : String) : Option String :=
   blocks.find? (fun b => (blockDefs b).contains reg) |>.map (·.label)
 
+/-- Registers defined in blocks that strictly dominate the given block. -/
+private def strictDomDefs (ctx : VerifyCtx) (blockLabel : String) : List String :=
+  let doms := dominatedBy ctx.dominators blockLabel
+  let strictDoms := doms.filter (· != blockLabel)
+  ctx.blocks.filter (fun b => strictDoms.contains b.label)
+    |>.foldl (fun acc b => acc ++ blockDefs b) []
+
 -- ============================================================
 -- Per-block validation
 -- ============================================================
@@ -165,22 +177,48 @@ private def checkDuplicateDefs (ctx : VerifyCtx) (b : SBlock) : VerifyCtx :=
       (ctx, d :: seen)
   ) (ctx, ([] : List String)) |>.1
 
-/-- Check that all used registers are defined in a dominating block (or as params).
-    Phi nodes are special: their operands come from predecessor blocks, not the current block. -/
+/-- Check that all used registers are defined before use.
+    Non-phi instructions are checked in program order within the block.
+    Phi operands are checked against predecessor block dominator sets. -/
 private def checkUsesAreDefined (ctx : VerifyCtx) (b : SBlock) : VerifyCtx :=
-  let doms := dominatedBy ctx.dominators b.label
-  -- Check non-phi instruction uses
+  let phiDefs := blockPhiDefs b
+  let strictDomRegs := strictDomDefs ctx b.label
+  -- Walk non-phi instructions in order, accumulating defs
   let nonPhiInsts := b.insts.filter fun inst => match inst with | .phi _ _ _ => false | _ => true
-  let uses := nonPhiInsts.foldl (fun acc i => acc ++ instUses i) [] ++ termUses b.term
-  let ctx := uses.foldl (fun ctx u =>
+  let (ctx, runningDefs) := nonPhiInsts.foldl (fun (ctx, running) inst =>
+    -- Check uses of this instruction against what's available so far
+    let uses := instUses inst
+    let ctx := uses.foldl (fun ctx u =>
+      if ctx.paramNames.contains u then ctx
+      else if u.startsWith "@fnref." then ctx
+      else if phiDefs.contains u then ctx
+      else if running.contains u then ctx
+      else if strictDomRegs.contains u then ctx
+      else
+        match regDefBlock ctx.blocks u with
+        | some defBlock =>
+          if defBlock == b.label then
+            addError ctx s!"block '{b.label}': use of %{u} before its definition in the same block"
+          else
+            addError ctx s!"block '{b.label}': use of %{u} defined in non-dominating block '{defBlock}'"
+        | none => addError ctx s!"block '{b.label}': use of undefined register %{u}"
+    ) ctx
+    -- Add this instruction's def to running set
+    let running := match instDst inst with
+      | some dst => dst :: running
+      | none => running
+    (ctx, running)
+  ) (ctx, ([] : List String))
+  -- Check terminator uses: all block instructions have executed
+  let allBlockDefs := phiDefs ++ runningDefs ++ strictDomRegs
+  let ctx := (termUses b.term).foldl (fun ctx u =>
     if ctx.paramNames.contains u then ctx
-    else if u.startsWith "@fnref." then ctx  -- global function references
+    else if u.startsWith "@fnref." then ctx
+    else if allBlockDefs.contains u then ctx
     else
-      -- Register must be defined in a block that dominates this one
       match regDefBlock ctx.blocks u with
       | some defBlock =>
-        if doms.contains defBlock then ctx
-        else addError ctx s!"block '{b.label}': use of %{u} defined in non-dominating block '{defBlock}'"
+        addError ctx s!"block '{b.label}': use of %{u} defined in non-dominating block '{defBlock}'"
       | none => addError ctx s!"block '{b.label}': use of undefined register %{u}"
   ) ctx
   -- Check phi node uses: each operand must be defined in or dominating its source block
@@ -219,9 +257,14 @@ private def checkPhiNodes (ctx : VerifyCtx) (b : SBlock) : VerifyCtx :=
     | .phi _ incoming _ =>
       let phiLabels := incoming.map (·.2)
       -- Check that each predecessor has an entry
-      preds.foldl (fun ctx p =>
+      let ctx := preds.foldl (fun ctx p =>
         if phiLabels.contains p then ctx
         else addError ctx s!"block '{b.label}': phi missing entry for predecessor '{p}'"
+      ) ctx
+      -- Check for extra entries (non-predecessor labels)
+      phiLabels.foldl (fun ctx lbl =>
+        if preds.contains lbl then ctx
+        else addError ctx s!"block '{b.label}': phi has entry for non-predecessor '{lbl}'"
       ) ctx
     | _ => ctx
   ) ctx
@@ -335,7 +378,6 @@ private def verifyFn (f : SFnDef) (fnSigs : List (String × List Ty × Ty)) : Di
   else
     let blockLabels := f.blocks.map (·.label)
     let predecessors := buildPredecessors f.blocks
-    let allDefs := f.blocks.foldl (fun acc b => acc ++ blockDefs b) []
     let paramNames := f.params.map (·.1)
     let dominators := computeDominators f.blocks predecessors
     let regTypes := buildRegTypes f.params f.blocks
@@ -343,7 +385,6 @@ private def verifyFn (f : SFnDef) (fnSigs : List (String × List Ty × Ty)) : Di
       fnName := f.name
       blockLabels := blockLabels
       predecessors := predecessors
-      allDefs := allDefs
       paramNames := paramNames
       dominators := dominators
       blocks := f.blocks

@@ -203,7 +203,7 @@ Concrete is built for code that must be inspectable and mechanically verified.
 
 The compiler implements the core surface language and the new internal IR pipeline in Lean 4. All 201 tests pass.
 
-**MLIR backend, kernel formalization, and the runtime are not yet implemented.** The compiler now has Core IR, elaboration, Core validation, and SSA lowering, but the legacy AST-based codegen path is still the authoritative compilation path. Backend unification onto SSA is still in progress. See the full [ROADMAP.md](ROADMAP.md) for the implementation plan. What works today:
+**MLIR backend, kernel formalization, and the runtime are not yet implemented.** The compiler now has Core IR, elaboration, Core validation, monomorphization, SSA lowering, SSA verification/cleanup, and SSA codegen. The default compile path uses the SSA pipeline, while the legacy AST backend remains available behind `--compile-legacy` during the transition. See the full [ROADMAP.md](ROADMAP.md) for the implementation plan. What works today:
 
 - **Types**: Int, Uint, i8-i32, u8-u32, f32, f64, Bool, Char, String, arrays `[T; N]`, raw pointers
 - **Structs** with field access, mutation, and `Heap<T>` fields
@@ -222,7 +222,7 @@ The compiler implements the core surface language and the new internal IR pipeli
 - **Function pointers**: first-class values, `Copy` semantics, no closures (explicit design choice)
 - **Bitwise operators**: `&`, `|`, `^`, `<<`, `>>`, `~` with hex/binary/octal literals
 - **FFI**: `extern fn` declarations with `Unsafe` capability gating
-- **Compiler pipeline**: Core IR (`--emit-core`), elaboration, SSA lowering (`--emit-ssa`)
+- **Compiler pipeline**: Core IR (`--emit-core`), elaboration, Core validation, SSA lowering (`--emit-ssa`), SSA-based compilation
 - **Standard library builtins**:
   - **Strings**: `string_length`, `string_concat`, `string_slice`, `string_char_at`, `string_contains`, `string_eq`, `string_trim`, `drop_string`
   - **Conversions**: `int_to_string`, `string_to_int`, `bool_to_string`, `float_to_string`
@@ -262,7 +262,7 @@ See [ROADMAP.md](ROADMAP.md) for the full implementation plan with syntax, rules
 | **13** | Tooling | Not started |
 | **14** | Runtime (C, then Concrete) | Not started |
 
-Next critical path: **backend unification onto SSA + migration out of `Check.lean`** so the new IR pipeline becomes the semantic and backend source of truth. After that: optimization, a real `Resolve` pass, and kernel formalization.
+Next critical path: **deepen `Resolve` + remove the legacy backend** so the new pipeline is the only semantic and backend path. After that: structured diagnostics, optimization, and kernel formalization.
 
 ### What fits the philosophy and what does not
 
@@ -296,7 +296,10 @@ Source (.con)
   AST (Concrete/AST.lean)
     |
     v
-  Check.lean -- current frontend checker / resolver
+  Resolve.lean -- current early name-resolution pass
+    |
+    v
+  Check.lean -- frontend checker
     |
     v
   Elab.lean -- surface AST -> Core IR
@@ -305,10 +308,16 @@ Source (.con)
   CoreCheck.lean -- Core validation
     |
     v
+  Mono.lean -- Core monomorphization
+    |
+    v
   Lower.lean -- Core IR -> SSA IR
     |
     v
-  Codegen.lean -- current LLVM codegen (legacy path still authoritative)
+  SSAVerify.lean / SSACleanup.lean -- SSA validation + cleanup
+    |
+    v
+  EmitSSA.lean -- LLVM IR from SSA (default path)
     |
     v
   clang -- LLVM IR -> native binary
@@ -338,13 +347,18 @@ Concrete/
   Lexer.lean     -- Tokenizer
   AST.lean       -- Abstract syntax tree
   Parser.lean    -- LL(1) recursive descent parser
-  Check.lean     -- Current frontend checker / resolver
+  Resolve.lean   -- Early name resolution
+  Check.lean     -- Frontend checker
   Core.lean      -- Core IR
   Elab.lean      -- Surface AST -> Core IR
   CoreCheck.lean -- Core validation
+  Mono.lean      -- Core monomorphization
   Lower.lean     -- Core IR -> SSA IR
   SSA.lean       -- SSA IR
-  Codegen.lean   -- LLVM IR code generation
+  SSAVerify.lean -- SSA validation
+  SSACleanup.lean -- SSA cleanup
+  EmitSSA.lean   -- LLVM IR from SSA
+  Codegen.lean   -- Legacy AST-based LLVM backend
 Main.lean        -- Entry point
 lean_tests/      -- 201 tests
 examples/        -- 62 example programs
