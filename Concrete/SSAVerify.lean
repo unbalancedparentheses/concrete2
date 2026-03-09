@@ -37,8 +37,52 @@ structure VerifyCtx where
   retTy : Ty
   errors : Diagnostics
 
+inductive SSAVerifyError where
+  -- Register definitions
+  | duplicateRegDef (block : String) (reg : String)
+  | functionHasNoBlocks
+  -- Use-def / dominance
+  | useBeforeDef (block : String) (reg : String)
+  | useInNonDominatingBlock (block : String) (reg : String) (defBlock : String)
+  | undefinedRegister (block : String) (reg : String)
+  -- Branch targets
+  | branchToUnknownLabel (block : String) (label : String)
+  -- Phi nodes
+  | phiMissingPredecessor (block : String) (predecessor : String)
+  | phiExtraPredecessor (block : String) (label : String)
+  | phiNotDominatedBySrc (block : String) (reg : String) (srcLabel : String) (defBlock : String)
+  | phiUndefinedRegister (block : String) (reg : String)
+  | phiTypeMismatch (block : String) (dst : String) (expected : String) (got : String)
+  -- Call validation
+  | callArityMismatch (block : String) (fn : String) (got : Nat) (expected : Nat)
+  -- Return validation
+  | retVoidInNonVoidFn (block : String) (retTy : String)
+  | retValueInVoidFn (block : String) (valTy : String)
+  -- Binop validation
+  | binopTypeMismatch (block : String) (dst : String) (lTy : String) (rTy : String)
+
+def SSAVerifyError.message : SSAVerifyError → String
+  | .duplicateRegDef block reg => s!"block '{block}': duplicate definition of %{reg}"
+  | .functionHasNoBlocks => "function has no blocks"
+  | .useBeforeDef block reg => s!"block '{block}': use of %{reg} before its definition in the same block"
+  | .useInNonDominatingBlock block reg defBlock => s!"block '{block}': use of %{reg} defined in non-dominating block '{defBlock}'"
+  | .undefinedRegister block reg => s!"block '{block}': use of undefined register %{reg}"
+  | .branchToUnknownLabel block label => s!"block '{block}': branch to unknown label '{label}'"
+  | .phiMissingPredecessor block predecessor => s!"block '{block}': phi missing entry for predecessor '{predecessor}'"
+  | .phiExtraPredecessor block label => s!"block '{block}': phi has entry for non-predecessor '{label}'"
+  | .phiNotDominatedBySrc block reg srcLabel defBlock => s!"block '{block}': phi operand %{reg} from '{srcLabel}' not dominated by def block '{defBlock}'"
+  | .phiUndefinedRegister block reg => s!"block '{block}': phi uses undefined register %{reg}"
+  | .phiTypeMismatch block dst expected got => s!"block '{block}': phi %{dst} expects type {expected} but incoming value has type {got}"
+  | .callArityMismatch block fn got expected => s!"block '{block}': call @{fn} has {got} args but function expects {expected}"
+  | .retVoidInNonVoidFn block retTy => s!"block '{block}': `ret void` in function returning {retTy}"
+  | .retValueInVoidFn block valTy => s!"block '{block}': `ret {valTy}` in void function"
+  | .binopTypeMismatch block dst lTy rTy => s!"block '{block}': binop %{dst} has mismatched operand types: {lTy} vs {rTy}"
+
 private def addError (ctx : VerifyCtx) (msg : String) : VerifyCtx :=
   { ctx with errors := ctx.errors ++ [{ severity := .error, message := s!"{ctx.fnName}: {msg}", pass := "ssa-verify", span := none, hint := none }] }
+
+private def addSSAError (ctx : VerifyCtx) (e : SSAVerifyError) : VerifyCtx :=
+  addError ctx e.message
 
 -- ============================================================
 -- Collect defined registers
@@ -172,7 +216,7 @@ private def checkDuplicateDefs (ctx : VerifyCtx) (b : SBlock) : VerifyCtx :=
   let defs := blockDefs b
   defs.foldl (fun (ctx, seen) d =>
     if seen.contains d then
-      (addError ctx s!"block '{b.label}': duplicate definition of %{d}", seen)
+      (addSSAError ctx (.duplicateRegDef b.label d), seen)
     else
       (ctx, d :: seen)
   ) (ctx, ([] : List String)) |>.1
@@ -198,10 +242,10 @@ private def checkUsesAreDefined (ctx : VerifyCtx) (b : SBlock) : VerifyCtx :=
         match regDefBlock ctx.blocks u with
         | some defBlock =>
           if defBlock == b.label then
-            addError ctx s!"block '{b.label}': use of %{u} before its definition in the same block"
+            addSSAError ctx (.useBeforeDef b.label u)
           else
-            addError ctx s!"block '{b.label}': use of %{u} defined in non-dominating block '{defBlock}'"
-        | none => addError ctx s!"block '{b.label}': use of undefined register %{u}"
+            addSSAError ctx (.useInNonDominatingBlock b.label u defBlock)
+        | none => addSSAError ctx (.undefinedRegister b.label u)
     ) ctx
     -- Add this instruction's def to running set
     let running := match instDst inst with
@@ -218,8 +262,8 @@ private def checkUsesAreDefined (ctx : VerifyCtx) (b : SBlock) : VerifyCtx :=
     else
       match regDefBlock ctx.blocks u with
       | some defBlock =>
-        addError ctx s!"block '{b.label}': use of %{u} defined in non-dominating block '{defBlock}'"
-      | none => addError ctx s!"block '{b.label}': use of undefined register %{u}"
+        addSSAError ctx (.useInNonDominatingBlock b.label u defBlock)
+      | none => addSSAError ctx (.undefinedRegister b.label u)
   ) ctx
   -- Check phi node uses: each operand must be defined in or dominating its source block
   b.insts.foldl (fun ctx inst =>
@@ -234,8 +278,8 @@ private def checkUsesAreDefined (ctx : VerifyCtx) (b : SBlock) : VerifyCtx :=
             match regDefBlock ctx.blocks name with
             | some defBlock =>
               if srcDoms.contains defBlock then ctx
-              else addError ctx s!"block '{b.label}': phi operand %{name} from '{srcLabel}' not dominated by def block '{defBlock}'"
-            | none => addError ctx s!"block '{b.label}': phi uses undefined register %{name}"
+              else addSSAError ctx (.phiNotDominatedBySrc b.label name srcLabel defBlock)
+            | none => addSSAError ctx (.phiUndefinedRegister b.label name)
         | _ => ctx
       ) ctx
     | _ => ctx
@@ -246,7 +290,7 @@ private def checkBranchTargets (ctx : VerifyCtx) (b : SBlock) : VerifyCtx :=
   let successors := termSuccessors b.term
   successors.foldl (fun ctx lbl =>
     if ctx.blockLabels.contains lbl then ctx
-    else addError ctx s!"block '{b.label}': branch to unknown label '{lbl}'"
+    else addSSAError ctx (.branchToUnknownLabel b.label lbl)
   ) ctx
 
 /-- Check phi node predecessors. Each phi should have entries for all predecessor blocks. -/
@@ -259,12 +303,12 @@ private def checkPhiNodes (ctx : VerifyCtx) (b : SBlock) : VerifyCtx :=
       -- Check that each predecessor has an entry
       let ctx := preds.foldl (fun ctx p =>
         if phiLabels.contains p then ctx
-        else addError ctx s!"block '{b.label}': phi missing entry for predecessor '{p}'"
+        else addSSAError ctx (.phiMissingPredecessor b.label p)
       ) ctx
       -- Check for extra entries (non-predecessor labels)
       phiLabels.foldl (fun ctx lbl =>
         if preds.contains lbl then ctx
-        else addError ctx s!"block '{b.label}': phi has entry for non-predecessor '{lbl}'"
+        else addSSAError ctx (.phiExtraPredecessor b.label lbl)
       ) ctx
     | _ => ctx
   ) ctx
@@ -322,7 +366,7 @@ private def checkPhiTypes (ctx : VerifyCtx) (b : SBlock) : VerifyCtx :=
         else if phiTy == vTy then ctx
         -- Allow numeric width promotions and ref equivalences
         else if phiTy == .bool && vTy == .bool then ctx
-        else addError ctx s!"block '{b.label}': phi %{dst} expects type {repr phiTy} but incoming value has type {repr vTy}"
+        else addSSAError ctx (.phiTypeMismatch b.label dst (toString (repr phiTy)) (toString (repr vTy)))
       ) ctx
     | _ => ctx
   ) ctx
@@ -335,7 +379,7 @@ private def checkCallArity (ctx : VerifyCtx) (b : SBlock) : VerifyCtx :=
       match ctx.fnSigs.find? fun (n, _, _) => n == fn with
       | some (_, paramTys, _) =>
         if args.length != paramTys.length then
-          addError ctx s!"block '{b.label}': call @{fn} has {args.length} args but function expects {paramTys.length}"
+          addSSAError ctx (.callArityMismatch b.label fn args.length paramTys.length)
         else ctx
       | none => ctx  -- unknown function (e.g. indirect call, builtin), skip
     | _ => ctx
@@ -346,11 +390,11 @@ private def checkReturnCoverage (ctx : VerifyCtx) (b : SBlock) : VerifyCtx :=
   match b.term with
   | .ret none =>
     if ctx.retTy != .unit && ctx.retTy != .never then
-      addError ctx s!"block '{b.label}': `ret void` in function returning {repr ctx.retTy}"
+      addSSAError ctx (.retVoidInNonVoidFn b.label (toString (repr ctx.retTy)))
     else ctx
   | .ret (some v) =>
     if ctx.retTy == .unit then
-      addError ctx s!"block '{b.label}': `ret {repr v.ty}` in void function"
+      addSSAError ctx (.retValueInVoidFn b.label (toString (repr v.ty)))
     else ctx
   | _ => ctx
 
@@ -364,7 +408,7 @@ private def checkBinOpTypes (ctx : VerifyCtx) (b : SBlock) : VerifyCtx :=
       -- Skip if either is a constant (constants may have generic int type)
       if lTy == rTy then ctx
       else if lTy == .unit || rTy == .unit then ctx
-      else addError ctx s!"block '{b.label}': binop %{dst} has mismatched operand types: {repr lTy} vs {repr rTy}"
+      else addSSAError ctx (.binopTypeMismatch b.label dst (toString (repr lTy)) (toString (repr rTy)))
     | _ => ctx
   ) ctx
 
@@ -374,7 +418,7 @@ private def checkBinOpTypes (ctx : VerifyCtx) (b : SBlock) : VerifyCtx :=
 
 private def verifyFn (f : SFnDef) (fnSigs : List (String × List Ty × Ty)) : Diagnostics :=
   if f.blocks.isEmpty then
-    [{ severity := .error, message := s!"{f.name}: function has no blocks", pass := "ssa-verify", span := none, hint := none }]
+    [{ severity := .error, message := s!"{f.name}: {SSAVerifyError.message .functionHasNoBlocks}", pass := "ssa-verify", span := none, hint := none }]
   else
     let blockLabels := f.blocks.map (·.label)
     let predecessors := buildPredecessors f.blocks

@@ -347,7 +347,7 @@ Replace string-based errors with typed diagnostic data:
 - Secondary notes
 - Fix suggestions
 
-**Status:** In progress. `Diagnostic.lean` exists, AST/source spans are threaded through the parser, and Resolve now emits located diagnostics with a structured `ResolveError` layer. Check now has a structured `CheckError` layer with stable rendered messages covering all ~75 error sites. Elab now has a structured `ElabError` layer covering all ~22 error sites. CoreCheck now has a structured `CoreCheckError` layer covering all ~20 error sites. The remaining work is to move `SSAVerify` off raw string errors.
+**Status:** Done for all semantic passes. `Diagnostic.lean` exists, AST/source spans are threaded through the parser, and Resolve now emits located diagnostics with a structured `ResolveError` layer. Check now has a structured `CheckError` layer with stable rendered messages covering all ~75 error sites. Elab now has a structured `ElabError` layer covering all ~22 error sites. CoreCheck now has a structured `CoreCheckError` layer covering all ~20 error sites. SSAVerify now has a structured `SSAVerifyError` layer covering all ~18 error sites. All semantic passes use structured error kinds.
 
 ### A7: Builtin vs Stdlib Boundary
 
@@ -416,7 +416,7 @@ SSA already assumes monomorphic input — `SInst.call` has no `typeArgs`.
 Longer-term items beyond current batch:
 
 1. **Remove the legacy backend** — the SSA backend is now the default path; the old AST backend should remain only as a short-term fallback during the diagnostics migration, then be deleted.
-2. **Structured diagnostics** — finish per-pass error kinds, notes, and phase-aware reporting beyond Resolve.
+2. **Structured diagnostics** — per-pass error kinds done for all semantic passes (Resolve, Check, Elab, CoreCheck, SSAVerify). Remaining: notes, fix suggestions, and phase-aware reporting.
 3. **Resolution infrastructure** — keep tightening the module/trait/impl/name resolution layer (`Resolve.lean`) while leaving type-directed method dispatch in `Check`.
 4. **Internal semantic spec** — ownership states, borrow meaning, capability propagation, lowering guarantees documented alongside code.
 5. **Backend-neutral lowering boundary** — keep SSA generic enough for multiple targets (LLVM, MLIR, etc.).
@@ -463,12 +463,12 @@ Longer-term items beyond current batch:
 - `Resolve` diagnostics now render with source locations.
 - Remaining work is to use the same plumbing across the rest of the semantic passes and eventually move to range spans.
 
-7. **Structured error kinds** — in progress.
+7. **Structured error kinds** — done for all semantic passes.
 - `Resolve` now has a structured `ResolveError` layer with stable rendered messages.
 - `Check` now has a structured `CheckError` layer covering all ~75 error sites (type mismatches, linearity, borrow checking, capabilities, struct/enum/field, builtins, control flow, module validation).
 - `Elab` now has a structured `ElabError` layer covering all ~22 error sites (name resolution, struct/field, enum/variant, method resolution, validation, module/import).
 - `CoreCheck` now has a structured `CoreCheckError` layer covering all ~20 error sites (type consistency, capability discipline, match coverage, control flow).
-- Next pass: `SSAVerify`.
+- `SSAVerify` now has a structured `SSAVerifyError` layer covering all ~18 error sites (register defs, use-def/dominance, branch targets, phi nodes, call arity, return coverage, binop types).
 
 #### Language features after the compiler work
 

@@ -246,7 +246,7 @@ Source Text
 - Phi nodes have entries for all predecessor blocks.
 - No duplicate register definitions within a block.
 
-**Error conditions:**
+**Error conditions** (all errors use the structured `SSAVerifyError` inductive, rendered to identical strings via `SSAVerifyError.message`):
 - Use-before-def (register used without dominating definition).
 - Branch to non-existent label.
 - Phi missing entry for a predecessor.
