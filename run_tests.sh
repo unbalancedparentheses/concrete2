@@ -270,6 +270,15 @@ run_ok "$TESTDIR/hashmap_remove.con" 0
 # Phase 7: FFI / Unsafe
 run_ok "$TESTDIR/ffi_basic.con" 42
 
+# Phase 8: Additional coverage
+run_ok "$TESTDIR/nested_match_enum.con" 60
+run_ok "$TESTDIR/generic_pair.con" 42
+run_ok "$TESTDIR/enum_multi_variant.con" 8
+run_ok "$TESTDIR/trait_multi_bound.con" 42
+run_ok "$TESTDIR/while_nested_labeled.con" 25
+run_ok "$TESTDIR/struct_nested.con" 42
+run_ok "$TESTDIR/complex_multi_feature.con" 40
+
 echo ""
 echo "=== Negative tests (expected errors) ==="
 run_err "$TESTDIR/error_unconsumed.con"        "was never consumed"
@@ -357,6 +366,10 @@ run_err "$TESTDIR/error_vec_no_alloc.con" "requires capability"
 run_err "$TESTDIR/error_network_no_cap.con" "requires capability"
 # HashMap errors
 run_err "$TESTDIR/error_hashmap_no_alloc.con" "requires capability"
+# Match exhaustiveness
+run_err "$TESTDIR/error_match_missing_variant.con" "missing variant"
+# Return type mismatch
+run_err "$TESTDIR/error_return_type_mismatch.con" "type mismatch"
 
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
