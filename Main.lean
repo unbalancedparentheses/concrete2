@@ -102,18 +102,19 @@ def compileSSA (inputPath : String) (outputPath : String) (emitLLVM : Bool) : IO
     IO.eprintln (renderDiagnostics [{ severity := .error, message := e, pass := "resolve", span := none, hint := none }])
     return 1
   | .ok modules =>
+    let summaryTable := buildSummaryTable modules
     -- Name resolution (catches undeclared names early)
-    match resolveProgram modules with
+    match resolveProgram modules summaryTable with
     | .error ds =>
       IO.eprintln (renderDiagnostics ds)
       return 1
     | .ok _ =>
-    match liftStringError "check" (checkProgram modules) with
+    match liftStringError "check" (checkProgram modules summaryTable) with
     | .error ds =>
       IO.eprintln (renderDiagnostics ds)
       return 1
     | .ok () =>
-    match liftStringError "elab" (elabProgram modules) with
+    match liftStringError "elab" (elabProgram modules summaryTable) with
     | .error ds =>
       IO.eprintln (renderDiagnostics ds)
       return 1
@@ -166,17 +167,18 @@ def compileAndEmit (inputPath : String) (mode : String) : IO UInt32 := do
     IO.eprintln s!"Parse error: {e}"
     return 1
   | .ok modules =>
-    match resolveProgram modules with
+    let summaryTable := buildSummaryTable modules
+    match resolveProgram modules summaryTable with
     | .error ds =>
       IO.eprintln (renderDiagnostics ds)
       return 1
     | .ok _ =>
-    match checkProgram modules with
+    match checkProgram modules summaryTable with
     | .error e =>
       IO.eprintln s!"Type error: {e}"
       return 1
     | .ok () =>
-    match elabProgram modules with
+    match elabProgram modules summaryTable with
     | .error e =>
       IO.eprintln s!"Elaboration error: {e}"
       return 1

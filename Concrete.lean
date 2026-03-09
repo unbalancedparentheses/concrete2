@@ -1,6 +1,7 @@
 import Concrete.Token
 import Concrete.Diagnostic
 import Concrete.AST
+import Concrete.FileSummary
 import Concrete.Resolve
 import Concrete.Lexer
 import Concrete.Parser

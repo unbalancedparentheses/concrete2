@@ -1,5 +1,6 @@
 import Concrete.AST
 import Concrete.Core
+import Concrete.FileSummary
 
 namespace Concrete
 
@@ -1233,12 +1234,6 @@ partial def elabModule (m : Module)
 -- Program elaboration
 -- ============================================================
 
-/-- Build export sigs for cross-module import resolution. -/
-private def buildExportSigs (m : Module) : List (String × ElabFnSig) :=
-  m.functions.map fun f =>
-    (f.name, { params := f.params.map fun p => (p.name, p.ty), retTy := f.retTy,
-               typeBounds := f.typeBounds, capParams := f.capParams, capSet := f.capSet })
-
 private def resolveImportsE (m : Module)
     (exportTable : List (String × (List (String × ElabFnSig) × List StructDef × List EnumDef × List ImplBlock × List ImplTraitBlock)))
     : Except String (List (String × ElabFnSig) × List StructDef × List EnumDef × List ImplBlock × List ImplTraitBlock) :=
@@ -1260,17 +1255,13 @@ private def resolveImportsE (m : Module)
             | some ed => .ok (fns, structs, enums ++ [ed], impls, trImpls)
             | none => .error (ElabError.message (.notPublicInModule sym imp.moduleName))
 
-def elabProgram (modules : List Module) : Except String (List CModule) := do
-  -- Build export table
-  let exportTable := modules.foldl (fun acc m =>
-    let pubFns := buildExportSigs m
-    let subExports := m.submodules.foldl (fun acc2 sub =>
-      let subFns := buildExportSigs sub
-      let entry := (subFns, sub.structs, sub.enums, sub.implBlocks, sub.traitImpls)
-      acc2 ++ [(m.name ++ "." ++ sub.name, entry), (sub.name, entry)]
-    ) []
-    acc ++ [(m.name, (pubFns, m.structs, m.enums, m.implBlocks, m.traitImpls))] ++ subExports
-  ) []
+def elabProgram (modules : List Module) (summaryTable : List (String × FileSummary) := []) : Except String (List CModule) := do
+  -- Build export table from summaryTable
+  let exportTable := summaryTable.map fun (name, summary) =>
+    let fnSigs := summary.functions.map fun (n, fs) =>
+      (n, { params := fs.params, retTy := fs.retTy, typeParams := fs.typeParams,
+            typeBounds := fs.typeBounds, capParams := fs.capParams, capSet := fs.capSet : ElabFnSig })
+    (name, (fnSigs, summary.structs, summary.enums, summary.implBlocks, summary.traitImpls))
   -- Elaborate each module
   modules.foldlM (init := []) fun acc m => do
     let (impFns, impStructs, impEnums, impImpls, impTraitImpls) ← resolveImportsE m exportTable

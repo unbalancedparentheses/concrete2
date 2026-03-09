@@ -81,9 +81,9 @@ Remaining architecture work, in order:
 
 1. **Summary-based frontend**
 Before the standard library grows much further, move the frontend toward file summaries as the main cross-file interface:
-- introduce an explicit `FileSummary` pass
-- make import/export validation consume summaries
-- split shallow/interface work from body-level resolution
+- shallow/interface resolution split from body-level resolution is already landed in `Resolve`
+- next: introduce an explicit stable `FileSummary` artifact
+- make import/export validation consume summaries directly
 - keep method/type-directed body checking in `Check`
 - preserve the simple pass pipeline instead of moving to a query-first frontend
 
@@ -425,12 +425,15 @@ Planned compiler products:
 - checked/elaborated file
 
 Planned direction:
-- build `FileSummary` from declaration-level information
-- make import/export validation consume summaries
+- shallow/interface resolution and body resolution are now separate in `Resolve`
+- next: build an explicit `FileSummary` from declaration-level information
+- make import/export validation consume summaries directly
 - keep cross-file dependencies declaration-level where possible
 - split shallow/interface work from body-level resolution
 
 This keeps the frontend explicit and batch-oriented without moving to a query-first architecture.
+
+**Status:** In progress. `Resolve` now has a shallow phase (`resolveShallow`) and a body phase (`resolveBodies`). The next step is to turn the shallow result into a stable explicit summary artifact that other frontend stages can reuse directly.
 
 ### A4: Core Validation
 

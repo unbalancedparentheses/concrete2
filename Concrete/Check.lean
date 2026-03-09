@@ -1,4 +1,5 @@
 import Concrete.AST
+import Concrete.FileSummary
 
 namespace Concrete
 
@@ -2583,22 +2584,13 @@ private def resolveImports (m : Module)
             | none => .error (CheckError.message (.notPublicInModule sym imp.moduleName))
 
 /-- Check a multi-module program. Processes modules in order, building export tables. -/
-def checkProgram (modules : List Module) : Except String Unit :=
-  -- First pass: build export table from all modules (allows forward references)
-  let exportTable : List (String × ExportEntry) := modules.foldl (fun acc m =>
-    let pubFns := m.functions.map fun (f : FnDef) =>
-      (f.name, { params := f.params.map fun (p : Param) => (p.name, p.ty), retTy := f.retTy,
-                  typeBounds := f.typeBounds, capParams := f.capParams, capSet := f.capSet : FnSig })
-    let subExports : List (String × ExportEntry) := m.submodules.foldl (fun acc2 (sub : Module) =>
-      let subFns : List (String × FnSig) := sub.functions.map fun (f : FnDef) =>
-        (f.name, { params := f.params.map fun (p : Param) => (p.name, p.ty), retTy := f.retTy,
-                    typeBounds := f.typeBounds, capParams := f.capParams, capSet := f.capSet : FnSig })
-      let entry : ExportEntry := (subFns, sub.structs, sub.enums, sub.implBlocks, sub.traitImpls)
-      -- Register under both qualified (parent.sub) and unqualified (sub) names
-      acc2 ++ [(m.name ++ "." ++ sub.name, entry), (sub.name, entry)]
-    ) ([] : List (String × ExportEntry))
-    acc ++ [(m.name, (pubFns, m.structs, m.enums, m.implBlocks, m.traitImpls))] ++ subExports
-  ) []
+def checkProgram (modules : List Module) (summaryTable : List (String × FileSummary) := []) : Except String Unit :=
+  -- Build export table from summaryTable
+  let exportTable : List (String × ExportEntry) := summaryTable.map fun (name, summary) =>
+    let fnSigs := summary.functions.map fun (n, fs) =>
+      (n, { params := fs.params, retTy := fs.retTy, typeParams := fs.typeParams,
+            typeBounds := fs.typeBounds, capParams := fs.capParams, capSet := fs.capSet : FnSig })
+    (name, (fnSigs, summary.structs, summary.enums, summary.implBlocks, summary.traitImpls))
   -- Second pass: resolve imports and type-check each module
   let go := modules.foldlM (init := ()) fun () m => do
     let (impFns, impStructs, impEnums, impImpls, impTraitImpls) ← resolveImports m exportTable

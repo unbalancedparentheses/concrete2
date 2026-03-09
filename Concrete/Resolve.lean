@@ -1,6 +1,7 @@
 import Concrete.AST
 import Concrete.Diagnostic
 import Concrete.Token
+import Concrete.FileSummary
 
 namespace Concrete
 
@@ -83,6 +84,15 @@ structure ResolveCtx where
   traitMethods : List (String × List String) := []
   /-- (typeName, traitName) pairs from trait impl blocks. -/
   traitImpls : List (String × String) := []
+
+/-- Result of the shallow (declaration-level) resolution phase.
+    Carries everything the body phase needs plus any errors found during the shallow phase. -/
+structure ShallowResult where
+  globalScope : Scope
+  knownTypes : List String
+  traitMethods : List (String × List String)
+  traitImpls : List (String × String)
+  errors : Diagnostics
 
 private def addError (ctx : ResolveCtx) (err : ResolveError) (span : Option Span := none) : ResolveCtx :=
   { ctx with errors := ctx.errors ++ [{ severity := .error, message := err.message, pass := "resolve", span := span, hint := none }] }
@@ -325,66 +335,68 @@ end
 -- Build global scope from a module
 -- ============================================================
 
-/-- Register all top-level definitions from a module into a scope. -/
-private def buildGlobalScope (m : Module) : Scope × List String :=
+/-- Register all top-level definitions from a FileSummary into a scope. -/
+private def buildGlobalScopeFromSummary (s : FileSummary) : Scope × List String :=
   let symbols : List (String × SymKind) := []
   let types : List String := builtinTypes
   -- Functions
-  let symbols := symbols ++ m.functions.map fun f => (f.name, SymKind.fn f.params f.retTy)
+  let symbols := symbols ++ s.functions.map fun (name, fs) =>
+    (name, SymKind.fn (fs.params.map fun (n, ty) => { name := n, ty := ty }) fs.retTy)
   -- Structs
-  let symbols := symbols ++ m.structs.map fun s => (s.name, SymKind.struct s)
-  let types := types ++ m.structs.map (·.name)
+  let symbols := symbols ++ s.structs.map fun st => (st.name, SymKind.struct st)
+  let types := types ++ s.structs.map (·.name)
   -- Enums
-  let symbols := symbols ++ m.enums.map fun e => (e.name, SymKind.enum e)
-  let symbols := symbols ++ m.enums.foldl (fun acc e =>
+  let symbols := symbols ++ s.enums.map fun e => (e.name, SymKind.enum e)
+  let symbols := symbols ++ s.enums.foldl (fun acc e =>
     acc ++ e.variants.map fun v => (s!"{e.name}::{v.name}", SymKind.fn [] .unit)) []
-  let types := types ++ m.enums.map (·.name)
+  let types := types ++ s.enums.map (·.name)
   -- Traits
-  let symbols := symbols ++ m.traits.map fun t => (t.name, SymKind.trait t)
-  let types := types ++ m.traits.map (·.name)
+  let symbols := symbols ++ s.traits.map fun t => (t.name, SymKind.trait t)
+  let types := types ++ s.traits.map (·.name)
   -- Constants
-  let symbols := symbols ++ m.constants.map fun c => (c.name, SymKind.const c.ty)
+  let symbols := symbols ++ s.constants.map fun c => (c.name, SymKind.const c.ty)
   -- Type aliases
-  let symbols := symbols ++ m.typeAliases.map fun ta => (ta.name, SymKind.typeAlias ta.targetTy)
-  let types := types ++ m.typeAliases.map (·.name)
+  let symbols := symbols ++ s.typeAliases.map fun ta => (ta.name, SymKind.typeAlias ta.targetTy)
+  let types := types ++ s.typeAliases.map (·.name)
   -- Newtypes
-  let symbols := symbols ++ m.newtypes.map fun nt => (nt.name, SymKind.newtype nt)
-  let types := types ++ m.newtypes.map (·.name)
+  let symbols := symbols ++ s.newtypes.map fun nt => (nt.name, SymKind.newtype nt)
+  let types := types ++ s.newtypes.map (·.name)
   -- Extern functions
-  let symbols := symbols ++ m.externFns.map fun ef => (ef.name, SymKind.externFn ef.params ef.retTy)
+  let symbols := symbols ++ s.externFns.map fun ef => (ef.name, SymKind.externFn ef.params ef.retTy)
   -- Impl block methods (mangled name only: TypeName_methodName)
-  let symbols := symbols ++ m.implBlocks.foldl (fun acc ib =>
+  let symbols := symbols ++ s.implBlocks.foldl (fun acc ib =>
     acc ++ ib.methods.map fun method =>
       (s!"{ib.typeName}_{method.name}", SymKind.implMethod ib.typeName method.params method.retTy)
     ) []
   -- Trait impl methods (mangled name only: TypeName_methodName)
-  let symbols := symbols ++ m.traitImpls.foldl (fun acc ti =>
+  let symbols := symbols ++ s.traitImpls.foldl (fun acc ti =>
     acc ++ ti.methods.map fun method =>
       (s!"{ti.typeName}_{method.name}", SymKind.implMethod ti.typeName method.params method.retTy)
     ) []
-  -- Submodule definitions (mangled as submodName_fnName)
-  let symbols := symbols ++ m.submodules.foldl (fun acc sub =>
+  -- Submodule definitions (via submoduleSummaries)
+  let symbols := symbols ++ s.submoduleSummaries.foldl (fun acc (subName, subS) =>
     acc
-    ++ (sub.functions.map fun f => (s!"{sub.name}_{f.name}", SymKind.fn f.params f.retTy))
-    ++ (sub.structs.map fun s => (s.name, SymKind.struct s))
-    ++ (sub.enums.map fun e => (e.name, SymKind.enum e))
-    ++ (sub.externFns.map fun ef => (ef.name, SymKind.externFn ef.params ef.retTy))
-    ++ (sub.constants.map fun c => (c.name, SymKind.const c.ty))
-    ++ (sub.implBlocks.foldl (fun acc2 ib =>
+    ++ (subS.functions.map fun (name, fs) =>
+      (s!"{subName}_{name}", SymKind.fn (fs.params.map fun (n, ty) => { name := n, ty := ty }) fs.retTy))
+    ++ (subS.structs.map fun st => (st.name, SymKind.struct st))
+    ++ (subS.enums.map fun e => (e.name, SymKind.enum e))
+    ++ (subS.externFns.map fun ef => (ef.name, SymKind.externFn ef.params ef.retTy))
+    ++ (subS.constants.map fun c => (c.name, SymKind.const c.ty))
+    ++ (subS.implBlocks.foldl (fun acc2 ib =>
       acc2 ++ ib.methods.map fun method =>
         (s!"{ib.typeName}_{method.name}", SymKind.implMethod ib.typeName method.params method.retTy)
     ) [])
-    ++ (sub.traitImpls.foldl (fun acc2 ti =>
+    ++ (subS.traitImpls.foldl (fun acc2 ti =>
       acc2 ++ ti.methods.map fun method =>
         (s!"{ti.typeName}_{method.name}", SymKind.implMethod ti.typeName method.params method.retTy)
     ) [])
   ) []
-  let types := types ++ m.submodules.foldl (fun acc sub =>
+  let types := types ++ s.submoduleSummaries.foldl (fun acc (_, subS) =>
     acc
-    ++ (sub.structs.map (·.name))
-    ++ (sub.enums.map (·.name))
-    ++ (sub.typeAliases.map (·.name))
-    ++ (sub.traits.map (·.name))
+    ++ (subS.structs.map (·.name))
+    ++ (subS.enums.map (·.name))
+    ++ (subS.typeAliases.map (·.name))
+    ++ (subS.traits.map (·.name))
   ) []
   ({ symbols := symbols }, types)
 
@@ -395,9 +407,9 @@ private def buildGlobalScope (m : Module) : Scope × List String :=
 /-- Built-in trait names (Destroy is the only one). -/
 private def builtinTraits : List String := ["Destroy"]
 
-/-- Check that trait impls reference known traits and provide all required methods. -/
-private def checkTraitImpls (ctx : ResolveCtx) (m : Module) : ResolveCtx :=
-  m.traitImpls.foldl (fun ctx ti =>
+/-- Check that trait impls reference known traits and provide all required methods (from summary). -/
+private def checkTraitImplsFromSummary (ctx : ResolveCtx) (s : FileSummary) : ResolveCtx :=
+  s.traitImpls.foldl (fun ctx ti =>
     match ctx.traitMethods.find? (fun (n, _) => n == ti.traitName) with
     | none =>
       if builtinTraits.contains ti.traitName then ctx
@@ -453,61 +465,32 @@ private def resolveModule (m : Module) (globalScope : Scope) (knownTypes : List 
   let traitImplErrors := m.traitImpls.foldl (fun acc ti =>
     acc ++ ti.methods.foldl (fun acc method =>
       acc ++ resolveFnBody globalScope (knownTypes ++ ti.typeParams) method (some ti.typeName) traitMethods traitImpls_) []) []
-  -- Check trait impls completeness
-  let traitCtx : ResolveCtx := {
-    globalScope := globalScope, localScopes := [[]], errors := [],
-    knownTypes := knownTypes, traitMethods := traitMethods, traitImpls := traitImpls_
-  }
-  let traitCtx := checkTraitImpls traitCtx m
-  let allErrors := fnErrors ++ implErrors ++ traitImplErrors ++ traitCtx.errors
+  let allErrors := fnErrors ++ implErrors ++ traitImplErrors
   ({ module := m, globalScope := globalScope }, allErrors)
 
 -- ============================================================
--- Entry point
+-- Shallow (declaration-level) resolution
 -- ============================================================
 
-/-- Resolve all modules. Returns resolved modules or diagnostics on failure. -/
-def resolveProgram (modules : List Module) : Except Diagnostics (List ResolvedModule) :=
-  -- Build combined global scope from all modules
-  let (combinedScope, combinedTypes) := modules.foldl (fun (scope, types) m =>
-    let (mScope, mTypes) := buildGlobalScope m
-    ({ symbols := scope.symbols ++ mScope.symbols }, types ++ mTypes)
+/-- Perform declaration-level resolution: build global scope, collect trait info,
+    validate imports, and check trait impl completeness. Works entirely from FileSummary artifacts. -/
+def resolveShallow (moduleSummaries : List FileSummary)
+    (summaryTable : List (String × FileSummary) := []) : ShallowResult :=
+  -- Build combined global scope from all module summaries
+  let (combinedScope, combinedTypes) := moduleSummaries.foldl (fun (scope, types) s =>
+    let (sScope, sTypes) := buildGlobalScopeFromSummary s
+    ({ symbols := scope.symbols ++ sScope.symbols }, types ++ sTypes)
   ) ({ symbols := [] : Scope }, ([] : List String))
-  -- Collect trait methods and trait impls from all modules
-  let traitMethods := modules.foldl (fun acc m =>
-    acc ++ m.traits.map fun t => (t.name, t.methods.map (·.name))) []
-  let traitImpls_ := modules.foldl (fun acc m =>
-    acc ++ m.traitImpls.map fun ti => (ti.typeName, ti.traitName)) []
-  -- Build per-module export tables (public symbols only)
-  let exportTable := modules.map fun m =>
-    let pubFns := m.functions.filter (·.isPublic) |>.map (·.name)
-    let pubStructs := m.structs.filter (·.isPublic) |>.map (·.name)
-    let pubEnums := m.enums.filter (·.isPublic) |>.map (·.name)
-    let pubTraits := m.traits.filter (·.isPublic) |>.map (·.name)
-    let pubExterns := m.externFns.filter (·.isPublic) |>.map (·.name)
-    let pubConstants := m.constants.filter (·.isPublic) |>.map (·.name)
-    let pubAliases := m.typeAliases.filter (·.isPublic) |>.map (·.name)
-    -- Include impl method names for public types
-    let pubImplMethods := m.implBlocks.foldl (fun acc ib =>
-      acc ++ ib.methods.map (·.name)) []
-    let pubTraitImplMethods := m.traitImpls.foldl (fun acc ti =>
-      acc ++ ti.methods.map (·.name)) []
-    (m.name, pubFns ++ pubStructs ++ pubEnums ++ pubTraits ++ pubExterns
-             ++ pubConstants ++ pubAliases ++ pubImplMethods ++ pubTraitImplMethods)
-  -- Also add submodule export entries
-  let subExportTable := modules.foldl (fun acc m =>
-    acc ++ m.submodules.map fun sub =>
-      let pubFns := sub.functions.filter (·.isPublic) |>.map (·.name)
-      let pubStructs := sub.structs.filter (·.isPublic) |>.map (·.name)
-      let pubEnums := sub.enums.filter (·.isPublic) |>.map (·.name)
-      let pubTraits := sub.traits.filter (·.isPublic) |>.map (·.name)
-      let pubExterns := sub.externFns.filter (·.isPublic) |>.map (·.name)
-      (sub.name, pubFns ++ pubStructs ++ pubEnums ++ pubTraits ++ pubExterns)
-  ) []
-  let fullExportTable := exportTable ++ subExportTable
-  -- Validate imports
-  let importErrors := modules.foldl (fun errs m =>
-    m.imports.foldl (fun errs imp =>
+  -- Collect trait methods and trait impls from all summaries
+  let traitMethods := moduleSummaries.foldl (fun acc s =>
+    acc ++ s.traits.map fun t => (t.name, t.methods.map (·.name))) []
+  let traitImpls_ := moduleSummaries.foldl (fun acc s =>
+    acc ++ s.traitImpls.map fun ti => (ti.typeName, ti.traitName)) []
+  -- Build per-module export tables (public symbols only) from summaryTable
+  let fullExportTable := summaryTable.map fun (n, s) => (n, s.publicNames)
+  -- Validate imports from summaries
+  let importErrors := moduleSummaries.foldl (fun errs s =>
+    s.imports.foldl (fun errs imp =>
       match fullExportTable.find? (fun (n, _) => n == imp.moduleName) with
       | none => errs ++ [mkResolveDiag (.unknownModule imp.moduleName) (some imp.span)]
       | some (_, pubNames) =>
@@ -517,15 +500,42 @@ def resolveProgram (modules : List Module) : Except Diagnostics (List ResolvedMo
         ) errs
     ) errs
   ) []
-  -- Resolve each module
-  let (resolved, allErrors) := modules.foldl (fun (acc, errs) m =>
-    let (rm, mErrs) := resolveModule m combinedScope combinedTypes traitMethods traitImpls_
+  -- Check trait impl completeness for all summaries
+  let traitCtx : ResolveCtx := {
+    globalScope := combinedScope, localScopes := [[]], errors := [],
+    knownTypes := combinedTypes, traitMethods := traitMethods, traitImpls := traitImpls_
+  }
+  let traitCtx := moduleSummaries.foldl (fun ctx s => checkTraitImplsFromSummary ctx s) traitCtx
+  { globalScope := combinedScope
+  , knownTypes := combinedTypes
+  , traitMethods := traitMethods
+  , traitImpls := traitImpls_
+  , errors := importErrors ++ traitCtx.errors }
+
+-- ============================================================
+-- Body-level resolution
+-- ============================================================
+
+/-- Resolve all module bodies using the result of the shallow phase. -/
+def resolveBodies (modules : List Module) (shallow : ShallowResult) : Except Diagnostics (List ResolvedModule) :=
+  let (resolved, bodyErrors) := modules.foldl (fun (acc, errs) m =>
+    let (rm, mErrs) := resolveModule m shallow.globalScope shallow.knownTypes shallow.traitMethods shallow.traitImpls
     (acc ++ [rm], errs ++ mErrs)
   ) ([], [])
-  let allErrors := importErrors ++ allErrors
+  let allErrors := shallow.errors ++ bodyErrors
   if hasErrors allErrors then
     .error allErrors
   else
     .ok resolved
+
+-- ============================================================
+-- Entry point
+-- ============================================================
+
+/-- Resolve all modules. Returns resolved modules or diagnostics on failure. -/
+def resolveProgram (modules : List Module) (summaryTable : List (String × FileSummary) := []) : Except Diagnostics (List ResolvedModule) :=
+  let moduleSummaries := modules.map buildFileSummary
+  let shallow := resolveShallow moduleSummaries summaryTable
+  resolveBodies modules shallow
 
 end Concrete

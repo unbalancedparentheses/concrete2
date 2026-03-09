@@ -8,6 +8,10 @@ Runs after SSAVerify. Simple cleanup passes:
 - Dead block elimination (blocks with no predecessors except entry)
 - Trivial phi elimination (phi with one incoming value → replace with that value)
 - Empty block folding (block that just branches → redirect predecessors)
+- Constant folding (evaluate constant binary ops at compile time)
+- Algebraic simplifications (identity, annihilation, self-cancellation)
+- Identity cast elimination (remove casts where source type == target type)
+- Strength reduction (multiply/divide by power-of-2 → shift)
 -/
 
 -- ============================================================
@@ -276,11 +280,11 @@ private partial def eliminateDeadInstsFixpoint (blocks : List SBlock) : List SBl
     eliminateDeadInstsFixpoint blocks
 
 -- ============================================================
--- Pass 5: Constant folding
+-- Pass 5: Constant folding + algebraic simplifications
 -- ============================================================
 
-/-- Try to fold a binary operation on two integer constants. -/
-private def foldBinOp (op : BinOp) (lhs rhs : SVal) (ty : Ty) : Option SVal :=
+/-- Try to fold a binary operation on two constant operands. -/
+private def foldBinOpConst (op : BinOp) (lhs rhs : SVal) (ty : Ty) : Option SVal :=
   match lhs, rhs with
   | .intConst a _, .intConst b _ =>
     match op with
@@ -305,23 +309,167 @@ private def foldBinOp (op : BinOp) (lhs rhs : SVal) (ty : Ty) : Option SVal :=
     | _ => none
   | _, _ => none
 
-/-- Fold constant expressions in all blocks. Returns (blocks, replacements). -/
+/-- Check if two SVal are the same register. -/
+private def sameReg (a b : SVal) : Bool :=
+  match a, b with
+  | .reg n1 _, .reg n2 _ => n1 == n2
+  | _, _ => false
+
+private def isIntZero : SVal → Bool
+  | .intConst 0 _ => true
+  | _ => false
+
+private def isIntOne : SVal → Bool
+  | .intConst 1 _ => true
+  | _ => false
+
+private def isBoolTrue : SVal → Bool
+  | .boolConst true => true
+  | _ => false
+
+private def isBoolFalse : SVal → Bool
+  | .boolConst false => true
+  | _ => false
+
+/-- Check if a type is non-floating (safe for self-equality/cancellation rules). -/
+private def isNonFloatTy : Ty → Bool
+  | .float32 => false
+  | .float64 => false
+  | _ => true
+
+/-- Algebraic identity simplifications for binary ops.
+    Returns the simplified SVal (may be a register, not just a constant). -/
+private def foldBinOpAlgebraic (op : BinOp) (lhs rhs : SVal) (ty : Ty) : Option SVal :=
+  -- Additive identity
+  if op == .add && isIntZero rhs then some lhs
+  else if op == .add && isIntZero lhs then some rhs
+  else if op == .sub && isIntZero rhs then some lhs
+  -- Multiplicative identity
+  else if op == .mul && isIntOne rhs then some lhs
+  else if op == .mul && isIntOne lhs then some rhs
+  -- Multiplicative annihilation
+  else if op == .mul && isIntZero rhs then some (.intConst 0 ty)
+  else if op == .mul && isIntZero lhs then some (.intConst 0 ty)
+  -- Self-cancellation (not valid for floats: NaN - NaN = NaN, Inf - Inf = NaN)
+  else if op == .sub && sameReg lhs rhs && isNonFloatTy ty then some (.intConst 0 ty)
+  else if op == .bitxor && sameReg lhs rhs then some (.intConst 0 ty)
+  -- Bitwise identity (same register)
+  else if op == .bitand && sameReg lhs rhs then some lhs
+  else if op == .bitor && sameReg lhs rhs then some lhs
+  -- Shift by zero
+  else if (op == .shl || op == .shr) && isIntZero rhs then some lhs
+  -- Bitwise with zero
+  else if op == .bitor && isIntZero rhs then some lhs
+  else if op == .bitor && isIntZero lhs then some rhs
+  else if op == .bitand && isIntZero rhs then some (.intConst 0 ty)
+  else if op == .bitand && isIntZero lhs then some (.intConst 0 ty)
+  else if op == .bitxor && isIntZero rhs then some lhs
+  else if op == .bitxor && isIntZero lhs then some rhs
+  -- Boolean identity
+  else if op == .and_ && isBoolTrue rhs then some lhs
+  else if op == .and_ && isBoolTrue lhs then some rhs
+  else if op == .and_ && isBoolFalse rhs then some (.boolConst false)
+  else if op == .and_ && isBoolFalse lhs then some (.boolConst false)
+  else if op == .or_ && isBoolFalse rhs then some lhs
+  else if op == .or_ && isBoolFalse lhs then some rhs
+  else if op == .or_ && isBoolTrue rhs then some (.boolConst true)
+  else if op == .or_ && isBoolTrue lhs then some (.boolConst true)
+  -- Self-comparison (not valid for floats: NaN == NaN is false, NaN != NaN is true)
+  else if op == .eq && sameReg lhs rhs && isNonFloatTy ty then some (.boolConst true)
+  else if op == .neq && sameReg lhs rhs && isNonFloatTy ty then some (.boolConst false)
+  else if (op == .leq || op == .geq) && sameReg lhs rhs && isNonFloatTy ty then some (.boolConst true)
+  else if (op == .lt || op == .gt) && sameReg lhs rhs && isNonFloatTy ty then some (.boolConst false)
+  else none
+
+/-- Combined binary op folding: try constant folding first, then algebraic. -/
+private def foldBinOp (op : BinOp) (lhs rhs : SVal) (ty : Ty) : Option SVal :=
+  match foldBinOpConst op lhs rhs ty with
+  | some v => some v
+  | none => foldBinOpAlgebraic op lhs rhs ty
+
+/-- Check if an integer is a power of 2. Returns the exponent if so. -/
+private def isPowerOfTwo (n : Int) : Option Nat :=
+  if n > 0 then
+    let m := n.toNat
+    if m &&& (m - 1) == 0 then some (Nat.log2 m) else none
+  else none
+
+/-- Check if a type is unsigned. -/
+private def isUnsignedTy : Ty → Bool
+  | .uint => true
+  | .u8 => true
+  | .u16 => true
+  | .u32 => true
+  | _ => false
+
+/-- Fold constant expressions and algebraic identities in all blocks.
+    Also performs strength reduction (mul/div by power-of-2 → shift). -/
 private def foldConstants (blocks : List SBlock) : List SBlock :=
-  -- Find all foldable binops
-  let replacements := blocks.foldl (fun acc b =>
-    b.insts.foldl (fun acc inst =>
+  -- Collect replacements (dst → value) and instruction rewrites (dst → new inst)
+  let (replacements, rewrites) := blocks.foldl (fun (acc : List (String × SVal) × List (String × SInst)) b =>
+    b.insts.foldl (fun (acc : List (String × SVal) × List (String × SInst)) inst =>
       match inst with
       | .binOp dst op lhs rhs ty =>
         match foldBinOp op lhs rhs ty with
-        | some val => (dst, val) :: acc
-        | none => acc
+        | some val => (acc.1 ++ [(dst, val)], acc.2)
+        | none =>
+          -- Strength reduction: mul by power-of-2 → shl
+          if op == .mul then
+            match rhs with
+            | .intConst n _ =>
+              match isPowerOfTwo n with
+              | some exp => (acc.1, acc.2 ++ [(dst, SInst.binOp dst .shl lhs (.intConst exp ty) ty)])
+              | none => acc
+            | _ =>
+              match lhs with
+              | .intConst n _ =>
+                match isPowerOfTwo n with
+                | some exp => (acc.1, acc.2 ++ [(dst, SInst.binOp dst .shl rhs (.intConst exp ty) ty)])
+                | none => acc
+              | _ => acc
+          -- Strength reduction: unsigned div by power-of-2 → shr
+          else if op == .div && isUnsignedTy ty then
+            match rhs with
+            | .intConst n _ =>
+              match isPowerOfTwo n with
+              | some exp => (acc.1, acc.2 ++ [(dst, SInst.binOp dst .shr lhs (.intConst exp ty) ty)])
+              | none => acc
+            | _ => acc
+          else acc
       | _ => acc
-    ) acc) []
+    ) acc) ([], [])
+  -- Apply value replacements
+  let blocks :=
+    if replacements.isEmpty then blocks
+    else applyReplacements blocks replacements
+  -- Apply instruction rewrites (replace instruction in-place)
+  if rewrites.isEmpty then blocks
+  else blocks.map fun b =>
+    { b with insts := b.insts.map fun inst =>
+      match instDst inst with
+      | some dst =>
+        match rewrites.find? fun (d, _) => d == dst with
+        | some (_, newInst) => newInst
+        | none => inst
+      | none => inst }
+
+-- ============================================================
+-- Pass 6: Identity cast elimination
+-- ============================================================
+
+/-- Eliminate `cast dst val tgt` where `val.ty == tgt` (no-op cast). -/
+private def eliminateIdentityCasts (blocks : List SBlock) : List SBlock :=
+  let replacements := blocks.foldl (fun acc b =>
+    b.insts.foldl (fun acc inst =>
+      match inst with
+      | .cast dst val tgt =>
+        if val.ty == tgt then (dst, val) :: acc else acc
+      | _ => acc) acc) []
   if replacements.isEmpty then blocks
   else applyReplacements blocks replacements
 
 -- ============================================================
--- Pass 6: Constant branch elimination
+-- Pass 7: Constant branch elimination
 -- ============================================================
 
 /-- Replace `condBr (boolConst true) t e` → `br t` and
@@ -336,7 +484,7 @@ private def eliminateConstantBranches (blocks : List SBlock) : List SBlock :=
     | _ => b
 
 -- ============================================================
--- Pass 7: Stale PHI entry cleanup
+-- Pass 8: Stale PHI entry cleanup
 -- ============================================================
 
 /-- For each block, remove PHI incoming entries whose source label is not
@@ -360,13 +508,14 @@ private def stripStalePhiEntries (blocks : List SBlock) : List SBlock :=
 private def cleanupFn (f : SFnDef) : SFnDef :=
   let blocks := eliminateDeadBlocks f.blocks
   let blocks := eliminateTrivialPhis blocks
-  let blocks := foldConstants blocks
+  let blocks := foldConstants blocks              -- constant folding + algebraic + strength reduction
+  let blocks := eliminateIdentityCasts blocks     -- remove no-op casts
   let blocks := eliminateConstantBranches blocks
   let blocks := stripStalePhiEntries blocks
-  let blocks := eliminateTrivialPhis blocks
+  let blocks := eliminateTrivialPhis blocks       -- re-run after folding may expose new trivial phis
   let blocks := eliminateDeadInstsFixpoint blocks
   let blocks := foldEmptyBlocks blocks
-  let blocks := eliminateDeadBlocks blocks  -- re-run after branch elimination
+  let blocks := eliminateDeadBlocks blocks        -- re-run after branch elimination
   { f with blocks := blocks }
 
 def ssaCleanupModule (m : SModule) : SModule :=
