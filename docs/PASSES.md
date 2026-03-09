@@ -188,16 +188,24 @@ Source Text
 **Postconditions:**
 - Capability discipline re-validated at Core level: caller capSet ⊇ callee capSet.
 - Operand types match operators (numeric ops on numeric types, etc.).
+- Core-level capability requirements are enforced for lowered operations, builtins, and extern calls.
+- Return statements agree with the elaborated function return type.
+- Match structure is validated after elaboration, including wrong-enum arms, duplicate variants, and variant field-count agreement.
 - Match expressions cover all enum variants (or have wildcard).
 - `break`/`continue` only inside loops.
 
 **Error conditions** (all errors use the structured `CoreCheckError` inductive, rendered to identical strings via `CoreCheckError.message`):
 - Insufficient capabilities for callee.
 - Type mismatch on operator arguments.
+- Missing capability for a Core-level builtin or operation.
+- Return type mismatch.
 - Incomplete match coverage.
+- Wrong enum variant used in match.
+- Duplicate match arm.
+- Wrong field count for enum variant arm.
 - `break`/`continue` outside loop context.
 
-**Invariant established:** Capabilities valid in Core IR, operand types match, match coverage complete.
+**Invariant established:** Capabilities valid in Core IR, operand types match, return types agree, and match structure/coverage are valid.
 
 ---
 
@@ -320,7 +328,9 @@ Source Text
 | Name resolution | Resolve | Check, Elab (names exist, imports valid) |
 | Type consistency | Check | Elab, CoreCheck |
 | Linearity | Check | (enforced at surface level) |
-| Capabilities | Check, CoreCheck | EmitSSA (no runtime checks) |
+| Capabilities | Check (cap-polymorphic calls), CoreCheck | EmitSSA (no runtime checks) |
+| Return type agreement after elaboration | CoreCheck | Lower, EmitSSA |
+| Match shape and coverage after elaboration | CoreCheck | Lower |
 | Full type annotations | Elab | Mono, Lower, EmitSSA |
 | No type variables | Mono | Lower, EmitSSA |
 | SSA form / dominance | Lower, SSAVerify | SSACleanup, EmitSSA |

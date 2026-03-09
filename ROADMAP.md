@@ -92,10 +92,9 @@ Before the standard library grows much further, move the frontend toward file su
 - preserve the simple pass pipeline instead of moving to a query-first frontend
 
 2. **Core as semantic authority**
-Continue moving semantic ownership out of surface-AST checking and into elaborated/validated Core:
+CoreCheck now owns capability enforcement for Core operations and builtins, operator type errors, condition type errors, match exhaustiveness (including wrong-enum, duplicate arm, field-count validation), and return-type checking. Check.lean still exists but its semantic role is shrinking in the intended direction — it retains linearity/borrow tracking, type inference, and capability-polymorphism resolution (which requires surface-syntax context). Continue moving post-elaboration legality checks out of Check.lean and into CoreCheck, especially wherever the rule no longer needs surface-syntax context or type-inference-only context:
 - keep elaboration as the place where surface sugar disappears
 - make `CoreCheck` the main home for post-elaboration semantic rules
-- `CoreCheck` now already owns more validation, including return-type checking after elaboration
 - reduce duplicated semantic reasoning between `Check` and Core validation
 - keep the proof target centered on validated Core rather than surface syntax
 
@@ -452,7 +451,7 @@ New file: `Concrete/CoreCheck.lean`
 
 Type check, linearity, borrow, and capability validation on Core IR. Replaces semantic checking currently in Check.lean. Much simpler because the input is already desugared and explicit.
 
-**Status:** In progress. `CoreCheck.lean` is integrated into the pipeline and validates capability discipline, type consistency, return-type correctness, match exhaustiveness, and structural invariants. The remaining work is to continue moving semantic authority out of `Check.lean`.
+**Status:** In progress. `CoreCheck.lean` is the primary semantic authority for post-elaboration validation. It now owns: capability enforcement (function calls, builtins via capability table, extern fns, alloc/deref/cast/derefAssign operations), operator type errors (arithmetic, bitwise, logical, comparison), condition type errors (if/while), match exhaustiveness (coverage, wrong-enum, duplicate arms, field-count), return-type checking, and structural invariants (break/continue). `Check.lean` no longer has `checkCapabilities`, operator type error reporting, condition type checks, or match validation — it retains linearity/borrow tracking, type inference, and capability-polymorphism resolution. The remaining work is to continue migrating checks that don't require surface-syntax context.
 
 ### A4b: Core As Semantic Authority
 
@@ -463,6 +462,8 @@ Make the architecture rule explicit:
 - new semantic rules should prefer to land in Core validation rather than accumulate in surface-AST checking
 
 This is the internal compiler analogue of Concrete's source-level explicitness: one clear semantic form, one clear validation boundary.
+
+**Status:** A5 refactor complete. `checkCapabilities` removed from Check.lean (was 21 call sites). Operator type checks, condition type checks, match validation all moved to CoreCheck. CoreCheck has a builtin capability table and extern-fn awareness. Check.lean retains only what requires surface-syntax context: linearity/borrow tracking, type inference, cap-poly resolution. Next step: continue migrating post-elaboration legality checks where the rule no longer needs surface-syntax or type-inference context.
 
 ### A5: Codegen on SSA IR
 
@@ -534,7 +535,7 @@ Each pass guarantees specific properties about its output:
 | **Parse** | Syntactically valid AST. LL(1), no ambiguity. |
 | **Check** | Types resolve. Linearity holds. Borrows valid. Capabilities propagated. |
 | **Elab** | No surface sugar. Every `CExpr` has concrete `Ty`. Method calls desugared to mangled function calls. For loops desugared to while. |
-| **CoreCheck** | Types consistent across operators and calls. Capabilities satisfied. Break/continue only inside loops. Match arms cover all enum variants. |
+| **CoreCheck** | Types consistent across operators and calls. Core capabilities satisfied. Return types agree after elaboration. Break/continue only inside loops. Match structure and coverage are valid. |
 | **Lower** | Explicit control flow only (no structured if/while). Every block has exactly one terminator. Enum discriminants stored at index 0. Field indices match struct definitions. Break/continue resolved to branch targets. |
 
 ### Monomorphization Placement
@@ -2170,7 +2171,7 @@ These do not block any phase above:
 | **12a** | Runtime in C | Not started | 7 |
 | **12b** | Runtime in Concrete | Not started | 8, 12a |
 
-**Next priorities:** keep pushing the summary-based frontend (`FileSummary` as the declaration-level interface artifact, shallow vs body resolution, and shared extern-aware export/import), continue moving semantic authority into `CoreCheck`, then deepen ABI/layout, modest SSA optimizations, formalization, and stdlib growth.
+**Next priorities:** keep pushing the summary-based frontend (`FileSummary` as the declaration-level interface artifact, shallow vs body resolution, and shared extern-aware export/import), continue migrating post-elaboration legality checks from `Check` to `CoreCheck` (especially where the rule no longer needs surface-syntax or type-inference context), then deepen ABI/layout, modest SSA optimizations, formalization, and stdlib growth.
 
 **Critical path for production use:** Architecture (A1-A5) → remaining stdlib (8f, 8h) → runtime (12a).
 
