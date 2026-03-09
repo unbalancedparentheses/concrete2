@@ -244,6 +244,49 @@ Once `FileSummary` exists:
 
 This gets many of the practical benefits people want from query systems without introducing query machinery at the front of the compiler.
 
+## Why Not Salsa-Style Queries?
+
+For Concrete, a Salsa-style or broadly query-first frontend is probably the wrong default architecture.
+
+Query systems are strongest when the language itself creates many fine-grained, cyclic, demand-driven dependencies:
+
+- source-generating macros
+- complex name lookup rules
+- body-sensitive interface semantics
+- heavy IDE-first incremental demands from the beginning
+- semantic questions that naturally recurse across many files and phases
+
+That is much closer to Rust's problem shape than Concrete's.
+
+Concrete is deliberately trying to stay in a better position:
+
+- LL(1) parsing
+- explicit imports
+- no source-generating macros
+- explicit capabilities and effects
+- no hidden lookup rules
+- fewer surface forms that require global semantic feedback
+
+Because of that, Concrete should benefit more from a **summary-based pass pipeline** than from a query framework.
+
+The main reasons are:
+
+1. **Simpler compiler architecture**
+   File summaries preserve a clear pass structure and keep the frontend understandable without a large dependency engine.
+
+2. **Better fit with the language philosophy**
+   Concrete wants explicit boundaries in the language; file summaries are the compiler analogue of the same idea.
+
+3. **Easier long-term specification and proof work**
+   A coarse-grained, summary-based frontend is easier to describe, test, and eventually reason about mechanically than a fine-grained query graph.
+
+4. **Probably enough incremental behavior without the framework cost**
+   If file summaries and their hashes become the unit of reuse, Concrete can still get useful caching and parallelism without adopting query machinery as the primary frontend model.
+
+This does not mean query systems are bad. It means Concrete should first exploit the advantages created by its own language design before reaching for a more complex compiler framework.
+
+If Concrete later adds features that destroy file-local boundaries or introduce much more dynamic cross-file semantics, that conclusion could change. But with the language as currently designed, a summary-based frontend is the better architectural default.
+
 ## What Must Not Be Added Casually
 
 If Concrete wants this architecture, the following features should be treated as high-risk:

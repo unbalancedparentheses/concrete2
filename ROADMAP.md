@@ -88,16 +88,51 @@ Keep this deliberately modest at first:
 - CFG cleanup
 - trivial copy/phi cleanup
 
-5. **Formalization**
-The cleaned pipeline is now stable enough that proof work over Core and the backend boundary is more valuable than more architecture churn.
+5. **Summary-based frontend**
+Before the standard library grows much further, move the frontend toward file summaries as the main cross-file interface:
+- introduce an explicit `FileSummary` pass
+- make import/export validation consume summaries
+- keep method/type-directed body checking in `Check`
+- preserve the simple pass pipeline instead of moving to a query-first frontend
 
-6. **Stdlib growth**
+6. **ABI/layout subsystem boundary**
+Make layout and FFI concerns a clearer compiler subsystem instead of just scattered helpers:
+- centralize size/alignment/field-offset logic
+- make enum layout and payload rules explicit
+- separate extern ABI decisions from general type checking
+- keep FFI-safe validation tied to the same source of truth
+
+7. **Cacheable compiler artifacts**
+Once `FileSummary` exists, make the main compiler products explicit and reusable:
+- parsed file
+- file summary
+- checked/elaborated file
+- monomorphized Core
+- SSA module
+
+8. **Diagnostics infrastructure**
+Build on the structured errors with stronger shared machinery for:
+- range-aware spans
+- secondary labels/notes
+- phase-aware rendering
+- cleaner multi-diagnostic presentation
+
+9. **Backend boundary discipline**
+Keep SSA as the backend boundary and make that architectural rule explicit:
+- `EmitSSA` remains one backend over verified/cleaned SSA
+- any future MLIR backend should consume the same boundary
+- avoid introducing a second semantic backend path
+
+10. **Stdlib growth**
 Focus on the areas that pressure-test the language:
 - bytes / buffers
 - borrowed slices and text views
 - stronger file/path/process/env modules
 - a real networking layer
 - small formatting and test support improvements
+
+11. **Formalization**
+The cleaned pipeline is now stable enough that proof work over Core and the backend boundary is more valuable than more architecture churn.
 
 ---
 
