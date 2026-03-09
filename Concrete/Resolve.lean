@@ -205,7 +205,7 @@ partial def resolveExpr (ctx : ResolveCtx) (e : Expr) : ResolveCtx :=
     args.foldl resolveExpr ctx
   | .staticMethodCall typeName method _ args =>
     let mangledName := s!"{typeName}_{method}"
-    let ctx := if lookupName ctx mangledName || lookupName ctx method then ctx
+    let ctx := if lookupName ctx mangledName then ctx
                else addError ctx s!"unknown static method '{typeName}::{method}'"
     args.foldl resolveExpr ctx
   | .fnRef name =>
@@ -312,18 +312,16 @@ private def buildGlobalScope (m : Module) : Scope × List String :=
   let types := types ++ m.typeAliases.map (·.name)
   -- Extern functions
   let symbols := symbols ++ m.externFns.map fun ef => (ef.name, SymKind.externFn ef.params ef.retTy)
-  -- Impl block methods
+  -- Impl block methods (mangled name only: TypeName_methodName)
   let symbols := symbols ++ m.implBlocks.foldl (fun acc ib =>
-    acc ++ ib.methods.foldl (fun acc method =>
-      acc ++ [(s!"{ib.typeName}_{method.name}", SymKind.implMethod ib.typeName method.params method.retTy),
-              (method.name, SymKind.implMethod ib.typeName method.params method.retTy)]
-    ) []) []
-  -- Trait impl methods
+    acc ++ ib.methods.map fun method =>
+      (s!"{ib.typeName}_{method.name}", SymKind.implMethod ib.typeName method.params method.retTy)
+    ) []
+  -- Trait impl methods (mangled name only: TypeName_methodName)
   let symbols := symbols ++ m.traitImpls.foldl (fun acc ti =>
-    acc ++ ti.methods.foldl (fun acc method =>
-      acc ++ [(s!"{ti.typeName}_{method.name}", SymKind.implMethod ti.typeName method.params method.retTy),
-              (method.name, SymKind.implMethod ti.typeName method.params method.retTy)]
-    ) []) []
+    acc ++ ti.methods.map fun method =>
+      (s!"{ti.typeName}_{method.name}", SymKind.implMethod ti.typeName method.params method.retTy)
+    ) []
   -- Submodule definitions (mangled as submodName_fnName)
   let symbols := symbols ++ m.submodules.foldl (fun acc sub =>
     acc

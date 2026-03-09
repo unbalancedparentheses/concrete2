@@ -201,6 +201,11 @@ def compileAndEmit (inputPath : String) (mode : String) : IO UInt32 := do
     IO.eprintln s!"Parse error: {e}"
     return 1
   | .ok modules =>
+    match resolveProgram modules with
+    | .error ds =>
+      IO.eprintln (renderDiagnostics ds)
+      return 1
+    | .ok _ =>
     match checkProgram modules with
     | .error e =>
       IO.eprintln s!"Type error: {e}"
