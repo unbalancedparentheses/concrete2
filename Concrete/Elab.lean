@@ -41,6 +41,58 @@ structure ElabEnv where
 
 abbrev ElabM := ExceptT String (StateM ElabEnv)
 
+inductive ElabError where
+  -- Name resolution
+  | selfOutsideImpl
+  | undeclaredVariable (name : String)
+  | undeclaredFunction (name : String)
+  | unknownFunctionRef (name : String)
+  | assignToUndeclaredVariable (name : String)
+  | borrowUndeclaredVariable (name : String)
+  -- Struct/field
+  | unknownStructType (name : String)
+  | arrowAccessUnknownStruct (name : String)
+  | structHasNoField (structName : String) (fieldName : String)
+  | fieldAccessNonStruct
+  -- Enum/variant
+  | unknownEnumType (name : String)
+  | unknownVariant (variant : String) (enumName : String)
+  | missingFieldInVariant (fieldName : String) (enumName : String) (variant : String)
+  -- Method resolution
+  | noMethodOnTypeVar (method : String) (typeVar : String)
+  | noMethodOnType (method : String) (typeName : String)
+  | methodCallOnNonNamedType
+  -- Validation
+  | arrayLiteralEmpty
+  -- Module/import
+  | inSubmodule (subName : String) (innerError : String)
+  | unknownModule (name : String)
+  | notPublicInModule (symbol : String) (moduleName : String)
+
+def ElabError.message : ElabError → String
+  | .selfOutsideImpl => "Self can only be used inside impl blocks"
+  | .undeclaredVariable name => s!"use of undeclared variable '{name}'"
+  | .undeclaredFunction name => s!"call to undeclared function '{name}'"
+  | .unknownFunctionRef name => s!"unknown function '{name}' in function reference"
+  | .assignToUndeclaredVariable name => s!"assignment to undeclared variable '{name}'"
+  | .borrowUndeclaredVariable name => s!"borrow: undeclared variable '{name}'"
+  | .unknownStructType name => s!"unknown struct type '{name}'"
+  | .arrowAccessUnknownStruct name => s!"arrow access on unknown struct type '{name}'"
+  | .structHasNoField structName fieldName => s!"struct '{structName}' has no field '{fieldName}'"
+  | .fieldAccessNonStruct => "field access on non-struct type"
+  | .unknownEnumType name => s!"unknown enum type '{name}'"
+  | .unknownVariant variant enumName => s!"unknown variant '{variant}' in enum '{enumName}'"
+  | .missingFieldInVariant fieldName enumName variant => s!"missing field '{fieldName}' in {enumName}::{variant}"
+  | .noMethodOnTypeVar method typeVar => s!"no method '{method}' for type variable '{typeVar}'"
+  | .noMethodOnType method typeName => s!"no method '{method}' on type '{typeName}'"
+  | .methodCallOnNonNamedType => "method call on non-named type"
+  | .arrayLiteralEmpty => "array literal cannot be empty"
+  | .inSubmodule subName innerError => s!"in submodule '{subName}': {innerError}"
+  | .unknownModule name => s!"unknown module '{name}'"
+  | .notPublicInModule symbol moduleName => s!"'{symbol}' is not public in module '{moduleName}'"
+
+def throwElab (e : ElabError) : ElabM α := throw e.message
+
 private def getEnv : ElabM ElabEnv := get
 private def setEnv (env : ElabEnv) : ElabM Unit := set env
 
@@ -67,7 +119,7 @@ private def resolveTypeE (ty : Ty) : ElabM Ty := do
     if name == "Self" then
       match env.currentImplType with
       | some t => return t
-      | none => throw "Self can only be used inside impl blocks"
+      | none => throwElab .selfOutsideImpl
     else if env.currentTypeParams.contains name then return .typeVar name
     else
       match env.typeAliases.lookup name with
@@ -232,7 +284,7 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
       | some sig =>
         let paramTys := sig.params.map Prod.snd
         return .ident name (.fn_ paramTys sig.capSet sig.retTy)
-      | none => throw s!"use of undeclared variable '{name}'"
+      | none => throwElab (.undeclaredVariable name)
 
   | .paren _ inner => elabExpr inner hint
 
@@ -274,8 +326,8 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
         let fieldTy := substTy mapping f.ty
         let fieldTy ← resolveTypeE fieldTy
         return .fieldAccess cDeref field fieldTy
-      | none => throw s!"struct '{structName}' has no field '{field}'"
-    | none => throw s!"arrow access on unknown struct type '{structName}'"
+      | none => throwElab (.structHasNoField structName field)
+    | none => throwElab (.arrowAccessUnknownStruct structName)
 
   | .allocCall _ inner allocExpr =>
     let cInner ← elabExpr inner hint
@@ -307,7 +359,7 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
         | none => pure ()  -- union partial init
       let resultTy := if typeArgs.isEmpty then Ty.named name else Ty.generic name typeArgs
       return .structLit name typeArgs cFields resultTy
-    | none => throw s!"unknown struct type '{name}'"
+    | none => throwElab (.unknownStructType name)
 
   | .fieldAccess _ obj field =>
     let cObj ← elabExpr obj
@@ -327,8 +379,8 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
         let fieldTy := substTy mapping f.ty
         let fieldTy ← resolveTypeE fieldTy
         return .fieldAccess cObj field fieldTy
-      | none => throw s!"struct '{structName}' has no field '{field}'"
-    | none => throw s!"field access on non-struct type"
+      | none => throwElab (.structHasNoField structName field)
+    | none => throwElab .fieldAccessNonStruct
 
   | .enumLit _ enumName variant typeArgs fields =>
     match ← lookupEnum enumName with
@@ -349,12 +401,12 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
           | some (_, expr) =>
             let cExpr ← elabExpr expr (some fieldTy)
             cFields := cFields ++ [(sf.name, cExpr)]
-          | none => throw s!"missing field '{sf.name}' in {enumName}::{variant}"
+          | none => throwElab (.missingFieldInVariant sf.name enumName variant)
         let resultTy := if effectiveTypeArgs.isEmpty then Ty.named enumName
                          else Ty.generic enumName effectiveTypeArgs
         return .enumLit enumName variant effectiveTypeArgs cFields resultTy
-      | none => throw s!"unknown variant '{variant}' in enum '{enumName}'"
-    | none => throw s!"unknown enum type '{enumName}'"
+      | none => throwElab (.unknownVariant variant enumName)
+    | none => throwElab (.unknownEnumType enumName)
 
   | .match_ _ scrutinee arms =>
     let cScrut ← elabExpr scrutinee
@@ -459,7 +511,7 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
 
   | .arrayLit _ elems =>
     match elems with
-    | [] => throw "array literal cannot be empty"
+    | [] => throwElab .arrayLiteralEmpty
     | first :: rest =>
       let elemHint := match hint with | some (.array t _) => some t | _ => none
       let cFirst ← elabExpr first elemHint
@@ -488,7 +540,7 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
     | some sig =>
       let paramTys := sig.params.map Prod.snd
       return .fnRef fnName (.fn_ paramTys sig.capSet sig.retTy)
-    | none => throw s!"unknown function '{fnName}' in function reference"
+    | none => throwElab (.unknownFunctionRef fnName)
 
   | .methodCall _ obj methodName typeArgs args =>
     -- Desugar: obj.method(args) → Type_method(&obj, args) or Type_method(&mut obj, args)
@@ -513,14 +565,14 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
             | none => pure ()
           | none => pure ()
         match foundSig with
-        | none => throw s!"no method '{methodName}' for type variable '{n}'"
+        | none => throwElab (.noMethodOnTypeVar methodName n)
         | some sig =>
           let mut cArgs : List CExpr := [cObj]
           for (arg, p) in args.zip sig.params do
             let cArg ← elabExpr arg (some p.ty)
             cArgs := cArgs ++ [cArg]
           return .call (n ++ "_" ++ methodName) typeArgs cArgs sig.retTy
-      | _ => throw s!"method call on non-named type"
+      | _ => throwElab .methodCallOnNonNamedType
     else
       let mangledName := typeName ++ "_" ++ methodName
       match ← lookupFnSig mangledName with
@@ -549,7 +601,7 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
           let cArg ← elabExpr arg (some pTy)
           cArgs := cArgs ++ [cArg]
         return .call mangledName (objTypeArgs ++ typeArgs) cArgs retTy
-      | none => throw s!"no method '{methodName}' on type '{typeName}'"
+      | none => throwElab (.noMethodOnType methodName typeName)
 
   | .staticMethodCall _ typeName methodName typeArgs args =>
     let mangledName := typeName ++ "_" ++ methodName
@@ -563,7 +615,7 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
         let cArg ← elabExpr arg (some pTy)
         cArgs := cArgs ++ [cArg]
       return .call mangledName typeArgs cArgs retTy
-    | none => throw s!"no method '{methodName}' on type '{typeName}'"
+    | none => throwElab (.noMethodOnType methodName typeName)
 
 /-- Elaborate a function call (regular, builtins, intercepted). -/
 partial def elabCall (fnName : String) (typeArgs : List Ty) (args : List Expr)
@@ -755,7 +807,7 @@ partial def elabCall (fnName : String) (typeArgs : List Ty) (args : List Expr)
       let cArg ← elabExpr arg (some pTy)
       cArgs := cArgs ++ [cArg]
     return .call fnName inferredTypeArgs cArgs retTy
-  | none => throw s!"call to undeclared function '{fnName}'"
+  | none => throwElab (.undeclaredFunction fnName)
 
 partial def elabStmt (stmt : Stmt) : ElabM (List CStmt) := do
   match stmt with
@@ -775,7 +827,7 @@ partial def elabStmt (stmt : Stmt) : ElabM (List CStmt) := do
     | some varTy =>
       let cVal ← elabExpr value (some varTy)
       return [.assign name cVal]
-    | none => throw s!"assignment to undeclared variable '{name}'"
+    | none => throwElab (.assignToUndeclaredVariable name)
 
   | .return_ _ (some value) =>
     let env ← getEnv
@@ -857,7 +909,7 @@ partial def elabStmt (stmt : Stmt) : ElabM (List CStmt) := do
   | .borrowIn _ var ref region isMut body =>
     let varTy ← match ← lookupVar var with
       | some ty => pure ty
-      | none => throw s!"borrow: undeclared variable '{var}'"
+      | none => throwElab (.borrowUndeclaredVariable var)
     let refTy := if isMut then Ty.refMut varTy else Ty.ref varTy
     addVar ref refTy
     let cBody ← elabStmts body
@@ -1122,7 +1174,7 @@ partial def elabModule (m : Module)
       | .ok lst =>
         match elabModule sub with
         | .ok csub => .ok (lst ++ [csub])
-        | .error e => .error s!"in submodule '{sub.name}': {e}"
+        | .error e => .error (ElabError.message (.inSubmodule sub.name e))
     match cSubmodules with
     | .error e => .error e
     | .ok subs =>
@@ -1156,7 +1208,7 @@ private def resolveImportsE (m : Module)
     : Except String (List (String × ElabFnSig) × List StructDef × List EnumDef × List ImplBlock × List ImplTraitBlock) :=
   m.imports.foldlM (init := ([], [], [], [], [])) fun (fns, structs, enums, impls, trImpls) imp =>
     match exportTable.lookup imp.moduleName with
-    | none => .error s!"unknown module '{imp.moduleName}'"
+    | none => .error (ElabError.message (.unknownModule imp.moduleName))
     | some (pubFns, pubStructs, pubEnums, pubImpls, pubTraitImpls) =>
       imp.symbols.foldlM (init := (fns, structs, enums, impls, trImpls)) fun (fns, structs, enums, impls, trImpls) sym =>
         match pubFns.find? fun (n, _) => n == sym with
@@ -1170,7 +1222,7 @@ private def resolveImportsE (m : Module)
           | none =>
             match pubEnums.find? fun ed => ed.name == sym with
             | some ed => .ok (fns, structs, enums ++ [ed], impls, trImpls)
-            | none => .error s!"'{sym}' is not public in module '{imp.moduleName}'"
+            | none => .error (ElabError.message (.notPublicInModule sym imp.moduleName))
 
 def elabProgram (modules : List Module) : Except String (List CModule) := do
   -- Build export table

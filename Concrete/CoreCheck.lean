@@ -28,12 +28,57 @@ structure CoreCheckEnv where
 
 abbrev CoreCheckM := StateM CoreCheckEnv Unit
 
+inductive CoreCheckError where
+  -- Type consistency
+  | typeMismatchVariable (name : String) (declared : String) (used : String)
+  | arithmeticOnNonNumeric (ty : String)
+  | binaryOperandMismatch (lTy : String) (rTy : String)
+  | comparisonOperandMismatch (lTy : String) (rTy : String)
+  | comparisonResultNotBool (ty : String)
+  | logicalOnNonBool (lTy : String) (rTy : String)
+  | bitwiseOnNonInteger (ty : String)
+  | negationOnNonNumeric (ty : String)
+  | logicalNotOnNonBool (ty : String)
+  | bitwiseNotOnNonInteger (ty : String)
+  -- Capability discipline
+  | insufficientCapabilities (fn : String)
+  | argCountMismatch (fn : String) (expected : Nat) (got : Nat)
+  -- Match coverage
+  | matchMissingVariant (enumName : String) (variant : String)
+  -- Control flow
+  | whileCondNotBool (ty : String)
+  | ifCondNotBool (ty : String)
+  | breakOutsideLoop
+  | continueOutsideLoop
+
+def CoreCheckError.message : CoreCheckError → String
+  | .typeMismatchVariable name declared used => s!"type mismatch for variable '{name}': declared {declared}, used as {used}"
+  | .arithmeticOnNonNumeric ty => s!"arithmetic operator on non-numeric type: {ty}"
+  | .binaryOperandMismatch lTy rTy => s!"binary operand type mismatch: {lTy} vs {rTy}"
+  | .comparisonOperandMismatch lTy rTy => s!"comparison operand type mismatch: {lTy} vs {rTy}"
+  | .comparisonResultNotBool ty => s!"comparison result should be Bool, got {ty}"
+  | .logicalOnNonBool lTy rTy => s!"logical operator on non-Bool types: {lTy}, {rTy}"
+  | .bitwiseOnNonInteger ty => s!"bitwise operator on non-integer type: {ty}"
+  | .negationOnNonNumeric ty => s!"negation on non-numeric type: {ty}"
+  | .logicalNotOnNonBool ty => s!"logical not on non-Bool type: {ty}"
+  | .bitwiseNotOnNonInteger ty => s!"bitwise not on non-integer type: {ty}"
+  | .insufficientCapabilities fn => s!"function '{fn}' requires capabilities not available in caller"
+  | .argCountMismatch fn expected got => s!"function '{fn}' expects {expected} args, got {got}"
+  | .matchMissingVariant enumName variant => s!"match on '{enumName}' missing variant '{variant}'"
+  | .whileCondNotBool ty => s!"while condition must be Bool, got {ty}"
+  | .ifCondNotBool ty => s!"if condition must be Bool, got {ty}"
+  | .breakOutsideLoop => "break outside of loop"
+  | .continueOutsideLoop => "continue outside of loop"
+
 private def getEnv : StateM CoreCheckEnv CoreCheckEnv := get
 private def setEnv (env : CoreCheckEnv) : StateM CoreCheckEnv Unit := set env
 
 private def addError (msg : String) : StateM CoreCheckEnv Unit := do
   let env ← getEnv
   setEnv { env with errors := env.errors ++ [{ severity := .error, message := msg, pass := "core-check", span := none, hint := none }] }
+
+private def addCCError (e : CoreCheckError) : StateM CoreCheckEnv Unit :=
+  addError e.message
 
 private def addVar (name : String) (ty : Ty) : StateM CoreCheckEnv Unit := do
   let env ← getEnv
@@ -113,7 +158,7 @@ partial def ccCheckExpr (e : CExpr) : StateM CoreCheckEnv Unit := do
     match ← lookupVar name with
     | some varTy =>
       if !typesCompatible varTy ty then
-        addError s!"type mismatch for variable '{name}': declared {repr varTy}, used as {repr ty}"
+        addCCError (.typeMismatchVariable name (toString (repr varTy)) (toString (repr ty)))
     | none => pure ()  -- may be a parameter or external
 
   | .binOp op lhs rhs ty =>
@@ -124,33 +169,33 @@ partial def ccCheckExpr (e : CExpr) : StateM CoreCheckEnv Unit := do
     match op with
     | .add | .sub | .mul | .div | .mod =>
       if !isNumeric lTy then
-        addError s!"arithmetic operator on non-numeric type: {repr lTy}"
+        addCCError (.arithmeticOnNonNumeric (toString (repr lTy)))
       if !typesCompatible lTy rTy then
-        addError s!"binary operand type mismatch: {repr lTy} vs {repr rTy}"
+        addCCError (.binaryOperandMismatch (toString (repr lTy)) (toString (repr rTy)))
     | .eq | .neq | .lt | .gt | .leq | .geq =>
       if !typesCompatible lTy rTy then
-        addError s!"comparison operand type mismatch: {repr lTy} vs {repr rTy}"
+        addCCError (.comparisonOperandMismatch (toString (repr lTy)) (toString (repr rTy)))
       if ty != .bool then
-        addError s!"comparison result should be Bool, got {repr ty}"
+        addCCError (.comparisonResultNotBool (toString (repr ty)))
     | .and_ | .or_ =>
       if lTy != .bool || rTy != .bool then
-        addError s!"logical operator on non-Bool types: {repr lTy}, {repr rTy}"
+        addCCError (.logicalOnNonBool (toString (repr lTy)) (toString (repr rTy)))
     | .bitand | .bitor | .bitxor | .shl | .shr =>
       if !isInteger lTy then
-        addError s!"bitwise operator on non-integer type: {repr lTy}"
+        addCCError (.bitwiseOnNonInteger (toString (repr lTy)))
 
   | .unaryOp op operand _ty =>
     ccCheckExpr operand
     match op with
     | .neg =>
       if !isNumeric operand.ty then
-        addError s!"negation on non-numeric type: {repr operand.ty}"
+        addCCError (.negationOnNonNumeric (toString (repr operand.ty)))
     | .not_ =>
       if operand.ty != .bool then
-        addError s!"logical not on non-Bool type: {repr operand.ty}"
+        addCCError (.logicalNotOnNonBool (toString (repr operand.ty)))
     | .bitnot =>
       if !isInteger operand.ty then
-        addError s!"bitwise not on non-integer type: {repr operand.ty}"
+        addCCError (.bitwiseNotOnNonInteger (toString (repr operand.ty)))
 
   | .call fn _typeArgs args _ty =>
     -- Check capability discipline
@@ -158,13 +203,13 @@ partial def ccCheckExpr (e : CExpr) : StateM CoreCheckEnv Unit := do
     | some calleeCaps =>
       let env ← getEnv
       if !capsContain env.currentCapSet calleeCaps then
-        addError s!"function '{fn}' requires capabilities not available in caller"
+        addCCError (.insufficientCapabilities fn)
     | none => pure ()  -- builtin or extern, skip cap check
     -- Check argument types
     match ← lookupFnSig fn with
     | some (params, _retTy) =>
       if args.length != params.length then
-        addError s!"function '{fn}' expects {params.length} args, got {args.length}"
+        addCCError (.argCountMismatch fn params.length args.length)
     | none => pure ()
     for arg in args do
       ccCheckExpr arg
@@ -199,7 +244,7 @@ partial def ccCheckExpr (e : CExpr) : StateM CoreCheckEnv Unit := do
         if !hasWildcard then
           for vn in variantNames do
             if !coveredVariants.contains vn then
-              addError s!"match on '{name}' missing variant '{vn}'"
+              addCCError (.matchMissingVariant name vn)
       | none => pure ()
     | none => pure ()
     for arm in arms do
@@ -222,7 +267,7 @@ partial def ccCheckExpr (e : CExpr) : StateM CoreCheckEnv Unit := do
   | .whileExpr cond body elseBody _ =>
     ccCheckExpr cond
     if cond.ty != .bool then
-      addError s!"while condition must be Bool, got {repr cond.ty}"
+      addCCError (.whileCondNotBool (toString (repr cond.ty)))
     let env ← getEnv
     setEnv { env with inLoop := true }
     for s in body do ccCheckStmt s
@@ -262,7 +307,7 @@ partial def ccCheckStmt (stmt : CStmt) : StateM CoreCheckEnv Unit := do
   | .ifElse cond then_ else_ =>
     ccCheckExpr cond
     if cond.ty != .bool then
-      addError s!"if condition must be Bool, got {repr cond.ty}"
+      addCCError (.ifCondNotBool (toString (repr cond.ty)))
     for s in then_ do ccCheckStmt s
     match else_ with
     | some stmts => for s in stmts do ccCheckStmt s
@@ -271,7 +316,7 @@ partial def ccCheckStmt (stmt : CStmt) : StateM CoreCheckEnv Unit := do
   | .while_ cond body _label _ =>
     ccCheckExpr cond
     if cond.ty != .bool then
-      addError s!"while condition must be Bool, got {repr cond.ty}"
+      addCCError (.whileCondNotBool (toString (repr cond.ty)))
     let env ← getEnv
     setEnv { env with inLoop := true }
     for s in body do ccCheckStmt s
@@ -294,12 +339,12 @@ partial def ccCheckStmt (stmt : CStmt) : StateM CoreCheckEnv Unit := do
   | .break_ _value _label =>
     let env ← getEnv
     if !env.inLoop then
-      addError "break outside of loop"
+      addCCError .breakOutsideLoop
 
   | .continue_ _label =>
     let env ← getEnv
     if !env.inLoop then
-      addError "continue outside of loop"
+      addCCError .continueOutsideLoop
 
   | .defer body => ccCheckExpr body
 

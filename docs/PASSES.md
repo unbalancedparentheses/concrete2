@@ -138,7 +138,7 @@ Source Text
 - Trait method resolution applied.
 - Cross-module import resolution via export tables.
 
-**Error conditions:**
+**Error conditions** (all errors use the structured `ElabError` inductive, rendered to identical strings via `ElabError.message`):
 - Unresolved trait method, unknown type in elaboration context.
 - Import resolution failures.
 
@@ -179,7 +179,7 @@ Source Text
 - Match expressions cover all enum variants (or have wildcard).
 - `break`/`continue` only inside loops.
 
-**Error conditions:**
+**Error conditions** (all errors use the structured `CoreCheckError` inductive, rendered to identical strings via `CoreCheckError.message`):
 - Insufficient capabilities for callee.
 - Type mismatch on operator arguments.
 - Incomplete match coverage.
