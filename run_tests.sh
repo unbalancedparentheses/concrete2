@@ -386,6 +386,17 @@ run_err "$TESTDIR/error_cap_deep_missing.con" "requires capability"
 # Borrow conflict errors
 run_err "$TESTDIR/error_borrow_double_mut.con" "frozen by borrow"
 
+# Span-bearing diagnostics (Resolve errors include line:col prefix)
+run_err "$TESTDIR/error_resolve_undeclared_span.con" "4:12: error\[resolve\]: undeclared variable"
+run_err "$TESTDIR/error_resolve_unknown_func_span.con" "3:18: error\[resolve\]: unknown function"
+run_err "$TESTDIR/error_resolve_unknown_type.con" "error\[resolve\]: unknown type 'Foo'"
+run_err "$TESTDIR/error_resolve_not_enum.con" "is not an enum"
+run_err "$TESTDIR/error_resolve_multi_errors.con" "unknown function 'unknown2'"
+run_err "$TESTDIR/error_resolve_unknown_enum.con" "unknown enum 'Phantom'"
+# Check error variants
+run_err "$TESTDIR/error_assign_immutable.con" "cannot assign to immutable"
+run_err "$TESTDIR/error_arrow_not_heap.con" "arrow access"
+
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 if [ "$FAIL" -gt 0 ]; then
