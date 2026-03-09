@@ -15,6 +15,7 @@ This directory contains design notes, open questions, and architectural explorat
 
 - [stdlib-design.md](stdlib-design.md) — stdlib direction and module priorities
 - [pre-post-conditions.md](pre-post-conditions.md) — design space around contracts/specification support
+- [concurrency.md](concurrency.md) — concurrency direction before async-style features
 
 ## Compiler Architecture
 
