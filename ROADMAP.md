@@ -37,7 +37,7 @@ The Lean 4 compiler implements the core surface language plus the new internal I
 - `Vec<T>`: vec_new, vec_push, vec_get, vec_set, vec_len, vec_pop, vec_free (generic intercepted calls, require Alloc)
 - `HashMap<K,V>`: map_new, map_insert, map_get, map_contains, map_remove, map_len, map_free (keys: Int or String, require Alloc)
 - Networking: tcp_connect, tcp_listen, tcp_accept, socket_send, socket_recv, socket_close (require Network)
-- FFI: `extern fn` declarations, `Unsafe` capability gating
+- FFI: `extern fn` declarations, `Unsafe` capability gating (extern calls, raw pointer deref, raw pointer assign, unsafe casts)
 - `#[repr(C)]` attribute for structs with FFI-safe type validation at extern boundaries
 
 **Not yet implemented:** transmute, newtype, MLIR backend, env vars/process args, kernel formalization, runtime, fully authoritative standalone resolution.
@@ -74,8 +74,8 @@ Nominal wrappers over existing representations with no implicit conversions. Thi
 2. **Explicit representation/layout control** *(done: `#[repr(C)]` + FFI-safe validation)*
 `#[repr(C)]` is implemented with compile-time validation: no generics on repr(C) structs, all fields must be FFI-safe, and extern fn boundaries require FFI-safe types. Explicit alignment/packing choices may follow later.
 
-3. **A sharper `unsafe` boundary**
-Unsafe operations should have a small, explicit rule set: what is permitted, what invariants shift to the programmer, and how this interacts with raw pointers, FFI, and capabilities.
+3. **A sharper `unsafe` boundary** *(done: Unsafe gates extern calls, raw pointer deref/assign, and unsafe casts)*
+The `Unsafe` capability gates: extern fn calls, raw pointer dereference, raw pointer assignment, and pointer-involving casts (pointer↔pointer, pointer↔integer, array→pointer, pointer→reference). Reference-to-pointer casts (`&x as *const T`) remain safe.
 
 4. **A stricter value/reference model**
 The language should stay very clear about when values are passed by value, when borrows are first-class references, and how raw pointers and `Heap<T>` differ operationally.
@@ -466,11 +466,90 @@ Longer-term items beyond current batch:
 - `CoreCheck` now has a structured `CoreCheckError` layer covering all ~20 error sites (type consistency, capability discipline, match coverage, control flow).
 - `SSAVerify` now has a structured `SSAVerifyError` layer covering all ~18 error sites (register defs, use-def/dominance, branch targets, phi nodes, call arity, return coverage, binop types).
 
-#### Language features after the compiler work
+#### Language strengthening after the compiler work
 
-- `newtype`
-- `#[repr(C)]`
-- sharper `unsafe`
+- `#[repr(C)]` is now implemented as the first ABI/layout step.
+- The next immediate language work is a sharper `unsafe` boundary.
+- After `unsafe`, deepen ABI/layout rules and FFI compatibility guarantees.
+
+### Ordered Next Steps
+
+This is the intended sequence from the current state onward.
+
+#### Immediate
+
+1. **Fix the labeled-break PHI bug**
+- Restore a fully green tree before pushing more low-level surface work.
+- This is a trust-restoring bug fix, not a design change.
+
+2. **Sharpen `unsafe`**
+- Define clearly what requires `Unsafe`.
+- This should cover:
+  - raw pointer operations
+  - extern calls and foreign boundaries
+  - layout-sensitive operations
+  - any operation the compiler cannot prove safe
+
+3. **Deepen ABI/layout**
+- Build on the `#[repr(C)]` work that already exists.
+- Tighten:
+  - `#[repr(C)]` rules
+  - extern compatibility rules
+  - layout/size/alignment guarantees
+  - what is and is not FFI-safe
+
+This order matters:
+- the bug fix restores trust
+- `Unsafe` defines the semantic safety boundary
+- ABI/layout then builds on that clearer contract
+
+#### After `Unsafe` and ABI/layout
+
+1. **`newtype`**
+- The best next language feature once the low-level foundation is solid.
+
+2. **Small SSA optimizations**
+- constant folding
+- dead code elimination
+- CFG cleanup
+- trivial copy/phi cleanup
+
+3. **Deeper ABI/FFI polish**
+- clearer calling-convention rules
+- more explicit FFI compatibility rules
+- more layout edge-case testing
+
+4. **Formalization work**
+- With the compiler and language surface more stable, the proof story becomes much more valuable.
+
+5. **Stdlib growth**
+- buffers
+- deeper file/process/network layers
+- more collection polish
+
+#### After stdlib growth
+
+1. **Formal verification seriously**
+- Push the proof story as a central project goal, not just a future note.
+
+2. **Tooling**
+- formatter
+- better diagnostics presentation
+- maybe language server support
+- stronger test/golden workflows
+
+3. **Optimization/backend maturity**
+- better SSA optimizations
+- MLIR path if it still earns its complexity
+- backend cleanup for long-term maintainability
+
+4. **Runtime maturity**
+- a clearer runtime story, including eventual self-hosting pressure
+
+5. **Ecosystem discipline**
+- APIs that preserve explicitness
+- no hidden behavior creeping in through libraries
+- low-level libraries that match the language philosophy
 
 ---
 
@@ -1959,7 +2038,7 @@ These do not block any phase above:
 | **12a** | Runtime in C | Not started | 7 |
 | **12b** | Runtime in Concrete | Not started | 8, 12a |
 
-**Next priorities:** ABI/layout rigor, `#[repr(C)]`, sharper `unsafe`, SSA optimization, and formalization work.
+**Next priorities:** fix the labeled-break PHI bug, sharpen `unsafe`, deepen ABI/layout, then move into `newtype`, SSA optimizations, deeper ABI/FFI polish, formalization, and stdlib growth.
 
 **Critical path for production use:** Architecture (A1-A5) → remaining stdlib (8f, 8h) → runtime (12a).
 
