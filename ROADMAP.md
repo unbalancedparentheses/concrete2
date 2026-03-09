@@ -423,6 +423,56 @@ Longer-term items beyond current batch:
 6. **Formal kernel decision** — Core as proof kernel vs. smaller kernel later.
 7. **Per-phase test layering** — separate suites for parser, elab, core validation, lowering, codegen, integration.
 
+### Short-Term Compiler Priorities
+
+#### Correctness foundations
+
+1. **Layout alignment** — done.
+- `Layout.lean` now uses natural alignment (`tyAlign`, `alignUp`) instead of packed byte counting.
+- `fieldOffset`, `tySize`, enum payload offsets, and runtime/builtin layout assumptions were brought into line.
+- This closed the most dangerous silent-correctness gap in mixed-size structs and enums.
+
+2. **Stricter SSA verification** — done.
+- `SSAVerify` now checks instruction-order use-before-def within blocks.
+- Strict-dominance handling closes the self-domination loophole.
+- Phi nodes reject non-predecessor incoming blocks.
+- Remaining future tightening is about richer CFG/type checks, not the basic correctness model.
+
+3. **Resolve depth** — partially done.
+- `Resolve` now validates imports/exports, deep type references, `Self`, function names, static methods, enum variants, and trait-impl completeness.
+- Bare impl method names were removed from the global scope to avoid false positives.
+- The intentional remaining boundary is `.methodCall`, which still belongs to `Check` because it needs receiver-type information.
+
+#### Simplification
+
+4. **Delete the legacy backend**
+- Remove `Concrete/Codegen/` and the `--compile-legacy` flag.
+- Do this only after:
+  - the main and SSA suites stay green
+  - the SSA path remains stable beyond the standard suite
+  - the diagnostics migration is far enough along that the fallback is no longer useful for isolating regressions
+
+5. **Harden `docs/PASSES.md`**
+- Keep tightening pass contracts so each phase guarantees something downstream can rely on.
+- Make pass ownership explicit enough that bugs clearly belong to one phase.
+
+#### Diagnostics
+
+6. **Span tracking** — mostly done for the surface language.
+- AST nodes carry source spans and the parser populates them from token positions.
+- `Resolve` diagnostics now render with source locations.
+- Remaining work is to use the same plumbing across the rest of the semantic passes and eventually move to range spans.
+
+7. **Structured error kinds** — in progress.
+- `Resolve` now has a structured `ResolveError` layer with stable rendered messages.
+- Next passes: `Check`, `Elab`, `CoreCheck`, `SSAVerify`.
+
+#### Language features after the compiler work
+
+- `newtype`
+- `#[repr(C)]`
+- sharper `unsafe`
+
 ---
 
 ## Language Feature Phases
