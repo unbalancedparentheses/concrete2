@@ -439,6 +439,8 @@ Source (.con)
   clang -- LLVM IR -> native binary
 ```
 
+Concrete's frontend is currently a staged whole-program pipeline, but the intended direction is to move earlier phases toward per-file parsing plus summary-based cross-module compilation. The language design is deliberately trying to make that possible: LL(1) syntax, explicit imports, and no source-generating macros in the current design. The goal is a compiler that is easier to reason about, easier to parallelize, and better aligned with the long-term verification story. See [research/file-summary-frontend.md](research/file-summary-frontend.md).
+
 Target pipeline:
 
 ```

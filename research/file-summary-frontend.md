@@ -1,0 +1,327 @@
+# File-Summary Frontend Architecture
+
+**Status:** Open design direction
+**Affects:** Frontend architecture, modules/imports, method resolution, future incremental compilation
+**Date:** 2026-03-09
+
+## Context
+
+Concrete already leans toward a language design that should make the frontend simpler than Rust's:
+
+- LL(1) grammar
+- explicit modules and imports
+- no macros today
+- no hidden control flow
+- explicit capabilities, borrows, destruction, and allocation
+
+The current compiler pipeline is still largely whole-program and batch-oriented:
+
+```
+Parse -> Resolve -> Check -> Elab -> CoreCanonicalize -> CoreCheck -> Mono -> Lower -> SSA
+```
+
+This is the right shape for clarity, but it still processes `List Module` at several stages and builds combined scopes/export tables over the whole program.
+
+The question is whether Concrete should push further toward a Zig-like frontend architecture: parse each file independently, build file-local semantic summaries, and defer whole-program work until later phases where it is actually needed.
+
+## Reference: matklad on Query-Based Compilers
+
+In [Against Query Based Compilers](https://matklad.github.io/2026/02/25/against-query-based-compilers.html) (February 25, 2026), matklad argues that language design strongly determines compiler architecture.
+
+The key comparison in the article is:
+
+- **Zig** can parse files independently because macros do not generate source code and the grammar is designed to stay file-local.
+- **Rust** cannot fully parse independently at the file level because macro expansion and crate-wide name resolution feed back into parsing and early semantic stages.
+
+The useful takeaway for Concrete is not "never use queries" as a slogan. The useful takeaway is:
+
+**If the language avoids early cross-file semantic dependencies, the compiler can use coarse-grained passes with cheap summaries rather than fine-grained dependency tracking from the start of the frontend.**
+
+That is already close to Concrete's stated philosophy.
+
+## Current State in Concrete
+
+Concrete's pass contracts already separate syntax from semantics:
+
+- `Parse` produces a syntactically valid AST.
+- `Resolve` validates many names and imports.
+- `Check` handles type checking, linearity, capabilities, and some resolution that depends on types.
+- `Elab` lowers to fully typed Core IR.
+
+Relevant current properties:
+
+1. Parsing is independent of semantic reasoning.
+Concrete's parser is LL(1) recursive descent and does not depend on macro expansion or type information.
+
+2. Module file loading is separate from parsing.
+`mod X;` currently triggers recursive file loading before the semantic passes.
+
+3. Resolution and checking are still whole-program in shape.
+`Resolve` builds a combined global scope across modules.
+`Check` builds an export table across modules and then checks each module using imported signatures.
+
+4. Instance method resolution still depends on type information.
+This is explicitly documented as a boundary between `Resolve` and `Check`.
+
+This means Concrete is already in a better position than Rust for a non-query frontend, but it has not yet been refactored to fully exploit that advantage.
+
+## Goal
+
+Move the frontend toward **file summaries as the main cross-file interface**.
+
+Instead of feeding full ASTs from all files into every early pass, each file should produce a summary that contains exactly the information other files need:
+
+- declared module name
+- imports
+- public items
+- type declarations
+- struct fields and enum variants
+- function signatures and capability sets
+- impl headers
+- method signatures
+- trait declarations
+- trait-impl headers
+
+Other files should depend on these summaries, not on the original AST bodies.
+
+## Proposed Architecture
+
+### 1. Parse files independently
+
+Introduce a per-file frontend unit:
+
+```
+SourceText -> ParsedFile
+```
+
+`ParsedFile` should preserve:
+
+- top-level declarations
+- function bodies
+- spans/diagnostics
+- unresolved `mod` declarations
+
+This step should remain purely syntactic.
+
+### 2. Build a shallow file summary
+
+Add a new pass:
+
+```
+ParsedFile -> FileSummary
+```
+
+`FileSummary` is the crucial new abstraction. It should include only declaration-level information needed across files.
+
+Suggested contents:
+
+- file path / module path
+- imported module names and imported symbols
+- public and private top-level names
+- function signatures
+- extern signatures
+- constants and type aliases
+- struct/enum/newtype declarations
+- trait headers and method signatures
+- impl headers (`impl T`, `impl Trait for T`)
+- method signatures from impl blocks
+
+This pass should not inspect function bodies beyond what is needed to collect local declaration metadata.
+
+### 3. Resolve imports from summaries only
+
+Replace today's ad hoc cross-module export construction with:
+
+```
+List FileSummary -> ImportIndex
+```
+
+This pass answers:
+
+- which modules exist
+- which symbols are exported
+- whether imports are valid
+- whether there are circular module dependencies
+
+At this stage, no function bodies need to be loaded from imported files.
+
+### 4. Resolve file bodies against imported summaries
+
+Split name resolution into two layers:
+
+- **Shallow resolution**: declarations, imports, top-level names
+- **Body resolution**: names inside expressions/statements
+
+Body resolution for file `A` should have access to:
+
+- `A`'s own full AST
+- `A`'s local declarations
+- imported `FileSummary` data from other files
+
+This avoids using a whole-program merged scope when only summary data is required.
+
+### 5. Type-check per file using summaries
+
+Refactor checking so that a file is checked from:
+
+```
+CheckedFile = check(ParsedFile, LocalSummary, ImportedSummaries)
+```
+
+This should be enough for:
+
+- expression typing
+- function-call validation
+- capability propagation
+- linearity and borrow checks
+- FFI validation
+
+The main discipline is that imported files contribute signatures and type declarations, not executable body semantics.
+
+### 6. Elaborate per file to Core IR
+
+Once a file is checked, elaboration can also be per-file:
+
+```
+CheckedFile -> CoreFile
+```
+
+Whole-program work can then happen later, at the Core level, where the IR is more explicit and dependencies are narrower and easier to reason about.
+
+## The Hard Part: Method and Trait Resolution
+
+This is the main architectural constraint.
+
+Concrete currently documents that instance method resolution cannot happen in `Resolve` because the receiver type is only known after type checking. That is fine, but it creates an important design question:
+
+**Can method lookup be driven entirely from imported summaries once the receiver type is known?**
+
+For the file-summary architecture to work cleanly, the answer should be "yes".
+
+That suggests the following rule:
+
+- imported files expose impl headers and method signatures
+- body checking may use those summaries to determine method candidates
+- body checking should not need to inspect imported function bodies
+
+This is still compatible with a later type-directed method lookup step, as long as the lookup surface is summary-only.
+
+### Implication for language design
+
+If Concrete adds features that make method lookup depend on arbitrary body-level reasoning, the summary-based frontend becomes much harder.
+
+The architecture therefore favors:
+
+- explicit imports
+- explicit trait bounds
+- no source-generating macros
+- no body-dependent name lookup
+- no hidden capture environments
+
+These are already aligned with existing design decisions.
+
+## Why This Is Better Than a Query-First Frontend
+
+For Concrete, a file-summary architecture has three advantages.
+
+### 1. It matches the language's explicitness goals
+
+Concrete is deliberately trying to make semantics visible in the source. A summary-based frontend is the compiler analogue of that same principle: expose declaration interfaces early, avoid hidden cross-file dependencies, and make phase boundaries explicit.
+
+### 2. It preserves a simple pass pipeline
+
+Concrete's compiler documentation already emphasizes explicit pass contracts. File summaries strengthen this model instead of replacing it with a large fine-grained dependency graph.
+
+### 3. It creates a clean path to incremental and parallel compilation
+
+Once `FileSummary` exists:
+
+- parsing can run per file in parallel
+- summary construction can run per file in parallel
+- import validation can run from summaries
+- unchanged files can reuse cached summaries
+- checked/elaborated outputs can be cached by file hash plus imported-summary hashes
+
+This gets many of the practical benefits people want from query systems without introducing query machinery at the front of the compiler.
+
+## What Must Not Be Added Casually
+
+If Concrete wants this architecture, the following features should be treated as high-risk:
+
+### 1. Source-generating macros
+
+Rust-style macros are the clearest way to destroy file-local parsing and early summary construction. If macros are ever added, they should be phase-separated and hygienic, or Concrete should continue to reject them entirely.
+
+### 2. Implicit cross-file lookup rules
+
+If a use site can trigger broad crate-wide search without explicit imports or explicit summary-visible declarations, the file-summary design starts to collapse.
+
+### 3. Body-sensitive interface semantics
+
+Cross-file compilation should depend on declarations, signatures, and type layout, not on the executable content of other files' function bodies.
+
+## Migration Plan for This Repository
+
+The practical path is incremental.
+
+### Phase 1: Introduce `FileSummary`
+
+Extract the existing export-table logic into an explicit data structure and builder pass.
+
+Likely sources:
+
+- `Concrete/Resolve.lean`
+- `Concrete/Check.lean`
+- `Main.lean` module-loading logic
+
+The first version can be minimal and coexist with the current whole-program pipeline.
+
+### Phase 2: Separate shallow and body resolution
+
+Refactor `Resolve` so declaration/interface resolution is summary-based while body validation remains in a second step.
+
+This is a structural change, not a language change.
+
+### Phase 3: Check files against imported summaries
+
+Refactor `Check` so imported information flows through `FileSummary` rather than through whole-program merged structures.
+
+### Phase 4: Elaborate per file
+
+Once checking is file-scoped, elaboration can follow the same shape.
+
+### Phase 5: Add caching and parallelism
+
+After the semantic interfaces are stable, parallel parsing/indexing/checking becomes straightforward, and incremental rebuilds can key off file content plus imported summary hashes.
+
+## Open Questions
+
+1. Should the summary layer include private declarations, or only exported ones plus enough local metadata for checking the file itself?
+2. How should nested modules and `mod X;` file loading map onto a stable file/module identity model?
+3. Should trait impl summaries include only method signatures, or also normalized receiver/type information for faster method lookup?
+4. Which validations are truly file-local, and which should remain crate-level checks even after this refactor?
+5. Should Core IR become the first phase with any whole-program semantic authority, leaving the surface frontend strictly file-scoped?
+
+## Recommendation
+
+Concrete should move toward a **summary-based frontend, not a query-first frontend**.
+
+This is the architecture most consistent with:
+
+- the language's LL(1) and explicit-design goals
+- the current pass-contract documentation
+- the absence of macros
+- the long-term verification goal
+
+The immediate next step is modest:
+
+**Create an explicit `FileSummary` pass and make import/export validation consume it.**
+
+That single move would turn the current whole-program frontend from an implementation convenience into a more principled architecture, while keeping the existing compiler understandable.
+
+## References
+
+- matklad, [Against Query Based Compilers](https://matklad.github.io/2026/02/25/against-query-based-compilers.html), February 25, 2026.
+- [README.md](../README.md)
+- [docs/PASSES.md](../docs/PASSES.md)
+- [ROADMAP.md](../ROADMAP.md)
