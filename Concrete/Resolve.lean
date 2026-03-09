@@ -1,5 +1,6 @@
 import Concrete.AST
 import Concrete.Diagnostic
+import Concrete.Token
 
 namespace Concrete
 
@@ -50,8 +51,8 @@ structure ResolveCtx where
   /-- (typeName, traitName) pairs from trait impl blocks. -/
   traitImpls : List (String × String) := []
 
-private def addError (ctx : ResolveCtx) (msg : String) : ResolveCtx :=
-  { ctx with errors := ctx.errors ++ [{ severity := .error, message := msg, pass := "resolve", span := none, hint := none }] }
+private def addError (ctx : ResolveCtx) (msg : String) (span : Option Span := none) : ResolveCtx :=
+  { ctx with errors := ctx.errors ++ [{ severity := .error, message := msg, pass := "resolve", span := span, hint := none }] }
 
 private def pushScope (ctx : ResolveCtx) : ResolveCtx :=
   { ctx with localScopes := [] :: ctx.localScopes }
@@ -121,25 +122,25 @@ private def builtinTypes : List String :=
 -- ============================================================
 
 /-- Recursively check that all type names in a Ty are known. -/
-private def checkTyDeep (ctx : ResolveCtx) (ty : Ty) : ResolveCtx :=
+private def checkTyDeep (ctx : ResolveCtx) (ty : Ty) (span : Option Span := none) : ResolveCtx :=
   match ty with
   | .named name =>
     if name == "Self" then
       match ctx.currentImplType with
       | some _ => ctx
-      | none => addError ctx s!"Self can only be used inside impl blocks"
+      | none => addError ctx s!"Self can only be used inside impl blocks" span
     else if isKnownType ctx name then ctx
-    else addError ctx s!"unknown type '{name}'"
+    else addError ctx s!"unknown type '{name}'" span
   | .generic name args =>
     let ctx := if isKnownType ctx name then ctx
-               else addError ctx s!"unknown type '{name}'"
-    args.foldl checkTyDeep ctx
+               else addError ctx s!"unknown type '{name}'" span
+    args.foldl (fun ctx ty => checkTyDeep ctx ty span) ctx
   | .ref inner | .refMut inner | .ptrMut inner | .ptrConst inner
-  | .heap inner | .heapArray inner => checkTyDeep ctx inner
-  | .array elem _ => checkTyDeep ctx elem
+  | .heap inner | .heapArray inner => checkTyDeep ctx inner span
+  | .array elem _ => checkTyDeep ctx elem span
   | .fn_ params _capSet retTy =>
-    let ctx := params.foldl checkTyDeep ctx
-    checkTyDeep ctx retTy
+    let ctx := params.foldl (fun ctx ty => checkTyDeep ctx ty span) ctx
+    checkTyDeep ctx retTy span
   | _ => ctx
 
 -- ============================================================
@@ -150,71 +151,71 @@ mutual
 /-- Walk an expression, checking all name references. -/
 partial def resolveExpr (ctx : ResolveCtx) (e : Expr) : ResolveCtx :=
   match e with
-  | .ident name =>
+  | .ident sp name =>
     -- Only flag identifiers that aren't in any scope and aren't known functions
     if lookupName ctx name || builtinFns.contains name then ctx
-    else addError ctx s!"undeclared variable '{name}'"
-  | .intLit _ | .floatLit _ | .boolLit _ | .strLit _ | .charLit _ => ctx
-  | .binOp _ lhs rhs => resolveExpr (resolveExpr ctx lhs) rhs
-  | .unaryOp _ operand => resolveExpr ctx operand
-  | .call fn _typeArgs args =>
+    else addError ctx s!"undeclared variable '{name}'" (some sp)
+  | .intLit _ _ | .floatLit _ _ | .boolLit _ _ | .strLit _ _ | .charLit _ _ => ctx
+  | .binOp _ _ lhs rhs => resolveExpr (resolveExpr ctx lhs) rhs
+  | .unaryOp _ _ operand => resolveExpr ctx operand
+  | .call sp fn _typeArgs args =>
     let ctx := if lookupName ctx fn || builtinFns.contains fn then ctx
-               else addError ctx s!"unknown function '{fn}'"
+               else addError ctx s!"unknown function '{fn}'" (some sp)
     args.foldl resolveExpr ctx
-  | .paren inner => resolveExpr ctx inner
-  | .structLit name _typeArgs fields =>
+  | .paren _ inner => resolveExpr ctx inner
+  | .structLit sp name _typeArgs fields =>
     let ctx := if isKnownType ctx name then ctx
-               else addError ctx s!"unknown struct type '{name}'"
+               else addError ctx s!"unknown struct type '{name}'" (some sp)
     fields.foldl (fun ctx (_, e) => resolveExpr ctx e) ctx
-  | .fieldAccess obj _ => resolveExpr ctx obj
-  | .enumLit enumName variant _typeArgs fields =>
+  | .fieldAccess _ obj _ => resolveExpr ctx obj
+  | .enumLit sp enumName variant _typeArgs fields =>
     let ctx := match lookupSymKind ctx enumName with
       | some (.enum def_) =>
         if def_.variants.any (fun v => v.name == variant) then ctx
-        else addError ctx s!"unknown variant '{variant}' in enum '{enumName}'"
-      | some _ => addError ctx s!"'{enumName}' is not an enum"
+        else addError ctx s!"unknown variant '{variant}' in enum '{enumName}'" (some sp)
+      | some _ => addError ctx s!"'{enumName}' is not an enum" (some sp)
       | none => if isKnownType ctx enumName then ctx
-                else addError ctx s!"unknown enum '{enumName}'"
+                else addError ctx s!"unknown enum '{enumName}'" (some sp)
     fields.foldl (fun ctx (_, e) => resolveExpr ctx e) ctx
-  | .match_ scrutinee arms =>
+  | .match_ _ scrutinee arms =>
     let ctx := resolveExpr ctx scrutinee
     arms.foldl (fun ctx arm =>
       match arm with
-      | .mk _ _ bindings body =>
+      | .mk _ _ _ bindings body =>
         let ctx := pushScope ctx
         let ctx := bindings.foldl (fun ctx b => addLocal ctx b (.var none false)) ctx
         let ctx := resolveStmts ctx body
         popScope ctx
-      | .litArm val body =>
+      | .litArm _ val body =>
         let ctx := resolveExpr ctx val
         resolveStmts ctx body
-      | .varArm binding body =>
+      | .varArm _ binding body =>
         let ctx := pushScope ctx
         let ctx := addLocal ctx binding (.var none false)
         let ctx := resolveStmts ctx body
         popScope ctx
     ) ctx
-  | .borrow inner | .borrowMut inner | .deref inner | .try_ inner =>
+  | .borrow _ inner | .borrowMut _ inner | .deref _ inner | .try_ _ inner =>
     resolveExpr ctx inner
-  | .arrayLit elems => elems.foldl resolveExpr ctx
-  | .arrayIndex arr idx => resolveExpr (resolveExpr ctx arr) idx
-  | .cast inner _ => resolveExpr ctx inner
-  | .methodCall obj _ _ args =>
+  | .arrayLit _ elems => elems.foldl resolveExpr ctx
+  | .arrayIndex _ arr idx => resolveExpr (resolveExpr ctx arr) idx
+  | .cast _ inner _ => resolveExpr ctx inner
+  | .methodCall _ obj _ _ args =>
     -- Keep skipping method name validation (needs type info to resolve receiver)
     let ctx := resolveExpr ctx obj
     args.foldl resolveExpr ctx
-  | .staticMethodCall typeName method _ args =>
+  | .staticMethodCall sp typeName method _ args =>
     let mangledName := s!"{typeName}_{method}"
     let ctx := if lookupName ctx mangledName then ctx
-               else addError ctx s!"unknown static method '{typeName}::{method}'"
+               else addError ctx s!"unknown static method '{typeName}::{method}'" (some sp)
     args.foldl resolveExpr ctx
-  | .fnRef name =>
+  | .fnRef sp name =>
     if lookupName ctx name || builtinFns.contains name then ctx
-    else addError ctx s!"unknown function reference '{name}'"
-  | .arrowAccess obj _ => resolveExpr ctx obj
-  | .allocCall inner allocExpr =>
+    else addError ctx s!"unknown function reference '{name}'" (some sp)
+  | .arrowAccess _ obj _ => resolveExpr ctx obj
+  | .allocCall _ inner allocExpr =>
     resolveExpr (resolveExpr ctx inner) allocExpr
-  | .whileExpr cond body elseBody =>
+  | .whileExpr _ cond body elseBody =>
     let ctx := resolveExpr ctx cond
     let ctx := resolveStmts ctx body
     resolveStmts ctx elseBody
@@ -226,20 +227,20 @@ partial def resolveStmts (ctx : ResolveCtx) (stmts : List Stmt) : ResolveCtx :=
 /-- Walk a single statement. -/
 partial def resolveStmt (ctx : ResolveCtx) (stmt : Stmt) : ResolveCtx :=
   match stmt with
-  | .letDecl name _mutable ty value =>
+  | .letDecl sp name _mutable ty value =>
     let ctx := resolveExpr ctx value
     let ctx := match ty with
-      | some t => checkTyDeep ctx t
+      | some t => checkTyDeep ctx t (some sp)
       | none => ctx
     addLocal ctx name (.var ty _mutable)
-  | .assign name value =>
+  | .assign sp name value =>
     let ctx := if lookupName ctx name then ctx
-               else addError ctx s!"undeclared variable '{name}'"
+               else addError ctx s!"undeclared variable '{name}'" (some sp)
     resolveExpr ctx value
-  | .return_ (some e) => resolveExpr ctx e
-  | .return_ none => ctx
-  | .expr e => resolveExpr ctx e
-  | .ifElse cond then_ else_ =>
+  | .return_ _ (some e) => resolveExpr ctx e
+  | .return_ _ none => ctx
+  | .expr _ e => resolveExpr ctx e
+  | .ifElse _ cond then_ else_ =>
     let ctx := resolveExpr ctx cond
     let ctx := pushScope ctx
     let ctx := resolveStmts ctx then_
@@ -250,12 +251,12 @@ partial def resolveStmt (ctx : ResolveCtx) (stmt : Stmt) : ResolveCtx :=
       let ctx := resolveStmts ctx elseStmts
       popScope ctx
     | none => ctx
-  | .while_ cond body _ =>
+  | .while_ _ cond body _ =>
     let ctx := resolveExpr ctx cond
     let ctx := pushScope ctx
     let ctx := resolveStmts ctx body
     popScope ctx
-  | .forLoop init cond step body _ =>
+  | .forLoop _ init cond step body _ =>
     let ctx := pushScope ctx
     let ctx := match init with
       | some s => resolveStmt ctx s
@@ -266,21 +267,21 @@ partial def resolveStmt (ctx : ResolveCtx) (stmt : Stmt) : ResolveCtx :=
       | none => ctx
     let ctx := resolveStmts ctx body
     popScope ctx
-  | .fieldAssign obj _ value =>
+  | .fieldAssign _ obj _ value =>
     resolveExpr (resolveExpr ctx obj) value
-  | .derefAssign target value =>
+  | .derefAssign _ target value =>
     resolveExpr (resolveExpr ctx target) value
-  | .arrayIndexAssign arr idx value =>
+  | .arrayIndexAssign _ arr idx value =>
     resolveExpr (resolveExpr (resolveExpr ctx arr) idx) value
-  | .break_ (some e) _ => resolveExpr ctx e
-  | .break_ none _ => ctx
-  | .continue_ _ => ctx
-  | .defer body => resolveExpr ctx body
-  | .borrowIn var ref _region _isMut body =>
+  | .break_ _ (some e) _ => resolveExpr ctx e
+  | .break_ _ none _ => ctx
+  | .continue_ _ _ => ctx
+  | .defer _ body => resolveExpr ctx body
+  | .borrowIn _ var ref _region _isMut body =>
     let ctx := addLocal ctx var (.var none false)
     let ctx := addLocal ctx ref (.var none false)
     resolveStmts ctx body
-  | .arrowAssign obj _ value =>
+  | .arrowAssign _ obj _ value =>
     resolveExpr (resolveExpr ctx obj) value
 end
 
@@ -391,9 +392,9 @@ private def resolveFnBody (globalScope : Scope) (knownTypes : List String) (f : 
   -- Validate parameter types and add params to scope
   let ctx := f.params.foldl (fun ctx p =>
     let ctx := addLocal ctx p.name (.var (some p.ty) false)
-    checkTyDeep ctx p.ty) ctx
+    checkTyDeep ctx p.ty none) ctx
   -- Validate return type
-  let ctx := checkTyDeep ctx f.retTy
+  let ctx := checkTyDeep ctx f.retTy none
   -- Walk body
   let ctx := resolveStmts ctx f.body
   ctx.errors
@@ -469,11 +470,11 @@ def resolveProgram (modules : List Module) : Except Diagnostics (List ResolvedMo
   let importErrors := modules.foldl (fun errs m =>
     m.imports.foldl (fun errs imp =>
       match fullExportTable.find? (fun (n, _) => n == imp.moduleName) with
-      | none => errs ++ [{ severity := .error, message := s!"unknown module '{imp.moduleName}'", pass := "resolve", span := none, hint := none }]
+      | none => errs ++ [{ severity := .error, message := s!"unknown module '{imp.moduleName}'", pass := "resolve", span := some imp.span, hint := none }]
       | some (_, pubNames) =>
         imp.symbols.foldl (fun errs sym =>
           if pubNames.contains sym then errs
-          else errs ++ [{ severity := .error, message := s!"'{sym}' is not public in module '{imp.moduleName}'", pass := "resolve", span := none, hint := none }]
+          else errs ++ [{ severity := .error, message := s!"'{sym}' is not public in module '{imp.moduleName}'", pass := "resolve", span := some imp.span, hint := none }]
         ) errs
     ) errs
   ) []

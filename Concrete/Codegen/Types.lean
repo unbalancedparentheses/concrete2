@@ -124,12 +124,12 @@ def isPassByPtr (s : CodegenState) (ty : Ty) : Bool :=
 
 partial def stmtListHasReturn (stmts : List Stmt) : Bool :=
   stmts.any fun s => match s with
-    | .return_ _ => true
-    | .ifElse _ thenBody (some elseBody) =>
+    | .return_ _ _ => true
+    | .ifElse _ _ thenBody (some elseBody) =>
       stmtListHasReturn thenBody && stmtListHasReturn elseBody
-    | .expr (.match_ _ arms) =>
+    | .expr _ (.match_ _ _ arms) =>
       arms.all fun arm => match arm with
-        | .mk _ _ _ body | .litArm _ body | .varArm _ body => stmtListHasReturn body
+        | .mk _ _ _ _ body | .litArm _ _ body | .varArm _ _ body => stmtListHasReturn body
     | _ => false
 
 /-- Get the LLVM integer type name for the given Concrete type (for arithmetic). -/
@@ -175,16 +175,16 @@ private def isFloatType : Ty → Bool
 /-- Infer the type of an expression from codegen state, optionally using a type hint. -/
 def inferExprTy (s : CodegenState) (e : Expr) (hint : Option Ty := none) : Ty :=
   match e with
-  | .intLit _ => match hint with
+  | .intLit _ _ => match hint with
     | some t => if isIntegerType t || t == .char then t else .int
     | none => .int
-  | .floatLit _ => match hint with
+  | .floatLit _ _ => match hint with
     | some t => if isFloatType t then t else .float64
     | none => .float64
-  | .boolLit _ => .bool
-  | .strLit _ => .string
-  | .charLit _ => .char
-  | .ident name =>
+  | .boolLit _ _ => .bool
+  | .strLit _ _ => .string
+  | .charLit _ _ => .char
+  | .ident _ name =>
     -- Check constants first
     match s.constants.lookup name with
     | some (ty, _) => normalizeTy ty
@@ -198,7 +198,7 @@ def inferExprTy (s : CodegenState) (e : Expr) (hint : Option Ty := none) : Ty :=
           let paramTys := (s.fnParamTypes.lookup name).getD []
           .fn_ paramTys .empty retTy
         | none => .int
-  | .fieldAccess obj field =>
+  | .fieldAccess _ obj field =>
     let objTy := inferExprTy s obj hint
     let innerTy := match objTy with
       | .ref t => t
@@ -223,27 +223,27 @@ def inferExprTy (s : CodegenState) (e : Expr) (hint : Option Ty := none) : Ty :=
         | none => ty
       | none => .int
     else .int
-  | .structLit name _ _ => .named name
-  | .enumLit name _ typeArgs _ =>
+  | .structLit _ name _ _ => .named name
+  | .enumLit _ name _ typeArgs _ =>
     if typeArgs.isEmpty then .named name else .generic name typeArgs
-  | .match_ _ _ => .int
-  | .call fnName _typeArgs args =>
+  | .match_ _ _ _ => .int
+  | .call _ fnName _typeArgs args =>
     if fnName == "sizeof" then match hint with
       | some t => t
       | none => .uint
     else if fnName == "alloc" then
       -- Infer arg type without recursion to avoid termination issues
       match args.head? with
-      | some (Expr.structLit name _ _) => Ty.heap (Ty.named name)
-      | some (Expr.enumLit name _ _ _) => Ty.heap (Ty.named name)
-      | some (Expr.ident name) => Ty.heap ((s.lookupVarType name).getD Ty.int)
-      | some (Expr.intLit _) => Ty.heap Ty.int
+      | some (Expr.structLit _ name _ _) => Ty.heap (Ty.named name)
+      | some (Expr.enumLit _ name _ _ _) => Ty.heap (Ty.named name)
+      | some (Expr.ident _ name) => Ty.heap ((s.lookupVarType name).getD Ty.int)
+      | some (Expr.intLit _ _) => Ty.heap Ty.int
       | _ => match hint with
         | some t => t
         | none => Ty.heap Ty.int
     else if fnName == "free" then
       match args.head? with
-      | some (Expr.ident name) =>
+      | some (Expr.ident _ name) =>
         match s.lookupVarType name with
         | some (Ty.heap inner) => inner
         | _ => Ty.int
@@ -255,7 +255,7 @@ def inferExprTy (s : CodegenState) (e : Expr) (hint : Option Ty := none) : Ty :=
     else if fnName == "vec_push" || fnName == "vec_set" || fnName == "vec_free" then .unit
     else if fnName == "vec_get" then
       match args.head? with
-      | some (Expr.ident name) =>
+      | some (Expr.ident _ name) =>
         match s.lookupVarType name with
         | some (.refMut (.generic "Vec" [et])) => et
         | some (.ref (.generic "Vec" [et])) => et
@@ -265,7 +265,7 @@ def inferExprTy (s : CodegenState) (e : Expr) (hint : Option Ty := none) : Ty :=
     else if fnName == "vec_len" then .int
     else if fnName == "vec_pop" then
       match args.head? with
-      | some (Expr.ident name) =>
+      | some (Expr.ident _ name) =>
         match s.lookupVarType name with
         | some (.refMut (.generic "Vec" [et])) => .generic "Option" [et]
         | some (.generic "Vec" [et]) => .generic "Option" [et]
@@ -278,7 +278,7 @@ def inferExprTy (s : CodegenState) (e : Expr) (hint : Option Ty := none) : Ty :=
     else if fnName == "map_insert" || fnName == "map_free" then .unit
     else if fnName == "map_get" || fnName == "map_remove" then
       match args.head? with
-      | some (Expr.ident name) =>
+      | some (Expr.ident _ name) =>
         match s.lookupVarType name with
         | some (.ref (.generic "HashMap" [_, vt])) => .generic "Option" [vt]
         | some (.refMut (.generic "HashMap" [_, vt])) => .generic "Option" [vt]
@@ -288,17 +288,17 @@ def inferExprTy (s : CodegenState) (e : Expr) (hint : Option Ty := none) : Ty :=
     else if fnName == "map_contains" then .bool
     else if fnName == "map_len" then .int
     else normalizeTy ((s.fnRetTypes.lookup fnName).getD .int)
-  | .binOp op lhs _ =>
+  | .binOp _ op lhs _ =>
     match op with
     | .eq | .neq | .lt | .gt | .leq | .geq | .and_ | .or_ => .bool
     | _ => inferExprTy s lhs
-  | .unaryOp .not_ _ => .bool
-  | .unaryOp .neg operand => inferExprTy s operand
-  | .unaryOp .bitnot operand => inferExprTy s operand
-  | .paren inner => inferExprTy s inner
-  | .borrow inner => .ref (inferExprTy s inner)
-  | .borrowMut inner => .refMut (inferExprTy s inner)
-  | .deref inner =>
+  | .unaryOp _ .not_ _ => .bool
+  | .unaryOp _ .neg operand => inferExprTy s operand
+  | .unaryOp _ .bitnot operand => inferExprTy s operand
+  | .paren _ inner => inferExprTy s inner
+  | .borrow _ inner => .ref (inferExprTy s inner)
+  | .borrowMut _ inner => .refMut (inferExprTy s inner)
+  | .deref _ inner =>
     match inferExprTy s inner with
     | .ref t => t
     | .refMut t => t
@@ -306,7 +306,7 @@ def inferExprTy (s : CodegenState) (e : Expr) (hint : Option Ty := none) : Ty :=
     | .ptrConst t => t
     | .heap t => t
     | _ => .int
-  | .try_ inner =>
+  | .try_ _ inner =>
     match inferExprTy s inner with
     | .named enumName =>
       match s.lookupEnum enumName with
@@ -319,16 +319,16 @@ def inferExprTy (s : CodegenState) (e : Expr) (hint : Option Ty := none) : Ty :=
         | none => .int
       | none => .int
     | _ => .int
-  | .arrayLit elems =>
+  | .arrayLit _ elems =>
     match elems with
     | first :: _ => .array (inferExprTy s first) elems.length
     | [] => .array .int 0
-  | .arrayIndex arr _ =>
+  | .arrayIndex _ arr _ =>
     match inferExprTy s arr with
     | .array elemTy _ => elemTy
     | _ => .int
-  | .cast _ targetTy => targetTy
-  | .methodCall obj methodName _ _ =>
+  | .cast _ _ targetTy => targetTy
+  | .methodCall _ obj methodName _ _ =>
     let objTy := inferExprTy s obj
     let innerTy := match objTy with
       | .ref t => t
@@ -341,15 +341,15 @@ def inferExprTy (s : CodegenState) (e : Expr) (hint : Option Ty := none) : Ty :=
       | _ => ""
     let mangledName := typeName ++ "_" ++ methodName
     normalizeTy ((s.fnRetTypes.lookup mangledName).getD .int)
-  | .staticMethodCall typeName methodName _ _ =>
+  | .staticMethodCall _ typeName methodName _ _ =>
     let mangledName := typeName ++ "_" ++ methodName
     normalizeTy ((s.fnRetTypes.lookup mangledName).getD .int)
-  | .fnRef fnName =>
+  | .fnRef _ fnName =>
     -- Look up the function's type to build the fn pointer type
     (s.fnRetTypes.lookup fnName).map (fun retTy =>
       let paramTys := (s.fnParamTypes.lookup fnName).getD []
       .fn_ paramTys .empty retTy) |>.getD .int
-  | .arrowAccess obj field =>
+  | .arrowAccess _ obj field =>
     let objTy := inferExprTy s obj hint
     let innerTy := match objTy with
       | .heap t | .heapArray t => t
@@ -360,8 +360,8 @@ def inferExprTy (s : CodegenState) (e : Expr) (hint : Option Ty := none) : Ty :=
     match s.lookupFieldIndex structName field with
     | some (_, ty) => ty
     | none => .int
-  | .allocCall inner _ => inferExprTy s inner hint
-  | .whileExpr _cond _body _elseBody =>
+  | .allocCall _ inner _ => inferExprTy s inner hint
+  | .whileExpr _ _cond _body _elseBody =>
     -- Result type comes from hint (set by checker) or defaults to Int
     match hint with
     | some t => t

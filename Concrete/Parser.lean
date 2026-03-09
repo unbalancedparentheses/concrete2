@@ -359,22 +359,24 @@ mutual
 partial def parsePrimary : ParseM Expr := do
   let tk ← peek
   match tk with
-  | .intLit v => advance; return .intLit v
-  | .floatLit v => advance; return .floatLit v
-  | .boolLit v => advance; return .boolLit v
-  | .strLit v => advance; return .strLit v
-  | .charLit v => advance; return .charLit v
-  | .true_ => advance; return .boolLit true
-  | .false_ => advance; return .boolLit false
+  | .intLit v => let sp ← peekSpan; advance; return .intLit sp v
+  | .floatLit v => let sp ← peekSpan; advance; return .floatLit sp v
+  | .boolLit v => let sp ← peekSpan; advance; return .boolLit sp v
+  | .strLit v => let sp ← peekSpan; advance; return .strLit sp v
+  | .charLit v => let sp ← peekSpan; advance; return .charLit sp v
+  | .true_ => let sp ← peekSpan; advance; return .boolLit sp true
+  | .false_ => let sp ← peekSpan; advance; return .boolLit sp false
   | .while_ =>
     -- while-as-expression: while cond { body } else { elseBody }
+    let sp ← peekSpan
     advance
     let cond ← parseExpr
     let body ← parseBlock
     expect .else_
     let elseBody ← parseBlock
-    return .whileExpr cond body elseBody
+    return .whileExpr sp cond body elseBody
   | .ident name =>
+    let sp ← peekSpan
     advance
     -- Check for turbofish or module path: name::<Type, ...> or mod::name(...)
     let next ← peek
@@ -421,9 +423,9 @@ partial def parsePrimary : ParseM Expr := do
         expect .assign
         let allocExpr ← parseExpr
         expect .rparen
-        return .allocCall (.call qualName typeArgs args) allocExpr
+        return .allocCall sp (.call sp qualName typeArgs args) allocExpr
       else
-        return .call qualName typeArgs args
+        return .call sp qualName typeArgs args
     else if next2 == .hash then
       -- Enum literal or static method call: Name#Variant { ... } or Name#method(args)
       advance
@@ -434,15 +436,15 @@ partial def parsePrimary : ParseM Expr := do
         advance
         let args ← parseCallArgs
         expect .rparen
-        return .staticMethodCall name variant typeArgs args
+        return .staticMethodCall sp name variant typeArgs args
       else if next3 == .lbrace then
         expect .lbrace
         let fields ← parseStructLitFields
         expect .rbrace
-        return .enumLit name variant typeArgs fields
+        return .enumLit sp name variant typeArgs fields
       else
         -- Fieldless enum literal: Name#Variant (no braces)
-        return .enumLit name variant typeArgs []
+        return .enumLit sp name variant typeArgs []
     else if next2 == .dot && name.length > 0 && (name.toList.head!).isUpper && typeArgs.isEmpty then
       -- Could be enum literal with dot syntax: EnumName.Variant
       -- Save position in case this is not an enum literal
@@ -458,68 +460,76 @@ partial def parsePrimary : ParseM Expr := do
             expect .lbrace
             let fields ← parseStructLitFields
             expect .rbrace
-            return .enumLit name variant [] fields
+            return .enumLit sp name variant [] fields
           else
-            return .enumLit name variant [] []
+            return .enumLit sp name variant [] []
         else
           -- Not an enum variant (lowercase after dot), restore and return as ident
           set s
-          return .ident name
+          return .ident sp name
       | _ =>
         -- Not an ident after dot, restore
         set s
-        return .ident name
+        return .ident sp name
     else if next2 == .lbrace then
       -- Could be struct literal: Name[::<Type>] { field: val, ... }
       if name.length > 0 && (name.toList.head!).isUpper then
         advance
         let fields ← parseStructLitFields
         expect .rbrace
-        return .structLit name typeArgs fields
+        return .structLit sp name typeArgs fields
       else
-        return .ident name
+        return .ident sp name
     else
-      return .ident name
+      return .ident sp name
   | .match_ =>
+    let sp ← peekSpan
     advance
     let scrutinee ← parseExpr
     expect .lbrace
     let arms ← parseMatchArms
     expect .rbrace
-    return .match_ scrutinee arms
+    return .match_ sp scrutinee arms
   | .lparen =>
+    let sp ← peekSpan
     advance
     let inner ← parseExpr
     expect .rparen
-    return .paren inner
+    return .paren sp inner
   | .ampersand =>
+    let sp ← peekSpan
     advance
     let next ← peek
     if next == .mut then
       advance
       let operand ← parsePrimary
-      return .borrowMut operand
+      return .borrowMut sp operand
     else
       let operand ← parsePrimary
-      return .borrow operand
+      return .borrow sp operand
   | .star =>
+    let sp ← peekSpan
     advance
     let operand ← parsePrimary
-    return .deref operand
+    return .deref sp operand
   | .minus =>
+    let sp ← peekSpan
     advance
     let operand ← parsePrimary
-    return .unaryOp .neg operand
+    return .unaryOp sp .neg operand
   | .not_ =>
+    let sp ← peekSpan
     advance
     let operand ← parsePrimary
-    return .unaryOp .not_ operand
+    return .unaryOp sp .not_ operand
   | .tilde =>
+    let sp ← peekSpan
     advance
     let operand ← parsePrimary
-    return .unaryOp .bitnot operand
+    return .unaryOp sp .bitnot operand
   | .lbracket =>
     -- Array literal: [expr, expr, ...]
+    let sp ← peekSpan
     advance
     let mut elems : List Expr := []
     let tk ← peek
@@ -535,7 +545,7 @@ partial def parsePrimary : ParseM Expr := do
         elems := elems ++ [e]
         tk2 ← peek
     expect .rbracket
-    return .arrayLit elems
+    return .arrayLit sp elems
   | .fn =>
     let sp ← peekSpan
     throw ("closures are not supported; use a named function reference instead" ++
@@ -583,32 +593,32 @@ partial def parsePostfix (e : Expr) : ParseM Expr := do
         expect .lparen
         let args ← parseCallArgs
         expect .rparen
-        result := .methodCall result fieldName targs args
+        result := .methodCall result.getSpan result fieldName targs args
       else if next == .lparen then
         advance
         let args ← parseCallArgs
         expect .rparen
-        result := .methodCall result fieldName [] args
+        result := .methodCall result.getSpan result fieldName [] args
       else
-        result := .fieldAccess result fieldName
+        result := .fieldAccess result.getSpan result fieldName
     else if tk == .question then
       advance
-      result := .try_ result
+      result := .try_ result.getSpan result
     else if tk == .lbracket then
       -- Array index: expr[index]
       advance
       let index ← parseExpr
       expect .rbracket
-      result := .arrayIndex result index
+      result := .arrayIndex result.getSpan result index
     else if tk == .arrow then
       -- Arrow access: expr->field
       advance
       let fieldName ← expectIdent
-      result := .arrowAccess result fieldName
+      result := .arrowAccess result.getSpan result fieldName
     else  -- .as_
       advance
       let targetTy ← parseType
-      result := .cast result targetTy
+      result := .cast result.getSpan result targetTy
     tk ← peek
   return result
 
@@ -656,7 +666,7 @@ partial def parseExprPrec (minPrec : Nat) : ParseM Expr := do
       if prec < minPrec then break
       advance
       let rhs ← parseExprPrec (prec + 1)
-      lhs := .binOp op lhs rhs
+      lhs := .binOp lhs.getSpan op lhs rhs
       tk ← peek
     | none => break
   return lhs
@@ -680,6 +690,7 @@ partial def parseStmtList : ParseM (List Stmt) := do
   return stmts
 
 partial def parseStmt : ParseM Stmt := do
+  let sp ← peekSpan
   let tk ← peek
   match tk with
   | .«let» => parseLet
@@ -703,14 +714,14 @@ partial def parseStmt : ParseM Stmt := do
     | .label name =>
       advance
       expect .semicolon
-      return .break_ none (some name)
+      return .break_ sp none (some name)
     | .semicolon =>
       advance
-      return .break_ none none
+      return .break_ sp none none
     | _ =>
       let val ← parseExpr
       expect .semicolon
-      return .break_ (some val) none
+      return .break_ sp (some val) none
   | .continue_ =>
     advance
     let tk2 ← peek
@@ -718,15 +729,15 @@ partial def parseStmt : ParseM Stmt := do
     | .label name =>
       advance
       expect .semicolon
-      return .continue_ (some name)
+      return .continue_ sp (some name)
     | _ =>
       expect .semicolon
-      return .continue_ none
+      return .continue_ sp none
   | .defer_ =>
     advance
     let body ← parseExpr
     expect .semicolon
-    return .defer body
+    return .defer sp body
   | .borrow_ =>
     advance
     -- borrow [mut] var as ref in region { ... }
@@ -739,10 +750,11 @@ partial def parseStmt : ParseM Stmt := do
     expect .in_
     let region ← expectIdent
     let body ← parseBlock
-    return .borrowIn var ref region isMut body
+    return .borrowIn sp var ref region isMut body
   | _ => parseExprOrAssign
 
 partial def parseLet : ParseM Stmt := do
+  let sp ← peekSpan
   expect .«let»
   let tk ← peek
   let isMut := tk == .mut
@@ -758,9 +770,10 @@ partial def parseLet : ParseM Stmt := do
   expect .assign
   let value ← parseExpr
   expect .semicolon
-  return .letDecl name isMut ty value
+  return .letDecl sp name isMut ty value
 
 partial def parseReturn : ParseM Stmt := do
+  let sp ← peekSpan
   expect .return_
   let tk ← peek
   let value ← if tk == .semicolon then
@@ -769,9 +782,10 @@ partial def parseReturn : ParseM Stmt := do
     let e ← parseExpr
     pure (some e)
   expect .semicolon
-  return .return_ value
+  return .return_ sp value
 
 partial def parseIf : ParseM Stmt := do
+  let sp ← peekSpan
   expect .if_
   let cond ← parseExpr
   let thenBody ← parseBlock
@@ -788,21 +802,23 @@ partial def parseIf : ParseM Stmt := do
       pure (some body)
   else
     pure none
-  return .ifElse cond thenBody elseBody
+  return .ifElse sp cond thenBody elseBody
 
 partial def parseWhile (lbl : Option String) : ParseM Stmt := do
+  let sp ← peekSpan
   expect .while_
   let cond ← parseExpr
   let body ← parseBlock
-  return .while_ cond body lbl
+  return .while_ sp cond body lbl
 
 partial def parseFor (lbl : Option String) : ParseM Stmt := do
+  let sp ← peekSpan
   expect .for_
   let tk ← peek
   -- for { body } — infinite loop (no parens, no cond)
   if tk == .lbrace then
     let body ← parseBlock
-    return .while_ (.boolLit true) body lbl
+    return .while_ sp (.boolLit default true) body lbl
   -- for (cond) or for (init; cond; step)
   expect .lparen
   let tk ← peek
@@ -814,7 +830,7 @@ partial def parseFor (lbl : Option String) : ParseM Stmt := do
     let step ← parseExprOrAssignNoSemicolon
     expect .rparen
     let body ← parseBlock
-    return .forLoop (some initStmt) cond (some step) body lbl
+    return .forLoop sp (some initStmt) cond (some step) body lbl
   else
     -- Could be for(cond) { body } or for(existingVar; cond; step) { body }
     let expr ← parseExpr
@@ -823,7 +839,7 @@ partial def parseFor (lbl : Option String) : ParseM Stmt := do
       -- for (cond) { body } - like while
       advance
       let body ← parseBlock
-      return .forLoop none expr none body lbl
+      return .forLoop sp none expr none body lbl
     else if tk2 == .semicolon then
       -- for(existing_assignment; cond; step)
       -- Wait, if we're here the init was an expression, not a let.
@@ -845,26 +861,27 @@ partial def parseExprOrAssignNoSemicolon : ParseM Stmt := do
   match tk with
   | .assign =>
     match e with
-    | .ident name =>
+    | .ident _ name =>
       advance
       let value ← parseExpr
-      return .assign name value
-    | .fieldAccess obj field =>
+      return .assign e.getSpan name value
+    | .fieldAccess _ obj field =>
       advance
       let value ← parseExpr
-      return .fieldAssign obj field value
+      return .fieldAssign e.getSpan obj field value
     | _ =>
       let sp ← peekSpan
       throw ("invalid assignment target at " ++ toString sp.line ++ ":" ++ toString sp.col)
-  | _ => return .expr e
+  | _ => return .expr e.getSpan e
 
 partial def parseMatchStmt : ParseM Stmt := do
+  let sp ← peekSpan
   advance  -- consume match_
   let scrutinee ← parseExpr
   expect .lbrace
   let arms ← parseMatchArms
   expect .rbrace
-  return .expr (.match_ scrutinee arms)
+  return .expr sp (.match_ sp scrutinee arms)
 
 partial def parseMatchArms : ParseM (List MatchArm) := do
   let mut arms : List MatchArm := []
@@ -881,6 +898,7 @@ partial def parseMatchArmBody : ParseM (List Stmt) := do
   if bodyTk == .lbrace then
     parseBlock
   else if bodyTk == .return_ then
+    let sp ← peekSpan
     advance
     let tk ← peek
     let value ← if tk == .semicolon || tk == .comma || tk == .rbrace then
@@ -891,12 +909,13 @@ partial def parseMatchArmBody : ParseM (List Stmt) := do
     -- Accept semicolon, comma, or nothing (rbrace will be consumed by caller)
     let tk2 ← peek
     if tk2 == .semicolon then advance
-    pure [.return_ value]
+    pure [.return_ sp value]
   else do
     let stmt ← parseStmt
     pure [stmt]
 
 partial def parseMatchArm : ParseM MatchArm := do
+  let sp ← peekSpan
   let firstTk ← peek
   -- Check for literal pattern (integer)
   match firstTk with
@@ -909,7 +928,7 @@ partial def parseMatchArm : ParseM MatchArm := do
     let body ← parseMatchArmBody
     let tk2 ← peek
     if tk2 == .comma then advance
-    return .litArm (.intLit n) body
+    return .litArm sp (.intLit sp n) body
   | .ident name =>
     advance
     let next ← peek
@@ -953,7 +972,7 @@ partial def parseMatchArm : ParseM MatchArm := do
       let body ← parseMatchArmBody
       let tk2 ← peek
       if tk2 == .comma then advance
-      return .mk enumName variant bindings body
+      return .mk sp enumName variant bindings body
     else
       -- Variable binding pattern: name -> body
       let arrowTk := next
@@ -963,7 +982,7 @@ partial def parseMatchArm : ParseM MatchArm := do
       let body ← parseMatchArmBody
       let tk2 ← peek
       if tk2 == .comma then advance
-      return .varArm name body
+      return .varArm sp name body
   | _ => throw s!"expected match pattern, got {firstTk}"
 
 partial def parseExprOrAssign : ParseM Stmt := do
@@ -972,37 +991,37 @@ partial def parseExprOrAssign : ParseM Stmt := do
   match tk with
   | .assign =>
     match e with
-    | .ident name =>
+    | .ident _ name =>
       advance
       let value ← parseExpr
       expect .semicolon
-      return .assign name value
-    | .fieldAccess obj field =>
+      return .assign e.getSpan name value
+    | .fieldAccess _ obj field =>
       advance
       let value ← parseExpr
       expect .semicolon
-      return .fieldAssign obj field value
-    | .deref inner =>
+      return .fieldAssign e.getSpan obj field value
+    | .deref _ inner =>
       advance
       let value ← parseExpr
       expect .semicolon
-      return .derefAssign inner value
-    | .arrayIndex arr index =>
+      return .derefAssign e.getSpan inner value
+    | .arrayIndex _ arr index =>
       advance
       let value ← parseExpr
       expect .semicolon
-      return .arrayIndexAssign arr index value
-    | .arrowAccess obj field =>
+      return .arrayIndexAssign e.getSpan arr index value
+    | .arrowAccess _ obj field =>
       advance
       let value ← parseExpr
       expect .semicolon
-      return .arrowAssign obj field value
+      return .arrowAssign e.getSpan obj field value
     | _ =>
       let sp ← peekSpan
       throw ("invalid assignment target at " ++ toString sp.line ++ ":" ++ toString sp.col)
   | .semicolon =>
     advance
-    return .expr e
+    return .expr e.getSpan e
   | other =>
     let sp ← peekSpan
     throw ("expected ';' or '=', got " ++ toString other ++
@@ -1328,6 +1347,7 @@ partial def parseEnumDef : ParseM EnumDef := do
   return { name, typeParams, typeBounds, variants, isCopy }
 
 partial def parseImport : ParseM ImportDecl := do
+  let sp ← peekSpan
   expect .import_
   let mut modPath : String := ""
   let modName ← expectIdent
@@ -1355,7 +1375,7 @@ partial def parseImport : ParseM ImportDecl := do
     if tk == .comma then advance; tk ← peek
   expect .rbrace
   expect .semicolon
-  return { moduleName := modPath, symbols }
+  return { moduleName := modPath, symbols, span := sp }
 
 /-- Skip an attribute like #[intrinsic = "sizeof"] or #[langitem = "String"] -/
 partial def skipAttribute : ParseM Unit := do

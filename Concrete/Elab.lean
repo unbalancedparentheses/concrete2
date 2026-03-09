@@ -165,12 +165,12 @@ private partial def unifyTypes (pattern actual : Ty) (typeParams : List String) 
 /-- Peek at an expression's type without any side effects, for type inference. -/
 private partial def peekExprType (e : Expr) : ElabM Ty := do
   match e with
-  | .intLit _ => return .int
-  | .floatLit _ => return .float64
-  | .boolLit _ => return .bool
-  | .strLit _ => return .string
-  | .charLit _ => return .char
-  | .ident name =>
+  | .intLit _ _ => return .int
+  | .floatLit _ _ => return .float64
+  | .boolLit _ _ => return .bool
+  | .strLit _ _ => return .string
+  | .charLit _ _ => return .char
+  | .ident _ name =>
     let env ← getEnv
     match env.constants.lookup name with
     | some ty => return ty
@@ -183,16 +183,16 @@ private partial def peekExprType (e : Expr) : ElabM Ty := do
         let paramTys := sig.params.map Prod.snd
         return .fn_ paramTys sig.capSet sig.retTy
       | none => return .placeholder
-  | .structLit name typeArgs _ =>
+  | .structLit _ name typeArgs _ =>
     if typeArgs.isEmpty then return .named name else return .generic name typeArgs
-  | .enumLit enumName _ typeArgs _ =>
+  | .enumLit _ enumName _ typeArgs _ =>
     if typeArgs.isEmpty then return .named enumName else return .generic enumName typeArgs
-  | .fnRef name =>
+  | .fnRef _ name =>
     let env ← getEnv
     match env.allFnSigPairs.lookup name with
     | some sig => return .fn_ (sig.params.map Prod.snd) sig.capSet sig.retTy
     | none => return .placeholder
-  | .paren inner => peekExprType inner
+  | .paren _ inner => peekExprType inner
   | _ => return .placeholder
 
 -- ============================================================
@@ -203,7 +203,7 @@ mutual
 
 partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
   match e with
-  | .intLit v =>
+  | .intLit _ v =>
     let ty := match hint with
       | some ty =>
         let tyR := ty  -- skip resolve in elab for perf; already resolved at let/call sites
@@ -211,16 +211,16 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
         else match tyR with | .typeVar _ => tyR | _ => .int
       | none => .int
     return .intLit v ty
-  | .floatLit v =>
+  | .floatLit _ v =>
     let ty := match hint with
       | some ty => if isFloatType ty then ty else .float64
       | none => .float64
     return .floatLit v ty
-  | .boolLit b => return .boolLit b
-  | .strLit s => return .strLit s
-  | .charLit c => return .charLit c
+  | .boolLit _ b => return .boolLit b
+  | .strLit _ s => return .strLit s
+  | .charLit _ c => return .charLit c
 
-  | .ident name =>
+  | .ident _ name =>
     let env ← getEnv
     match env.constants.lookup name with
     | some ty => return .ident name ty
@@ -234,9 +234,9 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
         return .ident name (.fn_ paramTys sig.capSet sig.retTy)
       | none => throw s!"use of undeclared variable '{name}'"
 
-  | .paren inner => elabExpr inner hint
+  | .paren _ inner => elabExpr inner hint
 
-  | .binOp op lhs rhs =>
+  | .binOp _ op lhs rhs =>
     let cLhs ← elabExpr lhs hint
     let lTy := cLhs.ty
     let cRhs ← elabExpr rhs (some lTy)
@@ -246,14 +246,14 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
       | _ => lTy
     return .binOp op cLhs cRhs resultTy
 
-  | .unaryOp op operand =>
+  | .unaryOp _ op operand =>
     let cOp ← elabExpr operand hint
     let resultTy := match op with
       | .not_ => Ty.bool
       | _ => cOp.ty
     return .unaryOp op cOp resultTy
 
-  | .arrowAccess obj field =>
+  | .arrowAccess _ obj field =>
     -- Desugar: p->field → (*p).field
     let cObj ← elabExpr obj
     let objTy := cObj.ty
@@ -277,12 +277,12 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
       | none => throw s!"struct '{structName}' has no field '{field}'"
     | none => throw s!"arrow access on unknown struct type '{structName}'"
 
-  | .allocCall inner allocExpr =>
+  | .allocCall _ inner allocExpr =>
     let cInner ← elabExpr inner hint
     let cAlloc ← elabExpr allocExpr
     return .allocCall cInner cAlloc cInner.ty
 
-  | .whileExpr cond body elseBody =>
+  | .whileExpr _ cond body elseBody =>
     let cCond ← elabExpr cond
     let cBody ← elabStmts body
     let cElse ← elabStmts elseBody
@@ -290,10 +290,10 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
     let resultTy := match hint with | some t => t | none => .unit
     return .whileExpr cCond cBody cElse resultTy
 
-  | .call fnName typeArgs args =>
+  | .call _ fnName typeArgs args =>
     elabCall fnName typeArgs args hint
 
-  | .structLit name typeArgs fields =>
+  | .structLit _ name typeArgs fields =>
     match ← lookupStruct name with
     | some sd =>
       let mapping := sd.typeParams.zip typeArgs
@@ -309,7 +309,7 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
       return .structLit name typeArgs cFields resultTy
     | none => throw s!"unknown struct type '{name}'"
 
-  | .fieldAccess obj field =>
+  | .fieldAccess _ obj field =>
     let cObj ← elabExpr obj
     let objTy := cObj.ty
     let innerTy := match objTy with
@@ -330,7 +330,7 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
       | none => throw s!"struct '{structName}' has no field '{field}'"
     | none => throw s!"field access on non-struct type"
 
-  | .enumLit enumName variant typeArgs fields =>
+  | .enumLit _ enumName variant typeArgs fields =>
     match ← lookupEnum enumName with
     | some ed =>
       let effectiveTypeArgs := if typeArgs.isEmpty && !ed.typeParams.isEmpty then
@@ -356,7 +356,7 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
       | none => throw s!"unknown variant '{variant}' in enum '{enumName}'"
     | none => throw s!"unknown enum type '{enumName}'"
 
-  | .match_ scrutinee arms =>
+  | .match_ _ scrutinee arms =>
     let cScrut ← elabExpr scrutinee
     let scrTy := cScrut.ty
     let innerTy := match scrTy with
@@ -374,7 +374,7 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
         for arm in arms do
           setEnv envBefore
           match arm with
-          | .mk _armEnum armVariant bindings body =>
+          | .mk _ _armEnum armVariant bindings body =>
             let ev := (ed.variants.find? fun v => v.name == armVariant).getD
               { name := armVariant, fields := [] }
             let typeMapping := ed.typeParams.zip enumTypeArgs
@@ -385,11 +385,11 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
               addVar binding bty
             let cBody ← elabStmts body
             cArms := cArms ++ [.enumArm enumName armVariant typedBindings cBody]
-          | .litArm val body =>
+          | .litArm _ val body =>
             let cVal ← elabExpr val
             let cBody ← elabStmts body
             cArms := cArms ++ [.litArm cVal cBody]
-          | .varArm binding body =>
+          | .varArm _ binding body =>
             addVar binding innerTyR
             let cBody ← elabStmts body
             cArms := cArms ++ [.varArm binding innerTyR cBody]
@@ -399,15 +399,15 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
         for arm in arms do
           setEnv envBefore
           match arm with
-          | .litArm val body =>
+          | .litArm _ val body =>
             let cVal ← elabExpr val
             let cBody ← elabStmts body
             cArms := cArms ++ [.litArm cVal cBody]
-          | .varArm binding body =>
+          | .varArm _ binding body =>
             addVar binding innerTyR
             let cBody ← elabStmts body
             cArms := cArms ++ [.varArm binding innerTyR cBody]
-          | .mk en v _ body =>
+          | .mk _ en v _ body =>
             let cBody ← elabStmts body
             cArms := cArms ++ [.enumArm en v [] cBody]
         setEnv envBefore
@@ -416,15 +416,15 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
       for arm in arms do
         setEnv envBefore
         match arm with
-        | .litArm val body =>
+        | .litArm _ val body =>
           let cVal ← elabExpr val (some innerTyR)
           let cBody ← elabStmts body
           cArms := cArms ++ [.litArm cVal cBody]
-        | .varArm binding body =>
+        | .varArm _ binding body =>
           addVar binding innerTyR
           let cBody ← elabStmts body
           cArms := cArms ++ [.varArm binding innerTyR cBody]
-        | .mk en v _ body =>
+        | .mk _ en v _ body =>
           let cBody ← elabStmts body
           cArms := cArms ++ [.enumArm en v [] cBody]
       setEnv envBefore
@@ -433,15 +433,15 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
     else innerTyR
     return .match_ cScrut cArms resultTy
 
-  | .borrow inner =>
+  | .borrow _ inner =>
     let cInner ← elabExpr inner
     return .borrow cInner (.ref cInner.ty)
 
-  | .borrowMut inner =>
+  | .borrowMut _ inner =>
     let cInner ← elabExpr inner
     return .borrowMut cInner (.refMut cInner.ty)
 
-  | .deref inner =>
+  | .deref _ inner =>
     let cInner ← elabExpr inner
     let resultTy := match cInner.ty with
       | .ref t => t | .refMut t => t
@@ -449,7 +449,7 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
       | _ => .placeholder
     return .deref cInner resultTy
 
-  | .try_ inner =>
+  | .try_ _ inner =>
     let cInner ← elabExpr inner
     let resultTy := match cInner.ty with
       | .named _enumName => .placeholder  -- would need enum lookup for Ok field
@@ -457,7 +457,7 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
       | _ => .placeholder
     return .try_ cInner resultTy
 
-  | .arrayLit elems =>
+  | .arrayLit _ elems =>
     match elems with
     | [] => throw "array literal cannot be empty"
     | first :: rest =>
@@ -470,7 +470,7 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
         cElems := cElems ++ [cE]
       return .arrayLit cElems (.array elemTy elems.length)
 
-  | .arrayIndex arr index =>
+  | .arrayIndex _ arr index =>
     let cArr ← elabExpr arr
     let cIdx ← elabExpr index (some .int)
     let elemTy := match cArr.ty with
@@ -478,11 +478,11 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
       | _ => .placeholder
     return .arrayIndex cArr cIdx elemTy
 
-  | .cast inner targetTy =>
+  | .cast _ inner targetTy =>
     let cInner ← elabExpr inner
     return .cast cInner targetTy
 
-  | .fnRef fnName =>
+  | .fnRef _ fnName =>
     let env ← getEnv
     match env.allFnSigPairs.lookup fnName with
     | some sig =>
@@ -490,7 +490,7 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
       return .fnRef fnName (.fn_ paramTys sig.capSet sig.retTy)
     | none => throw s!"unknown function '{fnName}' in function reference"
 
-  | .methodCall obj methodName typeArgs args =>
+  | .methodCall _ obj methodName typeArgs args =>
     -- Desugar: obj.method(args) → Type_method(&obj, args) or Type_method(&mut obj, args)
     let cObj ← elabExpr obj
     let objTy := cObj.ty
@@ -551,7 +551,7 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
         return .call mangledName (objTypeArgs ++ typeArgs) cArgs retTy
       | none => throw s!"no method '{methodName}' on type '{typeName}'"
 
-  | .staticMethodCall typeName methodName typeArgs args =>
+  | .staticMethodCall _ typeName methodName typeArgs args =>
     let mangledName := typeName ++ "_" ++ methodName
     match ← lookupFnSig mangledName with
     | some sig =>
@@ -573,19 +573,19 @@ partial def elabCall (fnName : String) (typeArgs : List Ty) (args : List Expr)
     return .call "abort" [] [] .never
   -- Intercept destroy(arg)
   if fnName == "destroy" then
-    let arg := match args with | a :: _ => a | [] => Expr.intLit 0
+    let arg := match args with | a :: _ => a | [] => Expr.intLit default 0
     let cArg ← elabExpr arg
     let typeName := match cArg.ty with
       | .named n => n | .generic n _ => n | _ => ""
     return .call (typeName ++ "_destroy") [] [cArg] .unit
   -- Intercept alloc(val)
   if fnName == "alloc" then
-    let arg := match args with | a :: _ => a | [] => Expr.intLit 0
+    let arg := match args with | a :: _ => a | [] => Expr.intLit default 0
     let cArg ← elabExpr arg
     return .call "alloc" [] [cArg] (.heap cArg.ty)
   -- Intercept free(ptr)
   if fnName == "free" then
-    let arg := match args with | a :: _ => a | [] => Expr.intLit 0
+    let arg := match args with | a :: _ => a | [] => Expr.intLit default 0
     let cArg ← elabExpr arg
     let innerTy := match cArg.ty with | .heap t => t | _ => .placeholder
     return .call "free" [] [cArg] innerTy
@@ -759,7 +759,7 @@ partial def elabCall (fnName : String) (typeArgs : List Ty) (args : List Expr)
 
 partial def elabStmt (stmt : Stmt) : ElabM (List CStmt) := do
   match stmt with
-  | .letDecl name mutable ty value =>
+  | .letDecl _ name mutable ty value =>
     let valHint ← match ty with
       | some t => do let t' ← resolveTypeE t; pure (some t')
       | none => pure none
@@ -770,27 +770,27 @@ partial def elabStmt (stmt : Stmt) : ElabM (List CStmt) := do
     addVar name finalTy
     return [.letDecl name mutable finalTy cVal]
 
-  | .assign name value =>
+  | .assign _ name value =>
     match ← lookupVar name with
     | some varTy =>
       let cVal ← elabExpr value (some varTy)
       return [.assign name cVal]
     | none => throw s!"assignment to undeclared variable '{name}'"
 
-  | .return_ (some value) =>
+  | .return_ _ (some value) =>
     let env ← getEnv
     let cVal ← elabExpr value (some env.currentRetTy)
     return [.return_ (some cVal) env.currentRetTy]
 
-  | .return_ none =>
+  | .return_ _ none =>
     let env ← getEnv
     return [.return_ none env.currentRetTy]
 
-  | .expr e =>
+  | .expr _ e =>
     let cE ← elabExpr e
     return [.expr cE]
 
-  | .ifElse cond then_ else_ =>
+  | .ifElse _ cond then_ else_ =>
     let cCond ← elabExpr cond (some .bool)
     let cThen ← elabStmts then_
     let cElse ← match else_ with
@@ -798,12 +798,12 @@ partial def elabStmt (stmt : Stmt) : ElabM (List CStmt) := do
       | none => pure none
     return [.ifElse cCond cThen cElse]
 
-  | .while_ cond body label =>
+  | .while_ _ cond body label =>
     let cCond ← elabExpr cond (some .bool)
     let cBody ← elabStmts body
     return [.while_ cCond cBody label []]
 
-  | .forLoop init cond step body label =>
+  | .forLoop _ init cond step body label =>
     -- Desugar: for (init; cond; step) { body } → init; while cond { body; step }
     let mut result : List CStmt := []
     match init with
@@ -820,12 +820,12 @@ partial def elabStmt (stmt : Stmt) : ElabM (List CStmt) := do
     result := result ++ [.while_ cCond whileBody label cStep]
     return result
 
-  | .fieldAssign obj field value =>
+  | .fieldAssign _ obj field value =>
     let cObj ← elabExpr obj
     let cVal ← elabExpr value
     return [.fieldAssign cObj field cVal]
 
-  | .derefAssign target value =>
+  | .derefAssign _ target value =>
     let cTarget ← elabExpr target
     let innerTy := match cTarget.ty with
       | .ref t => t | .refMut t => t
@@ -834,27 +834,27 @@ partial def elabStmt (stmt : Stmt) : ElabM (List CStmt) := do
     let cVal ← elabExpr value (some innerTy)
     return [.derefAssign cTarget cVal]
 
-  | .arrayIndexAssign arr index value =>
+  | .arrayIndexAssign _ arr index value =>
     let cArr ← elabExpr arr
     let cIdx ← elabExpr index (some .int)
     let cVal ← elabExpr value
     return [.arrayIndexAssign cArr cIdx cVal]
 
-  | .break_ value label =>
+  | .break_ _ value label =>
     match value with
     | some v =>
       let cV ← elabExpr v
       return [.break_ (some cV) label]
     | none => return [.break_ none label]
 
-  | .continue_ label =>
+  | .continue_ _ label =>
     return [.continue_ label]
 
-  | .defer body =>
+  | .defer _ body =>
     let cBody ← elabExpr body
     return [.defer cBody]
 
-  | .borrowIn var ref region isMut body =>
+  | .borrowIn _ var ref region isMut body =>
     let varTy ← match ← lookupVar var with
       | some ty => pure ty
       | none => throw s!"borrow: undeclared variable '{var}'"
@@ -863,7 +863,7 @@ partial def elabStmt (stmt : Stmt) : ElabM (List CStmt) := do
     let cBody ← elabStmts body
     return [.borrowIn var ref region isMut refTy cBody]
 
-  | .arrowAssign obj field value =>
+  | .arrowAssign _ obj field value =>
     -- Desugar: p->field = val → (*p).field = val
     let cObj ← elabExpr obj
     let objTy := cObj.ty

@@ -9,7 +9,7 @@ mutual
     An optional type hint is used for integer/float literals to emit the correct LLVM type. -/
 partial def genExpr (s : CodegenState) (e : Expr) (hintTy : Option Ty := none) : CodegenState × String :=
   match e with
-  | .intLit v =>
+  | .intLit _ v =>
     let ty := match hintTy with
       | some t => if isIntegerType t || t == .char then t else Ty.int
       | none => Ty.int
@@ -17,7 +17,7 @@ partial def genExpr (s : CodegenState) (e : Expr) (hintTy : Option Ty := none) :
     let (s, reg) := s.freshLocal
     let s := s.emit ("  " ++ reg ++ " = add " ++ llTy ++ " 0, " ++ toString v)
     (s, reg)
-  | .floatLit v =>
+  | .floatLit _ v =>
     let ty := match hintTy with
       | some t => if isFloatType t then t else Ty.float64
       | none => Ty.float64
@@ -33,12 +33,12 @@ partial def genExpr (s : CodegenState) (e : Expr) (hintTy : Option Ty := none) :
       let (s, reg) := s.freshLocal
       let s := s.emit ("  " ++ reg ++ " = fadd " ++ llTy ++ " 0.0, " ++ floatToLLVM v)
       (s, reg)
-  | .boolLit v =>
+  | .boolLit _ v =>
     let (s, reg) := s.freshLocal
     let val := if v then "1" else "0"
     let s := s.emit ("  " ++ reg ++ " = add i1 0, " ++ val)
     (s, reg)
-  | .strLit v =>
+  | .strLit _ v =>
     let globalName := "@.str." ++ toString s.stringLitCounter
     let len := v.length
     let escaped := escapeStringForLLVM v
@@ -56,11 +56,11 @@ partial def genExpr (s : CodegenState) (e : Expr) (hintTy : Option Ty := none) :
     let s := s.emit ("  " ++ lenField ++ " = getelementptr inbounds %struct.String, ptr " ++ alloca ++ ", i32 0, i32 1")
     let s := s.emit ("  store i64 " ++ toString len ++ ", ptr " ++ lenField)
     (s, alloca)
-  | .charLit v =>
+  | .charLit _ v =>
     let (s, reg) := s.freshLocal
     let s := s.emit ("  " ++ reg ++ " = add i8 0, " ++ toString v.toNat)
     (s, reg)
-  | .ident name =>
+  | .ident _ name =>
     -- Check constants first
     match s.constants.lookup name with
     | some (ty, constExpr) =>
@@ -84,7 +84,7 @@ partial def genExpr (s : CodegenState) (e : Expr) (hintTy : Option Ty := none) :
         (s, "@" ++ name)
       else
         (s, "%" ++ name)
-  | .binOp op lhs rhs =>
+  | .binOp _ op lhs rhs =>
     let lhsTy := inferExprTy s lhs hintTy
     let (s, lReg) := genExpr s lhs hintTy
     let (s, rReg) := genExpr s rhs (some lhsTy)
@@ -153,7 +153,7 @@ partial def genExpr (s : CodegenState) (e : Expr) (hintTy : Option Ty := none) :
                   else "lshr " ++ llTy ++ " " ++ lReg ++ ", " ++ rReg
       let s := s.emit ("  " ++ result ++ " = " ++ instr)
       (s, result)
-  | .unaryOp op operand =>
+  | .unaryOp _ op operand =>
     let opTy := inferExprTy s operand hintTy
     let (s, reg) := genExpr s operand hintTy
     let (s, result) := s.freshLocal
@@ -175,7 +175,7 @@ partial def genExpr (s : CodegenState) (e : Expr) (hintTy : Option Ty := none) :
       let llTy := intTyToLLVM opTy
       let s := s.emit ("  " ++ result ++ " = xor " ++ llTy ++ " " ++ reg ++ ", -1")
       (s, result)
-  | .call fnName typeArgs args =>
+  | .call _ fnName typeArgs args =>
     -- Intercept abort()
     if fnName == "abort" then
       let s := s.emit "  call void @abort()"
@@ -384,8 +384,8 @@ partial def genExpr (s : CodegenState) (e : Expr) (hintTy : Option Ty := none) :
       let (s, result) := s.freshLocal
       let s := s.emit ("  " ++ result ++ " = call " ++ retLLTy ++ " @" ++ effectiveName ++ "(" ++ argStr ++ ")")
       (s, result)
-  | .paren inner => genExpr s inner hintTy
-  | .structLit name typeArgs fields =>
+  | .paren _ inner => genExpr s inner hintTy
+  | .structLit _ name typeArgs fields =>
     match s.lookupStruct name with
     | some si =>
       let mapping : List (String × Ty) := si.typeParams.zip typeArgs
@@ -420,7 +420,7 @@ partial def genExpr (s : CodegenState) (e : Expr) (hintTy : Option Ty := none) :
       let (s, reg) := s.freshLocal
       let s := s.emit ("  " ++ reg ++ " = add i64 0, 0 ; unknown struct " ++ name)
       (s, reg)
-  | .fieldAccess obj field =>
+  | .fieldAccess _ obj field =>
     let objTy := inferExprTy s obj
     let innerTy := match objTy with
       | .ref t => t
@@ -467,11 +467,11 @@ partial def genExpr (s : CodegenState) (e : Expr) (hintTy : Option Ty := none) :
       let (s, reg) := s.freshLocal
       let s := s.emit ("  " ++ reg ++ " = add i64 0, 0 ; field access on non-struct")
       (s, reg)
-  | .borrow inner =>
+  | .borrow _ inner =>
     genExprAsPtr s inner
-  | .borrowMut inner =>
+  | .borrowMut _ inner =>
     genExprAsPtr s inner
-  | .deref inner =>
+  | .deref _ inner =>
     let (s, ptr) := genExpr s inner
     let innerTy := inferExprTy s inner
     match innerTy with
@@ -507,7 +507,7 @@ partial def genExpr (s : CodegenState) (e : Expr) (hintTy : Option Ty := none) :
         let (s, loaded) := s.freshLocal
         let s := s.emit ("  " ++ loaded ++ " = load " ++ llTy ++ ", ptr " ++ ptr)
         (s, loaded)
-  | .enumLit enumName variant typeArgs fields =>
+  | .enumLit _ enumName variant typeArgs fields =>
     match s.lookupEnum enumName with
     | some ei =>
       match ei.variants.find? fun v => v.name == variant with
@@ -555,7 +555,7 @@ partial def genExpr (s : CodegenState) (e : Expr) (hintTy : Option Ty := none) :
       let (s, reg) := s.freshLocal
       let s := s.emit ("  " ++ reg ++ " = add i64 0, 0 ; unknown enum " ++ enumName)
       (s, reg)
-  | .match_ scrutinee arms =>
+  | .match_ _ scrutinee arms =>
     let (s, scrReg) := genExpr s scrutinee
     let scrTy := inferExprTy s scrutinee
     let innerScrTy := match scrTy with
@@ -566,7 +566,7 @@ partial def genExpr (s : CodegenState) (e : Expr) (hintTy : Option Ty := none) :
       | _ => ""
     -- Check if this is a value-pattern match (litArm/varArm) vs enum match
     let isValueMatch := arms.any fun arm => match arm with
-      | .litArm _ _ | .varArm _ _ => true | _ => false
+      | .litArm _ _ _ | .varArm _ _ _ => true | _ => false
     if isValueMatch then
       -- Value-pattern match: emit if/else chain
       let scrLLTy := tyToLLVM s innerScrTy
@@ -580,7 +580,7 @@ partial def genExpr (s : CodegenState) (e : Expr) (hintTy : Option Ty := none) :
       let (s, _) := (arms.zip armLabels).foldl (fun (acc : CodegenState × Nat) (arm, label) =>
         let (s, idx) := acc
         match arm with
-        | .litArm val _ =>
+        | .litArm _ val _ =>
           let (s, valReg) := genExpr s val (some innerScrTy)
           let (s, cmpReg) := s.freshLocal
           let s := s.emit ("  " ++ cmpReg ++ " = icmp eq " ++ scrLLTy ++ " " ++ scrReg ++ ", " ++ valReg)
@@ -593,7 +593,7 @@ partial def genExpr (s : CodegenState) (e : Expr) (hintTy : Option Ty := none) :
             (s, idx + 1)
           else
             (s, idx + 1)
-        | .varArm _ _ =>
+        | .varArm _ _ _ =>
           -- Catch-all: unconditional branch
           let s := s.emit ("  br label %" ++ label)
           (s, idx + 1)
@@ -602,11 +602,11 @@ partial def genExpr (s : CodegenState) (e : Expr) (hintTy : Option Ty := none) :
       -- Emit arm bodies
       let s := (arms.zip armLabels).foldl (fun s (arm, label) =>
         match arm with
-        | .litArm _ body =>
+        | .litArm _ _ body =>
           let s := s.emit (label ++ ":")
           let s := genStmts s body
           if stmtListHasReturn body then s else s.emit ("  br label %" ++ mergeLabel)
-        | .varArm binding body =>
+        | .varArm _ binding body =>
           let s := s.emit (label ++ ":")
           -- Bind the scrutinee value to the variable
           let (s, alloca) := s.freshLocal
@@ -619,7 +619,7 @@ partial def genExpr (s : CodegenState) (e : Expr) (hintTy : Option Ty := none) :
         | _ => s
       ) s
       let allReturn := arms.all fun arm => match arm with
-        | .litArm _ body | .varArm _ body | .mk _ _ _ body => stmtListHasReturn body
+        | .litArm _ _ body | .varArm _ _ body | .mk _ _ _ _ body => stmtListHasReturn body
       if allReturn then
         (s, "0")
       else
@@ -657,7 +657,7 @@ partial def genExpr (s : CodegenState) (e : Expr) (hintTy : Option Ty := none) :
       ei.typeParams.zip enumTypeArgs
     let cases := arms.zip armLabels |>.filterMap fun (arm, label) =>
       match arm with
-      | .mk _ variant _ _ =>
+      | .mk _ _ variant _ _ =>
         match ei.variants.find? fun v => v.name == variant with
         | some vi => some ("    i32 " ++ toString vi.tag ++ ", label %" ++ label)
         | none => none
@@ -666,7 +666,7 @@ partial def genExpr (s : CodegenState) (e : Expr) (hintTy : Option Ty := none) :
     let s := s.emit ("  switch i32 " ++ tag ++ ", label %" ++ defaultLabel ++ " [\n" ++ switchCases ++ "\n  ]")
     let s := (arms.zip armLabels).foldl (fun s (arm, label) =>
       match arm with
-      | .mk _ variant bindings body =>
+      | .mk _ _ variant bindings body =>
         let s := s.emit (label ++ ":")
         let variantTy := "%variant." ++ enumName ++ "." ++ variant
         let vi := (ei.variants.find? fun v => v.name == variant).get!
@@ -693,7 +693,7 @@ partial def genExpr (s : CodegenState) (e : Expr) (hintTy : Option Ty := none) :
     let s := s.emit (defaultLabel ++ ":")
     let s := s.emit "  unreachable"
     let allReturn := arms.all fun arm => match arm with
-      | .mk _ _ _ body | .litArm _ body | .varArm _ body => stmtListHasReturn body
+      | .mk _ _ _ _ body | .litArm _ _ body | .varArm _ _ body => stmtListHasReturn body
     if allReturn then
       (s, "0")
     else
@@ -701,7 +701,7 @@ partial def genExpr (s : CodegenState) (e : Expr) (hintTy : Option Ty := none) :
       let (s, dummy) := s.freshLocal
       let s := s.emit ("  " ++ dummy ++ " = add i64 0, 0")
       (s, dummy)
-  | .try_ inner =>
+  | .try_ _ inner =>
     let (s, scrPtr) := genExpr s inner
     let innerTy := inferExprTy s inner
     let enumName := match innerTy with
@@ -742,7 +742,7 @@ partial def genExpr (s : CodegenState) (e : Expr) (hintTy : Option Ty := none) :
       let (s, value) := s.freshLocal
       let s := s.emit ("  " ++ value ++ " = load " ++ okFieldLLTy ++ ", ptr " ++ valueGep)
       (s, value)
-  | .arrayLit elems =>
+  | .arrayLit _ elems =>
     let elemTy := match hintTy with
       | some (.array t _) => t
       | _ => match elems.head? with
@@ -771,7 +771,7 @@ partial def genExpr (s : CodegenState) (e : Expr) (hintTy : Option Ty := none) :
       (s, idx + 1)
     ) (s, 0)
     (s, alloca)
-  | .arrayIndex arr index =>
+  | .arrayIndex _ arr index =>
     let arrTy := inferExprTy s arr
     let (elemTy, n) := match arrTy with
       | .array t sz => (t, sz)
@@ -801,11 +801,11 @@ partial def genExpr (s : CodegenState) (e : Expr) (hintTy : Option Ty := none) :
       let (s, loaded) := s.freshLocal
       let s := s.emit ("  " ++ loaded ++ " = load " ++ elemLLTy ++ ", ptr " ++ gepReg)
       (s, loaded)
-  | .cast inner targetTy =>
+  | .cast _ inner targetTy =>
     let (s, reg) := genExpr s inner
     let innerTy := inferExprTy s inner
     genCast s reg innerTy targetTy
-  | .methodCall obj methodName _typeArgs args =>
+  | .methodCall _ obj methodName _typeArgs args =>
     let objTy := inferExprTy s obj
     let innerTy := match objTy with
       | .ref t => t
@@ -840,7 +840,7 @@ partial def genExpr (s : CodegenState) (e : Expr) (hintTy : Option Ty := none) :
       let (s, result) := s.freshLocal
       let s := s.emit ("  " ++ result ++ " = call " ++ retLLTy ++ " @" ++ mangledName ++ "(" ++ argStr ++ ")")
       (s, result)
-  | .staticMethodCall typeName methodName _typeArgs args =>
+  | .staticMethodCall _ typeName methodName _typeArgs args =>
     let mangledName := typeName ++ "_" ++ methodName
     let (s, argRegs) := genExprList s args
     let argTys := args.map fun arg => paramTyToLLVM s (inferExprTy s arg)
@@ -862,7 +862,7 @@ partial def genExpr (s : CodegenState) (e : Expr) (hintTy : Option Ty := none) :
       let (s, result) := s.freshLocal
       let s := s.emit ("  " ++ result ++ " = call " ++ retLLTy ++ " @" ++ mangledName ++ "(" ++ argStr ++ ")")
       (s, result)
-  | .arrowAccess obj field =>
+  | .arrowAccess _ obj field =>
     -- p->x: load pointer from variable, GEP to field, load
     let objTy := inferExprTy s obj
     let innerTy := match objTy with
@@ -892,12 +892,12 @@ partial def genExpr (s : CodegenState) (e : Expr) (hintTy : Option Ty := none) :
       let (s, reg) := s.freshLocal
       let s := s.emit ("  " ++ reg ++ " = add i64 0, 0 ; unknown field " ++ field)
       (s, reg)
-  | .allocCall inner _allocExpr =>
+  | .allocCall _ inner _allocExpr =>
     -- For now, just generate the inner call
     genExpr s inner hintTy
-  | .whileExpr cond body elseBody =>
+  | .whileExpr _ cond body elseBody =>
     -- while-as-expression: alloca result slot, loop with break storing value, else stores default
-    let resultTy := inferExprTy s (.whileExpr cond body elseBody) hintTy
+    let resultTy := inferExprTy s (.whileExpr default cond body elseBody) hintTy
     let resultLLTy := tyToLLVM s resultTy
     let (s, resultSlot) := s.freshLocal
     let s := s.emit ("  " ++ resultSlot ++ " = alloca " ++ resultLLTy)
@@ -931,7 +931,7 @@ partial def genExpr (s : CodegenState) (e : Expr) (hintTy : Option Ty := none) :
     let s := genStmts s elseInit
     -- Get the value from the last expression in else body
     let (s, elseVal) := match elseBody.getLast? with
-      | some (.expr e) => genExpr s e (some resultTy)
+      | some (.expr _ e) => genExpr s e (some resultTy)
       | _ =>
         let (s, dummy) := s.freshLocal
         let s := s.emit ("  " ++ dummy ++ " = add i64 0, 0")
@@ -944,7 +944,7 @@ partial def genExpr (s : CodegenState) (e : Expr) (hintTy : Option Ty := none) :
     let s := s.emit ("  " ++ result ++ " = load " ++ resultLLTy ++ ", ptr " ++ resultSlot)
     let s := { s with loopExitLabel := savedExit, loopContLabel := savedCont, loopResultSlot := savedSlot }
     (s, result)
-  | .fnRef fnName =>
+  | .fnRef _ fnName =>
     -- Function reference: just store the function pointer
     let (s, alloca) := s.freshLocal
     let s := s.emit ("  " ++ alloca ++ " = alloca ptr")
@@ -1055,11 +1055,11 @@ partial def genCast (s : CodegenState) (reg : String) (fromTy : Ty) (toTy : Ty) 
 /-- Get a pointer to an expression's storage (for struct GEP). -/
 partial def genExprAsPtr (s : CodegenState) (e : Expr) : CodegenState × String :=
   match e with
-  | .ident name =>
+  | .ident _ name =>
     match s.lookupVar name with
     | some alloca => (s, alloca)
     | none => (s, "%" ++ name)
-  | .fieldAccess obj field =>
+  | .fieldAccess _ obj field =>
     let objTy := inferExprTy s obj
     let innerTy := match objTy with
       | .ref t => t
@@ -1083,27 +1083,27 @@ partial def genExprAsPtr (s : CodegenState) (e : Expr) : CodegenState × String 
         (s, gepReg)
       | none => (s, "%undef")
     else (s, "%undef")
-  | .strLit _ =>
+  | .strLit _ _ =>
     genExpr s e
-  | .borrow _ | .borrowMut _ =>
+  | .borrow _ _ | .borrowMut _ _ =>
     let (s, ptr) := genExpr s e
     (s, ptr)
-  | .deref _ =>
+  | .deref _ _ =>
     let (s, ptr) := genExpr s e
     (s, ptr)
-  | .enumLit _ _ _ _ =>
+  | .enumLit _ _ _ _ _ =>
     let (s, ptr) := genExpr s e
     (s, ptr)
-  | .match_ _ _ =>
+  | .match_ _ _ _ =>
     let (s, reg) := genExpr s e
     (s, reg)
-  | .arrayLit _ =>
+  | .arrayLit _ _ =>
     let (s, ptr) := genExpr s e
     (s, ptr)
-  | .arrayIndex _ _ =>
+  | .arrayIndex _ _ _ =>
     let (s, ptr) := genExpr s e
     (s, ptr)
-  | .methodCall _ _ _ _ | .staticMethodCall _ _ _ _ | .cast _ _ | .arrowAccess _ _ | .allocCall _ _ =>
+  | .methodCall _ _ _ _ _ | .staticMethodCall _ _ _ _ _ | .cast _ _ _ | .arrowAccess _ _ _ | .allocCall _ _ _ =>
     let (s, ptr) := genExpr s e
     (s, ptr)
   | _ =>
@@ -1160,8 +1160,8 @@ partial def genVecBuiltinCall (s : CodegenState) (fnName : String) (typeArgs : L
     let s := s.emit ("  store i64 " ++ toString initCap ++ ", ptr " ++ capPtr)
     (s, vecAlloca)
   else if fnName == "vec_push" then
-    let vecArg := match args with | a :: _ => a | [] => Expr.intLit 0
-    let valArg := match args with | _ :: b :: _ => b | _ => Expr.intLit 0
+    let vecArg := match args with | a :: _ => a | [] => Expr.intLit default 0
+    let valArg := match args with | _ :: b :: _ => b | _ => Expr.intLit default 0
     -- Determine element type from vec arg
     let vecArgTy := inferExprTy s vecArg
     let elemTy := match vecArgTy with
@@ -1236,8 +1236,8 @@ partial def genVecBuiltinCall (s : CodegenState) (fnName : String) (typeArgs : L
       let s := s.emit ("  store i64 " ++ newLen ++ ", ptr " ++ lenPtr)
       (s, "0")
   else if fnName == "vec_get" then
-    let vecArg := match args with | a :: _ => a | [] => Expr.intLit 0
-    let idxArg := match args with | _ :: b :: _ => b | _ => Expr.intLit 0
+    let vecArg := match args with | a :: _ => a | [] => Expr.intLit default 0
+    let idxArg := match args with | _ :: b :: _ => b | _ => Expr.intLit default 0
     let vecArgTy := inferExprTy s vecArg
     let elemTy := match vecArgTy with
       | .ref (.generic "Vec" [et]) => et
@@ -1266,9 +1266,9 @@ partial def genVecBuiltinCall (s : CodegenState) (fnName : String) (typeArgs : L
       let s := s.emit ("  " ++ loaded ++ " = load " ++ elemLLTy ++ ", ptr " ++ elemPtr)
       (s, loaded)
   else if fnName == "vec_set" then
-    let vecArg := match args with | a :: _ => a | [] => Expr.intLit 0
-    let idxArg := match args with | _ :: b :: _ => b | _ => Expr.intLit 0
-    let valArg := match args with | _ :: _ :: c :: _ => c | _ => Expr.intLit 0
+    let vecArg := match args with | a :: _ => a | [] => Expr.intLit default 0
+    let idxArg := match args with | _ :: b :: _ => b | _ => Expr.intLit default 0
+    let valArg := match args with | _ :: _ :: c :: _ => c | _ => Expr.intLit default 0
     let vecArgTy := inferExprTy s vecArg
     let elemTy := match vecArgTy with
       | .refMut (.generic "Vec" [et]) => et
@@ -1297,7 +1297,7 @@ partial def genVecBuiltinCall (s : CodegenState) (fnName : String) (typeArgs : L
       let s := s.emit ("  store " ++ elemLLTy ++ " " ++ valReg ++ ", ptr " ++ elemPtr)
       (s, "0")
   else if fnName == "vec_len" then
-    let vecArg := match args with | a :: _ => a | [] => Expr.intLit 0
+    let vecArg := match args with | a :: _ => a | [] => Expr.intLit default 0
     let (s, vecPtr) := genExpr s vecArg
     let (s, lenPtr) := s.freshLocal
     let s := s.emit ("  " ++ lenPtr ++ " = getelementptr inbounds %struct.Vec, ptr " ++ vecPtr ++ ", i32 0, i32 1")
@@ -1305,7 +1305,7 @@ partial def genVecBuiltinCall (s : CodegenState) (fnName : String) (typeArgs : L
     let s := s.emit ("  " ++ len ++ " = load i64, ptr " ++ lenPtr)
     (s, len)
   else if fnName == "vec_pop" then
-    let vecArg := match args with | a :: _ => a | [] => Expr.intLit 0
+    let vecArg := match args with | a :: _ => a | [] => Expr.intLit default 0
     let vecArgTy := inferExprTy s vecArg
     let elemTy := match vecArgTy with
       | .refMut (.generic "Vec" [et]) => et
@@ -1372,7 +1372,7 @@ partial def genVecBuiltinCall (s : CodegenState) (fnName : String) (typeArgs : L
       let s := s.emit (doneLabel ++ ":")
       (s, optAlloca)
   else if fnName == "vec_free" then
-    let vecArg := match args with | a :: _ => a | [] => Expr.intLit 0
+    let vecArg := match args with | a :: _ => a | [] => Expr.intLit default 0
     let (s, vecPtr) := genExpr s vecArg
     -- Load data buf and free it
     let (s, bufPtr) := s.freshLocal
@@ -1400,9 +1400,9 @@ partial def genHashMapBuiltinCall (s : CodegenState) (fnName : String) (typeArgs
     let s := s.emit ("  call void @__hashmap_" ++ pfx ++ "_new(ptr " ++ mapAlloca ++ ", i64 " ++ toString kSize ++ ", i64 " ++ toString vSize ++ ")")
     (s, mapAlloca)
   else if fnName == "map_insert" then
-    let mapArg := match args with | a :: _ => a | [] => Expr.intLit 0
-    let keyArg := match args with | _ :: b :: _ => b | _ => Expr.intLit 0
-    let valArg := match args with | _ :: _ :: c :: _ => c | _ => Expr.intLit 0
+    let mapArg := match args with | a :: _ => a | [] => Expr.intLit default 0
+    let keyArg := match args with | _ :: b :: _ => b | _ => Expr.intLit default 0
+    let valArg := match args with | _ :: _ :: c :: _ => c | _ => Expr.intLit default 0
     let mapArgTy := inferExprTy s mapArg
     let (kTy, vTy) := match mapArgTy with
       | .refMut (.generic "HashMap" [k, v]) => (k, v)
@@ -1427,8 +1427,8 @@ partial def genHashMapBuiltinCall (s : CodegenState) (fnName : String) (typeArgs
     let s := s.emit ("  call void @__hashmap_" ++ pfx ++ "_insert(ptr " ++ mapPtr ++ ", ptr " ++ keyPtr ++ ", ptr " ++ valPtr ++ ", i64 " ++ toString kSize ++ ", i64 " ++ toString vSize ++ ")")
     (s, "0")
   else if fnName == "map_get" || fnName == "map_remove" then
-    let mapArg := match args with | a :: _ => a | [] => Expr.intLit 0
-    let keyArg := match args with | _ :: b :: _ => b | _ => Expr.intLit 0
+    let mapArg := match args with | a :: _ => a | [] => Expr.intLit default 0
+    let keyArg := match args with | _ :: b :: _ => b | _ => Expr.intLit default 0
     let mapArgTy := inferExprTy s mapArg
     let (kTy, vTy) := match mapArgTy with
       | .ref (.generic "HashMap" [k, v]) => (k, v)
@@ -1456,8 +1456,8 @@ partial def genHashMapBuiltinCall (s : CodegenState) (fnName : String) (typeArgs
     let s := s.emit ("  call void @__hashmap_" ++ pfx ++ "_" ++ opName ++ "(ptr " ++ mapPtr ++ ", ptr " ++ keyPtr ++ ", ptr " ++ optAlloca ++ ", i64 " ++ toString kSize ++ ", i64 " ++ toString vSize ++ ")")
     (s, optAlloca)
   else if fnName == "map_contains" then
-    let mapArg := match args with | a :: _ => a | [] => Expr.intLit 0
-    let keyArg := match args with | _ :: b :: _ => b | _ => Expr.intLit 0
+    let mapArg := match args with | a :: _ => a | [] => Expr.intLit default 0
+    let keyArg := match args with | _ :: b :: _ => b | _ => Expr.intLit default 0
     let mapArgTy := inferExprTy s mapArg
     let kTy := match mapArgTy with
       | .ref (.generic "HashMap" [k, _]) => k
@@ -1476,7 +1476,7 @@ partial def genHashMapBuiltinCall (s : CodegenState) (fnName : String) (typeArgs
     let s := s.emit ("  " ++ result ++ " = call i1 @__hashmap_" ++ pfx ++ "_contains(ptr " ++ mapPtr ++ ", ptr " ++ keyPtr ++ ", i64 " ++ toString kSize ++ ")")
     (s, result)
   else if fnName == "map_len" then
-    let mapArg := match args with | a :: _ => a | [] => Expr.intLit 0
+    let mapArg := match args with | a :: _ => a | [] => Expr.intLit default 0
     let (s, mapPtr) := genExpr s mapArg
     let (s, lenFld) := s.freshLocal
     let s := s.emit ("  " ++ lenFld ++ " = getelementptr inbounds %struct.HashMap, ptr " ++ mapPtr ++ ", i32 0, i32 3")
@@ -1484,7 +1484,7 @@ partial def genHashMapBuiltinCall (s : CodegenState) (fnName : String) (typeArgs
     let s := s.emit ("  " ++ len ++ " = load i64, ptr " ++ lenFld)
     (s, len)
   else if fnName == "map_free" then
-    let mapArg := match args with | a :: _ => a | [] => Expr.intLit 0
+    let mapArg := match args with | a :: _ => a | [] => Expr.intLit default 0
     let (s, mapPtr) := genExpr s mapArg
     let (s, kFld) := s.freshLocal
     let s := s.emit ("  " ++ kFld ++ " = getelementptr inbounds %struct.HashMap, ptr " ++ mapPtr ++ ", i32 0, i32 0")
@@ -1512,7 +1512,7 @@ partial def genStmts (s : CodegenState) (stmts : List Stmt) : CodegenState :=
 
 partial def genStmt (s : CodegenState) (stmt : Stmt) : CodegenState :=
   match stmt with
-  | .letDecl name _mutable ty value =>
+  | .letDecl _ name _mutable ty value =>
     let exprTy := normalizeTy (match ty with
       | some t => t
       | none => inferExprTy s value)
@@ -1547,7 +1547,7 @@ partial def genStmt (s : CodegenState) (stmt : Stmt) : CodegenState :=
       let s := s.emit ("  store " ++ llTy ++ " " ++ finalReg ++ ", ptr " ++ alloca)
       let s := s.addVar name alloca
       s.addVarType name exprTy
-  | .assign name value =>
+  | .assign _ name value =>
     match s.lookupVar name with
     | some alloca =>
       let ty := (s.lookupVarType name).getD .int
@@ -1561,7 +1561,7 @@ partial def genStmt (s : CodegenState) (stmt : Stmt) : CodegenState :=
         let (s, valReg) := genExpr s value (some ty)
         s.emit ("  store " ++ llTy ++ " " ++ valReg ++ ", ptr " ++ alloca)
     | none => s.emit ("; ERROR: unknown variable " ++ name)
-  | .return_ (some value) =>
+  | .return_ _ (some value) =>
     let retTy := s.currentRetTy
     let (s, reg) := genExpr s value (some retTy)
     -- Emit all deferred expressions before returning
@@ -1590,13 +1590,13 @@ partial def genStmt (s : CodegenState) (stmt : Stmt) : CodegenState :=
         else (s, reg)
       else (s, reg)
       s.emit ("  ret " ++ llTy ++ " " ++ finalReg)
-  | .return_ none =>
+  | .return_ _ none =>
     let s := emitAllDeferred s
     s.emit "  ret void"
-  | .expr e =>
+  | .expr _ e =>
     let (s, _) := genExpr s e
     s
-  | .ifElse cond thenBody elseBody =>
+  | .ifElse _ cond thenBody elseBody =>
     let (s, condReg) := genExpr s cond
     -- If condition is not i1, convert to i1
     let condTy := inferExprTy s cond
@@ -1628,7 +1628,7 @@ partial def genStmt (s : CodegenState) (stmt : Stmt) : CodegenState :=
       | none => s.emit ("  br label %" ++ mergeLabel)
     if thenReturns && elseReturns then s
     else s.emit (mergeLabel ++ ":")
-  | .fieldAssign obj field value =>
+  | .fieldAssign _ obj field value =>
     let objTy := inferExprTy s obj
     let innerTy := match objTy with
       | .ref t => t
@@ -1650,7 +1650,7 @@ partial def genStmt (s : CodegenState) (stmt : Stmt) : CodegenState :=
         s.emit ("  store " ++ fieldLLTy ++ " " ++ valReg ++ ", ptr " ++ gepReg)
       | none => s.emit ("; ERROR: unknown field " ++ field)
     | _ => s.emit ("; ERROR: field assign on non-struct")
-  | .derefAssign target value =>
+  | .derefAssign _ target value =>
     let (s, ptr) := genExpr s target
     let targetTy := inferExprTy s target
     let pointeeTy := match targetTy with
@@ -1662,7 +1662,7 @@ partial def genStmt (s : CodegenState) (stmt : Stmt) : CodegenState :=
     let (s, valReg) := genExpr s value (some pointeeTy)
     let llTy := tyToLLVM s pointeeTy
     s.emit ("  store " ++ llTy ++ " " ++ valReg ++ ", ptr " ++ ptr)
-  | .arrayIndexAssign arr index value =>
+  | .arrayIndexAssign _ arr index value =>
     let arrTy := inferExprTy s arr
     let (elemTy, n) := match arrTy with
       | .array t sz => (t, sz)
@@ -1694,7 +1694,7 @@ partial def genStmt (s : CodegenState) (stmt : Stmt) : CodegenState :=
     else
       let (s, valReg) := genExpr s value (some elemTy)
       s.emit ("  store " ++ elemLLTy ++ " " ++ valReg ++ ", ptr " ++ gepReg)
-  | .while_ cond body lbl =>
+  | .while_ _ cond body lbl =>
     let (s, condLabel) := s.freshLabel "while.cond"
     let (s, bodyLabel) := s.freshLabel "while.body"
     let (s, exitLabel) := s.freshLabel "while.exit"
@@ -1722,7 +1722,7 @@ partial def genStmt (s : CodegenState) (stmt : Stmt) : CodegenState :=
     let s := s.emit ("  br label %" ++ condLabel)
     let s := s.emit (exitLabel ++ ":")
     { s with loopExitLabel := savedExit, loopContLabel := savedCont, loopLabelMap := savedLabelMap }
-  | .forLoop init cond step body lbl =>
+  | .forLoop _ init cond step body lbl =>
     -- Generate init
     let s := match init with
       | some initStmt => genStmt s initStmt
@@ -1762,7 +1762,7 @@ partial def genStmt (s : CodegenState) (stmt : Stmt) : CodegenState :=
     let s := s.emit ("  br label %" ++ condLabel)
     let s := s.emit (exitLabel ++ ":")
     { s with loopExitLabel := savedExit, loopContLabel := savedCont, loopLabelMap := savedLabelMap }
-  | .break_ value lbl =>
+  | .break_ _ value lbl =>
     -- Store break value to result slot if present (while-as-expression)
     let s := match value, s.loopResultSlot with
     | some expr, some slot =>
@@ -1783,7 +1783,7 @@ partial def genStmt (s : CodegenState) (stmt : Stmt) : CodegenState :=
       let (s, deadLabel) := s.freshLabel "break.dead"
       s.emit (deadLabel ++ ":")
     | none => s
-  | .continue_ lbl =>
+  | .continue_ _ lbl =>
     let targetCont := match lbl with
     | some l => match s.loopLabelMap.find? fun (name, _, _) => name == l with
       | some (_, _, cont) => some cont
@@ -1795,7 +1795,7 @@ partial def genStmt (s : CodegenState) (stmt : Stmt) : CodegenState :=
       let (s, deadLabel) := s.freshLabel "cont.dead"
       s.emit (deadLabel ++ ":")
     | none => s
-  | .defer body =>
+  | .defer _ body =>
     -- Push deferred expression onto current scope's defer list
     let deferStack := s.deferStack
     match deferStack with
@@ -1803,7 +1803,7 @@ partial def genStmt (s : CodegenState) (stmt : Stmt) : CodegenState :=
       { s with deferStack := (body :: current) :: rest }
     | [] =>
       { s with deferStack := [[body]] }
-  | .borrowIn _var ref _region _isMut body =>
+  | .borrowIn _ _var ref _region _isMut body =>
     -- Regions are erased at codegen — ref = pointer to var's alloca
     -- The var name is in _var, but we need to find the ref source
     -- For stack values: ref = pointer to var's alloca
@@ -1817,7 +1817,7 @@ partial def genStmt (s : CodegenState) (stmt : Stmt) : CodegenState :=
     let refTy := if _isMut then Ty.refMut varTy else Ty.ref varTy
     let s := s.addVarType ref refTy
     genStmts s body
-  | .arrowAssign obj field value =>
+  | .arrowAssign _ obj field value =>
     -- p->x = val: load heap ptr, GEP to field, store
     let objTy := inferExprTy s obj
     let innerTy := match objTy with

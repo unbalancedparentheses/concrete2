@@ -1,3 +1,5 @@
+import Concrete.Token
+
 namespace Concrete
 
 -- ============================================================
@@ -86,60 +88,79 @@ structure Param where
 
 mutual
 inductive Expr where
-  | intLit (val : Int)
-  | floatLit (val : Float)
-  | boolLit (val : Bool)
-  | strLit (val : String)
-  | charLit (val : Char)
-  | ident (name : String)
-  | binOp (op : BinOp) (lhs rhs : Expr)
-  | unaryOp (op : UnaryOp) (operand : Expr)
-  | call (fn : String) (typeArgs : List Ty) (args : List Expr)
-  | paren (inner : Expr)
-  | structLit (name : String) (typeArgs : List Ty) (fields : List (String × Expr))
-  | fieldAccess (obj : Expr) (field : String)
-  | enumLit (enumName variant : String) (typeArgs : List Ty) (fields : List (String × Expr))
-  | match_ (scrutinee : Expr) (arms : List MatchArm)
-  | borrow (inner : Expr)      -- &expr
-  | borrowMut (inner : Expr)   -- &mut expr
-  | deref (inner : Expr)       -- *expr
-  | try_ (inner : Expr)       -- expr?
-  | arrayLit (elems : List Expr)              -- [1, 2, 3]
-  | arrayIndex (arr : Expr) (index : Expr)    -- arr[i]
-  | cast (inner : Expr) (targetTy : Ty)       -- expr as Type
-  | methodCall (obj : Expr) (method : String) (typeArgs : List Ty) (args : List Expr)
-  | staticMethodCall (typeName method : String) (typeArgs : List Ty) (args : List Expr)
-  | fnRef (name : String)                      -- function reference: double (as a value of fn pointer type)
-  | arrowAccess (obj : Expr) (field : String)   -- p->x
-  | allocCall (inner : Expr) (allocExpr : Expr)  -- call() with(Alloc = expr)
-  | whileExpr (cond : Expr) (body : List Stmt) (elseBody : List Stmt)  -- while cond { body } else { elseBody }
+  | intLit (span : Span) (val : Int)
+  | floatLit (span : Span) (val : Float)
+  | boolLit (span : Span) (val : Bool)
+  | strLit (span : Span) (val : String)
+  | charLit (span : Span) (val : Char)
+  | ident (span : Span) (name : String)
+  | binOp (span : Span) (op : BinOp) (lhs rhs : Expr)
+  | unaryOp (span : Span) (op : UnaryOp) (operand : Expr)
+  | call (span : Span) (fn : String) (typeArgs : List Ty) (args : List Expr)
+  | paren (span : Span) (inner : Expr)
+  | structLit (span : Span) (name : String) (typeArgs : List Ty) (fields : List (String × Expr))
+  | fieldAccess (span : Span) (obj : Expr) (field : String)
+  | enumLit (span : Span) (enumName variant : String) (typeArgs : List Ty) (fields : List (String × Expr))
+  | match_ (span : Span) (scrutinee : Expr) (arms : List MatchArm)
+  | borrow (span : Span) (inner : Expr)      -- &expr
+  | borrowMut (span : Span) (inner : Expr)   -- &mut expr
+  | deref (span : Span) (inner : Expr)       -- *expr
+  | try_ (span : Span) (inner : Expr)       -- expr?
+  | arrayLit (span : Span) (elems : List Expr)              -- [1, 2, 3]
+  | arrayIndex (span : Span) (arr : Expr) (index : Expr)    -- arr[i]
+  | cast (span : Span) (inner : Expr) (targetTy : Ty)       -- expr as Type
+  | methodCall (span : Span) (obj : Expr) (method : String) (typeArgs : List Ty) (args : List Expr)
+  | staticMethodCall (span : Span) (typeName method : String) (typeArgs : List Ty) (args : List Expr)
+  | fnRef (span : Span) (name : String)                      -- function reference: double (as a value of fn pointer type)
+  | arrowAccess (span : Span) (obj : Expr) (field : String)   -- p->x
+  | allocCall (span : Span) (inner : Expr) (allocExpr : Expr)  -- call() with(Alloc = expr)
+  | whileExpr (span : Span) (cond : Expr) (body : List Stmt) (elseBody : List Stmt)  -- while cond { body } else { elseBody }
 
 inductive MatchArm where
-  | mk (enumName : String) (variant : String) (bindings : List String) (body : List Stmt)
-  | litArm (value : Expr) (body : List Stmt)           -- literal pattern: 0 -> ...
-  | varArm (binding : String) (body : List Stmt)        -- variable pattern: n -> ...
+  | mk (span : Span) (enumName : String) (variant : String) (bindings : List String) (body : List Stmt)
+  | litArm (span : Span) (value : Expr) (body : List Stmt)           -- literal pattern: 0 -> ...
+  | varArm (span : Span) (binding : String) (body : List Stmt)        -- variable pattern: n -> ...
 
 inductive Stmt where
-  | letDecl (name : String) (mutable : Bool) (ty : Option Ty) (value : Expr)
-  | assign (name : String) (value : Expr)
-  | return_ (value : Option Expr)
-  | expr (e : Expr)
-  | ifElse (cond : Expr) (then_ : List Stmt) (else_ : Option (List Stmt))
-  | while_ (cond : Expr) (body : List Stmt) (label : Option String)
-  | forLoop (init : Option Stmt) (cond : Expr) (step : Option Stmt) (body : List Stmt) (label : Option String)
-  | fieldAssign (obj : Expr) (field : String) (value : Expr)
-  | derefAssign (target : Expr) (value : Expr)  -- *expr = expr
-  | arrayIndexAssign (arr : Expr) (index : Expr) (value : Expr)  -- arr[i] = val
-  | break_ (value : Option Expr) (label : Option String)  -- break; or break 'label; or break expr;
-  | continue_ (label : Option String)                    -- continue; or continue 'label;
-  | defer (body : Expr)           -- defer expr;
-  | borrowIn (var : String) (ref : String) (region : String) (isMut : Bool) (body : List Stmt)
-  | arrowAssign (obj : Expr) (field : String) (value : Expr)  -- p->x = val
+  | letDecl (span : Span) (name : String) (mutable : Bool) (ty : Option Ty) (value : Expr)
+  | assign (span : Span) (name : String) (value : Expr)
+  | return_ (span : Span) (value : Option Expr)
+  | expr (span : Span) (e : Expr)
+  | ifElse (span : Span) (cond : Expr) (then_ : List Stmt) (else_ : Option (List Stmt))
+  | while_ (span : Span) (cond : Expr) (body : List Stmt) (label : Option String)
+  | forLoop (span : Span) (init : Option Stmt) (cond : Expr) (step : Option Stmt) (body : List Stmt) (label : Option String)
+  | fieldAssign (span : Span) (obj : Expr) (field : String) (value : Expr)
+  | derefAssign (span : Span) (target : Expr) (value : Expr)  -- *expr = expr
+  | arrayIndexAssign (span : Span) (arr : Expr) (index : Expr) (value : Expr)  -- arr[i] = val
+  | break_ (span : Span) (value : Option Expr) (label : Option String)  -- break; or break 'label; or break expr;
+  | continue_ (span : Span) (label : Option String)                    -- continue; or continue 'label;
+  | defer (span : Span) (body : Expr)           -- defer expr;
+  | borrowIn (span : Span) (var : String) (ref : String) (region : String) (isMut : Bool) (body : List Stmt)
+  | arrowAssign (span : Span) (obj : Expr) (field : String) (value : Expr)  -- p->x = val
 end
+
+def Expr.getSpan : Expr → Span
+  | .intLit sp _ | .floatLit sp _ | .boolLit sp _ | .strLit sp _ | .charLit sp _ => sp
+  | .ident sp _ | .fnRef sp _ => sp
+  | .binOp sp _ _ _ | .unaryOp sp _ _ | .paren sp _ => sp
+  | .call sp _ _ _ | .structLit sp _ _ _ | .enumLit sp _ _ _ _ => sp
+  | .fieldAccess sp _ _ | .arrowAccess sp _ _ => sp
+  | .match_ sp _ _ | .borrow sp _ | .borrowMut sp _ | .deref sp _ | .try_ sp _ => sp
+  | .arrayLit sp _ | .arrayIndex sp _ _ | .cast sp _ _ => sp
+  | .methodCall sp _ _ _ _ | .staticMethodCall sp _ _ _ _ => sp
+  | .allocCall sp _ _ | .whileExpr sp _ _ _ => sp
+
+def Stmt.getSpan : Stmt → Span
+  | .letDecl sp _ _ _ _ | .assign sp _ _ | .return_ sp _ | .expr sp _ => sp
+  | .ifElse sp _ _ _ | .while_ sp _ _ _ | .forLoop sp _ _ _ _ _ => sp
+  | .fieldAssign sp _ _ _ | .derefAssign sp _ _ | .arrayIndexAssign sp _ _ _ => sp
+  | .break_ sp _ _ | .continue_ sp _ | .defer sp _ => sp
+  | .borrowIn sp _ _ _ _ _ | .arrowAssign sp _ _ _ => sp
 
 structure ImportDecl where
   moduleName : String
   symbols : List String
+  span : Span := default
   deriving Repr
 
 structure StructField where
@@ -159,6 +180,7 @@ structure EnumDef where
   variants : List EnumVariant
   isPublic : Bool := false
   isCopy : Bool := false
+  span : Span := default
   deriving Repr
 
 structure StructDef where
@@ -169,6 +191,7 @@ structure StructDef where
   isPublic : Bool := false
   isUnion : Bool := false
   isCopy : Bool := false
+  span : Span := default
   deriving Repr
 
 structure FnDef where
@@ -182,17 +205,20 @@ structure FnDef where
   isPublic : Bool := false
   capSet : CapSet := .empty        -- with(File, Network, ...)
   hasBang : Bool := false          -- fn main!() sugar
+  span : Span := default
 
 structure ConstDef where
   name : String
   ty : Ty
   value : Expr
   isPublic : Bool := false
+  span : Span := default
 
 structure TypeAlias where
   name : String
   targetTy : Ty
   isPublic : Bool := false
+  span : Span := default
   deriving Repr
 
 structure ExternFnDecl where
@@ -200,6 +226,7 @@ structure ExternFnDecl where
   params : List Param
   retTy : Ty
   isPublic : Bool := false
+  span : Span := default
   deriving Repr
 
 inductive SelfKind where
@@ -220,12 +247,14 @@ structure ImplBlock where
   typeName : String
   typeParams : List String := []
   methods : List FnDef
+  span : Span := default
 
 structure TraitDef where
   name : String
   typeParams : List String := []
   methods : List FnSigDef
   isPublic : Bool := false
+  span : Span := default
   deriving Repr
 
 structure ImplTraitBlock where
@@ -234,6 +263,7 @@ structure ImplTraitBlock where
   typeParams : List String := []
   methods : List FnDef
   capSet : CapSet := .empty        -- capabilities on the impl (used by Destroy in Phase 3)
+  span : Span := default
 
 structure Module where
   name : String
@@ -256,43 +286,43 @@ structure Module where
 mutual
 partial def collectFreeVarsExpr (e : Expr) (bound : List String) : List String :=
   match e with
-  | .ident name => if bound.contains name then [] else [name]
-  | .intLit _ | .floatLit _ | .boolLit _ | .strLit _ | .charLit _ => []
-  | .binOp _ lhs rhs =>
+  | .ident _ name => if bound.contains name then [] else [name]
+  | .intLit _ _ | .floatLit _ _ | .boolLit _ _ | .strLit _ _ | .charLit _ _ => []
+  | .binOp _ _ lhs rhs =>
     collectFreeVarsExpr lhs bound ++ collectFreeVarsExpr rhs bound
-  | .unaryOp _ operand => collectFreeVarsExpr operand bound
-  | .call fn _typeArgs args =>
+  | .unaryOp _ _ operand => collectFreeVarsExpr operand bound
+  | .call _ fn _typeArgs args =>
     let fnFree := if bound.contains fn then [fn] else []
     fnFree ++ args.flatMap (fun a => collectFreeVarsExpr a bound)
-  | .paren inner => collectFreeVarsExpr inner bound
-  | .structLit _ _ fields =>
+  | .paren _ inner => collectFreeVarsExpr inner bound
+  | .structLit _ _ _ fields =>
     fields.flatMap (fun (_, e) => collectFreeVarsExpr e bound)
-  | .fieldAccess obj _ => collectFreeVarsExpr obj bound
-  | .enumLit _ _ _ fields =>
+  | .fieldAccess _ obj _ => collectFreeVarsExpr obj bound
+  | .enumLit _ _ _ _ fields =>
     fields.flatMap (fun (_, e) => collectFreeVarsExpr e bound)
-  | .match_ scrutinee arms =>
+  | .match_ _ scrutinee arms =>
     collectFreeVarsExpr scrutinee bound ++
     arms.flatMap (fun arm => match arm with
-      | .mk _ _ bindings body =>
+      | .mk _ _ _ bindings body =>
         let newBound := bound ++ bindings
         collectFreeVarsStmts body newBound
-      | .litArm _ body => collectFreeVarsStmts body bound
-      | .varArm binding body => collectFreeVarsStmts body (binding :: bound))
-  | .borrow inner | .borrowMut inner | .deref inner | .try_ inner =>
+      | .litArm _ _ body => collectFreeVarsStmts body bound
+      | .varArm _ binding body => collectFreeVarsStmts body (binding :: bound))
+  | .borrow _ inner | .borrowMut _ inner | .deref _ inner | .try_ _ inner =>
     collectFreeVarsExpr inner bound
-  | .arrayLit elems => elems.flatMap (fun e => collectFreeVarsExpr e bound)
-  | .arrayIndex arr idx =>
+  | .arrayLit _ elems => elems.flatMap (fun e => collectFreeVarsExpr e bound)
+  | .arrayIndex _ arr idx =>
     collectFreeVarsExpr arr bound ++ collectFreeVarsExpr idx bound
-  | .cast inner _ => collectFreeVarsExpr inner bound
-  | .methodCall obj _ _ args =>
+  | .cast _ inner _ => collectFreeVarsExpr inner bound
+  | .methodCall _ obj _ _ args =>
     collectFreeVarsExpr obj bound ++ args.flatMap (fun a => collectFreeVarsExpr a bound)
-  | .staticMethodCall _ _ _ args =>
+  | .staticMethodCall _ _ _ _ args =>
     args.flatMap (fun a => collectFreeVarsExpr a bound)
-  | .fnRef _ => []
-  | .arrowAccess obj _ => collectFreeVarsExpr obj bound
-  | .allocCall inner allocExpr =>
+  | .fnRef _ _ => []
+  | .arrowAccess _ obj _ => collectFreeVarsExpr obj bound
+  | .allocCall _ inner allocExpr =>
     collectFreeVarsExpr inner bound ++ collectFreeVarsExpr allocExpr bound
-  | .whileExpr cond body elseBody =>
+  | .whileExpr _ cond body elseBody =>
     collectFreeVarsExpr cond bound ++
     collectFreeVarsStmts body bound ++
     collectFreeVarsStmts elseBody bound
@@ -302,23 +332,23 @@ partial def collectFreeVarsStmts (stmts : List Stmt) (bound : List String) : Lis
   | [] => []
   | stmt :: rest =>
     let (freeVars, newBound) := match stmt with
-      | .letDecl name _ _ value =>
+      | .letDecl _ name _ _ value =>
         (collectFreeVarsExpr value bound, name :: bound)
-      | .assign name value =>
+      | .assign _ name value =>
         (collectFreeVarsExpr value bound ++ (if bound.contains name then [] else [name]), bound)
-      | .return_ (some value) => (collectFreeVarsExpr value bound, bound)
-      | .return_ none => ([], bound)
-      | .expr e => (collectFreeVarsExpr e bound, bound)
-      | .ifElse cond thenBody elseBody =>
+      | .return_ _ (some value) => (collectFreeVarsExpr value bound, bound)
+      | .return_ _ none => ([], bound)
+      | .expr _ e => (collectFreeVarsExpr e bound, bound)
+      | .ifElse _ cond thenBody elseBody =>
         let condFree := collectFreeVarsExpr cond bound
         let thenFree := collectFreeVarsStmts thenBody bound
         let elseFree := match elseBody with
           | some body => collectFreeVarsStmts body bound
           | none => []
         (condFree ++ thenFree ++ elseFree, bound)
-      | .while_ cond body _ =>
+      | .while_ _ cond body _ =>
         (collectFreeVarsExpr cond bound ++ collectFreeVarsStmts body bound, bound)
-      | .forLoop init cond step body _ =>
+      | .forLoop _ init cond step body _ =>
         let initFree := match init with
           | some s => collectFreeVarsStmts [s] bound
           | none => []
@@ -327,20 +357,20 @@ partial def collectFreeVarsStmts (stmts : List Stmt) (bound : List String) : Lis
           | some s => collectFreeVarsStmts [s] bound
           | none => []
         (initFree ++ condFree ++ stepFree ++ collectFreeVarsStmts body bound, bound)
-      | .fieldAssign obj _ value =>
+      | .fieldAssign _ obj _ value =>
         (collectFreeVarsExpr obj bound ++ collectFreeVarsExpr value bound, bound)
-      | .derefAssign target value =>
+      | .derefAssign _ target value =>
         (collectFreeVarsExpr target bound ++ collectFreeVarsExpr value bound, bound)
-      | .arrayIndexAssign arr idx value =>
+      | .arrayIndexAssign _ arr idx value =>
         (collectFreeVarsExpr arr bound ++ collectFreeVarsExpr idx bound ++
          collectFreeVarsExpr value bound, bound)
-      | .break_ (some e) _ => (collectFreeVarsExpr e bound, bound)
-      | .break_ none _ => ([], bound)
-      | .continue_ _ => ([], bound)
-      | .defer body => (collectFreeVarsExpr body bound, bound)
-      | .borrowIn var _ref _region _isMut body =>
-        (collectFreeVarsExpr (.ident var) bound ++ collectFreeVarsStmts body bound, bound)
-      | .arrowAssign obj _ value =>
+      | .break_ _ (some e) _ => (collectFreeVarsExpr e bound, bound)
+      | .break_ _ none _ => ([], bound)
+      | .continue_ _ _ => ([], bound)
+      | .defer _ body => (collectFreeVarsExpr body bound, bound)
+      | .borrowIn _ var _ref _region _isMut body =>
+        (collectFreeVarsExpr (.ident default var) bound ++ collectFreeVarsStmts body bound, bound)
+      | .arrowAssign _ obj _ value =>
         (collectFreeVarsExpr obj bound ++ collectFreeVarsExpr value bound, bound)
     freeVars ++ collectFreeVarsStmts rest newBound
 end

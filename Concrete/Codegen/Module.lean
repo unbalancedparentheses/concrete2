@@ -302,42 +302,42 @@ private def resolveSelfTy (ty : Ty) (implTy : Ty) : Ty :=
 mutual
 private partial def resolveSelfExpr (e : Expr) (implTy : Ty) : Expr :=
   match e with
-  | .structLit name targs fields =>
-    .structLit name (targs.map fun t => resolveSelfTy t implTy)
+  | .structLit sp name targs fields =>
+    .structLit sp name (targs.map fun t => resolveSelfTy t implTy)
       (fields.map fun (n, v) => (n, resolveSelfExpr v implTy))
-  | .enumLit ename vname targs fields =>
-    .enumLit ename vname (targs.map fun t => resolveSelfTy t implTy)
+  | .enumLit sp ename vname targs fields =>
+    .enumLit sp ename vname (targs.map fun t => resolveSelfTy t implTy)
       (fields.map fun (n, v) => (n, resolveSelfExpr v implTy))
-  | .cast inner targetTy => .cast (resolveSelfExpr inner implTy) (resolveSelfTy targetTy implTy)
-  | .call fn targs args =>
-    .call fn (targs.map fun t => resolveSelfTy t implTy)
+  | .cast sp inner targetTy => .cast sp (resolveSelfExpr inner implTy) (resolveSelfTy targetTy implTy)
+  | .call sp fn targs args =>
+    .call sp fn (targs.map fun t => resolveSelfTy t implTy)
       (args.map fun a => resolveSelfExpr a implTy)
-  | .methodCall obj m targs args =>
-    .methodCall (resolveSelfExpr obj implTy) m (targs.map fun t => resolveSelfTy t implTy)
+  | .methodCall sp obj m targs args =>
+    .methodCall sp (resolveSelfExpr obj implTy) m (targs.map fun t => resolveSelfTy t implTy)
       (args.map fun a => resolveSelfExpr a implTy)
-  | .staticMethodCall tn m targs args =>
-    .staticMethodCall tn m (targs.map fun t => resolveSelfTy t implTy)
+  | .staticMethodCall sp tn m targs args =>
+    .staticMethodCall sp tn m (targs.map fun t => resolveSelfTy t implTy)
       (args.map fun a => resolveSelfExpr a implTy)
-  | .binOp op l r => .binOp op (resolveSelfExpr l implTy) (resolveSelfExpr r implTy)
-  | .unaryOp op e => .unaryOp op (resolveSelfExpr e implTy)
-  | .paren inner => .paren (resolveSelfExpr inner implTy)
-  | .borrow inner => .borrow (resolveSelfExpr inner implTy)
-  | .borrowMut inner => .borrowMut (resolveSelfExpr inner implTy)
-  | .deref inner => .deref (resolveSelfExpr inner implTy)
-  | .try_ inner => .try_ (resolveSelfExpr inner implTy)
-  | .fieldAccess obj f => .fieldAccess (resolveSelfExpr obj implTy) f
-  | .arrowAccess obj f => .arrowAccess (resolveSelfExpr obj implTy) f
-  | .arrayLit elems => .arrayLit (elems.map fun e => resolveSelfExpr e implTy)
-  | .arrayIndex arr idx => .arrayIndex (resolveSelfExpr arr implTy) (resolveSelfExpr idx implTy)
-  | .allocCall inner alloc => .allocCall (resolveSelfExpr inner implTy) (resolveSelfExpr alloc implTy)
-  | .match_ scrut arms => .match_ (resolveSelfExpr scrut implTy) (arms.map fun arm =>
+  | .binOp sp op l r => .binOp sp op (resolveSelfExpr l implTy) (resolveSelfExpr r implTy)
+  | .unaryOp sp op e => .unaryOp sp op (resolveSelfExpr e implTy)
+  | .paren sp inner => .paren sp (resolveSelfExpr inner implTy)
+  | .borrow sp inner => .borrow sp (resolveSelfExpr inner implTy)
+  | .borrowMut sp inner => .borrowMut sp (resolveSelfExpr inner implTy)
+  | .deref sp inner => .deref sp (resolveSelfExpr inner implTy)
+  | .try_ sp inner => .try_ sp (resolveSelfExpr inner implTy)
+  | .fieldAccess sp obj f => .fieldAccess sp (resolveSelfExpr obj implTy) f
+  | .arrowAccess sp obj f => .arrowAccess sp (resolveSelfExpr obj implTy) f
+  | .arrayLit sp elems => .arrayLit sp (elems.map fun e => resolveSelfExpr e implTy)
+  | .arrayIndex sp arr idx => .arrayIndex sp (resolveSelfExpr arr implTy) (resolveSelfExpr idx implTy)
+  | .allocCall sp inner alloc => .allocCall sp (resolveSelfExpr inner implTy) (resolveSelfExpr alloc implTy)
+  | .match_ sp scrut arms => .match_ sp (resolveSelfExpr scrut implTy) (arms.map fun arm =>
       match arm with
-      | .mk en vn bs body => .mk en vn bs (resolveSelfStmts body implTy)
-      | .litArm v body => .litArm (resolveSelfExpr v implTy) (resolveSelfStmts body implTy)
-      | .varArm b body => .varArm b (resolveSelfStmts body implTy))
-  | .fnRef name => .fnRef name
-  | .whileExpr cond body elseBody =>
-    .whileExpr (resolveSelfExpr cond implTy) (resolveSelfStmts body implTy)
+      | .mk sp2 en vn bs body => .mk sp2 en vn bs (resolveSelfStmts body implTy)
+      | .litArm sp2 v body => .litArm sp2 (resolveSelfExpr v implTy) (resolveSelfStmts body implTy)
+      | .varArm sp2 b body => .varArm sp2 b (resolveSelfStmts body implTy))
+  | .fnRef sp name => .fnRef sp name
+  | .whileExpr sp cond body elseBody =>
+    .whileExpr sp (resolveSelfExpr cond implTy) (resolveSelfStmts body implTy)
       (resolveSelfStmts elseBody implTy)
   | other => other
 
@@ -346,36 +346,36 @@ private partial def resolveSelfStmts (stmts : List Stmt) (implTy : Ty) : List St
 
 private partial def resolveSelfStmt (s : Stmt) (implTy : Ty) : Stmt :=
   match s with
-  | .letDecl name isMut ty val =>
-    .letDecl name isMut (ty.map fun t => resolveSelfTy t implTy) (resolveSelfExpr val implTy)
-  | .assign name val => .assign name (resolveSelfExpr val implTy)
-  | .return_ (some val) => .return_ (some (resolveSelfExpr val implTy))
-  | .return_ none => .return_ none
-  | .expr e => .expr (resolveSelfExpr e implTy)
-  | .ifElse cond th el =>
-    .ifElse (resolveSelfExpr cond implTy) (resolveSelfStmts th implTy)
+  | .letDecl sp name isMut ty val =>
+    .letDecl sp name isMut (ty.map fun t => resolveSelfTy t implTy) (resolveSelfExpr val implTy)
+  | .assign sp name val => .assign sp name (resolveSelfExpr val implTy)
+  | .return_ sp (some val) => .return_ sp (some (resolveSelfExpr val implTy))
+  | .return_ sp none => .return_ sp none
+  | .expr sp e => .expr sp (resolveSelfExpr e implTy)
+  | .ifElse sp cond th el =>
+    .ifElse sp (resolveSelfExpr cond implTy) (resolveSelfStmts th implTy)
       (el.map fun b => resolveSelfStmts b implTy)
-  | .while_ cond body lbl => .while_ (resolveSelfExpr cond implTy) (resolveSelfStmts body implTy) lbl
-  | .forLoop init cond step body lbl =>
-    .forLoop (init.map fun s => resolveSelfStmt s implTy)
+  | .while_ sp cond body lbl => .while_ sp (resolveSelfExpr cond implTy) (resolveSelfStmts body implTy) lbl
+  | .forLoop sp init cond step body lbl =>
+    .forLoop sp (init.map fun s => resolveSelfStmt s implTy)
       (resolveSelfExpr cond implTy)
       (step.map fun s => resolveSelfStmt s implTy)
       (resolveSelfStmts body implTy) lbl
-  | .fieldAssign obj f val =>
-    .fieldAssign (resolveSelfExpr obj implTy) f (resolveSelfExpr val implTy)
-  | .derefAssign target val =>
-    .derefAssign (resolveSelfExpr target implTy) (resolveSelfExpr val implTy)
-  | .arrayIndexAssign arr idx val =>
-    .arrayIndexAssign (resolveSelfExpr arr implTy) (resolveSelfExpr idx implTy)
+  | .fieldAssign sp obj f val =>
+    .fieldAssign sp (resolveSelfExpr obj implTy) f (resolveSelfExpr val implTy)
+  | .derefAssign sp target val =>
+    .derefAssign sp (resolveSelfExpr target implTy) (resolveSelfExpr val implTy)
+  | .arrayIndexAssign sp arr idx val =>
+    .arrayIndexAssign sp (resolveSelfExpr arr implTy) (resolveSelfExpr idx implTy)
       (resolveSelfExpr val implTy)
-  | .break_ (some e) lbl => .break_ (some (resolveSelfExpr e implTy)) lbl
-  | .break_ none lbl => .break_ none lbl
-  | .continue_ lbl => .continue_ lbl
-  | .defer body => .defer (resolveSelfExpr body implTy)
-  | .borrowIn v r reg isMut body =>
-    .borrowIn v r reg isMut (resolveSelfStmts body implTy)
-  | .arrowAssign obj f val =>
-    .arrowAssign (resolveSelfExpr obj implTy) f (resolveSelfExpr val implTy)
+  | .break_ sp (some e) lbl => .break_ sp (some (resolveSelfExpr e implTy)) lbl
+  | .break_ sp none lbl => .break_ sp none lbl
+  | .continue_ sp lbl => .continue_ sp lbl
+  | .defer sp body => .defer sp (resolveSelfExpr body implTy)
+  | .borrowIn sp v r reg isMut body =>
+    .borrowIn sp v r reg isMut (resolveSelfStmts body implTy)
+  | .arrowAssign sp obj f val =>
+    .arrowAssign sp (resolveSelfExpr obj implTy) f (resolveSelfExpr val implTy)
 end
 
 /-- Resolve Self in a FnDef given the impl's type. -/
