@@ -79,19 +79,20 @@ Already completed in this arc:
 
 Remaining architecture work, in order:
 
-1. **Small SSA optimizations**
-Keep this deliberately modest at first:
-- constant folding
-- dead code elimination
-- CFG cleanup
-- trivial copy/phi cleanup
-
-2. **Summary-based frontend**
+1. **Summary-based frontend**
 Before the standard library grows much further, move the frontend toward file summaries as the main cross-file interface:
 - introduce an explicit `FileSummary` pass
 - make import/export validation consume summaries
+- split shallow/interface work from body-level resolution
 - keep method/type-directed body checking in `Check`
 - preserve the simple pass pipeline instead of moving to a query-first frontend
+
+2. **Core as semantic authority**
+Continue moving semantic ownership out of surface-AST checking and into elaborated/validated Core:
+- keep elaboration as the place where surface sugar disappears
+- make `CoreCheck` the main home for post-elaboration semantic rules
+- reduce duplicated semantic reasoning between `Check` and Core validation
+- keep the proof target centered on validated Core rather than surface syntax
 
 3. **ABI/layout subsystem boundary**
 Make layout and FFI concerns a clearer compiler subsystem instead of just scattered helpers:
@@ -108,7 +109,15 @@ Once `FileSummary` exists, make the main compiler products explicit and reusable
 - monomorphized Core
 - SSA module
 
-5. **Diagnostics infrastructure**
+5. **Small SSA optimizations**
+Keep this deliberately modest at first:
+- constant folding
+- dead code elimination
+- CFG cleanup
+- trivial copy/phi cleanup
+- use ownership/linearity facts when they directly simplify lowering or cleanup
+
+6. **Diagnostics infrastructure**
 Build on the structured errors with stronger shared compiler infrastructure for:
 - range-aware spans
 - secondary labels/notes
@@ -116,16 +125,34 @@ Build on the structured errors with stronger shared compiler infrastructure for:
 - cleaner multi-diagnostic presentation
 - reusable diagnostic data/formatting paths across passes
 
-6. **Multi-backend boundary over SSA**
+7. **Audit-focused compiler outputs**
+Make the compiler more inspectable, not just more correct:
+- capability summaries
+- `Unsafe` usage summaries
+- allocation summaries
+- monomorphization reports
+- type layout reports
+- cleanup/destruction reports
+- import/interface summaries
+- pass-boundary inspection modes
+
+8. **Multi-backend boundary over SSA**
 Keep SSA as the backend boundary and make that architectural rule explicit:
 - `EmitSSA` remains one backend over verified/cleaned SSA
 - any future MLIR backend should consume the same SSA boundary
 - future backends should differ only after SSA, not by introducing parallel semantic lowering paths
 - avoid introducing a second semantic backend path
 
+9. **Explicit build/project model**
+Keep the project model boring and visible:
+- reproducible builds
+- explicit target configuration
+- explicit FFI setup
+- minimal hidden environment coupling
+
 After the architecture layer above:
 
-7. **Stdlib growth**
+10. **Stdlib growth**
 Focus on the areas that pressure-test the language:
 - bytes / buffers
 - borrowed slices and text views
@@ -133,8 +160,15 @@ Focus on the areas that pressure-test the language:
 - a real networking layer
 - small formatting and test support improvements
 
-8. **Formalization**
+11. **Formalization**
 The cleaned pipeline is now stable enough that proof work over Core and the backend boundary is more valuable than more architecture churn.
+
+12. **Proof-driven narrowing**
+Keep rejecting features that:
+- complicate the proof story too much
+- weaken pass boundaries
+- hide too much semantics
+- add surface area without real low-level value
 
 ---
 
@@ -381,6 +415,23 @@ Extract name resolution, module resolution, and symbol binding from Check.lean i
 
 **Status:** In progress. `Resolve.lean` runs in the compile path and now validates imports, exports, deep type references, `Self`, function/static-method names, enum variants, and trait-impl completeness. Method-call resolution still remains with `Check.lean` because it needs receiver type information.
 
+### A3b: Summary-Based Frontend
+
+Introduce an explicit summary layer between parsing and body-level checking.
+
+Planned compiler products:
+- parsed file
+- file summary
+- checked/elaborated file
+
+Planned direction:
+- build `FileSummary` from declaration-level information
+- make import/export validation consume summaries
+- keep cross-file dependencies declaration-level where possible
+- split shallow/interface work from body-level resolution
+
+This keeps the frontend explicit and batch-oriented without moving to a query-first architecture.
+
 ### A4: Core Validation
 
 New file: `Concrete/CoreCheck.lean`
@@ -388,6 +439,16 @@ New file: `Concrete/CoreCheck.lean`
 Type check, linearity, borrow, and capability validation on Core IR. Replaces semantic checking currently in Check.lean. Much simpler because the input is already desugared and explicit.
 
 **Status:** In progress. `CoreCheck.lean` is integrated into the pipeline and validates capability discipline, type consistency, match exhaustiveness, and structural invariants. The remaining work is to continue moving semantic authority out of `Check.lean`.
+
+### A4b: Core As Semantic Authority
+
+Make the architecture rule explicit:
+
+- surface syntax should elaborate away aggressively
+- Core should be the main semantic authority before lowering
+- new semantic rules should prefer to land in Core validation rather than accumulate in surface-AST checking
+
+This is the internal compiler analogue of Concrete's source-level explicitness: one clear semantic form, one clear validation boundary.
 
 ### A5: Codegen on SSA IR
 
@@ -2094,7 +2155,7 @@ These do not block any phase above:
 | **12a** | Runtime in C | Not started | 7 |
 | **12b** | Runtime in Concrete | Not started | 8, 12a |
 
-**Next priorities:** fix the labeled-break PHI bug, sharpen `unsafe`, deepen ABI/layout, then move into `newtype`, SSA optimizations, deeper ABI/FFI polish, formalization, and stdlib growth.
+**Next priorities:** fix the labeled-break PHI bug, sharpen `unsafe`, push the summary-based frontend (`FileSummary`, shallow vs body resolution), continue moving semantic authority into Core, then deepen ABI/layout, modest SSA optimizations, formalization, and stdlib growth.
 
 **Critical path for production use:** Architecture (A1-A5) → remaining stdlib (8f, 8h) → runtime (12a).
 

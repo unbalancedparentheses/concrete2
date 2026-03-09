@@ -331,15 +331,21 @@ Concrete is trying to stay strong by staying narrow.
 
 Those constraints are part of the language design, not temporary omissions.
 
-## Near-Term Design Priorities
+## High-Leverage Priorities
 
-The current surface language is intentionally conservative. The next language/compiler strengthening arc is:
+The current surface language is intentionally conservative. The highest-leverage next work is architectural sharpening, not a rush of new surface features.
 
-- **Deeper ABI/layout work**: finish the layout model around `#[repr(C)]`, extern compatibility, alignment guarantees, and FFI-safe boundaries
-- **`newtype`** for nominal zero-cost wrappers over existing representations
-- **Small SSA optimizations**: constant folding, dead code elimination, CFG cleanup, and trivial phi/copy cleanup
-- **Formalization** of the cleaned core pipeline
-- **Stdlib growth** in the pressure-testing areas: bytes/buffers, borrowed views, file/path/process/env, networking, and formatting
+In order, the strongest next improvements are:
+
+- **Summary-based frontend**: introduce `FileSummary`, move cross-file dependencies to summaries, and keep the frontend simple instead of query-first
+- **Core as semantic authority**: keep semantic meaning centered in elaborated/validated Core rather than duplicated in surface-AST checking
+- **ABI/layout subsystem clarity**: centralize size, alignment, field-offset, enum-layout, and FFI-safe rules
+- **Audit-focused compiler outputs**: capability summaries, `Unsafe` summaries, allocation/layout reports, and better pass-boundary inspection
+- **Small SSA optimization group**: constant folding, dead code elimination, CFG cleanup, and trivial phi/copy cleanup
+- **Small but excellent stdlib**: bytes/buffers, borrowed views, allocator-explicit collections, file/path/process/env, networking, formatting
+- **Explicit build/project model**: keep reproducibility, target configuration, and FFI setup boring and visible
+
+The main rule is: architecture before ornament, tooling visibility before convenience syntax, and proof-friendly boundaries before feature expansion.
 
 ## Stdlib Status
 
@@ -378,7 +384,7 @@ See [ROADMAP.md](ROADMAP.md) for the full implementation plan with syntax, rules
 | **13** | Tooling | Not started |
 | **14** | Runtime (C, then Concrete) | Not started |
 
-Next critical path: **ABI/layout refinement first, then `newtype`, small SSA optimization, formalization, and stdlib growth.** Structured diagnostics are complete across all semantic passes. The legacy AST backend has been removed.
+Next critical path: **summary-based frontend, Core authority, ABI/layout subsystem cleanup, audit-focused outputs, and small SSA optimization before broader stdlib growth.** Structured diagnostics are complete across all semantic passes. The legacy AST backend has been removed.
 
 ### What fits the philosophy and what does not
 
@@ -519,9 +525,11 @@ Things Concrete deliberately does not have:
 - Clear path to formal verification because the compiler is already implemented in Lean and now has explicit internal IR boundaries
 
 **Next steps:**
-- Tighten ABI/layout features (`repr(C)`, sharper unsafe boundary)
-- MLIR-based optimization pipeline
-- Kernel formalization and proof development in Lean
+- Move toward a summary-based frontend with explicit `FileSummary` boundaries
+- Continue shifting semantic authority toward validated Core IR
+- Tighten the ABI/layout subsystem and expose more audit-focused compiler outputs
+- Grow a sharp stdlib in bytes/buffers, views, file/path/process/env, networking, and formatting
+- Push kernel formalization and proof development in Lean
 
 ## License
 
