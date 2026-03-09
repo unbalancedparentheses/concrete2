@@ -24,18 +24,32 @@ For the full language specification, see [The Concrete Programming Language: Sys
 ## Try It Now
 
 ```
-struct Point { x: Int, y: Int }
+struct Counter {
+    value: Int,
+}
 
-impl Point {
-    fn sum(&self) -> Int {
-        return self.x + self.y;
+impl Counter {
+    fn inc(&mut self) {
+        self.value = self.value + 1;
     }
 }
 
-fn main() -> Int {
-    let p: Point = Point { x: 10, y: 20 };
-    let s: Int = p.sum();
-    return s;  // => 30
+fn read_and_count(path: String) with(File) -> Result<Int, String> {
+    let text: String = read_file(path)?;
+    let mut c: Counter = Counter { value: 0 };
+
+    if string_contains(text, "Concrete") {
+        c.inc();
+    }
+
+    return Ok(c.value);
+}
+
+fn main!() -> Int {
+    match read_and_count("README.md") {
+        Ok(n) => return n,
+        Err(_) => return 0,
+    }
 }
 ```
 
@@ -44,7 +58,14 @@ make build
 .lake/build/bin/concrete input.con -o output && ./output
 ```
 
-Linear types work today. The compiler rejects programs that forget or reuse resources:
+This example is small, but it already shows the core shape of the language:
+
+- explicit capabilities (`with(File)`)
+- explicit error propagation with `?`
+- plain structs and methods
+- no hidden effects in the pure-looking parts
+
+Linear values work today too. The compiler rejects programs that forget or reuse resources:
 
 ```
 struct Resource { value: Int }
@@ -62,49 +83,17 @@ fn main() -> Int {
 }
 ```
 
-## The Vision
+## The Language Model
 
-Concrete is designed around a verified core. Here is what a Concrete program will look like when the language is complete:
+Concrete is trying to make five things obvious in source code:
 
-```
-module Main
+1. whether a function is pure or effectful
+2. where resources are acquired and destroyed
+3. whether a value is copied, borrowed, or consumed
+4. whether control flow is explicit
+5. where unsafe or foreign code begins
 
-import FileSystem.{open, read, write}
-import Parse.{parse_csv}
-
-// Pure: no capabilities, computes result from inputs
-fn transform(data: &List<Row>) -> String {
-    ...
-}
-
-// Declares exactly which effects it performs
-fn process_file(input: String, output: String) with(File, Alloc) -> Result<Unit, Error> {
-    let in_file = open(input)?
-    defer destroy(in_file)             // cleanup visible in source, runs at scope exit
-
-    let content = read(&in_file)
-    let data = parse_csv(content)?
-    let result = transform(&data)
-
-    let out_file = open(output)?
-    defer destroy(out_file)
-
-    write(&mut out_file, result)
-    Ok(())
-}
-
-fn main!() {                           // ! is sugar for with(Std)
-    let arena = Arena.new()
-    defer arena.deinit()
-
-    match process_file("in.csv", "out.txt") with(Alloc = arena) {
-        Ok(()) => println("Done"),
-        Err(e) => println("Error: " + e.message())
-    }
-}
-```
-
-Resource acquisition, cleanup, error propagation, effect declarations, and allocator binding are all visible in the source.
+That drives the whole surface language.
 
 ### Pure by default, effects declared
 
@@ -118,7 +107,7 @@ Functions without capability annotations are pure. No side effects, no allocatio
 
 Predefined capabilities: `File`, `Network`, `Console`, `Env`, `Process`, `Alloc`, `Unsafe`. `Std` includes all except `Unsafe`. Users cannot define new capabilities.
 
-### Linear types
+### Linear values and explicit destruction
 
 Concrete has linear types: use **exactly** once. Forgetting a resource is a compile error, not silent cleanup.
 
@@ -128,7 +117,16 @@ Concrete has linear types: use **exactly** once. Forgetting a resource is a comp
 - Types without a destructor must be consumed by moving, returning, or destructuring
 - `Copy` is explicit and opt-in. A `Copy` type cannot have a destructor and cannot contain linear fields
 
-### No hidden control flow
+### Borrowing instead of hidden aliasing
+
+Concrete supports explicit shared and mutable borrows:
+
+- `&T` is a shared borrow
+- `&mut T` is an exclusive borrow
+- borrow regions are explicit when a borrow must span multiple statements
+- mutation flows through `&mut`, not through hidden interior mutability in safe code
+
+### No hidden control flow or hidden work
 
 When you read Concrete code, what you see is what executes:
 
@@ -146,7 +144,16 @@ Allocation is a capability with explicit allocator binding at call sites:
 - Stack allocation does not require `Alloc`
 - Allocation-free code is provably allocation-free
 
-### Compiler as proof artifact
+### Unsafe is a boundary
+
+Unsafe or foreign-facing operations are supposed to stay sharply visible:
+
+- FFI is declared with `extern fn`
+- raw pointers are explicit types (`*const T`, `*mut T`)
+- unsafe operations are gated by `with(Unsafe)`
+- the intended audit story stays simple: `grep with(Unsafe)` should find the boundary
+
+### Long-term verification goal
 
 The compiler is in Lean 4 so the core type system can be formally verified:
 
@@ -203,7 +210,7 @@ Concrete is built for code that must be inspectable and mechanically verified.
 
 The compiler implements the core surface language and the new internal IR pipeline in Lean 4. All 201 main tests pass, and the SSA-specific suite passes as well.
 
-**MLIR backend, kernel formalization, and the runtime are not yet implemented.** The compiler now has Core IR, elaboration, Core validation, monomorphization, SSA lowering, SSA verification/cleanup, and SSA codegen. The default compile path uses the SSA pipeline. The legacy AST backend still exists temporarily behind `--compile-legacy`, but only as a short-term fallback while the diagnostics migration finishes. After that, it should be removed. The frontend also now carries source spans through the AST, and diagnostics have moved from raw strings to structured per-pass errors in Resolve (`ResolveError`) and Check (`CheckError`), with Elab, CoreCheck, and SSAVerify next. See the full [ROADMAP.md](ROADMAP.md) for the implementation plan. What works today:
+**MLIR backend, kernel formalization, and the runtime are not yet implemented.** The compiler now has a real staged pipeline in Lean 4: Parse → Resolve → Check → Elab → CoreCheck → Mono → Lower → SSAVerify → SSACleanup → EmitSSA → clang. The default compile path uses the SSA backend. The legacy AST backend still exists temporarily behind `--compile-legacy`, but only as a short-term fallback while the diagnostics migration finishes. The frontend carries source spans through the AST, and diagnostics have started moving from raw strings to structured per-pass errors. See the full [ROADMAP.md](ROADMAP.md) for the implementation plan. What works today:
 
 - **Types**: Int, Uint, i8-i32, u8-u32, f32, f64, Bool, Char, String, arrays `[T; N]`, raw pointers
 - **Structs** with field access, mutation, and `Heap<T>` fields
@@ -223,12 +230,32 @@ The compiler implements the core surface language and the new internal IR pipeli
 - **Bitwise operators**: `&`, `|`, `^`, `<<`, `>>`, `~` with hex/binary/octal literals
 - **FFI**: `extern fn` declarations with `Unsafe` capability gating
 - **Compiler pipeline**: source spans in the AST, Resolve, Core IR (`--emit-core`), elaboration, Core validation, monomorphization, SSA lowering (`--emit-ssa`), SSA verification/cleanup, SSA-based compilation
+- **Collections builtins**: `Vec<T>` and `HashMap<K,V>` operations with explicit `Alloc` requirements
+- **Networking builtins**: TCP connect/listen/accept and socket send/recv/close under `Network`
 - **Standard library builtins**:
   - **Strings**: `string_length`, `string_concat`, `string_slice`, `string_char_at`, `string_contains`, `string_eq`, `string_trim`, `drop_string`
   - **Conversions**: `int_to_string`, `string_to_int`, `bool_to_string`, `float_to_string`
   - **I/O**: `print_int`, `print_bool`, `print_string`, `print_char`, `eprint_string`, `read_line` (require Console)
   - **File**: `read_file`, `write_file` (require File)
   - **System**: `get_env` (requires Env), `exit_process` (requires Process)
+
+### What this means today
+
+Concrete is already usable for small low-level programs that need:
+
+- explicit ownership and borrowing
+- explicit effect tracking
+- predictable control flow
+- direct FFI and raw-pointer escape hatches
+- inspectable internal stages (`--emit-core`, `--emit-ssa`)
+
+It is not finished in the places that matter for broader adoption:
+
+- no verified kernel yet
+- no finalized `repr(C)` / layout-control surface
+- no optimizer/MLIR pipeline yet
+- diagnostics migration still in progress
+- runtime story still incomplete
 
 ## Near-Term Design Priorities
 
@@ -299,10 +326,10 @@ Source (.con)
   Resolve.lean -- current early name-resolution pass
     |
     v
-  Check.lean -- frontend checker
+  Check.lean -- frontend checker with structured errors
     |
     v
-  Elab.lean -- surface AST -> Core IR
+  Elab.lean -- surface AST -> Core IR with structured errors
     |
     v
   CoreCheck.lean -- Core validation
@@ -360,8 +387,8 @@ Concrete/
   EmitSSA.lean   -- LLVM IR from SSA
   Codegen.lean   -- Legacy AST-based LLVM backend
 Main.lean        -- Entry point
-lean_tests/      -- 201 tests
-examples/        -- 62 example programs
+lean_tests/      -- 204 test programs (201 in main suite)
+examples/        -- 66 example programs
 ```
 
 ## Influences
@@ -395,16 +422,18 @@ Things Concrete deliberately does not have:
 ## Implementation Snapshot
 
 **Current Lean 4 implementation:**
-- ~7,500 lines, the whole compiler fits in 6 files
-- Direct textual LLVM IR emission, no MLIR, no complex lowering passes
-- Path to formal verification of the type system using Lean's proof system
-- Clean pipeline: Lexer -> Parser -> AST -> Check -> Codegen
+- ~15,500 lines of Lean across parser, checker, Core IR, SSA pipeline, and backends
+- Direct textual LLVM IR emission from the SSA backend, compiled with `clang`
+- Real staged pipeline: Parse -> Resolve -> Check -> Elab -> CoreCheck -> Mono -> Lower -> SSAVerify -> SSACleanup -> EmitSSA
+- Structured diagnostics migration underway, with source spans in the AST and typed errors already in `Resolve`, `Check`, and `Elab`
+- Clear path to formal verification because the compiler is already implemented in Lean and now has explicit internal IR boundaries
 
 **Next steps:**
-- MLIR-based lowering pipeline for optimization
+- Finish structured diagnostics in `CoreCheck` and `SSAVerify`
+- Delete the legacy AST backend fallback
+- Tighten ABI/layout features (`repr(C)`, sharper unsafe boundary)
+- MLIR-based optimization pipeline
 - Kernel formalization and proof development in Lean
-- Generic data structures: `Vec<T>`, `HashMap<K,V>`
-- Networking capabilities
 
 ## License
 
