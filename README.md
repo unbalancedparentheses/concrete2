@@ -85,6 +85,24 @@ fn main() -> Int {
 }
 ```
 
+Here is the low-level boundary in a smaller example:
+
+```con
+extern fn puts(ptr: *const u8) -> i32;
+
+fn print_raw(s: &String) with(Unsafe) {
+    let ptr: *const u8 = &s.ptr as *const *mut u8 as *const u8;
+    puts(ptr);
+}
+```
+
+This shows the intended rule:
+
+- FFI is explicit
+- raw pointers are explicit
+- `Unsafe` is explicit
+- crossing the boundary is visible in the function signature
+
 ## The Language Model
 
 Concrete is trying to make five things obvious in source code:
@@ -187,6 +205,16 @@ What a type-checked program guarantees:
 
 Concrete is built for code that must be inspectable and mechanically verified.
 
+### Why not Rust, Go, or Zig?
+
+Concrete is closest in spirit to Rust and Zig, but it is aiming at a different balance.
+
+- Compared to Rust: Concrete is trying to keep the surface language smaller and more explicit, with stricter rejection of hidden control flow, hidden dispatch, and trait-heavy abstraction styles.
+- Compared to Go: Concrete wants much stronger compile-time guarantees about ownership, effects, and low-level correctness.
+- Compared to Zig: Concrete shares the explicit low-level mindset, but pushes harder on static reasoning, linear ownership, and eventually formal verification.
+
+The goal is not to out-feature those languages. The goal is to be unusually good at auditable, correctness-focused systems code.
+
 ### Clarity guarantees
 
 | Question | Concrete |
@@ -225,9 +253,24 @@ Concrete is built for code that must be inspectable and mechanically verified.
 
 ## Current Status
 
-The compiler implements the core surface language and the internal IR pipeline in Lean 4. All 230 main tests and 151 SSA tests pass.
+The compiler implements the core surface language and the internal IR pipeline in Lean 4. All 243 main tests and 155 SSA tests pass.
 
-**MLIR backend, kernel formalization, and the runtime are not yet implemented.** The compiler has a single staged pipeline in Lean 4: Parse → Resolve → Check → Elab → CoreCheck → Mono → Lower → SSAVerify → SSACleanup → EmitSSA → clang. All semantic passes use structured error kinds (ResolveError, CheckError, ElabError, CoreCheckError, SSAVerifyError). The frontend carries source spans through the AST. See the full [ROADMAP.md](ROADMAP.md) for the implementation plan. What works today:
+Implemented today:
+
+- a single staged Lean 4 compiler pipeline: Parse → Resolve → Check → Elab → CoreCheck → Mono → Lower → SSAVerify → SSACleanup → EmitSSA → clang
+- structured diagnostics across all semantic passes
+- source spans in the AST and rendered diagnostics
+- SSA as the only real backend path
+
+Still in progress:
+
+- ABI/layout refinement
+- a sharper `Unsafe` model
+- optimizer work
+- kernel formalization
+- runtime maturity
+
+See the full [ROADMAP.md](ROADMAP.md) for the implementation plan. What works today:
 
 - **Types**: Int, Uint, i8-i32, u8-u32, f32, f64, Bool, Char, String, arrays `[T; N]`, raw pointers
 - **Structs** with field access, mutation, and `Heap<T>` fields
@@ -246,6 +289,7 @@ The compiler implements the core surface language and the internal IR pipeline i
 - **Function pointers**: first-class values, `Copy` semantics, no closures (explicit design choice)
 - **Bitwise operators**: `&`, `|`, `^`, `<<`, `>>`, `~` with hex/binary/octal literals
 - **FFI**: `extern fn` declarations with `Unsafe` capability gating
+- **Unsafe boundary**: raw pointer dereference/assignment and pointer-involving casts require `Unsafe`; reference-to-pointer casts remain safe
 - **Compiler pipeline**: source spans in the AST, Resolve, Core IR (`--emit-core`), elaboration, Core validation, monomorphization, SSA lowering (`--emit-ssa`), SSA verification/cleanup, SSA-based compilation
 - **Collections builtins**: `Vec<T>` and `HashMap<K,V>` operations with explicit `Alloc` requirements
 - **Networking builtins**: TCP connect/listen/accept and socket send/recv/close under `Network`
@@ -275,6 +319,19 @@ It is not finished in the places that matter for broader adoption:
 - no optimizer/MLIR pipeline yet
 - runtime story still incomplete
 
+### Design Constraints
+
+Concrete is trying to stay strong by staying narrow.
+
+- no hidden control flow
+- no hidden allocation
+- no trait objects
+- no closures
+- no operator overloading
+- no implicit conversions
+
+Those constraints are part of the language design, not temporary omissions.
+
 ## Near-Term Design Priorities
 
 The current surface language is intentionally conservative. The highest-value design additions after the architecture work are:
@@ -283,6 +340,20 @@ The current surface language is intentionally conservative. The highest-value de
 - **Explicit representation/layout control** for ABI-sensitive low-level code (`repr(C)`, alignment, and carefully-scoped layout controls)
 - **A sharper `unsafe` model** that clearly states which invariants move from the compiler to the programmer
 - **A more explicit value/reference model** so pass-by-value, borrows, raw pointers, and heap ownership stay operationally obvious
+
+## Stdlib Status
+
+The standard library exists, but it is still foundational rather than mature.
+
+The next stdlib focus is:
+
+- bytes / buffer types
+- borrowed slices and text views
+- stronger file/path/process/env modules
+- a real networking layer over the builtins
+- small formatting and test support improvements
+
+See [`research/stdlib-design.md`](research/stdlib-design.md) for the current stdlib design direction.
 
 ## Roadmap
 
@@ -380,7 +451,7 @@ Requires [Lean 4](https://leanprover.github.io/lean4/doc/setup.html) (v4.28.0+) 
 
 ```bash
 make build    # or: lake build
-make test     # runs all 230 tests
+make test     # runs all 243 tests
 make clean    # or: lake clean
 ```
 
@@ -404,7 +475,7 @@ Concrete/
   SSACleanup.lean -- SSA cleanup
   EmitSSA.lean   -- LLVM IR from SSA
 Main.lean        -- Entry point
-lean_tests/      -- 230 test programs
+lean_tests/      -- 243 test programs
 examples/        -- 66 example programs
 ```
 

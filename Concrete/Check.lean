@@ -178,6 +178,10 @@ inductive CheckError where
   | reprCFieldNotFFISafe (structName : String) (fieldName : String) (fieldTy : String)
   | externFnParamNotFFISafe (fnName : String) (paramName : String) (paramTy : String)
   | externFnReturnNotFFISafe (fnName : String) (retTy : String)
+  -- Slice 8: Unsafe boundary
+  | rawPtrDerefRequiresUnsafe
+  | rawPtrAssignRequiresUnsafe
+  | unsafeCastRequiresUnsafe (fromTy : String) (toTy : String)
 
 def CheckError.message : CheckError → String
   -- Slice 1
@@ -286,6 +290,10 @@ def CheckError.message : CheckError → String
   | .reprCFieldNotFFISafe structName fieldName fieldTy => s!"#[repr(C)] struct '{structName}' has non-FFI-safe field '{fieldName}' of type {fieldTy}"
   | .externFnParamNotFFISafe fnName paramName paramTy => s!"extern fn '{fnName}' has non-FFI-safe parameter '{paramName}' of type {paramTy}"
   | .externFnReturnNotFFISafe fnName retTy => s!"extern fn '{fnName}' has non-FFI-safe return type {retTy}"
+  -- Slice 8
+  | .rawPtrDerefRequiresUnsafe => "dereferencing raw pointer requires Unsafe capability"
+  | .rawPtrAssignRequiresUnsafe => "assigning through raw pointer requires Unsafe capability"
+  | .unsafeCastRequiresUnsafe fromTy toTy => s!"cast from {fromTy} to {toTy} requires Unsafe capability"
 
 def throwCheck (e : CheckError) : CheckM α := throw e.message
 
@@ -362,6 +370,11 @@ def isNumericType : Ty → Bool
 /-- Is this a pointer type? -/
 def isPointerType : Ty → Bool
   | .ptrMut _ | .ptrConst _ => true
+  | _ => false
+
+/-- Is this a reference type? -/
+def isReferenceType : Ty → Bool
+  | .ref _ | .refMut _ => true
   | _ => false
 
 def getEnv : CheckM TypeEnv := get
@@ -1525,8 +1538,12 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
     match innerTy with
     | .ref t => return t
     | .refMut t => return t
-    | .ptrMut t => return t
-    | .ptrConst t => return t
+    | .ptrMut t =>
+      checkCapabilities "*raw_ptr" (.concrete ["Unsafe"])
+      return t
+    | .ptrConst t =>
+      checkCapabilities "*raw_ptr" (.concrete ["Unsafe"])
+      return t
     | .heap t =>
       -- *heap_ptr: loads value from heap, frees memory, consumes the Heap<T>
       -- Requires Alloc capability (heap deallocation)
@@ -1604,6 +1621,12 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       (match innerTy with | .ref _ | .refMut _ => isPointerType targetTy | _ => false) ||
       (innerTy == targetTy)
     if !valid then throwCheck (.cannotCast (tyToString innerTy) (tyToString targetTy))
+    -- Unsafe capability check for pointer-involving casts (except safe ref-to-ptr)
+    let isRefToPtr := isReferenceType innerTy && isPointerType targetTy
+    let involvesPointer := isPointerType innerTy || isPointerType targetTy ||
+                           (match innerTy with | .array _ _ => isPointerType targetTy | _ => false)
+    if involvesPointer && !isRefToPtr then
+      checkCapabilities "unsafe_cast" (.concrete ["Unsafe"])
     return targetTy
   | .methodCall _ obj methodName typeArgs args =>
     let objTy ← checkExpr obj
@@ -1852,6 +1875,7 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
       let valTy ← checkExpr value (some inner)
       expectTy inner valTy "deref assignment"
     | .ptrMut inner =>
+      checkCapabilities "*raw_ptr=" (.concrete ["Unsafe"])
       let valTy ← checkExpr value (some inner)
       expectTy inner valTy "deref assignment"
     | _ => throwCheck .cannotAssignThroughNonMutRef

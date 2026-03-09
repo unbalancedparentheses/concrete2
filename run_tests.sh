@@ -290,6 +290,9 @@ run_ok "$TESTDIR/complex_trait_hierarchy.con" 45
 run_ok "$TESTDIR/cap_propagation_deep.con" "1
 42"
 
+# Unsafe boundary: ref-to-ptr is safe (no Unsafe needed)
+run_ok "$TESTDIR/ref_to_ptr_safe.con" 0
+
 # repr(C) / FFI safety
 run_ok "$TESTDIR/repr_c_basic.con" 42
 run_ok "$TESTDIR/repr_c_nested.con" 42
@@ -407,6 +410,11 @@ run_err "$TESTDIR/error_repr_c_string_field.con" "non-FFI-safe field"
 run_err "$TESTDIR/error_extern_string_param.con" "non-FFI-safe parameter"
 run_err "$TESTDIR/error_extern_non_repr_struct.con" "non-FFI-safe parameter"
 run_err "$TESTDIR/error_repr_c_on_enum.con" "can only be applied to struct"
+# Unsafe boundary errors
+run_err "$TESTDIR/error_ptr_deref_no_unsafe.con" "requires capability"
+run_err "$TESTDIR/error_ptr_assign_no_unsafe.con" "requires capability"
+run_err "$TESTDIR/error_ptr_cast_no_unsafe.con" "requires capability"
+run_err "$TESTDIR/error_int_to_ptr_no_unsafe.con" "requires capability"
 
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="

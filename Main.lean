@@ -197,9 +197,10 @@ def compileAndEmit (inputPath : String) (mode : String) : IO UInt32 := do
         return 1
       | .ok monoModules =>
       let ssaModules := monoModules.map lowerModule
-      -- SSA verification: warn but don't block (Lower may produce imperfect phis)
       match ssaVerifyProgram ssaModules with
-      | .error e => IO.eprintln s!"[warn] {e}"
+      | .error e =>
+        IO.eprintln s!"SSA verification error: {e}"
+        return 1
       | .ok () => pure ()
       let ssaModules := ssaCleanupProgram ssaModules
       for sm in ssaModules do

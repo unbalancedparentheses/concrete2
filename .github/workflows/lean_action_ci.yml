@@ -30,8 +30,11 @@ jobs:
       - name: Install clang
         run: sudo apt-get update && sudo apt-get install -y clang
 
-      - name: Run test suite (59 tests)
+      - name: Run main test suite
         run: ./run_tests.sh
+
+      - name: Run SSA test suite
+        run: ./test_ssa.sh
 
       - name: Compile all examples
         run: |

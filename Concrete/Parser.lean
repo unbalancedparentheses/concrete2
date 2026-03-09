@@ -137,7 +137,7 @@ partial def parseType : ParseM Ty := do
       advance
       let inner ← parseType
       return .ptrMut inner
-    else if next == .ident "const" then
+    else if next == .const_ || next == .ident "const" then
       advance
       let inner ← parseType
       return .ptrConst inner

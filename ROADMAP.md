@@ -4,7 +4,7 @@ This is the implementation plan for the Concrete programming language. For the f
 
 ## What's Built
 
-The Lean 4 compiler implements the core surface language plus the new internal IR pipeline pieces: Core IR, elaboration, Core validation, monomorphization, SSA lowering, SSA verification/cleanup, and SSA codegen. All 222 main tests pass, and the SSA-specific suite passes as well (`151/151`).
+The Lean 4 compiler implements the core surface language plus the new internal IR pipeline pieces: Core IR, elaboration, Core validation, monomorphization, SSA lowering, SSA verification/cleanup, and SSA codegen. All 243 main tests pass, and the SSA-specific suite passes as well (`155/155`).
 
 **Done:**
 - Lexer, LL(1) parser, AST

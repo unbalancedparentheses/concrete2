@@ -126,6 +126,12 @@ Source Text
 - All `extern fn` parameters and return types must be FFI-safe.
 - FFI-safe types: integer types, float types, Bool, Char, `()`, raw pointers (`*mut T`, `*const T`), and `#[repr(C)]` structs.
 
+**Unsafe boundary validation:**
+- Dereferencing raw pointers (`*ptr` on `*mut T` or `*const T`) requires `Unsafe` capability.
+- Assigning through raw pointers (`*ptr = val` on `*mut T`) requires `Unsafe` capability.
+- Pointer-involving casts require `Unsafe` capability: pointer-to-pointer, pointer-to-integer, integer-to-pointer, array-to-pointer, pointer-to-reference.
+- Reference-to-pointer casts (`&x as *const T`, `&mut x as *mut T`) are safe and do not require `Unsafe`, since they preserve compiler-known provenance.
+
 ---
 
 ## 4. Elab (Elaboration)
