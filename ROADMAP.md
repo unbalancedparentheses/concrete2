@@ -40,7 +40,7 @@ The Lean 4 compiler implements the core surface language plus the new internal I
 - FFI: `extern fn` declarations, `Unsafe` capability gating (extern calls, raw pointer deref, raw pointer assign, unsafe casts)
 - `#[repr(C)]` attribute for structs with FFI-safe type validation at extern boundaries
 
-**Not yet implemented:** transmute, newtype, MLIR backend, env vars/process args, kernel formalization, runtime, fully authoritative standalone resolution.
+**Not yet implemented:** transmute, newtype, MLIR backend, kernel formalization, runtime, fully authoritative standalone resolution.
 
 ---
 
@@ -66,19 +66,38 @@ Syntax choices that diverge from the [spec blog post](https://federicocarrone.co
 
 ## Design Priorities After The New IR Pipeline
 
-Now that Core IR, elaboration, and SSA lowering exist, the most important design-level additions are:
+Now that Core IR, elaboration, Core validation, monomorphization, SSA lowering, SSA verification/cleanup, and SSA codegen are in place, the next design-level work is:
 
-1. **`newtype`**
+1. **Deepen ABI/layout**
+Build on the current `#[repr(C)]` and `Unsafe` baseline:
+- make layout/size/alignment guarantees explicit
+- tighten extern compatibility rules
+- define FFI-safe boundaries more sharply
+- add more edge-case ABI/layout tests
+
+2. **`newtype`**
 Nominal wrappers over existing representations with no implicit conversions. This gives alias-like ergonomics with struct-level type separation.
 
-2. **Explicit representation/layout control** *(done: `#[repr(C)]` + FFI-safe validation)*
-`#[repr(C)]` is implemented with compile-time validation: no generics on repr(C) structs, all fields must be FFI-safe, and extern fn boundaries require FFI-safe types. Explicit alignment/packing choices may follow later.
-
-3. **A sharper `unsafe` boundary** *(done: Unsafe gates extern calls, raw pointer deref/assign, and unsafe casts)*
-The `Unsafe` capability gates: extern fn calls, raw pointer dereference, raw pointer assignment, and pointer-involving casts (pointer↔pointer, pointer↔integer, array→pointer, pointer→reference). Reference-to-pointer casts (`&x as *const T`) remain safe.
-
-4. **A stricter value/reference model**
+3. **A stricter value/reference model**
 The language should stay very clear about when values are passed by value, when borrows are first-class references, and how raw pointers and `Heap<T>` differ operationally.
+
+4. **Small SSA optimizations**
+Keep this deliberately modest at first:
+- constant folding
+- dead code elimination
+- CFG cleanup
+- trivial copy/phi cleanup
+
+5. **Formalization**
+The cleaned pipeline is now stable enough that proof work over Core and the backend boundary is more valuable than more architecture churn.
+
+6. **Stdlib growth**
+Focus on the areas that pressure-test the language:
+- bytes / buffers
+- borrowed slices and text views
+- stronger file/path/process/env modules
+- a real networking layer
+- small formatting and test support improvements
 
 ---
 
@@ -133,18 +152,18 @@ These rules apply across all phases. They come directly from the spec and must n
 ### Current Pipeline
 
 ```
-Source → Lex/Parse → Surface AST → Check.lean → Codegen.lean → LLVM IR text → clang → binary
+Source → Parse → Resolve → Check → Elab → CoreCanonicalize → CoreCheck → Mono → Lower → SSAVerify → SSACleanup → EmitSSA → clang
 ```
 
-Check.lean currently handles: name resolution, type checking, linearity, borrow checking, capability propagation, generic substitution, trait/method dispatch, special-case builtins, and pieces of semantic lowering. Codegen.lean directly consumes the surface AST. This works but concentrates too much semantic work in too few places. Every new feature is expensive to add, hard to test in isolation, and hard to prove sound later.
+The old AST backend is gone. The current compiler goes through the full Core → SSA pipeline, with structured diagnostics across the semantic passes. The main remaining architectural work is no longer pass creation; it is tightening ABI/layout guarantees, language boundaries, and the proof story.
 
 ### Target Pipeline
 
 ```
-Source → Parse → Resolve → Elaborate → Validate Core → Monomorphize → Lower → Codegen
+Source → Parse → Resolve → Check → Elab → CoreCanonicalize → CoreCheck → Mono → Lower → SSAVerify → SSACleanup → EmitSSA → clang
 ```
 
-Each pass has a single job, a well-defined input type, and a well-defined output type.
+The pipeline shape is now in place. The remaining work is to keep each pass narrow, preserve the documented invariants, and build language/runtime work on top of that foundation.
 
 ### Pass Definitions
 
@@ -335,9 +354,9 @@ Type check, linearity, borrow, and capability validation on Core IR. Replaces se
 
 ### A5: Codegen on SSA IR
 
-Modify `Concrete/Codegen.lean` to consume SSA IR instead of Surface AST. Codegen becomes a pure target-emission step over the lowered SSA representation. This makes the pipeline: AST → Elab → CoreCheck → Mono → Lower → SSA → Codegen.
+Make code generation consume SSA IR instead of the surface AST. Codegen becomes a pure target-emission step over the lowered SSA representation. This makes the pipeline: AST → Resolve → Check → Elab → CoreCheck → Mono → Lower → SSA → Codegen.
 
-**Status:** Done. `EmitSSA.lean` is the sole codegen path. The legacy AST→Codegen backend has been removed. Only shared runtime builtin IR generation (`Codegen/Builtins.lean`) is retained for use by `EmitSSA`.
+**Status:** Done. `EmitSSA.lean` is the sole codegen path. The legacy AST backend has been removed. Only shared runtime builtin IR generation (`Codegen/Builtins.lean`) is retained for use by `EmitSSA`.
 
 ### A6: Structured Diagnostics
 
@@ -1821,8 +1840,8 @@ The current codegen emits LLVM IR as text strings — it works but has no optimi
 ### Architecture
 
 ```
-Current:  Surface AST → Check → Codegen.lean (text emission) → .ll file → clang → binary
-Target:   Surface AST → Check → Codegen.lean (MLIR API calls) → MLIR Module → LLVM IR → binary
+Current:  Surface AST → Resolve → Check → Elab → CoreCanonicalize → CoreCheck → Mono → Lower → SSAVerify → SSACleanup → EmitSSA (LLVM text) → clang → binary
+Target:   Surface AST → Resolve → Check → Elab → CoreCanonicalize → CoreCheck → Mono → Lower → SSAVerify → SSACleanup → MLIR/LLVM backend → binary
 ```
 
 ### Phase 11a: Lean-MLIR FFI bindings
@@ -1836,13 +1855,13 @@ Build Lean 4 `@[extern]` bindings to the MLIR C API.
 
 ### Phase 11b: LLVM dialect codegen
 
-Replace `Codegen.lean` text emission with MLIR operation construction.
+Replace `EmitSSA.lean` text emission with MLIR operation construction.
 
 - Target LLVM dialect directly (1:1 mapping with current textual IR)
 - Same semantics, structured construction instead of string concatenation
-- New file: `Concrete/MLIR/Codegen.lean` (parallel to existing `Codegen.lean`)
+- New file: `Concrete/MLIR/Codegen.lean` (parallel to `EmitSSA.lean`)
 - Validate: all existing tests pass with MLIR backend
-- Keep textual backend as fallback during transition
+- Keep the current textual SSA backend as fallback during transition
 - Compiler flag: `--backend=text` (default initially) vs `--backend=mlir`
 
 ### Phase 11c: Optimization passes

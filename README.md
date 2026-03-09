@@ -253,7 +253,7 @@ The goal is not to out-feature those languages. The goal is to be unusually good
 
 ## Current Status
 
-The compiler implements the core surface language and the internal IR pipeline in Lean 4. All 243 main tests and 155 SSA tests pass.
+The compiler implements the core surface language and the full internal IR pipeline in Lean 4. All 243 main tests and 155 SSA tests pass.
 
 Implemented today:
 
@@ -265,7 +265,6 @@ Implemented today:
 Still in progress:
 
 - ABI/layout refinement
-- a sharper `Unsafe` model
 - optimizer work
 - kernel formalization
 - runtime maturity
@@ -315,7 +314,7 @@ That already makes it more than a language-design experiment. The current implem
 It is not finished in the places that matter for broader adoption:
 
 - no verified kernel yet
-- no finalized `repr(C)` / layout-control surface
+- no finalized ABI/layout model beyond the current `#[repr(C)]` baseline
 - no optimizer/MLIR pipeline yet
 - runtime story still incomplete
 
@@ -334,12 +333,13 @@ Those constraints are part of the language design, not temporary omissions.
 
 ## Near-Term Design Priorities
 
-The current surface language is intentionally conservative. The highest-value design additions after the architecture work are:
+The current surface language is intentionally conservative. The next language/compiler strengthening arc is:
 
+- **Deeper ABI/layout work**: finish the layout model around `#[repr(C)]`, extern compatibility, alignment guarantees, and FFI-safe boundaries
 - **`newtype`** for nominal zero-cost wrappers over existing representations
-- **Explicit representation/layout control** for ABI-sensitive low-level code (`repr(C)`, alignment, and carefully-scoped layout controls)
-- **A sharper `unsafe` model** that clearly states which invariants move from the compiler to the programmer
-- **A more explicit value/reference model** so pass-by-value, borrows, raw pointers, and heap ownership stay operationally obvious
+- **Small SSA optimizations**: constant folding, dead code elimination, CFG cleanup, and trivial phi/copy cleanup
+- **Formalization** of the cleaned core pipeline
+- **Stdlib growth** in the pressure-testing areas: bytes/buffers, borrowed views, file/path/process/env, networking, and formatting
 
 ## Stdlib Status
 
@@ -378,7 +378,7 @@ See [ROADMAP.md](ROADMAP.md) for the full implementation plan with syntax, rules
 | **13** | Tooling | Not started |
 | **14** | Runtime (C, then Concrete) | Not started |
 
-Next critical path: **optimization, ABI/layout refinement, and kernel formalization.** Structured diagnostics are complete across all semantic passes. The legacy AST backend has been removed.
+Next critical path: **ABI/layout refinement first, then `newtype`, small SSA optimization, formalization, and stdlib growth.** Structured diagnostics are complete across all semantic passes. The legacy AST backend has been removed.
 
 ### What fits the philosophy and what does not
 
