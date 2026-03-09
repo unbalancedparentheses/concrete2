@@ -11,6 +11,9 @@ Source Text
   Parse ─── String → List Module
     │
     ▼
+  Resolve ── List Module → List ResolvedModule
+    │
+    ▼
   Check ─── List Module → Unit
     │
     ▼
@@ -63,12 +66,44 @@ Source Text
 
 ---
 
-## 2. Check
+## 2. Resolve
+
+**Signature:** `resolveProgram : List Module → Except Diagnostics (List ResolvedModule)`
+
+**Preconditions:**
+- Syntactically valid AST from Parse with module files resolved.
+
+**Postconditions:**
+- All name references validated: function calls, struct/enum literals, static method calls, function references, variable identifiers.
+- Deep type validation: all type names in annotations, parameters, return types, generics, refs, arrays, and function pointer types are known.
+- `Self` only used inside impl/trait-impl blocks.
+- Trait impl completeness checked: all required methods provided (name-level, not signature-level).
+- Import validation: imported modules exist, imported symbols are public.
+- Submodule definitions registered in global scope.
+
+**What Resolve does NOT check:**
+- **Instance method calls (`.methodCall`)** are skipped entirely. The method name depends on the receiver type, which is only known after type checking. This is an intentional boundary — method resolution requires type information that only Check can provide.
+- **Trait impl signature compatibility** — Check owns parameter/return type agreement.
+- **Type correctness** — Resolve only checks that names exist, not that types are used correctly.
+
+**Error conditions:**
+- Unknown function, struct type, enum, enum variant, static method, function reference.
+- Unknown type name in any type position.
+- `Self` outside impl block.
+- Trait impl missing a required method or referencing unknown trait.
+- Import referencing unknown module or non-public symbol.
+
+**Invariant established:** All name references resolve to known definitions. Types are named validly. Imports reference existing public symbols.
+
+---
+
+## 3. Check
 
 **Signature:** `checkProgram : List Module → Except String Unit`
 
 **Preconditions:**
 - Syntactically valid AST from Parse.
+- All names validated by Resolve (no unknown functions, types, or imports).
 
 **Postconditions:**
 - Types are consistent across expressions, statements, and function signatures.
@@ -87,7 +122,7 @@ Source Text
 
 ---
 
-## 3. Elab (Elaboration)
+## 4. Elab (Elaboration)
 
 **Signature:** `elabProgram : List Module → Except String (List CModule)`
 
@@ -111,7 +146,7 @@ Source Text
 
 ---
 
-## 4. CoreCanonicalize
+## 5. CoreCanonicalize
 
 **Signature:** `canonicalizeProgram : List CModule → List CModule`
 
@@ -131,7 +166,7 @@ Source Text
 
 ---
 
-## 5. CoreCheck
+## 6. CoreCheck
 
 **Signature:** `coreCheckProgram : List CModule → Except String Unit`
 
@@ -154,7 +189,7 @@ Source Text
 
 ---
 
-## 6. Mono (Monomorphization)
+## 7. Mono (Monomorphization)
 
 **Signature:** `monoProgram : List CModule → Except String (List CModule)`
 
@@ -174,7 +209,7 @@ Source Text
 
 ---
 
-## 7. Lower
+## 8. Lower
 
 **Signature:** `lowerModule : CModule → SModule`
 
@@ -196,7 +231,7 @@ Source Text
 
 ---
 
-## 8. SSAVerify
+## 9. SSAVerify
 
 **Signature:** `ssaVerifyProgram : List SModule → Except String Unit`
 
@@ -222,7 +257,7 @@ Source Text
 
 ---
 
-## 9. SSACleanup
+## 10. SSACleanup
 
 **Signature:** `ssaCleanupProgram : List SModule → List SModule`
 
@@ -242,7 +277,7 @@ Source Text
 
 ---
 
-## 10. EmitSSA
+## 11. EmitSSA
 
 **Signature:** `emitSSAProgram : List SModule → String`
 
@@ -270,6 +305,7 @@ Source Text
 | Property | Established by | Relied upon by |
 |----------|---------------|----------------|
 | Syntactic validity | Parse | All subsequent passes |
+| Name resolution | Resolve | Check, Elab (names exist, imports valid) |
 | Type consistency | Check | Elab, CoreCheck |
 | Linearity | Check | (enforced at surface level) |
 | Capabilities | Check, CoreCheck | EmitSSA (no runtime checks) |
