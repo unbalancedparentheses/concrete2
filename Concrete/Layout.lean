@@ -27,6 +27,36 @@ def lookupEnum (ctx : Ctx) (name : String) : Option CEnumDef :=
 -- Type size (bytes)
 -- ============================================================
 
+/-- Natural alignment of a type in bytes. -/
+partial def tyAlign (ctx : Ctx) : Ty → Nat
+  | .int | .uint | .float64 => 8
+  | .i32 | .u32 | .float32 => 4
+  | .i16 | .u16 => 2
+  | .i8 | .u8 | .char | .bool => 1
+  | .unit => 1
+  | .string => 8  -- contains ptr and i64, both align 8
+  | .ref _ | .refMut _ | .ptrMut _ | .ptrConst _ => 8
+  | .fn_ _ _ _ | .heap _ | .heapArray _ => 8
+  | .generic "Heap" _ | .generic "HeapArray" _ => 8
+  | .generic "Vec" _ => 8
+  | .generic "HashMap" _ => 8
+  | .named name | .generic name _ =>
+    match lookupStruct ctx name with
+    | some sd => sd.fields.foldl (fun maxA (_, ft) => Nat.max maxA (tyAlign ctx ft)) 1
+    | none =>
+      match lookupEnum ctx name with
+      | some ed => Nat.max 4 (ed.variants.foldl (fun maxA (_, vfields) =>
+          vfields.foldl (fun a (_, ft) => Nat.max a (tyAlign ctx ft)) maxA) 1)
+      | none => 8
+  | .array elem _ => tyAlign ctx elem
+  | .never | .placeholder => 1
+  | .typeVar _ => 8
+
+/-- Round `n` up to the next multiple of `align`. -/
+def alignUp (n : Nat) (align : Nat) : Nat :=
+  if align <= 1 then n
+  else ((n + align - 1) / align) * align
+
 /-- Byte size of a type. Used for malloc/alloca sizing and enum layout. -/
 partial def tySize (ctx : Ctx) : Ty → Nat
   | .int | .uint | .float64 => 8
@@ -43,14 +73,22 @@ partial def tySize (ctx : Ctx) : Ty → Nat
   | .named name | .generic name _ =>
     match lookupStruct ctx name with
     | some sd =>
-      sd.fields.foldl (fun acc (_, ft) => acc + tySize ctx ft) 0
+      let (sz, _) := sd.fields.foldl (fun (acc, _) (_, ft) =>
+        let aligned := alignUp acc (tyAlign ctx ft)
+        (aligned + tySize ctx ft, ())) (0, ())
+      alignUp sz (sd.fields.foldl (fun maxA (_, ft) => Nat.max maxA (tyAlign ctx ft)) 1)
     | none =>
       match lookupEnum ctx name with
       | some ed =>
         let maxPayload := ed.variants.foldl (fun maxSz (_, vfields) =>
-          let sz := vfields.foldl (fun acc (_, ft) => acc + tySize ctx ft) 0
-          Nat.max maxSz sz) 0
-        4 + maxPayload  -- i32 tag + payload
+          let sz := vfields.foldl (fun (acc, _) (_, ft) =>
+            let aligned := alignUp acc (tyAlign ctx ft)
+            (aligned + tySize ctx ft, ())) (0, ())
+          Nat.max maxSz sz.1) 0
+        let payloadAlign := ed.variants.foldl (fun maxA (_, vfields) =>
+          vfields.foldl (fun a (_, ft) => Nat.max a (tyAlign ctx ft)) maxA) 1
+        let payloadStart := alignUp 4 payloadAlign
+        alignUp (payloadStart + maxPayload) (Nat.max 4 payloadAlign)
       | none => 8
   | .array elem n => tySize ctx elem * n
   | .never | .placeholder => 0
@@ -63,16 +101,36 @@ def fieldOffset (ctx : Ctx) (structName fieldName : String) : Nat :=
     let (offset, _) := sd.fields.foldl (fun (acc : Nat × Bool) (n, t) =>
       let (off, found) := acc
       if found then (off, true)
-      else if n == fieldName then (off, true)
-      else (off + tySize ctx t, false)) (0, false)
+      else
+        let aligned := alignUp off (tyAlign ctx t)
+        if n == fieldName then (aligned, true)
+        else (aligned + tySize ctx t, false)) (0, false)
     offset
   | none => 0
 
 /-- Maximum payload size across all variants of an enum. -/
 def enumPayloadSize (ctx : Ctx) (ed : CEnumDef) : Nat :=
   ed.variants.foldl (fun maxSz (_, vfields) =>
-    let sz := vfields.foldl (fun acc (_, ft) => acc + tySize ctx ft) 0
-    Nat.max maxSz sz) 0
+    let sz := vfields.foldl (fun (acc, _) (_, ft) =>
+      let aligned := alignUp acc (tyAlign ctx ft)
+      (aligned + tySize ctx ft, ())) (0, ())
+    Nat.max maxSz sz.1) 0
+
+/-- Byte offset from start of enum to payload (after i32 tag, aligned). -/
+def enumPayloadOffset (ctx : Ctx) (ed : CEnumDef) : Nat :=
+  let payloadAlign := ed.variants.foldl (fun maxA (_, vfields) =>
+    vfields.foldl (fun a (_, ft) => Nat.max a (tyAlign ctx ft)) maxA) 1
+  alignUp 4 payloadAlign
+
+/-- Byte offset of a field within a variant's payload (aligned). -/
+def variantFieldOffset (ctx : Ctx) (fields : List (String × Ty)) (idx : Nat) : Nat :=
+  let (off, _, _) := fields.foldl (fun (acc, i, done) (_, ft) =>
+    if done then (acc, i + 1, true)
+    else
+      let aligned := alignUp acc (tyAlign ctx ft)
+      if i == idx then (aligned, i + 1, true)
+      else (aligned + tySize ctx ft, i + 1, false)) (0, 0, false)
+  off
 
 -- ============================================================
 -- Pass-by-pointer ABI

@@ -413,21 +413,22 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
     let baseVal := SVal.reg dst ty
     -- Store tag as i32 at offset 0
     emit (.store (.intConst (Int.ofNat vidx) .i32) baseVal)
-    -- Store fields starting at byte offset 4 (after i32 tag)
-    -- First GEP past the tag: gep i32, ptr, 1 → offset 4
+    -- GEP to payload using aligned offset (after i32 tag, with padding)
+    let layoutCtx ← getLayoutCtx
+    let vfields ← variantFields enumName variant
+    let s ← getState
+    let ed := s.enumDefs.find? fun ed => ed.name == enumName
+    let payloadOff := match ed with
+      | some ed => Layout.enumPayloadOffset layoutCtx ed
+      | none => 4
     let payloadPtr ← freshReg
-    emit (.gep payloadPtr baseVal [.intConst 1 .int] .i32)
-    let mut fieldOffset : Int := 0
-    for (_, (_, fieldExpr)) in enumerate fields do
+    emit (.gep payloadPtr baseVal [.intConst (Int.ofNat payloadOff) .int] .i8)
+    for (idx, (_, fieldExpr)) in enumerate fields do
       let fVal ← lowerExpr fieldExpr
       let gepDst ← freshReg
-      if fieldOffset == 0 then
-        -- First field is right at the payload pointer
-        emit (.gep gepDst (.reg payloadPtr .i32) [.intConst 0 .int] .i8)
-      else
-        emit (.gep gepDst (.reg payloadPtr .i32) [.intConst fieldOffset .int] .i8)
+      let foff := Layout.variantFieldOffset layoutCtx vfields idx
+      emit (.gep gepDst (.reg payloadPtr .i8) [.intConst (Int.ofNat foff) .int] .i8)
       emit (.store fVal (.reg gepDst fieldExpr.ty))
-      fieldOffset := fieldOffset + Int.ofNat (← computeTySize fieldExpr.ty)
     let loadDst ← freshReg
     emit (.load loadDst baseVal ty)
     return .reg loadDst ty
@@ -464,20 +465,23 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
           emit (.binOp cmpDst .eq (.reg tagVal .int) (.intConst (Int.ofNat vidx) .int) .bool)
           terminateBlock (.condBr (.reg cmpDst .bool) armLabel nextCheck)
           startBlock armLabel
-          -- GEP past i32 tag to reach payload
+          -- GEP past i32 tag to payload using aligned offset
+          let layoutCtx ← getLayoutCtx
+          let vfields ← variantFields enumName variant
+          let s ← getState
+          let ed := s.enumDefs.find? fun ed => ed.name == enumName
+          let payloadOff := match ed with
+            | some ed => Layout.enumPayloadOffset layoutCtx ed
+            | none => 4
           let payloadGep ← freshReg
-          emit (.gep payloadGep scrVal [.intConst 1 .int] .i32)
-          let mut fieldOffset : Int := 0
-          for (_, (bname, bty)) in enumerate bindings do
+          emit (.gep payloadGep scrVal [.intConst (Int.ofNat payloadOff) .int] .i8)
+          for (fieldIdx, (bname, bty)) in enumerate bindings do
             let gepDst ← freshReg
-            if fieldOffset == 0 then
-              emit (.gep gepDst (.reg payloadGep .i32) [.intConst 0 .int] .i8)
-            else
-              emit (.gep gepDst (.reg payloadGep .i32) [.intConst fieldOffset .int] .i8)
+            let foff := Layout.variantFieldOffset layoutCtx vfields fieldIdx
+            emit (.gep gepDst (.reg payloadGep .i8) [.intConst (Int.ofNat foff) .int] .i8)
             let loadDst ← freshReg
             emit (.load loadDst (.reg gepDst bty) bty)
             setVar bname (.reg loadDst bty)
-            fieldOffset := fieldOffset + Int.ofNat (← computeTySize bty)
           lowerStmts body
           let bodyVal ← lastExprVal body ty
           let term ← currentBlockTerminated
@@ -658,14 +662,22 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
     -- Err path: return the whole enum
     startBlock errLabel
     terminateBlock (.ret (some iVal))
-    -- Ok path: extract the Ok value from payload
+    -- Ok path: extract the Ok value from payload using aligned offset
     startBlock okLabel
+    let layoutCtx ← getLayoutCtx
+    let resultEnumName := match inner.ty with
+      | .named n => n
+      | .generic n _ => n
+      | _ => "Result"
+    let s ← getState
+    let ed := s.enumDefs.find? fun ed => ed.name == resultEnumName
+    let payloadOff := match ed with
+      | some ed => Layout.enumPayloadOffset layoutCtx ed
+      | none => 8
     let payloadGep ← freshReg
-    emit (.gep payloadGep iVal [.intConst 1 .int] .i32)
-    let valueGep ← freshReg
-    emit (.gep valueGep (.reg payloadGep .i32) [.intConst 0 .int] .i8)
+    emit (.gep payloadGep iVal [.intConst (Int.ofNat payloadOff) .int] .i8)
     let loadDst ← freshReg
-    emit (.load loadDst (.reg valueGep ty) ty)
+    emit (.load loadDst (.reg payloadGep ty) ty)
     return .reg loadDst ty
 
   | .allocCall inner _allocExpr _ty =>

@@ -448,12 +448,8 @@ private def emitStructTypes (s : EmitSSAState) : EmitSSAState :=
   ) s
 
 private def emitEnumTypes (s : EmitSSAState) : EmitSSAState :=
+  let ctx := layoutCtxOf s
   s.enumDefs.foldl (fun s ed =>
-    -- Compute max payload size
-    let maxPayload := ed.variants.foldl (fun (acc : Nat) (_, fields) =>
-      let sz := fields.foldl (fun (a : Nat) (_, ft) => a + ssaTySize s ft) 0
-      if sz > acc then sz else acc
-    ) (0 : Nat)
     -- Emit variant types
     let s := ed.variants.foldl (fun s (vn, fields) =>
       if fields.isEmpty then
@@ -462,7 +458,9 @@ private def emitEnumTypes (s : EmitSSAState) : EmitSSAState :=
         let fieldTypes := ", ".intercalate (fields.map fun (_, t) => ssaTyToLLVM s t)
         emit s s!"%variant.{ed.name}.{vn} = type \{ {fieldTypes} }"
     ) s
-    let payloadBytes := if maxPayload == 0 then 1 else maxPayload
+    -- Use aligned total size: byte array = totalSize - 4 (i32 tag)
+    let totalSize := Layout.tySize ctx (.named ed.name)
+    let payloadBytes := if totalSize <= 4 then 1 else totalSize - 4
     emit s s!"%enum.{ed.name} = type \{ i32, [{payloadBytes} x i8] }"
   ) s
 
@@ -669,16 +667,14 @@ private def getVecBuiltinsIR : String :=
     ++ s!"  %slot = getelementptr i8, ptr %data, i64 %offset\n"
     ++ s!"  %val = load i64, ptr %slot\n"
     ++ s!"  %res = alloca %enum.Option\n"
-    ++ s!"  %tag = getelementptr inbounds %enum.Option, ptr %res, i32 0, i32 0\n"
-    ++ s!"  store i32 0, ptr %tag\n"
-    ++ s!"  %payload = getelementptr inbounds %enum.Option, ptr %res, i32 0, i32 1\n"
+    ++ s!"  store i32 0, ptr %res\n"
+    ++ s!"  %payload = getelementptr i8, ptr %res, i64 8\n"
     ++ s!"  store i64 %val, ptr %payload\n"
     ++ s!"  %r = load %enum.Option, ptr %res\n"
     ++ s!"  ret %enum.Option %r\n"
     ++ s!"none:\n"
     ++ s!"  %res2 = alloca %enum.Option\n"
-    ++ s!"  %tag2 = getelementptr inbounds %enum.Option, ptr %res2, i32 0, i32 0\n"
-    ++ s!"  store i32 1, ptr %tag2\n"
+    ++ s!"  store i32 1, ptr %res2\n"
     ++ s!"  %r2 = load %enum.Option, ptr %res2\n"
     ++ s!"  ret %enum.Option %r2\n"
     ++ s!"}\n\n"
@@ -787,14 +783,11 @@ def emitSModule (s : EmitSSAState) (m : SModule) : EmitSSAState :=
       let fieldTypes := ", ".intercalate (sd.fields.map fun (_, t) => ssaTyToLLVM s t)
       emit s s!"%struct.{sd.name} = type \{ {fieldTypes} }"
   ) s
+  let ctx := layoutCtxOf s
   let s := m.enums.foldl (fun s ed =>
     if s.emittedTypes.contains ed.name then s
     else
       let s := { s with emittedTypes := ed.name :: s.emittedTypes }
-      let maxPayload := ed.variants.foldl (fun (acc : Nat) (_, fields) =>
-        let sz := fields.foldl (fun (a : Nat) (_, ft) => a + ssaTySize s ft) 0
-        if sz > acc then sz else acc
-      ) (0 : Nat)
       let s := ed.variants.foldl (fun s (vn, fields) =>
         if fields.isEmpty then
           emit s s!"%variant.{ed.name}.{vn} = type \{}"
@@ -802,7 +795,8 @@ def emitSModule (s : EmitSSAState) (m : SModule) : EmitSSAState :=
           let fieldTypes := ", ".intercalate (fields.map fun (_, t) => ssaTyToLLVM s t)
           emit s s!"%variant.{ed.name}.{vn} = type \{ {fieldTypes} }"
       ) s
-      let payloadBytes := if maxPayload == 0 then 1 else maxPayload
+      let totalSize := Layout.tySize ctx (.named ed.name)
+      let payloadBytes := if totalSize <= 4 then 1 else totalSize - 4
       emit s s!"%enum.{ed.name} = type \{ i32, [{payloadBytes} x i8] }"
   ) s
   -- String literal globals
@@ -846,10 +840,10 @@ def emitSSAProgram (modules : List SModule) : String :=
   -- Builtin enum types used by string_to_int, get_env, etc.
   let s := emit s "%variant.Result.Ok = type { i64 }"
   let s := emit s "%variant.Result.Err = type { i64 }"
-  let s := emit s "%enum.Result = type { i32, [8 x i8] }"
+  let s := emit s "%enum.Result = type { i32, [12 x i8] }"
   let s := emit s "%variant.Option.Some = type { i64 }"
   let s := emit s "%variant.Option.None = type {}"
-  let s := emit s "%enum.Option = type { i32, [8 x i8] }"
+  let s := emit s "%enum.Option = type { i32, [12 x i8] }"
   -- Mark these as emitted so user enums with the same names won't duplicate
   let s := { s with emittedTypes := ["Result", "Option"] ++ s.emittedTypes }
   let s := emit s ""
