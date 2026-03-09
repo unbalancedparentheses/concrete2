@@ -76,6 +76,209 @@ structure TypeEnv where
 
 abbrev CheckM := ExceptT String (StateM TypeEnv)
 
+inductive CheckError where
+  -- Slice 1: Name/variable/linearity
+  | selfOutsideImpl
+  | undeclaredVariable (name : String)
+  | assignToUndeclaredVariable (name : String)
+  | variableFrozenByBorrow (name : String)
+  | cannotMoveLinearBorrowed (name : String)
+  | variableUsedAfterMove (name : String)
+  | variableReservedByDefer (name : String)
+  | cannotConsumeLinearInLoop (name : String)
+  | linearVariableNeverConsumed (name : String)
+  | matchConsumptionDisagreement (name : String)
+  | breakSkipsUnconsumedLinear (name : String)
+  | continueSkipsUnconsumedLinear (name : String)
+  | linearConsumedOneBranchNotOther (name : String)
+  | linearConsumedNoBranch (name : String) (ctx : String)
+  | borrowRefShadows (ref : String)
+  | borrowRegionShadows (region : String)
+  | unknownLoopLabel (label : String)
+  | assignToImmutable (name : String)
+  | assignToFrozen (name : String)
+  | assignToBorrowed (name : String)
+  -- Slice 2: Type mismatch / operator
+  | typeMismatch (ctx : String) (expected : String) (actual : String)
+  | bitwiseOpNotInteger (ty : String)
+  | bitwiseNotNotInteger (ty : String)
+  | conditionNotBool (ctx : String) (ty : String)
+  | arrayIndexNotInteger (ty : Option String)
+  | indexingNonArray (ty : Option String)
+  | cannotCast (fromTy : String) (toTy : String)
+  | cannotDerefNonRef
+  | whileBreakTypeMismatch (breakTy : String) (elseTy : String)
+  | breakTypeMismatch (valTy : String) (prevTy : String)
+  | cannotAssignThroughNonMutRef
+  | arrayLiteralEmpty
+  -- Slice 3: Borrow/escape/freeze
+  | cannotBorrowMoved (name : String)
+  | cannotBorrowMutablyBorrowed (name : String)
+  | cannotMutBorrowAlreadyBorrowed (name : String)
+  | cannotMutBorrowAlreadyMutBorrowed (name : String)
+  | cannotMutBorrowImmutable (name : String)
+  | referenceEscapesBorrowBlock (name : String)
+  | variableAlreadyMutBorrowed (name : String)
+  | cannotMutBorrowImmBorrowed (name : String)
+  | cannotImmBorrowMutBorrowed (name : String)
+  -- Slice 4: Capability
+  | missingCapability (callee : String) (cap : String) (caller : String)
+  | traitBoundNotSatisfied (typeName : String) (traitName : String) (context : String)
+  | cannotInferCapVariable (cap : String) (fnName : String)
+  -- Slice 5: Struct/enum/field + function calls
+  | unknownStructType (name : String)
+  | structHasNoField (structName : String) (fieldName : String)
+  | missingFieldInLiteral (fieldName : String) (containerDesc : String)
+  | unknownFieldInLiteral (fieldName : String) (containerDesc : String)
+  | fieldAccessNonStruct
+  | heapAccessRequired (field : String) (ty : String)
+  | arrowAccessNotHeap (ty : String)
+  | arrowAccessNonStruct
+  | arrowAssignNotHeap (ty : String)
+  | arrowAssignNonStruct
+  | unknownVariant (variant : String) (enumName : String)
+  | unknownEnumType (name : String)
+  | matchArmWrongEnum (armEnum : String) (scrutineeEnum : String)
+  | duplicateMatchArm (variant : String)
+  | variantFieldCountMismatch (variant : String) (expected : Nat) (actual : Nat)
+  | nonExhaustiveMatch (missingVariant : String)
+  | wrongArgCount (calleeDesc : String) (expected : Nat) (actual : Nat)
+  | undeclaredFunction (name : String)
+  | noMethodOnType (method : String) (typeName : String)
+  | noMethodOnTypeVar (method : String) (typeVar : String)
+  | methodCallOnNonNamedType
+  | unknownFunctionRef (name : String)
+  | builtinWrongArgCount (fnName : String) (expected : Nat)
+  | builtinWrongTypeArgCount (fnName : String) (desc : String)
+  | builtinWrongFirstArg (fnName : String) (expectedDesc : String) (actualTy : String)
+  | builtinBadKeyType (fnName : String) (ty : String)
+  | destroyRequiresNamed (ty : String)
+  | typeDoesNotImplDestroy (typeName : String)
+  | freeRequiresHeap (ty : String)
+  | tryRequiresResult
+  | tryRequiresOkErrVariants
+  | tryOkNoField (enumName : String)
+  -- Slice 6: Control flow/defer + module validation
+  | breakOutsideLoop
+  | breakInDefer
+  | continueOutsideLoop
+  | continueInDefer
+  | deferBodyNotCall
+  | copyDestroyConflict (typeName : String)
+  | copyFieldNotCopy (structName : String) (fieldName : String)
+  | builtinTraitRedeclared
+  | reservedName (name : String)
+  | unknownTrait (name : String)
+  | missingTraitMethod (typeName : String) (methodName : String)
+  | traitMethodRetTyMismatch (methodName : String) (expectedRetTy : String) (actualRetTy : String)
+  | unknownModule (name : String)
+  | notPublicInModule (symbol : String) (moduleName : String)
+
+def CheckError.message : CheckError → String
+  -- Slice 1
+  | .selfOutsideImpl => "Self can only be used inside impl blocks"
+  | .undeclaredVariable name => s!"use of undeclared variable '{name}'"
+  | .assignToUndeclaredVariable name => s!"assignment to undeclared variable '{name}'"
+  | .variableFrozenByBorrow name => s!"variable '{name}' is frozen by borrow block"
+  | .cannotMoveLinearBorrowed name => s!"cannot move linear variable '{name}': variable is borrowed"
+  | .variableUsedAfterMove name => s!"linear variable '{name}' used after move"
+  | .variableReservedByDefer name => s!"variable '{name}' is reserved by defer"
+  | .cannotConsumeLinearInLoop name => s!"cannot consume linear variable '{name}' inside a loop (declared outside the loop)"
+  | .linearVariableNeverConsumed name => s!"linear variable '{name}' was never consumed"
+  | .matchConsumptionDisagreement name => s!"match arms disagree on consumption of '{name}'"
+  | .breakSkipsUnconsumedLinear name => s!"break would skip unconsumed linear variable '{name}'"
+  | .continueSkipsUnconsumedLinear name => s!"continue would skip unconsumed linear variable '{name}'"
+  | .linearConsumedOneBranchNotOther name => s!"linear variable '{name}' consumed in one branch of if/else but not the other"
+  | .linearConsumedNoBranch name ctx => s!"linear variable '{name}' consumed in {ctx} then-branch (no else branch to match)"
+  | .borrowRefShadows ref => s!"borrow ref '{ref}' shadows existing name"
+  | .borrowRegionShadows region => s!"borrow region '{region}' shadows existing name"
+  | .unknownLoopLabel label => s!"unknown loop label '{label}'"
+  | .assignToImmutable name => s!"cannot assign to immutable variable '{name}'"
+  | .assignToFrozen name => s!"cannot assign to '{name}': variable is frozen by borrow block"
+  | .assignToBorrowed name => s!"cannot assign to '{name}': variable is borrowed"
+  -- Slice 2
+  | .typeMismatch ctx expected actual => s!"type mismatch in {ctx}: expected {expected}, got {actual}"
+  | .bitwiseOpNotInteger ty => s!"type mismatch in bitwise op: expected integer type, got {ty}"
+  | .bitwiseNotNotInteger ty => s!"type mismatch in bitwise not: expected integer type, got {ty}"
+  | .conditionNotBool ctx ty => s!"{ctx} condition must be bool, got {ty}"
+  | .arrayIndexNotInteger (some ty) => s!"type mismatch: array index must be an integer type, got {ty}"
+  | .arrayIndexNotInteger none => "type mismatch: array index must be an integer type"
+  | .indexingNonArray (some ty) => s!"type mismatch: indexing into non-array type {ty}"
+  | .indexingNonArray none => "type mismatch: indexing into non-array type"
+  | .cannotCast fromTy toTy => s!"cannot cast {fromTy} to {toTy}"
+  | .cannotDerefNonRef => "cannot dereference non-reference type"
+  | .whileBreakTypeMismatch breakTy elseTy => s!"while-expression break type '{breakTy}' does not match else type '{elseTy}'"
+  | .breakTypeMismatch valTy prevTy => s!"break value type '{valTy}' does not match previous break type '{prevTy}'"
+  | .cannotAssignThroughNonMutRef => "cannot assign through non-mutable reference"
+  | .arrayLiteralEmpty => "array literal cannot be empty"
+  -- Slice 3
+  | .cannotBorrowMoved name => s!"cannot borrow '{name}': already moved"
+  | .cannotBorrowMutablyBorrowed name => s!"cannot borrow '{name}': already mutably borrowed"
+  | .cannotMutBorrowAlreadyBorrowed name => s!"cannot mutably borrow '{name}': already borrowed"
+  | .cannotMutBorrowAlreadyMutBorrowed name => s!"cannot mutably borrow '{name}': already mutably borrowed"
+  | .cannotMutBorrowImmutable name => s!"cannot take mutable borrow of immutable variable '{name}'"
+  | .referenceEscapesBorrowBlock name => s!"reference '{name}' cannot escape its borrow block"
+  | .variableAlreadyMutBorrowed name => s!"variable '{name}' is already mutably borrowed"
+  | .cannotMutBorrowImmBorrowed name => s!"cannot mutably borrow '{name}': already immutably borrowed"
+  | .cannotImmBorrowMutBorrowed name => s!"cannot immutably borrow '{name}': already mutably borrowed"
+  -- Slice 4
+  | .missingCapability callee cap caller => s!"function '{callee}' requires capability '{cap}' but '{caller}' does not declare it"
+  | .traitBoundNotSatisfied typeName traitName context => s!"type '{typeName}' does not implement trait '{traitName}' required by {context}"
+  | .cannotInferCapVariable cap fnName => s!"cannot infer capability variable '{cap}' for call to '{fnName}'"
+  -- Slice 5
+  | .unknownStructType name => s!"unknown struct type '{name}'"
+  | .structHasNoField structName fieldName => s!"struct '{structName}' has no field '{fieldName}'"
+  | .missingFieldInLiteral fieldName containerDesc => s!"missing field '{fieldName}' in {containerDesc}"
+  | .unknownFieldInLiteral fieldName containerDesc => s!"unknown field '{fieldName}' in {containerDesc}"
+  | .fieldAccessNonStruct => "field access on non-struct type"
+  | .heapAccessRequired field ty => s!"cannot access field '{field}' on {ty} with '.'; use '->' for heap access"
+  | .arrowAccessNotHeap ty => s!"arrow access '->' requires Heap<T> or HeapArray<T> type, got {ty}"
+  | .arrowAccessNonStruct => "arrow access '->' on non-struct inner type"
+  | .arrowAssignNotHeap ty => s!"arrow assign '->' requires Heap<T> type, got {ty}"
+  | .arrowAssignNonStruct => "arrow assign on non-struct inner type"
+  | .unknownVariant variant enumName => s!"unknown variant '{variant}' in enum '{enumName}'"
+  | .unknownEnumType name => s!"unknown enum type '{name}'"
+  | .matchArmWrongEnum armEnum scrutineeEnum => s!"match arm has enum '{armEnum}' but scrutinee is '{scrutineeEnum}'"
+  | .duplicateMatchArm variant => s!"duplicate match arm for variant '{variant}'"
+  | .variantFieldCountMismatch variant expected actual => s!"variant '{variant}' has {expected} fields but arm binds {actual}"
+  | .nonExhaustiveMatch missingVariant => s!"non-exhaustive match: missing variant '{missingVariant}'"
+  | .wrongArgCount calleeDesc expected actual => s!"{calleeDesc} expects {expected} arguments, got {actual}"
+  | .undeclaredFunction name => s!"call to undeclared function '{name}'"
+  | .noMethodOnType method typeName => s!"no method '{method}' on type '{typeName}'"
+  | .noMethodOnTypeVar method typeVar => s!"no method '{method}' for type variable '{typeVar}'"
+  | .methodCallOnNonNamedType => "method call on non-named type"
+  | .unknownFunctionRef name => s!"unknown function '{name}' in function reference"
+  | .builtinWrongArgCount fnName expected =>
+    if expected == 0 then s!"{fnName}() takes no arguments"
+    else if expected == 1 then s!"{fnName}() takes exactly 1 argument"
+    else s!"{fnName}() takes exactly {expected} arguments"
+  | .builtinWrongTypeArgCount fnName desc => s!"{fnName} requires exactly {desc}"
+  | .builtinWrongFirstArg fnName expectedDesc actualTy => s!"{fnName}() requires {expectedDesc}, got {actualTy}"
+  | .builtinBadKeyType fnName ty => s!"{fnName}() key type must be Int or String, got {ty}"
+  | .destroyRequiresNamed ty => s!"destroy() requires a named type, got {ty}"
+  | .typeDoesNotImplDestroy typeName => s!"type '{typeName}' does not implement Destroy"
+  | .freeRequiresHeap ty => s!"free() requires Heap<T> type, got {ty}"
+  | .tryRequiresResult => "? operator requires a Result enum type"
+  | .tryRequiresOkErrVariants => "? operator requires an enum with Ok and Err variants"
+  | .tryOkNoField enumName => s!"Ok variant of '{enumName}' has no value field"
+  -- Slice 6
+  | .breakOutsideLoop => "break outside of loop"
+  | .breakInDefer => "break is not allowed inside defer"
+  | .continueOutsideLoop => "continue outside of loop"
+  | .continueInDefer => "continue is not allowed inside defer"
+  | .deferBodyNotCall => "defer body must be a function call"
+  | .copyDestroyConflict typeName => s!"type '{typeName}' implements Destroy and cannot be Copy"
+  | .copyFieldNotCopy structName fieldName => s!"Copy struct '{structName}' contains non-copy field '{fieldName}'"
+  | .builtinTraitRedeclared => "'Destroy' is a built-in trait"
+  | .reservedName name => s!"'{name}' is a reserved identifier"
+  | .unknownTrait name => s!"unknown trait '{name}'"
+  | .missingTraitMethod typeName methodName => s!"trait impl for '{typeName}' is missing method '{methodName}'"
+  | .traitMethodRetTyMismatch methodName expectedRetTy actualRetTy => s!"method '{methodName}' signature does not match trait definition: expected return type {expectedRetTy}, got {actualRetTy}"
+  | .unknownModule name => s!"unknown module '{name}'"
+  | .notPublicInModule symbol moduleName => s!"'{symbol}' is not public in module '{moduleName}'"
+
+def throwCheck (e : CheckError) : CheckM α := throw e.message
+
 -- ============================================================
 -- Helpers
 -- ============================================================
@@ -163,7 +366,7 @@ def resolveType (ty : Ty) : CheckM Ty := do
     if name == "Self" then
       match env.currentImplType with
       | some t => return t
-      | none => throw "Self can only be used inside impl blocks"
+      | none => throwCheck .selfOutsideImpl
     -- Check if it's a type parameter first
     else if env.currentTypeParams.contains name then return .typeVar name
     else
@@ -317,7 +520,7 @@ def expectTy (expected actual : Ty) (ctx : String) : CheckM Unit := do
   -- .string is compatible with .named "String"
   else if (expectedR == .string && actualR == .named "String")
        || (expectedR == .named "String" && actualR == .string) then return ()
-  else throw s!"type mismatch in {ctx}: expected {tyToString expected}, got {tyToString actual}"
+  else throwCheck (.typeMismatch ctx (tyToString expected) (tyToString actual))
 
 -- ============================================================
 -- Capability checking
@@ -336,7 +539,7 @@ def checkCapabilities (calleeName : String) (calleeCapSet : CapSet) : CheckM Uni
   -- Check each callee concrete cap exists in caller (concrete or variable)
   for cap in calleeCaps do
     unless callerCaps.contains cap || callerVars.contains cap do
-      throw s!"function '{calleeName}' requires capability '{cap}' but '{env.currentFnName}' does not declare it"
+      throwCheck (.missingCapability calleeName cap env.currentFnName)
 
 -- ============================================================
 -- Linearity: consume and check
@@ -349,7 +552,7 @@ def useVar (name : String) : CheckM Unit := do
   | none => pure ()  -- not found (might be a constant or function)
   | some info =>
     if info.state == .frozen then
-      throw s!"variable '{name}' is frozen by borrow block"
+      throwCheck (.variableFrozenByBorrow name)
     if info.isCopy then return ()
     if info.state == .unconsumed || info.state == .reserved then
       let vars' := env.vars.map fun (n, vi) =>
@@ -362,23 +565,23 @@ def useVar (name : String) : CheckM Unit := do
 def consumeVar (name : String) : CheckM Unit := do
   let env ← getEnv
   match env.vars.lookup name with
-  | none => throw s!"use of undeclared variable '{name}'"
+  | none => throwCheck (.undeclaredVariable name)
   | some info =>
     if info.isCopy then return ()  -- Copy types are never consumed
     let activeRefs := activeBorrowRefs env name
     if activeRefs.any (fun refInfo => match refInfo.ty with | .ref _ | .refMut _ => true | _ => false) then
-      throw s!"cannot move linear variable '{name}': variable is borrowed"
+      throwCheck (.cannotMoveLinearBorrowed name)
     match info.state with
     | .consumed =>
-      throw s!"linear variable '{name}' used after move"
+      throwCheck (.variableUsedAfterMove name)
     | .reserved =>
-      throw s!"variable '{name}' is reserved by defer"
+      throwCheck (.variableReservedByDefer name)
     | .frozen =>
-      throw s!"variable '{name}' is frozen by borrow block"
+      throwCheck (.variableFrozenByBorrow name)
     | .unconsumed | .used =>
       -- Loop depth check
       if info.loopDepth < env.loopDepth then
-        throw s!"cannot consume linear variable '{name}' inside a loop (declared outside the loop)"
+        throwCheck (.cannotConsumeLinearInLoop name)
       -- Mark consumed
       let vars' := env.vars.map fun (n, vi) =>
         if n == name then (n, { vi with state := .consumed })
@@ -399,7 +602,7 @@ def checkScopeExit (varNames : List String) : CheckM Unit := do
     match env.vars.lookup name with
     | some info =>
       if !info.isCopy && info.state != .consumed && info.state != .reserved then
-        throw s!"linear variable '{name}' was never consumed"
+        throwCheck (.linearVariableNeverConsumed name)
     | none => pure ()
 
 -- ============================================================
@@ -526,7 +729,7 @@ private def checkTraitBounds (bounds : List (String × List String)) (mapping : 
       | some tn =>
         for traitName in requiredTraits do
           if !(env.traitImpls.any fun (t, tr) => t == tn && tr == traitName) then
-            throw s!"type '{tn}' does not implement trait '{traitName}' required by {context}"
+            throwCheck (.traitBoundNotSatisfied tn traitName context)
       | none => pure ()  -- primitive types, skip bound checking
     | none => pure ()
 
@@ -568,7 +771,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
     | some info =>
       -- Reading a variable (not consuming). Check it's not already consumed.
       if !info.isCopy && info.state == .consumed then
-        throw s!"linear variable '{name}' used after move"
+        throwCheck (.variableUsedAfterMove name)
       useVar name
       return info.ty
     | none =>
@@ -577,7 +780,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       | some sig =>
         let paramTys := sig.params.map fun (_, t) => t
         return .fn_ paramTys sig.capSet sig.retTy
-      | none => throw s!"use of undeclared variable '{name}'"
+      | none => throwCheck (.undeclaredVariable name)
   | .binOp _ op lhs rhs =>
     -- Check lhs first (with hint), then use its type as hint for rhs
     let lTy ← checkExpr lhs hint
@@ -612,7 +815,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       else if isTypeVarL || isTypeVarR then return lTy
       else do
         if !isIntegerType lTyR then
-          throw s!"type mismatch in bitwise op: expected integer type, got {tyToString lTyR}"
+          throwCheck (.bitwiseOpNotInteger (tyToString lTyR))
         expectTy lTyR rTyR "bitwise operand types"
         return lTy
   | .unaryOp _ op operand =>
@@ -629,7 +832,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
     | .bitnot =>
       if isIntegerType ty then return ty
       else do
-        throw s!"type mismatch in bitwise not: expected integer type, got {tyToString ty}"
+        throwCheck (.bitwiseNotNotInteger (tyToString ty))
   | .arrowAccess _ obj field =>
     let objTy ← checkExpr obj
     -- obj must be Heap<T> or HeapArray<T>
@@ -640,19 +843,19 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       | .refMut (.heap t) => t
       | _ => .placeholder
     if innerTy == .placeholder then
-      throw s!"arrow access '->' requires Heap<T> or HeapArray<T> type, got {tyToString objTy}"
+      throwCheck (.arrowAccessNotHeap (tyToString objTy))
     -- Look up field on the inner type
     let structName := match innerTy with
       | .named n => n
       | .generic n _ => n
       | _ => ""
-    if structName == "" then throw s!"arrow access '->' on non-struct inner type"
+    if structName == "" then throwCheck .arrowAccessNonStruct
     match ← lookupStruct structName with
     | some sd =>
       match sd.fields.find? fun f => f.name == field with
       | some f => resolveType f.ty
-      | none => throw s!"struct '{structName}' has no field '{field}'"
-    | none => throw s!"unknown struct type '{structName}'"
+      | none => throwCheck (.structHasNoField structName field)
+    | none => throwCheck (.unknownStructType structName)
   | .allocCall _ inner allocExpr =>
     -- Check that caller has Alloc capability (needed to forward)
     checkCapabilities "with(Alloc)" (.concrete ["Alloc"])
@@ -664,7 +867,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
     -- while-as-expression: while cond { body } else { elseBody }
     let condTy ← checkExpr cond
     if condTy != .bool && !isIntegerType condTy then
-      throw s!"while condition must be bool, got {tyToString condTy}"
+      throwCheck (.conditionNotBool "while" (tyToString condTy))
     -- Save and set up loop context
     let env ← getEnv
     let savedLoopDepth := env.loopDepth
@@ -694,17 +897,17 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
     match breakTy with
     | some bTy =>
       if bTy != elseTy && elseTy != .never && bTy != .never then
-        throw s!"while-expression break type '{tyToString bTy}' does not match else type '{tyToString elseTy}'"
+        throwCheck (.whileBreakTypeMismatch (tyToString bTy) (tyToString elseTy))
       return elseTy
     | none => return elseTy
   | .call _ fnName typeArgs args =>
     -- Intercept abort() calls
     if fnName == "abort" then
-      if args.length != 0 then throw "abort() takes no arguments"
+      if args.length != 0 then throwCheck (.builtinWrongArgCount "abort" 0)
       return .never
     -- Intercept destroy() calls
     if fnName == "destroy" then
-      if args.length != 1 then throw "destroy() takes exactly 1 argument"
+      if args.length != 1 then throwCheck (.builtinWrongArgCount "destroy" 1)
       let arg := match args with | a :: _ => a | [] => Expr.intLit default 0
       let argTy ← checkExpr arg
       -- Look up impl Destroy for the type
@@ -712,7 +915,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
         | .named n => n
         | .generic n _ => n
         | _ => ""
-      if typeName == "" then throw s!"destroy() requires a named type, got {tyToString argTy}"
+      if typeName == "" then throwCheck (.destroyRequiresNamed (tyToString argTy))
       -- Search function signatures for TypeName_destroy
       let destroyFn ← lookupFn (typeName ++ "_destroy")
       match destroyFn with
@@ -722,10 +925,10 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
         | .ident _ varName => consumeVarIfExists varName
         | _ => pure ()
         return .unit
-      | none => throw s!"type '{typeName}' does not implement Destroy"
+      | none => throwCheck (.typeDoesNotImplDestroy typeName)
     -- Intercept alloc(val) calls
     if fnName == "alloc" then
-      if args.length != 1 then throw "alloc() takes exactly 1 argument"
+      if args.length != 1 then throwCheck (.builtinWrongArgCount "alloc" 1)
       -- Require Alloc capability
       checkCapabilities "alloc" (.concrete ["Alloc"])
       let arg := match args with | a :: _ => a | [] => Expr.intLit default 0
@@ -737,7 +940,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       return .heap argTy
     -- Intercept free(ptr) calls
     if fnName == "free" then
-      if args.length != 1 then throw "free() takes exactly 1 argument"
+      if args.length != 1 then throwCheck (.builtinWrongArgCount "free" 1)
       -- Require Alloc capability
       checkCapabilities "free" (.concrete ["Alloc"])
       let arg := match args with | a :: _ => a | [] => Expr.intLit default 0
@@ -749,17 +952,17 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
         | .ident _ varName => consumeVarIfExists varName
         | _ => pure ()
         return innerTy
-      | _ => throw s!"free() requires Heap<T> type, got {tyToString argTy}"
+      | _ => throwCheck (.freeRequiresHeap (tyToString argTy))
     -- Intercept vec_new::<T>()
     if fnName == "vec_new" then
-      if args.length != 0 then throw "vec_new() takes no arguments"
-      if typeArgs.length != 1 then throw "vec_new requires exactly 1 type argument: vec_new::<T>()"
+      if args.length != 0 then throwCheck (.builtinWrongArgCount "vec_new" 0)
+      if typeArgs.length != 1 then throwCheck (.builtinWrongTypeArgCount "vec_new" "1 type argument: vec_new::<T>()")
       checkCapabilities "vec_new" (.concrete ["Alloc"])
       let elemTy := match typeArgs with | t :: _ => t | [] => Ty.int
       return .generic "Vec" [elemTy]
     -- Intercept vec_push(&mut v, val)
     if fnName == "vec_push" then
-      if args.length != 2 then throw "vec_push() takes exactly 2 arguments"
+      if args.length != 2 then throwCheck (.builtinWrongArgCount "vec_push" 2)
       checkCapabilities "vec_push" (.concrete ["Alloc"])
       let vecArg := match args with | a :: _ => a | [] => Expr.intLit default 0
       let valArg := match args with | _ :: b :: _ => b | _ => Expr.intLit default 0
@@ -767,7 +970,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       let elemTy := match vecTy with
         | .refMut (.generic "Vec" [et]) => et
         | _ => Ty.placeholder
-      if elemTy == .placeholder then throw s!"vec_push() requires &mut Vec<T> as first argument, got {tyToString vecTy}"
+      if elemTy == .placeholder then throwCheck (.builtinWrongFirstArg "vec_push" "&mut Vec<T> as first argument" (tyToString vecTy))
       let valTy ← checkExpr valArg (some elemTy)
       expectTy elemTy valTy "vec_push() element argument"
       match valArg with
@@ -776,7 +979,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       return .unit
     -- Intercept vec_get(&v, idx)
     if fnName == "vec_get" then
-      if args.length != 2 then throw "vec_get() takes exactly 2 arguments"
+      if args.length != 2 then throwCheck (.builtinWrongArgCount "vec_get" 2)
       let vecArg := match args with | a :: _ => a | [] => Expr.intLit default 0
       let idxArg := match args with | _ :: b :: _ => b | _ => Expr.intLit default 0
       let vecTy ← checkExpr vecArg
@@ -784,13 +987,13 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
         | .ref (.generic "Vec" [et]) => et
         | .refMut (.generic "Vec" [et]) => et
         | _ => Ty.placeholder
-      if elemTy == .placeholder then throw s!"vec_get() requires &Vec<T> or &mut Vec<T> as first argument, got {tyToString vecTy}"
+      if elemTy == .placeholder then throwCheck (.builtinWrongFirstArg "vec_get" "&Vec<T> or &mut Vec<T> as first argument" (tyToString vecTy))
       let idxTy ← checkExpr idxArg (some .int)
       expectTy .int idxTy "vec_get() index argument"
       return elemTy
     -- Intercept vec_set(&mut v, idx, val)
     if fnName == "vec_set" then
-      if args.length != 3 then throw "vec_set() takes exactly 3 arguments"
+      if args.length != 3 then throwCheck (.builtinWrongArgCount "vec_set" 3)
       let vecArg := match args with | a :: _ => a | [] => Expr.intLit default 0
       let idxArg := match args with | _ :: b :: _ => b | _ => Expr.intLit default 0
       let valArg := match args with | _ :: _ :: c :: _ => c | _ => Expr.intLit default 0
@@ -798,7 +1001,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       let elemTy := match vecTy with
         | .refMut (.generic "Vec" [et]) => et
         | _ => Ty.placeholder
-      if elemTy == .placeholder then throw s!"vec_set() requires &mut Vec<T> as first argument, got {tyToString vecTy}"
+      if elemTy == .placeholder then throwCheck (.builtinWrongFirstArg "vec_set" "&mut Vec<T> as first argument" (tyToString vecTy))
       let idxTy ← checkExpr idxArg (some .int)
       expectTy .int idxTy "vec_set() index argument"
       let valTy ← checkExpr valArg (some elemTy)
@@ -809,54 +1012,54 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       return .unit
     -- Intercept vec_len(&v)
     if fnName == "vec_len" then
-      if args.length != 1 then throw "vec_len() takes exactly 1 argument"
+      if args.length != 1 then throwCheck (.builtinWrongArgCount "vec_len" 1)
       let vecArg := match args with | a :: _ => a | [] => Expr.intLit default 0
       let vecTy ← checkExpr vecArg
       let ok := match vecTy with
         | .ref (.generic "Vec" _) => true
         | .refMut (.generic "Vec" _) => true
         | _ => false
-      if !ok then throw s!"vec_len() requires &Vec<T> or &mut Vec<T> as argument, got {tyToString vecTy}"
+      if !ok then throwCheck (.builtinWrongFirstArg "vec_len" "&Vec<T> or &mut Vec<T> as argument" (tyToString vecTy))
       return .int
     -- Intercept vec_pop(&mut v)
     if fnName == "vec_pop" then
-      if args.length != 1 then throw "vec_pop() takes exactly 1 argument"
+      if args.length != 1 then throwCheck (.builtinWrongArgCount "vec_pop" 1)
       checkCapabilities "vec_pop" (.concrete ["Alloc"])
       let vecArg := match args with | a :: _ => a | [] => Expr.intLit default 0
       let vecTy ← checkExpr vecArg
       let elemTy := match vecTy with
         | .refMut (.generic "Vec" [et]) => et
         | _ => Ty.placeholder
-      if elemTy == .placeholder then throw s!"vec_pop() requires &mut Vec<T> as argument, got {tyToString vecTy}"
+      if elemTy == .placeholder then throwCheck (.builtinWrongFirstArg "vec_pop" "&mut Vec<T> as argument" (tyToString vecTy))
       return .generic "Option" [elemTy]
     -- Intercept vec_free(v)
     if fnName == "vec_free" then
-      if args.length != 1 then throw "vec_free() takes exactly 1 argument"
+      if args.length != 1 then throwCheck (.builtinWrongArgCount "vec_free" 1)
       checkCapabilities "vec_free" (.concrete ["Alloc"])
       let vecArg := match args with | a :: _ => a | [] => Expr.intLit default 0
       let vecTy ← checkExpr vecArg
       let ok := match vecTy with
         | .generic "Vec" _ => true
         | _ => false
-      if !ok then throw s!"vec_free() requires Vec<T> as argument, got {tyToString vecTy}"
+      if !ok then throwCheck (.builtinWrongFirstArg "vec_free" "Vec<T> as argument" (tyToString vecTy))
       match vecArg with
       | .ident _ varName => consumeVarIfExists varName
       | _ => pure ()
       return .unit
     -- Intercept map_new::<K, V>()
     if fnName == "map_new" then
-      if args.length != 0 then throw "map_new() takes no arguments"
-      if typeArgs.length != 2 then throw "map_new requires exactly 2 type arguments: map_new::<K, V>()"
+      if args.length != 0 then throwCheck (.builtinWrongArgCount "map_new" 0)
+      if typeArgs.length != 2 then throwCheck (.builtinWrongTypeArgCount "map_new" "2 type arguments: map_new::<K, V>()")
       checkCapabilities "map_new" (.concrete ["Alloc"])
       let kTy := match typeArgs with | t :: _ => t | [] => Ty.int
       let vTy := match typeArgs with | _ :: t :: _ => t | _ => Ty.int
       -- Validate key type is Int or String
       let keyOk := match kTy with | .int => true | .string => true | _ => false
-      if !keyOk then throw s!"map_new() key type must be Int or String, got {tyToString kTy}"
+      if !keyOk then throwCheck (.builtinBadKeyType "map_new" (tyToString kTy))
       return .generic "HashMap" [kTy, vTy]
     -- Intercept map_insert(&mut m, key, val)
     if fnName == "map_insert" then
-      if args.length != 3 then throw "map_insert() takes exactly 3 arguments"
+      if args.length != 3 then throwCheck (.builtinWrongArgCount "map_insert" 3)
       checkCapabilities "map_insert" (.concrete ["Alloc"])
       let mapArg := match args with | a :: _ => a | [] => Expr.intLit default 0
       let keyArg := match args with | _ :: b :: _ => b | _ => Expr.intLit default 0
@@ -865,7 +1068,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       let (kTy, vTy) := match mapTy with
         | .refMut (.generic "HashMap" [k, v]) => (k, v)
         | _ => (Ty.placeholder, Ty.placeholder)
-      if kTy == .placeholder then throw s!"map_insert() requires &mut HashMap<K,V> as first argument, got {tyToString mapTy}"
+      if kTy == .placeholder then throwCheck (.builtinWrongFirstArg "map_insert" "&mut HashMap<K,V> as first argument" (tyToString mapTy))
       let keyTy ← checkExpr keyArg (some kTy)
       expectTy kTy keyTy "map_insert() key argument"
       match keyArg with
@@ -879,7 +1082,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       return .unit
     -- Intercept map_get(&m, key)
     if fnName == "map_get" then
-      if args.length != 2 then throw "map_get() takes exactly 2 arguments"
+      if args.length != 2 then throwCheck (.builtinWrongArgCount "map_get" 2)
       let mapArg := match args with | a :: _ => a | [] => Expr.intLit default 0
       let keyArg := match args with | _ :: b :: _ => b | _ => Expr.intLit default 0
       let mapTy ← checkExpr mapArg
@@ -887,7 +1090,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
         | .ref (.generic "HashMap" [k, v]) => (k, v)
         | .refMut (.generic "HashMap" [k, v]) => (k, v)
         | _ => (Ty.placeholder, Ty.placeholder)
-      if kTy == .placeholder then throw s!"map_get() requires &HashMap<K,V> or &mut HashMap<K,V> as first argument, got {tyToString mapTy}"
+      if kTy == .placeholder then throwCheck (.builtinWrongFirstArg "map_get" "&HashMap<K,V> or &mut HashMap<K,V> as first argument" (tyToString mapTy))
       let keyTy ← checkExpr keyArg (some kTy)
       expectTy kTy keyTy "map_get() key argument"
       match keyArg with
@@ -896,7 +1099,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       return .generic "Option" [vTy]
     -- Intercept map_contains(&m, key)
     if fnName == "map_contains" then
-      if args.length != 2 then throw "map_contains() takes exactly 2 arguments"
+      if args.length != 2 then throwCheck (.builtinWrongArgCount "map_contains" 2)
       let mapArg := match args with | a :: _ => a | [] => Expr.intLit default 0
       let keyArg := match args with | _ :: b :: _ => b | _ => Expr.intLit default 0
       let mapTy ← checkExpr mapArg
@@ -904,7 +1107,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
         | .ref (.generic "HashMap" [k, _]) => k
         | .refMut (.generic "HashMap" [k, _]) => k
         | _ => Ty.placeholder
-      if kTy == .placeholder then throw s!"map_contains() requires &HashMap<K,V> or &mut HashMap<K,V> as first argument, got {tyToString mapTy}"
+      if kTy == .placeholder then throwCheck (.builtinWrongFirstArg "map_contains" "&HashMap<K,V> or &mut HashMap<K,V> as first argument" (tyToString mapTy))
       let keyTy ← checkExpr keyArg (some kTy)
       expectTy kTy keyTy "map_contains() key argument"
       match keyArg with
@@ -913,7 +1116,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       return .bool
     -- Intercept map_remove(&mut m, key)
     if fnName == "map_remove" then
-      if args.length != 2 then throw "map_remove() takes exactly 2 arguments"
+      if args.length != 2 then throwCheck (.builtinWrongArgCount "map_remove" 2)
       checkCapabilities "map_remove" (.concrete ["Alloc"])
       let mapArg := match args with | a :: _ => a | [] => Expr.intLit default 0
       let keyArg := match args with | _ :: b :: _ => b | _ => Expr.intLit default 0
@@ -921,7 +1124,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       let (kTy, vTy) := match mapTy with
         | .refMut (.generic "HashMap" [k, v]) => (k, v)
         | _ => (Ty.placeholder, Ty.placeholder)
-      if kTy == .placeholder then throw s!"map_remove() requires &mut HashMap<K,V> as first argument, got {tyToString mapTy}"
+      if kTy == .placeholder then throwCheck (.builtinWrongFirstArg "map_remove" "&mut HashMap<K,V> as first argument" (tyToString mapTy))
       let keyTy ← checkExpr keyArg (some kTy)
       expectTy kTy keyTy "map_remove() key argument"
       match keyArg with
@@ -930,25 +1133,25 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       return .generic "Option" [vTy]
     -- Intercept map_len(&m)
     if fnName == "map_len" then
-      if args.length != 1 then throw "map_len() takes exactly 1 argument"
+      if args.length != 1 then throwCheck (.builtinWrongArgCount "map_len" 1)
       let mapArg := match args with | a :: _ => a | [] => Expr.intLit default 0
       let mapTy ← checkExpr mapArg
       let ok := match mapTy with
         | .ref (.generic "HashMap" _) => true
         | .refMut (.generic "HashMap" _) => true
         | _ => false
-      if !ok then throw s!"map_len() requires &HashMap<K,V> or &mut HashMap<K,V> as argument, got {tyToString mapTy}"
+      if !ok then throwCheck (.builtinWrongFirstArg "map_len" "&HashMap<K,V> or &mut HashMap<K,V> as argument" (tyToString mapTy))
       return .int
     -- Intercept map_free(m)
     if fnName == "map_free" then
-      if args.length != 1 then throw "map_free() takes exactly 1 argument"
+      if args.length != 1 then throwCheck (.builtinWrongArgCount "map_free" 1)
       checkCapabilities "map_free" (.concrete ["Alloc"])
       let mapArg := match args with | a :: _ => a | [] => Expr.intLit default 0
       let mapTy ← checkExpr mapArg
       let ok := match mapTy with
         | .generic "HashMap" _ => true
         | _ => false
-      if !ok then throw s!"map_free() requires HashMap<K,V> as argument, got {tyToString mapTy}"
+      if !ok then throwCheck (.builtinWrongFirstArg "map_free" "HashMap<K,V> as argument" (tyToString mapTy))
       match mapArg with
       | .ident _ varName => consumeVarIfExists varName
       | _ => pure ()
@@ -961,7 +1164,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       checkCapabilities fnName fnPtrCapSet
       -- Check argument count
       if args.length != paramTys.length then
-        throw s!"function pointer '{fnName}' expects {paramTys.length} arguments, got {args.length}"
+        throwCheck (.wrongArgCount s!"function pointer '{fnName}'" paramTys.length args.length)
       -- Check each argument type
       for (arg, pTy) in args.zip paramTys do
         let argTy ← checkExpr arg (some pTy)
@@ -1035,14 +1238,14 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
             if sig.capParams.contains cap then
               match capBindings.find? fun (name, _) => name == cap with
               | some (_, caps) => resolvedCaps := resolvedCaps ++ caps
-              | none => throw s!"cannot infer capability variable '{cap}' for call to '{fnName}'"
+              | none => throwCheck (.cannotInferCapVariable cap fnName)
             else
               resolvedCaps := resolvedCaps ++ [cap]
           -- Also resolve cap variables (e.g. .var "C" → bound caps)
           for cv in capVars do
             match capBindings.find? fun (name, _) => name == cv with
             | some (_, caps) => resolvedCaps := resolvedCaps ++ caps
-            | none => throw s!"cannot infer capability variable '{cv}' for call to '{fnName}'"
+            | none => throwCheck (.cannotInferCapVariable cv fnName)
           pure (CapSet.concrete resolvedCaps)
       -- Resolve cap variables in parameter types for type comparison
       let capBindings' := if sig.capParams.isEmpty then [] else
@@ -1065,7 +1268,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       -- Check capabilities with resolved set
       checkCapabilities fnName resolvedCapSet
       if args.length != paramTypes.length then
-        throw s!"function '{fnName}' expects {paramTypes.length} arguments, got {args.length}"
+        throwCheck (.wrongArgCount s!"function '{fnName}'" paramTypes.length args.length)
       for (arg, (pName, pTy)) in args.zip paramTypes do
         let argTy ← checkExpr arg (some pTy)
         expectTy pTy argTy s!"argument '{pName}' of '{fnName}'"
@@ -1077,7 +1280,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
     | none =>
       -- sizeof intrinsic
       if fnName == "sizeof" || fnName.endsWith "_sizeof" then return .uint
-      else throw s!"call to undeclared function '{fnName}'"
+      else throwCheck (.undeclaredFunction fnName)
   | .paren _ inner => checkExpr inner hint
   | .structLit _ name typeArgs fields =>
     match ← lookupStruct name with
@@ -1097,20 +1300,20 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
         | none =>
           -- Unions allow partial initialization (only one field set)
           if !sd.isUnion then
-            throw s!"missing field '{sf.name}' in struct literal '{name}'"
+            throwCheck (.missingFieldInLiteral sf.name s!"struct literal '{name}'")
       for (fn, _) in fields do
         match sd.fields.find? fun sf => sf.name == fn with
         | some _ => pure ()
-        | none => throw s!"unknown field '{fn}' in struct literal '{name}'"
+        | none => throwCheck (.unknownFieldInLiteral fn s!"struct literal '{name}'")
       if typeArgs.isEmpty then return .named name
       else return .generic name typeArgs
-    | none => throw s!"unknown struct type '{name}'"
+    | none => throwCheck (.unknownStructType name)
   | .fieldAccess _ obj field =>
     let objTy ← checkExpr obj
     -- Prevent direct field access on Heap<T> — must use ->
     match objTy with
-    | .heap _ => throw s!"cannot access field '{field}' on {tyToString objTy} with '.'; use '->' for heap access"
-    | .heapArray _ => throw s!"cannot access field '{field}' on {tyToString objTy} with '.'; use '->' for heap access"
+    | .heap _ => throwCheck (.heapAccessRequired field (tyToString objTy))
+    | .heapArray _ => throwCheck (.heapAccessRequired field (tyToString objTy))
     | _ => pure ()
     -- Auto-deref through references
     let innerTy := match objTy with
@@ -1123,7 +1326,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       | .generic n args => (n, args)
       | .string => ("String", [])
       | _ => ("", [])
-    if structName == "" then throw s!"field access on non-struct type"
+    if structName == "" then throwCheck .fieldAccessNonStruct
     else
       match ← lookupStruct structName with
       | some sd =>
@@ -1131,8 +1334,8 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
         | some f =>
           let mapping := sd.typeParams.zip typeArgs
           resolveType (substTy mapping f.ty)
-        | none => throw s!"struct '{structName}' has no field '{field}'"
-      | none => throw s!"field access on non-struct type"
+        | none => throwCheck (.structHasNoField structName field)
+      | none => throwCheck .fieldAccessNonStruct
   | .enumLit _ enumName variant typeArgs fields =>
     match ← lookupEnum enumName with
     | some ed =>
@@ -1155,15 +1358,15 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
             match expr with
             | .ident _ varName => consumeVarIfExists varName
             | _ => pure ()
-          | none => throw s!"missing field '{sf.name}' in {enumName}#{variant}"
+          | none => throwCheck (.missingFieldInLiteral sf.name s!"{enumName}#{variant}")
         for (fn, _) in fields do
           match ev.fields.find? fun sf => sf.name == fn with
           | some _ => pure ()
-          | none => throw s!"unknown field '{fn}' in {enumName}#{variant}"
+          | none => throwCheck (.unknownFieldInLiteral fn s!"{enumName}#{variant}")
         if effectiveTypeArgs.isEmpty then return .named enumName
         else return .generic enumName effectiveTypeArgs
-      | none => throw s!"unknown variant '{variant}' in enum '{enumName}'"
-    | none => throw s!"unknown enum type '{enumName}'"
+      | none => throwCheck (.unknownVariant variant enumName)
+    | none => throwCheck (.unknownEnumType enumName)
   | .match_ _ scrutinee arms =>
     let scrTy ← checkExpr scrutinee
     -- Auto-deref through references for match
@@ -1189,22 +1392,22 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
           match arm with
           | .mk _ armEnum armVariant bindings _body =>
             if armEnum != enumName then
-              throw s!"match arm has enum '{armEnum}' but scrutinee is '{enumName}'"
+              throwCheck (.matchArmWrongEnum armEnum enumName)
             match ed.variants.find? fun v => v.name == armVariant with
             | some ev =>
               if seenVariants.contains armVariant then
-                throw s!"duplicate match arm for variant '{armVariant}'"
+                throwCheck (.duplicateMatchArm armVariant)
               seenVariants := seenVariants ++ [armVariant]
               -- Allow 0 bindings (ignore payload) or exact match
               if bindings.length != 0 && bindings.length != ev.fields.length then
-                throw s!"variant '{armVariant}' has {ev.fields.length} fields but arm binds {bindings.length}"
-            | none => throw s!"unknown variant '{armVariant}' in enum '{enumName}'"
+                throwCheck (.variantFieldCountMismatch armVariant ev.fields.length bindings.length)
+            | none => throwCheck (.unknownVariant armVariant enumName)
           | .litArm _ _ _ => pure ()
           | .varArm _ _ _ => pure ()
         -- Check all variants covered
         for v in ed.variants do
           if !seenVariants.contains v.name then
-            throw s!"non-exhaustive match: missing variant '{v.name}'"
+            throwCheck (.nonExhaustiveMatch v.name)
         -- Linearity across arms: snapshot env, check each arm, ensure all agree
         let envBefore ← getEnv
         let mut firstArmVars : Option (List (String × VarInfo)) := none
@@ -1240,7 +1443,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
               let consumed1 := state1 == .consumed
               let consumed2 := state2 == .consumed
               if consumed1 != consumed2 then
-                throw s!"match arms disagree on consumption of '{name}'"
+                throwCheck (.matchConsumptionDisagreement name)
         -- Apply the final state from first arm (they all agree)
         match firstArmVars with
         | some vars =>
@@ -1252,7 +1455,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
           setEnv { envBefore with vars := vars' }
         | none => setEnv envBefore
         return .named enumName
-      | none => throw s!"unknown enum type '{enumName}'"
+      | none => throwCheck (.unknownEnumType enumName)
     else
       -- Value-pattern match (integer/bool literals, variable bindings)
       match scrutinee with
@@ -1280,12 +1483,12 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       match ← lookupVarInfo varName with
       | some info =>
         if !info.isCopy && info.state == .consumed then
-          throw s!"cannot borrow '{varName}': already moved"
+          throwCheck (.cannotBorrowMoved varName)
         let env ← getEnv
         let activeRefs := activeBorrowRefs env varName
         if info.mutBorrowed || activeRefs.any (fun refInfo => match refInfo.ty with | .refMut _ => true | _ => false) then
-          throw s!"cannot borrow '{varName}': already mutably borrowed"
-      | none => throw s!"use of undeclared variable '{varName}'"
+          throwCheck (.cannotBorrowMutablyBorrowed varName)
+      | none => throwCheck (.undeclaredVariable varName)
     | _ => pure ()
     return .ref innerTy
   | .borrowMut _ inner =>
@@ -1295,16 +1498,16 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       match ← lookupVarInfo varName with
       | some info =>
         if !info.isCopy && info.state == .consumed then
-          throw s!"cannot borrow '{varName}': already moved"
+          throwCheck (.cannotBorrowMoved varName)
         let env ← getEnv
         let activeRefs := activeBorrowRefs env varName
         if info.borrowCount > 0 || activeRefs.any (fun refInfo => match refInfo.ty with | .ref _ | .refMut _ => true | _ => false) then
-          throw s!"cannot mutably borrow '{varName}': already borrowed"
+          throwCheck (.cannotMutBorrowAlreadyBorrowed varName)
         if info.mutBorrowed then
-          throw s!"cannot mutably borrow '{varName}': already mutably borrowed"
+          throwCheck (.cannotMutBorrowAlreadyMutBorrowed varName)
         if !info.mutable then
-          throw s!"cannot take mutable borrow of immutable variable '{varName}'"
-      | none => throw s!"use of undeclared variable '{varName}'"
+          throwCheck (.cannotMutBorrowImmutable varName)
+      | none => throwCheck (.undeclaredVariable varName)
     | _ => pure ()
     return .refMut innerTy
   | .deref _ inner =>
@@ -1322,7 +1525,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       | .ident _ varName => consumeVar varName
       | _ => pure ()
       return t
-    | _ => throw s!"cannot dereference non-reference type"
+    | _ => throwCheck .cannotDerefNonRef
   | .try_ _ inner =>
     let innerTy ← checkExpr inner
     -- Consume the inner expression if it's a variable
@@ -1343,13 +1546,13 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
           -- Return the type of the first field in Ok variant
           match ok.fields.head? with
           | some f => return f.ty
-          | none => throw s!"Ok variant of '{enumName}' has no value field"
-        | _, _ => throw s!"? operator requires an enum with Ok and Err variants"
-      | none => throw s!"unknown enum type '{enumName}'"
-    | _ => throw "? operator requires a Result enum type"
+          | none => throwCheck (.tryOkNoField enumName)
+        | _, _ => throwCheck .tryRequiresOkErrVariants
+      | none => throwCheck (.unknownEnumType enumName)
+    | _ => throwCheck .tryRequiresResult
   | .arrayLit _ elems =>
     match elems with
-    | [] => throw "array literal cannot be empty"
+    | [] => throwCheck .arrayLiteralEmpty
     | first :: rest =>
       -- Use hint to determine element type (e.g. [i32; N] → elements are i32)
       let elemHint := match hint with
@@ -1364,10 +1567,10 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
     let arrTy ← checkExpr arr
     let idxTy ← checkExpr index
     if !isIntegerType idxTy then
-      throw s!"type mismatch: array index must be an integer type, got {tyToString idxTy}"
+      throwCheck (.arrayIndexNotInteger (some (tyToString idxTy)))
     match arrTy with
     | .array elemTy _ => return elemTy
-    | _ => throw s!"type mismatch: indexing into non-array type {tyToString arrTy}"
+    | _ => throwCheck (.indexingNonArray (some (tyToString arrTy)))
   | .cast _ inner targetTy =>
     let innerTy ← checkExpr inner
     -- Allow casts between: integers (any size), bool, floats, pointers, char
@@ -1390,7 +1593,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       -- Allow reference to pointer cast
       (match innerTy with | .ref _ | .refMut _ => isPointerType targetTy | _ => false) ||
       (innerTy == targetTy)
-    if !valid then throw s!"cannot cast {tyToString innerTy} to {tyToString targetTy}"
+    if !valid then throwCheck (.cannotCast (tyToString innerTy) (tyToString targetTy))
     return targetTy
   | .methodCall _ obj methodName typeArgs args =>
     let objTy ← checkExpr obj
@@ -1418,13 +1621,13 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
             | none => pure ()
           | none => pure ()
         match foundSig with
-        | none => throw s!"no method '{methodName}' for type variable '{n}'"
+        | none => throwCheck (.noMethodOnTypeVar methodName n)
         | some sig =>
           -- Check capabilities from trait method
           checkCapabilities (n ++ "." ++ methodName) sig.capSet
           -- Type check arguments (params in FnSigDef excludes self)
           if args.length != sig.params.length then
-            throw s!"method '{methodName}' expects {sig.params.length} arguments, got {args.length}"
+            throwCheck (.wrongArgCount s!"method '{methodName}'" sig.params.length args.length)
           for (arg, p) in args.zip sig.params do
             let argTy ← checkExpr arg (some p.ty)
             expectTy p.ty argTy s!"argument '{p.name}' of '{methodName}'"
@@ -1432,7 +1635,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
             | .ident _ varName => consumeVarIfExists varName
             | _ => pure ()
           return sig.retTy
-      | _ => throw s!"method call on non-named type"
+      | _ => throwCheck .methodCallOnNonNamedType
     else
     let mangledName := typeName ++ "_" ++ methodName
     match ← lookupFn mangledName with
@@ -1449,7 +1652,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       let methodParams := (sig.params.drop 1).map fun (n, t) => (n, substTy mapping t)
       let retTy := substTy mapping sig.retTy
       if args.length != methodParams.length then
-        throw s!"method '{methodName}' expects {methodParams.length} arguments, got {args.length}"
+        throwCheck (.wrongArgCount s!"method '{methodName}'" methodParams.length args.length)
       for (arg, (pName, pTy)) in args.zip methodParams do
         let argTy ← checkExpr arg (some pTy)
         expectTy pTy argTy s!"argument '{pName}' of '{methodName}'"
@@ -1457,7 +1660,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
         | .ident _ varName => consumeVarIfExists varName
         | _ => pure ()
       return retTy
-    | none => throw s!"no method '{methodName}' on type '{typeName}'"
+    | none => throwCheck (.noMethodOnType methodName typeName)
   | .staticMethodCall _ typeName methodName typeArgs args =>
     let mangledName := typeName ++ "_" ++ methodName
     match ← lookupFn mangledName with
@@ -1468,7 +1671,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       let paramTypes := sig.params.map fun (n, t) => (n, substTy mapping t)
       let retTy := substTy mapping sig.retTy
       if args.length != paramTypes.length then
-        throw s!"static method '{methodName}' expects {paramTypes.length} arguments, got {args.length}"
+        throwCheck (.wrongArgCount s!"static method '{methodName}'" paramTypes.length args.length)
       for (arg, (pName, pTy)) in args.zip paramTypes do
         let argTy ← checkExpr arg (some pTy)
         expectTy pTy argTy s!"argument '{pName}' of '{typeName}::{methodName}'"
@@ -1476,7 +1679,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
         | .ident _ varName => consumeVarIfExists varName
         | _ => pure ()
       return retTy
-    | none => throw s!"no method '{methodName}' on type '{typeName}'"
+    | none => throwCheck (.noMethodOnType methodName typeName)
   | .fnRef _ fnName =>
     -- Look up the function signature to build the fn pointer type
     let env ← getEnv
@@ -1484,7 +1687,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
     | some sig =>
       let paramTys := sig.params.map Prod.snd
       return .fn_ paramTys sig.capSet sig.retTy
-    | none => throw s!"unknown function '{fnName}' in function reference"
+    | none => throwCheck (.unknownFunctionRef fnName)
 
 partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
   match stmt with
@@ -1494,7 +1697,7 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
     match value with
     | .ident _ vn =>
       if env.borrowRefs.contains vn then
-        throw s!"reference '{vn}' cannot escape its borrow block"
+        throwCheck (.referenceEscapesBorrowBlock vn)
     | _ => pure ()
     let valTy ← checkExpr value ty
     match ty with
@@ -1520,28 +1723,28 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
     match value with
     | .ident _ vn =>
       if env.borrowRefs.contains vn then
-        throw s!"reference '{vn}' cannot escape its borrow block"
+        throwCheck (.referenceEscapesBorrowBlock vn)
     | _ => pure ()
     match ← lookupVarInfo name with
     | some info =>
       if !info.mutable then
-        throw s!"cannot assign to immutable variable '{name}'"
+        throwCheck (.assignToImmutable name)
       if info.state == .frozen then
-        throw s!"cannot assign to '{name}': variable is frozen by borrow block"
+        throwCheck (.assignToFrozen name)
       let env ← getEnv
       let activeRefs := activeBorrowRefs env name
       if activeRefs.any (fun refInfo => match refInfo.ty with | .ref _ | .refMut _ => true | _ => false) then
-        throw s!"cannot assign to '{name}': variable is borrowed"
+        throwCheck (.assignToBorrowed name)
       let valTy ← checkExpr value (some info.ty)
       expectTy info.ty valTy s!"assignment to '{name}'"
-    | none => throw s!"assignment to undeclared variable '{name}'"
+    | none => throwCheck (.assignToUndeclaredVariable name)
   | .return_ _ (some value) =>
     -- Escape analysis: prevent returning a borrow ref
     let env ← getEnv
     match value with
     | .ident _ vn =>
       if env.borrowRefs.contains vn then
-        throw s!"reference '{vn}' cannot escape its borrow block"
+        throwCheck (.referenceEscapesBorrowBlock vn)
     | _ => pure ()
     let valTy ← checkExpr value (some retTy)
     expectTy retTy valTy "return value"
@@ -1558,7 +1761,7 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
     let condTy ← checkExpr cond
     -- Allow bool or integer types as conditions
     if condTy != .bool && !isIntegerType condTy then
-      throw s!"if condition must be bool, got {tyToString condTy}"
+      throwCheck (.conditionNotBool "if" (tyToString condTy))
     -- Snapshot variable states before branches
     let envBefore ← getEnv
     -- Check then branch
@@ -1578,7 +1781,7 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
   | .while_ _ cond body lbl =>
     let condTy ← checkExpr cond
     if condTy != .bool && !isIntegerType condTy then
-      throw s!"while condition must be bool, got {tyToString condTy}"
+      throwCheck (.conditionNotBool "while" (tyToString condTy))
     -- Increment loop depth for the body, push label if present
     let env ← getEnv
     let labels := match lbl with
@@ -1597,7 +1800,7 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
     -- Condition
     let condTy ← checkExpr cond
     if condTy != .bool && !isIntegerType condTy then
-      throw s!"for condition must be bool, got {tyToString condTy}"
+      throwCheck (.conditionNotBool "for" (tyToString condTy))
     -- Body + step in loop scope, push label if present
     let env ← getEnv
     let labels := match lbl with
@@ -1616,7 +1819,7 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
     match value with
     | .ident _ vn =>
       if env.borrowRefs.contains vn then
-        throw s!"reference '{vn}' cannot escape its borrow block"
+        throwCheck (.referenceEscapesBorrowBlock vn)
     | _ => pure ()
     let objTy ← checkExpr obj
     -- Auto-deref through references
@@ -1630,8 +1833,8 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
       | some fieldTy =>
         let valTy ← checkExpr value (some fieldTy)
         expectTy fieldTy valTy s!"field assignment '{structName}.{field}'"
-      | none => throw s!"struct '{structName}' has no field '{field}'"
-    | _ => throw s!"field assignment on non-struct type"
+      | none => throwCheck (.structHasNoField structName field)
+    | _ => throwCheck .fieldAccessNonStruct
   | .derefAssign _ target value =>
     let targetTy ← checkExpr target
     match targetTy with
@@ -1641,22 +1844,22 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
     | .ptrMut inner =>
       let valTy ← checkExpr value (some inner)
       expectTy inner valTy "deref assignment"
-    | _ => throw s!"cannot assign through non-mutable reference"
+    | _ => throwCheck .cannotAssignThroughNonMutRef
   | .arrayIndexAssign _ arr index value =>
     let arrTy ← checkExpr arr
     let idxTy ← checkExpr index
     if !isIntegerType idxTy then
-      throw s!"type mismatch: array index must be an integer type"
+      throwCheck (.arrayIndexNotInteger none)
     match arrTy with
     | .array elemTy _ =>
       let valTy ← checkExpr value (some elemTy)
       expectTy elemTy valTy "array element assignment"
-    | _ => throw s!"type mismatch: indexing into non-array type"
+    | _ => throwCheck (.indexingNonArray none)
   | .defer _ body =>
     -- Verify body is a call expression
     match body with
     | .call _ _ _ _ => pure ()
-    | _ => throw "defer body must be a function call"
+    | _ => throwCheck .deferBodyNotCall
     let _ ← checkExpr body
     -- If it's destroy(varName), mark varName as reserved
     match body with
@@ -1673,24 +1876,24 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
   | .borrowIn _ var ref region isMut body =>
     -- Check that var exists
     match ← lookupVarInfo var with
-    | none => throw s!"use of undeclared variable '{var}'"
+    | none => throwCheck (.undeclaredVariable var)
     | some varInfo =>
       -- Check no shadowing of ref and region names
       let env ← getEnv
       if (env.vars.lookup ref).isSome then
-        throw s!"borrow ref '{ref}' shadows existing name"
+        throwCheck (.borrowRefShadows ref)
       if (env.vars.lookup region).isSome then
-        throw s!"borrow region '{region}' shadows existing name"
+        throwCheck (.borrowRegionShadows region)
       -- Check if variable is frozen (already inside another borrow block)
       if varInfo.state == .frozen then
-        throw s!"variable '{var}' is frozen by borrow block"
+        throwCheck (.variableFrozenByBorrow var)
       -- Check for mutable borrow conflict: if var is already mutably borrowed, error
       if isMut && varInfo.mutBorrowed then
-        throw s!"variable '{var}' is already mutably borrowed"
+        throwCheck (.variableAlreadyMutBorrowed var)
       if isMut && varInfo.borrowCount > 0 then
-        throw s!"cannot mutably borrow '{var}': already immutably borrowed"
+        throwCheck (.cannotMutBorrowImmBorrowed var)
       if !isMut && varInfo.mutBorrowed then
-        throw s!"cannot immutably borrow '{var}': already mutably borrowed"
+        throwCheck (.cannotImmBorrowMutBorrowed var)
       -- Save state and freeze the original variable
       let savedState := varInfo.state
       let vars' := env.vars.map fun (n, vi) =>
@@ -1719,32 +1922,32 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
       | .ref (.heap t) | .refMut (.heap t) => t
       | _ => .placeholder
     if innerTy == .placeholder then
-      throw s!"arrow assign '->' requires Heap<T> type, got {tyToString objTy}"
+      throwCheck (.arrowAssignNotHeap (tyToString objTy))
     let structName := match innerTy with
       | .named n => n
       | _ => ""
-    if structName == "" then throw s!"arrow assign on non-struct inner type"
+    if structName == "" then throwCheck .arrowAssignNonStruct
     match ← lookupStructField structName field with
     | some fieldTy =>
       let valTy ← checkExpr value (some fieldTy)
       expectTy fieldTy valTy s!"arrow field assignment '{structName}->{field}'"
-    | none => throw s!"struct '{structName}' has no field '{field}'"
+    | none => throwCheck (.structHasNoField structName field)
   | .break_ _ value lbl =>
     let env ← getEnv
     if env.inDeferBody then
-      throw "break is not allowed inside defer"
+      throwCheck .breakInDefer
     if env.loopDepth == 0 then
-      throw "break outside of loop"
+      throwCheck .breakOutsideLoop
     -- Validate label if present
     match lbl with
     | some l =>
       if !env.loopLabels.contains l then
-        throw s!"unknown loop label '{l}'"
+        throwCheck (.unknownLoopLabel l)
     | none => pure ()
     -- Check all linear variables declared in the loop body are consumed
     for (name, info) in env.vars do
       if !info.isCopy && info.state != .consumed && info.loopDepth >= env.loopDepth then
-        throw s!"break would skip unconsumed linear variable '{name}'"
+        throwCheck (.breakSkipsUnconsumedLinear name)
     -- Check break value if present (for while-as-expression)
     match value with
     | some expr =>
@@ -1754,24 +1957,24 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
       | none => setEnv { env2 with loopBreakTy := some valTy }
       | some prevTy =>
         if prevTy != valTy then
-          throw s!"break value type '{tyToString valTy}' does not match previous break type '{tyToString prevTy}'"
+          throwCheck (.breakTypeMismatch (tyToString valTy) (tyToString prevTy))
     | none => pure ()
   | .continue_ _ lbl =>
     let env ← getEnv
     if env.inDeferBody then
-      throw "continue is not allowed inside defer"
+      throwCheck .continueInDefer
     if env.loopDepth == 0 then
-      throw "continue outside of loop"
+      throwCheck .continueOutsideLoop
     -- Validate label if present
     match lbl with
     | some l =>
       if !env.loopLabels.contains l then
-        throw s!"unknown loop label '{l}'"
+        throwCheck (.unknownLoopLabel l)
     | none => pure ()
     -- Check all linear variables declared in the loop body are consumed
     for (name, info) in env.vars do
       if !info.isCopy && info.state != .consumed && info.loopDepth >= env.loopDepth then
-        throw s!"continue would skip unconsumed linear variable '{name}'"
+        throwCheck (.continueSkipsUnconsumedLinear name)
 
 partial def checkStmts (stmts : List Stmt) (retTy : Ty) : CheckM Unit := do
   for stmt in stmts do
@@ -1794,7 +1997,7 @@ partial def mergeVarStates
     let thenConsumed := thenState == .consumed
     let elseConsumed := elseState == .consumed
     if thenConsumed != elseConsumed then
-      throw s!"linear variable '{name}' consumed in one branch of if/else but not the other"
+      throwCheck (.linearConsumedOneBranchNotOther name)
     -- Apply the most progressed state (consumed > used > unconsumed)
     let mergedState := if thenState == .consumed then .consumed
       else if thenState == .used || elseState == .used then .used
@@ -1819,7 +2022,7 @@ partial def checkNoBranchConsumption
       | some info => info.state
       | none => infoBefore.state
     if thenState == .consumed then
-      throw s!"linear variable '{name}' consumed in {ctx} then-branch (no else branch to match)"
+      throwCheck (.linearConsumedNoBranch name ctx)
 
 end
 
@@ -2107,11 +2310,11 @@ def checkModule (m : Module) (importedFnSigs : List (String × FnSig) := [])
     | .ok () =>
       if sd.isCopy then
         if m.traitImpls.any fun tb => tb.traitName == "Destroy" && tb.typeName == sd.name then
-          .error s!"type '{sd.name}' implements Destroy and cannot be Copy"
+          .error (CheckError.message (.copyDestroyConflict sd.name))
         else
           -- Check all fields are copy types
           match sd.fields.find? fun f => !isCopyTyPure f.ty with
-          | some f => .error s!"Copy struct '{sd.name}' contains non-copy field '{f.name}'"
+          | some f => .error (CheckError.message (.copyFieldNotCopy sd.name f.name))
           | none => .ok ()
       else .ok ()
   match copyStructCheck with
@@ -2122,7 +2325,7 @@ def checkModule (m : Module) (importedFnSigs : List (String × FnSig) := [])
     | .error e => .error e
     | .ok () =>
       if ed.isCopy && (m.traitImpls.any fun tb => tb.traitName == "Destroy" && tb.typeName == ed.name) then
-        .error s!"type '{ed.name}' implements Destroy and cannot be Copy"
+        .error (CheckError.message (.copyDestroyConflict ed.name))
       else .ok ()
   match copyEnumCheck with
   | .error e => .error e
@@ -2132,7 +2335,7 @@ def checkModule (m : Module) (importedFnSigs : List (String × FnSig) := [])
     match acc with
     | .error e => .error e
     | .ok () =>
-      if td.name == "Destroy" then .error "'Destroy' is a built-in trait"
+      if td.name == "Destroy" then .error (CheckError.message .builtinTraitRedeclared)
       else .ok ()
   match destroyTraitCheck with
   | .error e => .error e
@@ -2144,7 +2347,7 @@ def checkModule (m : Module) (importedFnSigs : List (String × FnSig) := [])
     | .ok () =>
       if f.name == "destroy" || f.name == "abort" || f.name == "alloc" || f.name == "free"
          || f.name == "alloc_array" || f.name == "free_array" || f.name == "realloc_array" then
-        .error s!"'{f.name}' is a reserved identifier"
+        .error (CheckError.message (.reservedName f.name))
       else .ok ()
   match reservedNameCheck with
   | .error e => .error e
@@ -2158,14 +2361,14 @@ def checkModule (m : Module) (importedFnSigs : List (String × FnSig) := [])
   -- Validate trait impls
   let traitCheck := m.traitImpls.foldlM (init := ()) fun () tb => do
     match allTraits.find? fun (td : TraitDef) => td.name == tb.traitName with
-    | none => Except.error s!"unknown trait '{tb.traitName}'"
+    | none => Except.error (CheckError.message (.unknownTrait tb.traitName))
     | some td =>
       td.methods.foldlM (init := ()) fun () (sig : FnSigDef) =>
         match tb.methods.find? fun (f : FnDef) => f.name == sig.name with
-        | none => Except.error s!"trait impl for '{tb.typeName}' is missing method '{sig.name}'"
+        | none => Except.error (CheckError.message (.missingTraitMethod tb.typeName sig.name))
         | some f =>
           if sig.retTy != f.retTy then
-            Except.error s!"method '{sig.name}' signature does not match trait definition: expected return type {tyToString sig.retTy}, got {tyToString f.retTy}"
+            Except.error (CheckError.message (.traitMethodRetTyMismatch sig.name (tyToString sig.retTy) (tyToString f.retTy)))
           else Except.ok ()
   match traitCheck with
   | .error e => .error e
@@ -2202,7 +2405,7 @@ private def resolveImports (m : Module)
     : Except String (List (String × FnSig) × List StructDef × List EnumDef × List ImplBlock × List ImplTraitBlock) :=
   m.imports.foldlM (init := ([], [], [], [], [])) fun (fns, structs, enums, impls, trImpls) imp =>
     match exportTable.lookup imp.moduleName with
-    | none => .error s!"unknown module '{imp.moduleName}'"
+    | none => .error (CheckError.message (.unknownModule imp.moduleName))
     | some (pubFns, pubStructs, pubEnums, pubImpls, pubTraitImpls) =>
       imp.symbols.foldlM (init := (fns, structs, enums, impls, trImpls)) fun (fns, structs, enums, impls, trImpls) sym =>
         match pubFns.find? fun (n, _) => n == sym with
@@ -2216,7 +2419,7 @@ private def resolveImports (m : Module)
           | none =>
             match pubEnums.find? fun ed => ed.name == sym with
             | some ed => .ok (fns, structs, enums ++ [ed], impls, trImpls)
-            | none => .error s!"'{sym}' is not public in module '{imp.moduleName}'"
+            | none => .error (CheckError.message (.notPublicInModule sym imp.moduleName))
 
 /-- Check a multi-module program. Processes modules in order, building export tables. -/
 def checkProgram (modules : List Module) : Except String Unit :=

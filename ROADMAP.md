@@ -347,7 +347,7 @@ Replace string-based errors with typed diagnostic data:
 - Secondary notes
 - Fix suggestions
 
-**Status:** In progress. `Diagnostic.lean` exists, AST/source spans are threaded through the parser, and Resolve now emits located diagnostics with a structured `ResolveError` layer. The remaining work is to move `Check`, `Elab`, `CoreCheck`, and `SSAVerify` off raw string errors.
+**Status:** In progress. `Diagnostic.lean` exists, AST/source spans are threaded through the parser, and Resolve now emits located diagnostics with a structured `ResolveError` layer. Check now has a structured `CheckError` layer with stable rendered messages covering all ~75 error sites. The remaining work is to move `Elab`, `CoreCheck`, and `SSAVerify` off raw string errors.
 
 ### A7: Builtin vs Stdlib Boundary
 
@@ -465,7 +465,8 @@ Longer-term items beyond current batch:
 
 7. **Structured error kinds** — in progress.
 - `Resolve` now has a structured `ResolveError` layer with stable rendered messages.
-- Next passes: `Check`, `Elab`, `CoreCheck`, `SSAVerify`.
+- `Check` now has a structured `CheckError` layer covering all ~75 error sites (type mismatches, linearity, borrow checking, capabilities, struct/enum/field, builtins, control flow, module validation).
+- Next passes: `Elab`, `CoreCheck`, `SSAVerify`.
 
 #### Language features after the compiler work
 

@@ -112,7 +112,7 @@ Source Text
 - `defer` and borrow blocks are well-formed.
 - Cross-module imports resolved via export tables.
 
-**Error conditions:**
+**Error conditions** (all errors use the structured `CheckError` inductive, rendered to identical strings via `CheckError.message`):
 - Type mismatch, undeclared variable/function/type.
 - Linear variable double-consumed or left unconsumed.
 - Missing capability for effect-requiring calls.
