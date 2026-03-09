@@ -161,6 +161,7 @@ Focus on the areas that pressure-test the language:
 - stronger file/path/process/env modules
 - a real networking layer
 - small formatting and test support improvements
+- keep stdlib APIs explicit: allocator-visible where allocation occurs, typed errors, and obvious ownership/resource handles
 
 11. **Formalization**
 The cleaned pipeline is now stable enough that proof work over Core and the backend boundary is more valuable than more architecture churn.
@@ -1927,6 +1928,7 @@ Parallel with everything above. Start early, grow incrementally.
 - Test runner (built-in `test` blocks)
 - REPL
 - Language server (LSP — editor integration)
+- Compiler-backed tooling artifacts: keep enough reference/module data for project-wide rename, find-references, and similar editor features
 - Cross-compilation
 - WebAssembly target (via MLIR after Phase 11)
 - C codegen target (via MLIR after Phase 11)

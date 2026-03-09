@@ -136,6 +136,41 @@ Why these fit:
 - allocator-explicit design is one of the strongest matches for Concrete
 - Zig’s stdlib discipline is close to Concrete’s intended culture
 
+### From Odin
+
+Useful ideas:
+
+- low-level OS/file APIs with explicit allocators where allocation occurs
+- typed error returns instead of vague sentinel-style failure signaling
+- explicit resource-handle types instead of raw integer-ish handles in safe-facing APIs
+
+Illustrative API shape from Odin's `core:os` direction:
+
+```odin
+data, err := os.read_entire_file(path, context.allocator)
+if err != os.Error.None {
+    // handle error
+}
+
+file, err := os.open(path)
+if err != os.Error.None {
+    // handle error
+}
+```
+
+Why these fit:
+
+- allocation stays visible in the API shape
+- ownership of returned resources is obvious
+- error handling stays explicit and typed
+- low-level APIs stay practical without becoming implicit or magical
+
+Concrete should copy the API-shape lesson, not the exact syntax: stdlib modules should make allocation, ownership, and failure modes obvious from signatures and types.
+
+Reference:
+
+- [Moving Towards a New `core:os`](https://odin-lang.org/news/moving-towards-a-new-core-os/)
+
 ### From C++
 
 Useful ideas:
