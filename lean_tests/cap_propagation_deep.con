@@ -1,0 +1,18 @@
+// Deep capability propagation: 4 levels deep
+// Tests that capabilities propagate correctly through call chains
+fn level3() with(Console) -> Int {
+    print_int(1);
+    return 42;
+}
+
+fn level2() with(Console) -> Int {
+    return level3();
+}
+
+fn level1() with(Console) -> Int {
+    return level2();
+}
+
+fn main!() -> Int {
+    return level1();
+}

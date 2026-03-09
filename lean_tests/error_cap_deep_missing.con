@@ -1,0 +1,13 @@
+// Error: missing capability in deep call chain
+fn inner() with(Console) -> Int {
+    print_int(1);
+    return 1;
+}
+
+fn outer() -> Int {
+    return inner();
+}
+
+fn main() -> Int {
+    return outer();
+}

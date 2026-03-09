@@ -1,17 +1,11 @@
-// Test: two mutable borrows on same variable should fail
-struct Data { value: Int }
-
+// Error: two simultaneous mutable borrows of same variable
 fn main() -> Int {
-    let mut d: Data = Data { value: 10 };
-
-    borrow mut d as r1 in R1 {
-        borrow mut d as r2 in R2 {
-            r2.value = 20;
+    let mut x: Int = 10;
+    borrow mut x as r1 in R1 {
+        borrow mut x as r2 in R2 {
+            *r2 = 20;
         }
-        r1.value = 30;
+        *r1 = 30;
     }
-
-    let result: Int = d.value;
-    destroy(d);
-    return result;
+    return x;
 }

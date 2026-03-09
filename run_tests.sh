@@ -278,6 +278,17 @@ run_ok "$TESTDIR/trait_multi_bound.con" 42
 run_ok "$TESTDIR/while_nested_labeled.con" 25
 run_ok "$TESTDIR/struct_nested.con" 42
 run_ok "$TESTDIR/complex_multi_feature.con" 40
+run_ok "$TESTDIR/complex_heap_borrow.con" 42
+run_ok "$TESTDIR/complex_enum_nested.con" 87
+run_ok "$TESTDIR/defer_multiple.con" 30
+run_ok "$TESTDIR/borrow_in_method.con" 67
+run_ok "$TESTDIR/generic_multi_bound_dispatch.con" 49
+run_ok "$TESTDIR/complex_recursive_enum.con" 19
+run_ok "$TESTDIR/struct_method_chain.con" 39
+run_ok "$TESTDIR/complex_option_chain.con" 26
+run_ok "$TESTDIR/complex_trait_hierarchy.con" 45
+run_ok "$TESTDIR/cap_propagation_deep.con" "1
+42"
 
 echo ""
 echo "=== Negative tests (expected errors) ==="
@@ -370,6 +381,10 @@ run_err "$TESTDIR/error_hashmap_no_alloc.con" "requires capability"
 run_err "$TESTDIR/error_match_missing_variant.con" "missing variant"
 # Return type mismatch
 run_err "$TESTDIR/error_return_type_mismatch.con" "type mismatch"
+# Capability propagation errors
+run_err "$TESTDIR/error_cap_deep_missing.con" "requires capability"
+# Borrow conflict errors
+run_err "$TESTDIR/error_borrow_double_mut.con" "frozen by borrow"
 
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
