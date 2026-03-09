@@ -225,7 +225,7 @@ Concrete is built for code that must be inspectable and mechanically verified.
 
 ## Current Status
 
-The compiler implements the core surface language and the internal IR pipeline in Lean 4. All 222 main tests and 151 SSA tests pass.
+The compiler implements the core surface language and the internal IR pipeline in Lean 4. All 230 main tests and 151 SSA tests pass.
 
 **MLIR backend, kernel formalization, and the runtime are not yet implemented.** The compiler has a single staged pipeline in Lean 4: Parse → Resolve → Check → Elab → CoreCheck → Mono → Lower → SSAVerify → SSACleanup → EmitSSA → clang. All semantic passes use structured error kinds (ResolveError, CheckError, ElabError, CoreCheckError, SSAVerifyError). The frontend carries source spans through the AST. See the full [ROADMAP.md](ROADMAP.md) for the implementation plan. What works today:
 
@@ -380,7 +380,7 @@ Requires [Lean 4](https://leanprover.github.io/lean4/doc/setup.html) (v4.28.0+) 
 
 ```bash
 make build    # or: lake build
-make test     # runs all 222 tests
+make test     # runs all 230 tests
 make clean    # or: lake clean
 ```
 
@@ -404,7 +404,7 @@ Concrete/
   SSACleanup.lean -- SSA cleanup
   EmitSSA.lean   -- LLVM IR from SSA
 Main.lean        -- Entry point
-lean_tests/      -- 222 test programs
+lean_tests/      -- 230 test programs
 examples/        -- 66 example programs
 ```
 

@@ -86,7 +86,7 @@ Source Text
 - **Trait impl signature compatibility** — Check owns parameter/return type agreement.
 - **Type correctness** — Resolve only checks that names exist, not that types are used correctly.
 
-**Error conditions:**
+**Error conditions** (all errors use the structured `ResolveError` inductive with span-bearing `Diagnostic` output via `Diagnostic.render`):
 - Unknown function, struct type, enum, enum variant, static method, function reference.
 - Unknown type name in any type position.
 - `Self` outside impl block.
