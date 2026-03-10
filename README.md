@@ -372,6 +372,7 @@ See [`research/stdlib-design.md`](research/stdlib-design.md) for the current std
 See [ROADMAP.md](ROADMAP.md) for the full implementation plan with syntax, rules, and implementation details for each phase.
 See [CHANGELOG.md](CHANGELOG.md) for completed milestones and major landed architecture/language work.
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the detailed compiler pipeline, artifact flow, and pass boundaries.
+See [docs/ABI_LAYOUT.md](docs/ABI_LAYOUT.md) for the current layout and FFI boundary, and [docs/DIAGNOSTICS.md](docs/DIAGNOSTICS.md) for the diagnostics model.
 See [docs/README.md](docs/README.md) for the stable documentation index and [research/README.md](research/README.md) for exploratory design notes.
 
 | Phase | Feature | Status |

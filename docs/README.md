@@ -5,6 +5,8 @@ This directory holds the stable reference docs for Concrete's implementation and
 Use these files as the primary reference once a design has moved out of exploration:
 
 - [ARCHITECTURE.md](ARCHITECTURE.md) — compiler pipeline, artifact flow, pass boundaries, and architecture phase reference
+- [ABI_LAYOUT.md](ABI_LAYOUT.md) — layout, enum representation, FFI-safety, and ABI boundary rules
+- [DIAGNOSTICS.md](DIAGNOSTICS.md) — diagnostics model, current status, and staged diagnostics work
 - [PASSES.md](PASSES.md) — pass-by-pass contracts and ownership boundaries
 - [LANGUAGE_INVARIANTS.md](LANGUAGE_INVARIANTS.md) — the language rules that must hold across every phase
 - [VALUE_MODEL.md](VALUE_MODEL.md) — value, borrow, ownership, and resource-model rules

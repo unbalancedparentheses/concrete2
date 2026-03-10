@@ -122,6 +122,8 @@ Make layout and FFI concerns a clearer compiler subsystem instead of just scatte
 
 Both `EmitSSA` and `CoreCheck` delegate to `Layout` instead of maintaining separate layout/FFI logic.
 
+See [docs/ABI_LAYOUT.md](docs/ABI_LAYOUT.md) for the current reference.
+
 4. **Cacheable compiler artifacts** — DONE
 `Concrete/Pipeline.lean` defines explicit artifact types at each pipeline boundary:
 - `ParsedProgram` (parsed modules)
@@ -155,6 +157,8 @@ Sequencing for this work should stay explicit:
 - only after that consider multi-error accumulation in `Check` / `Elab`
 
 Multi-error reporting is valuable, but it is a separate behavioral change and a larger control-flow refactor. The compiler should get native diagnostics plumbing correct before it changes how many errors those passes try to accumulate.
+
+See [docs/DIAGNOSTICS.md](docs/DIAGNOSTICS.md) for the current diagnostics model and sequencing.
 
 7. **Audit-focused compiler outputs** — first batch done
 Make the compiler more inspectable, not just more correct:
