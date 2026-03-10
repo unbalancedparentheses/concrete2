@@ -1,4 +1,5 @@
 import Concrete.AST
+import Concrete.Diagnostic
 import Concrete.FileSummary
 import Concrete.Shared
 
@@ -69,7 +70,7 @@ structure TypeEnv where
   newtypes : List NewtypeDef := []         -- all newtype definitions
   deriving Repr
 
-abbrev CheckM := ExceptT String (StateM TypeEnv)
+abbrev CheckM := ExceptT Diagnostics (StateM TypeEnv)
 
 inductive CheckError where
   -- Slice 1: Name/variable/linearity
@@ -238,7 +239,24 @@ def CheckError.message : CheckError → String
   | .unknownModule name => s!"unknown module '{name}'"
   | .notPublicInModule symbol moduleName => s!"'{symbol}' is not public in module '{moduleName}'"
 
-def throwCheck (e : CheckError) : CheckM α := throw e.message
+def CheckError.hint : CheckError → Option String
+  | .variableUsedAfterMove _ => some "consider cloning or restructuring to avoid the move"
+  | .linearVariableNeverConsumed _ => some "pass it to a function, return it, or use destroy()"
+  | .assignToImmutable _ => some "declare with 'let mut' to make it mutable"
+  | .cannotConsumeLinearInLoop _ => some "move the declaration inside the loop or clone before the loop"
+  | .arrowAccessNotHeap _ => some "use '.' for direct field access"
+  | .destroyRequiresNamed _ => some "only struct and enum types can be destroyed"
+  | .referenceEscapesBorrowBlock _ => some "copy the data before the borrow block ends"
+  | .cannotMutBorrowImmutable _ => some "declare with 'let mut' to allow mutable borrowing"
+  | .assignToFrozen _ => some "the variable is frozen by an active borrow block"
+  | .assignToBorrowed _ => some "wait for the borrow to end before assigning"
+  | _ => none
+
+def throwCheck (e : CheckError) (span : Option Span := none) : CheckM α :=
+  throw [{ severity := .error, message := e.message, pass := "check", span := span, hint := e.hint }]
+
+private def throwCheckMsg (msg : String) (span : Option Span := none) : CheckM α :=
+  throw [{ severity := .error, message := msg, pass := "check", span := span, hint := none }]
 
 -- ============================================================
 -- Helpers
@@ -469,7 +487,7 @@ private def normalizeTyForCmp : Ty → Ty
   | .array t n => .array (normalizeTyForCmp t) n
   | t => t
 
-def expectTy (expected actual : Ty) (ctx : String) : CheckM Unit := do
+def expectTy (expected actual : Ty) (ctx : String) (span : Option Span := none) : CheckM Unit := do
   if expected == actual then return ()
   -- Never type is compatible with anything (bottom type)
   if actual == .never then return ()
@@ -484,7 +502,7 @@ def expectTy (expected actual : Ty) (ctx : String) : CheckM Unit := do
   -- .string is compatible with .named "String"
   else if (expectedR == .string && actualR == .named "String")
        || (expectedR == .named "String" && actualR == .string) then return ()
-  else throwCheck (.typeMismatch ctx (tyToString expected) (tyToString actual))
+  else throwCheck (.typeMismatch ctx (tyToString expected) (tyToString actual)) span
 
 
 -- ============================================================
@@ -492,13 +510,13 @@ def expectTy (expected actual : Ty) (ctx : String) : CheckM Unit := do
 -- ============================================================
 
 /-- Mark a linear variable as used (read/borrowed but not moved). -/
-def useVar (name : String) : CheckM Unit := do
+def useVar (name : String) (span : Option Span := none) : CheckM Unit := do
   let env ← getEnv
   match env.vars.lookup name with
   | none => pure ()  -- not found (might be a constant or function)
   | some info =>
     if info.state == .frozen then
-      throwCheck (.variableFrozenByBorrow name)
+      throwCheck (.variableFrozenByBorrow name) span
     if info.isCopy then return ()
     if info.state == .unconsumed || info.state == .reserved then
       let vars' := env.vars.map fun (n, vi) =>
@@ -508,26 +526,26 @@ def useVar (name : String) : CheckM Unit := do
 
 /-- Consume a linear variable (mark it as consumed).
     Errors on use-after-move, or consuming an outer var inside a loop. -/
-def consumeVar (name : String) : CheckM Unit := do
+def consumeVar (name : String) (span : Option Span := none) : CheckM Unit := do
   let env ← getEnv
   match env.vars.lookup name with
-  | none => throwCheck (.undeclaredVariable name)
+  | none => throwCheck (.undeclaredVariable name) span
   | some info =>
     if info.isCopy then return ()  -- Copy types are never consumed
     let activeRefs := activeBorrowRefs env name
     if activeRefs.any (fun refInfo => match refInfo.ty with | .ref _ | .refMut _ => true | _ => false) then
-      throwCheck (.cannotMoveLinearBorrowed name)
+      throwCheck (.cannotMoveLinearBorrowed name) span
     match info.state with
     | .consumed =>
-      throwCheck (.variableUsedAfterMove name)
+      throwCheck (.variableUsedAfterMove name) span
     | .reserved =>
-      throwCheck (.variableReservedByDefer name)
+      throwCheck (.variableReservedByDefer name) span
     | .frozen =>
-      throwCheck (.variableFrozenByBorrow name)
+      throwCheck (.variableFrozenByBorrow name) span
     | .unconsumed | .used =>
       -- Loop depth check
       if info.loopDepth < env.loopDepth then
-        throwCheck (.cannotConsumeLinearInLoop name)
+        throwCheck (.cannotConsumeLinearInLoop name) span
       -- Mark consumed
       let vars' := env.vars.map fun (n, vi) =>
         if n == name then (n, { vi with state := .consumed })
@@ -535,20 +553,20 @@ def consumeVar (name : String) : CheckM Unit := do
       setEnv { env with vars := vars' }
 
 /-- Consume a variable if it exists. Skips function names (not in var scope). -/
-def consumeVarIfExists (name : String) : CheckM Unit := do
+def consumeVarIfExists (name : String) (span : Option Span := none) : CheckM Unit := do
   match ← lookupVarInfo name with
-  | some _ => consumeVar name
+  | some _ => consumeVar name span
   | none => pure ()  -- function reference, not a variable
 
 /-- Check that all tracked linear variables in the given name list are consumed.
     `reserved` is allowed because the deferred destroy will run at scope exit. -/
-def checkScopeExit (varNames : List String) : CheckM Unit := do
+def checkScopeExit (varNames : List String) (span : Option Span := none) : CheckM Unit := do
   let env ← getEnv
   for name in varNames do
     match env.vars.lookup name with
     | some info =>
       if !info.isCopy && info.state != .consumed && info.state != .reserved then
-        throwCheck (.linearVariableNeverConsumed name)
+        throwCheck (.linearVariableNeverConsumed name) span
     | none => pure ()
 
 -- ============================================================
@@ -717,8 +735,8 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
     | some info =>
       -- Reading a variable (not consuming). Check it's not already consumed.
       if !info.isCopy && info.state == .consumed then
-        throwCheck (.variableUsedAfterMove name)
-      useVar name
+        throwCheck (.variableUsedAfterMove name) (some e.getSpan)
+      useVar name (some e.getSpan)
       return info.ty
     | none =>
       -- Check if it's a function name (first-class function reference)
@@ -726,7 +744,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       | some sig =>
         let paramTys := sig.params.map fun (_, t) => t
         return .fn_ paramTys sig.capSet sig.retTy
-      | none => throwCheck (.undeclaredVariable name)
+      | none => throwCheck (.undeclaredVariable name) (some e.getSpan)
   | .binOp _ op lhs rhs =>
     -- Check lhs first (with hint), then use its type as hint for rhs
     let lTy ← checkExpr lhs hint
@@ -772,19 +790,19 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       | .refMut (.heap t) => t
       | _ => .placeholder
     if innerTy == .placeholder then
-      throwCheck (.arrowAccessNotHeap (tyToString objTy))
+      throwCheck (.arrowAccessNotHeap (tyToString objTy)) (some e.getSpan)
     -- Look up field on the inner type
     let structName := match innerTy with
       | .named n => n
       | .generic n _ => n
       | _ => ""
-    if structName == "" then throwCheck .arrowAccessNonStruct
+    if structName == "" then throwCheck .arrowAccessNonStruct (some e.getSpan)
     match ← lookupStruct structName with
     | some sd =>
       match sd.fields.find? fun f => f.name == field with
       | some f => resolveType f.ty
-      | none => throwCheck (.structHasNoField structName field)
-    | none => throwCheck (.unknownStructType structName)
+      | none => throwCheck (.structHasNoField structName field) (some e.getSpan)
+    | none => throwCheck (.unknownStructType structName) (some e.getSpan)
   | .allocCall _ inner allocExpr =>
     -- Check the allocator expression is valid
     let _allocTy ← checkExpr allocExpr
@@ -822,15 +840,15 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
     match breakTy with
     | some bTy =>
       if bTy != elseTy && elseTy != .never && bTy != .never then
-        throwCheck (.whileBreakTypeMismatch (tyToString bTy) (tyToString elseTy))
+        throwCheck (.whileBreakTypeMismatch (tyToString bTy) (tyToString elseTy)) (some e.getSpan)
       return elseTy
     | none => return elseTy
   | .call _sp fnName typeArgs args =>
     -- Intercept newtype wrapping: NewtypeName(expr)
     match ← lookupNewtype fnName with
     | some nt =>
-      if args.length != 1 then throw s!"newtype '{fnName}' constructor takes exactly 1 argument"
-      if !typeArgs.isEmpty then throw s!"newtype '{fnName}' constructor does not take type arguments"
+      if args.length != 1 then throwCheckMsg s!"newtype '{fnName}' constructor takes exactly 1 argument"
+      if !typeArgs.isEmpty then throwCheckMsg s!"newtype '{fnName}' constructor does not take type arguments"
       -- For generic newtypes, infer type args from hint
       let inferredTypeArgs := if nt.typeParams.isEmpty then []
         else match hint with
@@ -840,18 +858,18 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       let resolvedInnerTy := substTy mapping nt.innerTy
       let arg := match args with | a :: _ => a | [] => Expr.intLit default 0
       let argTy ← checkExpr arg (some resolvedInnerTy)
-      expectTy resolvedInnerTy argTy s!"newtype '{fnName}' constructor"
+      expectTy resolvedInnerTy argTy s!"newtype '{fnName}' constructor" (some e.getSpan)
       -- Consume linear variables passed to newtype constructor (ownership moves)
       match arg with
-      | .ident _ varName => consumeVarIfExists varName
+      | .ident _ varName => consumeVarIfExists varName (some e.getSpan)
       | _ => pure ()
       if inferredTypeArgs.isEmpty then return .named fnName
       else return .generic fnName inferredTypeArgs
     | none =>
     -- Intercept sizeof::<T>() and alignof::<T>() builtins
     if fnName == "sizeof" || fnName == "alignof" then
-      if args.length != 0 then throw s!"{fnName} takes no value arguments"
-      if typeArgs.length != 1 then throw s!"{fnName} requires exactly 1 type argument: {fnName}::<T>()"
+      if args.length != 0 then throwCheckMsg s!"{fnName} takes no value arguments"
+      if typeArgs.length != 1 then throwCheckMsg s!"{fnName} requires exactly 1 type argument: {fnName}::<T>()"
       return .uint
     -- Intercept unwrap(x) for newtype unwrapping (only if not a user-defined function)
     if fnName == "unwrap" && args.length == 1 then
@@ -861,21 +879,21 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
         let arg := match args with | a :: _ => a | [] => Expr.intLit default 0
         let argTy ← checkExpr arg
         let ntName := match argTy with | .named n => n | _ => ""
-        if ntName == "" then throw s!"unwrap() requires a newtype argument, got {tyToString argTy}"
+        if ntName == "" then throwCheckMsg s!"unwrap() requires a newtype argument, got {tyToString argTy}"
         match ← lookupNewtype ntName with
         | some nt =>
           match arg with
-          | .ident _ varName => consumeVarIfExists varName
+          | .ident _ varName => consumeVarIfExists varName (some e.getSpan)
           | _ => pure ()
           return nt.innerTy
-        | none => throw s!"unwrap() requires a newtype argument, '{ntName}' is not a newtype"
+        | none => throwCheckMsg s!"unwrap() requires a newtype argument, '{ntName}' is not a newtype"
     -- Intercept abort() calls
     if fnName == "abort" then
-      if args.length != 0 then throwCheck (.builtinWrongArgCount "abort" 0)
+      if args.length != 0 then throwCheck (.builtinWrongArgCount "abort" 0) (some e.getSpan)
       return .never
     -- Intercept destroy() calls
     if fnName == "destroy" then
-      if args.length != 1 then throwCheck (.builtinWrongArgCount "destroy" 1)
+      if args.length != 1 then throwCheck (.builtinWrongArgCount "destroy" 1) (some e.getSpan)
       let arg := match args with | a :: _ => a | [] => Expr.intLit default 0
       let argTy ← checkExpr arg
       -- Look up impl Destroy for the type
@@ -883,65 +901,65 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
         | .named n => n
         | .generic n _ => n
         | _ => ""
-      if typeName == "" then throwCheck (.destroyRequiresNamed (tyToString argTy))
+      if typeName == "" then throwCheck (.destroyRequiresNamed (tyToString argTy)) (some e.getSpan)
       -- Search function signatures for TypeName_destroy
       let destroyFn ← lookupFn (typeName ++ "_destroy")
       match destroyFn with
       | some _ =>
         -- Consume the argument
         match arg with
-        | .ident _ varName => consumeVarIfExists varName
+        | .ident _ varName => consumeVarIfExists varName (some e.getSpan)
         | _ => pure ()
         return .unit
-      | none => throwCheck (.typeDoesNotImplDestroy typeName)
+      | none => throwCheck (.typeDoesNotImplDestroy typeName) (some e.getSpan)
     -- Intercept alloc(val) calls
     if fnName == "alloc" then
-      if args.length != 1 then throwCheck (.builtinWrongArgCount "alloc" 1)
+      if args.length != 1 then throwCheck (.builtinWrongArgCount "alloc" 1) (some e.getSpan)
       let arg := match args with | a :: _ => a | [] => Expr.intLit default 0
       let argTy ← checkExpr arg
       -- Consume linear variables passed to alloc (ownership moves to heap)
       match arg with
-      | .ident _ varName => consumeVarIfExists varName
+      | .ident _ varName => consumeVarIfExists varName (some e.getSpan)
       | _ => pure ()
       return .heap argTy
     -- Intercept free(ptr) calls
     if fnName == "free" then
-      if args.length != 1 then throwCheck (.builtinWrongArgCount "free" 1)
+      if args.length != 1 then throwCheck (.builtinWrongArgCount "free" 1) (some e.getSpan)
       let arg := match args with | a :: _ => a | [] => Expr.intLit default 0
       let argTy ← checkExpr arg
       match argTy with
       | .heap innerTy =>
         -- Consume the argument (Heap<T> is linear)
         match arg with
-        | .ident _ varName => consumeVarIfExists varName
+        | .ident _ varName => consumeVarIfExists varName (some e.getSpan)
         | _ => pure ()
         return innerTy
-      | _ => throwCheck (.freeRequiresHeap (tyToString argTy))
+      | _ => throwCheck (.freeRequiresHeap (tyToString argTy)) (some e.getSpan)
     -- Intercept vec_new::<T>()
     if fnName == "vec_new" then
-      if args.length != 0 then throwCheck (.builtinWrongArgCount "vec_new" 0)
-      if typeArgs.length != 1 then throwCheck (.builtinWrongTypeArgCount "vec_new" "1 type argument: vec_new::<T>()")
+      if args.length != 0 then throwCheck (.builtinWrongArgCount "vec_new" 0) (some e.getSpan)
+      if typeArgs.length != 1 then throwCheck (.builtinWrongTypeArgCount "vec_new" "1 type argument: vec_new::<T>()") (some e.getSpan)
       let elemTy := match typeArgs with | t :: _ => t | [] => Ty.int
       return .generic "Vec" [elemTy]
     -- Intercept vec_push(&mut v, val)
     if fnName == "vec_push" then
-      if args.length != 2 then throwCheck (.builtinWrongArgCount "vec_push" 2)
+      if args.length != 2 then throwCheck (.builtinWrongArgCount "vec_push" 2) (some e.getSpan)
       let vecArg := match args with | a :: _ => a | [] => Expr.intLit default 0
       let valArg := match args with | _ :: b :: _ => b | _ => Expr.intLit default 0
       let vecTy ← checkExpr vecArg
       let elemTy := match vecTy with
         | .refMut (.generic "Vec" [et]) => et
         | _ => Ty.placeholder
-      if elemTy == .placeholder then throwCheck (.builtinWrongFirstArg "vec_push" "&mut Vec<T> as first argument" (tyToString vecTy))
+      if elemTy == .placeholder then throwCheck (.builtinWrongFirstArg "vec_push" "&mut Vec<T> as first argument" (tyToString vecTy)) (some e.getSpan)
       let valTy ← checkExpr valArg (some elemTy)
-      expectTy elemTy valTy "vec_push() element argument"
+      expectTy elemTy valTy "vec_push() element argument" (some e.getSpan)
       match valArg with
-      | .ident _ varName => consumeVarIfExists varName
+      | .ident _ varName => consumeVarIfExists varName (some e.getSpan)
       | _ => pure ()
       return .unit
     -- Intercept vec_get(&v, idx)
     if fnName == "vec_get" then
-      if args.length != 2 then throwCheck (.builtinWrongArgCount "vec_get" 2)
+      if args.length != 2 then throwCheck (.builtinWrongArgCount "vec_get" 2) (some e.getSpan)
       let vecArg := match args with | a :: _ => a | [] => Expr.intLit default 0
       let idxArg := match args with | _ :: b :: _ => b | _ => Expr.intLit default 0
       let vecTy ← checkExpr vecArg
@@ -949,13 +967,13 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
         | .ref (.generic "Vec" [et]) => et
         | .refMut (.generic "Vec" [et]) => et
         | _ => Ty.placeholder
-      if elemTy == .placeholder then throwCheck (.builtinWrongFirstArg "vec_get" "&Vec<T> or &mut Vec<T> as first argument" (tyToString vecTy))
+      if elemTy == .placeholder then throwCheck (.builtinWrongFirstArg "vec_get" "&Vec<T> or &mut Vec<T> as first argument" (tyToString vecTy)) (some e.getSpan)
       let idxTy ← checkExpr idxArg (some .int)
-      expectTy .int idxTy "vec_get() index argument"
+      expectTy .int idxTy "vec_get() index argument" (some e.getSpan)
       return elemTy
     -- Intercept vec_set(&mut v, idx, val)
     if fnName == "vec_set" then
-      if args.length != 3 then throwCheck (.builtinWrongArgCount "vec_set" 3)
+      if args.length != 3 then throwCheck (.builtinWrongArgCount "vec_set" 3) (some e.getSpan)
       let vecArg := match args with | a :: _ => a | [] => Expr.intLit default 0
       let idxArg := match args with | _ :: b :: _ => b | _ => Expr.intLit default 0
       let valArg := match args with | _ :: _ :: c :: _ => c | _ => Expr.intLit default 0
@@ -963,62 +981,62 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       let elemTy := match vecTy with
         | .refMut (.generic "Vec" [et]) => et
         | _ => Ty.placeholder
-      if elemTy == .placeholder then throwCheck (.builtinWrongFirstArg "vec_set" "&mut Vec<T> as first argument" (tyToString vecTy))
+      if elemTy == .placeholder then throwCheck (.builtinWrongFirstArg "vec_set" "&mut Vec<T> as first argument" (tyToString vecTy)) (some e.getSpan)
       let idxTy ← checkExpr idxArg (some .int)
-      expectTy .int idxTy "vec_set() index argument"
+      expectTy .int idxTy "vec_set() index argument" (some e.getSpan)
       let valTy ← checkExpr valArg (some elemTy)
-      expectTy elemTy valTy "vec_set() value argument"
+      expectTy elemTy valTy "vec_set() value argument" (some e.getSpan)
       match valArg with
-      | .ident _ varName => consumeVarIfExists varName
+      | .ident _ varName => consumeVarIfExists varName (some e.getSpan)
       | _ => pure ()
       return .unit
     -- Intercept vec_len(&v)
     if fnName == "vec_len" then
-      if args.length != 1 then throwCheck (.builtinWrongArgCount "vec_len" 1)
+      if args.length != 1 then throwCheck (.builtinWrongArgCount "vec_len" 1) (some e.getSpan)
       let vecArg := match args with | a :: _ => a | [] => Expr.intLit default 0
       let vecTy ← checkExpr vecArg
       let ok := match vecTy with
         | .ref (.generic "Vec" _) => true
         | .refMut (.generic "Vec" _) => true
         | _ => false
-      if !ok then throwCheck (.builtinWrongFirstArg "vec_len" "&Vec<T> or &mut Vec<T> as argument" (tyToString vecTy))
+      if !ok then throwCheck (.builtinWrongFirstArg "vec_len" "&Vec<T> or &mut Vec<T> as argument" (tyToString vecTy)) (some e.getSpan)
       return .int
     -- Intercept vec_pop(&mut v)
     if fnName == "vec_pop" then
-      if args.length != 1 then throwCheck (.builtinWrongArgCount "vec_pop" 1)
+      if args.length != 1 then throwCheck (.builtinWrongArgCount "vec_pop" 1) (some e.getSpan)
       let vecArg := match args with | a :: _ => a | [] => Expr.intLit default 0
       let vecTy ← checkExpr vecArg
       let elemTy := match vecTy with
         | .refMut (.generic "Vec" [et]) => et
         | _ => Ty.placeholder
-      if elemTy == .placeholder then throwCheck (.builtinWrongFirstArg "vec_pop" "&mut Vec<T> as argument" (tyToString vecTy))
+      if elemTy == .placeholder then throwCheck (.builtinWrongFirstArg "vec_pop" "&mut Vec<T> as argument" (tyToString vecTy)) (some e.getSpan)
       return .generic "Option" [elemTy]
     -- Intercept vec_free(v)
     if fnName == "vec_free" then
-      if args.length != 1 then throwCheck (.builtinWrongArgCount "vec_free" 1)
+      if args.length != 1 then throwCheck (.builtinWrongArgCount "vec_free" 1) (some e.getSpan)
       let vecArg := match args with | a :: _ => a | [] => Expr.intLit default 0
       let vecTy ← checkExpr vecArg
       let ok := match vecTy with
         | .generic "Vec" _ => true
         | _ => false
-      if !ok then throwCheck (.builtinWrongFirstArg "vec_free" "Vec<T> as argument" (tyToString vecTy))
+      if !ok then throwCheck (.builtinWrongFirstArg "vec_free" "Vec<T> as argument" (tyToString vecTy)) (some e.getSpan)
       match vecArg with
-      | .ident _ varName => consumeVarIfExists varName
+      | .ident _ varName => consumeVarIfExists varName (some e.getSpan)
       | _ => pure ()
       return .unit
     -- Intercept map_new::<K, V>()
     if fnName == "map_new" then
-      if args.length != 0 then throwCheck (.builtinWrongArgCount "map_new" 0)
-      if typeArgs.length != 2 then throwCheck (.builtinWrongTypeArgCount "map_new" "2 type arguments: map_new::<K, V>()")
+      if args.length != 0 then throwCheck (.builtinWrongArgCount "map_new" 0) (some e.getSpan)
+      if typeArgs.length != 2 then throwCheck (.builtinWrongTypeArgCount "map_new" "2 type arguments: map_new::<K, V>()") (some e.getSpan)
       let kTy := match typeArgs with | t :: _ => t | [] => Ty.int
       let vTy := match typeArgs with | _ :: t :: _ => t | _ => Ty.int
       -- Validate key type is Int or String
       let keyOk := match kTy with | .int => true | .string => true | _ => false
-      if !keyOk then throwCheck (.builtinBadKeyType "map_new" (tyToString kTy))
+      if !keyOk then throwCheck (.builtinBadKeyType "map_new" (tyToString kTy)) (some e.getSpan)
       return .generic "HashMap" [kTy, vTy]
     -- Intercept map_insert(&mut m, key, val)
     if fnName == "map_insert" then
-      if args.length != 3 then throwCheck (.builtinWrongArgCount "map_insert" 3)
+      if args.length != 3 then throwCheck (.builtinWrongArgCount "map_insert" 3) (some e.getSpan)
       let mapArg := match args with | a :: _ => a | [] => Expr.intLit default 0
       let keyArg := match args with | _ :: b :: _ => b | _ => Expr.intLit default 0
       let valArg := match args with | _ :: _ :: c :: _ => c | _ => Expr.intLit default 0
@@ -1026,21 +1044,21 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       let (kTy, vTy) := match mapTy with
         | .refMut (.generic "HashMap" [k, v]) => (k, v)
         | _ => (Ty.placeholder, Ty.placeholder)
-      if kTy == .placeholder then throwCheck (.builtinWrongFirstArg "map_insert" "&mut HashMap<K,V> as first argument" (tyToString mapTy))
+      if kTy == .placeholder then throwCheck (.builtinWrongFirstArg "map_insert" "&mut HashMap<K,V> as first argument" (tyToString mapTy)) (some e.getSpan)
       let keyTy ← checkExpr keyArg (some kTy)
-      expectTy kTy keyTy "map_insert() key argument"
+      expectTy kTy keyTy "map_insert() key argument" (some e.getSpan)
       match keyArg with
-      | .ident _ varName => consumeVarIfExists varName
+      | .ident _ varName => consumeVarIfExists varName (some e.getSpan)
       | _ => pure ()
       let valTy ← checkExpr valArg (some vTy)
-      expectTy vTy valTy "map_insert() value argument"
+      expectTy vTy valTy "map_insert() value argument" (some e.getSpan)
       match valArg with
-      | .ident _ varName => consumeVarIfExists varName
+      | .ident _ varName => consumeVarIfExists varName (some e.getSpan)
       | _ => pure ()
       return .unit
     -- Intercept map_get(&m, key)
     if fnName == "map_get" then
-      if args.length != 2 then throwCheck (.builtinWrongArgCount "map_get" 2)
+      if args.length != 2 then throwCheck (.builtinWrongArgCount "map_get" 2) (some e.getSpan)
       let mapArg := match args with | a :: _ => a | [] => Expr.intLit default 0
       let keyArg := match args with | _ :: b :: _ => b | _ => Expr.intLit default 0
       let mapTy ← checkExpr mapArg
@@ -1048,16 +1066,16 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
         | .ref (.generic "HashMap" [k, v]) => (k, v)
         | .refMut (.generic "HashMap" [k, v]) => (k, v)
         | _ => (Ty.placeholder, Ty.placeholder)
-      if kTy == .placeholder then throwCheck (.builtinWrongFirstArg "map_get" "&HashMap<K,V> or &mut HashMap<K,V> as first argument" (tyToString mapTy))
+      if kTy == .placeholder then throwCheck (.builtinWrongFirstArg "map_get" "&HashMap<K,V> or &mut HashMap<K,V> as first argument" (tyToString mapTy)) (some e.getSpan)
       let keyTy ← checkExpr keyArg (some kTy)
-      expectTy kTy keyTy "map_get() key argument"
+      expectTy kTy keyTy "map_get() key argument" (some e.getSpan)
       match keyArg with
-      | .ident _ varName => consumeVarIfExists varName
+      | .ident _ varName => consumeVarIfExists varName (some e.getSpan)
       | _ => pure ()
       return .generic "Option" [vTy]
     -- Intercept map_contains(&m, key)
     if fnName == "map_contains" then
-      if args.length != 2 then throwCheck (.builtinWrongArgCount "map_contains" 2)
+      if args.length != 2 then throwCheck (.builtinWrongArgCount "map_contains" 2) (some e.getSpan)
       let mapArg := match args with | a :: _ => a | [] => Expr.intLit default 0
       let keyArg := match args with | _ :: b :: _ => b | _ => Expr.intLit default 0
       let mapTy ← checkExpr mapArg
@@ -1065,51 +1083,51 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
         | .ref (.generic "HashMap" [k, _]) => k
         | .refMut (.generic "HashMap" [k, _]) => k
         | _ => Ty.placeholder
-      if kTy == .placeholder then throwCheck (.builtinWrongFirstArg "map_contains" "&HashMap<K,V> or &mut HashMap<K,V> as first argument" (tyToString mapTy))
+      if kTy == .placeholder then throwCheck (.builtinWrongFirstArg "map_contains" "&HashMap<K,V> or &mut HashMap<K,V> as first argument" (tyToString mapTy)) (some e.getSpan)
       let keyTy ← checkExpr keyArg (some kTy)
-      expectTy kTy keyTy "map_contains() key argument"
+      expectTy kTy keyTy "map_contains() key argument" (some e.getSpan)
       match keyArg with
-      | .ident _ varName => consumeVarIfExists varName
+      | .ident _ varName => consumeVarIfExists varName (some e.getSpan)
       | _ => pure ()
       return .bool
     -- Intercept map_remove(&mut m, key)
     if fnName == "map_remove" then
-      if args.length != 2 then throwCheck (.builtinWrongArgCount "map_remove" 2)
+      if args.length != 2 then throwCheck (.builtinWrongArgCount "map_remove" 2) (some e.getSpan)
       let mapArg := match args with | a :: _ => a | [] => Expr.intLit default 0
       let keyArg := match args with | _ :: b :: _ => b | _ => Expr.intLit default 0
       let mapTy ← checkExpr mapArg
       let (kTy, vTy) := match mapTy with
         | .refMut (.generic "HashMap" [k, v]) => (k, v)
         | _ => (Ty.placeholder, Ty.placeholder)
-      if kTy == .placeholder then throwCheck (.builtinWrongFirstArg "map_remove" "&mut HashMap<K,V> as first argument" (tyToString mapTy))
+      if kTy == .placeholder then throwCheck (.builtinWrongFirstArg "map_remove" "&mut HashMap<K,V> as first argument" (tyToString mapTy)) (some e.getSpan)
       let keyTy ← checkExpr keyArg (some kTy)
-      expectTy kTy keyTy "map_remove() key argument"
+      expectTy kTy keyTy "map_remove() key argument" (some e.getSpan)
       match keyArg with
-      | .ident _ varName => consumeVarIfExists varName
+      | .ident _ varName => consumeVarIfExists varName (some e.getSpan)
       | _ => pure ()
       return .generic "Option" [vTy]
     -- Intercept map_len(&m)
     if fnName == "map_len" then
-      if args.length != 1 then throwCheck (.builtinWrongArgCount "map_len" 1)
+      if args.length != 1 then throwCheck (.builtinWrongArgCount "map_len" 1) (some e.getSpan)
       let mapArg := match args with | a :: _ => a | [] => Expr.intLit default 0
       let mapTy ← checkExpr mapArg
       let ok := match mapTy with
         | .ref (.generic "HashMap" _) => true
         | .refMut (.generic "HashMap" _) => true
         | _ => false
-      if !ok then throwCheck (.builtinWrongFirstArg "map_len" "&HashMap<K,V> or &mut HashMap<K,V> as argument" (tyToString mapTy))
+      if !ok then throwCheck (.builtinWrongFirstArg "map_len" "&HashMap<K,V> or &mut HashMap<K,V> as argument" (tyToString mapTy)) (some e.getSpan)
       return .int
     -- Intercept map_free(m)
     if fnName == "map_free" then
-      if args.length != 1 then throwCheck (.builtinWrongArgCount "map_free" 1)
+      if args.length != 1 then throwCheck (.builtinWrongArgCount "map_free" 1) (some e.getSpan)
       let mapArg := match args with | a :: _ => a | [] => Expr.intLit default 0
       let mapTy ← checkExpr mapArg
       let ok := match mapTy with
         | .generic "HashMap" _ => true
         | _ => false
-      if !ok then throwCheck (.builtinWrongFirstArg "map_free" "HashMap<K,V> as argument" (tyToString mapTy))
+      if !ok then throwCheck (.builtinWrongFirstArg "map_free" "HashMap<K,V> as argument" (tyToString mapTy)) (some e.getSpan)
       match mapArg with
-      | .ident _ varName => consumeVarIfExists varName
+      | .ident _ varName => consumeVarIfExists varName (some e.getSpan)
       | _ => pure ()
       return .unit
     -- Check if this is a function pointer call (variable with fn_ type)
@@ -1118,16 +1136,16 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
     | some (.fn_ paramTys _fnPtrCapSet fnPtrRetTy) =>
       -- Check argument count
       if args.length != paramTys.length then
-        throwCheck (.wrongArgCount s!"function pointer '{fnName}'" paramTys.length args.length)
+        throwCheck (.wrongArgCount s!"function pointer '{fnName}'" paramTys.length args.length) (some e.getSpan)
       -- Check each argument type
       for (arg, pTy) in args.zip paramTys do
         let argTy ← checkExpr arg (some pTy)
-        expectTy pTy argTy s!"argument of function pointer call '{fnName}'"
+        expectTy pTy argTy s!"argument of function pointer call '{fnName}'" (some e.getSpan)
         match arg with
-        | .ident _ varName => consumeVarIfExists varName
+        | .ident _ varName => consumeVarIfExists varName (some e.getSpan)
         | _ => pure ()
       -- Function pointers are Copy, no need to consume
-      useVar fnName
+      useVar fnName (some e.getSpan)
       return fnPtrRetTy
     | _ =>
     match ← lookupFn fnName with
@@ -1192,14 +1210,14 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
             if sig.capParams.contains cap then
               match capBindings.find? fun (name, _) => name == cap with
               | some (_, caps) => resolvedCaps := resolvedCaps ++ caps
-              | none => throwCheck (.cannotInferCapVariable cap fnName)
+              | none => throwCheck (.cannotInferCapVariable cap fnName) (some e.getSpan)
             else
               resolvedCaps := resolvedCaps ++ [cap]
           -- Also resolve cap variables (e.g. .var "C" → bound caps)
           for cv in capVars do
             match capBindings.find? fun (name, _) => name == cv with
             | some (_, caps) => resolvedCaps := resolvedCaps ++ caps
-            | none => throwCheck (.cannotInferCapVariable cv fnName)
+            | none => throwCheck (.cannotInferCapVariable cv fnName) (some e.getSpan)
           pure (CapSet.concrete resolvedCaps)
       -- Resolve cap variables in parameter types for type comparison
       let capBindings' := if sig.capParams.isEmpty then [] else
@@ -1226,21 +1244,21 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
         let (callerCaps, callerVars) := env.currentCapSet.normalize
         for cap in resolvedCaps do
           unless callerCaps.contains cap || callerVars.contains cap do
-            throwCheck (.missingCapability fnName cap env.currentFnName)
+            throwCheck (.missingCapability fnName cap env.currentFnName) (some e.getSpan)
       if args.length != paramTypes.length then
-        throwCheck (.wrongArgCount s!"function '{fnName}'" paramTypes.length args.length)
+        throwCheck (.wrongArgCount s!"function '{fnName}'" paramTypes.length args.length) (some e.getSpan)
       for (arg, (pName, pTy)) in args.zip paramTypes do
         let argTy ← checkExpr arg (some pTy)
-        expectTy pTy argTy s!"argument '{pName}' of '{fnName}'"
+        expectTy pTy argTy s!"argument '{pName}' of '{fnName}'" (some e.getSpan)
         -- If arg is a bare identifier of a linear type, consume it
         match arg with
-        | .ident _ varName => consumeVarIfExists varName
+        | .ident _ varName => consumeVarIfExists varName (some e.getSpan)
         | _ => pure ()
       return retTy
     | none =>
       -- sizeof intrinsic
       if fnName == "sizeof" || fnName.endsWith "_sizeof" then return .uint
-      else throwCheck (.undeclaredFunction fnName)
+      else throwCheck (.undeclaredFunction fnName) (some e.getSpan)
   | .paren _ inner => checkExpr inner hint
   | .structLit _ name typeArgs fields =>
     match ← lookupStruct name with
@@ -1252,28 +1270,28 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
         match fields.find? fun (fn, _) => fn == sf.name with
         | some (_, expr) =>
           let exprTy ← checkExpr expr (some fieldTy)
-          expectTy fieldTy exprTy s!"field '{sf.name}' of struct '{name}'"
+          expectTy fieldTy exprTy s!"field '{sf.name}' of struct '{name}'" (some e.getSpan)
           -- Consume linear variables used as struct fields
           match expr with
-          | .ident _ varName => consumeVarIfExists varName
+          | .ident _ varName => consumeVarIfExists varName (some e.getSpan)
           | _ => pure ()
         | none =>
           -- Unions allow partial initialization (only one field set)
           if !sd.isUnion then
-            throwCheck (.missingFieldInLiteral sf.name s!"struct literal '{name}'")
+            throwCheck (.missingFieldInLiteral sf.name s!"struct literal '{name}'") (some e.getSpan)
       for (fn, _) in fields do
         match sd.fields.find? fun sf => sf.name == fn with
         | some _ => pure ()
-        | none => throwCheck (.unknownFieldInLiteral fn s!"struct literal '{name}'")
+        | none => throwCheck (.unknownFieldInLiteral fn s!"struct literal '{name}'") (some e.getSpan)
       if typeArgs.isEmpty then return .named name
       else return .generic name typeArgs
-    | none => throwCheck (.unknownStructType name)
+    | none => throwCheck (.unknownStructType name) (some e.getSpan)
   | .fieldAccess _ obj field =>
     let objTy ← checkExpr obj
     -- Prevent direct field access on Heap<T> — must use ->
     match objTy with
-    | .heap _ => throwCheck (.heapAccessRequired field (tyToString objTy))
-    | .heapArray _ => throwCheck (.heapAccessRequired field (tyToString objTy))
+    | .heap _ => throwCheck (.heapAccessRequired field (tyToString objTy)) (some e.getSpan)
+    | .heapArray _ => throwCheck (.heapAccessRequired field (tyToString objTy)) (some e.getSpan)
     | _ => pure ()
     -- Auto-deref through references
     let innerTy := match objTy with
@@ -1286,7 +1304,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       | .generic n args => (n, args)
       | .string => ("String", [])
       | _ => ("", [])
-    if structName == "" then throwCheck .fieldAccessNonStruct
+    if structName == "" then throwCheck .fieldAccessNonStruct (some e.getSpan)
     else
       -- Check for newtype .0 unwrap
       match ← lookupNewtype structName with
@@ -1294,12 +1312,12 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
         if field == "0" then
           -- Consume the newtype variable if linear
           match obj with
-          | .ident _ varName => consumeVarIfExists varName
+          | .ident _ varName => consumeVarIfExists varName (some e.getSpan)
           | _ => pure ()
           -- Substitute type params for generic newtypes
           let mapping := nt.typeParams.zip typeArgs
           return substTy mapping nt.innerTy
-        else throw s!"newtype '{structName}' only supports .0 field access"
+        else throwCheckMsg s!"newtype '{structName}' only supports .0 field access"
       | none =>
       match ← lookupStruct structName with
       | some sd =>
@@ -1307,8 +1325,8 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
         | some f =>
           let mapping := sd.typeParams.zip typeArgs
           resolveType (substTy mapping f.ty)
-        | none => throwCheck (.structHasNoField structName field)
-      | none => throwCheck .fieldAccessNonStruct
+        | none => throwCheck (.structHasNoField structName field) (some e.getSpan)
+      | none => throwCheck .fieldAccessNonStruct (some e.getSpan)
   | .enumLit _ enumName variant typeArgs fields =>
     match ← lookupEnum enumName with
     | some ed =>
@@ -1326,20 +1344,20 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
           match fields.find? fun (fn, _) => fn == sf.name with
           | some (_, expr) =>
             let exprTy ← checkExpr expr (some fieldTy)
-            expectTy fieldTy exprTy s!"field '{sf.name}' of {enumName}#{variant}"
+            expectTy fieldTy exprTy s!"field '{sf.name}' of {enumName}#{variant}" (some e.getSpan)
             -- Consume linear variables used as enum fields
             match expr with
-            | .ident _ varName => consumeVarIfExists varName
+            | .ident _ varName => consumeVarIfExists varName (some e.getSpan)
             | _ => pure ()
-          | none => throwCheck (.missingFieldInLiteral sf.name s!"{enumName}#{variant}")
+          | none => throwCheck (.missingFieldInLiteral sf.name s!"{enumName}#{variant}") (some e.getSpan)
         for (fn, _) in fields do
           match ev.fields.find? fun sf => sf.name == fn with
           | some _ => pure ()
-          | none => throwCheck (.unknownFieldInLiteral fn s!"{enumName}#{variant}")
+          | none => throwCheck (.unknownFieldInLiteral fn s!"{enumName}#{variant}") (some e.getSpan)
         if effectiveTypeArgs.isEmpty then return .named enumName
         else return .generic enumName effectiveTypeArgs
-      | none => throwCheck (.unknownVariant variant enumName)
-    | none => throwCheck (.unknownEnumType enumName)
+      | none => throwCheck (.unknownVariant variant enumName) (some e.getSpan)
+    | none => throwCheck (.unknownEnumType enumName) (some e.getSpan)
   | .match_ _ scrutinee arms =>
     let scrTy ← checkExpr scrutinee
     -- Auto-deref through references for match
@@ -1357,7 +1375,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       | some ed =>
         -- Consume scrutinee if it's a linear ident
         match scrutinee with
-        | .ident _ varName => consumeVarIfExists varName
+        | .ident _ varName => consumeVarIfExists varName (some e.getSpan)
         | _ => pure ()
         -- CoreCheck validates exhaustiveness, duplicates, field counts, wrong-enum
         -- Linearity across arms: snapshot env, check each arm, ensure all agree
@@ -1395,7 +1413,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
               let consumed1 := state1 == .consumed
               let consumed2 := state2 == .consumed
               if consumed1 != consumed2 then
-                throwCheck (.matchConsumptionDisagreement name)
+                throwCheck (.matchConsumptionDisagreement name) (some e.getSpan)
         -- Apply the final state from first arm (they all agree)
         match firstArmVars with
         | some vars =>
@@ -1407,11 +1425,11 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
           setEnv { envBefore with vars := vars' }
         | none => setEnv envBefore
         return .named enumName
-      | none => throwCheck (.unknownEnumType enumName)
+      | none => throwCheck (.unknownEnumType enumName) (some e.getSpan)
     else
       -- Value-pattern match (integer/bool literals, variable bindings)
       match scrutinee with
-      | .ident _ varName => useVar varName
+      | .ident _ varName => useVar varName (some e.getSpan)
       | _ => pure ()
       let envBefore ← getEnv
       let mut resultTy := scrTy
@@ -1435,12 +1453,12 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       match ← lookupVarInfo varName with
       | some info =>
         if !info.isCopy && info.state == .consumed then
-          throwCheck (.cannotBorrowMoved varName)
+          throwCheck (.cannotBorrowMoved varName) (some e.getSpan)
         let env ← getEnv
         let activeRefs := activeBorrowRefs env varName
         if info.mutBorrowed || activeRefs.any (fun refInfo => match refInfo.ty with | .refMut _ => true | _ => false) then
-          throwCheck (.cannotBorrowMutablyBorrowed varName)
-      | none => throwCheck (.undeclaredVariable varName)
+          throwCheck (.cannotBorrowMutablyBorrowed varName) (some e.getSpan)
+      | none => throwCheck (.undeclaredVariable varName) (some e.getSpan)
     | _ => pure ()
     return .ref innerTy
   | .borrowMut _ inner =>
@@ -1450,16 +1468,16 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       match ← lookupVarInfo varName with
       | some info =>
         if !info.isCopy && info.state == .consumed then
-          throwCheck (.cannotBorrowMoved varName)
+          throwCheck (.cannotBorrowMoved varName) (some e.getSpan)
         let env ← getEnv
         let activeRefs := activeBorrowRefs env varName
         if info.borrowCount > 0 || activeRefs.any (fun refInfo => match refInfo.ty with | .ref _ | .refMut _ => true | _ => false) then
-          throwCheck (.cannotMutBorrowAlreadyBorrowed varName)
+          throwCheck (.cannotMutBorrowAlreadyBorrowed varName) (some e.getSpan)
         if info.mutBorrowed then
-          throwCheck (.cannotMutBorrowAlreadyMutBorrowed varName)
+          throwCheck (.cannotMutBorrowAlreadyMutBorrowed varName) (some e.getSpan)
         if !info.mutable then
-          throwCheck (.cannotMutBorrowImmutable varName)
-      | none => throwCheck (.undeclaredVariable varName)
+          throwCheck (.cannotMutBorrowImmutable varName) (some e.getSpan)
+      | none => throwCheck (.undeclaredVariable varName) (some e.getSpan)
     | _ => pure ()
     return .refMut innerTy
   | .deref _ inner =>
@@ -1474,15 +1492,15 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
     | .heap t =>
       -- *heap_ptr: loads value from heap, frees memory, consumes the Heap<T>
       match inner with
-      | .ident _ varName => consumeVar varName
+      | .ident _ varName => consumeVar varName (some e.getSpan)
       | _ => pure ()
       return t
-    | _ => throwCheck .cannotDerefNonRef
+    | _ => throwCheck .cannotDerefNonRef (some e.getSpan)
   | .try_ _ inner =>
     let innerTy ← checkExpr inner
     -- Consume the inner expression if it's a variable
     match inner with
-    | .ident _ name => consumeVar name
+    | .ident _ name => consumeVar name (some e.getSpan)
     | _ => pure ()
     match innerTy with
     | .named enumName =>
@@ -1494,14 +1512,14 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
         | some ok, some _ =>
           -- Function must return the same Result type
           let env ← getEnv
-          expectTy innerTy env.currentRetTy "try (?) operator: function must return same Result type"
+          expectTy innerTy env.currentRetTy "try (?) operator: function must return same Result type" (some e.getSpan)
           -- Return the type of the first field in Ok variant
           match ok.fields.head? with
           | some f => return f.ty
-          | none => throwCheck (.tryOkNoField enumName)
-        | _, _ => throwCheck .tryRequiresOkErrVariants
-      | none => throwCheck (.unknownEnumType enumName)
-    | _ => throwCheck .tryRequiresResult
+          | none => throwCheck (.tryOkNoField enumName) (some e.getSpan)
+        | _, _ => throwCheck .tryRequiresOkErrVariants (some e.getSpan)
+      | none => throwCheck (.unknownEnumType enumName) (some e.getSpan)
+    | _ => throwCheck .tryRequiresResult (some e.getSpan)
   | .arrayLit _ elems =>
     match elems with
     | [] => return .array .placeholder 0  -- CoreCheck validates empty array literals
@@ -1513,7 +1531,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       let firstTy ← checkExpr first elemHint
       for e in rest do
         let eTy ← checkExpr e (some firstTy)
-        expectTy firstTy eTy "array element"
+        expectTy firstTy eTy "array element" (some e.getSpan)
       return .array firstTy elems.length
   | .arrayIndex _ arr index =>
     let arrTy ← checkExpr arr
@@ -1552,19 +1570,19 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
             | none => pure ()
           | none => pure ()
         match foundSig with
-        | none => throwCheck (.noMethodOnTypeVar methodName n)
+        | none => throwCheck (.noMethodOnTypeVar methodName n) (some e.getSpan)
         | some sig =>
           -- Type check arguments (params in FnSigDef excludes self)
           if args.length != sig.params.length then
-            throwCheck (.wrongArgCount s!"method '{methodName}'" sig.params.length args.length)
+            throwCheck (.wrongArgCount s!"method '{methodName}'" sig.params.length args.length) (some e.getSpan)
           for (arg, p) in args.zip sig.params do
             let argTy ← checkExpr arg (some p.ty)
-            expectTy p.ty argTy s!"argument '{p.name}' of '{methodName}'"
+            expectTy p.ty argTy s!"argument '{p.name}' of '{methodName}'" (some e.getSpan)
             match arg with
-            | .ident _ varName => consumeVarIfExists varName
+            | .ident _ varName => consumeVarIfExists varName (some e.getSpan)
             | _ => pure ()
           return sig.retTy
-      | _ => throwCheck .methodCallOnNonNamedType
+      | _ => throwCheck .methodCallOnNonNamedType (some e.getSpan)
     else
     let mangledName := typeName ++ "_" ++ methodName
     match ← lookupFn mangledName with
@@ -1579,15 +1597,15 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       let methodParams := (sig.params.drop 1).map fun (n, t) => (n, substTy mapping t)
       let retTy := substTy mapping sig.retTy
       if args.length != methodParams.length then
-        throwCheck (.wrongArgCount s!"method '{methodName}'" methodParams.length args.length)
+        throwCheck (.wrongArgCount s!"method '{methodName}'" methodParams.length args.length) (some e.getSpan)
       for (arg, (pName, pTy)) in args.zip methodParams do
         let argTy ← checkExpr arg (some pTy)
-        expectTy pTy argTy s!"argument '{pName}' of '{methodName}'"
+        expectTy pTy argTy s!"argument '{pName}' of '{methodName}'" (some e.getSpan)
         match arg with
-        | .ident _ varName => consumeVarIfExists varName
+        | .ident _ varName => consumeVarIfExists varName (some e.getSpan)
         | _ => pure ()
       return retTy
-    | none => throwCheck (.noMethodOnType methodName typeName)
+    | none => throwCheck (.noMethodOnType methodName typeName) (some e.getSpan)
   | .staticMethodCall _ typeName methodName typeArgs args =>
     let mangledName := typeName ++ "_" ++ methodName
     match ← lookupFn mangledName with
@@ -1596,15 +1614,15 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       let paramTypes := sig.params.map fun (n, t) => (n, substTy mapping t)
       let retTy := substTy mapping sig.retTy
       if args.length != paramTypes.length then
-        throwCheck (.wrongArgCount s!"static method '{methodName}'" paramTypes.length args.length)
+        throwCheck (.wrongArgCount s!"static method '{methodName}'" paramTypes.length args.length) (some e.getSpan)
       for (arg, (pName, pTy)) in args.zip paramTypes do
         let argTy ← checkExpr arg (some pTy)
-        expectTy pTy argTy s!"argument '{pName}' of '{typeName}::{methodName}'"
+        expectTy pTy argTy s!"argument '{pName}' of '{typeName}::{methodName}'" (some e.getSpan)
         match arg with
-        | .ident _ varName => consumeVarIfExists varName
+        | .ident _ varName => consumeVarIfExists varName (some e.getSpan)
         | _ => pure ()
       return retTy
-    | none => throwCheck (.noMethodOnType methodName typeName)
+    | none => throwCheck (.noMethodOnType methodName typeName) (some e.getSpan)
   | .fnRef _ fnName =>
     -- Look up the function signature to build the fn pointer type
     let env ← getEnv
@@ -1612,7 +1630,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
     | some sig =>
       let paramTys := sig.params.map Prod.snd
       return .fn_ paramTys sig.capSet sig.retTy
-    | none => throwCheck (.unknownFunctionRef fnName)
+    | none => throwCheck (.unknownFunctionRef fnName) (some e.getSpan)
 
 partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
   match stmt with
@@ -1622,11 +1640,11 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
     match value with
     | .ident _ vn =>
       if env.borrowRefs.contains vn then
-        throwCheck (.referenceEscapesBorrowBlock vn)
+        throwCheck (.referenceEscapesBorrowBlock vn) (some stmt.getSpan)
     | _ => pure ()
     let valTy ← checkExpr value ty
     match ty with
-    | some declTy => expectTy declTy valTy s!"let binding '{name}'"
+    | some declTy => expectTy declTy valTy s!"let binding '{name}'" (some stmt.getSpan)
     | none => pure ()
     let finalTy ← match ty with
       | some t => resolveType t
@@ -1648,37 +1666,37 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
     match value with
     | .ident _ vn =>
       if env.borrowRefs.contains vn then
-        throwCheck (.referenceEscapesBorrowBlock vn)
+        throwCheck (.referenceEscapesBorrowBlock vn) (some stmt.getSpan)
     | _ => pure ()
     match ← lookupVarInfo name with
     | some info =>
       if !info.mutable then
-        throwCheck (.assignToImmutable name)
+        throwCheck (.assignToImmutable name) (some stmt.getSpan)
       if info.state == .frozen then
-        throwCheck (.assignToFrozen name)
+        throwCheck (.assignToFrozen name) (some stmt.getSpan)
       let env ← getEnv
       let activeRefs := activeBorrowRefs env name
       if activeRefs.any (fun refInfo => match refInfo.ty with | .ref _ | .refMut _ => true | _ => false) then
-        throwCheck (.assignToBorrowed name)
+        throwCheck (.assignToBorrowed name) (some stmt.getSpan)
       let valTy ← checkExpr value (some info.ty)
-      expectTy info.ty valTy s!"assignment to '{name}'"
-    | none => throwCheck (.assignToUndeclaredVariable name)
+      expectTy info.ty valTy s!"assignment to '{name}'" (some stmt.getSpan)
+    | none => throwCheck (.assignToUndeclaredVariable name) (some stmt.getSpan)
   | .return_ _ (some value) =>
     -- Escape analysis: prevent returning a borrow ref
     let env ← getEnv
     match value with
     | .ident _ vn =>
       if env.borrowRefs.contains vn then
-        throwCheck (.referenceEscapesBorrowBlock vn)
+        throwCheck (.referenceEscapesBorrowBlock vn) (some stmt.getSpan)
     | _ => pure ()
     let valTy ← checkExpr value (some retTy)
-    expectTy retTy valTy "return value"
+    expectTy retTy valTy "return value" (some stmt.getSpan)
     -- Returning a linear variable consumes it
     match value with
-    | .ident _ varName => consumeVar varName
+    | .ident _ varName => consumeVar varName (some stmt.getSpan)
     | _ => pure ()
   | .return_ _ none =>
-    expectTy .unit retTy "return (void)"
+    expectTy .unit retTy "return (void)" (some stmt.getSpan)
   | .expr _ e =>
     let _ ← checkExpr e
     pure ()
@@ -1696,10 +1714,10 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
       checkStmts stmts retTy
       let envAfterElse ← getEnv
       -- Merge: both branches must agree on consumption state of linear vars
-      mergeVarStates envBefore.vars envAfterThen.vars envAfterElse.vars
+      mergeVarStates envBefore.vars envAfterThen.vars envAfterElse.vars (some stmt.getSpan)
     | none =>
       -- No else branch: then branch must not consume any linear var
-      checkNoBranchConsumption envBefore.vars envAfterThen.vars "if-without-else"
+      checkNoBranchConsumption envBefore.vars envAfterThen.vars "if-without-else" (some stmt.getSpan)
   | .while_ _ cond body lbl =>
     let _condTy ← checkExpr cond
     -- Increment loop depth for the body, push label if present
@@ -1737,7 +1755,7 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
     match value with
     | .ident _ vn =>
       if env.borrowRefs.contains vn then
-        throwCheck (.referenceEscapesBorrowBlock vn)
+        throwCheck (.referenceEscapesBorrowBlock vn) (some stmt.getSpan)
     | _ => pure ()
     let objTy ← checkExpr obj
     -- Auto-deref through references
@@ -1750,18 +1768,18 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
       match ← lookupStructField structName field with
       | some fieldTy =>
         let valTy ← checkExpr value (some fieldTy)
-        expectTy fieldTy valTy s!"field assignment '{structName}.{field}'"
-      | none => throwCheck (.structHasNoField structName field)
-    | _ => throwCheck .fieldAccessNonStruct
+        expectTy fieldTy valTy s!"field assignment '{structName}.{field}'" (some stmt.getSpan)
+      | none => throwCheck (.structHasNoField structName field) (some stmt.getSpan)
+    | _ => throwCheck .fieldAccessNonStruct (some stmt.getSpan)
   | .derefAssign _ target value =>
     let targetTy ← checkExpr target
     match targetTy with
     | .refMut inner =>
       let valTy ← checkExpr value (some inner)
-      expectTy inner valTy "deref assignment"
+      expectTy inner valTy "deref assignment" (some stmt.getSpan)
     | .ptrMut inner =>
       let valTy ← checkExpr value (some inner)
-      expectTy inner valTy "deref assignment"
+      expectTy inner valTy "deref assignment" (some stmt.getSpan)
     | _ => pure ()  -- CoreCheck validates deref-assign target type
   | .arrayIndexAssign _ arr index value =>
     let arrTy ← checkExpr arr
@@ -1770,13 +1788,13 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
     match arrTy with
     | .array elemTy _ =>
       let valTy ← checkExpr value (some elemTy)
-      expectTy elemTy valTy "array element assignment"
+      expectTy elemTy valTy "array element assignment" (some stmt.getSpan)
     | _ => let _ ← checkExpr value; pure ()
   | .defer _ body =>
     -- Verify body is a call expression
     match body with
     | .call _ _ _ _ => pure ()
-    | _ => throwCheck .deferBodyNotCall
+    | _ => throwCheck .deferBodyNotCall (some stmt.getSpan)
     let _ ← checkExpr body
     -- If it's destroy(varName), mark varName as reserved
     match body with
@@ -1793,24 +1811,24 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
   | .borrowIn _ var ref region isMut body =>
     -- Check that var exists
     match ← lookupVarInfo var with
-    | none => throwCheck (.undeclaredVariable var)
+    | none => throwCheck (.undeclaredVariable var) (some stmt.getSpan)
     | some varInfo =>
       -- Check no shadowing of ref and region names
       let env ← getEnv
       if (env.vars.lookup ref).isSome then
-        throwCheck (.borrowRefShadows ref)
+        throwCheck (.borrowRefShadows ref) (some stmt.getSpan)
       if (env.vars.lookup region).isSome then
-        throwCheck (.borrowRegionShadows region)
+        throwCheck (.borrowRegionShadows region) (some stmt.getSpan)
       -- Check if variable is frozen (already inside another borrow block)
       if varInfo.state == .frozen then
-        throwCheck (.variableFrozenByBorrow var)
+        throwCheck (.variableFrozenByBorrow var) (some stmt.getSpan)
       -- Check for mutable borrow conflict: if var is already mutably borrowed, error
       if isMut && varInfo.mutBorrowed then
-        throwCheck (.variableAlreadyMutBorrowed var)
+        throwCheck (.variableAlreadyMutBorrowed var) (some stmt.getSpan)
       if isMut && varInfo.borrowCount > 0 then
-        throwCheck (.cannotMutBorrowImmBorrowed var)
+        throwCheck (.cannotMutBorrowImmBorrowed var) (some stmt.getSpan)
       if !isMut && varInfo.mutBorrowed then
-        throwCheck (.cannotImmBorrowMutBorrowed var)
+        throwCheck (.cannotImmBorrowMutBorrowed var) (some stmt.getSpan)
       -- Save state and freeze the original variable
       let savedState := varInfo.state
       let vars' := env.vars.map fun (n, vi) =>
@@ -1839,32 +1857,32 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
       | .ref (.heap t) | .refMut (.heap t) => t
       | _ => .placeholder
     if innerTy == .placeholder then
-      throwCheck (.arrowAssignNotHeap (tyToString objTy))
+      throwCheck (.arrowAssignNotHeap (tyToString objTy)) (some stmt.getSpan)
     let structName := match innerTy with
       | .named n => n
       | _ => ""
-    if structName == "" then throwCheck .arrowAssignNonStruct
+    if structName == "" then throwCheck .arrowAssignNonStruct (some stmt.getSpan)
     match ← lookupStructField structName field with
     | some fieldTy =>
       let valTy ← checkExpr value (some fieldTy)
-      expectTy fieldTy valTy s!"arrow field assignment '{structName}->{field}'"
-    | none => throwCheck (.structHasNoField structName field)
+      expectTy fieldTy valTy s!"arrow field assignment '{structName}->{field}'" (some stmt.getSpan)
+    | none => throwCheck (.structHasNoField structName field) (some stmt.getSpan)
   | .break_ _ value lbl =>
     let env ← getEnv
     if env.inDeferBody then
-      throwCheck .breakInDefer
+      throwCheck .breakInDefer (some stmt.getSpan)
     if env.loopDepth == 0 then
-      throwCheck .breakOutsideLoop
+      throwCheck .breakOutsideLoop (some stmt.getSpan)
     -- Validate label if present
     match lbl with
     | some l =>
       if !env.loopLabels.contains l then
-        throwCheck (.unknownLoopLabel l)
+        throwCheck (.unknownLoopLabel l) (some stmt.getSpan)
     | none => pure ()
     -- Check all linear variables declared in the loop body are consumed
     for (name, info) in env.vars do
       if !info.isCopy && info.state != .consumed && info.loopDepth >= env.loopDepth then
-        throwCheck (.breakSkipsUnconsumedLinear name)
+        throwCheck (.breakSkipsUnconsumedLinear name) (some stmt.getSpan)
     -- Check break value if present (for while-as-expression)
     match value with
     | some expr =>
@@ -1874,24 +1892,24 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
       | none => setEnv { env2 with loopBreakTy := some valTy }
       | some prevTy =>
         if prevTy != valTy then
-          throwCheck (.breakTypeMismatch (tyToString valTy) (tyToString prevTy))
+          throwCheck (.breakTypeMismatch (tyToString valTy) (tyToString prevTy)) (some stmt.getSpan)
     | none => pure ()
   | .continue_ _ lbl =>
     let env ← getEnv
     if env.inDeferBody then
-      throwCheck .continueInDefer
+      throwCheck .continueInDefer (some stmt.getSpan)
     if env.loopDepth == 0 then
-      throwCheck .continueOutsideLoop
+      throwCheck .continueOutsideLoop (some stmt.getSpan)
     -- Validate label if present
     match lbl with
     | some l =>
       if !env.loopLabels.contains l then
-        throwCheck (.unknownLoopLabel l)
+        throwCheck (.unknownLoopLabel l) (some stmt.getSpan)
     | none => pure ()
     -- Check all linear variables declared in the loop body are consumed
     for (name, info) in env.vars do
       if !info.isCopy && info.state != .consumed && info.loopDepth >= env.loopDepth then
-        throwCheck (.continueSkipsUnconsumedLinear name)
+        throwCheck (.continueSkipsUnconsumedLinear name) (some stmt.getSpan)
 
 partial def checkStmts (stmts : List Stmt) (retTy : Ty) : CheckM Unit := do
   for stmt in stmts do
@@ -1901,7 +1919,8 @@ partial def checkStmts (stmts : List Stmt) (retTy : Ty) : CheckM Unit := do
 partial def mergeVarStates
     (before : List (String × VarInfo))
     (afterThen : List (String × VarInfo))
-    (afterElse : List (String × VarInfo)) : CheckM Unit := do
+    (afterElse : List (String × VarInfo))
+    (span : Option Span := none) : CheckM Unit := do
   for (name, infoBefore) in before do
     if infoBefore.isCopy then continue
     let thenState := match afterThen.lookup name with
@@ -1914,7 +1933,7 @@ partial def mergeVarStates
     let thenConsumed := thenState == .consumed
     let elseConsumed := elseState == .consumed
     if thenConsumed != elseConsumed then
-      throwCheck (.linearConsumedOneBranchNotOther name)
+      throwCheck (.linearConsumedOneBranchNotOther name) span
     -- Apply the most progressed state (consumed > used > unconsumed)
     let mergedState := if thenState == .consumed then .consumed
       else if thenState == .used || elseState == .used then .used
@@ -1931,7 +1950,8 @@ partial def mergeVarStates
 partial def checkNoBranchConsumption
     (before : List (String × VarInfo))
     (afterThen : List (String × VarInfo))
-    (ctx : String) : CheckM Unit := do
+    (ctx : String)
+    (span : Option Span := none) : CheckM Unit := do
   for (name, infoBefore) in before do
     if infoBefore.isCopy then continue
     if infoBefore.state == .consumed then continue
@@ -1939,7 +1959,7 @@ partial def checkNoBranchConsumption
       | some info => info.state
       | none => infoBefore.state
     if thenState == .consumed then
-      throwCheck (.linearConsumedNoBranch name ctx)
+      throwCheck (.linearConsumedNoBranch name ctx) span
 
 end
 
@@ -1996,7 +2016,7 @@ def checkFn (f : FnDef) : CheckM Unit := do
 
 
 def checkModule (m : Module) (summary : FileSummary)
-    (imports : ResolvedImports := {}) : Except String Unit :=
+    (imports : ResolvedImports := {}) : Except Diagnostics Unit :=
   -- Use pre-built summaries from FileSummary
   let fnSigs : List FnSummary := summary.functions.map Prod.snd
   let externSigs : List FnSummary := summary.externFnSigs.map Prod.snd
@@ -2167,13 +2187,13 @@ def checkModule (m : Module) (summary : FileSummary)
       traitImpls := traitImplPairs, allFnSummarys := fnSigPairs, newtypes := allNewtypes }
   -- Module-level declaration checks (Copy/Destroy, repr, FFI, traits) moved to CoreCheck.lean.
   -- Reserved name check stays here because reserved names conflict with builtins in Check.
-  let reservedNameCheck := m.functions.foldl (init := (Except.ok () : Except String Unit)) fun acc f =>
+  let reservedNameCheck := m.functions.foldl (init := (Except.ok () : Except Diagnostics Unit)) fun acc f =>
     match acc with
     | .error e => .error e
     | .ok () =>
       if f.name == "destroy" || f.name == "abort" || f.name == "alloc" || f.name == "free"
          || f.name == "alloc_array" || f.name == "free_array" || f.name == "realloc_array" then
-        .error (CheckError.message (.reservedName f.name))
+        .error [{ severity := .error, message := CheckError.message (.reservedName f.name), pass := "check", span := none, hint := none }]
       else .ok ()
   match reservedNameCheck with
   | .error e => .error e
@@ -2199,26 +2219,32 @@ def checkModule (m : Module) (summary : FileSummary)
       ({ f with typeParams := tb.typeParams ++ f.typeParams }, some implTy)
   ) []
   let allFnPairs := regularFns ++ implMethodPairs ++ traitImplMethodPairs
-  let result := allFnPairs.foldlM (fun () (f, implTy) => do
-    let env ← getEnv
-    setEnv { env with currentImplType := implTy, traits := allTraits }
-    checkFn f
-  ) () |>.run initEnv |>.run
-  match result with
-  | (.ok (), _) => .ok ()
-  | (.error e, _) => .error e
+  let (allErrors, _) := allFnPairs.foldl (fun (errs, env) (f, implTy) =>
+    let env' := { env with currentImplType := implTy, traits := allTraits }
+    let result := (checkFn f).run env' |>.run
+    match result with
+    | (.ok (), finalEnv) => (errs, finalEnv)
+    | (.error ds, _) => (errs ++ ds, env)
+  ) (([] : Diagnostics), initEnv)
+  if allErrors.isEmpty then .ok ()
+  else .error allErrors
 
 /-- Check a multi-module program. Uses summary table for import resolution. -/
 def checkProgram (modules : List Module)
-    (summaryTable : List (String × FileSummary) := []) : Except String Unit :=
-  let go := modules.foldlM (init := ()) fun () m => do
+    (summaryTable : List (String × FileSummary) := []) : Except Diagnostics Unit :=
+  let allErrors := modules.foldl (fun errs m =>
     let summary := match summaryTable.find? fun (n, _) => n == m.name with
       | some (_, s) => s
       | none => buildFileSummary m
-    let imports ← resolveImports m.imports summaryTable
+    match liftStringError "check" (resolveImports m.imports summaryTable
         (fun modName => CheckError.message (.unknownModule modName))
-        (fun sym modName => CheckError.message (.notPublicInModule sym modName))
-    checkModule m summary imports
-  go
+        (fun sym modName => CheckError.message (.notPublicInModule sym modName))) with
+    | .error ds => errs ++ ds
+    | .ok imports =>
+      match checkModule m summary imports with
+      | .ok () => errs
+      | .error ds => errs ++ ds
+  ) ([] : Diagnostics)
+  if allErrors.isEmpty then .ok () else .error allErrors
 
 end Concrete

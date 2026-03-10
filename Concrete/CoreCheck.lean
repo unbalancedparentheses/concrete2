@@ -135,12 +135,19 @@ def CoreCheckError.message : CoreCheckError → String
 private def getEnv : StateM CoreCheckEnv CoreCheckEnv := get
 private def setEnv (env : CoreCheckEnv) : StateM CoreCheckEnv Unit := set env
 
-private def addError (msg : String) : StateM CoreCheckEnv Unit := do
+def CoreCheckError.hint : CoreCheckError → Option String
+  | .breakOutsideLoop => some "break can only be used inside while or for loops"
+  | .continueOutsideLoop => some "continue can only be used inside while or for loops"
+  | .copyDestroyConflict _ => some "remove the Destroy impl or remove #[copy]"
+  | .copyFieldNotCopy _ _ => some "mark the field type as #[copy] or remove #[copy] from the struct"
+  | _ => none
+
+private def addError (msg : String) (hint : Option String := none) : StateM CoreCheckEnv Unit := do
   let env ← getEnv
-  setEnv { env with errors := env.errors ++ [{ severity := .error, message := msg, pass := "core-check", span := none, hint := none }] }
+  setEnv { env with errors := env.errors ++ [{ severity := .error, message := msg, pass := "core-check", span := none, hint := hint }] }
 
 private def addCCError (e : CoreCheckError) : StateM CoreCheckEnv Unit :=
-  addError e.message
+  addError e.message e.hint
 
 private def addVar (name : String) (ty : Ty) : StateM CoreCheckEnv Unit := do
   let env ← getEnv
@@ -559,7 +566,7 @@ private def isCopyTy (allStructs : List CStructDef) (allEnums : List CEnumDef) (
   | _ => false
 
 private def mkDeclDiag (e : CoreCheckError) : Diagnostic :=
-  { severity := .error, message := e.message, pass := "core-check", span := none, hint := none }
+  { severity := .error, message := e.message, pass := "core-check", span := none, hint := e.hint }
 
 def ccCheckModuleDecls (m : CModule)
     (allStructs : List CStructDef) (allEnums : List CEnumDef) : Diagnostics :=
@@ -676,13 +683,13 @@ partial def ccCheckModule (m : CModule)
   declErrors ++ finalEnv.errors ++ subErrors
 
 /-- Validate all Core modules. Returns the first error or Ok. -/
-def coreCheckProgram (modules : List CModule) : Except String Unit :=
+def coreCheckProgram (modules : List CModule) : Except Diagnostics Unit :=
   let allStructs := modules.foldl (fun acc m => acc ++ collectAllStructs m) []
   let allEnums := modules.foldl (fun acc m => acc ++ collectAllEnums m) []
   let allErrors := modules.foldl (fun acc m =>
     acc ++ (ccCheckModule m allStructs allEnums).map fun d => { d with message := s!"[{m.name}] {d.message}" }
   ) ([] : Diagnostics)
   if allErrors.isEmpty then .ok ()
-  else .error (renderDiagnostics allErrors)
+  else .error allErrors
 
 end Concrete

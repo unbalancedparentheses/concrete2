@@ -453,10 +453,10 @@ private def verifyFn (f : SFnDef) (fnSigs : List (String × List Ty × Ty)) : Di
 private def verifyModule (m : SModule) (fnSigs : List (String × List Ty × Ty)) : Diagnostics :=
   m.functions.foldl (fun acc f => acc ++ verifyFn f fnSigs) []
 
-def ssaVerifyProgram (modules : List SModule) : Except String Unit :=
+def ssaVerifyProgram (modules : List SModule) : Except Diagnostics Unit :=
   let fnSigs := buildFnSigs modules
   let errors := modules.foldl (fun acc m => acc ++ verifyModule m fnSigs) []
   if errors.isEmpty then .ok ()
-  else .error ("SSA verification errors:\n" ++ renderDiagnostics errors)
+  else .error errors
 
 end Concrete

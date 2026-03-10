@@ -42,6 +42,8 @@ inductive TokenKind where
 structure Span where
   line : Nat
   col : Nat
+  endLine : Nat := 0
+  endCol : Nat := 0
   deriving Repr, Inhabited
 
 structure Token where

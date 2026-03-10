@@ -1,5 +1,6 @@
 import Concrete.AST
 import Concrete.Core
+import Concrete.Diagnostic
 import Concrete.FileSummary
 
 namespace Concrete
@@ -29,7 +30,7 @@ structure ElabEnv where
   allFnSigPairs : List (String × FnSummary) := []
   newtypes : List NewtypeDef := []
 
-abbrev ElabM := ExceptT String (StateM ElabEnv)
+abbrev ElabM := ExceptT Diagnostics (StateM ElabEnv)
 
 inductive ElabError where
   -- Name resolution
@@ -81,7 +82,14 @@ def ElabError.message : ElabError → String
   | .unknownModule name => s!"unknown module '{name}'"
   | .notPublicInModule symbol moduleName => s!"'{symbol}' is not public in module '{moduleName}'"
 
-def throwElab (e : ElabError) : ElabM α := throw e.message
+def ElabError.hint : ElabError → Option String
+  | .fieldAccessNonStruct => some "field access requires a struct type"
+  | .arrayLiteralEmpty => some "provide at least one element"
+  | .methodCallOnNonNamedType => some "method calls require a named type"
+  | _ => none
+
+def throwElab (e : ElabError) (span : Option Span := none) : ElabM α :=
+  throw [{ severity := .error, message := e.message, pass := "elab", span := span, hint := e.hint }]
 
 private def getEnv : ElabM ElabEnv := get
 private def setEnv (env : ElabEnv) : ElabM Unit := set env
@@ -273,7 +281,7 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
       | some sig =>
         let paramTys := sig.params.map Prod.snd
         return .ident name (.fn_ paramTys sig.capSet sig.retTy)
-      | none => throwElab (.undeclaredVariable name)
+      | none => throwElab (.undeclaredVariable name) (some e.getSpan)
 
   | .paren _ inner => elabExpr inner hint
 
@@ -315,8 +323,8 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
         let fieldTy := substTy mapping f.ty
         let fieldTy ← resolveTypeE fieldTy
         return .fieldAccess cDeref field fieldTy
-      | none => throwElab (.structHasNoField structName field)
-    | none => throwElab (.arrowAccessUnknownStruct structName)
+      | none => throwElab (.structHasNoField structName field) (some e.getSpan)
+    | none => throwElab (.arrowAccessUnknownStruct structName) (some e.getSpan)
 
   | .allocCall _ inner allocExpr =>
     let cInner ← elabExpr inner hint
@@ -332,7 +340,7 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
     return .whileExpr cCond cBody cElse resultTy
 
   | .call _ fnName typeArgs args =>
-    elabCall fnName typeArgs args hint
+    elabCall fnName typeArgs args hint (some e.getSpan)
 
   | .structLit _ name typeArgs fields =>
     match ← lookupStruct name with
@@ -348,7 +356,7 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
         | none => pure ()  -- union partial init
       let resultTy := if typeArgs.isEmpty then Ty.named name else Ty.generic name typeArgs
       return .structLit name typeArgs cFields resultTy
-    | none => throwElab (.unknownStructType name)
+    | none => throwElab (.unknownStructType name) (some e.getSpan)
 
   | .fieldAccess _ obj field =>
     let cObj ← elabExpr obj
@@ -371,11 +379,11 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
       | none =>
         -- Erased newtype wrapping a struct: .0 is identity
         if field == "0" then return cObj
-        else throwElab (.structHasNoField structName field)
+        else throwElab (.structHasNoField structName field) (some e.getSpan)
     | none =>
       -- Erased newtype: .0 on a primitive type is identity
       if field == "0" then return cObj
-      else throwElab .fieldAccessNonStruct
+      else throwElab .fieldAccessNonStruct (some e.getSpan)
 
   | .enumLit _ enumName variant typeArgs fields =>
     match ← lookupEnum enumName with
@@ -396,12 +404,12 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
           | some (_, expr) =>
             let cExpr ← elabExpr expr (some fieldTy)
             cFields := cFields ++ [(sf.name, cExpr)]
-          | none => throwElab (.missingFieldInVariant sf.name enumName variant)
+          | none => throwElab (.missingFieldInVariant sf.name enumName variant) (some e.getSpan)
         let resultTy := if effectiveTypeArgs.isEmpty then Ty.named enumName
                          else Ty.generic enumName effectiveTypeArgs
         return .enumLit enumName variant effectiveTypeArgs cFields resultTy
-      | none => throwElab (.unknownVariant variant enumName)
-    | none => throwElab (.unknownEnumType enumName)
+      | none => throwElab (.unknownVariant variant enumName) (some e.getSpan)
+    | none => throwElab (.unknownEnumType enumName) (some e.getSpan)
 
   | .match_ _ scrutinee arms =>
     let cScrut ← elabExpr scrutinee
@@ -506,7 +514,7 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
 
   | .arrayLit _ elems =>
     match elems with
-    | [] => throwElab .arrayLiteralEmpty
+    | [] => throwElab .arrayLiteralEmpty (some e.getSpan)
     | first :: rest =>
       let elemHint := match hint with | some (.array t _) => some t | _ => none
       let cFirst ← elabExpr first elemHint
@@ -535,7 +543,7 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
     | some sig =>
       let paramTys := sig.params.map Prod.snd
       return .fnRef fnName (.fn_ paramTys sig.capSet sig.retTy)
-    | none => throwElab (.unknownFunctionRef fnName)
+    | none => throwElab (.unknownFunctionRef fnName) (some e.getSpan)
 
   | .methodCall _ obj methodName typeArgs args =>
     -- Desugar: obj.method(args) → Type_method(&obj, args) or Type_method(&mut obj, args)
@@ -560,14 +568,14 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
             | none => pure ()
           | none => pure ()
         match foundSig with
-        | none => throwElab (.noMethodOnTypeVar methodName n)
+        | none => throwElab (.noMethodOnTypeVar methodName n) (some e.getSpan)
         | some sig =>
           let mut cArgs : List CExpr := [cObj]
           for (arg, p) in args.zip sig.params do
             let cArg ← elabExpr arg (some p.ty)
             cArgs := cArgs ++ [cArg]
           return .call (n ++ "_" ++ methodName) typeArgs cArgs sig.retTy
-      | _ => throwElab .methodCallOnNonNamedType
+      | _ => throwElab .methodCallOnNonNamedType (some e.getSpan)
     else
       let mangledName := typeName ++ "_" ++ methodName
       match ← lookupFnSig mangledName with
@@ -596,7 +604,7 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
           let cArg ← elabExpr arg (some pTy)
           cArgs := cArgs ++ [cArg]
         return .call mangledName (objTypeArgs ++ typeArgs) cArgs retTy
-      | none => throwElab (.noMethodOnType methodName typeName)
+      | none => throwElab (.noMethodOnType methodName typeName) (some e.getSpan)
 
   | .staticMethodCall _ typeName methodName typeArgs args =>
     let mangledName := typeName ++ "_" ++ methodName
@@ -610,11 +618,11 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
         let cArg ← elabExpr arg (some pTy)
         cArgs := cArgs ++ [cArg]
       return .call mangledName typeArgs cArgs retTy
-    | none => throwElab (.noMethodOnType methodName typeName)
+    | none => throwElab (.noMethodOnType methodName typeName) (some e.getSpan)
 
 /-- Elaborate a function call (regular, builtins, intercepted). -/
 partial def elabCall (fnName : String) (typeArgs : List Ty) (args : List Expr)
-    (_hint : Option Ty) : ElabM CExpr := do
+    (_hint : Option Ty) (span : Option Span := none) : ElabM CExpr := do
   -- Intercept abort()
   if fnName == "abort" then
     return .call "abort" [] [] .never
@@ -817,7 +825,7 @@ partial def elabCall (fnName : String) (typeArgs : List Ty) (args : List Expr)
       let cArg ← elabExpr arg (some pTy)
       cArgs := cArgs ++ [cArg]
     return .call fnName inferredTypeArgs cArgs retTy
-  | none => throwElab (.undeclaredFunction fnName)
+  | none => throwElab (.undeclaredFunction fnName) span
 
 partial def elabStmt (stmt : Stmt) : ElabM (List CStmt) := do
   match stmt with
@@ -837,7 +845,7 @@ partial def elabStmt (stmt : Stmt) : ElabM (List CStmt) := do
     | some varTy =>
       let cVal ← elabExpr value (some varTy)
       return [.assign name cVal]
-    | none => throwElab (.assignToUndeclaredVariable name)
+    | none => throwElab (.assignToUndeclaredVariable name) (some stmt.getSpan)
 
   | .return_ _ (some value) =>
     let env ← getEnv
@@ -919,7 +927,7 @@ partial def elabStmt (stmt : Stmt) : ElabM (List CStmt) := do
   | .borrowIn _ var ref region isMut body =>
     let varTy ← match ← lookupVar var with
       | some ty => pure ty
-      | none => throwElab (.borrowUndeclaredVariable var)
+      | none => throwElab (.borrowUndeclaredVariable var) (some stmt.getSpan)
     let refTy := if isMut then Ty.refMut varTy else Ty.ref varTy
     addVar ref refTy
     let cBody ← elabStmts body
@@ -1042,7 +1050,7 @@ private def buildBuiltinSigs : List (String × FnSummary) := [
 ]
 
 partial def elabModule (m : Module) (summary : FileSummary)
-    (imports : ResolvedImports := {}) : Except String CModule :=
+    (imports : ResolvedImports := {}) : Except Diagnostics CModule :=
   -- Use pre-built summaries from FileSummary
   let userFnSigs := summary.functions
   let externSigs := summary.externFnSigs
@@ -1119,88 +1127,94 @@ partial def elabModule (m : Module) (summary : FileSummary)
       ({ f with typeParams := tb.typeParams ++ f.typeParams }, some implTy)
   ) ([] : List (FnDef × Option Ty))
   let allFnPairs := regularFns ++ implMethodPairs ++ traitImplMethodPairs
-  let result := allFnPairs.foldlM (init := ([] : List CFnDef)) (fun acc (f, implTy) => do
-    let env ← getEnv
-    setEnv { env with currentImplType := implTy, traits := allTraits }
-    let cfn ← elabFn f implTy
-    -- For impl methods, mangle the name
-    let finalName := match implTy with
-      | some it =>
-        let typeName := match it with
-          | .named n => n | .generic n _ => n | _ => ""
-        if typeName != "" then typeName ++ "_" ++ f.name else f.name
-      | none => f.name
-    return acc ++ [{ cfn with name := finalName }]
-  ) |>.run initEnv |>.run
-  match result with
-  | ((.ok fns), _) =>
-    -- Build Core structs
-    let cStructs := m.structs.map fun sd =>
-      { name := sd.name, typeParams := sd.typeParams,
-        fields := sd.fields.map fun f => (f.name, f.ty),
-        isPublic := sd.isPublic, isCopy := sd.isCopy, isReprC := sd.isReprC,
-        isPacked := sd.isPacked, reprAlign := sd.reprAlign : CStructDef }
-    -- Build extern fns
-    let cExterns := m.externFns.map fun ef =>
-      (ef.name, ef.params.map fun p => (p.name, p.ty), ef.retTy)
-    -- Build constants
-    let cConstants := m.constants.map fun c =>
-      let constResult := (elabExpr c.value (some c.ty)).run initEnv |>.run
-      match constResult with
-      | ((.ok cExpr), _) => (c.name, c.ty, cExpr)
-      | ((.error _), _) => (c.name, c.ty, CExpr.intLit 0 c.ty)
-    -- Elaborate submodules recursively
-    let cSubmodules := m.submodules.foldl (init := (Except.ok [] : Except String (List CModule))) fun acc sub =>
-      match acc with
-      | .error e => .error e
-      | .ok lst =>
-        let subSummary := match summary.submoduleSummaries.find? fun (n, _) => n == sub.name with
-          | some (_, s) => s
-          | none => buildFileSummary sub
-        match elabModule sub subSummary with
-        | .ok csub => .ok (lst ++ [csub])
-        | .error e => .error (ElabError.message (.inSubmodule sub.name e))
-    match cSubmodules with
+  let (fns, fnErrors, _) := allFnPairs.foldl (fun (acc, errs, env) (f, implTy) =>
+    let env' := { env with currentImplType := implTy, traits := allTraits }
+    let result := (do
+      let cfn ← elabFn f implTy
+      let finalName := match implTy with
+        | some it =>
+          let typeName := match it with
+            | .named n => n | .generic n _ => n | _ => ""
+          if typeName != "" then typeName ++ "_" ++ f.name else f.name
+        | none => f.name
+      pure { cfn with name := finalName } : ElabM CFnDef).run env' |>.run
+    match result with
+    | (.ok cfn, finalEnv) => (acc ++ [cfn], errs, finalEnv)
+    | (.error ds, _) => (acc, errs ++ ds, env)
+  ) (([] : List CFnDef), ([] : Diagnostics), initEnv)
+  if !fnErrors.isEmpty then .error fnErrors
+  else
+  -- Build Core structs
+  let cStructs := m.structs.map fun sd =>
+    { name := sd.name, typeParams := sd.typeParams,
+      fields := sd.fields.map fun f => (f.name, f.ty),
+      isPublic := sd.isPublic, isCopy := sd.isCopy, isReprC := sd.isReprC,
+      isPacked := sd.isPacked, reprAlign := sd.reprAlign : CStructDef }
+  -- Build extern fns
+  let cExterns := m.externFns.map fun ef =>
+    (ef.name, ef.params.map fun p => (p.name, p.ty), ef.retTy)
+  -- Build constants
+  let cConstants := m.constants.map fun c =>
+    let constResult := (elabExpr c.value (some c.ty)).run initEnv |>.run
+    match constResult with
+    | ((.ok cExpr), _) => (c.name, c.ty, cExpr)
+    | ((.error _), _) => (c.name, c.ty, CExpr.intLit 0 c.ty)
+  -- Elaborate submodules recursively
+  let cSubmodules := m.submodules.foldl (init := (Except.ok [] : Except Diagnostics (List CModule))) fun acc sub =>
+    match acc with
     | .error e => .error e
-    | .ok subs =>
-    .ok {
-      name := m.name
-      structs := cStructs
-      enums := allEnums.map fun ed =>
-        { name := ed.name, typeParams := ed.typeParams,
-          variants := ed.variants.map fun v =>
-            (v.name, v.fields.map fun f => (f.name, f.ty)),
-          isPublic := ed.isPublic, isCopy := ed.isCopy : CEnumDef }
-      functions := fns
-      externFns := cExterns
-      constants := cConstants
-      submodules := subs
-      traitDefs := m.traits.map fun td =>
-        { name := td.name,
-          methods := td.methods.map fun sig =>
-            { name := sig.name, retTy := sig.retTy } : CTraitDef }
-      traitImpls := m.traitImpls.map fun tb =>
-        { traitName := tb.traitName,
-          typeName := tb.typeName,
-          methodNames := tb.methods.map (·.name),
-          methodRetTys := tb.methods.map fun f => (f.name, f.retTy) : CTraitImpl }
-    }
-  | ((.error e), _) => .error e
+    | .ok lst =>
+      let subSummary := match summary.submoduleSummaries.find? fun (n, _) => n == sub.name with
+        | some (_, s) => s
+        | none => buildFileSummary sub
+      match elabModule sub subSummary with
+      | .ok csub => .ok (lst ++ [csub])
+      | .error ds => .error (ds.map fun d => { d with message := s!"in submodule '{sub.name}': {d.message}" })
+  match cSubmodules with
+  | .error e => .error e
+  | .ok subs =>
+  .ok {
+    name := m.name
+    structs := cStructs
+    enums := allEnums.map fun ed =>
+      { name := ed.name, typeParams := ed.typeParams,
+        variants := ed.variants.map fun v =>
+          (v.name, v.fields.map fun f => (f.name, f.ty)),
+        isPublic := ed.isPublic, isCopy := ed.isCopy : CEnumDef }
+    functions := fns
+    externFns := cExterns
+    constants := cConstants
+    submodules := subs
+    traitDefs := m.traits.map fun td =>
+      { name := td.name,
+        methods := td.methods.map fun sig =>
+          { name := sig.name, retTy := sig.retTy } : CTraitDef }
+    traitImpls := m.traitImpls.map fun tb =>
+      { traitName := tb.traitName,
+        typeName := tb.typeName,
+        methodNames := tb.methods.map (·.name),
+        methodRetTys := tb.methods.map fun f => (f.name, f.retTy) : CTraitImpl }
+  }
 
 -- ============================================================
 -- Program elaboration
 -- ============================================================
 
 def elabProgram (modules : List Module)
-    (summaryTable : List (String × FileSummary) := []) : Except String (List CModule) := do
-  modules.foldlM (init := []) fun acc m => do
+    (summaryTable : List (String × FileSummary) := []) : Except Diagnostics (List CModule) :=
+  let (cms, allErrors) := modules.foldl (fun (acc, errs) m =>
     let summary := match summaryTable.find? fun (n, _) => n == m.name with
       | some (_, s) => s
       | none => buildFileSummary m
-    let imports ← resolveImports m.imports summaryTable
+    match liftStringError "elab" (resolveImports m.imports summaryTable
         (fun modName => ElabError.message (.unknownModule modName))
-        (fun sym modName => ElabError.message (.notPublicInModule sym modName))
-    let cm ← elabModule m summary imports
-    return acc ++ [cm]
+        (fun sym modName => ElabError.message (.notPublicInModule sym modName))) with
+    | .error ds => (acc, errs ++ ds)
+    | .ok imports =>
+      match elabModule m summary imports with
+      | .ok cm => (acc ++ [cm], errs)
+      | .error ds => (acc, errs ++ ds)
+  ) (([] : List CModule), ([] : Diagnostics))
+  if allErrors.isEmpty then .ok cms else .error allErrors
 
 end Concrete

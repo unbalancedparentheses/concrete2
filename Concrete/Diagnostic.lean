@@ -37,7 +37,9 @@ private def severityStr : Severity → String
 
 def Diagnostic.render (d : Diagnostic) : String :=
   let locStr := match d.span with
-    | some sp => s!"{sp.line}:{sp.col}: "
+    | some sp =>
+      if sp.endLine > 0 then s!"{sp.line}:{sp.col}-{sp.endLine}:{sp.endCol}: "
+      else s!"{sp.line}:{sp.col}: "
     | none => ""
   let hintStr := match d.hint with
     | some h => s!"\n  hint: {h}"

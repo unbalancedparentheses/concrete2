@@ -81,15 +81,15 @@ def resolve (prog : ParsedProgram) (summary : SummaryTable) : Except Diagnostics
 
 /-- Type-checking pass. -/
 def check (prog : ParsedProgram) (summary : SummaryTable) : Except Diagnostics Unit :=
-  liftStringError "check" (checkProgram prog.modules summary.entries)
+  checkProgram prog.modules summary.entries
 
 /-- Elaborate, canonicalize, and core-check in one step. -/
 def elaborate (prog : ParsedProgram) (summary : SummaryTable) : Except Diagnostics ElaboratedProgram :=
-  match liftStringError "elab" (elabProgram prog.modules summary.entries) with
+  match elabProgram prog.modules summary.entries with
   | .error ds => .error ds
   | .ok coreModules =>
     let coreModules := canonicalizeProgram coreModules
-    match liftStringError "core-check" (coreCheckProgram coreModules) with
+    match coreCheckProgram coreModules with
     | .error ds => .error ds
     | .ok () => .ok { coreModules }
 
@@ -102,7 +102,7 @@ def monomorphize (elabProg : ElaboratedProgram) : Except Diagnostics Monomorphiz
 /-- Lower to SSA, verify, and clean up. -/
 def lower (mono : MonomorphizedProgram) : Except Diagnostics SSAProgram :=
   let ssaModules := mono.coreModules.map lowerModule
-  match liftStringError "ssa-verify" (ssaVerifyProgram ssaModules) with
+  match ssaVerifyProgram ssaModules with
   | .error ds => .error ds
   | .ok () =>
     let ssaModules := ssaCleanupProgram ssaModules
