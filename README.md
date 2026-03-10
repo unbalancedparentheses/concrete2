@@ -41,8 +41,9 @@ What Concrete has today:
 
 - a full Lean 4 compiler pipeline through Core and SSA
 - explicit capabilities, linear ownership, borrows, `defer`, trait dispatch, FFI, and layout attributes
-- structured diagnostics across the semantic pipeline
+- structured diagnostics across the semantic pipeline, with native `Diagnostics` through the main semantic passes
 - explicit audit/report outputs
+- a first real stdlib foundation: stronger `vec`, `string`, `io`, plus `bytes`, `slice`, `text`, `path`, and `fs`
 
 What is still clearly missing:
 
@@ -50,7 +51,7 @@ What is still clearly missing:
 - MLIR backend
 - kernel formalization
 - runtime
-- broader stdlib foundation growth
+- deeper stdlib systems-layer growth (`env`, `process`, `net`, `time`, `hash`, parsing, and later sync/runtime-facing APIs)
 
 ## Try It Now
 

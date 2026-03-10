@@ -16,7 +16,7 @@ Concrete has structured error kinds across the semantic pipeline:
 - `CoreCheckError`
 - `SSAVerifyError`
 
-The parser and AST now carry source spans, and semantic diagnostics render with source locations.
+The parser and AST now carry source spans, including range-capable spans, and semantic diagnostics render with source locations.
 
 ## Current Strengths
 
@@ -24,22 +24,20 @@ Today the compiler already has:
 
 - structured per-pass error kinds
 - span-bearing diagnostics
+- native `Except Diagnostics` plumbing through `Check`, `Elab`, `CoreCheck`, and `SSAVerify`
+- range-aware rendering support in `Diagnostic`
+- hint text on a growing set of semantic diagnostics
 - stable rendered messages for the semantic passes
 - a shared `Diagnostic` type
+- module/function-level multi-error accumulation in `Check` and `Elab`
 
 This means diagnostics are no longer mostly raw strings, and pass ownership is visible in emitted errors.
 
 ## Remaining Work
 
-The next diagnostics work is intentionally staged:
+The remaining diagnostics work is now mostly about fidelity and presentation, not basic plumbing.
 
-### 1. Native diagnostics plumbing
-
-Move more of the compiler to return `Except Diagnostics` natively and remove ad hoc string-to-diagnostic bridging.
-
-This should happen before broader behavior changes.
-
-### 2. Better span/range fidelity
+### 1. Better span/range fidelity
 
 Improve the precision of source reporting:
 
@@ -47,7 +45,7 @@ Improve the precision of source reporting:
 - better postfix/operator-site highlighting
 - cleaner attachment of diagnostics to transformed constructs
 
-### 3. Rendering quality
+### 2. Rendering quality
 
 Add richer presentation support:
 
@@ -56,31 +54,30 @@ Add richer presentation support:
 - suggestions
 - more consistent multi-line formatting
 
-### 4. Optional later accumulation
+### 3. Optional later accumulation refinement
 
-Only after the plumbing and rendering model are stable should the compiler consider multi-error accumulation in `Check` / `Elab`.
+Concrete already accumulates across functions/modules in `Check` and `Elab`. Further accumulation work should only happen if it improves real diagnostic quality without making control flow much harder to reason about.
 
-That is intentionally deferred because it is a larger control-flow change, not just a formatting upgrade.
+This remains intentionally secondary to span fidelity and rendering quality.
 
 ## Current Architectural Rule
 
 Diagnostics work should proceed in this order:
 
-1. native diagnostics plumbing
-2. better span/range fidelity
-3. better rendering
-4. only then consider multi-error accumulation
+1. improve span/range fidelity
+2. improve rendering quality
+3. only then consider broader accumulation/refinement
 
-This preserves architectural clarity and avoids mixing plumbing changes with behavioral changes.
+The basic diagnostics plumbing is already in place. Remaining work should avoid reopening that boundary unless there is a clear payoff.
 
-## First-Error Policy
+## Current Accumulation Policy
 
-The main semantic pipeline is still fail-fast today.
+Concrete is no longer purely fail-fast in the semantic pipeline.
 
-That is documented in [LANGUAGE_INVARIANTS.md](LANGUAGE_INVARIANTS.md) as part of the current implementation model:
+Current behavior:
 
-- first error stops compilation
-- no broad semantic recovery
-- no multi-error accumulation in the main path yet
+- `Resolve` accumulates diagnostics across shallow/interface and body-level work
+- `Check` and `Elab` now accumulate across functions/modules
+- there is still no broad semantic recovery inside a single body; accumulation is deliberately coarse-grained
 
-If that changes later, this document should become the place where the policy and rollout are recorded.
+If this changes further later, this document should be the place where the policy and rollout are recorded.

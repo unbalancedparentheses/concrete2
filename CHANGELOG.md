@@ -41,6 +41,8 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
   - `CoreCheckError`
   - `SSAVerifyError`
 - Threaded source spans through the AST/parser
+- Moved the main semantic pipeline to native `Diagnostics` transport instead of mostly string-based bridging
+- Added range-capable spans, hint text, and broader error accumulation across functions/modules in `Check` and `Elab`
 - Added report/inspection modes:
   - `--report caps`
   - `--report unsafe`
@@ -76,6 +78,17 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 - File I/O builtins
 - Networking builtins
 - `Vec<T>` and `HashMap<K, V>` builtin/runtime-backed support
+
+### Standard library foundation
+
+- Hardened the early `vec`, `string`, and `io` modules with correctness and completeness fixes
+- Added:
+  - `std.bytes`
+  - `std.slice`
+  - `std.text`
+  - `std.path`
+  - `std.fs`
+- Expanded libc/math/test support to better support the growing stdlib surface
 
 ### Testing / status milestones
 

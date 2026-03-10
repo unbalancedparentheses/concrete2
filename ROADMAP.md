@@ -8,6 +8,13 @@ This is the implementation plan for the Concrete programming language. For the f
 
 The Lean 4 compiler implements the core surface language plus the full internal IR pipeline: Core IR, elaboration, Core validation, monomorphization, SSA lowering, SSA verification/cleanup, and SSA codegen. The main suite currently has 266 passing tests, and the SSA-specific suite also passes.
 
+The project also now has:
+
+- centralized ABI/layout authority in `Layout.lean`
+- first-batch audit/report outputs
+- native diagnostics through the main semantic passes
+- a first real stdlib foundation (`vec`, `string`, `io`, `bytes`, `slice`, `text`, `path`, `fs`)
+
 For completed milestones and major landed features, see [CHANGELOG.md](CHANGELOG.md).
 For the detailed compiler pipeline, pass boundaries, and architecture phase reference, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
@@ -23,20 +30,19 @@ Still clearly not implemented:
 
 ### Now
 
-1. Strengthen shared diagnostics infrastructure:
-   - native `Except Diagnostics` plumbing
-   - better span/range fidelity
-   - better rendering, notes, and labels
-2. Keep the builtin-vs-stdlib boundary explicit as the standard library grows.
-3. Preserve SSA as the only backend boundary and keep the build/project model explicit and boring.
+1. Keep the builtin-vs-stdlib boundary explicit as the standard library grows.
+2. Preserve SSA as the only backend boundary and keep the build/project model explicit and boring.
+3. Improve diagnostics fidelity and rendering quality:
+   - better range precision
+   - notes and secondary labels
+   - clearer presentation for transformed constructs
 
 ### Next
 
 1. Grow the stdlib foundation:
-   - bytes / buffers
-   - borrowed slices and text views
-   - stronger file/path/process/env modules
-   - networking
+   - strengthen `fs`
+   - add `env` / `process`
+   - add `net`
    - small formatting and test support
 2. Push formalization over the cleaned Core -> SSA architecture.
 3. Add later audit/report outputs still marked deferred, such as allocation summaries and cleanup/destruction reports.
@@ -144,7 +150,7 @@ Composable runner functions (`Pipeline.parse`, `.resolveFiles`, `.buildSummary`,
 - trivial phi/copy elimination
 This is a cross-backend cleanup layer over SSA, not an LLVM-only optimization project. Every backend sees cleaner IR and shares the same semantics.
 
-6. **Diagnostics infrastructure**
+6. **Diagnostics infrastructure** — DONE enough
 Build on the structured errors with stronger shared compiler infrastructure for:
 - range-aware spans
 - secondary labels/notes
@@ -152,13 +158,19 @@ Build on the structured errors with stronger shared compiler infrastructure for:
 - cleaner multi-diagnostic presentation
 - reusable diagnostic data/formatting paths across passes
 
-Sequencing for this work should stay explicit:
+What is already true:
 
-- first make passes return `Except Diagnostics` natively and remove ad hoc string-to-diagnostic bridging
-- then improve span/range fidelity and rendering quality
-- only after that consider multi-error accumulation in `Check` / `Elab`
+- the main semantic passes now use native `Diagnostics`
+- range-capable spans exist in the diagnostic model
+- `Check` and `Elab` now accumulate across functions/modules
+- hint text exists for a growing subset of semantic errors
 
-Multi-error reporting is valuable, but it is a separate behavioral change and a larger control-flow refactor. The compiler should get native diagnostics plumbing correct before it changes how many errors those passes try to accumulate.
+Remaining work should stay focused on:
+
+- better span/range fidelity
+- secondary labels, notes, and suggestions
+- cleaner rendering quality
+- only then broader accumulation/refinement if it earns its complexity
 
 See [docs/DIAGNOSTICS.md](docs/DIAGNOSTICS.md) for the current diagnostics model and sequencing.
 
@@ -202,10 +214,9 @@ After the architecture layer above:
 
 10. **Stdlib growth**
 Focus on the areas that pressure-test the language:
-- bytes / buffers
-- borrowed slices and text views
-- stronger file/path/process/env modules
-- a real networking layer
+- strengthen the new foundation (`vec`, `string`, `io`, `bytes`, `slice`, `text`, `path`, `fs`)
+- add `env` / `process`
+- add `net`
 - small formatting and test support improvements
 - keep stdlib APIs explicit: allocator-visible where allocation occurs, typed errors, and obvious ownership/resource handles
 
