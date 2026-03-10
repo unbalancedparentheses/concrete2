@@ -1,8 +1,8 @@
 # File-Summary Frontend Architecture
 
-**Status:** Open design direction
+**Status:** Implemented — summary frontend is complete
 **Affects:** Frontend architecture, modules/imports, method resolution, future incremental compilation
-**Date:** 2026-03-09
+**Date:** 2026-03-09 (design), 2026-03-10 (completed)
 
 ## Context
 
@@ -39,7 +39,7 @@ The useful takeaway for Concrete is not "never use queries" as a slogan. The use
 
 That is already close to Concrete's stated philosophy.
 
-## Current State in Concrete
+## Historical Context
 
 Concrete's pass contracts already separate syntax from semantics:
 
@@ -63,7 +63,60 @@ Concrete's parser is LL(1) recursive descent and does not depend on macro expans
 4. Instance method resolution still depends on type information.
 This is explicitly documented as a boundary between `Resolve` and `Check`.
 
-This means Concrete is already in a better position than Rust for a non-query frontend, but it has not yet been refactored to fully exploit that advantage.
+This is the direction the compiler was moving toward before the summary frontend landed.
+
+## Implementation Status (2026-03-10)
+
+The summary-based frontend is now implemented. Here is what landed:
+
+### Artifacts
+
+| Artifact | Location | Consumers |
+|----------|----------|-----------|
+| `FileSummary` | `Concrete/FileSummary.lean` | Resolve (shallow phase), Check, Elab |
+| `ResolvedImports` | `Concrete/FileSummary.lean` | Check, Elab |
+| `FnSummary` | `Concrete/FileSummary.lean` | All passes via FileSummary |
+
+### Pass responsibilities
+
+| Pass | Role |
+|------|------|
+| **Resolve** | Purely shallow/interface: module existence, import validity, top-level name visibility, deep type name validation. Consumes `FileSummary`. Does NOT own trait impl completeness or any post-elaboration semantic rule. |
+| **Check** | Surface/inference-specific: linearity/borrow tracking, type inference, cap-polymorphic call resolution, surface-syntax-dependent checks. Consumes `ResolvedImports`. |
+| **Elab** | Elaboration to Core IR. Consumes `ResolvedImports`. |
+| **CoreCanonicalize** | Pure Core→Core normalization. Recurses through submodules. |
+| **CoreCheck** | Post-elaboration semantic authority: capability discipline, match completeness, operator/return-type legality, declaration-level trait/FFI/repr checks. Recurses through submodules. |
+
+### What moved where
+
+- Trait impl completeness: Resolve → CoreCheck (operates on Core IR after elaboration)
+- Copy/Destroy conflict, Copy field validation: Check → CoreCheck
+- repr(C)/packed/align validation: Check → CoreCheck
+- FFI safety (extern fn params/return): Check → CoreCheck
+- Builtin trait redeclaration: Check → CoreCheck
+- Reserved function names: duplicated in both Check (early gate) and CoreCheck
+- Submodule processing: CoreCheck and CoreCanonicalize now recurse into `mod X { ... }` blocks
+
+### "Done enough" criteria met
+
+1. `FileSummary` is the single cross-file interface artifact — all passes consume it rather than rebuilding views from raw ASTs. **Caveat:** FileSummary and ResolvedImports carry full impl/trait-impl blocks with method bodies (not just signatures) because Check and Elab need them for cross-module method type-checking and elaboration. Splitting into interface-only and body portions is a future incremental-compilation concern.
+2. `ResolvedImports` is an explicit stable artifact (documented, not ad hoc)
+3. No early pass rebuilds import/export/signature views ad hoc
+4. Resolve is purely shallow/interface-oriented
+5. Check is clearly surface/inference-specific
+6. CoreCheck owns all post-elaboration legality rules
+7. The artifact flow is explicit in the pipeline
+
+### What remains for future incremental compilation
+
+- Split `FileSummary` into interface-only and body portions (currently carries `implBlocks`/`traitImpls` for Elab)
+- Cache summaries by file content hash
+- Parallel per-file parsing and summary construction
+- Incremental rebuild keyed off file hash + imported summary hashes
+
+---
+
+## Original Design Direction (preserved for reference)
 
 ## Goal
 
@@ -111,7 +164,7 @@ Add a new pass:
 ParsedFile -> FileSummary
 ```
 
-`FileSummary` is the crucial new abstraction. It should include only declaration-level information needed across files.
+`FileSummary` was the crucial new abstraction. In the implemented version it became the declaration-level interface artifact, but it still carries impl/trait-impl bodies because imported method checking and elaboration need them today.
 
 Suggested contents:
 
@@ -130,7 +183,7 @@ This pass should not inspect function bodies beyond what is needed to collect lo
 
 ### 3. Resolve imports from summaries only
 
-Replace today's ad hoc cross-module export construction with:
+Replace ad hoc cross-module export construction with:
 
 ```
 List FileSummary -> ImportIndex
@@ -356,9 +409,10 @@ This is the architecture most consistent with:
 - the absence of macros
 - the long-term verification goal
 
-The immediate next step is modest:
+That part is now implemented. The remaining future refinement is narrower:
 
-**Create an explicit `FileSummary` pass and make import/export validation consume it.**
+- if incremental compilation becomes a priority, split interface-only and body-bearing portions of `FileSummary` / `ResolvedImports`
+- otherwise keep the current coarse-grained artifact boundary and move on to the next architecture item
 
 That single move would turn the current whole-program frontend from an implementation convenience into a more principled architecture, while keeping the existing compiler understandable.
 

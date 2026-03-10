@@ -70,27 +70,30 @@ Source Text
 
 **Signature:** `resolveProgram : List Module → Except Diagnostics (List ResolvedModule)`
 
+Resolve is strictly a shallow/interface validation pass. It operates on `FileSummary` artifacts and surface AST — it never inspects function bodies for declaration-level information and does not perform any post-elaboration semantic checks.
+
 **Preconditions:**
 - Syntactically valid AST from Parse with module files resolved.
+- `FileSummary` artifacts built for all modules (via `buildSummaryTable`).
 
 **Postconditions:**
 - All name references validated: function calls, struct/enum literals, static method calls, function references, variable identifiers.
 - Deep type validation: all type names in annotations, parameters, return types, generics, refs, arrays, and function pointer types are known.
 - `Self` only used inside impl/trait-impl blocks.
-- Trait impl completeness checked: all required methods provided (name-level, not signature-level).
 - Import validation: imported modules exist, imported symbols are public.
 - Submodule definitions registered in global scope.
 
 **What Resolve does NOT check:**
 - **Instance method calls (`.methodCall`)** are skipped entirely. The method name depends on the receiver type, which is only known after type checking. This is an intentional boundary — method resolution requires type information that only Check can provide.
-- **Trait impl signature compatibility** — Check owns parameter/return type agreement.
+- **Trait impl completeness** — CoreCheck owns this (validates all required methods provided and signatures match, operating on Core IR after elaboration).
+- **Trait impl signature compatibility** — CoreCheck owns this too.
 - **Type correctness** — Resolve only checks that names exist, not that types are used correctly.
+- **FFI safety, repr validation, Copy/Destroy rules** — all declaration-level semantic checks that can be stated on Core IR belong in CoreCheck.
 
 **Error conditions** (all errors use the structured `ResolveError` inductive with span-bearing `Diagnostic` output via `Diagnostic.render`):
 - Unknown function, struct type, enum, enum variant, static method, function reference.
 - Unknown type name in any type position.
 - `Self` outside impl block.
-- Trait impl missing a required method or referencing unknown trait.
 - Import referencing unknown module or non-public symbol.
 
 **Invariant established:** All name references resolve to known definitions. Types are named validly. Imports reference existing public symbols.
@@ -170,17 +173,20 @@ Source Text
 - Match arms sorted: specific constructors before wildcards/variables.
 - Struct literal fields reordered to match definition order.
 - Function signatures and expressions normalized.
+- Submodules recursively canonicalized (trait defs, trait impls, types in submodule declarations are all normalized).
 
 **Error conditions:**
 - None (pure transformation, always succeeds).
 
-**Invariant established:** Types normalized, match arms sorted, struct fields in definition order.
+**Invariant established:** Types normalized, match arms sorted, struct fields in definition order. Applies uniformly across top-level modules and all nested submodules.
 
 ---
 
 ## 6. CoreCheck
 
 **Signature:** `coreCheckProgram : List CModule → Except String Unit`
+
+CoreCheck is the post-elaboration semantic authority. It owns all legality rules that can be stated on Core IR, including both function-body validation and declaration-level checks. It recursively processes submodules, so declaration checks apply uniformly to inline `mod X { ... }` blocks.
 
 **Preconditions:**
 - Canonicalized Core IR.
@@ -193,6 +199,16 @@ Source Text
 - Match structure is validated after elaboration, including wrong-enum arms, duplicate variants, and variant field-count agreement.
 - Match expressions cover all enum variants (or have wildcard).
 - `break`/`continue` only inside loops.
+- Declaration-level checks validated across all modules and submodules:
+  - Copy/Destroy conflict detection.
+  - Copy struct fields must be Copy types.
+  - `#[repr(C)]` validation (no generics, FFI-safe fields).
+  - `#[repr(packed)]`/`#[repr(align(N))]` conflict and power-of-two checks.
+  - Extern fn parameter and return type FFI safety.
+  - Builtin trait (`Destroy`) redeclaration prevention.
+  - Reserved function name detection.
+  - Trait impl completeness: all required methods provided, return type signatures match trait definition.
+  - Unknown trait detection.
 
 **Error conditions** (all errors use the structured `CoreCheckError` inductive, rendered to identical strings via `CoreCheckError.message`):
 - Insufficient capabilities for callee.
@@ -204,8 +220,14 @@ Source Text
 - Duplicate match arm.
 - Wrong field count for enum variant arm.
 - `break`/`continue` outside loop context.
+- Copy/Destroy conflict, non-Copy field in Copy struct.
+- `#[repr(C)]` with generics, non-FFI-safe fields.
+- `#[repr(packed)]` + `#[repr(align)]` conflict, non-power-of-two alignment.
+- Non-FFI-safe extern fn parameters/return types.
+- Builtin trait redeclared, unknown trait, missing trait method, trait method signature mismatch.
+- Reserved function name.
 
-**Invariant established:** Capabilities valid in Core IR, operand types match, return types agree, and match structure/coverage are valid.
+**Invariant established:** Capabilities valid in Core IR, operand types match, return types agree, match structure/coverage valid, declaration-level trait/FFI/repr rules satisfied. All checks apply uniformly across top-level modules and nested submodules.
 
 ---
 
@@ -320,17 +342,72 @@ Source Text
 
 ---
 
+## Artifact Flow
+
+The compiler produces explicit, stable artifacts at each stage:
+
+```
+Source Text
+    │
+    ▼
+  Parse ─── String → List Module (ParsedModule)
+    │
+    ▼
+  buildSummaryTable ─── List Module → List (String × FileSummary)
+    │
+    ├─→ FileSummary: declaration-level cross-file interface
+    │     (function sigs, extern sigs, impl method sigs, structs, enums,
+    │      traits, constants, type aliases, newtypes, imports, public names)
+    │
+    ├─→ ResolvedImports: per-module import artifact
+    │     (imported functions, structs, enums, impl blocks, trait impls,
+    │      impl method sigs — all resolved from FileSummary)
+    │
+    ▼
+  Resolve ─── shallow (FileSummary) + body (AST) → List ResolvedModule
+    │
+    ▼
+  Check ─── List Module + ResolvedImports → Unit
+    │
+    ▼
+  Elab ──── List Module + ResolvedImports → List CModule
+    │
+    ▼
+  CoreCanonicalize ── List CModule → List CModule
+    │
+    ▼
+  CoreCheck ── List CModule → Unit
+    │
+    ▼
+  Mono ──── List CModule → List CModule (monomorphized)
+    │
+    ▼
+  Lower ─── CModule → SModule (SSA)
+    │
+    ▼
+  SSAVerify → SSACleanup → EmitSSA → clang → executable
+```
+
+`FileSummary` is the single cross-file interface artifact for the current frontend architecture phase. All passes consume signatures and type declarations from it rather than rebuilding their own views from raw ASTs. `ResolvedImports` is the single import artifact consumed by Check and Elab — it is built once from the summary table and shared, not rebuilt ad hoc in each pass.
+
+**Note:** `FileSummary` and `ResolvedImports` currently carry full impl/trait-impl blocks with method bodies (not just signatures). Check and Elab need these to type-check and elaborate imported method implementations. Splitting into interface-only and body portions is a future incremental-compilation concern, not a current blocker.
+
+---
+
 ## Cross-Pass Invariants
 
 | Property | Established by | Relied upon by |
 |----------|---------------|----------------|
 | Syntactic validity | Parse | All subsequent passes |
-| Name resolution | Resolve | Check, Elab (names exist, imports valid) |
+| FileSummary (declaration-level interface) | buildSummaryTable | Resolve, Check, Elab |
+| ResolvedImports (per-module import artifact) | resolveImportsFromTable | Check, Elab |
+| Name resolution, import validity | Resolve | Check, Elab (names exist, imports valid) |
 | Type consistency | Check | Elab, CoreCheck |
 | Linearity | Check | (enforced at surface level) |
 | Capabilities | Check (cap-polymorphic calls), CoreCheck | EmitSSA (no runtime checks) |
 | Return type agreement after elaboration | CoreCheck | Lower, EmitSSA |
 | Match shape and coverage after elaboration | CoreCheck | Lower |
+| Declaration-level legality (trait/FFI/repr) | CoreCheck | Lower, EmitSSA |
 | Full type annotations | Elab | Mono, Lower, EmitSSA |
 | No type variables | Mono | Lower, EmitSSA |
 | SSA form / dominance | Lower, SSAVerify | SSACleanup, EmitSSA |

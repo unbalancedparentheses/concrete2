@@ -4,7 +4,7 @@ This is the implementation plan for the Concrete programming language. For the f
 
 ## What's Built
 
-The Lean 4 compiler implements the core surface language plus the new internal IR pipeline pieces: Core IR, elaboration, Core validation, monomorphization, SSA lowering, SSA verification/cleanup, and SSA codegen. All 255 main tests pass, and the SSA-specific suite passes as well (`163/163`).
+The Lean 4 compiler implements the core surface language plus the new internal IR pipeline pieces: Core IR, elaboration, Core validation, monomorphization, SSA lowering, SSA verification/cleanup, and SSA codegen. All 263 main tests pass, and the SSA-specific suite passes as well.
 
 **Done:**
 - Lexer, LL(1) parser, AST
@@ -79,24 +79,19 @@ Already completed in this arc:
 
 Remaining architecture work, in order:
 
-1. **Summary-based frontend**
-Before the standard library grows much further, move the frontend toward file summaries as the main cross-file interface:
-- `FileSummary` exists as the declaration-level interface artifact
-- shallow/interface resolution split from body-level resolution is already landed in `Resolve`
-- shallow resolution now consumes summaries directly
-- summary-driven import/export now includes extern signatures
-- `Check` and `Elab` now share a single export/import path built from summaries
-- next: make summaries stable reusable frontend artifacts
-- make import/export validation consume summaries directly
-- keep method/type-directed body checking in `Check`
-- preserve the simple pass pipeline instead of moving to a query-first frontend
+1. **Summary-based frontend** — DONE
+The frontend now uses file summaries as the main cross-file interface:
+- `FileSummary` is the only declaration-level cross-file interface artifact
+- `ResolvedImports` is an explicit stable artifact consumed by Check and Elab
+- No pass rebuilds import/export/signature views ad hoc — function, extern, and impl-method sigs are prebuilt once in FileSummary
+- Resolve is purely shallow/interface-oriented: module existence, import validity, top-level name visibility, deep type name validation
+- Check retains only surface/inference-specific work: linearity/borrow tracking, type inference, cap-polymorphic call resolution
+- CoreCheck owns all post-elaboration legality rules: capability discipline, match completeness, trait/FFI/repr checks, return-type and operator legality
+- CoreCheck and CoreCanonicalize both recurse through submodules
+- The artifact flow is explicit: ParsedModule → FileSummary → ResolvedImports → checked/elaborated module → monomorphized Core → SSA module
 
-2. **Core as semantic authority**
-CoreCheck now owns capability enforcement for Core operations and builtins, operator type errors, condition type errors, match exhaustiveness (including wrong-enum, duplicate arm, field-count validation), and return-type checking. Check.lean still exists but its semantic role is shrinking in the intended direction — it retains linearity/borrow tracking, type inference, and capability-polymorphism resolution (which requires surface-syntax context). Continue moving post-elaboration legality checks out of Check.lean and into CoreCheck, especially wherever the rule no longer needs surface-syntax context or type-inference-only context:
-- keep elaboration as the place where surface sugar disappears
-- make `CoreCheck` the main home for post-elaboration semantic rules
-- reduce duplicated semantic reasoning between `Check` and Core validation
-- keep the proof target centered on validated Core rather than surface syntax
+2. **Core as semantic authority** — DONE
+CoreCheck is the post-elaboration semantic authority. It owns: capability enforcement, operator type errors, condition type errors, match exhaustiveness (coverage, wrong-enum, duplicate arms, field-count), return-type checking, and all declaration-level checks (Copy/Destroy conflicts, repr validation, FFI safety, trait impl completeness with signature checking, reserved names). CoreCheck and CoreCanonicalize both recurse through submodules. Check.lean retains only what genuinely requires surface-syntax context: linearity/borrow tracking, type inference, cap-polymorphic call resolution, reserved-name early gate (prevents confusing downstream type errors). Trait impl completeness has moved entirely from Resolve to CoreCheck.
 
 3. **ABI/layout subsystem boundary**
 Make layout and FFI concerns a clearer compiler subsystem instead of just scattered helpers:
@@ -420,7 +415,7 @@ New file: `Concrete/Resolve.lean`
 
 Extract name resolution, module resolution, and symbol binding from Check.lean into a dedicated pass.
 
-**Status:** In progress. `Resolve.lean` runs in the compile path and now validates imports, exports, deep type references, `Self`, function/static-method names, enum variants, and trait-impl completeness. Method-call resolution still remains with `Check.lean` because it needs receiver type information.
+**Status:** Done. `Resolve.lean` is a purely shallow/interface validation pass. It validates imports, exports, deep type references, `Self`, function/static-method names, and enum variants. Trait impl completeness has moved to CoreCheck (which operates on Core IR after elaboration). Method-call resolution remains with `Check.lean` because it needs receiver type information. Resolve consumes `FileSummary` artifacts and does not inspect function bodies for declaration-level information.
 
 ### A3b: Summary-Based Frontend
 
@@ -444,7 +439,19 @@ Planned direction:
 
 This keeps the frontend explicit and batch-oriented without moving to a query-first architecture.
 
-**Status:** In progress. `Resolve` now has a shallow phase (`resolveShallow`) and a body phase (`resolveBodies`), `FileSummary` exists as the declaration-level interface artifact, shallow resolution consumes summaries directly, and summary-driven import/export includes extern signatures through a shared `Check`/`Elab` path. Function, extern, and impl-method signatures are now prebuilt once in `FileSummary` and reused by downstream passes. Impl method summaries preserve `Self` structurally and use shared `resolveSelfTy` for pass-local interpretation. The next step is to turn summaries into stable reusable frontend artifacts that other stages can cache and consume explicitly.
+**Status:** Done enough for the current architecture phase. The summary-based frontend is complete in the sense needed by the roadmap:
+- `FileSummary` is the only declaration-level cross-file interface artifact
+- `ResolvedImports` is an explicit stable artifact consumed by Check and Elab (not rebuilt ad hoc)
+- `Resolve` has a shallow phase (`resolveShallow`) and a body phase (`resolveBodies`); shallow resolution consumes summaries directly
+- Function, extern, and impl-method signatures are prebuilt once in `FileSummary` and reused by all downstream passes
+- Impl method summaries preserve `Self` structurally and use shared `resolveSelfTy` for pass-local interpretation
+- Resolve is purely shallow/interface-oriented (trait impl completeness moved to CoreCheck)
+- CoreCheck owns all post-elaboration declaration-level legality checks and recurses through submodules
+- The artifact flow is explicit: ParsedModule → FileSummary → ResolvedImports → checked/elaborated module → monomorphized Core → SSA module
+
+Refinement still possible later:
+- `FileSummary` and `ResolvedImports` currently carry full impl/trait-impl bodies because imported method checking and elaboration need them
+- splitting interface-only and body-bearing portions is a future incremental-compilation concern, not a blocker for the current roadmap phase
 
 ### A4: Core Validation
 
@@ -452,7 +459,7 @@ New file: `Concrete/CoreCheck.lean`
 
 Type check, linearity, borrow, and capability validation on Core IR. Replaces semantic checking currently in Check.lean. Much simpler because the input is already desugared and explicit.
 
-**Status:** In progress. `CoreCheck.lean` is the primary semantic authority for post-elaboration validation. It now owns: capability enforcement (function calls, builtins via capability table, extern fns, alloc/deref/cast/derefAssign operations), operator type errors (arithmetic, bitwise, logical, comparison), condition type errors (if/while), match exhaustiveness (coverage, wrong-enum, duplicate arms, field-count), return-type checking, and structural invariants (break/continue). `Check.lean` no longer has `checkCapabilities`, operator type error reporting, condition type checks, or match validation — it retains linearity/borrow tracking, type inference, and capability-polymorphism resolution. The remaining work is to continue migrating checks that don't require surface-syntax context.
+**Status:** Done enough for the current architecture phase. `CoreCheck.lean` is the post-elaboration semantic authority. It owns: capability enforcement (function calls, builtins via capability table, extern fns, alloc/deref/cast/derefAssign operations), operator type errors (arithmetic, bitwise, logical, comparison), condition type errors (if/while), match exhaustiveness (coverage, wrong-enum, duplicate arms, field-count), return-type checking, structural invariants (break/continue), and all declaration-level checks (Copy/Destroy conflicts, Copy field validation, repr(C)/packed/align validation, FFI safety, builtin trait redeclaration, reserved names, trait impl completeness with signature matching). CoreCheck recursively processes submodules. `Check.lean` retains only surface-context-dependent work: linearity/borrow tracking, type inference, capability-polymorphism resolution, and the reserved-name early gate.
 
 ### A4b: Core As Semantic Authority
 
@@ -464,7 +471,7 @@ Make the architecture rule explicit:
 
 This is the internal compiler analogue of Concrete's source-level explicitness: one clear semantic form, one clear validation boundary.
 
-**Status:** A5 refactor complete, continued migration in progress. `checkCapabilities` removed from Check.lean (was 21 call sites). Operator type checks, condition type checks, match validation all moved to CoreCheck. CoreCheck has a builtin capability table and extern-fn awareness. Cast validity, array index type checks, array literal emptiness, and deref-assign target validation also moved to CoreCheck. The remaining `Check` logic is now largely the genuinely surface-context-dependent work: linearity/borrow tracking, type inference, name resolution fallout, cap-poly resolution, and `cannotDerefNonRef` (needed for type inference — Check must know the result type to continue). Next step: continue migrating post-elaboration legality checks where the rule no longer needs surface-syntax or type-inference context.
+**Status:** Done. All post-elaboration legality checks that can be stated on Core IR have been migrated to CoreCheck. `checkCapabilities` removed from Check.lean (was 21 call sites). Operator type checks, condition type checks, match validation, cast validity, array index type checks, array literal emptiness, deref-assign target validation, Copy/Destroy conflict detection, repr validation, FFI safety, trait impl completeness (with signature matching), reserved names, and builtin trait redeclaration are all in CoreCheck. CoreCheck recurses through submodules for uniform coverage. The remaining `Check` logic is genuinely surface-context-dependent: linearity/borrow tracking, type inference, cap-poly resolution, reserved-name early gate (prevents confusing type errors), and `cannotDerefNonRef` (needed for type inference).
 
 ### A5: Codegen on SSA IR
 
@@ -517,8 +524,8 @@ Build mechanized proofs over the validated Core IR. This is existing Phase 9, no
 |----------|-------|-------------|-----------|--------|
 | 1 | A1 | Core IR definition | `Concrete/Core.lean` | **DONE** |
 | 2 | A2 | Elaboration phase | `Concrete/Elab.lean` | **DONE** |
-| 3 | A3 | Resolution phase cleanup | `Concrete/Resolve.lean` | **IN PROGRESS** |
-| 4 | A4 | Core validation (split from checker) | `Concrete/CoreCheck.lean` | **IN PROGRESS** |
+| 3 | A3 | Resolution phase cleanup | `Concrete/Resolve.lean` | **DONE** |
+| 4 | A4 | Core validation (split from checker) | `Concrete/CoreCheck.lean` | **DONE** |
 | 5 | A5 | Codegen consumes SSA IR | `Concrete/EmitSSA.lean` | **DONE** |
 | 6 | A6 | Structured diagnostics | `Concrete/Diagnostic.lean` | **DONE** |
 | 7 | A7 | Builtin vs stdlib boundary | documentation + migration | Not started |
@@ -536,7 +543,7 @@ Each pass guarantees specific properties about its output:
 | **Parse** | Syntactically valid AST. LL(1), no ambiguity. |
 | **Check** | Types resolve. Linearity holds. Borrows valid. Capabilities propagated. |
 | **Elab** | No surface sugar. Every `CExpr` has concrete `Ty`. Method calls desugared to mangled function calls. For loops desugared to while. |
-| **CoreCheck** | Types consistent across operators and calls. Core capabilities satisfied. Return types agree after elaboration. Break/continue only inside loops. Match structure and coverage are valid. |
+| **CoreCheck** | Types consistent across operators and calls. Core capabilities satisfied. Return types agree after elaboration. Break/continue only inside loops. Match structure and coverage valid. Declaration-level legality: trait impl completeness, FFI safety, repr validation, Copy/Destroy rules. Recurses through submodules. |
 | **Lower** | Explicit control flow only (no structured if/while). Every block has exactly one terminator. Enum discriminants stored at index 0. Field indices match struct definitions. Break/continue resolved to branch targets. |
 
 ### Monomorphization Placement
@@ -2172,7 +2179,7 @@ These do not block any phase above:
 | **12a** | Runtime in C | Not started | 7 |
 | **12b** | Runtime in Concrete | Not started | 8, 12a |
 
-**Next priorities:** keep pushing the summary-based frontend (`FileSummary` as the declaration-level interface artifact, shallow vs body resolution, shared export/import, and prebuilt function/extern/impl-method signatures), continue migrating post-elaboration legality checks from `Check` to `CoreCheck` where possible while recognizing that most remaining `Check` logic is surface/inference-specific, then deepen ABI/layout, modest SSA optimizations, formalization, and stdlib growth.
+**Next priorities:** deepen ABI/layout, add audit-focused compiler outputs, add modest SSA optimizations, then push formalization and stdlib growth.
 
 **Critical path for production use:** Architecture (A1-A5) → remaining stdlib (8f, 8h) → runtime (12a).
 

@@ -337,13 +337,16 @@ The current surface language is intentionally conservative. The highest-leverage
 
 In order, the strongest next improvements are:
 
-- **Summary-based frontend**: `FileSummary` now exists as the declaration-level interface artifact, shallow resolution already consumes summaries, and `Check`/`Elab` now share a single summary-driven export/import path over prebuilt function, extern, and impl-method signatures; the next step is making summaries stable reusable frontend artifacts
-- **Core as semantic authority**: keep semantic meaning centered in elaborated/validated Core rather than duplicated in surface-AST checking; `CoreCheck` now owns more post-elaboration validation, including Core capability enforcement, return-type checking, and more match validation
 - **ABI/layout subsystem clarity**: centralize size, alignment, field-offset, enum-layout, and FFI-safe rules
 - **Audit-focused compiler outputs**: capability summaries, `Unsafe` summaries, allocation/layout reports, and better pass-boundary inspection
 - **Small SSA optimization group**: constant folding, dead code elimination, CFG cleanup, and trivial phi/copy cleanup
 - **Small but excellent stdlib**: bytes/buffers, borrowed views, allocator-explicit collections, file/path/process/env, networking, formatting
 - **Explicit build/project model**: keep reproducibility, target configuration, and FFI setup boring and visible
+
+Already established architecture in this arc:
+
+- **Summary-based frontend**: `FileSummary` and `ResolvedImports` now form the cross-file frontend boundary, with prebuilt function, extern, and impl-method signatures reused across `Resolve`, `Check`, and `Elab`
+- **Core as semantic authority**: `CoreCheck` now owns post-elaboration legality checks that can be stated on Core IR; `Check` is mostly surface/inference-specific work
 
 The main rule is: architecture before ornament, tooling visibility before convenience syntax, and proof-friendly boundaries before feature expansion.
 
@@ -384,7 +387,7 @@ See [ROADMAP.md](ROADMAP.md) for the full implementation plan with syntax, rules
 | **13** | Tooling | Not started |
 | **14** | Runtime (C, then Concrete) | Not started |
 
-Next critical path: **continue the summary-based frontend migration (`FileSummary` is now the declaration-level interface artifact, shallow resolution consumes summaries, and `Check`/`Elab` share a summary-driven export/import path over prebuilt function, extern, and impl-method signatures), then keep moving semantic authority into `CoreCheck` (which now owns more Core capability enforcement, return-type checking, and match validation, with most remaining `Check` logic tied to linearity/borrows, type inference, and name resolution), followed by ABI/layout subsystem cleanup, audit-focused outputs, and small SSA optimization before broader stdlib growth.** Structured diagnostics are complete across all semantic passes. The legacy AST backend has been removed.
+Next critical path: **deepen the ABI/layout subsystem boundary, then add audit-focused compiler outputs, modest SSA cleanup/optimization, broader stdlib growth, and formalization.** The summary-based frontend and `CoreCheck` semantic-authority work are done enough for the current architecture phase. Structured diagnostics are complete across all semantic passes. The legacy AST backend has been removed.
 
 ### What fits the philosophy and what does not
 
@@ -445,7 +448,7 @@ Source (.con)
   clang -- LLVM IR -> native binary
 ```
 
-Concrete's frontend is currently a staged whole-program pipeline, but the summary layer is now real: `FileSummary` acts as the declaration-level interface artifact for cross-file work, shallow resolution consumes summaries directly, and `Check`/`Elab` now share a summary-driven export/import path over prebuilt function, extern, and impl-method signatures. Impl method summaries preserve `Self` structurally in the summary artifact and use a shared `resolveSelfTy` helper for pass-local interpretation, which keeps the artifact close to the source-level declaration shape. The intended next step is to make these summaries stable reusable frontend artifacts for caching and clearer module boundaries. In parallel, semantic authority is being pushed down into `CoreCheck`: it already owns more Core capability enforcement for lowered operations and builtins, return-type checking, and more match validation, so those rules no longer need to live primarily in surface-AST checking. At this point, most of what remains in `Check` is the surface-context-dependent work: linearity/borrow tracking, type inference, name resolution fallout, and cap-polymorphic call handling. The language design is deliberately trying to make that possible: LL(1) syntax, explicit imports, and no source-generating macros in the current design. The goal is a compiler that is easier to reason about, easier to parallelize, and better aligned with the long-term verification story. See [research/file-summary-frontend.md](research/file-summary-frontend.md).
+Concrete's frontend is currently a staged whole-program pipeline, and the summary layer is now its established cross-file boundary: `FileSummary` acts as the declaration-level interface artifact, `ResolvedImports` is the per-module imported-summary artifact, and `Check`/`Elab` share a summary-driven import path over prebuilt function, extern, and impl-method signatures. Impl method summaries preserve `Self` structurally in the summary artifact and use a shared `resolveSelfTy` helper for pass-local interpretation, which keeps the artifact close to the source-level declaration shape. `FileSummary` and `ResolvedImports` still carry full impl/trait-impl bodies because imported method checking and elaboration need them today; splitting interface-only and body-bearing portions is a future incremental-compilation refinement, not a blocker for the current architecture phase. In parallel, semantic authority has been pushed down into `CoreCheck`: it owns more Core capability enforcement for lowered operations and builtins, return-type checking, more match validation, and declaration-level trait/FFI/repr rules. At this point, most of what remains in `Check` is the surface-context-dependent work: linearity/borrow tracking, type inference, name resolution fallout, and cap-polymorphic call handling. The language design is deliberately trying to make that possible: LL(1) syntax, explicit imports, and no source-generating macros in the current design. The goal is a compiler that is easier to reason about, easier to parallelize, and better aligned with the long-term verification story. See [research/file-summary-frontend.md](research/file-summary-frontend.md).
 
 Target pipeline:
 
@@ -525,9 +528,8 @@ Things Concrete deliberately does not have:
 - Clear path to formal verification because the compiler is already implemented in Lean and now has explicit internal IR boundaries
 
 **Next steps:**
-- Keep pushing the summary-based frontend from the current declaration-level `FileSummary` artifact, summary-driven shallow resolution, and shared export/import flow over prebuilt function, extern, and impl-method signatures toward stable reusable frontend artifacts
-- Continue shifting semantic authority toward validated Core IR, with `CoreCheck` already owning more Core capability enforcement, return-type checking, and match validation, and most remaining `Check` logic now tied to surface/inference-specific work
 - Tighten the ABI/layout subsystem and expose more audit-focused compiler outputs
+- Add modest SSA cleanup/optimization that benefits every backend
 - Grow a sharp stdlib in bytes/buffers, views, file/path/process/env, networking, and formatting
 - Push kernel formalization and proof development in Lean
 
