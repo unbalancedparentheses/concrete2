@@ -18,14 +18,40 @@ mod string {
             return value;
         }
 
+        pub fn from_raw(ptr: *mut u8, len: u64, cap: u64) -> String {
+            let value: String = String {
+                ptr: ptr,
+                len: len,
+                cap: cap,
+            };
+            return value;
+        }
+
         pub fn len(&self) -> u64 {
             return self.len;
         }
 
+        pub fn cap(&self) -> u64 {
+            return self.cap;
+        }
+
+        pub fn is_empty(&self) -> bool {
+            return self.len == 0;
+        }
+
         pub fn get(&self, at: u64) -> char {
-            // todo: bounds check
+            let target_ptr: *mut u8 = self.ptr + at;
+            return (*target_ptr) as char;
+        }
+
+        pub fn push_char(&mut self, c: char) {
+            if self.len >= self.cap {
+                self.grow();
+            }
+
             let target_ptr: *mut u8 = self.ptr + self.len;
-            return (*target_ptr) as  char;
+            *target_ptr = c as u8;
+            self.len = self.len + 1;
         }
 
         fn grow(&mut self) {
@@ -55,6 +81,6 @@ mod string {
     }
 
     pub fn int_to_digit<T>(value: T) -> char {
-        return (value + 48) as T;
+        return (value + 48) as char;
     }
 }

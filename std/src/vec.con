@@ -19,7 +19,7 @@ mod vec {
         }
 
         pub fn push(&mut self, value: T) {
-            if self.len <= self.cap {
+            if self.len >= self.cap {
                 self.grow();
             }
 
@@ -28,16 +28,37 @@ mod vec {
             self.len = self.len + 1;
         }
 
-        pub fn get(&self, at: u64) -> &T {
-            // todo: bounds check
+        pub fn pop(&mut self) -> T {
+            self.len = self.len - 1;
             let target_ptr: *mut T = self.ptr + self.len;
+            return *target_ptr;
+        }
+
+        pub fn get(&self, at: u64) -> &T {
+            let target_ptr: *mut T = self.ptr + at;
             return target_ptr as &T;
         }
 
         pub fn get_mut(&mut self, at: u64) -> &mut T {
-            // todo: bounds check
-            let target_ptr: *mut T = self.ptr + self.len;
+            let target_ptr: *mut T = self.ptr + at;
             return target_ptr as &mut T;
+        }
+
+        pub fn set(&mut self, at: u64, value: T) {
+            let target_ptr: *mut T = self.ptr + at;
+            *target_ptr = value;
+        }
+
+        pub fn len(&self) -> u64 {
+            return self.len;
+        }
+
+        pub fn cap(&self) -> u64 {
+            return self.cap;
+        }
+
+        pub fn is_empty(&self) -> bool {
+            return self.len == 0;
         }
 
         fn grow(&mut self) {

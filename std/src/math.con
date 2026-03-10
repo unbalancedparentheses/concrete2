@@ -17,6 +17,23 @@ mod math {
         }
     }
 
+    pub fn abs<T>(a: T) -> T {
+        if a < 0 {
+            return 0 - a;
+        }
+        return a;
+    }
+
+    pub fn clamp<T>(value: T, lo: T, hi: T) -> T {
+        if value < lo {
+            return lo;
+        }
+        if value > hi {
+            return hi;
+        }
+        return value;
+    }
+
     import std.test.{assert_eq};
 
     #[test]
@@ -46,7 +63,7 @@ mod math {
             return 1;
         }
 
-        if !assert_eq::<i32>(max::<i32>(4, 5), 4, "Should give the max value") {
+        if !assert_eq::<i32>(max::<i32>(4, 5), 5, "Should give the max value") {
             return 1;
         }
 

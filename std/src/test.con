@@ -11,4 +11,37 @@ mod test {
         }
         return true;
     }
+
+    pub fn assert_ne<T>(a: T, b: T, message: String) -> bool {
+        if a == b {
+            let msg: String = "Assert error (expected not equal):";
+            print(&msg);
+            msg.drop();
+            print(&message);
+            return false;
+        }
+        return true;
+    }
+
+    pub fn assert_true(value: bool, message: String) -> bool {
+        if !value {
+            let msg: String = "Assert error (expected true):";
+            print(&msg);
+            msg.drop();
+            print(&message);
+            return false;
+        }
+        return true;
+    }
+
+    pub fn assert_false(value: bool, message: String) -> bool {
+        if value {
+            let msg: String = "Assert error (expected false):";
+            print(&msg);
+            msg.drop();
+            print(&message);
+            return false;
+        }
+        return true;
+    }
 }

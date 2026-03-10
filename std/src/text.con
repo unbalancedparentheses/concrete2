@@ -1,0 +1,45 @@
+mod text {
+    pub struct Text {
+        ptr: *const u8,
+        len: u64,
+    }
+
+    pub fn from_string(s: &String) -> Text {
+        let t: Text = Text {
+            ptr: s.ptr as *const u8,
+            len: s.len,
+        };
+        return t;
+    }
+
+    pub fn len(t: &Text) -> u64 {
+        return t.len;
+    }
+
+    pub fn is_empty(t: &Text) -> bool {
+        return t.len == 0;
+    }
+
+    pub fn get(t: &Text, at: u64) -> u8 {
+        let target_ptr: *const u8 = t.ptr + at;
+        return *(target_ptr as *mut u8);
+    }
+
+    pub fn eq(a: &Text, b: &Text) -> bool {
+        if a.len != b.len {
+            return false;
+        }
+
+        let i: u64 = 0;
+        while i < a.len {
+            let pa: *const u8 = a.ptr + i;
+            let pb: *const u8 = b.ptr + i;
+            if *(pa as *mut u8) != *(pb as *mut u8) {
+                return false;
+            }
+            i = i + 1;
+        }
+
+        return true;
+    }
+}

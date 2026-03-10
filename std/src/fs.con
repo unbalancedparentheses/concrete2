@@ -1,0 +1,76 @@
+mod fs {
+    import std.alloc.{realloc,free};
+
+    pub struct File {
+        handle: *const u8,
+    }
+
+    impl File {
+        pub fn open(path: &String, mode: &String) -> File {
+            let f: File = File {
+                handle: std::libc::fopen(path.ptr, mode.ptr),
+            };
+            return f;
+        }
+
+        pub fn create(path: &String) -> File {
+            let mode: String = "w";
+            let f: File = File {
+                handle: std::libc::fopen(path.ptr, mode.ptr),
+            };
+            mode.drop();
+            return f;
+        }
+
+        pub fn write_bytes(&self, buf: *const u8, len: u64) -> u64 {
+            return std::libc::fwrite(buf, 1, len, self.handle);
+        }
+
+        pub fn read_bytes(&self, buf: *mut u8, len: u64) -> u64 {
+            return std::libc::fread(buf, 1, len, self.handle);
+        }
+
+        pub fn seek(&self, offset: i64, whence: i32) -> i32 {
+            return std::libc::fseek(self.handle, offset, whence);
+        }
+
+        pub fn tell(&self) -> i64 {
+            return std::libc::ftell(self.handle);
+        }
+
+        pub fn close(self) {
+            std::libc::fclose(self.handle);
+        }
+    }
+
+    pub fn read_file(path: &String) -> std::bytes::Bytes {
+        let mode: String = "r";
+        let handle: *const u8 = std::libc::fopen(path.ptr, mode.ptr);
+        mode.drop();
+
+        // Seek to end to get size
+        std::libc::fseek(handle, 0, 2); // SEEK_END = 2
+        let size: i64 = std::libc::ftell(handle);
+        std::libc::fseek(handle, 0, 0); // SEEK_SET = 0
+
+        let buf: std::bytes::Bytes = std::bytes::Bytes::with_capacity(size as u64);
+
+        // Read into the buffer's backing memory
+        let n: u64 = std::libc::fread(buf.ptr, 1, size as u64, handle);
+        // Set the length to what was actually read
+        // We access the field directly since Bytes is in the same crate
+        buf.len = n;
+
+        std::libc::fclose(handle);
+        return buf;
+    }
+
+    pub fn write_file(path: &String, data: &std::bytes::Bytes) {
+        let mode: String = "w";
+        let handle: *const u8 = std::libc::fopen(path.ptr, mode.ptr);
+        mode.drop();
+
+        std::libc::fwrite(data.ptr as *const u8, 1, data.len, handle);
+        std::libc::fclose(handle);
+    }
+}

@@ -10,4 +10,9 @@ mod std {
     mod test;
     mod option;
     mod result;
+    mod bytes;
+    mod slice;
+    mod text;
+    mod path;
+    mod fs;
 }

@@ -5,8 +5,21 @@ mod libc {
     extern fn puts(ptr: *mut u8) -> i32;
     extern fn fopen(name: *mut u8, mode: *mut u8) -> *const u8;
     extern fn fdopen(name: i32, mode: *mut u8) -> *const u8;
-    extern fn fdopen(name: i32, mode: *mut u8) -> *const u8;
     extern fn fclose(file: *const u8) -> i32;
+    extern fn fflush(file: *const u8) -> i32;
+    extern fn fread(buf: *mut u8, size: u64, count: u64, file: *const u8) -> u64;
+    extern fn fwrite(buf: *const u8, size: u64, count: u64, file: *const u8) -> u64;
+    extern fn fseek(file: *const u8, offset: i64, whence: i32) -> i32;
+    extern fn ftell(file: *const u8) -> i64;
     extern fn exit(status: i32);
     extern fn raise(signal: i32);
+    extern fn strlen(ptr: *const u8) -> u64;
+    extern fn memcpy(dest: *mut u8, src: *const u8, n: u64) -> *mut u8;
+    extern fn memset(ptr: *mut u8, value: i32, n: u64) -> *mut u8;
+    extern fn memcmp(a: *const u8, b: *const u8, n: u64) -> i32;
+    extern fn read(fd: i32, buf: *mut u8, count: u64) -> i64;
+    extern fn write(fd: i32, buf: *const u8, count: u64) -> i64;
+    extern fn getenv(name: *const u8) -> *const u8;
+    extern fn snprintf(buf: *mut u8, size: u64, fmt: *const u8) -> i32;
+    extern fn strtol(str: *const u8, endptr: *mut *const u8, base: i32) -> i64;
 }

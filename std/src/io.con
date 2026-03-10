@@ -1,5 +1,5 @@
 mod io {
-    struct File {
+    pub struct File {
         ptr: *const u8,
     }
 
@@ -16,16 +16,96 @@ mod io {
             return handle;
         }
 
+        pub fn open(path: &String, mode: &String) -> File {
+            let handle: File = File {
+                ptr: std::libc::fopen(path.ptr, mode.ptr),
+            };
+            return handle;
+        }
+
+        pub fn write(self: &File, data: &String) {
+            std::libc::fwrite(data.ptr as *const u8, 1, data.len, self.ptr);
+        }
+
+        pub fn read_byte(self: &File) -> i32 {
+            let buf: u8 = 0;
+            let n: u64 = std::libc::fread(&buf as *mut u8, 1, 1, self.ptr);
+            if n == 0 {
+                return -1;
+            }
+            return buf as i32;
+        }
+
+        pub fn flush(self: &File) {
+            std::libc::fflush(self.ptr);
+        }
+
         pub fn close(self) {
             std::libc::fclose(self.ptr);
         }
 
-        // TODO: write, read, flush
+        // TODO: read
     }
 
     pub fn print(value: &String) {
         if value.len > 0 {
             std::libc::puts(value.ptr);
+        }
+    }
+
+    pub fn println(value: &String) {
+        if value.len > 0 {
+            std::libc::puts(value.ptr);
+        }
+    }
+
+    pub fn print_int(value: i64) {
+        // Print an integer by converting digits
+        if value < 0 {
+            let dash: String = "-";
+            std::libc::puts(dash.ptr);
+            dash.drop();
+            print_int(0 - value);
+            return;
+        }
+
+        if value == 0 {
+            let zero: String = "0";
+            std::libc::puts(zero.ptr);
+            zero.drop();
+            return;
+        }
+
+        let buf: String = String::new();
+        let n: i64 = value;
+        while n > 0 {
+            let digit: char = std::string::int_to_digit::<i64>(n - ((n / 10) * 10));
+            buf.push_char(digit);
+            n = n / 10;
+        }
+
+        // Reverse the buffer
+        let i: u64 = 0;
+        let j: u64 = buf.len - 1;
+        while i < j {
+            let a: char = buf.get(i);
+            let b: char = buf.get(j);
+            let pa: *mut u8 = buf.ptr + i;
+            let pb: *mut u8 = buf.ptr + j;
+            *pa = b as u8;
+            *pb = a as u8;
+            i = i + 1;
+            j = j - 1;
+        }
+
+        std::libc::puts(buf.ptr);
+        buf.drop();
+    }
+
+    pub fn eprint(value: &String) {
+        if value.len > 0 {
+            let stderr: *const u8 = std::libc::fdopen(2, "w" as *mut u8);
+            std::libc::fwrite(value.ptr as *const u8, 1, value.len, stderr);
         }
     }
 }

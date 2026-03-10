@@ -1,0 +1,83 @@
+mod bytes {
+    import std.alloc.{realloc,free};
+
+    pub struct Bytes {
+        ptr: *mut u8,
+        len: u64,
+        cap: u64,
+    }
+
+    impl Bytes {
+        pub fn new() -> Bytes {
+            let b: Bytes = Bytes {
+                ptr: 0 as *mut u8,
+                len: 0,
+                cap: 0,
+            };
+            return b;
+        }
+
+        pub fn with_capacity(cap: u64) -> Bytes {
+            let b: Bytes = Bytes {
+                ptr: realloc::<u8>(0 as *mut u8, cap),
+                len: 0,
+                cap: cap,
+            };
+            return b;
+        }
+
+        pub fn push(&mut self, byte: u8) {
+            if self.len >= self.cap {
+                self.grow();
+            }
+
+            let target_ptr: *mut u8 = self.ptr + self.len;
+            *target_ptr = byte;
+            self.len = self.len + 1;
+        }
+
+        pub fn get(&self, at: u64) -> u8 {
+            let target_ptr: *mut u8 = self.ptr + at;
+            return *target_ptr;
+        }
+
+        pub fn set(&mut self, at: u64, byte: u8) {
+            let target_ptr: *mut u8 = self.ptr + at;
+            *target_ptr = byte;
+        }
+
+        pub fn len(&self) -> u64 {
+            return self.len;
+        }
+
+        pub fn cap(&self) -> u64 {
+            return self.cap;
+        }
+
+        pub fn is_empty(&self) -> bool {
+            return self.len == 0;
+        }
+
+        pub fn clear(&mut self) {
+            self.len = 0;
+        }
+
+        fn grow(&mut self) {
+            let new_cap: u64 = std::math::max::<u64>(self.cap, 4) * 2;
+            self.ptr = realloc::<u8>(self.ptr, new_cap);
+            self.cap = new_cap;
+        }
+
+        pub fn append_bytes(&mut self, other: &Bytes) {
+            let i: u64 = 0;
+            while i < other.len {
+                self.push(other.get(i));
+                i = i + 1;
+            }
+        }
+
+        pub fn drop(self) {
+            free::<u8>(self.ptr);
+        }
+    }
+}
