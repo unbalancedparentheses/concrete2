@@ -25,6 +25,14 @@ In practical terms, Concrete is trying to give low-level programmers something u
 
 For the full language specification, see [The Concrete Programming Language: Systems Programming for Formal Reasoning](https://federicocarrone.com/series/concrete/the-concrete-programming-language-systems-programming-for-formal-reasoning/).
 
+## Doc Map
+
+- [README.md](README.md) — start here: project overview, status, build/test usage
+- [ROADMAP.md](ROADMAP.md) — active and future work
+- [CHANGELOG.md](CHANGELOG.md) — completed milestones
+- [docs/README.md](docs/README.md) — stable reference docs
+- [research/README.md](research/README.md) — exploratory design notes
+
 ## Try It Now
 
 ```

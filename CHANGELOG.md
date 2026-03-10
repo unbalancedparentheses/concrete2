@@ -1,5 +1,7 @@
 # Changelog
 
+Status: changelog
+
 This file tracks major completed milestones for Concrete.
 
 It is intentionally milestone-oriented rather than release-oriented. The project is still evolving quickly, so the useful unit of history is “what architectural or language capability landed,” not tagged versions.

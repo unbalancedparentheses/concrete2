@@ -1,5 +1,7 @@
 # Concrete Roadmap
 
+Status: roadmap
+
 This is the implementation plan for the Concrete programming language. For the full specification, see [The Concrete Programming Language: Systems Programming for Formal Reasoning](https://federicocarrone.com/series/concrete/the-concrete-programming-language-systems-programming-for-formal-reasoning/).
 
 ## Current State
