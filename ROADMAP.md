@@ -437,14 +437,14 @@ Planned direction:
 - shallow resolution now consumes summaries directly
 - summary-driven import/export now includes extern signatures
 - `Check` and `Elab` now share the same summary-driven export/import path
-- function and extern signatures are prebuilt once in `FileSummary` and reused instead of being rebuilt in each pass
+- function, extern, and impl-method signatures are prebuilt once in `FileSummary` and reused instead of being rebuilt in each pass
 - next: make `FileSummary` a stable reusable frontend artifact
 - keep cross-file dependencies declaration-level where possible
 - split shallow/interface work from body-level resolution
 
 This keeps the frontend explicit and batch-oriented without moving to a query-first architecture.
 
-**Status:** In progress. `Resolve` now has a shallow phase (`resolveShallow`) and a body phase (`resolveBodies`), `FileSummary` exists as the declaration-level interface artifact, shallow resolution consumes summaries directly, and summary-driven import/export includes extern signatures through a shared `Check`/`Elab` path. Function and extern signatures are now prebuilt once in `FileSummary` and reused by downstream passes. The next step is to turn summaries into stable reusable frontend artifacts that other stages can cache and consume explicitly.
+**Status:** In progress. `Resolve` now has a shallow phase (`resolveShallow`) and a body phase (`resolveBodies`), `FileSummary` exists as the declaration-level interface artifact, shallow resolution consumes summaries directly, and summary-driven import/export includes extern signatures through a shared `Check`/`Elab` path. Function, extern, and impl-method signatures are now prebuilt once in `FileSummary` and reused by downstream passes. Impl method summaries preserve `Self` structurally and use shared `resolveSelfTy` for pass-local interpretation. The next step is to turn summaries into stable reusable frontend artifacts that other stages can cache and consume explicitly.
 
 ### A4: Core Validation
 
@@ -2172,7 +2172,7 @@ These do not block any phase above:
 | **12a** | Runtime in C | Not started | 7 |
 | **12b** | Runtime in Concrete | Not started | 8, 12a |
 
-**Next priorities:** keep pushing the summary-based frontend (`FileSummary` as the declaration-level interface artifact, shallow vs body resolution, shared extern-aware export/import, and prebuilt summary signatures), continue migrating post-elaboration legality checks from `Check` to `CoreCheck` where possible while recognizing that most remaining `Check` logic is surface/inference-specific, then deepen ABI/layout, modest SSA optimizations, formalization, and stdlib growth.
+**Next priorities:** keep pushing the summary-based frontend (`FileSummary` as the declaration-level interface artifact, shallow vs body resolution, shared export/import, and prebuilt function/extern/impl-method signatures), continue migrating post-elaboration legality checks from `Check` to `CoreCheck` where possible while recognizing that most remaining `Check` logic is surface/inference-specific, then deepen ABI/layout, modest SSA optimizations, formalization, and stdlib growth.
 
 **Critical path for production use:** Architecture (A1-A5) → remaining stdlib (8f, 8h) → runtime (12a).
 
