@@ -91,184 +91,106 @@ def resolveAllModules (baseDir : String) (modules : List Module) (inputPath : St
 /-- Compile via SSA pipeline: Parse → Resolve → Check → Elab → CoreCanonicalize → CoreCheck → Mono → Lower → SSAVerify → SSACleanup → EmitSSA → clang -/
 def compileSSA (inputPath : String) (outputPath : String) (emitLLVM : Bool) : IO UInt32 := do
   let source ← readFile inputPath
-  match liftStringError "parse" (parse source) with
+  match ← Pipeline.runFrontend inputPath source resolveAllModules with
   | .error ds =>
     IO.eprintln (renderDiagnostics ds)
     return 1
-  | .ok parsedModules =>
-  let baseDir := dirOf inputPath
-  match ← resolveAllModules baseDir parsedModules inputPath with
-  | .error e =>
-    IO.eprintln (renderDiagnostics [{ severity := .error, message := e, pass := "resolve", span := none, hint := none }])
+  | .ok (_, _, elabProg) =>
+  match Pipeline.monomorphize elabProg with
+  | .error ds =>
+    IO.eprintln (renderDiagnostics ds)
     return 1
-  | .ok modules =>
-    let summaryTable := buildSummaryTable modules
-    -- Name resolution (catches undeclared names early)
-    match resolveProgram modules summaryTable with
-    | .error ds =>
-      IO.eprintln (renderDiagnostics ds)
-      return 1
-    | .ok _ =>
-    match liftStringError "check" (checkProgram modules summaryTable) with
-    | .error ds =>
-      IO.eprintln (renderDiagnostics ds)
-      return 1
-    | .ok () =>
-    match liftStringError "elab" (elabProgram modules summaryTable) with
-    | .error ds =>
-      IO.eprintln (renderDiagnostics ds)
-      return 1
-    | .ok coreModules =>
-      let coreModules := canonicalizeProgram coreModules
-      match liftStringError "core-check" (coreCheckProgram coreModules) with
-      | .error ds =>
-        IO.eprintln (renderDiagnostics ds)
-        return 1
-      | .ok () =>
-      match liftStringError "mono" (monoProgram coreModules) with
-      | .error ds =>
-        IO.eprintln (renderDiagnostics ds)
-        return 1
-      | .ok monoModules =>
-      let ssaModules := monoModules.map lowerModule
-      match liftStringError "ssa-verify" (ssaVerifyProgram ssaModules) with
-      | .error ds =>
-        IO.eprintln (renderDiagnostics ds)
-        return 1
-      | .ok () =>
-      let ssaModules := ssaCleanupProgram ssaModules
-      let llvmIR := emitSSAProgram ssaModules
-      let llPath := inputPath ++ ".ll"
-      writeFile llPath llvmIR
-      if emitLLVM then
-        IO.println llvmIR
-        return 0
-      -- Compile with clang
-      let exitCode ← runCmd "clang" #[llPath, "-o", outputPath, "-Wno-override-module"]
-      if exitCode != 0 then
-        IO.eprintln "clang compilation failed"
-        return exitCode
-      -- Clean up .ll file
-      IO.FS.removeFile ⟨llPath⟩
-      IO.println s!"Compiled {inputPath} -> {outputPath}"
+  | .ok mono =>
+  match Pipeline.lower mono with
+  | .error ds =>
+    IO.eprintln (renderDiagnostics ds)
+    return 1
+  | .ok ssa =>
+    let llvmIR := Pipeline.emit ssa
+    let llPath := inputPath ++ ".ll"
+    writeFile llPath llvmIR
+    if emitLLVM then
+      IO.println llvmIR
       return 0
+    -- Compile with clang
+    let exitCode ← runCmd "clang" #[llPath, "-o", outputPath, "-Wno-override-module"]
+    if exitCode != 0 then
+      IO.eprintln "clang compilation failed"
+      return exitCode
+    -- Clean up .ll file
+    IO.FS.removeFile ⟨llPath⟩
+    IO.println s!"Compiled {inputPath} -> {outputPath}"
+    return 0
 
 /-- Emit Core or SSA IR for inspection. Runs full pipeline including new passes. -/
 def compileAndEmit (inputPath : String) (mode : String) : IO UInt32 := do
   let source ← readFile inputPath
-  match parse source with
-  | .error e =>
-    IO.eprintln s!"Parse error: {e}"
+  match ← Pipeline.runFrontend inputPath source resolveAllModules with
+  | .error ds =>
+    IO.eprintln (renderDiagnostics ds)
     return 1
-  | .ok parsedModules =>
-  let baseDir := dirOf inputPath
-  match ← resolveAllModules baseDir parsedModules inputPath with
-  | .error e =>
-    IO.eprintln s!"Parse error: {e}"
-    return 1
-  | .ok modules =>
-    let summaryTable := buildSummaryTable modules
-    match resolveProgram modules summaryTable with
+  | .ok (_, _, elabProg) =>
+    if mode == "core" then
+      for cm in elabProg.coreModules do
+        IO.println (ppCModule cm)
+      return 0
+    match Pipeline.monomorphize elabProg with
     | .error ds =>
       IO.eprintln (renderDiagnostics ds)
       return 1
-    | .ok _ =>
-    match checkProgram modules summaryTable with
-    | .error e =>
-      IO.eprintln s!"Type error: {e}"
+    | .ok mono =>
+    match Pipeline.lower mono with
+    | .error ds =>
+      IO.eprintln (renderDiagnostics ds)
       return 1
-    | .ok () =>
-    match elabProgram modules summaryTable with
-    | .error e =>
-      IO.eprintln s!"Elaboration error: {e}"
-      return 1
-    | .ok coreModules =>
-      let coreModules := canonicalizeProgram coreModules
-      match coreCheckProgram coreModules with
-      | .error e =>
-        IO.eprintln s!"Core validation error: {e}"
-        return 1
-      | .ok () =>
-      if mode == "core" then
-        for cm in coreModules do
-          IO.println (ppCModule cm)
-        return 0
-      match monoProgram coreModules with
-      | .error e =>
-        IO.eprintln s!"Monomorphization error: {e}"
-        return 1
-      | .ok monoModules =>
-      let ssaModules := monoModules.map lowerModule
-      match ssaVerifyProgram ssaModules with
-      | .error e =>
-        IO.eprintln s!"SSA verification error: {e}"
-        return 1
-      | .ok () => pure ()
-      let ssaModules := ssaCleanupProgram ssaModules
-      for sm in ssaModules do
+    | .ok ssa =>
+      for sm in ssa.ssaModules do
         IO.println (ppSModule sm)
       return 0
 
 /-- Run pipeline to needed depth and produce a report. -/
 def compileAndReport (inputPath : String) (reportType : String) : IO UInt32 := do
   let source ← readFile inputPath
-  match parse source with
-  | .error e =>
-    IO.eprintln s!"Parse error: {e}"
-    return 1
-  | .ok parsedModules =>
-  let baseDir := dirOf inputPath
-  match ← resolveAllModules baseDir parsedModules inputPath with
-  | .error e =>
-    IO.eprintln s!"Resolve error: {e}"
-    return 1
-  | .ok modules =>
-    let summaryTable := buildSummaryTable modules
-    -- Interface report only needs parse + summary table
-    if reportType == "interface" then
-      IO.println (Report.interfaceReport summaryTable)
-      return 0
-    -- All other reports need the full pipeline through canonicalization
-    match resolveProgram modules summaryTable with
+  -- Interface report only needs parse + resolveFiles + summary
+  if reportType == "interface" then
+    match Pipeline.parse source with
     | .error ds =>
       IO.eprintln (renderDiagnostics ds)
       return 1
-    | .ok _ =>
-    match checkProgram modules summaryTable with
-    | .error e =>
-      IO.eprintln s!"Type error: {e}"
+    | .ok parsed =>
+    match ← Pipeline.resolveFiles (dirOf inputPath) parsed inputPath resolveAllModules with
+    | .error ds =>
+      IO.eprintln (renderDiagnostics ds)
       return 1
-    | .ok () =>
-    match elabProgram modules summaryTable with
-    | .error e =>
-      IO.eprintln s!"Elaboration error: {e}"
-      return 1
-    | .ok coreModules =>
-      let coreModules := canonicalizeProgram coreModules
-      match coreCheckProgram coreModules with
-      | .error e =>
-        IO.eprintln s!"Core validation error: {e}"
+    | .ok resolved =>
+      let summary := Pipeline.buildSummary resolved
+      IO.println (Report.interfaceReport summary.entries)
+      return 0
+  -- All other reports need the full frontend
+  match ← Pipeline.runFrontend inputPath source resolveAllModules with
+  | .error ds =>
+    IO.eprintln (renderDiagnostics ds)
+    return 1
+  | .ok (_, _, elabProg) =>
+    if reportType == "caps" then
+      IO.println (Report.capabilityReport elabProg.coreModules)
+      return 0
+    if reportType == "unsafe" then
+      IO.println (Report.unsafeReport elabProg.coreModules)
+      return 0
+    if reportType == "layout" then
+      IO.println (Report.layoutReport elabProg.coreModules)
+      return 0
+    if reportType == "mono" then
+      match Pipeline.monomorphize elabProg with
+      | .error ds =>
+        IO.eprintln (renderDiagnostics ds)
         return 1
-      | .ok () =>
-      if reportType == "caps" then
-        IO.println (Report.capabilityReport coreModules)
+      | .ok mono =>
+        IO.println (Report.monoReport elabProg.coreModules mono.coreModules)
         return 0
-      if reportType == "unsafe" then
-        IO.println (Report.unsafeReport coreModules)
-        return 0
-      if reportType == "layout" then
-        IO.println (Report.layoutReport coreModules)
-        return 0
-      if reportType == "mono" then
-        match monoProgram coreModules with
-        | .error e =>
-          IO.eprintln s!"Monomorphization error: {e}"
-          return 1
-        | .ok monoModules =>
-          IO.println (Report.monoReport coreModules monoModules)
-          return 0
-      IO.eprintln s!"Unknown report type: {reportType}. Use: caps, unsafe, layout, interface, mono"
-      return 1
+    IO.eprintln s!"Unknown report type: {reportType}. Use: caps, unsafe, layout, interface, mono"
+    return 1
 
 def main (args : List String) : IO UInt32 := do
   match args with

@@ -253,11 +253,12 @@ The goal is not to out-feature those languages. The goal is to be unusually good
 
 ## Current Status
 
-The compiler implements the core surface language and the full internal IR pipeline in Lean 4. All 243 main tests and 155 SSA tests pass.
+The compiler implements the core surface language and the full internal IR pipeline in Lean 4. All 266 main tests pass, and the SSA-specific suite passes as well.
 
 Implemented today:
 
 - a single staged Lean 4 compiler pipeline: Parse → Resolve → Check → Elab → CoreCheck → Mono → Lower → SSAVerify → SSACleanup → EmitSSA → clang
+- explicit cacheable artifact types at each pipeline boundary (`Concrete/Pipeline.lean`), with composable runner functions and a shared frontend helper
 - structured diagnostics across all semantic passes
 - source spans in the AST and rendered diagnostics
 - SSA as the only real backend path
@@ -337,9 +338,9 @@ The current surface language is intentionally conservative. The highest-leverage
 
 In order, the strongest next improvements are:
 
-- **ABI/layout subsystem clarity**: centralize size, alignment, field-offset, enum-layout, and FFI-safe rules
-- **Audit-focused compiler outputs**: capability summaries, `Unsafe` summaries, allocation/layout reports, and better pass-boundary inspection
-- **Small SSA optimization group**: constant folding, dead code elimination, CFG cleanup, and trivial phi/copy cleanup
+- **Cacheable compiler artifacts**: DONE — `Concrete/Pipeline.lean` defines explicit artifact types (`ParsedProgram`, `SummaryTable`, `ResolvedProgram`, `ElaboratedProgram`, `MonomorphizedProgram`, `SSAProgram`) and composable runner functions; `Main.lean` consumes these boundaries instead of threading types through ad-hoc `match` chains
+- **Small SSA optimization group**: DONE — `SSACleanup.lean` covers constant folding, dead code elimination, CFG cleanup, and trivial phi/copy cleanup
+- **Diagnostics infrastructure**: build on typed errors with better ranges, notes, and rendering
 - **Small but excellent stdlib**: bytes/buffers, borrowed views, allocator-explicit collections, file/path/process/env, networking, formatting
 - **Explicit build/project model**: keep reproducibility, target configuration, and FFI setup boring and visible
 
@@ -347,6 +348,8 @@ Already established architecture in this arc:
 
 - **Summary-based frontend**: `FileSummary` and `ResolvedImports` now form the cross-file frontend boundary, with prebuilt function, extern, and impl-method signatures reused across `Resolve`, `Check`, and `Elab`
 - **Core as semantic authority**: `CoreCheck` now owns post-elaboration legality checks that can be stated on Core IR; `Check` is mostly surface/inference-specific work
+- **ABI/layout subsystem clarity**: `Layout.lean` is now the shared authority for size, alignment, field offsets, enum layout, LLVM type definitions, and FFI-safety checks used by both `CoreCheck` and `EmitSSA`
+- **Audit-focused compiler outputs**: `--report caps|unsafe|layout|interface|mono` now exposes capability summaries, unsafe-signature summaries, layout reports, public interface summaries, and monomorphization reports
 
 The main rule is: architecture before ornament, tooling visibility before convenience syntax, and proof-friendly boundaries before feature expansion.
 
@@ -387,7 +390,7 @@ See [ROADMAP.md](ROADMAP.md) for the full implementation plan with syntax, rules
 | **13** | Tooling | Not started |
 | **14** | Runtime (C, then Concrete) | Not started |
 
-Next critical path: **deepen the ABI/layout subsystem boundary, then add audit-focused compiler outputs, modest SSA cleanup/optimization, broader stdlib growth, and formalization.** The summary-based frontend and `CoreCheck` semantic-authority work are done enough for the current architecture phase. Structured diagnostics are complete across all semantic passes. The legacy AST backend has been removed.
+Next critical path: **strengthen shared diagnostics infrastructure, then push broader stdlib growth and formalization.** The summary-based frontend, `CoreCheck` semantic-authority shift, ABI/layout subsystem, cacheable pipeline artifacts (`Concrete/Pipeline.lean`), SSA cleanup, and first audit/report outputs are done enough for the current architecture phase. Structured diagnostics are complete across all semantic passes. The legacy AST backend has been removed.
 
 ### What fits the philosophy and what does not
 
@@ -485,6 +488,7 @@ Concrete/
   SSAVerify.lean -- SSA validation
   SSACleanup.lean -- SSA cleanup
   EmitSSA.lean   -- LLVM IR from SSA
+  Pipeline.lean  -- Cacheable artifact types and composable pipeline runners
 Main.lean        -- Entry point
 lean_tests/      -- 243 test programs
 examples/        -- 66 example programs
@@ -528,8 +532,7 @@ Things Concrete deliberately does not have:
 - Clear path to formal verification because the compiler is already implemented in Lean and now has explicit internal IR boundaries
 
 **Next steps:**
-- Tighten the ABI/layout subsystem and expose more audit-focused compiler outputs
-- Add modest SSA cleanup/optimization that benefits every backend
+- Strengthen shared diagnostics infrastructure with richer spans, secondary labels/notes, and phase-aware rendering
 - Grow a sharp stdlib in bytes/buffers, views, file/path/process/env, networking, and formatting
 - Push kernel formalization and proof development in Lean
 

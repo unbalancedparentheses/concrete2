@@ -166,6 +166,54 @@ Why these fit:
 - allocator-explicit design is one of the strongest matches for Concrete
 - Zig’s stdlib discipline is close to Concrete’s intended culture
 
+### From Go
+
+Useful ideas:
+
+- clear, boring standard-library API surfaces
+- straightforward file/network/process packages
+- practical interfaces for common systems tasks without abstraction theatrics
+
+Why these fit:
+
+- Go is a good reminder that low-level-adjacent APIs benefit from clarity more than cleverness
+- Concrete should learn from Go’s readability and packaging discipline without copying its semantics or weak type/resource model
+
+What not to copy:
+
+- implicit nil-heavy API patterns
+- concurrency assumptions leaking into too much of the library surface
+
+### From Swift
+
+Useful ideas:
+
+- clear value-oriented API surfaces
+- strong separation between owned values and borrowed/temporary views where performance matters
+- practical systems-facing libraries with explicit handle/resource types
+
+Why these fit:
+
+- Swift is a useful reference for keeping APIs readable while still being serious about systems boundaries
+- it is a reminder that low-level-facing libraries do not need to become unreadable to stay powerful
+
+What not to copy:
+
+- runtime assumptions that are too tied to Swift’s broader execution model
+
+### From Gleam
+
+Useful ideas:
+
+- standard-library readability
+- consistent API shape
+- preference for a small, coherent surface over a sprawling one
+
+Why these fit:
+
+- Gleam is a useful counterexample to “serious language means sprawling stdlib surface”
+- Concrete should preserve this bias toward coherence and readability even while targeting lower-level work
+
 ### From Odin
 
 Useful ideas:
@@ -333,6 +381,116 @@ Only after the basic containers are solid.
 
 This is where a Zig-inspired data-oriented collection could fit.
 
+## High-Value Later Additions
+
+After the core foundation is solid, Concrete should add only a few more modules, carefully.
+
+### `std.time`
+
+Useful for:
+
+- clocks
+- durations
+- timestamps
+- sleeping/timers later, but only once the runtime story is clearer
+
+### `std.rand`
+
+Only if kept explicit and capability-gated.
+
+Useful for practical systems work, but it should not become ambient magic.
+
+### `std.hash`
+
+Useful for:
+
+- hashing APIs
+- map/set internals
+- checksums and digests later
+
+### `std.collections.map`
+
+Once `Vec`, `bytes`, and borrowed views are solid, a real map API becomes worthwhile.
+
+Concrete should still keep the collection surface small.
+
+### `std.collections.set`
+
+Only after `map` is solid, and probably built on top of it.
+
+### `std.iter` (or equivalent), very carefully
+
+Not a trait-heavy iterator universe.
+
+If anything like this is added, it should stay:
+
+- small
+- explicit
+- eager
+
+### `std.sync`
+
+Much later, and only once the concurrency design is clearer.
+
+This should not be added casually.
+
+### `std.ffi`
+
+A small module for explicit FFI-facing helpers and safer wrappers around low-level interop patterns.
+
+### `std.layout`
+
+Potentially useful for exposing layout/size/alignment information in a principled way if the language wants a stdlib-facing low-level reflection surface.
+
+### `std.parse`
+
+Only after `bytes`, `text`, and `fmt` are in good shape.
+
+Useful for:
+
+- integer parsing
+- float parsing
+- path/text parsing helpers
+- other small explicit parsers
+
+## Low-Level Spine Concrete Still Needs
+
+Looking across Rust, Zig, Odin, Go, Swift, and related systems-oriented languages, the core missing low-level spine is fairly clear.
+
+Concrete does not need Rust’s breadth, but it does need a strong low-level foundation in these areas:
+
+1. **Bytes**
+An owned byte buffer is the most important missing foundational type.
+
+2. **Slices / spans**
+Non-owning contiguous views are essential for low-level APIs.
+
+3. **Borrowed text views**
+Owned `String` is not enough. Borrowed text needs its own type.
+
+4. **Path types**
+Path handling should be explicit and not hidden inside `fs`.
+
+5. **Real `fs` / `env` / `process` APIs**
+These are core systems boundaries, not optional extras.
+
+6. **Networking**
+A real stdlib networking layer over the current builtins is necessary for serious systems use.
+
+7. **Time**
+Durations, clocks, timestamps, and later timer-related APIs are basic low-level requirements.
+
+8. **Allocator-visible containers**
+Concrete should stay disciplined here and make allocation visible in collection growth and owned-buffer APIs.
+
+9. **Formatting and parsing**
+These should be explicit, buffer-oriented, and small.
+
+10. **Owned handle types**
+Files, sockets, listeners, and later subprocess handles should not be raw low-level integers in safe APIs.
+
+This is the real stdlib foundation Concrete needs before it should worry about broader convenience layers.
+
 ## What To Avoid
 
 Concrete should not let the stdlib smuggle in abstractions that the language itself rejects.
@@ -352,6 +510,8 @@ Also avoid standardizing too early:
 - lazy stream APIs over resources
 - a large collection zoo before `bytes`, `slice`, `fs`, and `net` are solid
 - runtime-coupled APIs whose shape only makes sense under one concurrency model
+- future/promise ecosystems
+- too many string-heavy utilities before `bytes`, `slice`, and `text` are solid
 
 ## Candidate Module Map
 
@@ -448,8 +608,10 @@ The actual concurrency/runtime direction belongs in [`research/concurrency.md`](
 4. Add `std.path`.
 5. Build real file/process/env modules around explicit handles and typed errors.
 6. Wrap networking builtins in a proper stdlib layer.
-7. Add formatting helpers and stronger test support.
-8. Expand collections only after the core is solid.
+7. Add `std.time`.
+8. Add formatting helpers and stronger test support.
+9. Add parsing helpers once `bytes`, `text`, and `fmt` are solid.
+10. Expand collections only after the core is solid.
 
 ## Adoption Filter
 
@@ -467,6 +629,22 @@ A stdlib idea is a poor fit if it:
 - assumes a runtime model everywhere
 - depends on heavy trait/generic indirection for ordinary use
 - turns simple data movement into “clever” code
+
+## Later Summary
+
+Beyond the core foundation, the best additions are probably:
+
+- `std.time`
+- `std.rand`
+- `std.hash`
+- `std.collections.map`
+- `std.collections.set`
+- maybe a small `std.parse`
+- later `std.sync`
+- later `std.ffi` helpers
+
+The important point is that Concrete’s stdlib should stay small and sharp.
+It does not need to imitate Rust’s breadth.
 
 ## Long-Term Goal
 

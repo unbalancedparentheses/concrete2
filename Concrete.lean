@@ -19,3 +19,4 @@ import Concrete.SSAVerify
 import Concrete.SSACleanup
 import Concrete.EmitSSA
 import Concrete.Report
+import Concrete.Pipeline

@@ -786,6 +786,64 @@ def emitSModule (s : EmitSSAState) (m : SModule) : EmitSSAState :=
     | none => s
   else s
 
+/-- Collect all types referenced in an SVal. -/
+private def collectSValTys (v : SVal) : List Ty :=
+  match v with
+  | .reg _ t => [t]
+  | .intConst _ t => [t]
+  | .floatConst _ t => [t]
+  | _ => []
+
+/-- Collect all types referenced in an SInst. -/
+private def collectSInstTys (inst : SInst) : List Ty :=
+  match inst with
+  | .binOp _ _ lhs rhs ty => collectSValTys lhs ++ collectSValTys rhs ++ [ty]
+  | .unaryOp _ _ operand ty => collectSValTys operand ++ [ty]
+  | .call _ _ args retTy => args.foldl (fun acc a => acc ++ collectSValTys a) [] ++ [retTy]
+  | .alloca _ ty => [ty]
+  | .load _ ptr ty => collectSValTys ptr ++ [ty]
+  | .store val ptr => collectSValTys val ++ collectSValTys ptr
+  | .gep _ base indices ty => collectSValTys base ++ indices.foldl (fun acc i => acc ++ collectSValTys i) [] ++ [ty]
+  | .phi _ incoming ty => incoming.foldl (fun acc (v, _) => acc ++ collectSValTys v) [] ++ [ty]
+  | .cast _ val targetTy => collectSValTys val ++ [targetTy]
+  | .memcpy dst src _ => collectSValTys dst ++ collectSValTys src
+
+/-- Scan all SSA modules for concrete type arguments used with Option and Result.
+    Returns (largest Option payload type, largest Result payload types (ok, err)). -/
+private def scanBuiltinEnumArgs (ctx : Layout.Ctx) (modules : List SModule) : (Option Ty) × (Option (Ty × Ty)) :=
+  let allTys := modules.foldl (fun acc m =>
+    m.functions.foldl (fun acc f =>
+      f.blocks.foldl (fun acc b =>
+        b.insts.foldl (fun acc inst => acc ++ collectSInstTys inst) acc
+      ) acc
+    ) acc
+  ) ([] : List Ty)
+  -- Find all Option<T> and Result<T, E> instantiations
+  let optPayloads := allTys.filterMap fun t =>
+    match t with
+    | .generic "Option" [arg] => some arg
+    | _ => none
+  let resPayloads := allTys.filterMap fun t =>
+    match t with
+    | .generic "Result" [ok, err] => some (ok, err)
+    | _ => none
+  -- Pick the largest payload type for Option
+  let bestOpt := optPayloads.foldl (fun best t =>
+    match best with
+    | none => some t
+    | some prev => if Layout.tySize ctx t > Layout.tySize ctx prev then some t else best
+  ) none
+  -- Pick the largest ok/err payload types for Result
+  let bestRes := resPayloads.foldl (fun best (ok, err) =>
+    match best with
+    | none => some (ok, err)
+    | some (prevOk, prevErr) =>
+      let newOk := if Layout.tySize ctx ok > Layout.tySize ctx prevOk then ok else prevOk
+      let newErr := if Layout.tySize ctx err > Layout.tySize ctx prevErr then err else prevErr
+      some (newOk, newErr)
+  ) none
+  (bestOpt, bestRes)
+
 def emitSSAProgram (modules : List SModule) : String :=
   let s : EmitSSAState := {}
   -- Header
@@ -794,14 +852,39 @@ def emitSSAProgram (modules : List SModule) : String :=
   -- Collect all structs and enums for type resolution
   let allStructs := modules.foldl (fun acc m => acc ++ m.structs) []
   let allEnums := modules.foldl (fun acc m => acc ++ m.enums) []
-  -- Add builtin enums (Option, Result) so ssaLookupEnum resolves them to %enum.X
-  let builtinEnums : List CEnumDef := [
-    { name := "Option", variants := [("Some", [("value", .int)]), ("None", [])] },
-    { name := "Result", variants := [("Ok", [("value", .int)]), ("Err", [("value", .int)])] }
-  ]
+  -- Canonical builtin enum definitions with type parameters
+  let optionDef : CEnumDef :=
+    { name := "Option", typeParams := ["T"],
+      variants := [("Some", [("value", .typeVar "T")]), ("None", [])] }
+  let resultDef : CEnumDef :=
+    { name := "Result", typeParams := ["T", "E"],
+      variants := [("Ok", [("value", .typeVar "T")]), ("Err", [("value", .typeVar "E")])] }
+  let builtinEnums : List CEnumDef := [optionDef, resultDef]
   let s := { s with structDefs := allStructs, enumDefs := builtinEnums ++ allEnums }
-  -- Well-known types
+  -- Well-known struct types (String, Vec, HashMap)
   let s := Layout.builtinTypeDefs.foldl (fun s line => emit s line) s
+  -- Whole-program monomorphic ABI for builtin generic enums:
+  -- Scan all SSA modules for concrete type arguments, then emit a single LLVM type
+  -- definition sized to the largest payload across all instantiations.
+  -- Smaller payloads under-fill the slot (wasted padding) but are correct.
+  -- Builtin functions (vec_pop, map_get, etc.) store i64 payloads, which always fit.
+  -- NOTE: GEP offsets in Lower.lean assume tyAlign(.typeVar "T") = 8, which is correct
+  -- only because all current Concrete types have alignment ≤ 8. If larger-aligned types
+  -- are added, Lower.lean will need to thread concrete type args through offset computation.
+  let ctx := layoutCtxOf s
+  let (bestOpt, bestRes) := scanBuiltinEnumArgs ctx modules
+  -- Generate dynamic Option type def
+  let optTypeArgs := match bestOpt with
+    | some t => [t]
+    | none => [Ty.int]  -- fallback: i64 payload
+  let optTypeDefs := Layout.enumTypeDefs ctx optionDef optTypeArgs
+  let s := optTypeDefs.foldl (fun s line => emit s line) s
+  -- Generate dynamic Result type def
+  let resTypeArgs := match bestRes with
+    | some (ok, err) => [ok, err]
+    | none => [Ty.int, Ty.int]  -- fallback: i64 payloads
+  let resTypeDefs := Layout.enumTypeDefs ctx resultDef resTypeArgs
+  let s := resTypeDefs.foldl (fun s line => emit s line) s
   -- Mark these as emitted so user enums with the same names won't duplicate
   let s := { s with emittedTypes := ["Result", "Option"] ++ s.emittedTypes }
   let s := emit s ""

@@ -37,8 +37,43 @@ namespace Builtin
 end Builtin
 
 -- ============================================================
+-- Type argument substitution for generic enums
+-- ============================================================
+
+/-- Substitute type variables in a CEnumDef with concrete type arguments. -/
+private def substEnumTypeArgs (ed : CEnumDef) (typeArgs : List Ty) : CEnumDef :=
+  if ed.typeParams.isEmpty || typeArgs.isEmpty then ed
+  else
+    let subst := ed.typeParams.zip typeArgs
+    { ed with variants := ed.variants.map fun (vn, fields) =>
+      (vn, fields.map fun (fn, ft) =>
+        (fn, match ft with
+             | .typeVar name => match subst.find? fun (p, _) => p == name with
+                                | some (_, actual) => actual
+                                | none => ft
+             | other => other)) }
+
+-- ============================================================
 -- Type size (bytes)
 -- ============================================================
+
+/-- Compute alignment for a named or generic type (struct or enum). -/
+private partial def tyAlign_namedOrGeneric (ctx : Ctx) (tyAlignFn : Ctx → Ty → Nat) (name : String) (typeArgs : List Ty) : Nat :=
+  match lookupStruct ctx name with
+  | some sd =>
+    if sd.isPacked then 1
+    else
+      let natural := sd.fields.foldl (fun maxA (_, ft) => Nat.max maxA (tyAlignFn ctx ft)) 1
+      match sd.reprAlign with
+      | some a => Nat.max natural a
+      | none => natural
+  | none =>
+    match lookupEnum ctx name with
+    | some ed =>
+      let ed := substEnumTypeArgs ed typeArgs
+      Nat.max 4 (ed.variants.foldl (fun maxA (_, vfields) =>
+        vfields.foldl (fun a (_, ft) => Nat.max a (tyAlignFn ctx ft)) maxA) 1)
+    | none => 8
 
 /-- Natural alignment of a type in bytes. -/
 partial def tyAlign (ctx : Ctx) : Ty → Nat
@@ -53,20 +88,8 @@ partial def tyAlign (ctx : Ctx) : Ty → Nat
   | .generic "Heap" _ | .generic "HeapArray" _ => 8
   | .generic "Vec" _ => Builtin.vecAlign
   | .generic "HashMap" _ => Builtin.hashmapAlign
-  | .named name | .generic name _ =>
-    match lookupStruct ctx name with
-    | some sd =>
-      if sd.isPacked then 1
-      else
-        let natural := sd.fields.foldl (fun maxA (_, ft) => Nat.max maxA (tyAlign ctx ft)) 1
-        match sd.reprAlign with
-        | some a => Nat.max natural a
-        | none => natural
-    | none =>
-      match lookupEnum ctx name with
-      | some ed => Nat.max 4 (ed.variants.foldl (fun maxA (_, vfields) =>
-          vfields.foldl (fun a (_, ft) => Nat.max a (tyAlign ctx ft)) maxA) 1)
-      | none => 8
+  | .named name => tyAlign_namedOrGeneric ctx tyAlign name []
+  | .generic name args => tyAlign_namedOrGeneric ctx tyAlign name args
   | .array elem _ => tyAlign ctx elem
   | .never | .placeholder => 1
   | .typeVar _ => 8
@@ -75,6 +98,33 @@ partial def tyAlign (ctx : Ctx) : Ty → Nat
 def alignUp (n : Nat) (align : Nat) : Nat :=
   if align <= 1 then n
   else ((n + align - 1) / align) * align
+
+/-- Compute size for a named or generic type (struct or enum). -/
+private partial def tySize_namedOrGeneric (ctx : Ctx) (tySizeFn : Ctx → Ty → Nat) (tyAlignFn : Ctx → Ty → Nat) (name : String) (typeArgs : List Ty) : Nat :=
+  match lookupStruct ctx name with
+  | some sd =>
+    if sd.isPacked then
+      sd.fields.foldl (fun acc (_, ft) => acc + tySizeFn ctx ft) 0
+    else
+      let (sz, _) := sd.fields.foldl (fun (acc, _) (_, ft) =>
+        let aligned := alignUp acc (tyAlignFn ctx ft)
+        (aligned + tySizeFn ctx ft, ())) (0, ())
+      let structAlign := tyAlignFn ctx (.named name)
+      alignUp sz structAlign
+  | none =>
+    match lookupEnum ctx name with
+    | some ed =>
+      let ed := substEnumTypeArgs ed typeArgs
+      let maxPayload := ed.variants.foldl (fun maxSz (_, vfields) =>
+        let sz := vfields.foldl (fun (acc, _) (_, ft) =>
+          let aligned := alignUp acc (tyAlignFn ctx ft)
+          (aligned + tySizeFn ctx ft, ())) (0, ())
+        Nat.max maxSz sz.1) 0
+      let payloadAlign := ed.variants.foldl (fun maxA (_, vfields) =>
+        vfields.foldl (fun a (_, ft) => Nat.max a (tyAlignFn ctx ft)) maxA) 1
+      let payloadStart := alignUp 4 payloadAlign
+      alignUp (payloadStart + maxPayload) (Nat.max 4 payloadAlign)
+    | none => 8
 
 /-- Byte size of a type. Used for malloc/alloca sizing and enum layout. -/
 partial def tySize (ctx : Ctx) : Ty → Nat
@@ -89,31 +139,8 @@ partial def tySize (ctx : Ctx) : Ty → Nat
   | .generic "Heap" _ | .generic "HeapArray" _ => 8
   | .generic "Vec" _ => Builtin.vecSize
   | .generic "HashMap" _ => Builtin.hashmapSize
-  | .named name | .generic name _ =>
-    match lookupStruct ctx name with
-    | some sd =>
-      if sd.isPacked then
-        -- Packed: no padding between fields, alignment = 1
-        sd.fields.foldl (fun acc (_, ft) => acc + tySize ctx ft) 0
-      else
-        let (sz, _) := sd.fields.foldl (fun (acc, _) (_, ft) =>
-          let aligned := alignUp acc (tyAlign ctx ft)
-          (aligned + tySize ctx ft, ())) (0, ())
-        let structAlign := tyAlign ctx (.named name)
-        alignUp sz structAlign
-    | none =>
-      match lookupEnum ctx name with
-      | some ed =>
-        let maxPayload := ed.variants.foldl (fun maxSz (_, vfields) =>
-          let sz := vfields.foldl (fun (acc, _) (_, ft) =>
-            let aligned := alignUp acc (tyAlign ctx ft)
-            (aligned + tySize ctx ft, ())) (0, ())
-          Nat.max maxSz sz.1) 0
-        let payloadAlign := ed.variants.foldl (fun maxA (_, vfields) =>
-          vfields.foldl (fun a (_, ft) => Nat.max a (tyAlign ctx ft)) maxA) 1
-        let payloadStart := alignUp 4 payloadAlign
-        alignUp (payloadStart + maxPayload) (Nat.max 4 payloadAlign)
-      | none => 8
+  | .named name => tySize_namedOrGeneric ctx tySize tyAlign name []
+  | .generic name args => tySize_namedOrGeneric ctx tySize tyAlign name args
   | .array elem n => tySize ctx elem * n
   | .never | .placeholder => 0
   | .typeVar _ => 8
@@ -235,29 +262,34 @@ def structTypeDef (ctx : Ctx) (sd : CStructDef) : String :=
   if sd.isPacked then s!"%struct.{sd.name} = type <\{ {fieldTypes} }>"
   else s!"%struct.{sd.name} = type \{ {fieldTypes} }"
 
-/-- Generate LLVM type definitions for an enum (variant types + tagged union). -/
-def enumTypeDefs (ctx : Ctx) (ed : CEnumDef) : List String :=
-  let variantDefs := ed.variants.map fun (vn, fields) =>
+/-- Generate LLVM type definitions for an enum (variant types + tagged union).
+    For generic enums, pass typeArgs to get the correct payload size from substitution. -/
+def enumTypeDefs (ctx : Ctx) (ed : CEnumDef) (typeArgs : List Ty := []) : List String :=
+  let substEd := substEnumTypeArgs ed typeArgs
+  let variantDefs := substEd.variants.map fun (vn, fields) =>
     if fields.isEmpty then s!"%variant.{ed.name}.{vn} = type \{}"
     else
       let fieldTypes := ", ".intercalate (fields.map fun (_, t) => tyToLLVM ctx t)
       s!"%variant.{ed.name}.{vn} = type \{ {fieldTypes} }"
-  let totalSize := tySize ctx (.named ed.name)
+  -- Compute total size using the substituted enum's fields directly
+  let maxPayload := substEd.variants.foldl (fun maxSz (_, vfields) =>
+    let sz := vfields.foldl (fun (acc, _) (_, ft) =>
+      let aligned := alignUp acc (tyAlign ctx ft)
+      (aligned + tySize ctx ft, ())) (0, ())
+    Nat.max maxSz sz.1) 0
+  let payloadAlign := substEd.variants.foldl (fun maxA (_, vfields) =>
+    vfields.foldl (fun a (_, ft) => Nat.max a (tyAlign ctx ft)) maxA) 1
+  let payloadStart := alignUp 4 payloadAlign
+  let totalSize := alignUp (payloadStart + maxPayload) (Nat.max 4 payloadAlign)
   let payloadBytes := if totalSize <= 4 then 1 else totalSize - 4
   let enumDef := s!"%enum.{ed.name} = type \{ i32, [{payloadBytes} x i8] }"
   variantDefs ++ [enumDef]
 
-/-- LLVM type definitions for builtin types (String, Vec, HashMap, Option, Result). -/
+/-- LLVM type definitions for builtin types (String, Vec, HashMap). -/
 def builtinTypeDefs : List String :=
   [ "%struct.String = type { ptr, i64 }"
   , "%struct.Vec = type { ptr, i64, i64 }"
-  , "%struct.HashMap = type { ptr, ptr, ptr, i64, i64 }"
-  , "%variant.Result.Ok = type { i64 }"
-  , "%variant.Result.Err = type { i64 }"
-  , "%enum.Result = type { i32, [12 x i8] }"
-  , "%variant.Option.Some = type { i64 }"
-  , "%variant.Option.None = type {}"
-  , "%enum.Option = type { i32, [12 x i8] }" ]
+  , "%struct.HashMap = type { ptr, ptr, ptr, i64, i64 }" ]
 
 -- ============================================================
 -- FFI safety

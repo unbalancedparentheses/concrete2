@@ -4,7 +4,7 @@ This is the implementation plan for the Concrete programming language. For the f
 
 ## What's Built
 
-The Lean 4 compiler implements the core surface language plus the new internal IR pipeline pieces: Core IR, elaboration, Core validation, monomorphization, SSA lowering, SSA verification/cleanup, and SSA codegen. All 263 main tests pass, and the SSA-specific suite passes as well.
+The Lean 4 compiler implements the core surface language plus the new internal IR pipeline pieces: Core IR, elaboration, Core validation, monomorphization, SSA lowering, SSA verification/cleanup, and SSA codegen. All 266 main tests pass, and the SSA-specific suite passes as well.
 
 **Done:**
 - Lexer, LL(1) parser, AST
@@ -93,30 +93,38 @@ The frontend now uses file summaries as the main cross-file interface:
 2. **Core as semantic authority** — DONE
 CoreCheck is the post-elaboration semantic authority. It owns: capability enforcement, operator type errors, condition type errors, match exhaustiveness (coverage, wrong-enum, duplicate arms, field-count), return-type checking, and all declaration-level checks (Copy/Destroy conflicts, repr validation, FFI safety, trait impl completeness with signature checking, reserved names). CoreCheck and CoreCanonicalize both recurse through submodules. Check.lean retains only what genuinely requires surface-syntax context: linearity/borrow tracking, type inference, cap-polymorphic call resolution, reserved-name early gate (prevents confusing downstream type errors). Trait impl completeness has moved entirely from Resolve to CoreCheck.
 
-3. **ABI/layout subsystem boundary**
+3. **ABI/layout subsystem boundary** — DONE enough
 Make layout and FFI concerns a clearer compiler subsystem instead of just scattered helpers:
 - centralize size/alignment/field-offset logic
 - make enum layout and payload rules explicit
 - separate extern ABI decisions from general type checking
 - keep FFI-safe validation tied to the same source of truth
 
-4. **Cacheable compiler artifacts**
-Once `FileSummary` exists, make the main compiler products explicit and reusable:
-- parsed file
-- file summary
-- checked/elaborated file
-- monomorphized Core
-- SSA module
+`Layout.lean` is now the shared authority for:
+- type sizes and alignment
+- field offsets and enum payload layout
+- LLVM type definition generation (`structTypeDef`, `enumTypeDefs`, `builtinTypeDefs`)
+- FFI-safety checks (`isFFISafe`)
 
-5. **Small SSA optimizations**
-Keep this deliberately modest at first:
+Both `EmitSSA` and `CoreCheck` delegate to `Layout` instead of maintaining separate layout/FFI logic.
+
+4. **Cacheable compiler artifacts** — DONE
+`Concrete/Pipeline.lean` defines explicit artifact types at each pipeline boundary:
+- `ParsedProgram` (parsed modules)
+- `SummaryTable` (cross-file interface)
+- `ResolvedProgram` (name-resolved modules)
+- `ElaboratedProgram` (Core IR after elab + canonicalize + core-check)
+- `MonomorphizedProgram` (specialized Core)
+- `SSAProgram` (lowered + verified + cleaned SSA)
+Composable runner functions (`Pipeline.parse`, `.resolveFiles`, `.buildSummary`, `.resolve`, `.check`, `.elaborate`, `.monomorphize`, `.lower`, `.emit`) wrap each pass. `Pipeline.runFrontend` is the shared prefix for all three CLI entry points. `Main.lean` now consumes these artifact boundaries. No serialization yet — these types are the prerequisite for future `ToJson`/`FromJson` instances and disk caching.
+
+5. **Small SSA optimizations** — DONE enough
+`SSACleanup.lean` covers:
 - constant folding
 - dead code elimination
-- CFG cleanup
-- trivial copy/phi cleanup
-- use ownership/linearity facts when they directly simplify lowering or cleanup
-- treat this as a small cross-backend cleanup layer over SSA, not as an LLVM-only optimization project
-- the goal is to simplify and normalize SSA before any backend emission (LLVM today, C/MLIR/Wasm later), so every backend sees cleaner IR and shares the same semantics
+- CFG cleanup (unreachable block removal, empty block folding)
+- trivial phi/copy elimination
+This is a cross-backend cleanup layer over SSA, not an LLVM-only optimization project. Every backend sees cleaner IR and shares the same semantics.
 
 6. **Diagnostics infrastructure**
 Build on the structured errors with stronger shared compiler infrastructure for:
@@ -126,7 +134,15 @@ Build on the structured errors with stronger shared compiler infrastructure for:
 - cleaner multi-diagnostic presentation
 - reusable diagnostic data/formatting paths across passes
 
-7. **Audit-focused compiler outputs**
+Sequencing for this work should stay explicit:
+
+- first make passes return `Except Diagnostics` natively and remove ad hoc string-to-diagnostic bridging
+- then improve span/range fidelity and rendering quality
+- only after that consider multi-error accumulation in `Check` / `Elab`
+
+Multi-error reporting is valuable, but it is a separate behavioral change and a larger control-flow refactor. The compiler should get native diagnostics plumbing correct before it changes how many errors those passes try to accumulate.
+
+7. **Audit-focused compiler outputs** — first batch done
 Make the compiler more inspectable, not just more correct:
 - capability summaries
 - `Unsafe` usage summaries
@@ -136,6 +152,17 @@ Make the compiler more inspectable, not just more correct:
 - cleanup/destruction reports
 - import/interface summaries
 - pass-boundary inspection modes
+
+Implemented today via `--report`:
+- `caps`: capability summaries by module/function
+- `unsafe`: unsafe-signature summaries (declared `Unsafe`, externs, raw-pointer signatures)
+- `layout`: struct/enum sizes, alignment, offsets, and enum payload layout
+- `interface`: public API summary from `FileSummary`
+- `mono`: generic-function and specialization report
+
+Deferred:
+- allocation summaries (heap alloc tracking per function/module)
+- cleanup/destruction reports (drop/defer coverage analysis)
 
 8. **Multi-backend boundary over SSA**
 Keep SSA as the backend boundary and make that architectural rule explicit:
@@ -2179,7 +2206,7 @@ These do not block any phase above:
 | **12a** | Runtime in C | Not started | 7 |
 | **12b** | Runtime in Concrete | Not started | 8, 12a |
 
-**Next priorities:** deepen ABI/layout, add audit-focused compiler outputs, add modest SSA optimizations, then push formalization and stdlib growth.
+**Next priorities:** make compiler artifacts more explicit and reusable, add modest SSA optimizations, strengthen shared diagnostics infrastructure, then push stdlib growth and formalization.
 
 **Critical path for production use:** Architecture (A1-A5) → remaining stdlib (8f, 8h) → runtime (12a).
 

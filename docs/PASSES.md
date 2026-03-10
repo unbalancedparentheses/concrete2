@@ -344,16 +344,19 @@ CoreCheck is the post-elaboration semantic authority. It owns all legality rules
 
 ## Artifact Flow
 
-The compiler produces explicit, stable artifacts at each stage:
+The compiler produces explicit, stable artifacts at each stage. Since the introduction of `Concrete/Pipeline.lean`, each boundary is a named artifact type with a composable runner function:
 
 ```
 Source Text
     │
     ▼
-  Parse ─── String → List Module (ParsedModule)
+  Pipeline.parse ─── String → ParsedProgram (List Module)
     │
     ▼
-  buildSummaryTable ─── List Module → List (String × FileSummary)
+  Pipeline.resolveFiles ─── IO, reads sub-module files → ParsedProgram
+    │
+    ▼
+  Pipeline.buildSummary ─── ParsedProgram → SummaryTable (List (String × FileSummary))
     │
     ├─→ FileSummary: declaration-level cross-file interface
     │     (function sigs, extern sigs, impl method sigs, structs, enums,
@@ -364,33 +367,39 @@ Source Text
     │      impl method sigs — all resolved from FileSummary)
     │
     ▼
-  Resolve ─── shallow (FileSummary) + body (AST) → List ResolvedModule
+  Pipeline.resolve ─── ParsedProgram × SummaryTable → ResolvedProgram (List ResolvedModule)
     │
     ▼
-  Check ─── List Module + ResolvedImports → Unit
+  Pipeline.check ─── ParsedProgram × SummaryTable → Unit
     │
     ▼
-  Elab ──── List Module + ResolvedImports → List CModule
+  Pipeline.elaborate ─── ParsedProgram × SummaryTable → ElaboratedProgram (List CModule)
+    │                     (includes elab + canonicalize + core-check)
+    ▼
+  Pipeline.monomorphize ─── ElaboratedProgram → MonomorphizedProgram (List CModule)
     │
     ▼
-  CoreCanonicalize ── List CModule → List CModule
+  Pipeline.lower ─── MonomorphizedProgram → SSAProgram (List SModule)
+    │                  (includes lower + verify + cleanup)
+    ▼
+  Pipeline.emit ─── SSAProgram → String (LLVM IR)
     │
     ▼
-  CoreCheck ── List CModule → Unit
-    │
-    ▼
-  Mono ──── List CModule → List CModule (monomorphized)
-    │
-    ▼
-  Lower ─── CModule → SModule (SSA)
-    │
-    ▼
-  SSAVerify → SSACleanup → EmitSSA → clang → executable
+  clang → executable
 ```
+
+`Pipeline.runFrontend` composes the shared prefix (parse → resolveFiles → buildSummary → resolve → check → elaborate) used by all three CLI entry points.
 
 `FileSummary` is the single cross-file interface artifact for the current frontend architecture phase. All passes consume signatures and type declarations from it rather than rebuilding their own views from raw ASTs. `ResolvedImports` is the single import artifact consumed by Check and Elab — it is built once from the summary table and shared, not rebuilt ad hoc in each pass.
 
 `Layout` is the single source of truth for type sizes, alignment, field offsets, pass-by-pointer decisions, `Ty` → LLVM type mappings, LLVM type definition generation (`structTypeDef`, `enumTypeDefs`, `builtinTypeDefs`), and FFI-safety checks (`isFFISafe`). Both EmitSSA and CoreCheck delegate to Layout rather than maintaining their own layout or type-emission logic.
+
+`Report` is the current audit/inspection surface over the pipeline:
+- `--report interface` consumes `FileSummary`
+- `--report caps`, `unsafe`, and `layout` consume canonicalized Core
+- `--report mono` compares pre- and post-monomorphization Core modules
+
+These reports are intended as compiler-facing audit outputs, not as a second semantic pipeline.
 
 **Note:** `FileSummary` and `ResolvedImports` currently carry full impl/trait-impl blocks with method bodies (not just signatures). Check and Elab need these to type-check and elaborate imported method implementations. Splitting into interface-only and body portions is a future incremental-compilation concern, not a current blocker.
 

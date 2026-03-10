@@ -454,7 +454,85 @@ private def foldConstants (blocks : List SBlock) : List SBlock :=
       | none => inst }
 
 -- ============================================================
--- Pass 6: Identity cast elimination
+-- Pass 6: GEP-zero elimination
+-- ============================================================
+
+/-- Eliminate `gep dst base [intConst 0 _]` (single zero-index GEP is identity). -/
+private def eliminateGepZero (blocks : List SBlock) : List SBlock :=
+  let replacements := blocks.foldl (fun acc b =>
+    b.insts.foldl (fun acc inst =>
+      match inst with
+      | .gep dst base [.intConst 0 _] _ => (dst, base) :: acc
+      | _ => acc) acc) []
+  if replacements.isEmpty then blocks
+  else applyReplacements blocks replacements
+
+-- ============================================================
+-- Pass 7: Store-load forwarding (block-local)
+-- ============================================================
+
+/-- Get the register name from an SVal, if it is a register. -/
+private def svalRegName : SVal → Option String
+  | .reg name _ => some name
+  | _ => none
+
+/-- Forward store values to subsequent loads within each block.
+    Conservatively invalidates on any call or memcpy. -/
+private def forwardStoreToLoad (blocks : List SBlock) : List SBlock :=
+  let replacements := blocks.foldl (fun acc b =>
+    let (_, blockRepls) := b.insts.foldl
+      (fun (state : List (String × SVal) × List (String × SVal)) inst =>
+        let (storeMap, repls) := state
+        match inst with
+        | .store val ptr =>
+          match svalRegName ptr with
+          | some ptrName => ([(ptrName, val)], repls)
+          | none => ([], repls)
+        | .load dst ptr ty =>
+          match svalRegName ptr with
+          | some ptrName =>
+            match storeMap.find? fun (k, _) => k == ptrName with
+            | some (_, storedVal) =>
+              if storedVal.ty == ty then (storeMap, (dst, storedVal) :: repls)
+              else (storeMap, repls)
+            | none => (storeMap, repls)
+          | none => (storeMap, repls)
+        | .call .. | .memcpy .. => ([], repls)
+        | _ => (storeMap, repls))
+      ([], [])
+    acc ++ blockRepls) []
+  if replacements.isEmpty then blocks
+  else applyReplacements blocks replacements
+
+-- ============================================================
+-- Pass 8: Redundant load elimination (block-local)
+-- ============================================================
+
+/-- Eliminate redundant loads: if two loads from the same pointer (same type)
+    occur in the same block with no intervening store/call/memcpy,
+    replace the second load's result with the first's. -/
+private def eliminateRedundantLoads (blocks : List SBlock) : List SBlock :=
+  let replacements := blocks.foldl (fun acc b =>
+    let (_, blockRepls) := b.insts.foldl
+      (fun (state : List (String × Ty × String) × List (String × SVal)) inst =>
+        let (loadMap, repls) := state
+        match inst with
+        | .load dst ptr ty =>
+          match svalRegName ptr with
+          | some ptrName =>
+            match loadMap.find? fun (k, t, _) => k == ptrName && t == ty with
+            | some (_, _, prevDst) => (loadMap, (dst, SVal.reg prevDst ty) :: repls)
+            | none => ((ptrName, ty, dst) :: loadMap, repls)
+          | none => (loadMap, repls)
+        | .store .. | .call .. | .memcpy .. => ([], repls)
+        | _ => (loadMap, repls))
+      ([], [])
+    acc ++ blockRepls) []
+  if replacements.isEmpty then blocks
+  else applyReplacements blocks replacements
+
+-- ============================================================
+-- Pass 9: Identity cast elimination
 -- ============================================================
 
 /-- Eliminate `cast dst val tgt` where `val.ty == tgt` (no-op cast). -/
@@ -469,7 +547,7 @@ private def eliminateIdentityCasts (blocks : List SBlock) : List SBlock :=
   else applyReplacements blocks replacements
 
 -- ============================================================
--- Pass 7: Constant branch elimination
+-- Pass 10: Constant branch elimination
 -- ============================================================
 
 /-- Replace `condBr (boolConst true) t e` → `br t` and
@@ -484,7 +562,7 @@ private def eliminateConstantBranches (blocks : List SBlock) : List SBlock :=
     | _ => b
 
 -- ============================================================
--- Pass 8: Stale PHI entry cleanup
+-- Pass 11: Stale PHI entry cleanup
 -- ============================================================
 
 /-- For each block, remove PHI incoming entries whose source label is not
@@ -505,18 +583,36 @@ private def stripStalePhiEntries (blocks : List SBlock) : List SBlock :=
 -- Combined cleanup
 -- ============================================================
 
-private def cleanupFn (f : SFnDef) : SFnDef :=
-  let blocks := eliminateDeadBlocks f.blocks
+/-- Cheap fingerprint: total blocks + total instructions.
+    If this doesn't change between iterations, the pass sequence has converged. -/
+private def blocksFingerprint (blocks : List SBlock) : Nat :=
+  blocks.foldl (fun acc b => acc + 1 + b.insts.length) 0
+
+/-- One full pass of all cleanup transformations. -/
+private def cleanupBlocks (blocks : List SBlock) : List SBlock :=
+  let blocks := eliminateDeadBlocks blocks
   let blocks := eliminateTrivialPhis blocks
   let blocks := foldConstants blocks              -- constant folding + algebraic + strength reduction
+  let blocks := eliminateGepZero blocks           -- clean up gep-zero before memory opts
+  let blocks := forwardStoreToLoad blocks         -- local store-to-load forwarding
+  let blocks := eliminateRedundantLoads blocks    -- local redundant load elimination
   let blocks := eliminateIdentityCasts blocks     -- remove no-op casts
   let blocks := eliminateConstantBranches blocks
   let blocks := stripStalePhiEntries blocks
   let blocks := eliminateTrivialPhis blocks       -- re-run after folding may expose new trivial phis
   let blocks := eliminateDeadInstsFixpoint blocks
   let blocks := foldEmptyBlocks blocks
-  let blocks := eliminateDeadBlocks blocks        -- re-run after branch elimination
-  { f with blocks := blocks }
+  eliminateDeadBlocks blocks                      -- re-run after branch elimination
+
+/-- Run the full pass sequence to fixpoint (converge when fingerprint stabilizes). -/
+private partial def cleanupFixpoint (blocks : List SBlock) : List SBlock :=
+  let before := blocksFingerprint blocks
+  let blocks := cleanupBlocks blocks
+  if blocksFingerprint blocks == before then blocks
+  else cleanupFixpoint blocks
+
+private def cleanupFn (f : SFnDef) : SFnDef :=
+  { f with blocks := cleanupFixpoint f.blocks }
 
 def ssaCleanupModule (m : SModule) : SModule :=
   { m with functions := m.functions.map cleanupFn }

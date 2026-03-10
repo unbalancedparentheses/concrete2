@@ -153,6 +153,7 @@ run_ok "$TESTDIR/complex_closure_pipeline.con" 27
 run_ok "$TESTDIR/complex_struct_methods.con" 42
 run_ok "$TESTDIR/complex_defer_destroy.con" 42
 run_ok "$TESTDIR/complex_enum_result.con" 25
+run_ok "$TESTDIR/result_string.con" 5
 run_ok "$TESTDIR/complex_borrow_compute.con" 170
 run_ok "$TESTDIR/complex_generic_container.con" 42
 run_ok "$TESTDIR/complex_loop_accumulate.con" 50
@@ -233,6 +234,8 @@ run_ok "$TESTDIR/heap_deref_recursive.con" 42
 # Phase 9a: Option<T>
 run_ok "$TESTDIR/option_basic.con" 52
 run_ok "$TESTDIR/option_heap.con" 42
+run_ok "$TESTDIR/option_string.con" 2
+run_ok "$TESTDIR/option_mixed_payloads.con" 44
 
 # Phase 11: File I/O builtins
 run_ok "$TESTDIR/file_write_read.con" 5
