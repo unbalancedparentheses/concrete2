@@ -437,13 +437,14 @@ Planned direction:
 - shallow resolution now consumes summaries directly
 - summary-driven import/export now includes extern signatures
 - `Check` and `Elab` now share the same summary-driven export/import path
+- function and extern signatures are prebuilt once in `FileSummary` and reused instead of being rebuilt in each pass
 - next: make `FileSummary` a stable reusable frontend artifact
 - keep cross-file dependencies declaration-level where possible
 - split shallow/interface work from body-level resolution
 
 This keeps the frontend explicit and batch-oriented without moving to a query-first architecture.
 
-**Status:** In progress. `Resolve` now has a shallow phase (`resolveShallow`) and a body phase (`resolveBodies`), `FileSummary` exists as the declaration-level interface artifact, shallow resolution consumes summaries directly, and summary-driven import/export includes extern signatures through a shared `Check`/`Elab` path. The next step is to turn summaries into stable reusable frontend artifacts that other stages can cache and consume explicitly.
+**Status:** In progress. `Resolve` now has a shallow phase (`resolveShallow`) and a body phase (`resolveBodies`), `FileSummary` exists as the declaration-level interface artifact, shallow resolution consumes summaries directly, and summary-driven import/export includes extern signatures through a shared `Check`/`Elab` path. Function and extern signatures are now prebuilt once in `FileSummary` and reused by downstream passes. The next step is to turn summaries into stable reusable frontend artifacts that other stages can cache and consume explicitly.
 
 ### A4: Core Validation
 
@@ -463,7 +464,7 @@ Make the architecture rule explicit:
 
 This is the internal compiler analogue of Concrete's source-level explicitness: one clear semantic form, one clear validation boundary.
 
-**Status:** A5 refactor complete, continued migration in progress. `checkCapabilities` removed from Check.lean (was 21 call sites). Operator type checks, condition type checks, match validation all moved to CoreCheck. CoreCheck has a builtin capability table and extern-fn awareness. Cast validity, array index type checks, array literal emptiness, and deref-assign target validation also moved to CoreCheck. Check.lean retains only what requires surface-syntax context: linearity/borrow tracking, type inference, cap-poly resolution, and `cannotDerefNonRef` (needed for type inference — Check must know the result type to continue). Next step: continue migrating post-elaboration legality checks where the rule no longer needs surface-syntax or type-inference context.
+**Status:** A5 refactor complete, continued migration in progress. `checkCapabilities` removed from Check.lean (was 21 call sites). Operator type checks, condition type checks, match validation all moved to CoreCheck. CoreCheck has a builtin capability table and extern-fn awareness. Cast validity, array index type checks, array literal emptiness, and deref-assign target validation also moved to CoreCheck. The remaining `Check` logic is now largely the genuinely surface-context-dependent work: linearity/borrow tracking, type inference, name resolution fallout, cap-poly resolution, and `cannotDerefNonRef` (needed for type inference — Check must know the result type to continue). Next step: continue migrating post-elaboration legality checks where the rule no longer needs surface-syntax or type-inference context.
 
 ### A5: Codegen on SSA IR
 
@@ -2171,7 +2172,7 @@ These do not block any phase above:
 | **12a** | Runtime in C | Not started | 7 |
 | **12b** | Runtime in Concrete | Not started | 8, 12a |
 
-**Next priorities:** keep pushing the summary-based frontend (`FileSummary` as the declaration-level interface artifact, shallow vs body resolution, and shared extern-aware export/import), continue migrating post-elaboration legality checks from `Check` to `CoreCheck` (especially where the rule no longer needs surface-syntax or type-inference context), then deepen ABI/layout, modest SSA optimizations, formalization, and stdlib growth.
+**Next priorities:** keep pushing the summary-based frontend (`FileSummary` as the declaration-level interface artifact, shallow vs body resolution, shared extern-aware export/import, and prebuilt summary signatures), continue migrating post-elaboration legality checks from `Check` to `CoreCheck` where possible while recognizing that most remaining `Check` logic is surface/inference-specific, then deepen ABI/layout, modest SSA optimizations, formalization, and stdlib growth.
 
 **Critical path for production use:** Architecture (A1-A5) → remaining stdlib (8f, 8h) → runtime (12a).
 
