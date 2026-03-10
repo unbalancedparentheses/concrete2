@@ -79,16 +79,16 @@ Already completed in this arc:
 
 Remaining architecture work, in order:
 
-1. **Summary-based frontend** — DONE
+1. **Summary-based frontend** — DONE (operationally complete; not yet a pure interface-only boundary)
 The frontend now uses file summaries as the main cross-file interface:
-- `FileSummary` is the only declaration-level cross-file interface artifact
-- `ResolvedImports` is an explicit stable artifact consumed by Check and Elab
+- `FileSummary` is the declaration-level cross-file interface artifact; `ResolvedImports` is an explicit stable artifact consumed by Check and Elab
 - No pass rebuilds import/export/signature views ad hoc — function, extern, and impl-method sigs are prebuilt once in FileSummary
-- Resolve is purely shallow/interface-oriented: module existence, import validity, top-level name visibility, deep type name validation
+- `Resolve` has a shallow phase (`resolveShallow`) for module/import/type-name validation and a body phase (`resolveBodies`) for identifier resolution within function/method bodies; both consume summaries directly
 - Check retains only surface/inference-specific work: linearity/borrow tracking, type inference, cap-polymorphic call resolution
 - CoreCheck owns all post-elaboration legality rules: capability discipline, match completeness, trait/FFI/repr checks, return-type and operator legality
 - CoreCheck and CoreCanonicalize both recurse through submodules
 - The artifact flow is explicit: ParsedModule → FileSummary → ResolvedImports → checked/elaborated module → monomorphized Core → SSA module
+- **Caveat:** `FileSummary` and `ResolvedImports` still carry full `implBlocks` and `traitImpls` bodies because imported method checking/elaboration needs them. Splitting to a pure declaration-only interface is a future incremental-compilation concern.
 
 2. **Core as semantic authority** — DONE
 CoreCheck is the post-elaboration semantic authority. It owns: capability enforcement, operator type errors, condition type errors, match exhaustiveness (coverage, wrong-enum, duplicate arms, field-count), return-type checking, and all declaration-level checks (Copy/Destroy conflicts, repr validation, FFI safety, trait impl completeness with signature checking, reserved names). CoreCheck and CoreCanonicalize both recurse through submodules. Check.lean retains only what genuinely requires surface-syntax context: linearity/borrow tracking, type inference, cap-polymorphic call resolution, reserved-name early gate (prevents confusing downstream type errors). Trait impl completeness has moved entirely from Resolve to CoreCheck.
@@ -415,7 +415,7 @@ New file: `Concrete/Resolve.lean`
 
 Extract name resolution, module resolution, and symbol binding from Check.lean into a dedicated pass.
 
-**Status:** Done. `Resolve.lean` is a purely shallow/interface validation pass. It validates imports, exports, deep type references, `Self`, function/static-method names, and enum variants. Trait impl completeness has moved to CoreCheck (which operates on Core IR after elaboration). Method-call resolution remains with `Check.lean` because it needs receiver type information. Resolve consumes `FileSummary` artifacts and does not inspect function bodies for declaration-level information.
+**Status:** Done. `Resolve.lean` has two phases: a shallow phase (`resolveShallow`) that validates imports, exports, deep type references, `Self`, function/static-method names, and enum variants; and a body phase (`resolveBodies`) that resolves identifiers within function and method bodies. Shallow resolution consumes `FileSummary` artifacts directly. Trait impl completeness has moved to CoreCheck (which operates on Core IR after elaboration). Method-call resolution remains with `Check.lean` because it needs receiver type information.
 
 ### A3b: Summary-Based Frontend
 
@@ -445,7 +445,7 @@ This keeps the frontend explicit and batch-oriented without moving to a query-fi
 - `Resolve` has a shallow phase (`resolveShallow`) and a body phase (`resolveBodies`); shallow resolution consumes summaries directly
 - Function, extern, and impl-method signatures are prebuilt once in `FileSummary` and reused by all downstream passes
 - Impl method summaries preserve `Self` structurally and use shared `resolveSelfTy` for pass-local interpretation
-- Resolve is purely shallow/interface-oriented (trait impl completeness moved to CoreCheck)
+- Resolve's shallow phase is interface-oriented; body-level name resolution (`resolveBodies`) still exists but consumes summaries (trait impl completeness moved to CoreCheck)
 - CoreCheck owns all post-elaboration declaration-level legality checks and recurses through submodules
 - The artifact flow is explicit: ParsedModule → FileSummary → ResolvedImports → checked/elaborated module → monomorphized Core → SSA module
 
