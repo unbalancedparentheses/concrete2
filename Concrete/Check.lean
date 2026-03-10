@@ -142,30 +142,16 @@ inductive CheckError where
   | tryRequiresResult
   | tryRequiresOkErrVariants
   | tryOkNoField (enumName : String)
-  -- Slice 6: Control flow/defer + module validation
+  -- Slice 6: Control flow/defer
   | breakOutsideLoop
   | breakInDefer
   | continueOutsideLoop
   | continueInDefer
   | deferBodyNotCall
-  | copyDestroyConflict (typeName : String)
-  | copyFieldNotCopy (structName : String) (fieldName : String)
-  | builtinTraitRedeclared
   | reservedName (name : String)
-  | unknownTrait (name : String)
-  | missingTraitMethod (typeName : String) (methodName : String)
-  | traitMethodRetTyMismatch (methodName : String) (expectedRetTy : String) (actualRetTy : String)
   | unknownModule (name : String)
   | notPublicInModule (symbol : String) (moduleName : String)
-  -- Slice 7: repr(C) / FFI safety
-  | reprCHasGenerics (structName : String)
-  | reprCFieldNotFFISafe (structName : String) (fieldName : String) (fieldTy : String)
-  | externFnParamNotFFISafe (fnName : String) (paramName : String) (paramTy : String)
-  | externFnReturnNotFFISafe (fnName : String) (retTy : String)
-  -- Slice 8: Unsafe boundary (capability checks moved to CoreCheck)
-  -- Slice 9: repr(align/packed) validation
-  | reprPackedAndAlignConflict (structName : String)
-  | reprAlignNotPowerOfTwo (structName : String) (n : Nat)
+  -- Slices 7-9: Module-level validation (Copy/Destroy, repr, FFI, traits) moved to CoreCheck
 
 def CheckError.message : CheckError → String
   -- Slice 1
@@ -248,24 +234,9 @@ def CheckError.message : CheckError → String
   | .continueOutsideLoop => "continue outside of loop"
   | .continueInDefer => "continue is not allowed inside defer"
   | .deferBodyNotCall => "defer body must be a function call"
-  | .copyDestroyConflict typeName => s!"type '{typeName}' implements Destroy and cannot be Copy"
-  | .copyFieldNotCopy structName fieldName => s!"Copy struct '{structName}' contains non-copy field '{fieldName}'"
-  | .builtinTraitRedeclared => "'Destroy' is a built-in trait"
   | .reservedName name => s!"'{name}' is a reserved identifier"
-  | .unknownTrait name => s!"unknown trait '{name}'"
-  | .missingTraitMethod typeName methodName => s!"trait impl for '{typeName}' is missing method '{methodName}'"
-  | .traitMethodRetTyMismatch methodName expectedRetTy actualRetTy => s!"method '{methodName}' signature does not match trait definition: expected return type {expectedRetTy}, got {actualRetTy}"
   | .unknownModule name => s!"unknown module '{name}'"
   | .notPublicInModule symbol moduleName => s!"'{symbol}' is not public in module '{moduleName}'"
-  -- Slice 7
-  | .reprCHasGenerics structName => s!"#[repr(C)] struct '{structName}' cannot have type parameters"
-  | .reprCFieldNotFFISafe structName fieldName fieldTy => s!"#[repr(C)] struct '{structName}' has non-FFI-safe field '{fieldName}' of type {fieldTy}"
-  | .externFnParamNotFFISafe fnName paramName paramTy => s!"extern fn '{fnName}' has non-FFI-safe parameter '{paramName}' of type {paramTy}"
-  | .externFnReturnNotFFISafe fnName retTy => s!"extern fn '{fnName}' has non-FFI-safe return type {retTy}"
-  -- Slice 8 (capability checks moved to CoreCheck)
-  -- Slice 9
-  | .reprPackedAndAlignConflict structName => s!"struct '{structName}' cannot have both #[repr(packed)] and #[repr(align(...))]"
-  | .reprAlignNotPowerOfTwo structName n => s!"#[repr(align({n}))] on struct '{structName}' must be a power of two"
 
 def throwCheck (e : CheckError) : CheckM α := throw e.message
 
@@ -2023,30 +1994,13 @@ def checkFn (f : FnDef) : CheckM Unit := do
   -- Restore env (remove this function's locals)
   setEnv envBefore
 
-/-- Resolve Self to the concrete impl type in a Ty (pure, for signature building). -/
-private def resolveSelf (ty : Ty) (implTy : Ty) : Ty :=
-  match ty with
-  | .named "Self" => implTy
-  | .ref inner => .ref (resolveSelf inner implTy)
-  | .refMut inner => .refMut (resolveSelf inner implTy)
-  | .generic name args => .generic name (args.map fun a => resolveSelf a implTy)
-  | .array elem n => .array (resolveSelf elem implTy) n
-  | .heap inner => .heap (resolveSelf inner implTy)
-  | .heapArray inner => .heapArray (resolveSelf inner implTy)
-  | other => other
 
-def checkModule (m : Module) (importedFnSummarys : List (String × FnSummary) := [])
-    (importedStructs : List StructDef := []) (importedEnums : List EnumDef := [])
-    (importedImplBlocks : List ImplBlock := []) (importedTraitImpls : List ImplTraitBlock := [])
-    : Except String Unit :=
-  let fnSigs : List FnSummary := m.functions.map fun f =>
-    { params := f.params.map fun p => (p.name, p.ty), retTy := f.retTy, typeParams := f.typeParams,
-      typeBounds := f.typeBounds, capParams := f.capParams, capSet := f.capSet }
-  -- Add extern fn signatures
-  let externSigs : List FnSummary := m.externFns.map fun ef =>
-    { params := ef.params.map fun p => (p.name, p.ty), retTy := ef.retTy,
-      capSet := .concrete ["Unsafe"] }
-  let importedSigList := importedFnSummarys.map Prod.snd
+def checkModule (m : Module) (summary : FileSummary)
+    (imports : ResolvedImports := {}) : Except String Unit :=
+  -- Use pre-built summaries from FileSummary
+  let fnSigs : List FnSummary := summary.functions.map Prod.snd
+  let externSigs : List FnSummary := summary.externFnSigs.map Prod.snd
+  let importedSigList := imports.functions.map Prod.snd
   let baseOffset := importedSigList.length
   -- Built-in functions for strings and I/O
   let builtinSigs : List FnSummary := [
@@ -2142,68 +2096,41 @@ def checkModule (m : Module) (importedFnSummarys : List (String × FnSummary) :=
     ("socket_close", builtinOffset + 28)
   ]
   -- Add submodule functions/extern fns with qualified names (mod_fn)
-  let submoduleSigs : List FnSummary := m.submodules.foldl (fun acc (sub : Module) =>
-    acc ++ (sub.functions.map fun f =>
-      { params := f.params.map fun p => (p.name, p.ty), retTy := f.retTy, typeParams := f.typeParams,
-        typeBounds := f.typeBounds, capParams := f.capParams, capSet := f.capSet : FnSummary })
-    ++ (sub.externFns.map fun ef =>
-      { params := ef.params.map fun p => (p.name, p.ty), retTy := ef.retTy : FnSummary })
+  let submoduleSigs : List FnSummary := summary.submoduleSummaries.foldl (fun acc (_, subSummary) =>
+    acc ++ subSummary.functions.map Prod.snd
+    ++ subSummary.externFnSigs.map Prod.snd
   ) []
-  let submoduleNames : List (String × Nat) := m.submodules.foldl (fun (acc : List (String × Nat)) (sub : Module) =>
+  let submoduleNames : List (String × Nat) := summary.submoduleSummaries.foldl (fun (acc : List (String × Nat)) (subName, subSummary) =>
     let baseIdx := baseOffset + fnSigs.length + builtinSigs.length + externSigs.length + acc.length
-    let fnNames' : List (String × Nat) := (enumerateList sub.functions).map fun (idx, f) =>
-      (sub.name ++ "_" ++ f.name, baseIdx + idx)
-    let efNames : List (String × Nat) := (enumerateList sub.externFns).map fun (idx, ef) =>
-      (sub.name ++ "_" ++ ef.name, baseIdx + sub.functions.length + idx)
+    let fnNames' : List (String × Nat) := (enumerateList subSummary.functions).map fun (idx, (name, _)) =>
+      (subName ++ "_" ++ name, baseIdx + idx)
+    let efNames : List (String × Nat) := (enumerateList subSummary.externFnSigs).map fun (idx, (name, _)) =>
+      (subName ++ "_" ++ name, baseIdx + subSummary.functions.length + idx)
     acc ++ fnNames' ++ efNames
   ) []
   let externOffset := builtinOffset + builtinSigs.length
   let externNames : List (String × Nat) :=
-    (enumerateList m.externFns).map fun (idx, ef) => (ef.name, externOffset + idx)
-  -- Collect all impl block methods
-  let allImplBlocks := importedImplBlocks ++ m.implBlocks
-  let allTraitImpls := importedTraitImpls ++ m.traitImpls
-  let implMethodSigs : List (String × FnSummary) := allImplBlocks.foldl (fun acc ib =>
-    let implTy := if ib.typeParams.isEmpty then Ty.named ib.typeName
-                  else Ty.generic ib.typeName (ib.typeParams.map Ty.typeVar)
-    acc ++ ib.methods.map fun f =>
-      let mangledName := ib.typeName ++ "_" ++ f.name
-      let allTypeParams := ib.typeParams ++ f.typeParams
-      let paramList := f.params.map fun p => (p.name, resolveSelf p.ty implTy)
-      let sig := ({ params := paramList,
-                     retTy := resolveSelf f.retTy implTy,
-                     typeParams := allTypeParams, capParams := f.capParams, capSet := f.capSet : FnSummary })
-      (mangledName, sig)
-  ) []
-  let traitImplMethodSigs : List (String × FnSummary) := allTraitImpls.foldl (fun acc tb =>
-    let implTy := if tb.typeParams.isEmpty then Ty.named tb.typeName
-                  else Ty.generic tb.typeName (tb.typeParams.map Ty.typeVar)
-    acc ++ tb.methods.map fun f =>
-      let mangledName := tb.typeName ++ "_" ++ f.name
-      let allTypeParams := tb.typeParams ++ f.typeParams
-      let paramList := f.params.map fun p => (p.name, resolveSelf p.ty implTy)
-      let sig := ({ params := paramList,
-                     retTy := resolveSelf f.retTy implTy,
-                     typeParams := allTypeParams, capParams := f.capParams, capSet := f.capSet : FnSummary })
-      (mangledName, sig)
-  ) []
+    (enumerateList summary.externFnSigs).map fun (idx, (name, _)) => (name, externOffset + idx)
+  -- Collect all impl block methods (pre-built + imported, then resolve Self)
+  let localImplSigs := summary.implMethodSigs
+  let allImplBlocks := imports.implBlocks ++ m.implBlocks
+  let allTraitImpls := imports.traitImpls ++ m.traitImpls
+  let implMethodSigs := resolveImplMethodSigs (imports.implMethodSigs ++ localImplSigs) allImplBlocks allTraitImpls
+  let traitImplMethodSigs : List (String × FnSummary) := []
   let implSigList := (implMethodSigs ++ traitImplMethodSigs).map Prod.snd
   let implOffset := externOffset + externSigs.length
   let implNames : List (String × Nat) :=
     (enumerateList (implMethodSigs ++ traitImplMethodSigs)).map fun (idx, (name, _)) => (name, implOffset + idx)
   let allSigs := importedSigList ++ fnSigs ++ builtinSigs ++ externSigs ++ submoduleSigs ++ implSigList
   let importedNames : List (String × Nat) :=
-    (enumerateList importedFnSummarys).map fun (idx, (name, _)) => (name, idx)
+    (enumerateList imports.functions).map fun (idx, (name, _)) => (name, idx)
   let fnNames : List (String × Nat) :=
-    (enumerateList m.functions).map fun (idx, f) => (f.name, baseOffset + idx)
+    (enumerateList summary.functions).map fun (idx, (name, _)) => (name, baseOffset + idx)
   let allNames := importedNames ++ fnNames ++ builtinNames ++ externNames ++ submoduleNames ++ implNames
   -- Build named function signature map for fnRef resolution
   let fnSigPairs : List (String × FnSummary) :=
-    (m.functions.map fun f => (f.name, { params := f.params.map fun p => (p.name, p.ty),
-                                          retTy := f.retTy, typeParams := f.typeParams,
-                                          capParams := f.capParams, capSet := f.capSet })) ++
-    (implMethodSigs ++ traitImplMethodSigs)
-  let allStructs := importedStructs ++ m.structs
+    summary.functions ++ (implMethodSigs ++ traitImplMethodSigs)
+  let allStructs := imports.structs ++ m.structs
   -- Built-in Option<T> enum (Some { value: T }, None {})
   let builtinOptionEnum : EnumDef := {
     name := "Option"
@@ -2225,7 +2152,7 @@ def checkModule (m : Module) (importedFnSummarys : List (String × FnSummary) :=
   }
   let hasUserResult := m.enums.any fun ed => ed.name == "Result"
   let builtinEnumList := [builtinOptionEnum] ++ (if hasUserResult then [] else [builtinResultEnum])
-  let allEnums := builtinEnumList ++ importedEnums ++ m.enums
+  let allEnums := builtinEnumList ++ imports.enums ++ m.enums
   -- Build type aliases map
   let typeAliasMap : List (String × Ty) := m.typeAliases.map fun ta => (ta.name, ta.targetTy)
   -- Build constants map
@@ -2238,114 +2165,8 @@ def checkModule (m : Module) (importedFnSummarys : List (String × FnSummary) :=
     { vars := [], structs := allStructs, enums := allEnums, functions := allSigs,
       fnNames := allNames, loopDepth := 0, typeAliases := typeAliasMap, constants := constantsMap,
       traitImpls := traitImplPairs, allFnSummarys := fnSigPairs, newtypes := allNewtypes }
-  -- Helper: check if a type is copy (pure context, uses struct/enum defs)
-  let isCopyTyPure : Ty → Bool := fun ty =>
-    match ty with
-    | .int | .uint | .i8 | .i16 | .i32 | .u8 | .u16 | .u32 => true
-    | .bool | .float64 | .float32 | .char | .unit => true
-    | .ref _ => true
-    | .ptrMut _ | .ptrConst _ => true
-    | .never => true
-    | .named name =>
-      match m.structs.find? fun sd => sd.name == name with
-      | some sd => sd.isCopy
-      | none => match m.enums.find? fun ed => ed.name == name with
-        | some ed => ed.isCopy
-        | none => false
-    | _ => false
-  -- Validate Copy structs/enums don't implement Destroy, and all fields are copy
-  let copyStructCheck := m.structs.foldl (init := (Except.ok () : Except String Unit)) fun acc sd =>
-    match acc with
-    | .error e => .error e
-    | .ok () =>
-      if sd.isCopy then
-        if m.traitImpls.any fun tb => tb.traitName == "Destroy" && tb.typeName == sd.name then
-          .error (CheckError.message (.copyDestroyConflict sd.name))
-        else
-          -- Check all fields are copy types
-          match sd.fields.find? fun f => !isCopyTyPure f.ty with
-          | some f => .error (CheckError.message (.copyFieldNotCopy sd.name f.name))
-          | none => .ok ()
-      else .ok ()
-  match copyStructCheck with
-  | .error e => .error e
-  | .ok () =>
-  let copyEnumCheck := m.enums.foldl (init := (Except.ok () : Except String Unit)) fun acc ed =>
-    match acc with
-    | .error e => .error e
-    | .ok () =>
-      if ed.isCopy && (m.traitImpls.any fun tb => tb.traitName == "Destroy" && tb.typeName == ed.name) then
-        .error (CheckError.message (.copyDestroyConflict ed.name))
-      else .ok ()
-  match copyEnumCheck with
-  | .error e => .error e
-  | .ok () =>
-  -- FFI safety: isFFISafe predicate (uses allStructs to include imported structs)
-  let isFFISafe : Ty → Bool := fun ty =>
-    match ty with
-    | .int | .uint | .i8 | .i16 | .i32 | .u8 | .u16 | .u32 => true
-    | .float32 | .float64 => true
-    | .bool | .char | .unit => true
-    | .ptrMut _ | .ptrConst _ => true
-    | .named name => (allStructs.find? fun sd => sd.name == name).any fun sd => sd.isReprC
-    | _ => false
-  -- Validate repr(C) structs: no generics, all fields FFI-safe
-  let reprCCheck := m.structs.foldl (init := (Except.ok () : Except String Unit)) fun acc sd =>
-    match acc with
-    | .error e => .error e
-    | .ok () =>
-      if sd.isReprC then
-        if !sd.typeParams.isEmpty then
-          .error (CheckError.message (.reprCHasGenerics sd.name))
-        else
-          match sd.fields.find? fun f => !isFFISafe f.ty with
-          | some f => .error (CheckError.message (.reprCFieldNotFFISafe sd.name f.name (tyToString f.ty)))
-          | none => .ok ()
-      else .ok ()
-  match reprCCheck with
-  | .error e => .error e
-  | .ok () =>
-  -- Validate repr(packed) + repr(align) conflict and align power-of-2
-  let reprAttrCheck := m.structs.foldl (init := (Except.ok () : Except String Unit)) fun acc sd =>
-    match acc with
-    | .error e => .error e
-    | .ok () =>
-      if sd.isPacked && sd.reprAlign.isSome then
-        .error (CheckError.message (.reprPackedAndAlignConflict sd.name))
-      else match sd.reprAlign with
-        | some n =>
-          if n == 0 || (n &&& (n - 1)) != 0 then
-            .error (CheckError.message (.reprAlignNotPowerOfTwo sd.name n))
-          else .ok ()
-        | none => .ok ()
-  match reprAttrCheck with
-  | .error e => .error e
-  | .ok () =>
-  -- Validate extern fn params and return types are FFI-safe
-  let externFnCheck := m.externFns.foldl (init := (Except.ok () : Except String Unit)) fun acc ef =>
-    match acc with
-    | .error e => .error e
-    | .ok () =>
-      match ef.params.find? fun (p : Param) => !isFFISafe p.ty with
-      | some p => .error (CheckError.message (.externFnParamNotFFISafe ef.name p.name (tyToString p.ty)))
-      | none =>
-        if !isFFISafe ef.retTy && ef.retTy != .unit then
-          .error (CheckError.message (.externFnReturnNotFFISafe ef.name (tyToString ef.retTy)))
-        else .ok ()
-  match externFnCheck with
-  | .error e => .error e
-  | .ok () =>
-  -- Check user doesn't declare trait Destroy
-  let destroyTraitCheck := m.traits.foldl (init := (Except.ok () : Except String Unit)) fun acc td =>
-    match acc with
-    | .error e => .error e
-    | .ok () =>
-      if td.name == "Destroy" then .error (CheckError.message .builtinTraitRedeclared)
-      else .ok ()
-  match destroyTraitCheck with
-  | .error e => .error e
-  | .ok () =>
-  -- Reserved top-level function names
+  -- Module-level declaration checks (Copy/Destroy, repr, FFI, traits) moved to CoreCheck.lean.
+  -- Reserved name check stays here because reserved names conflict with builtins in Check.
   let reservedNameCheck := m.functions.foldl (init := (Except.ok () : Except String Unit)) fun acc f =>
     match acc with
     | .error e => .error e
@@ -2357,27 +2178,12 @@ def checkModule (m : Module) (importedFnSummarys : List (String × FnSummary) :=
   match reservedNameCheck with
   | .error e => .error e
   | .ok () =>
-  -- Built-in Destroy trait (users don't declare it, just impl it)
+  -- Built-in Destroy trait (needed for expression-level trait method resolution)
   let builtinDestroyTrait : TraitDef := {
     name := "Destroy"
     methods := [{ name := "destroy", params := [], retTy := .unit, selfKind := some .ref }]
   }
   let allTraits := builtinDestroyTrait :: m.traits
-  -- Validate trait impls
-  let traitCheck := m.traitImpls.foldlM (init := ()) fun () tb => do
-    match allTraits.find? fun (td : TraitDef) => td.name == tb.traitName with
-    | none => Except.error (CheckError.message (.unknownTrait tb.traitName))
-    | some td =>
-      td.methods.foldlM (init := ()) fun () (sig : FnSigDef) =>
-        match tb.methods.find? fun (f : FnDef) => f.name == sig.name with
-        | none => Except.error (CheckError.message (.missingTraitMethod tb.typeName sig.name))
-        | some f =>
-          if sig.retTy != f.retTy then
-            Except.error (CheckError.message (.traitMethodRetTyMismatch sig.name (tyToString sig.retTy) (tyToString f.retTy)))
-          else Except.ok ()
-  match traitCheck with
-  | .error e => .error e
-  | .ok () =>
   -- Merge impl block type params into each method's typeParams, track impl type for Self
   let regularFns : List (FnDef × Option Ty) := m.functions.map fun f => (f, none)
   let implMethodPairs : List (FnDef × Option Ty) := allImplBlocks.foldl (fun acc ib =>
@@ -2402,14 +2208,17 @@ def checkModule (m : Module) (importedFnSummarys : List (String × FnSummary) :=
   | (.ok (), _) => .ok ()
   | (.error e, _) => .error e
 
-/-- Check a multi-module program. Uses a pre-built export table for import resolution. -/
-def checkProgram (modules : List Module) (exportTable : List (String × ExportEntry) := []) : Except String Unit :=
+/-- Check a multi-module program. Uses summary table for import resolution. -/
+def checkProgram (modules : List Module)
+    (summaryTable : List (String × FileSummary) := []) : Except String Unit :=
   let go := modules.foldlM (init := ()) fun () m => do
-    let (impFns, impStructs, impEnums, impImpls, impTraitImpls) ←
-      resolveImportsFromExports m.imports exportTable
+    let summary := match summaryTable.find? fun (n, _) => n == m.name with
+      | some (_, s) => s
+      | none => buildFileSummary m
+    let imports ← resolveImports m.imports summaryTable
         (fun modName => CheckError.message (.unknownModule modName))
         (fun sym modName => CheckError.message (.notPublicInModule sym modName))
-    checkModule m impFns impStructs impEnums impImpls impTraitImpls
+    checkModule m summary imports
   go
 
 end Concrete

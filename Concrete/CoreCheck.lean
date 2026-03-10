@@ -2,15 +2,25 @@ import Concrete.Core
 import Concrete.AST
 import Concrete.Diagnostic
 import Concrete.Shared
+import Concrete.Layout
 
 namespace Concrete
 
-/-! ## Core IR Validation
+/-! ## Core IR Validation — post-elaboration semantic authority
 
-Runs after elaboration, before lowering. Validates:
+Runs after CoreCanonicalize, before Mono/Lower. Recursively processes
+top-level modules and all nested submodules.
+
+Function-body validation:
 - Capability discipline: caller's capSet ⊇ callee's capSet
 - Type consistency: operand types match operators, arguments match parameters
 - Structural invariants: break/continue inside loops, match coverage
+
+Declaration-level validation (on Core IR, not surface AST):
+- Copy/Destroy conflicts, Copy field validation
+- repr(C)/packed/align validation, FFI safety
+- Trait impl completeness with signature matching
+- Builtin trait redeclaration, reserved function names
 -/
 
 -- ============================================================
@@ -64,6 +74,20 @@ inductive CoreCheckError where
   | cannotAssignThroughNonMutRef (ty : String)
   -- Return type
   | returnTypeMismatch (expected : String) (got : String)
+  -- Module-level validation (moved from Check)
+  | copyDestroyConflict (typeName : String)
+  | copyFieldNotCopy (structName : String) (fieldName : String)
+  | reprCHasGenerics (structName : String)
+  | reprCFieldNotFFISafe (structName fieldName fieldTy : String)
+  | externFnParamNotFFISafe (fnName paramName paramTy : String)
+  | externFnReturnNotFFISafe (fnName retTy : String)
+  | reprPackedAndAlignConflict (structName : String)
+  | reprAlignNotPowerOfTwo (structName : String) (n : Nat)
+  | reservedFnName (name : String)
+  | builtinTraitRedeclared
+  | unknownTrait (traitName : String)
+  | missingTraitMethod (typeName methodName : String)
+  | traitMethodRetTyMismatch (methodName expectedRetTy actualRetTy : String)
 
 def CoreCheckError.message : CoreCheckError → String
   | .typeMismatchVariable name declared used => s!"type mismatch for variable '{name}': declared {declared}, used as {used}"
@@ -94,6 +118,19 @@ def CoreCheckError.message : CoreCheckError → String
   | .cannotDerefNonRef ty => s!"cannot dereference non-reference type {ty}"
   | .cannotAssignThroughNonMutRef ty => s!"cannot assign through non-mutable reference type {ty}"
   | .returnTypeMismatch expected got => s!"return type mismatch: expected {expected}, got {got}"
+  | .copyDestroyConflict typeName => s!"type '{typeName}' implements Destroy and cannot be Copy"
+  | .copyFieldNotCopy structName fieldName => s!"Copy struct '{structName}' contains non-copy field '{fieldName}'"
+  | .reprCHasGenerics structName => s!"#[repr(C)] struct '{structName}' cannot have type parameters"
+  | .reprCFieldNotFFISafe structName fieldName fieldTy => s!"#[repr(C)] struct '{structName}' has non-FFI-safe field '{fieldName}' of type {fieldTy}"
+  | .externFnParamNotFFISafe fnName paramName paramTy => s!"extern fn '{fnName}' has non-FFI-safe parameter '{paramName}' of type {paramTy}"
+  | .externFnReturnNotFFISafe fnName retTy => s!"extern fn '{fnName}' has non-FFI-safe return type {retTy}"
+  | .reprPackedAndAlignConflict structName => s!"struct '{structName}' cannot have both #[repr(packed)] and #[repr(align(...))]"
+  | .reprAlignNotPowerOfTwo structName n => s!"#[repr(align({n}))] on struct '{structName}' must be a power of two"
+  | .reservedFnName name => s!"'{name}' is a reserved identifier"
+  | .builtinTraitRedeclared => "'Destroy' is a built-in trait"
+  | .unknownTrait traitName => s!"unknown trait '{traitName}'"
+  | .missingTraitMethod typeName methodName => s!"trait impl for '{typeName}' is missing method '{methodName}'"
+  | .traitMethodRetTyMismatch methodName expectedRetTy actualRetTy => s!"method '{methodName}' signature does not match trait definition: expected return type {expectedRetTy}, got {actualRetTy}"
 
 private def getEnv : StateM CoreCheckEnv CoreCheckEnv := get
 private def setEnv (env : CoreCheckEnv) : StateM CoreCheckEnv Unit := set env
@@ -468,6 +505,128 @@ partial def ccCheckStmt (stmt : CStmt) : StateM CoreCheckEnv Unit := do
 end
 
 -- ============================================================
+-- Module-level declaration validation (moved from Check)
+-- ============================================================
+
+private def tyToString : Ty → String
+  | .int => "i64"
+  | .uint => "u64"
+  | .i8 => "i8"
+  | .i16 => "i16"
+  | .i32 => "i32"
+  | .u8 => "u8"
+  | .u16 => "u16"
+  | .u32 => "u32"
+  | .bool => "bool"
+  | .float64 => "f64"
+  | .float32 => "f32"
+  | .char => "char"
+  | .unit => "()"
+  | .string => "String"
+  | .named n => n
+  | .ref inner => "&" ++ tyToString inner
+  | .refMut inner => "&mut " ++ tyToString inner
+  | .generic name args => name ++ "<" ++ ", ".intercalate (args.map tyToString) ++ ">"
+  | .typeVar name => name
+  | .array elem size => "[" ++ tyToString elem ++ "; " ++ toString size ++ "]"
+  | .ptrMut inner => "*mut " ++ tyToString inner
+  | .ptrConst inner => "*const " ++ tyToString inner
+  | .fn_ params capSet retTy =>
+    let paramStr := ", ".intercalate (params.map tyToString)
+    let capStr := match capSet with
+      | .empty => ""
+      | .concrete caps => " with(" ++ ", ".intercalate caps ++ ")"
+      | .var name => " with(" ++ name ++ ")"
+      | _ => " with(...)"
+    "fn(" ++ paramStr ++ ")" ++ capStr ++ " -> " ++ tyToString retTy
+  | .never => "!"
+  | .heap inner => "Heap<" ++ tyToString inner ++ ">"
+  | .heapArray inner => "HeapArray<" ++ tyToString inner ++ ">"
+  | .placeholder => "<unknown>"
+
+private def isCopyTy (allStructs : List CStructDef) (allEnums : List CEnumDef) (ty : Ty) : Bool :=
+  match ty with
+  | .int | .uint | .i8 | .i16 | .i32 | .u8 | .u16 | .u32 => true
+  | .bool | .float64 | .float32 | .char | .unit => true
+  | .ref _ | .ptrMut _ | .ptrConst _ | .never => true
+  | .fn_ _ _ _ => true
+  | .named name =>
+    match allStructs.find? fun sd => sd.name == name with
+    | some sd => sd.isCopy
+    | none => match allEnums.find? fun ed => ed.name == name with
+      | some ed => ed.isCopy
+      | none => false
+  | _ => false
+
+private def mkDeclDiag (e : CoreCheckError) : Diagnostic :=
+  { severity := .error, message := e.message, pass := "core-check", span := none, hint := none }
+
+def ccCheckModuleDecls (m : CModule)
+    (allStructs : List CStructDef) (allEnums : List CEnumDef) : Diagnostics :=
+  Id.run do
+  let mut errors : Diagnostics := []
+  let lctx : Layout.Ctx := { structDefs := allStructs, enumDefs := allEnums }
+  -- 1. Copy/Destroy conflict + Copy field check for structs
+  for sd in m.structs do
+    if sd.isCopy then
+      if m.traitImpls.any fun ti => ti.traitName == "Destroy" && ti.typeName == sd.name then
+        errors := errors ++ [mkDeclDiag (.copyDestroyConflict sd.name)]
+      for (fname, fty) in sd.fields do
+        if !isCopyTy allStructs allEnums fty then
+          errors := errors ++ [mkDeclDiag (.copyFieldNotCopy sd.name fname)]
+  -- 2. Copy/Destroy conflict for enums
+  for ed in m.enums do
+    if ed.isCopy then
+      if m.traitImpls.any fun ti => ti.traitName == "Destroy" && ti.typeName == ed.name then
+        errors := errors ++ [mkDeclDiag (.copyDestroyConflict ed.name)]
+  -- 3. repr(C) validation
+  for sd in m.structs do
+    if sd.isReprC then
+      if !sd.typeParams.isEmpty then
+        errors := errors ++ [mkDeclDiag (.reprCHasGenerics sd.name)]
+      for (fname, fty) in sd.fields do
+        if !Layout.isFFISafe lctx fty then
+          errors := errors ++ [mkDeclDiag (.reprCFieldNotFFISafe sd.name fname (tyToString fty))]
+  -- 4. repr(packed) + repr(align) conflict
+  for sd in m.structs do
+    if sd.isPacked && sd.reprAlign.isSome then
+      errors := errors ++ [mkDeclDiag (.reprPackedAndAlignConflict sd.name)]
+    match sd.reprAlign with
+    | some n =>
+      if n == 0 || (n &&& (n - 1)) != 0 then
+        errors := errors ++ [mkDeclDiag (.reprAlignNotPowerOfTwo sd.name n)]
+    | none => ()
+  -- 5. Extern fn FFI safety
+  for (efName, efParams, efRetTy) in m.externFns do
+    for (pName, pTy) in efParams do
+      if !Layout.isFFISafe lctx pTy then
+        errors := errors ++ [mkDeclDiag (.externFnParamNotFFISafe efName pName (tyToString pTy))]
+    if !Layout.isFFISafe lctx efRetTy && efRetTy != .unit then
+      errors := errors ++ [mkDeclDiag (.externFnReturnNotFFISafe efName (tyToString efRetTy))]
+  -- 6. Builtin trait redeclaration
+  for td in m.traitDefs do
+    if td.name == "Destroy" then
+      errors := errors ++ [mkDeclDiag .builtinTraitRedeclared]
+  -- 7. Reserved function names
+  for f in m.functions do
+    if ["destroy", "abort", "alloc", "free", "alloc_array", "free_array", "realloc_array"].contains f.name then
+      errors := errors ++ [mkDeclDiag (.reservedFnName f.name)]
+  -- 8. Trait impl validation
+  let builtinDestroyTrait : CTraitDef := { name := "Destroy", methods := [{ name := "destroy", retTy := .unit }] }
+  let allTraits := builtinDestroyTrait :: m.traitDefs
+  for ti in m.traitImpls do
+    match allTraits.find? fun td => td.name == ti.traitName with
+    | none => errors := errors ++ [mkDeclDiag (.unknownTrait ti.traitName)]
+    | some td =>
+      for sig in td.methods do
+        match ti.methodRetTys.find? fun (mn, _) => mn == sig.name with
+        | none => errors := errors ++ [mkDeclDiag (.missingTraitMethod ti.typeName sig.name)]
+        | some (_, actualRetTy) =>
+          if sig.retTy != actualRetTy then
+            errors := errors ++ [mkDeclDiag (.traitMethodRetTyMismatch sig.name (tyToString sig.retTy) (tyToString actualRetTy))]
+  errors
+
+-- ============================================================
 -- Function and module validation
 -- ============================================================
 
@@ -482,7 +641,15 @@ def ccCheckFn (f : CFnDef) : StateM CoreCheckEnv Unit := do
   for s in f.body do
     ccCheckStmt s
 
-def ccCheckModule (m : CModule) : Diagnostics :=
+private partial def collectAllStructs (m : CModule) : List CStructDef :=
+  m.structs ++ m.submodules.foldl (fun acc s => acc ++ collectAllStructs s) []
+
+private partial def collectAllEnums (m : CModule) : List CEnumDef :=
+  m.enums ++ m.submodules.foldl (fun acc s => acc ++ collectAllEnums s) []
+
+partial def ccCheckModule (m : CModule)
+    (allStructs : List CStructDef) (allEnums : List CEnumDef) : Diagnostics :=
+  let declErrors := ccCheckModuleDecls m allStructs allEnums
   let fnSigs := m.functions.map fun f =>
     (f.name, f.capSet, f.params, f.retTy)
   -- Extern functions require Unsafe capability
@@ -502,12 +669,18 @@ def ccCheckModule (m : CModule) : Diagnostics :=
     let ((), env') := (ccCheckFn f).run env
     env'
   ) initEnv
-  finalEnv.errors
+  let subErrors := m.submodules.foldl (fun acc sub =>
+    acc ++ (ccCheckModule sub allStructs allEnums).map fun d =>
+      { d with message := s!"[{sub.name}] {d.message}" }
+  ) ([] : Diagnostics)
+  declErrors ++ finalEnv.errors ++ subErrors
 
 /-- Validate all Core modules. Returns the first error or Ok. -/
 def coreCheckProgram (modules : List CModule) : Except String Unit :=
+  let allStructs := modules.foldl (fun acc m => acc ++ collectAllStructs m) []
+  let allEnums := modules.foldl (fun acc m => acc ++ collectAllEnums m) []
   let allErrors := modules.foldl (fun acc m =>
-    acc ++ (ccCheckModule m).map fun d => { d with message := s!"[{m.name}] {d.message}" }
+    acc ++ (ccCheckModule m allStructs allEnums).map fun d => { d with message := s!"[{m.name}] {d.message}" }
   ) ([] : Diagnostics)
   if allErrors.isEmpty then .ok ()
   else .error (renderDiagnostics allErrors)

@@ -4,10 +4,12 @@ namespace Concrete
 
 /-! ## CoreCanonicalize — Core→Core normalization pass
 
-Runs after Elab, before CoreCheck. Canonicalizes the Core IR:
+Runs after Elab, before CoreCheck. Canonicalizes the Core IR,
+recursing through all top-level modules and nested submodules:
 - Normalize pattern match arm ordering (wildcard/var arms last)
 - Canonical ordering of struct fields in literals (match definition order)
 - Normalize type representations (Ty.generic "Heap" [t] → Ty.heap t)
+- Types in submodule traitDefs/traitImpls are canonicalized
 -/
 
 -- ============================================================
@@ -140,7 +142,7 @@ def canonFn (structs : List CStructDef) (f : CFnDef) : CFnDef :=
     retTy := canonTy f.retTy,
     body := canonStmts structs f.body }
 
-def canonModule (m : CModule) : CModule :=
+partial def canonModule (m : CModule) : CModule :=
   let structs := m.structs
   { m with
     structs := m.structs.map fun s =>
@@ -149,7 +151,13 @@ def canonModule (m : CModule) : CModule :=
       { e with variants := e.variants.map fun (vn, fields) =>
         (vn, fields.map fun (fn, ft) => (fn, canonTy ft)) },
     functions := m.functions.map (canonFn structs),
-    constants := m.constants.map fun (n, t, e) => (n, canonTy t, canonExpr structs e) }
+    constants := m.constants.map fun (n, t, e) => (n, canonTy t, canonExpr structs e),
+    traitDefs := m.traitDefs.map fun td =>
+      { td with methods := td.methods.map fun sig =>
+        { sig with retTy := canonTy sig.retTy } },
+    traitImpls := m.traitImpls.map fun ti =>
+      { ti with methodRetTys := ti.methodRetTys.map fun (n, t) => (n, canonTy t) },
+    submodules := m.submodules.map canonModule }
 
 def canonicalizeProgram (modules : List CModule) : List CModule :=
   modules.map canonModule

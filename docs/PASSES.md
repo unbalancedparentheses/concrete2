@@ -390,6 +390,8 @@ Source Text
 
 `FileSummary` is the single cross-file interface artifact for the current frontend architecture phase. All passes consume signatures and type declarations from it rather than rebuilding their own views from raw ASTs. `ResolvedImports` is the single import artifact consumed by Check and Elab — it is built once from the summary table and shared, not rebuilt ad hoc in each pass.
 
+`Layout` is the single source of truth for type sizes, alignment, field offsets, pass-by-pointer decisions, `Ty` → LLVM type mappings, LLVM type definition generation (`structTypeDef`, `enumTypeDefs`, `builtinTypeDefs`), and FFI-safety checks (`isFFISafe`). Both EmitSSA and CoreCheck delegate to Layout rather than maintaining their own layout or type-emission logic.
+
 **Note:** `FileSummary` and `ResolvedImports` currently carry full impl/trait-impl blocks with method bodies (not just signatures). Check and Elab need these to type-check and elaborate imported method implementations. Splitting into interface-only and body portions is a future incremental-compilation concern, not a current blocker.
 
 ---

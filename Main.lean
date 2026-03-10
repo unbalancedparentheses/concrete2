@@ -3,7 +3,7 @@ import Concrete
 open Concrete
 
 def usage : String :=
-  "Usage: concrete <file.con> [-o output] [--emit-llvm] [--emit-core] [--emit-ssa]"
+  "Usage: concrete <file.con> [-o output] [--emit-llvm] [--emit-core] [--emit-ssa] [--report caps|unsafe|layout|interface|mono]"
 
 def writeFile (path : String) (content : String) : IO Unit := do
   IO.FS.writeFile ⟨path⟩ content
@@ -103,19 +103,18 @@ def compileSSA (inputPath : String) (outputPath : String) (emitLLVM : Bool) : IO
     return 1
   | .ok modules =>
     let summaryTable := buildSummaryTable modules
-    let exportTable := buildExportTable summaryTable
     -- Name resolution (catches undeclared names early)
     match resolveProgram modules summaryTable with
     | .error ds =>
       IO.eprintln (renderDiagnostics ds)
       return 1
     | .ok _ =>
-    match liftStringError "check" (checkProgram modules exportTable) with
+    match liftStringError "check" (checkProgram modules summaryTable) with
     | .error ds =>
       IO.eprintln (renderDiagnostics ds)
       return 1
     | .ok () =>
-    match liftStringError "elab" (elabProgram modules exportTable) with
+    match liftStringError "elab" (elabProgram modules summaryTable) with
     | .error ds =>
       IO.eprintln (renderDiagnostics ds)
       return 1
@@ -169,18 +168,17 @@ def compileAndEmit (inputPath : String) (mode : String) : IO UInt32 := do
     return 1
   | .ok modules =>
     let summaryTable := buildSummaryTable modules
-    let exportTable := buildExportTable summaryTable
     match resolveProgram modules summaryTable with
     | .error ds =>
       IO.eprintln (renderDiagnostics ds)
       return 1
     | .ok _ =>
-    match checkProgram modules exportTable with
+    match checkProgram modules summaryTable with
     | .error e =>
       IO.eprintln s!"Type error: {e}"
       return 1
     | .ok () =>
-    match elabProgram modules exportTable with
+    match elabProgram modules summaryTable with
     | .error e =>
       IO.eprintln s!"Elaboration error: {e}"
       return 1
@@ -211,6 +209,67 @@ def compileAndEmit (inputPath : String) (mode : String) : IO UInt32 := do
         IO.println (ppSModule sm)
       return 0
 
+/-- Run pipeline to needed depth and produce a report. -/
+def compileAndReport (inputPath : String) (reportType : String) : IO UInt32 := do
+  let source ← readFile inputPath
+  match parse source with
+  | .error e =>
+    IO.eprintln s!"Parse error: {e}"
+    return 1
+  | .ok parsedModules =>
+  let baseDir := dirOf inputPath
+  match ← resolveAllModules baseDir parsedModules inputPath with
+  | .error e =>
+    IO.eprintln s!"Resolve error: {e}"
+    return 1
+  | .ok modules =>
+    let summaryTable := buildSummaryTable modules
+    -- Interface report only needs parse + summary table
+    if reportType == "interface" then
+      IO.println (Report.interfaceReport summaryTable)
+      return 0
+    -- All other reports need the full pipeline through canonicalization
+    match resolveProgram modules summaryTable with
+    | .error ds =>
+      IO.eprintln (renderDiagnostics ds)
+      return 1
+    | .ok _ =>
+    match checkProgram modules summaryTable with
+    | .error e =>
+      IO.eprintln s!"Type error: {e}"
+      return 1
+    | .ok () =>
+    match elabProgram modules summaryTable with
+    | .error e =>
+      IO.eprintln s!"Elaboration error: {e}"
+      return 1
+    | .ok coreModules =>
+      let coreModules := canonicalizeProgram coreModules
+      match coreCheckProgram coreModules with
+      | .error e =>
+        IO.eprintln s!"Core validation error: {e}"
+        return 1
+      | .ok () =>
+      if reportType == "caps" then
+        IO.println (Report.capabilityReport coreModules)
+        return 0
+      if reportType == "unsafe" then
+        IO.println (Report.unsafeReport coreModules)
+        return 0
+      if reportType == "layout" then
+        IO.println (Report.layoutReport coreModules)
+        return 0
+      if reportType == "mono" then
+        match monoProgram coreModules with
+        | .error e =>
+          IO.eprintln s!"Monomorphization error: {e}"
+          return 1
+        | .ok monoModules =>
+          IO.println (Report.monoReport coreModules monoModules)
+          return 0
+      IO.eprintln s!"Unknown report type: {reportType}. Use: caps, unsafe, layout, interface, mono"
+      return 1
+
 def main (args : List String) : IO UInt32 := do
   match args with
   | [] =>
@@ -227,6 +286,8 @@ def main (args : List String) : IO UInt32 := do
     compileAndEmit inputPath "ssa"
   | [inputPath, "-o", outputPath] =>
     compileSSA inputPath outputPath false
+  | [inputPath, "--report", reportType] =>
+    compileAndReport inputPath reportType
   | _ =>
     IO.eprintln usage
     return 1

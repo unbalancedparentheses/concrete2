@@ -87,7 +87,7 @@ def SVal.ty : SVal → Ty
 -- Pretty-printer
 -- ============================================================
 
-private def tyToStr : Ty → String
+private def ssaTyToStr : Ty → String
   | .int => "i64"
   | .uint => "u64"
   | .i8 => "i8"
@@ -103,17 +103,17 @@ private def tyToStr : Ty → String
   | .unit => "void"
   | .named n => s!"%{n}"
   | .string => "%String"
-  | .ref inner => s!"ptr({tyToStr inner})"
-  | .refMut inner => s!"ptr(mut {tyToStr inner})"
-  | .generic n args => s!"%{n}<{", ".intercalate (args.map tyToStr)}>"
+  | .ref inner => s!"ptr({ssaTyToStr inner})"
+  | .refMut inner => s!"ptr(mut {ssaTyToStr inner})"
+  | .generic n args => s!"%{n}<{", ".intercalate (args.map ssaTyToStr)}>"
   | .typeVar n => s!"%{n}"
-  | .array elem size => s!"[{size} x {tyToStr elem}]"
+  | .array elem size => s!"[{size} x {ssaTyToStr elem}]"
   | .ptrMut _ => "ptr"
   | .ptrConst _ => "ptr"
-  | .fn_ params _ ret => s!"fn({", ".intercalate (params.map tyToStr)}) -> {tyToStr ret}"
+  | .fn_ params _ ret => s!"fn({", ".intercalate (params.map ssaTyToStr)}) -> {ssaTyToStr ret}"
   | .never => "void"
-  | .heap inner => s!"ptr({tyToStr inner})"
-  | .heapArray inner => s!"ptr({tyToStr inner})"
+  | .heap inner => s!"ptr({ssaTyToStr inner})"
+  | .heapArray inner => s!"ptr({ssaTyToStr inner})"
   | .placeholder => "?"
 
 private def ppSVal : SVal → String
@@ -136,35 +136,35 @@ private def unaryOpToStr : UnaryOp → String
 private def ppSInst (inst : SInst) : String :=
   match inst with
   | .binOp dst op lhs rhs ty =>
-    s!"  %{dst} = {binOpToStr op} {tyToStr ty} {ppSVal lhs}, {ppSVal rhs}"
+    s!"  %{dst} = {binOpToStr op} {ssaTyToStr ty} {ppSVal lhs}, {ppSVal rhs}"
   | .unaryOp dst op operand ty =>
-    s!"  %{dst} = {unaryOpToStr op} {tyToStr ty} {ppSVal operand}"
+    s!"  %{dst} = {unaryOpToStr op} {ssaTyToStr ty} {ppSVal operand}"
   | .call (some dst) fn args retTy =>
-    let argsStr := args.map fun a => s!"{tyToStr a.ty} {ppSVal a}"
-    s!"  %{dst} = call {tyToStr retTy} @{fn}({", ".intercalate argsStr})"
+    let argsStr := args.map fun a => s!"{ssaTyToStr a.ty} {ppSVal a}"
+    s!"  %{dst} = call {ssaTyToStr retTy} @{fn}({", ".intercalate argsStr})"
   | .call none fn args retTy =>
-    let argsStr := args.map fun a => s!"{tyToStr a.ty} {ppSVal a}"
-    s!"  call {tyToStr retTy} @{fn}({", ".intercalate argsStr})"
+    let argsStr := args.map fun a => s!"{ssaTyToStr a.ty} {ppSVal a}"
+    s!"  call {ssaTyToStr retTy} @{fn}({", ".intercalate argsStr})"
   | .alloca dst ty =>
-    s!"  %{dst} = alloca {tyToStr ty}"
+    s!"  %{dst} = alloca {ssaTyToStr ty}"
   | .load dst ptr ty =>
-    s!"  %{dst} = load {tyToStr ty}, {ppSVal ptr}"
+    s!"  %{dst} = load {ssaTyToStr ty}, {ppSVal ptr}"
   | .store val ptr =>
-    s!"  store {tyToStr val.ty} {ppSVal val}, {ppSVal ptr}"
+    s!"  store {ssaTyToStr val.ty} {ppSVal val}, {ppSVal ptr}"
   | .gep dst base indices ty =>
-    let idxStr := indices.map fun i => s!"{tyToStr i.ty} {ppSVal i}"
-    s!"  %{dst} = gep {tyToStr ty} {ppSVal base}, {", ".intercalate idxStr}"
+    let idxStr := indices.map fun i => s!"{ssaTyToStr i.ty} {ppSVal i}"
+    s!"  %{dst} = gep {ssaTyToStr ty} {ppSVal base}, {", ".intercalate idxStr}"
   | .phi dst incoming ty =>
     let pairs := incoming.map fun (v, lbl) => s!"[{ppSVal v}, %{lbl}]"
-    s!"  %{dst} = phi {tyToStr ty} {", ".intercalate pairs}"
+    s!"  %{dst} = phi {ssaTyToStr ty} {", ".intercalate pairs}"
   | .cast dst val tgt =>
-    s!"  %{dst} = cast {tyToStr val.ty} {ppSVal val} to {tyToStr tgt}"
+    s!"  %{dst} = cast {ssaTyToStr val.ty} {ppSVal val} to {ssaTyToStr tgt}"
   | .memcpy dst src size =>
     s!"  memcpy {ppSVal dst}, {ppSVal src}, {size}"
 
 private def ppSTerm (t : STerm) : String :=
   match t with
-  | .ret (some v) => s!"  ret {tyToStr v.ty} {ppSVal v}"
+  | .ret (some v) => s!"  ret {ssaTyToStr v.ty} {ppSVal v}"
   | .ret none => "  ret void"
   | .br lbl => s!"  br label %{lbl}"
   | .condBr cond tl el => s!"  br i1 {ppSVal cond}, label %{tl}, label %{el}"
@@ -176,17 +176,17 @@ private def ppSBlock (b : SBlock) : String :=
   s!"{b.label}:\n{"\n".intercalate instsStr}\n{termStr}"
 
 def ppSFnDef (f : SFnDef) : String :=
-  let paramsStr := f.params.map fun (n, t) => s!"{tyToStr t} %{n}"
+  let paramsStr := f.params.map fun (n, t) => s!"{ssaTyToStr t} %{n}"
   let blocksStr := f.blocks.map ppSBlock
-  s!"define {tyToStr f.retTy} @{f.name}({", ".intercalate paramsStr}) \{\n{"\n".intercalate blocksStr}\n}"
+  s!"define {ssaTyToStr f.retTy} @{f.name}({", ".intercalate paramsStr}) \{\n{"\n".intercalate blocksStr}\n}"
 
 def ppSModule (m : SModule) : String :=
   let parts : List String := []
   let parts := parts ++ m.globals.map fun (name, val) =>
     s!"@{name} = private constant \"{val}\""
   let parts := parts ++ m.externFns.map fun (n, ps, rt) =>
-    let paramsStr := ps.map fun (_, pt) => tyToStr pt
-    s!"declare {tyToStr rt} @{n}({", ".intercalate paramsStr})"
+    let paramsStr := ps.map fun (_, pt) => ssaTyToStr pt
+    s!"declare {ssaTyToStr rt} @{n}({", ".intercalate paramsStr})"
   let parts := parts ++ m.functions.map ppSFnDef
   s!"; module {m.name}\n{"\n\n".intercalate parts}"
 

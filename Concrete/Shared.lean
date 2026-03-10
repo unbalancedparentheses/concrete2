@@ -36,4 +36,19 @@ def capsContain (caller callee : CapSet) : Bool :=
   | .var _ => true  -- capability variable, can't check statically here
   | .union a b => capsContain caller a && capsContain caller b
 
+/-- Resolve `Self` to the concrete impl type in a Ty (pure, for signature building).
+    Handles all type constructors including ptrMut, ptrConst, fn_. -/
+def resolveSelfTy : Ty → Ty → Ty
+  | .named "Self", implTy => implTy
+  | .ref inner, implTy => .ref (resolveSelfTy inner implTy)
+  | .refMut inner, implTy => .refMut (resolveSelfTy inner implTy)
+  | .ptrMut inner, implTy => .ptrMut (resolveSelfTy inner implTy)
+  | .ptrConst inner, implTy => .ptrConst (resolveSelfTy inner implTy)
+  | .generic name args, implTy => .generic name (args.map (resolveSelfTy · implTy))
+  | .array elem n, implTy => .array (resolveSelfTy elem implTy) n
+  | .fn_ params cs ret, implTy => .fn_ (params.map (resolveSelfTy · implTy)) cs (resolveSelfTy ret implTy)
+  | .heap inner, implTy => .heap (resolveSelfTy inner implTy)
+  | .heapArray inner, implTy => .heapArray (resolveSelfTy inner implTy)
+  | other, _ => other
+
 end Concrete

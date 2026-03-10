@@ -5,10 +5,19 @@ import Concrete.FileSummary
 
 namespace Concrete
 
-/-! ## Resolve — name resolution pass
+/-! ## Resolve — shallow/interface name resolution pass
 
-Runs after Parse, before Check. Builds symbol tables and validates that all
-referenced names (variables, functions, types) are defined.
+Runs after Parse, before Check. Strictly a shallow/interface validation pass.
+Consumes `FileSummary` artifacts for declaration-level information. Does not
+inspect function bodies for interface data and does not perform post-elaboration
+semantic checks.
+
+Owns: module existence, import validity, top-level name visibility, deep type
+name validation, `Self` scoping, function/static-method/enum-variant resolution.
+
+Does NOT own: trait impl completeness (CoreCheck), trait signature matching
+(CoreCheck), FFI/repr validation (CoreCheck), type correctness (Check),
+instance method resolution (Check — needs receiver type).
 
 Approach: side-table symbol resolution — AST types are not modified.
 -/
@@ -40,8 +49,6 @@ inductive ResolveError where
   | unknownFunctionRef (name : String)
   | unknownType (name : String)
   | selfOutsideImpl
-  | unknownTrait (name : String)
-  | missingTraitMethod (traitName : String) (typeName : String) (method : String)
   | unknownModule (name : String)
   | notPublicInModule (symbol : String) (moduleName : String)
 
@@ -56,8 +63,6 @@ def ResolveError.message : ResolveError → String
   | .unknownFunctionRef name => s!"unknown function reference '{name}'"
   | .unknownType name => s!"unknown type '{name}'"
   | .selfOutsideImpl => "Self can only be used inside impl blocks"
-  | .unknownTrait name => s!"impl references unknown trait '{name}'"
-  | .missingTraitMethod traitName typeName method => s!"impl {traitName} for {typeName}: missing method '{method}'"
   | .unknownModule name => s!"unknown module '{name}'"
   | .notPublicInModule symbol moduleName => s!"'{symbol}' is not public in module '{moduleName}'"
 
@@ -335,6 +340,16 @@ end
 -- Build global scope from a module
 -- ============================================================
 
+/-- Convert pre-built impl method signatures to scope symbols. -/
+private def implSigsToSymbols (sigs : List (String × FnSummary)) : List (String × SymKind) :=
+  sigs.map fun (mangledName, fs) =>
+    -- Extract typeName from mangled "TypeName_methodName" (best-effort for SymKind)
+    let typeName := match mangledName.splitOn "_" with
+      | t :: _ => t
+      | [] => mangledName
+    (mangledName, SymKind.implMethod typeName
+      (fs.params.map fun (n, ty) => { name := n, ty := ty }) fs.retTy)
+
 /-- Register all top-level definitions from a FileSummary into a scope. -/
 private def buildGlobalScopeFromSummary (s : FileSummary) : Scope × List String :=
   let symbols : List (String × SymKind) := []
@@ -363,16 +378,8 @@ private def buildGlobalScopeFromSummary (s : FileSummary) : Scope × List String
   let types := types ++ s.newtypes.map (·.name)
   -- Extern functions
   let symbols := symbols ++ s.externFns.map fun ef => (ef.name, SymKind.externFn ef.params ef.retTy)
-  -- Impl block methods (mangled name only: TypeName_methodName)
-  let symbols := symbols ++ s.implBlocks.foldl (fun acc ib =>
-    acc ++ ib.methods.map fun method =>
-      (s!"{ib.typeName}_{method.name}", SymKind.implMethod ib.typeName method.params method.retTy)
-    ) []
-  -- Trait impl methods (mangled name only: TypeName_methodName)
-  let symbols := symbols ++ s.traitImpls.foldl (fun acc ti =>
-    acc ++ ti.methods.map fun method =>
-      (s!"{ti.typeName}_{method.name}", SymKind.implMethod ti.typeName method.params method.retTy)
-    ) []
+  -- Impl method signatures (pre-built in FileSummary, not rebuilt from raw blocks)
+  let symbols := symbols ++ implSigsToSymbols s.implMethodSigs
   -- Submodule definitions (via submoduleSummaries)
   let symbols := symbols ++ s.submoduleSummaries.foldl (fun acc (subName, subS) =>
     acc
@@ -382,14 +389,7 @@ private def buildGlobalScopeFromSummary (s : FileSummary) : Scope × List String
     ++ (subS.enums.map fun e => (e.name, SymKind.enum e))
     ++ (subS.externFns.map fun ef => (ef.name, SymKind.externFn ef.params ef.retTy))
     ++ (subS.constants.map fun c => (c.name, SymKind.const c.ty))
-    ++ (subS.implBlocks.foldl (fun acc2 ib =>
-      acc2 ++ ib.methods.map fun method =>
-        (s!"{ib.typeName}_{method.name}", SymKind.implMethod ib.typeName method.params method.retTy)
-    ) [])
-    ++ (subS.traitImpls.foldl (fun acc2 ti =>
-      acc2 ++ ti.methods.map fun method =>
-        (s!"{ti.typeName}_{method.name}", SymKind.implMethod ti.typeName method.params method.retTy)
-    ) [])
+    ++ (implSigsToSymbols subS.implMethodSigs)
   ) []
   let types := types ++ s.submoduleSummaries.foldl (fun acc (_, subS) =>
     acc
@@ -399,28 +399,6 @@ private def buildGlobalScopeFromSummary (s : FileSummary) : Scope × List String
     ++ (subS.traits.map (·.name))
   ) []
   ({ symbols := symbols }, types)
-
--- ============================================================
--- Trait impl validation
--- ============================================================
-
-/-- Built-in trait names (Destroy is the only one). -/
-private def builtinTraits : List String := ["Destroy"]
-
-/-- Check that trait impls reference known traits and provide all required methods (from summary). -/
-private def checkTraitImplsFromSummary (ctx : ResolveCtx) (s : FileSummary) : ResolveCtx :=
-  s.traitImpls.foldl (fun ctx ti =>
-    match ctx.traitMethods.find? (fun (n, _) => n == ti.traitName) with
-    | none =>
-      if builtinTraits.contains ti.traitName then ctx
-      else addError ctx (.unknownTrait ti.traitName)
-    | some (_, expectedMethods) =>
-      let providedMethods := ti.methods.map (·.name)
-      expectedMethods.foldl (fun ctx methodName =>
-        if providedMethods.contains methodName then ctx
-        else addError ctx (.missingTraitMethod ti.traitName ti.typeName methodName)
-      ) ctx
-  ) ctx
 
 -- ============================================================
 -- Resolve a module
@@ -500,17 +478,11 @@ def resolveShallow (moduleSummaries : List FileSummary)
         ) errs
     ) errs
   ) []
-  -- Check trait impl completeness for all summaries
-  let traitCtx : ResolveCtx := {
-    globalScope := combinedScope, localScopes := [[]], errors := [],
-    knownTypes := combinedTypes, traitMethods := traitMethods, traitImpls := traitImpls_
-  }
-  let traitCtx := moduleSummaries.foldl (fun ctx s => checkTraitImplsFromSummary ctx s) traitCtx
   { globalScope := combinedScope
   , knownTypes := combinedTypes
   , traitMethods := traitMethods
   , traitImpls := traitImpls_
-  , errors := importErrors ++ traitCtx.errors }
+  , errors := importErrors }
 
 -- ============================================================
 -- Body-level resolution

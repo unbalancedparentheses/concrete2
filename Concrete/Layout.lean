@@ -24,6 +24,19 @@ def lookupEnum (ctx : Ctx) (name : String) : Option CEnumDef :=
   ctx.enumDefs.find? fun ed => ed.name == name
 
 -- ============================================================
+-- Builtin type layout constants
+-- ============================================================
+
+namespace Builtin
+  def stringSize : Nat := 16   -- ptr + i64
+  def stringAlign : Nat := 8
+  def vecSize : Nat := 24      -- ptr + i64 + i64
+  def vecAlign : Nat := 8
+  def hashmapSize : Nat := 40  -- ptr + ptr + ptr + i64 + i64
+  def hashmapAlign : Nat := 8
+end Builtin
+
+-- ============================================================
 -- Type size (bytes)
 -- ============================================================
 
@@ -34,12 +47,12 @@ partial def tyAlign (ctx : Ctx) : Ty → Nat
   | .i16 | .u16 => 2
   | .i8 | .u8 | .char | .bool => 1
   | .unit => 1
-  | .string => 8  -- contains ptr and i64, both align 8
+  | .string => Builtin.stringAlign
   | .ref _ | .refMut _ | .ptrMut _ | .ptrConst _ => 8
   | .fn_ _ _ _ | .heap _ | .heapArray _ => 8
   | .generic "Heap" _ | .generic "HeapArray" _ => 8
-  | .generic "Vec" _ => 8
-  | .generic "HashMap" _ => 8
+  | .generic "Vec" _ => Builtin.vecAlign
+  | .generic "HashMap" _ => Builtin.hashmapAlign
   | .named name | .generic name _ =>
     match lookupStruct ctx name with
     | some sd =>
@@ -70,12 +83,12 @@ partial def tySize (ctx : Ctx) : Ty → Nat
   | .i16 | .u16 => 2
   | .i8 | .u8 | .char | .bool => 1
   | .unit => 0
-  | .string => 16  -- ptr + i64
+  | .string => Builtin.stringSize
   | .ref _ | .refMut _ | .ptrMut _ | .ptrConst _ => 8
   | .fn_ _ _ _ | .heap _ | .heapArray _ => 8
   | .generic "Heap" _ | .generic "HeapArray" _ => 8
-  | .generic "Vec" _ => 24
-  | .generic "HashMap" _ => 40
+  | .generic "Vec" _ => Builtin.vecSize
+  | .generic "HashMap" _ => Builtin.hashmapSize
   | .named name | .generic name _ =>
     match lookupStruct ctx name with
     | some sd =>
@@ -86,9 +99,7 @@ partial def tySize (ctx : Ctx) : Ty → Nat
         let (sz, _) := sd.fields.foldl (fun (acc, _) (_, ft) =>
           let aligned := alignUp acc (tyAlign ctx ft)
           (aligned + tySize ctx ft, ())) (0, ())
-        let structAlign := match sd.reprAlign with
-          | some a => Nat.max (sd.fields.foldl (fun maxA (_, ft) => Nat.max maxA (tyAlign ctx ft)) 1) a
-          | none => sd.fields.foldl (fun maxA (_, ft) => Nat.max maxA (tyAlign ctx ft)) 1
+        let structAlign := tyAlign ctx (.named name)
         alignUp sz structAlign
     | none =>
       match lookupEnum ctx name with
@@ -213,6 +224,54 @@ def tyToLLVM (ctx : Ctx) : Ty → String
 def paramTyToLLVM (ctx : Ctx) (ty : Ty) : String :=
   if isPassByPtr ctx ty then "ptr"
   else tyToLLVM ctx ty
+
+-- ============================================================
+-- LLVM type definition generators
+-- ============================================================
+
+/-- Generate LLVM type definition for a struct. -/
+def structTypeDef (ctx : Ctx) (sd : CStructDef) : String :=
+  let fieldTypes := ", ".intercalate (sd.fields.map fun (_, t) => tyToLLVM ctx t)
+  if sd.isPacked then s!"%struct.{sd.name} = type <\{ {fieldTypes} }>"
+  else s!"%struct.{sd.name} = type \{ {fieldTypes} }"
+
+/-- Generate LLVM type definitions for an enum (variant types + tagged union). -/
+def enumTypeDefs (ctx : Ctx) (ed : CEnumDef) : List String :=
+  let variantDefs := ed.variants.map fun (vn, fields) =>
+    if fields.isEmpty then s!"%variant.{ed.name}.{vn} = type \{}"
+    else
+      let fieldTypes := ", ".intercalate (fields.map fun (_, t) => tyToLLVM ctx t)
+      s!"%variant.{ed.name}.{vn} = type \{ {fieldTypes} }"
+  let totalSize := tySize ctx (.named ed.name)
+  let payloadBytes := if totalSize <= 4 then 1 else totalSize - 4
+  let enumDef := s!"%enum.{ed.name} = type \{ i32, [{payloadBytes} x i8] }"
+  variantDefs ++ [enumDef]
+
+/-- LLVM type definitions for builtin types (String, Vec, HashMap, Option, Result). -/
+def builtinTypeDefs : List String :=
+  [ "%struct.String = type { ptr, i64 }"
+  , "%struct.Vec = type { ptr, i64, i64 }"
+  , "%struct.HashMap = type { ptr, ptr, ptr, i64, i64 }"
+  , "%variant.Result.Ok = type { i64 }"
+  , "%variant.Result.Err = type { i64 }"
+  , "%enum.Result = type { i32, [12 x i8] }"
+  , "%variant.Option.Some = type { i64 }"
+  , "%variant.Option.None = type {}"
+  , "%enum.Option = type { i32, [12 x i8] }" ]
+
+-- ============================================================
+-- FFI safety
+-- ============================================================
+
+/-- Is a type FFI-safe? Used by CoreCheck for extern fn and repr(C) validation. -/
+def isFFISafe (ctx : Ctx) (ty : Ty) : Bool :=
+  match ty with
+  | .int | .uint | .i8 | .i16 | .i32 | .u8 | .u16 | .u32 => true
+  | .float32 | .float64 => true
+  | .bool | .char | .unit => true
+  | .ptrMut _ | .ptrConst _ => true
+  | .named name => (lookupStruct ctx name).any fun sd => sd.isReprC
+  | _ => false
 
 end Layout
 end Concrete

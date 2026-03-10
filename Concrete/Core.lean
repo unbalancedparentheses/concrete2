@@ -98,6 +98,20 @@ structure CEnumDef where
   isPublic : Bool := false
   isCopy : Bool := false
 
+structure CTraitMethodSig where
+  name : String
+  retTy : Ty
+
+structure CTraitDef where
+  name : String
+  methods : List CTraitMethodSig
+
+structure CTraitImpl where
+  traitName : String
+  typeName : String
+  methodNames : List String
+  methodRetTys : List (String × Ty)
+
 structure CModule where
   name : String
   structs : List CStructDef
@@ -106,6 +120,8 @@ structure CModule where
   externFns : List (String × List (String × Ty) × Ty)
   constants : List (String × Ty × CExpr)
   submodules : List CModule := []
+  traitDefs : List CTraitDef := []
+  traitImpls : List CTraitImpl := []
 
 -- ============================================================
 -- CExpr.ty accessor
@@ -140,7 +156,7 @@ def CExpr.ty : CExpr → Ty
 -- Pretty-printer
 -- ============================================================
 
-private def tyToStr : Ty → String
+def tyToStr : Ty → String
   | .int => "Int"
   | .uint => "Uint"
   | .i8 => "i8"

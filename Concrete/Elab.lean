@@ -174,19 +174,6 @@ private def addVar (name : String) (ty : Ty) : ElabM Unit := do
   setEnv { env with vars := (name, ty) :: env.vars }
 
 
-/-- Resolve Self to concrete impl type in a type. -/
-private def resolveSelf : Ty → Ty → Ty
-  | .named "Self", implTy => implTy
-  | .ref inner, implTy => .ref (resolveSelf inner implTy)
-  | .refMut inner, implTy => .refMut (resolveSelf inner implTy)
-  | .ptrMut inner, implTy => .ptrMut (resolveSelf inner implTy)
-  | .ptrConst inner, implTy => .ptrConst (resolveSelf inner implTy)
-  | .generic name args, implTy => .generic name (args.map (resolveSelf · implTy))
-  | .array elem n, implTy => .array (resolveSelf elem implTy) n
-  | .fn_ params cs ret, implTy => .fn_ (params.map (resolveSelf · implTy)) cs (resolveSelf ret implTy)
-  | .heap inner, implTy => .heap (resolveSelf inner implTy)
-  | .heapArray inner, implTy => .heapArray (resolveSelf inner implTy)
-  | other, _ => other
 
 /-- Unify a pattern type with an actual type to discover type variable bindings. -/
 private partial def unifyTypes (pattern actual : Ty) (typeParams : List String) : List (String × Ty) :=
@@ -968,9 +955,9 @@ def elabFn (f : FnDef) (implTy : Option Ty := none) : ElabM CFnDef := do
   -- Set up type params and return type
   let allTypeParams := f.typeParams
   let params := f.params.map fun p =>
-    let pty := match implTy with | some it => resolveSelf p.ty it | none => p.ty
+    let pty := match implTy with | some it => resolveSelfTy p.ty it | none => p.ty
     (p.name, pty)
-  let retTy := match implTy with | some it => resolveSelf f.retTy it | none => f.retTy
+  let retTy := match implTy with | some it => resolveSelfTy f.retTy it | none => f.retTy
   -- Resolve type params in param/return types
   let resolveTP (ty : Ty) : Ty :=
     let rec go : Ty → Ty
@@ -1054,58 +1041,28 @@ private def buildBuiltinSigs : List (String × FnSummary) := [
   ("socket_close", { params := [("sockfd", .int)], retTy := .unit, capSet := .concrete ["Network"] })
 ]
 
-partial def elabModule (m : Module)
-    (importedFnSigs : List (String × FnSummary) := [])
-    (importedStructs : List StructDef := [])
-    (importedEnums : List EnumDef := [])
-    (importedImplBlocks : List ImplBlock := [])
-    (importedTraitImpls : List ImplTraitBlock := [])
-    : Except String CModule :=
-  -- Build fn sigs from module functions
-  let userFnSigs : List (String × FnSummary) := m.functions.map fun f =>
-    (f.name, { params := f.params.map fun p => (p.name, p.ty), retTy := f.retTy,
-               typeParams := f.typeParams, typeBounds := f.typeBounds,
-               capParams := f.capParams, capSet := f.capSet })
-  -- Extern fn sigs
-  let externSigs : List (String × FnSummary) := m.externFns.map fun ef =>
-    (ef.name, { params := ef.params.map fun p => (p.name, p.ty), retTy := ef.retTy,
-                capSet := .concrete ["Unsafe"] })
-  -- Submodule fn sigs
-  let submoduleSigs : List (String × FnSummary) := m.submodules.foldl (fun acc sub =>
-    acc ++ (sub.functions.map fun f =>
-      (sub.name ++ "_" ++ f.name,
-       { params := f.params.map fun p => (p.name, p.ty), retTy := f.retTy,
-         typeParams := f.typeParams, typeBounds := f.typeBounds,
-         capParams := f.capParams, capSet := f.capSet }))
-    ++ (sub.externFns.map fun ef =>
-      (sub.name ++ "_" ++ ef.name,
-       { params := ef.params.map fun p => (p.name, p.ty), retTy := ef.retTy }))
+partial def elabModule (m : Module) (summary : FileSummary)
+    (imports : ResolvedImports := {}) : Except String CModule :=
+  -- Use pre-built summaries from FileSummary
+  let userFnSigs := summary.functions
+  let externSigs := summary.externFnSigs
+  -- Submodule fn sigs from pre-built submodule summaries
+  let submoduleSigs : List (String × FnSummary) := summary.submoduleSummaries.foldl (fun acc (subName, subSummary) =>
+    let fnSigs := subSummary.functions.map fun (fnName, sig) =>
+      (subName ++ "_" ++ fnName, sig)
+    let efSigs := subSummary.externFnSigs.map fun (efName, sig) =>
+      (subName ++ "_" ++ efName, sig)
+    acc ++ fnSigs ++ efSigs
   ) []
-  -- Impl method sigs
-  let allImplBlocks := importedImplBlocks ++ m.implBlocks
-  let allTraitImpls := importedTraitImpls ++ m.traitImpls
-  let implMethodSigs : List (String × FnSummary) := allImplBlocks.foldl (fun acc ib =>
-    let implTy := if ib.typeParams.isEmpty then Ty.named ib.typeName
-                  else Ty.generic ib.typeName (ib.typeParams.map Ty.typeVar)
-    acc ++ ib.methods.map fun f =>
-      let mangledName := ib.typeName ++ "_" ++ f.name
-      let allTypeParams := ib.typeParams ++ f.typeParams
-      (mangledName, { params := f.params.map fun p => (p.name, resolveSelf p.ty implTy),
-                       retTy := resolveSelf f.retTy implTy,
-                       typeParams := allTypeParams, capParams := f.capParams, capSet := f.capSet })
-  ) []
-  let traitImplMethodSigs : List (String × FnSummary) := allTraitImpls.foldl (fun acc tb =>
-    let implTy := if tb.typeParams.isEmpty then Ty.named tb.typeName
-                  else Ty.generic tb.typeName (tb.typeParams.map Ty.typeVar)
-    acc ++ tb.methods.map fun f =>
-      let mangledName := tb.typeName ++ "_" ++ f.name
-      let allTypeParams := tb.typeParams ++ f.typeParams
-      (mangledName, { params := f.params.map fun p => (p.name, resolveSelf p.ty implTy),
-                       retTy := resolveSelf f.retTy implTy,
-                       typeParams := allTypeParams, capParams := f.capParams, capSet := f.capSet })
-  ) []
+  -- Impl method sigs (pre-built + imported, then resolve Self)
+  let localImplSigs := summary.implMethodSigs
+  let allImplBlocks := imports.implBlocks ++ m.implBlocks
+  let allTraitImpls := imports.traitImpls ++ m.traitImpls
+  let implMethodSigs := resolveImplMethodSigs (imports.implMethodSigs ++ localImplSigs)
+      allImplBlocks allTraitImpls
+  let traitImplMethodSigs : List (String × FnSummary) := []
   -- Combine all sigs
-  let allSigs := importedFnSigs ++ userFnSigs ++ buildBuiltinSigs ++ externSigs
+  let allSigs := imports.functions ++ userFnSigs ++ buildBuiltinSigs ++ externSigs
                  ++ submoduleSigs ++ implMethodSigs ++ traitImplMethodSigs
   -- Build structs / enums
   let builtinOptionEnum : EnumDef := {
@@ -1124,8 +1081,8 @@ partial def elabModule (m : Module)
   }
   let hasUserResult := m.enums.any fun ed => ed.name == "Result"
   let builtinEnumList := [builtinOptionEnum] ++ (if hasUserResult then [] else [builtinResultEnum])
-  let allStructs := importedStructs ++ m.structs
-  let allEnums := builtinEnumList ++ importedEnums ++ m.enums
+  let allStructs := imports.structs ++ m.structs
+  let allEnums := builtinEnumList ++ imports.enums ++ m.enums
   let typeAliasMap := m.typeAliases.map fun ta => (ta.name, ta.targetTy)
   let constantsMap := m.constants.map fun c => (c.name, c.ty)
   let builtinDestroyTrait : TraitDef := {
@@ -1197,7 +1154,10 @@ partial def elabModule (m : Module)
       match acc with
       | .error e => .error e
       | .ok lst =>
-        match elabModule sub with
+        let subSummary := match summary.submoduleSummaries.find? fun (n, _) => n == sub.name with
+          | some (_, s) => s
+          | none => buildFileSummary sub
+        match elabModule sub subSummary with
         | .ok csub => .ok (lst ++ [csub])
         | .error e => .error (ElabError.message (.inSubmodule sub.name e))
     match cSubmodules with
@@ -1215,6 +1175,15 @@ partial def elabModule (m : Module)
       externFns := cExterns
       constants := cConstants
       submodules := subs
+      traitDefs := m.traits.map fun td =>
+        { name := td.name,
+          methods := td.methods.map fun sig =>
+            { name := sig.name, retTy := sig.retTy } : CTraitDef }
+      traitImpls := m.traitImpls.map fun tb =>
+        { traitName := tb.traitName,
+          typeName := tb.typeName,
+          methodNames := tb.methods.map (·.name),
+          methodRetTys := tb.methods.map fun f => (f.name, f.retTy) : CTraitImpl }
     }
   | ((.error e), _) => .error e
 
@@ -1222,13 +1191,16 @@ partial def elabModule (m : Module)
 -- Program elaboration
 -- ============================================================
 
-def elabProgram (modules : List Module) (exportTable : List (String × ExportEntry) := []) : Except String (List CModule) := do
+def elabProgram (modules : List Module)
+    (summaryTable : List (String × FileSummary) := []) : Except String (List CModule) := do
   modules.foldlM (init := []) fun acc m => do
-    let (impFns, impStructs, impEnums, impImpls, impTraitImpls) ←
-      resolveImportsFromExports m.imports exportTable
+    let summary := match summaryTable.find? fun (n, _) => n == m.name with
+      | some (_, s) => s
+      | none => buildFileSummary m
+    let imports ← resolveImports m.imports summaryTable
         (fun modName => ElabError.message (.unknownModule modName))
         (fun sym modName => ElabError.message (.notPublicInModule sym modName))
-    let cm ← elabModule m impFns impStructs impEnums impImpls impTraitImpls
+    let cm ← elabModule m summary imports
     return acc ++ [cm]
 
 end Concrete

@@ -441,32 +441,6 @@ private def emitSFnDef (s : EmitSSAState) (f : SFnDef) (isUserMain : Bool) : Emi
 -- Emit struct/enum type definitions
 -- ============================================================
 
-private def emitStructTypes (s : EmitSSAState) : EmitSSAState :=
-  s.structDefs.foldl (fun s sd =>
-    let fieldTypes := ", ".intercalate (sd.fields.map fun (_, t) => ssaTyToLLVM s t)
-    if sd.isPacked then
-      emit s s!"%struct.{sd.name} = type <\{ {fieldTypes} }>"
-    else
-      emit s s!"%struct.{sd.name} = type \{ {fieldTypes} }"
-  ) s
-
-private def emitEnumTypes (s : EmitSSAState) : EmitSSAState :=
-  let ctx := layoutCtxOf s
-  s.enumDefs.foldl (fun s ed =>
-    -- Emit variant types
-    let s := ed.variants.foldl (fun s (vn, fields) =>
-      if fields.isEmpty then
-        emit s s!"%variant.{ed.name}.{vn} = type \{}"
-      else
-        let fieldTypes := ", ".intercalate (fields.map fun (_, t) => ssaTyToLLVM s t)
-        emit s s!"%variant.{ed.name}.{vn} = type \{ {fieldTypes} }"
-    ) s
-    -- Use aligned total size: byte array = totalSize - 4 (i32 tag)
-    let totalSize := Layout.tySize ctx (.named ed.name)
-    let payloadBytes := if totalSize <= 4 then 1 else totalSize - 4
-    emit s s!"%enum.{ed.name} = type \{ i32, [{payloadBytes} x i8] }"
-  ) s
-
 -- ============================================================
 -- Emit external declarations and builtins
 -- ============================================================
@@ -783,27 +757,14 @@ def emitSModule (s : EmitSSAState) (m : SModule) : EmitSSAState :=
     if s.emittedTypes.contains sd.name then s
     else
       let s := { s with emittedTypes := sd.name :: s.emittedTypes }
-      let fieldTypes := ", ".intercalate (sd.fields.map fun (_, t) => ssaTyToLLVM s t)
-      if sd.isPacked then
-        emit s s!"%struct.{sd.name} = type <\{ {fieldTypes} }>"
-      else
-        emit s s!"%struct.{sd.name} = type \{ {fieldTypes} }"
+      emit s (Layout.structTypeDef (layoutCtxOf s) sd)
   ) s
   let ctx := layoutCtxOf s
   let s := m.enums.foldl (fun s ed =>
     if s.emittedTypes.contains ed.name then s
     else
       let s := { s with emittedTypes := ed.name :: s.emittedTypes }
-      let s := ed.variants.foldl (fun s (vn, fields) =>
-        if fields.isEmpty then
-          emit s s!"%variant.{ed.name}.{vn} = type \{}"
-        else
-          let fieldTypes := ", ".intercalate (fields.map fun (_, t) => ssaTyToLLVM s t)
-          emit s s!"%variant.{ed.name}.{vn} = type \{ {fieldTypes} }"
-      ) s
-      let totalSize := Layout.tySize ctx (.named ed.name)
-      let payloadBytes := if totalSize <= 4 then 1 else totalSize - 4
-      emit s s!"%enum.{ed.name} = type \{ i32, [{payloadBytes} x i8] }"
+      (Layout.enumTypeDefs ctx ed).foldl (fun s line => emit s line) s
   ) s
   -- String literal globals
   let s := m.globals.foldl (fun s (name, val) =>
@@ -840,16 +801,7 @@ def emitSSAProgram (modules : List SModule) : String :=
   ]
   let s := { s with structDefs := allStructs, enumDefs := builtinEnums ++ allEnums }
   -- Well-known types
-  let s := emit s "%struct.String = type { ptr, i64 }"
-  let s := emit s "%struct.Vec = type { ptr, i64, i64 }"
-  let s := emit s "%struct.HashMap = type { ptr, ptr, ptr, i64, i64 }"
-  -- Builtin enum types used by string_to_int, get_env, etc.
-  let s := emit s "%variant.Result.Ok = type { i64 }"
-  let s := emit s "%variant.Result.Err = type { i64 }"
-  let s := emit s "%enum.Result = type { i32, [12 x i8] }"
-  let s := emit s "%variant.Option.Some = type { i64 }"
-  let s := emit s "%variant.Option.None = type {}"
-  let s := emit s "%enum.Option = type { i32, [12 x i8] }"
+  let s := Layout.builtinTypeDefs.foldl (fun s line => emit s line) s
   -- Mark these as emitted so user enums with the same names won't duplicate
   let s := { s with emittedTypes := ["Result", "Option"] ++ s.emittedTypes }
   let s := emit s ""
