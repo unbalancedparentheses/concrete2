@@ -43,7 +43,13 @@ def capabilityReport (modules : List CModule) : String :=
   s!"{header}\n\n{"\n\n".intercalate body}\n"
 
 -- ============================================================
--- Report 2: Unsafe Summary (--report unsafe)
+-- Report 2: Unsafe Signature Summary (--report unsafe)
+--
+-- Reports functions whose *signatures* involve Unsafe:
+--   - declared Unsafe capability
+--   - extern functions (implicit Unsafe)
+--   - raw pointer parameter/return types
+-- Does not inspect function bodies for unsafe operations.
 -- ============================================================
 
 private def hasUnsafeCap (cs : CapSet) : Bool :=
@@ -74,16 +80,16 @@ private partial def unsafeReportModule (m : CModule) (indent : String) : Option 
         externFns.map fun (n, ps, rt) =>
           s!"{indent}    extern fn {n}({ppTyList ps}) -> {tyToStr rt}"
     let lines := if ptrFns.isEmpty then lines
-      else lines ++ [s!"{indent}  Functions using raw pointers:"] ++
+      else lines ++ [s!"{indent}  Functions with raw pointer signatures:"] ++
         ptrFns.map fun f =>
           s!"{indent}    fn {f.name}({ppTyList f.params}) -> {tyToStr f.retTy}"
     let lines := lines ++ subReports
     some ("\n".intercalate lines)
 
 def unsafeReport (modules : List CModule) : String :=
-  let header := "=== Unsafe Summary ==="
+  let header := "=== Unsafe Signature Summary ==="
   let body := modules.filterMap (unsafeReportModule · "")
-  if body.isEmpty then s!"{header}\n\nNo unsafe code found.\n"
+  if body.isEmpty then s!"{header}\n\nNo unsafe signatures found.\n"
   else s!"{header}\n\n{"\n\n".intercalate body}\n"
 
 -- ============================================================
@@ -132,13 +138,20 @@ private def layoutEnumReport (ctx : Layout.Ctx) (ed : CEnumDef) : Option String 
         s!"    {vn} \{ {", ".intercalate fs} }"
     some (s!"{header}\n{"\n".intercalate variantLines}")
 
+/-- Collect all structs and enums from a module including submodules. -/
+private partial def collectAllStructs (m : CModule) : List CStructDef :=
+  m.structs ++ m.submodules.foldl (fun acc sub => acc ++ collectAllStructs sub) []
+
+private partial def collectAllEnums (m : CModule) : List CEnumDef :=
+  m.enums ++ m.submodules.foldl (fun acc sub => acc ++ collectAllEnums sub) []
+
 def layoutReport (modules : List CModule) : String :=
   let ctx := buildLayoutCtx modules
   let header := "=== Type Layout Report ==="
-  let structReports := modules.foldl (fun acc m =>
-    acc ++ m.structs.filterMap (layoutStructReport ctx)) []
-  let enumReports := modules.foldl (fun acc m =>
-    acc ++ m.enums.filterMap (layoutEnumReport ctx)) []
+  let allStructs := modules.foldl (fun acc m => acc ++ collectAllStructs m) []
+  let allEnums := modules.foldl (fun acc m => acc ++ collectAllEnums m) []
+  let structReports := allStructs.filterMap (layoutStructReport ctx)
+  let enumReports := allEnums.filterMap (layoutEnumReport ctx)
   let body := structReports ++ enumReports
   if body.isEmpty then s!"{header}\n\nNo concrete types found.\n"
   else s!"{header}\n\n{"\n\n".intercalate body}\n"
@@ -149,9 +162,16 @@ def layoutReport (modules : List CModule) : String :=
 
 private def interfaceModule (name : String) (fs : FileSummary) : String :=
   let pubFns := fs.functions.filter fun (n, _) => fs.publicNames.contains n
+  let pubExternFns := fs.externFns.filter (·.isPublic)
   let pubStructs := fs.structs.filter (·.isPublic)
   let pubEnums := fs.enums.filter (·.isPublic)
-  let exportCount := pubFns.length + pubStructs.length + pubEnums.length
+  let pubTraits := fs.traits.filter (·.isPublic)
+  let pubConstants := fs.constants.filter (·.isPublic)
+  let pubAliases := fs.typeAliases.filter (·.isPublic)
+  let pubNewtypes := fs.newtypes.filter (·.isPublic)
+  let exportCount := pubFns.length + pubExternFns.length + pubStructs.length +
+    pubEnums.length + pubTraits.length + pubConstants.length +
+    pubAliases.length + pubNewtypes.length
   let header := s!"module {name} ({exportCount} exports):"
   let lines : List String := []
   let lines := if fs.imports.isEmpty then lines
@@ -165,12 +185,24 @@ private def interfaceModule (name : String) (fs : FileSummary) : String :=
         let params := sig.params.map fun (pn, pt) => s!"{pn}: {tyToStr pt}"
         let capsStr := s!" [{ppCapSet sig.capSet}]"
         s!"    fn {n}({", ".intercalate params}) -> {tyToStr sig.retTy}{capsStr}"
+      let lines := lines ++ pubExternFns.map fun ef =>
+        let params := ef.params.map fun p => s!"{p.name}: {tyToStr p.ty}"
+        s!"    extern fn {ef.name}({", ".intercalate params}) -> {tyToStr ef.retTy}"
       let lines := lines ++ pubStructs.map fun sd =>
         let fields := sd.fields.map fun sf => s!"{sf.name}: {tyToStr sf.ty}"
         s!"    struct {sd.name} \{ {", ".intercalate fields} }"
       let lines := lines ++ pubEnums.map fun ed =>
         let variants := ed.variants.map (·.name)
         s!"    enum {ed.name} \{ {", ".intercalate variants} }"
+      let lines := lines ++ pubTraits.map fun td =>
+        let methods := td.methods.map (·.name)
+        s!"    trait {td.name} \{ {", ".intercalate methods} }"
+      let lines := lines ++ pubConstants.map fun c =>
+        s!"    const {c.name}: {tyToStr c.ty}"
+      let lines := lines ++ pubAliases.map fun a =>
+        s!"    type {a.name} = {tyToStr a.targetTy}"
+      let lines := lines ++ pubNewtypes.map fun nt =>
+        s!"    newtype {nt.name}({tyToStr nt.innerTy})"
       lines
   s!"{header}\n{"\n".intercalate lines}"
 
@@ -191,14 +223,18 @@ private def collectFnNames (modules : List CModule) : List String :=
   modules.foldl (fun acc m =>
     acc ++ m.functions.map (·.name) ++ collectSubFnNames m) []
 
+/-- Count generic functions across all modules including submodules. -/
+private partial def countGenericFns (m : CModule) : Nat :=
+  let local_ := (m.functions.filter fun f => !f.typeParams.isEmpty).length
+  local_ + m.submodules.foldl (fun acc sub => acc + countGenericFns sub) 0
+
 def monoReport (preMono postMono : List CModule) : String :=
   let header := "=== Monomorphization Report ==="
   let preNames := collectFnNames preMono
   let postNames := collectFnNames postMono
   let specializations := postNames.filter fun n =>
     (n.splitOn "_for_").length > 1 && !preNames.contains n
-  let genericCount := preMono.foldl (fun acc m =>
-    acc + (m.functions.filter fun f => !f.typeParams.isEmpty).length) 0
+  let genericCount := preMono.foldl (fun acc m => acc + countGenericFns m) 0
   let statsLines := [
     s!"Generic functions: {genericCount}",
     s!"Specializations generated: {specializations.length}"
