@@ -31,7 +31,26 @@ For the full language specification, see [The Concrete Programming Language: Sys
 - [ROADMAP.md](ROADMAP.md) — active and future work
 - [CHANGELOG.md](CHANGELOG.md) — completed milestones
 - [docs/README.md](docs/README.md) — stable reference docs
+- [docs/PASSES.md](docs/PASSES.md) — pass-by-pass ownership boundaries and contracts
+- [docs/TESTING.md](docs/TESTING.md) — test suites, coverage layers, and verification flow
 - [research/README.md](research/README.md) — exploratory design notes
+
+## Snapshot
+
+What Concrete has today:
+
+- a full Lean 4 compiler pipeline through Core and SSA
+- explicit capabilities, linear ownership, borrows, `defer`, trait dispatch, FFI, and layout attributes
+- structured diagnostics across the semantic pipeline
+- explicit audit/report outputs
+
+What is still clearly missing:
+
+- `transmute`
+- MLIR backend
+- kernel formalization
+- runtime
+- broader stdlib foundation growth
 
 ## Try It Now
 
@@ -384,6 +403,7 @@ See [CHANGELOG.md](CHANGELOG.md) for completed milestones and major landed archi
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the detailed compiler pipeline, artifact flow, and pass boundaries.
 See [docs/ABI_LAYOUT.md](docs/ABI_LAYOUT.md) for the current layout and FFI boundary, and [docs/DIAGNOSTICS.md](docs/DIAGNOSTICS.md) for the diagnostics model.
 See [docs/FFI.md](docs/FFI.md) for the explicit foreign/unsafe boundary and [docs/STDLIB.md](docs/STDLIB.md) for the current stable stdlib direction.
+See [docs/PASSES.md](docs/PASSES.md) for pass-by-pass compiler contracts and [docs/TESTING.md](docs/TESTING.md) for the test structure.
 See [docs/README.md](docs/README.md) for the stable documentation index and [research/README.md](research/README.md) for exploratory design notes.
 
 | Phase | Feature | Status |

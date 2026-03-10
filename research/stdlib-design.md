@@ -1,30 +1,37 @@
 # Standard Library Design Notes
 
+**Status:** Open, partially adopted as ordering guidance
+
 This document records the direction for Concrete's standard library after the core compiler architecture work.
 
 The standard library is not just "APIs we need eventually." It is one of the main ways the language proves that its design is viable for correctness-focused low-level work.
+
+For the stable project direction, see [../docs/STDLIB.md](../docs/STDLIB.md). This note is broader and more exploratory.
 
 ## Design Rules
 
 The stdlib should follow a small number of hard rules:
 
-1. Allocation must be visible.
-If an API allocates, that fact should be visible in the signature, capability set, or returned ownership shape.
+1. **Allocation must be visible.**
+   If an API allocates, that fact should be visible in the signature, capability set, or returned ownership shape.
 
-2. Ownership must be obvious.
-Owned resources, borrowed views, and transferred values should be easy to distinguish from the type alone.
+2. **Ownership must be obvious.**
+   Owned resources, borrowed views, and transferred values should be easy to distinguish from the type alone.
 
-3. Effects must stay explicit.
-I/O, environment access, process control, networking, and time should not be hidden behind “convenience” wrappers.
+3. **Effects must stay explicit.**
+   I/O, environment access, process control, networking, and time should not be hidden behind convenience wrappers.
 
-4. Resource-backed APIs should avoid laziness.
-The stdlib should not hide evaluation order, blocking, cleanup, or resource lifetime behind lazy streams or iterator pipelines.
+4. **Resource-backed APIs should avoid laziness.**
+   The stdlib should not hide evaluation order, blocking, cleanup, or resource lifetime behind lazy streams or iterator pipelines.
 
-5. Safe-facing APIs should prefer typed structure over ambient convention.
-Use small types and explicit enums, not sentinel values, magic integers, or “just know the convention” APIs.
+5. **Safe-facing APIs should prefer typed structure over ambient convention.**
+   Use small types and explicit enums, not sentinel values, magic integers, or “just know the convention” APIs.
 
-6. The stdlib should avoid baking in a runtime model too early.
-Concurrency/runtime design should be handled by the separate concurrency research track.
+6. **The stdlib should avoid baking in a runtime model too early.**
+   Concurrency/runtime design should be handled by the separate concurrency research track.
+
+7. **The stdlib should optimize for low-level usefulness, explicitness, and composability without magic.**
+   Concrete should prefer APIs that are easy to audit over APIs that are merely clever.
 
 ## Current Situation
 
@@ -52,6 +59,51 @@ Several current modules are still incomplete or need correctness work:
 
 Before adding a lot more surface area, those modules need to become trustworthy.
 
+## What Would Make It Excellent
+
+To make the stdlib genuinely strong for Concrete, it should optimize for three things at once:
+
+- low-level usefulness
+- explicitness
+- composability without hidden behavior
+
+That implies a few broad rules:
+
+1. **Make `bytes` the real center.**
+   Not `String`. A low-level stdlib should revolve around owned bytes, borrowed slices, and borrowed text views.
+
+2. **Separate owned from borrowed everywhere.**
+   Examples:
+   - `Bytes` vs borrowed byte slice/view
+   - `String` vs borrowed text view
+   - owned path buffer vs borrowed path view
+   - owned file/socket handle vs borrowed handle/view
+
+3. **Make handles first-class and explicit.**
+   File, socket, listener, subprocess, and directory APIs should revolve around explicit resource types, not raw integer-ish handles.
+
+4. **Keep typed errors small and local.**
+   Prefer small enum error types per module. Avoid one giant catch-all error type too early.
+
+5. **Keep allocation visible.**
+   The stdlib should not drift into “allocation happens somewhere in the library.”
+
+6. **Prefer eager, explicit APIs over abstraction towers.**
+   Concrete should not copy the giant iterator/future culture of larger ecosystems.
+
+7. **Stay concurrency-neutral until the concurrency story is real.**
+   `std.io`, `std.net`, and `std.process` should not smuggle in a runtime model too early.
+
+8. **Expose layout and FFI reality cleanly.**
+   A good low-level stdlib should work naturally with:
+   - `repr(C)`
+   - explicit FFI wrappers
+   - explicit foreign handles
+   - raw pointers where necessary, but not by default
+
+9. **Keep it small but deep.**
+   Concrete does not need Rust’s breadth. It needs a smaller, sharper, more coherent core.
+
 ## What The Stdlib Needs First
 
 The next milestone should not be "more modules everywhere." It should be "a coherent low-level foundation."
@@ -78,6 +130,8 @@ This should become the foundation for:
 - binary protocols
 - formatting
 
+This is the real center of the low-level stdlib. `bytes` should come before “more string helpers.”
+
 ### 3. Add borrowed views
 
 Concrete should have explicit non-owning views, such as:
@@ -86,6 +140,8 @@ Concrete should have explicit non-owning views, such as:
 - borrowed string/text views
 
 These fit the language well because they preserve explicit ownership while still making low-level APIs practical.
+
+This is one of the highest-value design moves the stdlib can make.
 
 ### 4. Build real file/process/env/path modules
 
@@ -103,6 +159,8 @@ These should become the foundation for “real program” boundaries:
 - process spawning and exit
 - environment access
 - later, time and networking surfaces
+
+`path` should be explicit, not just a subtopic inside filesystem APIs.
 
 ### 5. Wrap networking builtins in a real stdlib layer
 
@@ -126,6 +184,34 @@ The stdlib should prefer:
 - eager operations
 
 It should avoid hidden control flow or trait-heavy abstraction layers.
+
+## Error, Handle, and Allocator Policy
+
+### Error Shape
+
+Safe-facing APIs should prefer:
+
+- small enum error types per module
+- no opaque integer-ish error codes
+- no hidden sentinel-style failure signaling
+
+### Handle Ownership
+
+For `fs`, `net`, and later `process`, the stdlib should prefer:
+
+- owned handle types
+- borrowed handle/view types where clearly useful
+- no raw fd/socket integers in safe-facing APIs
+
+### Allocation Policy
+
+Allocator-sensitive APIs should make allocation visible. In practice that means:
+
+- APIs should make owned return values obvious
+- allocation-sensitive modules should not hide cost
+- allocator/capability-aware APIs should stay explicit where appropriate
+
+Concrete should stay closer to Zig/Odin here than to more ambient-allocation ecosystems.
 
 ## Best Ideas To Borrow
 
@@ -258,6 +344,51 @@ Useful ideas:
 
 Only the concepts are useful. Concrete should avoid C++-style complexity and customization machinery.
 
+### From Erlang / Elixir
+
+Useful ideas:
+
+- failure-aware API design
+- clear process/resource boundaries
+- supervision-style thinking for later runtime/process/network work
+
+Why these fit:
+
+- even if Concrete does not copy BEAM-style runtimes, it can learn from how these ecosystems make failure and resource ownership part of the design surface
+
+### From Ada / SPARK
+
+Useful ideas:
+
+- contract-minded API design
+- readability over cleverness
+- low-level library surfaces designed for high-integrity use
+
+Why these fit:
+
+- Concrete should aim for libraries that remain readable under audit, not just expressive to experts
+
+### From Pony
+
+Useful ideas:
+
+- ownership/isolation-aware concurrent API design
+- capability-shaped resource boundaries
+
+Why these fit:
+
+- useful for thinking about later `std.sync` or concurrency-adjacent library design without copying Rust’s async complexity
+
+### From Koka
+
+Useful ideas:
+
+- effect-oriented library surface design
+
+Why these fit:
+
+- Concrete can benefit from libraries whose signatures expose blocking, I/O, and authority boundaries cleanly
+
 ### From Clojure
 
 Useful ideas:
@@ -271,16 +402,6 @@ This is interesting for Concrete only if kept:
 - free of hidden control flow
 
 Concrete should not import lazy sequence semantics here.
-
-### From Elixir
-
-Useful ideas:
-
-- clear separation between eager collection APIs and streaming/resource-backed APIs
-
-What not to copy:
-
-- lazy stream semantics that hide evaluation or resource timing
 
 ### From newer research
 
@@ -308,7 +429,7 @@ This should support:
 
 This becomes the foundation for low-level text and binary work.
 
-This should probably be the first major new stdlib type after `vec`/`string`/`io` are corrected.
+This should probably be the first major new stdlib type after `vec` / `string` / `io` are corrected.
 
 ### `std.slice`
 
@@ -418,21 +539,19 @@ Concrete should still keep the collection surface small.
 
 Only after `map` is solid, and probably built on top of it.
 
-### `std.iter` (or equivalent), very carefully
+### `std.iter`
 
-Not a trait-heavy iterator universe.
-
-If anything like this is added, it should stay:
+If Concrete adds an iteration helper layer at all, it should be:
 
 - small
 - explicit
 - eager
 
+Not a trait-heavy iterator universe.
+
 ### `std.sync`
 
 Much later, and only once the concurrency design is clearer.
-
-This should not be added casually.
 
 ### `std.ffi`
 
@@ -444,210 +563,69 @@ Potentially useful for exposing layout/size/alignment information in a principle
 
 ### `std.parse`
 
-Only after `bytes`, `text`, and `fmt` are in good shape.
+Only after bytes/text/fmt are in good shape.
 
-Useful for:
+Useful for parsing:
 
-- integer parsing
-- float parsing
-- path/text parsing helpers
-- other small explicit parsers
+- integers
+- floats
+- paths
+- other small foundational formats
 
-## Low-Level Spine Concrete Still Needs
+## What Not To Standardize Too Early
 
-Looking across Rust, Zig, Odin, Go, Swift, and related systems-oriented languages, the core missing low-level spine is fairly clear.
+Avoid adding these before the low-level foundation is stable:
 
-Concrete does not need Rust’s breadth, but it does need a strong low-level foundation in these areas:
-
-1. **Bytes**
-An owned byte buffer is the most important missing foundational type.
-
-2. **Slices / spans**
-Non-owning contiguous views are essential for low-level APIs.
-
-3. **Borrowed text views**
-Owned `String` is not enough. Borrowed text needs its own type.
-
-4. **Path types**
-Path handling should be explicit and not hidden inside `fs`.
-
-5. **Real `fs` / `env` / `process` APIs**
-These are core systems boundaries, not optional extras.
-
-6. **Networking**
-A real stdlib networking layer over the current builtins is necessary for serious systems use.
-
-7. **Time**
-Durations, clocks, timestamps, and later timer-related APIs are basic low-level requirements.
-
-8. **Allocator-visible containers**
-Concrete should stay disciplined here and make allocation visible in collection growth and owned-buffer APIs.
-
-9. **Formatting and parsing**
-These should be explicit, buffer-oriented, and small.
-
-10. **Owned handle types**
-Files, sockets, listeners, and later subprocess handles should not be raw low-level integers in safe APIs.
-
-This is the real stdlib foundation Concrete needs before it should worry about broader convenience layers.
-
-## What To Avoid
-
-Concrete should not let the stdlib smuggle in abstractions that the language itself rejects.
-
-Avoid:
-
-- trait-heavy iterator ecosystems
-- lazy resource streams
-- hidden allocation
-- hidden dispatch
-- interior-mutability-style escape hatches in the stdlib
-- generic “convenience APIs” that obscure ownership/effects
-
-Also avoid standardizing too early:
-
-- a giant iterator ecosystem
-- lazy stream APIs over resources
-- a large collection zoo before `bytes`, `slice`, `fs`, and `net` are solid
-- runtime-coupled APIs whose shape only makes sense under one concurrency model
+- huge collection libraries
+- lazy streams
 - future/promise ecosystems
-- too many string-heavy utilities before `bytes`, `slice`, and `text` are solid
-
-## Candidate Module Map
-
-This is a plausible medium-term stdlib shape:
-
-- `std.alloc`
-- `std.mem`
-- `std.ptr`
-- `std.bytes`
-- `std.slice`
-- `std.text`
-- `std.string`
-- `std.vec`
-- `std.option`
-- `std.result`
-- `std.fs`
-- `std.path`
-- `std.env`
-- `std.process`
-- `std.net`
-- `std.fmt`
-- `std.test`
-- `std.math`
-- `std.libc`
-
-Not all of these should be expanded immediately, but this is a better target shape than continuing to grow the current tree ad hoc.
-
-## Error Design
-
-Safe-facing stdlib APIs should prefer:
-
-- small enum error types per module
-- explicit typed failure in signatures
-- no opaque integer-ish error codes in safe APIs
-
-Low-level bindings may still expose raw platform error values where necessary, but the safe stdlib surface should translate them into explicit error types.
-
-As a rule:
-
-- thin low-level bindings may expose platform-shaped results
-- safe-facing stdlib modules should wrap them in typed errors and explicit resource types
-
-## Handle Ownership
-
-For `fs`, `net`, and later process/runtime-facing modules, the stdlib should make handle ownership explicit:
-
-- owned handle types for resources that must be closed/destroyed
-- borrowed handle/view types where temporary non-owning access is useful
-- no raw fd/socket integers in safe APIs
-
-This is one of the highest-value ways to make the stdlib align with Concrete’s ownership model.
-
-The default should be:
-
-- owned handle at module boundaries
-- borrowed handle when temporary access is enough
-- raw handle only in explicitly low-level/unsafe layers
-
-## Allocator Policy
-
-Allocator-explicit design is a good fit for Concrete, but the stdlib should make the rule clear.
-
-In general:
-
-- APIs that allocate should make allocation visible in the signature
-- owned buffers/collections should clearly indicate when `Alloc` is required
-- APIs should either take allocator/runtime authority explicitly or require `with(Alloc)` in a way that is easy to audit
-
-The exact mechanism can vary by module, but the stdlib should never hide allocation behind “convenience” calls.
-
-In practice this likely means:
-
-- `bytes`, `string`, and collection growth are allocator-visible
-- whole-file/whole-buffer helpers remain explicit that they allocate
-- path/process/network helpers should not smuggle allocation into “simple” calls without making it visible
-
-## Runtime Boundary Note
-
-The stdlib should avoid assuming one ambient runtime model too early.
-
-In practice this means:
-
-- keep blocking behavior explicit in APIs
-- avoid forcing “async everywhere”
-- avoid shaping `fs`, `net`, and process modules around one runtime convention before the concurrency design is settled
-
-The actual concurrency/runtime direction belongs in [`research/concurrency.md`](concurrency.md), not in the stdlib plan.
+- runtime-bound async helpers
+- too many string-heavy utilities before bytes/slice/text are solid
+- heavy collection sprawl before bytes/slice/fs/net are solid
+- broad convenience wrappers that hide ownership or effects
+- concurrency abstractions that quietly commit the stdlib to one runtime model
 
 ## Recommended Build Order
 
-1. Make `vec`, `string`, and `io` correct and complete.
-2. Add `bytes` / buffer as the core low-level owned container.
-3. Add borrowed views for slices and strings.
-4. Add `std.path`.
-5. Build real file/process/env modules around explicit handles and typed errors.
-6. Wrap networking builtins in a proper stdlib layer.
-7. Add `std.time`.
-8. Add formatting helpers and stronger test support.
-9. Add parsing helpers once `bytes`, `text`, and `fmt` are solid.
-10. Expand collections only after the core is solid.
+1. fix `vec`, `string`, `io`
+2. add `bytes`
+3. add `slice`
+4. add `text`
+5. add `path`
+6. real `std.fs`
+7. `std.env` and `std.process`
+8. `std.net`
+9. small `std.fmt`
+10. stronger `std.test`
 
-## Adoption Filter
+After that foundation:
 
-A stdlib idea is a good fit for Concrete if it:
+11. `std.time`
+12. `std.rand`
+13. `std.hash`
+14. `std.collections.map`
+15. `std.collections.set`
+16. maybe a small eager `std.iter`
+17. later `std.ffi`
+18. later `std.parse`
+19. much later `std.sync`
 
-- makes allocation more visible, not less
-- makes ownership easier to read from types
-- improves low-level correctness without adding hidden control flow
-- stays compatible with explicit effects/capabilities
-- can be explained without a large abstraction tower
+## Summary
 
-A stdlib idea is a poor fit if it:
+The stdlib Concrete needs is not huge. It is:
 
-- hides resource lifetime
-- assumes a runtime model everywhere
-- depends on heavy trait/generic indirection for ordinary use
-- turns simple data movement into “clever” code
+- low-level
+- ownership-honest
+- resource-honest
+- explicit in its effects
+- allocator-visible where necessary
+- smaller and more coherent than the broad stdlibs of bigger languages
 
-## Later Summary
+If Concrete wants a genuinely excellent stdlib, the guiding priorities should be:
 
-Beyond the core foundation, the best additions are probably:
-
-- `std.time`
-- `std.rand`
-- `std.hash`
-- `std.collections.map`
-- `std.collections.set`
-- maybe a small `std.parse`
-- later `std.sync`
-- later `std.ffi` helpers
-
-The important point is that Concrete’s stdlib should stay small and sharp.
-It does not need to imitate Rust’s breadth.
-
-## Long-Term Goal
-
-The standard library should make Concrete usable for real low-level programs without betraying the language’s core promise:
-
-code should stay explicit, auditable, and mechanically understandable.
+- bytes before strings
+- slices before iterator ecosystems
+- owned and borrowed handles before convenience wrappers
+- typed errors before catch-all APIs
+- explicit allocation before ergonomic shortcuts
+- small coherent depth before broad surface area
