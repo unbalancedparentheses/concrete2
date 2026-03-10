@@ -1,5 +1,7 @@
 # Compiler Architecture
 
+Status: stable reference
+
 This document is the architecture/reference companion to [ROADMAP.md](../ROADMAP.md).
 
 Use it for:

@@ -11,6 +11,8 @@
 
 </div>
 
+Status: project entry point
+
 >Most ideas come from previous ideas - Alan C. Kay, The Early History Of Smalltalk
 
 Concrete is a systems programming language for **correctness-focused low-level work**. It is designed around a single organizing principle: **every design choice must answer the question, can a machine reason about this?** All code is explicit, machine-verifiable, LL(1)-parseable, with no hidden control flow.
@@ -373,6 +375,7 @@ See [ROADMAP.md](ROADMAP.md) for the full implementation plan with syntax, rules
 See [CHANGELOG.md](CHANGELOG.md) for completed milestones and major landed architecture/language work.
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the detailed compiler pipeline, artifact flow, and pass boundaries.
 See [docs/ABI_LAYOUT.md](docs/ABI_LAYOUT.md) for the current layout and FFI boundary, and [docs/DIAGNOSTICS.md](docs/DIAGNOSTICS.md) for the diagnostics model.
+See [docs/FFI.md](docs/FFI.md) for the explicit foreign/unsafe boundary and [docs/STDLIB.md](docs/STDLIB.md) for the current stable stdlib direction.
 See [docs/README.md](docs/README.md) for the stable documentation index and [research/README.md](research/README.md) for exploratory design notes.
 
 | Phase | Feature | Status |

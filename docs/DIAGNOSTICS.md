@@ -1,5 +1,7 @@
 # Diagnostics
 
+Status: stable reference
+
 This document describes Concrete's diagnostics model and the remaining diagnostics work.
 
 For pass ownership, see [PASSES.md](PASSES.md). For active priorities, see [../ROADMAP.md](../ROADMAP.md).

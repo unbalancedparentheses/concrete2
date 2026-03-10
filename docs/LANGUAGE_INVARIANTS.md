@@ -1,5 +1,7 @@
 # Language Invariants
 
+Status: stable reference
+
 These rules apply across all phases. They come directly from the language design and must never be violated.
 
 ## 1. Pure By Default

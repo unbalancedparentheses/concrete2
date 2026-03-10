@@ -1,5 +1,7 @@
 # Research Notes
 
+Status: exploratory index
+
 This directory contains design notes, open questions, and architectural explorations for Concrete.
 
 These files are exploratory unless they explicitly say otherwise. Once a design becomes a stable project rule or implementation contract, it should move into `docs/`.
@@ -7,17 +9,20 @@ These files are exploratory unless they explicitly say otherwise. Once a design 
 ## Language Decisions
 
 Status key:
-- `Decided` = direction chosen
 - `Open` = still exploratory
-- `Process` = decision filter or project rule
 - `Adopted` = design influenced implementation, but the note remains useful as background
+- `Excluded` = intentionally not in the language surface
+- `Process` = decision filter or project rule
 
 - [derived-equality-design.md](derived-equality-design.md) — possible derived structural equality for user-defined types (`Open`)
 - [heap-ownership-design.md](heap-ownership-design.md) — chosen `Heap<T>` ownership model (`Adopted`)
 - [heap-access-revisited.md](heap-access-revisited.md) — follow-up on heap access syntax and tradeoffs (`Open`)
-- [no-closures.md](no-closures.md) — why Concrete excludes closures (`Decided`)
-- [no-trait-objects.md](no-trait-objects.md) — why Concrete excludes trait objects (`Decided`)
 - [union.md](union.md) — whether unions fit Concrete's design (`Open`)
+
+## Excluded by Design
+
+- [no-closures.md](no-closures.md) — why Concrete excludes closures (`Excluded`)
+- [no-trait-objects.md](no-trait-objects.md) — why Concrete excludes trait objects (`Excluded`)
 
 ## Standard Library
 
@@ -37,3 +42,10 @@ Status key:
 - [external-ideas.md](external-ideas.md) — useful ideas borrowed from other languages (`Research`)
 
 The roadmap should only absorb items from here when they become concrete technical work.
+
+## Placement Rule
+
+- stable rule/reference -> `docs/`
+- active plan/sequencing -> `ROADMAP.md`
+- landed milestone/history -> `CHANGELOG.md`
+- exploratory note -> `research/`

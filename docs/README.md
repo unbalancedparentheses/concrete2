@@ -1,5 +1,7 @@
 # Documentation Guide
 
+Status: stable reference
+
 This directory holds the stable reference docs for Concrete's implementation and language model.
 
 Use these files as the primary reference once a design has moved out of exploration:
@@ -7,8 +9,10 @@ Use these files as the primary reference once a design has moved out of explorat
 - [ARCHITECTURE.md](ARCHITECTURE.md) — compiler pipeline, artifact flow, pass boundaries, and architecture phase reference
 - [ABI_LAYOUT.md](ABI_LAYOUT.md) — layout, enum representation, FFI-safety, and ABI boundary rules
 - [DIAGNOSTICS.md](DIAGNOSTICS.md) — diagnostics model, current status, and staged diagnostics work
+- [FFI.md](FFI.md) — externs, raw pointers, and the `Unsafe` boundary
 - [PASSES.md](PASSES.md) — pass-by-pass contracts and ownership boundaries
 - [LANGUAGE_INVARIANTS.md](LANGUAGE_INVARIANTS.md) — the language rules that must hold across every phase
+- [STDLIB.md](STDLIB.md) — current stable stdlib direction and module priorities
 - [VALUE_MODEL.md](VALUE_MODEL.md) — value, borrow, ownership, and resource-model rules
 
 The `book/` subdirectory is for tutorial-style and user-facing structured documentation.
@@ -26,3 +30,10 @@ The `book/` subdirectory is for tutorial-style and user-facing structured docume
 - `research/` = exploratory notes, possible future work, and design investigations
 
 If a topic is still being explored or debated, it belongs in `research/` first. Once it becomes a stable project rule or compiler boundary, it should move into `docs/`.
+
+## Where New Docs Go
+
+- stable rule/reference -> `docs/`
+- active plan/sequencing -> `ROADMAP.md`
+- landed milestone/history -> `CHANGELOG.md`
+- exploratory note -> `research/`

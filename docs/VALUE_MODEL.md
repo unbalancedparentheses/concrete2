@@ -1,5 +1,7 @@
 # Value & Reference Model
 
+Status: stable reference
+
 Concrete uses a strict value/reference model with linear types by default.
 
 ## Value Categories

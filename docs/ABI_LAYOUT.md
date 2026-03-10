@@ -1,5 +1,7 @@
 # ABI and Layout
 
+Status: stable reference
+
 This document describes Concrete's current ABI/layout boundary and the compiler components that own it.
 
 For current priorities, see [../ROADMAP.md](../ROADMAP.md). For the surrounding compiler pipeline, see [ARCHITECTURE.md](ARCHITECTURE.md).
