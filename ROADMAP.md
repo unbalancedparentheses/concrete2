@@ -2,48 +2,62 @@
 
 This is the implementation plan for the Concrete programming language. For the full specification, see [The Concrete Programming Language: Systems Programming for Formal Reasoning](https://federicocarrone.com/series/concrete/the-concrete-programming-language-systems-programming-for-formal-reasoning/).
 
-## What's Built
+## Current State
 
-The Lean 4 compiler implements the core surface language plus the new internal IR pipeline pieces: Core IR, elaboration, Core validation, monomorphization, SSA lowering, SSA verification/cleanup, and SSA codegen. All 266 main tests pass, and the SSA-specific suite passes as well.
+The Lean 4 compiler implements the core surface language plus the full internal IR pipeline: Core IR, elaboration, Core validation, monomorphization, SSA lowering, SSA verification/cleanup, and SSA codegen. The main suite currently has 266 passing tests, and the SSA-specific suite also passes.
 
-**Done:**
-- Lexer, LL(1) parser, AST
-- Types: Int, Uint, i8-i32, u8-u32, f32, f64, Bool, Char, String, arrays `[T; N]`, raw pointers `*mut T` / `*const T`
-- Structs with field access, mutation, pass-by-pointer, `Heap<T>` fields
-- Enums with pattern matching (exhaustiveness checked, literal and variable patterns)
-- Impl blocks with methods (`&self`, `&mut self`, `self`) and static methods
-- `Self` keyword in impl blocks (resolved to the implementing type)
-- Traits with static dispatch, signature checking, and trait bounds on generics (`<T: Trait1 + Trait2>`)
-- Generics on functions, structs, and enums
-- Borrowing: `&T` (shared) and `&mut T` (exclusive), with borrow checking
-- Borrow regions: `borrow x as xr in R { ... }` with escape analysis
-- Linear type system: structs consumed exactly once, branches must agree, loop restrictions
-- `defer`/`destroy`/`Copy`: explicit resource management, LIFO deferred cleanup, opt-in Copy marker
-- Modules with `pub` visibility, imports, submodules, forward references, multi-file resolution (`mod X;` reads `X.con`), circular import detection
-- Result type with `?` operator for error propagation
-- Cast expressions (`as`) between numeric types
-- Control flow: while (including while-as-expression), for (C-style), if/else, match, break/continue (with labeled loops `'label:`)
-- Function pointers: first-class values, `Copy` semantics, no closures
-- Heap allocation: `alloc`/`free`, `Heap<T>` with `->` field access, `HeapArray<T>`, heap dereference (`*heap_ptr`)
-- Monomorphized trait dispatch: calling trait methods on generic type variables generates specialized copies at compile time (no vtables, no runtime dispatch)
-- `Option<T>` builtin enum with `Some`/`None` variants
-- File I/O: `read_file`/`write_file` builtins (require File capability)
-- Bitwise operators (`&`, `|`, `^`, `<<`, `>>`, `~`) and hex/binary/octal literals
-- `print_int`/`print_bool` builtins (require Console capability)
-- Constants, type aliases, extern fn declarations, `abort()`
-- Capabilities: `with(File, Network, Alloc)` effect declarations, `!` sugar, capability polymorphism, capability checking
-- Direct LLVM IR text emission, compiled via clang to native binaries
-- Standard library builtins: string operations (length, concat, slice, char_at, index_of, contains, replace, split, to_upper, to_lower, trim), type conversions (int↔string, float↔string, char↔string, int↔float), stdin (read_line)
-- `Vec<T>`: vec_new, vec_push, vec_get, vec_set, vec_len, vec_pop, vec_free (generic intercepted calls, require Alloc)
-- `HashMap<K,V>`: map_new, map_insert, map_get, map_contains, map_remove, map_len, map_free (keys: Int or String, require Alloc)
-- Networking: tcp_connect, tcp_listen, tcp_accept, socket_send, socket_recv, socket_close (require Network)
-- FFI: `extern fn` declarations, `Unsafe` capability gating (extern calls, raw pointer deref, raw pointer assign, unsafe casts)
-- `#[repr(C)]` attribute for structs with FFI-safe type validation at extern boundaries
-- `newtype`: zero-cost nominal wrappers (`newtype UserId = Int;`), no implicit conversions, wrap via `Name(expr)`, unwrap via `.0`, generic newtypes, Copy/linear propagation
-- `sizeof::<T>()`/`alignof::<T>()` compile-time intrinsics
-- `#[repr(packed)]` and `#[repr(align(N))]` struct layout attributes
+For completed milestones and major landed features, see [CHANGELOG.md](CHANGELOG.md).
+For the detailed compiler pipeline, pass boundaries, and architecture phase reference, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-**Not yet implemented:** transmute, MLIR backend, kernel formalization, runtime, fully authoritative standalone resolution.
+Still clearly not implemented:
+
+- `transmute`
+- MLIR backend
+- kernel formalization
+- runtime
+- fully authoritative standalone resolution
+
+## Priority Snapshot
+
+### Now
+
+1. Strengthen shared diagnostics infrastructure:
+   - native `Except Diagnostics` plumbing
+   - better span/range fidelity
+   - better rendering, notes, and labels
+2. Keep the builtin-vs-stdlib boundary explicit as the standard library grows.
+3. Preserve SSA as the only backend boundary and keep the build/project model explicit and boring.
+
+### Next
+
+1. Grow the stdlib foundation:
+   - bytes / buffers
+   - borrowed slices and text views
+   - stronger file/path/process/env modules
+   - networking
+   - small formatting and test support
+2. Push formalization over the cleaned Core -> SSA architecture.
+3. Add later audit/report outputs still marked deferred, such as allocation summaries and cleanup/destruction reports.
+
+### Later
+
+1. MLIR or other additional backends, but only over the SSA boundary.
+2. Runtime maturity and eventual self-hosting pressure.
+3. Proof-driven narrowing of future feature additions.
+
+## Status Legend
+
+- **Done**: implemented and no longer on the active roadmap.
+- **Done enough**: complete for the current architecture phase, though refinement is still possible later.
+- **Active**: current roadmap work.
+- **Deferred**: intentionally postponed until prerequisites are stable.
+- **Research**: explored in docs/research but not yet roadmap-committed.
+
+## Dependency Notes
+
+- Stdlib growth depends on the current artifact boundaries, layout subsystem, and diagnostics staying stable.
+- Formalization depends on keeping Core and SSA as the clear semantic and backend boundaries.
+- Multi-backend work is deferred until the SSA boundary stays boring and shared.
 
 ---
 
@@ -203,520 +217,24 @@ Keep rejecting features that:
 
 ## Language Invariants
 
-These rules apply across all phases. They come directly from the spec and must never be violated.
+The language invariants now live in [docs/LANGUAGE_INVARIANTS.md](docs/LANGUAGE_INVARIANTS.md).
 
-1. **Pure by default.** A function without `with()` is pure. It cannot call any function that has `with()`. This is the core invariant.
-
-2. **True linear types.** Every linear value must be consumed exactly once. Not zero (leak = compile error). Not twice (double-use = compile error). Forgetting a resource is rejected. **What counts as "consuming" a value** — this is the canonical list, referenced by all phases:
-   - Passing it as a by-value argument to a function or method (including `destroy(x)`)
-   - Returning it from a function (`return x`)
-   - Moving it into a struct field during construction (`Point { x: val }`)
-   - `break val` inside a loop-as-expression (Phase 4)
-   - Destructuring via `match` or `let` (the original is consumed, the fields become new bindings)
-   - Storing into an array element during array literal construction (`[val1, val2]`)
-   - Each phase that adds a new consumption form must update this list.
-   - **NOT consumption**: borrowing (`&x`, `&mut x`), taking address for raw pointer (`&x as *const T`), deferring (`defer destroy(x)` reserves but does not consume until execution).
-
-3. **No hidden control flow.** `a + b` on integers is primitive addition, not a method call. The compiler never inserts destructor calls — you write `defer destroy(x)` explicitly. If it allocates, you see `with(Alloc)`. Errors propagate only where `?` appears. **Note on `defer`:** `defer` schedules code at scope exit, but the programmer writes `defer` explicitly at the point of scheduling. The compiler emits the deferred call at the point of scope exit — this is the ONE mechanism where the compiler inserts code you didn't write at that exact source location. It does not violate the invariant because (a) the programmer wrote the `defer` statement, (b) the execution point (scope exit) is deterministic and visible from the block structure, and (c) no implicit function dispatch occurs — the exact function being called is the one written in the `defer` statement.
-
-4. **No variable shadowing.** Each variable name must be unique within its scope. This extends to region names in borrow blocks (Phase 6) — `borrow x as xr in R` introduces `xr` and `R` into scope, and neither may shadow existing names.
-
-5. **No uninitialized variables.** All variables must be initialized at declaration.
-
-6. **No operator overloading.** Operators (`+`, `-`, `*`, `/`, `%`, `==`, `!=`, `<`, `>`, `<=`, `>=`, `&&`, `||`, `!`) on primitives (Int, Uint, i8-i64, u8-u64, f32, f64, Bool) are built-in. They are not trait method calls. User-defined types (structs, enums) cannot use these operators — you must write named functions (e.g., `fn eq(a: &Point, b: &Point) -> Bool`). There is no `Eq` trait, no `Ord` trait, no `Add` trait.
-
-7. **No implicit conversions.** No silent coercion between types. Explicit `as` casts only. `Int` and `i64` are distinct types even if both are 64-bit — cast between them explicitly.
-
-8. **No null.** Optional values use `Option<T>`.
-
-9. **No exceptions.** Errors are values (`Result<T, E>`), propagated with `?`.
-
-10. **No global mutable state.** All global interactions mediated through capabilities.
-
-11. **No interior mutability** in safe code. All mutation flows through `&mut`. Exception: `UnsafeCell<T>` in Phase 8 (standard library), gated by `Unsafe` capability. **Before Phase 8, interior mutability simply does not exist** — the borrow checker is closed with no escape hatches.
-
-12. **Local-only type inference.** Function signatures must be fully annotated (parameters and return type). Inside function bodies, local variable types may be inferred from the right-hand side of `let` bindings. Inference direction: **right-to-left only** — the type of `let x = expr;` is the type of `expr`. There is no constraint solving or unification across statements. Function pointers do not add bidirectional inference.
-
-13. **LL(1) grammar.** Every parsing decision with a single token of lookahead. No ambiguity, no backtracking. This is a permanent constraint — future evolution is bounded by LL(1).
-
-14. **`abort()` is immediate process termination.** Deferred cleanup does NOT run on abort. Out-of-memory and stack overflow trigger abort. This is outside the language's semantic model. **Exit code:** `abort()` calls the C `abort()` function, which raises `SIGABRT`. On POSIX systems this produces exit code 134. The exact exit code is platform-dependent — tests should check for nonzero exit, not a specific code.
-
-15. **Reproducible builds.** Same source + same compiler = identical binary. No timestamps, random seeds, or environment-dependent data in output.
-
-16. **First error stops compilation.** The compiler reports the first error it encounters and stops. It does not attempt error recovery or multi-error reporting. The `CheckM` monad is `ExceptT String (StateM TypeEnv)` — a single error halts checking. This simplifies the implementation and produces clear, actionable error messages.
+That file is the stable reference for:
+- purity and capability rules
+- linear consumption rules
+- no-hidden-control-flow rules
+- no-shadowing / no-uninitialized-variable rules
+- explicit-cast / no-null / no-exception rules
+- LL(1) grammar commitment
+- build reproducibility and fail-fast compilation rules
 
 ---
 
-## Compiler Architecture
+## Architecture Reference
 
-### Current Pipeline
+The detailed pipeline definition, pass boundaries, artifact flow, invariants, and the A1-A10 architecture retrospective now live in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-```
-Source → Parse → Resolve → Check → Elab → CoreCanonicalize → CoreCheck → Mono → Lower → SSAVerify → SSACleanup → EmitSSA → clang
-```
-
-The old AST backend is gone. The current compiler goes through the full Core → SSA pipeline, with structured diagnostics across the semantic passes. The main remaining architectural work is no longer pass creation; it is tightening ABI/layout guarantees, language boundaries, and the proof story.
-
-### Target Pipeline
-
-```
-Source → Parse → Resolve → Check → Elab → CoreCanonicalize → CoreCheck → Mono → Lower → SSAVerify → SSACleanup → EmitSSA → clang
-```
-
-The pipeline shape is now in place. The remaining work is to keep each pass narrow, preserve the documented invariants, and build language/runtime work on top of that foundation.
-
-### Pass Definitions
-
-#### 1. Parse
-
-**Input:** Source text
-**Output:** Surface AST with source spans
-
-Lexing, parsing, syntax error reporting. Preserves user-written structure. LL(1), no semantic reasoning.
-
-Does not do: type reasoning, name resolution, capability/linearity checks.
-
-#### 2. Resolve
-
-**Input:** Surface AST
-**Output:** Resolved AST (identifiers bound to declarations)
-
-Resolve imports and modules. Bind identifiers to declarations. Distinguish type names from value names. Resolve trait names, method candidates, impl scopes, `Self`. Resolve aliases and qualified names.
-
-Does not do: borrow checking, linearity, final typing decisions.
-
-This phase answers: **"what does each name refer to?"**
-
-#### 3. Elaborate
-
-**Input:** Resolved AST
-**Output:** Typed Core IR
-
-The most important new phase. This is where surface language ends.
-
-- Remove surface sugar (`!` → `with(Std)`, `?` → explicit control flow)
-- Lower method calls into explicit function/impl dispatch
-- Normalize pattern matching, borrow-region syntax, struct/enum constructors
-- Attach concrete types to all expressions and bindings
-- Build explicit semantic forms instead of user syntax forms
-
-Does not produce: unresolved identifiers, sugar, multiple representations of the same meaning.
-
-This phase answers: **"what does the program mean in the language's semantic core?"**
-
-#### 4. Validate Core
-
-**Input:** Typed Core IR
-**Output:** Validated Core IR
-
-Type consistency, linearity rules, borrow rules, capability discipline, branch agreement, loop restrictions, trait bound satisfaction.
-
-Much smaller and cleaner than current Check.lean because the input is already desugared and explicit. This is the phase closest to formal proofs.
-
-This phase answers: **"is this meaning legal?"**
-
-#### 5. Monomorphize
-
-**Input:** Validated Core IR (with generics)
-**Output:** Monomorphic Core IR
-
-Instantiate generic functions/types. Specialize trait-dispatch calls. Produce concrete copies used by the program. May be partially intertwined with elaboration initially, but should be its own step long-term.
-
-This phase answers: **"what concrete instantiations exist in this program?"**
-
-#### 6. Lower
-
-**Input:** Monomorphic Core IR
-**Output:** Backend IR
-
-Flatten high-level structured semantics into explicit control flow. Make data layout decisions explicit. Prepare memory operations. Later: SSA form for optimization.
-
-This phase answers: **"how will this be represented operationally?"**
-
-#### 7. Codegen
-
-**Input:** Backend IR
-**Output:** LLVM IR text (or other targets later)
-
-Emit target code only. No high-level semantic reasoning. No hidden language interpretation beyond target layout.
-
-This phase answers: **"how do I encode this in the target backend?"**
-
-### Core IR Design
-
-The core IR is a smaller, stricter language — not another AST. Defined in `Concrete/Core.lean`.
-
-**Includes:**
-- Literals, locals, calls
-- Explicit borrows and moves/consumption
-- Struct/enum construction and field projection
-- Explicit match, loops, branches
-- Explicit destroy/defer-lowered cleanup
-- Explicit heap operations
-- Capability-bearing calls
-
-**Excludes:**
-- Parser sugar (`!`, `?`, inline borrows)
-- Unresolved identifiers
-- Multiple ways to express the same meaning
-- Frontend convenience forms
-
-### Boundary Rules
-
-**Codegen should not know:**
-- Whether something came from method-call syntax
-- Whether `?` was used
-- Surface borrow syntax details
-- `!` sugar, alias syntax, most trait syntax
-
-All of that should already be gone before codegen.
-
-**Parser should not know:**
-- Whether a borrow is legal
-- Whether a capability is available
-- Whether a move is allowed
-- Trait coherence decisions
-
-It should only know syntax.
-
-**Builtin vs stdlib boundary:**
-
-| Category | Lives in | Examples |
-|----------|----------|----------|
-| Syntax features | Parser | `if`, `match`, `fn`, `struct`, `enum` |
-| Checker/elaboration intrinsics | Elaborate + Validate | intercepted calls (alloc, free, vec_*, map_*), type constructors |
-| Runtime/codegen intrinsics | Lower + Codegen | memory layout, calling conventions, POSIX wrappers |
-| Ordinary library code | `std/` source files | string utilities, I/O wrappers, collection helpers |
-
-### Internal Semantic Spec
-
-These implementation invariants must be written down alongside the code, not just in the roadmap:
-
-- What counts as consumption (canonical list in Language Invariants §2)
-- What counts as borrowing
-- What gets elaborated away vs what remains explicit in the core
-- What codegen is allowed to assume about its input
-- Pass input/output contracts: each pass promises something precise about its output
-
-### Why This Structure
-
-This gives:
-- Easier reasoning about each phase in isolation
-- Easier testing (unit tests per pass, not just end-to-end)
-- Easier refactoring (change one pass without breaking others)
-- Easier proofs later (Validate Core is the proof target)
-- Clearer ownership of responsibilities
-- Less accidental coupling between features
-
-It also makes new features cheaper because you know where they belong:
-- Syntax feature → Parse + Elaborate
-- Semantic rule → Validate Core
-- Optimization/backend → Lower + SSA + Codegen
-- Library feature → `std/` only
-
----
-
-## Architecture Work Phases
-
-Incremental steps to reach the target pipeline. These interleave with and support language feature work.
-
-### A1: Define Core IR
-
-New file: `Concrete/Core.lean`
-
-Define `CoreTy`, `CoreExpr`, `CoreStmt`, `CoreFn`, `CoreModule`. Start minimal: literals, locals, calls, returns, structs, if/while. Expand incrementally.
-
-**Status:** Done. Core IR exists and is inspectable via `--emit-core`.
-
-### A2: Elaboration Phase
-
-New file: `Concrete/Elab.lean`
-
-Convert resolved AST → Core IR for the initial subset. Expand coverage gradually: enums/match, borrows, capabilities, traits, generics, heap ops, defer.
-
-**Status:** Done for the implemented language. Current focus is correctness and moving semantic authority onto the elaborated Core IR.
-
-### A3: Resolution Phase
-
-New file: `Concrete/Resolve.lean`
-
-Extract name resolution, module resolution, and symbol binding from Check.lean into a dedicated pass.
-
-**Status:** Done. `Resolve.lean` has two phases: a shallow phase (`resolveShallow`) that validates imports, exports, deep type references, `Self`, function/static-method names, and enum variants; and a body phase (`resolveBodies`) that resolves identifiers within function and method bodies. Shallow resolution consumes `FileSummary` artifacts directly. Trait impl completeness has moved to CoreCheck (which operates on Core IR after elaboration). Method-call resolution remains with `Check.lean` because it needs receiver type information.
-
-### A3b: Summary-Based Frontend
-
-Introduce an explicit summary layer between parsing and body-level checking.
-
-Planned compiler products:
-- parsed file
-- file summary
-- checked/elaborated file
-
-Planned direction:
-- `FileSummary` now exists in `Concrete/FileSummary.lean` as the declaration-level interface artifact
-- shallow/interface resolution and body resolution are now separate in `Resolve`
-- shallow resolution now consumes summaries directly
-- summary-driven import/export now includes extern signatures
-- `Check` and `Elab` now share the same summary-driven export/import path
-- function, extern, and impl-method signatures are prebuilt once in `FileSummary` and reused instead of being rebuilt in each pass
-- next: make `FileSummary` a stable reusable frontend artifact
-- keep cross-file dependencies declaration-level where possible
-- split shallow/interface work from body-level resolution
-
-This keeps the frontend explicit and batch-oriented without moving to a query-first architecture.
-
-**Status:** Done enough for the current architecture phase. The summary-based frontend is complete in the sense needed by the roadmap:
-- `FileSummary` is the only declaration-level cross-file interface artifact
-- `ResolvedImports` is an explicit stable artifact consumed by Check and Elab (not rebuilt ad hoc)
-- `Resolve` has a shallow phase (`resolveShallow`) and a body phase (`resolveBodies`); shallow resolution consumes summaries directly
-- Function, extern, and impl-method signatures are prebuilt once in `FileSummary` and reused by all downstream passes
-- Impl method summaries preserve `Self` structurally and use shared `resolveSelfTy` for pass-local interpretation
-- Resolve's shallow phase is interface-oriented; body-level name resolution (`resolveBodies`) still exists but consumes summaries (trait impl completeness moved to CoreCheck)
-- CoreCheck owns all post-elaboration declaration-level legality checks and recurses through submodules
-- The artifact flow is explicit: ParsedModule → FileSummary → ResolvedImports → checked/elaborated module → monomorphized Core → SSA module
-
-Refinement still possible later:
-- `FileSummary` and `ResolvedImports` currently carry full impl/trait-impl bodies because imported method checking and elaboration need them
-- splitting interface-only and body-bearing portions is a future incremental-compilation concern, not a blocker for the current roadmap phase
-
-### A4: Core Validation
-
-New file: `Concrete/CoreCheck.lean`
-
-Type check, linearity, borrow, and capability validation on Core IR. Replaces semantic checking currently in Check.lean. Much simpler because the input is already desugared and explicit.
-
-**Status:** Done enough for the current architecture phase. `CoreCheck.lean` is the post-elaboration semantic authority. It owns: capability enforcement (function calls, builtins via capability table, extern fns, alloc/deref/cast/derefAssign operations), operator type errors (arithmetic, bitwise, logical, comparison), condition type errors (if/while), match exhaustiveness (coverage, wrong-enum, duplicate arms, field-count), return-type checking, structural invariants (break/continue), and all declaration-level checks (Copy/Destroy conflicts, Copy field validation, repr(C)/packed/align validation, FFI safety, builtin trait redeclaration, reserved names, trait impl completeness with signature matching). CoreCheck recursively processes submodules. `Check.lean` retains only surface-context-dependent work: linearity/borrow tracking, type inference, capability-polymorphism resolution, and the reserved-name early gate.
-
-### A4b: Core As Semantic Authority
-
-Make the architecture rule explicit:
-
-- surface syntax should elaborate away aggressively
-- Core should be the main semantic authority before lowering
-- new semantic rules should prefer to land in Core validation rather than accumulate in surface-AST checking
-
-This is the internal compiler analogue of Concrete's source-level explicitness: one clear semantic form, one clear validation boundary.
-
-**Status:** Done. All post-elaboration legality checks that can be stated on Core IR have been migrated to CoreCheck. `checkCapabilities` removed from Check.lean (was 21 call sites). Operator type checks, condition type checks, match validation, cast validity, array index type checks, array literal emptiness, deref-assign target validation, Copy/Destroy conflict detection, repr validation, FFI safety, trait impl completeness (with signature matching), reserved names, and builtin trait redeclaration are all in CoreCheck. CoreCheck recurses through submodules for uniform coverage. The remaining `Check` logic is genuinely surface-context-dependent: linearity/borrow tracking, type inference, cap-poly resolution, reserved-name early gate (prevents confusing type errors), and `cannotDerefNonRef` (needed for type inference).
-
-### A5: Codegen on SSA IR
-
-Make code generation consume SSA IR instead of the surface AST. Codegen becomes a pure target-emission step over the lowered SSA representation. This makes the pipeline: AST → Resolve → Check → Elab → CoreCheck → Mono → Lower → SSA → Codegen.
-
-**Status:** Done. `EmitSSA.lean` is the sole codegen path. The legacy AST backend has been removed. Only shared runtime builtin IR generation (`Codegen/Builtins.lean`) is retained for use by `EmitSSA`.
-
-### A6: Structured Diagnostics
-
-Replace string-based errors with typed diagnostic data:
-- Error kind/code
-- Primary source span
-- Message
-- Secondary notes
-- Fix suggestions
-
-**Status:** Done for all semantic passes. `Diagnostic.lean` exists, AST/source spans are threaded through the parser, and Resolve now emits located diagnostics with a structured `ResolveError` layer. Check now has a structured `CheckError` layer with stable rendered messages covering all ~75 error sites. Elab now has a structured `ElabError` layer covering all ~22 error sites. CoreCheck now has a structured `CoreCheckError` layer covering all ~20 error sites. SSAVerify now has a structured `SSAVerifyError` layer covering all ~18 error sites. All semantic passes use structured error kinds.
-
-### A7: Builtin vs Stdlib Boundary
-
-Write down and enforce a hard rule for what lives in syntax, checker/elaboration, codegen/runtime, vs stdlib. Migrate stdlib-appropriate code out of compiler intrinsics where possible.
-
-### A8: Monomorphization as Separate Pass
-
-Extract monomorphization from elaboration/codegen into its own explicit pass operating on Core IR.
-
-**Status:** Done. `Mono.lean` exists and runs before lowering.
-
-### A9: Lower / SSA
-
-Add and stabilize the lowering pass that produces SSA as the backend-oriented IR (explicit control flow, data layout, memory operations). SSA becomes the input to codegen.
-
-**Status:** Done. `Lower.lean` converts Core IR → SSA IR with correct aligned field indexing, enum payload layout, match dispatch via conditional branches, and break/continue via loop label tracking. Inspectable via `--emit-ssa`. Golden tests cover 19 programs × 2 modes.
-
-### A9b: SSA Verify / Cleanup
-
-New files: `Concrete/SSAVerify.lean`, `Concrete/SSACleanup.lean`
-
-Validate SSA invariants and perform structural cleanup before codegen.
-
-**Status:** Done. Both passes are integrated into the SSA compile path.
-
-### A10: Formal Kernel Proofs
-
-Build mechanized proofs over the validated Core IR. This is existing Phase 9, now grounded in the architecture's Core IR rather than a separate kernel language.
-
-### Architecture Priority
-
-| Priority | Phase | Description | New files | Status |
-|----------|-------|-------------|-----------|--------|
-| 1 | A1 | Core IR definition | `Concrete/Core.lean` | **DONE** |
-| 2 | A2 | Elaboration phase | `Concrete/Elab.lean` | **DONE** |
-| 3 | A3 | Resolution phase cleanup | `Concrete/Resolve.lean` | **DONE** |
-| 4 | A4 | Core validation (split from checker) | `Concrete/CoreCheck.lean` | **DONE** |
-| 5 | A5 | Codegen consumes SSA IR | `Concrete/EmitSSA.lean` | **DONE** |
-| 6 | A6 | Structured diagnostics | `Concrete/Diagnostic.lean` | **DONE** |
-| 7 | A7 | Builtin vs stdlib boundary | documentation + migration | Not started |
-| 8 | A8 | Monomorphization cleanup | `Concrete/Mono.lean` | **DONE** |
-| 9 | A9 | SSA / lowering IR | `Concrete/Lower.lean` | **DONE** |
-| 10 | A9b | SSA verify / cleanup | `Concrete/SSAVerify.lean`, `Concrete/SSACleanup.lean` | **DONE** |
-| 10 | A10 | Formal kernel proofs | `Concrete/Kernel/*.lean` | Not started |
-
-### Pass Invariants
-
-Each pass guarantees specific properties about its output:
-
-| Pass | Guarantees |
-|------|-----------|
-| **Parse** | Syntactically valid AST. LL(1), no ambiguity. |
-| **Check** | Types resolve. Linearity holds. Borrows valid. Capabilities propagated. |
-| **Elab** | No surface sugar. Every `CExpr` has concrete `Ty`. Method calls desugared to mangled function calls. For loops desugared to while. |
-| **CoreCheck** | Types consistent across operators and calls. Core capabilities satisfied. Return types agree after elaboration. Break/continue only inside loops. Match structure and coverage valid. Declaration-level legality: trait impl completeness, FFI safety, repr validation, Copy/Destroy rules. Recurses through submodules. |
-| **Lower** | Explicit control flow only (no structured if/while). Every block has exactly one terminator. Enum discriminants stored at index 0. Field indices match struct definitions. Break/continue resolved to branch targets. |
-
-### Monomorphization Placement
-
-**Target:** Core → Core pass in a separate `Mono.lean`.
-**Interim:** Monomorphization lives in codegen (it works, just coupled).
-SSA already assumes monomorphic input — `SInst.call` has no `typeArgs`.
-
-### Maturity Roadmap
-
-Longer-term items beyond current batch:
-
-1. **~~Remove the legacy backend~~** — **DONE.** The old AST→Codegen path (`--compile-legacy`, `Concrete/Codegen/Emit.lean`, `Module.lean`, `Types.lean`) has been deleted. Only `Builtins.lean`, `Helpers.lean`, and `State.lean` remain in `Codegen/` as shared runtime IR generation used by `EmitSSA`.
-2. **Structured diagnostics** — per-pass error kinds done for all semantic passes (Resolve, Check, Elab, CoreCheck, SSAVerify). Remaining: notes, fix suggestions, and phase-aware reporting.
-3. **Resolution infrastructure** — keep tightening the module/trait/impl/name resolution layer (`Resolve.lean`) while leaving type-directed method dispatch in `Check`.
-4. **Internal semantic spec** — ownership states, borrow meaning, capability propagation, lowering guarantees documented alongside code.
-5. **Backend-neutral lowering boundary** — keep SSA generic enough for multiple targets (LLVM, MLIR, etc.).
-6. **Formal kernel decision** — Core as proof kernel vs. smaller kernel later.
-7. **Per-phase test layering** — separate suites for parser, elab, core validation, lowering, codegen, integration.
-
-### Short-Term Compiler Priorities
-
-#### Correctness foundations
-
-1. **Layout alignment** — done.
-- `Layout.lean` now uses natural alignment (`tyAlign`, `alignUp`) instead of packed byte counting.
-- `fieldOffset`, `tySize`, enum payload offsets, and runtime/builtin layout assumptions were brought into line.
-- This closed the most dangerous silent-correctness gap in mixed-size structs and enums.
-
-2. **Stricter SSA verification** — done.
-- `SSAVerify` now checks instruction-order use-before-def within blocks.
-- Strict-dominance handling closes the self-domination loophole.
-- Phi nodes reject non-predecessor incoming blocks.
-- Remaining future tightening is about richer CFG/type checks, not the basic correctness model.
-
-3. **Resolve depth** — partially done.
-- `Resolve` now validates imports/exports, deep type references, `Self`, function names, static methods, enum variants, and trait-impl completeness.
-- Bare impl method names were removed from the global scope to avoid false positives.
-- The intentional remaining boundary is `.methodCall`, which still belongs to `Check` because it needs receiver-type information.
-
-#### Simplification
-
-4. **~~Delete the legacy backend~~** — **DONE.** Legacy AST codegen (`Emit.lean`, `Module.lean`, `Types.lean`) and `--compile-legacy` flag removed. Shared builtin IR generation retained in `Codegen/Builtins.lean`.
-
-5. **Harden `docs/PASSES.md`**
-- Keep tightening pass contracts so each phase guarantees something downstream can rely on.
-- Make pass ownership explicit enough that bugs clearly belong to one phase.
-
-#### Diagnostics
-
-6. **Span tracking** — done for the current compiler surface.
-- AST nodes carry source spans and the parser populates them from token positions.
-- Semantic diagnostics now render with source locations.
-- Remaining future work is range spans and richer highlighting, not basic span plumbing.
-
-7. **Structured error kinds** — done for all semantic passes.
-- `Resolve` now has a structured `ResolveError` layer with stable rendered messages.
-- `Check` now has a structured `CheckError` layer covering all ~75 error sites (type mismatches, linearity, borrow checking, capabilities, struct/enum/field, builtins, control flow, module validation).
-- `Elab` now has a structured `ElabError` layer covering all ~22 error sites (name resolution, struct/field, enum/variant, method resolution, validation, module/import).
-- `CoreCheck` now has a structured `CoreCheckError` layer covering all ~20 error sites (type consistency, capability discipline, match coverage, control flow).
-- `SSAVerify` now has a structured `SSAVerifyError` layer covering all ~18 error sites (register defs, use-def/dominance, branch targets, phi nodes, call arity, return coverage, binop types).
-
-#### Language strengthening after the compiler work
-
-- `#[repr(C)]` is now implemented as the first ABI/layout step.
-- The next immediate language work is a sharper `unsafe` boundary.
-- After `unsafe`, deepen ABI/layout rules and FFI compatibility guarantees.
-
-### Ordered Next Steps
-
-This is the intended sequence from the current state onward.
-
-#### Immediate
-
-1. **Fix the labeled-break PHI bug**
-- Restore a fully green tree before pushing more low-level surface work.
-- This is a trust-restoring bug fix, not a design change.
-
-2. **Sharpen `unsafe`**
-- Define clearly what requires `Unsafe`.
-- This should cover:
-  - raw pointer operations
-  - extern calls and foreign boundaries
-  - layout-sensitive operations
-  - any operation the compiler cannot prove safe
-
-3. **Deepen ABI/layout**
-- Build on the `#[repr(C)]` work that already exists.
-- Tighten:
-  - `#[repr(C)]` rules
-  - extern compatibility rules
-  - layout/size/alignment guarantees
-  - what is and is not FFI-safe
-
-This order matters:
-- the bug fix restores trust
-- `Unsafe` defines the semantic safety boundary
-- ABI/layout then builds on that clearer contract
-
-#### After `Unsafe` and ABI/layout
-
-1. **`newtype`**
-- The best next language feature once the low-level foundation is solid.
-
-2. **Small SSA optimizations**
-- constant folding
-- dead code elimination
-- CFG cleanup
-- trivial copy/phi cleanup
-
-3. **Deeper ABI/FFI polish**
-- clearer calling-convention rules
-- more explicit FFI compatibility rules
-- more layout edge-case testing
-
-4. **Formalization work**
-- With the compiler and language surface more stable, the proof story becomes much more valuable.
-
-5. **Stdlib growth**
-- buffers
-- deeper file/process/network layers
-- more collection polish
-
-#### After stdlib growth
-
-1. **Formal verification seriously**
-- Push the proof story as a central project goal, not just a future note.
-
-2. **Tooling**
-- formatter
-- better diagnostics presentation
-- maybe language server support
-- stronger test/golden workflows
-
-3. **Optimization/backend maturity**
-- better SSA optimizations
-- MLIR path if it still earns its complexity
-- backend cleanup for long-term maintainability
-
-4. **Runtime maturity**
-- a clearer runtime story, including eventual self-hosting pressure
-
-5. **Ecosystem discipline**
-- APIs that preserve explicitness
-- no hidden behavior creeping in through libraries
-- low-level libraries that match the language philosophy
+`ROADMAP.md` is intentionally future-facing. The architecture reference remains important, but it is no longer the main vehicle for tracking what is still active.
 
 ---
 
@@ -2206,8 +1724,8 @@ These do not block any phase above:
 | **12a** | Runtime in C | Not started | 7 |
 | **12b** | Runtime in Concrete | Not started | 8, 12a |
 
-**Next priorities:** make compiler artifacts more explicit and reusable, add modest SSA optimizations, strengthen shared diagnostics infrastructure, then push stdlib growth and formalization.
+**Next priorities:** strengthen shared diagnostics infrastructure, keep the builtin-vs-stdlib boundary explicit while the stdlib grows, then push stdlib growth and formalization.
 
-**Critical path for production use:** Architecture (A1-A5) → remaining stdlib (8f, 8h) → runtime (12a).
+**Critical path for production use:** current pipeline stability → remaining stdlib (`8f`, `8h`) → runtime (`12a`).
 
 **Formalization** (Phase 9) now depends on architecture phase A4 (Core Validation) — the proofs target the Core IR, not the surface AST.

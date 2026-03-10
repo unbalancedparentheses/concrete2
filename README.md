@@ -370,6 +370,9 @@ See [`research/stdlib-design.md`](research/stdlib-design.md) for the current std
 ## Roadmap
 
 See [ROADMAP.md](ROADMAP.md) for the full implementation plan with syntax, rules, and implementation details for each phase.
+See [CHANGELOG.md](CHANGELOG.md) for completed milestones and major landed architecture/language work.
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the detailed compiler pipeline, artifact flow, and pass boundaries.
+See [docs/README.md](docs/README.md) for the stable documentation index and [research/README.md](research/README.md) for exploratory design notes.
 
 | Phase | Feature | Status |
 |-------|---------|--------|
