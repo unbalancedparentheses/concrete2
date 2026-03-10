@@ -15,4 +15,7 @@ mod std {
     mod text;
     mod path;
     mod fs;
+    mod env;
+    mod process;
+    mod net;
 }

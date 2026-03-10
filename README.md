@@ -43,7 +43,7 @@ What Concrete has today:
 - explicit capabilities, linear ownership, borrows, `defer`, trait dispatch, FFI, and layout attributes
 - structured diagnostics across the semantic pipeline, with native `Diagnostics` through the main semantic passes
 - explicit audit/report outputs
-- a first real stdlib foundation: stronger `vec`, `string`, `io`, plus `bytes`, `slice`, `text`, `path`, and `fs`
+- a first real stdlib foundation: stronger `vec`, `string`, `io`, plus `bytes`, `slice`, `text`, `path`, `fs`, `env`, `process`, and `net`
 
 What is still clearly missing:
 
@@ -51,7 +51,7 @@ What is still clearly missing:
 - MLIR backend
 - kernel formalization
 - runtime
-- deeper stdlib systems-layer growth (`env`, `process`, `net`, `time`, `hash`, parsing, and later sync/runtime-facing APIs)
+- deeper stdlib systems-layer growth (`time`, `hash`, `fmt`, parsing, and later sync/runtime-facing APIs)
 
 ## Try It Now
 
@@ -387,13 +387,13 @@ The main rule is: architecture before ornament, tooling visibility before conven
 
 The standard library exists, but it is still foundational rather than mature.
 
+Current stdlib modules: `mem`, `alloc`, `libc`, `math`, `ptr`, `string`, `vec`, `io`, `test`, `option`, `result`, `bytes`, `slice`, `text`, `path`, `fs`, `env`, `process`, `net`.
+
 The next stdlib focus is:
 
-- bytes / buffer types
-- borrowed slices and text views
-- stronger file/path/process/env modules
-- a real networking layer over the builtins
-- small formatting and test support improvements
+- small formatting layer (`fmt`)
+- stronger test support
+- `time`, `rand`, `hash`, and carefully chosen collections
 
 See [`research/stdlib-design.md`](research/stdlib-design.md) for the current stdlib design direction.
 
@@ -569,7 +569,7 @@ Things Concrete deliberately does not have:
 
 **Next steps:**
 - Strengthen shared diagnostics infrastructure with richer spans, secondary labels/notes, and phase-aware rendering
-- Grow a sharp stdlib in bytes/buffers, views, file/path/process/env, networking, and formatting
+- Grow a sharp stdlib in formatting, time, hash, parsing, and collections — the systems layer (env/process/net) is now in place
 - Push kernel formalization and proof development in Lean
 
 ## License

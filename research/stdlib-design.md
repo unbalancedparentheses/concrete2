@@ -587,14 +587,14 @@ Avoid adding these before the low-level foundation is stable:
 
 ## Recommended Build Order
 
-1. fix `vec`, `string`, `io`
-2. add `bytes`
-3. add `slice`
-4. add `text`
-5. add `path`
-6. real `std.fs`
-7. `std.env` and `std.process`
-8. `std.net`
+1. ~~fix `vec`, `string`, `io`~~ — done
+2. ~~add `bytes`~~ — done
+3. ~~add `slice`~~ — done
+4. ~~add `text`~~ — done
+5. ~~add `path`~~ — done
+6. ~~real `std.fs`~~ — done
+7. ~~`std.env` and `std.process`~~ — done
+8. ~~`std.net`~~ — done
 9. small `std.fmt`
 10. stronger `std.test`
 

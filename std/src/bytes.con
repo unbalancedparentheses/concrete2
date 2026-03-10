@@ -80,4 +80,89 @@ mod bytes {
             free::<u8>(self.ptr);
         }
     }
+
+    import std.test.{assert_eq};
+
+    #[test]
+    fn test_bytes_push_get() -> i32 {
+        let mut b: Bytes = Bytes::new();
+        b.push(10);
+        b.push(20);
+        b.push(30);
+
+        if !assert_eq::<u64>(b.len(), 3, "len should be 3 after 3 pushes") {
+            b.drop();
+            return 1;
+        }
+        if !assert_eq::<u8>(b.get(0), 10, "first byte should be 10") {
+            b.drop();
+            return 1;
+        }
+        if !assert_eq::<u8>(b.get(1), 20, "second byte should be 20") {
+            b.drop();
+            return 1;
+        }
+        if !assert_eq::<u8>(b.get(2), 30, "third byte should be 30") {
+            b.drop();
+            return 1;
+        }
+
+        b.drop();
+        return 0;
+    }
+
+    #[test]
+    fn test_bytes_growth() -> i32 {
+        let mut b: Bytes = Bytes::with_capacity(2);
+
+        if !assert_eq::<u64>(b.cap(), 2, "initial cap should be 2") {
+            b.drop();
+            return 1;
+        }
+
+        b.push(1);
+        b.push(2);
+        b.push(3);
+
+        if !assert_eq::<u64>(b.len(), 3, "len should be 3") {
+            b.drop();
+            return 1;
+        }
+
+        b.drop();
+        return 0;
+    }
+
+    #[test]
+    fn test_bytes_append() -> i32 {
+        let mut a: Bytes = Bytes::new();
+        a.push(1);
+        a.push(2);
+
+        let mut b: Bytes = Bytes::new();
+        b.push(3);
+        b.push(4);
+
+        a.append_bytes(&b);
+
+        if !assert_eq::<u64>(a.len(), 4, "combined len should be 4") {
+            a.drop();
+            b.drop();
+            return 1;
+        }
+        if !assert_eq::<u8>(a.get(2), 3, "third byte should be 3 from appended") {
+            a.drop();
+            b.drop();
+            return 1;
+        }
+        if !assert_eq::<u8>(a.get(3), 4, "fourth byte should be 4 from appended") {
+            a.drop();
+            b.drop();
+            return 1;
+        }
+
+        a.drop();
+        b.drop();
+        return 0;
+    }
 }

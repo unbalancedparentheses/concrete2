@@ -1,0 +1,42 @@
+mod process {
+    import std.libc.{exit as libc_exit, getpid as libc_getpid, fork as libc_fork, kill as libc_kill, waitpid as libc_waitpid};
+    import std.alloc.{realloc,free};
+
+    pub fn exit(code: i32) {
+        libc_exit(code);
+    }
+
+    pub fn getpid() -> i32 {
+        return libc_getpid();
+    }
+
+    pub fn fork() -> i32 {
+        return libc_fork();
+    }
+
+    pub fn kill(pid: i32, sig: i32) -> i32 {
+        return libc_kill(pid, sig);
+    }
+
+    pub struct Child {
+        pid: i32,
+    }
+
+    impl Child {
+        pub fn new(pid: i32) -> Child {
+            let c: Child = Child { pid: pid };
+            return c;
+        }
+
+        pub fn pid(&self) -> i32 {
+            return self.pid;
+        }
+
+        pub fn wait(&self) -> i32 {
+            let status: i32 = 0;
+            let status_ptr: *mut i32 = &status as *mut i32;
+            libc_waitpid(self.pid, status_ptr as *mut i32, 0);
+            return status;
+        }
+    }
+}

@@ -90,6 +90,14 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
   - `std.fs`
 - Expanded libc/math/test support to better support the growing stdlib surface
 
+### Standard library systems layer
+
+- Added `std.env` — environment variable access (get/set/unset)
+- Added `std.process` — Unix process control (exit, getpid, fork, kill, Child with wait)
+- Added `std.net` — TCP networking (TcpListener with bind/accept/close, TcpStream with connect/read/write/close)
+- Extended `std.libc` with process (setenv, unsetenv, getpid, fork, execvp, waitpid, kill) and networking (socket, bind, listen, accept, connect, close, send, recv, htons, htonl, inet_pton, setsockopt) declarations
+- Added module-level `#[test]` functions to `bytes` and `path`
+
 ### Testing / status milestones
 
 - End-to-end main suite expanded to 266 passing tests

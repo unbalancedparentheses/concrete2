@@ -1,0 +1,122 @@
+mod net {
+    import std.libc.{socket,bind,listen,accept,connect,close,send,recv,htons,inet_pton,setsockopt};
+    import std.alloc.{realloc,free};
+
+    // AF_INET = 2, SOCK_STREAM = 1, SOL_SOCKET = 1, SO_REUSEADDR = 2
+    // struct sockaddr_in is 16 bytes on all Unix platforms
+
+    pub struct TcpListener {
+        fd: i32,
+    }
+
+    impl TcpListener {
+        pub fn bind(addr: &String, port: u16) -> TcpListener {
+            let fd: i32 = socket(2, 1, 0);
+
+            // setsockopt SO_REUSEADDR
+            let one: i32 = 1;
+            let one_ptr: *const u8 = &one as *const u8;
+            setsockopt(fd, 1, 2, one_ptr, 4);
+
+            // Build sockaddr_in (16 bytes)
+            let sa: *mut u8 = realloc::<u8>(0 as *mut u8, 16);
+
+            // Zero out
+            let i: u64 = 0;
+            while i < 16 {
+                let p: *mut u8 = sa + i;
+                *p = 0;
+                i = i + 1;
+            }
+
+            // sin_family = AF_INET (2) at offset 0 (2 bytes, little-endian on most platforms)
+            *sa = 2;
+
+            // sin_port at offset 2 (network byte order)
+            let port_n: u16 = htons(port);
+            let port_ptr: *mut u8 = sa + 2;
+            let port_src: *const u8 = &port_n as *const u8;
+            *port_ptr = *port_src;
+            let port_ptr2: *mut u8 = sa + 3;
+            let port_src2: *const u8 = port_src + 1;
+            *port_ptr2 = *port_src2;
+
+            // sin_addr at offset 4
+            let addr_dst: *mut u8 = sa + 4;
+            inet_pton(2, addr.ptr as *const u8, addr_dst);
+
+            bind(fd, sa as *const u8, 16);
+            listen(fd, 128);
+
+            free::<u8>(sa);
+
+            let listener: TcpListener = TcpListener { fd: fd };
+            return listener;
+        }
+
+        pub fn accept(&self) -> TcpStream {
+            let client_fd: i32 = accept(self.fd, 0 as *mut u8, 0 as *mut u32);
+            let stream: TcpStream = TcpStream { fd: client_fd };
+            return stream;
+        }
+
+        pub fn close(self) {
+            close(self.fd);
+        }
+    }
+
+    pub struct TcpStream {
+        fd: i32,
+    }
+
+    impl TcpStream {
+        pub fn connect(addr: &String, port: u16) -> TcpStream {
+            let fd: i32 = socket(2, 1, 0);
+
+            // Build sockaddr_in (16 bytes)
+            let sa: *mut u8 = realloc::<u8>(0 as *mut u8, 16);
+
+            // Zero out
+            let i: u64 = 0;
+            while i < 16 {
+                let p: *mut u8 = sa + i;
+                *p = 0;
+                i = i + 1;
+            }
+
+            // sin_family = AF_INET
+            *sa = 2;
+
+            // sin_port at offset 2
+            let port_n: u16 = htons(port);
+            let port_ptr: *mut u8 = sa + 2;
+            let port_src: *const u8 = &port_n as *const u8;
+            *port_ptr = *port_src;
+            let port_ptr2: *mut u8 = sa + 3;
+            let port_src2: *const u8 = port_src + 1;
+            *port_ptr2 = *port_src2;
+
+            // sin_addr at offset 4
+            let addr_dst: *mut u8 = sa + 4;
+            inet_pton(2, addr.ptr as *const u8, addr_dst);
+
+            connect(fd, sa as *const u8, 16);
+            free::<u8>(sa);
+
+            let stream: TcpStream = TcpStream { fd: fd };
+            return stream;
+        }
+
+        pub fn write(&self, data: *const u8, len: u64) -> i64 {
+            return send(self.fd, data, len, 0);
+        }
+
+        pub fn read(&self, buf: *mut u8, len: u64) -> i64 {
+            return recv(self.fd, buf, len, 0);
+        }
+
+        pub fn close(self) {
+            close(self.fd);
+        }
+    }
+}

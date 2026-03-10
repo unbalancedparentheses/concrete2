@@ -29,32 +29,33 @@ It should avoid:
 
 ## Foundation First
 
-The first wave of stdlib foundation work has started to land:
+The first wave of stdlib foundation work has landed:
 
 - `vec`, `string`, and `io` have had real correctness/completeness work
 - `bytes`, `slice`, `text`, `path`, and `fs` now exist
+- `env`, `process`, and `net` are implemented
 
 The next stdlib work should build on that foundation instead of restarting it.
 
 ## Current Foundation Status
 
-Implemented or substantially started:
+Implemented:
 
-1. stronger `vec`, `string`, and `io`
-2. `bytes`
-3. `slice`
-4. borrowed text views via `text`
-5. `path`
-6. first real `fs`
+1. stronger `vec`, `string`, and `io` — done
+2. `bytes` — done
+3. `slice` — done
+4. borrowed text views via `text` — done
+5. `path` — done
+6. first real `fs` — done
+7. `env` and `process` — done
+8. `net` (TCP) — done
 
 Still the main near-term stdlib work:
 
 1. strengthen `fs`
-2. add `env` / `process`
-3. add `net`
-4. add small `fmt`
-5. improve `test`
-6. then move to `time`, `rand`, `hash`, parsing, and carefully chosen collections
+2. add small `fmt`
+3. improve `test`
+4. then move to `time`, `rand`, `hash`, parsing, and carefully chosen collections
 
 ## Core Module Direction
 
@@ -102,11 +103,25 @@ The first version now exists, but it should still deepen in:
 - stronger path integration
 - later process/environment interplay
 
+### `std.env`
+
+Environment variable access:
+
+- get/set/unset wrapping libc
+- owned String returns for safe use
+
+### `std.process`
+
+Unix process control:
+
+- exit, getpid, fork, kill
+- owned Child handle with wait/pid
+
 ### `std.net`
 
-Next major systems layer after the current foundation:
+TCP networking layer:
 
-- owned socket/listener/stream handles
+- owned TcpListener and TcpStream handles
 - explicit buffer-based read/write
 - no hidden runtime coupling
 
@@ -151,4 +166,4 @@ The goal is a stdlib that is:
 - explicit enough for auditability
 - small enough to stay coherent
 
-The current state is no longer just a plan. A first useful low-level foundation is in place, and the next work is to deepen the systems layer without losing explicitness.
+The current state is no longer just a plan. A first useful low-level foundation is in place, including the systems layer (`env`, `process`, `net`). The next work is to deepen formatting, testing, and later additions without losing explicitness.
