@@ -4,6 +4,28 @@ This document records the direction for Concrete's standard library after the co
 
 The standard library is not just "APIs we need eventually." It is one of the main ways the language proves that its design is viable for correctness-focused low-level work.
 
+## Design Rules
+
+The stdlib should follow a small number of hard rules:
+
+1. Allocation must be visible.
+If an API allocates, that fact should be visible in the signature, capability set, or returned ownership shape.
+
+2. Ownership must be obvious.
+Owned resources, borrowed views, and transferred values should be easy to distinguish from the type alone.
+
+3. Effects must stay explicit.
+I/O, environment access, process control, networking, and time should not be hidden behind “convenience” wrappers.
+
+4. Resource-backed APIs should avoid laziness.
+The stdlib should not hide evaluation order, blocking, cleanup, or resource lifetime behind lazy streams or iterator pipelines.
+
+5. Safe-facing APIs should prefer typed structure over ambient convention.
+Use small types and explicit enums, not sentinel values, magic integers, or “just know the convention” APIs.
+
+6. The stdlib should avoid baking in a runtime model too early.
+Concurrency/runtime design should be handled by the separate concurrency research track.
+
 ## Current Situation
 
 The `std/` tree exists, but it is still early:
@@ -73,6 +95,14 @@ The stdlib should eventually expose coherent modules for:
 - paths and owned path buffers
 - environment access
 - process arguments and process control
+
+These should become the foundation for “real program” boundaries:
+
+- files and directories
+- path handling
+- process spawning and exit
+- environment access
+- later, time and networking surfaces
 
 ### 5. Wrap networking builtins in a real stdlib layer
 
@@ -230,6 +260,8 @@ This should support:
 
 This becomes the foundation for low-level text and binary work.
 
+This should probably be the first major new stdlib type after `vec`/`string`/`io` are corrected.
+
 ### `std.slice`
 
 Borrowed contiguous views.
@@ -240,11 +272,15 @@ This should cover:
 - mutable slice/span
 - explicit pointer + length semantics
 
+This is one of the most important non-owning abstractions in the whole stdlib.
+
 ### `std.text`
 
 A borrowed text view separated from owned `String`.
 
 `String` can remain the owned growable text/buffer type, but most APIs should not require ownership.
+
+This is how Concrete avoids turning every text API into an allocation API.
 
 ### `std.fs`
 
@@ -255,6 +291,20 @@ Real file-system APIs:
 - explicit read/write APIs over buffers
 - later: path/path-buffer split
 
+`std.fs` should feel like a small explicit systems interface, not a convenience façade.
+
+### `std.path`
+
+Paths deserve their own module rather than being treated as a detail of `fs`.
+
+Concrete should eventually have:
+
+- borrowed path views
+- owned path buffers
+- normalization/join/split helpers that stay explicit and allocation-visible
+
+Path handling is a foundational low-level concern and should not be hidden inside unrelated file APIs.
+
 ### `std.net`
 
 A real networking layer over the existing builtins:
@@ -263,11 +313,19 @@ A real networking layer over the existing builtins:
 - explicit buffer-oriented I/O
 - no raw unsafe integer/socket APIs in safe-facing surfaces
 
+Networking should follow the same ownership and effect rules as files:
+
+- explicit handles
+- explicit buffer use
+- no hidden runtime commitments
+
 ### `std.fmt`
 
 A small explicit formatting layer.
 
 Not macro-heavy formatting. Not hidden allocation.
+
+Formatting should be useful enough for diagnostics and tools, but not become a second string-magic subsystem.
 
 ### Later: `std.collections.multi_array`
 
@@ -288,15 +346,127 @@ Avoid:
 - interior-mutability-style escape hatches in the stdlib
 - generic “convenience APIs” that obscure ownership/effects
 
+Also avoid standardizing too early:
+
+- a giant iterator ecosystem
+- lazy stream APIs over resources
+- a large collection zoo before `bytes`, `slice`, `fs`, and `net` are solid
+- runtime-coupled APIs whose shape only makes sense under one concurrency model
+
+## Candidate Module Map
+
+This is a plausible medium-term stdlib shape:
+
+- `std.alloc`
+- `std.mem`
+- `std.ptr`
+- `std.bytes`
+- `std.slice`
+- `std.text`
+- `std.string`
+- `std.vec`
+- `std.option`
+- `std.result`
+- `std.fs`
+- `std.path`
+- `std.env`
+- `std.process`
+- `std.net`
+- `std.fmt`
+- `std.test`
+- `std.math`
+- `std.libc`
+
+Not all of these should be expanded immediately, but this is a better target shape than continuing to grow the current tree ad hoc.
+
+## Error Design
+
+Safe-facing stdlib APIs should prefer:
+
+- small enum error types per module
+- explicit typed failure in signatures
+- no opaque integer-ish error codes in safe APIs
+
+Low-level bindings may still expose raw platform error values where necessary, but the safe stdlib surface should translate them into explicit error types.
+
+As a rule:
+
+- thin low-level bindings may expose platform-shaped results
+- safe-facing stdlib modules should wrap them in typed errors and explicit resource types
+
+## Handle Ownership
+
+For `fs`, `net`, and later process/runtime-facing modules, the stdlib should make handle ownership explicit:
+
+- owned handle types for resources that must be closed/destroyed
+- borrowed handle/view types where temporary non-owning access is useful
+- no raw fd/socket integers in safe APIs
+
+This is one of the highest-value ways to make the stdlib align with Concrete’s ownership model.
+
+The default should be:
+
+- owned handle at module boundaries
+- borrowed handle when temporary access is enough
+- raw handle only in explicitly low-level/unsafe layers
+
+## Allocator Policy
+
+Allocator-explicit design is a good fit for Concrete, but the stdlib should make the rule clear.
+
+In general:
+
+- APIs that allocate should make allocation visible in the signature
+- owned buffers/collections should clearly indicate when `Alloc` is required
+- APIs should either take allocator/runtime authority explicitly or require `with(Alloc)` in a way that is easy to audit
+
+The exact mechanism can vary by module, but the stdlib should never hide allocation behind “convenience” calls.
+
+In practice this likely means:
+
+- `bytes`, `string`, and collection growth are allocator-visible
+- whole-file/whole-buffer helpers remain explicit that they allocate
+- path/process/network helpers should not smuggle allocation into “simple” calls without making it visible
+
+## Runtime Boundary Note
+
+The stdlib should avoid assuming one ambient runtime model too early.
+
+In practice this means:
+
+- keep blocking behavior explicit in APIs
+- avoid forcing “async everywhere”
+- avoid shaping `fs`, `net`, and process modules around one runtime convention before the concurrency design is settled
+
+The actual concurrency/runtime direction belongs in [`research/concurrency.md`](concurrency.md), not in the stdlib plan.
+
 ## Recommended Build Order
 
 1. Make `vec`, `string`, and `io` correct and complete.
 2. Add `bytes` / buffer as the core low-level owned container.
 3. Add borrowed views for slices and strings.
-4. Build real file/path/process/env modules.
-5. Wrap networking builtins in a proper stdlib layer.
-6. Add formatting helpers and stronger test support.
-7. Expand collections only after the core is solid.
+4. Add `std.path`.
+5. Build real file/process/env modules around explicit handles and typed errors.
+6. Wrap networking builtins in a proper stdlib layer.
+7. Add formatting helpers and stronger test support.
+8. Expand collections only after the core is solid.
+
+## Adoption Filter
+
+A stdlib idea is a good fit for Concrete if it:
+
+- makes allocation more visible, not less
+- makes ownership easier to read from types
+- improves low-level correctness without adding hidden control flow
+- stays compatible with explicit effects/capabilities
+- can be explained without a large abstraction tower
+
+A stdlib idea is a poor fit if it:
+
+- hides resource lifetime
+- assumes a runtime model everywhere
+- depends on heavy trait/generic indirection for ordinary use
+- turns simple data movement into “clever” code
 
 ## Long-Term Goal
 
