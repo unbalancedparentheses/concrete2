@@ -4,6 +4,16 @@ struct Pair {
   b: Int,
 }
 
+enum Option<T> {
+  Some { value: T },
+  None,
+}
+
+enum Result<T, E> {
+  Ok { value: T },
+  Err { value: E },
+}
+
 fn sum(p: Pair) -> Int {
   return (p.a + p.b);
 }

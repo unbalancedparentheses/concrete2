@@ -476,7 +476,7 @@ private def emitSFnDef (s : EmitSSAState) (f : SFnDef) (isUserMain : Bool) : Emi
 -- ============================================================
 
 private def emitExternDecls (s : EmitSSAState) (externFns : List (String × List (String × Ty) × Ty)) : EmitSSAState :=
-  -- Standard C runtime declarations
+  -- Standard C runtime declarations (used by remaining builtins)
   let s := emit s "declare ptr @malloc(i64)"
   let s := emit s "declare void @free(ptr)"
   let s := emit s "declare ptr @realloc(ptr, i64)"
@@ -485,38 +485,20 @@ private def emitExternDecls (s : EmitSSAState) (externFns : List (String × List
   let s := emit s "declare void @abort()"
   let s := emit s "declare i32 @printf(ptr, ...)"
   let s := emit s "declare i64 @strlen(ptr)"
-  let s := emit s "declare ptr @fopen(ptr, ptr)"
-  let s := emit s "declare i64 @fread(ptr, i64, i64, ptr)"
-  let s := emit s "declare i64 @fwrite(ptr, i64, i64, ptr)"
-  let s := emit s "declare i32 @fclose(ptr)"
-  let s := emit s "declare i32 @fseek(ptr, i64, i32)"
-  let s := emit s "declare i64 @ftell(ptr)"
   let s := emit s "declare ptr @memset(ptr, i32, i64)"
   let s := emit s "declare i32 @memcmp(ptr, ptr, i64)"
   -- Conversion builtin dependencies
   let s := emit s "declare i32 @snprintf(ptr, i64, ptr, ...)"
   let s := emit s "declare i64 @strtol(ptr, ptr, i32)"
-  let s := emit s "declare i64 @read(i32, ptr, i64)"
-  let s := emit s "declare i32 @putchar(i32)"
-  let s := emit s "declare ptr @getenv(ptr)"
-  let s := emit s "declare void @exit(i32)"
-  -- Network builtin dependencies
-  let s := emit s "declare i32 @socket(i32, i32, i32)"
-  let s := emit s "declare i32 @connect(i32, ptr, i32)"
-  let s := emit s "declare i32 @bind(i32, ptr, i32)"
-  let s := emit s "declare i32 @listen(i32, i32)"
-  let s := emit s "declare i32 @accept(i32, ptr, ptr)"
-  let s := emit s "declare i64 @send(i32, ptr, i64, i32)"
-  let s := emit s "declare i64 @recv(i32, ptr, i64, i32)"
-  let s := emit s "declare i32 @close(i32)"
-  let s := emit s "declare i32 @getaddrinfo(ptr, ptr, ptr, ptr)"
-  let s := emit s "declare void @freeaddrinfo(ptr)"
-  let s := emit s "declare i16 @htons(i16)"
-  let s := emit s "declare i32 @setsockopt(i32, i32, i32, ptr, i32)"
   let s := emit s ""
+  -- Names already declared above — skip duplicates from user extern fns
+  let builtinNames : List String := [
+    "malloc", "free", "realloc", "write", "abort", "printf", "strlen",
+    "memset", "memcmp", "snprintf", "strtol"
+  ]
   -- User extern function declarations
   externFns.foldl (fun s (name, params, retTy) =>
-    if name == "malloc" || name == "free" || name == "realloc" then s
+    if builtinNames.contains name then s
     else
       let retLLTy := ssaTyToLLVM s retTy
       let paramStr := ", ".intercalate (params.map fun (_, t) => ssaParamTyToLLVM s t)
@@ -587,7 +569,6 @@ private def getBuiltinsIR : String :=
   let initState : CodegenState := default
   let s := genBuiltinFunctions initState
   let s := genConversionBuiltins s
-  let s := genNetworkBuiltins s
   let s := genHashMapFunctions s
   s.output
 

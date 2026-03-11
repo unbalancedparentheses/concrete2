@@ -5,19 +5,17 @@ entry:
   br i1 %t0, label %then0, label %merge2
 then0:
   %t1 = alloca %MyResult
-  %t2 = gep i64 %t1, i64 0
-  store i64 1, %t2
-  %t3 = gep i64 %t1, i64 1
-  store i64 0, %t3
+  store i32 1, %t1
+  %t2 = gep i8 %t1, i64 8
+  store i64 0, %t2
   %t4 = load %MyResult, %t1
   ret %MyResult %t4
 merge2:
   %t5 = alloca %MyResult
-  %t6 = gep i64 %t5, i64 0
-  store i64 0, %t6
+  store i32 0, %t5
+  %t6 = gep i8 %t5, i64 8
   %t7 = sdiv i64 %a, %b
-  %t8 = gep i64 %t5, i64 1
-  store i64 %t7, %t8
+  store i64 %t7, %t6
   %t9 = load %MyResult, %t5
   ret %MyResult %t9
 }
@@ -25,22 +23,22 @@ merge2:
 define i64 @main() {
 entry:
   %t0 = call %MyResult @safe_div(i64 10, i64 2)
-  %t2 = gep i64 %t0, i64 0
-  %t3 = load i64, %t2
+  %t2 = load i32, %t0
+  %t3 = cast i32 %t2 to i64
   %t4 = eq i1 %t3, 0
   br i1 %t4, label %arm01, label %check12
 arm01:
-  %t5 = gep i64 %t0, i64 1
-  %t6 = load i64, %t5
-  ret i64 %t6
+  %t5 = gep i8 %t0, i64 8
+  %t7 = load i64, %t5
+  ret i64 %t7
 check12:
-  %t7 = eq i1 %t3, 1
-  br i1 %t7, label %arm13, label %merge0
+  %t8 = eq i1 %t3, 1
+  br i1 %t8, label %arm13, label %check24
 arm13:
-  %t8 = gep i64 %t0, i64 1
-  %t9 = load i64, %t8
-  ret i64 %t9
-merge0:
+  %t9 = gep i8 %t0, i64 8
+  %t11 = load i64, %t9
+  ret i64 %t11
+check24:
 
-  ret void void
+  unreachable
 }

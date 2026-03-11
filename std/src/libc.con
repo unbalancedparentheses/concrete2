@@ -19,6 +19,7 @@ mod libc {
     extern fn memcmp(a: *const u8, b: *const u8, n: u64) -> i32;
     extern fn read(fd: i32, buf: *mut u8, count: u64) -> i64;
     extern fn write(fd: i32, buf: *const u8, count: u64) -> i64;
+    extern fn putchar(c: i32) -> i32;
     extern fn getenv(name: *const u8) -> *const u8;
     extern fn snprintf(buf: *mut u8, size: u64, fmt: *const u8) -> i32;
     extern fn strtol(str: *const u8, endptr: *mut *const u8, base: i32) -> i64;

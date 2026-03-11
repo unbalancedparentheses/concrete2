@@ -1029,12 +1029,7 @@ def elabFn (f : FnDef) (implTy : Option Ty := none) : ElabM CFnDef := do
 private def buildBuiltinSigs : List (String × FnSummary) := [
   ("string_length", { params := [("s", .ref .string)], retTy := .int }),
   ("string_concat", { params := [("a", .string), ("b", .string)], retTy := .string }),
-  ("print_string", { params := [("s", .ref .string)], retTy := .unit, capSet := .concrete ["Console"] }),
   ("drop_string", { params := [("s", .string)], retTy := .unit }),
-  ("print_int", { params := [("x", .int)], retTy := .unit, capSet := .concrete ["Console"] }),
-  ("print_bool", { params := [("x", .bool)], retTy := .unit, capSet := .concrete ["Console"] }),
-  ("read_file", { params := [("path", .ref .string)], retTy := .string, capSet := .concrete ["File"] }),
-  ("write_file", { params := [("path", .ref .string), ("data", .ref .string)], retTy := .int, capSet := .concrete ["File"] }),
   ("string_slice", { params := [("s", .ref .string), ("start", .int), ("end_", .int)], retTy := .string }),
   ("string_char_at", { params := [("s", .ref .string), ("index", .int)], retTy := .int }),
   ("string_contains", { params := [("haystack", .ref .string), ("needle", .ref .string)], retTy := .bool }),
@@ -1043,20 +1038,8 @@ private def buildBuiltinSigs : List (String × FnSummary) := [
   ("string_to_int", { params := [("s", .ref .string)], retTy := .generic "Result" [.int, .int] }),
   ("bool_to_string", { params := [("b", .bool)], retTy := .string }),
   ("float_to_string", { params := [("f", .float64)], retTy := .string }),
-  ("read_line", { params := [], retTy := .string, capSet := .concrete ["Console"] }),
-  ("print_char", { params := [("c", .int)], retTy := .unit, capSet := .concrete ["Console"] }),
-  ("eprint_string", { params := [("s", .ref .string)], retTy := .unit, capSet := .concrete ["Console"] }),
-  ("get_env", { params := [("name", .ref .string)], retTy := .generic "Option" [.string], capSet := .concrete ["Env"] }),
   ("get_args", { params := [], retTy := .heapArray .string, capSet := .concrete ["Process"] }),
-  ("exit_process", { params := [("code", .int)], retTy := .unit, capSet := .concrete ["Process"] }),
-  ("string_trim", { params := [("s", .ref .string)], retTy := .string }),
-  ("tcp_connect", { params := [("host", .ref .string), ("port", .int)], retTy := .int, capSet := .concrete ["Network"] }),
-  ("tcp_listen", { params := [("port", .int), ("backlog", .int)], retTy := .int, capSet := .concrete ["Network"] }),
-  ("tcp_accept", { params := [("sockfd", .int)], retTy := .int, capSet := .concrete ["Network"] }),
-  ("socket_send", { params := [("sockfd", .int), ("data", .ref .string)], retTy := .int, capSet := .concrete ["Network"] }),
-  ("socket_recv", { params := [("sockfd", .int), ("bufsize", .int)], retTy := .string, capSet := .concrete ["Network"] }),
-  ("socket_close", { params := [("sockfd", .int)], retTy := .unit, capSet := .concrete ["Network"] }),
-  ("append_file", { params := [("path", .ref .string), ("data", .ref .string)], retTy := .int, capSet := .concrete ["File"] })
+  ("string_trim", { params := [("s", .ref .string)], retTy := .string })
 ]
 
 partial def elabModule (m : Module) (summary : FileSummary)

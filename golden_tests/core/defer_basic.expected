@@ -3,6 +3,16 @@ struct Resource {
   value: Int,
 }
 
+enum Option<T> {
+  Some { value: T },
+  None,
+}
+
+enum Result<T, E> {
+  Ok { value: T },
+  Err { value: E },
+}
+
 fn use_resource() -> Int {
   let mut r: Resource = Resource { value: 10 };
   defer Resource_destroy(r);

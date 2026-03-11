@@ -19,9 +19,6 @@ inductive IntrinsicId where
   | alloc           -- alloc(x) → Heap<T>
   | free            -- free(h) → T
   | destroy         -- destroy(x) → Unit (linear type destructor)
-  | allocArray      -- low-level array alloc
-  | freeArray       -- low-level array free
-  | reallocArray    -- low-level array realloc
 
   -- Vec operations
   | vecNew | vecPush | vecGet | vecSet | vecLen | vecPop | vecFree
@@ -29,34 +26,15 @@ inductive IntrinsicId where
   -- HashMap operations
   | mapNew | mapInsert | mapGet | mapContains | mapRemove | mapLen | mapFree
 
-  -- HeapArray operations
-  | heapArrayNew | heapArrayGet | heapArraySet | heapArrayLen | heapArrayFree
-
   -- String operations
   | stringLength | stringConcat | stringEq | stringSlice
   | stringCharAt | stringContains | stringTrim | dropString
-  | stringFromChar
 
   -- Conversion
   | intToString | stringToInt | boolToString | floatToString
-  | charToInt | intToChar
-
-  -- I/O
-  | printString | printInt | printBool | printChar
-  | eprintString | readLine
-
-  -- File I/O
-  | readFile | writeFile | appendFile
-
-  -- Network
-  | tcpConnect | tcpListen | tcpAccept
-  | socketSend | socketRecv | socketClose
 
   -- System
-  | getEnv | getArgs | exitProcess | abort
-  | processExec | processExit
-  | clockNow | envGet | envSet
-  | randomInt | randomFloat
+  | getArgs | abort
 
   -- Size queries (compile-time)
   | sizeof | alignof
@@ -76,9 +54,6 @@ def resolveIntrinsic (name : String) : Option IntrinsicId :=
   | "alloc" => some .alloc
   | "free" => some .free
   | "destroy" => some .destroy
-  | "alloc_array" => some .allocArray
-  | "free_array" => some .freeArray
-  | "realloc_array" => some .reallocArray
 
   -- Vec (snake_case and method-call PascalCase)
   | "vec_new"  | "Vec_new"  => some .vecNew
@@ -98,13 +73,6 @@ def resolveIntrinsic (name : String) : Option IntrinsicId :=
   | "map_len"      | "HashMap_len"      => some .mapLen
   | "map_free"     | "HashMap_free"     => some .mapFree
 
-  -- HeapArray
-  | "heap_array_new" | "HeapArray_new" => some .heapArrayNew
-  | "heap_array_get" | "HeapArray_get" => some .heapArrayGet
-  | "heap_array_set" | "HeapArray_set" => some .heapArraySet
-  | "heap_array_len" | "HeapArray_len" => some .heapArrayLen
-  | "heap_array_free"| "HeapArray_free"=> some .heapArrayFree
-
   -- String
   | "string_length" | "string_len" | "String_len" => some .stringLength
   | "string_concat" | "String_concat"              => some .stringConcat
@@ -114,48 +82,16 @@ def resolveIntrinsic (name : String) : Option IntrinsicId :=
   | "string_contains"=> some .stringContains
   | "string_trim"    => some .stringTrim
   | "drop_string"    => some .dropString
-  | "string_from_char" => some .stringFromChar
 
   -- Conversion
   | "int_to_string"  => some .intToString
   | "string_to_int"  => some .stringToInt
   | "bool_to_string" => some .boolToString
   | "float_to_string"=> some .floatToString
-  | "char_to_int"    => some .charToInt
-  | "int_to_char"    => some .intToChar
-
-  -- I/O
-  | "print_string"  => some .printString
-  | "print_int"     => some .printInt
-  | "print_bool"    => some .printBool
-  | "print_char"    => some .printChar
-  | "eprint_string" => some .eprintString
-  | "read_line"     => some .readLine
-
-  -- File
-  | "read_file"   => some .readFile
-  | "write_file"  => some .writeFile
-  | "append_file" => some .appendFile
-
-  -- Network
-  | "tcp_connect" => some .tcpConnect
-  | "tcp_listen"  => some .tcpListen
-  | "tcp_accept"  => some .tcpAccept
-  | "socket_send" => some .socketSend
-  | "socket_recv" => some .socketRecv
-  | "socket_close"=> some .socketClose
 
   -- System
-  | "get_env"      => some .getEnv
-  | "env_get"      => some .envGet
-  | "env_set"      => some .envSet
   | "get_args"     => some .getArgs
-  | "exit_process" | "process_exit" => some .exitProcess
   | "abort"        => some .abort
-  | "process_exec" => some .processExec
-  | "clock_now"    => some .clockNow
-  | "random_int"   => some .randomInt
-  | "random_float" => some .randomFloat
 
   -- Size queries
   | "sizeof"  | "_sizeof" => some .sizeof
@@ -178,9 +114,6 @@ def IntrinsicId.canonicalName : IntrinsicId → String
   | .alloc => "alloc"
   | .free => "free"
   | .destroy => "destroy"
-  | .allocArray => "alloc_array"
-  | .freeArray => "free_array"
-  | .reallocArray => "realloc_array"
   | .vecNew => "vec_new"
   | .vecPush => "vec_push"
   | .vecGet => "vec_get"
@@ -195,11 +128,6 @@ def IntrinsicId.canonicalName : IntrinsicId → String
   | .mapRemove => "map_remove"
   | .mapLen => "map_len"
   | .mapFree => "map_free"
-  | .heapArrayNew => "heap_array_new"
-  | .heapArrayGet => "heap_array_get"
-  | .heapArraySet => "heap_array_set"
-  | .heapArrayLen => "heap_array_len"
-  | .heapArrayFree => "heap_array_free"
   | .stringLength => "string_length"
   | .stringConcat => "string_concat"
   | .stringEq => "string_eq"
@@ -208,67 +136,24 @@ def IntrinsicId.canonicalName : IntrinsicId → String
   | .stringContains => "string_contains"
   | .stringTrim => "string_trim"
   | .dropString => "drop_string"
-  | .stringFromChar => "string_from_char"
   | .intToString => "int_to_string"
   | .stringToInt => "string_to_int"
   | .boolToString => "bool_to_string"
   | .floatToString => "float_to_string"
-  | .charToInt => "char_to_int"
-  | .intToChar => "int_to_char"
-  | .printString => "print_string"
-  | .printInt => "print_int"
-  | .printBool => "print_bool"
-  | .printChar => "print_char"
-  | .eprintString => "eprint_string"
-  | .readLine => "read_line"
-  | .readFile => "read_file"
-  | .writeFile => "write_file"
-  | .appendFile => "append_file"
-  | .tcpConnect => "tcp_connect"
-  | .tcpListen => "tcp_listen"
-  | .tcpAccept => "tcp_accept"
-  | .socketSend => "socket_send"
-  | .socketRecv => "socket_recv"
-  | .socketClose => "socket_close"
-  | .getEnv => "get_env"
-  | .envGet => "env_get"
-  | .envSet => "env_set"
   | .getArgs => "get_args"
-  | .exitProcess => "exit_process"
   | .abort => "abort"
-  | .processExec => "process_exec"
-  | .processExit => "process_exit"
-  | .clockNow => "clock_now"
-  | .randomInt => "random_int"
-  | .randomFloat => "random_float"
   | .sizeof => "sizeof"
   | .alignof => "alignof"
   | .unwrap => "unwrap"
 
 /-- Required capability set for an intrinsic, if any. -/
 def IntrinsicId.capability : IntrinsicId → Option String
-  -- I/O
-  | .printString | .printInt | .printBool | .printChar
-  | .eprintString | .readLine => some "Console"
-  -- File
-  | .readFile | .writeFile | .appendFile => some "File"
-  -- Network
-  | .tcpConnect | .tcpListen | .tcpAccept
-  | .socketSend | .socketRecv | .socketClose => some "Network"
   -- Process
-  | .getArgs | .exitProcess | .abort | .processExec | .processExit => some "Process"
-  -- Env
-  | .getEnv | .envGet | .envSet => some "Env"
+  | .getArgs | .abort => some "Process"
   -- Alloc
   | .alloc | .free
   | .vecNew | .vecPush | .vecPop | .vecFree
-  | .mapNew | .mapInsert | .mapRemove | .mapFree
-  | .heapArrayNew | .heapArrayFree
-  | .allocArray | .freeArray | .reallocArray => some "Alloc"
-  -- Random
-  | .randomInt | .randomFloat => some "Random"
-  -- Time
-  | .clockNow => some "Time"
+  | .mapNew | .mapInsert | .mapRemove | .mapFree => some "Alloc"
   -- Pure (no capability required)
   | _ => none
 

@@ -1,35 +1,34 @@
 ; module main
 define i64 @pick(%Color %c) {
 entry:
-  %t1 = gep i64 %c, i64 0
-  %t2 = load i64, %t1
+  %t1 = load i32, %c
+  %t2 = cast i32 %t1 to i64
   %t3 = eq i1 %t2, 0
   br i1 %t3, label %arm01, label %check12
 arm01:
 
   ret i64 1
 check12:
-  %t4 = eq i1 %t2, 1
-  br i1 %t4, label %arm13, label %check24
+  %t5 = eq i1 %t2, 1
+  br i1 %t5, label %arm13, label %check24
 arm13:
 
   ret i64 2
 check24:
-  %t5 = eq i1 %t2, 2
-  br i1 %t5, label %arm25, label %merge0
+  %t7 = eq i1 %t2, 2
+  br i1 %t7, label %arm25, label %check36
 arm25:
 
   ret i64 3
-merge0:
+check36:
 
-  ret void void
+  unreachable
 }
 
 define i64 @main() {
 entry:
   %t0 = alloca %Color
-  %t1 = gep i64 %t0, i64 0
-  store i64 1, %t1
+  store i32 1, %t0
   %t2 = load %Color, %t0
   %t3 = call i64 @pick(%Color %t2)
   ret i64 %t3

@@ -66,7 +66,7 @@ mod io {
         }
     }
 
-    pub trusted fn print_int(value: i64) with(Unsafe, Alloc, Console) {
+    pub trusted fn print_int(value: i64) with(Console) {
         // Print an integer by converting digits
         if value < 0 {
             let dash: String = "-";
@@ -109,11 +109,51 @@ mod io {
         buf.drop();
     }
 
-    pub trusted fn eprint(value: &String) with(Unsafe, Console) {
+    pub trusted fn eprint(value: &String) with(Console) {
         if value.len > 0 {
             let stderr: *const u8 = std::libc::fdopen(2, "w" as *mut u8);
             std::libc::fwrite(value.ptr as *const u8, 1, value.len, stderr);
         }
+    }
+
+    pub trusted fn print_string(s: &String) with(Console) {
+        std::libc::write(1, s.ptr as *const u8, s.len);
+    }
+
+    pub trusted fn eprint_string(s: &String) with(Console) {
+        std::libc::write(2, s.ptr as *const u8, s.len);
+    }
+
+    pub trusted fn print_bool(x: bool) with(Console) {
+        if x {
+            let s: String = "true\n";
+            std::libc::write(1, s.ptr as *const u8, s.len);
+            s.drop();
+        } else {
+            let s: String = "false\n";
+            std::libc::write(1, s.ptr as *const u8, s.len);
+            s.drop();
+        }
+    }
+
+    pub trusted fn print_char(c: i64) with(Console) {
+        std::libc::putchar(c as i32);
+    }
+
+    pub trusted fn read_line() -> String with(Console) {
+        let buf: String = String::new();
+        while true {
+            let ch: u8 = 0;
+            let n: i64 = std::libc::read(0, &ch as *mut u8, 1);
+            if n <= 0 {
+                return buf;
+            }
+            if ch == 10 {
+                return buf;
+            }
+            buf.push_char(ch as char);
+        }
+        return buf;
     }
 
     #[test]

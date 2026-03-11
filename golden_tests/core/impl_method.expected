@@ -3,13 +3,23 @@ struct Counter {
   value: Int,
 }
 
+enum Option<T> {
+  Some { value: T },
+  None,
+}
+
+enum Result<T, E> {
+  Ok { value: T },
+  Err { value: E },
+}
+
 fn consume(c: Counter) -> Int {
   return c.value;
 }
 
 fn main() -> Int {
   let c: Counter = Counter { value: 42 };
-  let v: Int = Counter_get(c);
+  let v: Int = Counter_get(&c);
   let dummy: Int = consume(c);
   return v;
 }

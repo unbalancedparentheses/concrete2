@@ -3,6 +3,16 @@ struct Box {
   value: Int,
 }
 
+enum Option<T> {
+  Some { value: T },
+  None,
+}
+
+enum Result<T, E> {
+  Ok { value: T },
+  Err { value: E },
+}
+
 fn set_value(b: &mut Box, v: Int) -> () {
   b.value = v;
 }

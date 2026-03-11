@@ -147,22 +147,11 @@ private def extraBuiltinNames : List String :=
     "HashMap_new", "HashMap_insert", "HashMap_get", "HashMap_contains",
     "HashMap_remove", "HashMap_free", "HashMap_len",
     "String_len", "String_concat", "String_eq",
-    "HeapArray_new", "HeapArray_get", "HeapArray_set", "HeapArray_len", "HeapArray_free",
-    "heap_array_new", "heap_array_get", "heap_array_set", "heap_array_len", "heap_array_free",
-    "read_file", "write_file", "append_file",
-    "tcp_connect", "tcp_listen", "tcp_accept", "tcp_read", "tcp_write", "tcp_close",
-    "clock_now", "env_get", "env_set", "random_int", "random_float",
-    "process_exec", "process_exit",
-    "char_to_int", "int_to_char", "string_from_char",
     "int_to_string", "string_to_int", "string_length", "string_char_at",
     "string_contains", "string_slice", "string_trim",
-    "print_int", "print_bool", "print_char",
-    "socket_close", "add", "sizeof", "alignof", "unwrap",
-    -- Additional builtins registered by Check
-    "print_string", "eprint_string", "read_line",
+    "add", "sizeof", "alignof", "unwrap",
     "bool_to_string", "float_to_string",
-    "get_env", "get_args", "exit_process",
-    "socket_send", "socket_recv" ]
+    "get_args" ]
 
 /-- Check if a name is a known builtin (intrinsic or legacy). -/
 private def isKnownBuiltin (name : String) : Bool :=

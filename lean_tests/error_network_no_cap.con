@@ -1,4 +1,10 @@
 // Error: tcp_connect in pure function requires Network capability
+trusted extern fn socket(domain: i32, typ: i32, protocol: i32) -> i32;
+
+trusted fn tcp_connect(host: &String, port: i64) with(Network) -> Int {
+    return -1;
+}
+
 fn try_connect() -> Int {
     let host: String = "localhost";
     let fd: Int = tcp_connect(&host, 80);

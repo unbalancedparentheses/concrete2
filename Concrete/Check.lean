@@ -2045,95 +2045,44 @@ def checkModule (m : Module) (summary : FileSummary)
     { params := [("s", .ref .string)], retTy := .int },
     -- 1: string_concat
     { params := [("a", .string), ("b", .string)], retTy := .string },
-    -- 2: print_string
-    { params := [("s", .ref .string)], retTy := .unit, capSet := .concrete ["Console"] },
-    -- 3: drop_string
+    -- 2: drop_string
     { params := [("s", .string)], retTy := .unit },
-    -- 4: print_int
-    { params := [("x", .int)], retTy := .unit, capSet := .concrete ["Console"] },
-    -- 5: print_bool
-    { params := [("x", .bool)], retTy := .unit, capSet := .concrete ["Console"] },
-    -- 6: read_file
-    { params := [("path", .ref .string)], retTy := .string, capSet := .concrete ["File"] },
-    -- 7: write_file
-    { params := [("path", .ref .string), ("data", .ref .string)], retTy := .int, capSet := .concrete ["File"] },
-    -- 8: string_slice
+    -- 3: string_slice
     { params := [("s", .ref .string), ("start", .int), ("end_", .int)], retTy := .string },
-    -- 9: string_char_at
+    -- 4: string_char_at
     { params := [("s", .ref .string), ("index", .int)], retTy := .int },
-    -- 10: string_contains
+    -- 5: string_contains
     { params := [("haystack", .ref .string), ("needle", .ref .string)], retTy := .bool },
-    -- 11: string_eq
+    -- 6: string_eq
     { params := [("a", .ref .string), ("b", .ref .string)], retTy := .bool },
-    -- 12: int_to_string
+    -- 7: int_to_string
     { params := [("n", .int)], retTy := .string },
-    -- 13: string_to_int
+    -- 8: string_to_int
     { params := [("s", .ref .string)], retTy := .generic "Result" [.int, .int] },
-    -- 14: bool_to_string
+    -- 9: bool_to_string
     { params := [("b", .bool)], retTy := .string },
-    -- 15: float_to_string
+    -- 10: float_to_string
     { params := [("f", .float64)], retTy := .string },
-    -- 16: read_line
-    { params := [], retTy := .string, capSet := .concrete ["Console"] },
-    -- 17: print_char
-    { params := [("c", .int)], retTy := .unit, capSet := .concrete ["Console"] },
-    -- 18: eprint_string
-    { params := [("s", .ref .string)], retTy := .unit, capSet := .concrete ["Console"] },
-    -- 19: get_env
-    { params := [("name", .ref .string)], retTy := .generic "Option" [.string], capSet := .concrete ["Env"] },
-    -- 20: get_args
+    -- 11: get_args
     { params := [], retTy := .heapArray .string, capSet := .concrete ["Process"] },
-    -- 21: exit_process
-    { params := [("code", .int)], retTy := .unit, capSet := .concrete ["Process"] },
-    -- 22: string_trim
-    { params := [("s", .ref .string)], retTy := .string },
-    -- 23: tcp_connect
-    { params := [("host", .ref .string), ("port", .int)], retTy := .int, capSet := .concrete ["Network"] },
-    -- 24: tcp_listen
-    { params := [("port", .int), ("backlog", .int)], retTy := .int, capSet := .concrete ["Network"] },
-    -- 25: tcp_accept
-    { params := [("sockfd", .int)], retTy := .int, capSet := .concrete ["Network"] },
-    -- 26: socket_send
-    { params := [("sockfd", .int), ("data", .ref .string)], retTy := .int, capSet := .concrete ["Network"] },
-    -- 27: socket_recv
-    { params := [("sockfd", .int), ("bufsize", .int)], retTy := .string, capSet := .concrete ["Network"] },
-    -- 28: socket_close
-    { params := [("sockfd", .int)], retTy := .unit, capSet := .concrete ["Network"] },
-    -- 29: append_file
-    { params := [("path", .ref .string), ("data", .ref .string)], retTy := .int, capSet := .concrete ["File"] }
+    -- 12: string_trim
+    { params := [("s", .ref .string)], retTy := .string }
   ]
   let builtinOffset := baseOffset + fnSigs.length
   let builtinNames : List (String × Nat) := [
     ("string_length", builtinOffset),
     ("string_concat", builtinOffset + 1),
-    ("print_string", builtinOffset + 2),
-    ("drop_string", builtinOffset + 3),
-    ("print_int", builtinOffset + 4),
-    ("print_bool", builtinOffset + 5),
-    ("read_file", builtinOffset + 6),
-    ("write_file", builtinOffset + 7),
-    ("string_slice", builtinOffset + 8),
-    ("string_char_at", builtinOffset + 9),
-    ("string_contains", builtinOffset + 10),
-    ("string_eq", builtinOffset + 11),
-    ("int_to_string", builtinOffset + 12),
-    ("string_to_int", builtinOffset + 13),
-    ("bool_to_string", builtinOffset + 14),
-    ("float_to_string", builtinOffset + 15),
-    ("read_line", builtinOffset + 16),
-    ("print_char", builtinOffset + 17),
-    ("eprint_string", builtinOffset + 18),
-    ("get_env", builtinOffset + 19),
-    ("get_args", builtinOffset + 20),
-    ("exit_process", builtinOffset + 21),
-    ("string_trim", builtinOffset + 22),
-    ("tcp_connect", builtinOffset + 23),
-    ("tcp_listen", builtinOffset + 24),
-    ("tcp_accept", builtinOffset + 25),
-    ("socket_send", builtinOffset + 26),
-    ("socket_recv", builtinOffset + 27),
-    ("socket_close", builtinOffset + 28),
-    ("append_file", builtinOffset + 29)
+    ("drop_string", builtinOffset + 2),
+    ("string_slice", builtinOffset + 3),
+    ("string_char_at", builtinOffset + 4),
+    ("string_contains", builtinOffset + 5),
+    ("string_eq", builtinOffset + 6),
+    ("int_to_string", builtinOffset + 7),
+    ("string_to_int", builtinOffset + 8),
+    ("bool_to_string", builtinOffset + 9),
+    ("float_to_string", builtinOffset + 10),
+    ("get_args", builtinOffset + 11),
+    ("string_trim", builtinOffset + 12)
   ]
   -- Add submodule functions/extern fns with qualified names (mod_fn)
   let submoduleSigs : List FnSummary := summary.submoduleSummaries.foldl (fun acc (_, subSummary) =>

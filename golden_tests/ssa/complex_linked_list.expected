@@ -1,32 +1,31 @@
 ; module main
 define i64 @value(%IntList %l) {
 entry:
-  %t1 = gep i64 %l, i64 0
-  %t2 = load i64, %t1
+  %t1 = load i32, %l
+  %t2 = cast i32 %t1 to i64
   %t3 = eq i1 %t2, 0
   br i1 %t3, label %arm01, label %check12
 arm01:
 
   ret i64 0
 check12:
-  %t4 = eq i1 %t2, 1
-  br i1 %t4, label %arm13, label %merge0
+  %t5 = eq i1 %t2, 1
+  br i1 %t5, label %arm13, label %check24
 arm13:
-  %t5 = gep i64 %l, i64 1
-  %t6 = load i64, %t5
-  ret i64 %t6
-merge0:
+  %t6 = gep i8 %l, i64 8
+  %t8 = load i64, %t6
+  ret i64 %t8
+check24:
 
-  ret void void
+  unreachable
 }
 
 define i64 @main() {
 entry:
   %t0 = alloca %IntList
-  %t1 = gep i64 %t0, i64 0
-  store i64 1, %t1
-  %t2 = gep i64 %t0, i64 1
-  store i64 42, %t2
+  store i32 1, %t0
+  %t1 = gep i8 %t0, i64 8
+  store i64 42, %t1
   %t3 = load %IntList, %t0
   %t4 = call i64 @value(%IntList %t3)
   ret i64 %t4
