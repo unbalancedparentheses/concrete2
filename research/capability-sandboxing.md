@@ -4,6 +4,18 @@
 
 This note collects ideas for making Concrete's capability system better at sandboxing code, especially low-level code that should be auditable, reviewable, and mechanically restricted.
 
+The current best direction now assumes a related three-way split:
+
+- semantic effects are expressed as capabilities
+- implementation trust is expressed by `trusted fn` / `trusted impl`
+- foreign semantic danger remains under `with(Unsafe)`
+
+The important consequence is that sandboxing is not only about user-written code. It also has to apply coherently across:
+
+- builtins
+- stdlib internals
+- ordinary user code
+
 Concrete already has an unusually strong base:
 
 - explicit `with(...)` capability declarations
@@ -230,7 +242,16 @@ Promising directions:
 
 - compiler reports of where `Unsafe` is required and why
 - wrapper patterns that contain raw-pointer or FFI authority
+- the `trusted fn` / `trusted impl` boundary for containing pointer-level implementation unsafety behind safe APIs (see [trusted-boundary.md](trusted-boundary.md))
 - maybe later splitting `Unsafe` conceptually into subcategories for reports, even if the source language still uses one `Unsafe`
+
+The three-way split described in [trusted-boundary.md](trusted-boundary.md) is directly relevant here:
+
+- **`with(Alloc)` and other capabilities** = semantic effects visible to callers
+- **`trusted`** = containment of internal pointer-level implementation techniques (raw ptr deref, assignment, arithmetic, casts) behind a safe API
+- **`with(Unsafe)`** = authority to cross foreign boundaries (FFI, transmute) — required even inside `trusted` code
+
+This should apply coherently across builtins, stdlib code, and user code. The sandboxing model gets weaker if any one of those layers is silently exempt.
 
 The important rule:
 

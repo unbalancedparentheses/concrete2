@@ -10,6 +10,14 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Trusted boundaries
+
+- Added `trusted fn` and `trusted impl` to the language surface
+- Propagated trusted boundaries through AST, Core, lowering metadata, and audit reporting
+- `CoreCheck` now relaxes raw pointer dereference, raw pointer assignment, and pointer-cast checks inside trusted code
+- Kept `extern fn` calls under `with(Unsafe)` even inside `trusted`
+- Added tests for trusted functions, trusted impls, trusted pointer operations, and invalid trusted usage
+
 ### Stdlib collections: HashMap and HashSet
 
 - Added `std.map.HashMap<K, V>` — open-addressing hash map with linear probing, fn-pointer hash/eq (Zig-style)
@@ -164,7 +172,7 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ### Testing / status milestones
 
-- End-to-end main suite expanded to 275 passing tests
+- End-to-end main suite expanded to 285 passing tests
 - SSA-specific suite passing
 - Golden SSA/IR testing integrated
 - CI updated to exercise SSA-specific coverage as well as the main path

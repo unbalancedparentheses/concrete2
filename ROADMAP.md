@@ -6,13 +6,14 @@ This is the implementation plan for the Concrete programming language. For the f
 
 ## Current State
 
-The Lean 4 compiler implements the core surface language plus the full internal IR pipeline: Core IR, elaboration, Core validation, monomorphization, SSA lowering, SSA verification/cleanup, and SSA codegen. The main suite currently has 278 passing tests, and the SSA-specific suite also passes.
+The Lean 4 compiler implements the core surface language plus the full internal IR pipeline: Core IR, elaboration, Core validation, monomorphization, SSA lowering, SSA verification/cleanup, and SSA codegen. The main suite currently has 285 passing tests, and the SSA-specific suite also passes.
 
 The project also now has:
 
 - centralized ABI/layout authority in `Layout.lean`
 - first-batch audit/report outputs
 - native diagnostics through the main semantic passes
+- explicit `trusted fn` / `trusted impl` boundaries for containing internal pointer-level implementation unsafety without leaking `Unsafe` into callers
 - a real stdlib foundation (`vec`, `string`, `io`, `bytes`, `slice`, `text`, `path`, `fs`) plus the systems layer (`env`, `process`, `net`)
 - a utility layer (`fmt`, `hash`, `rand`, `time`, `parse`, `test`) over the low-level core
 - stdlib hardening and deepening: typed `Result<T, ModuleError>` surfaces, checked/unchecked accessors, systems-module helpers, and in-language `#[test]` execution
@@ -31,17 +32,18 @@ Still clearly not implemented:
 Recently completed:
 
 - parser cleanup to make the implementation strictly LL(1), with the previous bounded save/restore sites removed
+- `trusted fn` / `trusted impl` implemented through the parser, Core pipeline, CoreCheck, and audit reports
 
 ## Priority Snapshot
 
 ### Now
 
 1. Make builtins, stdlib, and user code follow one explicit trust/effect model:
-   - add `trusted fn` / `trusted impl` as the internal implementation-audit boundary
+   - now that `trusted fn` / `trusted impl` exist, migrate builtins and stdlib internals to use them coherently
    - keep semantic effects (`Alloc`, `File`, `Network`, `Process`, etc.) visible in public signatures
    - keep FFI under `with(Unsafe)` even inside `trusted`
-   - migrate builtins and stdlib internals away from silent capability/unsafe exemptions
-   - surface trusted boundaries in audit/report output
+   - remove silent builtin and stdlib capability/unsafe exemptions
+   - improve reports so trusted impl boundaries are visible explicitly, not only as lowered trusted functions
 2. Preserve SSA as the only backend boundary and keep the build/project model explicit and boring.
 3. Improve diagnostics fidelity and rendering quality:
    - better range precision
@@ -1776,7 +1778,7 @@ The biggest strategic multipliers are:
 - a formatter and stronger tooling baseline
 - a cleaner hosted vs freestanding split
 - a stronger `Unsafe` structure and audit story
-- an explicit `trusted fn` / `trusted impl` boundary so internal implementation unsafety can be audited without leaking `Unsafe` into safe public APIs
+- a fully coherent trust/effect model across builtins, stdlib, and user code
 - a better capability/sandboxing story
 - later, a coherent concurrency/runtime model
 

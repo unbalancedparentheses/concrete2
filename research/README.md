@@ -14,12 +14,13 @@ Status key:
 - `Excluded` = intentionally not in the language surface
 - `Process` = decision filter or project rule
 
-- [capability-sandboxing.md](capability-sandboxing.md) — ways to make `with(...)` better at expressing restricted authority and sandboxing (`Open`)
+- [capability-sandboxing.md](capability-sandboxing.md) — ways to make `with(...)` better at expressing restricted authority and sandboxing (`Open`, partially adopted by the trusted/capability split)
 - [derived-equality-design.md](derived-equality-design.md) — possible derived structural equality for user-defined types (`Open`)
 - [heap-ownership-design.md](heap-ownership-design.md) — chosen `Heap<T>` ownership model (`Adopted`)
 - [heap-access-revisited.md](heap-access-revisited.md) — follow-up on heap access syntax and tradeoffs (`Open`)
-- [trusted-boundary.md](trusted-boundary.md) — explicit `trusted fn` / `trusted impl` design for containing implementation unsafety (`Open`)
-- [unsafe-structure.md](unsafe-structure.md) — how to make `Unsafe` more inspectable and better contained without complicating the language (`Open`)
+- [ll1-grammar.md](ll1-grammar.md) — strict LL(1) grammar rule, known parser backtrack sites, and the cleanup criteria for claiming full LL(1) (`Process`)
+- [trusted-boundary.md](trusted-boundary.md) — explicit `trusted fn` / `trusted impl` design for containing implementation unsafety (`Adopted`)
+- [unsafe-structure.md](unsafe-structure.md) — how to make `Unsafe` more inspectable and better contained without complicating the language (`Open`, partially adopted by the trusted split)
 - [union.md](union.md) — whether unions fit Concrete's design (`Open`)
 
 ## Excluded by Design
@@ -33,6 +34,10 @@ Status key:
 - [no-std-freestanding.md](no-std-freestanding.md) — how a future hosted vs freestanding / `no_std` split could work in Concrete (`Open`)
 - [pre-post-conditions.md](pre-post-conditions.md) — design space around contracts/specification support (`Open`)
 - [concurrency.md](concurrency.md) — concurrency direction before async-style features (`Open`)
+
+## Runtime And Scheduling
+
+- [execution-cost.md](execution-cost.md) — static execution cost analysis: structural reports, bounded instruction counts, and WCET (`Open`)
 
 ## Compiler Architecture
 

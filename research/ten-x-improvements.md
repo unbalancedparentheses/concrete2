@@ -143,9 +143,8 @@ See [capability-sandboxing.md](capability-sandboxing.md).
 
 Closely related:
 
-- a stronger `Unsafe` structure and audit story
-
-See [unsafe-structure.md](unsafe-structure.md).
+- a stronger `Unsafe` structure and audit story — see [unsafe-structure.md](unsafe-structure.md)
+- the `trusted fn` / `trusted impl` boundary for containing pointer-level implementation unsafety behind safe APIs, keeping the three-way split clean: semantic effects (capabilities) / implementation trust (`trusted`) / foreign boundaries (`Unsafe`) — see [trusted-boundary.md](trusted-boundary.md)
 
 ### 7. A truly strong concurrency/runtime model
 

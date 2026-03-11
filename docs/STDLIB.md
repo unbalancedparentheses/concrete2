@@ -20,6 +20,14 @@ The Concrete stdlib should stay:
 - small and sharp rather than broad
 - neutral about the eventual concurrency/runtime model unless a dependency is unavoidable
 
+For low-level internals, the split is now:
+
+- semantic effects remain visible in public signatures (`with(Alloc)`, `with(File)`, etc.)
+- pointer-level implementation unsafety is contained by `trusted fn` / `trusted impl`
+- foreign boundaries (`extern fn`) remain under `with(Unsafe)` even inside trusted code
+
+See [../research/trusted-boundary.md](../research/trusted-boundary.md).
+
 It should avoid:
 
 - lazy resource-hiding APIs
@@ -36,6 +44,12 @@ The first wave of stdlib foundation work has landed:
 - `env`, `process`, and `net` are implemented
 
 The next stdlib work should build on that foundation instead of restarting it.
+The highest-priority stdlib task now is **trust/effect coherence**:
+
+- migrate builtins and stdlib internals away from silent capability/unsafe exemptions
+- keep `Alloc`, `File`, `Network`, `Process`, etc. visible in public signatures
+- use `trusted` only for internal pointer-level implementation techniques
+- keep `extern fn` calls under `with(Unsafe)` even inside trusted code
 
 ## Current Foundation Status
 
@@ -60,6 +74,7 @@ Still the main near-term stdlib work:
 2. keep error and handle conventions uniform
 3. expand failure-path and integration testing
 4. carefully chosen collections
+5. migrate modules to the explicit `trusted + real effects` model consistently
 
 ## Core Module Direction
 
@@ -277,6 +292,14 @@ Allocator-sensitive APIs should make allocation visible:
 - via allocator/capability-aware APIs
 - via `with(Alloc)` when allocation occurs
 - via return types that make ownership obvious
+
+This fits the implemented three-way split between:
+
+- **capabilities** (`with(Alloc)`, `with(File)`, etc.) = semantic effects visible to callers — `with(Alloc)` stays in public signatures because allocation is a real program behavior callers should know about
+- **`trusted`** = containment of internal pointer-level implementation techniques (raw ptr deref, arithmetic, casts) behind a safe API — callers do not need `Unsafe` just because a container uses raw pointers internally
+- **`with(Unsafe)`** = authority to cross foreign boundaries (FFI, transmute) — always explicit, even inside `trusted` code
+
+See [../research/trusted-boundary.md](../research/trusted-boundary.md) for the full design.
 
 ## Later Additions
 

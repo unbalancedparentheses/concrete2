@@ -1,8 +1,22 @@
 # Stronger `Unsafe` Structure
 
-**Status:** Open
+**Status:** Open, partially adopted
 
 This note explores how Concrete could make `Unsafe` more useful and more auditable without turning it into a large, complex sub-language.
+
+The strongest current refinement path is the three-way split:
+
+- semantic effects stay in capabilities such as `with(Alloc)`
+- implementation-level pointer unsafety is now contained by `trusted fn` / `trusted impl` at the language level, with the remaining work being coherent migration across builtins and stdlib
+- foreign semantic boundaries (`extern fn`, conservatively `transmute`) remain under `with(Unsafe)`
+
+This should apply uniformly across:
+
+- compiler builtins
+- stdlib code
+- user code
+
+Otherwise the language ends up with different unsafe truths at different layers.
 
 The current rule is intentionally simple:
 
@@ -96,6 +110,12 @@ This strengthens the audit story without changing the language surface.
 
 This is also one of the clearest ways Concrete could improve on Zig: keep the low-level boundary explicit, but make the compiler much better at explaining it.
 
+The reporting story should eventually distinguish:
+
+- ordinary `with(Unsafe)` authority
+- trusted implementation boundaries
+- the specific unsafe reasons inside each category
+
 ### 2. Prefer containment through safe wrappers
 
 The best long-term `Unsafe` structure may come more from API style than from effect syntax.
@@ -175,13 +195,20 @@ The point of `Unsafe` is to make danger obvious, not to create a second advanced
 
 This connects directly to:
 
+- [trusted-boundary.md](trusted-boundary.md) — the `trusted fn` / `trusted impl` design for containing pointer-level implementation unsafety behind safe APIs, without leaking `Unsafe` to callers. The wrapper-based containment pattern described here is what `trusted` formalizes as a language-level boundary.
 - [capability-sandboxing.md](capability-sandboxing.md)
 - [no-std-freestanding.md](no-std-freestanding.md)
 - [../docs/FFI.md](../docs/FFI.md)
 
+That trusted-boundary note also makes two constraints explicit that matter here:
+
+- `trusted` should be available to user code, not only stdlib internals
+- `extern fn` calls should remain under `with(Unsafe)` even inside `trusted` code
+
 It also overlaps with audit-focused compiler outputs:
 
 - `Unsafe` summaries
+- `trusted` region reports (see trusted-boundary.md)
 - later allocation / destruction reports
 - capability call-chain explanations
 

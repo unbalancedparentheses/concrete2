@@ -75,6 +75,20 @@ Concrete is aiming for an unsafe boundary that is:
 - explicitly gated
 - easier to audit than a broad ambient low-level model
 
+## Trusted Split
+
+Concrete now has the three-way split described in the research notes:
+
+- **capabilities** (`with(Alloc)`, `with(File)`, etc.) = semantic effects visible to callers
+- **`trusted`** = containment of internal pointer-level implementation techniques behind a safe API
+- **`with(Unsafe)`** = authority to cross foreign boundaries (FFI, transmute) — always explicit, even inside trusted code
+
+That means:
+
+- `trusted` does **not** suppress ordinary capabilities
+- `trusted` does **not** permit `extern fn` calls without `with(Unsafe)`
+- stdlib and builtin internals should eventually migrate to this same model instead of relying on silent exemptions
+
 ## Future Refinement
 
 This doc should expand if the FFI surface grows substantially, for example:
@@ -84,5 +98,6 @@ This doc should expand if the FFI surface grows substantially, for example:
 - more explicit calling-convention rules
 - ABI notes for additional targets
 - low-level FFI helper patterns in the stdlib
+- deeper migration of builtin and stdlib internals to the implemented `trusted` boundary
 
-For the exploratory direction behind those ideas, see [../research/unsafe-structure.md](../research/unsafe-structure.md).
+For the exploratory direction behind those ideas, see [../research/unsafe-structure.md](../research/unsafe-structure.md) and [../research/trusted-boundary.md](../research/trusted-boundary.md).
