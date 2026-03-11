@@ -449,12 +449,12 @@ run_err "$TESTDIR/error_trusted_on_struct.con" "trusted"
 run_ok "$TESTDIR/trusted_trait_impl.con" 0
 run_ok "$TESTDIR/trusted_ptr_arith.con" 0
 run_err "$TESTDIR/error_ptr_arith_no_unsafe.con" "requires capability"
-# Trusted runtime tests (compile-gate for now — ptr deref/assign segfaults at runtime due to codegen gap)
-run_ok "$TESTDIR/trusted_deref_runtime.con" 0
-run_ok "$TESTDIR/trusted_assign_runtime.con" 0
+# Trusted runtime tests
+run_ok "$TESTDIR/trusted_deref_runtime.con" 42
+run_ok "$TESTDIR/trusted_assign_runtime.con" 77
 run_ok "$TESTDIR/trusted_cast_runtime.con" 0
-run_ok "$TESTDIR/trusted_arith_runtime.con" 0
-run_ok "$TESTDIR/trusted_with_alloc.con" 0
+run_ok "$TESTDIR/trusted_arith_runtime.con" 32
+run_ok "$TESTDIR/trusted_with_alloc.con" 10
 run_ok "$TESTDIR/trusted_report_check.con" 0
 # Capability propagation errors
 run_err "$TESTDIR/error_cap_alloc_missing.con" "but caller has"
@@ -478,6 +478,14 @@ run_ok "$TESTDIR/string_contains_empty.con" 1
 run_ok "$TESTDIR/string_char_at_first_last.con" 196
 run_ok "$TESTDIR/string_trim_spaces.con" 2
 run_ok "$TESTDIR/string_to_int_roundtrip.con" 42
+
+# === Math function tests ===
+run_ok "$TESTDIR/math_sqrt.con" 5
+run_ok "$TESTDIR/math_pow.con" 81
+run_ok "$TESTDIR/math_abs.con" 42
+run_ok "$TESTDIR/math_floor_ceil.con" 34
+run_ok "$TESTDIR/math_sin_cos.con" 10
+run_ok "$TESTDIR/math_exp_log.con" 10
 
 # === Integer edge case tests ===
 run_ok "$TESTDIR/int_arithmetic_negative.con" 50

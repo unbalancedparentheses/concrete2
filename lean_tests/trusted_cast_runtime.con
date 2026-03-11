@@ -1,4 +1,4 @@
-// Trusted fn can do pointer cast at runtime without crash
+// Trusted fn casts pointer types at runtime
 trusted fn reinterpret(p: *const i32) -> *const u8 {
     return p as *const u8;
 }
@@ -6,6 +6,6 @@ trusted fn reinterpret(p: *const i32) -> *const u8 {
 fn main() with(Unsafe) -> i32 {
     let x: i32 = 42;
     let p: *const i32 = &x as *const i32;
-    let q: *const u8 = reinterpret(p);
+    let _q: *const u8 = reinterpret(p);
     return 0;
 }

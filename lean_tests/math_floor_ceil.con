@@ -1,0 +1,8 @@
+fn main() -> Int {
+    let x: Float64 = 3.7;
+    let y: Float64 = 3.2;
+    let f: Float64 = floor(x);
+    let c: Float64 = ceil(y);
+    let result: Int = (f as Int) * 10 + (c as Int);
+    return result;
+}

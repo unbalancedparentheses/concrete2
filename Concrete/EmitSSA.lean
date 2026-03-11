@@ -202,14 +202,18 @@ private def emitBinOp (s : EmitSSAState) (dst : String) (op : BinOp) (lhs rhs : 
   let lhsStr := emitSVal s lhs
   let rhsStr := emitSVal s rhs
   let operandTy := lhs.ty
-  -- Pointer arithmetic: ptr + int → getelementptr i8, ptr %p, i64 %n
+  -- Pointer arithmetic: ptr + int → getelementptr <pointee>, ptr %p, i64 %n
+  -- GEP scales the offset by the pointee element size automatically
   if isPointerTy operandTy && (op == .add || op == .sub) then
+    let pointeeTy := match operandTy with
+      | .ptrMut t | .ptrConst t => ssaTyToLLVM s t
+      | _ => "i8"
     let rhsIdx := if op == .sub then
       let negReg := s!"{dst}.neg"
       let s := emit s s!"  %{negReg} = sub i64 0, {rhsStr}"
       (s, s!"%{negReg}")
     else (s, rhsStr)
-    emit rhsIdx.1 s!"  %{dst} = getelementptr i8, ptr {lhsStr}, i64 {rhsIdx.2}"
+    emit rhsIdx.1 s!"  %{dst} = getelementptr {pointeeTy}, ptr {lhsStr}, i64 {rhsIdx.2}"
   else if isFloatTy operandTy then
     let fTy := ssaFloatTyToLLVM operandTy
     let opStr := match op with
@@ -301,10 +305,11 @@ private def emitSInst (s : EmitSSAState) (inst : SInst) : EmitSSAState :=
       || (s.fnParams.any fun (n, t) =>
         n == fn && match t with | .fn_ _ _ _ => true | _ => false)
       || s.fnTypeRegs.contains fn
+    let mappedFn := fn
     let callTarget := if isIndirect then
       if fn.startsWith "%" then fn  -- already has % prefix
       else "%" ++ fn
-    else "@" ++ fn
+    else "@" ++ mappedFn
     match dst with
     | some d =>
       let s := emit s s!"  %{d} = call {retLLTy} {callTarget}({argStr})"
@@ -508,6 +513,17 @@ private def emitExternDecls (s : EmitSSAState) (externFns : List (String × List
   let s := emit s "declare void @freeaddrinfo(ptr)"
   let s := emit s "declare i16 @htons(i16)"
   let s := emit s "declare i32 @setsockopt(i32, i32, i32, ptr, i32)"
+  -- Math builtins (libm)
+  let s := emit s "declare double @sqrt(double)"
+  let s := emit s "declare double @sin(double)"
+  let s := emit s "declare double @cos(double)"
+  let s := emit s "declare double @tan(double)"
+  let s := emit s "declare double @pow(double, double)"
+  let s := emit s "declare double @log(double)"
+  let s := emit s "declare double @exp(double)"
+  let s := emit s "declare double @floor(double)"
+  let s := emit s "declare double @ceil(double)"
+  let s := emit s "declare double @fabs(double)"
   let s := emit s ""
   -- User extern function declarations
   externFns.foldl (fun s (name, params, retTy) =>

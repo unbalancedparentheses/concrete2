@@ -2094,7 +2094,29 @@ def checkModule (m : Module) (summary : FileSummary)
     -- 27: socket_recv
     { params := [("sockfd", .int), ("bufsize", .int)], retTy := .string, capSet := .concrete ["Network"] },
     -- 28: socket_close
-    { params := [("sockfd", .int)], retTy := .unit, capSet := .concrete ["Network"] }
+    { params := [("sockfd", .int)], retTy := .unit, capSet := .concrete ["Network"] },
+    -- 29: sqrt
+    { params := [("x", .float64)], retTy := .float64 },
+    -- 30: sin
+    { params := [("x", .float64)], retTy := .float64 },
+    -- 31: cos
+    { params := [("x", .float64)], retTy := .float64 },
+    -- 32: tan
+    { params := [("x", .float64)], retTy := .float64 },
+    -- 33: pow
+    { params := [("x", .float64), ("y", .float64)], retTy := .float64 },
+    -- 34: log
+    { params := [("x", .float64)], retTy := .float64 },
+    -- 35: exp
+    { params := [("x", .float64)], retTy := .float64 },
+    -- 36: floor
+    { params := [("x", .float64)], retTy := .float64 },
+    -- 37: ceil
+    { params := [("x", .float64)], retTy := .float64 },
+    -- 38: fabs
+    { params := [("x", .float64)], retTy := .float64 },
+    -- 39: append_file
+    { params := [("path", .ref .string), ("data", .ref .string)], retTy := .int, capSet := .concrete ["File"] }
   ]
   let builtinOffset := baseOffset + fnSigs.length
   let builtinNames : List (String × Nat) := [
@@ -2126,7 +2148,18 @@ def checkModule (m : Module) (summary : FileSummary)
     ("tcp_accept", builtinOffset + 25),
     ("socket_send", builtinOffset + 26),
     ("socket_recv", builtinOffset + 27),
-    ("socket_close", builtinOffset + 28)
+    ("socket_close", builtinOffset + 28),
+    ("sqrt", builtinOffset + 29),
+    ("sin", builtinOffset + 30),
+    ("cos", builtinOffset + 31),
+    ("tan", builtinOffset + 32),
+    ("pow", builtinOffset + 33),
+    ("log", builtinOffset + 34),
+    ("exp", builtinOffset + 35),
+    ("floor", builtinOffset + 36),
+    ("ceil", builtinOffset + 37),
+    ("fabs", builtinOffset + 38),
+    ("append_file", builtinOffset + 39)
   ]
   -- Add submodule functions/extern fns with qualified names (mod_fn)
   let submoduleSigs : List FnSummary := summary.submoduleSummaries.foldl (fun acc (_, subSummary) =>

@@ -1,0 +1,6 @@
+fn main() -> Int {
+    let e: Float64 = exp(0.0);
+    let l: Float64 = log(1.0);
+    let result: Int = (e as Int) * 10 + (l as Int);
+    return result;
+}

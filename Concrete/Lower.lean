@@ -617,15 +617,32 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
 
   | .borrow inner ty =>
     let iVal ← lowerExpr inner
-    let dst ← freshReg
-    emit (.cast dst iVal ty)
-    return .reg dst ty
+    let innerTy := iVal.ty
+    -- If the inner value is not already a pointer/ref, alloca + store to get an address
+    match innerTy with
+    | .ref _ | .refMut _ | .ptrMut _ | .ptrConst _ | .heap _ =>
+      let dst ← freshReg
+      emit (.cast dst iVal ty)
+      return .reg dst ty
+    | _ =>
+      let slot ← freshReg "borrow."
+      emit (.alloca slot innerTy)
+      emit (.store iVal (.reg slot innerTy))
+      return .reg slot ty
 
   | .borrowMut inner ty =>
     let iVal ← lowerExpr inner
-    let dst ← freshReg
-    emit (.cast dst iVal ty)
-    return .reg dst ty
+    let innerTy := iVal.ty
+    match innerTy with
+    | .ref _ | .refMut _ | .ptrMut _ | .ptrConst _ | .heap _ =>
+      let dst ← freshReg
+      emit (.cast dst iVal ty)
+      return .reg dst ty
+    | _ =>
+      let slot ← freshReg "borrowmut."
+      emit (.alloca slot innerTy)
+      emit (.store iVal (.reg slot innerTy))
+      return .reg slot ty
 
   | .deref inner ty =>
     let iVal ← lowerExpr inner

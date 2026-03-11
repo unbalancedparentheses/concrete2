@@ -1,0 +1,5 @@
+fn main() -> Int {
+    let x: Float64 = -42.0;
+    let result: Float64 = fabs(x);
+    return result as Int;
+}

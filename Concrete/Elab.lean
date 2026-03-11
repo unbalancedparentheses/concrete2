@@ -1048,7 +1048,18 @@ private def buildBuiltinSigs : List (String × FnSummary) := [
   ("tcp_accept", { params := [("sockfd", .int)], retTy := .int, capSet := .concrete ["Network"] }),
   ("socket_send", { params := [("sockfd", .int), ("data", .ref .string)], retTy := .int, capSet := .concrete ["Network"] }),
   ("socket_recv", { params := [("sockfd", .int), ("bufsize", .int)], retTy := .string, capSet := .concrete ["Network"] }),
-  ("socket_close", { params := [("sockfd", .int)], retTy := .unit, capSet := .concrete ["Network"] })
+  ("socket_close", { params := [("sockfd", .int)], retTy := .unit, capSet := .concrete ["Network"] }),
+  ("sqrt", { params := [("x", .float64)], retTy := .float64 }),
+  ("sin", { params := [("x", .float64)], retTy := .float64 }),
+  ("cos", { params := [("x", .float64)], retTy := .float64 }),
+  ("tan", { params := [("x", .float64)], retTy := .float64 }),
+  ("pow", { params := [("x", .float64), ("y", .float64)], retTy := .float64 }),
+  ("log", { params := [("x", .float64)], retTy := .float64 }),
+  ("exp", { params := [("x", .float64)], retTy := .float64 }),
+  ("floor", { params := [("x", .float64)], retTy := .float64 }),
+  ("ceil", { params := [("x", .float64)], retTy := .float64 }),
+  ("fabs", { params := [("x", .float64)], retTy := .float64 }),
+  ("append_file", { params := [("path", .ref .string), ("data", .ref .string)], retTy := .int, capSet := .concrete ["File"] })
 ]
 
 partial def elabModule (m : Module) (summary : FileSummary)
