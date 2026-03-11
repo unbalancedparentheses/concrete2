@@ -229,7 +229,7 @@ mod parse {
         pos: u64,
     }
 
-    impl Cursor {
+    trusted impl Cursor {
         pub fn new(s: &String) -> Cursor {
             let c: Cursor = Cursor {
                 data: s.ptr as *const u8,

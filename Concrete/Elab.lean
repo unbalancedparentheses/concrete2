@@ -1141,7 +1141,13 @@ partial def elabModule (m : Module) (summary : FileSummary)
             | .named n => n | .generic n _ => n | _ => ""
           if typeName != "" then typeName ++ "_" ++ f.name else f.name
         | none => f.name
-      pure { cfn with name := finalName } : ElabM CFnDef).run env' |>.run
+      let implOrigin := if cfn.isTrusted then
+        match implTy with
+        | some it => match it with
+          | .named n => some n | .generic n _ => some n | _ => none
+        | none => none
+      else none
+      pure { cfn with name := finalName, trustedImplOrigin := implOrigin } : ElabM CFnDef).run env' |>.run
     match result with
     | (.ok cfn, finalEnv) => (acc ++ [cfn], errs, finalEnv)
     | (.error ds, _) => (acc, errs ++ ds, env)

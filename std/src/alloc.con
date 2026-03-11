@@ -1,15 +1,15 @@
 mod alloc {
     import std.mem.{sizeof};
 
-    pub fn alloc<T>() -> *mut T {
+    pub trusted fn alloc<T>() -> *mut T with(Alloc, Unsafe) {
         return std::libc::malloc(sizeof::<T>()) as *mut T;
     }
 
-    pub fn realloc<T>(old_ptr: *mut T, size: u64) -> *mut T {
+    pub trusted fn realloc<T>(old_ptr: *mut T, size: u64) -> *mut T with(Alloc, Unsafe) {
         return std::libc::realloc(old_ptr as *mut u8, sizeof::<T>() * size) as *mut T;
     }
 
-    pub fn free<T>(ptr: *mut T) {
+    pub trusted fn free<T>(ptr: *mut T) with(Alloc, Unsafe) {
         std::libc::free(ptr as *mut u8);
     }
 }

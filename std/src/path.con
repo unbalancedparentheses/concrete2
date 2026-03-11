@@ -12,7 +12,7 @@ mod path {
         cap: u64,
     }
 
-    impl PathBuf {
+    trusted impl PathBuf {
         pub fn new() -> PathBuf {
             let p: PathBuf = PathBuf {
                 ptr: 0 as *mut u8,
@@ -22,7 +22,7 @@ mod path {
             return p;
         }
 
-        pub fn from_string(s: &String) -> PathBuf {
+        pub fn from_string(s: &String) with(Alloc) -> PathBuf {
             let cap: u64 = std::math::max::<u64>(s.len, 4) * 2;
             let p: PathBuf = PathBuf {
                 ptr: realloc::<u8>(0 as *mut u8, cap),
@@ -41,13 +41,13 @@ mod path {
             return p;
         }
 
-        fn grow(&mut self) {
+        fn grow(&mut self) with(Alloc) {
             let new_cap: u64 = std::math::max::<u64>(self.cap, 4) * 2;
             self.ptr = realloc::<u8>(self.ptr, new_cap);
             self.cap = new_cap;
         }
 
-        fn push_byte(&mut self, b: u8) {
+        fn push_byte(&mut self, b: u8) with(Alloc) {
             if self.len >= self.cap {
                 self.grow();
             }
@@ -56,7 +56,7 @@ mod path {
             self.len = self.len + 1;
         }
 
-        pub fn push(&mut self, segment: &String) {
+        pub fn push(&mut self, segment: &String) with(Alloc) {
             // Add separator if needed
             if self.len > 0 {
                 let last: *mut u8 = self.ptr + (self.len - 1);
@@ -82,12 +82,12 @@ mod path {
             return p;
         }
 
-        pub fn drop(self) {
+        pub fn drop(self) with(Alloc) {
             free::<u8>(self.ptr);
         }
     }
 
-    pub fn path_join(base: &Path, segment: &String) -> PathBuf {
+    pub trusted fn path_join(base: &Path, segment: &String) with(Alloc) -> PathBuf {
         let result: PathBuf = PathBuf {
             ptr: realloc::<u8>(0 as *mut u8, base.len + segment.len + 1),
             len: 0,

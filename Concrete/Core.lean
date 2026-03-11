@@ -81,6 +81,7 @@ structure CFnDef where
   isPublic : Bool := false
   isTest : Bool := false
   isTrusted : Bool := false
+  trustedImplOrigin : Option String := none  -- "TypeName" if from a trusted impl/trait-impl
   capSet : CapSet := .empty
 
 structure CStructDef where

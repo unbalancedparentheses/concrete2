@@ -10,8 +10,8 @@ mod fs {
         handle: *const u8,
     }
 
-    impl File {
-        pub fn open(path: &String, mode: &String) -> Result<File, FsError> {
+    trusted impl File {
+        pub fn open(path: &String, mode: &String) -> Result<File, FsError> with(Unsafe, Alloc) {
             let h: *const u8 = std::libc::fopen(path.ptr, mode.ptr);
             if h == (0 as *const u8) {
                 return Result::<File, FsError>#Err { error: FsError#OpenFailed };
@@ -20,7 +20,7 @@ mod fs {
             return Result::<File, FsError>#Ok { value: f };
         }
 
-        pub fn create(path: &String) -> Result<File, FsError> {
+        pub fn create(path: &String) -> Result<File, FsError> with(Unsafe, Alloc) {
             let mode: String = "w";
             let h: *const u8 = std::libc::fopen(path.ptr, mode.ptr);
             mode.drop();
@@ -31,28 +31,28 @@ mod fs {
             return Result::<File, FsError>#Ok { value: f };
         }
 
-        pub fn write_bytes(&self, buf: *const u8, len: u64) -> u64 {
+        pub fn write_bytes(&self, buf: *const u8, len: u64) -> u64 with(Unsafe) {
             return std::libc::fwrite(buf, 1, len, self.handle);
         }
 
-        pub fn read_bytes(&self, buf: *mut u8, len: u64) -> u64 {
+        pub fn read_bytes(&self, buf: *mut u8, len: u64) -> u64 with(Unsafe) {
             return std::libc::fread(buf, 1, len, self.handle);
         }
 
-        pub fn seek(&self, offset: i64, whence: i32) -> i32 {
+        pub fn seek(&self, offset: i64, whence: i32) -> i32 with(Unsafe) {
             return std::libc::fseek(self.handle, offset, whence);
         }
 
-        pub fn tell(&self) -> i64 {
+        pub fn tell(&self) -> i64 with(Unsafe) {
             return std::libc::ftell(self.handle);
         }
 
-        pub fn close(self) {
+        pub fn close(self) with(Unsafe) {
             std::libc::fclose(self.handle);
         }
     }
 
-    pub fn read_file(path: &String) -> Result<std::bytes::Bytes, FsError> {
+    pub trusted fn read_file(path: &String) -> Result<std::bytes::Bytes, FsError> with(Unsafe, Alloc) {
         let mode: String = "r";
         let handle: *const u8 = std::libc::fopen(path.ptr, mode.ptr);
         mode.drop();
@@ -77,7 +77,7 @@ mod fs {
         return Result::<std::bytes::Bytes, FsError>#Ok { value: buf };
     }
 
-    pub fn write_file(path: &String, data: &std::bytes::Bytes) -> Result<u64, FsError> {
+    pub trusted fn write_file(path: &String, data: &std::bytes::Bytes) -> Result<u64, FsError> with(Unsafe, Alloc) {
         let mode: String = "w";
         let handle: *const u8 = std::libc::fopen(path.ptr, mode.ptr);
         mode.drop();
@@ -91,7 +91,7 @@ mod fs {
         return Result::<u64, FsError>#Ok { value: written };
     }
 
-    pub fn append_file(path: &String, data: &std::bytes::Bytes) -> Result<u64, FsError> {
+    pub trusted fn append_file(path: &String, data: &std::bytes::Bytes) -> Result<u64, FsError> with(Unsafe, Alloc) {
         let mode: String = "a";
         let handle: *const u8 = std::libc::fopen(path.ptr, mode.ptr);
         mode.drop();
@@ -105,7 +105,7 @@ mod fs {
         return Result::<u64, FsError>#Ok { value: written };
     }
 
-    pub fn file_exists(path: &String) -> bool {
+    pub trusted fn file_exists(path: &String) -> bool with(Unsafe, Alloc) {
         let mode: String = "r";
         let handle: *const u8 = std::libc::fopen(path.ptr, mode.ptr);
         mode.drop();
@@ -116,7 +116,7 @@ mod fs {
         return true;
     }
 
-    pub fn read_to_string(path: &String) -> Result<String, FsError> {
+    pub trusted fn read_to_string(path: &String) -> Result<String, FsError> with(Unsafe, Alloc) {
         let mode: String = "r";
         let handle: *const u8 = std::libc::fopen(path.ptr, mode.ptr);
         mode.drop();
@@ -146,7 +146,7 @@ mod fs {
     }
 
     #[test]
-    fn test_file_exists() -> i32 {
+    fn test_file_exists() -> i32 with(Unsafe, Alloc) {
         let path: String = "/dev/null";
         let exists: bool = file_exists(&path);
         path.drop();
@@ -163,7 +163,7 @@ mod fs {
     }
 
     #[test]
-    fn test_write_read_roundtrip() -> i32 {
+    fn test_write_read_roundtrip() -> i32 with(Unsafe, Alloc) {
         let path: String = "/tmp/concrete_fs_test_roundtrip.txt";
         let mut data: std::bytes::Bytes = std::bytes::Bytes::new();
         data.push(72);  // H
@@ -204,7 +204,7 @@ mod fs {
     }
 
     #[test]
-    fn test_open_nonexistent() -> i32 {
+    fn test_open_nonexistent() -> i32 with(Unsafe, Alloc) {
         let path: String = "/nonexistent/path/no_such_file.txt";
         let mode: String = "r";
         let result: Result<File, FsError> = File::open(&path, &mode);
@@ -222,7 +222,7 @@ mod fs {
     }
 
     #[test]
-    fn test_create_bad_path() -> i32 {
+    fn test_create_bad_path() -> i32 with(Unsafe, Alloc) {
         let path: String = "/nonexistent/dir/file.txt";
         let result: Result<File, FsError> = File::create(&path);
         path.drop();
@@ -238,7 +238,7 @@ mod fs {
     }
 
     #[test]
-    fn test_read_file_nonexistent() -> i32 {
+    fn test_read_file_nonexistent() -> i32 with(Unsafe, Alloc) {
         let path: String = "/nonexistent/path/no_such_file.txt";
         let result: Result<std::bytes::Bytes, FsError> = read_file(&path);
         path.drop();
@@ -254,7 +254,7 @@ mod fs {
     }
 
     #[test]
-    fn test_write_to_readonly() -> i32 {
+    fn test_write_to_readonly() -> i32 with(Unsafe, Alloc) {
         // Open a file read-only, verify write returns 0 bytes
         let path: String = "/dev/null";
         let mode: String = "r";
@@ -280,7 +280,7 @@ mod fs {
     }
 
     #[test]
-    fn test_write_file_bad_path() -> i32 {
+    fn test_write_file_bad_path() -> i32 with(Unsafe, Alloc) {
         let path: String = "/nonexistent/dir/file.txt";
         let data: std::bytes::Bytes = std::bytes::Bytes::new();
         let result: Result<u64, FsError> = write_file(&path, &data);

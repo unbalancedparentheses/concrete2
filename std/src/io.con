@@ -9,8 +9,8 @@ mod io {
         ptr: *const u8,
     }
 
-    impl File {
-        pub fn create(path: &String) -> Result<File, IoError> {
+    trusted impl File {
+        pub fn create(path: &String) -> Result<File, IoError> with(Unsafe, Alloc) {
             let mode: String = "w";
             let h: *const u8 = std::libc::fopen(path.ptr, mode.ptr);
             mode.drop();
@@ -21,7 +21,7 @@ mod io {
             return Result::<File, IoError>#Ok { value: handle };
         }
 
-        pub fn open(path: &String, mode: &String) -> Result<File, IoError> {
+        pub fn open(path: &String, mode: &String) -> Result<File, IoError> with(Unsafe) {
             let h: *const u8 = std::libc::fopen(path.ptr, mode.ptr);
             if h == (0 as *const u8) {
                 return Result::<File, IoError>#Err { error: IoError#OpenFailed };
@@ -30,11 +30,11 @@ mod io {
             return Result::<File, IoError>#Ok { value: handle };
         }
 
-        pub fn write(self: &File, data: &String) {
+        pub fn write(self: &File, data: &String) with(Unsafe) {
             std::libc::fwrite(data.ptr as *const u8, 1, data.len, self.ptr);
         }
 
-        pub fn read_byte(self: &File) -> i32 {
+        pub fn read_byte(self: &File) -> i32 with(Unsafe) {
             let buf: u8 = 0;
             let n: u64 = std::libc::fread(&buf as *mut u8, 1, 1, self.ptr);
             if n == 0 {
@@ -43,30 +43,30 @@ mod io {
             return buf as i32;
         }
 
-        pub fn flush(self: &File) {
+        pub fn flush(self: &File) with(Unsafe) {
             std::libc::fflush(self.ptr);
         }
 
-        pub fn close(self) {
+        pub fn close(self) with(Unsafe) {
             std::libc::fclose(self.ptr);
         }
 
         // TODO: read
     }
 
-    pub fn print(value: &String) {
+    pub fn print(value: &String) with(Unsafe, Console) {
         if value.len > 0 {
             std::libc::puts(value.ptr);
         }
     }
 
-    pub fn println(value: &String) {
+    pub fn println(value: &String) with(Unsafe, Console) {
         if value.len > 0 {
             std::libc::puts(value.ptr);
         }
     }
 
-    pub fn print_int(value: i64) {
+    pub trusted fn print_int(value: i64) with(Unsafe, Alloc, Console) {
         // Print an integer by converting digits
         if value < 0 {
             let dash: String = "-";
@@ -109,7 +109,7 @@ mod io {
         buf.drop();
     }
 
-    pub fn eprint(value: &String) {
+    pub trusted fn eprint(value: &String) with(Unsafe, Console) {
         if value.len > 0 {
             let stderr: *const u8 = std::libc::fdopen(2, "w" as *mut u8);
             std::libc::fwrite(value.ptr as *const u8, 1, value.len, stderr);
@@ -117,7 +117,7 @@ mod io {
     }
 
     #[test]
-    fn test_open_nonexistent() -> i32 {
+    fn test_open_nonexistent() -> i32 with(Unsafe, Alloc) {
         let path: String = "/nonexistent/path/no_such_file.txt";
         let mode: String = "r";
         let result: Result<File, IoError> = File::open(&path, &mode);
@@ -135,7 +135,7 @@ mod io {
     }
 
     #[test]
-    fn test_create_bad_path() -> i32 {
+    fn test_create_bad_path() -> i32 with(Unsafe, Alloc) {
         let path: String = "/nonexistent/dir/file.txt";
         let result: Result<File, IoError> = File::create(&path);
         path.drop();

@@ -1,15 +1,15 @@
 mod rand {
     import std.libc.{rand as libc_rand, srand as libc_srand};
 
-    pub fn seed(s: u32) {
+    pub fn seed(s: u32) with(Unsafe, Random) {
         libc_srand(s);
     }
 
-    pub fn random_int() -> i32 {
+    pub fn random_int() with(Unsafe, Random) -> i32 {
         return libc_rand();
     }
 
-    pub fn random_range(lo: i32, hi: i32) -> i32 {
+    pub fn random_range(lo: i32, hi: i32) with(Unsafe, Random) -> i32 {
         let range: i32 = hi - lo;
         let r: i32 = libc_rand();
         // Use modulo to bound, then shift by lo

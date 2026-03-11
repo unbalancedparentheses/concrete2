@@ -84,10 +84,27 @@ private partial def unsafeReportModule (m : CModule) (indent : String) : Option 
       else lines ++ [s!"{indent}  Functions with raw pointer signatures:"] ++
         ptrFns.map fun f =>
           s!"{indent}    fn {f.name}({ppTyList f.params}) -> {tyToStr f.retTy}"
-    let lines := if trustedFns.isEmpty then lines
-      else lines ++ [s!"{indent}  Trusted boundaries:"] ++
-        trustedFns.map fun f =>
-          s!"{indent}    trusted fn {f.name}({ppTyList f.params}) -> {tyToStr f.retTy}"
+    -- Split trusted functions into standalone fns vs impl methods
+    let trustedStandalone := trustedFns.filter fun f => f.trustedImplOrigin.isNone
+    let trustedImplFns := trustedFns.filter fun f => f.trustedImplOrigin.isSome
+    -- Group impl methods by origin type name
+    let trustedImplNames := (trustedImplFns.filterMap (·.trustedImplOrigin)).eraseDups
+    let lines := if trustedStandalone.isEmpty && trustedImplFns.isEmpty then lines
+      else
+        let lines := lines ++ [s!"{indent}  Trusted boundaries:"]
+        let lines := if trustedStandalone.isEmpty then lines
+          else lines ++ trustedStandalone.map fun f =>
+            s!"{indent}    trusted fn {f.name}({ppTyList f.params}) -> {tyToStr f.retTy}"
+        let lines := trustedImplNames.foldl (fun lines implName =>
+          let methods := trustedImplFns.filter fun f => f.trustedImplOrigin == some implName
+          let methodLines := methods.map fun f =>
+            -- Strip "TypeName_" prefix from method name for display
+            let shortName := if f.name.startsWith (implName ++ "_") then
+              f.name.drop (implName.length + 1) else f.name
+            s!"{indent}      fn {shortName}({ppTyList f.params}) -> {tyToStr f.retTy}"
+          lines ++ [s!"{indent}    trusted impl {implName}:"] ++ methodLines
+        ) lines
+        lines
     let lines := lines ++ subReports
     some ("\n".intercalate lines)
 

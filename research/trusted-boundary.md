@@ -228,7 +228,7 @@ User code uses `trusted` for C bindings, custom allocators, ring buffers, intrus
 
 ## Stdlib Migration
 
-When `trusted` lands, the stdlib internals get a systematic migration pass.
+`trusted` is now implemented in the compiler. The next work is the systematic migration pass across builtins and stdlib internals.
 
 What needs `trusted`:
 
@@ -236,22 +236,21 @@ What needs `trusted`:
 - low-level file/network/process wrappers that use raw pointers internally
 - allocator internals and pointer/memory helpers
 
-The migration is not ad hoc. The order is:
+The migration is not ad hoc. The remaining order is:
 
-1. implement `trusted fn` / `trusted impl` in the compiler (parser + checker)
-2. enforce capability checking for raw pointer ops and extern calls
-3. migrate builtins — signatures carry `with(Alloc)` etc.
-4. migrate stdlib — `trusted impl` on containers, proper capabilities on every function
-5. add trusted regions to `--report unsafe`
+1. enforce capability checking for raw pointer ops and extern calls uniformly with `trusted` available as the containment mechanism
+2. migrate builtins — signatures carry `with(Alloc)` etc.
+3. migrate stdlib — `trusted impl` on containers, proper capabilities on every function
+4. improve `--report unsafe` so trusted impl boundaries are surfaced more explicitly
+5. add `--report trusted` later only if the combined report becomes noisy
 
 ## Rollout Order
 
-1. implement `trusted fn` / `trusted impl` in the compiler
-2. enforce raw-pointer / low-level checks uniformly with `trusted` available as the containment mechanism
-3. migrate builtins so their signatures expose real capabilities
-4. migrate stdlib internals to trusted boundaries plus honest capabilities
-5. surface trusted boundaries in `--report unsafe`
-6. later, add `--report trusted` if the combined report becomes noisy
+1. keep raw-pointer / low-level checks uniform with `trusted` available as the containment mechanism
+2. migrate builtins so their signatures expose real capabilities
+3. migrate stdlib internals to trusted boundaries plus honest capabilities
+4. surface trusted boundaries in `--report unsafe`
+5. later, add `--report trusted` if the combined report becomes noisy
 
 ## Relationship To Other Work
 

@@ -8,7 +8,7 @@ mod bytes {
         cap: u64,
     }
 
-    impl Bytes {
+    trusted impl Bytes {
         pub fn new() -> Bytes {
             let b: Bytes = Bytes {
                 ptr: 0 as *mut u8,
@@ -18,7 +18,7 @@ mod bytes {
             return b;
         }
 
-        pub fn with_capacity(cap: u64) -> Bytes {
+        pub fn with_capacity(cap: u64) -> Bytes with(Alloc) {
             let b: Bytes = Bytes {
                 ptr: realloc::<u8>(0 as *mut u8, cap),
                 len: 0,
@@ -27,7 +27,7 @@ mod bytes {
             return b;
         }
 
-        pub fn push(&mut self, byte: u8) {
+        pub fn push(&mut self, byte: u8) with(Alloc) {
             if self.len >= self.cap {
                 self.grow();
             }
@@ -80,13 +80,13 @@ mod bytes {
             self.len = 0;
         }
 
-        fn grow(&mut self) {
+        fn grow(&mut self) with(Alloc) {
             let new_cap: u64 = std::math::max::<u64>(self.cap, 4) * 2;
             self.ptr = realloc::<u8>(self.ptr, new_cap);
             self.cap = new_cap;
         }
 
-        pub fn append_bytes(&mut self, other: &Bytes) {
+        pub fn append_bytes(&mut self, other: &Bytes) with(Alloc) {
             let i: u64 = 0;
             while i < other.len {
                 self.push(other.get_unchecked(i));
@@ -94,7 +94,7 @@ mod bytes {
             }
         }
 
-        pub fn drop(self) {
+        pub fn drop(self) with(Alloc) {
             free::<u8>(self.ptr);
         }
     }
@@ -102,7 +102,7 @@ mod bytes {
     import std.test.{assert_eq};
 
     #[test]
-    fn test_bytes_push_get() -> i32 {
+    fn test_bytes_push_get() -> i32 with(Alloc) {
         let mut b: Bytes = Bytes::new();
         b.push(10);
         b.push(20);
@@ -130,7 +130,7 @@ mod bytes {
     }
 
     #[test]
-    fn test_bytes_growth() -> i32 {
+    fn test_bytes_growth() -> i32 with(Alloc) {
         let mut b: Bytes = Bytes::with_capacity(2);
 
         if !assert_eq::<u64>(b.cap(), 2, "initial cap should be 2") {
@@ -152,7 +152,7 @@ mod bytes {
     }
 
     #[test]
-    fn test_bytes_append() -> i32 {
+    fn test_bytes_append() -> i32 with(Alloc) {
         let mut a: Bytes = Bytes::new();
         a.push(1);
         a.push(2);
@@ -185,7 +185,7 @@ mod bytes {
     }
 
     #[test]
-    fn test_get_in_bounds() -> i32 {
+    fn test_get_in_bounds() -> i32 with(Alloc) {
         let mut b: Bytes = Bytes::new();
         b.push(42);
         let result: Option<u8> = b.get(0);
@@ -206,7 +206,7 @@ mod bytes {
     }
 
     #[test]
-    fn test_get_out_of_bounds() -> i32 {
+    fn test_get_out_of_bounds() -> i32 with(Alloc) {
         let b: Bytes = Bytes::new();
         let result: Option<u8> = b.get(0);
         match result {
@@ -222,7 +222,7 @@ mod bytes {
     }
 
     #[test]
-    fn test_set_in_bounds() -> i32 {
+    fn test_set_in_bounds() -> i32 with(Alloc) {
         let mut b: Bytes = Bytes::new();
         b.push(0);
         let ok: bool = b.set(0, 42);
@@ -239,7 +239,7 @@ mod bytes {
     }
 
     #[test]
-    fn test_set_out_of_bounds() -> i32 {
+    fn test_set_out_of_bounds() -> i32 with(Alloc) {
         let mut b: Bytes = Bytes::new();
         let ok: bool = b.set(0, 42);
         if ok {

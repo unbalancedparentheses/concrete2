@@ -19,8 +19,8 @@ mod net {
         fd: i32,
     }
 
-    impl TcpListener {
-        pub fn bind(addr: &String, port: u16) -> Result<TcpListener, NetError> {
+    trusted impl TcpListener {
+        pub fn bind(addr: &String, port: u16) -> Result<TcpListener, NetError> with(Unsafe, Alloc, Network) {
             let fd: i32 = socket(2, 1, 0);
             if fd < 0 {
                 return Result::<TcpListener, NetError>#Err { error: NetError#SocketFailed };
@@ -87,7 +87,7 @@ mod net {
             return Result::<TcpListener, NetError>#Ok { value: listener };
         }
 
-        pub fn accept(&self) -> Result<TcpStream, NetError> {
+        pub fn accept(&self) -> Result<TcpStream, NetError> with(Unsafe, Network) {
             let client_fd: i32 = accept(self.fd, 0 as *mut u8, 0 as *mut u32);
             if client_fd < 0 {
                 return Result::<TcpStream, NetError>#Err { error: NetError#AcceptFailed };
@@ -96,7 +96,7 @@ mod net {
             return Result::<TcpStream, NetError>#Ok { value: stream };
         }
 
-        pub fn close(self) {
+        pub fn close(self) with(Unsafe, Network) {
             close(self.fd);
         }
     }
@@ -105,8 +105,8 @@ mod net {
         fd: i32,
     }
 
-    impl TcpStream {
-        pub fn connect(addr: &String, port: u16) -> Result<TcpStream, NetError> {
+    trusted impl TcpStream {
+        pub fn connect(addr: &String, port: u16) -> Result<TcpStream, NetError> with(Unsafe, Alloc, Network) {
             let fd: i32 = socket(2, 1, 0);
             if fd < 0 {
                 return Result::<TcpStream, NetError>#Err { error: NetError#SocketFailed };
@@ -156,15 +156,15 @@ mod net {
             return Result::<TcpStream, NetError>#Ok { value: stream };
         }
 
-        pub fn write(&self, data: *const u8, len: u64) -> i64 {
+        pub fn write(&self, data: *const u8, len: u64) -> i64 with(Unsafe, Network) {
             return send(self.fd, data, len, 0);
         }
 
-        pub fn read(&self, buf: *mut u8, len: u64) -> i64 {
+        pub fn read(&self, buf: *mut u8, len: u64) -> i64 with(Unsafe, Network) {
             return recv(self.fd, buf, len, 0);
         }
 
-        pub fn write_all(&self, data: *const u8, len: u64) -> bool {
+        pub fn write_all(&self, data: *const u8, len: u64) -> bool with(Unsafe, Network) {
             let sent: u64 = 0;
             while sent < len {
                 let src: *const u8 = data + sent;
@@ -178,7 +178,7 @@ mod net {
             return true;
         }
 
-        pub fn read_all(&self, buf: &mut std::bytes::Bytes) -> i64 {
+        pub fn read_all(&self, buf: &mut std::bytes::Bytes) -> i64 with(Unsafe, Alloc, Network) {
             let total: i64 = 0;
             let tmp: [u8; 4096] = [0; 4096];
             let reading: bool = true;
@@ -199,7 +199,7 @@ mod net {
             return total;
         }
 
-        pub fn close(self) {
+        pub fn close(self) with(Unsafe, Network) {
             close(self.fd);
         }
     }
@@ -207,7 +207,7 @@ mod net {
     import std.test.{assert_eq};
 
     #[test]
-    fn test_tcp_roundtrip() -> i32 {
+    fn test_tcp_roundtrip() -> i32 with(Unsafe, Alloc, Network, Process) {
         // Integration test: bind, fork, child connects+writes, parent accepts+reads
         let addr: String = "127.0.0.1";
         let port: u16 = 39876;
@@ -277,7 +277,7 @@ mod net {
     }
 
     #[test]
-    fn test_tcp_write_all_read_all() -> i32 {
+    fn test_tcp_write_all_read_all() -> i32 with(Unsafe, Alloc, Network, Process) {
         // Integration test: write_all from client, read_all on server
         let addr: String = "127.0.0.1";
         let port: u16 = 39877;
@@ -347,7 +347,7 @@ mod net {
     }
 
     #[test]
-    fn test_connect_refused() -> i32 {
+    fn test_connect_refused() -> i32 with(Unsafe, Alloc, Network, Process) {
         // Connect to localhost port 1 — should fail with ConnectFailed
         let addr: String = "127.0.0.1";
         let result: Result<TcpStream, NetError> = TcpStream::connect(&addr, 1);
@@ -364,7 +364,7 @@ mod net {
     }
 
     #[test]
-    fn test_connect_bad_address() -> i32 {
+    fn test_connect_bad_address() -> i32 with(Unsafe, Alloc, Network, Process) {
         let addr: String = "999.999.999.999";
         let result: Result<TcpStream, NetError> = TcpStream::connect(&addr, 1);
         addr.drop();
@@ -380,7 +380,7 @@ mod net {
     }
 
     #[test]
-    fn test_bind_bad_address() -> i32 {
+    fn test_bind_bad_address() -> i32 with(Unsafe, Alloc, Network, Process) {
         let addr: String = "999.999.999.999";
         let result: Result<TcpListener, NetError> = TcpListener::bind(&addr, 9999);
         addr.drop();

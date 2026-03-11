@@ -9,7 +9,7 @@ mod slice {
         len: u64,
     }
 
-    pub fn slice_get<T>(s: &Slice<T>, at: u64) -> &T {
+    pub trusted fn slice_get<T>(s: &Slice<T>, at: u64) -> &T {
         let target_ptr: *const T = s.ptr + at;
         return target_ptr as &T;
     }
@@ -22,12 +22,12 @@ mod slice {
         return s.len == 0;
     }
 
-    pub fn mut_slice_get<T>(s: &MutSlice<T>, at: u64) -> &T {
+    pub trusted fn mut_slice_get<T>(s: &MutSlice<T>, at: u64) -> &T {
         let target_ptr: *mut T = s.ptr + at;
         return target_ptr as &T;
     }
 
-    pub fn mut_slice_set<T>(s: &mut MutSlice<T>, at: u64, value: T) {
+    pub trusted fn mut_slice_set<T>(s: &mut MutSlice<T>, at: u64, value: T) {
         let target_ptr: *mut T = s.ptr + at;
         *target_ptr = value;
     }

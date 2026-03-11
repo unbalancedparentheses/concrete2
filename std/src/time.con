@@ -33,8 +33,8 @@ mod time {
         nanos: i64,
     }
 
-    impl Instant {
-        pub fn now() -> Instant {
+    trusted impl Instant {
+        pub fn now() with(Unsafe, Alloc) -> Instant {
             // Allocate 16 bytes for struct timespec (macOS arm64: i64 + i64)
             let buf: *mut u8 = realloc::<u8>(0 as *mut u8, 16);
 
@@ -63,7 +63,7 @@ mod time {
             return inst;
         }
 
-        pub fn elapsed(&self) -> Duration {
+        pub fn elapsed(&self) with(Unsafe, Alloc) -> Duration {
             let current: Instant = Instant::now();
             let sec_diff: i64 = current.secs - self.secs;
             let nsec_diff: i64 = current.nanos - self.nanos;
@@ -78,7 +78,7 @@ mod time {
         }
     }
 
-    pub fn sleep(dur: &Duration) {
+    pub trusted fn sleep(dur: &Duration) with(Unsafe, Alloc) {
         // Allocate 16 bytes for struct timespec
         let req: *mut u8 = realloc::<u8>(0 as *mut u8, 16);
 
@@ -95,7 +95,7 @@ mod time {
         free::<u8>(req);
     }
 
-    pub fn unix_timestamp() -> i64 {
+    pub trusted fn unix_timestamp() with(Unsafe) -> i64 {
         return libc_time(0 as *mut i64);
     }
 

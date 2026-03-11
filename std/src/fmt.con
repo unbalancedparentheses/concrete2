@@ -2,7 +2,7 @@ mod fmt {
     import std.alloc.{realloc,free};
     import std.string.{int_to_digit};
 
-    pub fn format_int(value: i64) -> String {
+    pub trusted fn format_int(value: i64) with(Alloc) -> String {
         if value == 0 {
             let s: String = "0";
             return s;
@@ -42,7 +42,7 @@ mod fmt {
         return buf;
     }
 
-    pub fn format_uint(value: u64) -> String {
+    pub trusted fn format_uint(value: u64) with(Alloc) -> String {
         if value == 0 {
             let s: String = "0";
             return s;
@@ -82,7 +82,7 @@ mod fmt {
         return (87 + v) as char;
     }
 
-    pub fn format_hex(value: u64) -> String {
+    pub trusted fn format_hex(value: u64) with(Alloc) -> String {
         if value == 0 {
             let s: String = "0x0";
             return s;
@@ -117,7 +117,7 @@ mod fmt {
         return buf;
     }
 
-    pub fn format_bin(value: u64) -> String {
+    pub trusted fn format_bin(value: u64) with(Alloc) -> String {
         if value == 0 {
             let s: String = "0b0";
             return s;
@@ -152,7 +152,7 @@ mod fmt {
         return buf;
     }
 
-    pub fn format_oct(value: u64) -> String {
+    pub trusted fn format_oct(value: u64) with(Alloc) -> String {
         if value == 0 {
             let s: String = "0o0";
             return s;
@@ -187,7 +187,7 @@ mod fmt {
         return buf;
     }
 
-    pub fn format_bool(value: bool) -> String {
+    pub trusted fn format_bool(value: bool) with(Alloc) -> String {
         if value {
             let s: String = "true";
             return s;
@@ -196,7 +196,7 @@ mod fmt {
         return s;
     }
 
-    pub fn pad_left(s: &String, width: u64, fill: char) -> String {
+    pub fn pad_left(s: &String, width: u64, fill: char) with(Alloc) -> String {
         if s.len >= width {
             // Copy the string as-is
             let result: String = String::new();
@@ -226,7 +226,7 @@ mod fmt {
         return result;
     }
 
-    pub fn pad_right(s: &String, width: u64, fill: char) -> String {
+    pub fn pad_right(s: &String, width: u64, fill: char) with(Alloc) -> String {
         let result: String = String::new();
 
         let i: u64 = 0;
