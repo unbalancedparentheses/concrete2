@@ -54,7 +54,6 @@ inductive IntrinsicId where
 
   -- Math (Float64 → Float64 unless noted)
   | sqrt | sin | cos | tan | pow | log_ | exp | floor | ceil
-  | abs   -- polymorphic: works on Int or Float64
 
   -- System
   | getEnv | getArgs | exitProcess | abort
@@ -159,7 +158,6 @@ def resolveIntrinsic (name : String) : Option IntrinsicId :=
   | "exp"   => some .exp
   | "floor" => some .floor
   | "ceil"  => some .ceil
-  | "abs"   => some .abs
 
   -- System
   | "get_env"      => some .getEnv
@@ -189,9 +187,7 @@ def isIntrinsic (name : String) : Bool :=
 /-- The canonical LLVM/runtime name for an intrinsic.
 
 This is the name emitted in the final IR — it may differ from the
-source-level name (e.g. the source name `abs` on Float64 becomes `fabs`
-at codegen time, but at the IR level we keep `abs` and let EmitSSA
-dispatch). -/
+source-level name (e.g. `log` in source → `log` in IR). -/
 def IntrinsicId.canonicalName : IntrinsicId → String
   | .alloc => "alloc"
   | .free => "free"
@@ -257,7 +253,6 @@ def IntrinsicId.canonicalName : IntrinsicId → String
   | .exp => "exp"
   | .floor => "floor"
   | .ceil => "ceil"
-  | .abs => "abs"
   | .getEnv => "get_env"
   | .envGet => "env_get"
   | .envSet => "env_set"
