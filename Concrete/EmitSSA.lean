@@ -2,6 +2,7 @@ import Concrete.SSA
 import Concrete.Core
 import Concrete.Layout
 import Concrete.Codegen.Builtins
+import Concrete.Intrinsic
 
 namespace Concrete
 
@@ -306,7 +307,8 @@ private def emitSInst (s : EmitSSAState) (inst : SInst) : EmitSSAState :=
         n == fn && match t with | .fn_ _ _ _ => true | _ => false)
       || s.fnTypeRegs.contains fn
     -- Special-case abs: emit fabs for floats, conditional negate for integers
-    if fn == "abs" && !isIndirect && args.length == 1 then
+    let intrinsic := resolveIntrinsic fn
+    if intrinsic == some .abs && !isIndirect && args.length == 1 then
       match dst with
       | some d =>
         let argVal := match args with | a :: _ => a | [] => SVal.unit

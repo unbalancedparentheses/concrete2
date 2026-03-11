@@ -1,6 +1,7 @@
 import Concrete.Core
 import Concrete.SSA
 import Concrete.Layout
+import Concrete.Intrinsic
 
 namespace Concrete
 
@@ -305,17 +306,18 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
     return .reg dst ty
 
   | .call fn _typeArgs args ty =>
+    let intrinsic := resolveIntrinsic fn
     -- Handle sizeof::<T>() and alignof::<T>() → compile-time constants
-    if fn == "sizeof" then
+    if intrinsic == some .sizeof then
       let argTy := match _typeArgs with | t :: _ => t | [] => Ty.int
       let sz ← computeTySize argTy
       return .intConst (Int.ofNat sz) .uint
-    if fn == "alignof" then
+    if intrinsic == some .alignof then
       let argTy := match _typeArgs with | t :: _ => t | [] => Ty.int
       let ctx ← getLayoutCtx
       return .intConst (Int.ofNat (Layout.tyAlign ctx argTy)) .uint
     -- Handle alloc(val) → malloc + store
-    if fn == "alloc" then
+    if intrinsic == some .alloc then
       match args.head? with
       | some arg =>
         let aVal ← lowerExpr arg
@@ -328,7 +330,7 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
         return ptrVal
       | none => return .unit
     -- Handle free(ptr) → free the pointer, return loaded value
-    else if fn == "free" then
+    else if intrinsic == some .free then
       match args.head? with
       | some arg =>
         let ptrVal ← lowerExpr arg

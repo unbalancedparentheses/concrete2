@@ -1,6 +1,7 @@
 import Concrete.AST
 import Concrete.Diagnostic
 import Concrete.FileSummary
+import Concrete.Intrinsic
 import Concrete.Shared
 
 namespace Concrete
@@ -68,6 +69,7 @@ structure TypeEnv where
   traits : List TraitDef := []             -- all trait definitions (for method lookup on type vars)
   currentTypeBounds : List (String × List String) := []  -- current function's type param bounds
   newtypes : List NewtypeDef := []         -- all newtype definitions
+  userFnNames : List String := []          -- names of user-defined, imported, and extern functions (NOT builtins)
   deriving Repr
 
 abbrev CheckM := ExceptT Diagnostics (StateM TypeEnv)
@@ -866,16 +868,16 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       if inferredTypeArgs.isEmpty then return .named fnName
       else return .generic fnName inferredTypeArgs
     | none =>
+    let env ← getEnv
+    let isUserFn := env.userFnNames.contains fnName
+    let intrinsic := if isUserFn then none else resolveIntrinsic fnName
     -- Intercept sizeof::<T>() and alignof::<T>() builtins
-    if fnName == "sizeof" || fnName == "alignof" then
+    if intrinsic == some .sizeof || intrinsic == some .alignof then
       if args.length != 0 then throwCheckMsg s!"{fnName} takes no value arguments"
       if typeArgs.length != 1 then throwCheckMsg s!"{fnName} requires exactly 1 type argument: {fnName}::<T>()"
       return .uint
     -- Intercept unwrap(x) for newtype unwrapping (only if not a user-defined function)
-    if fnName == "unwrap" && args.length == 1 then
-      -- Check if unwrap is a user-defined function; if so, skip this intercept
-      let isUserFn ← lookupFn "unwrap"
-      if isUserFn.isNone then
+    if intrinsic == some .unwrap && args.length == 1 then
         let arg := match args with | a :: _ => a | [] => Expr.intLit default 0
         let argTy ← checkExpr arg
         let ntName := match argTy with | .named n => n | _ => ""
@@ -888,11 +890,11 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
           return nt.innerTy
         | none => throwCheckMsg s!"unwrap() requires a newtype argument, '{ntName}' is not a newtype"
     -- Intercept abort() calls
-    if fnName == "abort" then
+    if intrinsic == some .abort then
       if args.length != 0 then throwCheck (.builtinWrongArgCount "abort" 0) (some e.getSpan)
       return .never
     -- Intercept destroy() calls
-    if fnName == "destroy" then
+    if intrinsic == some .destroy then
       if args.length != 1 then throwCheck (.builtinWrongArgCount "destroy" 1) (some e.getSpan)
       let arg := match args with | a :: _ => a | [] => Expr.intLit default 0
       let argTy ← checkExpr arg
@@ -913,7 +915,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
         return .unit
       | none => throwCheck (.typeDoesNotImplDestroy typeName) (some e.getSpan)
     -- Intercept alloc(val) calls
-    if fnName == "alloc" then
+    if intrinsic == some .alloc then
       if args.length != 1 then throwCheck (.builtinWrongArgCount "alloc" 1) (some e.getSpan)
       let arg := match args with | a :: _ => a | [] => Expr.intLit default 0
       let argTy ← checkExpr arg
@@ -923,7 +925,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       | _ => pure ()
       return .heap argTy
     -- Intercept free(ptr) calls
-    if fnName == "free" then
+    if intrinsic == some .free then
       if args.length != 1 then throwCheck (.builtinWrongArgCount "free" 1) (some e.getSpan)
       let arg := match args with | a :: _ => a | [] => Expr.intLit default 0
       let argTy ← checkExpr arg
@@ -936,13 +938,13 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
         return innerTy
       | _ => throwCheck (.freeRequiresHeap (tyToString argTy)) (some e.getSpan)
     -- Intercept vec_new::<T>()
-    if fnName == "vec_new" then
+    if intrinsic == some .vecNew then
       if args.length != 0 then throwCheck (.builtinWrongArgCount "vec_new" 0) (some e.getSpan)
       if typeArgs.length != 1 then throwCheck (.builtinWrongTypeArgCount "vec_new" "1 type argument: vec_new::<T>()") (some e.getSpan)
       let elemTy := match typeArgs with | t :: _ => t | [] => Ty.int
       return .generic "Vec" [elemTy]
     -- Intercept vec_push(&mut v, val)
-    if fnName == "vec_push" then
+    if intrinsic == some .vecPush then
       if args.length != 2 then throwCheck (.builtinWrongArgCount "vec_push" 2) (some e.getSpan)
       let vecArg := match args with | a :: _ => a | [] => Expr.intLit default 0
       let valArg := match args with | _ :: b :: _ => b | _ => Expr.intLit default 0
@@ -958,7 +960,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       | _ => pure ()
       return .unit
     -- Intercept vec_get(&v, idx)
-    if fnName == "vec_get" then
+    if intrinsic == some .vecGet then
       if args.length != 2 then throwCheck (.builtinWrongArgCount "vec_get" 2) (some e.getSpan)
       let vecArg := match args with | a :: _ => a | [] => Expr.intLit default 0
       let idxArg := match args with | _ :: b :: _ => b | _ => Expr.intLit default 0
@@ -972,7 +974,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       expectTy .int idxTy "vec_get() index argument" (some e.getSpan)
       return elemTy
     -- Intercept vec_set(&mut v, idx, val)
-    if fnName == "vec_set" then
+    if intrinsic == some .vecSet then
       if args.length != 3 then throwCheck (.builtinWrongArgCount "vec_set" 3) (some e.getSpan)
       let vecArg := match args with | a :: _ => a | [] => Expr.intLit default 0
       let idxArg := match args with | _ :: b :: _ => b | _ => Expr.intLit default 0
@@ -991,7 +993,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       | _ => pure ()
       return .unit
     -- Intercept vec_len(&v)
-    if fnName == "vec_len" then
+    if intrinsic == some .vecLen then
       if args.length != 1 then throwCheck (.builtinWrongArgCount "vec_len" 1) (some e.getSpan)
       let vecArg := match args with | a :: _ => a | [] => Expr.intLit default 0
       let vecTy ← checkExpr vecArg
@@ -1002,7 +1004,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       if !ok then throwCheck (.builtinWrongFirstArg "vec_len" "&Vec<T> or &mut Vec<T> as argument" (tyToString vecTy)) (some e.getSpan)
       return .int
     -- Intercept vec_pop(&mut v)
-    if fnName == "vec_pop" then
+    if intrinsic == some .vecPop then
       if args.length != 1 then throwCheck (.builtinWrongArgCount "vec_pop" 1) (some e.getSpan)
       let vecArg := match args with | a :: _ => a | [] => Expr.intLit default 0
       let vecTy ← checkExpr vecArg
@@ -1012,7 +1014,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       if elemTy == .placeholder then throwCheck (.builtinWrongFirstArg "vec_pop" "&mut Vec<T> as argument" (tyToString vecTy)) (some e.getSpan)
       return .generic "Option" [elemTy]
     -- Intercept vec_free(v)
-    if fnName == "vec_free" then
+    if intrinsic == some .vecFree then
       if args.length != 1 then throwCheck (.builtinWrongArgCount "vec_free" 1) (some e.getSpan)
       let vecArg := match args with | a :: _ => a | [] => Expr.intLit default 0
       let vecTy ← checkExpr vecArg
@@ -1025,7 +1027,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       | _ => pure ()
       return .unit
     -- Intercept map_new::<K, V>()
-    if fnName == "map_new" then
+    if intrinsic == some .mapNew then
       if args.length != 0 then throwCheck (.builtinWrongArgCount "map_new" 0) (some e.getSpan)
       if typeArgs.length != 2 then throwCheck (.builtinWrongTypeArgCount "map_new" "2 type arguments: map_new::<K, V>()") (some e.getSpan)
       let kTy := match typeArgs with | t :: _ => t | [] => Ty.int
@@ -1035,7 +1037,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       if !keyOk then throwCheck (.builtinBadKeyType "map_new" (tyToString kTy)) (some e.getSpan)
       return .generic "HashMap" [kTy, vTy]
     -- Intercept map_insert(&mut m, key, val)
-    if fnName == "map_insert" then
+    if intrinsic == some .mapInsert then
       if args.length != 3 then throwCheck (.builtinWrongArgCount "map_insert" 3) (some e.getSpan)
       let mapArg := match args with | a :: _ => a | [] => Expr.intLit default 0
       let keyArg := match args with | _ :: b :: _ => b | _ => Expr.intLit default 0
@@ -1057,7 +1059,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       | _ => pure ()
       return .unit
     -- Intercept map_get(&m, key)
-    if fnName == "map_get" then
+    if intrinsic == some .mapGet then
       if args.length != 2 then throwCheck (.builtinWrongArgCount "map_get" 2) (some e.getSpan)
       let mapArg := match args with | a :: _ => a | [] => Expr.intLit default 0
       let keyArg := match args with | _ :: b :: _ => b | _ => Expr.intLit default 0
@@ -1074,7 +1076,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       | _ => pure ()
       return .generic "Option" [vTy]
     -- Intercept map_contains(&m, key)
-    if fnName == "map_contains" then
+    if intrinsic == some .mapContains then
       if args.length != 2 then throwCheck (.builtinWrongArgCount "map_contains" 2) (some e.getSpan)
       let mapArg := match args with | a :: _ => a | [] => Expr.intLit default 0
       let keyArg := match args with | _ :: b :: _ => b | _ => Expr.intLit default 0
@@ -1091,7 +1093,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       | _ => pure ()
       return .bool
     -- Intercept map_remove(&mut m, key)
-    if fnName == "map_remove" then
+    if intrinsic == some .mapRemove then
       if args.length != 2 then throwCheck (.builtinWrongArgCount "map_remove" 2) (some e.getSpan)
       let mapArg := match args with | a :: _ => a | [] => Expr.intLit default 0
       let keyArg := match args with | _ :: b :: _ => b | _ => Expr.intLit default 0
@@ -1107,7 +1109,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       | _ => pure ()
       return .generic "Option" [vTy]
     -- Intercept map_len(&m)
-    if fnName == "map_len" then
+    if intrinsic == some .mapLen then
       if args.length != 1 then throwCheck (.builtinWrongArgCount "map_len" 1) (some e.getSpan)
       let mapArg := match args with | a :: _ => a | [] => Expr.intLit default 0
       let mapTy ← checkExpr mapArg
@@ -1118,7 +1120,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       if !ok then throwCheck (.builtinWrongFirstArg "map_len" "&HashMap<K,V> or &mut HashMap<K,V> as argument" (tyToString mapTy)) (some e.getSpan)
       return .int
     -- Intercept map_free(m)
-    if fnName == "map_free" then
+    if intrinsic == some .mapFree then
       if args.length != 1 then throwCheck (.builtinWrongArgCount "map_free" 1) (some e.getSpan)
       let mapArg := match args with | a :: _ => a | [] => Expr.intLit default 0
       let mapTy ← checkExpr mapArg
@@ -1131,7 +1133,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       | _ => pure ()
       return .unit
     -- Intercept abs(x) — works on any numeric type
-    if fnName == "abs" then
+    if intrinsic == some .abs then
       if args.length != 1 then throwCheck (.builtinWrongArgCount "abs" 1) (some e.getSpan)
       let arg := match args with | a :: _ => a | [] => Expr.intLit default 0
       let argTy ← checkExpr arg
@@ -1265,7 +1267,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       return retTy
     | none =>
       -- sizeof intrinsic
-      if fnName == "sizeof" || fnName.endsWith "_sizeof" then return .uint
+      if intrinsic == some .sizeof || fnName.endsWith "_sizeof" then return .uint
       else throwCheck (.undeclaredFunction fnName) (some e.getSpan)
   | .paren _ inner => checkExpr inner hint
   | .structLit _ name typeArgs fields =>
@@ -2200,6 +2202,7 @@ def checkModule (m : Module) (summary : FileSummary)
   let fnNames : List (String × Nat) :=
     (enumerateList summary.functions).map fun (idx, (name, _)) => (name, baseOffset + idx)
   let allNames := importedNames ++ fnNames ++ builtinNames ++ externNames ++ submoduleNames ++ implNames
+  let userFnNamesList := (importedNames ++ fnNames ++ externNames ++ submoduleNames ++ implNames).map Prod.fst
   -- Build named function signature map for fnRef resolution
   let fnSigPairs : List (String × FnSummary) :=
     summary.functions ++ (implMethodSigs ++ traitImplMethodSigs)
@@ -2237,7 +2240,8 @@ def checkModule (m : Module) (summary : FileSummary)
   let initEnv : TypeEnv :=
     { vars := [], structs := allStructs, enums := allEnums, functions := allSigs,
       fnNames := allNames, loopDepth := 0, typeAliases := typeAliasMap, constants := constantsMap,
-      traitImpls := traitImplPairs, allFnSummarys := fnSigPairs, newtypes := allNewtypes }
+      traitImpls := traitImplPairs, allFnSummarys := fnSigPairs, newtypes := allNewtypes,
+      userFnNames := userFnNamesList }
   -- Module-level declaration checks (Copy/Destroy, repr, FFI, traits) moved to CoreCheck.lean.
   -- Reserved name check stays here because reserved names conflict with builtins in Check.
   let reservedNameCheck := m.functions.foldl (init := (Except.ok () : Except Diagnostics Unit)) fun acc f =>

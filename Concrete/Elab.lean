@@ -2,6 +2,7 @@ import Concrete.AST
 import Concrete.Core
 import Concrete.Diagnostic
 import Concrete.FileSummary
+import Concrete.Intrinsic
 
 namespace Concrete
 
@@ -623,28 +624,29 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
 /-- Elaborate a function call (regular, builtins, intercepted). -/
 partial def elabCall (fnName : String) (typeArgs : List Ty) (args : List Expr)
     (_hint : Option Ty) (span : Option Span := none) : ElabM CExpr := do
+  let intrinsic := resolveIntrinsic fnName
   -- Intercept abort()
-  if fnName == "abort" then
+  if intrinsic == some .abort then
     return .call "abort" [] [] .never
   -- Intercept abs(x) — works on any numeric type
-  if fnName == "abs" then
+  if intrinsic == some .abs then
     let arg := match args with | a :: _ => a | [] => Expr.intLit default 0
     let cArg ← elabExpr arg
     return .call "abs" [] [cArg] cArg.ty
   -- Intercept destroy(arg)
-  if fnName == "destroy" then
+  if intrinsic == some .destroy then
     let arg := match args with | a :: _ => a | [] => Expr.intLit default 0
     let cArg ← elabExpr arg
     let typeName := match cArg.ty with
       | .named n => n | .generic n _ => n | _ => ""
     return .call (typeName ++ "_destroy") [] [cArg] .unit
   -- Intercept alloc(val)
-  if fnName == "alloc" then
+  if intrinsic == some .alloc then
     let arg := match args with | a :: _ => a | [] => Expr.intLit default 0
     let cArg ← elabExpr arg
     return .call "alloc" [] [cArg] (.heap cArg.ty)
   -- Intercept free(ptr)
-  if fnName == "free" then
+  if intrinsic == some .free then
     let arg := match args with | a :: _ => a | [] => Expr.intLit default 0
     let cArg ← elabExpr arg
     let innerTy := match cArg.ty with | .heap t => t | _ => .placeholder
@@ -658,28 +660,28 @@ partial def elabCall (fnName : String) (typeArgs : List Ty) (args : List Expr)
     return cArg  -- newtype erasure: just return the inner value
   | none => pure ()
   -- Intercept unwrap(x): erase to inner expression (only if not a user-defined function)
-  if fnName == "unwrap" && args.length == 1 then
+  if intrinsic == some .unwrap && args.length == 1 then
     let isUserFn ← lookupFnSig "unwrap"
     if isUserFn.isNone then
       let arg := match args with | a :: _ => a | [] => Expr.intLit default 0
       let cArg ← elabExpr arg
       return cArg  -- newtype erasure: just return the inner value
   -- Intercept sizeof/alignof
-  if fnName == "sizeof" || fnName == "alignof" || fnName.endsWith "_sizeof" then
+  if intrinsic == some .sizeof || intrinsic == some .alignof || fnName.endsWith "_sizeof" then
     return .call fnName typeArgs [] .uint
   -- Intercept vec_new::<T>()
-  if fnName == "vec_new" then
+  if intrinsic == some .vecNew then
     let elemTy := match typeArgs with | t :: _ => t | [] => .int
     return .call "vec_new" typeArgs [] (.generic "Vec" [elemTy])
   -- Intercept vec_push
-  if fnName == "vec_push" then
+  if intrinsic == some .vecPush then
     let mut cArgs : List CExpr := []
     for arg in args do
       let cArg ← elabExpr arg
       cArgs := cArgs ++ [cArg]
     return .call "vec_push" [] cArgs .unit
   -- Intercept vec_get
-  if fnName == "vec_get" then
+  if intrinsic == some .vecGet then
     let mut cArgs : List CExpr := []
     for arg in args do
       let cArg ← elabExpr arg
@@ -690,21 +692,21 @@ partial def elabCall (fnName : String) (typeArgs : List Ty) (args : List Expr)
       | _ => .placeholder
     return .call "vec_get" [] cArgs elemTy
   -- Intercept vec_set
-  if fnName == "vec_set" then
+  if intrinsic == some .vecSet then
     let mut cArgs : List CExpr := []
     for arg in args do
       let cArg ← elabExpr arg
       cArgs := cArgs ++ [cArg]
     return .call "vec_set" [] cArgs .unit
   -- Intercept vec_len
-  if fnName == "vec_len" then
+  if intrinsic == some .vecLen then
     let mut cArgs : List CExpr := []
     for arg in args do
       let cArg ← elabExpr arg
       cArgs := cArgs ++ [cArg]
     return .call "vec_len" [] cArgs .int
   -- Intercept vec_pop
-  if fnName == "vec_pop" then
+  if intrinsic == some .vecPop then
     let mut cArgs : List CExpr := []
     for arg in args do
       let cArg ← elabExpr arg
@@ -714,20 +716,20 @@ partial def elabCall (fnName : String) (typeArgs : List Ty) (args : List Expr)
       | _ => .placeholder
     return .call "vec_pop" [] cArgs (.generic "Option" [elemTy])
   -- Intercept vec_free
-  if fnName == "vec_free" then
+  if intrinsic == some .vecFree then
     let mut cArgs : List CExpr := []
     for arg in args do
       let cArg ← elabExpr arg
       cArgs := cArgs ++ [cArg]
     return .call "vec_free" [] cArgs .unit
   -- Intercept map_new::<K, V>()
-  if fnName == "map_new" then
+  if intrinsic == some .mapNew then
     let kTy := match typeArgs with | t :: _ => t | [] => .int
     let vTy := match typeArgs with | _ :: t :: _ => t | _ => .int
     let suffix := if kTy == .string then "_str" else ""
     return .call ("map_new" ++ suffix) typeArgs [] (.generic "HashMap" [kTy, vTy])
   -- Intercept map_insert
-  if fnName == "map_insert" then
+  if intrinsic == some .mapInsert then
     let mut cArgs : List CExpr := []
     for arg in args do
       let cArg ← elabExpr arg
@@ -739,7 +741,7 @@ partial def elabCall (fnName : String) (typeArgs : List Ty) (args : List Expr)
     let suffix := if isStrKey then "_str" else ""
     return .call ("map_insert" ++ suffix) [] cArgs .unit
   -- Intercept map_get
-  if fnName == "map_get" then
+  if intrinsic == some .mapGet then
     let mut cArgs : List CExpr := []
     for arg in args do
       let cArg ← elabExpr arg
@@ -755,7 +757,7 @@ partial def elabCall (fnName : String) (typeArgs : List Ty) (args : List Expr)
     let suffix := if isStrKey then "_str" else ""
     return .call ("map_get" ++ suffix) [] cArgs (.generic "Option" [vTy])
   -- Intercept map_contains
-  if fnName == "map_contains" then
+  if intrinsic == some .mapContains then
     let mut cArgs : List CExpr := []
     for arg in args do
       let cArg ← elabExpr arg
@@ -767,7 +769,7 @@ partial def elabCall (fnName : String) (typeArgs : List Ty) (args : List Expr)
     let suffix := if isStrKey then "_str" else ""
     return .call ("map_contains" ++ suffix) [] cArgs .bool
   -- Intercept map_remove
-  if fnName == "map_remove" then
+  if intrinsic == some .mapRemove then
     let mut cArgs : List CExpr := []
     for arg in args do
       let cArg ← elabExpr arg
@@ -781,14 +783,14 @@ partial def elabCall (fnName : String) (typeArgs : List Ty) (args : List Expr)
     let suffix := if isStrKey then "_str" else ""
     return .call ("map_remove" ++ suffix) [] cArgs (.generic "Option" [vTy])
   -- Intercept map_len
-  if fnName == "map_len" then
+  if intrinsic == some .mapLen then
     let mut cArgs : List CExpr := []
     for arg in args do
       let cArg ← elabExpr arg
       cArgs := cArgs ++ [cArg]
     return .call "map_len" [] cArgs .int
   -- Intercept map_free
-  if fnName == "map_free" then
+  if intrinsic == some .mapFree then
     let mut cArgs : List CExpr := []
     for arg in args do
       let cArg ← elabExpr arg

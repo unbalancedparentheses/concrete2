@@ -2,6 +2,7 @@ import Concrete.AST
 import Concrete.Diagnostic
 import Concrete.Token
 import Concrete.FileSummary
+import Concrete.Intrinsic
 
 namespace Concrete
 
@@ -133,8 +134,8 @@ private def isKnownType (ctx : ResolveCtx) (name : String) : Bool :=
 -- Builtin names
 -- ============================================================
 
-/-- Built-in function names that don't require explicit definitions. -/
-private def builtinFns : List String :=
+/-- Legacy builtin names not yet in IntrinsicId. Will shrink over time. -/
+private def extraBuiltinNames : List String :=
   [ "print", "println", "to_string", "abort", "destroy",
     "alloc", "free", "deref", "deref_mut",
     "drop_string", "string_len", "string_concat", "string_eq",
@@ -161,6 +162,10 @@ private def builtinFns : List String :=
     "bool_to_string", "float_to_string",
     "get_env", "get_args", "exit_process",
     "socket_send", "socket_recv" ]
+
+/-- Check if a name is a known builtin (intrinsic or legacy). -/
+private def isKnownBuiltin (name : String) : Bool :=
+  isIntrinsic name || extraBuiltinNames.contains name
 
 /-- Built-in type names. -/
 private def builtinTypes : List String :=
@@ -204,13 +209,13 @@ partial def resolveExpr (ctx : ResolveCtx) (e : Expr) : ResolveCtx :=
   match e with
   | .ident sp name =>
     -- Only flag identifiers that aren't in any scope and aren't known functions
-    if lookupName ctx name || builtinFns.contains name then ctx
+    if lookupName ctx name || isKnownBuiltin name then ctx
     else addError ctx (.undeclaredVariable name) (some sp)
   | .intLit _ _ | .floatLit _ _ | .boolLit _ _ | .strLit _ _ | .charLit _ _ => ctx
   | .binOp _ _ lhs rhs => resolveExpr (resolveExpr ctx lhs) rhs
   | .unaryOp _ _ operand => resolveExpr ctx operand
   | .call sp fn _typeArgs args =>
-    let ctx := if lookupName ctx fn || builtinFns.contains fn then ctx
+    let ctx := if lookupName ctx fn || isKnownBuiltin fn then ctx
                else addError ctx (.unknownFunction fn) (some sp)
     args.foldl resolveExpr ctx
   | .paren _ inner => resolveExpr ctx inner
@@ -261,7 +266,7 @@ partial def resolveExpr (ctx : ResolveCtx) (e : Expr) : ResolveCtx :=
                else addError ctx (.unknownStaticMethod typeName method) (some sp)
     args.foldl resolveExpr ctx
   | .fnRef sp name =>
-    if lookupName ctx name || builtinFns.contains name then ctx
+    if lookupName ctx name || isKnownBuiltin name then ctx
     else addError ctx (.unknownFunctionRef name) (some sp)
   | .arrowAccess _ obj _ => resolveExpr ctx obj
   | .allocCall _ inner allocExpr =>

@@ -3,6 +3,7 @@ import Concrete.AST
 import Concrete.Diagnostic
 import Concrete.Shared
 import Concrete.Layout
+import Concrete.Intrinsic
 
 namespace Concrete
 
@@ -164,48 +165,21 @@ private def lookupVar (name : String) : StateM CoreCheckEnv (Option Ty) := do
   let env ← getEnv
   return env.vars.lookup name
 
-/-- Builtin functions and their required capabilities. -/
-private def builtinCapTable : List (String × CapSet) := [
-  ("print_int", .concrete ["Console"]),
-  ("print_bool", .concrete ["Console"]),
-  ("print_string", .concrete ["Console"]),
-  ("print_char", .concrete ["Console"]),
-  ("eprint_string", .concrete ["Console"]),
-  ("read_line", .concrete ["Console"]),
-  ("read_file", .concrete ["File"]),
-  ("write_file", .concrete ["File"]),
-  ("get_env", .concrete ["Env"]),
-  ("get_args", .concrete ["Process"]),
-  ("exit_process", .concrete ["Process"]),
-  ("alloc", .concrete ["Alloc"]),
-  ("free", .concrete ["Alloc"]),
-  ("vec_new", .concrete ["Alloc"]),
-  ("vec_push", .concrete ["Alloc"]),
-  ("vec_pop", .concrete ["Alloc"]),
-  ("vec_free", .concrete ["Alloc"]),
-  ("map_new", .concrete ["Alloc"]),
-  ("map_insert", .concrete ["Alloc"]),
-  ("map_remove", .concrete ["Alloc"]),
-  ("map_free", .concrete ["Alloc"]),
-  ("tcp_connect", .concrete ["Network"]),
-  ("tcp_listen", .concrete ["Network"]),
-  ("tcp_accept", .concrete ["Network"]),
-  ("socket_send", .concrete ["Network"]),
-  ("socket_recv", .concrete ["Network"]),
-  ("socket_close", .concrete ["Network"]),
-  ("abort", .concrete ["Process"]),
-  ("alloc_array", .concrete ["Alloc"]),
-  ("free_array", .concrete ["Alloc"]),
-  ("realloc_array", .concrete ["Alloc"])
-]
+/-- Look up the capability required by a builtin via IntrinsicId. -/
+private def lookupBuiltinCap (name : String) : Option CapSet :=
+  match resolveIntrinsic name with
+  | some id => match id.capability with
+    | some cap => some (.concrete [cap])
+    | none => none
+  | none => none
 
 private def lookupFnCaps (name : String) : StateM CoreCheckEnv (Option CapSet) := do
   let env ← getEnv
   match env.fnSigs.find? fun (n, _, _, _) => n == name with
   | some (_, caps, _, _) => return some caps
   | none =>
-    -- Fall back to builtin capability table
-    match builtinCapTable.lookup name with
+    -- Fall back to intrinsic capability lookup
+    match lookupBuiltinCap name with
     | some caps => return some caps
     | none => return none
 
