@@ -1130,6 +1130,14 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       | .ident _ varName => consumeVarIfExists varName (some e.getSpan)
       | _ => pure ()
       return .unit
+    -- Intercept abs(x) — works on any numeric type
+    if fnName == "abs" then
+      if args.length != 1 then throwCheck (.builtinWrongArgCount "abs" 1) (some e.getSpan)
+      let arg := match args with | a :: _ => a | [] => Expr.intLit default 0
+      let argTy ← checkExpr arg
+      if !isNumeric argTy then
+        throwCheck (.builtinWrongFirstArg "abs" "numeric type" (tyToString argTy)) (some e.getSpan)
+      return argTy
     -- Check if this is a function pointer call (variable with fn_ type)
     let fnPtrVarTy ← lookupVarTy fnName
     match fnPtrVarTy with
@@ -2113,8 +2121,7 @@ def checkModule (m : Module) (summary : FileSummary)
     { params := [("x", .float64)], retTy := .float64 },
     -- 37: ceil
     { params := [("x", .float64)], retTy := .float64 },
-    -- 38: fabs
-    { params := [("x", .float64)], retTy := .float64 },
+    -- 38: (reserved, abs handled as special intercept)
     -- 39: append_file
     { params := [("path", .ref .string), ("data", .ref .string)], retTy := .int, capSet := .concrete ["File"] }
   ]
@@ -2158,7 +2165,7 @@ def checkModule (m : Module) (summary : FileSummary)
     ("exp", builtinOffset + 35),
     ("floor", builtinOffset + 36),
     ("ceil", builtinOffset + 37),
-    ("fabs", builtinOffset + 38),
+    -- abs is handled as a special intercept, not via builtinSigs
     ("append_file", builtinOffset + 39)
   ]
   -- Add submodule functions/extern fns with qualified names (mod_fn)

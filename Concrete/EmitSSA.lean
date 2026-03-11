@@ -305,11 +305,29 @@ private def emitSInst (s : EmitSSAState) (inst : SInst) : EmitSSAState :=
       || (s.fnParams.any fun (n, t) =>
         n == fn && match t with | .fn_ _ _ _ => true | _ => false)
       || s.fnTypeRegs.contains fn
-    let mappedFn := fn
+    -- Special-case abs: emit fabs for floats, conditional negate for integers
+    if fn == "abs" && !isIndirect && args.length == 1 then
+      match dst with
+      | some d =>
+        let argVal := match args with | a :: _ => a | [] => SVal.unit
+        let argStr := emitSVal s argVal
+        let argTy := argVal.ty
+        if isFloatTy argTy then
+          let fTy := ssaFloatTyToLLVM argTy
+          emit s s!"  %{d} = call {fTy} @fabs({fTy} {argStr})"
+        else
+          let iTy := ssaIntTyToLLVM argTy
+          let negReg := s!"{d}.neg"
+          let cmpReg := s!"{d}.cmp"
+          let s := emit s s!"  %{negReg} = sub {iTy} 0, {argStr}"
+          let s := emit s s!"  %{cmpReg} = icmp slt {iTy} {argStr}, 0"
+          emit s s!"  %{d} = select i1 %{cmpReg}, {iTy} %{negReg}, {iTy} {argStr}"
+      | none => s
+    else
     let callTarget := if isIndirect then
       if fn.startsWith "%" then fn  -- already has % prefix
       else "%" ++ fn
-    else "@" ++ mappedFn
+    else "@" ++ fn
     match dst with
     | some d =>
       let s := emit s s!"  %{d} = call {retLLTy} {callTarget}({argStr})"

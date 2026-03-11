@@ -626,6 +626,11 @@ partial def elabCall (fnName : String) (typeArgs : List Ty) (args : List Expr)
   -- Intercept abort()
   if fnName == "abort" then
     return .call "abort" [] [] .never
+  -- Intercept abs(x) — works on any numeric type
+  if fnName == "abs" then
+    let arg := match args with | a :: _ => a | [] => Expr.intLit default 0
+    let cArg ← elabExpr arg
+    return .call "abs" [] [cArg] cArg.ty
   -- Intercept destroy(arg)
   if fnName == "destroy" then
     let arg := match args with | a :: _ => a | [] => Expr.intLit default 0
@@ -1058,7 +1063,7 @@ private def buildBuiltinSigs : List (String × FnSummary) := [
   ("exp", { params := [("x", .float64)], retTy := .float64 }),
   ("floor", { params := [("x", .float64)], retTy := .float64 }),
   ("ceil", { params := [("x", .float64)], retTy := .float64 }),
-  ("fabs", { params := [("x", .float64)], retTy := .float64 }),
+  -- abs is handled as a special intercept in elabCall
   ("append_file", { params := [("path", .ref .string), ("data", .ref .string)], retTy := .int, capSet := .concrete ["File"] })
 ]
 

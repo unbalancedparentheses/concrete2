@@ -1,5 +1,8 @@
+// abs works on both Float64 and Int
 fn main() -> Int {
     let x: Float64 = -42.0;
-    let result: Float64 = fabs(x);
-    return result as Int;
+    let y: Int = -10;
+    let fx: Float64 = abs(x);
+    let iy: Int = abs(y);
+    return (fx as Int) + iy;
 }
