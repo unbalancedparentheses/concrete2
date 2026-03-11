@@ -1,0 +1,64 @@
+mod set {
+    import std.map.{HashMap};
+    import std.option.{Option};
+
+    // HashSet<K> — thin wrapper around HashMap<K, u8>.
+    // Takes hash and eq function pointers at construction.
+
+    pub struct HashSet<K> {
+        inner: HashMap<K, u8>,
+    }
+
+    impl<K> HashSet<K> {
+        pub fn new(hash_fn: fn(&K) -> u64, eq_fn: fn(&K, &K) -> bool) -> HashSet<K> {
+            let s: HashSet<K> = HashSet::<K> {
+                inner: HashMap::<K, u8>::new(hash_fn, eq_fn),
+            };
+            return s;
+        }
+
+        pub fn insert(&mut self, key: K) -> bool {
+            let result: Option<u8> = self.inner.insert(key, 0);
+            match result {
+                Option#Some { value } => {
+                    return false;
+                },
+                Option#None => {
+                    return true;
+                }
+            }
+        }
+
+        pub fn contains(&self, key: &K) -> bool {
+            return self.inner.contains(key);
+        }
+
+        pub fn remove(&mut self, key: &K) -> bool {
+            let result: Option<u8> = self.inner.remove(key);
+            match result {
+                Option#Some { value } => {
+                    return true;
+                },
+                Option#None => {
+                    return false;
+                }
+            }
+        }
+
+        pub fn len(&self) -> u64 {
+            return self.inner.len();
+        }
+
+        pub fn is_empty(&self) -> bool {
+            return self.inner.is_empty();
+        }
+
+        pub fn clear(&mut self) {
+            self.inner.clear();
+        }
+
+        pub fn drop(self) {
+            self.inner.drop();
+        }
+    }
+}

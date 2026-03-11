@@ -62,6 +62,7 @@ structure SFnDef where
   params : List (String × Ty)
   retTy : Ty
   blocks : List SBlock
+  isTest : Bool := false
 
 structure SModule where
   name : String

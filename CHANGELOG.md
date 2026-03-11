@@ -10,6 +10,13 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Stdlib collections: HashMap and HashSet
+
+- Added `std.map.HashMap<K, V>` — open-addressing hash map with linear probing, fn-pointer hash/eq (Zig-style)
+- Added `std.set.HashSet<K>` — thin wrapper around `HashMap<K, u8>`
+- Added hash/eq helper functions in `std.hash`: `hash_u64`, `hash_i32`, `hash_i64`, `hash_string`, `eq_u64`, `eq_i32`, `eq_i64`, `eq_string`
+- Fixed compiler bug: function pointers loaded from struct fields were emitted as direct calls (`@name`) instead of indirect calls (`%name`), causing linker errors. Fix spans Lower, SSACleanup, and EmitSSA.
+
 ### Test framework
 
 - Added `--test` CLI flag: `concrete file.con --test` compiles and runs all `#[test]` functions

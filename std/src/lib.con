@@ -14,6 +14,13 @@ mod std {
     mod slice;
     mod text;
     mod path;
+    mod fmt;
+    mod parse;
+    mod hash;
+    mod map;
+    mod set;
+    mod rand;
+    mod time;
     mod fs;
     mod env;
     mod process;

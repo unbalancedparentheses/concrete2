@@ -215,6 +215,7 @@ structure FnDef where
   retTy : Ty
   body : List Stmt
   isPublic : Bool := false
+  isTest : Bool := false
   capSet : CapSet := .empty        -- with(File, Network, ...)
   hasBang : Bool := false          -- fn main!() sugar
   span : Span := default

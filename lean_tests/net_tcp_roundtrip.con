@@ -1,0 +1,56 @@
+// Integration test: real TCP listener/client pair via fork
+// Uses builtins for networking and string handling.
+extern fn fork() -> i32;
+extern fn _exit(status: i32);
+extern fn waitpid(pid: i32, status: *mut i32, options: i32) -> i32;
+
+fn main() with(Network, Unsafe, Process) -> Int {
+    let server_fd: Int = tcp_listen(39878, 1);
+    if server_fd < 0 { return 1; }
+
+    let pid: i32 = fork();
+    if pid < 0 { socket_close(server_fd); return 2; }
+
+    if pid == 0 {
+        // Child: connect, send "Hi", close, exit
+        socket_close(server_fd);
+        let addr: String = "127.0.0.1";
+        let client_fd: Int = tcp_connect(&addr, 39878);
+        drop_string(addr);
+        if client_fd >= 0 {
+            let msg: String = "Hi";
+            socket_send(client_fd, &msg);
+            drop_string(msg);
+            socket_close(client_fd);
+        }
+        _exit(0);
+        return 0;
+    }
+
+    // Parent: accept, recv, verify
+    let client_fd: Int = tcp_accept(server_fd);
+    socket_close(server_fd);
+    if client_fd < 0 {
+        let status: i32 = 0;
+        waitpid(pid, &status as *mut i32, 0);
+        return 3;
+    }
+
+    let data: String = socket_recv(client_fd, 256);
+    socket_close(client_fd);
+
+    let status: i32 = 0;
+    waitpid(pid, &status as *mut i32, 0);
+
+    // Verify we got "Hi"
+    let len: Int = string_length(&data);
+    let ch0: Int = string_char_at(&data, 0);
+    let ch1: Int = string_char_at(&data, 1);
+    drop_string(data);
+
+    if len != 2 { return 4; }
+    if ch0 != 72 { return 5; }
+    if ch1 != 105 { return 6; }
+
+    return 42;
+}

@@ -231,7 +231,12 @@ private def svalUses : SVal → List String
 private def instUses : SInst → List String
   | .binOp _ _ lhs rhs _ => svalUses lhs ++ svalUses rhs
   | .unaryOp _ _ operand _ => svalUses operand
-  | .call _ _ args _ => args.foldl (fun acc a => acc ++ svalUses a) []
+  | .call _ fn args _ =>
+    let argUses := args.foldl (fun acc a => acc ++ svalUses a) []
+    -- If the call target is a %-prefixed register (indirect fn-pointer call),
+    -- include the register name as a use so DCE preserves the producing instruction.
+    if fn.startsWith "%" then (fn.drop 1).toString :: argUses
+    else argUses
   | .alloca _ _ => []
   | .load _ ptr _ => svalUses ptr
   | .store val ptr => svalUses val ++ svalUses ptr

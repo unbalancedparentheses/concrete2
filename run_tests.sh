@@ -81,6 +81,8 @@ run_ok "$TESTDIR/string_basic.con"    5
 run_ok "$TESTDIR/string_borrow.con"   10
 run_ok "$TESTDIR/result_ok.con"      42
 run_ok "$TESTDIR/result_err.con"     99
+run_ok "$TESTDIR/result_generic_try.con" 42
+run_ok "$TESTDIR/net_tcp_roundtrip.con" 42
 run_ok "$TESTDIR/module_basic.con"   42
 run_ok "$TESTDIR/module_struct.con"  30
 run_ok "$TESTDIR/array_basic.con"   20
@@ -305,6 +307,11 @@ run_ok "$TESTDIR/repr_c_basic.con" 42
 run_ok "$TESTDIR/repr_c_nested.con" 42
 run_ok "$TESTDIR/repr_c_cross_module.con" 30
 
+# Function pointer from struct field (indirect call fix)
+run_ok "$TESTDIR/fn_ptr_struct_field.con" 42
+run_ok "$TESTDIR/fn_ptr_method_call.con" 42
+run_ok "$TESTDIR/stdlib_hashmap.con" 0
+
 echo ""
 echo "=== Negative tests (expected errors) ==="
 run_err "$TESTDIR/error_unconsumed.con"        "was never consumed"
@@ -333,9 +340,9 @@ run_err "$TESTDIR/error_cast_invalid.con"        "cannot cast"
 run_err "$TESTDIR/error_unknown_method.con"      "no method"
 run_err "$TESTDIR/error_trait_missing_method.con" "missing method"
 run_err "$TESTDIR/error_trait_wrong_sig.con"     "signature does not match"
-run_err "$TESTDIR/error_cap_pure.con"            "requires capability"
-run_err "$TESTDIR/error_cap_propagation.con"     "requires capability"
-run_err "$TESTDIR/error_cap_method.con"          "requires capability"
+run_err "$TESTDIR/error_cap_pure.con"            "but caller has"
+run_err "$TESTDIR/error_cap_propagation.con"     "but caller has"
+run_err "$TESTDIR/error_cap_method.con"          "but caller has"
 run_err "$TESTDIR/error_cap_poly_inline.con"     "requires capability"
 run_err "$TESTDIR/error_break_outside.con"       "break outside of loop"
 run_err "$TESTDIR/error_continue_outside.con"    "continue outside of loop"
@@ -346,7 +353,7 @@ run_err "$TESTDIR/error_copy_linear_field.con"   "contains non-copy field"
 run_err "$TESTDIR/error_destroy_no_impl.con"     "does not implement Destroy"
 run_err "$TESTDIR/error_destroy_reserved.con"    "is a reserved identifier"
 # Phase 5: Allocator errors
-run_err "$TESTDIR/error_alloc_no_cap.con"       "requires capability"
+run_err "$TESTDIR/error_alloc_no_cap.con"       "but caller has"
 run_err "$TESTDIR/error_heap_direct_access.con"  "use '->' for heap access"
 run_err "$TESTDIR/error_heap_leak.con"           "was never consumed"
 run_err "$TESTDIR/error_alloc_reserved.con"      "is a reserved identifier"
@@ -369,7 +376,7 @@ run_err "$TESTDIR/error_borrow_assign_frozen.con" "frozen by borrow block"
 # Bitwise errors
 run_err "$TESTDIR/error_bitwise_float.con" "type mismatch"
 # Print errors
-run_err "$TESTDIR/error_print_no_cap.con" "requires capability"
+run_err "$TESTDIR/error_print_no_cap.con" "but caller has"
 # Module errors
 run_err "$TESTDIR/error_module_not_found.con" "module file not found"
 run_err "$TESTDIR/module_circular/main.con" "circular module import"
@@ -383,21 +390,21 @@ run_err "$TESTDIR/error_trait_bound_missing.con" "does not implement trait"
 # Trait dispatch errors
 run_err "$TESTDIR/error_trait_dispatch_missing.con" "no method"
 # File I/O errors
-run_err "$TESTDIR/error_file_no_cap.con" "requires capability"
+run_err "$TESTDIR/error_file_no_cap.con" "but caller has"
 # FFI errors
-run_err "$TESTDIR/error_ffi_no_unsafe.con" "requires capability"
+run_err "$TESTDIR/error_ffi_no_unsafe.con" "but caller has"
 # Vec errors
-run_err "$TESTDIR/error_vec_no_alloc.con" "requires capability"
+run_err "$TESTDIR/error_vec_no_alloc.con" "but caller has"
 # Network errors
-run_err "$TESTDIR/error_network_no_cap.con" "requires capability"
+run_err "$TESTDIR/error_network_no_cap.con" "but caller has"
 # HashMap errors
-run_err "$TESTDIR/error_hashmap_no_alloc.con" "requires capability"
+run_err "$TESTDIR/error_hashmap_no_alloc.con" "but caller has"
 # Match exhaustiveness
 run_err "$TESTDIR/error_match_missing_variant.con" "missing variant"
 # Return type mismatch
 run_err "$TESTDIR/error_return_type_mismatch.con" "type mismatch"
 # Capability propagation errors
-run_err "$TESTDIR/error_cap_deep_missing.con" "requires capability"
+run_err "$TESTDIR/error_cap_deep_missing.con" "but caller has"
 # Borrow conflict errors
 run_err "$TESTDIR/error_borrow_double_mut.con" "frozen by borrow"
 
@@ -448,6 +455,37 @@ run_ok "$TESTDIR/summary_import_type_alias.con" 42
 run_ok "$TESTDIR/summary_submodule.con" 42
 run_ok "$TESTDIR/summary_trait_impl_cross_module.con" 42
 run_err "$TESTDIR/error_summary_trait_missing_cross.con" "missing method"
+
+# === --test flag tests ===
+echo ""
+echo "=== --test flag tests ==="
+run_test() {
+    local file="$1"
+    local expected="$2"
+    local name
+    name=$(basename "$file" .con)
+
+    local output exit_code
+    output=$($COMPILER "$file" --test 2>&1) && exit_code=0 || exit_code=$?
+    if [ "$exit_code" = "$expected" ]; then
+        echo "  ok  $file --test (exit $expected)"
+        PASS=$((PASS + 1))
+    else
+        echo "FAIL  $file --test — expected exit $expected, got $exit_code"
+        echo "$output"
+        FAIL=$((FAIL + 1))
+    fi
+}
+
+run_test "$TESTDIR/test_flag_pass.con" 0
+run_test "$TESTDIR/test_flag_mixed.con" 1
+run_test "$TESTDIR/test_flag_submodule.con" 0
+
+# #[test] validation errors
+run_err "$TESTDIR/error_test_with_params.con" "must have no parameters"
+run_err "$TESTDIR/error_test_generic.con" "must not be generic"
+run_err "$TESTDIR/error_test_wrong_return.con" "must return i32"
+run_err "$TESTDIR/error_test_on_struct.con" "can only be applied to function"
 
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="

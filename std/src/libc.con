@@ -32,6 +32,15 @@ mod libc {
     extern fn waitpid(pid: i32, status: *mut i32, options: i32) -> i32;
     extern fn kill(pid: i32, sig: i32) -> i32;
 
+    // Time
+    extern fn time(t: *mut i64) -> i64;
+    extern fn clock_gettime(clk_id: i32, tp: *mut u8) -> i32;
+    extern fn nanosleep(req: *const u8, rem: *mut u8) -> i32;
+
+    // Random
+    extern fn rand() -> i32;
+    extern fn srand(seed: u32);
+
     // Networking
     extern fn socket(domain: i32, typ: i32, protocol: i32) -> i32;
     extern fn bind(sockfd: i32, addr: *const u8, addrlen: u32) -> i32;

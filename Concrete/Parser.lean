@@ -1509,6 +1509,7 @@ partial def parseModuleBody (stopToken : TokenKind) : ParseM Module := do
   let mut newtypes : List NewtypeDef := []
   let mut submodules : List Module := []
   let mut pendingRepr : Option ReprOpts := none
+  let mut pendingIsTest : Bool := false
   let mut tk ← peek
   while tk != stopToken && tk != .eof do
     -- Parse attributes (but don't continue — let the next token be parsed)
@@ -1516,6 +1517,8 @@ partial def parseModuleBody (stopToken : TokenKind) : ParseM Module := do
       let (key, _, reprOpts) ← parseAttribute
       if key == "repr" then
         pendingRepr := reprOpts
+      if key == "test" then
+        pendingIsTest := true
       tk ← peek
     if tk == .import_ then
       if pendingRepr.isSome then
@@ -1527,6 +1530,9 @@ partial def parseModuleBody (stopToken : TokenKind) : ParseM Module := do
       let isPub := tk == .pub_
       if isPub then advance; tk ← peek
       if tk == .struct_ then
+        if pendingIsTest then
+          let sp ← peekSpan
+          throw s!"#[test] can only be applied to function definitions, at {sp.line}:{sp.col}"
         let s ← parseStructDef
         let reprC := pendingRepr.map (·.isReprC) |>.getD false
         let packed := pendingRepr.map (·.isPacked) |>.getD false
@@ -1539,11 +1545,17 @@ partial def parseModuleBody (stopToken : TokenKind) : ParseM Module := do
         let (key, _, reprOpts) ← parseAttribute
         if key == "repr" then
           pendingRepr := reprOpts
+        if key == "test" then
+          pendingIsTest := true
       else
         -- Any non-struct declaration: reject dangling #[repr(...)]
         if pendingRepr.isSome then
           let sp ← peekSpan
           throw s!"#[repr(...)] can only be applied to struct definitions, at {sp.line}:{sp.col}"
+        -- Reject #[test] on non-function declarations
+        if pendingIsTest && tk != .fn then
+          let sp ← peekSpan
+          throw s!"#[test] can only be applied to function definitions, at {sp.line}:{sp.col}"
         if tk == .extern_ then
           let ext ← parseExternFn
           externFns := externFns ++ [{ ext with isPublic := isPub }]
@@ -1585,8 +1597,9 @@ partial def parseModuleBody (stopToken : TokenKind) : ParseM Module := do
           -- Check if function has a body or is body-less (intrinsic/declaration)
           let f ← parseFnDefOrDecl
           match f with
-          | .inl fnDef => fns := fns ++ [{ fnDef with isPublic := isPub }]
+          | .inl fnDef => fns := fns ++ [{ fnDef with isPublic := isPub, isTest := pendingIsTest }]
           | .inr extDef => externFns := externFns ++ [{ extDef with isPublic := isPub }]
+          pendingIsTest := false
         else if tk == .ident "union" then
           -- Parse union as a struct (all fields share memory)
           advance  -- consume 'union'

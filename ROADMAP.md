@@ -1766,6 +1766,7 @@ The biggest strategic multipliers are:
 - a very strong stdlib style
 - a formatter and stronger tooling baseline
 - a cleaner hosted vs freestanding split
+- a stronger `Unsafe` structure and audit story
 - a better capability/sandboxing story
 - later, a coherent concurrency/runtime model
 
@@ -1779,6 +1780,7 @@ Related research notes:
 
 - [research/ten-x-improvements.md](research/ten-x-improvements.md)
 - [research/complete-language-system.md](research/complete-language-system.md)
+- [research/unsafe-structure.md](research/unsafe-structure.md)
 - [research/capability-sandboxing.md](research/capability-sandboxing.md)
 - [research/no-std-freestanding.md](research/no-std-freestanding.md)
 - [research/concurrency.md](research/concurrency.md)

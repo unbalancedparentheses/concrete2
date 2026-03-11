@@ -1,0 +1,227 @@
+mod map {
+    import std.mem.{sizeof};
+    import std.alloc.{realloc, free};
+    import std.option.{Option};
+    import std.libc.{memset};
+
+    // Open-addressing hash map with linear probing.
+    // Takes hash and eq function pointers at construction (Zig-style).
+    // Flag values: 0 = empty, 1 = occupied, 2 = tombstone.
+
+    pub struct HashMap<K, V> {
+        keys:    *mut K,
+        values:  *mut V,
+        flags:   *mut u8,
+        len:     u64,
+        cap:     u64,
+        hash_fn: fn(&K) -> u64,
+        eq_fn:   fn(&K, &K) -> bool,
+    }
+
+    impl<K, V> HashMap<K, V> {
+        pub fn new(hash_fn: fn(&K) -> u64, eq_fn: fn(&K, &K) -> bool) -> HashMap<K, V> {
+            let cap: u64 = 16;
+            let keys: *mut K = realloc::<K>(0 as *mut K, cap);
+            let values: *mut V = realloc::<V>(0 as *mut V, cap);
+            let flags: *mut u8 = realloc::<u8>(0 as *mut u8, cap);
+            memset(flags as *mut u8, 0, cap * sizeof::<u8>());
+            let m: HashMap<K, V> = HashMap::<K, V> {
+                keys: keys,
+                values: values,
+                flags: flags,
+                len: 0,
+                cap: cap,
+                hash_fn: hash_fn,
+                eq_fn: eq_fn,
+            };
+            return m;
+        }
+
+        pub fn len(&self) -> u64 {
+            return self.len;
+        }
+
+        pub fn is_empty(&self) -> bool {
+            return self.len == 0;
+        }
+
+        pub fn contains(&self, key: &K) -> bool {
+            let idx: u64 = self.find_slot(key);
+            let flag_ptr: *mut u8 = self.flags + idx;
+            let flag: u8 = *flag_ptr;
+            return flag == 1;
+        }
+
+        pub fn get(&self, key: &K) -> Option<&V> {
+            let idx: u64 = self.find_slot(key);
+            let flag_ptr: *mut u8 = self.flags + idx;
+            let flag: u8 = *flag_ptr;
+            if flag == 1 {
+                let val_ptr: *mut V = self.values + idx;
+                return Option::<&V>#Some { value: val_ptr as &V };
+            }
+            return Option::<&V>#None;
+        }
+
+        pub fn insert(&mut self, key: K, value: V) -> Option<V> {
+            // Grow if load factor >= 75%
+            if self.len * 4 >= self.cap * 3 {
+                self.grow();
+            }
+
+            let hash_f: fn(&K) -> u64 = self.hash_fn;
+            let h: u64 = hash_f(&key);
+            let mask: u64 = self.cap - 1;
+            let idx: u64 = h & mask;
+
+            while true {
+                let flag_ptr: *mut u8 = self.flags + idx;
+                let flag: u8 = *flag_ptr;
+
+                if flag == 0 || flag == 2 {
+                    // Empty or tombstone — insert here
+                    let key_ptr: *mut K = self.keys + idx;
+                    *key_ptr = key;
+                    let val_ptr: *mut V = self.values + idx;
+                    *val_ptr = value;
+                    *flag_ptr = 1;
+                    self.len = self.len + 1;
+                    return Option::<V>#None;
+                }
+
+                if flag == 1 {
+                    // Occupied — check if same key
+                    let key_ptr: *mut K = self.keys + idx;
+                    let eq_f: fn(&K, &K) -> bool = self.eq_fn;
+                    if eq_f(key_ptr as &K, &key) {
+                        // Overwrite: return old value
+                        let val_ptr: *mut V = self.values + idx;
+                        let old: V = *val_ptr;
+                        *val_ptr = value;
+                        // Also overwrite key for consistency
+                        *key_ptr = key;
+                        return Option::<V>#Some { value: old };
+                    }
+                }
+
+                idx = (idx + 1) & mask;
+            }
+
+            // Unreachable, but needed for type checker
+            return Option::<V>#None;
+        }
+
+        pub fn remove(&mut self, key: &K) -> Option<V> {
+            let idx: u64 = self.find_slot(key);
+            let flag_ptr: *mut u8 = self.flags + idx;
+            let flag: u8 = *flag_ptr;
+            if flag != 1 {
+                return Option::<V>#None;
+            }
+            let val_ptr: *mut V = self.values + idx;
+            let old: V = *val_ptr;
+            *flag_ptr = 2;  // tombstone
+            self.len = self.len - 1;
+            return Option::<V>#Some { value: old };
+        }
+
+        pub fn clear(&mut self) {
+            memset(self.flags as *mut u8, 0, self.cap * sizeof::<u8>());
+            self.len = 0;
+        }
+
+        pub fn drop(self) {
+            free::<K>(self.keys);
+            free::<V>(self.values);
+            free::<u8>(self.flags);
+        }
+
+        // --- Internal helpers ---
+
+        fn find_slot(&self, key: &K) -> u64 {
+            let hash_f: fn(&K) -> u64 = self.hash_fn;
+            let h: u64 = hash_f(key);
+            let mask: u64 = self.cap - 1;
+            let idx: u64 = h & mask;
+
+            while true {
+                let flag_ptr: *mut u8 = self.flags + idx;
+                let flag: u8 = *flag_ptr;
+
+                if flag == 0 {
+                    // Empty — key not found, return this slot
+                    return idx;
+                }
+                if flag == 1 {
+                    let key_ptr: *mut K = self.keys + idx;
+                    let eq_f: fn(&K, &K) -> bool = self.eq_fn;
+                    if eq_f(key_ptr as &K, key) {
+                        return idx;
+                    }
+                }
+                // flag == 2 (tombstone) or hash collision: keep probing
+                idx = (idx + 1) & mask;
+            }
+
+            return 0;
+        }
+
+        fn grow(&mut self) {
+            let old_cap: u64 = self.cap;
+            let old_keys: *mut K = self.keys;
+            let old_values: *mut V = self.values;
+            let old_flags: *mut u8 = self.flags;
+
+            let new_cap: u64 = old_cap * 2;
+            let new_keys: *mut K = realloc::<K>(0 as *mut K, new_cap);
+            let new_values: *mut V = realloc::<V>(0 as *mut V, new_cap);
+            let new_flags: *mut u8 = realloc::<u8>(0 as *mut u8, new_cap);
+            memset(new_flags as *mut u8, 0, new_cap * sizeof::<u8>());
+
+            self.keys = new_keys;
+            self.values = new_values;
+            self.flags = new_flags;
+            self.cap = new_cap;
+            self.len = 0;
+
+            // Rehash all occupied entries
+            let i: u64 = 0;
+            while i < old_cap {
+                let flag_ptr: *mut u8 = old_flags + i;
+                let flag: u8 = *flag_ptr;
+                if flag == 1 {
+                    let key_ptr: *mut K = old_keys + i;
+                    let val_ptr: *mut V = old_values + i;
+                    self.insert_for_grow(*key_ptr, *val_ptr);
+                }
+                i = i + 1;
+            }
+
+            free::<K>(old_keys);
+            free::<V>(old_values);
+            free::<u8>(old_flags);
+        }
+
+        fn insert_for_grow(&mut self, key: K, value: V) {
+            let hash_f: fn(&K) -> u64 = self.hash_fn;
+            let h: u64 = hash_f(&key);
+            let mask: u64 = self.cap - 1;
+            let idx: u64 = h & mask;
+
+            while true {
+                let flag_ptr: *mut u8 = self.flags + idx;
+                let flag: u8 = *flag_ptr;
+                if flag == 0 {
+                    let key_ptr: *mut K = self.keys + idx;
+                    *key_ptr = key;
+                    let val_ptr: *mut V = self.values + idx;
+                    *val_ptr = value;
+                    *flag_ptr = 1;
+                    self.len = self.len + 1;
+                    return;
+                }
+                idx = (idx + 1) & mask;
+            }
+        }
+    }
+}

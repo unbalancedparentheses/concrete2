@@ -1,5 +1,5 @@
 mod option {
-    enum Option<T> {
+    pub enum Option<T> {
         Some {
             value: T,
         },

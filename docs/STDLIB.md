@@ -172,7 +172,31 @@ Pure-Concrete FNV-1a hash:
 - `fnv1a_bytes` — hash a `Bytes` buffer
 - `fnv1a_string` — hash a `String`
 
+Hash/eq helpers for use as fn pointers with `HashMap`/`HashSet`:
+
+- `hash_u64`, `hash_i32`, `hash_i64` — multiplicative hash with xorshift mixing
+- `hash_string` — delegates to `fnv1a_string`
+- `eq_u64`, `eq_i32`, `eq_i64`, `eq_string` — pointer-based equality
+
 Deterministic, no libc dependency.
+
+### `std.map`
+
+Open-addressing hash map with linear probing:
+
+- `HashMap<K, V>` — generic over key/value types
+- Takes `hash_fn: fn(&K) -> u64` and `eq_fn: fn(&K, &K) -> bool` at construction (Zig-style, no traits)
+- Initial capacity 16, power-of-2, grows at 75% load factor
+- Tombstone deletion preserves probe chains
+- API: `new`, `insert` (returns `Option<V>`), `get` (returns `Option<&V>`), `contains`, `remove` (returns `Option<V>`), `len`, `is_empty`, `clear`, `drop`
+
+### `std.set`
+
+Thin wrapper around `HashMap<K, u8>`:
+
+- `HashSet<K>` — generic over key type
+- Takes same `hash_fn`/`eq_fn` as `HashMap`
+- API: `new`, `insert` (returns `bool`), `contains`, `remove` (returns `bool`), `len`, `is_empty`, `clear`, `drop`
 
 ### `std.rand`
 
@@ -258,9 +282,8 @@ Allocator-sensitive APIs should make allocation visible:
 
 After the foundation is solid, the likely next additions are:
 
-- `std.collections.map`
-- `std.collections.set`
 - a small eager `std.iter` if it earns its place
+- `std.collections.ordered_map` (tree-based)
 - later `std.sync`
 - later `std.ffi`
 

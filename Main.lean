@@ -3,7 +3,7 @@ import Concrete
 open Concrete
 
 def usage : String :=
-  "Usage: concrete <file.con> [-o output] [--emit-llvm] [--emit-core] [--emit-ssa] [--report caps|unsafe|layout|interface|mono]"
+  "Usage: concrete <file.con> [-o output] [--emit-llvm] [--emit-core] [--emit-ssa] [--test] [--report caps|unsafe|layout|interface|mono]"
 
 def writeFile (path : String) (content : String) : IO Unit := do
   IO.FS.writeFile ⟨path⟩ content
@@ -122,6 +122,47 @@ def compileSSA (inputPath : String) (outputPath : String) (emitLLVM : Bool) : IO
     IO.println s!"Compiled {inputPath} -> {outputPath}"
     return 0
 
+/-- Compile and run tests: Parse → ... → EmitSSA (test mode) → clang → run -/
+def compileTest (inputPath : String) : IO UInt32 := do
+  let source ← readFile inputPath
+  match ← Pipeline.runFrontend inputPath source resolveAllModules with
+  | .error ds =>
+    IO.eprintln (renderDiagnostics ds)
+    return 1
+  | .ok (_, _, elabProg) =>
+  match Pipeline.monomorphize elabProg with
+  | .error ds =>
+    IO.eprintln (renderDiagnostics ds)
+    return 1
+  | .ok mono =>
+  match Pipeline.lower mono with
+  | .error ds =>
+    IO.eprintln (renderDiagnostics ds)
+    return 1
+  | .ok ssa =>
+    let llvmIR := Pipeline.emit ssa (testMode := true)
+    let llPath := inputPath ++ ".test.ll"
+    let outPath := inputPath ++ ".test"
+    writeFile llPath llvmIR
+    let exitCode ← runCmd "clang" #[llPath, "-o", outPath, "-Wno-override-module"]
+    if exitCode != 0 then
+      IO.eprintln "clang compilation failed"
+      IO.FS.removeFile ⟨llPath⟩
+      return exitCode
+    IO.FS.removeFile ⟨llPath⟩
+    -- Run the test binary
+    let child ← IO.Process.spawn {
+      cmd := outPath
+      stdout := .piped
+      stderr := .piped
+    }
+    let stdout ← child.stdout.readToEnd
+    let exitCode ← child.wait
+    IO.print stdout
+    -- Clean up test binary
+    IO.FS.removeFile ⟨outPath⟩
+    return exitCode
+
 /-- Emit Core or SSA IR for inspection. Runs full pipeline including new passes. -/
 def compileAndEmit (inputPath : String) (mode : String) : IO UInt32 := do
   let source ← readFile inputPath
@@ -200,6 +241,8 @@ def main (args : List String) : IO UInt32 := do
   | [inputPath] =>
     let outputPath := if inputPath.endsWith ".con" then String.ofList (inputPath.toList.take (inputPath.length - 4)) else inputPath ++ ".out"
     compileSSA inputPath outputPath false
+  | [inputPath, "--test"] =>
+    compileTest inputPath
   | [inputPath, "--emit-llvm"] =>
     compileSSA inputPath "" true
   | [inputPath, "--emit-core"] =>

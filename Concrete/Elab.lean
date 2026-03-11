@@ -1010,6 +1010,7 @@ def elabFn (f : FnDef) (implTy : Option Ty := none) : ElabM CFnDef := do
     retTy := retTy
     body := cBody
     isPublic := f.isPublic
+    isTest := f.isTest
     capSet := f.capSet
   }
 

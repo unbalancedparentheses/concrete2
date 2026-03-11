@@ -246,6 +246,7 @@ partial def monoExpr (e : CExpr) : MonoM CExpr := do
         retTy := sub fnDef.retTy
         body := rewriteCallNamesStmts callNameMap (substStmts sub fnDef.body)
         isPublic := false
+        isTest := false
         capSet := fnDef.capSet
       }
       enqueueMono name monoFn

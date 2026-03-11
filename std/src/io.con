@@ -1,26 +1,33 @@
 mod io {
+    import std.result.{Result};
+
+    pub enum IoError {
+        OpenFailed,
+    }
+
     pub struct File {
         ptr: *const u8,
     }
 
     impl File {
-        pub fn create(path: &String) -> File {
+        pub fn create(path: &String) -> Result<File, IoError> {
             let mode: String = "w";
-
-            let handle: File = File {
-                ptr: std::libc::fopen(path.ptr, mode.ptr),
-            };
-
+            let h: *const u8 = std::libc::fopen(path.ptr, mode.ptr);
             mode.drop();
-
-            return handle;
+            if h == (0 as *const u8) {
+                return Result::<File, IoError>#Err { error: IoError#OpenFailed };
+            }
+            let handle: File = File { ptr: h };
+            return Result::<File, IoError>#Ok { value: handle };
         }
 
-        pub fn open(path: &String, mode: &String) -> File {
-            let handle: File = File {
-                ptr: std::libc::fopen(path.ptr, mode.ptr),
-            };
-            return handle;
+        pub fn open(path: &String, mode: &String) -> Result<File, IoError> {
+            let h: *const u8 = std::libc::fopen(path.ptr, mode.ptr);
+            if h == (0 as *const u8) {
+                return Result::<File, IoError>#Err { error: IoError#OpenFailed };
+            }
+            let handle: File = File { ptr: h };
+            return Result::<File, IoError>#Ok { value: handle };
         }
 
         pub fn write(self: &File, data: &String) {
@@ -106,6 +113,40 @@ mod io {
         if value.len > 0 {
             let stderr: *const u8 = std::libc::fdopen(2, "w" as *mut u8);
             std::libc::fwrite(value.ptr as *const u8, 1, value.len, stderr);
+        }
+    }
+
+    #[test]
+    fn test_open_nonexistent() -> i32 {
+        let path: String = "/nonexistent/path/no_such_file.txt";
+        let mode: String = "r";
+        let result: Result<File, IoError> = File::open(&path, &mode);
+        path.drop();
+        mode.drop();
+        match result {
+            Result#Ok { value } => {
+                value.close();
+                return 1;
+            },
+            Result#Err { error } => {
+                return 0;
+            }
+        }
+    }
+
+    #[test]
+    fn test_create_bad_path() -> i32 {
+        let path: String = "/nonexistent/dir/file.txt";
+        let result: Result<File, IoError> = File::create(&path);
+        path.drop();
+        match result {
+            Result#Ok { value } => {
+                value.close();
+                return 1;
+            },
+            Result#Err { error } => {
+                return 0;
+            }
         }
     }
 }

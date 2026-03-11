@@ -1502,8 +1502,13 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
     match inner with
     | .ident _ name => consumeVar name (some e.getSpan)
     | _ => pure ()
-    match innerTy with
-    | .named enumName =>
+    let (enumName, typeArgs) := match innerTy with
+      | .named n => (n, ([] : List Ty))
+      | .generic n args => (n, args)
+      | _ => ("", [])
+    if enumName == "" then
+      throwCheck .tryRequiresResult (some e.getSpan)
+    else
       match ← lookupEnum enumName with
       | some ed =>
         let okVariant := ed.variants.find? fun v => v.name == "Ok"
@@ -1513,13 +1518,13 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
           -- Function must return the same Result type
           let env ← getEnv
           expectTy innerTy env.currentRetTy "try (?) operator: function must return same Result type" (some e.getSpan)
-          -- Return the type of the first field in Ok variant
+          -- Return the type of the first field in Ok variant, with type substitution for generics
+          let mapping := ed.typeParams.zip typeArgs
           match ok.fields.head? with
-          | some f => return f.ty
+          | some f => return (substTy mapping f.ty)
           | none => throwCheck (.tryOkNoField enumName) (some e.getSpan)
         | _, _ => throwCheck .tryRequiresOkErrVariants (some e.getSpan)
       | none => throwCheck (.unknownEnumType enumName) (some e.getSpan)
-    | _ => throwCheck .tryRequiresResult (some e.getSpan)
   | .arrayLit _ elems =>
     match elems with
     | [] => return .array .placeholder 0  -- CoreCheck validates empty array literals
@@ -1975,6 +1980,14 @@ private def resolveTypeParams (ty : Ty) (typeParams : List String) : Ty :=
   | _ => ty
 
 def checkFn (f : FnDef) : CheckM Unit := do
+  -- Validate #[test] constraints
+  if f.isTest then
+    if !f.params.isEmpty then
+      throwCheckMsg s!"#[test] function '{f.name}' must have no parameters" f.span
+    if !f.typeParams.isEmpty then
+      throwCheckMsg s!"#[test] function '{f.name}' must not be generic" f.span
+    if f.retTy != .i32 then
+      throwCheckMsg s!"#[test] function '{f.name}' must return i32" f.span
   -- Save env state (vars from previous functions shouldn't leak)
   let envBefore ← getEnv
   -- Resolve type parameter names: .named "T" -> .typeVar "T"

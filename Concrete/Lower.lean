@@ -364,8 +364,18 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
       | _ =>
         let v ← lowerExpr arg
         aVals := aVals ++ [v]
+    -- Resolve fn-pointer variables: if the call target is a local variable
+    -- holding a fn pointer, resolve it to the actual function / register name.
+    -- For statically-known function references (@fnref.X), use the raw function name.
+    -- For runtime registers, prefix with "%" to mark as indirect call target.
+    let callTarget ← do
+      match ← lookupVar fn with
+      | some (.reg regName (.fn_ _ _ _)) =>
+        if regName.startsWith "@fnref." then pure (regName.drop 7).toString
+        else pure ("%" ++ regName)
+      | _ => pure fn
     if ty == .unit || ty == .never then
-      emit (.call none fn aVals ty)
+      emit (.call none callTarget aVals ty)
       -- Write back mutably borrowed variables
       for (varName, slot, innerTy) in mutBorrows do
         let loadBack ← freshReg "wb."
@@ -374,7 +384,7 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
       return .unit
     else
       let dst ← freshReg
-      emit (.call (some dst) fn aVals ty)
+      emit (.call (some dst) callTarget aVals ty)
       -- Write back mutably borrowed variables
       for (varName, slot, innerTy) in mutBorrows do
         let loadBack ← freshReg "wb."
@@ -1203,6 +1213,7 @@ def lowerFn (f : CFnDef) (structDefs : List CStructDef) (enumDefs : List CEnumDe
       params := f.params
       retTy := f.retTy
       blocks := finalState.blocks
+      isTest := f.isTest
     }
   | ((.error e), _) => .error e
 

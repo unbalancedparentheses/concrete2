@@ -1,6 +1,7 @@
 mod vec {
     import std.mem.{sizeof};
     import std.alloc.{alloc,realloc,free};
+    import std.option.{Option};
 
     pub struct Vec<T> {
         ptr: *mut T,
@@ -37,6 +38,14 @@ mod vec {
         pub fn get(&self, at: u64) -> &T {
             let target_ptr: *mut T = self.ptr + at;
             return target_ptr as &T;
+        }
+
+        pub fn get_checked(&self, at: u64) -> Option<&T> {
+            if at >= self.len {
+                return Option::<&T>#None;
+            }
+            let target_ptr: *mut T = self.ptr + at;
+            return Option::<&T>#Some { value: target_ptr as &T };
         }
 
         pub fn get_mut(&mut self, at: u64) -> &mut T {
@@ -77,5 +86,73 @@ mod vec {
         }
 
         // TODO: insert, remove
+    }
+
+    #[test]
+    fn test_get_checked_in_bounds() -> i32 {
+        let mut v: Vec<i32> = Vec::<i32>::new();
+        v.push(10);
+        v.push(20);
+        let r: Option<&i32> = v.get_checked(0);
+        match r {
+            Option#Some { value } => {
+                if *value != 10 {
+                    v.drop();
+                    return 1;
+                }
+            },
+            Option#None => {
+                v.drop();
+                return 1;
+            }
+        }
+        let r2: Option<&i32> = v.get_checked(1);
+        match r2 {
+            Option#Some { value } => {
+                if *value != 20 {
+                    v.drop();
+                    return 1;
+                }
+            },
+            Option#None => {
+                v.drop();
+                return 1;
+            }
+        }
+        v.drop();
+        return 0;
+    }
+
+    #[test]
+    fn test_get_checked_out_of_bounds() -> i32 {
+        let mut v: Vec<i32> = Vec::<i32>::new();
+        v.push(10);
+        let r: Option<&i32> = v.get_checked(5);
+        match r {
+            Option#Some { value } => {
+                v.drop();
+                return 1;
+            },
+            Option#None => {
+                v.drop();
+                return 0;
+            }
+        }
+    }
+
+    #[test]
+    fn test_get_checked_empty() -> i32 {
+        let v: Vec<i32> = Vec::<i32>::new();
+        let r: Option<&i32> = v.get_checked(0);
+        match r {
+            Option#Some { value } => {
+                v.drop();
+                return 1;
+            },
+            Option#None => {
+                v.drop();
+                return 0;
+            }
+        }
     }
 }

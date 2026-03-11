@@ -36,12 +36,47 @@ Purpose:
 - catch regressions in lowering, SSA verification, SSA cleanup, and LLVM emission
 - make sure SSA-specific behavior stays healthy even when the main suite passes
 
+### In-Language Test Runner
+
+The compiler has a built-in test runner invoked via `--test`:
+
+```bash
+./lake/build/bin/concrete file.con --test
+```
+
+This compiles all `#[test]` functions in the module (including submodules), generates a test-runner `main()`, and executes it. Each test function must:
+
+- take no parameters
+- not be generic
+- return `i32` (0 = pass, non-zero = fail)
+
+Example:
+
+```
+mod math {
+    #[test]
+    fn test_add() -> i32 {
+        if 2 + 3 == 5 { return 0; }
+        return 1;
+    }
+}
+```
+
+Output:
+
+```
+PASS: test_add
+```
+
+The process exits 0 if all tests pass, 1 if any fail.
+
 ## What The Tests Are For
 
 - `run_tests.sh` = whole-language behavior and broad regression coverage
 - `test_ssa.sh` = backend/SSA coverage
+- `--test` flag = in-language test execution for `#[test]` functions
 
-Both matter. The main suite answers “does Concrete still work?” The SSA suite answers “does the real backend path still work correctly?”
+Both external suites matter. The main suite answers “does Concrete still work?” The SSA suite answers “does the real backend path still work correctly?” The `--test` flag is intended for module-level testing within user and stdlib code.
 
 ## Golden / Inspection Tests
 

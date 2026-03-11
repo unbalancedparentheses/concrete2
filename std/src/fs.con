@@ -1,25 +1,34 @@
 mod fs {
     import std.alloc.{realloc,free};
+    import std.result.{Result};
+
+    pub enum FsError {
+        OpenFailed,
+    }
 
     pub struct File {
         handle: *const u8,
     }
 
     impl File {
-        pub fn open(path: &String, mode: &String) -> File {
-            let f: File = File {
-                handle: std::libc::fopen(path.ptr, mode.ptr),
-            };
-            return f;
+        pub fn open(path: &String, mode: &String) -> Result<File, FsError> {
+            let h: *const u8 = std::libc::fopen(path.ptr, mode.ptr);
+            if h == (0 as *const u8) {
+                return Result::<File, FsError>#Err { error: FsError#OpenFailed };
+            }
+            let f: File = File { handle: h };
+            return Result::<File, FsError>#Ok { value: f };
         }
 
-        pub fn create(path: &String) -> File {
+        pub fn create(path: &String) -> Result<File, FsError> {
             let mode: String = "w";
-            let f: File = File {
-                handle: std::libc::fopen(path.ptr, mode.ptr),
-            };
+            let h: *const u8 = std::libc::fopen(path.ptr, mode.ptr);
             mode.drop();
-            return f;
+            if h == (0 as *const u8) {
+                return Result::<File, FsError>#Err { error: FsError#OpenFailed };
+            }
+            let f: File = File { handle: h };
+            return Result::<File, FsError>#Ok { value: f };
         }
 
         pub fn write_bytes(&self, buf: *const u8, len: u64) -> u64 {
@@ -43,10 +52,14 @@ mod fs {
         }
     }
 
-    pub fn read_file(path: &String) -> std::bytes::Bytes {
+    pub fn read_file(path: &String) -> Result<std::bytes::Bytes, FsError> {
         let mode: String = "r";
         let handle: *const u8 = std::libc::fopen(path.ptr, mode.ptr);
         mode.drop();
+
+        if handle == (0 as *const u8) {
+            return Result::<std::bytes::Bytes, FsError>#Err { error: FsError#OpenFailed };
+        }
 
         // Seek to end to get size
         std::libc::fseek(handle, 0, 2); // SEEK_END = 2
@@ -58,19 +71,228 @@ mod fs {
         // Read into the buffer's backing memory
         let n: u64 = std::libc::fread(buf.ptr, 1, size as u64, handle);
         // Set the length to what was actually read
-        // We access the field directly since Bytes is in the same crate
         buf.len = n;
 
         std::libc::fclose(handle);
-        return buf;
+        return Result::<std::bytes::Bytes, FsError>#Ok { value: buf };
     }
 
-    pub fn write_file(path: &String, data: &std::bytes::Bytes) {
+    pub fn write_file(path: &String, data: &std::bytes::Bytes) -> Result<u64, FsError> {
         let mode: String = "w";
         let handle: *const u8 = std::libc::fopen(path.ptr, mode.ptr);
         mode.drop();
 
-        std::libc::fwrite(data.ptr as *const u8, 1, data.len, handle);
+        if handle == (0 as *const u8) {
+            return Result::<u64, FsError>#Err { error: FsError#OpenFailed };
+        }
+
+        let written: u64 = std::libc::fwrite(data.ptr as *const u8, 1, data.len, handle);
         std::libc::fclose(handle);
+        return Result::<u64, FsError>#Ok { value: written };
+    }
+
+    pub fn append_file(path: &String, data: &std::bytes::Bytes) -> Result<u64, FsError> {
+        let mode: String = "a";
+        let handle: *const u8 = std::libc::fopen(path.ptr, mode.ptr);
+        mode.drop();
+
+        if handle == (0 as *const u8) {
+            return Result::<u64, FsError>#Err { error: FsError#OpenFailed };
+        }
+
+        let written: u64 = std::libc::fwrite(data.ptr as *const u8, 1, data.len, handle);
+        std::libc::fclose(handle);
+        return Result::<u64, FsError>#Ok { value: written };
+    }
+
+    pub fn file_exists(path: &String) -> bool {
+        let mode: String = "r";
+        let handle: *const u8 = std::libc::fopen(path.ptr, mode.ptr);
+        mode.drop();
+        if handle == (0 as *const u8) {
+            return false;
+        }
+        std::libc::fclose(handle);
+        return true;
+    }
+
+    pub fn read_to_string(path: &String) -> Result<String, FsError> {
+        let mode: String = "r";
+        let handle: *const u8 = std::libc::fopen(path.ptr, mode.ptr);
+        mode.drop();
+
+        if handle == (0 as *const u8) {
+            return Result::<String, FsError>#Err { error: FsError#OpenFailed };
+        }
+
+        // Seek to end to get size
+        std::libc::fseek(handle, 0, 2); // SEEK_END = 2
+        let size: i64 = std::libc::ftell(handle);
+        std::libc::fseek(handle, 0, 0); // SEEK_SET = 0
+
+        let s: String = String::new();
+        if size > 0 {
+            s.ptr = realloc::<u8>(s.ptr, (size as u64) + 1);
+            s.cap = (size as u64) + 1;
+            let n: u64 = std::libc::fread(s.ptr, 1, size as u64, handle);
+            s.len = n;
+            // Null-terminate for C compatibility
+            let term: *mut u8 = s.ptr + n;
+            *term = 0;
+        }
+
+        std::libc::fclose(handle);
+        return Result::<String, FsError>#Ok { value: s };
+    }
+
+    #[test]
+    fn test_file_exists() -> i32 {
+        let path: String = "/dev/null";
+        let exists: bool = file_exists(&path);
+        path.drop();
+        if !exists {
+            return 1;
+        }
+        let bad: String = "/nonexistent/path/no_such_file.txt";
+        let exists2: bool = file_exists(&bad);
+        bad.drop();
+        if exists2 {
+            return 1;
+        }
+        return 0;
+    }
+
+    #[test]
+    fn test_write_read_roundtrip() -> i32 {
+        let path: String = "/tmp/concrete_fs_test_roundtrip.txt";
+        let mut data: std::bytes::Bytes = std::bytes::Bytes::new();
+        data.push(72);  // H
+        data.push(105); // i
+        let wr: Result<u64, FsError> = write_file(&path, &data);
+        data.drop();
+        match wr {
+            Result#Ok { value } => {
+                let rr: Result<std::bytes::Bytes, FsError> = read_file(&path);
+                path.drop();
+                match rr {
+                    Result#Ok { value } => {
+                        if value.len != 2 {
+                            value.drop();
+                            return 1;
+                        }
+                        if value.get_unchecked(0) != 72 {
+                            value.drop();
+                            return 1;
+                        }
+                        if value.get_unchecked(1) != 105 {
+                            value.drop();
+                            return 1;
+                        }
+                        value.drop();
+                        return 0;
+                    },
+                    Result#Err { error } => {
+                        return 1;
+                    }
+                }
+            },
+            Result#Err { error } => {
+                path.drop();
+                return 1;
+            }
+        }
+    }
+
+    #[test]
+    fn test_open_nonexistent() -> i32 {
+        let path: String = "/nonexistent/path/no_such_file.txt";
+        let mode: String = "r";
+        let result: Result<File, FsError> = File::open(&path, &mode);
+        path.drop();
+        mode.drop();
+        match result {
+            Result#Ok { value } => {
+                value.close();
+                return 1;
+            },
+            Result#Err { error } => {
+                return 0;
+            }
+        }
+    }
+
+    #[test]
+    fn test_create_bad_path() -> i32 {
+        let path: String = "/nonexistent/dir/file.txt";
+        let result: Result<File, FsError> = File::create(&path);
+        path.drop();
+        match result {
+            Result#Ok { value } => {
+                value.close();
+                return 1;
+            },
+            Result#Err { error } => {
+                return 0;
+            }
+        }
+    }
+
+    #[test]
+    fn test_read_file_nonexistent() -> i32 {
+        let path: String = "/nonexistent/path/no_such_file.txt";
+        let result: Result<std::bytes::Bytes, FsError> = read_file(&path);
+        path.drop();
+        match result {
+            Result#Ok { value } => {
+                value.drop();
+                return 1;
+            },
+            Result#Err { error } => {
+                return 0;
+            }
+        }
+    }
+
+    #[test]
+    fn test_write_to_readonly() -> i32 {
+        // Open a file read-only, verify write returns 0 bytes
+        let path: String = "/dev/null";
+        let mode: String = "r";
+        let result: Result<File, FsError> = File::open(&path, &mode);
+        path.drop();
+        mode.drop();
+        match result {
+            Result#Ok { value } => {
+                // Writing to a read-only file should return 0 bytes written
+                let data: String = "hello";
+                let n: u64 = value.write_bytes(data.ptr as *const u8, data.len);
+                data.drop();
+                value.close();
+                if n == 0 {
+                    return 0;
+                }
+                return 1;
+            },
+            Result#Err { error } => {
+                return 1;
+            }
+        }
+    }
+
+    #[test]
+    fn test_write_file_bad_path() -> i32 {
+        let path: String = "/nonexistent/dir/file.txt";
+        let data: std::bytes::Bytes = std::bytes::Bytes::new();
+        let result: Result<u64, FsError> = write_file(&path, &data);
+        path.drop();
+        data.drop();
+        match result {
+            Result#Ok { value } => {
+                return 1;
+            },
+            Result#Err { error } => {
+                return 0;
+            }
+        }
     }
 }

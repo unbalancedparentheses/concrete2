@@ -69,10 +69,20 @@ The audit story should stay simple:
 - extern declarations are visible in signatures
 - raw pointers stay explicit in types
 
+Concrete is aiming for an unsafe boundary that is:
+
+- operationally obvious
+- explicitly gated
+- easier to audit than a broad ambient low-level model
+
 ## Future Refinement
 
 This doc should expand if the FFI surface grows substantially, for example:
 
+- better compiler reports for *why* `Unsafe` is required
+- stronger stdlib wrapper patterns around unsafe operations
 - more explicit calling-convention rules
 - ABI notes for additional targets
 - low-level FFI helper patterns in the stdlib
+
+For the exploratory direction behind those ideas, see [../research/unsafe-structure.md](../research/unsafe-structure.md).

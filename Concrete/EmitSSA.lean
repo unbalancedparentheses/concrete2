@@ -34,6 +34,8 @@ structure EmitSSAState where
   stringLengths : List (String × Nat) := []
   /-- Parameter names of the current function (for indirect call detection). -/
   fnParams : List (String × Ty) := []
+  /-- Registers holding function-pointer values loaded from memory (e.g. struct fields). -/
+  fnTypeRegs : List String := []
 
 private def emit (s : EmitSSAState) (line : String) : EmitSSAState :=
   { s with output := s.output ++ line ++ "\n" }
@@ -280,10 +282,16 @@ private def emitSInst (s : EmitSSAState) (inst : SInst) : EmitSSAState :=
     ) (s, ([] : List String))
     let argStr := ", ".intercalate argParts
     let retLLTy := ssaTyToLLVM s retTy
-    -- Indirect call: function is a parameter with fn type
-    let isIndirect := s.fnParams.any fun (n, t) =>
-      n == fn && match t with | .fn_ _ _ _ => true | _ => false
-    let callTarget := if isIndirect then "%" ++ fn else "@" ++ fn
+    -- Indirect call: function is a parameter with fn type, a register loaded
+    -- from memory (fnTypeRegs), or a %-prefixed register from the Lower pass.
+    let isIndirect := fn.startsWith "%"
+      || (s.fnParams.any fun (n, t) =>
+        n == fn && match t with | .fn_ _ _ _ => true | _ => false)
+      || s.fnTypeRegs.contains fn
+    let callTarget := if isIndirect then
+      if fn.startsWith "%" then fn  -- already has % prefix
+      else "%" ++ fn
+    else "@" ++ fn
     match dst with
     | some d =>
       let s := emit s s!"  %{d} = call {retLLTy} {callTarget}({argStr})"
@@ -296,7 +304,11 @@ private def emitSInst (s : EmitSSAState) (inst : SInst) : EmitSSAState :=
     markPtr s dst
   | .load dst ptr ty =>
     let (s, ptrStr) := ensurePtr s ptr
-    emit s s!"  %{dst} = load {ssaTyToLLVM s ty}, ptr {ptrStr}"
+    let s := emit s s!"  %{dst} = load {ssaTyToLLVM s ty}, ptr {ptrStr}"
+    -- Track registers that hold function pointers (loaded from struct fields etc.)
+    match ty with
+    | .fn_ _ _ _ => { s with fnTypeRegs := s.fnTypeRegs ++ [dst] }
+    | _ => s
   | .store val ptr =>
     let (s, ptrStr) := ensurePtr s ptr
     match val with
@@ -435,7 +447,7 @@ private def emitSFnDef (s : EmitSSAState) (f : SFnDef) (isUserMain : Bool) : Emi
   let s := f.blocks.foldl emitSBlock s
   let s := emit s "}\n"
   -- Reset per-function state
-  { s with ptrRegs := [], fnParams := [] }
+  { s with ptrRegs := [], fnParams := [], fnTypeRegs := [] }
 
 -- ============================================================
 -- Emit struct/enum type definitions
@@ -750,7 +762,7 @@ private def emitBuiltins (s : EmitSSAState) : EmitSSAState :=
 -- Entry point: emit full SSA program as LLVM IR
 -- ============================================================
 
-def emitSModule (s : EmitSSAState) (m : SModule) : EmitSSAState :=
+def emitSModule (s : EmitSSAState) (m : SModule) (testMode : Bool := false) : EmitSSAState :=
   let s := { s with structDefs := s.structDefs ++ m.structs, enumDefs := s.enumDefs ++ m.enums }
   -- User types (dedup across modules)
   let s := m.structs.foldl (fun s sd =>
@@ -779,8 +791,9 @@ def emitSModule (s : EmitSSAState) (m : SModule) : EmitSSAState :=
     let isUserMain := f.name == "main" && hasMain
     emitSFnDef s f isUserMain
   ) s
-  -- Main wrapper
-  if hasMain then
+  -- Main wrapper (skip in test mode — test runner provides main)
+  if testMode then s
+  else if hasMain then
     match m.functions.find? fun f => f.name == "main" with
     | some mainFn => emitMainWrapper s mainFn.retTy
     | none => s
@@ -844,7 +857,74 @@ private def scanBuiltinEnumArgs (ctx : Layout.Ctx) (modules : List SModule) : (O
   ) none
   (bestOpt, bestRes)
 
-def emitSSAProgram (modules : List SModule) : String :=
+private def emitTestRunner (s : EmitSSAState) (modules : List SModule) : EmitSSAState :=
+  -- Collect all test functions across all modules
+  let testFns := modules.foldl (fun acc m =>
+    acc ++ (m.functions.filter fun f => f.isTest)
+  ) []
+  if testFns.isEmpty then
+    -- No tests found: emit a main that prints a message and returns 0
+    let s := emit s "@fmt.test.none = private constant [15 x i8] c\"No tests found\\00\""
+    let s := emit s "@fmt.test.nl = private constant [2 x i8] c\"\\0A\\00\""
+    let s := emit s ""
+    let s := emit s "define i32 @main() {"
+    let s := emit s "  %fmt = getelementptr [15 x i8], ptr @fmt.test.none, i32 0, i32 0"
+    let s := emit s "  call i32 (ptr, ...) @printf(ptr %fmt)"
+    let s := emit s "  %nl = getelementptr [2 x i8], ptr @fmt.test.nl, i32 0, i32 0"
+    let s := emit s "  call i32 (ptr, ...) @printf(ptr %nl)"
+    let s := emit s "  ret i32 0"
+    emit s "}\n"
+  else
+    -- Emit string constants for each test name
+    let s := testFns.foldl (fun s f =>
+      let nameLen := f.name.length + 1
+      let escaped := ssaEscapeStringForLLVM f.name
+      emit s s!"@test.name.{f.name} = private constant [{nameLen} x i8] c\"{escaped}\\00\""
+    ) s
+    -- Emit format strings
+    let s := emit s "@fmt.test.pass = private constant [10 x i8] c\"PASS: %s\\0A\\00\""
+    let s := emit s "@fmt.test.fail = private constant [10 x i8] c\"FAIL: %s\\0A\\00\""
+    let s := emit s ""
+    -- Generate main()
+    let s := emit s "define i32 @main() {"
+    let s := emit s "  %failures = alloca i32"
+    let s := emit s "  store i32 0, ptr %failures"
+    let s := emit s ""
+    -- Call each test function
+    let (s, _) := testFns.foldl (fun (s, idx) f =>
+      let i := toString idx
+      let s := emit s s!"  ; Test: {f.name}"
+      let s := emit s s!"  %result.{i} = call i32 @{f.name}()"
+      let s := emit s s!"  %is_pass.{i} = icmp eq i32 %result.{i}, 0"
+      let nameLen := f.name.length + 1
+      let s := emit s s!"  %name.{i} = getelementptr [{nameLen} x i8], ptr @test.name.{f.name}, i32 0, i32 0"
+      let s := emit s s!"  br i1 %is_pass.{i}, label %pass.{i}, label %fail.{i}"
+      let s := emit s ""
+      let s := emit s s!"pass.{i}:"
+      let s := emit s s!"  %pfmt.{i} = getelementptr [10 x i8], ptr @fmt.test.pass, i32 0, i32 0"
+      let s := emit s s!"  call i32 (ptr, ...) @printf(ptr %pfmt.{i}, ptr %name.{i})"
+      let s := emit s s!"  br label %next.{i}"
+      let s := emit s ""
+      let s := emit s s!"fail.{i}:"
+      let s := emit s s!"  %ffmt.{i} = getelementptr [10 x i8], ptr @fmt.test.fail, i32 0, i32 0"
+      let s := emit s s!"  call i32 (ptr, ...) @printf(ptr %ffmt.{i}, ptr %name.{i})"
+      -- Increment failures
+      let s := emit s s!"  %old_fail.{i} = load i32, ptr %failures"
+      let s := emit s s!"  %new_fail.{i} = add i32 %old_fail.{i}, 1"
+      let s := emit s s!"  store i32 %new_fail.{i}, ptr %failures"
+      let s := emit s s!"  br label %next.{i}"
+      let s := emit s ""
+      let s := emit s s!"next.{i}:"
+      (s, idx + 1)
+    ) (s, 0)
+    -- Return: 1 if any failed, 0 if all passed
+    let s := emit s "  %total_fail = load i32, ptr %failures"
+    let s := emit s "  %any_fail = icmp sgt i32 %total_fail, 0"
+    let s := emit s "  %exit = select i1 %any_fail, i32 1, i32 0"
+    let s := emit s "  ret i32 %exit"
+    emit s "}\n"
+
+def emitSSAProgram (modules : List SModule) (testMode : Bool := false) : String :=
   let s : EmitSSAState := {}
   -- Header
   let s := emit s "; Generated by Concrete compiler (SSA path)"
@@ -893,7 +973,9 @@ def emitSSAProgram (modules : List SModule) : String :=
   let s := emitExternDecls s allExternFns
   let s := emit s ""
   -- Emit each module
-  let s := modules.foldl emitSModule s
+  let s := modules.foldl (fun s m => emitSModule s m testMode) s
+  -- In test mode, emit the test runner instead of the normal main wrapper
+  let s := if testMode then emitTestRunner s modules else s
   -- Emit builtin function implementations
   let s := emitBuiltins s
   s.output

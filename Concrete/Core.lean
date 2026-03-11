@@ -79,6 +79,7 @@ structure CFnDef where
   retTy : Ty
   body : List CStmt
   isPublic : Bool := false
+  isTest : Bool := false
   capSet : CapSet := .empty
 
 structure CStructDef where

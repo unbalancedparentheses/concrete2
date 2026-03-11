@@ -1,6 +1,30 @@
 mod process {
-    import std.libc.{exit as libc_exit, getpid as libc_getpid, fork as libc_fork, kill as libc_kill, waitpid as libc_waitpid};
+    import std.libc.{exit as libc_exit, getpid as libc_getpid, fork as libc_fork, kill as libc_kill, waitpid as libc_waitpid, execvp as libc_execvp};
     import std.alloc.{realloc,free};
+    import std.result.{Result};
+
+    pub enum ProcessError {
+        ForkFailed,
+        KillFailed,
+        WaitFailed,
+        SpawnFailed,
+    }
+
+    // Signal constants
+    pub fn sig_int() -> i32 { return 2; }
+    pub fn sig_kill() -> i32 { return 9; }
+    pub fn sig_term() -> i32 { return 15; }
+
+    pub enum ForkResult {
+        Parent { child_pid: i32 },
+        Child,
+        Err { error: ProcessError },
+    }
+
+    pub enum ExitStatus {
+        Exited { code: i32 },
+        Signaled { raw: i32 },
+    }
 
     pub fn exit(code: i32) {
         libc_exit(code);
@@ -10,12 +34,23 @@ mod process {
         return libc_getpid();
     }
 
-    pub fn fork() -> i32 {
-        return libc_fork();
+    pub fn fork() -> ForkResult {
+        let pid: i32 = libc_fork();
+        if pid < 0 {
+            return ForkResult#Err { error: ProcessError#ForkFailed };
+        }
+        if pid == 0 {
+            return ForkResult#Child;
+        }
+        return ForkResult#Parent { child_pid: pid };
     }
 
-    pub fn kill(pid: i32, sig: i32) -> i32 {
-        return libc_kill(pid, sig);
+    pub fn kill(pid: i32, sig: i32) -> Result<bool, ProcessError> {
+        let ret: i32 = libc_kill(pid, sig);
+        if ret != 0 {
+            return Result::<bool, ProcessError>#Err { error: ProcessError#KillFailed };
+        }
+        return Result::<bool, ProcessError>#Ok { value: true };
     }
 
     pub struct Child {
@@ -32,11 +67,154 @@ mod process {
             return self.pid;
         }
 
-        pub fn wait(&self) -> i32 {
+        pub fn wait(&self) -> Result<ExitStatus, ProcessError> {
             let status: i32 = 0;
             let status_ptr: *mut i32 = &status as *mut i32;
-            libc_waitpid(self.pid, status_ptr as *mut i32, 0);
-            return status;
+            let ret: i32 = libc_waitpid(self.pid, status_ptr as *mut i32, 0);
+            if ret < 0 {
+                return Result::<ExitStatus, ProcessError>#Err { error: ProcessError#WaitFailed };
+            }
+            // WIFEXITED: (status & 0x7F) == 0
+            let low: i32 = status & 127;
+            if low == 0 {
+                // WEXITSTATUS: (status >> 8) & 0xFF
+                let code: i32 = (status >> 8) & 255;
+                return Result::<ExitStatus, ProcessError>#Ok { value: ExitStatus#Exited { code: code } };
+            }
+            return Result::<ExitStatus, ProcessError>#Ok { value: ExitStatus#Signaled { raw: status } };
         }
+    }
+
+    pub fn spawn(cmd: &String, args: *const *const u8) -> Result<Child, ProcessError> {
+        let pid: i32 = libc_fork();
+        if pid < 0 {
+            return Result::<Child, ProcessError>#Err { error: ProcessError#SpawnFailed };
+        }
+        if pid == 0 {
+            // Child process: exec
+            libc_execvp(cmd.ptr as *const u8, args);
+            // If execvp returns, it failed
+            libc_exit(127);
+            // unreachable
+            return Result::<Child, ProcessError>#Err { error: ProcessError#SpawnFailed };
+        }
+        let c: Child = Child { pid: pid };
+        return Result::<Child, ProcessError>#Ok { value: c };
+    }
+
+    #[test]
+    fn test_wait_invalid_pid() -> i32 {
+        // waitpid with nonexistent pid should return WaitFailed
+        let child: Child = Child::new(99999);
+        let result: Result<ExitStatus, ProcessError> = child.wait();
+        match result {
+            Result#Ok { value } => {
+                return 1;
+            },
+            Result#Err { error } => {
+                return 0;
+            }
+        }
+    }
+
+    #[test]
+    fn test_kill_invalid_pid() -> i32 {
+        // kill with nonexistent pid should return Err
+        let result: Result<bool, ProcessError> = kill(99999, 0);
+        match result {
+            Result#Ok { value } => {
+                return 1;
+            },
+            Result#Err { error } => {
+                return 0;
+            }
+        }
+    }
+
+    #[test]
+    fn test_fork_returns_typed() -> i32 {
+        let result: ForkResult = fork();
+        match result {
+            ForkResult#Parent { child_pid } => {
+                // Parent: wait for child
+                let child: Child = Child::new(child_pid);
+                let wait_result: Result<ExitStatus, ProcessError> = child.wait();
+                match wait_result {
+                    Result#Ok { value } => {
+                        match value {
+                            ExitStatus#Exited { code } => {
+                                // Child exits with 0
+                                return code;
+                            },
+                            ExitStatus#Signaled { raw } => {
+                                return 1;
+                            }
+                        }
+                    },
+                    Result#Err { error } => {
+                        return 1;
+                    }
+                }
+            },
+            ForkResult#Child => {
+                // Child: exit cleanly
+                exit(0);
+                return 0;
+            },
+            ForkResult#Err { error } => {
+                return 1;
+            }
+        }
+    }
+
+    #[test]
+    fn test_spawn_bad_command() -> i32 {
+        // Spawn a nonexistent command — child should exec-fail and exit 127
+        let cmd: String = "/nonexistent/binary/that/does/not/exist";
+        let args: [*const u8; 2] = [cmd.ptr as *const u8, 0 as *const u8];
+        let result: Result<Child, ProcessError> = spawn(&cmd, &args as *const *const u8);
+        cmd.drop();
+        match result {
+            Result#Ok { value } => {
+                // Child was forked, but execvp failed — child exits 127
+                let wr: Result<ExitStatus, ProcessError> = value.wait();
+                match wr {
+                    Result#Ok { value } => {
+                        match value {
+                            ExitStatus#Exited { code } => {
+                                if code == 127 {
+                                    return 0;
+                                }
+                                return 1;
+                            },
+                            ExitStatus#Signaled { raw } => {
+                                return 1;
+                            }
+                        }
+                    },
+                    Result#Err { error } => {
+                        return 1;
+                    }
+                }
+            },
+            Result#Err { error } => {
+                // Fork itself failed — also acceptable
+                return 0;
+            }
+        }
+    }
+
+    #[test]
+    fn test_signal_constants() -> i32 {
+        if sig_int() != 2 {
+            return 1;
+        }
+        if sig_kill() != 9 {
+            return 1;
+        }
+        if sig_term() != 15 {
+            return 1;
+        }
+        return 0;
     }
 }

@@ -52,7 +52,7 @@ inductive CoreCheckError where
   | logicalNotOnNonBool (ty : String)
   | bitwiseNotOnNonInteger (ty : String)
   -- Capability discipline
-  | insufficientCapabilities (fn : String)
+  | insufficientCapabilities (fn : String) (required : String) (available : String)
   | missingCapability (callee : String) (cap : String) (caller : String)
   | argCountMismatch (fn : String) (expected : Nat) (got : Nat)
   -- Match coverage
@@ -100,7 +100,7 @@ def CoreCheckError.message : CoreCheckError → String
   | .negationOnNonNumeric ty => s!"negation on non-numeric type: {ty}"
   | .logicalNotOnNonBool ty => s!"logical not on non-Bool type: {ty}"
   | .bitwiseNotOnNonInteger ty => s!"type mismatch in bitwise not: expected integer type, got {ty}"
-  | .insufficientCapabilities fn => s!"function '{fn}' requires capability not available in caller"
+  | .insufficientCapabilities fn required available => s!"function '{fn}' requires {required} but caller has {available}"
   | .missingCapability callee cap _caller => s!"function '{callee}' requires capability '{cap}' but caller does not declare it"
   | .argCountMismatch fn expected got => s!"function '{fn}' expects {expected} args, got {got}"
   | .matchMissingVariant enumName variant => s!"non-exhaustive match: missing variant '{variant}' in enum '{enumName}'"
@@ -141,6 +141,12 @@ def CoreCheckError.hint : CoreCheckError → Option String
   | .copyDestroyConflict _ => some "remove the Destroy impl or remove #[copy]"
   | .copyFieldNotCopy _ _ => some "mark the field type as #[copy] or remove #[copy] from the struct"
   | _ => none
+
+private def capSetToString : CapSet → String
+  | .empty => "(none)"
+  | .concrete caps => if caps.isEmpty then "(none)" else String.intercalate ", " caps
+  | .var name => name
+  | .union a b => s!"{capSetToString a} + {capSetToString b}"
 
 private def addError (msg : String) (hint : Option String := none) : StateM CoreCheckEnv Unit := do
   let env ← getEnv
@@ -272,7 +278,7 @@ partial def ccCheckExpr (e : CExpr) : StateM CoreCheckEnv Unit := do
     | some calleeCaps =>
       let env ← getEnv
       if !capsContain env.currentCapSet calleeCaps then
-        addCCError (.insufficientCapabilities fn)
+        addCCError (.insufficientCapabilities fn (capSetToString calleeCaps) (capSetToString env.currentCapSet))
     | none => pure ()  -- builtin or extern, skip cap check
     -- Check argument types
     match ← lookupFnSig fn with
