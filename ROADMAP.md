@@ -6,7 +6,7 @@ This is the implementation plan for the Concrete programming language. For the f
 
 ## Current State
 
-The Lean 4 compiler implements the core surface language plus the full internal IR pipeline: Core IR, elaboration, Core validation, monomorphization, SSA lowering, SSA verification/cleanup, and SSA codegen. The main suite currently has 275 passing tests, and the SSA-specific suite also passes.
+The Lean 4 compiler implements the core surface language plus the full internal IR pipeline: Core IR, elaboration, Core validation, monomorphization, SSA lowering, SSA verification/cleanup, and SSA codegen. The main suite currently has 278 passing tests, and the SSA-specific suite also passes.
 
 The project also now has:
 
@@ -28,24 +28,22 @@ Still clearly not implemented:
 - runtime
 - fully authoritative standalone resolution
 
+Recently completed:
+
+- parser cleanup to make the implementation strictly LL(1), with the previous bounded save/restore sites removed
+
 ## Priority Snapshot
 
 ### Now
 
-1. Make the parser strictly LL(1), not just LL(1)-oriented:
-   - left-factor `mod` handling so top-level program shape does not require save/restore
-   - remove save/restore around `&self` / `&mut self` by parsing a dedicated first-method-parameter form
-   - decide whether `Name::<T>` is worth the parser complexity; otherwise drop it or constrain it
-   - remove enum-dot fallback backtracking by making the syntax choice more explicit or committing to one parse with a later semantic error
-   - add a short grammar/reference note listing the parser backtrack sites that must stay eliminated for strict LL(1)
-2. Make builtins, stdlib, and user code follow one explicit trust/effect model:
+1. Make builtins, stdlib, and user code follow one explicit trust/effect model:
    - add `trusted fn` / `trusted impl` as the internal implementation-audit boundary
    - keep semantic effects (`Alloc`, `File`, `Network`, `Process`, etc.) visible in public signatures
    - keep FFI under `with(Unsafe)` even inside `trusted`
    - migrate builtins and stdlib internals away from silent capability/unsafe exemptions
    - surface trusted boundaries in audit/report output
-3. Preserve SSA as the only backend boundary and keep the build/project model explicit and boring.
-4. Improve diagnostics fidelity and rendering quality:
+2. Preserve SSA as the only backend boundary and keep the build/project model explicit and boring.
+3. Improve diagnostics fidelity and rendering quality:
    - better range precision
    - notes and secondary labels
    - clearer presentation for transformed constructs

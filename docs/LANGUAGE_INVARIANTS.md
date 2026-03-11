@@ -96,6 +96,6 @@ On POSIX systems, `abort()` typically produces exit code `134`, but tests should
 
 Same source plus same compiler should yield the same binary. No timestamps, random seeds, or environment-dependent output.
 
-## 16. First Error Stops Compilation
+## 16. Diagnostics Stay Structured
 
-The compiler reports the first error it encounters and stops. It does not attempt broad recovery or multi-error accumulation in the main semantic pipeline.
+The compiler keeps diagnostics structured through the main semantic pipeline. It may accumulate multiple errors across functions or modules, but it does not rely on broad recovery or ambiguous parse fallback to continue.
