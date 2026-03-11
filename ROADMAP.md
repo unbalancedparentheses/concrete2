@@ -39,17 +39,19 @@ Recently completed:
 
 ### Now
 
-1. Strengthen the testing strategy beyond the current end-to-end and module-local tests:
+1. Tighten the builtin-vs-stdlib boundary and clean up the public stdlib surface:
+   - keep builtins minimal, compiler/runtime-facing, and explicitly non-user-facing
+   - replace stringly builtin dispatch with internal intrinsic identities so compiler-known operations stop colliding with user/stdlib names
+   - wrap builtin-shaped hooks in coherent stdlib vocabulary
+   - move polymorphic builtin-shaped operations like `abs` toward stdlib traits + monomorphization instead of ad hoc compiler intercepts
+   - clean public API names that still look like low-level runtime hooks
+   - make ownership/borrowing costs more predictable at the stdlib boundary
+2. Strengthen the testing strategy beyond the current end-to-end and module-local tests:
    - parser fuzzing
    - `fmt` / `parse` property tests
    - `Vec` / `HashMap` trace tests
    - report consistency tests
    - selected codegen differential tests
-2. Tighten the builtin-vs-stdlib boundary and clean up the public stdlib surface:
-   - keep builtins minimal, compiler/runtime-facing, and explicitly non-user-facing
-   - wrap builtin-shaped hooks in coherent stdlib vocabulary
-   - clean public API names that still look like low-level runtime hooks
-   - make ownership/borrowing costs more predictable at the stdlib boundary
 3. Keep deepening and hardening the existing stdlib surface:
    - deepen `fs`, `net`, and `process`
    - add more failure-path and integration tests
