@@ -216,6 +216,7 @@ structure FnDef where
   body : List Stmt
   isPublic : Bool := false
   isTest : Bool := false
+  isTrusted : Bool := false        -- trusted fn: allows raw ptr ops without Unsafe
   capSet : CapSet := .empty        -- with(File, Network, ...)
   hasBang : Bool := false          -- fn main!() sugar
   span : Span := default
@@ -260,6 +261,7 @@ structure ImplBlock where
   typeName : String
   typeParams : List String := []
   methods : List FnDef
+  isTrusted : Bool := false        -- trusted impl: all methods inherit trusted boundary
   span : Span := default
 
 structure TraitDef where
@@ -276,6 +278,7 @@ structure ImplTraitBlock where
   typeParams : List String := []
   methods : List FnDef
   capSet : CapSet := .empty        -- capabilities on the impl (used by Destroy in Phase 3)
+  isTrusted : Bool := false        -- trusted impl Trait for Type: methods inherit trusted boundary
   span : Span := default
 
 structure Module where

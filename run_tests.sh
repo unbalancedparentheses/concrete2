@@ -429,6 +429,15 @@ run_err "$TESTDIR/error_ptr_deref_no_unsafe.con" "requires capability"
 run_err "$TESTDIR/error_ptr_assign_no_unsafe.con" "requires capability"
 run_err "$TESTDIR/error_ptr_cast_no_unsafe.con" "requires capability"
 run_err "$TESTDIR/error_int_to_ptr_no_unsafe.con" "requires capability"
+# Trusted boundary tests
+run_ok "$TESTDIR/trusted_fn_ptr_deref.con" 0
+run_ok "$TESTDIR/trusted_impl_basic.con" 0
+run_ok "$TESTDIR/trusted_ptr_assign.con" 0
+run_ok "$TESTDIR/trusted_ptr_cast.con" 0
+run_err "$TESTDIR/error_trusted_extern_needs_unsafe.con" "but caller has"
+run_err "$TESTDIR/error_trusted_on_struct.con" "trusted"
+# Builtin capability enforcement
+run_err "$TESTDIR/error_abort_no_process.con" "but caller has"
 
 # === Newtype tests ===
 run_ok "$TESTDIR/newtype_basic.con" 42

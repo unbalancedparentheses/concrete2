@@ -35,6 +35,7 @@ structure CoreCheckEnv where
   currentCapSet : CapSet
   currentRetTy : Ty
   inLoop : Bool
+  inTrusted : Bool
   errors : Diagnostics
 
 abbrev CoreCheckM := StateM CoreCheckEnv Unit
@@ -191,7 +192,11 @@ private def builtinCapTable : List (String × CapSet) := [
   ("tcp_accept", .concrete ["Network"]),
   ("socket_send", .concrete ["Network"]),
   ("socket_recv", .concrete ["Network"]),
-  ("socket_close", .concrete ["Network"])
+  ("socket_close", .concrete ["Network"]),
+  ("abort", .concrete ["Process"]),
+  ("alloc_array", .concrete ["Alloc"]),
+  ("free_array", .concrete ["Alloc"]),
+  ("realloc_array", .concrete ["Alloc"])
 ]
 
 private def lookupFnCaps (name : String) : StateM CoreCheckEnv (Option CapSet) := do
@@ -243,10 +248,18 @@ partial def ccCheckExpr (e : CExpr) : StateM CoreCheckEnv Unit := do
     let rTy := rhs.ty
     match op with
     | .add | .sub | .mul | .div | .mod =>
-      if !isNumeric lTy then
-        addCCError (.arithmeticOnNonNumeric (toString (repr lTy)))
-      if !typesCompatible lTy rTy then
-        addCCError (.binaryOperandMismatch (toString (repr lTy)) (toString (repr rTy)))
+      let isPtr := fun (t : Ty) => match t with | .ptrMut _ | .ptrConst _ => true | _ => false
+      let isPtrArith := isPtr lTy && isInteger rTy
+      if isPtrArith then
+        -- Pointer arithmetic requires trusted or Unsafe
+        let env ← getEnv
+        if !env.inTrusted && !capsContain env.currentCapSet (.concrete ["Unsafe"]) then
+          addCCError (.missingCapability "ptr_arith" "Unsafe" "")
+      else
+        if !isNumeric lTy then
+          addCCError (.arithmeticOnNonNumeric (toString (repr lTy)))
+        if !typesCompatible lTy rTy then
+          addCCError (.binaryOperandMismatch (toString (repr lTy)) (toString (repr rTy)))
     | .eq | .neq | .lt | .gt | .leq | .geq =>
       if !typesCompatible lTy rTy then
         addCCError (.comparisonOperandMismatch (toString (repr lTy)) (toString (repr rTy)))
@@ -348,7 +361,7 @@ partial def ccCheckExpr (e : CExpr) : StateM CoreCheckEnv Unit := do
     match inner.ty with
     | .ref _ | .refMut _ => pure ()
     | .ptrMut _ | .ptrConst _ =>
-      if !capsContain env.currentCapSet (.concrete ["Unsafe"]) then
+      if !env.inTrusted && !capsContain env.currentCapSet (.concrete ["Unsafe"]) then
         addCCError (.missingCapability "*raw_ptr" "Unsafe" "")
     | .heap _ =>
       if !capsContain env.currentCapSet (.concrete ["Alloc"]) then
@@ -396,7 +409,7 @@ partial def ccCheckExpr (e : CExpr) : StateM CoreCheckEnv Unit := do
     let involvesPointer := isPtr innerTy || isPtr targetTy
     if involvesPointer && !isRefToPtr then
       let env ← getEnv
-      if !capsContain env.currentCapSet (.concrete ["Unsafe"]) then
+      if !env.inTrusted && !capsContain env.currentCapSet (.concrete ["Unsafe"]) then
         addCCError (.missingCapability "unsafe_cast" "Unsafe" "")
   | .fnRef _ _ => pure ()
   | .try_ inner _ => ccCheckExpr inner
@@ -486,7 +499,7 @@ partial def ccCheckStmt (stmt : CStmt) : StateM CoreCheckEnv Unit := do
     match target.ty with
     | .refMut _ => pure ()
     | .ptrMut _ =>
-      if !capsContain env.currentCapSet (.concrete ["Unsafe"]) then
+      if !env.inTrusted && !capsContain env.currentCapSet (.concrete ["Unsafe"]) then
         addCCError (.missingCapability "*raw_ptr=" "Unsafe" "")
     | _ => addCCError (.cannotAssignThroughNonMutRef (toString (repr target.ty)))
 
@@ -650,6 +663,7 @@ def ccCheckFn (f : CFnDef) : StateM CoreCheckEnv Unit := do
     currentCapSet := f.capSet
     currentRetTy := f.retTy
     inLoop := false
+    inTrusted := f.isTrusted
   }
   for s in f.body do
     ccCheckStmt s
@@ -676,6 +690,7 @@ partial def ccCheckModule (m : CModule)
     currentCapSet := .empty
     currentRetTy := .unit
     inLoop := false
+    inTrusted := false
     errors := []
   }
   let finalEnv := m.functions.foldl (fun env f =>

@@ -1011,6 +1011,7 @@ def elabFn (f : FnDef) (implTy : Option Ty := none) : ElabM CFnDef := do
     body := cBody
     isPublic := f.isPublic
     isTest := f.isTest
+    isTrusted := f.isTrusted
     capSet := f.capSet
   }
 
@@ -1119,13 +1120,15 @@ partial def elabModule (m : Module) (summary : FileSummary)
     let implTy := if ib.typeParams.isEmpty then Ty.named ib.typeName
                   else Ty.generic ib.typeName (ib.typeParams.map Ty.typeVar)
     acc ++ ib.methods.map fun f =>
-      ({ f with typeParams := ib.typeParams ++ f.typeParams }, some implTy)
+      ({ f with typeParams := ib.typeParams ++ f.typeParams,
+                isTrusted := f.isTrusted || ib.isTrusted }, some implTy)
   ) ([] : List (FnDef × Option Ty))
   let traitImplMethodPairs := allTraitImpls.foldl (fun acc tb =>
     let implTy := if tb.typeParams.isEmpty then Ty.named tb.typeName
                   else Ty.generic tb.typeName (tb.typeParams.map Ty.typeVar)
     acc ++ tb.methods.map fun f =>
-      ({ f with typeParams := tb.typeParams ++ f.typeParams }, some implTy)
+      ({ f with typeParams := tb.typeParams ++ f.typeParams,
+                isTrusted := f.isTrusted || tb.isTrusted }, some implTy)
   ) ([] : List (FnDef × Option Ty))
   let allFnPairs := regularFns ++ implMethodPairs ++ traitImplMethodPairs
   let (fns, fnErrors, _) := allFnPairs.foldl (fun (acc, errs, env) (f, implTy) =>

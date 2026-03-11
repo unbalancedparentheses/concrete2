@@ -2,6 +2,27 @@ import Concrete.Token
 import Concrete.AST
 import Concrete.Lexer
 
+/-!
+# Parser — Strictly LL(1)
+
+Every parse decision is made with one token of lookahead. No save/restore
+backtracking. Key design points:
+
+- **Self params** (`&self`, `&mut self`): `&` in method-parameter position
+  commits; it must be followed by `self` or `mut self`, otherwise error.
+- **Turbofish in types** (`Name::<T>`): `::` in type position commits to
+  turbofish; `<` is required after `::`.
+- **Turbofish / module path in expressions** (`name::<T>`, `mod::name`):
+  `::` commits; must be followed by `<` or an identifier.
+- **Enum dot-syntax** (`Enum.Variant`): handled in `parsePostfix` after
+  `.field` is already consumed; decided by checking if both base name and
+  field name start with an uppercase letter.
+- **Top-level `mod`**: left-factored; `mod name` is consumed once, then
+  `{` vs `;` decides inline block vs file import.
+
+New syntax must satisfy the LL(1) invariant. See `research/ll1-grammar.md`.
+-/
+
 namespace Concrete
 
 structure ParserState where
@@ -165,26 +186,20 @@ partial def parseType : ParseM Ty := do
     -- Check for generic type: Name<T, U> or Name::<T, U>
     let next ← peek
     if next == .doubleColon then
-      -- Turbofish on type: Name::<T, U>
-      let saved ← get
+      -- Turbofish on type: Name::<T, U> (committed after ::)
       advance
-      let next2 ← peek
-      if next2 == .lt then
+      expect .lt
+      -- Inline parseTypeArgList (not yet in scope)
+      let firstTy ← parseType
+      let mut tyArgs := [firstTy]
+      let mut tkInner ← peek
+      while tkInner == .comma do
         advance
-        -- Inline parseTypeArgList (not yet in scope)
-        let firstTy ← parseType
-        let mut tyArgs := [firstTy]
-        let mut tkInner ← peek
-        while tkInner == .comma do
-          advance
-          let ty2 ← parseType
-          tyArgs := tyArgs ++ [ty2]
-          tkInner ← peek
-        expect .gt
-        return .generic name tyArgs
-      else
-        set saved
-        return .named name
+        let ty2 ← parseType
+        tyArgs := tyArgs ++ [ty2]
+        tkInner ← peek
+      expect .gt
+      return .generic name tyArgs
     else if next == .lt then
       advance
       -- Inline parseTypeArgList
@@ -383,8 +398,7 @@ partial def parsePrimary : ParseM Expr := do
     let mut qualName := name
     let mut typeArgs : List Ty := []
     if next == .doubleColon then
-      let s ← get
-      advance  -- consume '::'
+      advance  -- consume '::', committed
       let afterDC ← peek
       if afterDC == .lt then
         -- Turbofish: name::<Type, ...>
@@ -405,8 +419,8 @@ partial def parsePrimary : ParseM Expr := do
             typeArgs ← parseTypeArgList
             expect .gt
         | _ =>
-          -- Not turbofish and not module path, restore
-          set s
+          let sp ← peekSpan
+          throw s!"expected '<' or identifier after '::', got {afterDC} at {sp.line}:{sp.col}"
     let next2 ← peek
     if next2 == .lparen then
       advance
@@ -445,32 +459,6 @@ partial def parsePrimary : ParseM Expr := do
       else
         -- Fieldless enum literal: Name#Variant (no braces)
         return .enumLit sp name variant typeArgs []
-    else if next2 == .dot && name.length > 0 && (name.toList.head!).isUpper && typeArgs.isEmpty then
-      -- Could be enum literal with dot syntax: EnumName.Variant
-      -- Save position in case this is not an enum literal
-      let s ← get
-      advance  -- consume '.'
-      let variantTk ← peek
-      match variantTk with
-      | .ident variant =>
-        if variant.length > 0 && (variant.toList.head!).isUpper then
-          advance  -- consume variant name
-          let next3 ← peek
-          if next3 == .lbrace then
-            expect .lbrace
-            let fields ← parseStructLitFields
-            expect .rbrace
-            return .enumLit sp name variant [] fields
-          else
-            return .enumLit sp name variant [] []
-        else
-          -- Not an enum variant (lowercase after dot), restore and return as ident
-          set s
-          return .ident sp name
-      | _ =>
-        -- Not an ident after dot, restore
-        set s
-        return .ident sp name
     else if next2 == .lbrace then
       -- Could be struct literal: Name[::<Type>] { field: val, ... }
       if name.length > 0 && (name.toList.head!).isUpper then
@@ -586,25 +574,41 @@ partial def parsePostfix (e : Expr) : ParseM Expr := do
       let fieldName ← match nextTk with
         | .intLit n => advance; pure (toString n)
         | _ => expectIdent
-      -- Check if this is a method call: .name(args) or .name::<T>(args)
-      let next ← peek
-      if next == .doubleColon then
-        -- Method call with turbofish: .name::<T, U>(args)
-        advance
-        expect .lt
-        let targs ← parseTypeArgList
-        expect .gt
-        expect .lparen
-        let args ← parseCallArgs
-        expect .rparen
-        result := .methodCall result.getSpan result fieldName targs args
-      else if next == .lparen then
-        advance
-        let args ← parseCallArgs
-        expect .rparen
-        result := .methodCall result.getSpan result fieldName [] args
+      -- Check for enum literal: UppercaseName.UppercaseVariant (LL(1): decided by case)
+      let isEnumLit := match result with
+        | .ident _ baseName => baseName.length > 0 && (baseName.toList.head!).isUpper
+                               && fieldName.length > 0 && (fieldName.toList.head!).isUpper
+        | _ => false
+      if isEnumLit then
+        let baseName := match result with | .ident _ n => n | _ => ""
+        let next ← peek
+        if next == .lbrace then
+          advance
+          let fields ← parseStructLitFields
+          expect .rbrace
+          result := .enumLit result.getSpan baseName fieldName [] fields
+        else
+          result := .enumLit result.getSpan baseName fieldName [] []
       else
-        result := .fieldAccess result.getSpan result fieldName
+        -- Check if this is a method call: .name(args) or .name::<T>(args)
+        let next ← peek
+        if next == .doubleColon then
+          -- Method call with turbofish: .name::<T, U>(args)
+          advance
+          expect .lt
+          let targs ← parseTypeArgList
+          expect .gt
+          expect .lparen
+          let args ← parseCallArgs
+          expect .rparen
+          result := .methodCall result.getSpan result fieldName targs args
+        else if next == .lparen then
+          advance
+          let args ← parseCallArgs
+          expect .rparen
+          result := .methodCall result.getSpan result fieldName [] args
+        else
+          result := .fieldAccess result.getSpan result fieldName
     else if tk == .question then
       advance
       result := .try_ result.getSpan result
@@ -1055,8 +1059,7 @@ partial def parseMethodDef : ParseM (FnDef × Option SelfKind) := do
   let tk ← peek
   let (selfKind, params) ← match tk with
   | .ampersand =>
-    -- Could be &self or &mut self
-    let saved ← get
+    -- &self or &mut self (committed after &)
     advance
     let tk2 ← peek
     if tk2 == .mut then
@@ -1068,10 +1071,8 @@ partial def parseMethodDef : ParseM (FnDef × Option SelfKind) := do
         let params ← parseMethodParamList (some .refMut)
         pure (some SelfKind.refMut, params)
       | _ =>
-        -- Not &mut self, backtrack
-        set saved
-        let params ← parseParamList
-        pure (none, params)
+        let sp ← peekSpan
+        throw s!"expected 'self' after '&mut' in method parameter, got {tk3} at {sp.line}:{sp.col}"
     else
       match tk2 with
       | .ident "self" =>
@@ -1079,10 +1080,8 @@ partial def parseMethodDef : ParseM (FnDef × Option SelfKind) := do
         let params ← parseMethodParamList (some .ref)
         pure (some SelfKind.ref, params)
       | _ =>
-        -- Not &self, backtrack
-        set saved
-        let params ← parseParamList
-        pure (none, params)
+        let sp ← peekSpan
+        throw s!"expected 'self' after '&' in method parameter, got {tk2} at {sp.line}:{sp.col}"
   | .ident "self" =>
     advance
     let params ← parseMethodParamList (some .value)
@@ -1177,7 +1176,7 @@ partial def parseTraitDef : ParseM TraitDef := do
     let tk2 ← peek
     let (selfKind, params) ← match tk2 with
     | .ampersand =>
-      let saved ← get
+      -- &self or &mut self (committed after &)
       advance
       let tk3 ← peek
       if tk3 == .mut then
@@ -1188,14 +1187,18 @@ partial def parseTraitDef : ParseM TraitDef := do
           advance
           let params ← parseMethodParamList (some .refMut)
           pure (some SelfKind.refMut, params)
-        | _ => set saved; let params ← parseParamList; pure (none, params)
+        | _ =>
+          let sp ← peekSpan
+          throw s!"expected 'self' after '&mut' in trait method parameter, got {tk4} at {sp.line}:{sp.col}"
       else
         match tk3 with
         | .ident "self" =>
           advance
           let params ← parseMethodParamList (some .ref)
           pure (some SelfKind.ref, params)
-        | _ => set saved; let params ← parseParamList; pure (none, params)
+        | _ =>
+          let sp ← peekSpan
+          throw s!"expected 'self' after '&' in trait method parameter, got {tk3} at {sp.line}:{sp.col}"
     | .ident "self" =>
       advance
       let params ← parseMethodParamList (some .value)
@@ -1529,7 +1532,13 @@ partial def parseModuleBody (stopToken : TokenKind) : ParseM Module := do
     else
       let isPub := tk == .pub_
       if isPub then advance; tk ← peek
+      -- Check for 'trusted' modifier (only valid before fn and impl)
+      let isTrusted := tk == .trusted_
+      if isTrusted then advance; tk ← peek
       if tk == .struct_ then
+        if isTrusted then
+          let sp ← peekSpan
+          throw s!"'trusted' can only be applied to fn or impl, at {sp.line}:{sp.col}"
         if pendingIsTest then
           let sp ← peekSpan
           throw s!"#[test] can only be applied to function definitions, at {sp.line}:{sp.col}"
@@ -1541,6 +1550,9 @@ partial def parseModuleBody (stopToken : TokenKind) : ParseM Module := do
                                         isPacked := packed, reprAlign := reprA }]
         pendingRepr := none
       else if tk == .hash then
+        if isTrusted then
+          let sp ← peekSpan
+          throw s!"'trusted' can only be applied to fn or impl, at {sp.line}:{sp.col}"
         -- Attribute before a declaration (after pub)
         let (key, _, reprOpts) ← parseAttribute
         if key == "repr" then
@@ -1556,6 +1568,10 @@ partial def parseModuleBody (stopToken : TokenKind) : ParseM Module := do
         if pendingIsTest && tk != .fn then
           let sp ← peekSpan
           throw s!"#[test] can only be applied to function definitions, at {sp.line}:{sp.col}"
+        -- Reject 'trusted' on non-fn/impl declarations
+        if isTrusted && tk != .fn && tk != .impl_ then
+          let sp ← peekSpan
+          throw s!"'trusted' can only be applied to fn or impl, at {sp.line}:{sp.col}"
         if tk == .extern_ then
           let ext ← parseExternFn
           externFns := externFns ++ [{ ext with isPublic := isPub }]
@@ -1565,8 +1581,8 @@ partial def parseModuleBody (stopToken : TokenKind) : ParseM Module := do
         else if tk == .impl_ then
           let result ← parseImplBlock
           match result with
-          | .inl ib => implBlocks := implBlocks ++ [ib]
-          | .inr tb => traitImpls := traitImpls ++ [tb]
+          | .inl ib => implBlocks := implBlocks ++ [{ ib with isTrusted }]
+          | .inr tb => traitImpls := traitImpls ++ [{ tb with isTrusted }]
         else if tk == .trait_ then
           let t ← parseTraitDef
           traits := traits ++ [{ t with isPublic := isPub }]
@@ -1597,7 +1613,7 @@ partial def parseModuleBody (stopToken : TokenKind) : ParseM Module := do
           -- Check if function has a body or is body-less (intrinsic/declaration)
           let f ← parseFnDefOrDecl
           match f with
-          | .inl fnDef => fns := fns ++ [{ fnDef with isPublic := isPub, isTest := pendingIsTest }]
+          | .inl fnDef => fns := fns ++ [{ fnDef with isPublic := isPub, isTest := pendingIsTest, isTrusted }]
           | .inr extDef => externFns := externFns ++ [{ extDef with isPublic := isPub }]
           pendingIsTest := false
         else if tk == .ident "union" then
@@ -1641,26 +1657,28 @@ partial def parseModule : ParseM Module := do
 partial def parseProgram : ParseM (List Module) := do
   let tk ← peek
   if tk == .«mod» then
-    -- Peek ahead: if after 'mod ident' we see '{', it's an inline module block.
-    -- If we see ';', it's a mod import declaration inside the main module body.
-    let s ← get
-    advance  -- consume 'mod'
-    let _ ← expectIdent  -- consume name
+    -- Left-factored: consume 'mod name', then branch on { vs ;
+    advance  -- consume 'mod', committed
+    let modName ← expectIdent
     let tk2 ← peek
-    set s  -- restore parser state
     if tk2 == .lbrace then
-      -- Inline module blocks: mod Name { ... }
-      let mut modules : List Module := []
-      let mut tk ← peek
-      while tk == .«mod» do
+      -- Inline module block: mod Name { ... }
+      expect .lbrace
+      let body ← parseModuleBody .rbrace
+      expect .rbrace
+      let mut modules := [{ body with name := modName }]
+      let mut tk3 ← peek
+      while tk3 == .«mod» do
         let m ← parseModule
         modules := modules ++ [m]
-        tk ← peek
+        tk3 ← peek
       return modules
     else
       -- 'mod X;' is a module import, part of the main module body
+      expect .semicolon
       let m ← parseModuleBody .eof
-      return [{ m with name := "main" }]
+      let importedSub : Module := { name := modName, structs := [], enums := [], functions := [] }
+      return [{ m with name := "main", submodules := [importedSub] ++ m.submodules }]
   else
     let m ← parseModuleBody .eof
     return [{ m with name := "main" }]

@@ -66,8 +66,9 @@ private partial def unsafeReportModule (m : CModule) (indent : String) : Option 
   let unsafeFns := m.functions.filter fun f => hasUnsafeCap f.capSet
   let externFns := m.externFns
   let ptrFns := m.functions.filter fnUsesRawPtrs
+  let trustedFns := m.functions.filter fun f => f.isTrusted
   let subReports := m.submodules.filterMap (unsafeReportModule · (indent ++ "  "))
-  if unsafeFns.isEmpty && externFns.isEmpty && ptrFns.isEmpty && subReports.isEmpty then
+  if unsafeFns.isEmpty && externFns.isEmpty && ptrFns.isEmpty && trustedFns.isEmpty && subReports.isEmpty then
     none
   else
     let lines : List String := [s!"{indent}module {m.name}:"]
@@ -83,6 +84,10 @@ private partial def unsafeReportModule (m : CModule) (indent : String) : Option 
       else lines ++ [s!"{indent}  Functions with raw pointer signatures:"] ++
         ptrFns.map fun f =>
           s!"{indent}    fn {f.name}({ppTyList f.params}) -> {tyToStr f.retTy}"
+    let lines := if trustedFns.isEmpty then lines
+      else lines ++ [s!"{indent}  Trusted boundaries:"] ++
+        trustedFns.map fun f =>
+          s!"{indent}    trusted fn {f.name}({ppTyList f.params}) -> {tyToStr f.retTy}"
     let lines := lines ++ subReports
     some ("\n".intercalate lines)
 

@@ -80,6 +80,7 @@ structure CFnDef where
   body : List CStmt
   isPublic : Bool := false
   isTest : Bool := false
+  isTrusted : Bool := false
   capSet : CapSet := .empty
 
 structure CStructDef where
@@ -293,6 +294,7 @@ end
 
 def ppCFnDef (f : CFnDef) : String :=
   let pubStr := if f.isPublic then "pub " else ""
+  let pubStr := if f.isTrusted then pubStr ++ "trusted " else pubStr
   let tparamsStr := if f.typeParams.isEmpty then "" else s!"<{", ".intercalate f.typeParams}>"
   let paramsStr := f.params.map fun (n, t) => s!"{n}: {tyToStr t}"
   let capStr := match f.capSet with
