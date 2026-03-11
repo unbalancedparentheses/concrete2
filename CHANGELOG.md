@@ -17,6 +17,9 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 - `CoreCheck` now relaxes raw pointer dereference, raw pointer assignment, and pointer-cast checks inside trusted code
 - Kept `extern fn` calls under `with(Unsafe)` even inside `trusted`
 - Added tests for trusted functions, trusted impls, trusted pointer operations, and invalid trusted usage
+- Added trusted trait-impl support and grouped trusted boundary reporting at the source level
+- Migrated builtins, stdlib, and user code to one explicit trust/effect model with honest capability annotations
+- Fixed trusted pointer arithmetic end-to-end by teaching SSA verification and codegen how to handle pointer + integer lowering
 
 ### Stdlib collections: HashMap and HashSet
 
@@ -172,7 +175,7 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ### Testing / status milestones
 
-- End-to-end main suite expanded to 285 passing tests
+- End-to-end main suite expanded to 288 passing tests
 - SSA-specific suite passing
 - Golden SSA/IR testing integrated
 - CI updated to exercise SSA-specific coverage as well as the main path

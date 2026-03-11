@@ -6,7 +6,7 @@ This is the implementation plan for the Concrete programming language. For the f
 
 ## Current State
 
-The Lean 4 compiler implements the core surface language plus the full internal IR pipeline: Core IR, elaboration, Core validation, monomorphization, SSA lowering, SSA verification/cleanup, and SSA codegen. The main suite currently has 285 passing tests, and the SSA-specific suite also passes.
+The Lean 4 compiler implements the core surface language plus the full internal IR pipeline: Core IR, elaboration, Core validation, monomorphization, SSA lowering, SSA verification/cleanup, and SSA codegen. The main suite currently has 288 passing tests, and the SSA-specific suite also passes.
 
 The project also now has:
 
@@ -33,32 +33,28 @@ Recently completed:
 
 - parser cleanup to make the implementation strictly LL(1), with the previous bounded save/restore sites removed
 - `trusted fn` / `trusted impl` implemented through the parser, Core pipeline, CoreCheck, and audit reports
+- builtins, stdlib, and user code migrated to one explicit trust/effect model with trusted boundaries and honest capability annotations
 
 ## Priority Snapshot
 
 ### Now
 
-1. Make builtins, stdlib, and user code follow one explicit trust/effect model:
-   - now that `trusted fn` / `trusted impl` exist, migrate builtins and stdlib internals to use them coherently
-   - keep semantic effects (`Alloc`, `File`, `Network`, `Process`, etc.) visible in public signatures
-   - keep FFI under `with(Unsafe)` even inside `trusted`
-   - remove silent builtin and stdlib capability/unsafe exemptions
-   - improve reports so trusted impl boundaries are visible explicitly, not only as lowered trusted functions
-2. Preserve SSA as the only backend boundary and keep the build/project model explicit and boring.
-3. Improve diagnostics fidelity and rendering quality:
+1. Improve diagnostics fidelity and rendering quality:
    - better range precision
    - notes and secondary labels
    - clearer presentation for transformed constructs
-
-### Next
-
-1. Deepen and harden the existing stdlib surface rather than adding broad new modules:
+2. Preserve SSA as the only backend boundary and keep the build/project model explicit and boring.
+3. Keep deepening and hardening the existing stdlib surface:
    - deepen `fs`, `net`, and `process`
    - add more failure-path and integration tests
    - keep error, handle, and checked/unchecked conventions uniform
    - add carefully chosen collections
-2. Push formalization over the cleaned Core -> SSA architecture.
-3. Add later audit/report outputs still marked deferred, such as allocation summaries and cleanup/destruction reports.
+
+### Next
+
+1. Push formalization over the cleaned Core -> SSA architecture.
+2. Add later audit/report outputs still marked deferred, such as allocation summaries and cleanup/destruction reports.
+3. Continue stdlib deepening with carefully chosen collections and stronger systems ergonomics.
 
 ### Later
 

@@ -87,7 +87,7 @@ That means:
 
 - `trusted` does **not** suppress ordinary capabilities
 - `trusted` does **not** permit `extern fn` calls without `with(Unsafe)`
-- stdlib and builtin internals should eventually migrate to this same model instead of relying on silent exemptions
+- builtin and stdlib internals are being aligned to this same model instead of relying on silent exemptions
 
 ## Future Refinement
 
@@ -98,6 +98,6 @@ This doc should expand if the FFI surface grows substantially, for example:
 - more explicit calling-convention rules
 - ABI notes for additional targets
 - low-level FFI helper patterns in the stdlib
-- deeper migration of builtin and stdlib internals to the implemented `trusted` boundary
+- continued hardening of builtin and stdlib internals around the implemented `trusted` boundary
 
 For the exploratory direction behind those ideas, see [../research/unsafe-structure.md](../research/unsafe-structure.md) and [../research/trusted-boundary.md](../research/trusted-boundary.md).

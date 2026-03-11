@@ -44,12 +44,12 @@ The first wave of stdlib foundation work has landed:
 - `env`, `process`, and `net` are implemented
 
 The next stdlib work should build on that foundation instead of restarting it.
-The highest-priority stdlib task now is **trust/effect coherence**:
+The trust/effect coherence pass is now in place:
 
-- migrate builtins and stdlib internals away from silent capability/unsafe exemptions
-- keep `Alloc`, `File`, `Network`, `Process`, etc. visible in public signatures
-- use `trusted` only for internal pointer-level implementation techniques
-- keep `extern fn` calls under `with(Unsafe)` even inside trusted code
+- builtins, stdlib, and user code follow one explicit trust/effect model
+- `Alloc`, `File`, `Network`, `Process`, etc. stay visible in public signatures
+- `trusted` is used only for internal pointer-level implementation techniques
+- `extern fn` calls stay under `with(Unsafe)` even inside trusted code
 
 ## Current Foundation Status
 
@@ -74,7 +74,7 @@ Still the main near-term stdlib work:
 2. keep error and handle conventions uniform
 3. expand failure-path and integration testing
 4. carefully chosen collections
-5. migrate modules to the explicit `trusted + real effects` model consistently
+5. keep pushing deeper systems-module polish and stronger integration coverage
 
 ## Core Module Direction
 

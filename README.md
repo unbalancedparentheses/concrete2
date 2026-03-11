@@ -46,6 +46,7 @@ What Concrete has today:
 - structured diagnostics across the semantic pipeline, with native `Diagnostics` through the main semantic passes
 - explicit audit/report outputs
 - explicit `trusted fn` / `trusted impl` boundaries for internal pointer-level implementation unsafety
+- a coherent trust/effect model across builtins, stdlib, and user code
 - a first real stdlib foundation: stronger `vec`, `string`, `io`, plus `bytes`, `slice`, `text`, `path`, `fs`, `env`, `process`, `net`, `fmt`, `hash`, `rand`, `time`, and `parse`
 - stdlib systems-layer hardening: typed errors across `fs`/`net`/`process`/`io`, checked/unchecked splits in `bytes`, `Option`-returning accessors in `env`
 - stdlib deepening: `fmt` (integer/hex/bin/oct/bool formatting, padding), `hash` (FNV-1a), `rand` (deterministic seeding, bounded range), `time` (monotonic clock, sleep, unix timestamp), and `parse` (value parsing plus `Cursor`)
@@ -290,7 +291,7 @@ The goal is not to out-feature those languages. The goal is to be unusually good
 
 ## Current Status
 
-The compiler implements the core surface language and the full internal IR pipeline in Lean 4. All 285 main tests pass, and the SSA-specific suite passes as well.
+The compiler implements the core surface language and the full internal IR pipeline in Lean 4. All 288 main tests pass, and the SSA-specific suite passes as well.
 
 Implemented today:
 
@@ -300,10 +301,11 @@ Implemented today:
 - source spans in the AST and rendered diagnostics
 - SSA as the only real backend path
 - `trusted fn` / `trusted impl` through the parser, Core pipeline, CoreCheck, and audit reports
+- builtins, stdlib, and user code aligned under one explicit trust/effect model
 
 Still in progress:
 
-- trusted/capability coherence across builtins and stdlib
+- diagnostics quality and rendering polish
 - optimizer work
 - kernel formalization
 - runtime maturity
@@ -446,7 +448,7 @@ See [docs/README.md](docs/README.md) for the stable documentation index and [res
 | **13** | Tooling | Not started |
 | **14** | Runtime (C, then Concrete) | Not started |
 
-Next critical path: **make builtins, stdlib, and user code follow one explicit trust/effect model, then keep deepening the stdlib and push formalization.** The summary-based frontend, `CoreCheck` semantic-authority shift, ABI/layout subsystem, cacheable pipeline artifacts (`Concrete/Pipeline.lean`), SSA cleanup, audit/report outputs, and structured diagnostics are done enough for the current architecture phase. The next work is coherence: real semantic effects stay in signatures, internal pointer-level unsafety moves behind `trusted`, and foreign boundaries remain under `with(Unsafe)`.
+Next critical path: **improve diagnostics quality, then keep deepening the stdlib and push formalization.** The summary-based frontend, `CoreCheck` semantic-authority shift, ABI/layout subsystem, cacheable pipeline artifacts (`Concrete/Pipeline.lean`), SSA cleanup, audit/report outputs, structured diagnostics, and the trusted/effect coherence migration are done enough for the current architecture phase.
 
 ### What fits the philosophy and what does not
 
@@ -588,7 +590,6 @@ Things Concrete deliberately does not have:
 - Clear path to formal verification because the compiler is already implemented in Lean and now has explicit internal IR boundaries
 
 **Next steps:**
-- Finish the trust/effect coherence pass across builtins and stdlib
 - Strengthen shared diagnostics infrastructure with richer spans, secondary labels/notes, and phase-aware rendering
 - Then deepen with carefully chosen collections and more systems-module polish
 - Push kernel formalization and proof development in Lean

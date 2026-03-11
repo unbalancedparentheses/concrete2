@@ -228,7 +228,7 @@ User code uses `trusted` for C bindings, custom allocators, ring buffers, intrus
 
 ## Stdlib Migration
 
-`trusted` is now implemented in the compiler. The next work is the systematic migration pass across builtins and stdlib internals.
+`trusted` is now implemented in the compiler, and the first builtins/std/user-code coherence pass has landed. The next work is hardening and refinement, not invention of the model itself.
 
 What needs `trusted`:
 
@@ -238,19 +238,17 @@ What needs `trusted`:
 
 The migration is not ad hoc. The remaining order is:
 
-1. enforce capability checking for raw pointer ops and extern calls uniformly with `trusted` available as the containment mechanism
-2. migrate builtins — signatures carry `with(Alloc)` etc.
-3. migrate stdlib — `trusted impl` on containers, proper capabilities on every function
-4. improve `--report unsafe` so trusted impl boundaries are surfaced more explicitly
-5. add `--report trusted` later only if the combined report becomes noisy
+1. keep capability checking for raw pointer ops and extern calls uniform with `trusted` as the containment mechanism
+2. deepen builtin and stdlib migration coverage where any silent exemptions remain
+3. improve `--report unsafe` and trusted-boundary visibility further as the audit story grows
+4. add `--report trusted` later only if the combined report becomes noisy
 
 ## Rollout Order
 
 1. keep raw-pointer / low-level checks uniform with `trusted` available as the containment mechanism
-2. migrate builtins so their signatures expose real capabilities
-3. migrate stdlib internals to trusted boundaries plus honest capabilities
-4. surface trusted boundaries in `--report unsafe`
-5. later, add `--report trusted` if the combined report becomes noisy
+2. keep builtin and stdlib signatures honest about their semantic capabilities
+3. keep trusted boundaries visible in `--report unsafe`
+4. later, add `--report trusted` if the combined report becomes noisy
 
 ## Relationship To Other Work
 
