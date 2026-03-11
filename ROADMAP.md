@@ -47,9 +47,10 @@ Recently completed:
    - treat parser-state rewind/backtracking regressions as bugs
 2. Tighten the builtin-vs-stdlib boundary and clean up the public stdlib surface:
    - keep builtins minimal, compiler/runtime-facing, and explicitly non-user-facing
-   - replace stringly builtin dispatch with internal intrinsic identities so compiler-known operations stop colliding with user/stdlib names
+   - ~~replace stringly builtin dispatch with internal intrinsic identities~~ **done** (IntrinsicId enum)
    - wrap builtin-shaped hooks in coherent stdlib vocabulary
-   - move polymorphic builtin-shaped operations like `abs` toward stdlib traits + monomorphization instead of ad hoc compiler intercepts
+   - ~~move polymorphic builtin-shaped operations like `abs` toward stdlib traits + monomorphization~~ **done** (abs removed from intrinsics, now Numeric trait)
+   - migrate remaining math intrinsics (sqrt, sin, cos, etc.) to stdlib traits where appropriate
    - clean public API names that still look like low-level runtime hooks
    - make ownership/borrowing costs more predictable at the stdlib boundary
    - keep the stdlib bytes-first and low-level, rather than letting string-heavy convenience APIs become the default surface
