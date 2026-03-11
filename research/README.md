@@ -14,6 +14,7 @@ Status key:
 - `Excluded` = intentionally not in the language surface
 - `Process` = decision filter or project rule
 
+- [builtin-vs-stdlib.md](builtin-vs-stdlib.md) — what belongs in compiler/runtime builtins vs the user-facing stdlib (`Open`, partially adopted)
 - [capability-sandboxing.md](capability-sandboxing.md) — ways to make `with(...)` better at expressing restricted authority and sandboxing (`Open`, partially adopted by the trusted/capability split)
 - [derived-equality-design.md](derived-equality-design.md) — possible derived structural equality for user-defined types (`Open`)
 - [heap-ownership-design.md](heap-ownership-design.md) — chosen `Heap<T>` ownership model (`Adopted`)
@@ -31,6 +32,7 @@ Status key:
 ## Standard Library
 
 - [stdlib-design.md](stdlib-design.md) — stdlib direction and module priorities (`Open`, partially adopted as ordering guidance)
+- [stdlib-api-cleanup.md](stdlib-api-cleanup.md) — cleaning builtin-style names and ownership surprises out of the public stdlib surface (`Open`)
 - [no-std-freestanding.md](no-std-freestanding.md) — how a future hosted vs freestanding / `no_std` split could work in Concrete (`Open`)
 - [pre-post-conditions.md](pre-post-conditions.md) — design space around contracts/specification support (`Open`)
 - [concurrency.md](concurrency.md) — concurrency direction before async-style features (`Open`)
@@ -38,6 +40,10 @@ Status key:
 ## Runtime And Scheduling
 
 - [execution-cost.md](execution-cost.md) — static execution cost analysis: structural reports, bounded instruction counts, and WCET (`Open`)
+
+## Process And Quality
+
+- [testing-strategy.md](testing-strategy.md) — gaps beyond current end-to-end/module tests: fuzzing, property tests, report consistency, and differential testing (`Open`)
 
 ## Compiler Architecture
 

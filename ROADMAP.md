@@ -6,7 +6,7 @@ This is the implementation plan for the Concrete programming language. For the f
 
 ## Current State
 
-The Lean 4 compiler implements the core surface language plus the full internal IR pipeline: Core IR, elaboration, Core validation, monomorphization, SSA lowering, SSA verification/cleanup, and SSA codegen. The main suite currently has 288 passing tests, and the SSA-specific suite also passes.
+The Lean 4 compiler implements the core surface language plus the full internal IR pipeline: Core IR, elaboration, Core validation, monomorphization, SSA lowering, SSA verification/cleanup, and SSA codegen. The main suite currently has 326 passing tests, and the SSA-specific suite also passes.
 
 The project also now has:
 
@@ -39,22 +39,35 @@ Recently completed:
 
 ### Now
 
-1. Improve diagnostics fidelity and rendering quality:
-   - better range precision
-   - notes and secondary labels
-   - clearer presentation for transformed constructs
-2. Preserve SSA as the only backend boundary and keep the build/project model explicit and boring.
+1. Strengthen the testing strategy beyond the current end-to-end and module-local tests:
+   - parser fuzzing
+   - `fmt` / `parse` property tests
+   - `Vec` / `HashMap` trace tests
+   - report consistency tests
+   - selected codegen differential tests
+2. Tighten the builtin-vs-stdlib boundary and clean up the public stdlib surface:
+   - keep builtins minimal, compiler/runtime-facing, and explicitly non-user-facing
+   - wrap builtin-shaped hooks in coherent stdlib vocabulary
+   - clean public API names that still look like low-level runtime hooks
+   - make ownership/borrowing costs more predictable at the stdlib boundary
 3. Keep deepening and hardening the existing stdlib surface:
    - deepen `fs`, `net`, and `process`
    - add more failure-path and integration tests
    - keep error, handle, and checked/unchecked conventions uniform
    - add carefully chosen collections
+4. Improve diagnostics fidelity and rendering quality:
+   - better range precision
+   - notes and secondary labels
+   - clearer presentation for transformed constructs
+5. Preserve SSA as the only backend boundary and keep the build/project model explicit and boring.
 
 ### Next
 
 1. Push formalization over the cleaned Core -> SSA architecture.
 2. Add later audit/report outputs still marked deferred, such as allocation summaries and cleanup/destruction reports.
 3. Continue stdlib deepening with carefully chosen collections and stronger systems ergonomics.
+4. Keep diagnostics converging on one high-quality surface across compiler modes.
+5. Turn the testing strategy into durable infrastructure instead of a one-off push.
 
 ### Later
 
@@ -62,6 +75,10 @@ Recently completed:
 2. Runtime maturity and eventual self-hosting pressure.
 3. Proof-driven narrowing of future feature additions.
 4. A clearer hosted vs freestanding / `no_std` split, but only after the current runtime and stdlib boundaries are more stable.
+5. Execution-cost analysis as an audit/report extension:
+   - structural boundedness reports first
+   - abstract cost estimation later
+   - never at the cost of clarity in the core language
 
 ## Status Legend
 
@@ -205,6 +222,7 @@ Implemented today via `--report`:
 Deferred:
 - allocation summaries (heap alloc tracking per function/module)
 - cleanup/destruction reports (drop/defer coverage analysis)
+- execution-cost / boundedness reports (see `research/execution-cost.md`)
 
 8. **Multi-backend boundary over SSA**
 Keep SSA as the backend boundary and make that architectural rule explicit:
@@ -229,8 +247,10 @@ The stdlib now has:
 - a utility layer (`fmt`, `hash`, `rand`, `time`, `parse`, `test`)
 
 The next arc is to deepen what exists rather than add broad new surface area:
+- keep the builtin-vs-stdlib boundary clean so user-facing APIs do not inherit runtime-hook naming or semantics unnecessarily
 - keep stdlib APIs explicit: allocator-visible where allocation occurs, typed errors, and obvious ownership/resource handles
 - make checked vs unchecked operations honest and consistent
+- clean builtin-style names and ownership surprises out of the user-facing API surface
 - deepen the existing systems modules (`fs`, `net`, `process`) with more helpers and stronger path integration
 - improve testing depth, especially failure-path and integration coverage
 - then add carefully chosen collections
@@ -1756,7 +1776,7 @@ These do not block any phase above:
 | **12a** | Runtime in C | Not started | 7 |
 | **12b** | Runtime in Concrete | Not started | 8, 12a |
 
-**Next priorities:** deepen and harden the existing stdlib surface, strengthen diagnostics quality, then push formalization.
+**Next priorities:** strengthen the testing strategy, tighten the builtin-vs-stdlib/API boundary, keep deepening the stdlib, then push formalization.
 
 **Critical path for production use:** current pipeline stability → stdlib hardening → runtime (`12a`).
 
@@ -1770,6 +1790,7 @@ The biggest strategic multipliers are:
 
 - real formalization of Core and lowering
 - stronger audit outputs
+- execution-cost visibility as a later audit/report extension
 - a very strong stdlib style
 - a formatter and stronger tooling baseline
 - a cleaner hosted vs freestanding split
@@ -1780,6 +1801,8 @@ The biggest strategic multipliers are:
 
 These should not displace the current near-term work. The near-term roadmap is still:
 
+- strengthen the testing strategy
+- clean up the builtin-vs-stdlib boundary and stdlib API surface
 - deepen and harden the existing stdlib
 - keep the compiler/toolchain explicit and boring
 - push formalization over the cleaned Core -> SSA architecture
@@ -1788,6 +1811,10 @@ Related research notes:
 
 - [research/ten-x-improvements.md](research/ten-x-improvements.md)
 - [research/complete-language-system.md](research/complete-language-system.md)
+- [research/testing-strategy.md](research/testing-strategy.md)
+- [research/builtin-vs-stdlib.md](research/builtin-vs-stdlib.md)
+- [research/stdlib-api-cleanup.md](research/stdlib-api-cleanup.md)
+- [research/execution-cost.md](research/execution-cost.md)
 - [research/unsafe-structure.md](research/unsafe-structure.md)
 - [research/capability-sandboxing.md](research/capability-sandboxing.md)
 - [research/no-std-freestanding.md](research/no-std-freestanding.md)
