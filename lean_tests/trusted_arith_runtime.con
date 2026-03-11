@@ -1,0 +1,11 @@
+// Trusted ptr arithmetic: verifies compilation of ptr offset + deref
+// NOTE: runtime ptr deref segfaults due to codegen gap
+trusted fn offset_and_read(p: *const i32) -> i32 {
+    let q: *const i32 = p + 1;
+    return *q;
+}
+
+fn main() -> i32 {
+    // Cannot exercise at runtime yet — codegen gap
+    return 0;
+}

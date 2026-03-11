@@ -1,0 +1,10 @@
+// Trusted fn can assign through raw pointer — verifies compilation succeeds
+// NOTE: runtime ptr assign segfaults due to codegen gap
+trusted fn write_i32(p: *mut i32, val: i32) {
+    *p = val;
+}
+
+fn main() with(Unsafe) -> i32 {
+    // Cannot exercise write_i32 at runtime yet — codegen gap
+    return 0;
+}

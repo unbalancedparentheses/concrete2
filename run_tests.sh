@@ -262,6 +262,11 @@ run_ok "$TESTDIR/print_char_basic.con" "A0"
 run_ok "$TESTDIR/vec_basic.con" 23
 run_ok "$TESTDIR/vec_push_get.con" 500
 run_ok "$TESTDIR/vec_pop.con" 42
+run_ok "$TESTDIR/vec_set_basic.con" 99
+run_ok "$TESTDIR/vec_len_after_ops.con" 32
+run_ok "$TESTDIR/vec_stress_realloc.con" 249
+run_ok "$TESTDIR/vec_set_all.con" 60
+run_ok "$TESTDIR/vec_pop_until_empty.con" 29
 
 # Networking tests
 if [ "${SKIP_FLAKY_TCP_TEST:-0}" = "1" ]; then
@@ -275,6 +280,11 @@ run_ok "$TESTDIR/socket_listen_close.con" 0
 run_ok "$TESTDIR/hashmap_int_int.con" 102
 run_ok "$TESTDIR/hashmap_string_int.con" 42
 run_ok "$TESTDIR/hashmap_remove.con" 0
+run_ok "$TESTDIR/hashmap_contains.con" 10
+run_ok "$TESTDIR/hashmap_overwrite.con" 201
+run_ok "$TESTDIR/hashmap_remove_check.con" 201
+run_ok "$TESTDIR/hashmap_stress.con" 790
+run_ok "$TESTDIR/hashmap_get_missing.con" 0
 
 # Phase 7: FFI / Unsafe
 run_ok "$TESTDIR/ffi_basic.con" 42
@@ -439,8 +449,43 @@ run_err "$TESTDIR/error_trusted_on_struct.con" "trusted"
 run_ok "$TESTDIR/trusted_trait_impl.con" 0
 run_ok "$TESTDIR/trusted_ptr_arith.con" 0
 run_err "$TESTDIR/error_ptr_arith_no_unsafe.con" "requires capability"
+# Trusted runtime tests (compile-gate for now — ptr deref/assign segfaults at runtime due to codegen gap)
+run_ok "$TESTDIR/trusted_deref_runtime.con" 0
+run_ok "$TESTDIR/trusted_assign_runtime.con" 0
+run_ok "$TESTDIR/trusted_cast_runtime.con" 0
+run_ok "$TESTDIR/trusted_arith_runtime.con" 0
+run_ok "$TESTDIR/trusted_with_alloc.con" 0
+run_ok "$TESTDIR/trusted_report_check.con" 0
+# Capability propagation errors
+run_err "$TESTDIR/error_cap_alloc_missing.con" "but caller has"
+run_err "$TESTDIR/error_cap_console_missing.con" "but caller has"
+run_err "$TESTDIR/error_cap_multi_missing.con" "but caller has"
+# Trusted + capabilities interaction errors
+run_err "$TESTDIR/error_trusted_no_alloc.con" "but caller has"
+# Trusted boundary negative tests
+run_err "$TESTDIR/error_untrusted_calls_trusted_ptr.con" "requires capability"
+run_err "$TESTDIR/error_untrusted_ptr_assign.con" "requires capability"
 # Builtin capability enforcement
 run_err "$TESTDIR/error_abort_no_process.con" "but caller has"
+
+# === String edge case tests ===
+run_ok "$TESTDIR/string_empty.con" 0
+run_ok "$TESTDIR/string_concat_empty.con" 5
+run_ok "$TESTDIR/string_eq_same.con" 1
+run_ok "$TESTDIR/string_eq_different.con" 0
+run_ok "$TESTDIR/string_slice_full.con" 5
+run_ok "$TESTDIR/string_contains_empty.con" 1
+run_ok "$TESTDIR/string_char_at_first_last.con" 196
+run_ok "$TESTDIR/string_trim_spaces.con" 2
+run_ok "$TESTDIR/string_to_int_roundtrip.con" 42
+
+# === Integer edge case tests ===
+run_ok "$TESTDIR/int_arithmetic_negative.con" 50
+run_ok "$TESTDIR/int_division.con" 31
+run_ok "$TESTDIR/int_bitwise_combined.con" 15
+run_ok "$TESTDIR/int_shift_basic.con" 4
+run_ok "$TESTDIR/int_cast_i32.con" 42
+run_ok "$TESTDIR/int_large_multiply.con" 56088
 
 # === Newtype tests ===
 run_ok "$TESTDIR/newtype_basic.con" 42
@@ -498,6 +543,21 @@ run_err "$TESTDIR/error_test_with_params.con" "must have no parameters"
 run_err "$TESTDIR/error_test_generic.con" "must not be generic"
 run_err "$TESTDIR/error_test_wrong_return.con" "must return i32"
 run_err "$TESTDIR/error_test_on_struct.con" "can only be applied to function"
+
+# === Report output tests ===
+echo ""
+echo "=== Report output tests ==="
+
+# --report unsafe should show trusted boundaries
+report_output=$($COMPILER "$TESTDIR/trusted_report_check.con" --report unsafe 2>&1)
+if echo "$report_output" | grep -q "trusted impl Buffer" && echo "$report_output" | grep -q "trusted fn raw_read"; then
+    echo "  ok  trusted_report_check.con --report unsafe shows trusted boundaries"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  trusted_report_check.con --report unsafe missing trusted boundaries"
+    echo "$report_output"
+    FAIL=$((FAIL + 1))
+fi
 
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="

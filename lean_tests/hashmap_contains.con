@@ -1,0 +1,19 @@
+// Test: map_contains returns true/false for present/absent keys
+fn bool_to_int(b: Bool) -> Int {
+    if b {
+        return 1;
+    } else {
+        return 0;
+    }
+}
+
+fn main() with(Alloc) -> Int {
+    let mut m: HashMap<Int, Int> = map_new::<Int, Int>();
+    map_insert(&mut m, 42, 100);
+    let has: Bool = map_contains(&m, 42);
+    let missing: Bool = map_contains(&m, 99);
+    let a: Int = bool_to_int(has) * 10;
+    let b: Int = bool_to_int(missing);
+    map_free(m);
+    return a + b;
+}

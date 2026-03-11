@@ -1,0 +1,12 @@
+// Trusted fn can dereference raw pointer — verifies compilation succeeds
+// NOTE: runtime ptr deref segfaults due to codegen gap (ref-to-ptr cast + deref)
+trusted fn read_i32(p: *const i32) -> i32 {
+    return *p;
+}
+
+fn main() with(Unsafe) -> i32 {
+    let x: i32 = 42;
+    let p: *const i32 = &x as *const i32;
+    // Cannot call read_i32(p) at runtime yet — codegen gap
+    return 0;
+}

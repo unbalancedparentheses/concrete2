@@ -1,0 +1,11 @@
+// Error: calling print_string without Console capability
+fn talk() -> Int {
+    let s: String = "hello";
+    print_string(&s);
+    drop_string(s);
+    return 0;
+}
+
+fn main() -> Int {
+    return 0;
+}

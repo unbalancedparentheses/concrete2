@@ -1,0 +1,22 @@
+// Test: insert same key twice, get latest value
+enum Option<T> {
+    Some { value: T },
+    None
+}
+
+fn extract_or(opt: Option<Int>, default: Int) -> Int {
+    match opt {
+        Option#Some { value } => { return value; },
+        Option#None {} => { return default; },
+    }
+}
+
+fn main() with(Alloc) -> Int {
+    let mut m: HashMap<Int, Int> = map_new::<Int, Int>();
+    map_insert(&mut m, 1, 100);
+    map_insert(&mut m, 1, 200);
+    let val: Option<Int> = map_get(&m, 1);
+    let len: Int = map_len(&m);
+    map_free(m);
+    return extract_or(val, 0) + len;
+}
