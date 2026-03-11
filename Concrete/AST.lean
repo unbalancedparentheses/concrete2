@@ -240,6 +240,7 @@ structure ExternFnDecl where
   params : List Param
   retTy : Ty
   isPublic : Bool := false
+  isTrusted : Bool := false
   span : Span := default
   deriving Repr
 

@@ -17,3 +17,5 @@ build/
 .cache/
 # Compiled example binaries (keep .con sources)
 /tmp/
+# Compiled test binaries
+lean_tests/trait_numeric_abs

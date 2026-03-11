@@ -154,7 +154,6 @@ private def extraBuiltinNames : List String :=
     "clock_now", "env_get", "env_set", "random_int", "random_float",
     "process_exec", "process_exit",
     "char_to_int", "int_to_char", "string_from_char",
-    "sqrt", "sin", "cos", "tan", "pow", "log", "exp", "floor", "ceil",
     "int_to_string", "string_to_int", "string_length", "string_char_at",
     "string_contains", "string_slice", "string_trim",
     "print_int", "print_bool", "print_char",

@@ -1252,7 +1252,7 @@ private partial def collectAllEnums (m : CModule) : List CEnumDef :=
   own ++ sub
 
 private partial def collectAllExterns (m : CModule) : List (String × List (String × Ty) × Ty) :=
-  let own := m.externFns
+  let own := m.externFns.map fun (n, ps, rt, _) => (n, ps, rt)
   let sub := m.submodules.foldl (fun acc s => acc ++ collectAllExterns s) []
   own ++ sub
 

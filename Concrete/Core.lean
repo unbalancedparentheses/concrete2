@@ -120,7 +120,7 @@ structure CModule where
   structs : List CStructDef
   enums : List CEnumDef
   functions : List CFnDef
-  externFns : List (String × List (String × Ty) × Ty)
+  externFns : List (String × List (String × Ty) × Ty × Bool)  -- (name, params, retTy, isTrusted)
   constants : List (String × Ty × CExpr)
   submodules : List CModule := []
   traitDefs : List CTraitDef := []
@@ -320,9 +320,10 @@ partial def ppCModule (m : CModule) : String :=
         let fs := fields.map fun (fn, ft) => s!"{fn}: {tyToStr ft}"
         s!"  {vn} \{ {", ".intercalate fs} },"
     s!"enum {e.name}{tparamsStr} \{\n{"\n".intercalate variants}\n}"
-  let parts := parts ++ m.externFns.map fun (n, ps, rt) =>
+  let parts := parts ++ m.externFns.map fun (n, ps, rt, trusted) =>
     let paramsStr := ps.map fun (pn, pt) => s!"{pn}: {tyToStr pt}"
-    s!"extern fn {n}({", ".intercalate paramsStr}) -> {tyToStr rt};"
+    let kw := if trusted then "trusted extern fn" else "extern fn"
+    s!"{kw} {n}({", ".intercalate paramsStr}) -> {tyToStr rt};"
   let parts := parts ++ m.functions.map ppCFnDef
   let parts := parts ++ m.submodules.map fun sub =>
     s!"mod {sub.name} \{\n{ppCModule sub}\n}"

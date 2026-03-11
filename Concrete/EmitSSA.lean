@@ -513,16 +513,6 @@ private def emitExternDecls (s : EmitSSAState) (externFns : List (String × List
   let s := emit s "declare void @freeaddrinfo(ptr)"
   let s := emit s "declare i16 @htons(i16)"
   let s := emit s "declare i32 @setsockopt(i32, i32, i32, ptr, i32)"
-  -- Math builtins (libm)
-  let s := emit s "declare double @sqrt(double)"
-  let s := emit s "declare double @sin(double)"
-  let s := emit s "declare double @cos(double)"
-  let s := emit s "declare double @tan(double)"
-  let s := emit s "declare double @pow(double, double)"
-  let s := emit s "declare double @log(double)"
-  let s := emit s "declare double @exp(double)"
-  let s := emit s "declare double @floor(double)"
-  let s := emit s "declare double @ceil(double)"
   let s := emit s ""
   -- User extern function declarations
   externFns.foldl (fun s (name, params, retTy) =>

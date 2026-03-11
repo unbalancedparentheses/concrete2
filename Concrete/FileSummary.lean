@@ -153,8 +153,9 @@ partial def buildFileSummary (m : Module) : FileSummary :=
   let publicNames := pubFns ++ pubStructs ++ pubEnums ++ pubTraits ++ pubExterns
                      ++ pubConstants ++ pubAliases ++ pubImplMethods ++ pubTraitImplMethods
   let externFnSigs := m.externFns.map fun ef =>
+    let capSet := if ef.isTrusted then CapSet.empty else CapSet.concrete ["Unsafe"]
     (ef.name, { params := ef.params.map fun p => (p.name, p.ty), retTy := ef.retTy,
-                capSet := .concrete ["Unsafe"] : FnSummary })
+                capSet := capSet : FnSummary })
   let implMethodSigs := implBlocksToMethodSummaries m.implBlocks
                      ++ traitImplBlocksToMethodSummaries m.traitImpls
   { name := m.name

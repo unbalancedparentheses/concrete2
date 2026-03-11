@@ -29,9 +29,14 @@ private partial def capReportModule (m : CModule) (indent : String) : String :=
     let pubStr := if f.isPublic then "pub " else "    "
     let capsStr := ppCapSet f.capSet
     s!"{indent}  {pubStr}{f.name} : {capsStr}"
-  let externLines := if m.externFns.isEmpty then []
-    else [s!"{indent}  extern:"] ++ m.externFns.map fun (n, _, _) =>
+  let trustedExterns := m.externFns.filter fun (_, _, _, t) => t
+  let untrustedExterns := m.externFns.filter fun (_, _, _, t) => !t
+  let externLines := if untrustedExterns.isEmpty then []
+    else [s!"{indent}  extern:"] ++ untrustedExterns.map fun (n, _, _, _) =>
       s!"{indent}      {n} : Unsafe"
+  let externLines := externLines ++ (if trustedExterns.isEmpty then []
+    else [s!"{indent}  trusted extern:"] ++ trustedExterns.map fun (n, _, _, _) =>
+      s!"{indent}      {n} : (none)")
   let subLines := m.submodules.map (capReportModule · (indent ++ "  "))
   let body := fnLines ++ externLines ++ subLines
   if body.isEmpty then header
@@ -64,11 +69,12 @@ private def fnUsesRawPtrs (f : CFnDef) : Bool :=
 
 private partial def unsafeReportModule (m : CModule) (indent : String) : Option String :=
   let unsafeFns := m.functions.filter fun f => hasUnsafeCap f.capSet
-  let externFns := m.externFns
+  let externFns := m.externFns.filter fun (_, _, _, t) => !t
+  let trustedExternFns := m.externFns.filter fun (_, _, _, t) => t
   let ptrFns := m.functions.filter fnUsesRawPtrs
   let trustedFns := m.functions.filter fun f => f.isTrusted
   let subReports := m.submodules.filterMap (unsafeReportModule · (indent ++ "  "))
-  if unsafeFns.isEmpty && externFns.isEmpty && ptrFns.isEmpty && trustedFns.isEmpty && subReports.isEmpty then
+  if unsafeFns.isEmpty && externFns.isEmpty && trustedExternFns.isEmpty && ptrFns.isEmpty && trustedFns.isEmpty && subReports.isEmpty then
     none
   else
     let lines : List String := [s!"{indent}module {m.name}:"]
@@ -78,8 +84,12 @@ private partial def unsafeReportModule (m : CModule) (indent : String) : Option 
           s!"{indent}    fn {f.name}({ppTyList f.params}) -> {tyToStr f.retTy}"
     let lines := if externFns.isEmpty then lines
       else lines ++ [s!"{indent}  Extern functions:"] ++
-        externFns.map fun (n, ps, rt) =>
+        externFns.map fun (n, ps, rt, _) =>
           s!"{indent}    extern fn {n}({ppTyList ps}) -> {tyToStr rt}"
+    let lines := if trustedExternFns.isEmpty then lines
+      else lines ++ [s!"{indent}  Trusted extern functions:"] ++
+        trustedExternFns.map fun (n, ps, rt, _) =>
+          s!"{indent}    trusted extern fn {n}({ppTyList ps}) -> {tyToStr rt}"
     let lines := if ptrFns.isEmpty then lines
       else lines ++ [s!"{indent}  Functions with raw pointer signatures:"] ++
         ptrFns.map fun f =>
@@ -209,7 +219,8 @@ private def interfaceModule (name : String) (fs : FileSummary) : String :=
         s!"    fn {n}({", ".intercalate params}) -> {tyToStr sig.retTy}{capsStr}"
       let lines := lines ++ pubExternFns.map fun ef =>
         let params := ef.params.map fun p => s!"{p.name}: {tyToStr p.ty}"
-        s!"    extern fn {ef.name}({", ".intercalate params}) -> {tyToStr ef.retTy}"
+        let kw := if ef.isTrusted then "trusted extern fn" else "extern fn"
+        s!"    {kw} {ef.name}({", ".intercalate params}) -> {tyToStr ef.retTy}"
       let lines := lines ++ pubStructs.map fun sd =>
         let fields := sd.fields.map fun sf => s!"{sf.name}: {tyToStr sf.ty}"
         s!"    struct {sd.name} \{ {", ".intercalate fields} }"

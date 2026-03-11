@@ -52,9 +52,6 @@ inductive IntrinsicId where
   | tcpConnect | tcpListen | tcpAccept
   | socketSend | socketRecv | socketClose
 
-  -- Math (Float64 → Float64 unless noted)
-  | sqrt | sin | cos | tan | pow | log_ | exp | floor | ceil
-
   -- System
   | getEnv | getArgs | exitProcess | abort
   | processExec | processExit
@@ -148,17 +145,6 @@ def resolveIntrinsic (name : String) : Option IntrinsicId :=
   | "socket_recv" => some .socketRecv
   | "socket_close"=> some .socketClose
 
-  -- Math
-  | "sqrt"  => some .sqrt
-  | "sin"   => some .sin
-  | "cos"   => some .cos
-  | "tan"   => some .tan
-  | "pow"   => some .pow
-  | "log"   => some .log_
-  | "exp"   => some .exp
-  | "floor" => some .floor
-  | "ceil"  => some .ceil
-
   -- System
   | "get_env"      => some .getEnv
   | "env_get"      => some .envGet
@@ -244,15 +230,6 @@ def IntrinsicId.canonicalName : IntrinsicId → String
   | .socketSend => "socket_send"
   | .socketRecv => "socket_recv"
   | .socketClose => "socket_close"
-  | .sqrt => "sqrt"
-  | .sin => "sin"
-  | .cos => "cos"
-  | .tan => "tan"
-  | .pow => "pow"
-  | .log_ => "log"
-  | .exp => "exp"
-  | .floor => "floor"
-  | .ceil => "ceil"
   | .getEnv => "get_env"
   | .envGet => "env_get"
   | .envSet => "env_set"

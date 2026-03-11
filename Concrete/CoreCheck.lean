@@ -597,7 +597,7 @@ def ccCheckModuleDecls (m : CModule)
         errors := errors ++ [mkDeclDiag (.reprAlignNotPowerOfTwo sd.name n)]
     | none => ()
   -- 5. Extern fn FFI safety
-  for (efName, efParams, efRetTy) in m.externFns do
+  for (efName, efParams, efRetTy, _) in m.externFns do
     for (pName, pTy) in efParams do
       if !Layout.isFFISafe lctx pTy then
         errors := errors ++ [mkDeclDiag (.externFnParamNotFFISafe efName pName (tyToString pTy))]
@@ -655,9 +655,10 @@ partial def ccCheckModule (m : CModule)
   let declErrors := ccCheckModuleDecls m allStructs allEnums
   let fnSigs := m.functions.map fun f =>
     (f.name, f.capSet, f.params, f.retTy)
-  -- Extern functions require Unsafe capability
-  let externSigs := m.externFns.map fun (name, params, retTy) =>
-    (name, CapSet.concrete ["Unsafe"], params, retTy)
+  -- Extern functions: trusted ones need no cap, others require Unsafe
+  let externSigs := m.externFns.map fun (name, params, retTy, isTrusted) =>
+    let cap := if isTrusted then CapSet.empty else CapSet.concrete ["Unsafe"]
+    (name, cap, params, retTy)
   let initEnv : CoreCheckEnv := {
     fnSigs := fnSigs ++ externSigs
     structDefs := m.structs

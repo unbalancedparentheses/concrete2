@@ -1056,15 +1056,6 @@ private def buildBuiltinSigs : List (String × FnSummary) := [
   ("socket_send", { params := [("sockfd", .int), ("data", .ref .string)], retTy := .int, capSet := .concrete ["Network"] }),
   ("socket_recv", { params := [("sockfd", .int), ("bufsize", .int)], retTy := .string, capSet := .concrete ["Network"] }),
   ("socket_close", { params := [("sockfd", .int)], retTy := .unit, capSet := .concrete ["Network"] }),
-  ("sqrt", { params := [("x", .float64)], retTy := .float64 }),
-  ("sin", { params := [("x", .float64)], retTy := .float64 }),
-  ("cos", { params := [("x", .float64)], retTy := .float64 }),
-  ("tan", { params := [("x", .float64)], retTy := .float64 }),
-  ("pow", { params := [("x", .float64), ("y", .float64)], retTy := .float64 }),
-  ("log", { params := [("x", .float64)], retTy := .float64 }),
-  ("exp", { params := [("x", .float64)], retTy := .float64 }),
-  ("floor", { params := [("x", .float64)], retTy := .float64 }),
-  ("ceil", { params := [("x", .float64)], retTy := .float64 }),
   ("append_file", { params := [("path", .ref .string), ("data", .ref .string)], retTy := .int, capSet := .concrete ["File"] })
 ]
 
@@ -1179,7 +1170,7 @@ partial def elabModule (m : Module) (summary : FileSummary)
       isPacked := sd.isPacked, reprAlign := sd.reprAlign : CStructDef }
   -- Build extern fns
   let cExterns := m.externFns.map fun ef =>
-    (ef.name, ef.params.map fun p => (p.name, p.ty), ef.retTy)
+    (ef.name, ef.params.map fun p => (p.name, p.ty), ef.retTy, ef.isTrusted)
   -- Build constants
   let cConstants := m.constants.map fun c =>
     let constResult := (elabExpr c.value (some c.ty)).run initEnv |>.run

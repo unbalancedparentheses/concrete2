@@ -288,6 +288,7 @@ run_ok "$TESTDIR/hashmap_get_missing.con" 0
 
 # Phase 7: FFI / Unsafe
 run_ok "$TESTDIR/ffi_basic.con" 42
+run_ok "$TESTDIR/trusted_extern_basic.con" 42
 
 # Phase 8: Additional coverage
 run_ok "$TESTDIR/nested_match_enum.con" 60

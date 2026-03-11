@@ -1571,13 +1571,13 @@ partial def parseModuleBody (stopToken : TokenKind) : ParseM Module := do
         if pendingIsTest && tk != .fn then
           let sp ← peekSpan
           throw s!"#[test] can only be applied to function definitions, at {sp.line}:{sp.col}"
-        -- Reject 'trusted' on non-fn/impl declarations
-        if isTrusted && tk != .fn && tk != .impl_ then
+        -- Reject 'trusted' on non-fn/impl/extern declarations
+        if isTrusted && tk != .fn && tk != .impl_ && tk != .extern_ then
           let sp ← peekSpan
-          throw s!"'trusted' can only be applied to fn or impl, at {sp.line}:{sp.col}"
+          throw s!"'trusted' can only be applied to fn, impl, or extern fn, at {sp.line}:{sp.col}"
         if tk == .extern_ then
           let ext ← parseExternFn
-          externFns := externFns ++ [{ ext with isPublic := isPub }]
+          externFns := externFns ++ [{ ext with isPublic := isPub, isTrusted }]
         else if tk == .enum_ then
           let e ← parseEnumDef
           enums := enums ++ [{ e with isPublic := isPub }]
