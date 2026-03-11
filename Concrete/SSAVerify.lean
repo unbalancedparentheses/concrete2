@@ -1,5 +1,6 @@
 import Concrete.SSA
 import Concrete.Diagnostic
+import Concrete.Shared
 
 namespace Concrete
 
@@ -398,6 +399,11 @@ private def checkReturnCoverage (ctx : VerifyCtx) (b : SBlock) : VerifyCtx :=
     else ctx
   | _ => ctx
 
+/-- Is this type a raw pointer? -/
+private def isPointerTy : Ty → Bool
+  | .ptrMut _ | .ptrConst _ => true
+  | _ => false
+
 /-- Check binop type consistency: both operands should have compatible types. -/
 private def checkBinOpTypes (ctx : VerifyCtx) (b : SBlock) : VerifyCtx :=
   b.insts.foldl (fun ctx inst =>
@@ -408,6 +414,8 @@ private def checkBinOpTypes (ctx : VerifyCtx) (b : SBlock) : VerifyCtx :=
       -- Skip if either is a constant (constants may have generic int type)
       if lTy == rTy then ctx
       else if lTy == .unit || rTy == .unit then ctx
+      -- Pointer arithmetic: ptr + int or ptr - int is valid
+      else if isPointerTy lTy && isInteger rTy then ctx
       else addSSAError ctx (.binopTypeMismatch b.label dst (toString (repr lTy)) (toString (repr rTy)))
     | _ => ctx
   ) ctx

@@ -437,6 +437,7 @@ run_ok "$TESTDIR/trusted_ptr_cast.con" 0
 run_err "$TESTDIR/error_trusted_extern_needs_unsafe.con" "but caller has"
 run_err "$TESTDIR/error_trusted_on_struct.con" "trusted"
 run_ok "$TESTDIR/trusted_trait_impl.con" 0
+run_ok "$TESTDIR/trusted_ptr_arith.con" 0
 run_err "$TESTDIR/error_ptr_arith_no_unsafe.con" "requires capability"
 # Builtin capability enforcement
 run_err "$TESTDIR/error_abort_no_process.con" "but caller has"

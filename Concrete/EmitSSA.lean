@@ -191,13 +191,26 @@ private def ensurePtr (s : EmitSSAState) (v : SVal) : EmitSSAState × String :=
 -- Emit SInst
 -- ============================================================
 
+/-- Is this type a raw pointer? -/
+private def isPointerTy : Ty → Bool
+  | .ptrMut _ | .ptrConst _ => true
+  | _ => false
+
 /-- Emit a binary operation. Uses operand type (lhs.ty) for type annotations,
     since comparison results are i1 but operate on the operand type. -/
 private def emitBinOp (s : EmitSSAState) (dst : String) (op : BinOp) (lhs rhs : SVal) (_ty : Ty) : EmitSSAState :=
   let lhsStr := emitSVal s lhs
   let rhsStr := emitSVal s rhs
   let operandTy := lhs.ty
-  if isFloatTy operandTy then
+  -- Pointer arithmetic: ptr + int → getelementptr i8, ptr %p, i64 %n
+  if isPointerTy operandTy && (op == .add || op == .sub) then
+    let rhsIdx := if op == .sub then
+      let negReg := s!"{dst}.neg"
+      let s := emit s s!"  %{negReg} = sub i64 0, {rhsStr}"
+      (s, s!"%{negReg}")
+    else (s, rhsStr)
+    emit rhsIdx.1 s!"  %{dst} = getelementptr i8, ptr {lhsStr}, i64 {rhsIdx.2}"
+  else if isFloatTy operandTy then
     let fTy := ssaFloatTyToLLVM operandTy
     let opStr := match op with
       | .add => "fadd" | .sub => "fsub" | .mul => "fmul" | .div => "fdiv" | .mod => "frem"
