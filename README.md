@@ -43,7 +43,11 @@ What Concrete has today:
 - explicit capabilities, linear ownership, borrows, `defer`, trait dispatch, FFI, and layout attributes
 - structured diagnostics across the semantic pipeline, with native `Diagnostics` through the main semantic passes
 - explicit audit/report outputs
-- a first real stdlib foundation: stronger `vec`, `string`, `io`, plus `bytes`, `slice`, `text`, `path`, `fs`, `env`, `process`, and `net`
+- a first real stdlib foundation: stronger `vec`, `string`, `io`, plus `bytes`, `slice`, `text`, `path`, `fs`, `env`, `process`, `net`, `fmt`, `hash`, `rand`, `time`, and `parse`
+- stdlib systems-layer hardening: typed errors across `fs`/`net`/`process`/`io`, checked/unchecked splits in `bytes`, `Option`-returning accessors in `env`
+- stdlib deepening: `fmt` (integer/hex/bin/oct/bool formatting, padding), `hash` (FNV-1a), `rand` (deterministic seeding, bounded range), `time` (monotonic clock, sleep, unix timestamp), and `parse` (value parsing plus `Cursor`)
+- stdlib uniformity: generic `Result<T, ModuleError>` across all modules, `parse` module (inverse of `fmt`), checked accessors on `String` and `Vec`
+- built-in test runner: `concrete file.con --test` compiles and runs all `#[test]` functions
 
 What is still clearly missing:
 
@@ -51,7 +55,7 @@ What is still clearly missing:
 - MLIR backend
 - kernel formalization
 - runtime
-- deeper stdlib systems-layer growth (`time`, `hash`, `fmt`, parsing, and later sync/runtime-facing APIs)
+- stdlib deepening: carefully chosen collections
 
 ## Try It Now
 
@@ -283,7 +287,7 @@ The goal is not to out-feature those languages. The goal is to be unusually good
 
 ## Current Status
 
-The compiler implements the core surface language and the full internal IR pipeline in Lean 4. All 266 main tests pass, and the SSA-specific suite passes as well.
+The compiler implements the core surface language and the full internal IR pipeline in Lean 4. All 275 main tests pass, and the SSA-specific suite passes as well.
 
 Implemented today:
 
@@ -371,7 +375,7 @@ In order, the strongest next improvements are:
 - **Cacheable compiler artifacts**: DONE — `Concrete/Pipeline.lean` defines explicit artifact types (`ParsedProgram`, `SummaryTable`, `ResolvedProgram`, `ElaboratedProgram`, `MonomorphizedProgram`, `SSAProgram`) and composable runner functions; `Main.lean` consumes these boundaries instead of threading types through ad-hoc `match` chains
 - **Small SSA optimization group**: DONE — `SSACleanup.lean` covers constant folding, dead code elimination, CFG cleanup, and trivial phi/copy cleanup
 - **Diagnostics infrastructure**: build on typed errors with better ranges, notes, and rendering
-- **Small but excellent stdlib**: bytes/buffers, borrowed views, allocator-explicit collections, file/path/process/env, networking, formatting
+- **Stdlib hardening**: typed errors, checked/unchecked splits, and deeper file/network/process ergonomics across the existing foundation
 - **Explicit build/project model**: keep reproducibility, target configuration, and FFI setup boring and visible
 
 Already established architecture in this arc:
@@ -385,17 +389,29 @@ The main rule is: architecture before ornament, tooling visibility before conven
 
 ## Stdlib Status
 
-The standard library exists, but it is still foundational rather than mature.
+The standard library exists with a systems layer in place and a first hardening pass complete.
 
-Current stdlib modules: `mem`, `alloc`, `libc`, `math`, `ptr`, `string`, `vec`, `io`, `test`, `option`, `result`, `bytes`, `slice`, `text`, `path`, `fs`, `env`, `process`, `net`.
+Current stdlib modules: `mem`, `alloc`, `libc`, `math`, `ptr`, `string`, `vec`, `io`, `test`, `option`, `result`, `bytes`, `slice`, `text`, `path`, `fmt`, `parse`, `hash`, `rand`, `time`, `fs`, `env`, `process`, `net`.
 
-The next stdlib focus is:
+The current arc is hardening what exists rather than adding more surface area:
 
-- small formatting layer (`fmt`)
-- stronger test support
-- `time`, `rand`, `hash`, and carefully chosen collections
+- typed error surfaces across `fs`, `net`, `process` (no more raw integer returns from syscalls)
+- explicit checked/unchecked accessor split in `bytes`
+- `Option`-returning APIs where absence is meaningful (`env::get`, `Bytes::get`)
 
-See [`research/stdlib-design.md`](research/stdlib-design.md) for the current stdlib design direction.
+Stdlib deepening now in place:
+
+- `fmt` — integer/hex/bin/oct/bool formatting, left/right padding
+- `parse` — inverse of `fmt`: value parsers (`parse_int`, `parse_uint`, `parse_hex`, `parse_bin`, `parse_oct`, `parse_bool`) + `Cursor` for structured input
+- `hash` — FNV-1a for bytes and strings
+- `rand` — deterministic seeding, bounded range
+- `time` — monotonic clock, sleep, unix timestamp
+- Unified error handling: generic `Result<T, ModuleError>` across all modules (`io`, `fs`, `net`, `process`)
+- Systems deepening: `fs` helpers (`append_file`, `file_exists`, `read_to_string`), `net` helpers (`write_all`, `read_all`), `process` helpers (`spawn`, signal constants)
+
+The next stdlib focus: deeper systems-module polish, stronger failure-path and integration testing, and carefully chosen collections
+
+See [`docs/STDLIB.md`](docs/STDLIB.md) for the stable stdlib direction.
 
 ## Roadmap
 
@@ -426,7 +442,7 @@ See [docs/README.md](docs/README.md) for the stable documentation index and [res
 | **13** | Tooling | Not started |
 | **14** | Runtime (C, then Concrete) | Not started |
 
-Next critical path: **strengthen shared diagnostics infrastructure, then push broader stdlib growth and formalization.** The summary-based frontend, `CoreCheck` semantic-authority shift, ABI/layout subsystem, cacheable pipeline artifacts (`Concrete/Pipeline.lean`), SSA cleanup, and first audit/report outputs are done enough for the current architecture phase. Structured diagnostics are complete across all semantic passes. The legacy AST backend has been removed.
+Next critical path: **harden existing stdlib surfaces (typed errors, checked/unchecked splits, deeper file/network/process ergonomics), then push diagnostics quality and formalization.** The summary-based frontend, `CoreCheck` semantic-authority shift, ABI/layout subsystem, cacheable pipeline artifacts (`Concrete/Pipeline.lean`), SSA cleanup, and first audit/report outputs are done enough for the current architecture phase. Structured diagnostics are complete across all semantic passes. The legacy AST backend has been removed.
 
 ### What fits the philosophy and what does not
 
@@ -568,8 +584,9 @@ Things Concrete deliberately does not have:
 - Clear path to formal verification because the compiler is already implemented in Lean and now has explicit internal IR boundaries
 
 **Next steps:**
+- Finish the stdlib API honesty pass: typed results everywhere, explicit checked vs unchecked operations
 - Strengthen shared diagnostics infrastructure with richer spans, secondary labels/notes, and phase-aware rendering
-- Grow a sharp stdlib in formatting, time, hash, parsing, and collections — the systems layer (env/process/net) is now in place
+- Then deepen with parsing and carefully chosen collections
 - Push kernel formalization and proof development in Lean
 
 ## License

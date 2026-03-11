@@ -50,12 +50,16 @@ Implemented:
 7. `env` and `process` — done
 8. `net` (TCP) — done
 
+Typed error hardening is now in place across `fs`, `net`, `env`, and `bytes`.
+
+The stdlib deepening arc is now underway. `fmt`, `hash`, `rand`, and `time` are implemented. `io` has been hardened with typed error returns.
+
 Still the main near-term stdlib work:
 
-1. strengthen `fs`
-2. add small `fmt`
-3. improve `test`
-4. then move to `time`, `rand`, `hash`, parsing, and carefully chosen collections
+1. deepen `fs`, `net`, and `process`
+2. keep error and handle conventions uniform
+3. expand failure-path and integration testing
+4. carefully chosen collections
 
 ## Core Module Direction
 
@@ -67,6 +71,11 @@ Owned byte buffer type for:
 - network I/O
 - parsing
 - formatting
+
+Accessors follow an explicit checked/unchecked split:
+
+- `get` / `set` are bounds-checked (`Option<u8>` / `bool`)
+- `get_unchecked` / `set_unchecked` are raw fast paths with no bounds check
 
 ### `std.slice`
 
@@ -95,11 +104,16 @@ Handle-oriented file APIs:
 - owned file handles
 - borrowed handle/view types where needed
 - no raw fd-like integers in safe-facing APIs
+- typed error returns via `FsError` enum with `Result<T, FsError>`
+- `File::open` and `File::create` return `Result<File, FsError>` (null-checked fopen)
+- `read_file` returns `Result<Bytes, FsError>`; `write_file` returns `Result<u64, FsError>` (reports bytes written)
+- `append_file` — open in append mode, returns `Result<u64, FsError>`
+- `file_exists` — probe via fopen, returns `bool`
+- `read_to_string` — read file into `String`, returns `Result<String, FsError>`
+- methods on an already-validated `File` handle (`write_bytes`, `read_bytes`, `seek`, `tell`, `close`) keep raw returns
 
-The first version now exists, but it should still deepen in:
+Still planned:
 
-- clearer typed error surfaces
-- more complete byte-oriented read/write helpers
 - stronger path integration
 - later process/environment interplay
 
@@ -108,13 +122,19 @@ The first version now exists, but it should still deepen in:
 Environment variable access:
 
 - get/set/unset wrapping libc
-- owned String returns for safe use
+- `get()` returns `Option<String>` — `None` for absent vars, `Some` for present (including empty)
+- `set` and `unset` remain void
 
 ### `std.process`
 
 Unix process control:
 
-- exit, getpid, fork, kill
+- exit, getpid
+- `fork()` returns `ForkResult` (Parent/Child/Err) — 3-variant union, not a standard Result
+- `kill()` returns `Result<bool, ProcessError>`
+- `Child::wait()` returns `Result<ExitStatus, ProcessError>` with typed `ExitStatus` (Exited with code / Signaled with raw status)
+- `spawn(cmd, args)` returns `Result<Child, ProcessError>` — fork+execvp
+- Signal constants: `sig_int()`, `sig_kill()`, `sig_term()`
 - owned Child handle with wait/pid
 
 ### `std.net`
@@ -124,15 +144,107 @@ TCP networking layer:
 - owned TcpListener and TcpStream handles
 - explicit buffer-based read/write
 - no hidden runtime coupling
+- typed error returns via `NetError` enum with `Result<T, NetError>`
+- `TcpListener::bind` returns `Result<TcpListener, NetError>` (checks socket/setsockopt/inet_pton/bind/listen)
+- `TcpListener::accept` returns `Result<TcpStream, NetError>` (checks accept)
+- `TcpStream::connect` returns `Result<TcpStream, NetError>` (checks socket/connect)
+- `TcpStream::write_all` — loop until all bytes sent, returns `bool`
+- `TcpStream::read_all` — read until EOF into `Bytes`, returns total bytes read
+- `write`, `read` keep `i64` returns (negative = error); `close` stays void
 
-## Error and Handle Design
+### `std.fmt`
 
-Stdlib APIs should prefer:
+Pure-Concrete formatting module:
 
-- small enum error types per module
-- no opaque integer-like error codes in safe-facing APIs
-- explicit owned handle types
-- borrowed handle/view types only where they clearly help
+- `format_int` / `format_uint` — signed/unsigned decimal
+- `format_hex` — `0x` prefixed hexadecimal
+- `format_bin` — `0b` prefixed binary
+- `format_oct` — `0o` prefixed octal
+- `format_bool` — `"true"` / `"false"`
+- `pad_left` / `pad_right` — fixed-width padding with fill character
+
+No libc dependency beyond alloc/string.
+
+### `std.hash`
+
+Pure-Concrete FNV-1a hash:
+
+- `fnv1a_bytes` — hash a `Bytes` buffer
+- `fnv1a_string` — hash a `String`
+
+Deterministic, no libc dependency.
+
+### `std.rand`
+
+Thin wrapper over libc `rand`/`srand`:
+
+- `seed(s: u32)` — deterministic seeding
+- `random_int() -> i32` — raw random integer
+- `random_range(lo: i32, hi: i32) -> i32` — bounded random in `[lo, hi)`
+
+### `std.time`
+
+Monotonic clock and sleep via libc `clock_gettime`/`nanosleep`/`time`:
+
+- `Duration` — `from_secs`, `from_millis`, `from_nanos`
+- `Instant` — `now()` (monotonic clock), `elapsed()` (duration since capture)
+- `sleep(dur: &Duration)` — nanosleep wrapper
+- `unix_timestamp() -> i64` — seconds since epoch
+
+### `std.io` (hardened)
+
+Typed error handling using generic `Result`:
+
+- `IoError` enum (`OpenFailed`)
+- `File::create` and `File::open` return `Result<File, IoError>` with null-checked fopen
+- `print`, `println`, `print_int`, `eprint` unchanged
+
+### `std.parse`
+
+Inverse of `fmt` — value parsers for converting strings to typed values:
+
+- `parse_int(s: &String) -> Option<i64>` — handles leading `-`, returns `None` on invalid/empty
+- `parse_uint(s: &String) -> Option<u64>`
+- `parse_hex(s: &String) -> Option<u64>` — optional `0x`/`0X` prefix, supports a-f/A-F
+- `parse_bin(s: &String) -> Option<u64>` — optional `0b`/`0B` prefix
+- `parse_oct(s: &String) -> Option<u64>` — optional `0o`/`0O` prefix
+- `parse_bool(s: &String) -> Option<bool>` — `"true"`/`"false"` only
+
+`Cursor` struct for structured parsing of string input:
+
+- `Cursor::new(s: &String) -> Cursor` — create cursor over string
+- `pos`, `remaining`, `is_eof` — position queries
+- `peek` / `advance` — character access with `Option<char>` return
+- `skip_whitespace` — skip spaces, tabs, newlines
+- `expect_char(expected: char) -> bool` — consume if matched
+
+No libc dependency beyond what `std.string` provides.
+
+### `std.test`
+
+Test assertion helpers:
+
+- `assert_eq<T>(expected, result, message) -> bool` — equality check
+- `assert_ne<T>(a, b, message) -> bool` — inequality check
+- `assert_true(value, message) -> bool` / `assert_false(value, message) -> bool`
+- `assert_gt<T>`, `assert_lt<T>`, `assert_ge<T>`, `assert_le<T>` — comparison assertions
+- `str_eq(a: &String, b: &String) -> bool` — byte-level string equality
+- `assert_str_eq(a: &String, b: &String, message) -> bool` — string equality assertion
+
+All assertions return `bool` and print the message on failure.
+
+## Error and Result Design
+
+Stdlib APIs use a uniform error pattern:
+
+- Small enum error types per module (e.g. `FsError`, `NetError`, `IoError`, `ProcessError`)
+- Generic `Result<T, ModuleError>` for all fallible operations — no module-specific result enums
+- The `?` operator works with both named and generic enum types (patched in Check.lean)
+- `std.bytes` provides `get`/`set` returning `Option<u8>`/`bool` for bounds-safe access
+- `std.string` provides `get_checked` returning `Option<char>`
+- `std.vec` provides `get_checked` returning `Option<&T>`
+
+This replaces the earlier approach of per-module result enums (`FileResult`, `ReadResult`, `WriteResult`, `ListenResult`, `StreamResult`, `KillResult`, `WaitResult`). The generic `Result<T, E>` is now pub and used everywhere.
 
 ## Allocation Policy
 
@@ -146,15 +258,11 @@ Allocator-sensitive APIs should make allocation visible:
 
 After the foundation is solid, the likely next additions are:
 
-- `std.time`
-- `std.rand`
-- `std.hash`
 - `std.collections.map`
 - `std.collections.set`
 - a small eager `std.iter` if it earns its place
 - later `std.sync`
 - later `std.ffi`
-- later `std.parse`
 
 ## Current Position
 
@@ -166,4 +274,4 @@ The goal is a stdlib that is:
 - explicit enough for auditability
 - small enough to stay coherent
 
-The current state is no longer just a plan. A first useful low-level foundation is in place, including the systems layer (`env`, `process`, `net`). The next work is to deepen formatting, testing, and later additions without losing explicitness.
+The current state is no longer just a plan. A first useful low-level foundation is in place, including the systems layer (`env`, `process`, `net`), with typed error surfaces across the modules that touch the OS. The stdlib deepening arc has added `fmt`, `hash`, `rand`, `time`, and `parse`, and unified error handling with generic `Result<T, ModuleError>` across all modules. Systems modules have been deepened with helper functions (`fs`: `append_file`, `file_exists`, `read_to_string`; `net`: `write_all`, `read_all`; `process`: `spawn`, signal constants). The next arc is deeper systems-module polish, stronger failure-path and integration testing, and carefully chosen collections.

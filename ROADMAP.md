@@ -6,14 +6,16 @@ This is the implementation plan for the Concrete programming language. For the f
 
 ## Current State
 
-The Lean 4 compiler implements the core surface language plus the full internal IR pipeline: Core IR, elaboration, Core validation, monomorphization, SSA lowering, SSA verification/cleanup, and SSA codegen. The main suite currently has 266 passing tests, and the SSA-specific suite also passes.
+The Lean 4 compiler implements the core surface language plus the full internal IR pipeline: Core IR, elaboration, Core validation, monomorphization, SSA lowering, SSA verification/cleanup, and SSA codegen. The main suite currently has 275 passing tests, and the SSA-specific suite also passes.
 
 The project also now has:
 
 - centralized ABI/layout authority in `Layout.lean`
 - first-batch audit/report outputs
 - native diagnostics through the main semantic passes
-- a first real stdlib foundation (`vec`, `string`, `io`, `bytes`, `slice`, `text`, `path`, `fs`)
+- a real stdlib foundation (`vec`, `string`, `io`, `bytes`, `slice`, `text`, `path`, `fs`) plus the systems layer (`env`, `process`, `net`)
+- a utility layer (`fmt`, `hash`, `rand`, `time`, `parse`, `test`) over the low-level core
+- stdlib hardening and deepening: typed `Result<T, ModuleError>` surfaces, checked/unchecked accessors, systems-module helpers, and in-language `#[test]` execution
 
 For completed milestones and major landed features, see [CHANGELOG.md](CHANGELOG.md).
 For the detailed compiler pipeline, pass boundaries, and architecture phase reference, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
@@ -39,11 +41,11 @@ Still clearly not implemented:
 
 ### Next
 
-1. Grow the stdlib foundation:
-   - strengthen `fs`
-   - add `env` / `process`
-   - add `net`
-   - small formatting and test support
+1. Deepen and harden the existing stdlib surface rather than adding broad new modules:
+   - deepen `fs`, `net`, and `process`
+   - add more failure-path and integration tests
+   - keep error and handle conventions uniform
+   - add carefully chosen collections
 2. Push formalization over the cleaned Core -> SSA architecture.
 3. Add later audit/report outputs still marked deferred, such as allocation summaries and cleanup/destruction reports.
 
@@ -212,13 +214,18 @@ Keep the project model boring and visible:
 
 After the architecture layer above:
 
-10. **Stdlib growth**
-Focus on the areas that pressure-test the language:
-- strengthen the new foundation (`vec`, `string`, `io`, `bytes`, `slice`, `text`, `path`, `fs`)
-- add `env` / `process`
-- add `net`
-- small formatting and test support improvements
+10. **Stdlib hardening and deepening**
+The stdlib now has:
+- a low-level foundation (`vec`, `string`, `io`, `bytes`, `slice`, `text`, `path`, `fs`)
+- a systems layer (`env`, `process`, `net`)
+- a utility layer (`fmt`, `hash`, `rand`, `time`, `parse`, `test`)
+
+The next arc is to deepen what exists rather than add broad new surface area:
 - keep stdlib APIs explicit: allocator-visible where allocation occurs, typed errors, and obvious ownership/resource handles
+- make checked vs unchecked operations honest and consistent
+- deepen the existing systems modules (`fs`, `net`, `process`) with more helpers and stronger path integration
+- improve testing depth, especially failure-path and integration coverage
+- then add carefully chosen collections
 
 11. **Formalization**
 The cleaned pipeline is now stable enough that proof work over Core and the backend boundary is more valuable than more architecture churn.
@@ -1725,9 +1732,9 @@ These do not block any phase above:
 | **8c** | stdin / Console I/O | Done | 1 |
 | **8d** | Vec\<T\> | Done | — |
 | **8e** | HashMap\<K, V\> | Done | — |
-| **8f** | Environment / process | Not started | 1 |
+| **8f** | Environment / process | Done | 1 |
 | **8g** | Networking | Done | 1 |
-| **8h** | Other stdlib | Not started | 8a-8g |
+| **8h** | Other stdlib | In progress | 8a-8g |
 | **9a** | Kernel IR + checker | Not started | A4 |
 | **9b** | Linearity proof | Not started | 9a |
 | **9c** | Progress + preservation | Not started | 9b |
@@ -1741,8 +1748,26 @@ These do not block any phase above:
 | **12a** | Runtime in C | Not started | 7 |
 | **12b** | Runtime in Concrete | Not started | 8, 12a |
 
-**Next priorities:** strengthen shared diagnostics infrastructure, keep the builtin-vs-stdlib boundary explicit while the stdlib grows, then push stdlib growth and formalization.
+**Next priorities:** deepen and harden the existing stdlib surface, strengthen diagnostics quality, then push formalization.
 
-**Critical path for production use:** current pipeline stability → remaining stdlib (`8f`, `8h`) → runtime (`12a`).
+**Critical path for production use:** current pipeline stability → stdlib hardening → runtime (`12a`).
 
 **Formalization** (Phase 9) now depends on architecture phase A4 (Core Validation) — the proofs target the Core IR, not the surface AST.
+
+## Beyond The Current Roadmap
+
+Even after the current compiler, stdlib, and formalization work, a complete language system still eventually needs:
+
+- a coherent concurrency/runtime model
+- stronger tooling (formatter, better diagnostics presentation, editor support)
+- deeper backend and optimization maturity
+- a cleaner ecosystem/package workflow
+- disciplined conventions for idiomatic Concrete code
+
+Those are intentionally not the near-term focus. The near-term roadmap is still:
+
+- harden and deepen the existing stdlib
+- keep the compiler/toolchain explicit and boring
+- push formalization over the cleaned Core -> SSA architecture
+
+See [research/complete-language-system.md](research/complete-language-system.md) for the longer-horizon picture.
