@@ -1,6 +1,6 @@
 # Builtin vs Stdlib Boundary
 
-**Status:** Open, partially adopted
+**Status:** Open, partially adopted (math intrinsics migrated to stdlib via `trusted extern fn`; `abs` migrated to trait-based dispatch)
 
 Concrete needs a clear distinction between:
 

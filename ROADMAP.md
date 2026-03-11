@@ -50,7 +50,7 @@ Recently completed:
    - ~~replace stringly builtin dispatch with internal intrinsic identities~~ **done** (IntrinsicId enum)
    - wrap builtin-shaped hooks in coherent stdlib vocabulary
    - ~~move polymorphic builtin-shaped operations like `abs` toward stdlib traits + monomorphization~~ **done** (abs removed from intrinsics, now Numeric trait)
-   - migrate remaining math intrinsics (sqrt, sin, cos, etc.) to stdlib traits where appropriate
+   - ~~migrate remaining math intrinsics (sqrt, sin, cos, etc.) to stdlib~~ **done** (9 math functions moved to `std/src/math.con` as `trusted extern fn`; compiler builtins removed from Intrinsic, Check, Elab, EmitSSA, Resolve)
    - clean public API names that still look like low-level runtime hooks
    - make ownership/borrowing costs more predictable at the stdlib boundary
    - keep the stdlib bytes-first and low-level, rather than letting string-heavy convenience APIs become the default surface

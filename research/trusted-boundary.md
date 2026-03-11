@@ -75,7 +75,14 @@ The trusted-boundary design avoids both:
 ```con
 trusted fn helper(...) { ... }
 trusted impl Vec<T> { ... }
+trusted extern fn sqrt(x: Float64) -> Float64;
 ```
+
+Three forms:
+
+- `trusted fn` — a function whose body may use raw pointers without leaking `Unsafe` to callers
+- `trusted impl` — an impl block whose methods may use raw pointers without leaking `Unsafe` to callers
+- `trusted extern fn` — a foreign binding that callers can use without `with(Unsafe)`, because the binding is audited as safe for any valid inputs of the declared types
 
 This is better than `#[trusted]` because it is more visible, feels like a language-level boundary, and is easier to grep.
 
@@ -92,10 +99,16 @@ This is better than `unsafe fn` because `unsafe fn` suggests danger for the call
 - pointer arithmetic (`ptr + offset`)
 - pointer casts (`ptr as *mut T`, `ptr as &T`)
 
-### Still requires `with(Unsafe)` even inside `trusted`
+### Still requires `with(Unsafe)` even inside `trusted fn`/`trusted impl`
 
 - **`extern fn` calls** — FFI crosses a semantic boundary (calling code with unknown behavior), not just an implementation detail. Callers should know when foreign code is invoked.
 - **`transmute`** — stays under `with(Unsafe)`, even inside `trusted`. Transmute can violate type safety in ways pointer operations cannot. If a narrower layout-preserving reinterpretation is ever needed, it should be a different feature — not a weakening of transmute.
+
+### Exception: `trusted extern fn`
+
+A `trusted extern fn` declaration asserts that a specific foreign binding is safe to call with any valid inputs. This removes the `Unsafe` requirement at the call site. Unlike `trusted fn`/`trusted impl` (which contain *blocks* of pointer-level code), `trusted extern fn` is a *per-binding* audit assertion.
+
+This is the right tool for pure, well-understood libc functions like `sqrt`, `sin`, `floor`, etc. It is not a general escape from `Unsafe` for arbitrary FFI. The distinction: `trusted fn` trusts a body of code; `trusted extern fn` trusts a single foreign symbol.
 
 ### Why this boundary
 
@@ -117,8 +130,8 @@ An `extern fn` call hands control to code outside the language entirely. The com
 4. **Ordinary capability rules still apply**
    `trusted` does not erase `Alloc`, `File`, `Network`, etc. It only affects the internal pointer-level trust boundary. If `Vec::push` allocates, it declares `with(Alloc)`. If a network wrapper opens a socket, it declares `with(Network)`. `trusted` only removes the need to leak `Unsafe` for internal pointer work — it never suppresses semantic capability checking.
 
-5. **FFI stays under `Unsafe`**
-   `extern fn` calls require `with(Unsafe)` even inside `trusted` code. `trusted` is not a backdoor to call foreign code silently.
+5. **FFI stays under `Unsafe` by default**
+   Regular `extern fn` calls require `with(Unsafe)` even inside `trusted` code. `trusted fn`/`trusted impl` is not a backdoor to call foreign code silently. The narrow exception is `trusted extern fn`, which marks a specific foreign binding as safe — this is a per-binding audit decision, not a blanket trust grant.
 
 6. **`transmute` stays under `Unsafe`**
    `transmute` requires `with(Unsafe)` even inside `trusted` code. If a narrower layout-preserving reinterpretation is needed later, it will be a separate feature.

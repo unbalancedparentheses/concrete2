@@ -26,8 +26,28 @@ extern fn puts(ptr: *const u8) -> i32;
 Current rules:
 
 - `extern fn` has no Concrete body
-- extern calls require `Unsafe`
+- extern calls require `Unsafe` by default
 - extern parameter and return types must be FFI-safe
+
+### Trusted Extern Functions
+
+A `trusted extern fn` is an audited foreign binding that callers can use without `with(Unsafe)`:
+
+```con
+trusted extern fn sqrt(x: Float64) -> Float64;
+```
+
+This is the right tool for well-known, pure libc functions (math, `abs`, etc.) where requiring `Unsafe` at every call site adds noise without safety value.
+
+Rules:
+
+- `trusted extern fn` uses the existing `trusted` keyword — no new syntax
+- callers do not need `with(Unsafe)`
+- parameter and return types must still be FFI-safe
+- the declaration itself is the audit boundary — it asserts the foreign function is safe to call with any valid arguments of the declared types
+- `--report unsafe` shows trusted extern declarations in a separate "Trusted extern functions" section
+
+Keep the category narrow. `trusted extern fn` is for pure, well-understood foreign functions — not a general "safe FFI" escape hatch. If a foreign function has side effects, mutates global state, or can crash on valid inputs, it should remain a regular `extern fn` under `with(Unsafe)`.
 
 ## FFI-Safe Types
 
@@ -47,7 +67,7 @@ The implementation authority for this check is `Layout.isFFISafe`.
 
 Concrete currently requires `Unsafe` for:
 
-- calling `extern fn`
+- calling `extern fn` (but not `trusted extern fn`)
 - dereferencing raw pointers
 - assigning through raw pointers
 - pointer-involving casts, except reference-to-pointer casts
@@ -86,8 +106,9 @@ Concrete now has the three-way split described in the research notes:
 That means:
 
 - `trusted` does **not** suppress ordinary capabilities
-- `trusted` does **not** permit `extern fn` calls without `with(Unsafe)`
-- builtin and stdlib internals are being aligned to this same model instead of relying on silent exemptions
+- `trusted fn`/`trusted impl` does **not** permit `extern fn` calls without `with(Unsafe)`
+- `trusted extern fn` is a separate, narrower mechanism: it marks a specific foreign binding as safe to call, rather than granting blanket trust to a block of code
+- builtin and stdlib internals are aligned to this same model instead of relying on silent exemptions
 
 ## Future Refinement
 

@@ -569,6 +569,39 @@ else
     FAIL=$((FAIL + 1))
 fi
 
+# --report unsafe should show trusted extern fn declarations separately from regular extern fn
+report_output=$($COMPILER "$TESTDIR/trusted_extern_basic.con" --report unsafe 2>&1)
+if echo "$report_output" | grep -q "Trusted extern functions" && echo "$report_output" | grep -q "trusted extern fn abs"; then
+    echo "  ok  trusted_extern_basic.con --report unsafe shows trusted extern functions"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  trusted_extern_basic.con --report unsafe missing trusted extern functions"
+    echo "$report_output"
+    FAIL=$((FAIL + 1))
+fi
+
+# --report caps should show trusted extern with (none) capability
+report_output=$($COMPILER "$TESTDIR/trusted_extern_basic.con" --report caps 2>&1)
+if echo "$report_output" | grep -q "trusted extern:" && echo "$report_output" | grep -q "abs : (none)"; then
+    echo "  ok  trusted_extern_basic.con --report caps shows trusted extern with no capability"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  trusted_extern_basic.con --report caps missing trusted extern info"
+    echo "$report_output"
+    FAIL=$((FAIL + 1))
+fi
+
+# --report unsafe should show regular extern under "Extern functions" (not "Trusted")
+report_output=$($COMPILER "$TESTDIR/ffi_basic.con" --report unsafe 2>&1)
+if echo "$report_output" | grep -q "Extern functions:" && echo "$report_output" | grep -q "extern fn abs" && ! echo "$report_output" | grep -q "Trusted extern"; then
+    echo "  ok  ffi_basic.con --report unsafe shows regular extern (not trusted)"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  ffi_basic.con --report unsafe should show regular extern, not trusted"
+    echo "$report_output"
+    FAIL=$((FAIL + 1))
+fi
+
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 if [ "$FAIL" -gt 0 ]; then

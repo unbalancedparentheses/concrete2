@@ -8,7 +8,7 @@ The strongest current refinement path is the three-way split:
 
 - semantic effects stay in capabilities such as `with(Alloc)`
 - implementation-level pointer unsafety is now contained by `trusted fn` / `trusted impl` at the language level, with the remaining work being coherent migration across builtins and stdlib
-- foreign semantic boundaries (`extern fn`, conservatively `transmute`) remain under `with(Unsafe)`
+- foreign semantic boundaries (`extern fn`, conservatively `transmute`) remain under `with(Unsafe)`, with a narrow per-binding exception for `trusted extern fn` (audited pure foreign bindings like math functions)
 
 This should apply uniformly across:
 
