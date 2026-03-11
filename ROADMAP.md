@@ -54,6 +54,7 @@ Still clearly not implemented:
 1. MLIR or other additional backends, but only over the SSA boundary.
 2. Runtime maturity and eventual self-hosting pressure.
 3. Proof-driven narrowing of future feature additions.
+4. A clearer hosted vs freestanding / `no_std` split, but only after the current runtime and stdlib boundaries are more stable.
 
 ## Status Legend
 
@@ -1754,20 +1755,30 @@ These do not block any phase above:
 
 **Formalization** (Phase 9) now depends on architecture phase A4 (Core Validation) — the proofs target the Core IR, not the surface AST.
 
-## Beyond The Current Roadmap
+## Longer-Horizon Multipliers
 
-Even after the current compiler, stdlib, and formalization work, a complete language system still eventually needs:
+These are not the near-term priorities, but they are the things most likely to multiply Concrete's long-term value once the current compiler and stdlib arcs are stable.
 
-- a coherent concurrency/runtime model
-- stronger tooling (formatter, better diagnostics presentation, editor support)
-- deeper backend and optimization maturity
-- a cleaner ecosystem/package workflow
-- disciplined conventions for idiomatic Concrete code
+The biggest strategic multipliers are:
 
-Those are intentionally not the near-term focus. The near-term roadmap is still:
+- real formalization of Core and lowering
+- stronger audit outputs
+- a very strong stdlib style
+- a formatter and stronger tooling baseline
+- a cleaner hosted vs freestanding split
+- a better capability/sandboxing story
+- later, a coherent concurrency/runtime model
 
-- harden and deepen the existing stdlib
+These should not displace the current near-term work. The near-term roadmap is still:
+
+- deepen and harden the existing stdlib
 - keep the compiler/toolchain explicit and boring
 - push formalization over the cleaned Core -> SSA architecture
 
-See [research/complete-language-system.md](research/complete-language-system.md) for the longer-horizon picture.
+Related research notes:
+
+- [research/ten-x-improvements.md](research/ten-x-improvements.md)
+- [research/complete-language-system.md](research/complete-language-system.md)
+- [research/capability-sandboxing.md](research/capability-sandboxing.md)
+- [research/no-std-freestanding.md](research/no-std-freestanding.md)
+- [research/concurrency.md](research/concurrency.md)

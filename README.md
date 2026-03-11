@@ -34,6 +34,8 @@ For the full language specification, see [The Concrete Programming Language: Sys
 - [docs/PASSES.md](docs/PASSES.md) — pass-by-pass ownership boundaries and contracts
 - [docs/TESTING.md](docs/TESTING.md) — test suites, coverage layers, and verification flow
 - [research/README.md](research/README.md) — exploratory design notes
+- [research/ten-x-improvements.md](research/ten-x-improvements.md) — the biggest long-term multipliers for Concrete
+- [research/complete-language-system.md](research/complete-language-system.md) — what still separates a strong language/compiler from a complete system
 
 ## Snapshot
 
@@ -55,7 +57,7 @@ What is still clearly missing:
 - MLIR backend
 - kernel formalization
 - runtime
-- stdlib deepening: carefully chosen collections
+- stdlib deepening: deeper collections (iterators, ordered maps)
 
 ## Try It Now
 
@@ -391,7 +393,7 @@ The main rule is: architecture before ornament, tooling visibility before conven
 
 The standard library exists with a systems layer in place and a first hardening pass complete.
 
-Current stdlib modules: `mem`, `alloc`, `libc`, `math`, `ptr`, `string`, `vec`, `io`, `test`, `option`, `result`, `bytes`, `slice`, `text`, `path`, `fmt`, `parse`, `hash`, `rand`, `time`, `fs`, `env`, `process`, `net`.
+Current stdlib modules: `mem`, `alloc`, `libc`, `math`, `ptr`, `string`, `vec`, `io`, `test`, `option`, `result`, `bytes`, `slice`, `text`, `path`, `fmt`, `parse`, `hash`, `map`, `set`, `rand`, `time`, `fs`, `env`, `process`, `net`.
 
 The current arc is hardening what exists rather than adding more surface area:
 
