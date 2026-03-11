@@ -32,9 +32,20 @@ Still clearly not implemented:
 
 ### Now
 
-1. Keep the builtin-vs-stdlib boundary explicit as the standard library grows.
-2. Preserve SSA as the only backend boundary and keep the build/project model explicit and boring.
-3. Improve diagnostics fidelity and rendering quality:
+1. Make the parser strictly LL(1), not just LL(1)-oriented:
+   - left-factor `mod` handling so top-level program shape does not require save/restore
+   - remove save/restore around `&self` / `&mut self` by parsing a dedicated first-method-parameter form
+   - decide whether `Name::<T>` is worth the parser complexity; otherwise drop it or constrain it
+   - remove enum-dot fallback backtracking by making the syntax choice more explicit or committing to one parse with a later semantic error
+   - add a short grammar/reference note listing the parser backtrack sites that must stay eliminated for strict LL(1)
+2. Make builtins, stdlib, and user code follow one explicit trust/effect model:
+   - add `trusted fn` / `trusted impl` as the internal implementation-audit boundary
+   - keep semantic effects (`Alloc`, `File`, `Network`, `Process`, etc.) visible in public signatures
+   - keep FFI under `with(Unsafe)` even inside `trusted`
+   - migrate builtins and stdlib internals away from silent capability/unsafe exemptions
+   - surface trusted boundaries in audit/report output
+3. Preserve SSA as the only backend boundary and keep the build/project model explicit and boring.
+4. Improve diagnostics fidelity and rendering quality:
    - better range precision
    - notes and secondary labels
    - clearer presentation for transformed constructs
@@ -44,7 +55,7 @@ Still clearly not implemented:
 1. Deepen and harden the existing stdlib surface rather than adding broad new modules:
    - deepen `fs`, `net`, and `process`
    - add more failure-path and integration tests
-   - keep error and handle conventions uniform
+   - keep error, handle, and checked/unchecked conventions uniform
    - add carefully chosen collections
 2. Push formalization over the cleaned Core -> SSA architecture.
 3. Add later audit/report outputs still marked deferred, such as allocation summaries and cleanup/destruction reports.
@@ -1767,6 +1778,7 @@ The biggest strategic multipliers are:
 - a formatter and stronger tooling baseline
 - a cleaner hosted vs freestanding split
 - a stronger `Unsafe` structure and audit story
+- an explicit `trusted fn` / `trusted impl` boundary so internal implementation unsafety can be audited without leaking `Unsafe` into safe public APIs
 - a better capability/sandboxing story
 - later, a coherent concurrency/runtime model
 
