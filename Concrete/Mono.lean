@@ -1,4 +1,5 @@
 import Concrete.Core
+import Concrete.Shared
 
 namespace Concrete
 
@@ -236,9 +237,8 @@ partial def monoExpr (e : CExpr) : MonoM CExpr := do
       let sub := substTy fnDef.typeParams mapping
       -- Build a name map for rewriting trait method calls like T_describe → Point_describe
       let callNameMap := mapping.filterMap fun (paramName, ty) =>
-        let concreteName := match ty with
-          | .named n => some n | .generic n _ => some n | _ => none
-        concreteName.map fun cn => (paramName, cn)
+        let concreteName := tyName ty
+        if concreteName == "" then none else some (paramName, concreteName)
       let monoFn : CFnDef := {
         name := name
         typeParams := []

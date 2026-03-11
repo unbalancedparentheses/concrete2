@@ -1,6 +1,7 @@
 import Concrete.Token
 import Concrete.AST
 import Concrete.Lexer
+import Concrete.Shared
 
 /-!
 # Parser — Strictly LL(1)
@@ -1128,10 +1129,11 @@ partial def parseImplBlock : ParseM (ImplBlock ⊕ ImplTraitBlock) := do
       let isPub := tk == .pub_
       if isPub then advance; tk ← peek
       let (f, selfKind) ← parseMethodDef
+      let selfTy := tyFromName typeName
       let selfParam : List Param := match selfKind with
-        | some .value => [{ name := "self", ty := .named typeName }]
-        | some .ref => [{ name := "self", ty := .ref (.named typeName) }]
-        | some .refMut => [{ name := "self", ty := .refMut (.named typeName) }]
+        | some .value => [{ name := "self", ty := selfTy }]
+        | some .ref => [{ name := "self", ty := .ref selfTy }]
+        | some .refMut => [{ name := "self", ty := .refMut selfTy }]
         | none => []
       let f := { f with params := selfParam ++ f.params, isPublic := isPub }
       methods := methods ++ [f]
@@ -1149,10 +1151,11 @@ partial def parseImplBlock : ParseM (ImplBlock ⊕ ImplTraitBlock) := do
       if isPub then advance; tk ← peek
       let (f, selfKind) ← parseMethodDef
       -- Inject self parameter based on selfKind
+      let selfTy := tyFromName typeName
       let selfParam : List Param := match selfKind with
-        | some .value => [{ name := "self", ty := .named typeName }]
-        | some .ref => [{ name := "self", ty := .ref (.named typeName) }]
-        | some .refMut => [{ name := "self", ty := .refMut (.named typeName) }]
+        | some .value => [{ name := "self", ty := selfTy }]
+        | some .ref => [{ name := "self", ty := .ref selfTy }]
+        | some .refMut => [{ name := "self", ty := .refMut selfTy }]
         | none => []
       let f := { f with params := selfParam ++ f.params, isPublic := isPub }
       methods := methods ++ [f]

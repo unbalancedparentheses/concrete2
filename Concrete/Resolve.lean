@@ -90,6 +90,8 @@ structure ResolveCtx where
   traitMethods : List (String × List String) := []
   /-- (typeName, traitName) pairs from trait impl blocks. -/
   traitImpls : List (String × String) := []
+  /-- True when resolving inside a trait definition (Self is allowed). -/
+  inTraitDef : Bool := false
 
 /-- Result of the shallow (declaration-level) resolution phase.
     Carries everything the body phase needs plus any errors found during the shallow phase. -/

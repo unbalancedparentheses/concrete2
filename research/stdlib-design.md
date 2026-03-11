@@ -33,6 +33,157 @@ The stdlib should follow a small number of hard rules:
 7. **The stdlib should optimize for low-level usefulness, explicitness, and composability without magic.**
    Concrete should prefer APIs that are easy to audit over APIs that are merely clever.
 
+## Stdlib Quality Bar
+
+The stdlib should be evaluated against a concrete quality bar, not just a list of good intentions.
+
+For any new module, type, or major API addition, ask:
+
+1. Does ownership remain obvious from the type and signature?
+2. Are semantic effects visible to callers?
+3. Are allocation, blocking, and host interaction easy to audit?
+4. Is the naming consistent with the rest of the stdlib?
+5. Does it avoid leaking builtin/runtime-hook vocabulary into the public API?
+6. Does it add real low-level value, or only surface area?
+7. Does it preserve Concrete’s explicit style better than the alternatives?
+
+If the answer to several of those is “no,” the API should not land yet.
+
+## Module Standards
+
+Every stable stdlib module should aim to satisfy the same baseline standards.
+
+### 1. Surface clarity
+
+- public names should be user-facing, not compiler-hook-shaped
+- effects should be visible in signatures
+- ownership and borrowing should be obvious
+- checked and unchecked operations should be named honestly
+
+### 2. Error design
+
+- use `Result<T, ModuleError>` where failure is expected
+- keep module-local error enums small and typed
+- do not expose sentinel integers or null-like conventions in safe APIs
+
+### 3. Handle/resource design
+
+- use owned handle types for files, sockets, listeners, child processes, etc.
+- use borrowed handle/view types only when they add real value
+- no raw fd/socket integers in safe-facing APIs
+
+### 4. Trust/effect honesty
+
+- semantic effects stay in public signatures
+- internal pointer-level implementation techniques stay behind `trusted`
+- foreign boundaries remain under `with(Unsafe)`
+- safe APIs should not inherit implementation-only unsafety
+
+### 5. Integration quality
+
+- modules that touch the OS should have failure-path tests
+- modules that exchange data should have integration tests
+- utility modules should have property-style or round-trip tests where appropriate
+
+## API Naming Standards
+
+The public stdlib should feel like one library.
+
+### Preferred style
+
+- short, direct verbs: `open`, `create`, `read`, `write`, `close`
+- explicit checked forms: `get_checked`, `get_unchecked`
+- explicit ownership verbs where useful: `append`, `reserve`, `drop`
+
+### Avoid
+
+- builtin/runtime-hook names in public APIs (`print_string`-style naming)
+- multiple unrelated names for the same operation across modules
+- names that hide consumption, allocation, or borrowing behavior
+
+### Consistency targets
+
+Use the same surface patterns wherever possible:
+
+- `open` / `create` / `close`
+- `read` / `read_all`
+- `write` / `write_all`
+- `get` / `get_checked` / `get_unchecked`
+- `insert` / `remove` / `contains`
+- `len` / `is_empty`
+
+## Collection Standards
+
+Collections should be admitted slowly and held to a higher bar than utility modules.
+
+### A collection should earn its place by offering:
+
+- clear low-level value
+- explicit allocation behavior
+- obvious ownership semantics
+- strong invariants
+- strong testing depth
+
+### Required standards for collections
+
+1. **API honesty**
+   - checked vs unchecked access must be explicit
+   - insertion/removal/lookup semantics must be obvious
+   - mutation should be visible and unsurprising
+
+2. **Allocation honesty**
+   - constructors, growth, reserve paths, and teardown should make allocation visible
+
+3. **Testing depth**
+   - deterministic unit tests
+   - edge-case tests
+   - trace/property tests for operation sequences
+
+4. **Auditability**
+   - if a collection uses `trusted`, that boundary should remain small and explainable
+
+### Collection priority order
+
+After the current core (`Vec`, `HashMap`, `HashSet`), the strongest next additions are:
+
+1. deque / ring buffer
+2. priority queue
+3. ordered map / ordered set
+4. bitset / bit array
+
+Later, if justified:
+
+- fixed-capacity vectors/lists
+- arenas / slabs / slot maps
+- small inline-buffer collections
+
+## Testing Standards
+
+The stdlib should be tested more like infrastructure than like examples.
+
+### Every module should have:
+
+- direct unit tests for basic behavior
+- edge-case tests for failure and boundary conditions
+
+### Utility modules should also have:
+
+- property or round-trip tests where natural (`fmt` / `parse`, hashing helpers, etc.)
+
+### Systems modules should also have:
+
+- failure-path tests
+- integration tests with real handles/resources where practical
+
+### Collections should also have:
+
+- trace/property tests against a simple reference model
+- growth, overwrite, remove, and empty-case coverage
+
+### Reports and compiler-facing APIs should also have:
+
+- consistency tests ensuring reported effects/trust/layout agree with actual semantics
+
 ## Current Situation
 
 The `std/` tree exists, but it is still early:

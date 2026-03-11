@@ -51,4 +51,42 @@ def resolveSelfTy : Ty → Ty → Ty
   | .heapArray inner, implTy => .heapArray (resolveSelfTy inner implTy)
   | other, _ => other
 
+/-- Map a type name string to its primitive Ty, or `.named` for user types.
+    Mirrors the parser's type name → Ty mapping. -/
+def tyFromName (name : String) : Ty :=
+  match name with
+  | "Int" | "i64" => .int
+  | "Uint" | "u64" => .uint
+  | "i8"  => .i8  | "i16" => .i16 | "i32" => .i32
+  | "u8"  => .u8  | "u16" => .u16 | "u32" => .u32
+  | "Bool" | "bool" => .bool
+  | "Float64" | "f64" => .float64
+  | "Float32" | "f32" => .float32
+  | "Char" | "char" => .char
+  | "String" => .string
+  | n => .named n
+
+/-- Extract the type name string from a Ty (inverse of tyFromName for primitives). -/
+def tyName : Ty → String
+  | .int => "Int" | .uint => "Uint"
+  | .i8 => "i8" | .i16 => "i16" | .i32 => "i32"
+  | .u8 => "u8" | .u16 => "u16" | .u32 => "u32"
+  | .float64 => "Float64" | .float32 => "Float32"
+  | .bool => "Bool" | .char => "Char" | .string => "String"
+  | .named n => n | .generic n _ => n
+  | _ => ""
+
+/-- Replace every occurrence of `.named "Self"` with `replacement` inside a Ty. -/
+partial def substSelf (ty : Ty) (replacement : Ty) : Ty :=
+  match ty with
+  | .named "Self" => replacement
+  | .ref t => .ref (substSelf t replacement)
+  | .refMut t => .refMut (substSelf t replacement)
+  | .ptrMut t => .ptrMut (substSelf t replacement)
+  | .ptrConst t => .ptrConst (substSelf t replacement)
+  | .array t n => .array (substSelf t replacement) n
+  | .generic n args => .generic n (args.map (substSelf · replacement))
+  | .fn_ params caps ret => .fn_ (params.map (substSelf · replacement)) caps (substSelf ret replacement)
+  | t => t
+
 end Concrete

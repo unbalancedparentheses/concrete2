@@ -40,7 +40,12 @@ Recently completed:
 
 ### Now
 
-1. Tighten the builtin-vs-stdlib boundary and clean up the public stdlib surface:
+1. Add an external LL(1) grammar checker as a standing syntax guardrail:
+   - write a compact reference grammar (`grammar/concrete.ebnf`)
+   - add a small Python LL(1) checker (`scripts/check_ll1.py`)
+   - put it in CI
+   - treat parser-state rewind/backtracking regressions as bugs
+2. Tighten the builtin-vs-stdlib boundary and clean up the public stdlib surface:
    - keep builtins minimal, compiler/runtime-facing, and explicitly non-user-facing
    - replace stringly builtin dispatch with internal intrinsic identities so compiler-known operations stop colliding with user/stdlib names
    - wrap builtin-shaped hooks in coherent stdlib vocabulary
@@ -48,13 +53,13 @@ Recently completed:
    - clean public API names that still look like low-level runtime hooks
    - make ownership/borrowing costs more predictable at the stdlib boundary
    - keep the stdlib bytes-first and low-level, rather than letting string-heavy convenience APIs become the default surface
-2. Strengthen the testing strategy beyond the current end-to-end and module-local tests:
+3. Strengthen the testing strategy beyond the current end-to-end and module-local tests:
    - parser fuzzing
    - `fmt` / `parse` property tests
    - `Vec` / `HashMap` trace tests
    - report consistency tests
    - selected codegen differential tests
-3. Keep deepening and hardening the existing stdlib surface:
+4. Keep deepening and hardening the existing stdlib surface:
    - deepen `fs`, `net`, and `process`
    - add more failure-path and integration tests
    - keep error, handle, and checked/unchecked conventions uniform
@@ -63,11 +68,11 @@ Recently completed:
      - priority queue
      - ordered map / ordered set
      - bitset / bit array
-4. Improve diagnostics fidelity and rendering quality:
+5. Improve diagnostics fidelity and rendering quality:
    - better range precision
    - notes and secondary labels
    - clearer presentation for transformed constructs
-5. Preserve SSA as the only backend boundary and keep the build/project model explicit and boring.
+6. Preserve SSA as the only backend boundary and keep the build/project model explicit and boring.
 
 ### Next
 
@@ -1825,6 +1830,7 @@ Related research notes:
 - [research/complete-language-system.md](research/complete-language-system.md)
 - [research/testing-strategy.md](research/testing-strategy.md)
 - [research/builtin-vs-stdlib.md](research/builtin-vs-stdlib.md)
+- [research/external-ll1-checker.md](research/external-ll1-checker.md)
 - [research/stdlib-api-cleanup.md](research/stdlib-api-cleanup.md)
 - [research/execution-cost.md](research/execution-cost.md)
 - [research/unsafe-structure.md](research/unsafe-structure.md)

@@ -483,6 +483,7 @@ run_ok "$TESTDIR/string_to_int_roundtrip.con" 42
 run_ok "$TESTDIR/math_sqrt.con" 5
 run_ok "$TESTDIR/math_pow.con" 81
 run_ok "$TESTDIR/math_abs.con" 52
+run_ok "$TESTDIR/trait_numeric_abs.con" 57
 run_ok "$TESTDIR/math_floor_ceil.con" 34
 run_ok "$TESTDIR/math_sin_cos.con" 10
 run_ok "$TESTDIR/math_exp_log.con" 10

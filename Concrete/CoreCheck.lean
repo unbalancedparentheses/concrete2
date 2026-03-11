@@ -622,8 +622,10 @@ def ccCheckModuleDecls (m : CModule)
         match ti.methodRetTys.find? fun (mn, _) => mn == sig.name with
         | none => errors := errors ++ [mkDeclDiag (.missingTraitMethod ti.typeName sig.name)]
         | some (_, actualRetTy) =>
-          if sig.retTy != actualRetTy then
-            errors := errors ++ [mkDeclDiag (.traitMethodRetTyMismatch sig.name (tyToString sig.retTy) (tyToString actualRetTy))]
+          let implTy := tyFromName ti.typeName
+          let expectedRetTy := resolveSelfTy sig.retTy implTy
+          if expectedRetTy != actualRetTy then
+            errors := errors ++ [mkDeclDiag (.traitMethodRetTyMismatch sig.name (tyToString expectedRetTy) (tyToString actualRetTy))]
   errors
 
 -- ============================================================

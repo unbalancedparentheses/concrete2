@@ -3,6 +3,7 @@ import Concrete.Core
 import Concrete.Diagnostic
 import Concrete.FileSummary
 import Concrete.Intrinsic
+import Concrete.Shared
 
 namespace Concrete
 
@@ -243,6 +244,7 @@ private partial def peekExprType (e : Expr) : ElabM Ty := do
     | some sig => return .fn_ (sig.params.map Prod.snd) sig.capSet sig.retTy
     | none => return .placeholder
   | .paren _ inner => peekExprType inner
+  | .binOp _ _ lhs _ => peekExprType lhs
   | _ => return .placeholder
 
 -- ============================================================
@@ -552,8 +554,7 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
     let objTy := cObj.ty
     let innerTy := match objTy with
       | .ref t => t | .refMut t => t | t => t
-    let typeName := match innerTy with
-      | .named n => n | .generic n _ => n | _ => ""
+    let typeName := tyName innerTy
     if typeName == "" then
       -- Type variable with trait bounds
       match innerTy with
@@ -571,11 +572,15 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
         match foundSig with
         | none => throwElab (.noMethodOnTypeVar methodName n) (some e.getSpan)
         | some sig =>
+          -- Replace Self with the type variable
+          let selfTy := Ty.typeVar n
+          let retTy := substSelf sig.retTy selfTy
+          let params := sig.params.map fun p => { p with ty := substSelf p.ty selfTy }
           let mut cArgs : List CExpr := [cObj]
-          for (arg, p) in args.zip sig.params do
+          for (arg, p) in args.zip params do
             let cArg ← elabExpr arg (some p.ty)
             cArgs := cArgs ++ [cArg]
-          return .call (n ++ "_" ++ methodName) typeArgs cArgs sig.retTy
+          return .call (n ++ "_" ++ methodName) typeArgs cArgs retTy
       | _ => throwElab .methodCallOnNonNamedType (some e.getSpan)
     else
       let mangledName := typeName ++ "_" ++ methodName
@@ -1135,14 +1140,14 @@ partial def elabModule (m : Module) (summary : FileSummary)
   -- Elaborate all functions
   let regularFns := m.functions.map fun f => (f, (none : Option Ty))
   let implMethodPairs := allImplBlocks.foldl (fun acc ib =>
-    let implTy := if ib.typeParams.isEmpty then Ty.named ib.typeName
+    let implTy := if ib.typeParams.isEmpty then tyFromName ib.typeName
                   else Ty.generic ib.typeName (ib.typeParams.map Ty.typeVar)
     acc ++ ib.methods.map fun f =>
       ({ f with typeParams := ib.typeParams ++ f.typeParams,
                 isTrusted := f.isTrusted || ib.isTrusted }, some implTy)
   ) ([] : List (FnDef × Option Ty))
   let traitImplMethodPairs := allTraitImpls.foldl (fun acc tb =>
-    let implTy := if tb.typeParams.isEmpty then Ty.named tb.typeName
+    let implTy := if tb.typeParams.isEmpty then tyFromName tb.typeName
                   else Ty.generic tb.typeName (tb.typeParams.map Ty.typeVar)
     acc ++ tb.methods.map fun f =>
       ({ f with typeParams := tb.typeParams ++ f.typeParams,
@@ -1155,14 +1160,14 @@ partial def elabModule (m : Module) (summary : FileSummary)
       let cfn ← elabFn f implTy
       let finalName := match implTy with
         | some it =>
-          let typeName := match it with
-            | .named n => n | .generic n _ => n | _ => ""
-          if typeName != "" then typeName ++ "_" ++ f.name else f.name
+          let tn := tyName it
+          if tn != "" then tn ++ "_" ++ f.name else f.name
         | none => f.name
       let implOrigin := if cfn.isTrusted then
         match implTy with
-        | some it => match it with
-          | .named n => some n | .generic n _ => some n | _ => none
+        | some it =>
+          let tn := tyName it
+          if tn != "" then some tn else none
         | none => none
       else none
       pure { cfn with name := finalName, trustedImplOrigin := implOrigin } : ElabM CFnDef).run env' |>.run

@@ -610,6 +610,7 @@ def peekExprType (e : Expr) : CheckM Ty := do
       return .fn_ paramTys sig.capSet sig.retTy
     | none => return .placeholder
   | .paren _ inner => peekExprType inner
+  | .binOp _ _ lhs _ => peekExprType lhs
   | _ => return .placeholder
 
 /-- Unify a pattern type with an actual type to discover type variable bindings. -/
@@ -1565,10 +1566,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       | .ref t => t
       | .refMut t => t
       | t => t
-    let typeName := match innerTy with
-      | .named n => n
-      | .generic n _ => n
-      | _ => ""
+    let typeName := tyName innerTy
     if typeName == "" then
       -- Check if this is a type variable with trait bounds
       match innerTy with
@@ -1587,16 +1585,20 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
         match foundSig with
         | none => throwCheck (.noMethodOnTypeVar methodName n) (some e.getSpan)
         | some sig =>
+          -- Replace Self with the type variable in the trait signature
+          let selfTy := Ty.typeVar n
+          let retTy := substSelf sig.retTy selfTy
+          let params := sig.params.map fun p => { p with ty := substSelf p.ty selfTy }
           -- Type check arguments (params in FnSigDef excludes self)
-          if args.length != sig.params.length then
-            throwCheck (.wrongArgCount s!"method '{methodName}'" sig.params.length args.length) (some e.getSpan)
-          for (arg, p) in args.zip sig.params do
+          if args.length != params.length then
+            throwCheck (.wrongArgCount s!"method '{methodName}'" params.length args.length) (some e.getSpan)
+          for (arg, p) in args.zip params do
             let argTy ← checkExpr arg (some p.ty)
             expectTy p.ty argTy s!"argument '{p.name}' of '{methodName}'" (some e.getSpan)
             match arg with
             | .ident _ varName => consumeVarIfExists varName (some e.getSpan)
             | _ => pure ()
-          return sig.retTy
+          return retTy
       | _ => throwCheck .methodCallOnNonNamedType (some e.getSpan)
     else
     let mangledName := typeName ++ "_" ++ methodName
@@ -2264,13 +2266,13 @@ def checkModule (m : Module) (summary : FileSummary)
   -- Merge impl block type params into each method's typeParams, track impl type for Self
   let regularFns : List (FnDef × Option Ty) := m.functions.map fun f => (f, none)
   let implMethodPairs : List (FnDef × Option Ty) := allImplBlocks.foldl (fun acc ib =>
-    let implTy := if ib.typeParams.isEmpty then Ty.named ib.typeName
+    let implTy := if ib.typeParams.isEmpty then tyFromName ib.typeName
                   else Ty.generic ib.typeName (ib.typeParams.map Ty.typeVar)
     acc ++ ib.methods.map fun f =>
       ({ f with typeParams := ib.typeParams ++ f.typeParams }, some implTy)
   ) []
   let traitImplMethodPairs : List (FnDef × Option Ty) := allTraitImpls.foldl (fun acc tb =>
-    let implTy := if tb.typeParams.isEmpty then Ty.named tb.typeName
+    let implTy := if tb.typeParams.isEmpty then tyFromName tb.typeName
                   else Ty.generic tb.typeName (tb.typeParams.map Ty.typeVar)
     acc ++ tb.methods.map fun f =>
       ({ f with typeParams := tb.typeParams ++ f.typeParams }, some implTy)

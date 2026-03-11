@@ -19,6 +19,7 @@ Status key:
 - [derived-equality-design.md](derived-equality-design.md) — possible derived structural equality for user-defined types (`Open`)
 - [heap-ownership-design.md](heap-ownership-design.md) — chosen `Heap<T>` ownership model (`Adopted`)
 - [heap-access-revisited.md](heap-access-revisited.md) — follow-up on heap access syntax and tradeoffs (`Open`)
+- [external-ll1-checker.md](external-ll1-checker.md) — external grammar + Python LL(1) checker as a CI guardrail for future syntax changes (`Open`)
 - [ll1-grammar.md](ll1-grammar.md) — strict LL(1) grammar rule, known parser backtrack sites, and the cleanup criteria for claiming full LL(1) (`Process`)
 - [trusted-boundary.md](trusted-boundary.md) — explicit `trusted fn` / `trusted impl` design for containing implementation unsafety (`Adopted`)
 - [unsafe-structure.md](unsafe-structure.md) — how to make `Unsafe` more inspectable and better contained without complicating the language (`Open`, partially adopted by the trusted split)
