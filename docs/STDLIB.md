@@ -17,6 +17,8 @@ The Concrete stdlib should stay:
 - explicit about allocation
 - explicit about ownership
 - explicit about handles/resources
+- bytes-first rather than string-first for low-level APIs
+- coherent in naming and verb choice across modules
 - small and sharp rather than broad
 - neutral about the eventual concurrency/runtime model unless a dependency is unavoidable
 
@@ -34,6 +36,44 @@ It should avoid:
 - a giant iterator/future ecosystem
 - hidden allocation
 - overly broad collection sprawl before the fundamentals are solid
+- builtin/runtime-hook names leaking directly into the public API surface
+
+## What Would Make It Excellent
+
+The stdlib does not need to become huge to become dramatically better. The biggest gains come from making it:
+
+- more coherent
+- more explicit
+- more ownership-honest
+- more audit-friendly
+
+The core principles are:
+
+1. **Bytes first, not String first.**
+   `Bytes`, `Slice`, `Text`, and `Path` should remain the center of low-level I/O, parsing, formatting, and networking.
+
+2. **One public vocabulary everywhere.**
+   The same verbs and API shapes should recur across modules:
+   - `open`, `create`, `read`, `write`, `write_all`, `close`
+   - `get`, `get_checked`, `get_unchecked`
+   - `insert`, `remove`, `contains`, `len`, `is_empty`
+
+3. **Builtins stay minimal and ugly; stdlib stays clean.**
+   Compiler/runtime hooks can be low-level and implementation-shaped. The user-facing stdlib should wrap them in coherent, typed APIs.
+
+4. **Effects and trust stay visible.**
+   The best stdlib for Concrete is one where it is easy to answer:
+   - does this allocate?
+   - does this block?
+   - does this require `Unsafe`?
+   - does this rely on `trusted` internally?
+   - what capability does it need?
+
+5. **Systems modules should feel like one family.**
+   `fs`, `net`, `process`, `env`, and `time` should share the same approach to typed errors, handles, cleanup, and capability visibility.
+
+6. **Collections should be few but excellent.**
+   It is better to have a small number of deeply-tested, explicit, low-level collections than a broad and inconsistent collection zoo.
 
 ## Foundation First
 
@@ -75,6 +115,38 @@ Still the main near-term stdlib work:
 3. expand failure-path and integration testing
 4. carefully chosen collections
 5. keep pushing deeper systems-module polish and stronger integration coverage
+
+## Collection Priorities
+
+The current collection spine is:
+
+- `Vec`
+- `HashMap`
+- `HashSet`
+
+The next collection work should stay narrow and low-level.
+
+Highest-priority additions after the current core:
+
+1. **Deque / ring buffer**
+   Useful for queues, schedulers, buffering, and general systems work.
+
+2. **Priority queue**
+   Important for schedulers, search algorithms, and event-driven systems.
+
+3. **Ordered map / ordered set**
+   Tree-based containers for deterministic iteration and range-based access.
+
+4. **Bitset / bit array**
+   Useful for flags, dataflow, graph/search algorithms, and compiler-style workloads.
+
+Useful later, but not early priorities:
+
+- fixed-capacity vectors/lists
+- arenas / slabs / slot maps
+- small inline-buffer collections
+
+The rule is: add collections only when they improve low-level work materially, and keep their ownership, allocation, and error behavior as explicit as `Vec` and `HashMap`.
 
 ## Core Module Direction
 
@@ -167,6 +239,12 @@ TCP networking layer:
 - `TcpStream::read_all` — read until EOF into `Bytes`, returns total bytes read
 - `write`, `read` keep `i64` returns (negative = error); `close` stays void
 
+Near-term improvement goals:
+
+- deeper integration coverage with real listener/stream round-trips
+- cleaner user-facing naming where builtin hooks still leak through
+- keep owned-handle and typed-error patterns uniform with `fs` and `process`
+
 ### `std.fmt`
 
 Pure-Concrete formatting module:
@@ -179,6 +257,8 @@ Pure-Concrete formatting module:
 - `pad_left` / `pad_right` — fixed-width padding with fill character
 
 No libc dependency beyond alloc/string.
+
+The long-term goal is for `fmt` and `parse` to behave like one coherent subsystem: explicit, buffer-oriented, and round-trip-friendly where appropriate.
 
 ### `std.hash`
 
@@ -259,6 +339,14 @@ Inverse of `fmt` — value parsers for converting strings to typed values:
 
 No libc dependency beyond what `std.string` provides.
 
+`parse` should remain small and explicit:
+
+- value parsing
+- a tiny `Cursor`
+- no parser combinator framework
+- no hidden allocation
+- strong round-trip behavior with `fmt`
+
 ### `std.test`
 
 Test assertion helpers:
@@ -320,4 +408,14 @@ The goal is a stdlib that is:
 - explicit enough for auditability
 - small enough to stay coherent
 
-The current state is no longer just a plan. A first useful low-level foundation is in place, including the systems layer (`env`, `process`, `net`), with typed error surfaces across the modules that touch the OS. The stdlib deepening arc has added `fmt`, `hash`, `rand`, `time`, and `parse`, and unified error handling with generic `Result<T, ModuleError>` across all modules. Systems modules have been deepened with helper functions (`fs`: `append_file`, `file_exists`, `read_to_string`; `net`: `write_all`, `read_all`; `process`: `spawn`, signal constants). The next arc is deeper systems-module polish, stronger failure-path and integration testing, and carefully chosen collections.
+The current state is no longer just a plan. A first useful low-level foundation is in place, including the systems layer (`env`, `process`, `net`), with typed error surfaces across the modules that touch the OS. The stdlib deepening arc has added `fmt`, `hash`, `rand`, `time`, and `parse`, and unified error handling with generic `Result<T, ModuleError>` across all modules. Systems modules have been deepened with helper functions (`fs`: `append_file`, `file_exists`, `read_to_string`; `net`: `write_all`, `read_all`; `process`: `spawn`, signal constants).
+
+The next arc is not “add lots more modules.” It is:
+
+- cleaner public API names and ownership behavior
+- stronger builtin-vs-stdlib separation
+- deeper systems-module polish
+- stronger failure-path and integration testing
+- carefully chosen collections in the order above
+
+The best version of the Concrete stdlib will not be the biggest. It will be the most coherent, explicit, and auditable.

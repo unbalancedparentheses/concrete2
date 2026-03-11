@@ -6,7 +6,7 @@ This is the implementation plan for the Concrete programming language. For the f
 
 ## Current State
 
-The Lean 4 compiler implements the core surface language plus the full internal IR pipeline: Core IR, elaboration, Core validation, monomorphization, SSA lowering, SSA verification/cleanup, and SSA codegen. The main suite currently has 326 passing tests, and the SSA-specific suite also passes.
+The Lean 4 compiler implements the core surface language plus the full internal IR pipeline: Core IR, elaboration, Core validation, monomorphization, SSA lowering, SSA verification/cleanup, and SSA codegen. The main suite currently has 332 passing tests, and the SSA-specific suite also passes.
 
 The project also now has:
 
@@ -16,6 +16,7 @@ The project also now has:
 - explicit `trusted fn` / `trusted impl` boundaries for containing internal pointer-level implementation unsafety without leaking `Unsafe` into callers
 - a real stdlib foundation (`vec`, `string`, `io`, `bytes`, `slice`, `text`, `path`, `fs`) plus the systems layer (`env`, `process`, `net`)
 - a utility layer (`fmt`, `hash`, `rand`, `time`, `parse`, `test`) over the low-level core
+- foundational collections in place (`Vec`, `HashMap`, `HashSet`), with the next collection work aimed at queues, heaps, ordered maps/sets, and bitsets rather than broad sprawl
 - stdlib hardening and deepening: typed `Result<T, ModuleError>` surfaces, checked/unchecked accessors, systems-module helpers, and in-language `#[test]` execution
 
 For completed milestones and major landed features, see [CHANGELOG.md](CHANGELOG.md).
@@ -46,6 +47,7 @@ Recently completed:
    - move polymorphic builtin-shaped operations like `abs` toward stdlib traits + monomorphization instead of ad hoc compiler intercepts
    - clean public API names that still look like low-level runtime hooks
    - make ownership/borrowing costs more predictable at the stdlib boundary
+   - keep the stdlib bytes-first and low-level, rather than letting string-heavy convenience APIs become the default surface
 2. Strengthen the testing strategy beyond the current end-to-end and module-local tests:
    - parser fuzzing
    - `fmt` / `parse` property tests
@@ -56,7 +58,11 @@ Recently completed:
    - deepen `fs`, `net`, and `process`
    - add more failure-path and integration tests
    - keep error, handle, and checked/unchecked conventions uniform
-   - add carefully chosen collections
+   - add carefully chosen collections in this order:
+     - deque / ring buffer
+     - priority queue
+     - ordered map / ordered set
+     - bitset / bit array
 4. Improve diagnostics fidelity and rendering quality:
    - better range precision
    - notes and secondary labels
@@ -255,7 +261,11 @@ The next arc is to deepen what exists rather than add broad new surface area:
 - clean builtin-style names and ownership surprises out of the user-facing API surface
 - deepen the existing systems modules (`fs`, `net`, `process`) with more helpers and stronger path integration
 - improve testing depth, especially failure-path and integration coverage
-- then add carefully chosen collections
+- then add carefully chosen collections:
+  - deque / ring buffer
+  - priority queue
+  - ordered map / ordered set
+  - bitset / bit array
 
 11. **Formalization**
 The cleaned pipeline is now stable enough that proof work over Core and the backend boundary is more valuable than more architecture churn.
