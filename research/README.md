@@ -49,6 +49,7 @@ Status key:
 ## Compiler Architecture
 
 - [file-summary-frontend.md](file-summary-frontend.md) — summary-based frontend direction (`Adopted`)
+- [formalization-roi.md](formalization-roi.md) — highest-return-on-investment order for proving Core, effects, ownership, and Core→SSA preservation (`Open`)
 - [mlir-backend-shape.md](mlir-backend-shape.md) — where an MLIR backend should sit in the pipeline (`Research`)
 
 ## Meta / Planning
