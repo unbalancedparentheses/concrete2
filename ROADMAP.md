@@ -81,15 +81,16 @@ This list is ordered to match the active execution phases: Phase A is done enoug
    - primary surfaces: [research/builtin-vs-stdlib.md](research/builtin-vs-stdlib.md), [Concrete/Intrinsic.lean](/Users/unbalancedparen/projects/concrete/Concrete/Intrinsic.lean), [Concrete/BuiltinSigs.lean](/Users/unbalancedparen/projects/concrete/Concrete/BuiltinSigs.lean), [Concrete/Check.lean](/Users/unbalancedparen/projects/concrete/Concrete/Check.lean), [Concrete/Elab.lean](/Users/unbalancedparen/projects/concrete/Concrete/Elab.lean), [Concrete/CoreCheck.lean](/Users/unbalancedparen/projects/concrete/Concrete/CoreCheck.lean), [Concrete/EmitSSA.lean](/Users/unbalancedparen/projects/concrete/Concrete/EmitSSA.lean)
    - first slices:
      - keep builtins minimal, compiler/runtime-facing, and explicitly non-user-facing
-     - remove remaining string-based semantic dispatch in compiler tables, pass-local special cases, and backend helper selection
+     - ~~remove remaining string-based semantic dispatch in compiler tables, pass-local special cases, and backend helper selection~~ **done** — all semantic names centralized in `Intrinsic.lean`
      - make ordinary language behavior depend on internal identities or explicit language items, not raw function-name matching
-     - keep stringly handling confined to true foreign-symbol, linker-symbol, or user-facing report/rendering boundaries
+     - structural string handling (parser keywords, mangling, LLVM naming, diagnostics) is tolerated — not the same category of debt
      - keep improving testing ergonomics where it directly speeds semantic-cleanup work, but treat deeper artifact-aware testing as later infrastructure rather than a blocker for Phase B
      - keep the stdlib bytes-first and low-level rather than letting string-heavy convenience APIs dominate the surface
    - constraints:
      - any compiler rule that changes semantics based on an ordinary public name is architecture debt
+     - structural/compiler-internal string handling (parser keywords, type-name→Ty mapping, monomorphization rewriting, method mangling, LLVM IR naming, linker symbols, diagnostics) is not
      - do not move user-facing convenience back into compiler builtins
-   - done means: ordinary public names no longer carry compiler-known semantics through raw matching
+   - done means: ordinary public names no longer carry compiler-known semantics through raw matching; structural string handling may remain
 2. Add an external LL(1) grammar checker as a standing syntax guardrail.
    - problem: the language claims LL(1) discipline, but parser regressions can still slip in without a dedicated grammar guardrail
    - why now: this is the first Phase C tool that protects the language shape without destabilizing semantics
@@ -205,19 +206,28 @@ Primary surfaces:
 - `Concrete/CoreCheck.lean`
 - `Concrete/EmitSSA.lean`
 
-1. ~~centralize string-based semantic dispatch into `Intrinsic.lean`~~ **done** (d0b2f53, this commit)
+**The distinction that governs Phase B:**
+
+- **Forbidden:** semantic dispatch on ordinary public names — compiler behavior that changes because a function, type, trait, or variant happens to have a particular user-visible name.  This is the real architecture debt.  Every such case must be replaced by an explicit internal identity (`IntrinsicId`, a centralized constant, or a language item).
+- **Tolerated:** structural/compiler-internal string handling — parser keyword matching (`"repr"`, `"test"`, `"C"`), primitive type-name → `Ty` mapping (`tyFromName`), monomorphization name rewriting, method mangling (`TypeName_method`), LLVM IR naming, linker symbols, diagnostic/reporting strings.  These are implementation mechanics, not semantic magic.  They can be improved later for ergonomic or maintenance reasons but are not the same category of debt.
+
+**Completed:**
+
+1. ~~centralize string-based semantic dispatch into `Intrinsic.lean`~~ **done** (d0b2f53, 4e557e0)
    - centralized builtin names: reserved fns, builtin types, Destroy trait/method, Result enum/variants, Self type, main entry point, capability names, newtype field, sizeof suffix, HashMap str-key suffix, method mangling helper
    - separated semantic language items (Self, Destroy, Result, Ok/Err, main, Unsafe, Std) from compiler-reserved identifiers (alloc, free, etc.) and mangling/suffix helpers
    - updated Check, CoreCheck, Elab, EmitSSA, Resolve, Shared, Report, Parser to reference centralized names
-2. remove remaining string-based semantic dispatch in non-centralized positions
-   - remaining: `tyFromName` in Shared.lean (primitive type-name → Ty mapping), attribute keywords ("repr", "test", "C", "packed", "align") in Parser.lean, monomorphization prefix rewriting in Mono.lean
-   - these are structural (parser keywords, type-system primitives) — centralizing requires deeper refactoring
-3. make compiler-known behavior ride on explicit identities or language items
+
+**Remaining:**
+
+2. audit for any surviving semantic dispatch on ordinary public names outside `Intrinsic.lean`
+   - all known semantic names are now centralized; if new semantic names appear they must go through `Intrinsic.lean`
+3. make compiler-known behavior ride on explicit identities or language items where centralized constants are still insufficient
 4. keep raw string matching confined to foreign/linker/reporting boundaries
 5. allow tactical testing improvements only when they directly accelerate semantic-cleanup work
 
 Exit criterion:
-ordinary language behavior is no longer keyed off raw public names.
+no compiler pass changes behavior based on an ordinary public name through raw string matching.  Structural string handling (parser keywords, mangling, LLVM naming, diagnostics) is not a Phase B blocker.
 
 #### Phase C: Tooling And Stdlib Hardening
 
