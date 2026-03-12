@@ -14,6 +14,7 @@ Use it to decide what to do next, in what order, and what documents/code areas t
 
 For landed milestones, see [CHANGELOG.md](CHANGELOG.md).
 For current compiler structure and pass boundaries, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/PASSES.md](docs/PASSES.md).
+For project identity and differentiators, see [docs/IDENTITY.md](docs/IDENTITY.md).
 For current language and subsystem references, see:
 - [docs/FFI.md](docs/FFI.md)
 - [docs/ABI_LAYOUT.md](docs/ABI_LAYOUT.md)

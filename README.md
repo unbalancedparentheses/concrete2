@@ -17,6 +17,8 @@ Status: project entry point
 
 Concrete is a systems programming language for **correctness-focused low-level work**. It is designed around a single organizing principle: **every design choice must answer the question, can a machine reason about this?** All code is explicit, machine-verifiable, LL(1)-parseable, with no hidden control flow.
 
+Concrete's intended differentiator is not "more features". It is **auditable low-level programming with explicit authority and trust boundaries, on top of a small, honest, proof-friendly language and compiler**. See [docs/IDENTITY.md](docs/IDENTITY.md) for the explicit project identity.
+
 The compiler is written in [Lean 4](https://leanprover.github.io/lean4/doc/setup.html), a theorem prover. The goal is a language whose core type system is mechanically verified: proofs of progress, preservation, linearity soundness, and effect soundness, checked by Lean itself.
 
 **No other language combines all four: linear types, a capability-based effect system, a compiler written in a theorem prover, and a design optimized for machine-generated code.**
@@ -28,6 +30,7 @@ For the full language specification, see [The Concrete Programming Language: Sys
 ## Doc Map
 
 - [README.md](README.md) — start here: project overview, status, build/test usage
+- [docs/IDENTITY.md](docs/IDENTITY.md) — what Concrete is optimizing for and what differentiates it
 - [ROADMAP.md](ROADMAP.md) — active and future work
 - [CHANGELOG.md](CHANGELOG.md) — completed milestones
 - [docs/README.md](docs/README.md) — stable reference docs
