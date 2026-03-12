@@ -33,6 +33,13 @@ Concrete was created to close a gap between low-level programming and mechanized
 
 Systems languages usually optimize for control, performance, and interoperability. Proof systems usually optimize for expressing and checking mathematical claims. Concrete is trying to meet in the middle: a low-level language where authority, resources, cleanup, trust boundaries, and compiler meaning stay explicit enough to inspect, audit, and eventually prove.
 
+The core idea is that systems code should not only run fast or expose low-level control. It should also make important facts visible:
+
+- what authority it has
+- where resources are created and destroyed
+- where `Unsafe` and `trusted` boundaries exist
+- what the compiler actually means by the program
+
 In one sentence: Concrete exists to make low-level programming explicit enough to audit, honest enough to trust, and structured enough to eventually prove.
 
 ## Two Lean Goals
@@ -44,10 +51,28 @@ Concrete's Lean story has two different goals.
 2. **Prove selected Concrete programs in Lean.**
    This means proving properties about particular user functions written in Concrete, through formalized Core semantics. The question is no longer "is the compiler coherent?" but "does this function satisfy its specification?"
 
+Examples of compiler/language proof targets:
+
+- the type system is sound
+- ownership and linearity rules are coherent
+- capability and trust rules are preserved
+- lowering from Core to SSA preserves meaning
+
+Examples of program proof targets:
+
+- this function returns the right result
+- this data-structure operation preserves its invariant
+- this parser round-trips with a formatter
+- this critical routine respects a specification
+
 The difference matters:
 
 - compiler/language proofs give **language trust**
 - program proofs give **program trust**
+
+Both matter, but they are not the same. One asks whether the language and compiler are trustworthy. The other asks whether a specific piece of code does what it should.
+
+The second goal is especially important because many projects can say their compiler is formally inspired. Far fewer can realistically say: here is a Concrete function, here is its formal Core meaning, and here is a Lean proof of a property about it.
 
 Concrete is aiming for both, in that order. See [docs/IDENTITY.md](docs/IDENTITY.md) for the project identity and [research/proving-concrete-functions-in-lean.md](research/proving-concrete-functions-in-lean.md) for the longer proof direction.
 

@@ -20,6 +20,8 @@ Concrete was created to close a gap between low-level programming and mechanized
 
 It is trying to make systems code explicit enough that you can answer concrete questions about it: what authority it uses, where it allocates, where it cleans up, where trust boundaries are crossed, and what the compiler actually means by the program.
 
+The point is not only speed or control. The point is to keep low-level power while making authority, resources, `Unsafe`, `trusted`, and compiler meaning visible enough to inspect and eventually prove.
+
 ## What Makes It Different
 
 <div class="feature-grid">
@@ -49,6 +51,8 @@ Concrete's proof direction has two layers:
 - eventually prove properties of selected Concrete programs in Lean through formalized Core semantics
 
 Those are different goals. Compiler proofs give trust in the language rules and pipeline. Program proofs give trust in specific user code.
+
+That second goal matters because it is a much stronger claim than "the compiler seems well-designed": it points toward real user functions whose formal Core meaning can be proved against a specification in Lean.
 
 ## What Concrete Is Not Trying To Be
 

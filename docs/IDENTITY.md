@@ -16,6 +16,13 @@ Concrete was created to close a gap between systems programming and mechanized r
 
 Most systems languages optimize for control, performance, and interoperability, but leave many important questions hard to answer mechanically: where authority enters, where resources are allocated and destroyed, where trust boundaries are crossed, and what the compiler really means by a program. Proof assistants make those questions tractable, but they are not the same thing as an everyday low-level systems language.
 
+The core idea is that systems code should not only run fast or expose low-level control. It should also make important facts visible:
+
+- what authority it has
+- where resources are created and destroyed
+- where `Unsafe` and `trusted` boundaries exist
+- what the compiler actually means by the program
+
 Concrete is trying to bridge that gap. The project exists to make low-level programming explicit enough to audit, honest enough to trust, and structured enough to eventually prove.
 
 ## Core Differentiators
@@ -73,10 +80,26 @@ Concrete's long-term proof story has two layers:
 - proving properties of the language/compiler in Lean
 - eventually proving properties of selected Concrete programs in Lean through formalized Core semantics
 
+Examples of the first layer:
+
+- the type system is sound
+- ownership and linearity rules are coherent
+- capability and trust rules are preserved
+- lowering from Core to SSA preserves meaning
+
+Examples of the second layer:
+
+- a function returns the right result
+- a data-structure operation preserves its invariant
+- a parser round-trips with a formatter
+- a critical routine respects a specification
+
 The difference matters:
 
 - proving the language/compiler gives trust in the language rules and compiler pipeline
 - proving selected Concrete programs gives trust in specific pieces of user code
+
+Both matter, but they are not the same. One is language trust and compiler trust. The other is program trust.
 
 That second goal is important because it turns proof-friendliness from a compiler implementation detail into a real language differentiator.
 
@@ -144,3 +167,5 @@ It means:
 - selected Concrete programs can eventually be reasoned about in Lean too
 
 That matters because it validates the language design, validates the compiler architecture choices around Core and SSA, creates a real differentiator for security- and audit-sensitive code, and helps keep future language growth disciplined.
+
+It is also one of the clearest reasons Concrete exists at all: systems languages usually give low-level power, proof systems usually give reasoning power, and Concrete is trying to make those two meet cleanly.

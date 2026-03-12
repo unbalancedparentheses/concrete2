@@ -4,6 +4,8 @@ Status: Open
 
 This note sketches how Concrete programs could eventually be proved in Lean, and what architecture choices make that realistic or unrealistic.
 
+Concrete was created to close a gap between low-level programming and mechanized reasoning. Systems languages usually give low-level power. Proof systems usually give reasoning power. Concrete is trying to make those two meet cleanly by keeping authority, resource, trust, and compiler-meaning boundaries explicit enough that Lean can reason about them.
+
 ## Short Answer
 
 Yes, Concrete functions should be provable in Lean, but the realistic path is not "prove arbitrary surface syntax directly".
@@ -29,6 +31,13 @@ Concrete is already being shaped around:
 - explicit trust/capability/resource boundaries
 
 Those choices are exactly what make a Lean proof story plausible.
+
+There are really two proof layers in play:
+
+- language/compiler proofs ask whether the language rules and compiler pipeline are trustworthy
+- program proofs ask whether a specific Concrete function satisfies its specification
+
+Both matter. The first gives language and compiler trust. The second gives program trust.
 
 ## Why This Is Useful
 
