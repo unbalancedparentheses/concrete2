@@ -52,7 +52,7 @@ Still clearly not implemented:
 
 | Phase | Focus | Status | Blocks |
 |------|-------|--------|--------|
-| **A** | Compiler stability | Active | B, C, D |
+| **A** | Fast feedback and compiler stability | Active | B, C, D |
 | **B** | Semantic cleanup | Active | D |
 | **C** | Tooling and stdlib hardening | Active | later system maturity |
 | **D** | Backend and trust multipliers | Pending | A, most of B |
@@ -61,14 +61,20 @@ Still clearly not implemented:
 
 This list is ordered to match the active execution phases: Phase A first, then Phase B, then Phase C, then the front edge of Phase D.
 
-1. Stabilize loop lowering for mutable aggregates and borrows.
+1. Make the edit-test loop materially faster.
+   - make common local test paths parallel by default where safe instead of effectively serial
+   - add narrower runner modes for one-file, one-subsystem, and one-stdlib-area workflows
+   - make optimized-build targeted regressions easy to run without paying for the full suite
+   - keep the fast path explicit: quick local verification first, full-suite confidence second
+   - done means: ordinary compiler work no longer depends on waiting for the full serial test path after each change
+2. Stabilize loop lowering for mutable aggregates and borrows.
    - stop relying on full aggregate writeback through loop `phi` nodes for mutable aggregate state
    - keep mutable aggregate loop state in stable storage and flow pointers/storage identity rather than whole struct values where possible
    - reduce aggregate `phi` usage to cases that are semantically necessary, preferring scalars or pointer identities over whole-aggregate SSA transport
    - treat borrow+loop+aggregate lowering fragility as a compiler architecture bug, not an LLVM quirk to paper over
    - grow regression coverage around optimized builds and stdlib cases that stress mutable aggregate loops
    - done means: optimized-build loop/borrow/aggregate cases are stable and this class of failure is covered by durable regressions
-2. Finish tightening the builtin-vs-stdlib boundary.
+3. Finish tightening the builtin-vs-stdlib boundary.
    - keep builtins minimal, compiler/runtime-facing, and explicitly non-user-facing
    - remove remaining string-based semantic dispatch in compiler tables, pass-local special cases, and backend helper selection
    - make ordinary language behavior depend on internal identities or explicit language items, not raw function-name matching
@@ -76,25 +82,25 @@ This list is ordered to match the active execution phases: Phase A first, then P
    - treat any compiler rule that changes semantics based on an ordinary public name as architecture debt
    - keep the stdlib bytes-first and low-level rather than letting string-heavy convenience APIs dominate the surface
    - done means: ordinary public names no longer carry compiler-known semantics through raw matching
-3. Add an external LL(1) grammar checker as a standing syntax guardrail.
+4. Add an external LL(1) grammar checker as a standing syntax guardrail.
    - add a compact reference grammar at `grammar/concrete.ebnf`
    - add a small checker at `scripts/check_ll1.py`
    - put it in CI
    - treat parser-state rewind/backtracking regressions as bugs
    - done means: syntax regressions trip a dedicated CI check instead of silently re-entering the parser
-4. Keep deepening and hardening the stdlib.
+5. Keep deepening and hardening the stdlib.
    - deepen `fs`, `net`, and `process`
    - add more failure-path and integration tests
    - keep error, handle, and checked/unchecked conventions uniform
    - add stdlib-aware module-targeted test infrastructure instead of relying only on `std/src/lib.con --test`
    - done means: systems modules have stronger failure-path coverage and stdlib tests can target one area without bootstrapping the whole tree
-5. Improve diagnostics fidelity and rendering quality.
+6. Improve diagnostics fidelity and rendering quality.
    - better range precision
    - notes and secondary labels
    - clearer presentation for transformed constructs
    - reduce brittle string-matched report/test coupling where structured checks are possible
    - done means: diagnostics quality improvements are visible in ordinary compiler output, not only in internal plumbing
-6. Preserve SSA as the only backend boundary and keep the build/project model explicit and boring.
+7. Preserve SSA as the only backend boundary and keep the build/project model explicit and boring.
    - replace raw LLVM string emission with a structured LLVM backend before adding backend plurality
    - keep target-specific work behind an explicit backend abstraction over SSA
    - treat MLIR as a later optional backend family, not the default immediate answer
@@ -104,36 +110,40 @@ This list is ordered to match the active execution phases: Phase A first, then P
 
 The compiler-improvement order should stay:
 
-1. stabilize lowering and mutable-state storage identity
-2. remove remaining string-based semantic dispatch from ordinary language behavior
-3. strengthen the SSA verifier/cleanup boundary into a clearer backend contract
-4. replace textual LLVM emission with a structured backend
-5. only then expand toward backend plurality, deeper caching/incrementality, and more ambitious tooling reuse
+1. speed up the edit-test loop so compiler work can iterate quickly
+2. stabilize lowering and mutable-state storage identity
+3. remove remaining string-based semantic dispatch from ordinary language behavior
+4. strengthen the SSA verifier/cleanup boundary into a clearer backend contract
+5. replace textual LLVM emission with a structured backend
+6. only then expand toward backend plurality, deeper caching/incrementality, and more ambitious tooling reuse
 
 This is the highest-leverage path for turning the current compiler into a stable long-term project rather than just a working bootstrap.
 
 ### Execution Phases
 
-#### Phase A: Compiler Stability
+#### Phase A: Fast Feedback And Compiler Stability
 
-Goal: make the current pipeline boring and hard to break.
+Goal: make the current pipeline fast to iterate on, boring, and hard to break.
 
 Primary surfaces:
+- [docs/TESTING.md](docs/TESTING.md)
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - [docs/PASSES.md](docs/PASSES.md)
+- `run_tests.sh`
 - `Concrete/Lower.lean`
 - `Concrete/SSAVerify.lean`
 - `Concrete/SSACleanup.lean`
 - `Concrete/EmitSSA.lean`
 - `lean_tests/`
 
-1. stabilize loop lowering for mutable aggregates and borrows
-2. stop depending on aggregate writeback through loop `phi` nodes where stable storage identity is the real semantic model
-3. add optimized-build regressions and stdlib coverage for borrow+loop+aggregate cases
-4. tighten SSA invariants around these lowering patterns
+1. make common test paths materially faster through safer parallelization and narrower runner modes
+2. stabilize loop lowering for mutable aggregates and borrows
+3. stop depending on aggregate writeback through loop `phi` nodes where stable storage identity is the real semantic model
+4. add optimized-build regressions and stdlib coverage for borrow+loop+aggregate cases
+5. tighten SSA invariants around these lowering patterns
 
 Exit criterion:
-no known backend-sensitive failures in mutable aggregate loop lowering, including optimized-build stress cases.
+ordinary development no longer depends on a slow serial full-suite loop, and there are no known backend-sensitive failures in mutable aggregate loop lowering, including optimized-build stress cases.
 
 #### Phase B: Semantic Cleanup
 
@@ -205,7 +215,7 @@ backend work no longer feels fragile, and proofs, reports, and tooling all build
 
 ### Why These Phases Matter
 
-- **Phase A** matters because backend-sensitive lowering bugs destroy trust in every other part of the compiler.
+- **Phase A** matters because a slow feedback loop drags down every compiler task, and backend-sensitive lowering bugs destroy trust in every other part of the compiler.
 - **Phase B** matters because a compiler is much easier to trust, prove, and maintain when ordinary names stay ordinary.
 - **Phase C** matters because syntax guardrails, diagnostics, and testing infrastructure are what make a compiler sustainable instead of heroic.
 - **Phase D** matters because this is where Concrete stops being only a working compiler and becomes a trustworthy compiler platform.
@@ -258,6 +268,7 @@ The roadmap should also constrain what not to do before prerequisites are stable
 - do not add surface features that increase grammar cost, audit cost, or proof cost without clear leverage
 - do not grow parallel semantic lowering paths for convenience
 - do not let ordinary public names regain compiler-known meaning through ad-hoc string matching
+- do not parallelize test execution in ways that make failures non-reproducible or hide ordering/resource bugs
 
 These are not style preferences. They are project-protection rules.
 
@@ -328,6 +339,7 @@ For more on these longer-horizon themes, see:
 - textual LLVM emission remains a brittle backend choke point
 - tooling/caching work can regress into ad-hoc duplication if artifacts stop being explicit and reusable
 - audit/report work is still weaker than the language's long-term value proposition requires
+- a slow local test loop will drag down every architecture task even when the technical direction is correct
 
 ## Current Design Constraints
 
@@ -343,4 +355,4 @@ These are current choices that should continue constraining future work unless e
 
 ## Summary
 
-Concrete already has the compiler pipeline and a meaningful stdlib base. The main unfinished work is now structural rather than speculative: stable lowering, smaller semantic surface in the compiler itself, a stronger SSA/backend contract, syntax guardrails, stdlib hardening, diagnostics quality, formalization, and runtime work in that order.
+Concrete already has the compiler pipeline and a meaningful stdlib base. The main unfinished work is now structural rather than speculative: fast feedback loops, stable lowering, smaller semantic surface in the compiler itself, a stronger SSA/backend contract, syntax guardrails, stdlib hardening, diagnostics quality, formalization, and runtime work in that order.
