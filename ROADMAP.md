@@ -52,14 +52,21 @@ Still clearly not implemented:
 
 | Phase | Focus | Status | Blocks |
 |------|-------|--------|--------|
-| **A** | Fast feedback and compiler stability | Active | B, C, D |
+| **A** | Fast feedback and compiler stability | Active; core aggregate-loop storage fix landed, hardening still open | B, C, D |
 | **B** | Semantic cleanup | Active | D |
 | **C** | Tooling and stdlib hardening | Active | later system maturity |
 | **D** | Backend and trust multipliers | Pending | A, most of B |
 
+### Recent Progress
+
+- The core Phase A architecture fix for mutable aggregate loops has landed: aggregate loop variables can now be promoted to stable allocas instead of being transported as whole aggregates through loop `phi` nodes.
+- That lowers the immediate risk, but it does **not** finish Phase A. Faster local testing, optimized-build regressions, stdlib stress coverage, and SSA invariant tightening remain ahead of the LL(1) checker and the rest of Phase C.
+- Read the `Now` list as "remaining highest-priority work", not as "what has never been started."
+
 ### Now
 
 This list is ordered to match the active execution phases: Phase A first, then Phase B, then Phase C, then the front edge of Phase D.
+Within Phase A, the fast feedback loop comes first on purpose: it is the immediate force multiplier for every compiler change that follows.
 
 1. Make the edit-test loop materially faster.
    - make common local test paths parallel by default where safe instead of effectively serial
@@ -67,13 +74,14 @@ This list is ordered to match the active execution phases: Phase A first, then P
    - make optimized-build targeted regressions easy to run without paying for the full suite
    - keep the fast path explicit: quick local verification first, full-suite confidence second
    - done means: ordinary compiler work no longer depends on waiting for the full serial test path after each change
-2. Stabilize loop lowering for mutable aggregates and borrows.
-   - stop relying on full aggregate writeback through loop `phi` nodes for mutable aggregate state
-   - keep mutable aggregate loop state in stable storage and flow pointers/storage identity rather than whole struct values where possible
+2. Finish hardening loop lowering for mutable aggregates and borrows.
+   - the core stable-storage promotion change has landed; keep building on that design instead of reintroducing whole-aggregate loop transport
+   - remove or narrow remaining full aggregate writeback through loop `phi` nodes where stable storage identity is the real semantic model
    - reduce aggregate `phi` usage to cases that are semantically necessary, preferring scalars or pointer identities over whole-aggregate SSA transport
    - treat borrow+loop+aggregate lowering fragility as a compiler architecture bug, not an LLVM quirk to paper over
    - grow regression coverage around optimized builds and stdlib cases that stress mutable aggregate loops
-   - done means: optimized-build loop/borrow/aggregate cases are stable and this class of failure is covered by durable regressions
+   - tighten SSA invariants around the promoted-storage path so the design is mechanically defended, not just empirically passing
+   - done means: optimized-build loop/borrow/aggregate cases are stable, remaining aggregate transport is intentional rather than accidental, and this class of failure is covered by durable regressions
 3. Finish tightening the builtin-vs-stdlib boundary.
    - keep builtins minimal, compiler/runtime-facing, and explicitly non-user-facing
    - remove remaining string-based semantic dispatch in compiler tables, pass-local special cases, and backend helper selection
@@ -111,19 +119,21 @@ This list is ordered to match the active execution phases: Phase A first, then P
 The compiler-improvement order should stay:
 
 1. speed up the edit-test loop so compiler work can iterate quickly
-2. stabilize lowering and mutable-state storage identity
+2. finish hardening lowering around mutable-state storage identity after the core stable-storage fix
 3. remove remaining string-based semantic dispatch from ordinary language behavior
 4. strengthen the SSA verifier/cleanup boundary into a clearer backend contract
 5. replace textual LLVM emission with a structured backend
 6. only then expand toward backend plurality, deeper caching/incrementality, and more ambitious tooling reuse
 
 This is the highest-leverage path for turning the current compiler into a stable long-term project rather than just a working bootstrap.
+If there is a tradeoff between starting a deeper compiler refactor and first making the local test loop materially faster, prefer the faster test loop unless the refactor is needed to unblock basic correctness.
 
 ### Execution Phases
 
 #### Phase A: Fast Feedback And Compiler Stability
 
 Goal: make the current pipeline fast to iterate on, boring, and hard to break.
+Order inside this phase matters: first improve the local development loop, then use that faster loop to finish lowering hardening and regression growth.
 
 Primary surfaces:
 - [docs/TESTING.md](docs/TESTING.md)
@@ -137,10 +147,10 @@ Primary surfaces:
 - `lean_tests/`
 
 1. make common test paths materially faster through safer parallelization and narrower runner modes
-2. stabilize loop lowering for mutable aggregates and borrows
-3. stop depending on aggregate writeback through loop `phi` nodes where stable storage identity is the real semantic model
+2. finish hardening loop lowering for mutable aggregates and borrows after the core stable-storage promotion change
+3. keep shrinking accidental aggregate writeback through loop `phi` nodes where stable storage identity is the real semantic model
 4. add optimized-build regressions and stdlib coverage for borrow+loop+aggregate cases
-5. tighten SSA invariants around these lowering patterns
+5. tighten SSA invariants around these lowering patterns and the promoted-storage path
 
 Exit criterion:
 ordinary development no longer depends on a slow serial full-suite loop, and there are no known backend-sensitive failures in mutable aggregate loop lowering, including optimized-build stress cases.
@@ -330,11 +340,12 @@ For more on these longer-horizon themes, see:
 - Tooling and caching quality depend on explicit reusable artifacts rather than pass-local reconstruction.
 - Multi-backend work is deferred until the SSA boundary stays boring and shared.
 - Loop lowering should preserve stable storage identity for mutable aggregate state instead of normalizing everything into whole-aggregate SSA transport.
+- The new promoted-storage path for aggregate loop variables is the preferred architecture; follow-up work should harden and extend it rather than reintroducing aggregate transport by convenience.
 - Runtime work should not pull frontend semantics or stdlib design into premature complexity.
 
 ## Current Risks
 
-- mutable aggregate lowering can still be too backend-sensitive if storage identity is not preserved
+- mutable aggregate lowering can still be too backend-sensitive if promoted storage is incomplete, under-tested in optimized builds, or weakly defended by SSA invariants
 - remaining string-based semantic logic still expands the trusted computing base unnecessarily
 - textual LLVM emission remains a brittle backend choke point
 - tooling/caching work can regress into ad-hoc duplication if artifacts stop being explicit and reusable
@@ -355,4 +366,4 @@ These are current choices that should continue constraining future work unless e
 
 ## Summary
 
-Concrete already has the compiler pipeline and a meaningful stdlib base. The main unfinished work is now structural rather than speculative: fast feedback loops, stable lowering, smaller semantic surface in the compiler itself, a stronger SSA/backend contract, syntax guardrails, stdlib hardening, diagnostics quality, formalization, and runtime work in that order.
+Concrete already has the compiler pipeline and a meaningful stdlib base. The main unfinished work is now structural rather than speculative: faster feedback loops, hardening the new stable-storage lowering direction, shrinking the compiler's semantic surface, strengthening the SSA/backend contract, adding syntax guardrails, hardening the stdlib, improving diagnostics quality, and then pushing formalization and runtime work in that order.
