@@ -103,6 +103,51 @@ run_ok() {
     JOB_FILES+=("$result_file")
 }
 
+# Compile to LLVM IR then link with clang -O2 and check output
+run_ok_O2_worker() {
+    local file="$1"
+    local expected="$2"
+    local result_file="$3"
+    local name
+    name=$(path_key "${file%.con}")
+    local llpath="$TMPDIR/${name}.ll"
+    local out="$TMPDIR/${name}_O2"
+
+    local llvm_ir
+    if ! llvm_ir=$($COMPILER "$file" --emit-llvm 2>&1); then
+        { echo "FAIL"; echo "FAIL  $file -O2 — emit-llvm failed"; } > "$result_file"
+        return
+    fi
+    echo "$llvm_ir" > "$llpath"
+    if ! clang "$llpath" -o "$out" -O2 -Wno-override-module > /dev/null 2>&1; then
+        { echo "FAIL"; echo "FAIL  $file -O2 — clang -O2 failed"; } > "$result_file"
+        return
+    fi
+    local actual
+    actual=$("$out" 2>&1) || true
+    if [ "$actual" = "$expected" ]; then
+        { echo "PASS"; echo "  ok  $file -O2 => $expected"; } > "$result_file"
+    else
+        { echo "FAIL"; echo "FAIL  $file -O2 — expected '$expected', got '$actual'"; } > "$result_file"
+    fi
+}
+
+run_ok_O2() {
+    local file="$1"
+    local expected="$2"
+    if [ "$TEST_JOBS" -le 1 ]; then
+        local result_file="$JOBDIR/$$.$RANDOM.result"
+        run_ok_O2_worker "$file" "$expected" "$result_file"
+        record_result "$result_file"
+        return
+    fi
+    local result_file="$JOBDIR/$$.$RANDOM.result"
+    throttle_jobs
+    (run_ok_O2_worker "$file" "$expected" "$result_file") &
+    JOB_PIDS+=("$!")
+    JOB_FILES+=("$result_file")
+}
+
 # Negative tests: should fail to compile with a specific error substring
 run_err_worker() {
     local file="$1"
@@ -1019,6 +1064,11 @@ else
     echo "$ssa_output"
     FAIL=$((FAIL + 1))
 fi
+
+# --- Category 2b: Optimized-build (-O2) regression for aggregate loop lowering ---
+run_ok_O2 "$TESTDIR/struct_loop_field_assign.con" 42
+run_ok_O2 "$TESTDIR/struct_loop_break.con"        42
+run_ok_O2 "$TESTDIR/struct_nested_loop.con"        42
 
 # --- Category 3: Cross-representation consistency ---
 

@@ -59,8 +59,11 @@ Still clearly not implemented:
 
 ### Recent Progress
 
-- The core Phase A architecture fix for mutable aggregate loops has landed: aggregate loop variables can now be promoted to stable allocas instead of being transported as whole aggregates through loop `phi` nodes.
-- That lowers the immediate risk, but it does **not** finish Phase A. Faster local testing, optimized-build regressions, stdlib stress coverage, and SSA invariant tightening remain ahead of the LL(1) checker and the rest of Phase C.
+- The core Phase A architecture fix for mutable aggregate loops has landed (commit `e68acc0`): aggregate loop variables are promoted to entry-block allocas instead of flowing through `phi` nodes. Field assignment GEPs directly into stable storage — no temp-alloca round-trip, no unbounded stack growth.
+- Measured on representative cases: aggregate phis eliminated (0 across all loop tests), allocas reduced from 4 in-loop to 2 in-entry, fieldAssign allocas hoisted for non-promoted path too.
+- Explicit `-O2` regression tests added for all three struct-loop patterns (simple, break, nested).
+- **Remaining aggregate phi site**: if-else branch merging still creates whole-aggregate `phi` for struct variables modified in branches. This is less critical (no stack growth, happens once per branch join) but is the next target for Phase A item 2.
+- That lowers the immediate risk, but it does **not** finish Phase A. Faster local testing, broader optimized-build regressions, stdlib stress coverage, and SSA invariant tightening remain ahead of the LL(1) checker and the rest of Phase C.
 - Read the `Now` list as "remaining highest-priority work", not as "what has never been started."
 
 ### Now
