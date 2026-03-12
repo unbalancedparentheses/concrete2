@@ -16,8 +16,9 @@ The project also now has:
 - explicit `trusted fn` / `trusted impl` boundaries for containing internal pointer-level implementation unsafety without leaking `Unsafe` into callers
 - a real stdlib foundation (`vec`, `string`, `io`, `bytes`, `slice`, `text`, `path`, `fs`) plus the systems layer (`env`, `process`, `net`)
 - a utility layer (`fmt`, `hash`, `rand`, `time`, `parse`, `test`) over the low-level core
-- foundational collections in place (`Vec`, `HashMap`, `HashSet`), with the next collection work aimed at queues, heaps, ordered maps/sets, and bitsets rather than broad sprawl
+- foundational collections (`Vec`, `HashMap`, `HashSet`) plus extended collections (`Deque`, `BinaryHeap`, `OrderedMap`, `OrderedSet`, `BitSet`)
 - stdlib hardening and deepening: typed `Result<T, ModuleError>` surfaces, checked/unchecked accessors, systems-module helpers, and in-language `#[test]` execution
+- unified API conventions: `get`/`set` are checked (return `Option`/`bool`), `get_unchecked`/`set_unchecked` are raw; `print`/`println`/`eprintln` use write-based I/O; `Text` and `Slice` use `impl` method syntax
 
 For completed milestones and major landed features, see [CHANGELOG.md](CHANGELOG.md).
 For the detailed compiler pipeline, pass boundaries, and architecture phase reference, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
@@ -38,6 +39,8 @@ Recently completed:
 - fixed lowering bugs exposed by the trusted-extern migration: string constant naming collision across functions, and SSA variable scoping errors (then-branch leakage into else-branch, loop-body leakage past while-loop exits)
 - first testing strategy expansion: parser fuzzing, fmt/parse property tests, Vec/HashMap trace tests
 - testing strategy expansion completed: codegen differential tests (16 assertions across `--emit-ssa`, `--emit-llvm`, `--emit-core`), report consistency tests, 372 passing tests total
+- stdlib API cleanup: unified get/set convention (checked returns Option, unchecked is raw), fixed io.con print semantics, converted Text and Slice to impl methods, Vec::pop now returns Option<T>
+- new collections: Deque (ring buffer), BinaryHeap (priority queue with fn pointer cmp), OrderedMap/OrderedSet (sorted array + binary search), BitSet (u64-word-backed with union/intersect)
 
 ## Priority Snapshot
 
@@ -54,19 +57,19 @@ Recently completed:
    - wrap builtin-shaped hooks in coherent stdlib vocabulary
    - ~~move polymorphic builtin-shaped operations like `abs` toward stdlib traits + monomorphization~~ **done** (abs removed from intrinsics, now Numeric trait)
    - ~~migrate remaining math intrinsics (sqrt, sin, cos, etc.) to stdlib~~ **done** (9 math functions moved to `std/src/math.con` as `trusted extern fn`; compiler builtins removed from Intrinsic, Check, Elab, EmitSSA, Resolve)
-   - clean public API names that still look like low-level runtime hooks
-   - make ownership/borrowing costs more predictable at the stdlib boundary
+   - ~~clean public API names that still look like low-level runtime hooks~~ **done** (unified get/set/get_unchecked/set_unchecked, fixed io.con print semantics, converted Text/Slice to impl methods)
+   - ~~make ownership/borrowing costs more predictable at the stdlib boundary~~ **done** (Vec::pop returns Option<T>, test.con properly drops owned Strings, read_line annotated with(Alloc))
    - revisit the string/conversion boundary separately instead of letting builtin-shaped string APIs linger by default
    - keep the stdlib bytes-first and low-level, rather than letting string-heavy convenience APIs become the default surface
 3. Keep deepening and hardening the existing stdlib surface:
    - deepen `fs`, `net`, and `process`
    - add more failure-path and integration tests
    - keep error, handle, and checked/unchecked conventions uniform
-   - add carefully chosen collections in this order:
-     - deque / ring buffer
-     - priority queue
-     - ordered map / ordered set
-     - bitset / bit array
+   - ~~add carefully chosen collections~~ **done**:
+     - ~~deque / ring buffer~~ **done** (`std.deque.Deque<T>` — ring buffer with power-of-2 masking)
+     - ~~priority queue~~ **done** (`std.heap.BinaryHeap<T>` — fn pointer comparator, sift up/down)
+     - ~~ordered map / ordered set~~ **done** (`std.ordered_map.OrderedMap<K,V>` + `std.ordered_set.OrderedSet<K>` — sorted array with binary search)
+     - ~~bitset / bit array~~ **done** (`std.bitset.BitSet` — u64-word-backed with union/intersect/popcount)
 4. Improve diagnostics fidelity and rendering quality:
    - better range precision
    - notes and secondary labels

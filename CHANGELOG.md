@@ -10,6 +10,27 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Stdlib API cleanup and new collections
+
+- Unified get/set convention across `String`, `Vec`, `Bytes`:
+  - `get` is now checked (returns `Option`), `get_unchecked` is the raw fast path
+  - `set` is now checked (returns `bool`), `set_unchecked` is the raw fast path
+  - `Vec::pop` now returns `Option<T>` instead of unchecked raw access
+- Fixed `std.io` print semantics:
+  - Removed type-suffixed names (`print_int`, `print_bool`, `print_char`, `print_string`, `eprint_string`)
+  - `print` now uses `write(1, ...)` (no trailing newline), `println` writes + newline, added `eprintln` for stderr
+  - `read_line` annotated with `with(Alloc)`
+- Converted `Text` and `Slice` to use `impl` method syntax (from C-style free functions)
+- Fixed `test.con` to properly drop owned `String` messages on all code paths
+- Updated all internal callers (`parse.con`, `fmt.con`, `hash.con`, `test.con`) to use new accessor names
+- Added 5 new collections to the stdlib (33 modules total):
+  - `std.deque.Deque<T>` — ring buffer with power-of-2 masking, push/pop front/back, checked/unchecked access
+  - `std.heap.BinaryHeap<T>` — binary heap with fn-pointer comparator (works as min-heap or max-heap)
+  - `std.ordered_map.OrderedMap<K, V>` — sorted array with binary search, fn-pointer comparator
+  - `std.ordered_set.OrderedSet<K>` — thin wrapper over `OrderedMap<K, u8>`
+  - `std.bitset.BitSet` — u64-word-backed bitset with set/unset/test, popcount, union, intersect
+- All new collections have inline `#[test]` functions covering basic operations, edge cases, and stress tests
+
 ### Testing strategy expansion
 
 - Added parser fuzzing infrastructure (`test_parser_fuzz.sh`): generates random/malformed inputs and verifies the parser never crashes or hangs

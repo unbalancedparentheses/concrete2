@@ -1,91 +1,107 @@
 mod test {
-    import std.io.{print};
+    import std.io.{println};
 
     pub fn assert_eq<T>(expected: T, result: T, message: String) -> bool {
         if expected != result {
             let msg: String = "Assert error:";
-            print(&msg);
+            println(&msg);
             msg.drop();
-            print(&message);
+            println(&message);
+            message.drop();
             return false;
         }
+        message.drop();
         return true;
     }
 
     pub fn assert_ne<T>(a: T, b: T, message: String) -> bool {
         if a == b {
             let msg: String = "Assert error (expected not equal):";
-            print(&msg);
+            println(&msg);
             msg.drop();
-            print(&message);
+            println(&message);
+            message.drop();
             return false;
         }
+        message.drop();
         return true;
     }
 
     pub fn assert_true(value: bool, message: String) -> bool {
         if !value {
             let msg: String = "Assert error (expected true):";
-            print(&msg);
+            println(&msg);
             msg.drop();
-            print(&message);
+            println(&message);
+            message.drop();
             return false;
         }
+        message.drop();
         return true;
     }
 
     pub fn assert_false(value: bool, message: String) -> bool {
         if value {
             let msg: String = "Assert error (expected false):";
-            print(&msg);
+            println(&msg);
             msg.drop();
-            print(&message);
+            println(&message);
+            message.drop();
             return false;
         }
+        message.drop();
         return true;
     }
 
     pub fn assert_gt<T>(a: T, b: T, message: String) -> bool {
         if a <= b {
             let msg: String = "Assert error (expected a > b):";
-            print(&msg);
+            println(&msg);
             msg.drop();
-            print(&message);
+            println(&message);
+            message.drop();
             return false;
         }
+        message.drop();
         return true;
     }
 
     pub fn assert_lt<T>(a: T, b: T, message: String) -> bool {
         if a >= b {
             let msg: String = "Assert error (expected a < b):";
-            print(&msg);
+            println(&msg);
             msg.drop();
-            print(&message);
+            println(&message);
+            message.drop();
             return false;
         }
+        message.drop();
         return true;
     }
 
     pub fn assert_ge<T>(a: T, b: T, message: String) -> bool {
         if a < b {
             let msg: String = "Assert error (expected a >= b):";
-            print(&msg);
+            println(&msg);
             msg.drop();
-            print(&message);
+            println(&message);
+            message.drop();
             return false;
         }
+        message.drop();
         return true;
     }
 
     pub fn assert_le<T>(a: T, b: T, message: String) -> bool {
         if a > b {
             let msg: String = "Assert error (expected a <= b):";
-            print(&msg);
+            println(&msg);
             msg.drop();
-            print(&message);
+            println(&message);
+            message.drop();
             return false;
         }
+        message.drop();
         return true;
     }
 
@@ -95,7 +111,7 @@ mod test {
         }
         let i: u64 = 0;
         while i < a.len {
-            if a.get(i) != b.get(i) {
+            if a.get_unchecked(i) != b.get_unchecked(i) {
                 return false;
             }
             i = i + 1;
@@ -106,11 +122,13 @@ mod test {
     pub fn assert_str_eq(a: &String, b: &String, message: String) -> bool {
         if !str_eq(a, b) {
             let msg: String = "Assert error (strings not equal):";
-            print(&msg);
+            println(&msg);
             msg.drop();
-            print(&message);
+            println(&message);
+            message.drop();
             return false;
         }
+        message.drop();
         return true;
     }
 }

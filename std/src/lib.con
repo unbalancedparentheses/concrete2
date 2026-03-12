@@ -19,6 +19,11 @@ mod std {
     mod hash;
     mod map;
     mod set;
+    mod deque;
+    mod heap;
+    mod ordered_map;
+    mod ordered_set;
+    mod bitset;
     mod rand;
     mod time;
     mod fs;

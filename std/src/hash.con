@@ -25,7 +25,7 @@ mod hash {
 
         let i: u64 = 0;
         while i < data.len {
-            let byte: u8 = data.get(i) as u8;
+            let byte: u8 = data.get_unchecked(i) as u8;
             hash = hash ^ (byte as u64);
             hash = hash * prime;
             i = i + 1;
@@ -81,7 +81,7 @@ mod hash {
         }
         let i: u64 = 0;
         while i < a.len {
-            if a.get(i) != b.get(i) {
+            if a.get_unchecked(i) != b.get_unchecked(i) {
                 return false;
             }
             i = i + 1;

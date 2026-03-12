@@ -10,7 +10,7 @@ mod parse {
         let result: u64 = 0;
         let i: u64 = 0;
         while i < s.len {
-            let c: char = s.get(i);
+            let c: char = s.get_unchecked(i);
             if c < '0' {
                 return Option::<u64>#None;
             }
@@ -30,7 +30,7 @@ mod parse {
 
         let negative: bool = false;
         let start: u64 = 0;
-        let first: char = s.get(0);
+        let first: char = s.get_unchecked(0);
         if first == '-' {
             negative = true;
             start = 1;
@@ -42,7 +42,7 @@ mod parse {
         let result: i64 = 0;
         let i: u64 = start;
         while i < s.len {
-            let c: char = s.get(i);
+            let c: char = s.get_unchecked(i);
             if c < '0' {
                 return Option::<i64>#None;
             }
@@ -86,8 +86,8 @@ mod parse {
         let start: u64 = 0;
         // Skip optional 0x prefix
         if s.len >= 2 {
-            if s.get(0) == '0' {
-                let second: char = s.get(1);
+            if s.get_unchecked(0) == '0' {
+                let second: char = s.get_unchecked(1);
                 if second == 'x' {
                     start = 2;
                 }
@@ -104,7 +104,7 @@ mod parse {
         let result: u64 = 0;
         let i: u64 = start;
         while i < s.len {
-            let val: i64 = hex_char_value(s.get(i));
+            let val: i64 = hex_char_value(s.get_unchecked(i));
             if val < 0 {
                 return Option::<u64>#None;
             }
@@ -122,8 +122,8 @@ mod parse {
         let start: u64 = 0;
         // Skip optional 0b prefix
         if s.len >= 2 {
-            if s.get(0) == '0' {
-                let second: char = s.get(1);
+            if s.get_unchecked(0) == '0' {
+                let second: char = s.get_unchecked(1);
                 if second == 'b' {
                     start = 2;
                 }
@@ -140,7 +140,7 @@ mod parse {
         let result: u64 = 0;
         let i: u64 = start;
         while i < s.len {
-            let c: char = s.get(i);
+            let c: char = s.get_unchecked(i);
             if c == '0' {
                 result = result << 1;
             } else {
@@ -163,8 +163,8 @@ mod parse {
         let start: u64 = 0;
         // Skip optional 0o prefix
         if s.len >= 2 {
-            if s.get(0) == '0' {
-                let second: char = s.get(1);
+            if s.get_unchecked(0) == '0' {
+                let second: char = s.get_unchecked(1);
                 if second == 'o' {
                     start = 2;
                 }
@@ -181,7 +181,7 @@ mod parse {
         let result: u64 = 0;
         let i: u64 = start;
         while i < s.len {
-            let c: char = s.get(i);
+            let c: char = s.get_unchecked(i);
             if c < '0' {
                 return Option::<u64>#None;
             }
@@ -196,10 +196,10 @@ mod parse {
 
     pub fn parse_bool(s: &String) -> Option<bool> {
         if s.len == 4 {
-            if s.get(0) == 't' {
-                if s.get(1) == 'r' {
-                    if s.get(2) == 'u' {
-                        if s.get(3) == 'e' {
+            if s.get_unchecked(0) == 't' {
+                if s.get_unchecked(1) == 'r' {
+                    if s.get_unchecked(2) == 'u' {
+                        if s.get_unchecked(3) == 'e' {
                             return Option::<bool>#Some { value: true };
                         }
                     }
@@ -207,11 +207,11 @@ mod parse {
             }
         }
         if s.len == 5 {
-            if s.get(0) == 'f' {
-                if s.get(1) == 'a' {
-                    if s.get(2) == 'l' {
-                        if s.get(3) == 's' {
-                            if s.get(4) == 'e' {
+            if s.get_unchecked(0) == 'f' {
+                if s.get_unchecked(1) == 'a' {
+                    if s.get_unchecked(2) == 'l' {
+                        if s.get_unchecked(3) == 's' {
+                            if s.get_unchecked(4) == 'e' {
                                 return Option::<bool>#Some { value: false };
                             }
                         }

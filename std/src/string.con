@@ -40,17 +40,19 @@ mod string {
             return self.len == 0;
         }
 
-        pub fn get(&self, at: u64) -> char {
-            let target_ptr: *mut u8 = self.ptr + at;
-            return (*target_ptr) as char;
-        }
-
-        pub fn get_checked(&self, at: u64) -> Option<char> {
+        /// Bounds-checked access. Returns None if index is out of bounds.
+        pub fn get(&self, at: u64) -> Option<char> {
             if at >= self.len {
                 return Option::<char>#None;
             }
             let target_ptr: *mut u8 = self.ptr + at;
             return Option::<char>#Some { value: (*target_ptr) as char };
+        }
+
+        /// Unchecked access. Caller must ensure index is within bounds.
+        pub fn get_unchecked(&self, at: u64) -> char {
+            let target_ptr: *mut u8 = self.ptr + at;
+            return (*target_ptr) as char;
         }
 
         pub fn push_char(&mut self, c: char) with(Alloc) {
@@ -86,9 +88,9 @@ mod string {
     }
 
     #[test]
-    fn test_get_checked_in_bounds() -> i32 with(Alloc) {
+    fn test_get_in_bounds() -> i32 with(Alloc) {
         let s: String = "hello";
-        let result: Option<char> = s.get_checked(0);
+        let result: Option<char> = s.get(0);
         match result {
             Option#Some { value } => {
                 if value != 'h' {
@@ -106,9 +108,9 @@ mod string {
     }
 
     #[test]
-    fn test_get_checked_out_of_bounds() -> i32 with(Alloc) {
+    fn test_get_out_of_bounds() -> i32 with(Alloc) {
         let s: String = "hi";
-        let result: Option<char> = s.get_checked(10);
+        let result: Option<char> = s.get(10);
         match result {
             Option#Some { value } => {
                 s.drop();
@@ -122,9 +124,9 @@ mod string {
     }
 
     #[test]
-    fn test_get_checked_empty() -> i32 with(Alloc) {
+    fn test_get_empty() -> i32 with(Alloc) {
         let s: String = String::new();
-        let result: Option<char> = s.get_checked(0);
+        let result: Option<char> = s.get(0);
         match result {
             Option#Some { value } => {
                 s.drop();

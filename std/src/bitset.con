@@ -1,0 +1,276 @@
+mod bitset {
+    import std.mem.{sizeof};
+    import std.alloc.{realloc,free};
+
+    pub struct BitSet {
+        data: *mut u64,
+        n_bits: u64,
+        cap_words: u64,
+    }
+
+    trusted impl BitSet {
+        pub fn new() -> BitSet {
+            let b: BitSet = BitSet {
+                data: 0 as *mut u64,
+                n_bits: 0,
+                cap_words: 0,
+            };
+            return b;
+        }
+
+        pub fn with_capacity(n: u64) -> BitSet with(Alloc, Unsafe) {
+            let words: u64 = (n + 63) / 64;
+            let ptr: *mut u64 = realloc::<u64>(0 as *mut u64, words);
+            std::libc::memset(ptr as *mut u8, 0, words * 8);
+            let b: BitSet = BitSet {
+                data: ptr,
+                n_bits: n,
+                cap_words: words,
+            };
+            return b;
+        }
+
+        pub fn set(&mut self, bit: u64) with(Alloc, Unsafe) {
+            if bit >= self.n_bits {
+                self.grow(bit + 1);
+            }
+            let word: u64 = bit / 64;
+            let offset: u64 = bit & 63;
+            let word_ptr: *mut u64 = self.data + word;
+            *word_ptr = *word_ptr | (1 << offset);
+        }
+
+        pub fn unset(&mut self, bit: u64) {
+            if bit >= self.n_bits {
+                return;
+            }
+            let word: u64 = bit / 64;
+            let offset: u64 = bit & 63;
+            let word_ptr: *mut u64 = self.data + word;
+            let mask: u64 = 1 << offset;
+            *word_ptr = *word_ptr & (mask ^ 0xFFFFFFFFFFFFFFFF);
+        }
+
+        pub fn test(&self, bit: u64) -> bool {
+            if bit >= self.n_bits {
+                return false;
+            }
+            let word: u64 = bit / 64;
+            let offset: u64 = bit & 63;
+            let word_ptr: *mut u64 = self.data + word;
+            return (*word_ptr & (1 << offset)) != 0;
+        }
+
+        /// Count the number of set bits (popcount).
+        pub fn count(&self) -> u64 {
+            let total: u64 = 0;
+            let i: u64 = 0;
+            while i < self.cap_words {
+                let word_ptr: *mut u64 = self.data + i;
+                let w: u64 = *word_ptr;
+                // Kernighan's bit counting
+                while w != 0 {
+                    w = w & (w - 1);
+                    total = total + 1;
+                }
+                i = i + 1;
+            }
+            return total;
+        }
+
+        /// In-place union: self |= other.
+        pub fn union(&mut self, other: &BitSet) with(Alloc, Unsafe) {
+            if other.n_bits > self.n_bits {
+                self.grow(other.n_bits);
+            }
+            let i: u64 = 0;
+            while i < other.cap_words {
+                let self_ptr: *mut u64 = self.data + i;
+                let other_ptr: *mut u64 = other.data + i;
+                *self_ptr = *self_ptr | *other_ptr;
+                i = i + 1;
+            }
+        }
+
+        /// In-place intersection: self &= other.
+        pub fn intersect(&mut self, other: &BitSet) {
+            let min_words: u64 = self.cap_words;
+            if other.cap_words < min_words {
+                min_words = other.cap_words;
+            }
+            let i: u64 = 0;
+            while i < min_words {
+                let self_ptr: *mut u64 = self.data + i;
+                let other_ptr: *mut u64 = other.data + i;
+                *self_ptr = *self_ptr & *other_ptr;
+                i = i + 1;
+            }
+            // Zero out remaining words in self
+            while i < self.cap_words {
+                let self_ptr: *mut u64 = self.data + i;
+                *self_ptr = 0;
+                i = i + 1;
+            }
+        }
+
+        pub fn len(&self) -> u64 {
+            return self.n_bits;
+        }
+
+        pub fn clear(&mut self) with(Unsafe) {
+            if self.cap_words > 0 {
+                std::libc::memset(self.data as *mut u8, 0, self.cap_words * 8);
+            }
+        }
+
+        fn grow(&mut self, needed_bits: u64) with(Alloc, Unsafe) {
+            let needed_words: u64 = (needed_bits + 63) / 64;
+            let new_words: u64 = std::math::max::<u64>(needed_words, std::math::max::<u64>(self.cap_words, 1) * 2);
+            let new_ptr: *mut u64 = realloc::<u64>(0 as *mut u64, new_words);
+            // Zero the new buffer
+            std::libc::memset(new_ptr as *mut u8, 0, new_words * 8);
+            // Copy old data
+            if self.cap_words > 0 {
+                std::libc::memcpy(new_ptr as *mut u8, self.data as *const u8, self.cap_words * 8);
+                free::<u64>(self.data);
+            }
+            self.data = new_ptr;
+            self.cap_words = new_words;
+            self.n_bits = needed_bits;
+        }
+
+        pub fn drop(self) with(Alloc) {
+            if self.cap_words > 0 {
+                free::<u64>(self.data);
+            }
+        }
+    }
+
+    import std.test.{assert_eq, assert_true};
+
+    #[test]
+    fn test_set_and_test() -> i32 with(Alloc, Unsafe) {
+        let mut b: BitSet = BitSet::new();
+        b.set(0);
+        b.set(5);
+        b.set(63);
+        b.set(64);
+
+        if !b.test(0) { b.drop(); return 1; }
+        if !b.test(5) { b.drop(); return 1; }
+        if !b.test(63) { b.drop(); return 1; }
+        if !b.test(64) { b.drop(); return 1; }
+        if b.test(1) { b.drop(); return 1; }
+        if b.test(100) { b.drop(); return 1; }
+
+        b.drop();
+        return 0;
+    }
+
+    #[test]
+    fn test_unset() -> i32 with(Alloc, Unsafe) {
+        let mut b: BitSet = BitSet::new();
+        b.set(10);
+        if !b.test(10) { b.drop(); return 1; }
+        b.unset(10);
+        if b.test(10) { b.drop(); return 1; }
+        b.drop();
+        return 0;
+    }
+
+    #[test]
+    fn test_count() -> i32 with(Alloc, Unsafe) {
+        let mut b: BitSet = BitSet::new();
+        b.set(0);
+        b.set(1);
+        b.set(2);
+        b.set(100);
+
+        if !assert_eq::<u64>(b.count(), 4, "count should be 4") {
+            b.drop();
+            return 1;
+        }
+
+        b.unset(1);
+        if !assert_eq::<u64>(b.count(), 3, "count should be 3 after unset") {
+            b.drop();
+            return 1;
+        }
+
+        b.drop();
+        return 0;
+    }
+
+    #[test]
+    fn test_union() -> i32 with(Alloc, Unsafe) {
+        let mut a: BitSet = BitSet::new();
+        a.set(0);
+        a.set(2);
+
+        let mut b: BitSet = BitSet::new();
+        b.set(1);
+        b.set(2);
+        b.set(3);
+
+        a.union(&b);
+
+        // Should have bits 0, 1, 2, 3
+        if !assert_eq::<u64>(a.count(), 4, "union should have 4 bits set") {
+            a.drop();
+            b.drop();
+            return 1;
+        }
+        if !a.test(0) { a.drop(); b.drop(); return 1; }
+        if !a.test(1) { a.drop(); b.drop(); return 1; }
+        if !a.test(2) { a.drop(); b.drop(); return 1; }
+        if !a.test(3) { a.drop(); b.drop(); return 1; }
+
+        a.drop();
+        b.drop();
+        return 0;
+    }
+
+    #[test]
+    fn test_intersect() -> i32 with(Alloc, Unsafe) {
+        let mut a: BitSet = BitSet::new();
+        a.set(0);
+        a.set(1);
+        a.set(2);
+
+        let mut b: BitSet = BitSet::new();
+        b.set(1);
+        b.set(2);
+        b.set(3);
+
+        a.intersect(&b);
+
+        // Should have only bits 1, 2
+        if !assert_eq::<u64>(a.count(), 2, "intersect should have 2 bits set") {
+            a.drop();
+            b.drop();
+            return 1;
+        }
+        if a.test(0) { a.drop(); b.drop(); return 1; }
+        if !a.test(1) { a.drop(); b.drop(); return 1; }
+        if !a.test(2) { a.drop(); b.drop(); return 1; }
+        if a.test(3) { a.drop(); b.drop(); return 1; }
+
+        a.drop();
+        b.drop();
+        return 0;
+    }
+
+    #[test]
+    fn test_with_capacity() -> i32 with(Alloc, Unsafe) {
+        let mut b: BitSet = BitSet::with_capacity(128);
+        b.set(0);
+        b.set(127);
+
+        if !b.test(0) { b.drop(); return 1; }
+        if !b.test(127) { b.drop(); return 1; }
+        if b.test(64) { b.drop(); return 1; }
+
+        b.drop();
+        return 0;
+    }
+}

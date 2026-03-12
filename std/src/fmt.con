@@ -29,8 +29,8 @@ mod fmt {
         let i: u64 = 0;
         let j: u64 = buf.len - 1;
         while i < j {
-            let a: char = buf.get(i);
-            let b: char = buf.get(j);
+            let a: char = buf.get_unchecked(i);
+            let b: char = buf.get_unchecked(j);
             let pa: *mut u8 = buf.ptr + i;
             let pb: *mut u8 = buf.ptr + j;
             *pa = b as u8;
@@ -61,8 +61,8 @@ mod fmt {
         let i: u64 = 0;
         let j: u64 = buf.len - 1;
         while i < j {
-            let a: char = buf.get(i);
-            let b: char = buf.get(j);
+            let a: char = buf.get_unchecked(i);
+            let b: char = buf.get_unchecked(j);
             let pa: *mut u8 = buf.ptr + i;
             let pb: *mut u8 = buf.ptr + j;
             *pa = b as u8;
@@ -104,8 +104,8 @@ mod fmt {
         let i: u64 = 0;
         let j: u64 = buf.len - 1;
         while i < j {
-            let a: char = buf.get(i);
-            let b: char = buf.get(j);
+            let a: char = buf.get_unchecked(i);
+            let b: char = buf.get_unchecked(j);
             let pa: *mut u8 = buf.ptr + i;
             let pb: *mut u8 = buf.ptr + j;
             *pa = b as u8;
@@ -139,8 +139,8 @@ mod fmt {
         let i: u64 = 0;
         let j: u64 = buf.len - 1;
         while i < j {
-            let a: char = buf.get(i);
-            let b: char = buf.get(j);
+            let a: char = buf.get_unchecked(i);
+            let b: char = buf.get_unchecked(j);
             let pa: *mut u8 = buf.ptr + i;
             let pb: *mut u8 = buf.ptr + j;
             *pa = b as u8;
@@ -174,8 +174,8 @@ mod fmt {
         let i: u64 = 0;
         let j: u64 = buf.len - 1;
         while i < j {
-            let a: char = buf.get(i);
-            let b: char = buf.get(j);
+            let a: char = buf.get_unchecked(i);
+            let b: char = buf.get_unchecked(j);
             let pa: *mut u8 = buf.ptr + i;
             let pb: *mut u8 = buf.ptr + j;
             *pa = b as u8;
@@ -202,7 +202,7 @@ mod fmt {
             let result: String = String::new();
             let i: u64 = 0;
             while i < s.len {
-                result.push_char(s.get(i));
+                result.push_char(s.get_unchecked(i));
                 i = i + 1;
             }
             return result;
@@ -219,7 +219,7 @@ mod fmt {
 
         i = 0;
         while i < s.len {
-            result.push_char(s.get(i));
+            result.push_char(s.get_unchecked(i));
             i = i + 1;
         }
 
@@ -231,7 +231,7 @@ mod fmt {
 
         let i: u64 = 0;
         while i < s.len {
-            result.push_char(s.get(i));
+            result.push_char(s.get_unchecked(i));
             i = i + 1;
         }
 
@@ -260,7 +260,7 @@ mod fmt {
         }
         let i: u64 = 0;
         while i < s.len {
-            if s.get(i) != expected.get(i) {
+            if s.get_unchecked(i) != expected.get_unchecked(i) {
                 s.drop();
                 expected.drop();
                 return 1;
@@ -283,7 +283,7 @@ mod fmt {
         }
         let i: u64 = 0;
         while i < s.len {
-            if s.get(i) != expected.get(i) {
+            if s.get_unchecked(i) != expected.get_unchecked(i) {
                 s.drop();
                 expected.drop();
                 return 1;
@@ -304,7 +304,7 @@ mod fmt {
             expected.drop();
             return 1;
         }
-        if s.get(0) != '0' {
+        if s.get_unchecked(0) != '0' {
             s.drop();
             expected.drop();
             return 1;
@@ -325,7 +325,7 @@ mod fmt {
         }
         let i: u64 = 0;
         while i < s.len {
-            if s.get(i) != expected.get(i) {
+            if s.get_unchecked(i) != expected.get_unchecked(i) {
                 s.drop();
                 expected.drop();
                 return 1;
@@ -348,7 +348,7 @@ mod fmt {
         }
         let i: u64 = 0;
         while i < s.len {
-            if s.get(i) != expected.get(i) {
+            if s.get_unchecked(i) != expected.get_unchecked(i) {
                 s.drop();
                 expected.drop();
                 return 1;
@@ -392,7 +392,7 @@ mod fmt {
         }
         let i: u64 = 0;
         while i < padded.len {
-            if padded.get(i) != expected.get(i) {
+            if padded.get_unchecked(i) != expected.get_unchecked(i) {
                 s.drop();
                 padded.drop();
                 expected.drop();
@@ -419,7 +419,7 @@ mod fmt {
         }
         let i: u64 = 0;
         while i < padded.len {
-            if padded.get(i) != expected.get(i) {
+            if padded.get_unchecked(i) != expected.get_unchecked(i) {
                 s.drop();
                 padded.drop();
                 expected.drop();

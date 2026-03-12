@@ -4,31 +4,43 @@ mod slice {
         len: u64,
     }
 
+    trusted impl<T> Slice<T> {
+        pub fn get_unchecked(&self, at: u64) -> &T {
+            let target_ptr: *const T = self.ptr + at;
+            return target_ptr as &T;
+        }
+
+        pub fn len(&self) -> u64 {
+            return self.len;
+        }
+
+        pub fn is_empty(&self) -> bool {
+            return self.len == 0;
+        }
+    }
+
     pub struct MutSlice<T> {
         ptr: *mut T,
         len: u64,
     }
 
-    pub trusted fn slice_get<T>(s: &Slice<T>, at: u64) -> &T {
-        let target_ptr: *const T = s.ptr + at;
-        return target_ptr as &T;
-    }
+    trusted impl<T> MutSlice<T> {
+        pub fn get_unchecked(&self, at: u64) -> &T {
+            let target_ptr: *mut T = self.ptr + at;
+            return target_ptr as &T;
+        }
 
-    pub fn slice_len<T>(s: &Slice<T>) -> u64 {
-        return s.len;
-    }
+        pub fn set_unchecked(&mut self, at: u64, value: T) {
+            let target_ptr: *mut T = self.ptr + at;
+            *target_ptr = value;
+        }
 
-    pub fn slice_is_empty<T>(s: &Slice<T>) -> bool {
-        return s.len == 0;
-    }
+        pub fn len(&self) -> u64 {
+            return self.len;
+        }
 
-    pub trusted fn mut_slice_get<T>(s: &MutSlice<T>, at: u64) -> &T {
-        let target_ptr: *mut T = s.ptr + at;
-        return target_ptr as &T;
-    }
-
-    pub trusted fn mut_slice_set<T>(s: &mut MutSlice<T>, at: u64, value: T) {
-        let target_ptr: *mut T = s.ptr + at;
-        *target_ptr = value;
+        pub fn is_empty(&self) -> bool {
+            return self.len == 0;
+        }
     }
 }

@@ -50,97 +50,43 @@ mod io {
         pub fn close(self) with(Unsafe) {
             std::libc::fclose(self.ptr);
         }
-
-        // TODO: read
     }
 
-    pub fn print(value: &String) with(Unsafe, Console) {
+    /// Write a string to stdout without a trailing newline.
+    pub trusted fn print(value: &String) with(Console) {
         if value.len > 0 {
-            std::libc::puts(value.ptr);
+            std::libc::write(1, value.ptr as *const u8, value.len);
         }
     }
 
-    pub fn println(value: &String) with(Unsafe, Console) {
+    /// Write a string to stdout followed by a newline.
+    pub trusted fn println(value: &String) with(Console) {
         if value.len > 0 {
-            std::libc::puts(value.ptr);
+            std::libc::write(1, value.ptr as *const u8, value.len);
         }
+        let nl: String = "\n";
+        std::libc::write(1, nl.ptr as *const u8, 1);
+        nl.drop();
     }
 
-    pub trusted fn print_int(value: i64) with(Console) {
-        // Print an integer by converting digits
-        if value < 0 {
-            let dash: String = "-";
-            std::libc::puts(dash.ptr);
-            dash.drop();
-            print_int(0 - value);
-            return;
-        }
-
-        if value == 0 {
-            let zero: String = "0";
-            std::libc::puts(zero.ptr);
-            zero.drop();
-            return;
-        }
-
-        let buf: String = String::new();
-        let n: i64 = value;
-        while n > 0 {
-            let digit: char = std::string::int_to_digit::<i64>(n - ((n / 10) * 10));
-            buf.push_char(digit);
-            n = n / 10;
-        }
-
-        // Reverse the buffer
-        let i: u64 = 0;
-        let j: u64 = buf.len - 1;
-        while i < j {
-            let a: char = buf.get(i);
-            let b: char = buf.get(j);
-            let pa: *mut u8 = buf.ptr + i;
-            let pb: *mut u8 = buf.ptr + j;
-            *pa = b as u8;
-            *pb = a as u8;
-            i = i + 1;
-            j = j - 1;
-        }
-
-        std::libc::puts(buf.ptr);
-        buf.drop();
-    }
-
+    /// Write a string to stderr without a trailing newline.
     pub trusted fn eprint(value: &String) with(Console) {
         if value.len > 0 {
-            let stderr: *const u8 = std::libc::fdopen(2, "w" as *mut u8);
-            std::libc::fwrite(value.ptr as *const u8, 1, value.len, stderr);
+            std::libc::write(2, value.ptr as *const u8, value.len);
         }
     }
 
-    pub trusted fn print_string(s: &String) with(Console) {
-        std::libc::write(1, s.ptr as *const u8, s.len);
-    }
-
-    pub trusted fn eprint_string(s: &String) with(Console) {
-        std::libc::write(2, s.ptr as *const u8, s.len);
-    }
-
-    pub trusted fn print_bool(x: bool) with(Console) {
-        if x {
-            let s: String = "true\n";
-            std::libc::write(1, s.ptr as *const u8, s.len);
-            s.drop();
-        } else {
-            let s: String = "false\n";
-            std::libc::write(1, s.ptr as *const u8, s.len);
-            s.drop();
+    /// Write a string to stderr followed by a newline.
+    pub trusted fn eprintln(value: &String) with(Console) {
+        if value.len > 0 {
+            std::libc::write(2, value.ptr as *const u8, value.len);
         }
+        let nl: String = "\n";
+        std::libc::write(2, nl.ptr as *const u8, 1);
+        nl.drop();
     }
 
-    pub trusted fn print_char(c: i64) with(Console) {
-        std::libc::putchar(c as i32);
-    }
-
-    pub trusted fn read_line() -> String with(Console) {
+    pub trusted fn read_line() -> String with(Console, Alloc) {
         let buf: String = String::new();
         while true {
             let ch: u8 = 0;
