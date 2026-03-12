@@ -158,6 +158,9 @@ run_ok "$TESTDIR/recursion.con"          479001600
 run_ok "$TESTDIR/nested_calls.con"       42
 run_ok "$TESTDIR/struct_basic.con"       7
 run_ok "$TESTDIR/struct_field_assign.con" 33
+run_ok "$TESTDIR/struct_loop_field_assign.con" 42
+run_ok "$TESTDIR/struct_loop_break.con"  42
+run_ok "$TESTDIR/struct_nested_loop.con" 42
 run_ok "$TESTDIR/linear_consume.con"     42
 run_ok "$TESTDIR/linear_branch_agree.con" 42
 run_ok "$TESTDIR/linear_loop_inner.con"  3
@@ -1002,6 +1005,17 @@ if echo "$ssa_output" | grep -q "store i64"; then
     PASS=$((PASS + 1))
 else
     echo "FAIL  borrow_mut.con --emit-ssa missing store i64"
+    echo "$ssa_output"
+    FAIL=$((FAIL + 1))
+fi
+
+# Struct-in-loop: aggregate promoted to stable alloca (no aggregate phi)
+ssa_output=$($COMPILER "$TESTDIR/struct_loop_field_assign.con" --emit-ssa 2>&1)
+if echo "$ssa_output" | grep -q "alloca %Point" && ! echo "$ssa_output" | grep -q "phi %Point"; then
+    echo "  ok  struct_loop_field_assign.con --emit-ssa aggregate promoted to alloca (no phi %Point)"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  struct_loop_field_assign.con --emit-ssa expected alloca %Point but no phi %Point"
     echo "$ssa_output"
     FAIL=$((FAIL + 1))
 fi

@@ -57,6 +57,10 @@ structure LowerState where
   /-- Allocas that must be hoisted to the function entry block.
       Prevents unbounded stack growth when &mut borrows occur in loops. -/
   entryAllocas : List SInst := []
+  /-- Aggregate variables promoted to stable allocas during loops.
+      Maps (varName, allocaReg, ty). Field assignment GEPs directly into
+      the alloca instead of phi-transporting whole struct values. -/
+  promotedAllocas : List (String × String × Ty) := []
 
 abbrev LowerM := ExceptT String (StateM LowerState)
 
@@ -96,15 +100,28 @@ private def startBlock (label : String) : LowerM Unit := do
 
 private def setVar (name : String) (val : SVal) : LowerM Unit := do
   let s ← getState
-  let vars' := if s.vars.any fun (n, _) => n == name then
-    s.vars.map fun (n, v) => if n == name then (n, val) else (n, v)
-  else
-    s.vars ++ [(name, val)]
-  setState { s with vars := vars' }
+  -- If promoted to stable alloca, store there instead of updating var map
+  match s.promotedAllocas.find? fun (n, _, _) => n == name with
+  | some (_, allocaReg, ty) =>
+    emit (.store val (.reg allocaReg ty))
+  | none =>
+    let vars' := if s.vars.any fun (n, _) => n == name then
+      s.vars.map fun (n, v) => if n == name then (n, val) else (n, v)
+    else
+      s.vars ++ [(name, val)]
+    setState { s with vars := vars' }
 
 private def lookupVar (name : String) : LowerM (Option SVal) := do
   let s ← getState
-  return s.vars.lookup name
+  -- Check if this variable is promoted to a stable alloca (aggregate in loop)
+  match s.promotedAllocas.find? fun (n, _, _) => n == name with
+  | some (_, allocaReg, ty) =>
+    -- Load current value from the alloca
+    let loadDst ← freshReg "pload."
+    emit (.load loadDst (.reg allocaReg ty) ty)
+    return some (.reg loadDst ty)
+  | none =>
+    return s.vars.lookup name
 
 private def internString (val : String) : LowerM String := do
   let s ← getState
@@ -185,6 +202,49 @@ private def getLayoutCtx : LowerM Layout.Ctx := do
 private def computeTySize (ty : Ty) : LowerM Nat := do
   let ctx ← getLayoutCtx
   return Layout.tySize ctx ty
+
+/-- Is this type an aggregate that should use stable alloca storage
+    instead of phi-transporting through loop headers?
+    Only true value-typed aggregates (structs, enums, strings, vecs, arrays)
+    should be promoted. References and pointers are 8-byte scalars — use phi. -/
+private def isAggregateForPromotion (ty : Ty) : LowerM Bool := do
+  match ty with
+  -- References/pointers are 8-byte scalars — NOT aggregates for promotion
+  | .ref _ | .refMut _ | .ptrMut _ | .ptrConst _ => return false
+  -- Function pointers, heap pointers are scalars
+  | .fn_ _ _ _ | .heap _ | .heapArray _ => return false
+  -- Primitive scalars
+  | .int | .uint | .i8 | .i16 | .i32 | .u8 | .u16 | .u32 => return false
+  | .float32 | .float64 | .bool | .char | .unit => return false
+  | .never | .placeholder | .typeVar _ => return false
+  -- True aggregates: structs, enums, strings, vecs, hashmaps, arrays
+  | .string => return true
+  | .array _ _ => return true
+  | .generic "Vec" _ | .generic "HashMap" _ => return true
+  | .generic "Heap" _ | .generic "HeapArray" _ => return false
+  | .named name =>
+    let ctx ← getLayoutCtx
+    return (Layout.lookupStruct ctx name).isSome || (Layout.lookupEnum ctx name).isSome
+  | .generic name _ =>
+    let ctx ← getLayoutCtx
+    return (Layout.lookupStruct ctx name).isSome || (Layout.lookupEnum ctx name).isSome
+
+/-- Check if a variable is currently promoted to a stable alloca. -/
+private def isPromoted (name : String) : LowerM (Option (String × Ty)) := do
+  let s ← getState
+  match s.promotedAllocas.find? fun (n, _, _) => n == name with
+  | some (_, reg, ty) => return some (reg, ty)
+  | none => return none
+
+/-- Add a promoted alloca for a variable. -/
+private def addPromotedAlloca (name : String) (allocaReg : String) (ty : Ty) : LowerM Unit := do
+  let s ← getState
+  setState { s with promotedAllocas := s.promotedAllocas ++ [(name, allocaReg, ty)] }
+
+/-- Remove promoted allocas by name (at loop exit). -/
+private def removePromotedAllocas (names : List String) : LowerM Unit := do
+  let s ← getState
+  setState { s with promotedAllocas := s.promotedAllocas.filter fun (n, _, _) => !names.contains n }
 
 /-- Get byte offset of a field within a struct definition. Delegates to Layout.fieldOffset. -/
 private def fieldByteOffset (tyName : String) (fieldName : String) : LowerM Nat := do
@@ -752,13 +812,32 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
     let preLoopVars ← snapshotVars
     let preLoopLabel ← getCurrentLabel
     let mut headerPhis : List (String × String × SVal × Ty) := []
+    let mut allPromotedExpr : List String := []
+    let mut newlyPromotedExpr : List String := []
+    -- Promote aggregate variables before entering the loop
+    for (name, val) in preLoopVars do
+      let ty := val.ty
+      -- Skip if already promoted by an outer loop
+      let alreadyPromoted ← isPromoted name
+      if alreadyPromoted.isSome then
+        allPromotedExpr := allPromotedExpr ++ [name]
+      else
+        let isAgg ← isAggregateForPromotion ty
+        if isAgg then
+          let allocaReg ← freshReg "agg."
+          emitEntryAlloca (.alloca allocaReg ty)
+          emit (.store val (.reg allocaReg ty))
+          addPromotedAlloca name allocaReg ty
+          allPromotedExpr := allPromotedExpr ++ [name]
+          newlyPromotedExpr := newlyPromotedExpr ++ [name]
     terminateBlock (.br headerLabel)
     startBlock headerLabel
     for (name, val) in preLoopVars do
       let ty := val.ty
-      let phiReg ← freshReg "phi."
-      setVar name (.reg phiReg ty)
-      headerPhis := headerPhis ++ [(name, phiReg, val, ty)]
+      if !allPromotedExpr.contains name then
+        let phiReg ← freshReg "phi."
+        setVar name (.reg phiReg ty)
+        headerPhis := headerPhis ++ [(name, phiReg, val, ty)]
     let loopInfo : LoopInfo := {
       headerLabel := headerLabel
       exitLabel := exitLabel
@@ -842,6 +921,15 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
       terminateBlock (.br finalLabel)
       -- Final block: load result
       startBlock finalLabel
+      -- Un-promote aggregate variables
+      for name in newlyPromotedExpr do
+        match ← isPromoted name with
+        | some (allocaReg, ty) =>
+          let loadDst ← freshReg "unpro."
+          emit (.load loadDst (.reg allocaReg ty) ty)
+          removePromotedAllocas [name]
+          setVar name (.reg loadDst ty)
+        | none => pure ()
       let loadDst ← freshReg "wload."
       emit (.load loadDst (.reg resultSlot _ty) _ty)
       return .reg loadDst _ty
@@ -851,6 +939,15 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
       -- Replace entire var map (removes body-local vars)
       let s ← getState
       setState { s with vars := headerPhis.map fun (name, phiReg, _, ty) => (name, SVal.reg phiReg ty) }
+      -- Un-promote aggregate variables
+      for name in newlyPromotedExpr do
+        match ← isPromoted name with
+        | some (allocaReg, ty) =>
+          let loadDst ← freshReg "unpro."
+          emit (.load loadDst (.reg allocaReg ty) ty)
+          removePromotedAllocas [name]
+          setVar name (.reg loadDst ty)
+        | none => pure ()
       -- Store else value into result slot (loop ended without break)
       if !_elseBody.isEmpty then
         lowerStmts _elseBody
@@ -972,15 +1069,36 @@ partial def lowerStmt (stmt : CStmt) : LowerM Unit := do
     -- Snapshot pre-loop state
     let preLoopVars ← snapshotVars
     let preLoopLabel ← getCurrentLabel
-    -- Create header phis for all live variables
+    -- Partition live variables: aggregate types get stable allocas,
+    -- scalar types get phi nodes as before.
     let mut headerPhis : List (String × String × SVal × Ty) := []
-    terminateBlock (.br headerLabel)
-    startBlock headerLabel
+    let mut allPromotedNames : List String := []  -- all aggregate names (including outer)
+    let mut newlyPromotedNames : List String := [] -- only promoted by THIS loop
+    -- Promote aggregate variables BEFORE terminating the block (stores go here)
     for (name, val) in preLoopVars do
       let ty := val.ty
-      let phiReg ← freshReg "phi."
-      setVar name (.reg phiReg ty)
-      headerPhis := headerPhis ++ [(name, phiReg, val, ty)]
+      -- Skip if already promoted by an outer loop
+      let alreadyPromoted ← isPromoted name
+      if alreadyPromoted.isSome then
+        allPromotedNames := allPromotedNames ++ [name]
+      else
+        let isAgg ← isAggregateForPromotion ty
+        if isAgg then
+          let allocaReg ← freshReg "agg."
+          emitEntryAlloca (.alloca allocaReg ty)
+          emit (.store val (.reg allocaReg ty))
+          addPromotedAlloca name allocaReg ty
+          allPromotedNames := allPromotedNames ++ [name]
+          newlyPromotedNames := newlyPromotedNames ++ [name]
+    terminateBlock (.br headerLabel)
+    startBlock headerLabel
+    -- Create phi nodes only for scalar variables
+    for (name, val) in preLoopVars do
+      let ty := val.ty
+      if !allPromotedNames.contains name then
+        let phiReg ← freshReg "phi."
+        setVar name (.reg phiReg ty)
+        headerPhis := headerPhis ++ [(name, phiReg, val, ty)]
     let loopInfo : LoopInfo := {
       headerLabel := headerLabel
       exitLabel := exitLabel
@@ -1069,11 +1187,19 @@ partial def lowerStmt (stmt : CStmt) : LowerM Unit := do
             let exitPhiReg ← freshReg "exit."
             emit (.phi exitPhiReg exitIncoming ty)
             setVar name (.reg exitPhiReg ty)
+      -- Un-promote aggregate variables at for-loop exit (only this loop's)
+      for name in newlyPromotedNames do
+        match ← isPromoted name with
+        | some (allocaReg, ty) =>
+          let loadDst ← freshReg "unpro."
+          emit (.load loadDst (.reg allocaReg ty) ty)
+          removePromotedAllocas [name]
+          setVar name (.reg loadDst ty)
+        | none => pure ()
     else do
     -- Pop loop to get break/continue edges
     let loopInfoFinal ← popLoop
-    -- Build header phi instructions
-    -- Incoming edges: (preLoopLabel, preLoopVars) + (bodyEndLabel, bodyEndVars) + continue edges
+    -- Build header phi instructions (only for non-promoted scalar vars)
     let mut headerPhiInsts : List SInst := []
     for (name, phiReg, preVal, ty) in headerPhis do
       let mut incoming : List (SVal × String) := [(preVal, preLoopLabel)]
@@ -1114,6 +1240,17 @@ partial def lowerStmt (stmt : CStmt) : LowerM Unit := do
           let exitPhiReg ← freshReg "exit."
           emit (.phi exitPhiReg exitIncoming ty)
           setVar name (.reg exitPhiReg ty)
+    -- Un-promote aggregate variables: load final values from allocas,
+    -- restore them as SSA values, and remove from promoted set (only this loop's).
+    for name in newlyPromotedNames do
+      match ← isPromoted name with
+      | some (allocaReg, ty) =>
+        let loadDst ← freshReg "unpro."
+        emit (.load loadDst (.reg allocaReg ty) ty)
+        -- Temporarily remove from promoted so setVar writes to var map
+        removePromotedAllocas [name]
+        setVar name (.reg loadDst ty)
+      | none => pure ()
 
   | .fieldAssign obj field value =>
     let fVal ← lowerExpr value
@@ -1138,20 +1275,31 @@ partial def lowerStmt (stmt : CStmt) : LowerM Unit := do
       emit (.gep gepDst oVal [.intConst (Int.ofNat byteOff) .int] .i8)
       emit (.store fVal (.reg gepDst value.ty))
     else
-      -- Struct value: alloca a temporary, mutate the field, load back,
-      -- and update the variable map with the new struct value.
-      let structTy := obj.ty
-      let tmpSlot ← freshReg
-      emit (.alloca tmpSlot structTy)
-      emit (.store oVal (.reg tmpSlot structTy))
-      let gepDst ← freshReg
-      emit (.gep gepDst (.reg tmpSlot structTy) [.intConst (Int.ofNat byteOff) .int] .i8)
-      emit (.store fVal (.reg gepDst value.ty))
-      let newVal ← freshReg
-      emit (.load newVal (.reg tmpSlot structTy) structTy)
-      match obj with
-      | .ident name _ => setVar name (.reg newVal structTy)
-      | _ => pure ()
+      -- Check if the target is a promoted variable (aggregate in loop → stable alloca)
+      let promotedAlloca ← match obj with
+        | .ident name _ => isPromoted name
+        | _ => pure none
+      match promotedAlloca with
+      | some (allocaReg, structTy) =>
+        -- GEP directly into the stable alloca — no store/load round-trip
+        let gepDst ← freshReg
+        emit (.gep gepDst (.reg allocaReg structTy) [.intConst (Int.ofNat byteOff) .int] .i8)
+        emit (.store fVal (.reg gepDst value.ty))
+      | none =>
+        -- Struct value: alloca a temporary, mutate the field, load back,
+        -- and update the variable map with the new struct value.
+        let structTy := obj.ty
+        let tmpSlot ← freshReg
+        emitEntryAlloca (.alloca tmpSlot structTy)
+        emit (.store oVal (.reg tmpSlot structTy))
+        let gepDst ← freshReg
+        emit (.gep gepDst (.reg tmpSlot structTy) [.intConst (Int.ofNat byteOff) .int] .i8)
+        emit (.store fVal (.reg gepDst value.ty))
+        let newVal ← freshReg
+        emit (.load newVal (.reg tmpSlot structTy) structTy)
+        match obj with
+        | .ident name _ => setVar name (.reg newVal structTy)
+        | _ => pure ()
 
   | .derefAssign target value =>
     let tVal ← lowerExpr target
