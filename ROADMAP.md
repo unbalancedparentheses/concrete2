@@ -56,6 +56,7 @@ Still clearly not implemented:
 | **B** | Semantic cleanup | Active | D |
 | **C** | Tooling and stdlib hardening | Active | later system maturity |
 | **D** | Backend and trust multipliers | Pending | A, most of B |
+| **E** | Project and operational maturity | Deferred | C, D |
 
 ### Recent Progress
 
@@ -262,12 +263,43 @@ Primary surfaces:
 Exit criterion:
 backend work no longer feels fragile, and proofs, reports, and tooling all build on the same stable compiler boundaries.
 
+#### Phase E: Project And Operational Maturity
+
+Goal: turn Concrete from a strong compiler project into a durable, distributable, maintainable system.
+
+Primary surfaces:
+- [README.md](README.md)
+- [docs/README.md](docs/README.md)
+- CI config
+- release/build tooling
+- project/package metadata
+- editor/tool integration surfaces
+
+1. make the project and package model operationally solid
+   - define how projects, dependencies, roots, and standard-library integration are expected to work in ordinary use
+2. add release and compatibility discipline
+   - decide what compatibility promises exist for language, stdlib, reports, and tooling surfaces
+   - make breaking changes deliberate instead of ambient
+3. harden reproducibility and CI operations
+   - keep builds and tests reproducible enough to trust failures
+   - make CI/reporting workflows clear, boring, and maintainable
+4. make the distribution and installation story explicit
+   - document and streamline how users obtain, build, and run Concrete
+   - reduce dependence on repo-local tribal knowledge
+5. turn docs and editor/tool integration into maintained product surfaces
+   - keep top-level docs coherent with the actual workflow
+   - decide the expected level of editor/LSP/tool support instead of leaving it accidental
+
+Exit criterion:
+Concrete is not only architecturally strong internally, but also operable, reproducible, documentable, and maintainable as a long-term project.
+
 ### Why These Phases Matter
 
 - **Phase A** matters because a slow feedback loop drags down every compiler task, and backend-sensitive lowering bugs destroy trust in every other part of the compiler.
 - **Phase B** matters because a compiler is much easier to trust, prove, and maintain when ordinary names stay ordinary.
 - **Phase C** matters because syntax guardrails, diagnostics, and testing infrastructure are what make a compiler sustainable instead of heroic.
 - **Phase D** matters because this is where Concrete stops being only a working compiler and becomes a trustworthy compiler platform.
+- **Phase E** matters because long-term projects fail just as easily from weak operational discipline as from weak compiler architecture.
 
 ### Next
 
@@ -285,6 +317,7 @@ backend work no longer feels fragile, and proofs, reports, and tooling all build
    - move toward serialization/caching only on top of already boring pass contracts
    - let tooling consume the same compiler facts rather than growing parallel ad-hoc models
    - use explicit artifacts to enable better test reuse and narrower recompilation instead of keeping all fast paths inside shell orchestration
+6. Prepare for the eventual project/operational maturity phase by keeping package/build/docs decisions explicit instead of accidental.
 
 ### Later
 
@@ -296,6 +329,7 @@ backend work no longer feels fragile, and proofs, reports, and tooling all build
    - structural boundedness reports first
    - abstract cost estimation later
    - never at the cost of clarity in the core language
+6. Project and operational maturity as an explicit phase once the current compiler/tooling architecture is stable enough to productize.
 
 ## Backend Work Order
 
