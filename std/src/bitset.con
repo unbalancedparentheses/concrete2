@@ -4,6 +4,12 @@ mod bitset {
     import std.libc.{memset, memcpy};
     import std.math.{max};
 
+    /// A growable bitset backed by a heap-allocated array of u64 words.
+    ///
+    /// `n_bits` is a high-water mark: the largest bit index ever set + 1
+    /// (or the capacity passed to `with_capacity`). It never shrinks
+    /// except on `clear()`. This means `len()` returns an upper bound,
+    /// not the exact highest set bit after `unset()` or `intersect()`.
     pub struct BitSet {
         data: *mut u64,
         n_bits: u64,
@@ -33,8 +39,11 @@ mod bitset {
         }
 
         pub fn set(&mut self, bit: u64) with(Alloc, Unsafe) {
-            if bit >= self.n_bits {
+            if bit / 64 >= self.cap_words {
                 self.grow(bit + 1);
+            }
+            if bit >= self.n_bits {
+                self.n_bits = bit + 1;
             }
             let word: u64 = bit / 64;
             let offset: u64 = bit & 63;
@@ -82,8 +91,11 @@ mod bitset {
 
         /// In-place union: self |= other.
         pub fn union(&mut self, other: &BitSet) with(Alloc, Unsafe) {
-            if other.n_bits > self.n_bits {
+            if other.cap_words > self.cap_words {
                 self.grow(other.n_bits);
+            }
+            if other.n_bits > self.n_bits {
+                self.n_bits = other.n_bits;
             }
             let i: u64 = 0;
             while i < other.cap_words {
@@ -115,6 +127,8 @@ mod bitset {
             }
         }
 
+        /// Returns the high-water mark: the largest bit index ever set + 1.
+        /// Does not shrink after unset() or intersect(); only clear() resets it.
         pub fn len(&self) -> u64 {
             return self.n_bits;
         }
@@ -123,6 +137,7 @@ mod bitset {
             if self.cap_words > 0 {
                 memset(self.data as *mut u8, 0, self.cap_words * 8);
             }
+            self.n_bits = 0;
         }
 
         fn grow(&mut self, needed_bits: u64) with(Alloc, Unsafe) {
@@ -138,7 +153,6 @@ mod bitset {
             }
             self.data = new_ptr;
             self.cap_words = new_words;
-            self.n_bits = new_words * 64;
         }
 
         pub fn drop(self) with(Alloc) {
@@ -338,6 +352,142 @@ mod bitset {
         if b.test(1) { b.drop(); return 1; }
         if b.test(298) { b.drop(); return 1; }
 
+        b.drop();
+        return 0;
+    }
+
+    /// Regression: len() must return logical size, not physical capacity.
+    #[test]
+    fn test_len_is_logical_size() with(Alloc, Unsafe) -> i32 {
+        let mut b: BitSet = BitSet::new();
+        b.set(5);
+        // len() should be 6 (highest bit + 1), not cap_words * 64
+        if !assert_eq::<u64>(b.len(), 6, "len after set(5)") {
+            b.drop();
+            return 1;
+        }
+        b.set(3);
+        // Setting a lower bit should not change len
+        if !assert_eq::<u64>(b.len(), 6, "len after set(3)") {
+            b.drop();
+            return 1;
+        }
+        b.set(100);
+        if !assert_eq::<u64>(b.len(), 101, "len after set(100)") {
+            b.drop();
+            return 1;
+        }
+        b.drop();
+        return 0;
+    }
+
+    /// Regression: test() must return false for bits beyond logical size
+    /// even if they are within physical capacity.
+    #[test]
+    fn test_beyond_logical_size() with(Alloc, Unsafe) -> i32 {
+        let mut b: BitSet = BitSet::new();
+        b.set(5);
+        // Bit 5 is set, len is 6, but cap_words is likely >= 1 (64 bits of capacity).
+        // Bits 6..63 are within physical capacity but beyond logical size.
+        if b.test(6) { b.drop(); return 1; }
+        if b.test(63) { b.drop(); return 1; }
+        b.drop();
+        return 0;
+    }
+
+    /// Regression: unset() must be a no-op for bits beyond logical size.
+    #[test]
+    fn test_unset_beyond_logical_size() with(Alloc, Unsafe) -> i32 {
+        let mut b: BitSet = BitSet::new();
+        b.set(5);
+        let len_before: u64 = b.len();
+        // unset a bit beyond logical size — should be a no-op
+        b.unset(100);
+        if !assert_eq::<u64>(b.len(), len_before, "len unchanged after unset beyond") {
+            b.drop();
+            return 1;
+        }
+        if !(b.test(5)) { b.drop(); return 1; }
+        b.drop();
+        return 0;
+    }
+
+    /// Regression: non-monotonic sets must not cause exponential allocation.
+    #[test]
+    fn test_non_monotonic_sets() with(Alloc, Unsafe) -> i32 {
+        let mut b: BitSet = BitSet::new();
+        // Alternating high and low bits — previously triggered grow on every call
+        b.set(100);
+        b.set(1);
+        b.set(200);
+        b.set(3);
+        b.set(150);
+        b.set(0);
+
+        if !assert_eq::<u64>(b.count(), 6, "non-monotonic count") {
+            b.drop();
+            return 1;
+        }
+        if !assert_eq::<u64>(b.len(), 201, "non-monotonic len") {
+            b.drop();
+            return 1;
+        }
+
+        b.drop();
+        return 0;
+    }
+
+    /// Contract: unset() does not shrink n_bits (high-water mark).
+    #[test]
+    fn test_unset_preserves_len() with(Alloc, Unsafe) -> i32 {
+        let mut b: BitSet = BitSet::new();
+        b.set(10);
+        b.set(50);
+        if !assert_eq::<u64>(b.len(), 51, "len before unset") {
+            b.drop();
+            return 1;
+        }
+        // Unset the highest bit — len stays at high-water mark
+        b.unset(50);
+        if !assert_eq::<u64>(b.len(), 51, "len after unset(50)") {
+            b.drop();
+            return 1;
+        }
+        if !assert_eq::<u64>(b.count(), 1, "count after unset") {
+            b.drop();
+            return 1;
+        }
+        b.drop();
+        return 0;
+    }
+
+    /// Contract: intersect() does not shrink n_bits (high-water mark).
+    #[test]
+    fn test_intersect_preserves_len() with(Alloc, Unsafe) -> i32 {
+        let mut a: BitSet = BitSet::new();
+        a.set(0);
+        a.set(100);
+
+        let mut b: BitSet = BitSet::new();
+        b.set(0);
+        // b has no bit 100, so intersect clears it from a
+
+        a.intersect(&b);
+
+        // Only bit 0 remains set
+        if !assert_eq::<u64>(a.count(), 1, "intersect count") {
+            a.drop();
+            b.drop();
+            return 1;
+        }
+        // But len is still the high-water mark
+        if !assert_eq::<u64>(a.len(), 101, "intersect preserves len") {
+            a.drop();
+            b.drop();
+            return 1;
+        }
+
+        a.drop();
         b.drop();
         return 0;
     }

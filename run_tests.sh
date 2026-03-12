@@ -1118,7 +1118,10 @@ check_collection_tests "OrderedSet" \
 
 check_collection_tests "BitSet" \
     test_set_and_test test_unset test_count test_union test_intersect test_with_capacity \
-    test_bitset_word_boundaries test_bitset_large_stress test_bitset_clear_reuse
+    test_loop_set_small test_bitset_word_boundaries test_bitset_large_stress \
+    test_len_is_logical_size test_beyond_logical_size test_unset_beyond_logical_size \
+    test_non_monotonic_sets test_unset_preserves_len test_intersect_preserves_len \
+    test_bitset_clear_reuse
 
 echo ""
 flush_jobs

@@ -19,3 +19,4 @@ build/
 /tmp/
 # Compiled test binaries
 lean_tests/trait_numeric_abs
+*.con.test
