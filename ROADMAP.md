@@ -52,53 +52,33 @@ Still clearly not implemented:
 
 | Phase | Focus | Status | Blocks |
 |------|-------|--------|--------|
-| **A** | Fast feedback and compiler stability | Active; core aggregate-loop storage fix landed, hardening still open | B, C, D |
+| **A** | Fast feedback and compiler stability | Near-complete; aggregate lowering hardened, test runner parallelized, SSA invariants mechanically defended | B, C, D |
 | **B** | Semantic cleanup | Active | D |
 | **C** | Tooling and stdlib hardening | Active | later system maturity |
 | **D** | Backend and trust multipliers | Pending | A, most of B |
 
 ### Recent Progress
 
-- The core Phase A architecture fix for mutable aggregate loops has landed (commit `e68acc0`): aggregate loop variables are promoted to entry-block allocas instead of flowing through `phi` nodes. Field assignment GEPs directly into stable storage — no temp-alloca round-trip, no unbounded stack growth.
-- Measured on representative cases: aggregate phis eliminated (0 across all loop tests), allocas reduced from 4 in-loop to 2 in-entry, fieldAssign allocas hoisted for non-promoted path too.
-- Explicit `-O2` regression tests added for all three struct-loop patterns (simple, break, nested).
-- **Remaining aggregate phi sites**: `if`/`else` branch merging still creates whole-aggregate `phi` for struct variables modified in branches, and `match` expressions can still merge aggregate results the same way. These are less critical than loops (no stack growth, no iteration amplification) but they are the next target for Phase A item 2.
-- That lowers the immediate risk, but it does **not** finish Phase A. Faster local testing, non-loop aggregate-merge cleanup, broader optimized-build regressions, stdlib stress coverage, and SSA invariant tightening remain ahead of the LL(1) checker and the rest of Phase C.
-- Read the `Now` list as "remaining highest-priority work", not as "what has never been started."
+- **Test runner parallelized and narrowed** (commits `1619220`, `6049d89`): `run_tests.sh` defaults to parallel (`nproc` cores), adds `--fast` (default), `--full`, `--filter`, `--stdlib`, `--O2`, `--codegen`, `--report` modes. Partial runs warn clearly. `--fast` is the documented standard developer workflow.
+- **Aggregate loop lowering hardened** (commit `e68acc0`): aggregate loop variables promoted to entry-block allocas. Field assignment GEPs directly into stable storage.
+- **Aggregate if/else and match lowering hardened** (commit `8e606d9`): if/else branches with modified struct variables merge via entry-block allocas instead of `phi %Struct`. Match arms get var snapshot/restore between arms. Void-typed match results filtered from phi/store paths.
+- **SSA verifier now rejects aggregate phi nodes**: `SSAVerify.lean` checks that no phi node carries an aggregate type (struct, enum, string, array). This is a mechanical invariant, not just regression coverage.
+- **Audit**: all phi emission sites in Lower.lean confirmed to check `isAggregateForPromotion` before creating phi nodes. No remaining accidental aggregate transport found.
+- 521 tests pass (0 failures), including SSA structure verification and -O2 regressions for all aggregate lowering paths.
 
 ### Now
 
-This list is ordered to match the active execution phases: Phase A first, then Phase B, then Phase C, then the front edge of Phase D.
-Within Phase A, the fast feedback loop comes first on purpose: it is the immediate force multiplier for every compiler change that follows.
+This list is ordered to match the active execution phases: Phase A first (near-complete), then Phase B, then Phase C, then the front edge of Phase D.
 
-1. Make the edit-test loop materially faster.
-   - problem: ordinary compiler work still slows down when the default feedback loop is too close to full-suite validation cost
-   - why now: every Phase A and Phase B change gets cheaper once the local loop is fast and explicit
-   - primary surfaces: [docs/TESTING.md](docs/TESTING.md), [run_tests.sh](/Users/unbalancedparen/projects/concrete/run_tests.sh)
-   - first slices:
-     - make common local test paths parallel by default where safe instead of effectively serial
-     - add narrower runner modes for one-file, one-subsystem, and one-stdlib-area workflows
-     - make optimized-build targeted regressions easy to run without paying for the full suite
-     - keep the fast path explicit: quick local verification first, full-suite confidence second
-   - constraints:
-     - do not make failures harder to reproduce
-     - do not hide skipped coverage behind ambiguous summaries
-   - done means: ordinary compiler work no longer depends on waiting for the full serial test path after each change
-2. Finish hardening aggregate lowering and merge transport for mutable aggregates and borrows.
-   - problem: aggregate-valued transport remains more backend-sensitive than scalar or storage-identity transport, especially when it survives at joins by convenience instead of by semantic need
-   - why now: the loop-storage fix is in; this is the remaining Phase A lowering cleanup before semantic cleanup should take over
-   - primary surfaces: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/PASSES.md](docs/PASSES.md), [Concrete/Lower.lean](/Users/unbalancedparen/projects/concrete/Concrete/Lower.lean), [Concrete/SSAVerify.lean](/Users/unbalancedparen/projects/concrete/Concrete/SSAVerify.lean), [lean_tests/](/Users/unbalancedparen/projects/concrete/lean_tests)
-   - first slices:
-     - keep building on the stable-storage promotion path instead of reintroducing whole-aggregate loop transport
-     - eliminate or narrow whole-aggregate `phi` transport at `if`/`else` merge points when stable storage identity or narrower transport is the real semantic model
-     - do the same for `match` expressions that currently merge aggregate results through a single whole-aggregate `phi`
-     - audit remaining aggregate transport and keep it only where it is semantically intentional
-     - grow regression coverage around optimized builds and stdlib cases that stress aggregate lowering and merge paths
-     - tighten SSA invariants around the promoted-storage path so the design is mechanically defended, not just empirically passing
-   - constraints:
-     - do not grow parallel lowering strategies for the same semantic case
-     - do not treat backend optimizer behavior as the source of truth for correctness
-   - done means: optimized-build borrow/aggregate cases are stable, remaining aggregate transport is intentional rather than accidental, and this class of failure is covered by durable regressions
+1. ~~Make the edit-test loop materially faster.~~ **Done.**
+   - `run_tests.sh` defaults to parallel on all cores, with `--fast` (default), `--full`, `--filter`, `--stdlib`, `--O2`, `--codegen`, `--report` modes
+   - partial runs warn clearly with mode/filter/skip summary
+   - `--fast` is the standard developer workflow: `./run_tests.sh` for edit-test, `./run_tests.sh --full` before merge
+2. ~~Finish hardening aggregate lowering and merge transport.~~ **Done.**
+   - aggregate phis eliminated in loops (alloca promotion), if/else (alloca merge), and match (snapshot/restore + alloca merge)
+   - SSA verifier rejects aggregate phi nodes as a mechanical invariant
+   - full audit confirms no remaining accidental aggregate transport
+   - -O2 regressions and SSA structure checks cover all paths
 3. Finish tightening the builtin-vs-stdlib boundary.
    - problem: remaining string-based semantic dispatch still makes ordinary names carry compiler meaning and expands the trusted computing base
    - why now: Phase A should reduce backend fragility first; Phase B starts by shrinking semantic magic

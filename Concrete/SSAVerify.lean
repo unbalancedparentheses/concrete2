@@ -59,6 +59,8 @@ inductive SSAVerifyError where
   -- Return validation
   | retVoidInNonVoidFn (block : String) (retTy : String)
   | retValueInVoidFn (block : String) (valTy : String)
+  -- Aggregate phi
+  | aggregatePhi (block : String) (dst : String) (ty : String)
   -- Binop validation
   | binopTypeMismatch (block : String) (dst : String) (lTy : String) (rTy : String)
 
@@ -77,6 +79,7 @@ def SSAVerifyError.message : SSAVerifyError → String
   | .callArityMismatch block fn got expected => s!"block '{block}': call @{fn} has {got} args but function expects {expected}"
   | .retVoidInNonVoidFn block retTy => s!"block '{block}': `ret void` in function returning {retTy}"
   | .retValueInVoidFn block valTy => s!"block '{block}': `ret {valTy}` in void function"
+  | .aggregatePhi block dst ty => s!"block '{block}': phi %{dst} has aggregate type {ty} — use alloca+store instead"
   | .binopTypeMismatch block dst lTy rTy => s!"block '{block}': binop %{dst} has mismatched operand types: {lTy} vs {rTy}"
 
 private def addError (ctx : VerifyCtx) (msg : String) : VerifyCtx :=
@@ -294,12 +297,28 @@ private def checkBranchTargets (ctx : VerifyCtx) (b : SBlock) : VerifyCtx :=
     else addSSAError ctx (.branchToUnknownLabel b.label lbl)
   ) ctx
 
+/-- Is this type an aggregate that should never appear in a phi node?
+    Aggregates should be transported via alloca+store, not SSA phi. -/
+private def isAggregateType : Ty → Bool
+  | .named _ => true
+  | .string => true
+  | .array _ _ => true
+  | .generic name _ =>
+    -- Vec, HashMap, etc. are heap pointers (8 bytes), not aggregates
+    name != "Vec" && name != "HashMap" && name != "HashSet" &&
+    name != "Heap" && name != "HeapArray"
+  | _ => false
+
 /-- Check phi node predecessors. Each phi should have entries for all predecessor blocks. -/
 private def checkPhiNodes (ctx : VerifyCtx) (b : SBlock) : VerifyCtx :=
   let preds := (ctx.predecessors.find? fun (l, _) => l == b.label).map (·.2) |>.getD []
   b.insts.foldl (fun ctx inst =>
     match inst with
-    | .phi _ incoming _ =>
+    | .phi dst incoming ty =>
+      -- Reject aggregate types in phi nodes (must use alloca+store)
+      let ctx := if isAggregateType ty then
+        addSSAError ctx (.aggregatePhi b.label dst (reprStr ty))
+      else ctx
       let phiLabels := incoming.map (·.2)
       -- Check that each predecessor has an entry
       let ctx := preds.foldl (fun ctx p =>
