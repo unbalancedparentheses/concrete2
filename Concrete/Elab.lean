@@ -715,7 +715,7 @@ partial def elabCall (fnName : String) (typeArgs : List Ty) (args : List Expr)
     let elemTy := match (cArgs.head?.map CExpr.ty) with
       | some (.refMut (.generic "Vec" [et])) => et
       | _ => .placeholder
-    return .call "vec_pop" [] cArgs (.generic "Option" [elemTy])
+    return .call "vec_pop" [] cArgs (.generic optionEnumName [elemTy])
   -- Intercept vec_free
   if intrinsic == some .vecFree then
     let mut cArgs : List CExpr := []
@@ -756,7 +756,7 @@ partial def elabCall (fnName : String) (typeArgs : List Ty) (args : List Expr)
       | some (.refMut (.generic "HashMap" [.string, _])) => true
       | _ => false
     let suffix := if isStrKey then hashMapStrKeySuffix else ""
-    return .call ("map_get" ++ suffix) [] cArgs (.generic "Option" [vTy])
+    return .call ("map_get" ++ suffix) [] cArgs (.generic optionEnumName [vTy])
   -- Intercept map_contains
   if intrinsic == some .mapContains then
     let mut cArgs : List CExpr := []
@@ -782,7 +782,7 @@ partial def elabCall (fnName : String) (typeArgs : List Ty) (args : List Expr)
       | some (.refMut (.generic "HashMap" [.string, _])) => true
       | _ => false
     let suffix := if isStrKey then hashMapStrKeySuffix else ""
-    return .call ("map_remove" ++ suffix) [] cArgs (.generic "Option" [vTy])
+    return .call ("map_remove" ++ suffix) [] cArgs (.generic optionEnumName [vTy])
   -- Intercept map_len
   if intrinsic == some .mapLen then
     let mut cArgs : List CExpr := []
@@ -1056,7 +1056,7 @@ partial def elabModule (m : Module) (summary : FileSummary)
                  ++ submoduleSigs ++ implMethodSigs ++ traitImplMethodSigs
   -- Build structs / enums
   let builtinOptionEnum : EnumDef := {
-    name := "Option", typeParams := ["T"],
+    name := optionEnumName, typeParams := ["T"],
     variants := [
       { name := "Some", fields := [{ name := "value", ty := .typeVar "T" }] },
       { name := "None", fields := [] }
@@ -1208,10 +1208,14 @@ partial def elabModule (m : Module) (summary : FileSummary)
           { name := sig.name, retTy := sig.retTy },
         builtinId := td.builtinId : CTraitDef }
     traitImpls := m.traitImpls.map fun tb =>
+      let traitBuiltinId := match allTraits.find? fun td => td.name == tb.traitName with
+        | some td => td.builtinId
+        | none => none
       { traitName := tb.traitName,
         typeName := tb.typeName,
         methodNames := tb.methods.map (·.name),
-        methodRetTys := tb.methods.map fun f => (f.name, f.retTy) : CTraitImpl }
+        methodRetTys := tb.methods.map fun f => (f.name, f.retTy),
+        builtinTraitId := traitBuiltinId : CTraitImpl }
     linkerAliases := imports.linkerAliases
   }
 

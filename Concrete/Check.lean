@@ -1014,7 +1014,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
         | .refMut (.generic "Vec" [et]) => et
         | _ => Ty.placeholder
       if elemTy == .placeholder then throwCheck (.builtinWrongFirstArg "vec_pop" "&mut Vec<T> as argument" (tyToString vecTy)) (some e.getSpan)
-      return .generic "Option" [elemTy]
+      return .generic optionEnumName [elemTy]
     -- Intercept vec_free(v)
     if intrinsic == some .vecFree then
       if args.length != 1 then throwCheck (.builtinWrongArgCount "vec_free" 1) (some e.getSpan)
@@ -1076,7 +1076,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       match keyArg with
       | .ident _ varName => consumeVarIfExists varName (some e.getSpan)
       | _ => pure ()
-      return .generic "Option" [vTy]
+      return .generic optionEnumName [vTy]
     -- Intercept map_contains(&m, key)
     if intrinsic == some .mapContains then
       if args.length != 2 then throwCheck (.builtinWrongArgCount "map_contains" 2) (some e.getSpan)
@@ -1109,7 +1109,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       match keyArg with
       | .ident _ varName => consumeVarIfExists varName (some e.getSpan)
       | _ => pure ()
-      return .generic "Option" [vTy]
+      return .generic optionEnumName [vTy]
     -- Intercept map_len(&m)
     if intrinsic == some .mapLen then
       if args.length != 1 then throwCheck (.builtinWrongArgCount "map_len" 1) (some e.getSpan)
@@ -2086,7 +2086,7 @@ def checkModule (m : Module) (summary : FileSummary)
   let allStructs := imports.structs ++ m.structs
   -- Built-in Option<T> enum (Some { value: T }, None {})
   let builtinOptionEnum : EnumDef := {
-    name := "Option"
+    name := optionEnumName
     typeParams := ["T"]
     variants := [
       { name := "Some", fields := [{ name := "value", ty := .typeVar "T" }] },

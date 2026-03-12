@@ -585,16 +585,15 @@ def ccCheckModuleDecls (m : CModule)
   -- 1. Copy/Destroy conflict + Copy field check for structs
   for sd in m.structs do
     if sd.isCopy then
-      if m.traitImpls.any fun ti => ti.traitName == destroyTraitName && ti.typeName == sd.name then
+      if m.traitImpls.any fun ti => ti.builtinTraitId == some .destroy && ti.typeName == sd.name then
         errors := errors ++ [mkDeclDiag (.copyDestroyConflict sd.name)]
       for (fname, fty) in sd.fields do
         if !isCopyTy allStructs allEnums fty then
           errors := errors ++ [mkDeclDiag (.copyFieldNotCopy sd.name fname)]
-  -- 2. Copy/Destroy conflict for enums (trait impls use traitName string;
-  --    once CTraitImpl gains a builtinTraitId field, switch to that)
+  -- 2. Copy/Destroy conflict for enums
   for ed in m.enums do
     if ed.isCopy then
-      if m.traitImpls.any fun ti => ti.traitName == destroyTraitName && ti.typeName == ed.name then
+      if m.traitImpls.any fun ti => ti.builtinTraitId == some .destroy && ti.typeName == ed.name then
         errors := errors ++ [mkDeclDiag (.copyDestroyConflict ed.name)]
   -- 3. repr(C) validation
   for sd in m.structs do
@@ -620,7 +619,8 @@ def ccCheckModuleDecls (m : CModule)
         errors := errors ++ [mkDeclDiag (.externFnParamNotFFISafe efName pName (tyToString pTy))]
     if !Layout.isFFISafe lctx efRetTy && efRetTy != .unit then
       errors := errors ++ [mkDeclDiag (.externFnReturnNotFFISafe efName (tyToString efRetTy))]
-  -- 6. Builtin trait redeclaration (user traits have builtinId = none)
+  -- 6. Builtin trait redeclaration — name collision check at validation boundary
+  --    (user-defined traits have builtinId = none; the name check detects collisions)
   for td in m.traitDefs do
     if td.name == destroyTraitName then
       errors := errors ++ [mkDeclDiag .builtinTraitRedeclared]

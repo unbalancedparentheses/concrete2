@@ -206,6 +206,9 @@ def destroyTraitName : String := "Destroy"
 /-- The name of the destroy method inside the Destroy trait. -/
 def destroyMethodName : String := "destroy"
 
+/-- The name of the builtin Option enum. -/
+def optionEnumName : String := "Option"
+
 /-- The name of the builtin Result enum. -/
 def resultEnumName : String := "Result"
 

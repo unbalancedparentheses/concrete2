@@ -863,11 +863,11 @@ private def scanBuiltinEnumArgs (ctx : Layout.Ctx) (modules : List SModule) : (O
   -- Find all Option<T> and Result<T, E> instantiations
   let optPayloads := allTys.filterMap fun t =>
     match t with
-    | .generic "Option" [arg] => some arg
+    | .generic n [arg] => if n == optionEnumName then some arg else none
     | _ => none
   let resPayloads := allTys.filterMap fun t =>
     match t with
-    | .generic "Result" [ok, err] => some (ok, err)
+    | .generic n [ok, err] => if n == resultEnumName then some (ok, err) else none
     | _ => none
   -- Pick the largest payload type for Option
   let bestOpt := optPayloads.foldl (fun best t =>
@@ -963,11 +963,13 @@ def emitSSAProgram (modules : List SModule) (testMode : Bool := false) : String 
   let allEnums := modules.foldl (fun acc m => acc ++ m.enums) []
   -- Canonical builtin enum definitions with type parameters
   let optionDef : CEnumDef :=
-    { name := "Option", typeParams := ["T"],
-      variants := [("Some", [("value", .typeVar "T")]), ("None", [])] }
+    { name := optionEnumName, typeParams := ["T"],
+      variants := [("Some", [("value", .typeVar "T")]), ("None", [])],
+      builtinId := some .option }
   let resultDef : CEnumDef :=
-    { name := "Result", typeParams := ["T", "E"],
-      variants := [("Ok", [("value", .typeVar "T")]), ("Err", [("value", .typeVar "E")])] }
+    { name := resultEnumName, typeParams := ["T", "E"],
+      variants := [(okVariantName, [("value", .typeVar "T")]), (errVariantName, [("value", .typeVar "E")])],
+      builtinId := some .result }
   let builtinEnums : List CEnumDef := [optionDef, resultDef]
   let s := { s with structDefs := allStructs, enumDefs := builtinEnums ++ allEnums }
   -- Well-known struct types (String, Vec, HashMap)
@@ -997,7 +999,7 @@ def emitSSAProgram (modules : List SModule) (testMode : Bool := false) : String 
   let resTypeDefs := Layout.enumTypeDefs ctx resultDef resTypeArgs
   let s := resTypeDefs.foldl (fun s line => emit s line) s
   -- Mark these as emitted so user enums with the same names won't duplicate
-  let s := { s with emittedTypes := ["Result", "Option"] ++ s.emittedTypes }
+  let s := { s with emittedTypes := [resultEnumName, optionEnumName] ++ s.emittedTypes }
   let s := emit s ""
   -- External declarations (skip externs that shadow defined functions)
   let allExternFns := modules.foldl (fun acc m => acc ++ m.externFns) []

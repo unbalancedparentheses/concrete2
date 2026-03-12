@@ -117,6 +117,7 @@ structure CTraitImpl where
   typeName : String
   methodNames : List String
   methodRetTys : List (String × Ty)
+  builtinTraitId : Option BuiltinTraitId := none
 
 structure CModule where
   name : String

@@ -76,22 +76,20 @@ Still clearly not implemented:
 
 This list is ordered to match the active execution phases: Phase A is done enough, so active work now starts in Phase B, then Phase C, then the front edge of Phase D.
 
-1. Finish tightening the builtin-vs-stdlib boundary.
-   - problem: remaining string-based semantic dispatch still makes ordinary names carry compiler meaning and expands the trusted computing base
-   - why now: Phase A is complete enough to stop dominating roadmap pressure; Phase B starts by shrinking semantic magic
-   - primary surfaces: [research/builtin-vs-stdlib.md](research/builtin-vs-stdlib.md), [Concrete/Intrinsic.lean](/Users/unbalancedparen/projects/concrete/Concrete/Intrinsic.lean), [Concrete/BuiltinSigs.lean](/Users/unbalancedparen/projects/concrete/Concrete/BuiltinSigs.lean), [Concrete/Check.lean](/Users/unbalancedparen/projects/concrete/Concrete/Check.lean), [Concrete/Elab.lean](/Users/unbalancedparen/projects/concrete/Concrete/Elab.lean), [Concrete/CoreCheck.lean](/Users/unbalancedparen/projects/concrete/Concrete/CoreCheck.lean), [Concrete/EmitSSA.lean](/Users/unbalancedparen/projects/concrete/Concrete/EmitSSA.lean)
-   - first slices:
-     - keep builtins minimal, compiler/runtime-facing, and explicitly non-user-facing
-     - ~~remove remaining string-based semantic dispatch in compiler tables, pass-local special cases, and backend helper selection~~ **done** — all semantic names centralized in `Intrinsic.lean`
-     - make ordinary language behavior depend on internal identities or explicit language items, not raw function-name matching
-     - structural string handling (parser keywords, mangling, LLVM naming, diagnostics) is tolerated — not the same category of debt
-     - keep improving testing ergonomics where it directly speeds semantic-cleanup work, but treat deeper artifact-aware testing as later infrastructure rather than a blocker for Phase B
-     - keep the stdlib bytes-first and low-level rather than letting string-heavy convenience APIs dominate the surface
-   - constraints:
-     - any compiler rule that changes semantics based on an ordinary public name is architecture debt
-     - structural/compiler-internal string handling (parser keywords, type-name→Ty mapping, monomorphization rewriting, method mangling, LLVM IR naming, linker symbols, diagnostics) is not
-     - do not move user-facing convenience back into compiler builtins
-   - done means: ordinary public names no longer carry compiler-known semantics through raw matching; structural string handling may remain
+1. ~~Finish tightening the builtin-vs-stdlib boundary.~~ **done**
+   - Phase B has moved from "centralize string semantics" to "replace centralized string semantics with typed language-item identity."
+   - All semantic dispatch now rides on explicit identity types (`BuiltinTraitId`, `BuiltinEnumId`, `isEntryPoint` flag) or centralized constants in `Intrinsic.lean`. No compiler pass changes behavior based on an ordinary public name through raw string matching.
+   - Remaining string handling is structural (parser keywords, `Ty` type-name fields, method mangling, LLVM IR naming, linker symbols, diagnostics) — tolerated as implementation mechanics, not semantic dispatch.
+   - primary surfaces: [research/builtin-vs-stdlib.md](research/builtin-vs-stdlib.md), [Concrete/Intrinsic.lean](/Users/unbalancedparen/projects/concrete/Concrete/Intrinsic.lean), [Concrete/BuiltinSigs.lean](/Users/unbalancedparen/projects/concrete/Concrete/BuiltinSigs.lean)
+   - what landed:
+     - centralized all semantic names into `Intrinsic.lean` (d0b2f53, 4e557e0)
+     - separated semantic language items from compiler-reserved identifiers and mangling helpers
+     - added `BuiltinTraitId` (`.destroy`), `BuiltinEnumId` (`.result`, `.option`) enums
+     - added `isEntryPoint` flag on `FnDef`/`CFnDef`/`SFnDef`
+     - added `builtinId` on `TraitDef`/`CTraitDef`/`EnumDef`/`CEnumDef` and `builtinTraitId` on `CTraitImpl`
+     - migrated EmitSSA entry-point dispatch to `isEntryPoint` flag
+     - migrated CoreCheck Copy/Destroy conflict check to `builtinTraitId` on `CTraitImpl`
+     - remaining name-collision checks at validation boundaries (e.g., "did user redefine Destroy?") intentionally use string comparison — they detect collisions, not dispatch on identity
 2. Add an external LL(1) grammar checker as a standing syntax guardrail.
    - problem: the language claims LL(1) discipline, but parser regressions can still slip in without a dedicated grammar guardrail
    - why now: this is the first Phase C tool that protects the language shape without destabilizing semantics
@@ -215,25 +213,20 @@ Primary surfaces:
 **Completed:**
 
 1. ~~centralize string-based semantic dispatch into `Intrinsic.lean`~~ **done** (d0b2f53, 4e557e0)
-   - centralized builtin names: reserved fns, builtin types, Destroy trait/method, Result enum/variants, Self type, main entry point, capability names, newtype field, sizeof suffix, HashMap str-key suffix, method mangling helper
-   - separated semantic language items (Self, Destroy, Result, Ok/Err, main, Unsafe, Std) from compiler-reserved identifiers (alloc, free, etc.) and mangling/suffix helpers
-   - updated Check, CoreCheck, Elab, EmitSSA, Resolve, Shared, Report, Parser to reference centralized names
+   - centralized builtin names: reserved fns, builtin types, Destroy trait/method, Result enum/variants, Option enum, Self type, main entry point, capability names, newtype field, sizeof suffix, HashMap str-key suffix, method mangling helper
+   - separated semantic language items from compiler-reserved identifiers and mangling/suffix helpers
+   - updated Check, CoreCheck, Elab, EmitSSA, Lower, Resolve, Shared, Report, Parser to reference centralized names
+2. ~~audit for any surviving semantic dispatch on ordinary public names~~ **done** — comprehensive audit found no surviving semantic dispatch; remaining string handling is structural
+3. ~~replace centralized string semantics with typed language-item identity~~ **done** (daef46a, this commit)
+   - added `BuiltinTraitId` (`.destroy`), `BuiltinEnumId` (`.result`, `.option`) identity enums
+   - added `builtinId` field on `TraitDef`, `CTraitDef`, `EnumDef`, `CEnumDef`
+   - added `builtinTraitId` field on `CTraitImpl` — resolved during elaboration from trait definition
+   - added `isEntryPoint` flag on `FnDef`, `CFnDef`, `SFnDef` — set during elaboration, flows through pipeline
+   - migrated EmitSSA entry-point dispatch from `mainFnName` string to `isEntryPoint` flag
+   - migrated CoreCheck Copy/Destroy conflict from `destroyTraitName` string to `builtinTraitId == some .destroy`
+   - name-collision checks at validation boundaries (e.g., "did user redefine Destroy?") intentionally remain string-based — they detect collisions, not dispatch on identity
 
-2. ~~audit for any surviving semantic dispatch on ordinary public names outside `Intrinsic.lean`~~ **done** — comprehensive audit found no surviving semantic dispatch; remaining string handling is structural
-3. ~~make compiler-known behavior ride on explicit identities or language items~~ **done** (this commit)
-   - added `BuiltinTraitId` enum (`.destroy`) — tagged on `TraitDef`, `CTraitDef` via `builtinId` field
-   - added `BuiltinEnumId` enum (`.result`, `.option`) — tagged on `EnumDef`, `CEnumDef` via `builtinId` field
-   - added `isEntryPoint : Bool` to `FnDef`, `CFnDef`, `SFnDef` — set during elaboration, used by EmitSSA instead of `mainFnName` string comparison
-   - EmitSSA now dispatches on `f.isEntryPoint` flag, never on function name
-   - builtin Option/Result enums and Destroy trait carry their identity through the full pipeline
-
-**Remaining:**
-
-4. keep raw string matching confined to foreign/linker/reporting boundaries
-5. allow tactical testing improvements only when they directly accelerate semantic-cleanup work
-
-Exit criterion:
-no compiler pass changes behavior based on an ordinary public name through raw string matching.  Structural string handling (parser keywords, mangling, LLVM naming, diagnostics) is not a Phase B blocker.
+**Phase B is complete.** The exit criterion is met: no compiler pass changes behavior based on an ordinary public name through raw string matching. All semantic dispatch rides on explicit identity types or centralized constants. Structural string handling (parser keywords, `Ty` type-name fields, mangling, LLVM naming, diagnostics) remains as tolerated implementation mechanics.
 
 #### Phase C: Tooling And Stdlib Hardening
 

@@ -879,7 +879,7 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
     let resultEnumName := match inner.ty with
       | .named n => n
       | .generic n _ => n
-      | _ => "Result"
+      | _ => resultEnumName
     let s ← getState
     let ed := s.enumDefs.find? fun ed => ed.name == resultEnumName
     let payloadOff := match ed with
