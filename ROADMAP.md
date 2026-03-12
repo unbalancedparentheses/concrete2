@@ -62,8 +62,8 @@ Still clearly not implemented:
 - The core Phase A architecture fix for mutable aggregate loops has landed (commit `e68acc0`): aggregate loop variables are promoted to entry-block allocas instead of flowing through `phi` nodes. Field assignment GEPs directly into stable storage — no temp-alloca round-trip, no unbounded stack growth.
 - Measured on representative cases: aggregate phis eliminated (0 across all loop tests), allocas reduced from 4 in-loop to 2 in-entry, fieldAssign allocas hoisted for non-promoted path too.
 - Explicit `-O2` regression tests added for all three struct-loop patterns (simple, break, nested).
-- **Remaining aggregate phi site**: if-else branch merging still creates whole-aggregate `phi` for struct variables modified in branches. This is less critical (no stack growth, happens once per branch join) but is the next target for Phase A item 2.
-- That lowers the immediate risk, but it does **not** finish Phase A. Faster local testing, broader optimized-build regressions, stdlib stress coverage, and SSA invariant tightening remain ahead of the LL(1) checker and the rest of Phase C.
+- **Remaining aggregate phi sites**: `if`/`else` branch merging still creates whole-aggregate `phi` for struct variables modified in branches, and `match` expressions can still merge aggregate results the same way. These are less critical than loops (no stack growth, no iteration amplification) but they are the next target for Phase A item 2.
+- That lowers the immediate risk, but it does **not** finish Phase A. Faster local testing, non-loop aggregate-merge cleanup, broader optimized-build regressions, stdlib stress coverage, and SSA invariant tightening remain ahead of the LL(1) checker and the rest of Phase C.
 - Read the `Now` list as "remaining highest-priority work", not as "what has never been started."
 
 ### Now
@@ -77,14 +77,16 @@ Within Phase A, the fast feedback loop comes first on purpose: it is the immedia
    - make optimized-build targeted regressions easy to run without paying for the full suite
    - keep the fast path explicit: quick local verification first, full-suite confidence second
    - done means: ordinary compiler work no longer depends on waiting for the full serial test path after each change
-2. Finish hardening loop lowering for mutable aggregates and borrows.
+2. Finish hardening aggregate lowering and merge transport for mutable aggregates and borrows.
    - the core stable-storage promotion change has landed; keep building on that design instead of reintroducing whole-aggregate loop transport
+   - eliminate or narrow whole-aggregate `phi` transport at `if`/`else` merge points when stable storage identity or narrower transport is the real semantic model
+   - do the same for `match` expressions that currently merge aggregate results through a single whole-aggregate `phi`
    - remove or narrow remaining full aggregate writeback through loop `phi` nodes where stable storage identity is the real semantic model
    - reduce aggregate `phi` usage to cases that are semantically necessary, preferring scalars or pointer identities over whole-aggregate SSA transport
-   - treat borrow+loop+aggregate lowering fragility as a compiler architecture bug, not an LLVM quirk to paper over
-   - grow regression coverage around optimized builds and stdlib cases that stress mutable aggregate loops
+   - treat borrow+aggregate lowering fragility as a compiler architecture bug, not an LLVM quirk to paper over
+   - grow regression coverage around optimized builds and stdlib cases that stress aggregate lowering and merge paths
    - tighten SSA invariants around the promoted-storage path so the design is mechanically defended, not just empirically passing
-   - done means: optimized-build loop/borrow/aggregate cases are stable, remaining aggregate transport is intentional rather than accidental, and this class of failure is covered by durable regressions
+   - done means: optimized-build borrow/aggregate cases are stable, remaining aggregate transport is intentional rather than accidental, and this class of failure is covered by durable regressions
 3. Finish tightening the builtin-vs-stdlib boundary.
    - keep builtins minimal, compiler/runtime-facing, and explicitly non-user-facing
    - remove remaining string-based semantic dispatch in compiler tables, pass-local special cases, and backend helper selection
@@ -122,7 +124,7 @@ Within Phase A, the fast feedback loop comes first on purpose: it is the immedia
 The compiler-improvement order should stay:
 
 1. speed up the edit-test loop so compiler work can iterate quickly
-2. finish hardening lowering around mutable-state storage identity after the core stable-storage fix
+2. finish hardening lowering around mutable-state storage identity and aggregate merge transport after the core stable-storage fix
 3. remove remaining string-based semantic dispatch from ordinary language behavior
 4. strengthen the SSA verifier/cleanup boundary into a clearer backend contract
 5. replace textual LLVM emission with a structured backend
@@ -150,13 +152,13 @@ Primary surfaces:
 - `lean_tests/`
 
 1. make common test paths materially faster through safer parallelization and narrower runner modes
-2. finish hardening loop lowering for mutable aggregates and borrows after the core stable-storage promotion change
-3. keep shrinking accidental aggregate writeback through loop `phi` nodes where stable storage identity is the real semantic model
-4. add optimized-build regressions and stdlib coverage for borrow+loop+aggregate cases
+2. finish hardening aggregate lowering for mutable aggregates and borrows after the core stable-storage promotion change
+3. keep shrinking accidental aggregate transport at loops and non-loop merge points where stable storage identity is the real semantic model
+4. add optimized-build regressions and stdlib coverage for borrow+aggregate cases, including non-loop merge paths
 5. tighten SSA invariants around these lowering patterns and the promoted-storage path
 
 Exit criterion:
-ordinary development no longer depends on a slow serial full-suite loop, and there are no known backend-sensitive failures in mutable aggregate loop lowering, including optimized-build stress cases.
+ordinary development no longer depends on a slow serial full-suite loop, and there are no known backend-sensitive failures in mutable aggregate lowering or aggregate merge transport, including optimized-build stress cases.
 
 #### Phase B: Semantic Cleanup
 
@@ -348,7 +350,7 @@ For more on these longer-horizon themes, see:
 
 ## Current Risks
 
-- mutable aggregate lowering can still be too backend-sensitive if promoted storage is incomplete, under-tested in optimized builds, or weakly defended by SSA invariants
+- mutable aggregate lowering can still be too backend-sensitive if promoted storage is incomplete, non-loop aggregate merge transport remains too broad, optimized-build coverage is too narrow, or SSA invariants are too weak
 - remaining string-based semantic logic still expands the trusted computing base unnecessarily
 - textual LLVM emission remains a brittle backend choke point
 - tooling/caching work can regress into ad-hoc duplication if artifacts stop being explicit and reusable
