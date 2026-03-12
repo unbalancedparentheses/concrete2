@@ -52,14 +52,14 @@ Still clearly not implemented:
 
 | Phase | Focus | Status | Blocks |
 |------|-------|--------|--------|
-| **A** | Fast feedback and compiler stability | Near-complete; aggregate lowering hardened, test runner parallelized, SSA invariants mechanically defended | B, C, D |
+| **A** | Fast feedback and compiler stability | Done enough; aggregate lowering hardened, test runner parallelized, SSA invariants mechanically defended | B, C, D |
 | **B** | Semantic cleanup | Active | D |
 | **C** | Tooling and stdlib hardening | Active | later system maturity |
 | **D** | Backend and trust multipliers | Pending | A, most of B |
 
 ### Recent Progress
 
-- **Test runner parallelized and narrowed** (commits `1619220`, `6049d89`): `run_tests.sh` defaults to parallel (`nproc` cores), adds `--fast` (default), `--full`, `--filter`, `--stdlib`, `--O2`, `--codegen`, `--report` modes. Partial runs warn clearly. `--fast` is the documented standard developer workflow.
+- **Test runner parallelized and narrowed** (commits `1619220`, `6049d89`): `run_tests.sh` defaults to parallel (`nproc` cores), adds `--fast` (default), `--full`, `--filter`, `--stdlib`, `--O2`, `--codegen`, `--report` modes. Partial runs warn clearly. `--fast` is the documented standard developer workflow. This is a strong Phase A solution, but it is still script-level orchestration rather than a deeper artifact-cached or dependency-aware test system.
 - **Aggregate loop lowering hardened** (commit `e68acc0`): aggregate loop variables promoted to entry-block allocas. Field assignment GEPs directly into stable storage.
 - **Aggregate if/else and match lowering hardened** (commit `8e606d9`): if/else branches with modified struct variables merge via entry-block allocas instead of `phi %Struct`. Match arms get var snapshot/restore between arms. Void-typed match results filtered from phi/store paths.
 - **SSA verifier now rejects aggregate phi nodes**: `SSAVerify.lean` checks that no phi node carries an aggregate type (struct, enum, string, array). This is a mechanical invariant, not just regression coverage.
@@ -68,32 +68,24 @@ Still clearly not implemented:
 
 ### Now
 
-This list is ordered to match the active execution phases: Phase A first (near-complete), then Phase B, then Phase C, then the front edge of Phase D.
+This list is ordered to match the active execution phases: Phase A is done enough, so active work now starts in Phase B, then Phase C, then the front edge of Phase D.
 
-1. ~~Make the edit-test loop materially faster.~~ **Done.**
-   - `run_tests.sh` defaults to parallel on all cores, with `--fast` (default), `--full`, `--filter`, `--stdlib`, `--O2`, `--codegen`, `--report` modes
-   - partial runs warn clearly with mode/filter/skip summary
-   - `--fast` is the standard developer workflow: `./run_tests.sh` for edit-test, `./run_tests.sh --full` before merge
-2. ~~Finish hardening aggregate lowering and merge transport.~~ **Done.**
-   - aggregate phis eliminated in loops (alloca promotion), if/else (alloca merge), and match (snapshot/restore + alloca merge)
-   - SSA verifier rejects aggregate phi nodes as a mechanical invariant
-   - full audit confirms no remaining accidental aggregate transport
-   - -O2 regressions and SSA structure checks cover all paths
-3. Finish tightening the builtin-vs-stdlib boundary.
+1. Finish tightening the builtin-vs-stdlib boundary.
    - problem: remaining string-based semantic dispatch still makes ordinary names carry compiler meaning and expands the trusted computing base
-   - why now: Phase A should reduce backend fragility first; Phase B starts by shrinking semantic magic
+   - why now: Phase A is complete enough to stop dominating roadmap pressure; Phase B starts by shrinking semantic magic
    - primary surfaces: [research/builtin-vs-stdlib.md](research/builtin-vs-stdlib.md), [Concrete/Intrinsic.lean](/Users/unbalancedparen/projects/concrete/Concrete/Intrinsic.lean), [Concrete/BuiltinSigs.lean](/Users/unbalancedparen/projects/concrete/Concrete/BuiltinSigs.lean), [Concrete/Check.lean](/Users/unbalancedparen/projects/concrete/Concrete/Check.lean), [Concrete/Elab.lean](/Users/unbalancedparen/projects/concrete/Concrete/Elab.lean), [Concrete/CoreCheck.lean](/Users/unbalancedparen/projects/concrete/Concrete/CoreCheck.lean), [Concrete/EmitSSA.lean](/Users/unbalancedparen/projects/concrete/Concrete/EmitSSA.lean)
    - first slices:
      - keep builtins minimal, compiler/runtime-facing, and explicitly non-user-facing
      - remove remaining string-based semantic dispatch in compiler tables, pass-local special cases, and backend helper selection
      - make ordinary language behavior depend on internal identities or explicit language items, not raw function-name matching
      - keep stringly handling confined to true foreign-symbol, linker-symbol, or user-facing report/rendering boundaries
+     - keep improving testing ergonomics where it directly speeds semantic-cleanup work, but treat deeper artifact-aware testing as later infrastructure rather than a blocker for Phase B
      - keep the stdlib bytes-first and low-level rather than letting string-heavy convenience APIs dominate the surface
    - constraints:
      - any compiler rule that changes semantics based on an ordinary public name is architecture debt
      - do not move user-facing convenience back into compiler builtins
    - done means: ordinary public names no longer carry compiler-known semantics through raw matching
-4. Add an external LL(1) grammar checker as a standing syntax guardrail.
+2. Add an external LL(1) grammar checker as a standing syntax guardrail.
    - problem: the language claims LL(1) discipline, but parser regressions can still slip in without a dedicated grammar guardrail
    - why now: this is the first Phase C tool that protects the language shape without destabilizing semantics
    - primary surfaces: [research/external-ll1-checker.md](research/external-ll1-checker.md), `grammar/`, `scripts/`, CI config
@@ -106,7 +98,7 @@ This list is ordered to match the active execution phases: Phase A first (near-c
      - keep the checker external and simple enough to audit
      - do not let the reference grammar drift away from the actual parser unnoticed
    - done means: syntax regressions trip a dedicated CI check instead of silently re-entering the parser
-5. Keep deepening and hardening the stdlib.
+3. Keep deepening and hardening the stdlib.
    - problem: stdlib breadth is real now, but systems modules still need stronger failure-path behavior, consistency, and targeted test workflows
    - why now: once Phase A and Phase B stop dominating every change, stdlib quality becomes the main usability multiplier
    - primary surfaces: [docs/STDLIB.md](docs/STDLIB.md), [std/src/](/Users/unbalancedparen/projects/concrete/std/src), [run_tests.sh](/Users/unbalancedparen/projects/concrete/run_tests.sh)
@@ -119,7 +111,7 @@ This list is ordered to match the active execution phases: Phase A first (near-c
      - do not let API growth outrun failure-path coverage
      - do not let module conventions drift case-by-case
    - done means: systems modules have stronger failure-path coverage and stdlib tests can target one area without bootstrapping the whole tree
-6. Improve diagnostics fidelity and rendering quality.
+4. Improve diagnostics fidelity and rendering quality.
    - problem: diagnostics still lose precision around transformed constructs and rely too much on brittle string-exact expectations
    - why now: diagnostics are the main user-visible quality multiplier once the compiler architecture is stable enough to trust
    - primary surfaces: [docs/DIAGNOSTICS.md](docs/DIAGNOSTICS.md), [Concrete/Diagnostic.lean](/Users/unbalancedparen/projects/concrete/Concrete/Diagnostic.lean), [Concrete/Check.lean](/Users/unbalancedparen/projects/concrete/Concrete/Check.lean), [Concrete/CoreCheck.lean](/Users/unbalancedparen/projects/concrete/Concrete/CoreCheck.lean), diagnostic tests
@@ -132,7 +124,7 @@ This list is ordered to match the active execution phases: Phase A first (near-c
      - do not make tests depend on full rendered strings when structured assertions can work
      - do not improve rendering by smearing away the actual semantic source location
    - done means: diagnostics quality improvements are visible in ordinary compiler output, not only in internal plumbing
-7. Preserve SSA as the only backend boundary and keep the build/project model explicit and boring.
+5. Preserve SSA as the only backend boundary and keep the build/project model explicit and boring.
    - problem: textual LLVM emission is still a brittle choke point, and backend plurality would multiply instability if the backend contract stays loose
    - why now: this is the front edge of Phase D and the prerequisite for serious backend, tooling, and proof leverage
    - primary surfaces: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/PASSES.md](docs/PASSES.md), [Concrete/SSAVerify.lean](/Users/unbalancedparen/projects/concrete/Concrete/SSAVerify.lean), [Concrete/SSACleanup.lean](/Users/unbalancedparen/projects/concrete/Concrete/SSACleanup.lean), [Concrete/EmitSSA.lean](/Users/unbalancedparen/projects/concrete/Concrete/EmitSSA.lean), [Concrete/Pipeline.lean](/Users/unbalancedparen/projects/concrete/Concrete/Pipeline.lean)
@@ -144,6 +136,14 @@ This list is ordered to match the active execution phases: Phase A first (near-c
      - keep SSA as the only backend boundary
      - do not add another backend family until the LLVM path is structurally cleaner
    - done means: the backend consumes a structured contract over SSA and textual LLVM concatenation is no longer the critical path
+
+### Phase A Notes
+
+Phase A is done enough for the roadmap.
+
+- The fast runner is the standard developer path: `./run_tests.sh` for edit-test, `./run_tests.sh --full` before merge.
+- Aggregate lowering and merge transport are mechanically defended by `SSAVerify`.
+- Remaining testing improvements are no longer Phase A blockers; the larger wins now live under later stdlib-aware and artifact-aware testing work.
 
 ### Compiler Excellence Order
 
@@ -272,10 +272,17 @@ backend work no longer feels fragile, and proofs, reports, and tooling all build
    - grow the regression corpus from real bugs
    - make report assertions part of ordinary compiler hardening
    - make stdlib testing module-targeted rather than only single-root bootstrap testing
+   - treat the current fast runner as the practical Phase A baseline, not the end-state architecture for testing
+   - proper long-term fast testing means:
+     - module-aware and subsystem-aware entrypoints instead of only shell-level filtering
+     - artifact-aware reuse so unchanged compiler facts do not get rebuilt or revalidated unnecessarily
+     - narrower recompilation and rerun scopes driven by explicit dependencies rather than by ad-hoc script sections
+     - fast local confidence without losing clear visibility into what was and was not exercised
 5. Turn explicit pipeline artifacts into stronger tooling/caching building blocks once the current architecture cleanup settles.
    - keep artifact boundaries explicit and inspectable
    - move toward serialization/caching only on top of already boring pass contracts
    - let tooling consume the same compiler facts rather than growing parallel ad-hoc models
+   - use explicit artifacts to enable better test reuse and narrower recompilation instead of keeping all fast paths inside shell orchestration
 
 ### Later
 
