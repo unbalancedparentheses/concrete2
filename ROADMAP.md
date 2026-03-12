@@ -9,6 +9,9 @@ Use it for:
 - remaining major work
 - sequencing constraints between unfinished areas
 
+Do not use it as the source of truth for current semantics or past implementation history.
+Use it to decide what to do next, in what order, and what documents/code areas to consult while doing it.
+
 For landed milestones, see [CHANGELOG.md](CHANGELOG.md).
 For current compiler structure and pass boundaries, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/PASSES.md](docs/PASSES.md).
 For current language and subsystem references, see:
@@ -45,7 +48,18 @@ Still clearly not implemented:
 
 ## Priority Snapshot
 
+### Milestones
+
+| Phase | Focus | Status | Blocks |
+|------|-------|--------|--------|
+| **A** | Compiler stability | Active | B, C, D |
+| **B** | Semantic cleanup | Active | D |
+| **C** | Tooling and stdlib hardening | Active | later system maturity |
+| **D** | Backend and trust multipliers | Pending | A, most of B |
+
 ### Now
+
+This list is ordered to match the active execution phases: Phase A first, then Phase B, then Phase C, then the front edge of Phase D.
 
 1. Stabilize loop lowering for mutable aggregates and borrows.
    - stop relying on full aggregate writeback through loop `phi` nodes for mutable aggregate state
@@ -53,32 +67,38 @@ Still clearly not implemented:
    - reduce aggregate `phi` usage to cases that are semantically necessary, preferring scalars or pointer identities over whole-aggregate SSA transport
    - treat borrow+loop+aggregate lowering fragility as a compiler architecture bug, not an LLVM quirk to paper over
    - grow regression coverage around optimized builds and stdlib cases that stress mutable aggregate loops
-2. Add an external LL(1) grammar checker as a standing syntax guardrail.
-   - add a compact reference grammar at `grammar/concrete.ebnf`
-   - add a small checker at `scripts/check_ll1.py`
-   - put it in CI
-   - treat parser-state rewind/backtracking regressions as bugs
-3. Finish tightening the builtin-vs-stdlib boundary.
+   - done means: optimized-build loop/borrow/aggregate cases are stable and this class of failure is covered by durable regressions
+2. Finish tightening the builtin-vs-stdlib boundary.
    - keep builtins minimal, compiler/runtime-facing, and explicitly non-user-facing
    - remove remaining string-based semantic dispatch in compiler tables, pass-local special cases, and backend helper selection
    - make ordinary language behavior depend on internal identities or explicit language items, not raw function-name matching
    - keep stringly handling confined to true foreign-symbol, linker-symbol, or user-facing report/rendering boundaries
    - treat any compiler rule that changes semantics based on an ordinary public name as architecture debt
    - keep the stdlib bytes-first and low-level rather than letting string-heavy convenience APIs dominate the surface
+   - done means: ordinary public names no longer carry compiler-known semantics through raw matching
+3. Add an external LL(1) grammar checker as a standing syntax guardrail.
+   - add a compact reference grammar at `grammar/concrete.ebnf`
+   - add a small checker at `scripts/check_ll1.py`
+   - put it in CI
+   - treat parser-state rewind/backtracking regressions as bugs
+   - done means: syntax regressions trip a dedicated CI check instead of silently re-entering the parser
 4. Keep deepening and hardening the stdlib.
    - deepen `fs`, `net`, and `process`
    - add more failure-path and integration tests
    - keep error, handle, and checked/unchecked conventions uniform
    - add stdlib-aware module-targeted test infrastructure instead of relying only on `std/src/lib.con --test`
+   - done means: systems modules have stronger failure-path coverage and stdlib tests can target one area without bootstrapping the whole tree
 5. Improve diagnostics fidelity and rendering quality.
    - better range precision
    - notes and secondary labels
    - clearer presentation for transformed constructs
    - reduce brittle string-matched report/test coupling where structured checks are possible
+   - done means: diagnostics quality improvements are visible in ordinary compiler output, not only in internal plumbing
 6. Preserve SSA as the only backend boundary and keep the build/project model explicit and boring.
    - replace raw LLVM string emission with a structured LLVM backend before adding backend plurality
    - keep target-specific work behind an explicit backend abstraction over SSA
    - treat MLIR as a later optional backend family, not the default immediate answer
+   - done means: the backend consumes a structured contract over SSA and textual LLVM concatenation is no longer the critical path
 
 ### Compiler Excellence Order
 
@@ -98,6 +118,15 @@ This is the highest-leverage path for turning the current compiler into a stable
 
 Goal: make the current pipeline boring and hard to break.
 
+Primary surfaces:
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- [docs/PASSES.md](docs/PASSES.md)
+- `Concrete/Lower.lean`
+- `Concrete/SSAVerify.lean`
+- `Concrete/SSACleanup.lean`
+- `Concrete/EmitSSA.lean`
+- `lean_tests/`
+
 1. stabilize loop lowering for mutable aggregates and borrows
 2. stop depending on aggregate writeback through loop `phi` nodes where stable storage identity is the real semantic model
 3. add optimized-build regressions and stdlib coverage for borrow+loop+aggregate cases
@@ -110,6 +139,16 @@ no known backend-sensitive failures in mutable aggregate loop lowering, includin
 
 Goal: shrink compiler magic and make language meaning explicit.
 
+Primary surfaces:
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- [research/builtin-vs-stdlib.md](research/builtin-vs-stdlib.md)
+- `Concrete/Intrinsic.lean`
+- `Concrete/BuiltinSigs.lean`
+- `Concrete/Check.lean`
+- `Concrete/Elab.lean`
+- `Concrete/CoreCheck.lean`
+- `Concrete/EmitSSA.lean`
+
 1. remove remaining string-based semantic dispatch
 2. make compiler-known behavior ride on explicit identities or language items
 3. keep raw string matching confined to foreign/linker/reporting boundaries
@@ -121,6 +160,15 @@ ordinary language behavior is no longer keyed off raw public names.
 #### Phase C: Tooling And Stdlib Hardening
 
 Goal: make the language usable and inspectable without destabilizing semantics.
+
+Primary surfaces:
+- [docs/DIAGNOSTICS.md](docs/DIAGNOSTICS.md)
+- [docs/STDLIB.md](docs/STDLIB.md)
+- [docs/TESTING.md](docs/TESTING.md)
+- `grammar/`
+- `scripts/`
+- `std/src/`
+- `run_tests.sh`
 
 1. add the external LL(1) grammar checker and CI coverage
 2. improve diagnostics fidelity and presentation
@@ -135,6 +183,17 @@ syntax guardrails, diagnostics, and stdlib testing behave like durable infrastru
 
 Goal: make the compiler strong enough to support proofs, tooling reuse, and long-term backend work.
 
+Primary surfaces:
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- [docs/PASSES.md](docs/PASSES.md)
+- [research/ten-x-improvements.md](research/ten-x-improvements.md)
+- [research/formalization-roi.md](research/formalization-roi.md)
+- `Concrete/Pipeline.lean`
+- `Concrete/SSAVerify.lean`
+- `Concrete/SSACleanup.lean`
+- `Concrete/EmitSSA.lean`
+- `Concrete/Report.lean`
+
 1. strengthen the SSA verifier/cleanup boundary into a clearer backend contract
 2. replace raw LLVM text emission with a structured backend
 3. turn explicit pipeline artifacts into reusable tooling/caching building blocks
@@ -143,6 +202,13 @@ Goal: make the compiler strong enough to support proofs, tooling reuse, and long
 
 Exit criterion:
 backend work no longer feels fragile, and proofs, reports, and tooling all build on the same stable compiler boundaries.
+
+### Why These Phases Matter
+
+- **Phase A** matters because backend-sensitive lowering bugs destroy trust in every other part of the compiler.
+- **Phase B** matters because a compiler is much easier to trust, prove, and maintain when ordinary names stay ordinary.
+- **Phase C** matters because syntax guardrails, diagnostics, and testing infrastructure are what make a compiler sustainable instead of heroic.
+- **Phase D** matters because this is where Concrete stops being only a working compiler and becomes a trustworthy compiler platform.
 
 ### Next
 
@@ -181,6 +247,30 @@ Backend work should happen in this order:
 4. Treat MLIR as optional and only if it still earns its complexity after the LLVM/backend-boundary cleanup.
 
 The immediate backend problem is stringly LLVM emission, not lack of MLIR.
+
+## Not Yet
+
+The roadmap should also constrain what not to do before prerequisites are stable:
+
+- do not add backend plurality before the structured LLVM/backend-contract work is done
+- do not treat MLIR as the immediate answer to the current backend problem
+- do not add major runtime/concurrency surface area before compiler/backend boundaries are more stable
+- do not add surface features that increase grammar cost, audit cost, or proof cost without clear leverage
+- do not grow parallel semantic lowering paths for convenience
+- do not let ordinary public names regain compiler-known meaning through ad-hoc string matching
+
+These are not style preferences. They are project-protection rules.
+
+## Implementation Rule
+
+For any roadmap item:
+
+1. start from the phase and item description here
+2. use the linked docs in that phase as the semantic/reference authority
+3. inspect the listed code surfaces before changing behavior
+4. preserve the phase ordering unless there is an explicit dependency reason to do otherwise
+
+If a task needs detailed current semantics, the docs and code own that detail; the roadmap owns ordering, priorities, and completion criteria.
 
 ## Longer-Horizon Multipliers
 
@@ -230,6 +320,14 @@ For more on these longer-horizon themes, see:
 - Multi-backend work is deferred until the SSA boundary stays boring and shared.
 - Loop lowering should preserve stable storage identity for mutable aggregate state instead of normalizing everything into whole-aggregate SSA transport.
 - Runtime work should not pull frontend semantics or stdlib design into premature complexity.
+
+## Current Risks
+
+- mutable aggregate lowering can still be too backend-sensitive if storage identity is not preserved
+- remaining string-based semantic logic still expands the trusted computing base unnecessarily
+- textual LLVM emission remains a brittle backend choke point
+- tooling/caching work can regress into ad-hoc duplication if artifacts stop being explicit and reusable
+- audit/report work is still weaker than the language's long-term value proposition requires
 
 ## Current Design Constraints
 
