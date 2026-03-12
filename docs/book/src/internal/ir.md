@@ -1,57 +1,43 @@
-# The Concrete IR
+# Internal IRs
 
-Currently in Concrete, the AST is lowered first to a IR to help support multiple targets and ease the generation of code on the end of the compilation process.
+The current compiler architecture is built around explicit intermediate representations, not direct AST-to-codegen translation.
 
-This IR is based on the concept of basic blocks, where within each block there is a linear flow (i.e) there is no branching.
+The important modern pipeline is:
 
-Each block has a terminator, which for example can return or jump to another block, this is what defines the control flow of the program.
+`Parse -> Resolve -> Check -> Elab -> CoreCanonicalize -> CoreCheck -> Mono -> Lower -> SSAVerify -> SSACleanup -> EmitSSA`
 
+## Why This Matters
 
-## The IR struct
+Concrete wants:
 
-The `IR` struct holds the whole compile unit, with all the modules, structs, functions, types, etc defined within.
+- explicit semantic boundaries
+- a backend contract that can be checked
+- better audit/report surfaces
+- eventual proof work against a reduced, explicit core
 
-An arena is used to store the data types, so they can be cheaply referenced by the given typed index.
+That is why the compiler architecture is such a large part of the roadmap.
 
-The `IR` stores all of these in a flat structure, i.e, functions defined in a submodule are available for lookup directly by their index through the arena.
+## Core vs SSA
 
-## The Module struct
+Two especially important IR boundaries are:
 
-Defines a module in concrete.
+- **Core**: the main post-elaboration semantic representation
+- **SSA**: the backend-facing representation consumed by code generation
 
-This structure holds the indexes of the functions, structs, modules, etc defined within this module.
+Concrete's long-term shape depends on keeping those boundaries clear and boring.
 
-## The Function struct
+## Control Flow In SSA
 
-Defines a function in concrete.
+SSA represents control flow with:
 
-It holds the basic blocks and the locals used within.
+- basic blocks
+- terminators
+- explicit values/registers
 
-## The BasicBlock
+Recent compiler work has specifically hardened aggregate lowering so mutable aggregate state is kept in stable storage instead of being transported through fragile aggregate `phi` nodes.
 
-It holds a array of statements and a terminator.
+## Where To Read More
 
-The statements have no branching.
-
-The terminator defines where to branch, return from a function, a switch, etc.
-
-## The Statement
-
-Currently there are 3 kinds of statements: assign, storage live, storage dead.
-
-Only assign is used currently: it contains a place and a rvalue.
-
-## Place
-
-This defines a place in memory, where you can load or store.
-
-## RValue
-
-A value found in the right hand side of an assignment, for example the use of an operand or a binary operation with 2 operands, a reference to a place, etc.
-
-## Operand
-
-A operand is a value, either from a place in memory or constant data.
-
-## Local
-A local is a local variable within a function body, it is defined by a place and the type of local, such as temporary, argument or a return pointer.
+- `docs/ARCHITECTURE.md` for the full pass structure
+- `docs/PASSES.md` for pass-by-pass contracts
+- `docs/ABI_LAYOUT.md` for type/layout rules

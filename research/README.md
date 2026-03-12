@@ -56,6 +56,7 @@ Status key:
 
 - [design-filters.md](design-filters.md) — feature-admission checklist and high-leverage design filters (`Process`)
 - [candidate-ideas.md](candidate-ideas.md) — Concrete-specific candidate compiler/language/tooling ideas (`Research`)
+- [competitive-gap-analysis.md](competitive-gap-analysis.md) — what other systems languages may still have, which gaps matter, and where Concrete should aim to be stronger instead (`Open`)
 - [complete-language-system.md](complete-language-system.md) — what still separates a strong language/compiler from a complete language system (`Open`)
 - [ten-x-improvements.md](ten-x-improvements.md) — the relatively small set of changes that could dramatically raise Concrete's value (`Open`)
 - [external-ideas.md](external-ideas.md) — useful ideas borrowed from other languages (`Research`)

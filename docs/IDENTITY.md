@@ -84,6 +84,8 @@ Concrete should instead be strongest where those languages are not explicitly ce
 - proof-friendly compiler structure
 - a smaller and more honest semantic surface
 
+For a fuller comparison of what other languages may still have even after Concrete's planned phases, see [../research/competitive-gap-analysis.md](../research/competitive-gap-analysis.md).
+
 ## Non-Goals
 
 Concrete should avoid drifting into these as identity goals:

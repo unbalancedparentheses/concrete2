@@ -1,6 +1,8 @@
 # Enums
 
-With the `enum` keyword you can define a enum:
+Enums define tagged unions. Variants can carry payloads or be empty.
+
+Example:
 
 ```rust
 mod option {
@@ -29,6 +31,8 @@ mod option {
     }
 }
 ```
+
+Enums are matched with `match`, and variants are introduced with the `Type#Variant` syntax.
 
 ```rust
 mod Enum {
@@ -61,3 +65,14 @@ mod Enum {
     }
 }
 ```
+
+## Why Enums Matter In Concrete
+
+Enums matter both as language-level sum types and as layout-sensitive types:
+
+- they participate in ordinary control flow and error handling
+- they matter to ABI/layout rules
+- they appear in trusted/FFI boundaries
+- they are important to report/audit surfaces
+
+`Result` is especially important because it is one of the language's core ergonomic/dataflow types.
