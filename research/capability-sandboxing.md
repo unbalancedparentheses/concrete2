@@ -86,6 +86,8 @@ Why this is high leverage:
 - improves code review and security auditing immediately
 - makes coarse capability sets more understandable before splitting them further
 
+This is one of the highest-value security features Concrete could have. A reviewer should be able to ask not just “does this function require `Network`?”, but “why does it require `Network`, through which path, and what narrower authority wrapper could remove that requirement?”
+
 This is the safest and highest-value first step.
 
 ### 2. Capability aliases

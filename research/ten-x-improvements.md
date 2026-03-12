@@ -72,6 +72,15 @@ Why this is 10x:
 - it helps ordinary users understand effect and resource boundaries
 - it strengthens the capability/sandboxing story without complicating syntax
 
+The strongest version of this is security-oriented, not only developer-oriented:
+
+- mechanically see where authority enters a system
+- mechanically see where allocation and cleanup happen
+- mechanically see where trusted implementation techniques are used
+- mechanically see where foreign behavior enters through `Unsafe` or `trusted extern fn`
+
+Very few low-level languages aim to make those boundaries this visible.
+
 ### 3. A very strong stdlib style
 
 Concrete does not need a huge stdlib. It needs a *strong* one.
@@ -139,12 +148,20 @@ Why this is 10x:
 - it multiplies the value of the existing `with(...)` system
 - it improves the hosted vs freestanding story too
 
+This is also one of the clearest security multipliers available to Concrete:
+
+- less ambient authority
+- easier least-authority review
+- clearer sandbox boundaries
+- fewer “safe-looking but globally powerful” APIs
+
 See [capability-sandboxing.md](capability-sandboxing.md).
 
 Closely related:
 
 - a stronger `Unsafe` structure and audit story — see [unsafe-structure.md](unsafe-structure.md)
 - the `trusted fn` / `trusted impl` boundary for containing pointer-level implementation unsafety behind safe APIs, keeping the three-way split clean: semantic effects (capabilities) / implementation trust (`trusted`) / foreign boundaries (`Unsafe`) — see [trusted-boundary.md](trusted-boundary.md)
+- builtin minimization and stdlib-owned public APIs, which shrink the trusted computing base and make those boundaries easier to audit — see [builtin-vs-stdlib.md](builtin-vs-stdlib.md)
 
 ### 7. A truly strong concurrency/runtime model
 

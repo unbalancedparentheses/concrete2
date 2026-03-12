@@ -98,6 +98,44 @@ Recently completed:
    - abstract cost estimation later
    - never at the cost of clarity in the core language
 
+## Longer-Horizon Multipliers
+
+These are not the immediate implementation queue, but they are some of the highest-leverage ways to make Concrete unusually strong for safety-, security-, and audit-focused low-level work.
+
+1. **Proof-backed trust claims**
+   - prove effect/capability honesty
+   - prove ownership/linearity soundness
+   - prove `trusted` / `Unsafe` honesty
+   - prove Core -> SSA preservation
+   This is the clearest way to turn “carefully designed” into “meaningfully more trustworthy.”
+
+2. **Stronger audit outputs**
+   - why a capability is required
+   - where allocation happens
+   - where cleanup/destruction happens
+   - where `trusted` enters
+   - what layout/ABI a type actually has
+   The compiler should become a practical audit tool, not only a compiler.
+
+3. **A smaller trusted computing base**
+   - keep shrinking compiler-known builtins
+   - keep moving user-facing behavior into stdlib traits and ordinary code
+   - keep trust boundaries explicit and grep-able
+   This is one of the best ways to make Concrete more defensible than larger systems-language implementations.
+
+4. **A better capability/sandboxing story**
+   - stronger capability reports
+   - better “why” traces
+   - capability aliases
+   - explicit authority wrappers
+   - later, a cleaner hosted vs freestanding split
+
+For more on these longer-horizon themes, see:
+- [research/ten-x-improvements.md](research/ten-x-improvements.md)
+- [research/capability-sandboxing.md](research/capability-sandboxing.md)
+- [research/unsafe-structure.md](research/unsafe-structure.md)
+- [research/no-std-freestanding.md](research/no-std-freestanding.md)
+
 ## Status Legend
 
 - **Done**: implemented and no longer on the active roadmap.
@@ -1803,31 +1841,6 @@ These do not block any phase above:
 **Critical path for production use:** current pipeline stability → stdlib hardening → runtime (`12a`).
 
 **Formalization** (Phase 9) now depends on architecture phase A4 (Core Validation) — the proofs target the Core IR, not the surface AST.
-
-## Longer-Horizon Multipliers
-
-These are not the near-term priorities, but they are the things most likely to multiply Concrete's long-term value once the current compiler and stdlib arcs are stable.
-
-The biggest strategic multipliers are:
-
-- real formalization of Core and lowering
-- stronger audit outputs
-- execution-cost visibility as a later audit/report extension
-- a very strong stdlib style
-- a formatter and stronger tooling baseline
-- a cleaner hosted vs freestanding split
-- a stronger `Unsafe` structure and audit story
-- a fully coherent trust/effect model across builtins, stdlib, and user code
-- a better capability/sandboxing story
-- later, a coherent concurrency/runtime model
-
-These should not displace the current near-term work. The near-term roadmap is still:
-
-- strengthen the testing strategy
-- clean up the builtin-vs-stdlib boundary and stdlib API surface
-- deepen and harden the existing stdlib
-- keep the compiler/toolchain explicit and boring
-- push formalization over the cleaned Core -> SSA architecture
 
 Related research notes:
 

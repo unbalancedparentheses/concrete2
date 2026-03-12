@@ -55,6 +55,7 @@ That means:
 - keep `with(Unsafe)` simple and visible
 - make the compiler much better at explaining *why* unsafe is required
 - encourage wrapper-based containment so unsafe code stays narrow
+- keep the trusted computing base small by shrinking compiler magic and keeping trusted boundaries explicit
 
 The goal is not to beat Zig by adding more unsafe syntax. The goal is to make unsafe code easier to review, audit, and trust.
 
@@ -109,6 +110,8 @@ why transitive Unsafe?
 This strengthens the audit story without changing the language surface.
 
 This is also one of the clearest ways Concrete could improve on Zig: keep the low-level boundary explicit, but make the compiler much better at explaining it.
+
+From a security point of view, this matters because the review target is not only “all unsafe code,” but “all places where the program stops being justified by ordinary safe semantics.” Concrete should make those places mechanically visible.
 
 The reporting story should eventually distinguish:
 
@@ -198,6 +201,7 @@ This connects directly to:
 - [trusted-boundary.md](trusted-boundary.md) — the `trusted fn` / `trusted impl` design for containing pointer-level implementation unsafety behind safe APIs, without leaking `Unsafe` to callers. The wrapper-based containment pattern described here is what `trusted` formalizes as a language-level boundary.
 - [capability-sandboxing.md](capability-sandboxing.md)
 - [no-std-freestanding.md](no-std-freestanding.md)
+- [builtin-vs-stdlib.md](builtin-vs-stdlib.md)
 - [../docs/FFI.md](../docs/FFI.md)
 
 That trusted-boundary note also makes two constraints explicit that matter here:

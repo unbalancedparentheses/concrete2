@@ -168,6 +168,8 @@ For low-level programming, that means:
 
 The goal is not convenience-first systems programming. The goal is code that is still close to the machine, but substantially easier to audit, reason about, and eventually verify.
 
+The deeper security goal is not only memory safety. It is making trust boundaries explicit and inspectable: where authority enters, where allocation happens, where foreign code begins, where trusted implementation techniques are used, and later, where proofs justify those boundaries. Concrete is trying to make those facts visible to both the compiler and the reviewer.
+
 ### Pure by default, effects declared
 
 Functions without capability annotations are pure. No side effects, no allocation, no I/O. When a function needs effects, it declares them with `with()`:
