@@ -293,6 +293,14 @@ The goal is not to out-feature those languages. The goal is to be unusually good
 
 The compiler implements the core surface language and the full internal IR pipeline in Lean 4. All 288 main tests pass, and the SSA-specific suite passes as well.
 
+## Known Rough Edges
+
+- stdlib direct compilation/testing is still being tightened so `std/src/*.con` follows the exact same path as ordinary user modules.
+- some docs still lag behind recent stdlib naming/API cleanup and need periodic sync with landed `main`.
+- builtin-vs-stdlib cleanup is still active in a few areas where older compiler-known hooks remain.
+- diagnostics infrastructure is strong, but rendering quality still has room to improve (ranges, notes, and secondary labels).
+- formal proofs and deferred audit outputs such as allocation/cleanup summaries are still ahead, not done.
+
 Implemented today:
 
 - a single staged Lean 4 compiler pipeline: Parse → Resolve → Check → Elab → CoreCheck → Mono → Lower → SSAVerify → SSACleanup → EmitSSA → clang
