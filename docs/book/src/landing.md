@@ -76,5 +76,9 @@ Compared to Lean, Concrete is a low-level programming language first, not a proo
   <a href="../../IDENTITY.md">Project Identity</a>
   <a href="../../../ROADMAP.md">Roadmap</a>
   <a href="../../../CHANGELOG.md">Changelog</a>
+  <a href="./stdlib.md">Standard Library</a>
+  <a href="./testing.md">Testing</a>
+  <a href="./architecture.md">Architecture</a>
+  <a href="./reference.md">Reference Docs</a>
   <a href="./internal/index.md">Internal Details</a>
 </div>
