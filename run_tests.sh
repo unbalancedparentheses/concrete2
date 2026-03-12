@@ -10,14 +10,22 @@ usage() {
     cat <<'USAGE'
 Usage: run_tests.sh [OPTIONS]
 
+The default mode is --fast: parallel execution on all cores, network tests
+skipped. This is the recommended developer workflow for edit-test loops.
+
+Use --full before merging to run the complete suite including network tests.
+Use --filter to iterate on a single area without paying for the full suite.
+
+Modes:
+  --fast              Fast tier — skip network/TCP tests (DEFAULT)
+  --full              Complete suite — all sections including slow tests
+  --filter PATTERN    Only tests whose file path contains PATTERN
+  --stdlib            Only stdlib module + collection verification
+  --O2               Only -O2 optimized-build regression tests
+  --codegen           Only codegen differential + SSA structure tests
+  --report            Only --report output verification tests
+
 Options:
-  --full              Run the entire suite (all sections, including slow tests)
-  --fast              Run fast tier only — no network/TCP tests (default)
-  --filter PATTERN    Run only tests whose file path matches PATTERN (glob)
-  --stdlib            Run only the stdlib module + collection tests
-  --O2                Run only the -O2 optimized-build regression tests
-  --codegen           Run only codegen differential + SSA structure tests
-  --report            Run only --report output tests
   -j N                Override parallelism (default: number of CPU cores)
   -h, --help          Show this help
 
@@ -25,14 +33,13 @@ Environment:
   TEST_JOBS=N         Same as -j N
   SKIP_FLAKY_TCP_TEST=1  Skip the flaky TCP test
 
-Examples:
-  ./run_tests.sh                        # fast parallel run
-  ./run_tests.sh --full                 # everything
-  ./run_tests.sh --filter struct        # only tests with "struct" in the path
-  ./run_tests.sh --filter "enum_*"      # glob filter
-  ./run_tests.sh --stdlib               # stdlib + collection verification
-  ./run_tests.sh --O2                   # only -O2 regressions
-  ./run_tests.sh -j1                    # serial (old default)
+Recommended workflows:
+  ./run_tests.sh                        # daily driver — fast parallel
+  ./run_tests.sh --filter struct_loop   # iterate on one area
+  ./run_tests.sh --stdlib               # after touching std/src/
+  ./run_tests.sh --O2                   # after lowering changes
+  ./run_tests.sh --full                 # pre-merge — complete coverage
+  ./run_tests.sh -j 1                   # debug ordering issues
 USAGE
     exit 0
 }
@@ -1320,11 +1327,23 @@ fi # end section: collection
 
 echo ""
 flush_jobs
-RESULT_LINE="=== Results: $PASS passed, $FAIL failed"
+
+# --- Summary ---
+echo "=== Results ==="
+echo "  passed:  $PASS"
+echo "  failed:  $FAIL"
 if [ "$SKIP" -gt 0 ]; then
-    RESULT_LINE="$RESULT_LINE, $SKIP skipped"
+    echo "  skipped: $SKIP"
 fi
-echo "$RESULT_LINE ==="
+echo "  mode:    $MODE"
+if [ -n "$FILTER" ]; then
+    echo "  filter:  $FILTER"
+fi
+if [ "$MODE" != "full" ] || [ -n "$FILTER" ]; then
+    echo ""
+    echo "  NOTE: This was a partial run. Use './run_tests.sh --full' for complete coverage."
+fi
+echo ""
 if [ "$FAIL" -gt 0 ]; then
     exit 1
 fi
