@@ -917,6 +917,13 @@ else
     FAIL=$((FAIL + 1))
 fi
 
+# === Compiler bug regression tests ===
+run_ok "$TESTDIR/regress_deref_field_precedence.con"  42
+run_ok "$TESTDIR/regress_mut_field_writeback.con"     42
+run_ok "$TESTDIR/regress_char_bool_cast.con"          42
+run_ok "$TESTDIR/regress_ref_no_spill.con"            42
+run_ok "$TESTDIR/regress_string_field_access.con"     42
+
 # === Stdlib module tests ===
 echo ""
 echo "=== Stdlib module tests ==="
