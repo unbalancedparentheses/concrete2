@@ -231,7 +231,7 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 - `std.net`: `TcpListener::bind` returns `Result<TcpListener, NetError>`, `TcpStream::connect` returns `Result<TcpStream, NetError>`, `TcpListener::accept` returns `Result<TcpStream, NetError>`
 - `std.process`: `kill` returns `Result<bool, ProcessError>`, `Child::wait` returns `Result<ExitStatus, ProcessError>`, `ForkResult` kept as 3-variant union
 - Added `std.parse` — inverse of `fmt`: `parse_int`, `parse_uint`, `parse_hex`, `parse_bin`, `parse_oct`, `parse_bool` (all return `Option<T>`), plus `Cursor` struct for structured input parsing (`peek`, `advance`, `skip_whitespace`, `expect_char`)
-- Added checked accessors: `String::get_checked` returns `Option<char>`, `Vec::get_checked` returns `Option<&T>` (reference-in-generic monomorphizes correctly)
+- Added checked accessors: `String::get` returns `Option<char>`, `Vec::get` returns `Option<&T>` (reference-in-generic monomorphizes correctly)
 - Systems deepening:
   - `std.fs`: `append_file`, `file_exists`, `read_to_string`, write-then-read roundtrip test
   - `std.net`: `TcpStream::write_all` (loop until all sent), `TcpStream::read_all` (read until EOF into Bytes)

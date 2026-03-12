@@ -599,7 +599,7 @@ mod parse {
     fn test_cursor_expect_char() -> i32 {
         let s: String = "ab";
         let mut cur: Cursor = Cursor::new(&s);
-        if !cur.expect_char('a') {
+        if !(cur.expect_char('a')) {
             s.drop();
             return 1;
         }
@@ -755,7 +755,7 @@ mod parse {
     fn test_cursor_eof() -> i32 {
         let s: String = String::new();
         let mut cur: Cursor = Cursor::new(&s);
-        if !cur.is_eof() {
+        if !(cur.is_eof()) {
             s.drop();
             return 1;
         }
@@ -825,7 +825,7 @@ mod parse {
             },
             Option#None => {}
         }
-        if !cur.is_eof() {
+        if !(cur.is_eof()) {
             s.drop();
             return 1;
         }
@@ -839,7 +839,7 @@ mod parse {
         let s: String = "   ";
         let mut cur: Cursor = Cursor::new(&s);
         cur.skip_whitespace();
-        if !cur.is_eof() {
+        if !(cur.is_eof()) {
             s.drop();
             return 1;
         }

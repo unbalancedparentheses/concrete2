@@ -1043,7 +1043,8 @@ private def buildBuiltinSigs : List (String × FnSummary) := [
 ]
 
 partial def elabModule (m : Module) (summary : FileSummary)
-    (imports : ResolvedImports := {}) : Except Diagnostics CModule :=
+    (imports : ResolvedImports := {})
+    (summaryTable : List (String × FileSummary) := []) : Except Diagnostics CModule :=
   -- Use pre-built summaries from FileSummary
   let userFnSigs := summary.functions
   let externSigs := summary.externFnSigs
@@ -1081,6 +1082,7 @@ partial def elabModule (m : Module) (summary : FileSummary)
     ], isCopy := false
   }
   let hasUserResult := m.enums.any fun ed => ed.name == "Result"
+    || imports.enums.any fun ed => ed.name == "Result"
   let builtinEnumList := [builtinOptionEnum] ++ (if hasUserResult then [] else [builtinResultEnum])
   let allStructs := imports.structs ++ m.structs
   let allEnums := builtinEnumList ++ imports.enums ++ m.enums
@@ -1105,16 +1107,16 @@ partial def elabModule (m : Module) (summary : FileSummary)
     allFnSigPairs := fnSigPairs
     newtypes := m.newtypes
   }
-  -- Elaborate all functions
+  -- Elaborate only LOCAL functions (imported impl bodies are already elaborated in their module)
   let regularFns := m.functions.map fun f => (f, (none : Option Ty))
-  let implMethodPairs := allImplBlocks.foldl (fun acc ib =>
+  let implMethodPairs := m.implBlocks.foldl (fun acc ib =>
     let implTy := if ib.typeParams.isEmpty then tyFromName ib.typeName
                   else Ty.generic ib.typeName (ib.typeParams.map Ty.typeVar)
     acc ++ ib.methods.map fun f =>
       ({ f with typeParams := ib.typeParams ++ f.typeParams,
                 isTrusted := f.isTrusted || ib.isTrusted }, some implTy)
   ) ([] : List (FnDef × Option Ty))
-  let traitImplMethodPairs := allTraitImpls.foldl (fun acc tb =>
+  let traitImplMethodPairs := m.traitImpls.foldl (fun acc tb =>
     let implTy := if tb.typeParams.isEmpty then tyFromName tb.typeName
                   else Ty.generic tb.typeName (tb.typeParams.map Ty.typeVar)
     acc ++ tb.methods.map fun f =>
@@ -1161,6 +1163,14 @@ partial def elabModule (m : Module) (summary : FileSummary)
     | ((.ok cExpr), _) => (c.name, c.ty, cExpr)
     | ((.error _), _) => (c.name, c.ty, CExpr.intLit 0 c.ty)
   -- Elaborate submodules recursively
+  -- Collect sibling submodule type definitions so each submodule can reference sibling types.
+  -- Only inject struct/enum definitions and method SIGNATURES (not full impl blocks with bodies).
+  let siblingStructs := summary.submoduleSummaries.foldl (fun acc (_, subSummary) =>
+    acc ++ subSummary.structs) ([] : List StructDef)
+  let siblingEnums := summary.submoduleSummaries.foldl (fun acc (_, subSummary) =>
+    acc ++ subSummary.enums) ([] : List EnumDef)
+  let siblingImplMethodSigs := summary.submoduleSummaries.foldl (fun acc (_, subSummary) =>
+    acc ++ subSummary.implMethodSigs) ([] : List (String × FnSummary))
   let cSubmodules := m.submodules.foldl (init := (Except.ok [] : Except Diagnostics (List CModule))) fun acc sub =>
     match acc with
     | .error e => .error e
@@ -1168,7 +1178,24 @@ partial def elabModule (m : Module) (summary : FileSummary)
       let subSummary := match summary.submoduleSummaries.find? fun (n, _) => n == sub.name with
         | some (_, s) => s
         | none => buildFileSummary sub
-      match elabModule sub subSummary with
+      let subImports := match liftStringError "elab" (resolveImports sub.imports summaryTable
+          (fun modName => ElabError.message (.unknownModule modName))
+          (fun sym modName => ElabError.message (.notPublicInModule sym modName))) with
+        | .ok imp => imp
+        | .error _ => {}
+      -- Inject sibling module types so submodules can reference each other's types
+      -- Filter out siblings that conflict with locally-defined names
+      let localStructNames := sub.structs.map (·.name)
+      let localEnumNames := sub.enums.map (·.name)
+      let filteredStructs := siblingStructs.filter fun sd =>
+        !(localStructNames.contains sd.name)
+      let filteredEnums := siblingEnums.filter fun ed =>
+        !(localEnumNames.contains ed.name)
+      let subImports := { subImports with
+        structs := subImports.structs ++ filteredStructs
+        enums := subImports.enums ++ filteredEnums
+        implMethodSigs := subImports.implMethodSigs ++ siblingImplMethodSigs }
+      match elabModule sub subSummary subImports summaryTable with
       | .ok csub => .ok (lst ++ [csub])
       | .error ds => .error (ds.map fun d => { d with message := s!"in submodule '{sub.name}': {d.message}" })
   match cSubmodules with
@@ -1195,6 +1222,7 @@ partial def elabModule (m : Module) (summary : FileSummary)
         typeName := tb.typeName,
         methodNames := tb.methods.map (·.name),
         methodRetTys := tb.methods.map fun f => (f.name, f.retTy) : CTraitImpl }
+    linkerAliases := imports.linkerAliases
   }
 
 -- ============================================================
@@ -1212,7 +1240,7 @@ def elabProgram (modules : List Module)
         (fun sym modName => ElabError.message (.notPublicInModule sym modName))) with
     | .error ds => (acc, errs ++ ds)
     | .ok imports =>
-      match elabModule m summary imports with
+      match elabModule m summary imports summaryTable with
       | .ok cm => (acc ++ [cm], errs)
       | .error ds => (acc, errs ++ ds)
   ) (([] : List CModule), ([] : Diagnostics))

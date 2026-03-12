@@ -1,6 +1,8 @@
 mod bitset {
     import std.mem.{sizeof};
-    import std.alloc.{realloc,free};
+    import std.alloc.{grow,dealloc};
+    import std.libc.{memset, memcpy};
+    import std.math.{max};
 
     pub struct BitSet {
         data: *mut u64,
@@ -18,10 +20,10 @@ mod bitset {
             return b;
         }
 
-        pub fn with_capacity(n: u64) -> BitSet with(Alloc, Unsafe) {
+        pub fn with_capacity(n: u64) with(Alloc, Unsafe) -> BitSet {
             let words: u64 = (n + 63) / 64;
-            let ptr: *mut u64 = realloc::<u64>(0 as *mut u64, words);
-            std::libc::memset(ptr as *mut u8, 0, words * 8);
+            let ptr: *mut u64 = grow::<u64>(0 as *mut u64, words);
+            memset(ptr as *mut u8, 0, words * 8);
             let b: BitSet = BitSet {
                 data: ptr,
                 n_bits: n,
@@ -119,20 +121,20 @@ mod bitset {
 
         pub fn clear(&mut self) with(Unsafe) {
             if self.cap_words > 0 {
-                std::libc::memset(self.data as *mut u8, 0, self.cap_words * 8);
+                memset(self.data as *mut u8, 0, self.cap_words * 8);
             }
         }
 
         fn grow(&mut self, needed_bits: u64) with(Alloc, Unsafe) {
             let needed_words: u64 = (needed_bits + 63) / 64;
-            let new_words: u64 = std::math::max::<u64>(needed_words, std::math::max::<u64>(self.cap_words, 1) * 2);
-            let new_ptr: *mut u64 = realloc::<u64>(0 as *mut u64, new_words);
+            let new_words: u64 = max::<u64>(needed_words, max::<u64>(self.cap_words, 1) * 2);
+            let new_ptr: *mut u64 = grow::<u64>(0 as *mut u64, new_words);
             // Zero the new buffer
-            std::libc::memset(new_ptr as *mut u8, 0, new_words * 8);
+            memset(new_ptr as *mut u8, 0, new_words * 8);
             // Copy old data
             if self.cap_words > 0 {
-                std::libc::memcpy(new_ptr as *mut u8, self.data as *const u8, self.cap_words * 8);
-                free::<u64>(self.data);
+                memcpy(new_ptr as *mut u8, self.data as *const u8, self.cap_words * 8);
+                dealloc::<u64>(self.data);
             }
             self.data = new_ptr;
             self.cap_words = new_words;
@@ -141,7 +143,7 @@ mod bitset {
 
         pub fn drop(self) with(Alloc) {
             if self.cap_words > 0 {
-                free::<u64>(self.data);
+                dealloc::<u64>(self.data);
             }
         }
     }
@@ -149,17 +151,17 @@ mod bitset {
     import std.test.{assert_eq, assert_true};
 
     #[test]
-    fn test_set_and_test() -> i32 with(Alloc, Unsafe) {
+    fn test_set_and_test() with(Alloc, Unsafe) -> i32 {
         let mut b: BitSet = BitSet::new();
         b.set(0);
         b.set(5);
         b.set(63);
         b.set(64);
 
-        if !b.test(0) { b.drop(); return 1; }
-        if !b.test(5) { b.drop(); return 1; }
-        if !b.test(63) { b.drop(); return 1; }
-        if !b.test(64) { b.drop(); return 1; }
+        if !(b.test(0)) { b.drop(); return 1; }
+        if !(b.test(5)) { b.drop(); return 1; }
+        if !(b.test(63)) { b.drop(); return 1; }
+        if !(b.test(64)) { b.drop(); return 1; }
         if b.test(1) { b.drop(); return 1; }
         if b.test(100) { b.drop(); return 1; }
 
@@ -168,10 +170,10 @@ mod bitset {
     }
 
     #[test]
-    fn test_unset() -> i32 with(Alloc, Unsafe) {
+    fn test_unset() with(Alloc, Unsafe) -> i32 {
         let mut b: BitSet = BitSet::new();
         b.set(10);
-        if !b.test(10) { b.drop(); return 1; }
+        if !(b.test(10)) { b.drop(); return 1; }
         b.unset(10);
         if b.test(10) { b.drop(); return 1; }
         b.drop();
@@ -179,7 +181,7 @@ mod bitset {
     }
 
     #[test]
-    fn test_count() -> i32 with(Alloc, Unsafe) {
+    fn test_count() with(Alloc, Unsafe) -> i32 {
         let mut b: BitSet = BitSet::new();
         b.set(0);
         b.set(1);
@@ -202,7 +204,7 @@ mod bitset {
     }
 
     #[test]
-    fn test_union() -> i32 with(Alloc, Unsafe) {
+    fn test_union() with(Alloc, Unsafe) -> i32 {
         let mut a: BitSet = BitSet::new();
         a.set(0);
         a.set(2);
@@ -220,10 +222,10 @@ mod bitset {
             b.drop();
             return 1;
         }
-        if !a.test(0) { a.drop(); b.drop(); return 1; }
-        if !a.test(1) { a.drop(); b.drop(); return 1; }
-        if !a.test(2) { a.drop(); b.drop(); return 1; }
-        if !a.test(3) { a.drop(); b.drop(); return 1; }
+        if !(a.test(0)) { a.drop(); b.drop(); return 1; }
+        if !(a.test(1)) { a.drop(); b.drop(); return 1; }
+        if !(a.test(2)) { a.drop(); b.drop(); return 1; }
+        if !(a.test(3)) { a.drop(); b.drop(); return 1; }
 
         a.drop();
         b.drop();
@@ -231,7 +233,7 @@ mod bitset {
     }
 
     #[test]
-    fn test_intersect() -> i32 with(Alloc, Unsafe) {
+    fn test_intersect() with(Alloc, Unsafe) -> i32 {
         let mut a: BitSet = BitSet::new();
         a.set(0);
         a.set(1);
@@ -251,8 +253,8 @@ mod bitset {
             return 1;
         }
         if a.test(0) { a.drop(); b.drop(); return 1; }
-        if !a.test(1) { a.drop(); b.drop(); return 1; }
-        if !a.test(2) { a.drop(); b.drop(); return 1; }
+        if !(a.test(1)) { a.drop(); b.drop(); return 1; }
+        if !(a.test(2)) { a.drop(); b.drop(); return 1; }
         if a.test(3) { a.drop(); b.drop(); return 1; }
 
         a.drop();
@@ -261,13 +263,13 @@ mod bitset {
     }
 
     #[test]
-    fn test_with_capacity() -> i32 with(Alloc, Unsafe) {
+    fn test_with_capacity() with(Alloc, Unsafe) -> i32 {
         let mut b: BitSet = BitSet::with_capacity(128);
         b.set(0);
         b.set(127);
 
-        if !b.test(0) { b.drop(); return 1; }
-        if !b.test(127) { b.drop(); return 1; }
+        if !(b.test(0)) { b.drop(); return 1; }
+        if !(b.test(127)) { b.drop(); return 1; }
         if b.test(64) { b.drop(); return 1; }
 
         b.drop();

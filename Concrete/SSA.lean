@@ -71,6 +71,8 @@ structure SModule where
   functions : List SFnDef
   externFns : List (String × List (String × Ty) × Ty)
   globals : List (String × String)
+  /-- Maps local alias name → original linker symbol for aliased imports. -/
+  linkerAliases : List (String × String) := []
 
 -- ============================================================
 -- SVal.ty accessor

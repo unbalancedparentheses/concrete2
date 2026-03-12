@@ -1,5 +1,6 @@
 mod path {
-    import std.alloc.{realloc,free};
+    import std.alloc.{grow,dealloc};
+    import std.math.{max};
 
     pub struct Path {
         ptr: *const u8,
@@ -23,9 +24,9 @@ mod path {
         }
 
         pub fn from_string(s: &String) with(Alloc) -> PathBuf {
-            let cap: u64 = std::math::max::<u64>(s.len, 4) * 2;
+            let cap: u64 = max::<u64>(s.len, 4) * 2;
             let p: PathBuf = PathBuf {
-                ptr: realloc::<u8>(0 as *mut u8, cap),
+                ptr: grow::<u8>(0 as *mut u8, cap),
                 len: s.len,
                 cap: cap,
             };
@@ -42,8 +43,8 @@ mod path {
         }
 
         fn grow(&mut self) with(Alloc) {
-            let new_cap: u64 = std::math::max::<u64>(self.cap, 4) * 2;
-            self.ptr = realloc::<u8>(self.ptr, new_cap);
+            let new_cap: u64 = max::<u64>(self.cap, 4) * 2;
+            self.ptr = grow::<u8>(self.ptr, new_cap);
             self.cap = new_cap;
         }
 
@@ -83,13 +84,13 @@ mod path {
         }
 
         pub fn drop(self) with(Alloc) {
-            free::<u8>(self.ptr);
+            dealloc::<u8>(self.ptr);
         }
     }
 
     pub trusted fn path_join(base: &Path, segment: &String) with(Alloc) -> PathBuf {
         let result: PathBuf = PathBuf {
-            ptr: realloc::<u8>(0 as *mut u8, base.len + segment.len + 1),
+            ptr: grow::<u8>(0 as *mut u8, base.len + segment.len + 1),
             len: 0,
             cap: base.len + segment.len + 1,
         };
@@ -124,7 +125,7 @@ mod path {
     import std.test.{assert_eq};
 
     #[test]
-    fn test_pathbuf_push() -> i32 {
+    fn test_pathbuf_push() with(Unsafe, Alloc) -> i32 {
         let mut p: PathBuf = PathBuf::new();
 
         let seg1: String = "home";

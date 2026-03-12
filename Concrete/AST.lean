@@ -157,9 +157,22 @@ def Stmt.getSpan : Stmt → Span
   | .break_ sp _ _ | .continue_ sp _ | .defer sp _ => sp
   | .borrowIn sp _ _ _ _ _ | .arrowAssign sp _ _ _ => sp
 
+structure ImportSymbol where
+  name : String
+  alias : Option String := none
+  deriving Repr
+
+namespace ImportSymbol
+
+/-- The name used locally: alias if present, otherwise the original name. -/
+def effectiveName (s : ImportSymbol) : String :=
+  s.alias.getD s.name
+
+end ImportSymbol
+
 structure ImportDecl where
   moduleName : String
-  symbols : List String
+  symbols : List ImportSymbol
   span : Span := default
   deriving Repr
 

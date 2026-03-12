@@ -76,6 +76,10 @@ def expectIdent : ParseM String := do
   let sp ← peekSpan
   match tk with
   | .ident name => advance; return name
+  -- `cap` and `type` are context-sensitive keywords that are also valid as
+  -- field names, variable names, and import symbols.
+  | .cap_ => advance; return "cap"
+  | .type_ => advance; return "type"
   | other => throw ("expected identifier, got " ++ toString other ++
                     " at " ++ toString sp.line ++ ":" ++ toString sp.col)
 
@@ -391,6 +395,16 @@ partial def parsePrimary : ParseM Expr := do
     expect .else_
     let elseBody ← parseBlock
     return .whileExpr sp cond body elseBody
+  | .cap_ =>
+    -- `cap` used as a variable/field name in expression position
+    let sp ← peekSpan
+    advance
+    return .ident sp "cap"
+  | .type_ =>
+    -- `type` used as a variable/field name in expression position
+    let sp ← peekSpan
+    advance
+    return .ident sp "type"
   | .ident name =>
     let sp ← peekSpan
     advance
@@ -406,6 +420,12 @@ partial def parsePrimary : ParseM Expr := do
         advance
         typeArgs ← parseTypeArgList
         expect .gt
+        -- Check for chained ::method after turbofish: Name::<T>::method(args)
+        let afterTF ← peek
+        if afterTF == .doubleColon then
+          advance
+          let methodName ← expectIdent
+          qualName := name ++ "_" ++ methodName
       else
         match afterDC with
         | .ident nextName =>
@@ -491,15 +511,15 @@ partial def parsePrimary : ParseM Expr := do
     let next ← peek
     if next == .mut then
       advance
-      let operand ← parsePrimary
+      let operand ← parsePrimary >>= parsePostfixNoAs
       return .borrowMut sp operand
     else
-      let operand ← parsePrimary
+      let operand ← parsePrimary >>= parsePostfixNoAs
       return .borrow sp operand
   | .star =>
     let sp ← peekSpan
     advance
-    let operand ← parsePrimary
+    let operand ← parsePrimary >>= parsePostfixNoAs
     return .deref sp operand
   | .minus =>
     let sp ← peekSpan
@@ -517,7 +537,7 @@ partial def parsePrimary : ParseM Expr := do
     let operand ← parsePrimary
     return .unaryOp sp .bitnot operand
   | .lbracket =>
-    -- Array literal: [expr, expr, ...]
+    -- Array literal: [expr, expr, ...] or [expr; count]
     let sp ← peekSpan
     advance
     let mut elems : List Expr := []
@@ -526,13 +546,29 @@ partial def parsePrimary : ParseM Expr := do
       let first ← parseExpr
       elems := [first]
       let mut tk2 ← peek
-      while tk2 == .comma do
+      if tk2 == .semicolon then
+        -- Repeat syntax: [value; count]
         advance
-        tk2 ← peek
-        if tk2 == .rbracket then break  -- trailing comma
-        let e ← parseExpr
-        elems := elems ++ [e]
-        tk2 ← peek
+        let countTk ← peek
+        match countTk with
+        | .intLit n =>
+          advance
+          let count := n.toNat
+          let mut i : Nat := 1
+          while i < count do
+            elems := elems ++ [first]
+            i := i + 1
+        | _ =>
+          let csp ← peekSpan
+          throw s!"expected integer count after ';' in array repeat, got {countTk} at {csp.line}:{csp.col}"
+      else
+        while tk2 == .comma do
+          advance
+          tk2 ← peek
+          if tk2 == .rbracket then break  -- trailing comma
+          let e ← parseExpr
+          elems := elems ++ [e]
+          tk2 ← peek
     expect .rbracket
     return .arrayLit sp elems
   | .fn =>
@@ -563,6 +599,63 @@ partial def parseStructLitFields : ParseM (List (String × Expr)) := do
     fields := fields ++ [(fieldName, fieldVal)]
     tk ← peek
   return fields
+
+partial def parsePostfixNoAs (e : Expr) : ParseM Expr := do
+  let mut result := e
+  let mut tk ← peek
+  while tk == .dot || tk == .question || tk == .lbracket || tk == .arrow do
+    if tk == .dot then
+      advance
+      let nextTk ← peek
+      let fieldName ← match nextTk with
+        | .intLit n => advance; pure (toString n)
+        | _ => expectIdent
+      let isEnumLit := match result with
+        | .ident _ baseName => baseName.length > 0 && (baseName.toList.head!).isUpper
+                               && fieldName.length > 0 && (fieldName.toList.head!).isUpper
+        | _ => false
+      if isEnumLit then
+        let baseName := match result with | .ident _ n => n | _ => ""
+        let next ← peek
+        if next == .lbrace then
+          advance
+          let fields ← parseStructLitFields
+          expect .rbrace
+          result := .enumLit result.getSpan baseName fieldName [] fields
+        else
+          result := .enumLit result.getSpan baseName fieldName [] []
+      else
+        let next ← peek
+        if next == .doubleColon then
+          advance
+          expect .lt
+          let targs ← parseTypeArgList
+          expect .gt
+          expect .lparen
+          let args ← parseCallArgs
+          expect .rparen
+          result := .methodCall result.getSpan result fieldName targs args
+        else if next == .lparen then
+          advance
+          let args ← parseCallArgs
+          expect .rparen
+          result := .methodCall result.getSpan result fieldName [] args
+        else
+          result := .fieldAccess result.getSpan result fieldName
+    else if tk == .question then
+      advance
+      result := .try_ result.getSpan result
+    else if tk == .lbracket then
+      advance
+      let index ← parseExpr
+      expect .rbracket
+      result := .arrayIndex result.getSpan result index
+    else  -- .arrow
+      advance
+      let fieldName ← expectIdent
+      result := .arrowAccess result.getSpan result fieldName
+    tk ← peek
+  return result
 
 partial def parsePostfix (e : Expr) : ParseM Expr := do
   let mut result := e
@@ -1376,11 +1469,17 @@ partial def parseImport : ParseM ImportDecl := do
       modPath := modPath ++ "." ++ nextName
     tk ← peek
   expect .lbrace
-  let mut symbols : List String := []
+  let mut symbols : List ImportSymbol := []
   tk ← peek
   while tk != .rbrace && tk != .eof do
     let sym ← expectIdent
-    symbols := symbols ++ [sym]
+    tk ← peek
+    if tk == .as_ then
+      advance
+      let aliasName ← expectIdent
+      symbols := symbols ++ [{ name := sym, alias := some aliasName }]
+    else
+      symbols := symbols ++ [{ name := sym }]
     tk ← peek
     if tk == .comma then advance; tk ← peek
   expect .rbrace

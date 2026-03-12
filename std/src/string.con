@@ -1,5 +1,6 @@
 mod string {
-    import std.alloc.{realloc,free};
+    import std.alloc.{grow,dealloc};
+    import std.math.{max};
     import std.option.{Option};
 
     #[langitem = "String"]
@@ -66,8 +67,8 @@ mod string {
         }
 
         fn grow(&mut self) with(Alloc) {
-            let new_cap: u64 = std::math::max::<u64>(self.cap, 4) * 2;
-            self.ptr = realloc::<u8>(self.ptr, new_cap);
+            let new_cap: u64 = max::<u64>(self.cap, 4) * 2;
+            self.ptr = grow::<u8>(self.ptr, new_cap);
             self.cap = new_cap;
         }
 
@@ -75,20 +76,21 @@ mod string {
             self.len = 0;
             if self.cap > 0 {
                 // c-str, set first to null just in case.
-                *self.ptr = 0;
+                let p: *mut u8 = self.ptr;
+                *p = 0;
             }
         }
 
         /// TODO: drop should be a trait, and isn't really called yet automatically.
         pub fn drop(self) with(Alloc) {
-            free::<u8>(self.ptr);
+            dealloc::<u8>(self.ptr);
         }
 
         // TODO: insert, remove
     }
 
     #[test]
-    fn test_get_in_bounds() -> i32 with(Alloc) {
+    fn test_str_get_in_bounds() with(Alloc) -> i32 {
         let s: String = "hello";
         let result: Option<char> = s.get(0);
         match result {
@@ -108,7 +110,7 @@ mod string {
     }
 
     #[test]
-    fn test_get_out_of_bounds() -> i32 with(Alloc) {
+    fn test_str_get_out_of_bounds() with(Alloc) -> i32 {
         let s: String = "hi";
         let result: Option<char> = s.get(10);
         match result {
@@ -124,7 +126,7 @@ mod string {
     }
 
     #[test]
-    fn test_get_empty() -> i32 with(Alloc) {
+    fn test_str_get_empty() with(Alloc) -> i32 {
         let s: String = String::new();
         let result: Option<char> = s.get(0);
         match result {

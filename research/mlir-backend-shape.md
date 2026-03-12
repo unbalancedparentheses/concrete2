@@ -1,8 +1,8 @@
 # MLIR Backend Shape
 
 **Status:** Open research direction
-**Affects:** Backend architecture, tooling, MLIR integration
-**Date:** 2026-03-09
+**Affects:** Backend architecture, backend plurality, tooling, MLIR integration
+**Date:** 2026-03-12
 
 ## Purpose
 
@@ -19,14 +19,38 @@ The real questions are:
 
 ## Short Answer
 
-If Concrete adopts MLIR, the safest architecture is:
+MLIR is only worth making a real backend target if Concrete wants a genuinely richer
+multi-stage, multi-backend compiler.
+
+If that happens, the safest architecture is:
 
 - keep **SSA** as the backend boundary
+- first replace raw LLVM string emission with a structured LLVM backend
+- add an explicit backend abstraction over verified/cleaned SSA
 - make MLIR a **consumer of validated/cleaned SSA**
 - keep language semantics out of the MLIR layer
 - use MLIR for backend lowering and optimization, not frontend meaning
 
 This keeps the current architecture legible and avoids introducing a second semantic compiler pipeline.
+
+If Concrete only wants to stop hand-emitting LLVM text and keep one native backend,
+MLIR is probably more machinery than it is worth. In that case, the better path is:
+
+- typed backend construction over LLVM
+- SSA remains the only backend boundary
+- no extra middle/backend layer until there is a concrete multi-backend need
+
+## When MLIR Is Worth It
+
+MLIR becomes a good fit when Concrete wants one or more of these:
+
+- multiple serious backend targets (for example native LLVM, C, Wasm)
+- a richer middle/backend optimization story than direct SSA -> LLVM permits
+- more than one useful lowering level below SSA
+- a backend architecture that can branch after SSA without duplicating semantics
+
+MLIR is **not** automatically the right end goal just because raw LLVM strings are brittle.
+The immediate problem there is better solved by a structured LLVM backend.
 
 ## Where MLIR Should Sit
 
@@ -39,7 +63,7 @@ Source -> Parse -> Resolve -> Check -> Elab -> CoreCanonicalize -> CoreCheck -> 
 The MLIR direction should be:
 
 ```
-Source -> Parse -> Resolve -> Check -> Elab -> CoreCanonicalize -> CoreCheck -> Mono -> Lower -> SSAVerify -> SSACleanup -> MLIR backend -> binary
+Source -> Parse -> Resolve -> Check -> Elab -> CoreCanonicalize -> CoreCheck -> Mono -> Lower -> SSAVerify -> SSACleanup -> backend abstraction -> {LLVM backend, MLIR backend, ...} -> binary
 ```
 
 The key point is:
@@ -183,11 +207,32 @@ This is acceptable for experimentation, but it is probably not the right final s
 
 The best staged plan is:
 
-### Stage 1: Preserve SSA as the backend boundary
+### Stage 1: Stop hand-emitting LLVM as raw strings
+
+Before MLIR becomes urgent, Concrete should first solve the immediate backend problem:
+
+- replace textual LLVM concatenation with a structured LLVM backend
+- keep SSA as the backend boundary
+- avoid introducing another IR layer unless there is a concrete need
+
+This can be done through:
+
+- LLVM C API bindings
+- or a small typed LLVM builder layer
+
+### Stage 2: Preserve SSA as the backend boundary
 
 Do not let MLIR affect frontend or Core architecture.
 
-### Stage 2: Define an explicit SSA-to-MLIR mapping
+### Stage 3: Define an explicit backend abstraction over SSA
+
+Before adopting MLIR, make the backend contract explicit:
+
+- verified/cleaned SSA is the only backend input
+- any backend must consume the same SSA boundary
+- target-specific work begins only after SSA
+
+### Stage 4: Define an explicit SSA-to-MLIR mapping
 
 Write down how each SSA concept maps to MLIR concepts:
 
@@ -200,7 +245,7 @@ Write down how each SSA concept maps to MLIR concepts:
 - calls
 - control flow
 
-### Stage 3: Start with a minimal backend path
+### Stage 5: Start with a minimal backend path
 
 Either:
 
@@ -209,11 +254,11 @@ Either:
 
 This stage is for validating the mapping, not for finalizing architecture.
 
-### Stage 4: Move to a real backend library
+### Stage 6: Move to a real backend library
 
 Once the mapping is stable, build a more principled MLIR backend layer, ideally through a thin binding approach.
 
-### Stage 5: Add optimization passes only after the mapping is stable
+### Stage 7: Add optimization passes only after the mapping is stable
 
 Do not start by "using MLIR because optimization exists."
 
@@ -224,6 +269,23 @@ First ensure:
 - verification/debugging of generated MLIR is straightforward
 
 Then optimization becomes a reward for good architecture rather than a source of architectural pressure.
+
+## Recommended Roadmap Placement
+
+MLIR should not be in Concrete's immediate implementation queue.
+
+The better order is:
+
+1. finish the current compiler cleanup and stdlib deepening work
+2. replace raw LLVM string emission with a structured LLVM backend
+3. make backend plurality over SSA explicit
+4. only then prototype MLIR if C/Wasm/additional backends are still a serious goal
+
+So in roadmap terms:
+
+- **Now:** not MLIR
+- **Next:** maybe backend abstraction work, if backend plurality becomes active
+- **Later:** MLIR as one possible backend family over SSA
 
 ## Which Dialects To Target
 
@@ -258,6 +320,20 @@ A custom dialect only makes sense if it provides:
 - real optimization value
 - better tooling
 - or cleaner lowering structure
+
+## Bottom Line
+
+MLIR is useful if Concrete eventually wants a richer, multi-stage, multi-backend compiler.
+
+It is **not** the best immediate answer to the current backend problem.
+
+The immediate answer is:
+
+- keep SSA as the backend boundary
+- stop emitting LLVM as raw strings
+- add backend abstraction only when it earns its place
+
+Then, if Concrete still wants C/Wasm/native backend plurality, MLIR becomes a strong later option.
 
 Otherwise it is just another IR to maintain.
 

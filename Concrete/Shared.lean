@@ -21,7 +21,11 @@ def isInteger : Ty → Bool
 
 /-- Check if two types are compatible (equal or both numeric). -/
 def typesCompatible (a b : Ty) : Bool :=
-  a == b || (isNumeric a && isNumeric b)
+  a == b || (isNumeric a && isNumeric b) ||
+  -- ptrMut and ptrConst with same inner type are compatible
+  (match a, b with
+   | .ptrMut t1, .ptrConst t2 | .ptrConst t1, .ptrMut t2 => t1 == t2
+   | _, _ => false)
 
 /-- Check if capSet `caller` is a superset of `callee`. -/
 def capsContain (caller callee : CapSet) : Bool :=

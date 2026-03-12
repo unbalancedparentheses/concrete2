@@ -1,6 +1,7 @@
 mod deque {
     import std.mem.{sizeof};
-    import std.alloc.{realloc,free};
+    import std.alloc.{grow,dealloc};
+    import std.math.{max};
     import std.option.{Option};
 
     pub struct Deque<T> {
@@ -93,8 +94,8 @@ mod deque {
         }
 
         fn grow(&mut self) with(Alloc) {
-            let new_cap: u64 = std::math::max::<u64>(self.cap, 4) * 2;
-            let new_ptr: *mut T = realloc::<T>(0 as *mut T, new_cap);
+            let new_cap: u64 = max::<u64>(self.cap, 4) * 2;
+            let new_ptr: *mut T = grow::<T>(0 as *mut T, new_cap);
 
             // Copy elements in logical order to new buffer
             let i: u64 = 0;
@@ -107,7 +108,7 @@ mod deque {
             }
 
             if self.cap > 0 {
-                free(self.ptr);
+                dealloc(self.ptr);
             }
             self.ptr = new_ptr;
             self.head = 0;
@@ -116,7 +117,7 @@ mod deque {
 
         pub fn drop(self) with(Alloc) {
             if self.cap > 0 {
-                free(self.ptr);
+                dealloc(self.ptr);
             }
         }
     }
@@ -124,7 +125,7 @@ mod deque {
     import std.test.{assert_eq, assert_true};
 
     #[test]
-    fn test_push_back_pop_front() -> i32 with(Alloc) {
+    fn test_push_back_pop_front() with(Alloc) -> i32 {
         let mut d: Deque<i32> = Deque::<i32>::new();
         d.push_back(10);
         d.push_back(20);
@@ -173,7 +174,7 @@ mod deque {
     }
 
     #[test]
-    fn test_push_front_pop_back() -> i32 with(Alloc) {
+    fn test_push_front_pop_back() with(Alloc) -> i32 {
         let mut d: Deque<i32> = Deque::<i32>::new();
         d.push_front(10);
         d.push_front(20);
@@ -207,7 +208,7 @@ mod deque {
     }
 
     #[test]
-    fn test_pop_empty() -> i32 with(Alloc) {
+    fn test_deque_pop_empty() with(Alloc) -> i32 {
         let mut d: Deque<i32> = Deque::<i32>::new();
         let r: Option<i32> = d.pop_front();
         match r {
@@ -224,7 +225,7 @@ mod deque {
     }
 
     #[test]
-    fn test_get() -> i32 with(Alloc) {
+    fn test_get() with(Alloc) -> i32 {
         let mut d: Deque<i32> = Deque::<i32>::new();
         d.push_back(100);
         d.push_back(200);
@@ -253,7 +254,7 @@ mod deque {
     }
 
     #[test]
-    fn test_growth_wrapping() -> i32 with(Alloc) {
+    fn test_growth_wrapping() with(Alloc) -> i32 {
         let mut d: Deque<i32> = Deque::<i32>::new();
 
         // Push 20 elements, forcing multiple grows
@@ -289,7 +290,7 @@ mod deque {
     }
 
     #[test]
-    fn test_mixed_push_pop() -> i32 with(Alloc) {
+    fn test_mixed_push_pop() with(Alloc) -> i32 {
         let mut d: Deque<i32> = Deque::<i32>::new();
 
         // Interleave push_front and push_back
@@ -302,7 +303,7 @@ mod deque {
         let sum: i32 = 0;
         let i: u64 = 0;
         while i < d.len() {
-            sum = sum + *d.get_unchecked(i);
+            sum = sum + *(d.get_unchecked(i));
             i = i + 1;
         }
 

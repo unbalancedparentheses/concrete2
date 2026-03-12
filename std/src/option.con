@@ -19,7 +19,7 @@ mod option {
         }
 
         pub fn is_none(&self) -> bool {
-            return !self.is_some();
+            return !(self.is_some());
         }
     }
 }

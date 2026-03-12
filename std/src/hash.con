@@ -1,10 +1,11 @@
 mod hash {
+    import std.bytes.{Bytes};
     // FNV-1a hash — pure Concrete, no libc dependency
 
     // FNV offset basis: 14695981039346656037 = 0xcbf29ce484222325
     // FNV prime: 1099511628211 = 0x100000001b3
 
-    pub fn fnv1a_bytes(data: &std::bytes::Bytes) -> u64 {
+    pub fn fnv1a_bytes(data: &Bytes) -> u64 {
         let hash: u64 = 0xcbf29ce484222325;
         let prime: u64 = 0x100000001b3;
 
@@ -93,7 +94,7 @@ mod hash {
 
     #[test]
     fn test_fnv1a_empty_bytes() -> i32 {
-        let b: std::bytes::Bytes = std::bytes::Bytes::new();
+        let b: Bytes = Bytes::new();
         let h: u64 = fnv1a_bytes(&b);
         // Empty input should return the offset basis
         if !assert_eq::<u64>(h, 0xcbf29ce484222325, "empty bytes should return offset basis") {
@@ -106,7 +107,7 @@ mod hash {
 
     #[test]
     fn test_fnv1a_single_byte() -> i32 {
-        let mut b: std::bytes::Bytes = std::bytes::Bytes::new();
+        let mut b: Bytes = Bytes::new();
         b.push(0);
         let h: u64 = fnv1a_bytes(&b);
         // FNV-1a of single zero byte: (offset_basis ^ 0) * prime
@@ -122,14 +123,14 @@ mod hash {
 
     #[test]
     fn test_fnv1a_deterministic() -> i32 {
-        let mut b1: std::bytes::Bytes = std::bytes::Bytes::new();
+        let mut b1: Bytes = Bytes::new();
         b1.push(72);  // 'H'
         b1.push(101); // 'e'
         b1.push(108); // 'l'
         b1.push(108); // 'l'
         b1.push(111); // 'o'
 
-        let mut b2: std::bytes::Bytes = std::bytes::Bytes::new();
+        let mut b2: Bytes = Bytes::new();
         b2.push(72);
         b2.push(101);
         b2.push(108);
@@ -165,11 +166,11 @@ mod hash {
 
     #[test]
     fn test_fnv1a_different_inputs() -> i32 {
-        let mut b1: std::bytes::Bytes = std::bytes::Bytes::new();
+        let mut b1: Bytes = Bytes::new();
         b1.push(1);
         b1.push(2);
 
-        let mut b2: std::bytes::Bytes = std::bytes::Bytes::new();
+        let mut b2: Bytes = Bytes::new();
         b2.push(3);
         b2.push(4);
 

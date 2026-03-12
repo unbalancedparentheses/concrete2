@@ -147,20 +147,26 @@ def compileTest (inputPath : String) : IO UInt32 := do
     let exitCode ← runCmd "clang" #[llPath, "-o", outPath, "-Wno-override-module"]
     if exitCode != 0 then
       IO.eprintln "clang compilation failed"
-      IO.FS.removeFile ⟨llPath⟩
+      IO.eprintln s!"LLVM IR left at: {llPath}"
       return exitCode
-    IO.FS.removeFile ⟨llPath⟩
-    -- Run the test binary
+    -- Run the test binary (keep .ll and binary for debugging)
     let child ← IO.Process.spawn {
       cmd := outPath
       stdout := .piped
       stderr := .piped
     }
     let stdout ← child.stdout.readToEnd
+    let stderr ← child.stderr.readToEnd
     let exitCode ← child.wait
     IO.print stdout
-    -- Clean up test binary
-    IO.FS.removeFile ⟨outPath⟩
+    if !stderr.isEmpty then IO.eprint stderr
+    if exitCode != 0 then
+      IO.eprintln s!"Test binary exited with code {exitCode}"
+      IO.eprintln s!"LLVM IR at: {llPath}"
+      IO.eprintln s!"Binary at: {outPath}"
+    else
+      IO.FS.removeFile ⟨llPath⟩
+      IO.FS.removeFile ⟨outPath⟩
     return exitCode
 
 /-- Emit Core or SSA IR for inspection. Runs full pipeline including new passes. -/

@@ -160,6 +160,60 @@ private partial def rewriteCallNamesStmts (nameMap : List (String × String)) : 
   List.map (rewriteCallNamesStmt nameMap)
 end
 
+mutual
+/-- Given a set of known generic function names and type args to inject,
+    walk the body and add typeArgs to any call targeting these functions
+    that currently has empty typeArgs. -/
+partial def injectTypeArgsExpr (genericNames : List String) (typeArgs : List Ty) : CExpr → CExpr
+  | .call fn [] args ty =>
+    let args' := args.map (injectTypeArgsExpr genericNames typeArgs)
+    if genericNames.contains fn then .call fn typeArgs args' ty
+    else .call fn [] args' ty
+  | .call fn ta args ty => .call fn ta (args.map (injectTypeArgsExpr genericNames typeArgs)) ty
+  | .binOp op l r ty => .binOp op (injectTypeArgsExpr genericNames typeArgs l) (injectTypeArgsExpr genericNames typeArgs r) ty
+  | .unaryOp op inner ty => .unaryOp op (injectTypeArgsExpr genericNames typeArgs inner) ty
+  | .structLit n ta fields ty => .structLit n ta (fields.map fun (n, e) => (n, injectTypeArgsExpr genericNames typeArgs e)) ty
+  | .fieldAccess obj f ty => .fieldAccess (injectTypeArgsExpr genericNames typeArgs obj) f ty
+  | .enumLit en v ta fields ty => .enumLit en v ta (fields.map fun (n, e) => (n, injectTypeArgsExpr genericNames typeArgs e)) ty
+  | .match_ scrut arms ty => .match_ (injectTypeArgsExpr genericNames typeArgs scrut) (arms.map (injectTypeArgsArm genericNames typeArgs)) ty
+  | .borrow inner ty => .borrow (injectTypeArgsExpr genericNames typeArgs inner) ty
+  | .borrowMut inner ty => .borrowMut (injectTypeArgsExpr genericNames typeArgs inner) ty
+  | .deref inner ty => .deref (injectTypeArgsExpr genericNames typeArgs inner) ty
+  | .arrayLit elems ty => .arrayLit (elems.map (injectTypeArgsExpr genericNames typeArgs)) ty
+  | .arrayIndex arr idx ty => .arrayIndex (injectTypeArgsExpr genericNames typeArgs arr) (injectTypeArgsExpr genericNames typeArgs idx) ty
+  | .cast inner t => .cast (injectTypeArgsExpr genericNames typeArgs inner) t
+  | .try_ inner ty => .try_ (injectTypeArgsExpr genericNames typeArgs inner) ty
+  | .allocCall inner alloc ty => .allocCall (injectTypeArgsExpr genericNames typeArgs inner) (injectTypeArgsExpr genericNames typeArgs alloc) ty
+  | .whileExpr cond body elseBody ty =>
+    .whileExpr (injectTypeArgsExpr genericNames typeArgs cond) (injectTypeArgsStmts genericNames typeArgs body) (injectTypeArgsStmts genericNames typeArgs elseBody) ty
+  | e => e
+
+partial def injectTypeArgsArm (genericNames : List String) (typeArgs : List Ty) : CMatchArm → CMatchArm
+  | .enumArm en v binds body => .enumArm en v binds (injectTypeArgsStmts genericNames typeArgs body)
+  | .litArm val body => .litArm (injectTypeArgsExpr genericNames typeArgs val) (injectTypeArgsStmts genericNames typeArgs body)
+  | .varArm b ty body => .varArm b ty (injectTypeArgsStmts genericNames typeArgs body)
+
+partial def injectTypeArgsStmt (genericNames : List String) (typeArgs : List Ty) : CStmt → CStmt
+  | .letDecl n m ty val => .letDecl n m ty (injectTypeArgsExpr genericNames typeArgs val)
+  | .assign n val => .assign n (injectTypeArgsExpr genericNames typeArgs val)
+  | .return_ (some v) ty => .return_ (some (injectTypeArgsExpr genericNames typeArgs v)) ty
+  | .expr e => .expr (injectTypeArgsExpr genericNames typeArgs e)
+  | .ifElse c t el =>
+    .ifElse (injectTypeArgsExpr genericNames typeArgs c) (injectTypeArgsStmts genericNames typeArgs t) (el.map (injectTypeArgsStmts genericNames typeArgs))
+  | .while_ c body lbl step =>
+    .while_ (injectTypeArgsExpr genericNames typeArgs c) (injectTypeArgsStmts genericNames typeArgs body) lbl (injectTypeArgsStmts genericNames typeArgs step)
+  | .fieldAssign obj f val => .fieldAssign (injectTypeArgsExpr genericNames typeArgs obj) f (injectTypeArgsExpr genericNames typeArgs val)
+  | .derefAssign target val => .derefAssign (injectTypeArgsExpr genericNames typeArgs target) (injectTypeArgsExpr genericNames typeArgs val)
+  | .break_ (some v) lbl => .break_ (some (injectTypeArgsExpr genericNames typeArgs v)) lbl
+  | .defer body => .defer (injectTypeArgsExpr genericNames typeArgs body)
+  | .borrowIn v r reg isMut ty body =>
+    .borrowIn v r reg isMut ty (injectTypeArgsStmts genericNames typeArgs body)
+  | s => s
+
+partial def injectTypeArgsStmts (genericNames : List String) (typeArgs : List Ty) : List CStmt → List CStmt :=
+  List.map (injectTypeArgsStmt genericNames typeArgs)
+end
+
 -- ============================================================
 -- Monomorphized name computation
 -- ============================================================
@@ -189,6 +243,57 @@ private def tyToSuffix : Ty → String
 private def monoNameFor (fnName : String) (typeArgs : List Ty) : String :=
   fnName ++ "_for_" ++ "_".intercalate (typeArgs.map tyToSuffix)
 
+/-- Infer type arguments by matching formal parameter types against concrete argument types.
+    For a generic fn like `push(self: &mut BinaryHeap<T>, value: T)` called with
+    concrete args of types `(&mut BinaryHeap<i32>, i32)`, infer `T = i32`. -/
+private partial def cexprTy (e : CExpr) : Ty := match e with
+  | .intLit _ ty | .floatLit _ ty | .ident _ ty | .binOp _ _ _ ty
+  | .unaryOp _ _ ty | .call _ _ _ ty | .structLit _ _ _ ty
+  | .fieldAccess _ _ ty | .enumLit _ _ _ _ ty | .match_ _ _ ty
+  | .borrow _ ty | .borrowMut _ ty | .deref _ ty | .arrayLit _ ty
+  | .arrayIndex _ _ ty | .fnRef _ ty | .try_ _ ty
+  | .allocCall _ _ ty | .whileExpr _ _ _ ty => ty
+  | .cast _ t => t
+  | .boolLit _ => .bool
+  | .strLit _ => .string
+  | .charLit _ => .char
+
+private partial def matchFormalActual (typeParams : List String) (formal : Ty) (actual : Ty) (acc : List (String × Ty)) : List (String × Ty) :=
+  match formal with
+  | .typeVar n =>
+    if typeParams.contains n && !acc.any (·.1 == n) then acc ++ [(n, actual)]
+    else acc
+  | .named n =>
+    if typeParams.contains n && !acc.any (·.1 == n) then acc ++ [(n, actual)]
+    else acc
+  | .ref f => match actual with
+    | .ref a | .ptrConst a => matchFormalActual typeParams f a acc
+    | _ => acc
+  | .refMut f => match actual with
+    | .refMut a | .ptrMut a => matchFormalActual typeParams f a acc
+    | _ => acc
+  | .ptrMut f => match actual with
+    | .ptrMut a | .refMut a => matchFormalActual typeParams f a acc
+    | _ => acc
+  | .ptrConst f => match actual with
+    | .ptrConst a | .ref a => matchFormalActual typeParams f a acc
+    | _ => acc
+  | .generic _ fArgs => match actual with
+    | .generic _ aArgs =>
+      fArgs.zip aArgs |>.foldl (fun acc (f, a) => matchFormalActual typeParams f a acc) acc
+    | _ => acc
+  | _ => acc
+
+private def inferTypeArgs (typeParams : List String) (formalParams : List (String × Ty))
+    (args : List CExpr) : List Ty :=
+  -- Build a mapping from type param name → concrete type by matching formal/actual
+  let mapping := formalParams.zip args |>.foldl (fun (acc : List (String × Ty)) ((_, formalTy), argExpr) =>
+    let argTy := cexprTy argExpr
+    matchFormalActual typeParams formalTy argTy acc
+  ) []
+  -- Return the type args in order of typeParams
+  typeParams.filterMap fun p => mapping.lookup p
+
 -- ============================================================
 -- Monomorphization state
 -- ============================================================
@@ -207,6 +312,11 @@ private def lookupFn (name : String) : MonoM (Option CFnDef) := do
   let st ← get
   return st.allFns.find? fun f => f.name == name
 
+/-- Get names of all generic functions (non-empty typeParams). -/
+private def getGenericFnNames : MonoM (List String) := do
+  let st ← get
+  return st.allFns.filter (fun f => !f.typeParams.isEmpty) |>.map (·.name)
+
 private def enqueueMono (monoName : String) (monoFn : CFnDef) : MonoM Unit := do
   let st ← get
   if st.generated.contains monoName then return
@@ -224,7 +334,43 @@ partial def monoExpr (e : CExpr) : MonoM CExpr := do
   | .call fn typeArgs args ty =>
     let args' ← args.mapM monoExpr
     if typeArgs.isEmpty then
-      return .call fn [] args' ty
+      -- Even with no explicit typeArgs, the callee might be generic.
+      -- Check if it's a generic function we need to monomorphize.
+      let fnDef? ← lookupFn fn
+      match fnDef? with
+      | some fnDef =>
+        if fnDef.typeParams.isEmpty then
+          return .call fn [] args' ty  -- truly non-generic
+        else
+          -- Generic function called without type args (e.g., sibling method call).
+          -- Try to infer type args from concrete argument types.
+          let inferredArgs := inferTypeArgs fnDef.typeParams fnDef.params args'
+          if inferredArgs.isEmpty then
+            return .call fn [] args' ty  -- couldn't infer, leave as-is
+          else
+            -- Re-process as a generic call with inferred type args
+            let genericNames ← getGenericFnNames
+            let name := monoNameFor fn inferredArgs
+            let mapping := fnDef.typeParams.zip inferredArgs
+            let sub := substTy fnDef.typeParams mapping
+            let callNameMap := mapping.filterMap fun (paramName, ty) =>
+              let concreteName := tyName ty
+              if concreteName == "" then none else some (paramName, concreteName)
+            -- Inject type args into calls to sibling generic functions before type subst
+            let bodyWithTypeArgs := injectTypeArgsStmts genericNames inferredArgs fnDef.body
+            let monoFn : CFnDef := {
+              name := name
+              typeParams := []
+              params := fnDef.params.map fun (n, t) => (n, sub t)
+              retTy := sub fnDef.retTy
+              body := rewriteCallNamesStmts callNameMap (substStmts sub bodyWithTypeArgs)
+              isPublic := false
+              isTest := false
+              capSet := fnDef.capSet
+            }
+            enqueueMono name monoFn
+            return .call name [] args' (sub ty)
+      | none => return .call fn [] args' ty
     -- Look up the generic function
     let fnDef? ← lookupFn fn
     match fnDef? with
@@ -232,6 +378,7 @@ partial def monoExpr (e : CExpr) : MonoM CExpr := do
     | some fnDef =>
       if fnDef.typeParams.isEmpty then
         return .call fn typeArgs args' ty  -- not actually generic
+      let genericNames ← getGenericFnNames
       let name := monoNameFor fn typeArgs
       let mapping := fnDef.typeParams.zip typeArgs
       let sub := substTy fnDef.typeParams mapping
@@ -239,12 +386,14 @@ partial def monoExpr (e : CExpr) : MonoM CExpr := do
       let callNameMap := mapping.filterMap fun (paramName, ty) =>
         let concreteName := tyName ty
         if concreteName == "" then none else some (paramName, concreteName)
+      -- Inject type args into calls to sibling generic functions before type subst
+      let bodyWithTypeArgs := injectTypeArgsStmts genericNames typeArgs fnDef.body
       let monoFn : CFnDef := {
         name := name
         typeParams := []
         params := fnDef.params.map fun (n, t) => (n, sub t)
         retTy := sub fnDef.retTy
-        body := rewriteCallNamesStmts callNameMap (substStmts sub fnDef.body)
+        body := rewriteCallNamesStmts callNameMap (substStmts sub bodyWithTypeArgs)
         isPublic := false
         isTest := false
         capSet := fnDef.capSet
@@ -340,15 +489,24 @@ private partial def drainQueue : MonoM (List CFnDef) := do
   let rest ← drainQueue
   return result ++ rest
 
-def monoModule (m : CModule) : MonoM CModule := do
+partial def monoModule (m : CModule) : MonoM CModule := do
   -- Mono all existing functions
   let fns' ← m.functions.mapM monoFn
   -- Drain mono queue to get all generated specializations
   let monoFns ← drainQueue
-  return { m with functions := fns' ++ monoFns }
+  -- Recursively process submodules
+  let subs' ← m.submodules.mapM monoModule
+  let subMonoFns ← drainQueue
+  return { m with functions := fns' ++ monoFns ++ subMonoFns, submodules := subs' }
+
+/-- Recursively collect all functions from a module and its submodules. -/
+private partial def collectAllModuleFns (m : CModule) : List CFnDef :=
+  let own := m.functions
+  let sub := m.submodules.foldl (fun acc s => acc ++ collectAllModuleFns s) []
+  own ++ sub
 
 def monoProgram (modules : List CModule) : Except String (List CModule) :=
-  let allFns := modules.foldl (fun acc m => acc ++ m.functions) []
+  let allFns := modules.foldl (fun acc m => acc ++ collectAllModuleFns m) []
   let initState : MonoState := { allFns := allFns }
   let (result, _) := (modules.mapM monoModule).run initState |>.run
   match result with

@@ -297,7 +297,7 @@ The goal is not to out-feature those languages. The goal is to be unusually good
 
 ## Current Status
 
-The compiler implements the core surface language and the full internal IR pipeline in Lean 4. All 288 main tests pass, and the SSA-specific suite passes as well.
+The compiler implements the core surface language and the full internal IR pipeline in Lean 4. All 483 tests pass (372 compiler tests + 111 stdlib module tests), and the SSA-specific suite passes as well.
 
 ## Known Rough Edges
 
@@ -537,7 +537,7 @@ Requires [Lean 4](https://leanprover.github.io/lean4/doc/setup.html) (v4.28.0+) 
 
 ```bash
 make build    # or: lake build
-make test     # runs all 243 tests
+make test     # runs all 483 tests
 make clean    # or: lake clean
 ```
 
@@ -562,7 +562,7 @@ Concrete/
   EmitSSA.lean   -- LLVM IR from SSA
   Pipeline.lean  -- Cacheable artifact types and composable pipeline runners
 Main.lean        -- Entry point
-lean_tests/      -- 243 test programs
+lean_tests/      -- 344 test programs
 examples/        -- 66 example programs
 ```
 

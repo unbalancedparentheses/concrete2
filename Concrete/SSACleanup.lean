@@ -54,7 +54,14 @@ private def replaceRegInInst (inst : SInst) (oldReg : String) (replacement : SVa
   match inst with
   | .binOp dst op lhs rhs ty => .binOp dst op (r lhs) (r rhs) ty
   | .unaryOp dst op operand ty => .unaryOp dst op (r operand) ty
-  | .call dst fn args retTy => .call dst fn (args.map r) retTy
+  | .call dst fn args retTy =>
+    -- Also handle indirect calls where fn is a register name (e.g., "%phi.6")
+    let fn' := if fn == "%" ++ oldReg then
+      match replacement with
+      | .reg name _ => "%" ++ name
+      | _ => fn
+    else fn
+    .call dst fn' (args.map r) retTy
   | .alloca dst ty => .alloca dst ty
   | .load dst ptr ty => .load dst (r ptr) ty
   | .store val ptr => .store (r val) (r ptr)

@@ -917,6 +917,20 @@ else
     FAIL=$((FAIL + 1))
 fi
 
+# === Stdlib module tests ===
+echo ""
+echo "=== Stdlib module tests ==="
+rm -f std/src/lib.con.test.ll std/src/lib.con.test
+stdlib_output=$($COMPILER std/src/lib.con --test 2>&1) && stdlib_exit=0 || stdlib_exit=$?
+stdlib_pass=$(echo "$stdlib_output" | grep -c "^PASS:" || true)
+stdlib_fail=$(echo "$stdlib_output" | grep -c "^FAIL:" || true)
+echo "  Stdlib: $stdlib_pass passed, $stdlib_fail failed (exit $stdlib_exit)"
+if [ "$stdlib_fail" -gt 0 ]; then
+    echo "$stdlib_output" | grep "^FAIL:"
+fi
+PASS=$((PASS + stdlib_pass))
+FAIL=$((FAIL + stdlib_fail))
+
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 if [ "$FAIL" -gt 0 ]; then

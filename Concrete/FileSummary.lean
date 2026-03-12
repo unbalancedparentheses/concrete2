@@ -78,6 +78,8 @@ structure ResolvedImports where
   implBlocks     : List ImplBlock := []
   traitImpls     : List ImplTraitBlock := []
   implMethodSigs : List (String × FnSummary) := []  -- pre-computed, Self preserved
+  /-- Maps local alias name → original linker symbol for aliased imports. -/
+  linkerAliases  : List (String × String) := []
 
 private def fnDefToSummary (f : FnDef) : String × FnSummary :=
   (f.name, { params := f.params.map fun p => (p.name, p.ty)
@@ -198,13 +200,20 @@ def resolveImports (imports : List ImportDecl)
     | some summary =>
       let pubFns := summary.functions ++ summary.externFnSigs
       imp.symbols.foldlM (init := acc) fun acc sym =>
-        match pubFns.find? fun (n, _) => n == sym with
-        | some pair => .ok { acc with functions := acc.functions ++ [pair] }
+        let origName := sym.name
+        let localName := sym.effectiveName
+        match pubFns.find? fun (n, _) => n == origName with
+        | some (_, sig) =>
+          let newAliases := if localName != origName
+            then acc.linkerAliases ++ [(localName, origName)]
+            else acc.linkerAliases
+          .ok { acc with functions := acc.functions ++ [(localName, sig)],
+                         linkerAliases := newAliases }
         | none =>
-          match summary.structs.find? fun sd => sd.name == sym with
+          match summary.structs.find? fun sd => sd.name == origName with
           | some sd =>
-            let structImpls := summary.implBlocks.filter fun ib => ib.typeName == sym
-            let structTraitImpls := summary.traitImpls.filter fun tb => tb.typeName == sym
+            let structImpls := summary.implBlocks.filter fun ib => ib.typeName == origName
+            let structTraitImpls := summary.traitImpls.filter fun tb => tb.typeName == origName
             let mangledNames := structImpls.foldl (fun ns ib =>
               ns ++ ib.methods.map fun f => ib.typeName ++ "_" ++ f.name) []
               ++ structTraitImpls.foldl (fun ns tb =>
@@ -216,8 +225,8 @@ def resolveImports (imports : List ImportDecl)
                            traitImpls := acc.traitImpls ++ structTraitImpls,
                            implMethodSigs := acc.implMethodSigs ++ matchingSigs }
           | none =>
-            match summary.enums.find? fun ed => ed.name == sym with
+            match summary.enums.find? fun ed => ed.name == origName with
             | some ed => .ok { acc with enums := acc.enums ++ [ed] }
-            | none => .error (notPublicMsg sym imp.moduleName)
+            | none => .error (notPublicMsg origName imp.moduleName)
 
 end Concrete

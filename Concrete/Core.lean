@@ -125,6 +125,8 @@ structure CModule where
   submodules : List CModule := []
   traitDefs : List CTraitDef := []
   traitImpls : List CTraitImpl := []
+  /-- Maps local alias name → original linker symbol for aliased imports. -/
+  linkerAliases : List (String × String) := []
 
 -- ============================================================
 -- CExpr.ty accessor

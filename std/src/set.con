@@ -10,14 +10,14 @@ mod set {
     }
 
     impl<K> HashSet<K> {
-        pub fn new(hash_fn: fn(&K) -> u64, eq_fn: fn(&K, &K) -> bool) -> HashSet<K> with(Alloc, Unsafe) {
+        pub fn new(hash_fn: fn(&K) with(Alloc, Unsafe) -> u64, eq_fn: fn(&K, &K) -> bool) with(Alloc, Unsafe) -> HashSet<K> {
             let s: HashSet<K> = HashSet::<K> {
                 inner: HashMap::<K, u8>::new(hash_fn, eq_fn),
             };
             return s;
         }
 
-        pub fn insert(&mut self, key: K) -> bool with(Alloc, Unsafe) {
+        pub fn insert(&mut self, key: K) with(Alloc, Unsafe) -> bool {
             let result: Option<u8> = self.inner.insert(key, 0);
             match result {
                 Option#Some { value } => {
@@ -33,7 +33,7 @@ mod set {
             return self.inner.contains(key);
         }
 
-        pub fn remove(&mut self, key: &K) -> bool {
+        pub fn remove(&mut self, key: &K) with(Alloc, Unsafe) -> bool {
             let result: Option<u8> = self.inner.remove(key);
             match result {
                 Option#Some { value } => {

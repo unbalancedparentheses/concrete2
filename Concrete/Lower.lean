@@ -163,6 +163,7 @@ private def structNameFromTy (ty : Ty) : String :=
   match ty with
   | .named n => n
   | .generic n _ => n
+  | .string => "String"
   | .ref inner | .refMut inner | .ptrMut inner | .ptrConst inner => structNameFromTy inner
   | _ => ""
 
@@ -363,6 +364,15 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
         emit (.store curVal (.reg slot innerTy))
         aVals := aVals ++ [.reg slot (.refMut innerTy)]
         mutBorrows := mutBorrows ++ [(varName, slot, innerTy)]
+      | .borrowMut (.fieldAccess obj field fieldTy) _ =>
+        -- For &mut borrows of struct fields: GEP directly into the parent struct
+        -- to get a pointer to the field, avoiding copy + lost write-back.
+        let oVal ← lowerExpr obj
+        let tyName := structNameFromTy obj.ty
+        let byteOff ← fieldByteOffset tyName field
+        let gepDst ← freshReg "fieldmut."
+        emit (.gep gepDst oVal [.intConst (Int.ofNat byteOff) .int] .i8)
+        aVals := aVals ++ [.reg gepDst (.refMut fieldTy)]
       | _ =>
         let v ← lowerExpr arg
         aVals := aVals ++ [v]
@@ -1259,6 +1269,10 @@ private partial def collectAllExterns (m : CModule) : List (String × List (Stri
   let sub := m.submodules.foldl (fun acc s => acc ++ collectAllExterns s) []
   own ++ sub
 
+private partial def collectAllLinkerAliases (m : CModule) : List (String × String) :=
+  let sub := m.submodules.foldl (fun acc s => acc ++ collectAllLinkerAliases s) []
+  m.linkerAliases ++ sub
+
 private def renameSVal (rmap : List (String × String)) : SVal → SVal
   | .strConst name => match rmap.lookup name with
     | some newName => .strConst newName
@@ -1284,7 +1298,9 @@ private def renameStrConstsInTerm (rmap : List (String × String)) : STerm → S
 
 def lowerModule (m : CModule) : SModule :=
   let allFunctions := collectAllFunctions m
-  let allStructs := collectAllStructs m
+  -- Add synthetic String struct so fieldOffset can compute offsets for built-in .string type
+  let syntheticStringDef : CStructDef := { name := "String", fields := [("ptr", .ptrMut .u8), ("len", .uint)] }
+  let allStructs := syntheticStringDef :: collectAllStructs m
   let allEnums := collectAllEnums m
   let allExterns := collectAllExterns m
   -- Skip generic functions (non-empty typeParams); only their monomorphized
@@ -1319,6 +1335,7 @@ def lowerModule (m : CModule) : SModule :=
     enums := allEnums
     functions := fns
     externFns := allExterns
-    globals := globals }
+    globals := globals
+    linkerAliases := collectAllLinkerAliases m }
 
 end Concrete

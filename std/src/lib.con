@@ -1,15 +1,15 @@
 mod std {
-    mod mem;
-    mod alloc;
     mod libc;
     mod math;
     mod ptr;
-    mod string;
-    mod vec;
-    mod io;
-    mod test;
     mod option;
     mod result;
+    mod mem;
+    mod alloc;
+    mod string;
+    mod io;
+    mod test;
+    mod vec;
     mod bytes;
     mod slice;
     mod text;

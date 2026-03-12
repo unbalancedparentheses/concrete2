@@ -209,7 +209,11 @@ private def interfaceModule (name : String) (fs : FileSummary) : String :=
   let lines := if fs.imports.isEmpty then lines
     else lines ++ ["  imports:"] ++
       fs.imports.map fun imp =>
-        s!"    use {imp.moduleName} \{ {", ".intercalate imp.symbols} }"
+        let symStrs := imp.symbols.map fun s =>
+          match s.alias with
+          | some a => s!"{s.name} as {a}"
+          | none => s.name
+        s!"    use {imp.moduleName} \{ {", ".intercalate symStrs} }"
   let lines := if exportCount == 0 then lines
     else
       let lines := lines ++ ["  public API:"]

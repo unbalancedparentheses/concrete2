@@ -24,7 +24,7 @@ mod rand {
     import std.test.{assert_eq, assert_true};
 
     #[test]
-    fn test_seed_determinism() -> i32 {
+    fn test_seed_determinism() with(Unsafe, Random) -> i32 {
         // Same seed should produce same sequence
         seed(42);
         let a1: i32 = random_int();
@@ -44,7 +44,7 @@ mod rand {
     }
 
     #[test]
-    fn test_random_range_bounds() -> i32 {
+    fn test_random_range_bounds() with(Unsafe, Random) -> i32 {
         seed(123);
         let i: i32 = 0;
         while i < 100 {

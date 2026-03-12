@@ -184,6 +184,7 @@ partial def lexStringLoop (s : LexerState) (acc : String) : LexerState × TokenK
     match s.peek with
     | some 'n' => lexStringLoop s.advance (acc.push '\n')
     | some 't' => lexStringLoop s.advance (acc.push '\t')
+    | some 'r' => lexStringLoop s.advance (acc.push (Char.ofNat 13))
     | some '\\' => lexStringLoop s.advance (acc.push '\\')
     | some '"' => lexStringLoop s.advance (acc.push '"')
     | some '0' => lexStringLoop s.advance (acc.push (Char.ofNat 0))
@@ -207,6 +208,11 @@ def lexCharLit (s : LexerState) : LexerState × TokenKind :=
       let s := s.advance
       match s.peek with
       | some '\'' => (s.advance, .charLit '\t')
+      | _ => (s, .eof)
+    | some 'r' =>
+      let s := s.advance
+      match s.peek with
+      | some '\'' => (s.advance, .charLit (Char.ofNat 13))
       | _ => (s, .eof)
     | some '\\' =>
       let s := s.advance

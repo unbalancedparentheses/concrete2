@@ -37,6 +37,8 @@ structure EmitSSAState where
   fnParams : List (String × Ty) := []
   /-- Registers holding function-pointer values loaded from memory (e.g. struct fields). -/
   fnTypeRegs : List String := []
+  /-- Maps local alias name → original linker symbol for aliased imports. -/
+  linkerAliases : List (String × String) := []
 
 private def emit (s : EmitSSAState) (line : String) : EmitSSAState :=
   { s with output := s.output ++ line ++ "\n" }
@@ -99,7 +101,7 @@ private def ssaIsSignedInt : Ty → Bool
   | _ => false
 
 private def isIntegerTy : Ty → Bool
-  | .int | .uint | .i8 | .i16 | .i32 | .u8 | .u16 | .u32 => true
+  | .int | .uint | .i8 | .i16 | .i32 | .u8 | .u16 | .u32 | .char | .bool => true
   | _ => false
 
 private def isFloatTy : Ty → Bool
@@ -173,11 +175,19 @@ private def materializeStrConst (s : EmitSSAState) (name : String) : EmitSSAStat
 
 /-- If the SVal is not known to be a ptr but has a pass-by-ptr type,
     emit alloca+store to convert it. Returns (state, ptrString). -/
+private def isRefOrPtrTy : Ty → Bool
+  | .ref _ | .refMut _ | .ptrMut _ | .ptrConst _ => true
+  | _ => false
+
 private def ensurePtr (s : EmitSSAState) (v : SVal) : EmitSSAState × String :=
   match v with
   | .strConst name => materializeStrConst s name
   | _ =>
   if isKnownPtr s v then
+    (s, emitSVal s v)
+  else if isRefOrPtrTy v.ty then
+    -- References and raw pointers are already pointer-sized values in LLVM IR;
+    -- they must NOT be spilled to an alloca (which would add an extra indirection).
     (s, emitSVal s v)
   else if ssaIsPassByPtr s v.ty then
     let llTy := ssaTyToLLVM s v.ty
@@ -224,7 +234,8 @@ private def emitBinOp (s : EmitSSAState) (dst : String) (op : BinOp) (lhs rhs : 
       | _ => "fadd"
     emit s (s!"  %{dst} = {opStr} {fTy} {lhsStr}, {rhsStr}")
   else
-    let iTy := ssaIntTyToLLVM operandTy
+    let isPtrTy := match operandTy with | .ptrMut _ | .ptrConst _ | .ref _ | .refMut _ => true | _ => false
+    let iTy := if isPtrTy then "ptr" else ssaIntTyToLLVM operandTy
     match op with
     | .add => emit s s!"  %{dst} = add {iTy} {lhsStr}, {rhsStr}"
     | .sub => emit s s!"  %{dst} = sub {iTy} {lhsStr}, {rhsStr}"
@@ -306,10 +317,14 @@ private def emitSInst (s : EmitSSAState) (inst : SInst) : EmitSSAState :=
       || (s.fnParams.any fun (n, t) =>
         n == fn && match t with | .fn_ _ _ _ => true | _ => false)
       || s.fnTypeRegs.contains fn
+    -- Resolve aliased imports to their real linker symbol
+    let linkerFn := match s.linkerAliases.lookup fn with
+      | some orig => orig
+      | none => fn
     let callTarget := if isIndirect then
       if fn.startsWith "%" then fn  -- already has % prefix
       else "%" ++ fn
-    else "@" ++ fn
+    else "@" ++ linkerFn
     match dst with
     | some d =>
       let s := emit s s!"  %{d} = call {retLLTy} {callTarget}({argStr})"
@@ -430,7 +445,15 @@ private def emitSTerm (s : EmitSSAState) (t : STerm) : EmitSSAState :=
   | .ret (some v) =>
     let tyStr := ssaTyToLLVM s v.ty
     if tyStr == "void" then emit s "  ret void"
-    else if isKnownPtr s v && ssaIsPassByPtr s v.ty then
+    else match v with
+    | .strConst _ =>
+      -- String constant: materialize as struct, load, return by value
+      let (s, ptr) := materializeStrConst s (match v with | .strConst n => n | _ => "")
+      let (s, tmp) := freshLocal s
+      let s := emit s s!"  {tmp} = load {tyStr}, ptr {ptr}"
+      emit s s!"  ret {tyStr} {tmp}"
+    | _ =>
+    if isKnownPtr s v && ssaIsPassByPtr s v.ty then
       -- Value is a pointer to a struct (e.g. pass-by-ptr param); load it
       -- so we return the struct by value as the LLVM signature expects.
       let (s, tmp) := freshLocal s
@@ -460,7 +483,9 @@ private def emitSFnDef (s : EmitSSAState) (f : SFnDef) (isUserMain : Bool) : Emi
   -- Mark struct-type params as pointers, track fn params for indirect calls
   let s := { s with fnParams := f.params }
   let s := f.params.foldl (fun s (n, t) =>
-    if ssaIsPassByPtr s t then markPtr s n else s
+    match t with
+    | .ref _ | .refMut _ | .ptrMut _ | .ptrConst _ => markPtr s n
+    | _ => if ssaIsPassByPtr s t then markPtr s n else s
   ) s
   let s := f.blocks.foldl emitSBlock s
   let s := emit s "}\n"
@@ -475,7 +500,8 @@ private def emitSFnDef (s : EmitSSAState) (f : SFnDef) (isUserMain : Bool) : Emi
 -- Emit external declarations and builtins
 -- ============================================================
 
-private def emitExternDecls (s : EmitSSAState) (externFns : List (String × List (String × Ty) × Ty)) : EmitSSAState :=
+private def emitExternDecls (s : EmitSSAState) (externFns : List (String × List (String × Ty) × Ty))
+    (definedFns : List String := []) : EmitSSAState :=
   -- Standard C runtime declarations (used by remaining builtins)
   let s := emit s "declare ptr @malloc(i64)"
   let s := emit s "declare void @free(ptr)"
@@ -496,9 +522,9 @@ private def emitExternDecls (s : EmitSSAState) (externFns : List (String × List
     "malloc", "free", "realloc", "write", "abort", "printf", "strlen",
     "memset", "memcmp", "snprintf", "strtol"
   ]
-  -- User extern function declarations
+  -- User extern function declarations (skip if already defined as a concrete function)
   externFns.foldl (fun s (name, params, retTy) =>
-    if builtinNames.contains name then s
+    if builtinNames.contains name || definedFns.contains name then s
     else
       let retLLTy := ssaTyToLLVM s retTy
       let paramStr := ", ".intercalate (params.map fun (_, t) => ssaParamTyToLLVM s t)
@@ -762,7 +788,8 @@ private def emitBuiltins (s : EmitSSAState) : EmitSSAState :=
 -- ============================================================
 
 def emitSModule (s : EmitSSAState) (m : SModule) (testMode : Bool := false) : EmitSSAState :=
-  let s := { s with structDefs := s.structDefs ++ m.structs, enumDefs := s.enumDefs ++ m.enums }
+  let s := { s with structDefs := s.structDefs ++ m.structs, enumDefs := s.enumDefs ++ m.enums,
+                     linkerAliases := s.linkerAliases ++ m.linkerAliases }
   -- User types (dedup across modules)
   let s := m.structs.foldl (fun s sd =>
     if s.emittedTypes.contains sd.name then s
@@ -942,6 +969,8 @@ def emitSSAProgram (modules : List SModule) (testMode : Bool := false) : String 
   let s := { s with structDefs := allStructs, enumDefs := builtinEnums ++ allEnums }
   -- Well-known struct types (String, Vec, HashMap)
   let s := Layout.builtinTypeDefs.foldl (fun s line => emit s line) s
+  -- Mark builtins as emitted so user-defined versions don't duplicate them
+  let s := { s with emittedTypes := ["String", "Vec", "HashMap"] ++ s.emittedTypes }
   -- Whole-program monomorphic ABI for builtin generic enums:
   -- Scan all SSA modules for concrete type arguments, then emit a single LLVM type
   -- definition sized to the largest payload across all instantiations.
@@ -967,9 +996,10 @@ def emitSSAProgram (modules : List SModule) (testMode : Bool := false) : String 
   -- Mark these as emitted so user enums with the same names won't duplicate
   let s := { s with emittedTypes := ["Result", "Option"] ++ s.emittedTypes }
   let s := emit s ""
-  -- External declarations
+  -- External declarations (skip externs that shadow defined functions)
   let allExternFns := modules.foldl (fun acc m => acc ++ m.externFns) []
-  let s := emitExternDecls s allExternFns
+  let allDefinedFns := modules.foldl (fun acc m => acc ++ m.functions.map (·.name)) []
+  let s := emitExternDecls s allExternFns allDefinedFns
   let s := emit s ""
   -- Emit each module
   let s := modules.foldl (fun s m => emitSModule s m testMode) s

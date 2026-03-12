@@ -8,7 +8,7 @@ Concrete should stay small enough to remain readable, auditable, and mechanicall
 
 ## Current State
 
-The Lean 4 compiler implements the core surface language plus the full internal IR pipeline: Core IR, elaboration, Core validation, monomorphization, SSA lowering, SSA verification/cleanup, and SSA codegen. The main suite currently has 372 passing tests (including codegen differential coverage across `--emit-ssa`, `--emit-llvm`, and `--emit-core`), and the SSA-specific suite also passes.
+The Lean 4 compiler implements the core surface language plus the full internal IR pipeline: Core IR, elaboration, Core validation, monomorphization, SSA lowering, SSA verification/cleanup, and SSA codegen. The main suite currently has 483 passing tests (372 compiler tests + 111 stdlib module tests, including codegen differential coverage across `--emit-ssa`, `--emit-llvm`, and `--emit-core`), and the SSA-specific suite also passes.
 
 The project also now has:
 
@@ -28,7 +28,8 @@ For the detailed compiler pipeline, pass boundaries, and architecture phase refe
 Still clearly not implemented:
 
 - `transmute`
-- MLIR backend
+- structured non-string LLVM backend
+- backend plurality over SSA (for example MLIR / C / Wasm)
 - kernel formalization
 - runtime
 - fully authoritative standalone resolution
@@ -40,7 +41,7 @@ Recently completed:
 - builtins, stdlib, and user code migrated to one explicit trust/effect model with trusted boundaries and honest capability annotations
 - fixed lowering bugs exposed by the trusted-extern migration: string constant naming collision across functions, and SSA variable scoping errors (then-branch leakage into else-branch, loop-body leakage past while-loop exits)
 - first testing strategy expansion: parser fuzzing, fmt/parse property tests, Vec/HashMap trace tests
-- testing strategy expansion completed: codegen differential tests (16 assertions across `--emit-ssa`, `--emit-llvm`, `--emit-core`), report consistency tests, 372 passing tests total
+- testing strategy expansion completed: codegen differential tests (16 assertions across `--emit-ssa`, `--emit-llvm`, `--emit-core`), report consistency tests, stdlib test runner (`concrete std/src/lib.con --test`), 483 passing tests total
 - stdlib API cleanup: unified get/set convention (checked returns Option, unchecked is raw), fixed io.con print semantics, converted Text and Slice to impl methods, Vec::pop now returns Option<T>
 - new collections: Deque (ring buffer), BinaryHeap (priority queue with fn pointer cmp), OrderedMap/OrderedSet (sorted array + binary search), BitSet (u64-word-backed with union/intersect)
 
@@ -61,6 +62,8 @@ Recently completed:
    - ~~migrate remaining math intrinsics (sqrt, sin, cos, etc.) to stdlib~~ **done** (9 math functions moved to `std/src/math.con` as `trusted extern fn`; compiler builtins removed from Intrinsic, Check, Elab, EmitSSA, Resolve)
    - ~~clean public API names that still look like low-level runtime hooks~~ **done** (unified get/set/get_unchecked/set_unchecked, fixed io.con print semantics, converted Text/Slice to impl methods)
    - ~~make ownership/borrowing costs more predictable at the stdlib boundary~~ **done** (Vec::pop returns Option<T>, test.con properly drops owned Strings, read_line annotated with(Alloc))
+   - remove remaining string-based semantic dispatch in compiler tables and special-case paths
+   - keep stringly handling confined to true foreign-symbol boundaries, not ordinary semantic logic
    - revisit the string/conversion boundary separately instead of letting builtin-shaped string APIs linger by default
    - keep the stdlib bytes-first and low-level, rather than letting string-heavy convenience APIs become the default surface
 3. Keep deepening and hardening the existing stdlib surface:
@@ -76,7 +79,11 @@ Recently completed:
    - better range precision
    - notes and secondary labels
    - clearer presentation for transformed constructs
+   - reduce brittle string-matched report/test coupling where stable structured checks are possible
 5. Preserve SSA as the only backend boundary and keep the build/project model explicit and boring.
+   - replace raw LLVM string emission with a structured LLVM backend before adding backend plurality
+   - keep target-specific work behind an explicit backend abstraction over SSA
+   - treat MLIR as a later optional backend family, not the default immediate answer
 
 ### Next
 
@@ -91,7 +98,7 @@ Recently completed:
 
 ### Later
 
-1. MLIR or other additional backends, but only over the SSA boundary.
+1. Backend plurality over SSA (for example MLIR / C / Wasm), but only after the current backend becomes structurally cleaner first.
 2. Runtime maturity and eventual self-hosting pressure.
 3. Proof-driven narrowing of future feature additions.
 4. A clearer hosted vs freestanding / `no_std` split, but only after the current runtime and stdlib boundaries are more stable.
@@ -1605,69 +1612,81 @@ Parallel with everything above. Start early, grow incrementally.
 - Language server (LSP — editor integration)
 - Compiler-backed tooling artifacts: keep enough reference/module data for project-wide rename, find-references, and similar editor features
 - Cross-compilation
-- WebAssembly target (via MLIR after Phase 11)
-- C codegen target (via MLIR after Phase 11)
+- WebAssembly target (after backend plurality over SSA is real)
+- C codegen target (after backend plurality over SSA is real)
 
 ---
 
-## Phase 11: MLIR backend
+## Phase 11: Backend Plurality Over SSA
 
-Replace direct LLVM IR text emission with MLIR-based compilation pipeline. This gives proper optimization passes, better diagnostics, and a foundation for multiple backends.
+Do backend work in the following order:
+
+1. replace direct LLVM IR text emission with a structured LLVM backend
+2. make backend plurality explicit over the SSA boundary
+3. only then prototype MLIR if it still buys something concrete for C/Wasm/multi-stage lowering
+
+MLIR is not the immediate goal by default. The immediate backend problem is stringly LLVM emission.
 
 ### Why
 
-The current codegen emits LLVM IR as text strings — it works but has no optimization (every variable is an `alloca`, no inlining, no constant folding). MLIR provides structured IR construction, dialect-based lowering, and access to LLVM's full optimization pipeline.
+The current codegen emits LLVM IR as text strings. That is brittle and makes backend evolution harder.
+
+The first fix is:
+- keep SSA as the backend boundary
+- emit LLVM structurally instead of as raw strings
+
+Only after that is in place does MLIR become an interesting option for richer multi-stage, multi-backend work.
 
 ### Architecture
 
 ```
 Current:  Surface AST → Resolve → Check → Elab → CoreCanonicalize → CoreCheck → Mono → Lower → SSAVerify → SSACleanup → EmitSSA (LLVM text) → clang → binary
-Target:   Surface AST → Resolve → Check → Elab → CoreCanonicalize → CoreCheck → Mono → Lower → SSAVerify → SSACleanup → MLIR/LLVM backend → binary
+Stage 1:  Surface AST → Resolve → Check → Elab → CoreCanonicalize → CoreCheck → Mono → Lower → SSAVerify → SSACleanup → structured LLVM backend → binary
+Stage 2:  Surface AST → Resolve → Check → Elab → CoreCanonicalize → CoreCheck → Mono → Lower → SSAVerify → SSACleanup → backend abstraction → {LLVM, MLIR, C, Wasm, ...} → binary
 ```
 
-### Phase 11a: Lean-MLIR FFI bindings
+### Phase 11a: Structured LLVM backend
 
-Build Lean 4 `@[extern]` bindings to the MLIR C API.
+Replace `EmitSSA.lean` raw string concatenation with structured LLVM construction.
 
-- Wrap core types: `MLIRContext`, `MLIRModule`, `MLIRBlock`, `MLIROperation`, `MLIRType`, `MLIRValue`
-- Use [melior](https://github.com/raviqqe/melior) as a design reference for the API surface
-- Build system: link against MLIR/LLVM shared libraries via `lakefile.lean`
-- New file: `Concrete/MLIR/Bindings.lean`
+- Keep SSA as the only backend input
+- Remove textual LLVM brittleness first
+- A small typed builder or LLVM C API binding is enough here
+- Validate: all existing tests still pass
 
-### Phase 11b: LLVM dialect codegen
+### Phase 11b: Backend abstraction over SSA
 
-Replace `EmitSSA.lean` text emission with MLIR operation construction.
+Make it explicit that verified/cleaned SSA can feed multiple backends without duplicating semantics.
 
-- Target LLVM dialect directly (1:1 mapping with current textual IR)
-- Same semantics, structured construction instead of string concatenation
-- New file: `Concrete/MLIR/Codegen.lean` (parallel to `EmitSSA.lean`)
-- Validate: all existing tests pass with MLIR backend
-- Keep the current textual SSA backend as fallback during transition
-- Compiler flag: `--backend=text` (default initially) vs `--backend=mlir`
+- `EmitSSA` remains one backend over SSA
+- New targets should branch only after SSA
+- Do not introduce a second semantic lowering path
+- Add a backend flag only once there are actually multiple backends
 
-### Phase 11c: Optimization passes
+### Phase 11c: MLIR prototype (optional, only if it earns its complexity)
 
-Wire up LLVM optimization passes through MLIR's pass manager.
+If Concrete still wants richer backend plurality (for example C and Wasm) after 11a and 11b, prototype MLIR as a consumer of SSA.
 
-- `mem2reg` — promotes allocas to SSA registers (biggest single win)
-- Dead code elimination, constant folding, inlining
-- Add compiler flags: `-O0` (default, current behavior), `-O1`, `-O2`
-- Benchmark: compare output binary performance textual vs MLIR
+- Start with a narrow subset
+- Prefer proving the SSA → backend contract before optimizing heavily
+- Keep MLIR out of frontend semantics and Core semantics
+- Re-evaluate whether MLIR is actually buying enough to keep
 
-### Phase 11d: Custom Concrete dialect (future, optional)
+### Phase 11d: Additional backend families
 
-A Concrete-specific MLIR dialect for domain-specific optimizations.
+If backend plurality becomes real, support extra targets only over SSA.
 
-- Linear type annotations in IR for linearity-aware optimization
-- Capability annotations for effect-guided dead code elimination
-- Lower: Concrete dialect → LLVM dialect
-- This is speculative — only pursue if 11a-11c reveal clear benefits
+- C backend
+- Wasm backend
+- MLIR-based native path, if still justified
+- keep the semantic path shared
 
 ### Tests
 
-- All existing tests must pass with MLIR backend (`--backend=mlir`)
-- Binary output must be functionally equivalent (same exit codes, same behavior)
-- Performance regression tests for -O2 vs -O0
+- All existing tests must pass with the structured LLVM backend
+- Any additional backend must pass the same SSA-boundary functional tests
+- Binary output must remain functionally equivalent across backends
+- Backend plurality must not reintroduce parallel semantic lowering paths
 
 ---
 

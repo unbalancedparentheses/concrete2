@@ -468,8 +468,8 @@ def resolveShallow (moduleSummaries : List FileSummary)
       | none => errs ++ [mkResolveDiag (.unknownModule imp.moduleName) (some imp.span)]
       | some (_, pubNames) =>
         imp.symbols.foldl (fun errs sym =>
-          if pubNames.contains sym then errs
-          else errs ++ [mkResolveDiag (.notPublicInModule sym imp.moduleName) (some imp.span)]
+          if pubNames.contains sym.name then errs
+          else errs ++ [mkResolveDiag (.notPublicInModule sym.name imp.moduleName) (some imp.span)]
         ) errs
     ) errs
   ) []

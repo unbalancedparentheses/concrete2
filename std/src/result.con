@@ -21,7 +21,7 @@ mod result {
         }
 
         pub fn is_err(&self) -> bool {
-            return !self.is_ok();
+            return !(self.is_ok());
         }
     }
 }

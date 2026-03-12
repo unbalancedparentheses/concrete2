@@ -211,7 +211,18 @@ partial def ccCheckExpr (e : CExpr) : StateM CoreCheckEnv Unit := do
   | .ident name ty =>
     match ← lookupVar name with
     | some varTy =>
-      if !typesCompatible varTy ty then
+      -- Skip check when types involve named/generic/typeVar or ref/deref differences
+      -- (match arms rebind names with different types; auto-deref also causes ref vs value differences)
+      let isLenient := fun (t : Ty) => match t with
+        | .named _ | .generic _ _ | .typeVar _ => true
+        | .ref inner | .refMut inner | .ptrMut inner | .ptrConst inner => match inner with
+          | .named _ | .generic _ _ | .typeVar _ => true | _ => false
+        | _ => false
+      let isRefCompat := match varTy, ty with
+        | .ref inner, t | t, .ref inner => typesCompatible inner t
+        | .refMut inner, t | t, .refMut inner => typesCompatible inner t
+        | _, _ => false
+      if !typesCompatible varTy ty && !isLenient varTy && !isLenient ty && !isRefCompat then
         addCCError (.typeMismatchVariable name (toString (repr varTy)) (toString (repr ty)))
     | none => pure ()  -- may be a parameter or external
 
@@ -230,9 +241,10 @@ partial def ccCheckExpr (e : CExpr) : StateM CoreCheckEnv Unit := do
         if !env.inTrusted && !capsContain env.currentCapSet (.concrete ["Unsafe"]) then
           addCCError (.missingCapability "ptr_arith" "Unsafe" "")
       else
-        if !isNumeric lTy then
+        let hasTypeVar := fun (t : Ty) => match t with | .typeVar _ | .named _ => true | _ => false
+        if !isNumeric lTy && !hasTypeVar lTy then
           addCCError (.arithmeticOnNonNumeric (toString (repr lTy)))
-        if !typesCompatible lTy rTy then
+        if !typesCompatible lTy rTy && !hasTypeVar lTy && !hasTypeVar rTy then
           addCCError (.binaryOperandMismatch (toString (repr lTy)) (toString (repr rTy)))
     | .eq | .neq | .lt | .gt | .leq | .geq =>
       if !typesCompatible lTy rTy then
@@ -376,7 +388,9 @@ partial def ccCheckExpr (e : CExpr) : StateM CoreCheckEnv Unit := do
       (isPtr innerTy && isRef targetTy) ||
       (isRef innerTy && isPtr targetTy) ||
       (innerTy == targetTy)
-    if !valid then
+    -- Skip cast validation for type variables / named generic params
+    let hasTypeVar := fun (t : Ty) => match t with | .typeVar _ | .named _ => true | _ => false
+    if !valid && !hasTypeVar innerTy && !hasTypeVar targetTy then
       addCCError (.cannotCast (toString (repr innerTy)) (toString (repr targetTy)))
     -- Unsafe capability check for pointer-involving casts (except safe ref-to-ptr)
     let isRefToPtr := isRef innerTy && isPtr targetTy
@@ -431,11 +445,13 @@ partial def ccCheckStmt (stmt : CStmt) : StateM CoreCheckEnv Unit := do
     ccCheckExpr value
     let env ← getEnv
     let valueTy := value.ty
-    -- Skip check for named/generic/typeVar types (could be newtypes, aliases, or polymorphic)
-    let isResolvable := fun (t : Ty) => match t with
+    -- Skip check for types containing named/generic/typeVar (could be newtypes, aliases, or polymorphic)
+    let rec containsResolvable : Ty → Bool
       | .named _ | .generic _ _ | .typeVar _ | .unit | .placeholder => true
+      | .ptrMut inner | .ptrConst inner | .ref inner | .refMut inner => containsResolvable inner
+      | .array inner _ => containsResolvable inner
       | _ => false
-    if !typesCompatible valueTy env.currentRetTy && !isResolvable valueTy && !isResolvable env.currentRetTy then
+    if !typesCompatible valueTy env.currentRetTy && !containsResolvable valueTy && !containsResolvable env.currentRetTy then
       addCCError (.returnTypeMismatch (toString (repr env.currentRetTy)) (toString (repr valueTy)))
 
   | .return_ none _ => pure ()
