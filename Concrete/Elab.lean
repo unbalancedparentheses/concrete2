@@ -1,4 +1,5 @@
 import Concrete.AST
+import Concrete.BuiltinSigs
 import Concrete.Core
 import Concrete.Diagnostic
 import Concrete.FileSummary
@@ -1026,21 +1027,7 @@ def elabFn (f : FnDef) (implTy : Option Ty := none) : ElabM CFnDef := do
 -- Build environment from module (mirrors checkModule setup)
 -- ============================================================
 
-private def buildBuiltinSigs : List (String × FnSummary) := [
-  ("string_length", { params := [("s", .ref .string)], retTy := .int }),
-  ("string_concat", { params := [("a", .string), ("b", .string)], retTy := .string }),
-  ("drop_string", { params := [("s", .string)], retTy := .unit }),
-  ("string_slice", { params := [("s", .ref .string), ("start", .int), ("end_", .int)], retTy := .string }),
-  ("string_char_at", { params := [("s", .ref .string), ("index", .int)], retTy := .int }),
-  ("string_contains", { params := [("haystack", .ref .string), ("needle", .ref .string)], retTy := .bool }),
-  ("string_eq", { params := [("a", .ref .string), ("b", .ref .string)], retTy := .bool }),
-  ("int_to_string", { params := [("n", .int)], retTy := .string }),
-  ("string_to_int", { params := [("s", .ref .string)], retTy := .generic "Result" [.int, .int] }),
-  ("bool_to_string", { params := [("b", .bool)], retTy := .string }),
-  ("float_to_string", { params := [("f", .float64)], retTy := .string }),
-  ("get_args", { params := [], retTy := .heapArray .string, capSet := .concrete ["Process"] }),
-  ("string_trim", { params := [("s", .ref .string)], retTy := .string })
-]
+-- Builtin function signatures: shared definition in BuiltinSigs.lean (builtinFnSigs)
 
 partial def elabModule (m : Module) (summary : FileSummary)
     (imports : ResolvedImports := {})
@@ -1064,7 +1051,7 @@ partial def elabModule (m : Module) (summary : FileSummary)
       allImplBlocks allTraitImpls
   let traitImplMethodSigs : List (String × FnSummary) := []
   -- Combine all sigs
-  let allSigs := imports.functions ++ userFnSigs ++ buildBuiltinSigs ++ externSigs
+  let allSigs := imports.functions ++ userFnSigs ++ builtinFnSigs ++ externSigs
                  ++ submoduleSigs ++ implMethodSigs ++ traitImplMethodSigs
   -- Build structs / enums
   let builtinOptionEnum : EnumDef := {

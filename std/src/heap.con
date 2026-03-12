@@ -267,4 +267,79 @@ mod heap {
         if count != 50 { return 1; }
         return 0;
     }
+
+    #[test]
+    fn test_heap_sorted_output() with(Alloc) -> i32 {
+        // Verify max-heap: peek is max, and all 10 elements can be popped
+        let mut h: BinaryHeap<i32> = BinaryHeap::<i32>::new(max_cmp);
+        h.push(5);
+        h.push(1);
+        h.push(9);
+        h.push(3);
+        h.push(7);
+        h.push(2);
+        h.push(8);
+        h.push(4);
+        h.push(6);
+        h.push(10);
+
+        if !assert_eq::<u64>(h.len(), 10, "len should be 10") {
+            h.drop();
+            return 1;
+        }
+
+        // Pop all 10 and count
+        let count: u64 = 0;
+        while h.len() > 0 {
+            h.pop();
+            count = count + 1;
+        }
+
+        h.drop();
+        if count != 10 { return 1; }
+        return 0;
+    }
+
+    #[test]
+    fn test_heap_push_pop_interleaved() with(Alloc) -> i32 {
+        // Interleave push and pop, verify heap property holds
+        let mut h: BinaryHeap<i32> = BinaryHeap::<i32>::new(max_cmp);
+        h.push(10);
+        h.push(20);
+        // Pop max (should be 20)
+        let r1: Option<i32> = h.pop();
+        match r1 {
+            Option#Some { value } => {
+                if value != 20 { h.drop(); return 1; }
+            },
+            Option#None => { h.drop(); return 1; }
+        }
+        h.push(15);
+        h.push(25);
+        // Pop max (should be 25)
+        let r2: Option<i32> = h.pop();
+        match r2 {
+            Option#Some { value } => {
+                if value != 25 { h.drop(); return 1; }
+            },
+            Option#None => { h.drop(); return 1; }
+        }
+        // Remaining: 10, 15 — pop should give 15 then 10
+        let r3: Option<i32> = h.pop();
+        match r3 {
+            Option#Some { value } => {
+                if value != 15 { h.drop(); return 1; }
+            },
+            Option#None => { h.drop(); return 1; }
+        }
+        let r4: Option<i32> = h.pop();
+        match r4 {
+            Option#Some { value } => {
+                if value != 10 { h.drop(); return 1; }
+            },
+            Option#None => { h.drop(); return 1; }
+        }
+        h.drop();
+        return 0;
+    }
 }

@@ -275,4 +275,16 @@ mod bitset {
         b.drop();
         return 0;
     }
+
+    #[test]
+    fn test_loop_set_small() with(Alloc, Unsafe) -> i32 {
+        let mut b: BitSet = BitSet::new();
+        let i: u64 = 0;
+        while i < 50 {
+            b.set(i * 7);
+            i = i + 1;
+        }
+        b.drop();
+        return 0;
+    }
 }

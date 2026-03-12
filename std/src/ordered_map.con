@@ -329,4 +329,82 @@ mod ordered_map {
         m.drop();
         return 0;
     }
+
+    #[test]
+    fn test_omap_insert_remove_stress() with(Alloc) -> i32 {
+        // Insert many elements, remove some, verify structure
+        let mut m: OrderedMap<i32, i32> = OrderedMap::<i32, i32>::new(omap_cmp_i32);
+        m.insert(50, 500);
+        m.insert(10, 100);
+        m.insert(30, 300);
+        m.insert(20, 200);
+        m.insert(40, 400);
+        m.insert(5, 50);
+        m.insert(25, 250);
+        m.insert(35, 350);
+        m.insert(15, 150);
+        m.insert(45, 450);
+
+        if !assert_eq::<u64>(m.len(), 10, "len should be 10") {
+            m.drop();
+            return 1;
+        }
+
+        // Remove 4 keys
+        let k20: i32 = 20;
+        let k40: i32 = 40;
+        let k5: i32 = 5;
+        let k35: i32 = 35;
+        m.remove(&k20);
+        m.remove(&k40);
+        m.remove(&k5);
+        m.remove(&k35);
+
+        if !assert_eq::<u64>(m.len(), 6, "len should be 6 after removes") {
+            m.drop();
+            return 1;
+        }
+
+        // min should be 10, max should be 50
+        let mn: Option<&i32> = m.min_key();
+        match mn {
+            Option#Some { value } => {
+                if *value != 10 { m.drop(); return 1; }
+            },
+            Option#None => { m.drop(); return 1; }
+        }
+        let mx: Option<&i32> = m.max_key();
+        match mx {
+            Option#Some { value } => {
+                if *value != 50 { m.drop(); return 1; }
+            },
+            Option#None => { m.drop(); return 1; }
+        }
+
+        // Removed keys should be absent
+        if m.contains(&k20) { m.drop(); return 1; }
+        if m.contains(&k40) { m.drop(); return 1; }
+        if m.contains(&k5) { m.drop(); return 1; }
+        if m.contains(&k35) { m.drop(); return 1; }
+
+        // Remaining keys should be present
+        let r10: i32 = 10;
+        let r30: i32 = 30;
+        let r50: i32 = 50;
+        if !(m.contains(&r10)) { m.drop(); return 1; }
+        if !(m.contains(&r30)) { m.drop(); return 1; }
+        if !(m.contains(&r50)) { m.drop(); return 1; }
+
+        // Verify a value
+        let v: Option<&i32> = m.get(&r30);
+        match v {
+            Option#Some { value } => {
+                if *value != 300 { m.drop(); return 1; }
+            },
+            Option#None => { m.drop(); return 1; }
+        }
+
+        m.drop();
+        return 0;
+    }
 }

@@ -77,11 +77,11 @@ def resolveIntrinsic (name : String) : Option IntrinsicId :=
   | "string_length" | "string_len" | "String_len" => some .stringLength
   | "string_concat" | "String_concat"              => some .stringConcat
   | "string_eq"     | "String_eq"                  => some .stringEq
-  | "string_slice"   => some .stringSlice
-  | "string_char_at" => some .stringCharAt
-  | "string_contains"=> some .stringContains
-  | "string_trim"    => some .stringTrim
-  | "drop_string"    => some .dropString
+  | "string_slice"    | "String_slice"    => some .stringSlice
+  | "string_char_at"  | "String_char_at"  => some .stringCharAt
+  | "string_contains" | "String_contains" => some .stringContains
+  | "string_trim"     | "String_trim"     => some .stringTrim
+  | "drop_string"     | "String_drop"     => some .dropString
 
   -- Conversion
   | "int_to_string"  => some .intToString

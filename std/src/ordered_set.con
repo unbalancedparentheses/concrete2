@@ -150,4 +150,102 @@ mod ordered_set {
         s.drop();
         return 0;
     }
+
+    #[test]
+    fn test_oset_insert_remove_stress() with(Alloc) -> i32 {
+        // Insert many elements, remove some, verify structure
+        let mut s: OrderedSet<i32> = OrderedSet::<i32>::new(oset_cmp_i32);
+        s.insert(50);
+        s.insert(10);
+        s.insert(30);
+        s.insert(20);
+        s.insert(40);
+        s.insert(5);
+        s.insert(25);
+        s.insert(35);
+        s.insert(15);
+        s.insert(45);
+
+        if !assert_eq::<u64>(s.len(), 10, "len should be 10") {
+            s.drop();
+            return 1;
+        }
+
+        // Remove 4 keys
+        let k20: i32 = 20;
+        let k40: i32 = 40;
+        let k5: i32 = 5;
+        let k35: i32 = 35;
+        s.remove(&k20);
+        s.remove(&k40);
+        s.remove(&k5);
+        s.remove(&k35);
+
+        if !assert_eq::<u64>(s.len(), 6, "len should be 6 after removes") {
+            s.drop();
+            return 1;
+        }
+
+        // min should be 10, max should be 50
+        let mn: Option<&i32> = s.min();
+        match mn {
+            Option#Some { value } => {
+                if *value != 10 { s.drop(); return 1; }
+            },
+            Option#None => { s.drop(); return 1; }
+        }
+        let mx: Option<&i32> = s.max();
+        match mx {
+            Option#Some { value } => {
+                if *value != 50 { s.drop(); return 1; }
+            },
+            Option#None => { s.drop(); return 1; }
+        }
+
+        // Removed keys should be absent
+        if s.contains(&k20) { s.drop(); return 1; }
+        if s.contains(&k40) { s.drop(); return 1; }
+        if s.contains(&k5) { s.drop(); return 1; }
+        if s.contains(&k35) { s.drop(); return 1; }
+
+        // Remaining keys should be present
+        let r10: i32 = 10;
+        let r30: i32 = 30;
+        let r50: i32 = 50;
+        let r25: i32 = 25;
+        let r15: i32 = 15;
+        let r45: i32 = 45;
+        if !(s.contains(&r10)) { s.drop(); return 1; }
+        if !(s.contains(&r30)) { s.drop(); return 1; }
+        if !(s.contains(&r50)) { s.drop(); return 1; }
+        if !(s.contains(&r25)) { s.drop(); return 1; }
+        if !(s.contains(&r15)) { s.drop(); return 1; }
+        if !(s.contains(&r45)) { s.drop(); return 1; }
+
+        s.drop();
+        return 0;
+    }
+
+    #[test]
+    fn test_oset_clear_reuse() with(Alloc) -> i32 {
+        let mut s: OrderedSet<i32> = OrderedSet::<i32>::new(oset_cmp_i32);
+        s.insert(1);
+        s.insert(2);
+        s.insert(3);
+        s.clear();
+        if !assert_eq::<u64>(s.len(), 0, "len should be 0 after clear") {
+            s.drop();
+            return 1;
+        }
+        // Reuse after clear
+        s.insert(42);
+        let k: i32 = 42;
+        if !(s.contains(&k)) { s.drop(); return 1; }
+        if !assert_eq::<u64>(s.len(), 1, "len should be 1 after re-insert") {
+            s.drop();
+            return 1;
+        }
+        s.drop();
+        return 0;
+    }
 }

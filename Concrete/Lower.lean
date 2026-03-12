@@ -54,6 +54,9 @@ structure LowerState where
   structDefs : List CStructDef
   enumDefs : List CEnumDef
   loopStack : List LoopInfo
+  /-- Allocas that must be hoisted to the function entry block.
+      Prevents unbounded stack growth when &mut borrows occur in loops. -/
+  entryAllocas : List SInst := []
 
 abbrev LowerM := ExceptT String (StateM LowerState)
 
@@ -75,6 +78,12 @@ private def freshLabel (pfx : String := "bb") : LowerM String := do
 private def emit (inst : SInst) : LowerM Unit := do
   let s ← getState
   setState { s with currentInsts := s.currentInsts ++ [inst] }
+
+/-- Emit an alloca that will be hoisted to the function entry block.
+    This prevents dynamic stack growth when allocas occur inside loops. -/
+private def emitEntryAlloca (inst : SInst) : LowerM Unit := do
+  let s ← getState
+  setState { s with entryAllocas := s.entryAllocas ++ [inst] }
 
 private def terminateBlock (term : STerm) : LowerM Unit := do
   let s ← getState
@@ -357,10 +366,12 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
       match arg with
       | .borrowMut (.ident varName innerTy) _ =>
         -- For &mut borrows of variables: alloca, store current value, pass ptr
-        -- After the call we'll load back to propagate mutations
+        -- After the call we'll load back to propagate mutations.
+        -- The alloca is hoisted to the entry block so that loops don't
+        -- grow the stack on every iteration.
         let curVal ← lowerExpr (.ident varName innerTy)
         let slot ← freshReg "mutref."
-        emit (.alloca slot innerTy)
+        emitEntryAlloca (.alloca slot innerTy)
         emit (.store curVal (.reg slot innerTy))
         aVals := aVals ++ [.reg slot (.refMut innerTy)]
         mutBorrows := mutBorrows ++ [(varName, slot, innerTy)]
@@ -1240,11 +1251,16 @@ def lowerFn (f : CFnDef) (structDefs : List CStructDef) (enumDefs : List CEnumDe
   ).run initState |>.run
   match result with
   | ((.ok ()), finalState) =>
+    -- Hoist entry allocas: prepend them to the first (entry) block
+    let blocks' := match finalState.blocks with
+      | [] => []
+      | entry :: rest =>
+        { entry with insts := finalState.entryAllocas ++ entry.insts } :: rest
     .ok ({
       name := f.name
       params := f.params
       retTy := f.retTy
-      blocks := finalState.blocks
+      blocks := blocks'
       isTest := f.isTest
     }, finalState.stringLits)
   | ((.error e), _) => .error e

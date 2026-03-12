@@ -5,55 +5,148 @@ COMPILER=".lake/build/bin/concrete"
 TESTDIR="lean_tests"
 TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT
+TEST_JOBS="${TEST_JOBS:-1}"
+JOBDIR="$TMPDIR/jobs"
+mkdir -p "$JOBDIR"
 
 PASS=0
 FAIL=0
+declare -a JOB_PIDS=()
+declare -a JOB_FILES=()
+
+path_key() {
+    local path="$1"
+    path="${path//\//__}"
+    path="${path//:/_}"
+    path="${path// /_}"
+    echo "$path"
+}
+
+record_result() {
+    local result_file="$1"
+    local status message
+    status=$(sed -n '1p' "$result_file")
+    message=$(sed -n '2,$p' "$result_file")
+    echo "$message"
+    if [ "$status" = "PASS" ]; then
+        PASS=$((PASS + 1))
+    else
+        FAIL=$((FAIL + 1))
+    fi
+}
+
+flush_one_job() {
+    local pid="${JOB_PIDS[0]}"
+    local result_file="${JOB_FILES[0]}"
+    wait "$pid" || true
+    record_result "$result_file"
+    JOB_PIDS=("${JOB_PIDS[@]:1}")
+    JOB_FILES=("${JOB_FILES[@]:1}")
+}
+
+flush_jobs() {
+    while [ "${#JOB_PIDS[@]}" -gt 0 ]; do
+        flush_one_job
+    done
+}
+
+throttle_jobs() {
+    while [ "${#JOB_PIDS[@]}" -ge "$TEST_JOBS" ]; do
+        flush_one_job
+    done
+}
 
 # Positive tests: should compile and produce expected output
-run_ok() {
+run_ok_worker() {
     local file="$1"
     local expected="$2"
+    local result_file="$3"
     local name
-    name=$(basename "$file" .con)
+    name=$(path_key "${file%.con}")
     local out="$TMPDIR/$name"
 
     if ! $COMPILER "$file" -o "$out" > /dev/null 2>&1; then
-        echo "FAIL  $file — compilation failed (expected success)"
-        FAIL=$((FAIL + 1))
+        {
+            echo "FAIL"
+            echo "FAIL  $file — compilation failed (expected success)"
+        } > "$result_file"
         return
     fi
     local actual
     actual=$("$out" 2>&1) || true
     if [ "$actual" = "$expected" ]; then
-        echo "  ok  $file => $expected"
-        PASS=$((PASS + 1))
+        {
+            echo "PASS"
+            echo "  ok  $file => $expected"
+        } > "$result_file"
     else
-        echo "FAIL  $file — expected '$expected', got '$actual'"
-        FAIL=$((FAIL + 1))
+        {
+            echo "FAIL"
+            echo "FAIL  $file — expected '$expected', got '$actual'"
+        } > "$result_file"
     fi
 }
 
+run_ok() {
+    local file="$1"
+    local expected="$2"
+    if [ "$TEST_JOBS" -le 1 ]; then
+        local result_file="$JOBDIR/$$.$RANDOM.result"
+        run_ok_worker "$file" "$expected" "$result_file"
+        record_result "$result_file"
+        return
+    fi
+    local result_file="$JOBDIR/$$.$RANDOM.result"
+    throttle_jobs
+    (run_ok_worker "$file" "$expected" "$result_file") &
+    JOB_PIDS+=("$!")
+    JOB_FILES+=("$result_file")
+}
+
 # Negative tests: should fail to compile with a specific error substring
-run_err() {
+run_err_worker() {
     local file="$1"
     local expected_err="$2"
+    local result_file="$3"
     local name
-    name=$(basename "$file" .con)
+    name=$(path_key "${file%.con}")
     local out="$TMPDIR/$name"
 
     local stderr
     if stderr=$($COMPILER "$file" -o "$out" 2>&1); then
-        echo "FAIL  $file — compiled successfully (expected error)"
-        FAIL=$((FAIL + 1))
+        {
+            echo "FAIL"
+            echo "FAIL  $file — compiled successfully (expected error)"
+        } > "$result_file"
         return
     fi
-    if echo "$stderr" | grep -q "$expected_err"; then
-        echo "  ok  $file => error: $expected_err"
-        PASS=$((PASS + 1))
+    if grep -Fq -- "$expected_err" <<<"$stderr"; then
+        {
+            echo "PASS"
+            echo "  ok  $file => error: $expected_err"
+        } > "$result_file"
     else
-        echo "FAIL  $file — expected error '$expected_err', got: $stderr"
-        FAIL=$((FAIL + 1))
+        {
+            echo "FAIL"
+            echo "FAIL  $file — expected error '$expected_err', got: $stderr"
+        } > "$result_file"
     fi
+}
+
+run_err() {
+    local file="$1"
+    local expected_err="$2"
+    if [ "$TEST_JOBS" -le 1 ]; then
+        local result_file="$JOBDIR/$$.$RANDOM.result"
+        run_err_worker "$file" "$expected_err" "$result_file"
+        record_result "$result_file"
+        return
+    fi
+    local result_file="$JOBDIR/$$.$RANDOM.result"
+    throttle_jobs
+    (run_err_worker "$file" "$expected_err" "$result_file") &
+    JOB_PIDS+=("$!")
+    JOB_FILES+=("$result_file")
 }
 
 echo "=== Positive tests ==="
@@ -111,23 +204,44 @@ run_ok "$TESTDIR/copy_struct.con" 42
 run_ok "$TESTDIR/copy_enum.con" 42
 
 # abort test: compiles but exits with nonzero (signal)
-run_abort() {
+run_abort_worker() {
     local file="$1"
+    local result_file="$2"
     local name
-    name=$(basename "$file" .con)
+    name=$(path_key "${file%.con}")
     local out="$TMPDIR/$name"
     if ! $COMPILER "$file" -o "$out" > /dev/null 2>&1; then
-        echo "FAIL  $file — compilation failed"
-        FAIL=$((FAIL + 1))
+        {
+            echo "FAIL"
+            echo "FAIL  $file — compilation failed"
+        } > "$result_file"
         return
     fi
     if "$out" > /dev/null 2>&1; then
-        echo "FAIL  $file — expected nonzero exit"
-        FAIL=$((FAIL + 1))
+        {
+            echo "FAIL"
+            echo "FAIL  $file — expected nonzero exit"
+        } > "$result_file"
     else
-        echo "  ok  $file => nonzero exit"
-        PASS=$((PASS + 1))
+        {
+            echo "PASS"
+            echo "  ok  $file => nonzero exit"
+        } > "$result_file"
     fi
+}
+run_abort() {
+    local file="$1"
+    if [ "$TEST_JOBS" -le 1 ]; then
+        local result_file="$JOBDIR/$$.$RANDOM.result"
+        run_abort_worker "$file" "$result_file"
+        record_result "$result_file"
+        return
+    fi
+    local result_file="$JOBDIR/$$.$RANDOM.result"
+    throttle_jobs
+    (run_abort_worker "$file" "$result_file") &
+    JOB_PIDS+=("$!")
+    JOB_FILES+=("$result_file")
 }
 run_abort "$TESTDIR/abort_basic.con"
 
@@ -329,6 +443,7 @@ run_ok "$TESTDIR/fn_ptr_method_call.con" 42
 run_ok "$TESTDIR/stdlib_hashmap.con" 0
 
 echo ""
+flush_jobs
 echo "=== Negative tests (expected errors) ==="
 run_err "$TESTDIR/error_unconsumed.con"        "was never consumed"
 run_err "$TESTDIR/error_use_after_move.con"    "used after move"
@@ -425,9 +540,9 @@ run_err "$TESTDIR/error_cap_deep_missing.con" "but caller has"
 run_err "$TESTDIR/error_borrow_double_mut.con" "frozen by borrow"
 
 # Span-bearing diagnostics (Resolve errors include line:col prefix)
-run_err "$TESTDIR/error_resolve_undeclared_span.con" "4:12: error\[resolve\]: undeclared variable"
-run_err "$TESTDIR/error_resolve_unknown_func_span.con" "3:18: error\[resolve\]: unknown function"
-run_err "$TESTDIR/error_resolve_unknown_type.con" "error\[resolve\]: unknown type 'Foo'"
+run_err "$TESTDIR/error_resolve_undeclared_span.con" "4:12: error[resolve]: undeclared variable"
+run_err "$TESTDIR/error_resolve_unknown_func_span.con" "3:18: error[resolve]: unknown function"
+run_err "$TESTDIR/error_resolve_unknown_type.con" "error[resolve]: unknown type 'Foo'"
 run_err "$TESTDIR/error_resolve_not_enum.con" "is not an enum"
 run_err "$TESTDIR/error_resolve_multi_errors.con" "unknown function 'unknown2'"
 run_err "$TESTDIR/error_resolve_unknown_enum.con" "unknown enum 'Phantom'"
@@ -531,23 +646,43 @@ run_err "$TESTDIR/error_summary_trait_missing_cross.con" "missing method"
 
 # === --test flag tests ===
 echo ""
+flush_jobs
 echo "=== --test flag tests ==="
-run_test() {
+run_test_worker() {
     local file="$1"
     local expected="$2"
-    local name
-    name=$(basename "$file" .con)
+    local result_file="$3"
 
     local output exit_code
     output=$($COMPILER "$file" --test 2>&1) && exit_code=0 || exit_code=$?
     if [ "$exit_code" = "$expected" ]; then
-        echo "  ok  $file --test (exit $expected)"
-        PASS=$((PASS + 1))
+        {
+            echo "PASS"
+            echo "  ok  $file --test (exit $expected)"
+        } > "$result_file"
     else
-        echo "FAIL  $file --test — expected exit $expected, got $exit_code"
-        echo "$output"
-        FAIL=$((FAIL + 1))
+        {
+            echo "FAIL"
+            echo "FAIL  $file --test — expected exit $expected, got $exit_code"
+            echo "$output"
+        } > "$result_file"
     fi
+}
+
+run_test() {
+    local file="$1"
+    local expected="$2"
+    if [ "$TEST_JOBS" -le 1 ]; then
+        local result_file="$JOBDIR/$$.$RANDOM.result"
+        run_test_worker "$file" "$expected" "$result_file"
+        record_result "$result_file"
+        return
+    fi
+    local result_file="$JOBDIR/$$.$RANDOM.result"
+    throttle_jobs
+    (run_test_worker "$file" "$expected" "$result_file") &
+    JOB_PIDS+=("$!")
+    JOB_FILES+=("$result_file")
 }
 
 run_test "$TESTDIR/test_flag_pass.con" 0
@@ -562,6 +697,7 @@ run_err "$TESTDIR/error_test_on_struct.con" "can only be applied to function"
 
 # === Report output tests ===
 echo ""
+flush_jobs
 echo "=== Report output tests ==="
 
 # --report unsafe should show trusted boundaries
@@ -927,6 +1063,7 @@ run_ok "$TESTDIR/regress_string_field_access.con"     42
 # === Stdlib module tests ===
 echo ""
 echo "=== Stdlib module tests ==="
+flush_jobs
 rm -f std/src/lib.con.test.ll std/src/lib.con.test
 stdlib_output=$($COMPILER std/src/lib.con --test 2>&1) && stdlib_exit=0 || stdlib_exit=$?
 stdlib_pass=$(echo "$stdlib_output" | grep -c "^PASS:" || true)
@@ -938,7 +1075,53 @@ fi
 PASS=$((PASS + stdlib_pass))
 FAIL=$((FAIL + stdlib_fail))
 
+# === Per-collection test verification ===
+# Verify each new collection's tests are present and passing in the stdlib run.
+# This catches silent regressions where a collection's tests vanish or break.
 echo ""
+echo "=== Collection test verification ==="
+
+check_collection_tests() {
+    local name="$1"
+    shift
+    local missing=0
+    for test_name in "$@"; do
+        if ! echo "$stdlib_output" | grep -qF "PASS: $test_name"; then
+            echo "FAIL  collection/$name — missing or failing test: $test_name"
+            missing=1
+        fi
+    done
+    if [ "$missing" -eq 0 ]; then
+        echo "  ok  collection/$name — all $# tests present and passing"
+        PASS=$((PASS + 1))
+    else
+        FAIL=$((FAIL + 1))
+    fi
+}
+
+check_collection_tests "Deque" \
+    test_push_back_pop_front test_push_front_pop_back test_deque_pop_empty \
+    test_get test_growth_wrapping test_mixed_push_pop \
+    test_deque_wrap_stress test_deque_clear_reuse
+
+check_collection_tests "BinaryHeap" \
+    test_max_heap_basic test_min_heap_basic test_heap_pop_empty test_heap_stress \
+    test_heap_sorted_output test_heap_push_pop_interleaved
+
+check_collection_tests "OrderedMap" \
+    test_insert_and_get test_sorted_order test_overwrite test_omap_remove test_get_missing \
+    test_omap_insert_remove_stress
+
+check_collection_tests "OrderedSet" \
+    test_insert_contains test_oset_remove test_min_max test_duplicate_insert \
+    test_oset_insert_remove_stress test_oset_clear_reuse
+
+check_collection_tests "BitSet" \
+    test_set_and_test test_unset test_count test_union test_intersect test_with_capacity \
+    test_bitset_word_boundaries test_bitset_large_stress test_bitset_clear_reuse
+
+echo ""
+flush_jobs
 echo "=== Results: $PASS passed, $FAIL failed ==="
 if [ "$FAIL" -gt 0 ]; then
     exit 1

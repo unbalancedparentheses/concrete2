@@ -1,4 +1,5 @@
 import Concrete.AST
+import Concrete.BuiltinSigs
 import Concrete.Diagnostic
 import Concrete.FileSummary
 import Concrete.Intrinsic
@@ -2039,51 +2040,11 @@ def checkModule (m : Module) (summary : FileSummary)
   let externSigs : List FnSummary := summary.externFnSigs.map Prod.snd
   let importedSigList := imports.functions.map Prod.snd
   let baseOffset := importedSigList.length
-  -- Built-in functions for strings and I/O
-  let builtinSigs : List FnSummary := [
-    -- 0: string_length
-    { params := [("s", .ref .string)], retTy := .int },
-    -- 1: string_concat
-    { params := [("a", .string), ("b", .string)], retTy := .string },
-    -- 2: drop_string
-    { params := [("s", .string)], retTy := .unit },
-    -- 3: string_slice
-    { params := [("s", .ref .string), ("start", .int), ("end_", .int)], retTy := .string },
-    -- 4: string_char_at
-    { params := [("s", .ref .string), ("index", .int)], retTy := .int },
-    -- 5: string_contains
-    { params := [("haystack", .ref .string), ("needle", .ref .string)], retTy := .bool },
-    -- 6: string_eq
-    { params := [("a", .ref .string), ("b", .ref .string)], retTy := .bool },
-    -- 7: int_to_string
-    { params := [("n", .int)], retTy := .string },
-    -- 8: string_to_int
-    { params := [("s", .ref .string)], retTy := .generic "Result" [.int, .int] },
-    -- 9: bool_to_string
-    { params := [("b", .bool)], retTy := .string },
-    -- 10: float_to_string
-    { params := [("f", .float64)], retTy := .string },
-    -- 11: get_args
-    { params := [], retTy := .heapArray .string, capSet := .concrete ["Process"] },
-    -- 12: string_trim
-    { params := [("s", .ref .string)], retTy := .string }
-  ]
+  -- Built-in functions for strings and I/O (shared definition in BuiltinSigs.lean)
+  let builtinSigs := builtinFnSigs.map Prod.snd
   let builtinOffset := baseOffset + fnSigs.length
-  let builtinNames : List (String × Nat) := [
-    ("string_length", builtinOffset),
-    ("string_concat", builtinOffset + 1),
-    ("drop_string", builtinOffset + 2),
-    ("string_slice", builtinOffset + 3),
-    ("string_char_at", builtinOffset + 4),
-    ("string_contains", builtinOffset + 5),
-    ("string_eq", builtinOffset + 6),
-    ("int_to_string", builtinOffset + 7),
-    ("string_to_int", builtinOffset + 8),
-    ("bool_to_string", builtinOffset + 9),
-    ("float_to_string", builtinOffset + 10),
-    ("get_args", builtinOffset + 11),
-    ("string_trim", builtinOffset + 12)
-  ]
+  let builtinNames : List (String × Nat) :=
+    (enumerateList builtinFnSigs).map fun (idx, (name, _)) => (name, builtinOffset + idx)
   -- Add submodule functions/extern fns with qualified names (mod_fn)
   let submoduleSigs : List FnSummary := summary.submoduleSummaries.foldl (fun acc (_, subSummary) =>
     acc ++ subSummary.functions.map Prod.snd

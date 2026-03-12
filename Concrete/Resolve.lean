@@ -136,22 +136,11 @@ private def isKnownType (ctx : ResolveCtx) (name : String) : Bool :=
 -- Builtin names
 -- ============================================================
 
-/-- Legacy builtin names not yet in IntrinsicId. Will shrink over time. -/
+/-- Builtin names that need special resolve treatment but are NOT
+    in `resolveIntrinsic` (Intrinsic.lean).  Everything else is
+    handled by `isIntrinsic` already. -/
 private def extraBuiltinNames : List String :=
-  [ "print", "println", "to_string", "abort", "destroy",
-    "alloc", "free", "deref", "deref_mut",
-    "drop_string", "string_len", "string_concat", "string_eq",
-    "vec_new", "vec_push", "vec_get", "vec_set", "vec_pop", "vec_free", "vec_len",
-    "Vec_new", "Vec_push", "Vec_get", "Vec_set", "Vec_pop", "Vec_free", "Vec_len",
-    "map_new", "map_insert", "map_get", "map_contains", "map_remove", "map_free", "map_len",
-    "HashMap_new", "HashMap_insert", "HashMap_get", "HashMap_contains",
-    "HashMap_remove", "HashMap_free", "HashMap_len",
-    "String_len", "String_concat", "String_eq",
-    "int_to_string", "string_to_int", "string_length", "string_char_at",
-    "string_contains", "string_slice", "string_trim",
-    "add", "sizeof", "alignof", "unwrap",
-    "bool_to_string", "float_to_string",
-    "get_args" ]
+  [ "print", "println", "to_string", "deref", "deref_mut", "add" ]
 
 /-- Check if a name is a known builtin (intrinsic or legacy). -/
 private def isKnownBuiltin (name : String) : Bool :=
