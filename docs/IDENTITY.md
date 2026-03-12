@@ -109,6 +109,29 @@ Concrete is aiming for a strong ownership/capability/trust story without requiri
 
 The goal is not to out-Rust Rust on every dimension. The goal is to offer a smaller, more explicit system that is easier to audit and reason about.
 
+### 6. Explainability As Part Of The Product
+
+Concrete should not stop at "accepted" or "rejected". It should become unusually good at answering:
+
+- why a capability is required
+- why code crosses an `Unsafe` or `trusted` boundary
+- why a value is dropped or consumed where it is
+- why a layout, ABI, or monomorphization outcome occurred
+
+This is part of the same identity as auditability. A language built for explicit reasoning should also be built to explain its own decisions clearly.
+
+### 7. Reproducible And Inspectable Compiler Outputs
+
+Concrete should eventually produce artifacts and builds that are not only correct enough to use, but inspectable and reproducible enough to trust operationally.
+
+That means moving toward:
+
+- explicit, durable compiler artifacts
+- reproducible enough builds and tests to trust failures
+- outputs that support reports, audits, tooling, and later proof workflows from the same underlying facts
+
+This is not a separate identity from the proof story. It is part of what makes a low-level language operationally trustworthy.
+
 ## Competitive Stance
 
 Concrete does not need to beat every systems language on every axis.
@@ -156,6 +179,8 @@ To justify its identity, Concrete should eventually be able to show users:
 - where allocation and destruction happen
 
 If Concrete cannot show these things clearly, it is not yet delivering its intended differentiator.
+
+Concrete should also be able to explain those facts clearly and, over time, reproduce them reliably enough that users can trust them across machines and environments.
 
 ## Why The Proof Direction Is Useful
 

@@ -24,6 +24,12 @@ Concrete should avoid broadening itself in ten directions at once. The most valu
 - auditable
 - coherent
 
+The best extra multipliers are not separate identities. They reinforce the same one:
+
+- Concrete as an audit machine, not only a compiler
+- Concrete as a language with first-class explainability
+- Concrete as a reproducible and inspectable compiler/build pipeline
+
 ## Highest-Leverage Improvements
 
 ### 0. A truly excellent compiler pipeline
@@ -133,6 +139,31 @@ The strongest version of this is security-oriented, not only developer-oriented:
 
 Very few low-level languages aim to make those boundaries this visible.
 
+The stronger version of this vision is "compiler as audit machine":
+
+- the compiler does not only accept or reject code
+- it produces security- and review-relevant facts as first-class outputs
+- those same facts can later support reports, tooling, and proof workflows
+
+That is one of Concrete's clearest 10x opportunities.
+
+### 2.5. First-class explainability
+
+Concrete should become unusually good at answering "why?" questions, not only "is this allowed?" questions.
+
+High-value explainability includes:
+
+- why a capability is required
+- why a borrow or destruction happens where it does
+- why `Unsafe` or `trusted` is needed
+- why a layout, ABI, or monomorphization decision occurred
+
+Why this is 10x:
+
+- it makes the auditability story usable by ordinary humans
+- it turns compiler internals into legible engineering facts
+- it supports security review and proof work without adding language surface
+
 ### 3. A very strong stdlib style
 
 Concrete does not need a huge stdlib. It needs a *strong* one.
@@ -177,6 +208,13 @@ The deeper version of this is compiler-artifact-driven tooling:
 - later, serialization and caching on top of those same artifacts
 
 Tooling gets much better when the compiler is already structured as a producer of durable facts instead of ephemeral pass-local state.
+
+Part of that long-term tooling value is operational trust:
+
+- clearer artifact inspection
+- more reproducible failures
+- later, more reproducible builds and test runs
+- later, caching and narrower rerun scopes that still preserve inspectability
 
 ### 5. A clean hosted vs freestanding split
 

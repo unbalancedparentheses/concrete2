@@ -27,6 +27,8 @@ Concrete is also being shaped so that this proof story does not stop at the comp
 
 In practical terms, Concrete is trying to give low-level programmers something unusual: the control and auditability of systems programming, but with much stronger guarantees about resources, effects, and compiler meaning.
 
+The longer-term product vision is not only "a compiler that works". It is a compiler that can explain itself, expose audit-relevant facts as first-class outputs, and eventually produce artifacts and builds that are inspectable and reproducible enough to trust.
+
 ## Why Concrete Exists
 
 Concrete was created to close a gap between low-level programming and mechanized reasoning.

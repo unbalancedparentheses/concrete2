@@ -28,6 +28,8 @@
             gnumake
             gnugrep
             coreutils
+            python3
+            rustc
           ];
         };
       });

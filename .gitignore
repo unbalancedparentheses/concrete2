@@ -20,3 +20,7 @@ build/
 # Compiled test binaries
 lean_tests/trait_numeric_abs
 *.con.test
+
+# Compiled checker binaries
+scripts/check_ll1
+scripts/check_ll1_rs

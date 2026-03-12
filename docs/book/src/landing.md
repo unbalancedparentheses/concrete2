@@ -14,6 +14,8 @@ Concrete is not trying to win by having the most features. Its intended strength
 Concrete should be strongest where many systems languages are not explicitly centered: auditability, explicit authority/trust boundaries, and proof-friendly compiler structure.
 </div>
 
+Concrete is also aiming at something broader than "a working compiler": a compiler that can explain itself, surface audit-relevant facts directly, and eventually produce inspectable and reproducible outputs that users can trust.
+
 ## Why Concrete Exists
 
 Concrete was created to close a gap between low-level programming and mechanized reasoning.
