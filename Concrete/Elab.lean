@@ -132,7 +132,7 @@ private partial def resolveTypeE (ty : Ty) : ElabM Ty := do
   match ty with
   | .named name =>
     let env ← getEnv
-    if name == "Self" then
+    if name == selfTypeName then
       match env.currentImplType with
       | some t => return t
       | none => throwElab .selfOutsideImpl
@@ -640,7 +640,7 @@ partial def elabCall (fnName : String) (typeArgs : List Ty) (args : List Expr)
     let cArg ← elabExpr arg
     let typeName := match cArg.ty with
       | .named n => n | .generic n _ => n | _ => ""
-    return .call (typeName ++ "_destroy") [] [cArg] .unit
+    return .call (destroyFnNameFor typeName) [] [cArg] .unit
   -- Intercept alloc(val)
   if intrinsic == some .alloc then
     let arg := match args with | a :: _ => a | [] => Expr.intLit default 0
@@ -1062,22 +1062,22 @@ partial def elabModule (m : Module) (summary : FileSummary)
     ], isCopy := false
   }
   let builtinResultEnum : EnumDef := {
-    name := "Result", typeParams := ["T", "E"],
+    name := resultEnumName, typeParams := ["T", "E"],
     variants := [
       { name := "Ok", fields := [{ name := "value", ty := .typeVar "T" }] },
       { name := "Err", fields := [{ name := "value", ty := .typeVar "E" }] }
     ], isCopy := false
   }
-  let hasUserResult := m.enums.any fun ed => ed.name == "Result"
-    || imports.enums.any fun ed => ed.name == "Result"
+  let hasUserResult := m.enums.any fun ed => ed.name == resultEnumName
+    || imports.enums.any fun ed => ed.name == resultEnumName
   let builtinEnumList := [builtinOptionEnum] ++ (if hasUserResult then [] else [builtinResultEnum])
   let allStructs := imports.structs ++ m.structs
   let allEnums := builtinEnumList ++ imports.enums ++ m.enums
   let typeAliasMap := m.typeAliases.map fun ta => (ta.name, ta.targetTy)
   let constantsMap := m.constants.map fun c => (c.name, c.ty)
   let builtinDestroyTrait : TraitDef := {
-    name := "Destroy"
-    methods := [{ name := "destroy", params := [], retTy := .unit, selfKind := some .ref }]
+    name := destroyTraitName
+    methods := [{ name := destroyMethodName, params := [], retTy := .unit, selfKind := some .ref }]
   }
   let allTraits := builtinDestroyTrait :: m.traits
   -- All named fn sigs for fnRef

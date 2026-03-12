@@ -585,7 +585,7 @@ def ccCheckModuleDecls (m : CModule)
   -- 1. Copy/Destroy conflict + Copy field check for structs
   for sd in m.structs do
     if sd.isCopy then
-      if m.traitImpls.any fun ti => ti.traitName == "Destroy" && ti.typeName == sd.name then
+      if m.traitImpls.any fun ti => ti.traitName == destroyTraitName && ti.typeName == sd.name then
         errors := errors ++ [mkDeclDiag (.copyDestroyConflict sd.name)]
       for (fname, fty) in sd.fields do
         if !isCopyTy allStructs allEnums fty then
@@ -593,7 +593,7 @@ def ccCheckModuleDecls (m : CModule)
   -- 2. Copy/Destroy conflict for enums
   for ed in m.enums do
     if ed.isCopy then
-      if m.traitImpls.any fun ti => ti.traitName == "Destroy" && ti.typeName == ed.name then
+      if m.traitImpls.any fun ti => ti.traitName == destroyTraitName && ti.typeName == ed.name then
         errors := errors ++ [mkDeclDiag (.copyDestroyConflict ed.name)]
   -- 3. repr(C) validation
   for sd in m.structs do
@@ -621,14 +621,14 @@ def ccCheckModuleDecls (m : CModule)
       errors := errors ++ [mkDeclDiag (.externFnReturnNotFFISafe efName (tyToString efRetTy))]
   -- 6. Builtin trait redeclaration
   for td in m.traitDefs do
-    if td.name == "Destroy" then
+    if td.name == destroyTraitName then
       errors := errors ++ [mkDeclDiag .builtinTraitRedeclared]
   -- 7. Reserved function names
   for f in m.functions do
-    if ["destroy", "abort", "alloc", "free", "alloc_array", "free_array", "realloc_array"].contains f.name then
+    if isReservedFnName f.name then
       errors := errors ++ [mkDeclDiag (.reservedFnName f.name)]
   -- 8. Trait impl validation
-  let builtinDestroyTrait : CTraitDef := { name := "Destroy", methods := [{ name := "destroy", retTy := .unit }] }
+  let builtinDestroyTrait : CTraitDef := { name := destroyTraitName, methods := [{ name := destroyMethodName, retTy := .unit }] }
   let allTraits := builtinDestroyTrait :: m.traitDefs
   for ti in m.traitImpls do
     match allTraits.find? fun td => td.name == ti.traitName with

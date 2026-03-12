@@ -341,7 +341,7 @@ def resolveType (ty : Ty) : CheckM Ty := do
   | .named name =>
     let env ← getEnv
     -- Resolve Self to the current impl type
-    if name == "Self" then
+    if name == selfTypeName then
       match env.currentImplType with
       | some t => return t
       | none => throwCheck .selfOutsideImpl
@@ -907,7 +907,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
         | _ => ""
       if typeName == "" then throwCheck (.destroyRequiresNamed (tyToString argTy)) (some e.getSpan)
       -- Search function signatures for TypeName_destroy
-      let destroyFn ← lookupFn (typeName ++ "_destroy")
+      let destroyFn ← lookupFn (destroyFnNameFor typeName)
       match destroyFn with
       | some _ =>
         -- Consume the argument
@@ -1808,15 +1808,17 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
     let _ ← checkExpr body
     -- If it's destroy(varName), mark varName as reserved
     match body with
-    | .call _ "destroy" _ args =>
-      match args.head? with
-      | some (.ident _ varName) =>
-        let env ← getEnv
-        let vars' := env.vars.map fun (n, vi) =>
-          if n == varName then (n, { vi with state := .reserved })
-          else (n, vi)
-        setEnv { env with vars := vars' }
-      | _ => pure ()
+    | .call _ fname _ args =>
+      if fname == destroyMethodName then
+        match args.head? with
+        | some (.ident _ varName) =>
+          let env ← getEnv
+          let vars' := env.vars.map fun (n, vi) =>
+            if n == varName then (n, { vi with state := .reserved })
+            else (n, vi)
+          setEnv { env with vars := vars' }
+        | _ => pure ()
+      else pure ()
     | _ => pure ()
   | .borrowIn _ var ref region isMut body =>
     -- Check that var exists
@@ -2093,7 +2095,7 @@ def checkModule (m : Module) (summary : FileSummary)
     isCopy := false
   }
   let builtinResultEnum : EnumDef := {
-    name := "Result"
+    name := resultEnumName
     typeParams := ["T", "E"]
     variants := [
       { name := "Ok", fields := [{ name := "value", ty := .typeVar "T" }] },
@@ -2101,7 +2103,7 @@ def checkModule (m : Module) (summary : FileSummary)
     ]
     isCopy := false
   }
-  let hasUserResult := m.enums.any fun ed => ed.name == "Result"
+  let hasUserResult := m.enums.any fun ed => ed.name == resultEnumName
   let builtinEnumList := [builtinOptionEnum] ++ (if hasUserResult then [] else [builtinResultEnum])
   let allEnums := builtinEnumList ++ imports.enums ++ m.enums
   -- Build type aliases map
@@ -2123,8 +2125,7 @@ def checkModule (m : Module) (summary : FileSummary)
     match acc with
     | .error e => .error e
     | .ok () =>
-      if f.name == "destroy" || f.name == "abort" || f.name == "alloc" || f.name == "free"
-         || f.name == "alloc_array" || f.name == "free_array" || f.name == "realloc_array" then
+      if isReservedFnName f.name then
         .error [{ severity := .error, message := CheckError.message (.reservedName f.name), pass := "check", span := none, hint := none }]
       else .ok ()
   match reservedNameCheck with
@@ -2132,8 +2133,8 @@ def checkModule (m : Module) (summary : FileSummary)
   | .ok () =>
   -- Built-in Destroy trait (needed for expression-level trait method resolution)
   let builtinDestroyTrait : TraitDef := {
-    name := "Destroy"
-    methods := [{ name := "destroy", params := [], retTy := .unit, selfKind := some .ref }]
+    name := destroyTraitName
+    methods := [{ name := destroyMethodName, params := [], retTy := .unit, selfKind := some .ref }]
   }
   let allTraits := builtinDestroyTrait :: m.traits
   -- Merge impl block type params into each method's typeParams, track impl type for Self

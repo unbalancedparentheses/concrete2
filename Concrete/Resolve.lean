@@ -136,21 +136,8 @@ private def isKnownType (ctx : ResolveCtx) (name : String) : Bool :=
 -- Builtin names
 -- ============================================================
 
-/-- Builtin names that need special resolve treatment but are NOT
-    in `resolveIntrinsic` (Intrinsic.lean).  Everything else is
-    handled by `isIntrinsic` already. -/
-private def extraBuiltinNames : List String :=
-  [ "print", "println", "to_string", "deref", "deref_mut", "add" ]
-
-/-- Check if a name is a known builtin (intrinsic or legacy). -/
-private def isKnownBuiltin (name : String) : Bool :=
-  isIntrinsic name || extraBuiltinNames.contains name
-
-/-- Built-in type names. -/
-private def builtinTypes : List String :=
-  [ "Int", "Uint", "Bool", "String", "Float64", "Float32", "Char",
-    "i8", "i16", "i32", "u8", "u16", "u32",
-    "Heap", "HeapArray", "Vec", "HashMap", "Option", "Result" ]
+-- Builtin name tables are centralized in Intrinsic.lean.
+-- Resolve uses isKnownBuiltinFnFn, builtinTypeNames, etc. from there.
 
 -- ============================================================
 -- Deep type validation
@@ -160,7 +147,7 @@ private def builtinTypes : List String :=
 private def checkTyDeep (ctx : ResolveCtx) (ty : Ty) (span : Option Span := none) : ResolveCtx :=
   match ty with
   | .named name =>
-    if name == "Self" then
+    if name == selfTypeName then
       match ctx.currentImplType with
       | some _ => ctx
       | none => addError ctx .selfOutsideImpl span
@@ -188,13 +175,13 @@ partial def resolveExpr (ctx : ResolveCtx) (e : Expr) : ResolveCtx :=
   match e with
   | .ident sp name =>
     -- Only flag identifiers that aren't in any scope and aren't known functions
-    if lookupName ctx name || isKnownBuiltin name then ctx
+    if lookupName ctx name || isKnownBuiltinFn name then ctx
     else addError ctx (.undeclaredVariable name) (some sp)
   | .intLit _ _ | .floatLit _ _ | .boolLit _ _ | .strLit _ _ | .charLit _ _ => ctx
   | .binOp _ _ lhs rhs => resolveExpr (resolveExpr ctx lhs) rhs
   | .unaryOp _ _ operand => resolveExpr ctx operand
   | .call sp fn _typeArgs args =>
-    let ctx := if lookupName ctx fn || isKnownBuiltin fn then ctx
+    let ctx := if lookupName ctx fn || isKnownBuiltinFn fn then ctx
                else addError ctx (.unknownFunction fn) (some sp)
     args.foldl resolveExpr ctx
   | .paren _ inner => resolveExpr ctx inner
@@ -245,7 +232,7 @@ partial def resolveExpr (ctx : ResolveCtx) (e : Expr) : ResolveCtx :=
                else addError ctx (.unknownStaticMethod typeName method) (some sp)
     args.foldl resolveExpr ctx
   | .fnRef sp name =>
-    if lookupName ctx name || isKnownBuiltin name then ctx
+    if lookupName ctx name || isKnownBuiltinFn name then ctx
     else addError ctx (.unknownFunctionRef name) (some sp)
   | .arrowAccess _ obj _ => resolveExpr ctx obj
   | .allocCall _ inner allocExpr =>
@@ -337,7 +324,7 @@ private def implSigsToSymbols (sigs : List (String × FnSummary)) : List (String
 /-- Register all top-level definitions from a FileSummary into a scope. -/
 private def buildGlobalScopeFromSummary (s : FileSummary) : Scope × List String :=
   let symbols : List (String × SymKind) := []
-  let types : List String := builtinTypes
+  let types : List String := builtinTypeNames
   -- Functions
   let symbols := symbols ++ s.functions.map fun (name, fs) =>
     (name, SymKind.fn (fs.params.map fun (n, ty) => { name := n, ty := ty }) fs.retTy)
