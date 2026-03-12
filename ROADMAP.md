@@ -72,51 +72,97 @@ This list is ordered to match the active execution phases: Phase A first, then P
 Within Phase A, the fast feedback loop comes first on purpose: it is the immediate force multiplier for every compiler change that follows.
 
 1. Make the edit-test loop materially faster.
-   - make common local test paths parallel by default where safe instead of effectively serial
-   - add narrower runner modes for one-file, one-subsystem, and one-stdlib-area workflows
-   - make optimized-build targeted regressions easy to run without paying for the full suite
-   - keep the fast path explicit: quick local verification first, full-suite confidence second
+   - problem: ordinary compiler work still slows down when the default feedback loop is too close to full-suite validation cost
+   - why now: every Phase A and Phase B change gets cheaper once the local loop is fast and explicit
+   - primary surfaces: [docs/TESTING.md](docs/TESTING.md), [run_tests.sh](/Users/unbalancedparen/projects/concrete/run_tests.sh)
+   - first slices:
+     - make common local test paths parallel by default where safe instead of effectively serial
+     - add narrower runner modes for one-file, one-subsystem, and one-stdlib-area workflows
+     - make optimized-build targeted regressions easy to run without paying for the full suite
+     - keep the fast path explicit: quick local verification first, full-suite confidence second
+   - constraints:
+     - do not make failures harder to reproduce
+     - do not hide skipped coverage behind ambiguous summaries
    - done means: ordinary compiler work no longer depends on waiting for the full serial test path after each change
 2. Finish hardening aggregate lowering and merge transport for mutable aggregates and borrows.
-   - the core stable-storage promotion change has landed; keep building on that design instead of reintroducing whole-aggregate loop transport
-   - eliminate or narrow whole-aggregate `phi` transport at `if`/`else` merge points when stable storage identity or narrower transport is the real semantic model
-   - do the same for `match` expressions that currently merge aggregate results through a single whole-aggregate `phi`
-   - remove or narrow remaining full aggregate writeback through loop `phi` nodes where stable storage identity is the real semantic model
-   - reduce aggregate `phi` usage to cases that are semantically necessary, preferring scalars or pointer identities over whole-aggregate SSA transport
-   - treat borrow+aggregate lowering fragility as a compiler architecture bug, not an LLVM quirk to paper over
-   - grow regression coverage around optimized builds and stdlib cases that stress aggregate lowering and merge paths
-   - tighten SSA invariants around the promoted-storage path so the design is mechanically defended, not just empirically passing
+   - problem: aggregate-valued transport remains more backend-sensitive than scalar or storage-identity transport, especially when it survives at joins by convenience instead of by semantic need
+   - why now: the loop-storage fix is in; this is the remaining Phase A lowering cleanup before semantic cleanup should take over
+   - primary surfaces: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/PASSES.md](docs/PASSES.md), [Concrete/Lower.lean](/Users/unbalancedparen/projects/concrete/Concrete/Lower.lean), [Concrete/SSAVerify.lean](/Users/unbalancedparen/projects/concrete/Concrete/SSAVerify.lean), [lean_tests/](/Users/unbalancedparen/projects/concrete/lean_tests)
+   - first slices:
+     - keep building on the stable-storage promotion path instead of reintroducing whole-aggregate loop transport
+     - eliminate or narrow whole-aggregate `phi` transport at `if`/`else` merge points when stable storage identity or narrower transport is the real semantic model
+     - do the same for `match` expressions that currently merge aggregate results through a single whole-aggregate `phi`
+     - audit remaining aggregate transport and keep it only where it is semantically intentional
+     - grow regression coverage around optimized builds and stdlib cases that stress aggregate lowering and merge paths
+     - tighten SSA invariants around the promoted-storage path so the design is mechanically defended, not just empirically passing
+   - constraints:
+     - do not grow parallel lowering strategies for the same semantic case
+     - do not treat backend optimizer behavior as the source of truth for correctness
    - done means: optimized-build borrow/aggregate cases are stable, remaining aggregate transport is intentional rather than accidental, and this class of failure is covered by durable regressions
 3. Finish tightening the builtin-vs-stdlib boundary.
-   - keep builtins minimal, compiler/runtime-facing, and explicitly non-user-facing
-   - remove remaining string-based semantic dispatch in compiler tables, pass-local special cases, and backend helper selection
-   - make ordinary language behavior depend on internal identities or explicit language items, not raw function-name matching
-   - keep stringly handling confined to true foreign-symbol, linker-symbol, or user-facing report/rendering boundaries
-   - treat any compiler rule that changes semantics based on an ordinary public name as architecture debt
-   - keep the stdlib bytes-first and low-level rather than letting string-heavy convenience APIs dominate the surface
+   - problem: remaining string-based semantic dispatch still makes ordinary names carry compiler meaning and expands the trusted computing base
+   - why now: Phase A should reduce backend fragility first; Phase B starts by shrinking semantic magic
+   - primary surfaces: [research/builtin-vs-stdlib.md](research/builtin-vs-stdlib.md), [Concrete/Intrinsic.lean](/Users/unbalancedparen/projects/concrete/Concrete/Intrinsic.lean), [Concrete/BuiltinSigs.lean](/Users/unbalancedparen/projects/concrete/Concrete/BuiltinSigs.lean), [Concrete/Check.lean](/Users/unbalancedparen/projects/concrete/Concrete/Check.lean), [Concrete/Elab.lean](/Users/unbalancedparen/projects/concrete/Concrete/Elab.lean), [Concrete/CoreCheck.lean](/Users/unbalancedparen/projects/concrete/Concrete/CoreCheck.lean), [Concrete/EmitSSA.lean](/Users/unbalancedparen/projects/concrete/Concrete/EmitSSA.lean)
+   - first slices:
+     - keep builtins minimal, compiler/runtime-facing, and explicitly non-user-facing
+     - remove remaining string-based semantic dispatch in compiler tables, pass-local special cases, and backend helper selection
+     - make ordinary language behavior depend on internal identities or explicit language items, not raw function-name matching
+     - keep stringly handling confined to true foreign-symbol, linker-symbol, or user-facing report/rendering boundaries
+     - keep the stdlib bytes-first and low-level rather than letting string-heavy convenience APIs dominate the surface
+   - constraints:
+     - any compiler rule that changes semantics based on an ordinary public name is architecture debt
+     - do not move user-facing convenience back into compiler builtins
    - done means: ordinary public names no longer carry compiler-known semantics through raw matching
 4. Add an external LL(1) grammar checker as a standing syntax guardrail.
-   - add a compact reference grammar at `grammar/concrete.ebnf`
-   - add a small checker at `scripts/check_ll1.py`
-   - put it in CI
-   - treat parser-state rewind/backtracking regressions as bugs
+   - problem: the language claims LL(1) discipline, but parser regressions can still slip in without a dedicated grammar guardrail
+   - why now: this is the first Phase C tool that protects the language shape without destabilizing semantics
+   - primary surfaces: [research/external-ll1-checker.md](research/external-ll1-checker.md), `grammar/`, `scripts/`, CI config
+   - first slices:
+     - add a compact reference grammar at `grammar/concrete.ebnf`
+     - add a small checker at `scripts/check_ll1.py`
+     - put it in CI
+     - treat parser-state rewind/backtracking regressions as bugs
+   - constraints:
+     - keep the checker external and simple enough to audit
+     - do not let the reference grammar drift away from the actual parser unnoticed
    - done means: syntax regressions trip a dedicated CI check instead of silently re-entering the parser
 5. Keep deepening and hardening the stdlib.
-   - deepen `fs`, `net`, and `process`
-   - add more failure-path and integration tests
-   - keep error, handle, and checked/unchecked conventions uniform
-   - add stdlib-aware module-targeted test infrastructure instead of relying only on `std/src/lib.con --test`
+   - problem: stdlib breadth is real now, but systems modules still need stronger failure-path behavior, consistency, and targeted test workflows
+   - why now: once Phase A and Phase B stop dominating every change, stdlib quality becomes the main usability multiplier
+   - primary surfaces: [docs/STDLIB.md](docs/STDLIB.md), [std/src/](/Users/unbalancedparen/projects/concrete/std/src), [run_tests.sh](/Users/unbalancedparen/projects/concrete/run_tests.sh)
+   - first slices:
+     - deepen `fs`, `net`, and `process`
+     - add more failure-path and integration tests
+     - keep error, handle, and checked/unchecked conventions uniform
+     - add stdlib-aware module-targeted test infrastructure instead of relying only on `std/src/lib.con --test`
+   - constraints:
+     - do not let API growth outrun failure-path coverage
+     - do not let module conventions drift case-by-case
    - done means: systems modules have stronger failure-path coverage and stdlib tests can target one area without bootstrapping the whole tree
 6. Improve diagnostics fidelity and rendering quality.
-   - better range precision
-   - notes and secondary labels
-   - clearer presentation for transformed constructs
-   - reduce brittle string-matched report/test coupling where structured checks are possible
+   - problem: diagnostics still lose precision around transformed constructs and rely too much on brittle string-exact expectations
+   - why now: diagnostics are the main user-visible quality multiplier once the compiler architecture is stable enough to trust
+   - primary surfaces: [docs/DIAGNOSTICS.md](docs/DIAGNOSTICS.md), [Concrete/Diagnostic.lean](/Users/unbalancedparen/projects/concrete/Concrete/Diagnostic.lean), [Concrete/Check.lean](/Users/unbalancedparen/projects/concrete/Concrete/Check.lean), [Concrete/CoreCheck.lean](/Users/unbalancedparen/projects/concrete/Concrete/CoreCheck.lean), diagnostic tests
+   - first slices:
+     - better range precision
+     - notes and secondary labels
+     - clearer presentation for transformed constructs
+     - reduce brittle string-matched report/test coupling where structured checks are possible
+   - constraints:
+     - do not make tests depend on full rendered strings when structured assertions can work
+     - do not improve rendering by smearing away the actual semantic source location
    - done means: diagnostics quality improvements are visible in ordinary compiler output, not only in internal plumbing
 7. Preserve SSA as the only backend boundary and keep the build/project model explicit and boring.
-   - replace raw LLVM string emission with a structured LLVM backend before adding backend plurality
-   - keep target-specific work behind an explicit backend abstraction over SSA
-   - treat MLIR as a later optional backend family, not the default immediate answer
+   - problem: textual LLVM emission is still a brittle choke point, and backend plurality would multiply instability if the backend contract stays loose
+   - why now: this is the front edge of Phase D and the prerequisite for serious backend, tooling, and proof leverage
+   - primary surfaces: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/PASSES.md](docs/PASSES.md), [Concrete/SSAVerify.lean](/Users/unbalancedparen/projects/concrete/Concrete/SSAVerify.lean), [Concrete/SSACleanup.lean](/Users/unbalancedparen/projects/concrete/Concrete/SSACleanup.lean), [Concrete/EmitSSA.lean](/Users/unbalancedparen/projects/concrete/Concrete/EmitSSA.lean), [Concrete/Pipeline.lean](/Users/unbalancedparen/projects/concrete/Concrete/Pipeline.lean)
+   - first slices:
+     - replace raw LLVM string emission with a structured LLVM backend before adding backend plurality
+     - keep target-specific work behind an explicit backend abstraction over SSA
+     - treat MLIR as a later optional backend family, not the default immediate answer
+   - constraints:
+     - keep SSA as the only backend boundary
+     - do not add another backend family until the LLVM path is structurally cleaner
    - done means: the backend consumes a structured contract over SSA and textual LLVM concatenation is no longer the critical path
 
 ### Compiler Excellence Order
