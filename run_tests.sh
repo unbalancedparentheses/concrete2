@@ -1,18 +1,107 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# --- CLI argument parsing ---
+MODE="fast"           # fast (default) | full | stdlib | O2 | codegen | report
+FILTER=""             # glob pattern to match test file paths
+SECTION=""            # internal: which sections to run
+
+usage() {
+    cat <<'USAGE'
+Usage: run_tests.sh [OPTIONS]
+
+Options:
+  --full              Run the entire suite (all sections, including slow tests)
+  --fast              Run fast tier only — no network/TCP tests (default)
+  --filter PATTERN    Run only tests whose file path matches PATTERN (glob)
+  --stdlib            Run only the stdlib module + collection tests
+  --O2                Run only the -O2 optimized-build regression tests
+  --codegen           Run only codegen differential + SSA structure tests
+  --report            Run only --report output tests
+  -j N                Override parallelism (default: number of CPU cores)
+  -h, --help          Show this help
+
+Environment:
+  TEST_JOBS=N         Same as -j N
+  SKIP_FLAKY_TCP_TEST=1  Skip the flaky TCP test
+
+Examples:
+  ./run_tests.sh                        # fast parallel run
+  ./run_tests.sh --full                 # everything
+  ./run_tests.sh --filter struct        # only tests with "struct" in the path
+  ./run_tests.sh --filter "enum_*"      # glob filter
+  ./run_tests.sh --stdlib               # stdlib + collection verification
+  ./run_tests.sh --O2                   # only -O2 regressions
+  ./run_tests.sh -j1                    # serial (old default)
+USAGE
+    exit 0
+}
+
+# Auto-detect CPU count for default parallelism
+if [ -z "${TEST_JOBS:-}" ]; then
+    if command -v nproc &>/dev/null; then
+        TEST_JOBS=$(nproc)
+    elif command -v sysctl &>/dev/null; then
+        TEST_JOBS=$(sysctl -n hw.ncpu 2>/dev/null || echo 4)
+    else
+        TEST_JOBS=4
+    fi
+fi
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --full)    MODE="full"; shift ;;
+        --fast)    MODE="fast"; shift ;;
+        --stdlib)  MODE="stdlib"; shift ;;
+        --O2)      MODE="O2"; shift ;;
+        --codegen) MODE="codegen"; shift ;;
+        --report)  MODE="report"; shift ;;
+        --filter)  FILTER="$2"; shift 2 ;;
+        -j)        TEST_JOBS="$2"; shift 2 ;;
+        -h|--help) usage ;;
+        *)         echo "Unknown option: $1"; usage ;;
+    esac
+done
+
+# Resolve which sections are active based on MODE
+case "$MODE" in
+    full)    SECTION="positive,negative,testflag,report,codegen,O2,stdlib,collection" ;;
+    fast)    SECTION="positive,negative,testflag,report,codegen,O2,stdlib,collection" ;;
+    stdlib)  SECTION="stdlib,collection" ;;
+    O2)      SECTION="O2" ;;
+    codegen) SECTION="codegen,O2" ;;
+    report)  SECTION="report" ;;
+esac
+
+section_active() {
+    [[ ",$SECTION," == *",$1,"* ]]
+}
+
+# If --filter is set, check whether a file path matches the pattern
+filter_match() {
+    local file="$1"
+    [ -z "$FILTER" ] && return 0
+    # Match against basename and full path
+    local base
+    base=$(basename "$file" .con)
+    [[ "$file" == *${FILTER}* ]] || [[ "$base" == *${FILTER}* ]]
+}
+
 COMPILER=".lake/build/bin/concrete"
 TESTDIR="lean_tests"
 TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT
-TEST_JOBS="${TEST_JOBS:-1}"
 JOBDIR="$TMPDIR/jobs"
 mkdir -p "$JOBDIR"
 
 PASS=0
 FAIL=0
+SKIP=0
 declare -a JOB_PIDS=()
 declare -a JOB_FILES=()
+
+echo "Mode: $MODE | Jobs: $TEST_JOBS | Filter: ${FILTER:-<none>}"
+echo ""
 
 path_key() {
     local path="$1"
@@ -90,6 +179,7 @@ run_ok_worker() {
 run_ok() {
     local file="$1"
     local expected="$2"
+    if ! filter_match "$file"; then SKIP=$((SKIP + 1)); return; fi
     if [ "$TEST_JOBS" -le 1 ]; then
         local result_file="$JOBDIR/$$.$RANDOM.result"
         run_ok_worker "$file" "$expected" "$result_file"
@@ -135,6 +225,7 @@ run_ok_O2_worker() {
 run_ok_O2() {
     local file="$1"
     local expected="$2"
+    if ! filter_match "$file"; then SKIP=$((SKIP + 1)); return; fi
     if [ "$TEST_JOBS" -le 1 ]; then
         local result_file="$JOBDIR/$$.$RANDOM.result"
         run_ok_O2_worker "$file" "$expected" "$result_file"
@@ -181,6 +272,7 @@ run_err_worker() {
 run_err() {
     local file="$1"
     local expected_err="$2"
+    if ! filter_match "$file"; then SKIP=$((SKIP + 1)); return; fi
     if [ "$TEST_JOBS" -le 1 ]; then
         local result_file="$JOBDIR/$$.$RANDOM.result"
         run_err_worker "$file" "$expected_err" "$result_file"
@@ -194,6 +286,7 @@ run_err() {
     JOB_FILES+=("$result_file")
 }
 
+if section_active positive; then
 echo "=== Positive tests ==="
 run_ok "$TESTDIR/fib.con"                55
 run_ok "$TESTDIR/arithmetic.con"         65
@@ -223,7 +316,13 @@ run_ok "$TESTDIR/string_borrow.con"   10
 run_ok "$TESTDIR/result_ok.con"      42
 run_ok "$TESTDIR/result_err.con"     99
 run_ok "$TESTDIR/result_generic_try.con" 42
-run_ok "$TESTDIR/net_tcp_roundtrip.con" 42
+# Network test — skip in fast mode
+if [ "$MODE" != "fast" ]; then
+    run_ok "$TESTDIR/net_tcp_roundtrip.con" 42
+else
+    echo "skip lean_tests/net_tcp_roundtrip.con (fast mode)"
+    SKIP=$((SKIP + 1))
+fi
 run_ok "$TESTDIR/module_basic.con"   42
 run_ok "$TESTDIR/module_struct.con"  30
 run_ok "$TESTDIR/array_basic.con"   20
@@ -279,6 +378,7 @@ run_abort_worker() {
 }
 run_abort() {
     local file="$1"
+    if ! filter_match "$file"; then SKIP=$((SKIP + 1)); return; fi
     if [ "$TEST_JOBS" -le 1 ]; then
         local result_file="$JOBDIR/$$.$RANDOM.result"
         run_abort_worker "$file" "$result_file"
@@ -430,9 +530,10 @@ run_ok "$TESTDIR/vec_stress_realloc.con" 249
 run_ok "$TESTDIR/vec_set_all.con" 60
 run_ok "$TESTDIR/vec_pop_until_empty.con" 29
 
-# Networking tests
-if [ "${SKIP_FLAKY_TCP_TEST:-0}" = "1" ]; then
-    echo "skip lean_tests/tcp_basic.con (SKIP_FLAKY_TCP_TEST=1)"
+# Networking tests (skipped in fast mode)
+if [ "$MODE" = "fast" ] || [ "${SKIP_FLAKY_TCP_TEST:-0}" = "1" ]; then
+    echo "skip lean_tests/tcp_basic.con (fast mode or SKIP_FLAKY_TCP_TEST=1)"
+    SKIP=$((SKIP + 1))
 else
     run_ok "$TESTDIR/tcp_basic.con" 1
 fi
@@ -490,8 +591,11 @@ run_ok "$TESTDIR/fn_ptr_struct_field.con" 42
 run_ok "$TESTDIR/fn_ptr_method_call.con" 42
 run_ok "$TESTDIR/stdlib_hashmap.con" 0
 
+fi # end section: positive
+
 echo ""
 flush_jobs
+if section_active negative; then
 echo "=== Negative tests (expected errors) ==="
 run_err "$TESTDIR/error_unconsumed.con"        "was never consumed"
 run_err "$TESTDIR/error_use_after_move.con"    "used after move"
@@ -692,9 +796,12 @@ run_ok "$TESTDIR/summary_submodule.con" 42
 run_ok "$TESTDIR/summary_trait_impl_cross_module.con" 42
 run_err "$TESTDIR/error_summary_trait_missing_cross.con" "missing method"
 
+fi # end section: negative
+
 # === --test flag tests ===
 echo ""
 flush_jobs
+if section_active testflag; then
 echo "=== --test flag tests ==="
 run_test_worker() {
     local file="$1"
@@ -720,6 +827,7 @@ run_test_worker() {
 run_test() {
     local file="$1"
     local expected="$2"
+    if ! filter_match "$file"; then SKIP=$((SKIP + 1)); return; fi
     if [ "$TEST_JOBS" -le 1 ]; then
         local result_file="$JOBDIR/$$.$RANDOM.result"
         run_test_worker "$file" "$expected" "$result_file"
@@ -743,9 +851,12 @@ run_err "$TESTDIR/error_test_generic.con" "must not be generic"
 run_err "$TESTDIR/error_test_wrong_return.con" "must return i32"
 run_err "$TESTDIR/error_test_on_struct.con" "can only be applied to function"
 
+fi # end section: testflag
+
 # === Report output tests ===
 echo ""
 flush_jobs
+if section_active report; then
 echo "=== Report output tests ==="
 
 # --report unsafe should show trusted boundaries
@@ -933,8 +1044,11 @@ else
     FAIL=$((FAIL + 1))
 fi
 
+fi # end section: report
+
 # === Codegen differential tests ===
 echo ""
+if section_active codegen; then
 echo "=== Codegen differential tests ==="
 
 # --- Category 1: SSA optimization verification ---
@@ -1065,12 +1179,18 @@ else
     FAIL=$((FAIL + 1))
 fi
 
+fi # end section: codegen
+
 # --- Category 2b: Optimized-build (-O2) regression for aggregate loop lowering ---
+if section_active O2; then
+echo "=== -O2 regression tests ==="
 run_ok_O2 "$TESTDIR/struct_loop_field_assign.con" 42
 run_ok_O2 "$TESTDIR/struct_loop_break.con"        42
 run_ok_O2 "$TESTDIR/struct_nested_loop.con"        42
+fi # end section: O2
 
 # --- Category 3: Cross-representation consistency ---
+if section_active codegen; then
 
 # LLVM packed struct matches report layout
 llvm_output=$($COMPILER "$TESTDIR/report_layout_check.con" --emit-llvm 2>&1)
@@ -1117,17 +1237,23 @@ else
     FAIL=$((FAIL + 1))
 fi
 
+fi # end section: codegen (cross-representation)
+
 # === Compiler bug regression tests ===
+if section_active positive; then
 run_ok "$TESTDIR/regress_deref_field_precedence.con"  42
 run_ok "$TESTDIR/regress_mut_field_writeback.con"     42
 run_ok "$TESTDIR/regress_char_bool_cast.con"          42
 run_ok "$TESTDIR/regress_ref_no_spill.con"            42
 run_ok "$TESTDIR/regress_string_field_access.con"     42
 
+fi # end section: positive (regression tests)
+
 # === Stdlib module tests ===
 echo ""
-echo "=== Stdlib module tests ==="
 flush_jobs
+if section_active stdlib; then
+echo "=== Stdlib module tests ==="
 rm -f std/src/lib.con.test.ll std/src/lib.con.test
 stdlib_output=$($COMPILER std/src/lib.con --test 2>&1) && stdlib_exit=0 || stdlib_exit=$?
 stdlib_pass=$(echo "$stdlib_output" | grep -c "^PASS:" || true)
@@ -1139,10 +1265,13 @@ fi
 PASS=$((PASS + stdlib_pass))
 FAIL=$((FAIL + stdlib_fail))
 
+fi # end section: stdlib
+
 # === Per-collection test verification ===
 # Verify each new collection's tests are present and passing in the stdlib run.
 # This catches silent regressions where a collection's tests vanish or break.
 echo ""
+if section_active collection; then
 echo "=== Collection test verification ==="
 
 check_collection_tests() {
@@ -1187,9 +1316,15 @@ check_collection_tests "BitSet" \
     test_non_monotonic_sets test_unset_preserves_len test_intersect_preserves_len \
     test_bitset_clear_reuse
 
+fi # end section: collection
+
 echo ""
 flush_jobs
-echo "=== Results: $PASS passed, $FAIL failed ==="
+RESULT_LINE="=== Results: $PASS passed, $FAIL failed"
+if [ "$SKIP" -gt 0 ]; then
+    RESULT_LINE="$RESULT_LINE, $SKIP skipped"
+fi
+echo "$RESULT_LINE ==="
 if [ "$FAIL" -gt 0 ]; then
     exit 1
 fi
