@@ -7,6 +7,25 @@ on:
   workflow_dispatch:
 
 jobs:
+  grammar:
+    name: LL(1) grammar check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Python LL(1) checker
+        run: python3 scripts/check_ll1.py grammar/concrete.ebnf
+
+      - name: Run C LL(1) checker
+        run: |
+          cc -Wall -Wextra -Werror -O2 -o /tmp/check_ll1 scripts/check_ll1.c
+          /tmp/check_ll1 grammar/concrete.ebnf
+
+      - name: Run Rust LL(1) checker
+        run: |
+          rustc -O -o /tmp/check_ll1_rs scripts/check_ll1.rs
+          /tmp/check_ll1_rs grammar/concrete.ebnf
+
   build:
     name: Build
     runs-on: ubuntu-latest
