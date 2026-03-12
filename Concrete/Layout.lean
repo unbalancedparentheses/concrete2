@@ -28,7 +28,7 @@ def lookupEnum (ctx : Ctx) (name : String) : Option CEnumDef :=
 -- ============================================================
 
 namespace Builtin
-  def stringSize : Nat := 16   -- ptr + i64
+  def stringSize : Nat := 24   -- ptr + i64 + i64
   def stringAlign : Nat := 8
   def vecSize : Nat := 24      -- ptr + i64 + i64
   def vecAlign : Nat := 8
@@ -287,7 +287,7 @@ def enumTypeDefs (ctx : Ctx) (ed : CEnumDef) (typeArgs : List Ty := []) : List S
 
 /-- LLVM type definitions for builtin types (String, Vec, HashMap). -/
 def builtinTypeDefs : List String :=
-  [ "%struct.String = type { ptr, i64 }"
+  [ "%struct.String = type { ptr, i64, i64 }"
   , "%struct.Vec = type { ptr, i64, i64 }"
   , "%struct.HashMap = type { ptr, ptr, ptr, i64, i64 }" ]
 

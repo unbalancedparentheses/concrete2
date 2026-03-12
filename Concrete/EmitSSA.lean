@@ -171,6 +171,9 @@ private def materializeStrConst (s : EmitSSAState) (name : String) : EmitSSAStat
   let (s, lenField) := freshLocal s
   let s := emit s s!"  {lenField} = getelementptr %struct.String, ptr {strTmp}, i32 0, i32 1"
   let s := emit s s!"  store i64 {strLen}, ptr {lenField}"
+  let (s, capField) := freshLocal s
+  let s := emit s s!"  {capField} = getelementptr %struct.String, ptr {strTmp}, i32 0, i32 2"
+  let s := emit s s!"  store i64 {arrLen}, ptr {capField}"
   (s, strTmp)
 
 /-- If the SVal is not known to be a ptr but has a pass-by-ptr type,
@@ -348,7 +351,8 @@ private def emitSInst (s : EmitSSAState) (inst : SInst) : EmitSSAState :=
     | .strConst name =>
       -- Copy string struct from materialized temp to destination
       let (s, srcPtr) := materializeStrConst s name
-      let s := emit s s!"  call void @llvm.memcpy.p0.p0.i64(ptr {ptrStr}, ptr {srcPtr}, i64 16, i1 false)"
+      let sz := ssaTySize s .string
+      let s := emit s s!"  call void @llvm.memcpy.p0.p0.i64(ptr {ptrStr}, ptr {srcPtr}, i64 {sz}, i1 false)"
       s
     | _ =>
     -- If the value is a known pointer but typed as a struct, it is
@@ -762,19 +766,19 @@ private def getMapBuiltinsIR : String :=
   -- String-keyed variants
   ++ "define %struct.HashMap @map_new_str() {\n"
   ++ "  %m = alloca %struct.HashMap\n"
-  ++ "  call void @__hashmap_str_new(ptr %m, i64 16, i64 8)\n"
+  ++ "  call void @__hashmap_str_new(ptr %m, i64 24, i64 8)\n"
   ++ "  %r = load %struct.HashMap, ptr %m\n"
   ++ "  ret %struct.HashMap %r\n"
   ++ "}\n\n"
   ++ "define void @map_insert_str(ptr %m, ptr %key, i64 %val) {\n"
   ++ "  %vp = alloca i64\n"
   ++ "  store i64 %val, ptr %vp\n"
-  ++ "  call void @__hashmap_str_insert(ptr %m, ptr %key, ptr %vp, i64 16, i64 8)\n"
+  ++ "  call void @__hashmap_str_insert(ptr %m, ptr %key, ptr %vp, i64 24, i64 8)\n"
   ++ "  ret void\n"
   ++ "}\n\n"
   ++ "define %enum.Option @map_get_str(ptr %m, ptr %key) {\n"
   ++ "  %opt = alloca %enum.Option\n"
-  ++ "  call void @__hashmap_str_get(ptr %m, ptr %key, ptr %opt, i64 16, i64 8)\n"
+  ++ "  call void @__hashmap_str_get(ptr %m, ptr %key, ptr %opt, i64 24, i64 8)\n"
   ++ "  %r = load %enum.Option, ptr %opt\n"
   ++ "  ret %enum.Option %r\n"
   ++ "}\n\n"

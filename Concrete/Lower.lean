@@ -1315,7 +1315,7 @@ private def renameStrConstsInTerm (rmap : List (String × String)) : STerm → S
 def lowerModule (m : CModule) : SModule :=
   let allFunctions := collectAllFunctions m
   -- Add synthetic String struct so fieldOffset can compute offsets for built-in .string type
-  let syntheticStringDef : CStructDef := { name := "String", fields := [("ptr", .ptrMut .u8), ("len", .uint)] }
+  let syntheticStringDef : CStructDef := { name := "String", fields := [("ptr", .ptrMut .u8), ("len", .uint), ("cap", .uint)] }
   let allStructs := syntheticStringDef :: collectAllStructs m
   let allEnums := collectAllEnums m
   let allExterns := collectAllExterns m

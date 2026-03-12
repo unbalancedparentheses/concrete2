@@ -138,7 +138,7 @@ mod bitset {
             }
             self.data = new_ptr;
             self.cap_words = new_words;
-            self.n_bits = needed_bits;
+            self.n_bits = new_words * 64;
         }
 
         pub fn drop(self) with(Alloc) {
@@ -284,6 +284,96 @@ mod bitset {
             b.set(i * 7);
             i = i + 1;
         }
+        b.drop();
+        return 0;
+    }
+
+    #[test]
+    fn test_bitset_word_boundaries() with(Alloc, Unsafe) -> i32 {
+        let mut b: BitSet = BitSet::new();
+        // Test bits at word boundaries: 63, 64, 127, 128
+        b.set(63);
+        b.set(64);
+        b.set(127);
+        b.set(128);
+
+        if !(b.test(63)) { b.drop(); return 1; }
+        if !(b.test(64)) { b.drop(); return 1; }
+        if !(b.test(127)) { b.drop(); return 1; }
+        if !(b.test(128)) { b.drop(); return 1; }
+        // Bits adjacent to boundaries should be unset
+        if b.test(62) { b.drop(); return 1; }
+        if b.test(65) { b.drop(); return 1; }
+        if b.test(126) { b.drop(); return 1; }
+        if b.test(129) { b.drop(); return 1; }
+
+        if !assert_eq::<u64>(b.count(), 4, "boundary bits count") {
+            b.drop();
+            return 1;
+        }
+
+        b.drop();
+        return 0;
+    }
+
+    #[test]
+    fn test_bitset_large_stress() with(Alloc, Unsafe) -> i32 {
+        let mut b: BitSet = BitSet::new();
+        // Set every 3rd bit up to 300
+        let i: u64 = 0;
+        while i < 100 {
+            b.set(i * 3);
+            i = i + 1;
+        }
+
+        if !assert_eq::<u64>(b.count(), 100, "large stress count") {
+            b.drop();
+            return 1;
+        }
+
+        // Verify a few specific bits
+        if !(b.test(0)) { b.drop(); return 1; }
+        if !(b.test(99)) { b.drop(); return 1; }
+        if !(b.test(297)) { b.drop(); return 1; }
+        if b.test(1) { b.drop(); return 1; }
+        if b.test(298) { b.drop(); return 1; }
+
+        b.drop();
+        return 0;
+    }
+
+    #[test]
+    fn test_bitset_clear_reuse() with(Alloc, Unsafe) -> i32 {
+        let mut b: BitSet = BitSet::new();
+        b.set(10);
+        b.set(20);
+        b.set(30);
+
+        if !assert_eq::<u64>(b.count(), 3, "before clear") {
+            b.drop();
+            return 1;
+        }
+
+        b.clear();
+
+        if !assert_eq::<u64>(b.count(), 0, "after clear") {
+            b.drop();
+            return 1;
+        }
+
+        // Reuse after clear
+        b.set(5);
+        b.set(15);
+
+        if !assert_eq::<u64>(b.count(), 2, "after reuse") {
+            b.drop();
+            return 1;
+        }
+
+        if !(b.test(5)) { b.drop(); return 1; }
+        if !(b.test(15)) { b.drop(); return 1; }
+        if b.test(10) { b.drop(); return 1; }
+
         b.drop();
         return 0;
     }
