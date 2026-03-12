@@ -76,7 +76,9 @@ The process exits 0 if all tests pass, 1 if any fail.
 - `test_ssa.sh` = backend/SSA coverage
 - `--test` flag = in-language test execution for `#[test]` functions
 
-Both external suites matter. The main suite answers “does Concrete still work?” The SSA suite answers “does the real backend path still work correctly?” The `--test` flag is intended for module-level testing within user and stdlib code, and stdlib-module tests now run through the same real compiler path via `concrete std/src/lib.con --test`.
+Both external suites matter. The main suite answers “does Concrete still work?” The SSA suite answers “does the real backend path still work correctly?” The `--test` flag is intended for module-level testing within user and stdlib code.
+
+Today, stdlib tests run through the real compiler path via `concrete std/src/lib.con --test`. That is the current bootstrap entrypoint for stdlib testing, not the final intended shape. The next testing step is a stdlib-aware, module-targeted mode that can run one stdlib area under an explicit root/project context instead of treating individual stdlib files as ordinary standalone programs.
 
 ## Golden / Inspection Tests
 

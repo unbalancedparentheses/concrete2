@@ -70,6 +70,7 @@ Recently completed:
    - deepen `fs`, `net`, and `process`
    - add more failure-path and integration tests
    - keep error, handle, and checked/unchecked conventions uniform
+   - keep the current `std/src/lib.con --test` path as the bootstrap stdlib test entrypoint, but add a stdlib-aware module-targeted test mode so individual stdlib modules/subtrees can be exercised under an explicit root/project context
    - ~~add carefully chosen collections~~ **done**:
      - ~~deque / ring buffer~~ **done** (`std.deque.Deque<T>` — ring buffer with power-of-2 masking)
      - ~~priority queue~~ **done** (`std.heap.BinaryHeap<T>` — fn pointer comparator, sift up/down)
@@ -94,6 +95,7 @@ Recently completed:
    - keep fuzz/property/trace/report/differential tests alive in CI
    - grow the regression corpus from real bugs
    - make report assertions part of ordinary compiler hardening
+   - turn stdlib testing from a single-root bootstrap path into module-targeted infrastructure that can run one stdlib area cleanly without pretending stdlib files are ordinary standalone programs
 5. Continue stdlib deepening with the next collection layer and stronger systems ergonomics once the current API cleanup settles.
 
 ### Later

@@ -464,7 +464,7 @@ See [docs/README.md](docs/README.md) for the stable documentation index and [res
 | **13** | Tooling | Not started |
 | **14** | Runtime (C, then Concrete) | Not started |
 
-Next critical path: **improve diagnostics quality, then keep deepening the stdlib and push formalization.** The summary-based frontend, `CoreCheck` semantic-authority shift, ABI/layout subsystem, cacheable pipeline artifacts (`Concrete/Pipeline.lean`), SSA cleanup, audit/report outputs, structured diagnostics, and the trusted/effect coherence migration are done enough for the current architecture phase.
+Next critical path: **keep deepening the stdlib and its test infrastructure, improve diagnostics quality, then push formalization.** The summary-based frontend, `CoreCheck` semantic-authority shift, ABI/layout subsystem, cacheable pipeline artifacts (`Concrete/Pipeline.lean`), SSA cleanup, audit/report outputs, structured diagnostics, and the trusted/effect coherence migration are done enough for the current architecture phase.
 
 ### What fits the philosophy and what does not
 
