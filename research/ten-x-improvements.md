@@ -359,15 +359,34 @@ The right multiplier is not breadth. It is leverage.
 
 If Concrete wants the biggest step-function improvements, a plausible order is:
 
-1. stabilize the compiler pipeline further: loop-lowering/storage identity, string-dispatch cleanup, stronger SSA/backend contracts
-2. replace textual LLVM emission with a structured backend
-3. improve audit outputs further
-4. add formatter/tooling baseline on top of explicit compiler artifacts
-5. keep strengthening the stdlib style and systems layer
-6. push formalization much harder
-7. later, design hosted vs freestanding support
-8. later, deepen capability/sandboxing
-9. much later, do concurrency/runtime only if it can be done in a way that stays recognizably Concrete
+1. **Phase A: Compiler Stability**
+   - stabilize loop-lowering/storage identity
+   - remove dependence on fragile aggregate writeback patterns
+   - add optimized-build regression coverage around mutable aggregate loops
+
+2. **Phase B: Semantic Cleanup**
+   - finish shrinking string-based semantic logic
+   - make explicit identities/boundaries carry compiler-known behavior
+   - finish builtin-vs-stdlib cleanup so ordinary names stay ordinary
+
+3. **Phase C: Tooling And Stdlib Hardening**
+   - add syntax guardrails and stronger diagnostics
+   - harden stdlib testing and systems-module coverage
+   - make reports and inspection workflows part of ordinary engineering
+
+4. **Phase D: Backend And Trust Multipliers**
+   - strengthen SSA/backend contracts
+   - replace textual LLVM emission with a structured backend
+   - build tooling/caching on explicit compiler artifacts
+   - push formalization much harder
+   - deepen audit outputs
+
+5. **Later system multipliers**
+   - hosted vs freestanding split
+   - deeper capability/sandboxing work
+   - concurrency/runtime only if it preserves Concrete's explicitness
+
+This four-phase structure is the most plausible path from "strong bootstrap compiler" to "stable long-term compiler project."
 
 ## Bottom Line
 

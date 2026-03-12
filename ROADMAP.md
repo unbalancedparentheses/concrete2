@@ -92,6 +92,58 @@ The compiler-improvement order should stay:
 
 This is the highest-leverage path for turning the current compiler into a stable long-term project rather than just a working bootstrap.
 
+### Execution Phases
+
+#### Phase A: Compiler Stability
+
+Goal: make the current pipeline boring and hard to break.
+
+1. stabilize loop lowering for mutable aggregates and borrows
+2. stop depending on aggregate writeback through loop `phi` nodes where stable storage identity is the real semantic model
+3. add optimized-build regressions and stdlib coverage for borrow+loop+aggregate cases
+4. tighten SSA invariants around these lowering patterns
+
+Exit criterion:
+no known backend-sensitive failures in mutable aggregate loop lowering, including optimized-build stress cases.
+
+#### Phase B: Semantic Cleanup
+
+Goal: shrink compiler magic and make language meaning explicit.
+
+1. remove remaining string-based semantic dispatch
+2. make compiler-known behavior ride on explicit identities or language items
+3. keep raw string matching confined to foreign/linker/reporting boundaries
+4. finish builtin-vs-stdlib boundary cleanup
+
+Exit criterion:
+ordinary language behavior is no longer keyed off raw public names.
+
+#### Phase C: Tooling And Stdlib Hardening
+
+Goal: make the language usable and inspectable without destabilizing semantics.
+
+1. add the external LL(1) grammar checker and CI coverage
+2. improve diagnostics fidelity and presentation
+3. build module-targeted stdlib test infrastructure
+4. deepen failure-path and integration testing in systems modules
+5. make report assertions part of ordinary hardening
+
+Exit criterion:
+syntax guardrails, diagnostics, and stdlib testing behave like durable infrastructure rather than one-off pushes.
+
+#### Phase D: Backend And Trust Multipliers
+
+Goal: make the compiler strong enough to support proofs, tooling reuse, and long-term backend work.
+
+1. strengthen the SSA verifier/cleanup boundary into a clearer backend contract
+2. replace raw LLVM text emission with a structured backend
+3. turn explicit pipeline artifacts into reusable tooling/caching building blocks
+4. push formalization over Core -> SSA
+5. add deferred audit/report outputs
+
+Exit criterion:
+backend work no longer feels fragile, and proofs, reports, and tooling all build on the same stable compiler boundaries.
+
 ### Next
 
 1. Push formalization over the cleaned Core -> SSA architecture.
