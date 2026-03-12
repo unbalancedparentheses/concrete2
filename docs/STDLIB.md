@@ -38,6 +38,8 @@ It should avoid:
 - overly broad collection sprawl before the fundamentals are solid
 - builtin/runtime-hook names leaking directly into the public API surface
 
+Public stdlib APIs should also be simpler and clearer than the builtin/runtime machinery they wrap. The stdlib is part of Concrete's safety story: if the public surface is confusing, ownership-hiding, or effect-blurring, the language becomes harder to audit even if the compiler internals are sound.
+
 ## What Would Make It Excellent
 
 The stdlib does not need to become huge to become dramatically better. The biggest gains come from making it:
@@ -55,7 +57,8 @@ The core principles are:
 2. **One public vocabulary everywhere.**
    The same verbs and API shapes should recur across modules:
    - `open`, `create`, `read`, `write`, `write_all`, `close`
-   - `get`, `get_checked`, `get_unchecked`
+   - `get`, `get_unchecked`
+   - `set`, `set_unchecked`
    - `insert`, `remove`, `contains`, `len`, `is_empty`
 
 3. **Builtins stay minimal and ugly; stdlib stays clean.**
@@ -368,8 +371,8 @@ Stdlib APIs use a uniform error pattern:
 - Generic `Result<T, ModuleError>` for all fallible operations — no module-specific result enums
 - The `?` operator works with both named and generic enum types (patched in Check.lean)
 - `std.bytes` provides `get`/`set` returning `Option<u8>`/`bool` for bounds-safe access
-- `std.string` provides `get_checked` returning `Option<char>`
-- `std.vec` provides `get_checked` returning `Option<&T>`
+- `std.string` provides `get` returning `Option<char>`
+- `std.vec` provides `get` returning `Option<&T>`
 
 This replaces the earlier approach of per-module result enums (`FileResult`, `ReadResult`, `WriteResult`, `ListenResult`, `StreamResult`, `KillResult`, `WaitResult`). The generic `Result<T, E>` is now pub and used everywhere.
 

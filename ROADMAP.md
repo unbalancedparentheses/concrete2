@@ -4,6 +4,8 @@ Status: roadmap
 
 This is the implementation plan for the Concrete programming language. For the full specification, see [The Concrete Programming Language: Systems Programming for Formal Reasoning](https://federicocarrone.com/series/concrete/the-concrete-programming-language-systems-programming-for-formal-reasoning/).
 
+Concrete should stay small enough to remain readable, auditable, and mechanically understandable. New features should be judged not only by expressiveness, but also by their grammar cost, audit cost, and proof cost.
+
 ## Current State
 
 The Lean 4 compiler implements the core surface language plus the full internal IR pipeline: Core IR, elaboration, Core validation, monomorphization, SSA lowering, SSA verification/cleanup, and SSA codegen. The main suite currently has 372 passing tests (including codegen differential coverage across `--emit-ssa`, `--emit-llvm`, and `--emit-core`), and the SSA-specific suite also passes.

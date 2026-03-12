@@ -86,16 +86,30 @@ Inference direction:
 
 Every parsing decision must be possible with a single token of lookahead. No ambiguity, no backtracking.
 
-## 14. `abort()` Is Immediate Process Termination
+## 14. Readability Is Part of Correctness
+
+Surface syntax, stdlib APIs, and trusted boundaries should stay explicit enough that ordinary code can be read and audited predictably. A feature that makes low-level behavior harder to see increases audit cost and should be treated as a correctness concern, not merely a style issue.
+
+## 15. New Features Must Justify Their Cost
+
+New language features must justify:
+
+- grammar cost
+- audit cost
+- proof cost
+
+If a feature makes the language harder to parse, harder to review, or harder to prove without delivering a correspondingly large benefit, it should be rejected or delayed.
+
+## 16. `abort()` Is Immediate Process Termination
 
 Deferred cleanup does not run on `abort()`. Out-of-memory and stack overflow also trigger abort. This is outside the language's semantic model.
 
 On POSIX systems, `abort()` typically produces exit code `134`, but tests should check for nonzero exit rather than a specific code.
 
-## 15. Reproducible Builds
+## 17. Reproducible Builds
 
 Same source plus same compiler should yield the same binary. No timestamps, random seeds, or environment-dependent output.
 
-## 16. Diagnostics Stay Structured
+## 18. Diagnostics Stay Structured
 
 The compiler keeps diagnostics structured through the main semantic pipeline. It may accumulate multiple errors across functions or modules, but it does not rely on broad recovery or ambiguous parse fallback to continue.

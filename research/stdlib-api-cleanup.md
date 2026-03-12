@@ -138,8 +138,8 @@ The stdlib should converge on a reusable vocabulary.
 
 Good families:
 
-- `get`, `get_checked`, `get_unchecked`
-- `set`, `set_checked`, `set_unchecked`
+- `get`, `get_unchecked`
+- `set`, `set_unchecked`
 - `open`, `create`, `close`
 - `read`, `read_all`, `write`, `write_all`
 - `print`, `println`
@@ -193,12 +193,12 @@ Audit:
 
 Ensure the checked/unchecked story is uniform:
 
-- `get_checked`
+- `get`
 - `get_unchecked`
-- `set_checked`
+- `set`
 - `set_unchecked`
 
-Avoid one module doing `get` as checked and another doing `get` as unchecked unless there is a very strong reason.
+Avoid one module doing `get` as raw and another doing `get` as checked unless there is a very strong reason.
 
 ### 4. File / net / process verbs
 

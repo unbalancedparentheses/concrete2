@@ -92,7 +92,7 @@ The public stdlib should feel like one library.
 ### Preferred style
 
 - short, direct verbs: `open`, `create`, `read`, `write`, `close`
-- explicit checked forms: `get_checked`, `get_unchecked`
+- explicit checked/raw split: `get`, `get_unchecked`
 - explicit ownership verbs where useful: `append`, `reserve`, `drop`
 
 ### Avoid
@@ -108,7 +108,8 @@ Use the same surface patterns wherever possible:
 - `open` / `create` / `close`
 - `read` / `read_all`
 - `write` / `write_all`
-- `get` / `get_checked` / `get_unchecked`
+- `get` / `get_unchecked`
+- `set` / `set_unchecked`
 - `insert` / `remove` / `contains`
 - `len` / `is_empty`
 
