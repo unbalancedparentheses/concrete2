@@ -11,7 +11,9 @@ This document describes the main test surfaces for Concrete and what each one is
 Primary entrypoint:
 
 ```bash
-bash run_tests.sh
+./run_tests.sh              # fast parallel (default)
+./run_tests.sh --full       # complete suite
+./run_tests.sh --filter X   # only tests matching X
 ```
 
 Purpose:
@@ -20,7 +22,7 @@ Purpose:
 - validate language behavior end to end
 - catch regressions in parsing, checking, elaboration, lowering, codegen, and runtime-facing builtins
 
-This is the broadest regression suite and the main “does the compiler still work?” check.
+Runs in `--fast` mode by default: parallel on all CPU cores, network tests skipped. Supports `--full`, `--filter`, `--stdlib`, `--O2`, `--codegen`, and `--report` for targeted runs. Partial runs display a clear warning with mode, filter, and skip count.
 
 ### SSA-Specific Suite
 
@@ -72,7 +74,7 @@ The process exits 0 if all tests pass, 1 if any fail.
 
 ## What The Tests Are For
 
-- `run_tests.sh` = whole-language behavior and broad regression coverage
+- `run_tests.sh` = whole-language behavior and broad regression coverage (parallel by default, with fast/full/filter/targeted modes)
 - `test_ssa.sh` = backend/SSA coverage
 - `--test` flag = in-language test execution for `#[test]` functions
 
@@ -94,20 +96,41 @@ Where report output is tested, prefer stable semantic assertions (sections, fact
 
 ## Recommended Verification Flow
 
-For normal compiler work:
+### Daily driver (default)
 
 ```bash
-make build
-bash run_tests.sh
-bash test_ssa.sh
+lake build && ./run_tests.sh
 ```
 
-Use more targeted tests or inspection output when working on:
+This runs `--fast` mode: parallel on all cores, network tests skipped. It is the standard developer workflow for edit-test loops. The summary clearly warns that it is a partial run.
 
-- lowering / SSA cleanup
-- diagnostics rendering
-- layout / ABI
-- report generation
+### Pre-merge (full coverage)
+
+```bash
+lake build && ./run_tests.sh --full
+```
+
+Runs the complete suite including network/TCP tests. Use this before merging.
+
+### Targeted workflows
+
+```bash
+./run_tests.sh --filter struct_loop   # only tests matching "struct_loop"
+./run_tests.sh --stdlib               # only stdlib module + collection verification
+./run_tests.sh --O2                   # only -O2 optimized-build regressions
+./run_tests.sh --codegen              # only codegen differential + SSA structure
+./run_tests.sh --report               # only --report output verification
+./run_tests.sh -j 1                   # serial execution (debug ordering issues)
+```
+
+Use `--filter` when iterating on a single area. Use `--stdlib` after touching `std/src/`. Use `--O2` after lowering changes. Run `./run_tests.sh -h` for the full options reference.
+
+### Other suites
+
+```bash
+bash test_ssa.sh                      # SSA-specific backend coverage
+bash test_parser_fuzz.sh              # parser crash/hang fuzzing
+```
 
 ## Parser Fuzzing
 
@@ -163,6 +186,9 @@ Located in the `=== Codegen differential tests ===` section of `run_tests.sh`.
 - Monomorphization naming: `report_mono_check.con` — `identity_for_Int` and `identity_for_i32` specializations exist
 - LLVM struct types: `struct_basic.con` — `%struct.Point = type { i64, i64 }`
 - Mutable borrow codegen: `borrow_mut.con` — `store i64` generated for mutable borrow write-back
+- Aggregate promotion (loop): `struct_loop_field_assign.con` — `alloca %Point` present, no `phi %Point`
+- Aggregate promotion (if/else): `struct_if_else_merge.con` — `alloca %Pair` present, no `phi %Pair`
+- Aggregate promotion (match): `struct_match_merge.con` — `alloca %Pair` present, no `phi %Pair`
 
 ### Cross-representation consistency
 
