@@ -89,6 +89,16 @@ private def emitEntryAlloca (inst : SInst) : LowerM Unit := do
   let s ← getState
   setState { s with entryAllocas := s.entryAllocas ++ [inst] }
 
+-- Insert a store instruction into an already-emitted block (before its terminator).
+-- Used by if/else and match to store aggregate values into merge allocas.
+private def insertStoreBeforeTerm (blockLabel : String) (val : SVal) (dst : SVal) : LowerM Unit := do
+  let s ← getState
+  let storeInst := SInst.store val dst
+  let blocks := s.blocks.map fun b =>
+    if b.label == blockLabel then { b with insts := b.insts ++ [storeInst] }
+    else b
+  setState { s with blocks := blocks }
+
 private def terminateBlock (term : STerm) : LowerM Unit := do
   let s ← getState
   let block : SBlock := { label := s.currentLabel, insts := s.currentInsts, term := term }
@@ -543,6 +553,10 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
     let mergeDst ← freshReg
     let mut phiIncoming : List (SVal × String) := []
     let mut allArmsTerminated := true
+    -- Snapshot vars before match so each arm starts from the same state
+    let preMatchVars ← snapshotVars
+    -- Collect (endVars, endLabel, terminated) for each arm for var merge
+    let mut armEndSnapshots : List (List (String × SVal) × String × Bool) := []
 
     -- Determine if this is an enum match (check first arm)
     let isEnumMatch := arms.any fun arm => match arm with
@@ -558,6 +572,9 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
 
       -- Generate comparison chain
       for (idx, arm) in enumerate arms do
+        -- Restore vars to pre-match state for each arm
+        let st ← getState
+        setState { st with vars := preMatchVars }
         let armLabel ← freshLabel s!"arm{idx}"
         let nextCheck ← freshLabel s!"check{idx + 1}"
         match arm with
@@ -591,7 +608,11 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
             allArmsTerminated := false
             let curLabel ← getCurrentLabel
             phiIncoming := phiIncoming ++ [(bodyVal, curLabel)]
+            let armEndVars ← snapshotVars
+            armEndSnapshots := armEndSnapshots ++ [(armEndVars, curLabel, false)]
             terminateBlock (.br mergeLabel)
+          else
+            armEndSnapshots := armEndSnapshots ++ [([], "", true)]
           startBlock nextCheck
         | .varArm binding _bindTy body =>
           terminateBlock (.br armLabel)
@@ -604,7 +625,11 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
             allArmsTerminated := false
             let curLabel ← getCurrentLabel
             phiIncoming := phiIncoming ++ [(bodyVal, curLabel)]
+            let armEndVars ← snapshotVars
+            armEndSnapshots := armEndSnapshots ++ [(armEndVars, curLabel, false)]
             terminateBlock (.br mergeLabel)
+          else
+            armEndSnapshots := armEndSnapshots ++ [([], "", true)]
           startBlock nextCheck
         | .litArm litVal body =>
           let litSVal ← lowerExpr litVal
@@ -619,20 +644,23 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
             allArmsTerminated := false
             let curLabel ← getCurrentLabel
             phiIncoming := phiIncoming ++ [(bodyVal, curLabel)]
+            let armEndVars ← snapshotVars
+            armEndSnapshots := armEndSnapshots ++ [(armEndVars, curLabel, false)]
             terminateBlock (.br mergeLabel)
+          else
+            armEndSnapshots := armEndSnapshots ++ [([], "", true)]
           startBlock nextCheck
-      -- After all checks: if all arms terminated, fallthrough is unreachable
+      -- After all checks: fallthrough is unreachable (match is exhaustive or
+      -- catch-all arms consume remaining cases). Mark as unreachable.
       let term ← currentBlockTerminated
       if !term then
-        if allArmsTerminated then
-          terminateBlock .unreachable
-        else
-          let curLabel ← getCurrentLabel
-          phiIncoming := phiIncoming ++ [(.unit, curLabel)]
-          terminateBlock (.br mergeLabel)
+        terminateBlock .unreachable
     else
       -- Non-enum match (literal/variable patterns)
       for (idx, arm) in enumerate arms do
+        -- Restore vars to pre-match state for each arm
+        let st ← getState
+        setState { st with vars := preMatchVars }
         let armLabel ← freshLabel s!"arm{idx}"
         let nextCheck ← freshLabel s!"check{idx + 1}"
         match arm with
@@ -649,7 +677,11 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
             allArmsTerminated := false
             let curLabel ← getCurrentLabel
             phiIncoming := phiIncoming ++ [(bodyVal, curLabel)]
+            let armEndVars ← snapshotVars
+            armEndSnapshots := armEndSnapshots ++ [(armEndVars, curLabel, false)]
             terminateBlock (.br mergeLabel)
+          else
+            armEndSnapshots := armEndSnapshots ++ [([], "", true)]
           startBlock nextCheck
         | .varArm binding _bindTy body =>
           terminateBlock (.br armLabel)
@@ -662,7 +694,11 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
             allArmsTerminated := false
             let curLabel ← getCurrentLabel
             phiIncoming := phiIncoming ++ [(bodyVal, curLabel)]
+            let armEndVars ← snapshotVars
+            armEndSnapshots := armEndSnapshots ++ [(armEndVars, curLabel, false)]
             terminateBlock (.br mergeLabel)
+          else
+            armEndSnapshots := armEndSnapshots ++ [([], "", true)]
           startBlock nextCheck
         | .enumArm _ _ _ body =>
           terminateBlock (.br armLabel)
@@ -674,23 +710,79 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
             allArmsTerminated := false
             let curLabel ← getCurrentLabel
             phiIncoming := phiIncoming ++ [(bodyVal, curLabel)]
+            let armEndVars ← snapshotVars
+            armEndSnapshots := armEndSnapshots ++ [(armEndVars, curLabel, false)]
             terminateBlock (.br mergeLabel)
+          else
+            armEndSnapshots := armEndSnapshots ++ [([], "", true)]
           startBlock nextCheck
       let term ← currentBlockTerminated
       if !term then
-        if allArmsTerminated then
-          terminateBlock .unreachable
-        else
-          let curLabel ← getCurrentLabel
-          phiIncoming := phiIncoming ++ [(.unit, curLabel)]
-          terminateBlock (.br mergeLabel)
+        -- Fallthrough after all check blocks — if the match is exhaustive
+        -- (catch-all or complete enum), this block is unreachable.
+        -- Mark it as unreachable to avoid creating dead-code SSA artifacts.
+        terminateBlock .unreachable
 
     startBlock mergeLabel
-    if phiIncoming.length > 1 then
-      emit (.phi mergeDst phiIncoming ty)
-      return .reg mergeDst ty
-    else if phiIncoming.length == 1 then
-      match phiIncoming with
+    -- Merge variables modified in match arms (same logic as if/else merge)
+    let liveSnapshots := armEndSnapshots.filter fun (_, _, term) => !term
+    if liveSnapshots.length >= 2 then
+      for (name, preVal) in preMatchVars do
+        let varTy := preVal.ty
+        -- Collect (value, label) for arms that changed this variable
+        let mut incoming : List (SVal × String) := []
+        let mut anyChanged := false
+        for (endVars, endLabel, _) in liveSnapshots do
+          match endVars.find? fun (n, _) => n == name with
+          | some (_, v) =>
+            let changed := match v, preVal with
+              | .reg n1 _, .reg n2 _ => n1 != n2
+              | _, _ => true
+            if changed then anyChanged := true
+            incoming := incoming ++ [(v, endLabel)]
+          | none => pure ()
+        if anyChanged && incoming.length >= 2 then
+          let isAgg ← isAggregateForPromotion varTy
+          if isAgg then
+            let allocaReg ← freshReg "match.merge."
+            emitEntryAlloca (.alloca allocaReg varTy)
+            for (v, fromLabel) in incoming do
+              insertStoreBeforeTerm fromLabel v (.reg allocaReg varTy)
+            let loadReg ← freshReg "match.load."
+            emit (.load loadReg (.reg allocaReg varTy) varTy)
+            setVar name (.reg loadReg varTy)
+          else
+            let phiReg ← freshReg "match.phi."
+            emit (.phi phiReg incoming varTy)
+            setVar name (.reg phiReg varTy)
+    else if liveSnapshots.length == 1 then
+      -- Only one arm reached merge — use its vars directly
+      match liveSnapshots with
+      | [(endVars, _, _)] =>
+        let st ← getState
+        setState { st with vars := endVars }
+      | _ => pure ()
+    -- Handle the match result value phi
+    -- Filter out .unit values (arms that produce no result, e.g. side-effect blocks)
+    let realPhiIncoming := phiIncoming.filter fun (v, _) => match v with | .unit => false | _ => true
+    if ty == .unit || ty == .never || realPhiIncoming.isEmpty then
+      -- Void-typed match or no real result values — no result to merge
+      return .unit
+    else if realPhiIncoming.length > 1 then
+      let isAgg ← isAggregateForPromotion ty
+      if isAgg then
+        let allocaReg ← freshReg "match.res."
+        emitEntryAlloca (.alloca allocaReg ty)
+        for (v, fromLabel) in realPhiIncoming do
+          insertStoreBeforeTerm fromLabel v (.reg allocaReg ty)
+        let loadReg ← freshReg "match.rload."
+        emit (.load loadReg (.reg allocaReg ty) ty)
+        return .reg loadReg ty
+      else
+        emit (.phi mergeDst realPhiIncoming ty)
+        return .reg mergeDst ty
+    else if realPhiIncoming.length == 1 then
+      match realPhiIncoming with
       | [(val, _)] => return val
       | _ => return .unit
     else
@@ -1051,9 +1143,26 @@ partial def lowerStmt (stmt : CStmt) : LowerM Unit := do
           | some v => incoming := incoming ++ [(v, elseEndLabel)]
           | none => pure ()
           if incoming.length >= 2 then
-            let phiReg ← freshReg "if.phi."
-            emit (.phi phiReg incoming ty)
-            setVar name (.reg phiReg ty)
+            let isAgg ← isAggregateForPromotion ty
+            if isAgg then
+              -- Aggregate: use entry-block alloca instead of phi
+              -- Stores from each branch were already done by setVar→promoted path,
+              -- or we retroactively insert an alloca + stores now.
+              let allocaReg ← freshReg "if.merge."
+              emitEntryAlloca (.alloca allocaReg ty)
+              -- Re-emit stores from each branch by inserting store at end of each
+              -- For correctness: we patch the last instruction of each branch block
+              -- to store into the alloca before the terminator.
+              -- Simpler approach: insert store-before-branch in each block.
+              for (v, fromLabel) in incoming do
+                insertStoreBeforeTerm fromLabel v (.reg allocaReg ty)
+              let loadReg ← freshReg "if.load."
+              emit (.load loadReg (.reg allocaReg ty) ty)
+              setVar name (.reg loadReg ty)
+            else
+              let phiReg ← freshReg "if.phi."
+              emit (.phi phiReg incoming ty)
+              setVar name (.reg phiReg ty)
           else if incoming.length == 1 then
             match incoming.head? with
             | some (v, _) => setVar name v

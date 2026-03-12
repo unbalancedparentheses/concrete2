@@ -306,6 +306,8 @@ run_ok "$TESTDIR/struct_field_assign.con" 33
 run_ok "$TESTDIR/struct_loop_field_assign.con" 42
 run_ok "$TESTDIR/struct_loop_break.con"  42
 run_ok "$TESTDIR/struct_nested_loop.con" 42
+run_ok "$TESTDIR/struct_if_else_merge.con" 42
+run_ok "$TESTDIR/struct_match_merge.con" 42
 run_ok "$TESTDIR/linear_consume.con"     42
 run_ok "$TESTDIR/linear_branch_agree.con" 42
 run_ok "$TESTDIR/linear_loop_inner.con"  3
@@ -1186,14 +1188,38 @@ else
     FAIL=$((FAIL + 1))
 fi
 
+# Struct-in-if/else: aggregate merge via alloca (no aggregate phi)
+ssa_output=$($COMPILER "$TESTDIR/struct_if_else_merge.con" --emit-ssa 2>&1)
+if echo "$ssa_output" | grep -q "alloca %Pair" && ! echo "$ssa_output" | grep -q "phi %Pair"; then
+    echo "  ok  struct_if_else_merge.con --emit-ssa aggregate if/else merged via alloca (no phi %Pair)"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  struct_if_else_merge.con --emit-ssa expected alloca %Pair but no phi %Pair"
+    echo "$ssa_output"
+    FAIL=$((FAIL + 1))
+fi
+
+# Struct-in-match: aggregate merge via alloca (no aggregate phi)
+ssa_output=$($COMPILER "$TESTDIR/struct_match_merge.con" --emit-ssa 2>&1)
+if echo "$ssa_output" | grep -q "alloca %Pair" && ! echo "$ssa_output" | grep -q "phi %Pair"; then
+    echo "  ok  struct_match_merge.con --emit-ssa aggregate match merged via alloca (no phi %Pair)"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  struct_match_merge.con --emit-ssa expected alloca %Pair but no phi %Pair"
+    echo "$ssa_output"
+    FAIL=$((FAIL + 1))
+fi
+
 fi # end section: codegen
 
-# --- Category 2b: Optimized-build (-O2) regression for aggregate loop lowering ---
+# --- Category 2b: Optimized-build (-O2) regression for aggregate lowering ---
 if section_active O2; then
 echo "=== -O2 regression tests ==="
 run_ok_O2 "$TESTDIR/struct_loop_field_assign.con" 42
 run_ok_O2 "$TESTDIR/struct_loop_break.con"        42
 run_ok_O2 "$TESTDIR/struct_nested_loop.con"        42
+run_ok_O2 "$TESTDIR/struct_if_else_merge.con"      42
+run_ok_O2 "$TESTDIR/struct_match_merge.con"        42
 fi # end section: O2
 
 # --- Category 3: Cross-representation consistency ---
