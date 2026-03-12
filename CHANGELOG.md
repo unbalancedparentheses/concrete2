@@ -10,6 +10,53 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Testing strategy expansion
+
+- Added parser fuzzing infrastructure (`test_parser_fuzz.sh`): generates random/malformed inputs and verifies the parser never crashes or hangs
+- Added `fmt`/`parse` round-trip property tests (`fmt_parse_roundtrip.con`): verifies `parse(format(x)) == x` across ranges, powers, and edge values
+- Added `Vec` trace tests (`vec_trace.con`): push/get/set/length invariants, growth preservation, interleaved operations
+- Added `HashMap` trace tests (`hashmap_trace.con`): insert/get/remove/overwrite invariants, tombstone recovery, growth stress
+- Added report consistency tests:
+  - capability reports (`report_caps_check.con`)
+  - unsafe / trusted-boundary reports (`report_unsafe_rawptr.con`)
+  - layout reports with runtime cross-validation (`report_layout_check.con`)
+  - interface visibility reports (`report_interface_check.con`)
+  - monomorphization reports (`report_mono_check.con`)
+- Added codegen differential tests (16 assertions across `--emit-ssa`, `--emit-llvm`, `--emit-core`):
+  - SSA optimization verification: constant folding (`2+3→5`), strength reduction (`*8→shl 3`), absence of un-optimized ops
+  - Codegen structure: struct GEP offsets, enum tag load/compare, monomorphization naming, LLVM struct type definitions, mutable borrow stores
+  - Cross-representation consistency: packed struct syntax in LLVM matches `--report layout`, enum payload size agreement, Core→SSA function signature mapping
+- This completed the first planned testing-strategy expansion: parser fuzzing, property tests, trace tests, report consistency tests, and selected differential tests are now permanent coverage in the main suite
+
+### Builtin / stdlib boundary cleanup
+
+- Introduced `IntrinsicId` as the compiler-internal identity for builtins, replacing raw string matching in compiler dispatch paths
+- Removed the ad hoc builtin `abs` special case; `abs` now lives in the stdlib as a trait method (`Numeric::abs`) resolved through normal trait dispatch + monomorphization
+- Migrated the remaining monomorphic math wrappers (`sqrt`, `sin`, `cos`, `tan`, `pow`, `log`, `exp`, `floor`, `ceil`) out of compiler intrinsics and into `std.math` as `trusted extern fn`
+- Added `trusted extern fn` as an explicit audited foreign-binding category:
+  - ordinary `extern fn` still requires `with(Unsafe)`
+  - `trusted extern fn` exposes narrow trusted foreign symbols without leaking `Unsafe` to callers
+  - audit reports now distinguish trusted extern functions from ordinary extern functions
+- Removed dead intrinsic entries and then removed 17 I/O / File / Network / Process / Env intrinsics by migrating them to stdlib wrappers
+- Deleted large hand-written LLVM builtin/codegen paths that were no longer needed after the stdlib/trusted-extern migration
+- Tightened the public stdlib surface so more operations now route through ordinary stdlib APIs instead of compiler-known names
+
+### LL(1) parser cleanup
+
+- Removed all remaining parser save/restore backtracking sites
+- Left-factored top-level `mod` parsing
+- Removed retry-based parsing around `&self` / `&mut self`
+- Tightened turbofish/type-position parsing so `::` commits instead of rewinding
+- Moved enum-dot fallback handling into postfix parsing instead of speculative rewind
+- Parser implementation now matches the language’s strict LL(1) design goal much more closely
+
+### Lowering bug fixes (string dedup + variable scoping)
+
+- Fixed string constant naming collision: multiple functions with string literals independently generated `str.0`, `str.1`, etc. The second lowering pass concatenated per-function lists, producing duplicate LLVM globals. Fix: `lowerFn` now returns string literals alongside the function definition; `lowerModule` collects, deduplicates by value, and renames references per-function. The redundant second lowering pass is removed.
+- Fixed SSA domination error in if/else with while loops: restoring pre-if variable state before the else-branch only overwrote existing variables, leaving then-branch locals (loop body registers) visible in the else-branch scope. Fix: replace the per-variable restore with a full variable map replacement so the else-branch starts with exactly the pre-if variable set.
+- Fixed the same variable leakage bug in while loop exits: body-local variables leaked into subsequent code after the loop. Fix: replace the per-variable phi restore at all four while-loop exit points with full variable map replacement.
+- Added regression tests: `string_multi_fn.con`, `if_else_while.con`
+
 ### Trusted boundaries
 
 - Added `trusted fn` and `trusted impl` to the language surface
@@ -50,6 +97,7 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
   - `ElaboratedProgram`
   - `MonomorphizedProgram`
   - `SSAProgram`
+- Introduced `IntrinsicId` so the remaining compiler-known operations are identified internally instead of by raw string names
 
 ### Frontend and semantic boundaries
 
@@ -76,6 +124,7 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
   - `--report layout`
   - `--report interface`
   - `--report mono`
+- Added report consistency coverage so capability, unsafe/trusted, layout, interface, and monomorphization reports are now regression-tested against real semantics and emitted LLVM
 
 ### ABI / layout / low-level semantics
 
@@ -175,7 +224,7 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ### Testing / status milestones
 
-- End-to-end main suite expanded to 288 passing tests
+- End-to-end main suite has continued to grow through the milestones above; current suite size and latest status live in `README.md` and `ROADMAP.md`, not here
 - SSA-specific suite passing
 - Golden SSA/IR testing integrated
 - CI updated to exercise SSA-specific coverage as well as the main path

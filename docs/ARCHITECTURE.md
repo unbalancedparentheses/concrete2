@@ -21,6 +21,13 @@ Source -> Parse -> Resolve -> Check -> Elab -> CoreCanonicalize -> CoreCheck -> 
 
 The old AST backend is gone. The current compiler goes through the full Core -> SSA pipeline, with structured diagnostics across the semantic passes.
 
+Recent architecture-level cleanups worth calling out:
+
+- parser save/restore backtracking sites were removed so the implementation now matches the language's strict LL(1) goal
+- compiler-known operations are being identified by internal intrinsic IDs instead of raw string matching
+- `trusted fn`, `trusted impl`, and `trusted extern fn` now flow through the normal parser -> Core -> SSA pipeline
+- the first planned testing-strategy expansion is complete: parser fuzzing, property tests, trace tests, report consistency tests, and selected differential tests now exercise the pipeline more directly
+
 ## Artifact Flow
 
 The current artifact boundary is explicit in code via `Concrete/Pipeline.lean`:
@@ -152,6 +159,12 @@ Validate SSA invariants and perform modest cross-backend cleanup:
 
 Pure backend emission over SSA. No re-interpretation of language semantics.
 
+Recent backend cleanups:
+
+- string literals are now extracted and deduplicated in one lowering path instead of via a fragile redundant second lowering pass
+- SSA variable maps are restored correctly across `if`/`else` and `while` exits
+- trusted pointer arithmetic now verifies and lowers correctly end to end
+
 ## Core IR Design
 
 The core IR is a smaller, stricter language — not another AST. Defined in `Concrete/Core.lean`.
@@ -199,6 +212,12 @@ It should only know syntax.
 | Checker/elaboration intrinsics | Elaborate + Validate | intercepted calls (`alloc`, `free`, `vec_*`, `map_*`), type constructors |
 | Runtime/codegen intrinsics | Lower + EmitSSA | memory layout, calling conventions, POSIX wrappers |
 | Ordinary library code | `std/` source files | string utilities, I/O wrappers, collection helpers |
+
+The direction of travel is explicit:
+
+- keep the intrinsic/builtin layer small and compiler-facing
+- move public polymorphic operations onto stdlib traits + monomorphization where possible (`Numeric::abs`, etc.)
+- keep stdlib names coherent even when the underlying runtime hooks remain low-level
 
 ## Pass Invariants
 
@@ -276,7 +295,7 @@ Replace string-based errors with typed diagnostic data.
 
 Write down and enforce a hard rule for what lives in syntax, checker/elaboration, codegen/runtime, vs stdlib.
 
-**Status:** Still active as an architectural policy item.
+**Status:** In progress. `IntrinsicId` exists, `abs` has been migrated to stdlib trait dispatch, trusted extern has replaced the old math intrinsic path, and a large batch of I/O / File / Network / Process / Env intrinsics has already moved to stdlib wrappers.
 
 ### A8: Monomorphization as Separate Pass
 
