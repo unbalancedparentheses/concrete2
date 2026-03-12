@@ -1,50 +1,39 @@
-# Why Concrete
+<section class="hero">
+  <h1>Concrete</h1>
+  <p>Auditable low-level programming with explicit authority and trust boundaries, on top of a small, honest, proof-friendly language and compiler.</p>
+  <div class="hero-actions">
+    <a class="primary" href="./getting_started.md">Get Started</a>
+    <a href="../../IDENTITY.md">Read the Identity</a>
+    <a href="../../../ROADMAP.md">See the Roadmap</a>
+  </div>
+</section>
 
-Concrete is a low-level language optimized for auditability, explicit trust, and proof-friendly compiler architecture.
+Concrete is not trying to win by having the most features. Its intended strength is that important low-level properties stay explicit enough to inspect, report, audit, and eventually prove.
 
-It is not trying to win by having the most features. Its intended strength is that important low-level properties stay explicit enough to inspect, report, audit, and eventually prove.
+<div class="positioning-note">
+Concrete should be strongest where many systems languages are not explicitly centered: auditability, explicit authority/trust boundaries, and proof-friendly compiler structure.
+</div>
 
 ## What Makes It Different
 
-### Auditability
-
-Concrete should become unusually good at showing:
-
-- where authority enters
-- where allocation happens
-- where cleanup happens
-- where `trusted` enters
-- what layout/ABI a type really has
-- what monomorphized code actually exists
-
-### Explicit Trust
-
-Concrete treats trust and authority as explicit language/compiler surfaces:
-
-- capabilities
-- `Unsafe`
-- `trusted fn`
-- `trusted impl`
-- `trusted extern fn`
-- audit/report outputs
-
-### Small Semantic Surface
-
-Concrete is trying to stay small enough that:
-
-- ordinary names are ordinary
-- semantics are explicit
-- compiler magic is minimized
-- the trusted computing base stays easier to reason about
-
-### Proof-Friendly Structure
-
-The compiler is being shaped around:
-
-- clear Core semantics
-- SSA as a real backend boundary
-- explicit pass structure
-- formalization targets that match the architecture
+<div class="feature-grid">
+  <div class="feature-card">
+    <h3>Auditability</h3>
+    <p>Concrete is trying to show where authority enters, where allocation and cleanup happen, what layout/ABI a type really has, and what monomorphized code actually exists.</p>
+  </div>
+  <div class="feature-card">
+    <h3>Explicit Trust</h3>
+    <p>Capabilities, <code>Unsafe</code>, <code>trusted fn</code>, <code>trusted impl</code>, and <code>trusted extern fn</code> are explicit surfaces, not hidden implementation accidents.</p>
+  </div>
+  <div class="feature-card">
+    <h3>Small Semantic Surface</h3>
+    <p>Ordinary names should stay ordinary, compiler magic should stay narrow, and the trusted computing base should remain easier to reason about.</p>
+  </div>
+  <div class="feature-card">
+    <h3>Proof-Friendly Structure</h3>
+    <p>The compiler is being shaped around clear Core semantics, SSA as a real backend boundary, explicit pass structure, and formalization targets that match the architecture.</p>
+  </div>
+</div>
 
 ## What Concrete Is Not Trying To Be
 
@@ -59,7 +48,10 @@ The goal is a language that is unusually explicit, inspectable, and honest.
 
 ## Start Here
 
-- Read the repository [README](../../../README.md)
-- Read the project [identity doc](../../IDENTITY.md)
-- Check the [roadmap](../../../ROADMAP.md)
-- Check the [changelog](../../../CHANGELOG.md)
+<div class="quick-links">
+  <a href="../../../README.md">Repository README</a>
+  <a href="../../IDENTITY.md">Project Identity</a>
+  <a href="../../../ROADMAP.md">Roadmap</a>
+  <a href="../../../CHANGELOG.md">Changelog</a>
+  <a href="./internal/index.md">Internal Details</a>
+</div>
