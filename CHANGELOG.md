@@ -10,6 +10,25 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Phase A completion: fast feedback and aggregate-lowering hardening
+
+- Hardened mutable aggregate lowering so aggregate state no longer flows accidentally through whole-aggregate phi nodes:
+  - loop-carried aggregate variables are promoted to stable entry-block allocas instead of being transported as aggregate phi values
+  - aggregate merges in `if`/`else` and `match` now lower through alloca+store/load patterns instead of `phi %Struct`
+  - void-typed match results are filtered out of phi/store paths
+- Added mechanical SSA protection for this architecture:
+  - `SSAVerify` now rejects aggregate phi nodes (`struct`, `enum`, `string`, `array`) with a hard error instead of relying only on regression coverage
+  - lowering phi-emission sites were audited so aggregate transport is intentionally blocked rather than incidentally absent
+- Strengthened regression coverage around the new lowering path:
+  - added `-O2` regressions for struct-loop lowering patterns
+  - added SSA-shape verification for aggregate-merge cases so aggregate phi nodes are caught close to the source
+- Upgraded the main test runner into a practical fast-feedback workflow:
+  - `run_tests.sh` now defaults to parallel execution on available cores
+  - added `--fast` (default), `--full`, `--filter`, `--stdlib`, `--O2`, `--codegen`, and `--report` modes
+  - partial runs now report mode/filter/skip information clearly
+  - documented `--fast` as the standard developer loop and `--full` as the pre-merge check
+- This completed Phase A well enough for the roadmap to shift primary attention to Phase B semantic cleanup while leaving deeper testing architecture work for later phases.
+
 ### Stdlib test-runner activation and compiler fixes
 
 - The stdlib test corpus now runs through the real compiler path via `concrete std/src/lib.con --test`, so module-local `#[test]` coverage in `std/src` is active CI protection instead of latent coverage.

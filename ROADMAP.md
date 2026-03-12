@@ -204,6 +204,7 @@ Primary surfaces:
 2. make compiler-known behavior ride on explicit identities or language items
 3. keep raw string matching confined to foreign/linker/reporting boundaries
 4. finish builtin-vs-stdlib boundary cleanup
+5. allow tactical testing improvements only when they directly accelerate semantic-cleanup work
 
 Exit criterion:
 ordinary language behavior is no longer keyed off raw public names.
@@ -224,8 +225,14 @@ Primary surfaces:
 1. add the external LL(1) grammar checker and CI coverage
 2. improve diagnostics fidelity and presentation
 3. build module-targeted stdlib test infrastructure
-4. deepen failure-path and integration testing in systems modules
-5. make report assertions part of ordinary hardening
+4. turn the current fast runner into proper long-term testing infrastructure
+   - module-aware and subsystem-aware entrypoints instead of only shell-level filtering
+   - stdlib-aware targeted execution under an explicit module/project context
+   - clearer visibility into what partial runs did and did not exercise
+   - narrower recompilation and rerun scopes driven by explicit dependencies rather than ad-hoc script sections
+   - treat the current fast runner as the practical Phase A baseline, not the end-state architecture for testing
+5. deepen failure-path and integration testing in systems modules
+6. make report assertions part of ordinary hardening
 
 Exit criterion:
 syntax guardrails, diagnostics, and stdlib testing behave like durable infrastructure rather than one-off pushes.
@@ -248,6 +255,7 @@ Primary surfaces:
 1. strengthen the SSA verifier/cleanup boundary into a clearer backend contract
 2. replace raw LLVM text emission with a structured backend
 3. turn explicit pipeline artifacts into reusable tooling/caching building blocks
+   - use those artifacts as the foundation for later test reuse, caching, and narrower rerun scopes
 4. push formalization over Core -> SSA
 5. add deferred audit/report outputs
 
@@ -271,13 +279,7 @@ backend work no longer feels fragile, and proofs, reports, and tooling all build
    - keep fuzz/property/trace/report/differential tests alive in CI
    - grow the regression corpus from real bugs
    - make report assertions part of ordinary compiler hardening
-   - make stdlib testing module-targeted rather than only single-root bootstrap testing
-   - treat the current fast runner as the practical Phase A baseline, not the end-state architecture for testing
-   - proper long-term fast testing means:
-     - module-aware and subsystem-aware entrypoints instead of only shell-level filtering
-     - artifact-aware reuse so unchanged compiler facts do not get rebuilt or revalidated unnecessarily
-     - narrower recompilation and rerun scopes driven by explicit dependencies rather than by ad-hoc script sections
-     - fast local confidence without losing clear visibility into what was and was not exercised
+   - keep pushing beyond shell-level orchestration toward artifact-aware reuse once the explicit pipeline-artifact work is ready
 5. Turn explicit pipeline artifacts into stronger tooling/caching building blocks once the current architecture cleanup settles.
    - keep artifact boundaries explicit and inspectable
    - move toward serialization/caching only on top of already boring pass contracts
