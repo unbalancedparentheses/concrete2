@@ -6,7 +6,7 @@ This is the implementation plan for the Concrete programming language. For the f
 
 ## Current State
 
-The Lean 4 compiler implements the core surface language plus the full internal IR pipeline: Core IR, elaboration, Core validation, monomorphization, SSA lowering, SSA verification/cleanup, and SSA codegen. The main suite currently has 332 passing tests, and the SSA-specific suite also passes.
+The Lean 4 compiler implements the core surface language plus the full internal IR pipeline: Core IR, elaboration, Core validation, monomorphization, SSA lowering, SSA verification/cleanup, and SSA codegen. The main suite currently has 372 passing tests (including codegen differential coverage across `--emit-ssa`, `--emit-llvm`, and `--emit-core`), and the SSA-specific suite also passes.
 
 The project also now has:
 
@@ -35,6 +35,9 @@ Recently completed:
 - parser cleanup to make the implementation strictly LL(1), with the previous bounded save/restore sites removed
 - `trusted fn` / `trusted impl` implemented through the parser, Core pipeline, CoreCheck, and audit reports
 - builtins, stdlib, and user code migrated to one explicit trust/effect model with trusted boundaries and honest capability annotations
+- fixed lowering bugs exposed by the trusted-extern migration: string constant naming collision across functions, and SSA variable scoping errors (then-branch leakage into else-branch, loop-body leakage past while-loop exits)
+- first testing strategy expansion: parser fuzzing, fmt/parse property tests, Vec/HashMap trace tests
+- testing strategy expansion completed: codegen differential tests (16 assertions across `--emit-ssa`, `--emit-llvm`, `--emit-core`), report consistency tests, 372 passing tests total
 
 ## Priority Snapshot
 
@@ -53,14 +56,9 @@ Recently completed:
    - ~~migrate remaining math intrinsics (sqrt, sin, cos, etc.) to stdlib~~ **done** (9 math functions moved to `std/src/math.con` as `trusted extern fn`; compiler builtins removed from Intrinsic, Check, Elab, EmitSSA, Resolve)
    - clean public API names that still look like low-level runtime hooks
    - make ownership/borrowing costs more predictable at the stdlib boundary
+   - revisit the string/conversion boundary separately instead of letting builtin-shaped string APIs linger by default
    - keep the stdlib bytes-first and low-level, rather than letting string-heavy convenience APIs become the default surface
-3. Strengthen the testing strategy beyond the current end-to-end and module-local tests:
-   - parser fuzzing
-   - `fmt` / `parse` property tests
-   - `Vec` / `HashMap` trace tests
-   - report consistency tests
-   - selected codegen differential tests
-4. Keep deepening and hardening the existing stdlib surface:
+3. Keep deepening and hardening the existing stdlib surface:
    - deepen `fs`, `net`, and `process`
    - add more failure-path and integration tests
    - keep error, handle, and checked/unchecked conventions uniform
@@ -69,19 +67,22 @@ Recently completed:
      - priority queue
      - ordered map / ordered set
      - bitset / bit array
-5. Improve diagnostics fidelity and rendering quality:
+4. Improve diagnostics fidelity and rendering quality:
    - better range precision
    - notes and secondary labels
    - clearer presentation for transformed constructs
-6. Preserve SSA as the only backend boundary and keep the build/project model explicit and boring.
+5. Preserve SSA as the only backend boundary and keep the build/project model explicit and boring.
 
 ### Next
 
 1. Push formalization over the cleaned Core -> SSA architecture.
 2. Add later audit/report outputs still marked deferred, such as allocation summaries and cleanup/destruction reports.
-3. Continue stdlib deepening with carefully chosen collections and stronger systems ergonomics.
-4. Keep diagnostics converging on one high-quality surface across compiler modes.
-5. Turn the testing strategy into durable infrastructure instead of a one-off push.
+3. Keep diagnostics converging on one high-quality surface across compiler modes.
+4. Turn the testing strategy into durable infrastructure instead of a one-off push:
+   - keep fuzz/property/trace/report/differential tests alive in CI
+   - grow the regression corpus from real bugs
+   - make report assertions part of ordinary compiler hardening
+5. Continue stdlib deepening with the next collection layer and stronger systems ergonomics once the current API cleanup settles.
 
 ### Later
 

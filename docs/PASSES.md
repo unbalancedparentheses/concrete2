@@ -262,7 +262,7 @@ CoreCheck is the post-elaboration semantic authority. It owns all legality rules
 - Structured control flow (if/else, while, for, match) converted to basic blocks with branches.
 - SSA form: each variable assignment produces a unique register.
 - Phi nodes inserted at control flow merge points.
-- String literals extracted as globals.
+- String literals extracted as globals, deduplicated by value across all functions, with globally unique names (`str.0`, `str.1`, ...). Per-function references are renamed to match the global canonical names.
 - Generic functions filtered out (only concrete/monomorphized lowered).
 - Every block has exactly one terminator (`br`, `condBr`, `ret`, `unreachable`).
 

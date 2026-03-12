@@ -786,8 +786,9 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
       -- Break edges already branch to exitLabel, so we need a different approach:
       -- exitLabel receives both paths. Use the resultSlot to distinguish.
       startBlock exitLabel
-      for (name, phiReg, _, ty) in headerPhis do
-        setVar name (.reg phiReg ty)
+      -- Replace entire var map (removes body-local vars)
+      let s ← getState
+      setState { s with vars := headerPhis.map fun (name, phiReg, _, ty) => (name, SVal.reg phiReg ty) }
       if !breakEdges.isEmpty then
         for (name, phiReg, _, ty) in headerPhis do
           let headerVal := SVal.reg phiReg ty
@@ -826,8 +827,9 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
     else
       -- No breaks: simple exit
       startBlock exitLabel
-      for (name, phiReg, _, ty) in headerPhis do
-        setVar name (.reg phiReg ty)
+      -- Replace entire var map (removes body-local vars)
+      let s ← getState
+      setState { s with vars := headerPhis.map fun (name, phiReg, _, ty) => (name, SVal.reg phiReg ty) }
       -- Store else value into result slot (loop ended without break)
       if !_elseBody.isEmpty then
         lowerStmts _elseBody
@@ -890,9 +892,9 @@ partial def lowerStmt (stmt : CStmt) : LowerM Unit := do
     if !term1 then
       terminateBlock (.br mergeLabel)
     -- Else block
-    -- Restore pre-if vars so else branch starts from same state
-    for (name, val) in preIfVars do
-      setVar name val
+    -- Replace entire var map (removes then-branch locals)
+    let s ← getState
+    setState { s with vars := preIfVars }
     startBlock elseLabel
     match else_ with
     | some stmts => lowerStmts stmts
@@ -1029,8 +1031,9 @@ partial def lowerStmt (stmt : CStmt) : LowerM Unit := do
       let breakEdges := match loopInfoFinal with
         | some info => info.breakEdges
         | none => []
-      for (name, phiReg, _, ty) in headerPhis do
-        setVar name (.reg phiReg ty)
+      -- Replace entire var map (removes body-local vars)
+      let s ← getState
+      setState { s with vars := headerPhis.map fun (name, phiReg, _, ty) => (name, SVal.reg phiReg ty) }
       if !breakEdges.isEmpty then
         for (name, phiReg, _, ty) in headerPhis do
           let headerVal := SVal.reg phiReg ty
@@ -1071,9 +1074,9 @@ partial def lowerStmt (stmt : CStmt) : LowerM Unit := do
     let breakEdges := match loopInfoFinal with
       | some info => info.breakEdges
       | none => []
-    -- Restore vars to header phi values (which dominate exit)
-    for (name, phiReg, _, ty) in headerPhis do
-      setVar name (.reg phiReg ty)
+    -- Replace entire var map (removes body-local vars)
+    let s ← getState
+    setState { s with vars := headerPhis.map fun (name, phiReg, _, ty) => (name, SVal.reg phiReg ty) }
     -- If break edges exist, insert exit phis
     if !breakEdges.isEmpty then
       for (name, phiReg, _, ty) in headerPhis do
@@ -1202,7 +1205,7 @@ end
 -- Function and module lowering
 -- ============================================================
 
-def lowerFn (f : CFnDef) (structDefs : List CStructDef) (enumDefs : List CEnumDef) : Except String SFnDef :=
+def lowerFn (f : CFnDef) (structDefs : List CStructDef) (enumDefs : List CEnumDef) : Except String (SFnDef × List (String × String)) :=
   let initState : LowerState := {
     blocks := []
     currentLabel := "entry"
@@ -1227,13 +1230,13 @@ def lowerFn (f : CFnDef) (structDefs : List CStructDef) (enumDefs : List CEnumDe
   ).run initState |>.run
   match result with
   | ((.ok ()), finalState) =>
-    .ok {
+    .ok ({
       name := f.name
       params := f.params
       retTy := f.retTy
       blocks := finalState.blocks
       isTest := f.isTest
-    }
+    }, finalState.stringLits)
   | ((.error e), _) => .error e
 
 private partial def collectAllFunctions (m : CModule) : List CFnDef :=
@@ -1256,6 +1259,29 @@ private partial def collectAllExterns (m : CModule) : List (String × List (Stri
   let sub := m.submodules.foldl (fun acc s => acc ++ collectAllExterns s) []
   own ++ sub
 
+private def renameSVal (rmap : List (String × String)) : SVal → SVal
+  | .strConst name => match rmap.lookup name with
+    | some newName => .strConst newName
+    | none => .strConst name
+  | other => other
+
+private def renameStrConstsInInst (rmap : List (String × String)) : SInst → SInst
+  | .binOp dst op lhs rhs ty => .binOp dst op (renameSVal rmap lhs) (renameSVal rmap rhs) ty
+  | .unaryOp dst op operand ty => .unaryOp dst op (renameSVal rmap operand) ty
+  | .call dst fn args retTy => .call dst fn (args.map (renameSVal rmap)) retTy
+  | .alloca dst ty => .alloca dst ty
+  | .load dst ptr ty => .load dst (renameSVal rmap ptr) ty
+  | .store val ptr => .store (renameSVal rmap val) (renameSVal rmap ptr)
+  | .gep dst base indices ty => .gep dst (renameSVal rmap base) (indices.map (renameSVal rmap)) ty
+  | .phi dst incoming ty => .phi dst (incoming.map fun (v, lbl) => (renameSVal rmap v, lbl)) ty
+  | .cast dst val tgt => .cast dst (renameSVal rmap val) tgt
+  | .memcpy dst src size => .memcpy (renameSVal rmap dst) (renameSVal rmap src) size
+
+private def renameStrConstsInTerm (rmap : List (String × String)) : STerm → STerm
+  | .ret (some v) => .ret (some (renameSVal rmap v))
+  | .condBr cond tl el => .condBr (renameSVal rmap cond) tl el
+  | other => other
+
 def lowerModule (m : CModule) : SModule :=
   let allFunctions := collectAllFunctions m
   let allStructs := collectAllStructs m
@@ -1264,30 +1290,30 @@ def lowerModule (m : CModule) : SModule :=
   -- Skip generic functions (non-empty typeParams); only their monomorphized
   -- specializations should be lowered.
   let concreteFns := allFunctions.filter fun f => f.typeParams.isEmpty
-  let fns := concreteFns.filterMap fun f =>
+  let results := concreteFns.filterMap fun f =>
     match lowerFn f allStructs allEnums with
-    | .ok sfn => some sfn
+    | .ok (sfn, lits) => some (sfn, lits)
     | .error _ => none
-  -- Collect string literals from lowered functions
-  let globals := concreteFns.foldl (fun acc f =>
-    let initState : LowerState := {
-      blocks := [], currentLabel := "entry", currentInsts := []
-      labelCounter := 0, regCounter := 0
-      vars := f.params.map fun (n, ty) => (n, SVal.reg n ty)
-      stringLits := []
-      structDefs := allStructs
-      enumDefs := allEnums
-      loopStack := []
-    }
-    let result := (do
-      lowerStmts f.body
-      let term ← currentBlockTerminated
-      if !term then terminateBlock (.ret none)
-    ).run initState |>.run
-    match result with
-    | ((.ok ()), finalState) => acc ++ finalState.stringLits
-    | _ => acc
+  -- Build deduplicated globals list (by string value)
+  let globals := results.foldl (fun deduped (_, lits) =>
+    lits.foldl (fun deduped (_, strVal) =>
+      if deduped.any fun (_, v) => v == strVal then deduped
+      else deduped ++ [(s!"str.{deduped.length}", strVal)]
+    ) deduped
   ) ([] : List (String × String))
+  -- Rename strConst references per-function using its own string literals
+  let fns := results.map fun (fn, lits) =>
+    -- Build per-function rename map: old local name → global canonical name
+    let renameMap := lits.filterMap fun (oldName, strVal) =>
+      match globals.find? fun (_, v) => v == strVal with
+      | some (canonName, _) => if oldName == canonName then none else some (oldName, canonName)
+      | none => none
+    if renameMap.isEmpty then fn else { fn with
+      blocks := fn.blocks.map fun blk => { blk with
+        insts := blk.insts.map fun inst => renameStrConstsInInst renameMap inst
+        term := renameStrConstsInTerm renameMap blk.term
+      }
+    }
   { name := m.name
     structs := allStructs
     enums := allEnums

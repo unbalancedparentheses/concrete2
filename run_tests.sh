@@ -296,6 +296,11 @@ run_ok "$TESTDIR/generic_pair.con" 42
 run_ok "$TESTDIR/enum_multi_variant.con" 8
 run_ok "$TESTDIR/trait_multi_bound.con" 42
 run_ok "$TESTDIR/while_nested_labeled.con" 25
+run_ok "$TESTDIR/if_else_while.con" 3
+run_ok "$TESTDIR/while_seq_scoping.con" 400
+run_ok "$TESTDIR/fmt_parse_roundtrip.con" 0
+run_ok "$TESTDIR/vec_trace.con" 0
+run_ok "$TESTDIR/hashmap_trace.con" 0
 run_ok "$TESTDIR/struct_nested.con" 42
 run_ok "$TESTDIR/complex_multi_feature.con" 40
 run_ok "$TESTDIR/complex_heap_borrow.con" 42
@@ -475,6 +480,7 @@ run_ok "$TESTDIR/string_concat_empty.con" 5
 run_ok "$TESTDIR/string_eq_same.con" 1
 run_ok "$TESTDIR/string_eq_different.con" 0
 run_ok "$TESTDIR/string_slice_full.con" 5
+run_ok "$TESTDIR/string_multi_fn.con" 8
 run_ok "$TESTDIR/string_contains_empty.con" 1
 run_ok "$TESTDIR/string_char_at_first_last.con" 196
 run_ok "$TESTDIR/string_trim_spaces.con" 2
@@ -599,6 +605,315 @@ if echo "$report_output" | grep -q "Extern functions:" && echo "$report_output" 
 else
     echo "FAIL  ffi_basic.con --report unsafe should show regular extern, not trusted"
     echo "$report_output"
+    FAIL=$((FAIL + 1))
+fi
+
+# --- report caps: pure, single cap, multi cap ---
+report_output=$($COMPILER "$TESTDIR/report_caps_check.con" --report caps 2>&1)
+if echo "$report_output" | grep -q "pure_fn : (pure)"; then
+    echo "  ok  report_caps_check.con --report caps shows pure_fn : (pure)"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  report_caps_check.con --report caps missing pure_fn : (pure)"
+    echo "$report_output"
+    FAIL=$((FAIL + 1))
+fi
+
+if echo "$report_output" | grep -q "alloc_fn : Alloc"; then
+    echo "  ok  report_caps_check.con --report caps shows alloc_fn : Alloc"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  report_caps_check.con --report caps missing alloc_fn : Alloc"
+    echo "$report_output"
+    FAIL=$((FAIL + 1))
+fi
+
+if echo "$report_output" | grep -q "multi_fn : File, Network"; then
+    echo "  ok  report_caps_check.con --report caps shows multi_fn : File, Network"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  report_caps_check.con --report caps missing multi_fn : File, Network"
+    echo "$report_output"
+    FAIL=$((FAIL + 1))
+fi
+
+# --- report unsafe: Unsafe capability + raw pointer signatures ---
+report_output=$($COMPILER "$TESTDIR/report_unsafe_rawptr.con" --report unsafe 2>&1)
+if echo "$report_output" | grep -q "Functions with Unsafe capability" && echo "$report_output" | grep -q "ptr_swap"; then
+    echo "  ok  report_unsafe_rawptr.con --report unsafe shows Unsafe capability for ptr_swap"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  report_unsafe_rawptr.con --report unsafe missing Unsafe capability for ptr_swap"
+    echo "$report_output"
+    FAIL=$((FAIL + 1))
+fi
+
+if echo "$report_output" | grep -q "Functions with raw pointer signatures" && echo "$report_output" | grep -q "ptr_swap"; then
+    echo "  ok  report_unsafe_rawptr.con --report unsafe shows raw pointer signatures for ptr_swap"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  report_unsafe_rawptr.con --report unsafe missing raw pointer signatures for ptr_swap"
+    echo "$report_output"
+    FAIL=$((FAIL + 1))
+fi
+
+# --- report layout: struct sizes, packed, enum tags ---
+report_output=$($COMPILER "$TESTDIR/report_layout_check.con" --report layout 2>&1)
+if echo "$report_output" | grep -q "struct Padded" && echo "$report_output" | grep -q "size:" && echo "$report_output" | grep -q "align:"; then
+    echo "  ok  report_layout_check.con --report layout shows struct Padded with size and align"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  report_layout_check.con --report layout missing struct Padded with size/align"
+    echo "$report_output"
+    FAIL=$((FAIL + 1))
+fi
+
+if echo "$report_output" | grep -q "struct Packed" && echo "$report_output" | grep -q "#\[packed\]"; then
+    echo "  ok  report_layout_check.con --report layout shows struct Packed with #[packed]"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  report_layout_check.con --report layout missing struct Packed with #[packed]"
+    echo "$report_output"
+    FAIL=$((FAIL + 1))
+fi
+
+if echo "$report_output" | grep -q "enum Shape" && echo "$report_output" | grep -q "tag:" && echo "$report_output" | grep -q "payload_offset:"; then
+    echo "  ok  report_layout_check.con --report layout shows enum Shape with tag and payload_offset"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  report_layout_check.con --report layout missing enum Shape with tag/payload_offset"
+    echo "$report_output"
+    FAIL=$((FAIL + 1))
+fi
+
+# --- report layout: cross-validate sizes against runtime sizeof ---
+padded_size=$(echo "$report_output" | grep "struct Padded" -A1 | grep -o "size: [0-9]*" | head -1 | grep -o "[0-9]*")
+packed_size=$(echo "$report_output" | grep "struct Packed" -A1 | grep -o "size: [0-9]*" | head -1 | grep -o "[0-9]*")
+expected_sum=$((padded_size + packed_size))
+$COMPILER "$TESTDIR/report_layout_check.con" -o "$TMPDIR/report_layout_check" > /dev/null 2>&1
+runtime_sum=$("$TMPDIR/report_layout_check" 2>&1) || true
+if [ "$expected_sum" = "$runtime_sum" ]; then
+    echo "  ok  report_layout_check.con layout sizes ($padded_size + $packed_size = $expected_sum) match runtime sizeof ($runtime_sum)"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  report_layout_check.con layout sizes ($padded_size + $packed_size = $expected_sum) != runtime sizeof ($runtime_sum)"
+    FAIL=$((FAIL + 1))
+fi
+
+# --- report interface: public API, struct fields, private exclusion ---
+report_output=$($COMPILER "$TESTDIR/report_interface_check.con" --report interface 2>&1)
+if echo "$report_output" | grep -q "fn add_points" && echo "$report_output" | grep -q "\[Alloc\]"; then
+    echo "  ok  report_interface_check.con --report interface shows fn add_points with [Alloc]"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  report_interface_check.con --report interface missing fn add_points with [Alloc]"
+    echo "$report_output"
+    FAIL=$((FAIL + 1))
+fi
+
+if echo "$report_output" | grep -q "struct Point" && echo "$report_output" | grep -q "x: i32"; then
+    echo "  ok  report_interface_check.con --report interface shows struct Point with x: i32"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  report_interface_check.con --report interface missing struct Point with x: i32"
+    echo "$report_output"
+    FAIL=$((FAIL + 1))
+fi
+
+if ! echo "$report_output" | grep -q "private_helper"; then
+    echo "  ok  report_interface_check.con --report interface excludes private_helper"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  report_interface_check.con --report interface should not show private_helper"
+    echo "$report_output"
+    FAIL=$((FAIL + 1))
+fi
+
+# --- report mono: generic count and specializations ---
+report_output=$($COMPILER "$TESTDIR/report_mono_check.con" --report mono 2>&1)
+if echo "$report_output" | grep -q "Generic functions: 1"; then
+    echo "  ok  report_mono_check.con --report mono shows Generic functions: 1"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  report_mono_check.con --report mono missing Generic functions: 1"
+    echo "$report_output"
+    FAIL=$((FAIL + 1))
+fi
+
+if echo "$report_output" | grep -q "Specializations generated: 2"; then
+    echo "  ok  report_mono_check.con --report mono shows Specializations generated: 2"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  report_mono_check.con --report mono missing Specializations generated: 2"
+    echo "$report_output"
+    FAIL=$((FAIL + 1))
+fi
+
+# === Codegen differential tests ===
+echo ""
+echo "=== Codegen differential tests ==="
+
+# --- Category 1: SSA optimization verification ---
+
+# Constant folding: 2 + 3 should be folded to 5
+ssa_output=$($COMPILER "$TESTDIR/codegen_constfold.con" --emit-ssa 2>&1)
+if echo "$ssa_output" | grep -q "ret i64 5"; then
+    echo "  ok  codegen_constfold.con --emit-ssa constant folded to ret i64 5"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  codegen_constfold.con --emit-ssa missing ret i64 5 (constant folding)"
+    echo "$ssa_output"
+    FAIL=$((FAIL + 1))
+fi
+
+if ! echo "$ssa_output" | grep -q "add i64"; then
+    echo "  ok  codegen_constfold.con --emit-ssa no residual add i64"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  codegen_constfold.con --emit-ssa still contains add i64 (folding missed)"
+    echo "$ssa_output"
+    FAIL=$((FAIL + 1))
+fi
+
+# Strength reduction: x * 8 should become shl x, 3
+ssa_output=$($COMPILER "$TESTDIR/codegen_strength.con" --emit-ssa 2>&1)
+if echo "$ssa_output" | grep -q "shl i64 %x, 3"; then
+    echo "  ok  codegen_strength.con --emit-ssa strength-reduced *8 to shl 3"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  codegen_strength.con --emit-ssa missing shl i64 %x, 3 (strength reduction)"
+    echo "$ssa_output"
+    FAIL=$((FAIL + 1))
+fi
+
+if ! echo "$ssa_output" | grep -q "mul i64"; then
+    echo "  ok  codegen_strength.con --emit-ssa no residual mul i64"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  codegen_strength.con --emit-ssa still contains mul i64 (reduction missed)"
+    echo "$ssa_output"
+    FAIL=$((FAIL + 1))
+fi
+
+# --- Category 2: Codegen structure verification ---
+
+# Struct field access: second field at offset 8
+ssa_output=$($COMPILER "$TESTDIR/struct_basic.con" --emit-ssa 2>&1)
+if echo "$ssa_output" | grep -q "gep i8 %p, i64 8"; then
+    echo "  ok  struct_basic.con --emit-ssa second field GEP at offset 8"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  struct_basic.con --emit-ssa missing gep i8 %p, i64 8"
+    echo "$ssa_output"
+    FAIL=$((FAIL + 1))
+fi
+
+# Enum tag load and comparison
+ssa_output=$($COMPILER "$TESTDIR/enum_basic.con" --emit-ssa 2>&1)
+if echo "$ssa_output" | grep -q "load i32"; then
+    echo "  ok  enum_basic.con --emit-ssa tag loaded as i32"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  enum_basic.con --emit-ssa missing load i32 (tag load)"
+    echo "$ssa_output"
+    FAIL=$((FAIL + 1))
+fi
+
+if echo "$ssa_output" | grep -q "eq i1"; then
+    echo "  ok  enum_basic.con --emit-ssa tag comparison with eq i1"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  enum_basic.con --emit-ssa missing eq i1 (tag comparison)"
+    echo "$ssa_output"
+    FAIL=$((FAIL + 1))
+fi
+
+# Monomorphization: identity<T> specialized for Int and i32
+ssa_output=$($COMPILER "$TESTDIR/report_mono_check.con" --emit-ssa 2>&1)
+if echo "$ssa_output" | grep -q "define i64 @identity_for_Int"; then
+    echo "  ok  report_mono_check.con --emit-ssa has identity_for_Int"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  report_mono_check.con --emit-ssa missing define i64 @identity_for_Int"
+    echo "$ssa_output"
+    FAIL=$((FAIL + 1))
+fi
+
+if echo "$ssa_output" | grep -q "define i32 @identity_for_i32"; then
+    echo "  ok  report_mono_check.con --emit-ssa has identity_for_i32"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  report_mono_check.con --emit-ssa missing define i32 @identity_for_i32"
+    echo "$ssa_output"
+    FAIL=$((FAIL + 1))
+fi
+
+# LLVM struct type definition
+llvm_output=$($COMPILER "$TESTDIR/struct_basic.con" --emit-llvm 2>&1)
+if echo "$llvm_output" | grep -q "%struct.Point = type { i64, i64 }"; then
+    echo "  ok  struct_basic.con --emit-llvm has %struct.Point = type { i64, i64 }"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  struct_basic.con --emit-llvm missing %struct.Point = type { i64, i64 }"
+    echo "$llvm_output" | head -40
+    FAIL=$((FAIL + 1))
+fi
+
+# Mutable borrow generates store
+ssa_output=$($COMPILER "$TESTDIR/borrow_mut.con" --emit-ssa 2>&1)
+if echo "$ssa_output" | grep -q "store i64"; then
+    echo "  ok  borrow_mut.con --emit-ssa mutable borrow generates store i64"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  borrow_mut.con --emit-ssa missing store i64"
+    echo "$ssa_output"
+    FAIL=$((FAIL + 1))
+fi
+
+# --- Category 3: Cross-representation consistency ---
+
+# LLVM packed struct matches report layout
+llvm_output=$($COMPILER "$TESTDIR/report_layout_check.con" --emit-llvm 2>&1)
+if echo "$llvm_output" | grep -q "%struct.Packed = type <{"; then
+    echo "  ok  report_layout_check.con --emit-llvm packed struct uses <{ syntax"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  report_layout_check.con --emit-llvm missing packed struct <{ syntax"
+    echo "$llvm_output" | head -40
+    FAIL=$((FAIL + 1))
+fi
+
+# LLVM enum payload size matches report layout max_payload
+report_output=$($COMPILER "$TESTDIR/report_layout_check.con" --report layout 2>&1)
+layout_max_payload=$(echo "$report_output" | grep -o "max_payload: [0-9]*" | grep -o "[0-9]*")
+if echo "$llvm_output" | grep -q "%enum.Shape = type { i32, \[$layout_max_payload x i8\] }"; then
+    echo "  ok  report_layout_check.con --emit-llvm enum payload size matches --report layout max_payload ($layout_max_payload)"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  report_layout_check.con --emit-llvm enum payload size does not match --report layout max_payload ($layout_max_payload)"
+    echo "  LLVM: $(echo "$llvm_output" | grep '%enum.Shape')"
+    echo "  Report: $(echo "$report_output" | grep 'max_payload')"
+    FAIL=$((FAIL + 1))
+fi
+
+# Core-SSA consistency: function signature preserved across representations
+core_output=$($COMPILER "$TESTDIR/struct_basic.con" --emit-core 2>&1)
+ssa_output=$($COMPILER "$TESTDIR/struct_basic.con" --emit-ssa 2>&1)
+if echo "$core_output" | grep -q "fn sum_point(p: Point) -> Int"; then
+    echo "  ok  struct_basic.con --emit-core preserves fn sum_point(p: Point) -> Int"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  struct_basic.con --emit-core missing fn sum_point(p: Point) -> Int"
+    echo "$core_output"
+    FAIL=$((FAIL + 1))
+fi
+
+if echo "$ssa_output" | grep -q "define i64 @sum_point"; then
+    echo "  ok  struct_basic.con --emit-ssa maps sum_point to define i64 @sum_point"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  struct_basic.con --emit-ssa missing define i64 @sum_point"
+    echo "$ssa_output"
     FAIL=$((FAIL + 1))
 fi
 
