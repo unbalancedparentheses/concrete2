@@ -326,7 +326,7 @@ Still in progress:
 - kernel formalization
 - runtime maturity
 
-See the full [ROADMAP.md](ROADMAP.md) for the implementation plan. What works today:
+See [ROADMAP.md](ROADMAP.md) for active priorities and remaining work. What works today:
 
 - **Types**: Int, Uint, i8-i32, u8-u32, f32, f64, Bool, Char, String, arrays `[T; N]`, raw pointers
 - **Structs** with field access, mutation, and `Heap<T>` fields
@@ -437,12 +437,12 @@ See [`docs/STDLIB.md`](docs/STDLIB.md) for the stable stdlib direction.
 
 ## Roadmap
 
-See [ROADMAP.md](ROADMAP.md) for the full implementation plan with syntax, rules, and implementation details for each phase.
+See [ROADMAP.md](ROADMAP.md) for active priorities, remaining major work, and sequencing.
 See [CHANGELOG.md](CHANGELOG.md) for completed milestones and major landed architecture/language work.
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the detailed compiler pipeline, artifact flow, and pass boundaries.
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/PASSES.md](docs/PASSES.md) for the detailed compiler pipeline, artifact flow, pass boundaries, and compiler contracts.
 See [docs/ABI_LAYOUT.md](docs/ABI_LAYOUT.md) for the current layout and FFI boundary, and [docs/DIAGNOSTICS.md](docs/DIAGNOSTICS.md) for the diagnostics model.
 See [docs/FFI.md](docs/FFI.md) for the explicit foreign/unsafe boundary and [docs/STDLIB.md](docs/STDLIB.md) for the current stable stdlib direction.
-See [docs/PASSES.md](docs/PASSES.md) for pass-by-pass compiler contracts and [docs/TESTING.md](docs/TESTING.md) for the test structure.
+See [docs/TESTING.md](docs/TESTING.md) for the test structure.
 See [docs/README.md](docs/README.md) for the stable documentation index and [research/README.md](research/README.md) for exploratory design notes.
 
 | Phase | Feature | Status |
