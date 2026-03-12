@@ -816,15 +816,14 @@ def emitSModule (s : EmitSSAState) (m : SModule) (testMode : Bool := false) : Em
     { s with stringLengths := s.stringLengths ++ [(name, val.length)] }
   ) s
   -- Functions
-  let hasMain := m.functions.any fun f => f.name == mainFnName
+  let hasMain := m.functions.any fun f => f.isEntryPoint
   let s := m.functions.foldl (fun s f =>
-    let isUserMain := f.name == mainFnName && hasMain
-    emitSFnDef s f isUserMain
+    emitSFnDef s f f.isEntryPoint
   ) s
   -- Main wrapper (skip in test mode — test runner provides main)
   if testMode then s
   else if hasMain then
-    match m.functions.find? fun f => f.name == mainFnName with
+    match m.functions.find? fun f => f.isEntryPoint with
     | some mainFn => emitMainWrapper s mainFn.retTy
     | none => s
   else s

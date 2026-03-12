@@ -219,11 +219,16 @@ Primary surfaces:
    - separated semantic language items (Self, Destroy, Result, Ok/Err, main, Unsafe, Std) from compiler-reserved identifiers (alloc, free, etc.) and mangling/suffix helpers
    - updated Check, CoreCheck, Elab, EmitSSA, Resolve, Shared, Report, Parser to reference centralized names
 
+2. ~~audit for any surviving semantic dispatch on ordinary public names outside `Intrinsic.lean`~~ **done** — comprehensive audit found no surviving semantic dispatch; remaining string handling is structural
+3. ~~make compiler-known behavior ride on explicit identities or language items~~ **done** (this commit)
+   - added `BuiltinTraitId` enum (`.destroy`) — tagged on `TraitDef`, `CTraitDef` via `builtinId` field
+   - added `BuiltinEnumId` enum (`.result`, `.option`) — tagged on `EnumDef`, `CEnumDef` via `builtinId` field
+   - added `isEntryPoint : Bool` to `FnDef`, `CFnDef`, `SFnDef` — set during elaboration, used by EmitSSA instead of `mainFnName` string comparison
+   - EmitSSA now dispatches on `f.isEntryPoint` flag, never on function name
+   - builtin Option/Result enums and Destroy trait carry their identity through the full pipeline
+
 **Remaining:**
 
-2. audit for any surviving semantic dispatch on ordinary public names outside `Intrinsic.lean`
-   - all known semantic names are now centralized; if new semantic names appear they must go through `Intrinsic.lean`
-3. make compiler-known behavior ride on explicit identities or language items where centralized constants are still insufficient
 4. keep raw string matching confined to foreign/linker/reporting boundaries
 5. allow tactical testing improvements only when they directly accelerate semantic-cleanup work
 

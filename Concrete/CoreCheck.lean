@@ -590,7 +590,8 @@ def ccCheckModuleDecls (m : CModule)
       for (fname, fty) in sd.fields do
         if !isCopyTy allStructs allEnums fty then
           errors := errors ++ [mkDeclDiag (.copyFieldNotCopy sd.name fname)]
-  -- 2. Copy/Destroy conflict for enums
+  -- 2. Copy/Destroy conflict for enums (trait impls use traitName string;
+  --    once CTraitImpl gains a builtinTraitId field, switch to that)
   for ed in m.enums do
     if ed.isCopy then
       if m.traitImpls.any fun ti => ti.traitName == destroyTraitName && ti.typeName == ed.name then
@@ -619,7 +620,7 @@ def ccCheckModuleDecls (m : CModule)
         errors := errors ++ [mkDeclDiag (.externFnParamNotFFISafe efName pName (tyToString pTy))]
     if !Layout.isFFISafe lctx efRetTy && efRetTy != .unit then
       errors := errors ++ [mkDeclDiag (.externFnReturnNotFFISafe efName (tyToString efRetTy))]
-  -- 6. Builtin trait redeclaration
+  -- 6. Builtin trait redeclaration (user traits have builtinId = none)
   for td in m.traitDefs do
     if td.name == destroyTraitName then
       errors := errors ++ [mkDeclDiag .builtinTraitRedeclared]
@@ -628,7 +629,7 @@ def ccCheckModuleDecls (m : CModule)
     if isReservedFnName f.name then
       errors := errors ++ [mkDeclDiag (.reservedFnName f.name)]
   -- 8. Trait impl validation
-  let builtinDestroyTrait : CTraitDef := { name := destroyTraitName, methods := [{ name := destroyMethodName, retTy := .unit }] }
+  let builtinDestroyTrait : CTraitDef := { name := destroyTraitName, methods := [{ name := destroyMethodName, retTy := .unit }], builtinId := some .destroy }
   let allTraits := builtinDestroyTrait :: m.traitDefs
   for ti in m.traitImpls do
     match allTraits.find? fun td => td.name == ti.traitName with

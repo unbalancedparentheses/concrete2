@@ -158,6 +158,26 @@ def IntrinsicId.capability : IntrinsicId → Option String
   | _ => none
 
 -- ============================================================
+-- Explicit identity types for builtin language items
+-- ============================================================
+-- These enums replace string comparisons in downstream passes.
+-- Resolve/Check tag data structures with these IDs early;
+-- downstream passes dispatch on the ID, never on raw strings.
+
+/-- Identity for compiler-builtin traits.
+    Downstream passes dispatch on this instead of comparing trait name strings. -/
+inductive BuiltinTraitId where
+  | destroy
+  deriving BEq, Hashable, Repr
+
+/-- Identity for compiler-builtin enums.
+    Tagged on EnumDef/CEnumDef so downstream passes avoid name comparisons. -/
+inductive BuiltinEnumId where
+  | result
+  | option
+  deriving BEq, Hashable, Repr
+
+-- ============================================================
 -- Centralized builtin name tables
 -- ============================================================
 -- These are the single source of truth for names that carry

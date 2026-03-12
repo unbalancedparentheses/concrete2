@@ -2093,15 +2093,17 @@ def checkModule (m : Module) (summary : FileSummary)
       { name := "None", fields := [] }
     ]
     isCopy := false
+    builtinId := some .option
   }
   let builtinResultEnum : EnumDef := {
     name := resultEnumName
     typeParams := ["T", "E"]
     variants := [
-      { name := "Ok", fields := [{ name := "value", ty := .typeVar "T" }] },
-      { name := "Err", fields := [{ name := "value", ty := .typeVar "E" }] }
+      { name := okVariantName, fields := [{ name := "value", ty := .typeVar "T" }] },
+      { name := errVariantName, fields := [{ name := "value", ty := .typeVar "E" }] }
     ]
     isCopy := false
+    builtinId := some .result
   }
   let hasUserResult := m.enums.any fun ed => ed.name == resultEnumName
   let builtinEnumList := [builtinOptionEnum] ++ (if hasUserResult then [] else [builtinResultEnum])
@@ -2135,6 +2137,7 @@ def checkModule (m : Module) (summary : FileSummary)
   let builtinDestroyTrait : TraitDef := {
     name := destroyTraitName
     methods := [{ name := destroyMethodName, params := [], retTy := .unit, selfKind := some .ref }]
+    builtinId := some .destroy
   }
   let allTraits := builtinDestroyTrait :: m.traits
   -- Merge impl block type params into each method's typeParams, track impl type for Self

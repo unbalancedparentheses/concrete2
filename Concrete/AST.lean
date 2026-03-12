@@ -1,4 +1,5 @@
 import Concrete.Token
+import Concrete.Intrinsic
 
 namespace Concrete
 
@@ -193,6 +194,7 @@ structure EnumDef where
   variants : List EnumVariant
   isPublic : Bool := false
   isCopy : Bool := false
+  builtinId : Option BuiltinEnumId := none  -- tagged for compiler-builtin enums
   span : Span := default
   deriving Repr
 
@@ -230,6 +232,7 @@ structure FnDef where
   isPublic : Bool := false
   isTest : Bool := false
   isTrusted : Bool := false        -- trusted fn: allows raw ptr ops without Unsafe
+  isEntryPoint : Bool := false     -- tagged by Check when name == mainFnName
   capSet : CapSet := .empty        -- with(File, Network, ...)
   hasBang : Bool := false          -- fn main!() sugar
   span : Span := default
@@ -283,6 +286,7 @@ structure TraitDef where
   typeParams : List String := []
   methods : List FnSigDef
   isPublic : Bool := false
+  builtinId : Option BuiltinTraitId := none  -- tagged for compiler-builtin traits
   span : Span := default
   deriving Repr
 

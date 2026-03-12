@@ -81,6 +81,7 @@ structure CFnDef where
   isPublic : Bool := false
   isTest : Bool := false
   isTrusted : Bool := false
+  isEntryPoint : Bool := false  -- tagged by Elab when name == mainFnName
   trustedImplOrigin : Option String := none  -- "TypeName" if from a trusted impl/trait-impl
   capSet : CapSet := .empty
 
@@ -100,6 +101,7 @@ structure CEnumDef where
   variants : List (String × List (String × Ty))
   isPublic : Bool := false
   isCopy : Bool := false
+  builtinId : Option BuiltinEnumId := none
 
 structure CTraitMethodSig where
   name : String
@@ -108,6 +110,7 @@ structure CTraitMethodSig where
 structure CTraitDef where
   name : String
   methods : List CTraitMethodSig
+  builtinId : Option BuiltinTraitId := none
 
 structure CTraitImpl where
   traitName : String

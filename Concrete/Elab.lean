@@ -1020,6 +1020,7 @@ def elabFn (f : FnDef) (implTy : Option Ty := none) : ElabM CFnDef := do
     isPublic := f.isPublic
     isTest := f.isTest
     isTrusted := f.isTrusted
+    isEntryPoint := f.name == mainFnName
     capSet := f.capSet
   }
 
@@ -1059,14 +1060,14 @@ partial def elabModule (m : Module) (summary : FileSummary)
     variants := [
       { name := "Some", fields := [{ name := "value", ty := .typeVar "T" }] },
       { name := "None", fields := [] }
-    ], isCopy := false
+    ], isCopy := false, builtinId := some .option
   }
   let builtinResultEnum : EnumDef := {
     name := resultEnumName, typeParams := ["T", "E"],
     variants := [
-      { name := "Ok", fields := [{ name := "value", ty := .typeVar "T" }] },
-      { name := "Err", fields := [{ name := "value", ty := .typeVar "E" }] }
-    ], isCopy := false
+      { name := okVariantName, fields := [{ name := "value", ty := .typeVar "T" }] },
+      { name := errVariantName, fields := [{ name := "value", ty := .typeVar "E" }] }
+    ], isCopy := false, builtinId := some .result
   }
   let hasUserResult := m.enums.any fun ed => ed.name == resultEnumName
     || imports.enums.any fun ed => ed.name == resultEnumName
@@ -1078,6 +1079,7 @@ partial def elabModule (m : Module) (summary : FileSummary)
   let builtinDestroyTrait : TraitDef := {
     name := destroyTraitName
     methods := [{ name := destroyMethodName, params := [], retTy := .unit, selfKind := some .ref }]
+    builtinId := some .destroy
   }
   let allTraits := builtinDestroyTrait :: m.traits
   -- All named fn sigs for fnRef
@@ -1195,7 +1197,7 @@ partial def elabModule (m : Module) (summary : FileSummary)
       { name := ed.name, typeParams := ed.typeParams,
         variants := ed.variants.map fun v =>
           (v.name, v.fields.map fun f => (f.name, f.ty)),
-        isPublic := ed.isPublic, isCopy := ed.isCopy : CEnumDef }
+        isPublic := ed.isPublic, isCopy := ed.isCopy, builtinId := ed.builtinId : CEnumDef }
     functions := fns
     externFns := cExterns
     constants := cConstants
@@ -1203,7 +1205,8 @@ partial def elabModule (m : Module) (summary : FileSummary)
     traitDefs := m.traits.map fun td =>
       { name := td.name,
         methods := td.methods.map fun sig =>
-          { name := sig.name, retTy := sig.retTy } : CTraitDef }
+          { name := sig.name, retTy := sig.retTy },
+        builtinId := td.builtinId : CTraitDef }
     traitImpls := m.traitImpls.map fun tb =>
       { traitName := tb.traitName,
         typeName := tb.typeName,

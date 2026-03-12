@@ -63,6 +63,7 @@ structure SFnDef where
   retTy : Ty
   blocks : List SBlock
   isTest : Bool := false
+  isEntryPoint : Bool := false
 
 structure SModule where
   name : String
