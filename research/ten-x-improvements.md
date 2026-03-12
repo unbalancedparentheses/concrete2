@@ -26,6 +26,58 @@ Concrete should avoid broadening itself in ten directions at once. The most valu
 
 ## Highest-Leverage Improvements
 
+### 0. A truly excellent compiler pipeline
+
+Concrete's compiler architecture is already pointed in the right direction. A real multiplier now is making the pipeline not merely "working" but unusually stable, inspectable, and proof-friendly.
+
+That means a pipeline with these properties:
+
+- semantic boundaries are explicit and hard to blur
+- mutable state lowering is stable under optimization, not accidentally backend-sensitive
+- backend emission consumes a verified contract instead of re-deciding language meaning
+- artifacts are inspectable and reusable by tooling, not just internal pass glue
+- ordinary language behavior is not keyed off raw names or incidental compiler tables
+
+The target is not just "bootstrap the language." The target is:
+
+- a compiler that is easy to reason about
+- a compiler that is hard to destabilize accidentally
+- a compiler whose artifacts can support proofs, reports, tooling, and future incremental work
+
+The highest-return pipeline work now is:
+
+1. **Stabilize loop lowering for mutable aggregates**
+   - stop transporting mutable aggregate loop state as whole values through aggregate `phi` nodes when stable storage identity is the real semantic model
+   - prefer storage/pointer identity over repeated aggregate writeback
+   - treat borrow+loop+aggregate fragility as a lowering architecture problem, not as an LLVM quirk to patch around
+
+2. **Finish shrinking string-based semantic logic**
+   - ordinary names should stay ordinary
+   - compiler-known behavior should ride on explicit intrinsic identities, language items, or other explicit boundaries
+   - raw string matching should remain only at true foreign/linker/reporting boundaries
+
+3. **Make SSA a stronger backend contract**
+   - Lower should produce one boring, explicit backend IR
+   - `SSAVerify` and cleanup should define and enforce the contract that all backends rely on
+   - backend work should become "consume the verified SSA contract," not "reinterpret the program again"
+
+4. **Replace raw LLVM text emission with a structured backend**
+   - this is the immediate backend architecture gain
+   - it removes a major source of brittleness
+   - it makes later backend plurality much less dangerous
+
+5. **Turn pipeline artifacts into first-class compiler products**
+   - summaries, resolved imports, checked/elaborated artifacts, monomorphized programs, and SSA programs should become reusable compiler facts
+   - that supports inspection, caching, tooling, and eventually more serious incremental workflows
+
+Why this is 10x:
+
+- it compounds every later improvement instead of competing with them
+- it makes proofs more realistic
+- it makes reports and tooling more valuable
+- it reduces backend fragility and "mystery compiler" behavior
+- it moves Concrete toward being a stable long-term compiler project, not just a successful bootstrap
+
 ### 1. Real formalization
 
 If Core semantics and lowering become genuinely proven, Concrete changes category.
@@ -116,6 +168,15 @@ Why this is 10x:
 - it reduces friction immediately
 - it makes codebases more uniform
 - it makes adoption and contribution easier
+
+The deeper version of this is compiler-artifact-driven tooling:
+
+- artifact/report inspection workflows
+- stable compiler outputs that editor tooling can consume
+- explicit import/module graph data
+- later, serialization and caching on top of those same artifacts
+
+Tooling gets much better when the compiler is already structured as a producer of durable facts instead of ephemeral pass-local state.
 
 ### 5. A clean hosted vs freestanding split
 
@@ -298,13 +359,15 @@ The right multiplier is not breadth. It is leverage.
 
 If Concrete wants the biggest step-function improvements, a plausible order is:
 
-1. keep strengthening the stdlib style and systems layer
-2. improve audit outputs further
-3. add formatter/tooling baseline
-4. push formalization much harder
-5. later, design hosted vs freestanding support
-6. later, deepen capability/sandboxing
-7. much later, do concurrency/runtime only if it can be done in a way that stays recognizably Concrete
+1. stabilize the compiler pipeline further: loop-lowering/storage identity, string-dispatch cleanup, stronger SSA/backend contracts
+2. replace textual LLVM emission with a structured backend
+3. improve audit outputs further
+4. add formatter/tooling baseline on top of explicit compiler artifacts
+5. keep strengthening the stdlib style and systems layer
+6. push formalization much harder
+7. later, design hosted vs freestanding support
+8. later, deepen capability/sandboxing
+9. much later, do concurrency/runtime only if it can be done in a way that stays recognizably Concrete
 
 ## Bottom Line
 
@@ -319,6 +382,7 @@ They are the things that make Concrete:
 
 That means the real 10x improvements are:
 
+- compiler-pipeline excellence
 - proofs
 - audit outputs
 - stdlib quality
