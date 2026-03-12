@@ -74,23 +74,9 @@ Still clearly not implemented:
 
 ### Now
 
-This list is ordered to match the active execution phases: Phase A is done enough, so active work now starts in Phase B, then Phase C, then the front edge of Phase D.
+Phases A and B are done.  Active work is now in Phase C, with opportunistic internal improvements (further string cleanup, proof groundwork) as they arise naturally.
 
-1. ~~Finish tightening the builtin-vs-stdlib boundary.~~ **done**
-   - Phase B has moved from "centralize string semantics" to "replace centralized string semantics with typed language-item identity."
-   - All semantic dispatch now rides on explicit identity types (`BuiltinTraitId`, `BuiltinEnumId`, `isEntryPoint` flag) or centralized constants in `Intrinsic.lean`. No compiler pass changes behavior based on an ordinary public name through raw string matching.
-   - Remaining string handling is structural (parser keywords, `Ty` type-name fields, method mangling, LLVM IR naming, linker symbols, diagnostics) — tolerated as implementation mechanics, not semantic dispatch.
-   - primary surfaces: [research/builtin-vs-stdlib.md](research/builtin-vs-stdlib.md), [Concrete/Intrinsic.lean](/Users/unbalancedparen/projects/concrete/Concrete/Intrinsic.lean), [Concrete/BuiltinSigs.lean](/Users/unbalancedparen/projects/concrete/Concrete/BuiltinSigs.lean)
-   - what landed:
-     - centralized all semantic names into `Intrinsic.lean` (d0b2f53, 4e557e0)
-     - separated semantic language items from compiler-reserved identifiers and mangling helpers
-     - added `BuiltinTraitId` (`.destroy`), `BuiltinEnumId` (`.result`, `.option`) enums
-     - added `isEntryPoint` flag on `FnDef`/`CFnDef`/`SFnDef`
-     - added `builtinId` on `TraitDef`/`CTraitDef`/`EnumDef`/`CEnumDef` and `builtinTraitId` on `CTraitImpl`
-     - migrated EmitSSA entry-point dispatch to `isEntryPoint` flag
-     - migrated CoreCheck Copy/Destroy conflict check to `builtinTraitId` on `CTraitImpl`
-     - remaining name-collision checks at validation boundaries (e.g., "did user redefine Destroy?") intentionally use string comparison — they detect collisions, not dispatch on identity
-2. Add an external LL(1) grammar checker as a standing syntax guardrail.
+1. Add an external LL(1) grammar checker as a standing syntax guardrail.
    - problem: the language claims LL(1) discipline, but parser regressions can still slip in without a dedicated grammar guardrail
    - why now: this is the first Phase C tool that protects the language shape without destabilizing semantics
    - primary surfaces: [research/external-ll1-checker.md](research/external-ll1-checker.md), `grammar/`, `scripts/`, CI config
@@ -191,42 +177,13 @@ Primary surfaces:
 Exit criterion:
 ordinary development no longer depends on a slow serial full-suite loop, and there are no known backend-sensitive failures in mutable aggregate lowering or aggregate merge transport, including optimized-build stress cases.
 
-#### Phase B: Semantic Cleanup
+#### Phase B: Semantic Cleanup — **done**
 
 Goal: shrink compiler magic and make language meaning explicit.
 
-Primary surfaces:
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
-- [research/builtin-vs-stdlib.md](research/builtin-vs-stdlib.md)
-- `Concrete/Intrinsic.lean`
-- `Concrete/BuiltinSigs.lean`
-- `Concrete/Check.lean`
-- `Concrete/Elab.lean`
-- `Concrete/CoreCheck.lean`
-- `Concrete/EmitSSA.lean`
+**Exit criterion met:** no compiler pass changes behavior based on an ordinary public name through raw string matching.  All semantic dispatch rides on explicit identity types (`BuiltinTraitId`, `BuiltinEnumId`, `IntrinsicId`, `isEntryPoint`) or centralized constants in `Intrinsic.lean`.  Structural string handling (parser keywords, `Ty` type-name fields, mangling, LLVM naming, diagnostics) remains as tolerated implementation mechanics — further cleanup is opportunistic, not a blocker.
 
-**The distinction that governs Phase B:**
-
-- **Forbidden:** semantic dispatch on ordinary public names — compiler behavior that changes because a function, type, trait, or variant happens to have a particular user-visible name.  This is the real architecture debt.  Every such case must be replaced by an explicit internal identity (`IntrinsicId`, a centralized constant, or a language item).
-- **Tolerated:** structural/compiler-internal string handling — parser keyword matching (`"repr"`, `"test"`, `"C"`), primitive type-name → `Ty` mapping (`tyFromName`), monomorphization name rewriting, method mangling (`TypeName_method`), LLVM IR naming, linker symbols, diagnostic/reporting strings.  These are implementation mechanics, not semantic magic.  They can be improved later for ergonomic or maintenance reasons but are not the same category of debt.
-
-**Completed:**
-
-1. ~~centralize string-based semantic dispatch into `Intrinsic.lean`~~ **done** (d0b2f53, 4e557e0)
-   - centralized builtin names: reserved fns, builtin types, Destroy trait/method, Result enum/variants, Option enum, Self type, main entry point, capability names, newtype field, sizeof suffix, HashMap str-key suffix, method mangling helper
-   - separated semantic language items from compiler-reserved identifiers and mangling/suffix helpers
-   - updated Check, CoreCheck, Elab, EmitSSA, Lower, Resolve, Shared, Report, Parser to reference centralized names
-2. ~~audit for any surviving semantic dispatch on ordinary public names~~ **done** — comprehensive audit found no surviving semantic dispatch; remaining string handling is structural
-3. ~~replace centralized string semantics with typed language-item identity~~ **done** (daef46a, this commit)
-   - added `BuiltinTraitId` (`.destroy`), `BuiltinEnumId` (`.result`, `.option`) identity enums
-   - added `builtinId` field on `TraitDef`, `CTraitDef`, `EnumDef`, `CEnumDef`
-   - added `builtinTraitId` field on `CTraitImpl` — resolved during elaboration from trait definition
-   - added `isEntryPoint` flag on `FnDef`, `CFnDef`, `SFnDef` — set during elaboration, flows through pipeline
-   - migrated EmitSSA entry-point dispatch from `mainFnName` string to `isEntryPoint` flag
-   - migrated CoreCheck Copy/Destroy conflict from `destroyTraitName` string to `builtinTraitId == some .destroy`
-   - name-collision checks at validation boundaries (e.g., "did user redefine Destroy?") intentionally remain string-based — they detect collisions, not dispatch on identity
-
-**Phase B is complete.** The exit criterion is met: no compiler pass changes behavior based on an ordinary public name through raw string matching. All semantic dispatch rides on explicit identity types or centralized constants. Structural string handling (parser keywords, `Ty` type-name fields, mangling, LLVM naming, diagnostics) remains as tolerated implementation mechanics.
+Key commits: d0b2f53, 4e557e0, daef46a, 40f1ce4.  See `Concrete/Intrinsic.lean` for the centralized identity definitions.
 
 #### Phase C: Tooling And Stdlib Hardening
 
@@ -446,6 +403,7 @@ Concrete is not only architecturally strong internally, but also operable, repro
    - let tooling consume the same compiler facts rather than growing parallel ad-hoc models
    - use explicit artifacts to enable better test reuse and narrower recompilation instead of keeping all fast paths inside shell orchestration
 6. Prepare for the eventual runtime, safety, language-discipline, package-ecosystem, and operational-maturity phases by keeping package/build/docs/runtime decisions explicit instead of accidental.
+7. Prepare for eventual Lean-side proof of selected Concrete functions by keeping Core semantics small, explicit, and suitable as the proof boundary.
 
 ### Later
 
@@ -461,6 +419,7 @@ Concrete is not only architecturally strong internally, but also operable, repro
    - structural boundedness reports first
    - abstract cost estimation later
    - never at the cost of clarity in the core language
+10. Lean-side proof of selected Concrete functions over formalized Core, starting with pure fragments rather than raw surface syntax or FFI-heavy code.
 
 ## Backend Work Order
 
