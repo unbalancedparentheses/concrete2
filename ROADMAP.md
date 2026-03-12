@@ -56,7 +56,10 @@ Still clearly not implemented:
 | **B** | Semantic cleanup | Active | D |
 | **C** | Tooling and stdlib hardening | Active | later system maturity |
 | **D** | Backend and trust multipliers | Pending | A, most of B |
-| **E** | Project and operational maturity | Deferred | C, D |
+| **E** | Runtime and execution model | Deferred | C, D |
+| **F** | Capability and safety productization | Deferred | D, E |
+| **G** | Language surface and feature discipline | Deferred | B, D, E, F |
+| **H** | Project and operational maturity | Deferred | C, D, E, F, G |
 
 ### Recent Progress
 
@@ -263,7 +266,77 @@ Primary surfaces:
 Exit criterion:
 backend work no longer feels fragile, and proofs, reports, and tooling all build on the same stable compiler boundaries.
 
-#### Phase E: Project And Operational Maturity
+#### Phase E: Runtime And Execution Model
+
+Goal: make the language's execution model explicit instead of leaving runtime behavior and environment assumptions as a loose later concern.
+
+Primary surfaces:
+- [docs/VALUE_MODEL.md](docs/VALUE_MODEL.md)
+- [docs/STDLIB.md](docs/STDLIB.md)
+- [research/no-std-freestanding.md](research/no-std-freestanding.md)
+- runtime-facing stdlib and FFI boundaries
+
+1. define the hosted vs freestanding model more explicitly
+   - decide what the language assumes from the OS, libc, allocator, and startup environment
+2. make the runtime boundary explicit
+   - allocator expectations
+   - program startup / shutdown model
+   - panic / abort / failure model
+3. define the concurrency and execution story deliberately
+   - decide whether threads, async, processes, or none of them are first-class language/runtime concerns
+4. tighten the FFI/runtime ownership boundary
+   - make it clearer what ownership, destruction, and capability assumptions survive foreign boundaries
+5. make runtime-related stdlib surfaces reflect the chosen execution model instead of growing opportunistically
+
+Exit criterion:
+Concrete has an explicit execution model that explains how programs start, allocate, fail, interact with the host, and cross runtime/FFI boundaries.
+
+#### Phase F: Capability And Safety Productization
+
+Goal: turn capability and trust features into a strong user-facing safety system, not just an internal language property.
+
+Primary surfaces:
+- [docs/DIAGNOSTICS.md](docs/DIAGNOSTICS.md)
+- [Concrete/Report.lean](/Users/unbalancedparen/projects/concrete/Concrete/Report.lean)
+- [research/capability-sandboxing.md](research/capability-sandboxing.md)
+- [research/unsafe-structure.md](research/unsafe-structure.md)
+
+1. improve capability and trust ergonomics
+   - make capability requirements easier to understand, introduce, and audit
+2. deepen capability/trust reporting
+   - stronger "why" traces
+   - clearer authority flow
+   - better `trusted` / `Unsafe` visibility
+3. add stronger patterns for explicit authority wrappers and capability aliases
+4. make safety features easier to use correctly in ordinary programs without weakening honesty
+5. ensure docs, diagnostics, and reports present one coherent safety story
+
+Exit criterion:
+Concrete's capability and trust model is not only sound in principle, but also understandable, auditable, and practical for users.
+
+#### Phase G: Language Surface And Feature Discipline
+
+Goal: keep the language small, coherent, and intentionally shaped instead of letting features accumulate opportunistically.
+
+Primary surfaces:
+- [research/design-filters.md](research/design-filters.md)
+- grammar docs and language references
+- language-design research notes
+
+1. define explicit feature-admission criteria
+   - grammar cost
+   - audit cost
+   - proof cost
+   - implementation complexity
+2. make "no" and "not yet" decisions first-class language outcomes
+3. revisit syntax and surface complexity with a bias toward simplification, not expansion
+4. keep unsafe/trusted/foreign surface area as narrow as possible
+5. make long-term language shape decisions explicit instead of letting them emerge from local convenience
+
+Exit criterion:
+Concrete has an explicit discipline for preserving a small, coherent language surface and resisting low-leverage feature growth.
+
+#### Phase H: Project And Operational Maturity
 
 Goal: turn Concrete from a strong compiler project into a durable, distributable, maintainable system.
 
@@ -299,7 +372,10 @@ Concrete is not only architecturally strong internally, but also operable, repro
 - **Phase B** matters because a compiler is much easier to trust, prove, and maintain when ordinary names stay ordinary.
 - **Phase C** matters because syntax guardrails, diagnostics, and testing infrastructure are what make a compiler sustainable instead of heroic.
 - **Phase D** matters because this is where Concrete stops being only a working compiler and becomes a trustworthy compiler platform.
-- **Phase E** matters because long-term projects fail just as easily from weak operational discipline as from weak compiler architecture.
+- **Phase E** matters because a language is not really settled until its execution model is explicit.
+- **Phase F** matters because Concrete's safety model should be a user-visible strength, not only an internal design claim.
+- **Phase G** matters because languages decay when feature growth has no explicit discipline.
+- **Phase H** matters because long-term projects fail just as easily from weak operational discipline as from weak compiler architecture.
 
 ### Next
 
@@ -317,19 +393,21 @@ Concrete is not only architecturally strong internally, but also operable, repro
    - move toward serialization/caching only on top of already boring pass contracts
    - let tooling consume the same compiler facts rather than growing parallel ad-hoc models
    - use explicit artifacts to enable better test reuse and narrower recompilation instead of keeping all fast paths inside shell orchestration
-6. Prepare for the eventual project/operational maturity phase by keeping package/build/docs decisions explicit instead of accidental.
+6. Prepare for the eventual runtime, safety, language-discipline, and operational-maturity phases by keeping package/build/docs/runtime decisions explicit instead of accidental.
 
 ### Later
 
 1. Backend plurality over SSA, but only after the current backend becomes structurally cleaner first.
-2. Runtime maturity and eventual self-hosting pressure.
-3. Proof-driven narrowing of future feature additions.
-4. A clearer hosted vs freestanding / `no_std` split, but only after the runtime and stdlib boundaries are more stable.
-5. Execution-cost analysis as an audit/report extension.
+2. Runtime and execution-model maturity as an explicit phase once the compiler/tooling architecture is stable enough to support it well.
+3. Capability and safety productization as an explicit phase after the backend/trust foundations are strong enough.
+4. Language-surface and feature-discipline work as an explicit phase once the runtime/safety direction is clear.
+5. Project and operational maturity as an explicit phase once the current compiler/tooling architecture is stable enough to productize.
+6. Proof-driven narrowing of future feature additions.
+7. A clearer hosted vs freestanding / `no_std` split, but only after the runtime and stdlib boundaries are more stable.
+8. Execution-cost analysis as an audit/report extension.
    - structural boundedness reports first
    - abstract cost estimation later
    - never at the cost of clarity in the core language
-6. Project and operational maturity as an explicit phase once the current compiler/tooling architecture is stable enough to productize.
 
 ## Backend Work Order
 
