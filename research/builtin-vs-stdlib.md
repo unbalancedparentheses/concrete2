@@ -76,6 +76,24 @@ That is why stdlib API cleanup matters:
 - the builtin layer can stay implementation-shaped
 - the stdlib should not feel like raw compiler internals leaking through
 
+## Stringly semantic dispatch is technical debt
+
+The compiler should not attach semantic meaning to ordinary user-visible names by raw string matching.
+
+Good:
+
+- an internal intrinsic identity such as `IntrinsicId`
+- ordinary name resolution first
+- intrinsic-backed lowering only after resolution
+- string names used only at true foreign-symbol boundaries
+
+Bad:
+
+- special-case semantic behavior keyed directly off names like `abs`, `print_string`, or similar user-visible functions
+- compiler tables whose meaning depends on ordinary stdlib names remaining frozen forever
+
+The remaining builtin cleanup is therefore not "add more intrinsics." It is shrinking the last string-based semantic dispatch so the language surface stays honest and ordinary names stay ordinary.
+
 ## Design Rules
 
 ### 1. Keep the builtin layer small

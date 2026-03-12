@@ -155,6 +155,8 @@ This is also one of the clearest security multipliers available to Concrete:
 - clearer sandbox boundaries
 - fewer “safe-looking but globally powerful” APIs
 
+Part of that improvement is shrinking string-based semantic logic in the compiler itself. A language is easier to audit when ordinary names stay ordinary and special behavior is carried by explicit identities and boundaries instead of raw string matching.
+
 See [capability-sandboxing.md](capability-sandboxing.md).
 
 Closely related:

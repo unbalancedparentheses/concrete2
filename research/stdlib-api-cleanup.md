@@ -43,6 +43,8 @@ The stdlib should present:
 - explicit effects
 - low-level honesty without builtin leakage
 
+Builtin-shaped names in the public stdlib are therefore a useful smell: they usually mean compiler/runtime vocabulary is leaking through a layer that is supposed to be coherent and user-facing.
+
 In other words:
 
 - the compiler/runtime may have ugly or specialized internal names

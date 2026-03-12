@@ -150,6 +150,8 @@ These should be tested as interfaces in their own right:
 - stable/expected output shape
 - bad flag combinations handled cleanly
 
+Where report output is tested, prefer stable semantic assertions over brittle raw string snapshots. Good report tests should fail because reported meaning changed, not because harmless formatting moved a line break or heading.
+
 ## Strong Next Additions
 
 If testing grows in phases, the best next layers are:

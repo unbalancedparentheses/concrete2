@@ -88,6 +88,8 @@ Concrete also has golden or inspection-oriented coverage around internal outputs
 
 These are useful for locking down architecture behavior even when user-visible output would not show a regression immediately.
 
+Where report output is tested, prefer stable semantic assertions (sections, facts, counts, or field/value relationships) over brittle raw string snapshots whenever possible.
+
 ## Recommended Verification Flow
 
 For normal compiler work:

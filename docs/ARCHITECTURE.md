@@ -28,6 +28,8 @@ Recent architecture-level cleanups worth calling out:
 - `trusted fn`, `trusted impl`, and `trusted extern fn` now flow through the normal parser -> Core -> SSA pipeline
 - the first planned testing-strategy expansion is complete: parser fuzzing, property tests, trace tests, report consistency tests, and selected differential tests now exercise the pipeline more directly
 
+One important remaining cleanup in this area is removing the last string-based semantic dispatch from compiler tables and special-case paths. Ordinary language behavior should not depend on raw function-name matching outside true foreign-symbol boundaries.
+
 ## Artifact Flow
 
 The current artifact boundary is explicit in code via `Concrete/Pipeline.lean`:
