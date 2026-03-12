@@ -14,6 +14,12 @@ Concrete is not trying to win by having the most features. Its intended strength
 Concrete should be strongest where many systems languages are not explicitly centered: auditability, explicit authority/trust boundaries, and proof-friendly compiler structure.
 </div>
 
+## Why Concrete Exists
+
+Concrete was created to close a gap between low-level programming and mechanized reasoning.
+
+It is trying to make systems code explicit enough that you can answer concrete questions about it: what authority it uses, where it allocates, where it cleans up, where trust boundaries are crossed, and what the compiler actually means by the program.
+
 ## What Makes It Different
 
 <div class="feature-grid">
@@ -35,6 +41,15 @@ Concrete should be strongest where many systems languages are not explicitly cen
   </div>
 </div>
 
+## Two Lean Goals
+
+Concrete's proof direction has two layers:
+
+- prove properties of the language/compiler in Lean
+- eventually prove properties of selected Concrete programs in Lean through formalized Core semantics
+
+Those are different goals. Compiler proofs give trust in the language rules and pipeline. Program proofs give trust in specific user code.
+
 ## What Concrete Is Not Trying To Be
 
 Concrete is not primarily trying to out-compete:
@@ -45,6 +60,8 @@ Concrete is not primarily trying to out-compete:
 - other systems languages on feature count for its own sake
 
 The goal is a language that is unusually explicit, inspectable, and honest.
+
+Compared to Lean, Concrete is a low-level programming language first, not a proof assistant. Compared to mainstream systems languages, it is more explicitly centered on auditability and trust boundaries. Compared to verification-first languages, it is trying to keep FFI, layout, ownership, and low-level runtime concerns first-class.
 
 ## Start Here
 

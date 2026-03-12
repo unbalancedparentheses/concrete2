@@ -21,9 +21,43 @@ Concrete's intended differentiator is not "more features". It is **auditable low
 
 The compiler is written in [Lean 4](https://leanprover.github.io/lean4/doc/setup.html), a theorem prover. The goal is a language whose core type system is mechanically verified: proofs of progress, preservation, linearity soundness, and effect soundness, checked by Lean itself.
 
+Concrete is also being shaped so that this proof story does not stop at the compiler. The long-term goal is not only to formalize the language/compiler in Lean, but also to make selected Concrete programs provable in Lean through explicit Core semantics.
+
 **No other language combines all four: linear types, a capability-based effect system, a compiler written in a theorem prover, and a design optimized for machine-generated code.**
 
 In practical terms, Concrete is trying to give low-level programmers something unusual: the control and auditability of systems programming, but with much stronger guarantees about resources, effects, and compiler meaning.
+
+## Why Concrete Exists
+
+Concrete was created to close a gap between low-level programming and mechanized reasoning.
+
+Systems languages usually optimize for control, performance, and interoperability. Proof systems usually optimize for expressing and checking mathematical claims. Concrete is trying to meet in the middle: a low-level language where authority, resources, cleanup, trust boundaries, and compiler meaning stay explicit enough to inspect, audit, and eventually prove.
+
+In one sentence: Concrete exists to make low-level programming explicit enough to audit, honest enough to trust, and structured enough to eventually prove.
+
+## Two Lean Goals
+
+Concrete's Lean story has two different goals.
+
+1. **Prove the language/compiler in Lean.**
+   This means proving properties about the language definition and compiler pipeline itself: soundness, ownership/resource rules, effect/capability discipline, and preservation across internal compiler boundaries.
+2. **Prove selected Concrete programs in Lean.**
+   This means proving properties about particular user functions written in Concrete, through formalized Core semantics. The question is no longer "is the compiler coherent?" but "does this function satisfy its specification?"
+
+The difference matters:
+
+- compiler/language proofs give **language trust**
+- program proofs give **program trust**
+
+Concrete is aiming for both, in that order. See [docs/IDENTITY.md](docs/IDENTITY.md) for the project identity and [research/proving-concrete-functions-in-lean.md](research/proving-concrete-functions-in-lean.md) for the longer proof direction.
+
+## What Makes Concrete Different
+
+Compared to Lean itself, Concrete is a low-level programming language first, not a proof assistant. The point is not to replace Lean. The point is to write real systems code in a language whose semantics stay close enough to formal reasoning that Lean can still talk about it.
+
+Compared to Rust, C, Zig, Odin, and similar systems languages, Concrete is more explicitly centered on auditability, explicit authority/trust boundaries, and a compiler architecture shaped for formal reasoning. It does not need to out-compete those languages on every feature, ecosystem, or toolchain axis to be valuable.
+
+Compared to verification-first languages and tools, Concrete is trying to remain a real low-level systems language with explicit FFI, layout, ownership, trust, and runtime concerns, while still keeping a credible path to proving selected programs.
 
 For the full language specification, see [The Concrete Programming Language: Systems Programming for Formal Reasoning](https://federicocarrone.com/series/concrete/the-concrete-programming-language-systems-programming-for-formal-reasoning/).
 

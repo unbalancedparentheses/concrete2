@@ -10,6 +10,14 @@ Concrete is a low-level language optimized for auditability, explicit trust, and
 
 It is not trying to win by having the largest feature set, the most metaprogramming, or the broadest ecosystem first. Its intended advantage is that important low-level properties stay explicit enough to inspect, report, audit, and eventually prove.
 
+## Why Concrete Exists
+
+Concrete was created to close a gap between systems programming and mechanized reasoning.
+
+Most systems languages optimize for control, performance, and interoperability, but leave many important questions hard to answer mechanically: where authority enters, where resources are allocated and destroyed, where trust boundaries are crossed, and what the compiler really means by a program. Proof assistants make those questions tractable, but they are not the same thing as an everyday low-level systems language.
+
+Concrete is trying to bridge that gap. The project exists to make low-level programming explicit enough to audit, honest enough to trust, and structured enough to eventually prove.
+
 ## Core Differentiators
 
 ### 1. Auditability As A First-Class Goal
@@ -60,6 +68,18 @@ Concrete's compiler is being shaped around:
 
 This is meant to make the language unusually compatible with mechanized trust claims rather than treating proof work as an afterthought.
 
+Concrete's long-term proof story has two layers:
+
+- proving properties of the language/compiler in Lean
+- eventually proving properties of selected Concrete programs in Lean through formalized Core semantics
+
+The difference matters:
+
+- proving the language/compiler gives trust in the language rules and compiler pipeline
+- proving selected Concrete programs gives trust in specific pieces of user code
+
+That second goal is important because it turns proof-friendliness from a compiler implementation detail into a real language differentiator.
+
 ### 5. Resource / Safety Honesty Without A Giant Surface
 
 Concrete is aiming for a strong ownership/capability/trust story without requiring the language to become maximally large or magical.
@@ -84,6 +104,12 @@ Concrete should instead be strongest where those languages are not explicitly ce
 - proof-friendly compiler structure
 - a smaller and more honest semantic surface
 
+Compared to Lean, Concrete is not trying to be a proof assistant. It is trying to be a real low-level programming language that still keeps a credible Lean proof story.
+
+Compared to mainstream systems languages, Concrete's intended difference is not "more features". It is unusually explicit authority, trust, resource, and compiler-meaning boundaries.
+
+Compared to verification-first languages, Concrete is trying to keep low-level runtime, FFI, layout, and ownership concerns first-class instead of treating them as secondary escape hatches.
+
 For a fuller comparison of what other languages may still have even after Concrete's planned phases, see [../research/competitive-gap-analysis.md](../research/competitive-gap-analysis.md).
 
 ## Non-Goals
@@ -107,3 +133,14 @@ To justify its identity, Concrete should eventually be able to show users:
 - where allocation and destruction happen
 
 If Concrete cannot show these things clearly, it is not yet delivering its intended differentiator.
+
+## Why The Proof Direction Is Useful
+
+This direction is useful because it lets Concrete justify a stronger claim than "the compiler seems well-designed."
+
+It means:
+
+- the language and compiler can be reasoned about in Lean
+- selected Concrete programs can eventually be reasoned about in Lean too
+
+That matters because it validates the language design, validates the compiler architecture choices around Core and SSA, creates a real differentiator for security- and audit-sensitive code, and helps keep future language growth disciplined.
