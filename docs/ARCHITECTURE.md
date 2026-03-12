@@ -27,6 +27,7 @@ Recent architecture-level cleanups worth calling out:
 - compiler-known operations are being identified by internal intrinsic IDs instead of raw string matching
 - `trusted fn`, `trusted impl`, and `trusted extern fn` now flow through the normal parser -> Core -> SSA pipeline
 - the first planned testing-strategy expansion is complete: parser fuzzing, property tests, trace tests, report consistency tests, and selected differential tests now exercise the pipeline more directly
+- stdlib `#[test]` execution now runs through the real compiler path via `concrete std/src/lib.con --test`, and recent parser/lowering/codegen fixes were driven by making that path actually execute the stdlib test corpus
 
 One important remaining cleanup in this area is removing the last string-based semantic dispatch from compiler tables and special-case paths. Ordinary language behavior should not depend on raw function-name matching outside true foreign-symbol boundaries.
 

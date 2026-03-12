@@ -48,18 +48,20 @@ What Concrete has today:
 - explicit `trusted fn` / `trusted impl` boundaries for internal pointer-level implementation unsafety
 - a coherent trust/effect model across builtins, stdlib, and user code
 - a first real stdlib foundation: stronger `vec`, `string`, `io`, plus `bytes`, `slice`, `text`, `path`, `fs`, `env`, `process`, `net`, `fmt`, `hash`, `rand`, `time`, and `parse`
+- foundational collections beyond `Vec`: `HashMap`, `HashSet`, `Deque`, `BinaryHeap`, `OrderedMap`, `OrderedSet`, and `BitSet`
 - stdlib systems-layer hardening: typed errors across `fs`/`net`/`process`/`io`, checked/unchecked splits in `bytes`, `Option`-returning accessors in `env`
 - stdlib deepening: `fmt` (integer/hex/bin/oct/bool formatting, padding), `hash` (FNV-1a), `rand` (deterministic seeding, bounded range), `time` (monotonic clock, sleep, unix timestamp), and `parse` (value parsing plus `Cursor`)
 - stdlib uniformity: generic `Result<T, ModuleError>` across all modules, `parse` module (inverse of `fmt`), checked accessors on `String` and `Vec`
-- built-in test runner: `concrete file.con --test` compiles and runs all `#[test]` functions
+- built-in test runner: `concrete file.con --test` compiles and runs all `#[test]` functions, including stdlib module tests via `concrete std/src/lib.con --test`
 
 What is still clearly missing:
 
 - `transmute`
-- MLIR backend
+- structured non-string LLVM backend
+- backend plurality over SSA (for example MLIR / C / Wasm)
 - kernel formalization
 - runtime
-- stdlib deepening: deeper collections (iterators, ordered maps)
+- stdlib deepening: stronger systems ergonomics, API cleanup, and later iterator/collection polish
 
 ## Try It Now
 
@@ -297,7 +299,7 @@ The goal is not to out-feature those languages. The goal is to be unusually good
 
 ## Current Status
 
-The compiler implements the core surface language and the full internal IR pipeline in Lean 4. All 483 tests pass (372 compiler tests + 111 stdlib module tests), and the SSA-specific suite passes as well.
+The compiler implements the core surface language and the full internal IR pipeline in Lean 4. All 488 tests pass in the main suite, and the SSA-specific suite passes as well.
 
 ## Known Rough Edges
 
@@ -457,7 +459,7 @@ See [docs/README.md](docs/README.md) for the stable documentation index and [res
 | **8** | Standard library builtins (strings, I/O, conversions, env) | Done |
 | **9** | Bitwise operators + hex/bin/oct literals | Done |
 | **10** | `Self` keyword + multi-file modules | Done |
-| **11** | MLIR backend + optimization | Not started |
+| **11** | Structured LLVM backend + backend plurality over SSA | Not started |
 | **12** | Kernel formalization + proofs | Not started |
 | **13** | Tooling | Not started |
 | **14** | Runtime (C, then Concrete) | Not started |
@@ -528,7 +530,7 @@ Concrete's frontend is currently a staged whole-program pipeline, and the summar
 Target pipeline:
 
 ```
-Surface AST → Resolve → Elaborate → CoreCanonicalize → CoreCheck → Monomorphize → Lower → SSAVerify → SSACleanup → SSA Codegen → LLVM/MLIR backend → binary
+Surface AST → Resolve → Elaborate → CoreCanonicalize → CoreCheck → Monomorphize → Lower → SSAVerify → SSACleanup → SSA Codegen → structured LLVM backend → binary
 ```
 
 ## Building
@@ -537,7 +539,7 @@ Requires [Lean 4](https://leanprover.github.io/lean4/doc/setup.html) (v4.28.0+) 
 
 ```bash
 make build    # or: lake build
-make test     # runs all 483 tests
+make test     # runs all 488 tests
 make clean    # or: lake clean
 ```
 

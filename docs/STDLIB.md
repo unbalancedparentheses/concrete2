@@ -413,6 +413,8 @@ The goal is a stdlib that is:
 
 The current state is no longer just a plan. A first useful low-level foundation is in place, including the systems layer (`env`, `process`, `net`), with typed error surfaces across the modules that touch the OS. The stdlib deepening arc has added `fmt`, `hash`, `rand`, `time`, and `parse`, and unified error handling with generic `Result<T, ModuleError>` across all modules. Systems modules have been deepened with helper functions (`fs`: `append_file`, `file_exists`, `read_to_string`; `net`: `write_all`, `read_all`; `process`: `spawn`, signal constants).
 
+Module-local stdlib `#[test]` coverage is now exercised through the real compiler path via `concrete std/src/lib.con --test`, and recent parser/lowering/codegen fixes were driven directly by making that path execute the stdlib corpus cleanly.
+
 The next arc is not “add lots more modules.” It is:
 
 - cleaner public API names and ownership behavior

@@ -10,6 +10,17 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Stdlib test-runner activation and compiler fixes
+
+- The stdlib test corpus now runs through the real compiler path via `concrete std/src/lib.con --test`, so module-local `#[test]` coverage in `std/src` is active CI protection instead of latent coverage.
+- Fixed parser precedence around unary `*` / `&` with postfix field access so expressions like `*self.data` and `&self.field` bind correctly.
+- Fixed lowering/codegen issues exposed by stdlib execution:
+  - built-in `String` field access now lowers through a synthetic `String` struct definition so field offsets are computed correctly
+  - `&mut` field method chains now write back into the parent struct instead of mutating a temporary copy
+  - reference/pointer-typed values are no longer incorrectly spilled to allocas by `ensurePtr`
+  - `char` / `bool` integer casts now use the proper integer-extension path instead of the old alloca/store/load fallback
+- This brought the project to 488 passing tests in the main suite, including active stdlib-module coverage.
+
 ### Stdlib API cleanup and new collections
 
 - Unified get/set convention across `String`, `Vec`, `Bytes`:

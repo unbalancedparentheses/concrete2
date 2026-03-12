@@ -8,7 +8,7 @@ Concrete should stay small enough to remain readable, auditable, and mechanicall
 
 ## Current State
 
-The Lean 4 compiler implements the core surface language plus the full internal IR pipeline: Core IR, elaboration, Core validation, monomorphization, SSA lowering, SSA verification/cleanup, and SSA codegen. The main suite currently has 483 passing tests (372 compiler tests + 111 stdlib module tests, including codegen differential coverage across `--emit-ssa`, `--emit-llvm`, and `--emit-core`), and the SSA-specific suite also passes.
+The Lean 4 compiler implements the core surface language plus the full internal IR pipeline: Core IR, elaboration, Core validation, monomorphization, SSA lowering, SSA verification/cleanup, and SSA codegen. The main suite currently has 488 passing tests, including codegen differential coverage across `--emit-ssa`, `--emit-llvm`, and `--emit-core`, and the SSA-specific suite also passes.
 
 The project also now has:
 
@@ -41,7 +41,7 @@ Recently completed:
 - builtins, stdlib, and user code migrated to one explicit trust/effect model with trusted boundaries and honest capability annotations
 - fixed lowering bugs exposed by the trusted-extern migration: string constant naming collision across functions, and SSA variable scoping errors (then-branch leakage into else-branch, loop-body leakage past while-loop exits)
 - first testing strategy expansion: parser fuzzing, fmt/parse property tests, Vec/HashMap trace tests
-- testing strategy expansion completed: codegen differential tests (16 assertions across `--emit-ssa`, `--emit-llvm`, `--emit-core`), report consistency tests, stdlib test runner (`concrete std/src/lib.con --test`), 483 passing tests total
+- testing strategy expansion completed: codegen differential tests (16 assertions across `--emit-ssa`, `--emit-llvm`, `--emit-core`), report consistency tests, stdlib test runner (`concrete std/src/lib.con --test`), 488 passing tests total
 - stdlib API cleanup: unified get/set convention (checked returns Option, unchecked is raw), fixed io.con print semantics, converted Text and Slice to impl methods, Vec::pop now returns Option<T>
 - new collections: Deque (ring buffer), BinaryHeap (priority queue with fn pointer cmp), OrderedMap/OrderedSet (sorted array + binary search), BitSet (u64-word-backed with union/intersect)
 
