@@ -121,7 +121,7 @@ partial def parseType : ParseM Ty := do
       expect .rparen
       -- Expand Std
       let expanded := caps.flatMap fun c =>
-        if c == "Std" then stdCaps else [c]
+        if c == stdCapMacroName then stdCaps else [c]
       pure (CapSet.concrete expanded)
     else
       pure CapSet.empty
@@ -369,7 +369,7 @@ partial def parseWithCaps : ParseM CapSet := do
     expect .rparen
     -- Expand "Std" to the full set
     let expanded := caps.flatMap fun c =>
-      if c == "Std" then stdCaps else [c]
+      if c == stdCapMacroName then stdCaps else [c]
     return .concrete expanded
   else
     return .empty

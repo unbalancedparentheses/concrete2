@@ -1261,7 +1261,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       return retTy
     | none =>
       -- sizeof intrinsic
-      if intrinsic == some .sizeof || fnName.endsWith "_sizeof" then return .uint
+      if intrinsic == some .sizeof || fnName.endsWith sizeofSuffix then return .uint
       else throwCheck (.undeclaredFunction fnName) (some e.getSpan)
   | .paren _ inner => checkExpr inner hint
   | .structLit _ name typeArgs fields =>
@@ -1313,7 +1313,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       -- Check for newtype .0 unwrap
       match ← lookupNewtype structName with
       | some nt =>
-        if field == "0" then
+        if field == newtypeFieldName then
           -- Consume the newtype variable if linear
           match obj with
           | .ident _ varName => consumeVarIfExists varName (some e.getSpan)
@@ -1515,8 +1515,8 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
     else
       match ← lookupEnum enumName with
       | some ed =>
-        let okVariant := ed.variants.find? fun v => v.name == "Ok"
-        let errVariant := ed.variants.find? fun v => v.name == "Err"
+        let okVariant := ed.variants.find? fun v => v.name == okVariantName
+        let errVariant := ed.variants.find? fun v => v.name == errVariantName
         match okVariant, errVariant with
         | some ok, some _ =>
           -- Function must return the same Result type

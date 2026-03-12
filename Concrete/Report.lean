@@ -2,6 +2,7 @@ import Concrete.Core
 import Concrete.Layout
 import Concrete.FileSummary
 import Concrete.AST
+import Concrete.Intrinsic
 
 namespace Concrete
 namespace Report
@@ -58,7 +59,7 @@ def capabilityReport (modules : List CModule) : String :=
 -- ============================================================
 
 private def hasUnsafeCap (cs : CapSet) : Bool :=
-  cs.concreteCaps.contains "Unsafe"
+  cs.concreteCaps.contains unsafeCapName
 
 private def usesRawPtr : Ty → Bool
   | .ptrMut _ | .ptrConst _ => true

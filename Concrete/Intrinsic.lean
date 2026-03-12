@@ -161,27 +161,66 @@ def IntrinsicId.capability : IntrinsicId → Option String
 -- Centralized builtin name tables
 -- ============================================================
 -- These are the single source of truth for names that carry
--- compiler-known semantics. Downstream passes should reference
--- these lists instead of maintaining their own hardcoded copies.
+-- compiler-known semantics.  Downstream passes should reference
+-- these definitions instead of maintaining their own hardcoded copies.
+--
+-- Organisation:
+--   1. Semantic language items — names that define language behaviour
+--      (traits, variants, type keywords, entry point).
+--   2. Compiler-reserved identifiers — names users cannot redefine
+--      but whose identity is an implementation detail.
+--   3. Mangling / suffix helpers — deterministic name construction
+--      used by elaboration and lowering.
+--   4. Convenience predicates.
+
+-- ============================================================
+-- 1. Semantic language items
+-- ============================================================
+
+/-- The `Self` pseudo-type name used inside impl blocks. -/
+def selfTypeName : String := "Self"
+
+/-- The name of the builtin Destroy trait. -/
+def destroyTraitName : String := "Destroy"
+
+/-- The name of the destroy method inside the Destroy trait. -/
+def destroyMethodName : String := "destroy"
+
+/-- The name of the builtin Result enum. -/
+def resultEnumName : String := "Result"
+
+/-- Variant name for the success case of Result. -/
+def okVariantName : String := "Ok"
+
+/-- Variant name for the failure case of Result. -/
+def errVariantName : String := "Err"
+
+/-- The user-level entry point function name. -/
+def mainFnName : String := "main"
+
+/-- The `Unsafe` capability name. -/
+def unsafeCapName : String := "Unsafe"
+
+/-- The `Std` capability macro name (expands to all safe caps). -/
+def stdCapMacroName : String := "Std"
+
+/-- Newtype positional field name (`.0`). -/
+def newtypeFieldName : String := "0"
+
+-- ============================================================
+-- 2. Compiler-reserved identifiers
+-- ============================================================
 
 /-- Function names reserved by the compiler.
     User code cannot define functions with these names. -/
 def reservedFnNames : List String :=
   ["destroy", "abort", "alloc", "free", "alloc_array", "free_array", "realloc_array"]
 
-/-- Check if a function name is reserved by the compiler. -/
-def isReservedFnName (name : String) : Bool :=
-  reservedFnNames.contains name
-
 /-- Builtin function names that need special resolve treatment but
     are NOT in `resolveIntrinsic`.  These are compiler-emitted helpers
     or legacy names that user code may call but not redefine. -/
 def extraBuiltinFnNames : List String :=
   ["print", "println", "to_string", "deref", "deref_mut", "add"]
-
-/-- Check if a name is any known builtin (intrinsic or extra). -/
-def isKnownBuiltinFn (name : String) : Bool :=
-  isIntrinsic name || extraBuiltinFnNames.contains name
 
 /-- Built-in type names known to the compiler.
     These are always in scope without an explicit import. -/
@@ -190,23 +229,34 @@ def builtinTypeNames : List String :=
     "i8", "i16", "i32", "u8", "u16", "u32",
     "Heap", "HeapArray", "Vec", "HashMap", "Option", "Result" ]
 
-/-- The name of the builtin Destroy trait. -/
-def destroyTraitName : String := "Destroy"
-
-/-- The name of the builtin Result enum. -/
-def resultEnumName : String := "Result"
-
-/-- The `Self` pseudo-type name used inside impl blocks. -/
-def selfTypeName : String := "Self"
-
-/-- The name of the destroy method inside the Destroy trait. -/
-def destroyMethodName : String := "destroy"
+-- ============================================================
+-- 3. Mangling / suffix helpers
+-- ============================================================
 
 /-- Build the mangled destroy function name for a type (e.g. "Point_destroy"). -/
 def destroyFnNameFor (typeName : String) : String :=
   typeName ++ "_" ++ destroyMethodName
 
-/-- The user-level entry point function name. -/
-def mainFnName : String := "main"
+/-- Build a mangled method name: `TypeName_method`. -/
+def mangledMethodName (typeName : String) (method : String) : String :=
+  typeName ++ "_" ++ method
+
+/-- Suffix appended to HashMap runtime functions when the key type is String. -/
+def hashMapStrKeySuffix : String := "_str"
+
+/-- Suffix for compiler-generated sizeof functions. -/
+def sizeofSuffix : String := "_sizeof"
+
+-- ============================================================
+-- 4. Convenience predicates
+-- ============================================================
+
+/-- Check if a function name is reserved by the compiler. -/
+def isReservedFnName (name : String) : Bool :=
+  reservedFnNames.contains name
+
+/-- Check if a name is any known builtin (intrinsic or extra). -/
+def isKnownBuiltinFn (name : String) : Bool :=
+  isIntrinsic name || extraBuiltinFnNames.contains name
 
 end Concrete

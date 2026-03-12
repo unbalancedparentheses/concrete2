@@ -1,4 +1,5 @@
 import Concrete.AST
+import Concrete.Intrinsic
 
 namespace Concrete
 
@@ -83,7 +84,7 @@ def tyName : Ty → String
 /-- Replace every occurrence of `.named "Self"` with `replacement` inside a Ty. -/
 partial def substSelf (ty : Ty) (replacement : Ty) : Ty :=
   match ty with
-  | .named "Self" => replacement
+  | .named n => if n == selfTypeName then replacement else .named n
   | .ref t => .ref (substSelf t replacement)
   | .refMut t => .refMut (substSelf t replacement)
   | .ptrMut t => .ptrMut (substSelf t replacement)

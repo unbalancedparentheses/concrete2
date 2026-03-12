@@ -59,7 +59,8 @@ Still clearly not implemented:
 | **E** | Runtime and execution model | Deferred | C, D |
 | **F** | Capability and safety productization | Deferred | D, E |
 | **G** | Language surface and feature discipline | Deferred | B, D, E, F |
-| **H** | Project and operational maturity | Deferred | C, D, E, F, G |
+| **H** | Package and dependency ecosystem | Deferred | C, E, G |
+| **I** | Project and operational maturity | Deferred | C, D, E, F, G, H |
 
 ### Recent Progress
 
@@ -204,10 +205,15 @@ Primary surfaces:
 - `Concrete/CoreCheck.lean`
 - `Concrete/EmitSSA.lean`
 
-1. remove remaining string-based semantic dispatch
-2. make compiler-known behavior ride on explicit identities or language items
-3. keep raw string matching confined to foreign/linker/reporting boundaries
-4. finish builtin-vs-stdlib boundary cleanup
+1. ~~centralize string-based semantic dispatch into `Intrinsic.lean`~~ **done** (d0b2f53, this commit)
+   - centralized builtin names: reserved fns, builtin types, Destroy trait/method, Result enum/variants, Self type, main entry point, capability names, newtype field, sizeof suffix, HashMap str-key suffix, method mangling helper
+   - separated semantic language items (Self, Destroy, Result, Ok/Err, main, Unsafe, Std) from compiler-reserved identifiers (alloc, free, etc.) and mangling/suffix helpers
+   - updated Check, CoreCheck, Elab, EmitSSA, Resolve, Shared, Report, Parser to reference centralized names
+2. remove remaining string-based semantic dispatch in non-centralized positions
+   - remaining: `tyFromName` in Shared.lean (primitive type-name → Ty mapping), attribute keywords ("repr", "test", "C", "packed", "align") in Parser.lean, monomorphization prefix rewriting in Mono.lean
+   - these are structural (parser keywords, type-system primitives) — centralizing requires deeper refactoring
+3. make compiler-known behavior ride on explicit identities or language items
+4. keep raw string matching confined to foreign/linker/reporting boundaries
 5. allow tactical testing improvements only when they directly accelerate semantic-cleanup work
 
 Exit criterion:
@@ -260,8 +266,12 @@ Primary surfaces:
 2. replace raw LLVM text emission with a structured backend
 3. turn explicit pipeline artifacts into reusable tooling/caching building blocks
    - use those artifacts as the foundation for later test reuse, caching, and narrower rerun scopes
-4. push formalization over Core -> SSA
-5. add deferred audit/report outputs
+4. define a clearer FFI / ABI maturity path
+   - decide what ABI stability, if any, is promised
+   - make platform-variance expectations explicit instead of accidental
+   - add clearer verification/testing expectations for ABI compatibility
+5. push formalization over Core -> SSA
+6. add deferred audit/report outputs
 
 Exit criterion:
 backend work no longer feels fragile, and proofs, reports, and tooling all build on the same stable compiler boundaries.
@@ -282,11 +292,16 @@ Primary surfaces:
    - allocator expectations
    - program startup / shutdown model
    - panic / abort / failure model
-3. define the concurrency and execution story deliberately
+3. define the memory / allocation strategy explicitly
+   - allocator model(s)
+   - no-alloc / bounded-allocation story
+   - region/arena patterns, if any
+   - interaction between allocation, `Destroy`, capabilities, and reports
+4. define the concurrency and execution story deliberately
    - decide whether threads, async, processes, or none of them are first-class language/runtime concerns
-4. tighten the FFI/runtime ownership boundary
+5. tighten the FFI/runtime ownership boundary
    - make it clearer what ownership, destruction, and capability assumptions survive foreign boundaries
-5. make runtime-related stdlib surfaces reflect the chosen execution model instead of growing opportunistically
+6. make runtime-related stdlib surfaces reflect the chosen execution model instead of growing opportunistically
 
 Exit criterion:
 Concrete has an explicit execution model that explains how programs start, allocate, fail, interact with the host, and cross runtime/FFI boundaries.
@@ -336,7 +351,30 @@ Primary surfaces:
 Exit criterion:
 Concrete has an explicit discipline for preserving a small, coherent language surface and resisting low-leverage feature growth.
 
-#### Phase H: Project And Operational Maturity
+#### Phase H: Package And Dependency Ecosystem
+
+Goal: make Concrete usable for real multi-module and multi-package projects with explicit, stable project-facing semantics.
+
+Primary surfaces:
+- project/package metadata
+- import resolution and project-root semantics
+- stdlib vs third-party package boundaries
+- workspace and dependency tooling
+
+1. define the package and dependency model explicitly
+   - import/package resolution model for real projects
+   - dependency/version semantics
+2. define stdlib vs third-party package boundaries
+   - what is special, what is ordinary, and what is versioned how
+3. define workspace and multi-package behavior
+   - roots, workspaces, local dependencies, and expected project layouts
+4. make dependency and package UX part of the language-user experience rather than a repo-local convention
+5. ensure docs, tooling, and CI reflect the same package/project model
+
+Exit criterion:
+Concrete has an explicit package/dependency model that supports real projects without relying on ad-hoc repo-local conventions.
+
+#### Phase I: Project And Operational Maturity
 
 Goal: turn Concrete from a strong compiler project into a durable, distributable, maintainable system.
 
@@ -361,7 +399,11 @@ Primary surfaces:
    - reduce dependence on repo-local tribal knowledge
 5. turn docs and editor/tool integration into maintained product surfaces
    - keep top-level docs coherent with the actual workflow
-   - decide the expected level of editor/LSP/tool support instead of leaving it accidental
+   - decide whether editor/LSP support is a serious maintained goal and what minimum UX is expected for navigation, diagnostics, formatting, and reports
+6. add explicit compatibility and bootstrap-trust policy
+   - decide what can break freely now and what should stabilize first
+   - state whether reports/tooling/IRs have compatibility expectations
+   - decide whether self-hosting is a goal, whether diverse-double-compilation/bootstrap trust matters, and how far reproducibility should go
 
 Exit criterion:
 Concrete is not only architecturally strong internally, but also operable, reproducible, documentable, and maintainable as a long-term project.
@@ -375,7 +417,8 @@ Concrete is not only architecturally strong internally, but also operable, repro
 - **Phase E** matters because a language is not really settled until its execution model is explicit.
 - **Phase F** matters because Concrete's safety model should be a user-visible strength, not only an internal design claim.
 - **Phase G** matters because languages decay when feature growth has no explicit discipline.
-- **Phase H** matters because long-term projects fail just as easily from weak operational discipline as from weak compiler architecture.
+- **Phase H** matters because package and dependency semantics are part of the language experience once real projects exist.
+- **Phase I** matters because long-term projects fail just as easily from weak operational discipline as from weak compiler architecture.
 
 ### Next
 
@@ -393,7 +436,7 @@ Concrete is not only architecturally strong internally, but also operable, repro
    - move toward serialization/caching only on top of already boring pass contracts
    - let tooling consume the same compiler facts rather than growing parallel ad-hoc models
    - use explicit artifacts to enable better test reuse and narrower recompilation instead of keeping all fast paths inside shell orchestration
-6. Prepare for the eventual runtime, safety, language-discipline, and operational-maturity phases by keeping package/build/docs/runtime decisions explicit instead of accidental.
+6. Prepare for the eventual runtime, safety, language-discipline, package-ecosystem, and operational-maturity phases by keeping package/build/docs/runtime decisions explicit instead of accidental.
 
 ### Later
 
@@ -401,10 +444,11 @@ Concrete is not only architecturally strong internally, but also operable, repro
 2. Runtime and execution-model maturity as an explicit phase once the compiler/tooling architecture is stable enough to support it well.
 3. Capability and safety productization as an explicit phase after the backend/trust foundations are strong enough.
 4. Language-surface and feature-discipline work as an explicit phase once the runtime/safety direction is clear.
-5. Project and operational maturity as an explicit phase once the current compiler/tooling architecture is stable enough to productize.
-6. Proof-driven narrowing of future feature additions.
-7. A clearer hosted vs freestanding / `no_std` split, but only after the runtime and stdlib boundaries are more stable.
-8. Execution-cost analysis as an audit/report extension.
+5. Package and dependency ecosystem as an explicit phase once stdlib/tooling/runtime direction is stable enough to support real projects well.
+6. Project and operational maturity as an explicit phase once the current compiler/tooling architecture is stable enough to productize.
+7. Proof-driven narrowing of future feature additions.
+8. A clearer hosted vs freestanding / `no_std` split, but only after the runtime and stdlib boundaries are more stable.
+9. Execution-cost analysis as an audit/report extension.
    - structural boundedness reports first
    - abstract cost estimation later
    - never at the cost of clarity in the core language

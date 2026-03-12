@@ -382,11 +382,11 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
         return .fieldAccess cObj field fieldTy
       | none =>
         -- Erased newtype wrapping a struct: .0 is identity
-        if field == "0" then return cObj
+        if field == newtypeFieldName then return cObj
         else throwElab (.structHasNoField structName field) (some e.getSpan)
     | none =>
       -- Erased newtype: .0 on a primitive type is identity
-      if field == "0" then return cObj
+      if field == newtypeFieldName then return cObj
       else throwElab .fieldAccessNonStruct (some e.getSpan)
 
   | .enumLit _ enumName variant typeArgs fields =>
@@ -581,10 +581,10 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
           for (arg, p) in args.zip params do
             let cArg ← elabExpr arg (some p.ty)
             cArgs := cArgs ++ [cArg]
-          return .call (n ++ "_" ++ methodName) typeArgs cArgs retTy
+          return .call (mangledMethodName n methodName) typeArgs cArgs retTy
       | _ => throwElab .methodCallOnNonNamedType (some e.getSpan)
     else
-      let mangledName := typeName ++ "_" ++ methodName
+      let mangledName := mangledMethodName typeName methodName
       match ← lookupFnSig mangledName with
       | some sig =>
         let objTypeArgs := match innerTy with | .generic _ args => args | _ => []
@@ -614,7 +614,7 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
       | none => throwElab (.noMethodOnType methodName typeName) (some e.getSpan)
 
   | .staticMethodCall _ typeName methodName typeArgs args =>
-    let mangledName := typeName ++ "_" ++ methodName
+    let mangledName := mangledMethodName typeName methodName
     match ← lookupFnSig mangledName with
     | some sig =>
       let mapping := sig.typeParams.zip typeArgs
@@ -668,7 +668,7 @@ partial def elabCall (fnName : String) (typeArgs : List Ty) (args : List Expr)
       let cArg ← elabExpr arg
       return cArg  -- newtype erasure: just return the inner value
   -- Intercept sizeof/alignof
-  if intrinsic == some .sizeof || intrinsic == some .alignof || fnName.endsWith "_sizeof" then
+  if intrinsic == some .sizeof || intrinsic == some .alignof || fnName.endsWith sizeofSuffix then
     return .call fnName typeArgs [] .uint
   -- Intercept vec_new::<T>()
   if intrinsic == some .vecNew then
@@ -727,7 +727,7 @@ partial def elabCall (fnName : String) (typeArgs : List Ty) (args : List Expr)
   if intrinsic == some .mapNew then
     let kTy := match typeArgs with | t :: _ => t | [] => .int
     let vTy := match typeArgs with | _ :: t :: _ => t | _ => .int
-    let suffix := if kTy == .string then "_str" else ""
+    let suffix := if kTy == .string then hashMapStrKeySuffix else ""
     return .call ("map_new" ++ suffix) typeArgs [] (.generic "HashMap" [kTy, vTy])
   -- Intercept map_insert
   if intrinsic == some .mapInsert then
@@ -739,7 +739,7 @@ partial def elabCall (fnName : String) (typeArgs : List Ty) (args : List Expr)
     let isStrKey := match (cArgs.head?.map CExpr.ty) with
       | some (.refMut (.generic "HashMap" [.string, _])) => true
       | _ => false
-    let suffix := if isStrKey then "_str" else ""
+    let suffix := if isStrKey then hashMapStrKeySuffix else ""
     return .call ("map_insert" ++ suffix) [] cArgs .unit
   -- Intercept map_get
   if intrinsic == some .mapGet then
@@ -755,7 +755,7 @@ partial def elabCall (fnName : String) (typeArgs : List Ty) (args : List Expr)
       | some (.ref (.generic "HashMap" [.string, _])) => true
       | some (.refMut (.generic "HashMap" [.string, _])) => true
       | _ => false
-    let suffix := if isStrKey then "_str" else ""
+    let suffix := if isStrKey then hashMapStrKeySuffix else ""
     return .call ("map_get" ++ suffix) [] cArgs (.generic "Option" [vTy])
   -- Intercept map_contains
   if intrinsic == some .mapContains then
@@ -767,7 +767,7 @@ partial def elabCall (fnName : String) (typeArgs : List Ty) (args : List Expr)
       | some (.ref (.generic "HashMap" [.string, _])) => true
       | some (.refMut (.generic "HashMap" [.string, _])) => true
       | _ => false
-    let suffix := if isStrKey then "_str" else ""
+    let suffix := if isStrKey then hashMapStrKeySuffix else ""
     return .call ("map_contains" ++ suffix) [] cArgs .bool
   -- Intercept map_remove
   if intrinsic == some .mapRemove then
@@ -781,7 +781,7 @@ partial def elabCall (fnName : String) (typeArgs : List Ty) (args : List Expr)
     let isStrKey := match (cArgs.head?.map CExpr.ty) with
       | some (.refMut (.generic "HashMap" [.string, _])) => true
       | _ => false
-    let suffix := if isStrKey then "_str" else ""
+    let suffix := if isStrKey then hashMapStrKeySuffix else ""
     return .call ("map_remove" ++ suffix) [] cArgs (.generic "Option" [vTy])
   -- Intercept map_len
   if intrinsic == some .mapLen then
