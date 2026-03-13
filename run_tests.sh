@@ -1319,6 +1319,26 @@ check_collection_tests() {
     fi
 }
 
+check_collection_tests "Vec" \
+    test_vec_get_in_bounds test_vec_get_out_of_bounds test_vec_get_empty \
+    test_pop_some test_pop_none \
+    test_vec_set test_vec_clear_reuse test_vec_push_growth test_vec_pop_until_empty
+
+check_collection_tests "Fs" \
+    test_file_exists test_write_read_roundtrip \
+    test_fs_open_nonexistent test_fs_create_bad_path \
+    test_read_file_nonexistent test_write_to_readonly test_write_file_bad_path \
+    test_read_file_empty test_append_file test_seek_tell \
+    test_read_to_string_nonexistent test_read_to_string_roundtrip test_append_file_bad_path
+
+check_collection_tests "Process" \
+    test_wait_invalid_pid test_kill_invalid_pid test_signal_constants \
+    test_getpid test_kill_signal_zero
+
+check_collection_tests "Net" \
+    test_connect_refused test_connect_bad_address test_bind_bad_address \
+    test_connect_bad_address_ipv6
+
 check_collection_tests "Deque" \
     test_push_back_pop_front test_push_front_pop_back test_deque_pop_empty \
     test_get test_growth_wrapping test_mixed_push_pop \
@@ -1326,10 +1346,12 @@ check_collection_tests "Deque" \
 
 check_collection_tests "BinaryHeap" \
     test_max_heap_basic test_min_heap_basic test_heap_pop_empty test_heap_stress \
-    test_heap_sorted_output test_heap_push_pop_interleaved
+    test_heap_sorted_output test_heap_push_pop_interleaved \
+    test_heap_peek_empty test_heap_clear_reuse
 
 check_collection_tests "OrderedMap" \
     test_insert_and_get test_sorted_order test_overwrite test_omap_remove test_get_missing \
+    test_omap_remove_empty test_omap_min_max_empty test_omap_clear_reuse \
     test_omap_insert_remove_stress
 
 check_collection_tests "OrderedSet" \
@@ -1356,10 +1378,13 @@ check_collection_tests "Slice" \
     test_slice_len test_slice_get_unchecked test_slice_empty test_mutslice_set_get
 
 check_collection_tests "HashMap" \
-    test_map_insert_len test_map_contains test_map_overwrite test_map_remove
+    test_map_insert_len test_map_contains test_map_overwrite test_map_remove \
+    test_map_remove_nonexistent test_map_get test_map_clear \
+    test_map_insert_reinsert_after_remove test_map_growth
 
 check_collection_tests "HashSet" \
-    test_set_insert_contains test_set_remove
+    test_set_insert_contains test_set_remove \
+    test_set_duplicate_insert test_set_remove_nonexistent test_set_clear_reuse
 
 fi # end section: collection
 

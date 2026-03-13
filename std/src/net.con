@@ -398,4 +398,21 @@ mod net {
             }
         }
     }
+
+    #[test]
+    fn test_connect_bad_address_ipv6() with(Unsafe, Alloc, Network, Process) -> i32 {
+        // IPv6 address should fail with AddressFailed since we use AF_INET
+        let addr: String = "::1";
+        let result: Result<TcpStream, NetError> = TcpStream::connect(&addr, 1);
+        addr.drop();
+        match result {
+            Result::<TcpStream, NetError>#Ok { value } => {
+                value.close();
+                return 1;
+            },
+            Result::<TcpStream, NetError>#Err { error } => {
+                return 0;
+            }
+        }
+    }
 }

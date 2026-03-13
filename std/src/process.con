@@ -219,4 +219,26 @@ mod process {
         }
         return 0;
     }
+
+    #[test]
+    fn test_getpid() with(Unsafe, Process, Alloc) -> i32 {
+        let pid: i32 = process_getpid();
+        // PID must be positive
+        if pid <= 0 { return 1; }
+        // Calling again should return the same value
+        let pid2: i32 = process_getpid();
+        if pid != pid2 { return 1; }
+        return 0;
+    }
+
+    #[test]
+    fn test_kill_signal_zero() with(Unsafe, Process, Alloc) -> i32 {
+        // signal 0 to own PID should succeed (existence check)
+        let pid: i32 = process_getpid();
+        let result: Result<bool, ProcessError> = process_kill(pid, 0);
+        match result {
+            Result#Ok { value } => { return 0; },
+            Result#Err { error } => { return 1; }
+        }
+    }
 }

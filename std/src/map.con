@@ -273,4 +273,103 @@ mod map {
         m.drop();
         return 0;
     }
+
+    #[test]
+    fn test_map_remove_nonexistent() with(Alloc, Unsafe) -> i32 {
+        let mut m: HashMap<i32, i32> = HashMap::<i32, i32>::new(hash_i32, eq_i32);
+        m.insert(1, 100);
+        let k: i32 = 99;
+        let r: Option<i32> = m.remove(&k);
+        match r {
+            Option#Some { value } => { m.drop(); return 1; },
+            Option#None => {}
+        }
+        if m.len() != 1 { m.drop(); return 1; }
+        m.drop();
+        return 0;
+    }
+
+    #[test]
+    fn test_map_get() with(Alloc, Unsafe) -> i32 {
+        let mut m: HashMap<i32, i32> = HashMap::<i32, i32>::new(hash_i32, eq_i32);
+        m.insert(5, 500);
+        m.insert(10, 1000);
+        let k5: i32 = 5;
+        let k99: i32 = 99;
+        let r: Option<&i32> = m.get(&k5);
+        match r {
+            Option#Some { value } => {
+                if *value != 500 { m.drop(); return 1; }
+            },
+            Option#None => { m.drop(); return 1; }
+        }
+        // get non-existent key
+        let r2: Option<&i32> = m.get(&k99);
+        match r2 {
+            Option#Some { value } => { m.drop(); return 1; },
+            Option#None => {}
+        }
+        m.drop();
+        return 0;
+    }
+
+    #[test]
+    fn test_map_clear() with(Alloc, Unsafe) -> i32 {
+        let mut m: HashMap<i32, i32> = HashMap::<i32, i32>::new(hash_i32, eq_i32);
+        m.insert(1, 10);
+        m.insert(2, 20);
+        m.clear();
+        if m.len() != 0 { m.drop(); return 1; }
+        if m.is_empty() == false { m.drop(); return 1; }
+        // reuse after clear
+        m.insert(3, 30);
+        if m.len() != 1 { m.drop(); return 1; }
+        let k: i32 = 3;
+        if !(m.contains(&k)) { m.drop(); return 1; }
+        m.drop();
+        return 0;
+    }
+
+    #[test]
+    fn test_map_insert_reinsert_after_remove() with(Alloc, Unsafe) -> i32 {
+        // Remove a key, then re-insert with different value — tombstone reuse
+        let mut m: HashMap<i32, i32> = HashMap::<i32, i32>::new(hash_i32, eq_i32);
+        m.insert(1, 100);
+        m.remove(&1);
+        let k: i32 = 1;
+        if m.contains(&k) { m.drop(); return 1; }
+        m.insert(1, 999);
+        if !(m.contains(&k)) { m.drop(); return 1; }
+        let r: Option<&i32> = m.get(&k);
+        match r {
+            Option#Some { value } => {
+                if *value != 999 { m.drop(); return 1; }
+            },
+            Option#None => { m.drop(); return 1; }
+        }
+        if m.len() != 1 { m.drop(); return 1; }
+        m.drop();
+        return 0;
+    }
+
+    #[test]
+    fn test_map_growth() with(Alloc, Unsafe) -> i32 {
+        // Insert enough to force rehash (initial cap=16, grows at 75% = 12)
+        let mut m: HashMap<i32, i32> = HashMap::<i32, i32>::new(hash_i32, eq_i32);
+        let i: i32 = 0;
+        while i < 50 {
+            m.insert(i, i * 10);
+            i = i + 1;
+        }
+        if m.len() != 50 { m.drop(); return 1; }
+        // Verify a few values survive rehash
+        let k0: i32 = 0;
+        let k25: i32 = 25;
+        let k49: i32 = 49;
+        if !(m.contains(&k0)) { m.drop(); return 1; }
+        if !(m.contains(&k25)) { m.drop(); return 1; }
+        if !(m.contains(&k49)) { m.drop(); return 1; }
+        m.drop();
+        return 0;
+    }
 }

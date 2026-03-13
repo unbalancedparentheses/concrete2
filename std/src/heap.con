@@ -342,4 +342,39 @@ mod heap {
         h.drop();
         return 0;
     }
+
+    #[test]
+    fn test_heap_peek_empty() with(Alloc) -> i32 {
+        let h: BinaryHeap<i32> = BinaryHeap::<i32>::new(max_cmp);
+        let r: Option<&i32> = h.peek();
+        match r {
+            Option#Some { value } => { h.drop(); return 1; },
+            Option#None => {}
+        }
+        h.drop();
+        return 0;
+    }
+
+    #[test]
+    fn test_heap_clear_reuse() with(Alloc) -> i32 {
+        let mut h: BinaryHeap<i32> = BinaryHeap::<i32>::new(max_cmp);
+        h.push(10);
+        h.push(20);
+        h.push(30);
+        h.clear();
+        if h.len() != 0 { h.drop(); return 1; }
+        if h.is_empty() == false { h.drop(); return 1; }
+        // reuse after clear
+        h.push(99);
+        if h.len() != 1 { h.drop(); return 1; }
+        let r: Option<&i32> = h.peek();
+        match r {
+            Option#Some { value } => {
+                if *value != 99 { h.drop(); return 1; }
+            },
+            Option#None => { h.drop(); return 1; }
+        }
+        h.drop();
+        return 0;
+    }
 }

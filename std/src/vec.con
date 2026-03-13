@@ -209,4 +209,110 @@ mod vec {
             }
         }
     }
+
+    #[test]
+    fn test_vec_set() with(Alloc) -> i32 {
+        let mut v: Vec<i32> = Vec::<i32>::new();
+        v.push(10);
+        v.push(20);
+        v.push(30);
+        // set in-bounds should succeed
+        let ok: bool = v.set(1, 99);
+        if !ok { v.drop(); return 1; }
+        // verify the value changed
+        let r: Option<&i32> = v.get(1);
+        match r {
+            Option#Some { value } => {
+                if *value != 99 { v.drop(); return 1; }
+            },
+            Option#None => { v.drop(); return 1; }
+        }
+        // set out-of-bounds should return false
+        let bad: bool = v.set(10, 0);
+        if bad { v.drop(); return 1; }
+        v.drop();
+        return 0;
+    }
+
+    #[test]
+    fn test_vec_clear_reuse() with(Alloc) -> i32 {
+        let mut v: Vec<i32> = Vec::<i32>::new();
+        v.push(1);
+        v.push(2);
+        v.push(3);
+        if v.len() != 3 { v.drop(); return 1; }
+        v.clear();
+        if v.len() != 0 { v.drop(); return 1; }
+        if v.is_empty() == false { v.drop(); return 1; }
+        // reuse after clear
+        v.push(42);
+        if v.len() != 1 { v.drop(); return 1; }
+        let r: Option<&i32> = v.get(0);
+        match r {
+            Option#Some { value } => {
+                if *value != 42 { v.drop(); return 1; }
+            },
+            Option#None => { v.drop(); return 1; }
+        }
+        v.drop();
+        return 0;
+    }
+
+    #[test]
+    fn test_vec_push_growth() with(Alloc) -> i32 {
+        // Push enough elements to force multiple growth cycles
+        let mut v: Vec<i32> = Vec::<i32>::new();
+        let i: i32 = 0;
+        while i < 100 {
+            v.push(i);
+            i = i + 1;
+        }
+        if v.len() != 100 { v.drop(); return 1; }
+        // Verify first and last
+        let r0: Option<&i32> = v.get(0);
+        match r0 {
+            Option#Some { value } => { if *value != 0 { v.drop(); return 1; } },
+            Option#None => { v.drop(); return 1; }
+        }
+        let r99: Option<&i32> = v.get(99);
+        match r99 {
+            Option#Some { value } => { if *value != 99 { v.drop(); return 1; } },
+            Option#None => { v.drop(); return 1; }
+        }
+        v.drop();
+        return 0;
+    }
+
+    #[test]
+    fn test_vec_pop_until_empty() with(Alloc) -> i32 {
+        let mut v: Vec<i32> = Vec::<i32>::new();
+        v.push(1);
+        v.push(2);
+        v.push(3);
+        // Pop all three — should get 3, 2, 1 (LIFO)
+        let r1: Option<i32> = v.pop();
+        match r1 {
+            Option#Some { value } => { if value != 3 { v.drop(); return 1; } },
+            Option#None => { v.drop(); return 1; }
+        }
+        let r2: Option<i32> = v.pop();
+        match r2 {
+            Option#Some { value } => { if value != 2 { v.drop(); return 1; } },
+            Option#None => { v.drop(); return 1; }
+        }
+        let r3: Option<i32> = v.pop();
+        match r3 {
+            Option#Some { value } => { if value != 1 { v.drop(); return 1; } },
+            Option#None => { v.drop(); return 1; }
+        }
+        // Now empty
+        let r4: Option<i32> = v.pop();
+        match r4 {
+            Option#Some { value } => { v.drop(); return 1; },
+            Option#None => {}
+        }
+        if v.is_empty() == false { v.drop(); return 1; }
+        v.drop();
+        return 0;
+    }
 }

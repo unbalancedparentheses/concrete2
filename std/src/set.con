@@ -92,4 +92,44 @@ mod set {
         s.drop();
         return 0;
     }
+
+    #[test]
+    fn test_set_duplicate_insert() with(Alloc, Unsafe) -> i32 {
+        let mut s: HashSet<i32> = HashSet::<i32>::new(hash_i32, eq_i32);
+        let first: bool = s.insert(42);
+        if !first { s.drop(); return 1; }
+        let second: bool = s.insert(42);
+        if second { s.drop(); return 1; }
+        if s.len() != 1 { s.drop(); return 1; }
+        s.drop();
+        return 0;
+    }
+
+    #[test]
+    fn test_set_remove_nonexistent() with(Alloc, Unsafe) -> i32 {
+        let mut s: HashSet<i32> = HashSet::<i32>::new(hash_i32, eq_i32);
+        s.insert(1);
+        let k: i32 = 99;
+        let removed: bool = s.remove(&k);
+        if removed { s.drop(); return 1; }
+        if s.len() != 1 { s.drop(); return 1; }
+        s.drop();
+        return 0;
+    }
+
+    #[test]
+    fn test_set_clear_reuse() with(Alloc, Unsafe) -> i32 {
+        let mut s: HashSet<i32> = HashSet::<i32>::new(hash_i32, eq_i32);
+        s.insert(1);
+        s.insert(2);
+        s.clear();
+        if s.len() != 0 { s.drop(); return 1; }
+        if s.is_empty() == false { s.drop(); return 1; }
+        s.insert(3);
+        if s.len() != 1 { s.drop(); return 1; }
+        let k: i32 = 3;
+        if !(s.contains(&k)) { s.drop(); return 1; }
+        s.drop();
+        return 0;
+    }
 }

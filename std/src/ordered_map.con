@@ -331,6 +331,52 @@ mod ordered_map {
     }
 
     #[test]
+    fn test_omap_remove_empty() with(Alloc) -> i32 {
+        let mut m: OrderedMap<i32, i32> = OrderedMap::<i32, i32>::new(omap_cmp_i32);
+        let k: i32 = 1;
+        let r: Option<i32> = m.remove(&k);
+        match r {
+            Option#Some { value } => { m.drop(); return 1; },
+            Option#None => {}
+        }
+        m.drop();
+        return 0;
+    }
+
+    #[test]
+    fn test_omap_min_max_empty() with(Alloc) -> i32 {
+        let m: OrderedMap<i32, i32> = OrderedMap::<i32, i32>::new(omap_cmp_i32);
+        let mn: Option<&i32> = m.min_key();
+        match mn {
+            Option#Some { value } => { m.drop(); return 1; },
+            Option#None => {}
+        }
+        let mx: Option<&i32> = m.max_key();
+        match mx {
+            Option#Some { value } => { m.drop(); return 1; },
+            Option#None => {}
+        }
+        m.drop();
+        return 0;
+    }
+
+    #[test]
+    fn test_omap_clear_reuse() with(Alloc) -> i32 {
+        let mut m: OrderedMap<i32, i32> = OrderedMap::<i32, i32>::new(omap_cmp_i32);
+        m.insert(10, 100);
+        m.insert(20, 200);
+        m.clear();
+        if m.len() != 0 { m.drop(); return 1; }
+        if m.is_empty() == false { m.drop(); return 1; }
+        m.insert(30, 300);
+        if m.len() != 1 { m.drop(); return 1; }
+        let k: i32 = 30;
+        if !(m.contains(&k)) { m.drop(); return 1; }
+        m.drop();
+        return 0;
+    }
+
+    #[test]
     fn test_omap_insert_remove_stress() with(Alloc) -> i32 {
         // Insert many elements, remove some, verify structure
         let mut m: OrderedMap<i32, i32> = OrderedMap::<i32, i32>::new(omap_cmp_i32);
