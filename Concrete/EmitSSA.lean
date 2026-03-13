@@ -687,112 +687,120 @@ private def getBuiltinsIR : String :=
 
 /-- Generate standalone Vec builtin function definitions for the SSA path.
     The old codegen inlines vec operations at each call site, but the SSA path
-    lowers them to function calls that need actual definitions. -/
-private def getVecBuiltinsIR : String :=
-  let es := 8  -- element size (i64 = 8 bytes)
-  let ic := 8  -- initial capacity
-  let ib := ic * es  -- initial buffer bytes
-  let ir := s!"define %struct.Vec @vec_new() \{\n"
-    ++ s!"  %buf = call ptr @malloc(i64 {ib})\n"
-    ++ s!"  %v = alloca %struct.Vec\n"
-    ++ s!"  %bp = getelementptr inbounds %struct.Vec, ptr %v, i32 0, i32 0\n"
-    ++ s!"  store ptr %buf, ptr %bp\n"
-    ++ s!"  %lp = getelementptr inbounds %struct.Vec, ptr %v, i32 0, i32 1\n"
-    ++ s!"  store i64 0, ptr %lp\n"
-    ++ s!"  %cp = getelementptr inbounds %struct.Vec, ptr %v, i32 0, i32 2\n"
-    ++ s!"  store i64 {ic}, ptr %cp\n"
-    ++ s!"  %r = load %struct.Vec, ptr %v\n"
-    ++ s!"  ret %struct.Vec %r\n"
-    ++ s!"}\n\n"
-    -- vec_push
-    ++ s!"define void @vec_push(ptr %vec, i64 %val) \{\n"
-    ++ s!"  %lp = getelementptr inbounds %struct.Vec, ptr %vec, i32 0, i32 1\n"
-    ++ s!"  %len = load i64, ptr %lp\n"
-    ++ s!"  %cp = getelementptr inbounds %struct.Vec, ptr %vec, i32 0, i32 2\n"
-    ++ s!"  %cap = load i64, ptr %cp\n"
-    ++ s!"  %full = icmp eq i64 %len, %cap\n"
-    ++ s!"  br i1 %full, label %grow, label %store\n"
-    ++ s!"grow:\n"
-    ++ s!"  %newcap = mul i64 %cap, 2\n"
-    ++ s!"  %newbytes = mul i64 %newcap, {es}\n"
-    ++ s!"  %dp = getelementptr inbounds %struct.Vec, ptr %vec, i32 0, i32 0\n"
-    ++ s!"  %data = load ptr, ptr %dp\n"
-    ++ s!"  %newbuf = call ptr @realloc(ptr %data, i64 %newbytes)\n"
-    ++ s!"  store ptr %newbuf, ptr %dp\n"
-    ++ s!"  store i64 %newcap, ptr %cp\n"
-    ++ s!"  br label %store\n"
-    ++ s!"store:\n"
-    ++ s!"  %dp2 = getelementptr inbounds %struct.Vec, ptr %vec, i32 0, i32 0\n"
-    ++ s!"  %data2 = load ptr, ptr %dp2\n"
-    ++ s!"  %offset = mul i64 %len, {es}\n"
-    ++ s!"  %slot = getelementptr i8, ptr %data2, i64 %offset\n"
-    ++ s!"  store i64 %val, ptr %slot\n"
-    ++ s!"  %newlen = add i64 %len, 1\n"
-    ++ s!"  store i64 %newlen, ptr %lp\n"
-    ++ s!"  ret void\n"
-    ++ s!"}\n\n"
-    -- vec_get
-    ++ s!"define i64 @vec_get(ptr %vec, i64 %idx) \{\n"
-    ++ s!"  %dp = getelementptr inbounds %struct.Vec, ptr %vec, i32 0, i32 0\n"
-    ++ s!"  %data = load ptr, ptr %dp\n"
-    ++ s!"  %offset = mul i64 %idx, {es}\n"
-    ++ s!"  %slot = getelementptr i8, ptr %data, i64 %offset\n"
-    ++ s!"  %val = load i64, ptr %slot\n"
-    ++ s!"  ret i64 %val\n"
-    ++ s!"}\n\n"
-    -- vec_len
-    ++ s!"define i64 @vec_len(ptr %vec) \{\n"
-    ++ s!"  %lp = getelementptr inbounds %struct.Vec, ptr %vec, i32 0, i32 1\n"
-    ++ s!"  %len = load i64, ptr %lp\n"
-    ++ s!"  ret i64 %len\n"
-    ++ s!"}\n\n"
-    -- vec_free
-    ++ s!"define void @vec_free(ptr %vec) \{\n"
-    ++ s!"  %dp = getelementptr inbounds %struct.Vec, ptr %vec, i32 0, i32 0\n"
-    ++ s!"  %data = load ptr, ptr %dp\n"
-    ++ s!"  call void @free(ptr %data)\n"
-    ++ s!"  ret void\n"
-    ++ s!"}\n\n"
-    -- vec_pop
-    ++ s!"define %enum.Option @vec_pop(ptr %vec) \{\n"
-    ++ s!"  %lp = getelementptr inbounds %struct.Vec, ptr %vec, i32 0, i32 1\n"
-    ++ s!"  %len = load i64, ptr %lp\n"
-    ++ s!"  %empty = icmp eq i64 %len, 0\n"
-    ++ s!"  br i1 %empty, label %none, label %some\n"
-    ++ s!"some:\n"
-    ++ s!"  %newlen = sub i64 %len, 1\n"
-    ++ s!"  store i64 %newlen, ptr %lp\n"
-    ++ s!"  %dp = getelementptr inbounds %struct.Vec, ptr %vec, i32 0, i32 0\n"
-    ++ s!"  %data = load ptr, ptr %dp\n"
-    ++ s!"  %offset = mul i64 %newlen, {es}\n"
-    ++ s!"  %slot = getelementptr i8, ptr %data, i64 %offset\n"
-    ++ s!"  %val = load i64, ptr %slot\n"
-    ++ s!"  %res = alloca %enum.Option\n"
-    ++ s!"  store i32 0, ptr %res\n"
-    ++ s!"  %payload = getelementptr i8, ptr %res, i64 8\n"
-    ++ s!"  store i64 %val, ptr %payload\n"
-    ++ s!"  %r = load %enum.Option, ptr %res\n"
-    ++ s!"  ret %enum.Option %r\n"
-    ++ s!"none:\n"
-    ++ s!"  %res2 = alloca %enum.Option\n"
-    ++ s!"  store i32 1, ptr %res2\n"
-    ++ s!"  %r2 = load %enum.Option, ptr %res2\n"
-    ++ s!"  ret %enum.Option %r2\n"
-    ++ s!"}\n\n"
-    -- vec_set
-    ++ s!"define void @vec_set(ptr %vec, i64 %idx, i64 %val) \{\n"
-    ++ s!"  %dp = getelementptr inbounds %struct.Vec, ptr %vec, i32 0, i32 0\n"
-    ++ s!"  %data = load ptr, ptr %dp\n"
-    ++ s!"  %offset = mul i64 %idx, {es}\n"
-    ++ s!"  %slot = getelementptr i8, ptr %data, i64 %offset\n"
-    ++ s!"  store i64 %val, ptr %slot\n"
-    ++ s!"  ret void\n"
-    ++ s!"}\n"
-  ir
+    lowers them to function calls that need actual definitions.
+    Note: GEPs omit `inbounds` — semantically identical, slightly less optimizable. -/
+private def getVecBuiltinFns : List LLVMFnDef :=
+  let vecTy := LLVMTy.struct_ "Vec"
+  let optTy := LLVMTy.enum_ "Option"
+  let es : Int := 8   -- element size (i64 = 8 bytes)
+  let ic : Int := 8   -- initial capacity
+  let ib : Int := ic * es  -- initial buffer bytes
+  -- Helper: getelementptr %struct.Vec, ptr %base, i32 0, i32 N
+  let vecGep (dst base : String) (fieldIdx : Int) : LLVMInstr :=
+    .gep dst vecTy (.reg base) [(.i32, .intLit 0), (.i32, .intLit fieldIdx)]
+  -- vec_new
+  let vecNew : LLVMFnDef := { name := "vec_new", retTy := vecTy, params := [], blocks := [
+    ⟨"entry", [
+      .call (some "buf") .ptr (.global "malloc") [(.i64, .intLit ib)],
+      .alloca "v" vecTy,
+      vecGep "bp" "v" 0, .store .ptr (.reg "buf") (.reg "bp"),
+      vecGep "lp" "v" 1, .store .i64 (.intLit 0) (.reg "lp"),
+      vecGep "cp" "v" 2, .store .i64 (.intLit ic) (.reg "cp"),
+      .load "r" vecTy (.reg "v")
+    ], .ret vecTy (some (.reg "r"))⟩] }
+  -- vec_push
+  let vecPushBlocks : List LLVMBlock := [
+    ⟨"entry", [
+      vecGep "lp" "vec" 1, .load "len" .i64 (.reg "lp"),
+      vecGep "cp" "vec" 2, .load "cap" .i64 (.reg "cp"),
+      .binOp "full" .icmpEq .i64 (.reg "len") (.reg "cap")
+    ], .condBr (.reg "full") "grow" "store"⟩,
+    ⟨"grow", [
+      .binOp "newcap" .mul .i64 (.reg "cap") (.intLit 2),
+      .binOp "newbytes" .mul .i64 (.reg "newcap") (.intLit es),
+      vecGep "dp" "vec" 0, .load "data" .ptr (.reg "dp"),
+      .call (some "newbuf") .ptr (.global "realloc") [(.ptr, .reg "data"), (.i64, .reg "newbytes")],
+      .store .ptr (.reg "newbuf") (.reg "dp"),
+      .store .i64 (.reg "newcap") (.reg "cp")
+    ], .br "store"⟩,
+    ⟨"store", [
+      vecGep "dp2" "vec" 0, .load "data2" .ptr (.reg "dp2"),
+      .binOp "offset" .mul .i64 (.reg "len") (.intLit es),
+      .gep "slot" .i8 (.reg "data2") [(.i64, .reg "offset")],
+      .store .i64 (.reg "val") (.reg "slot"),
+      .binOp "newlen" .add .i64 (.reg "len") (.intLit 1),
+      .store .i64 (.reg "newlen") (.reg "lp")
+    ], .ret .void none⟩]
+  let vecPush : LLVMFnDef :=
+    { name := "vec_push", retTy := .void, params := [("vec", .ptr), ("val", .i64)], blocks := vecPushBlocks }
+  -- vec_get
+  let vecGetBlocks : List LLVMBlock := [
+    ⟨"entry", [
+      vecGep "dp" "vec" 0, .load "data" .ptr (.reg "dp"),
+      .binOp "offset" .mul .i64 (.reg "idx") (.intLit es),
+      .gep "slot" .i8 (.reg "data") [(.i64, .reg "offset")],
+      .load "val" .i64 (.reg "slot")
+    ], .ret .i64 (some (.reg "val"))⟩]
+  let vecGet : LLVMFnDef :=
+    { name := "vec_get", retTy := .i64, params := [("vec", .ptr), ("idx", .i64)], blocks := vecGetBlocks }
+  -- vec_len
+  let vecLenBlocks : List LLVMBlock := [
+    ⟨"entry", [
+      vecGep "lp" "vec" 1, .load "len" .i64 (.reg "lp")
+    ], .ret .i64 (some (.reg "len"))⟩]
+  let vecLen : LLVMFnDef :=
+    { name := "vec_len", retTy := .i64, params := [("vec", .ptr)], blocks := vecLenBlocks }
+  -- vec_free
+  let vecFreeBlocks : List LLVMBlock := [
+    ⟨"entry", [
+      vecGep "dp" "vec" 0, .load "data" .ptr (.reg "dp"),
+      .call none .void (.global "free") [(.ptr, .reg "data")]
+    ], .ret .void none⟩]
+  let vecFree : LLVMFnDef :=
+    { name := "vec_free", retTy := .void, params := [("vec", .ptr)], blocks := vecFreeBlocks }
+  -- vec_pop
+  let vecPopBlocks : List LLVMBlock := [
+    ⟨"entry", [
+      vecGep "lp" "vec" 1, .load "len" .i64 (.reg "lp"),
+      .binOp "empty" .icmpEq .i64 (.reg "len") (.intLit 0)
+    ], .condBr (.reg "empty") "none" "some"⟩,
+    ⟨"some", [
+      .binOp "newlen" .sub .i64 (.reg "len") (.intLit 1),
+      .store .i64 (.reg "newlen") (.reg "lp"),
+      vecGep "dp" "vec" 0, .load "data" .ptr (.reg "dp"),
+      .binOp "offset" .mul .i64 (.reg "newlen") (.intLit es),
+      .gep "slot" .i8 (.reg "data") [(.i64, .reg "offset")],
+      .load "val" .i64 (.reg "slot"),
+      .alloca "res" optTy,
+      .store .i32 (.intLit 0) (.reg "res"),
+      .gep "payload" .i8 (.reg "res") [(.i64, .intLit 8)],
+      .store .i64 (.reg "val") (.reg "payload"),
+      .load "r" optTy (.reg "res")
+    ], .ret optTy (some (.reg "r"))⟩,
+    ⟨"none", [
+      .alloca "res2" optTy,
+      .store .i32 (.intLit 1) (.reg "res2"),
+      .load "r2" optTy (.reg "res2")
+    ], .ret optTy (some (.reg "r2"))⟩]
+  let vecPop : LLVMFnDef :=
+    { name := "vec_pop", retTy := optTy, params := [("vec", .ptr)], blocks := vecPopBlocks }
+  -- vec_set
+  let vecSetBlocks : List LLVMBlock := [
+    ⟨"entry", [
+      vecGep "dp" "vec" 0, .load "data" .ptr (.reg "dp"),
+      .binOp "offset" .mul .i64 (.reg "idx") (.intLit es),
+      .gep "slot" .i8 (.reg "data") [(.i64, .reg "offset")],
+      .store .i64 (.reg "val") (.reg "slot")
+    ], .ret .void none⟩]
+  let vecSet : LLVMFnDef :=
+    { name := "vec_set", retTy := .void, params := [("vec", .ptr), ("idx", .i64), ("val", .i64)], blocks := vecSetBlocks }
+  [vecNew, vecPush, vecGet, vecLen, vecFree, vecPop, vecSet]
 
 /-- Emit builtin implementations needed by the program. -/
 private def emitBuiltins (s : EmitSSAState) : EmitSSAState :=
-  { s with rawSections := s.rawSections.push (getBuiltinsIR ++ getVecBuiltinsIR) }
+  let s := { s with rawSections := s.rawSections.push getBuiltinsIR }
+  let vecFns := getVecBuiltinFns
+  { s with moduleFunctions := s.moduleFunctions ++ vecFns.toArray }
 
 -- ============================================================
 -- Entry point: emit full SSA program as LLVM IR
