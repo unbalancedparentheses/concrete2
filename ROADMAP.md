@@ -253,6 +253,30 @@ Phase D is split internally:
 
 The intent is explicit: testing comes first inside Phase D. Backend/proof work should ride on top of a testing system that is already fast, explainable, artifact-aware, and unusually reliable.
 
+Execution model for D1:
+- source of truth for test metadata: structured test definitions checked into the repo, not only shell-script sections; the metadata should be close enough to each test to stay honest, but centralized enough to support selection, reporting, and caching
+- execution engine: `run_tests.sh` remains as the short user-facing entrypoint at first, but the real test graph, metadata loading, artifact reuse, and result reporting should move into structured code/data rather than accumulating more shell logic
+- canonical layers:
+  - pass-level Lean tests stop at the relevant compiler pass and do not invoke full runtime/codegen unless the test explicitly needs it
+  - artifact tests consume parse/Core/validated-Core/SSA/report outputs directly
+  - end-to-end tests exercise compile-and-run behavior
+  - stress/integration tests exercise realistic multi-feature and multi-module workloads
+- artifact boundaries by test class:
+  - semantic/diagnostic tests should stop before unnecessary codegen
+  - report tests should consume cached report artifacts
+  - SSA/codegen tests should consume cached lowered/SSA artifacts where possible
+  - runtime/integration tests should pay full pipeline cost only when that full-path value is the point of the test
+- first concrete repo changes:
+  - add a structured manifest or equivalent metadata source for test kind/profile/requirements/ownership
+  - add a preserved-artifact directory layout for failures and cached intermediate outputs
+  - add a structured runner layer that `run_tests.sh` can call instead of embedding all orchestration directly
+  - add the first pass-level Lean test suites for semantic failures
+- shell boundary:
+  - keep `run_tests.sh` as the stable CLI surface for developers
+  - move scheduling, metadata interpretation, artifact reuse, and result formatting out of shell over time
+- sequencing rule:
+  - D2 can begin in parallel only after D1 has a usable core: structured test metadata, preserved failure artifacts, compile-once report reuse, and pass-level semantic tests
+
 Primary surfaces:
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - [docs/PASSES.md](docs/PASSES.md)
