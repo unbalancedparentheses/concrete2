@@ -52,9 +52,9 @@ structure EmitSSAState where
   fnTypeRegs : List String := []
   /-- Maps local alias name → original linker symbol for aliased imports. -/
   linkerAliases : List (String × String) := []
-  /-- Distinct Vec element sizes (in bytes) used in the program.
+  /-- Distinct Vec element specs (elemSize, optionPayloadOffset) used in the program.
       Used to generate per-size vec builtin implementations. -/
-  vecElemSizes : List Nat := []
+  vecElemSpecs : List (Nat × Nat) := []
 
 /-- Append a structured instruction to the current block. -/
 private def emitStructured (s : EmitSSAState) (instr : LLVMInstr) : EmitSSAState :=
@@ -182,6 +182,10 @@ private def isFloatTy : Ty → Bool
 private def ssaTySize (s : EmitSSAState) (ty : Ty) : Nat :=
   Layout.tySize (layoutCtxOf s) ty
 
+/-- Get byte alignment of a type. -/
+private def ssaTyAlign (s : EmitSSAState) (ty : Ty) : Nat :=
+  Layout.tyAlign (layoutCtxOf s) ty
+
 /-- Extract the Vec element type from a type like `Vec<T>`, `&Vec<T>`, or `&mut Vec<T>`. -/
 private def vecElemTy : Ty → Option Ty
   | .generic "Vec" (t :: _) => some t
@@ -190,13 +194,14 @@ private def vecElemTy : Ty → Option Ty
   | _ => none
 
 /-- The set of vec intrinsic names that need per-size specialization.
-    vec_len, vec_free, and vec_pop are size-independent and stay unspecialized. -/
+    vec_len and vec_free are size-independent and stay unspecialized. -/
 private def vecSizedOps : List String :=
-  ["vec_new", "vec_push", "vec_get", "vec_set"]
+  ["vec_new", "vec_push", "vec_get", "vec_set", "vec_pop"]
 
 /-- Resolve the Vec element size for a call to a vec intrinsic.
-    Returns `(specializedName, elemSize)` or none if not a vec op. -/
-private def resolveVecCall (s : EmitSSAState) (fn : String) (args : List SVal) (retTy : Ty) : Option (String × Nat) :=
+    Returns `(specializedName, elemSize, optionPayloadOffset)` or none if not a vec op.
+    The payload offset is needed for vec_pop's Option construction. -/
+private def resolveVecCall (s : EmitSSAState) (fn : String) (args : List SVal) (retTy : Ty) : Option (String × Nat × Nat) :=
   if !vecSizedOps.contains fn then none
   else
     -- Extract element type from args or return type
@@ -208,20 +213,24 @@ private def resolveVecCall (s : EmitSSAState) (fn : String) (args : List SVal) (
         | .generic _ (t :: _) => some t  -- Option<T> → T
         | _ => none
       else
-        -- vec_push, vec_set, vec_free, vec_len: get from first arg (the Vec ref)
+        -- vec_push, vec_set: get from first arg (the Vec ref)
         match args.head? with
         | some v => vecElemTy v.ty
         | none => none
     match elemTy? with
     | some elemTy =>
       let sz := ssaTySize s elemTy
-      some (fn ++ "_" ++ toString sz, sz)
+      let al := ssaTyAlign s elemTy
+      let payOff := Layout.alignUp 4 al
+      -- vec_pop is named by size_payoff (different alignments need different Option layouts)
+      let name := if fn == "vec_pop" then s!"{fn}_{sz}_{payOff}" else s!"{fn}_{sz}"
+      some (name, sz, payOff)
     | none => none
 
-/-- Record a Vec element size as used (for builtin generation). -/
-private def recordVecElemSize (s : EmitSSAState) (sz : Nat) : EmitSSAState :=
-  if s.vecElemSizes.contains sz then s
-  else { s with vecElemSizes := s.vecElemSizes ++ [sz] }
+/-- Record a Vec element spec as used (for builtin generation). -/
+private def recordVecElemSpec (s : EmitSSAState) (sz : Nat) (payOff : Nat) : EmitSSAState :=
+  if s.vecElemSpecs.any fun (s, p) => s == sz && p == payOff then s
+  else { s with vecElemSpecs := s.vecElemSpecs ++ [(sz, payOff)] }
 
 private def ssaEscapeCharForLLVM (c : Char) : String :=
   if c == '\n' then "\\0A"
@@ -416,8 +425,8 @@ private def emitSInst (s : EmitSSAState) (inst : SInst) : EmitSSAState :=
   | .call dst fn args retTy =>
     -- Intercept vec sized operations for per-element-size dispatch
     match resolveVecCall s fn args retTy with
-    | some (specFn, es) =>
-      let s := recordVecElemSize s es
+    | some (specFn, es, payOff) =>
+      let s := recordVecElemSpec s es payOff
       if fn == "vec_new" then
         emitStructured s (.call dst (.struct_ "Vec") (.global specFn) [])
       else if fn == "vec_get" then
@@ -448,9 +457,17 @@ private def emitSInst (s : EmitSSAState) (inst : SInst) : EmitSSAState :=
           let (s, valPtr) := ensureValAsPtr s valArg
           emitStructured s (.call none .void (.global specFn) [(.ptr, vecPtr), (.i64, idxOp), (.ptr, valPtr)])
         | _ => s
+      else if fn == "vec_pop" then
+        -- vec_pop returns %enum.Option by value, same calling convention as before
+        match args with
+        | [vecArg] =>
+          let (s, vecPtr) := ensurePtrOp s vecArg
+          let retLLTy := tyToLLVMTy s retTy
+          emitStructured s (.call dst retLLTy (.global specFn) [(.ptr, vecPtr)])
+        | _ => s
       else s
     | none =>
-    -- General call path (non-vec or unspecialized vec ops like vec_len/vec_free/vec_pop)
+    -- General call path (non-vec or unspecialized vec ops like vec_len/vec_free)
     -- Build typed argument list
     let (s, argOps) := args.foldl (fun (s, ops) a =>
       let paramTy := paramTyToLLVMTy s a.ty
@@ -1180,12 +1197,13 @@ private def getBuiltinFns : List LLVMFnDef × List LLVMGlobal × List LLVMFnDecl
   (fns, globals, decls)
 
 /-- Generate standalone Vec builtin function definitions for the SSA path.
-    Size-independent ops (vec_len, vec_free, vec_pop) are emitted once.
-    Size-dependent ops (vec_new, vec_push, vec_get, vec_set) are emitted once per
-    distinct element size encountered in the program, using memcpy for correctness
-    across scalar and aggregate types.
+    Size-independent ops (vec_len, vec_free) are emitted once.
+    Size-dependent ops (vec_new, vec_push, vec_get, vec_set) are emitted per
+    distinct element size. vec_pop is emitted per (size, payloadOffset) pair
+    because the Option enum payload offset depends on element alignment.
+    All per-size ops use ptr-based value passing with memcpy for correctness.
     Note: GEPs omit `inbounds` — semantically identical, slightly less optimizable. -/
-private def getVecBuiltinFns (sizes : List Nat) : List LLVMFnDef :=
+private def getVecBuiltinFns (specs : List (Nat × Nat)) : List LLVMFnDef :=
   let vecTy := LLVMTy.struct_ "Vec"
   let optTy := LLVMTy.enum_ "Option"
   let ic : Int := 8   -- initial capacity
@@ -1208,36 +1226,15 @@ private def getVecBuiltinFns (sizes : List Nat) : List LLVMFnDef :=
       .call none .void (.global "free") [(.ptr, .reg "data")]
     ], .ret .void none⟩] }
   -- -------------------------------------------------------
-  -- Size-independent: vec_pop (hardcoded to i64/8-byte payload)
+  -- Deduplicate sizes for push/get/set/new (only need elem size)
   -- -------------------------------------------------------
-  let vecPop : LLVMFnDef := { name := "vec_pop", retTy := optTy, params := [("vec", .ptr)], blocks := [
-    ⟨"entry", [
-      vecGep "lp" "vec" 1, .load "len" .i64 (.reg "lp"),
-      .binOp "empty" .icmpEq .i64 (.reg "len") (.intLit 0)
-    ], .condBr (.reg "empty") "none" "some"⟩,
-    ⟨"some", [
-      .binOp "newlen" .sub .i64 (.reg "len") (.intLit 1),
-      .store .i64 (.reg "newlen") (.reg "lp"),
-      vecGep "dp" "vec" 0, .load "data" .ptr (.reg "dp"),
-      .binOp "offset" .mul .i64 (.reg "newlen") (.intLit 8),
-      .gep "slot" .i8 (.reg "data") [(.i64, .reg "offset")],
-      .load "val" .i64 (.reg "slot"),
-      .alloca "res" optTy,
-      .store .i32 (.intLit 0) (.reg "res"),
-      .gep "payload" .i8 (.reg "res") [(.i64, .intLit 8)],
-      .store .i64 (.reg "val") (.reg "payload"),
-      .load "r" optTy (.reg "res")
-    ], .ret optTy (some (.reg "r"))⟩,
-    ⟨"none", [
-      .alloca "res2" optTy,
-      .store .i32 (.intLit 1) (.reg "res2"),
-      .load "r2" optTy (.reg "res2")
-    ], .ret optTy (some (.reg "r2"))⟩] }
+  let uniqueSizes := specs.foldl (fun (acc : List Nat) (sz, _) =>
+    if acc.contains sz then acc else acc ++ [sz]) []
   -- -------------------------------------------------------
   -- Per-size: vec_new_{es}, vec_push_{es}, vec_get_{es}, vec_set_{es}
   -- All use ptr-based value passing with memcpy.
   -- -------------------------------------------------------
-  let sizedFns := sizes.foldl (fun (acc : List LLVMFnDef) (esNat : Nat) =>
+  let sizedFns := uniqueSizes.foldl (fun (acc : List LLVMFnDef) (esNat : Nat) =>
     let es : Int := esNat
     let ib : Int := ic * es
     let newName := s!"vec_new_{esNat}"
@@ -1256,7 +1253,6 @@ private def getVecBuiltinFns (sizes : List Nat) : List LLVMFnDef :=
       ], .ret vecTy (some (.reg "r"))⟩]
     let vecNew : LLVMFnDef := { name := newName, retTy := vecTy, params := [], blocks := vecNewBlocks }
     -- vec_push_{es}(vec: ptr, val: ptr) -> void
-    -- val is always a pointer; memcpy es bytes from val into the buffer slot.
     let vecPushBlocks : List LLVMBlock := [
       ⟨"entry", [
         vecGep "lp" "vec" 1, .load "len" .i64 (.reg "lp"),
@@ -1281,8 +1277,6 @@ private def getVecBuiltinFns (sizes : List Nat) : List LLVMFnDef :=
       ], .ret .void none⟩]
     let vecPush : LLVMFnDef := { name := pushName, retTy := .void, params := [("vec", .ptr), ("val", .ptr)], blocks := vecPushBlocks }
     -- vec_get_{es}(vec: ptr, idx: i64) -> ptr
-    -- Returns pointer to the element slot in the buffer.
-    -- Caller loads the concrete type from this pointer.
     let vecGetBlocks : List LLVMBlock := [
       ⟨"entry", [
         vecGep "dp" "vec" 0, .load "data" .ptr (.reg "dp"),
@@ -1291,7 +1285,6 @@ private def getVecBuiltinFns (sizes : List Nat) : List LLVMFnDef :=
       ], .ret .ptr (some (.reg "slot"))⟩]
     let vecGet : LLVMFnDef := { name := getName, retTy := .ptr, params := [("vec", .ptr), ("idx", .i64)], blocks := vecGetBlocks }
     -- vec_set_{es}(vec: ptr, idx: i64, val: ptr) -> void
-    -- memcpy es bytes from val into the buffer slot.
     let vecSetBlocks : List LLVMBlock := [
       ⟨"entry", [
         vecGep "dp" "vec" 0, .load "data" .ptr (.reg "dp"),
@@ -1302,12 +1295,47 @@ private def getVecBuiltinFns (sizes : List Nat) : List LLVMFnDef :=
     let vecSet : LLVMFnDef := { name := setName, retTy := .void, params := [("vec", .ptr), ("idx", .i64), ("val", .ptr)], blocks := vecSetBlocks }
     acc ++ [vecNew, vecPush, vecGet, vecSet]
   ) ([] : List LLVMFnDef)
-  [vecLen, vecFree, vecPop] ++ sizedFns
+  -- -------------------------------------------------------
+  -- Per-spec: vec_pop_{es}_{payOff} (needs both size and payload offset)
+  -- Uses memcpy for buffer read and correct Option payload placement.
+  -- -------------------------------------------------------
+  let popFns := specs.foldl (fun (acc : List LLVMFnDef) ((esNat, payOff) : Nat × Nat) =>
+    let es : Int := esNat
+    let popName := s!"vec_pop_{esNat}_{payOff}"
+    let vecPopBlocks : List LLVMBlock := [
+      ⟨"entry", [
+        vecGep "lp" "vec" 1, .load "len" .i64 (.reg "lp"),
+        .binOp "empty" .icmpEq .i64 (.reg "len") (.intLit 0)
+      ], .condBr (.reg "empty") "none" "some"⟩,
+      ⟨"some", [
+        .binOp "newlen" .sub .i64 (.reg "len") (.intLit 1),
+        .store .i64 (.reg "newlen") (.reg "lp"),
+        vecGep "dp" "vec" 0, .load "data" .ptr (.reg "dp"),
+        .binOp "offset" .mul .i64 (.reg "newlen") (.intLit es),
+        .gep "slot" .i8 (.reg "data") [(.i64, .reg "offset")],
+        -- Zero-initialize the Option, then copy element into payload
+        .alloca "res" optTy,
+        .call none .void (.global "memset") [(.ptr, .reg "res"), (.i32, .intLit 0), (.i64, .intLit (Layout.alignUp (payOff + esNat) (Nat.max 4 (Nat.min esNat 8))))],
+        .store .i32 (.intLit 0) (.reg "res"),
+        .gep "payload" .i8 (.reg "res") [(.i64, .intLit payOff)],
+        .memcpy (.reg "payload") (.reg "slot") esNat,
+        .load "r" optTy (.reg "res")
+      ], .ret optTy (some (.reg "r"))⟩,
+      ⟨"none", [
+        .alloca "res2" optTy,
+        .call none .void (.global "memset") [(.ptr, .reg "res2"), (.i32, .intLit 0), (.i64, .intLit (Layout.alignUp (payOff + esNat) (Nat.max 4 (Nat.min esNat 8))))],
+        .store .i32 (.intLit 1) (.reg "res2"),
+        .load "r2" optTy (.reg "res2")
+      ], .ret optTy (some (.reg "r2"))⟩]
+    let vecPop : LLVMFnDef := { name := popName, retTy := optTy, params := [("vec", .ptr)], blocks := vecPopBlocks }
+    acc ++ [vecPop]
+  ) ([] : List LLVMFnDef)
+  [vecLen, vecFree] ++ sizedFns ++ popFns
 
 /-- Emit builtin implementations needed by the program. -/
 private def emitBuiltins (s : EmitSSAState) : EmitSSAState :=
   let (builtinFns, builtinGlobals, builtinDecls) := getBuiltinFns
-  let vecFns := getVecBuiltinFns s.vecElemSizes
+  let vecFns := getVecBuiltinFns s.vecElemSpecs
   let allFns := builtinFns ++ vecFns
   { s with
     moduleFunctions := s.moduleFunctions ++ allFns.toArray,
