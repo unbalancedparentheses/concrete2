@@ -78,6 +78,33 @@ The second goal is especially important because many projects can say their comp
 
 Concrete is aiming for both, in that order. See [docs/IDENTITY.md](docs/IDENTITY.md) for the project identity and [research/proving-concrete-functions-in-lean.md](research/proving-concrete-functions-in-lean.md) for the longer proof direction.
 
+One of the explicit long-term objectives is that a user should be able to write Concrete code, then write Lean proof code about that Concrete code through validated Core semantics.
+
+Conceptually, the workflow should eventually look like this:
+
+```con
+fn unwrap_or_zero(x: Option<Int>) -> Int {
+    match x {
+        Option#Some { value } => return value,
+        Option#None => return 0,
+    }
+}
+```
+
+```lean
+-- exported or referenced from the compiler's validated Core / ProofCore artifact
+def unwrap_or_zero_core : ProofCoreFn := ...
+
+theorem unwrap_or_zero_correct (x : Option Int) :
+  unwrap_or_zero_sem x =
+    match x with
+    | some v => v
+    | none => 0 := by
+  cases x <;> rfl
+```
+
+The point is not to turn Concrete into Lean. The point is to let Concrete stay the executable low-level language while Lean remains the proof environment, with validated Core as the bridge between them.
+
 ## What Makes Concrete Different
 
 Compared to Lean itself, Concrete is a low-level programming language first, not a proof assistant. The point is not to replace Lean. The point is to write real systems code in a language whose semantics stay close enough to formal reasoning that Lean can still talk about it.
@@ -108,7 +135,7 @@ What Concrete has today:
 - a full Lean 4 compiler pipeline through Core and SSA
 - explicit capabilities, linear ownership, borrows, `defer`, trait dispatch, FFI, and layout attributes
 - structured diagnostics across the semantic pipeline, with native `Diagnostics` through the main semantic passes
-- explicit audit/report outputs
+- explicit audit/report outputs (6 modes: `caps`, `unsafe`, `layout`, `interface`, `mono`, `alloc`) with capability "why" traces, trust boundary analysis, and allocation/cleanup summaries
 - explicit `trusted fn` / `trusted impl` boundaries for internal pointer-level implementation unsafety
 - a coherent trust/effect model across builtins, stdlib, and user code
 - a first real stdlib foundation: stronger `vec`, `string`, `io`, plus `bytes`, `slice`, `text`, `path`, `fs`, `env`, `process`, `net`, `fmt`, `hash`, `rand`, `time`, and `parse`
@@ -116,7 +143,8 @@ What Concrete has today:
 - stdlib systems-layer hardening: typed errors across `fs`/`net`/`process`/`io`, checked/unchecked splits in `bytes`, `Option`-returning accessors in `env`
 - stdlib deepening: `fmt` (integer/hex/bin/oct/bool formatting, padding), `hash` (FNV-1a), `rand` (deterministic seeding, bounded range), `time` (monotonic clock, sleep, unix timestamp), and `parse` (value parsing plus `Cursor`)
 - stdlib uniformity: generic `Result<T, ModuleError>` across all modules, `parse` module (inverse of `fmt`), checked accessors on `String` and `Vec`
-- built-in test runner: `concrete file.con --test` compiles and runs all `#[test]` functions, including stdlib module tests via `concrete std/src/lib.con --test`
+- built-in test runner: `concrete file.con --test` compiles and runs all `#[test]` functions, with module targeting via `--test --module <name>`
+- module-targeted stdlib testing: `--stdlib-module <name>` in `run_tests.sh` for single-module iteration
 
 What is still clearly missing:
 
@@ -363,15 +391,14 @@ The goal is not to out-feature those languages. The goal is to be unusually good
 
 ## Current Status
 
-The compiler implements the core surface language and the full internal IR pipeline in Lean 4. All 488 tests pass in the main suite, and the SSA-specific suite passes as well.
+The compiler implements the core surface language and the full internal IR pipeline in Lean 4. All 600 tests pass in the main suite (189 stdlib), including 44 report assertions, 46 golden tests, and 16 collections verified.
 
 ## Known Rough Edges
 
-- stdlib direct compilation/testing is still being tightened so `std/src/*.con` follows the exact same path as ordinary user modules.
-- some docs still lag behind recent stdlib naming/API cleanup and need periodic sync with landed `main`.
-- builtin-vs-stdlib cleanup is still active in a few areas where older compiler-known hooks remain.
-- diagnostics infrastructure is strong, but rendering quality still has room to improve (ranges, notes, and secondary labels).
-- formal proofs and deferred audit outputs such as allocation/cleanup summaries are still ahead, not done.
+- textual LLVM emission is still string-based concatenation (structured backend is the primary Phase D target)
+- diagnostics infrastructure is strong, but rendering quality still has room to improve (ranges, notes, and secondary labels)
+- formal proofs have not started; the proof boundary exists architecturally (validated Core after `CoreCheck`) but no proofs are written yet
+- no runtime or execution model beyond what clang/libc provide
 
 Implemented today:
 
@@ -469,7 +496,7 @@ Already established architecture in this arc:
 - **Summary-based frontend**: `FileSummary` and `ResolvedImports` now form the cross-file frontend boundary, with prebuilt function, extern, and impl-method signatures reused across `Resolve`, `Check`, and `Elab`
 - **Core as semantic authority**: `CoreCheck` now owns post-elaboration legality checks that can be stated on Core IR; `Check` is mostly surface/inference-specific work
 - **ABI/layout subsystem clarity**: `Layout.lean` is now the shared authority for size, alignment, field offsets, enum layout, LLVM type definitions, and FFI-safety checks used by both `CoreCheck` and `EmitSSA`
-- **Audit-focused compiler outputs**: `--report caps|unsafe|layout|interface|mono` now exposes capability summaries, unsafe-signature summaries, layout reports, public interface summaries, and monomorphization reports
+- **Audit-focused compiler outputs**: `--report caps|unsafe|layout|interface|mono|alloc` exposes capability summaries with "why" traces, trust boundary analysis, layout reports, public interface summaries, monomorphization reports, and allocation/cleanup summaries
 
 The main rule is: architecture before ornament, tooling visibility before convenience syntax, and proof-friendly boundaries before feature expansion.
 
@@ -495,7 +522,7 @@ Stdlib deepening now in place:
 - Unified error handling: generic `Result<T, ModuleError>` across all modules (`io`, `fs`, `net`, `process`)
 - Systems deepening: `fs` helpers (`append_file`, `file_exists`, `read_to_string`), `net` helpers (`write_all`, `read_all`), `process` helpers (`spawn`, signal constants)
 
-The next stdlib focus: deeper systems-module polish, stronger failure-path and integration testing, and carefully chosen collections
+The stdlib has module-targeted testing (`--stdlib-module <name>`), 189 tests across 16 collections, and integration tests exercising multi-collection pipelines
 
 See [`docs/STDLIB.md`](docs/STDLIB.md) for the stable stdlib direction.
 
@@ -528,7 +555,7 @@ See [docs/README.md](docs/README.md) for the stable documentation index and [res
 | **13** | Tooling | Not started |
 | **14** | Runtime (C, then Concrete) | Not started |
 
-Next critical path: **keep deepening the stdlib and its test infrastructure, improve diagnostics quality, then push formalization.** The summary-based frontend, `CoreCheck` semantic-authority shift, ABI/layout subsystem, cacheable pipeline artifacts (`Concrete/Pipeline.lean`), SSA cleanup, audit/report outputs, structured diagnostics, and the trusted/effect coherence migration are done enough for the current architecture phase.
+Next critical path: **replace textual LLVM emission with a structured backend, strengthen the SSA/backend contract, then push formalization.** Phases A-C (fast feedback, semantic cleanup, tooling/stdlib hardening) are complete. The summary-based frontend, `CoreCheck` semantic-authority shift, ABI/layout subsystem, cacheable pipeline artifacts, SSA cleanup, audit/report outputs (6 modes with why-traces), structured diagnostics, and module-targeted testing are all in place.
 
 ### What fits the philosophy and what does not
 
@@ -603,7 +630,7 @@ Requires [Lean 4](https://leanprover.github.io/lean4/doc/setup.html) (v4.28.0+) 
 
 ```bash
 make build    # or: lake build
-make test     # runs all 488 tests
+make test     # runs all 600 tests
 make clean    # or: lake clean
 ```
 
@@ -628,7 +655,7 @@ Concrete/
   EmitSSA.lean   -- LLVM IR from SSA
   Pipeline.lean  -- Cacheable artifact types and composable pipeline runners
 Main.lean        -- Entry point
-lean_tests/      -- 344 test programs
+lean_tests/      -- 353 test programs
 examples/        -- 66 example programs
 ```
 
@@ -670,8 +697,8 @@ Things Concrete deliberately does not have:
 - Clear path to formal verification because the compiler is already implemented in Lean and now has explicit internal IR boundaries
 
 **Next steps:**
-- Strengthen shared diagnostics infrastructure with richer spans, secondary labels/notes, and phase-aware rendering
-- Then deepen with carefully chosen collections and more systems-module polish
+- Replace textual LLVM emission with a structured backend (Phase D)
+- Strengthen the SSA/backend contract for backend plurality
 - Push kernel formalization and proof development in Lean
 
 ## License

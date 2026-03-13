@@ -22,7 +22,9 @@ Purpose:
 - validate language behavior end to end
 - catch regressions in parsing, checking, elaboration, lowering, codegen, and runtime-facing builtins
 
-Runs in `--fast` mode by default: parallel on all CPU cores, network tests skipped. Supports `--full`, `--filter`, `--stdlib`, `--O2`, `--codegen`, and `--report` for targeted runs. Partial runs display a clear warning with mode, filter, and skip count.
+Runs in `--fast` mode by default: parallel on all CPU cores, network tests skipped. Supports `--full`, `--filter`, `--stdlib`, `--stdlib-module`, `--O2`, `--codegen`, and `--report` for targeted runs. Partial runs display a clear warning with mode, filter, and skip count.
+
+Current suite: 600 tests (189 stdlib), including 44 report assertions, 46 golden tests, and 16 collections verified.
 
 ### SSA-Specific Suite
 
@@ -80,7 +82,7 @@ The process exits 0 if all tests pass, 1 if any fail.
 
 Both external suites matter. The main suite answers “does Concrete still work?” The SSA suite answers “does the real backend path still work correctly?” The `--test` flag is intended for module-level testing within user and stdlib code.
 
-Today, stdlib tests run through the real compiler path via `concrete std/src/lib.con --test`. That is the current bootstrap entrypoint for stdlib testing, not the final intended shape. The next testing step is a stdlib-aware, module-targeted mode that can run one stdlib area under an explicit root/project context instead of treating individual stdlib files as ordinary standalone programs.
+Stdlib tests run through the real compiler path via `concrete std/src/lib.con --test`. Module-targeted testing is available via `--stdlib-module <name>` (e.g., `--stdlib-module map`, `--stdlib-module string`), which runs `--test --module std.<name>` to target a single stdlib module without bootstrapping the whole tree.
 
 ## Golden / Inspection Tests
 
@@ -117,13 +119,14 @@ Runs the complete suite including network/TCP tests. Use this before merging.
 ```bash
 ./run_tests.sh --filter struct_loop   # only tests matching "struct_loop"
 ./run_tests.sh --stdlib               # only stdlib module + collection verification
+./run_tests.sh --stdlib-module map    # only tests for stdlib module "map"
 ./run_tests.sh --O2                   # only -O2 optimized-build regressions
 ./run_tests.sh --codegen              # only codegen differential + SSA structure
 ./run_tests.sh --report               # only --report output verification
 ./run_tests.sh -j 1                   # serial execution (debug ordering issues)
 ```
 
-Use `--filter` when iterating on a single area. Use `--stdlib` after touching `std/src/`. Use `--O2` after lowering changes. Run `./run_tests.sh -h` for the full options reference.
+Use `--filter` when iterating on a single area. Use `--stdlib` after touching `std/src/`. Use `--stdlib-module <name>` to iterate on one stdlib module (e.g., map, string, vec, fs, deque, bitset). Use `--O2` after lowering changes. Run `./run_tests.sh -h` for the full options reference.
 
 ### Other suites
 
@@ -195,6 +198,23 @@ Located in the `=== Codegen differential tests ===` section of `run_tests.sh`.
 - Packed struct: `report_layout_check.con` — LLVM `<{` syntax matches `--report layout` `#[packed]`
 - Enum payload size: `report_layout_check.con` — LLVM `[N x i8]` payload matches `--report layout` `max_payload`
 - Core-SSA agreement: `struct_basic.con` — Core IR preserves `fn sum_point(p: Point) -> Int`, SSA maps it to `define i64 @sum_point`
+
+## Report Tests
+
+Report tests verify the output of `--report` modes against expected content. Located in the `=== Report output tests ===` section of `run_tests.sh`.
+
+Current coverage (44 assertions across 6 modes):
+
+- **caps**: pure function detection, single/multi-capability, trusted extern, capability "why" traces (which callees contribute each cap)
+- **unsafe**: trusted boundaries, trusted extern vs regular extern, raw pointer signatures, trust boundary analysis (what trusted functions wrap)
+- **layout**: struct sizes/alignment, packed structs, enum tags/payload, runtime size cross-validation
+- **interface**: public API exports, capability annotations, private function exclusion
+- **mono**: generic function counts, specialization details
+- **alloc**: allocation sources, cleanup patterns (free/defer), returned-allocation warnings, allocating function totals
+
+Integration test programs:
+- `report_integration.con` — exercises all 6 report modes with caps/unsafe/alloc/layout/interface/mono on a single program with pure functions, generic functions, trusted extern, trusted wrappers, and allocation patterns
+- `integration_collection_pipeline.con` — multi-collection pipeline with Vec, generics, enums, structs, and mixed allocation patterns (alloc/free/defer); verifies both runtime correctness and report accuracy
 
 ## Future Refinement
 

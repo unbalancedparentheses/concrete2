@@ -10,6 +10,27 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Phase C complete: tooling and stdlib hardening
+
+Phase C is done with all 8 items complete. This phase turned syntax guardrails, diagnostics, stdlib testing, and audit reports into durable infrastructure.
+
+What landed:
+- **Module-targeted stdlib testing**: `--stdlib-module <name>` in `run_tests.sh` runs tests for a single stdlib module (e.g., `--stdlib-module map`, `--stdlib-module string`) using `--test --module std.<name>`. Developers can iterate on one module without bootstrapping the whole tree.
+- **Diagnostics/formatter polish**: fixed empty `{}` edge case in formatter (enum literals need braces to avoid parser ambiguity), fixed `String.trimLeft` deprecation, eliminated compiler warnings in `Check.lean`.
+- **Integration testing deepened**: added `report_integration.con` (exercises all 6 report modes with caps/unsafe/alloc/layout/interface/mono) and `integration_collection_pipeline.con` (multi-collection pipeline with Vec, generics, enums, structs, mixed allocation patterns).
+- **Report assertions hardened**: 44 report tests with content checks across all 6 modes, replacing crash-only checks with assertions that verify specific output content (struct sizes, public API exports, capability traces, allocation patterns, specialization details).
+- **Reports as audit product**: 6 report modes (`caps`, `unsafe`, `layout`, `interface`, `mono`, `alloc`) with:
+  - capability "why" traces showing which callees contribute each capability with `(intrinsic)`/`(extern)` tags
+  - trust boundary analysis showing what unsafe operations trusted functions wrap (extern calls, pointer dereference, memory management)
+  - allocation/cleanup summaries tracking alloc/free/defer patterns with leak warnings for functions that allocate without cleanup
+  - summary totals and aligned columns across all reports
+- **Formatter golden tests**: 4 formatter-specific golden tests with idempotency checking
+- **LL(1) grammar checker in CI** (completed earlier in Phase C)
+- **Linearity checker fixes** (completed earlier in Phase C)
+- **Builtin HashMap retirement** (completed earlier in Phase C)
+
+Test suite: 600 tests passing (189 stdlib), including 44 report assertions, 46 golden tests, and 16 collections verified.
+
 ### Builtin HashMap interception retired
 
 Deleted ~1,400 lines of compiler-internal HashMap machinery across 6 Lean files. HashMap is now an ordinary stdlib type compiled through the normal generic struct path — no compiler interception, no hardcoded layout, no hand-written LLVM IR runtime.
