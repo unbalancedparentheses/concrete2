@@ -285,11 +285,10 @@ def enumTypeDefs (ctx : Ctx) (ed : CEnumDef) (typeArgs : List Ty := []) : List S
   let enumDef := s!"%enum.{ed.name} = type \{ i32, [{payloadBytes} x i8] }"
   variantDefs ++ [enumDef]
 
-/-- LLVM type definitions for builtin types (String, Vec, HashMap). -/
+/-- LLVM type definitions for builtin types (String, Vec). -/
 def builtinTypeDefs : List String :=
   [ "%struct.String = type { ptr, i64, i64 }"
-  , "%struct.Vec = type { ptr, i64, i64 }"
-  , "%struct.HashMap = type { ptr, ptr, ptr, i64, i64 }" ]
+  , "%struct.Vec = type { ptr, i64, i64 }" ]
 
 -- ============================================================
 -- FFI safety

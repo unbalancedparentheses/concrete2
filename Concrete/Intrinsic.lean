@@ -23,9 +23,6 @@ inductive IntrinsicId where
   -- Vec operations
   | vecNew | vecPush | vecGet | vecSet | vecLen | vecPop | vecFree
 
-  -- HashMap operations
-  | mapNew | mapInsert | mapGet | mapContains | mapRemove | mapLen | mapFree
-
   -- String operations
   | stringLength | stringConcat | stringEq | stringSlice
   | stringCharAt | stringContains | stringTrim | dropString
@@ -63,15 +60,6 @@ def resolveIntrinsic (name : String) : Option IntrinsicId :=
   | "vec_len"  | "Vec_len"  => some .vecLen
   | "vec_pop"  | "Vec_pop"  => some .vecPop
   | "vec_free" | "Vec_free" => some .vecFree
-
-  -- HashMap (snake_case and method-call PascalCase)
-  | "map_new"      | "HashMap_new"      => some .mapNew
-  | "map_insert"   | "HashMap_insert"   => some .mapInsert
-  | "map_get"      | "HashMap_get"      => some .mapGet
-  | "map_contains" | "HashMap_contains" => some .mapContains
-  | "map_remove"   | "HashMap_remove"   => some .mapRemove
-  | "map_len"      | "HashMap_len"      => some .mapLen
-  | "map_free"     | "HashMap_free"     => some .mapFree
 
   -- String
   | "string_length" | "string_len" | "String_len" => some .stringLength
@@ -121,13 +109,6 @@ def IntrinsicId.canonicalName : IntrinsicId → String
   | .vecLen => "vec_len"
   | .vecPop => "vec_pop"
   | .vecFree => "vec_free"
-  | .mapNew => "map_new"
-  | .mapInsert => "map_insert"
-  | .mapGet => "map_get"
-  | .mapContains => "map_contains"
-  | .mapRemove => "map_remove"
-  | .mapLen => "map_len"
-  | .mapFree => "map_free"
   | .stringLength => "string_length"
   | .stringConcat => "string_concat"
   | .stringEq => "string_eq"
@@ -152,8 +133,7 @@ def IntrinsicId.capability : IntrinsicId → Option String
   | .getArgs | .abort => some "Process"
   -- Alloc
   | .alloc | .free
-  | .vecNew | .vecPush | .vecPop | .vecFree
-  | .mapNew | .mapInsert | .mapRemove | .mapFree => some "Alloc"
+  | .vecNew | .vecPush | .vecPop | .vecFree => some "Alloc"
   -- Pure (no capability required)
   | _ => none
 
@@ -250,7 +230,7 @@ def extraBuiltinFnNames : List String :=
 def builtinTypeNames : List String :=
   [ "Int", "Uint", "Bool", "String", "Float64", "Float32", "Char",
     "i8", "i16", "i32", "u8", "u16", "u32",
-    "Heap", "HeapArray", "Vec", "HashMap", "Option", "Result" ]
+    "Heap", "HeapArray", "Vec", "Option", "Result" ]
 
 -- ============================================================
 -- 3. Mangling / suffix helpers
@@ -263,9 +243,6 @@ def destroyFnNameFor (typeName : String) : String :=
 /-- Build a mangled method name: `TypeName_method`. -/
 def mangledMethodName (typeName : String) (method : String) : String :=
   typeName ++ "_" ++ method
-
-/-- Suffix appended to HashMap runtime functions when the key type is String. -/
-def hashMapStrKeySuffix : String := "_str"
 
 /-- Suffix for compiler-generated sizeof functions. -/
 def sizeofSuffix : String := "_sizeof"

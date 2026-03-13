@@ -599,7 +599,6 @@ private def getBuiltinsIR : String :=
   let initState : CodegenState := default
   let s := genBuiltinFunctions initState
   let s := genConversionBuiltins s
-  let s := genHashMapFunctions s
   s.output
 
 /-- Generate standalone Vec builtin function definitions for the SSA path.
@@ -707,85 +706,9 @@ private def getVecBuiltinsIR : String :=
     ++ s!"}\n"
   ir
 
-/-- HashMap wrapper functions that delegate to __hashmap_int_* / __hashmap_str_* builtins. -/
-private def getMapBuiltinsIR : String :=
-  -- map_new() -> HashMap (int keys, 8-byte values)
-  "define %struct.HashMap @map_new() {\n"
-  ++ "  %m = alloca %struct.HashMap\n"
-  ++ "  call void @__hashmap_int_new(ptr %m, i64 8, i64 8)\n"
-  ++ "  %r = load %struct.HashMap, ptr %m\n"
-  ++ "  ret %struct.HashMap %r\n"
-  ++ "}\n\n"
-  ++ "define void @map_insert(ptr %m, i64 %key, i64 %val) {\n"
-  ++ "  %kp = alloca i64\n"
-  ++ "  store i64 %key, ptr %kp\n"
-  ++ "  %vp = alloca i64\n"
-  ++ "  store i64 %val, ptr %vp\n"
-  ++ "  call void @__hashmap_int_insert(ptr %m, ptr %kp, ptr %vp, i64 8, i64 8)\n"
-  ++ "  ret void\n"
-  ++ "}\n\n"
-  ++ "define %enum.Option @map_get(ptr %m, i64 %key) {\n"
-  ++ "  %kp = alloca i64\n"
-  ++ "  store i64 %key, ptr %kp\n"
-  ++ "  %opt = alloca %enum.Option\n"
-  ++ "  call void @__hashmap_int_get(ptr %m, ptr %kp, ptr %opt, i64 8, i64 8)\n"
-  ++ "  %r = load %enum.Option, ptr %opt\n"
-  ++ "  ret %enum.Option %r\n"
-  ++ "}\n\n"
-  ++ "define void @map_free(ptr %m) {\n"
-  ++ "  %kf = getelementptr inbounds %struct.HashMap, ptr %m, i32 0, i32 0\n"
-  ++ "  %kb = load ptr, ptr %kf\n"
-  ++ "  call void @free(ptr %kb)\n"
-  ++ "  %vf = getelementptr inbounds %struct.HashMap, ptr %m, i32 0, i32 1\n"
-  ++ "  %vb = load ptr, ptr %vf\n"
-  ++ "  call void @free(ptr %vb)\n"
-  ++ "  %ff = getelementptr inbounds %struct.HashMap, ptr %m, i32 0, i32 2\n"
-  ++ "  %fb = load ptr, ptr %ff\n"
-  ++ "  call void @free(ptr %fb)\n"
-  ++ "  ret void\n"
-  ++ "}\n\n"
-  ++ "define i64 @map_len(ptr %m) {\n"
-  ++ "  %lp = getelementptr inbounds %struct.HashMap, ptr %m, i32 0, i32 3\n"
-  ++ "  %r = load i64, ptr %lp\n"
-  ++ "  ret i64 %r\n"
-  ++ "}\n\n"
-  ++ "define i1 @map_contains(ptr %m, i64 %key) {\n"
-  ++ "  %kp = alloca i64\n"
-  ++ "  store i64 %key, ptr %kp\n"
-  ++ "  %r = call i1 @__hashmap_int_contains(ptr %m, ptr %kp, i64 8)\n"
-  ++ "  ret i1 %r\n"
-  ++ "}\n\n"
-  ++ "define %enum.Option @map_remove(ptr %m, i64 %key) {\n"
-  ++ "  %kp = alloca i64\n"
-  ++ "  store i64 %key, ptr %kp\n"
-  ++ "  %opt = alloca %enum.Option\n"
-  ++ "  call void @__hashmap_int_remove(ptr %m, ptr %kp, ptr %opt, i64 8, i64 8)\n"
-  ++ "  %r = load %enum.Option, ptr %opt\n"
-  ++ "  ret %enum.Option %r\n"
-  ++ "}\n\n"
-  -- String-keyed variants
-  ++ "define %struct.HashMap @map_new_str() {\n"
-  ++ "  %m = alloca %struct.HashMap\n"
-  ++ "  call void @__hashmap_str_new(ptr %m, i64 24, i64 8)\n"
-  ++ "  %r = load %struct.HashMap, ptr %m\n"
-  ++ "  ret %struct.HashMap %r\n"
-  ++ "}\n\n"
-  ++ "define void @map_insert_str(ptr %m, ptr %key, i64 %val) {\n"
-  ++ "  %vp = alloca i64\n"
-  ++ "  store i64 %val, ptr %vp\n"
-  ++ "  call void @__hashmap_str_insert(ptr %m, ptr %key, ptr %vp, i64 24, i64 8)\n"
-  ++ "  ret void\n"
-  ++ "}\n\n"
-  ++ "define %enum.Option @map_get_str(ptr %m, ptr %key) {\n"
-  ++ "  %opt = alloca %enum.Option\n"
-  ++ "  call void @__hashmap_str_get(ptr %m, ptr %key, ptr %opt, i64 24, i64 8)\n"
-  ++ "  %r = load %enum.Option, ptr %opt\n"
-  ++ "  ret %enum.Option %r\n"
-  ++ "}\n\n"
-
 /-- Emit builtin implementations needed by the program. -/
 private def emitBuiltins (s : EmitSSAState) : EmitSSAState :=
-  { s with output := s.output ++ getBuiltinsIR ++ getVecBuiltinsIR ++ getMapBuiltinsIR }
+  { s with output := s.output ++ getBuiltinsIR ++ getVecBuiltinsIR }
 
 -- ============================================================
 -- Entry point: emit full SSA program as LLVM IR
@@ -972,15 +895,15 @@ def emitSSAProgram (modules : List SModule) (testMode : Bool := false) : String 
       builtinId := some .result }
   let builtinEnums : List CEnumDef := [optionDef, resultDef]
   let s := { s with structDefs := allStructs, enumDefs := builtinEnums ++ allEnums }
-  -- Well-known struct types (String, Vec, HashMap)
+  -- Well-known struct types (String, Vec)
   let s := Layout.builtinTypeDefs.foldl (fun s line => emit s line) s
   -- Mark builtins as emitted so user-defined versions don't duplicate them
-  let s := { s with emittedTypes := ["String", "Vec", "HashMap"] ++ s.emittedTypes }
+  let s := { s with emittedTypes := ["String", "Vec"] ++ s.emittedTypes }
   -- Whole-program monomorphic ABI for builtin generic enums:
   -- Scan all SSA modules for concrete type arguments, then emit a single LLVM type
   -- definition sized to the largest payload across all instantiations.
   -- Smaller payloads under-fill the slot (wasted padding) but are correct.
-  -- Builtin functions (vec_pop, map_get, etc.) store i64 payloads, which always fit.
+  -- Builtin functions (vec_pop, etc.) store i64 payloads, which always fit.
   -- NOTE: GEP offsets in Lower.lean assume tyAlign(.typeVar "T") = 8, which is correct
   -- only because all current Concrete types have alignment ≤ 8. If larger-aligned types
   -- are added, Lower.lean will need to thread concrete type args through offset computation.

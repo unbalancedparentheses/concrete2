@@ -1,6 +1,7 @@
 mod set {
     import std.map.{HashMap};
     import std.option.{Option};
+    import std.hash.{hash_i32, eq_i32};
 
     // HashSet<K> — thin wrapper around HashMap<K, u8>.
     // Takes hash and eq function pointers at construction.
@@ -62,7 +63,33 @@ mod set {
         }
     }
 
-    // HashSet tests disabled: wraps HashMap, which has a layout mismatch
-    // between the user-defined struct (7 fields with fn pointers) and the
-    // builtin intrinsic implementation (5 fields, no fn pointers). See map.con.
+    #[test]
+    fn test_set_insert_contains() with(Alloc, Unsafe) -> i32 {
+        let mut s: HashSet<i32> = HashSet::<i32>::new(hash_i32, eq_i32);
+        s.insert(1);
+        s.insert(2);
+        s.insert(3);
+        let k1: i32 = 1;
+        let k2: i32 = 99;
+        if !(s.contains(&k1)) { s.drop(); return 1; }
+        if s.contains(&k2) { s.drop(); return 1; }
+        if s.len() != 3 { s.drop(); return 1; }
+        s.drop();
+        return 0;
+    }
+
+    #[test]
+    fn test_set_remove() with(Alloc, Unsafe) -> i32 {
+        let mut s: HashSet<i32> = HashSet::<i32>::new(hash_i32, eq_i32);
+        s.insert(10);
+        s.insert(20);
+        s.remove(&10);
+        let k10: i32 = 10;
+        let k20: i32 = 20;
+        if s.contains(&k10) { s.drop(); return 1; }
+        if !(s.contains(&k20)) { s.drop(); return 1; }
+        if s.len() != 1 { s.drop(); return 1; }
+        s.drop();
+        return 0;
+    }
 }

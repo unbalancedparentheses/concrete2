@@ -548,16 +548,6 @@ else
 fi
 run_ok "$TESTDIR/socket_listen_close.con" 0
 
-# HashMap tests
-run_ok "$TESTDIR/hashmap_int_int.con" 102
-run_ok "$TESTDIR/hashmap_string_int.con" 42
-run_ok "$TESTDIR/hashmap_remove.con" 0
-run_ok "$TESTDIR/hashmap_contains.con" 10
-run_ok "$TESTDIR/hashmap_overwrite.con" 201
-run_ok "$TESTDIR/hashmap_remove_check.con" 201
-run_ok "$TESTDIR/hashmap_stress.con" 790
-run_ok "$TESTDIR/hashmap_get_missing.con" 0
-
 # Phase 7: FFI / Unsafe
 run_ok "$TESTDIR/ffi_basic.con" 42
 run_ok "$TESTDIR/trusted_extern_basic.con" 42
@@ -572,7 +562,6 @@ run_ok "$TESTDIR/if_else_while.con" 3
 run_ok "$TESTDIR/while_seq_scoping.con" 400
 run_ok "$TESTDIR/fmt_parse_roundtrip.con" 0
 run_ok "$TESTDIR/vec_trace.con" 0
-run_ok "$TESTDIR/hashmap_trace.con" 0
 run_ok "$TESTDIR/struct_nested.con" 42
 run_ok "$TESTDIR/complex_multi_feature.con" 40
 run_ok "$TESTDIR/complex_heap_borrow.con" 42
@@ -689,8 +678,6 @@ run_err "$TESTDIR/error_ffi_no_unsafe.con" "but caller has"
 run_err "$TESTDIR/error_vec_no_alloc.con" "but caller has"
 # Network errors
 run_err "$TESTDIR/error_network_no_cap.con" "but caller has"
-# HashMap errors
-run_err "$TESTDIR/error_hashmap_no_alloc.con" "but caller has"
 # Match exhaustiveness
 run_err "$TESTDIR/error_match_missing_variant.con" "missing variant"
 # Return type mismatch
@@ -1367,6 +1354,12 @@ check_collection_tests "Text" \
 
 check_collection_tests "Slice" \
     test_slice_len test_slice_get_unchecked test_slice_empty test_mutslice_set_get
+
+check_collection_tests "HashMap" \
+    test_map_insert_len test_map_contains test_map_overwrite test_map_remove
+
+check_collection_tests "HashSet" \
+    test_set_insert_contains test_set_remove
 
 fi # end section: collection
 

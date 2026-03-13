@@ -3,6 +3,7 @@ mod map {
     import std.alloc.{grow, dealloc};
     import std.option.{Option};
     import std.libc.{memset};
+    import std.hash.{hash_i32, eq_i32};
 
     // Open-addressing hash map with linear probing.
     // Takes hash and eq function pointers at construction (Zig-style).
@@ -225,11 +226,51 @@ mod map {
         }
     }
 
-    // HashMap tests disabled: the compiler intercepts HashMap methods via
-    // builtin intrinsics (map_new, map_insert, etc.) that use a 5-field
-    // struct layout (ptr, ptr, ptr, i64, i64). But the user-defined HashMap
-    // here has 7 fields (including fn pointer fields). The layout mismatch
-    // causes SIGBUS at runtime. Fix: either align the user struct to the
-    // builtin layout, or compile the user-defined HashMap natively (requires
-    // fixing generic linearity: isCopyType treats typeVar as always linear).
+    #[test]
+    fn test_map_insert_len() with(Alloc, Unsafe) -> i32 {
+        let mut m: HashMap<i32, i32> = HashMap::<i32, i32>::new(hash_i32, eq_i32);
+        m.insert(1, 10);
+        m.insert(2, 20);
+        m.insert(3, 30);
+        if m.len() != 3 { m.drop(); return 1; }
+        m.drop();
+        return 0;
+    }
+
+    #[test]
+    fn test_map_contains() with(Alloc, Unsafe) -> i32 {
+        let mut m: HashMap<i32, i32> = HashMap::<i32, i32>::new(hash_i32, eq_i32);
+        m.insert(42, 100);
+        let k1: i32 = 42;
+        let k2: i32 = 99;
+        if !(m.contains(&k1)) { m.drop(); return 1; }
+        if m.contains(&k2) { m.drop(); return 1; }
+        m.drop();
+        return 0;
+    }
+
+    #[test]
+    fn test_map_overwrite() with(Alloc, Unsafe) -> i32 {
+        let mut m: HashMap<i32, i32> = HashMap::<i32, i32>::new(hash_i32, eq_i32);
+        m.insert(1, 100);
+        m.insert(1, 200);
+        if m.len() != 1 { m.drop(); return 1; }
+        m.drop();
+        return 0;
+    }
+
+    #[test]
+    fn test_map_remove() with(Alloc, Unsafe) -> i32 {
+        let mut m: HashMap<i32, i32> = HashMap::<i32, i32>::new(hash_i32, eq_i32);
+        m.insert(1, 100);
+        m.insert(2, 200);
+        m.remove(&1);
+        let k1: i32 = 1;
+        let k2: i32 = 2;
+        if m.contains(&k1) { m.drop(); return 1; }
+        if !(m.contains(&k2)) { m.drop(); return 1; }
+        if m.len() != 1 { m.drop(); return 1; }
+        m.drop();
+        return 0;
+    }
 }
