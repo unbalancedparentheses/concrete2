@@ -79,6 +79,7 @@ Still clearly not implemented:
   - if-without-else where the then-branch returns no longer blocks linear consumption in that branch
 - **User-defined IntMap validated end-to-end**: a full hash map with fn pointer fields for hash/eq (same pattern as `HashMap`) compiles and runs correctly through the native compiler path, proving the linearity fix chain works.
 - **Builtin HashMap interception retired**: ~1,400 lines of compiler-internal HashMap machinery deleted (7 intrinsic IDs, type checking/elaboration intercepts, LLVM wrapper functions, hand-written LLVM IR runtime with hash/probe/insert/get/contains/remove/grow for int and string keys, hardcoded 5-field struct type). HashMap is now an ordinary stdlib type compiled through the normal generic struct path. 6 new stdlib tests (4 HashMap, 2 HashSet) replace 11 deleted builtin-API tests. HashMap and HashSet are now in the collection verification section of the test runner.
+- **Structured backend conversion landed for the main emission path**: user functions, extern declarations, type definitions, globals, the main wrapper, the test runner, and vec builtins now emit through structured `LLVMModule` fields rather than raw text concatenation. The remaining raw backend island is `getBuiltinsIR` in the legacy builtin codegen path (`Concrete/Codegen/Builtins.lean`).
 - 544 tests pass (148 stdlib), including SSA structure verification, -O2 regressions for aggregate lowering paths, expanded stdlib module coverage, six linearity regression tests, and native HashMap/HashSet coverage.
 - **Phase C completed**: all 8 items done:
   - module-targeted stdlib testing (`--stdlib-module <name>` runs tests for a single stdlib module)
@@ -93,11 +94,12 @@ Still clearly not implemented:
 Phases A, B, and C are done. Phase D is active. The compiler has a working stdlib, module-targeted testing, hardened reports (6 modes with why-traces, trust boundaries, allocation tracking), and 600 tests passing. Active work is backend and trust multipliers.
 
 1. Push the backend/artifact/proof stack (Phase D):
-   - problem: textual LLVM emission is still a brittle choke point, and backend plurality would multiply instability if the backend contract stays loose
+   - problem: the main emission path is now structured, but one legacy backend island remains (`getBuiltinsIR`), the SSA/backend contract still needs tightening, and backend plurality would multiply instability if the remaining legacy/raw path and contract looseness survive
    - why now: this is the front edge of Phase D and the prerequisite for serious backend, tooling, and proof leverage; it is also the phase that should make the first real Lean 4 proof workflow for selected Concrete functions actually work
    - primary surfaces: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/PASSES.md](docs/PASSES.md), [Concrete/SSAVerify.lean](/Users/unbalancedparen/projects/concrete/Concrete/SSAVerify.lean), [Concrete/SSACleanup.lean](/Users/unbalancedparen/projects/concrete/Concrete/SSACleanup.lean), [Concrete/EmitSSA.lean](/Users/unbalancedparen/projects/concrete/Concrete/EmitSSA.lean), [Concrete/Pipeline.lean](/Users/unbalancedparen/projects/concrete/Concrete/Pipeline.lean)
    - first slices:
-     - replace raw LLVM string emission with a structured LLVM backend
+     - record the main structured-backend conversion as landed and treat `getBuiltinsIR` as the remaining legacy backend island
+     - decide explicitly whether that legacy builtin path should be retired or rewritten into the structured backend
      - strengthen SSA/backend contract
      - turn explicit pipeline artifacts into reusable tooling/caching building blocks
      - make validated Core a first-class proof-oriented artifact boundary after `CoreCheck` and before `Mono`
@@ -114,7 +116,7 @@ Phases A, B, and C are done. Phase D is active. The compiler has a working stdli
      - do not add another backend family until the LLVM path is structurally cleaner
      - treat MLIR as a later optional backend family, not the default immediate answer
      - once the structured LLVM path and SSA contract are solid, evaluate MLIR deliberately as a potential replacement or additional backend family rather than as an early escape hatch
-   - done means: the backend consumes a structured contract over SSA, textual LLVM concatenation is no longer the critical path, pipeline artifacts support reuse, and the first real Lean 4 proof workflow exists for selected Concrete functions over validated Core
+   - done means: the backend consumes a structured contract over SSA, the remaining legacy builtin backend island is either retired or cleanly rewritten, pipeline artifacts support reuse, and the first real Lean 4 proof workflow exists for selected Concrete functions over validated Core
 
 ### Phase A Notes
 
@@ -429,24 +431,31 @@ Concrete is not only architecturally strong internally, but also operable, repro
 
 ### Next
 
-1. Replace raw LLVM text emission with a structured backend.
-   - the immediate backend problem is stringly LLVM emission, not lack of MLIR
-   - replace `EmitSSA.lean` string concatenation with a structured LLVM IR representation
-   - preserve the SSA boundary as the only backend contract
-2. Strengthen the SSA verifier/cleanup boundary into a clearer backend contract.
+1. Turn testing from shell-level fast paths into artifact-aware, dependency-aware execution.
+   - reuse compiler artifacts instead of recompiling/rerunning unnecessarily
+   - rerun only the scopes actually affected by a change instead of relying only on string filters
+   - classify tests more clearly (`fast`, `unit`, `integration`, `optimization/regression`, `report/golden`, `slow/network/stress`) so local runs and CI can choose smarter defaults
+2. Grow a stronger real-program and invariant-testing corpus on top of that faster loop.
+   - add more nontrivial integration programs instead of only many small regressions
+   - keep expanding property/fuzz/differential coverage, especially around parser/formatter/report/IR invariants
+3. Finish the remaining backend cleanup after the main structured emission conversion.
+   - keep the main structured LLVM backend win explicit in the roadmap/history
+   - treat `getBuiltinsIR` as the remaining legacy backend island
+   - decide whether to retire that legacy builtin path or rewrite it cleanly as a structured follow-up
+4. Strengthen the SSA verifier/cleanup boundary into a clearer backend contract.
    - make the SSA/backend interface explicit enough for backend plurality later
    - turn SSA verification into a contract that any backend can rely on
-3. Push formalization over the cleaned Core -> SSA architecture.
+5. Push formalization over the cleaned Core -> SSA architecture.
    - prioritize proof targets that directly depend on the compiler architecture cleanup: Core soundness, capability discipline, linearity/resource soundness, and Core -> SSA preservation
    - stage the user-program proof workflow explicitly: validated Core after `CoreCheck` as proof boundary, small pure ProofCore fragment, manual embedding of selected functions, first concrete proofs, later export/tooling
-4. Turn explicit pipeline artifacts into stronger tooling/caching building blocks.
+6. Turn explicit pipeline artifacts into stronger tooling/caching building blocks.
    - keep artifact boundaries explicit and inspectable
    - move toward serialization/caching only on top of already boring pass contracts
    - use explicit artifacts to enable better test reuse and narrower recompilation
-5. Prepare for eventual Lean-side proof of selected Concrete functions by keeping Core semantics small, explicit, and suitable as the proof boundary.
+7. Prepare for eventual Lean-side proof of selected Concrete functions by keeping Core semantics small, explicit, and suitable as the proof boundary.
    - keep the proof boundary after `CoreCheck` and before `Mono`
    - treat ProofCore as a restricted view of validated Core rather than a second semantic IR
-6. Preserve a small set of long-horizon differentiator ideas in research without turning them into immediate roadmap thrash.
+8. Preserve a small set of long-horizon differentiator ideas in research without turning them into immediate roadmap thrash.
    - first-class audit mode and authority tracing
    - proof-carrying reports and proof-oriented module contracts
    - verified FFI envelopes
