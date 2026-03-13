@@ -473,6 +473,11 @@ Concrete is not only architecturally strong internally, but also operable, repro
    - abstract cost estimation later
    - never at the cost of clarity in the core language
 10. Lean-side proof of selected Concrete functions over formalized Core, starting with pure fragments rather than raw surface syntax or FFI-heavy code.
+11. Implement a real artificial-life showcase/stress-test in Concrete.
+   - target a program in the spirit of Rabrg's `artificial-life` reproduction of "Computational Life: How Well-formed, Self-replicating Programs Emerge from Simple Interaction"
+   - a 240x135 grid of 64-instruction Brainfuck-like programs, randomly initialized, locally paired, concatenated, executed for bounded steps, then split back apart
+   - use it as a serious end-to-end stress test for runtime/performance, collections/buffers, formatting/reporting, and later proof/audit ambitions
+   - treat it as a showcase workload once the runtime, stdlib, and backend are mature enough rather than as immediate Phase C compiler work
 
 ## Backend Work Order
 
