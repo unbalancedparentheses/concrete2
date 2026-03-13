@@ -653,10 +653,19 @@ private def emitSBlock (s : EmitSSAState) (b : SBlock) : EmitSSAState :=
   let s := b.insts.foldl emitSInst s
   -- Emit terminator (may add pre-terminator instructions to currentInstrs)
   let (s, term) := emitSTerm s b.term
-  -- Create the block with structured instructions and terminator
+  -- LLVM requires all PHI nodes at the top of a basic block.
+  -- Lower.lean can interleave PHIs with other instructions (e.g. when multiple
+  -- if-statements appear in a match arm), so partition and reorder here.
+  let isPhi : LLVMInstr → Bool
+    | .phi .. => true
+    | _ => false
+  let allInstrs := s.currentInstrs.toList
+  let phis := allInstrs.filter isPhi
+  let nonPhis := allInstrs.filter (fun i => !isPhi i)
+  -- Create the block with PHIs first, then other instructions
   let block : LLVMBlock := {
     label := b.label
-    instrs := s.currentInstrs.toList
+    instrs := phis ++ nonPhis
     term := term
   }
   { s with
