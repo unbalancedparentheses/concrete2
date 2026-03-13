@@ -229,6 +229,8 @@ Testing is not just support work here. It should become a first-class compiler s
 
 The current test infrastructure is good for a research-stage compiler, but its limits should stay explicit. The suite has breadth and the right broad categories, yet too much behavior still lives in a large shell script, too many semantic tests still pay full process/filesystem/codegen cost, report assertions still recompile the same programs repeatedly, and failure reproduction/isolation is weaker than it should be for a fast parallel workflow.
 
+The bar for Phase D should be unusually high: not merely "good enough CI" or "lots of tests," but a testing system that feels best-in-class for a compiler project. That means the fastest credible feedback loop, the clearest explanation of what was tested and why, the cheapest path from change to affected coverage, the best failure isolation and reproduction story, and the strongest mix of end-to-end, pass-level, invariant, differential, and proof-adjacent validation that the project can realistically support.
+
 Primary surfaces:
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - [docs/PASSES.md](docs/PASSES.md)
@@ -249,6 +251,7 @@ Primary surfaces:
      - a documented artifact model for parse/Core/validated-Core/mono/SSA/report outputs with stable identity rules
      - a reusable cache key strategy tied to those artifacts rather than ad hoc runner behavior
      - a targeted-run path that can explain why a test was selected or skipped
+     - explicit change-to-test mapping good enough that a developer can see which tests are affected by a file, pass, module, or report-mode change
 2. make testing architecture a first-class subsystem
    - add pass-level Lean tests for `Check`, `Elab`, `Lower`, `SSAVerify`, and `EmitSSA` where end-to-end execution is unnecessary cost
    - define a clearer coverage matrix by failure mode (parser crash resistance, semantic regressions, lowering invariants, backend structure, runtime behavior, diagnostics, reports, stdlib behavior, optimization regressions)
@@ -263,6 +266,7 @@ Primary surfaces:
      - per-test timing output and preserved failure artifacts for targeted debugging
      - a reproducible single-test rerun path for failures discovered under parallel execution
      - a lower-cost semantic-test path that avoids full compiler/codegen/process overhead when that cost is unnecessary
+     - failure output that tells the developer what failed, how long it took, what artifacts were kept, and the exact rerun command
 3. strengthen the SSA verifier/cleanup boundary into a clearer backend contract
    - deliverables:
      - a documented SSA contract naming what cleanup guarantees and what every backend may assume
@@ -288,6 +292,7 @@ Primary surfaces:
      - 2-3 real multi-module programs in the roughly 100-300 line range that combine multiple language features under realistic pressure
      - cached multi-assertion report testing so one compiler run can satisfy multiple report assertions against the same program
      - deeper integration coverage for FFI, file, and network behavior
+     - at least one stress-style integration program large enough to act as a real compiler workload, not only a feature sampler
 6. push formalization over Core -> SSA
    - treat validated Core after `CoreCheck` as the main proof boundary for user-program proofs
    - formalize a small pure Core fragment first
@@ -305,7 +310,7 @@ Primary surfaces:
      - regression-tested report outputs with stable semantic assertions rather than brittle snapshots
 
 Exit criterion:
-backend work no longer feels fragile, proofs, reports, and tooling all build on the same stable compiler boundaries, targeted test runs are artifact-aware and dependency-aware, pass-level and end-to-end testing play distinct roles under explicit coverage/determinism rules, and selected Concrete functions can actually be proved in Lean 4 over validated Core.
+backend work no longer feels fragile, proofs, reports, and tooling all build on the same stable compiler boundaries, targeted test runs are artifact-aware and dependency-aware, failures are easy to isolate and rerun, semantic tests avoid unnecessary full-pipeline cost, pass-level and end-to-end testing play distinct roles under explicit coverage/determinism rules, and selected Concrete functions can actually be proved in Lean 4 over validated Core.
 
 #### Phase E: Runtime And Execution Model
 
