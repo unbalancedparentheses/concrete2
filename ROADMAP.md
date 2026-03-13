@@ -55,7 +55,7 @@ Still clearly not implemented:
 | **A** | Fast feedback and compiler stability | Done enough; aggregate lowering hardened, test runner parallelized, SSA invariants mechanically defended | B, C, D |
 | **B** | Semantic cleanup | Done | D |
 | **C** | Tooling and stdlib hardening | Done; all 8 items complete (LL(1) CI, linearity fixes, HashMap retired, module-targeted testing, diagnostics polish, integration tests, report hardening, audit reports) | later system maturity |
-| **D** | Backend and trust multipliers | Active | A, most of B |
+| **D** | Testing, backend, and trust multipliers | Active | A, most of B |
 | **E** | Runtime and execution model | Deferred | C, D |
 | **F** | Capability and safety productization | Deferred | D, E |
 | **G** | Language surface and feature discipline | Deferred | B, D, E, F |
@@ -90,16 +90,32 @@ Still clearly not implemented:
 
 ### Now
 
-Phases A, B, and C are done. Phase D is active. The compiler has a working stdlib, module-targeted testing, hardened reports (6 modes with why-traces, trust boundaries, allocation tracking), a fully structured LLVM backend, and 600 tests passing. Active work is backend and trust multipliers.
+Phases A, B, and C are done. Phase D is active. The compiler has a working stdlib, module-targeted testing, hardened reports (6 modes with why-traces, trust boundaries, allocation tracking), a fully structured LLVM backend, and 600 tests passing. Active work is now testing architecture first, then backend/proof/trust multipliers on top of that stronger base.
 
-1. Push the backend/artifact/proof stack (Phase D):
-   - problem: the structured backend is now in place, but the SSA/backend contract still needs tightening, pipeline artifacts are not yet doing enough real work, and the proof-facing validated-Core path is still more described than implemented
-   - why now: the structured backend win removes the biggest backend-shape blocker, so Phase D can now focus on contract strength, artifact reuse, and the first real Lean 4 proof workflow for selected Concrete functions
+1. Make testing infrastructure best-in-class (Phase D1 inside Phase D):
+   - problem: the suite has strong breadth, but too much test behavior still lives in shell orchestration, semantic tests pay too much full-pipeline cost, repeated report assertions waste compiler work, and failure isolation/reproduction is weaker than it should be
+   - why now: this is the highest-leverage compiler work left because faster, clearer, more reliable testing raises the quality ceiling on every later backend, proof, stdlib, and runtime task
+   - primary surfaces: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/PASSES.md](docs/PASSES.md), [Concrete/SSAVerify.lean](/Users/unbalancedparen/projects/concrete/Concrete/SSAVerify.lean), [Concrete/SSACleanup.lean](/Users/unbalancedparen/projects/concrete/Concrete/SSACleanup.lean), [Concrete/EmitSSA.lean](/Users/unbalancedparen/projects/concrete/Concrete/EmitSSA.lean), [Concrete/Pipeline.lean](/Users/unbalancedparen/projects/concrete/Concrete/Pipeline.lean)
+   - first slices:
+     - turn explicit pipeline artifacts into reusable tooling/caching building blocks
+     - move testing beyond shell-level filtering toward dependency-aware and artifact-aware execution
+     - add pass-level Lean tests for semantic/compiler-pass behavior
+     - preserve failure artifacts and exact rerun commands automatically
+     - cache multi-assertion report checks and other repeated compiler work
+     - grow the integration corpus toward real multi-module and stress-style programs
+   - constraints:
+     - prefer the fastest credible feedback loop over deeper refactors when the choice is real
+     - do not confuse "more tests" with better testing; architecture, reproducibility, and selection quality matter as much as count
+     - keep the system explainable enough that developers can see why a given test did or did not run
+   - done means: targeted runs are explainable and dependency-aware, failures are easy to isolate and rerun, semantic tests avoid unnecessary full-pipeline cost, report/invariant checks reuse artifacts aggressively, and the suite includes real multi-module and stress-style programs rather than mostly feature probes
+
+2. Push the backend/artifact/proof stack on top of that stronger base (Phase D2 inside Phase D):
+   - problem: the structured backend is now in place, but the SSA/backend contract still needs tightening, pipeline artifacts are not yet doing enough real work beyond testing, and the proof-facing validated-Core path is still more described than implemented
+   - why now: once D1 makes testing fast, reliable, and architecture-aware, Phase D can press harder on contract strength, artifact reuse, and the first real Lean 4 proof workflow for selected Concrete functions
    - primary surfaces: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/PASSES.md](docs/PASSES.md), [Concrete/SSAVerify.lean](/Users/unbalancedparen/projects/concrete/Concrete/SSAVerify.lean), [Concrete/SSACleanup.lean](/Users/unbalancedparen/projects/concrete/Concrete/SSACleanup.lean), [Concrete/EmitSSA.lean](/Users/unbalancedparen/projects/concrete/Concrete/EmitSSA.lean), [Concrete/Pipeline.lean](/Users/unbalancedparen/projects/concrete/Concrete/Pipeline.lean)
    - first slices:
      - record the fully structured backend conversion as landed in the roadmap/changelog/docs
      - strengthen SSA/backend contract
-     - turn explicit pipeline artifacts into reusable tooling/caching building blocks
      - make `ValidatedCore` explicit in `Concrete/Pipeline.lean` rather than leaving it only as a documented post-`CoreCheck` boundary
      - make validated Core a first-class proof-oriented artifact boundary after `CoreCheck` and before `Mono`
      - preserve source-to-Core traceability well enough that selected functions can later be understood and proved in Lean
@@ -115,7 +131,7 @@ Phases A, B, and C are done. Phase D is active. The compiler has a working stdli
      - do not add another backend family until the LLVM path is structurally cleaner
      - treat MLIR as a later optional backend family, not the default immediate answer
      - once the structured LLVM path and SSA contract are solid, evaluate MLIR deliberately as a potential replacement or additional backend family rather than as an early escape hatch
-   - done means: `ValidatedCore` is a named, explicit artifact in the pipeline rather than only a documented conceptual boundary, the backend consumes a structured contract over SSA, pipeline artifacts support reuse, and the first real Lean 4 proof workflow exists for selected Concrete functions over validated Core
+   - done means: `ValidatedCore` is a named, explicit artifact in the pipeline rather than only a documented conceptual boundary, the backend consumes a structured contract over SSA, pipeline artifacts support reuse beyond test orchestration, and the first real Lean 4 proof workflow exists for selected Concrete functions over validated Core
 
 ### Phase A Notes
 
@@ -219,7 +235,7 @@ Landed deliverables:
 Exit criterion:
 syntax guardrails, diagnostics, and stdlib testing behave like durable infrastructure rather than one-off pushes.
 
-#### Phase D: Backend And Trust Multipliers
+#### Phase D: Testing, Backend, And Trust Multipliers
 
 Goal: make the compiler strong enough to support proofs, tooling reuse, and long-term backend work.
 
@@ -230,6 +246,12 @@ Testing is not just support work here. It should become a first-class compiler s
 The current test infrastructure is good for a research-stage compiler, but its limits should stay explicit. The suite has breadth and the right broad categories, yet too much behavior still lives in a large shell script, too many semantic tests still pay full process/filesystem/codegen cost, report assertions still recompile the same programs repeatedly, and failure reproduction/isolation is weaker than it should be for a fast parallel workflow.
 
 The bar for Phase D should be unusually high: not merely "good enough CI" or "lots of tests," but a testing system that feels best-in-class for a compiler project. That means the fastest credible feedback loop, the clearest explanation of what was tested and why, the cheapest path from change to affected coverage, the best failure isolation and reproduction story, and the strongest mix of end-to-end, pass-level, invariant, differential, and proof-adjacent validation that the project can realistically support.
+
+Phase D is split internally:
+- D1: Testing Architecture And Validation Excellence
+- D2: Backend, Artifact, And Proof Multipliers
+
+The intent is explicit: testing comes first inside Phase D. Backend/proof work should ride on top of a testing system that is already fast, explainable, artifact-aware, and unusually reliable.
 
 Primary surfaces:
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
@@ -245,19 +267,29 @@ Primary surfaces:
 1. turn explicit pipeline artifacts into reusable tooling/caching building blocks
    - use those artifacts as the foundation for artifact-aware test reuse, caching, and narrower rerun scopes
    - move test execution beyond shell-level filtering toward dependency-aware reruns
-   - classify tests more clearly (`fast`, `unit`, `integration`, `optimization/regression`, `report/golden`, `slow/network/stress`) so local runs and CI can choose better defaults
+   - classify tests more clearly (`unit`, `semantic`, `report`, `codegen`, `integration`, `stress`) and also by run profile (`fast`, `optimization/regression`, `report/golden`, `slow/network/stress`) so local runs and CI can choose better defaults
    - make test classification real compiler metadata rather than only runner conventions
+   - require test metadata to capture expected phase, required capabilities (for example network/filesystem), whether codegen is required, and the owning source/module/pass where known
    - deliverables:
      - a documented artifact model for parse/Core/validated-Core/mono/SSA/report outputs with stable identity rules
      - a reusable cache key strategy tied to those artifacts rather than ad hoc runner behavior
      - a targeted-run path that can explain why a test was selected or skipped
      - explicit change-to-test mapping good enough that a developer can see which tests are affected by a file, pass, module, or report-mode change
+     - compile-once/reuse-many execution for repeated report, SSA, and diagnostics assertions against the same program artifacts
 2. make testing architecture a first-class subsystem
+   - split the stack deliberately by cost and purpose: pass-level Lean tests, artifact tests for Core/SSA/report outputs, end-to-end runtime tests, and stress/integration tests
    - add pass-level Lean tests for `Check`, `Elab`, `Lower`, `SSAVerify`, and `EmitSSA` where end-to-end execution is unnecessary cost
    - define a clearer coverage matrix by failure mode (parser crash resistance, semantic regressions, lowering invariants, backend structure, runtime behavior, diagnostics, reports, stdlib behavior, optimization regressions)
    - add performance-regression tracking for compile time, suite time, and artifact reuse efficiency so "faster" stays defended rather than anecdotal
-   - define determinism/flakiness policy explicitly (network isolation, seeds, timeouts, quarantine/repair expectations)
+   - define determinism/flakiness policy explicitly (fixed seeds unless deliberately exploring, timeout classes, network isolation by default, no wall-clock dependence unless declared, stable tempdir handling, quarantine/repair expectations)
    - push test selection toward dependency- and ownership-aware scopes instead of string matching alone
+   - make `run_tests.sh` thinner over time so it is a frontend into structured test definitions/execution rather than the test system itself
+   - near-term implementation order:
+     - failure artifacts plus exact rerun commands
+     - compile-once/reuse-many report assertions
+     - pass-level Lean tests for semantic failures
+     - test metadata and category model
+     - change-based test selection
    - deliverables:
      - a pass-level Lean test suite covering at least `Check`, `Elab`, `Lower`, `SSAVerify`, and `EmitSSA`
      - a written coverage matrix in `docs/TESTING.md`
@@ -267,6 +299,9 @@ Primary surfaces:
      - a reproducible single-test rerun path for failures discovered under parallel execution
      - a lower-cost semantic-test path that avoids full compiler/codegen/process overhead when that cost is unnecessary
      - failure output that tells the developer what failed, how long it took, what artifacts were kept, and the exact rerun command
+     - automatic failure preservation for source input, stdout/stderr, emitted Core/SSA/report output where relevant, temp files, and environment/test metadata
+     - timing/regression reporting that identifies slowest tests, highest-variance tests, compile-heavy vs runtime-heavy tests, and suite time by category
+     - a data-driven or structured test-definition path that allows `run_tests.sh` to shrink into an orchestration frontend rather than remain the whole system
 3. strengthen the SSA verifier/cleanup boundary into a clearer backend contract
    - deliverables:
      - a documented SSA contract naming what cleanup guarantees and what every backend may assume
@@ -529,7 +564,7 @@ Concrete is not only architecturally strong internally, but also operable, repro
 - **Phase A** matters because a slow feedback loop drags down every compiler task, and backend-sensitive lowering bugs destroy trust in every other part of the compiler.
 - **Phase B** matters because a compiler is much easier to trust, prove, and maintain when ordinary names stay ordinary.
 - **Phase C** matters because syntax guardrails, diagnostics, and testing infrastructure are what make a compiler sustainable instead of heroic.
-- **Phase D** matters because this is where Concrete stops being only a working compiler and becomes a trustworthy compiler platform.
+- **Phase D** matters because this is where Concrete stops being only a working compiler and becomes a trustworthy compiler platform, starting with testing architecture strong enough to support every later backend and proof ambition.
 - **Phase E** matters because a language is not really settled until its execution model is explicit.
 - **Phase F** matters because Concrete's safety model should be a user-visible strength, not only an internal design claim.
 - **Phase G** matters because languages decay when feature growth has no explicit discipline.
