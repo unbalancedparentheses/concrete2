@@ -3,7 +3,7 @@ import Concrete
 open Concrete
 
 def usage : String :=
-  "Usage: concrete <file.con> [-o output] [--emit-llvm] [--emit-core] [--emit-ssa] [--test] [--test --module <name>] [--report caps|unsafe|layout|interface|mono]"
+  "Usage: concrete <file.con> [-o output] [--emit-llvm] [--emit-core] [--emit-ssa] [--test] [--test --module <name>] [--report caps|unsafe|layout|interface|mono] [--fmt]"
 
 def writeFile (path : String) (content : String) : IO Unit := do
   IO.FS.writeFile ⟨path⟩ content
@@ -269,6 +269,15 @@ def main (args : List String) : IO UInt32 := do
     compileSSA inputPath outputPath false
   | [inputPath, "--report", reportType] =>
     compileAndReport inputPath reportType
+  | [inputPath, "--fmt"] =>
+    let source ← readFile inputPath
+    match parse source with
+    | .error e =>
+      IO.eprintln s!"parse error: {e}"
+      return 1
+    | .ok modules =>
+      IO.print (formatProgram modules)
+      return 0
   | _ =>
     IO.eprintln usage
     return 1
