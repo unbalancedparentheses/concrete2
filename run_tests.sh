@@ -120,6 +120,7 @@ fi
 PASS=0
 FAIL=0
 SKIP=0
+JOB_SEQ=0
 declare -a JOB_PIDS=()
 declare -a JOB_FILES=()
 
@@ -221,12 +222,12 @@ run_ok() {
     local expected="$2"
     if ! filter_match "$file"; then SKIP=$((SKIP + 1)); return; fi
     if [ "$TEST_JOBS" -le 1 ]; then
-        local result_file="$JOBDIR/$$.$RANDOM.result"
+        JOB_SEQ=$((JOB_SEQ + 1)); local result_file="$JOBDIR/$JOB_SEQ.result"
         run_ok_worker "$file" "$expected" "$result_file"
         record_result "$result_file"
         return
     fi
-    local result_file="$JOBDIR/$$.$RANDOM.result"
+    JOB_SEQ=$((JOB_SEQ + 1)); local result_file="$JOBDIR/$JOB_SEQ.result"
     throttle_jobs
     (run_ok_worker "$file" "$expected" "$result_file") &
     JOB_PIDS+=("$!")
@@ -267,12 +268,12 @@ run_ok_O2() {
     local expected="$2"
     if ! filter_match "$file"; then SKIP=$((SKIP + 1)); return; fi
     if [ "$TEST_JOBS" -le 1 ]; then
-        local result_file="$JOBDIR/$$.$RANDOM.result"
+        JOB_SEQ=$((JOB_SEQ + 1)); local result_file="$JOBDIR/$JOB_SEQ.result"
         run_ok_O2_worker "$file" "$expected" "$result_file"
         record_result "$result_file"
         return
     fi
-    local result_file="$JOBDIR/$$.$RANDOM.result"
+    JOB_SEQ=$((JOB_SEQ + 1)); local result_file="$JOBDIR/$JOB_SEQ.result"
     throttle_jobs
     (run_ok_O2_worker "$file" "$expected" "$result_file") &
     JOB_PIDS+=("$!")
@@ -315,12 +316,12 @@ run_err() {
     local expected_err="$2"
     if ! filter_match "$file"; then SKIP=$((SKIP + 1)); return; fi
     if [ "$TEST_JOBS" -le 1 ]; then
-        local result_file="$JOBDIR/$$.$RANDOM.result"
+        JOB_SEQ=$((JOB_SEQ + 1)); local result_file="$JOBDIR/$JOB_SEQ.result"
         run_err_worker "$file" "$expected_err" "$result_file"
         record_result "$result_file"
         return
     fi
-    local result_file="$JOBDIR/$$.$RANDOM.result"
+    JOB_SEQ=$((JOB_SEQ + 1)); local result_file="$JOBDIR/$JOB_SEQ.result"
     throttle_jobs
     (run_err_worker "$file" "$expected_err" "$result_file") &
     JOB_PIDS+=("$!")
@@ -425,12 +426,12 @@ run_abort() {
     local file="$1"
     if ! filter_match "$file"; then SKIP=$((SKIP + 1)); return; fi
     if [ "$TEST_JOBS" -le 1 ]; then
-        local result_file="$JOBDIR/$$.$RANDOM.result"
+        JOB_SEQ=$((JOB_SEQ + 1)); local result_file="$JOBDIR/$JOB_SEQ.result"
         run_abort_worker "$file" "$result_file"
         record_result "$result_file"
         return
     fi
-    local result_file="$JOBDIR/$$.$RANDOM.result"
+    JOB_SEQ=$((JOB_SEQ + 1)); local result_file="$JOBDIR/$JOB_SEQ.result"
     throttle_jobs
     (run_abort_worker "$file" "$result_file") &
     JOB_PIDS+=("$!")
@@ -861,12 +862,12 @@ run_test() {
     local expected="$2"
     if ! filter_match "$file"; then SKIP=$((SKIP + 1)); return; fi
     if [ "$TEST_JOBS" -le 1 ]; then
-        local result_file="$JOBDIR/$$.$RANDOM.result"
+        JOB_SEQ=$((JOB_SEQ + 1)); local result_file="$JOBDIR/$JOB_SEQ.result"
         run_test_worker "$file" "$expected" "$result_file"
         record_result "$result_file"
         return
     fi
-    local result_file="$JOBDIR/$$.$RANDOM.result"
+    JOB_SEQ=$((JOB_SEQ + 1)); local result_file="$JOBDIR/$JOB_SEQ.result"
     throttle_jobs
     (run_test_worker "$file" "$expected" "$result_file") &
     JOB_PIDS+=("$!")
