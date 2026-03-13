@@ -24,3 +24,6 @@ lean_tests/trait_numeric_abs
 # Compiled checker binaries
 scripts/check_ll1
 scripts/check_ll1_rs
+
+# Test failure artifacts
+.test-failures/
