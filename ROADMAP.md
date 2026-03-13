@@ -207,6 +207,8 @@ syntax guardrails, diagnostics, and stdlib testing behave like durable infrastru
 
 Goal: make the compiler strong enough to support proofs, tooling reuse, and long-term backend work.
 
+The first active Phase D pressure is now testing-system infrastructure. Phase C made testing credible; Phase D should make it materially smarter and faster by using compiler artifacts and dependency information instead of relying mostly on shell-level orchestration.
+
 Primary surfaces:
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - [docs/PASSES.md](docs/PASSES.md)
@@ -218,24 +220,29 @@ Primary surfaces:
 - `Concrete/EmitSSA.lean`
 - `Concrete/Report.lean`
 
-1. strengthen the SSA verifier/cleanup boundary into a clearer backend contract
-2. replace raw LLVM text emission with a structured backend
-3. turn explicit pipeline artifacts into reusable tooling/caching building blocks
-   - use those artifacts as the foundation for later test reuse, caching, and narrower rerun scopes
+1. turn explicit pipeline artifacts into reusable tooling/caching building blocks
+   - use those artifacts as the foundation for artifact-aware test reuse, caching, and narrower rerun scopes
+   - move test execution beyond shell-level filtering toward dependency-aware reruns
+   - classify tests more clearly (`fast`, `unit`, `integration`, `optimization/regression`, `report/golden`, `slow/network/stress`) so local runs and CI can choose better defaults
+2. strengthen the SSA verifier/cleanup boundary into a clearer backend contract
+3. replace raw LLVM text emission with a structured backend
 4. define a clearer FFI / ABI maturity path
    - decide what ABI stability, if any, is promised
    - decide what remains intentionally unstable for now
    - make platform-variance expectations explicit instead of accidental
    - add clearer verification/testing expectations for ABI compatibility
    - identify the first concrete cross-platform ABI/layout checks rather than leaving verification purely abstract
-5. push formalization over Core -> SSA
+5. grow a stronger real-program and invariant-testing corpus on top of the faster loop
+   - add more nontrivial integration programs instead of only many small regressions
+   - keep expanding property/fuzz/differential coverage, especially around parser/formatter/report/IR invariants
+6. push formalization over Core -> SSA
    - treat validated Core after `CoreCheck` as the main proof boundary for user-program proofs
    - formalize a small pure Core fragment first
    - define a proof-oriented Core fragment as a restricted view of validated Core, not a separate semantic authority
    - validate the proof boundary with manual embeddings of selected functions
    - only then add compiler/export support for Lean-side proof workflows
    - treat "selected Concrete functions proved in Lean 4" as a core Phase D deliverable, not just a later research aspiration
-6. add deferred audit/report outputs
+7. add deferred audit/report outputs
 
 Exit criterion:
 backend work no longer feels fragile, proofs, reports, and tooling all build on the same stable compiler boundaries, and selected Concrete functions can actually be proved in Lean 4 over validated Core.

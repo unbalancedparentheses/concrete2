@@ -235,3 +235,24 @@ But the current split already provides strong practical coverage:
 - codegen differential tests (--emit-ssa/--emit-llvm/--emit-core assertions)
 - parser fuzzing (test_parser_fuzz.sh)
 - property and trace tests (fmt/parse round-trip, Vec/HashMap traces)
+
+## Next Refinement
+
+The current testing pipeline is good, but the next major improvement is not "add more shell flags." It is to make the loop smarter and cheaper.
+
+The likely bottleneck is no longer the compiler frontend itself. It is repeated process startup, repeated `clang` work, and broad reruns when only a narrow scope changed.
+
+The highest-value next steps are:
+
+- artifact-aware test reuse instead of recompiling and rerunning everything through the full shell path
+- dependency-aware narrower rerun scopes instead of relying only on string filters
+- clearer test classes (`fast`, `unit`, `integration`, `optimization/regression`, `report/golden`, `slow/network/stress`) so local runs and CI can choose better defaults
+- more real-program integration cases plus more property/fuzz/differential coverage
+
+Promising implementation directions include:
+
+- Lean-level unit tests for `Check`, `Elab`, `Lower`, and `EmitSSA` that avoid filesystem and linker overhead entirely
+- faster integration execution paths that reduce per-test `clang` and process-spawn cost, as long as they preserve the semantic value of the current end-to-end suite
+- artifact-driven caching and reuse once the pipeline artifact story is strong enough
+
+The goal is a much tighter development loop without weakening the architectural coverage that the current suite already provides.
