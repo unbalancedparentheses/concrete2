@@ -18,6 +18,56 @@ Concrete is also aiming at something broader than "a working compiler": a compil
 
 One important long-term direction is an explicit high-integrity profile: stricter execution and safety modes for critical code, built around bounded behavior, analyzability, and better evidence rather than feature sprawl.
 
+## One Concrete Shape Of The Vision
+
+Concrete is trying to make three things line up:
+
+1. low-level implementation code
+2. audit/report outputs
+3. Lean 4 proof direction
+
+Example implementation:
+
+```con
+fn unwrap_or_zero(x: Option<Int>) -> Int {
+    match x {
+        Option#Some { value } => return value,
+        Option#None => return 0,
+    }
+}
+```
+
+Example report shape:
+
+```text
+caps:
+  unwrap_or_zero
+    direct: {}
+    transitive: {}
+
+unsafe:
+  Totals: 0 unsafe-related signatures
+```
+
+Example proof shape:
+
+```lean
+def unwrap_or_zero_core : ProofCoreFn := ...
+
+theorem unwrap_or_zero_correct (x : Option Int) :
+  unwrap_or_zero_sem x =
+    match x with
+    | some v => v
+    | none => 0 := by
+  cases x <;> rfl
+```
+
+That is the point of the project identity:
+
+- Concrete stays the executable low-level language
+- the compiler explains authority, trust, and allocation facts directly
+- Lean 4 can eventually be used to prove selected Concrete code
+
 ## Why Concrete Exists
 
 Concrete was created to close a gap between low-level programming and mechanized reasoning.
@@ -78,6 +128,10 @@ Compared to Lean, Concrete is the low-level language and Lean 4 is the proof env
 <div class="quick-links">
   <a href="../../../README.md">Repository README</a>
   <a href="../../IDENTITY.md">Project Identity</a>
+  <a href="./why_lean4.md">Why Lean 4?</a>
+  <a href="./high_integrity.md">High-Integrity Concrete</a>
+  <a href="./use_cases.md">Use Cases</a>
+  <a href="./status.md">Status</a>
   <a href="../../../ROADMAP.md">Roadmap</a>
   <a href="../../../CHANGELOG.md">Changelog</a>
   <a href="./stdlib.md">Standard Library</a>

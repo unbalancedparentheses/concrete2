@@ -78,6 +78,7 @@ The next chapters are meant as a guided tour, not a formal spec.
 
 - [Modules](./modules.md) explains how code is organized
 - [Variables](./variables.md) explains binding, mutation, and ownership expectations
+- [Memory Management](./memory.md) explains `Heap<T>`, `with(Alloc)`, and explicit cleanup
 - [Functions](./functions.md) explains capabilities, generics, and method shape
 - [Structs](./structs.md) explains data layout and mutation
 - [Enums](./enums.md) explains variants and pattern matching
