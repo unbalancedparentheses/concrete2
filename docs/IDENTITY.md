@@ -204,6 +204,8 @@ To justify its identity, Concrete should eventually be able to show users:
 - what code was generated after monomorphization
 - where allocation and destruction happen
 
+Over time, this should grow from function-level explanation into component-level control. A stronger future Concrete should be able to say not only "what authority does this function require?" but also "what authority is this package, dependency, or subsystem allowed to require at all?"
+
 If Concrete cannot show these things clearly, it is not yet delivering its intended differentiator.
 
 Concrete should also be able to explain those facts clearly and, over time, reproduce them reliably enough that users can trust them across machines and environments.

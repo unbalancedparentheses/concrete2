@@ -116,7 +116,31 @@ Why this is good:
 
 This is one of the safest source-language upgrades.
 
-### 3. Finer-grained capabilities
+### 3. Authority budgets for modules, packages, and binaries
+
+One of the strongest future extensions would be to let larger program units declare not just what they *currently require*, but what they are *allowed to require at all*.
+
+Example shape:
+
+- package `logger` may use only `{File, Alloc}`
+- package `config` may use only `{FileRead, Alloc}`
+- binary `worker` may not require `Network` or `Process`
+
+Then if a dependency or subsystem grows new authority:
+
+- the compiler or package tooling reports it
+- the build can fail if the declared budget is exceeded
+
+Why this is powerful:
+
+- it turns capability checking into a project-level control mechanism
+- it helps prevent authority creep in dependencies
+- it gives reviewers a simple least-authority story at the subsystem or package level
+- it fits naturally with Concrete's audit/report identity
+
+This becomes especially compelling once Concrete has a real package/dependency model. Capabilities then stop being only function-level facts and become enforceable package-level boundaries too.
+
+### 4. Finer-grained capabilities
 
 Some current capabilities may be too broad to express useful sandbox boundaries.
 
@@ -141,7 +165,7 @@ Risk:
 
 So this should be introduced only where the split buys real operational value.
 
-### 4. Capability-aware stdlib design
+### 5. Capability-aware stdlib design
 
 A better sandboxing story is not only syntax. It is also library discipline.
 
@@ -155,7 +179,7 @@ The stdlib should make authority boundaries obvious:
 
 This may matter more than adding any new capability syntax.
 
-### 5. Blocking vs non-blocking as explicit authority
+### 6. Blocking vs non-blocking as explicit authority
 
 This is one of the most promising future directions.
 

@@ -29,9 +29,15 @@ structure EmitSSAState where
   currentBlocks : Array LLVMBlock := #[]
   /-- Completed function definitions. -/
   moduleFunctions : Array LLVMFnDef := #[]
-  /-- Module-level raw lines (type defs, globals, declarations). -/
-  moduleRawLines : Array String := #[]
-  /-- Raw sections escape hatch (builtins, main wrapper, test runner). -/
+  /-- Module header comment lines. -/
+  moduleHeader : Array String := #[]
+  /-- Structured type definitions (%struct.Foo, %enum.Bar, etc.). -/
+  moduleTypeDefs : Array LLVMTypeDef := #[]
+  /-- Structured global constants (string literals, format strings). -/
+  moduleGlobals : Array LLVMGlobal := #[]
+  /-- Structured extern function declarations. -/
+  moduleDeclarations : Array LLVMFnDecl := #[]
+  /-- Raw sections escape hatch (builtins only). -/
   rawSections : Array String := #[]
   structDefs : List CStructDef := []
   enumDefs : List CEnumDef := []
@@ -54,9 +60,17 @@ structure EmitSSAState where
 private def emitStructured (s : EmitSSAState) (instr : LLVMInstr) : EmitSSAState :=
   { s with currentInstrs := s.currentInstrs.push instr }
 
-/-- Append a raw line to module-level output (type defs, globals, declarations). -/
-private def emitModuleLine (s : EmitSSAState) (line : String) : EmitSSAState :=
-  { s with moduleRawLines := s.moduleRawLines.push line }
+/-- Append a type definition to the module. -/
+private def emitTypeDef (s : EmitSSAState) (line : String) : EmitSSAState :=
+  { s with moduleTypeDefs := s.moduleTypeDefs.push { line := line } }
+
+/-- Append a global constant to the module. -/
+private def emitGlobal (s : EmitSSAState) (g : LLVMGlobal) : EmitSSAState :=
+  { s with moduleGlobals := s.moduleGlobals.push g }
+
+/-- Append an extern function declaration to the module. -/
+private def emitDecl (s : EmitSSAState) (d : LLVMFnDecl) : EmitSSAState :=
+  { s with moduleDeclarations := s.moduleDeclarations.push d }
 
 private def freshLocal (s : EmitSSAState) : EmitSSAState × String :=
   let name := "%ssa.t" ++ toString s.localCounter
@@ -84,17 +98,9 @@ private def ssaLookupStruct (s : EmitSSAState) (name : String) : Option CStructD
 private def ssaLookupEnum (s : EmitSSAState) (name : String) : Option CEnumDef :=
   Layout.lookupEnum (layoutCtxOf s) name
 
-/-- Map a Concrete type to its LLVM IR type string. Delegates to Layout.tyToLLVM. -/
-def ssaTyToLLVM (s : EmitSSAState) (ty : Ty) : String :=
-  Layout.tyToLLVM (layoutCtxOf s) ty
-
 /-- Is this type passed by pointer in function calls? Delegates to Layout.isPassByPtr. -/
 private def ssaIsPassByPtr (s : EmitSSAState) (ty : Ty) : Bool :=
   Layout.isPassByPtr (layoutCtxOf s) ty
-
-/-- LLVM type for function parameters (structs passed as ptr). Delegates to Layout.paramTyToLLVM. -/
-private def ssaParamTyToLLVM (s : EmitSSAState) (ty : Ty) : String :=
-  Layout.paramTyToLLVM (layoutCtxOf s) ty
 
 
 /-- Map a Concrete type to a structured LLVMTy. Mirrors Layout.tyToLLVM. -/
@@ -584,20 +590,19 @@ private def emitSFnDef (s : EmitSSAState) (f : SFnDef) (isUserMain : Bool) : Emi
 private def emitExternDecls (s : EmitSSAState) (externFns : List (String × List (String × Ty) × Ty))
     (definedFns : List String := []) : EmitSSAState :=
   -- Standard C runtime declarations (used by remaining builtins)
-  let s := emitModuleLine s "declare ptr @malloc(i64)"
-  let s := emitModuleLine s "declare void @free(ptr)"
-  let s := emitModuleLine s "declare ptr @realloc(ptr, i64)"
-  let s := emitModuleLine s "declare void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)"
-  let s := emitModuleLine s "declare i64 @write(i32, ptr, i64)"
-  let s := emitModuleLine s "declare void @abort()"
-  let s := emitModuleLine s "declare i32 @printf(ptr, ...)"
-  let s := emitModuleLine s "declare i64 @strlen(ptr)"
-  let s := emitModuleLine s "declare ptr @memset(ptr, i32, i64)"
-  let s := emitModuleLine s "declare i32 @memcmp(ptr, ptr, i64)"
+  let s := emitDecl s { name := "malloc", retTy := .ptr, params := [.i64] }
+  let s := emitDecl s { name := "free", retTy := .void, params := [.ptr] }
+  let s := emitDecl s { name := "realloc", retTy := .ptr, params := [.ptr, .i64] }
+  let s := emitDecl s { name := "llvm.memcpy.p0.p0.i64", retTy := .void, params := [.ptr, .ptr, .i64, .i1] }
+  let s := emitDecl s { name := "write", retTy := .i64, params := [.i32, .ptr, .i64] }
+  let s := emitDecl s { name := "abort", retTy := .void, params := [] }
+  let s := emitDecl s { name := "printf", retTy := .i32, params := [.ptr], variadic := true }
+  let s := emitDecl s { name := "strlen", retTy := .i64, params := [.ptr] }
+  let s := emitDecl s { name := "memset", retTy := .ptr, params := [.ptr, .i32, .i64] }
+  let s := emitDecl s { name := "memcmp", retTy := .i32, params := [.ptr, .ptr, .i64] }
   -- Conversion builtin dependencies
-  let s := emitModuleLine s "declare i32 @snprintf(ptr, i64, ptr, ...)"
-  let s := emitModuleLine s "declare i64 @strtol(ptr, ptr, i32)"
-  let s := emitModuleLine s ""
+  let s := emitDecl s { name := "snprintf", retTy := .i32, params := [.ptr, .i64, .ptr], variadic := true }
+  let s := emitDecl s { name := "strtol", retTy := .i64, params := [.ptr, .ptr, .i32] }
   -- Names already declared above — skip duplicates from user extern fns
   let builtinNames : List String := [
     "malloc", "free", "realloc", "write", "abort", "printf", "strlen",
@@ -607,23 +612,24 @@ private def emitExternDecls (s : EmitSSAState) (externFns : List (String × List
   externFns.foldl (fun s (name, params, retTy) =>
     if builtinNames.contains name || definedFns.contains name then s
     else
-      let retLLTy := ssaTyToLLVM s retTy
-      let paramStr := ", ".intercalate (params.map fun (_, t) => ssaParamTyToLLVM s t)
-      emitModuleLine s s!"declare {retLLTy} @{name}({paramStr})"
+      let retLLTy := tyToLLVMTy s retTy
+      let paramTys := params.map fun (_, t) => paramTyToLLVMTy s t
+      emitDecl s { name := name, retTy := retLLTy, params := paramTys }
   ) s
 
 /-- Emit the main wrapper that calls user_main and prints the result.
     For void/unit return types, the wrapper just calls user_main without printing.
     For int/bool/other scalar types, it prints the result. -/
 private def emitMainWrapper (s : EmitSSAState) (retTy : Ty) : EmitSSAState :=
-  let retLLTy := ssaTyToLLVM s retTy
-  let wrapperText := if retLLTy == "void" then
+  let retLLTyS := tyToLLVMTy s retTy
+  let retLLTy := printLLVMTy retLLTyS
+  let wrapperText := if retLLTyS == .void then
     -- Unit/void return: just call, no print
     "define i32 @main() {\n" ++
     "  call void @user_main()\n" ++
     "  ret i32 0\n" ++
     "}\n\n"
-  else if retLLTy == "i1" then
+  else if retLLTyS == .i1 then
     -- Bool return: print "true" or "false"
     "@fmt.true = private constant [5 x i8] c\"true\\00\"\n" ++
     "@fmt.false = private constant [6 x i8] c\"false\\00\"\n" ++
@@ -638,7 +644,7 @@ private def emitMainWrapper (s : EmitSSAState) (retTy : Ty) : EmitSSAState :=
     "  call i32 (ptr, ...) @printf(ptr %fmt, ptr %str)\n" ++
     "  ret i32 0\n" ++
     "}\n\n"
-  else if retLLTy == "i64" then
+  else if retLLTyS == .i64 then
     -- i64 return: print with %lld
     "@fmt.main = private constant [6 x i8] c\"%lld\\0A\\00\"\n" ++
     "\n" ++
@@ -648,7 +654,7 @@ private def emitMainWrapper (s : EmitSSAState) (retTy : Ty) : EmitSSAState :=
     "  call i32 (ptr, ...) @printf(ptr %fmt, i64 %result)\n" ++
     "  ret i32 0\n" ++
     "}\n\n"
-  else if retLLTy == "i32" || retLLTy == "i16" || retLLTy == "i8" then
+  else if retLLTyS == .i32 || retLLTyS == .i16 || retLLTyS == .i8 then
     -- Smaller integer return: widen to i64, then print
     let ext := if ssaIsSignedInt retTy then "sext" else "zext"
     "@fmt.main = private constant [6 x i8] c\"%lld\\0A\\00\"\n" ++
@@ -800,20 +806,20 @@ def emitSModule (s : EmitSSAState) (m : SModule) (testMode : Bool := false) : Em
     if s.emittedTypes.contains sd.name then s
     else
       let s := { s with emittedTypes := sd.name :: s.emittedTypes }
-      emitModuleLine s (Layout.structTypeDef (layoutCtxOf s) sd)
+      emitTypeDef s (Layout.structTypeDef (layoutCtxOf s) sd)
   ) s
   let ctx := layoutCtxOf s
   let s := m.enums.foldl (fun s ed =>
     if s.emittedTypes.contains ed.name then s
     else
       let s := { s with emittedTypes := ed.name :: s.emittedTypes }
-      (Layout.enumTypeDefs ctx ed).foldl (fun s line => emitModuleLine s line) s
+      (Layout.enumTypeDefs ctx ed).foldl (fun s line => emitTypeDef s line) s
   ) s
   -- String literal globals
   let s := m.globals.foldl (fun s (name, val) =>
     let escaped := ssaEscapeStringForLLVM val
     let len := val.length + 1
-    let s := emitModuleLine s s!"@{name} = private constant [{len} x i8] c\"{escaped}\\00\""
+    let s := emitGlobal s { name := name, ty := .array len .i8, value := s!"c\"{escaped}\\00\"" }
     { s with stringLengths := s.stringLengths ++ [(name, val.length)] }
   ) s
   -- Functions
@@ -985,10 +991,9 @@ def emitSSAProgram (modules : List SModule) (testMode : Bool := false) (moduleFi
   let builtinEnums : List CEnumDef := [optionDef, resultDef]
   let s := { s with structDefs := allStructs, enumDefs := builtinEnums ++ allEnums }
   -- Header
-  let s := emitModuleLine s "; Generated by Concrete compiler (SSA path)"
-  let s := emitModuleLine s ""
+  let s := { s with moduleHeader := s.moduleHeader.push "; Generated by Concrete compiler (SSA path)" }
   -- Well-known struct types (String, Vec)
-  let s := Layout.builtinTypeDefs.foldl (fun s line => emitModuleLine s line) s
+  let s := Layout.builtinTypeDefs.foldl (fun s line => emitTypeDef s line) s
   -- Mark builtins as emitted so user-defined versions don't duplicate them
   let s := { s with emittedTypes := ["String", "Vec"] ++ s.emittedTypes }
   -- Whole-program monomorphic ABI for builtin generic enums:
@@ -1006,21 +1011,19 @@ def emitSSAProgram (modules : List SModule) (testMode : Bool := false) (moduleFi
     | some t => [t]
     | none => [Ty.int]  -- fallback: i64 payload
   let optTypeDefs := Layout.enumTypeDefs ctx optionDef optTypeArgs
-  let s := optTypeDefs.foldl (fun s line => emitModuleLine s line) s
+  let s := optTypeDefs.foldl (fun s line => emitTypeDef s line) s
   -- Generate dynamic Result type def
   let resTypeArgs := match bestRes with
     | some (ok, err) => [ok, err]
     | none => [Ty.int, Ty.int]  -- fallback: i64 payloads
   let resTypeDefs := Layout.enumTypeDefs ctx resultDef resTypeArgs
-  let s := resTypeDefs.foldl (fun s line => emitModuleLine s line) s
+  let s := resTypeDefs.foldl (fun s line => emitTypeDef s line) s
   -- Mark these as emitted so user enums with the same names won't duplicate
   let s := { s with emittedTypes := [resultEnumName, optionEnumName] ++ s.emittedTypes }
-  let s := emitModuleLine s ""
   -- External declarations (skip externs that shadow defined functions)
   let allExternFns := modules.foldl (fun acc m => acc ++ m.externFns) []
   let allDefinedFns := modules.foldl (fun acc m => acc ++ m.functions.map (·.name)) []
   let s := emitExternDecls s allExternFns allDefinedFns
-  let s := emitModuleLine s ""
   -- Emit each module
   let s := modules.foldl (fun s m => emitSModule s m testMode) s
   -- In test mode, emit the test runner instead of the normal main wrapper
@@ -1029,7 +1032,10 @@ def emitSSAProgram (modules : List SModule) (testMode : Bool := false) (moduleFi
   let s := emitBuiltins s
   -- Assemble the final LLVMModule and print it
   let llvmModule : LLVMModule := {
-    header := s.moduleRawLines.toList
+    header := s.moduleHeader.toList
+    typeDefs := s.moduleTypeDefs.toList
+    globals := s.moduleGlobals.toList
+    declarations := s.moduleDeclarations.toList
     functions := s.moduleFunctions.toList
     rawSections := s.rawSections.toList
   }

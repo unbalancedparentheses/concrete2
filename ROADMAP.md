@@ -302,6 +302,7 @@ Primary surfaces:
    - clearer authority flow
    - better `trusted` / `Unsafe` visibility
 3. add stronger patterns for explicit authority wrappers and capability aliases
+   - keep open the later path to authority budgets that can limit what a module, package, or binary is allowed to require at all
 4. make safety features easier to use correctly in ordinary programs without weakening honesty
 5. ensure docs, diagnostics, and reports present one coherent safety story
 6. define the shape of a high-integrity safety profile
@@ -358,10 +359,11 @@ Primary surfaces:
 3. define workspace and multi-package behavior
    - roots, workspaces, local dependencies, and expected project layouts
 4. make dependency and package UX part of the language-user experience rather than a repo-local convention
+   - include package- or subsystem-level authority budgets so dependencies can be checked against declared capability limits
 5. ensure docs, tooling, and CI reflect the same package/project model
 
 Exit criterion:
-Concrete has an explicit package/dependency model that supports real projects without relying on ad-hoc repo-local conventions.
+Concrete has an explicit package/dependency model that supports real projects without relying on ad-hoc repo-local conventions, and it has a credible path to enforcing authority budgets at package or subsystem boundaries.
 
 #### Phase I: Project And Operational Maturity
 
