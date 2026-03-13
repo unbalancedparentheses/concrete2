@@ -24,6 +24,7 @@
           packages = with pkgs; [
             lean4
             clang
+            llvmPackages.llvm  # provides lli for fast test execution
             bash
             gnumake
             gnugrep
