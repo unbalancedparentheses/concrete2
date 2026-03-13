@@ -73,3 +73,29 @@
   padding-left: 1rem;
   margin: 1.5rem 0;
 }
+
+.content main h1 {
+  letter-spacing: -0.02em;
+}
+
+.content main h2 {
+  margin-top: 2.2rem;
+  padding-top: 0.2rem;
+}
+
+.content main pre {
+  border-radius: 14px;
+  border: 1px solid var(--searchbar-border-color);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+}
+
+.content main code {
+  border-radius: 6px;
+}
+
+.content main blockquote {
+  border-left: 4px solid var(--links);
+  background: color-mix(in srgb, var(--bg) 90%, var(--sidebar-bg) 10%);
+  border-radius: 10px;
+  padding: 0.9rem 1rem;
+}

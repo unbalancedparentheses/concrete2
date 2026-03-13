@@ -1,27 +1,29 @@
-# Control flow
+# Control Flow
 
-Concrete keeps control flow explicit. The language uses familiar constructs, but the compiler is intentionally shaped so control-flow lowering stays inspectable and analyzable.
+Concrete keeps control flow familiar, but it cares a lot about what that control flow becomes in the compiler.
+
+That means the language uses ordinary constructs like `if`, `match`, and loops, while the compiler tries to keep the lowered structure explicit and inspectable.
 
 ## If
 
-The `if` keyword allows conditional branching.
-
 ```rust
-fn factorial(n: i64) -> i64 {
-    if n == 0 {
-        return 1;
+fn max(a: Int, b: Int) -> Int {
+    if a > b {
+        return a;
     } else {
-        return n * factorial(n - 1);
+        return b;
     }
 }
 ```
 
+The surface syntax is intentionally unsurprising. Concrete does not need novelty here. What matters is that the language and compiler keep the meaning explicit all the way down.
+
 ## Match
 
-Pattern matching works over enums and similar structured values:
+Pattern matching is one of the clearest parts of the language:
 
 ```rust
-fn unwrap_or_zero(x: Result<i32, i32>) -> i32 {
+fn unwrap_or_zero(x: Result<Int, Int>) -> Int {
     match x {
         Result#Ok { value } => {
             return value;
@@ -33,15 +35,23 @@ fn unwrap_or_zero(x: Result<i32, i32>) -> i32 {
 }
 ```
 
-## For
+This is one of the places where Concrete gets clarity without becoming magical:
 
-A basic for loop:
+- the data shape is visible
+- the branching is visible
+- the handled cases are visible
+
+## Loops
+
+Concrete supports loop forms that stay close to explicit control flow.
+
+### Counting loop
 
 ```rust
-fn sum_to(limit: i64) -> i64 {
-    let mut result: i64 = 0;
+fn sum_to(limit: Int) -> Int {
+    let mut result: Int = 0;
 
-    for (let mut n: i64 = 1; n <= limit; n = n + 1) {
+    for (let mut n: Int = 1; n <= limit; n = n + 1) {
         result = result + n;
     }
 
@@ -49,15 +59,13 @@ fn sum_to(limit: i64) -> i64 {
 }
 ```
 
-## While
-
-The `for` keyword can also be used in while-style form:
+### While-style loop
 
 ```rust
-fn sum_to(limit: i64) -> i64 {
-    let mut result: i64 = 0;
+fn sum_to(limit: Int) -> Int {
+    let mut result: Int = 0;
+    let mut n: Int = 1;
 
-    let mut n: i64 = 1;
     for (n <= limit) {
         result = result + n;
         n = n + 1;
@@ -67,6 +75,13 @@ fn sum_to(limit: i64) -> i64 {
 }
 ```
 
-## Current Direction
+## Why Control Flow Matters Architecturally
 
-Control-flow lowering has been a major recent compiler-hardening area, especially for mutable aggregate state. That matters because Concrete wants ordinary source control flow to remain compatible with explicit, auditable backend structure.
+Control flow has been one of the biggest compiler-hardening areas in Concrete, especially around mutable aggregates and merge points.
+
+That matters because the language is trying to preserve both:
+
+- readable source-level control flow
+- explicit backend structure that can be verified, audited, and eventually reasoned about
+
+So even a simple `if` or loop is part of a larger story: source code should stay ordinary, but the compiler should still produce something structurally honest underneath.

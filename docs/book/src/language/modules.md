@@ -1,18 +1,8 @@
 # Modules
 
-A module groups functions, structs, enums, impls, and nested modules.
+Modules are the basic unit of organization in Concrete.
 
-Basic shape:
-
-```rust
-mod modulename {
-    // ..
-}
-```
-
-## What Lives In A Module
-
-Modules are the basic namespace boundary for:
+They group:
 
 - functions
 - types
@@ -20,17 +10,62 @@ Modules are the basic namespace boundary for:
 - submodules
 - imports
 
-## Current Notes
+## A Small Module
 
-- The module system is still evolving as the package/dependency model matures.
-- Concrete's compiler already has explicit multi-file/module handling, but the final project/package UX is still a later roadmap phase.
-- `Self` resolution and interface/summary handling are important parts of the compiler architecture behind the surface module syntax.
+```rust
+mod math {
+    pub fn double(x: Int) -> Int {
+        return x * 2;
+    }
+
+    pub fn triple(x: Int) -> Int {
+        return x * 3;
+    }
+}
+
+fn main!() -> Int {
+    return math::double(21);
+}
+```
+
+The syntax is familiar, but modules matter for more than namespacing. They are part of how Concrete keeps visibility, resolution, and project structure explicit.
 
 ## Why Modules Matter
 
-Modules are not only a syntax feature. They are also important to:
+Modules are important to:
 
-- visibility
+- visibility boundaries
 - name resolution
-- project/package structure
-- future package/dependency semantics
+- multi-file structure
+- future package/dependency behavior
+
+Concrete's package/dependency model is still a later roadmap phase, but the compiler already treats modules as a serious boundary rather than just syntax decoration.
+
+## Nested Modules
+
+Concrete also supports nested modules:
+
+```rust
+mod net {
+    mod tcp {
+        pub fn default_port() -> Int {
+            return 8080;
+        }
+    }
+}
+```
+
+This keeps related functionality together without flattening everything into one namespace.
+
+## The Bigger Point
+
+In many languages, modules are easy to treat as boring plumbing.
+
+In Concrete they matter because the compiler is intentionally explicit about:
+
+- where names come from
+- what gets imported
+- what belongs to a public boundary
+- what later becomes part of package and interface artifacts
+
+So modules are part of the language's semantic clarity, not just part of its file layout.

@@ -1,6 +1,51 @@
 # The Language
 
-Concrete is a low-level language centered on explicit semantics, explicit authority, and auditability.
+Concrete is a low-level language built around explicit semantics, explicit authority, and explicit ownership.
+
+The easiest way to understand the language is to read it as "systems code that wants to stay legible."
+
+That means:
+
+- effects stay visible
+- control flow stays explicit
+- ownership and mutation are not hidden
+- ordinary names should stay ordinary
+- the compiler should be able to explain what the program means
+
+## A Small Example
+
+```rust
+struct Counter {
+    value: Int,
+}
+
+impl Counter {
+    fn inc(&mut self) {
+        self.value = self.value + 1;
+    }
+}
+
+fn count_if_present(path: String) with(File) -> Result<Int, String> {
+    let text: String = read_file(path)?;
+    let mut counter: Counter = Counter { value: 0 };
+
+    if string_contains(text, "Concrete") {
+        counter.inc();
+    }
+
+    return Ok(counter.value);
+}
+```
+
+This is already most of the language's personality:
+
+- plain structs and methods
+- explicit mutation through `&mut`
+- explicit capability requirements through `with(File)`
+- explicit error propagation with `?`
+- no hidden effectful magic in code that looks pure
+
+## What Exists Today
 
 The current implementation already has:
 
@@ -13,28 +58,29 @@ The current implementation already has:
 - FFI support
 - `defer`, `Destroy`, and layout attributes
 
-But the language is still evolving. Some surfaces will continue to tighten as the compiler, stdlib, and execution model mature.
+## What The Language Is Optimizing For
 
-## Design Direction
+Concrete is not trying to become the densest or most magical systems language.
 
-Concrete is intentionally aiming for:
+It is trying to optimize for:
 
 - a small semantic surface
 - explicit effects and authority
 - explicit trust boundaries
-- compiler architecture that is easy to inspect and eventually prove against
+- explicit ownership/resource behavior
+- compiler architecture that stays inspectable and eventually provable against
 
-That means the language is not optimized for maximum shorthand or maximum metaprogramming. It is optimized for clarity at the low-level boundary.
+So when the language chooses explicitness over shorthand, that is usually intentional.
 
-## Reading The Language Chapters
+## How To Read The Next Chapters
 
-The rest of this section introduces the current language shape:
+The next chapters are meant as a guided tour, not a formal spec.
 
-- [Modules](./modules.md)
-- [Variables](./variables.md)
-- [Functions](./functions.md)
-- [Structs](./structs.md)
-- [Enums](./enums.md)
-- [Control flow](./control_flow.md)
+- [Modules](./modules.md) explains how code is organized
+- [Variables](./variables.md) explains binding, mutation, and ownership expectations
+- [Functions](./functions.md) explains capabilities, generics, and method shape
+- [Structs](./structs.md) explains data layout and mutation
+- [Enums](./enums.md) explains variants and pattern matching
+- [Control flow](./control_flow.md) explains `if`, `match`, and loops
 
-These chapters describe the current implementation direction, not a frozen language reference.
+For stable lower-level references after that, use the root docs in `docs/`.
