@@ -50,10 +50,6 @@ structure EmitSSAState where
   /-- Maps local alias name → original linker symbol for aliased imports. -/
   linkerAliases : List (String × String) := []
 
-/-- Append a raw instruction to the current block's instruction list. -/
-private def emitInstr (s : EmitSSAState) (line : String) : EmitSSAState :=
-  { s with currentInstrs := s.currentInstrs.push (.raw line) }
-
 /-- Append a structured instruction to the current block. -/
 private def emitStructured (s : EmitSSAState) (instr : LLVMInstr) : EmitSSAState :=
   { s with currentInstrs := s.currentInstrs.push instr }
@@ -208,23 +204,34 @@ private def ssaEscapeStringForLLVM (str : String) : String :=
 private def materializeStrConst (s : EmitSSAState) (name : String) : EmitSSAState × String :=
   let strLen := (s.stringLengths.find? fun (n, _) => n == name).map (·.2) |>.getD 0
   let arrLen := strLen + 1  -- includes null terminator in the global
+  -- GEP into the global char array
   let (s, gepTmp) := freshLocal s
-  let s := emitInstr s s!"  {gepTmp} = getelementptr [{arrLen} x i8], ptr @{name}, i32 0, i32 0"
+  let gepName := (gepTmp.drop 1).toString
+  let s := emitStructured s (.gep gepName (.array arrLen .i8) (.global name) [(.i32, .intLit 0), (.i32, .intLit 0)])
   -- Heap-allocate a copy so drop_string can safely free it
   let (s, heapBuf) := freshLocal s
-  let s := emitInstr s s!"  {heapBuf} = call ptr @malloc(i64 {arrLen})"
-  let s := emitInstr s s!"  call void @llvm.memcpy.p0.p0.i64(ptr {heapBuf}, ptr {gepTmp}, i64 {arrLen}, i1 false)"
+  let heapName := (heapBuf.drop 1).toString
+  let s := emitStructured s (.call (some heapName) .ptr (.global "malloc") [(.i64, .intLit arrLen)])
+  let s := emitStructured s (.memcpy (.reg heapName) (.reg gepName) arrLen)
+  -- Allocate %struct.String on stack
   let (s, strTmp) := freshLocal s
-  let s := emitInstr s s!"  {strTmp} = alloca %struct.String"
+  let strName := (strTmp.drop 1).toString
+  let s := emitStructured s (.alloca strName (.struct_ "String"))
+  -- Store ptr field (index 0)
   let (s, ptrField) := freshLocal s
-  let s := emitInstr s s!"  {ptrField} = getelementptr %struct.String, ptr {strTmp}, i32 0, i32 0"
-  let s := emitInstr s s!"  store ptr {heapBuf}, ptr {ptrField}"
+  let ptrFieldName := (ptrField.drop 1).toString
+  let s := emitStructured s (.gep ptrFieldName (.struct_ "String") (.reg strName) [(.i32, .intLit 0), (.i32, .intLit 0)])
+  let s := emitStructured s (.store .ptr (.reg heapName) (.reg ptrFieldName))
+  -- Store len field (index 1)
   let (s, lenField) := freshLocal s
-  let s := emitInstr s s!"  {lenField} = getelementptr %struct.String, ptr {strTmp}, i32 0, i32 1"
-  let s := emitInstr s s!"  store i64 {strLen}, ptr {lenField}"
+  let lenFieldName := (lenField.drop 1).toString
+  let s := emitStructured s (.gep lenFieldName (.struct_ "String") (.reg strName) [(.i32, .intLit 0), (.i32, .intLit 1)])
+  let s := emitStructured s (.store .i64 (.intLit strLen) (.reg lenFieldName))
+  -- Store cap field (index 2)
   let (s, capField) := freshLocal s
-  let s := emitInstr s s!"  {capField} = getelementptr %struct.String, ptr {strTmp}, i32 0, i32 2"
-  let s := emitInstr s s!"  store i64 {arrLen}, ptr {capField}"
+  let capFieldName := (capField.drop 1).toString
+  let s := emitStructured s (.gep capFieldName (.struct_ "String") (.reg strName) [(.i32, .intLit 0), (.i32, .intLit 2)])
+  let s := emitStructured s (.store .i64 (.intLit arrLen) (.reg capFieldName))
   (s, strTmp)
 
 /-- If the SVal is not known to be a ptr but has a pass-by-ptr type,
