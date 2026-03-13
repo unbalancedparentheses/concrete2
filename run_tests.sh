@@ -407,7 +407,9 @@ run_abort_worker() {
         } > "$result_file"
         return
     fi
-    if "$out" > /dev/null 2>&1; then
+    # Suppress bash's own "Abort trap" diagnostic for expected signal exits.
+    # We only care whether the program exited successfully or not.
+    if { "$out" > /dev/null 2>&1; } 2>/dev/null; then
         {
             echo "FAIL"
             echo "FAIL  $file — expected nonzero exit"

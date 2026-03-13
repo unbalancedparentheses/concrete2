@@ -41,7 +41,6 @@ The project currently has:
 Still clearly not implemented:
 
 - `transmute`
-- a structured non-string LLVM backend
 - backend plurality over SSA (for example C / Wasm, and later maybe MLIR)
 - kernel formalization
 - a runtime
@@ -80,7 +79,7 @@ Still clearly not implemented:
 - **User-defined IntMap validated end-to-end**: a full hash map with fn pointer fields for hash/eq (same pattern as `HashMap`) compiles and runs correctly through the native compiler path, proving the linearity fix chain works.
 - **Builtin HashMap interception retired**: ~1,400 lines of compiler-internal HashMap machinery deleted (7 intrinsic IDs, type checking/elaboration intercepts, LLVM wrapper functions, hand-written LLVM IR runtime with hash/probe/insert/get/contains/remove/grow for int and string keys, hardcoded 5-field struct type). HashMap is now an ordinary stdlib type compiled through the normal generic struct path. 6 new stdlib tests (4 HashMap, 2 HashSet) replace 11 deleted builtin-API tests. HashMap and HashSet are now in the collection verification section of the test runner.
 - **Structured LLVM backend completed**: all backend emission now flows through structured `LLVMModule` data before printing. User functions, declarations, type definitions, globals, wrappers, test runner logic, vec builtins, and string/conversion builtins all emit through structured types; `rawSections` and the old `Concrete/Codegen/` backend path are gone.
-- 544 tests pass (148 stdlib), including SSA structure verification, -O2 regressions for aggregate lowering paths, expanded stdlib module coverage, six linearity regression tests, and native HashMap/HashSet coverage.
+- 600 tests pass (189 stdlib), including SSA structure verification, -O2 regressions for aggregate lowering paths, expanded stdlib module coverage, six linearity regression tests, native HashMap/HashSet coverage, and lli-accelerated test execution (~12s full suite).
 - **Phase C completed**: all 8 items done:
   - module-targeted stdlib testing (`--stdlib-module <name>` runs tests for a single stdlib module)
   - diagnostics/formatter polish (empty `{}` edge case, deprecation fixes, compiler warnings eliminated)
@@ -209,6 +208,8 @@ Goal: make the compiler strong enough to support proofs, tooling reuse, and long
 
 The first active Phase D pressure is now testing-system infrastructure. Phase C made testing credible; Phase D should make it materially smarter and faster by using compiler artifacts and dependency information instead of relying mostly on shell-level orchestration.
 
+Testing is not just support work here. It should become a first-class compiler subsystem with explicit artifact boundaries, pass-level coverage, performance expectations, and determinism rules rather than growing only as a larger shell script plus more cases.
+
 Primary surfaces:
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - [docs/PASSES.md](docs/PASSES.md)
@@ -224,27 +225,34 @@ Primary surfaces:
    - use those artifacts as the foundation for artifact-aware test reuse, caching, and narrower rerun scopes
    - move test execution beyond shell-level filtering toward dependency-aware reruns
    - classify tests more clearly (`fast`, `unit`, `integration`, `optimization/regression`, `report/golden`, `slow/network/stress`) so local runs and CI can choose better defaults
-2. strengthen the SSA verifier/cleanup boundary into a clearer backend contract
-3. define a clearer FFI / ABI maturity path
+   - make test classification real compiler metadata rather than only runner conventions
+2. make testing architecture a first-class subsystem
+   - add pass-level Lean tests for `Check`, `Elab`, `Lower`, `SSAVerify`, and `EmitSSA` where end-to-end execution is unnecessary cost
+   - define a clearer coverage matrix by failure mode (parser crash resistance, semantic regressions, lowering invariants, backend structure, runtime behavior, diagnostics, reports, stdlib behavior, optimization regressions)
+   - add performance-regression tracking for compile time, suite time, and artifact reuse efficiency so "faster" stays defended rather than anecdotal
+   - define determinism/flakiness policy explicitly (network isolation, seeds, timeouts, quarantine/repair expectations)
+   - push test selection toward dependency- and ownership-aware scopes instead of string matching alone
+3. strengthen the SSA verifier/cleanup boundary into a clearer backend contract
+4. define a clearer FFI / ABI maturity path
    - decide what ABI stability, if any, is promised
    - decide what remains intentionally unstable for now
    - make platform-variance expectations explicit instead of accidental
    - add clearer verification/testing expectations for ABI compatibility
    - identify the first concrete cross-platform ABI/layout checks rather than leaving verification purely abstract
-4. grow a stronger real-program and invariant-testing corpus on top of the faster loop
+5. grow a stronger real-program and invariant-testing corpus on top of the faster loop
    - add more nontrivial integration programs instead of only many small regressions
    - keep expanding property/fuzz/differential coverage, especially around parser/formatter/report/IR invariants
-5. push formalization over Core -> SSA
+6. push formalization over Core -> SSA
    - treat validated Core after `CoreCheck` as the main proof boundary for user-program proofs
    - formalize a small pure Core fragment first
    - define a proof-oriented Core fragment as a restricted view of validated Core, not a separate semantic authority
    - validate the proof boundary with manual embeddings of selected functions
    - only then add compiler/export support for Lean-side proof workflows
    - treat "selected Concrete functions proved in Lean 4" as a core Phase D deliverable, not just a later research aspiration
-6. add deferred audit/report outputs
+7. add deferred audit/report outputs
 
 Exit criterion:
-backend work no longer feels fragile, proofs, reports, and tooling all build on the same stable compiler boundaries, and selected Concrete functions can actually be proved in Lean 4 over validated Core.
+backend work no longer feels fragile, proofs, reports, and tooling all build on the same stable compiler boundaries, targeted test runs are artifact-aware and dependency-aware, pass-level and end-to-end testing play distinct roles under explicit coverage/determinism rules, and selected Concrete functions can actually be proved in Lean 4 over validated Core.
 
 #### Phase E: Runtime And Execution Model
 
@@ -444,11 +452,7 @@ Concrete is not only architecturally strong internally, but also operable, repro
 2. Grow a stronger real-program and invariant-testing corpus on top of that faster loop.
    - add more nontrivial integration programs instead of only many small regressions
    - keep expanding property/fuzz/differential coverage, especially around parser/formatter/report/IR invariants
-3. Finish the remaining backend cleanup after the main structured emission conversion.
-   - keep the main structured LLVM backend win explicit in the roadmap/history
-   - treat `getBuiltinsIR` as the remaining legacy backend island
-   - decide whether to retire that legacy builtin path or rewrite it cleanly as a structured follow-up
-4. Strengthen the SSA verifier/cleanup boundary into a clearer backend contract.
+3. Strengthen the SSA verifier/cleanup boundary into a clearer backend contract.
    - make the SSA/backend interface explicit enough for backend plurality later
    - turn SSA verification into a contract that any backend can rely on
 5. Push formalization over the cleaned Core -> SSA architecture.
