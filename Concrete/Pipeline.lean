@@ -59,15 +59,16 @@ def parse (source : String) : Except Diagnostics ParsedProgram :=
   | .error ds => .error ds
 
 /-- Resolve `mod X;` declarations by reading sub-module files from disk.
-    Wraps `resolveAllModules` (IO because it reads files). -/
+    Wraps `resolveAllModules` (IO because it reads files).
+    Returns the resolved program and a source map for diagnostics. -/
 def resolveFiles (baseDir : String) (prog : ParsedProgram) (inputPath : String)
-    (resolveAllModules : String → List Module → String → IO (Except String (List Module)))
-    : IO (Except Diagnostics ParsedProgram) := do
+    (resolveAllModules : String → List Module → String → IO (Except String (List Module × SourceMap)))
+    : IO (Except Diagnostics (ParsedProgram × SourceMap)) := do
   match ← resolveAllModules baseDir prog.modules inputPath with
   | .error e =>
     return .error [{ severity := .error, message := e, pass := "resolve", span := none, hint := none }]
-  | .ok modules =>
-    return .ok { modules }
+  | .ok (modules, srcMap) =>
+    return .ok ({ modules }, srcMap)
 
 /-- Build the cross-file summary table from parsed modules. -/
 def buildSummary (prog : ParsedProgram) : SummaryTable :=
@@ -117,10 +118,12 @@ def emit (ssa : SSAProgram) (testMode : Bool := false) (moduleFilter : Option St
 -- ============================================================
 
 /-- Run the shared frontend: parse → resolveFiles → buildSummary → resolve → check → elaborate.
-    This is the common prefix of all three CLI entry points (except interface report). -/
+    This is the common prefix of all three CLI entry points (except interface report).
+    Returns the source map alongside the artifacts for diagnostic rendering. -/
 def runFrontend (inputPath source : String)
-    (resolveAllModules : String → List Module → String → IO (Except String (List Module)))
-    : IO (Except Diagnostics (ParsedProgram × SummaryTable × ElaboratedProgram)) := do
+    (resolveAllModules : String → List Module → String → IO (Except String (List Module × SourceMap)))
+    : IO (Except Diagnostics (ParsedProgram × SummaryTable × ElaboratedProgram × SourceMap)) := do
+  let mainSrcMap : SourceMap := [(inputPath, source)]
   match Pipeline.parse source with
   | .error ds => return .error ds
   | .ok parsed =>
@@ -130,7 +133,8 @@ def runFrontend (inputPath source : String)
     | [] => "."
   match ← Pipeline.resolveFiles baseDir parsed inputPath resolveAllModules with
   | .error ds => return .error ds
-  | .ok resolved =>
+  | .ok (resolved, subSrcMap) =>
+    let srcMap := mainSrcMap ++ subSrcMap
     let summary := Pipeline.buildSummary resolved
     match Pipeline.resolve resolved summary with
     | .error ds => return .error ds
@@ -140,7 +144,7 @@ def runFrontend (inputPath source : String)
     | .ok () =>
     match Pipeline.elaborate resolved summary with
     | .error ds => return .error ds
-    | .ok elabProg => return .ok (resolved, summary, elabProg)
+    | .ok elabProg => return .ok (resolved, summary, elabProg, srcMap)
 
 end Pipeline
 end Concrete

@@ -39,11 +39,13 @@ def dirOf (path : String) : String :=
   | [] => "."
 
 /-- Resolve `mod X;` declarations by reading X.con files from the same directory.
-    Detects circular imports via parsedPaths. -/
+    Detects circular imports via parsedPaths. Collects source map entries. -/
 partial def resolveModules (baseDir : String) (m : Module) (parsedPaths : List String)
-    : IO (Except String (Module × List String)) := do
+    (srcMap : SourceMap := [])
+    : IO (Except String (Module × List String × SourceMap)) := do
   let mut resolvedSubs : List Module := []
   let mut paths := parsedPaths
+  let mut sources := srcMap
   for sub in m.submodules do
     if isModuleStub sub then
       let filePath := if baseDir == "" then sub.name ++ ".con"
@@ -54,56 +56,61 @@ partial def resolveModules (baseDir : String) (m : Module) (parsedPaths : List S
         readFile filePath
       catch _ =>
         return .error s!"module file not found: {filePath}"
+      sources := sources ++ [(filePath, source)]
       match parse source with
       | .error e => return .error s!"error in module '{sub.name}': {e}"
       | .ok subModules =>
         match subModules with
         | [subMod] =>
           paths := paths ++ [filePath]
-          match ← resolveModules baseDir { subMod with name := sub.name } paths with
-          | .ok (resolved, newPaths) =>
+          match ← resolveModules baseDir { subMod with name := sub.name } paths sources with
+          | .ok (resolved, newPaths, newSources) =>
             paths := newPaths
+            sources := newSources
             resolvedSubs := resolvedSubs ++ [resolved]
           | .error e => return .error e
         | _ => return .error s!"module file '{filePath}' must contain exactly one module"
     else
       -- Inline module (mod X { ... }), recurse to resolve nested stubs
-      match ← resolveModules baseDir sub paths with
-      | .ok (resolved, newPaths) =>
+      match ← resolveModules baseDir sub paths sources with
+      | .ok (resolved, newPaths, newSources) =>
         paths := newPaths
+        sources := newSources
         resolvedSubs := resolvedSubs ++ [resolved]
       | .error e => return .error e
-  return .ok ({ m with submodules := resolvedSubs }, paths)
+  return .ok ({ m with submodules := resolvedSubs }, paths, sources)
 
-/-- Resolve all modules in a program. -/
+/-- Resolve all modules in a program. Returns resolved modules and source map. -/
 def resolveAllModules (baseDir : String) (modules : List Module) (inputPath : String)
-    : IO (Except String (List Module)) := do
+    : IO (Except String (List Module × SourceMap)) := do
   let mut resolved : List Module := []
   let mut paths : List String := [inputPath]
+  let mut sources : SourceMap := []
   for m in modules do
-    match ← resolveModules baseDir m paths with
-    | .ok (rm, newPaths) =>
+    match ← resolveModules baseDir m paths sources with
+    | .ok (rm, newPaths, newSources) =>
       paths := newPaths
+      sources := newSources
       resolved := resolved ++ [rm]
     | .error e => return .error e
-  return .ok resolved
+  return .ok (resolved, sources)
 
 /-- Compile via SSA pipeline: Parse → Resolve → Check → Elab → CoreCanonicalize → CoreCheck → Mono → Lower → SSAVerify → SSACleanup → EmitSSA → clang -/
 def compileSSA (inputPath : String) (outputPath : String) (emitLLVM : Bool) : IO UInt32 := do
   let source ← readFile inputPath
   match ← Pipeline.runFrontend inputPath source resolveAllModules with
   | .error ds =>
-    IO.eprintln (renderDiagnostics ds)
+    IO.eprintln (renderDiagnostics ds (sourceMap := [(inputPath, source)]))
     return 1
-  | .ok (_, _, elabProg) =>
+  | .ok (_, _, elabProg, srcMap) =>
   match Pipeline.monomorphize elabProg with
   | .error ds =>
-    IO.eprintln (renderDiagnostics ds)
+    IO.eprintln (renderDiagnostics ds (sourceMap := srcMap))
     return 1
   | .ok mono =>
   match Pipeline.lower mono with
   | .error ds =>
-    IO.eprintln (renderDiagnostics ds)
+    IO.eprintln (renderDiagnostics ds (sourceMap := srcMap))
     return 1
   | .ok ssa =>
     let llvmIR := Pipeline.emit ssa
@@ -127,17 +134,17 @@ def compileTest (inputPath : String) (moduleFilter : Option String := none) : IO
   let source ← readFile inputPath
   match ← Pipeline.runFrontend inputPath source resolveAllModules with
   | .error ds =>
-    IO.eprintln (renderDiagnostics ds)
+    IO.eprintln (renderDiagnostics ds (sourceMap := [(inputPath, source)]))
     return 1
-  | .ok (_, _, elabProg) =>
+  | .ok (_, _, elabProg, srcMap) =>
   match Pipeline.monomorphize elabProg with
   | .error ds =>
-    IO.eprintln (renderDiagnostics ds)
+    IO.eprintln (renderDiagnostics ds (sourceMap := srcMap))
     return 1
   | .ok mono =>
   match Pipeline.lower mono with
   | .error ds =>
-    IO.eprintln (renderDiagnostics ds)
+    IO.eprintln (renderDiagnostics ds (sourceMap := srcMap))
     return 1
   | .ok ssa =>
     let llvmIR := Pipeline.emit ssa (testMode := true) (moduleFilter := moduleFilter)
@@ -174,21 +181,21 @@ def compileAndEmit (inputPath : String) (mode : String) : IO UInt32 := do
   let source ← readFile inputPath
   match ← Pipeline.runFrontend inputPath source resolveAllModules with
   | .error ds =>
-    IO.eprintln (renderDiagnostics ds)
+    IO.eprintln (renderDiagnostics ds (sourceMap := [(inputPath, source)]))
     return 1
-  | .ok (_, _, elabProg) =>
+  | .ok (_, _, elabProg, srcMap) =>
     if mode == "core" then
       for cm in elabProg.coreModules do
         IO.println (ppCModule cm)
       return 0
     match Pipeline.monomorphize elabProg with
     | .error ds =>
-      IO.eprintln (renderDiagnostics ds)
+      IO.eprintln (renderDiagnostics ds (sourceMap := srcMap))
       return 1
     | .ok mono =>
     match Pipeline.lower mono with
     | .error ds =>
-      IO.eprintln (renderDiagnostics ds)
+      IO.eprintln (renderDiagnostics ds (sourceMap := srcMap))
       return 1
     | .ok ssa =>
       for sm in ssa.ssaModules do
@@ -198,27 +205,28 @@ def compileAndEmit (inputPath : String) (mode : String) : IO UInt32 := do
 /-- Run pipeline to needed depth and produce a report. -/
 def compileAndReport (inputPath : String) (reportType : String) : IO UInt32 := do
   let source ← readFile inputPath
+  let mainSrcMap : SourceMap := [(inputPath, source)]
   -- Interface report only needs parse + resolveFiles + summary
   if reportType == "interface" then
     match Pipeline.parse source with
     | .error ds =>
-      IO.eprintln (renderDiagnostics ds)
+      IO.eprintln (renderDiagnostics ds (sourceMap := mainSrcMap))
       return 1
     | .ok parsed =>
     match ← Pipeline.resolveFiles (dirOf inputPath) parsed inputPath resolveAllModules with
     | .error ds =>
-      IO.eprintln (renderDiagnostics ds)
+      IO.eprintln (renderDiagnostics ds (sourceMap := mainSrcMap))
       return 1
-    | .ok resolved =>
+    | .ok (resolved, _) =>
       let summary := Pipeline.buildSummary resolved
       IO.println (Report.interfaceReport summary.entries)
       return 0
   -- All other reports need the full frontend
   match ← Pipeline.runFrontend inputPath source resolveAllModules with
   | .error ds =>
-    IO.eprintln (renderDiagnostics ds)
+    IO.eprintln (renderDiagnostics ds (sourceMap := mainSrcMap))
     return 1
-  | .ok (_, _, elabProg) =>
+  | .ok (_, _, elabProg, srcMap) =>
     if reportType == "caps" then
       IO.println (Report.capabilityReport elabProg.coreModules)
       return 0
@@ -231,7 +239,7 @@ def compileAndReport (inputPath : String) (reportType : String) : IO UInt32 := d
     if reportType == "mono" then
       match Pipeline.monomorphize elabProg with
       | .error ds =>
-        IO.eprintln (renderDiagnostics ds)
+        IO.eprintln (renderDiagnostics ds (sourceMap := srcMap))
         return 1
       | .ok mono =>
         IO.println (Report.monoReport elabProg.coreModules mono.coreModules)
