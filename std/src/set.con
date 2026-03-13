@@ -62,6 +62,7 @@ mod set {
         }
     }
 
-    // HashSet tests disabled: HashMap<K,V>::new with fn pointers causes
-    // runtime SIGBUS — tracked as a compiler bug for Phase C investigation
+    // HashSet tests disabled: wraps HashMap, which has a layout mismatch
+    // between the user-defined struct (7 fields with fn pointers) and the
+    // builtin intrinsic implementation (5 fields, no fn pointers). See map.con.
 }

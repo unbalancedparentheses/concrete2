@@ -225,6 +225,11 @@ mod map {
         }
     }
 
-    // HashMap tests disabled pending investigation of runtime crash
-    // in HashMap<i32, i32> with generics + fn pointers (SIGBUS)
+    // HashMap tests disabled: the compiler intercepts HashMap methods via
+    // builtin intrinsics (map_new, map_insert, etc.) that use a 5-field
+    // struct layout (ptr, ptr, ptr, i64, i64). But the user-defined HashMap
+    // here has 7 fields (including fn pointer fields). The layout mismatch
+    // causes SIGBUS at runtime. Fix: either align the user struct to the
+    // builtin layout, or compile the user-defined HashMap natively (requires
+    // fixing generic linearity: isCopyType treats typeVar as always linear).
 }
