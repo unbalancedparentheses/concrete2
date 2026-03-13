@@ -90,28 +90,44 @@ Phases A and B are done. Phase C is active. The LL(1) grammar checker is in CI, 
    - why now: the builtin HashMap retirement removed the last major compiler blocker for stdlib collections; testing infrastructure is now the main usability multiplier
    - primary surfaces: [docs/STDLIB.md](docs/STDLIB.md), [docs/TESTING.md](docs/TESTING.md), [std/src/](/Users/unbalancedparen/projects/concrete/std/src), [run_tests.sh](/Users/unbalancedparen/projects/concrete/run_tests.sh)
    - first slices:
-     - add stdlib-aware module-targeted test infrastructure instead of relying only on `std/src/lib.con --test`
+     - add a first real stdlib-aware module-targeted mode that can run one module under an explicit stdlib/project root instead of only `std/src/lib.con --test`
+     - start with one or two concrete entrypoints (for example `--stdlib-module map` / `--stdlib-module fs`) before generalizing the runner shape
      - deepen `fs`, `net`, and `process` failure-path and integration tests
      - add more failure-path and integration tests across all collections
      - keep error, handle, and checked/unchecked conventions uniform
    - constraints:
      - do not let API growth outrun failure-path coverage
      - do not let module conventions drift case-by-case
-   - done means: stdlib tests can target one area without bootstrapping the whole tree, and systems modules have stronger failure-path coverage
-2. Improve diagnostics fidelity and rendering quality.
+   - done means: stdlib tests can target one area without bootstrapping the whole tree, systems modules have stronger failure-path coverage, and the first module-targeted runner path is real rather than aspirational
+2. Improve diagnostics fidelity, rendering quality, and formatting baseline.
    - problem: diagnostics still lose precision around transformed constructs and rely too much on brittle string-exact expectations
-   - why now: diagnostics are the main user-visible quality multiplier once the compiler architecture is stable enough to trust
-   - primary surfaces: [docs/DIAGNOSTICS.md](docs/DIAGNOSTICS.md), [Concrete/Diagnostic.lean](/Users/unbalancedparen/projects/concrete/Concrete/Diagnostic.lean), [Concrete/Check.lean](/Users/unbalancedparen/projects/concrete/Concrete/Check.lean), [Concrete/CoreCheck.lean](/Users/unbalancedparen/projects/concrete/Concrete/CoreCheck.lean), diagnostic tests
+   - why now: diagnostics and formatting are the main user-visible quality multipliers once the compiler architecture is stable enough to trust
+   - primary surfaces: [docs/DIAGNOSTICS.md](docs/DIAGNOSTICS.md), [Concrete/Diagnostic.lean](/Users/unbalancedparen/projects/concrete/Concrete/Diagnostic.lean), [Concrete/Check.lean](/Users/unbalancedparen/projects/concrete/Concrete/Check.lean), [Concrete/CoreCheck.lean](/Users/unbalancedparen/projects/concrete/Concrete/CoreCheck.lean), diagnostic tests, future formatter surfaces
    - first slices:
      - better range precision
      - notes and secondary labels
      - clearer presentation for transformed constructs
      - reduce brittle string-matched report/test coupling where structured checks are possible
+     - define a minimal formatter scope and style baseline instead of leaving formatting only as a research note
    - constraints:
      - do not make tests depend on full rendered strings when structured assertions can work
      - do not improve rendering by smearing away the actual semantic source location
-   - done means: diagnostics quality improvements are visible in ordinary compiler output, not only in internal plumbing
-3. Then push the backend/artifact/proof stack (Phase C/D boundary):
+     - do not let formatter work outrun syntax/diagnostic stability
+   - done means: diagnostics quality improvements are visible in ordinary compiler output, a formatter baseline exists, and presentation tooling is no longer only aspirational
+3. Productize audit/report outputs before deeper backend multiplication.
+   - problem: Concrete's strongest differentiator is still under-realized in ordinary compiler workflows; reports exist, but they do not yet feel like a first-class audit mode
+   - why now: this is the bridge between Phase C usability and Phase D trust multipliers
+   - primary surfaces: [Concrete/Report.lean](/Users/unbalancedparen/projects/concrete/Concrete/Report.lean), report tests, [docs/IDENTITY.md](docs/IDENTITY.md), [research/ten-x-improvements.md](research/ten-x-improvements.md)
+   - first slices:
+     - allocation and cleanup/destruction summaries
+     - stronger authority and capability "why" traces
+     - clearer `Unsafe` / `trusted` summaries
+     - a more explicit compiler-facing audit mode instead of scattered report surfaces
+   - constraints:
+     - keep report outputs tied to compiler facts rather than ad hoc narration
+     - do not turn reports into a parallel semantic system
+   - done means: Concrete can explain authority, unsafe/trusted, and resource boundaries through ordinary compiler workflows rather than only internal hooks
+4. Then push the backend/artifact/proof stack (Phase C/D boundary):
    - problem: textual LLVM emission is still a brittle choke point, and backend plurality would multiply instability if the backend contract stays loose
    - why now: this is the front edge of Phase D and the prerequisite for serious backend, tooling, and proof leverage
    - primary surfaces: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/PASSES.md](docs/PASSES.md), [Concrete/SSAVerify.lean](/Users/unbalancedparen/projects/concrete/Concrete/SSAVerify.lean), [Concrete/SSACleanup.lean](/Users/unbalancedparen/projects/concrete/Concrete/SSACleanup.lean), [Concrete/EmitSSA.lean](/Users/unbalancedparen/projects/concrete/Concrete/EmitSSA.lean), [Concrete/Pipeline.lean](/Users/unbalancedparen/projects/concrete/Concrete/Pipeline.lean)
@@ -119,6 +135,11 @@ Phases A and B are done. Phase C is active. The LL(1) grammar checker is in CI, 
      - replace raw LLVM string emission with a structured LLVM backend
      - strengthen SSA/backend contract
      - turn explicit pipeline artifacts into reusable tooling/caching building blocks
+     - stage the user-program proof workflow explicitly:
+       - formalize a small pure Core fragment
+       - manually embed selected Concrete functions against that Core
+       - prove first concrete examples
+       - only later add export/tooling for Lean-side proof workflows
      - push formalization over Core → SSA
    - constraints:
      - keep SSA as the only backend boundary
@@ -207,9 +228,17 @@ Remaining:
    - stdlib-aware targeted execution under an explicit module/project context
    - clearer visibility into what partial runs did and did not exercise
    - narrower recompilation and rerun scopes driven by explicit dependencies rather than ad-hoc script sections
-5. improve diagnostics fidelity and presentation
+5. improve diagnostics fidelity, presentation, and formatter baseline
+   - better range precision
+   - stronger notes/secondary labels
+   - less brittle diagnostic assertions
+   - define a minimal formatter scope and supported workflow
 6. deepen failure-path and integration testing in systems modules
 7. make report assertions part of ordinary hardening
+8. start turning reports into a clearer audit-mode product surface
+   - authority/capability "why" traces
+   - `Unsafe` / `trusted` summaries
+   - allocation / cleanup summaries
 
 Exit criterion:
 syntax guardrails, diagnostics, and stdlib testing behave like durable infrastructure rather than one-off pushes.
@@ -235,9 +264,14 @@ Primary surfaces:
    - use those artifacts as the foundation for later test reuse, caching, and narrower rerun scopes
 4. define a clearer FFI / ABI maturity path
    - decide what ABI stability, if any, is promised
+   - decide what remains intentionally unstable for now
    - make platform-variance expectations explicit instead of accidental
    - add clearer verification/testing expectations for ABI compatibility
+   - identify the first concrete cross-platform ABI/layout checks rather than leaving verification purely abstract
 5. push formalization over Core -> SSA
+   - formalize a small pure Core fragment first
+   - validate the proof boundary with manual embeddings of selected functions
+   - only then add compiler/export support for Lean-side proof workflows
 6. add deferred audit/report outputs
 
 Exit criterion:
@@ -367,6 +401,7 @@ Primary surfaces:
 5. turn docs and editor/tool integration into maintained product surfaces
    - keep top-level docs coherent with the actual workflow
    - decide whether editor/LSP support is a serious maintained goal and what minimum UX is expected for navigation, diagnostics, formatting, and reports
+   - define the minimum supported editor/tooling baseline even before full LSP exists
 6. add explicit compatibility and bootstrap-trust policy
    - decide what can break freely now and what should stabilize first
    - state whether reports/tooling/IRs have compatibility expectations
@@ -391,13 +426,17 @@ Concrete is not only architecturally strong internally, but also operable, repro
 
 1. Push formalization over the cleaned Core -> SSA architecture.
    - prioritize proof targets that directly depend on the compiler architecture cleanup: Core soundness, capability discipline, linearity/resource soundness, and Core -> SSA preservation
+   - stage the user-program proof workflow explicitly: small pure Core fragment, manual embedding of selected functions, first concrete proofs, later export/tooling
 2. Add deferred audit/report outputs such as allocation summaries and cleanup/destruction reports.
+   - keep moving toward a clearer audit-mode product instead of isolated report flags
 3. Keep diagnostics converging on one high-quality surface across compiler modes.
+   - include a minimal formatter baseline in that convergence plan
 4. Turn the testing strategy into durable infrastructure.
    - keep fuzz/property/trace/report/differential tests alive in CI
    - grow the regression corpus from real bugs
    - make report assertions part of ordinary compiler hardening
    - keep pushing beyond shell-level orchestration toward artifact-aware reuse once the explicit pipeline-artifact work is ready
+   - start with one real stdlib module-targeted path under explicit project context before generalizing further
 5. Turn explicit pipeline artifacts into stronger tooling/caching building blocks once the current architecture cleanup settles.
    - keep artifact boundaries explicit and inspectable
    - move toward serialization/caching only on top of already boring pass contracts
