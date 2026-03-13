@@ -121,7 +121,7 @@ partial def fmtExprAt (ind : Nat) : Expr → String
   | .fieldAccess _ obj field => s!"{fmtExprAt ind obj}.{field}"
   | .enumLit _ enumName variant typeArgs fields =>
     let targsStr := if typeArgs.isEmpty then "" else s!"::<{", ".intercalate (typeArgs.map fmtTy)}>"
-    if fields.isEmpty then s!"{enumName}{targsStr}#{variant}"
+    if fields.isEmpty then s!"{enumName}{targsStr}#{variant} \{}"
     else
       let fs := fields.map fun (k, v) => s!"{k}: {fmtExprAt ind v}"
       s!"{enumName}{targsStr}#{variant} \{ {", ".intercalate fs} }"
@@ -410,7 +410,7 @@ partial def fmtModuleBody (m : Module) (ind : Nat) : String :=
   let groups := if subs.isEmpty then groups else groups ++ [subs]
   "\n\n".intercalate (groups.map fun g =>
     let isCompact := match g with
-      | s :: _ => (s.trimLeft).startsWith "import " || (s.trimLeft).startsWith "extern "
+      | s :: _ => (s.trimAsciiLeft).startsWith "import " || (s.trimAsciiLeft).startsWith "extern "
       | [] => false
     if isCompact then "\n".intercalate g
     else "\n\n".intercalate g)
