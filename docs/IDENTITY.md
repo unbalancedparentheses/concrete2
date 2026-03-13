@@ -144,6 +144,19 @@ That means moving toward:
 
 This is not a separate identity from the proof story. It is part of what makes a low-level language operationally trustworthy.
 
+### 8. A Future High-Integrity Profile
+
+Concrete should eventually support a clearly defined high-integrity or provable subset/profile for critical code.
+
+The important idea is not "add more syntax for verification." The important idea is:
+
+- restricted execution profiles such as no-allocation or bounded-allocation modes
+- tighter restrictions around `Unsafe`, `trusted`, FFI, and ambient authority
+- analyzable concurrency rules rather than unconstrained concurrency by default
+- stronger evidence, reports, and traceability for review-heavy code
+
+This fits Concrete better than a large contract system as a first move. It preserves the language's bias toward explicitness, analyzability, and smaller trusted surfaces.
+
 ## Competitive Stance
 
 Concrete does not need to beat every systems language on every axis.
@@ -161,6 +174,7 @@ Concrete should instead be strongest where those languages are not explicitly ce
 - explicit authority/trust boundaries
 - proof-friendly compiler structure
 - a smaller and more honest semantic surface
+- a path toward high-integrity profiles for critical systems without requiring Concrete to become a giant verification-first language
 
 Compared to Lean, Concrete is not trying to be a proof assistant. It is trying to be the low-level language that Lean 4 can reason about well.
 

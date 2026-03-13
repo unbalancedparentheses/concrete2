@@ -464,6 +464,13 @@ What Concrete can learn:
 - critical-system value comes from profiles and evidence, not only from language features
 - certification-friendly reports, traceability, bounded-allocation profiles, and explicit invariants could become real differentiators
 
+Concrete should probably synthesize those lessons as an eventual explicit high-integrity profile:
+
+- restricted execution modes
+- analyzable safety boundaries
+- stronger evidence and traceability
+- only later, if needed, richer proof or contract layers
+
 ## What To Avoid
 
 Concrete should avoid trying to become "10x better" by simply accreting the full surface area of other languages.

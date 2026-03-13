@@ -16,6 +16,8 @@ Concrete should be strongest where many systems languages are not explicitly cen
 
 Concrete is also aiming at something broader than "a working compiler": a compiler that can explain itself, surface audit-relevant facts directly, and eventually produce inspectable and reproducible outputs that users can trust.
 
+One important long-term direction is an explicit high-integrity profile: stricter execution and safety modes for critical code, built around bounded behavior, analyzability, and better evidence rather than feature sprawl.
+
 ## Why Concrete Exists
 
 Concrete was created to close a gap between low-level programming and mechanized reasoning.

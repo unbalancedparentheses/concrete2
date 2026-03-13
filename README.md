@@ -19,6 +19,8 @@ Concrete is a systems programming language for **correctness-focused low-level w
 
 Concrete's intended differentiator is not "more features". It is **auditable low-level programming with explicit authority and trust boundaries, on top of a small, honest, proof-friendly language and compiler**. See [docs/IDENTITY.md](docs/IDENTITY.md) for the explicit project identity.
 
+Longer term, Concrete should also grow an explicit high-integrity profile: stricter execution and safety modes for critical code, built around analyzability, bounded behavior, and stronger evidence rather than feature accumulation.
+
 The compiler is written in [Lean 4](https://leanprover.github.io/lean4/doc/setup.html), a theorem prover. The goal is to leverage Lean 4 to prove Concrete: first the language/compiler itself, and later selected Concrete programs through explicit Core semantics.
 
 Concrete is also being shaped so that this proof story does not stop at the compiler. The long-term goal is not only to formalize the language/compiler in Lean, but also to make selected Concrete programs provable in Lean through explicit Core semantics.
@@ -114,6 +116,8 @@ Compared to Lean itself, Concrete is a low-level programming language first, not
 Compared to Rust, C, Zig, Odin, and similar systems languages, Concrete is more explicitly centered on auditability, explicit authority/trust boundaries, and a compiler architecture shaped for formal reasoning. The intended feel is closer to Austral in clarity and explicitness, while still aiming for the low-level power and seriousness people expect from modern systems languages.
 
 Compared to verification-first languages and tools, Concrete is trying to remain a real low-level systems language with explicit FFI, layout, ownership, trust, and runtime concerns, while still keeping a credible path to proving selected programs.
+
+For critical systems, one of the most important future directions is not "more proof syntax." It is an explicit high-integrity subset/profile: tighter restrictions around allocation, authority, `Unsafe`, FFI, and later concurrency, paired with stronger evidence and traceability.
 
 For the full language specification, see [The Concrete Programming Language: Systems Programming for Formal Reasoning](https://federicocarrone.com/series/concrete/the-concrete-programming-language-systems-programming-for-formal-reasoning/).
 
