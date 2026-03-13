@@ -19,6 +19,8 @@ import Concrete.Mono
 import Concrete.SSAVerify
 import Concrete.SSACleanup
 import Concrete.EmitSSA
+import Concrete.LLVM
+import Concrete.EmitLLVM
 import Concrete.Report
 import Concrete.Pipeline
 import Concrete.Format
