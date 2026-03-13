@@ -408,7 +408,7 @@ partial def isCopyType (ty : Ty) : CheckM Bool := do
         match env.newtypes.find? fun nt => nt.name == name with
         | some nt => isCopyType nt.innerTy
         | none => return false
-  | .generic name args =>
+  | .generic name _args =>
     -- Look up the struct/enum definition — if it's declared Copy, the instantiation is Copy
     let env ← getEnv
     match env.structs.find? fun sd => sd.name == name with
