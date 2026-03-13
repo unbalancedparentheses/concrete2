@@ -16,6 +16,8 @@ Concrete was created to close a gap between systems programming and mechanized r
 
 Most systems languages optimize for control, performance, and interoperability, but leave many important questions hard to answer mechanically: where authority enters, where resources are allocated and destroyed, where trust boundaries are crossed, and what the compiler really means by a program. Proof assistants make those questions tractable, but they are not the same thing as an everyday low-level systems language.
 
+Lean 4 is central to Concrete's proof story, but Lean is still a theorem prover first, not a low-level systems language. It has a runtime and garbage collector, and it is not designed as the place where you would normally implement non-GC systems code with explicit ownership, layout, FFI, and resource management. Concrete exists so the implementation language can stay low-level and explicit while Lean 4 is leveraged to prove properties about it.
+
 The core idea is that systems code should not only run fast or expose low-level control. It should also make important facts visible:
 
 - what authority it has
@@ -106,10 +108,10 @@ That second goal is important because it turns proof-friendliness from a compile
 The practical shape of that idea is important:
 
 - Concrete is the low-level implementation language
-- Lean is the theorem and proof environment
+- Lean 4 is the theorem and proof environment that Concrete leverages
 - formalized Core semantics are the bridge between them
 
-That is appealing because it points toward something stronger than "compiler in Lean". It points toward real executable systems code written in Concrete and proved in Lean, using Lean's existing theorem ecosystem without requiring the implementation itself to be written as ordinary Lean code.
+That is appealing because it points toward something stronger than "compiler in Lean". It points toward real executable systems code written in Concrete and proved with Lean 4, using Lean's theorem ecosystem without requiring the implementation itself to live inside a GC-oriented proof language runtime.
 
 ### 5. Resource / Safety Honesty Without A Giant Surface
 
@@ -158,9 +160,9 @@ Concrete should instead be strongest where those languages are not explicitly ce
 - proof-friendly compiler structure
 - a smaller and more honest semantic surface
 
-Compared to Lean, Concrete is not trying to be a proof assistant. It is trying to be a real low-level programming language that still keeps a credible Lean proof story.
+Compared to Lean, Concrete is not trying to be a proof assistant. It is trying to be the low-level language that Lean 4 can reason about well.
 
-Compared to mainstream systems languages, Concrete's intended difference is not "more features". It is unusually explicit authority, trust, resource, and compiler-meaning boundaries.
+Compared to mainstream systems languages, Concrete's intended difference is not "more features". It is unusually explicit authority, trust, resource, and compiler-meaning boundaries, with a style that should stay closer to Austral's clarity than to feature accumulation.
 
 Compared to verification-first languages, Concrete is trying to keep low-level runtime, FFI, layout, and ownership concerns first-class instead of treating them as secondary escape hatches.
 

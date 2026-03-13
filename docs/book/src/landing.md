@@ -22,6 +22,8 @@ Concrete was created to close a gap between low-level programming and mechanized
 
 It is trying to make systems code explicit enough that you can answer concrete questions about it: what authority it uses, where it allocates, where it cleans up, where trust boundaries are crossed, and what the compiler actually means by the program.
 
+Lean 4 is part of that story, but Lean is not itself a low-level systems language. It is a theorem prover with a runtime and garbage collector. Concrete exists so low-level code can stay explicit and non-GC-oriented while Lean 4 is leveraged to prove properties about that code.
+
 The point is not only speed or control. The point is to keep low-level power while making authority, resources, `Unsafe`, `trusted`, and compiler meaning visible enough to inspect and eventually prove.
 
 ## What Makes It Different
@@ -67,7 +69,7 @@ Concrete is not primarily trying to out-compete:
 
 The goal is a language that is unusually explicit, inspectable, and honest.
 
-Compared to Lean, Concrete is a low-level programming language first, not a proof assistant. Compared to mainstream systems languages, it is more explicitly centered on auditability and trust boundaries. Compared to verification-first languages, it is trying to keep FFI, layout, ownership, and low-level runtime concerns first-class.
+Compared to Lean, Concrete is the low-level language and Lean 4 is the proof environment. Compared to mainstream systems languages, it is more explicitly centered on auditability and trust boundaries, with a style that should stay closer to Austral's clarity than to feature sprawl. Compared to verification-first languages, it is trying to keep FFI, layout, ownership, and low-level runtime concerns first-class.
 
 ## Start Here
 
