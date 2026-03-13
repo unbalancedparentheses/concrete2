@@ -145,6 +145,7 @@ Phases A and B are done. Phase C is active. The LL(1) grammar checker is in CI, 
      - keep SSA as the only backend boundary
      - do not add another backend family until the LLVM path is structurally cleaner
      - treat MLIR as a later optional backend family, not the default immediate answer
+     - once the structured LLVM path and SSA contract are solid, evaluate MLIR deliberately as a potential replacement or additional backend family rather than as an early escape hatch
    - done means: the backend consumes a structured contract over SSA, textual LLVM concatenation is no longer the critical path, and pipeline artifacts support reuse
 
 ### Phase A Notes
@@ -474,6 +475,7 @@ Backend work should happen in this order:
 2. Make backend plurality explicit over the SSA boundary.
 3. Only then evaluate additional backend families such as C or Wasm.
 4. Treat MLIR as optional and only if it still earns its complexity after the LLVM/backend-boundary cleanup.
+5. Once the structured LLVM backend and SSA contract are solid, evaluate whether MLIR should remain optional, become a sibling backend family, or replace the direct LLVM path for some stages.
 
 The immediate backend problem is stringly LLVM emission, not lack of MLIR.
 
