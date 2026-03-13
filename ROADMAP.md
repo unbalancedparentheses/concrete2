@@ -242,6 +242,13 @@ backend work no longer feels fragile, proofs, reports, and tooling all build on 
 
 Goal: make the language's execution model explicit instead of leaving runtime behavior and environment assumptions as a loose later concern.
 
+This phase begins the high-integrity profile direction:
+
+- explicit execution restrictions
+- bounded/no-allocation modes
+- analyzable concurrency constraints
+- a runtime story that can later support critical-system use without pretending every feature belongs everywhere
+
 Primary surfaces:
 - [docs/VALUE_MODEL.md](docs/VALUE_MODEL.md)
 - [docs/STDLIB.md](docs/STDLIB.md)
@@ -276,6 +283,12 @@ Concrete has an explicit execution model that explains how programs start, alloc
 
 Goal: turn capability and trust features into a strong user-facing safety system, not just an internal language property.
 
+This phase carries the safety side of the eventual high-integrity profile:
+
+- stricter authority rules
+- clearer limits around `Unsafe`, `trusted`, and FFI
+- a safety story that remains usable in ordinary code but can also become stricter in higher-assurance modes
+
 Primary surfaces:
 - [docs/DIAGNOSTICS.md](docs/DIAGNOSTICS.md)
 - [Concrete/Report.lean](/Users/unbalancedparen/projects/concrete/Concrete/Report.lean)
@@ -302,6 +315,8 @@ Concrete's capability and trust model is not only sound in principle, but also u
 
 Goal: keep the language small, coherent, and intentionally shaped instead of letting features accumulate opportunistically.
 
+This phase is where an eventual critical/provable subset becomes a real language-design commitment instead of only a later hope.
+
 Primary surfaces:
 - [research/design-filters.md](research/design-filters.md)
 - grammar docs and language references
@@ -327,6 +342,8 @@ Concrete has an explicit discipline for preserving a small, coherent language su
 
 Goal: make Concrete usable for real multi-module and multi-package projects with explicit, stable project-facing semantics.
 
+For serious use, this phase is unavoidable. High-integrity or proof-oriented code still needs a clean project model, dependency semantics, and workspace behavior that are explicit rather than ad hoc.
+
 Primary surfaces:
 - project/package metadata
 - import resolution and project-root semantics
@@ -349,6 +366,13 @@ Concrete has an explicit package/dependency model that supports real projects wi
 #### Phase I: Project And Operational Maturity
 
 Goal: turn Concrete from a strong compiler project into a durable, distributable, maintainable system.
+
+This phase is where the evidence story becomes operational:
+
+- maintained editor/tooling surfaces
+- reproducible and reviewable outputs
+- explicit compatibility policy
+- certification-style traceability between source, reports, proofs, and builds
 
 Primary surfaces:
 - [README.md](README.md)
