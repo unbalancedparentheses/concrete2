@@ -410,7 +410,7 @@ partial def fmtModuleBody (m : Module) (ind : Nat) : String :=
   let groups := if subs.isEmpty then groups else groups ++ [subs]
   "\n\n".intercalate (groups.map fun g =>
     let isCompact := match g with
-      | s :: _ => (s.trimAsciiLeft).startsWith "import " || (s.trimAsciiLeft).startsWith "extern "
+      | s :: _ => let t := s.dropWhile (· == ' '); t.startsWith "import " || t.startsWith "extern "
       | [] => false
     if isCompact then "\n".intercalate g
     else "\n\n".intercalate g)
