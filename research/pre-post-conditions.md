@@ -67,6 +67,123 @@ function Increment (X : Integer) return Integer
 
 **What Concrete can learn:** SPARK's pragmatism is instructive. Contracts are *separate* from the type system, so they don't infect every type signature. The SPARK subset restricts the language specifically to make proofs tractable — this mirrors Concrete's "simple enough to verify" thesis. But SPARK required decades of investment in the prover toolchain.
 
+## What SPARK / Ada Suggest Beyond Contracts
+
+The most useful SPARK / Ada lessons are not only "add pre/post conditions."
+For high-integrity and critical systems, the bigger lessons are about subsets, profiles, analyzability, and certification-friendly discipline.
+
+### 1. A clearly defined critical subset
+
+SPARK succeeds partly because it is not "all of Ada with proofs sprinkled on top." It is a stricter analyzable subset.
+
+For Concrete, the analogous long-horizon idea is:
+
+- define a **proof-critical** or **high-integrity** subset
+- keep it smaller than the full language
+- make the restrictions explicit and tool-enforced
+
+That subset could later rule out or tightly constrain things like:
+
+- FFI-heavy code
+- `Unsafe`
+- `trusted`
+- host-dependent effects
+- unconstrained dynamic allocation
+- concurrency features that do not yet have a clear analyzable model
+
+This is one of the strongest ideas Concrete could borrow for critical systems.
+
+### 2. Bounded-allocation and determinism profiles
+
+Critical software often needs more than "memory safe." It needs behavior that is analyzable and predictable.
+
+Concrete could eventually support profiles such as:
+
+- no allocation
+- bounded allocation
+- no FFI
+- no `Unsafe`
+- no hidden authority escalation
+- no recursion, or recursion only with explicit bounds
+
+That would fit Concrete better than trying to imitate Ada syntax directly. The value is the profile discipline, not the surface language.
+
+### 3. Stronger contract and invariant surfaces
+
+If Concrete eventually adds richer proof-oriented contracts, the most useful forms for critical code would be:
+
+- preconditions
+- postconditions
+- data-structure invariants
+- loop invariants
+- explicit termination / variant measures
+
+The key SPARK lesson is not "make everything dependently typed." It is that a language becomes much more useful for critical systems when these obligations are explicit and reviewable.
+
+### 4. Better initialization and definite-assignment discipline
+
+Ada and SPARK are strong at keeping partially initialized or semantically suspect states out of ordinary code.
+
+Concrete should keep pushing in the same direction:
+
+- explicit initialization
+- making uninitialized states hard to express
+- keeping ownership/resource state transitions visible
+
+This matters especially for critical systems because bugs at initialization boundaries are common and expensive.
+
+### 5. Module and interface contracts for proofs and audits
+
+Critical systems need more than local function reasoning. They need strong boundaries between components.
+
+Concrete could borrow this lesson as:
+
+- module-level contracts
+- capability/authority contracts
+- resource/lifetime invariants at module boundaries
+- proof-oriented interface artifacts
+
+This aligns well with Concrete's audit and report story.
+
+### 6. Certification-friendly artifact and traceability discipline
+
+Another major SPARK / Ada strength is not just proof power. It is process discipline:
+
+- reviewable artifacts
+- explicit assumptions
+- traceability from source to analysis result
+- tooling that supports certification evidence
+
+For Concrete, the comparable opportunity is:
+
+- reproducible compiler outputs
+- report artifacts tied to code and build state
+- proof artifacts tied to compiler artifacts
+- explicit trust boundaries and assumptions
+
+This is a better fit than trying to copy Ada's ecosystem directly. The real win is stronger engineering evidence.
+
+### 7. Restricted, analyzable concurrency
+
+SPARK's restrictions are a reminder that concurrency is one of the fastest ways to make proofs and certification harder.
+
+If Concrete eventually adds concurrency, the SPARK/Ada lesson is:
+
+- prefer an analyzable concurrency model
+- keep authority and ownership explicit across concurrent boundaries
+- do not make "threads exist" the same thing as "concurrency is ready for critical systems"
+
+### What this means for Concrete
+
+The highest-value Ada/SPARK-inspired ideas for Concrete are probably:
+
+1. a clearly defined critical/provable subset
+2. bounded-allocation and determinism profiles
+3. stronger contracts and invariants where they earn their complexity
+4. certification-friendly artifacts, reports, and traceability
+
+These ideas strengthen Concrete for serious high-integrity systems without requiring Concrete to become "Ada syntax with Lean attached."
+
 ### ATS — Linear proofs interleaved with code
 
 ATS (Applied Type System) combines dependent types with linear types in a unique way: proofs are values that must be consumed linearly, just like resources.

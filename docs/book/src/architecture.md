@@ -36,6 +36,25 @@ Recent architectural themes include:
 - expanding direct testing of reports, SSA shape, and optimized builds
 - keeping the backend boundary explicit and inspectable
 
+## Why Selected-Function Proofs Come Earlier
+
+Concrete's proof story has two different scales:
+
+- proving properties of selected Concrete functions
+- proving the whole compiler pipeline
+
+Those are not equally hard.
+
+Selected-function proofs can attach to validated Core after `CoreCheck` and before `Mono`. That is a much smaller and cleaner semantic object than the whole compiler. It means the project can aim for an earlier milestone where:
+
+- a Concrete function is elaborated and validated
+- the compiler exposes a proof-oriented view of that Core
+- Lean 4 is used to prove properties about the function
+
+Whole-compiler proofs are broader because they have to cover the pass structure itself: elaboration, monomorphization, lowering, SSA, backend preservation, and the surrounding trust assumptions.
+
+That is why the validated-Core boundary matters so much. It creates a serious proof target earlier than "prove the whole compiler."
+
 ## Where To Go Deeper
 
 Read the stable architecture references:

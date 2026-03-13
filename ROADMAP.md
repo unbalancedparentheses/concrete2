@@ -94,7 +94,7 @@ Phases A, B, and C are done. Phase D is active. The compiler has a working stdli
 
 1. Push the backend/artifact/proof stack (Phase D):
    - problem: textual LLVM emission is still a brittle choke point, and backend plurality would multiply instability if the backend contract stays loose
-   - why now: this is the front edge of Phase D and the prerequisite for serious backend, tooling, and proof leverage
+   - why now: this is the front edge of Phase D and the prerequisite for serious backend, tooling, and proof leverage; it is also the phase that should make the first real Lean 4 proof workflow for selected Concrete functions actually work
    - primary surfaces: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/PASSES.md](docs/PASSES.md), [Concrete/SSAVerify.lean](/Users/unbalancedparen/projects/concrete/Concrete/SSAVerify.lean), [Concrete/SSACleanup.lean](/Users/unbalancedparen/projects/concrete/Concrete/SSACleanup.lean), [Concrete/EmitSSA.lean](/Users/unbalancedparen/projects/concrete/Concrete/EmitSSA.lean), [Concrete/Pipeline.lean](/Users/unbalancedparen/projects/concrete/Concrete/Pipeline.lean)
    - first slices:
      - replace raw LLVM string emission with a structured LLVM backend
@@ -114,7 +114,7 @@ Phases A, B, and C are done. Phase D is active. The compiler has a working stdli
      - do not add another backend family until the LLVM path is structurally cleaner
      - treat MLIR as a later optional backend family, not the default immediate answer
      - once the structured LLVM path and SSA contract are solid, evaluate MLIR deliberately as a potential replacement or additional backend family rather than as an early escape hatch
-   - done means: the backend consumes a structured contract over SSA, textual LLVM concatenation is no longer the critical path, and pipeline artifacts support reuse
+   - done means: the backend consumes a structured contract over SSA, textual LLVM concatenation is no longer the critical path, pipeline artifacts support reuse, and the first real Lean 4 proof workflow exists for selected Concrete functions over validated Core
 
 ### Phase A Notes
 
@@ -232,10 +232,11 @@ Primary surfaces:
    - define a proof-oriented Core fragment as a restricted view of validated Core, not a separate semantic authority
    - validate the proof boundary with manual embeddings of selected functions
    - only then add compiler/export support for Lean-side proof workflows
+   - treat "selected Concrete functions proved in Lean 4" as a core Phase D deliverable, not just a later research aspiration
 6. add deferred audit/report outputs
 
 Exit criterion:
-backend work no longer feels fragile, and proofs, reports, and tooling all build on the same stable compiler boundaries.
+backend work no longer feels fragile, proofs, reports, and tooling all build on the same stable compiler boundaries, and selected Concrete functions can actually be proved in Lean 4 over validated Core.
 
 #### Phase E: Runtime And Execution Model
 
@@ -260,9 +261,13 @@ Primary surfaces:
    - interaction between allocation, `Destroy`, capabilities, and reports
 4. define the concurrency and execution story deliberately
    - decide whether threads, async, processes, or none of them are first-class language/runtime concerns
+   - prefer analyzable concurrency constraints over unconstrained surface growth if Concrete is meant to serve critical systems later
 5. tighten the FFI/runtime ownership boundary
    - make it clearer what ownership, destruction, and capability assumptions survive foreign boundaries
 6. make runtime-related stdlib surfaces reflect the chosen execution model instead of growing opportunistically
+7. define execution profiles for high-integrity use
+   - make room for profiles such as `no_alloc`, bounded-allocation, or other explicitly restricted execution modes
+   - keep these profiles aligned with the actual runtime and allocator model instead of bolting them on later
 
 Exit criterion:
 Concrete has an explicit execution model that explains how programs start, allocate, fail, interact with the host, and cross runtime/FFI boundaries.
@@ -286,6 +291,9 @@ Primary surfaces:
 3. add stronger patterns for explicit authority wrappers and capability aliases
 4. make safety features easier to use correctly in ordinary programs without weakening honesty
 5. ensure docs, diagnostics, and reports present one coherent safety story
+6. define the shape of a high-integrity safety profile
+   - decide how `Unsafe`, `trusted`, FFI, and ambient authority should be constrained in stricter code profiles
+   - make the restrictions explicit enough that they can later support audit-heavy or critical-system use
 
 Exit criterion:
 Concrete's capability and trust model is not only sound in principle, but also understandable, auditable, and practical for users.
@@ -308,6 +316,9 @@ Primary surfaces:
 3. revisit syntax and surface complexity with a bias toward simplification, not expansion
 4. keep unsafe/trusted/foreign surface area as narrow as possible
 5. make long-term language shape decisions explicit instead of letting them emerge from local convenience
+6. define a clearly analyzable critical/provable subset if Concrete is going to target higher-integrity domains
+   - make the subset explicit rather than leaving it as an accidental intersection of current features
+   - treat contracts and richer proof annotations as optional later research, not a required part of the language philosophy
 
 Exit criterion:
 Concrete has an explicit discipline for preserving a small, coherent language surface and resisting low-leverage feature growth.
@@ -366,6 +377,9 @@ Primary surfaces:
    - decide what can break freely now and what should stabilize first
    - state whether reports/tooling/IRs have compatibility expectations
    - decide whether self-hosting is a goal, whether diverse-double-compilation/bootstrap trust matters, and how far reproducibility should go
+7. make certification-style evidence and traceability practical where it fits Concrete's identity
+   - tie source, reports, proofs, and build artifacts together clearly enough for high-integrity review workflows
+   - prefer explicit evidence and traceability over process folklore
 
 Exit criterion:
 Concrete is not only architecturally strong internally, but also operable, reproducible, documentable, and maintainable as a long-term project.
@@ -406,6 +420,7 @@ Concrete is not only architecturally strong internally, but also operable, repro
    - proof-carrying reports and proof-oriented module contracts
    - verified FFI envelopes
    - reproducible trust bundles
+   - keep richer contracts and invariants in research until it is clear they fit Concrete's philosophy instead of assuming they belong on the main roadmap
 
 ### Later
 
@@ -426,7 +441,11 @@ Concrete is not only architecturally strong internally, but also operable, repro
    - later broaden selected-function proofs toward effects, resources, capabilities, runtime interaction, and only then concurrency
    - later consider backend-level proof concerns such as richer compiler-preservation work across deeper lowering stacks or optional backend-family layers
    - do not treat either broader end-to-end program proofs or backend/MLIR-layer proof work as near-term substitutes for the validated-Core-first plan
-12. Implement a real artificial-life showcase/stress-test in Concrete.
+12. Treat contracts, richer invariants, and similar verification extensions as post-roadmap evaluation work, not as part of the main current philosophy.
+   - only evaluate them after the simpler Concrete + Lean 4 proof story has proven insufficient
+   - keep them out of the main phase plan until the core language, proof boundary, runtime model, and operational story are already stable
+   - if adopted at all, treat them as a final optional verification-extension stage rather than as a prerequisite for the main roadmap
+13. Implement a real artificial-life showcase/stress-test in Concrete.
    - target a program in the spirit of Rabrg's `artificial-life` reproduction of "Computational Life: How Well-formed, Self-replicating Programs Emerge from Simple Interaction"
    - a 240x135 grid of 64-instruction Brainfuck-like programs, randomly initialized, locally paired, concatenated, executed for bounded steps, then split back apart
    - use it as a serious end-to-end stress test for runtime/performance, collections/buffers, formatting/reporting, and later proof/audit ambitions

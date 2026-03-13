@@ -455,11 +455,14 @@ Useful ideas:
 - high-integrity low-level style
 - explicit resource and authority boundaries
 - proof-aware or contract-aware systems thinking
+- analyzable subsets and operational profiles for critical code
 
 What Concrete can learn:
 
 - readability and explicitness matter as much as formal strength
 - high-assurance systems programming benefits from a smaller, more disciplined surface
+- critical-system value comes from profiles and evidence, not only from language features
+- certification-friendly reports, traceability, bounded-allocation profiles, and explicit invariants could become real differentiators
 
 ## What To Avoid
 

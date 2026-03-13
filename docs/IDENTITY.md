@@ -105,6 +105,8 @@ Both matter, but they are not the same. One is language trust and compiler trust
 
 That second goal is important because it turns proof-friendliness from a compiler implementation detail into a real language differentiator.
 
+It is also important as a concrete project milestone, not only as a vague long-term ambition. Concrete should reach a point where a user can write selected Concrete code, then use Lean 4 to prove properties about that code through validated Core semantics. That is one of the clearest breakthroughs the roadmap is trying to produce.
+
 The practical shape of that idea is important:
 
 - Concrete is the low-level implementation language
