@@ -5,6 +5,7 @@ set -euo pipefail
 MODE="fast"           # fast (default) | full | stdlib | O2 | codegen | report
 FILTER=""             # glob pattern to match test file paths
 SECTION=""            # internal: which sections to run
+STDLIB_MODULE=""      # single stdlib module to target (e.g., "string", "map")
 
 usage() {
     cat <<'USAGE'
@@ -21,6 +22,7 @@ Modes:
   --full              Complete suite — all sections including slow tests
   --filter PATTERN    Only tests whose file path contains PATTERN
   --stdlib            Only stdlib module + collection verification
+  --stdlib-module M   Only run tests for stdlib module M (e.g., string, map, vec)
   --O2               Only -O2 optimized-build regression tests
   --codegen           Only codegen differential + SSA structure tests
   --report            Only --report output verification tests
@@ -37,6 +39,7 @@ Recommended workflows:
   ./run_tests.sh                        # daily driver — fast parallel
   ./run_tests.sh --filter struct_loop   # iterate on one area
   ./run_tests.sh --stdlib               # after touching std/src/
+  ./run_tests.sh --stdlib-module map    # iterate on one stdlib module
   ./run_tests.sh --O2                   # after lowering changes
   ./run_tests.sh --full                 # pre-merge — complete coverage
   ./run_tests.sh -j 1                   # debug ordering issues
@@ -60,6 +63,7 @@ while [ $# -gt 0 ]; do
         --full)    MODE="full"; shift ;;
         --fast)    MODE="fast"; shift ;;
         --stdlib)  MODE="stdlib"; shift ;;
+        --stdlib-module) MODE="stdlib-module"; STDLIB_MODULE="$2"; shift 2 ;;
         --O2)      MODE="O2"; shift ;;
         --codegen) MODE="codegen"; shift ;;
         --report)  MODE="report"; shift ;;
@@ -75,6 +79,7 @@ case "$MODE" in
     full)    SECTION="positive,negative,testflag,report,codegen,O2,stdlib,collection" ;;
     fast)    SECTION="positive,negative,testflag,report,codegen,O2,stdlib,collection" ;;
     stdlib)  SECTION="stdlib,collection" ;;
+    stdlib-module) SECTION="stdlib" ;;
     O2)      SECTION="O2" ;;
     codegen) SECTION="codegen,O2" ;;
     report)  SECTION="report" ;;
@@ -1360,15 +1365,42 @@ flush_jobs
 if section_active stdlib; then
 echo "=== Stdlib module tests ==="
 rm -f std/src/lib.con.test.ll std/src/lib.con.test
-stdlib_output=$($COMPILER std/src/lib.con --test 2>&1) && stdlib_exit=0 || stdlib_exit=$?
-stdlib_pass=$(echo "$stdlib_output" | grep -c "^PASS:" || true)
-stdlib_fail=$(echo "$stdlib_output" | grep -c "^FAIL:" || true)
-echo "  Stdlib: $stdlib_pass passed, $stdlib_fail failed (exit $stdlib_exit)"
-if [ "$stdlib_fail" -gt 0 ]; then
-    echo "$stdlib_output" | grep "^FAIL:"
+
+# Stdlib modules that have #[test] functions
+STDLIB_TEST_MODULES="string vec bytes slice text path fmt parse hash map set deque heap ordered_map ordered_set bitset option result fs process net"
+
+if [ -n "$STDLIB_MODULE" ]; then
+    # Single module mode: only run the requested module
+    echo "  (targeting module: std.$STDLIB_MODULE)"
+    mod_output=$($COMPILER std/src/lib.con --test --module "std.$STDLIB_MODULE" 2>&1) && mod_exit=0 || mod_exit=$?
+    mod_pass=$(echo "$mod_output" | grep -c "^PASS:" || true)
+    mod_fail=$(echo "$mod_output" | grep -c "^FAIL:" || true)
+    if [ "$mod_pass" -eq 0 ] && [ "$mod_fail" -eq 0 ]; then
+        echo "  warn  std.$STDLIB_MODULE — no tests found (check module name)"
+    elif [ "$mod_fail" -gt 0 ]; then
+        echo "  FAIL  std.$STDLIB_MODULE — $mod_pass passed, $mod_fail failed"
+        echo "$mod_output" | grep "^FAIL:"
+    else
+        echo "  ok    std.$STDLIB_MODULE — $mod_pass passed"
+    fi
+    PASS=$((PASS + mod_pass))
+    FAIL=$((FAIL + mod_fail))
+    # Capture for collection verification section
+    stdlib_output="$mod_output"
+else
+    # Full stdlib run with per-module breakdown
+    stdlib_output=$($COMPILER std/src/lib.con --test 2>&1) && stdlib_exit=0 || stdlib_exit=$?
+    stdlib_pass=$(echo "$stdlib_output" | grep -c "^PASS:" || true)
+    stdlib_fail=$(echo "$stdlib_output" | grep -c "^FAIL:" || true)
+
+    echo "  Stdlib: $stdlib_pass passed, $stdlib_fail failed (exit $stdlib_exit)"
+    echo "  (use --stdlib-module <name> to target a single module)"
+    if [ "$stdlib_fail" -gt 0 ]; then
+        echo "$stdlib_output" | grep "^FAIL:"
+    fi
+    PASS=$((PASS + stdlib_pass))
+    FAIL=$((FAIL + stdlib_fail))
 fi
-PASS=$((PASS + stdlib_pass))
-FAIL=$((FAIL + stdlib_fail))
 
 fi # end section: stdlib
 
