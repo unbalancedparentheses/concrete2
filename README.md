@@ -151,11 +151,11 @@ What Concrete has today:
 - stdlib uniformity: generic `Result<T, ModuleError>` across all modules, `parse` module (inverse of `fmt`), checked accessors on `String` and `Vec`
 - built-in test runner: `concrete file.con --test` compiles and runs all `#[test]` functions, with module targeting via `--test --module <name>`
 - module-targeted stdlib testing: `--stdlib-module <name>` in `run_tests.sh` for single-module iteration
+- structured non-string LLVM backend
 
 What is still clearly missing:
 
 - `transmute`
-- structured non-string LLVM backend
 - backend plurality over SSA (for example MLIR / C / Wasm)
 - kernel formalization
 - runtime
@@ -401,7 +401,7 @@ The compiler implements the core surface language and the full internal IR pipel
 
 ## Known Rough Edges
 
-- textual LLVM emission is still string-based concatenation (structured backend is the primary Phase D target)
+- the structured LLVM backend is in place, but the SSA/backend contract still needs tightening and defending
 - diagnostics infrastructure is strong, but rendering quality still has room to improve (ranges, notes, and secondary labels)
 - formal proofs have not started; the proof boundary exists architecturally (validated Core after `CoreCheck`) but no proofs are written yet
 - no runtime or execution model beyond what clang/libc provide
@@ -556,12 +556,12 @@ See [docs/README.md](docs/README.md) for the stable documentation index and [res
 | **8** | Standard library builtins (strings, I/O, conversions, env) | Done |
 | **9** | Bitwise operators + hex/bin/oct literals | Done |
 | **10** | `Self` keyword + multi-file modules | Done |
-| **11** | Structured LLVM backend + backend plurality over SSA | Not started |
+| **11** | Structured LLVM backend + backend plurality over SSA | Backend done; plurality not started |
 | **12** | Kernel formalization + proofs | Not started |
 | **13** | Tooling | Not started |
 | **14** | Runtime (C, then Concrete) | Not started |
 
-Next critical path: **replace textual LLVM emission with a structured backend, strengthen the SSA/backend contract, then push formalization.** Phases A-C (fast feedback, semantic cleanup, tooling/stdlib hardening) are complete. The summary-based frontend, `CoreCheck` semantic-authority shift, ABI/layout subsystem, cacheable pipeline artifacts, SSA cleanup, audit/report outputs (6 modes with why-traces), structured diagnostics, and module-targeted testing are all in place.
+Next critical path: **strengthen the SSA/backend contract, make pipeline artifacts do more real work, then push formalization over validated Core.** Phases A-C (fast feedback, semantic cleanup, tooling/stdlib hardening) are complete. The summary-based frontend, `CoreCheck` semantic-authority shift, ABI/layout subsystem, cacheable pipeline artifacts, SSA cleanup, structured LLVM backend, audit/report outputs (6 modes with why-traces), structured diagnostics, and module-targeted testing are all in place.
 
 ### What fits the philosophy and what does not
 
@@ -697,14 +697,14 @@ Things Concrete deliberately does not have:
 
 **Current Lean 4 implementation:**
 - ~15,500 lines of Lean across parser, checker, Core IR, SSA pipeline, and backends
-- Direct textual LLVM IR emission from the SSA backend, compiled with `clang`
+- Structured SSA-to-LLVM backend built around `LLVMModule`, compiled with `clang`
 - Real staged pipeline: Parse -> Resolve -> Check -> Elab -> CoreCheck -> Mono -> Lower -> SSAVerify -> SSACleanup -> EmitSSA
 - Structured diagnostics across the semantic pipeline, with source spans in the AST and typed errors in `Resolve`, `Check`, `Elab`, `CoreCheck`, and `SSAVerify`
 - Clear path to formal verification because the compiler is already implemented in Lean and now has explicit internal IR boundaries
 
 **Next steps:**
-- Replace textual LLVM emission with a structured backend (Phase D)
-- Strengthen the SSA/backend contract for backend plurality
+- Strengthen the SSA/backend contract for backend plurality and better backend reuse
+- Turn pipeline artifacts into more reusable tooling/testing/proof boundaries
 - Push kernel formalization and proof development in Lean
 
 ## License

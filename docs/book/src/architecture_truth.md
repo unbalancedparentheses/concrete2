@@ -14,7 +14,7 @@ What that means:
 - `CoreCheck` is the post-elaboration semantic authority
 - `ValidatedCore` is the proof-facing semantic boundary
 - `SSA` is backend territory, not where language meaning should be re-decided
-- the main LLVM emission path is now structured, with one remaining legacy builtin island
+- the LLVM emission path is now structured end to end
 
 ## What Is Shipped
 
@@ -32,20 +32,9 @@ Phase D is the active frontier.
 That means the main work is:
 
 - smarter testing infrastructure built on compiler artifacts and dependency information
-- finishing backend cleanup around the remaining legacy builtin emission island
 - stronger SSA/backend contracts
 - reusable pipeline artifacts
 - the first real Lean 4 proof workflow for selected Concrete functions
-
-## What Is Legacy
-
-The main remaining legacy backend island is the old builtin emission path behind `getBuiltinsIR`.
-
-That matters because:
-
-- ordinary module emission is already structured
-- the raw path is now isolated enough to treat as a separate cleanup decision
-- it should either be retired or rewritten cleanly as a follow-up Phase D task
 
 ## What Is Planned
 

@@ -114,7 +114,6 @@ Phases A, B, and C are done. Phase D is active. The compiler has a working stdli
    - why now: once D1 makes testing fast, reliable, and architecture-aware, Phase D can press harder on contract strength, artifact reuse, and the first real Lean 4 proof workflow for selected Concrete functions
    - primary surfaces: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/PASSES.md](docs/PASSES.md), [Concrete/SSAVerify.lean](/Users/unbalancedparen/projects/concrete/Concrete/SSAVerify.lean), [Concrete/SSACleanup.lean](/Users/unbalancedparen/projects/concrete/Concrete/SSACleanup.lean), [Concrete/EmitSSA.lean](/Users/unbalancedparen/projects/concrete/Concrete/EmitSSA.lean), [Concrete/Pipeline.lean](/Users/unbalancedparen/projects/concrete/Concrete/Pipeline.lean)
    - first slices:
-     - record the fully structured backend conversion as landed in the roadmap/changelog/docs
      - strengthen SSA/backend contract
      - make `ValidatedCore` explicit in `Concrete/Pipeline.lean` rather than leaving it only as a documented post-`CoreCheck` boundary
      - make validated Core a first-class proof-oriented artifact boundary after `CoreCheck` and before `Mono`
@@ -149,7 +148,7 @@ The compiler-improvement order should stay:
 2. finish hardening lowering around mutable-state storage identity and aggregate merge transport after the core stable-storage fix
 3. remove remaining string-based semantic dispatch from ordinary language behavior
 4. strengthen the SSA verifier/cleanup boundary into a clearer backend contract
-5. replace textual LLVM emission with a structured backend
+5. make the structured LLVM backend easier to reuse, verify, and defend with a clearer SSA/backend contract
 6. only then expand toward backend plurality, deeper caching/incrementality, and more ambitious tooling reuse
 
 This is the highest-leverage path for turning the current compiler into a stable long-term project rather than just a working bootstrap.
@@ -441,9 +440,9 @@ Primary surfaces:
 1. improve capability and trust ergonomics
    - make capability requirements easier to understand, introduce, and audit
 2. deepen capability/trust reporting
-   - stronger "why" traces
-   - clearer authority flow
-   - better `trusted` / `Unsafe` visibility
+   - extend the existing "why" traces into a more complete authority-flow story
+   - make authority flow easier to follow across wrappers, modules, and trust boundaries
+   - improve `trusted` / `Unsafe` visibility and cross-links in reports
 3. add stronger patterns for explicit authority wrappers and capability aliases
    - keep open the later path to authority budgets that can limit what a module, package, or binary is allowed to require at all
 4. make safety features easier to use correctly in ordinary programs without weakening honesty
@@ -454,7 +453,7 @@ Primary surfaces:
 
 Deliverables:
 - clearer user-facing capability and trust ergonomics in diagnostics/docs/reports
-- stronger report outputs for authority flow, `trusted`, and `Unsafe`
+- stronger report outputs building on the current capability/trust reports for authority flow, `trusted`, and `Unsafe`
 - explicit patterns for authority wrappers, aliases, and later authority-budget integration
 - a documented high-integrity safety profile direction covering `Unsafe`, `trusted`, FFI, and ambient authority
 
