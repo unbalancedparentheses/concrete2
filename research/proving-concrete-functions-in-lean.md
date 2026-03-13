@@ -47,6 +47,24 @@ It would mean:
 
 - not only can you reason about the language in Lean
 - you can reason about actual Concrete programs in Lean
+- you can use Lean's theorem library and proof environment while still implementing the executable code in Concrete
+
+That last point is one of the most practical reasons this idea is interesting.
+
+If the bridge is done well, the workflow is not "replace Lean with Concrete" or "replace Concrete with Lean". It is:
+
+- write low-level executable code in Concrete
+- connect that code to formal Core semantics
+- prove properties about it in Lean using existing Lean definitions, lemmas, and theorems
+
+That matters because Concrete is meant to be a real low-level implementation language:
+
+- no GC assumptions
+- explicit ownership and resources
+- explicit layout and FFI boundaries
+- explicit authority and trust boundaries
+
+Lean is excellent for proofs, but it is not the language most people would choose for ordinary systems programming. Concrete can potentially make a different tradeoff: write the executable systems code in a low-level language, but reason about it in Lean.
 
 That is useful for several reasons.
 
@@ -94,6 +112,18 @@ Concrete is unusually well-positioned to care about both.
 
 If Concrete is used for low-level code where authority, resources, and trust boundaries matter, then proving selected critical functions is much more valuable than generic language marketing.
 
+### 7. It Could Make Verified Low-Level Code More Practical
+
+One of the strongest long-term possibilities is this:
+
+- implementation language = Concrete
+- proof language = Lean
+- bridge = formalized Core semantics
+
+That would let users write real low-level executable code in Concrete and still prove properties about it using Lean's theorem ecosystem.
+
+This is especially appealing for code that would be awkward to write directly in Lean for practical systems reasons, but that still benefits from mechanized proofs.
+
 ## Why This Could Be Distinctive
 
 Program verification is not new, and some other systems-oriented languages or verification ecosystems already support related work.
@@ -104,6 +134,12 @@ What would still be relatively unusual here is the combination of:
 - explicit trust/capability/resource boundaries
 - compiler architecture intentionally aligned with a formal Core semantics
 - and a realistic path to proving selected user programs in Lean
+
+It would also create a more practical split than "just write everything in a proof assistant":
+
+- Lean remains the theorem and proof environment
+- Concrete remains the executable low-level language
+- the bridge between them is intentional instead of accidental
 
 That is not the same thing as "verification exists somewhere". It would make this proof story part of Concrete's architectural identity rather than an external afterthought.
 

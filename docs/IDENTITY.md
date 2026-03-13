@@ -103,6 +103,14 @@ Both matter, but they are not the same. One is language trust and compiler trust
 
 That second goal is important because it turns proof-friendliness from a compiler implementation detail into a real language differentiator.
 
+The practical shape of that idea is important:
+
+- Concrete is the low-level implementation language
+- Lean is the theorem and proof environment
+- formalized Core semantics are the bridge between them
+
+That is appealing because it points toward something stronger than "compiler in Lean". It points toward real executable systems code written in Concrete and proved in Lean, using Lean's existing theorem ecosystem without requiring the implementation itself to be written as ordinary Lean code.
+
 ### 5. Resource / Safety Honesty Without A Giant Surface
 
 Concrete is aiming for a strong ownership/capability/trust story without requiring the language to become maximally large or magical.
