@@ -25,6 +25,8 @@ Source Text
     ▼
   CoreCheck ── List CModule → Unit
     │
+    ├─→ future ValidatedCore / ProofCore artifact for selected-function proving
+    │
     ▼
   Mono ──── List CModule → List CModule
     │
@@ -43,6 +45,38 @@ Source Text
     ▼
   clang ─── executable
 ```
+
+### Proof-Oriented Pipeline Summary
+
+For Lean-side proofs of selected Concrete functions, the intended proof boundary sits
+after `CoreCheck` and before `Mono`.
+
+Keep as-is:
+
+- `CoreCheck` remains the semantic authority
+- validated Core remains the main proof boundary
+- `Mono` stays after the proof boundary
+- SSA stays backend-only territory, mainly for compiler-preservation proofs
+- explicit `Unsafe` / `trusted` / FFI boundaries stay visible in the language and reports
+
+Still change:
+
+- make validated Core a first-class pipeline artifact
+- define `ProofCore` as a restricted, proof-oriented view of validated Core
+- preserve source-to-Core traceability
+- later add selected-function export support for Lean-facing proof workflows
+- keep proof scopes staged explicitly: pure first, then effects/resources/capabilities, then runtime/concurrency
+
+Fine for now:
+
+- no separate verification compiler
+- no proof pass inserted into ordinary compilation
+- no surface-AST proof target
+- no backend or MLIR layer in the proof story yet
+
+Main caution:
+
+- `ProofCore` must not become a second semantic authority
 
 ---
 
@@ -229,6 +263,8 @@ CoreCheck is the post-elaboration semantic authority. It owns all legality rules
 
 **Invariant established:** Capabilities valid in Core IR, operand types match, return types agree, match structure/coverage valid, declaration-level trait/FFI/repr rules satisfied. All checks apply uniformly across top-level modules and nested submodules.
 
+**Proof-boundary note:** for eventual Lean-side proofs of selected Concrete functions, the output of `CoreCheck` is the right semantic boundary. A future proof-oriented artifact should attach here, before monomorphization and lowering.
+
 ---
 
 ## 7. Mono (Monomorphization)
@@ -248,6 +284,8 @@ CoreCheck is the post-elaboration semantic authority. It owns all legality rules
 - Unbounded polymorphic recursion (infinite specialization).
 
 **Invariant established:** All generics fully instantiated. No type variables in emitted code.
+
+**Proof-boundary note:** user-program proofs should generally attach before this pass unless the proof target is specifically about a concrete monomorphized instantiation. The primary semantic proof boundary remains validated Core after `CoreCheck`.
 
 ---
 

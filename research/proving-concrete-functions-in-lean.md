@@ -209,6 +209,186 @@ Core is the right proof boundary because it is:
 - more explicit
 - semantically authoritative
 
+## What "Core" Should Mean For Proofs
+
+The proof target should not be raw surface syntax, and it probably should not be a totally separate verification IR either.
+
+The best design is:
+
+- **Validated Core is the semantic authority**
+- **ProofCore is a restricted, proof-oriented view of validated Core**
+
+That means the proof story should attach after:
+
+```text
+Parse -> Resolve -> Check -> Elab -> CoreCanonicalize -> CoreCheck
+```
+
+and before:
+
+```text
+Mono -> Lower -> SSAVerify -> SSACleanup -> EmitSSA
+```
+
+In other words:
+
+- `Elab` produces typed Core
+- `CoreCanonicalize` normalizes it
+- `CoreCheck` validates it
+- **that validated Core is the right source for proving Concrete functions**
+
+## ProofCore Design
+
+The most useful near-term design is **not** "invent a brand-new proof IR."
+
+Instead:
+
+- keep Core as the main semantic object
+- define a **ProofCore fragment** as the subset of validated Core intended for early user-program proofs
+- make that fragment explicit and stable enough to export or re-encode in Lean
+
+ProofCore should initially include:
+
+- literals and locals
+- algebraic data construction and projection
+- explicit calls
+- structured branching and pattern matching
+- simple recursion
+- typed values and explicit return structure
+
+ProofCore should initially exclude or fence off:
+
+- FFI
+- `Unsafe`
+- `trusted`
+- host-environment-dependent capabilities
+- raw pointer operations
+- concurrency/runtime-dependent operations
+
+That gives the project a proof target that is:
+
+- small enough to formalize
+- close enough to real user code to matter
+- still clearly connected to the real compiler pipeline
+
+## Pipeline Placement
+
+If proving Concrete functions is a real goal, the compiler architecture should make one thing explicit:
+
+- there is a **proof-oriented artifact boundary after `CoreCheck`**
+
+This does **not** mean every compile goes through a separate proof pass.
+It means the pipeline should be able to expose, for selected functions:
+
+- validated Core term
+- source-to-Core traceability
+- explicit trusted/unsafe/FFI boundary markers
+- enough identity information that Lean proofs do not depend on ad hoc names
+
+The simplest future shape is something like:
+
+```text
+Source
+  -> Parse
+  -> Resolve
+  -> Check
+  -> Elab
+  -> CoreCanonicalize
+  -> CoreCheck
+  -> ValidatedCore artifact
+  -> optional ProofCore/Lean export for selected functions
+  -> Mono
+  -> Lower
+  -> SSA ...
+```
+
+## Architecture Changes Suggested By This
+
+If the project wants this proof story to be practical, the compiler should evolve in a few specific ways:
+
+1. **Treat validated Core as a first-class artifact**
+   - not just a pass-local internal value
+   - something selected functions can be exported from later
+
+2. **Preserve source-to-Core traceability**
+   - enough span/name/origin metadata that proofs remain understandable to humans
+
+3. **Keep trusted/unsafe/FFI boundaries explicit in Core**
+   - these boundaries should be machine-visible in the proof story, not reconstructed later
+
+4. **Avoid creating a second semantic authority**
+   - ProofCore should be a restricted view of validated Core, not a rival IR with its own meaning
+
+5. **Stage proof export after the semantics settle**
+   - manual embedding first
+   - compiler-supported export later
+
+This is a refinement of the current architecture, not a demand for a whole new compiler pipeline.
+
+## Architecture Summary
+
+### Keep As-Is
+
+These are already the right architectural choices:
+
+- `CoreCheck` as the semantic authority
+- validated Core as the main proof boundary
+- `Mono` after the proof boundary
+- SSA as backend-only territory, mainly for compiler-preservation proofs
+- explicit `Unsafe` / `trusted` / FFI boundaries in the language and reports
+
+### Should Change
+
+The main architecture work still needed is:
+
+1. add a first-class `ValidatedCore` artifact in the pipeline
+   - right now it is implicit in pass flow
+   - it should become explicit after `CoreCheck`
+2. define `ProofCore` as a restricted view of `ValidatedCore`
+   - not a new semantic IR
+   - just the proof-friendly subset/filter for early Lean work
+3. preserve source-to-Core traceability
+   - function origin
+   - spans or source mapping
+   - stable names/ids through `Elab -> CoreCheck`
+4. add export support later
+   - manual embedding first
+   - later compiler export of selected `ValidatedCore` / `ProofCore` terms to Lean
+5. be explicit about proof scopes
+   - early: pure / no FFI / no `Unsafe` / no `trusted`
+   - later: effects, resources, capabilities
+   - much later: runtime and concurrency
+
+### Probably Not A Goal
+
+The following are not just "later." They are probably the wrong default architecture:
+
+- no separate verification compiler
+- no proof pass inserted into ordinary compilation
+- no surface-AST proof target
+
+These all risk splitting the semantic authority, making the ordinary compiler path heavier than it should be, or attaching proofs to a noisier object than validated Core.
+
+### Not A Near-Term Goal, But Potential Later Work
+
+The following are real later-stage possibilities, but only after the narrow Core-based proof story works:
+
+- no MLIR/backend involvement in the proof story yet
+- no attempt to prove arbitrary programs end to end first
+
+Why they could make sense later:
+
+- backend or MLIR-layer reasoning could eventually matter for compiler-preservation proofs, backend rewrite validation, or richer multi-backend translation contracts
+- broader end-to-end program proofs could eventually expand from pure fragments into effects, resources, capabilities, runtime interaction, and later concurrency
+
+These are legitimate downstream proof problems. They are just not the first proof problems Concrete should try to solve.
+
+### One Important Caution
+
+Do not let `ProofCore` become a second semantic authority.
+
+If `ValidatedCore` says one thing and `ProofCore` says another, the design is wrong. `ProofCore` should stay a restricted view of validated Core, not a new compiler world.
+
 ## What Should Be Provable First
 
 The first realistic target subset is:
@@ -250,12 +430,184 @@ That does not make them impossible. It means they likely need:
 
 To make function proofs practical, Concrete should eventually be able to:
 
-1. expose a stable Lean-side representation of Core terms for selected functions
+1. expose a stable Lean-side representation of validated Core / ProofCore terms for selected functions
 2. preserve source-to-Core traceability well enough that proofs remain understandable
 3. identify trusted/unsafe/FFI boundaries explicitly in the proof story
 4. keep language-item identity explicit so proofs do not depend on ad-hoc names
 
 This means the formalization roadmap and the semantic-cleanup roadmap directly support function proving.
+
+## Example Workflow
+
+The intended long-term workflow is:
+
+1. a user writes a Concrete function
+2. the compiler exposes or exports a validated Core / ProofCore representation for that function
+3. the user writes Lean proof code against that exported meaning
+
+A tiny conceptual example:
+
+Concrete source:
+
+```con
+fn add1(x: Int) -> Int {
+    return x + 1;
+}
+```
+
+The compiler would eventually make available something like:
+
+- a validated Core / ProofCore term for `add1`
+- or a generated Lean module containing that term and its semantics hook
+
+Then the user could write Lean along these lines:
+
+```lean
+-- Conceptual example: exported from Concrete, not current syntax
+def add1_core : ProofCoreFn := ...
+
+def add1_sem (x : Int) : Int := ...
+
+theorem add1_correct (x : Int) :
+  add1_sem x = x + 1 := by
+  rfl
+```
+
+A slightly more structured example:
+
+Concrete source:
+
+```con
+enum Option<T> {
+    Some { value: T },
+    None,
+}
+
+fn unwrap_or_zero(x: Option<Int>) -> Int {
+    match x {
+        Option#Some { value } => return value,
+        Option#None => return 0,
+    }
+}
+```
+
+Lean-side proof shape:
+
+```lean
+-- Conceptual example only
+def unwrap_or_zero_core : ProofCoreFn := ...
+
+def unwrap_or_zero_spec : Option Int -> Int
+| some v => v
+| none   => 0
+
+theorem unwrap_or_zero_correct (x : Option Int) :
+  unwrap_or_zero_sem x = unwrap_or_zero_spec x := by
+  cases x <;> rfl
+```
+
+The important point is not the exact Lean API yet. The important point is the split:
+
+- Concrete remains the implementation language
+- Lean remains the proof language
+- validated Core / ProofCore is the bridge between them
+
+## A More Interesting Example
+
+The real value of this idea is not proving `add1`.
+It is proving selected low-level routines that are still practical executable code.
+
+For example, imagine a small parser/formatter round-trip property over a bounded domain.
+
+Concrete source:
+
+```con
+fn format_then_parse(x: Int) -> Result<Int, ParseError> with(Alloc) {
+    let s: String = fmt::format_int(x);
+    return parse::parse_int(s);
+}
+```
+
+A useful Lean-side theorem shape would be:
+
+```lean
+-- Conceptual only
+theorem format_then_parse_roundtrip (x : Int) :
+  within_domain x ->
+  format_then_parse_sem x = Result.ok x := by
+  ...
+```
+
+This is much more interesting than a toy arithmetic proof because it starts to look like a real library guarantee:
+
+- the implementation is ordinary Concrete code
+- the theorem uses Lean
+- the property is about actual executable behavior, not a separate handwritten model
+
+Another good class of example is a low-level data-structure invariant.
+
+Concrete source:
+
+```con
+fn push_preserves_len<T>(v: Vec<T>, x: T) with(Alloc) -> Vec<T> {
+    let before: Int = v.len();
+    v.push(x);
+    assert(v.len() == before + 1);
+    return v;
+}
+```
+
+The interesting theorem is not the assertion itself. It is the semantic property:
+
+```lean
+-- Conceptual only
+theorem vec_push_len (v : VecModel α) (x : α) :
+  len (push_sem v x) = len v + 1 := by
+  ...
+```
+
+That kind of result is where the bridge starts to justify itself:
+
+- real low-level implementation language
+- real theorem-prover proof environment
+- properties about code you would actually want to run
+
+## A Concrete-Specific Example: Capability Discipline
+
+One of the most interesting longer-horizon examples would not be pure arithmetic or containers. It would be a proof about authority.
+
+Concrete source:
+
+```con
+fn read_config(path: String) with(File, Alloc) -> Result<String, FsError> {
+    return fs::read_to_string(path);
+}
+```
+
+The interesting Lean-side theorem shape is not merely "this returns a string."
+It is something closer to:
+
+```lean
+-- Conceptual only
+theorem read_config_no_network_or_process_effects (path : String) :
+  effects_of (read_config_sem path) ⊆ {Effect.file, Effect.alloc} := by
+  ...
+```
+
+Or, phrased more generally:
+
+- if a function is validated without `Network`
+- and validated without `Process`
+- then its semantics cannot perform network or process effects
+
+This is especially interesting because it is not just a normal program-correctness theorem.
+It is a theorem about one of Concrete's central design promises:
+
+- authority is explicit
+- capabilities matter semantically
+- the proof story can talk about those authority boundaries directly
+
+That makes capability/effect proofs one of the most Concrete-specific examples the Lean bridge could eventually support.
 
 ## Good First Milestones
 

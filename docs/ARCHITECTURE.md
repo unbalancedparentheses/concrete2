@@ -50,6 +50,72 @@ ParsedModule -> FileSummary -> ResolvedImports -> checked/elaborated module -> m
 
 `FileSummary` and `ResolvedImports` still carry full impl/trait-impl bodies because imported method checking and elaboration need them. Splitting interface-only and body-bearing artifacts is a future incremental-compilation concern.
 
+## Proof Boundary Placement
+
+If Concrete is going to support Lean-side proofs of selected Concrete functions, the proof boundary should sit **after `CoreCheck` and before `Mono`**.
+
+That is the point where the program has become:
+
+- explicit typed Core
+- normalized by `CoreCanonicalize`
+- validated by `CoreCheck`
+
+This is the right place because:
+
+- surface sugar is gone
+- the main semantic legality checks have already run
+- the object is still close to source meaning
+- backend-oriented lowering has not started yet
+
+The intended long-term shape is:
+
+```text
+Source
+  -> Parse
+  -> Resolve
+  -> Check
+  -> Elab
+  -> CoreCanonicalize
+  -> CoreCheck
+  -> ValidatedCore artifact
+  -> optional proof-oriented export for selected functions
+  -> Mono
+  -> Lower
+  -> SSA ...
+```
+
+This does not require a separate "verification compiler."
+The goal is to treat validated Core as the semantic authority and let a proof-oriented view of that artifact serve Lean-side reasoning.
+
+### Proof Architecture Summary
+
+Keep as-is:
+
+- `CoreCheck` is the semantic authority
+- validated Core after `CoreCheck` is the main proof boundary
+- `Mono` stays after the proof boundary
+- SSA stays backend-only territory, mainly for compiler-preservation proofs
+- explicit `Unsafe` / `trusted` / FFI boundaries remain visible in the language and reports
+
+Still change:
+
+- make `ValidatedCore` a first-class pipeline artifact
+- define `ProofCore` as a restricted view of `ValidatedCore`
+- preserve source-to-Core traceability
+- later add export support for selected functions
+- keep proof scopes staged and explicit
+
+Fine for now:
+
+- no separate verification compiler
+- no proof pass in ordinary compilation
+- no surface-AST proof target
+- no MLIR/backend layer in the proof story yet
+
+Main caution:
+
+- `ProofCore` must not become a second semantic authority
+
 ## Pass Definitions
 
 ### 1. Parse
@@ -186,6 +252,32 @@ Excludes:
 - unresolved identifiers
 - multiple ways to express the same meaning
 - frontend convenience forms
+
+### Proof-Oriented Core Direction
+
+For proving selected Concrete functions in Lean, the intended direction is **not** to invent a fully separate semantic IR.
+
+Instead:
+
+- validated Core remains the main semantic object
+- a future **ProofCore** should be a restricted, proof-oriented view of validated Core
+
+That proof-oriented view should initially target:
+
+- pure functions
+- algebraic data
+- structured control flow
+- explicit calls and recursion
+
+and initially exclude or fence off:
+
+- FFI
+- `Unsafe`
+- `trusted`
+- raw-pointer-heavy operations
+- host-environment-dependent effects
+
+This keeps the proof workflow attached to the same architectural boundary the compiler already treats as authoritative.
 
 ## Boundary Rules
 

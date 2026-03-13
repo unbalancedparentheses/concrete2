@@ -78,6 +78,13 @@ Why this is first:
 - proof work over the wrong object is expensive waste
 - this is the boundary the rest of the proof story depends on
 
+For user-program proofs, the practical refinement is:
+
+- validated Core is the semantic authority
+- an early **ProofCore** should be a restricted, proof-oriented view of validated Core rather than a separate rival IR
+
+That keeps the proof story attached to the real compiler boundary instead of inventing a second semantic center.
+
 ### 2. Prove Core well-formedness invariants are preserved by CoreCheck
 
 First high-value theorem family:
