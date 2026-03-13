@@ -48,3 +48,20 @@ Use them when you need exact current direction rather than the book's higher-lev
 
 - [`research/README.md`](../../../research/README.md)
   Exploratory design notes and longer-horizon research direction.
+
+## Focused Design Notes
+
+- [`research/high-integrity-profile.md`](../../../research/high-integrity-profile.md)
+  The long-term high-integrity profile direction.
+
+- [`research/high-integrity-examples.md`](../../../research/high-integrity-examples.md)
+  Concrete examples of what the high-integrity profile would restrict.
+
+- [`research/authority-budgets.md`](../../../research/authority-budgets.md)
+  Package/subsystem authority budgets and dependency policy.
+
+- [`research/package-model.md`](../../../research/package-model.md)
+  What the future package/project model needs to decide.
+
+- [`research/proof-evidence-artifacts.md`](../../../research/proof-evidence-artifacts.md)
+  How reports, proofs, reproducibility, and build artifacts could fit together.

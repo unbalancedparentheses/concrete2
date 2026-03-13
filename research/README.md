@@ -36,12 +36,14 @@ If you want the highest-leverage current research first:
 4. [high-integrity-profile.md](high-integrity-profile.md) — what a stricter high-integrity / provable Concrete profile could be (`P0`, `Open`)
 5. [authority-budgets.md](authority-budgets.md) — package/subsystem authority limits and authority-aware dependency policy (`P0`, `Open`)
 6. [proof-evidence-artifacts.md](proof-evidence-artifacts.md) — tying reports, artifacts, reproducibility, and later proof references into one evidence story (`P0`, `Open`)
+7. [package-model.md](package-model.md) — what the eventual project/package model must decide (`P0`, `Open`)
 
 ## Language Decisions
 
 - [builtin-vs-stdlib.md](builtin-vs-stdlib.md) — what belongs in compiler/runtime builtins versus the public stdlib (`P0`, `Open`, partially adopted)
 - [capability-sandboxing.md](capability-sandboxing.md) — ways to make `with(...)` better at expressing restricted authority and sandboxing (`P0`, `Open`, partially adopted)
 - [high-integrity-profile.md](high-integrity-profile.md) — stricter profile/subset for critical code across runtime, safety, language discipline, and evidence (`P0`, `Open`)
+- [high-integrity-examples.md](high-integrity-examples.md) — concrete allowed/restricted examples for the future high-integrity profile (`P0`, `Open`)
 - [authority-budgets.md](authority-budgets.md) — package/subsystem authority budgets and dependency policy (`P0`, `Open`)
 - [unsafe-structure.md](unsafe-structure.md) — how to make `Unsafe` more inspectable and better contained without complicating the language (`P1`, `Open`, partially adopted)
 - [trusted-boundary.md](trusted-boundary.md) — explicit `trusted fn` / `trusted impl` design for containing implementation unsafety (`P1`, `Adopted`)
@@ -71,6 +73,7 @@ If you want the highest-leverage current research first:
 - [formalization-roi.md](formalization-roi.md) — best order for proving Core, effects, ownership, and Core→SSA preservation (`P0`, `Open`)
 - [proving-concrete-functions-in-lean.md](proving-concrete-functions-in-lean.md) — how Concrete functions could be represented and proved in Lean 4 (`P0`, `Open`)
 - [proof-evidence-artifacts.md](proof-evidence-artifacts.md) — how reports, artifacts, proofs, and reproducibility could reinforce each other (`P0`, `Open`)
+- [package-model.md](package-model.md) — package identity, dependency semantics, workspaces, and the boundary to authority-aware dependencies (`P0`, `Open`)
 - [file-summary-frontend.md](file-summary-frontend.md) — summary-based frontend direction and artifact boundaries (`P1`, `Adopted`)
 - [mlir-backend-shape.md](mlir-backend-shape.md) — where MLIR should sit if it earns its complexity later (`P1`, `Research`)
 

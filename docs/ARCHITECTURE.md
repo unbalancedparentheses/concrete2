@@ -87,6 +87,12 @@ Source
 This does not require a separate "verification compiler."
 The goal is to treat validated Core as the semantic authority and let a proof-oriented view of that artifact serve Lean-side reasoning.
 
+The remaining architecture change here is concrete compiler work, not only documentation:
+
+- `ValidatedCore` should exist as an explicit first-class artifact in `Concrete/Pipeline.lean`
+- selected-function proof workflows should refer to that artifact directly instead of treating it as an implied pass boundary
+- source-to-Core traceability should survive strongly enough that a user can tell which validated Core function corresponds to the Concrete source they want to prove
+
 ### Proof Architecture Summary
 
 Keep as-is:

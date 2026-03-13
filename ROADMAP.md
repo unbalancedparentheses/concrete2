@@ -102,6 +102,7 @@ Phases A, B, and C are done. Phase D is active. The compiler has a working stdli
      - decide explicitly whether that legacy builtin path should be retired or rewritten into the structured backend
      - strengthen SSA/backend contract
      - turn explicit pipeline artifacts into reusable tooling/caching building blocks
+     - make `ValidatedCore` explicit in `Concrete/Pipeline.lean` rather than leaving it only as a documented post-`CoreCheck` boundary
      - make validated Core a first-class proof-oriented artifact boundary after `CoreCheck` and before `Mono`
      - preserve source-to-Core traceability well enough that selected functions can later be understood and proved in Lean
      - stage the user-program proof workflow explicitly:
@@ -116,7 +117,7 @@ Phases A, B, and C are done. Phase D is active. The compiler has a working stdli
      - do not add another backend family until the LLVM path is structurally cleaner
      - treat MLIR as a later optional backend family, not the default immediate answer
      - once the structured LLVM path and SSA contract are solid, evaluate MLIR deliberately as a potential replacement or additional backend family rather than as an early escape hatch
-   - done means: the backend consumes a structured contract over SSA, the remaining legacy builtin backend island is either retired or cleanly rewritten, pipeline artifacts support reuse, and the first real Lean 4 proof workflow exists for selected Concrete functions over validated Core
+   - done means: `ValidatedCore` is a named, explicit artifact in the pipeline rather than only a documented conceptual boundary, the backend consumes a structured contract over SSA, the remaining legacy builtin backend island is either retired or cleanly rewritten, pipeline artifacts support reuse, and the first real Lean 4 proof workflow exists for selected Concrete functions over validated Core
 
 ### Phase A Notes
 

@@ -25,7 +25,7 @@ Source Text
     ▼
   CoreCheck ── List CModule → Unit
     │
-    ├─→ future ValidatedCore / ProofCore artifact for selected-function proving
+    ├─→ explicit ValidatedCore artifact / future ProofCore export for selected-function proving
     │
     ▼
   Mono ──── List CModule → List CModule
