@@ -626,6 +626,11 @@ run_ok "$TESTDIR/fn_ptr_struct_field.con" 42
 run_ok "$TESTDIR/fn_ptr_method_call.con" 42
 run_ok "$TESTDIR/stdlib_hashmap.con" 0
 
+# Integration tests: multi-feature programs
+run_ok "$TESTDIR/integration_text_processing.con" 0
+run_ok "$TESTDIR/integration_data_structures.con" 0
+run_ok "$TESTDIR/integration_error_handling.con" 0
+
 fi # end section: positive
 
 echo ""
