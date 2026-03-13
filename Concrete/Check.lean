@@ -71,6 +71,7 @@ structure TypeEnv where
   currentTypeBounds : List (String × List String) := []  -- current function's type param bounds
   newtypes : List NewtypeDef := []         -- all newtype definitions
   userFnNames : List String := []          -- names of user-defined, imported, and extern functions (NOT builtins)
+  isTrustedFn : Bool := false              -- true when checking a trusted fn (relaxes linearity in loops)
   deriving Repr
 
 abbrev CheckM := ExceptT Diagnostics (StateM TypeEnv)
@@ -407,8 +408,20 @@ partial def isCopyType (ty : Ty) : CheckM Bool := do
         match env.newtypes.find? fun nt => nt.name == name with
         | some nt => isCopyType nt.innerTy
         | none => return false
-  | .generic _ _ => return false  -- Generic instantiations are linear
-  | .typeVar _ => return false  -- Generic values remain linear unless proven Copy
+  | .generic name args =>
+    -- Look up the struct/enum definition — if it's declared Copy, the instantiation is Copy
+    let env ← getEnv
+    match env.structs.find? fun sd => sd.name == name with
+    | some sd => return sd.isCopy
+    | none =>
+      match env.enums.find? fun ed => ed.name == name with
+      | some ed => return ed.isCopy
+      | none => return false
+  | .typeVar name =>
+    -- Check if the type parameter has a Copy bound
+    let env ← getEnv
+    let bounds := (env.currentTypeBounds.find? fun (n, _) => n == name).map Prod.snd |>.getD []
+    return bounds.contains "Copy"
   | .array t _ => isCopyType t  -- Array of copy types is copy
 
 def lookupVarInfo (name : String) : CheckM (Option VarInfo) := do
@@ -546,8 +559,8 @@ def consumeVar (name : String) (span : Option Span := none) : CheckM Unit := do
     | .frozen =>
       throwCheck (.variableFrozenByBorrow name) span
     | .unconsumed | .used =>
-      -- Loop depth check
-      if info.loopDepth < env.loopDepth then
+      -- Loop depth check (trusted functions skip this — they assert soundness manually)
+      if info.loopDepth < env.loopDepth && !env.isTrustedFn then
         throwCheck (.cannotConsumeLinearInLoop name) span
       -- Mark consumed
       let vars' := env.vars.map fun (n, vi) =>
@@ -1614,6 +1627,17 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
         match arg with
         | .ident _ varName => consumeVarIfExists varName (some e.getSpan)
         | _ => pure ()
+      -- If self param is by value (not &self/&mut self), consume the receiver
+      match sig.params.head? with
+      | some ("self", selfTy) =>
+        match selfTy with
+        | .ref _ | .refMut _ => pure ()
+        | _ =>
+          -- Self is by value — this method consumes the receiver
+          match obj with
+          | .ident _ varName => consumeVarIfExists varName (some e.getSpan)
+          | _ => pure ()
+      | _ => pure ()
       return retTy
     | none => throwCheck (.noMethodOnType methodName typeName) (some e.getSpan)
   | .staticMethodCall _ typeName methodName typeArgs args =>
@@ -1727,7 +1751,12 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
       mergeVarStates envBefore.vars envAfterThen.vars envAfterElse.vars (some stmt.getSpan)
     | none =>
       -- No else branch: then branch must not consume any linear var
-      checkNoBranchConsumption envBefore.vars envAfterThen.vars "if-without-else" (some stmt.getSpan)
+      -- Exception: if then-branch always returns, consumption is fine (control never falls through)
+      let thenDiverges := match thenBody.getLast? with
+        | some (.return_ _ _) => true
+        | _ => false
+      if !thenDiverges then
+        checkNoBranchConsumption envBefore.vars envAfterThen.vars "if-without-else" (some stmt.getSpan)
   | .while_ _ cond body lbl =>
     let _condTy ← checkExpr cond
     -- Increment loop depth for the body, push label if present
@@ -2003,7 +2032,7 @@ def checkFn (f : FnDef) : CheckM Unit := do
   let env1 := { envBefore with currentRetTy := retTyRaw, currentTypeParams := f.typeParams }
   let env2 := { env1 with currentCapSet := f.capSet }
   let env3 := { env2 with currentTypeBounds := f.typeBounds }
-  setEnv { env3 with currentFnName := f.name }
+  setEnv { env3 with currentFnName := f.name, isTrustedFn := f.isTrusted }
   -- Resolve Self in return type (needs currentImplType from env)
   let retTy ← resolveType retTyRaw
   modify fun env => { env with currentRetTy := retTy }
