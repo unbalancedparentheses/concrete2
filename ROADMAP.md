@@ -68,9 +68,18 @@ Still clearly not implemented:
 - **Test runner parallelized and narrowed** (commits `1619220`, `6049d89`): `run_tests.sh` defaults to parallel (`nproc` cores), adds `--fast` (default), `--full`, `--filter`, `--stdlib`, `--O2`, `--codegen`, `--report` modes. Partial runs warn clearly. `--fast` is the documented standard developer workflow. This is a strong Phase A solution, but it is still script-level orchestration rather than a deeper artifact-cached or dependency-aware test system.
 - **Aggregate loop lowering hardened** (commit `e68acc0`): aggregate loop variables promoted to entry-block allocas. Field assignment GEPs directly into stable storage.
 - **Aggregate if/else and match lowering hardened** (commit `8e606d9`): if/else branches with modified struct variables merge via entry-block allocas instead of `phi %Struct`. Match arms get var snapshot/restore between arms. Void-typed match results filtered from phi/store paths.
+- **Void-in-phi codegen bug fixed**: a branch-inside-loop case that called a void function was incorrectly producing `phi ptr [void, ...]` in LLVM IR. Regression coverage now exists for that shape.
 - **SSA verifier now rejects aggregate phi nodes**: `SSAVerify.lean` checks that no phi node carries an aggregate type (struct, enum, string, array). This is a mechanical invariant, not just regression coverage.
 - **Audit**: all phi emission sites in Lower.lean confirmed to check `isAggregateForPromotion` before creating phi nodes. No remaining accidental aggregate transport found.
-- 521 tests pass (0 failures), including SSA structure verification and -O2 regressions for all aggregate lowering paths.
+- **Stdlib test depth increased**: Option, Result, Text, and Slice now have broader in-language test coverage.
+- **Linearity checker fixed for generic types**: four fixes to `Check.lean` unblock user-defined generic collections with function pointer fields:
+  - `isCopyType` now correctly handles `.generic` (struct isCopy lookup) and `.typeVar` (Copy bound check) instead of returning false for all generics
+  - trusted functions can consume linear variables inside loops (loop-depth check skipped when `isTrustedFn`)
+  - self-consuming methods (`fn drop(self)`) now mark the receiver as consumed
+  - if-without-else where the then-branch returns no longer blocks linear consumption in that branch
+- **User-defined IntMap validated end-to-end**: a full hash map with fn pointer fields for hash/eq (same pattern as `HashMap`) compiles and runs correctly through the native compiler path, proving the linearity fix chain works.
+- **Builtin HashMap intercept retirement possible**: the linearity fixes mean user-defined `HashMap` can now work natively. The builtin `map_*` intrinsic interception in `Elab.lean` (lines 726–799) and `Intrinsic.lean` (lines 68–74) can be retired once the stdlib `HashMap` is updated to use the native path. The 5-field builtin layout vs 7-field user layout mismatch is no longer a blocking issue — it becomes a migration task.
+- 544 tests pass in the current hardening arc, including SSA structure verification, -O2 regressions for aggregate lowering paths, expanded stdlib module coverage, and four new linearity regression tests.
 
 ### Now
 
@@ -90,18 +99,20 @@ Phases A and B are done.  Active work is now in Phase C, with opportunistic inte
      - do not let the reference grammar drift away from the actual parser unnoticed
    - done means: syntax regressions trip a dedicated CI check instead of silently re-entering the parser
 3. Keep deepening and hardening the stdlib.
-   - problem: stdlib breadth is real now, but systems modules still need stronger failure-path behavior, consistency, and targeted test workflows
+   - problem: stdlib breadth is real now, but systems modules and collections still need stronger failure-path behavior, consistency, targeted test workflows, and in at least one case a blocking compiler/runtime fix
    - why now: once Phase A and Phase B stop dominating every change, stdlib quality becomes the main usability multiplier
    - primary surfaces: [docs/STDLIB.md](docs/STDLIB.md), [std/src/](/Users/unbalancedparen/projects/concrete/std/src), [run_tests.sh](/Users/unbalancedparen/projects/concrete/run_tests.sh)
    - first slices:
      - deepen `fs`, `net`, and `process`
+     - retire the builtin `map_*` intrinsic interception now that generic linearity is fixed: update stdlib `HashMap` to use the native compiler path (self-managed struct with fn pointer fields), remove the 5-field builtin layout, and re-enable the disabled map/set tests
      - add more failure-path and integration tests
      - keep error, handle, and checked/unchecked conventions uniform
      - add stdlib-aware module-targeted test infrastructure instead of relying only on `std/src/lib.con --test`
    - constraints:
      - do not let API growth outrun failure-path coverage
      - do not let module conventions drift case-by-case
-   - done means: systems modules have stronger failure-path coverage and stdlib tests can target one area without bootstrapping the whole tree
+     - do not paper over collection/compiler crashes by leaving important tests permanently disabled
+   - done means: systems modules and collections have stronger failure-path coverage, the current `HashMap` / `HashSet` function-pointer crash is fixed, and stdlib tests can target one area without bootstrapping the whole tree
 4. Improve diagnostics fidelity and rendering quality.
    - problem: diagnostics still lose precision around transformed constructs and rely too much on brittle string-exact expectations
    - why now: diagnostics are the main user-visible quality multiplier once the compiler architecture is stable enough to trust

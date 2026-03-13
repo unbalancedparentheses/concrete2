@@ -10,6 +10,17 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Linearity checker: generic types, self-consumption, and divergence
+
+Four fixes to the type checker's linearity analysis (`Check.lean`) that together unblock user-defined generic collections with function pointer fields — the same pattern as `HashMap`:
+
+1. **`isCopyType` for generic and type-variable types** — `.generic` types now look up the struct's `isCopy` flag instead of returning `false`; `.typeVar` types check whether their bounds include `Copy`. Previously all generic instantiations were treated as linear.
+2. **Trusted function loop-consumption relaxation** — `trusted impl` methods can now consume linear variables inside loops. The linearity checker skips the loop-depth restriction when `isTrustedFn` is set, because trusted code asserts soundness manually.
+3. **Self-consuming method calls** — methods that take `self` by value (not `&self`/`&mut self`) now mark the receiver variable as consumed. Previously `f.drop()` left `f` unconsumed.
+4. **If-without-else divergence** — consuming a linear variable inside an if-then that unconditionally returns is now allowed. The checker detects that the then-branch diverges and skips the branch-consumption check, enabling the common `if bad { x.drop(); return err; }` guard pattern.
+
+Validated by four independent regression tests and a full IntMap (user-defined hash map with fn pointer fields for hash/eq) that compiles and runs end-to-end. 544 tests passing, 0 failures.
+
 ### Phase A completion: fast feedback and aggregate-lowering hardening
 
 - Hardened mutable aggregate lowering so aggregate state no longer flows accidentally through whole-aggregate phi nodes:

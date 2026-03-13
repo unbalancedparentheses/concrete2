@@ -1283,6 +1283,8 @@ run_ok "$TESTDIR/regress_void_phi.con"                0
 run_ok "$TESTDIR/test_linear_drop.con"                0
 run_ok "$TESTDIR/test_typevar_copy_bound.con"         0
 run_ok "$TESTDIR/test_generic_linearity.con"          0
+run_ok "$TESTDIR/test_linear_if_return.con"            0
+run_ok "$TESTDIR/test_trusted_loop_consume.con"       0
 run_ok "$TESTDIR/test_generic_fnptr_map.con"          0
 
 fi # end section: positive (regression tests)
