@@ -163,6 +163,12 @@ Primary surfaces:
 4. add optimized-build regressions and stdlib coverage for borrow+aggregate cases, including non-loop merge paths
 5. tighten SSA invariants around these lowering patterns and the promoted-storage path
 
+Deliverables:
+- a standard fast local workflow that does not require the serial full suite
+- hardened aggregate lowering behavior for loops, if/else merges, and match merges
+- optimized-build regression coverage for the backend-sensitive lowering paths
+- verifier-enforced SSA invariants for promoted aggregate storage and merge transport
+
 Exit criterion:
 ordinary development no longer depends on a slow serial full-suite loop, and there are no known backend-sensitive failures in mutable aggregate lowering or aggregate merge transport, including optimized-build stress cases.
 
@@ -173,6 +179,11 @@ Goal: shrink compiler magic and make language meaning explicit.
 **Exit criterion met:** no compiler pass changes behavior based on an ordinary public name through raw string matching.  All semantic dispatch rides on explicit identity types (`BuiltinTraitId`, `BuiltinEnumId`, `IntrinsicId`, `isEntryPoint`) or centralized constants in `Intrinsic.lean`.  Structural string handling (parser keywords, `Ty` type-name fields, mangling, LLVM naming, diagnostics) remains as tolerated implementation mechanics — further cleanup is opportunistic, not a blocker.
 
 Key commits: d0b2f53, 4e557e0, daef46a, 40f1ce4.  See `Concrete/Intrinsic.lean` for the centralized identity definitions.
+
+Landed deliverables:
+- centralized semantic identity definitions in `Concrete/Intrinsic.lean`
+- no ordinary-language behavior controlled by raw public-name string matching in compiler passes
+- a clearer separation between real semantic identity and tolerated structural string mechanics
 
 #### Phase C: Tooling And Stdlib Hardening — **done**
 
@@ -199,6 +210,12 @@ Done:
 7. report assertions hardened: 44 report tests covering caps/unsafe/layout/interface/mono/alloc with content checks (not just crash checks)
 8. reports as audit product: capability "why" traces, trust boundary analysis, allocation/cleanup summaries, summary totals, aligned columns
 
+Landed deliverables:
+- LL(1) grammar checking as CI infrastructure
+- module-targeted stdlib testing through the real compiler path
+- an expanded integration/report test corpus with stable semantic assertions
+- audit reports that explain capability authority, trust boundaries, and allocation behavior
+
 Exit criterion:
 syntax guardrails, diagnostics, and stdlib testing behave like durable infrastructure rather than one-off pushes.
 
@@ -209,6 +226,8 @@ Goal: make the compiler strong enough to support proofs, tooling reuse, and long
 The first active Phase D pressure is now testing-system infrastructure. Phase C made testing credible; Phase D should make it materially smarter and faster by using compiler artifacts and dependency information instead of relying mostly on shell-level orchestration.
 
 Testing is not just support work here. It should become a first-class compiler subsystem with explicit artifact boundaries, pass-level coverage, performance expectations, and determinism rules rather than growing only as a larger shell script plus more cases.
+
+The current test infrastructure is good for a research-stage compiler, but its limits should stay explicit. The suite has breadth and the right broad categories, yet too much behavior still lives in a large shell script, too many semantic tests still pay full process/filesystem/codegen cost, report assertions still recompile the same programs repeatedly, and failure reproduction/isolation is weaker than it should be for a fast parallel workflow.
 
 Primary surfaces:
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
@@ -226,22 +245,49 @@ Primary surfaces:
    - move test execution beyond shell-level filtering toward dependency-aware reruns
    - classify tests more clearly (`fast`, `unit`, `integration`, `optimization/regression`, `report/golden`, `slow/network/stress`) so local runs and CI can choose better defaults
    - make test classification real compiler metadata rather than only runner conventions
+   - deliverables:
+     - a documented artifact model for parse/Core/validated-Core/mono/SSA/report outputs with stable identity rules
+     - a reusable cache key strategy tied to those artifacts rather than ad hoc runner behavior
+     - a targeted-run path that can explain why a test was selected or skipped
 2. make testing architecture a first-class subsystem
    - add pass-level Lean tests for `Check`, `Elab`, `Lower`, `SSAVerify`, and `EmitSSA` where end-to-end execution is unnecessary cost
    - define a clearer coverage matrix by failure mode (parser crash resistance, semantic regressions, lowering invariants, backend structure, runtime behavior, diagnostics, reports, stdlib behavior, optimization regressions)
    - add performance-regression tracking for compile time, suite time, and artifact reuse efficiency so "faster" stays defended rather than anecdotal
    - define determinism/flakiness policy explicitly (network isolation, seeds, timeouts, quarantine/repair expectations)
    - push test selection toward dependency- and ownership-aware scopes instead of string matching alone
+   - deliverables:
+     - a pass-level Lean test suite covering at least `Check`, `Elab`, `Lower`, `SSAVerify`, and `EmitSSA`
+     - a written coverage matrix in `docs/TESTING.md`
+     - a small benchmark set with recorded compile/test timing baselines
+     - an explicit determinism/flakiness policy in `docs/TESTING.md`
+     - per-test timing output and preserved failure artifacts for targeted debugging
+     - a reproducible single-test rerun path for failures discovered under parallel execution
+     - a lower-cost semantic-test path that avoids full compiler/codegen/process overhead when that cost is unnecessary
 3. strengthen the SSA verifier/cleanup boundary into a clearer backend contract
+   - deliverables:
+     - a documented SSA contract naming what cleanup guarantees and what every backend may assume
+     - verifier checks for the remaining backend-critical invariants that are still only convention
+     - at least one backend-facing regression group tied directly to that contract
 4. define a clearer FFI / ABI maturity path
    - decide what ABI stability, if any, is promised
    - decide what remains intentionally unstable for now
    - make platform-variance expectations explicit instead of accidental
    - add clearer verification/testing expectations for ABI compatibility
    - identify the first concrete cross-platform ABI/layout checks rather than leaving verification purely abstract
+   - deliverables:
+     - a written ABI/FFI maturity statement in the docs
+     - an initial cross-platform layout/ABI verification matrix for the supported targets
 5. grow a stronger real-program and invariant-testing corpus on top of the faster loop
    - add more nontrivial integration programs instead of only many small regressions
+   - add more real multi-module programs instead of mostly single-file feature-pair exercises
+   - deepen FFI/file/network integration beyond toy cases
    - keep expanding property/fuzz/differential coverage, especially around parser/formatter/report/IR invariants
+   - deliverables:
+     - a named integration corpus of real programs rather than only isolated regressions
+     - explicit property/fuzz/differential suites with stable entrypoints
+     - 2-3 real multi-module programs in the roughly 100-300 line range that combine multiple language features under realistic pressure
+     - cached multi-assertion report testing so one compiler run can satisfy multiple report assertions against the same program
+     - deeper integration coverage for FFI, file, and network behavior
 6. push formalization over Core -> SSA
    - treat validated Core after `CoreCheck` as the main proof boundary for user-program proofs
    - formalize a small pure Core fragment first
@@ -249,7 +295,14 @@ Primary surfaces:
    - validate the proof boundary with manual embeddings of selected functions
    - only then add compiler/export support for Lean-side proof workflows
    - treat "selected Concrete functions proved in Lean 4" as a core Phase D deliverable, not just a later research aspiration
+   - deliverables:
+     - `ValidatedCore` represented explicitly in `Concrete/Pipeline.lean`
+     - a small formalized pure Core fragment in Lean
+     - a first proof batch of selected Concrete functions over that boundary
 7. add deferred audit/report outputs
+   - deliverables:
+     - the next report modes named explicitly before implementation starts
+     - regression-tested report outputs with stable semantic assertions rather than brittle snapshots
 
 Exit criterion:
 backend work no longer feels fragile, proofs, reports, and tooling all build on the same stable compiler boundaries, targeted test runs are artifact-aware and dependency-aware, pass-level and end-to-end testing play distinct roles under explicit coverage/determinism rules, and selected Concrete functions can actually be proved in Lean 4 over validated Core.
@@ -293,6 +346,14 @@ Primary surfaces:
    - make room for profiles such as `no_alloc`, bounded-allocation, or other explicitly restricted execution modes
    - keep these profiles aligned with the actual runtime and allocator model instead of bolting them on later
 
+Deliverables:
+- a documented hosted vs freestanding execution model
+- a documented runtime boundary covering startup, shutdown, failure, and allocator expectations
+- an explicit memory/allocation model including no-alloc or bounded-allocation profile direction
+- a written concurrency/execution stance for the language/runtime
+- a documented ownership/capability story across FFI/runtime boundaries
+- runtime-facing stdlib surfaces aligned with the chosen execution model
+
 Exit criterion:
 Concrete has an explicit execution model that explains how programs start, allocate, fail, interact with the host, and cross runtime/FFI boundaries.
 
@@ -327,6 +388,12 @@ Primary surfaces:
    - decide how `Unsafe`, `trusted`, FFI, and ambient authority should be constrained in stricter code profiles
    - make the restrictions explicit enough that they can later support audit-heavy or critical-system use
 
+Deliverables:
+- clearer user-facing capability and trust ergonomics in diagnostics/docs/reports
+- stronger report outputs for authority flow, `trusted`, and `Unsafe`
+- explicit patterns for authority wrappers, aliases, and later authority-budget integration
+- a documented high-integrity safety profile direction covering `Unsafe`, `trusted`, FFI, and ambient authority
+
 Exit criterion:
 Concrete's capability and trust model is not only sound in principle, but also understandable, auditable, and practical for users.
 
@@ -355,6 +422,12 @@ Primary surfaces:
    - make the subset explicit rather than leaving it as an accidental intersection of current features
    - treat contracts and richer proof annotations as optional later research, not a required part of the language philosophy
 
+Deliverables:
+- explicit feature-admission criteria used as a standing design filter
+- a documented set of first-class "no" and "not yet" language decisions
+- a reviewed language-surface simplification pass where needed
+- a documented analyzable critical/provable subset if Concrete continues toward higher-integrity domains
+
 Exit criterion:
 Concrete has an explicit discipline for preserving a small, coherent language surface and resisting low-leverage feature growth.
 
@@ -381,6 +454,13 @@ Primary surfaces:
 4. make dependency and package UX part of the language-user experience rather than a repo-local convention
    - include package- or subsystem-level authority budgets so dependencies can be checked against declared capability limits
 5. ensure docs, tooling, and CI reflect the same package/project model
+
+Deliverables:
+- a documented package/dependency model with project-root and resolution semantics
+- a defined boundary between stdlib and third-party packages
+- a documented workspace/multi-package model
+- dependency/package tooling and CI behavior aligned with the same model
+- an authority-budget path at package or subsystem boundaries
 
 Exit criterion:
 Concrete has an explicit package/dependency model that supports real projects without relying on ad-hoc repo-local conventions, and it has a credible path to enforcing authority budgets at package or subsystem boundaries.
@@ -427,6 +507,14 @@ Primary surfaces:
 7. make certification-style evidence and traceability practical where it fits Concrete's identity
    - tie source, reports, proofs, and build artifacts together clearly enough for high-integrity review workflows
    - prefer explicit evidence and traceability over process folklore
+
+Deliverables:
+- a documented release and compatibility policy for language, stdlib, reports, and tooling surfaces
+- reproducible build/test/CI expectations that are operationally maintained
+- an explicit distribution and installation story
+- maintained baseline docs and editor/tooling expectations
+- an explicit bootstrap-trust and compatibility policy
+- a practical evidence/traceability story linking source, reports, proofs, and build artifacts
 
 Exit criterion:
 Concrete is not only architecturally strong internally, but also operable, reproducible, documentable, and maintainable as a long-term project.
