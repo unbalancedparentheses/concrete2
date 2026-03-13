@@ -10,9 +10,9 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
-### Main-path structured LLVM backend conversion
+### Structured LLVM backend completed
 
-The main `EmitSSA` path no longer relies on raw text concatenation for ordinary module emission.
+The LLVM backend no longer relies on raw LLVM string emission. `LLVMModule` is now the single source of truth for backend construction, and all emitted LLVM IR flows through structured types before printing.
 
 What landed:
 - user function codegen emits through structured LLVM module fields
@@ -20,15 +20,11 @@ What landed:
 - type definitions emit through structured LLVM module fields
 - globals emit through structured LLVM module fields
 - the main wrapper, test runner, and vec builtins were converted from prebuilt text blobs into structured module output
+- string/conversion builtins were rewritten into structured `LLVMFnDef` / `LLVMGlobal` / `LLVMFnDecl` output
+- the `rawSections` escape hatch was deleted
+- the legacy `Concrete/Codegen/` backend path was deleted
 
-What remains:
-- the legacy builtin codegen island `getBuiltinsIR` in `Concrete/Codegen/Builtins.lean`
-
-That remaining raw section is now a separate cleanup decision:
-- retire the legacy builtin path if it keeps shrinking
-- or rewrite it cleanly as a follow-up structured-backend milestone
-
-This is a major Phase D milestone because the active ordinary emission path is now structurally cleaner even though one legacy builtin island still exists.
+This is a major Phase D milestone because the backend is now structurally unified: every emitted LLVM construct is represented in structured data before the final printer turns it into text.
 
 ### Phase C complete: tooling and stdlib hardening
 

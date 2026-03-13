@@ -79,7 +79,7 @@ Still clearly not implemented:
   - if-without-else where the then-branch returns no longer blocks linear consumption in that branch
 - **User-defined IntMap validated end-to-end**: a full hash map with fn pointer fields for hash/eq (same pattern as `HashMap`) compiles and runs correctly through the native compiler path, proving the linearity fix chain works.
 - **Builtin HashMap interception retired**: ~1,400 lines of compiler-internal HashMap machinery deleted (7 intrinsic IDs, type checking/elaboration intercepts, LLVM wrapper functions, hand-written LLVM IR runtime with hash/probe/insert/get/contains/remove/grow for int and string keys, hardcoded 5-field struct type). HashMap is now an ordinary stdlib type compiled through the normal generic struct path. 6 new stdlib tests (4 HashMap, 2 HashSet) replace 11 deleted builtin-API tests. HashMap and HashSet are now in the collection verification section of the test runner.
-- **Structured backend conversion landed for the main emission path**: user functions, extern declarations, type definitions, globals, the main wrapper, the test runner, and vec builtins now emit through structured `LLVMModule` fields rather than raw text concatenation. The remaining raw backend island is `getBuiltinsIR` in the legacy builtin codegen path (`Concrete/Codegen/Builtins.lean`).
+- **Structured LLVM backend completed**: all backend emission now flows through structured `LLVMModule` data before printing. User functions, declarations, type definitions, globals, wrappers, test runner logic, vec builtins, and string/conversion builtins all emit through structured types; `rawSections` and the old `Concrete/Codegen/` backend path are gone.
 - 544 tests pass (148 stdlib), including SSA structure verification, -O2 regressions for aggregate lowering paths, expanded stdlib module coverage, six linearity regression tests, and native HashMap/HashSet coverage.
 - **Phase C completed**: all 8 items done:
   - module-targeted stdlib testing (`--stdlib-module <name>` runs tests for a single stdlib module)
@@ -91,15 +91,14 @@ Still clearly not implemented:
 
 ### Now
 
-Phases A, B, and C are done. Phase D is active. The compiler has a working stdlib, module-targeted testing, hardened reports (6 modes with why-traces, trust boundaries, allocation tracking), and 600 tests passing. Active work is backend and trust multipliers.
+Phases A, B, and C are done. Phase D is active. The compiler has a working stdlib, module-targeted testing, hardened reports (6 modes with why-traces, trust boundaries, allocation tracking), a fully structured LLVM backend, and 600 tests passing. Active work is backend and trust multipliers.
 
 1. Push the backend/artifact/proof stack (Phase D):
-   - problem: the main emission path is now structured, but one legacy backend island remains (`getBuiltinsIR`), the SSA/backend contract still needs tightening, and backend plurality would multiply instability if the remaining legacy/raw path and contract looseness survive
-   - why now: this is the front edge of Phase D and the prerequisite for serious backend, tooling, and proof leverage; it is also the phase that should make the first real Lean 4 proof workflow for selected Concrete functions actually work
+   - problem: the structured backend is now in place, but the SSA/backend contract still needs tightening, pipeline artifacts are not yet doing enough real work, and the proof-facing validated-Core path is still more described than implemented
+   - why now: the structured backend win removes the biggest backend-shape blocker, so Phase D can now focus on contract strength, artifact reuse, and the first real Lean 4 proof workflow for selected Concrete functions
    - primary surfaces: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/PASSES.md](docs/PASSES.md), [Concrete/SSAVerify.lean](/Users/unbalancedparen/projects/concrete/Concrete/SSAVerify.lean), [Concrete/SSACleanup.lean](/Users/unbalancedparen/projects/concrete/Concrete/SSACleanup.lean), [Concrete/EmitSSA.lean](/Users/unbalancedparen/projects/concrete/Concrete/EmitSSA.lean), [Concrete/Pipeline.lean](/Users/unbalancedparen/projects/concrete/Concrete/Pipeline.lean)
    - first slices:
-     - record the main structured-backend conversion as landed and treat `getBuiltinsIR` as the remaining legacy backend island
-     - decide explicitly whether that legacy builtin path should be retired or rewritten into the structured backend
+     - record the fully structured backend conversion as landed in the roadmap/changelog/docs
      - strengthen SSA/backend contract
      - turn explicit pipeline artifacts into reusable tooling/caching building blocks
      - make `ValidatedCore` explicit in `Concrete/Pipeline.lean` rather than leaving it only as a documented post-`CoreCheck` boundary
@@ -117,7 +116,7 @@ Phases A, B, and C are done. Phase D is active. The compiler has a working stdli
      - do not add another backend family until the LLVM path is structurally cleaner
      - treat MLIR as a later optional backend family, not the default immediate answer
      - once the structured LLVM path and SSA contract are solid, evaluate MLIR deliberately as a potential replacement or additional backend family rather than as an early escape hatch
-   - done means: `ValidatedCore` is a named, explicit artifact in the pipeline rather than only a documented conceptual boundary, the backend consumes a structured contract over SSA, the remaining legacy builtin backend island is either retired or cleanly rewritten, pipeline artifacts support reuse, and the first real Lean 4 proof workflow exists for selected Concrete functions over validated Core
+   - done means: `ValidatedCore` is a named, explicit artifact in the pipeline rather than only a documented conceptual boundary, the backend consumes a structured contract over SSA, pipeline artifacts support reuse, and the first real Lean 4 proof workflow exists for selected Concrete functions over validated Core
 
 ### Phase A Notes
 
@@ -226,24 +225,23 @@ Primary surfaces:
    - move test execution beyond shell-level filtering toward dependency-aware reruns
    - classify tests more clearly (`fast`, `unit`, `integration`, `optimization/regression`, `report/golden`, `slow/network/stress`) so local runs and CI can choose better defaults
 2. strengthen the SSA verifier/cleanup boundary into a clearer backend contract
-3. replace raw LLVM text emission with a structured backend
-4. define a clearer FFI / ABI maturity path
+3. define a clearer FFI / ABI maturity path
    - decide what ABI stability, if any, is promised
    - decide what remains intentionally unstable for now
    - make platform-variance expectations explicit instead of accidental
    - add clearer verification/testing expectations for ABI compatibility
    - identify the first concrete cross-platform ABI/layout checks rather than leaving verification purely abstract
-5. grow a stronger real-program and invariant-testing corpus on top of the faster loop
+4. grow a stronger real-program and invariant-testing corpus on top of the faster loop
    - add more nontrivial integration programs instead of only many small regressions
    - keep expanding property/fuzz/differential coverage, especially around parser/formatter/report/IR invariants
-6. push formalization over Core -> SSA
+5. push formalization over Core -> SSA
    - treat validated Core after `CoreCheck` as the main proof boundary for user-program proofs
    - formalize a small pure Core fragment first
    - define a proof-oriented Core fragment as a restricted view of validated Core, not a separate semantic authority
    - validate the proof boundary with manual embeddings of selected functions
    - only then add compiler/export support for Lean-side proof workflows
    - treat "selected Concrete functions proved in Lean 4" as a core Phase D deliverable, not just a later research aspiration
-7. add deferred audit/report outputs
+6. add deferred audit/report outputs
 
 Exit criterion:
 backend work no longer feels fragile, proofs, reports, and tooling all build on the same stable compiler boundaries, and selected Concrete functions can actually be proved in Lean 4 over validated Core.
@@ -506,8 +504,8 @@ Backend work should happen in this order:
 1. Replace direct LLVM IR text emission with a structured LLVM backend.
 2. Make backend plurality explicit over the SSA boundary.
 3. Only then evaluate additional backend families such as C or Wasm.
-4. Treat MLIR as optional and only if it still earns its complexity after the LLVM/backend-boundary cleanup.
-5. Once the structured LLVM backend and SSA contract are solid, evaluate whether MLIR should remain optional, become a sibling backend family, or replace the direct LLVM path for some stages.
+4. Treat MLIR as optional and only if it still earns its complexity after the SSA/backend-contract cleanup.
+5. Once the SSA contract and artifact story are solid, evaluate whether MLIR should remain optional, become a sibling backend family, or replace the direct LLVM path for some stages.
 
 The immediate backend problem is stringly LLVM emission, not lack of MLIR.
 
@@ -515,7 +513,7 @@ The immediate backend problem is stringly LLVM emission, not lack of MLIR.
 
 The roadmap should also constrain what not to do before prerequisites are stable:
 
-- do not add backend plurality before the structured LLVM/backend-contract work is done
+- do not add backend plurality before the SSA/backend-contract work is done
 - do not treat MLIR as the immediate answer to the current backend problem
 - do not add major runtime/concurrency surface area before compiler/backend boundaries are more stable
 - do not add surface features that increase grammar cost, audit cost, or proof cost without clear leverage
@@ -588,7 +586,7 @@ For more on these longer-horizon themes, see:
 
 ## Current Risks
 
-- textual LLVM emission remains a brittle backend choke point (primary Phase D target)
+- the SSA/backend contract is still weaker than the newly structured backend deserves
 - mutable aggregate lowering can still be too backend-sensitive if promoted storage is incomplete or SSA invariants are too weak
 - tooling/caching work can regress into ad-hoc duplication if artifacts stop being explicit and reusable
 - formalization has not started; the proof boundary exists architecturally but no proofs are written yet
@@ -607,4 +605,4 @@ These are current choices that should continue constraining future work unless e
 
 ## Summary
 
-Concrete has a complete compiler pipeline, a real stdlib (33 modules, 16 collections), module-targeted testing (600 tests, 189 stdlib), and audit reports that explain capability authority, trust boundaries, and allocation patterns. Phases A-C are done. The main unfinished work is now Phase D: replacing textual LLVM emission with a structured backend, strengthening the SSA/backend contract, and pushing formalization over the validated Core boundary.
+Concrete has a complete compiler pipeline, a real stdlib (33 modules, 16 collections), module-targeted testing (600 tests, 189 stdlib), a fully structured LLVM backend, and audit reports that explain capability authority, trust boundaries, and allocation patterns. Phases A-C are done. The main unfinished work is now Phase D: strengthening the SSA/backend contract, making artifacts do more real work, and pushing formalization over the validated Core boundary.
