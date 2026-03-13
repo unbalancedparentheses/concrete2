@@ -283,6 +283,27 @@ private def ensurePtr (s : EmitSSAState) (v : SVal) : EmitSSAState × String :=
   else
     (s, emitSVal s v)
 
+/-- Like ensurePtr but returns a structured LLVMOperand instead of a string. -/
+private def ensurePtrOp (s : EmitSSAState) (v : SVal) : EmitSSAState × LLVMOperand :=
+  match v with
+  | .strConst name =>
+    let (s, strTmp) := materializeStrConst s name
+    (s, .reg (strTmp.drop 1).toString)
+  | _ =>
+  if isKnownPtr s v then
+    (s, svalToOperand s v)
+  else if isRefOrPtrTy v.ty then
+    (s, svalToOperand s v)
+  else if ssaIsPassByPtr s v.ty then
+    let llTy := tyToLLVMTy s v.ty
+    let (s, tmp) := freshLocal s
+    let tmpName := (tmp.drop 1).toString
+    let s := emitStructured s (.alloca tmpName llTy)
+    let s := emitStructured s (.store llTy (svalToOperand s v) (.reg tmpName))
+    (s, .reg tmpName)
+  else
+    (s, svalToOperand s v)
+
 -- ============================================================
 -- Emit SInst
 -- ============================================================
@@ -373,32 +394,32 @@ private def emitSInst (s : EmitSSAState) (inst : SInst) : EmitSSAState :=
     | .not_ => emitStructured s (.binOp dst .xor_ .i1 valOp (.intLit 1))
     | .bitnot => emitStructured s (.binOp dst .xor_ (intTyToLLVMTy ty) valOp (.intLit (-1)))
   | .call dst fn args retTy =>
-    -- For pass-by-ptr args: convert struct values to pointers
-    let (s, argParts) := args.foldl (fun (s, parts) a =>
-      let paramLLTy := ssaParamTyToLLVM s a.ty
+    -- Build typed argument list
+    let (s, argOps) := args.foldl (fun (s, ops) a =>
+      let paramTy := paramTyToLLVMTy s a.ty
       match a with
       | .strConst name =>
         -- String constants always passed as ptr to %struct.String
         let (s, strPtr) := materializeStrConst s name
-        (s, parts ++ [s!"ptr {strPtr}"])
+        (s, ops ++ [(.ptr, .reg (strPtr.drop 1).toString)])
       | _ =>
-      let valLLTy := ssaTyToLLVM s a.ty
-      if paramLLTy == "ptr" && valLLTy != "ptr" then
+      let valTy := tyToLLVMTy s a.ty
+      if paramTy == .ptr && valTy != .ptr then
         -- If the register is already known to be a pointer (e.g. a struct
         -- parameter passed by ptr), pass it directly instead of
         -- alloca+store which would misuse the ptr as a struct value.
         if isKnownPtr s a then
-          (s, parts ++ [s!"ptr {emitSVal s a}"])
+          (s, ops ++ [(.ptr, svalToOperand s a)])
         else
           let (s, tmp) := freshLocal s
-          let s := emitInstr s s!"  {tmp} = alloca {valLLTy}"
-          let s := emitInstr s s!"  store {valLLTy} {emitSVal s a}, ptr {tmp}"
-          (s, parts ++ [s!"ptr {tmp}"])
+          let tmpName := (tmp.drop 1).toString
+          let s := emitStructured s (.alloca tmpName valTy)
+          let s := emitStructured s (.store valTy (svalToOperand s a) (.reg tmpName))
+          (s, ops ++ [(.ptr, .reg tmpName)])
       else
-        (s, parts ++ [s!"{paramLLTy} {emitSVal s a}"])
-    ) (s, ([] : List String))
-    let argStr := ", ".intercalate argParts
-    let retLLTy := ssaTyToLLVM s retTy
+        (s, ops ++ [(paramTy, svalToOperand s a)])
+    ) (s, ([] : List (LLVMTy × LLVMOperand)))
+    let retLLTy := tyToLLVMTy s retTy
     -- Indirect call: function is a parameter with fn type, a register loaded
     -- from memory (fnTypeRegs), or a %-prefixed register from the Lower pass.
     let isIndirect := fn.startsWith "%"
@@ -409,50 +430,42 @@ private def emitSInst (s : EmitSSAState) (inst : SInst) : EmitSSAState :=
     let linkerFn := match s.linkerAliases.lookup fn with
       | some orig => orig
       | none => fn
-    let callTarget := if isIndirect then
-      if fn.startsWith "%" then fn  -- already has % prefix
-      else "%" ++ fn
-    else "@" ++ linkerFn
-    match dst with
-    | some d =>
-      let s := emitInstr s s!"  %{d} = call {retLLTy} {callTarget}({argStr})"
-      -- If return type is pass-by-ptr, the result is actually a value, not ptr
-      s
-    | none =>
-      emitInstr s s!"  call {retLLTy} {callTarget}({argStr})"
+    let callTarget : LLVMOperand := if isIndirect then
+      if fn.startsWith "%" then .reg (fn.drop 1).toString
+      else .reg fn
+    else .global linkerFn
+    emitStructured s (.call dst retLLTy callTarget argOps)
   | .alloca dst ty =>
     let s := emitStructured s (.alloca dst (tyToLLVMTy s ty))
     markPtr s dst
   | .load dst ptr ty =>
-    let (s, ptrStr) := ensurePtr s ptr
-    let s := emitInstr s s!"  %{dst} = load {ssaTyToLLVM s ty}, ptr {ptrStr}"
+    let (s, ptrOp) := ensurePtrOp s ptr
+    let s := emitStructured s (.load dst (tyToLLVMTy s ty) ptrOp)
     -- Track registers that hold function pointers (loaded from struct fields etc.)
     match ty with
     | .fn_ _ _ _ => { s with fnTypeRegs := s.fnTypeRegs ++ [dst] }
     | _ => s
   | .store val ptr =>
-    let (s, ptrStr) := ensurePtr s ptr
+    let (s, ptrOp) := ensurePtrOp s ptr
     match val with
     | .strConst name =>
       -- Copy string struct from materialized temp to destination
       let (s, srcPtr) := materializeStrConst s name
       let sz := ssaTySize s .string
-      let s := emitInstr s s!"  call void @llvm.memcpy.p0.p0.i64(ptr {ptrStr}, ptr {srcPtr}, i64 {sz}, i1 false)"
-      s
+      emitStructured s (.memcpy ptrOp (.reg (srcPtr.drop 1).toString) sz)
     | _ =>
     -- If the value is a known pointer but typed as a struct, it is
     -- actually a pointer to the struct (e.g. a pass-by-ptr param).
     -- Use memcpy rather than a store that would misinterpret ptr as struct.
     if isKnownPtr s val && ssaIsPassByPtr s val.ty then
       let sz := ssaTySize s val.ty
-      emitInstr s s!"  call void @llvm.memcpy.p0.p0.i64(ptr {ptrStr}, ptr {emitSVal s val}, i64 {sz}, i1 false)"
+      emitStructured s (.memcpy ptrOp (svalToOperand s val) sz)
     else
-      emitInstr s s!"  store {ssaTyToLLVM s val.ty} {emitSVal s val}, ptr {ptrStr}"
+      emitStructured s (.store (tyToLLVMTy s val.ty) (svalToOperand s val) ptrOp)
   | .gep dst base indices ty =>
-    let (s, basePtr) := ensurePtr s base
-    let idxStr := ", ".intercalate (indices.map fun i => ssaTyToLLVM s i.ty ++ " " ++ emitSVal s i)
-    let elemTy := ssaTyToLLVM s ty
-    let s := emitInstr s s!"  %{dst} = getelementptr {elemTy}, ptr {basePtr}, {idxStr}"
+    let (s, basePtrOp) := ensurePtrOp s base
+    let idxOps := indices.map fun i => (tyToLLVMTy s i.ty, svalToOperand s i)
+    let s := emitStructured s (.gep dst (tyToLLVMTy s ty) basePtrOp idxOps)
     markPtr s dst
   | .phi dst incoming ty =>
     let pairs := incoming.map fun (v, lbl) => (svalToOperand s v, lbl)
