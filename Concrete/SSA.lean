@@ -64,6 +64,7 @@ structure SFnDef where
   blocks : List SBlock
   isTest : Bool := false
   isEntryPoint : Bool := false
+  modulePath : String := ""
 
 structure SModule where
   name : String

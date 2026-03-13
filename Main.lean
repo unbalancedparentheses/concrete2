@@ -3,7 +3,7 @@ import Concrete
 open Concrete
 
 def usage : String :=
-  "Usage: concrete <file.con> [-o output] [--emit-llvm] [--emit-core] [--emit-ssa] [--test] [--report caps|unsafe|layout|interface|mono]"
+  "Usage: concrete <file.con> [-o output] [--emit-llvm] [--emit-core] [--emit-ssa] [--test] [--test --module <name>] [--report caps|unsafe|layout|interface|mono]"
 
 def writeFile (path : String) (content : String) : IO Unit := do
   IO.FS.writeFile ⟨path⟩ content
@@ -123,7 +123,7 @@ def compileSSA (inputPath : String) (outputPath : String) (emitLLVM : Bool) : IO
     return 0
 
 /-- Compile and run tests: Parse → ... → EmitSSA (test mode) → clang → run -/
-def compileTest (inputPath : String) : IO UInt32 := do
+def compileTest (inputPath : String) (moduleFilter : Option String := none) : IO UInt32 := do
   let source ← readFile inputPath
   match ← Pipeline.runFrontend inputPath source resolveAllModules with
   | .error ds =>
@@ -140,7 +140,7 @@ def compileTest (inputPath : String) : IO UInt32 := do
     IO.eprintln (renderDiagnostics ds)
     return 1
   | .ok ssa =>
-    let llvmIR := Pipeline.emit ssa (testMode := true)
+    let llvmIR := Pipeline.emit ssa (testMode := true) (moduleFilter := moduleFilter)
     let llPath := inputPath ++ ".test.ll"
     let outPath := inputPath ++ ".test"
     writeFile llPath llvmIR
@@ -249,6 +249,8 @@ def main (args : List String) : IO UInt32 := do
     compileSSA inputPath outputPath false
   | [inputPath, "--test"] =>
     compileTest inputPath
+  | [inputPath, "--test", "--module", moduleName] =>
+    compileTest inputPath (moduleFilter := some moduleName)
   | [inputPath, "--emit-llvm"] =>
     compileSSA inputPath "" true
   | [inputPath, "--emit-core"] =>

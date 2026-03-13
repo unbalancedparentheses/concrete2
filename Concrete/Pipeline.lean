@@ -109,8 +109,8 @@ def lower (mono : MonomorphizedProgram) : Except Diagnostics SSAProgram :=
     .ok { ssaModules }
 
 /-- Emit LLVM IR from SSA modules. -/
-def emit (ssa : SSAProgram) (testMode : Bool := false) : String :=
-  emitSSAProgram ssa.ssaModules testMode
+def emit (ssa : SSAProgram) (testMode : Bool := false) (moduleFilter : Option String := none) : String :=
+  emitSSAProgram ssa.ssaModules testMode moduleFilter
 
 -- ============================================================
 -- Shared frontend helper

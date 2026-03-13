@@ -1548,6 +1548,13 @@ private partial def collectAllFunctions (m : CModule) : List CFnDef :=
   let sub := m.submodules.foldl (fun acc s => acc ++ collectAllFunctions s) []
   own ++ sub
 
+/-- Collect all functions with their dot-separated module path prefix. -/
+private partial def collectAllFunctionsWithPath (m : CModule) (parentPath : String := "") : List (CFnDef × String) :=
+  let path := if parentPath.isEmpty then m.name else parentPath ++ "." ++ m.name
+  let own := m.functions.map fun f => (f, path)
+  let sub := m.submodules.foldl (fun acc s => acc ++ collectAllFunctionsWithPath s path) []
+  own ++ sub
+
 private partial def collectAllStructs (m : CModule) : List CStructDef :=
   let own := m.structs
   let sub := m.submodules.foldl (fun acc s => acc ++ collectAllStructs s) []
@@ -1591,7 +1598,7 @@ private def renameStrConstsInTerm (rmap : List (String × String)) : STerm → S
   | other => other
 
 def lowerModule (m : CModule) : SModule :=
-  let allFunctions := collectAllFunctions m
+  let allFunctionsWithPath := collectAllFunctionsWithPath m
   -- Add synthetic String struct so fieldOffset can compute offsets for built-in .string type
   let syntheticStringDef : CStructDef := { name := "String", fields := [("ptr", .ptrMut .u8), ("len", .uint), ("cap", .uint)] }
   let allStructs := syntheticStringDef :: collectAllStructs m
@@ -1599,10 +1606,10 @@ def lowerModule (m : CModule) : SModule :=
   let allExterns := collectAllExterns m
   -- Skip generic functions (non-empty typeParams); only their monomorphized
   -- specializations should be lowered.
-  let concreteFns := allFunctions.filter fun f => f.typeParams.isEmpty
-  let results := concreteFns.filterMap fun f =>
+  let concreteFns := allFunctionsWithPath.filter fun (f, _) => f.typeParams.isEmpty
+  let results := concreteFns.filterMap fun (f, path) =>
     match lowerFn f allStructs allEnums with
-    | .ok (sfn, lits) => some (sfn, lits)
+    | .ok (sfn, lits) => some ({ sfn with modulePath := path }, lits)
     | .error _ => none
   -- Build deduplicated globals list (by string value)
   let globals := results.foldl (fun deduped (_, lits) =>
