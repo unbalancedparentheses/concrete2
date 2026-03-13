@@ -107,6 +107,123 @@ trap 'rm -rf "$TMPDIR"' EXIT
 JOBDIR="$TMPDIR/jobs"
 mkdir -p "$JOBDIR"
 
+# --- Compiler output cache ---
+# Avoids recompiling the same file with the same flags.
+# Usage: output=$(cached_output "file.con" "--report caps")
+CACHEDIR="$TMPDIR/cache"
+mkdir -p "$CACHEDIR"
+# Track cache stats via files (counters don't survive subshells)
+CACHE_HITS_FILE="$TMPDIR/cache_hits"
+CACHE_MISSES_FILE="$TMPDIR/cache_misses"
+echo 0 > "$CACHE_HITS_FILE"
+echo 0 > "$CACHE_MISSES_FILE"
+
+cached_output() {
+    local file="$1"
+    local flags="$2"
+    local key
+    key=$(echo "${file}|${flags}" | sed 's/[^a-zA-Z0-9_.-]/_/g')
+    local cache_file="$CACHEDIR/$key"
+    if [ -f "$cache_file" ]; then
+        echo $(( $(cat "$CACHE_HITS_FILE") + 1 )) > "$CACHE_HITS_FILE"
+        cat "$cache_file"
+    else
+        echo $(( $(cat "$CACHE_MISSES_FILE") + 1 )) > "$CACHE_MISSES_FILE"
+        $COMPILER "$file" $flags 2>&1 | tee "$cache_file"
+    fi
+}
+
+# --- Failure artifact preservation ---
+# On test failure, save artifacts and rerun command to .test-failures/
+FAILDIR=".test-failures"
+
+save_failure() {
+    local test_name="$1"
+    local rerun_cmd="$2"
+    local output="$3"
+    mkdir -p "$FAILDIR"
+    local fail_file="$FAILDIR/$test_name"
+    {
+        echo "# Failed: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        echo "# Rerun:"
+        echo "$rerun_cmd"
+        echo ""
+        echo "# Output:"
+        echo "$output"
+    } > "$fail_file"
+}
+
+# Clean previous failure artifacts at start of run
+rm -rf "$FAILDIR"
+
+# --- Report assertion helper ---
+# check_report FILE MODE GREP_PATTERN OK_MSG FAIL_MSG [NEGATE]
+# Compiles FILE with --report MODE (cached), greps for PATTERN.
+# If NEGATE is "!" then the pattern must NOT match.
+check_report() {
+    local file="$1" mode="$2" pattern="$3" ok_msg="$4" fail_msg="$5"
+    local negate="${6:-}"
+    local output
+    output=$(cached_output "$file" "--report $mode")
+    local matched=0
+    if echo "$output" | grep -q "$pattern"; then
+        matched=1
+    fi
+    if [ "$negate" = "!" ]; then
+        if [ "$matched" -eq 0 ]; then
+            echo "  ok  $ok_msg"
+            PASS=$((PASS + 1))
+        else
+            echo "FAIL  $fail_msg"
+            echo "$output"
+            FAIL=$((FAIL + 1))
+            save_failure "$(path_key "$fail_msg")" "$COMPILER $file --report $mode" "$output"
+        fi
+    else
+        if [ "$matched" -eq 1 ]; then
+            echo "  ok  $ok_msg"
+            PASS=$((PASS + 1))
+        else
+            echo "FAIL  $fail_msg"
+            echo "$output"
+            FAIL=$((FAIL + 1))
+            save_failure "$(path_key "$fail_msg")" "$COMPILER $file --report $mode" "$output"
+        fi
+    fi
+}
+
+# --- Multi-pattern report assertion ---
+# check_report_multi FILE MODE OK_MSG FAIL_MSG PATTERN1 [PATTERN2 ...]
+# All patterns must match.
+check_report_multi() {
+    local file="$1" mode="$2" ok_msg="$3" fail_msg="$4"
+    shift 4
+    local output
+    output=$(cached_output "$file" "--report $mode")
+    local all_match=1
+    for pattern in "$@"; do
+        if ! echo "$output" | grep -q "$pattern"; then
+            all_match=0
+            break
+        fi
+    done
+    if [ "$all_match" -eq 1 ]; then
+        echo "  ok  $ok_msg"
+        PASS=$((PASS + 1))
+    else
+        echo "FAIL  $fail_msg"
+        echo "$output"
+        FAIL=$((FAIL + 1))
+        save_failure "$(path_key "$fail_msg")" "$COMPILER $file --report $mode" "$output"
+    fi
+}
+
+# --- Emit output helper (cached) ---
+# cached_emit FILE FLAG — returns cached output of $COMPILER FILE FLAG
+cached_emit() {
+    cached_output "$1" "$2"
+}
+
 # --- lli auto-detection ---
 # Use lli (LLVM interpreter) for positive tests when available.
 # This skips clang linking entirely and is ~15x faster per test.
@@ -899,40 +1016,26 @@ if section_active report; then
 echo "=== Report output tests ==="
 
 # --report unsafe should show trusted boundaries
-report_output=$($COMPILER "$TESTDIR/trusted_report_check.con" --report unsafe 2>&1)
-if echo "$report_output" | grep -q "trusted impl Buffer" && echo "$report_output" | grep -q "trusted fn raw_read"; then
-    echo "  ok  trusted_report_check.con --report unsafe shows trusted boundaries"
-    PASS=$((PASS + 1))
-else
-    echo "FAIL  trusted_report_check.con --report unsafe missing trusted boundaries"
-    echo "$report_output"
-    FAIL=$((FAIL + 1))
-fi
+check_report_multi "$TESTDIR/trusted_report_check.con" unsafe \
+    "trusted_report_check.con --report unsafe shows trusted boundaries" \
+    "trusted_report_check.con --report unsafe missing trusted boundaries" \
+    "trusted impl Buffer" "trusted fn raw_read"
 
 # --report unsafe should show trusted extern fn declarations separately from regular extern fn
-report_output=$($COMPILER "$TESTDIR/trusted_extern_basic.con" --report unsafe 2>&1)
-if echo "$report_output" | grep -q "Trusted extern functions" && echo "$report_output" | grep -q "trusted extern fn abs"; then
-    echo "  ok  trusted_extern_basic.con --report unsafe shows trusted extern functions"
-    PASS=$((PASS + 1))
-else
-    echo "FAIL  trusted_extern_basic.con --report unsafe missing trusted extern functions"
-    echo "$report_output"
-    FAIL=$((FAIL + 1))
-fi
+check_report_multi "$TESTDIR/trusted_extern_basic.con" unsafe \
+    "trusted_extern_basic.con --report unsafe shows trusted extern functions" \
+    "trusted_extern_basic.con --report unsafe missing trusted extern functions" \
+    "Trusted extern functions" "trusted extern fn abs"
 
 # --report caps should show trusted extern with (none) capability
-report_output=$($COMPILER "$TESTDIR/trusted_extern_basic.con" --report caps 2>&1)
-if echo "$report_output" | grep -q "trusted extern:" && echo "$report_output" | grep -q "abs : (none)"; then
-    echo "  ok  trusted_extern_basic.con --report caps shows trusted extern with no capability"
-    PASS=$((PASS + 1))
-else
-    echo "FAIL  trusted_extern_basic.con --report caps missing trusted extern info"
-    echo "$report_output"
-    FAIL=$((FAIL + 1))
-fi
+check_report_multi "$TESTDIR/trusted_extern_basic.con" caps \
+    "trusted_extern_basic.con --report caps shows trusted extern with no capability" \
+    "trusted_extern_basic.con --report caps missing trusted extern info" \
+    "trusted extern:" "abs : (none)"
 
 # --report unsafe should show regular extern under "Extern functions" (not "Trusted")
-report_output=$($COMPILER "$TESTDIR/ffi_basic.con" --report unsafe 2>&1)
+# This needs a custom check because it combines match + no-match
+report_output=$(cached_output "$TESTDIR/ffi_basic.con" "--report unsafe")
 if echo "$report_output" | grep -q "Extern functions:" && echo "$report_output" | grep -q "extern fn abs" && ! echo "$report_output" | grep -q "Trusted extern"; then
     echo "  ok  ffi_basic.con --report unsafe shows regular extern (not trusted)"
     PASS=$((PASS + 1))
@@ -943,84 +1046,50 @@ else
 fi
 
 # --- report caps: pure, single cap, multi cap ---
-report_output=$($COMPILER "$TESTDIR/report_caps_check.con" --report caps 2>&1)
-if echo "$report_output" | grep -q "pure_fn : (pure)"; then
-    echo "  ok  report_caps_check.con --report caps shows pure_fn : (pure)"
-    PASS=$((PASS + 1))
-else
-    echo "FAIL  report_caps_check.con --report caps missing pure_fn : (pure)"
-    echo "$report_output"
-    FAIL=$((FAIL + 1))
-fi
+check_report "$TESTDIR/report_caps_check.con" caps \
+    "pure_fn : (pure)" \
+    "report_caps_check.con --report caps shows pure_fn : (pure)" \
+    "report_caps_check.con --report caps missing pure_fn : (pure)"
 
-if echo "$report_output" | grep -q "alloc_fn : Alloc"; then
-    echo "  ok  report_caps_check.con --report caps shows alloc_fn : Alloc"
-    PASS=$((PASS + 1))
-else
-    echo "FAIL  report_caps_check.con --report caps missing alloc_fn : Alloc"
-    echo "$report_output"
-    FAIL=$((FAIL + 1))
-fi
+check_report "$TESTDIR/report_caps_check.con" caps \
+    "alloc_fn : Alloc" \
+    "report_caps_check.con --report caps shows alloc_fn : Alloc" \
+    "report_caps_check.con --report caps missing alloc_fn : Alloc"
 
-if echo "$report_output" | grep -q "multi_fn : File, Network"; then
-    echo "  ok  report_caps_check.con --report caps shows multi_fn : File, Network"
-    PASS=$((PASS + 1))
-else
-    echo "FAIL  report_caps_check.con --report caps missing multi_fn : File, Network"
-    echo "$report_output"
-    FAIL=$((FAIL + 1))
-fi
+check_report "$TESTDIR/report_caps_check.con" caps \
+    "multi_fn : File, Network" \
+    "report_caps_check.con --report caps shows multi_fn : File, Network" \
+    "report_caps_check.con --report caps missing multi_fn : File, Network"
 
 # --- report unsafe: Unsafe capability + raw pointer signatures ---
-report_output=$($COMPILER "$TESTDIR/report_unsafe_rawptr.con" --report unsafe 2>&1)
-if echo "$report_output" | grep -q "Functions with Unsafe capability" && echo "$report_output" | grep -q "ptr_swap"; then
-    echo "  ok  report_unsafe_rawptr.con --report unsafe shows Unsafe capability for ptr_swap"
-    PASS=$((PASS + 1))
-else
-    echo "FAIL  report_unsafe_rawptr.con --report unsafe missing Unsafe capability for ptr_swap"
-    echo "$report_output"
-    FAIL=$((FAIL + 1))
-fi
+check_report_multi "$TESTDIR/report_unsafe_rawptr.con" unsafe \
+    "report_unsafe_rawptr.con --report unsafe shows Unsafe capability for ptr_swap" \
+    "report_unsafe_rawptr.con --report unsafe missing Unsafe capability for ptr_swap" \
+    "Functions with Unsafe capability" "ptr_swap"
 
-if echo "$report_output" | grep -q "Functions with raw pointer signatures" && echo "$report_output" | grep -q "ptr_swap"; then
-    echo "  ok  report_unsafe_rawptr.con --report unsafe shows raw pointer signatures for ptr_swap"
-    PASS=$((PASS + 1))
-else
-    echo "FAIL  report_unsafe_rawptr.con --report unsafe missing raw pointer signatures for ptr_swap"
-    echo "$report_output"
-    FAIL=$((FAIL + 1))
-fi
+check_report_multi "$TESTDIR/report_unsafe_rawptr.con" unsafe \
+    "report_unsafe_rawptr.con --report unsafe shows raw pointer signatures for ptr_swap" \
+    "report_unsafe_rawptr.con --report unsafe missing raw pointer signatures for ptr_swap" \
+    "Functions with raw pointer signatures" "ptr_swap"
 
 # --- report layout: struct sizes, packed, enum tags ---
-report_output=$($COMPILER "$TESTDIR/report_layout_check.con" --report layout 2>&1)
-if echo "$report_output" | grep -q "struct Padded" && echo "$report_output" | grep -q "size:" && echo "$report_output" | grep -q "align:"; then
-    echo "  ok  report_layout_check.con --report layout shows struct Padded with size and align"
-    PASS=$((PASS + 1))
-else
-    echo "FAIL  report_layout_check.con --report layout missing struct Padded with size/align"
-    echo "$report_output"
-    FAIL=$((FAIL + 1))
-fi
+check_report_multi "$TESTDIR/report_layout_check.con" layout \
+    "report_layout_check.con --report layout shows struct Padded with size and align" \
+    "report_layout_check.con --report layout missing struct Padded with size/align" \
+    "struct Padded" "size:" "align:"
 
-if echo "$report_output" | grep -q "struct Packed" && echo "$report_output" | grep -q "#\[packed\]"; then
-    echo "  ok  report_layout_check.con --report layout shows struct Packed with #[packed]"
-    PASS=$((PASS + 1))
-else
-    echo "FAIL  report_layout_check.con --report layout missing struct Packed with #[packed]"
-    echo "$report_output"
-    FAIL=$((FAIL + 1))
-fi
+check_report_multi "$TESTDIR/report_layout_check.con" layout \
+    "report_layout_check.con --report layout shows struct Packed with #[packed]" \
+    "report_layout_check.con --report layout missing struct Packed with #[packed]" \
+    "struct Packed" "#\[packed\]"
 
-if echo "$report_output" | grep -q "enum Shape" && echo "$report_output" | grep -q "tag:" && echo "$report_output" | grep -q "payload_offset:"; then
-    echo "  ok  report_layout_check.con --report layout shows enum Shape with tag and payload_offset"
-    PASS=$((PASS + 1))
-else
-    echo "FAIL  report_layout_check.con --report layout missing enum Shape with tag/payload_offset"
-    echo "$report_output"
-    FAIL=$((FAIL + 1))
-fi
+check_report_multi "$TESTDIR/report_layout_check.con" layout \
+    "report_layout_check.con --report layout shows enum Shape with tag and payload_offset" \
+    "report_layout_check.con --report layout missing enum Shape with tag/payload_offset" \
+    "enum Shape" "tag:" "payload_offset:"
 
 # --- report layout: cross-validate sizes against runtime sizeof ---
+report_output=$(cached_output "$TESTDIR/report_layout_check.con" "--report layout")
 padded_size=$(echo "$report_output" | grep "struct Padded" -A1 | grep -o "size: [0-9]*" | head -1 | grep -o "[0-9]*")
 packed_size=$(echo "$report_output" | grep "struct Packed" -A1 | grep -o "size: [0-9]*" | head -1 | grep -o "[0-9]*")
 expected_sum=$((padded_size + packed_size))
@@ -1035,193 +1104,116 @@ else
 fi
 
 # --- report interface: public API, struct fields, private exclusion ---
-report_output=$($COMPILER "$TESTDIR/report_interface_check.con" --report interface 2>&1)
-if echo "$report_output" | grep -q "fn add_points" && echo "$report_output" | grep -q "\[Alloc\]"; then
-    echo "  ok  report_interface_check.con --report interface shows fn add_points with [Alloc]"
-    PASS=$((PASS + 1))
-else
-    echo "FAIL  report_interface_check.con --report interface missing fn add_points with [Alloc]"
-    echo "$report_output"
-    FAIL=$((FAIL + 1))
-fi
+check_report_multi "$TESTDIR/report_interface_check.con" interface \
+    "report_interface_check.con --report interface shows fn add_points with [Alloc]" \
+    "report_interface_check.con --report interface missing fn add_points with [Alloc]" \
+    "fn add_points" "\[Alloc\]"
 
-if echo "$report_output" | grep -q "struct Point" && echo "$report_output" | grep -q "x: i32"; then
-    echo "  ok  report_interface_check.con --report interface shows struct Point with x: i32"
-    PASS=$((PASS + 1))
-else
-    echo "FAIL  report_interface_check.con --report interface missing struct Point with x: i32"
-    echo "$report_output"
-    FAIL=$((FAIL + 1))
-fi
+check_report_multi "$TESTDIR/report_interface_check.con" interface \
+    "report_interface_check.con --report interface shows struct Point with x: i32" \
+    "report_interface_check.con --report interface missing struct Point with x: i32" \
+    "struct Point" "x: i32"
 
-if ! echo "$report_output" | grep -q "private_helper"; then
-    echo "  ok  report_interface_check.con --report interface excludes private_helper"
-    PASS=$((PASS + 1))
-else
-    echo "FAIL  report_interface_check.con --report interface should not show private_helper"
-    echo "$report_output"
-    FAIL=$((FAIL + 1))
-fi
+check_report "$TESTDIR/report_interface_check.con" interface \
+    "private_helper" \
+    "report_interface_check.con --report interface excludes private_helper" \
+    "report_interface_check.con --report interface should not show private_helper" \
+    "!"
 
 # --- report mono: generic count and specializations ---
-report_output=$($COMPILER "$TESTDIR/report_mono_check.con" --report mono 2>&1)
-if echo "$report_output" | grep -q "Generic functions:"; then
-    echo "  ok  report_mono_check.con --report mono shows Generic functions"
-    PASS=$((PASS + 1))
-else
-    echo "FAIL  report_mono_check.con --report mono missing Generic functions"
-    echo "$report_output"
-    FAIL=$((FAIL + 1))
-fi
+check_report "$TESTDIR/report_mono_check.con" mono \
+    "Generic functions:" \
+    "report_mono_check.con --report mono shows Generic functions" \
+    "report_mono_check.con --report mono missing Generic functions"
 
-if echo "$report_output" | grep -q "Specializations:"; then
-    echo "  ok  report_mono_check.con --report mono shows Specializations"
-    PASS=$((PASS + 1))
-else
-    echo "FAIL  report_mono_check.con --report mono missing Specializations"
-    echo "$report_output"
-    FAIL=$((FAIL + 1))
-fi
+check_report "$TESTDIR/report_mono_check.con" mono \
+    "Specializations:" \
+    "report_mono_check.con --report mono shows Specializations" \
+    "report_mono_check.con --report mono missing Specializations"
 
 # -- Integration test: all report modes on one file --
 
 # Caps with why traces
-report_output=$($COMPILER "$TESTDIR/report_integration.con" --report caps 2>&1)
-if echo "$report_output" | grep -q "Alloc.*<- calls vec_new"; then
-    echo "  ok  report_integration.con --report caps shows Alloc why trace"
-    PASS=$((PASS + 1))
-else
-    echo "FAIL  report_integration.con --report caps missing Alloc why trace"
-    echo "$report_output"
-    FAIL=$((FAIL + 1))
-fi
-if echo "$report_output" | grep -q "Unsafe.*<- calls raw_extern"; then
-    echo "  ok  report_integration.con --report caps shows Unsafe why trace"
-    PASS=$((PASS + 1))
-else
-    echo "FAIL  report_integration.con --report caps missing Unsafe why trace"
-    echo "$report_output"
-    FAIL=$((FAIL + 1))
-fi
+check_report "$TESTDIR/report_integration.con" caps \
+    "Alloc.*<- calls vec_new" \
+    "report_integration.con --report caps shows Alloc why trace" \
+    "report_integration.con --report caps missing Alloc why trace"
+
+check_report "$TESTDIR/report_integration.con" caps \
+    "Unsafe.*<- calls raw_extern" \
+    "report_integration.con --report caps shows Unsafe why trace" \
+    "report_integration.con --report caps missing Unsafe why trace"
 
 # Unsafe with trust boundary analysis
-report_output=$($COMPILER "$TESTDIR/report_integration.con" --report unsafe 2>&1)
-if echo "$report_output" | grep -q "Trust boundary analysis"; then
-    echo "  ok  report_integration.con --report unsafe shows Trust boundary analysis"
-    PASS=$((PASS + 1))
-else
-    echo "FAIL  report_integration.con --report unsafe missing Trust boundary analysis"
-    echo "$report_output"
-    FAIL=$((FAIL + 1))
-fi
-if echo "$report_output" | grep -q "wraps: extern raw_extern"; then
-    echo "  ok  report_integration.con --report unsafe shows wraps extern"
-    PASS=$((PASS + 1))
-else
-    echo "FAIL  report_integration.con --report unsafe missing wraps extern"
-    echo "$report_output"
-    FAIL=$((FAIL + 1))
-fi
+check_report "$TESTDIR/report_integration.con" unsafe \
+    "Trust boundary analysis" \
+    "report_integration.con --report unsafe shows Trust boundary analysis" \
+    "report_integration.con --report unsafe missing Trust boundary analysis"
+
+check_report "$TESTDIR/report_integration.con" unsafe \
+    "wraps: extern raw_extern" \
+    "report_integration.con --report unsafe shows wraps extern" \
+    "report_integration.con --report unsafe missing wraps extern"
 
 # Alloc report
-report_output=$($COMPILER "$TESTDIR/report_integration.con" --report alloc 2>&1)
-if echo "$report_output" | grep -q "allocates: vec_new"; then
-    echo "  ok  report_integration.con --report alloc shows vec_new allocation"
-    PASS=$((PASS + 1))
-else
-    echo "FAIL  report_integration.con --report alloc missing vec_new allocation"
-    echo "$report_output"
-    FAIL=$((FAIL + 1))
-fi
-if echo "$report_output" | grep -q "caller responsible for cleanup"; then
-    echo "  ok  report_integration.con --report alloc shows returned-alloc note"
-    PASS=$((PASS + 1))
-else
-    echo "FAIL  report_integration.con --report alloc missing returned-alloc note"
-    echo "$report_output"
-    FAIL=$((FAIL + 1))
-fi
-if echo "$report_output" | grep -q "defer free"; then
-    echo "  ok  report_integration.con --report alloc shows defer free"
-    PASS=$((PASS + 1))
-else
-    echo "FAIL  report_integration.con --report alloc missing defer free"
-    echo "$report_output"
-    FAIL=$((FAIL + 1))
-fi
+check_report "$TESTDIR/report_integration.con" alloc \
+    "allocates: vec_new" \
+    "report_integration.con --report alloc shows vec_new allocation" \
+    "report_integration.con --report alloc missing vec_new allocation"
+
+check_report "$TESTDIR/report_integration.con" alloc \
+    "caller responsible for cleanup" \
+    "report_integration.con --report alloc shows returned-alloc note" \
+    "report_integration.con --report alloc missing returned-alloc note"
+
+check_report "$TESTDIR/report_integration.con" alloc \
+    "defer free" \
+    "report_integration.con --report alloc shows defer free" \
+    "report_integration.con --report alloc missing defer free"
 
 # Layout: verify struct and enum details
-report_output=$($COMPILER "$TESTDIR/report_integration.con" --report layout 2>&1)
-if echo "$report_output" | grep -q "struct Pair" && echo "$report_output" | grep -q "size: 8"; then
-    echo "  ok  report_integration.con --report layout shows struct Pair with size"
-    PASS=$((PASS + 1))
-else
-    echo "FAIL  report_integration.con --report layout missing struct Pair"
-    echo "$report_output"
-    FAIL=$((FAIL + 1))
-fi
-if echo "$report_output" | grep -q "enum Shape" && echo "$report_output" | grep -q "tag:"; then
-    echo "  ok  report_integration.con --report layout shows enum Shape with tag"
-    PASS=$((PASS + 1))
-else
-    echo "FAIL  report_integration.con --report layout missing enum Shape"
-    echo "$report_output"
-    FAIL=$((FAIL + 1))
-fi
-if echo "$report_output" | grep -q "Totals:.*struct.*enum"; then
-    echo "  ok  report_integration.con --report layout shows totals"
-    PASS=$((PASS + 1))
-else
-    echo "FAIL  report_integration.con --report layout missing totals"
-    echo "$report_output"
-    FAIL=$((FAIL + 1))
-fi
+check_report_multi "$TESTDIR/report_integration.con" layout \
+    "report_integration.con --report layout shows struct Pair with size" \
+    "report_integration.con --report layout missing struct Pair" \
+    "struct Pair" "size: 8"
+
+check_report_multi "$TESTDIR/report_integration.con" layout \
+    "report_integration.con --report layout shows enum Shape with tag" \
+    "report_integration.con --report layout missing enum Shape" \
+    "enum Shape" "tag:"
+
+check_report "$TESTDIR/report_integration.con" layout \
+    "Totals:.*struct.*enum" \
+    "report_integration.con --report layout shows totals" \
+    "report_integration.con --report layout missing totals"
 
 # Interface: verify public API exports and private exclusion
-report_output=$($COMPILER "$TESTDIR/report_integration.con" --report interface 2>&1)
-if echo "$report_output" | grep -q "fn pure_add" && echo "$report_output" | grep -q "(pure)"; then
-    echo "  ok  report_integration.con --report interface shows pure_add"
-    PASS=$((PASS + 1))
-else
-    echo "FAIL  report_integration.con --report interface missing pure_add"
-    echo "$report_output"
-    FAIL=$((FAIL + 1))
-fi
-if echo "$report_output" | grep -q "fn uses_alloc" && echo "$report_output" | grep -q "Alloc"; then
-    echo "  ok  report_integration.con --report interface shows uses_alloc with Alloc"
-    PASS=$((PASS + 1))
-else
-    echo "FAIL  report_integration.con --report interface missing uses_alloc"
-    echo "$report_output"
-    FAIL=$((FAIL + 1))
-fi
-if ! echo "$report_output" | grep -q "alloc_no_free"; then
-    echo "  ok  report_integration.con --report interface excludes private alloc_no_free"
-    PASS=$((PASS + 1))
-else
-    echo "FAIL  report_integration.con --report interface should not show private alloc_no_free"
-    echo "$report_output"
-    FAIL=$((FAIL + 1))
-fi
+check_report_multi "$TESTDIR/report_integration.con" interface \
+    "report_integration.con --report interface shows pure_add" \
+    "report_integration.con --report interface missing pure_add" \
+    "fn pure_add" "(pure)"
+
+check_report_multi "$TESTDIR/report_integration.con" interface \
+    "report_integration.con --report interface shows uses_alloc with Alloc" \
+    "report_integration.con --report interface missing uses_alloc" \
+    "fn uses_alloc" "Alloc"
+
+check_report "$TESTDIR/report_integration.con" interface \
+    "alloc_no_free" \
+    "report_integration.con --report interface excludes private alloc_no_free" \
+    "report_integration.con --report interface should not show private alloc_no_free" \
+    "!"
 
 # Mono: verify specialization details
-report_output=$($COMPILER "$TESTDIR/report_integration.con" --report mono 2>&1)
-if echo "$report_output" | grep -q "Generic functions:" && echo "$report_output" | grep -q "1"; then
-    echo "  ok  report_integration.con --report mono shows 1 generic function"
-    PASS=$((PASS + 1))
-else
-    echo "FAIL  report_integration.con --report mono missing generic function count"
-    echo "$report_output"
-    FAIL=$((FAIL + 1))
-fi
-if echo "$report_output" | grep -q "identity.*i32"; then
-    echo "  ok  report_integration.con --report mono shows identity<i32> specialization"
-    PASS=$((PASS + 1))
-else
-    echo "FAIL  report_integration.con --report mono missing identity<i32> specialization"
-    echo "$report_output"
-    FAIL=$((FAIL + 1))
-fi
+check_report_multi "$TESTDIR/report_integration.con" mono \
+    "report_integration.con --report mono shows 1 generic function" \
+    "report_integration.con --report mono missing generic function count" \
+    "Generic functions:" "1"
+
+check_report "$TESTDIR/report_integration.con" mono \
+    "identity.*i32" \
+    "report_integration.con --report mono shows identity<i32> specialization" \
+    "report_integration.con --report mono missing identity<i32> specialization"
 
 # --- Collection pipeline integration test ---
 
@@ -1242,88 +1234,56 @@ else
 fi
 
 # Caps: multi-level allocation traces
-report_output=$($COMPILER "$TESTDIR/integration_collection_pipeline.con" --report caps 2>&1)
-if echo "$report_output" | grep -q "build_and_summarize : Alloc" && echo "$report_output" | grep -q "<- calls.*vec_new"; then
-    echo "  ok  integration_collection_pipeline.con --report caps shows build_and_summarize Alloc trace"
-    PASS=$((PASS + 1))
-else
-    echo "FAIL  integration_collection_pipeline.con --report caps missing build_and_summarize trace"
-    echo "$report_output"
-    FAIL=$((FAIL + 1))
-fi
-if echo "$report_output" | grep -q "classify : (pure)" && echo "$report_output" | grep -q "double : (pure)"; then
-    echo "  ok  integration_collection_pipeline.con --report caps identifies pure functions"
-    PASS=$((PASS + 1))
-else
-    echo "FAIL  integration_collection_pipeline.con --report caps missing pure function detection"
-    echo "$report_output"
-    FAIL=$((FAIL + 1))
-fi
+check_report_multi "$TESTDIR/integration_collection_pipeline.con" caps \
+    "integration_collection_pipeline.con --report caps shows build_and_summarize Alloc trace" \
+    "integration_collection_pipeline.con --report caps missing build_and_summarize trace" \
+    "build_and_summarize : Alloc" "<- calls.*vec_new"
+
+check_report_multi "$TESTDIR/integration_collection_pipeline.con" caps \
+    "integration_collection_pipeline.con --report caps identifies pure functions" \
+    "integration_collection_pipeline.con --report caps missing pure function detection" \
+    "classify : (pure)" "double : (pure)"
 
 # Alloc: multiple allocation patterns
-report_output=$($COMPILER "$TESTDIR/integration_collection_pipeline.con" --report alloc 2>&1)
-if echo "$report_output" | grep -q "fn map_vec" && echo "$report_output" | grep -q "caller responsible for cleanup"; then
-    echo "  ok  integration_collection_pipeline.con --report alloc shows map_vec returns allocation"
-    PASS=$((PASS + 1))
-else
-    echo "FAIL  integration_collection_pipeline.con --report alloc missing map_vec return-alloc note"
-    echo "$report_output"
-    FAIL=$((FAIL + 1))
-fi
-if echo "$report_output" | grep -q "fn build_and_summarize" && echo "$report_output" | grep -q "frees: vec_free"; then
-    echo "  ok  integration_collection_pipeline.con --report alloc shows build_and_summarize frees"
-    PASS=$((PASS + 1))
-else
-    echo "FAIL  integration_collection_pipeline.con --report alloc missing build_and_summarize free"
-    echo "$report_output"
-    FAIL=$((FAIL + 1))
-fi
-if echo "$report_output" | grep -q "fn count_with_defer" && echo "$report_output" | grep -q "defer free"; then
-    echo "  ok  integration_collection_pipeline.con --report alloc shows count_with_defer defer"
-    PASS=$((PASS + 1))
-else
-    echo "FAIL  integration_collection_pipeline.con --report alloc missing count_with_defer defer"
-    echo "$report_output"
-    FAIL=$((FAIL + 1))
-fi
-if echo "$report_output" | grep -q "Totals:.*4 functions allocate"; then
-    echo "  ok  integration_collection_pipeline.con --report alloc shows 4 allocating functions"
-    PASS=$((PASS + 1))
-else
-    echo "FAIL  integration_collection_pipeline.con --report alloc wrong allocating function count"
-    echo "$report_output"
-    FAIL=$((FAIL + 1))
-fi
+check_report_multi "$TESTDIR/integration_collection_pipeline.con" alloc \
+    "integration_collection_pipeline.con --report alloc shows map_vec returns allocation" \
+    "integration_collection_pipeline.con --report alloc missing map_vec return-alloc note" \
+    "fn map_vec" "caller responsible for cleanup"
+
+check_report_multi "$TESTDIR/integration_collection_pipeline.con" alloc \
+    "integration_collection_pipeline.con --report alloc shows build_and_summarize frees" \
+    "integration_collection_pipeline.con --report alloc missing build_and_summarize free" \
+    "fn build_and_summarize" "frees: vec_free"
+
+check_report_multi "$TESTDIR/integration_collection_pipeline.con" alloc \
+    "integration_collection_pipeline.con --report alloc shows count_with_defer defer" \
+    "integration_collection_pipeline.con --report alloc missing count_with_defer defer" \
+    "fn count_with_defer" "defer free"
+
+check_report "$TESTDIR/integration_collection_pipeline.con" alloc \
+    "Totals:.*4 functions allocate" \
+    "integration_collection_pipeline.con --report alloc shows 4 allocating functions" \
+    "integration_collection_pipeline.con --report alloc wrong allocating function count"
 
 # Layout: struct with 4 fields, enum with 3 variants
-report_output=$($COMPILER "$TESTDIR/integration_collection_pipeline.con" --report layout 2>&1)
-if echo "$report_output" | grep -q "struct Stats" && echo "$report_output" | grep -q "size: 16"; then
-    echo "  ok  integration_collection_pipeline.con --report layout shows Stats (4 fields, 16 bytes)"
-    PASS=$((PASS + 1))
-else
-    echo "FAIL  integration_collection_pipeline.con --report layout missing Stats struct"
-    echo "$report_output"
-    FAIL=$((FAIL + 1))
-fi
-if echo "$report_output" | grep -q "enum Classification" && echo "$report_output" | grep -q "max_payload: 0"; then
-    echo "  ok  integration_collection_pipeline.con --report layout shows Classification (no payload)"
-    PASS=$((PASS + 1))
-else
-    echo "FAIL  integration_collection_pipeline.con --report layout missing Classification enum"
-    echo "$report_output"
-    FAIL=$((FAIL + 1))
-fi
+check_report_multi "$TESTDIR/integration_collection_pipeline.con" layout \
+    "integration_collection_pipeline.con --report layout shows Stats (4 fields, 16 bytes)" \
+    "integration_collection_pipeline.con --report layout missing Stats struct" \
+    "struct Stats" "size: 16"
+
+check_report_multi "$TESTDIR/integration_collection_pipeline.con" layout \
+    "integration_collection_pipeline.con --report layout shows Classification (no payload)" \
+    "integration_collection_pipeline.con --report layout missing Classification enum" \
+    "enum Classification" "max_payload: 0"
 
 # Interface: public exports
-report_output=$($COMPILER "$TESTDIR/integration_collection_pipeline.con" --report interface 2>&1)
-if echo "$report_output" | grep -q "fn classify" && echo "$report_output" | grep -q "fn build_and_summarize"; then
-    echo "  ok  integration_collection_pipeline.con --report interface shows public functions"
-    PASS=$((PASS + 1))
-else
-    echo "FAIL  integration_collection_pipeline.con --report interface missing public functions"
-    echo "$report_output"
-    FAIL=$((FAIL + 1))
-fi
+check_report_multi "$TESTDIR/integration_collection_pipeline.con" interface \
+    "integration_collection_pipeline.con --report interface shows public functions" \
+    "integration_collection_pipeline.con --report interface missing public functions" \
+    "fn classify" "fn build_and_summarize"
+
+# Interface: private exclusion (custom check — need both to NOT match)
+report_output=$(cached_output "$TESTDIR/integration_collection_pipeline.con" "--report interface")
 if ! echo "$report_output" | grep -q "map_vec" && ! echo "$report_output" | grep -q "collect_classified"; then
     echo "  ok  integration_collection_pipeline.con --report interface excludes private functions"
     PASS=$((PASS + 1))
@@ -1343,7 +1303,7 @@ echo "=== Codegen differential tests ==="
 # --- Category 1: SSA optimization verification ---
 
 # Constant folding: 2 + 3 should be folded to 5
-ssa_output=$($COMPILER "$TESTDIR/codegen_constfold.con" --emit-ssa 2>&1)
+ssa_output=$(cached_emit "$TESTDIR/codegen_constfold.con" "--emit-ssa")
 if echo "$ssa_output" | grep -q "ret i64 5"; then
     echo "  ok  codegen_constfold.con --emit-ssa constant folded to ret i64 5"
     PASS=$((PASS + 1))
@@ -1363,7 +1323,7 @@ else
 fi
 
 # Strength reduction: x * 8 should become shl x, 3
-ssa_output=$($COMPILER "$TESTDIR/codegen_strength.con" --emit-ssa 2>&1)
+ssa_output=$(cached_emit "$TESTDIR/codegen_strength.con" "--emit-ssa")
 if echo "$ssa_output" | grep -q "shl i64 %x, 3"; then
     echo "  ok  codegen_strength.con --emit-ssa strength-reduced *8 to shl 3"
     PASS=$((PASS + 1))
@@ -1385,7 +1345,7 @@ fi
 # --- Category 2: Codegen structure verification ---
 
 # Struct field access: second field at offset 8
-ssa_output=$($COMPILER "$TESTDIR/struct_basic.con" --emit-ssa 2>&1)
+ssa_output=$(cached_emit "$TESTDIR/struct_basic.con" "--emit-ssa")
 if echo "$ssa_output" | grep -q "gep i8 %p, i64 8"; then
     echo "  ok  struct_basic.con --emit-ssa second field GEP at offset 8"
     PASS=$((PASS + 1))
@@ -1396,7 +1356,7 @@ else
 fi
 
 # Enum tag load and comparison
-ssa_output=$($COMPILER "$TESTDIR/enum_basic.con" --emit-ssa 2>&1)
+ssa_output=$(cached_emit "$TESTDIR/enum_basic.con" "--emit-ssa")
 if echo "$ssa_output" | grep -q "load i32"; then
     echo "  ok  enum_basic.con --emit-ssa tag loaded as i32"
     PASS=$((PASS + 1))
@@ -1416,7 +1376,7 @@ else
 fi
 
 # Monomorphization: identity<T> specialized for Int and i32
-ssa_output=$($COMPILER "$TESTDIR/report_mono_check.con" --emit-ssa 2>&1)
+ssa_output=$(cached_emit "$TESTDIR/report_mono_check.con" "--emit-ssa")
 if echo "$ssa_output" | grep -q "define i64 @identity_for_Int"; then
     echo "  ok  report_mono_check.con --emit-ssa has identity_for_Int"
     PASS=$((PASS + 1))
@@ -1436,7 +1396,7 @@ else
 fi
 
 # LLVM struct type definition
-llvm_output=$($COMPILER "$TESTDIR/struct_basic.con" --emit-llvm 2>&1)
+llvm_output=$(cached_emit "$TESTDIR/struct_basic.con" "--emit-llvm")
 if echo "$llvm_output" | grep -q "%struct.Point = type { i64, i64 }"; then
     echo "  ok  struct_basic.con --emit-llvm has %struct.Point = type { i64, i64 }"
     PASS=$((PASS + 1))
@@ -1447,7 +1407,7 @@ else
 fi
 
 # Mutable borrow generates store
-ssa_output=$($COMPILER "$TESTDIR/borrow_mut.con" --emit-ssa 2>&1)
+ssa_output=$(cached_emit "$TESTDIR/borrow_mut.con" "--emit-ssa")
 if echo "$ssa_output" | grep -q "store i64"; then
     echo "  ok  borrow_mut.con --emit-ssa mutable borrow generates store i64"
     PASS=$((PASS + 1))
@@ -1458,7 +1418,7 @@ else
 fi
 
 # Struct-in-loop: aggregate promoted to stable alloca (no aggregate phi)
-ssa_output=$($COMPILER "$TESTDIR/struct_loop_field_assign.con" --emit-ssa 2>&1)
+ssa_output=$(cached_emit "$TESTDIR/struct_loop_field_assign.con" "--emit-ssa")
 if echo "$ssa_output" | grep -q "alloca %Point" && ! echo "$ssa_output" | grep -q "phi %Point"; then
     echo "  ok  struct_loop_field_assign.con --emit-ssa aggregate promoted to alloca (no phi %Point)"
     PASS=$((PASS + 1))
@@ -1469,7 +1429,7 @@ else
 fi
 
 # Struct-in-if/else: aggregate merge via alloca (no aggregate phi)
-ssa_output=$($COMPILER "$TESTDIR/struct_if_else_merge.con" --emit-ssa 2>&1)
+ssa_output=$(cached_emit "$TESTDIR/struct_if_else_merge.con" "--emit-ssa")
 if echo "$ssa_output" | grep -q "alloca %Pair" && ! echo "$ssa_output" | grep -q "phi %Pair"; then
     echo "  ok  struct_if_else_merge.con --emit-ssa aggregate if/else merged via alloca (no phi %Pair)"
     PASS=$((PASS + 1))
@@ -1480,7 +1440,7 @@ else
 fi
 
 # Struct-in-match: aggregate merge via alloca (no aggregate phi)
-ssa_output=$($COMPILER "$TESTDIR/struct_match_merge.con" --emit-ssa 2>&1)
+ssa_output=$(cached_emit "$TESTDIR/struct_match_merge.con" "--emit-ssa")
 if echo "$ssa_output" | grep -q "alloca %Pair" && ! echo "$ssa_output" | grep -q "phi %Pair"; then
     echo "  ok  struct_match_merge.con --emit-ssa aggregate match merged via alloca (no phi %Pair)"
     PASS=$((PASS + 1))
@@ -1506,7 +1466,7 @@ fi # end section: O2
 if section_active codegen; then
 
 # LLVM packed struct matches report layout
-llvm_output=$($COMPILER "$TESTDIR/report_layout_check.con" --emit-llvm 2>&1)
+llvm_output=$(cached_emit "$TESTDIR/report_layout_check.con" "--emit-llvm")
 if echo "$llvm_output" | grep -q "%struct.Packed = type <{"; then
     echo "  ok  report_layout_check.con --emit-llvm packed struct uses <{ syntax"
     PASS=$((PASS + 1))
@@ -1517,7 +1477,7 @@ else
 fi
 
 # LLVM enum payload size matches report layout max_payload
-report_output=$($COMPILER "$TESTDIR/report_layout_check.con" --report layout 2>&1)
+report_output=$(cached_output "$TESTDIR/report_layout_check.con" "--report layout")
 layout_max_payload=$(echo "$report_output" | grep -o "max_payload: [0-9]*" | grep -o "[0-9]*")
 if echo "$llvm_output" | grep -q "%enum.Shape = type { i32, \[$layout_max_payload x i8\] }"; then
     echo "  ok  report_layout_check.con --emit-llvm enum payload size matches --report layout max_payload ($layout_max_payload)"
@@ -1530,8 +1490,8 @@ else
 fi
 
 # Core-SSA consistency: function signature preserved across representations
-core_output=$($COMPILER "$TESTDIR/struct_basic.con" --emit-core 2>&1)
-ssa_output=$($COMPILER "$TESTDIR/struct_basic.con" --emit-ssa 2>&1)
+core_output=$(cached_emit "$TESTDIR/struct_basic.con" "--emit-core")
+ssa_output=$(cached_emit "$TESTDIR/struct_basic.con" "--emit-ssa")
 if echo "$core_output" | grep -q "fn sum_point(p: Point) -> Int"; then
     echo "  ok  struct_basic.con --emit-core preserves fn sum_point(p: Point) -> Int"
     PASS=$((PASS + 1))
@@ -1726,9 +1686,20 @@ echo "  mode:    $MODE"
 if [ -n "$FILTER" ]; then
     echo "  filter:  $FILTER"
 fi
+CACHE_HITS=$(cat "$CACHE_HITS_FILE")
+CACHE_MISSES=$(cat "$CACHE_MISSES_FILE")
+CACHE_TOTAL=$((CACHE_HITS + CACHE_MISSES))
+if [ "$CACHE_TOTAL" -gt 0 ]; then
+    echo "  cache:   $CACHE_HITS/$CACHE_TOTAL hits ($CACHE_HITS compilations saved)"
+fi
 if [ "$MODE" != "full" ] || [ -n "$FILTER" ]; then
     echo ""
     echo "  NOTE: This was a partial run. Use './run_tests.sh --full' for complete coverage."
+fi
+if [ -d "$FAILDIR" ] && [ "$(ls -A "$FAILDIR" 2>/dev/null)" ]; then
+    echo ""
+    echo "  Failure artifacts saved to $FAILDIR/"
+    echo "  Rerun individual failures with the commands in each file."
 fi
 echo ""
 if [ "$FAIL" -gt 0 ]; then
