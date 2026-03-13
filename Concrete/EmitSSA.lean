@@ -621,58 +621,58 @@ private def emitExternDecls (s : EmitSSAState) (externFns : List (String × List
     For void/unit return types, the wrapper just calls user_main without printing.
     For int/bool/other scalar types, it prints the result. -/
 private def emitMainWrapper (s : EmitSSAState) (retTy : Ty) : EmitSSAState :=
-  let retLLTyS := tyToLLVMTy s retTy
-  let retLLTy := printLLVMTy retLLTyS
-  let wrapperText := if retLLTyS == .void then
+  let retLLTy := tyToLLVMTy s retTy
+  let ret0 : LLVMTerm := .ret .i32 (some (.intLit 0))
+  let printfTarget : LLVMOperand := .global "printf"
+  let mkMainFn (blk : LLVMBlock) : LLVMFnDef :=
+    { name := "main", retTy := .i32, params := [], blocks := [blk] }
+  if retLLTy == .void then
     -- Unit/void return: just call, no print
-    "define i32 @main() {\n" ++
-    "  call void @user_main()\n" ++
-    "  ret i32 0\n" ++
-    "}\n\n"
-  else if retLLTyS == .i1 then
+    let instrs : List LLVMInstr := [.call none .void (.global "user_main") []]
+    let mainFn := mkMainFn ⟨"entry", instrs, ret0⟩
+    { s with moduleFunctions := s.moduleFunctions.push mainFn }
+  else if retLLTy == .i1 then
     -- Bool return: print "true" or "false"
-    "@fmt.true = private constant [5 x i8] c\"true\\00\"\n" ++
-    "@fmt.false = private constant [6 x i8] c\"false\\00\"\n" ++
-    "@fmt.main.s = private constant [4 x i8] c\"%s\\0A\\00\"\n" ++
-    "\n" ++
-    "define i32 @main() {\n" ++
-    "  %result = call i1 @user_main()\n" ++
-    "  %true_str = getelementptr [5 x i8], ptr @fmt.true, i32 0, i32 0\n" ++
-    "  %false_str = getelementptr [6 x i8], ptr @fmt.false, i32 0, i32 0\n" ++
-    "  %str = select i1 %result, ptr %true_str, ptr %false_str\n" ++
-    "  %fmt = getelementptr [4 x i8], ptr @fmt.main.s, i32 0, i32 0\n" ++
-    "  call i32 (ptr, ...) @printf(ptr %fmt, ptr %str)\n" ++
-    "  ret i32 0\n" ++
-    "}\n\n"
-  else if retLLTyS == .i64 then
+    let s := emitGlobal s { name := "fmt.true", ty := .array 5 .i8, value := "c\"true\\00\"" }
+    let s := emitGlobal s { name := "fmt.false", ty := .array 6 .i8, value := "c\"false\\00\"" }
+    let s := emitGlobal s { name := "fmt.main.s", ty := .array 4 .i8, value := "c\"%s\\0A\\00\"" }
+    let instrs : List LLVMInstr := [
+      .call (some "result") .i1 (.global "user_main") [],
+      .gep "true_str" (.array 5 .i8) (.global "fmt.true") [(.i32, .intLit 0), (.i32, .intLit 0)],
+      .gep "false_str" (.array 6 .i8) (.global "fmt.false") [(.i32, .intLit 0), (.i32, .intLit 0)],
+      .select "str" (.reg "result") .ptr (.reg "true_str") (.reg "false_str"),
+      .gep "fmt" (.array 4 .i8) (.global "fmt.main.s") [(.i32, .intLit 0), (.i32, .intLit 0)],
+      .callVariadic none .i32 printfTarget [(.ptr, .reg "fmt"), (.ptr, .reg "str")]
+    ]
+    let mainFn := mkMainFn ⟨"entry", instrs, ret0⟩
+    { s with moduleFunctions := s.moduleFunctions.push mainFn }
+  else if retLLTy == .i64 then
     -- i64 return: print with %lld
-    "@fmt.main = private constant [6 x i8] c\"%lld\\0A\\00\"\n" ++
-    "\n" ++
-    "define i32 @main() {\n" ++
-    "  %result = call i64 @user_main()\n" ++
-    "  %fmt = getelementptr [6 x i8], ptr @fmt.main, i32 0, i32 0\n" ++
-    "  call i32 (ptr, ...) @printf(ptr %fmt, i64 %result)\n" ++
-    "  ret i32 0\n" ++
-    "}\n\n"
-  else if retLLTyS == .i32 || retLLTyS == .i16 || retLLTyS == .i8 then
+    let s := emitGlobal s { name := "fmt.main", ty := .array 6 .i8, value := "c\"%lld\\0A\\00\"" }
+    let instrs : List LLVMInstr := [
+      .call (some "result") .i64 (.global "user_main") [],
+      .gep "fmt" (.array 6 .i8) (.global "fmt.main") [(.i32, .intLit 0), (.i32, .intLit 0)],
+      .callVariadic none .i32 printfTarget [(.ptr, .reg "fmt"), (.i64, .reg "result")]
+    ]
+    let mainFn := mkMainFn ⟨"entry", instrs, ret0⟩
+    { s with moduleFunctions := s.moduleFunctions.push mainFn }
+  else if retLLTy == .i32 || retLLTy == .i16 || retLLTy == .i8 then
     -- Smaller integer return: widen to i64, then print
-    let ext := if ssaIsSignedInt retTy then "sext" else "zext"
-    "@fmt.main = private constant [6 x i8] c\"%lld\\0A\\00\"\n" ++
-    "\n" ++
-    "define i32 @main() {\n" ++
-    s!"  %result = call {retLLTy} @user_main()\n" ++
-    s!"  %result64 = {ext} {retLLTy} %result to i64\n" ++
-    "  %fmt = getelementptr [6 x i8], ptr @fmt.main, i32 0, i32 0\n" ++
-    "  call i32 (ptr, ...) @printf(ptr %fmt, i64 %result64)\n" ++
-    "  ret i32 0\n" ++
-    "}\n\n"
+    let castOp : LLVMCastOp := if ssaIsSignedInt retTy then .sext else .zext
+    let s := emitGlobal s { name := "fmt.main", ty := .array 6 .i8, value := "c\"%lld\\0A\\00\"" }
+    let instrs : List LLVMInstr := [
+      .call (some "result") retLLTy (.global "user_main") [],
+      .cast "result64" castOp retLLTy (.reg "result") .i64,
+      .gep "fmt" (.array 6 .i8) (.global "fmt.main") [(.i32, .intLit 0), (.i32, .intLit 0)],
+      .callVariadic none .i32 printfTarget [(.ptr, .reg "fmt"), (.i64, .reg "result64")]
+    ]
+    let mainFn := mkMainFn ⟨"entry", instrs, ret0⟩
+    { s with moduleFunctions := s.moduleFunctions.push mainFn }
   else
     -- For other types (structs, strings, etc.), just call and return 0
-    s!"define i32 @main() \{\n" ++
-    s!"  %result = call {retLLTy} @user_main()\n" ++
-    "  ret i32 0\n" ++
-    "}\n\n"
-  { s with rawSections := s.rawSections.push wrapperText }
+    let instrs : List LLVMInstr := [.call (some "result") retLLTy (.global "user_main") []]
+    let mainFn := mkMainFn ⟨"entry", instrs, ret0⟩
+    { s with moduleFunctions := s.moduleFunctions.push mainFn }
 
 -- ============================================================
 -- Emit string literal globals
@@ -903,76 +903,85 @@ private def emitTestRunner (s : EmitSSAState) (modules : List SModule) (moduleFi
     | none => testFns
     | some modPrefix => testFns.filter fun f =>
         f.modulePath == modPrefix || f.modulePath.startsWith (modPrefix ++ ".")
+  let printfOp : LLVMOperand := .global "printf"
+  let gep32 (dst : String) (arrTy : LLVMTy) (base : LLVMOperand) : LLVMInstr :=
+    .gep dst arrTy base [(.i32, .intLit 0), (.i32, .intLit 0)]
   if testFns.isEmpty then
     -- No tests found: emit a main that prints a message and returns 0
-    let runnerText :=
-      "@fmt.test.none = private constant [15 x i8] c\"No tests found\\00\"\n" ++
-      "@fmt.test.nl = private constant [2 x i8] c\"\\0A\\00\"\n" ++
-      "\n" ++
-      "define i32 @main() {\n" ++
-      "  %fmt = getelementptr [15 x i8], ptr @fmt.test.none, i32 0, i32 0\n" ++
-      "  call i32 (ptr, ...) @printf(ptr %fmt)\n" ++
-      "  %nl = getelementptr [2 x i8], ptr @fmt.test.nl, i32 0, i32 0\n" ++
-      "  call i32 (ptr, ...) @printf(ptr %nl)\n" ++
-      "  ret i32 0\n" ++
-      "}\n\n"
-    { s with rawSections := s.rawSections.push runnerText }
+    let s := emitGlobal s { name := "fmt.test.none", ty := .array 15 .i8, value := "c\"No tests found\\00\"" }
+    let s := emitGlobal s { name := "fmt.test.nl", ty := .array 2 .i8, value := "c\"\\0A\\00\"" }
+    let instrs : List LLVMInstr := [
+      gep32 "fmt" (.array 15 .i8) (.global "fmt.test.none"),
+      .callVariadic none .i32 printfOp [(.ptr, .reg "fmt")],
+      gep32 "nl" (.array 2 .i8) (.global "fmt.test.nl"),
+      .callVariadic none .i32 printfOp [(.ptr, .reg "nl")]
+    ]
+    let blk : LLVMBlock := ⟨"entry", instrs, .ret .i32 (some (.intLit 0))⟩
+    let mainFn : LLVMFnDef := { name := "main", retTy := .i32, params := [], blocks := [blk] }
+    { s with moduleFunctions := s.moduleFunctions.push mainFn }
   else
-    -- Build the entire test runner as a raw section using foldl
-    -- Emit string constants for each test name
-    let nameConsts := testFns.foldl (fun acc f =>
+    -- Emit globals for test name strings
+    let s := testFns.foldl (fun s f =>
       let nameLen := f.name.length + 1
       let escaped := ssaEscapeStringForLLVM f.name
-      acc ++ s!"@test.name.{f.name} = private constant [{nameLen} x i8] c\"{escaped}\\00\"\n"
-    ) ""
-    -- Emit format strings
-    let fmtConsts :=
-      "@fmt.test.pass = private constant [10 x i8] c\"PASS: %s\\0A\\00\"\n" ++
-      "@fmt.test.fail = private constant [10 x i8] c\"FAIL: %s\\0A\\00\"\n" ++
-      "\n"
-    -- Generate main() header
-    let mainHeader :=
-      "define i32 @main() {\n" ++
-      "  %failures = alloca i32\n" ++
-      "  store i32 0, ptr %failures\n" ++
-      "\n"
-    -- Call each test function
-    let (testBody, _) := testFns.foldl (fun (acc, idx) f =>
-      let i := toString idx
+      emitGlobal s { name := s!"test.name.{f.name}", ty := .array nameLen .i8, value := s!"c\"{escaped}\\00\"" }
+    ) s
+    -- Emit format string globals
+    let s := emitGlobal s { name := "fmt.test.pass", ty := .array 10 .i8, value := "c\"PASS: %s\\0A\\00\"" }
+    let s := emitGlobal s { name := "fmt.test.fail", ty := .array 10 .i8, value := "c\"FAIL: %s\\0A\\00\"" }
+    -- Helper: build test dispatch instructions for a given test at index i
+    let mkTestDispatch (f : SFnDef) (i : String) : List LLVMInstr :=
       let nameLen := f.name.length + 1
-      let body := acc
-        ++ s!"  ; Test: {f.name}\n"
-        ++ s!"  %result.{i} = call i32 @{f.name}()\n"
-        ++ s!"  %is_pass.{i} = icmp eq i32 %result.{i}, 0\n"
-        ++ s!"  %name.{i} = getelementptr [{nameLen} x i8], ptr @test.name.{f.name}, i32 0, i32 0\n"
-        ++ s!"  br i1 %is_pass.{i}, label %pass.{i}, label %fail.{i}\n"
-        ++ "\n"
-        ++ s!"pass.{i}:\n"
-        ++ s!"  %pfmt.{i} = getelementptr [10 x i8], ptr @fmt.test.pass, i32 0, i32 0\n"
-        ++ s!"  call i32 (ptr, ...) @printf(ptr %pfmt.{i}, ptr %name.{i})\n"
-        ++ s!"  br label %next.{i}\n"
-        ++ "\n"
-        ++ s!"fail.{i}:\n"
-        ++ s!"  %ffmt.{i} = getelementptr [10 x i8], ptr @fmt.test.fail, i32 0, i32 0\n"
-        ++ s!"  call i32 (ptr, ...) @printf(ptr %ffmt.{i}, ptr %name.{i})\n"
-        -- Increment failures
-        ++ s!"  %old_fail.{i} = load i32, ptr %failures\n"
-        ++ s!"  %new_fail.{i} = add i32 %old_fail.{i}, 1\n"
-        ++ s!"  store i32 %new_fail.{i}, ptr %failures\n"
-        ++ s!"  br label %next.{i}\n"
-        ++ "\n"
-        ++ s!"next.{i}:\n"
-      (body, idx + 1)
-    ) ("", 0)
-    -- Return: 1 if any failed, 0 if all passed
-    let mainFooter :=
-      "  %total_fail = load i32, ptr %failures\n" ++
-      "  %any_fail = icmp sgt i32 %total_fail, 0\n" ++
-      "  %exit = select i1 %any_fail, i32 1, i32 0\n" ++
-      "  ret i32 %exit\n" ++
-      "}\n\n"
-    let runnerText := nameConsts ++ fmtConsts ++ mainHeader ++ testBody ++ mainFooter
-    { s with rawSections := s.rawSections.push runnerText }
+      [ .comment s!"Test: {f.name}",
+        .call (some s!"result.{i}") .i32 (.global f.name) [],
+        .binOp s!"is_pass.{i}" .icmpEq .i32 (.reg s!"result.{i}") (.intLit 0),
+        gep32 s!"name.{i}" (.array nameLen .i8) (.global s!"test.name.{f.name}") ]
+    -- Build all blocks via fold over (remaining tests, index, accumulated blocks)
+    -- Entry block gets alloca + store + first test dispatch
+    let (blocks, _, _) := testFns.foldl (fun (acc, idx, rest) _f =>
+      let i := toString idx
+      -- pass.i: print PASS, branch to next.i
+      let passInstrs : List LLVMInstr := [
+        gep32 s!"pfmt.{i}" (.array 10 .i8) (.global "fmt.test.pass"),
+        .callVariadic none .i32 printfOp [(.ptr, .reg s!"pfmt.{i}"), (.ptr, .reg s!"name.{i}")]
+      ]
+      let passBlock : LLVMBlock := ⟨s!"pass.{i}", passInstrs, .br s!"next.{i}"⟩
+      -- fail.i: print FAIL, increment failures, branch to next.i
+      let failInstrs : List LLVMInstr := [
+        gep32 s!"ffmt.{i}" (.array 10 .i8) (.global "fmt.test.fail"),
+        .callVariadic none .i32 printfOp [(.ptr, .reg s!"ffmt.{i}"), (.ptr, .reg s!"name.{i}")],
+        .load s!"old_fail.{i}" .i32 (.reg "failures"),
+        .binOp s!"new_fail.{i}" .add .i32 (.reg s!"old_fail.{i}") (.intLit 1),
+        .store .i32 (.reg s!"new_fail.{i}") (.reg "failures")
+      ]
+      let failBlock : LLVMBlock := ⟨s!"fail.{i}", failInstrs, .br s!"next.{i}"⟩
+      -- next.i: dispatch next test, or return exit code if last
+      let tail := rest.drop 1
+      let nextBlock : LLVMBlock := match tail with
+        | nextF :: _ =>
+          let nextI := toString (idx + 1)
+          ⟨s!"next.{i}", mkTestDispatch nextF nextI,
+           .condBr (.reg s!"is_pass.{nextI}") s!"pass.{nextI}" s!"fail.{nextI}"⟩
+        | [] =>
+          let footerInstrs : List LLVMInstr := [
+            .load "total_fail" .i32 (.reg "failures"),
+            .binOp "any_fail" .icmpSgt .i32 (.reg "total_fail") (.intLit 0),
+            .select "exit" (.reg "any_fail") .i32 (.intLit 1) (.intLit 0)
+          ]
+          ⟨s!"next.{i}", footerInstrs, .ret .i32 (some (.reg "exit"))⟩
+      (acc ++ [passBlock, failBlock, nextBlock], idx + 1, tail)
+    ) ([], 0, testFns)
+    -- Entry block: alloca failures + first test dispatch
+    let entryBlock : LLVMBlock := match testFns with
+      | f0 :: _ =>
+        let entryInstrs : List LLVMInstr :=
+          [.alloca "failures" .i32, .store .i32 (.intLit 0) (.reg "failures")]
+          ++ mkTestDispatch f0 "0"
+        ⟨"entry", entryInstrs, .condBr (.reg "is_pass.0") "pass.0" "fail.0"⟩
+      | [] => ⟨"entry", [], .ret .i32 (some (.intLit 0))⟩  -- unreachable
+    let allBlocks := [entryBlock] ++ blocks
+    let mainFn : LLVMFnDef := { name := "main", retTy := .i32, params := [], blocks := allBlocks }
+    { s with moduleFunctions := s.moduleFunctions.push mainFn }
 
 def emitSSAProgram (modules : List SModule) (testMode : Bool := false) (moduleFilter : Option String := none) : String :=
   let s : EmitSSAState := {}
