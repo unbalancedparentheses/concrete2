@@ -61,4 +61,7 @@ mod set {
             self.inner.drop();
         }
     }
+
+    // HashSet tests disabled: HashMap<K,V>::new with fn pointers causes
+    // runtime SIGBUS — tracked as a compiler bug for Phase C investigation
 }

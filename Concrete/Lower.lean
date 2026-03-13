@@ -1124,23 +1124,42 @@ partial def lowerStmt (stmt : CStmt) : LowerM Unit := do
           else (elseEndVars.find? fun (n, _) => n == name).map (·.2)
         let ty := preVal.ty
         -- Check if any branch modified this variable
+        -- Check if a value truly changed (ignore void→non-void spurious changes)
+        let isRealChange (newVal : SVal) (oldVal : SVal) : Bool :=
+          match newVal with
+          | SVal.unit => ty == .unit  -- void only counts as change for void vars
+          | .reg n1 _ => match oldVal with
+            | .reg n2 _ => n1 != n2
+            | _ => true
+          | _ => true
         let thenChanged := match thenVal with
-          | some v => match v, preVal with
-            | .reg n1 _, .reg n2 _ => n1 != n2
-            | _, _ => true
+          | some v => isRealChange v preVal
           | none => false
         let elseChanged := match elseVal with
-          | some v => match v, preVal with
-            | .reg n1 _, .reg n2 _ => n1 != n2
-            | _, _ => true
+          | some v => isRealChange v preVal
           | none => false
         if thenChanged || elseChanged then
           let mut incoming : List (SVal × String) := []
           match thenVal with
-          | some v => incoming := incoming ++ [(v, thenEndLabel)]
+          | some v =>
+            -- Use pre-if value for void in non-void context
+            match v with
+            | SVal.unit =>
+              if ty == .unit then
+                incoming := incoming ++ [(v, thenEndLabel)]
+              else
+                incoming := incoming ++ [(preVal, thenEndLabel)]
+            | _ => incoming := incoming ++ [(v, thenEndLabel)]
           | none => pure ()
           match elseVal with
-          | some v => incoming := incoming ++ [(v, elseEndLabel)]
+          | some v =>
+            match v with
+            | SVal.unit =>
+              if ty == .unit then
+                incoming := incoming ++ [(v, elseEndLabel)]
+              else
+                incoming := incoming ++ [(preVal, elseEndLabel)]
+            | _ => incoming := incoming ++ [(v, elseEndLabel)]
           | none => pure ()
           if incoming.length >= 2 then
             let isAgg ← isAggregateForPromotion ty
@@ -1159,10 +1178,11 @@ partial def lowerStmt (stmt : CStmt) : LowerM Unit := do
               let loadReg ← freshReg "if.load."
               emit (.load loadReg (.reg allocaReg ty) ty)
               setVar name (.reg loadReg ty)
-            else
+            else if ty != .unit then
               let phiReg ← freshReg "if.phi."
               emit (.phi phiReg incoming ty)
               setVar name (.reg phiReg ty)
+            else pure ()
           else if incoming.length == 1 then
             match incoming.head? with
             | some (v, _) => setVar name v

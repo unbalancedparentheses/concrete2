@@ -1279,6 +1279,7 @@ run_ok "$TESTDIR/regress_mut_field_writeback.con"     42
 run_ok "$TESTDIR/regress_char_bool_cast.con"          42
 run_ok "$TESTDIR/regress_ref_no_spill.con"            42
 run_ok "$TESTDIR/regress_string_field_access.con"     42
+run_ok "$TESTDIR/regress_void_phi.con"                0
 
 fi # end section: positive (regression tests)
 
@@ -1348,6 +1349,18 @@ check_collection_tests "BitSet" \
     test_len_is_logical_size test_beyond_logical_size test_unset_beyond_logical_size \
     test_non_monotonic_sets test_unset_preserves_len test_intersect_preserves_len \
     test_bitset_clear_reuse
+
+check_collection_tests "Option" \
+    test_option_some test_option_none test_option_match
+
+check_collection_tests "Result" \
+    test_result_ok test_result_err test_result_match
+
+check_collection_tests "Text" \
+    test_text_from_string test_text_get_unchecked test_text_eq test_text_empty
+
+check_collection_tests "Slice" \
+    test_slice_len test_slice_get_unchecked test_slice_empty test_mutslice_set_get
 
 fi # end section: collection
 

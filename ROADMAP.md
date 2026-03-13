@@ -404,6 +404,11 @@ Concrete is not only architecturally strong internally, but also operable, repro
    - use explicit artifacts to enable better test reuse and narrower recompilation instead of keeping all fast paths inside shell orchestration
 6. Prepare for the eventual runtime, safety, language-discipline, package-ecosystem, and operational-maturity phases by keeping package/build/docs/runtime decisions explicit instead of accidental.
 7. Prepare for eventual Lean-side proof of selected Concrete functions by keeping Core semantics small, explicit, and suitable as the proof boundary.
+8. Preserve a small set of long-horizon differentiator ideas in research without turning them into immediate roadmap thrash.
+   - first-class audit mode and authority tracing
+   - proof-carrying reports and proof-oriented module contracts
+   - verified FFI envelopes
+   - reproducible trust bundles
 
 ### Later
 

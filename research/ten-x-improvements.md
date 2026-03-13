@@ -164,6 +164,61 @@ Why this is 10x:
 - it turns compiler internals into legible engineering facts
 - it supports security review and proof work without adding language surface
 
+### 2.6. Authority tracing and audit mode
+
+Concrete could become much stronger if it develops a true "why does this code have this authority?" story.
+
+That would include:
+
+- tracing why a function requires `File`, `Network`, `Process`, or other capabilities
+- showing where that authority enters and where it propagates
+- surfacing those facts as reviewable compiler outputs rather than as ad hoc debugging
+
+The strongest form of this is a first-class audit mode:
+
+- not only "build this program"
+- but also "explain this program's authority, unsafe, trusted, allocation, cleanup, and layout boundaries"
+
+Why this is 10x:
+
+- it turns capability checking into a much more usable product surface
+- it makes least-authority review practical
+- it fits Concrete's identity better than almost any conventional feature addition
+
+### 2.7. Proof-carrying reports and proof-oriented module contracts
+
+If Concrete eventually supports proving selected programs in Lean, the next multiplier is to connect compiler reports and proof artifacts instead of keeping them as unrelated worlds.
+
+Long-horizon possibilities include:
+
+- reports that can point to proof obligations or proof artifacts for selected functions
+- module contracts that can later serve as proof-oriented specifications
+- a workflow where audit outputs, compiler artifacts, and proof artifacts reinforce each other instead of drifting apart
+
+Why this is 10x:
+
+- it extends the proof story into something operationally useful
+- it makes "provable code" visible through normal compiler tooling
+- it would be a very unusual systems-language capability
+
+### 2.8. Verified FFI envelopes
+
+FFI is one of the most important trust boundaries in any low-level language.
+
+Concrete could become much stronger if FFI declarations gradually carry richer ABI/layout contracts and clearer verification expectations.
+
+The long-horizon version is not "prove all FFI". It is:
+
+- make envelopes around foreign boundaries more explicit
+- improve layout and calling-convention reporting
+- later, connect some of those contracts to mechanized checks or proofs where the boundary is tractable
+
+Why this is 10x:
+
+- it directly strengthens one of the riskiest low-level boundaries
+- it fits Concrete's audit and proof identity
+- it improves trust without requiring a giant new language surface
+
 ### 3. A very strong stdlib style
 
 Concrete does not need a huge stdlib. It needs a *strong* one.
@@ -216,6 +271,14 @@ Part of that long-term tooling value is operational trust:
 - later, more reproducible builds and test runs
 - later, caching and narrower rerun scopes that still preserve inspectability
 
+It also opens the door to stronger trust bundles:
+
+- source revision plus artifact hashes
+- report outputs
+- later, proof references for selected verified components
+
+That kind of reproducible trust bundle would be a strong fit for Concrete's long-term identity.
+
 ### 5. A clean hosted vs freestanding split
 
 Concrete will eventually be much stronger if it can support a clear split between:
@@ -257,6 +320,25 @@ This is also one of the clearest security multipliers available to Concrete:
 Part of that improvement is shrinking string-based semantic logic in the compiler itself. A language is easier to audit when ordinary names stay ordinary and special behavior is carried by explicit identities and boundaries instead of raw string matching.
 
 See [capability-sandboxing.md](capability-sandboxing.md).
+
+## Long-Horizon Experimental Ideas Worth Preserving
+
+These are not immediate roadmap items, but they are worth keeping visible because they fit Concrete unusually well:
+
+1. **Compiler as audit machine**
+   - first-class audit mode over authority, unsafe, trusted, allocation, cleanup, layout, and monomorphization
+2. **Authority tracing**
+   - explain why capabilities are required and how they flow
+3. **Proof-carrying reports**
+   - connect compiler reports to proof obligations or proof artifacts for selected functions
+4. **Proof-oriented module contracts**
+   - let selected modules expose specs that later Lean proofs can target
+5. **Verified FFI envelopes**
+   - strengthen foreign boundaries with richer contracts and better checking
+6. **Reproducible trust bundles**
+   - package artifact hashes, reports, and later proof references together
+
+The rule for all of them is the same: they should make Concrete more explicit, more auditable, more explainable, or more provable. If an idea does not do that, it is probably not a good Concrete idea.
 
 Closely related:
 
