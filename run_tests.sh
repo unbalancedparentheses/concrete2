@@ -1040,6 +1040,84 @@ else
     FAIL=$((FAIL + 1))
 fi
 
+# -- Integration test: all report modes on one file --
+
+# Caps with why traces
+report_output=$($COMPILER "$TESTDIR/report_integration.con" --report caps 2>&1)
+if echo "$report_output" | grep -q "Alloc.*<- calls vec_new"; then
+    echo "  ok  report_integration.con --report caps shows Alloc why trace"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  report_integration.con --report caps missing Alloc why trace"
+    echo "$report_output"
+    FAIL=$((FAIL + 1))
+fi
+if echo "$report_output" | grep -q "Unsafe.*<- calls raw_extern"; then
+    echo "  ok  report_integration.con --report caps shows Unsafe why trace"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  report_integration.con --report caps missing Unsafe why trace"
+    echo "$report_output"
+    FAIL=$((FAIL + 1))
+fi
+
+# Unsafe with trust boundary analysis
+report_output=$($COMPILER "$TESTDIR/report_integration.con" --report unsafe 2>&1)
+if echo "$report_output" | grep -q "Trust boundary analysis"; then
+    echo "  ok  report_integration.con --report unsafe shows Trust boundary analysis"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  report_integration.con --report unsafe missing Trust boundary analysis"
+    echo "$report_output"
+    FAIL=$((FAIL + 1))
+fi
+if echo "$report_output" | grep -q "wraps: extern raw_extern"; then
+    echo "  ok  report_integration.con --report unsafe shows wraps extern"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  report_integration.con --report unsafe missing wraps extern"
+    echo "$report_output"
+    FAIL=$((FAIL + 1))
+fi
+
+# Alloc report
+report_output=$($COMPILER "$TESTDIR/report_integration.con" --report alloc 2>&1)
+if echo "$report_output" | grep -q "allocates: vec_new"; then
+    echo "  ok  report_integration.con --report alloc shows vec_new allocation"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  report_integration.con --report alloc missing vec_new allocation"
+    echo "$report_output"
+    FAIL=$((FAIL + 1))
+fi
+if echo "$report_output" | grep -q "caller responsible for cleanup"; then
+    echo "  ok  report_integration.con --report alloc shows returned-alloc note"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  report_integration.con --report alloc missing returned-alloc note"
+    echo "$report_output"
+    FAIL=$((FAIL + 1))
+fi
+if echo "$report_output" | grep -q "defer free"; then
+    echo "  ok  report_integration.con --report alloc shows defer free"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  report_integration.con --report alloc missing defer free"
+    echo "$report_output"
+    FAIL=$((FAIL + 1))
+fi
+
+# Layout, interface, mono — just verify they don't crash
+for mode in layout interface mono; do
+    if $COMPILER "$TESTDIR/report_integration.con" --report "$mode" >/dev/null 2>&1; then
+        echo "  ok  report_integration.con --report $mode succeeds"
+        PASS=$((PASS + 1))
+    else
+        echo "FAIL  report_integration.con --report $mode crashed"
+        FAIL=$((FAIL + 1))
+    fi
+done
+
 fi # end section: report
 
 # === Codegen differential tests ===

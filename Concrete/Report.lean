@@ -32,7 +32,231 @@ private def padNum (n : Nat) (w : Nat) : String :=
   else String.ofList (List.replicate (w - s.length) ' ') ++ s
 
 -- ============================================================
--- Report 1: Capability Summary (--report caps)
+-- Body-walking infrastructure
+-- ============================================================
+-- Shared recursive traversal of Core IR (CExpr/CStmt/CMatchArm)
+-- for collecting call sites, defer nodes, pointer ops, etc.
+
+/-- A call site found in a function body. -/
+structure CallSite where
+  callee : String
+  deriving BEq
+
+/-- Info about allocation-related activity in a function body. -/
+structure AllocInfo where
+  allocCalls : List String   -- intrinsic names: alloc, vec_new, etc.
+  freeCalls  : List String   -- intrinsic names: free, destroy, vec_free, etc.
+  deferExprs : List String   -- descriptions of deferred expressions
+  hasAllocCall : Bool        -- CExpr.allocCall node (with(Alloc = ...))
+
+mutual
+partial def collectCallsExpr (e : CExpr) : List String :=
+  match e with
+  | .call fn _ args _ => [fn] ++ args.foldl (fun acc a => acc ++ collectCallsExpr a) []
+  | .binOp _ l r _ => collectCallsExpr l ++ collectCallsExpr r
+  | .unaryOp _ e _ => collectCallsExpr e
+  | .structLit _ _ fields _ => fields.foldl (fun acc (_, v) => acc ++ collectCallsExpr v) []
+  | .fieldAccess obj _ _ => collectCallsExpr obj
+  | .enumLit _ _ _ fields _ => fields.foldl (fun acc (_, v) => acc ++ collectCallsExpr v) []
+  | .match_ scrut arms _ => collectCallsExpr scrut ++ arms.foldl (fun acc a => acc ++ collectCallsArm a) []
+  | .borrow inner _ | .borrowMut inner _ | .deref inner _ => collectCallsExpr inner
+  | .arrayLit elems _ => elems.foldl (fun acc e => acc ++ collectCallsExpr e) []
+  | .arrayIndex arr idx _ => collectCallsExpr arr ++ collectCallsExpr idx
+  | .cast inner _ | .try_ inner _ => collectCallsExpr inner
+  | .allocCall inner alloc _ => collectCallsExpr inner ++ collectCallsExpr alloc
+  | .whileExpr cond body elseBody _ =>
+    collectCallsExpr cond ++ collectCallsStmts body ++ collectCallsStmts elseBody
+  | _ => []  -- intLit, floatLit, boolLit, strLit, charLit, ident, fnRef
+
+partial def collectCallsArm (arm : CMatchArm) : List String :=
+  match arm with
+  | .enumArm _ _ _ body => collectCallsStmts body
+  | .litArm v body => collectCallsExpr v ++ collectCallsStmts body
+  | .varArm _ _ body => collectCallsStmts body
+
+partial def collectCallsStmt (s : CStmt) : List String :=
+  match s with
+  | .letDecl _ _ _ v => collectCallsExpr v
+  | .assign _ v => collectCallsExpr v
+  | .return_ (some v) _ => collectCallsExpr v
+  | .return_ none _ => []
+  | .expr e => collectCallsExpr e
+  | .ifElse c t el =>
+    collectCallsExpr c ++ collectCallsStmts t ++
+    match el with | some stmts => collectCallsStmts stmts | none => []
+  | .while_ c body _ step =>
+    collectCallsExpr c ++ collectCallsStmts body ++ collectCallsStmts step
+  | .fieldAssign obj _ v => collectCallsExpr obj ++ collectCallsExpr v
+  | .derefAssign t v => collectCallsExpr t ++ collectCallsExpr v
+  | .arrayIndexAssign arr idx v =>
+    collectCallsExpr arr ++ collectCallsExpr idx ++ collectCallsExpr v
+  | .break_ (some v) _ => collectCallsExpr v
+  | .break_ none _ | .continue_ _ => []
+  | .defer body => collectCallsExpr body
+  | .borrowIn _ _ _ _ _ body => collectCallsStmts body
+
+partial def collectCallsStmts (ss : List CStmt) : List String :=
+  ss.foldl (fun acc s => acc ++ collectCallsStmt s) []
+
+-- Defer collection
+
+partial def collectDefersExpr (e : CExpr) : List String :=
+  match e with
+  | .call _ _ args _ => args.foldl (fun acc a => acc ++ collectDefersExpr a) []
+  | .binOp _ l r _ => collectDefersExpr l ++ collectDefersExpr r
+  | .unaryOp _ e _ => collectDefersExpr e
+  | .structLit _ _ fields _ => fields.foldl (fun acc (_, v) => acc ++ collectDefersExpr v) []
+  | .fieldAccess obj _ _ => collectDefersExpr obj
+  | .enumLit _ _ _ fields _ => fields.foldl (fun acc (_, v) => acc ++ collectDefersExpr v) []
+  | .match_ scrut arms _ =>
+    collectDefersExpr scrut ++ arms.foldl (fun acc a => acc ++ collectDefersArm a) []
+  | .borrow inner _ | .borrowMut inner _ | .deref inner _ => collectDefersExpr inner
+  | .arrayLit elems _ => elems.foldl (fun acc e => acc ++ collectDefersExpr e) []
+  | .arrayIndex arr idx _ => collectDefersExpr arr ++ collectDefersExpr idx
+  | .cast inner _ | .try_ inner _ => collectDefersExpr inner
+  | .allocCall inner alloc _ => collectDefersExpr inner ++ collectDefersExpr alloc
+  | .whileExpr cond body elseBody _ =>
+    collectDefersExpr cond ++ collectDefersStmts body ++ collectDefersStmts elseBody
+  | _ => []
+
+partial def collectDefersArm (arm : CMatchArm) : List String :=
+  match arm with
+  | .enumArm _ _ _ body => collectDefersStmts body
+  | .litArm v body => collectDefersExpr v ++ collectDefersStmts body
+  | .varArm _ _ body => collectDefersStmts body
+
+partial def collectDefersStmt (s : CStmt) : List String :=
+  match s with
+  | .defer body =>
+    -- Describe the deferred expression
+    let desc := match body with
+      | .call fn _ _ _ => s!"defer {fn}(...)"
+      | _ => "defer <expr>"
+    [desc] ++ collectDefersExpr body
+  | .letDecl _ _ _ v => collectDefersExpr v
+  | .assign _ v => collectDefersExpr v
+  | .return_ (some v) _ => collectDefersExpr v
+  | .return_ none _ => []
+  | .expr e => collectDefersExpr e
+  | .ifElse c t el =>
+    collectDefersExpr c ++ collectDefersStmts t ++
+    match el with | some stmts => collectDefersStmts stmts | none => []
+  | .while_ c body _ step =>
+    collectDefersExpr c ++ collectDefersStmts body ++ collectDefersStmts step
+  | .fieldAssign obj _ v => collectDefersExpr obj ++ collectDefersExpr v
+  | .derefAssign t v => collectDefersExpr t ++ collectDefersExpr v
+  | .arrayIndexAssign arr idx v =>
+    collectDefersExpr arr ++ collectDefersExpr idx ++ collectDefersExpr v
+  | .break_ (some v) _ => collectDefersExpr v
+  | .break_ none _ | .continue_ _ => []
+  | .borrowIn _ _ _ _ _ body => collectDefersStmts body
+
+partial def collectDefersStmts (ss : List CStmt) : List String :=
+  ss.foldl (fun acc s => acc ++ collectDefersStmt s) []
+
+-- Raw pointer operation detection
+
+partial def hasRawPtrOpsExpr (e : CExpr) : Bool :=
+  match e with
+  | .deref inner ty =>
+    match ty with
+    | .ptrMut _ | .ptrConst _ => true
+    | _ => hasRawPtrOpsExpr inner
+  | .call _ _ args _ => args.any hasRawPtrOpsExpr
+  | .binOp _ l r _ => hasRawPtrOpsExpr l || hasRawPtrOpsExpr r
+  | .unaryOp _ e _ => hasRawPtrOpsExpr e
+  | .structLit _ _ fields _ => fields.any (fun (_, v) => hasRawPtrOpsExpr v)
+  | .fieldAccess obj _ _ => hasRawPtrOpsExpr obj
+  | .enumLit _ _ _ fields _ => fields.any (fun (_, v) => hasRawPtrOpsExpr v)
+  | .match_ scrut arms _ =>
+    hasRawPtrOpsExpr scrut || arms.any hasRawPtrOpsArm
+  | .borrow inner _ | .borrowMut inner _ => hasRawPtrOpsExpr inner
+  | .arrayLit elems _ => elems.any hasRawPtrOpsExpr
+  | .arrayIndex arr idx _ => hasRawPtrOpsExpr arr || hasRawPtrOpsExpr idx
+  | .cast inner _ | .try_ inner _ => hasRawPtrOpsExpr inner
+  | .allocCall inner alloc _ => hasRawPtrOpsExpr inner || hasRawPtrOpsExpr alloc
+  | .whileExpr cond body elseBody _ =>
+    hasRawPtrOpsExpr cond || hasRawPtrOpsStmts body || hasRawPtrOpsStmts elseBody
+  | _ => false
+
+partial def hasRawPtrOpsArm (arm : CMatchArm) : Bool :=
+  match arm with
+  | .enumArm _ _ _ body => hasRawPtrOpsStmts body
+  | .litArm v body => hasRawPtrOpsExpr v || hasRawPtrOpsStmts body
+  | .varArm _ _ body => hasRawPtrOpsStmts body
+
+partial def hasRawPtrOpsStmt (s : CStmt) : Bool :=
+  match s with
+  | .derefAssign _ _ => true
+  | .letDecl _ _ _ v => hasRawPtrOpsExpr v
+  | .assign _ v => hasRawPtrOpsExpr v
+  | .return_ (some v) _ => hasRawPtrOpsExpr v
+  | .return_ none _ => false
+  | .expr e => hasRawPtrOpsExpr e
+  | .ifElse c t el =>
+    hasRawPtrOpsExpr c || hasRawPtrOpsStmts t ||
+    match el with | some stmts => hasRawPtrOpsStmts stmts | none => false
+  | .while_ c body _ step =>
+    hasRawPtrOpsExpr c || hasRawPtrOpsStmts body || hasRawPtrOpsStmts step
+  | .fieldAssign obj _ v => hasRawPtrOpsExpr obj || hasRawPtrOpsExpr v
+  | .arrayIndexAssign arr idx v =>
+    hasRawPtrOpsExpr arr || hasRawPtrOpsExpr idx || hasRawPtrOpsExpr v
+  | .break_ (some v) _ => hasRawPtrOpsExpr v
+  | .break_ none _ | .continue_ _ => false
+  | .defer body => hasRawPtrOpsExpr body
+  | .borrowIn _ _ _ _ _ body => hasRawPtrOpsStmts body
+
+partial def hasRawPtrOpsStmts (ss : List CStmt) : Bool :=
+  ss.any hasRawPtrOpsStmt
+end
+
+-- ============================================================
+-- Callee CapSet lookup
+-- ============================================================
+
+/-- A flat map of function/extern names → CapSet, built once per report. -/
+abbrev CapLookup := List (String × CapSet)
+
+private partial def buildCapLookupModule (m : CModule) : CapLookup :=
+  let fnEntries := m.functions.map fun f => (f.name, f.capSet)
+  let externEntries := m.externFns.map fun (n, _, _, trusted) =>
+    (n, if trusted then .empty else .concrete [unsafeCapName])
+  fnEntries ++ externEntries ++ m.submodules.foldl (fun acc sub =>
+    acc ++ buildCapLookupModule sub) []
+
+private def buildCapLookup (modules : List CModule) : CapLookup :=
+  modules.foldl (fun acc m => acc ++ buildCapLookupModule m) []
+
+/-- Look up a callee's capability set. Checks user fns, externs, then intrinsics. -/
+private def lookupCalleeCap (lookup : CapLookup) (name : String) : Option CapSet :=
+  match lookup.find? (fun (n, _) => n == name) with
+  | some (_, cs) => some cs
+  | none =>
+    match resolveIntrinsic name with
+    | some iid =>
+      match iid.capability with
+      | some cap => some (.concrete [cap])
+      | none => some .empty
+    | none => none
+
+/-- Classify a callee for display purposes. -/
+private def calleeTag (lookup : CapLookup) (name : String) : String :=
+  match lookup.find? (fun (n, _) => n == name) with
+  | some _ => ""
+  | none =>
+    if (resolveIntrinsic name).isSome then " (intrinsic)"
+    else " (unknown)"
+
+-- ============================================================
+-- Extern name lookup (for unsafe body analysis)
+-- ============================================================
+
+private partial def collectExternNames (m : CModule) : List String :=
+  m.externFns.map (fun (n, _, _, _) => n) ++
+  m.submodules.foldl (fun acc sub => acc ++ collectExternNames sub) []
+
+-- ============================================================
+-- Report 1: Capability Summary with "why" traces (--report caps)
 -- ============================================================
 
 /-- Count functions across module tree. -/
@@ -46,12 +270,36 @@ private partial def countModulePure (m : CModule) : Nat :=
 private partial def countModuleExterns (m : CModule) : Nat :=
   m.externFns.length + m.submodules.foldl (fun acc sub => acc + countModuleExterns sub) 0
 
-private partial def capReportModule (m : CModule) (indent : String) : String :=
+/-- Build capability "why" trace lines for a function.
+    For each concrete cap the function requires, find which direct callees
+    contribute that cap. -/
+private def capWhyTrace (lookup : CapLookup) (f : CFnDef) (indent : String) : List String :=
+  let (concreteCaps, _) := f.capSet.normalize
+  if concreteCaps.isEmpty then []
+  else
+    let callees := collectCallsStmts f.body |>.eraseDups
+    concreteCaps.filterMap fun cap =>
+      -- Find callees that require this cap
+      let contributors := callees.filter fun callee =>
+        match lookupCalleeCap lookup callee with
+        | some cs =>
+          let (calleeCaps, _) := cs.normalize
+          calleeCaps.contains cap
+        | none => false
+      let contribStr := if contributors.isEmpty then "<- declared"
+        else
+          let tagged := contributors.map fun c => s!"{c}{calleeTag lookup c}"
+          s!"<- calls {", ".intercalate tagged}"
+      some s!"{indent}    {padRight cap 10} {contribStr}"
+
+private partial def capReportModule (lookup : CapLookup) (m : CModule) (indent : String) : String :=
   let header := s!"{indent}module {m.name}:"
-  let fnLines := m.functions.map fun f =>
+  let fnLines := m.functions.foldl (fun acc f =>
     let pubStr := if f.isPublic then "pub " else "    "
     let capsStr := ppCapSet f.capSet
-    s!"{indent}  {pubStr}{f.name} : {capsStr}"
+    let mainLine := s!"{indent}  {pubStr}{f.name} : {capsStr}"
+    let traceLines := capWhyTrace lookup f indent
+    acc ++ [mainLine] ++ traceLines) []
   let trustedExterns := m.externFns.filter fun (_, _, _, t) => t
   let untrustedExterns := m.externFns.filter fun (_, _, _, t) => !t
   let externLines := if untrustedExterns.isEmpty then []
@@ -60,14 +308,15 @@ private partial def capReportModule (m : CModule) (indent : String) : String :=
   let externLines := externLines ++ (if trustedExterns.isEmpty then []
     else [s!"{indent}  trusted extern:"] ++ trustedExterns.map fun (n, _, _, _) =>
       s!"{indent}      {n} : (none)")
-  let subLines := m.submodules.map (capReportModule · (indent ++ "  "))
+  let subLines := m.submodules.map (capReportModule lookup · (indent ++ "  "))
   let body := fnLines ++ externLines ++ subLines
   if body.isEmpty then header
   else s!"{header}\n{"\n".intercalate body}"
 
 def capabilityReport (modules : List CModule) : String :=
   let header := "=== Capability Summary ==="
-  let body := modules.map (capReportModule · "")
+  let lookup := buildCapLookup modules
+  let body := modules.map (capReportModule lookup · "")
   let totalFns := modules.foldl (fun acc m => acc + countModuleFns m) 0
   let pureFns := modules.foldl (fun acc m => acc + countModulePure m) 0
   let externCount := modules.foldl (fun acc m => acc + countModuleExterns m) 0
@@ -75,13 +324,8 @@ def capabilityReport (modules : List CModule) : String :=
   s!"{header}\n\n{"\n\n".intercalate body}\n{summary}\n"
 
 -- ============================================================
--- Report 2: Unsafe Signature Summary (--report unsafe)
---
--- Reports functions whose *signatures* involve Unsafe:
---   - declared Unsafe capability
---   - extern functions (implicit Unsafe)
---   - raw pointer parameter/return types
--- Does not inspect function bodies for unsafe operations.
+-- Report 2: Unsafe Signature Summary with trust boundary
+--           analysis (--report unsafe)
 -- ============================================================
 
 private def hasUnsafeCap (cs : CapSet) : Bool :=
@@ -107,13 +351,32 @@ private partial def unsafeCounts (m : CModule)
     (a + a', b + b', c + c', d + d', e + e'))
     (unsafeFns, ptrFns, externFns, trustedExterns, trustedFns)
 
-private partial def unsafeReportModule (m : CModule) (indent : String) : Option String :=
+/-- Analyze what a trusted function wraps — scan its body for unsafe operations. -/
+private def trustBoundaryAnalysis (externNames : List String) (f : CFnDef) : List String :=
+  let callees := collectCallsStmts f.body |>.eraseDups
+  let ops : List String := []
+  -- Check for raw pointer operations in body
+  let ops := if hasRawPtrOpsStmts f.body then ops ++ ["pointer dereference"] else ops
+  -- Check for calls to extern functions
+  let externCalls := callees.filter fun c => externNames.contains c
+  let ops := if externCalls.isEmpty then ops
+    else ops ++ externCalls.map fun c => s!"extern {c}"
+  -- Check for calls to functions with Unsafe capability
+  -- (this is approximate — we check if callee name contains known unsafe patterns)
+  let ops := if callees.any (fun c => c == "alloc" || c == "free") then
+    ops ++ ["memory management"]
+  else ops
+  if ops.isEmpty then ["(safe body — no raw ops detected)"]
+  else ops
+
+private partial def unsafeReportModule (externNames : List String)
+    (m : CModule) (indent : String) : Option String :=
   let unsafeFns := m.functions.filter fun f => hasUnsafeCap f.capSet
   let externFns := m.externFns.filter fun (_, _, _, t) => !t
   let trustedExternFns := m.externFns.filter fun (_, _, _, t) => t
   let ptrFns := m.functions.filter fnUsesRawPtrs
   let trustedFns := m.functions.filter fun f => f.isTrusted
-  let subReports := m.submodules.filterMap (unsafeReportModule · (indent ++ "  "))
+  let subReports := m.submodules.filterMap (unsafeReportModule externNames · (indent ++ "  "))
   if unsafeFns.isEmpty && externFns.isEmpty && trustedExternFns.isEmpty && ptrFns.isEmpty && trustedFns.isEmpty && subReports.isEmpty then
     none
   else
@@ -134,24 +397,28 @@ private partial def unsafeReportModule (m : CModule) (indent : String) : Option 
       else lines ++ [s!"{indent}  Functions with raw pointer signatures:"] ++
         ptrFns.map fun f =>
           s!"{indent}    fn {f.name}({ppTyList f.params}) -> {tyToStr f.retTy}"
-    -- Split trusted functions into standalone fns vs impl methods
+    -- Trusted boundaries with body analysis
     let trustedStandalone := trustedFns.filter fun f => f.trustedImplOrigin.isNone
     let trustedImplFns := trustedFns.filter fun f => f.trustedImplOrigin.isSome
-    -- Group impl methods by origin type name
     let trustedImplNames := (trustedImplFns.filterMap (·.trustedImplOrigin)).eraseDups
     let lines := if trustedStandalone.isEmpty && trustedImplFns.isEmpty then lines
       else
-        let lines := lines ++ [s!"{indent}  Trusted boundaries:"]
+        let lines := lines ++ [s!"{indent}  Trust boundary analysis:"]
         let lines := if trustedStandalone.isEmpty then lines
-          else lines ++ trustedStandalone.map fun f =>
-            s!"{indent}    trusted fn {f.name}({ppTyList f.params}) -> {tyToStr f.retTy}"
+          else trustedStandalone.foldl (fun lines f =>
+            let ops := trustBoundaryAnalysis externNames f
+            lines ++ [s!"{indent}    trusted fn {f.name}:"] ++
+              ops.map fun op => s!"{indent}      wraps: {op}"
+          ) lines
         let lines := trustedImplNames.foldl (fun lines implName =>
           let methods := trustedImplFns.filter fun f => f.trustedImplOrigin == some implName
-          let methodLines := methods.map fun f =>
-            -- Strip "TypeName_" prefix from method name for display
+          let methodLines := methods.foldl (fun acc f =>
             let shortName := if f.name.startsWith (implName ++ "_") then
               f.name.drop (implName.length + 1) else f.name
-            s!"{indent}      fn {shortName}({ppTyList f.params}) -> {tyToStr f.retTy}"
+            let ops := trustBoundaryAnalysis externNames f
+            acc ++ [s!"{indent}      fn {shortName}:"] ++
+              ops.map fun op => s!"{indent}        wraps: {op}"
+          ) []
           lines ++ [s!"{indent}    trusted impl {implName}:"] ++ methodLines
         ) lines
         lines
@@ -160,7 +427,8 @@ private partial def unsafeReportModule (m : CModule) (indent : String) : Option 
 
 def unsafeReport (modules : List CModule) : String :=
   let header := "=== Unsafe Signature Summary ==="
-  let body := modules.filterMap (unsafeReportModule · "")
+  let externNames := modules.foldl (fun acc m => acc ++ collectExternNames m) []
+  let body := modules.filterMap (unsafeReportModule externNames · "")
   let (unsafeCount, ptrCount, externCount, trustedExternCount, trustedCount) :=
     modules.foldl (fun (a, b, c, d, e) m =>
       let (a', b', c', d', e') := unsafeCounts m
@@ -369,6 +637,101 @@ def monoReport (preMono postMono : List CModule) : String :=
       | _ => s!"  {n}"
   let body := statsLines ++ specLines
   s!"{header}\n\n{"\n".intercalate body}\n"
+
+-- ============================================================
+-- Report 6: Allocation/Cleanup Summary (--report alloc)
+-- ============================================================
+
+/-- Intrinsic names that represent allocation. -/
+private def allocIntrinsics : List String :=
+  ["alloc", "vec_new", "Vec_new"]
+
+/-- Intrinsic names that represent deallocation/cleanup. -/
+private def freeIntrinsics : List String :=
+  ["free", "destroy", "vec_free", "Vec_free", "drop_string", "String_drop"]
+
+/-- Is this call name an alloc-family intrinsic? -/
+private def isAllocCall (name : String) : Bool :=
+  allocIntrinsics.contains name ||
+  -- Also catch Type_destroy patterns as not-alloc
+  match resolveIntrinsic name with
+  | some .alloc | some .vecNew => true
+  | _ => false
+
+/-- Is this call name a free/cleanup-family intrinsic? -/
+private def isFreeCall (name : String) : Bool :=
+  freeIntrinsics.contains name ||
+  name.endsWith "_destroy" ||
+  match resolveIntrinsic name with
+  | some .free | some .destroy | some .vecFree | some .dropString => true
+  | _ => false
+
+/-- Check if a return type suggests the allocation is returned to the caller. -/
+private def returnsAllocation : Ty → Bool
+  | .heap _ | .heapArray _ => true
+  | .generic "Vec" _ => true
+  | _ => false
+
+/-- Analyze allocation patterns in a single function. -/
+private def analyzeFnAlloc (f : CFnDef) : Option String :=
+  let callees := collectCallsStmts f.body |>.eraseDups
+  let allocs := callees.filter isAllocCall
+  let frees := callees.filter isFreeCall
+  let defers := collectDefersStmts f.body
+  -- Skip functions with no allocation activity
+  if allocs.isEmpty && frees.isEmpty && defers.isEmpty then none
+  else
+    let lines : List String := [s!"  fn {f.name}:"]
+    let lines := if allocs.isEmpty then lines
+      else lines ++ [s!"    allocates: {", ".intercalate allocs}"]
+    let lines := if frees.isEmpty then lines
+      else lines ++ [s!"    frees: {", ".intercalate frees}"]
+    let lines := if defers.isEmpty then lines
+      else lines ++ defers.map fun d => s!"    cleanup: {d}"
+    -- Warn if allocates but no free or defer
+    let lines := if !allocs.isEmpty && frees.isEmpty && defers.isEmpty then
+      if returnsAllocation f.retTy then
+        lines ++ [s!"    note: allocates and returns — caller responsible for cleanup"]
+      else
+        lines ++ [s!"    WARNING: allocates but has no matching free/defer"]
+    else lines
+    some ("\n".intercalate lines)
+
+private partial def allocReportModule (m : CModule) (indent : String) : Option String :=
+  let fnReports := m.functions.filterMap analyzeFnAlloc
+  let subReports := m.submodules.filterMap (allocReportModule · (indent ++ "  "))
+  if fnReports.isEmpty && subReports.isEmpty then none
+  else
+    let header := s!"{indent}module {m.name}:"
+    let body := fnReports ++ subReports
+    some (s!"{header}\n{"\n".intercalate body}")
+
+/-- Count allocation-related functions across module tree. -/
+private partial def allocCounts (m : CModule) : Nat × Nat × Nat :=
+  let fnResults := m.functions.map fun f =>
+    let callees := collectCallsStmts f.body |>.eraseDups
+    let allocs := callees.filter isAllocCall
+    let frees := callees.filter isFreeCall
+    let defers := collectDefersStmts f.body
+    (allocs.isEmpty, frees.isEmpty, defers.isEmpty)
+  let allocating := (fnResults.filter fun (a, _, _) => !a).length
+  let freeing := (fnResults.filter fun (_, f, _) => !f).length
+  let deferring := (fnResults.filter fun (_, _, d) => !d).length
+  m.submodules.foldl (fun (a, f, d) sub =>
+    let (a', f', d') := allocCounts sub
+    (a + a', f + f', d + d')) (allocating, freeing, deferring)
+
+def allocReport (modules : List CModule) : String :=
+  let header := "=== Allocation/Cleanup Summary ==="
+  let body := modules.filterMap (allocReportModule · "")
+  let (allocCount, freeCount, deferCount) :=
+    modules.foldl (fun (a, f, d) m =>
+      let (a', f', d') := allocCounts m
+      (a + a', f + f', d + d')) (0, 0, 0)
+  if body.isEmpty then s!"{header}\n\nNo allocation activity found.\n"
+  else
+    let summary := s!"\nTotals: {allocCount} functions allocate, {freeCount} free, {deferCount} use defer"
+    s!"{header}\n\n{"\n\n".intercalate body}\n{summary}\n"
 
 end Report
 end Concrete

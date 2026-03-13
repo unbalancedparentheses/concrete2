@@ -3,7 +3,7 @@ import Concrete
 open Concrete
 
 def usage : String :=
-  "Usage: concrete <file.con> [-o output] [--emit-llvm] [--emit-core] [--emit-ssa] [--test] [--test --module <name>] [--report caps|unsafe|layout|interface|mono] [--fmt]"
+  "Usage: concrete <file.con> [-o output] [--emit-llvm] [--emit-core] [--emit-ssa] [--test] [--test --module <name>] [--report caps|unsafe|layout|interface|alloc|mono] [--fmt]"
 
 def writeFile (path : String) (content : String) : IO Unit := do
   IO.FS.writeFile ⟨path⟩ content
@@ -236,6 +236,9 @@ def compileAndReport (inputPath : String) (reportType : String) : IO UInt32 := d
     if reportType == "layout" then
       IO.println (Report.layoutReport elabProg.coreModules)
       return 0
+    if reportType == "alloc" then
+      IO.println (Report.allocReport elabProg.coreModules)
+      return 0
     if reportType == "mono" then
       match Pipeline.monomorphize elabProg with
       | .error ds =>
@@ -244,7 +247,7 @@ def compileAndReport (inputPath : String) (reportType : String) : IO UInt32 := d
       | .ok mono =>
         IO.println (Report.monoReport elabProg.coreModules mono.coreModules)
         return 0
-    IO.eprintln s!"Unknown report type: {reportType}. Use: caps, unsafe, layout, interface, mono"
+    IO.eprintln s!"Unknown report type: {reportType}. Use: caps, unsafe, layout, interface, alloc, mono"
     return 1
 
 def main (args : List String) : IO UInt32 := do
