@@ -94,6 +94,12 @@ Phases A and B are done. Phase C is active. The LL(1) grammar checker is in CI, 
      - start with one or two concrete entrypoints (for example `--stdlib-module map` / `--stdlib-module fs`) before generalizing the runner shape
      - deepen `fs`, `net`, and `process` failure-path and integration tests
      - add more failure-path and integration tests across all collections
+     - add a small set of larger integration-style tests instead of only micro-regressions:
+       - file -> parse -> transform -> fmt -> write round-trip
+       - collection-heavy real workload using multiple collection types together
+       - audit/report integration program with capabilities, allocation, and trusted boundaries
+       - env/process-style program with parsing and subprocess handling
+       - network buffer pipeline using TCP + bytes/slice + parsing/formatting
      - keep error, handle, and checked/unchecked conventions uniform
    - constraints:
      - do not let API growth outrun failure-path coverage
@@ -235,6 +241,7 @@ Remaining:
    - less brittle diagnostic assertions
    - define a minimal formatter scope and supported workflow
 6. deepen failure-path and integration testing in systems modules
+   - include a small set of larger integration programs, not only per-module unit-style tests
 7. make report assertions part of ordinary hardening
 8. start turning reports into a clearer audit-mode product surface
    - authority/capability "why" traces
