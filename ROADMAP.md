@@ -141,8 +141,11 @@ Phases A and B are done. Phase C is active. The LL(1) grammar checker is in CI, 
      - replace raw LLVM string emission with a structured LLVM backend
      - strengthen SSA/backend contract
      - turn explicit pipeline artifacts into reusable tooling/caching building blocks
+     - make validated Core a first-class proof-oriented artifact boundary after `CoreCheck` and before `Mono`
+     - preserve source-to-Core traceability well enough that selected functions can later be understood and proved in Lean
      - stage the user-program proof workflow explicitly:
        - formalize a small pure Core fragment
+       - define ProofCore as a restricted, proof-oriented view of validated Core rather than a separate rival semantic IR
        - manually embed selected Concrete functions against that Core
        - prove first concrete examples
        - only later add export/tooling for Lean-side proof workflows
@@ -228,25 +231,11 @@ Done:
 1. LL(1) grammar checker in CI (Python, C, Rust implementations; runs in parallel with build)
 2. linearity checker fixed for generic types (isCopyType, self-consumption, trusted loop relaxation, if-return divergence)
 3. builtin HashMap interception retired (~1,400 lines deleted; HashMap is now an ordinary stdlib type)
-
-Remaining:
-4. build module-targeted stdlib test infrastructure
-   - module-aware and subsystem-aware entrypoints instead of only shell-level filtering
-   - stdlib-aware targeted execution under an explicit module/project context
-   - clearer visibility into what partial runs did and did not exercise
-   - narrower recompilation and rerun scopes driven by explicit dependencies rather than ad-hoc script sections
-5. improve diagnostics fidelity, presentation, and formatter baseline
-   - better range precision
-   - stronger notes/secondary labels
-   - less brittle diagnostic assertions
-   - define a minimal formatter scope and supported workflow
-6. deepen failure-path and integration testing in systems modules
-   - include a small set of larger integration programs, not only per-module unit-style tests
-7. make report assertions part of ordinary hardening
-8. start turning reports into a clearer audit-mode product surface
-   - authority/capability "why" traces
-   - `Unsafe` / `trusted` summaries
-   - allocation / cleanup summaries
+4. module-targeted stdlib test infrastructure (`--stdlib-module <name>` in run_tests.sh)
+5. diagnostics/formatter polish (empty `{}` edge case, deprecation fixes, compiler warnings eliminated)
+6. integration testing: report_integration.con (all 6 report modes) + integration_collection_pipeline.con (multi-collection pipeline with allocation patterns)
+7. report assertions hardened: 44 report tests covering caps/unsafe/layout/interface/mono/alloc with content checks (not just crash checks)
+8. reports as audit product: capability "why" traces, trust boundary analysis, allocation/cleanup summaries, summary totals, aligned columns
 
 Exit criterion:
 syntax guardrails, diagnostics, and stdlib testing behave like durable infrastructure rather than one-off pushes.
@@ -277,7 +266,9 @@ Primary surfaces:
    - add clearer verification/testing expectations for ABI compatibility
    - identify the first concrete cross-platform ABI/layout checks rather than leaving verification purely abstract
 5. push formalization over Core -> SSA
+   - treat validated Core after `CoreCheck` as the main proof boundary for user-program proofs
    - formalize a small pure Core fragment first
+   - define a proof-oriented Core fragment as a restricted view of validated Core, not a separate semantic authority
    - validate the proof boundary with manual embeddings of selected functions
    - only then add compiler/export support for Lean-side proof workflows
 6. add deferred audit/report outputs
@@ -434,7 +425,7 @@ Concrete is not only architecturally strong internally, but also operable, repro
 
 1. Push formalization over the cleaned Core -> SSA architecture.
    - prioritize proof targets that directly depend on the compiler architecture cleanup: Core soundness, capability discipline, linearity/resource soundness, and Core -> SSA preservation
-   - stage the user-program proof workflow explicitly: small pure Core fragment, manual embedding of selected functions, first concrete proofs, later export/tooling
+   - stage the user-program proof workflow explicitly: validated Core after `CoreCheck` as proof boundary, small pure ProofCore fragment, manual embedding of selected functions, first concrete proofs, later export/tooling
 2. Add deferred audit/report outputs such as allocation summaries and cleanup/destruction reports.
    - keep moving toward a clearer audit-mode product instead of isolated report flags
 3. Keep diagnostics converging on one high-quality surface across compiler modes.
@@ -452,6 +443,8 @@ Concrete is not only architecturally strong internally, but also operable, repro
    - use explicit artifacts to enable better test reuse and narrower recompilation instead of keeping all fast paths inside shell orchestration
 6. Prepare for the eventual runtime, safety, language-discipline, package-ecosystem, and operational-maturity phases by keeping package/build/docs/runtime decisions explicit instead of accidental.
 7. Prepare for eventual Lean-side proof of selected Concrete functions by keeping Core semantics small, explicit, and suitable as the proof boundary.
+   - keep the proof boundary after `CoreCheck` and before `Mono`
+   - treat ProofCore as a restricted view of validated Core rather than a second semantic IR
 8. Preserve a small set of long-horizon differentiator ideas in research without turning them into immediate roadmap thrash.
    - first-class audit mode and authority tracing
    - proof-carrying reports and proof-oriented module contracts

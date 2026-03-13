@@ -1112,16 +1112,188 @@ else
     FAIL=$((FAIL + 1))
 fi
 
-# Layout, interface, mono — just verify they don't crash
-for mode in layout interface mono; do
-    if $COMPILER "$TESTDIR/report_integration.con" --report "$mode" >/dev/null 2>&1; then
-        echo "  ok  report_integration.con --report $mode succeeds"
+# Layout: verify struct and enum details
+report_output=$($COMPILER "$TESTDIR/report_integration.con" --report layout 2>&1)
+if echo "$report_output" | grep -q "struct Pair" && echo "$report_output" | grep -q "size: 8"; then
+    echo "  ok  report_integration.con --report layout shows struct Pair with size"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  report_integration.con --report layout missing struct Pair"
+    echo "$report_output"
+    FAIL=$((FAIL + 1))
+fi
+if echo "$report_output" | grep -q "enum Shape" && echo "$report_output" | grep -q "tag:"; then
+    echo "  ok  report_integration.con --report layout shows enum Shape with tag"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  report_integration.con --report layout missing enum Shape"
+    echo "$report_output"
+    FAIL=$((FAIL + 1))
+fi
+if echo "$report_output" | grep -q "Totals:.*struct.*enum"; then
+    echo "  ok  report_integration.con --report layout shows totals"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  report_integration.con --report layout missing totals"
+    echo "$report_output"
+    FAIL=$((FAIL + 1))
+fi
+
+# Interface: verify public API exports and private exclusion
+report_output=$($COMPILER "$TESTDIR/report_integration.con" --report interface 2>&1)
+if echo "$report_output" | grep -q "fn pure_add" && echo "$report_output" | grep -q "(pure)"; then
+    echo "  ok  report_integration.con --report interface shows pure_add"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  report_integration.con --report interface missing pure_add"
+    echo "$report_output"
+    FAIL=$((FAIL + 1))
+fi
+if echo "$report_output" | grep -q "fn uses_alloc" && echo "$report_output" | grep -q "Alloc"; then
+    echo "  ok  report_integration.con --report interface shows uses_alloc with Alloc"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  report_integration.con --report interface missing uses_alloc"
+    echo "$report_output"
+    FAIL=$((FAIL + 1))
+fi
+if ! echo "$report_output" | grep -q "alloc_no_free"; then
+    echo "  ok  report_integration.con --report interface excludes private alloc_no_free"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  report_integration.con --report interface should not show private alloc_no_free"
+    echo "$report_output"
+    FAIL=$((FAIL + 1))
+fi
+
+# Mono: verify specialization details
+report_output=$($COMPILER "$TESTDIR/report_integration.con" --report mono 2>&1)
+if echo "$report_output" | grep -q "Generic functions:" && echo "$report_output" | grep -q "1"; then
+    echo "  ok  report_integration.con --report mono shows 1 generic function"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  report_integration.con --report mono missing generic function count"
+    echo "$report_output"
+    FAIL=$((FAIL + 1))
+fi
+if echo "$report_output" | grep -q "identity.*i32"; then
+    echo "  ok  report_integration.con --report mono shows identity<i32> specialization"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  report_integration.con --report mono missing identity<i32> specialization"
+    echo "$report_output"
+    FAIL=$((FAIL + 1))
+fi
+
+# --- Collection pipeline integration test ---
+
+# Compile and run the collection pipeline
+if $COMPILER "$TESTDIR/integration_collection_pipeline.con" -o "$TMPDIR/integration_collection_pipeline" > /dev/null 2>&1; then
+    pipeline_exit=$("$TMPDIR/integration_collection_pipeline" 2>&1; echo $?)
+    pipeline_exit=$(echo "$pipeline_exit" | tail -1)
+    if [ "$pipeline_exit" = "0" ]; then
+        echo "  ok  integration_collection_pipeline.con compiles and runs correctly"
         PASS=$((PASS + 1))
     else
-        echo "FAIL  report_integration.con --report $mode crashed"
+        echo "FAIL  integration_collection_pipeline.con runtime exit code: $pipeline_exit"
         FAIL=$((FAIL + 1))
     fi
-done
+else
+    echo "FAIL  integration_collection_pipeline.con failed to compile"
+    FAIL=$((FAIL + 1))
+fi
+
+# Caps: multi-level allocation traces
+report_output=$($COMPILER "$TESTDIR/integration_collection_pipeline.con" --report caps 2>&1)
+if echo "$report_output" | grep -q "build_and_summarize : Alloc" && echo "$report_output" | grep -q "<- calls.*vec_new"; then
+    echo "  ok  integration_collection_pipeline.con --report caps shows build_and_summarize Alloc trace"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  integration_collection_pipeline.con --report caps missing build_and_summarize trace"
+    echo "$report_output"
+    FAIL=$((FAIL + 1))
+fi
+if echo "$report_output" | grep -q "classify : (pure)" && echo "$report_output" | grep -q "double : (pure)"; then
+    echo "  ok  integration_collection_pipeline.con --report caps identifies pure functions"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  integration_collection_pipeline.con --report caps missing pure function detection"
+    echo "$report_output"
+    FAIL=$((FAIL + 1))
+fi
+
+# Alloc: multiple allocation patterns
+report_output=$($COMPILER "$TESTDIR/integration_collection_pipeline.con" --report alloc 2>&1)
+if echo "$report_output" | grep -q "fn map_vec" && echo "$report_output" | grep -q "caller responsible for cleanup"; then
+    echo "  ok  integration_collection_pipeline.con --report alloc shows map_vec returns allocation"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  integration_collection_pipeline.con --report alloc missing map_vec return-alloc note"
+    echo "$report_output"
+    FAIL=$((FAIL + 1))
+fi
+if echo "$report_output" | grep -q "fn build_and_summarize" && echo "$report_output" | grep -q "frees: vec_free"; then
+    echo "  ok  integration_collection_pipeline.con --report alloc shows build_and_summarize frees"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  integration_collection_pipeline.con --report alloc missing build_and_summarize free"
+    echo "$report_output"
+    FAIL=$((FAIL + 1))
+fi
+if echo "$report_output" | grep -q "fn count_with_defer" && echo "$report_output" | grep -q "defer free"; then
+    echo "  ok  integration_collection_pipeline.con --report alloc shows count_with_defer defer"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  integration_collection_pipeline.con --report alloc missing count_with_defer defer"
+    echo "$report_output"
+    FAIL=$((FAIL + 1))
+fi
+if echo "$report_output" | grep -q "Totals:.*4 functions allocate"; then
+    echo "  ok  integration_collection_pipeline.con --report alloc shows 4 allocating functions"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  integration_collection_pipeline.con --report alloc wrong allocating function count"
+    echo "$report_output"
+    FAIL=$((FAIL + 1))
+fi
+
+# Layout: struct with 4 fields, enum with 3 variants
+report_output=$($COMPILER "$TESTDIR/integration_collection_pipeline.con" --report layout 2>&1)
+if echo "$report_output" | grep -q "struct Stats" && echo "$report_output" | grep -q "size: 16"; then
+    echo "  ok  integration_collection_pipeline.con --report layout shows Stats (4 fields, 16 bytes)"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  integration_collection_pipeline.con --report layout missing Stats struct"
+    echo "$report_output"
+    FAIL=$((FAIL + 1))
+fi
+if echo "$report_output" | grep -q "enum Classification" && echo "$report_output" | grep -q "max_payload: 0"; then
+    echo "  ok  integration_collection_pipeline.con --report layout shows Classification (no payload)"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  integration_collection_pipeline.con --report layout missing Classification enum"
+    echo "$report_output"
+    FAIL=$((FAIL + 1))
+fi
+
+# Interface: public exports
+report_output=$($COMPILER "$TESTDIR/integration_collection_pipeline.con" --report interface 2>&1)
+if echo "$report_output" | grep -q "fn classify" && echo "$report_output" | grep -q "fn build_and_summarize"; then
+    echo "  ok  integration_collection_pipeline.con --report interface shows public functions"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  integration_collection_pipeline.con --report interface missing public functions"
+    echo "$report_output"
+    FAIL=$((FAIL + 1))
+fi
+if ! echo "$report_output" | grep -q "map_vec" && ! echo "$report_output" | grep -q "collect_classified"; then
+    echo "  ok  integration_collection_pipeline.con --report interface excludes private functions"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  integration_collection_pipeline.con --report interface should exclude private functions"
+    echo "$report_output"
+    FAIL=$((FAIL + 1))
+fi
 
 fi # end section: report
 
