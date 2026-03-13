@@ -54,9 +54,13 @@ structure EmitSSAState where
 private def emitInstr (s : EmitSSAState) (line : String) : EmitSSAState :=
   { s with currentInstrs := s.currentInstrs.push (.raw line) }
 
+/-- Append a structured instruction to the current block. -/
+private def emitStructured (s : EmitSSAState) (instr : LLVMInstr) : EmitSSAState :=
+  { s with currentInstrs := s.currentInstrs.push instr }
+
 /-- Append a raw line to module-level output (type defs, globals, declarations). -/
 private def emitModuleLine (s : EmitSSAState) (line : String) : EmitSSAState :=
-  { s with moduleRawLines := s.moduleRawLines.push (line ++ "\n") }
+  { s with moduleRawLines := s.moduleRawLines.push line }
 
 private def freshLocal (s : EmitSSAState) : EmitSSAState × String :=
   let name := "%ssa.t" ++ toString s.localCounter
@@ -110,6 +114,69 @@ private def ssaIntTyToLLVM : Ty → String
 private def ssaFloatTyToLLVM : Ty → String
   | .float32 => "float"
   | _ => "double"
+
+/-- Map a Concrete type to a structured LLVMTy. Mirrors Layout.tyToLLVM. -/
+partial def tyToLLVMTy (s : EmitSSAState) : Ty → LLVMTy
+  | .int | .uint => .i64
+  | .i8 | .u8 => .i8
+  | .i16 | .u16 => .i16
+  | .i32 | .u32 => .i32
+  | .bool => .i1
+  | .float64 => .double
+  | .float32 => .float_
+  | .char => .i8
+  | .unit | .never => .void
+  | .string => .struct_ "String"
+  | .ref _ | .refMut _ | .ptrMut _ | .ptrConst _ => .ptr
+  | .generic "Heap" _ | .heap _ => .ptr
+  | .generic "HeapArray" _ | .heapArray _ => .ptr
+  | .generic "Vec" _ => .struct_ "Vec"
+  | .generic "HashMap" _ => .struct_ "HashMap"
+  | .generic name _ =>
+    match ssaLookupEnum s name with
+    | some _ => .enum_ name
+    | none => .struct_ name
+  | .typeVar _ => .i64
+  | .array elem n => .array n (tyToLLVMTy s elem)
+  | .fn_ _ _ _ => .ptr
+  | .placeholder => .i64
+  | .named name =>
+    match ssaLookupStruct s name with
+    | some _ => .struct_ name
+    | none =>
+      match ssaLookupEnum s name with
+      | some _ => .enum_ name
+      | none => .i64
+
+/-- Map integer Concrete type to structured LLVM type. -/
+private def intTyToLLVMTy : Ty → LLVMTy
+  | .int | .uint => .i64
+  | .i8 | .u8 | .char => .i8
+  | .i16 | .u16 => .i16
+  | .i32 | .u32 => .i32
+  | .bool => .i1
+  | _ => .i64
+
+/-- Map float Concrete type to structured LLVM type. -/
+private def floatTyToLLVMTy : Ty → LLVMTy
+  | .float32 => .float_
+  | _ => .double
+
+/-- Convert an SVal to a structured LLVM operand. -/
+private def svalToOperand (_s : EmitSSAState) (v : SVal) : LLVMOperand :=
+  match v with
+  | .reg name _ =>
+    if name.startsWith "@fnref." then .global (name.drop 7).toString
+    else .reg name
+  | .intConst val _ => .intLit val
+  | .floatConst val _ => .floatLit val
+  | .boolConst b => .boolLit b
+  | .strConst name => .global name
+  | .unit => .undef
+
+/-- LLVM type for function parameters (pass-by-ptr types → ptr). -/
+private def paramTyToLLVMTy (s : EmitSSAState) (ty : Ty) : LLVMTy :=
+  if ssaIsPassByPtr s ty then .ptr else tyToLLVMTy s ty
 
 private def ssaIsSignedInt : Ty → Bool
   | .int | .i8 | .i16 | .i32 => true
@@ -228,12 +295,12 @@ private def isPointerTy : Ty → Bool
 /-- Emit a binary operation. Uses operand type (lhs.ty) for type annotations,
     since comparison results are i1 but operate on the operand type. -/
 private def emitBinOp (s : EmitSSAState) (dst : String) (op : BinOp) (lhs rhs : SVal) (_ty : Ty) : EmitSSAState :=
-  let lhsStr := emitSVal s lhs
-  let rhsStr := emitSVal s rhs
   let operandTy := lhs.ty
   -- Pointer arithmetic: ptr + int → getelementptr <pointee>, ptr %p, i64 %n
   -- GEP scales the offset by the pointee element size automatically
   if isPointerTy operandTy && (op == .add || op == .sub) then
+    let lhsStr := emitSVal s lhs
+    let rhsStr := emitSVal s rhs
     let pointeeTy := match operandTy with
       | .ptrMut t | .ptrConst t => ssaTyToLLVM s t
       | _ => "i8"
@@ -244,64 +311,67 @@ private def emitBinOp (s : EmitSSAState) (dst : String) (op : BinOp) (lhs rhs : 
     else (s, rhsStr)
     emitInstr rhsIdx.1 s!"  %{dst} = getelementptr {pointeeTy}, ptr {lhsStr}, i64 {rhsIdx.2}"
   else if isFloatTy operandTy then
-    let fTy := ssaFloatTyToLLVM operandTy
-    let opStr := match op with
-      | .add => "fadd" | .sub => "fsub" | .mul => "fmul" | .div => "fdiv" | .mod => "frem"
-      | .eq => "fcmp oeq" | .neq => "fcmp une"
-      | .lt => "fcmp olt" | .gt => "fcmp ogt" | .leq => "fcmp ole" | .geq => "fcmp oge"
-      | _ => "fadd"
-    emitInstr s (s!"  %{dst} = {opStr} {fTy} {lhsStr}, {rhsStr}")
+    let fTy := floatTyToLLVMTy operandTy
+    let lOp := svalToOperand s lhs
+    let rOp := svalToOperand s rhs
+    let llOp := match op with
+      | .add => LLVMBinOp.fadd | .sub => .fsub | .mul => .fmul | .div => .fdiv | .mod => .frem
+      | .eq => .fcmpOeq | .neq => .fcmpUne
+      | .lt => .fcmpOlt | .gt => .fcmpOgt | .leq => .fcmpOle | .geq => .fcmpOge
+      | _ => .fadd
+    emitStructured s (.binOp dst llOp fTy lOp rOp)
   else
     let isPtrTy := match operandTy with | .ptrMut _ | .ptrConst _ | .ref _ | .refMut _ => true | _ => false
-    let iTy := if isPtrTy then "ptr" else ssaIntTyToLLVM operandTy
+    let iTy := if isPtrTy then LLVMTy.ptr else intTyToLLVMTy operandTy
+    let lOp := svalToOperand s lhs
+    let rOp := svalToOperand s rhs
     match op with
-    | .add => emitInstr s s!"  %{dst} = add {iTy} {lhsStr}, {rhsStr}"
-    | .sub => emitInstr s s!"  %{dst} = sub {iTy} {lhsStr}, {rhsStr}"
-    | .mul => emitInstr s s!"  %{dst} = mul {iTy} {lhsStr}, {rhsStr}"
+    | .add => emitStructured s (.binOp dst .add iTy lOp rOp)
+    | .sub => emitStructured s (.binOp dst .sub iTy lOp rOp)
+    | .mul => emitStructured s (.binOp dst .mul iTy lOp rOp)
     | .div =>
-      if ssaIsSignedInt operandTy then emitInstr s s!"  %{dst} = sdiv {iTy} {lhsStr}, {rhsStr}"
-      else emitInstr s s!"  %{dst} = udiv {iTy} {lhsStr}, {rhsStr}"
+      if ssaIsSignedInt operandTy then emitStructured s (.binOp dst .sdiv iTy lOp rOp)
+      else emitStructured s (.binOp dst .udiv iTy lOp rOp)
     | .mod =>
-      if ssaIsSignedInt operandTy then emitInstr s s!"  %{dst} = srem {iTy} {lhsStr}, {rhsStr}"
-      else emitInstr s s!"  %{dst} = urem {iTy} {lhsStr}, {rhsStr}"
-    | .eq => emitInstr s s!"  %{dst} = icmp eq {iTy} {lhsStr}, {rhsStr}"
-    | .neq => emitInstr s s!"  %{dst} = icmp ne {iTy} {lhsStr}, {rhsStr}"
+      if ssaIsSignedInt operandTy then emitStructured s (.binOp dst .srem iTy lOp rOp)
+      else emitStructured s (.binOp dst .urem iTy lOp rOp)
+    | .eq => emitStructured s (.binOp dst .icmpEq iTy lOp rOp)
+    | .neq => emitStructured s (.binOp dst .icmpNe iTy lOp rOp)
     | .lt =>
-      if ssaIsSignedInt operandTy then emitInstr s s!"  %{dst} = icmp slt {iTy} {lhsStr}, {rhsStr}"
-      else emitInstr s s!"  %{dst} = icmp ult {iTy} {lhsStr}, {rhsStr}"
+      if ssaIsSignedInt operandTy then emitStructured s (.binOp dst .icmpSlt iTy lOp rOp)
+      else emitStructured s (.binOp dst .icmpUlt iTy lOp rOp)
     | .gt =>
-      if ssaIsSignedInt operandTy then emitInstr s s!"  %{dst} = icmp sgt {iTy} {lhsStr}, {rhsStr}"
-      else emitInstr s s!"  %{dst} = icmp ugt {iTy} {lhsStr}, {rhsStr}"
+      if ssaIsSignedInt operandTy then emitStructured s (.binOp dst .icmpSgt iTy lOp rOp)
+      else emitStructured s (.binOp dst .icmpUgt iTy lOp rOp)
     | .leq =>
-      if ssaIsSignedInt operandTy then emitInstr s s!"  %{dst} = icmp sle {iTy} {lhsStr}, {rhsStr}"
-      else emitInstr s s!"  %{dst} = icmp ule {iTy} {lhsStr}, {rhsStr}"
+      if ssaIsSignedInt operandTy then emitStructured s (.binOp dst .icmpSle iTy lOp rOp)
+      else emitStructured s (.binOp dst .icmpUle iTy lOp rOp)
     | .geq =>
-      if ssaIsSignedInt operandTy then emitInstr s s!"  %{dst} = icmp sge {iTy} {lhsStr}, {rhsStr}"
-      else emitInstr s s!"  %{dst} = icmp uge {iTy} {lhsStr}, {rhsStr}"
-    | .and_ => emitInstr s s!"  %{dst} = and i1 {lhsStr}, {rhsStr}"
-    | .or_ => emitInstr s s!"  %{dst} = or i1 {lhsStr}, {rhsStr}"
-    | .bitand => emitInstr s s!"  %{dst} = and {iTy} {lhsStr}, {rhsStr}"
-    | .bitor => emitInstr s s!"  %{dst} = or {iTy} {lhsStr}, {rhsStr}"
-    | .bitxor => emitInstr s s!"  %{dst} = xor {iTy} {lhsStr}, {rhsStr}"
-    | .shl => emitInstr s s!"  %{dst} = shl {iTy} {lhsStr}, {rhsStr}"
+      if ssaIsSignedInt operandTy then emitStructured s (.binOp dst .icmpSge iTy lOp rOp)
+      else emitStructured s (.binOp dst .icmpUge iTy lOp rOp)
+    | .and_ => emitStructured s (.binOp dst .and_ .i1 lOp rOp)
+    | .or_ => emitStructured s (.binOp dst .or_ .i1 lOp rOp)
+    | .bitand => emitStructured s (.binOp dst .and_ iTy lOp rOp)
+    | .bitor => emitStructured s (.binOp dst .or_ iTy lOp rOp)
+    | .bitxor => emitStructured s (.binOp dst .xor_ iTy lOp rOp)
+    | .shl => emitStructured s (.binOp dst .shl iTy lOp rOp)
     | .shr =>
-      if ssaIsSignedInt operandTy then emitInstr s s!"  %{dst} = ashr {iTy} {lhsStr}, {rhsStr}"
-      else emitInstr s s!"  %{dst} = lshr {iTy} {lhsStr}, {rhsStr}"
+      if ssaIsSignedInt operandTy then emitStructured s (.binOp dst .ashr iTy lOp rOp)
+      else emitStructured s (.binOp dst .lshr iTy lOp rOp)
 
 private def emitSInst (s : EmitSSAState) (inst : SInst) : EmitSSAState :=
   match inst with
   | .binOp dst op lhs rhs ty => emitBinOp s dst op lhs rhs ty
   | .unaryOp dst op operand ty =>
-    let opStr := emitSVal s operand
-    let iTy := ssaIntTyToLLVM ty
+    let valOp := svalToOperand s operand
     match op with
     | .neg =>
       if isFloatTy ty then
-        emitInstr s s!"  %{dst} = fneg {ssaFloatTyToLLVM ty} {opStr}"
+        emitStructured s (.fneg dst (floatTyToLLVMTy ty) valOp)
       else
-        emitInstr s s!"  %{dst} = sub {iTy} 0, {opStr}"
-    | .not_ => emitInstr s s!"  %{dst} = xor i1 {opStr}, 1"
-    | .bitnot => emitInstr s s!"  %{dst} = xor {iTy} {opStr}, -1"
+        emitStructured s (.binOp dst .sub (intTyToLLVMTy ty) (.intLit 0) valOp)
+    | .not_ => emitStructured s (.binOp dst .xor_ .i1 valOp (.intLit 1))
+    | .bitnot => emitStructured s (.binOp dst .xor_ (intTyToLLVMTy ty) valOp (.intLit (-1)))
   | .call dst fn args retTy =>
     -- For pass-by-ptr args: convert struct values to pointers
     let (s, argParts) := args.foldl (fun (s, parts) a =>
@@ -351,7 +421,7 @@ private def emitSInst (s : EmitSSAState) (inst : SInst) : EmitSSAState :=
     | none =>
       emitInstr s s!"  call {retLLTy} {callTarget}({argStr})"
   | .alloca dst ty =>
-    let s := emitInstr s s!"  %{dst} = alloca {ssaTyToLLVM s ty}"
+    let s := emitStructured s (.alloca dst (tyToLLVMTy s ty))
     markPtr s dst
   | .load dst ptr ty =>
     let (s, ptrStr) := ensurePtr s ptr
@@ -385,8 +455,8 @@ private def emitSInst (s : EmitSSAState) (inst : SInst) : EmitSSAState :=
     let s := emitInstr s s!"  %{dst} = getelementptr {elemTy}, ptr {basePtr}, {idxStr}"
     markPtr s dst
   | .phi dst incoming ty =>
-    let pairs := incoming.map fun (v, lbl) => s!"[{emitSVal s v}, %{lbl}]"
-    emitInstr s s!"  %{dst} = phi {ssaTyToLLVM s ty} {", ".intercalate pairs}"
+    let pairs := incoming.map fun (v, lbl) => (svalToOperand s v, lbl)
+    emitStructured s (.phi dst (tyToLLVMTy s ty) pairs)
   | .cast dst val targetTy =>
     match val with
     | .strConst name =>
@@ -451,55 +521,54 @@ private def emitSInst (s : EmitSSAState) (inst : SInst) : EmitSSAState :=
       let s := emitInstr s s!"  store {srcLLTy} {valStr}, ptr {tmp}"
       emitInstr s s!"  %{dst} = load {dstLLTy}, ptr {tmp}"
   | .memcpy dst src size =>
-    let dstStr := emitSVal s dst
-    let srcStr := emitSVal s src
-    emitInstr s s!"  call void @llvm.memcpy.p0.p0.i64(ptr {dstStr}, ptr {srcStr}, i64 {size}, i1 false)"
+    emitStructured s (.memcpy (svalToOperand s dst) (svalToOperand s src) size)
 
 -- ============================================================
 -- Emit SBlock / SFnDef
 -- ============================================================
 
-/-- Emit a block terminator into currentInstrs (may add pre-terminator instructions
-    for loading struct values before ret). -/
-private def emitSTerm (s : EmitSSAState) (t : STerm) : EmitSSAState :=
+/-- Emit a block terminator. Returns the (possibly modified) state and a structured LLVMTerm.
+    May add pre-terminator instructions (e.g. loads for struct return values). -/
+private def emitSTerm (s : EmitSSAState) (t : STerm) : EmitSSAState × LLVMTerm :=
   match t with
   | .ret (some v) =>
-    let tyStr := ssaTyToLLVM s v.ty
-    if tyStr == "void" then emitInstr s "  ret void"
+    let llTy := tyToLLVMTy s v.ty
+    if llTy == .void then (s, .ret .void none)
     else match v with
     | .strConst _ =>
       -- String constant: materialize as struct, load, return by value
+      let tyStr := ssaTyToLLVM s v.ty
       let (s, ptr) := materializeStrConst s (match v with | .strConst n => n | _ => "")
       let (s, tmp) := freshLocal s
       let s := emitInstr s s!"  {tmp} = load {tyStr}, ptr {ptr}"
-      emitInstr s s!"  ret {tyStr} {tmp}"
+      (s, .ret llTy (some (.reg (tmp.drop 1).toString)))
     | _ =>
     if isKnownPtr s v && ssaIsPassByPtr s v.ty then
       -- Value is a pointer to a struct (e.g. pass-by-ptr param); load it
       -- so we return the struct by value as the LLVM signature expects.
+      let tyStr := ssaTyToLLVM s v.ty
       let (s, tmp) := freshLocal s
       let s := emitInstr s s!"  {tmp} = load {tyStr}, ptr {emitSVal s v}"
-      emitInstr s s!"  ret {tyStr} {tmp}"
-    else emitInstr s s!"  ret {tyStr} {emitSVal s v}"
-  | .ret none => emitInstr s "  ret void"
-  | .br lbl => emitInstr s s!"  br label %{lbl}"
+      (s, .ret llTy (some (.reg (tmp.drop 1).toString)))
+    else (s, .ret llTy (some (svalToOperand s v)))
+  | .ret none => (s, .ret .void none)
+  | .br lbl => (s, .br lbl)
   | .condBr cond tl el =>
-    emitInstr s s!"  br i1 {emitSVal s cond}, label %{tl}, label %{el}"
-  | .unreachable => emitInstr s "  unreachable"
+    (s, .condBr (svalToOperand s cond) tl el)
+  | .unreachable => (s, .unreachable)
 
 private def emitSBlock (s : EmitSSAState) (b : SBlock) : EmitSSAState :=
   -- Start fresh instruction list for this block
   let s := { s with currentInstrs := #[] }
   -- Emit all instructions
   let s := b.insts.foldl emitSInst s
-  -- Emit terminator (may add pre-terminator instructions)
-  let s := emitSTerm s b.term
-  -- Create the block: all instructions (including the terminator line as a raw instr)
-  -- are stored in .instrs, with a dummy .term
+  -- Emit terminator (may add pre-terminator instructions to currentInstrs)
+  let (s, term) := emitSTerm s b.term
+  -- Create the block with structured instructions and terminator
   let block : LLVMBlock := {
     label := b.label
     instrs := s.currentInstrs.toList
-    term := .unreachable  -- dummy: the real terminator is in instrs as a raw line
+    term := term
   }
   { s with
     currentBlocks := s.currentBlocks.push block
@@ -507,9 +576,9 @@ private def emitSBlock (s : EmitSSAState) (b : SBlock) : EmitSSAState :=
   }
 
 private def emitSFnDef (s : EmitSSAState) (f : SFnDef) (isUserMain : Bool) : EmitSSAState :=
-  let retTy := ssaTyToLLVM s f.retTy
+  let retTy := tyToLLVMTy s f.retTy
   let fnName := if isUserMain then "user_main" else f.name
-  let params := f.params.map fun (n, t) => (n, ssaParamTyToLLVM s t)
+  let params := f.params.map fun (n, t) => (n, paramTyToLLVMTy s t)
   -- Reset per-function state
   let s := { s with currentBlocks := #[], fnParams := f.params }
   -- Mark struct-type params as pointers, track fn params for indirect calls
@@ -520,23 +589,16 @@ private def emitSFnDef (s : EmitSSAState) (f : SFnDef) (isUserMain : Bool) : Emi
   ) s
   -- Emit all blocks
   let s := f.blocks.foldl emitSBlock s
-  -- Construct the raw text for this function from blocks and header
-  let paramStr := ", ".intercalate (params.map fun (n, t) => t ++ " %" ++ n)
-  let header := s!"define {retTy} @{fnName}({paramStr}) \{"
-  let blockStrs := s.currentBlocks.toList.map fun block =>
-    let instrLines := block.instrs.map fun
-      | .raw line => line
-      | other => printInstr other  -- shouldn't happen in first pass
-    s!"{block.label}:\n" ++ "\n".intercalate instrLines
-  let fnText := header ++ "\n" ++ "\n".intercalate blockStrs ++ "\n}\n\n"
-  let s := { s with rawSections := s.rawSections.push fnText }
+  -- Build structured function definition
+  let fnDef : LLVMFnDef := {
+    name := fnName
+    retTy := retTy
+    params := params
+    blocks := s.currentBlocks.toList
+  }
+  let s := { s with moduleFunctions := s.moduleFunctions.push fnDef }
   -- Reset per-function state
   { s with ptrRegs := [], fnParams := [], fnTypeRegs := [], currentBlocks := #[], currentInstrs := #[] }
-where
-  /-- Print an LLVMInstr (used as fallback, shouldn't be needed in raw mode). -/
-  printInstr : LLVMInstr → String
-    | .raw line => line
-    | _ => ""
 
 -- ============================================================
 -- Emit struct/enum type definitions
@@ -994,7 +1056,9 @@ def emitSSAProgram (modules : List SModule) (testMode : Bool := false) (moduleFi
   let s := emitBuiltins s
   -- Assemble the final LLVMModule and print it
   let llvmModule : LLVMModule := {
-    rawSections := s.moduleRawLines.toList ++ s.rawSections.toList
+    header := s.moduleRawLines.toList
+    functions := s.moduleFunctions.toList
+    rawSections := s.rawSections.toList
   }
   printLLVMModule llvmModule
 
