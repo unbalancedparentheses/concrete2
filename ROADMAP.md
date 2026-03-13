@@ -54,8 +54,8 @@ Still clearly not implemented:
 | Phase | Focus | Status | Blocks |
 |------|-------|--------|--------|
 | **A** | Fast feedback and compiler stability | Done enough; aggregate lowering hardened, test runner parallelized, SSA invariants mechanically defended | B, C, D |
-| **B** | Semantic cleanup | Active | D |
-| **C** | Tooling and stdlib hardening | Active | later system maturity |
+| **B** | Semantic cleanup | Done | D |
+| **C** | Tooling and stdlib hardening | Active; builtin HashMap retired, LL(1) CI wired, linearity fixed | later system maturity |
 | **D** | Backend and trust multipliers | Pending | A, most of B |
 | **E** | Runtime and execution model | Deferred | C, D |
 | **F** | Capability and safety productization | Deferred | D, E |
@@ -78,42 +78,27 @@ Still clearly not implemented:
   - self-consuming methods (`fn drop(self)`) now mark the receiver as consumed
   - if-without-else where the then-branch returns no longer blocks linear consumption in that branch
 - **User-defined IntMap validated end-to-end**: a full hash map with fn pointer fields for hash/eq (same pattern as `HashMap`) compiles and runs correctly through the native compiler path, proving the linearity fix chain works.
-- **Builtin HashMap intercept retirement possible**: the linearity fixes mean user-defined `HashMap` can now work natively. The builtin `map_*` intrinsic interception in `Elab.lean` (lines 726–799) and `Intrinsic.lean` (lines 68–74) can be retired once the stdlib `HashMap` is updated to use the native path. The 5-field builtin layout vs 7-field user layout mismatch is no longer a blocking issue — it becomes a migration task.
-- 544 tests pass in the current hardening arc, including SSA structure verification, -O2 regressions for aggregate lowering paths, expanded stdlib module coverage, and four new linearity regression tests.
+- **Builtin HashMap interception retired**: ~1,400 lines of compiler-internal HashMap machinery deleted (7 intrinsic IDs, type checking/elaboration intercepts, LLVM wrapper functions, hand-written LLVM IR runtime with hash/probe/insert/get/contains/remove/grow for int and string keys, hardcoded 5-field struct type). HashMap is now an ordinary stdlib type compiled through the normal generic struct path. 6 new stdlib tests (4 HashMap, 2 HashSet) replace 11 deleted builtin-API tests. HashMap and HashSet are now in the collection verification section of the test runner.
+- 544 tests pass (148 stdlib), including SSA structure verification, -O2 regressions for aggregate lowering paths, expanded stdlib module coverage, six linearity regression tests, and native HashMap/HashSet coverage.
 
 ### Now
 
-Phases A and B are done.  Active work is now in Phase C, with opportunistic internal improvements (further string cleanup, proof groundwork) as they arise naturally.
+Phases A and B are done. Phase C is active. The LL(1) grammar checker is in CI, the linearity checker is fixed for generic types, and the builtin HashMap interception is retired. Active work is the remaining Phase C items, then the Phase C/D boundary.
 
-1. Add an external LL(1) grammar checker as a standing syntax guardrail.
-   - problem: the language claims LL(1) discipline, but parser regressions can still slip in without a dedicated grammar guardrail
-   - why now: this is the first Phase C tool that protects the language shape without destabilizing semantics
-   - primary surfaces: [research/external-ll1-checker.md](research/external-ll1-checker.md), `grammar/`, `scripts/`, CI config
+1. Keep turning testing into proper stdlib/module-targeted infrastructure.
+   - problem: stdlib breadth is real now, but testing still relies on shell-level orchestration and whole-tree `--test` runs; module-targeted, failure-path, and integration coverage is uneven
+   - why now: the builtin HashMap retirement removed the last major compiler blocker for stdlib collections; testing infrastructure is now the main usability multiplier
+   - primary surfaces: [docs/STDLIB.md](docs/STDLIB.md), [docs/TESTING.md](docs/TESTING.md), [std/src/](/Users/unbalancedparen/projects/concrete/std/src), [run_tests.sh](/Users/unbalancedparen/projects/concrete/run_tests.sh)
    - first slices:
-     - add a compact reference grammar at `grammar/concrete.ebnf`
-     - add a small checker at `scripts/check_ll1.py`
-     - put it in CI
-     - treat parser-state rewind/backtracking regressions as bugs
-   - constraints:
-     - keep the checker external and simple enough to audit
-     - do not let the reference grammar drift away from the actual parser unnoticed
-   - done means: syntax regressions trip a dedicated CI check instead of silently re-entering the parser
-3. Keep deepening and hardening the stdlib.
-   - problem: stdlib breadth is real now, but systems modules and collections still need stronger failure-path behavior, consistency, targeted test workflows, and in at least one case a blocking compiler/runtime fix
-   - why now: once Phase A and Phase B stop dominating every change, stdlib quality becomes the main usability multiplier
-   - primary surfaces: [docs/STDLIB.md](docs/STDLIB.md), [std/src/](/Users/unbalancedparen/projects/concrete/std/src), [run_tests.sh](/Users/unbalancedparen/projects/concrete/run_tests.sh)
-   - first slices:
-     - deepen `fs`, `net`, and `process`
-     - retire the builtin `map_*` intrinsic interception now that generic linearity is fixed: update stdlib `HashMap` to use the native compiler path (self-managed struct with fn pointer fields), remove the 5-field builtin layout, and re-enable the disabled map/set tests
-     - add more failure-path and integration tests
-     - keep error, handle, and checked/unchecked conventions uniform
      - add stdlib-aware module-targeted test infrastructure instead of relying only on `std/src/lib.con --test`
+     - deepen `fs`, `net`, and `process` failure-path and integration tests
+     - add more failure-path and integration tests across all collections
+     - keep error, handle, and checked/unchecked conventions uniform
    - constraints:
      - do not let API growth outrun failure-path coverage
      - do not let module conventions drift case-by-case
-     - do not paper over collection/compiler crashes by leaving important tests permanently disabled
-   - done means: systems modules and collections have stronger failure-path coverage, the current `HashMap` / `HashSet` function-pointer crash is fixed, and stdlib tests can target one area without bootstrapping the whole tree
-4. Improve diagnostics fidelity and rendering quality.
+   - done means: stdlib tests can target one area without bootstrapping the whole tree, and systems modules have stronger failure-path coverage
+2. Improve diagnostics fidelity and rendering quality.
    - problem: diagnostics still lose precision around transformed constructs and rely too much on brittle string-exact expectations
    - why now: diagnostics are the main user-visible quality multiplier once the compiler architecture is stable enough to trust
    - primary surfaces: [docs/DIAGNOSTICS.md](docs/DIAGNOSTICS.md), [Concrete/Diagnostic.lean](/Users/unbalancedparen/projects/concrete/Concrete/Diagnostic.lean), [Concrete/Check.lean](/Users/unbalancedparen/projects/concrete/Concrete/Check.lean), [Concrete/CoreCheck.lean](/Users/unbalancedparen/projects/concrete/Concrete/CoreCheck.lean), diagnostic tests
@@ -126,18 +111,20 @@ Phases A and B are done.  Active work is now in Phase C, with opportunistic inte
      - do not make tests depend on full rendered strings when structured assertions can work
      - do not improve rendering by smearing away the actual semantic source location
    - done means: diagnostics quality improvements are visible in ordinary compiler output, not only in internal plumbing
-5. Preserve SSA as the only backend boundary and keep the build/project model explicit and boring.
+3. Then push the backend/artifact/proof stack (Phase C/D boundary):
    - problem: textual LLVM emission is still a brittle choke point, and backend plurality would multiply instability if the backend contract stays loose
    - why now: this is the front edge of Phase D and the prerequisite for serious backend, tooling, and proof leverage
    - primary surfaces: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/PASSES.md](docs/PASSES.md), [Concrete/SSAVerify.lean](/Users/unbalancedparen/projects/concrete/Concrete/SSAVerify.lean), [Concrete/SSACleanup.lean](/Users/unbalancedparen/projects/concrete/Concrete/SSACleanup.lean), [Concrete/EmitSSA.lean](/Users/unbalancedparen/projects/concrete/Concrete/EmitSSA.lean), [Concrete/Pipeline.lean](/Users/unbalancedparen/projects/concrete/Concrete/Pipeline.lean)
    - first slices:
-     - replace raw LLVM string emission with a structured LLVM backend before adding backend plurality
-     - keep target-specific work behind an explicit backend abstraction over SSA
-     - treat MLIR as a later optional backend family, not the default immediate answer
+     - replace raw LLVM string emission with a structured LLVM backend
+     - strengthen SSA/backend contract
+     - turn explicit pipeline artifacts into reusable tooling/caching building blocks
+     - push formalization over Core → SSA
    - constraints:
      - keep SSA as the only backend boundary
      - do not add another backend family until the LLVM path is structurally cleaner
-   - done means: the backend consumes a structured contract over SSA and textual LLVM concatenation is no longer the critical path
+     - treat MLIR as a later optional backend family, not the default immediate answer
+   - done means: the backend consumes a structured contract over SSA, textual LLVM concatenation is no longer the critical path, and pipeline artifacts support reuse
 
 ### Phase A Notes
 
@@ -209,17 +196,20 @@ Primary surfaces:
 - `std/src/`
 - `run_tests.sh`
 
-1. add the external LL(1) grammar checker and CI coverage
-2. improve diagnostics fidelity and presentation
-3. build module-targeted stdlib test infrastructure
-4. turn the current fast runner into proper long-term testing infrastructure
+Done:
+1. LL(1) grammar checker in CI (Python, C, Rust implementations; runs in parallel with build)
+2. linearity checker fixed for generic types (isCopyType, self-consumption, trusted loop relaxation, if-return divergence)
+3. builtin HashMap interception retired (~1,400 lines deleted; HashMap is now an ordinary stdlib type)
+
+Remaining:
+4. build module-targeted stdlib test infrastructure
    - module-aware and subsystem-aware entrypoints instead of only shell-level filtering
    - stdlib-aware targeted execution under an explicit module/project context
    - clearer visibility into what partial runs did and did not exercise
    - narrower recompilation and rerun scopes driven by explicit dependencies rather than ad-hoc script sections
-   - treat the current fast runner as the practical Phase A baseline, not the end-state architecture for testing
-5. deepen failure-path and integration testing in systems modules
-6. make report assertions part of ordinary hardening
+5. improve diagnostics fidelity and presentation
+6. deepen failure-path and integration testing in systems modules
+7. make report assertions part of ordinary hardening
 
 Exit criterion:
 syntax guardrails, diagnostics, and stdlib testing behave like durable infrastructure rather than one-off pushes.

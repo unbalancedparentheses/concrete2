@@ -10,6 +10,23 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Builtin HashMap interception retired
+
+Deleted ~1,400 lines of compiler-internal HashMap machinery across 6 Lean files. HashMap is now an ordinary stdlib type compiled through the normal generic struct path — no compiler interception, no hardcoded layout, no hand-written LLVM IR runtime.
+
+What was removed:
+- 7 intrinsic IDs (`mapNew`..`mapFree`) and their resolution/capability mappings from `Intrinsic.lean`
+- ~106 lines of type checking intercepts from `Check.lean`
+- ~74 lines of elaboration intercepts from `Elab.lean`
+- ~75 lines of LLVM wrapper functions from `EmitSSA.lean`
+- ~636 lines of hand-written LLVM IR runtime from `Codegen/Builtins.lean` (hash, probe, insert, get, contains, remove, grow — for both int and string key variants)
+- Hardcoded 5-field `%struct.HashMap` type definition from `Layout.lean`
+- `HashMap` removed from `builtinTypeNames` (it is now resolved through normal imports)
+
+What replaced it: the stdlib `HashMap<K, V>` in `std/src/map.con` (a 7-field struct with fn pointer fields for hash/eq) compiles natively through monomorphization, the same path as any user-defined generic struct. 6 new stdlib tests (4 HashMap, 2 HashSet) provide collection verification coverage.
+
+This was enabled by the linearity checker fixes in the previous milestone.
+
 ### Linearity checker: generic types, self-consumption, and divergence
 
 Four fixes to the type checker's linearity analysis (`Check.lean`) that together unblock user-defined generic collections with function pointer fields — the same pattern as `HashMap`:
