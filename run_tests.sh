@@ -1649,15 +1649,19 @@ check_collection_tests "Fs" \
     test_fs_open_nonexistent test_fs_create_bad_path \
     test_read_file_nonexistent test_write_to_readonly test_write_file_bad_path \
     test_read_file_empty test_append_file test_seek_tell \
-    test_read_to_string_nonexistent test_read_to_string_roundtrip test_append_file_bad_path
+    test_read_to_string_nonexistent test_read_to_string_roundtrip test_append_file_bad_path \
+    test_read_past_eof test_seek_past_end test_read_to_string_empty
 
 check_collection_tests "Process" \
     test_wait_invalid_pid test_kill_invalid_pid test_signal_constants \
-    test_getpid test_kill_signal_zero
+    test_getpid test_kill_signal_zero \
+    test_kill_invalid_signal test_wait_invalid_pid_negative test_kill_pid_zero_exists
 
 check_collection_tests "Net" \
     test_connect_refused test_connect_bad_address test_bind_bad_address \
-    test_connect_bad_address_ipv6
+    test_connect_bad_address_ipv6 \
+    test_bind_empty_address test_write_to_refused_connection \
+    test_read_from_unconnected_socket test_bind_duplicate_port
 
 check_collection_tests "Deque" \
     test_push_back_pop_front test_push_front_pop_back test_deque_pop_empty \

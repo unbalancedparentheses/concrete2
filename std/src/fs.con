@@ -441,4 +441,100 @@ mod fs {
             Result#Err { error } => { return 0; }
         }
     }
+
+    #[test]
+    fn test_read_past_eof() with(Unsafe, Alloc) -> i32 {
+        // Write 3 bytes via write_file, read back via read_file to confirm,
+        // then open and read_bytes(64) — fread should return < 64
+        let path: String = "/tmp/concrete_fs_test_read_past_eof.txt";
+        let mut data: Bytes = Bytes::new();
+        data.push(10);
+        data.push(20);
+        data.push(30);
+        let wrote: bool = write_file_ok(&path, &data);
+        data.drop();
+        if !wrote { path.drop(); return 1; }
+        // Confirm file is 3 bytes via read_file
+        let check: Result<Bytes, FsError> = read_file(&path);
+        match check {
+            Result#Ok { value } => {
+                if value.len != 3 { value.drop(); path.drop(); return 1; }
+                value.drop();
+            },
+            Result#Err { error } => { path.drop(); return 1; }
+        }
+        // Now open and read more than the file contains
+        let mode: String = "r";
+        let result: Result<File, FsError> = File::open(&path, &mode);
+        path.drop();
+        mode.drop();
+        match result {
+            Result#Ok { value } => {
+                let buf: [u8; 64] = [0; 64];
+                let n: u64 = value.read_bytes(&buf as *mut u8, 64);
+                value.close();
+                // fread should return exactly 3 (the file size)
+                // but we accept any value < 64 and > 0 as proof that
+                // reading past EOF is correctly bounded
+                if n == 0 { return 1; }
+                if n > 3 { return 1; }
+                return 0;
+            },
+            Result#Err { error } => { return 1; }
+        }
+    }
+
+    #[test]
+    fn test_seek_past_end() with(Unsafe, Alloc) -> i32 {
+        // Write 5 bytes, seek to offset 100, verify tell returns 100
+        // (fseek past end is valid in C — read returns 0 bytes)
+        let path: String = "/tmp/concrete_fs_test_seek_past_end.txt";
+        let mut data: Bytes = Bytes::new();
+        data.push(1);
+        data.push(2);
+        data.push(3);
+        data.push(4);
+        data.push(5);
+        let wrote: bool = write_file_ok(&path, &data);
+        data.drop();
+        if !wrote { path.drop(); return 1; }
+        let mode: String = "r";
+        let result: Result<File, FsError> = File::open(&path, &mode);
+        path.drop();
+        mode.drop();
+        match result {
+            Result#Ok { value } => {
+                value.seek(100, 0); // SEEK_SET past end
+                let pos: i64 = value.tell();
+                // Read should return 0 bytes from beyond EOF
+                let buf: [u8; 16] = [0; 16];
+                let n: u64 = value.read_bytes(&buf as *mut u8, 16);
+                value.close();
+                if pos != 100 { return 1; }
+                if n != 0 { return 1; }
+                return 0;
+            },
+            Result#Err { error } => { return 1; }
+        }
+    }
+
+    #[test]
+    fn test_read_to_string_empty() with(Unsafe, Alloc) -> i32 {
+        // Write empty file, read as string — should get empty string
+        let path: String = "/tmp/concrete_fs_test_rts_empty.txt";
+        let data: Bytes = Bytes::new();
+        let wrote: bool = write_file_ok(&path, &data);
+        data.drop();
+        if !wrote { path.drop(); return 1; }
+        let rr: Result<String, FsError> = read_to_string(&path);
+        path.drop();
+        match rr {
+            Result#Ok { value } => {
+                if value.len != 0 { value.drop(); return 1; }
+                value.drop();
+                return 0;
+            },
+            Result#Err { error } => { return 1; }
+        }
+    }
 }

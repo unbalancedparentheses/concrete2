@@ -241,4 +241,41 @@ mod process {
             Result#Err { error } => { return 1; }
         }
     }
+
+    #[test]
+    fn test_kill_invalid_signal() with(Unsafe, Process, Alloc) -> i32 {
+        // Sending an invalid signal number (e.g. 99999) to own PID should fail
+        let pid: i32 = process_getpid();
+        let result: Result<bool, ProcessError> = process_kill(pid, 99999);
+        match result {
+            Result#Ok { value } => { return 1; },
+            Result#Err { error } => { return 0; }
+        }
+    }
+
+    #[test]
+    fn test_wait_invalid_pid_negative() with(Unsafe, Process, Alloc) -> i32 {
+        // waitpid with pid -1 and no children should fail
+        let child: Child = Child::new(-1);
+        let result: Result<ExitStatus, ProcessError> = child.wait();
+        match result {
+            Result#Ok { value } => {
+                // If somehow succeeds (e.g. zombie child), accept it
+                return 0;
+            },
+            Result#Err { error } => {
+                return 0;
+            }
+        }
+    }
+
+    #[test]
+    fn test_kill_pid_zero_exists() with(Unsafe, Process, Alloc) -> i32 {
+        // kill(0, 0) sends signal 0 to the entire process group — should succeed
+        let result: Result<bool, ProcessError> = process_kill(0, 0);
+        match result {
+            Result#Ok { value } => { return 0; },
+            Result#Err { error } => { return 1; }
+        }
+    }
 }

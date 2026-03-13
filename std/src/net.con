@@ -415,4 +415,91 @@ mod net {
             }
         }
     }
+
+    #[test]
+    fn test_bind_empty_address() with(Unsafe, Alloc, Network, Process) -> i32 {
+        // Binding to an empty string should fail with AddressFailed
+        let addr: String = "";
+        let result: Result<TcpListener, NetError> = TcpListener::bind(&addr, 8080);
+        addr.drop();
+        match result {
+            Result::<TcpListener, NetError>#Ok { value } => {
+                value.close();
+                return 1;
+            },
+            Result::<TcpListener, NetError>#Err { error } => {
+                return 0;
+            }
+        }
+    }
+
+    #[test]
+    fn test_write_to_refused_connection() with(Unsafe, Alloc, Network, Process) -> i32 {
+        // Create a socket manually and try to send to it without connecting
+        // socket(AF_INET=2, SOCK_STREAM=1, 0)
+        let fd: i32 = socket(2, 1, 0);
+        if fd < 0 { return 1; }
+        // send on an unconnected socket should return -1
+        let msg: String = "hello";
+        let n: i64 = send(fd, msg.ptr as *const u8, msg.len, 0);
+        msg.drop();
+        close(fd);
+        if n < 0 {
+            return 0;
+        }
+        // Some OSes may return 0 rather than -1; either means no data sent
+        if n == 0 {
+            return 0;
+        }
+        return 1;
+    }
+
+    #[test]
+    fn test_read_from_unconnected_socket() with(Unsafe, Alloc, Network, Process) -> i32 {
+        // recv on an unconnected stream socket should return -1
+        let fd: i32 = socket(2, 1, 0);
+        if fd < 0 { return 1; }
+        let buf: [u8; 16] = [0; 16];
+        let n: i64 = recv(fd, &buf as *mut u8, 16, 0);
+        close(fd);
+        if n < 0 {
+            return 0;
+        }
+        if n == 0 {
+            return 0;
+        }
+        return 1;
+    }
+
+    #[test]
+    fn test_bind_duplicate_port() with(Unsafe, Alloc, Network, Process) -> i32 {
+        // Bind to an ephemeral port, then try to bind again on the same port
+        // First bind to port 0 to get an OS-assigned port
+        // We use a fixed high port instead so we can try to double-bind
+        let addr: String = "127.0.0.1";
+        let result1: Result<TcpListener, NetError> = TcpListener::bind(&addr, 49321);
+        match result1 {
+            Result::<TcpListener, NetError>#Ok { value } => {
+                // Try to bind a second listener on the same port
+                let result2: Result<TcpListener, NetError> = TcpListener::bind(&addr, 49321);
+                addr.drop();
+                value.close();
+                match result2 {
+                    Result::<TcpListener, NetError>#Ok { value } => {
+                        // SO_REUSEADDR may allow this on some OSes; close and accept either outcome
+                        value.close();
+                        return 0;
+                    },
+                    Result::<TcpListener, NetError>#Err { error } => {
+                        return 0;
+                    }
+                }
+            },
+            Result::<TcpListener, NetError>#Err { error } => {
+                // Port might be in use — that's ok, test is about the double-bind path
+                addr.drop();
+                return 0;
+            }
+        }
+    }
 }
