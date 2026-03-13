@@ -33,6 +33,7 @@ Options:
 
 Environment:
   TEST_JOBS=N         Same as -j N
+  LLI_PATH=/path/lli  Use lli (LLVM interpreter) for ~15x faster tests
   SKIP_FLAKY_TCP_TEST=1  Skip the flaky TCP test
 
 Recommended workflows:
@@ -106,13 +107,25 @@ trap 'rm -rf "$TMPDIR"' EXIT
 JOBDIR="$TMPDIR/jobs"
 mkdir -p "$JOBDIR"
 
+# --- lli auto-detection ---
+# Use lli (LLVM interpreter) for positive tests when available.
+# This skips clang linking entirely and is ~15x faster per test.
+LLI=""
+if command -v lli &>/dev/null; then
+    LLI="lli"
+elif [ -x "${LLI_PATH:-}" ]; then
+    LLI="$LLI_PATH"
+fi
+
 PASS=0
 FAIL=0
 SKIP=0
 declare -a JOB_PIDS=()
 declare -a JOB_FILES=()
 
-echo "Mode: $MODE | Jobs: $TEST_JOBS | Filter: ${FILTER:-<none>}"
+LLI_STATUS="off"
+[ -n "$LLI" ] && LLI_STATUS="on ($LLI)"
+echo "Mode: $MODE | Jobs: $TEST_JOBS | Filter: ${FILTER:-<none>} | lli: $LLI_STATUS"
 echo ""
 
 path_key() {
@@ -158,6 +171,7 @@ throttle_jobs() {
 }
 
 # Positive tests: should compile and produce expected output
+# Uses lli (LLVM interpreter) when available to skip clang linking (~15x faster).
 run_ok_worker() {
     local file="$1"
     local expected="$2"
@@ -166,15 +180,29 @@ run_ok_worker() {
     name=$(path_key "${file%.con}")
     local out="$TMPDIR/$name"
 
-    if ! $COMPILER "$file" -o "$out" > /dev/null 2>&1; then
-        {
-            echo "FAIL"
-            echo "FAIL  $file — compilation failed (expected success)"
-        } > "$result_file"
-        return
-    fi
     local actual
-    actual=$("$out" 2>&1) || true
+    if [ -n "$LLI" ]; then
+        # Fast path: emit LLVM IR and interpret directly (no clang)
+        local llpath="$out.ll"
+        if ! $COMPILER "$file" --emit-llvm > "$llpath" 2>/dev/null; then
+            {
+                echo "FAIL"
+                echo "FAIL  $file — compilation failed (expected success)"
+            } > "$result_file"
+            return
+        fi
+        actual=$($LLI "$llpath" 2>&1) || true
+    else
+        # Fallback: compile to native binary via clang
+        if ! $COMPILER "$file" -o "$out" > /dev/null 2>&1; then
+            {
+                echo "FAIL"
+                echo "FAIL  $file — compilation failed (expected success)"
+            } > "$result_file"
+            return
+        fi
+        actual=$("$out" 2>&1) || true
+    fi
     if [ "$actual" = "$expected" ]; then
         {
             echo "PASS"
@@ -252,6 +280,7 @@ run_ok_O2() {
 }
 
 # Negative tests: should fail to compile with a specific error substring
+# Uses --emit-llvm to skip clang (error is detected before codegen linking).
 run_err_worker() {
     local file="$1"
     local expected_err="$2"
@@ -261,7 +290,7 @@ run_err_worker() {
     local out="$TMPDIR/$name"
 
     local stderr
-    if stderr=$($COMPILER "$file" -o "$out" 2>&1); then
+    if stderr=$($COMPILER "$file" --emit-llvm 2>&1 > /dev/null); then
         {
             echo "FAIL"
             echo "FAIL  $file — compiled successfully (expected error)"
