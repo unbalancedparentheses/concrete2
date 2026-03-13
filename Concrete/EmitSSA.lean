@@ -100,20 +100,6 @@ private def ssaIsPassByPtr (s : EmitSSAState) (ty : Ty) : Bool :=
 private def ssaParamTyToLLVM (s : EmitSSAState) (ty : Ty) : String :=
   Layout.paramTyToLLVM (layoutCtxOf s) ty
 
-/-- Integer LLVM type for arithmetic. -/
-private def ssaIntTyToLLVM : Ty → String
-  | .int | .uint => "i64"
-  | .i8 | .u8 => "i8"
-  | .i16 | .u16 => "i16"
-  | .i32 | .u32 => "i32"
-  | .char => "i8"
-  | .bool => "i1"
-  | _ => "i64"
-
-/-- Float LLVM type. -/
-private def ssaFloatTyToLLVM : Ty → String
-  | .float32 => "float"
-  | _ => "double"
 
 /-- Map a Concrete type to a structured LLVMTy. Mirrors Layout.tyToLLVM. -/
 partial def tyToLLVMTy (s : EmitSSAState) : Ty → LLVMTy
@@ -214,23 +200,6 @@ private def ssaEscapeStringForLLVM (str : String) : String :=
   str.foldl (fun acc c => acc ++ ssaEscapeCharForLLVM c) ""
 
 -- ============================================================
--- Emit SVal
--- ============================================================
-
-private def emitSVal (_s : EmitSSAState) (v : SVal) : String :=
-  match v with
-  | .reg name _ =>
-    if name.startsWith "@fnref." then "@" ++ name.drop 7
-    else "%" ++ name
-  | .intConst val _ => toString val
-  | .floatConst val _ =>
-    let str := toString val
-    if str.any (· == '.') || str.any (· == 'e') || str.any (· == 'E') then str else str ++ ".0"
-  | .boolConst b => if b then "1" else "0"
-  | .strConst name => "@" ++ name
-  | .unit => "void"
-
--- ============================================================
 -- Materialize string constants and ensure pointers
 -- ============================================================
 
@@ -264,26 +233,8 @@ private def isRefOrPtrTy : Ty → Bool
   | .ref _ | .refMut _ | .ptrMut _ | .ptrConst _ => true
   | _ => false
 
-private def ensurePtr (s : EmitSSAState) (v : SVal) : EmitSSAState × String :=
-  match v with
-  | .strConst name => materializeStrConst s name
-  | _ =>
-  if isKnownPtr s v then
-    (s, emitSVal s v)
-  else if isRefOrPtrTy v.ty then
-    -- References and raw pointers are already pointer-sized values in LLVM IR;
-    -- they must NOT be spilled to an alloca (which would add an extra indirection).
-    (s, emitSVal s v)
-  else if ssaIsPassByPtr s v.ty then
-    let llTy := ssaTyToLLVM s v.ty
-    let (s, tmp) := freshLocal s
-    let s := emitInstr s s!"  {tmp} = alloca {llTy}"
-    let s := emitInstr s s!"  store {llTy} {emitSVal s v}, ptr {tmp}"
-    (s, tmp)
-  else
-    (s, emitSVal s v)
-
-/-- Like ensurePtr but returns a structured LLVMOperand instead of a string. -/
+/-- If the SVal is not known to be a ptr but has a pass-by-ptr type,
+    emit alloca+store to convert it. Returns (state, LLVMOperand). -/
 private def ensurePtrOp (s : EmitSSAState) (v : SVal) : EmitSSAState × LLVMOperand :=
   match v with
   | .strConst name =>
@@ -320,17 +271,17 @@ private def emitBinOp (s : EmitSSAState) (dst : String) (op : BinOp) (lhs rhs : 
   -- Pointer arithmetic: ptr + int → getelementptr <pointee>, ptr %p, i64 %n
   -- GEP scales the offset by the pointee element size automatically
   if isPointerTy operandTy && (op == .add || op == .sub) then
-    let lhsStr := emitSVal s lhs
-    let rhsStr := emitSVal s rhs
+    let lOp := svalToOperand s lhs
+    let rOp := svalToOperand s rhs
     let pointeeTy := match operandTy with
-      | .ptrMut t | .ptrConst t => ssaTyToLLVM s t
-      | _ => "i8"
-    let rhsIdx := if op == .sub then
+      | .ptrMut t | .ptrConst t => tyToLLVMTy s t
+      | _ => .i8
+    let (s, idxOp) := if op == .sub then
       let negReg := s!"{dst}.neg"
-      let s := emitInstr s s!"  %{negReg} = sub i64 0, {rhsStr}"
-      (s, s!"%{negReg}")
-    else (s, rhsStr)
-    emitInstr rhsIdx.1 s!"  %{dst} = getelementptr {pointeeTy}, ptr {lhsStr}, i64 {rhsIdx.2}"
+      let s := emitStructured s (.binOp negReg .sub .i64 (.intLit 0) rOp)
+      (s, LLVMOperand.reg negReg)
+    else (s, rOp)
+    emitStructured s (.gep dst pointeeTy lOp [(.i64, idxOp)])
   else if isFloatTy operandTy then
     let fTy := floatTyToLLVMTy operandTy
     let lOp := svalToOperand s lhs
@@ -475,64 +426,66 @@ private def emitSInst (s : EmitSSAState) (inst : SInst) : EmitSSAState :=
     | .strConst name =>
       -- String constant → ptr: materialize the %struct.String and return ptr
       let (s, strPtr) := materializeStrConst s name
-      let s := emitInstr s s!"  %{dst} = getelementptr i8, ptr {strPtr}, i32 0"
+      let s := emitStructured s (.gep dst .i8 (.reg (strPtr.drop 1).toString) [(.i32, .intLit 0)])
       markPtr s dst
     | _ =>
     let srcTy := val.ty
-    let srcLLTy := ssaTyToLLVM s srcTy
-    let dstLLTy := ssaTyToLLVM s targetTy
-    let valStr := emitSVal s val
+    let srcLLTy := tyToLLVMTy s srcTy
+    let dstLLTy := tyToLLVMTy s targetTy
+    let valOp := svalToOperand s val
     if srcLLTy == dstLLTy then
       -- Same type, just alias
-      if srcLLTy == "ptr" then emitInstr s s!"  %{dst} = getelementptr i8, ptr {valStr}, i32 0"
-      else emitInstr s s!"  %{dst} = add {srcLLTy} {valStr}, 0"
-    else if srcLLTy == "ptr" || dstLLTy == "ptr" then
-      if srcLLTy == "ptr" && isIntegerTy targetTy then
-        emitInstr s s!"  %{dst} = ptrtoint ptr {valStr} to {dstLLTy}"
-      else if dstLLTy == "ptr" && isIntegerTy srcTy then
-        emitInstr s s!"  %{dst} = inttoptr {srcLLTy} {valStr} to ptr"
-      else if srcLLTy == "ptr" then
-        -- ptr → ptr (already handled by same type), or ptr → non-ptr
-        emitInstr s s!"  %{dst} = ptrtoint ptr {valStr} to {dstLLTy}"
+      if srcLLTy == .ptr then emitStructured s (.gep dst .i8 valOp [(.i32, .intLit 0)])
+      else emitStructured s (.binOp dst .add srcLLTy valOp (.intLit 0))
+    else if srcLLTy == .ptr || dstLLTy == .ptr then
+      if srcLLTy == .ptr && isIntegerTy targetTy then
+        emitStructured s (.cast dst .ptrtoint .ptr valOp dstLLTy)
+      else if dstLLTy == .ptr && isIntegerTy srcTy then
+        emitStructured s (.cast dst .inttoptr srcLLTy valOp .ptr)
+      else if srcLLTy == .ptr then
+        -- ptr → non-int (e.g. ptr → struct): ptrtoint
+        emitStructured s (.cast dst .ptrtoint .ptr valOp dstLLTy)
       else
         -- non-ptr → ptr: use inttoptr for ints, alloca+store for structs
         if ssaIsPassByPtr s srcTy then
           let (s, tmp) := freshLocal s
-          let s := emitInstr s s!"  {tmp} = alloca {srcLLTy}"
-          let s := emitInstr s s!"  store {srcLLTy} {valStr}, ptr {tmp}"
-          let s := emitInstr s s!"  %{dst} = getelementptr i8, ptr {tmp}, i32 0"
+          let tmpName := (tmp.drop 1).toString
+          let s := emitStructured s (.alloca tmpName srcLLTy)
+          let s := emitStructured s (.store srcLLTy valOp (.reg tmpName))
+          let s := emitStructured s (.gep dst .i8 (.reg tmpName) [(.i32, .intLit 0)])
           markPtr s dst
         else
-          emitInstr s s!"  %{dst} = inttoptr {srcLLTy} {valStr} to ptr"
+          emitStructured s (.cast dst .inttoptr srcLLTy valOp .ptr)
     else if isIntegerTy srcTy && isIntegerTy targetTy then
       let srcBits := match srcTy with
         | .i8 | .u8 | .char => 8 | .i16 | .u16 => 16 | .i32 | .u32 => 32 | _ => 64
       let dstBits := match targetTy with
         | .i8 | .u8 | .char => 8 | .i16 | .u16 => 16 | .i32 | .u32 => 32 | _ => 64
       if srcBits < dstBits then
-        if ssaIsSignedInt srcTy then emitInstr s s!"  %{dst} = sext {srcLLTy} {valStr} to {dstLLTy}"
-        else emitInstr s s!"  %{dst} = zext {srcLLTy} {valStr} to {dstLLTy}"
+        if ssaIsSignedInt srcTy then emitStructured s (.cast dst .sext srcLLTy valOp dstLLTy)
+        else emitStructured s (.cast dst .zext srcLLTy valOp dstLLTy)
       else if srcBits > dstBits then
-        emitInstr s s!"  %{dst} = trunc {srcLLTy} {valStr} to {dstLLTy}"
+        emitStructured s (.cast dst .trunc srcLLTy valOp dstLLTy)
       else
-        emitInstr s s!"  %{dst} = bitcast {srcLLTy} {valStr} to {dstLLTy}"
+        emitStructured s (.cast dst .bitcast srcLLTy valOp dstLLTy)
     else if isIntegerTy srcTy && isFloatTy targetTy then
-      if ssaIsSignedInt srcTy then emitInstr s s!"  %{dst} = sitofp {srcLLTy} {valStr} to {dstLLTy}"
-      else emitInstr s s!"  %{dst} = uitofp {srcLLTy} {valStr} to {dstLLTy}"
+      if ssaIsSignedInt srcTy then emitStructured s (.cast dst .sitofp srcLLTy valOp dstLLTy)
+      else emitStructured s (.cast dst .uitofp srcLLTy valOp dstLLTy)
     else if isFloatTy srcTy && isIntegerTy targetTy then
-      if ssaIsSignedInt targetTy then emitInstr s s!"  %{dst} = fptosi {srcLLTy} {valStr} to {dstLLTy}"
-      else emitInstr s s!"  %{dst} = fptoui {srcLLTy} {valStr} to {dstLLTy}"
+      if ssaIsSignedInt targetTy then emitStructured s (.cast dst .fptosi srcLLTy valOp dstLLTy)
+      else emitStructured s (.cast dst .fptoui srcLLTy valOp dstLLTy)
     else if isFloatTy srcTy && isFloatTy targetTy then
       let srcBits := if srcTy == .float32 then 32 else 64
       let dstBits := if targetTy == .float32 then 32 else 64
-      if srcBits < dstBits then emitInstr s s!"  %{dst} = fpext {srcLLTy} {valStr} to {dstLLTy}"
-      else emitInstr s s!"  %{dst} = fptrunc {srcLLTy} {valStr} to {dstLLTy}"
+      if srcBits < dstBits then emitStructured s (.cast dst .fpext srcLLTy valOp dstLLTy)
+      else emitStructured s (.cast dst .fptrunc srcLLTy valOp dstLLTy)
     else
       -- Fallback: alloca+store+load to "bitcast"
       let (s, tmp) := freshLocal s
-      let s := emitInstr s s!"  {tmp} = alloca {srcLLTy}"
-      let s := emitInstr s s!"  store {srcLLTy} {valStr}, ptr {tmp}"
-      emitInstr s s!"  %{dst} = load {dstLLTy}, ptr {tmp}"
+      let tmpName := (tmp.drop 1).toString
+      let s := emitStructured s (.alloca tmpName srcLLTy)
+      let s := emitStructured s (.store srcLLTy valOp (.reg tmpName))
+      emitStructured s (.load dst dstLLTy (.reg tmpName))
   | .memcpy dst src size =>
     emitStructured s (.memcpy (svalToOperand s dst) (svalToOperand s src) size)
 
@@ -550,19 +503,19 @@ private def emitSTerm (s : EmitSSAState) (t : STerm) : EmitSSAState × LLVMTerm 
     else match v with
     | .strConst _ =>
       -- String constant: materialize as struct, load, return by value
-      let tyStr := ssaTyToLLVM s v.ty
       let (s, ptr) := materializeStrConst s (match v with | .strConst n => n | _ => "")
       let (s, tmp) := freshLocal s
-      let s := emitInstr s s!"  {tmp} = load {tyStr}, ptr {ptr}"
-      (s, .ret llTy (some (.reg (tmp.drop 1).toString)))
+      let tmpName := (tmp.drop 1).toString
+      let s := emitStructured s (.load tmpName llTy (.reg (ptr.drop 1).toString))
+      (s, .ret llTy (some (.reg tmpName)))
     | _ =>
     if isKnownPtr s v && ssaIsPassByPtr s v.ty then
       -- Value is a pointer to a struct (e.g. pass-by-ptr param); load it
       -- so we return the struct by value as the LLVM signature expects.
-      let tyStr := ssaTyToLLVM s v.ty
       let (s, tmp) := freshLocal s
-      let s := emitInstr s s!"  {tmp} = load {tyStr}, ptr {emitSVal s v}"
-      (s, .ret llTy (some (.reg (tmp.drop 1).toString)))
+      let tmpName := (tmp.drop 1).toString
+      let s := emitStructured s (.load tmpName llTy (svalToOperand s v))
+      (s, .ret llTy (some (.reg tmpName)))
     else (s, .ret llTy (some (svalToOperand s v)))
   | .ret none => (s, .ret .void none)
   | .br lbl => (s, .br lbl)
