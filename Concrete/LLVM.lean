@@ -86,8 +86,10 @@ inductive LLVMInstr where
   | fneg (dst : String) (ty : LLVMTy) (operand : LLVMOperand)
   /-- `%dst = call <retTy> <target>(<args>)` or `call void <target>(<args>)` -/
   | call (dst : Option String) (retTy : LLVMTy) (target : LLVMOperand) (args : List (LLVMTy × LLVMOperand))
-  /-- `%dst = call <retTy> (ptr, ...) <target>(<args>)` — variadic call (printf etc.) -/
-  | callVariadic (dst : Option String) (retTy : LLVMTy) (target : LLVMOperand) (args : List (LLVMTy × LLVMOperand))
+  /-- `%dst = call <retTy> (<fnTyParams>, ...) <target>(<args>)` — variadic call (printf etc.)
+      `fnTyParams` lists the non-variadic parameter types for the function type signature.
+      Default `[.ptr]` matches printf's `(ptr, ...)`. -/
+  | callVariadic (dst : Option String) (retTy : LLVMTy) (target : LLVMOperand) (args : List (LLVMTy × LLVMOperand)) (fnTyParams : List LLVMTy := [.ptr])
   /-- `%dst = alloca <ty>` -/
   | alloca (dst : String) (ty : LLVMTy)
   /-- `%dst = load <ty>, ptr <src>` -/
@@ -174,8 +176,6 @@ structure LLVMModule where
   globals : List LLVMGlobal := []
   declarations : List LLVMFnDecl := []
   functions : List LLVMFnDef := []
-  /-- Raw LLVM IR blocks (escape hatch for builtins that are still string-based). -/
-  rawSections : List String := []
   deriving Inhabited, Repr
 
 end Concrete

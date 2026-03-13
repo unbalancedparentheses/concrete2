@@ -97,13 +97,15 @@ private def printInstr (inst : LLVMInstr) : String :=
     match dst with
     | some d => s!"  %{d} = call {retStr} {targetStr}({argStr})"
     | none => s!"  call {retStr} {targetStr}({argStr})"
-  | .callVariadic dst retTy target args =>
+  | .callVariadic dst retTy target args fnTyParams =>
     let argStr := ", ".intercalate (args.map fun (t, o) => printTypedOperand t o)
     let retStr := printLLVMTy retTy
     let targetStr := printLLVMOperand target
+    let paramStr := ", ".intercalate (fnTyParams.map printLLVMTy)
+    let sigStr := if paramStr.isEmpty then "..." else paramStr ++ ", ..."
     match dst with
-    | some d => s!"  %{d} = call {retStr} (ptr, ...) {targetStr}({argStr})"
-    | none => s!"  call {retStr} (ptr, ...) {targetStr}({argStr})"
+    | some d => s!"  %{d} = call {retStr} ({sigStr}) {targetStr}({argStr})"
+    | none => s!"  call {retStr} ({sigStr}) {targetStr}({argStr})"
   | .alloca dst ty =>
     s!"  %{dst} = alloca {printLLVMTy ty}"
   | .load dst ty src =>
@@ -191,8 +193,6 @@ def printLLVMModule (m : LLVMModule) : String :=
   -- Functions
   let parts := if m.functions.isEmpty then parts
     else parts ++ m.functions.map (fun f => printFnDef f ++ "\n")
-  -- Raw sections (builtins, etc.)
-  let parts := parts ++ m.rawSections
   -- Join everything
   "".intercalate parts
 
