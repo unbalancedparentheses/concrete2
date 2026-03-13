@@ -252,6 +252,7 @@ This phase begins the high-integrity profile direction:
 Primary surfaces:
 - [docs/VALUE_MODEL.md](docs/VALUE_MODEL.md)
 - [docs/STDLIB.md](docs/STDLIB.md)
+- [research/high-integrity-profile.md](research/high-integrity-profile.md)
 - [research/no-std-freestanding.md](research/no-std-freestanding.md)
 - runtime-facing stdlib and FFI boundaries
 
@@ -292,6 +293,7 @@ This phase carries the safety side of the eventual high-integrity profile:
 Primary surfaces:
 - [docs/DIAGNOSTICS.md](docs/DIAGNOSTICS.md)
 - [Concrete/Report.lean](/Users/unbalancedparen/projects/concrete/Concrete/Report.lean)
+- [research/authority-budgets.md](research/authority-budgets.md)
 - [research/capability-sandboxing.md](research/capability-sandboxing.md)
 - [research/unsafe-structure.md](research/unsafe-structure.md)
 
@@ -320,6 +322,7 @@ This phase is where an eventual critical/provable subset becomes a real language
 
 Primary surfaces:
 - [research/design-filters.md](research/design-filters.md)
+- [research/high-integrity-profile.md](research/high-integrity-profile.md)
 - grammar docs and language references
 - language-design research notes
 
@@ -346,6 +349,7 @@ Goal: make Concrete usable for real multi-module and multi-package projects with
 For serious use, this phase is unavoidable. High-integrity or proof-oriented code still needs a clean project model, dependency semantics, and workspace behavior that are explicit rather than ad hoc.
 
 Primary surfaces:
+- [research/authority-budgets.md](research/authority-budgets.md)
 - project/package metadata
 - import resolution and project-root semantics
 - stdlib vs third-party package boundaries
@@ -379,6 +383,7 @@ This phase is where the evidence story becomes operational:
 Primary surfaces:
 - [README.md](README.md)
 - [docs/README.md](docs/README.md)
+- [research/proof-evidence-artifacts.md](research/proof-evidence-artifacts.md)
 - CI config
 - release/build tooling
 - project/package metadata
