@@ -266,100 +266,22 @@ Landed deliverables:
 Exit criterion:
 syntax guardrails, diagnostics, and stdlib testing behave like durable infrastructure rather than one-off pushes.
 
-#### Phase D: Testing, Backend, And Trust Multipliers
+#### Phase D: Testing, Backend, And Trust Multipliers — **Done**
 
 Goal: make the compiler strong enough to support proofs, tooling reuse, and long-term backend work.
 
-The first active Phase D pressure is now testing-system infrastructure. Phase C made testing credible; Phase D should make it materially smarter and faster by using compiler artifacts and dependency information instead of relying mostly on shell-level orchestration.
+Phase D was split into D1 (testing architecture) and D2 (backend/artifact/proof), plus items 3–7. All items are complete. See Recent Progress for details on what landed.
 
-Testing is not just support work here. It should become a first-class compiler subsystem with explicit artifact boundaries, pass-level coverage, performance expectations, and determinism rules rather than growing only as a larger shell script plus more cases.
+**What D1 delivered:** pass-level Lean tests (32 tests across all compiler passes), test metadata (`test_manifest.toml`, `test_dep_map.toml`), dependency-aware selection (`--affected`), compiler output cache (26/57 hits), failure artifact preservation, coverage matrix and determinism policy in `docs/TESTING.md`, compile-once report reuse.
 
-The current test infrastructure is good for a research-stage compiler, but its limits should stay explicit. The suite has breadth and the right broad categories, yet too much behavior still lives in a large shell script, too many semantic tests still pay full process/filesystem/codegen cost, report assertions still recompile the same programs repeatedly, and failure reproduction/isolation is weaker than it should be for a fast parallel workflow.
+**What D2 delivered:** `ValidatedCore` pipeline artifact, `ProofCore` extraction, formal evaluation semantics with 17 proven theorems, SSA backend contract in `docs/PASSES.md`.
 
-The bar for Phase D should be unusually high: not merely "good enough CI" or "lots of tests," but a testing system that feels best-in-class for a compiler project. That means the fastest credible feedback loop, the clearest explanation of what was tested and why, the cheapest path from change to affected coverage, the best failure isolation and reproduction story, and the strongest mix of end-to-end, pass-level, invariant, differential, and proof-adjacent validation that the project can realistically support.
+**What items 3–7 delivered:** SSA backend contract (item 3), ABI/FFI maturity statement with known limitations (item 4), 12-program integration corpus (item 5), formalization over Core→SSA (item 6), next report modes named (item 7). Integration testing also discovered 3 compiler bugs (now fixed — see `docs/bugs/`).
 
-Phase D is split internally:
-- D1: Testing Architecture And Validation Excellence
-- D2: Backend, Artifact, And Proof Multipliers
-
-The intent is explicit: testing comes first inside Phase D. Backend/proof work should ride on top of a testing system that is already fast, explainable, artifact-aware, and unusually reliable.
-
-Execution model for D1:
-- source of truth for test metadata: structured test definitions checked into the repo, not only shell-script sections; the metadata should be close enough to each test to stay honest, but centralized enough to support selection, reporting, and caching
-- execution engine: `run_tests.sh` remains as the short user-facing entrypoint at first, but the real test graph, metadata loading, artifact reuse, and result reporting should move into structured code/data rather than accumulating more shell logic
-- canonical layers:
-  - pass-level Lean tests stop at the relevant compiler pass and do not invoke full runtime/codegen unless the test explicitly needs it
-  - artifact tests consume parse/Core/validated-Core/SSA/report outputs directly
-  - end-to-end tests exercise compile-and-run behavior
-  - stress/integration tests exercise realistic multi-feature and multi-module workloads
-- artifact boundaries by test class:
-  - semantic/diagnostic tests should stop before unnecessary codegen
-  - report tests should consume cached report artifacts
-  - SSA/codegen tests should consume cached lowered/SSA artifacts where possible
-  - runtime/integration tests should pay full pipeline cost only when that full-path value is the point of the test
-- first concrete repo changes:
-  - add a structured manifest or equivalent metadata source for test kind/profile/requirements/ownership
-  - add a preserved-artifact directory layout for failures and cached intermediate outputs
-  - add a structured runner layer that `run_tests.sh` can call instead of embedding all orchestration directly
-  - add the first pass-level Lean test suites for semantic failures
-- shell boundary:
-  - keep `run_tests.sh` as the stable CLI surface for developers
-  - move scheduling, metadata interpretation, artifact reuse, and result formatting out of shell over time
-- sequencing rule:
-  - D2 can begin in parallel only after D1 has a usable core: structured test metadata, preserved failure artifacts, compile-once report reuse, and pass-level semantic tests
-
-Primary surfaces:
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
-- [docs/PASSES.md](docs/PASSES.md)
-- [research/ten-x-improvements.md](research/ten-x-improvements.md)
-- [research/formalization-roi.md](research/formalization-roi.md)
-- `Concrete/Pipeline.lean`
-- `Concrete/SSAVerify.lean`
-- `Concrete/SSACleanup.lean`
-- `Concrete/EmitSSA.lean`
-- `Concrete/Report.lean`
-
-1. turn explicit pipeline artifacts into reusable tooling/caching building blocks
-   - use those artifacts as the foundation for artifact-aware test reuse, caching, and narrower rerun scopes
-   - move test execution beyond shell-level filtering toward dependency-aware reruns
-   - classify tests more clearly (`unit`, `semantic`, `report`, `codegen`, `integration`, `stress`) and also by run profile (`fast`, `optimization/regression`, `report/golden`, `slow/network/stress`) so local runs and CI can choose better defaults
-   - make test classification real compiler metadata rather than only runner conventions
-   - require test metadata to capture expected phase, required capabilities (for example network/filesystem), whether codegen is required, and the owning source/module/pass where known
-   - deliverables:
-     - a documented artifact model for parse/Core/validated-Core/mono/SSA/report outputs with stable identity rules
-     - a reusable cache key strategy tied to those artifacts rather than ad hoc runner behavior
-     - a targeted-run path that can explain why a test was selected or skipped
-     - explicit change-to-test mapping good enough that a developer can see which tests are affected by a file, pass, module, or report-mode change
-     - compile-once/reuse-many execution for repeated report, SSA, and diagnostics assertions against the same program artifacts
-2. make testing architecture a first-class subsystem
-   - split the stack deliberately by cost and purpose: pass-level Lean tests, artifact tests for Core/SSA/report outputs, end-to-end runtime tests, and stress/integration tests
-   - add pass-level Lean tests for `Check`, `Elab`, `Lower`, `SSAVerify`, and `EmitSSA` where end-to-end execution is unnecessary cost
-   - define a clearer coverage matrix by failure mode (parser crash resistance, semantic regressions, lowering invariants, backend structure, runtime behavior, diagnostics, reports, stdlib behavior, optimization regressions)
-   - add performance-regression tracking for compile time, suite time, and artifact reuse efficiency so "faster" stays defended rather than anecdotal
-   - define determinism/flakiness policy explicitly (fixed seeds unless deliberately exploring, timeout classes, network isolation by default, no wall-clock dependence unless declared, stable tempdir handling, quarantine/repair expectations)
-   - push test selection toward dependency- and ownership-aware scopes instead of string matching alone
-   - make `run_tests.sh` thinner over time so it is a frontend into structured test definitions/execution rather than the test system itself
-   - near-term implementation order:
-     - failure artifacts plus exact rerun commands
-     - compile-once/reuse-many report assertions
-     - pass-level Lean tests for semantic failures
-     - test metadata and category model
-     - change-based test selection
-   - deliverables:
-     - a pass-level Lean test suite covering at least `Check`, `Elab`, `Lower`, `SSAVerify`, and `EmitSSA`
-     - a written coverage matrix in `docs/TESTING.md`
-     - a small benchmark set with recorded compile/test timing baselines
-     - an explicit determinism/flakiness policy in `docs/TESTING.md`
-     - per-test timing output and preserved failure artifacts for targeted debugging
-     - a reproducible single-test rerun path for failures discovered under parallel execution
-     - a lower-cost semantic-test path that avoids full compiler/codegen/process overhead when that cost is unnecessary
-     - failure output that tells the developer what failed, how long it took, what artifacts were kept, and the exact rerun command
-     - automatic failure preservation for source input, stdout/stderr, emitted Core/SSA/report output where relevant, temp files, and environment/test metadata
-     - timing/regression reporting that identifies slowest tests, highest-variance tests, compile-heavy vs runtime-heavy tests, and suite time by category
-     - a data-driven or structured test-definition path that allows `run_tests.sh` to shrink into an orchestration frontend rather than remain the whole system
+**What remains as future aspirations** (not blockers for Phase D exit): structured test definitions replacing shell orchestration, artifact-aware test reuse beyond the current cache, richer pass-level coverage for Check/Elab edge cases. These are tracked in the Compiler Hardening section and Phase E.
 3. ~~strengthen the SSA verifier/cleanup boundary into a clearer backend contract~~ **Done** (D2): SSA backend contract documented in `docs/PASSES.md` — SSAVerify guarantees (8 invariants), SSACleanup guarantees (8 postconditions), EmitSSA assumptions (5 preconditions), invariant chain.
 4. ~~define a clearer FFI / ABI maturity path~~ **Done**: `docs/ABI.md` — stability matrix, platform assumptions (64-bit only), FFI safety model, struct layout rules (repr(C)/packed/align), enum representation, pass-by-pointer convention. 4 layout verification tests in `PipelineTest.lean` (scalar sizes, builtin sizes, repr(C) layout, pass-by-ptr decisions). **Known gap:** `#[repr(C)]` structs have C-compatible in-memory layout but are passed by pointer (not by value) in `extern fn` calls — C code must accept a struct pointer, not a by-value struct. Layout model assumptions are verified against Lean helpers, not by empirical cross-target compilation.
-5. ~~grow a stronger real-program and invariant-testing corpus on top of the faster loop~~ **Done**: 4 new integration programs (calculator 200 lines, type registry 248 lines, pipeline processor 223 lines, stress bytecode interpreter 280 lines). Integration corpus now 12 programs. Stress workload exercises 11-variant enum, multiple Vec instances, 21-instruction execution loop, cross-module types/functions. Programs discovered and worked around two compiler bugs: cross-module struct field offset (all fields read as offset 0) and i32 literal type mismatch in subtraction.
+5. ~~grow a stronger real-program and invariant-testing corpus on top of the faster loop~~ **Done**: 4 new integration programs (calculator 200 lines, type registry 248 lines, pipeline processor 223 lines, stress bytecode interpreter 280 lines). Integration corpus now 12 programs. Stress workload exercises 11-variant enum, multiple Vec instances, 21-instruction execution loop, cross-module types/functions. Programs discovered 3 compiler bugs (all now fixed — see `docs/bugs/`): cross-module struct field offset, i32 literal type mismatch, and cross-module &mut borrow consumed as move.
 6. ~~push formalization over Core -> SSA~~ **Done** (D2): `ValidatedCore` explicit in `Pipeline.lean`, `ProofCore` extraction in `ProofCore.lean`, formal evaluation semantics in `Proof.lean` with 17 proven theorems (abs/max/clamp correctness, structural lemmas, arithmetic). Source-to-Core traceability and proof fragment extension (structs, enums, match, recursion) remain as future work.
 7. ~~add deferred audit/report outputs~~ **Done**: next report modes named in `docs/PASSES.md` (`--report authority`, `--report proof`, `--report high-integrity` deferred to Phase E). All 6 existing modes (caps, unsafe, layout, interface, alloc, mono) regression-tested with 44 stable semantic assertions.
 
@@ -687,15 +609,14 @@ These are concrete, implementable improvements that emerged from the bug fixes a
 
 ## Backend Work Order
 
-Backend work should happen in this order:
+The structured LLVM backend and SSA backend contract are done. Remaining backend work in priority order:
 
-1. Replace direct LLVM IR text emission with a structured LLVM backend.
-2. Make backend plurality explicit over the SSA boundary.
-3. Only then evaluate additional backend families such as C or Wasm.
-4. Treat MLIR as optional and only if it still earns its complexity after the SSA/backend-contract cleanup.
-5. Once the SSA contract and artifact story are solid, evaluate whether MLIR should remain optional, become a sibling backend family, or replace the direct LLVM path for some stages.
-
-The immediate backend problem is stringly LLVM emission, not lack of MLIR.
+1. ~~Replace direct LLVM IR text emission with a structured LLVM backend.~~ **Done** — EmitSSA emits structured LLVM IR through `LLVMTy`/`LLVMFnDecl`/`SInst` types, not string concatenation.
+2. ~~Document the SSA backend contract.~~ **Done** — SSAVerify guarantees, SSACleanup postconditions, EmitSSA preconditions documented in `docs/PASSES.md`.
+3. Close the calling convention gap for `extern fn` with struct parameters (Phase E item 6).
+4. Make backend plurality explicit over the SSA boundary — only after the current backend is fully trustworthy.
+5. Only then evaluate additional backend families such as C or Wasm.
+6. Treat MLIR as optional and only if it earns its complexity after the SSA/backend-contract work is mature.
 
 ## Not Yet
 
