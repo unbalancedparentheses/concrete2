@@ -42,7 +42,7 @@ Still clearly not implemented:
 
 - `transmute`
 - backend plurality over SSA (for example C / Wasm, and later maybe MLIR)
-- kernel formalization
+- full kernel formalization (initial proof workflow landed in D2 with 17 theorems over a pure Core fragment; full formalization of structs, enums, match, recursion, and source-to-Core traceability remains future work)
 - a runtime
 - fully authoritative standalone resolution
 
@@ -539,9 +539,7 @@ Concrete is not only architecturally strong internally, but also operable, repro
    - keep artifact boundaries explicit and inspectable
    - move toward serialization/caching only on top of already boring pass contracts
    - use explicit artifacts to enable better test reuse and narrower recompilation
-7. Prepare for eventual Lean-side proof of selected Concrete functions by keeping Core semantics small, explicit, and suitable as the proof boundary.
-   - keep the proof boundary after `CoreCheck` and before `Mono`
-   - treat ProofCore as a restricted view of validated Core rather than a second semantic IR
+7. ~~Prepare for eventual Lean-side proof of selected Concrete functions.~~ **Done** (D2): `Proof.lean` defines evaluation semantics for a pure Core fragment with 17 proven theorems; `ProofCore.lean` extracts the proof-eligible subset from `ValidatedCore`. Remaining: extend proof coverage to structs, enums, match, recursion; add source-to-Core traceability; add export/tooling for proof workflows.
 8. Preserve a small set of long-horizon differentiator ideas in research without turning them into immediate roadmap thrash.
    - first-class audit mode and authority tracing
    - proof-carrying reports and proof-oriented module contracts
@@ -592,8 +590,8 @@ These are concrete, implementable improvements that emerged from the bug fixes a
    - structural boundedness reports first
    - abstract cost estimation later
    - never at the cost of clarity in the core language
-10. Lean-side proof of selected Concrete functions over formalized Core, starting with pure fragments rather than raw surface syntax or FFI-heavy code.
-11. Potential later expansion of the Lean proof story, but only after the narrow Core-based workflow works cleanly.
+10. Broaden the Lean-side proof workflow beyond the current pure-fragment scope (17 theorems over integers/booleans/arithmetic/conditionals). Next targets: structs, enums, match expressions, recursive functions, source-to-Core traceability, and export/tooling for external proof use.
+11. Potential later expansion of the Lean proof story beyond Core-level properties.
    - later broaden selected-function proofs toward effects, resources, capabilities, runtime interaction, and only then concurrency
    - later consider backend-level proof concerns such as richer compiler-preservation work across deeper lowering stacks or optional backend-family layers
    - do not treat either broader end-to-end program proofs or backend/MLIR-layer proof work as near-term substitutes for the validated-Core-first plan
