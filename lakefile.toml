@@ -8,3 +8,7 @@ name = "Concrete"
 [[lean_exe]]
 name = "concrete"
 root = "Main"
+
+[[lean_exe]]
+name = "pipeline-test"
+root = "PipelineTest"

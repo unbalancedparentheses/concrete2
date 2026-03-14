@@ -1,0 +1,421 @@
+import Concrete
+
+open Concrete Pipeline
+
+-- ============================================================
+-- Helpers
+-- ============================================================
+
+/-- Check if `needle` appears anywhere in `haystack`. -/
+def String.contains' (haystack needle : String) : Bool :=
+  -- Simple substring search
+  let n := needle.length
+  let h := haystack.length
+  if n > h then false
+  else
+    let rec go (i : Nat) (fuel : Nat) : Bool :=
+      match fuel with
+      | 0 => false
+      | fuel' + 1 =>
+        if i + n > h then false
+        else if (haystack.drop i).take n == needle then true
+        else go (i + 1) fuel'
+    go 0 (h - n + 1)
+
+/-- Run an action, print PASS/FAIL, return 0/1. -/
+def runTest (name : String) (action : Unit → Except Diagnostics Unit) : IO UInt32 := do
+  match action () with
+  | .ok () =>
+    IO.println s!"PASS: {name}"
+    return 0
+  | .error ds =>
+    IO.eprintln s!"FAIL: {name}"
+    IO.eprintln (renderDiagnostics ds)
+    return 1
+
+/-- Expect a successful result from an Except. -/
+def expectOk (result : Except Diagnostics α) (name : String) : IO (Option α) := do
+  match result with
+  | .ok a => return some a
+  | .error ds =>
+    IO.eprintln s!"FAIL: {name} — unexpected error"
+    IO.eprintln (renderDiagnostics ds)
+    return none
+
+/-- Expect a failure result from an Except. -/
+def expectError (result : Except Diagnostics α) (name : String) : IO (Option Diagnostics) := do
+  match result with
+  | .error ds => return some ds
+  | .ok _ =>
+    IO.eprintln s!"FAIL: {name} — expected error but got success"
+    return none
+
+/-- Run frontend passes (parse → buildSummary → check → elaborate) on a source string.
+    No file I/O — no resolveFiles step (single-file programs only). -/
+def frontendNoIO (source : String) : Except Diagnostics (ParsedProgram × SummaryTable × ElaboratedProgram) :=
+  match Pipeline.parse source with
+  | .error ds => .error ds
+  | .ok parsed =>
+    let summary := Pipeline.buildSummary parsed
+    match Pipeline.resolve parsed summary with
+    | .error ds => .error ds
+    | .ok _ =>
+    match Pipeline.check parsed summary with
+    | .error ds => .error ds
+    | .ok () =>
+    match Pipeline.elaborate parsed summary with
+    | .error ds => .error ds
+    | .ok elabProg => .ok (parsed, summary, elabProg)
+
+/-- Full pipeline from source string to LLVM IR string (no file I/O). -/
+def fullPipelineNoIO (source : String) : Except Diagnostics String :=
+  match frontendNoIO source with
+  | .error ds => .error ds
+  | .ok (_, _, elabProg) =>
+  match Pipeline.monomorphize elabProg with
+  | .error ds => .error ds
+  | .ok mono =>
+  match Pipeline.lower mono with
+  | .error ds => .error ds
+  | .ok ssa => .ok (Pipeline.emit ssa)
+
+-- ============================================================
+-- Test sources
+-- ============================================================
+
+def simpleMain : String :=
+  "fn main() -> Int { return 42; }"
+
+def addFunction : String :=
+  "fn add(a: i32, b: i32) -> i32 { return a + b; }
+fn main() -> Int { return add(1, 2) as Int; }"
+
+def structSource : String :=
+  "pub struct Copy Point { x: i32, y: i32 }
+fn main() -> Int {
+    let p: Point = Point { x: 3, y: 4 };
+    return (p.x + p.y) as Int;
+}"
+
+def enumSource : String :=
+  "pub enum Copy Shape {
+    Circle { radius: i32 },
+    Rect { w: i32, h: i32 },
+}
+fn area(s: &Shape) -> i32 {
+    match *s {
+        Shape#Circle { radius } => { return radius * radius; },
+        Shape#Rect { w, h } => { return w * h; }
+    }
+}
+fn main() -> Int {
+    let s: Shape = Shape#Rect { w: 6, h: 7 };
+    return area(&s) as Int;
+}"
+
+def traitSource : String :=
+  "trait Describable {
+    fn value(&self) -> i32;
+}
+pub struct Copy Num { n: i32 }
+impl Describable for Num {
+    fn value(&self) -> i32 { return self.n; }
+}
+fn get_value<T: Describable>(x: &T) -> i32 { return x.value(); }
+fn main() -> Int {
+    let n: Num = Num { n: 42 };
+    return get_value::<Num>(&n) as Int;
+}"
+
+def genericSource : String :=
+  "trait Addable {
+    fn val(&self) -> i32;
+}
+pub struct Copy W { v: i32 }
+impl Addable for W {
+    fn val(&self) -> i32 { return self.v; }
+}
+fn sum_two<T: Addable>(a: &T, b: &T) -> i32 { return a.val() + b.val(); }
+fn main() -> Int {
+    let a: W = W { v: 20 };
+    let b: W = W { v: 22 };
+    return sum_two::<W>(&a, &b) as Int;
+}"
+
+-- Sources that should fail at various passes
+
+def parseError : String :=
+  "fn main( -> Int { return 1; }"  -- missing closing paren
+
+def typeError : String :=
+  "fn main() -> Int {
+    let x: i32 = true;
+    return x as Int;
+}"
+
+def undefinedVar : String :=
+  "fn main() -> Int {
+    return y as Int;
+}"
+
+-- ============================================================
+-- Tests: parse pass
+-- ============================================================
+
+def testParseSimple : IO UInt32 :=
+  runTest "parse/simple" fun () =>
+    match Pipeline.parse simpleMain with
+    | .ok _ => .ok ()
+    | .error ds => .error ds
+
+def testParseEnum : IO UInt32 :=
+  runTest "parse/enum" fun () =>
+    match Pipeline.parse enumSource with
+    | .ok _ => .ok ()
+    | .error ds => .error ds
+
+def testParseTrait : IO UInt32 :=
+  runTest "parse/trait" fun () =>
+    match Pipeline.parse traitSource with
+    | .ok _ => .ok ()
+    | .error ds => .error ds
+
+def testParseRejectsGarbage : IO UInt32 := do
+  match Pipeline.parse parseError with
+  | .error _ =>
+    IO.println "PASS: parse/rejects-garbage"
+    return 0
+  | .ok _ =>
+    IO.eprintln "FAIL: parse/rejects-garbage — expected parse error"
+    return 1
+
+-- ============================================================
+-- Tests: frontend (parse + resolve + check + elaborate)
+-- ============================================================
+
+def testFrontendSimple : IO UInt32 :=
+  runTest "frontend/simple" fun () =>
+    match frontendNoIO simpleMain with
+    | .ok _ => .ok ()
+    | .error ds => .error ds
+
+def testFrontendAdd : IO UInt32 :=
+  runTest "frontend/add" fun () =>
+    match frontendNoIO addFunction with
+    | .ok _ => .ok ()
+    | .error ds => .error ds
+
+def testFrontendStruct : IO UInt32 :=
+  runTest "frontend/struct" fun () =>
+    match frontendNoIO structSource with
+    | .ok _ => .ok ()
+    | .error ds => .error ds
+
+def testFrontendEnum : IO UInt32 :=
+  runTest "frontend/enum" fun () =>
+    match frontendNoIO enumSource with
+    | .ok _ => .ok ()
+    | .error ds => .error ds
+
+def testFrontendTrait : IO UInt32 :=
+  runTest "frontend/trait" fun () =>
+    match frontendNoIO traitSource with
+    | .ok _ => .ok ()
+    | .error ds => .error ds
+
+def testFrontendGeneric : IO UInt32 :=
+  runTest "frontend/generic" fun () =>
+    match frontendNoIO genericSource with
+    | .ok _ => .ok ()
+    | .error ds => .error ds
+
+def testFrontendTypeError : IO UInt32 := do
+  match frontendNoIO typeError with
+  | .error ds =>
+    -- Should be a check or elab error
+    if ds.any fun d => d.severity == .error then
+      IO.println "PASS: frontend/type-error"
+      return 0
+    else
+      IO.eprintln "FAIL: frontend/type-error — got diagnostics but none are errors"
+      return 1
+  | .ok _ =>
+    IO.eprintln "FAIL: frontend/type-error — expected error"
+    return 1
+
+def testFrontendUndefinedVar : IO UInt32 := do
+  match frontendNoIO undefinedVar with
+  | .error ds =>
+    if ds.any fun d => d.severity == .error then
+      IO.println "PASS: frontend/undefined-var"
+      return 0
+    else
+      IO.eprintln "FAIL: frontend/undefined-var — got diagnostics but none are errors"
+      return 1
+  | .ok _ =>
+    IO.eprintln "FAIL: frontend/undefined-var — expected error"
+    return 1
+
+-- ============================================================
+-- Tests: monomorphize pass
+-- ============================================================
+
+def testMonoGeneric : IO UInt32 := do
+  match frontendNoIO genericSource with
+  | .error ds =>
+    IO.eprintln s!"FAIL: mono/generic — frontend failed"
+    IO.eprintln (renderDiagnostics ds)
+    return 1
+  | .ok (_, _, elabProg) =>
+    match Pipeline.monomorphize elabProg with
+    | .ok _ =>
+      IO.println "PASS: mono/generic"
+      return 0
+    | .error ds =>
+      IO.eprintln s!"FAIL: mono/generic"
+      IO.eprintln (renderDiagnostics ds)
+      return 1
+
+def testMonoTrait : IO UInt32 := do
+  match frontendNoIO traitSource with
+  | .error ds =>
+    IO.eprintln s!"FAIL: mono/trait — frontend failed"
+    IO.eprintln (renderDiagnostics ds)
+    return 1
+  | .ok (_, _, elabProg) =>
+    match Pipeline.monomorphize elabProg with
+    | .ok _ =>
+      IO.println "PASS: mono/trait"
+      return 0
+    | .error ds =>
+      IO.eprintln s!"FAIL: mono/trait"
+      IO.eprintln (renderDiagnostics ds)
+      return 1
+
+-- ============================================================
+-- Tests: full pipeline to LLVM IR
+-- ============================================================
+
+def testFullSimple : IO UInt32 := do
+  match fullPipelineNoIO simpleMain with
+  | .ok ir =>
+    if ir.contains' "define" then
+      IO.println "PASS: full/simple — produced LLVM IR"
+      return 0
+    else
+      IO.eprintln "FAIL: full/simple — IR missing 'define'"
+      return 1
+  | .error ds =>
+    IO.eprintln "FAIL: full/simple"
+    IO.eprintln (renderDiagnostics ds)
+    return 1
+
+def testFullStruct : IO UInt32 := do
+  match fullPipelineNoIO structSource with
+  | .ok ir =>
+    if ir.contains' "define" then
+      IO.println "PASS: full/struct — produced LLVM IR"
+      return 0
+    else
+      IO.eprintln "FAIL: full/struct — IR missing 'define'"
+      return 1
+  | .error ds =>
+    IO.eprintln "FAIL: full/struct"
+    IO.eprintln (renderDiagnostics ds)
+    return 1
+
+def testFullEnum : IO UInt32 := do
+  match fullPipelineNoIO enumSource with
+  | .ok ir =>
+    if ir.contains' "define" then
+      IO.println "PASS: full/enum — produced LLVM IR"
+      return 0
+    else
+      IO.eprintln "FAIL: full/enum — IR missing 'define'"
+      return 1
+  | .error ds =>
+    IO.eprintln "FAIL: full/enum"
+    IO.eprintln (renderDiagnostics ds)
+    return 1
+
+def testFullTrait : IO UInt32 := do
+  match fullPipelineNoIO traitSource with
+  | .ok ir =>
+    if ir.contains' "define" then
+      IO.println "PASS: full/trait — produced LLVM IR"
+      return 0
+    else
+      IO.eprintln "FAIL: full/trait — IR missing 'define'"
+      return 1
+  | .error ds =>
+    IO.eprintln "FAIL: full/trait"
+    IO.eprintln (renderDiagnostics ds)
+    return 1
+
+def testFullGeneric : IO UInt32 := do
+  match fullPipelineNoIO genericSource with
+  | .ok ir =>
+    if ir.contains' "define" then
+      IO.println "PASS: full/generic — produced LLVM IR"
+      return 0
+    else
+      IO.eprintln "FAIL: full/generic — IR missing 'define'"
+      return 1
+  | .error ds =>
+    IO.eprintln "FAIL: full/generic"
+    IO.eprintln (renderDiagnostics ds)
+    return 1
+
+-- ============================================================
+-- Main: run all tests, report totals
+-- ============================================================
+
+def main : IO UInt32 := do
+  IO.println "=== Concrete Pass-Level Tests ==="
+  IO.println ""
+  let mut failures : UInt32 := 0
+  let mut total : Nat := 0
+
+  -- Parse tests
+  IO.println "--- Parse ---"
+  total := total + 4
+  failures := failures + (← testParseSimple)
+  failures := failures + (← testParseEnum)
+  failures := failures + (← testParseTrait)
+  failures := failures + (← testParseRejectsGarbage)
+  IO.println ""
+
+  -- Frontend tests
+  IO.println "--- Frontend (parse → check → elaborate) ---"
+  total := total + 8
+  failures := failures + (← testFrontendSimple)
+  failures := failures + (← testFrontendAdd)
+  failures := failures + (← testFrontendStruct)
+  failures := failures + (← testFrontendEnum)
+  failures := failures + (← testFrontendTrait)
+  failures := failures + (← testFrontendGeneric)
+  failures := failures + (← testFrontendTypeError)
+  failures := failures + (← testFrontendUndefinedVar)
+  IO.println ""
+
+  -- Mono tests
+  IO.println "--- Monomorphize ---"
+  total := total + 2
+  failures := failures + (← testMonoGeneric)
+  failures := failures + (← testMonoTrait)
+  IO.println ""
+
+  -- Full pipeline tests
+  IO.println "--- Full Pipeline (→ LLVM IR) ---"
+  total := total + 5
+  failures := failures + (← testFullSimple)
+  failures := failures + (← testFullStruct)
+  failures := failures + (← testFullEnum)
+  failures := failures + (← testFullTrait)
+  failures := failures + (← testFullGeneric)
+  IO.println ""
+
+  -- Summary
+  let passed := total - failures.toNat
+  IO.println s!"=== {passed}/{total} passed, {failures} failed ==="
+  return failures

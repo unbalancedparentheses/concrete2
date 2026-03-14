@@ -77,8 +77,8 @@ done
 
 # Resolve which sections are active based on MODE
 case "$MODE" in
-    full)    SECTION="positive,negative,testflag,report,codegen,O2,stdlib,collection" ;;
-    fast)    SECTION="positive,negative,testflag,report,codegen,O2,stdlib,collection" ;;
+    full)    SECTION="passlevel,positive,negative,testflag,report,codegen,O2,stdlib,collection" ;;
+    fast)    SECTION="passlevel,positive,negative,testflag,report,codegen,O2,stdlib,collection" ;;
     stdlib)  SECTION="stdlib,collection" ;;
     stdlib-module) SECTION="stdlib" ;;
     O2)      SECTION="O2" ;;
@@ -1717,6 +1717,34 @@ check_collection_tests "HashSet" \
     test_set_duplicate_insert test_set_remove_nonexistent test_set_clear_reuse
 
 fi # end section: collection
+
+# --- Pass-level Lean tests (no clang, no I/O — exercises parse/check/elab/mono/lower directly) ---
+if section_active passlevel; then
+echo "=== Pass-level pipeline tests ==="
+PIPELINE_TEST=".lake/build/bin/pipeline-test"
+if [ -x "$PIPELINE_TEST" ]; then
+    output=$("$PIPELINE_TEST" 2>&1) || true
+    # Parse the summary line: "=== N/M passed, F failed ==="
+    summary_line=$(echo "$output" | grep -E '^=== [0-9]+/[0-9]+ passed')
+    if [ -n "$summary_line" ]; then
+        pl_passed=$(echo "$summary_line" | sed 's/=== \([0-9]*\)\/.*/\1/')
+        pl_total=$(echo "$summary_line" | sed 's/.*\/\([0-9]*\) passed.*/\1/')
+        pl_failed=$(echo "$summary_line" | sed 's/.*, \([0-9]*\) failed.*/\1/')
+        PASS=$((PASS + pl_passed))
+        FAIL=$((FAIL + pl_failed))
+        echo "  $pl_passed/$pl_total pass-level tests passed"
+        if [ "$pl_failed" -gt 0 ]; then
+            echo "$output" | grep "^FAIL:" >&2
+        fi
+    else
+        echo "  WARNING: could not parse pipeline-test output"
+        echo "$output"
+    fi
+else
+    echo "  SKIP: $PIPELINE_TEST not built (run 'lake build pipeline-test')"
+    SKIP=$((SKIP + 1))
+fi
+fi # end section: passlevel
 
 echo ""
 flush_jobs
