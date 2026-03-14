@@ -133,6 +133,25 @@ cached_output() {
     fi
 }
 
+# Dependency gate: try compiling a file; if it fails, skip N assertions
+# Usage: if ! compile_gate "file.con" "--report caps" "description" COUNT; then skip; fi
+SKIPPED_DEPS=0
+compile_gate() {
+    local file="$1"
+    local flags="$2"
+    local desc="$3"
+    local count="$4"
+    if $COMPILER "$file" $flags > /dev/null 2>&1; then
+        return 0
+    else
+        echo "FAIL  $desc — compilation failed (skipping $count dependent assertions)"
+        FAIL=$((FAIL + 1))
+        SKIPPED_DEPS=$((SKIPPED_DEPS + count))
+        save_failure "$(path_key "$desc")" "$COMPILER $file $flags" "compilation failed"
+        return 1
+    fi
+}
+
 # --- Failure artifact preservation ---
 # On test failure, save artifacts and rerun command to .test-failures/
 FAILDIR=".test-failures"
@@ -1132,6 +1151,8 @@ check_report "$TESTDIR/report_mono_check.con" mono \
     "report_mono_check.con --report mono missing Specializations"
 
 # -- Integration test: all report modes on one file --
+# Gate: if the file doesn't compile at all, skip all 14 assertions
+if compile_gate "$TESTDIR/report_integration.con" "--report caps" "report_integration.con compilation" 14; then
 
 # Caps with why traces
 check_report "$TESTDIR/report_integration.con" caps \
@@ -1215,10 +1236,13 @@ check_report "$TESTDIR/report_integration.con" mono \
     "report_integration.con --report mono shows identity<i32> specialization" \
     "report_integration.con --report mono missing identity<i32> specialization"
 
-# --- Collection pipeline integration test ---
+fi # end report_integration.con gate
 
-# Compile and run the collection pipeline
+# --- Collection pipeline integration test ---
+# Gate: compile once, then run all report assertions only if compilation succeeds
+pipeline_compiled=0
 if $COMPILER "$TESTDIR/integration_collection_pipeline.con" -o "$TMPDIR/integration_collection_pipeline" > /dev/null 2>&1; then
+    pipeline_compiled=1
     pipeline_exit=$("$TMPDIR/integration_collection_pipeline" 2>&1; echo $?)
     pipeline_exit=$(echo "$pipeline_exit" | tail -1)
     if [ "$pipeline_exit" = "0" ]; then
@@ -1229,10 +1253,14 @@ if $COMPILER "$TESTDIR/integration_collection_pipeline.con" -o "$TMPDIR/integrat
         FAIL=$((FAIL + 1))
     fi
 else
-    echo "FAIL  integration_collection_pipeline.con failed to compile"
+    echo "FAIL  integration_collection_pipeline.con failed to compile (skipping 10 dependent assertions)"
     FAIL=$((FAIL + 1))
+    save_failure "integration_collection_pipeline_compile" \
+        "$COMPILER $TESTDIR/integration_collection_pipeline.con -o /tmp/test" \
+        "compilation failed"
 fi
 
+if [ "$pipeline_compiled" -eq 1 ]; then
 # Caps: multi-level allocation traces
 check_report_multi "$TESTDIR/integration_collection_pipeline.con" caps \
     "integration_collection_pipeline.con --report caps shows build_and_summarize Alloc trace" \
@@ -1292,6 +1320,8 @@ else
     echo "$report_output"
     FAIL=$((FAIL + 1))
 fi
+
+fi # end integration_collection_pipeline gate
 
 fi # end section: report
 
