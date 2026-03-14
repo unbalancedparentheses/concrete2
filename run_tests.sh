@@ -780,6 +780,8 @@ run_ok "$TESTDIR/stdlib_hashmap.con" 0
 run_ok "$TESTDIR/integration_text_processing.con" 0
 run_ok "$TESTDIR/integration_data_structures.con" 0
 run_ok "$TESTDIR/integration_error_handling.con" 0
+run_ok "$TESTDIR/integration_generic_pipeline.con" 42
+run_ok "$TESTDIR/integration_state_machine.con" 42
 run_ok "$TESTDIR/struct_enum_field_vec.con" 123
 
 fi # end section: positive
