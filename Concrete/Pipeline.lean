@@ -40,6 +40,12 @@ structure ResolvedProgram where
 structure ElaboratedProgram where
   coreModules : List CModule
 
+/-- Core IR that has passed `coreCheckProgram`.
+    This is the proof-oriented artifact boundary: downstream passes (Mono, Lower, Emit)
+    may assume all Core-level invariants hold.  Only `Pipeline.coreCheck` constructs this. -/
+structure ValidatedCore where
+  coreModules : List CModule
+
 structure MonomorphizedProgram where
   coreModules : List CModule
 
@@ -84,19 +90,21 @@ def resolve (prog : ParsedProgram) (summary : SummaryTable) : Except Diagnostics
 def check (prog : ParsedProgram) (summary : SummaryTable) : Except Diagnostics Unit :=
   checkProgram prog.modules summary.entries
 
-/-- Elaborate, canonicalize, and core-check in one step. -/
+/-- Elaborate and canonicalize (no validation yet). -/
 def elaborate (prog : ParsedProgram) (summary : SummaryTable) : Except Diagnostics ElaboratedProgram :=
   match elabProgram prog.modules summary.entries with
   | .error ds => .error ds
-  | .ok coreModules =>
-    let coreModules := canonicalizeProgram coreModules
-    match coreCheckProgram coreModules with
-    | .error ds => .error ds
-    | .ok () => .ok { coreModules }
+  | .ok coreModules => .ok { coreModules := canonicalizeProgram coreModules }
+
+/-- Validate elaborated Core IR.  This is the only way to construct a `ValidatedCore`. -/
+def coreCheck (elabProg : ElaboratedProgram) : Except Diagnostics ValidatedCore :=
+  match coreCheckProgram elabProg.coreModules with
+  | .error ds => .error ds
+  | .ok () => .ok { coreModules := elabProg.coreModules }
 
 /-- Monomorphize generic functions. -/
-def monomorphize (elabProg : ElaboratedProgram) : Except Diagnostics MonomorphizedProgram :=
-  match liftStringError "mono" (monoProgram elabProg.coreModules) with
+def monomorphize (vc : ValidatedCore) : Except Diagnostics MonomorphizedProgram :=
+  match liftStringError "mono" (monoProgram vc.coreModules) with
   | .ok modules => .ok { coreModules := modules }
   | .error ds => .error ds
 
@@ -117,12 +125,12 @@ def emit (ssa : SSAProgram) (testMode : Bool := false) (moduleFilter : Option St
 -- Shared frontend helper
 -- ============================================================
 
-/-- Run the shared frontend: parse → resolveFiles → buildSummary → resolve → check → elaborate.
-    This is the common prefix of all three CLI entry points (except interface report).
-    Returns the source map alongside the artifacts for diagnostic rendering. -/
+/-- Run the shared frontend: parse → resolveFiles → buildSummary → resolve → check → elaborate → coreCheck.
+    This is the common prefix of all CLI entry points (except interface report).
+    Returns validated Core alongside earlier artifacts for diagnostic rendering. -/
 def runFrontend (inputPath source : String)
     (resolveAllModules : String → List Module → String → IO (Except String (List Module × SourceMap)))
-    : IO (Except Diagnostics (ParsedProgram × SummaryTable × ElaboratedProgram × SourceMap)) := do
+    : IO (Except Diagnostics (ParsedProgram × SummaryTable × ValidatedCore × SourceMap)) := do
   let mainSrcMap : SourceMap := [(inputPath, source)]
   match Pipeline.parse source with
   | .error ds => return .error ds
@@ -144,7 +152,10 @@ def runFrontend (inputPath source : String)
     | .ok () =>
     match Pipeline.elaborate resolved summary with
     | .error ds => return .error ds
-    | .ok elabProg => return .ok (resolved, summary, elabProg, srcMap)
+    | .ok elabProg =>
+    match Pipeline.coreCheck elabProg with
+    | .error ds => return .error ds
+    | .ok validCore => return .ok (resolved, summary, validCore, srcMap)
 
 end Pipeline
 end Concrete

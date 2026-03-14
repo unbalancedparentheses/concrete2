@@ -23,4 +23,6 @@ import Concrete.LLVM
 import Concrete.EmitLLVM
 import Concrete.Report
 import Concrete.Pipeline
+import Concrete.ProofCore
+import Concrete.Proof
 import Concrete.Format

@@ -102,8 +102,8 @@ def compileSSA (inputPath : String) (outputPath : String) (emitLLVM : Bool) : IO
   | .error ds =>
     IO.eprintln (renderDiagnostics ds (sourceMap := [(inputPath, source)]))
     return 1
-  | .ok (_, _, elabProg, srcMap) =>
-  match Pipeline.monomorphize elabProg with
+  | .ok (_, _, validCore, srcMap) =>
+  match Pipeline.monomorphize validCore with
   | .error ds =>
     IO.eprintln (renderDiagnostics ds (sourceMap := srcMap))
     return 1
@@ -136,8 +136,8 @@ def compileTest (inputPath : String) (moduleFilter : Option String := none) : IO
   | .error ds =>
     IO.eprintln (renderDiagnostics ds (sourceMap := [(inputPath, source)]))
     return 1
-  | .ok (_, _, elabProg, srcMap) =>
-  match Pipeline.monomorphize elabProg with
+  | .ok (_, _, validCore, srcMap) =>
+  match Pipeline.monomorphize validCore with
   | .error ds =>
     IO.eprintln (renderDiagnostics ds (sourceMap := srcMap))
     return 1
@@ -183,12 +183,12 @@ def compileAndEmit (inputPath : String) (mode : String) : IO UInt32 := do
   | .error ds =>
     IO.eprintln (renderDiagnostics ds (sourceMap := [(inputPath, source)]))
     return 1
-  | .ok (_, _, elabProg, srcMap) =>
+  | .ok (_, _, validCore, srcMap) =>
     if mode == "core" then
-      for cm in elabProg.coreModules do
+      for cm in validCore.coreModules do
         IO.println (ppCModule cm)
       return 0
-    match Pipeline.monomorphize elabProg with
+    match Pipeline.monomorphize validCore with
     | .error ds =>
       IO.eprintln (renderDiagnostics ds (sourceMap := srcMap))
       return 1
@@ -226,26 +226,26 @@ def compileAndReport (inputPath : String) (reportType : String) : IO UInt32 := d
   | .error ds =>
     IO.eprintln (renderDiagnostics ds (sourceMap := mainSrcMap))
     return 1
-  | .ok (_, _, elabProg, srcMap) =>
+  | .ok (_, _, validCore, srcMap) =>
     if reportType == "caps" then
-      IO.println (Report.capabilityReport elabProg.coreModules)
+      IO.println (Report.capabilityReport validCore.coreModules)
       return 0
     if reportType == "unsafe" then
-      IO.println (Report.unsafeReport elabProg.coreModules)
+      IO.println (Report.unsafeReport validCore.coreModules)
       return 0
     if reportType == "layout" then
-      IO.println (Report.layoutReport elabProg.coreModules)
+      IO.println (Report.layoutReport validCore.coreModules)
       return 0
     if reportType == "alloc" then
-      IO.println (Report.allocReport elabProg.coreModules)
+      IO.println (Report.allocReport validCore.coreModules)
       return 0
     if reportType == "mono" then
-      match Pipeline.monomorphize elabProg with
+      match Pipeline.monomorphize validCore with
       | .error ds =>
         IO.eprintln (renderDiagnostics ds (sourceMap := srcMap))
         return 1
       | .ok mono =>
-        IO.println (Report.monoReport elabProg.coreModules mono.coreModules)
+        IO.println (Report.monoReport validCore.coreModules mono.coreModules)
         return 0
     IO.eprintln s!"Unknown report type: {reportType}. Use: caps, unsafe, layout, interface, alloc, mono"
     return 1

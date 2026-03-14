@@ -25,7 +25,9 @@ Source Text
     ▼
   CoreCheck ── List CModule → Unit
     │
-    ├─→ explicit ValidatedCore artifact / future ProofCore export for selected-function proving
+    ├─→ ValidatedCore artifact (Concrete/Pipeline.lean)
+    ├─→ ProofCore extraction (Concrete/ProofCore.lean) — pure fragment for Lean proofs
+    ├─→ Proof semantics (Concrete/Proof.lean) — formal evaluation + first theorems
     │
     ▼
   Mono ──── List CModule → List CModule
@@ -59,12 +61,18 @@ Keep as-is:
 - SSA stays backend-only territory, mainly for compiler-preservation proofs
 - explicit `Unsafe` / `trusted` / FFI boundaries stay visible in the language and reports
 
+Done:
+
+- `ValidatedCore` is a named, explicit pipeline artifact (`Concrete/Pipeline.lean`)
+- `ProofCore` extracts the pure, proof-eligible fragment from validated Core (`Concrete/ProofCore.lean`)
+- `Concrete/Proof.lean` defines evaluation semantics for a pure Core fragment and proves properties (abs, max, clamp correctness, literal evaluation, conditional reduction, arithmetic)
+- `Pipeline.coreCheck` is the only constructor for `ValidatedCore`; `Pipeline.monomorphize` takes `ValidatedCore`
+
 Still change:
 
-- make validated Core a first-class pipeline artifact
-- define `ProofCore` as a restricted, proof-oriented view of validated Core
-- preserve source-to-Core traceability
-- later add selected-function export support for Lean-facing proof workflows
+- preserve source-to-Core traceability (span tracking from source through to Core)
+- add selected-function export support for Lean-facing proof workflows
+- extend proof fragment to cover structs, enums, match, and function calls with recursion
 - keep proof scopes staged explicitly: pure first, then effects/resources/capabilities, then runtime/concurrency
 
 Fine for now:
@@ -380,6 +388,60 @@ CoreCheck is the post-elaboration semantic authority. It owns all legality rules
 
 ---
 
+## SSA Backend Contract
+
+The SSA pipeline (Lower → SSAVerify → SSACleanup → EmitSSA) is a closed backend contract.  This section consolidates what each stage guarantees, what each stage may assume, and the overall invariant chain.
+
+### What SSAVerify guarantees (postconditions)
+
+After SSAVerify passes, all downstream passes may assume:
+
+1. **Dominance:** Every non-phi register use is dominated by its definition.
+2. **Phi correctness:** Every phi node has entries for exactly its predecessor set.  Phi operands are defined in or dominate their source blocks.
+3. **No aggregate phis:** Phi nodes carry only scalar types (no struct/enum types).
+4. **Branch safety:** All branch targets reference existing block labels.
+5. **Unique defs:** No register is defined twice in the same block.
+6. **Call arity:** Function argument count matches parameter count.
+7. **Return coverage:** Non-void functions return values; void functions do not.
+8. **Type consistency:** Binary operation operands are type-compatible.
+
+### What SSACleanup guarantees (postconditions)
+
+After SSACleanup, EmitSSA may additionally assume:
+
+1. **No dead blocks:** All blocks are reachable from the entry block.
+2. **No trivial phis:** No phi with a single incoming value or all-identical incoming values.
+3. **No empty blocks:** No blocks whose only instruction is an unconditional branch.
+4. **No dead instructions:** No unused register definitions (except side-effecting ops).
+5. **Constant folding:** Integer arithmetic on constants is evaluated at compile time.
+6. **Strength reduction:** Multiply/divide by powers of 2 converted to shifts.
+7. **Store-load forwarding:** Block-local value forwarding (invalidated by calls/memcpy).
+8. **Fixpoint convergence:** The pass iterates to a fixpoint — re-running cleanup does not change the output.
+
+### What EmitSSA assumes (preconditions)
+
+EmitSSA is a pure translation; it does not validate its input.  It assumes:
+
+1. All SSAVerify invariants hold (dominance, phi correctness, branch safety).
+2. All SSACleanup optimizations have been applied (no dead blocks, no trivial phis).
+3. Aggregate types are passed/returned by pointer (the ABI contract from Lower).
+4. String literals are deduplicated globally (from Lower).
+5. Vec operations carry correct element-size metadata.
+
+### Invariant chain
+
+```
+Lower: Core → SSA with explicit control flow, phi insertion, ABI pass-by-ptr
+  ↓
+SSAVerify: validates dominance, phi coverage, type consistency, branch safety
+  ↓ (all structural invariants now hold)
+SSACleanup: removes dead code, folds constants, forwards stores, converges
+  ↓ (no dead blocks, no trivial phis, constants folded)
+EmitSSA: 1:1 translation to LLVM IR text — no validation, just emission
+```
+
+---
+
 ## Artifact Flow
 
 The compiler produces explicit, stable artifacts at each stage. Since the introduction of `Concrete/Pipeline.lean`, each boundary is a named artifact type with a composable runner function:
@@ -412,9 +474,13 @@ Source Text
     │
     ▼
   Pipeline.elaborate ─── ParsedProgram × SummaryTable → ElaboratedProgram (List CModule)
-    │                     (includes elab + canonicalize + core-check)
+    │                     (elab + canonicalize, no validation)
     ▼
-  Pipeline.monomorphize ─── ElaboratedProgram → MonomorphizedProgram (List CModule)
+  Pipeline.coreCheck ─── ElaboratedProgram → ValidatedCore (List CModule)
+    │                     (validates Core IR; only way to construct ValidatedCore)
+    ├──→ extractProofCore ─── ValidatedCore → ProofCore (pure fragment for Lean proofs)
+    ▼
+  Pipeline.monomorphize ─── ValidatedCore → MonomorphizedProgram (List CModule)
     │
     ▼
   Pipeline.lower ─── MonomorphizedProgram → SSAProgram (List SModule)
@@ -426,7 +492,7 @@ Source Text
   clang → executable
 ```
 
-`Pipeline.runFrontend` composes the shared prefix (parse → resolveFiles → buildSummary → resolve → check → elaborate) used by all three CLI entry points.
+`Pipeline.runFrontend` composes the shared prefix (parse → resolveFiles → buildSummary → resolve → check → elaborate → coreCheck) used by all CLI entry points.
 
 `FileSummary` is the single cross-file interface artifact for the current frontend architecture phase. All passes consume signatures and type declarations from it rather than rebuilding their own views from raw ASTs. `ResolvedImports` is the single import artifact consumed by Check and Elab — it is built once from the summary table and shared, not rebuilt ad hoc in each pass.
 

@@ -38,7 +38,8 @@ The current artifact boundary is explicit in code via `Concrete/Pipeline.lean`:
 - `ParsedProgram`
 - `SummaryTable`
 - `ResolvedProgram`
-- `ElaboratedProgram`
+- `ElaboratedProgram` — elaborated + canonicalized Core IR, before validation
+- `ValidatedCore` — Core IR that has passed `coreCheckProgram` (only constructed by `Pipeline.coreCheck`)
 - `MonomorphizedProgram`
 - `SSAProgram`
 
@@ -52,7 +53,7 @@ ParsedModule -> FileSummary -> ResolvedImports -> checked/elaborated module -> m
 
 ## Proof Boundary Placement
 
-If Concrete is going to support Lean-side proofs of selected Concrete functions, the proof boundary should sit **after `CoreCheck` and before `Mono`**.
+The proof boundary sits **after `CoreCheck` and before `Mono`**, materialized as the `ValidatedCore` artifact type.
 
 That is the point where the program has become:
 
@@ -103,13 +104,19 @@ Keep as-is:
 - SSA stays backend-only territory, mainly for compiler-preservation proofs
 - explicit `Unsafe` / `trusted` / FFI boundaries remain visible in the language and reports
 
+Done:
+
+- `ValidatedCore` is a named pipeline artifact (`Concrete/Pipeline.lean`); `Pipeline.coreCheck` is the only constructor
+- `ProofCore` extracts the pure, proof-eligible fragment (`Concrete/ProofCore.lean`)
+- `Concrete/Proof.lean` defines formal evaluation semantics for a pure Core fragment and proves properties (abs, max, clamp correctness; literal evaluation; conditional reduction; arithmetic)
+- `Pipeline.monomorphize` takes `ValidatedCore` — the type system enforces that validation happened
+
 Still change:
 
-- make `ValidatedCore` a first-class pipeline artifact
-- define `ProofCore` as a restricted view of `ValidatedCore`
-- preserve source-to-Core traceability
-- later add export support for selected functions
-- keep proof scopes staged and explicit
+- preserve source-to-Core traceability (span tracking)
+- add export support for selected Concrete functions to Lean proof workflows
+- extend proof fragment to cover structs, enums, match, and recursive functions
+- keep proof scopes staged: pure first, then effects, then runtime
 
 Fine for now:
 
@@ -120,7 +127,7 @@ Fine for now:
 
 Main caution:
 
-- `ProofCore` must not become a second semantic authority
+- `ProofCore` must not become a second semantic authority (it is a filter, not a rival IR)
 
 ## Pass Definitions
 
@@ -261,29 +268,32 @@ Excludes:
 
 ### Proof-Oriented Core Direction
 
-For proving selected Concrete functions in Lean, the intended direction is **not** to invent a fully separate semantic IR.
+`ProofCore` (`Concrete/ProofCore.lean`) is a restricted, proof-oriented view of `ValidatedCore`.  It is a filter, not a separate IR — the semantic authority remains CoreCheck.
 
-Instead:
+**Currently included** (via `extractProofCore`):
 
-- validated Core remains the main semantic object
-- a future **ProofCore** should be a restricted, proof-oriented view of validated Core
+- Pure functions (empty capability set, not trusted, no extern calls)
+- Algebraic data types (structs without repr(C)/packed, enums without builtin overrides)
+- Trait definitions (for context)
 
-That proof-oriented view should initially target:
+**Currently excluded:**
 
-- pure functions
-- algebraic data
-- structured control flow
-- explicit calls and recursion
+- Functions with capabilities (File, Network, etc.)
+- Trusted/unsafe functions
+- Extern functions and FFI types
+- Entry-point functions (main)
 
-and initially exclude or fence off:
+**Formal semantics** (`Concrete/Proof.lean`) define evaluation for a pure Core fragment:
 
-- FFI
-- `Unsafe`
-- `trusted`
-- raw-pointer-heavy operations
-- host-environment-dependent effects
+- Integer/boolean literals, arithmetic, comparisons
+- Let bindings, if/then/else, function calls
+- Proven properties: abs/max/clamp correctness, literal evaluation, conditional reduction, arithmetic identities
 
-This keeps the proof workflow attached to the same architectural boundary the compiler already treats as authoritative.
+**Next extensions:**
+
+- Structs, enums, and match expressions in the proof fragment
+- Recursive functions with termination proofs
+- Source-to-Core traceability for selected-function export
 
 ## Boundary Rules
 

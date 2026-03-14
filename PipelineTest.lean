@@ -50,9 +50,9 @@ def expectError (result : Except Diagnostics α) (name : String) : IO (Option Di
     IO.eprintln s!"FAIL: {name} — expected error but got success"
     return none
 
-/-- Run frontend passes (parse → buildSummary → check → elaborate) on a source string.
+/-- Run frontend passes (parse → buildSummary → check → elaborate → coreCheck) on a source string.
     No file I/O — no resolveFiles step (single-file programs only). -/
-def frontendNoIO (source : String) : Except Diagnostics (ParsedProgram × SummaryTable × ElaboratedProgram) :=
+def frontendNoIO (source : String) : Except Diagnostics (ParsedProgram × SummaryTable × ValidatedCore) :=
   match Pipeline.parse source with
   | .error ds => .error ds
   | .ok parsed =>
@@ -65,14 +65,17 @@ def frontendNoIO (source : String) : Except Diagnostics (ParsedProgram × Summar
     | .ok () =>
     match Pipeline.elaborate parsed summary with
     | .error ds => .error ds
-    | .ok elabProg => .ok (parsed, summary, elabProg)
+    | .ok elabProg =>
+    match Pipeline.coreCheck elabProg with
+    | .error ds => .error ds
+    | .ok validCore => .ok (parsed, summary, validCore)
 
 /-- Full pipeline from source string to LLVM IR string (no file I/O). -/
 def fullPipelineNoIO (source : String) : Except Diagnostics String :=
   match frontendNoIO source with
   | .error ds => .error ds
-  | .ok (_, _, elabProg) =>
-  match Pipeline.monomorphize elabProg with
+  | .ok (_, _, validCore) =>
+  match Pipeline.monomorphize validCore with
   | .error ds => .error ds
   | .ok mono =>
   match Pipeline.lower mono with
@@ -84,8 +87,8 @@ def fullPipelineNoIO (source : String) : Except Diagnostics String :=
 def frontendMonoLowerRaw (source : String) : Except Diagnostics (List SModule) :=
   match frontendNoIO source with
   | .error ds => .error ds
-  | .ok (_, _, elabProg) =>
-  match Pipeline.monomorphize elabProg with
+  | .ok (_, _, validCore) =>
+  match Pipeline.monomorphize validCore with
   | .error ds => .error ds
   | .ok mono => .ok (mono.coreModules.map Concrete.lowerModule)
 
@@ -276,8 +279,8 @@ def testMonoGeneric : IO UInt32 := do
     IO.eprintln s!"FAIL: mono/generic — frontend failed"
     IO.eprintln (renderDiagnostics ds)
     return 1
-  | .ok (_, _, elabProg) =>
-    match Pipeline.monomorphize elabProg with
+  | .ok (_, _, validCore) =>
+    match Pipeline.monomorphize validCore with
     | .ok _ =>
       IO.println "PASS: mono/generic"
       return 0
@@ -292,8 +295,8 @@ def testMonoTrait : IO UInt32 := do
     IO.eprintln s!"FAIL: mono/trait — frontend failed"
     IO.eprintln (renderDiagnostics ds)
     return 1
-  | .ok (_, _, elabProg) =>
-    match Pipeline.monomorphize elabProg with
+  | .ok (_, _, validCore) =>
+    match Pipeline.monomorphize validCore with
     | .ok _ =>
       IO.println "PASS: mono/trait"
       return 0
@@ -468,8 +471,8 @@ def testEmitTestMode : IO UInt32 := do
     IO.eprintln "FAIL: emit/test-mode — frontend failed"
     IO.eprintln (renderDiagnostics ds)
     return 1
-  | .ok (_, _, elabProg) =>
-  match Pipeline.monomorphize elabProg with
+  | .ok (_, _, validCore) =>
+  match Pipeline.monomorphize validCore with
   | .error ds =>
     IO.eprintln "FAIL: emit/test-mode — mono failed"
     IO.eprintln (renderDiagnostics ds)

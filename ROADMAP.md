@@ -55,7 +55,7 @@ Still clearly not implemented:
 | **A** | Fast feedback and compiler stability | Done enough; aggregate lowering hardened, test runner parallelized, SSA invariants mechanically defended | B, C, D |
 | **B** | Semantic cleanup | Done | D |
 | **C** | Tooling and stdlib hardening | Done; all 8 items complete (LL(1) CI, linearity fixes, HashMap retired, module-targeted testing, diagnostics polish, integration tests, report hardening, audit reports) | later system maturity |
-| **D** | Testing, backend, and trust multipliers | Active (D1 done, D2 next) | A, most of B |
+| **D** | Testing, backend, and trust multipliers | Active (D1 + D2 done) | A, most of B |
 | **E** | Runtime and execution model | Deferred | C, D |
 | **F** | Capability and safety productization | Deferred | D, E |
 | **G** | Language surface and feature discipline | Deferred | B, D, E, F |
@@ -97,10 +97,16 @@ Still clearly not implemented:
   - **Coverage matrix and determinism policy**: `docs/TESTING.md` rewritten with full coverage matrix (by failure mode and by compiler pass), determinism rules (fixed seeds, no wall-clock dependence, timeout classes, network isolation, parallel safety), compile-time baselines, and failure isolation documentation.
   - **Real-program corpus**: 8 integration tests including 5 multi-feature programs (150-250 lines each): generic pipeline (5-layer borrow chain), state machine (4×5 nested match), compiler stress (deep generic dispatch, 5-variant enum), multi-module (cross-module types/traits/enums), recursive structures (expression evaluator + stack machine).
 - 647 tests pass (189 stdlib), including 28 pass-level Lean tests, 44 report assertions, 46 golden tests, 8 integration tests, and 16 collections verified.
+- **Phase D2 complete** (backend/artifact/proof):
+  - **`ValidatedCore` artifact**: explicit pipeline type in `Concrete/Pipeline.lean`. `Pipeline.coreCheck` is the only constructor; `Pipeline.monomorphize` takes `ValidatedCore`, enforcing that validation happened. `Pipeline.elaborate` now returns `ElaboratedProgram` (elab + canonicalize only), and `Pipeline.coreCheck` validates it into `ValidatedCore`.
+  - **`ProofCore` extraction**: `Concrete/ProofCore.lean` filters `ValidatedCore` into the pure, proof-eligible fragment — pure functions (empty capability set, not trusted), safe structs (no repr(C)/packed), safe enums (no builtin overrides). `extractProofCore` flattens module trees and reports inclusion/exclusion counts.
+  - **Formal proof workflow**: `Concrete/Proof.lean` defines evaluation semantics for a pure Core fragment (integers, booleans, arithmetic, let bindings, conditionals, function calls with fuel-bounded termination). Embeds three Concrete programs (abs, max, clamp) and proves 12 theorems: concrete correctness (abs_positive, abs_negative, abs_zero, max_right, max_left, max_self, clamp_in_range, clamp_below, clamp_above), structural lemmas (eval_lit, eval_bool_lit, eval_var_bound), conditional reduction (eval_if_true, eval_if_false), and arithmetic (eval_add_lits, eval_sub_lits, eval_mul_lits).
+  - **SSA backend contract**: `docs/PASSES.md` now documents the full SSA invariant chain — what SSAVerify guarantees (8 invariants), what SSACleanup guarantees (8 postconditions), what EmitSSA assumes (5 preconditions), and the overall invariant flow.
+  - **Updated docs**: `docs/ARCHITECTURE.md` and `docs/PASSES.md` updated with ValidatedCore, ProofCore, proof semantics, and SSA contract.
 
 ### Now
 
-Phases A, B, C, and D1 are done. Phase D2 is next: backend/artifact/proof multipliers. The testing system now has pass-level coverage for all compiler passes, dependency-aware selection (via `test_dep_map.toml`), a documented coverage matrix, and a named integration corpus. D2 work rides on this foundation.
+Phases A, B, C, D1, and D2 are done. The compiler now has explicit artifact boundaries, a proof-oriented pipeline, formal evaluation semantics with proven properties, and a documented SSA backend contract.
 
 1. Make testing infrastructure best-in-class (Phase D1 inside Phase D):
    - problem: the suite has strong breadth, but too much test behavior still lives in shell orchestration, semantic tests pay too much full-pipeline cost, repeated report assertions waste compiler work, and failure isolation/reproduction is weaker than it should be
