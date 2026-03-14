@@ -92,7 +92,7 @@ Still clearly not implemented:
   - **Failure artifacts**: `.test-failures/` with timestamped output and exact rerun commands
   - **Dependency gates**: `compile_gate()` skips downstream assertions when compilation fails
   - **Pass-level Lean tests**: `PipelineTest.lean` with 28 tests — parse (4), frontend/check/elab (8), monomorphize (2), SSA lowering (2), SSA verify (3), SSA cleanup (2), SSA emit (2), full pipeline (5). Each pass tested in isolation without unnecessary downstream cost.
-  - **Structured test metadata**: `test_manifest.toml` with per-test metadata (category, kind, passes, profile, owner_pass, needs_clang, multi_module). `test_dep_map.toml` maps compiler source files to affected test sections.
+  - **Test metadata**: `test_manifest.toml` with per-test reference metadata (category, kind, passes, profile, owner_pass — not consumed by the runner, serves as documentation and future tooling source). `test_dep_map.toml` maps compiler source files to affected test sections (consumed by `--affected` mode).
   - **Dependency-aware selection**: `run_tests.sh --affected` auto-detects changed files via `git diff` and runs only affected sections. `--affected Concrete/Report.lean` runs 72 tests; `--affected Concrete/Lower.lean` runs 248 tests.
   - **Coverage matrix and determinism policy**: `docs/TESTING.md` rewritten with full coverage matrix (by failure mode and by compiler pass), determinism rules (fixed seeds, no wall-clock dependence, timeout classes, network isolation, parallel safety), compile-time baselines, and failure isolation documentation.
   - **Real-program corpus**: 8 integration tests including 5 multi-feature programs (150-250 lines each): generic pipeline (5-layer borrow chain), state machine (4×5 nested match), compiler stress (deep generic dispatch, 5-variant enum), multi-module (cross-module types/traits/enums), recursive structures (expression evaluator + stack machine).
@@ -100,7 +100,7 @@ Still clearly not implemented:
 
 ### Now
 
-Phases A, B, C, and D1 are done. Phase D2 is next: backend/artifact/proof multipliers. The testing system now has pass-level coverage for all compiler passes, structured metadata, dependency-aware selection, a documented coverage matrix, and a named integration corpus. D2 work rides on this foundation.
+Phases A, B, C, and D1 are done. Phase D2 is next: backend/artifact/proof multipliers. The testing system now has pass-level coverage for all compiler passes, dependency-aware selection (via `test_dep_map.toml`), a documented coverage matrix, and a named integration corpus. D2 work rides on this foundation.
 
 1. Make testing infrastructure best-in-class (Phase D1 inside Phase D):
    - problem: the suite has strong breadth, but too much test behavior still lives in shell orchestration, semantic tests pay too much full-pipeline cost, repeated report assertions waste compiler work, and failure isolation/reproduction is weaker than it should be

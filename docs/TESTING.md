@@ -143,7 +143,7 @@ After an `--affected` run, the summary shows which files triggered which section
 
 ### Manifest
 
-`test_manifest.toml` is the structured source of truth for test metadata. Each test entry includes:
+`test_manifest.toml` is reference metadata for test cases. It is **not** consumed by `run_tests.sh` directly — test execution is driven by the shell script's section structure. The manifest captures the metadata that shell sections encode implicitly, making it queryable and auditable for documentation and future tooling. Each test entry includes:
 
 - `file` — path relative to repo root
 - `category` — semantic category (`unit`, `semantic`, `lowering`, `codegen`, `report`, `integration`, `stress`, `stdlib`, `regression`, `property`, `fuzz`)
@@ -157,7 +157,7 @@ After an `--affected` run, the summary shows which files triggered which section
 
 ### Dependency Map
 
-`test_dep_map.toml` maps compiler source files to affected test sections and categories. Used by `--affected` mode.
+`test_dep_map.toml` maps compiler source files to affected test sections and categories. It is parsed by `run_tests.sh --affected` to select which test sections to run based on changed files.
 
 ## Determinism and Flakiness Policy
 

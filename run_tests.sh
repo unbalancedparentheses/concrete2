@@ -101,56 +101,83 @@ while [ $# -gt 0 ]; do
 done
 
 # --- Dependency-aware section resolution for --affected mode ---
+# Reads test_dep_map.toml to map changed files to test sections.
+
+DEP_MAP_FILE="test_dep_map.toml"
+
+# lookup_dep_map FILE — look up sections for a file from test_dep_map.toml
+# Returns comma-separated sections, or empty string if not found.
+# Parses the TOML structure: [source."path"] blocks with sections = [...] arrays.
+lookup_dep_map() {
+    local query="$1"
+    if [ ! -f "$DEP_MAP_FILE" ]; then
+        return
+    fi
+    # Find the [source."<query>"] block and extract its sections line.
+    # We iterate line by line, tracking which source block we're in.
+    local in_block=""
+    local found_sections=""
+    while IFS= read -r line; do
+        # Match [source."Concrete/Foo.lean"] or [source."std/src/*"]
+        if [[ "$line" =~ ^\[source\.\" ]]; then
+            # Extract the quoted path
+            local path
+            path=$(echo "$line" | sed 's/\[source\."\(.*\)"\]/\1/')
+            in_block="$path"
+            continue
+        fi
+        # Match [always] or other top-level blocks — end current source block
+        if [[ "$line" =~ ^\[ ]]; then
+            in_block=""
+            continue
+        fi
+        # If we're in the right block, look for sections = [...]
+        if [ -n "$in_block" ]; then
+            # Check exact match
+            local match=""
+            if [ "$in_block" = "$query" ]; then
+                match=1
+            fi
+            # Check glob match (e.g., "std/src/*" matches "std/src/vec.con")
+            if [ -z "$match" ] && [[ "$in_block" == *"*"* ]]; then
+                # Convert glob to regex for matching
+                local pattern="${in_block//\*/.*}"
+                if [[ "$query" =~ ^${pattern}$ ]]; then
+                    match=1
+                fi
+            fi
+            if [ -n "$match" ] && [[ "$line" =~ ^sections ]]; then
+                # Extract the array content: sections = ["a", "b", "c"]
+                found_sections=$(echo "$line" | sed 's/sections *= *\[//; s/\]//; s/"//g; s/ //g')
+                echo "$found_sections"
+                return
+            fi
+        fi
+    done < "$DEP_MAP_FILE"
+}
+
 resolve_affected_sections() {
     local files="$1"
-    local sections="passlevel"  # always run pass-level tests
+    # Always run pass-level tests (from [always] block)
+    local sections=""
+    local always_sections
+    always_sections=$(lookup_dep_map "__always__")
+    if [ -z "$always_sections" ]; then
+        # Read [always] block directly
+        always_sections=$(awk '/^\[always\]/{found=1; next} /^\[/{found=0} found && /^sections/{gsub(/sections *= *\[|\]|"| /,""); print}' "$DEP_MAP_FILE" 2>/dev/null)
+    fi
+    sections="${always_sections:-passlevel}"
 
     IFS=',' read -ra file_list <<< "$files"
     for f in "${file_list[@]}"; do
-        case "$f" in
-            Concrete/Parser.lean|Concrete/Lexer.lean|Concrete/Token.lean)
-                sections="$sections,positive,negative" ;;
-            Concrete/AST.lean)
-                sections="$sections,positive,negative,testflag,report,codegen" ;;
-            Concrete/Resolve.lean|Concrete/FileSummary.lean)
-                sections="$sections,positive,negative,stdlib" ;;
-            Concrete/Check.lean)
-                sections="$sections,positive,negative" ;;
-            Concrete/Elab.lean|Concrete/Core.lean|Concrete/CoreCanonicalize.lean|Concrete/CoreCheck.lean)
-                sections="$sections,positive,negative,report" ;;
-            Concrete/Mono.lean)
-                sections="$sections,positive,report" ;;
-            Concrete/Lower.lean|Concrete/SSA.lean)
-                sections="$sections,positive,codegen,O2" ;;
-            Concrete/SSAVerify.lean)
-                sections="$sections,positive,codegen" ;;
-            Concrete/SSACleanup.lean)
-                sections="$sections,positive,codegen,O2" ;;
-            Concrete/EmitSSA.lean|Concrete/EmitLLVM.lean|Concrete/LLVM.lean)
-                sections="$sections,positive,codegen,O2" ;;
-            Concrete/Layout.lean)
-                sections="$sections,positive,report,codegen" ;;
-            Concrete/Report.lean)
-                sections="$sections,report" ;;
-            Concrete/Intrinsic.lean|Concrete/BuiltinSigs.lean)
-                sections="$sections,positive,negative,stdlib" ;;
-            Concrete/Format.lean)
-                sections="$sections,positive" ;;
-            Concrete/Pipeline.lean|Main.lean)
-                sections="$sections,positive,negative,testflag,report,codegen,stdlib,collection" ;;
-            PipelineTest.lean)
-                sections="$sections,passlevel" ;;
-            std/src/*)
-                sections="$sections,stdlib,collection" ;;
-            run_tests.sh|test_manifest.toml|test_dep_map.toml)
-                ;; # runner changes don't require test reruns
-            lean_tests/*)
-                sections="$sections,positive,negative" ;;
-            *)
-                # Unknown file — run everything to be safe
-                sections="$sections,positive,negative,testflag,report,codegen,O2,stdlib,collection"
-                ;;
-        esac
+        local file_sections
+        file_sections=$(lookup_dep_map "$f")
+        if [ -n "$file_sections" ]; then
+            sections="$sections,$file_sections"
+        else
+            # File not in dep map — run everything to be safe
+            sections="$sections,positive,negative,testflag,report,codegen,O2,stdlib,collection"
+        fi
     done
 
     # Deduplicate

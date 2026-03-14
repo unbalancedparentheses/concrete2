@@ -1,8 +1,13 @@
-# Test Manifest — structured metadata for all test cases
+# Test Manifest — reference metadata for all test cases
 #
-# This file is the source of truth for test classification, ownership,
-# and selection. run_tests.sh reads it to support dependency-aware
-# targeted runs and coverage reporting.
+# This file is NOT consumed by run_tests.sh. Test execution is driven
+# by the shell script's section structure. This manifest captures the
+# metadata that the shell sections encode implicitly, making it
+# queryable and auditable for documentation and future tooling.
+#
+# Used by:
+# - docs/TESTING.md coverage matrix (reference data)
+# - future tooling for test selection and reporting
 #
 # Fields per test entry:
 #   file        — path relative to repo root

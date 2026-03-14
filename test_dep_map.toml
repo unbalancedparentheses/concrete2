@@ -1,11 +1,13 @@
-# Dependency Map: compiler source → affected test categories
+# Dependency Map: compiler source → affected test sections
 #
-# This file maps each compiler source file to the test categories
-# and sections that should run when that file changes. Used by
-# run_tests.sh --affected to select tests based on what changed.
+# This file is read by run_tests.sh --affected to select test sections
+# based on which compiler files changed. The runner parses the
+# [source."<path>"] blocks and extracts the `sections` array for each
+# changed file.
 #
-# The mapping is conservative: when in doubt, include more tests.
-# The "always" section lists tests that should run on any compiler change.
+# The mapping is conservative: when in doubt, include more sections.
+# Files not listed here cause the full suite to run (safe fallback).
+# The [always] block lists sections that run on any compiler change.
 
 [always]
 # These always run regardless of what changed
