@@ -283,6 +283,17 @@ record_result() {
         PASS=$((PASS + 1))
     else
         FAIL=$((FAIL + 1))
+        # Save failure artifact with rerun info
+        local fail_name
+        fail_name=$(echo "$message" | head -1 | sed 's/FAIL  //' | sed 's/[^a-zA-Z0-9_.-]/_/g' | head -c 120)
+        if [ -n "$fail_name" ]; then
+            mkdir -p "$FAILDIR"
+            {
+                echo "# Failed: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+                echo "# Output:"
+                echo "$message"
+            } > "$FAILDIR/$fail_name"
+        fi
     fi
 }
 
@@ -325,6 +336,7 @@ run_ok_worker() {
             {
                 echo "FAIL"
                 echo "FAIL  $file — compilation failed (expected success)"
+                echo "# Rerun: $COMPILER $file --emit-llvm"
             } > "$result_file"
             return
         fi
@@ -335,6 +347,7 @@ run_ok_worker() {
             {
                 echo "FAIL"
                 echo "FAIL  $file — compilation failed (expected success)"
+                echo "# Rerun: $COMPILER $file -o /tmp/test_rerun && /tmp/test_rerun"
             } > "$result_file"
             return
         fi
@@ -349,6 +362,7 @@ run_ok_worker() {
         {
             echo "FAIL"
             echo "FAIL  $file — expected '$expected', got '$actual'"
+            echo "# Rerun: $COMPILER $file -o /tmp/test_rerun && /tmp/test_rerun"
         } > "$result_file"
     fi
 }
