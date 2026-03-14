@@ -10,6 +10,27 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Phase D1 testing infrastructure (partial)
+
+Partial progress on D1 (testing infrastructure). This is not complete — see ROADMAP.md for what remains.
+
+What landed:
+- **Compiler output cache**: `run_tests.sh` now caches compiler output keyed by `(file, flags)`. Report tests that previously recompiled the same file 6+ times now get cache hits, saving 26 compilations per fast run. Cache stats are reported in the summary.
+- **Failure artifact preservation**: failed tests automatically save timestamped output and exact rerun commands to `.test-failures/`. Developers can reproduce any failure without re-running the full suite.
+- **Dependency gates**: `compile_gate()` in `run_tests.sh` skips downstream assertions (report content checks, codegen structure checks) when the prerequisite compilation fails, reducing cascading noise.
+- **Pass-level Lean tests**: `PipelineTest.lean` (19 tests) exercises individual compiler passes on in-memory source strings — parse, frontend (check+elaborate), monomorphize, and full pipeline to LLVM IR. No clang, no file I/O, runs in <1 second. Tests both success paths and expected-error paths (parse errors, type errors, undefined variables). Integrated into `run_tests.sh` as the `passlevel` section. Note: these do not separately test SSAVerify or EmitSSA as isolated passes.
+- **Integration tests**: two real multi-feature programs (~150–170 lines each): `integration_generic_pipeline.con` (5-layer borrow chain, trait dispatch, complex enum matching) and `integration_state_machine.con` (4-state × 5-command nested match, struct construction in match arms).
+- **Failure-path stdlib tests**: added tests for fs (read past EOF, seek past end, read empty file), net (bind empty address, write to refused connection, read from unconnected socket, bind duplicate port), and process (kill invalid signal, wait invalid PID, kill PID zero).
+
+What is NOT done (still needed for D1 completion):
+- structured test metadata / category model
+- dependency-aware test selection (change→test mapping)
+- documented coverage matrix and determinism/flakiness policy
+- isolated SSA pass tests (SSAVerify, EmitSSA as separate test targets)
+- named real-program corpus and stress workloads
+
+Test suite: 635 tests passing (189 stdlib), including 19 pass-level Lean tests.
+
 ### Structured LLVM backend completed
 
 The LLVM backend no longer relies on raw LLVM string emission. `LLVMModule` is now the single source of truth for backend construction, and all emitted LLVM IR flows through structured types before printing.
