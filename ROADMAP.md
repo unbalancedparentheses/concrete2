@@ -113,7 +113,12 @@ Still clearly not implemented:
 - **Phase D item 7 complete** (deferred audit reports):
   - **Next report modes named**: `--report authority` (transitive capability analysis), `--report proof` (ProofCore eligibility), `--report high-integrity` (deferred to Phase E). Documented in `docs/PASSES.md`.
   - **44 report assertions stable**: all 6 report modes (caps, unsafe, layout, interface, alloc, mono) regression-tested with semantic grep patterns, not brittle snapshots. Cross-validation test verifies layout report sizes match runtime sizeof.
-- 655 tests pass (189 stdlib), including 32 pass-level Lean tests, 44 report assertions, 46 golden tests, 12 integration tests, and 16 collections verified.
+- **3 compiler bugs fixed** (discovered during integration test writing):
+  - **Cross-module struct field offset** (`Elab.lean`): imported struct definitions were missing from `CModule`, causing `Layout.fieldOffset` to return 0 for all fields. Fix: include imported structs in CModule output.
+  - **i32 literal type mismatch** (`Elab.lean`): integer literals defaulted to i64 in binary ops with i32 operands, producing LLVM type mismatches. Fix: re-elaborate literal with concrete operand type when types differ.
+  - **Cross-module &mut borrow consumed as move** (`Check.lean`): function call argument processing consumed variables even for reference parameters. Fix: skip consumption for `&T`/`&mut T` parameter types.
+  - Bug documentation in `docs/bugs/`, regression tests in `lean_tests/bug_*.con`.
+- 658 tests pass (189 stdlib), including 32 pass-level Lean tests, 44 report assertions, 46 golden tests, 15 integration/regression tests, and 16 collections verified.
 
 ### Now
 

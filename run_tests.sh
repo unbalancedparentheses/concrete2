@@ -905,6 +905,9 @@ run_ok "$TESTDIR/integration_multi_file_calculator.con" 42
 run_ok "$TESTDIR/integration_type_registry.con" 42
 run_ok "$TESTDIR/integration_pipeline_processor.con" 42
 run_ok "$TESTDIR/integration_stress_workload.con" 42
+run_ok "$TESTDIR/bug_cross_module_struct_field.con" 42
+run_ok "$TESTDIR/bug_i32_literal_type.con" 42
+run_ok "$TESTDIR/bug_cross_module_mut_borrow.con" 42
 run_ok "$TESTDIR/struct_enum_field_vec.con" 123
 
 fi # end section: positive

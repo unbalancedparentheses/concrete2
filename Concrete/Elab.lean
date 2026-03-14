@@ -105,6 +105,11 @@ private def isIntegerType : Ty → Bool
   | .int | .uint | .i8 | .i16 | .i32 | .u8 | .u16 | .u32 => true
   | _ => false
 
+private def isIntLit : Expr → Bool
+  | .intLit _ _ => true
+  | .paren _ inner => isIntLit inner
+  | _ => false
+
 private def isFloatType : Ty → Bool
   | .float32 | .float64 => true
   | _ => false
@@ -293,10 +298,24 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
     let cLhs ← elabExpr lhs hint
     let lTy := cLhs.ty
     let cRhs ← elabExpr rhs (some lTy)
+    let rTy := cRhs.ty
+    -- If one operand is a default-typed literal (Int/i64) and the other has a concrete
+    -- smaller integer type, re-elaborate the literal with the concrete type as hint.
+    -- This fixes `0 - x` where x: i32 producing `sub i64 0, %i32_val`.
+    let (cLhs, cRhs, opTy) ← do
+      let lhsIsDefaultInt := lTy == .int && isIntLit lhs
+      let rhsIsDefaultInt := rTy == .int && isIntLit rhs
+      if lhsIsDefaultInt && isIntegerType rTy && rTy != .int then do
+        let cLhs' ← elabExpr lhs (some rTy)
+        pure (cLhs', cRhs, rTy)
+      else if rhsIsDefaultInt && isIntegerType lTy && lTy != .int then
+        pure (cLhs, cRhs, lTy)
+      else
+        pure (cLhs, cRhs, lTy)
     let resultTy := match op with
       | .eq | .neq | .lt | .gt | .leq | .geq => .bool
       | .and_ | .or_ => .bool
-      | _ => lTy
+      | _ => opTy
     return .binOp op cLhs cRhs resultTy
 
   | .unaryOp _ op operand =>
@@ -1062,8 +1081,16 @@ partial def elabModule (m : Module) (summary : FileSummary)
   ) (([] : List CFnDef), ([] : Diagnostics), initEnv)
   if !fnErrors.isEmpty then .error fnErrors
   else
-  -- Build Core structs
+  -- Build Core structs (local definitions)
   let cStructs := m.structs.map fun sd =>
+    { name := sd.name, typeParams := sd.typeParams,
+      fields := sd.fields.map fun f => (f.name, f.ty),
+      isPublic := sd.isPublic, isCopy := sd.isCopy, isReprC := sd.isReprC,
+      isPacked := sd.isPacked, reprAlign := sd.reprAlign : CStructDef }
+  -- Also convert imported structs so cross-module field offsets work in Lower/Layout
+  let localStructNames := m.structs.map (·.name)
+  let cImportedStructs := (imports.structs.filter fun sd =>
+      !(localStructNames.contains sd.name)).map fun sd =>
     { name := sd.name, typeParams := sd.typeParams,
       fields := sd.fields.map fun f => (f.name, f.ty),
       isPublic := sd.isPublic, isCopy := sd.isCopy, isReprC := sd.isReprC,
@@ -1118,7 +1145,7 @@ partial def elabModule (m : Module) (summary : FileSummary)
   | .ok subs =>
   .ok {
     name := m.name
-    structs := cStructs
+    structs := cStructs ++ cImportedStructs
     enums := allEnums.map fun ed =>
       { name := ed.name, typeParams := ed.typeParams,
         variants := ed.variants.map fun v =>

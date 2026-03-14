@@ -10,14 +10,22 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### 3 compiler bugs fixed
+
+Three bugs discovered during integration test writing, now fixed with regression tests and documentation in `docs/bugs/`:
+
+- **Bug 001 — cross-module struct field offset** (`Elab.lean`): all fields of a struct defined in another module read as offset 0. Imported struct definitions were excluded from `CModule` output, so `Layout.fieldOffset` couldn't find them and silently returned 0. Fix: include imported structs in CModule.
+- **Bug 002 — i32 literal type mismatch** (`Elab.lean`): `0 - a` where `a: i32` generated `sub i64 0, %i32_val`. Integer literals defaulted to i64 regardless of the other operand's type. Fix: when one operand is a default-typed literal and the other has a concrete smaller integer type, re-elaborate the literal with the concrete type.
+- **Bug 003 — cross-module &mut borrow consumed as move** (`Check.lean`): passing `&mut Vec<T>` to a function consumed the variable, preventing reuse. The checker didn't distinguish owned from reference parameters when consuming arguments. Fix: skip consumption for `&T`/`&mut T` parameter types.
+
+Test suite: 658 tests (32 pass-level, 15 integration/regression, 44 report assertions).
+
 ### Phase D complete: all items done
 
 Phase D (testing, backend, and trust multipliers) is fully complete. Final items landed:
 
-- **Item 5 — real-program corpus growth**: 4 new integration programs (calculator 200 lines, type registry 248 lines, pipeline processor 223 lines, stress bytecode interpreter 280 lines). Integration corpus now 12 programs. Stress workload exercises 11-variant enum, multiple Vec instances, 21-instruction execution loop, cross-module types/functions. Programs discovered two compiler bugs: cross-module struct field offset (all fields read as offset 0) and i32 literal type mismatch in subtraction.
+- **Item 5 — real-program corpus growth**: 4 new integration programs (calculator 200 lines, type registry 248 lines, pipeline processor 223 lines, stress bytecode interpreter 280 lines). Integration corpus now 12 programs. Stress workload exercises 11-variant enum, multiple Vec instances, 21-instruction execution loop, cross-module types/functions.
 - **Item 7 — deferred audit reports**: next report modes named in `docs/PASSES.md` (`--report authority`, `--report proof`, `--report high-integrity` deferred to Phase E). All 6 existing modes regression-tested with 44 stable semantic assertions.
-
-Test suite: 655 tests (32 pass-level, 12 integration, 44 report assertions).
 
 ### Phase D item 4 complete: FFI/ABI maturity
 

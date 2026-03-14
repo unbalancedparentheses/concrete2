@@ -7,7 +7,7 @@ This document describes Concrete's current ABI stability, FFI safety model, plat
 | Area | Status | Stable? |
 |------|--------|---------|
 | FFI-safe scalar types (i8–i64, u8–u64, f32, f64, bool) | Implemented, tested | **Yes** |
-| `#[repr(C)]` struct layout | Implemented, tested | **Yes** — follows C struct layout rules |
+| `#[repr(C)]` struct layout | Implemented, tested | **Yes** — follows C struct layout rules (field order, padding, alignment). **Not** passed by value across FFI; see Pass-by-Pointer below |
 | `#[repr(packed)]` struct layout | Implemented, tested | **Yes** — no padding between fields |
 | `#[repr(align(N)]` minimum alignment | Implemented, tested | **Yes** — power-of-two enforced |
 | `extern fn` declarations | Implemented, tested | **Yes** — requires `Unsafe` capability |
@@ -98,7 +98,9 @@ Violations are compile errors — there is no way to bypass FFI safety without m
 
 ### `#[repr(C)]` structs
 
-Follow the C ABI: fields are laid out in declaration order with natural alignment padding. Struct size is rounded up to the struct's alignment.
+Fields are laid out in declaration order with natural alignment padding, matching the C struct layout convention. Struct size is rounded up to the struct's alignment.
+
+**Important limitation:** `#[repr(C)]` guarantees layout compatibility (field offsets, sizes, alignment match what a C compiler would produce), but it does **not** guarantee calling-convention compatibility. All structs — including `#[repr(C)]` — are passed by pointer in Concrete function calls (see Pass-by-Pointer Convention below). This means `extern fn` declarations that take `#[repr(C)]` struct parameters expect a pointer, not a by-value struct. C callers must pass a pointer to the struct, not the struct itself.
 
 Example: `#[repr(C)] struct Packet { tag: i8, payload: i32, flags: i16 }`
 - `tag` at offset 0, size 1
@@ -141,7 +143,9 @@ This representation is **not stable** and should not be relied upon across FFI b
 
 Aggregate types (structs, enums, arrays, `String`, `Vec`, `HashMap`) are passed by pointer in function calls. The caller allocates stack space, stores the value, and passes a pointer. Scalar types (integers, floats, bool, char) are passed by value.
 
-This convention applies to internal Concrete function calls and `extern fn` declarations. It is **not stable** — the set of types passed by pointer may change.
+This convention applies uniformly to internal Concrete function calls **and** `extern fn` declarations. A C function declared as `extern fn foo(s: MyReprCStruct)` in Concrete will be emitted as `declare ... @foo(ptr ...)` in LLVM IR — the C side must accept a pointer, not a by-value struct. This is a known divergence from the standard C ABI, where small structs may be passed in registers or by value.
+
+The pass-by-pointer set is **not stable** — which types are passed by pointer may change in future compiler versions.
 
 ## What We Intentionally Do Not Promise
 
@@ -152,6 +156,7 @@ This convention applies to internal Concrete function calls and `extern fn` decl
 5. **32-bit support.** Not planned for the near term.
 6. **Cross-language enum interop.** Enums are not FFI-safe.
 7. **Stable pass-by-pointer set.** Which types are passed by pointer is an optimization decision.
+8. **C-ABI by-value struct passing.** Even `#[repr(C)]` structs are passed by pointer in `extern fn`. C callers must pass a pointer, not a by-value struct.
 
 ## Layout Verification
 
@@ -163,20 +168,22 @@ Layout properties are verified by:
 - **FFI safety tests:** 17 test files in `lean_tests/` cover `repr(C)`, `repr(packed)`, `repr(align)`, extern functions, and error cases for all safety violations.
 - **Report assertions:** `--report layout` produces human-readable layout information that is regression-tested.
 
-### Cross-platform verification matrix
+### Layout model assumptions (cross-platform)
 
-| Property | x86_64 | aarch64 | Verified by |
-|----------|--------|---------|-------------|
-| `sizeof(Int)` = 8 | Yes | Yes | Layout.lean `tySize .int = 8` |
-| `sizeof(i32)` = 4 | Yes | Yes | Layout.lean `tySize .i32 = 4` |
-| `sizeof(ptr)` = 8 | Yes | Yes | Layout.lean `tySize (.ref _) = 8` |
-| `sizeof(String)` = 24 | Yes | Yes | Layout.lean `Builtin.stringSize = 24` |
-| `sizeof(Vec)` = 24 | Yes | Yes | Layout.lean `Builtin.vecSize = 24` |
-| `alignof(i64)` = 8 | Yes | Yes | Layout.lean `tyAlign .int = 8` |
-| `alignof(i32)` = 4 | Yes | Yes | Layout.lean `tyAlign .i32 = 4` |
-| Enum tag = i32 | Yes | Yes | Layout.lean `alignUp 4 payloadAlign` |
-| repr(C) field order | Yes | Yes | `fieldOffset` iterates in declaration order |
-| repr(packed) no padding | Yes | Yes | `fieldOffset` sums sizes without alignment |
-| Pass-by-ptr for structs | Yes | Yes | `isPassByPtr` returns true for named types |
+The following table shows the layout properties assumed by `Layout.lean`. These are **model-based** — they are verified by Lean unit tests against the layout helper functions, not by empirical cross-platform compilation or runtime checks. Since all layout decisions are compile-time constants with no platform-dependent branches, the same values apply to all 64-bit targets.
 
-These properties are identical on x86_64 and aarch64 because all layout decisions are compile-time constants with no platform-dependent branches. The verification matrix confirms that both primary targets produce identical layout.
+| Property | Value | Verified by |
+|----------|-------|-------------|
+| `sizeof(Int)` = 8 | Compile-time constant | `PipelineTest.lean` layout test, `Layout.lean tySize .int = 8` |
+| `sizeof(i32)` = 4 | Compile-time constant | `PipelineTest.lean` layout test, `Layout.lean tySize .i32 = 4` |
+| `sizeof(ptr)` = 8 | Compile-time constant | `PipelineTest.lean` layout test, `Layout.lean tySize (.ref _) = 8` |
+| `sizeof(String)` = 24 | Compile-time constant | `PipelineTest.lean` builtin size test |
+| `sizeof(Vec)` = 24 | Compile-time constant | `PipelineTest.lean` builtin size test |
+| `alignof(i64)` = 8 | Compile-time constant | `Layout.lean tyAlign .int = 8` |
+| `alignof(i32)` = 4 | Compile-time constant | `Layout.lean tyAlign .i32 = 4` |
+| Enum tag = i32 | Compile-time constant | `Layout.lean alignUp 4 payloadAlign` |
+| repr(C) field order | Declaration order | `fieldOffset` iterates in declaration order; tested in `PipelineTest.lean` |
+| repr(packed) no padding | Consecutive offsets | `fieldOffset` sums sizes without alignment; tested in `PipelineTest.lean` |
+| Pass-by-ptr for structs | All named types | `isPassByPtr` returns true for named types; tested in `PipelineTest.lean` |
+
+**What this does not verify:** emitted LLVM IR signatures, actual runtime struct layout on target hardware, or foreign interop correctness. The tests confirm the layout model is internally consistent, not that it produces correct binaries on all targets. Empirical cross-target validation (compiling and running FFI tests on x86_64 and aarch64) is future work.

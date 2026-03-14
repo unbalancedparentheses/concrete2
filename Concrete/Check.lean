@@ -1161,9 +1161,13 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       for (arg, (pName, pTy)) in args.zip paramTypes do
         let argTy ← checkExpr arg (some pTy)
         expectTy pTy argTy s!"argument '{pName}' of '{fnName}'" (some e.getSpan)
-        -- If arg is a bare identifier of a linear type, consume it
+        -- If arg is a bare identifier of a linear type, consume it —
+        -- but NOT if the parameter type is a reference (borrow, not move).
         match arg with
-        | .ident _ varName => consumeVarIfExists varName (some e.getSpan)
+        | .ident _ varName =>
+          match pTy with
+          | .ref _ | .refMut _ => pure ()  -- borrowed parameter: don't consume
+          | _ => consumeVarIfExists varName (some e.getSpan)
         | _ => pure ()
       return retTy
     | none =>
