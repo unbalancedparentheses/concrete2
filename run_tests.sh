@@ -2,10 +2,11 @@
 set -euo pipefail
 
 # --- CLI argument parsing ---
-MODE="fast"           # fast (default) | full | stdlib | O2 | codegen | report
+MODE="fast"           # fast (default) | full | stdlib | O2 | codegen | report | affected
 FILTER=""             # glob pattern to match test file paths
 SECTION=""            # internal: which sections to run
 STDLIB_MODULE=""      # single stdlib module to target (e.g., "string", "map")
+AFFECTED_FILES=""     # comma-separated list of changed files for --affected mode
 
 usage() {
     cat <<'USAGE'
@@ -26,6 +27,8 @@ Modes:
   --O2               Only -O2 optimized-build regression tests
   --codegen           Only codegen differential + SSA structure tests
   --report            Only --report output verification tests
+  --affected          Auto-detect changed files (git diff) and run affected tests
+  --affected FILES    Run tests affected by specific files (comma-separated)
 
 Options:
   -j N                Override parallelism (default: number of CPU cores)
@@ -44,6 +47,8 @@ Recommended workflows:
   ./run_tests.sh --O2                   # after lowering changes
   ./run_tests.sh --full                 # pre-merge — complete coverage
   ./run_tests.sh -j 1                   # debug ordering issues
+  ./run_tests.sh --affected              # run tests for uncommitted changes
+  ./run_tests.sh --affected Concrete/Lower.lean,Concrete/SSA.lean
 USAGE
     exit 0
 }
@@ -68,12 +73,89 @@ while [ $# -gt 0 ]; do
         --O2)      MODE="O2"; shift ;;
         --codegen) MODE="codegen"; shift ;;
         --report)  MODE="report"; shift ;;
+        --affected)
+            MODE="affected"
+            if [ $# -gt 1 ] && [[ "$2" != --* ]]; then
+                AFFECTED_FILES="$2"; shift 2
+            else
+                # Auto-detect from git diff
+                AFFECTED_FILES=$(git diff --name-only HEAD 2>/dev/null | tr '\n' ',')
+                AFFECTED_FILES="${AFFECTED_FILES%,}"  # trim trailing comma
+                if [ -z "$AFFECTED_FILES" ]; then
+                    # Also check staged
+                    AFFECTED_FILES=$(git diff --cached --name-only 2>/dev/null | tr '\n' ',')
+                    AFFECTED_FILES="${AFFECTED_FILES%,}"
+                fi
+                if [ -z "$AFFECTED_FILES" ]; then
+                    echo "No changed files detected. Running full fast suite."
+                    MODE="fast"
+                fi
+                shift
+            fi
+            ;;
         --filter)  FILTER="$2"; shift 2 ;;
         -j)        TEST_JOBS="$2"; shift 2 ;;
         -h|--help) usage ;;
         *)         echo "Unknown option: $1"; usage ;;
     esac
 done
+
+# --- Dependency-aware section resolution for --affected mode ---
+resolve_affected_sections() {
+    local files="$1"
+    local sections="passlevel"  # always run pass-level tests
+
+    IFS=',' read -ra file_list <<< "$files"
+    for f in "${file_list[@]}"; do
+        case "$f" in
+            Concrete/Parser.lean|Concrete/Lexer.lean|Concrete/Token.lean)
+                sections="$sections,positive,negative" ;;
+            Concrete/AST.lean)
+                sections="$sections,positive,negative,testflag,report,codegen" ;;
+            Concrete/Resolve.lean|Concrete/FileSummary.lean)
+                sections="$sections,positive,negative,stdlib" ;;
+            Concrete/Check.lean)
+                sections="$sections,positive,negative" ;;
+            Concrete/Elab.lean|Concrete/Core.lean|Concrete/CoreCanonicalize.lean|Concrete/CoreCheck.lean)
+                sections="$sections,positive,negative,report" ;;
+            Concrete/Mono.lean)
+                sections="$sections,positive,report" ;;
+            Concrete/Lower.lean|Concrete/SSA.lean)
+                sections="$sections,positive,codegen,O2" ;;
+            Concrete/SSAVerify.lean)
+                sections="$sections,positive,codegen" ;;
+            Concrete/SSACleanup.lean)
+                sections="$sections,positive,codegen,O2" ;;
+            Concrete/EmitSSA.lean|Concrete/EmitLLVM.lean|Concrete/LLVM.lean)
+                sections="$sections,positive,codegen,O2" ;;
+            Concrete/Layout.lean)
+                sections="$sections,positive,report,codegen" ;;
+            Concrete/Report.lean)
+                sections="$sections,report" ;;
+            Concrete/Intrinsic.lean|Concrete/BuiltinSigs.lean)
+                sections="$sections,positive,negative,stdlib" ;;
+            Concrete/Format.lean)
+                sections="$sections,positive" ;;
+            Concrete/Pipeline.lean|Main.lean)
+                sections="$sections,positive,negative,testflag,report,codegen,stdlib,collection" ;;
+            PipelineTest.lean)
+                sections="$sections,passlevel" ;;
+            std/src/*)
+                sections="$sections,stdlib,collection" ;;
+            run_tests.sh|test_manifest.toml|test_dep_map.toml)
+                ;; # runner changes don't require test reruns
+            lean_tests/*)
+                sections="$sections,positive,negative" ;;
+            *)
+                # Unknown file — run everything to be safe
+                sections="$sections,positive,negative,testflag,report,codegen,O2,stdlib,collection"
+                ;;
+        esac
+    done
+
+    # Deduplicate
+    echo "$sections" | tr ',' '\n' | sort -u | tr '\n' ',' | sed 's/,$//'
+}
 
 # Resolve which sections are active based on MODE
 case "$MODE" in
@@ -84,6 +166,13 @@ case "$MODE" in
     O2)      SECTION="O2" ;;
     codegen) SECTION="codegen,O2" ;;
     report)  SECTION="report" ;;
+    affected)
+        SECTION=$(resolve_affected_sections "$AFFECTED_FILES")
+        echo "=== Affected mode ==="
+        echo "  changed files: $AFFECTED_FILES"
+        echo "  sections: $SECTION"
+        echo ""
+        ;;
 esac
 
 section_active() {
@@ -782,6 +871,9 @@ run_ok "$TESTDIR/integration_data_structures.con" 0
 run_ok "$TESTDIR/integration_error_handling.con" 0
 run_ok "$TESTDIR/integration_generic_pipeline.con" 42
 run_ok "$TESTDIR/integration_state_machine.con" 42
+run_ok "$TESTDIR/integration_compiler_stress.con" 42
+run_ok "$TESTDIR/integration_multi_module.con" 42
+run_ok "$TESTDIR/integration_recursive_structures.con" 42
 run_ok "$TESTDIR/struct_enum_field_vec.con" 123
 
 fi # end section: positive

@@ -79,6 +79,16 @@ def fullPipelineNoIO (source : String) : Except Diagnostics String :=
   | .error ds => .error ds
   | .ok ssa => .ok (Pipeline.emit ssa)
 
+/-- Run frontend + monomorphize + raw lowering (no verify/cleanup) on a source string.
+    Returns raw SSA modules for testing verify and cleanup in isolation. -/
+def frontendMonoLowerRaw (source : String) : Except Diagnostics (List SModule) :=
+  match frontendNoIO source with
+  | .error ds => .error ds
+  | .ok (_, _, elabProg) =>
+  match Pipeline.monomorphize elabProg with
+  | .error ds => .error ds
+  | .ok mono => .ok (mono.coreModules.map Concrete.lowerModule)
+
 -- ============================================================
 -- Test sources
 -- ============================================================
@@ -293,6 +303,193 @@ def testMonoTrait : IO UInt32 := do
       return 1
 
 -- ============================================================
+-- Tests: SSA lowering (isolated)
+-- ============================================================
+
+def testLowerSimple : IO UInt32 := do
+  match frontendMonoLowerRaw simpleMain with
+  | .ok modules =>
+    -- Check we got at least one module with at least one function with at least one block
+    let hasFnWithBlock := modules.any fun m =>
+      m.functions.any fun f => !f.blocks.isEmpty
+    if hasFnWithBlock then
+      IO.println "PASS: lower/simple — module has function with blocks"
+      return 0
+    else
+      IO.eprintln "FAIL: lower/simple — no function with blocks found"
+      return 1
+  | .error ds =>
+    IO.eprintln "FAIL: lower/simple"
+    IO.eprintln (renderDiagnostics ds)
+    return 1
+
+def testLowerEnum : IO UInt32 := do
+  match frontendMonoLowerRaw enumSource with
+  | .ok modules =>
+    let hasFns := modules.any fun m => !m.functions.isEmpty
+    if hasFns then
+      IO.println "PASS: lower/enum — module has functions"
+      return 0
+    else
+      IO.eprintln "FAIL: lower/enum — no functions found"
+      return 1
+  | .error ds =>
+    IO.eprintln "FAIL: lower/enum"
+    IO.eprintln (renderDiagnostics ds)
+    return 1
+
+-- ============================================================
+-- Tests: SSA verify (isolated)
+-- ============================================================
+
+def testVerifyValid : IO UInt32 := do
+  match frontendMonoLowerRaw simpleMain with
+  | .ok modules =>
+    match Concrete.ssaVerifyProgram modules with
+    | .ok () =>
+      IO.println "PASS: verify/valid-simple"
+      return 0
+    | .error ds =>
+      IO.eprintln "FAIL: verify/valid-simple — verify rejected valid SSA"
+      IO.eprintln (renderDiagnostics ds)
+      return 1
+  | .error ds =>
+    IO.eprintln "FAIL: verify/valid-simple — lowering failed"
+    IO.eprintln (renderDiagnostics ds)
+    return 1
+
+def testVerifyValidEnum : IO UInt32 := do
+  match frontendMonoLowerRaw enumSource with
+  | .ok modules =>
+    match Concrete.ssaVerifyProgram modules with
+    | .ok () =>
+      IO.println "PASS: verify/valid-enum"
+      return 0
+    | .error ds =>
+      IO.eprintln "FAIL: verify/valid-enum — verify rejected valid SSA"
+      IO.eprintln (renderDiagnostics ds)
+      return 1
+  | .error ds =>
+    IO.eprintln "FAIL: verify/valid-enum — lowering failed"
+    IO.eprintln (renderDiagnostics ds)
+    return 1
+
+def testVerifyValidGeneric : IO UInt32 := do
+  match frontendMonoLowerRaw genericSource with
+  | .ok modules =>
+    match Concrete.ssaVerifyProgram modules with
+    | .ok () =>
+      IO.println "PASS: verify/valid-generic"
+      return 0
+    | .error ds =>
+      IO.eprintln "FAIL: verify/valid-generic — verify rejected valid SSA"
+      IO.eprintln (renderDiagnostics ds)
+      return 1
+  | .error ds =>
+    IO.eprintln "FAIL: verify/valid-generic — lowering failed"
+    IO.eprintln (renderDiagnostics ds)
+    return 1
+
+-- ============================================================
+-- Tests: SSA cleanup (isolated)
+-- ============================================================
+
+def testCleanupRuns : IO UInt32 := do
+  match frontendMonoLowerRaw simpleMain with
+  | .ok modules =>
+    match Concrete.ssaVerifyProgram modules with
+    | .ok () =>
+      let cleaned := Concrete.ssaCleanupProgram modules
+      if !cleaned.isEmpty then
+        IO.println "PASS: cleanup/runs — cleanup produced non-empty modules"
+        return 0
+      else
+        IO.eprintln "FAIL: cleanup/runs — cleanup returned empty modules"
+        return 1
+    | .error ds =>
+      IO.eprintln "FAIL: cleanup/runs — verify failed before cleanup"
+      IO.eprintln (renderDiagnostics ds)
+      return 1
+  | .error ds =>
+    IO.eprintln "FAIL: cleanup/runs — lowering failed"
+    IO.eprintln (renderDiagnostics ds)
+    return 1
+
+def testCleanupIdempotent : IO UInt32 := do
+  match frontendMonoLowerRaw simpleMain with
+  | .ok modules =>
+    match Concrete.ssaVerifyProgram modules with
+    | .ok () =>
+      let cleaned1 := Concrete.ssaCleanupProgram modules
+      let cleaned2 := Concrete.ssaCleanupProgram cleaned1
+      -- Compare function and block counts between cleaned1 and cleaned2
+      let fnCount1 := cleaned1.foldl (fun acc m => acc + m.functions.length) 0
+      let fnCount2 := cleaned2.foldl (fun acc m => acc + m.functions.length) 0
+      let blkCount1 := cleaned1.foldl (fun acc m =>
+        acc + m.functions.foldl (fun a f => a + f.blocks.length) 0) 0
+      let blkCount2 := cleaned2.foldl (fun acc m =>
+        acc + m.functions.foldl (fun a f => a + f.blocks.length) 0) 0
+      if fnCount1 == fnCount2 && blkCount1 == blkCount2 then
+        IO.println "PASS: cleanup/idempotent — double cleanup preserves counts"
+        return 0
+      else
+        IO.eprintln s!"FAIL: cleanup/idempotent — counts differ: fns {fnCount1}→{fnCount2}, blks {blkCount1}→{blkCount2}"
+        return 1
+    | .error ds =>
+      IO.eprintln "FAIL: cleanup/idempotent — verify failed"
+      IO.eprintln (renderDiagnostics ds)
+      return 1
+  | .error ds =>
+    IO.eprintln "FAIL: cleanup/idempotent — lowering failed"
+    IO.eprintln (renderDiagnostics ds)
+    return 1
+
+-- ============================================================
+-- Tests: SSA emit (isolated)
+-- ============================================================
+
+def testEmitProducesIR : IO UInt32 := do
+  match fullPipelineNoIO simpleMain with
+  | .ok ir =>
+    if ir.contains' "define" then
+      IO.println "PASS: emit/produces-ir — output contains 'define'"
+      return 0
+    else
+      IO.eprintln "FAIL: emit/produces-ir — IR missing 'define'"
+      return 1
+  | .error ds =>
+    IO.eprintln "FAIL: emit/produces-ir"
+    IO.eprintln (renderDiagnostics ds)
+    return 1
+
+def testEmitTestMode : IO UInt32 := do
+  match frontendNoIO simpleMain with
+  | .error ds =>
+    IO.eprintln "FAIL: emit/test-mode — frontend failed"
+    IO.eprintln (renderDiagnostics ds)
+    return 1
+  | .ok (_, _, elabProg) =>
+  match Pipeline.monomorphize elabProg with
+  | .error ds =>
+    IO.eprintln "FAIL: emit/test-mode — mono failed"
+    IO.eprintln (renderDiagnostics ds)
+    return 1
+  | .ok mono =>
+  match Pipeline.lower mono with
+  | .error ds =>
+    IO.eprintln "FAIL: emit/test-mode — lower failed"
+    IO.eprintln (renderDiagnostics ds)
+    return 1
+  | .ok ssa =>
+    let ir := Concrete.emitSSAProgram ssa.ssaModules (testMode := true)
+    if ir.contains' "define" then
+      IO.println "PASS: emit/test-mode — test mode output contains 'define'"
+      return 0
+    else
+      IO.eprintln "FAIL: emit/test-mode — test mode IR missing 'define'"
+      return 1
+
+-- ============================================================
 -- Tests: full pipeline to LLVM IR
 -- ============================================================
 
@@ -403,6 +600,35 @@ def main : IO UInt32 := do
   total := total + 2
   failures := failures + (← testMonoGeneric)
   failures := failures + (← testMonoTrait)
+  IO.println ""
+
+  -- SSA Lowering tests
+  IO.println "--- SSA Lowering (isolated) ---"
+  total := total + 2
+  failures := failures + (← testLowerSimple)
+  failures := failures + (← testLowerEnum)
+  IO.println ""
+
+  -- SSA Verify tests
+  IO.println "--- SSA Verify (isolated) ---"
+  total := total + 3
+  failures := failures + (← testVerifyValid)
+  failures := failures + (← testVerifyValidEnum)
+  failures := failures + (← testVerifyValidGeneric)
+  IO.println ""
+
+  -- SSA Cleanup tests
+  IO.println "--- SSA Cleanup (isolated) ---"
+  total := total + 2
+  failures := failures + (← testCleanupRuns)
+  failures := failures + (← testCleanupIdempotent)
+  IO.println ""
+
+  -- SSA Emit tests
+  IO.println "--- SSA Emit (isolated) ---"
+  total := total + 2
+  failures := failures + (← testEmitProducesIR)
+  failures := failures + (← testEmitTestMode)
   IO.println ""
 
   -- Full pipeline tests

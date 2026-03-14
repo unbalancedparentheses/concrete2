@@ -2,99 +2,246 @@
 
 Status: stable reference
 
-This document describes the main test surfaces for Concrete and what each one is intended to catch.
+This document describes the test architecture, coverage matrix, determinism policy, and execution model for Concrete.
 
-## Main Suites
+## Test Architecture
 
-### Main End-to-End Suite
+The test system has four layers, ordered by cost:
 
-Primary entrypoint:
+| Layer | Tool | Cost | What it catches |
+|-------|------|------|-----------------|
+| **Pass-level** | `PipelineTest.lean` (Lean executable) | <1s, no I/O | Parse errors, type errors, elaboration bugs, monomorphization bugs, SSA verify/cleanup invariants, emit correctness |
+| **Artifact** | `run_tests.sh --report`, `--codegen` | ~1s each, no clang | Report output regressions, SSA structure, LLVM IR shape, codegen differentials |
+| **End-to-end** | `run_tests.sh` positive/negative | ~0.5s each, needs clang | Full compile-and-run behavior, runtime correctness |
+| **Stress/integration** | `run_tests.sh` integration tests | ~1s each, needs clang | Multi-feature interactions, deep call chains, realistic programs |
+
+### Pass-Level Lean Tests
+
+`PipelineTest.lean` exercises individual compiler passes directly on in-memory source strings. No subprocess, no clang, no file I/O.
+
+Current coverage (28 tests):
+- **Parse (4)**: valid programs parse, malformed input rejected
+- **Frontend (8)**: parse→check→elaborate on structs/enums/traits/generics, type errors and undefined vars rejected
+- **Monomorphize (2)**: generic and trait programs monomorphize
+- **SSA Lowering (2)**: `lowerModule` produces functions with blocks
+- **SSA Verify (3)**: `ssaVerifyProgram` accepts valid SSA from simple/enum/generic programs
+- **SSA Cleanup (2)**: `ssaCleanupProgram` runs without crash, double-cleanup is idempotent
+- **SSA Emit (2)**: `emitSSAProgram` produces LLVM IR, test mode works
+- **Full pipeline (5)**: source → LLVM IR for 5 program shapes
+
+Run: `lake build pipeline-test && .lake/build/bin/pipeline-test`
+
+### Artifact Tests
+
+Report and codegen tests consume cached compiler output without invoking clang.
+
+- **Report tests (44 assertions)**: content checks across all 6 `--report` modes (caps, unsafe, layout, interface, mono, alloc)
+- **Codegen differential tests**: SSA optimization verification (constant folding, strength reduction), codegen structure (GEP offsets, enum tags, aggregate promotion), cross-representation consistency (packed struct, enum payload, Core→SSA agreement)
+
+Compiler output is cached by `(file, flags)` key. Multi-assertion report tests reuse a single compilation (26/57 cache hits per fast run).
+
+### End-to-End Tests
+
+Compile-and-run tests in `lean_tests/`:
+- **Positive (182)**: compile, run, check exit code matches expected value
+- **Negative (151)**: compile, expect specific error message in stderr
+- **Abort (1)**: compile, run, expect crash
+- **Test flag (4)**: `--test` mode with pass/fail/mixed/submodule programs
+- **O2 (5)**: same programs compiled with `-O2`, check same results
+
+### Stdlib Tests
+
+189 `#[test]` functions across all stdlib modules, compiled through the real compiler path. Module-targeted testing via `--stdlib-module <name>`.
+
+15 collection modules verified for test presence and correctness.
+
+### Integration / Stress Tests
+
+Named real-program corpus:
+- `integration_text_processing.con` — string/parsing pipeline
+- `integration_data_structures.con` — struct/enum data flow
+- `integration_error_handling.con` — Result/Option error chains
+- `integration_generic_pipeline.con` (~150 lines) — 5-layer borrow chain, trait dispatch, complex enum matching
+- `integration_state_machine.con` (~170 lines) — 4-state × 5-command nested match, struct construction in match arms
+- `integration_compiler_stress.con` (~200 lines) — deep generic instantiation, multi-trait dispatch, nested enum matching
+- `integration_multi_module.con` + `helper.con` — cross-module types, traits, and enum matching
+- `integration_recursive_structures.con` (~200 lines) — recursive expression evaluation, stack-based computation
+
+## Coverage Matrix
+
+### By failure mode
+
+| Failure mode | Test layer | Test count | Key tests |
+|-------------|-----------|-----------|-----------|
+| Parser crash/hang | Fuzz | 500 iter | `test_parser_fuzz.sh` |
+| Parse rejection | Pass-level + E2E | 4 + ~20 | `parse/*`, `error_resolve_*` |
+| Name resolution | Pass-level + E2E | 2 + ~10 | `frontend/*`, `error_resolve_*`, `module_*` |
+| Type/capability errors | Pass-level + E2E | 8 + ~60 | `frontend/*`, `error_type_*`, `error_cap_*`, `error_borrow_*` |
+| Linearity violations | E2E | ~15 | `error_unconsumed*`, `error_use_after_*`, `error_linear_*`, `linear_*` |
+| Elaboration/trait bugs | Pass-level + E2E | 2 + ~20 | `mono/*`, `trait_*`, `generic_*`, `error_trait_*` |
+| Lowering invariants | Pass-level + E2E | 5 + ~30 | `lower/*`, `verify/*`, `struct_*`, `enum_*`, `regress_*` |
+| SSA verification | Pass-level | 3 | `verify/valid-*` |
+| SSA cleanup | Pass-level | 2 | `cleanup/*` |
+| Codegen structure | Artifact | ~16 | `codegen_*`, struct/enum GEP/tag checks |
+| LLVM emission | Pass-level + Artifact | 2 + ~10 | `emit/*`, cross-representation checks |
+| Runtime behavior | E2E | ~180 | All positive run_ok tests |
+| -O2 regressions | E2E | 5 | `struct_loop_*`, `struct_nested_*`, `struct_if_else_*` |
+| Report accuracy | Artifact | 44 | `report_integration.con`, `report_*_check.con` |
+| Stdlib correctness | Stdlib | 189 | All `#[test]` functions |
+| Collection integrity | Stdlib | 15 modules | Collection verification section |
+| Multi-module | E2E | 22 | `module_*`, `summary_*`, `module_file/` |
+| Formatter | Property | 4 | `fmt_parse_roundtrip.con`, golden tests |
+
+### By compiler pass
+
+| Pass | Direct pass-level tests | Owned E2E tests | Total coverage |
+|------|------------------------|----------------|---------------|
+| `parse` | 4 | ~20 | Strong |
+| `resolve` | (via frontend) | ~12 | Moderate |
+| `check` | (via frontend) | ~60 | Strong |
+| `elab` | (via frontend) | ~20 | Moderate |
+| `core_check` | (via frontend) | ~10 | Moderate |
+| `mono` | 2 | ~15 | Moderate |
+| `lower` | 2 | ~30 | Strong |
+| `ssa_verify` | 3 | ~5 | Moderate |
+| `ssa_cleanup` | 2 | ~5 | Moderate |
+| `emit_ssa` | 2 | ~180 | Strong |
+| `report` | — | 44 | Strong |
+| `format` | — | 4 | Light |
+
+## Dependency-Aware Test Selection
+
+### `--affected` mode
+
+`run_tests.sh --affected` detects changed files via `git diff` and selects only the test sections that exercise those compiler passes.
 
 ```bash
-./run_tests.sh              # fast parallel (default)
-./run_tests.sh --full       # complete suite
-./run_tests.sh --filter X   # only tests matching X
+./run_tests.sh --affected                     # auto-detect from git diff
+./run_tests.sh --affected Concrete/Lower.lean  # explicit file list
 ```
 
-Purpose:
+The mapping from compiler source files to test sections lives in `test_dep_map.toml`. The mapping is conservative — when in doubt, more sections run.
 
-- exercise the normal compile-and-run path
-- validate language behavior end to end
-- catch regressions in parsing, checking, elaboration, lowering, codegen, and runtime-facing builtins
+Example mappings:
+- `Concrete/Check.lean` → positive, negative, passlevel (type/cap/linearity tests)
+- `Concrete/Lower.lean` → positive, codegen, O2, passlevel (lowering + backend tests)
+- `Concrete/Report.lean` → report (report output tests only)
+- `std/src/*` → stdlib, collection (stdlib tests only)
+- Unknown files → full suite (safe fallback)
 
-Runs in `--fast` mode by default: parallel on all CPU cores, network tests skipped. Supports `--full`, `--filter`, `--stdlib`, `--stdlib-module`, `--O2`, `--codegen`, and `--report` for targeted runs. Partial runs display a clear warning with mode, filter, and skip count.
+### Explanation
 
-Current suite: 600 tests (189 stdlib), including 44 report assertions, 46 golden tests, and 16 collections verified.
+After an `--affected` run, the summary shows which files triggered which sections:
 
-### SSA-Specific Suite
-
-Primary entrypoint:
-
-```bash
-bash test_ssa.sh
+```
+=== Affected mode ===
+  changed files: Concrete/Lower.lean,Concrete/SSACleanup.lean
+  sections: codegen,O2,passlevel,positive
 ```
 
-Purpose:
+## Structured Test Metadata
 
-- exercise the SSA-based backend path explicitly
-- catch regressions in lowering, SSA verification, SSA cleanup, and LLVM emission
-- make sure SSA-specific behavior stays healthy even when the main suite passes
+### Manifest
 
-### In-Language Test Runner
+`test_manifest.toml` is the structured source of truth for test metadata. Each test entry includes:
 
-The compiler has a built-in test runner invoked via `--test`:
+- `file` — path relative to repo root
+- `category` — semantic category (`unit`, `semantic`, `lowering`, `codegen`, `report`, `integration`, `stress`, `stdlib`, `regression`, `property`, `fuzz`)
+- `kind` — execution kind (`run_ok`, `run_err`, `run_abort`, `run_test`, `check_report`, `check_codegen`, `check_O2`, `lean_pass`)
+- `passes` — which compiler passes this test exercises
+- `profile` — run profile (`fast`, `slow`, `network`)
+- `expected` — expected output
+- `owner_pass` — primary compiler pass whose correctness this test defends
+- `needs_clang` — whether clang is needed
+- `multi_module` — whether the test uses `mod X;` file imports
 
-```bash
-./lake/build/bin/concrete file.con --test
-```
+### Dependency Map
 
-This compiles all `#[test]` functions in the module (including submodules), generates a test-runner `main()`, and executes it. Each test function must:
+`test_dep_map.toml` maps compiler source files to affected test sections and categories. Used by `--affected` mode.
 
-- take no parameters
-- not be generic
-- return `i32` (0 = pass, non-zero = fail)
+## Determinism and Flakiness Policy
+
+### Rules
+
+1. **Fixed seeds**: all randomized tests use fixed seeds unless deliberately exploring. `test_parser_fuzz.sh` uses `$RANDOM` seeded from iteration count, not wall-clock time.
+
+2. **No wall-clock dependence**: no test depends on absolute time, execution speed, or timing. `std.time` tests check only that monotonic clock moves forward, not that specific durations elapse.
+
+3. **Timeout classes**: tests have three implicit timeout tiers:
+   - Fast tests: 10s (most E2E tests)
+   - Slow tests: 30s (compilation + complex runtime)
+   - Network tests: 60s (TCP round-trip with fork/accept)
+
+4. **Network isolation by default**: `--fast` mode (the default) skips all network tests. Network tests run only under `--full`. The `SKIP_FLAKY_TCP_TEST=1` environment variable provides an additional escape hatch.
+
+5. **Stable temp directory handling**: test artifacts use `$TMPDIR` or `/tmp`, never the working directory. Compiler output cache uses a per-run temp directory cleaned up on exit.
+
+6. **Parallel safety**: all tests are independent. No test reads another test's output or depends on execution order. The test runner uses job-based parallelism (`-j N`) without shared mutable state between test processes.
+
+7. **Quarantine/repair expectations**: if a test becomes flaky:
+   - Identify the non-determinism source (timing, file system, network, uninitialized memory)
+   - Fix the root cause or move the test to `--full` only
+   - Do not delete or skip flaky tests without a tracking comment
+   - The `SKIP_FLAKY_TCP_TEST` pattern is the model for temporary quarantine
+
+### Known flakiness risks
+
+- **TCP round-trip test**: depends on `fork()` + local socket bind. Can fail under port contention or slow CI. Quarantined behind `--full` and `SKIP_FLAKY_TCP_TEST`.
+- **Parser fuzz**: timeout-based crash detection could theoretically race on very slow machines. The 5s timeout is generous for the parser's workload.
+
+## Compile-Time and Suite-Time Baselines
+
+### Current baselines (as of Phase D1)
+
+| Metric | Value |
+|--------|-------|
+| Pass-level tests | <1s (28 tests, no I/O) |
+| Fast suite (`--fast`) | ~25-35s (635 tests, parallel) |
+| Full suite (`--full`) | ~40-50s (637 tests, includes network) |
+| Cache hit rate | 26/57 compilations saved per fast run |
+| Compiler build | ~30-45s (`lake build`) |
+| lli-accelerated suite | ~12s (when `LLI_PATH` is set) |
+
+### Tracking
+
+Suite time is not yet automatically tracked between runs. The baselines above are manual snapshots. Future work: record timing per section in the summary output and warn on regressions beyond a threshold.
+
+## Failure Isolation
+
+### Artifact preservation
+
+Failed tests automatically save artifacts to `.test-failures/`:
+- Timestamped output (stdout + stderr)
+- Exact rerun command
+- Compiler flags used
 
 Example:
-
 ```
-mod math {
-    #[test]
-    fn test_add() -> i32 {
-        if 2 + 3 == 5 { return 0; }
-        return 1;
-    }
-}
+$ cat .test-failures/lean_tests_struct_basic_con
+# Failure: lean_tests/struct_basic.con
+# Time: 2026-03-13 14:22:01
+# Rerun: .lake/build/bin/concrete lean_tests/struct_basic.con -o /tmp/test_rerun && /tmp/test_rerun
+<compiler output>
 ```
 
-Output:
+### Dependency gates
 
-```
-PASS: test_add
-```
+Report test groups use `compile_gate()` to skip downstream assertions when compilation fails. This prevents cascading false failures and makes the first error obvious.
 
-The process exits 0 if all tests pass, 1 if any fail.
+## Execution Modes
 
-## What The Tests Are For
-
-- `run_tests.sh` = whole-language behavior and broad regression coverage (parallel by default, with fast/full/filter/targeted modes)
-- `test_ssa.sh` = backend/SSA coverage
-- `--test` flag = in-language test execution for `#[test]` functions
-
-Both external suites matter. The main suite answers “does Concrete still work?” The SSA suite answers “does the real backend path still work correctly?” The `--test` flag is intended for module-level testing within user and stdlib code.
-
-Stdlib tests run through the real compiler path via `concrete std/src/lib.con --test`. Module-targeted testing is available via `--stdlib-module <name>` (e.g., `--stdlib-module map`, `--stdlib-module string`), which runs `--test --module std.<name>` to target a single stdlib module without bootstrapping the whole tree.
-
-## Golden / Inspection Tests
-
-Concrete also has golden or inspection-oriented coverage around internal outputs such as:
-
-- emitted Core
-- emitted SSA
-- compiler reports
-
-These are useful for locking down architecture behavior even when user-visible output would not show a regression immediately.
-
-Where report output is tested, prefer stable semantic assertions (sections, facts, counts, or field/value relationships) over brittle raw string snapshots whenever possible.
+| Mode | Sections | Use case |
+|------|----------|----------|
+| `--fast` (default) | all except network | Daily driver |
+| `--full` | everything | Pre-merge |
+| `--affected` | auto-detected | After specific compiler changes |
+| `--affected FILE` | mapped sections | Targeted rerun |
+| `--filter PAT` | all, filtered by path | Iterate on one area |
+| `--stdlib` | stdlib + collection | After stdlib changes |
+| `--stdlib-module M` | one stdlib module | Iterate on one module |
+| `--O2` | O2 regressions | After lowering changes |
+| `--codegen` | codegen + O2 | After backend changes |
+| `--report` | report | After report changes |
 
 ## Recommended Verification Flow
 
@@ -104,7 +251,15 @@ Where report output is tested, prefer stable semantic assertions (sections, fact
 lake build && ./run_tests.sh
 ```
 
-This runs `--fast` mode: parallel on all cores, network tests skipped. It is the standard developer workflow for edit-test loops. The summary clearly warns that it is a partial run.
+Runs `--fast` mode: parallel on all cores, network tests skipped.
+
+### After changing a specific compiler pass
+
+```bash
+lake build && ./run_tests.sh --affected
+```
+
+Auto-detects changed files and runs only affected test sections.
 
 ### Pre-merge (full coverage)
 
@@ -112,21 +267,17 @@ This runs `--fast` mode: parallel on all cores, network tests skipped. It is the
 lake build && ./run_tests.sh --full
 ```
 
-Runs the complete suite including network/TCP tests. Use this before merging.
-
 ### Targeted workflows
 
 ```bash
-./run_tests.sh --filter struct_loop   # only tests matching "struct_loop"
-./run_tests.sh --stdlib               # only stdlib module + collection verification
-./run_tests.sh --stdlib-module map    # only tests for stdlib module "map"
-./run_tests.sh --O2                   # only -O2 optimized-build regressions
-./run_tests.sh --codegen              # only codegen differential + SSA structure
-./run_tests.sh --report               # only --report output verification
-./run_tests.sh -j 1                   # serial execution (debug ordering issues)
+./run_tests.sh --filter struct_loop   # iterate on one area
+./run_tests.sh --stdlib               # after touching std/src/
+./run_tests.sh --stdlib-module map    # iterate on one stdlib module
+./run_tests.sh --O2                   # after lowering changes
+./run_tests.sh --codegen              # after backend changes
+./run_tests.sh --report               # after report changes
+./run_tests.sh -j 1                   # debug ordering issues
 ```
-
-Use `--filter` when iterating on a single area. Use `--stdlib` after touching `std/src/`. Use `--stdlib-module <name>` to iterate on one stdlib module (e.g., map, string, vec, fs, deque, bitset). Use `--O2` after lowering changes. Run `./run_tests.sh -h` for the full options reference.
 
 ### Other suites
 
@@ -134,125 +285,3 @@ Use `--filter` when iterating on a single area. Use `--stdlib` after touching `s
 bash test_ssa.sh                      # SSA-specific backend coverage
 bash test_parser_fuzz.sh              # parser crash/hang fuzzing
 ```
-
-## Parser Fuzzing
-
-Primary entrypoint:
-
-```bash
-bash test_parser_fuzz.sh [iterations]
-```
-
-Purpose:
-
-- generate random/malformed `.con` inputs (random bytes, random tokens, broken programs, corrupted valid programs)
-- verify the parser never crashes (segfault, abort) or hangs (timeout)
-- a clean compilation failure (exit 1 with error) is expected and fine
-
-Default: 500 iterations with 5-second timeout per input.
-
-## Property and Trace Tests
-
-These tests exercise invariants beyond single-example happy paths:
-
-- `fmt_parse_roundtrip.con` — round-trip property: `parse(format(x)) == x` for int ranges, powers of 10, and edge values
-- `vec_trace.con` — Vec operation traces: push/get/set/length invariants, growth preservation, interleaved push/set
-- `hashmap_trace.con` — HashMap operation traces: insert/get/remove/overwrite invariants, tombstone recovery, growth stress
-
-## Bug Regression Corpus
-
-Every real compiler bug should become a permanent regression test. These tests exist alongside the main suite and are named for the bug pattern they reproduce, not for the feature they exercise.
-
-Current regression tests:
-
-- `string_multi_fn.con` — string constant naming collision across multiple functions
-- `if_else_while.con` — SSA domination error from then-branch variable leakage into else-branch
-- `while_seq_scoping.con` — SSA domination error from while-loop body variables leaking past the exit block into subsequent loops
-
-The goal is a named corpus rather than an accidental pile of old tests. When a bug is fixed, the regression test is added to `run_tests.sh` alongside the fix.
-
-## Codegen Differential Tests
-
-These tests assert specific properties of the compiler's intermediate representations (`--emit-ssa`, `--emit-llvm`, `--emit-core`), catching codegen regressions closer to their source rather than waiting for end-to-end output to accidentally change.
-
-Located in the `=== Codegen differential tests ===` section of `run_tests.sh`.
-
-### SSA optimization verification
-
-- Constant folding: `codegen_constfold.con` — verifies `2 + 3` folds to `ret i64 5` with no residual `add i64`
-- Strength reduction: `codegen_strength.con` — verifies `x * 8` becomes `shl i64 %x, 3` with no residual `mul i64`
-
-### Codegen structure verification
-
-- Struct field access: `struct_basic.con` — second field GEP at offset 8 (`gep i8 %p, i64 8`)
-- Enum dispatch: `enum_basic.con` — tag loaded as `i32`, compared with `eq i1`
-- Monomorphization naming: `report_mono_check.con` — `identity_for_Int` and `identity_for_i32` specializations exist
-- LLVM struct types: `struct_basic.con` — `%struct.Point = type { i64, i64 }`
-- Mutable borrow codegen: `borrow_mut.con` — `store i64` generated for mutable borrow write-back
-- Aggregate promotion (loop): `struct_loop_field_assign.con` — `alloca %Point` present, no `phi %Point`
-- Aggregate promotion (if/else): `struct_if_else_merge.con` — `alloca %Pair` present, no `phi %Pair`
-- Aggregate promotion (match): `struct_match_merge.con` — `alloca %Pair` present, no `phi %Pair`
-
-### Cross-representation consistency
-
-- Packed struct: `report_layout_check.con` — LLVM `<{` syntax matches `--report layout` `#[packed]`
-- Enum payload size: `report_layout_check.con` — LLVM `[N x i8]` payload matches `--report layout` `max_payload`
-- Core-SSA agreement: `struct_basic.con` — Core IR preserves `fn sum_point(p: Point) -> Int`, SSA maps it to `define i64 @sum_point`
-
-## Report Tests
-
-Report tests verify the output of `--report` modes against expected content. Located in the `=== Report output tests ===` section of `run_tests.sh`.
-
-Current coverage (44 assertions across 6 modes):
-
-- **caps**: pure function detection, single/multi-capability, trusted extern, capability "why" traces (which callees contribute each cap)
-- **unsafe**: trusted boundaries, trusted extern vs regular extern, raw pointer signatures, trust boundary analysis (what trusted functions wrap)
-- **layout**: struct sizes/alignment, packed structs, enum tags/payload, runtime size cross-validation
-- **interface**: public API exports, capability annotations, private function exclusion
-- **mono**: generic function counts, specialization details
-- **alloc**: allocation sources, cleanup patterns (free/defer), returned-allocation warnings, allocating function totals
-
-Integration test programs:
-- `report_integration.con` — exercises all 6 report modes with caps/unsafe/alloc/layout/interface/mono on a single program with pure functions, generic functions, trusted extern, trusted wrappers, and allocation patterns
-- `integration_collection_pipeline.con` — multi-collection pipeline with Vec, generics, enums, structs, and mixed allocation patterns (alloc/free/defer); verifies both runtime correctness and report accuracy
-
-## Future Refinement
-
-The test structure may later become more explicitly layered, for example:
-
-- parser-focused tests
-- Core/Elab tests
-- CoreCheck tests
-- lowering/SSA tests
-- codegen tests
-
-But the current split already provides strong practical coverage:
-
-- full end-to-end behavior (run_tests.sh positive/negative/abort tests)
-- explicit SSA-path coverage (test_ssa.sh)
-- golden baseline tests (test_golden.sh)
-- report consistency tests (--report flag assertions)
-- codegen differential tests (--emit-ssa/--emit-llvm/--emit-core assertions)
-- parser fuzzing (test_parser_fuzz.sh)
-- property and trace tests (fmt/parse round-trip, Vec/HashMap traces)
-
-## Next Refinement
-
-The current testing pipeline is good, but the next major improvement is not "add more shell flags." It is to make the loop smarter and cheaper.
-
-The likely bottleneck is no longer the compiler frontend itself. It is repeated process startup, repeated `clang` work, and broad reruns when only a narrow scope changed.
-
-The highest-value next steps are:
-
-- artifact-aware test reuse instead of recompiling and rerunning everything through the full shell path
-- dependency-aware narrower rerun scopes instead of relying only on string filters
-- clearer test classes (`fast`, `unit`, `integration`, `optimization/regression`, `report/golden`, `slow/network/stress`) so local runs and CI can choose better defaults
-- more real-program integration cases plus more property/fuzz/differential coverage
-
-Promising implementation directions include:
-
-- Lean-level unit tests for `Check`, `Elab`, `Lower`, and `EmitSSA` that avoid filesystem and linker overhead entirely
-- faster integration execution paths that reduce per-test `clang` and process-spawn cost, as long as they preserve the semantic value of the current end-to-end suite
-- artifact-driven caching and reuse once the pipeline artifact story is strong enough
-
-The goal is a much tighter development loop without weakening the architectural coverage that the current suite already provides.
