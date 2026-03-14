@@ -627,6 +627,35 @@ Concrete is not only architecturally strong internally, but also operable, repro
    - reproducible trust bundles
    - keep richer contracts and invariants in research until it is clear they fit Concrete's philosophy instead of assuming they belong on the main roadmap
 
+### Compiler Hardening (between Phase D and Phase E)
+
+These are concrete, implementable improvements that emerged from the bug fixes and integration testing in Phase D. They are not full phases — they are targeted hardening work that should land before Phase E begins, because Phase E (runtime/execution model) depends on the compiler being trustworthy for the patterns it already claims to support.
+
+1. **Audit Layout.lean for silent fallback defaults**
+   - `fieldOffset` returns 0 when struct not found. `enumPayloadOffset` and `tySize` for unknown named types may have similar silent defaults.
+   - Every layout query that can fail should either propagate an error or be proven to never receive an unknown type.
+   - Deliverable: no silent zero-defaults in Layout.lean; all fallback paths either unreachable or explicitly error.
+
+2. **Systematic integer type inference hardening**
+   - The current fix handles binary ops, but integer literals can also mismatch in: function call arguments (literal passed to i32 param), struct field initialization, array index expressions, return statements, `as` cast sources.
+   - Audit all `elabExpr` cases that produce or consume integer types and ensure hint propagation is consistent.
+   - Deliverable: a test for each expression form that uses an integer literal with an i32 target type.
+
+3. **Linearity/borrow checker audit**
+   - The borrow-move fix was the most visible symptom, but the checker's argument consumption logic should be reviewed more broadly: does it handle nested borrows (`&mut &mut x`), borrow-of-field (`&mut s.field`), and borrow-in-expression (`f(&mut x, &mut y)` where both are the same variable) correctly?
+   - Multiple shared borrows (`&x` twice) should be allowed. The current checker may reject safe patterns.
+   - Deliverable: a test suite for borrow edge cases; document which patterns are intentionally rejected vs accidentally rejected.
+
+4. **Cross-module type propagation completeness**
+   - The struct fix ensures imported structs appear in CModule. Check whether imported **enums** have the same gap (enum variant payload offsets may also be wrong cross-module).
+   - Check whether imported **trait impls** and **type aliases** propagate correctly through the same path.
+   - Deliverable: cross-module tests for enum field access, trait dispatch, and type alias resolution.
+
+5. **Backend error reporting instead of silent wrong code**
+   - When Lower.lean encounters a type it can't lower, or EmitSSA sees a type mismatch, prefer a compile error over silently emitting wrong LLVM IR.
+   - The current pipeline sometimes produces LLVM that segfaults at runtime rather than failing at compile time. A defensive verification pass (or assertions in Lower/EmitSSA) would catch these.
+   - Deliverable: at least the most common "silent wrong code" patterns (type mismatch in binop, missing struct in GEP, missing enum in switch) produce compile errors.
+
 ### Later
 
 1. Backend plurality over SSA, but only after the current backend becomes structurally cleaner first.
@@ -749,6 +778,9 @@ For more on these longer-horizon themes, see:
 - mutable aggregate lowering can still be too backend-sensitive if promoted storage is incomplete or SSA invariants are too weak
 - tooling/caching work can regress into ad-hoc duplication if artifacts stop being explicit and reusable
 - formalization has started (`Concrete/Proof.lean` with 17 theorems over a pure Core fragment), but the proof scope is still narrow — structs, enums, match, and recursive functions are not yet covered, and source-to-Core traceability is not yet implemented
+- **silent fallback defaults in Layout/Lower**: `Layout.fieldOffset` returns 0 when a struct is not found instead of raising an error. Other layout helpers may have similar silent defaults. These mask bugs until runtime instead of failing at compile time. A systematic audit of silent fallbacks in Layout.lean and Lower.lean would prevent future classes of offset/size bugs.
+- **type coercion gaps in elaboration**: the i32 literal fix handles the most common case (binary ops), but similar mismatches may lurk in other expression forms — function arguments, array indexing, struct field initialization, comparison operators. The elaborator's strategy of "default to i64, hope the hint propagates" is fragile for any context where the hint doesn't reach.
+- **linearity checker is over-conservative for borrows**: the borrow-move fix addressed bare identifier consumption, but the checker still has a one-borrow-at-a-time model that may be more restrictive than necessary for safe patterns (e.g., two `&` borrows of the same variable should be fine)
 
 ## Current Design Constraints
 
@@ -764,4 +796,4 @@ These are current choices that should continue constraining future work unless e
 
 ## Summary
 
-Concrete has a complete compiler pipeline, a real stdlib (33 modules, 16 collections), 647 tests (189 stdlib), a fully structured LLVM backend, audit reports, explicit artifact boundaries (`ValidatedCore`, `ProofCore`), a documented SSA backend contract, and a first Lean 4 proof workflow (17 theorems over a pure Core fragment). Phases A-C are done. D1 (testing infrastructure) and D2 (backend contract, ValidatedCore, proof workflow) are done. The remaining Phase D work is items 4 (FFI/ABI maturity), 5 (real-program corpus growth), and 7 (deferred audit reports).
+Concrete has a complete compiler pipeline, a real stdlib (33 modules, 16 collections), 658 tests (189 stdlib), a fully structured LLVM backend, audit reports, explicit artifact boundaries (`ValidatedCore`, `ProofCore`), a documented SSA backend contract, a first Lean 4 proof workflow (17 theorems over a pure Core fragment), a 15-program integration/regression corpus, and bug tracking in `docs/bugs/`. Phases A–D are done. Three compiler bugs (cross-module struct offsets, i32 literal type inference, borrow-move confusion) were found and fixed during Phase D integration testing. A compiler-hardening pass (Layout audit, integer inference, borrow checker, cross-module types, backend error reporting) is staged before Phase E (runtime and execution model).
