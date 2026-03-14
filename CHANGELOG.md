@@ -10,6 +10,10 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Phase D item 4 complete: FFI/ABI maturity
+
+`docs/ABI.md` documents what's stable (FFI-safe scalars, repr(C)/packed/align layout, extern fn), what's intentionally unstable (non-repr struct layout, enum representation, pass-by-ptr convention, symbol naming), platform assumptions (64-bit only, hardcoded sizes), the FFI safety model, and a cross-platform verification matrix. 4 layout verification tests added to `PipelineTest.lean` (scalar sizes, builtin sizes, repr(C) layout, pass-by-ptr decisions). Test suite: 651 tests (32 pass-level).
+
 ### Phase D2 complete: backend contract, ValidatedCore, and proof workflow
 
 Phase D2 is done. The compiler now has explicit artifact boundaries with a proof-oriented pipeline, formal evaluation semantics with proven properties, and a documented SSA backend contract.

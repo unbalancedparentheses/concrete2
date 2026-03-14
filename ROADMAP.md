@@ -55,7 +55,7 @@ Still clearly not implemented:
 | **A** | Fast feedback and compiler stability | Done enough; aggregate lowering hardened, test runner parallelized, SSA invariants mechanically defended | B, C, D |
 | **B** | Semantic cleanup | Done | D |
 | **C** | Tooling and stdlib hardening | Done; all 8 items complete (LL(1) CI, linearity fixes, HashMap retired, module-targeted testing, diagnostics polish, integration tests, report hardening, audit reports) | later system maturity |
-| **D** | Testing, backend, and trust multipliers | Active (D1 + D2 done; items 4-5-7 remain) | A, most of B |
+| **D** | Testing, backend, and trust multipliers | Active (D1 + D2 + item 4 done; items 5, 7 remain) | A, most of B |
 | **E** | Runtime and execution model | Deferred | C, D |
 | **F** | Capability and safety productization | Deferred | D, E |
 | **G** | Language surface and feature discipline | Deferred | B, D, E, F |
@@ -103,10 +103,14 @@ Still clearly not implemented:
   - **Formal proof workflow**: `Concrete/Proof.lean` defines evaluation semantics for a pure Core fragment (integers, booleans, arithmetic, let bindings, conditionals, function calls with fuel-bounded termination). Embeds three Concrete programs (abs, max, clamp) and proves 17 theorems: concrete correctness (abs_positive, abs_negative, abs_zero, max_right, max_left, max_self, clamp_in_range, clamp_below, clamp_above), structural lemmas (eval_lit, eval_bool_lit, eval_var_bound), conditional reduction (eval_if_true, eval_if_false), and arithmetic (eval_add_lits, eval_sub_lits, eval_mul_lits).
   - **SSA backend contract**: `docs/PASSES.md` now documents the full SSA invariant chain — what SSAVerify guarantees (8 invariants), what SSACleanup guarantees (8 postconditions), what EmitSSA assumes (5 preconditions), and the overall invariant flow.
   - **Updated docs**: `docs/ARCHITECTURE.md` and `docs/PASSES.md` updated with ValidatedCore, ProofCore, proof semantics, and SSA contract.
+- **Phase D item 4 complete** (FFI/ABI maturity):
+  - **ABI maturity statement**: `docs/ABI.md` — stability matrix (stable: FFI-safe scalars, repr(C), packed, align, extern fn; unstable: non-repr layout, enum representation, pass-by-ptr set, symbol naming), platform assumptions (64-bit only), FFI safety model, struct/enum layout rules, cross-platform verification matrix.
+  - **Layout verification tests**: 4 tests in `PipelineTest.lean` — scalar sizes/alignments (17 checks), builtin sizes (String/Vec/HashMap), repr(C) struct layout (field offsets + packed variant), pass-by-pointer decisions (10 type checks).
+- 651 tests pass (189 stdlib), including 32 pass-level Lean tests, 44 report assertions, 46 golden tests, 8 integration tests, and 16 collections verified.
 
 ### Now
 
-Phases A, B, C, D1, and D2 are done. Phase D still has remaining items (4: FFI/ABI maturity, 5: real-program corpus growth, 7: deferred audit reports) that were not part of D1 or D2. The compiler now has explicit artifact boundaries, a proof-oriented pipeline, formal evaluation semantics with proven properties, and a documented SSA backend contract.
+Phases A, B, C, D1, D2, and item 4 (FFI/ABI maturity) are done. Phase D still has remaining items 5 (real-program corpus growth) and 7 (deferred audit reports). The compiler now has explicit artifact boundaries, a proof-oriented pipeline, formal evaluation semantics, a documented SSA backend contract, and a written ABI/FFI maturity statement with layout verification tests.
 
 1. Make testing infrastructure best-in-class (Phase D1 inside Phase D):
    - problem: the suite has strong breadth, but too much test behavior still lives in shell orchestration, semantic tests pay too much full-pipeline cost, repeated report assertions waste compiler work, and failure isolation/reproduction is weaker than it should be
@@ -342,15 +346,7 @@ Primary surfaces:
      - timing/regression reporting that identifies slowest tests, highest-variance tests, compile-heavy vs runtime-heavy tests, and suite time by category
      - a data-driven or structured test-definition path that allows `run_tests.sh` to shrink into an orchestration frontend rather than remain the whole system
 3. ~~strengthen the SSA verifier/cleanup boundary into a clearer backend contract~~ **Done** (D2): SSA backend contract documented in `docs/PASSES.md` — SSAVerify guarantees (8 invariants), SSACleanup guarantees (8 postconditions), EmitSSA assumptions (5 preconditions), invariant chain.
-4. define a clearer FFI / ABI maturity path
-   - decide what ABI stability, if any, is promised
-   - decide what remains intentionally unstable for now
-   - make platform-variance expectations explicit instead of accidental
-   - add clearer verification/testing expectations for ABI compatibility
-   - identify the first concrete cross-platform ABI/layout checks rather than leaving verification purely abstract
-   - deliverables:
-     - a written ABI/FFI maturity statement in the docs
-     - an initial cross-platform layout/ABI verification matrix for the supported targets
+4. ~~define a clearer FFI / ABI maturity path~~ **Done**: `docs/ABI.md` — stability matrix (what's stable vs intentionally unstable), platform assumptions (64-bit only, hardcoded sizes), FFI safety model, struct layout rules (repr(C)/packed/align), enum representation, pass-by-pointer convention, cross-platform verification matrix. 4 layout verification tests in `PipelineTest.lean` (scalar sizes, builtin sizes, repr(C) layout, pass-by-ptr decisions).
 5. grow a stronger real-program and invariant-testing corpus on top of the faster loop
    - add more nontrivial integration programs instead of only many small regressions
    - add more real multi-module programs instead of mostly single-file feature-pair exercises

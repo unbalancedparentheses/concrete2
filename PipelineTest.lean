@@ -567,6 +567,131 @@ def testFullGeneric : IO UInt32 := do
     return 1
 
 -- ============================================================
+-- Tests: layout/ABI verification
+-- ============================================================
+
+/-- Verify scalar type sizes and alignments match the ABI spec. -/
+def testLayoutScalarSizes : IO UInt32 := do
+  let ctx : Layout.Ctx := { structDefs := [], enumDefs := [] }
+  let checks := [
+    ("Int size",    Layout.tySize ctx .int,         8),
+    ("Int align",   Layout.tyAlign ctx .int,        8),
+    ("i32 size",    Layout.tySize ctx .i32,         4),
+    ("i32 align",   Layout.tyAlign ctx .i32,        4),
+    ("i16 size",    Layout.tySize ctx .i16,         2),
+    ("i16 align",   Layout.tyAlign ctx .i16,        2),
+    ("i8 size",     Layout.tySize ctx .i8,          1),
+    ("i8 align",    Layout.tyAlign ctx .i8,         1),
+    ("f64 size",    Layout.tySize ctx .float64,     8),
+    ("f64 align",   Layout.tyAlign ctx .float64,    8),
+    ("f32 size",    Layout.tySize ctx .float32,     4),
+    ("f32 align",   Layout.tyAlign ctx .float32,    4),
+    ("bool size",   Layout.tySize ctx .bool,        1),
+    ("char size",   Layout.tySize ctx .char,        1),
+    ("unit size",   Layout.tySize ctx .unit,        0),
+    ("ptr size",    Layout.tySize ctx (.ref .int),   8),
+    ("ptr align",   Layout.tyAlign ctx (.ref .int),  8)
+  ]
+  let mut ok := true
+  for (name, actual, expected) in checks do
+    if actual != expected then
+      IO.eprintln s!"  FAIL: {name} — expected {expected}, got {actual}"
+      ok := false
+  if ok then
+    IO.println "PASS: layout/scalar-sizes — all scalar sizes and alignments correct"
+    return 0
+  else
+    IO.eprintln "FAIL: layout/scalar-sizes"
+    return 1
+
+/-- Verify builtin type sizes (String, Vec, HashMap). -/
+def testLayoutBuiltinSizes : IO UInt32 := do
+  let ctx : Layout.Ctx := { structDefs := [], enumDefs := [] }
+  let checks := [
+    ("String size",   Layout.tySize ctx .string,                         24),
+    ("String align",  Layout.tyAlign ctx .string,                        8),
+    ("Vec size",      Layout.tySize ctx (.generic "Vec" [.int]),         24),
+    ("Vec align",     Layout.tyAlign ctx (.generic "Vec" [.int]),        8),
+    ("HashMap size",  Layout.tySize ctx (.generic "HashMap" [.int, .int]), 40),
+    ("HashMap align", Layout.tyAlign ctx (.generic "HashMap" [.int, .int]), 8)
+  ]
+  let mut ok := true
+  for (name, actual, expected) in checks do
+    if actual != expected then
+      IO.eprintln s!"  FAIL: {name} — expected {expected}, got {actual}"
+      ok := false
+  if ok then
+    IO.println "PASS: layout/builtin-sizes — String/Vec/HashMap sizes correct"
+    return 0
+  else
+    IO.eprintln "FAIL: layout/builtin-sizes"
+    return 1
+
+/-- Verify repr(C) struct layout follows C ABI rules. -/
+def testLayoutStructReprC : IO UInt32 := do
+  -- struct Packet { tag: i8, payload: i32, flags: i16 }
+  let sd : CStructDef := {
+    name := "Packet"
+    fields := [("tag", .i8), ("payload", .i32), ("flags", .i16)]
+    isReprC := true
+  }
+  let ctx : Layout.Ctx := { structDefs := [sd], enumDefs := [] }
+  let checks := [
+    ("Packet.tag offset",     Layout.fieldOffset ctx "Packet" "tag",     0),
+    ("Packet.payload offset", Layout.fieldOffset ctx "Packet" "payload", 4),  -- 3 bytes padding after i8
+    ("Packet.flags offset",   Layout.fieldOffset ctx "Packet" "flags",   8),
+    ("Packet size",           Layout.tySize ctx (.named "Packet"),       12), -- 2 bytes tail padding
+    ("Packet align",          Layout.tyAlign ctx (.named "Packet"),      4)
+  ]
+  let mut ok := true
+  for (name, actual, expected) in checks do
+    if actual != expected then
+      IO.eprintln s!"  FAIL: {name} — expected {expected}, got {actual}"
+      ok := false
+  -- Also test a packed version
+  let sdPacked : CStructDef := { sd with isPacked := true, isReprC := false }
+  let ctxPacked : Layout.Ctx := { structDefs := [sdPacked], enumDefs := [] }
+  let packedSize := Layout.tySize ctxPacked (.named "Packet")
+  if packedSize != 7 then  -- 1 + 4 + 2, no padding
+    IO.eprintln s!"  FAIL: Packet packed size — expected 7, got {packedSize}"
+    ok := false
+  if ok then
+    IO.println "PASS: layout/struct-repr-c — repr(C) and packed layout correct"
+    return 0
+  else
+    IO.eprintln "FAIL: layout/struct-repr-c"
+    return 1
+
+/-- Verify pass-by-pointer decisions match ABI spec. -/
+def testLayoutPassByPtr : IO UInt32 := do
+  let sd : CStructDef := { name := "Point", fields := [("x", .i32), ("y", .i32)] }
+  let ed : CEnumDef := { name := "Color", variants := [("Red", []), ("Blue", [])] }
+  let ctx : Layout.Ctx := { structDefs := [sd], enumDefs := [ed] }
+  let checks := [
+    ("Int pass-by-ptr",     Layout.isPassByPtr ctx .int,               false),
+    ("i32 pass-by-ptr",     Layout.isPassByPtr ctx .i32,               false),
+    ("f64 pass-by-ptr",     Layout.isPassByPtr ctx .float64,           false),
+    ("bool pass-by-ptr",    Layout.isPassByPtr ctx .bool,              false),
+    ("String pass-by-ptr",  Layout.isPassByPtr ctx .string,            true),
+    ("struct pass-by-ptr",  Layout.isPassByPtr ctx (.named "Point"),   true),
+    ("enum pass-by-ptr",    Layout.isPassByPtr ctx (.named "Color"),   true),
+    ("Vec pass-by-ptr",     Layout.isPassByPtr ctx (.generic "Vec" [.int]), true),
+    ("ref pass-by-ptr",     Layout.isPassByPtr ctx (.ref .int),        true),
+    ("array pass-by-ptr",   Layout.isPassByPtr ctx (.array .i32 4),    true)
+  ]
+  let mut ok := true
+  for (name, actual, expected) in checks do
+    if actual != expected then
+      IO.eprintln s!"  FAIL: {name} — expected {expected}, got {actual}"
+      ok := false
+  if ok then
+    IO.println "PASS: layout/pass-by-ptr — pass-by-pointer decisions correct"
+    return 0
+  else
+    IO.eprintln "FAIL: layout/pass-by-ptr"
+    return 1
+
+-- ============================================================
 -- Main: run all tests, report totals
 -- ============================================================
 
@@ -642,6 +767,15 @@ def main : IO UInt32 := do
   failures := failures + (← testFullEnum)
   failures := failures + (← testFullTrait)
   failures := failures + (← testFullGeneric)
+  IO.println ""
+
+  -- Layout/ABI verification tests
+  IO.println "--- Layout/ABI Verification ---"
+  total := total + 4
+  failures := failures + (← testLayoutScalarSizes)
+  failures := failures + (← testLayoutBuiltinSizes)
+  failures := failures + (← testLayoutStructReprC)
+  failures := failures + (← testLayoutPassByPtr)
   IO.println ""
 
   -- Summary
