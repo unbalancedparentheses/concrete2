@@ -901,6 +901,10 @@ run_ok "$TESTDIR/integration_state_machine.con" 42
 run_ok "$TESTDIR/integration_compiler_stress.con" 42
 run_ok "$TESTDIR/integration_multi_module.con" 42
 run_ok "$TESTDIR/integration_recursive_structures.con" 42
+run_ok "$TESTDIR/integration_multi_file_calculator.con" 42
+run_ok "$TESTDIR/integration_type_registry.con" 42
+run_ok "$TESTDIR/integration_pipeline_processor.con" 42
+run_ok "$TESTDIR/integration_stress_workload.con" 42
 run_ok "$TESTDIR/struct_enum_field_vec.con" 123
 
 fi # end section: positive

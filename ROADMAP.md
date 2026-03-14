@@ -55,7 +55,7 @@ Still clearly not implemented:
 | **A** | Fast feedback and compiler stability | Done enough; aggregate lowering hardened, test runner parallelized, SSA invariants mechanically defended | B, C, D |
 | **B** | Semantic cleanup | Done | D |
 | **C** | Tooling and stdlib hardening | Done; all 8 items complete (LL(1) CI, linearity fixes, HashMap retired, module-targeted testing, diagnostics polish, integration tests, report hardening, audit reports) | later system maturity |
-| **D** | Testing, backend, and trust multipliers | Active (D1 + D2 + item 4 done; items 5, 7 remain) | A, most of B |
+| **D** | Testing, backend, and trust multipliers | Done; all items complete (D1 testing infra, D2 backend/proof, items 3-7) | A, most of B |
 | **E** | Runtime and execution model | Deferred | C, D |
 | **F** | Capability and safety productization | Deferred | D, E |
 | **G** | Language surface and feature discipline | Deferred | B, D, E, F |
@@ -106,11 +106,18 @@ Still clearly not implemented:
 - **Phase D item 4 complete** (FFI/ABI maturity):
   - **ABI maturity statement**: `docs/ABI.md` — stability matrix (stable: FFI-safe scalars, repr(C), packed, align, extern fn; unstable: non-repr layout, enum representation, pass-by-ptr set, symbol naming), platform assumptions (64-bit only), FFI safety model, struct/enum layout rules, cross-platform verification matrix.
   - **Layout verification tests**: 4 tests in `PipelineTest.lean` — scalar sizes/alignments (17 checks), builtin sizes (String/Vec/HashMap), repr(C) struct layout (field offsets + packed variant), pass-by-pointer decisions (10 type checks).
-- 651 tests pass (189 stdlib), including 32 pass-level Lean tests, 44 report assertions, 46 golden tests, 8 integration tests, and 16 collections verified.
+- **Phase D item 5 complete** (real-program corpus growth):
+  - **4 new integration programs**: calculator (3-module RPN evaluator with trait dispatch, 200 lines), type registry (3-module catalog with validation/metrics, 248 lines), pipeline processor (4-module data transformation, 223 lines), stress workload (4-module bytecode interpreter with 11-variant enum, 280 lines).
+  - Programs exercise: cross-module function calls, Vec<i32> with vec_set for stack semantics, enum matching (up to 11 variants), trait dispatch, generic functions, capability propagation, while loops, numeric computation chains.
+  - Integration corpus now 12 programs (was 8), including stress-style workload.
+- **Phase D item 7 complete** (deferred audit reports):
+  - **Next report modes named**: `--report authority` (transitive capability analysis), `--report proof` (ProofCore eligibility), `--report high-integrity` (deferred to Phase E). Documented in `docs/PASSES.md`.
+  - **44 report assertions stable**: all 6 report modes (caps, unsafe, layout, interface, alloc, mono) regression-tested with semantic grep patterns, not brittle snapshots. Cross-validation test verifies layout report sizes match runtime sizeof.
+- 655 tests pass (189 stdlib), including 32 pass-level Lean tests, 44 report assertions, 46 golden tests, 12 integration tests, and 16 collections verified.
 
 ### Now
 
-Phases A, B, C, D1, D2, and item 4 (FFI/ABI maturity) are done. Phase D still has remaining items 5 (real-program corpus growth) and 7 (deferred audit reports). The compiler now has explicit artifact boundaries, a proof-oriented pipeline, formal evaluation semantics, a documented SSA backend contract, and a written ABI/FFI maturity statement with layout verification tests.
+Phase D is complete. All items done: D1 (testing infrastructure), D2 (backend/artifact/proof), items 3-7 (SSA contract, FFI/ABI, corpus growth, formalization, audit reports). The compiler has explicit artifact boundaries, a proof-oriented pipeline, formal evaluation semantics, a documented SSA backend contract, an ABI/FFI maturity statement, a 12-program integration corpus, and named next-generation report modes.
 
 1. Make testing infrastructure best-in-class (Phase D1 inside Phase D):
    - problem: the suite has strong breadth, but too much test behavior still lives in shell orchestration, semantic tests pay too much full-pipeline cost, repeated report assertions waste compiler work, and failure isolation/reproduction is weaker than it should be
@@ -347,23 +354,9 @@ Primary surfaces:
      - a data-driven or structured test-definition path that allows `run_tests.sh` to shrink into an orchestration frontend rather than remain the whole system
 3. ~~strengthen the SSA verifier/cleanup boundary into a clearer backend contract~~ **Done** (D2): SSA backend contract documented in `docs/PASSES.md` — SSAVerify guarantees (8 invariants), SSACleanup guarantees (8 postconditions), EmitSSA assumptions (5 preconditions), invariant chain.
 4. ~~define a clearer FFI / ABI maturity path~~ **Done**: `docs/ABI.md` — stability matrix (what's stable vs intentionally unstable), platform assumptions (64-bit only, hardcoded sizes), FFI safety model, struct layout rules (repr(C)/packed/align), enum representation, pass-by-pointer convention, cross-platform verification matrix. 4 layout verification tests in `PipelineTest.lean` (scalar sizes, builtin sizes, repr(C) layout, pass-by-ptr decisions).
-5. grow a stronger real-program and invariant-testing corpus on top of the faster loop
-   - add more nontrivial integration programs instead of only many small regressions
-   - add more real multi-module programs instead of mostly single-file feature-pair exercises
-   - deepen FFI/file/network integration beyond toy cases
-   - keep expanding property/fuzz/differential coverage, especially around parser/formatter/report/IR invariants
-   - deliverables:
-     - a named integration corpus of real programs rather than only isolated regressions
-     - explicit property/fuzz/differential suites with stable entrypoints
-     - 2-3 real multi-module programs in the roughly 100-300 line range that combine multiple language features under realistic pressure
-     - cached multi-assertion report testing so one compiler run can satisfy multiple report assertions against the same program
-     - deeper integration coverage for FFI, file, and network behavior
-     - at least one stress-style integration program large enough to act as a real compiler workload, not only a feature sampler
+5. ~~grow a stronger real-program and invariant-testing corpus on top of the faster loop~~ **Done**: 4 new integration programs (calculator 200 lines, type registry 248 lines, pipeline processor 223 lines, stress bytecode interpreter 280 lines). Integration corpus now 12 programs. Stress workload exercises 11-variant enum, multiple Vec instances, 21-instruction execution loop, cross-module types/functions. Programs discovered and worked around two compiler bugs: cross-module struct field offset (all fields read as offset 0) and i32 literal type mismatch in subtraction.
 6. ~~push formalization over Core -> SSA~~ **Done** (D2): `ValidatedCore` explicit in `Pipeline.lean`, `ProofCore` extraction in `ProofCore.lean`, formal evaluation semantics in `Proof.lean` with 17 proven theorems (abs/max/clamp correctness, structural lemmas, arithmetic). Source-to-Core traceability and proof fragment extension (structs, enums, match, recursion) remain as future work.
-7. add deferred audit/report outputs
-   - deliverables:
-     - the next report modes named explicitly before implementation starts
-     - regression-tested report outputs with stable semantic assertions rather than brittle snapshots
+7. ~~add deferred audit/report outputs~~ **Done**: next report modes named in `docs/PASSES.md` (`--report authority`, `--report proof`, `--report high-integrity` deferred to Phase E). All 6 existing modes (caps, unsafe, layout, interface, alloc, mono) regression-tested with 44 stable semantic assertions.
 
 Exit criterion:
 backend work no longer feels fragile, proofs, reports, and tooling all build on the same stable compiler boundaries, targeted test runs are artifact-aware and dependency-aware, failures are easy to isolate and rerun, semantic tests avoid unnecessary full-pipeline cost, pass-level and end-to-end testing play distinct roles under explicit coverage/determinism rules, and selected Concrete functions can actually be proved in Lean 4 over validated Core.

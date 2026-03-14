@@ -499,11 +499,26 @@ Source Text
 `Layout` is the single source of truth for type sizes, alignment, field offsets, pass-by-pointer decisions, `Ty` → LLVM type mappings, LLVM type definition generation (`structTypeDef`, `enumTypeDefs`, `builtinTypeDefs`), and FFI-safety checks (`isFFISafe`). Both EmitSSA and CoreCheck delegate to Layout rather than maintaining their own layout or type-emission logic.
 
 `Report` is the current audit/inspection surface over the pipeline:
-- `--report interface` consumes `FileSummary`
-- `--report caps`, `unsafe`, and `layout` consume canonicalized Core
-- `--report mono` compares pre- and post-monomorphization Core modules
+- `--report interface` consumes `FileSummary` — public API surface (functions, types, traits)
+- `--report caps` consumes canonicalized Core — capability requirements with "why" traces showing which callees contribute each cap
+- `--report unsafe` consumes canonicalized Core — trust boundary analysis (trusted fn/impl/extern, Unsafe capability holders, raw pointer signatures, what trusted functions wrap)
+- `--report layout` consumes canonicalized Core — struct/enum sizes, alignment, field offsets, packed/repr(C) annotations, enum tag/payload layout
+- `--report alloc` consumes canonicalized Core — allocation/cleanup summaries (vec_new/alloc sites, defer free patterns, returned-alloc warnings)
+- `--report mono` compares pre- and post-monomorphization Core modules — generic function count, specialization instances
 
-These reports are intended as compiler-facing audit outputs, not as a second semantic pipeline.
+These reports are intended as compiler-facing audit outputs, not as a second semantic pipeline. All 6 modes are regression-tested with 44 semantic assertions in `run_tests.sh`.
+
+### Next Report Modes
+
+The following report modes are explicitly deferred — named here so their scope is defined before implementation starts:
+
+| Mode | Purpose | Pipeline stage | Status |
+|------|---------|---------------|--------|
+| `--report authority` | Authority budget: for each capability, which functions require it and what call chains introduce it. Extends `caps` with transitive authority analysis. | Post-CoreCheck | Planned |
+| `--report proof` | Proof eligibility: which functions are pure enough for `ProofCore` extraction, which are excluded and why (capabilities, trusted, extern calls). | Post-CoreCheck via `ProofCore` | Planned |
+| `--report high-integrity` | High-integrity profile summary: which functions could run in a no-alloc/no-panic/bounded-stack environment. Requires Phase E runtime model. | Post-Mono | Deferred to Phase E |
+
+These are audit-oriented modes — they answer questions about what the program does, not what it should do. No mode should become a second semantic authority; all should consume validated artifacts from the existing pipeline.
 
 **Note:** `FileSummary` and `ResolvedImports` currently carry full impl/trait-impl blocks with method bodies (not just signatures). Check and Elab need these to type-check and elaborate imported method implementations. Splitting into interface-only and body portions is a future incremental-compilation concern, not a current blocker.
 

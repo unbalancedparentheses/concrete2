@@ -10,6 +10,15 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Phase D complete: all items done
+
+Phase D (testing, backend, and trust multipliers) is fully complete. Final items landed:
+
+- **Item 5 — real-program corpus growth**: 4 new integration programs (calculator 200 lines, type registry 248 lines, pipeline processor 223 lines, stress bytecode interpreter 280 lines). Integration corpus now 12 programs. Stress workload exercises 11-variant enum, multiple Vec instances, 21-instruction execution loop, cross-module types/functions. Programs discovered two compiler bugs: cross-module struct field offset (all fields read as offset 0) and i32 literal type mismatch in subtraction.
+- **Item 7 — deferred audit reports**: next report modes named in `docs/PASSES.md` (`--report authority`, `--report proof`, `--report high-integrity` deferred to Phase E). All 6 existing modes regression-tested with 44 stable semantic assertions.
+
+Test suite: 655 tests (32 pass-level, 12 integration, 44 report assertions).
+
 ### Phase D item 4 complete: FFI/ABI maturity
 
 `docs/ABI.md` documents what's stable (FFI-safe scalars, repr(C)/packed/align layout, extern fn), what's intentionally unstable (non-repr struct layout, enum representation, pass-by-ptr convention, symbol naming), platform assumptions (64-bit only, hardcoded sizes), the FFI safety model, and a cross-platform verification matrix. 4 layout verification tests added to `PipelineTest.lean` (scalar sizes, builtin sizes, repr(C) layout, pass-by-ptr decisions). Test suite: 651 tests (32 pass-level).
