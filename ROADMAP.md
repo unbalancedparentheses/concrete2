@@ -55,7 +55,7 @@ Still clearly not implemented:
 | **A** | Fast feedback and compiler stability | Done enough; aggregate lowering hardened, test runner parallelized, SSA invariants mechanically defended | B, C, D |
 | **B** | Semantic cleanup | Done | D |
 | **C** | Tooling and stdlib hardening | Done; all 8 items complete (LL(1) CI, linearity fixes, HashMap retired, module-targeted testing, diagnostics polish, integration tests, report hardening, audit reports) | later system maturity |
-| **D** | Testing, backend, and trust multipliers | Active (D1 + D2 done) | A, most of B |
+| **D** | Testing, backend, and trust multipliers | Active (D1 + D2 done; items 4-5-7 remain) | A, most of B |
 | **E** | Runtime and execution model | Deferred | C, D |
 | **F** | Capability and safety productization | Deferred | D, E |
 | **G** | Language surface and feature discipline | Deferred | B, D, E, F |
@@ -100,13 +100,13 @@ Still clearly not implemented:
 - **Phase D2 complete** (backend/artifact/proof):
   - **`ValidatedCore` artifact**: explicit pipeline type in `Concrete/Pipeline.lean`. `Pipeline.coreCheck` is the only constructor; `Pipeline.monomorphize` takes `ValidatedCore`, enforcing that validation happened. `Pipeline.elaborate` now returns `ElaboratedProgram` (elab + canonicalize only), and `Pipeline.coreCheck` validates it into `ValidatedCore`.
   - **`ProofCore` extraction**: `Concrete/ProofCore.lean` filters `ValidatedCore` into the pure, proof-eligible fragment — pure functions (empty capability set, not trusted), safe structs (no repr(C)/packed), safe enums (no builtin overrides). `extractProofCore` flattens module trees and reports inclusion/exclusion counts.
-  - **Formal proof workflow**: `Concrete/Proof.lean` defines evaluation semantics for a pure Core fragment (integers, booleans, arithmetic, let bindings, conditionals, function calls with fuel-bounded termination). Embeds three Concrete programs (abs, max, clamp) and proves 12 theorems: concrete correctness (abs_positive, abs_negative, abs_zero, max_right, max_left, max_self, clamp_in_range, clamp_below, clamp_above), structural lemmas (eval_lit, eval_bool_lit, eval_var_bound), conditional reduction (eval_if_true, eval_if_false), and arithmetic (eval_add_lits, eval_sub_lits, eval_mul_lits).
+  - **Formal proof workflow**: `Concrete/Proof.lean` defines evaluation semantics for a pure Core fragment (integers, booleans, arithmetic, let bindings, conditionals, function calls with fuel-bounded termination). Embeds three Concrete programs (abs, max, clamp) and proves 17 theorems: concrete correctness (abs_positive, abs_negative, abs_zero, max_right, max_left, max_self, clamp_in_range, clamp_below, clamp_above), structural lemmas (eval_lit, eval_bool_lit, eval_var_bound), conditional reduction (eval_if_true, eval_if_false), and arithmetic (eval_add_lits, eval_sub_lits, eval_mul_lits).
   - **SSA backend contract**: `docs/PASSES.md` now documents the full SSA invariant chain — what SSAVerify guarantees (8 invariants), what SSACleanup guarantees (8 postconditions), what EmitSSA assumes (5 preconditions), and the overall invariant flow.
   - **Updated docs**: `docs/ARCHITECTURE.md` and `docs/PASSES.md` updated with ValidatedCore, ProofCore, proof semantics, and SSA contract.
 
 ### Now
 
-Phases A, B, C, D1, and D2 are done. The compiler now has explicit artifact boundaries, a proof-oriented pipeline, formal evaluation semantics with proven properties, and a documented SSA backend contract.
+Phases A, B, C, D1, and D2 are done. Phase D still has remaining items (4: FFI/ABI maturity, 5: real-program corpus growth, 7: deferred audit reports) that were not part of D1 or D2. The compiler now has explicit artifact boundaries, a proof-oriented pipeline, formal evaluation semantics with proven properties, and a documented SSA backend contract.
 
 1. Make testing infrastructure best-in-class (Phase D1 inside Phase D):
    - problem: the suite has strong breadth, but too much test behavior still lives in shell orchestration, semantic tests pay too much full-pipeline cost, repeated report assertions waste compiler work, and failure isolation/reproduction is weaker than it should be
@@ -341,11 +341,7 @@ Primary surfaces:
      - automatic failure preservation for source input, stdout/stderr, emitted Core/SSA/report output where relevant, temp files, and environment/test metadata
      - timing/regression reporting that identifies slowest tests, highest-variance tests, compile-heavy vs runtime-heavy tests, and suite time by category
      - a data-driven or structured test-definition path that allows `run_tests.sh` to shrink into an orchestration frontend rather than remain the whole system
-3. strengthen the SSA verifier/cleanup boundary into a clearer backend contract
-   - deliverables:
-     - a documented SSA contract naming what cleanup guarantees and what every backend may assume
-     - verifier checks for the remaining backend-critical invariants that are still only convention
-     - at least one backend-facing regression group tied directly to that contract
+3. ~~strengthen the SSA verifier/cleanup boundary into a clearer backend contract~~ **Done** (D2): SSA backend contract documented in `docs/PASSES.md` — SSAVerify guarantees (8 invariants), SSACleanup guarantees (8 postconditions), EmitSSA assumptions (5 preconditions), invariant chain.
 4. define a clearer FFI / ABI maturity path
    - decide what ABI stability, if any, is promised
    - decide what remains intentionally unstable for now
@@ -367,17 +363,7 @@ Primary surfaces:
      - cached multi-assertion report testing so one compiler run can satisfy multiple report assertions against the same program
      - deeper integration coverage for FFI, file, and network behavior
      - at least one stress-style integration program large enough to act as a real compiler workload, not only a feature sampler
-6. push formalization over Core -> SSA
-   - treat validated Core after `CoreCheck` as the main proof boundary for user-program proofs
-   - formalize a small pure Core fragment first
-   - define a proof-oriented Core fragment as a restricted view of validated Core, not a separate semantic authority
-   - validate the proof boundary with manual embeddings of selected functions
-   - only then add compiler/export support for Lean-side proof workflows
-   - treat "selected Concrete functions proved in Lean 4" as a core Phase D deliverable, not just a later research aspiration
-   - deliverables:
-     - `ValidatedCore` represented explicitly in `Concrete/Pipeline.lean`
-     - a small formalized pure Core fragment in Lean
-     - a first proof batch of selected Concrete functions over that boundary
+6. ~~push formalization over Core -> SSA~~ **Done** (D2): `ValidatedCore` explicit in `Pipeline.lean`, `ProofCore` extraction in `ProofCore.lean`, formal evaluation semantics in `Proof.lean` with 17 proven theorems (abs/max/clamp correctness, structural lemmas, arithmetic). Source-to-Core traceability and proof fragment extension (structs, enums, match, recursion) remain as future work.
 7. add deferred audit/report outputs
    - deliverables:
      - the next report modes named explicitly before implementation starts

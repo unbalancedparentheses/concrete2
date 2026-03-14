@@ -17,7 +17,7 @@ Phase D2 is done. The compiler now has explicit artifact boundaries with a proof
 What landed:
 - **`ValidatedCore` artifact** (`Concrete/Pipeline.lean`): explicit pipeline type. `Pipeline.coreCheck` is the only constructor; `Pipeline.monomorphize` takes `ValidatedCore`. `Pipeline.elaborate` returns `ElaboratedProgram` (elab + canonicalize only), `Pipeline.coreCheck` validates it.
 - **`ProofCore` extraction** (`Concrete/ProofCore.lean`): filters `ValidatedCore` into the pure, proof-eligible fragment — pure functions (empty capability set, not trusted), safe structs (no repr(C)/packed), safe enums (no builtin overrides). Reports inclusion/exclusion counts.
-- **Formal proof workflow** (`Concrete/Proof.lean`): evaluation semantics for a pure Core fragment (integers, booleans, arithmetic, let bindings, conditionals, function calls). Embeds abs, max, clamp. 15 proven theorems: concrete correctness (9), structural lemmas (3), arithmetic (3).
+- **Formal proof workflow** (`Concrete/Proof.lean`): evaluation semantics for a pure Core fragment (integers, booleans, arithmetic, let bindings, conditionals, function calls). Embeds abs, max, clamp. 17 proven theorems: concrete correctness (9), structural lemmas (3), conditional reduction (2), arithmetic (3).
 - **SSA backend contract** (`docs/PASSES.md`): documents SSAVerify guarantees (8 invariants), SSACleanup guarantees (8 postconditions), EmitSSA assumptions (5 preconditions), and the invariant chain.
 
 ### Phase D1 complete: testing infrastructure
