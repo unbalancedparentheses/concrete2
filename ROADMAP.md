@@ -746,7 +746,7 @@ For more on these longer-horizon themes, see:
 - the SSA/backend contract is still weaker than the newly structured backend deserves
 - mutable aggregate lowering can still be too backend-sensitive if promoted storage is incomplete or SSA invariants are too weak
 - tooling/caching work can regress into ad-hoc duplication if artifacts stop being explicit and reusable
-- formalization has not started; the proof boundary exists architecturally but no proofs are written yet
+- formalization has started (`Concrete/Proof.lean` with 17 theorems over a pure Core fragment), but the proof scope is still narrow — structs, enums, match, and recursive functions are not yet covered, and source-to-Core traceability is not yet implemented
 
 ## Current Design Constraints
 
@@ -762,4 +762,4 @@ These are current choices that should continue constraining future work unless e
 
 ## Summary
 
-Concrete has a complete compiler pipeline, a real stdlib (33 modules, 16 collections), module-targeted testing (600 tests, 189 stdlib), a fully structured LLVM backend, and audit reports that explain capability authority, trust boundaries, and allocation patterns. Phases A-C are done. The main unfinished work is now Phase D: strengthening the SSA/backend contract, making artifacts do more real work, and pushing formalization over the validated Core boundary.
+Concrete has a complete compiler pipeline, a real stdlib (33 modules, 16 collections), 647 tests (189 stdlib), a fully structured LLVM backend, audit reports, explicit artifact boundaries (`ValidatedCore`, `ProofCore`), a documented SSA backend contract, and a first Lean 4 proof workflow (17 theorems over a pure Core fragment). Phases A-C are done. D1 (testing infrastructure) and D2 (backend contract, ValidatedCore, proof workflow) are done. The remaining Phase D work is items 4 (FFI/ABI maturity), 5 (real-program corpus growth), and 7 (deferred audit reports).

@@ -432,7 +432,7 @@ Validate SSA invariants and perform structural cleanup before codegen.
 
 Build mechanized proofs over the validated Core IR.
 
-**Status:** Not started.
+**Status:** Started. `Concrete/Proof.lean` defines evaluation semantics for a pure Core fragment and proves 17 theorems (abs/max/clamp correctness, structural lemmas, conditional reduction, arithmetic). `Concrete/ProofCore.lean` extracts the proof-eligible subset from `ValidatedCore`. Scope is still narrow — structs, enums, match, recursive functions, and source-to-Core traceability remain.
 
 ## Architecture Priority Table
 
@@ -448,7 +448,7 @@ Build mechanized proofs over the validated Core IR.
 | 8 | A8 | Monomorphization cleanup | `Concrete/Mono.lean` | **DONE** |
 | 9 | A9 | SSA / lowering IR | `Concrete/Lower.lean` | **DONE** |
 | 10 | A9b | SSA verify / cleanup | `Concrete/SSAVerify.lean`, `Concrete/SSACleanup.lean` | **DONE** |
-| 11 | A10 | Formal kernel proofs | `Concrete/Kernel/*.lean` | Not started |
+| 11 | A10 | Formal kernel proofs | `Concrete/Proof.lean`, `Concrete/ProofCore.lean` | **Started** (17 theorems, pure fragment) |
 
 ## Internal Semantic Spec Notes
 
