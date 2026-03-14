@@ -104,8 +104,8 @@ Still clearly not implemented:
   - **SSA backend contract**: `docs/PASSES.md` now documents the full SSA invariant chain — what SSAVerify guarantees (8 invariants), what SSACleanup guarantees (8 postconditions), what EmitSSA assumes (5 preconditions), and the overall invariant flow.
   - **Updated docs**: `docs/ARCHITECTURE.md` and `docs/PASSES.md` updated with ValidatedCore, ProofCore, proof semantics, and SSA contract.
 - **Phase D item 4 complete** (FFI/ABI maturity):
-  - **ABI maturity statement**: `docs/ABI.md` — stability matrix (stable: FFI-safe scalars, repr(C), packed, align, extern fn; unstable: non-repr layout, enum representation, pass-by-ptr set, symbol naming), platform assumptions (64-bit only), FFI safety model, struct/enum layout rules, cross-platform verification matrix.
-  - **Layout verification tests**: 4 tests in `PipelineTest.lean` — scalar sizes/alignments (17 checks), builtin sizes (String/Vec/HashMap), repr(C) struct layout (field offsets + packed variant), pass-by-pointer decisions (10 type checks).
+  - **ABI maturity statement**: `docs/ABI.md` — stability matrix, platform assumptions (64-bit only), FFI safety model, struct/enum layout rules, known limitations section. `#[repr(C)]` provides C-compatible in-memory layout; calling convention uses pointer indirection for all structs (known gap documented).
+  - **Layout verification tests**: 4 tests in `PipelineTest.lean` — scalar sizes/alignments (17 checks), builtin sizes (String/Vec/HashMap), repr(C) struct layout (field offsets + packed variant), pass-by-pointer decisions (10 type checks). Model-based (Lean helpers), not empirical cross-target.
 - **Phase D item 5 complete** (real-program corpus growth):
   - **4 new integration programs**: calculator (3-module RPN evaluator with trait dispatch, 200 lines), type registry (3-module catalog with validation/metrics, 248 lines), pipeline processor (4-module data transformation, 223 lines), stress workload (4-module bytecode interpreter with 11-variant enum, 280 lines).
   - Programs exercise: cross-module function calls, Vec<i32> with vec_set for stack semantics, enum matching (up to 11 variants), trait dispatch, generic functions, capability propagation, while loops, numeric computation chains.
@@ -358,7 +358,7 @@ Primary surfaces:
      - timing/regression reporting that identifies slowest tests, highest-variance tests, compile-heavy vs runtime-heavy tests, and suite time by category
      - a data-driven or structured test-definition path that allows `run_tests.sh` to shrink into an orchestration frontend rather than remain the whole system
 3. ~~strengthen the SSA verifier/cleanup boundary into a clearer backend contract~~ **Done** (D2): SSA backend contract documented in `docs/PASSES.md` — SSAVerify guarantees (8 invariants), SSACleanup guarantees (8 postconditions), EmitSSA assumptions (5 preconditions), invariant chain.
-4. ~~define a clearer FFI / ABI maturity path~~ **Done**: `docs/ABI.md` — stability matrix (what's stable vs intentionally unstable), platform assumptions (64-bit only, hardcoded sizes), FFI safety model, struct layout rules (repr(C)/packed/align), enum representation, pass-by-pointer convention, cross-platform verification matrix. 4 layout verification tests in `PipelineTest.lean` (scalar sizes, builtin sizes, repr(C) layout, pass-by-ptr decisions).
+4. ~~define a clearer FFI / ABI maturity path~~ **Done**: `docs/ABI.md` — stability matrix, platform assumptions (64-bit only), FFI safety model, struct layout rules (repr(C)/packed/align), enum representation, pass-by-pointer convention. 4 layout verification tests in `PipelineTest.lean` (scalar sizes, builtin sizes, repr(C) layout, pass-by-ptr decisions). **Known gap:** `#[repr(C)]` structs have C-compatible in-memory layout but are passed by pointer (not by value) in `extern fn` calls — C code must accept a struct pointer, not a by-value struct. Layout model assumptions are verified against Lean helpers, not by empirical cross-target compilation.
 5. ~~grow a stronger real-program and invariant-testing corpus on top of the faster loop~~ **Done**: 4 new integration programs (calculator 200 lines, type registry 248 lines, pipeline processor 223 lines, stress bytecode interpreter 280 lines). Integration corpus now 12 programs. Stress workload exercises 11-variant enum, multiple Vec instances, 21-instruction execution loop, cross-module types/functions. Programs discovered and worked around two compiler bugs: cross-module struct field offset (all fields read as offset 0) and i32 literal type mismatch in subtraction.
 6. ~~push formalization over Core -> SSA~~ **Done** (D2): `ValidatedCore` explicit in `Pipeline.lean`, `ProofCore` extraction in `ProofCore.lean`, formal evaluation semantics in `Proof.lean` with 17 proven theorems (abs/max/clamp correctness, structural lemmas, arithmetic). Source-to-Core traceability and proof fragment extension (structs, enums, match, recursion) remain as future work.
 7. ~~add deferred audit/report outputs~~ **Done**: next report modes named in `docs/PASSES.md` (`--report authority`, `--report proof`, `--report high-integrity` deferred to Phase E). All 6 existing modes (caps, unsafe, layout, interface, alloc, mono) regression-tested with 44 stable semantic assertions.
@@ -400,8 +400,14 @@ Primary surfaces:
    - prefer analyzable concurrency constraints over unconstrained surface growth if Concrete is meant to serve critical systems later
 5. tighten the FFI/runtime ownership boundary
    - make it clearer what ownership, destruction, and capability assumptions survive foreign boundaries
-6. make runtime-related stdlib surfaces reflect the chosen execution model instead of growing opportunistically
-7. define execution profiles for high-integrity use
+6. close the FFI/ABI calling convention gaps (from Phase D Known Limitations)
+   - implement by-value struct passing for `#[repr(C)]` structs in `extern fn` (currently all structs passed by pointer)
+   - implement by-value struct returns (currently sret pointer indirection)
+   - add target-aware calling convention support (SysV AMD64, AAPCS64) so `extern fn` matches the platform C ABI
+   - add empirical cross-target FFI tests: compile + link + run C↔Concrete interop on x86_64 and aarch64
+   - consider `#[repr(C)]` enum support (C-compatible tagged unions) for FFI
+7. make runtime-related stdlib surfaces reflect the chosen execution model instead of growing opportunistically
+8. define execution profiles for high-integrity use
    - make room for profiles such as `no_alloc`, bounded-allocation, or other explicitly restricted execution modes
    - keep these profiles aligned with the actual runtime and allocator model instead of bolting them on later
 
@@ -411,6 +417,8 @@ Deliverables:
 - an explicit memory/allocation model including no-alloc or bounded-allocation profile direction
 - a written concurrency/execution stance for the language/runtime
 - a documented ownership/capability story across FFI/runtime boundaries
+- C-compatible calling convention for `extern fn` with `#[repr(C)]` struct parameters (by-value, not pointer-only)
+- empirical cross-target FFI validation (compile + link + run on x86_64 and aarch64)
 - runtime-facing stdlib surfaces aligned with the chosen execution model
 
 Exit criterion:

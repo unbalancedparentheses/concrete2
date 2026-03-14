@@ -6,11 +6,12 @@ This document describes Concrete's current ABI stability, FFI safety model, plat
 
 | Area | Status | Stable? |
 |------|--------|---------|
-| FFI-safe scalar types (i8–i64, u8–u64, f32, f64, bool) | Implemented, tested | **Yes** |
-| `#[repr(C)]` struct layout | Implemented, tested | **Yes** — follows C struct layout rules (field order, padding, alignment). **Not** passed by value across FFI; see Pass-by-Pointer below |
+| FFI-safe scalar types (i8–i64, u8–u64, f32, f64, bool) | Implemented, tested | **Yes** — C-compatible by-value passing |
+| `#[repr(C)]` struct **in-memory layout** | Implemented, tested | **Yes** — field order, padding, and alignment match C. Layout only; **not** passed by value in calls (see Known Limitations) |
 | `#[repr(packed)]` struct layout | Implemented, tested | **Yes** — no padding between fields |
 | `#[repr(align(N)]` minimum alignment | Implemented, tested | **Yes** — power-of-two enforced |
-| `extern fn` declarations | Implemented, tested | **Yes** — requires `Unsafe` capability |
+| `extern fn` declarations (scalar params) | Implemented, tested | **Yes** — scalars passed by value, C-compatible |
+| `extern fn` declarations (struct params) | Implemented, **limited** | **No** — structs always passed by pointer, not by value (see Known Limitations) |
 | `trusted extern fn` declarations | Implemented, tested | **Yes** — no capability required |
 | FFI safety validation | Implemented, tested | **Yes** — CoreCheck enforces at compile time |
 | Non-repr struct layout | Implemented | **No** — compiler may change field ordering or padding |
@@ -64,7 +65,7 @@ A type is FFI-safe (can appear in `extern fn` signatures and `#[repr(C)]` struct
 - Float types: `f32`, `f64`
 - `Bool`, `Char`, `()` (unit)
 - Raw pointers: `*mut T`, `*const T`
-- `#[repr(C)]` structs (recursively: all fields must also be FFI-safe)
+- `#[repr(C)]` structs (recursively: all fields must also be FFI-safe) — **layout-compatible only**; passed by pointer, not by value (see Known Limitations)
 
 ### What is NOT FFI-safe
 
@@ -146,6 +147,18 @@ Aggregate types (structs, enums, arrays, `String`, `Vec`, `HashMap`) are passed 
 This convention applies uniformly to internal Concrete function calls **and** `extern fn` declarations. A C function declared as `extern fn foo(s: MyReprCStruct)` in Concrete will be emitted as `declare ... @foo(ptr ...)` in LLVM IR — the C side must accept a pointer, not a by-value struct. This is a known divergence from the standard C ABI, where small structs may be passed in registers or by value.
 
 The pass-by-pointer set is **not stable** — which types are passed by pointer may change in future compiler versions.
+
+## Known Limitations
+
+These are not hypothetical — they are current implementation gaps that affect real FFI usage:
+
+1. **No by-value struct passing in `extern fn`.** `#[repr(C)]` guarantees in-memory layout compatibility with C, but Concrete passes all structs (including `#[repr(C)]`) by pointer in function calls. An `extern fn` taking a `#[repr(C)]` struct emits `declare ... @foo(ptr ...)`, not a by-value struct parameter. C code must be written to accept a pointer. This is the single largest gap between what the layout model promises and what the calling convention delivers.
+
+2. **No empirical cross-platform validation.** The layout model is verified by Lean unit tests that check compile-time constants. There are no tests that compile to LLVM IR on multiple targets and verify the emitted signatures or struct layout at runtime. The "layout model assumptions" table below documents what the model assumes, not what has been empirically validated on each target.
+
+3. **No return-by-value for structs.** Struct return values also go through pointer indirection (sret), diverging from the C ABI where small structs may be returned in registers.
+
+These limitations are acceptable for the current stage (pointer-based FFI works correctly when both sides agree on the convention), but they mean Concrete cannot yet interoperate transparently with arbitrary C libraries that expect standard calling conventions for struct parameters.
 
 ## What We Intentionally Do Not Promise
 
