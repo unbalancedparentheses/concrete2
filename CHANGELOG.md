@@ -10,26 +10,22 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
-### Phase D1 testing infrastructure (partial)
+### Phase D1 complete: testing infrastructure
 
-Partial progress on D1 (testing infrastructure). This is not complete — see ROADMAP.md for what remains.
+Phase D1 is done — all "done means" criteria met. Testing is now a first-class compiler subsystem with structured metadata, dependency-aware selection, pass-level coverage for all compiler passes, and a documented coverage matrix.
 
 What landed:
-- **Compiler output cache**: `run_tests.sh` now caches compiler output keyed by `(file, flags)`. Report tests that previously recompiled the same file 6+ times now get cache hits, saving 26 compilations per fast run. Cache stats are reported in the summary.
-- **Failure artifact preservation**: failed tests automatically save timestamped output and exact rerun commands to `.test-failures/`. Developers can reproduce any failure without re-running the full suite.
-- **Dependency gates**: `compile_gate()` in `run_tests.sh` skips downstream assertions (report content checks, codegen structure checks) when the prerequisite compilation fails, reducing cascading noise.
-- **Pass-level Lean tests**: `PipelineTest.lean` (19 tests) exercises individual compiler passes on in-memory source strings — parse, frontend (check+elaborate), monomorphize, and full pipeline to LLVM IR. No clang, no file I/O, runs in <1 second. Tests both success paths and expected-error paths (parse errors, type errors, undefined variables). Integrated into `run_tests.sh` as the `passlevel` section. Note: these do not separately test SSAVerify or EmitSSA as isolated passes.
-- **Integration tests**: two real multi-feature programs (~150–170 lines each): `integration_generic_pipeline.con` (5-layer borrow chain, trait dispatch, complex enum matching) and `integration_state_machine.con` (4-state × 5-command nested match, struct construction in match arms).
-- **Failure-path stdlib tests**: added tests for fs (read past EOF, seek past end, read empty file), net (bind empty address, write to refused connection, read from unconnected socket, bind duplicate port), and process (kill invalid signal, wait invalid PID, kill PID zero).
+- **Pass-level Lean tests** (`PipelineTest.lean`, 28 tests): parse (4), frontend/check/elab (8), monomorphize (2), SSA lowering (2), SSA verify (3), SSA cleanup (2), SSA emit (2), full pipeline (5). Each pass tested in isolation on in-memory source strings — no clang, no file I/O, <1s total. Tests both success and error paths.
+- **Structured test metadata**: `test_manifest.toml` provides per-test metadata (category, kind, passes, profile, owner_pass, needs_clang, multi_module). `test_dep_map.toml` maps 27 compiler source files to affected test sections and categories.
+- **Dependency-aware selection**: `run_tests.sh --affected` auto-detects changed files via `git diff` and runs only affected test sections. Conservative mapping: `--affected Concrete/Report.lean` runs 72 tests (report + passlevel); `--affected Concrete/Lower.lean` runs 248 tests (positive + codegen + O2 + passlevel). Unknown files fall back to the full suite.
+- **Coverage matrix and determinism policy** (`docs/TESTING.md`): full coverage matrix by failure mode (17 categories) and by compiler pass (12 passes), determinism rules (fixed seeds, no wall-clock dependence, 3 timeout tiers, network isolation by default, parallel safety, quarantine/repair policy), compile-time baselines, and failure isolation documentation.
+- **Compiler output cache**: file-keyed cache, 26/57 hits per fast run, avoids redundant recompilation for multi-assertion report tests.
+- **Failure artifact preservation**: `.test-failures/` with timestamped output and exact rerun commands.
+- **Dependency gates**: `compile_gate()` skips downstream assertions when compilation fails.
+- **Real-program corpus**: 8 integration tests including 5 multi-feature programs (150-250 lines each): generic pipeline (5-layer borrow chain, trait dispatch), state machine (4×5 nested match), compiler stress (deep generic dispatch, 5-variant enum, while-loop accumulation), multi-module (cross-module types/traits/enums with imports), recursive structures (expression evaluator + stack machine with 6-variant enum).
+- **Failure-path stdlib tests**: fs (read past EOF, seek past end, read empty file), net (bind empty address, write to refused connection, read from unconnected socket, bind duplicate port), process (kill invalid signal, wait invalid PID, kill PID zero).
 
-What is NOT done (still needed for D1 completion):
-- structured test metadata / category model
-- dependency-aware test selection (change→test mapping)
-- documented coverage matrix and determinism/flakiness policy
-- isolated SSA pass tests (SSAVerify, EmitSSA as separate test targets)
-- named real-program corpus and stress workloads
-
-Test suite: 635 tests passing (189 stdlib), including 19 pass-level Lean tests.
+Test suite: 647 tests passing (189 stdlib), including 28 pass-level Lean tests, 44 report assertions, 8 integration tests, and 16 collections verified.
 
 ### Structured LLVM backend completed
 

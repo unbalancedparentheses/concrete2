@@ -55,7 +55,7 @@ Still clearly not implemented:
 | **A** | Fast feedback and compiler stability | Done enough; aggregate lowering hardened, test runner parallelized, SSA invariants mechanically defended | B, C, D |
 | **B** | Semantic cleanup | Done | D |
 | **C** | Tooling and stdlib hardening | Done; all 8 items complete (LL(1) CI, linearity fixes, HashMap retired, module-targeted testing, diagnostics polish, integration tests, report hardening, audit reports) | later system maturity |
-| **D** | Testing, backend, and trust multipliers | Active | A, most of B |
+| **D** | Testing, backend, and trust multipliers | Active (D1 done, D2 next) | A, most of B |
 | **E** | Runtime and execution model | Deferred | C, D |
 | **F** | Capability and safety productization | Deferred | D, E |
 | **G** | Language surface and feature discipline | Deferred | B, D, E, F |
@@ -87,14 +87,20 @@ Still clearly not implemented:
   - report assertions hardened: 44 report tests with content checks across all 6 modes (caps, unsafe, layout, interface, mono, alloc)
   - reports as audit product: capability "why" traces showing which callees contribute each cap, trust boundary analysis showing what trusted functions wrap, allocation/cleanup summaries with leak warnings, summary totals and aligned columns across all reports
 - 600 tests pass (189 stdlib), including 44 report assertions, 46 golden tests, integration tests, and 16 collections verified.
-- **Phase D1 progress** (testing infrastructure — in progress, not complete):
-  - **Done**: compiler output cache in `run_tests.sh` (file-keyed cache, 26/57 hits per fast run, avoids redundant recompilation for multi-assertion report tests). Failure artifact preservation (`.test-failures/` with timestamped output and exact rerun commands). Dependency gates (`compile_gate()`) so downstream report assertions skip when compilation fails. Pass-level Lean tests (`PipelineTest.lean`, 19 tests exercising parse/frontend/mono/full-pipeline on in-memory source strings — no clang, no file I/O). Two real integration tests (~150–170 lines each: `integration_generic_pipeline.con` with 5-layer borrow chains and trait dispatch, `integration_state_machine.con` with 4-state × 5-command nested match). Failure-path stdlib tests for fs/net/process.
-  - **Not done**: structured test metadata / category model (tests are still bare shell assertions, not tagged by category/pass/feature). Dependency-aware selection (no change→test mapping — filtering is by file path glob, not by which compiler code changed). Documented coverage matrix and determinism/flakiness policy. Broader artifact-test layering (pass-level tests cover parse through LLVM IR emission but do not separately exercise SSAVerify or EmitSSA as isolated passes). Named real-program corpus and stress workloads beyond the two integration tests.
-- 635 tests pass (189 stdlib), including 19 pass-level Lean tests, 44 report assertions, 46 golden tests, integration tests, and 16 collections verified.
+- **Phase D1 complete** (testing infrastructure):
+  - **Compiler output cache**: file-keyed cache in `run_tests.sh`, 26/57 hits per fast run
+  - **Failure artifacts**: `.test-failures/` with timestamped output and exact rerun commands
+  - **Dependency gates**: `compile_gate()` skips downstream assertions when compilation fails
+  - **Pass-level Lean tests**: `PipelineTest.lean` with 28 tests — parse (4), frontend/check/elab (8), monomorphize (2), SSA lowering (2), SSA verify (3), SSA cleanup (2), SSA emit (2), full pipeline (5). Each pass tested in isolation without unnecessary downstream cost.
+  - **Structured test metadata**: `test_manifest.toml` with per-test metadata (category, kind, passes, profile, owner_pass, needs_clang, multi_module). `test_dep_map.toml` maps compiler source files to affected test sections.
+  - **Dependency-aware selection**: `run_tests.sh --affected` auto-detects changed files via `git diff` and runs only affected sections. `--affected Concrete/Report.lean` runs 72 tests; `--affected Concrete/Lower.lean` runs 248 tests.
+  - **Coverage matrix and determinism policy**: `docs/TESTING.md` rewritten with full coverage matrix (by failure mode and by compiler pass), determinism rules (fixed seeds, no wall-clock dependence, timeout classes, network isolation, parallel safety), compile-time baselines, and failure isolation documentation.
+  - **Real-program corpus**: 8 integration tests including 5 multi-feature programs (150-250 lines each): generic pipeline (5-layer borrow chain), state machine (4×5 nested match), compiler stress (deep generic dispatch, 5-variant enum), multi-module (cross-module types/traits/enums), recursive structures (expression evaluator + stack machine).
+- 647 tests pass (189 stdlib), including 28 pass-level Lean tests, 44 report assertions, 46 golden tests, 8 integration tests, and 16 collections verified.
 
 ### Now
 
-Phases A, B, and C are done. Phase D is active. D1 (testing infrastructure) is partially complete: caching, failure preservation, dependency gates, and pass-level Lean tests are done, but structured metadata, dependency-aware selection, coverage documentation, and isolated SSA pass tests remain. Active work continues on D1 before moving to D2 (backend/proof/trust).
+Phases A, B, C, and D1 are done. Phase D2 is next: backend/artifact/proof multipliers. The testing system now has pass-level coverage for all compiler passes, structured metadata, dependency-aware selection, a documented coverage matrix, and a named integration corpus. D2 work rides on this foundation.
 
 1. Make testing infrastructure best-in-class (Phase D1 inside Phase D):
    - problem: the suite has strong breadth, but too much test behavior still lives in shell orchestration, semantic tests pay too much full-pipeline cost, repeated report assertions waste compiler work, and failure isolation/reproduction is weaker than it should be
