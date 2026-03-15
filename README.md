@@ -57,34 +57,42 @@ That is why the next major phase is [Phase H](ROADMAP.md): large-program pressur
 ## What Concrete Looks Like
 
 ```con
-struct Counter {
-    value: Int,
+enum Decision {
+    Allow,
+    Deny,
 }
 
-impl Counter {
-    fn inc(&mut self) {
-        self.value = self.value + 1;
+fn check_manifest(text: String) -> Decision {
+    if string_contains(text, "forbidden = true") {
+        return Decision#Deny;
     }
+
+    return Decision#Allow;
 }
 
-fn read_and_count(path: String) with(File) -> Result<Int, String> {
+fn verify_manifest(path: String) with(File) -> Result<Decision, String> {
     let text: String = read_file(path)?;
-    let mut c: Counter = Counter { value: 0 };
-
-    if string_contains(text, "Concrete") {
-        c.inc();
-    }
-
-    return Ok(c.value);
+    return Ok(check_manifest(text));
 }
 ```
 
-This small example already shows the shape of the language:
+```con
+extern fn puts(ptr: *const u8) -> i32;
 
-- explicit capabilities (`with(File)`)
-- ordinary structs and methods
+trusted extern fn c_puts(ptr: *const u8) -> i32;
+
+fn print_banner(s: &String) with(Unsafe) {
+    let ptr: *const u8 = &s.ptr as *const *mut u8 as *const u8;
+    c_puts(ptr);
+}
+```
+
+These examples show two of Concrete's main ideas:
+
+- explicit capabilities (`with(File)`) for ordinary code
+- a pure helper separated from the effectful wrapper
 - explicit error propagation with `?`
-- no hidden effects in the pure-looking parts
+- explicit foreign and trust boundaries at the low-level edge
 
 For more examples, see [`examples/`](examples).
 
