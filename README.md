@@ -56,7 +56,10 @@ That is why the next major phase is [Phase H](ROADMAP.md): large-program pressur
 
 ## What Concrete Looks Like
 
-Critical decision core:
+These are the kinds of boundaries Concrete tries to make obvious in source code.
+The interesting claim is mechanical, not rhetorical: the verifier below can read a manifest, but it cannot silently grow `Network` or `Process`, and the raw C edge stays inside one small trusted wrapper.
+
+Pure decision core:
 
 ```con
 enum Decision {
@@ -64,59 +67,68 @@ enum Decision {
     Deny,
 }
 
-fn check_update_policy(text: String) -> Decision {
-    if string_contains(text, "allow_network = true") {
+fn check_update_size(size: Int, expected: Int) -> Decision {
+    if size != expected {
         return Decision#Deny;
     }
-
     return Decision#Allow;
-}
-
-fn verify_update_manifest(path: String) with(File) -> Result<Decision, String> {
-    let text: String = read_file(path)?;
-    return Ok(check_update_policy(text));
 }
 ```
 
-Audited foreign boundary:
+Audited low-level wrapper:
 
 ```con
-extern fn hsm_send(cmd: *const u8, len: Int) -> i32;
+trusted extern fn fopen(name: *mut u8, mode: *mut u8) -> *const u8;
+trusted extern fn fclose(file: *const u8) -> i32;
+trusted extern fn fseek(file: *const u8, offset: i64, whence: i32) -> i32;
+trusted extern fn ftell(file: *const u8) -> i64;
+trusted extern fn malloc(size: u64) -> *mut u8;
+trusted extern fn free(ptr: *mut u8);
 
-trusted extern fn hsm_send_trusted(cmd: *const u8, len: Int) -> i32;
+// helper functions like string_to_cstr(...) and mode_cstr(...)
+// stay inside the trusted wrapper layer too
+trusted fn read_manifest_len(path: &String) with(File) -> Int {
+    let path_buf: *mut u8 = string_to_cstr(path);
+    let mode_buf: *mut u8 = mode_cstr(114); // "r"
+    let fp: *const u8 = fopen(path_buf, mode_buf);
+    free(mode_buf);
+    free(path_buf);
+    fseek(fp, 0, 2);
+    let size: i64 = ftell(fp);
+    fclose(fp);
+    return size as Int;
+}
 
-fn send_hsm_command(buf: &Bytes) with(Unsafe) -> i32 {
-    let ptr: *const u8 = buf.ptr;
-    return hsm_send_trusted(ptr, buf.len);
+fn verify_update(path: &String, expected: Int) with(File) -> Decision {
+    let size: Int = read_manifest_len(path);
+    return check_update_size(size, expected);
 }
 ```
 
 Explicit resource cleanup:
 
 ```con
-struct AuditBuffer {
-    data: HeapArray<u8>,
-    len: Int,
-}
+struct AuditHandle { fd: Int }
 
-impl Drop for AuditBuffer {
-    fn destroy(self) with(Alloc) {
-        free(self.data);
+impl Destroy for AuditHandle {
+    fn destroy(&self) {
+        // close the descriptor here
     }
 }
 
-fn consume_audit_buffer(buf: AuditBuffer) with(Alloc) -> Int {
-    defer destroy(buf);
-    return buf.len;
+fn inspect_handle(h: AuditHandle) -> Int {
+    defer destroy(h);
+    return h.fd;
 }
 ```
 
 These examples show why Concrete is aimed at critical low-level components instead of general convenience:
 
-- the policy logic is pure and easy to isolate from I/O
-- the file-reading wrapper says exactly what authority it has: `with(File)`
-- the foreign boundary is explicit and visibly audited through `trusted extern fn`
-- resource cleanup is written in the source, not hidden in a runtime or convention
+- the decision logic is pure and testable on its own
+- the verifier's authority is explicit: `with(File)` and nothing else
+- the raw C boundary is concentrated inside a small trusted wrapper instead of leaking everywhere
+- cleanup is written in the function body with `defer destroy(...)`, not hidden in a runtime or convention
+- the compiler surface makes a stronger audit claim than Rust, Zig, or C usually do by default: where authority exists, where trust starts, and where cleanup happens
 
 For more examples, see [`examples/`](examples).
 
