@@ -10,6 +10,16 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Phase G items 1–5: Language Discipline and Design Policy
+
+Five of six Phase G items complete. Concrete now has explicit feature-admission criteria, recorded language decisions, and documented long-term shape commitments.
+
+**Item 1 — Feature admission criteria**: Created `docs/DESIGN_POLICY.md` as standing policy. 10-point admission checklist (simple invariant, visibility, phase separation, declaration-level dependencies, static dispatch, predictable codegen, diagnostics ownership, single-pass ownership, proof story, benefit for audited code). Quick decision rule and one-line test. Promoted from `research/design-filters.md`.
+
+**Item 2 — "No" and "not yet" decisions**: Created `docs/DECISIONS.md` as a decisions registry. Six permanent decisions: no closures, no trait objects, no source-generating macros, no hidden dynamic dispatch, no inference-heavy abstraction, trusted = pointer containment only. Six deferred decisions with explicit prerequisites: freestanding mode, capability hiding, concurrency, pre/post conditions, derived equality, package model.
+
+**Item 5 — Long-term language shape**: Created `docs/LANGUAGE_SHAPE.md` documenting six structural commitments (static/explicit dispatch, capabilities in signatures, three-way trust split, linear ownership, whole-program monomorphization, phase separation), five "will not become" constraints, and a table of what may change with evidence. Synthesizes IDENTITY.md, DESIGN_POLICY.md, DECISIONS.md, and SAFETY.md.
+
 ### Phase G items 3–4: Language Surface Simplification and Trusted Narrowing
 
 Two Phase G items landed, simplifying the language surface and tightening the trusted model.

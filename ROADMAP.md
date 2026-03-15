@@ -60,13 +60,14 @@ Still clearly not implemented:
 | **C** | Tooling and stdlib hardening | Done |
 | **D** | Testing, backend, and trust multipliers | Done |
 | **E** | Runtime and execution model | Done |
-| **F** | Capability and safety productization | Not started |
-| **G** | Language surface and feature discipline | Not started |
+| **F** | Capability and safety productization | Done |
+| **G** | Language surface and feature discipline | 5/6 done (item 6 remaining) |
 | **H** | Real-program pressure testing and performance validation | Not started |
-| **I** | Package and dependency ecosystem | Not started |
-| **J** | Adoption, positioning, and showcase pull | Not started |
-| **K** | Project and operational maturity | Not started |
-| **L** | Concurrency maturity and runtime plurality | Not started |
+| **I** | Formalization and proof expansion | Not started |
+| **J** | Package and dependency ecosystem | Not started |
+| **K** | Adoption, positioning, and showcase pull | Not started |
+| **L** | Project and operational maturity | Not started |
+| **M** | Concurrency maturity and runtime plurality | Not started |
 
 ### Recent Progress
 
@@ -343,13 +344,18 @@ Goal: keep the language small, coherent, and intentionally shaped instead of let
 This phase is where an eventual critical/provable subset becomes a real language-design commitment instead of only a later hope.
 
 Primary surfaces:
-- [research/design-filters.md](research/design-filters.md)
+- [docs/DESIGN_POLICY.md](docs/DESIGN_POLICY.md) — feature admission criteria (promoted from research/design-filters.md)
+- [docs/DECISIONS.md](docs/DECISIONS.md) — recorded "no" and "not yet" decisions
+- [docs/LANGUAGE_SHAPE.md](docs/LANGUAGE_SHAPE.md) — long-term language shape commitments
 - [research/high-integrity-profile.md](research/high-integrity-profile.md)
-- grammar docs and language references
 - language-design research notes
 
-1. define explicit feature-admission criteria — **not started**
-2. make "no" and "not yet" decisions first-class language outcomes — **not started**
+1. define explicit feature-admission criteria — **done**
+   - promoted `research/design-filters.md` to `docs/DESIGN_POLICY.md` as standing policy
+   - 10-point admission checklist, quick decision rule, one-line test, high-leverage priorities
+2. make "no" and "not yet" decisions first-class language outcomes — **done**
+   - created `docs/DECISIONS.md` with permanent decisions (no closures, no trait objects, no source-generating macros, no hidden dynamic dispatch, no inference-heavy abstraction, trusted = pointer containment only) and deferred decisions (freestanding mode, capability hiding, concurrency, pre/post conditions, derived equality, package model)
+   - each entry records status, rationale, what Concrete does instead, and prerequisites for deferred items
 3. revisit syntax and surface complexity with a bias toward simplification, not expansion — **done**
    - removed `main!()` / `fn name!()` bang sugar from parser, AST, and all .con files (70+ files migrated to explicit `with(Std)` / `with(Alloc)`)
    - added union example test (`union_basic.con`) to validate union feature with trusted access pattern
@@ -359,7 +365,9 @@ Primary surfaces:
    - `trusted` now means exactly one thing: audited pointer-level containment (pointer arithmetic, deref, assign, cast without `with(Unsafe)`)
    - `trusted` is no longer a general-purpose escape hatch — it does not suppress capabilities, does not permit extern calls, and does not relax linearity
    - documented the refined model in SAFETY.md and CHANGELOG
-5. make long-term language shape decisions explicit instead of letting them emerge from local convenience — **not started**
+5. make long-term language shape decisions explicit instead of letting them emerge from local convenience — **done**
+   - created `docs/LANGUAGE_SHAPE.md` documenting structural commitments (dispatch model, authority model, trust model, ownership model, compilation model, phase separation), what Concrete will not become, what may change with evidence, and shape principles
+   - synthesizes IDENTITY.md, DESIGN_POLICY.md, DECISIONS.md, SAFETY.md into a single coherent picture
 6. define a clearly analyzable critical/provable subset — **not started**
 
 Deliverables:
@@ -406,7 +414,45 @@ Deliverables:
 Exit criterion:
 Concrete has been exercised by multiple serious programs large enough to reveal structural weaknesses, and the project has used those results to drive the next package/adoption/operational phases.
 
-#### Phase I: Package And Dependency Ecosystem
+#### Phase I: Formalization And Proof Expansion
+
+Goal: turn the existing proof-oriented architecture into a real multi-stage formalization effort over the language, proof-eligible subset, and selected compiler boundaries.
+
+This phase is intentionally after language-discipline work and real-program pressure testing:
+
+- after G, because proving an unstable or overgrown surface is wasted effort
+- after H, because real programs should help determine what is actually worth proving and where source-to-Core traceability must hold up
+- before the later package/adoption/operational phases become the center of gravity, so the proof story remains a structural part of the language rather than an indefinitely deferred side thread
+
+Primary surfaces:
+- [research/formalization-breakdown.md](research/formalization-breakdown.md)
+- [research/formalization-roi.md](research/formalization-roi.md)
+- [research/proving-concrete-functions-in-lean.md](research/proving-concrete-functions-in-lean.md)
+- [Concrete/ProofCore.lean](/Users/unbalancedparen/projects/concrete/Concrete/ProofCore.lean)
+- [Concrete/Proof.lean](/Users/unbalancedparen/projects/concrete/Concrete/Proof.lean)
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- [docs/PASSES.md](docs/PASSES.md)
+
+1. broaden the pure Core proof fragment beyond integers/booleans/arithmetic/conditionals to cover richer data and control structure — **not started**
+2. define and stabilize the clearly analyzable / provable subset promised in Phase G as an actual proof target rather than only a language aspiration — **not started**
+3. expand `ProofCore` carefully so it remains a filter over `ValidatedCore`, not a second semantic authority — **not started**
+4. add source-to-Core and Core-to-ProofCore traceability strong enough for external proof workflows and report/evidence integration — **not started**
+5. prove more language guarantees around capabilities, ownership, trust boundaries, and other rules that users are meant to rely on — **not started**
+6. push selected compiler-preservation work further where it is tractable and high-value, especially around explicit artifact boundaries — **not started**
+7. make the user-program proof workflow more real: exporting/referencing proof subjects, documenting proof-facing artifacts, and tying the workflow to ordinary compiler outputs — **not started**
+
+Deliverables:
+- a substantially broader formal semantics than the current pure Core fragment
+- a documented and implementation-aligned provable subset rooted in `ValidatedCore` / `ProofCore`
+- stronger traceability from source to validated Core to proof-facing artifacts
+- a clearer split between language-guarantee proofs, user-program proofs, and compiler-preservation proofs
+- a practical path for selected Concrete programs to be proved in Lean without pretending the entire language is already formalized
+- a proof roadmap grounded in the language that survived real-program pressure testing, not only in idealized fragments
+
+Exit criterion:
+Formalization is no longer only “proof-friendly architecture plus initial theorems.” Concrete has an explicit, broadened proof workflow, a clearer provable subset, and stronger traceability between user code, validated Core, and proof-facing artifacts.
+
+#### Phase J: Package And Dependency Ecosystem
 
 Goal: make Concrete usable for real multi-module and multi-package projects with explicit, stable project-facing semantics.
 
@@ -448,7 +494,7 @@ Deliverables:
 Exit criterion:
 Concrete has an explicit package/dependency model that supports real projects without relying on ad-hoc repo-local conventions, has a credible path to enforcing authority budgets at package or subsystem boundaries, and no longer depends on muddy interface/body artifact boundaries to reason about packages.
 
-#### Phase J: Adoption, Positioning, And Showcase Pull
+#### Phase K: Adoption, Positioning, And Showcase Pull
 
 Goal: make Concrete easier to want, try, understand, and remember, not only easier to admire architecturally.
 
@@ -460,12 +506,13 @@ This phase turns the language from a coherent technical project into something w
 - an explicit public stability surface
 - sharper comparison/positioning against adjacent languages
 
-This phase is intentionally after the package/project and real-program pressure-testing phases and before full operational maturity:
+This phase is intentionally after the package/project, real-program pressure-testing, and formalization phases and before full operational maturity:
 
-- after I, because adoption claims are weak without a coherent project/package model
+- after J, because adoption claims are weak without a coherent project/package model
 - after H, because the public story should be shaped by real programs, not only internal architecture
-- before K, because real user pressure should help shape which operational surfaces actually matter
-- before L, because long-term concurrency maturity is not part of the first convincing user story
+- after I, because a visible proof/formalization story is part of Concrete's differentiation and should be represented honestly once it has a real phase
+- before L, because real user pressure should help shape which operational surfaces actually matter
+- before M, because long-term concurrency maturity is not part of the first convincing user story
 
 Primary surfaces:
 - [README.md](README.md)
@@ -495,7 +542,7 @@ Deliverables:
 Exit criterion:
 Concrete has a credible adoption story: users can understand what it is for, try it through polished examples, and see why it is distinct without reading the whole compiler roadmap.
 
-#### Phase K: Project And Operational Maturity
+#### Phase L: Project And Operational Maturity
 
 Goal: turn Concrete from a strong compiler project into a durable, distributable, maintainable system.
 
@@ -561,13 +608,13 @@ Deliverables:
 Exit criterion:
 Concrete is not only architecturally strong internally, but also operable, reproducible, documentable, and maintainable as a long-term project, with a real driver/artifact model rather than only a pass library plus CLI entry points.
 
-#### Phase L: Concurrency Maturity And Runtime Plurality
+#### Phase M: Concurrency Maturity And Runtime Plurality
 
 Goal: give Concrete a long-term concurrency model that stays explicit, auditable, and small instead of collapsing into an "async everywhere" ecosystem.
 
 This phase is intentionally later than Phase E.
 Phase E defines the execution model and first runtime boundary.
-Phase L exists to do the larger concurrency design correctly once runtime, safety, package, adoption, and operational foundations are stable enough to support it.
+Phase M exists to do the larger concurrency design correctly once runtime, safety, formalization, package, adoption, and operational foundations are stable enough to support it.
 
 The intended long-term shape is:
 
@@ -614,10 +661,11 @@ Concrete has one coherent concurrency story: structured by default, threads-firs
 - **Phase F** matters because Concrete's safety model should be a user-visible strength, not only an internal design claim. Error recovery also lives here — getting one error at a time is the most visible DX gap.
 - **Phase G** matters because languages decay when feature growth has no explicit discipline. Debug info and inlining also live here — a systems language without debugger support or basic optimization is not credible for real work.
 - **Phase H** matters because languages often look coherent until they are forced to carry real programs. Large-code pressure testing is how Concrete earns confidence in its stdlib, diagnostics, package model, and performance story.
-- **Phase I** matters because package and dependency semantics are part of the language experience once real projects exist. Incremental compilation is the first item — without it, multi-package builds recompile the world.
-- **Phase J** matters because technically coherent languages still fail if nobody can quickly understand why to use them, what they are for, or how to get started well.
-- **Phase K** matters because long-term projects fail just as easily from weak operational discipline as from weak compiler architecture.
-- **Phase L** matters because concurrency is one of the easiest places for a language to lose clarity, and Concrete should only broaden it once it can do so without importing async fragmentation and hidden runtime culture.
+- **Phase I** matters because Concrete's proof story is too central to remain only a cross-cutting aspiration. This is where formalization becomes a real workstream instead of “initial theorems plus later hope.”
+- **Phase J** matters because package and dependency semantics are part of the language experience once real projects exist. Incremental compilation is the first item — without it, multi-package builds recompile the world.
+- **Phase K** matters because technically coherent languages still fail if nobody can quickly understand why to use them, what they are for, or how to get started well.
+- **Phase L** matters because long-term projects fail just as easily from weak operational discipline as from weak compiler architecture.
+- **Phase M** matters because concurrency is one of the easiest places for a language to lose clarity, and Concrete should only broaden it once it can do so without importing async fragmentation and hidden runtime culture.
 
 ### Compiler Hardening (between Phase D and Phase E)
 
@@ -649,10 +697,11 @@ These are concrete, implementable improvements that emerged from the bug fixes a
 3. Capability and safety productization as an explicit phase after the backend/trust foundations are strong enough.
 4. Language-surface and feature-discipline work as an explicit phase once the runtime/safety direction is clear.
 5. Real-program pressure testing and performance validation as an explicit phase once the language surface is disciplined enough that large programs can reveal meaningful weaknesses instead of churn.
-6. Package and dependency ecosystem as an explicit phase once stdlib/tooling/runtime direction is stable enough to support real projects well.
-7. Adoption, positioning, and showcase pull as an explicit phase once the package/project story is strong enough that new users can actually try Concrete coherently.
-8. Project and operational maturity as an explicit phase once the current compiler/tooling architecture is stable enough to productize.
-9. Concurrency maturity and runtime plurality as an explicit later phase once the runtime, safety, package, adoption, and operational foundations are stable enough to support it well.
+6. Formalization and proof expansion as an explicit phase once the language surface is disciplined and real-program pressure has clarified what is actually worth proving.
+7. Package and dependency ecosystem as an explicit phase once stdlib/tooling/runtime direction is stable enough to support real projects well.
+8. Adoption, positioning, and showcase pull as an explicit phase once the package/project story is strong enough that new users can actually try Concrete coherently.
+9. Project and operational maturity as an explicit phase once the current compiler/tooling architecture is stable enough to productize.
+10. Concurrency maturity and runtime plurality as an explicit later phase once the runtime, safety, formalization, package, adoption, and operational foundations are stable enough to support it well.
 9. Proof-driven narrowing of future feature additions.
 10. A clearer hosted vs freestanding / `no_std` split, but only after the runtime and stdlib boundaries are more stable.
 11. Execution-cost analysis as an audit/report extension.

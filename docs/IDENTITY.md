@@ -4,6 +4,8 @@ Status: stable reference
 
 This document states what Concrete is trying to be, what it is optimizing for, and what it is not trying to win on.
 
+For feature admission criteria, see [DESIGN_POLICY.md](DESIGN_POLICY.md). For recorded "no" and "not yet" decisions, see [DECISIONS.md](DECISIONS.md). For long-term shape commitments, see [LANGUAGE_SHAPE.md](LANGUAGE_SHAPE.md).
+
 ## Positioning
 
 Concrete is a low-level language optimized for auditability, explicit trust, and proof-friendly compiler architecture.
