@@ -303,9 +303,9 @@ Concrete currently supports a single target profile:
 
 | Tier | Definition | Current targets |
 |------|-----------|-----------------|
-| **Tier 1** | CI-tested, ABI documented, release-blocking | `x86_64-linux`, `aarch64-darwin` (macOS Apple Silicon) |
-| **Tier 2** | Builds expected to work, narrower testing | `x86_64-darwin` |
-| **Experimental** | May compile, no compatibility promise | Everything else LLVM can target |
+| **Tier 1** | CI-tested, ABI documented, release-blocking | `x86_64-linux` (CI runs on `ubuntu-latest`) |
+| **Tier 2** | Developer-tested, builds and tests pass locally, no CI | `aarch64-darwin` (macOS Apple Silicon — primary development machine) |
+| **Experimental** | May compile, no compatibility promise | `x86_64-darwin`, everything else LLVM can target |
 
 A target is not "supported" just because LLVM can emit code for it. Supported means:
 
@@ -386,7 +386,7 @@ The stdlib is classified into three layers by host dependency (see [Hosted vs Fr
 ### What the execution model constrains in stdlib
 
 1. **No hidden allocation.** Every stdlib function that allocates must declare `with(Alloc)`. The `--report alloc` output makes this auditable.
-2. **No hidden host access.** Hosted modules require their respective capability (`File`, `Net`, `Process`, etc.). A function that only does computation cannot accidentally pull in network or filesystem dependencies.
+2. **No hidden host access.** Hosted modules require their respective capability (`Network`, `Process`, `Random`, `Console`, etc.) or `Unsafe` for direct libc calls. A function that only does computation cannot accidentally pull in network or filesystem dependencies.
 3. **Deterministic cleanup.** All stdlib types that own resources provide explicit `free()`/`drop()`/`close()` methods. There is no implicit destructor insertion.
 4. **Abort-on-OOM.** All allocation through `std.alloc` and compiler builtins aborts on null. Stdlib types built on `Vec`/`String` inherit this guarantee.
 
@@ -425,7 +425,7 @@ An execution profile is a set of compiler-enforced restrictions on what a progra
 
 ### What makes this feasible
 
-Concrete's existing capability system already tracks `Alloc`, `Unsafe`, `File`, `Net`, `Process`, etc. Profiles are essentially named capability budgets — a `no_alloc` profile is "reject any function that requires `Alloc`." The enforcement mechanism already exists; profiles would add named sets and module-level declarations.
+Concrete's existing capability system already tracks `Alloc`, `Unsafe`, `Network`, `Process`, `Random`, `Console`, etc. Profiles are essentially named capability budgets — a `no_alloc` profile is "reject any function that requires `Alloc`." The enforcement mechanism already exists; profiles would add named sets and module-level declarations.
 
 ### Relationship to proofs
 
@@ -539,7 +539,7 @@ Concrete does not yet implement concurrency. This section documents the intended
 2. **Structured over detached.** Concurrent work should belong to explicit scopes with defined lifetimes. Fire-and-forget spawning should be rare and marked.
 3. **Threads first, async later.** OS threads are the base primitive. Evented I/O and executor-driven async are specialized later additions, not the default.
 4. **Ownership across threads.** Values moved into spawned threads are consumed (linear move). Shared mutable state requires explicit synchronization types.
-5. **Capability-gated.** Spawning threads requires a `Spawn` (or `Concurrency`) capability. Blocking requires `Block`. These are separate from `File`/`Net`/`Process`.
+5. **Capability-gated.** Spawning threads requires a `Spawn` (or `Concurrency`) capability. Blocking requires `Block`. These are separate from `Network`/`Process`/`Random`.
 
 ### First concurrency model (designed in Phase E, implemented in Phase J)
 
