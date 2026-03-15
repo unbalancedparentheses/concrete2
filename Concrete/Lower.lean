@@ -1630,10 +1630,11 @@ def lowerModule (m : CModule) : Except String SModule := do
     | .ok (sfn, lits) => .ok (acc ++ [({ sfn with modulePath := path }, lits)])
     | .error e => .error s!"Lower.lowerModule: failed to lower function '{f.name}': {e}"
   -- Build deduplicated globals list (by string value)
+  -- Prefix with module name to avoid collisions across modules
   let globals := results.foldl (fun deduped (_, lits) =>
     lits.foldl (fun deduped (_, strVal) =>
       if deduped.any fun (_, v) => v == strVal then deduped
-      else deduped ++ [(s!"str.{deduped.length}", strVal)]
+      else deduped ++ [(s!"{m.name}.str.{deduped.length}", strVal)]
     ) deduped
   ) ([] : List (String × String))
   -- Rename strConst references per-function using its own string literals
