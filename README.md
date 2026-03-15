@@ -17,19 +17,21 @@ Status: project entry point
 
 Concrete is a systems programming language for **correctness-focused low-level work**. The design rule is simple: if the compiler cannot explain what a feature means, the feature probably does not belong. The language stays explicit, LL(1)-parseable, and hostile to hidden control flow.
 
-Concrete is not trying to win by piling on features. Its real pitch is **auditable low-level programming with explicit authority and trust boundaries, built on a small language and a proof-friendly compiler**. See [docs/IDENTITY.md](docs/IDENTITY.md) for the fuller project identity.
+Concrete is not trying to win by piling on features. Its real pitch is **auditable low-level programming with explicit authority and trust boundaries, built on a small language and a proof-friendly compiler**.
 
-Longer term, Concrete should grow an explicit high-integrity profile: stricter execution and safety modes for critical code, built around analyzability, bounded behavior, and stronger evidence rather than feature accumulation.
+In practice, that means:
 
-The compiler is written in [Lean 4](https://leanprover.github.io/lean4/doc/setup.html), a theorem prover. The goal is to leverage Lean 4 to prove Concrete: first the language/compiler itself, and later selected Concrete programs through explicit Core semantics.
+- visible capabilities instead of ambient effects
+- visible `trusted` and `Unsafe` boundaries instead of hand-wavy escape hatches
+- explicit ownership and cleanup instead of hidden runtime behavior
+- compiler artifacts and reports that try to explain what the program means
 
-Concrete is also being shaped so that this proof story does not stop at the compiler. The long-term goal is not only to formalize the language/compiler in Lean, but also to make selected Concrete programs provable in Lean through explicit Core semantics.
+The compiler is written in [Lean 4](https://leanprover.github.io/lean4/doc/setup.html), and the long-term goal is two-layered:
 
-**No other language combines all four: linear types, a capability-based effect system, a compiler written in a theorem prover, and a design optimized for machine-generated code.**
+- prove properties of the language/compiler itself
+- prove selected Concrete programs through explicit Core semantics
 
-In practical terms, Concrete is trying to give low-level programmers something unusual: the control of systems programming, but with far better visibility into resources, effects, trust boundaries, and compiler meaning.
-
-The longer-term product vision is not just "a compiler that works." It is a compiler that can explain itself, expose audit-relevant facts as first-class outputs, and eventually produce artifacts and builds that are inspectable and reproducible enough to trust.
+For the longer identity and proof story, see [docs/IDENTITY.md](docs/IDENTITY.md) and [research/proving-concrete-functions-in-lean.md](research/proving-concrete-functions-in-lean.md).
 
 ## Current Stage
 
@@ -52,95 +54,52 @@ What is not proven yet:
 
 That is why the next major phase is [Phase H](ROADMAP.md): large-program pressure testing and performance validation. The next proof point is not another small feature. It is whether Concrete stays readable, explicit, and fast enough when it has to carry real software.
 
+## What Concrete Looks Like
+
+```con
+struct Counter {
+    value: Int,
+}
+
+impl Counter {
+    fn inc(&mut self) {
+        self.value = self.value + 1;
+    }
+}
+
+fn read_and_count(path: String) with(File) -> Result<Int, String> {
+    let text: String = read_file(path)?;
+    let mut c: Counter = Counter { value: 0 };
+
+    if string_contains(text, "Concrete") {
+        c.inc();
+    }
+
+    return Ok(c.value);
+}
+```
+
+This small example already shows the shape of the language:
+
+- explicit capabilities (`with(File)`)
+- ordinary structs and methods
+- explicit error propagation with `?`
+- no hidden effects in the pure-looking parts
+
+For more examples, see [`examples/`](examples).
+
 ## Why Concrete Exists
 
 Concrete was created to close a gap between low-level programming and mechanized reasoning.
 
-Systems languages usually optimize for control, performance, and interoperability. Proof systems usually optimize for expressing and checking mathematical claims. Concrete is trying to meet in the middle: a low-level language where authority, resources, cleanup, trust boundaries, and compiler meaning stay explicit enough to inspect, audit, and eventually prove.
-
-Lean 4 is a powerful theorem prover, but it is not designed as a low-level systems programming language. It has a runtime and garbage collector, and it is not the tool you would normally choose to write ordinary non-GC systems code with explicit ownership, FFI, layout, and resource management. Concrete exists to bridge that gap: keep the implementation language low-level and explicit, while still leveraging Lean 4 as the proof environment.
-
-The core idea is that systems code should not only run fast or expose low-level control. It should also make important facts visible:
+Most systems languages optimize for control, performance, and interoperability, but they leave many important questions harder to answer mechanically than they should be. Concrete is trying to make those questions easier:
 
 - what authority it has
 - where resources are created and destroyed
 - where `Unsafe` and `trusted` boundaries exist
 - what the compiler actually means by the program
 
-In one sentence: Concrete exists to make low-level programming explicit enough to audit, honest enough to trust, and structured enough to eventually prove.
-
-## Two Lean Goals
-
-Concrete's Lean story has two different goals.
-
-1. **Prove the language/compiler in Lean.**
-   This means proving properties about the language definition and compiler pipeline itself: soundness, ownership/resource rules, effect/capability discipline, and preservation across internal compiler boundaries.
-2. **Prove selected Concrete programs in Lean.**
-   This means proving properties about particular user functions written in Concrete, through formalized Core semantics. The question is no longer "is the compiler coherent?" but "does this function satisfy its specification?"
-
-Examples of compiler/language proof targets:
-
-- the type system is sound
-- ownership and linearity rules are coherent
-- capability and trust rules are preserved
-- lowering from Core to SSA preserves meaning
-
-Examples of program proof targets:
-
-- this function returns the right result
-- this data-structure operation preserves its invariant
-- this parser round-trips with a formatter
-- this critical routine respects a specification
-
-The difference matters:
-
-- compiler/language proofs give **language trust**
-- program proofs give **program trust**
-
-Both matter, but they are not the same. One asks whether the language and compiler are trustworthy. The other asks whether a specific piece of code does what it should.
-
-The second goal is especially important because many projects can say their compiler is formally inspired. Far fewer can realistically say: here is a Concrete function, here is its formal Core meaning, and here is a Lean proof of a property about it.
-
-Concrete is aiming for both, in that order. See [docs/IDENTITY.md](docs/IDENTITY.md) for the project identity and [research/proving-concrete-functions-in-lean.md](research/proving-concrete-functions-in-lean.md) for the longer proof direction.
-
-One of the explicit long-term objectives is that a user should be able to write Concrete code, then write Lean proof code about that Concrete code through validated Core semantics.
-
-Conceptually, the workflow should eventually look like this:
-
-```con
-fn unwrap_or_zero(x: Option<Int>) -> Int {
-    match x {
-        Option#Some { value } => return value,
-        Option#None => return 0,
-    }
-}
-```
-
-```lean
--- exported or referenced from the compiler's validated Core / ProofCore artifact
-def unwrap_or_zero_core : ProofCoreFn := ...
-
-theorem unwrap_or_zero_correct (x : Option Int) :
-  unwrap_or_zero_sem x =
-    match x with
-    | some v => v
-    | none => 0 := by
-  cases x <;> rfl
-```
-
-The point is not to turn Concrete into Lean. The point is to let Concrete stay the executable low-level language while Lean 4 is used to prove properties about it, with validated Core as the bridge between them.
-
-## What Makes Concrete Different
-
-Compared to Lean itself, Concrete is a low-level programming language first, not a proof assistant. Lean 4 gives the theorem-proving environment; Concrete is the language meant to run low-level code without leaning on a GC-managed runtime model.
-
-Compared to Rust, C, Zig, Odin, and similar systems languages, Concrete is more explicitly centered on auditability, explicit authority/trust boundaries, and a compiler architecture shaped for formal reasoning. The intended feel is closer to Austral in clarity and explicitness, while still aiming for the low-level power and seriousness people expect from modern systems languages.
-
-Compared to verification-first languages and tools, Concrete is trying to remain a real low-level systems language with explicit FFI, layout, ownership, trust, and runtime concerns, while still keeping a credible path to proving selected programs.
-
-For critical systems, one of the most important future directions is not "more proof syntax." It is an explicit high-integrity subset/profile: tighter restrictions around allocation, authority, `Unsafe`, FFI, and later concurrency, paired with stronger evidence and traceability.
-
-For the full language specification, see [The Concrete Programming Language: Systems Programming for Formal Reasoning](https://federicocarrone.com/series/concrete/the-concrete-programming-language-systems-programming-for-formal-reasoning/).
+Lean 4 matters here because it gives Concrete a credible path to proving both compiler properties and selected user programs, without turning the implementation language itself into a proof assistant. The deeper version of that story lives in [docs/IDENTITY.md](docs/IDENTITY.md).
 
 ## Where Concrete Fits
 
@@ -168,6 +127,16 @@ If the full roadmap lands, the more interesting destination is not only "safer C
 This is the kind of software where Concrete should eventually offer something meaningfully different from Rust: not a broader ecosystem, but a stronger story around explicit authority, auditable trust boundaries, restricted profiles, and proof/evidence-friendly compilation.
 
 Concrete is a poor fit for software that mainly wins from ecosystem breadth, heavy async frameworks, or very large general-purpose application stacks. The goal is not "systems language for everything." The goal is "systems language for software that must be explicit enough to inspect, constrain, and trust."
+
+## Why Not Rust, Zig, or C?
+
+Because Concrete is trying to optimize for a different balance.
+
+- **Compared to Rust:** Concrete is aiming for a smaller surface, less abstraction machinery, more explicit authority, and a compiler architecture that is easier to audit and formalize.
+- **Compared to Zig:** Concrete shares the low-level explicitness, but pushes harder on ownership discipline, capability tracking, and proof-oriented structure.
+- **Compared to C:** Concrete wants the same kind of low-level reach without leaving ownership, effects, and trust boundaries to convention.
+
+The goal is not to out-feature those languages. The goal is to be unusually good at auditable, correctness-focused systems code.
 
 ## Doc Map
 
@@ -216,47 +185,10 @@ What is still clearly missing:
 
 ## Try It Now
 
-```
-struct Counter {
-    value: Int,
-}
-
-impl Counter {
-    fn inc(&mut self) {
-        self.value = self.value + 1;
-    }
-}
-
-fn read_and_count(path: String) with(File) -> Result<Int, String> {
-    let text: String = read_file(path)?;
-    let mut c: Counter = Counter { value: 0 };
-
-    if string_contains(text, "Concrete") {
-        c.inc();
-    }
-
-    return Ok(c.value);
-}
-
-fn main() with(Std) -> Int {
-    match read_and_count("README.md") {
-        Ok(n) => return n,
-        Err(_) => return 0,
-    }
-}
-```
-
 ```bash
 make build
 .lake/build/bin/concrete input.con -o output && ./output
 ```
-
-This example is small, but it already shows the core shape of the language:
-
-- explicit capabilities (`with(File)`)
-- explicit error propagation with `?`
-- plain structs and methods
-- no hidden effects in the pure-looking parts
 
 Linear values work today too. The compiler rejects programs that forget or reuse resources:
 
@@ -398,21 +330,7 @@ What a type-checked program guarantees:
 - **Resource safety**: linear values consumed exactly once, no leaks
 - **Effect correctness**: declared capabilities match actual effects
 
-## Why Concrete
-
-Concrete is built for code that must be inspectable and mechanically verified.
-
-### Why not Rust, Go, or Zig?
-
-Concrete is closest in spirit to Rust and Zig, but it is aiming at a different balance.
-
-- Compared to Rust: Concrete is trying to keep the surface language smaller and more explicit, with stricter rejection of hidden control flow, hidden dispatch, and trait-heavy abstraction styles.
-- Compared to Go: Concrete wants much stronger compile-time guarantees about ownership, effects, and low-level correctness.
-- Compared to Zig: Concrete shares the explicit low-level mindset, but pushes harder on static reasoning, linear ownership, and eventually formal verification.
-
-The goal is not to out-feature those languages. The goal is to be unusually good at auditable, correctness-focused systems code.
-
-### Clarity guarantees
+## Clarity Guarantees
 
 | Question | Concrete |
 |----------|----------|
@@ -423,7 +341,7 @@ The goal is not to out-feature those languages. The goal is to be unusually good
 | Can you tell if a value is forgotten? | Yes.linearity makes it a compile error |
 | Can you audit unsafe code? | Yes.`grep with(Unsafe)` at the function boundary |
 
-### Critical software
+## Critical Software
 
 | Need | Concrete |
 |------|----------|
@@ -436,7 +354,7 @@ The goal is not to out-feature those languages. The goal is to be unusually good
 | Ecosystem / libraries | Early stage |
 | Compiler maturity | Research stage |
 
-### LLM-friendly design
+## LLM-Friendly Design
 
 | LLM task | Concrete |
 |----------|----------|
@@ -447,10 +365,6 @@ The goal is not to out-feature those languages. The goal is to be unusually good
 | Verify no resource leaks | Compiler-enforced linearity |
 | Verify security boundaries | Capabilities propagate through call graph |
 | Fix compilation errors | One error at a time, explicit cause |
-
-## Current Status
-
-The compiler implements the core surface language and the full internal IR pipeline in Lean 4. All 663 tests pass in the main suite (184 stdlib), including 32 pass-level Lean tests, 44 report assertions, 46 golden tests, and 16 collections verified.
 
 ## Known Rough Edges
 
@@ -503,38 +417,6 @@ See [ROADMAP.md](ROADMAP.md) for active priorities and remaining work. What work
   - **I/O**: `print_int`, `print_bool`, `print_string`, `print_char`, `eprint_string`, `read_line` (require Console)
   - **File**: `read_file`, `write_file` (require File)
   - **System**: `get_env` (requires Env), `exit_process` (requires Process)
-
-### What this means today
-
-Concrete is already usable for small low-level programs that need:
-
-- explicit ownership and borrowing
-- explicit effect tracking
-- predictable control flow
-- direct FFI and raw-pointer escape hatches
-- inspectable internal stages (`--emit-core`, `--emit-ssa`)
-
-That already makes it more than a language-design experiment. The current implementation is moving toward a compiler and language that are specifically strong for auditable, correctness-sensitive systems code.
-
-It is not finished in the places that matter for broader adoption:
-
-- no verified kernel yet (17 initial theorems, full formalization future)
-- ABI/layout model documented and tested but no empirical cross-target validation yet
-- no optimizer/MLIR pipeline yet
-- concurrency designed but not yet implemented
-
-### Design Constraints
-
-Concrete is trying to stay strong by staying narrow.
-
-- no hidden control flow
-- no hidden allocation
-- no trait objects
-- no closures
-- no operator overloading
-- no implicit conversions
-
-Those constraints are part of the language design, not temporary omissions.
 
 ## High-Leverage Priorities
 
@@ -688,7 +570,7 @@ Requires [Lean 4](https://leanprover.github.io/lean4/doc/setup.html) (v4.28.0+) 
 
 ```bash
 make build    # or: lake build
-make test     # runs all 663 tests
+make test     # runs the full test suite
 make clean    # or: lake clean
 ```
 
@@ -713,7 +595,7 @@ Concrete/
   EmitSSA.lean   -- LLVM IR from SSA
   Pipeline.lean  -- Cacheable artifact types and composable pipeline runners
 Main.lean        -- Entry point
-lean_tests/      -- 353 test programs
+lean_tests/      -- end-to-end regression and integration corpus
 examples/        -- 66 example programs
 ```
 
@@ -723,7 +605,6 @@ examples/        -- 66 example programs
 - **Zig**: explicit allocator passing, `defer`
 - **[Koka](https://koka-lang.github.io/)** / Eff / Frank: algebraic effect systems
 - **Lean 4**: theorem prover for kernel formalization
-- **[Roc](https://www.roc-lang.org/)**: `!` syntax for impure functions
 - **Ada/SPARK**: formal verification in production systems
 
 ## Anti-Features
@@ -755,9 +636,9 @@ Things Concrete deliberately does not have:
 - Clear path to formal verification because the compiler is already implemented in Lean and now has explicit internal IR boundaries
 
 **Next steps:**
-- Phase F: capability and safety productization (ergonomics, reporting, authority wrappers, high-integrity profile)
-- Push kernel formalization and proof development in Lean
-- Backend plurality over SSA (C/Wasm, later MLIR)
+- Phase H: real-program pressure testing and performance validation
+- expand the formalization story beyond the current pure fragment
+- backend plurality over SSA (C/Wasm, later MLIR)
 
 ## License
 
