@@ -402,7 +402,14 @@ Primary surfaces:
 
 1. write multiple real programs in the 10k-30k line range, not only stress tests or compiler fixtures — **not started**
 2. choose programs with different pressure shapes: parser/validator/policy engine, systems utility, data-structure-heavy workload, networked or service-style component, one high-integrity-profile candidate, and at least one well-known interpreter/runtime workload (for example a MAL-style Lisp) — **not started**
-   - early implementation order should be explicit: start with the policy/rule engine, then build the MAL-style Lisp interpreter second so the phase gets both an identity-heavy workload and a known interpreter/runtime workload immediately
+   - the first implementation tranche should be explicit, not implicit:
+     1. policy/rule engine
+     2. MAL-style Lisp interpreter
+     3. JSON parser + validator
+     4. grep-like text search tool
+     5. bytecode VM / interpreter
+     6. artifact/update verifier
+   - this is a reordering, not a replacement: MAL moves up to second, but JSON / grep / VM / artifact-verifier remain part of the intended first wave
 3. use those programs to drive stdlib gap discovery, diagnostics pain points, package/workspace friction, report UX problems, and readability failures under sustained use — **not started**
 4. build comparison implementations in Rust, Zig, and C where appropriate so Concrete is evaluated against real neighboring languages rather than in isolation — **not started**
 5. compare results across correctness, runtime, memory, binary size, compile time, code size, trust/unsafe surface, and auditability rather than reducing the phase to raw speed charts — **not started**
@@ -412,6 +419,7 @@ Primary surfaces:
 Deliverables:
 - a small corpus of serious Concrete programs large enough to pressure-test the language honestly
 - a documented 20-program comparison portfolio with estimated size, workload mix, and Rust/Zig/C reference targets
+- a clearly stated first-wave implementation order, with the policy/rule engine first and the MAL-style Lisp interpreter second
 - comparative benchmark and evaluation baselines grounded in real workloads instead of micro-assumptions
 - cross-language comparison notes explaining not only speed but also correctness, code size, unsafe/trust surface, and auditability tradeoffs
 - at least one explicit interpreter/runtime comparison target grounded in a known external workload with tests (for example MAL-style Lisp), not only ad hoc internal programs
