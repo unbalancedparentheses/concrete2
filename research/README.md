@@ -37,6 +37,7 @@ If you want the highest-leverage current research first:
 5. [authority-budgets.md](authority-budgets.md) — package/subsystem authority limits and authority-aware dependency policy (`P0`, `Open`)
 6. [proof-evidence-artifacts.md](proof-evidence-artifacts.md) — tying reports, artifacts, reproducibility, and later proof references into one evidence story (`P0`, `Open`)
 7. [package-model.md](package-model.md) — what the eventual project/package model must decide (`P0`, `Open`)
+8. [trust-multipliers.md](trust-multipliers.md) — proof-backed reports, sandbox profiles, authority budgets, FFI envelopes, trust bundles, and showcase workloads (`P0`, `Open`)
 
 ## Language Decisions
 
@@ -73,6 +74,7 @@ If you want the highest-leverage current research first:
 - [formalization-roi.md](formalization-roi.md) — best order for proving Core, effects, ownership, and Core→SSA preservation (`P0`, `Open`)
 - [proving-concrete-functions-in-lean.md](proving-concrete-functions-in-lean.md) — how Concrete functions could be represented and proved in Lean 4 (`P0`, `Open`)
 - [proof-evidence-artifacts.md](proof-evidence-artifacts.md) — how reports, artifacts, proofs, and reproducibility could reinforce each other (`P0`, `Open`)
+- [trust-multipliers.md](trust-multipliers.md) — how authority, runtime, proof, and evidence work could combine into Concrete-specific differentiators (`P0`, `Open`)
 - [package-model.md](package-model.md) — package identity, dependency semantics, workspaces, and the boundary to authority-aware dependencies (`P0`, `Open`)
 - [file-summary-frontend.md](file-summary-frontend.md) — summary-based frontend direction and artifact boundaries (`P1`, `Adopted`)
 - [mlir-backend-shape.md](mlir-backend-shape.md) — where MLIR should sit if it earns its complexity later (`P1`, `Research`)
@@ -90,6 +92,7 @@ If you want the highest-leverage current research first:
 - [showcase-workloads.md](showcase-workloads.md) — real programs Concrete should eventually implement well, including showcase/stress-test targets (`P2`, `Open`)
 - [candidate-ideas.md](candidate-ideas.md) — Concrete-specific candidate compiler/language/tooling ideas (`P2`, `Research`)
 - [external-ideas.md](external-ideas.md) — useful ideas borrowed from other languages (`P2`, `Research`)
+- [trust-multipliers.md](trust-multipliers.md) — the strongest combined roadmap/research differentiators across auditability, proofs, runtime restrictions, and evidence (`P0`, `Open`)
 
 ## Placement Rule
 

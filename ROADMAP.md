@@ -310,6 +310,7 @@ Primary surfaces:
 - [docs/STDLIB.md](docs/STDLIB.md)
 - [research/high-integrity-profile.md](research/high-integrity-profile.md)
 - [research/no-std-freestanding.md](research/no-std-freestanding.md)
+- [research/trust-multipliers.md](research/trust-multipliers.md)
 - runtime-facing stdlib and FFI boundaries
 
 1. define the hosted vs freestanding model more explicitly
@@ -338,6 +339,10 @@ Primary surfaces:
 8. define execution profiles for high-integrity use
    - make room for profiles such as `no_alloc`, bounded-allocation, or other explicitly restricted execution modes
    - keep these profiles aligned with the actual runtime and allocator model instead of bolting them on later
+   - leave room for capability sandbox profiles that can later ban `FFI`, ambient authority, or unrestricted `trusted` in stricter builds
+9. make room for verified FFI envelopes and structural boundedness reporting
+   - treat foreign boundaries as explicit envelopes over ABI, ownership, destruction, and capability assumptions rather than only raw `extern fn`
+   - extend report work toward structural boundedness facts (recursion, allocation reachability, loop structure, blocking I/O reachability) before any deeper cost-analysis ambition
 
 Deliverables:
 - a documented hosted vs freestanding execution model
@@ -348,6 +353,8 @@ Deliverables:
 - C-compatible calling convention for `extern fn` with `#[repr(C)]` struct parameters (by-value, not pointer-only)
 - empirical cross-target FFI validation (compile + link + run on x86_64 and aarch64)
 - runtime-facing stdlib surfaces aligned with the chosen execution model
+- a clear direction for stricter sandbox/execution profiles (`no_alloc`, bounded allocation, no ambient authority, no unrestricted FFI/trusted)
+- a documented direction for verified FFI envelopes and structural boundedness reports as part of the execution-model story
 
 Exit criterion:
 Concrete has an explicit execution model that explains how programs start, allocate, fail, interact with the host, and cross runtime/FFI boundaries.
@@ -367,6 +374,7 @@ Primary surfaces:
 - [Concrete/Report.lean](/Users/unbalancedparen/projects/concrete/Concrete/Report.lean)
 - [research/authority-budgets.md](research/authority-budgets.md)
 - [research/capability-sandboxing.md](research/capability-sandboxing.md)
+- [research/trust-multipliers.md](research/trust-multipliers.md)
 - [research/unsafe-structure.md](research/unsafe-structure.md)
 
 1. improve capability and trust ergonomics
@@ -375,6 +383,7 @@ Primary surfaces:
    - extend the existing "why" traces into a more complete authority-flow story
    - make authority flow easier to follow across wrappers, modules, and trust boundaries
    - improve `trusted` / `Unsafe` visibility and cross-links in reports
+   - make room for later proof-backed authority reports that can distinguish checked facts from trusted/foreign assumptions
 3. add stronger patterns for explicit authority wrappers and capability aliases
    - keep open the later path to authority budgets that can limit what a module, package, or binary is allowed to require at all
 4. make safety features easier to use correctly in ordinary programs without weakening honesty
@@ -382,12 +391,14 @@ Primary surfaces:
 6. define the shape of a high-integrity safety profile
    - decide how `Unsafe`, `trusted`, FFI, and ambient authority should be constrained in stricter code profiles
    - make the restrictions explicit enough that they can later support audit-heavy or critical-system use
+   - keep the profile compatible with stricter capability sandbox modes introduced from the execution-model side
 
 Deliverables:
 - clearer user-facing capability and trust ergonomics in diagnostics/docs/reports
 - stronger report outputs building on the current capability/trust reports for authority flow, `trusted`, and `Unsafe`
 - explicit patterns for authority wrappers, aliases, and later authority-budget integration
 - a documented high-integrity safety profile direction covering `Unsafe`, `trusted`, FFI, and ambient authority
+- a documented direction for proof-backed authority reports, even if the first implementation remains report-first rather than proof-first
 
 Exit criterion:
 Concrete's capability and trust model is not only sound in principle, but also understandable, auditable, and practical for users.
@@ -434,6 +445,7 @@ For serious use, this phase is unavoidable. High-integrity or proof-oriented cod
 
 Primary surfaces:
 - [research/authority-budgets.md](research/authority-budgets.md)
+- [research/trust-multipliers.md](research/trust-multipliers.md)
 - project/package metadata
 - import resolution and project-root semantics
 - stdlib vs third-party package boundaries
@@ -456,6 +468,7 @@ Deliverables:
 - a documented workspace/multi-package model
 - dependency/package tooling and CI behavior aligned with the same model
 - an authority-budget path at package or subsystem boundaries
+- a credible path for package- or subsystem-level capability budgets to become enforceable build policy
 
 Exit criterion:
 Concrete has an explicit package/dependency model that supports real projects without relying on ad-hoc repo-local conventions, and it has a credible path to enforcing authority budgets at package or subsystem boundaries.
@@ -475,6 +488,7 @@ Primary surfaces:
 - [README.md](README.md)
 - [docs/README.md](docs/README.md)
 - [research/proof-evidence-artifacts.md](research/proof-evidence-artifacts.md)
+- [research/trust-multipliers.md](research/trust-multipliers.md)
 - CI config
 - release/build tooling
 - project/package metadata
@@ -502,6 +516,9 @@ Primary surfaces:
 7. make certification-style evidence and traceability practical where it fits Concrete's identity
    - tie source, reports, proofs, and build artifacts together clearly enough for high-integrity review workflows
    - prefer explicit evidence and traceability over process folklore
+8. make reproducible trust bundles practical if the evidence story earns it
+   - package source/build identity, reports, proof references, ABI/layout assumptions, and emitted-artifact fingerprints into one reviewable bundle
+   - keep this as an operational packaging layer over existing compiler facts rather than a parallel metadata universe
 
 Deliverables:
 - a documented release and compatibility policy for language, stdlib, reports, and tooling surfaces
@@ -510,6 +527,7 @@ Deliverables:
 - maintained baseline docs and editor/tooling expectations
 - an explicit bootstrap-trust and compatibility policy
 - a practical evidence/traceability story linking source, reports, proofs, and build artifacts
+- a documented direction for reproducible trust bundles as the operational form of the evidence story
 
 Exit criterion:
 Concrete is not only architecturally strong internally, but also operable, reproducible, documentable, and maintainable as a long-term project.
@@ -604,6 +622,15 @@ These are concrete, implementable improvements that emerged from the bug fixes a
    - a 240x135 grid of 64-instruction Brainfuck-like programs, randomly initialized, locally paired, concatenated, executed for bounded steps, then split back apart
    - use it as a serious end-to-end stress test for runtime/performance, collections/buffers, formatting/reporting, and later proof/audit ambitions
    - treat it as a showcase workload once the runtime, stdlib, and backend are mature enough rather than as immediate Phase C compiler work
+14. Develop proof-backed authority reports as a later extension of the current capability/trust reports.
+   - make it explicit which authority facts are compiler-checked, which depend on validated Core extraction, and which still rest on trusted/foreign assumptions
+   - keep the first versions narrow and high-signal rather than pretending to prove the whole world
+15. Move toward verified FFI envelopes once the runtime/ABI boundary is explicit.
+   - make foreign boundaries carry ABI, ownership, destruction, and capability assumptions more explicitly than raw `extern fn`
+   - prefer wrapper/envelope approaches over broad new surface syntax
+16. Treat reproducible trust bundles as the operational destination of the evidence story.
+   - package reports, proof references, build identity, and artifact fingerprints together for audit/review workflows
+   - only do this once the package/runtime/compatibility story is stable enough to make the bundle worth trusting
 
 ## Backend Work Order
 
@@ -656,6 +683,7 @@ These are not the immediate implementation queue, but they remain some of the hi
    - where cleanup/destruction happens
    - where `trusted` enters
    - what layout/ABI a type actually has
+   - later, structural boundedness facts and proof-backed authority summaries
 3. **A smaller trusted computing base**
    - keep shrinking compiler-known builtins
    - keep moving user-facing behavior into stdlib traits and ordinary code
@@ -666,6 +694,7 @@ These are not the immediate implementation queue, but they remain some of the hi
    - capability aliases
    - explicit authority wrappers
    - later, a cleaner hosted vs freestanding split
+   - later, stricter capability sandbox profiles and authority budgets
 
 For more on these longer-horizon themes, see:
 - [research/ten-x-improvements.md](research/ten-x-improvements.md)
