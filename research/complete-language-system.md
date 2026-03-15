@@ -47,11 +47,13 @@ The current SSA pipeline is already strong, but a complete language system often
 - possibly additional backends (for example MLIR)
 - stronger backend/debug info maturity
 - eventually incremental/disk caching if the artifact boundaries are ready
+- a clear target/platform support policy instead of implicit "whatever LLVM happens to tolerate"
 
 Concrete should be especially careful here:
 
 - performance work should not quietly outrun the audit/proof story
 - incremental compilation should sit on explicit artifacts and boring pass contracts, not on hidden compiler coupling
+- debug-info and observability quality should be treated as product surfaces, not accidental backend side effects
 
 ### 4. Formalization
 
@@ -102,6 +104,24 @@ Concrete's audit/proof identity eventually pushes beyond "compiler outputs are n
 
 This is not just a proof problem and not just a CI problem.
 It is part of what would make Concrete feel like a complete trust-oriented system instead of an interesting compiler.
+
+### 8. Bootstrap and self-hosting stance
+
+A complete language system also needs an explicit answer to whether it should:
+
+- remain implemented in Lean long term
+- become partially self-hosted in carefully chosen layers
+- or eventually try to self-host broadly
+
+This is not only an implementation question. It affects:
+
+- trust and bootstrap policy
+- proof leverage
+- maintenance cost
+- operational complexity
+- what the project is actually optimizing for
+
+Concrete should treat this as an explicit strategic choice, not as ambient pressure from "real languages self-host."
 
 ## Why This Matters
 

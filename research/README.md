@@ -67,6 +67,8 @@ If you want the highest-leverage current research first:
 - [stdlib-api-cleanup.md](stdlib-api-cleanup.md) — cleaning builtin-style names and ownership surprises out of the public stdlib surface (`P1`, `Open`)
 - [no-std-freestanding.md](no-std-freestanding.md) — future hosted vs freestanding / `no_std` split (`P1`, `Open`)
 - [concurrency.md](concurrency.md) — concurrency direction before async-style features (`P1`, `Open`)
+- [long-term-concurrency.md](long-term-concurrency.md) — layered long-term concurrency target: structured concurrency over threads first, evented I/O later (`P1`, `Open`)
+- [target-platform-policy.md](target-platform-policy.md) — support tiers, ABI promises, and what counts as a supported vs experimental target (`P1`, `Open`)
 - [execution-cost.md](execution-cost.md) — structural cost reports, bounded instruction counts, and WCET direction (`P1`, `Open`)
 - [pre-post-conditions.md](pre-post-conditions.md) — contracts/specification support and why it stays later/optional (`P1`, `Open`)
 
@@ -85,6 +87,7 @@ If you want the highest-leverage current research first:
 
 - [testing-strategy.md](testing-strategy.md) — gaps beyond current suites: fuzzing, property tests, report consistency, and differential testing (`P1`, `Open`)
 - [design-filters.md](design-filters.md) — feature-admission checklist and high-leverage design filters (`P1`, `Process`)
+- [optimization-policy.md](optimization-policy.md) — explicit optimization goals, non-goals, observability constraints, and regression expectations (`P1`, `Open`)
 
 ## Meta And Long-Horizon Direction
 

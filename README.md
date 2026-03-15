@@ -133,6 +133,7 @@ For the full language specification, see [The Concrete Programming Language: Sys
 - [research/README.md](research/README.md) — exploratory design notes
 - [research/ten-x-improvements.md](research/ten-x-improvements.md) — the biggest long-term multipliers for Concrete
 - [research/complete-language-system.md](research/complete-language-system.md) — what still separates a strong language/compiler from a complete system
+- [research/long-term-concurrency.md](research/long-term-concurrency.md) — layered long-term concurrency target: structured concurrency over threads first, evented I/O later
 
 ## Snapshot
 

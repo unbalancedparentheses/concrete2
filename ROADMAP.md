@@ -57,7 +57,7 @@ Still clearly not implemented:
 | **B** | Semantic cleanup | Done |
 | **C** | Tooling and stdlib hardening | Done |
 | **D** | Testing, backend, and trust multipliers | Done |
-| **E** | Runtime and execution model | Not started |
+| **E** | Runtime and execution model | In progress (items 1–5 done) |
 | **F** | Capability and safety productization | Not started |
 | **G** | Language surface and feature discipline | Not started |
 | **H** | Package and dependency ecosystem | Not started |
@@ -246,6 +246,12 @@ This phase begins the high-integrity profile direction:
 - analyzable concurrency constraints
 - a runtime story that can later support critical-system use without pretending every feature belongs everywhere
 
+Order inside this phase matters:
+
+- first settle the runtime contract (environment, failure, allocation, FFI/runtime boundary, ABI, target policy)
+- then align stdlib/profile/performance consequences with that contract
+- only then define the initial concurrency stance that sits on top of the settled runtime model
+
 Primary surfaces:
 - [docs/EXECUTION_MODEL.md](docs/EXECUTION_MODEL.md)
 - [docs/VALUE_MODEL.md](docs/VALUE_MODEL.md)
@@ -258,30 +264,32 @@ Primary surfaces:
 
 1. define the hosted vs freestanding model more explicitly — **done** — `docs/EXECUTION_MODEL.md` documents hosted-only target, stdlib layer classification (core/alloc/hosted), future freestanding direction
 2. make the runtime boundary explicit — **done** — `docs/EXECUTION_MODEL.md` documents startup/shutdown/failure model, external symbol dependencies, no runtime initialization, no panic/unwind
-3. define the memory / allocation strategy explicitly — **done** — `docs/EXECUTION_MODEL.md` documents libc malloc model, capability-tracked allocation, OOM gap, deallocation model, future directions
-4. define the concurrency and execution story deliberately — **not started**
-   - first target: hosted runtime, OS-thread-based concurrency, explicit `spawn`/`join`/channel APIs, move-first ownership across threads, no built-in `async`/`await` initially
-   - concurrency should be capability-gated and live in stdlib/runtime surfaces before any core-language syntax is considered
-5. tighten the FFI/runtime ownership boundary — **not started**
-6. close the FFI/ABI calling convention gaps (from Phase D Known Limitations) — **not started**
+3. define the memory / allocation strategy explicitly — **done** — `docs/EXECUTION_MODEL.md` documents libc malloc model, capability-tracked allocation, deallocation model; abort-on-OOM implemented in both compiler builtins (`__concrete_check_oom`) and stdlib wrappers (`std.alloc` heap_new/grow null-check + abort)
+4. tighten the FFI/runtime ownership boundary — **done** — `docs/EXECUTION_MODEL.md` documents capability model at FFI boundary, ownership tracking across FFI calls (by-value consumes, by-ref borrows, raw pointers untracked), known gaps and future directions
+5. close the FFI/ABI calling convention gaps (from Phase D Known Limitations) — **done** — `EmitSSA.lean` now detects extern fn calls and passes `#[repr(C)]` struct arguments by value (C ABI) instead of always by pointer; `externParamTyToLLVMTy` + `isReprCStruct` distinguish extern vs internal calling convention
+6. define target/platform support policy explicitly — **not started**
 7. make runtime-related stdlib surfaces reflect the chosen execution model — **not started**
 8. define execution profiles for high-integrity use — **not started**
-9. make room for verified FFI envelopes and structural boundedness reporting — **not started**
-10. define how runtime-sensitive performance validation should work — **not started**
+9. define how runtime-sensitive performance validation should work — **not started**
+10. make room for verified FFI envelopes and structural boundedness reporting — **not started**
+11. define the concurrency and execution story deliberately — **not started**
+   - first target: hosted runtime, OS-thread-based concurrency, explicit `spawn`/`join`/channel APIs, move-first ownership across threads, no built-in `async`/`await` initially
+   - concurrency should be capability-gated and live in stdlib/runtime surfaces before any core-language syntax is considered
 
 Deliverables:
 - a documented hosted vs freestanding execution model
 - a documented runtime boundary covering startup, shutdown, failure, and allocator expectations
 - an explicit memory/allocation model including no-alloc or bounded-allocation profile direction
-- a written concurrency/execution stance for the language/runtime
-- an explicit first-step concurrency model: hosted runtime, OS threads, spawn/join, channels, capability-gated concurrency, no built-in async initially
 - a documented ownership/capability story across FFI/runtime boundaries
 - C-compatible calling convention for `extern fn` with `#[repr(C)]` struct parameters (by-value, not pointer-only)
 - empirical cross-target FFI validation (compile + link + run on x86_64 and aarch64)
+- a documented target/platform policy covering supported architectures, target tiers, ABI assumptions, and what counts as supported vs experimental
 - runtime-facing stdlib surfaces aligned with the chosen execution model
 - a clear direction for stricter sandbox/execution profiles (`no_alloc`, bounded allocation, no ambient authority, no unrestricted FFI/trusted)
-- a documented direction for verified FFI envelopes and structural boundedness reports as part of the execution-model story
 - an explicit runtime-performance validation direction (profiling/perf baselines/regression expectations) aligned with the execution model
+- a documented direction for verified FFI envelopes and structural boundedness reports as part of the execution-model story
+- a written concurrency/execution stance for the language/runtime
+- an explicit first-step concurrency model: hosted runtime, OS threads, spawn/join, channels, capability-gated concurrency, no built-in async initially
 
 Exit criterion:
 Concrete has an explicit execution model that explains how programs start, allocate, fail, interact with the host, and cross runtime/FFI boundaries.
@@ -411,6 +419,9 @@ Primary surfaces:
 7. make certification-style evidence and traceability practical — **not started**
 8. make reproducible trust bundles practical if the evidence story earns it — **not started**
 9. define whether evidence authenticity and build/dependency trust need explicit operational policy — **not started**
+10. define debugging/observability expectations as a maintained product surface — **not started**
+11. define whether and how artifact serialization / disk-backed compiler artifacts become part of the supported workflow — **not started**
+12. define the long-term bootstrap/self-hosting stance explicitly — **not started**
 
 Deliverables:
 - a documented release and compatibility policy for language, stdlib, reports, and tooling surfaces
@@ -423,6 +434,9 @@ Deliverables:
 - a documented deprecation/migration policy for language, reports, and tooling surfaces
 - an explicit direction for editor/tooling support as a maintained product surface
 - an explicit operational trust policy for builds, dependencies, and evidence authenticity if trust bundles become real outputs
+- a documented debugging/observability direction covering debug info quality, stack traces, symbol fidelity, and inspection workflows
+- an explicit policy for stable serialized artifacts, disk caches, and incremental state if they become supported operational surfaces
+- an explicit bootstrap/self-hosting policy describing whether Concrete should remain Lean-hosted, partially self-host, or intentionally avoid self-hosting
 
 Exit criterion:
 Concrete is not only architecturally strong internally, but also operable, reproducible, documentable, and maintainable as a long-term project.
@@ -453,14 +467,16 @@ Primary surfaces:
 1. stabilize the first concrete thread/channel model introduced after Phase E — **not started**
 2. define explicit cross-thread transfer/shareability rules — **not started**
 3. make structured concurrency the default lifecycle model for concurrent work — **not started**
-4. integrate concurrency into capability reporting, boundedness reporting, and high-integrity profiles — **not started**
-5. define whether and how evented I/O fits under the same explicit runtime/capability contract — **not started**
-6. keep runtime plurality explicit and prevent fragmentation into incompatible concurrency cultures — **not started**
+4. define explicit cancellation and supervision structure for concurrent work — **not started**
+5. integrate concurrency into capability reporting, boundedness reporting, and high-integrity profiles — **not started**
+6. define whether and how evented I/O fits under the same explicit runtime/capability contract — **not started**
+7. keep runtime plurality explicit and prevent fragmentation into incompatible concurrency cultures — **not started**
 
 Deliverables:
 - a documented long-term concurrency contract for the language/runtime
 - a stable threads-plus-channels baseline with explicit ownership transfer rules
 - an explicit structured-concurrency lifecycle model for ordinary concurrent work
+- an explicit cancellation/supervision model for concurrent work that stays visible and scope-owned by default
 - a documented shareability/synchronization discipline for concurrent code
 - report/profile integration for concurrency, blocking, and runtime authority
 - a documented evented-I/O direction that fits the same explicit contract without becoming the default for all code
@@ -544,8 +560,14 @@ These are concrete, implementable improvements that emerged from the bug fixes a
    - only do this once the package/runtime/compatibility story is stable enough to make the bundle worth trusting
 18. Treat performance and incrementality as an explicit later maturity thread rather than ambient compiler folklore.
    - define profiling methodology and performance regression expectations
+   - define optimization policy explicitly enough that backend work has stated goals and stated non-goals
+   - treat debug-info / observability maturity as a real backend quality axis, not accidental fallout of codegen work
    - make optimization policy explicit enough that "faster" does not silently trade away auditability or proof-friendliness
    - only add artifact serialization and incremental compilation once the artifact boundaries and compatibility story are boring enough to sustain them
+19. Treat bootstrap/self-hosting as an explicit strategic choice, not ambient ambition.
+   - decide whether Concrete should remain Lean-hosted, partially self-host, or eventually self-host
+   - evaluate it against trust, proof leverage, implementation cost, and operational complexity rather than aesthetics
+   - do not let self-hosting aspirations outrun the proof/runtime/package/operational story
 
 ## Backend Work Order
 
@@ -617,6 +639,8 @@ For more on these longer-horizon themes, see:
 - [research/unsafe-structure.md](research/unsafe-structure.md)
 - [research/no-std-freestanding.md](research/no-std-freestanding.md)
 - [research/long-term-concurrency.md](research/long-term-concurrency.md)
+- [research/optimization-policy.md](research/optimization-policy.md)
+- [research/target-platform-policy.md](research/target-platform-policy.md)
 - [research/complete-language-system.md](research/complete-language-system.md)
 
 ## Status Legend

@@ -61,6 +61,39 @@ So the interesting target is not "Rust async but cleaner." The target is a small
 
 ## Main Direction
 
+### Concrete's Recommended First Model
+
+Concrete should begin with a deliberately small concurrency model:
+
+- hosted runtime first
+- OS threads as the primitive
+- explicit `spawn` / `join` / channel APIs in stdlib/runtime code
+- move-first ownership across thread boundaries
+- shared mutable state only through explicit synchronization types
+- concurrency guarded by explicit runtime/capability surfaces
+- no built-in `async` / `await` in the initial model
+
+This is the smallest model that is still useful for real systems work while staying aligned with Concrete's auditability and proof goals.
+
+Why this is the right first target:
+
+- it avoids hidden schedulers and hidden allocation
+- it keeps runtime behavior visible in ordinary code
+- it gives authority reporting something concrete to describe
+- it avoids overcommitting to a large executor/cancellation model too early
+- it leaves room for richer evented or async runtimes later, if they earn their complexity
+
+The initial concurrency surface should look like library/runtime API, not new language syntax.
+
+Examples of the intended shape:
+
+- `thread.spawn(f, arg)`
+- `thread.join(handle)`
+- `chan.send(ch, value)`
+- `chan.recv(ch)`
+
+The language should avoid introducing a dedicated `async` color until the runtime model, cancellation model, and ownership transfer rules are all stable enough to justify it.
+
 ### 1. Prefer structured concurrency
 
 Child tasks should belong to explicit scopes.
@@ -87,6 +120,8 @@ Useful concurrency-related capabilities/effects may include:
 - may use networking
 - may access shared synchronization primitives
 
+The first model should gate thread creation separately from ordinary blocking or network authority. "May create concurrent work" is an important boundary in its own right.
+
 The compiler should help distinguish these rather than collapsing them all into one generic async color.
 
 ### 3. Separate blocking, evented, and parallel work
@@ -111,6 +146,8 @@ Many languages flatten these into one concurrency story even when the operationa
 - parallel code ties progress to core-level execution and ownership transfer
 
 Concrete could do better by exposing these as separate semantics rather than one generic "async" color.
+
+The initial language/runtime stance should only standardize the threaded case. Evented I/O and richer scheduler models can come later, but they should be added as clearly different execution models rather than smuggled in under one universal abstraction.
 
 ### 4. Keep runtime access capability-based
 
@@ -140,6 +177,60 @@ Concrete should aim for:
 - no hidden task abandonment
 
 This fits the language's explicit resource-management story.
+
+Concrete should not try to solve cancellation in the first thread/channel model. It is better to start with explicit join/termination semantics and add cancellation only after the runtime boundary and cleanup rules are fully documented.
+
+## Recommended Staging
+
+### Stage 1: hosted thread model
+
+Define and implement:
+
+- hosted-only concurrency
+- OS-thread-based `spawn` / `join`
+- explicit channels
+- capability-gated thread creation
+- move-first cross-thread ownership
+
+Do not add yet:
+
+- built-in `async` / `await`
+- hidden executors
+- cancellation semantics in the core model
+- large synchronization surface area
+
+### Stage 2: shareability and synchronization discipline
+
+Add a small, explicit model for:
+
+- which types may cross thread boundaries
+- which types may be shared concurrently
+- minimal synchronization primitives (`mutex`, perhaps atomics) only if they fit ownership cleanly
+
+This may eventually look somewhat like `Send` / `Sync`, but it should be phrased in Concrete's own capability/ownership terms rather than copied mechanically.
+
+### Stage 3: audit/report integration
+
+Once concurrency exists, the compiler should be able to report:
+
+- where threads are spawned
+- where code may block or join
+- which modules require concurrency/runtime capabilities
+- where shared synchronization primitives appear
+- whether queues or worklists are bounded or unbounded
+
+This is one of the strongest reasons for Concrete to keep the model small and explicit.
+
+### Stage 4: richer runtime models only if earned
+
+Only after the thread model is well understood should Concrete evaluate:
+
+- evented I/O runtimes
+- explicit executor models
+- cancellation scopes
+- any eventual async syntax
+
+Those additions should be justified by clear needs, not by imitation.
 
 ## High-Leverage Areas Where Concrete Could Be Better
 
@@ -218,9 +309,11 @@ without forcing one abstraction over everything.
 Concrete should be very skeptical of:
 
 - copying Rust async/await directly
+- making concurrency a core-language syntax story before the runtime boundary is stable
 - macro-heavy concurrency APIs
 - runtime-specific library conventions baked into the whole ecosystem
 - implicit task detachment
+- hidden executors or scheduler choice
 - hidden allocation in concurrent APIs
 - a single abstraction that blurs blocking, evented, and parallel work
 
