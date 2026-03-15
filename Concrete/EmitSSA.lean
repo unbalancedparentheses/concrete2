@@ -202,6 +202,26 @@ private def ssaTySize (s : EmitSSAState) (ty : Ty) : Nat :=
 private def ssaTyAlign (s : EmitSSAState) (ty : Ty) : Nat :=
   Layout.tyAlign (layoutCtxOf s) ty
 
+/-- Flatten a repr(C) struct parameter for the platform C ABI.
+    ARM64 AAPCS: structs ≤ 8 bytes → one i64, 9-16 bytes → two i64s, > 16 bytes → ptr.
+    Returns a list of LLVM types that replace the single struct parameter. -/
+private def externABIFlattenParam (s : EmitSSAState) (ty : Ty) : List LLVMTy :=
+  if !isReprCStruct s ty then [paramTyToLLVMTy s ty]
+  else
+    let size := ssaTySize s ty
+    if size ≤ 8 then [.i64]
+    else if size ≤ 16 then [.i64, .i64]
+    else [.ptr]
+
+/-- Flatten a repr(C) struct return type for the platform C ABI.
+    ARM64: return structs ≤ 8 bytes in one i64, > 8 bytes as-is (handled by sret). -/
+private def externABIFlattenRet (s : EmitSSAState) (ty : Ty) : LLVMTy :=
+  if !isReprCStruct s ty then tyToLLVMTy s ty
+  else
+    let size := ssaTySize s ty
+    if size ≤ 8 then .i64
+    else tyToLLVMTy s ty
+
 /-- Extract the Vec element type from a type like `Vec<T>`, `&Vec<T>`, or `&mut Vec<T>`. -/
 private def vecElemTy : Ty → Option Ty
   | .generic "Vec" (t :: _) => some t
@@ -497,7 +517,53 @@ private def emitSInst (s : EmitSSAState) (inst : SInst) : EmitSSAState :=
         (s, ops ++ [(.ptr, .reg (strPtr.drop 1).toString)])
       | _ =>
       let valTy := tyToLLVMTy s a.ty
-      if paramTy == .ptr && valTy != .ptr then
+      -- Extern call with repr(C) struct: flatten to integer registers per C ABI.
+      -- ARM64 AAPCS: ≤ 8 bytes → load as i64, 9-16 bytes → load as two i64s.
+      if isExternCall && isReprCStruct s a.ty then
+        let flatTys := externABIFlattenParam s a.ty
+        if flatTys == [.i64] then
+          -- Small struct (≤ 8 bytes): ensure pointer, load as i64
+          let (s, ptrOp) := if isKnownPtr s a then (s, svalToOperand s a)
+            else
+              let (s, tmp) := freshLocal s
+              let tmpName := (tmp.drop 1).toString
+              let s := emitStructured s (.alloca tmpName valTy)
+              let s := emitStructured s (.store valTy (svalToOperand s a) (.reg tmpName))
+              (s, .reg tmpName)
+          let (s, flat) := freshLocal s
+          let flatName := (flat.drop 1).toString
+          let s := emitStructured s (.load flatName .i64 ptrOp)
+          (s, ops ++ [(.i64, .reg flatName)])
+        else if flatTys == [.i64, .i64] then
+          -- Medium struct (9-16 bytes): ensure pointer, load two i64 halves
+          let (s, ptrOp) := if isKnownPtr s a then (s, svalToOperand s a)
+            else
+              let (s, tmp) := freshLocal s
+              let tmpName := (tmp.drop 1).toString
+              let s := emitStructured s (.alloca tmpName valTy)
+              let s := emitStructured s (.store valTy (svalToOperand s a) (.reg tmpName))
+              (s, .reg tmpName)
+          let (s, lo) := freshLocal s
+          let loName := (lo.drop 1).toString
+          let s := emitStructured s (.load loName .i64 ptrOp)
+          -- GEP to byte offset 8 for the second i64
+          let (s, hiPtr) := freshLocal s
+          let hiPtrName := (hiPtr.drop 1).toString
+          let s := emitStructured s (.gep hiPtrName .i8 ptrOp [(.i32, .intLit 8)])
+          let (s, hi) := freshLocal s
+          let hiName := (hi.drop 1).toString
+          let s := emitStructured s (.load hiName .i64 (.reg hiPtrName))
+          (s, ops ++ [(.i64, .reg loName), (.i64, .reg hiName)])
+        else
+          -- Large struct (> 16 bytes): pass by pointer
+          if isKnownPtr s a then (s, ops ++ [(.ptr, svalToOperand s a)])
+          else
+            let (s, tmp) := freshLocal s
+            let tmpName := (tmp.drop 1).toString
+            let s := emitStructured s (.alloca tmpName valTy)
+            let s := emitStructured s (.store valTy (svalToOperand s a) (.reg tmpName))
+            (s, ops ++ [(.ptr, .reg tmpName)])
+      else if paramTy == .ptr && valTy != .ptr then
         -- If the register is already known to be a pointer (e.g. a struct
         -- parameter passed by ptr), pass it directly instead of
         -- alloca+store which would misuse the ptr as a struct value.
@@ -509,17 +575,12 @@ private def emitSInst (s : EmitSSAState) (inst : SInst) : EmitSSAState :=
           let s := emitStructured s (.alloca tmpName valTy)
           let s := emitStructured s (.store valTy (svalToOperand s a) (.reg tmpName))
           (s, ops ++ [(.ptr, .reg tmpName)])
-      else if isExternCall && isReprCStruct s a.ty && isKnownPtr s a then
-        -- Extern call with repr(C) struct arg that's currently a pointer:
-        -- load the value so it's passed by value per C ABI.
-        let (s, tmp) := freshLocal s
-        let tmpName := (tmp.drop 1).toString
-        let s := emitStructured s (.load tmpName valTy (svalToOperand s a))
-        (s, ops ++ [(valTy, .reg tmpName)])
       else
         (s, ops ++ [(paramTy, svalToOperand s a)])
     ) (s, ([] : List (LLVMTy × LLVMOperand)))
-    let retLLTy := tyToLLVMTy s retTy
+    -- For extern calls, flatten the return type per C ABI
+    let retLLTy := if isExternCall then externABIFlattenRet s retTy
+                   else tyToLLVMTy s retTy
     -- Indirect call: function is a parameter with fn type, a register loaded
     -- from memory (fnTypeRegs), or a %-prefixed register from the Lower pass.
     let isIndirect := fn.startsWith "%"
@@ -534,7 +595,22 @@ private def emitSInst (s : EmitSSAState) (inst : SInst) : EmitSSAState :=
       if fn.startsWith "%" then .reg (fn.drop 1).toString
       else .reg fn
     else .global linkerFn
-    emitStructured s (.call dst retLLTy callTarget argOps)
+    -- For extern calls returning small repr(C) structs: call returns i64,
+    -- store through pointer so downstream code sees the struct correctly.
+    -- Downstream code expects dst to be a pointer (pass-by-ptr for structs).
+    if isExternCall && isReprCStruct s retTy && retLLTy == .i64 then
+      let (s, flatRet) := freshLocal s
+      let flatRetName := (flatRet.drop 1).toString
+      let s := emitStructured s (.call flatRetName .i64 callTarget argOps)
+      -- Alloca struct, store i64 into it, use alloca as the dst register
+      match dst with
+      | some dstName =>
+        let s := emitStructured s (.alloca dstName (tyToLLVMTy s retTy))
+        let s := emitStructured s (.store .i64 (.reg flatRetName) (.reg dstName))
+        markPtr s dstName
+      | none => s
+    else
+      emitStructured s (.call dst retLLTy callTarget argOps)
   | .alloca dst ty =>
     let s := emitStructured s (.alloca dst (tyToLLVMTy s ty))
     markPtr s dst
@@ -754,12 +830,12 @@ private def emitExternDecls (s : EmitSSAState) (externFns : List (String × List
     "memset", "memcmp", "snprintf", "strtol"
   ]
   -- User extern function declarations (skip if already defined as a concrete function).
-  -- Uses externParamTyToLLVMTy so #[repr(C)] structs are passed by value per the C ABI.
+  -- Uses ABI flattening so #[repr(C)] structs are passed in registers per the C ABI.
   externFns.foldl (fun s (name, params, retTy) =>
     if builtinNames.contains name || definedFns.contains name then s
     else
-      let retLLTy := tyToLLVMTy s retTy
-      let paramTys := params.map fun (_, t) => externParamTyToLLVMTy s t
+      let retLLTy := externABIFlattenRet s retTy
+      let paramTys := params.foldl (fun acc (_, t) => acc ++ externABIFlattenParam s t) []
       emitDecl s { name := name, retTy := retLLTy, params := paramTys }
   ) s
 
@@ -1074,6 +1150,9 @@ def emitSSAProgram (modules : List SModule) (testMode : Bool := false) (moduleFi
   let s := { s with structDefs := allStructs, enumDefs := builtinEnums ++ allEnums }
   -- Header
   let s := { s with moduleHeader := s.moduleHeader.push "; Generated by Concrete compiler (SSA path)" }
+  -- Emit target triple so LLVM applies the correct ABI (struct passing, alignment, etc.)
+  let s := { s with moduleHeader := s.moduleHeader.push "target datalayout = \"e-m:o-i64:64-i128:128-n32:64-S128-Fn32\"" }
+  let s := { s with moduleHeader := s.moduleHeader.push "target triple = \"arm64-apple-macosx14.0.0\"" }
   -- Well-known struct types (String, Vec)
   let s := Layout.builtinTypeDefs.foldl (fun s line => emitTypeDef s line) s
   -- Mark builtins as emitted so user-defined versions don't duplicate them

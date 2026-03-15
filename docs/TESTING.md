@@ -49,6 +49,8 @@ Compile-and-run tests in `lean_tests/`:
 - **Abort (1)**: compile, run, expect crash
 - **Test flag (4)**: `--test` mode with pass/fail/mixed/submodule programs
 - **O2 (~90)**: same programs compiled with `-O2`, check same results
+- **Cross-target (~25)**: IR verified to compile for x86_64 via `clang --target`
+- **Performance (1)**: regression check against saved baseline (>20% warning)
 
 ### Stdlib Tests
 
@@ -205,8 +207,8 @@ After an `--affected` run, the summary shows which files triggered which section
 | Metric | Value |
 |--------|-------|
 | Pass-level tests | <1s (32 tests, no I/O) |
-| Fast suite (`--fast`) | ~25-35s (864 tests, parallel) |
-| Full suite (`--full`) | ~40-50s (864 tests, includes network) |
+| Fast suite (`--fast`) | ~25-35s (~870 tests, parallel) |
+| Full suite (`--full`) | ~40-50s (~890 tests, includes network, cross-target, perf) |
 | Cache hit rate | 26/57 compilations saved per fast run |
 | Compiler build | ~30-45s (`lake build`) |
 | lli-accelerated suite | ~12s (when `LLI_PATH` is set) |
@@ -352,13 +354,17 @@ All return 42 and are registered as `run_ok` + O2 differential tests.
 
 #### 3.5 Cross-target / ABI validation (done)
 
-`phase3_abi_interop.con` + `phase3_abi_interop.c` — verifies sizeof/offsetof agreement between Concrete and C for repr(C) structs (Point, Rect, Aligned64). Linked and run as a custom test in `run_tests.sh`.
+`phase3_abi_interop.con` + `phase3_abi_interop.c` — verifies sizeof/offsetof agreement and by-value struct passing between Concrete and C for repr(C) structs (Point, Rect, Aligned64). Linked and run as a custom test in `run_tests.sh`.
 
-Known limitation: by-value struct passing across FFI doesn't match C ABI on all platforms (small structs may be passed in registers by C but as aggregate by Concrete). Documented.
+Cross-target IR verification: 25 representative programs compiled to LLVM IR, then verified to compile for x86_64 via `clang -S --target=x86_64-unknown-linux-gnu`. Runs in `--full` mode.
+
+By-value struct FFI: small repr(C) structs (≤ 16 bytes) are flattened to integer registers per the ARM64 C ABI. Point (8 bytes) → one i64, Rect (16 bytes) → two i64s.
 
 #### 3.6 Performance regression gates (done)
 
-`test_perf.sh` — measures compile time, runtime (avg of 3), IR line count, and binary size for 7 representative programs. Supports `--save` (save baseline to `.perf-baseline`) and `--compare` (compare against baseline, warn on >20% regression).
+`test_perf.sh` — measures compile time, runtime (avg of 3), IR line count, and binary size for 7 representative programs. Supports `--save` (save baseline to `.perf-baseline`) and `--compare` (compare against baseline, warn on >20% regression). Integrated into `run_tests.sh --full` as an informational section.
+
+`test_mutation.sh` — 18 targeted source mutations across 7 compiler files (Layout, Shared, Check, CoreCheck, Lower, EmitSSA, SSAVerify). Each mutation is applied, the compiler rebuilt, and the test suite run. Surviving mutations indicate test gaps.
 
 #### 3.7 Failure-quality testing (done)
 

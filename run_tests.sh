@@ -235,7 +235,7 @@ resolve_affected_sections() {
 
 # Resolve which sections are active based on MODE
 case "$MODE" in
-    full)    SECTION="passlevel,positive,negative,testflag,report,codegen,O2,stdlib,collection" ;;
+    full)    SECTION="passlevel,positive,negative,testflag,report,codegen,O2,stdlib,collection,xtarget,perf" ;;
     fast)    SECTION="passlevel,positive,negative,testflag,report,codegen,O2,stdlib,collection" ;;
     stdlib)  SECTION="stdlib,collection" ;;
     stdlib-module) SECTION="stdlib" ;;
@@ -2422,6 +2422,86 @@ else
     SKIP=$((SKIP + 1))
 fi
 fi # end section: passlevel
+
+# === Cross-target IR verification (full mode only) ===
+if section_active xtarget; then
+echo ""
+echo "=== Cross-target IR verification (x86_64) ==="
+XTARGET_PASS=0
+XTARGET_FAIL=0
+run_cross_check() {
+    local file="$1"
+    local base
+    base=$(basename "$file" .con)
+    local llpath="$TMPDIR/xtarget_${base}.ll"
+    cached_output "$file" "--emit-llvm" > "$llpath" 2>/dev/null
+    if [ ! -s "$llpath" ]; then
+        return
+    fi
+    if clang -S --target=x86_64-unknown-linux-gnu -Wno-override-module "$llpath" -o /dev/null 2>/dev/null; then
+        XTARGET_PASS=$((XTARGET_PASS + 1))
+    else
+        echo "FAIL  $base — x86_64 IR compilation failed"
+        XTARGET_FAIL=$((XTARGET_FAIL + 1))
+        FAIL=$((FAIL + 1))
+    fi
+}
+# Representative subset: integration, stress, phase3, ABI, complex programs
+for f in \
+    "$TESTDIR/integration_stress_workload.con" \
+    "$TESTDIR/integration_compiler_stress.con" \
+    "$TESTDIR/integration_generic_pipeline.con" \
+    "$TESTDIR/integration_state_machine.con" \
+    "$TESTDIR/integration_recursive_structures.con" \
+    "$TESTDIR/integration_multi_file_calculator.con" \
+    "$TESTDIR/integration_type_registry.con" \
+    "$TESTDIR/integration_pipeline_processor.con" \
+    "$TESTDIR/phase3_expression_evaluator.con" \
+    "$TESTDIR/phase3_task_scheduler.con" \
+    "$TESTDIR/phase3_data_pipeline.con" \
+    "$TESTDIR/phase3_type_checker.con" \
+    "$TESTDIR/phase3_state_machine.con" \
+    "$TESTDIR/complex_linked_list.con" \
+    "$TESTDIR/complex_struct_methods.con" \
+    "$TESTDIR/complex_generic_container.con" \
+    "$TESTDIR/complex_state_machine.con" \
+    "$TESTDIR/complex_recursive_list.con" \
+    "$TESTDIR/complex_recursive_tree.con" \
+    "$TESTDIR/repr_c_basic.con" \
+    "$TESTDIR/vec_basic.con" \
+    "$TESTDIR/vec_stress_realloc.con" \
+    "$TESTDIR/trait_basic.con" \
+    "$TESTDIR/generic_chain.con" \
+    "$TESTDIR/test_recursive_fibonacci.con" \
+    ; do
+    [ -f "$f" ] && run_cross_check "$f"
+done
+PASS=$((PASS + XTARGET_PASS))
+echo "  $XTARGET_PASS/$((XTARGET_PASS + XTARGET_FAIL)) cross-target checks passed"
+fi # end section: xtarget
+
+# === Performance regression check (full mode only) ===
+if section_active perf; then
+echo ""
+echo "=== Performance regression check ==="
+if [ -f "test_perf.sh" ] && [ -f ".perf-baseline" ]; then
+    perf_output=$(bash test_perf.sh --compare 2>&1) || true
+    perf_warns=$(echo "$perf_output" | grep -c "WARNING" || true)
+    if [ "$perf_warns" -gt 0 ]; then
+        echo "  $perf_warns performance regression warning(s):"
+        echo "$perf_output" | grep "WARNING" | sed 's/^/    /'
+    else
+        echo "  No performance regressions detected"
+    fi
+    PASS=$((PASS + 1))
+elif [ -f "test_perf.sh" ] && [ ! -f ".perf-baseline" ]; then
+    echo "  SKIP: no .perf-baseline file (run 'bash test_perf.sh --save' to create)"
+    SKIP=$((SKIP + 1))
+else
+    echo "  SKIP: test_perf.sh not found"
+    SKIP=$((SKIP + 1))
+fi
+fi # end section: perf
 
 echo ""
 flush_jobs

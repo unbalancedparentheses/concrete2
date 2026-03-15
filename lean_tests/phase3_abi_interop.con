@@ -1,11 +1,6 @@
-// Phase 3 ABI interop test: verify Concrete and C agree on struct layout.
-// Calls C functions that report sizeof/offsetof and compare against
-// Concrete's sizeof::<T>().
-//
-// NOTE: by-value struct passing across FFI is not yet ABI-compatible
-// on all platforms (small structs may be passed in registers by C but
-// as aggregate by Concrete's LLVM IR). Sizes and offsets are tested here;
-// by-value passing is a known limitation tracked in docs/ABI.md.
+// Phase 3 ABI interop test: verify Concrete and C agree on struct layout
+// and by-value struct passing across FFI boundaries.
+// Calls C functions that report sizeof/offsetof and pass structs by value.
 
 #[repr(C)]
 struct Copy Point {
@@ -32,6 +27,10 @@ trusted extern fn c_sizeof_rect() -> i64;
 trusted extern fn c_sizeof_aligned64() -> i64;
 trusted extern fn c_offsetof_rect_size() -> i64;
 trusted extern fn c_offsetof_aligned64_c() -> i64;
+
+// By-value struct passing (tests C ABI register flattening)
+trusted extern fn c_sum_point(p: Point) -> i64;
+trusted extern fn c_sum_rect(r: Rect) -> i64;
 
 fn main() with(Std) -> i32 {
     // Check sizeof matches between C and Concrete
@@ -64,6 +63,20 @@ fn main() with(Std) -> i32 {
     // a(8) + b(4) + padding(4) = 16
     if c_off2 != 16 {
         return 5;
+    }
+
+    // Test by-value struct passing: Point (8 bytes, fits in 1 register)
+    let p: Point = Point { x: 10, y: 20 };
+    let sum_p: i64 = c_sum_point(p);
+    if sum_p != 30 {
+        return 6;
+    }
+
+    // Test by-value struct passing: Rect (16 bytes, fits in 2 registers)
+    let r: Rect = Rect { origin: Point { x: 1, y: 2 }, size: Point { x: 3, y: 4 } };
+    let sum_r: i64 = c_sum_rect(r);
+    if sum_r != 10 {
+        return 7;
     }
 
     return 42;

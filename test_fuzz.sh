@@ -161,6 +161,49 @@ gen_missing_return() {
 fn main() -> i32 { return foo(1); }'
 }
 
+gen_match_non_exhaustive() {
+    # Enum with 3 variants, match only handles 2
+    local names=("Color" "Shape" "Tag")
+    local name=${names[$((RANDOM % ${#names[@]}))]}
+    local v1="A"
+    local v2="B"
+    local v3="C"
+    # Randomly pick which variant to omit: 0=omit C, 1=omit B, 2=omit A
+    local omit=$((RANDOM % 3))
+    local body=""
+    if [ "$omit" -eq 0 ]; then
+        body="${name}#${v1} {} => { return 1; },
+        ${name}#${v2} {} => { return 2; },"
+    elif [ "$omit" -eq 1 ]; then
+        body="${name}#${v1} {} => { return 1; },
+        ${name}#${v3} {} => { return 3; },"
+    else
+        body="${name}#${v2} {} => { return 2; },
+        ${name}#${v3} {} => { return 3; },"
+    fi
+    cat << EOF
+enum Copy ${name} { ${v1} {}, ${v2} {}, ${v3} {} }
+fn check(c: ${name}) -> i32 {
+    match c {
+        ${body}
+    }
+}
+fn main() -> i32 { return check(${name}#${v1} {}); }
+EOF
+}
+
+gen_cap_missing() {
+    # Function without Alloc calling vec_new (needs Alloc capability)
+    cat << 'EOF'
+fn compute() -> i32 {
+    let mut v: Vec<i32> = vec_new::<i32>();
+    vec_free::<i32>(v);
+    return 0;
+}
+fn main() -> i32 { return compute(); }
+EOF
+}
+
 # --- Valid Program Generators ---
 
 # gen_valid_* functions write program to $1 (file) and echo expected value
@@ -221,6 +264,128 @@ fn main() -> i32 {
 }
 EOF
     echo $(( (x + y) * z ))
+}
+
+gen_valid_enum_match() {
+    local file="$1"
+    # Pick random variant count: 2 or 3
+    local nvar=$(( RANDOM % 2 + 2 ))
+    local val_a=$((RANDOM % 50 + 1))
+    local val_b=$((RANDOM % 50 + 1))
+    local val_c=$((RANDOM % 50 + 1))
+    # Pick which variant to construct: 0..nvar-1
+    local pick=$((RANDOM % nvar))
+
+    if [ "$nvar" -eq 2 ]; then
+        cat > "$file" << EOF
+enum Copy Shape { Circle { r: i32 }, Rect { w: i32 } }
+fn eval(s: Shape) -> i32 {
+    match s {
+        Shape#Circle { r } => { return r * 3; },
+        Shape#Rect { w } => { return w + 10; },
+    }
+}
+EOF
+        if [ "$pick" -eq 0 ]; then
+            echo "fn main() -> i32 { return eval(Shape#Circle { r: ${val_a} }); }" >> "$file"
+            echo $(( val_a * 3 ))
+        else
+            echo "fn main() -> i32 { return eval(Shape#Rect { w: ${val_b} }); }" >> "$file"
+            echo $(( val_b + 10 ))
+        fi
+    else
+        cat > "$file" << EOF
+enum Copy Color { Red {}, Green { val: i32 }, Blue { val: i32 } }
+fn score(c: Color) -> i32 {
+    match c {
+        Color#Red {} => { return ${val_a}; },
+        Color#Green { val } => { return val; },
+        Color#Blue { val } => { return val * 2; },
+    }
+}
+EOF
+        if [ "$pick" -eq 0 ]; then
+            echo "fn main() -> i32 { return score(Color#Red {}); }" >> "$file"
+            echo "$val_a"
+        elif [ "$pick" -eq 1 ]; then
+            echo "fn main() -> i32 { return score(Color#Green { val: ${val_b} }); }" >> "$file"
+            echo "$val_b"
+        else
+            echo "fn main() -> i32 { return score(Color#Blue { val: ${val_c} }); }" >> "$file"
+            echo $(( val_c * 2 ))
+        fi
+    fi
+}
+
+gen_valid_nested_struct() {
+    local file="$1"
+    local a=$((RANDOM % 50 + 1))
+    local b=$((RANDOM % 50 + 1))
+    local c=$((RANDOM % 50 + 1))
+    cat > "$file" << EOF
+struct Copy Inner { a: i32, b: i32 }
+struct Copy Outer { inner: Inner, c: i32 }
+fn total(o: Outer) -> i32 { return o.inner.a + o.inner.b + o.c; }
+fn main() -> i32 {
+    let o: Outer = Outer { inner: Inner { a: ${a}, b: ${b} }, c: ${c} };
+    return total(o);
+}
+EOF
+    echo $(( a + b + c ))
+}
+
+gen_valid_fn_ptr() {
+    local file="$1"
+    local x=$((RANDOM % 50 + 1))
+    # Randomly pick which function to apply
+    local pick=$((RANDOM % 2))
+    local mult=$((RANDOM % 5 + 2))
+    local add=$((RANDOM % 20 + 1))
+    cat > "$file" << EOF
+fn times(x: i32) -> i32 { return x * ${mult}; }
+fn plus(x: i32) -> i32 { return x + ${add}; }
+fn apply(f: fn(i32) -> i32, x: i32) -> i32 { return f(x); }
+EOF
+    if [ "$pick" -eq 0 ]; then
+        echo "fn main() -> i32 { return apply(times, ${x}); }" >> "$file"
+        echo $(( x * mult ))
+    else
+        echo "fn main() -> i32 { return apply(plus, ${x}); }" >> "$file"
+        echo $(( x + add ))
+    fi
+}
+
+gen_valid_borrow() {
+    local file="$1"
+    local x=$((RANDOM % 100 + 1))
+    local y=$((RANDOM % 100 + 1))
+    cat > "$file" << EOF
+struct Copy Pair { x: i32, y: i32 }
+fn sum_ref(p: &Pair) -> i32 { return p.x + p.y; }
+fn main() -> i32 {
+    let p: Pair = Pair { x: ${x}, y: ${y} };
+    return sum_ref(&p);
+}
+EOF
+    echo $(( x + y ))
+}
+
+gen_valid_defer() {
+    local file="$1"
+    local val=$((RANDOM % 100 + 1))
+    cat > "$file" << EOF
+struct Resource { value: i32 }
+impl Destroy for Resource {
+    fn destroy(&self) {}
+}
+fn compute() -> i32 {
+    let mut r: Resource = Resource { value: ${val} };
+    defer destroy(r);
+    return r.value;
+}
+fn main() -> i32 { return compute(); }
+EOF
+    echo "$val"
 }
 
 # --- Run helpers ---
@@ -303,10 +468,12 @@ run_typecheck_fuzz() {
     echo "=== Typechecker Stress ($ITERATIONS iterations) ==="
     for (( iter=0; iter<ITERATIONS; iter++ )); do
         local file="$TMPDIR_FUZZ/typecheck_$iter.con"
-        case $((RANDOM % 3)) in
+        case $((RANDOM % 5)) in
             0) gen_type_mismatch > "$file" ;;
             1) gen_undefined_var > "$file" ;;
             2) gen_missing_return > "$file" ;;
+            3) gen_match_non_exhaustive > "$file" ;;
+            4) gen_cap_missing > "$file" ;;
         esac
         # These should fail to compile but must not crash
         run_crash_check "$file" "typecheck iter $iter"
@@ -319,11 +486,16 @@ run_valid_fuzz() {
     for (( iter=0; iter<ITERATIONS; iter++ )); do
         local file="$TMPDIR_FUZZ/valid_$iter.con"
         local expected
-        case $((RANDOM % 4)) in
+        case $((RANDOM % 9)) in
             0) expected=$(gen_valid_arithmetic "$file") ;;
             1) expected=$(gen_valid_conditional "$file") ;;
             2) expected=$(gen_valid_loop "$file") ;;
             3) expected=$(gen_valid_nested "$file") ;;
+            4) expected=$(gen_valid_enum_match "$file") ;;
+            5) expected=$(gen_valid_nested_struct "$file") ;;
+            6) expected=$(gen_valid_fn_ptr "$file") ;;
+            7) expected=$(gen_valid_borrow "$file") ;;
+            8) expected=$(gen_valid_defer "$file") ;;
         esac
         run_valid_check "$file" "$expected" "valid iter $iter"
     done

@@ -144,7 +144,7 @@ This representation is **not stable** and should not be relied upon across FFI b
 
 Aggregate types (structs, enums, arrays, `String`, `Vec`, `HashMap`) are passed by pointer in **internal** Concrete function calls. The caller allocates stack space, stores the value, and passes a pointer. Scalar types (integers, floats, bool, char) are passed by value.
 
-**Exception for extern fn:** `#[repr(C)]` struct arguments in `extern fn` calls are passed by value, following the standard C ABI. The compiler detects extern fn calls at emission time and loads the struct value from its pointer before passing it. This ensures interoperability with C code that expects by-value struct parameters.
+**Exception for extern fn:** `#[repr(C)]` struct arguments in `extern fn` calls are flattened to integer registers per the platform C ABI. On ARM64: structs ≤ 8 bytes are passed as one `i64`, structs 9-16 bytes as two `i64`s, structs > 16 bytes by pointer. Return values from extern fns follow the same flattening for ≤ 8 byte structs. This matches clang's calling convention and enables correct interoperability with C code.
 
 Non-repr(C) structs in extern fn calls still use pointer passing (but non-repr(C) structs are rejected in extern fn signatures by the FFI type checker, so this case should not arise in practice).
 
@@ -154,11 +154,9 @@ The pass-by-pointer set for internal calls is **not stable** — which types are
 
 These are not hypothetical — they are current implementation gaps that affect real FFI usage:
 
-1. **No empirical cross-platform validation.** The layout model is verified by Lean unit tests that check compile-time constants. There are no tests that compile to LLVM IR on multiple targets and verify the emitted signatures or struct layout at runtime. The "layout model assumptions" table below documents what the model assumes, not what has been empirically validated on each target.
+1. **No empirical cross-platform validation.** Layout is verified by Lean unit tests and by cross-target IR compilation (25 programs verified against x86_64 via clang). There are no runtime cross-platform tests — only same-platform Concrete↔C interop validation (sizeof/offsetof/by-value passing on ARM64).
 
-2. **No return-by-value for structs.** Struct return values also go through pointer indirection (sret), diverging from the C ABI where small structs may be returned in registers.
-
-These limitations are acceptable for the current stage. By-value `#[repr(C)]` struct passing in `extern fn` is implemented, but return-by-value and cross-platform empirical validation remain as future work.
+2. **Struct return flattening limited to ≤ 8 bytes.** Extern fns returning repr(C) structs ≤ 8 bytes have the return value correctly flattened to i64. Larger struct returns still use pointer indirection, which may not match the C ABI for 9-16 byte structs.
 
 ## What We Intentionally Do Not Promise
 
@@ -169,7 +167,7 @@ These limitations are acceptable for the current stage. By-value `#[repr(C)]` st
 5. **32-bit support.** Not planned for the near term.
 6. **Cross-language enum interop.** Enums are not FFI-safe.
 7. **Stable pass-by-pointer set.** Which types are passed by pointer is an optimization decision.
-8. **C-ABI by-value struct return.** Struct return values use pointer indirection (sret). C callers expecting register-returned small structs should use a pointer-based wrapper.
+8. **C-ABI by-value struct return > 8 bytes.** Struct return values > 8 bytes use pointer indirection. C callers expecting register-returned structs of 9-16 bytes should use a pointer-based wrapper.
 
 ## Layout Verification
 
