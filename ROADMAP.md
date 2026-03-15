@@ -401,7 +401,8 @@ Primary surfaces:
 - package/workspace and report workflows as they exist at that point
 
 1. write multiple real programs in the 10k-30k line range, not only stress tests or compiler fixtures — **not started**
-2. choose programs with different pressure shapes: parser/validator/policy engine, systems utility, data-structure-heavy workload, networked or service-style component, and one high-integrity-profile candidate — **not started**
+2. choose programs with different pressure shapes: parser/validator/policy engine, systems utility, data-structure-heavy workload, networked or service-style component, one high-integrity-profile candidate, and at least one well-known interpreter/runtime workload (for example a MAL-style Lisp) — **not started**
+   - early implementation order should be explicit: start with the policy/rule engine, then build the MAL-style Lisp interpreter second so the phase gets both an identity-heavy workload and a known interpreter/runtime workload immediately
 3. use those programs to drive stdlib gap discovery, diagnostics pain points, package/workspace friction, report UX problems, and readability failures under sustained use — **not started**
 4. build comparison implementations in Rust, Zig, and C where appropriate so Concrete is evaluated against real neighboring languages rather than in isolation — **not started**
 5. compare results across correctness, runtime, memory, binary size, compile time, code size, trust/unsafe surface, and auditability rather than reducing the phase to raw speed charts — **not started**
@@ -413,6 +414,7 @@ Deliverables:
 - a documented 20-program comparison portfolio with estimated size, workload mix, and Rust/Zig/C reference targets
 - comparative benchmark and evaluation baselines grounded in real workloads instead of micro-assumptions
 - cross-language comparison notes explaining not only speed but also correctness, code size, unsafe/trust surface, and auditability tradeoffs
+- at least one explicit interpreter/runtime comparison target grounded in a known external workload with tests (for example MAL-style Lisp), not only ad hoc internal programs
 - a concrete list of stdlib, diagnostics, package, and backend issues discovered only through sustained use
 - proof that Concrete remains readable and auditable at larger scales, or an explicit record of where it fails
 - a clearer basis for the package, adoption, and operational phases because they are now shaped by real code rather than only design intent

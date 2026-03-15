@@ -78,7 +78,7 @@ This mix gives both:
 | 17 | artifact/update verifier | Identity | hashes, signatures, policy, critical path | 15k-25k | Rust, Zig, C |
 | 18 | command authorization gatekeeper | Identity | narrow authority, audit reports, control boundary | 10k-20k | Rust, Zig, C |
 | 19 | protocol/message validator | Identity | bounded parsing, correctness, high-integrity fit | 10k-20k | Rust, Zig, C |
-| 20 | audited FFI wrapper subsystem | Identity | explicit trust boundary, wrapper discipline | 10k-15k | Rust, Zig, C |
+| 20 | MAL-style Lisp interpreter | Identity | known staged interpreter workload with tests; reader/evaluator/env pressure | 15k-25k | Rust, Zig, C |
 
 ## How To Use Existing Work
 
@@ -122,7 +122,7 @@ These are the strongest programs for showing why Concrete should exist at all:
 2. artifact/update verifier
 3. command authorization gatekeeper
 4. protocol/message validator
-5. audited FFI wrapper subsystem
+5. MAL-style Lisp interpreter
 
 These are especially important because they stress:
 
@@ -131,6 +131,7 @@ These are especially important because they stress:
 - high-integrity profile direction
 - report usefulness
 - reviewability under real code size
+- interpreter/runtime pressure against a known external target rather than only internal examples
 
 ## Suggested Rollout Order
 
@@ -138,24 +139,57 @@ The full 20-program suite should not be attempted in arbitrary order.
 
 The best early sequence is:
 
+1. policy/rule engine
+2. MAL-style Lisp interpreter
+3. JSON parser + validator
+4. grep-like text search tool
+5. bytecode VM / interpreter
+6. artifact/update verifier
+7. small TCP/HTTP service
+8. file tree scanner + policy checker
+9. inverted index / search core
+10. protocol/message validator
+
+This is a reordering, not a replacement. The original early comparison-heavy set is still intentionally present:
+
 1. JSON parser + validator
 2. grep-like text search tool
 3. bytecode VM / interpreter
 4. policy/rule engine
 5. artifact/update verifier
-6. small TCP/HTTP service
-7. file tree scanner + policy checker
-8. inverted index / search core
-9. protocol/message validator
-10. audited FFI wrapper subsystem
+6. MAL-style Lisp interpreter
+
+The only change is implementation order: the identity-heavy policy engine now comes first and MAL moves up to second, while the JSON / grep / VM / artifact-verifier workloads remain part of the same early Phase H tranche.
 
 This gives:
 
+- an immediate identity-heavy workload
+- an immediate known interpreter/runtime workload
 - parser-heavy pressure
 - text-heavy pressure
 - control-flow/runtime pressure
 - identity-heavy pressure
-- networking and FFI pressure
+- networking pressure
+- one known interpreter target with an external staged test shape
+
+## Interpreter Target
+
+The recommended interpreter/runtime workload is **MAL-style Lisp**, not an ad hoc Scheme or Common Lisp subset.
+
+For implementation order, MAL should be the **second Phase H program**, immediately after the first policy/rule-engine workload.
+
+Why MAL is the right target:
+
+- it is a known staged implementation target rather than a vague "tiny Lisp"
+- it comes with a strong external comparison story and existing test material
+- it stresses reader/parser, AST/value representation, environments, evaluation, errors, and REPL/runtime structure
+- it is large enough to reveal real language/runtime ergonomics without exploding into full-language implementation sprawl
+
+The intent is not to turn Phase H into "build a scripting language ecosystem." The intent is to include one recognizable interpreter workload that:
+
+- is interesting outside the Concrete project
+- has clear Rust/Zig/C comparison value
+- reveals how Concrete handles dynamic-language runtime structure, allocation pressure, and sustained module growth
 
 before filling out the rest of the portfolio.
 
