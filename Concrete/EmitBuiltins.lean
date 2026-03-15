@@ -14,6 +14,27 @@ This module is imported by EmitSSA to provide the builtin library that gets
 linked into every compiled program. -/
 
 -- ============================================================
+-- OOM check helper
+-- ============================================================
+
+/-- Generate the `__concrete_check_oom` helper: takes a pointer, aborts if null, returns it.
+    Called after every malloc/realloc in builtins so OOM produces a clean abort
+    instead of a null-pointer dereference. LLVM will inline this at -O1+. -/
+def getOOMCheckFn : LLVMFnDef :=
+  { name := "__concrete_check_oom"
+    retTy := .ptr
+    params := [("p", .ptr)]
+    blocks := [
+      ⟨"entry", [
+        .binOp "is_null" .icmpEq .ptr (.reg "p") .null_
+      ], .condBr (.reg "is_null") "oom" "ok"⟩,
+      ⟨"oom", [
+        .call none .void (.global "abort") []
+      ], .unreachable⟩,
+      ⟨"ok", [], .ret .ptr (some (.reg "p"))⟩
+    ] }
+
+-- ============================================================
 -- String and conversion builtins
 -- ============================================================
 
@@ -66,7 +87,8 @@ def getBuiltinFns : List LLVMFnDef × List LLVMGlobal × List LLVMFnDecl :=
       strGep "b_len_ptr" "b" 1,
       .load "b_len" .i64 (.reg "b_len_ptr"),
       .binOp "total_len" .add .i64 (.reg "a_len") (.reg "b_len"),
-      .call (some "buf") .ptr (.global "malloc") [(.i64, .reg "total_len")],
+      .call (some "buf.raw") .ptr (.global "malloc") [(.i64, .reg "total_len")],
+      .call (some "buf") .ptr (.global "__concrete_check_oom") [(.ptr, .reg "buf.raw")],
       dynMemcpy "buf" "a_data" "a_len",
       .gep "dst" .i8 (.reg "buf") [(.i64, .reg "a_len")],
       dynMemcpy "dst" "b_data" "b_len",
@@ -97,7 +119,8 @@ def getBuiltinFns : List LLVMFnDef × List LLVMGlobal × List LLVMFnDecl :=
       .call (some "e_min") .i64 (.global "llvm.smin.i64") [(.i64, .reg "e_clamped"), (.i64, .reg "len.ss")],
       .call (some "e_final") .i64 (.global "llvm.smax.i64") [(.i64, .reg "e_min"), (.i64, .reg "s_min")],
       .binOp "slice_len" .sub .i64 (.reg "e_final") (.reg "s_min"),
-      .call (some "slice_buf") .ptr (.global "malloc") [(.i64, .reg "slice_len")],
+      .call (some "slice_buf.raw") .ptr (.global "malloc") [(.i64, .reg "slice_len")],
+      .call (some "slice_buf") .ptr (.global "__concrete_check_oom") [(.ptr, .reg "slice_buf.raw")],
       strGep "data_ptr.ss" "s" 0,
       .load "data.ss" .ptr (.reg "data_ptr.ss"),
       .gep "src" .i8 (.reg "data.ss") [(.i64, .reg "s_min")],
@@ -205,7 +228,8 @@ def getBuiltinFns : List LLVMFnDef × List LLVMGlobal × List LLVMFnDecl :=
   -- -------------------------------------------------------
   let intToStrBlocks : List LLVMBlock := [
     ⟨"entry", [
-      .call (some "buf") .ptr (.global "malloc") [(.i64, .intLit 32)],
+      .call (some "buf.raw") .ptr (.global "malloc") [(.i64, .intLit 32)],
+      .call (some "buf") .ptr (.global "__concrete_check_oom") [(.ptr, .reg "buf.raw")],
       .gep "fmt_its" (.array 4 .i8) (.global ".fmt_ld") [(.i64, .intLit 0), (.i64, .intLit 0)],
       .callVariadic (some "written") .i32 (.global "snprintf") [(.ptr, .reg "buf"), (.i64, .intLit 32), (.ptr, .reg "fmt_its"), (.i64, .reg "n")] [.ptr, .i64, .ptr],
       .cast "wext" .sext .i32 (.reg "written") .i64,
@@ -231,7 +255,8 @@ def getBuiltinFns : List LLVMFnDef × List LLVMGlobal × List LLVMFnDecl :=
       strGep "sti_len_ptr" "s" 1,
       .load "sti_len" .i64 (.reg "sti_len_ptr"),
       .binOp "sti_buf_sz" .add .i64 (.reg "sti_len") (.intLit 1),
-      .call (some "sti_buf") .ptr (.global "malloc") [(.i64, .reg "sti_buf_sz")],
+      .call (some "sti_buf.raw") .ptr (.global "malloc") [(.i64, .reg "sti_buf_sz")],
+      .call (some "sti_buf") .ptr (.global "__concrete_check_oom") [(.ptr, .reg "sti_buf.raw")],
       dynMemcpy "sti_buf" "sti_data" "sti_len",
       .gep "sti_null" .i8 (.reg "sti_buf") [(.i64, .reg "sti_len")],
       .store .i8 (.intLit 0) (.reg "sti_null"),
@@ -268,7 +293,8 @@ def getBuiltinFns : List LLVMFnDef × List LLVMGlobal × List LLVMFnDecl :=
   let boolToStrBlocks : List LLVMBlock := [
     ⟨"entry", [], .condBr (.reg "b") "bts_true" "bts_false"⟩,
     ⟨"bts_true", [
-      .call (some "tbuf") .ptr (.global "malloc") [(.i64, .intLit 4)],
+      .call (some "tbuf.raw") .ptr (.global "malloc") [(.i64, .intLit 4)],
+      .call (some "tbuf") .ptr (.global "__concrete_check_oom") [(.ptr, .reg "tbuf.raw")],
       .memcpy (.reg "tbuf") (.global ".str_true") 4,
       .alloca "tres" strTy,
       strGep "td" "tres" 0,
@@ -280,7 +306,8 @@ def getBuiltinFns : List LLVMFnDef × List LLVMGlobal × List LLVMFnDecl :=
       .load "tresult" strTy (.reg "tres")
     ], .ret strTy (some (.reg "tresult"))⟩,
     ⟨"bts_false", [
-      .call (some "fbuf") .ptr (.global "malloc") [(.i64, .intLit 5)],
+      .call (some "fbuf.raw") .ptr (.global "malloc") [(.i64, .intLit 5)],
+      .call (some "fbuf") .ptr (.global "__concrete_check_oom") [(.ptr, .reg "fbuf.raw")],
       .memcpy (.reg "fbuf") (.global ".str_false") 5,
       .alloca "fres" strTy,
       strGep "fd" "fres" 0,
@@ -299,7 +326,8 @@ def getBuiltinFns : List LLVMFnDef × List LLVMGlobal × List LLVMFnDecl :=
   -- -------------------------------------------------------
   let floatToStrBlocks : List LLVMBlock := [
     ⟨"entry", [
-      .call (some "fbuf.fts") .ptr (.global "malloc") [(.i64, .intLit 64)],
+      .call (some "fbuf.fts.raw") .ptr (.global "malloc") [(.i64, .intLit 64)],
+      .call (some "fbuf.fts") .ptr (.global "__concrete_check_oom") [(.ptr, .reg "fbuf.fts.raw")],
       .gep "fmt.fts" (.array 3 .i8) (.global ".fmt_f") [(.i64, .intLit 0), (.i64, .intLit 0)],
       .callVariadic (some "written.fts") .i32 (.global "snprintf") [(.ptr, .reg "fbuf.fts"), (.i64, .intLit 64), (.ptr, .reg "fmt.fts"), (.double, .reg "f")] [.ptr, .i64, .ptr],
       .cast "wext.fts" .sext .i32 (.reg "written.fts") .i64,
@@ -371,7 +399,8 @@ def getBuiltinFns : List LLVMFnDef × List LLVMGlobal × List LLVMFnDecl :=
       .binOp "tr_empty" .icmpUge .i64 (.reg "tr_left") (.reg "tr_right")
     ], .condBr (.reg "tr_empty") "trim_empty" "trim_copy"⟩,
     ⟨"trim_empty", [
-      .call (some "te_buf") .ptr (.global "malloc") [(.i64, .intLit 1)],
+      .call (some "te_buf.raw") .ptr (.global "malloc") [(.i64, .intLit 1)],
+      .call (some "te_buf") .ptr (.global "__concrete_check_oom") [(.ptr, .reg "te_buf.raw")],
       .alloca "te_res" strTy,
       strGep "te_d" "te_res" 0,
       .store .ptr (.reg "te_buf") (.reg "te_d"),
@@ -383,7 +412,8 @@ def getBuiltinFns : List LLVMFnDef × List LLVMGlobal × List LLVMFnDecl :=
     ], .ret strTy (some (.reg "te_result"))⟩,
     ⟨"trim_copy", [
       .binOp "tc_len" .sub .i64 (.reg "tr_right") (.reg "tr_left"),
-      .call (some "tc_buf") .ptr (.global "malloc") [(.i64, .reg "tc_len")],
+      .call (some "tc_buf.raw") .ptr (.global "malloc") [(.i64, .reg "tc_len")],
+      .call (some "tc_buf") .ptr (.global "__concrete_check_oom") [(.ptr, .reg "tc_buf.raw")],
       .gep "tc_src" .i8 (.reg "st_data") [(.i64, .reg "tr_left")],
       dynMemcpy "tc_buf" "tc_src" "tc_len",
       .alloca "tc_res" strTy,
@@ -419,6 +449,7 @@ def getBuiltinFns : List LLVMFnDef × List LLVMGlobal × List LLVMFnDecl :=
   ]
 
   let fns : List LLVMFnDef := [
+    getOOMCheckFn,
     fnStringLength, fnDropString, fnStringConcat, fnStringSlice, fnStringCharAt,
     fnStringContains, fnStringEq, fnIntToString, fnStringToInt, fnBoolToString,
     fnFloatToString, fnStringTrim
@@ -477,7 +508,8 @@ def getVecBuiltinFns (specs : List (Nat × Nat)) : List LLVMFnDef :=
     -- vec_new_{es}() -> %struct.Vec
     let vecNewBlocks : List LLVMBlock := [
       ⟨"entry", [
-        .call (some "buf") .ptr (.global "malloc") [(.i64, .intLit ib)],
+        .call (some "buf.raw") .ptr (.global "malloc") [(.i64, .intLit ib)],
+        .call (some "buf") .ptr (.global "__concrete_check_oom") [(.ptr, .reg "buf.raw")],
         .alloca "v" vecTy,
         vecGep "bp" "v" 0, .store .ptr (.reg "buf") (.reg "bp"),
         vecGep "lp" "v" 1, .store .i64 (.intLit 0) (.reg "lp"),
@@ -496,7 +528,8 @@ def getVecBuiltinFns (specs : List (Nat × Nat)) : List LLVMFnDef :=
         .binOp "newcap" .mul .i64 (.reg "cap") (.intLit 2),
         .binOp "newbytes" .mul .i64 (.reg "newcap") (.intLit es),
         vecGep "dp" "vec" 0, .load "data" .ptr (.reg "dp"),
-        .call (some "newbuf") .ptr (.global "realloc") [(.ptr, .reg "data"), (.i64, .reg "newbytes")],
+        .call (some "newbuf.raw") .ptr (.global "realloc") [(.ptr, .reg "data"), (.i64, .reg "newbytes")],
+        .call (some "newbuf") .ptr (.global "__concrete_check_oom") [(.ptr, .reg "newbuf.raw")],
         .store .ptr (.reg "newbuf") (.reg "dp"),
         .store .i64 (.reg "newcap") (.reg "cp")
       ], .br "store"⟩,
