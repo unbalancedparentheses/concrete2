@@ -19,7 +19,7 @@ The test system has four layers, ordered by cost:
 
 `PipelineTest.lean` exercises individual compiler passes directly on in-memory source strings. No subprocess, no clang, no file I/O.
 
-Current coverage (28 tests):
+Current coverage (32 tests):
 - **Parse (4)**: valid programs parse, malformed input rejected
 - **Frontend (8)**: parse→check→elaborate on structs/enums/traits/generics, type errors and undefined vars rejected
 - **Monomorphize (2)**: generic and trait programs monomorphize
@@ -28,6 +28,7 @@ Current coverage (28 tests):
 - **SSA Cleanup (2)**: `ssaCleanupProgram` runs without crash, double-cleanup is idempotent
 - **SSA Emit (2)**: `emitSSAProgram` produces LLVM IR, test mode works
 - **Full pipeline (5)**: source → LLVM IR for 5 program shapes
+- **Layout/ABI (4)**: scalar sizes/alignments, builtin type sizes, repr(C) struct layout with field offsets, pass-by-pointer decisions
 
 Run: `lake build pipeline-test && .lake/build/bin/pipeline-test`
 
@@ -51,21 +52,26 @@ Compile-and-run tests in `lean_tests/`:
 
 ### Stdlib Tests
 
-189 `#[test]` functions across all stdlib modules, compiled through the real compiler path. Module-targeted testing via `--stdlib-module <name>`.
+188 `#[test]` functions across all stdlib modules, compiled through the real compiler path. Module-targeted testing via `--stdlib-module <name>`.
 
 15 collection modules verified for test presence and correctness.
 
 ### Integration / Stress Tests
 
-Named real-program corpus:
+Named real-program corpus (13 tests):
 - `integration_text_processing.con` — string/parsing pipeline
 - `integration_data_structures.con` — struct/enum data flow
 - `integration_error_handling.con` — Result/Option error chains
+- `integration_collection_pipeline.con` — multi-collection pipeline with Vec, generics, enums, allocation patterns
 - `integration_generic_pipeline.con` (~150 lines) — 5-layer borrow chain, trait dispatch, complex enum matching
 - `integration_state_machine.con` (~170 lines) — 4-state × 5-command nested match, struct construction in match arms
 - `integration_compiler_stress.con` (~200 lines) — deep generic instantiation, multi-trait dispatch, nested enum matching
 - `integration_multi_module.con` + `helper.con` — cross-module types, traits, and enum matching
 - `integration_recursive_structures.con` (~200 lines) — recursive expression evaluation, stack-based computation
+- `integration_multi_file_calculator.con` (~200 lines) — 3-module RPN evaluator with trait dispatch
+- `integration_type_registry.con` (~248 lines) — 3-module catalog with validation/metrics
+- `integration_pipeline_processor.con` (~223 lines) — 4-module data transformation
+- `integration_stress_workload.con` (~280 lines) — 4-module bytecode interpreter with 11-variant enum
 
 ## Coverage Matrix
 
@@ -87,7 +93,8 @@ Named real-program corpus:
 | Runtime behavior | E2E | ~180 | All positive run_ok tests |
 | -O2 regressions | E2E | 5 | `struct_loop_*`, `struct_nested_*`, `struct_if_else_*` |
 | Report accuracy | Artifact | 44 | `report_integration.con`, `report_*_check.con` |
-| Stdlib correctness | Stdlib | 189 | All `#[test]` functions |
+| Layout/ABI | Pass-level | 4 | Scalar sizes, builtin sizes, repr(C), pass-by-ptr |
+| Stdlib correctness | Stdlib | 188 | All `#[test]` functions |
 | Collection integrity | Stdlib | 15 modules | Collection verification section |
 | Multi-module | E2E | 22 | `module_*`, `summary_*`, `module_file/` |
 | Formatter | Property | 4 | `fmt_parse_roundtrip.con`, golden tests |
@@ -106,6 +113,7 @@ Named real-program corpus:
 | `ssa_verify` | 3 | ~5 | Moderate |
 | `ssa_cleanup` | 2 | ~5 | Moderate |
 | `emit_ssa` | 2 | ~180 | Strong |
+| `layout` | 4 | ~10 | Strong |
 | `report` | — | 44 | Strong |
 | `format` | — | 4 | Light |
 
@@ -191,13 +199,13 @@ After an `--affected` run, the summary shows which files triggered which section
 
 ## Compile-Time and Suite-Time Baselines
 
-### Current baselines (as of Phase D1)
+### Current baselines (as of Phase D hardening)
 
 | Metric | Value |
 |--------|-------|
-| Pass-level tests | <1s (28 tests, no I/O) |
-| Fast suite (`--fast`) | ~25-35s (635 tests, parallel) |
-| Full suite (`--full`) | ~40-50s (637 tests, includes network) |
+| Pass-level tests | <1s (32 tests, no I/O) |
+| Fast suite (`--fast`) | ~25-35s (663 tests, parallel) |
+| Full suite (`--full`) | ~40-50s (665 tests, includes network) |
 | Cache hit rate | 26/57 compilations saved per fast run |
 | Compiler build | ~30-45s (`lake build`) |
 | lli-accelerated suite | ~12s (when `LLI_PATH` is set) |
@@ -242,6 +250,7 @@ Report test groups use `compile_gate()` to skip downstream assertions when compi
 | `--O2` | O2 regressions | After lowering changes |
 | `--codegen` | codegen + O2 | After backend changes |
 | `--report` | report | After report changes |
+| `--manifest` | none (list only) | List all tests with categories |
 
 ## Recommended Verification Flow
 

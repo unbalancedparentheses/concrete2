@@ -784,6 +784,6 @@ multi_module = false
 #   owner_pass = inferred from filename prefix
 #   needs_clang = true (for run_ok/run_err), false (for check_*)
 #
-# The complete manifest can be generated from run_tests.sh via:
+# A complete listing can be generated via:
 #   ./run_tests.sh --manifest
 # ============================================================

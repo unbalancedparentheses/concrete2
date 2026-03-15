@@ -29,6 +29,7 @@ Modes:
   --report            Only --report output verification tests
   --affected          Auto-detect changed files (git diff) and run affected tests
   --affected FILES    Run tests affected by specific files (comma-separated)
+  --manifest          List all test files with categories (no execution)
 
 Options:
   -j N                Override parallelism (default: number of CPU cores)
@@ -94,11 +95,59 @@ while [ $# -gt 0 ]; do
             fi
             ;;
         --filter)  FILTER="$2"; shift 2 ;;
+        --manifest) MODE="manifest"; shift ;;
         -j)        TEST_JOBS="$2"; shift 2 ;;
         -h|--help) usage ;;
         *)         echo "Unknown option: $1"; usage ;;
     esac
 done
+
+# --- Manifest mode: list all tests and exit ---
+if [ "$MODE" = "manifest" ]; then
+    echo "# Concrete test manifest (auto-generated)"
+    echo "# category | kind | file"
+    echo "#"
+    # Pass-level Lean tests
+    echo "passlevel | lean_pass | PipelineTest.lean (32 tests)"
+    # Positive tests (run_ok)
+    for f in lean_tests/*.con; do
+        base=$(basename "$f" .con)
+        if [[ "$base" == error_* ]]; then
+            echo "negative | run_err | $f"
+        elif [[ "$base" == regress_* ]]; then
+            echo "regression | run_ok | $f"
+        elif [[ "$base" == integration_* ]]; then
+            echo "integration | run_ok | $f"
+        elif [[ "$base" == hardening_* ]]; then
+            echo "hardening | run_ok | $f"
+        elif [[ "$base" == bug_* ]]; then
+            echo "regression | run_ok | $f"
+        elif [[ "$base" == codegen_* ]]; then
+            echo "codegen | check_codegen | $f"
+        elif [[ "$base" == report_* ]]; then
+            echo "report | check_report | $f"
+        elif [[ "$base" == fmt_* ]]; then
+            echo "property | run_ok | $f"
+        elif [[ "$base" == abort_* ]]; then
+            echo "unit | run_abort | $f"
+        else
+            echo "unit | run_ok | $f"
+        fi
+    done
+    # Multi-module tests
+    for f in lean_tests/module_*/main.con; do
+        [ -f "$f" ] && echo "multi_module | run_ok | $f"
+    done
+    # Stdlib modules
+    for f in lean_tests/stdlib_*.con; do
+        echo "stdlib | run_test | $f"
+    done
+    # Fuzz
+    [ -f test_parser_fuzz.sh ] && echo "fuzz | fuzz | test_parser_fuzz.sh"
+    echo "#"
+    echo "# Total .con files: $(ls lean_tests/*.con 2>/dev/null | wc -l | tr -d ' ')"
+    exit 0
+fi
 
 # --- Dependency-aware section resolution for --affected mode ---
 # Reads test_dep_map.toml to map changed files to test sections.
