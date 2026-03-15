@@ -118,11 +118,11 @@ Still clearly not implemented:
   - **i32 literal type mismatch** (`Elab.lean`): integer literals defaulted to i64 in binary ops with i32 operands, producing LLVM type mismatches. Fix: re-elaborate literal with concrete operand type when types differ.
   - **Cross-module &mut borrow consumed as move** (`Check.lean`): function call argument processing consumed variables even for reference parameters. Fix: skip consumption for `&T`/`&mut T` parameter types.
   - Bug documentation in `docs/bugs/`, regression tests in `lean_tests/bug_*.con`.
-- **Compiler hardening pass** (items 1–5 from hardening roadmap):
-  - **Silent fallback warnings**: `dbg_trace` warnings added to Layout.lean (fieldOffset, tySize, tyAlign, tyToLLVM, isPassByPtr), Lower.lean (lookupStructFields, fieldIndex, variantIndex, variantFields, structNameFromTy, lowerModule), and EmitSSA.lean (tyToLLVMTy) — 12 silent default paths now produce visible warnings during compilation.
-  - **Integer literal inference**: vec_push/vec_set/vec_get now propagate element type and Int hints to arguments (matching Check.lean behavior). Cast expressions confirmed to intentionally NOT propagate target type as hint.
+- **Compiler hardening pass** (items 1–5 from hardening roadmap — audit and warning instrumentation, not full error handling):
+  - **Silent fallback warnings**: `dbg_trace` warnings added to 12 silent default paths in Layout.lean, Lower.lean, and EmitSSA.lean. Fallback values (0, 8, false, "i64", [], dropped functions) are still returned — warnings make them visible but do not prevent wrong code.
+  - **Integer literal inference**: vec_push/vec_set/vec_get now propagate element type and Int hints to arguments (matching Check.lean behavior). Cast expressions confirmed to intentionally NOT propagate target type as hint. Common paths covered; full systematic coverage not proven.
   - **Borrow edge cases**: tested multiple shared borrows of same variable, sequential &mut borrows, borrow of struct field, multiple &mut of different variables.
-  - **Cross-module enums**: verified working — enum propagation already includes imports via `allEnums`. Trait definitions confirmed as not importable (known language limitation, not a bug).
+  - **Cross-module enums and traits**: verified working. Type alias cross-module propagation not yet tested.
   - Hardening tests in `lean_tests/hardening_*.con`.
 - 662 tests pass (189 stdlib), including 32 pass-level Lean tests, 44 report assertions, 46 golden tests, 19 integration/regression/hardening tests, and 16 collections verified.
 
@@ -557,20 +557,24 @@ Concrete is not only architecturally strong internally, but also operable, repro
 
 These are concrete, implementable improvements that emerged from the bug fixes and integration testing in Phase D. They are not full phases — they are targeted hardening work that should land before Phase E begins, because Phase E (runtime/execution model) depends on the compiler being trustworthy for the patterns it already claims to support.
 
-1. ~~**Audit Layout.lean for silent fallback defaults**~~ **Done.**
-   - `dbg_trace` warnings added to 6 silent default paths in Layout.lean (`fieldOffset`, `tySize`, `tyAlign`, `tyToLLVM`, `isPassByPtr`). All fallback paths now produce visible warnings during compilation.
+1. **Audit Layout.lean for silent fallback defaults** — **partially done (warnings only, not errors).**
+   - `dbg_trace` warnings added to 6 silent default paths in Layout.lean (`fieldOffset`, `tySize`, `tyAlign`, `tyToLLVM`, `isPassByPtr`). Fallback paths now produce visible warnings during compilation.
+   - **Remaining**: the fallback values (0, 8, false, "i64") are still returned after warning. The original deliverable was "no silent zero-defaults; all fallback paths either unreachable or explicitly error." That has not been achieved — these paths still produce wrong code, they just log first.
 
-2. ~~**Systematic integer type inference hardening**~~ **Done.**
-   - Audited all `elabExpr` cases. Vec intrinsics (`vec_push`, `vec_set`, `vec_get`) now propagate element type and `Int` hints to arguments, matching `Check.lean` behavior. Cast expressions confirmed to intentionally NOT propagate target type as hint (doing so broke stdlib). Function call args, struct field init, let bindings, comparisons, and return statements already propagate hints correctly. Test: `hardening_int_literal_inference.con`.
+2. **Systematic integer type inference hardening** — **materially improved, not fully systematic.**
+   - Vec intrinsics (`vec_push`, `vec_set`, `vec_get`) now propagate element type and `Int` hints to arguments, matching `Check.lean` behavior. Cast expressions confirmed to intentionally NOT propagate target type as hint (doing so broke stdlib). Function call args, struct field init, let bindings, comparisons, and return statements already propagate hints correctly. Test: `hardening_int_literal_inference.con`.
+   - **Remaining**: the elaborator's "default to i64, hope the hint propagates" strategy is still fragile for expression forms where the hint doesn't reach. The audit covered the most common paths but did not prove full coverage.
 
 3. ~~**Linearity/borrow checker audit**~~ **Done.**
    - Tested: multiple shared borrows of same variable (`add_refs(&val, &val)` — works), borrow of struct field (`&s.x` — works), multiple `&mut` of different variables (works), sequential `&mut` borrows of same variable (works). Identified `borrowCount` as dead code and borrow-of-return-value as undocumented but not buggy. Test: `hardening_borrow_edge_cases.con`.
 
-4. ~~**Cross-module type propagation completeness**~~ **Done.**
+4. **Cross-module type propagation completeness** — **partially done (enums and traits, not aliases).**
    - Enums: already propagate correctly — `allEnums` includes `imports.enums` in Elab.lean. Trait definitions: confirmed not importable across modules (known language limitation, not a bug — dispatch works through imported wrapper functions). Tests: `hardening_cross_module_enum.con`, `hardening_cross_module_trait.con`.
+   - **Remaining**: type alias resolution across modules was part of the original deliverable but has no test and was not verified.
 
-5. ~~**Backend error reporting instead of silent wrong code**~~ **Done.**
+5. **Backend error reporting instead of silent wrong code** — **partially done (warnings only, not errors).**
    - `dbg_trace` warnings added to 6 silent default paths in Lower.lean (`lookupStructFields`, `fieldIndex`, `variantIndex`, `variantFields`, `structNameFromTy`, `lowerModule`) and 1 in EmitSSA.lean (`tyToLLVMTy`). Failed function lowering (previously silently dropped) now warns.
+   - **Remaining**: the original deliverable was "compile errors instead of silent wrong code." The fallback values ([], 0, "", dropped functions) are still returned after warning. Wrong LLVM IR can still be emitted.
 
 ### Later
 
@@ -693,9 +697,9 @@ For more on these longer-horizon themes, see:
 - mutable aggregate lowering can still be too backend-sensitive if promoted storage is incomplete or SSA invariants are too weak
 - tooling/caching work can regress into ad-hoc duplication if artifacts stop being explicit and reusable
 - formalization has started (`Concrete/Proof.lean` with 17 theorems over a pure Core fragment), but the proof scope is still narrow — structs, enums, match, and recursive functions are not yet covered, and source-to-Core traceability is not yet implemented
-- **silent fallback defaults in Layout/Lower**: `Layout.fieldOffset` returns 0 when a struct is not found instead of raising an error. Other layout helpers may have similar silent defaults. These mask bugs until runtime instead of failing at compile time. A systematic audit of silent fallbacks in Layout.lean and Lower.lean would prevent future classes of offset/size bugs.
-- **type coercion gaps in elaboration**: the i32 literal fix handles the most common case (binary ops), but similar mismatches may lurk in other expression forms — function arguments, array indexing, struct field initialization, comparison operators. The elaborator's strategy of "default to i64, hope the hint propagates" is fragile for any context where the hint doesn't reach.
-- **linearity checker is over-conservative for borrows**: the borrow-move fix addressed bare identifier consumption, but the checker still has a one-borrow-at-a-time model that may be more restrictive than necessary for safe patterns (e.g., two `&` borrows of the same variable should be fine)
+- **silent fallback defaults in Layout/Lower**: `dbg_trace` warnings now cover 12 fallback paths, but the fallback values (0, 8, false, "i64", [], dropped functions) are still returned. These still produce wrong code — they just log first. Converting warnings to hard errors requires making Layout/Lower functions monadic or propagating `Option`/`Except` through the pipeline.
+- **type coercion gaps in elaboration**: vec intrinsic hint propagation and the binary op fix cover the most common cases, but the elaborator's "default to i64, hope the hint propagates" strategy is still fragile for expression forms where the hint doesn't reach. Not all paths have been proven covered.
+- **linearity checker**: borrow edge cases (multiple shared borrows, sequential &mut, borrow-of-field) are tested and work. `borrowCount` is dead code. The checker is less over-conservative than initially feared, but hasn't been formally audited.
 
 ## Current Design Constraints
 
@@ -711,4 +715,4 @@ These are current choices that should continue constraining future work unless e
 
 ## Summary
 
-Concrete has a complete compiler pipeline, a real stdlib (33 modules, 16 collections), 662 tests (189 stdlib), a fully structured LLVM backend, audit reports, explicit artifact boundaries (`ValidatedCore`, `ProofCore`), a documented SSA backend contract, a first Lean 4 proof workflow (17 theorems over a pure Core fragment), a 19-program integration/regression/hardening corpus, and bug tracking in `docs/bugs/`. Phases A–D are done. Three compiler bugs (cross-module struct offsets, i32 literal type inference, borrow-move confusion) were found and fixed during Phase D integration testing. A compiler-hardening pass (Layout audit, integer inference, borrow checker, cross-module types, backend error reporting) is complete — all 5 items done before Phase E (runtime and execution model).
+Concrete has a complete compiler pipeline, a real stdlib (33 modules, 16 collections), 662 tests (189 stdlib), a fully structured LLVM backend, audit reports, explicit artifact boundaries (`ValidatedCore`, `ProofCore`), a documented SSA backend contract, a first Lean 4 proof workflow (17 theorems over a pure Core fragment), a 19-program integration/regression/hardening corpus, and bug tracking in `docs/bugs/`. Phases A–D are done. Three compiler bugs (cross-module struct offsets, i32 literal type inference, borrow-move confusion) were found and fixed during Phase D integration testing. A compiler-hardening pass (Layout audit, integer inference, borrow checker, cross-module types, backend error reporting) added warning instrumentation and tests but did not yet replace silent fallbacks with compile errors — items 1, 2, 4, and 5 have remaining work before Phase E (runtime and execution model).

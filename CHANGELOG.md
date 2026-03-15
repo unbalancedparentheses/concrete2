@@ -10,17 +10,16 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
-### Compiler hardening pass complete (all 5 items)
+### Compiler hardening pass — audit, warnings, and tests (items 1–5 partially done)
 
-Targeted hardening between Phase D and Phase E — 12 silent fallback paths now warn, integer inference covers vec intrinsics, borrow edge cases tested, cross-module enum/trait propagation verified:
+Warning instrumentation and edge-case testing for the 5 hardening items. This is an audit pass, not a completion — silent fallback values are still returned after logging, and not all deliverables are met.
 
-- **Layout.lean silent defaults**: `dbg_trace` warnings on 6 fallback paths (fieldOffset, tySize, tyAlign, tyToLLVM, isPassByPtr)
-- **Integer type inference**: vec_push/vec_set/vec_get now propagate element type hints; cast confirmed correct (no hint propagation)
-- **Borrow checker audit**: multiple shared borrows, sequential &mut, borrow-of-field all verified working
-- **Cross-module types**: enums propagate correctly; trait definitions not importable (known limitation, not bug)
-- **Backend error reporting**: `dbg_trace` warnings on 7 fallback paths in Lower.lean and EmitSSA.lean
+- **Layout.lean/Lower.lean/EmitSSA.lean**: `dbg_trace` warnings on 12 silent fallback paths. Fallback values (0, 8, false, "i64", [], dropped functions) still returned — warnings make them visible but do not prevent wrong code.
+- **Integer type inference**: vec_push/vec_set/vec_get now propagate element type hints. Common paths covered; full systematic coverage not proven.
+- **Borrow checker audit**: multiple shared borrows, sequential &mut, borrow-of-field all verified working.
+- **Cross-module types**: enums and trait dispatch verified. Type alias propagation not yet tested.
 
-4 hardening tests added. Test suite: 662 tests (189 stdlib).
+4 hardening tests added. Test suite: 662 tests (189 stdlib). Remaining: convert warnings to compile errors (items 1, 5), prove full integer inference coverage (item 2), test type alias propagation (item 4).
 
 ### 3 compiler bugs fixed
 
