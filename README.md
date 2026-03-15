@@ -56,43 +56,67 @@ That is why the next major phase is [Phase H](ROADMAP.md): large-program pressur
 
 ## What Concrete Looks Like
 
+Critical decision core:
+
 ```con
 enum Decision {
     Allow,
     Deny,
 }
 
-fn check_manifest(text: String) -> Decision {
-    if string_contains(text, "forbidden = true") {
+fn check_update_policy(text: String) -> Decision {
+    if string_contains(text, "allow_network = true") {
         return Decision#Deny;
     }
 
     return Decision#Allow;
 }
 
-fn verify_manifest(path: String) with(File) -> Result<Decision, String> {
+fn verify_update_manifest(path: String) with(File) -> Result<Decision, String> {
     let text: String = read_file(path)?;
-    return Ok(check_manifest(text));
+    return Ok(check_update_policy(text));
 }
 ```
+
+Audited foreign boundary:
 
 ```con
-extern fn puts(ptr: *const u8) -> i32;
+extern fn hsm_send(cmd: *const u8, len: Int) -> i32;
 
-trusted extern fn c_puts(ptr: *const u8) -> i32;
+trusted extern fn hsm_send_trusted(cmd: *const u8, len: Int) -> i32;
 
-fn print_banner(s: &String) with(Unsafe) {
-    let ptr: *const u8 = &s.ptr as *const *mut u8 as *const u8;
-    c_puts(ptr);
+fn send_hsm_command(buf: &Bytes) with(Unsafe) -> i32 {
+    let ptr: *const u8 = buf.ptr;
+    return hsm_send_trusted(ptr, buf.len);
 }
 ```
 
-These examples show two of Concrete's main ideas:
+Explicit resource cleanup:
 
-- explicit capabilities (`with(File)`) for ordinary code
-- a pure helper separated from the effectful wrapper
-- explicit error propagation with `?`
-- explicit foreign and trust boundaries at the low-level edge
+```con
+struct AuditBuffer {
+    data: HeapArray<u8>,
+    len: Int,
+}
+
+impl Drop for AuditBuffer {
+    fn destroy(self) with(Alloc) {
+        free(self.data);
+    }
+}
+
+fn consume_audit_buffer(buf: AuditBuffer) with(Alloc) -> Int {
+    defer destroy(buf);
+    return buf.len;
+}
+```
+
+These examples show why Concrete is aimed at critical low-level components instead of general convenience:
+
+- the policy logic is pure and easy to isolate from I/O
+- the file-reading wrapper says exactly what authority it has: `with(File)`
+- the foreign boundary is explicit and visibly audited through `trusted extern fn`
+- resource cleanup is written in the source, not hidden in a runtime or convention
 
 For more examples, see [`examples/`](examples).
 
