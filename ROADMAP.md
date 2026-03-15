@@ -126,8 +126,12 @@ Still clearly not implemented:
   - **i32 literal type mismatch** (`Elab.lean`): integer literals defaulted to i64 in binary ops with i32 operands, producing LLVM type mismatches. Fix: re-elaborate literal with concrete operand type when types differ.
   - **Cross-module &mut borrow consumed as move** (`Check.lean`): function call argument processing consumed variables even for reference parameters. Fix: skip consumption for `&T`/`&mut T` parameter types.
   - Bug documentation in `docs/bugs/`, regression tests in `lean_tests/bug_*.con`.
-  - **Bug 004 — Array variable-index assignment** (`Lower.lean:1460`): `arr[i] = val` with runtime variable `i` generates GEP with wrong base type (`i64` instead of element type) and wrong store width. Literal indices work correctly. Documented in `docs/bugs/004_array_variable_index_assign.md`, reproduction test in `lean_tests/bug_array_var_index_assign.con`. Status: **open**.
+  - **Bug 004 — Array variable-index assignment** (`Lower.lean:1460`): `arr[i] = val` with runtime variable `i` generated GEP with wrong base type (`i64` instead of element type) and wrong store width. Literal indices worked correctly. Documented in `docs/bugs/004_array_variable_index_assign.md`, reproduction test in `lean_tests/bug_array_var_index_assign.con`. Status: **fixed**.
   - **Bug 005 — Enum fields inside structs can panic layout computation** (`Layout.lean`): named structs containing enum-typed fields can crash layout/alignment computation instead of lowering correctly. Discovered during Phase H policy-engine work when a `Rule` struct with `Action`/`Verdict` enum fields was pushed through collection-oriented layout pressure. Documented in `docs/bugs/005_enum_field_struct_layout_panic.md`. Status: **open**.
+  - **Bug 006 — Cross-module string literal name collisions** (`Lower.lean`): different modules could emit conflicting `@str.N` globals, causing corrupt strings and crashes in cross-module string flows. Documented in `docs/bugs/006_cross_module_string_literal_collision.md`. Status: **fixed**.
+  - **Bug 007 — No easy print path for standalone programs**: stdlib `print`/`println` exists, but standalone `.con` files cannot use `std.io` without project/package setup, forcing manual `putchar` loops in single-file examples. Documented in `docs/bugs/007_no_print_string_builtin.md`. Status: **open**.
+  - **Bug 008 — Aggregate `if` expressions do not parse**: `let s: String = if cond { "a" } else { "b" };` fails for aggregate types and forces imperative workarounds. Documented in `docs/bugs/008_if_else_expression_aggregate_types.md`. Status: **open**.
+  - **Bug 009 — `const` declarations parsed but not lowered**: `const` appears to exist in the surface language but currently fails during lowering/SSA verification instead of compiling end-to-end. Documented in `docs/bugs/009_const_declarations_not_lowered.md`. Status: **open**.
 - **Compiler hardening pass complete** (all 5 items):
   - **Lower.lean errors**: 6 silent defaults converted to `throw` — `lookupStructFields`, `fieldIndex`, `variantIndex`, `variantFields`, `structNameFromTy` propagate errors through `LowerM`. `lowerModule` returns `Except String SModule` — failed function lowering is now a compile error.
   - **Layout/EmitSSA hard errors**: all `dbg_trace` fallback defaults converted to `panic!` (6 in Layout.lean, 1 in EmitSSA.lean). Previously impossible because generic struct/enum definitions survived monomorphization with unsubstituted type variables (`.named "T"`). Fixed by: (a) adding `substStructTypeArgs` in Layout.lean (parallel to existing `substEnumTypeArgs`), applied in `tySize`, `tyAlign`, and `fieldOffset`; (b) adding `typeArgs` parameter to `enumPayloadOffset`, threading concrete type args from Lower.lean through 3 call sites; (c) substituting type args in `variantFields` before passing fields to `variantFieldOffset`; (d) scanning function types in EmitSSA to emit substituted type defs for generic structs/enums instead of skipping them; (e) erasing newtypes in imported function signatures at module boundaries.
@@ -423,10 +427,22 @@ Primary surfaces:
      - WASM interpreter / validator subsets as a long-term semantics/runtime validation workload
      - Brainfuck interpreters as compact control-flow baselines, even if they are too toy-like to be a flagship workload
 3. use those programs to drive stdlib gap discovery, diagnostics pain points, package/workspace friction, report UX problems, and readability failures under sustained use — **not started**
+   - current findings already justify the phase:
+     - real compiler blocker: enum fields inside structs can still panic layout (`Bug 005`)
+     - real standalone UX blocker: printing exists in stdlib, but standalone programs lack an easy print path without project/std setup (`Bug 007`)
+     - fixed by real-program pressure: cross-module string literal collisions (`Bug 006`)
+     - real ergonomics gaps: aggregate `if` expressions (`Bug 008`) and non-working lowered `const` declarations (`Bug 009`)
+   - several initial complaints turned out to be misdiagnosed and should **not** be treated as roadmap gaps:
+     - `print` / `println` already exist in `std.io`
+     - `&&` / `||` already exist and are tested
+     - constants exist at the surface level; the real problem is that lowering is incomplete
 4. build comparison implementations in Rust, Zig, and C where appropriate so Concrete is evaluated against real neighboring languages rather than in isolation — **not started**
 5. compare results across correctness, runtime, memory, binary size, compile time, code size, trust/unsafe surface, and auditability rather than reducing the phase to raw speed charts — **not started**
 6. identify codegen cliffs, allocation cliffs, compile-time cliffs, diagnostics pain points, and trust/capability ergonomics failures that only appear at larger scale — **not started**
-   - current known example: enum-typed fields inside named structs can still panic layout computation under real-program pressure; this should be fixed rather than encoded around permanently
+   - current known examples:
+     - enum-typed fields inside named structs can still panic layout computation under real-program pressure (`Bug 005`)
+     - standalone programs have no easy stdlib-backed print path without project setup (`Bug 007`)
+     - aggregate `if` expressions and non-working lowered `const` declarations are real surface gaps exposed by real-program pressure (`Bug 008`, `Bug 009`)
 7. turn the findings into concrete language, stdlib, backend, and tooling follow-up work instead of treating the programs as mere demos — **not started**
 
 Deliverables:
