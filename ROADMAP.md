@@ -125,7 +125,7 @@ Still clearly not implemented:
   - **Borrow edge cases**: tested and working.
   - **Cross-module types**: enums, traits (via wrappers), type aliases, and newtypes all work. Type alias bug fixed — was broken even in single-module usage (function signatures carried unresolved alias names). Newtype erasure at import boundaries prevents leaked newtype names from reaching Layout/EmitSSA.
   - Hardening tests in `lean_tests/hardening_*.con`.
-- 663 tests pass (189 stdlib), including 32 pass-level Lean tests, 44 report assertions, 46 golden tests, 20 integration/regression/hardening tests, and 16 collections verified.
+- 663 tests pass (184 stdlib), including 32 pass-level Lean tests, 44 report assertions, 46 golden tests, 20 integration/regression/hardening tests, and 16 collections verified.
 
 ### Compiler Improvement Checklist
 
@@ -133,7 +133,7 @@ Still clearly not implemented:
 |---|------|--------|
 | 1 | Speed up the edit-test loop | Done — parallel runner, `--affected`, `--filter`, `--manifest`, cached compilations, lli acceleration |
 | 2 | Harden lowering (mutable-state storage, aggregate merge transport) | Done — all `dbg_trace` defaults converted to `throw`/`panic!`, type variable leakage fixed, newtype erasure at module boundaries |
-| 3 | Remove string-based semantic dispatch from ordinary language behavior | Not started |
+| 3 | Remove string-based semantic dispatch from ordinary language behavior | Done — Phase B exit criterion met: all semantic dispatch uses explicit identity types (`BuiltinTraitId`, `BuiltinEnumId`, `IntrinsicId`). Residual structural string mechanics (parser keywords, mangling, LLVM naming) are tolerated. |
 | 4 | Strengthen SSA verifier/cleanup into a clearer backend contract | Partial — 8 invariants documented, integer bit-width check added, but not mechanically enforced end-to-end |
 | 5 | Make structured LLVM backend easier to reuse/verify/defend | Partial — structured `LLVMModule` emission complete, SSA contract documented, but backend still tightly coupled |
 | 6 | Backend plurality (C/Wasm, later MLIR) | Not started |
@@ -609,4 +609,4 @@ These are current choices that should continue constraining future work unless e
 
 ## Summary
 
-Concrete has a complete compiler pipeline, a real stdlib (33 modules, 16 collections), 663 tests (189 stdlib), a fully structured LLVM backend, audit reports, explicit artifact boundaries (`ValidatedCore`, `ProofCore`), a documented SSA backend contract, a first Lean 4 proof workflow (17 theorems over a pure Core fragment), a 20-program integration/regression/hardening corpus, and bug tracking in `docs/bugs/`. Phases A–D are done. Three compiler bugs (cross-module struct offsets, i32 literal type inference, borrow-move confusion) were found and fixed during Phase D integration testing. Compiler hardening: Lower.lean fallbacks are now hard errors (`throw`), SSAVerify catches integer bit-width mismatches, cross-module type aliases fixed (was a pre-existing bug), borrow checker audited. Layout/EmitSSA fallbacks remain as warnings due to type variable leakage from elaboration (item 1 partially done). Phase E (runtime and execution model) is next.
+Concrete has a complete compiler pipeline, a real stdlib (33 modules, 16 collections), 663 tests (184 stdlib), a fully structured LLVM backend, audit reports, explicit artifact boundaries (`ValidatedCore`, `ProofCore`), a documented SSA backend contract, a first Lean 4 proof workflow (17 theorems over a pure Core fragment), a 20-program integration/regression/hardening corpus, and bug tracking in `docs/bugs/`. Phases A–D are done. Three compiler bugs (cross-module struct offsets, i32 literal type inference, borrow-move confusion) were found and fixed during Phase D integration testing. Compiler hardening complete: Lower.lean fallbacks are hard errors (`throw`), Layout.lean/EmitSSA.lean fallbacks are hard errors (`panic!`) with type variable leakage fixed, SSAVerify catches integer bit-width mismatches, cross-module type aliases fixed, borrow checker audited. Phase E (runtime and execution model) is next.
