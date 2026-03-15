@@ -10,15 +10,15 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
-### Compiler hardening pass complete (items 2–4 done, items 1 & 5 partially done)
+### Compiler hardening pass complete (all 5 items)
 
 - **Lower.lean hard errors**: 6 silent defaults converted to `throw` — `lookupStructFields`, `fieldIndex`, `variantIndex`, `variantFields`, `structNameFromTy` propagate errors through `LowerM`. `lowerModule` returns `Except String SModule` — failed function lowering is now a compile error, not silently dropped.
-- **Layout.lean/EmitSSA.lean warnings**: `dbg_trace` on fallback paths. Can't convert to errors: pure function context + type variables leak as `.named "T"` from elaboration (pre-existing issue). Defaults are correct for erased type variables.
+- **Layout.lean/EmitSSA.lean hard errors**: all 7 `dbg_trace` fallback defaults converted to `panic!` (6 in Layout, 1 in EmitSSA). Root cause fixed: generic struct/enum definitions survived monomorphization with unsubstituted type variables. Fix: `substStructTypeArgs` added to Layout (parallel to existing `substEnumTypeArgs`), applied in `tySize`, `tyAlign`, `fieldOffset`. `enumPayloadOffset` now accepts `typeArgs`; concrete args threaded from Lower.lean. `variantFields` substitutes type args before returning fields. EmitSSA scans function types for concrete instantiations and emits substituted type defs instead of skipping generic defs. Newtypes erased in imported function signatures at module boundaries.
 - **Integer inference**: vec intrinsic hint propagation + SSAVerify `intBitWidth` check catches `i32 + i64` mismatches at the backend gate.
 - **Borrow checker audit**: multiple shared borrows, sequential &mut, borrow-of-field all verified working.
-- **Cross-module type aliases**: fixed pre-existing bug — type alias names leaked through function signatures. `buildFileSummary` now resolves aliases in fn/extern/impl signatures. `resolveImports` resolves aliases in imported signatures. `Elab.elabFn` resolves aliases in function parameter types.
+- **Cross-module type aliases and newtypes**: fixed pre-existing bug — type alias names leaked through function signatures. `buildFileSummary` now resolves aliases in fn/extern/impl signatures. `resolveImports` resolves aliases and erases newtypes in imported signatures. `Elab.elabFn` resolves aliases in function parameter types.
 
-5 hardening tests added. Test suite: 663 tests (189 stdlib). Remaining: Layout/EmitSSA fallbacks need type variable leakage fix in elaboration before they can become errors.
+5 hardening tests added. Test suite: 663 tests (189 stdlib). All hardening items complete — no remaining silent fallback defaults in the compiler pipeline.
 
 ### 3 compiler bugs fixed
 

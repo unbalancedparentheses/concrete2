@@ -118,12 +118,12 @@ Still clearly not implemented:
   - **i32 literal type mismatch** (`Elab.lean`): integer literals defaulted to i64 in binary ops with i32 operands, producing LLVM type mismatches. Fix: re-elaborate literal with concrete operand type when types differ.
   - **Cross-module &mut borrow consumed as move** (`Check.lean`): function call argument processing consumed variables even for reference parameters. Fix: skip consumption for `&T`/`&mut T` parameter types.
   - Bug documentation in `docs/bugs/`, regression tests in `lean_tests/bug_*.con`.
-- **Compiler hardening pass** (items 1–5 from hardening roadmap):
+- **Compiler hardening pass complete** (all 5 items):
   - **Lower.lean errors**: 6 silent defaults converted to `throw` — `lookupStructFields`, `fieldIndex`, `variantIndex`, `variantFields`, `structNameFromTy` propagate errors through `LowerM`. `lowerModule` returns `Except String SModule` — failed function lowering is now a compile error.
-  - **Layout/EmitSSA warnings**: `dbg_trace` on fallback paths (can't convert to errors due to pure function context and type variable leakage from elaboration).
+  - **Layout/EmitSSA hard errors**: all `dbg_trace` fallback defaults converted to `panic!` (6 in Layout.lean, 1 in EmitSSA.lean). Previously impossible because generic struct/enum definitions survived monomorphization with unsubstituted type variables (`.named "T"`). Fixed by: (a) adding `substStructTypeArgs` in Layout.lean (parallel to existing `substEnumTypeArgs`), applied in `tySize`, `tyAlign`, and `fieldOffset`; (b) adding `typeArgs` parameter to `enumPayloadOffset`, threading concrete type args from Lower.lean through 3 call sites; (c) substituting type args in `variantFields` before passing fields to `variantFieldOffset`; (d) scanning function types in EmitSSA to emit substituted type defs for generic structs/enums instead of skipping them; (e) erasing newtypes in imported function signatures at module boundaries.
   - **Integer inference**: vec intrinsic hint propagation + defensive SSAVerify check catches integer bit-width mismatches (`i32 + i64`).
   - **Borrow edge cases**: tested and working.
-  - **Cross-module types**: enums, traits (via wrappers), and type aliases all work. Type alias bug fixed — was broken even in single-module usage (function signatures carried unresolved alias names).
+  - **Cross-module types**: enums, traits (via wrappers), type aliases, and newtypes all work. Type alias bug fixed — was broken even in single-module usage (function signatures carried unresolved alias names). Newtype erasure at import boundaries prevents leaked newtype names from reaching Layout/EmitSSA.
   - Hardening tests in `lean_tests/hardening_*.con`.
 - 663 tests pass (189 stdlib), including 32 pass-level Lean tests, 44 report assertions, 46 golden tests, 20 integration/regression/hardening tests, and 16 collections verified.
 
