@@ -117,7 +117,7 @@ fn test_length_invariant() with(Alloc) -> Int {
     return 0;
 }
 
-fn main!() -> Int {
+fn main() with(Std) -> Int {
     let mut r: Int = 0;
     r = r + test_push_get_length(0);
     r = r + test_push_get_length(1);

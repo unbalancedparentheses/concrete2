@@ -15,7 +15,7 @@ mod Types {
 }
 mod Main {
     import Types.{ Point };
-    fn main!() -> Int {
+    fn main() with(Std) -> Int {
         let p: Point = ...;
         // p.y returns 10 (same as p.x), not 20
     }

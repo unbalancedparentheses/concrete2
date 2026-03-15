@@ -17,7 +17,7 @@ fn greet() with(Console) {
     print_int(42);
 }
 
-fn main!() -> Int {
+fn main() with(Std) -> Int {
     greet();
     return 0;
 }

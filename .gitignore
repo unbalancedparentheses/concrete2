@@ -21,6 +21,7 @@ build/
 lean_tests/trait_numeric_abs
 lean_tests/cap_alias_basic
 lean_tests/cap_alias_pub
+lean_tests/union_basic
 *.con.test
 
 # Compiled checker binaries

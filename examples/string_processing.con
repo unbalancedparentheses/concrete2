@@ -1,7 +1,7 @@
 // String processing example: demonstrates string builtins
 // Parses a comma-separated list of numbers, sums them, prints the result
 
-fn parse_and_sum!(input: String) -> Int {
+fn parse_and_sum(input: String) with(Std) -> Int {
     let len: Int = string_length(&input);
     let mut sum: Int = 0;
     let mut start: Int = 0;
@@ -38,7 +38,7 @@ fn parse_and_sum!(input: String) -> Int {
     return sum;
 }
 
-fn main!() -> Int {
+fn main() with(Std) -> Int {
     let input: String = "10,20,30,40";
     let result: Int = parse_and_sum(input);
     // Print: "Sum: 100"

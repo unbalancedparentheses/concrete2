@@ -30,7 +30,7 @@ mod Shapes {
 mod Main {
     import Shapes.{ Shape, area, get_radius };
 
-    fn main!() -> Int {
+    fn main() with(Std) -> Int {
         // Construct enums from imported type in consuming module
         let c: Shape = Shape#Circle { radius: 2 };
         let r: Shape = Shape#Rect { width: 3, height: 5 };

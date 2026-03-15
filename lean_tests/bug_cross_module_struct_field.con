@@ -17,7 +17,7 @@ mod Types {
 mod Main {
     import Types.{ Point, make_point };
 
-    fn main!() -> Int {
+    fn main() with(Std) -> Int {
         let p: Point = make_point(10, 20, 12);
 
         // Before the fix, p.y and p.z both returned 10 (offset 0)

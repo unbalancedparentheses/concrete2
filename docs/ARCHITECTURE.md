@@ -11,7 +11,7 @@ Use it for:
 - architecture work phases (A1-A10)
 - invariants and subsystem boundaries
 
-For active priorities and remaining work, see [ROADMAP.md](../ROADMAP.md). For landed milestones, see [CHANGELOG.md](../CHANGELOG.md).
+For active priorities and remaining work, see [ROADMAP.md](../ROADMAP.md). For landed milestones, see [CHANGELOG.md](../CHANGELOG.md). For the safety model (capabilities, trusted, Unsafe, proof boundary), see [SAFETY.md](SAFETY.md).
 
 ## Current Pipeline
 

@@ -28,7 +28,7 @@ mod Units {
 mod Main {
     import Units.{ Meters, Seconds, make_meters, make_seconds, speed, double };
 
-    fn main!() -> Int {
+    fn main() with(Std) -> Int {
         // Use imported type aliases in let bindings
         let d: Meters = make_meters(210);
         let t: Seconds = make_seconds(5);

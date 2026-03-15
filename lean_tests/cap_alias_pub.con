@@ -11,7 +11,7 @@ fn needs_all() with(All) -> Int {
     return x;
 }
 
-fn main!() -> Int {
+fn main() with(Std) -> Int {
     let r: Int = needs_all();
     return r;
 }

@@ -14,7 +14,7 @@ trusted fn print_int(x: i64) with(Console) {
     drop_string(s);
 }
 
-fn main!() {
+fn main() with(Std) {
     let mut i: Int = 0;
     while i < 3 {
         print_int(i);

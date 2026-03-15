@@ -246,7 +246,6 @@ structure FnDef where
   isTrusted : Bool := false        -- trusted fn: allows raw ptr ops without Unsafe
   isEntryPoint : Bool := false     -- tagged by Check when name == mainFnName
   capSet : CapSet := .empty        -- with(File, Network, ...)
-  hasBang : Bool := false          -- fn main!() sugar
   span : Span := default
 
 structure ConstDef where

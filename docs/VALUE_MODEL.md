@@ -4,6 +4,9 @@ Status: stable reference
 
 Concrete uses a strict value/reference model with linear types by default.
 
+For the full safety model (capabilities, trusted boundaries, `Unsafe`), see [SAFETY.md](SAFETY.md).
+For FFI and trust boundaries, see [FFI.md](FFI.md).
+
 ## Value Categories
 
 | Type | Semantics | Default | Notes |

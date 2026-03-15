@@ -72,7 +72,6 @@ structure TypeEnv where
   currentTypeBounds : List (String × List String) := []  -- current function's type param bounds
   newtypes : List NewtypeDef := []         -- all newtype definitions
   userFnNames : List String := []          -- names of user-defined, imported, and extern functions (NOT builtins)
-  isTrustedFn : Bool := false              -- true when checking a trusted fn (relaxes linearity in loops)
   deriving Repr
 
 abbrev CheckM := ExceptT Diagnostics (StateM TypeEnv)
@@ -562,8 +561,8 @@ def consumeVar (name : String) (span : Option Span := none) : CheckM Unit := do
     | .frozen =>
       throwCheck (.variableFrozenByBorrow name) span
     | .unconsumed | .used =>
-      -- Loop depth check (trusted functions skip this — they assert soundness manually)
-      if info.loopDepth < env.loopDepth && !env.isTrustedFn then
+      -- Loop depth check: linear values from outer scope cannot be consumed inside a loop
+      if info.loopDepth < env.loopDepth then
         throwCheck (.cannotConsumeLinearInLoop name) span
       -- Mark consumed
       let vars' := env.vars.map fun (n, vi) =>
@@ -1950,7 +1949,7 @@ def checkFn (f : FnDef) : CheckM Unit := do
   let env1 := { envBefore with currentRetTy := retTyRaw, currentTypeParams := f.typeParams }
   let env2 := { env1 with currentCapSet := f.capSet }
   let env3 := { env2 with currentTypeBounds := f.typeBounds }
-  setEnv { env3 with currentFnName := f.name, isTrustedFn := f.isTrusted }
+  setEnv { env3 with currentFnName := f.name }
   -- Resolve Self in return type (needs currentImplType from env)
   let retTy ← resolveType retTyRaw
   modify fun env => { env with currentRetTy := retTy }

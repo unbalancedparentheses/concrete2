@@ -4,7 +4,7 @@ enum Shape {
     Rect { w: Int, h: Int }
 }
 
-fn main!() -> Int {
+fn main() with(Std) -> Int {
     let hs: Heap<Shape> = alloc(Shape#Circle { radius: 21 });
     let s: Shape = *hs;
     match s {

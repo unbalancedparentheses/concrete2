@@ -45,7 +45,7 @@ impl Destroy for Heap<T> with(Alloc) {
 Usage:
 
 ```
-fn main!() {
+fn main() with(Std) {
     let arena: Arena = Arena.new();
     defer arena.deinit();
 

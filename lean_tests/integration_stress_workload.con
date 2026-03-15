@@ -157,7 +157,7 @@ mod Main {
         vec_push::<i32>(prog, operand);
     }
 
-    fn main!() -> Int {
+    fn main() with(Std) -> Int {
         // Verify all 11 opcodes
         let vr: i32 = verify_opcodes();
         if vr != 0 { return (vr as Int) + 100; }

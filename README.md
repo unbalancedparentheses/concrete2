@@ -217,7 +217,7 @@ fn read_and_count(path: String) with(File) -> Result<Int, String> {
     return Ok(c.value);
 }
 
-fn main!() -> Int {
+fn main() with(Std) -> Int {
     match read_and_count("README.md") {
         Ok(n) => return n,
         Err(_) => return 0,

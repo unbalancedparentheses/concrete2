@@ -55,7 +55,7 @@ Concrete's safety story is built from explicit surfaces:
 - `trusted extern fn`
 - audit/report outputs
 
-The differentiator is not merely "has unsafe code". It is that trust and authority should be explicit, inspectable, and honest.
+The differentiator is not merely "has unsafe code". It is that trust and authority should be explicit, inspectable, and honest. The organizing principle is a three-way split: capabilities for semantic effects, `trusted` for contained implementation unsafety, and `with(Unsafe)` for foreign boundaries. See [SAFETY.md](SAFETY.md) for the full model.
 
 ### 3. Small Semantic Surface
 

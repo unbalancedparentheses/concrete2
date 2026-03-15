@@ -28,7 +28,9 @@ For low-level internals, the split is now:
 - pointer-level implementation unsafety is contained by `trusted fn` / `trusted impl`
 - foreign boundaries (`extern fn`) remain under `with(Unsafe)` even inside trusted code
 
-See [../research/trusted-boundary.md](../research/trusted-boundary.md).
+See [SAFETY.md](SAFETY.md) for the full safety model and [../research/trusted-boundary.md](../research/trusted-boundary.md) for the exploratory design notes.
+
+**Capability aliases** (e.g., `cap IO = File + Console;`) can reduce signature repetition in stdlib and user code. See [FFI.md](FFI.md).
 
 It should avoid:
 

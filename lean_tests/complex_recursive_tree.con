@@ -11,7 +11,7 @@ struct Branch {
     right: Heap<Leaf>
 }
 
-fn tree_sum!(root: Heap<Branch>) -> Int {
+fn tree_sum(root: Heap<Branch>) with(Alloc) -> Int {
     let v: Int = root->value;
     let l: Heap<Leaf> = root->left;
     let r: Heap<Leaf> = root->right;
@@ -23,7 +23,7 @@ fn tree_sum!(root: Heap<Branch>) -> Int {
     return v + lv + rv;
 }
 
-fn main!() -> Int {
+fn main() with(Std) -> Int {
     let left: Heap<Leaf> = alloc(Leaf { value: 20 });
     let right: Heap<Leaf> = alloc(Leaf { value: 12 });
     let root: Heap<Branch> = alloc(Branch { value: 10, left: left, right: right });

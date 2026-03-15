@@ -15,9 +15,10 @@ Use it to decide what to do next, in what order, and what documents/code areas t
 For landed milestones, see [CHANGELOG.md](CHANGELOG.md).
 For current compiler structure and pass boundaries, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/PASSES.md](docs/PASSES.md).
 For project identity and differentiators, see [docs/IDENTITY.md](docs/IDENTITY.md).
+For the safety model (capabilities, trusted, Unsafe, proof boundary, high-integrity profile), see [docs/SAFETY.md](docs/SAFETY.md).
 For current language and subsystem references, see:
 - [docs/FFI.md](docs/FFI.md)
-- [docs/ABI_LAYOUT.md](docs/ABI_LAYOUT.md)
+- [docs/ABI.md](docs/ABI.md)
 - [docs/DIAGNOSTICS.md](docs/DIAGNOSTICS.md)
 - [docs/STDLIB.md](docs/STDLIB.md)
 - [docs/VALUE_MODEL.md](docs/VALUE_MODEL.md)
@@ -61,10 +62,11 @@ Still clearly not implemented:
 | **E** | Runtime and execution model | Done |
 | **F** | Capability and safety productization | Not started |
 | **G** | Language surface and feature discipline | Not started |
-| **H** | Package and dependency ecosystem | Not started |
-| **I** | Adoption, positioning, and showcase pull | Not started |
-| **J** | Project and operational maturity | Not started |
-| **K** | Concurrency maturity and runtime plurality | Not started |
+| **H** | Real-program pressure testing and performance validation | Not started |
+| **I** | Package and dependency ecosystem | Not started |
+| **J** | Adoption, positioning, and showcase pull | Not started |
+| **K** | Project and operational maturity | Not started |
+| **L** | Concurrency maturity and runtime plurality | Not started |
 
 ### Recent Progress
 
@@ -78,7 +80,7 @@ Still clearly not implemented:
 - **Stdlib test depth increased**: Option, Result, Text, and Slice now have broader in-language test coverage.
 - **Linearity checker fixed for generic types**: four fixes to `Check.lean` unblock user-defined generic collections with function pointer fields:
   - `isCopyType` now correctly handles `.generic` (struct isCopy lookup) and `.typeVar` (Copy bound check) instead of returning false for all generics
-  - trusted functions can consume linear variables inside loops (loop-depth check skipped when `isTrustedFn`)
+  - ~~trusted functions could consume linear variables inside loops~~ (removed in Phase G: trusted is now strictly pointer-ops containment)
   - self-consuming methods (`fn drop(self)`) now mark the receiver as consumed
   - if-without-else where the then-branch returns no longer blocks linear consumption in that branch
 - **User-defined IntMap validated end-to-end**: a full hash map with fn pointer fields for hash/eq (same pattern as `HashMap`) compiles and runs correctly through the native compiler path, proving the linearity fix chain works.
@@ -199,7 +201,7 @@ Primary surfaces:
 
 Done:
 1. LL(1) grammar checker in CI (Python, C, Rust implementations; runs in parallel with build)
-2. linearity checker fixed for generic types (isCopyType, self-consumption, trusted loop relaxation, if-return divergence)
+2. linearity checker fixed for generic types (isCopyType, self-consumption, if-return divergence; the later trusted-loop relaxation was removed in Phase G)
 3. builtin HashMap interception retired (~1,400 lines deleted; HashMap is now an ordinary stdlib type)
 4. module-targeted stdlib test infrastructure (`--stdlib-module <name>` in run_tests.sh)
 5. diagnostics/formatter polish (empty `{}` edge case, deprecation fixes, compiler warnings eliminated)
@@ -318,9 +320,9 @@ Primary surfaces:
 1. improve capability and trust ergonomics — **done** — added actionable hints to all capability-related error messages in both Check.lean and CoreCheck.lean: `missingCapability` (suggests `with(Cap)` on calling function or trusted wrapper), `insufficientCapabilities` (same), `cannotInferCapVariable` (explains explicit capability binding), pointer/alloc operation errors (specific `with(Unsafe)` or `with(Alloc)` hints)
 2. deepen capability/trust reporting — **done** — `--report authority` (transitive authority analysis with BFS call-chain traces per capability) and `--report proof` (ProofCore eligibility with exclusion reasons: capabilities, trusted, extern, raw pointers) implemented in `Report.lean`, dispatched from `Main.lean`, regression-tested with 15 semantic assertions
 3. add stronger patterns for explicit authority wrappers and capability aliases — **done** — `cap IO = File + Console;` syntax parsed and expanded at parse time, transparent to Check/Elab/CoreCheck. Validates cap names at definition, supports `Std` macro, supports `pub cap`. Authority wrapper patterns documented in `docs/FFI.md` with stdlib examples (`trusted impl Vec`, `trusted impl TextFile`, etc.). 3 regression tests
-4. make safety features easier to use correctly in ordinary programs without weakening honesty — **not started**
-5. ensure docs, diagnostics, and reports present one coherent safety story — **not started**
-6. define the shape of a high-integrity safety profile — **not started**
+4. make safety features easier to use correctly in ordinary programs without weakening honesty — **done** — cap aliases reduce signature repetition, per-statement error recovery reports multiple errors per function, actionable capability hints suggest specific fixes. Wrapper patterns documented in `docs/FFI.md`. Safety model unified in `docs/SAFETY.md`
+5. ensure docs, diagnostics, and reports present one coherent safety story — **done** — created `docs/SAFETY.md` as the central safety reference: defines the three-way split (capabilities / trusted / Unsafe), documents all 8 report modes, error model, proof boundary, and high-integrity profile direction. Cross-references added from VALUE_MODEL.md, STDLIB.md, IDENTITY.md, DIAGNOSTICS.md, EXECUTION_MODEL.md, ARCHITECTURE.md, FFI.md, PASSES.md. Stale ABI_LAYOUT.md references replaced with ABI.md
+6. define the shape of a high-integrity safety profile — **done** — `docs/SAFETY.md` defines the profile direction: same language under stricter restrictions (no Unsafe, no unrestricted FFI, no/bounded allocation, no ambient authority growth, analyzable concurrency, stronger evidence). Documents what the compiler must provide (profile-aware checks, reports, package visibility, proof relation). Connects to existing capabilities, trusted boundaries, linearity, ProofCore, and reports
 7. improve bounded semantic error recovery so ordinary users get more than one useful body-local diagnostic without sacrificing honesty — **done** — `checkStmts` (Check.lean) and `elabStmts` (Elab.lean) now catch per-statement errors, restore env on failure, add placeholder types for failed let-declarations, and accumulate all diagnostics before throwing. 4 regression tests verify multi-error reporting from single function bodies
 
 Deliverables:
@@ -348,8 +350,15 @@ Primary surfaces:
 
 1. define explicit feature-admission criteria — **not started**
 2. make "no" and "not yet" decisions first-class language outcomes — **not started**
-3. revisit syntax and surface complexity with a bias toward simplification, not expansion — **not started**
-4. keep unsafe/trusted/foreign surface area as narrow as possible — **not started**
+3. revisit syntax and surface complexity with a bias toward simplification, not expansion — **done**
+   - removed `main!()` / `fn name!()` bang sugar from parser, AST, and all .con files (70+ files migrated to explicit `with(Std)` / `with(Alloc)`)
+   - added union example test (`union_basic.con`) to validate union feature with trusted access pattern
+   - fixed 5 heap/recursive test failures caused by stale bang syntax
+4. keep unsafe/trusted/foreign surface area as narrow as possible — **done**
+   - removed loop-linear exception from `trusted` (was the only non-pointer privilege, muddied the semantics)
+   - `trusted` now means exactly one thing: audited pointer-level containment (pointer arithmetic, deref, assign, cast without `with(Unsafe)`)
+   - `trusted` is no longer a general-purpose escape hatch — it does not suppress capabilities, does not permit extern calls, and does not relax linearity
+   - documented the refined model in SAFETY.md and CHANGELOG
 5. make long-term language shape decisions explicit instead of letting them emerge from local convenience — **not started**
 6. define a clearly analyzable critical/provable subset — **not started**
 
@@ -362,7 +371,42 @@ Deliverables:
 Exit criterion:
 Concrete has an explicit discipline for preserving a small, coherent language surface and resisting low-leverage feature growth.
 
-#### Phase H: Package And Dependency Ecosystem
+#### Phase H: Real-Program Pressure Testing And Performance Validation
+
+Goal: force Concrete to prove itself under sustained use by writing multiple real programs in the 10k-30k line range and using them to expose language, stdlib, correctness, auditability, performance, and workflow weaknesses.
+
+This phase is intentionally after language-discipline work and before packages/adoption harden too much around toy-scale assumptions. The point is to stop evaluating Concrete only through pass tests, integration tests, and medium examples.
+
+Primary surfaces:
+- large Concrete programs and example repos
+- [docs/STDLIB.md](docs/STDLIB.md)
+- [docs/TESTING.md](docs/TESTING.md)
+- [research/comparative-program-suite.md](research/comparative-program-suite.md)
+- [research/showcase-workloads.md](research/showcase-workloads.md)
+- performance validation notes
+- package/workspace and report workflows as they exist at that point
+
+1. write multiple real programs in the 10k-30k line range, not only stress tests or compiler fixtures — **not started**
+2. choose programs with different pressure shapes: parser/validator/policy engine, systems utility, data-structure-heavy workload, networked or service-style component, and one high-integrity-profile candidate — **not started**
+3. use those programs to drive stdlib gap discovery, diagnostics pain points, package/workspace friction, report UX problems, and readability failures under sustained use — **not started**
+4. build comparison implementations in Rust, Zig, and C where appropriate so Concrete is evaluated against real neighboring languages rather than in isolation — **not started**
+5. compare results across correctness, runtime, memory, binary size, compile time, code size, trust/unsafe surface, and auditability rather than reducing the phase to raw speed charts — **not started**
+6. identify codegen cliffs, allocation cliffs, compile-time cliffs, diagnostics pain points, and trust/capability ergonomics failures that only appear at larger scale — **not started**
+7. turn the findings into concrete language, stdlib, backend, and tooling follow-up work instead of treating the programs as mere demos — **not started**
+
+Deliverables:
+- a small corpus of serious Concrete programs large enough to pressure-test the language honestly
+- a documented 20-program comparison portfolio with estimated size, workload mix, and Rust/Zig/C reference targets
+- comparative benchmark and evaluation baselines grounded in real workloads instead of micro-assumptions
+- cross-language comparison notes explaining not only speed but also correctness, code size, unsafe/trust surface, and auditability tradeoffs
+- a concrete list of stdlib, diagnostics, package, and backend issues discovered only through sustained use
+- proof that Concrete remains readable and auditable at larger scales, or an explicit record of where it fails
+- a clearer basis for the package, adoption, and operational phases because they are now shaped by real code rather than only design intent
+
+Exit criterion:
+Concrete has been exercised by multiple serious programs large enough to reveal structural weaknesses, and the project has used those results to drive the next package/adoption/operational phases.
+
+#### Phase I: Package And Dependency Ecosystem
 
 Goal: make Concrete usable for real multi-module and multi-package projects with explicit, stable project-facing semantics.
 
@@ -404,7 +448,7 @@ Deliverables:
 Exit criterion:
 Concrete has an explicit package/dependency model that supports real projects without relying on ad-hoc repo-local conventions, has a credible path to enforcing authority budgets at package or subsystem boundaries, and no longer depends on muddy interface/body artifact boundaries to reason about packages.
 
-#### Phase I: Adoption, Positioning, And Showcase Pull
+#### Phase J: Adoption, Positioning, And Showcase Pull
 
 Goal: make Concrete easier to want, try, understand, and remember, not only easier to admire architecturally.
 
@@ -416,11 +460,12 @@ This phase turns the language from a coherent technical project into something w
 - an explicit public stability surface
 - sharper comparison/positioning against adjacent languages
 
-This phase is intentionally after the package/project phase and before full operational maturity:
+This phase is intentionally after the package/project and real-program pressure-testing phases and before full operational maturity:
 
-- after H, because adoption claims are weak without a coherent project/package model
-- before J, because real user pressure should help shape which operational surfaces actually matter
-- before K, because long-term concurrency maturity is not part of the first convincing user story
+- after I, because adoption claims are weak without a coherent project/package model
+- after H, because the public story should be shaped by real programs, not only internal architecture
+- before K, because real user pressure should help shape which operational surfaces actually matter
+- before L, because long-term concurrency maturity is not part of the first convincing user story
 
 Primary surfaces:
 - [README.md](README.md)
@@ -450,7 +495,7 @@ Deliverables:
 Exit criterion:
 Concrete has a credible adoption story: users can understand what it is for, try it through polished examples, and see why it is distinct without reading the whole compiler roadmap.
 
-#### Phase J: Project And Operational Maturity
+#### Phase K: Project And Operational Maturity
 
 Goal: turn Concrete from a strong compiler project into a durable, distributable, maintainable system.
 
@@ -516,13 +561,13 @@ Deliverables:
 Exit criterion:
 Concrete is not only architecturally strong internally, but also operable, reproducible, documentable, and maintainable as a long-term project, with a real driver/artifact model rather than only a pass library plus CLI entry points.
 
-#### Phase K: Concurrency Maturity And Runtime Plurality
+#### Phase L: Concurrency Maturity And Runtime Plurality
 
 Goal: give Concrete a long-term concurrency model that stays explicit, auditable, and small instead of collapsing into an "async everywhere" ecosystem.
 
 This phase is intentionally later than Phase E.
 Phase E defines the execution model and first runtime boundary.
-Phase K exists to do the larger concurrency design correctly once runtime, safety, package, adoption, and operational foundations are stable enough to support it.
+Phase L exists to do the larger concurrency design correctly once runtime, safety, package, adoption, and operational foundations are stable enough to support it.
 
 The intended long-term shape is:
 
@@ -568,10 +613,11 @@ Concrete has one coherent concurrency story: structured by default, threads-firs
 - **Phase E** matters because a language is not really settled until its execution model is explicit.
 - **Phase F** matters because Concrete's safety model should be a user-visible strength, not only an internal design claim. Error recovery also lives here — getting one error at a time is the most visible DX gap.
 - **Phase G** matters because languages decay when feature growth has no explicit discipline. Debug info and inlining also live here — a systems language without debugger support or basic optimization is not credible for real work.
-- **Phase H** matters because package and dependency semantics are part of the language experience once real projects exist. Incremental compilation is the first item — without it, multi-package builds recompile the world.
-- **Phase I** matters because technically coherent languages still fail if nobody can quickly understand why to use them, what they are for, or how to get started well.
-- **Phase J** matters because long-term projects fail just as easily from weak operational discipline as from weak compiler architecture.
-- **Phase K** matters because concurrency is one of the easiest places for a language to lose clarity, and Concrete should only broaden it once it can do so without importing async fragmentation and hidden runtime culture.
+- **Phase H** matters because languages often look coherent until they are forced to carry real programs. Large-code pressure testing is how Concrete earns confidence in its stdlib, diagnostics, package model, and performance story.
+- **Phase I** matters because package and dependency semantics are part of the language experience once real projects exist. Incremental compilation is the first item — without it, multi-package builds recompile the world.
+- **Phase J** matters because technically coherent languages still fail if nobody can quickly understand why to use them, what they are for, or how to get started well.
+- **Phase K** matters because long-term projects fail just as easily from weak operational discipline as from weak compiler architecture.
+- **Phase L** matters because concurrency is one of the easiest places for a language to lose clarity, and Concrete should only broaden it once it can do so without importing async fragmentation and hidden runtime culture.
 
 ### Compiler Hardening (between Phase D and Phase E)
 
@@ -602,10 +648,11 @@ These are concrete, implementable improvements that emerged from the bug fixes a
 2. Runtime and execution-model maturity as an explicit phase once the compiler/tooling architecture is stable enough to support it well.
 3. Capability and safety productization as an explicit phase after the backend/trust foundations are strong enough.
 4. Language-surface and feature-discipline work as an explicit phase once the runtime/safety direction is clear.
-5. Package and dependency ecosystem as an explicit phase once stdlib/tooling/runtime direction is stable enough to support real projects well.
-6. Adoption, positioning, and showcase pull as an explicit phase once the package/project story is strong enough that new users can actually try Concrete coherently.
-7. Project and operational maturity as an explicit phase once the current compiler/tooling architecture is stable enough to productize.
-8. Concurrency maturity and runtime plurality as an explicit later phase once the runtime, safety, package, adoption, and operational foundations are stable enough to support it well.
+5. Real-program pressure testing and performance validation as an explicit phase once the language surface is disciplined enough that large programs can reveal meaningful weaknesses instead of churn.
+6. Package and dependency ecosystem as an explicit phase once stdlib/tooling/runtime direction is stable enough to support real projects well.
+7. Adoption, positioning, and showcase pull as an explicit phase once the package/project story is strong enough that new users can actually try Concrete coherently.
+8. Project and operational maturity as an explicit phase once the current compiler/tooling architecture is stable enough to productize.
+9. Concurrency maturity and runtime plurality as an explicit later phase once the runtime, safety, package, adoption, and operational foundations are stable enough to support it well.
 9. Proof-driven narrowing of future feature additions.
 10. A clearer hosted vs freestanding / `no_std` split, but only after the runtime and stdlib boundaries are more stable.
 11. Execution-cost analysis as an audit/report extension.

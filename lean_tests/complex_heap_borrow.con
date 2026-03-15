@@ -7,7 +7,7 @@ impl Pair {
     }
 }
 
-fn main!() -> Int {
+fn main() with(Std) -> Int {
     let p: Heap<Pair> = alloc(Pair { a: 17, b: 25 });
     let s: Int = p->a + p->b;
     free(p);

@@ -47,7 +47,7 @@ mod Geometry {
 mod Main {
     import Geometry.{ Box, Circle, measure_box, measure_circle, double_box };
 
-    fn main!() -> Int {
+    fn main() with(Std) -> Int {
         let b: Box = Box { width: 5, height: 7 };
         let c: Circle = Circle { radius: 4 };
 

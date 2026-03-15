@@ -10,6 +10,28 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Phase G items 3–4: Language Surface Simplification and Trusted Narrowing
+
+Two Phase G items landed, simplifying the language surface and tightening the trusted model.
+
+**Item 3 — Syntax simplification**:
+- Removed `main!()` / `fn name!()` bang sugar entirely: parser no longer accepts `!` after function names, `hasBang` field removed from `FnDef` in AST.lean, Format.lean no longer emits `!`. 70+ `.con` files migrated to explicit `with(Std)` or `with(Alloc)`.
+- Fixed 5 pre-existing test failures (`complex_recursive_list`, `complex_recursive_tree`, `complex_recursive_mutual`, `heap_deref_recursive`, `option_heap`) that still used `fn name!()` syntax.
+- Added `union_basic.con` test exercising union creation and trusted field access.
+
+**Item 4 — Trusted narrowing**:
+- Removed the loop-linear exception from `trusted`. Previously, `isTrustedFn` in Check.lean's TypeEnv let trusted functions consume linear variables inside loops, bypassing the loop-depth check. This was the only non-pointer-related privilege `trusted` granted, and it muddied the semantics.
+- `trusted` now means exactly one thing: **audited pointer-level containment**. The four operations it permits (pointer arithmetic, raw pointer dereference, raw pointer assignment, pointer casts) all relate to pointer safety. No linearity, no capabilities, no other special treatment.
+- The three-way model is now sharper: `with(Cap)` = semantic effects, `with(Unsafe)` = foreign boundary authority, `trusted` = reviewed pointer containment.
+
+What changed:
+- `Concrete/AST.lean`: removed `hasBang` field from `FnDef`
+- `Concrete/Parser.lean`: removed `!` sugar parsing from `parseFnDef` and `parseFnDefOrDecl`
+- `Concrete/Format.lean`: removed `bangStr` emission
+- `Concrete/Check.lean`: removed `isTrustedFn` from TypeEnv, loop-depth check now applies uniformly
+
+Test suite: 686 tests passing, 0 failures.
+
 ### Phase F items 1–3, 7 complete: Capability and Safety Productization
 
 Four Phase F items landed, covering capability ergonomics, reporting, aliases, and error recovery.
@@ -40,6 +62,16 @@ What changed:
 - `docs/ARCHITECTURE.md`: Parse cap alias expansion, Check error accumulation
 
 Test suite: 685 tests passing (7 new: 4 error recovery, 3 capability alias).
+
+### Phase F items 4–6 complete: Coherent Safety Story and High-Integrity Profile
+
+**Item 4 — Safety usability**: Covered by the combination of capability aliases (item 3), error recovery (item 7), actionable error hints (item 1), and wrapper pattern documentation. Safety features are now easier to use correctly without weakening honesty.
+
+**Item 5 — Coherent safety story**: Created `docs/SAFETY.md` as the central safety reference. Defines the three-way split (capabilities / trusted / `with(Unsafe)`), documents all 8 report modes with what each shows, explains the error model with accumulation policy, describes the proof boundary and ProofCore eligibility, and introduces the high-integrity profile direction. Cross-references added from all existing docs: VALUE_MODEL.md, STDLIB.md, IDENTITY.md, DIAGNOSTICS.md, EXECUTION_MODEL.md, ARCHITECTURE.md, FFI.md, PASSES.md. Stale `ABI_LAYOUT.md` references replaced with `ABI.md`.
+
+**Item 6 — High-integrity safety profile**: `docs/SAFETY.md` defines the profile direction: same language under stricter restrictions (no Unsafe, no unrestricted FFI, no/bounded allocation, no ambient authority growth, analyzable concurrency, stronger evidence). Documents what the compiler must provide (profile-recognized restrictions, profile-aware reports, package visibility, proof relation). Connects profile restrictions to existing features (capabilities gate authority, trusted contains unsafety, linearity ensures resource safety, ProofCore extracts the provable fragment, reports make boundaries visible).
+
+Phase F is now complete. All 7 items done.
 
 ### Phase E complete: Runtime and Execution Model
 
@@ -217,7 +249,7 @@ This was enabled by the linearity checker fixes in the previous milestone.
 Four fixes to the type checker's linearity analysis (`Check.lean`) that together unblock user-defined generic collections with function pointer fields — the same pattern as `HashMap`:
 
 1. **`isCopyType` for generic and type-variable types** — `.generic` types now look up the struct's `isCopy` flag instead of returning `false`; `.typeVar` types check whether their bounds include `Copy`. Previously all generic instantiations were treated as linear.
-2. **Trusted function loop-consumption relaxation** — `trusted impl` methods can now consume linear variables inside loops. The linearity checker skips the loop-depth restriction when `isTrustedFn` is set, because trusted code asserts soundness manually.
+2. ~~**Trusted function loop-consumption relaxation**~~ — removed in Phase G. `trusted` no longer relaxes linearity rules; it is now strictly about pointer-level containment.
 3. **Self-consuming method calls** — methods that take `self` by value (not `&self`/`&mut self`) now mark the receiver variable as consumed. Previously `f.drop()` left `f` unconsumed.
 4. **If-without-else divergence** — consuming a linear variable inside an if-then that unconditionally returns is now allowed. The checker detects that the then-branch diverges and skips the branch-consumption check, enabling the common `if bad { x.drop(); return err; }` guard pattern.
 

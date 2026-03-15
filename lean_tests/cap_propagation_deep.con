@@ -28,6 +28,6 @@ fn level1() with(Console) -> Int {
     return level2();
 }
 
-fn main!() -> Int {
+fn main() with(Std) -> Int {
     return level1();
 }

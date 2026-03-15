@@ -2,7 +2,7 @@
 // Expected: 45
 struct Box { value: Int }
 
-fn main!() -> Int {
+fn main() with(Std) -> Int {
     let mut sum: Int = 0;
     let mut i: Int = 0;
     while i < 10 {

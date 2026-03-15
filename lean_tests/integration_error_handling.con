@@ -185,7 +185,7 @@ fn run_pipeline(cfg: Config) with(Alloc) -> PipelineResult {
     }};
 }
 
-fn main!() -> Int {
+fn main() with(Std) -> Int {
     // Good config: values in [0, 50], scale by 2
     let cfg: Config = Config { max_value: 50, min_value: 0, scale: 2 };
     let result: PipelineResult = run_pipeline(cfg);

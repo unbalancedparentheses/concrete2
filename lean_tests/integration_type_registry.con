@@ -190,7 +190,7 @@ mod Registry {
 mod Main {
     import Registry.{ registry_add, registry_count, total_size, count_by_kind, max_metric, total_complexity, count_issues };
 
-    fn main!() -> Int {
+    fn main() with(Std) -> Int {
         let mut reg: Vec<i32> = vec_new::<i32>();
 
         // 0: i8 — Scalar(8), size=1, align=1

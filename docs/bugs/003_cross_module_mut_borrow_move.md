@@ -15,7 +15,7 @@ mod Builder {
 }
 mod Main {
     import Builder.{ push_val };
-    fn main!() -> Int {
+    fn main() with(Std) -> Int {
         let mut nums: Vec<i32> = vec_new::<i32>();
         push_val(&mut nums, 10);   // OK
         push_val(&mut nums, 20);   // ERROR: linear variable used after move

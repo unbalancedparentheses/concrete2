@@ -1,4 +1,5 @@
-// Test: trusted fn can consume linear values inside a loop
+// Test: trusted impl with pointer ops inside a loop
+// (pointer arithmetic on Copy fields is always fine, not a linearity issue)
 
 extern fn malloc(size: u64) -> *mut u8;
 extern fn free(ptr: *mut u8);
@@ -12,7 +13,6 @@ trusted impl Buf {
     fn free_entries(self) with(Alloc, Unsafe) {
         let mut i: u64 = 0;
         while i < self.len {
-            // Consuming a value inside a loop is OK in trusted code
             let p: *mut u8 = self.ptr + i;
             let val: u8 = *p;
             i = i + 1;

@@ -41,6 +41,7 @@ If you want the highest-leverage current research first:
 9. [trust-multipliers.md](trust-multipliers.md) — proof-backed reports, sandbox profiles, authority budgets, FFI envelopes, trust bundles, and showcase workloads (`P0`, `Open`)
 10. [adoption-strategy.md](adoption-strategy.md) — signature domains, showcases, onboarding, stability surface, and positioning for real user pull (`P1`, `Open`)
 11. [artifact-driven-compiler.md](artifact-driven-compiler.md) — stable artifacts, serialization, IDs, traceability, interface/body splits, and the real compiler driver (`P0`, `Open`)
+12. [comparative-program-suite.md](comparative-program-suite.md) — the 20-program cross-language suite for correctness, auditability, and performance comparison against Rust, Zig, and C (`P1`, `Open`)
 
 ## Language Decisions
 
@@ -92,6 +93,7 @@ If you want the highest-leverage current research first:
 - [design-filters.md](design-filters.md) — feature-admission checklist and high-leverage design filters (`P1`, `Process`)
 - [optimization-policy.md](optimization-policy.md) — explicit optimization goals, non-goals, observability constraints, and regression expectations (`P1`, `Open`)
 - [developer-tooling.md](developer-tooling.md) — semantic recovery, editor/LSP baseline, debugging/observability, and project-facing CLI workflow (`P1`, `Open`)
+- [comparative-program-suite.md](comparative-program-suite.md) — the real-program comparison portfolio for large-scale pressure testing after the language surface stabilizes (`P1`, `Open`)
 
 ## Meta And Long-Horizon Direction
 

@@ -14,7 +14,7 @@ fn unwrap_or(opt: Option<Int>, default: Int) -> Int {
     }
 }
 
-fn main!() -> Int {
+fn main() with(Std) -> Int {
     let r1: Option<Int> = safe_div(100, 5);
     let r2: Option<Int> = safe_div(100, 0);
     let r3: Option<Int> = safe_div(42, 7);

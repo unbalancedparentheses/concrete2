@@ -1329,20 +1329,12 @@ private def resolveCapVars (capParams : List String) (cs : CapSet) : CapSet :=
 partial def parseFnDef : ParseM FnDef := do
   expect .fn
   let name ← expectIdent
-  -- Check for ! sugar (fn main!())
-  let tk0 ← peek
-  let hasBang := tk0 == .not_
-  if hasBang then advance
   let (typeParams, typeBounds, capParams) ← parseTypeAndCapParams
   expect .lparen
   let params ← parseParamList
   expect .rparen
-  -- Parse with(...) capabilities
   let withCaps ← parseWithCaps
-  -- Check ! and with() are not both present
-  if hasBang && !withCaps.isEmpty then
-    throw "cannot combine ! sugar with explicit with()"
-  let capSet := if hasBang then CapSet.concrete stdCaps else resolveCapVars capParams withCaps
+  let capSet := resolveCapVars capParams withCaps
   let tk ← peek
   let retTy ← if tk == .arrow then
     advance
@@ -1350,25 +1342,18 @@ partial def parseFnDef : ParseM FnDef := do
   else
     pure .unit
   let body ← parseBlock
-  return { name, typeParams, typeBounds, capParams, params, retTy, body, capSet, hasBang }
+  return { name, typeParams, typeBounds, capParams, params, retTy, body, capSet }
 
 /-- Parse a fn that may have a body ({...}) or be a declaration (;). -/
 partial def parseFnDefOrDecl : ParseM (FnDef ⊕ ExternFnDecl) := do
   expect .fn
   let name ← expectIdent
-  -- Check for ! sugar
-  let tk0 ← peek
-  let hasBang := tk0 == .not_
-  if hasBang then advance
   let (typeParams, typeBounds, capParams) ← parseTypeAndCapParams
   expect .lparen
   let params ← parseParamList
   expect .rparen
-  -- Parse with(...) capabilities
   let withCaps ← parseWithCaps
-  if hasBang && !withCaps.isEmpty then
-    throw "cannot combine ! sugar with explicit with()"
-  let capSet := if hasBang then CapSet.concrete stdCaps else resolveCapVars capParams withCaps
+  let capSet := resolveCapVars capParams withCaps
   let tk ← peek
   let retTy ← if tk == .arrow then
     advance
@@ -1381,7 +1366,7 @@ partial def parseFnDefOrDecl : ParseM (FnDef ⊕ ExternFnDecl) := do
     return .inr { name, params, retTy }
   else
     let body ← parseBlock
-    return .inl { name, typeParams, typeBounds, capParams, params, retTy, body, capSet, hasBang }
+    return .inl { name, typeParams, typeBounds, capParams, params, retTy, body, capSet }
 
 partial def parseStructDef : ParseM StructDef := do
   expect .struct_

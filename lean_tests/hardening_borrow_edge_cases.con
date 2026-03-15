@@ -19,7 +19,7 @@ fn mutate(v: &mut Vec<i32>, val: i32) with(Alloc) {
     vec_push::<i32>(v, val);
 }
 
-fn main!() -> Int {
+fn main() with(Std) -> Int {
     // 1. Multiple shared borrows of same variable in one call
     let val: i32 = 10;
     let sum: i32 = add_refs(&val, &val);

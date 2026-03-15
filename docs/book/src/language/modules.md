@@ -23,7 +23,7 @@ mod math {
     }
 }
 
-fn main!() -> Int {
+fn main() with(Std) -> Int {
     return math::double(21);
 }
 ```

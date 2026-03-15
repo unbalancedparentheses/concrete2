@@ -6,7 +6,7 @@ fn first_or(a: Option<Int>, default: Int) -> Int {
     }
 }
 
-fn main!() -> Int {
+fn main() with(Std) -> Int {
     let a: Option<Int> = Option#None {};
     let b: Option<Int> = Option#Some { value: 42 };
     let r1: Int = first_or(a, 0);

@@ -147,7 +147,7 @@ mod Main {
         vec_push::<i32>(data, categorize_value(value));
     }
 
-    fn main!() -> Int {
+    fn main() with(Std) -> Int {
         let mut data: Vec<i32> = vec_new::<i32>();
         add_record(&mut data, 1, 5);     // Low (0)
         add_record(&mut data, 2, 15);    // Medium (1)

@@ -1120,6 +1120,8 @@ run_err "$TESTDIR/error_multi_recovery.con" "type mismatch in let binding 'y'"
 run_ok "$TESTDIR/cap_alias_basic.con" 1
 run_ok "$TESTDIR/cap_alias_pub.con" 42
 run_err "$TESTDIR/error_cap_alias_missing.con" "requires Network but caller has"
+# Union tests
+run_ok "$TESTDIR/union_basic.con" 42
 
 # === String edge case tests ===
 run_ok "$TESTDIR/string_empty.con" 0

@@ -13,7 +13,7 @@ struct Copy Item {
     kind: Kind,
 }
 
-fn main!() -> Int {
+fn main() with(Std) -> Int {
     let mut v: Vec<Item> = vec_new::<Item>();
     vec_push::<Item>(&mut v, Item { x: 0, y: 5, kind: Kind#A {} });
     vec_push::<Item>(&mut v, Item { x: 6, y: 2, kind: Kind#B {} });

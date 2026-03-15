@@ -24,6 +24,6 @@ trusted fn print_bool(x: bool) with(Console) {
     putchar(10);
 }
 
-fn main!() {
+fn main() with(Std) {
     print_bool(true);
 }

@@ -13,7 +13,7 @@ struct Head {
     next: Heap<Mid>
 }
 
-fn sum_chain!(h: Heap<Head>) -> Int {
+fn sum_chain(h: Heap<Head>) with(Alloc) -> Int {
     let v1: Int = h->value;
     let mid: Heap<Mid> = h->next;
     let v2: Int = mid->value;
@@ -25,7 +25,7 @@ fn sum_chain!(h: Heap<Head>) -> Int {
     return v1 + v2 + v3;
 }
 
-fn main!() -> Int {
+fn main() with(Std) -> Int {
     let leaf: Heap<Leaf> = alloc(Leaf { value: 12 });
     let mid: Heap<Mid> = alloc(Mid { value: 20, next: leaf });
     let head: Heap<Head> = alloc(Head { value: 10, next: mid });

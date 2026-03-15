@@ -111,7 +111,7 @@ fn count_with_defer(n: i32) with(Alloc) -> i32 {
     return result;
 }
 
-fn main!() -> i32 {
+fn main() with(Std) -> i32 {
     let stats: Stats = build_and_summarize(5);
     // doubled values: 6, 20, 34, 48, 62 => sum=170, count=5, min=6, max=62
     if stats.count != 5 { return 1; }

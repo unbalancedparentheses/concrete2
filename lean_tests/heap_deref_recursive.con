@@ -6,7 +6,7 @@ enum Node {
     Nil {}
 }
 
-fn sum_list!(head: Heap<Node>) -> Int {
+fn sum_list(head: Heap<Node>) with(Alloc) -> Int {
     let node: Node = *head;
     match node {
         Node#Cons { value, next } => {
@@ -19,7 +19,7 @@ fn sum_list!(head: Heap<Node>) -> Int {
     }
 }
 
-fn main!() -> Int {
+fn main() with(Std) -> Int {
     let n3: Heap<Node> = alloc(Node#Nil {});
     let n2: Heap<Node> = alloc(Node#Cons { value: 12, next: n3 });
     let n1: Heap<Node> = alloc(Node#Cons { value: 20, next: n2 });

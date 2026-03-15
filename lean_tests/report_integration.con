@@ -47,7 +47,7 @@ trusted fn call_raw(x: Int) with(Unsafe) -> Int {
     return raw_extern(x);
 }
 
-fn main!() -> i32 {
+fn main() with(Std) -> i32 {
     let a: i32 = pure_add(1, 2);
     let b: i32 = uses_alloc(a);
     let c: i32 = identity::<i32>(b);

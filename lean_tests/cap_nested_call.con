@@ -12,6 +12,6 @@ fn outer() with(Console) -> Int {
     return middle();
 }
 
-fn main!() -> Int {
+fn main() with(Std) -> Int {
     return outer();
 }

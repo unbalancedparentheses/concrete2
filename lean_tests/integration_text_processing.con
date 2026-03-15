@@ -162,7 +162,7 @@ fn measure_span<T: HasLength>(s: T) -> Int {
     return s.length();
 }
 
-fn main!() -> Int {
+fn main() with(Std) -> Int {
     let input: String = "hello 42 world 8 foo bar";
 
     let tokens: Vec<Int> = tokenize(&input);

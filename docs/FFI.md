@@ -4,7 +4,7 @@ Status: stable reference
 
 This document describes the current foreign-function interface boundary and the role of `Unsafe` in Concrete.
 
-For layout and representation rules, see [ABI_LAYOUT.md](ABI_LAYOUT.md). For active priorities, see [../ROADMAP.md](../ROADMAP.md).
+For the full safety model (capabilities, trusted, Unsafe, proof boundary), see [SAFETY.md](SAFETY.md). For layout and representation rules, see [ABI.md](ABI.md). For active priorities, see [../ROADMAP.md](../ROADMAP.md).
 
 ## Core Principles
 

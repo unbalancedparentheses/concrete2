@@ -47,7 +47,7 @@ trusted fn socket_close(fd: Int) with(Network) {
     close(fd as i32);
 }
 
-fn main!() -> Int {
+fn main() with(Std) -> Int {
     let fd: Int = tcp_listen(0, 5);
     socket_close(fd);
     return 0;

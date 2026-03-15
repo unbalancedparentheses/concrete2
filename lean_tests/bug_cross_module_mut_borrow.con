@@ -12,7 +12,7 @@ mod Builder {
 mod Main {
     import Builder.{ push_val };
 
-    fn main!() -> Int {
+    fn main() with(Std) -> Int {
         let mut nums: Vec<i32> = vec_new::<i32>();
 
         // Before the fix, the second call would fail at check time:

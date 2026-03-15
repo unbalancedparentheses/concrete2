@@ -331,13 +331,11 @@ def fmtFnDef (f : FnDef) (ind : Nat) : String :=
   let trustedStr := if f.isTrusted then "trusted " else ""
   let testStr := if f.isTest then s!"{pfx}#[test]\n" else ""
   let tparamsStr := fmtTypeParams f.typeParams f.typeBounds
-  let bangStr := if f.hasBang then "!" else ""
   let paramsStr := f.params.map fmtParam
-  -- When hasBang is true, the ! already implies the full capset, don't emit with(...)
-  let capStr := if f.hasBang then "" else fmtCapSetTop f.capSet
+  let capStr := fmtCapSetTop f.capSet
   let retStr := if f.retTy == .unit then "" else s!" -> {fmtTy f.retTy}"
   let bodyStr := f.body.map (fmtStmt (ind + 1))
-  s!"{testStr}{pfx}{pubStr}{trustedStr}fn {f.name}{bangStr}{tparamsStr}({", ".intercalate paramsStr}){capStr}{retStr} \{\n{"\n".intercalate bodyStr}\n{pfx}}"
+  s!"{testStr}{pfx}{pubStr}{trustedStr}fn {f.name}{tparamsStr}({", ".intercalate paramsStr}){capStr}{retStr} \{\n{"\n".intercalate bodyStr}\n{pfx}}"
 
 def fmtTraitDef (t : TraitDef) (ind : Nat) : String :=
   let pfx := indent ind
