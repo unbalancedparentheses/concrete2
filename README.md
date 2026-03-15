@@ -59,16 +59,28 @@ That is why the next major phase is [Phase H](ROADMAP.md): large-program pressur
 These are the kinds of boundaries Concrete tries to make obvious in source code.
 The interesting claim is mechanical, not rhetorical: the verifier below can read a manifest, but it cannot silently grow `Network` or `Process`, and the raw C edge stays inside one small trusted wrapper.
 
-Pure decision core:
+Pure policy core:
 
 ```con
+struct ManifestMeta {
+    size: Int,
+    version: Int,
+    requests_network: Bool,
+}
+
 enum Decision {
     Allow,
     Deny,
 }
 
-fn check_update_size(size: Int, expected: Int) -> Decision {
-    if size != expected {
+fn approve_manifest(meta: ManifestMeta, expected_size: Int, max_version: Int) -> Decision {
+    if meta.requests_network {
+        return Decision#Deny;
+    }
+    if meta.version > max_version {
+        return Decision#Deny;
+    }
+    if meta.size != expected_size {
         return Decision#Deny;
     }
     return Decision#Allow;
@@ -86,8 +98,9 @@ trusted extern fn malloc(size: u64) -> *mut u8;
 trusted extern fn free(ptr: *mut u8);
 
 // helper functions like string_to_cstr(...) and mode_cstr(...)
-// stay inside the trusted wrapper layer too
-trusted fn read_manifest_len(path: &String) with(File) -> Int {
+// stay inside the trusted wrapper layer too.
+// Parsing details are omitted here; the point is the boundary shape.
+trusted fn load_manifest_meta(path: &String) with(File) -> ManifestMeta {
     let path_buf: *mut u8 = string_to_cstr(path);
     let mode_buf: *mut u8 = mode_cstr(114); // "r"
     let fp: *const u8 = fopen(path_buf, mode_buf);
@@ -96,12 +109,16 @@ trusted fn read_manifest_len(path: &String) with(File) -> Int {
     fseek(fp, 0, 2);
     let size: i64 = ftell(fp);
     fclose(fp);
-    return size as Int;
+    return ManifestMeta {
+        size: size as Int,
+        version: 1,
+        requests_network: false,
+    };
 }
 
-fn verify_update(path: &String, expected: Int) with(File) -> Decision {
-    let size: Int = read_manifest_len(path);
-    return check_update_size(size, expected);
+fn verify_update(path: &String, expected_size: Int, max_version: Int) with(File) -> Decision {
+    let meta: ManifestMeta = load_manifest_meta(path);
+    return approve_manifest(meta, expected_size, max_version);
 }
 ```
 
