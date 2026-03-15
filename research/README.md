@@ -33,11 +33,12 @@ If you want the highest-leverage current research first:
 1. [ten-x-improvements.md](ten-x-improvements.md) — the biggest long-term multipliers for Concrete (`P0`, `Open`)
 2. [formalization-roi.md](formalization-roi.md) — what to prove first and why (`P0`, `Open`)
 3. [proving-concrete-functions-in-lean.md](proving-concrete-functions-in-lean.md) — how selected Concrete functions could be proved in Lean 4 (`P0`, `Open`)
-4. [high-integrity-profile.md](high-integrity-profile.md) — what a stricter high-integrity / provable Concrete profile could be (`P0`, `Open`)
-5. [authority-budgets.md](authority-budgets.md) — package/subsystem authority limits and authority-aware dependency policy (`P0`, `Open`)
-6. [proof-evidence-artifacts.md](proof-evidence-artifacts.md) — tying reports, artifacts, reproducibility, and later proof references into one evidence story (`P0`, `Open`)
-7. [package-model.md](package-model.md) — what the eventual project/package model must decide (`P0`, `Open`)
-8. [trust-multipliers.md](trust-multipliers.md) — proof-backed reports, sandbox profiles, authority budgets, FFI envelopes, trust bundles, and showcase workloads (`P0`, `Open`)
+4. [formalization-breakdown.md](formalization-breakdown.md) — the full formalization effort broken into proof tracks, dependencies, and milestones (`P0`, `Open`)
+5. [high-integrity-profile.md](high-integrity-profile.md) — what a stricter high-integrity / provable Concrete profile could be (`P0`, `Open`)
+6. [authority-budgets.md](authority-budgets.md) — package/subsystem authority limits and authority-aware dependency policy (`P0`, `Open`)
+7. [proof-evidence-artifacts.md](proof-evidence-artifacts.md) — tying reports, artifacts, reproducibility, and later proof references into one evidence story (`P0`, `Open`)
+8. [package-model.md](package-model.md) — what the eventual project/package model must decide (`P0`, `Open`)
+9. [trust-multipliers.md](trust-multipliers.md) — proof-backed reports, sandbox profiles, authority budgets, FFI envelopes, trust bundles, and showcase workloads (`P0`, `Open`)
 
 ## Language Decisions
 
@@ -73,6 +74,7 @@ If you want the highest-leverage current research first:
 
 - [formalization-roi.md](formalization-roi.md) — best order for proving Core, effects, ownership, and Core→SSA preservation (`P0`, `Open`)
 - [proving-concrete-functions-in-lean.md](proving-concrete-functions-in-lean.md) — how Concrete functions could be represented and proved in Lean 4 (`P0`, `Open`)
+- [formalization-breakdown.md](formalization-breakdown.md) — the full proof effort split into semantic, language-guarantee, compiler-preservation, and evidence tracks (`P0`, `Open`)
 - [proof-evidence-artifacts.md](proof-evidence-artifacts.md) — how reports, artifacts, proofs, and reproducibility could reinforce each other (`P0`, `Open`)
 - [trust-multipliers.md](trust-multipliers.md) — how authority, runtime, proof, and evidence work could combine into Concrete-specific differentiators (`P0`, `Open`)
 - [package-model.md](package-model.md) — package identity, dependency semantics, workspaces, and the boundary to authority-aware dependencies (`P0`, `Open`)

@@ -189,10 +189,11 @@ private def variantIndex (enumName : String) (variantName : String) : LowerM Nat
     throw s!"Lower.variantIndex: enum '{enumName}' not found in enum defs"
 
 /-- Get variant fields within an enum definition. -/
-private def variantFields (enumName : String) (variantName : String) : LowerM (List (String × Ty)) := do
+private def variantFields (enumName : String) (variantName : String) (typeArgs : List Ty := []) : LowerM (List (String × Ty)) := do
   let s ← getState
   match s.enumDefs.find? fun ed => ed.name == enumName with
   | some ed =>
+    let ed := Layout.substEnumTypeArgs ed typeArgs
     match ed.variants.find? fun (vn, _) => vn == variantName with
     | some (_, fields) => return fields
     | none =>
@@ -263,10 +264,16 @@ private def removePromotedAllocas (names : List String) : LowerM Unit := do
   let s ← getState
   setState { s with promotedAllocas := s.promotedAllocas.filter fun (n, _, _) => !names.contains n }
 
+/-- Extract type args from a Ty, unwrapping references/pointers. -/
+private def typeArgsFromTy : Ty → List Ty
+  | .generic _ args => args
+  | .ref inner | .refMut inner | .ptrMut inner | .ptrConst inner => typeArgsFromTy inner
+  | _ => []
+
 /-- Get byte offset of a field within a struct definition. Delegates to Layout.fieldOffset. -/
-private def fieldByteOffset (tyName : String) (fieldName : String) : LowerM Nat := do
+private def fieldByteOffset (tyName : String) (fieldName : String) (typeArgs : List Ty := []) : LowerM Nat := do
   let ctx ← getLayoutCtx
-  return Layout.fieldOffset ctx tyName fieldName
+  return Layout.fieldOffset ctx tyName fieldName typeArgs
 
 /-- Push loop info onto the loop stack. -/
 private def pushLoop (info : LoopInfo) : LowerM Unit := do
@@ -457,7 +464,7 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
         -- to get a pointer to the field, avoiding copy + lost write-back.
         let oVal ← lowerExpr obj
         let tyName ← structNameFromTy obj.ty
-        let byteOff ← fieldByteOffset tyName field
+        let byteOff ← fieldByteOffset tyName field (typeArgsFromTy obj.ty)
         let gepDst ← freshReg "fieldmut."
         emit (.gep gepDst oVal [.intConst (Int.ofNat byteOff) .int] .i8)
         aVals := aVals ++ [.reg gepDst (.refMut fieldTy)]
@@ -516,7 +523,7 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
   | .fieldAccess obj field ty =>
     let oVal ← lowerExpr obj
     let tyName ← structNameFromTy obj.ty
-    let byteOff ← fieldByteOffset tyName field
+    let byteOff ← fieldByteOffset tyName field (typeArgsFromTy obj.ty)
     let dst ← freshReg
     -- Use byte-offset GEP: gep i8, ptr, byteOffset
     emit (.gep dst oVal [.intConst (Int.ofNat byteOff) .int] .i8)
@@ -534,11 +541,12 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
     emit (.store (.intConst (Int.ofNat vidx) .i32) baseVal)
     -- GEP to payload using aligned offset (after i32 tag, with padding)
     let layoutCtx ← getLayoutCtx
-    let vfields ← variantFields enumName variant
+    let enumTypeArgs := typeArgsFromTy ty
+    let vfields ← variantFields enumName variant enumTypeArgs
     let s ← getState
     let ed := s.enumDefs.find? fun ed => ed.name == enumName
     let payloadOff := match ed with
-      | some ed => Layout.enumPayloadOffset layoutCtx ed
+      | some ed => Layout.enumPayloadOffset layoutCtx ed enumTypeArgs
       | none => 4
     let payloadPtr ← freshReg
     emit (.gep payloadPtr baseVal [.intConst (Int.ofNat payloadOff) .int] .i8)
@@ -593,11 +601,12 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
           startBlock armLabel
           -- GEP past i32 tag to payload using aligned offset
           let layoutCtx ← getLayoutCtx
-          let vfields ← variantFields enumName variant
+          let enumTypeArgs := typeArgsFromTy scrutinee.ty
+          let vfields ← variantFields enumName variant enumTypeArgs
           let s ← getState
           let ed := s.enumDefs.find? fun ed => ed.name == enumName
           let payloadOff := match ed with
-            | some ed => Layout.enumPayloadOffset layoutCtx ed
+            | some ed => Layout.enumPayloadOffset layoutCtx ed enumTypeArgs
             | none => 4
           let payloadGep ← freshReg
           emit (.gep payloadGep scrVal [.intConst (Int.ofNat payloadOff) .int] .i8)
@@ -887,10 +896,11 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
       | .named n => n
       | .generic n _ => n
       | _ => resultEnumName
+    let enumTypeArgs := typeArgsFromTy inner.ty
     let s ← getState
     let ed := s.enumDefs.find? fun ed => ed.name == resultEnumName
     let payloadOff := match ed with
-      | some ed => Layout.enumPayloadOffset layoutCtx ed
+      | some ed => Layout.enumPayloadOffset layoutCtx ed enumTypeArgs
       | none => 8
     let payloadGep ← freshReg
     emit (.gep payloadGep iVal [.intConst (Int.ofNat payloadOff) .int] .i8)
@@ -1391,7 +1401,7 @@ partial def lowerStmt (stmt : CStmt) : LowerM Unit := do
   | .fieldAssign obj field value =>
     let fVal ← lowerExpr value
     let tyName ← structNameFromTy obj.ty
-    let byteOff ← fieldByteOffset tyName field
+    let byteOff ← fieldByteOffset tyName field (typeArgsFromTy obj.ty)
     -- Check if obj is a deref expression (e.g., *p.field = val → GEP into p directly)
     match obj with
     | .deref inner _ =>

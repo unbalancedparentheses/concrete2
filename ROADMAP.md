@@ -545,24 +545,6 @@ Concrete is not only architecturally strong internally, but also operable, repro
 - **Phase H** matters because package and dependency semantics are part of the language experience once real projects exist.
 - **Phase I** matters because long-term projects fail just as easily from weak operational discipline as from weak compiler architecture.
 
-### Next
-
-1. Finish the remaining compiler-hardening items below.
-   - convert warning-only fallback paths into real compile errors where possible
-   - complete the remaining integer-inference and cross-module alias checks
-   - prefer explicit failure over silent wrong code in backend-facing paths
-2. Start **Phase E: Runtime And Execution Model**.
-   - define the hosted vs freestanding split
-   - make the runtime boundary explicit
-   - close the current FFI/ABI calling-convention gaps
-   - define execution/sandbox profiles and the runtime-facing stdlib direction
-3. Then move through the deferred phases in order: **F** (capability/safety productization), **G** (language-surface discipline), **H** (package/dependency ecosystem), **I** (operational maturity).
-4. Keep long-horizon differentiator ideas in research until their prerequisites are real.
-   - proof-backed authority reports
-   - verified FFI envelopes
-   - reproducible trust bundles
-   - showcase workloads
-
 ### Compiler Hardening (between Phase D and Phase E)
 
 These are concrete, implementable improvements that emerged from the bug fixes and integration testing in Phase D. They are not full phases — they are targeted hardening work that should land before Phase E begins, because Phase E (runtime/execution model) depends on the compiler being trustworthy for the patterns it already claims to support.

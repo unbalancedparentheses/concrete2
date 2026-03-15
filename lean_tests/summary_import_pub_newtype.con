@@ -6,7 +6,7 @@ mod Lib {
 mod Main {
     import Lib.{ make_meters, unwrap_meters };
     fn main() -> Int {
-        let m: Meters = make_meters(42);
+        let m = make_meters(42);
         return unwrap_meters(m);
     }
 }

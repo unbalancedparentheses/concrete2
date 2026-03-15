@@ -135,8 +135,7 @@ partial def tyToLLVMTy (s : EmitSSAState) : Ty → LLVMTy
       match ssaLookupEnum s name with
       | some _ => .enum_ name
       | none =>
-        dbg_trace s!"WARNING: EmitSSA.tyToLLVMTy: unknown named type '{name}', defaulting to i64"
-        .i64
+        panic! s!"EmitSSA.tyToLLVMTy: unknown named type '{name}'"
 
 /-- Map integer Concrete type to structured LLVM type. -/
 private def intTyToLLVMTy : Ty → LLVMTy
@@ -1353,6 +1352,28 @@ private def emitBuiltins (s : EmitSSAState) : EmitSSAState :=
     moduleGlobals := s.moduleGlobals ++ builtinGlobals.toArray,
     moduleDeclarations := s.moduleDeclarations ++ builtinDecls.toArray }
 
+/-- Collect all types referenced in an SVal. -/
+private def collectSValTys (v : SVal) : List Ty :=
+  match v with
+  | .reg _ t => [t]
+  | .intConst _ t => [t]
+  | .floatConst _ t => [t]
+  | _ => []
+
+/-- Collect all types referenced in an SInst. -/
+private def collectSInstTys (inst : SInst) : List Ty :=
+  match inst with
+  | .binOp _ _ lhs rhs ty => collectSValTys lhs ++ collectSValTys rhs ++ [ty]
+  | .unaryOp _ _ operand ty => collectSValTys operand ++ [ty]
+  | .call _ _ args retTy => args.foldl (fun acc a => acc ++ collectSValTys a) [] ++ [retTy]
+  | .alloca _ ty => [ty]
+  | .load _ ptr ty => collectSValTys ptr ++ [ty]
+  | .store val ptr => collectSValTys val ++ collectSValTys ptr
+  | .gep _ base indices ty => collectSValTys base ++ indices.foldl (fun acc i => acc ++ collectSValTys i) [] ++ [ty]
+  | .phi _ incoming ty => incoming.foldl (fun acc (v, _) => acc ++ collectSValTys v) [] ++ [ty]
+  | .cast _ val targetTy => collectSValTys val ++ [targetTy]
+  | .memcpy dst src _ => collectSValTys dst ++ collectSValTys src
+
 -- ============================================================
 -- Entry point: emit full SSA program as LLVM IR
 -- ============================================================
@@ -1360,9 +1381,29 @@ private def emitBuiltins (s : EmitSSAState) : EmitSSAState :=
 def emitSModule (s : EmitSSAState) (m : SModule) (testMode : Bool := false) : EmitSSAState :=
   let s := { s with structDefs := s.structDefs ++ m.structs, enumDefs := s.enumDefs ++ m.enums,
                      linkerAliases := s.linkerAliases ++ m.linkerAliases }
-  -- User types (dedup across modules)
+  -- Collect all types from this module's functions for generic type arg lookup
+  let moduleTys := m.functions.foldl (fun acc f =>
+    let retTys := [f.retTy]
+    let paramTys := f.params.map (·.2)
+    f.blocks.foldl (fun acc b =>
+      b.insts.foldl (fun acc inst => acc ++ collectSInstTys inst) acc
+    ) (acc ++ retTys ++ paramTys)
+  ) ([] : List Ty)
+  -- User types (dedup across modules, substitute type args for generic definitions)
   let s := m.structs.foldl (fun s sd =>
     if s.emittedTypes.contains sd.name then s
+    else if sd.typeParams.length > 0 then
+      -- Generic struct: find concrete type args from function types
+      match moduleTys.findSome? fun t =>
+        match t with
+        | .generic n args => if n == sd.name then some args else none
+        | _ => none
+      with
+      | some args =>
+        let sd := Layout.substStructTypeArgs sd args
+        let s := { s with emittedTypes := sd.name :: s.emittedTypes }
+        emitTypeDef s (Layout.structTypeDef (layoutCtxOf s) sd)
+      | none => s  -- no instantiation found, skip
     else
       let s := { s with emittedTypes := sd.name :: s.emittedTypes }
       emitTypeDef s (Layout.structTypeDef (layoutCtxOf s) sd)
@@ -1370,6 +1411,17 @@ def emitSModule (s : EmitSSAState) (m : SModule) (testMode : Bool := false) : Em
   let ctx := layoutCtxOf s
   let s := m.enums.foldl (fun s ed =>
     if s.emittedTypes.contains ed.name then s
+    else if ed.typeParams.length > 0 then
+      -- Generic enum: find concrete type args from function types
+      match moduleTys.findSome? fun t =>
+        match t with
+        | .generic n args => if n == ed.name then some args else none
+        | _ => none
+      with
+      | some args =>
+        let s := { s with emittedTypes := ed.name :: s.emittedTypes }
+        (Layout.enumTypeDefs ctx ed args).foldl (fun s line => emitTypeDef s line) s
+      | none => s  -- no instantiation found, skip
     else
       let s := { s with emittedTypes := ed.name :: s.emittedTypes }
       (Layout.enumTypeDefs ctx ed).foldl (fun s line => emitTypeDef s line) s
@@ -1394,27 +1446,6 @@ def emitSModule (s : EmitSSAState) (m : SModule) (testMode : Bool := false) : Em
     | none => s
   else s
 
-/-- Collect all types referenced in an SVal. -/
-private def collectSValTys (v : SVal) : List Ty :=
-  match v with
-  | .reg _ t => [t]
-  | .intConst _ t => [t]
-  | .floatConst _ t => [t]
-  | _ => []
-
-/-- Collect all types referenced in an SInst. -/
-private def collectSInstTys (inst : SInst) : List Ty :=
-  match inst with
-  | .binOp _ _ lhs rhs ty => collectSValTys lhs ++ collectSValTys rhs ++ [ty]
-  | .unaryOp _ _ operand ty => collectSValTys operand ++ [ty]
-  | .call _ _ args retTy => args.foldl (fun acc a => acc ++ collectSValTys a) [] ++ [retTy]
-  | .alloca _ ty => [ty]
-  | .load _ ptr ty => collectSValTys ptr ++ [ty]
-  | .store val ptr => collectSValTys val ++ collectSValTys ptr
-  | .gep _ base indices ty => collectSValTys base ++ indices.foldl (fun acc i => acc ++ collectSValTys i) [] ++ [ty]
-  | .phi _ incoming ty => incoming.foldl (fun acc (v, _) => acc ++ collectSValTys v) [] ++ [ty]
-  | .cast _ val targetTy => collectSValTys val ++ [targetTy]
-  | .memcpy dst src _ => collectSValTys dst ++ collectSValTys src
 
 /-- Scan all SSA modules for concrete type arguments used with Option and Result.
     Returns (largest Option payload type, largest Result payload types (ok, err)). -/

@@ -224,8 +224,10 @@ def resolveImports (imports : List ImportDecl)
     match summaryTable.lookup imp.moduleName with
     | none => .error (unknownModuleMsg imp.moduleName)
     | some summary =>
-      -- Build alias map from the exporting module's type aliases
-      let aliasMap := summary.typeAliases.map fun ta => (ta.name, ta.targetTy)
+      -- Build alias map from the exporting module's type aliases and newtypes
+      -- (newtypes are erased at module boundaries for imported signatures)
+      let aliasMap := (summary.typeAliases.map fun ta => (ta.name, ta.targetTy))
+        ++ (summary.newtypes.map fun nt => (nt.name, nt.innerTy))
       let pubFns := summary.functions ++ summary.externFnSigs
       imp.symbols.foldlM (init := acc) fun acc sym =>
         let origName := sym.name

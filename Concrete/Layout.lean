@@ -40,18 +40,39 @@ end Builtin
 -- Type argument substitution for generic enums
 -- ============================================================
 
+/-- Substitute type variables in a type using a mapping. -/
+partial def substTyVars (subst : List (String × Ty)) : Ty → Ty
+  | .typeVar name => match subst.find? fun (p, _) => p == name with
+    | some (_, actual) => actual
+    | none => .typeVar name
+  | .named name => match subst.find? fun (p, _) => p == name with
+    | some (_, actual) => actual
+    | none => .named name
+  | .ref inner => .ref (substTyVars subst inner)
+  | .refMut inner => .refMut (substTyVars subst inner)
+  | .ptrMut inner => .ptrMut (substTyVars subst inner)
+  | .ptrConst inner => .ptrConst (substTyVars subst inner)
+  | .heap inner => .heap (substTyVars subst inner)
+  | .heapArray inner => .heapArray (substTyVars subst inner)
+  | .generic name args => .generic name (args.map (substTyVars subst))
+  | .array elem n => .array (substTyVars subst elem) n
+  | .fn_ params capSet retTy => .fn_ (params.map (substTyVars subst)) capSet (substTyVars subst retTy)
+  | ty => ty
+
+/-- Substitute type variables in a CStructDef with concrete type arguments. -/
+def substStructTypeArgs (sd : CStructDef) (typeArgs : List Ty) : CStructDef :=
+  if sd.typeParams.isEmpty || typeArgs.isEmpty then sd
+  else
+    let subst := sd.typeParams.zip typeArgs
+    { sd with fields := sd.fields.map fun (fn, ft) => (fn, substTyVars subst ft) }
+
 /-- Substitute type variables in a CEnumDef with concrete type arguments. -/
-private def substEnumTypeArgs (ed : CEnumDef) (typeArgs : List Ty) : CEnumDef :=
+def substEnumTypeArgs (ed : CEnumDef) (typeArgs : List Ty) : CEnumDef :=
   if ed.typeParams.isEmpty || typeArgs.isEmpty then ed
   else
     let subst := ed.typeParams.zip typeArgs
     { ed with variants := ed.variants.map fun (vn, fields) =>
-      (vn, fields.map fun (fn, ft) =>
-        (fn, match ft with
-             | .typeVar name => match subst.find? fun (p, _) => p == name with
-                                | some (_, actual) => actual
-                                | none => ft
-             | other => other)) }
+      (vn, fields.map fun (fn, ft) => (fn, substTyVars subst ft)) }
 
 -- ============================================================
 -- Type size (bytes)
@@ -61,6 +82,7 @@ private def substEnumTypeArgs (ed : CEnumDef) (typeArgs : List Ty) : CEnumDef :=
 private partial def tyAlign_namedOrGeneric (ctx : Ctx) (tyAlignFn : Ctx → Ty → Nat) (name : String) (typeArgs : List Ty) : Nat :=
   match lookupStruct ctx name with
   | some sd =>
+    let sd := substStructTypeArgs sd typeArgs
     if sd.isPacked then 1
     else
       let natural := sd.fields.foldl (fun maxA (_, ft) => Nat.max maxA (tyAlignFn ctx ft)) 1
@@ -74,8 +96,7 @@ private partial def tyAlign_namedOrGeneric (ctx : Ctx) (tyAlignFn : Ctx → Ty �
       Nat.max 4 (ed.variants.foldl (fun maxA (_, vfields) =>
         vfields.foldl (fun a (_, ft) => Nat.max a (tyAlignFn ctx ft)) maxA) 1)
     | none =>
-      dbg_trace s!"WARNING: Layout.tyAlign: unknown named type '{name}', defaulting to 8"
-      8
+      panic! s!"Layout.tyAlign: unknown named type '{name}'"
 
 /-- Natural alignment of a type in bytes. -/
 partial def tyAlign (ctx : Ctx) : Ty → Nat
@@ -105,13 +126,14 @@ def alignUp (n : Nat) (align : Nat) : Nat :=
 private partial def tySize_namedOrGeneric (ctx : Ctx) (tySizeFn : Ctx → Ty → Nat) (tyAlignFn : Ctx → Ty → Nat) (name : String) (typeArgs : List Ty) : Nat :=
   match lookupStruct ctx name with
   | some sd =>
+    let sd := substStructTypeArgs sd typeArgs
     if sd.isPacked then
       sd.fields.foldl (fun acc (_, ft) => acc + tySizeFn ctx ft) 0
     else
       let (sz, _) := sd.fields.foldl (fun (acc, _) (_, ft) =>
         let aligned := alignUp acc (tyAlignFn ctx ft)
         (aligned + tySizeFn ctx ft, ())) (0, ())
-      let structAlign := tyAlignFn ctx (.named name)
+      let structAlign := if typeArgs.isEmpty then tyAlignFn ctx (.named name) else tyAlignFn ctx (.generic name typeArgs)
       alignUp sz structAlign
   | none =>
     match lookupEnum ctx name with
@@ -127,8 +149,7 @@ private partial def tySize_namedOrGeneric (ctx : Ctx) (tySizeFn : Ctx → Ty →
       let payloadStart := alignUp 4 payloadAlign
       alignUp (payloadStart + maxPayload) (Nat.max 4 payloadAlign)
     | none =>
-      dbg_trace s!"WARNING: Layout.tySize: unknown named type '{name}', defaulting to 8"
-      8
+      panic! s!"Layout.tySize: unknown named type '{name}'"
 
 /-- Byte size of a type. Used for malloc/alloca sizing and enum layout. -/
 partial def tySize (ctx : Ctx) : Ty → Nat
@@ -149,10 +170,11 @@ partial def tySize (ctx : Ctx) : Ty → Nat
   | .never | .placeholder => 0
   | .typeVar _ => 8
 
-/-- Byte offset of a field within a struct. -/
-def fieldOffset (ctx : Ctx) (structName fieldName : String) : Nat :=
+/-- Byte offset of a field within a struct. Accepts optional type args for generic structs. -/
+def fieldOffset (ctx : Ctx) (structName fieldName : String) (typeArgs : List Ty := []) : Nat :=
   match lookupStruct ctx structName with
   | some sd =>
+    let sd := substStructTypeArgs sd typeArgs
     if sd.isPacked then
       -- Packed: no alignment padding
       let (offset, _) := sd.fields.foldl (fun (acc : Nat × Bool) (n, t) =>
@@ -171,8 +193,7 @@ def fieldOffset (ctx : Ctx) (structName fieldName : String) : Nat :=
           else (aligned + tySize ctx t, false)) (0, false)
       offset
   | none =>
-    dbg_trace s!"WARNING: Layout.fieldOffset: struct '{structName}' not found, returning offset 0"
-    0
+    panic! s!"Layout.fieldOffset: struct '{structName}' not found"
 
 /-- Maximum payload size across all variants of an enum. -/
 def enumPayloadSize (ctx : Ctx) (ed : CEnumDef) : Nat :=
@@ -183,12 +204,14 @@ def enumPayloadSize (ctx : Ctx) (ed : CEnumDef) : Nat :=
     Nat.max maxSz sz.1) 0
 
 /-- Byte offset from start of enum to payload (after i32 tag, aligned). -/
-def enumPayloadOffset (ctx : Ctx) (ed : CEnumDef) : Nat :=
+def enumPayloadOffset (ctx : Ctx) (ed : CEnumDef) (typeArgs : List Ty := []) : Nat :=
+  let ed := substEnumTypeArgs ed typeArgs
   let payloadAlign := ed.variants.foldl (fun maxA (_, vfields) =>
     vfields.foldl (fun a (_, ft) => Nat.max a (tyAlign ctx ft)) maxA) 1
   alignUp 4 payloadAlign
 
-/-- Byte offset of a field within a variant's payload (aligned). -/
+/-- Byte offset of a field within a variant's payload (aligned).
+    Fields should already be substituted (use substEnumTypeArgs before extracting). -/
 def variantFieldOffset (ctx : Ctx) (fields : List (String × Ty)) (idx : Nat) : Nat :=
   let (off, _, _) := fields.foldl (fun (acc, i, done) (_, ft) =>
     if done then (acc, i + 1, true)
@@ -216,8 +239,7 @@ def isPassByPtr (ctx : Ctx) (ty : Ty) : Bool :=
       match lookupEnum ctx name with
       | some _ => true
       | none =>
-        dbg_trace s!"WARNING: Layout.isPassByPtr: unknown named type '{name}', defaulting to false"
-        false
+        panic! s!"Layout.isPassByPtr: unknown named type '{name}'"
   | .generic "Vec" _ | .generic "HashMap" _ => true
   | .generic name _ =>
     match lookupStruct ctx name with
@@ -226,8 +248,7 @@ def isPassByPtr (ctx : Ctx) (ty : Ty) : Bool :=
       match lookupEnum ctx name with
       | some _ => true
       | none =>
-        dbg_trace s!"WARNING: Layout.isPassByPtr: unknown generic type '{name}', defaulting to false"
-        false
+        panic! s!"Layout.isPassByPtr: unknown generic type '{name}'"
   | _ => false
 
 -- ============================================================
@@ -268,8 +289,7 @@ def tyToLLVM (ctx : Ctx) : Ty → String
       match lookupEnum ctx name with
       | some _ => "%enum." ++ name
       | none =>
-        dbg_trace s!"WARNING: Layout.tyToLLVM: unknown named type '{name}', defaulting to i64"
-        "i64"
+        panic! s!"Layout.tyToLLVM: unknown named type '{name}'"
 
 /-- LLVM type for function parameters (pass-by-ptr types become ptr). -/
 def paramTyToLLVM (ctx : Ctx) (ty : Ty) : String :=
