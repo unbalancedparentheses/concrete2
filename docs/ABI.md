@@ -101,7 +101,7 @@ Violations are compile errors — there is no way to bypass FFI safety without m
 
 Fields are laid out in declaration order with natural alignment padding, matching the C struct layout convention. Struct size is rounded up to the struct's alignment.
 
-**Important limitation:** `#[repr(C)]` guarantees layout compatibility (field offsets, sizes, alignment match what a C compiler would produce), but it does **not** guarantee calling-convention compatibility. All structs — including `#[repr(C)]` — are passed by pointer in Concrete function calls (see Pass-by-Pointer Convention below). This means `extern fn` declarations that take `#[repr(C)]` struct parameters expect a pointer, not a by-value struct. C callers must pass a pointer to the struct, not the struct itself.
+**Calling convention:** `#[repr(C)]` structs are passed **by value** in `extern fn` calls, matching the standard C ABI. The compiler detects extern fn calls and emits by-value parameters for `#[repr(C)]` struct arguments instead of the pointer indirection used for internal Concrete calls. This means `extern fn` declarations that take `#[repr(C)]` struct parameters interoperate correctly with C code that expects by-value structs. Non-repr(C) structs are still passed by pointer in all contexts (see Pass-by-Pointer Convention below).
 
 Example: `#[repr(C)] struct Packet { tag: i8, payload: i32, flags: i16 }`
 - `tag` at offset 0, size 1
@@ -142,23 +142,23 @@ This representation is **not stable** and should not be relied upon across FFI b
 
 ## Pass-by-Pointer Convention
 
-Aggregate types (structs, enums, arrays, `String`, `Vec`, `HashMap`) are passed by pointer in function calls. The caller allocates stack space, stores the value, and passes a pointer. Scalar types (integers, floats, bool, char) are passed by value.
+Aggregate types (structs, enums, arrays, `String`, `Vec`, `HashMap`) are passed by pointer in **internal** Concrete function calls. The caller allocates stack space, stores the value, and passes a pointer. Scalar types (integers, floats, bool, char) are passed by value.
 
-This convention applies uniformly to internal Concrete function calls **and** `extern fn` declarations. A C function declared as `extern fn foo(s: MyReprCStruct)` in Concrete will be emitted as `declare ... @foo(ptr ...)` in LLVM IR — the C side must accept a pointer, not a by-value struct. This is a known divergence from the standard C ABI, where small structs may be passed in registers or by value.
+**Exception for extern fn:** `#[repr(C)]` struct arguments in `extern fn` calls are passed by value, following the standard C ABI. The compiler detects extern fn calls at emission time and loads the struct value from its pointer before passing it. This ensures interoperability with C code that expects by-value struct parameters.
 
-The pass-by-pointer set is **not stable** — which types are passed by pointer may change in future compiler versions.
+Non-repr(C) structs in extern fn calls still use pointer passing (but non-repr(C) structs are rejected in extern fn signatures by the FFI type checker, so this case should not arise in practice).
+
+The pass-by-pointer set for internal calls is **not stable** — which types are passed by pointer may change in future compiler versions.
 
 ## Known Limitations
 
 These are not hypothetical — they are current implementation gaps that affect real FFI usage:
 
-1. **No by-value struct passing in `extern fn`.** `#[repr(C)]` guarantees in-memory layout compatibility with C, but Concrete passes all structs (including `#[repr(C)]`) by pointer in function calls. An `extern fn` taking a `#[repr(C)]` struct emits `declare ... @foo(ptr ...)`, not a by-value struct parameter. C code must be written to accept a pointer. This is the single largest gap between what the layout model promises and what the calling convention delivers.
+1. **No empirical cross-platform validation.** The layout model is verified by Lean unit tests that check compile-time constants. There are no tests that compile to LLVM IR on multiple targets and verify the emitted signatures or struct layout at runtime. The "layout model assumptions" table below documents what the model assumes, not what has been empirically validated on each target.
 
-2. **No empirical cross-platform validation.** The layout model is verified by Lean unit tests that check compile-time constants. There are no tests that compile to LLVM IR on multiple targets and verify the emitted signatures or struct layout at runtime. The "layout model assumptions" table below documents what the model assumes, not what has been empirically validated on each target.
+2. **No return-by-value for structs.** Struct return values also go through pointer indirection (sret), diverging from the C ABI where small structs may be returned in registers.
 
-3. **No return-by-value for structs.** Struct return values also go through pointer indirection (sret), diverging from the C ABI where small structs may be returned in registers.
-
-These limitations are acceptable for the current stage (pointer-based FFI works correctly when both sides agree on the convention), but they mean Concrete cannot yet interoperate transparently with arbitrary C libraries that expect standard calling conventions for struct parameters.
+These limitations are acceptable for the current stage. By-value `#[repr(C)]` struct passing in `extern fn` is implemented, but return-by-value and cross-platform empirical validation remain as future work.
 
 ## What We Intentionally Do Not Promise
 

@@ -10,7 +10,13 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
-### Phase E items 1-3: execution model documented
+### Phase E items 4–5: FFI ownership boundary and ABI calling convention
+
+**Item 4 — FFI/runtime ownership boundary**: `docs/EXECUTION_MODEL.md` now documents how ownership, capabilities, and resource tracking interact at the FFI boundary. Extern functions require `Unsafe`; `trusted fn` wrappers hide `Unsafe` behind safe APIs. Linear types consumed by-value in extern calls; references borrow without consuming; raw pointers are Copy with no tracking. Known gaps documented: raw pointer leaks, no verified FFI envelopes, no cross-language ownership protocol.
+
+**Item 5 — FFI/ABI calling convention fix**: `EmitSSA.lean` now distinguishes extern fn calls from internal calls. `#[repr(C)]` struct arguments in extern fn calls are passed by value per the C ABI instead of always by pointer. New helpers: `externParamTyToLLVMTy` and `isReprCStruct` detect repr(C) structs and emit by-value passing for extern calls while preserving pointer-based passing for internal calls.
+
+### Phase E items 1–3: execution model and abort-on-OOM
 
 `docs/EXECUTION_MODEL.md` defines Concrete's execution model covering three Phase E items:
 
@@ -18,7 +24,7 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 **Item 2 — Runtime boundary**: There is no Concrete runtime. No global constructors, no GC, no module init, no thread-local setup. Programs start in a compiler-generated `main` that calls `user_main`, optionally print the result, and return 0. Failure is explicit through return types — no panic, no unwind. All external symbol dependencies are enumerated (always-required: malloc/free/printf/memcpy/etc.; conditionally-required: fs/net/process symbols from stdlib imports).
 
-**Item 3 — Memory/allocation strategy**: All heap allocation goes through libc malloc/realloc/free. Allocation is capability-tracked via `Alloc`. Deallocation is explicit via linear ownership + `defer`. malloc failure is not handled (known gap — abort-on-OOM is the planned first step). Future directions: bounded allocation profiles, allocator parameters (Zig-style), no-alloc mode for freestanding.
+**Item 3 — Memory/allocation strategy**: All heap allocation goes through libc malloc/realloc/free. Allocation is capability-tracked via `Alloc`. Deallocation is explicit via linear ownership + `defer`. **Abort-on-OOM is implemented** at both layers: compiler builtins pipe all malloc/realloc through `__concrete_check_oom` (null-check + abort), and stdlib wrappers in `std/src/alloc.con` (`heap_new`, `grow`) null-check and call `abort()` on failure. Future directions: bounded allocation profiles, allocator parameters (Zig-style), no-alloc mode for freestanding.
 
 ### Runtime/concurrency roadmap split clarified
 

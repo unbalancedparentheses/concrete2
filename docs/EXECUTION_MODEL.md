@@ -157,15 +157,19 @@ The `Alloc` capability marks functions that allocate. This is enforced by `CoreC
 
 ### Allocation failure
 
-**malloc failure is not handled.** If `malloc` returns null, the program will proceed with a null pointer and crash on the next dereference. This is the same behavior as C code that doesn't check malloc return values.
+**Abort on OOM.** All allocation paths check for null returns from `malloc`/`realloc` and abort the process immediately if allocation fails. This matches Rust's default allocator behavior and is appropriate for hosted programs.
 
-This is a known gap. Options for the future:
+The abort-on-OOM guarantee covers two layers:
 
-1. **Abort on OOM**: check malloc returns in builtins, call `abort()` on null. Simple, matches Rust's default allocator behavior. Suitable for most hosted programs.
-2. **Propagate OOM as error**: builtins return `Result<T, AllocError>`. Correct but invasive — changes the signature of every allocating operation.
-3. **Allocator trait**: user-provided allocator with configurable failure behavior. Most flexible but highest complexity.
+1. **Compiler builtins** (`EmitBuiltins.lean`): All 11 `malloc`/`realloc` call sites in string and vec builtins pipe through `__concrete_check_oom`, a compiler-emitted helper that null-checks and calls `abort()`.
+2. **Stdlib wrappers** (`std/src/alloc.con`): `heap_new<T>()` and `grow<T>()` null-check their `malloc`/`realloc` results and call `abort()` on failure.
 
-Option 1 (abort on OOM) is the likely first step. It can be added to the builtin functions in `EmitBuiltins.lean` without changing any user-facing API.
+This means any allocation reachable through the standard API is OOM-safe. Direct `extern fn malloc` calls from user `trusted` code are not checked — the user is responsible for null-checking in that case.
+
+Future directions beyond abort-on-OOM:
+
+1. **Propagate OOM as error**: builtins return `Result<T, AllocError>`. Correct but invasive — changes the signature of every allocating operation.
+2. **Allocator trait**: user-provided allocator with configurable failure behavior. Most flexible but highest complexity.
 
 ### Deallocation model
 
@@ -203,11 +207,83 @@ See [ABI_LAYOUT.md](ABI_LAYOUT.md) for full details.
 
 | Direction | Description | Phase |
 |-----------|-------------|-------|
-| Abort on OOM | Check malloc returns in builtins, abort on null | E (near-term) |
+| Abort on OOM | Check malloc returns in builtins, abort on null | E (done) |
 | Bounded allocation profile | Compile-time cap on allocation count/size for high-integrity use | E/F |
 | Allocator parameter | User-provided allocator for collections (Zig-style) | G+ |
 | No-alloc mode | Compile without malloc/free for freestanding targets | G+ |
 | Arena/bump allocators | Stdlib allocator implementations beyond libc malloc | G+ |
+
+---
+
+## FFI and Runtime Ownership Boundary
+
+This section documents how ownership, capabilities, and resource tracking interact with the FFI boundary. For FFI type rules and safety checks, see [FFI.md](FFI.md). For ABI and calling convention details, see [ABI.md](ABI.md).
+
+### Capability model at the FFI boundary
+
+Extern functions participate in the capability system:
+
+| Declaration | Capability requirement | Use case |
+|------------|----------------------|----------|
+| `extern fn foo(...)` | Caller must have `Unsafe` | Raw foreign calls |
+| `trusted extern fn bar(...)` | No capability required | Audited pure functions (math, abs) |
+| `trusted fn wrap(...) with(Alloc, Unsafe)` calling extern fn | Caller must have `Alloc` and `Unsafe` | Wrappers that audit raw pointer use but still expose `Unsafe` |
+
+The standard pattern is a three-layer stack:
+
+1. **libc declaration** (`std.libc`): raw `extern fn malloc(size: u64) -> *mut u8`
+2. **trusted wrapper** (`std.alloc`): `trusted fn heap_new<T>() with(Alloc, Unsafe) -> *mut T` — calls malloc, null-checks, casts the pointer. The `trusted` marker means raw pointer operations inside are audited, but `Unsafe` is still visible to callers.
+3. **user code**: calls `heap_new<T>()` with both `Alloc` and `Unsafe` capabilities
+
+Today `trusted` allows raw pointer operations without additional checks inside the function body, but it does **not** hide capabilities from callers. The declared `with(...)` set is the caller-visible contract. A future capability-hiding mechanism (where a trusted wrapper could absorb `Unsafe` and expose only `Alloc`) is not yet implemented.
+
+### Ownership across FFI calls
+
+The linearity checker tracks ownership at the Concrete level:
+
+- **By-value arguments to extern fn consume the variable.** If you pass a linear type by value, it is marked consumed. The compiler assumes the foreign function took ownership.
+- **By-reference arguments (`&T`, `&mut T`) borrow without consuming.** The original variable remains usable after the call.
+- **Raw pointers (`*mut T`, `*const T`) are Copy.** No ownership tracking. The compiler cannot see what C code does with a pointer.
+
+### What the compiler cannot track
+
+Once data crosses the FFI boundary, the compiler has no visibility:
+
+| Scenario | Compiler behavior | Risk |
+|----------|------------------|------|
+| Passing `*mut T` to extern fn | No tracking (Copy type) | C code may free, leak, or corrupt |
+| Extern fn returns `*mut T` | No obligation to free | Caller may leak if they drop the pointer |
+| Trusted code extracts `.ptr` from `Vec`/`String` | `Vec`/`String` is consumed, but buffer is now a raw pointer | Double-free if both Concrete and C free it |
+| Extern fn writes beyond buffer bounds | No defense | Buffer overflow / UB |
+
+These gaps are intentional — they match the cost model of C FFI in Rust, Zig, and other systems languages. The mitigation is:
+
+1. **`trusted fn` wrappers** that present a safe interface
+2. **Capability tracking** that makes FFI usage visible in reports
+3. **`--report unsafe`** that shows which trusted functions wrap which extern calls
+
+### What is NOT allowed at the FFI boundary
+
+The compiler enforces that only FFI-safe types appear in `extern fn` signatures:
+
+- **Allowed**: integers, floats, bool, char, `()`, raw pointers (`*mut T`, `*const T`), `#[repr(C)]` structs
+- **Rejected at compile time**: `String`, `Vec<T>`, `HashMap<K,V>`, non-repr(C) structs, enums, arrays, references
+
+This prevents accidentally passing a managed Concrete type to C code that doesn't understand its layout.
+
+### Calling convention
+
+`#[repr(C)]` structs in `extern fn` signatures are passed by value following the platform C ABI. LLVM handles the register/stack lowering for the target architecture. Internal Concrete function calls use pointer-based passing for all aggregates.
+
+For full calling convention details, see [ABI.md](ABI.md).
+
+### Known gaps and future directions
+
+| Gap | Description | Planned mitigation |
+|-----|-------------|-------------------|
+| Raw pointer leaks | `*mut T` from extern fn can be dropped without freeing | Linear pointer wrappers or `must_use` annotation |
+| No verified FFI envelopes | Extern fn contracts are trust-based, not mechanically checked | Verified FFI envelopes (Phase E item 9) |
+| No cross-language ownership protocol | No way to express "C takes ownership" vs "C borrows" | Ownership annotations on extern fn parameters |
 
 ---
 
@@ -218,8 +294,10 @@ See [ABI_LAYOUT.md](ABI_LAYOUT.md) for full details.
 | Environment | Hosted only (POSIX + libc) | Freestanding mode later |
 | Startup | `main` → `user_main`, no init | No change needed |
 | Shutdown | Return from `main`, OS cleanup | No change needed |
-| Failure | No panic, no unwind, explicit errors | Abort-on-OOM for builtins |
-| Allocation | libc malloc/realloc/free | Abort-on-OOM, then allocator traits |
+| Failure | No panic, no unwind, explicit errors, abort-on-OOM | Allocator traits |
+| Allocation | libc malloc/realloc/free, abort-on-OOM | Allocator traits, arenas |
 | Deallocation | Linear ownership + explicit `defer` | Automatic `Destroy` insertion possible |
 | Stack | Unbounded, OS guard page | Bounded stack analysis for high-integrity |
 | Capability tracking | `Alloc` tracks allocation, `Unsafe` tracks pointers | Authority budgets, sandboxing |
+| FFI ownership | Linear types consumed by-value; raw pointers untracked | Verified FFI envelopes, ownership annotations |
+| FFI calling convention | `#[repr(C)]` structs passed by value for extern fn | Already implemented |

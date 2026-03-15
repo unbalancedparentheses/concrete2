@@ -56,6 +56,8 @@ structure EmitSSAState where
   /-- Distinct Vec element specs (elemSize, optionPayloadOffset) used in the program.
       Used to generate per-size vec builtin implementations. -/
   vecElemSpecs : List (Nat × Nat) := []
+  /-- Names of extern functions (for C ABI calling convention at call sites). -/
+  externFnNames : List String := []
 
 /-- Append a structured instruction to the current block. -/
 private def emitStructured (s : EmitSSAState) (instr : LLVMInstr) : EmitSSAState :=
@@ -167,6 +169,18 @@ private def svalToOperand (_s : EmitSSAState) (v : SVal) : LLVMOperand :=
 /-- LLVM type for function parameters (pass-by-ptr types → ptr). -/
 private def paramTyToLLVMTy (s : EmitSSAState) (ty : Ty) : LLVMTy :=
   if ssaIsPassByPtr s ty then .ptr else tyToLLVMTy s ty
+
+/-- Is this type a #[repr(C)] struct? -/
+private def isReprCStruct (s : EmitSSAState) : Ty → Bool
+  | .named name => (Layout.lookupStruct (layoutCtxOf s) name).any (·.isReprC)
+  | _ => false
+
+/-- LLVM type for extern function parameters: #[repr(C)] structs are passed by value
+    (the actual LLVM struct type) so LLVM can apply the platform C calling convention.
+    All other types use the normal paramTyToLLVMTy logic. -/
+private def externParamTyToLLVMTy (s : EmitSSAState) (ty : Ty) : LLVMTy :=
+  if isReprCStruct s ty then tyToLLVMTy s ty
+  else paramTyToLLVMTy s ty
 
 private def ssaIsSignedInt : Ty → Bool
   | .int | .i8 | .i16 | .i32 => true
@@ -470,9 +484,12 @@ private def emitSInst (s : EmitSSAState) (inst : SInst) : EmitSSAState :=
       else s
     | none =>
     -- General call path (non-vec or unspecialized vec ops like vec_len/vec_free)
+    -- For extern fn calls, #[repr(C)] struct args use C ABI (by-value) passing.
+    let isExternCall := s.externFnNames.contains fn
     -- Build typed argument list
     let (s, argOps) := args.foldl (fun (s, ops) a =>
-      let paramTy := paramTyToLLVMTy s a.ty
+      let paramTy := if isExternCall then externParamTyToLLVMTy s a.ty
+                     else paramTyToLLVMTy s a.ty
       match a with
       | .strConst name =>
         -- String constants always passed as ptr to %struct.String
@@ -492,6 +509,13 @@ private def emitSInst (s : EmitSSAState) (inst : SInst) : EmitSSAState :=
           let s := emitStructured s (.alloca tmpName valTy)
           let s := emitStructured s (.store valTy (svalToOperand s a) (.reg tmpName))
           (s, ops ++ [(.ptr, .reg tmpName)])
+      else if isExternCall && isReprCStruct s a.ty && isKnownPtr s a then
+        -- Extern call with repr(C) struct arg that's currently a pointer:
+        -- load the value so it's passed by value per C ABI.
+        let (s, tmp) := freshLocal s
+        let tmpName := (tmp.drop 1).toString
+        let s := emitStructured s (.load tmpName valTy (svalToOperand s a))
+        (s, ops ++ [(valTy, .reg tmpName)])
       else
         (s, ops ++ [(paramTy, svalToOperand s a)])
     ) (s, ([] : List (LLVMTy × LLVMOperand)))
@@ -729,12 +753,13 @@ private def emitExternDecls (s : EmitSSAState) (externFns : List (String × List
     "malloc", "free", "realloc", "write", "abort", "printf", "strlen",
     "memset", "memcmp", "snprintf", "strtol"
   ]
-  -- User extern function declarations (skip if already defined as a concrete function)
+  -- User extern function declarations (skip if already defined as a concrete function).
+  -- Uses externParamTyToLLVMTy so #[repr(C)] structs are passed by value per the C ABI.
   externFns.foldl (fun s (name, params, retTy) =>
     if builtinNames.contains name || definedFns.contains name then s
     else
       let retLLTy := tyToLLVMTy s retTy
-      let paramTys := params.map fun (_, t) => paramTyToLLVMTy s t
+      let paramTys := params.map fun (_, t) => externParamTyToLLVMTy s t
       emitDecl s { name := name, retTy := retLLTy, params := paramTys }
   ) s
 
@@ -837,7 +862,8 @@ private def collectSInstTys (inst : SInst) : List Ty :=
 
 def emitSModule (s : EmitSSAState) (m : SModule) (testMode : Bool := false) : EmitSSAState :=
   let s := { s with structDefs := s.structDefs ++ m.structs, enumDefs := s.enumDefs ++ m.enums,
-                     linkerAliases := s.linkerAliases ++ m.linkerAliases }
+                     linkerAliases := s.linkerAliases ++ m.linkerAliases,
+                     externFnNames := s.externFnNames ++ m.externFns.map (·.1) }
   -- Collect all types from this module's functions for generic type arg lookup
   let moduleTys := m.functions.foldl (fun acc f =>
     let retTys := [f.retTy]
