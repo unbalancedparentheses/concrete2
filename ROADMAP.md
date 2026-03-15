@@ -57,7 +57,7 @@ Still clearly not implemented:
 | **B** | Semantic cleanup | Done |
 | **C** | Tooling and stdlib hardening | Done |
 | **D** | Testing, backend, and trust multipliers | Done |
-| **E** | Runtime and execution model | In progress (items 1–5 done) |
+| **E** | Runtime and execution model | Done |
 | **F** | Capability and safety productization | Not started |
 | **G** | Language surface and feature discipline | Not started |
 | **H** | Package and dependency ecosystem | Not started |
@@ -267,14 +267,12 @@ Primary surfaces:
 3. define the memory / allocation strategy explicitly — **done** — `docs/EXECUTION_MODEL.md` documents libc malloc model, capability-tracked allocation, deallocation model; abort-on-OOM implemented in both compiler builtins (`__concrete_check_oom`) and stdlib wrappers (`std.alloc` heap_new/grow null-check + abort)
 4. tighten the FFI/runtime ownership boundary — **done** — `docs/EXECUTION_MODEL.md` documents capability model at FFI boundary, ownership tracking across FFI calls (by-value consumes, by-ref borrows, raw pointers untracked), known gaps and future directions
 5. close the FFI/ABI calling convention gaps (from Phase D Known Limitations) — **done** — `EmitSSA.lean` now detects extern fn calls and passes `#[repr(C)]` struct arguments by value (C ABI) instead of always by pointer; `externParamTyToLLVMTy` + `isReprCStruct` distinguish extern vs internal calling convention
-6. define target/platform support policy explicitly — **not started**
-7. make runtime-related stdlib surfaces reflect the chosen execution model — **not started**
-8. define execution profiles for high-integrity use — **not started**
-9. define how runtime-sensitive performance validation should work — **not started**
-10. make room for verified FFI envelopes and structural boundedness reporting — **not started**
-11. define the concurrency and execution story deliberately — **not started**
-   - first target: hosted runtime, OS-thread-based concurrency, explicit `spawn`/`join`/channel APIs, move-first ownership across threads, no built-in `async`/`await` initially
-   - concurrency should be capability-gated and live in stdlib/runtime surfaces before any core-language syntax is considered
+6. define target/platform support policy explicitly — **done** — `docs/EXECUTION_MODEL.md` documents target profile (64-bit, POSIX), three-tier support model (Tier 1/2/Experimental), target-dependent components, empirical validation gaps
+7. make runtime-related stdlib surfaces reflect the chosen execution model — **done** — `docs/EXECUTION_MODEL.md` documents full module-to-layer mapping with capabilities and host dependencies; `docs/STDLIB.md` updated with execution model alignment section
+8. define execution profiles for high-integrity use — **done** — `docs/EXECUTION_MODEL.md` documents planned profiles (`no_alloc`, `bounded_alloc`, `no_unsafe`, `no_ffi`, `high_integrity`), enforcement via capability system, relationship to proofs
+9. define how runtime-sensitive performance validation should work — **done** — `docs/EXECUTION_MODEL.md` documents performance principles, metrics, regression thresholds, and future directions (compile-time baselines, integration timing)
+10. make room for verified FFI envelopes and structural boundedness reporting — **done** — `docs/EXECUTION_MODEL.md` documents FFI envelope direction (parameter checking, null safety, ownership transfer), structural boundedness properties (allocation-free, stack-bounded, terminating), existing report capabilities, and what's needed
+11. define the concurrency and execution story deliberately — **done** — `docs/EXECUTION_MODEL.md` documents design principles (explicit, structured, threads-first, capability-gated), first concurrency model (OS threads, spawn/join, channels, move ownership), staging plan, and what to avoid
 
 Deliverables:
 - a documented hosted vs freestanding execution model

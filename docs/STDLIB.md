@@ -78,6 +78,23 @@ The core principles are:
 6. **Collections should be few but excellent.**
    It is better to have a small number of deeply-tested, explicit, low-level collections than a broad and inconsistent collection zoo.
 
+## Execution Model Alignment
+
+The stdlib is classified into three layers by host dependency, documented in [EXECUTION_MODEL.md](EXECUTION_MODEL.md):
+
+| Layer | Modules | Host assumption |
+|-------|---------|-----------------|
+| **Core** | `option`, `result`, `mem`, `slice`, `math`, `fmt`, `hash`, `parse`, `test` | None — pure computation |
+| **Alloc** | `alloc`, `vec`, `string`, `bytes`, `text`, `deque`, `heap`, `ordered_map`, `ordered_set`, `bitset`, `map`, `set`, `path` | malloc/realloc/free + abort |
+| **Hosted** | `io`, `fs`, `env`, `process`, `net`, `time`, `rand` | Full POSIX libc |
+
+Every Alloc-layer module inherits abort-on-OOM from `std.alloc`. Every Hosted-layer module requires its own capability (`File`, `Net`, `Process`, `Env`, `Time`, `Rand`). This means:
+
+- `--report caps` shows the full authority chain for any stdlib usage
+- `--report alloc` shows which functions allocate and whether cleanup exists
+- A future `no_alloc` execution profile would reject code that uses any Alloc or Hosted module
+- A future `core_only` profile would restrict to Core-layer modules only
+
 ## Foundation First
 
 The first wave of stdlib foundation work has landed:

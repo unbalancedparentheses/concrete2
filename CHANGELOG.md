@@ -10,6 +10,19 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Phase E complete: Runtime and Execution Model
+
+Phase E is done. All 11 items are complete. `docs/EXECUTION_MODEL.md` is the central reference.
+
+**Items 6–11 (new this milestone):**
+
+- **Item 6 — Target/platform support policy**: Three-tier support model (Tier 1: x86_64-linux, aarch64-darwin; Tier 2: x86_64-darwin; Experimental: everything else). Documents what "supported" means, what is target-dependent, and what is not yet validated empirically.
+- **Item 7 — Stdlib execution model alignment**: Full module-to-layer mapping (Core/Alloc/Hosted) with capabilities and host dependencies for all 24 stdlib modules. `docs/STDLIB.md` updated with execution model alignment section.
+- **Item 8 — Execution profiles**: Documents planned profiles (`no_alloc`, `bounded_alloc`, `no_unsafe`, `no_ffi`, `high_integrity`), how they map to the existing capability system, and their relationship to `ProofCore` eligibility.
+- **Item 9 — Performance validation direction**: Documents principles (representative workloads, compilation time matters, observability over cleverness), metrics, regression thresholds, and future CI integration.
+- **Item 10 — Verified FFI envelopes and structural boundedness**: Documents FFI envelope direction (mechanical checking of extern fn contracts), structural boundedness properties (allocation-free, stack-bounded, terminating), and how they connect to existing report infrastructure.
+- **Item 11 — Concurrency direction**: Documents design principles (explicit, structured, threads-first, capability-gated), the first concurrency model (OS threads, spawn/join, channels, move ownership), 5-stage plan, and what to avoid (Rust-style async fragmentation, hidden executors).
+
 ### Phase E items 4–5: FFI ownership boundary and ABI calling convention
 
 **Item 4 — FFI/runtime ownership boundary**: `docs/EXECUTION_MODEL.md` now documents how ownership, capabilities, and resource tracking interact at the FFI boundary. Extern functions require `Unsafe`; `trusted fn` wrappers hide `Unsafe` behind safe APIs. Linear types consumed by-value in extern calls; references borrow without consuming; raw pointers are Copy with no tracking. Known gaps documented: raw pointer leaks, no verified FFI envelopes, no cross-language ownership protocol.
