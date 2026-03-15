@@ -1,0 +1,16 @@
+// Regression test: clock_monotonic_ns (Bug 012).
+// Tests that monotonic clock returns increasing values.
+// Expected output: 0
+
+fn main() with(Std) -> Int {
+    let t1: Int = clock_monotonic_ns();
+    let mut sum: Int = 0;
+    let mut i: Int = 0;
+    while i < 100 {
+        sum = sum + i;
+        i = i + 1;
+    }
+    let t2: Int = clock_monotonic_ns();
+    if t2 > t1 { return 0; }
+    return 1;
+}

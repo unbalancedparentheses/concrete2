@@ -900,11 +900,14 @@ private def emitMainWrapper (s : EmitSSAState) (retTy : Ty) : EmitSSAState :=
 -- Emit string literal globals
 -- ============================================================
 
-/-- Emit builtin implementations needed by the program. -/
+/-- Emit builtin implementations needed by the program.
+    Skips builtins whose name collides with a user-defined function. -/
 private def emitBuiltins (s : EmitSSAState) : EmitSSAState :=
   let (builtinFns, builtinGlobals, builtinDecls) := getBuiltinFns
   let vecFns := getVecBuiltinFns s.vecElemSpecs
-  let allFns := builtinFns ++ vecFns
+  -- Filter out builtins that are already defined by user/extern code
+  let userFnNames := s.moduleFunctions.toList.map (·.name)
+  let allFns := (builtinFns ++ vecFns).filter fun f => !userFnNames.contains f.name
   { s with
     moduleFunctions := s.moduleFunctions ++ allFns.toArray,
     moduleGlobals := s.moduleGlobals ++ builtinGlobals.toArray,
@@ -1192,11 +1195,17 @@ def emitSSAProgram (modules : List SModule) (testMode : Bool := false) (moduleFi
   -- Emit builtin function implementations
   let s := emitBuiltins s
   -- Assemble the final LLVMModule and print it
+  -- Deduplicate declarations: remove duplicates by name and declarations
+  -- that collide with a defined function (user code takes precedence)
+  let fnNames := s.moduleFunctions.toList.map (·.name)
+  let dedupDecls := s.moduleDeclarations.toList.foldl (fun (acc : List LLVMFnDecl) d =>
+    if acc.any (·.name == d.name) || fnNames.contains d.name then acc
+    else acc ++ [d]) []
   let llvmModule : LLVMModule := {
     header := s.moduleHeader.toList
     typeDefs := s.moduleTypeDefs.toList
     globals := s.moduleGlobals.toList
-    declarations := s.moduleDeclarations.toList
+    declarations := dedupDecls
     functions := s.moduleFunctions.toList
   }
   printLLVMModule llvmModule

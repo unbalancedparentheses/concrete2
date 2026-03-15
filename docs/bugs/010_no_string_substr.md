@@ -1,6 +1,6 @@
 # Bug 010: No String Substring Extraction Path
 
-**Status:** Open (missing feature / stdlib gap)
+**Status:** Fixed
 **Discovered:** 2026-03-15
 **Discovered in:** `examples/mal/main.con`
 
@@ -29,12 +29,8 @@ This works, but it distorts normal parser structure and makes otherwise straight
 - Phase H interpreter/runtime workloads become more contorted than they should be
 - pushes programs toward custom slice-hash logic instead of ordinary string processing
 
-## Fix Direction
+## Fix
 
-Provide one of:
-
-- a builtin `string_substr(&String, start, len) -> String`
-- a stdlib-owned substring helper with acceptable performance/ownership semantics
-- a slice/string-view story if the project wants to avoid eager substring allocation
-
-The main requirement is that parser code has a normal way to talk about substrings without re-implementing indexing logic everywhere.
+`string_slice(s: &String, start: Int, end: Int) -> String` already existed as a builtin.
+Added `string_substr` as an alias that maps to the same intrinsic (`stringSlice`).
+Intrinsic name canonicalization in Elab.lean ensures aliases resolve to the same LLVM function.

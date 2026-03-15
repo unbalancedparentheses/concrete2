@@ -1,0 +1,28 @@
+// Regression test: string_push_char and string_append (Bug 011).
+// Tests in-place string mutation inside loops.
+// Expected output: 0
+
+fn main() with(Std) -> Int {
+    let mut s: String = "";
+    let mut i: Int = 0;
+    while i < 5 {
+        string_push_char(&mut s, 65 + i);
+        i = i + 1;
+    }
+    string_append(&mut s, &"!");
+    if !string_eq(&s, &"ABCDE!") {
+        drop_string(s);
+        return 1;
+    }
+
+    // Test string_substr alias for string_slice
+    let sub: String = string_substr(&s, 0, 5);
+    if !string_eq(&sub, &"ABCDE") {
+        drop_string(sub);
+        drop_string(s);
+        return 2;
+    }
+    drop_string(sub);
+    drop_string(s);
+    return 0;
+}

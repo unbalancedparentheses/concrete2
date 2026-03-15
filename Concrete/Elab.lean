@@ -705,6 +705,20 @@ partial def elabCall (fnName : String) (typeArgs : List Ty) (args : List Expr)
   if intrinsic == some .vecNew then
     let elemTy := match typeArgs with | t :: _ => t | [] => .int
     return .call "vec_new" typeArgs [] (.generic "Vec" [elemTy])
+  -- Intercept string_push_char(&mut s, ch)
+  if intrinsic == some .stringPushChar then
+    let mut cArgs : List CExpr := []
+    for arg in args do
+      let cArg ← elabExpr arg
+      cArgs := cArgs ++ [cArg]
+    return .call "string_push_char" [] cArgs .unit
+  -- Intercept string_append(&mut s, other)
+  if intrinsic == some .stringAppend then
+    let mut cArgs : List CExpr := []
+    for arg in args do
+      let cArg ← elabExpr arg
+      cArgs := cArgs ++ [cArg]
+    return .call "string_append" [] cArgs .unit
   -- Intercept vec_push
   if intrinsic == some .vecPush then
     -- Elaborate vec arg first to extract element type for value hint
@@ -824,7 +838,11 @@ partial def elabCall (fnName : String) (typeArgs : List Ty) (args : List Expr)
     for (arg, pTy) in args.zip paramTypes do
       let cArg ← elabExpr arg (some pTy)
       cArgs := cArgs ++ [cArg]
-    return .call fnName inferredTypeArgs cArgs retTy
+    -- Use canonical name for intrinsics (e.g., string_substr → string_slice)
+    let callName := match intrinsic with
+      | some id => id.canonicalName
+      | none => fnName
+    return .call callName inferredTypeArgs cArgs retTy
   | none => throwElab (.undeclaredFunction fnName) span
 
 partial def elabStmt (stmt : Stmt) : ElabM (List CStmt) := do

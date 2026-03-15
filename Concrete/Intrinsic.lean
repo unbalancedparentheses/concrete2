@@ -26,9 +26,16 @@ inductive IntrinsicId where
   -- String operations
   | stringLength | stringConcat | stringEq | stringSlice
   | stringCharAt | stringContains | stringTrim | dropString
+  | stringPushChar | stringAppend
 
   -- Conversion
   | intToString | stringToInt | boolToString | floatToString
+
+  -- I/O
+  | printString | printInt | printChar
+
+  -- Timing
+  | clockMonotonicNs
 
   -- System
   | getArgs | abort
@@ -70,12 +77,23 @@ def resolveIntrinsic (name : String) : Option IntrinsicId :=
   | "string_contains" | "String_contains" => some .stringContains
   | "string_trim"     | "String_trim"     => some .stringTrim
   | "drop_string"     | "String_drop"     => some .dropString
+  | "string_push_char" | "String_push_char" => some .stringPushChar
+  | "string_append"    | "String_append"    => some .stringAppend
+  | "string_substr"    | "String_substr"    => some .stringSlice
 
   -- Conversion
   | "int_to_string"  => some .intToString
   | "string_to_int"  => some .stringToInt
   | "bool_to_string" => some .boolToString
   | "float_to_string"=> some .floatToString
+
+  -- I/O
+  | "print_string" => some .printString
+  | "print_int"    => some .printInt
+  | "print_char"   => some .printChar
+
+  -- Timing
+  | "clock_monotonic_ns" => some .clockMonotonicNs
 
   -- System
   | "get_args"     => some .getArgs
@@ -117,10 +135,16 @@ def IntrinsicId.canonicalName : IntrinsicId → String
   | .stringContains => "string_contains"
   | .stringTrim => "string_trim"
   | .dropString => "drop_string"
+  | .stringPushChar => "string_push_char"
+  | .stringAppend => "string_append"
   | .intToString => "int_to_string"
   | .stringToInt => "string_to_int"
   | .boolToString => "bool_to_string"
   | .floatToString => "float_to_string"
+  | .printString => "print_string"
+  | .printInt => "print_int"
+  | .printChar => "print_char"
+  | .clockMonotonicNs => "clock_monotonic_ns"
   | .getArgs => "get_args"
   | .abort => "abort"
   | .sizeof => "sizeof"
@@ -134,6 +158,10 @@ def IntrinsicId.capability : IntrinsicId → Option String
   -- Alloc
   | .alloc | .free
   | .vecNew | .vecPush | .vecPop | .vecFree => some "Alloc"
+  -- Console
+  | .printString | .printInt | .printChar => some "Console"
+  -- Clock
+  | .clockMonotonicNs => some "Clock"
   -- Pure (no capability required)
   | _ => none
 

@@ -1,6 +1,6 @@
 # Bug 012: No Easy Timing Path For Standalone Benchmark Programs
 
-**Status:** Open (ergonomic/access gap)
+**Status:** Fixed
 **Discovered:** 2026-03-15
 **Discovered in:** `examples/mal/main.con`
 
@@ -34,10 +34,15 @@ For Phase H comparative workloads, this means:
 - Phase H comparison work must currently time programs externally
 - the standalone/program split becomes visible in one more basic workflow
 
-## Possible Fixes
+## Fix
 
-- **Option A:** Add a tiny builtin timing surface for benchmarking-oriented standalone use
-- **Option B:** Auto-resolve `std.*` imports in standalone mode so `std.time` is usable
-- **Option C:** Keep timing external by design, but document that standalone programs are not expected to self-time
+Added `clock_monotonic_ns() -> Int` as a compiler builtin (Option A).
+Returns nanoseconds from the monotonic clock via `clock_gettime(CLOCK_MONOTONIC)`.
+Requires `Clock` capability.
 
-The most important thing is to make the intended workflow explicit and low-friction.
+```con
+let t1: Int = clock_monotonic_ns();
+// ... work ...
+let t2: Int = clock_monotonic_ns();
+let elapsed_ns: Int = t2 - t1;
+```

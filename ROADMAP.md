@@ -129,7 +129,7 @@ Still clearly not implemented:
   - **Bug 004 — Array variable-index assignment** (`Lower.lean:1460`): `arr[i] = val` with runtime variable `i` generated GEP with wrong base type (`i64` instead of element type) and wrong store width. Literal indices worked correctly. Documented in `docs/bugs/004_array_variable_index_assign.md`, reproduction test in `lean_tests/bug_array_var_index_assign.con`. Status: **fixed**.
   - **Bug 005 — Enum fields inside structs can panic layout computation** (`Layout.lean`): named structs containing enum-typed fields can crash layout/alignment computation instead of lowering correctly. Discovered during Phase H policy-engine work when a `Rule` struct with `Action`/`Verdict` enum fields was pushed through collection-oriented layout pressure. Documented in `docs/bugs/005_enum_field_struct_layout_panic.md`. Status: **fixed**.
   - **Bug 006 — Cross-module string literal name collisions** (`Lower.lean`): different modules could emit conflicting `@str.N` globals, causing corrupt strings and crashes in cross-module string flows. Documented in `docs/bugs/006_cross_module_string_literal_collision.md`. Status: **fixed**.
-  - **Bug 007 — No easy print path for standalone programs**: stdlib `print`/`println` exists, but standalone `.con` files cannot use `std.io` without project/package setup, forcing manual `putchar` loops in single-file examples. Documented in `docs/bugs/007_no_print_string_builtin.md`. Status: **open**.
+  - **Bug 007 — No easy print path for standalone programs**: added `print_string`, `print_int`, `print_char` builtins with `Console` capability. User-defined functions take precedence. Documented in `docs/bugs/007_no_print_string_builtin.md`. Status: **fixed**.
   - **Bug 008 — If-else expressions**: if-else now works as an expression (`let x = if cond { a } else { b };`). Added `ifExpr` to AST/Core, `parseExprBlock` in parser, elaboration, and lowering with alloca+condBr+store+load pattern and proper type casts. Documented in `docs/bugs/008_if_else_expression_aggregate_types.md`. Status: **fixed**.
   - **Bug 009 — `const` declarations parsed but not lowered**: constants now inline correctly during lowering. Added `constants` field to `LowerState` and constant lookup in `lowerExpr` `.ident` handler. Documented in `docs/bugs/009_const_declarations_not_lowered.md`. Status: **fixed**.
 - **Compiler hardening pass complete** (all 5 items):
@@ -429,13 +429,13 @@ Primary surfaces:
 3. use those programs to drive stdlib gap discovery, diagnostics pain points, package/workspace friction, report UX problems, and readability failures under sustained use — **not started**
    - current findings already justify the phase:
      - ~~real compiler blocker: enum fields inside structs can still panic layout (`Bug 005`)~~ — **fixed**
-     - real standalone UX blocker: printing exists in stdlib, but standalone programs lack an easy print path without project/std setup (`Bug 007`)
+     - ~~real standalone UX blocker: printing exists in stdlib, but standalone programs lack an easy print path without project/std setup (`Bug 007`)~~ — **fixed**: `print_string`/`print_int`/`print_char` builtins added
      - fixed by real-program pressure: cross-module string literal collisions (`Bug 006`)
-     - MAL exposed parser/runtime-specific gaps that should be fixed quickly:
-       - no substring extraction path for parser/reader code (`Bug 010`)
-       - linear string building remains awkward inside loops without a `push_char` / `append` style path (`Bug 011`)
+     - ~~MAL exposed parser/runtime-specific gaps that should be fixed quickly:~~ — **all fixed**
+       - ~~no substring extraction path for parser/reader code (`Bug 010`)~~ — **fixed**: `string_slice` existed, `string_substr` alias added
+       - ~~linear string building remains awkward inside loops without a `push_char` / `append` style path (`Bug 011`)~~ — **fixed**: `string_push_char`/`string_append` builtins added
        - interpreter/runtime workloads also need stronger supporting runtime/data-structure ergonomics (frame-friendly environment patterns, richer collections); the first MAL environment slowdown was primarily an implementation issue, but it still exposed a thin toolbox for this workload class
-       - standalone benchmark programs have no easy path to use `std.time` without project/package setup (`Bug 012`)
+       - ~~standalone benchmark programs have no easy path to use `std.time` without project/package setup (`Bug 012`)~~ — **fixed**: `clock_monotonic_ns` builtin added
      - ~~other real ergonomics gaps: aggregate `if` expressions (`Bug 008`) and non-working lowered `const` declarations (`Bug 009`)~~ — **both fixed**
    - several initial complaints turned out to be misdiagnosed and should **not** be treated as roadmap gaps:
      - `print` / `println` already exist in `std.io`
@@ -446,18 +446,18 @@ Primary surfaces:
 6. identify codegen cliffs, allocation cliffs, compile-time cliffs, diagnostics pain points, and trust/capability ergonomics failures that only appear at larger scale — **not started**
    - current known examples:
      - ~~enum-typed fields inside named structs can still panic layout computation under real-program pressure (`Bug 005`)~~ — **fixed**
-     - standalone programs have no easy stdlib-backed print path without project setup (`Bug 007`)
-     - parser/runtime workloads need substring extraction and loop-friendly string building (`Bug 010`, `Bug 011`)
+     - ~~standalone programs have no easy stdlib-backed print path without project setup (`Bug 007`)~~ — **fixed**
+     - ~~parser/runtime workloads need substring extraction and loop-friendly string building (`Bug 010`, `Bug 011`)~~ — **both fixed**
      - interpreter workloads want stronger runtime/data-structure support even when the concrete implementation strategy is fixed
-     - benchmark-oriented standalone programs have no easy in-language timing path (`Bug 012`)
+     - ~~benchmark-oriented standalone programs have no easy in-language timing path (`Bug 012`)~~ — **fixed**
      - ~~aggregate `if` expressions and non-working lowered `const` declarations are real surface gaps exposed by real-program pressure (`Bug 008`, `Bug 009`)~~ — **both fixed**
 7. turn the findings into concrete language, stdlib, backend, and tooling follow-up work instead of treating the programs as mere demos — **not started**
    - fast-fix priorities from the first two serious programs:
      1. ~~fix enum-in-struct layout panic (`Bug 005`)~~ — **fixed**
-     2. give standalone programs an easy print path (`Bug 007`)
-     3. add substring extraction or equivalent string slicing (`Bug 010`)
-     4. add loop-friendly string building (`Bug 011`)
-     5. give standalone benchmark programs an easy timing path (`Bug 012`)
+     2. ~~give standalone programs an easy print path (`Bug 007`)~~ — **fixed**
+     3. ~~add substring extraction or equivalent string slicing (`Bug 010`)~~ — **fixed**
+     4. ~~add loop-friendly string building (`Bug 011`)~~ — **fixed**
+     5. ~~give standalone benchmark programs an easy timing path (`Bug 012`)~~ — **fixed**
 
 Deliverables:
 - a small corpus of serious Concrete programs large enough to pressure-test the language honestly

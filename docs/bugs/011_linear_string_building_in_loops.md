@@ -1,6 +1,6 @@
 # Bug 011: Linear String Building Is Awkward Inside Loops
 
-**Status:** Open (ergonomic/stdlib gap)
+**Status:** Fixed
 **Discovered:** 2026-03-15
 **Discovered in:** `examples/mal/main.con`
 
@@ -31,12 +31,20 @@ This became painful while implementing MAL reader/parser code. Combined with the
 - string-heavy real programs pay an unnecessary ergonomics tax
 - encourages avoidance patterns instead of direct, readable code
 
-## Fix Direction
+## Fix
 
-Provide one or more loop-friendly string-building primitives, for example:
+Added two in-place string mutation builtins (analogous to `vec_push`):
 
-- `string_push_char(&mut String, ch: Int)` / `push_char` on `String`
-- `string_append(&mut String, &String)` or `append_str`
-- a builder type specialized for incremental string construction
+- `string_push_char(s: &mut String, ch: Int)` — appends a single character. Grows buffer on demand (2x or min 8).
+- `string_append(s: &mut String, other: &String)` — appends another string. Grows buffer to fit.
 
-The key requirement is that real programs can build strings incrementally without fighting linearity at every loop boundary.
+These take `&mut String`, so they work naturally with loop-carried mutable variables without consuming the string:
+
+```con
+let mut s: String = "";
+while i < n {
+    string_push_char(&mut s, 65 + i);
+    i = i + 1;
+}
+string_append(&mut s, &"!");
+```

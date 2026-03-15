@@ -24,7 +24,12 @@ def builtinFnSigs : List (String × FnSummary) := [
   ("bool_to_string", { params := [("b", .bool)], retTy := .string }),
   ("float_to_string", { params := [("f", .float64)], retTy := .string }),
   ("get_args", { params := [], retTy := .heapArray .string, capSet := .concrete ["Process"] }),
-  ("string_trim", { params := [("s", .ref .string)], retTy := .string })
+  ("string_trim", { params := [("s", .ref .string)], retTy := .string }),
+  ("string_substr", { params := [("s", .ref .string), ("start", .int), ("len", .int)], retTy := .string }),
+  ("print_string", { params := [("s", .ref .string)], retTy := .unit, capSet := .concrete ["Console"] }),
+  ("print_int", { params := [("n", .int)], retTy := .unit, capSet := .concrete ["Console"] }),
+  ("print_char", { params := [("c", .int)], retTy := .unit, capSet := .concrete ["Console"] }),
+  ("clock_monotonic_ns", { params := [], retTy := .int, capSet := .concrete ["Clock"] })
 ]
 
 end Concrete

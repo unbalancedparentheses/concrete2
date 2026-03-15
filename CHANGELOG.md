@@ -18,6 +18,16 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 **Bug 005 — Enum-in-struct:** Confirmed fixed (layout engine handles enum fields in structs correctly).
 
+**Bug 007 — Standalone print:** Added `print_string(&String)`, `print_int(Int)`, `print_char(Int)` as compiler builtins requiring `Console` capability. Uses `write(2)` syscall. User-defined functions with the same names take precedence.
+
+**Bug 010 — Substring extraction:** `string_slice(s, start, end)` already existed; added `string_substr` alias. Intrinsic name canonicalization in Elab.lean ensures aliases resolve to the canonical LLVM function.
+
+**Bug 011 — Loop string building:** Added `string_push_char(&mut String, Int)` and `string_append(&mut String, &String)` builtins with in-place mutation via `&mut`, analogous to `vec_push`. Works naturally in loops without fighting linearity.
+
+**Bug 012 — Standalone timing:** Added `clock_monotonic_ns() -> Int` builtin requiring `Clock` capability. Returns nanoseconds from monotonic clock via `clock_gettime`.
+
+**Builtin deduplication:** Builtin LLVM function definitions and declarations now skip names already defined by user code or extern declarations, preventing redefinition errors.
+
 **MAL interpreter:** ~1150-line Make A Lisp interpreter (`examples/mal/main.con`) with linked-list environment (O(n) lookup), symbol interning, cons cell pool. Benchmarks show Concrete MAL is ~73x faster than Python MAL at -O2. Includes comparison benchmarks against Python native and C native.
 
 ### By-value repr(C) struct FFI and testing infrastructure: 891 tests, 0 failures

@@ -1000,6 +1000,30 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       if typeArgs.length != 1 then throwCheck (.builtinWrongTypeArgCount "vec_new" "1 type argument: vec_new::<T>()") (some e.getSpan)
       let elemTy := match typeArgs with | t :: _ => t | [] => Ty.int
       return .generic "Vec" [elemTy]
+    -- Intercept string_push_char(&mut s, ch)
+    if intrinsic == some .stringPushChar then
+      if args.length != 2 then throwCheck (.builtinWrongArgCount "string_push_char" 2) (some e.getSpan)
+      let strArg := match args with | a :: _ => a | [] => Expr.intLit default 0
+      let chArg := match args with | _ :: b :: _ => b | _ => Expr.intLit default 0
+      let strTy ← checkExpr strArg
+      match strTy with
+      | .refMut .string => pure ()
+      | _ => throwCheck (.builtinWrongFirstArg "string_push_char" "&mut String as first argument" (tyToString strTy)) (some e.getSpan)
+      let chTy ← checkExpr chArg (some .int)
+      expectTy .int chTy "string_push_char() char argument" (some e.getSpan)
+      return .unit
+    -- Intercept string_append(&mut s, other)
+    if intrinsic == some .stringAppend then
+      if args.length != 2 then throwCheck (.builtinWrongArgCount "string_append" 2) (some e.getSpan)
+      let strArg := match args with | a :: _ => a | [] => Expr.intLit default 0
+      let otherArg := match args with | _ :: b :: _ => b | _ => Expr.intLit default 0
+      let strTy ← checkExpr strArg
+      match strTy with
+      | .refMut .string => pure ()
+      | _ => throwCheck (.builtinWrongFirstArg "string_append" "&mut String as first argument" (tyToString strTy)) (some e.getSpan)
+      let otherTy ← checkExpr otherArg (some (.ref .string))
+      expectTy (.ref .string) otherTy "string_append() second argument" (some e.getSpan)
+      return .unit
     -- Intercept vec_push(&mut v, val)
     if intrinsic == some .vecPush then
       if args.length != 2 then throwCheck (.builtinWrongArgCount "vec_push" 2) (some e.getSpan)

@@ -1,6 +1,6 @@
 # Bug 007: No Print Path for Standalone Programs
 
-**Status:** Open (ergonomic/access gap, not a missing feature)
+**Status:** Fixed
 **Discovered:** 2026-03-15
 
 ## Situation
@@ -29,8 +29,11 @@ Every standalone example that needs output must declare `trusted extern fn putch
 - `examples/string_processing.con` calls nonexistent `print_string` — it doesn't compile
 - New users trying single-file examples have no obvious print path
 
-## Possible Fixes
+## Fix
 
-- **Option A:** Add `print_string`/`print_char` as compiler builtins (like `string_concat`). Zero setup cost, duplicates stdlib.
-- **Option B:** Auto-resolve `std.*` imports in standalone mode by searching a known stdlib path. No new builtins needed.
-- **Option C:** Accept standalone limitation, document it clearly, encourage project setup for real programs.
+Added compiler builtins (Option A):
+- `print_string(s: &String)` — writes string to stdout via `write(2)` syscall. Requires `Console` capability.
+- `print_int(n: Int)` — converts integer to string, writes to stdout. Requires `Console` capability.
+- `print_char(c: Int)` — writes single byte to stdout. Requires `Console` capability.
+
+User-defined functions with the same names still take precedence (existing tests that define their own `print_int`/`print_char` continue to work).

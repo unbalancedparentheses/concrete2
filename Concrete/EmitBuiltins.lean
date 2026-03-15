@@ -429,6 +429,132 @@ def getBuiltinFns : List LLVMFnDef × List LLVMGlobal × List LLVMFnDecl :=
     { name := "string_trim", retTy := strTy, params := [("s", .ptr)], blocks := strTrimBlocks }
 
   -- -------------------------------------------------------
+  -- print_string (write string data to stdout)
+  -- -------------------------------------------------------
+  let fnPrintString : LLVMFnDef :=
+    { name := "print_string", retTy := .void, params := [("s", .ptr)], blocks := [
+      ⟨"entry", [
+        strGep "ps_data_ptr" "s" 0,
+        .load "ps_data" .ptr (.reg "ps_data_ptr"),
+        strGep "ps_len_ptr" "s" 1,
+        .load "ps_len" .i64 (.reg "ps_len_ptr"),
+        .call (some "ps_written") .i64 (.global "write") [(.i32, .intLit 1), (.ptr, .reg "ps_data"), (.i64, .reg "ps_len")]
+      ], .ret .void none⟩] }
+
+  -- -------------------------------------------------------
+  -- print_int (convert to string, write, free buffer)
+  -- -------------------------------------------------------
+  let fnPrintInt : LLVMFnDef :=
+    { name := "print_int", retTy := .void, params := [("n", .i64)], blocks := [
+      ⟨"entry", [
+        .call (some "pi_buf.raw") .ptr (.global "malloc") [(.i64, .intLit 32)],
+        .call (some "pi_buf") .ptr (.global "__concrete_check_oom") [(.ptr, .reg "pi_buf.raw")],
+        .gep "pi_fmt" (.array 4 .i8) (.global ".fmt_ld") [(.i64, .intLit 0), (.i64, .intLit 0)],
+        .callVariadic (some "pi_written") .i32 (.global "snprintf") [(.ptr, .reg "pi_buf"), (.i64, .intLit 32), (.ptr, .reg "pi_fmt"), (.i64, .reg "n")] [.ptr, .i64, .ptr],
+        .cast "pi_wext" .sext .i32 (.reg "pi_written") .i64,
+        .call (some "pi_wr") .i64 (.global "write") [(.i32, .intLit 1), (.ptr, .reg "pi_buf"), (.i64, .reg "pi_wext")],
+        .call none .void (.global "free") [(.ptr, .reg "pi_buf")]
+      ], .ret .void none⟩] }
+
+  -- -------------------------------------------------------
+  -- print_char (write single byte to stdout)
+  -- -------------------------------------------------------
+  let fnPrintChar : LLVMFnDef :=
+    { name := "print_char", retTy := .void, params := [("c", .i64)], blocks := [
+      ⟨"entry", [
+        .alloca "pc_byte" .i8,
+        .cast "pc_trunc" .trunc .i64 (.reg "c") .i8,
+        .store .i8 (.reg "pc_trunc") (.reg "pc_byte"),
+        .call (some "pc_wr") .i64 (.global "write") [(.i32, .intLit 1), (.ptr, .reg "pc_byte"), (.i64, .intLit 1)]
+      ], .ret .void none⟩] }
+
+  -- -------------------------------------------------------
+  -- string_push_char (append a char to a mutable string in-place)
+  -- -------------------------------------------------------
+  let fnStringPushChar : LLVMFnDef :=
+    { name := "string_push_char", retTy := .void, params := [("s", .ptr), ("c", .i64)], blocks := [
+      ⟨"entry", [
+        strGep "spc_len_ptr" "s" 1,
+        .load "spc_len" .i64 (.reg "spc_len_ptr"),
+        strGep "spc_cap_ptr" "s" 2,
+        .load "spc_cap" .i64 (.reg "spc_cap_ptr"),
+        .binOp "spc_full" .icmpEq .i64 (.reg "spc_len") (.reg "spc_cap")
+      ], .condBr (.reg "spc_full") "spc_grow" "spc_store"⟩,
+      ⟨"spc_grow", [
+        .binOp "spc_newcap" .mul .i64 (.reg "spc_cap") (.intLit 2),
+        .call (some "spc_nc_clamped") .i64 (.global "llvm.smax.i64") [(.i64, .reg "spc_newcap"), (.i64, .intLit 8)],
+        strGep "spc_data_ptr" "s" 0,
+        .load "spc_data" .ptr (.reg "spc_data_ptr"),
+        .call (some "spc_newbuf.raw") .ptr (.global "realloc") [(.ptr, .reg "spc_data"), (.i64, .reg "spc_nc_clamped")],
+        .call (some "spc_newbuf") .ptr (.global "__concrete_check_oom") [(.ptr, .reg "spc_newbuf.raw")],
+        .store .ptr (.reg "spc_newbuf") (.reg "spc_data_ptr"),
+        .store .i64 (.reg "spc_nc_clamped") (.reg "spc_cap_ptr")
+      ], .br "spc_store"⟩,
+      ⟨"spc_store", [
+        strGep "spc_dp2" "s" 0,
+        .load "spc_data2" .ptr (.reg "spc_dp2"),
+        .gep "spc_slot" .i8 (.reg "spc_data2") [(.i64, .reg "spc_len")],
+        .cast "spc_byte" .trunc .i64 (.reg "c") .i8,
+        .store .i8 (.reg "spc_byte") (.reg "spc_slot"),
+        .binOp "spc_newlen" .add .i64 (.reg "spc_len") (.intLit 1),
+        .store .i64 (.reg "spc_newlen") (.reg "spc_len_ptr")
+      ], .ret .void none⟩] }
+
+  -- -------------------------------------------------------
+  -- string_append (append another string to a mutable string in-place)
+  -- -------------------------------------------------------
+  let fnStringAppend : LLVMFnDef :=
+    { name := "string_append", retTy := .void, params := [("s", .ptr), ("other", .ptr)], blocks := [
+      ⟨"entry", [
+        strGep "sa_len_ptr" "s" 1,
+        .load "sa_len" .i64 (.reg "sa_len_ptr"),
+        strGep "sa_cap_ptr" "s" 2,
+        .load "sa_cap" .i64 (.reg "sa_cap_ptr"),
+        strGep "sa_olen_ptr" "other" 1,
+        .load "sa_olen" .i64 (.reg "sa_olen_ptr"),
+        .binOp "sa_needed" .add .i64 (.reg "sa_len") (.reg "sa_olen"),
+        .binOp "sa_need_grow" .icmpUgt .i64 (.reg "sa_needed") (.reg "sa_cap")
+      ], .condBr (.reg "sa_need_grow") "sa_grow" "sa_copy"⟩,
+      ⟨"sa_grow", [
+        .binOp "sa_dblcap" .mul .i64 (.reg "sa_cap") (.intLit 2),
+        .call (some "sa_newcap") .i64 (.global "llvm.smax.i64") [(.i64, .reg "sa_dblcap"), (.i64, .reg "sa_needed")],
+        strGep "sa_data_ptr" "s" 0,
+        .load "sa_data" .ptr (.reg "sa_data_ptr"),
+        .call (some "sa_newbuf.raw") .ptr (.global "realloc") [(.ptr, .reg "sa_data"), (.i64, .reg "sa_newcap")],
+        .call (some "sa_newbuf") .ptr (.global "__concrete_check_oom") [(.ptr, .reg "sa_newbuf.raw")],
+        .store .ptr (.reg "sa_newbuf") (.reg "sa_data_ptr"),
+        .store .i64 (.reg "sa_newcap") (.reg "sa_cap_ptr")
+      ], .br "sa_copy"⟩,
+      ⟨"sa_copy", [
+        strGep "sa_dp2" "s" 0,
+        .load "sa_data2" .ptr (.reg "sa_dp2"),
+        .gep "sa_dst" .i8 (.reg "sa_data2") [(.i64, .reg "sa_len")],
+        strGep "sa_odata_ptr" "other" 0,
+        .load "sa_odata" .ptr (.reg "sa_odata_ptr"),
+        dynMemcpy "sa_dst" "sa_odata" "sa_olen",
+        .store .i64 (.reg "sa_needed") (.reg "sa_len_ptr")
+      ], .ret .void none⟩] }
+
+  -- -------------------------------------------------------
+  -- clock_monotonic_ns (monotonic clock in nanoseconds)
+  -- Uses clock_gettime(CLOCK_MONOTONIC=6 on macOS, 1 on Linux)
+  -- -------------------------------------------------------
+  let fnClockMonotonicNs : LLVMFnDef :=
+    { name := "clock_monotonic_ns", retTy := .i64, params := [], blocks := [
+      ⟨"entry", [
+        -- struct timespec { i64 tv_sec; i64 tv_nsec; } laid out as [2 x i64]
+        .alloca "ts" (.array 2 .i64),
+        -- CLOCK_MONOTONIC = 6 on macOS/Darwin, 1 on Linux
+        .raw "  %clk_ret = call i32 @clock_gettime(i32 6, ptr %ts)",
+        .gep "sec_ptr" .i64 (.reg "ts") [(.i64, .intLit 0)],
+        .load "sec" .i64 (.reg "sec_ptr"),
+        .gep "nsec_ptr" .i64 (.reg "ts") [(.i64, .intLit 1)],
+        .load "nsec" .i64 (.reg "nsec_ptr"),
+        .binOp "sec_ns" .mul .i64 (.reg "sec") (.intLit 1000000000),
+        .binOp "total" .add .i64 (.reg "sec_ns") (.reg "nsec")
+      ], .ret .i64 (some (.reg "total"))⟩] }
+
+  -- -------------------------------------------------------
   -- Globals
   -- -------------------------------------------------------
   let globals : List LLVMGlobal := [
@@ -445,14 +571,18 @@ def getBuiltinFns : List LLVMFnDef × List LLVMGlobal × List LLVMFnDecl :=
   -- -------------------------------------------------------
   let decls : List LLVMFnDecl := [
     { name := "llvm.smax.i64", retTy := .i64, params := [.i64, .i64] },
-    { name := "llvm.smin.i64", retTy := .i64, params := [.i64, .i64] }
+    { name := "llvm.smin.i64", retTy := .i64, params := [.i64, .i64] },
+    { name := "clock_gettime", retTy := .i32, params := [.i32, .ptr] }
   ]
 
   let fns : List LLVMFnDef := [
     getOOMCheckFn,
     fnStringLength, fnDropString, fnStringConcat, fnStringSlice, fnStringCharAt,
     fnStringContains, fnStringEq, fnIntToString, fnStringToInt, fnBoolToString,
-    fnFloatToString, fnStringTrim
+    fnFloatToString, fnStringTrim,
+    fnPrintString, fnPrintInt, fnPrintChar,
+    fnStringPushChar, fnStringAppend,
+    fnClockMonotonicNs
   ]
   (fns, globals, decls)
 
