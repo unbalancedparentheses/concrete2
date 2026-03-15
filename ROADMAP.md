@@ -266,7 +266,7 @@ Primary surfaces:
 2. make the runtime boundary explicit — **done** — `docs/EXECUTION_MODEL.md` documents startup/shutdown/failure model, external symbol dependencies, no runtime initialization, no panic/unwind
 3. define the memory / allocation strategy explicitly — **done** — `docs/EXECUTION_MODEL.md` documents libc malloc model, capability-tracked allocation, deallocation model; abort-on-OOM implemented in both compiler builtins (`__concrete_check_oom`) and stdlib wrappers (`std.alloc` heap_new/grow null-check + abort)
 4. tighten the FFI/runtime ownership boundary — **done** — `docs/EXECUTION_MODEL.md` documents capability model at FFI boundary, ownership tracking across FFI calls (by-value consumes, by-ref borrows, raw pointers untracked), known gaps and future directions
-5. close the FFI/ABI calling convention gaps (from Phase D Known Limitations) — **done** — `EmitSSA.lean` now detects extern fn calls and passes `#[repr(C)]` struct arguments by value (C ABI) instead of always by pointer; `externParamTyToLLVMTy` + `isReprCStruct` distinguish extern vs internal calling convention
+5. close the FFI/ABI calling convention gaps (from Phase D Known Limitations) — **done** (calling convention fix landed; empirical cross-target validation deferred to Phase F) — `EmitSSA.lean` now detects extern fn calls and passes `#[repr(C)]` struct arguments by value (C ABI) instead of always by pointer; `externParamTyToLLVMTy` + `isReprCStruct` distinguish extern vs internal calling convention
 6. define target/platform support policy explicitly — **done** — `docs/EXECUTION_MODEL.md` documents target profile (64-bit, POSIX), three-tier support model (Tier 1/2/Experimental), target-dependent components, empirical validation gaps
 7. make runtime-related stdlib surfaces reflect the chosen execution model — **done** — `docs/EXECUTION_MODEL.md` documents full module-to-layer mapping with capabilities and host dependencies; `docs/STDLIB.md` updated with execution model alignment section
 8. define execution profiles for high-integrity use — **done** — `docs/EXECUTION_MODEL.md` documents planned profiles (`no_alloc`, `bounded_alloc`, `no_unsafe`, `no_ffi`, `high_integrity`), enforcement via capability system, relationship to proofs
@@ -279,8 +279,8 @@ Deliverables:
 - a documented runtime boundary covering startup, shutdown, failure, and allocator expectations
 - an explicit memory/allocation model including no-alloc or bounded-allocation profile direction
 - a documented ownership/capability story across FFI/runtime boundaries
-- C-compatible calling convention for `extern fn` with `#[repr(C)]` struct parameters (by-value, not pointer-only)
-- empirical cross-target FFI validation (compile + link + run on x86_64 and aarch64)
+- C-compatible calling convention for `extern fn` with `#[repr(C)]` struct parameters (by-value, not pointer-only) — **done**
+- empirical cross-target FFI validation (compile + link + run on x86_64 and aarch64) — **deferred to Phase F**
 - a documented target/platform policy covering supported architectures, target tiers, ABI assumptions, and what counts as supported vs experimental
 - runtime-facing stdlib surfaces aligned with the chosen execution model
 - a clear direction for stricter sandbox/execution profiles (`no_alloc`, bounded allocation, no ambient authority, no unrestricted FFI/trusted)

@@ -375,13 +375,13 @@ The stdlib is classified into three layers by host dependency (see [Hosted vs Fr
 | `map` | Alloc | `Alloc` | Via `alloc` |
 | `set` | Alloc | `Alloc` | Via `alloc` |
 | `path` | Alloc | `Alloc` | Via `alloc` (path manipulation only, no fs) |
-| `io` | Hosted | `File` | `fopen`, `fclose`, `fread`, `fwrite`, `read`, `write` |
-| `fs` | Hosted | `File` | `fopen`, `fread`, `fwrite`, `fseek`, `ftell`, `fclose` |
-| `env` | Hosted | `Env` | `getenv`, `setenv`, `unsetenv` |
-| `process` | Hosted | `Process` | `fork`, `execvp`, `waitpid`, `kill`, `getpid` |
-| `net` | Hosted | `Net` | `socket`, `bind`, `listen`, `accept`, `connect`, `send`, `recv` |
-| `time` | Hosted | `Time` | `clock_gettime`, `nanosleep`, `time` |
-| `rand` | Hosted | `Rand` | `rand`, `srand` |
+| `io` | Hosted | `Unsafe`, `Console` | TextFile: `fopen`/`fclose`/`fread`/`fwrite`; print/println: `Console` |
+| `fs` | Hosted | `Unsafe` | `fopen`, `fread`, `fwrite`, `fseek`, `ftell`, `fclose` |
+| `env` | Hosted | `Unsafe` | `getenv`, `setenv`, `unsetenv` |
+| `process` | Hosted | `Unsafe`, `Process` | `fork`, `execvp`, `waitpid`, `kill`, `getpid` |
+| `net` | Hosted | `Unsafe`, `Network` | `socket`, `bind`, `listen`, `accept`, `connect`, `send`, `recv` |
+| `time` | Hosted | `Unsafe` | `clock_gettime`, `nanosleep`, `time` |
+| `rand` | Hosted | `Unsafe`, `Random` | `rand`, `srand` |
 
 ### What the execution model constrains in stdlib
 
@@ -541,7 +541,7 @@ Concrete does not yet implement concurrency. This section documents the intended
 4. **Ownership across threads.** Values moved into spawned threads are consumed (linear move). Shared mutable state requires explicit synchronization types.
 5. **Capability-gated.** Spawning threads requires a `Spawn` (or `Concurrency`) capability. Blocking requires `Block`. These are separate from `File`/`Net`/`Process`.
 
-### First concurrency model (Phase J)
+### First concurrency model (designed in Phase E, implemented in Phase J)
 
 The initial model targets hosted environments only:
 

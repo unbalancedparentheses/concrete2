@@ -7,11 +7,11 @@ This document describes Concrete's current ABI stability, FFI safety model, plat
 | Area | Status | Stable? |
 |------|--------|---------|
 | FFI-safe scalar types (i8–i64, u8–u64, f32, f64, bool) | Implemented, tested | **Yes** — C-compatible by-value passing |
-| `#[repr(C)]` struct **in-memory layout** | Implemented, tested | **Yes** — field order, padding, and alignment match C. Layout only; **not** passed by value in calls (see Known Limitations) |
+| `#[repr(C)]` struct **in-memory layout** | Implemented, tested | **Yes** — field order, padding, and alignment match C |
 | `#[repr(packed)]` struct layout | Implemented, tested | **Yes** — no padding between fields |
 | `#[repr(align(N)]` minimum alignment | Implemented, tested | **Yes** — power-of-two enforced |
 | `extern fn` declarations (scalar params) | Implemented, tested | **Yes** — scalars passed by value, C-compatible |
-| `extern fn` declarations (struct params) | Implemented, **limited** | **No** — structs always passed by pointer, not by value (see Known Limitations) |
+| `extern fn` declarations (`#[repr(C)]` struct params) | Implemented, tested | **Yes** — `#[repr(C)]` structs passed by value per C ABI |
 | `trusted extern fn` declarations | Implemented, tested | **Yes** — no capability required |
 | FFI safety validation | Implemented, tested | **Yes** — CoreCheck enforces at compile time |
 | Non-repr struct layout | Implemented | **No** — compiler may change field ordering or padding |
@@ -65,7 +65,7 @@ A type is FFI-safe (can appear in `extern fn` signatures and `#[repr(C)]` struct
 - Float types: `f32`, `f64`
 - `Bool`, `Char`, `()` (unit)
 - Raw pointers: `*mut T`, `*const T`
-- `#[repr(C)]` structs (recursively: all fields must also be FFI-safe) — **layout-compatible only**; passed by pointer, not by value (see Known Limitations)
+- `#[repr(C)]` structs (recursively: all fields must also be FFI-safe) — layout-compatible and passed by value in `extern fn` calls
 
 ### What is NOT FFI-safe
 
@@ -169,7 +169,7 @@ These limitations are acceptable for the current stage. By-value `#[repr(C)]` st
 5. **32-bit support.** Not planned for the near term.
 6. **Cross-language enum interop.** Enums are not FFI-safe.
 7. **Stable pass-by-pointer set.** Which types are passed by pointer is an optimization decision.
-8. **C-ABI by-value struct passing.** Even `#[repr(C)]` structs are passed by pointer in `extern fn`. C callers must pass a pointer, not a by-value struct.
+8. **C-ABI by-value struct return.** Struct return values use pointer indirection (sret). C callers expecting register-returned small structs should use a pointer-based wrapper.
 
 ## Layout Verification
 
