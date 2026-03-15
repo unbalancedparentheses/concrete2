@@ -184,4 +184,6 @@ make clean    # or: lake clean
 
 ## License
 
+Concrete was originally specified and created by Federico Carrone at LambdaClass.
+
 [Apache 2.0](/LICENSE)
