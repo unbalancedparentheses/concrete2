@@ -61,7 +61,7 @@ Still clearly not implemented:
 | **D** | Testing, backend, and trust multipliers | Done |
 | **E** | Runtime and execution model | Done |
 | **F** | Capability and safety productization | Done |
-| **G** | Language surface and feature discipline | 5/6 done (item 6 remaining) |
+| **G** | Language surface and feature discipline | Done |
 | **H** | Real-program pressure testing and performance validation | Not started |
 | **I** | Formalization and proof expansion | Not started |
 | **J** | Package and dependency ecosystem | Not started |
@@ -347,6 +347,7 @@ Primary surfaces:
 - [docs/DESIGN_POLICY.md](docs/DESIGN_POLICY.md) — feature admission criteria (promoted from research/design-filters.md)
 - [docs/DECISIONS.md](docs/DECISIONS.md) — recorded "no" and "not yet" decisions
 - [docs/LANGUAGE_SHAPE.md](docs/LANGUAGE_SHAPE.md) — long-term language shape commitments
+- [docs/PROVABLE_SUBSET.md](docs/PROVABLE_SUBSET.md) — proof-eligible subset definition
 - [research/high-integrity-profile.md](research/high-integrity-profile.md)
 - language-design research notes
 
@@ -368,7 +369,10 @@ Primary surfaces:
 5. make long-term language shape decisions explicit instead of letting them emerge from local convenience — **done**
    - created `docs/LANGUAGE_SHAPE.md` documenting structural commitments (dispatch model, authority model, trust model, ownership model, compilation model, phase separation), what Concrete will not become, what may change with evidence, and shape principles
    - synthesizes IDENTITY.md, DESIGN_POLICY.md, DECISIONS.md, SAFETY.md into a single coherent picture
-6. define a clearly analyzable critical/provable subset — **not started**
+6. define a clearly analyzable critical/provable subset — **done**
+   - created `docs/PROVABLE_SUBSET.md` as the standing reference for the proof-eligible subset
+   - documents the current `ProofCore` extraction boundary, the stricter `--report proof` heuristic, safe ADT criteria, pipeline position, current proved properties (17 theorems), relationship to high-integrity profile, and design constraints from permanent language decisions
+   - cross-referenced from SAFETY.md, ARCHITECTURE.md, LANGUAGE_SHAPE.md
 
 Deliverables:
 - explicit feature-admission criteria used as a standing design filter
@@ -574,7 +578,7 @@ Primary surfaces:
 7. make certification-style evidence and traceability practical — **not started**
 8. make reproducible trust bundles practical if the evidence story earns it — **not started**
 9. define whether evidence authenticity and build/dependency trust need explicit operational policy — **not started**
-10. define debugging/observability expectations as a maintained product surface — **not started** (DWARF emission is in Phase G; this item covers the operational/maintenance policy around debug info quality, stack trace fidelity, and inspection workflows)
+10. define debugging/observability expectations as a maintained product surface — **not started** (this item covers the operational/maintenance policy around debug info quality, stack trace fidelity, and inspection workflows; implementation work is captured below)
 11. define whether and how artifact serialization / disk-backed compiler artifacts become part of the supported workflow — **not started** (incremental compilation is in Phase H; this item covers the stability/versioning policy for serialized artifacts)
 12. define the long-term bootstrap/self-hosting stance explicitly — **not started**
 13. make the compiler-driver/build-graph layer explicit instead of leaving orchestration as thin CLI glue — **not started**
@@ -659,7 +663,7 @@ Concrete has one coherent concurrency story: structured by default, threads-firs
 - **Phase D** matters because this is where Concrete stops being only a working compiler and becomes a trustworthy compiler platform, starting with testing architecture strong enough to support every later backend and proof ambition.
 - **Phase E** matters because a language is not really settled until its execution model is explicit.
 - **Phase F** matters because Concrete's safety model should be a user-visible strength, not only an internal design claim. Error recovery also lives here — getting one error at a time is the most visible DX gap.
-- **Phase G** matters because languages decay when feature growth has no explicit discipline. Debug info and inlining also live here — a systems language without debugger support or basic optimization is not credible for real work.
+- **Phase G** matters because languages decay when feature growth has no explicit discipline.
 - **Phase H** matters because languages often look coherent until they are forced to carry real programs. Large-code pressure testing is how Concrete earns confidence in its stdlib, diagnostics, package model, and performance story.
 - **Phase I** matters because Concrete's proof story is too central to remain only a cross-cutting aspiration. This is where formalization becomes a real workstream instead of “initial theorems plus later hope.”
 - **Phase J** matters because package and dependency semantics are part of the language experience once real projects exist. Incremental compilation is the first item — without it, multi-package builds recompile the world.

@@ -97,7 +97,7 @@ A mechanism where a trusted wrapper could absorb `with(Unsafe)` and expose only 
 **Status:** Deferred
 **Detail:** [../research/concurrency.md](../research/concurrency.md)
 
-Concrete should only broaden concurrency once it can do so without importing async fragmentation and hidden runtime culture. The current position is single-threaded with structured future direction. No async/await, no goroutines, no thread pool runtime.
+Concrete should only broaden concurrency once it can do so without importing async fragmentation and hidden runtime culture. The current implementation is single-threaded; the planned direction is explicit, threads-first concurrency with structured long-term evolution. No async/await, no goroutines, no thread pool runtime.
 
 **Prerequisite:** Language surface and safety model stable enough that concurrency does not distort them.
 

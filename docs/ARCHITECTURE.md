@@ -276,7 +276,7 @@ Excludes:
 
 ### Proof-Oriented Core Direction
 
-`ProofCore` (`Concrete/ProofCore.lean`) is a restricted, proof-oriented view of `ValidatedCore`.  It is a filter, not a separate IR — the semantic authority remains CoreCheck.
+`ProofCore` (`Concrete/ProofCore.lean`) is a restricted, proof-oriented view of `ValidatedCore`.  It is a filter, not a separate IR — the semantic authority remains CoreCheck. See [PROVABLE_SUBSET.md](PROVABLE_SUBSET.md) for the full definition of the proof-eligible subset.
 
 **Currently included** (via `extractProofCore`):
 

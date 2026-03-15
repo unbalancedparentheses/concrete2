@@ -147,7 +147,7 @@ The proof boundary sits after CoreCheck and before Mono, materialized as the `Va
 
 **Excluded:** Functions with capabilities, trusted/unsafe functions, extern functions, entry points.
 
-`Concrete/Proof.lean` defines formal evaluation semantics for the pure Core fragment and proves properties (abs, max, clamp correctness, structural lemmas, conditional reduction, arithmetic). See [ARCHITECTURE.md](ARCHITECTURE.md) for the full proof architecture.
+`Concrete/Proof.lean` defines formal evaluation semantics for the pure Core fragment and proves properties (abs, max, clamp correctness, structural lemmas, conditional reduction, arithmetic). See [PROVABLE_SUBSET.md](PROVABLE_SUBSET.md) for the full definition of the proof-eligible subset, and [ARCHITECTURE.md](ARCHITECTURE.md) for the proof architecture.
 
 ## High-Integrity Profile Direction
 

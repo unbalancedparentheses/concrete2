@@ -592,7 +592,7 @@ See [docs/README.md](docs/README.md) for the stable documentation index and [res
 | **13** | Execution model + runtime | Phase E done — documented, abort-on-OOM, FFI by-value |
 | **14** | Capability/safety productization | Done |
 
-Next critical path: **Phase G — kernel formalization and concurrency.** Phases A–F are complete: fast feedback, semantic cleanup, tooling/stdlib hardening, testing/backend/proofs, the full runtime/execution model, and capability/safety productization. The SSA backend contract, structured LLVM emission, audit reports (8 modes), abort-on-OOM, `#[repr(C)]` by-value extern fn passing, the execution model, capability aliases, coherent safety story (`docs/SAFETY.md`), and high-integrity profile direction are all in place.
+Next critical path: **Phase H — real-program pressure testing and performance validation.** Phases A–G are complete: fast feedback, semantic cleanup, tooling/stdlib hardening, testing/backend/proofs, the full runtime/execution model, capability/safety productization, and language-surface discipline. The SSA backend contract, structured LLVM emission, audit reports (8 modes), abort-on-OOM, `#[repr(C)]` by-value extern fn passing, the execution model, capability aliases, coherent safety story (`docs/SAFETY.md`), high-integrity profile direction, and the documented provable subset are all in place.
 
 ### What fits the philosophy and what does not
 

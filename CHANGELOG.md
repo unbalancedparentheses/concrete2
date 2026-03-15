@@ -10,9 +10,11 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
-### Phase G items 1–5: Language Discipline and Design Policy
+### Phase G complete: Language Discipline, Design Policy, and Provable Subset
 
-Five of six Phase G items complete. Concrete now has explicit feature-admission criteria, recorded language decisions, and documented long-term shape commitments.
+All six Phase G items complete. Concrete now has explicit feature-admission criteria, recorded language decisions, documented long-term shape commitments, and a defined provable subset.
+
+**Item 6 — Provable subset definition**: Created `docs/PROVABLE_SUBSET.md` as the standing reference. Defines the current ProofCore extraction boundary for proof-eligible functions (empty capability set, not trusted, not entry point, no trusted impl origin) and types (no repr(C)/packed, no builtin override), and distinguishes it from the stricter `--report proof` heuristic that also flags extern calls and raw-pointer operations. Documents pipeline position (extract from ValidatedCore after CoreCheck), current proof coverage (17 theorems over integers/booleans/arithmetic/conditionals), relationship to the high-integrity profile, and how permanent language decisions (no closures, no trait objects, static dispatch) make the subset boundary clean.
 
 **Item 1 — Feature admission criteria**: Created `docs/DESIGN_POLICY.md` as standing policy. 10-point admission checklist (simple invariant, visibility, phase separation, declaration-level dependencies, static dispatch, predictable codegen, diagnostics ownership, single-pass ownership, proof story, benefit for audited code). Quick decision rule and one-line test. Promoted from `research/design-filters.md`.
 
