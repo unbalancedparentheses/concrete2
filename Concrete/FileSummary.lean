@@ -78,6 +78,7 @@ structure ResolvedImports where
   implBlocks     : List ImplBlock := []
   traitImpls     : List ImplTraitBlock := []
   implMethodSigs : List (String × FnSummary) := []  -- pre-computed, Self preserved
+  typeAliases    : List (String × Ty) := []
   /-- Maps local alias name → original linker symbol for aliased imports. -/
   linkerAliases  : List (String × String) := []
 
@@ -139,8 +140,31 @@ def resolveImplMethodSigs
         retTy := resolveSelfTy sig.retTy implTy })
     | none => (name, sig)
 
+private partial def resolveAliasesInTy (aliases : List (String × Ty)) : Ty → Ty
+  | .named name => match aliases.lookup name with
+    | some resolved => resolved
+    | none => .named name
+  | .ref inner => .ref (resolveAliasesInTy aliases inner)
+  | .refMut inner => .refMut (resolveAliasesInTy aliases inner)
+  | .ptrMut inner => .ptrMut (resolveAliasesInTy aliases inner)
+  | .heap inner => .heap (resolveAliasesInTy aliases inner)
+  | .heapArray inner => .heapArray (resolveAliasesInTy aliases inner)
+  | .generic name args => .generic name (args.map (resolveAliasesInTy aliases))
+  | .fn_ params capSet retTy =>
+    .fn_ (params.map (resolveAliasesInTy aliases)) capSet (resolveAliasesInTy aliases retTy)
+  | ty => ty
+
+private def resolveAliasesInSig (aliases : List (String × Ty)) (sig : FnSummary) : FnSummary :=
+  { sig with
+    params := sig.params.map fun (n, ty) => (n, resolveAliasesInTy aliases ty)
+    retTy := resolveAliasesInTy aliases sig.retTy }
+
 partial def buildFileSummary (m : Module) : FileSummary :=
-  let functions := m.functions.map fnDefToSummary
+  -- Build alias map for resolving type aliases in signatures
+  let aliasMap := m.typeAliases.map fun ta => (ta.name, ta.targetTy)
+  let functions := m.functions.map fun f =>
+    let (name, sig) := fnDefToSummary f
+    (name, resolveAliasesInSig aliasMap sig)
   let pubFns := m.functions.filter (·.isPublic) |>.map (·.name)
   let pubStructs := m.structs.filter (·.isPublic) |>.map (·.name)
   let pubEnums := m.enums.filter (·.isPublic) |>.map (·.name)
@@ -156,10 +180,15 @@ partial def buildFileSummary (m : Module) : FileSummary :=
                      ++ pubConstants ++ pubAliases ++ pubImplMethods ++ pubTraitImplMethods
   let externFnSigs := m.externFns.map fun ef =>
     let capSet := if ef.isTrusted then CapSet.empty else CapSet.concrete ["Unsafe"]
-    (ef.name, { params := ef.params.map fun p => (p.name, p.ty), retTy := ef.retTy,
-                capSet := capSet : FnSummary })
-  let implMethodSigs := implBlocksToMethodSummaries m.implBlocks
-                     ++ traitImplBlocksToMethodSummaries m.traitImpls
+    let sig : FnSummary := {
+      params := ef.params.map fun p => (p.name, p.ty)
+      retTy := ef.retTy
+      capSet := capSet
+    }
+    (ef.name, resolveAliasesInSig aliasMap sig)
+  let implMethodSigs := (implBlocksToMethodSummaries m.implBlocks
+                     ++ traitImplBlocksToMethodSummaries m.traitImpls).map fun (n, sig) =>
+                     (n, resolveAliasesInSig aliasMap sig)
   { name := m.name
     functions := functions
     structs := m.structs
@@ -186,9 +215,6 @@ def buildSummaryTable (modules : List Module) : List (String × FileSummary) :=
     acc ++ [(m.name, summary)] ++ subEntries
   ) []
 
-/-- Resolve imports for a module by looking up symbols directly in the summary table.
-    Pre-computes imported impl method sigs from the exporting module's summary.
-    Used by both Check and Elab. -/
 def resolveImports (imports : List ImportDecl)
     (summaryTable : List (String × FileSummary))
     (unknownModuleMsg : String → String)
@@ -198,16 +224,19 @@ def resolveImports (imports : List ImportDecl)
     match summaryTable.lookup imp.moduleName with
     | none => .error (unknownModuleMsg imp.moduleName)
     | some summary =>
+      -- Build alias map from the exporting module's type aliases
+      let aliasMap := summary.typeAliases.map fun ta => (ta.name, ta.targetTy)
       let pubFns := summary.functions ++ summary.externFnSigs
       imp.symbols.foldlM (init := acc) fun acc sym =>
         let origName := sym.name
         let localName := sym.effectiveName
         match pubFns.find? fun (n, _) => n == origName with
         | some (_, sig) =>
+          let resolvedSig := resolveAliasesInSig aliasMap sig
           let newAliases := if localName != origName
             then acc.linkerAliases ++ [(localName, origName)]
             else acc.linkerAliases
-          .ok { acc with functions := acc.functions ++ [(localName, sig)],
+          .ok { acc with functions := acc.functions ++ [(localName, resolvedSig)],
                          linkerAliases := newAliases }
         | none =>
           match summary.structs.find? fun sd => sd.name == origName with
@@ -227,6 +256,9 @@ def resolveImports (imports : List ImportDecl)
           | none =>
             match summary.enums.find? fun ed => ed.name == origName with
             | some ed => .ok { acc with enums := acc.enums ++ [ed] }
-            | none => .error (notPublicMsg origName imp.moduleName)
+            | none =>
+              match summary.typeAliases.find? fun ta => ta.isPublic && ta.name == origName with
+              | some ta => .ok { acc with typeAliases := acc.typeAliases ++ [(localName, ta.targetTy)] }
+              | none => .error (notPublicMsg origName imp.moduleName)
 
 end Concrete

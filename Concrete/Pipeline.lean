@@ -109,8 +109,11 @@ def monomorphize (vc : ValidatedCore) : Except Diagnostics MonomorphizedProgram 
   | .error ds => .error ds
 
 /-- Lower to SSA, verify, and clean up. -/
-def lower (mono : MonomorphizedProgram) : Except Diagnostics SSAProgram :=
-  let ssaModules := mono.coreModules.map lowerModule
+def lower (mono : MonomorphizedProgram) : Except Diagnostics SSAProgram := do
+  let ssaModules ← mono.coreModules.mapM (fun m =>
+    match lowerModule m with
+    | .ok sm => .ok sm
+    | .error e => .error [{ severity := .error, message := e, pass := "lower", span := none, hint := none }])
   match ssaVerifyProgram ssaModules with
   | .error ds => .error ds
   | .ok () =>

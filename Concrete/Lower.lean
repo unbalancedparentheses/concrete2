@@ -166,8 +166,7 @@ private def lookupStructFields (tyName : String) : LowerM (List (String × Ty)) 
   match s.structDefs.find? fun sd => sd.name == tyName with
   | some sd => return sd.fields
   | none =>
-    dbg_trace s!"WARNING: Lower.lookupStructFields: struct '{tyName}' not found"
-    return []
+    throw s!"Lower.lookupStructFields: struct '{tyName}' not found in struct defs"
 
 /-- Get field index within a struct definition. Returns 0 if not found. -/
 private def fieldIndex (tyName : String) (fieldName : String) : LowerM Nat := do
@@ -175,8 +174,7 @@ private def fieldIndex (tyName : String) (fieldName : String) : LowerM Nat := do
   match (enumerate fields).find? fun (_, (n, _)) => n == fieldName with
   | some (idx, _) => return idx
   | none =>
-    dbg_trace s!"WARNING: Lower.fieldIndex: field '{fieldName}' not found in struct '{tyName}'"
-    return 0
+    throw s!"Lower.fieldIndex: field '{fieldName}' not found in struct '{tyName}'"
 
 /-- Get variant index within an enum definition. Returns 0 if not found. -/
 private def variantIndex (enumName : String) (variantName : String) : LowerM Nat := do
@@ -186,11 +184,9 @@ private def variantIndex (enumName : String) (variantName : String) : LowerM Nat
     match (enumerate ed.variants).find? fun (_, (vn, _)) => vn == variantName with
     | some (idx, _) => return idx
     | none =>
-      dbg_trace s!"WARNING: Lower.variantIndex: variant '{variantName}' not found in enum '{enumName}'"
-      return 0
+      throw s!"Lower.variantIndex: variant '{variantName}' not found in enum '{enumName}'"
   | none =>
-    dbg_trace s!"WARNING: Lower.variantIndex: enum '{enumName}' not found"
-    return 0
+    throw s!"Lower.variantIndex: enum '{enumName}' not found in enum defs"
 
 /-- Get variant fields within an enum definition. -/
 private def variantFields (enumName : String) (variantName : String) : LowerM (List (String × Ty)) := do
@@ -200,22 +196,19 @@ private def variantFields (enumName : String) (variantName : String) : LowerM (L
     match ed.variants.find? fun (vn, _) => vn == variantName with
     | some (_, fields) => return fields
     | none =>
-      dbg_trace s!"WARNING: Lower.variantFields: variant '{variantName}' not found in enum '{enumName}'"
-      return []
+      throw s!"Lower.variantFields: variant '{variantName}' not found in enum '{enumName}'"
   | none =>
-    dbg_trace s!"WARNING: Lower.variantFields: enum '{enumName}' not found"
-    return []
+    throw s!"Lower.variantFields: enum '{enumName}' not found in enum defs"
 
 /-- Extract struct type name from a Ty, unwrapping references/pointers. -/
-private def structNameFromTy (ty : Ty) : String :=
+private def structNameFromTy (ty : Ty) : LowerM String :=
   match ty with
-  | .named n => n
-  | .generic n _ => n
-  | .string => "String"
+  | .named n => return n
+  | .generic n _ => return n
+  | .string => return "String"
   | .ref inner | .refMut inner | .ptrMut inner | .ptrConst inner => structNameFromTy inner
   | other =>
-    dbg_trace s!"WARNING: Lower.structNameFromTy: unhandled type '{repr other}', returning \"\""
-    ""
+    throw s!"Lower.structNameFromTy: unhandled type '{repr other}'"
 
 /-- Build a Layout.Ctx from the current LowerState. -/
 private def getLayoutCtx : LowerM Layout.Ctx := do
@@ -463,7 +456,7 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
         -- For &mut borrows of struct fields: GEP directly into the parent struct
         -- to get a pointer to the field, avoiding copy + lost write-back.
         let oVal ← lowerExpr obj
-        let tyName := structNameFromTy obj.ty
+        let tyName ← structNameFromTy obj.ty
         let byteOff ← fieldByteOffset tyName field
         let gepDst ← freshReg "fieldmut."
         emit (.gep gepDst oVal [.intConst (Int.ofNat byteOff) .int] .i8)
@@ -522,7 +515,7 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
 
   | .fieldAccess obj field ty =>
     let oVal ← lowerExpr obj
-    let tyName := structNameFromTy obj.ty
+    let tyName ← structNameFromTy obj.ty
     let byteOff ← fieldByteOffset tyName field
     let dst ← freshReg
     -- Use byte-offset GEP: gep i8, ptr, byteOffset
@@ -1397,7 +1390,7 @@ partial def lowerStmt (stmt : CStmt) : LowerM Unit := do
 
   | .fieldAssign obj field value =>
     let fVal ← lowerExpr value
-    let tyName := structNameFromTy obj.ty
+    let tyName ← structNameFromTy obj.ty
     let byteOff ← fieldByteOffset tyName field
     -- Check if obj is a deref expression (e.g., *p.field = val → GEP into p directly)
     match obj with
@@ -1611,7 +1604,7 @@ private def renameStrConstsInTerm (rmap : List (String × String)) : STerm → S
   | .condBr cond tl el => .condBr (renameSVal rmap cond) tl el
   | other => other
 
-def lowerModule (m : CModule) : SModule :=
+def lowerModule (m : CModule) : Except String SModule := do
   let allFunctionsWithPath := collectAllFunctionsWithPath m
   -- Add synthetic String struct so fieldOffset can compute offsets for built-in .string type
   let syntheticStringDef : CStructDef := { name := "String", fields := [("ptr", .ptrMut .u8), ("len", .uint), ("cap", .uint)] }
@@ -1621,12 +1614,10 @@ def lowerModule (m : CModule) : SModule :=
   -- Skip generic functions (non-empty typeParams); only their monomorphized
   -- specializations should be lowered.
   let concreteFns := allFunctionsWithPath.filter fun (f, _) => f.typeParams.isEmpty
-  let results := concreteFns.filterMap fun (f, path) =>
+  let results ← concreteFns.foldlM (init := []) fun acc (f, path) =>
     match lowerFn f allStructs allEnums with
-    | .ok (sfn, lits) => some ({ sfn with modulePath := path }, lits)
-    | .error e =>
-      dbg_trace s!"WARNING: Lower.lowerModule: failed to lower function '{f.name}': {e}"
-      none
+    | .ok (sfn, lits) => .ok (acc ++ [({ sfn with modulePath := path }, lits)])
+    | .error e => .error s!"Lower.lowerModule: failed to lower function '{f.name}': {e}"
   -- Build deduplicated globals list (by string value)
   let globals := results.foldl (fun deduped (_, lits) =>
     lits.foldl (fun deduped (_, strVal) =>
@@ -1647,12 +1638,15 @@ def lowerModule (m : CModule) : SModule :=
         term := renameStrConstsInTerm renameMap blk.term
       }
     }
-  { name := m.name
+  let result : SModule := {
+    name := m.name
     structs := allStructs
     enums := allEnums
     functions := fns
     externFns := allExterns
     globals := globals
-    linkerAliases := collectAllLinkerAliases m }
+    linkerAliases := collectAllLinkerAliases m
+  }
+  return result
 
 end Concrete

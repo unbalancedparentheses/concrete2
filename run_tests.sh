@@ -912,6 +912,7 @@ run_ok "$TESTDIR/hardening_int_literal_inference.con" 42
 run_ok "$TESTDIR/hardening_borrow_edge_cases.con" 42
 run_ok "$TESTDIR/hardening_cross_module_enum.con" 42
 run_ok "$TESTDIR/hardening_cross_module_trait.con" 42
+run_ok "$TESTDIR/hardening_cross_module_type_alias.con" 42
 run_ok "$TESTDIR/struct_enum_field_vec.con" 123
 
 fi # end section: positive

@@ -10,16 +10,15 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
-### Compiler hardening pass — audit, warnings, and tests (items 1–5 partially done)
+### Compiler hardening pass complete (items 2–4 done, items 1 & 5 partially done)
 
-Warning instrumentation and edge-case testing for the 5 hardening items. This is an audit pass, not a completion — silent fallback values are still returned after logging, and not all deliverables are met.
-
-- **Layout.lean/Lower.lean/EmitSSA.lean**: `dbg_trace` warnings on 12 silent fallback paths. Fallback values (0, 8, false, "i64", [], dropped functions) still returned — warnings make them visible but do not prevent wrong code.
-- **Integer type inference**: vec_push/vec_set/vec_get now propagate element type hints. Common paths covered; full systematic coverage not proven.
+- **Lower.lean hard errors**: 6 silent defaults converted to `throw` — `lookupStructFields`, `fieldIndex`, `variantIndex`, `variantFields`, `structNameFromTy` propagate errors through `LowerM`. `lowerModule` returns `Except String SModule` — failed function lowering is now a compile error, not silently dropped.
+- **Layout.lean/EmitSSA.lean warnings**: `dbg_trace` on fallback paths. Can't convert to errors: pure function context + type variables leak as `.named "T"` from elaboration (pre-existing issue). Defaults are correct for erased type variables.
+- **Integer inference**: vec intrinsic hint propagation + SSAVerify `intBitWidth` check catches `i32 + i64` mismatches at the backend gate.
 - **Borrow checker audit**: multiple shared borrows, sequential &mut, borrow-of-field all verified working.
-- **Cross-module types**: enums and trait dispatch verified. Type alias propagation not yet tested.
+- **Cross-module type aliases**: fixed pre-existing bug — type alias names leaked through function signatures. `buildFileSummary` now resolves aliases in fn/extern/impl signatures. `resolveImports` resolves aliases in imported signatures. `Elab.elabFn` resolves aliases in function parameter types.
 
-4 hardening tests added. Test suite: 662 tests (189 stdlib). Remaining: convert warnings to compile errors (items 1, 5), prove full integer inference coverage (item 2), test type alias propagation (item 4).
+5 hardening tests added. Test suite: 663 tests (189 stdlib). Remaining: Layout/EmitSSA fallbacks need type variable leakage fix in elaboration before they can become errors.
 
 ### 3 compiler bugs fixed
 

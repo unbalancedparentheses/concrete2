@@ -2036,7 +2036,8 @@ def checkModule (m : Module) (summary : FileSummary)
   let builtinEnumList := [builtinOptionEnum] ++ (if hasUserResult then [] else [builtinResultEnum])
   let allEnums := builtinEnumList ++ imports.enums ++ m.enums
   -- Build type aliases map
-  let typeAliasMap : List (String × Ty) := m.typeAliases.map fun ta => (ta.name, ta.targetTy)
+  let localTypeAliases : List (String × Ty) := m.typeAliases.map fun ta => (ta.name, ta.targetTy)
+  let typeAliasMap : List (String × Ty) := imports.typeAliases ++ localTypeAliases
   -- Build constants map
   let constantsMap : List (String × Ty) := m.constants.map fun c => (c.name, c.ty)
   -- Build trait impl pairs for bound checking

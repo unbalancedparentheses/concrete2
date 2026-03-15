@@ -423,6 +423,13 @@ private def isPointerTy : Ty → Bool
   | .ptrMut _ | .ptrConst _ => true
   | _ => false
 
+private def intBitWidth : Ty → Nat
+  | .i8 | .u8 => 8
+  | .i16 | .u16 => 16
+  | .i32 | .u32 => 32
+  | .int | .uint => 64
+  | _ => 0
+
 /-- Check binop type consistency: both operands should have compatible types. -/
 private def checkBinOpTypes (ctx : VerifyCtx) (b : SBlock) : VerifyCtx :=
   b.insts.foldl (fun ctx inst =>
@@ -435,8 +442,8 @@ private def checkBinOpTypes (ctx : VerifyCtx) (b : SBlock) : VerifyCtx :=
       else if lTy == .unit || rTy == .unit then ctx
       -- Pointer arithmetic: ptr + int or ptr - int is valid
       else if isPointerTy lTy && isInteger rTy then ctx
-      -- Mixed int/uint arithmetic: both lower to i64 in LLVM
-      else if isInteger lTy && isInteger rTy then ctx
+      -- Mixed int/uint arithmetic is allowed only if both have the same bit width
+      else if isInteger lTy && isInteger rTy && intBitWidth lTy == intBitWidth rTy then ctx
       else addSSAError ctx (.binopTypeMismatch b.label dst (toString (repr lTy)) (toString (repr rTy)))
     | _ => ctx
   ) ctx

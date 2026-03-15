@@ -90,7 +90,10 @@ def frontendMonoLowerRaw (source : String) : Except Diagnostics (List SModule) :
   | .ok (_, _, validCore) =>
   match Pipeline.monomorphize validCore with
   | .error ds => .error ds
-  | .ok mono => .ok (mono.coreModules.map Concrete.lowerModule)
+  | .ok mono =>
+    match mono.coreModules.mapM Concrete.lowerModule with
+    | .ok ssaModules => .ok ssaModules
+    | .error e => .error [{ severity := .error, message := e, pass := "lower", span := none, hint := none }]
 
 -- ============================================================
 -- Test sources

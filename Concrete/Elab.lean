@@ -981,9 +981,10 @@ def elabFn (f : FnDef) (implTy : Option Ty := none) : ElabM CFnDef := do
     currentTypeBounds := f.typeBounds
     currentRetTy := retTy
     currentImplType := implTy }
-  -- Add parameters to scope
+  -- Add parameters to scope (resolve type aliases so params don't carry unresolved alias names)
   for (pname, pty) in params do
-    addVar pname pty
+    let resolvedPty ← resolveTypeE pty
+    addVar pname resolvedPty
   -- Elaborate body
   let cBody ← elabStmts f.body
   -- Restore env
@@ -994,11 +995,14 @@ def elabFn (f : FnDef) (implTy : Option Ty := none) : ElabM CFnDef := do
     currentTypeBounds := env.currentTypeBounds
     currentRetTy := env.currentRetTy
     currentImplType := env.currentImplType }
+  -- Resolve type aliases in output param/return types so Core IR doesn't carry alias names
+  let resolvedParams ← params.mapM fun (n, t) => do pure (n, ← resolveTypeE t)
+  let resolvedRetTy ← resolveTypeE retTy
   return {
     name := f.name
     typeParams := allTypeParams
-    params := params
-    retTy := retTy
+    params := resolvedParams
+    retTy := resolvedRetTy
     body := cBody
     isPublic := f.isPublic
     isTest := f.isTest
@@ -1057,7 +1061,8 @@ partial def elabModule (m : Module) (summary : FileSummary)
   let builtinEnumList := [builtinOptionEnum] ++ (if hasUserResult then [] else [builtinResultEnum])
   let allStructs := imports.structs ++ m.structs
   let allEnums := builtinEnumList ++ imports.enums ++ m.enums
-  let typeAliasMap := m.typeAliases.map fun ta => (ta.name, ta.targetTy)
+  let localTypeAliases := m.typeAliases.map fun ta => (ta.name, ta.targetTy)
+  let typeAliasMap := imports.typeAliases ++ localTypeAliases
   let constantsMap := m.constants.map fun c => (c.name, c.ty)
   let builtinDestroyTrait : TraitDef := {
     name := destroyTraitName
