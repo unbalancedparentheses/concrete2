@@ -10,6 +10,21 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Compiler improvement checklist items 4 & 5 complete
+
+The final two partial checklist items are now done, completing the compiler improvement checklist (all 6 items except backend plurality, which is Phase E+ work).
+
+**Item 4 — Post-cleanup SSA verification**: `Pipeline.lower` now runs `ssaVerifyProgram` both before and after `ssaCleanupProgram`. This mechanically guarantees that cleanup transformations (dead block elimination, trivial phi folding, empty block folding, constant folding, strength reduction, store-load forwarding) preserve all 8 SSA invariants (dominance, phi correctness, no aggregate phis, branch safety, unique defs, call arity, return coverage, type consistency). Previously verification ran only pre-cleanup — cleanup output was trusted by construction but not mechanically checked.
+
+What changed:
+- `Concrete/Pipeline.lean`: second `ssaVerifyProgram` call after cleanup
+- `Concrete/SSAVerify.lean`: module docstring updated to document dual verification; `isAggregateType` comment explains why generic heap types (Vec, HashMap, etc.) are excluded from the aggregate check
+- `docs/PASSES.md`: pipeline diagram, SSAVerify section, and invariant chain updated to reflect post-cleanup verification
+
+**Item 5 — Builtin extraction from EmitSSA**: 568 lines of builtin LLVM IR generation extracted from `EmitSSA.lean` into `Concrete/EmitBuiltins.lean`. The new module exports `getBuiltinFns` (string ops, conversion ops) and `getVecBuiltinFns` (vec ops per element size) and imports only `Concrete.LLVM` and `Concrete.Layout` — no dependency on SSA IR, Core IR, or `EmitSSAState`. This proves the builtins are structurally decoupled from the SSA→LLVM translation. `EmitSSA.lean` shrinks from 1642 to 1099 lines.
+
+Test suite: 663 tests passing, 0 failures.
+
 ### Compiler hardening pass complete (all 5 items)
 
 - **Lower.lean hard errors**: 6 silent defaults converted to `throw` — `lookupStructFields`, `fieldIndex`, `variantIndex`, `variantFields`, `structNameFromTy` propagate errors through `LowerM`. `lowerModule` returns `Except String SModule` — failed function lowering is now a compile error, not silently dropped.

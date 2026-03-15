@@ -61,6 +61,7 @@ Still clearly not implemented:
 | **G** | Language surface and feature discipline | Not started |
 | **H** | Package and dependency ecosystem | Not started |
 | **I** | Project and operational maturity | Not started |
+| **J** | Concurrency maturity and runtime plurality | Not started |
 
 ### Recent Progress
 
@@ -79,14 +80,14 @@ Still clearly not implemented:
 - **User-defined IntMap validated end-to-end**: a full hash map with fn pointer fields for hash/eq (same pattern as `HashMap`) compiles and runs correctly through the native compiler path, proving the linearity fix chain works.
 - **Builtin HashMap interception retired**: ~1,400 lines of compiler-internal HashMap machinery deleted (7 intrinsic IDs, type checking/elaboration intercepts, LLVM wrapper functions, hand-written LLVM IR runtime with hash/probe/insert/get/contains/remove/grow for int and string keys, hardcoded 5-field struct type). HashMap is now an ordinary stdlib type compiled through the normal generic struct path. 6 new stdlib tests (4 HashMap, 2 HashSet) replace 11 deleted builtin-API tests. HashMap and HashSet are now in the collection verification section of the test runner.
 - **Structured LLVM backend completed**: all backend emission now flows through structured `LLVMModule` data before printing. User functions, declarations, type definitions, globals, wrappers, test runner logic, vec builtins, and string/conversion builtins all emit through structured types; `rawSections` and the old `Concrete/Codegen/` backend path are gone.
-- 600 tests pass (189 stdlib), including SSA structure verification, -O2 regressions for aggregate lowering paths, expanded stdlib module coverage, six linearity regression tests, native HashMap/HashSet coverage, and lli-accelerated test execution (~12s full suite).
+- 600 tests pass (184 stdlib), including SSA structure verification, -O2 regressions for aggregate lowering paths, expanded stdlib module coverage, six linearity regression tests, native HashMap/HashSet coverage, and lli-accelerated test execution (~12s full suite).
 - **Phase C completed**: all 8 items done:
   - module-targeted stdlib testing (`--stdlib-module <name>` runs tests for a single stdlib module)
   - diagnostics/formatter polish (empty `{}` edge case, deprecation fixes, compiler warnings eliminated)
   - integration testing deepened: `report_integration.con` (all 6 report modes) + `integration_collection_pipeline.con` (multi-collection pipeline with Vec, generics, enums, allocation patterns)
   - report assertions hardened: 44 report tests with content checks across all 6 modes (caps, unsafe, layout, interface, mono, alloc)
   - reports as audit product: capability "why" traces showing which callees contribute each cap, trust boundary analysis showing what trusted functions wrap, allocation/cleanup summaries with leak warnings, summary totals and aligned columns across all reports
-- 600 tests pass (189 stdlib), including 44 report assertions, 46 golden tests, integration tests, and 16 collections verified.
+- 600 tests pass (184 stdlib), including 44 report assertions, 46 golden tests, integration tests, and 16 collections verified.
 - **Phase D1 complete** (testing infrastructure):
   - **Compiler output cache**: file-keyed cache in `run_tests.sh`, 26/57 hits per fast run
   - **Failure artifacts**: `.test-failures/` with timestamped output and exact rerun commands
@@ -96,7 +97,7 @@ Still clearly not implemented:
   - **Dependency-aware selection**: `run_tests.sh --affected` auto-detects changed files via `git diff` and runs only affected sections. `--affected Concrete/Report.lean` runs 72 tests; `--affected Concrete/Lower.lean` runs 248 tests.
   - **Coverage matrix and determinism policy**: `docs/TESTING.md` rewritten with full coverage matrix (by failure mode and by compiler pass), determinism rules (fixed seeds, no wall-clock dependence, timeout classes, network isolation, parallel safety), compile-time baselines, and failure isolation documentation.
   - **Real-program corpus**: 8 integration tests including 5 multi-feature programs (150-250 lines each): generic pipeline (5-layer borrow chain), state machine (4×5 nested match), compiler stress (deep generic dispatch, 5-variant enum), multi-module (cross-module types/traits/enums), recursive structures (expression evaluator + stack machine).
-- 647 tests pass (189 stdlib), including 28 pass-level Lean tests, 44 report assertions, 46 golden tests, 8 integration tests, and 16 collections verified.
+- 647 tests pass (184 stdlib), including 28 pass-level Lean tests, 44 report assertions, 46 golden tests, 8 integration tests, and 16 collections verified.
 - **Phase D2 complete** (backend/artifact/proof):
   - **`ValidatedCore` artifact**: explicit pipeline type in `Concrete/Pipeline.lean`. `Pipeline.coreCheck` is the only constructor; `Pipeline.monomorphize` takes `ValidatedCore`, enforcing that validation happened. `Pipeline.elaborate` now returns `ElaboratedProgram` (elab + canonicalize only), and `Pipeline.coreCheck` validates it into `ValidatedCore`.
   - **`ProofCore` extraction**: `Concrete/ProofCore.lean` filters `ValidatedCore` into the pure, proof-eligible fragment — pure functions (empty capability set, not trusted), safe structs (no repr(C)/packed), safe enums (no builtin overrides). `extractProofCore` flattens module trees and reports inclusion/exclusion counts.
@@ -134,8 +135,8 @@ Still clearly not implemented:
 | 1 | Speed up the edit-test loop | Done — parallel runner, `--affected`, `--filter`, `--manifest`, cached compilations, lli acceleration |
 | 2 | Harden lowering (mutable-state storage, aggregate merge transport) | Done — all `dbg_trace` defaults converted to `throw`/`panic!`, type variable leakage fixed, newtype erasure at module boundaries |
 | 3 | Remove string-based semantic dispatch from ordinary language behavior | Done — Phase B exit criterion met: all semantic dispatch uses explicit identity types (`BuiltinTraitId`, `BuiltinEnumId`, `IntrinsicId`). Residual structural string mechanics (parser keywords, mangling, LLVM naming) are tolerated. |
-| 4 | Strengthen SSA verifier/cleanup into a clearer backend contract | Partial — 8 invariants documented, integer bit-width check added, but not mechanically enforced end-to-end |
-| 5 | Make structured LLVM backend easier to reuse/verify/defend | Partial — structured `LLVMModule` emission complete, SSA contract documented, but backend still tightly coupled |
+| 4 | Strengthen SSA verifier/cleanup into a clearer backend contract | Done — 8 invariants documented and mechanically enforced end-to-end (SSAVerify runs both pre- and post-cleanup) |
+| 5 | Make structured LLVM backend easier to reuse/verify/defend | Done — structured `LLVMModule` emission complete, builtins extracted into standalone `EmitBuiltins.lean` (no SSA/Core dependency), SSA contract documented |
 | 6 | Backend plurality (C/Wasm, later MLIR) | Not started |
 
 ### Execution Phases
@@ -247,6 +248,7 @@ This phase begins the high-integrity profile direction:
 Primary surfaces:
 - [docs/VALUE_MODEL.md](docs/VALUE_MODEL.md)
 - [docs/STDLIB.md](docs/STDLIB.md)
+- [research/concurrency.md](research/concurrency.md)
 - [research/high-integrity-profile.md](research/high-integrity-profile.md)
 - [research/no-std-freestanding.md](research/no-std-freestanding.md)
 - [research/trust-multipliers.md](research/trust-multipliers.md)
@@ -256,6 +258,8 @@ Primary surfaces:
 2. make the runtime boundary explicit — **not started**
 3. define the memory / allocation strategy explicitly — **not started**
 4. define the concurrency and execution story deliberately — **not started**
+   - first target: hosted runtime, OS-thread-based concurrency, explicit `spawn`/`join`/channel APIs, move-first ownership across threads, no built-in `async`/`await` initially
+   - concurrency should be capability-gated and live in stdlib/runtime surfaces before any core-language syntax is considered
 5. tighten the FFI/runtime ownership boundary — **not started**
 6. close the FFI/ABI calling convention gaps (from Phase D Known Limitations) — **not started**
 7. make runtime-related stdlib surfaces reflect the chosen execution model — **not started**
@@ -268,6 +272,7 @@ Deliverables:
 - a documented runtime boundary covering startup, shutdown, failure, and allocator expectations
 - an explicit memory/allocation model including no-alloc or bounded-allocation profile direction
 - a written concurrency/execution stance for the language/runtime
+- an explicit first-step concurrency model: hosted runtime, OS threads, spawn/join, channels, capability-gated concurrency, no built-in async initially
 - a documented ownership/capability story across FFI/runtime boundaries
 - C-compatible calling convention for `extern fn` with `#[repr(C)]` struct parameters (by-value, not pointer-only)
 - empirical cross-target FFI validation (compile + link + run on x86_64 and aarch64)
@@ -420,6 +425,47 @@ Deliverables:
 Exit criterion:
 Concrete is not only architecturally strong internally, but also operable, reproducible, documentable, and maintainable as a long-term project.
 
+#### Phase J: Concurrency Maturity And Runtime Plurality
+
+Goal: give Concrete a long-term concurrency model that stays explicit, auditable, and small instead of collapsing into an "async everywhere" ecosystem.
+
+This phase is intentionally later than Phase E.
+Phase E defines the execution model and first runtime boundary.
+Phase J exists to do the larger concurrency design correctly once runtime, safety, package, and operational foundations are stable enough to support it.
+
+The intended long-term shape is:
+
+- structured concurrency as the semantic center
+- OS threads plus message passing as the base primitive
+- evented I/O as a later specialized runtime model
+- no unrestricted detached async ecosystem as the primary language identity
+
+Primary surfaces:
+- [research/concurrency.md](research/concurrency.md)
+- [research/long-term-concurrency.md](research/long-term-concurrency.md)
+- [research/high-integrity-profile.md](research/high-integrity-profile.md)
+- [research/trust-multipliers.md](research/trust-multipliers.md)
+- runtime-facing stdlib surfaces
+- capability/report tooling
+
+1. stabilize the first concrete thread/channel model introduced after Phase E — **not started**
+2. define explicit cross-thread transfer/shareability rules — **not started**
+3. make structured concurrency the default lifecycle model for concurrent work — **not started**
+4. integrate concurrency into capability reporting, boundedness reporting, and high-integrity profiles — **not started**
+5. define whether and how evented I/O fits under the same explicit runtime/capability contract — **not started**
+6. keep runtime plurality explicit and prevent fragmentation into incompatible concurrency cultures — **not started**
+
+Deliverables:
+- a documented long-term concurrency contract for the language/runtime
+- a stable threads-plus-channels baseline with explicit ownership transfer rules
+- an explicit structured-concurrency lifecycle model for ordinary concurrent work
+- a documented shareability/synchronization discipline for concurrent code
+- report/profile integration for concurrency, blocking, and runtime authority
+- a documented evented-I/O direction that fits the same explicit contract without becoming the default for all code
+
+Exit criterion:
+Concrete has one coherent concurrency story: structured by default, threads-first underneath, message-passing biased, and able to admit specialized evented runtime models later without losing auditability or runtime clarity.
+
 ### Why These Phases Matter
 
 - **Phase A** matters because a slow feedback loop drags down every compiler task, and backend-sensitive lowering bugs destroy trust in every other part of the compiler.
@@ -431,6 +477,7 @@ Concrete is not only architecturally strong internally, but also operable, repro
 - **Phase G** matters because languages decay when feature growth has no explicit discipline.
 - **Phase H** matters because package and dependency semantics are part of the language experience once real projects exist.
 - **Phase I** matters because long-term projects fail just as easily from weak operational discipline as from weak compiler architecture.
+- **Phase J** matters because concurrency is one of the easiest places for a language to lose clarity, and Concrete should only broaden it once it can do so without importing async fragmentation and hidden runtime culture.
 
 ### Compiler Hardening (between Phase D and Phase E)
 
@@ -463,36 +510,37 @@ These are concrete, implementable improvements that emerged from the bug fixes a
 4. Language-surface and feature-discipline work as an explicit phase once the runtime/safety direction is clear.
 5. Package and dependency ecosystem as an explicit phase once stdlib/tooling/runtime direction is stable enough to support real projects well.
 6. Project and operational maturity as an explicit phase once the current compiler/tooling architecture is stable enough to productize.
-7. Proof-driven narrowing of future feature additions.
-8. A clearer hosted vs freestanding / `no_std` split, but only after the runtime and stdlib boundaries are more stable.
-9. Execution-cost analysis as an audit/report extension.
+7. Concurrency maturity and runtime plurality as an explicit later phase once the runtime, safety, package, and operational foundations are stable enough to support it well.
+8. Proof-driven narrowing of future feature additions.
+9. A clearer hosted vs freestanding / `no_std` split, but only after the runtime and stdlib boundaries are more stable.
+10. Execution-cost analysis as an audit/report extension.
    - structural boundedness reports first
    - abstract cost estimation later
    - never at the cost of clarity in the core language
-10. Broaden the Lean-side proof workflow beyond the current pure-fragment scope (17 theorems over integers/booleans/arithmetic/conditionals). Next targets: structs, enums, match expressions, recursive functions, source-to-Core traceability, and export/tooling for external proof use.
-11. Potential later expansion of the Lean proof story beyond Core-level properties.
+11. Broaden the Lean-side proof workflow beyond the current pure-fragment scope (17 theorems over integers/booleans/arithmetic/conditionals). Next targets: structs, enums, match expressions, recursive functions, source-to-Core traceability, and export/tooling for external proof use.
+12. Potential later expansion of the Lean proof story beyond Core-level properties.
    - later broaden selected-function proofs toward effects, resources, capabilities, runtime interaction, and only then concurrency
    - later consider backend-level proof concerns such as richer compiler-preservation work across deeper lowering stacks or optional backend-family layers
    - do not treat either broader end-to-end program proofs or backend/MLIR-layer proof work as near-term substitutes for the validated-Core-first plan
-12. Treat contracts, richer invariants, and similar verification extensions as post-roadmap evaluation work, not as part of the main current philosophy.
+13. Treat contracts, richer invariants, and similar verification extensions as post-roadmap evaluation work, not as part of the main current philosophy.
    - only evaluate them after the simpler Concrete + Lean 4 proof story has proven insufficient
    - keep them out of the main phase plan until the core language, proof boundary, runtime model, and operational story are already stable
    - if adopted at all, treat them as a final optional verification-extension stage rather than as a prerequisite for the main roadmap
-13. Implement a real artificial-life showcase/stress-test in Concrete.
+14. Implement a real artificial-life showcase/stress-test in Concrete.
    - target a program in the spirit of Rabrg's `artificial-life` reproduction of "Computational Life: How Well-formed, Self-replicating Programs Emerge from Simple Interaction"
    - a 240x135 grid of 64-instruction Brainfuck-like programs, randomly initialized, locally paired, concatenated, executed for bounded steps, then split back apart
    - use it as a serious end-to-end stress test for runtime/performance, collections/buffers, formatting/reporting, and later proof/audit ambitions
    - treat it as a showcase workload once the runtime, stdlib, and backend are mature enough rather than as immediate Phase C compiler work
-14. Develop proof-backed authority reports as a later extension of the current capability/trust reports.
+15. Develop proof-backed authority reports as a later extension of the current capability/trust reports.
    - make it explicit which authority facts are compiler-checked, which depend on validated Core extraction, and which still rest on trusted/foreign assumptions
    - keep the first versions narrow and high-signal rather than pretending to prove the whole world
-15. Move toward verified FFI envelopes once the runtime/ABI boundary is explicit.
+16. Move toward verified FFI envelopes once the runtime/ABI boundary is explicit.
    - make foreign boundaries carry ABI, ownership, destruction, and capability assumptions more explicitly than raw `extern fn`
    - prefer wrapper/envelope approaches over broad new surface syntax
-16. Treat reproducible trust bundles as the operational destination of the evidence story.
+17. Treat reproducible trust bundles as the operational destination of the evidence story.
    - package reports, proof references, build identity, and artifact fingerprints together for audit/review workflows
    - only do this once the package/runtime/compatibility story is stable enough to make the bundle worth trusting
-17. Treat performance and incrementality as an explicit later maturity thread rather than ambient compiler folklore.
+18. Treat performance and incrementality as an explicit later maturity thread rather than ambient compiler folklore.
    - define profiling methodology and performance regression expectations
    - make optimization policy explicit enough that "faster" does not silently trade away auditability or proof-friendliness
    - only add artifact serialization and incremental compilation once the artifact boundaries and compatibility story are boring enough to sustain them
@@ -566,6 +614,7 @@ For more on these longer-horizon themes, see:
 - [research/capability-sandboxing.md](research/capability-sandboxing.md)
 - [research/unsafe-structure.md](research/unsafe-structure.md)
 - [research/no-std-freestanding.md](research/no-std-freestanding.md)
+- [research/long-term-concurrency.md](research/long-term-concurrency.md)
 - [research/complete-language-system.md](research/complete-language-system.md)
 
 ## Status Legend
