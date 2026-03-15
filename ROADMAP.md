@@ -50,17 +50,17 @@ Still clearly not implemented:
 
 ### Milestones
 
-| Phase | Focus | Status | Blocks |
-|------|-------|--------|--------|
-| **A** | Fast feedback and compiler stability | Done enough; aggregate lowering hardened, test runner parallelized, SSA invariants mechanically defended | B, C, D |
-| **B** | Semantic cleanup | Done | D |
-| **C** | Tooling and stdlib hardening | Done; all 8 items complete (LL(1) CI, linearity fixes, HashMap retired, module-targeted testing, diagnostics polish, integration tests, report hardening, audit reports) | later system maturity |
-| **D** | Testing, backend, and trust multipliers | Done; all items complete (D1 testing infra, D2 backend/proof, items 3-7) | A, most of B |
-| **E** | Runtime and execution model | Deferred | C, D |
-| **F** | Capability and safety productization | Deferred | D, E |
-| **G** | Language surface and feature discipline | Deferred | B, D, E, F |
-| **H** | Package and dependency ecosystem | Deferred | C, E, G |
-| **I** | Project and operational maturity | Deferred | C, D, E, F, G, H |
+| Phase | Focus | Status |
+|------|-------|--------|
+| **A** | Fast feedback and compiler stability | Done |
+| **B** | Semantic cleanup | Done |
+| **C** | Tooling and stdlib hardening | Done |
+| **D** | Testing, backend, and trust multipliers | Done |
+| **E** | Runtime and execution model | Not started |
+| **F** | Capability and safety productization | Not started |
+| **G** | Language surface and feature discipline | Not started |
+| **H** | Package and dependency ecosystem | Not started |
+| **I** | Project and operational maturity | Not started |
 
 ### Recent Progress
 
@@ -127,71 +127,16 @@ Still clearly not implemented:
   - Hardening tests in `lean_tests/hardening_*.con`.
 - 663 tests pass (189 stdlib), including 32 pass-level Lean tests, 44 report assertions, 46 golden tests, 20 integration/regression/hardening tests, and 16 collections verified.
 
-### Now
+### Compiler Improvement Checklist
 
-Phase D is complete. All items done: D1 (testing infrastructure), D2 (backend/artifact/proof), items 3-7 (SSA contract, FFI/ABI, corpus growth, formalization, audit reports). The compiler has explicit artifact boundaries, a proof-oriented pipeline, formal evaluation semantics, a documented SSA backend contract, an ABI/FFI maturity statement, a 12-program integration corpus, and named next-generation report modes.
-
-1. Make testing infrastructure best-in-class (Phase D1 inside Phase D):
-   - problem: the suite has strong breadth, but too much test behavior still lives in shell orchestration, semantic tests pay too much full-pipeline cost, repeated report assertions waste compiler work, and failure isolation/reproduction is weaker than it should be
-   - why now: this is the highest-leverage compiler work left because faster, clearer, more reliable testing raises the quality ceiling on every later backend, proof, stdlib, and runtime task
-   - primary surfaces: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/PASSES.md](docs/PASSES.md), [Concrete/SSAVerify.lean](/Users/unbalancedparen/projects/concrete/Concrete/SSAVerify.lean), [Concrete/SSACleanup.lean](/Users/unbalancedparen/projects/concrete/Concrete/SSACleanup.lean), [Concrete/EmitSSA.lean](/Users/unbalancedparen/projects/concrete/Concrete/EmitSSA.lean), [Concrete/Pipeline.lean](/Users/unbalancedparen/projects/concrete/Concrete/Pipeline.lean)
-   - first slices:
-     - turn explicit pipeline artifacts into reusable tooling/caching building blocks
-     - move testing beyond shell-level filtering toward dependency-aware and artifact-aware execution
-     - add pass-level Lean tests for semantic/compiler-pass behavior
-     - preserve failure artifacts and exact rerun commands automatically
-     - cache multi-assertion report checks and other repeated compiler work
-     - grow the integration corpus toward real multi-module and stress-style programs
-   - constraints:
-     - prefer the fastest credible feedback loop over deeper refactors when the choice is real
-     - do not confuse "more tests" with better testing; architecture, reproducibility, and selection quality matter as much as count
-     - keep the system explainable enough that developers can see why a given test did or did not run
-   - done means: targeted runs are explainable and dependency-aware, failures are easy to isolate and rerun, semantic tests avoid unnecessary full-pipeline cost, report/invariant checks reuse artifacts aggressively, and the suite includes real multi-module and stress-style programs rather than mostly feature probes
-
-2. Push the backend/artifact/proof stack on top of that stronger base (Phase D2 inside Phase D):
-   - problem: the structured backend is now in place, but the SSA/backend contract still needs tightening, pipeline artifacts are not yet doing enough real work beyond testing, and the proof-facing validated-Core path is still more described than implemented
-   - why now: once D1 makes testing fast, reliable, and architecture-aware, Phase D can press harder on contract strength, artifact reuse, and the first real Lean 4 proof workflow for selected Concrete functions
-   - primary surfaces: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/PASSES.md](docs/PASSES.md), [Concrete/SSAVerify.lean](/Users/unbalancedparen/projects/concrete/Concrete/SSAVerify.lean), [Concrete/SSACleanup.lean](/Users/unbalancedparen/projects/concrete/Concrete/SSACleanup.lean), [Concrete/EmitSSA.lean](/Users/unbalancedparen/projects/concrete/Concrete/EmitSSA.lean), [Concrete/Pipeline.lean](/Users/unbalancedparen/projects/concrete/Concrete/Pipeline.lean)
-   - first slices:
-     - strengthen SSA/backend contract
-     - make `ValidatedCore` explicit in `Concrete/Pipeline.lean` rather than leaving it only as a documented post-`CoreCheck` boundary
-     - make validated Core a first-class proof-oriented artifact boundary after `CoreCheck` and before `Mono`
-     - preserve source-to-Core traceability well enough that selected functions can later be understood and proved in Lean
-     - stage the user-program proof workflow explicitly:
-       - formalize a small pure Core fragment
-       - define ProofCore as a restricted, proof-oriented view of validated Core rather than a separate rival semantic IR
-       - manually embed selected Concrete functions against that Core
-       - prove first concrete examples
-       - only later add export/tooling for Lean-side proof workflows
-     - push formalization over Core → SSA
-   - constraints:
-     - keep SSA as the only backend boundary
-     - do not add another backend family until the LLVM path is structurally cleaner
-     - treat MLIR as a later optional backend family, not the default immediate answer
-     - once the structured LLVM path and SSA contract are solid, evaluate MLIR deliberately as a potential replacement or additional backend family rather than as an early escape hatch
-   - done means: `ValidatedCore` is a named, explicit artifact in the pipeline rather than only a documented conceptual boundary, the backend consumes a structured contract over SSA, pipeline artifacts support reuse beyond test orchestration, and the first real Lean 4 proof workflow exists for selected Concrete functions over validated Core
-
-### Phase A Notes
-
-Phase A is done enough for the roadmap.
-
-- The fast runner is the standard developer path: `./run_tests.sh` for edit-test, `./run_tests.sh --full` before merge.
-- Aggregate lowering and merge transport are mechanically defended by `SSAVerify`.
-- Remaining testing improvements are no longer Phase A blockers; the larger wins now live under later stdlib-aware and artifact-aware testing work.
-
-### Compiler Excellence Order
-
-The compiler-improvement order should stay:
-
-1. speed up the edit-test loop so compiler work can iterate quickly
-2. finish hardening lowering around mutable-state storage identity and aggregate merge transport after the core stable-storage fix
-3. remove remaining string-based semantic dispatch from ordinary language behavior
-4. strengthen the SSA verifier/cleanup boundary into a clearer backend contract
-5. make the structured LLVM backend easier to reuse, verify, and defend with a clearer SSA/backend contract
-6. only then expand toward backend plurality, deeper caching/incrementality, and more ambitious tooling reuse
-
-This is the highest-leverage path for turning the current compiler into a stable long-term project rather than just a working bootstrap.
-If there is a tradeoff between starting a deeper compiler refactor and first making the local test loop materially faster, prefer the faster test loop unless the refactor is needed to unblock basic correctness.
+| # | Item | Status |
+|---|------|--------|
+| 1 | Speed up the edit-test loop | Done — parallel runner, `--affected`, `--filter`, `--manifest`, cached compilations, lli acceleration |
+| 2 | Harden lowering (mutable-state storage, aggregate merge transport) | Done — all `dbg_trace` defaults converted to `throw`/`panic!`, type variable leakage fixed, newtype erasure at module boundaries |
+| 3 | Remove string-based semantic dispatch from ordinary language behavior | Not started |
+| 4 | Strengthen SSA verifier/cleanup into a clearer backend contract | Partial — 8 invariants documented, integer bit-width check added, but not mechanically enforced end-to-end |
+| 5 | Make structured LLVM backend easier to reuse/verify/defend | Partial — structured `LLVMModule` emission complete, SSA contract documented, but backend still tightly coupled |
+| 6 | Backend plurality (C/Wasm, later MLIR) | Not started |
 
 ### Execution Phases
 
@@ -211,20 +156,13 @@ Primary surfaces:
 - `Concrete/EmitSSA.lean`
 - `lean_tests/`
 
-1. make common test paths materially faster through safer parallelization and narrower runner modes
-2. finish hardening aggregate lowering for mutable aggregates and borrows after the core stable-storage promotion change
-3. keep shrinking accidental aggregate transport at loops and non-loop merge points where stable storage identity is the real semantic model
-4. add optimized-build regressions and stdlib coverage for borrow+aggregate cases, including non-loop merge paths
-5. tighten SSA invariants around these lowering patterns and the promoted-storage path
+1. ~~make common test paths materially faster through safer parallelization and narrower runner modes~~ **Done** — parallel runner, `--fast`/`--full`/`--filter`/`--affected`/`--manifest` modes, cached compilations, lli acceleration
+2. ~~finish hardening aggregate lowering for mutable aggregates and borrows after the core stable-storage promotion change~~ **Done** — aggregate loop vars promoted to entry-block allocas, field assignment GEPs into stable storage
+3. ~~keep shrinking accidental aggregate transport at loops and non-loop merge points where stable storage identity is the real semantic model~~ **Done** — if/else and match merge via entry-block allocas, SSA verifier rejects aggregate phi nodes
+4. ~~add optimized-build regressions and stdlib coverage for borrow+aggregate cases, including non-loop merge paths~~ **Done** — O2 regression tests, stdlib coverage for Option/Result/Text/Slice
+5. ~~tighten SSA invariants around these lowering patterns and the promoted-storage path~~ **Done** — SSAVerify rejects aggregate phi nodes, integer bit-width check added
 
-Deliverables:
-- a standard fast local workflow that does not require the serial full suite
-- hardened aggregate lowering behavior for loops, if/else merges, and match merges
-- optimized-build regression coverage for the backend-sensitive lowering paths
-- verifier-enforced SSA invariants for promoted aggregate storage and merge transport
-
-Exit criterion:
-ordinary development no longer depends on a slow serial full-suite loop, and there are no known backend-sensitive failures in mutable aggregate lowering or aggregate merge transport, including optimized-build stress cases.
+Exit criterion met: ordinary development uses parallel fast suite (~25-35s), no known backend-sensitive failures in aggregate lowering or merge transport.
 
 #### Phase B: Semantic Cleanup — **done**
 
@@ -314,36 +252,16 @@ Primary surfaces:
 - [research/trust-multipliers.md](research/trust-multipliers.md)
 - runtime-facing stdlib and FFI boundaries
 
-1. define the hosted vs freestanding model more explicitly
-   - decide what the language assumes from the OS, libc, allocator, and startup environment
-2. make the runtime boundary explicit
-   - allocator expectations
-   - program startup / shutdown model
-   - panic / abort / failure model
-3. define the memory / allocation strategy explicitly
-   - allocator model(s)
-   - no-alloc / bounded-allocation story
-   - region/arena patterns, if any
-   - interaction between allocation, `Destroy`, capabilities, and reports
-4. define the concurrency and execution story deliberately
-   - decide whether threads, async, processes, or none of them are first-class language/runtime concerns
-   - prefer analyzable concurrency constraints over unconstrained surface growth if Concrete is meant to serve critical systems later
-5. tighten the FFI/runtime ownership boundary
-   - make it clearer what ownership, destruction, and capability assumptions survive foreign boundaries
-6. close the FFI/ABI calling convention gaps (from Phase D Known Limitations)
-   - implement by-value struct passing for `#[repr(C)]` structs in `extern fn` (currently all structs passed by pointer)
-   - implement by-value struct returns (currently sret pointer indirection)
-   - add target-aware calling convention support (SysV AMD64, AAPCS64) so `extern fn` matches the platform C ABI
-   - add empirical cross-target FFI tests: compile + link + run C↔Concrete interop on x86_64 and aarch64
-   - consider `#[repr(C)]` enum support (C-compatible tagged unions) for FFI
-7. make runtime-related stdlib surfaces reflect the chosen execution model instead of growing opportunistically
-8. define execution profiles for high-integrity use
-   - make room for profiles such as `no_alloc`, bounded-allocation, or other explicitly restricted execution modes
-   - keep these profiles aligned with the actual runtime and allocator model instead of bolting them on later
-   - leave room for capability sandbox profiles that can later ban `FFI`, ambient authority, or unrestricted `trusted` in stricter builds
-9. make room for verified FFI envelopes and structural boundedness reporting
-   - treat foreign boundaries as explicit envelopes over ABI, ownership, destruction, and capability assumptions rather than only raw `extern fn`
-   - extend report work toward structural boundedness facts (recursion, allocation reachability, loop structure, blocking I/O reachability) before any deeper cost-analysis ambition
+1. define the hosted vs freestanding model more explicitly — **not started**
+2. make the runtime boundary explicit — **not started**
+3. define the memory / allocation strategy explicitly — **not started**
+4. define the concurrency and execution story deliberately — **not started**
+5. tighten the FFI/runtime ownership boundary — **not started**
+6. close the FFI/ABI calling convention gaps (from Phase D Known Limitations) — **not started**
+7. make runtime-related stdlib surfaces reflect the chosen execution model — **not started**
+8. define execution profiles for high-integrity use — **not started**
+9. make room for verified FFI envelopes and structural boundedness reporting — **not started**
+10. define how runtime-sensitive performance validation should work — **not started**
 
 Deliverables:
 - a documented hosted vs freestanding execution model
@@ -356,6 +274,7 @@ Deliverables:
 - runtime-facing stdlib surfaces aligned with the chosen execution model
 - a clear direction for stricter sandbox/execution profiles (`no_alloc`, bounded allocation, no ambient authority, no unrestricted FFI/trusted)
 - a documented direction for verified FFI envelopes and structural boundedness reports as part of the execution-model story
+- an explicit runtime-performance validation direction (profiling/perf baselines/regression expectations) aligned with the execution model
 
 Exit criterion:
 Concrete has an explicit execution model that explains how programs start, allocate, fail, interact with the host, and cross runtime/FFI boundaries.
@@ -378,21 +297,12 @@ Primary surfaces:
 - [research/trust-multipliers.md](research/trust-multipliers.md)
 - [research/unsafe-structure.md](research/unsafe-structure.md)
 
-1. improve capability and trust ergonomics
-   - make capability requirements easier to understand, introduce, and audit
-2. deepen capability/trust reporting
-   - extend the existing "why" traces into a more complete authority-flow story
-   - make authority flow easier to follow across wrappers, modules, and trust boundaries
-   - improve `trusted` / `Unsafe` visibility and cross-links in reports
-   - make room for later proof-backed authority reports that can distinguish checked facts from trusted/foreign assumptions
-3. add stronger patterns for explicit authority wrappers and capability aliases
-   - keep open the later path to authority budgets that can limit what a module, package, or binary is allowed to require at all
-4. make safety features easier to use correctly in ordinary programs without weakening honesty
-5. ensure docs, diagnostics, and reports present one coherent safety story
-6. define the shape of a high-integrity safety profile
-   - decide how `Unsafe`, `trusted`, FFI, and ambient authority should be constrained in stricter code profiles
-   - make the restrictions explicit enough that they can later support audit-heavy or critical-system use
-   - keep the profile compatible with stricter capability sandbox modes introduced from the execution-model side
+1. improve capability and trust ergonomics — **not started**
+2. deepen capability/trust reporting — **not started**
+3. add stronger patterns for explicit authority wrappers and capability aliases — **not started**
+4. make safety features easier to use correctly in ordinary programs without weakening honesty — **not started**
+5. ensure docs, diagnostics, and reports present one coherent safety story — **not started**
+6. define the shape of a high-integrity safety profile — **not started**
 
 Deliverables:
 - clearer user-facing capability and trust ergonomics in diagnostics/docs/reports
@@ -416,18 +326,12 @@ Primary surfaces:
 - grammar docs and language references
 - language-design research notes
 
-1. define explicit feature-admission criteria
-   - grammar cost
-   - audit cost
-   - proof cost
-   - implementation complexity
-2. make "no" and "not yet" decisions first-class language outcomes
-3. revisit syntax and surface complexity with a bias toward simplification, not expansion
-4. keep unsafe/trusted/foreign surface area as narrow as possible
-5. make long-term language shape decisions explicit instead of letting them emerge from local convenience
-6. define a clearly analyzable critical/provable subset if Concrete is going to target higher-integrity domains
-   - make the subset explicit rather than leaving it as an accidental intersection of current features
-   - treat contracts and richer proof annotations as optional later research, not a required part of the language philosophy
+1. define explicit feature-admission criteria — **not started**
+2. make "no" and "not yet" decisions first-class language outcomes — **not started**
+3. revisit syntax and surface complexity with a bias toward simplification, not expansion — **not started**
+4. keep unsafe/trusted/foreign surface area as narrow as possible — **not started**
+5. make long-term language shape decisions explicit instead of letting them emerge from local convenience — **not started**
+6. define a clearly analyzable critical/provable subset — **not started**
 
 Deliverables:
 - explicit feature-admission criteria used as a standing design filter
@@ -452,16 +356,11 @@ Primary surfaces:
 - stdlib vs third-party package boundaries
 - workspace and dependency tooling
 
-1. define the package and dependency model explicitly
-   - import/package resolution model for real projects
-   - dependency/version semantics
-2. define stdlib vs third-party package boundaries
-   - what is special, what is ordinary, and what is versioned how
-3. define workspace and multi-package behavior
-   - roots, workspaces, local dependencies, and expected project layouts
-4. make dependency and package UX part of the language-user experience rather than a repo-local convention
-   - include package- or subsystem-level authority budgets so dependencies can be checked against declared capability limits
-5. ensure docs, tooling, and CI reflect the same package/project model
+1. define the package and dependency model explicitly — **not started**
+2. define stdlib vs third-party package boundaries — **not started**
+3. define workspace and multi-package behavior — **not started**
+4. make dependency and package UX part of the language-user experience — **not started**
+5. ensure docs, tooling, and CI reflect the same package/project model — **not started**
 
 Deliverables:
 - a documented package/dependency model with project-root and resolution semantics
@@ -470,6 +369,7 @@ Deliverables:
 - dependency/package tooling and CI behavior aligned with the same model
 - an authority-budget path at package or subsystem boundaries
 - a credible path for package- or subsystem-level capability budgets to become enforceable build policy
+- a documented dependency-trust direction for packages, workspaces, and third-party inputs
 
 Exit criterion:
 Concrete has an explicit package/dependency model that supports real projects without relying on ad-hoc repo-local conventions, and it has a credible path to enforcing authority budgets at package or subsystem boundaries.
@@ -495,31 +395,15 @@ Primary surfaces:
 - project/package metadata
 - editor/tool integration surfaces
 
-1. make the project and package model operationally solid
-   - define how projects, dependencies, roots, and standard-library integration are expected to work in ordinary use
-2. add release and compatibility discipline
-   - decide what compatibility promises exist for language, stdlib, reports, and tooling surfaces
-   - make breaking changes deliberate instead of ambient
-3. harden reproducibility and CI operations
-   - keep builds and tests reproducible enough to trust failures
-   - make CI/reporting workflows clear, boring, and maintainable
-4. make the distribution and installation story explicit
-   - document and streamline how users obtain, build, and run Concrete
-   - reduce dependence on repo-local tribal knowledge
-5. turn docs and editor/tool integration into maintained product surfaces
-   - keep top-level docs coherent with the actual workflow
-   - decide whether editor/LSP support is a serious maintained goal and what minimum UX is expected for navigation, diagnostics, formatting, and reports
-   - define the minimum supported editor/tooling baseline even before full LSP exists
-6. add explicit compatibility and bootstrap-trust policy
-   - decide what can break freely now and what should stabilize first
-   - state whether reports/tooling/IRs have compatibility expectations
-   - decide whether self-hosting is a goal, whether diverse-double-compilation/bootstrap trust matters, and how far reproducibility should go
-7. make certification-style evidence and traceability practical where it fits Concrete's identity
-   - tie source, reports, proofs, and build artifacts together clearly enough for high-integrity review workflows
-   - prefer explicit evidence and traceability over process folklore
-8. make reproducible trust bundles practical if the evidence story earns it
-   - package source/build identity, reports, proof references, ABI/layout assumptions, and emitted-artifact fingerprints into one reviewable bundle
-   - keep this as an operational packaging layer over existing compiler facts rather than a parallel metadata universe
+1. make the project and package model operationally solid — **not started**
+2. add release and compatibility discipline — **not started**
+3. harden reproducibility and CI operations — **not started**
+4. make the distribution and installation story explicit — **not started**
+5. turn docs and editor/tool integration into maintained product surfaces — **not started**
+6. add explicit compatibility and bootstrap-trust policy — **not started**
+7. make certification-style evidence and traceability practical — **not started**
+8. make reproducible trust bundles practical if the evidence story earns it — **not started**
+9. define whether evidence authenticity and build/dependency trust need explicit operational policy — **not started**
 
 Deliverables:
 - a documented release and compatibility policy for language, stdlib, reports, and tooling surfaces
@@ -529,6 +413,9 @@ Deliverables:
 - an explicit bootstrap-trust and compatibility policy
 - a practical evidence/traceability story linking source, reports, proofs, and build artifacts
 - a documented direction for reproducible trust bundles as the operational form of the evidence story
+- a documented deprecation/migration policy for language, reports, and tooling surfaces
+- an explicit direction for editor/tooling support as a maintained product surface
+- an explicit operational trust policy for builds, dependencies, and evidence authenticity if trust bundles become real outputs
 
 Exit criterion:
 Concrete is not only architecturally strong internally, but also operable, reproducible, documentable, and maintainable as a long-term project.
@@ -549,9 +436,7 @@ Concrete is not only architecturally strong internally, but also operable, repro
 
 These are concrete, implementable improvements that emerged from the bug fixes and integration testing in Phase D. They are not full phases — they are targeted hardening work that should land before Phase E begins, because Phase E (runtime/execution model) depends on the compiler being trustworthy for the patterns it already claims to support.
 
-1. **Audit Layout.lean for silent fallback defaults** — **partially done.**
-   - `dbg_trace` warnings on 6 fallback paths in Layout.lean (`fieldOffset`, `tySize`, `tyAlign`, `tyToLLVM`, `isPassByPtr`).
-   - **Remaining**: Layout functions are pure (non-monadic) and called from deeply nested contexts (folds, recursive defs). Converting warnings to errors requires making them monadic or using `Option` return types, which is a larger refactor. Additionally, type variables leak as `.named "T"` into Layout (pre-existing elaboration issue), so these paths are intentionally reached for generic type erasure. The defaults (8, 0, "i64", false) are correct for erased type variables but wrong for genuinely missing types.
+1. ~~**Audit Layout.lean for silent fallback defaults**~~ **Done.** All 6 `dbg_trace` fallbacks in Layout.lean converted to `panic!`, plus 1 in EmitSSA.lean. Root cause fixed: type variable leakage (`.named "T"` surviving monomorphization) eliminated by adding `substStructTypeArgs`/`substEnumTypeArgs` in Layout.lean, threading `typeArgs` through `enumPayloadOffset` and `variantFields`, and scanning function types in EmitSSA to emit substituted type defs for generic structs/enums.
 
 2. ~~**Systematic integer type inference hardening**~~ **Done.**
    - Vec intrinsics (`vec_push`, `vec_set`, `vec_get`) now propagate element type and `Int` hints to arguments. Cast expressions confirmed to intentionally NOT propagate target type as hint. Function call args, struct field init, let bindings, comparisons, and return statements already propagate hints correctly.
@@ -565,10 +450,10 @@ These are concrete, implementable improvements that emerged from the bug fixes a
    - Trait definitions: confirmed not importable across modules (known language limitation, not a bug — dispatch works through imported wrapper functions).
    - **Type aliases**: were broken cross-module (and had a signature-resolution bug even within a single module). Fixed: `resolveImports` now handles type alias imports, `buildFileSummary` resolves aliases in function signatures, `Elab.elabFn` resolves aliases in function parameter types. Tests: `hardening_cross_module_enum.con`, `hardening_cross_module_trait.con`, `hardening_cross_module_type_alias.con`.
 
-5. **Backend error reporting instead of silent wrong code** — **done for Lower.lean (throw), partially done for Layout/EmitSSA (warnings).**
-   - Lower.lean: 6 silent defaults converted to `throw` — `lookupStructFields`, `fieldIndex`, `variantIndex`, `variantFields`, `structNameFromTy` now propagate errors through `LowerM`. `lowerModule` returns `Except String SModule` — failed function lowering is now a compile error, not silently dropped.
-   - Layout.lean/EmitSSA.lean: still use `dbg_trace` + defaults (see item 1 — pure functions with type variable leakage prevent full conversion).
-   - **Remaining**: Layout and EmitSSA fallback paths still return wrong defaults. Making them error requires fixing type variable leakage in elaboration first.
+5. ~~**Backend error reporting instead of silent wrong code**~~ **Done.**
+   - Lower.lean: 6 silent defaults converted to `throw` — `lookupStructFields`, `fieldIndex`, `variantIndex`, `variantFields`, `structNameFromTy` propagate errors through `LowerM`.
+   - Layout.lean: 6 `dbg_trace` fallbacks converted to `panic!` (type variable leakage fixed — see item 1).
+   - EmitSSA.lean: 1 `dbg_trace` fallback converted to `panic!`.
 
 ### Later
 
@@ -607,6 +492,10 @@ These are concrete, implementable improvements that emerged from the bug fixes a
 16. Treat reproducible trust bundles as the operational destination of the evidence story.
    - package reports, proof references, build identity, and artifact fingerprints together for audit/review workflows
    - only do this once the package/runtime/compatibility story is stable enough to make the bundle worth trusting
+17. Treat performance and incrementality as an explicit later maturity thread rather than ambient compiler folklore.
+   - define profiling methodology and performance regression expectations
+   - make optimization policy explicit enough that "faster" does not silently trade away auditability or proof-friendliness
+   - only add artifact serialization and incremental compilation once the artifact boundaries and compatibility story are boring enough to sustain them
 
 ## Backend Work Order
 
@@ -614,10 +503,10 @@ The structured LLVM backend and SSA backend contract are done. Remaining backend
 
 1. ~~Replace direct LLVM IR text emission with a structured LLVM backend.~~ **Done** — EmitSSA emits structured LLVM IR through `LLVMTy`/`LLVMFnDecl`/`SInst` types, not string concatenation.
 2. ~~Document the SSA backend contract.~~ **Done** — SSAVerify guarantees, SSACleanup postconditions, EmitSSA preconditions documented in `docs/PASSES.md`.
-3. Close the calling convention gap for `extern fn` with struct parameters (Phase E item 6).
-4. Make backend plurality explicit over the SSA boundary — only after the current backend is fully trustworthy.
-5. Only then evaluate additional backend families such as C or Wasm.
-6. Treat MLIR as optional and only if it earns its complexity after the SSA/backend-contract work is mature.
+3. Close the calling convention gap for `extern fn` with struct parameters (Phase E item 6) — **not started**
+4. Make backend plurality explicit over the SSA boundary — **not started**
+5. Only then evaluate additional backend families such as C or Wasm — **not started**
+6. Treat MLIR as optional and only if it earns its complexity — **not started**
 
 ## Not Yet
 
@@ -677,6 +566,7 @@ For more on these longer-horizon themes, see:
 - [research/capability-sandboxing.md](research/capability-sandboxing.md)
 - [research/unsafe-structure.md](research/unsafe-structure.md)
 - [research/no-std-freestanding.md](research/no-std-freestanding.md)
+- [research/complete-language-system.md](research/complete-language-system.md)
 
 ## Status Legend
 
@@ -702,7 +592,6 @@ For more on these longer-horizon themes, see:
 - mutable aggregate lowering can still be too backend-sensitive if promoted storage is incomplete or SSA invariants are too weak
 - tooling/caching work can regress into ad-hoc duplication if artifacts stop being explicit and reusable
 - formalization has started (`Concrete/Proof.lean` with 17 theorems over a pure Core fragment), but the proof scope is still narrow — structs, enums, match, and recursive functions are not yet covered, and source-to-Core traceability is not yet implemented
-- **silent fallback defaults in Layout/EmitSSA**: Lower.lean fallbacks are now hard errors (`throw`), but Layout.lean and EmitSSA.lean still use `dbg_trace` + defaults because they're pure functions and type variables leak as `.named "T"` from elaboration. The defaults (8, 0, "i64", false) are correct for erased type variables but wrong for genuinely missing types. Fixing this requires either making Layout monadic or fixing the type variable leakage in Elab/Mono.
 - **type coercion gaps**: SSAVerify now catches integer bit-width mismatches (`i32 + i64`) as a defensive backend check, so inference gaps that survive elaboration are caught before codegen. The elaborator's hint propagation covers common paths but hasn't been proven exhaustive.
 - **linearity checker**: borrow edge cases (multiple shared borrows, sequential &mut, borrow-of-field) are tested and work. `borrowCount` is dead code. The checker is less over-conservative than initially feared, but hasn't been formally audited.
 

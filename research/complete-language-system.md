@@ -32,6 +32,8 @@ Important missing tooling includes:
 - better diagnostics presentation
 - editor/LSP support
 - better inspection/debugging workflows
+- stable machine-readable report surfaces
+- migration/deprecation assistance for changing language and tooling behavior
 
 These are the pieces that make a language pleasant and sustainable in real projects.
 
@@ -39,10 +41,17 @@ These are the pieces that make a language pleasant and sustainable in real proje
 
 The current SSA pipeline is already strong, but a complete language system often still wants:
 
+- an explicit optimization policy, not only opportunistic codegen improvements
+- profiling methodology and performance regression discipline
 - deeper optimization work
 - possibly additional backends (for example MLIR)
 - stronger backend/debug info maturity
 - eventually incremental/disk caching if the artifact boundaries are ready
+
+Concrete should be especially careful here:
+
+- performance work should not quietly outrun the audit/proof story
+- incremental compilation should sit on explicit artifacts and boring pass contracts, not on hidden compiler coupling
 
 ### 4. Formalization
 
@@ -66,8 +75,33 @@ That eventually means:
 - shared library conventions
 - examples and reference applications
 - guidance for “idiomatic Concrete”
+- dependency trust / supply-chain expectations
+- evidence-aware package metadata where it actually earns its cost
 
 Concrete should be careful here: ecosystem growth should preserve explicitness rather than importing hidden-magic culture.
+
+### 6. Compatibility and migration discipline
+
+A complete language system eventually needs more than a vague statement that breaking changes are allowed or not allowed.
+
+It needs:
+
+- deprecation rules
+- migration guidance
+- explicit versioning expectations for reports and IR-facing tooling
+- a story for how users move across language/compiler changes without relying on tribal knowledge
+
+### 7. Trust and evidence operations
+
+Concrete's audit/proof identity eventually pushes beyond "compiler outputs are nice" toward:
+
+- reproducible trust bundles
+- evidence authenticity / signing questions if the trust bundle story becomes operational
+- build/dependency trust expectations
+- reviewable links between source, reports, proofs, and produced artifacts
+
+This is not just a proof problem and not just a CI problem.
+It is part of what would make Concrete feel like a complete trust-oriented system instead of an interesting compiler.
 
 ## Why This Matters
 
@@ -89,6 +123,7 @@ After the current near-term roadmap work, the likely larger system order is:
 4. improve tooling
 5. mature backend/optimization/caching work
 6. grow ecosystem/package conventions carefully
+7. add compatibility/migration and trust/evidence operations as product surfaces
 
 ## What To Avoid
 
