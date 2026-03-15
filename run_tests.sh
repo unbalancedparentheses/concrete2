@@ -1519,6 +1519,85 @@ fi
 
 fi # end integration_collection_pipeline gate
 
+# === Authority report tests (--report authority) ===
+
+check_report "$TESTDIR/report_caps_check.con" authority \
+    "capability Alloc" \
+    "report_caps_check.con --report authority shows Alloc capability section" \
+    "report_caps_check.con --report authority missing Alloc section"
+
+check_report "$TESTDIR/report_caps_check.con" authority \
+    "capability File" \
+    "report_caps_check.con --report authority shows File capability section" \
+    "report_caps_check.con --report authority missing File section"
+
+check_report "$TESTDIR/report_caps_check.con" authority \
+    "pure_fn" \
+    "report_caps_check.con --report authority excludes pure_fn from cap sections" \
+    "report_caps_check.con --report authority wrongly includes pure_fn" "!"
+
+check_report "$TESTDIR/report_integration.con" authority \
+    "capability Alloc" \
+    "report_integration.con --report authority shows Alloc section" \
+    "report_integration.con --report authority missing Alloc section"
+
+check_report "$TESTDIR/report_integration.con" authority \
+    "capability Unsafe" \
+    "report_integration.con --report authority shows Unsafe section" \
+    "report_integration.con --report authority missing Unsafe section"
+
+check_report "$TESTDIR/report_integration.con" authority \
+    "uses_alloc.*vec_new" \
+    "report_integration.con --report authority traces uses_alloc -> vec_new" \
+    "report_integration.con --report authority missing uses_alloc chain"
+
+check_report "$TESTDIR/report_integration.con" authority \
+    "call_raw.*raw_extern" \
+    "report_integration.con --report authority traces call_raw -> raw_extern" \
+    "report_integration.con --report authority missing call_raw chain"
+
+check_report "$TESTDIR/report_integration.con" authority \
+    "Totals:.*7 functions" \
+    "report_integration.con --report authority totals correct" \
+    "report_integration.con --report authority wrong totals"
+
+# === Proof eligibility report tests (--report proof) ===
+
+check_report "$TESTDIR/report_caps_check.con" proof \
+    "✓ pure_fn" \
+    "report_caps_check.con --report proof marks pure_fn eligible" \
+    "report_caps_check.con --report proof missing pure_fn eligible"
+
+check_report "$TESTDIR/report_caps_check.con" proof \
+    "✗ alloc_fn.*capabilities.*Alloc" \
+    "report_caps_check.con --report proof excludes alloc_fn for Alloc" \
+    "report_caps_check.con --report proof missing alloc_fn exclusion"
+
+check_report "$TESTDIR/report_integration.con" proof \
+    "✓ pure_add" \
+    "report_integration.con --report proof marks pure_add eligible" \
+    "report_integration.con --report proof missing pure_add eligible"
+
+check_report "$TESTDIR/report_integration.con" proof \
+    "✗ call_raw.*trusted boundary" \
+    "report_integration.con --report proof excludes call_raw for trusted" \
+    "report_integration.con --report proof missing call_raw trusted exclusion"
+
+check_report "$TESTDIR/report_integration.con" proof \
+    "✗ call_raw.*calls extern.*raw_extern" \
+    "report_integration.con --report proof excludes call_raw for extern call" \
+    "report_integration.con --report proof missing call_raw extern exclusion"
+
+check_report "$TESTDIR/report_integration.con" proof \
+    "2 eligible for ProofCore" \
+    "report_integration.con --report proof shows 2 eligible" \
+    "report_integration.con --report proof wrong eligible count"
+
+check_report "$TESTDIR/report_integration.con" proof \
+    "5 excluded" \
+    "report_integration.con --report proof shows 5 excluded" \
+    "report_integration.con --report proof wrong excluded count"
+
 fi # end section: report
 
 # === Codegen differential tests ===

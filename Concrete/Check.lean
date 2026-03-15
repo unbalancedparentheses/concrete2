@@ -3,6 +3,7 @@ import Concrete.BuiltinSigs
 import Concrete.Diagnostic
 import Concrete.FileSummary
 import Concrete.Intrinsic
+import Concrete.Resolve
 import Concrete.Shared
 
 namespace Concrete
@@ -254,6 +255,8 @@ def CheckError.hint : CheckError → Option String
   | .cannotMutBorrowImmutable _ => some "declare with 'let mut' to allow mutable borrowing"
   | .assignToFrozen _ => some "the variable is frozen by an active borrow block"
   | .assignToBorrowed _ => some "wait for the borrow to end before assigning"
+  | .missingCapability _ cap caller => some s!"add 'with({cap})' to '{caller}', or wrap the call in a function that declares it"
+  | .cannotInferCapVariable cap _ => some s!"provide an explicit capability for '{cap}' at the call site"
   | _ => none
 
 def throwCheck (e : CheckError) (span : Option Span := none) : CheckM α :=
@@ -2093,10 +2096,12 @@ def checkModule (m : Module) (summary : FileSummary)
   if allErrors.isEmpty then .ok ()
   else .error allErrors
 
-/-- Check a multi-module program. Uses summary table for import resolution. -/
-def checkProgram (modules : List Module)
+/-- Check a multi-module program. Consumes resolved modules (proving name resolution
+    happened) and uses summary table for import resolution. -/
+def checkProgram (resolved : List ResolvedModule)
     (summaryTable : List (String × FileSummary) := []) : Except Diagnostics Unit :=
-  let allErrors := modules.foldl (fun errs m =>
+  let allErrors := resolved.foldl (fun errs rm =>
+    let m := rm.module
     let summary := match summaryTable.find? fun (n, _) => n == m.name with
       | some (_, s) => s
       | none => buildFileSummary m

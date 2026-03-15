@@ -52,6 +52,7 @@ Concrete should avoid:
 
 - straightforward SSA cleanup and simplification
 - predictable scalar optimizations
+- explicit, auditable function inlining policy where it clearly improves code quality without hiding control/report structure excessively
 - explicit lowering/ABI improvements
 - backend decisions that remove obviously unnecessary work
 - profiling-guided performance investigation on real workloads

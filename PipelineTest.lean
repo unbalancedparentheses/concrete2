@@ -50,7 +50,7 @@ def expectError (result : Except Diagnostics α) (name : String) : IO (Option Di
     IO.eprintln s!"FAIL: {name} — expected error but got success"
     return none
 
-/-- Run frontend passes (parse → buildSummary → check → elaborate → coreCheck) on a source string.
+/-- Run frontend passes (parse → buildSummary → resolve → check → elaborate → coreCheck) on a source string.
     No file I/O — no resolveFiles step (single-file programs only). -/
 def frontendNoIO (source : String) : Except Diagnostics (ParsedProgram × SummaryTable × ValidatedCore) :=
   match Pipeline.parse source with
@@ -59,11 +59,11 @@ def frontendNoIO (source : String) : Except Diagnostics (ParsedProgram × Summar
     let summary := Pipeline.buildSummary parsed
     match Pipeline.resolve parsed summary with
     | .error ds => .error ds
-    | .ok _ =>
-    match Pipeline.check parsed summary with
+    | .ok resolvedProg =>
+    match Pipeline.check resolvedProg summary with
     | .error ds => .error ds
     | .ok () =>
-    match Pipeline.elaborate parsed summary with
+    match Pipeline.elaborate resolvedProg summary with
     | .error ds => .error ds
     | .ok elabProg =>
     match Pipeline.coreCheck elabProg with

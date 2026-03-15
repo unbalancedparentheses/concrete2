@@ -4,6 +4,7 @@ import Concrete.Core
 import Concrete.Diagnostic
 import Concrete.FileSummary
 import Concrete.Intrinsic
+import Concrete.Resolve
 import Concrete.Shared
 
 namespace Concrete
@@ -1219,9 +1220,10 @@ partial def elabModule (m : Module) (summary : FileSummary)
 -- Program elaboration
 -- ============================================================
 
-def elabProgram (modules : List Module)
+def elabProgram (resolved : List ResolvedModule)
     (summaryTable : List (String × FileSummary) := []) : Except Diagnostics (List CModule) :=
-  let (cms, allErrors) := modules.foldl (fun (acc, errs) m =>
+  let (cms, allErrors) := resolved.foldl (fun (acc, errs) rm =>
+    let m := rm.module
     let summary := match summaryTable.find? fun (n, _) => n == m.name with
       | some (_, s) => s
       | none => buildFileSummary m

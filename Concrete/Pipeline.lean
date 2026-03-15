@@ -86,13 +86,13 @@ def resolve (prog : ParsedProgram) (summary : SummaryTable) : Except Diagnostics
   | .ok resolved => .ok { modules := resolved }
   | .error ds => .error ds
 
-/-- Type-checking pass. -/
-def check (prog : ParsedProgram) (summary : SummaryTable) : Except Diagnostics Unit :=
-  checkProgram prog.modules summary.entries
+/-- Type-checking pass. Consumes resolved program (proving name resolution happened). -/
+def check (resolved : ResolvedProgram) (summary : SummaryTable) : Except Diagnostics Unit :=
+  checkProgram resolved.modules summary.entries
 
-/-- Elaborate and canonicalize (no validation yet). -/
-def elaborate (prog : ParsedProgram) (summary : SummaryTable) : Except Diagnostics ElaboratedProgram :=
-  match elabProgram prog.modules summary.entries with
+/-- Elaborate and canonicalize (no validation yet). Consumes resolved program. -/
+def elaborate (resolved : ResolvedProgram) (summary : SummaryTable) : Except Diagnostics ElaboratedProgram :=
+  match elabProgram resolved.modules summary.entries with
   | .error ds => .error ds
   | .ok coreModules => .ok { coreModules := canonicalizeProgram coreModules }
 
@@ -152,11 +152,11 @@ def runFrontend (inputPath source : String)
     let summary := Pipeline.buildSummary resolved
     match Pipeline.resolve resolved summary with
     | .error ds => return .error ds
-    | .ok _ =>
-    match Pipeline.check resolved summary with
+    | .ok resolvedProg =>
+    match Pipeline.check resolvedProg summary with
     | .error ds => return .error ds
     | .ok () =>
-    match Pipeline.elaborate resolved summary with
+    match Pipeline.elaborate resolvedProg summary with
     | .error ds => return .error ds
     | .ok elabProg =>
     match Pipeline.coreCheck elabProg with

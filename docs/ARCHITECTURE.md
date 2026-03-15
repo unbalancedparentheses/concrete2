@@ -29,11 +29,11 @@ Recent architecture-level cleanups worth calling out:
 - the first planned testing-strategy expansion is complete: parser fuzzing, property tests, trace tests, report consistency tests, and selected differential tests now exercise the pipeline more directly
 - stdlib `#[test]` execution now runs through the real compiler path via `concrete std/src/lib.con --test`, and recent parser/lowering/codegen fixes were driven by making that path actually execute the stdlib test corpus
 
-One important remaining cleanup in this area is removing the last string-based semantic dispatch from compiler tables and special-case paths. Ordinary language behavior should not depend on raw function-name matching outside true foreign-symbol boundaries.
+Most string-based semantic dispatch has been replaced by `IntrinsicId` lookup (`Concrete/Intrinsic.lean`). Some string matching remains at true foreign-symbol boundaries (extern fn names, linker aliases) where it is unavoidable. The intrinsic boundary is now explicit and testable.
 
 ## Artifact Flow
 
-The current artifact boundary is explicit in code via `Concrete/Pipeline.lean`:
+The compiler defines named artifact types in `Concrete/Pipeline.lean`:
 
 - `ParsedProgram`
 - `SummaryTable`
@@ -43,11 +43,18 @@ The current artifact boundary is explicit in code via `Concrete/Pipeline.lean`:
 - `MonomorphizedProgram`
 - `SSAProgram`
 
-The frontend boundary is:
+All artifact boundaries from Resolve onward are load-bearing:
+- `ParsedProgram` → consumed by BuildSummary, ResolveFiles, Resolve
+- `SummaryTable` → consumed by Resolve, Check, Elab
+- `ResolvedProgram` → consumed by Check, Elab (proves name resolution happened; carries resolved scopes)
+- `ElaboratedProgram` → consumed by CoreCheck
+- `ValidatedCore` → consumed by Mono (type-enforced: only `Pipeline.coreCheck` constructs it)
+- `MonomorphizedProgram` → consumed by Lower
+- `SSAProgram` → consumed by Emit
 
-```text
-ParsedModule -> FileSummary -> ResolvedImports -> checked/elaborated module -> monomorphized Core -> SSA module
-```
+**Remaining gap:** `Pipeline.resolveFiles` (the IO step that reads `mod X;` sub-module files from disk) returns `ParsedProgram × SourceMap`, not a dedicated artifact type. This means the transition from "parsed single file" to "parsed all files with sub-modules resolved" has no named boundary. The `ParsedProgram` that comes out of `resolveFiles` is structurally the same type as what went in, just with sub-module stubs replaced by their parsed contents. A future `ResolvedFilesProgram` artifact would make this boundary explicit and cacheable.
+
+`Pipeline.runFrontend` threads `ResolvedProgram` from Resolve through Check and Elab. Both `checkProgram` and `elabProgram` take `List ResolvedModule` and extract the surface `Module` internally. The `globalScope` in each `ResolvedModule` is available for future use (e.g., incremental compilation where you want to skip re-resolution if the source hasn't changed).
 
 `FileSummary` and `ResolvedImports` still carry full impl/trait-impl bodies because imported method checking and elaboration need them. Splitting interface-only and body-bearing artifacts is a future incremental-compilation concern.
 
@@ -88,11 +95,10 @@ Source
 This does not require a separate "verification compiler."
 The goal is to treat validated Core as the semantic authority and let a proof-oriented view of that artifact serve Lean-side reasoning.
 
-The remaining architecture change here is concrete compiler work, not only documentation:
+Remaining architecture changes:
 
-- `ValidatedCore` should exist as an explicit first-class artifact in `Concrete/Pipeline.lean`
-- selected-function proof workflows should refer to that artifact directly instead of treating it as an implied pass boundary
 - source-to-Core traceability should survive strongly enough that a user can tell which validated Core function corresponds to the Concrete source they want to prove
+- selected-function proof workflows should refer to `ValidatedCore` directly instead of treating it as an implied pass boundary
 
 ### Proof Architecture Summary
 

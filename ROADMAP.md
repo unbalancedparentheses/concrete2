@@ -46,6 +46,7 @@ Still clearly not implemented:
 - full kernel formalization (initial proof workflow landed in D2 with 17 theorems over a pure Core fragment; full formalization of structs, enums, match, recursion, and source-to-Core traceability remains future work)
 - a runtime
 - fully authoritative standalone resolution
+- a real artifact-driven compiler driver with stable serialized artifacts, stable IDs, and source-to-Core traceability
 
 ## Priority Snapshot
 
@@ -61,8 +62,9 @@ Still clearly not implemented:
 | **F** | Capability and safety productization | Not started |
 | **G** | Language surface and feature discipline | Not started |
 | **H** | Package and dependency ecosystem | Not started |
-| **I** | Project and operational maturity | Not started |
-| **J** | Concurrency maturity and runtime plurality | Not started |
+| **I** | Adoption, positioning, and showcase pull | Not started |
+| **J** | Project and operational maturity | Not started |
+| **K** | Concurrency maturity and runtime plurality | Not started |
 
 ### Recent Progress
 
@@ -114,8 +116,8 @@ Still clearly not implemented:
   - Programs exercise: cross-module function calls, Vec<i32> with vec_set for stack semantics, enum matching (up to 11 variants), trait dispatch, generic functions, capability propagation, while loops, numeric computation chains.
   - Integration corpus now 12 programs (was 8), including stress-style workload.
 - **Phase D item 7 complete** (deferred audit reports):
-  - **Next report modes named**: `--report authority` (transitive capability analysis), `--report proof` (ProofCore eligibility), `--report high-integrity` (deferred to Phase E). Documented in `docs/PASSES.md`.
-  - **44 report assertions stable**: all 6 report modes (caps, unsafe, layout, interface, alloc, mono) regression-tested with semantic grep patterns, not brittle snapshots. Cross-validation test verifies layout report sizes match runtime sizeof.
+  - **Next report modes named**: `--report authority` (transitive capability analysis), `--report proof` (ProofCore eligibility), `--report high-integrity` (deferred to Phase F). Documented in `docs/PASSES.md`.
+  - **59 report assertions stable**: all 8 report modes (caps, unsafe, layout, interface, alloc, mono, authority, proof) regression-tested with semantic grep patterns, not brittle snapshots. Cross-validation test verifies layout report sizes match runtime sizeof.
 - **3 compiler bugs fixed** (discovered during integration test writing):
   - **Cross-module struct field offset** (`Elab.lean`): imported struct definitions were missing from `CModule`, causing `Layout.fieldOffset` to return 0 for all fields. Fix: include imported structs in CModule output.
   - **i32 literal type mismatch** (`Elab.lean`): integer literals defaulted to i64 in binary ops with i32 operands, producing LLVM type mismatches. Fix: re-elaborate literal with concrete operand type when types differ.
@@ -184,7 +186,7 @@ Landed deliverables:
 
 Goal: make the language usable and inspectable without destabilizing semantics.
 
-**Exit criterion met:** syntax guardrails, diagnostics, stdlib testing, and audit reports behave like durable infrastructure. The LL(1) grammar checker runs in CI. Module-targeted stdlib testing is real (`--stdlib-module <name>`). Integration tests exercise multi-collection pipelines and all 6 report modes. Report outputs are regression-tested with 44 content assertions. Audit reports explain capability authority, trust boundaries, and allocation patterns through ordinary compiler workflows.
+**Exit criterion met:** syntax guardrails, diagnostics, stdlib testing, and audit reports behave like durable infrastructure. The LL(1) grammar checker runs in CI. Module-targeted stdlib testing is real (`--stdlib-module <name>`). Integration tests exercise multi-collection pipelines and all 8 report modes. Report outputs are regression-tested with 59 content assertions. Audit reports explain capability authority, trust boundaries, allocation patterns, transitive authority chains, and proof eligibility through ordinary compiler workflows.
 
 Primary surfaces:
 - [docs/DIAGNOSTICS.md](docs/DIAGNOSTICS.md)
@@ -227,11 +229,12 @@ Phase D was split into D1 (testing architecture) and D2 (backend/artifact/proof)
 **What items 3–7 delivered:** SSA backend contract (item 3), ABI/FFI maturity statement with known limitations (item 4), 12-program integration corpus (item 5), formalization over Core→SSA (item 6), next report modes named (item 7). Integration testing also discovered 3 compiler bugs (now fixed — see `docs/bugs/`).
 
 **What remains as future aspirations** (not blockers for Phase D exit): structured test definitions replacing shell orchestration, artifact-aware test reuse beyond the current cache, richer pass-level coverage for Check/Elab edge cases. These are tracked in the Compiler Hardening section and Phase E.
+Also still missing from the architecture despite the named artifact types: fully artifact-driven pass plumbing, stable artifact identity, serialization/versioning, and a stronger compiler-driver/build-graph layer. These are tracked later in Phases H/J and the proof/evidence thread.
 3. ~~strengthen the SSA verifier/cleanup boundary into a clearer backend contract~~ **Done** (D2): SSA backend contract documented in `docs/PASSES.md` — SSAVerify guarantees (8 invariants), SSACleanup guarantees (8 postconditions), EmitSSA assumptions (5 preconditions), invariant chain.
 4. ~~define a clearer FFI / ABI maturity path~~ **Done**: `docs/ABI.md` — stability matrix, platform assumptions (64-bit only), FFI safety model, struct layout rules (repr(C)/packed/align), enum representation, pass-by-pointer convention for internal calls, by-value passing for `#[repr(C)]` structs in `extern fn` calls (Phase E item 5). 4 layout verification tests in `PipelineTest.lean` (scalar sizes, builtin sizes, repr(C) layout, pass-by-ptr decisions). Layout model assumptions are verified against Lean helpers, not by empirical cross-target compilation.
 5. ~~grow a stronger real-program and invariant-testing corpus on top of the faster loop~~ **Done**: 4 new integration programs (calculator 200 lines, type registry 248 lines, pipeline processor 223 lines, stress bytecode interpreter 280 lines). Integration corpus now 12 programs. Stress workload exercises 11-variant enum, multiple Vec instances, 21-instruction execution loop, cross-module types/functions. Programs discovered 3 compiler bugs (all now fixed — see `docs/bugs/`): cross-module struct field offset, i32 literal type mismatch, and cross-module &mut borrow consumed as move.
 6. ~~push formalization over Core -> SSA~~ **Done** (D2): `ValidatedCore` explicit in `Pipeline.lean`, `ProofCore` extraction in `ProofCore.lean`, formal evaluation semantics in `Proof.lean` with 17 proven theorems (abs/max/clamp correctness, structural lemmas, arithmetic). Source-to-Core traceability and proof fragment extension (structs, enums, match, recursion) remain as future work.
-7. ~~add deferred audit/report outputs~~ **Done**: next report modes named in `docs/PASSES.md` (`--report authority`, `--report proof`, `--report high-integrity` deferred to Phase E). All 6 existing modes (caps, unsafe, layout, interface, alloc, mono) regression-tested with 44 stable semantic assertions.
+7. ~~add deferred audit/report outputs~~ **Done**: all 8 report modes implemented — `--report authority` (transitive authority with BFS chain traces), `--report proof` (ProofCore eligibility), plus original 6 (caps, unsafe, layout, interface, alloc, mono). `--report high-integrity` deferred to Phase F. Regression-tested with 59 stable semantic assertions.
 
 Exit criterion:
 backend work no longer feels fragile, proofs, reports, and tooling all build on the same stable compiler boundaries, targeted test runs are artifact-aware and dependency-aware, failures are easy to isolate and rerun, semantic tests avoid unnecessary full-pipeline cost, pass-level and end-to-end testing play distinct roles under explicit coverage/determinism rules, and selected Concrete functions can actually be proved in Lean 4 over validated Core.
@@ -308,15 +311,17 @@ Primary surfaces:
 - [Concrete/Report.lean](/Users/unbalancedparen/projects/concrete/Concrete/Report.lean)
 - [research/authority-budgets.md](research/authority-budgets.md)
 - [research/capability-sandboxing.md](research/capability-sandboxing.md)
+- [research/developer-tooling.md](research/developer-tooling.md)
 - [research/trust-multipliers.md](research/trust-multipliers.md)
 - [research/unsafe-structure.md](research/unsafe-structure.md)
 
-1. improve capability and trust ergonomics — **not started**
-2. deepen capability/trust reporting — **not started**
+1. improve capability and trust ergonomics — **done** — added actionable hints to all capability-related error messages in both Check.lean and CoreCheck.lean: `missingCapability` (suggests `with(Cap)` on calling function or trusted wrapper), `insufficientCapabilities` (same), `cannotInferCapVariable` (explains explicit capability binding), pointer/alloc operation errors (specific `with(Unsafe)` or `with(Alloc)` hints)
+2. deepen capability/trust reporting — **done** — `--report authority` (transitive authority analysis with BFS call-chain traces per capability) and `--report proof` (ProofCore eligibility with exclusion reasons: capabilities, trusted, extern, raw pointers) implemented in `Report.lean`, dispatched from `Main.lean`, regression-tested with 15 semantic assertions
 3. add stronger patterns for explicit authority wrappers and capability aliases — **not started**
 4. make safety features easier to use correctly in ordinary programs without weakening honesty — **not started**
 5. ensure docs, diagnostics, and reports present one coherent safety story — **not started**
 6. define the shape of a high-integrity safety profile — **not started**
+7. improve bounded semantic error recovery so ordinary users get more than one useful body-local diagnostic without sacrificing honesty — **not started**
 
 Deliverables:
 - clearer user-facing capability and trust ergonomics in diagnostics/docs/reports
@@ -324,6 +329,7 @@ Deliverables:
 - explicit patterns for authority wrappers, aliases, and later authority-budget integration
 - a documented high-integrity safety profile direction covering `Unsafe`, `trusted`, FFI, and ambient authority
 - a documented direction for proof-backed authority reports, even if the first implementation remains report-first rather than proof-first
+- bounded semantic recovery in Check and Elab so that independent errors inside a function body are collected instead of stopping at the first one — without guessing or cascading nonsense errors
 
 Exit criterion:
 Concrete's capability and trust model is not only sound in principle, but also understandable, auditable, and practical for users.
@@ -364,19 +370,26 @@ For serious use, this phase is unavoidable. High-integrity or proof-oriented cod
 
 Primary surfaces:
 - [research/authority-budgets.md](research/authority-budgets.md)
+- [research/artifact-driven-compiler.md](research/artifact-driven-compiler.md)
+- [research/developer-tooling.md](research/developer-tooling.md)
 - [research/trust-multipliers.md](research/trust-multipliers.md)
 - project/package metadata
 - import resolution and project-root semantics
 - stdlib vs third-party package boundaries
 - workspace and dependency tooling
 
-1. define the package and dependency model explicitly — **not started**
-2. define stdlib vs third-party package boundaries — **not started**
-3. define workspace and multi-package behavior — **not started**
-4. make dependency and package UX part of the language-user experience — **not started**
-5. ensure docs, tooling, and CI reflect the same package/project model — **not started**
+1. design and implement incremental compilation — serialize pipeline artifacts (`ResolvedProgram`, `ValidatedCore`, `SSAProgram`) to disk, add cache invalidation by source hash, skip unchanged modules — **not started**. This is the prerequisite for packages to scale: without it, every build recompiles the world. The artifact pipeline is already much stronger than before, but real incrementality still depends on cleaner interface/body artifact splitting, stable identities, and driver/cache work — not only serialization.
+2. define the package and dependency model explicitly — **not started**
+3. define stdlib vs third-party package boundaries — **not started**
+4. define workspace and multi-package behavior — **not started**
+5. make dependency and package UX part of the language-user experience — **not started**
+6. ensure docs, tooling, and CI reflect the same package/project model — **not started**
+7. split interface-facing artifacts from body-bearing artifacts cleanly enough to support package and dependency boundaries — **not started**
+8. make package/dependency reasoning operate on explicit graph artifacts instead of ad hoc file-level reconstruction — **not started**
+9. define the first real project-facing CLI workflow (`concrete build`, `concrete test`, `concrete run`) on top of the package model — **not started**
 
 Deliverables:
+- incremental compilation: serialized pipeline artifacts, source-hash-based cache invalidation, module-level rebuild granularity
 - a documented package/dependency model with project-root and resolution semantics
 - a defined boundary between stdlib and third-party packages
 - a documented workspace/multi-package model
@@ -384,11 +397,60 @@ Deliverables:
 - an authority-budget path at package or subsystem boundaries
 - a credible path for package- or subsystem-level capability budgets to become enforceable build policy
 - a documented dependency-trust direction for packages, workspaces, and third-party inputs
+- a cleaner split between interface-bearing and body-bearing compiler artifacts for package/workspace use
+- an explicit package/dependency graph artifact strong enough to support later driver, cache, and report reuse work
+- a project-facing CLI model that grows out of the package/driver architecture instead of shell conventions
 
 Exit criterion:
-Concrete has an explicit package/dependency model that supports real projects without relying on ad-hoc repo-local conventions, and it has a credible path to enforcing authority budgets at package or subsystem boundaries.
+Concrete has an explicit package/dependency model that supports real projects without relying on ad-hoc repo-local conventions, has a credible path to enforcing authority budgets at package or subsystem boundaries, and no longer depends on muddy interface/body artifact boundaries to reason about packages.
 
-#### Phase I: Project And Operational Maturity
+#### Phase I: Adoption, Positioning, And Showcase Pull
+
+Goal: make Concrete easier to want, try, understand, and remember, not only easier to admire architecturally.
+
+This phase turns the language from a coherent technical project into something with visible user pull:
+
+- a clearer signature-domain story
+- memorable public examples
+- smoother onboarding and developer experience
+- an explicit public stability surface
+- sharper comparison/positioning against adjacent languages
+
+This phase is intentionally after the package/project phase and before full operational maturity:
+
+- after H, because adoption claims are weak without a coherent project/package model
+- before J, because real user pressure should help shape which operational surfaces actually matter
+- before K, because long-term concurrency maturity is not part of the first convincing user story
+
+Primary surfaces:
+- [README.md](README.md)
+- [docs/IDENTITY.md](docs/IDENTITY.md)
+- [research/adoption-strategy.md](research/adoption-strategy.md)
+- [research/showcase-workloads.md](research/showcase-workloads.md)
+- [research/complete-language-system.md](research/complete-language-system.md)
+- project templates, examples, docs, and editor/onboarding surfaces
+
+1. define one or two signature domains where Concrete should be unusually strong — **not started**
+2. build a small set of serious public showcase programs, not only internal tests — **not started**
+3. make onboarding, examples, and project-start flow part of the product story — **not started**
+4. make report UX, docs, and examples feel useful to ordinary users instead of only compiler contributors — **not started**
+5. define an explicit public stability/experimental surface so users know what they can rely on — **not started**
+6. document Concrete's positioning relative to adjacent systems languages and where it should intentionally not compete — **not started**
+7. define explicit adoption non-goals so the project does not blur itself into a generic systems-language pitch — **not started**
+
+Deliverables:
+- a documented signature-domain strategy for the language
+- a small public showcase corpus that demonstrates Concrete's identity, not just compiler coverage
+- smoother first-use and onboarding guidance through templates/examples/docs
+- a clearer public explanation of what is stable, experimental, or intentionally deferred
+- a sharper comparison/positioning story explaining where Concrete is strongest and where it is not trying to win
+- explicit adoption non-goals that protect the language from feature-growth-for-attention
+- concrete success signals for the phase: a new user can identify the target domains, run a showcase, inspect reports, and understand the stable/experimental surface without reading internal compiler docs
+
+Exit criterion:
+Concrete has a credible adoption story: users can understand what it is for, try it through polished examples, and see why it is distinct without reading the whole compiler roadmap.
+
+#### Phase J: Project And Operational Maturity
 
 Goal: turn Concrete from a strong compiler project into a durable, distributable, maintainable system.
 
@@ -402,6 +464,8 @@ This phase is where the evidence story becomes operational:
 Primary surfaces:
 - [README.md](README.md)
 - [docs/README.md](docs/README.md)
+- [research/artifact-driven-compiler.md](research/artifact-driven-compiler.md)
+- [research/developer-tooling.md](research/developer-tooling.md)
 - [research/proof-evidence-artifacts.md](research/proof-evidence-artifacts.md)
 - [research/trust-multipliers.md](research/trust-multipliers.md)
 - CI config
@@ -418,9 +482,15 @@ Primary surfaces:
 7. make certification-style evidence and traceability practical — **not started**
 8. make reproducible trust bundles practical if the evidence story earns it — **not started**
 9. define whether evidence authenticity and build/dependency trust need explicit operational policy — **not started**
-10. define debugging/observability expectations as a maintained product surface — **not started**
-11. define whether and how artifact serialization / disk-backed compiler artifacts become part of the supported workflow — **not started**
+10. define debugging/observability expectations as a maintained product surface — **not started** (DWARF emission is in Phase G; this item covers the operational/maintenance policy around debug info quality, stack trace fidelity, and inspection workflows)
+11. define whether and how artifact serialization / disk-backed compiler artifacts become part of the supported workflow — **not started** (incremental compilation is in Phase H; this item covers the stability/versioning policy for serialized artifacts)
 12. define the long-term bootstrap/self-hosting stance explicitly — **not started**
+13. make the compiler-driver/build-graph layer explicit instead of leaving orchestration as thin CLI glue — **not started**
+14. define stable artifact identity/versioning rules for reports, caches, proof/export subjects, and build outputs — **not started**
+15. turn editor/LSP support into an explicit maintained product surface, starting from compiler-owned diagnostics/navigation rather than a separate semantic engine — **not started**
+16. define cross-compilation workflow expectations as part of the supported operational/build story, not only as backend target policy — **not started**
+17. implement and maintain usable debug-info emission as part of the supported tooling surface — at minimum, DWARF from EmitSSA sufficient for source locations and stack traces in lldb/gdb — **not started**
+18. implement and maintain the first explicit non-cleanup optimization layer — SSA-level function inlining with a stated policy that preserves capability/trust honesty and debug/report quality — **not started**
 
 Deliverables:
 - a documented release and compatibility policy for language, stdlib, reports, and tooling surfaces
@@ -436,17 +506,23 @@ Deliverables:
 - a documented debugging/observability direction covering debug info quality, stack traces, symbol fidelity, and inspection workflows
 - an explicit policy for stable serialized artifacts, disk caches, and incremental state if they become supported operational surfaces
 - an explicit bootstrap/self-hosting policy describing whether Concrete should remain Lean-hosted, partially self-host, or intentionally avoid self-hosting
+- an explicit compiler-driver/build-graph architecture that orchestrates packages, targets, reports, artifacts, and caches without becoming a second semantic authority
+- stable identity/versioning rules for user/tool-visible artifacts so reports, proof exports, caches, and evidence bundles can remain reproducible and comparable
+- an explicit editor/LSP baseline (diagnostics, go-to-definition, hover/navigation) grounded in compiler artifacts
+- an explicit cross-compilation workflow story for supported vs experimental targets, including how target selection interacts with packages, reports, and artifacts
+- emitted debug metadata good enough for ordinary debugger workflows to show source locations and stack traces
+- a first explicit optimization layer beyond cleanup, with function inlining treated as policy-governed backend work rather than accidental folklore
 
 Exit criterion:
-Concrete is not only architecturally strong internally, but also operable, reproducible, documentable, and maintainable as a long-term project.
+Concrete is not only architecturally strong internally, but also operable, reproducible, documentable, and maintainable as a long-term project, with a real driver/artifact model rather than only a pass library plus CLI entry points.
 
-#### Phase J: Concurrency Maturity And Runtime Plurality
+#### Phase K: Concurrency Maturity And Runtime Plurality
 
 Goal: give Concrete a long-term concurrency model that stays explicit, auditable, and small instead of collapsing into an "async everywhere" ecosystem.
 
 This phase is intentionally later than Phase E.
 Phase E defines the execution model and first runtime boundary.
-Phase J exists to do the larger concurrency design correctly once runtime, safety, package, and operational foundations are stable enough to support it.
+Phase K exists to do the larger concurrency design correctly once runtime, safety, package, adoption, and operational foundations are stable enough to support it.
 
 The intended long-term shape is:
 
@@ -490,11 +566,12 @@ Concrete has one coherent concurrency story: structured by default, threads-firs
 - **Phase C** matters because syntax guardrails, diagnostics, and testing infrastructure are what make a compiler sustainable instead of heroic.
 - **Phase D** matters because this is where Concrete stops being only a working compiler and becomes a trustworthy compiler platform, starting with testing architecture strong enough to support every later backend and proof ambition.
 - **Phase E** matters because a language is not really settled until its execution model is explicit.
-- **Phase F** matters because Concrete's safety model should be a user-visible strength, not only an internal design claim.
-- **Phase G** matters because languages decay when feature growth has no explicit discipline.
-- **Phase H** matters because package and dependency semantics are part of the language experience once real projects exist.
-- **Phase I** matters because long-term projects fail just as easily from weak operational discipline as from weak compiler architecture.
-- **Phase J** matters because concurrency is one of the easiest places for a language to lose clarity, and Concrete should only broaden it once it can do so without importing async fragmentation and hidden runtime culture.
+- **Phase F** matters because Concrete's safety model should be a user-visible strength, not only an internal design claim. Error recovery also lives here — getting one error at a time is the most visible DX gap.
+- **Phase G** matters because languages decay when feature growth has no explicit discipline. Debug info and inlining also live here — a systems language without debugger support or basic optimization is not credible for real work.
+- **Phase H** matters because package and dependency semantics are part of the language experience once real projects exist. Incremental compilation is the first item — without it, multi-package builds recompile the world.
+- **Phase I** matters because technically coherent languages still fail if nobody can quickly understand why to use them, what they are for, or how to get started well.
+- **Phase J** matters because long-term projects fail just as easily from weak operational discipline as from weak compiler architecture.
+- **Phase K** matters because concurrency is one of the easiest places for a language to lose clarity, and Concrete should only broaden it once it can do so without importing async fragmentation and hidden runtime culture.
 
 ### Compiler Hardening (between Phase D and Phase E)
 
@@ -526,47 +603,62 @@ These are concrete, implementable improvements that emerged from the bug fixes a
 3. Capability and safety productization as an explicit phase after the backend/trust foundations are strong enough.
 4. Language-surface and feature-discipline work as an explicit phase once the runtime/safety direction is clear.
 5. Package and dependency ecosystem as an explicit phase once stdlib/tooling/runtime direction is stable enough to support real projects well.
-6. Project and operational maturity as an explicit phase once the current compiler/tooling architecture is stable enough to productize.
-7. Concurrency maturity and runtime plurality as an explicit later phase once the runtime, safety, package, and operational foundations are stable enough to support it well.
-8. Proof-driven narrowing of future feature additions.
-9. A clearer hosted vs freestanding / `no_std` split, but only after the runtime and stdlib boundaries are more stable.
-10. Execution-cost analysis as an audit/report extension.
+6. Adoption, positioning, and showcase pull as an explicit phase once the package/project story is strong enough that new users can actually try Concrete coherently.
+7. Project and operational maturity as an explicit phase once the current compiler/tooling architecture is stable enough to productize.
+8. Concurrency maturity and runtime plurality as an explicit later phase once the runtime, safety, package, adoption, and operational foundations are stable enough to support it well.
+9. Proof-driven narrowing of future feature additions.
+10. A clearer hosted vs freestanding / `no_std` split, but only after the runtime and stdlib boundaries are more stable.
+11. Execution-cost analysis as an audit/report extension.
    - structural boundedness reports first
    - abstract cost estimation later
    - never at the cost of clarity in the core language
-11. Broaden the Lean-side proof workflow beyond the current pure-fragment scope (17 theorems over integers/booleans/arithmetic/conditionals). Next targets: structs, enums, match expressions, recursive functions, source-to-Core traceability, and export/tooling for external proof use.
-12. Potential later expansion of the Lean proof story beyond Core-level properties.
+12. Broaden the Lean-side proof workflow beyond the current pure-fragment scope (17 theorems over integers/booleans/arithmetic/conditionals). Next targets: structs, enums, match expressions, recursive functions, source-to-Core traceability, and export/tooling for external proof use.
+13. Potential later expansion of the Lean proof story beyond Core-level properties.
    - later broaden selected-function proofs toward effects, resources, capabilities, runtime interaction, and only then concurrency
    - later consider backend-level proof concerns such as richer compiler-preservation work across deeper lowering stacks or optional backend-family layers
    - do not treat either broader end-to-end program proofs or backend/MLIR-layer proof work as near-term substitutes for the validated-Core-first plan
-13. Treat contracts, richer invariants, and similar verification extensions as post-roadmap evaluation work, not as part of the main current philosophy.
+14. Treat contracts, richer invariants, and similar verification extensions as post-roadmap evaluation work, not as part of the main current philosophy.
    - only evaluate them after the simpler Concrete + Lean 4 proof story has proven insufficient
    - keep them out of the main phase plan until the core language, proof boundary, runtime model, and operational story are already stable
    - if adopted at all, treat them as a final optional verification-extension stage rather than as a prerequisite for the main roadmap
-14. Implement a real artificial-life showcase/stress-test in Concrete.
+15. Implement a real artificial-life showcase/stress-test in Concrete.
    - target a program in the spirit of Rabrg's `artificial-life` reproduction of "Computational Life: How Well-formed, Self-replicating Programs Emerge from Simple Interaction"
    - a 240x135 grid of 64-instruction Brainfuck-like programs, randomly initialized, locally paired, concatenated, executed for bounded steps, then split back apart
    - use it as a serious end-to-end stress test for runtime/performance, collections/buffers, formatting/reporting, and later proof/audit ambitions
    - treat it as a showcase workload once the runtime, stdlib, and backend are mature enough rather than as immediate Phase C compiler work
-15. Develop proof-backed authority reports as a later extension of the current capability/trust reports.
+16. Develop proof-backed authority reports as a later extension of the current capability/trust reports.
    - make it explicit which authority facts are compiler-checked, which depend on validated Core extraction, and which still rest on trusted/foreign assumptions
    - keep the first versions narrow and high-signal rather than pretending to prove the whole world
-16. Move toward verified FFI envelopes once the runtime/ABI boundary is explicit.
+17. Move toward verified FFI envelopes once the runtime/ABI boundary is explicit.
    - make foreign boundaries carry ABI, ownership, destruction, and capability assumptions more explicitly than raw `extern fn`
    - prefer wrapper/envelope approaches over broad new surface syntax
-17. Treat reproducible trust bundles as the operational destination of the evidence story.
+18. Treat reproducible trust bundles as the operational destination of the evidence story.
    - package reports, proof references, build identity, and artifact fingerprints together for audit/review workflows
    - only do this once the package/runtime/compatibility story is stable enough to make the bundle worth trusting
-18. Treat performance and incrementality as an explicit later maturity thread rather than ambient compiler folklore.
+19. Treat performance and incrementality as an explicit later maturity thread rather than ambient compiler folklore.
    - define profiling methodology and performance regression expectations
+   - include a clear position on early optimization families such as function inlining rather than leaving all non-cleanup optimization implicit
    - define optimization policy explicitly enough that backend work has stated goals and stated non-goals
    - treat debug-info / observability maturity as a real backend quality axis, not accidental fallout of codegen work
    - make optimization policy explicit enough that "faster" does not silently trade away auditability or proof-friendliness
    - only add artifact serialization and incremental compilation once the artifact boundaries and compatibility story are boring enough to sustain them
-19. Treat bootstrap/self-hosting as an explicit strategic choice, not ambient ambition.
+20. Treat bootstrap/self-hosting as an explicit strategic choice, not ambient ambition.
    - decide whether Concrete should remain Lean-hosted, partially self-host, or eventually self-host
    - evaluate it against trust, proof leverage, implementation cost, and operational complexity rather than aesthetics
    - do not let self-hosting aspirations outrun the proof/runtime/package/operational story
+21. Make the artifact model operationally real rather than nominal.
+   - ensure pass APIs consume/produce named artifacts directly rather than drifting back to parsed-module-plus-table plumbing
+   - introduce missing durable artifacts where needed (for example a checked-program boundary if the architecture continues to justify one, but do not freeze that exact split before the pass plumbing proves it)
+   - keep artifact ownership explicit enough that tooling and reports do not rebuild semantic facts ad hoc
+22. Make source-to-Core-to-proof-to-SSA traceability a first-class compiler property.
+   - preserve stable source-origin identity through validated Core, proof/export subjects, monomorphized instances, and SSA origins
+   - treat this as necessary for proof credibility, report credibility, and later debugging/evidence workflows
+23. Treat interface/body artifact splitting as a major architecture thread, not only an incremental-compilation detail.
+   - package, workspace, and dependency semantics should depend on explicit interface artifacts rather than body-bearing summaries wherever possible
+   - avoid letting import/package reasoning stay coupled to more implementation detail than it needs
+24. Make the compiler-driver/build-graph layer explicit.
+   - own package graph, target selection, cache lookup/store, report generation from artifacts, and invalidation rules in one orchestrator layer
+   - do not let shell scripts and scattered CLI entry points become the accidental long-term build architecture
 
 ## Backend Work Order
 

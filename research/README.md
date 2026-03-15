@@ -39,6 +39,8 @@ If you want the highest-leverage current research first:
 7. [proof-evidence-artifacts.md](proof-evidence-artifacts.md) — tying reports, artifacts, reproducibility, and later proof references into one evidence story (`P0`, `Open`)
 8. [package-model.md](package-model.md) — what the eventual project/package model must decide (`P0`, `Open`)
 9. [trust-multipliers.md](trust-multipliers.md) — proof-backed reports, sandbox profiles, authority budgets, FFI envelopes, trust bundles, and showcase workloads (`P0`, `Open`)
+10. [adoption-strategy.md](adoption-strategy.md) — signature domains, showcases, onboarding, stability surface, and positioning for real user pull (`P1`, `Open`)
+11. [artifact-driven-compiler.md](artifact-driven-compiler.md) — stable artifacts, serialization, IDs, traceability, interface/body splits, and the real compiler driver (`P0`, `Open`)
 
 ## Language Decisions
 
@@ -80,6 +82,7 @@ If you want the highest-leverage current research first:
 - [proof-evidence-artifacts.md](proof-evidence-artifacts.md) — how reports, artifacts, proofs, and reproducibility could reinforce each other (`P0`, `Open`)
 - [trust-multipliers.md](trust-multipliers.md) — how authority, runtime, proof, and evidence work could combine into Concrete-specific differentiators (`P0`, `Open`)
 - [package-model.md](package-model.md) — package identity, dependency semantics, workspaces, and the boundary to authority-aware dependencies (`P0`, `Open`)
+- [artifact-driven-compiler.md](artifact-driven-compiler.md) — what it would take to make the named pipeline artifacts operationally real (`P0`, `Open`)
 - [file-summary-frontend.md](file-summary-frontend.md) — summary-based frontend direction and artifact boundaries (`P1`, `Adopted`)
 - [mlir-backend-shape.md](mlir-backend-shape.md) — where MLIR should sit if it earns its complexity later (`P1`, `Research`)
 
@@ -88,12 +91,14 @@ If you want the highest-leverage current research first:
 - [testing-strategy.md](testing-strategy.md) — gaps beyond current suites: fuzzing, property tests, report consistency, and differential testing (`P1`, `Open`)
 - [design-filters.md](design-filters.md) — feature-admission checklist and high-leverage design filters (`P1`, `Process`)
 - [optimization-policy.md](optimization-policy.md) — explicit optimization goals, non-goals, observability constraints, and regression expectations (`P1`, `Open`)
+- [developer-tooling.md](developer-tooling.md) — semantic recovery, editor/LSP baseline, debugging/observability, and project-facing CLI workflow (`P1`, `Open`)
 
 ## Meta And Long-Horizon Direction
 
 - [ten-x-improvements.md](ten-x-improvements.md) — the relatively small set of changes that could dramatically raise Concrete's value (`P0`, `Open`)
 - [competitive-gap-analysis.md](competitive-gap-analysis.md) — what other systems languages may still have, which gaps matter, and where Concrete should aim to be stronger instead (`P1`, `Open`)
 - [complete-language-system.md](complete-language-system.md) — what still separates a strong language/compiler from a complete language system (`P1`, `Open`)
+- [adoption-strategy.md](adoption-strategy.md) — what Concrete needs beyond architecture to become understandable, memorable, and worth trying (`P1`, `Open`)
 - [showcase-workloads.md](showcase-workloads.md) — real programs Concrete should eventually implement well, including showcase/stress-test targets (`P2`, `Open`)
 - [candidate-ideas.md](candidate-ideas.md) — Concrete-specific candidate compiler/language/tooling ideas (`P2`, `Research`)
 - [external-ideas.md](external-ideas.md) — useful ideas borrowed from other languages (`P2`, `Research`)

@@ -8,48 +8,39 @@ This document describes each pass in the Concrete compiler pipeline, its signatu
 Source Text
     │
     ▼
-  Parse ─── String → List Module
+  Parse ─── String → ParsedProgram
+    │
+    ├─→ BuildSummary ── ParsedProgram → SummaryTable
     │
     ▼
-  Resolve ── List Module → List ResolvedModule
+  Resolve ── ParsedProgram × SummaryTable → ResolvedProgram
     │
     ▼
-  Check ─── List Module → Unit
+  Check ─── ResolvedProgram × SummaryTable → Unit
     │
     ▼
-  Elab ──── List Module → List CModule
-    │
+  Elab ──── ResolvedProgram × SummaryTable → ElaboratedProgram
+    │         (includes CoreCanonicalize)
     ▼
-  CoreCanonicalize ── List CModule → List CModule
+  CoreCheck ── ElaboratedProgram → ValidatedCore
     │
-    ▼
-  CoreCheck ── List CModule → Unit
-    │
-    ├─→ ValidatedCore artifact (Concrete/Pipeline.lean)
     ├─→ ProofCore extraction (Concrete/ProofCore.lean) — pure fragment for Lean proofs
     ├─→ Proof semantics (Concrete/Proof.lean) — formal evaluation + first theorems
     │
     ▼
-  Mono ──── List CModule → List CModule
+  Mono ──── ValidatedCore → MonomorphizedProgram
     │
     ▼
-  Lower ─── CModule → SModule
-    │
+  Lower ─── MonomorphizedProgram → SSAProgram
+    │         (includes SSAVerify pre-cleanup, SSACleanup, SSAVerify post-cleanup)
     ▼
-  SSAVerify (pre-cleanup) ── List SModule → Unit
-    │
-    ▼
-  SSACleanup ── List SModule → List SModule
-    │
-    ▼
-  SSAVerify (post-cleanup) ── List SModule → Unit
-    │
-    ▼
-  EmitSSA ── List SModule → String (LLVM IR)
+  EmitSSA ── SSAProgram → String (LLVM IR)
     │
     ▼
   clang ─── executable
 ```
+
+Each arrow represents a typed artifact boundary defined in `Concrete/Pipeline.lean`. The pipeline is data-flow-driven: each pass consumes the previous pass's named artifact type. `ValidatedCore` is the proof-oriented boundary — only `Pipeline.coreCheck` can construct it, and `Pipeline.monomorphize` requires it as input.
 
 ### Proof-Oriented Pipeline Summary
 
@@ -93,7 +84,7 @@ Main caution:
 
 ## 1. Parse
 
-**Signature:** `parse : String → Except String (List Module)`
+**Signature:** `Pipeline.parse : String → Except Diagnostics ParsedProgram`
 
 **Preconditions:**
 - Input is a UTF-8 source string.
@@ -113,7 +104,7 @@ Main caution:
 
 ## 2. Resolve
 
-**Signature:** `resolveProgram : List Module → Except Diagnostics (List ResolvedModule)`
+**Signature:** `Pipeline.resolve : ParsedProgram → SummaryTable → Except Diagnostics ResolvedProgram`
 
 Resolve is strictly a shallow/interface validation pass. It operates on `FileSummary` artifacts and surface AST — it never inspects function bodies for declaration-level information and does not perform any post-elaboration semantic checks.
 
@@ -147,11 +138,11 @@ Resolve is strictly a shallow/interface validation pass. It operates on `FileSum
 
 ## 3. Check
 
-**Signature:** `checkProgram : List Module → Except String Unit`
+**Signature:** `checkProgram : List ResolvedModule → Except Diagnostics Unit`
 
 **Preconditions:**
-- Syntactically valid AST from Parse.
-- All names validated by Resolve (no unknown functions, types, or imports).
+- `ResolvedProgram` from Resolve (proves name resolution happened).
+- `SummaryTable` for import resolution.
 
 **Postconditions:**
 - Types are consistent across expressions, statements, and function signatures.
@@ -184,9 +175,10 @@ Resolve is strictly a shallow/interface validation pass. It operates on `FileSum
 
 ## 4. Elab (Elaboration)
 
-**Signature:** `elabProgram : List Module → Except String (List CModule)`
+**Signature:** `elabProgram : List ResolvedModule → Except Diagnostics (List CModule)`
 
 **Preconditions:**
+- `ResolvedProgram` from Resolve (same artifact as Check consumed).
 - Check has passed (types and linearity validated).
 
 **Postconditions:**
@@ -513,17 +505,18 @@ Source Text
 - `--report alloc` consumes canonicalized Core — allocation/cleanup summaries (vec_new/alloc sites, defer free patterns, returned-alloc warnings)
 - `--report mono` compares pre- and post-monomorphization Core modules — generic function count, specialization instances
 
-These reports are intended as compiler-facing audit outputs, not as a second semantic pipeline. All 6 modes are regression-tested with 44 semantic assertions in `run_tests.sh`.
+These reports are intended as compiler-facing audit outputs, not as a second semantic pipeline. All 8 modes are regression-tested with 59 semantic assertions in `run_tests.sh`.
+
+- `--report authority` consumes canonicalized Core — for each capability, lists which functions require it with transitive call chain traces showing how the capability is introduced (BFS through the call graph)
+- `--report proof` consumes canonicalized Core — ProofCore eligibility analysis: marks each function as eligible (pure, no trusted/extern/pointer ops) or excluded with specific reasons
 
 ### Next Report Modes
 
-The following report modes are explicitly deferred — named here so their scope is defined before implementation starts:
+The following report mode is explicitly deferred — named here so its scope is defined before implementation starts:
 
 | Mode | Purpose | Pipeline stage | Status |
 |------|---------|---------------|--------|
-| `--report authority` | Authority budget: for each capability, which functions require it and what call chains introduce it. Extends `caps` with transitive authority analysis. | Post-CoreCheck | Planned |
-| `--report proof` | Proof eligibility: which functions are pure enough for `ProofCore` extraction, which are excluded and why (capabilities, trusted, extern calls). | Post-CoreCheck via `ProofCore` | Planned |
-| `--report high-integrity` | High-integrity profile summary: which functions could run in a no-alloc/no-panic/bounded-stack environment. Requires Phase E runtime model. | Post-Mono | Deferred to Phase E |
+| `--report high-integrity` | High-integrity profile summary: which functions could run in a no-alloc/no-panic/bounded-stack environment. Requires Phase E runtime model. | Post-Mono | Deferred to Phase F |
 
 These are audit-oriented modes — they answer questions about what the program does, not what it should do. No mode should become a second semantic authority; all should consume validated artifacts from the existing pipeline.
 

@@ -134,6 +134,9 @@ For the full language specification, see [The Concrete Programming Language: Sys
 - [research/README.md](research/README.md) — exploratory design notes
 - [research/ten-x-improvements.md](research/ten-x-improvements.md) — the biggest long-term multipliers for Concrete
 - [research/complete-language-system.md](research/complete-language-system.md) — what still separates a strong language/compiler from a complete system
+- [research/adoption-strategy.md](research/adoption-strategy.md) — signature domains, showcases, onboarding, stability surface, and positioning
+- [research/artifact-driven-compiler.md](research/artifact-driven-compiler.md) — stable artifacts, serialization, traceability, IDs, and compiler-driver architecture
+- [research/developer-tooling.md](research/developer-tooling.md) — semantic recovery, editor/LSP baseline, debugging/observability, and project-facing CLI workflow
 - [research/long-term-concurrency.md](research/long-term-concurrency.md) — layered long-term concurrency target: structured concurrency over threads first, evented I/O later
 
 ## Snapshot
@@ -160,7 +163,7 @@ What is still clearly missing:
 - `transmute`
 - backend plurality over SSA (for example MLIR / C / Wasm)
 - full kernel formalization (initial proof workflow landed with 17 theorems)
-- concurrency implementation (designed in Phase E, implementation in Phase J)
+- concurrency implementation (designed in Phase E, implementation in Phase K)
 - stdlib deepening: stronger systems ergonomics, API cleanup, and later iterator/collection polish
 
 ## Try It Now
@@ -405,7 +408,7 @@ The compiler implements the core surface language and the full internal IR pipel
 
 - diagnostics infrastructure is strong, but rendering quality still has room to improve (ranges, notes, and secondary labels)
 - formal proofs are initial; 17 theorems proven over a pure Core fragment (abs/max/clamp), but full formalization of structs, enums, match, and recursion remains future work
-- concurrency is designed but not yet implemented (OS threads, spawn/join, channels planned for Phase J)
+- concurrency is designed but not yet implemented (OS threads, spawn/join, channels planned for Phase K)
 
 Implemented today:
 
@@ -422,7 +425,7 @@ Still in progress:
 - diagnostics quality and rendering polish
 - capability/safety productization (Phase F)
 - deeper kernel formalization
-- concurrency implementation (Phase J)
+- concurrency implementation (Phase K)
 
 See [ROADMAP.md](ROADMAP.md) for active priorities and remaining work. What works today:
 

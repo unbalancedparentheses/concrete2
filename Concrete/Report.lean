@@ -733,5 +733,144 @@ def allocReport (modules : List CModule) : String :=
     let summary := s!"\nTotals: {allocCount} functions allocate, {freeCount} free, {deferCount} use defer"
     s!"{header}\n\n{"\n\n".intercalate body}\n{summary}\n"
 
+-- ============================================================
+-- Report 7: Authority Budget (--report authority)
+-- ============================================================
+-- For each capability, show which functions require it and
+-- compute the transitive call chain that introduces it.
+
+/-- A flat map of function name → list of direct callees. -/
+abbrev CallGraph := List (String × List String)
+
+/-- Build a call graph from all modules. -/
+private partial def buildCallGraphModule (m : CModule) : CallGraph :=
+  let fnEntries := m.functions.map fun f =>
+    (f.name, collectCallsStmts f.body |>.eraseDups)
+  fnEntries ++ m.submodules.foldl (fun acc sub => acc ++ buildCallGraphModule sub) []
+
+private def buildCallGraph (modules : List CModule) : CallGraph :=
+  modules.foldl (fun acc m => acc ++ buildCallGraphModule m) []
+
+/-- All function defs across modules (flat). -/
+private partial def collectAllFnDefs (m : CModule) : List CFnDef :=
+  m.functions ++ m.submodules.foldl (fun acc sub => acc ++ collectAllFnDefs sub) []
+
+/-- Find one call chain from `fn` to any function that directly declares `cap`.
+    Returns the chain as a list of function names, or empty if no chain found.
+    Uses BFS with visited set to avoid cycles. -/
+private def findCapChain (callGraph : CallGraph) (lookup : CapLookup)
+    (fnName : String) (cap : String) (maxDepth : Nat := 20) : List String :=
+  let rec bfs (queue : List (String × List String)) (visited : List String)
+      (fuel : Nat) : List String :=
+    match fuel, queue with
+    | 0, _ => []
+    | _, [] => []
+    | fuel + 1, (current, path) :: rest =>
+      -- Check if current function directly has this cap
+      let directCaps := match lookup.find? (fun (n, _) => n == current) with
+        | some (_, cs) => cs.concreteCaps
+        | none =>
+          match resolveIntrinsic current with
+          | some iid => match iid.capability with
+            | some c => [c]
+            | none => []
+          | none => []
+      if directCaps.contains cap && path.length > 0 then
+        path ++ [current]
+      else
+        let callees := match callGraph.find? (fun (n, _) => n == current) with
+          | some (_, cs) => cs
+          | none => []
+        let newVisited := visited ++ [current]
+        let newEntries := callees.filter (fun c => !visited.contains c) |>.map fun c =>
+          (c, path ++ [current])
+        bfs (rest ++ newEntries) newVisited fuel
+  bfs [(fnName, [])] [] maxDepth
+
+/-- Group functions by capability for the authority report. -/
+private partial def collectFnsWithCap (m : CModule) (cap : String) : List CFnDef :=
+  let matching := m.functions.filter fun f =>
+    let (caps, _) := f.capSet.normalize
+    caps.contains cap
+  matching ++ m.submodules.foldl (fun acc sub => acc ++ collectFnsWithCap sub cap) []
+
+def authorityReport (modules : List CModule) : String :=
+  let header := "=== Authority Report ==="
+  let lookup := buildCapLookup modules
+  let callGraph := buildCallGraph modules
+  let allCaps := validCaps  -- all 9 capabilities
+  let sections := allCaps.filterMap fun cap =>
+    let fns := modules.foldl (fun acc m => acc ++ collectFnsWithCap m cap) []
+    if fns.isEmpty then none
+    else
+      let capHeader := s!"capability {cap} ({fns.length} functions):"
+      let fnLines := fns.map fun f =>
+        let pubStr := if f.isPublic then "pub " else "    "
+        let chain := findCapChain callGraph lookup f.name cap
+        let chainStr := if chain.length <= 1 then "  <- declared"
+          else s!"  <- {" -> ".intercalate chain}"
+        s!"  {pubStr}{f.name}{chainStr}"
+      some (s!"{capHeader}\n{"\n".intercalate fnLines}")
+  let allFns := modules.foldl (fun acc m => acc ++ collectAllFnDefs m) []
+  let pureFns := (allFns.filter fun f => f.capSet.isEmpty).length
+  let totalFns := allFns.length
+  let externCount := modules.foldl (fun acc m => acc + countModuleExterns m) 0
+  let summary := s!"\nTotals: {totalFns} functions ({pureFns} pure, {totalFns - pureFns} with capabilities), {externCount} externs"
+  if sections.isEmpty then s!"{header}\n\nAll functions are pure — no capabilities required.\n"
+  else s!"{header}\n\n{"\n\n".intercalate sections}\n{summary}\n"
+
+-- ============================================================
+-- Report 8: Proof Eligibility (--report proof)
+-- ============================================================
+-- Determines which functions could be extracted for ProofCore
+-- (pure, no trusted, no extern calls, no raw pointer ops).
+
+/-- Reasons a function is excluded from ProofCore. -/
+private def proofExclusionReasons (externNames : List String) (f : CFnDef) : List String :=
+  let reasons : List String := []
+  -- 1. Has capabilities
+  let reasons := if !f.capSet.isEmpty then
+    let (caps, _) := f.capSet.normalize
+    reasons ++ [s!"requires capabilities: {", ".intercalate caps}"]
+  else reasons
+  -- 2. Is trusted
+  let reasons := if f.isTrusted then reasons ++ ["trusted boundary"] else reasons
+  -- 3. Calls extern functions
+  let callees := collectCallsStmts f.body |>.eraseDups
+  let externCalls := callees.filter fun c => externNames.contains c
+  let reasons := if !externCalls.isEmpty then
+    reasons ++ [s!"calls extern: {", ".intercalate externCalls}"]
+  else reasons
+  -- 4. Raw pointer operations
+  let reasons := if hasRawPtrOpsStmts f.body then
+    reasons ++ ["raw pointer operations"]
+  else reasons
+  reasons
+
+private partial def proofReportModule (externNames : List String) (m : CModule) (indent : String)
+    : String :=
+  let header := s!"{indent}module {m.name}:"
+  let fnLines := m.functions.map fun f =>
+    let reasons := proofExclusionReasons externNames f
+    if reasons.isEmpty then
+      s!"{indent}  ✓ {f.name}"
+    else
+      let reasonStr := ", ".intercalate reasons
+      s!"{indent}  ✗ {f.name}  ({reasonStr})"
+  let subLines := m.submodules.map (proofReportModule externNames · (indent ++ "  "))
+  let body := fnLines ++ subLines
+  s!"{header}\n{"\n".intercalate body}"
+
+def proofReport (modules : List CModule) : String :=
+  let header := "=== Proof Eligibility Report ==="
+  let externNames := modules.foldl (fun acc m => acc ++ collectExternNames m) []
+  let body := modules.map (proofReportModule externNames · "")
+  let allFns := modules.foldl (fun acc m => acc ++ collectAllFnDefs m) []
+  let eligible := allFns.filter fun f =>
+    (proofExclusionReasons externNames f).isEmpty
+  let excluded := allFns.length - eligible.length
+  let summary := s!"\nTotals: {allFns.length} functions, {eligible.length} eligible for ProofCore, {excluded} excluded"
+  s!"{header}\n\n{"\n\n".intercalate body}\n{summary}\n"
+
 end Report
 end Concrete

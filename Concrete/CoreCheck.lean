@@ -142,6 +142,14 @@ def CoreCheckError.hint : CoreCheckError → Option String
   | .continueOutsideLoop => some "continue can only be used inside while or for loops"
   | .copyDestroyConflict _ => some "remove the Destroy impl or remove #[copy]"
   | .copyFieldNotCopy _ _ => some "mark the field type as #[copy] or remove #[copy] from the struct"
+  | .insufficientCapabilities _ required _ => some s!"add 'with({required})' to the calling function, or wrap the call in a trusted function"
+  | .missingCapability callee cap _ =>
+    match callee with
+    | "ptr_arith" | "*raw_ptr" | "*raw_ptr=" | "unsafe_cast" =>
+      some "add 'with(Unsafe)' to the enclosing function, or wrap in a trusted function"
+    | "*heap_ptr" | "alloc" =>
+      some s!"add 'with({cap})' to the enclosing function"
+    | _ => some s!"add 'with({cap})' to the enclosing function, or wrap the call in a trusted function"
   | _ => none
 
 private def capSetToString : CapSet → String
