@@ -384,13 +384,14 @@ CoreCheck is the post-elaboration semantic authority. It owns all legality rules
 - Cleaned-up SSA IR (all modules verified and optimized).
 
 **Postconditions:**
-- Valid LLVM IR text emitted.
+- Valid LLVM IR text emitted with target triple and datalayout.
 - Struct and enum type definitions generated.
 - String literal globals emitted.
 - All user functions emitted with correct LLVM signatures.
 - Builtin functions (Vec, HashMap, String ops) included.
 - `main` wrapper generated for entry point.
 - External declarations (malloc, free, printf, etc.) emitted.
+- **Extern fn ABI flattening:** `#[repr(C)]` struct parameters in extern fn calls are flattened to integer registers per the platform C ABI (ARM64: ≤8 bytes → i64, 9-16 bytes → two i64s, >16 bytes → ptr). Return values ≤8 bytes similarly flattened. This is an exception to the internal pass-by-ptr rule and matches clang's calling convention.
 
 **Error conditions:**
 - None at the API level (pure string generation).
@@ -435,7 +436,7 @@ EmitSSA is a pure translation; it does not validate its input.  It assumes:
 
 1. All SSAVerify invariants hold (dominance, phi correctness, branch safety).
 2. All SSACleanup optimizations have been applied (no dead blocks, no trivial phis).
-3. Aggregate types are passed/returned by pointer (the ABI contract from Lower).
+3. Aggregate types are passed/returned by pointer (the ABI contract from Lower). Exception: extern fn calls with `#[repr(C)]` struct args use ABI-flattened integer registers (see postconditions above).
 4. String literals are deduplicated globally (from Lower).
 5. Vec operations carry correct element-size metadata.
 

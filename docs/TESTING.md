@@ -296,6 +296,13 @@ lake build && ./run_tests.sh --full
 ```bash
 bash test_ssa.sh                      # SSA-specific backend coverage
 bash test_parser_fuzz.sh              # parser crash/hang fuzzing
+bash test_fuzz.sh                     # structured fuzz: parser + typecheck + valid (1500+ programs)
+bash test_fuzz.sh --valid 1000        # valid program generation only, custom iteration count
+bash test_perf.sh --save              # save performance baseline
+bash test_perf.sh --compare           # compare against baseline (requires prior --save)
+bash test_mutation.sh --list          # list 18 mutations without running
+bash test_mutation.sh                 # run all mutations (~15 min, rebuilds compiler per mutation)
+bash test_mutation.sh --mutation 5    # run a single mutation
 ```
 
 ## Testing Phases
@@ -362,9 +369,20 @@ By-value struct FFI: small repr(C) structs (≤ 16 bytes) are flattened to integ
 
 #### 3.6 Performance regression gates (done)
 
-`test_perf.sh` — measures compile time, runtime (avg of 3), IR line count, and binary size for 7 representative programs. Supports `--save` (save baseline to `.perf-baseline`) and `--compare` (compare against baseline, warn on >20% regression). Integrated into `run_tests.sh --full` as an informational section.
+`test_perf.sh` — measures compile time, runtime (avg of 3), IR line count, and binary size for 7 representative programs. Supports `--save` (save baseline to `.perf-baseline`) and `--compare` (compare against baseline, warn on >20% regression). Requires a `.perf-baseline` file created by `--save`; `--compare` without a baseline is a no-op. Integrated into `run_tests.sh --full` as an informational section (warnings printed but do not fail the suite).
 
-`test_mutation.sh` — 18 targeted source mutations across 7 compiler files (Layout, Shared, Check, CoreCheck, Lower, EmitSSA, SSAVerify). Each mutation is applied, the compiler rebuilt, and the test suite run. Surviving mutations indicate test gaps.
+`test_mutation.sh` — mutation testing for the compiler. Applies targeted source mutations one at a time, rebuilds the compiler (`lake build`), and runs the test suite (`run_tests.sh --fast`). If all tests pass after a mutation, the mutation *survived* — indicating a test gap. If any test fails, the mutation was *killed* — tests caught the change. Use `--list` to see all mutations without running, `--mutation N` to run one.
+
+18 mutations across 7 compiler files:
+- **Layout.lean** (6): tySize i32 4→8, tyAlign i32 4→1, unit size 0→4, string size 24→16, isPassByPtr string→false, isFFISafe rejects integers
+- **Shared.lean** (2): isNumeric rejects floats, isInteger excludes i32
+- **Check.lean** (3): disable use-after-move, disable loop-depth linearity, disable scope-exit linearity
+- **CoreCheck.lean** (3): disable match exhaustiveness, disable capability check, allow break outside loop
+- **Lower.lean** (1): arrayIndex GEP uses wrong type
+- **EmitSSA.lean** (1): isReprCStruct always false
+- **SSAVerify.lean** (2): disable aggregate phi check, disable phi predecessor check
+
+Each mutation takes 30-60s (rebuild + test). Full run: ~15 minutes. Not part of `run_tests.sh` — run separately as a CI-occasional job.
 
 #### 3.7 Failure-quality testing (done)
 

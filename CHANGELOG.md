@@ -10,9 +10,21 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
-### Phase 3 system-level testing: 864 tests, 0 failures
+### By-value repr(C) struct FFI and testing infrastructure: 891 tests, 0 failures
 
-Added ~100 new tests (Phase 3) on top of Phase 2's 766, bringing the full suite to 864 tests.
+**Compiler fix — struct FFI ABI flattening:** `#[repr(C)]` struct parameters in extern fn calls are now flattened to integer registers per the ARM64 C ABI (≤8 bytes → i64, 9-16 bytes → two i64s), matching clang's calling convention. Target triple and datalayout emitted in LLVM IR. Previously, small structs were passed as LLVM aggregates, which didn't match the C register-passing convention across FFI boundaries.
+
+**Bug 004 fixed:** `arr[i] = val` with runtime variable index used the value's type instead of the array element type for GEP/store, causing wrong offsets and store widths. One-line fix in Lower.lean.
+
+**Testing infrastructure:**
+- Cross-target IR verification: 25 programs verified to compile for x86_64 via `clang --target`
+- Mutation testing (`test_mutation.sh`): 18 targeted mutations across 7 compiler files (Layout, Shared, Check, CoreCheck, Lower, EmitSSA, SSAVerify) — apply, rebuild, test, measure gap
+- Fuzz testing expanded: 7 new generators (enum/match, nested struct, fn pointer, borrow, defer, non-exhaustive match, missing capability)
+- Performance regression check integrated into `run_tests.sh --full`
+
+### Phase 3 system-level testing
+
+Added ~100 new tests (Phase 3) on top of Phase 2's 766.
 
 **Wave 1 — Type system, codegen, capabilities, modules (44 tests):**
 - Type system soundness: generic chains, recursive enums, nested match exhaustiveness, linearity branch agreement, trait multi-bound, defer linearity
