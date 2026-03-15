@@ -193,6 +193,39 @@ The intent is not to turn Phase H into "build a scripting language ecosystem." T
 
 before filling out the rest of the portfolio.
 
+## External-Tested Workload Track
+
+Phase H should not rely only on self-chosen programs. It should also maintain an explicit track of workloads that come with known specs, known tests, or widely recognized behavior targets.
+
+Best options:
+
+- **MAL (Make a Lisp)**  
+  Probably the best fit for an interpreter workload. Good because it has staged tasks and tests.
+- **SQLite-style miniature database projects**  
+  For example the "build your own sqlite" class of projects. Good because they usually have known behavior and lots of comparison value. Harder, but very revealing.
+- **Crafting Interpreters / Lox**  
+  Lox has a well-known spec and test corpus. Very strong if you want a parser + resolver + runtime workload.
+- **Wren / Lua-style small VM/interpreter clones**  
+  Good if you want bytecode/runtime pressure with recognizable semantics.
+- **Scheme/Lisp educational interpreters**  
+  SICP-style or Norvig-style projects are good, but MAL is usually more comparable.
+- **Regex engine projects**  
+  Small regex engines often have test suites and clear behavior targets. Good for parser + automata + performance.
+- **JSON test suites**  
+  There are standard JSON conformance suites. Great for parser/validator comparison.
+- **TOML / YAML / CSV parser suites**  
+  TOML especially has strong shared test corpora.
+- **WASM interpreter / validator subsets**  
+  There are small WASM runtimes and validator projects with test material. Very good long-term, but probably not first-wave.
+- **Brainfuck interpreters**  
+  Many exist with tests, but they are too toy-like to be a flagship.
+
+Recommended use:
+
+- **First-wave:** MAL, JSON, and eventually Lox/TOML/regex depending on progress
+- **Later but important:** SQLite-style miniature database, WASM subset
+- **Secondary comparison baselines:** Wren/Lua-style small VM, Scheme/Lisp educational interpreters, Brainfuck
+
 ## Success Conditions
 
 This suite is successful if it reveals:

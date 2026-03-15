@@ -410,6 +410,17 @@ Primary surfaces:
      5. bytecode VM / interpreter
      6. artifact/update verifier
    - this is a reordering, not a replacement: MAL moves up to second, but JSON / grep / VM / artifact-verifier remain part of the intended first wave
+   - the phase should also maintain an explicit external-tested workload track so Concrete is measured against known specs and known tests, not only self-chosen examples:
+     - MAL (Make a Lisp) as the preferred staged interpreter/runtime workload
+     - SQLite-style miniature database projects as a harder but high-value storage/runtime workload
+     - Crafting Interpreters / Lox as a parser + resolver + runtime workload with a known spec and test corpus
+     - Wren / Lua-style small VM/interpreter clones for recognizable bytecode/runtime pressure
+     - Scheme/Lisp educational interpreters (SICP/Norvig-style) as secondary interpreter references, even if MAL remains the preferred Lisp target
+     - regex engine projects for parser + automata + performance pressure
+     - JSON test suites for parser/validator conformance
+     - TOML / YAML / CSV parser suites, with TOML as the strongest shared-corpus target
+     - WASM interpreter / validator subsets as a long-term semantics/runtime validation workload
+     - Brainfuck interpreters as compact control-flow baselines, even if they are too toy-like to be a flagship workload
 3. use those programs to drive stdlib gap discovery, diagnostics pain points, package/workspace friction, report UX problems, and readability failures under sustained use — **not started**
 4. build comparison implementations in Rust, Zig, and C where appropriate so Concrete is evaluated against real neighboring languages rather than in isolation — **not started**
 5. compare results across correctness, runtime, memory, binary size, compile time, code size, trust/unsafe surface, and auditability rather than reducing the phase to raw speed charts — **not started**
@@ -423,6 +434,7 @@ Deliverables:
 - comparative benchmark and evaluation baselines grounded in real workloads instead of micro-assumptions
 - cross-language comparison notes explaining not only speed but also correctness, code size, unsafe/trust surface, and auditability tradeoffs
 - at least one explicit interpreter/runtime comparison target grounded in a known external workload with tests (for example MAL-style Lisp), not only ad hoc internal programs
+- a documented external-tested workload track covering known-spec / known-test programs beyond the first-wave portfolio
 - a concrete list of stdlib, diagnostics, package, and backend issues discovered only through sustained use
 - proof that Concrete remains readable and auditable at larger scales, or an explicit record of where it fails
 - a clearer basis for the package, adoption, and operational phases because they are now shaped by real code rather than only design intent
