@@ -21,6 +21,7 @@ For current language and subsystem references, see:
 - [docs/DIAGNOSTICS.md](docs/DIAGNOSTICS.md)
 - [docs/STDLIB.md](docs/STDLIB.md)
 - [docs/VALUE_MODEL.md](docs/VALUE_MODEL.md)
+- [docs/EXECUTION_MODEL.md](docs/EXECUTION_MODEL.md)
 
 Concrete should stay small enough to remain readable, auditable, and mechanically understandable. New work should be judged not only by expressiveness, but also by its grammar cost, audit cost, and proof cost.
 
@@ -246,6 +247,7 @@ This phase begins the high-integrity profile direction:
 - a runtime story that can later support critical-system use without pretending every feature belongs everywhere
 
 Primary surfaces:
+- [docs/EXECUTION_MODEL.md](docs/EXECUTION_MODEL.md)
 - [docs/VALUE_MODEL.md](docs/VALUE_MODEL.md)
 - [docs/STDLIB.md](docs/STDLIB.md)
 - [research/concurrency.md](research/concurrency.md)
@@ -254,9 +256,9 @@ Primary surfaces:
 - [research/trust-multipliers.md](research/trust-multipliers.md)
 - runtime-facing stdlib and FFI boundaries
 
-1. define the hosted vs freestanding model more explicitly — **not started**
-2. make the runtime boundary explicit — **not started**
-3. define the memory / allocation strategy explicitly — **not started**
+1. define the hosted vs freestanding model more explicitly — **done** — `docs/EXECUTION_MODEL.md` documents hosted-only target, stdlib layer classification (core/alloc/hosted), future freestanding direction
+2. make the runtime boundary explicit — **done** — `docs/EXECUTION_MODEL.md` documents startup/shutdown/failure model, external symbol dependencies, no runtime initialization, no panic/unwind
+3. define the memory / allocation strategy explicitly — **done** — `docs/EXECUTION_MODEL.md` documents libc malloc model, capability-tracked allocation, OOM gap, deallocation model, future directions
 4. define the concurrency and execution story deliberately — **not started**
    - first target: hosted runtime, OS-thread-based concurrency, explicit `spawn`/`join`/channel APIs, move-first ownership across threads, no built-in `async`/`await` initially
    - concurrency should be capability-gated and live in stdlib/runtime surfaces before any core-language syntax is considered

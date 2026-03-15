@@ -10,6 +10,30 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Phase E items 1-3: execution model documented
+
+`docs/EXECUTION_MODEL.md` defines Concrete's execution model covering three Phase E items:
+
+**Item 1 — Hosted vs freestanding model**: Concrete targets hosted (POSIX + libc) only. The stdlib is classified into three layers by host dependency: core (pure computation, no libc), alloc (malloc/realloc/free only), and hosted (full POSIX libc). Freestanding mode is a future milestone — the hosted boundary is now explicit so the split is straightforward when needed.
+
+**Item 2 — Runtime boundary**: There is no Concrete runtime. No global constructors, no GC, no module init, no thread-local setup. Programs start in a compiler-generated `main` that calls `user_main`, optionally print the result, and return 0. Failure is explicit through return types — no panic, no unwind. All external symbol dependencies are enumerated (always-required: malloc/free/printf/memcpy/etc.; conditionally-required: fs/net/process symbols from stdlib imports).
+
+**Item 3 — Memory/allocation strategy**: All heap allocation goes through libc malloc/realloc/free. Allocation is capability-tracked via `Alloc`. Deallocation is explicit via linear ownership + `defer`. malloc failure is not handled (known gap — abort-on-OOM is the planned first step). Future directions: bounded allocation profiles, allocator parameters (Zig-style), no-alloc mode for freestanding.
+
+### Runtime/concurrency roadmap split clarified
+
+The roadmap now separates:
+
+- **Phase E**: the first explicit runtime/execution model and initial thread/channel concurrency stance
+- **Phase J**: the later long-term concurrency phase for structured concurrency, threads-plus-message-passing as the base model, and evented I/O as a specialized later runtime
+
+Research notes now include:
+
+- `research/concurrency.md` for the near-term Phase E direction
+- `research/long-term-concurrency.md` for the long-horizon layered concurrency target
+
+This makes the sequencing explicit: define the runtime boundary first, then broaden concurrency only after runtime, safety, package, and operational foundations are stable enough to support it well.
+
 ### Compiler improvement checklist items 4 & 5 complete
 
 The final two partial checklist items are now done, completing the compiler improvement checklist (all 6 items except backend plurality, which is Phase E+ work).
@@ -33,7 +57,7 @@ Test suite: 663 tests passing, 0 failures.
 - **Borrow checker audit**: multiple shared borrows, sequential &mut, borrow-of-field all verified working.
 - **Cross-module type aliases and newtypes**: fixed pre-existing bug — type alias names leaked through function signatures. `buildFileSummary` now resolves aliases in fn/extern/impl signatures. `resolveImports` resolves aliases and erases newtypes in imported signatures. `Elab.elabFn` resolves aliases in function parameter types.
 
-5 hardening tests added. Test suite: 663 tests (189 stdlib). All hardening items complete — no remaining silent fallback defaults in the compiler pipeline.
+5 hardening tests added. Test suite: 663 tests (184 stdlib). All hardening items complete — no remaining silent fallback defaults in the compiler pipeline.
 
 ### 3 compiler bugs fixed
 
@@ -77,6 +101,7 @@ What landed:
 - **Coverage matrix and determinism policy** (`docs/TESTING.md`): full coverage matrix by failure mode (17 categories) and by compiler pass (12 passes), determinism rules (fixed seeds, no wall-clock dependence, 3 timeout tiers, network isolation by default, parallel safety, quarantine/repair policy), compile-time baselines, and failure isolation documentation.
 - **Compiler output cache**: file-keyed cache, 26/57 hits per fast run, avoids redundant recompilation for multi-assertion report tests.
 - **Failure artifact preservation**: `.test-failures/` with timestamped output and exact rerun commands.
+- **Manifest listing**: `run_tests.sh --manifest` now emits the full runner-known test inventory with category/kind/file metadata, so the documented manifest view is a real tool instead of a missing feature.
 - **Dependency gates**: `compile_gate()` skips downstream assertions when compilation fails.
 - **Real-program corpus**: 8 integration tests including 5 multi-feature programs (150-250 lines each): generic pipeline (5-layer borrow chain, trait dispatch), state machine (4×5 nested match), compiler stress (deep generic dispatch, 5-variant enum, while-loop accumulation), multi-module (cross-module types/traits/enums with imports), recursive structures (expression evaluator + stack machine with 6-variant enum).
 - **Failure-path stdlib tests**: fs (read past EOF, seek past end, read empty file), net (bind empty address, write to refused connection, read from unconnected socket, bind duplicate port), process (kill invalid signal, wait invalid PID, kill PID zero).
