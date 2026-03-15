@@ -118,7 +118,10 @@ def lower (mono : MonomorphizedProgram) : Except Diagnostics SSAProgram := do
   | .error ds => .error ds
   | .ok () =>
     let ssaModules := ssaCleanupProgram ssaModules
-    .ok { ssaModules }
+    -- Verify cleanup preserved SSA invariants
+    match ssaVerifyProgram ssaModules with
+    | .error ds => .error ds
+    | .ok () => .ok { ssaModules }
 
 /-- Emit LLVM IR from SSA modules. -/
 def emit (ssa : SSAProgram) (testMode : Bool := false) (moduleFilter : Option String := none) : String :=

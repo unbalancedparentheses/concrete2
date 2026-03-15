@@ -6,8 +6,9 @@ namespace Concrete
 
 /-! ## SSAVerify — SSA invariant validation
 
-Runs after Lower, before SSACleanup. Validates:
-- Every block has exactly one terminator
+Runs both before and after SSACleanup (see `Pipeline.lower`), ensuring that
+cleanup transformations preserve all SSA invariants. Validates:
+- Every block has exactly one terminator (structurally enforced by `SBlock.term : STerm`)
 - Every register used is defined before use (simplified dominance)
 - Branch targets reference existing block labels
 - Phi nodes have entries for all predecessor blocks
@@ -298,13 +299,15 @@ private def checkBranchTargets (ctx : VerifyCtx) (b : SBlock) : VerifyCtx :=
   ) ctx
 
 /-- Is this type an aggregate that should never appear in a phi node?
-    Aggregates should be transported via alloca+store, not SSA phi. -/
+    Aggregates should be transported via alloca+store, not SSA phi.
+    Generic heap types (Vec, HashMap, HashSet, Heap, HeapArray) are excluded
+    because they are represented as fixed-size pointer-based structs (≤24 bytes),
+    not variable-size aggregates — they are safe to pass through phi nodes. -/
 private def isAggregateType : Ty → Bool
   | .named _ => true
   | .string => true
   | .array _ _ => true
   | .generic name _ =>
-    -- Vec, HashMap, etc. are heap pointers (8 bytes), not aggregates
     name != "Vec" && name != "HashMap" && name != "HashSet" &&
     name != "Heap" && name != "HeapArray"
   | _ => false

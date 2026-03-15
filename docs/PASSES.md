@@ -36,10 +36,13 @@ Source Text
   Lower ─── CModule → SModule
     │
     ▼
-  SSAVerify ── List SModule → Unit
+  SSAVerify (pre-cleanup) ── List SModule → Unit
     │
     ▼
   SSACleanup ── List SModule → List SModule
+    │
+    ▼
+  SSAVerify (post-cleanup) ── List SModule → Unit
     │
     ▼
   EmitSSA ── List SModule → String (LLVM IR)
@@ -323,11 +326,13 @@ CoreCheck is the post-elaboration semantic authority. It owns all legality rules
 
 **Signature:** `ssaVerifyProgram : List SModule → Except String Unit`
 
+**Runs:** Both before and after SSACleanup (see `Pipeline.lower`). The pre-cleanup run validates Lower's output; the post-cleanup run mechanically ensures cleanup transformations preserved all SSA invariants.
+
 **Preconditions:**
-- SSA IR from Lower.
+- SSA IR from Lower (pre-cleanup run) or SSACleanup (post-cleanup run).
 
 **Postconditions:**
-- Every block has exactly one terminator.
+- Every block has exactly one terminator (structurally enforced by `SBlock.term : STerm`).
 - All register uses dominated by their definitions.
 - Phi node incoming values come from correct predecessor blocks.
 - All branch targets reference existing block labels.
@@ -433,10 +438,12 @@ EmitSSA is a pure translation; it does not validate its input.  It assumes:
 ```
 Lower: Core → SSA with explicit control flow, phi insertion, ABI pass-by-ptr
   ↓
-SSAVerify: validates dominance, phi coverage, type consistency, branch safety
+SSAVerify (pre-cleanup): validates dominance, phi coverage, type consistency, branch safety
   ↓ (all structural invariants now hold)
 SSACleanup: removes dead code, folds constants, forwards stores, converges
-  ↓ (no dead blocks, no trivial phis, constants folded)
+  ↓
+SSAVerify (post-cleanup): re-validates all invariants after cleanup transformations
+  ↓ (no dead blocks, no trivial phis, constants folded, invariants mechanically re-checked)
 EmitSSA: 1:1 translation to LLVM IR text — no validation, just emission
 ```
 
