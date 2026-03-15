@@ -1456,9 +1456,10 @@ partial def lowerStmt (stmt : CStmt) : LowerM Unit := do
     let aVal ← lowerExpr arr
     let iVal ← lowerExpr index
     let vVal ← lowerExpr value
+    let elemTy := match arr.ty with | .array t _ => t | _ => value.ty
     let gepDst ← freshReg
-    emit (.gep gepDst aVal [iVal] value.ty)
-    emit (.store vVal (.reg gepDst value.ty))
+    emit (.gep gepDst aVal [iVal] elemTy)
+    emit (.store vVal (.reg gepDst elemTy))
 
   | .break_ value breakLabel =>
     match ← findLoopByLabel breakLabel with

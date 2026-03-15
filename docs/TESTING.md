@@ -304,13 +304,13 @@ The test suite has evolved in three phases with distinct goals:
 
 Goal: one test per feature, one test per bug. Catch regressions in individual language features and compiler passes.
 
-Covers: type system, codegen, capabilities, trusted boundaries, linearity, modules, stdlib, golden tests, pass-level Lean tests. ~686 tests.
+Covers: type system, codegen, capabilities, trusted boundaries, linearity, modules, stdlib, golden tests, pass-level Lean tests. Phase-end snapshot: ~686 tests.
 
 ### Phase 2: Edge Cases and Contract-Boundary Tests (complete)
 
 Goal: push individual features toward their edges and test cross-boundary contracts.
 
-Covers: ABI/FFI runtime tests (repr(C), fn pointers, sizeof, arrays), proof boundary assertions (`--report proof` with exact eligibility marking and exclusion reasons), optimization-sensitive codegen tests with O2 variants, cross-module resolution edge cases, parser/type-system edge cases. ~766 tests.
+Covers: ABI/FFI runtime tests (repr(C), fn pointers, sizeof, arrays), proof boundary assertions (`--report proof` with exact eligibility marking and exclusion reasons), optimization-sensitive codegen tests with O2 variants, cross-module resolution edge cases, parser/type-system edge cases. Phase-end snapshot: ~766 tests.
 
 ### Phase 3: System-Level Validation and Regression Discipline (complete)
 

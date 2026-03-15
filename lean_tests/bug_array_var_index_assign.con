@@ -1,7 +1,6 @@
 // Bug 004: arr[i] = val with variable index writes to wrong location.
-// Expected: 42. Currently broken — returns wrong value.
-// This test should FAIL until the bug is fixed.
-// When fixed, register as: run_ok ... 42
+// Fixed: Lower.lean arrayIndexAssign now uses array element type for GEP/store.
+// Expected: 42
 
 fn main() -> i32 {
     let arr: [i32; 3] = [0, 0, 0];
