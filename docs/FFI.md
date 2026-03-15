@@ -110,12 +110,53 @@ That means:
 - `trusted extern fn` is a separate, narrower mechanism: it marks a specific foreign binding as safe to call, rather than granting blanket trust to a block of code
 - builtin and stdlib internals are aligned to this same model instead of relying on silent exemptions
 
+## Authority Wrapper Patterns
+
+The recommended pattern for containing unsafe or capability-requiring code is: write a small trusted wrapper, expose a safe narrow interface above it, keep raw pointers and FFI details inside the wrapper.
+
+```con
+// Bad: callers need with(Unsafe) to use raw FFI
+pub fn read_header(fd: i32) with(Unsafe) -> Int {
+    // raw extern call ...
+}
+
+// Good: trusted wrapper contains the unsafety
+pub trusted fn read_header(fd: i32) with(File, Unsafe) -> Int {
+    // raw extern call inside trusted boundary
+}
+// Callers only need with(File), not with(Unsafe)
+```
+
+The stdlib demonstrates this pattern throughout:
+
+- `trusted impl Vec<T>` wraps pointer arithmetic behind safe push/pop/get
+- `trusted impl HashMap<K, V>` wraps raw allocation behind safe insert/get/remove
+- `trusted impl TextFile` wraps POSIX file I/O behind open/read/write/close
+- `trusted fn print/println` wraps extern console I/O behind `with(Console)`
+- `trusted extern fn sqrt` marks a pure foreign function as safe to call without `with(Unsafe)`
+
+The `--report unsafe` and `--report authority` modes make these boundaries visible for audit.
+
+## Capability Aliases
+
+Capability aliases reduce signature repetition without hiding authority:
+
+```con
+cap IO = File + Console;
+cap Host = File + Network + Env + Process;
+
+fn serve() with(Host) -> Int { ... }
+fn log(msg: &String) with(IO) { ... }
+```
+
+An alias expands to its constituent capabilities at parse time — the rest of the compiler sees only concrete capability names. Aliases can use the `Std` macro (`cap All = Std;` expands to all standard capabilities except `Unsafe`).
+
+Aliases are validated at definition time: all constituent names must be known capabilities. Unknown names produce a parse error.
+
 ## Future Refinement
 
 This doc should expand if the FFI surface grows substantially, for example:
 
-- better compiler reports for *why* `Unsafe` is required
-- stronger stdlib wrapper patterns around unsafe operations
 - more explicit calling-convention rules
 - ABI notes for additional targets
 - low-level FFI helper patterns in the stdlib

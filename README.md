@@ -121,6 +121,33 @@ For critical systems, one of the most important future directions is not "more p
 
 For the full language specification, see [The Concrete Programming Language: Systems Programming for Formal Reasoning](https://federicocarrone.com/series/concrete/the-concrete-programming-language-systems-programming-for-formal-reasoning/).
 
+## Where Concrete Fits
+
+Concrete is not trying to replace Rust, C++, or Go as a general-purpose systems language. Its strongest long-term case is narrower: software that must be small, explicit, reviewable, and honest about power.
+
+The most compelling targets are mission-critical components with narrow authority and clear trust boundaries, for example:
+
+- boot, update, and artifact verification tools
+- key-handling and cryptographic policy helpers
+- policy engines and authorization layers
+- configuration, manifest, and protocol validators
+- safety/security guard processes with tightly bounded behavior
+- audited wrappers around critical C libraries or hardware interfaces
+- small supervisory/control kernels inside larger systems
+
+If the full roadmap lands, the more interesting destination is not only "safer CLI tools." It is small high-consequence components such as:
+
+- spacecraft or satellite command gatekeepers
+- industrial control safety interlocks
+- medical-device policy kernels
+- secure update and attestation roots
+- cryptographic control-plane decision cores
+- cross-domain or high-assurance data-release policy engines
+
+This is the kind of software where Concrete should eventually offer something meaningfully different from Rust: not a broader ecosystem, but a stronger story around explicit authority, auditable trust boundaries, restricted profiles, and proof/evidence-friendly compilation.
+
+Concrete is a poor fit for software that mainly wins from ecosystem breadth, heavy async frameworks, or very large general-purpose application stacks. The goal is not "systems language for everything." The goal is "systems language for software that must be explicit enough to inspect, constrain, and trust."
+
 ## Doc Map
 
 - [README.md](README.md) — start here: project overview, status, build/test usage

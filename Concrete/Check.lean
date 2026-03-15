@@ -1854,8 +1854,25 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
         throwCheck (.continueSkipsUnconsumedLinear name) (some stmt.getSpan)
 
 partial def checkStmts (stmts : List Stmt) (retTy : Ty) : CheckM Unit := do
+  let mut accumulated : Diagnostics := []
   for stmt in stmts do
-    checkStmt stmt retTy
+    let envBefore ← getEnv
+    let result := (checkStmt stmt retTy).run envBefore |>.run
+    match result with
+    | (.ok (), envAfter) => setEnv envAfter
+    | (.error ds, _) =>
+      accumulated := accumulated ++ ds
+      -- Restore env so subsequent statements see a consistent state.
+      -- For let-declarations, add the variable with its declared type (or placeholder)
+      -- so later statements referencing it don't cascade spurious errors.
+      setEnv envBefore
+      match stmt with
+      | .letDecl _ name _ ty _ =>
+        let placeholderTy := ty.getD .placeholder
+        addVar name placeholderTy false
+      | _ => pure ()
+  if !accumulated.isEmpty then
+    throw accumulated
 
 /-- After if/else, check both branches agree on linear var consumption. -/
 partial def mergeVarStates

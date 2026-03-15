@@ -317,11 +317,11 @@ Primary surfaces:
 
 1. improve capability and trust ergonomics — **done** — added actionable hints to all capability-related error messages in both Check.lean and CoreCheck.lean: `missingCapability` (suggests `with(Cap)` on calling function or trusted wrapper), `insufficientCapabilities` (same), `cannotInferCapVariable` (explains explicit capability binding), pointer/alloc operation errors (specific `with(Unsafe)` or `with(Alloc)` hints)
 2. deepen capability/trust reporting — **done** — `--report authority` (transitive authority analysis with BFS call-chain traces per capability) and `--report proof` (ProofCore eligibility with exclusion reasons: capabilities, trusted, extern, raw pointers) implemented in `Report.lean`, dispatched from `Main.lean`, regression-tested with 15 semantic assertions
-3. add stronger patterns for explicit authority wrappers and capability aliases — **not started**
+3. add stronger patterns for explicit authority wrappers and capability aliases — **done** — `cap IO = File + Console;` syntax parsed and expanded at parse time, transparent to Check/Elab/CoreCheck. Validates cap names at definition, supports `Std` macro, supports `pub cap`. Authority wrapper patterns documented in `docs/FFI.md` with stdlib examples (`trusted impl Vec`, `trusted impl TextFile`, etc.). 3 regression tests
 4. make safety features easier to use correctly in ordinary programs without weakening honesty — **not started**
 5. ensure docs, diagnostics, and reports present one coherent safety story — **not started**
 6. define the shape of a high-integrity safety profile — **not started**
-7. improve bounded semantic error recovery so ordinary users get more than one useful body-local diagnostic without sacrificing honesty — **not started**
+7. improve bounded semantic error recovery so ordinary users get more than one useful body-local diagnostic without sacrificing honesty — **done** — `checkStmts` (Check.lean) and `elabStmts` (Elab.lean) now catch per-statement errors, restore env on failure, add placeholder types for failed let-declarations, and accumulate all diagnostics before throwing. 4 regression tests verify multi-error reporting from single function bodies
 
 Deliverables:
 - clearer user-facing capability and trust ergonomics in diagnostics/docs/reports

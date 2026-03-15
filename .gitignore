@@ -17,8 +17,10 @@ build/
 .cache/
 # Compiled example binaries (keep .con sources)
 /tmp/
-# Compiled test binaries
+# Compiled test binaries (keep .con sources, ignore extensionless binaries)
 lean_tests/trait_numeric_abs
+lean_tests/cap_alias_basic
+lean_tests/cap_alias_pub
 *.con.test
 
 # Compiled checker binaries

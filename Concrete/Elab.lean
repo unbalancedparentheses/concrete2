@@ -939,9 +939,27 @@ partial def elabStmt (stmt : Stmt) : ElabM (List CStmt) := do
 
 partial def elabStmts (stmts : List Stmt) : ElabM (List CStmt) := do
   let mut result : List CStmt := []
+  let mut accumulated : Diagnostics := []
   for s in stmts do
-    let cs ← elabStmt s
-    result := result ++ cs
+    let envBefore ← getEnv
+    let r := (elabStmt s).run envBefore |>.run
+    match r with
+    | (.ok cs, envAfter) =>
+      setEnv envAfter
+      result := result ++ cs
+    | (.error ds, _) =>
+      accumulated := accumulated ++ ds
+      -- Restore env so subsequent statements see a consistent state.
+      -- For let-declarations, add the variable with its declared type (or placeholder)
+      -- so later statements referencing it don't cascade spurious errors.
+      setEnv envBefore
+      match s with
+      | .letDecl _ name _ ty _ =>
+        let placeholderTy := ty.getD .placeholder
+        addVar name placeholderTy
+      | _ => pure ()
+  if !accumulated.isEmpty then
+    throw accumulated
   return result
 
 end

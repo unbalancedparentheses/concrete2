@@ -1612,6 +1612,7 @@ partial def parseModuleBody (stopToken : TokenKind) : ParseM Module := do
   let mut typeAliases : List TypeAlias := []
   let mut externFns : List ExternFnDecl := []
   let mut newtypes : List NewtypeDef := []
+  let mut capAliases : List CapAlias := []
   let mut submodules : List Module := []
   let mut pendingRepr : Option ReprOpts := none
   let mut pendingIsTest : Bool := false
@@ -1694,6 +1695,29 @@ partial def parseModuleBody (stopToken : TokenKind) : ParseM Module := do
         else if tk == .type_ then
           let ta ← parseTypeAlias
           typeAliases := typeAliases ++ [{ ta with isPublic := isPub }]
+        else if tk == .cap_ then
+          let sp ← peekSpan
+          advance  -- consume 'cap'
+          let name ← expectIdent
+          expect .assign
+          let mut caps : List String := []
+          let firstName ← expectIdent
+          caps := [firstName]
+          let mut tk2 ← peek
+          while tk2 == .plus do
+            advance  -- consume '+'
+            let capName ← expectIdent
+            caps := caps ++ [capName]
+            tk2 ← peek
+          expect .semicolon
+          -- Expand "Std" macro inside alias definitions
+          let expanded := caps.flatMap fun c =>
+            if c == stdCapMacroName then stdCaps else [c]
+          -- Validate all names are known capabilities
+          for c in expanded do
+            if !validCaps.contains c then
+              throw s!"unknown capability '{c}' in cap alias '{name}', at {sp.line}:{sp.col}"
+          capAliases := capAliases ++ [{ name, caps := expanded, isPublic := isPub, span := sp }]
         else if tk == .newtype_ then
           let nt ← parseNewtypeDef
           newtypes := newtypes ++ [{ nt with isPublic := isPub }]
@@ -1740,7 +1764,7 @@ partial def parseModuleBody (stopToken : TokenKind) : ParseM Module := do
           throw s!"unexpected token {tk} at {sp.line}:{sp.col}"
     tk ← peek
   return { name := "", structs, enums, functions := fns, imports, implBlocks, traits,
-           traitImpls, constants, typeAliases, externFns, newtypes, submodules }
+           traitImpls, constants, typeAliases, capAliases, externFns, newtypes, submodules }
 
 partial def parseModule : ParseM Module := do
   expect .«mod»

@@ -10,6 +10,8 @@ Concrete is a low-level language optimized for auditability, explicit trust, and
 
 It is not trying to win by having the largest feature set, the most metaprogramming, or the broadest ecosystem first. Its intended advantage is that important low-level properties stay explicit enough to inspect, report, audit, and eventually prove.
 
+The clearest long-term fit is not "general systems programming for everything." It is software that must be small, explicit, reviewable, and honest about power: high-integrity components, audit-heavy infrastructure, security-sensitive utilities, and other mission-critical kernels where narrow authority and visible trust boundaries matter more than ecosystem breadth.
+
 ## Why Concrete Exists
 
 Concrete was created to close a gap between systems programming and mechanized reasoning.
@@ -175,6 +177,15 @@ Concrete should instead be strongest where those languages are not explicitly ce
 - proof-friendly compiler structure
 - a smaller and more honest semantic surface
 - a path toward high-integrity profiles for critical systems without requiring Concrete to become a giant verification-first language
+
+The most interesting target is not just "safer CLI tools." It is small high-consequence components inside larger critical systems, for example:
+
+- boot/update verification roots
+- key-handling or cryptographic policy helpers
+- command gatekeepers for hardware or remote systems
+- industrial or medical safety-policy kernels
+- audited wrappers around critical C or device interfaces
+- cross-domain or high-assurance data-release policy engines
 
 Compared to Lean, Concrete is not trying to be a proof assistant. It is trying to be the low-level language that Lean 4 can reason about well.
 

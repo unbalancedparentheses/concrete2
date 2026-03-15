@@ -58,10 +58,10 @@ structure SSAProgram where
 
 namespace Pipeline
 
-/-- Parse source code into a `ParsedProgram`. -/
+/-- Parse source code into a `ParsedProgram`. Expands capability aliases. -/
 def parse (source : String) : Except Diagnostics ParsedProgram :=
   match liftStringError "parse" (Concrete.parse source) with
-  | .ok modules => .ok { modules }
+  | .ok modules => .ok { modules := modules.map Module.expandCapAliases }
   | .error ds => .error ds
 
 /-- Resolve `mod X;` declarations by reading sub-module files from disk.

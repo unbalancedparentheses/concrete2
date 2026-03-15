@@ -10,6 +10,37 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Phase F items 1–3, 7 complete: Capability and Safety Productization
+
+Four Phase F items landed, covering capability ergonomics, reporting, aliases, and error recovery.
+
+**Item 1 — Capability error hints**: All capability-related errors in `Check.lean` and `CoreCheck.lean` now include actionable `hint:` text. `missingCapability` suggests `with(Cap)` on the calling function or a trusted wrapper. `insufficientCapabilities` suggests the same. `cannotInferCapVariable` explains explicit capability binding. Pointer/alloc operation errors suggest specific capabilities (`with(Unsafe)`, `with(Alloc)`).
+
+**Item 2 — Authority and proof reports**: Two new `--report` modes implemented in `Report.lean`:
+- `--report authority`: transitive authority analysis per capability with BFS call-chain traces through the call graph
+- `--report proof`: ProofCore eligibility analysis — marks each function as eligible or excluded with specific reasons (capabilities, trusted, extern calls, raw pointers)
+15 semantic assertions in `run_tests.sh`. Total report modes: 8 with 59 assertions.
+
+**Item 3 — Capability aliases**: New `cap IO = File + Console;` syntax at module level. Parsed by the parser, expanded at parse time via `Module.expandCapAliases`, transparent to Check/Elab/CoreCheck. Validates cap names at definition time; supports `Std` macro and `pub cap`. Authority wrapper patterns documented in `docs/FFI.md` with stdlib examples.
+
+**Item 7 — Bounded semantic error recovery**: `checkStmts` (Check.lean) and `elabStmts` (Elab.lean) now catch per-statement errors, restore the type environment on failure, and add placeholder types for failed let-declarations to prevent cascading errors. All accumulated diagnostics are thrown together. Statement-level granularity avoids guessing at expression-level placeholders while catching independent errors.
+
+What changed:
+- `Concrete/AST.lean`: `CapAlias` structure, `CapSet.expandAliases`, `Module.expandCapAliases`
+- `Concrete/Parser.lean`: `cap Name = Cap1 + Cap2;` parsing at module level
+- `Concrete/Pipeline.lean`: alias expansion in `Pipeline.parse`
+- `Concrete/Check.lean`: per-statement error recovery in `checkStmts`; consumes `ResolvedProgram`; capability error hints
+- `Concrete/Elab.lean`: per-statement error recovery in `elabStmts`; consumes `ResolvedProgram`
+- `Concrete/CoreCheck.lean`: capability error hints
+- `Concrete/Report.lean`: `authorityReport` and `proofReport` functions
+- `Main.lean`: authority/proof report dispatch
+- `docs/FFI.md`: authority wrapper patterns, capability aliases
+- `docs/PASSES.md`: error accumulation, cap alias expansion, pipeline signature fixes
+- `docs/DIAGNOSTICS.md`: statement-level accumulation policy
+- `docs/ARCHITECTURE.md`: Parse cap alias expansion, Check error accumulation
+
+Test suite: 685 tests passing (7 new: 4 error recovery, 3 capability alias).
+
 ### Phase E complete: Runtime and Execution Model
 
 Phase E is done. All 11 items are complete. `docs/EXECUTION_MODEL.md` is the central reference.

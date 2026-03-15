@@ -74,6 +74,7 @@ Good candidates:
 - audit-heavy infrastructure/tools
 - security-sensitive low-level utilities
 - deterministic service components
+- mission-critical policy and control kernels
 
 These domains fit Concrete's current direction because they reward:
 
@@ -110,10 +111,34 @@ The current best candidates look like:
 
 1. audit-heavy infrastructure and systems utilities
 2. high-integrity components with explicit runtime/authority restrictions
+3. small mission-critical policy/control components inside larger systems
 
 These are better than "general systems programming" because they give Concrete a sharper answer to:
 
 why this language?
+
+### Mission-Critical Examples
+
+If Concrete earns its full roadmap, the most compelling mission-critical use cases are likely to be small, high-consequence components rather than entire giant platforms. Examples include:
+
+- secure boot, update, and attestation verifiers
+- cryptographic control-plane or key-use policy engines
+- spacecraft or satellite command gatekeepers
+- industrial control safety interlocks
+- medical-device policy kernels
+- privileged installer or deployment verification helpers
+- audited wrappers around critical C libraries, device APIs, or firmware interfaces
+- cross-domain or high-assurance data-release policy engines
+
+These are attractive because they reward several Concrete strengths at once:
+
+- narrow authority
+- visible trust boundaries
+- explicit runtime/resource behavior
+- reviewability
+- later proof/evidence leverage
+
+They also keep the language honest about scope: Concrete is more likely to justify itself as the language for small critical kernels than as the language for every surrounding subsystem.
 
 ## Showcase Strategy
 

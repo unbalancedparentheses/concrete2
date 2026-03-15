@@ -92,13 +92,15 @@ Main caution:
 **Postconditions:**
 - All tokens consumed. AST is syntactically well-formed.
 - Module hierarchy (submodules) preserved.
+- Capability aliases (`cap IO = File + Console;`) parsed and expanded: all `CapSet`s in function defs, impl blocks, trait sigs, trait impls, and function pointer types have alias names replaced with their constituent capabilities.
 - No semantic validation performed.
 
 **Error conditions:**
 - Unexpected token, unterminated string, mismatched brackets/braces.
 - Nested generic ambiguity handled (`>>` split into `> >`).
+- Unknown capability name in `cap` alias definition.
 
-**Invariant established:** Syntactically valid AST with all tokens consumed.
+**Invariant established:** Syntactically valid AST with all tokens consumed. Capability aliases fully expanded.
 
 ---
 
@@ -157,6 +159,12 @@ Resolve is strictly a shallow/interface validation pass. It operates on `FileSum
 - Missing capability for effect-requiring calls.
 - Invalid borrow nesting, consuming borrowed references.
 
+**Error accumulation:** Check accumulates errors at two granularities:
+- Across functions/modules: `checkModule` runs each function independently, collecting all per-function errors.
+- Within function bodies: `checkStmts` catches per-statement errors, restores the type environment on failure, and adds placeholder types for failed let-declarations to prevent cascading "undeclared variable" errors. All accumulated diagnostics are thrown at the end.
+
+**Capability error hints:** Capability-related errors include actionable `hint:` text suggesting `with(Cap)` additions or trusted wrapper alternatives.
+
 **Invariant established:** Types consistent, linearity valid, capabilities valid, FFI-safe types at extern boundaries. All names resolve within module scopes.
 
 **FFI safety validation:**
@@ -193,6 +201,10 @@ Resolve is strictly a shallow/interface validation pass. It operates on `FileSum
 **Error conditions** (all errors use the structured `ElabError` inductive, rendered to identical strings via `ElabError.message`):
 - Unresolved trait method, unknown type in elaboration context.
 - Import resolution failures.
+
+**Error accumulation:** Elab accumulates errors at two granularities:
+- Across functions/modules: `elabModule` runs each function independently, collecting all per-function errors.
+- Within function bodies: `elabStmts` catches per-statement errors, skips failed statements from the output, and adds placeholder types for failed let-declarations. All accumulated diagnostics are thrown at the end.
 
 **Invariant established:** Fully type-annotated Core IR. Methods/arrows/for desugared. Generic type parameters still present.
 
@@ -469,10 +481,10 @@ Source Text
   Pipeline.resolve ─── ParsedProgram × SummaryTable → ResolvedProgram (List ResolvedModule)
     │
     ▼
-  Pipeline.check ─── ParsedProgram × SummaryTable → Unit
+  Pipeline.check ─── ResolvedProgram × SummaryTable → Unit
     │
     ▼
-  Pipeline.elaborate ─── ParsedProgram × SummaryTable → ElaboratedProgram (List CModule)
+  Pipeline.elaborate ─── ResolvedProgram × SummaryTable → ElaboratedProgram (List CModule)
     │                     (elab + canonicalize, no validation)
     ▼
   Pipeline.coreCheck ─── ElaboratedProgram → ValidatedCore (List CModule)
@@ -529,6 +541,7 @@ These are audit-oriented modes — they answer questions about what the program 
 | Property | Established by | Relied upon by |
 |----------|---------------|----------------|
 | Syntactic validity | Parse | All subsequent passes |
+| Capability aliases expanded | Parse | Check, Elab, CoreCheck (see only concrete cap names) |
 | FileSummary (declaration-level interface) | buildSummaryTable | Resolve, Check, Elab |
 | ResolvedImports (per-module import artifact) | resolveImportsFromTable | Check, Elab |
 | Name resolution, import validity | Resolve | Check, Elab (names exist, imports valid) |

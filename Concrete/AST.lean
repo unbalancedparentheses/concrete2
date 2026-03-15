@@ -45,6 +45,18 @@ def CapSet.isEmpty : CapSet → Bool
   | .concrete caps => caps.isEmpty
   | _ => false
 
+/-- Expand capability alias names in a CapSet using the given alias table. -/
+def CapSet.expandAliases (aliases : List (String × List String)) : CapSet → CapSet
+  | .empty => .empty
+  | .concrete caps =>
+    let expanded := caps.flatMap fun c =>
+      match aliases.find? fun (n, _) => n == c with
+      | some (_, expansion) => expansion
+      | none => [c]
+    .concrete (expanded.eraseDups)
+  | .var n => .var n
+  | .union a b => .union (a.expandAliases aliases) (b.expandAliases aliases)
+
 inductive Ty where
   | int          -- Int or i64
   | uint         -- Uint or u64
@@ -251,6 +263,14 @@ structure TypeAlias where
   span : Span := default
   deriving Repr
 
+/-- Capability alias declaration: `cap IO = File + Console;` -/
+structure CapAlias where
+  name : String
+  caps : List String
+  isPublic : Bool := false
+  span : Span := default
+  deriving Repr
+
 structure ExternFnDecl where
   name : String
   params : List Param
@@ -310,9 +330,72 @@ structure Module where
   traitImpls : List ImplTraitBlock := []
   constants : List ConstDef := []
   typeAliases : List TypeAlias := []
+  capAliases : List CapAlias := []
   externFns : List ExternFnDecl := []
   newtypes : List NewtypeDef := []
   submodules : List Module := []
+
+-- ============================================================
+-- Capability Alias Expansion
+-- ============================================================
+
+/-- Expand capability aliases in a Ty (only affects fn_ types with CapSets). -/
+partial def Ty.expandCapAliases (aliases : List (String × List String)) : Ty → Ty
+  | .fn_ params cs ret =>
+    .fn_ (params.map (Ty.expandCapAliases aliases))
+         (cs.expandAliases aliases)
+         (Ty.expandCapAliases aliases ret)
+  | .ref t => .ref (t.expandCapAliases aliases)
+  | .refMut t => .refMut (t.expandCapAliases aliases)
+  | .ptrMut t => .ptrMut (t.expandCapAliases aliases)
+  | .ptrConst t => .ptrConst (t.expandCapAliases aliases)
+  | .array t n => .array (t.expandCapAliases aliases) n
+  | .generic n args => .generic n (args.map (Ty.expandCapAliases aliases))
+  | .heap t => .heap (t.expandCapAliases aliases)
+  | .heapArray t => .heapArray (t.expandCapAliases aliases)
+  | t => t
+
+private def expandCapAliasesInParam (aliases : List (String × List String))
+    (p : Param) : Param :=
+  { p with ty := p.ty.expandCapAliases aliases }
+
+private partial def expandCapAliasesInFnDef (aliases : List (String × List String))
+    (f : FnDef) : FnDef :=
+  { f with
+    params := f.params.map (expandCapAliasesInParam aliases)
+    retTy := f.retTy.expandCapAliases aliases
+    capSet := f.capSet.expandAliases aliases }
+
+private def expandCapAliasesInFnSig (aliases : List (String × List String))
+    (s : FnSigDef) : FnSigDef :=
+  { s with
+    params := s.params.map (expandCapAliasesInParam aliases)
+    retTy := s.retTy.expandCapAliases aliases
+    capSet := s.capSet.expandAliases aliases }
+
+private def expandCapAliasesInExternFn (aliases : List (String × List String))
+    (e : ExternFnDecl) : ExternFnDecl :=
+  { e with
+    params := e.params.map (expandCapAliasesInParam aliases)
+    retTy := e.retTy.expandCapAliases aliases }
+
+/-- Expand all capability aliases in a module. Call after parsing. -/
+partial def Module.expandCapAliases (m : Module) : Module :=
+  let aliases := m.capAliases.map fun ca => (ca.name, ca.caps)
+  if aliases.isEmpty then m
+  else
+    { m with
+      functions := m.functions.map (expandCapAliasesInFnDef aliases)
+      implBlocks := m.implBlocks.map fun ib =>
+        { ib with methods := ib.methods.map (expandCapAliasesInFnDef aliases) }
+      traits := m.traits.map fun td =>
+        { td with methods := td.methods.map (expandCapAliasesInFnSig aliases) }
+      traitImpls := m.traitImpls.map fun tb =>
+        { tb with
+          capSet := tb.capSet.expandAliases aliases
+          methods := tb.methods.map (expandCapAliasesInFnDef aliases) }
+      externFns := m.externFns.map (expandCapAliasesInExternFn aliases)
+      submodules := m.submodules.map Module.expandCapAliases }
 
 -- ============================================================
 -- Free Variable Analysis (used by Check)

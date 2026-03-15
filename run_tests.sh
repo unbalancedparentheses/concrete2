@@ -1111,6 +1111,15 @@ run_err "$TESTDIR/error_untrusted_calls_trusted_ptr.con" "requires capability"
 run_err "$TESTDIR/error_untrusted_ptr_assign.con" "requires capability"
 # Builtin capability enforcement
 run_err "$TESTDIR/error_abort_no_process.con" "but caller has"
+# Multi-error recovery: multiple errors reported from one function body
+run_err "$TESTDIR/error_multi_body.con" "type mismatch in let binding 'y'"
+run_err "$TESTDIR/error_multi_body.con" "type mismatch in let binding 'x'"
+run_err "$TESTDIR/error_multi_recovery.con" "type mismatch in let binding 'x'"
+run_err "$TESTDIR/error_multi_recovery.con" "type mismatch in let binding 'y'"
+# Capability alias tests
+run_ok "$TESTDIR/cap_alias_basic.con" 1
+run_ok "$TESTDIR/cap_alias_pub.con" 42
+run_err "$TESTDIR/error_cap_alias_missing.con" "requires Network but caller has"
 
 # === String edge case tests ===
 run_ok "$TESTDIR/string_empty.con" 0
@@ -2034,6 +2043,9 @@ if [ -d "$FAILDIR" ] && [ "$(ls -A "$FAILDIR" 2>/dev/null)" ]; then
     echo "  Failure artifacts saved to $FAILDIR/"
     echo "  Rerun individual failures with the commands in each file."
 fi
+# Clean up any stray compiled binaries left in lean_tests/ (extensionless files)
+find "$TESTDIR" -maxdepth 1 -type f ! -name '*.*' -delete 2>/dev/null || true
+
 echo ""
 if [ "$FAIL" -gt 0 ]; then
     exit 1

@@ -142,7 +142,7 @@ Main caution:
 **Input:** source text  
 **Output:** surface AST with source spans
 
-Lexing, parsing, syntax error reporting. Preserves user-written structure. LL(1), no semantic reasoning.
+Lexing, parsing, syntax error reporting. Preserves user-written structure. LL(1), no semantic reasoning. Expands capability aliases (`cap IO = File + Console;`) at parse time so downstream passes see only concrete capability names.
 
 Does not do:
 - type reasoning
@@ -173,6 +173,8 @@ Owns the remaining surface-context-dependent work:
 - type inference
 - cap-polymorphic call resolution
 - reserved-name early gate
+
+Accumulates errors at both module level (across functions) and statement level (within function bodies). Failed let-declarations add placeholder types to prevent cascading errors.
 
 ### 4. Elaborate
 
@@ -325,7 +327,7 @@ It should only know syntax.
 
 | Category | Lives in | Examples |
 |----------|----------|----------|
-| Syntax features | Parser | `if`, `match`, `fn`, `struct`, `enum` |
+| Syntax features | Parser | `if`, `match`, `fn`, `struct`, `enum`, `cap` (alias) |
 | Checker/elaboration intrinsics | Elaborate + Validate | intercepted calls (`alloc`, `free`, `vec_*`, `map_*`), type constructors |
 | Runtime/codegen intrinsics | Lower + EmitSSA | memory layout, calling conventions, POSIX wrappers |
 | Ordinary library code | `std/` source files | string utilities, I/O wrappers, collection helpers |

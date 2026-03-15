@@ -29,7 +29,8 @@ Today the compiler already has:
 - hint text on a growing set of semantic diagnostics
 - stable rendered messages for the semantic passes
 - a shared `Diagnostic` type
-- module/function-level multi-error accumulation in `Check` and `Elab`
+- module/function-level and statement-level multi-error accumulation in `Check` and `Elab`
+- actionable `hint:` text on capability-related errors (suggests `with(Cap)` or trusted wrappers)
 
 This means diagnostics are no longer mostly raw strings, and pass ownership is visible in emitted errors.
 
@@ -54,11 +55,11 @@ Add richer presentation support:
 - suggestions
 - more consistent multi-line formatting
 
-### 3. Optional later accumulation refinement
+### 3. Accumulation refinement (done)
 
-Concrete already accumulates across functions/modules in `Check` and `Elab`. Further accumulation work should only happen if it improves real diagnostic quality without making control flow much harder to reason about.
+Concrete accumulates across functions/modules and within function bodies (statement-level) in both `Check` and `Elab`. The current granularity is intentional — statement-level recovery catches independent errors without guessing at expression-level placeholders.
 
-This remains intentionally secondary to span fidelity and rendering quality.
+Further accumulation refinement (e.g., expression-level recovery, cross-block recovery) should only happen if it improves real diagnostic quality without producing misleading cascading errors.
 
 ## Current Architectural Rule
 
@@ -77,7 +78,14 @@ Concrete is no longer purely fail-fast in the semantic pipeline.
 Current behavior:
 
 - `Resolve` accumulates diagnostics across shallow/interface and body-level work
-- `Check` and `Elab` now accumulate across functions/modules
-- there is still no broad semantic recovery inside a single body; accumulation is deliberately coarse-grained
+- `Check` and `Elab` accumulate across functions/modules
+- `Check` and `Elab` also accumulate within function bodies at statement granularity: `checkStmts` and `elabStmts` catch per-statement errors, restore the type environment on failure, and add placeholder types for failed let-declarations to prevent cascading errors
+
+This means users see all independent errors in a function body, not just the first one. The recovery is bounded — it operates at statement level, not expression level — which avoids guessing at placeholder values while still catching most independent errors.
+
+Design constraints:
+- Failed let-declarations add the declared type (or `.placeholder`) to the environment so subsequent statements can still be checked/elaborated
+- Environment is restored to pre-statement state on failure, keeping the type environment honest
+- All accumulated diagnostics are thrown together at the end of the statement list
 
 If this changes further later, this document should be the place where the policy and rollout are recorded.
