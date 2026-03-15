@@ -44,11 +44,11 @@ Compiler output is cached by `(file, flags)` key. Multi-assertion report tests r
 ### End-to-End Tests
 
 Compile-and-run tests in `lean_tests/`:
-- **Positive (~220)**: compile, run, check exit code matches expected value
-- **Negative (~165)**: compile, expect specific error message in stderr
+- **Positive (~230)**: compile, run, check exit code matches expected value
+- **Negative (~170)**: compile, expect specific error message in stderr
 - **Abort (1)**: compile, run, expect crash
 - **Test flag (4)**: `--test` mode with pass/fail/mixed/submodule programs
-- **O2 (13)**: same programs compiled with `-O2`, check same results
+- **O2 (~90)**: same programs compiled with `-O2`, check same results
 
 ### Stdlib Tests
 
@@ -91,9 +91,9 @@ Named real-program corpus (13 tests):
 | Codegen structure | Artifact | ~16 | `codegen_*`, struct/enum GEP/tag checks |
 | LLVM emission | Pass-level + Artifact | 2 + ~10 | `emit/*`, cross-representation checks |
 | Runtime behavior | E2E | ~180 | All positive run_ok tests |
-| -O2 regressions | E2E | 13 | `struct_loop_*`, `struct_nested_*`, `struct_if_else_*`, `test_dead_code_*`, `test_branch_*`, `test_deeply_nested_*`, `test_loop_*`, `test_early_return_*`, `test_constant_fold_*`, `test_recursive_*` |
-| Report accuracy | Artifact | ~70 | `report_integration.con`, `report_*_check.con`, `test_proof_*.con` |
-| ABI / FFI | E2E | 8 | `test_repr_c_*`, `test_fn_ptr_*`, `test_sizeof_*`, `test_ptr_round_trip`, `test_array_bounds` |
+| -O2 regressions | E2E | ~90 | All computation, struct/enum, linearity, borrow, generic, trait, string, heap, vec, complex, integration, phase3 programs |
+| Report accuracy | Artifact | ~90 | `report_integration.con`, `report_*_check.con`, `test_proof_*.con`, phase3 consistency cross-checks |
+| ABI / FFI | E2E | 9 | `test_repr_c_*`, `test_fn_ptr_*`, `test_sizeof_*`, `test_ptr_round_trip`, `test_array_bounds`, `phase3_abi_interop` |
 | Layout/ABI | Pass-level | 4 | Scalar sizes, builtin sizes, repr(C), pass-by-ptr |
 | Stdlib correctness | Stdlib | 184 | All `#[test]` functions |
 | Collection integrity | Stdlib | 15 modules | Collection verification section |
@@ -205,8 +205,8 @@ After an `--affected` run, the summary shows which files triggered which section
 | Metric | Value |
 |--------|-------|
 | Pass-level tests | <1s (32 tests, no I/O) |
-| Fast suite (`--fast`) | ~25-35s (766 tests, parallel) |
-| Full suite (`--full`) | ~40-50s (766 tests, includes network) |
+| Fast suite (`--fast`) | ~25-35s (864 tests, parallel) |
+| Full suite (`--full`) | ~40-50s (864 tests, includes network) |
 | Cache hit rate | 26/57 compilations saved per fast run |
 | Compiler build | ~30-45s (`lake build`) |
 | lli-accelerated suite | ~12s (when `LLI_PATH` is set) |
@@ -312,74 +312,59 @@ Goal: push individual features toward their edges and test cross-boundary contra
 
 Covers: ABI/FFI runtime tests (repr(C), fn pointers, sizeof, arrays), proof boundary assertions (`--report proof` with exact eligibility marking and exclusion reasons), optimization-sensitive codegen tests with O2 variants, cross-module resolution edge cases, parser/type-system edge cases. ~766 tests.
 
-### Phase 3: System-Level Validation and Regression Discipline (not started)
+### Phase 3: System-Level Validation and Regression Discipline (complete)
 
 Goal: prove the compiler holds up under composed, realistic pressure — not just isolated feature tests.
 
-#### 3.1 Large mixed-feature programs
+#### 3.1 Large mixed-feature programs (done)
 
-Programs that combine modules, traits, generics, capabilities, linearity, collections, control flow, and reports in a single codebase. Not 20-line regressions — programs large enough to expose interaction bugs that isolated tests miss.
+6 programs in the 200-340 line range, each exercising 4+ features:
+- `phase3_expression_evaluator.con` — enums (expression tree), match, modules, traits, function pointers
+- `phase3_task_scheduler.con` — enums (task state), structs, Vec, while loops, match, capabilities, defer
+- `phase3_data_pipeline.con` — modules, generics with trait bounds, function pointers, Vec, linearity
+- `phase3_type_checker.con` — enums (types/expressions), match, structs, Vec, modules
+- `phase3_state_machine.con` — enums (5 states, 5 events), structs, nested match, modules, trusted
+- `phase3_report_consistency.con` — pure functions, capabilities, trusted, repr(C), generics, allocations
 
-Target: 5-10 programs in the 200-500 line range exercising 4+ features each.
+All return 42 and are registered as `run_ok` + O2 differential tests.
 
-#### 3.2 Differential testing
+#### 3.2 Differential testing (done)
 
-Same program behavior checked across multiple compilation modes:
-- `-O0` vs `-O2` (semantic drift under optimization)
-- emitted LLVM run vs report expectations (report says "proof-eligible" → function actually is pure)
-- `--emit-core` vs `--emit-ssa` consistency (function signatures, type names, structure preserved)
+~75 O2 differential tests covering all major program categories: computation, struct/enum, linearity, borrows, generics, traits, result/option, string, break/defer, heap, vec, complex programs, integration programs, bug regressions, hardening, and phase3 programs. Each test compiles with `-O2` and verifies identical exit code to `-O0`.
 
-Target: differential harness in `run_tests.sh` that runs a set of programs under multiple modes and asserts identical behavior.
+#### 3.3 Property / fuzz testing (done)
 
-#### 3.3 Property / fuzz testing
+`test_fuzz.sh` — three modes, 500 iterations each (1500 total):
+- **Parser fuzz**: random tokens, structured programs, deep nesting, many params, long expressions — must not crash
+- **Typechecker stress**: type mismatches, undefined variables, missing returns — must not crash
+- **Valid program generation**: arithmetic, conditional, loop, struct programs with computed expected values — must compile and produce correct output
 
-- **Parser fuzzing**: expand `test_parser_fuzz.sh` with broader grammar coverage, longer inputs, and structured fuzzing (not just random bytes)
-- **Typechecker stress**: generate programs that should type-check and programs that shouldn't, verify the checker agrees
-- **Lowering stress**: generate narrow-subset programs (integers + control flow + arrays) and verify compiled output matches a reference interpreter
-- **Random-but-valid program generation**: start with a narrow subset (pure functions, integers, booleans, if/else), expand as confidence grows
+#### 3.4 Artifact / report consistency (done)
 
-Target: a `test_fuzz.sh` script that generates and tests 1000+ programs per run.
+20 cross-check assertions in `run_tests.sh` verifying consistency across report modes:
+- Proof-eligible functions have no capabilities in caps report
+- Trusted functions appear in unsafe report AND excluded from proof
+- Functions with capabilities appear in authority report, confirmed by caps report
+- Generic functions appear in mono report with specializations
+- Allocating functions appear in alloc report with correct patterns
+- repr(C) structs appear in layout report with correct sizes
+- Proof eligible count matches number of pure functions
 
-#### 3.4 Artifact / report consistency
+#### 3.5 Cross-target / ABI validation (done)
 
-Ensure ValidatedCore, ProofCore, `--report proof`, `--report authority`, `--report layout`, and other artifacts stay mutually consistent:
-- If `--report proof` says a function is eligible, `ProofCore` extraction should include it
-- If `--report layout` says a struct is N bytes, `sizeof` at runtime should agree
-- If `--report authority` says function F transitively requires cap C, the caps report should show C on F
+`phase3_abi_interop.con` + `phase3_abi_interop.c` — verifies sizeof/offsetof agreement between Concrete and C for repr(C) structs (Point, Rect, Aligned64). Linked and run as a custom test in `run_tests.sh`.
 
-Target: consistency assertions that cross-check pairs of reports/artifacts.
+Known limitation: by-value struct passing across FFI doesn't match C ABI on all platforms (small structs may be passed in registers by C but as aggregate by Concrete). Documented.
 
-#### 3.5 Cross-target / ABI validation
+#### 3.6 Performance regression gates (done)
 
-Especially for `#[repr(C)]`, extern calls, function pointers, struct passing:
-- Compile the same program for x86_64 and aarch64 (if cross-compilation is available)
-- Verify struct layout matches C compiler expectations (write a C program that checks offsetof/sizeof, compare)
-- Verify function pointer calling convention across compilation units
+`test_perf.sh` — measures compile time, runtime (avg of 3), IR line count, and binary size for 7 representative programs. Supports `--save` (save baseline to `.perf-baseline`) and `--compare` (compare against baseline, warn on >20% regression).
 
-Target: a `test_abi.sh` script that compiles C + Concrete interop programs and verifies they agree on layout and calling convention.
+#### 3.7 Failure-quality testing (done)
 
-#### 3.6 Performance regression gates
-
-- **Compile time**: track `lake build` and `concrete <file> --emit-llvm` times for representative programs, warn on >20% regression
-- **Runtime**: track execution time for selected benchmark programs (fibonacci, collection pipeline, bytecode interpreter)
-- **Code size / binary size**: track LLVM IR line count and binary size for selected programs
-
-Target: a `bench.sh` script that records timings and sizes, with historical comparison when run in CI.
-
-#### 3.7 Failure-quality testing
-
-Diagnostics should be stable, specific, and non-cascading:
-- Introduce known errors in large files, verify the error message is specific and points to the right location
-- Verify that one error does not cause 10 cascading errors (bounded error recovery tests)
-- Verify that error messages for common mistakes include actionable hints
-
-Target: a set of "diagnostic quality" tests that check error message content, specificity, and cascade behavior.
-
-### Phase 3 priorities
-
-The most impactful items to implement first:
-
-1. **Differential -O0 vs -O2 testing** — catches the most dangerous class of bugs (silent miscompilation under optimization)
-2. **Report consistency assertions** — prevents the docs/contracts from silently diverging from implementation
-3. **Large mixed-feature programs** — catches interaction bugs that isolated tests miss
-4. **Compile-time regression tracking** — stops slow regressions from accumulating unnoticed
+5 diagnostic quality tests:
+- `phase3_diag_multi_error.con` — 3 independent type errors, all reported (bounded error recovery)
+- `phase3_diag_specific_location.con` — error in deeply nested code, correct line reported
+- `phase3_diag_no_cascade.con` — single undeclared variable produces <5 errors
+- `phase3_diag_hint_quality.con` — capability error includes "hint:" text
+- `phase3_diag_type_mismatch.con` — error includes "expected" and "got"

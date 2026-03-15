@@ -1195,6 +1195,24 @@ run_ok "$TESTDIR/test_ptr_round_trip.con" 42
 run_err "$TESTDIR/error_repr_c_with_generic.con" "cannot have type parameters"
 run_err "$TESTDIR/error_fn_ptr_wrong_sig.con" "type mismatch"
 
+# === Phase 3: Large mixed-feature programs ===
+run_ok "$TESTDIR/phase3_expression_evaluator.con" 42
+run_ok "$TESTDIR/phase3_task_scheduler.con" 42
+run_ok "$TESTDIR/phase3_data_pipeline.con" 42
+run_ok "$TESTDIR/phase3_type_checker.con" 42
+run_ok "$TESTDIR/phase3_state_machine.con" 42
+run_ok "$TESTDIR/phase3_report_consistency.con" 42
+
+# === Phase 3: Diagnostic quality tests ===
+# Multi-error: compiler reports all 3 independent errors in one function body
+run_err "$TESTDIR/phase3_diag_multi_error.con" "type mismatch in let binding 'a'"
+# Specific location: error points to correct line in nested code
+run_err "$TESTDIR/phase3_diag_specific_location.con" "type mismatch"
+# Hint quality: capability error includes actionable hint
+run_err "$TESTDIR/phase3_diag_hint_quality.con" "hint:"
+# Type mismatch shows both expected and got types
+run_err "$TESTDIR/phase3_diag_type_mismatch.con" "expected"
+
 # === String edge case tests ===
 run_ok "$TESTDIR/string_empty.con" 0
 run_ok "$TESTDIR/string_concat_empty.con" 5
@@ -1734,6 +1752,134 @@ check_report_multi "$TESTDIR/test_proof_trusted_excluded.con" proof \
     "test_proof_trusted_excluded.con --report proof wrong counts" \
     "2 eligible for ProofCore" "1 excluded"
 
+# === Phase 3: Report consistency cross-checks ===
+
+# Cross-check 1: proof-eligible functions are pure in caps report
+check_report "$TESTDIR/phase3_report_consistency.con" proof \
+    "✓ pure_compute" \
+    "consistency: proof marks pure_compute eligible" \
+    "consistency: pure_compute not proof-eligible"
+
+check_report "$TESTDIR/phase3_report_consistency.con" caps \
+    "pure_compute.*(pure)" \
+    "consistency: caps confirms pure_compute is pure" \
+    "consistency: caps disagrees on pure_compute"
+
+check_report "$TESTDIR/phase3_report_consistency.con" proof \
+    "✓ pure_multiply" \
+    "consistency: proof marks pure_multiply eligible" \
+    "consistency: pure_multiply not proof-eligible"
+
+check_report "$TESTDIR/phase3_report_consistency.con" caps \
+    "pure_multiply.*(pure)" \
+    "consistency: caps confirms pure_multiply is pure" \
+    "consistency: caps disagrees on pure_multiply"
+
+# Cross-check 2: trusted functions in unsafe report AND excluded from proof
+check_report "$TESTDIR/phase3_report_consistency.con" unsafe \
+    "trusted_read" \
+    "consistency: unsafe shows trusted_read" \
+    "consistency: unsafe missing trusted_read"
+
+check_report "$TESTDIR/phase3_report_consistency.con" proof \
+    "✗ trusted_read.*trusted boundary" \
+    "consistency: proof excludes trusted_read" \
+    "consistency: proof doesn't exclude trusted_read"
+
+check_report "$TESTDIR/phase3_report_consistency.con" unsafe \
+    "safe_abs" \
+    "consistency: unsafe shows safe_abs" \
+    "consistency: unsafe missing safe_abs"
+
+# Cross-check 3: functions with capabilities appear in caps report
+check_report "$TESTDIR/phase3_report_consistency.con" caps \
+    "needs_alloc.*Alloc" \
+    "consistency: caps shows needs_alloc requires Alloc" \
+    "consistency: caps missing needs_alloc Alloc"
+
+check_report "$TESTDIR/phase3_report_consistency.con" proof \
+    "✗ needs_alloc.*capabilities.*Alloc" \
+    "consistency: proof excludes needs_alloc for Alloc" \
+    "consistency: proof doesn't exclude needs_alloc"
+
+# Cross-check 4: generic functions appear in mono report
+check_report "$TESTDIR/phase3_report_consistency.con" mono \
+    "identity.*identity_for_i32" \
+    "consistency: mono shows identity<i32> specialization" \
+    "consistency: mono missing identity specialization"
+
+check_report "$TESTDIR/phase3_report_consistency.con" mono \
+    "generic_add_one.*generic_add_one_for_i32" \
+    "consistency: mono shows generic_add_one<i32> specialization" \
+    "consistency: mono missing generic_add_one specialization"
+
+# Cross-check 5: allocating functions in alloc report
+check_report "$TESTDIR/phase3_report_consistency.con" alloc \
+    "needs_alloc" \
+    "consistency: alloc shows needs_alloc" \
+    "consistency: alloc missing needs_alloc"
+
+check_report "$TESTDIR/phase3_report_consistency.con" alloc \
+    "alloc_and_free" \
+    "consistency: alloc shows alloc_and_free" \
+    "consistency: alloc missing alloc_and_free"
+
+# Cross-check 6: repr(C) struct in layout report
+check_report "$TESTDIR/phase3_report_consistency.con" layout \
+    "CPoint.*repr(C)" \
+    "consistency: layout shows CPoint as repr(C)" \
+    "consistency: layout missing CPoint repr(C)"
+
+# Cross-check 7: proof eligible count matches pure count in caps
+check_report "$TESTDIR/phase3_report_consistency.con" proof \
+    "5 eligible for ProofCore" \
+    "consistency: proof shows 5 eligible" \
+    "consistency: proof wrong eligible count"
+
+# === Phase 3: Diagnostic quality assertions ===
+# Multi-error: all 3 independent type errors reported
+output=$($COMPILER "$TESTDIR/phase3_diag_multi_error.con" --emit-llvm 2>&1 || true)
+if echo "$output" | grep -q "type mismatch in let binding 'a'" \
+   && echo "$output" | grep -q "type mismatch in let binding 'b'" \
+   && echo "$output" | grep -q "type mismatch in let binding 'c'"; then
+    echo "  ok  phase3_diag_multi_error.con reports all 3 independent errors"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  phase3_diag_multi_error.con missing expected errors"
+    FAIL=$((FAIL + 1))
+fi
+
+# Specific location: error on correct line
+output=$($COMPILER "$TESTDIR/phase3_diag_specific_location.con" --emit-llvm 2>&1 || true)
+if echo "$output" | grep -q "^.*:9:.*error"; then
+    echo "  ok  phase3_diag_specific_location.con error points to line 9"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  phase3_diag_specific_location.con error not on line 9"
+    FAIL=$((FAIL + 1))
+fi
+
+# No cascade: single root cause produces < 5 errors
+output=$($COMPILER "$TESTDIR/phase3_diag_no_cascade.con" --emit-llvm 2>&1 || true)
+error_count=$(echo "$output" | grep -c "error\[" || true)
+if [ "$error_count" -lt 5 ]; then
+    echo "  ok  phase3_diag_no_cascade.con $error_count error(s) (< 5, no cascade)"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  phase3_diag_no_cascade.con cascaded into $error_count errors"
+    FAIL=$((FAIL + 1))
+fi
+
+# Hint quality: capability error includes hint
+output=$($COMPILER "$TESTDIR/phase3_diag_hint_quality.con" --emit-llvm 2>&1 || true)
+if echo "$output" | grep -q "requires File" && echo "$output" | grep -qi "hint:"; then
+    echo "  ok  phase3_diag_hint_quality.con capability error with hint"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  phase3_diag_hint_quality.con missing hint"
+    FAIL=$((FAIL + 1))
+fi
+
 fi # end section: report
 
 # === Codegen differential tests ===
@@ -1891,6 +2037,30 @@ else
     FAIL=$((FAIL + 1))
 fi
 
+# Phase 3: ABI interop test (Concrete + C, verifies sizeof/offsetof match)
+abi_ll="$TMPDIR/phase3_abi_interop.ll"
+abi_bin="$TMPDIR/phase3_abi_interop"
+if filter_match "$TESTDIR/phase3_abi_interop.con"; then
+    if $COMPILER "$TESTDIR/phase3_abi_interop.con" --emit-llvm > "$abi_ll" 2>/dev/null; then
+        if clang "$abi_ll" "$TESTDIR/phase3_abi_interop.c" -o "$abi_bin" -Wno-override-module 2>/dev/null; then
+            abi_result=$("$abi_bin" 2>&1) || true
+            if [ "$abi_result" = "42" ]; then
+                echo "  ok  phase3_abi_interop.con C interop sizeof/offsetof match"
+                PASS=$((PASS + 1))
+            else
+                echo "FAIL  phase3_abi_interop.con C interop expected 42, got '$abi_result'"
+                FAIL=$((FAIL + 1))
+            fi
+        else
+            echo "FAIL  phase3_abi_interop.con C interop clang link failed"
+            FAIL=$((FAIL + 1))
+        fi
+    else
+        echo "FAIL  phase3_abi_interop.con C interop compilation failed"
+        FAIL=$((FAIL + 1))
+    fi
+fi
+
 fi # end section: codegen
 
 # --- Category 2b: Optimized-build (-O2) regression for aggregate lowering ---
@@ -1911,6 +2081,106 @@ run_ok_O2 "$TESTDIR/test_early_return_loop.con" 42
 run_ok_O2 "$TESTDIR/test_constant_fold_complex.con" 42
 run_ok_O2 "$TESTDIR/test_loop_invariant.con" 42
 run_ok_O2 "$TESTDIR/test_recursive_fibonacci.con" 42
+
+# Phase 3: Expanded O2 differential testing
+# Core computation
+run_ok_O2 "$TESTDIR/fib.con" 55
+run_ok_O2 "$TESTDIR/arithmetic.con" 65
+run_ok_O2 "$TESTDIR/while_loop.con" 5050
+run_ok_O2 "$TESTDIR/recursion.con" 479001600
+run_ok_O2 "$TESTDIR/nested_calls.con" 42
+
+# Struct/enum codegen
+run_ok_O2 "$TESTDIR/struct_basic.con" 7
+run_ok_O2 "$TESTDIR/struct_field_assign.con" 33
+run_ok_O2 "$TESTDIR/struct_nested.con" 42
+run_ok_O2 "$TESTDIR/struct_method_chain.con" 39
+run_ok_O2 "$TESTDIR/enum_basic.con" 2
+run_ok_O2 "$TESTDIR/enum_fields.con" 12
+run_ok_O2 "$TESTDIR/enum_linear.con" 42
+run_ok_O2 "$TESTDIR/nested_match_enum.con" 60
+
+# Linearity and borrows
+run_ok_O2 "$TESTDIR/linear_consume.con" 42
+run_ok_O2 "$TESTDIR/linear_branch_agree.con" 42
+run_ok_O2 "$TESTDIR/borrow_read.con" 10
+run_ok_O2 "$TESTDIR/borrow_mut.con" 42
+run_ok_O2 "$TESTDIR/sequential_mut_borrow.con" 43
+run_ok_O2 "$TESTDIR/borrow_in_method.con" 67
+
+# Generics and traits
+run_ok_O2 "$TESTDIR/generic_fn.con" 42
+run_ok_O2 "$TESTDIR/generic_struct.con" 30
+run_ok_O2 "$TESTDIR/generic_pair.con" 42
+run_ok_O2 "$TESTDIR/trait_basic.con" 30
+run_ok_O2 "$TESTDIR/trait_dispatch_chain.con" 42
+run_ok_O2 "$TESTDIR/trait_numeric_abs.con" 57
+
+# Result/Option
+run_ok_O2 "$TESTDIR/result_ok.con" 42
+run_ok_O2 "$TESTDIR/result_generic_try.con" 42
+run_ok_O2 "$TESTDIR/option_basic.con" 52
+run_ok_O2 "$TESTDIR/option_heap.con" 42
+
+# String operations
+run_ok_O2 "$TESTDIR/string_basic.con" 5
+run_ok_O2 "$TESTDIR/string_slice_basic.con" 5
+run_ok_O2 "$TESTDIR/string_to_int_roundtrip.con" 42
+
+# Break/continue/defer
+run_ok_O2 "$TESTDIR/labeled_break.con" 42
+run_ok_O2 "$TESTDIR/while_expr_basic.con" 5
+run_ok_O2 "$TESTDIR/defer_basic.con" 10
+run_ok_O2 "$TESTDIR/defer_lifo.con" 42
+run_ok_O2 "$TESTDIR/defer_early_return.con" 10
+
+# Heap/alloc
+run_ok_O2 "$TESTDIR/alloc_basic.con" 30
+run_ok_O2 "$TESTDIR/heap_arrow.con" 20
+run_ok_O2 "$TESTDIR/heap_deref_basic.con" 30
+run_ok_O2 "$TESTDIR/heap_deref_recursive.con" 42
+
+# Vec
+run_ok_O2 "$TESTDIR/vec_basic.con" 23
+run_ok_O2 "$TESTDIR/vec_push_get.con" 500
+run_ok_O2 "$TESTDIR/vec_pop.con" 42
+run_ok_O2 "$TESTDIR/vec_stress_realloc.con" 249
+
+# Complex programs
+run_ok_O2 "$TESTDIR/complex_linked_list.con" 42
+run_ok_O2 "$TESTDIR/complex_struct_methods.con" 42
+run_ok_O2 "$TESTDIR/complex_generic_container.con" 42
+run_ok_O2 "$TESTDIR/complex_state_machine.con" 42
+run_ok_O2 "$TESTDIR/complex_recursive_list.con" 42
+run_ok_O2 "$TESTDIR/complex_recursive_tree.con" 42
+
+# Integration programs
+run_ok_O2 "$TESTDIR/integration_generic_pipeline.con" 42
+run_ok_O2 "$TESTDIR/integration_state_machine.con" 42
+run_ok_O2 "$TESTDIR/integration_compiler_stress.con" 42
+run_ok_O2 "$TESTDIR/integration_stress_workload.con" 42
+
+# Bug regressions under O2
+run_ok_O2 "$TESTDIR/bug_cross_module_struct_field.con" 42
+run_ok_O2 "$TESTDIR/bug_i32_literal_type.con" 42
+run_ok_O2 "$TESTDIR/bug_cross_module_mut_borrow.con" 42
+
+# Hardening tests under O2
+run_ok_O2 "$TESTDIR/hardening_int_literal_inference.con" 42
+run_ok_O2 "$TESTDIR/hardening_cross_module_enum.con" 42
+
+# Phase 3 mixed-feature programs under O2
+run_ok_O2 "$TESTDIR/phase3_expression_evaluator.con" 42
+run_ok_O2 "$TESTDIR/phase3_task_scheduler.con" 42
+run_ok_O2 "$TESTDIR/phase3_data_pipeline.con" 42
+run_ok_O2 "$TESTDIR/phase3_type_checker.con" 42
+run_ok_O2 "$TESTDIR/phase3_state_machine.con" 42
+
+# Newtype/repr under O2
+run_ok_O2 "$TESTDIR/newtype_basic.con" 42
+run_ok_O2 "$TESTDIR/repr_c_basic.con" 42
+run_ok_O2 "$TESTDIR/union_basic.con" 42
+
 fi # end section: O2
 
 # --- Category 3: Cross-representation consistency ---

@@ -1,0 +1,70 @@
+// Phase 3 ABI interop test: verify Concrete and C agree on struct layout.
+// Calls C functions that report sizeof/offsetof and compare against
+// Concrete's sizeof::<T>().
+//
+// NOTE: by-value struct passing across FFI is not yet ABI-compatible
+// on all platforms (small structs may be passed in registers by C but
+// as aggregate by Concrete's LLVM IR). Sizes and offsets are tested here;
+// by-value passing is a known limitation tracked in docs/ABI.md.
+
+#[repr(C)]
+struct Copy Point {
+    x: i32,
+    y: i32,
+}
+
+#[repr(C)]
+struct Copy Rect {
+    origin: Point,
+    size: Point,
+}
+
+#[repr(C)]
+struct Copy Aligned64 {
+    a: i64,
+    b: i32,
+    c: i64,
+}
+
+// C functions (defined in phase3_abi_interop.c)
+trusted extern fn c_sizeof_point() -> i64;
+trusted extern fn c_sizeof_rect() -> i64;
+trusted extern fn c_sizeof_aligned64() -> i64;
+trusted extern fn c_offsetof_rect_size() -> i64;
+trusted extern fn c_offsetof_aligned64_c() -> i64;
+
+fn main() with(Std) -> i32 {
+    // Check sizeof matches between C and Concrete
+    let con_point: i64 = sizeof::<Point>() as i64;
+    let c_point: i64 = c_sizeof_point();
+    if con_point != c_point {
+        return 1;
+    }
+
+    let con_rect: i64 = sizeof::<Rect>() as i64;
+    let c_rect: i64 = c_sizeof_rect();
+    if con_rect != c_rect {
+        return 2;
+    }
+
+    let con_aligned: i64 = sizeof::<Aligned64>() as i64;
+    let c_aligned: i64 = c_sizeof_aligned64();
+    if con_aligned != c_aligned {
+        return 3;
+    }
+
+    // Check offsetof matches
+    let c_off: i64 = c_offsetof_rect_size();
+    // Point is 8 bytes (2 x i32), so Rect.size should be at offset 8
+    if c_off != 8 {
+        return 4;
+    }
+
+    let c_off2: i64 = c_offsetof_aligned64_c();
+    // a(8) + b(4) + padding(4) = 16
+    if c_off2 != 16 {
+        return 5;
+    }
+
+    return 42;
+}

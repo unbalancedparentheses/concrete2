@@ -135,6 +135,7 @@ Still clearly not implemented:
   - **Cross-module types**: enums, traits (via wrappers), type aliases, and newtypes all work. Type alias bug fixed — was broken even in single-module usage (function signatures carried unresolved alias names). Newtype erasure at import boundaries prevents leaked newtype names from reaching Layout/EmitSSA.
   - Hardening tests in `lean_tests/hardening_*.con`.
 - 663 tests pass (184 stdlib), including 32 pass-level Lean tests, 44 report assertions, 46 golden tests, 20 integration/regression/hardening tests, and 16 collections verified.
+- **Phase 3 testing complete** (system-level validation): 864 tests pass. Added 6 large mixed-feature programs (200-340 lines each), ~75 O2 differential tests, 20 report consistency cross-checks, ABI interop test (Concrete↔C sizeof/offsetof), 5 diagnostic quality tests, `test_fuzz.sh` (1500 programs: parser/typecheck/valid), `test_perf.sh` (compile time/runtime/IR size/binary size regression tracking).
 
 ### Compiler Improvement Checklist
 

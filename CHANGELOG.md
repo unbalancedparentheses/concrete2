@@ -10,9 +10,9 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
-### Comprehensive test expansion: 766 tests, 0 failures
+### Phase 3 system-level testing: 864 tests, 0 failures
 
-Added 80 new tests across 6 categories, bringing the full suite from 686 to 766 tests.
+Added ~100 new tests (Phase 3) on top of Phase 2's 766, bringing the full suite to 864 tests.
 
 **Wave 1 — Type system, codegen, capabilities, modules (44 tests):**
 - Type system soundness: generic chains, recursive enums, nested match exhaustiveness, linearity branch agreement, trait multi-bound, defer linearity
