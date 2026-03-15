@@ -203,7 +203,7 @@ Capabilities ─── what authority code may use (compile-time, signature-visi
 Trusted ──────── containment of pointer-level unsafety behind safe APIs
      │
      ├── trusted fn / trusted impl / trusted extern fn
-     ├── callers see a safe signature, no with(Unsafe) required
+     ├── callers still see the declared capabilities; only trusted extern fn avoids with(Unsafe)
      ├── --report unsafe shows trust boundaries
      └── wrapper patterns documented in docs/FFI.md
 

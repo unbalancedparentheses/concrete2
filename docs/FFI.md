@@ -124,7 +124,7 @@ pub fn read_header(fd: i32) with(Unsafe) -> Int {
 pub trusted fn read_header(fd: i32) with(File, Unsafe) -> Int {
     // raw extern call inside trusted boundary
 }
-// Callers only need with(File), not with(Unsafe)
+// Callers still need with(File, Unsafe); trusted contains the pointer work, not the capability
 ```
 
 The stdlib demonstrates this pattern throughout:
