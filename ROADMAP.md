@@ -431,7 +431,11 @@ Primary surfaces:
      - real compiler blocker: enum fields inside structs can still panic layout (`Bug 005`)
      - real standalone UX blocker: printing exists in stdlib, but standalone programs lack an easy print path without project/std setup (`Bug 007`)
      - fixed by real-program pressure: cross-module string literal collisions (`Bug 006`)
-     - real ergonomics gaps: aggregate `if` expressions (`Bug 008`) and non-working lowered `const` declarations (`Bug 009`)
+     - MAL exposed parser/runtime-specific gaps that should be fixed quickly:
+       - no substring extraction path for parser/reader code (`Bug 010`)
+       - linear string building remains awkward inside loops without a `push_char` / `append` style path (`Bug 011`)
+       - interpreter/runtime workloads also need stronger supporting runtime/data-structure ergonomics (frame-friendly environment patterns, richer collections); the first MAL environment slowdown was primarily an implementation issue, but it still exposed a thin toolbox for this workload class
+     - other real ergonomics gaps: aggregate `if` expressions (`Bug 008`) and non-working lowered `const` declarations (`Bug 009`)
    - several initial complaints turned out to be misdiagnosed and should **not** be treated as roadmap gaps:
      - `print` / `println` already exist in `std.io`
      - `&&` / `||` already exist and are tested
@@ -442,8 +446,15 @@ Primary surfaces:
    - current known examples:
      - enum-typed fields inside named structs can still panic layout computation under real-program pressure (`Bug 005`)
      - standalone programs have no easy stdlib-backed print path without project setup (`Bug 007`)
+     - parser/runtime workloads need substring extraction and loop-friendly string building (`Bug 010`, `Bug 011`)
+     - interpreter workloads want stronger runtime/data-structure support even when the concrete implementation strategy is fixed
      - aggregate `if` expressions and non-working lowered `const` declarations are real surface gaps exposed by real-program pressure (`Bug 008`, `Bug 009`)
 7. turn the findings into concrete language, stdlib, backend, and tooling follow-up work instead of treating the programs as mere demos — **not started**
+   - fast-fix priorities from the first two serious programs:
+     1. fix enum-in-struct layout panic (`Bug 005`)
+     2. give standalone programs an easy print path (`Bug 007`)
+     3. add substring extraction or equivalent string slicing (`Bug 010`)
+     4. add loop-friendly string building (`Bug 011`)
 
 Deliverables:
 - a small corpus of serious Concrete programs large enough to pressure-test the language honestly
