@@ -4,21 +4,9 @@ Gaps found while writing the first real programs (`examples/policy_engine/` and 
 
 ## True Blockers
 
-### 1. Enum fields in structs panic the layout engine (Bug 005)
+### ~~1. Enum fields in structs panic the layout engine (Bug 005)~~ — FIXED
 
-The natural domain model:
-
-```con
-struct Copy Rule {
-    action: Action,      // enum
-    verdict: Verdict,    // enum
-    principal: i32,
-}
-```
-
-Panics in `Layout.tyAlign` when the struct is stored in `Vec<Rule>`. Workaround: flatten enums to `i32` tags.
-
-**Effect:** Pushes programs toward C-style integer encoding instead of using the type system. This is the single biggest gap.
+**Status:** Fixed. Enum fields in structs now work correctly, including in `Vec<Rule>` and similar containers. The layout engine handles enum alignment properly.
 
 ### 2. Standalone programs lack an always-available print path (Bug 007)
 
@@ -43,18 +31,15 @@ MAL exposed a real parser/reader gap: there is no normal way to extract a substr
 
 ## Real Ergonomic Pain (Not Blockers)
 
-### 5. If-else is a statement, not an expression (Bug 008)
+### ~~5. If-else is a statement, not an expression (Bug 008)~~ — FIXED
+
+**Status:** Fixed. If-else expressions now work:
 
 ```con
-// Can't do:
 let label: String = if v == 1 { "ALLOW" } else { "DENY" };
-
-// Must write:
-let mut label: String = "DENY";
-if v == 1 { label = "ALLOW"; }
 ```
 
-Confirmed: `AST.lean` defines `ifElse` only in `inductive Stmt`, not `inductive Expr`.
+Added `ifExpr` to `AST.Expr`, `Core.CExpr`, parser (`parseExprBlock`), elaboration, and lowering (alloca+condBr+store+load pattern with proper type casts).
 
 ### 6. Linear string building is awkward inside loops (Bug 011)
 
@@ -66,9 +51,9 @@ The obvious `string_concat` + `drop_string` + reassign pattern becomes awkward f
 
 When two modules export functions with the same name (e.g., `from_tag`), there's no way to disambiguate except renaming one. `Module.function()` syntax does not exist. Confirmed: call expressions take a plain `String` name, not a qualified path.
 
-### 8. Const declarations are parsed but broken at SSA lowering (Bug 009)
+### ~~8. Const declarations are parsed but broken at SSA lowering (Bug 009)~~ — FIXED
 
-`const foo: i32 = 10;` parses but produces "use of undefined register %foo" at compile time. Constants exist in the grammar but don't lower. Workaround: `fn FOO() -> i32 { return 0; }`.
+**Status:** Fixed. Constants now inline correctly during lowering. Added `constants` field to `LowerState` and constant lookup in the `.ident` case of `lowerExpr`.
 
 ### 9. No destructuring let
 
@@ -89,6 +74,12 @@ The right MAL fix is a frame-bounded environment design, not a language workarou
 
 **Effect:** Concrete can support better interpreter designs than the first MAL attempt, but the supporting runtime/data-structure toolbox is still thinner than ideal for this workload class.
 
+### 11. Standalone benchmark programs lack an easy timing path (Bug 012)
+
+Concrete already has `std.time`, but standalone `.con` files cannot easily import it without project/package setup. That means real benchmark programs currently need to be timed externally rather than measuring themselves through a normal in-language path.
+
+**Effect:** Phase H comparative programs can benchmark correctly, but the easiest workflow is still shell/harness timing instead of an obvious in-language timing surface.
+
 ## Not Actually Missing (Previously Claimed Incorrectly)
 
 - **print/println** — Exists in stdlib (`std.io`). The gap is standalone access, not absence.
@@ -96,12 +87,18 @@ The right MAL fix is a frame-bounded environment design, not a language workarou
 - **`&&` / `||`** — Work correctly. Used throughout tests (e.g., `lean_tests/integration_text_processing.con:31`).
 - **Enums as values** — Work generally. The gap is specifically enum fields inside structs (Bug 005).
 - **MAL's first slow environment design** — primarily an interpreter design problem, not proof that Concrete cannot support a better environment model.
+- **No clock/timing support at all** — false. `std.time` exists; the gap is standalone accessibility, not absence.
 
 ## Summary
 
-The top 5 findings from Phase H so far:
-1. **Fix enum-in-struct layout (Bug 005)** — unblocks natural domain modeling
-2. **Provide a print path for standalone programs (Bug 007)** — unblocks real examples producing output
-3. **Add substring extraction or an equivalent string-slicing path (Bug 010)** — unblocks normal parser/reader structure
-4. **Add loop-friendly string building (`push_char` / `append`) (Bug 011)** — makes parser/runtime workloads much less contorted
+### Fixed (since initial discovery)
+- **Bug 005** — Enum-in-struct layout: fixed
+- **Bug 008** — If-expression: fixed (was statement-only, now works as expression)
+- **Bug 009** — Const lowering: fixed (constants inline during lowering)
+
+### Remaining top findings:
+1. **Provide a print path for standalone programs (Bug 007)** — unblocks real examples producing output
+2. **Add substring extraction or an equivalent string-slicing path (Bug 010)** — unblocks normal parser/reader structure
+3. **Add loop-friendly string building (`push_char` / `append`) (Bug 011)** — makes parser/runtime workloads much less contorted
+4. **Provide a standalone-friendly timing path (Bug 012)** — makes comparative benchmark programs easier to run and report
 5. **Add string formatting** — cuts string-building verbosity by 5-7x

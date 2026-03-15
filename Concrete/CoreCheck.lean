@@ -426,6 +426,12 @@ partial def ccCheckExpr (e : CExpr) : StateM CoreCheckEnv Unit := do
     for s in elseBody do ccCheckStmt s
     let env' ← getEnv
     setEnv { env' with inLoop := env.inLoop }
+  | .ifExpr cond then_ else_ _ =>
+    ccCheckExpr cond
+    if cond.ty != .bool && !isInteger cond.ty then
+      addCCError (.whileCondNotBool (toString (repr cond.ty)))
+    for s in then_ do ccCheckStmt s
+    for s in else_ do ccCheckStmt s
 
 partial def ccCheckMatchArm (arm : CMatchArm) : StateM CoreCheckEnv Unit := do
   match arm with

@@ -1,6 +1,6 @@
 # Bug 005: Enum Fields Inside Structs Can Panic Layout Computation
 
-**Status:** Open
+**Status:** Fixed
 **Discovered:** 2026-03-15
 **Regression test:** not added yet
 

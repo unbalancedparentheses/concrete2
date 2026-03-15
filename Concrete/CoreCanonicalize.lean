@@ -97,6 +97,8 @@ partial def canonExpr (structs : List CStructDef) : CExpr → CExpr
     .allocCall (canonExpr structs inner) (canonExpr structs alloc) (canonTy ty)
   | .whileExpr cond body elseBody ty =>
     .whileExpr (canonExpr structs cond) (canonStmts structs body) (canonStmts structs elseBody) (canonTy ty)
+  | .ifExpr cond then_ else_ ty =>
+    .ifExpr (canonExpr structs cond) (canonStmts structs then_) (canonStmts structs else_) (canonTy ty)
 
 partial def canonArm (structs : List CStructDef) : CMatchArm → CMatchArm
   | .enumArm en v binds body =>

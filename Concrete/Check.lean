@@ -102,6 +102,8 @@ inductive CheckError where
   | typeMismatch (ctx : String) (expected : String) (actual : String)
   | cannotDerefNonRef
   | whileBreakTypeMismatch (breakTy : String) (elseTy : String)
+  | ifCondNotBool (ty : String)
+  | ifBranchTypeMismatch (thenTy : String) (elseTy : String)
   | breakTypeMismatch (valTy : String) (prevTy : String)
   -- arrayLiteralEmpty, cannotAssignThroughNonMutRef moved to CoreCheck
   -- Slice 3: Borrow/escape/freeze
@@ -185,6 +187,8 @@ def CheckError.message : CheckError → String
   -- arrayIndexNotInteger, indexingNonArray, cannotCast moved to CoreCheck
   | .cannotDerefNonRef => "cannot dereference non-reference type"
   | .whileBreakTypeMismatch breakTy elseTy => s!"while-expression break type '{breakTy}' does not match else type '{elseTy}'"
+  | .ifCondNotBool ty => s!"if condition must be Bool, got {ty}"
+  | .ifBranchTypeMismatch thenTy elseTy => s!"if-expression then type '{thenTy}' does not match else type '{elseTy}'"
   | .breakTypeMismatch valTy prevTy => s!"break value type '{valTy}' does not match previous break type '{prevTy}'"
   -- cannotAssignThroughNonMutRef, arrayLiteralEmpty moved to CoreCheck
   -- Slice 3
@@ -862,6 +866,42 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
         throwCheck (.whileBreakTypeMismatch (tyToString bTy) (tyToString elseTy)) (some e.getSpan)
       return elseTy
     | none => return elseTy
+  | .ifExpr _ cond then_ else_ =>
+    -- if-as-expression: if cond { then_ } else { else_ }
+    let condTy ← checkExpr cond
+    if condTy != .bool then
+      throwCheck (.ifCondNotBool (tyToString condTy)) (some e.getSpan)
+    let env ← getEnv
+    -- Check then branch: all stmts except the last, then check last for its type
+    let thenInit := then_.dropLast
+    checkStmts thenInit env.currentRetTy
+    let thenTy ← match then_.getLast? with
+      | some (.expr _ e) => checkExpr e hint
+      | some (.return_ _ v) =>
+        match v with
+        | some rv => let _ ← checkExpr rv; pure Ty.never
+        | none => pure Ty.never
+      | some other =>
+        checkStmt other env.currentRetTy
+        pure Ty.unit
+      | none => pure Ty.unit
+    -- Check else branch
+    let elseInit := else_.dropLast
+    checkStmts elseInit env.currentRetTy
+    let elseTy ← match else_.getLast? with
+      | some (.expr _ e) => checkExpr e hint
+      | some (.return_ _ v) =>
+        match v with
+        | some rv => let _ ← checkExpr rv; pure Ty.never
+        | none => pure Ty.never
+      | some other =>
+        checkStmt other env.currentRetTy
+        pure Ty.unit
+      | none => pure Ty.unit
+    -- Both branches must agree on type
+    if thenTy != elseTy && thenTy != .never && elseTy != .never then
+      throwCheck (.ifBranchTypeMismatch (tyToString thenTy) (tyToString elseTy)) (some e.getSpan)
+    if thenTy == .never then return elseTy else return thenTy
   | .call _sp fnName typeArgs args =>
     -- Intercept newtype wrapping: NewtypeName(expr)
     match ← lookupNewtype fnName with

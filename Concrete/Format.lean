@@ -151,6 +151,11 @@ partial def fmtExprAt (ind : Nat) : Expr → String
     let elseStr := if elseBody.isEmpty then ""
       else s!" else \{\n{"\n".intercalate (elseBody.map (fmtStmt (ind + 1)))}\n{pfx}}"
     s!"while {fmtExprAt ind cond} \{\n{"\n".intercalate bodyStr}\n{pfx}}{elseStr}"
+  | .ifExpr _ cond then_ else_ =>
+    let pfx := indent ind
+    let thenStr := then_.map (fmtStmt (ind + 1))
+    let elseStr := else_.map (fmtStmt (ind + 1))
+    s!"if {fmtExprAt ind cond} \{\n{"\n".intercalate thenStr}\n{pfx}} else \{\n{"\n".intercalate elseStr}\n{pfx}}"
 
 partial def fmtExprParensAt (ind : Nat) (e : Expr) : String :=
   match e with
@@ -196,7 +201,7 @@ partial def fmtStmt (ind : Nat) (s : Stmt) : String :=
   | .expr _ e =>
     -- match/while expressions used as statements don't need trailing semicolons
     let needsSemi := match e with
-      | .match_ .. | .whileExpr .. => false
+      | .match_ .. | .whileExpr .. | .ifExpr .. => false
       | _ => true
     let semi := if needsSemi then ";" else ""
     s!"{pfx}{fmtExprAt ind e}{semi}"

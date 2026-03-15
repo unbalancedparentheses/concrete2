@@ -10,6 +10,16 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Phase H bug fixes: Bug 005, 008, 009 fixed; if-expression, const lowering, enum-in-struct
+
+**Bug 008 — If-else expression:** If-else now works as an expression (`let x: i32 = if cond { 10 } else { 20 };`). Added `ifExpr` to AST/Core, `parseExprBlock` in parser, elaboration with hint propagation, and lowering using alloca+condBr+store+load with type casts. Changes across 10 files (AST, Core, Parser, Elab, Check, Lower, Format, Resolve, CoreCanonicalize, Mono, CoreCheck).
+
+**Bug 009 — Const lowering:** Constants now inline correctly. Added `constants` field to `LowerState`, `collectAllConstants` helper, and constant lookup in `lowerExpr` `.ident` handler. `examples/constants.con` now compiles.
+
+**Bug 005 — Enum-in-struct:** Confirmed fixed (layout engine handles enum fields in structs correctly).
+
+**MAL interpreter:** ~1150-line Make A Lisp interpreter (`examples/mal/main.con`) with linked-list environment (O(n) lookup), symbol interning, cons cell pool. Benchmarks show Concrete MAL is ~73x faster than Python MAL at -O2. Includes comparison benchmarks against Python native and C native.
+
 ### By-value repr(C) struct FFI and testing infrastructure: 891 tests, 0 failures
 
 **Compiler fix — struct FFI ABI flattening:** `#[repr(C)]` struct parameters in extern fn calls are now flattened to integer registers per the ARM64 C ABI (≤8 bytes → i64, 9-16 bytes → two i64s), matching clang's calling convention. Target triple and datalayout emitted in LLVM IR. Previously, small structs were passed as LLVM aggregates, which didn't match the C register-passing convention across FFI boundaries.

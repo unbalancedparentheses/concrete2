@@ -66,6 +66,8 @@ private partial def substExpr (sub : Ty → Ty) : CExpr → CExpr
   | .allocCall inner alloc ty => .allocCall (substExpr sub inner) (substExpr sub alloc) (sub ty)
   | .whileExpr cond body elseBody ty =>
     .whileExpr (substExpr sub cond) (substStmts sub body) (substStmts sub elseBody) (sub ty)
+  | .ifExpr cond then_ else_ ty =>
+    .ifExpr (substExpr sub cond) (substStmts sub then_) (substStmts sub else_) (sub ty)
 
 private partial def substArm (sub : Ty → Ty) : CMatchArm → CMatchArm
   | .enumArm en v binds body =>
@@ -130,6 +132,8 @@ private partial def rewriteCallNames (nameMap : List (String × String)) : CExpr
   | .allocCall inner alloc ty => .allocCall (rewriteCallNames nameMap inner) (rewriteCallNames nameMap alloc) ty
   | .whileExpr cond body elseBody ty =>
     .whileExpr (rewriteCallNames nameMap cond) (rewriteCallNamesStmts nameMap body) (rewriteCallNamesStmts nameMap elseBody) ty
+  | .ifExpr cond then_ else_ ty =>
+    .ifExpr (rewriteCallNames nameMap cond) (rewriteCallNamesStmts nameMap then_) (rewriteCallNamesStmts nameMap else_) ty
   | e => e
 
 private partial def rewriteCallNamesArm (nameMap : List (String × String)) : CMatchArm → CMatchArm
@@ -186,6 +190,8 @@ partial def injectTypeArgsExpr (genericNames : List String) (typeArgs : List Ty)
   | .allocCall inner alloc ty => .allocCall (injectTypeArgsExpr genericNames typeArgs inner) (injectTypeArgsExpr genericNames typeArgs alloc) ty
   | .whileExpr cond body elseBody ty =>
     .whileExpr (injectTypeArgsExpr genericNames typeArgs cond) (injectTypeArgsStmts genericNames typeArgs body) (injectTypeArgsStmts genericNames typeArgs elseBody) ty
+  | .ifExpr cond then_ else_ ty =>
+    .ifExpr (injectTypeArgsExpr genericNames typeArgs cond) (injectTypeArgsStmts genericNames typeArgs then_) (injectTypeArgsStmts genericNames typeArgs else_) ty
   | e => e
 
 partial def injectTypeArgsArm (genericNames : List String) (typeArgs : List Ty) : CMatchArm → CMatchArm
@@ -252,7 +258,7 @@ private partial def cexprTy (e : CExpr) : Ty := match e with
   | .fieldAccess _ _ ty | .enumLit _ _ _ _ ty | .match_ _ _ ty
   | .borrow _ ty | .borrowMut _ ty | .deref _ ty | .arrayLit _ ty
   | .arrayIndex _ _ ty | .fnRef _ ty | .try_ _ ty
-  | .allocCall _ _ ty | .whileExpr _ _ _ ty => ty
+  | .allocCall _ _ ty | .whileExpr _ _ _ ty | .ifExpr _ _ _ ty => ty
   | .cast _ t => t
   | .boolLit _ => .bool
   | .strLit _ => .string
@@ -428,6 +434,8 @@ partial def monoExpr (e : CExpr) : MonoM CExpr := do
   | .allocCall inner alloc ty => return .allocCall (← monoExpr inner) (← monoExpr alloc) ty
   | .whileExpr cond body elseBody ty =>
     return .whileExpr (← monoExpr cond) (← monoStmts body) (← monoStmts elseBody) ty
+  | .ifExpr cond then_ else_ ty =>
+    return .ifExpr (← monoExpr cond) (← monoStmts then_) (← monoStmts else_) ty
 
 partial def monoArm (arm : CMatchArm) : MonoM CMatchArm := do
   match arm with

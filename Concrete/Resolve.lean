@@ -241,6 +241,10 @@ partial def resolveExpr (ctx : ResolveCtx) (e : Expr) : ResolveCtx :=
     let ctx := resolveExpr ctx cond
     let ctx := resolveStmts ctx body
     resolveStmts ctx elseBody
+  | .ifExpr _ cond then_ else_ =>
+    let ctx := resolveExpr ctx cond
+    let ctx := resolveStmts ctx then_
+    resolveStmts ctx else_
 
 /-- Walk a list of statements, updating the context with let bindings. -/
 partial def resolveStmts (ctx : ResolveCtx) (stmts : List Stmt) : ResolveCtx :=

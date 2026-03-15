@@ -54,6 +54,7 @@ structure LowerState where
   structDefs : List CStructDef
   enumDefs : List CEnumDef
   loopStack : List LoopInfo
+  constants : List (String × Ty × CExpr) := []
   /-- Allocas that must be hoisted to the function entry block.
       Prevents unbounded stack growth when &mut borrows occur in loops. -/
   entryAllocas : List SInst := []
@@ -381,10 +382,15 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
     match ← lookupVar name with
     | some val => return val
     | none =>
-      -- If it's a function type and not a local var, treat as global function reference
-      match ty with
-      | .fn_ _ _ _ => return .reg ("@fnref." ++ name) ty
-      | _ => return .reg name ty
+      -- Check module-level constants and inline their value
+      let s ← getState
+      match s.constants.find? fun (n, _, _) => n == name with
+      | some (_, _, constExpr) => lowerExpr constExpr
+      | none =>
+        -- If it's a function type and not a local var, treat as global function reference
+        match ty with
+        | .fn_ _ _ _ => return .reg ("@fnref." ++ name) ty
+        | _ => return .reg name ty
 
   | .binOp op lhs rhs ty =>
     let lVal ← lowerExpr lhs
@@ -1067,6 +1073,89 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
       emit (.load loadDst (.reg resultSlot _ty) _ty)
       return .reg loadDst _ty
 
+  | .ifExpr cond then_ else_ ty =>
+    let condVal ← lowerExpr cond
+    let thenLabel ← freshLabel "ifexpr.then"
+    let elseLabel ← freshLabel "ifexpr.else"
+    let mergeLabel ← freshLabel "ifexpr.merge"
+    -- Create result slot in the entry block
+    let resultSlot ← freshReg "ifslot."
+    emit (.alloca resultSlot ty)
+    let preIfVars ← snapshotVars
+    terminateBlock (.condBr condVal thenLabel elseLabel)
+    -- Then block
+    startBlock thenLabel
+    lowerStmts then_
+    let thenVal ← lastExprVal then_ ty
+    -- Cast if branch result type differs from expected type (e.g., Int → i32)
+    let thenVal ← if thenVal.ty != ty && thenVal.ty != .unit then do
+      let castReg ← freshReg "ifcast."
+      emit (.cast castReg thenVal ty)
+      pure (.reg castReg ty)
+    else pure thenVal
+    emit (.store thenVal (.reg resultSlot ty))
+    let thenEndVars ← snapshotVars
+    let thenEndLabel ← getCurrentLabel
+    let term1 ← currentBlockTerminated
+    if !term1 then
+      terminateBlock (.br mergeLabel)
+    -- Else block
+    let s ← getState
+    setState { s with vars := preIfVars }
+    startBlock elseLabel
+    lowerStmts else_
+    let elseVal ← lastExprVal else_ ty
+    -- Cast if branch result type differs from expected type (e.g., Int → i32)
+    let elseVal ← if elseVal.ty != ty && elseVal.ty != .unit then do
+      let castReg ← freshReg "ifcast."
+      emit (.cast castReg elseVal ty)
+      pure (.reg castReg ty)
+    else pure elseVal
+    emit (.store elseVal (.reg resultSlot ty))
+    let elseEndVars ← snapshotVars
+    let elseEndLabel ← getCurrentLabel
+    let term2 ← currentBlockTerminated
+    if !term2 then
+      terminateBlock (.br mergeLabel)
+    -- Merge block with phi nodes for variables that differ between branches
+    startBlock mergeLabel
+    if !term1 || !term2 then
+      for (name, preVal) in preIfVars do
+        let thenV := if term1 then none
+          else (thenEndVars.find? fun (n, _) => n == name).map (·.2)
+        let elseV := if term2 then none
+          else (elseEndVars.find? fun (n, _) => n == name).map (·.2)
+        let vty := preVal.ty
+        let thenChanged := match thenV with
+          | some v => match v, preVal with
+            | .reg n1 _, .reg n2 _ => n1 != n2
+            | _, _ => true
+          | none => false
+        let elseChanged := match elseV with
+          | some v => match v, preVal with
+            | .reg n1 _, .reg n2 _ => n1 != n2
+            | _, _ => true
+          | none => false
+        if thenChanged || elseChanged then
+          let mut incoming : List (SVal × String) := []
+          match thenV with
+          | some v => incoming := incoming ++ [(v, thenEndLabel)]
+          | none => pure ()
+          match elseV with
+          | some v => incoming := incoming ++ [(v, elseEndLabel)]
+          | none => pure ()
+          if incoming.length >= 2 then
+            let phiReg ← freshReg "ifphi."
+            emit (.phi phiReg incoming vty)
+            setVar name (.reg phiReg vty)
+          else match incoming with
+            | [(val, _)] => setVar name val
+            | _ => pure ()
+    -- Load result from slot
+    let loadDst ← freshReg "ifload."
+    emit (.load loadDst (.reg resultSlot ty) ty)
+    return .reg loadDst ty
+
 /-- Extract a value from the last statement of a body, for phi nodes.
     Uses the __last_expr var that lowerStmt(.expr) sets. -/
 partial def lastExprVal (body : List CStmt) (_ty : Ty) : LowerM SVal := do
@@ -1521,7 +1610,8 @@ end
 -- Function and module lowering
 -- ============================================================
 
-def lowerFn (f : CFnDef) (structDefs : List CStructDef) (enumDefs : List CEnumDef) : Except String (SFnDef × List (String × String)) :=
+def lowerFn (f : CFnDef) (structDefs : List CStructDef) (enumDefs : List CEnumDef)
+    (constants : List (String × Ty × CExpr) := []) : Except String (SFnDef × List (String × String)) :=
   let initState : LowerState := {
     blocks := []
     currentLabel := "entry"
@@ -1533,6 +1623,7 @@ def lowerFn (f : CFnDef) (structDefs : List CStructDef) (enumDefs : List CEnumDe
     structDefs := structDefs
     enumDefs := enumDefs
     loopStack := []
+    constants := constants
   }
   let result := (do
     lowerStmts f.body
@@ -1583,6 +1674,11 @@ private partial def collectAllEnums (m : CModule) : List CEnumDef :=
   let sub := m.submodules.foldl (fun acc s => acc ++ collectAllEnums s) []
   own ++ sub
 
+private partial def collectAllConstants (m : CModule) : List (String × Ty × CExpr) :=
+  let own := m.constants
+  let sub := m.submodules.foldl (fun acc s => acc ++ collectAllConstants s) []
+  own ++ sub
+
 private partial def collectAllExterns (m : CModule) : List (String × List (String × Ty) × Ty) :=
   let own := m.externFns.map fun (n, ps, rt, _) => (n, ps, rt)
   let sub := m.submodules.foldl (fun acc s => acc ++ collectAllExterns s) []
@@ -1622,11 +1718,12 @@ def lowerModule (m : CModule) : Except String SModule := do
   let allStructs := syntheticStringDef :: collectAllStructs m
   let allEnums := collectAllEnums m
   let allExterns := collectAllExterns m
+  let allConstants := collectAllConstants m
   -- Skip generic functions (non-empty typeParams); only their monomorphized
   -- specializations should be lowered.
   let concreteFns := allFunctionsWithPath.filter fun (f, _) => f.typeParams.isEmpty
   let results ← concreteFns.foldlM (init := []) fun acc (f, path) =>
-    match lowerFn f allStructs allEnums with
+    match lowerFn f allStructs allEnums allConstants with
     | .ok (sfn, lits) => .ok (acc ++ [({ sfn with modulePath := path }, lits)])
     | .error e => .error s!"Lower.lowerModule: failed to lower function '{f.name}': {e}"
   -- Build deduplicated globals list (by string value)

@@ -44,6 +44,7 @@ inductive CExpr where
   | try_ (inner : CExpr) (ty : Ty)
   | allocCall (inner : CExpr) (allocExpr : CExpr) (ty : Ty)
   | whileExpr (cond : CExpr) (body : List CStmt) (elseBody : List CStmt) (ty : Ty)
+  | ifExpr (cond : CExpr) (then_ : List CStmt) (else_ : List CStmt) (ty : Ty)
 
 inductive CMatchArm where
   | enumArm (enumName variant : String) (bindings : List (String × Ty)) (body : List CStmt)
@@ -160,6 +161,7 @@ def CExpr.ty : CExpr → Ty
   | .try_ _ t => t
   | .allocCall _ _ t => t
   | .whileExpr _ _ _ t => t
+  | .ifExpr _ _ _ t => t
 
 -- ============================================================
 -- Pretty-printer
@@ -250,6 +252,10 @@ partial def ppCExpr (e : CExpr) : String :=
     let bodyStr := body.map (ppCStmt 2)
     let elseStr := if elseBody.isEmpty then "" else s!" else \{\n{"\n".intercalate (elseBody.map (ppCStmt 2))}\n  }"
     s!"while {ppCExpr cond} \{\n{"\n".intercalate bodyStr}\n  }{elseStr}"
+  | .ifExpr cond then_ else_ _ =>
+    let thenStr := then_.map (ppCStmt 2)
+    let elseStr := else_.map (ppCStmt 2)
+    s!"if {ppCExpr cond} \{\n{"\n".intercalate thenStr}\n  } else \{\n{"\n".intercalate elseStr}\n  }"
 
 partial def ppCMatchArm (arm : CMatchArm) : String :=
   match arm with

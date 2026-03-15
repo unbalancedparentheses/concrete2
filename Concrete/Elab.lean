@@ -363,6 +363,14 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
     let resultTy := match hint with | some t => t | none => .unit
     return .whileExpr cCond cBody cElse resultTy
 
+  | .ifExpr _ cond then_ else_ =>
+    let cCond ← elabExpr cond
+    let cThen ← elabStmts then_
+    let cElse ← elabStmts else_
+    -- Result type comes from the last statement in the then branch
+    let resultTy := match hint with | some t => t | none => .unit
+    return .ifExpr cCond cThen cElse resultTy
+
   | .call _ fnName typeArgs args =>
     elabCall fnName typeArgs args hint (some e.getSpan)
 

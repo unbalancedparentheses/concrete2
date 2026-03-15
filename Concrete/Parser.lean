@@ -395,6 +395,15 @@ partial def parsePrimary : ParseM Expr := do
     expect .else_
     let elseBody ← parseBlock
     return .whileExpr sp cond body elseBody
+  | .if_ =>
+    -- if-as-expression: if cond { then } else { else }
+    let sp ← peekSpan
+    advance
+    let cond ← parseExpr
+    let then_ ← parseExprBlock
+    expect .else_
+    let else_ ← parseExprBlock
+    return .ifExpr sp cond then_ else_
   | .cap_ =>
     -- `cap` used as a variable/field name in expression position
     let sp ← peekSpan
@@ -779,6 +788,56 @@ partial def parseExpr : ParseM Expr :=
 partial def parseBlock : ParseM (List Stmt) := do
   expect .lbrace
   let stmts ← parseStmtList
+  expect .rbrace
+  return stmts
+
+/-- Parse a block where the last expression may omit its trailing semicolon.
+    Used for if-expressions: `if cond { expr } else { expr }` -/
+partial def parseExprBlock : ParseM (List Stmt) := do
+  expect .lbrace
+  let mut stmts : List Stmt := []
+  let mut tk ← peek
+  while tk != .rbrace && tk != .eof do
+    -- Try to detect: is this the last item before `}`?
+    -- Parse a statement. If it's an expression-statement and the next token is `}`,
+    -- we accept it without a semicolon.
+    let sp ← peekSpan
+    let stmtTk ← peek
+    -- If the token starts a keyword statement (let, return, if, while, etc.), parse normally
+    match stmtTk with
+    | .«let» | .return_ | .while_ | .for_ | .match_ | .break_ | .continue_
+    | .defer_ | .borrow_ | .label _ =>
+      let stmt ← parseStmt
+      stmts := stmts ++ [stmt]
+    | .if_ =>
+      -- In an expr block, `if` before `}` is an if-expression (trailing value)
+      -- Otherwise parse as statement
+      let stmt ← parseStmt
+      stmts := stmts ++ [stmt]
+    | _ =>
+      -- Parse as expression
+      let e ← parseExpr
+      let nextTk ← peek
+      if nextTk == .rbrace then
+        -- Trailing expression without semicolon — this is the block's value
+        stmts := stmts ++ [Stmt.expr sp e]
+      else if nextTk == .assign then
+        -- Assignment: x = expr;
+        advance
+        let rhs ← parseExpr
+        expect .semicolon
+        match e with
+        | .ident _ name => stmts := stmts ++ [Stmt.assign sp name rhs]
+        | .fieldAccess _ obj field => stmts := stmts ++ [Stmt.fieldAssign sp obj field rhs]
+        | .deref _ target => stmts := stmts ++ [Stmt.derefAssign sp target rhs]
+        | .arrayIndex _ arr idx => stmts := stmts ++ [Stmt.arrayIndexAssign sp arr idx rhs]
+        | .arrowAccess _ obj field => stmts := stmts ++ [Stmt.arrowAssign sp obj field rhs]
+        | _ => throw s!"invalid assignment target"
+      else
+        -- Normal expression statement, need semicolon
+        expect .semicolon
+        stmts := stmts ++ [Stmt.expr sp e]
+    tk ← peek
   expect .rbrace
   return stmts
 
