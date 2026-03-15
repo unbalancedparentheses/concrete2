@@ -557,7 +557,10 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
     return .arrayIndex cArr cIdx elemTy
 
   | .cast _ inner targetTy =>
-    let cInner ← elabExpr inner
+    -- Do NOT pass any hint: the point of `as` is to convert between types.
+    -- Passing targetTy would mistype literals in `(100 + m) as i32` where m is Int.
+    -- Passing the outer hint could also leak i32 context into the inner expression.
+    let cInner ← elabExpr inner none
     return .cast cInner targetTy
 
   | .fnRef _ fnName =>
@@ -695,17 +698,39 @@ partial def elabCall (fnName : String) (typeArgs : List Ty) (args : List Expr)
     return .call "vec_new" typeArgs [] (.generic "Vec" [elemTy])
   -- Intercept vec_push
   if intrinsic == some .vecPush then
+    -- Elaborate vec arg first to extract element type for value hint
+    let elemTy := match typeArgs with | t :: _ => t | [] => .int
     let mut cArgs : List CExpr := []
-    for arg in args do
-      let cArg ← elabExpr arg
-      cArgs := cArgs ++ [cArg]
+    match args with
+    | vecArg :: valArg :: rest =>
+      let cVec ← elabExpr vecArg
+      cArgs := cArgs ++ [cVec]
+      let cVal ← elabExpr valArg (some elemTy)
+      cArgs := cArgs ++ [cVal]
+      for arg in rest do
+        let cArg ← elabExpr arg
+        cArgs := cArgs ++ [cArg]
+    | _ =>
+      for arg in args do
+        let cArg ← elabExpr arg
+        cArgs := cArgs ++ [cArg]
     return .call "vec_push" [] cArgs .unit
   -- Intercept vec_get
   if intrinsic == some .vecGet then
     let mut cArgs : List CExpr := []
-    for arg in args do
-      let cArg ← elabExpr arg
-      cArgs := cArgs ++ [cArg]
+    match args with
+    | vecArg :: idxArg :: rest =>
+      let cVec ← elabExpr vecArg
+      cArgs := cArgs ++ [cVec]
+      let cIdx ← elabExpr idxArg (some .int)
+      cArgs := cArgs ++ [cIdx]
+      for arg in rest do
+        let cArg ← elabExpr arg
+        cArgs := cArgs ++ [cArg]
+    | _ =>
+      for arg in args do
+        let cArg ← elabExpr arg
+        cArgs := cArgs ++ [cArg]
     let elemTy := match (cArgs.head?.map CExpr.ty) with
       | some (.ref (.generic "Vec" [et])) => et
       | some (.refMut (.generic "Vec" [et])) => et
@@ -713,10 +738,23 @@ partial def elabCall (fnName : String) (typeArgs : List Ty) (args : List Expr)
     return .call "vec_get" [] cArgs elemTy
   -- Intercept vec_set
   if intrinsic == some .vecSet then
+    let elemTy := match typeArgs with | t :: _ => t | [] => .int
     let mut cArgs : List CExpr := []
-    for arg in args do
-      let cArg ← elabExpr arg
-      cArgs := cArgs ++ [cArg]
+    match args with
+    | vecArg :: idxArg :: valArg :: rest =>
+      let cVec ← elabExpr vecArg
+      cArgs := cArgs ++ [cVec]
+      let cIdx ← elabExpr idxArg (some .int)
+      cArgs := cArgs ++ [cIdx]
+      let cVal ← elabExpr valArg (some elemTy)
+      cArgs := cArgs ++ [cVal]
+      for arg in rest do
+        let cArg ← elabExpr arg
+        cArgs := cArgs ++ [cArg]
+    | _ =>
+      for arg in args do
+        let cArg ← elabExpr arg
+        cArgs := cArgs ++ [cArg]
     return .call "vec_set" [] cArgs .unit
   -- Intercept vec_len
   if intrinsic == some .vecLen then

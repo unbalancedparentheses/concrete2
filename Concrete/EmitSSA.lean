@@ -134,7 +134,9 @@ partial def tyToLLVMTy (s : EmitSSAState) : Ty → LLVMTy
     | none =>
       match ssaLookupEnum s name with
       | some _ => .enum_ name
-      | none => .i64
+      | none =>
+        dbg_trace s!"WARNING: EmitSSA.tyToLLVMTy: unknown named type '{name}', defaulting to i64"
+        .i64
 
 /-- Map integer Concrete type to structured LLVM type. -/
 private def intTyToLLVMTy : Ty → LLVMTy

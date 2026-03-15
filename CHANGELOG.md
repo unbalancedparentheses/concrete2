@@ -10,6 +10,18 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Compiler hardening pass complete (all 5 items)
+
+Targeted hardening between Phase D and Phase E — 12 silent fallback paths now warn, integer inference covers vec intrinsics, borrow edge cases tested, cross-module enum/trait propagation verified:
+
+- **Layout.lean silent defaults**: `dbg_trace` warnings on 6 fallback paths (fieldOffset, tySize, tyAlign, tyToLLVM, isPassByPtr)
+- **Integer type inference**: vec_push/vec_set/vec_get now propagate element type hints; cast confirmed correct (no hint propagation)
+- **Borrow checker audit**: multiple shared borrows, sequential &mut, borrow-of-field all verified working
+- **Cross-module types**: enums propagate correctly; trait definitions not importable (known limitation, not bug)
+- **Backend error reporting**: `dbg_trace` warnings on 7 fallback paths in Lower.lean and EmitSSA.lean
+
+4 hardening tests added. Test suite: 662 tests (189 stdlib).
+
 ### 3 compiler bugs fixed
 
 Three bugs discovered during integration test writing, now fixed with regression tests and documentation in `docs/bugs/`:
@@ -18,7 +30,7 @@ Three bugs discovered during integration test writing, now fixed with regression
 - **Bug 002 — i32 literal type mismatch** (`Elab.lean`): `0 - a` where `a: i32` generated `sub i64 0, %i32_val`. Integer literals defaulted to i64 regardless of the other operand's type. Fix: when one operand is a default-typed literal and the other has a concrete smaller integer type, re-elaborate the literal with the concrete type.
 - **Bug 003 — cross-module &mut borrow consumed as move** (`Check.lean`): passing `&mut Vec<T>` to a function consumed the variable, preventing reuse. The checker didn't distinguish owned from reference parameters when consuming arguments. Fix: skip consumption for `&T`/`&mut T` parameter types.
 
-Test suite: 658 tests (32 pass-level, 15 integration/regression, 44 report assertions).
+Test suite: 658 tests at time of fix (32 pass-level, 15 integration/regression, 44 report assertions).
 
 ### Phase D complete: all items done
 

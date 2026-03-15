@@ -73,7 +73,9 @@ private partial def tyAlign_namedOrGeneric (ctx : Ctx) (tyAlignFn : Ctx → Ty �
       let ed := substEnumTypeArgs ed typeArgs
       Nat.max 4 (ed.variants.foldl (fun maxA (_, vfields) =>
         vfields.foldl (fun a (_, ft) => Nat.max a (tyAlignFn ctx ft)) maxA) 1)
-    | none => 8
+    | none =>
+      dbg_trace s!"WARNING: Layout.tyAlign: unknown named type '{name}', defaulting to 8"
+      8
 
 /-- Natural alignment of a type in bytes. -/
 partial def tyAlign (ctx : Ctx) : Ty → Nat
@@ -124,7 +126,9 @@ private partial def tySize_namedOrGeneric (ctx : Ctx) (tySizeFn : Ctx → Ty →
         vfields.foldl (fun a (_, ft) => Nat.max a (tyAlignFn ctx ft)) maxA) 1
       let payloadStart := alignUp 4 payloadAlign
       alignUp (payloadStart + maxPayload) (Nat.max 4 payloadAlign)
-    | none => 8
+    | none =>
+      dbg_trace s!"WARNING: Layout.tySize: unknown named type '{name}', defaulting to 8"
+      8
 
 /-- Byte size of a type. Used for malloc/alloca sizing and enum layout. -/
 partial def tySize (ctx : Ctx) : Ty → Nat
@@ -166,7 +170,9 @@ def fieldOffset (ctx : Ctx) (structName fieldName : String) : Nat :=
           if n == fieldName then (aligned, true)
           else (aligned + tySize ctx t, false)) (0, false)
       offset
-  | none => 0
+  | none =>
+    dbg_trace s!"WARNING: Layout.fieldOffset: struct '{structName}' not found, returning offset 0"
+    0
 
 /-- Maximum payload size across all variants of an enum. -/
 def enumPayloadSize (ctx : Ctx) (ed : CEnumDef) : Nat :=
@@ -203,9 +209,25 @@ def isPassByPtr (ctx : Ctx) (ty : Ty) : Bool :=
   | .ref _ | .refMut _ => true
   | .array _ _ => true
   | .fn_ _ _ _ | .heap _ | .heapArray _ => false
-  | .named name => (lookupStruct ctx name).isSome || (lookupEnum ctx name).isSome
+  | .named name =>
+    match lookupStruct ctx name with
+    | some _ => true
+    | none =>
+      match lookupEnum ctx name with
+      | some _ => true
+      | none =>
+        dbg_trace s!"WARNING: Layout.isPassByPtr: unknown named type '{name}', defaulting to false"
+        false
   | .generic "Vec" _ | .generic "HashMap" _ => true
-  | .generic name _ => (lookupStruct ctx name).isSome || (lookupEnum ctx name).isSome
+  | .generic name _ =>
+    match lookupStruct ctx name with
+    | some _ => true
+    | none =>
+      match lookupEnum ctx name with
+      | some _ => true
+      | none =>
+        dbg_trace s!"WARNING: Layout.isPassByPtr: unknown generic type '{name}', defaulting to false"
+        false
   | _ => false
 
 -- ============================================================
@@ -245,7 +267,9 @@ def tyToLLVM (ctx : Ctx) : Ty → String
     | none =>
       match lookupEnum ctx name with
       | some _ => "%enum." ++ name
-      | none => "i64"
+      | none =>
+        dbg_trace s!"WARNING: Layout.tyToLLVM: unknown named type '{name}', defaulting to i64"
+        "i64"
 
 /-- LLVM type for function parameters (pass-by-ptr types become ptr). -/
 def paramTyToLLVM (ctx : Ctx) (ty : Ty) : String :=

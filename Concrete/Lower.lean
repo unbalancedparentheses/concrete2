@@ -165,14 +165,18 @@ private def lookupStructFields (tyName : String) : LowerM (List (String × Ty)) 
   let s ← getState
   match s.structDefs.find? fun sd => sd.name == tyName with
   | some sd => return sd.fields
-  | none => return []
+  | none =>
+    dbg_trace s!"WARNING: Lower.lookupStructFields: struct '{tyName}' not found"
+    return []
 
 /-- Get field index within a struct definition. Returns 0 if not found. -/
 private def fieldIndex (tyName : String) (fieldName : String) : LowerM Nat := do
   let fields ← lookupStructFields tyName
   match (enumerate fields).find? fun (_, (n, _)) => n == fieldName with
   | some (idx, _) => return idx
-  | none => return 0
+  | none =>
+    dbg_trace s!"WARNING: Lower.fieldIndex: field '{fieldName}' not found in struct '{tyName}'"
+    return 0
 
 /-- Get variant index within an enum definition. Returns 0 if not found. -/
 private def variantIndex (enumName : String) (variantName : String) : LowerM Nat := do
@@ -181,8 +185,12 @@ private def variantIndex (enumName : String) (variantName : String) : LowerM Nat
   | some ed =>
     match (enumerate ed.variants).find? fun (_, (vn, _)) => vn == variantName with
     | some (idx, _) => return idx
-    | none => return 0
-  | none => return 0
+    | none =>
+      dbg_trace s!"WARNING: Lower.variantIndex: variant '{variantName}' not found in enum '{enumName}'"
+      return 0
+  | none =>
+    dbg_trace s!"WARNING: Lower.variantIndex: enum '{enumName}' not found"
+    return 0
 
 /-- Get variant fields within an enum definition. -/
 private def variantFields (enumName : String) (variantName : String) : LowerM (List (String × Ty)) := do
@@ -191,8 +199,12 @@ private def variantFields (enumName : String) (variantName : String) : LowerM (L
   | some ed =>
     match ed.variants.find? fun (vn, _) => vn == variantName with
     | some (_, fields) => return fields
-    | none => return []
-  | none => return []
+    | none =>
+      dbg_trace s!"WARNING: Lower.variantFields: variant '{variantName}' not found in enum '{enumName}'"
+      return []
+  | none =>
+    dbg_trace s!"WARNING: Lower.variantFields: enum '{enumName}' not found"
+    return []
 
 /-- Extract struct type name from a Ty, unwrapping references/pointers. -/
 private def structNameFromTy (ty : Ty) : String :=
@@ -201,7 +213,9 @@ private def structNameFromTy (ty : Ty) : String :=
   | .generic n _ => n
   | .string => "String"
   | .ref inner | .refMut inner | .ptrMut inner | .ptrConst inner => structNameFromTy inner
-  | _ => ""
+  | other =>
+    dbg_trace s!"WARNING: Lower.structNameFromTy: unhandled type '{repr other}', returning \"\""
+    ""
 
 /-- Build a Layout.Ctx from the current LowerState. -/
 private def getLayoutCtx : LowerM Layout.Ctx := do
@@ -1610,7 +1624,9 @@ def lowerModule (m : CModule) : SModule :=
   let results := concreteFns.filterMap fun (f, path) =>
     match lowerFn f allStructs allEnums with
     | .ok (sfn, lits) => some ({ sfn with modulePath := path }, lits)
-    | .error _ => none
+    | .error e =>
+      dbg_trace s!"WARNING: Lower.lowerModule: failed to lower function '{f.name}': {e}"
+      none
   -- Build deduplicated globals list (by string value)
   let globals := results.foldl (fun deduped (_, lits) =>
     lits.foldl (fun deduped (_, strVal) =>
