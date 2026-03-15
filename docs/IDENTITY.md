@@ -14,6 +14,26 @@ It is not trying to win by having the largest feature set, the most metaprogramm
 
 The clearest long-term fit is not "general systems programming for everything." It is software that must be small, explicit, reviewable, and honest about power: high-integrity components, audit-heavy infrastructure, security-sensitive utilities, and other mission-critical kernels where narrow authority and visible trust boundaries matter more than ecosystem breadth.
 
+## Current Stage
+
+Concrete is now in the middle ground between "language design document" and "mature language ecosystem."
+
+What is already true:
+
+- the compiler architecture is real and explicit
+- the safety story is coherent enough to inspect and teach
+- the language surface has been deliberately narrowed instead of allowed to drift
+- the proof story has started in concrete form rather than staying aspirational
+
+What is not true yet:
+
+- Concrete has not been pressure-tested by enough large programs
+- package and workspace workflow are not yet first-class
+- the operational/tooling story is not yet mature
+- the formalization story is still narrow compared to the final ambition
+
+That makes the current stage important. Concrete is no longer trying to prove that it has an identity. It is trying to prove that the identity holds up under real use. That is why the next major validation step is the real-program pressure-testing phase.
+
 ## Why Concrete Exists
 
 Concrete was created to close a gap between systems programming and mechanized reasoning.

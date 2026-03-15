@@ -15,11 +15,11 @@ Status: project entry point
 
 >Most ideas come from previous ideas - Alan C. Kay, The Early History Of Smalltalk
 
-Concrete is a systems programming language for **correctness-focused low-level work**. It is designed around a single organizing principle: **every design choice must answer the question, can a machine reason about this?** All code is explicit, machine-verifiable, LL(1)-parseable, with no hidden control flow.
+Concrete is a systems programming language for **correctness-focused low-level work**. The design rule is simple: if the compiler cannot explain what a feature means, the feature probably does not belong. The language stays explicit, LL(1)-parseable, and hostile to hidden control flow.
 
-Concrete's intended differentiator is not "more features". It is **auditable low-level programming with explicit authority and trust boundaries, on top of a small, honest, proof-friendly language and compiler**. See [docs/IDENTITY.md](docs/IDENTITY.md) for the explicit project identity.
+Concrete is not trying to win by piling on features. Its real pitch is **auditable low-level programming with explicit authority and trust boundaries, built on a small language and a proof-friendly compiler**. See [docs/IDENTITY.md](docs/IDENTITY.md) for the fuller project identity.
 
-Longer term, Concrete should also grow an explicit high-integrity profile: stricter execution and safety modes for critical code, built around analyzability, bounded behavior, and stronger evidence rather than feature accumulation.
+Longer term, Concrete should grow an explicit high-integrity profile: stricter execution and safety modes for critical code, built around analyzability, bounded behavior, and stronger evidence rather than feature accumulation.
 
 The compiler is written in [Lean 4](https://leanprover.github.io/lean4/doc/setup.html), a theorem prover. The goal is to leverage Lean 4 to prove Concrete: first the language/compiler itself, and later selected Concrete programs through explicit Core semantics.
 
@@ -27,9 +27,30 @@ Concrete is also being shaped so that this proof story does not stop at the comp
 
 **No other language combines all four: linear types, a capability-based effect system, a compiler written in a theorem prover, and a design optimized for machine-generated code.**
 
-In practical terms, Concrete is trying to give low-level programmers something unusual: the control and auditability of systems programming, but with much stronger guarantees about resources, effects, and compiler meaning.
+In practical terms, Concrete is trying to give low-level programmers something unusual: the control of systems programming, but with far better visibility into resources, effects, trust boundaries, and compiler meaning.
 
-The longer-term product vision is not only "a compiler that works". It is a compiler that can explain itself, expose audit-relevant facts as first-class outputs, and eventually produce artifacts and builds that are inspectable and reproducible enough to trust.
+The longer-term product vision is not just "a compiler that works." It is a compiler that can explain itself, expose audit-relevant facts as first-class outputs, and eventually produce artifacts and builds that are inspectable and reproducible enough to trust.
+
+## Current Stage
+
+Concrete is past the "interesting design" stage and into "serious language project with real architecture."
+
+What is already real:
+
+- a complete internal compiler pipeline with explicit artifacts such as `ValidatedCore` and `ProofCore`
+- a coherent safety model built around capabilities, `trusted`, `Unsafe`, and compiler reports
+- a structured LLVM backend with SSA verification and documented backend contracts
+- an initial Lean-side proof workflow over a pure Core fragment
+- a large regression suite covering the compiler, stdlib, reports, ABI edges, and optimization-sensitive cases
+
+What is not proven yet:
+
+- large-program ergonomics under sustained use
+- package/workspace workflow
+- operational maturity as a long-term language toolchain
+- broader formalization beyond the current pure proof fragment
+
+That is why the next major phase is [Phase H](ROADMAP.md): large-program pressure testing and performance validation. The next proof point is not another small feature. It is whether Concrete stays readable, explicit, and fast enough when it has to carry real software.
 
 ## Why Concrete Exists
 
@@ -123,7 +144,7 @@ For the full language specification, see [The Concrete Programming Language: Sys
 
 ## Where Concrete Fits
 
-Concrete is not trying to replace Rust, C++, or Go as a general-purpose systems language. Its strongest long-term case is narrower: software that must be small, explicit, reviewable, and honest about power.
+Concrete is not trying to replace Rust, C++, or Go as a general-purpose systems language. Its strongest case is narrower: software that must be small, explicit, reviewable, and honest about power.
 
 The most compelling targets are mission-critical components with narrow authority and clear trust boundaries, for example:
 
