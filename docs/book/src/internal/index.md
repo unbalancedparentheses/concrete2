@@ -15,7 +15,7 @@ For the more current stable reference, also see:
 
 - `docs/ARCHITECTURE.md`
 - `docs/PASSES.md`
-- `docs/ABI_LAYOUT.md`
+- `docs/ABI.md`
 
 Good starting pages in this section:
 

@@ -9,7 +9,7 @@ Use these files as the primary reference once a design has moved out of explorat
 - [IDENTITY.md](IDENTITY.md) — what Concrete is optimizing for, where it intends to differentiate, and what it is not trying to be
 - [ARCHITECTURE.md](ARCHITECTURE.md) — compiler pipeline, artifact flow, pass boundaries, and architecture phase reference
 - [PASSES.md](PASSES.md) — pass-by-pass contracts, ownership boundaries, and what each phase may assume
-- [ABI_LAYOUT.md](ABI_LAYOUT.md) — layout, enum representation, FFI-safety, and ABI boundary rules
+- [ABI.md](ABI.md) — layout, enum representation, FFI-safety, and ABI boundary rules
 - [DIAGNOSTICS.md](DIAGNOSTICS.md) — diagnostics model, current status, and staged diagnostics work
 - [FFI.md](FFI.md) — externs, raw pointers, and the `Unsafe` boundary
 - [LANGUAGE_INVARIANTS.md](LANGUAGE_INVARIANTS.md) — the language rules that must hold across every phase

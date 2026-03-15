@@ -5,7 +5,8 @@ Status: reference
 This document defines Concrete's execution model: how programs start, allocate, fail, and interact with the host environment. It covers the hosted/freestanding distinction, the runtime boundary, the memory/allocation strategy, target support policy, stdlib alignment, execution profiles, performance validation, verified FFI envelopes, and the concurrency direction.
 
 For the value and ownership model, see [VALUE_MODEL.md](VALUE_MODEL.md).
-For ABI and layout details, see [ABI_LAYOUT.md](ABI_LAYOUT.md) and [ABI.md](ABI.md).
+For the safety model (capabilities, trusted, Unsafe), see [SAFETY.md](SAFETY.md).
+For ABI and layout details, see [ABI.md](ABI.md).
 For stdlib module inventory, see [STDLIB.md](STDLIB.md).
 
 ---
@@ -201,7 +202,7 @@ All memory layout decisions are centralized in `Concrete/Layout.lean`:
 - `#[repr(C)]` provides C-compatible layout for FFI structs
 - `#[repr(align(N))]` sets minimum alignment
 
-See [ABI_LAYOUT.md](ABI_LAYOUT.md) for full details.
+See [ABI.md](ABI.md) for full details.
 
 ### Future directions
 

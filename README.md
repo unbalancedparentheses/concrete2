@@ -450,7 +450,6 @@ Implemented today:
 Still in progress:
 
 - diagnostics quality and rendering polish
-- capability/safety productization (Phase F)
 - deeper kernel formalization
 - concurrency implementation (Phase K)
 
@@ -568,7 +567,8 @@ See [`docs/STDLIB.md`](docs/STDLIB.md) for the stable stdlib direction.
 See [ROADMAP.md](ROADMAP.md) for active priorities, remaining major work, and sequencing.
 See [CHANGELOG.md](CHANGELOG.md) for completed milestones and major landed architecture/language work.
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/PASSES.md](docs/PASSES.md) for the detailed compiler pipeline, artifact flow, pass boundaries, and compiler contracts.
-See [docs/ABI_LAYOUT.md](docs/ABI_LAYOUT.md) for the current layout and FFI boundary, and [docs/DIAGNOSTICS.md](docs/DIAGNOSTICS.md) for the diagnostics model.
+See [docs/ABI.md](docs/ABI.md) for the current layout and FFI boundary, and [docs/DIAGNOSTICS.md](docs/DIAGNOSTICS.md) for the diagnostics model.
+See [docs/SAFETY.md](docs/SAFETY.md) for the unified safety model (capabilities, trusted boundaries, high-integrity profile).
 See [docs/FFI.md](docs/FFI.md) for the explicit foreign/unsafe boundary and [docs/STDLIB.md](docs/STDLIB.md) for the current stable stdlib direction.
 See [docs/TESTING.md](docs/TESTING.md) for the test structure.
 See [docs/README.md](docs/README.md) for the stable documentation index and [research/README.md](research/README.md) for exploratory design notes.
@@ -590,9 +590,9 @@ See [docs/README.md](docs/README.md) for the stable documentation index and [res
 | **11** | Structured LLVM backend + backend plurality over SSA | Backend done; plurality not started |
 | **12** | Kernel formalization + proofs | Initial — 17 theorems over pure Core fragment |
 | **13** | Execution model + runtime | Phase E done — documented, abort-on-OOM, FFI by-value |
-| **14** | Capability/safety productization | Phase F — not started |
+| **14** | Capability/safety productization | Done |
 
-Next critical path: **Phase F — capability and safety productization.** Phases A–E are complete: fast feedback, semantic cleanup, tooling/stdlib hardening, testing/backend/proofs, and the full runtime/execution model. The SSA backend contract, structured LLVM emission, audit reports (6 modes), abort-on-OOM, `#[repr(C)]` by-value extern fn passing, and the execution model (targets, profiles, FFI envelopes, concurrency direction) are all in place.
+Next critical path: **Phase G — kernel formalization and concurrency.** Phases A–F are complete: fast feedback, semantic cleanup, tooling/stdlib hardening, testing/backend/proofs, the full runtime/execution model, and capability/safety productization. The SSA backend contract, structured LLVM emission, audit reports (8 modes), abort-on-OOM, `#[repr(C)]` by-value extern fn passing, the execution model, capability aliases, coherent safety story (`docs/SAFETY.md`), and high-integrity profile direction are all in place.
 
 ### What fits the philosophy and what does not
 

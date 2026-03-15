@@ -32,7 +32,7 @@ Use them when you need exact current direction rather than the book's higher-lev
 - [`docs/FFI.md`](../../FFI.md)
   FFI direction, `extern fn`, `trusted extern fn`, and boundary rules.
 
-- [`docs/ABI_LAYOUT.md`](../../ABI_LAYOUT.md)
+- [`docs/ABI.md`](../../ABI.md)
   Layout and ABI-facing rules.
 
 - [`docs/DIAGNOSTICS.md`](../../DIAGNOSTICS.md)
