@@ -66,6 +66,7 @@ Still clearly not implemented:
 
 ### Recent Progress
 
+- **Phase E complete** (all 11 items): `docs/EXECUTION_MODEL.md` is the central reference. Covers hosted/freestanding model, runtime boundary, abort-on-OOM (builtins + stdlib), FFI ownership boundary, `#[repr(C)]` by-value calling convention for extern fn, target/platform support policy, stdlib execution model alignment, execution profiles direction, performance validation direction, verified FFI envelopes direction, and concurrency design (threads-first, structured, capability-gated).
 - **Test runner parallelized and narrowed** (commits `1619220`, `6049d89`): `run_tests.sh` defaults to parallel (`nproc` cores), adds `--fast` (default), `--full`, `--filter`, `--stdlib`, `--O2`, `--codegen`, `--report` modes. Partial runs warn clearly. `--fast` is the documented standard developer workflow. This is a strong Phase A solution, but it is still script-level orchestration rather than a deeper artifact-cached or dependency-aware test system.
 - **Aggregate loop lowering hardened** (commit `e68acc0`): aggregate loop variables promoted to entry-block allocas. Field assignment GEPs directly into stable storage.
 - **Aggregate if/else and match lowering hardened** (commit `8e606d9`): if/else branches with modified struct variables merge via entry-block allocas instead of `phi %Struct`. Match arms get var snapshot/restore between arms. Void-typed match results filtered from phi/store paths.

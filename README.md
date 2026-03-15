@@ -129,6 +129,7 @@ For the full language specification, see [The Concrete Programming Language: Sys
 - [CHANGELOG.md](CHANGELOG.md) — completed milestones
 - [docs/README.md](docs/README.md) — stable reference docs
 - [docs/PASSES.md](docs/PASSES.md) — pass-by-pass ownership boundaries and contracts
+- [docs/EXECUTION_MODEL.md](docs/EXECUTION_MODEL.md) — runtime model, allocation, FFI, targets, profiles, concurrency direction
 - [docs/TESTING.md](docs/TESTING.md) — test suites, coverage layers, and verification flow
 - [research/README.md](research/README.md) — exploratory design notes
 - [research/ten-x-improvements.md](research/ten-x-improvements.md) — the biggest long-term multipliers for Concrete
@@ -158,8 +159,8 @@ What is still clearly missing:
 
 - `transmute`
 - backend plurality over SSA (for example MLIR / C / Wasm)
-- kernel formalization
-- runtime
+- full kernel formalization (initial proof workflow landed with 17 theorems)
+- concurrency implementation (designed in Phase E, implementation in Phase J)
 - stdlib deepening: stronger systems ergonomics, API cleanup, and later iterator/collection polish
 
 ## Try It Now
@@ -285,7 +286,7 @@ Functions without capability annotations are pure. No side effects, no allocatio
 - `grep with(Network)` finds every function that touches the network
 - Your JSON parser has no capabilities? Then it *provably* can't phone home
 
-Predefined capabilities: `File`, `Network`, `Console`, `Env`, `Process`, `Alloc`, `Unsafe`. `Std` includes all except `Unsafe`. Users cannot define new capabilities.
+Predefined capabilities: `File`, `Network`, `Clock`, `Env`, `Random`, `Process`, `Console`, `Alloc`, `Unsafe`. `Std` includes all except `Unsafe`. Users cannot define new capabilities.
 
 ### Linear values and explicit destruction
 
@@ -398,14 +399,13 @@ The goal is not to out-feature those languages. The goal is to be unusually good
 
 ## Current Status
 
-The compiler implements the core surface language and the full internal IR pipeline in Lean 4. All 600 tests pass in the main suite (189 stdlib), including 44 report assertions, 46 golden tests, and 16 collections verified.
+The compiler implements the core surface language and the full internal IR pipeline in Lean 4. All 663 tests pass in the main suite (184 stdlib), including 32 pass-level Lean tests, 44 report assertions, 46 golden tests, and 16 collections verified.
 
 ## Known Rough Edges
 
-- the structured LLVM backend is in place, but the SSA/backend contract still needs tightening and defending
 - diagnostics infrastructure is strong, but rendering quality still has room to improve (ranges, notes, and secondary labels)
-- formal proofs have not started; the proof boundary exists architecturally (validated Core after `CoreCheck`) but no proofs are written yet
-- no runtime or execution model beyond what clang/libc provide
+- formal proofs are initial; 17 theorems proven over a pure Core fragment (abs/max/clamp), but full formalization of structs, enums, match, and recursion remains future work
+- concurrency is designed but not yet implemented (OS threads, spawn/join, channels planned for Phase J)
 
 Implemented today:
 
@@ -420,9 +420,9 @@ Implemented today:
 Still in progress:
 
 - diagnostics quality and rendering polish
-- optimizer work
-- kernel formalization
-- runtime maturity
+- capability/safety productization (Phase F)
+- deeper kernel formalization
+- concurrency implementation (Phase J)
 
 See [ROADMAP.md](ROADMAP.md) for active priorities and remaining work. What works today:
 
@@ -468,10 +468,10 @@ That already makes it more than a language-design experiment. The current implem
 
 It is not finished in the places that matter for broader adoption:
 
-- no verified kernel yet
-- no finalized ABI/layout model beyond the current `#[repr(C)]` baseline
+- no verified kernel yet (17 initial theorems, full formalization future)
+- ABI/layout model documented and tested but no empirical cross-target validation yet
 - no optimizer/MLIR pipeline yet
-- runtime story still incomplete
+- concurrency designed but not yet implemented
 
 ### Design Constraints
 
@@ -558,11 +558,11 @@ See [docs/README.md](docs/README.md) for the stable documentation index and [res
 | **9** | Bitwise operators + hex/bin/oct literals | Done |
 | **10** | `Self` keyword + multi-file modules | Done |
 | **11** | Structured LLVM backend + backend plurality over SSA | Backend done; plurality not started |
-| **12** | Kernel formalization + proofs | Not started |
-| **13** | Tooling | Not started |
-| **14** | Runtime (C, then Concrete) | Not started |
+| **12** | Kernel formalization + proofs | Initial — 17 theorems over pure Core fragment |
+| **13** | Execution model + runtime | Phase E done — documented, abort-on-OOM, FFI by-value |
+| **14** | Capability/safety productization | Phase F — not started |
 
-Next critical path: **strengthen the SSA/backend contract, make pipeline artifacts do more real work, then push formalization over validated Core.** Phases A-C (fast feedback, semantic cleanup, tooling/stdlib hardening) are complete. The summary-based frontend, `CoreCheck` semantic-authority shift, ABI/layout subsystem, cacheable pipeline artifacts, SSA cleanup, structured LLVM backend, audit/report outputs (6 modes with why-traces), structured diagnostics, and module-targeted testing are all in place.
+Next critical path: **Phase F — capability and safety productization.** Phases A–E are complete: fast feedback, semantic cleanup, tooling/stdlib hardening, testing/backend/proofs, and the full runtime/execution model. The SSA backend contract, structured LLVM emission, audit reports (6 modes), abort-on-OOM, `#[repr(C)]` by-value extern fn passing, and the execution model (targets, profiles, FFI envelopes, concurrency direction) are all in place.
 
 ### What fits the philosophy and what does not
 
@@ -637,7 +637,7 @@ Requires [Lean 4](https://leanprover.github.io/lean4/doc/setup.html) (v4.28.0+) 
 
 ```bash
 make build    # or: lake build
-make test     # runs all 600 tests
+make test     # runs all 663 tests
 make clean    # or: lake clean
 ```
 
@@ -704,9 +704,9 @@ Things Concrete deliberately does not have:
 - Clear path to formal verification because the compiler is already implemented in Lean and now has explicit internal IR boundaries
 
 **Next steps:**
-- Strengthen the SSA/backend contract for backend plurality and better backend reuse
-- Turn pipeline artifacts into more reusable tooling/testing/proof boundaries
+- Phase F: capability and safety productization (ergonomics, reporting, authority wrappers, high-integrity profile)
 - Push kernel formalization and proof development in Lean
+- Backend plurality over SSA (C/Wasm, later MLIR)
 
 ## License
 
