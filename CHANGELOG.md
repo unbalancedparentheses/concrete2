@@ -10,6 +10,22 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Comprehensive test expansion: 766 tests, 0 failures
+
+Added 80 new tests across 6 categories, bringing the full suite from 686 to 766 tests.
+
+**Wave 1 — Type system, codegen, capabilities, modules (44 tests):**
+- Type system soundness: generic chains, recursive enums, nested match exhaustiveness, linearity branch agreement, trait multi-bound, defer linearity
+- Codegen edge cases: integer overflow wrap, nested struct access, nested loops, large struct pass, cast chains, early return from loops, many locals, recursive fibonacci
+- Capability/trusted: capability subset chains, capability polymorphism, trusted impl methods, trusted extern calls, and 5 error tests for capability violations
+- Cross-module/parser: nested modules, struct methods across modules, enum match across modules, reexport types, deeply nested expressions
+
+**Wave 2 — ABI/FFI, proof boundary, optimization (19 tests):**
+- ABI/FFI: repr(C) nested structs, function pointer call chains, function pointers in structs, sizeof basic types, array bounds, pointer round-trips, and 2 error tests
+- Proof boundary: 11 `check_report` assertions verifying exact `--report proof` output — eligible function marking, exclusion reasons (capabilities, trusted boundary), and totals
+- Optimization: dead code after return, unused variables, constant folding, branch same value, loop invariant, deeply nested return, zero/single iteration loops
+- O2 regression: 8 new `-O2` variants for optimization-sensitive tests
+
 ### Phase G complete: Language Discipline, Design Policy, and Provable Subset
 
 All six Phase G items complete. Concrete now has explicit feature-admission criteria, recorded language decisions, documented long-term shape commitments, and a defined provable subset.
@@ -42,7 +58,7 @@ What changed:
 - `Concrete/Format.lean`: removed `bangStr` emission
 - `Concrete/Check.lean`: removed `isTrustedFn` from TypeEnv, loop-depth check now applies uniformly
 
-Test suite: 686 tests passing, 0 failures.
+Test suite: 766 tests passing, 0 failures.
 
 ### Phase F items 1–3, 7 complete: Capability and Safety Productization
 

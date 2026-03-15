@@ -1123,6 +1123,78 @@ run_err "$TESTDIR/error_cap_alias_missing.con" "requires Network but caller has"
 # Union tests
 run_ok "$TESTDIR/union_basic.con" 42
 
+# === Type system soundness tests ===
+run_ok "$TESTDIR/test_generic_chain.con" 42
+run_ok "$TESTDIR/test_generic_nested_struct.con" 42
+run_ok "$TESTDIR/test_enum_recursive_sum.con" 42
+run_ok "$TESTDIR/test_match_exhaustive_nested.con" 42
+run_ok "$TESTDIR/test_linearity_branch_agree.con" 42
+run_ok "$TESTDIR/test_linearity_match_consume.con" 42
+run_ok "$TESTDIR/test_defer_linearity.con" 42
+run_ok "$TESTDIR/test_trait_multi_bound.con" 42
+run_err "$TESTDIR/error_linearity_branch_disagree.con" "consumed in one branch"
+run_err "$TESTDIR/error_linearity_double_consume.con" "used after move"
+run_err "$TESTDIR/error_match_non_exhaustive.con" "non-exhaustive match"
+run_err "$TESTDIR/error_generic_bound_missing.con" "no method"
+
+# === Codegen edge case tests ===
+run_ok "$TESTDIR/test_int_overflow_wrap.con" 42
+run_ok "$TESTDIR/test_nested_struct_access.con" 42
+run_ok "$TESTDIR/test_nested_if_else.con" 42
+run_ok "$TESTDIR/test_loop_nested_three.con" 42
+run_ok "$TESTDIR/test_large_struct_pass.con" 42
+run_ok "$TESTDIR/test_cast_chain.con" 42
+run_ok "$TESTDIR/test_early_return_loop.con" 42
+run_ok "$TESTDIR/test_many_locals.con" 42
+run_ok "$TESTDIR/test_recursive_fibonacci.con" 42
+run_ok "$TESTDIR/test_comparison_chain.con" 42
+
+# === Optimization-sensitive codegen tests ===
+run_ok "$TESTDIR/test_dead_code_after_return.con" 42
+run_ok "$TESTDIR/test_unused_variable.con" 42
+run_ok "$TESTDIR/test_constant_fold_complex.con" 42
+run_ok "$TESTDIR/test_branch_same_value.con" 42
+run_ok "$TESTDIR/test_loop_invariant.con" 42
+run_ok "$TESTDIR/test_deeply_nested_return.con" 42
+run_ok "$TESTDIR/test_zero_iterations.con" 42
+run_ok "$TESTDIR/test_single_iteration_loop.con" 42
+
+# === Capability and trusted tests ===
+run_ok "$TESTDIR/test_cap_subset_chain.con" 42
+run_ok "$TESTDIR/test_cap_poly_apply.con" 42
+run_ok "$TESTDIR/test_cap_alias_nested.con" 42
+run_ok "$TESTDIR/test_trusted_impl_method.con" 42
+run_ok "$TESTDIR/test_trusted_extern_call.con" 42
+run_err "$TESTDIR/error_cap_superset_missing.con" "requires File, Network but caller has"
+run_err "$TESTDIR/error_cap_poly_insufficient.con" "requires capability"
+run_err "$TESTDIR/error_trusted_not_viral.con" "requires capability"
+run_err "$TESTDIR/error_extern_needs_unsafe.con" "requires Unsafe"
+run_err "$TESTDIR/error_trusted_no_extern.con" "requires Unsafe"
+
+# === Cross-module and parser tests ===
+run_ok "$TESTDIR/test_module_nested.con" 42
+run_ok "$TESTDIR/test_module_struct_method.con" 42
+run_ok "$TESTDIR/test_module_enum_match.con" 42
+run_ok "$TESTDIR/test_module_reexport_type.con" 42
+run_ok "$TESTDIR/test_deeply_nested_expr.con" 42
+run_ok "$TESTDIR/test_many_params.con" 42
+run_ok "$TESTDIR/test_empty_struct.con" 42
+run_ok "$TESTDIR/test_enum_many_variants.con" 42
+run_ok "$TESTDIR/test_defer_early_return.con" 42
+run_ok "$TESTDIR/test_defer_loop_break.con" 42
+run_err "$TESTDIR/error_module_private.con" "is not public"
+run_err "$TESTDIR/error_deeply_nested_type_mismatch.con" "type mismatch"
+
+# === ABI / FFI tests ===
+run_ok "$TESTDIR/test_repr_c_nested.con" 42
+run_ok "$TESTDIR/test_fn_ptr_call_chain.con" 42
+run_ok "$TESTDIR/test_fn_ptr_in_struct.con" 42
+run_ok "$TESTDIR/test_sizeof_basic_types.con" 42
+run_ok "$TESTDIR/test_array_bounds.con" 42
+run_ok "$TESTDIR/test_ptr_round_trip.con" 42
+run_err "$TESTDIR/error_repr_c_with_generic.con" "cannot have type parameters"
+run_err "$TESTDIR/error_fn_ptr_wrong_sig.con" "type mismatch"
+
 # === String edge case tests ===
 run_ok "$TESTDIR/string_empty.con" 0
 run_ok "$TESTDIR/string_concat_empty.con" 5
@@ -1609,6 +1681,59 @@ check_report "$TESTDIR/report_integration.con" proof \
     "report_integration.con --report proof shows 5 excluded" \
     "report_integration.con --report proof wrong excluded count"
 
+# --- Proof boundary: pure-only program ---
+check_report_multi "$TESTDIR/test_proof_eligible_pure.con" proof \
+    "test_proof_eligible_pure.con --report proof 4 eligible, 1 excluded" \
+    "test_proof_eligible_pure.con --report proof wrong counts" \
+    "4 eligible for ProofCore" "1 excluded"
+
+check_report_multi "$TESTDIR/test_proof_eligible_pure.con" proof \
+    "test_proof_eligible_pure.con --report proof add,multiply,make_point,color_value eligible" \
+    "test_proof_eligible_pure.con --report proof missing eligible fns" \
+    "✓ add" "✓ multiply" "✓ make_point" "✓ color_value"
+
+check_report "$TESTDIR/test_proof_eligible_pure.con" proof \
+    "✗ main.*capabilities" \
+    "test_proof_eligible_pure.con --report proof main excluded for caps" \
+    "test_proof_eligible_pure.con --report proof main not excluded"
+
+# --- Proof boundary: mixed eligible/ineligible ---
+check_report_multi "$TESTDIR/test_proof_mixed.con" proof \
+    "test_proof_mixed.con --report proof add,max eligible" \
+    "test_proof_mixed.con --report proof missing eligible fns" \
+    "✓ add" "✓ max"
+
+check_report "$TESTDIR/test_proof_mixed.con" proof \
+    "✗ read_data.*capabilities.*File" \
+    "test_proof_mixed.con --report proof read_data excluded for File cap" \
+    "test_proof_mixed.con --report proof read_data not excluded"
+
+check_report "$TESTDIR/test_proof_mixed.con" proof \
+    "✗ ptr_op.*trusted boundary" \
+    "test_proof_mixed.con --report proof ptr_op excluded for trusted" \
+    "test_proof_mixed.con --report proof ptr_op not excluded"
+
+check_report_multi "$TESTDIR/test_proof_mixed.con" proof \
+    "test_proof_mixed.con --report proof 2 eligible, 3 excluded" \
+    "test_proof_mixed.con --report proof wrong counts" \
+    "2 eligible for ProofCore" "3 excluded"
+
+# --- Proof boundary: trusted excluded even without pointer ops ---
+check_report "$TESTDIR/test_proof_trusted_excluded.con" proof \
+    "✗ safe_transform.*trusted boundary" \
+    "test_proof_trusted_excluded.con --report proof safe_transform excluded" \
+    "test_proof_trusted_excluded.con --report proof safe_transform not excluded"
+
+check_report "$TESTDIR/test_proof_trusted_excluded.con" proof \
+    "✓ pure_helper" \
+    "test_proof_trusted_excluded.con --report proof pure_helper eligible" \
+    "test_proof_trusted_excluded.con --report proof pure_helper not eligible"
+
+check_report_multi "$TESTDIR/test_proof_trusted_excluded.con" proof \
+    "test_proof_trusted_excluded.con --report proof 2 eligible, 1 excluded" \
+    "test_proof_trusted_excluded.con --report proof wrong counts" \
+    "2 eligible for ProofCore" "1 excluded"
+
 fi # end section: report
 
 # === Codegen differential tests ===
@@ -1776,6 +1901,16 @@ run_ok_O2 "$TESTDIR/struct_loop_break.con"        42
 run_ok_O2 "$TESTDIR/struct_nested_loop.con"        42
 run_ok_O2 "$TESTDIR/struct_if_else_merge.con"      42
 run_ok_O2 "$TESTDIR/struct_match_merge.con"        42
+
+# O2 variants for optimization-sensitive codegen tests
+run_ok_O2 "$TESTDIR/test_dead_code_after_return.con" 42
+run_ok_O2 "$TESTDIR/test_branch_same_value.con" 42
+run_ok_O2 "$TESTDIR/test_deeply_nested_return.con" 42
+run_ok_O2 "$TESTDIR/test_loop_nested_three.con" 42
+run_ok_O2 "$TESTDIR/test_early_return_loop.con" 42
+run_ok_O2 "$TESTDIR/test_constant_fold_complex.con" 42
+run_ok_O2 "$TESTDIR/test_loop_invariant.con" 42
+run_ok_O2 "$TESTDIR/test_recursive_fibonacci.con" 42
 fi # end section: O2
 
 # --- Category 3: Cross-representation consistency ---
