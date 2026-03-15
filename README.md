@@ -163,6 +163,23 @@ These examples show why Concrete is aimed at critical low-level components inste
 - cleanup is written in the function body with `defer destroy(...)`, not hidden in a runtime or convention
 - the compiler surface makes a stronger audit claim than Rust, Zig, or C usually do by default: who can decide, who can read policy, who can emit, and where trust starts
 
+Tiny trusted boundary:
+
+```con
+trusted extern fn abs(x: Int) -> Int;
+
+fn saturating_distance(x: Int, y: Int) -> Int {
+    let delta: Int = x - y;
+    return abs(delta);
+}
+```
+
+That second example is deliberately small. It shows the other half of Concrete's story:
+
+- the low-level foreign binding is explicit and named
+- the trusted boundary is one declaration, not ambient privilege
+- callers do not need to carry `Unsafe` just to use an audited pure foreign function
+
 For more examples, see [`examples/`](examples).
 
 ## Why Concrete Exists
