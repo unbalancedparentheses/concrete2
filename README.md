@@ -57,15 +57,20 @@ That is why the next major phase is [Phase H](ROADMAP.md): large-program pressur
 ## What Concrete Looks Like
 
 These are the kinds of boundaries Concrete tries to make obvious in source code.
-The interesting claim is mechanical, not rhetorical: the verifier below can read a manifest, but it cannot silently grow `Network` or `Process`, and the raw C edge stays inside one small trusted wrapper.
+The interesting claim is mechanical, not rhetorical: the gatekeeper below can read policy and emit an alert, but the actual decision core stays pure, and no function silently grows new authority.
 
-Pure policy core:
+Pure decision core:
 
 ```con
-struct ManifestMeta {
-    size: Int,
-    version: Int,
-    requests_network: Bool,
+struct Command {
+    opcode: Int,
+    target: Int,
+    remote: Bool,
+}
+
+struct Policy {
+    max_target: Int,
+    allow_remote: Bool,
 }
 
 enum Decision {
@@ -73,21 +78,18 @@ enum Decision {
     Deny,
 }
 
-fn approve_manifest(meta: ManifestMeta, expected_size: Int, max_version: Int) -> Decision {
-    if meta.requests_network {
+fn allow_command(cmd: Command, policy: Policy) -> Decision {
+    if cmd.target > policy.max_target {
         return Decision#Deny;
     }
-    if meta.version > max_version {
-        return Decision#Deny;
-    }
-    if meta.size != expected_size {
+    if cmd.remote && policy.allow_remote == false {
         return Decision#Deny;
     }
     return Decision#Allow;
 }
 ```
 
-Audited low-level wrapper:
+Trusted low-level wrappers:
 
 ```con
 trusted extern fn fopen(name: *mut u8, mode: *mut u8) -> *const u8;
@@ -96,11 +98,11 @@ trusted extern fn fseek(file: *const u8, offset: i64, whence: i32) -> i32;
 trusted extern fn ftell(file: *const u8) -> i64;
 trusted extern fn malloc(size: u64) -> *mut u8;
 trusted extern fn free(ptr: *mut u8);
+trusted extern fn putchar(c: i32) -> i32;
 
 // helper functions like string_to_cstr(...) and mode_cstr(...)
 // stay inside the trusted wrapper layer too.
-// Parsing details are omitted here; the point is the boundary shape.
-trusted fn load_manifest_meta(path: &String) with(File) -> ManifestMeta {
+trusted fn load_policy(path: &String) with(File) -> Policy {
     let path_buf: *mut u8 = string_to_cstr(path);
     let mode_buf: *mut u8 = mode_cstr(114); // "r"
     let fp: *const u8 = fopen(path_buf, mode_buf);
@@ -109,16 +111,30 @@ trusted fn load_manifest_meta(path: &String) with(File) -> ManifestMeta {
     fseek(fp, 0, 2);
     let size: i64 = ftell(fp);
     fclose(fp);
-    return ManifestMeta {
-        size: size as Int,
-        version: 1,
-        requests_network: false,
+    return Policy {
+        max_target: size as Int,
+        allow_remote: false,
     };
 }
 
-fn verify_update(path: &String, expected_size: Int, max_version: Int) with(File) -> Decision {
-    let meta: ManifestMeta = load_manifest_meta(path);
-    return approve_manifest(meta, expected_size, max_version);
+trusted fn emit_denial() with(Console) {
+    putchar(68); // D
+    putchar(69); // E
+    putchar(78); // N
+    putchar(89); // Y
+    putchar(10); // \n
+}
+
+fn evaluate_command(path: &String, cmd: Command) with(File, Console) -> Decision {
+    let policy: Policy = load_policy(path);
+    let decision: Decision = allow_command(cmd, policy);
+    match decision {
+        Decision#Allow => { return Decision#Allow; },
+        Decision#Deny => {
+            emit_denial();
+            return Decision#Deny;
+        }
+    }
 }
 ```
 
@@ -142,10 +158,10 @@ fn inspect_handle(h: AuditHandle) -> Int {
 These examples show why Concrete is aimed at critical low-level components instead of general convenience:
 
 - the decision logic is pure and testable on its own
-- the verifier's authority is explicit: `with(File)` and nothing else
-- the raw C boundary is concentrated inside a small trusted wrapper instead of leaking everywhere
+- policy loading and alert emission have separate, visible authority budgets
+- the raw C boundary is concentrated inside small trusted wrappers instead of leaking everywhere
 - cleanup is written in the function body with `defer destroy(...)`, not hidden in a runtime or convention
-- the compiler surface makes a stronger audit claim than Rust, Zig, or C usually do by default: where authority exists, where trust starts, and where cleanup happens
+- the compiler surface makes a stronger audit claim than Rust, Zig, or C usually do by default: who can decide, who can read policy, who can emit, and where trust starts
 
 For more examples, see [`examples/`](examples).
 
