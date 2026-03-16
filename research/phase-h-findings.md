@@ -103,6 +103,41 @@ What closed after scoped `defer` landed:
 - repeated keyword-matching and output cleanup paths also became smaller and less error-prone
 - this is evidence that explicit cleanup can become materially less noisy without hiding ownership or destruction
 
+### JSON Parser Benchmark
+
+What it exposed:
+
+- alloca inside loop bodies grows the stack every iteration (LLVM never frees until function return); with 24 String-sized allocas in `parse_value`, deep recursion hit stack overflow at ~130k iterations
+- string literal assignment inside a loop generated invalid IR: `ensureValAsPtr` had no `.strConst` case, producing `store %struct.String @global` instead of materializing the string
+- compiling without `-O2` made the benchmark 3.6x slower than necessary: per-character `string_char_at` calls dominate at -O0 but are fully inlined at -O2
+
+What closed:
+
+- Bug 013: alloca hoisting — all allocas now emitted in function entry block via `entryAllocas` field in EmitSSAState
+- Bug 014: string literal in loop — `.strConst` case added to `ensureValAsPtr`, routes through `materializeStrConst`
+- Bug 015: missing `-O2` — clang invocations now pass `-O2` for both regular and test compilation
+
+What it proved:
+
+- at -O2, Concrete's JSON parser parses 9.3MB in ~40ms, matching or slightly beating Python's `json.loads` (46ms) on the same file
+- earlier measurements showing Concrete at 185ms total were benchmark-mode artifacts: 145ms parse at -O0 + 40ms byte-by-byte string construction
+- the parser implementation is strong; the optimizer/backend story matters a lot for real workloads
+- `string_reserve` pre-allocation dropped the load phase from 40ms to 3ms at -O2 (LLVM inlines the push loop into a near-memcpy)
+
+What was added:
+
+- `string_reserve(&mut String, cap)` builtin across all compiler passes (Intrinsic, BuiltinSigs, Check, Elab, EmitBuiltins)
+- `Bytes.to_string()` zero-copy ownership transfer in std/src/bytes.con
+- regression tests: alloca hoisting stress, string literal in loop, string_reserve
+
+Benchmark results (9.3MB JSON, warm cache):
+
+| | Load | Parse | Total |
+|---|---|---|---|
+| Concrete -O0 (old default) | 40ms | 145ms | 185ms |
+| Concrete -O2 (new default) | 3ms | 40ms | 43ms |
+| Python json.loads | — | 46ms | 46ms |
+
 ## Current Open Findings
 
 ### Formatting / interpolation

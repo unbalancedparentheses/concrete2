@@ -10,6 +10,20 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Phase H: codegen fixes, -O2 default, JSON benchmark proves competitive performance
+
+**Alloca hoisting (Bug 013):** All `alloca` instructions now emitted in function entry block via `entryAllocas` field in EmitSSAState. Previously, allocas inside loop bodies grew the stack every iteration, causing stack overflow at ~130k iterations in recursive parsers.
+
+**String literal in loop (Bug 014):** Added `.strConst` case to `ensureValAsPtr` in EmitSSA.lean. String literal assignment inside loops previously generated invalid LLVM IR (global symbol used as struct value).
+
+**-O2 default (Bug 015):** Clang invocations now pass `-O2` for both regular and test compilation. This is a 3.6x parse speedup on the JSON benchmark (145ms → 40ms) because LLVM inlines per-character builtins like `string_char_at` and `string_push_char`.
+
+**`string_reserve` builtin:** Added `string_reserve(&mut String, cap)` across all compiler passes. Pre-allocates string capacity to avoid repeated reallocs during bulk construction.
+
+**`Bytes.to_string()`:** Zero-copy ownership transfer from Bytes to String in std/src/bytes.con (identical struct layout, no copy needed).
+
+**JSON benchmark result:** Concrete parses 9.3MB JSON in 40ms at -O2, matching or slightly beating Python's `json.loads` (46ms). Earlier 185ms measurements were -O0 artifacts. Full breakdown in `research/phase-h-findings.md`.
+
 ### Phase H: scope-aware defer semantics and control-flow cleanup coverage
 
 **Scoped defer semantics:** `defer` now lowers as true scope-exit cleanup rather than a flat function-scoped approximation. Deferred calls run at block exit, loop-iteration exit, `break`, `continue`, early return, and implicit function end.
