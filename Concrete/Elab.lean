@@ -1310,27 +1310,14 @@ partial def elabModule (m : Module) (summary : FileSummary)
         methodRetTys := tb.methods.map fun f => (f.name, f.retTy),
         builtinTraitId := traitBuiltinId : CTraitImpl }
     linkerAliases :=
-      -- Import aliases (first, so they take precedence over generic import aliases):
-      -- imported bare name → prefixed definition (subName_fnName)
-      -- Needed because file-based submodule definitions are emitted with module prefix.
-      m.imports.foldl (fun acc imp =>
-        match summary.submoduleSummaries.find? fun (n, _) => n == imp.moduleName with
-        | some (subName, subSummary) =>
-          acc ++ imp.symbols.foldl (fun acc sym =>
-            let origName := sym.name
-            let localName := match sym.alias with | some a => a | none => origName
-            -- Only alias regular functions (not externs — those keep bare C names)
-            if subSummary.functions.any fun (n, _) => n == origName then
-              acc ++ [(localName, subName ++ "_" ++ origName)]
-            else acc
-          ) []
-        | none => acc
-      ) []
-      ++ imports.linkerAliases
-      -- Extern fn aliases: qualified call (subName_efName) → bare C symbol (efName)
+      imports.linkerAliases
+      -- Qualified call aliases: subName_fnName → fnName (bare definition)
+      -- When user writes math::add, parser mangles to math_add; definition is just add.
       ++ summary.submoduleSummaries.foldl (fun acc (subName, subSummary) =>
         acc
+        ++ (subSummary.functions.map fun (fnName, _) => (subName ++ "_" ++ fnName, fnName))
         ++ (subSummary.externFnSigs.map fun (efName, _) => (subName ++ "_" ++ efName, efName))
+        ++ (subSummary.implMethodSigs.map fun (msName, _) => (subName ++ "_" ++ msName, msName))
       ) []
   }
 

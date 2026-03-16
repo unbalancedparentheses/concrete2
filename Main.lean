@@ -442,8 +442,17 @@ def compileBuild (projectRoot : String) (outputPath : Option String) (emitLLVM :
     IO.eprintln (renderDiagnostics ds (sourceMap := [(mainPath, source)]))
     return 1
   | .ok (resolvedParsed, subSrcMap) =>
+    -- Strip #[test] functions from dependency modules (they aren't needed for regular builds
+    -- and can trigger capability/monomorphization errors for test-only code paths)
+    let stripTests : Module → Module := fun m =>
+      { m with
+        functions := m.functions.filter fun f => !f.isTest
+        submodules := m.submodules.map fun sub =>
+          { sub with functions := sub.functions.filter fun f => !f.isTest }
+      }
+    let depModulesClean := depModules.map stripTests
     -- Merge: dependency modules come first, then project modules
-    let allModules : List Module := depModules ++ resolvedParsed.modules
+    let allModules : List Module := depModulesClean ++ resolvedParsed.modules
     let allSrcMap : SourceMap := [(mainPath, source)] ++ subSrcMap ++ depSrcMap
     let merged : ParsedProgram := { modules := allModules }
 

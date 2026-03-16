@@ -48,7 +48,8 @@ echo "    done."
 
 # ── 3. Build Concrete version ────────────────────────────────────────
 echo "==> Building Concrete version..."
-(cd "$SCRIPT_DIR" && concrete build 2>&1) || {
+CONCRETE_COMPILER="$(cd "$SCRIPT_DIR/../.." && pwd)/.lake/build/bin/concrete"
+(cd "$SCRIPT_DIR" && "$CONCRETE_COMPILER" build 2>&1) || {
     echo "    WARNING: concrete build failed; skipping Concrete benchmarks."
     CON_BIN=""
 }

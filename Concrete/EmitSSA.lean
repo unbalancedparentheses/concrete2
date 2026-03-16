@@ -790,16 +790,9 @@ private def emitSBlock (s : EmitSSAState) (b : SBlock) : EmitSSAState :=
     currentInstrs := #[]
   }
 
-/-- Compute the LLVM symbol name for a function definition.
-    Submodule functions are prefixed with their module path to avoid collisions. -/
-private def emittedFnName (f : SFnDef) : String :=
-  match f.modulePath.splitOn "." |>.drop 1 with
-  | parts@(_ :: _) => String.intercalate "_" parts ++ "_" ++ f.name
-  | [] => f.name
-
 private def emitSFnDef (s : EmitSSAState) (f : SFnDef) (isUserMain : Bool) : EmitSSAState :=
   let retTy := tyToLLVMTy s f.retTy
-  let fnName := if isUserMain then "user_main" else emittedFnName f
+  let fnName := if isUserMain then "user_main" else f.name
   let params := f.params.map fun (n, t) => (n, paramTyToLLVMTy s t)
   -- Reset per-function state
   let s := { s with currentBlocks := #[], fnParams := f.params, entryAllocas := #[] }
@@ -1139,9 +1132,8 @@ private def emitTestRunner (s : EmitSSAState) (modules : List SModule) (moduleFi
     -- Helper: build test dispatch instructions for a given test at index i
     let mkTestDispatch (f : SFnDef) (i : String) : List LLVMInstr :=
       let nameLen := f.name.length + 1
-      let defName := emittedFnName f
       [ .comment s!"Test: {f.name}",
-        .call (some s!"result.{i}") .i32 (.global defName) [],
+        .call (some s!"result.{i}") .i32 (.global f.name) [],
         .binOp s!"is_pass.{i}" .icmpEq .i32 (.reg s!"result.{i}") (.intLit 0),
         gep32 s!"name.{i}" (.array nameLen .i8) (.global s!"test.name.{f.name}") ]
     -- Build all blocks via fold over (remaining tests, index, accumulated blocks)

@@ -659,6 +659,10 @@ After the policy engine, MAL, JSON parser, grep-like tool, and bytecode VM, the 
 7. improve testing tooling on top of the now-landed package workflow:
    - better failure output and filtering
    - testing workflow that grows naturally into workspace mode
+8. keep the current backend work honest about future plurality:
+   - preserve SSA as the only backend boundary
+   - avoid baking new LLVM-only assumptions into earlier phases
+   - treat QBE as the first lightweight second-backend candidate once backend plurality work actually begins
 
 ### Priority Order For Closing The Gap To Rust
 
@@ -1312,7 +1316,9 @@ The structured LLVM backend and SSA backend contract are done. Remaining backend
 2. ~~Document the SSA backend contract.~~ **Done** — SSAVerify guarantees, SSACleanup postconditions, EmitSSA preconditions documented in `docs/PASSES.md`.
 3. ~~Close the calling convention gap for `extern fn` with struct parameters~~ — **Done** (Phase E item 5): `#[repr(C)]` struct arguments passed by value in extern fn calls
 4. Make backend plurality explicit over the SSA boundary — **not started**
+   - earlier phases should preserve this path even before L2 begins; do not let LLVM-specific assumptions leak backward into semantic or lowering layers
 5. Only then evaluate additional backend families such as C or Wasm — **not started**
+   - QBE is the first lightweight candidate to evaluate once a second backend experiment is justified
 6. Treat MLIR as optional and only if it earns its complexity — **not started**
 
 ## Not Yet
