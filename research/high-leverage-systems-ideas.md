@@ -26,6 +26,11 @@ It exists so these ideas stay visible, comparable, and cross-linked even when th
 | Semantic query/search tooling | 2-4 days for per-function report slices and simple fact queries | 1-2 weeks for maintained query/search surface over machine-readable artifacts | Research only; strong operational fit | [semantic-diff-and-trust-drift.md](semantic-diff-and-trust-drift.md) |
 | Type-aware fuzzing/tool-generated invariants | 1-2 days for parser/container/property expansions | 1-2 weeks for maintained generator/fuzz tooling over types and bounds | Research only; prefer tooling over syntax | [testing-strategy.md](testing-strategy.md) |
 | Binary format DSL / derived parsers | none without real workload pressure | several weeks if promoted to surface syntax and proof-backed derivation | Research only; evidence-gated | [binary-format-dsl.md](binary-format-dsl.md) |
+| Cryptographic source commitments / reproducible evidence bundles | 2-4 days for deterministic bundle manifests and replayable verification | longer if signing, publication, and attestation become supported workflow surfaces | Strong roadmap fit; operationally committed direction, detailed mechanism still research | [cryptographic-source-commitments.md](cryptographic-source-commitments.md) |
+| Semantic review policy tooling | 2-4 days for CI checks over authority/trust drift | 1-2 weeks for maintained review-policy tooling over machine-readable compiler facts | Strong roadmap fit; tooling-first | [evidence-review-workflows.md](evidence-review-workflows.md) |
+| Self-describing binaries / proof-facing release artifacts | none without stronger artifact identity | 1-2 weeks once proof-facing export identity is stable | Research only; keep claims narrow | [self-describing-binaries.md](self-describing-binaries.md) |
+| Symbolic execution as proof addon tooling | reuse existing proof-facing exports | 1-2 weeks for first bounded-property workflow once proof subjects are stable | Strong research fit; addon-only | [proof-addon-architecture.md](proof-addon-architecture.md) |
+| Hardware capability mapping | none without target/runtime work | long-horizon target-specific research | Research only; do not commit yet | [hardware-capability-mapping.md](hardware-capability-mapping.md) |
 
 ## Why These Ideas Matter
 
@@ -40,6 +45,11 @@ These ideas are worth tracking because they improve Concrete where it most wants
 - **semantic query/search tooling** lets users ask review questions directly over compiler facts instead of manually stitching reports together
 - **type-aware fuzzing/tool-generated invariants** improves confidence in stdlib/runtime behavior without growing the core language
 - **binary format DSLs** may eventually help protocol/config-heavy workloads, but only if they outperform ordinary library/tool/report approaches enough to justify new syntax
+- **cryptographic source commitments** strengthen the provenance and trust-bundle story without adding language semantics
+- **semantic review policy tooling** turns existing reports into operational CI/release controls
+- **self-describing binaries** may become a strong artifact story if they stay tied to explicit proof/report exports instead of vague executable claims
+- **symbolic execution as addon tooling** strengthens the proof workflow without turning the compiler into a solver-first system
+- **hardware capability mapping** is interesting only as later target-specific runtime research, not as a current language direction
 
 ## Report-First Wins
 
@@ -49,6 +59,7 @@ The fastest additions from this set are report-oriented, not language-oriented:
 2. `--report layout` padding visualization and stronger enum/layout detail
 3. `--report boundedness` or equivalent structural execution-cost classification
 4. per-function inspection and semantic query/search over maintained report subjects
+5. reproducible bundle manifests and review-policy checks over existing compiler facts
 
 These are high leverage because they:
 
@@ -106,13 +117,39 @@ Treat this as evidence-gated.
 If real workloads keep wanting binary/protocol schemas, derived parse/serialize pairs, and round-trip evidence, it may earn a place later.
 Until then, prefer library patterns, layout/protocol reports, and proof/tool consumers over new core syntax.
 
+### 10. Cryptographic source commitments / reproducible evidence bundles
+
+This is a strong fit and should be treated as an operational commitment, not a language feature.
+The research question is about exact bundle shape, signing/provenance policy, and verification workflow, not whether Concrete should care about reproducible evidence.
+
+### 11. Semantic review policy tooling
+
+This is also a strong fit and should remain tooling-first.
+The compiler should provide facts; CI/review tooling should enforce policy over those facts without embedding approval workflows in the language surface.
+
+### 12. Self-describing binaries / proof-facing release artifacts
+
+Keep this only in a narrow, honest form.
+The useful version is: binaries or release artifacts carry or reference stable proof/report identities.
+The wrong version is: "the executable proves itself."
+
+### 13. Symbolic execution as proof addon tooling
+
+Strong research fit, but only as addon tooling over proof-facing compiler artifacts.
+Do not let symbolic execution migrate into ordinary semantic compilation.
+
+### 14. Hardware capability mapping
+
+Keep this visible only as long-horizon target/runtime research.
+It is too target-specific and runtime-heavy to influence the main roadmap now.
+
 ## Roadmap Relation
 
 These ideas fall into three categories:
 
-- **Committed direction**: allocation profiles / `NoAlloc` / stronger alloc reports (Phase N)
-- **Strong research candidates**: arena allocation, layout reports, execution boundedness reports, semantic query/search tooling
-- **Evidence-gated later ideas**: typestate, package-level authority budgets, binary format DSLs, and any derive-heavy fuzzing surface
+- **Committed direction**: allocation profiles / `NoAlloc` / stronger alloc reports (Phase N); cryptographic source commitments / reproducible evidence bundles (Phase L); semantic review policy tooling (Phase L)
+- **Strong research candidates**: arena allocation, layout reports, execution boundedness reports, semantic query/search tooling, symbolic execution addon tooling, self-describing-binary artifact exports
+- **Evidence-gated later ideas**: typestate, package-level authority budgets, binary format DSLs, any derive-heavy fuzzing surface, and hardware capability mapping
 
 The roadmap should mention them so they remain visible, but not all of them should become phases immediately.
 
@@ -160,3 +197,25 @@ This is the current best-fit phase mapping for the concrete sequencing discussed
    - evidence-gated exploration
      - **Phase O**
    - only move earlier if a serious protocol-heavy workload proves that ordinary library/report/proof tooling is not enough
+
+9. **Cryptographic source commitments / reproducible evidence bundles**
+   - **Phase L**
+   - rationale: strong operational fit, but the exact signing/provenance/bundle workflow still needs research
+
+10. **Semantic review policy tooling**
+   - **Phase L**
+   - rationale: should sit on machine-readable reports and trust-drift facts, not in the source language
+
+11. **Self-describing binaries / proof-facing release artifacts**
+   - proof-facing export side
+     - **Phase I**
+   - operational bundle/release side
+     - **Phase L**
+
+12. **Symbolic execution as proof addon tooling**
+   - **Phase I**
+   - rationale: the layered proof workflow already points this way; keep it addon-style
+
+13. **Hardware capability mapping**
+   - **Phase O**
+   - rationale: long-horizon target/runtime research only
