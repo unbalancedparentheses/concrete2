@@ -12,7 +12,7 @@ This note records what seems genuinely useful to Concrete from:
 - Salsa
 - rust-analyzer frontend/VFS ideas
 - MLIR / IREE / TVM IR discipline
-- Roc / Gleam / Mojo compiler/tooling ideas
+- Roc / Gleam / Mojo / Zig / Odin compiler/tooling ideas
 
 The point is not to import "AI compiler" ideas into Concrete because AI is fashionable.
 The point is to identify architectural techniques that could materially improve:
@@ -318,8 +318,10 @@ This is more of a package/runtime design lesson than an incremental-compiler les
 
 ## What Gleam Adds
 
-The most useful Gleam-style idea is not syntax.
-It is ecosystem and target discipline.
+The most useful Gleam-style ideas are not syntax.
+They are ecosystem and target discipline.
+
+### 1. Fine-grained target compatibility
 
 Interesting compiler-adjacent lesson:
 
@@ -331,9 +333,53 @@ That may matter later for:
 - high-integrity profiles
 - package/platform constraints
 
+### 2. Explicit dependency/package UX
+
+Gleam is also a good reminder that package UX should stay boring:
+
+- local dependencies are straightforward
+- direct dependencies stay visible
+- package convenience does not hide the graph
+
+That reinforces Concrete's package direction:
+
+- boring manifests
+- explicit direct dependencies
+- graph honesty over convenience magic
+
+## What Zig Adds
+
+Zig is one of the strongest build/toolchain references for Concrete.
+
+### 1. Build graph as a first-class toolchain surface
+
+The main lesson is:
+
+- build orchestration belongs inside the toolchain, not as shell folklore
+
+This supports Concrete's existing direction:
+
+- one binary
+- graph-shaped project workflow
+- driver-owned orchestration
+
+### 2. Incremental compilation as a tested product surface
+
+One of Zig's most useful signals is not merely "incremental compilation exists."
+It is:
+
+- incremental compilation has dedicated test coverage and is treated as a real supported workflow
+
+That is a strong lesson for Concrete:
+
+- incremental compilation should not be treated as a hidden optimization
+- it should have dedicated tests, bug corpus coverage, and explicit workflow expectations
+
 ## What Mojo Adds
 
-The most relevant Mojo-like idea is:
+The most relevant Mojo-like ideas are tooling-oriented.
+
+### 1. Per-function compilation inspection
 
 - per-function compile inspection should be easy
 
@@ -351,6 +397,38 @@ That is useful for:
 
 This is a tooling/inspection lesson, not a language-design lesson.
 
+### 2. Explicit target-aware inspection
+
+Mojo's compile-time tooling also makes the target explicit in inspection APIs.
+
+That reinforces a useful idea for Concrete:
+
+- inspection and reports should become more target/profile aware over time
+
+Useful later for:
+
+- target-aware package/report workflows
+- cross-compilation diagnostics
+- clearer inspection UX
+
+## What Odin Adds
+
+Odin is less interesting for deep compiler architecture than the others, but it is useful as a product reminder.
+
+### 1. Tests/docs/packages are first-class product surfaces
+
+Odin's docs emphasize:
+
+- package docs
+- examples
+- test runner documentation
+- source/tree discoverability
+
+This is not a deep compiler-architecture lesson.
+It is still important for Concrete:
+
+- package/testing/doc UX should be treated as part of the language product, not only engineering cleanup
+
 ## Concrete-Specific Synthesis
 
 The most promising architecture is:
@@ -361,6 +439,7 @@ The most promising architecture is:
 4. partial materialization of expensive reports/views
 5. readiness tracking for report/evidence consumers
 6. per-function/per-artifact inspection tools
+7. finer-grained target/profile compatibility tracking in package/report tooling
 
 That would let Concrete become:
 
@@ -397,6 +476,7 @@ Once the package/project model exists, the first concrete uses would be:
 5. machine-readable maintained report views
 6. better test/build invalidation
 7. per-function inspection UX
+8. finer-grained target/profile compatibility tracking in package/report tooling
 
 These are much more realistic than trying to build a general differential compiler core immediately.
 
@@ -426,6 +506,7 @@ It does **not** belong as an immediate Phase H or language-surface task.
 4. only then experiment with maintained derived views for reports
 5. only after that consider more ambitious frontier/readiness tracking
 6. add per-function inspection before adding heavy new optimizer architecture
+7. treat incremental compilation as a tested workflow surface, not just a cache implementation detail
 
 ## Closest Existing Precedents
 
@@ -457,6 +538,11 @@ Timely / Differential / Noria are much more important:
   artifact-driven, report-maintaining compiler/build system
 
 Rustc and Salsa are the strongest practical compiler precedents.
+
+Zig is the strongest build/toolchain precedent.
+Gleam is the strongest package/compatibility-discipline precedent.
+Mojo is the strongest per-function inspection precedent.
+Odin is a reminder that tests/docs/packages are product surfaces.
 
 The likely highest-value long-term move is:
 

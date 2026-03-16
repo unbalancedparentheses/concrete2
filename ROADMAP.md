@@ -738,6 +738,7 @@ This phase should also establish the package-facing side of the evidence story:
 Primary surfaces:
 - [research/authority-budgets.md](research/authority-budgets.md)
 - [research/artifact-driven-compiler.md](research/artifact-driven-compiler.md)
+- [research/compiler-dataflow-ideas.md](research/compiler-dataflow-ideas.md)
 - [research/developer-tooling.md](research/developer-tooling.md)
 - [research/trust-multipliers.md](research/trust-multipliers.md)
 - project/package metadata
@@ -746,6 +747,7 @@ Primary surfaces:
 - workspace and dependency tooling
 
 1. design and implement incremental compilation — serialize pipeline artifacts (`ResolvedProgram`, `ValidatedCore`, `SSAProgram`) to disk, add cache invalidation by source hash, skip unchanged modules — **not started**. This is the prerequisite for packages to scale: without it, every build recompiles the world. The artifact pipeline is already much stronger than before, but real incrementality still depends on cleaner interface/body artifact splitting, stable identities, and driver/cache work — not only serialization.
+   - this should become a tested workflow surface, not only a hidden cache layer
 2. define the package and dependency model explicitly — **not started**
    - this must treat the stdlib as a builtin dependency, not a repo-relative path dependency in user manifests
 3. define stdlib vs third-party package boundaries — **not started**
@@ -763,6 +765,8 @@ Primary surfaces:
 11. design the first enforceable authority-budget path at module/package/subsystem scope, starting with report-backed policy rather than a second effect system — **not started**
 12. define the first provenance-aware publishing model for packages so publication can later be tied to trusted CI identity, explicit build metadata, and evidence outputs instead of only long-lived tokens — **not started**
 13. make the package graph and lockfile strong enough to support later evidence/trust bundles and trust-drift comparison without redesigning the package layer from scratch — **not started**
+14. decide whether package/profile/target compatibility needs to be tracked more explicitly than whole-package support, especially for hosted/freestanding splits and later high-integrity profiles — **not started**
+    - design notes: [research/compiler-dataflow-ideas.md](research/compiler-dataflow-ideas.md)
 
 Deliverables:
 - incremental compilation: serialized pipeline artifacts, source-hash-based cache invalidation, module-level rebuild granularity
@@ -781,6 +785,7 @@ Deliverables:
 - a first explicit module/package authority-budget path grounded in the package graph and existing capability reports
 - a documented provenance-aware publishing direction for packages, even if the first implementation remains local/private
 - package graph and lockfile semantics that can later carry trust/evidence metadata cleanly
+- an explicit decision about whether finer-grained target/profile compatibility belongs in the package/report model
 
 Exit criterion:
 Concrete has an explicit package/dependency model that supports real projects without relying on ad-hoc repo-local conventions, has a credible path to enforcing authority budgets at package or subsystem boundaries, and no longer depends on muddy interface/body artifact boundaries to reason about packages.
@@ -849,6 +854,7 @@ Primary surfaces:
 - [README.md](README.md)
 - [docs/README.md](docs/README.md)
 - [research/artifact-driven-compiler.md](research/artifact-driven-compiler.md)
+- [research/compiler-dataflow-ideas.md](research/compiler-dataflow-ideas.md)
 - [research/developer-tooling.md](research/developer-tooling.md)
 - [research/proof-evidence-artifacts.md](research/proof-evidence-artifacts.md)
 - [research/trust-multipliers.md](research/trust-multipliers.md)
@@ -881,6 +887,8 @@ Primary surfaces:
 20. implement and maintain usable debug-info emission as part of the supported tooling surface — at minimum, DWARF from EmitSSA sufficient for source locations and stack traces in lldb/gdb — **not started**
 21. implement and maintain the first explicit non-cleanup optimization layer — SSA-level function inlining with a stated policy that preserves capability/trust honesty and debug/report quality — **not started**
 22. define how evidence/trust bundles should carry provenance and attestable build identity so they can later interoperate cleanly with broader verification ecosystems without Concrete depending on them semantically — **not started**
+23. add per-function inspection tooling for compiler artifacts and reports — SSA, LLVM, and report slices for one function without requiring whole-program manual digging — **not started**
+    - this should help optimization work, auditability, and workflow debugging before heavier optimizer architecture is added
 
 Deliverables:
 - a documented release and compatibility policy for language, stdlib, reports, and tooling surfaces
@@ -906,6 +914,7 @@ Deliverables:
 - emitted debug metadata good enough for ordinary debugger workflows to show source locations and stack traces
 - a first explicit optimization layer beyond cleanup, with function inlining treated as policy-governed backend work rather than accidental folklore
 - a provenance-aware trust-bundle direction that ties package identity, build identity, reports, and evidence outputs together without turning package publication into a second semantic authority
+- per-function inspection tools that make emitted artifacts and report slices easy to inspect during optimization, audit, and tooling work
 
 Exit criterion:
 Concrete is not only architecturally strong internally, but also operable, reproducible, documentable, and maintainable as a long-term project, with a real driver/artifact model rather than only a pass library plus CLI entry points.
