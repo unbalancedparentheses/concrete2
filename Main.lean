@@ -3,7 +3,7 @@ import Concrete
 open Concrete
 
 def usage : String :=
-  "Usage: concrete <file.con> [-o output] [--emit-llvm] [--emit-core] [--emit-ssa] [--test] [--test --module <name>] [--report caps|unsafe|layout|interface|alloc|mono|authority|proof] [--fmt]\n       concrete build [-o output] [--emit-llvm]"
+  "Usage: concrete <file.con> [-o output] [--emit-llvm] [--emit-core] [--emit-ssa] [--test] [--test --module <name>] [--report caps|unsafe|layout|interface|alloc|mono|authority|proof] [--fmt]\n       concrete build [-o output] [--emit-llvm]\n       concrete run [-- args...]"
 
 def writeFile (path : String) (content : String) : IO Unit := do
   IO.FS.writeFile ⟨path⟩ content
@@ -385,7 +385,7 @@ partial def loadDependency (depName : String) (depPath : String)
       return .ok (resolved, srcMap)
 
 /-- Compile a project from Concrete.toml. -/
-def compileBuild (projectRoot : String) (outputPath : Option String) (emitLLVM : Bool) : IO UInt32 := do
+def compileBuild (projectRoot : String) (outputPath : Option String) (emitLLVM : Bool) (quiet : Bool := false) : IO UInt32 := do
   -- Read Concrete.toml
   let tomlPath := projectRoot ++ "/Concrete.toml"
   let tomlContent ← readFile tomlPath
@@ -507,7 +507,7 @@ def compileBuild (projectRoot : String) (outputPath : Option String) (emitLLVM :
         IO.eprintln "clang compilation failed"
         return exitCode
       IO.FS.removeFile ⟨llPath⟩
-      IO.println s!"Built {outPath}"
+      if !quiet then IO.println s!"Built {outPath}"
       return 0
 
 def main (args : List String) : IO UInt32 := do
@@ -524,6 +524,34 @@ def main (args : List String) : IO UInt32 := do
         | _ :: "-o" :: p :: _ => some p
         | _ => none
       return ← compileBuild root outPath emitLLVM
+  -- concrete run [-- args...]
+  if args.head? == some "run" then
+    let cwd ← IO.currentDir
+    match ← findProjectRoot cwd.toString with
+    | none =>
+      IO.eprintln "No Concrete.toml found in current directory or parent"
+      return 1
+    | some root =>
+      -- Build to a temporary path
+      let tmpBin := "/tmp/concrete_run_" ++ toString (← IO.monoMsNow)
+      let buildResult ← compileBuild root (some tmpBin) (emitLLVM := false) (quiet := true)
+      if buildResult != 0 then return buildResult
+      -- Extract user args after "--"
+      let userArgs := match args.dropWhile (· != "--") with
+        | _ :: rest => rest
+        | [] => []
+      -- Run the built binary
+      let child ← IO.Process.spawn {
+        cmd := tmpBin
+        args := userArgs.toArray
+        stdin := .inherit
+        stdout := .inherit
+        stderr := .inherit
+      }
+      let exitCode ← child.wait
+      -- Clean up temp binary
+      try IO.FS.removeFile ⟨tmpBin⟩ catch _ => pure ()
+      return exitCode
   match args with
   | [] =>
     IO.eprintln usage
