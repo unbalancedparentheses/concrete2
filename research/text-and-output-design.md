@@ -1,6 +1,6 @@
 # Text And Output Design
 
-Status: open
+Status: partially addressed
 
 Phase H removed the most painful standalone gaps by adding:
 
@@ -10,36 +10,45 @@ Phase H removed the most painful standalone gaps by adding:
 - `string_substr`
 - `string_push_char`
 - `string_append`
+- `string_append_int`
+- `string_append_bool`
 
-That fixed the first-wave blockers. It did not finish the text/output story.
+## What Is Now Possible
+
+Building mixed-type output strings without intermediate allocations:
+
+```con
+let mut msg: String = "Expected ':' at position ";
+string_append_int(&mut msg, pos as Int);
+string_append(&mut msg, &", got '");
+string_push_char(&mut msg, ch as Int);
+string_append(&mut msg, &"'");
+```
+
+This is still verbose compared to interpolation, but it is:
+- zero-grammar-cost (no new syntax)
+- leak-free (no intermediate string allocations to track)
+- explicit about allocation (requires `Alloc` capability)
+- composable with the existing builder pattern
 
 ## Remaining Problem
 
-Concrete still lacks a strong general-purpose text/output layer for real programs:
+Concrete still lacks:
 
-- formatting / interpolation
-- logging-friendly message construction
+- string interpolation syntax (would cut verbosity 3-5x for mixed-type messages)
+- a `format(pattern, ...)` variadic function
 - parser-oriented string helpers beyond raw slicing
-- a clearer split between compiler builtins and stdlib text APIs
 
-## Design Questions
+## Design Decision
 
-1. Should formatting be a stdlib function family, a macro-like surface, or explicit interpolation syntax?
-2. What minimum formatting capability is enough for real programs without importing a large dynamic formatting system?
-3. What parser/text helpers belong in stdlib rather than user-space utilities?
-4. Which current text operations should remain builtins versus becoming stdlib wrappers?
+The current approach is **builder builtins** — `string_append`, `string_append_int`, `string_append_bool`, `string_push_char` — rather than interpolation syntax.
 
-## Initial Scope
+Why:
+- fits the design policy (no new syntax, no hidden work, one clear pass)
+- avoids grammar cost and proof cost of interpolation
+- eliminates the main pain point (intermediate allocations for number→string→append→drop)
+- interpolation can be revisited later if the builder pattern proves too verbose at 10k+ LOC scale
 
-Prioritize:
+## What To Watch During Phase H
 
-- `format(...)` or equivalent minimal formatting surface
-- interpolation syntax only if it clearly beats a library design
-- text builder patterns that avoid repeated linear-allocation boilerplate
-- parser helpers that appear repeatedly in Phase H programs
-
-## Non-Goals
-
-- a large printf-style formatting language by default
-- hiding allocation or authority costs
-- turning common output into an implicit runtime feature
+The JSON parser will be the first sustained test of this approach. If error message construction becomes a dominant source of code noise, that's evidence for revisiting interpolation.

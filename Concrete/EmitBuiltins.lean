@@ -546,6 +546,102 @@ def getBuiltinFns : List LLVMFnDef × List LLVMGlobal × List LLVMFnDecl :=
       ], .ret .void none⟩] }
 
   -- -------------------------------------------------------
+  -- string_append_int (format int and append to mutable string in-place)
+  -- snprintf into temp buffer, then grow+memcpy like string_append
+  -- -------------------------------------------------------
+  let fnStringAppendInt : LLVMFnDef :=
+    { name := "string_append_int", retTy := .void, params := [("s", .ptr), ("n", .i64)], blocks := [
+      ⟨"entry", [
+        .alloca "sai_buf" (.array 32 .i8),
+        .gep "sai_fmt" (.array 4 .i8) (.global ".fmt_ld") [(.i64, .intLit 0), (.i64, .intLit 0)],
+        .callVariadic (some "sai_written") .i32 (.global "snprintf") [(.ptr, .reg "sai_buf"), (.i64, .intLit 32), (.ptr, .reg "sai_fmt"), (.i64, .reg "n")] [.ptr, .i64, .ptr],
+        .cast "sai_len" .sext .i32 (.reg "sai_written") .i64,
+        -- Load current string len and cap
+        strGep "sai_slen_ptr" "s" 1,
+        .load "sai_slen" .i64 (.reg "sai_slen_ptr"),
+        strGep "sai_scap_ptr" "s" 2,
+        .load "sai_scap" .i64 (.reg "sai_scap_ptr"),
+        .binOp "sai_needed" .add .i64 (.reg "sai_slen") (.reg "sai_len"),
+        .binOp "sai_need_grow" .icmpUgt .i64 (.reg "sai_needed") (.reg "sai_scap")
+      ], .condBr (.reg "sai_need_grow") "sai_grow" "sai_copy"⟩,
+      ⟨"sai_grow", [
+        .binOp "sai_dblcap" .mul .i64 (.reg "sai_scap") (.intLit 2),
+        .call (some "sai_newcap") .i64 (.global "llvm.smax.i64") [(.i64, .reg "sai_dblcap"), (.i64, .reg "sai_needed")],
+        strGep "sai_data_ptr" "s" 0,
+        .load "sai_data" .ptr (.reg "sai_data_ptr"),
+        .call (some "sai_newbuf.raw") .ptr (.global "realloc") [(.ptr, .reg "sai_data"), (.i64, .reg "sai_newcap")],
+        .call (some "sai_newbuf") .ptr (.global "__concrete_check_oom") [(.ptr, .reg "sai_newbuf.raw")],
+        .store .ptr (.reg "sai_newbuf") (.reg "sai_data_ptr"),
+        .store .i64 (.reg "sai_newcap") (.reg "sai_scap_ptr")
+      ], .br "sai_copy"⟩,
+      ⟨"sai_copy", [
+        strGep "sai_dp2" "s" 0,
+        .load "sai_data2" .ptr (.reg "sai_dp2"),
+        .gep "sai_dst" .i8 (.reg "sai_data2") [(.i64, .reg "sai_slen")],
+        dynMemcpy "sai_dst" "sai_buf" "sai_len",
+        .store .i64 (.reg "sai_needed") (.reg "sai_slen_ptr")
+      ], .ret .void none⟩] }
+
+  -- -------------------------------------------------------
+  -- string_append_bool (append "true" or "false" to mutable string in-place)
+  -- -------------------------------------------------------
+  let fnStringAppendBool : LLVMFnDef :=
+    { name := "string_append_bool", retTy := .void, params := [("s", .ptr), ("b", .i1)], blocks := [
+      ⟨"entry", [], .condBr (.reg "b") "sab_true" "sab_false"⟩,
+      ⟨"sab_true", [
+        -- Append "true" (4 bytes)
+        strGep "sab_tlen_ptr" "s" 1,
+        .load "sab_tlen" .i64 (.reg "sab_tlen_ptr"),
+        strGep "sab_tcap_ptr" "s" 2,
+        .load "sab_tcap" .i64 (.reg "sab_tcap_ptr"),
+        .binOp "sab_tneeded" .add .i64 (.reg "sab_tlen") (.intLit 4),
+        .binOp "sab_tneed_grow" .icmpUgt .i64 (.reg "sab_tneeded") (.reg "sab_tcap")
+      ], .condBr (.reg "sab_tneed_grow") "sab_tgrow" "sab_tcopy"⟩,
+      ⟨"sab_tgrow", [
+        .binOp "sab_tdblcap" .mul .i64 (.reg "sab_tcap") (.intLit 2),
+        .call (some "sab_tnewcap") .i64 (.global "llvm.smax.i64") [(.i64, .reg "sab_tdblcap"), (.i64, .reg "sab_tneeded")],
+        strGep "sab_tdata_ptr" "s" 0,
+        .load "sab_tdata" .ptr (.reg "sab_tdata_ptr"),
+        .call (some "sab_tnewbuf.raw") .ptr (.global "realloc") [(.ptr, .reg "sab_tdata"), (.i64, .reg "sab_tnewcap")],
+        .call (some "sab_tnewbuf") .ptr (.global "__concrete_check_oom") [(.ptr, .reg "sab_tnewbuf.raw")],
+        .store .ptr (.reg "sab_tnewbuf") (.reg "sab_tdata_ptr"),
+        .store .i64 (.reg "sab_tnewcap") (.reg "sab_tcap_ptr")
+      ], .br "sab_tcopy"⟩,
+      ⟨"sab_tcopy", [
+        strGep "sab_tdp2" "s" 0,
+        .load "sab_tdata2" .ptr (.reg "sab_tdp2"),
+        .gep "sab_tdst" .i8 (.reg "sab_tdata2") [(.i64, .reg "sab_tlen")],
+        .memcpy (.reg "sab_tdst") (.global ".str_true") 4,
+        .store .i64 (.reg "sab_tneeded") (.reg "sab_tlen_ptr")
+      ], .ret .void none⟩,
+      ⟨"sab_false", [
+        -- Append "false" (5 bytes)
+        strGep "sab_flen_ptr" "s" 1,
+        .load "sab_flen" .i64 (.reg "sab_flen_ptr"),
+        strGep "sab_fcap_ptr" "s" 2,
+        .load "sab_fcap" .i64 (.reg "sab_fcap_ptr"),
+        .binOp "sab_fneeded" .add .i64 (.reg "sab_flen") (.intLit 5),
+        .binOp "sab_fneed_grow" .icmpUgt .i64 (.reg "sab_fneeded") (.reg "sab_fcap")
+      ], .condBr (.reg "sab_fneed_grow") "sab_fgrow" "sab_fcopy"⟩,
+      ⟨"sab_fgrow", [
+        .binOp "sab_fdblcap" .mul .i64 (.reg "sab_fcap") (.intLit 2),
+        .call (some "sab_fnewcap") .i64 (.global "llvm.smax.i64") [(.i64, .reg "sab_fdblcap"), (.i64, .reg "sab_fneeded")],
+        strGep "sab_fdata_ptr" "s" 0,
+        .load "sab_fdata" .ptr (.reg "sab_fdata_ptr"),
+        .call (some "sab_fnewbuf.raw") .ptr (.global "realloc") [(.ptr, .reg "sab_fdata"), (.i64, .reg "sab_fnewcap")],
+        .call (some "sab_fnewbuf") .ptr (.global "__concrete_check_oom") [(.ptr, .reg "sab_fnewbuf.raw")],
+        .store .ptr (.reg "sab_fnewbuf") (.reg "sab_fdata_ptr"),
+        .store .i64 (.reg "sab_fnewcap") (.reg "sab_fcap_ptr")
+      ], .br "sab_fcopy"⟩,
+      ⟨"sab_fcopy", [
+        strGep "sab_fdp2" "s" 0,
+        .load "sab_fdata2" .ptr (.reg "sab_fdp2"),
+        .gep "sab_fdst" .i8 (.reg "sab_fdata2") [(.i64, .reg "sab_flen")],
+        .memcpy (.reg "sab_fdst") (.global ".str_false") 5,
+        .store .i64 (.reg "sab_fneeded") (.reg "sab_flen_ptr")
+      ], .ret .void none⟩] }
+
+  -- -------------------------------------------------------
   -- clock_monotonic_ns (monotonic clock in nanoseconds)
   -- Uses clock_gettime(CLOCK_MONOTONIC=6 on macOS, 1 on Linux)
   -- -------------------------------------------------------
@@ -591,7 +687,7 @@ def getBuiltinFns : List LLVMFnDef × List LLVMGlobal × List LLVMFnDecl :=
     fnStringContains, fnStringEq, fnIntToString, fnStringToInt, fnBoolToString,
     fnFloatToString, fnStringTrim,
     fnPrintString, fnPrintInt, fnPrintChar,
-    fnStringPushChar, fnStringAppend,
+    fnStringPushChar, fnStringAppend, fnStringAppendInt, fnStringAppendBool,
     fnClockMonotonicNs
   ]
   (fns, globals, decls)

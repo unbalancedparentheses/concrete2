@@ -719,6 +719,20 @@ partial def elabCall (fnName : String) (typeArgs : List Ty) (args : List Expr)
       let cArg ← elabExpr arg
       cArgs := cArgs ++ [cArg]
     return .call "string_append" [] cArgs .unit
+  -- Intercept string_append_int(&mut s, n)
+  if intrinsic == some .stringAppendInt then
+    let mut cArgs : List CExpr := []
+    for arg in args do
+      let cArg ← elabExpr arg
+      cArgs := cArgs ++ [cArg]
+    return .call "string_append_int" [] cArgs .unit
+  -- Intercept string_append_bool(&mut s, b)
+  if intrinsic == some .stringAppendBool then
+    let mut cArgs : List CExpr := []
+    for arg in args do
+      let cArg ← elabExpr arg
+      cArgs := cArgs ++ [cArg]
+    return .call "string_append_bool" [] cArgs .unit
   -- Intercept vec_push
   if intrinsic == some .vecPush then
     -- Elaborate vec arg first to extract element type for value hint

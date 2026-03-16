@@ -26,7 +26,7 @@ inductive IntrinsicId where
   -- String operations
   | stringLength | stringConcat | stringEq | stringSlice | stringSubstr
   | stringCharAt | stringContains | stringTrim | dropString
-  | stringPushChar | stringAppend
+  | stringPushChar | stringAppend | stringAppendInt | stringAppendBool
 
   -- Conversion
   | intToString | stringToInt | boolToString | floatToString
@@ -79,6 +79,8 @@ def resolveIntrinsic (name : String) : Option IntrinsicId :=
   | "drop_string"     | "String_drop"     => some .dropString
   | "string_push_char" | "String_push_char" => some .stringPushChar
   | "string_append"    | "String_append"    => some .stringAppend
+  | "string_append_int"  | "String_append_int"  => some .stringAppendInt
+  | "string_append_bool" | "String_append_bool" => some .stringAppendBool
   | "string_substr"    | "String_substr"    => some .stringSubstr
 
   -- Conversion
@@ -138,6 +140,8 @@ def IntrinsicId.canonicalName : IntrinsicId → String
   | .dropString => "drop_string"
   | .stringPushChar => "string_push_char"
   | .stringAppend => "string_append"
+  | .stringAppendInt => "string_append_int"
+  | .stringAppendBool => "string_append_bool"
   | .intToString => "int_to_string"
   | .stringToInt => "string_to_int"
   | .boolToString => "bool_to_string"
