@@ -43,7 +43,20 @@ The point is to understand where Concrete is stronger, weaker, or simply differe
 
 ## Portfolio Shape
 
-The suite should contain 20 programs split across four buckets:
+Do not treat the suite as 20 equal examples. Treat it as a ladder:
+
+1. a first wave that should reveal the highest-leverage language and stdlib pressure quickly
+2. a second wave that expands coverage once the first findings are closed
+3. a broader 20-program portfolio for continued comparison breadth
+
+The portfolio should optimize for:
+
+- different pressure shapes
+- external comparability
+- a clear “why Concrete?” signal
+- enough overlap for findings to compound without filling the suite with duplicates
+
+The full suite still spans four buckets:
 
 1. standard comparison-friendly workloads
 2. systems / infrastructure workloads
@@ -133,9 +146,7 @@ These are especially important because they stress:
 - reviewability under real code size
 - interpreter/runtime pressure against a known external target rather than only internal examples
 
-## Suggested Rollout Order
-
-The full 20-program suite should not be attempted in arbitrary order.
+## First-Wave Ladder
 
 The best early sequence is:
 
@@ -145,32 +156,57 @@ The best early sequence is:
 4. grep-like text search tool
 5. bytecode VM / interpreter
 6. artifact/update verifier
-7. small TCP/HTTP service
-8. file tree scanner + policy checker
-9. inverted index / search core
-10. protocol/message validator
 
-This is a reordering, not a replacement. The original early comparison-heavy set is still intentionally present:
+Why this specific ladder:
 
-1. JSON parser + validator
-2. grep-like text search tool
-3. bytecode VM / interpreter
-4. policy/rule engine
-5. artifact/update verifier
-6. MAL-style Lisp interpreter
+- policy/rule engine proves the authority/auditability niche
+- MAL proves parser/runtime/interpreter pressure
+- JSON and grep prove text/parser/streaming reality
+- bytecode VM proves control-flow/runtime/codegen pressure
+- artifact verifier returns to Concrete’s intended critical-software niche
 
-The only change is implementation order: the identity-heavy policy engine now comes first and MAL moves up to second, while the JSON / grep / VM / artifact-verifier workloads remain part of the same early Phase H tranche.
+This is a reordering and prioritization, not a replacement. The early comparison-heavy set is still present; it is just arranged to maximize insight sooner.
 
-This gives:
+## Second-Wave Ladder
 
-- an immediate identity-heavy workload
-- an immediate known interpreter/runtime workload
-- parser-heavy pressure
-- text-heavy pressure
-- control-flow/runtime pressure
-- identity-heavy pressure
-- networking pressure
-- one known interpreter target with an external staged test shape
+Once the first-wave findings are closed, the next best sequence is:
+
+1. regex engine
+2. Lox interpreter
+3. small TCP/HTTP service
+4. file tree scanner + policy checker
+5. package/archive indexer
+6. HSM/key-use policy engine
+
+Why these next:
+
+- regex and Lox deepen text/parser/runtime pressure with strong external comparability
+- TCP/HTTP, file tree scanning, and archive indexing expose systems/module/stdlib reality
+- HSM/key-use policy returns to a high-consequence Concrete-identity workload once the surrounding ergonomics are stronger
+
+## Highest-Value 12
+
+If the suite needs to be cut down to the most important 12 programs, keep:
+
+1. policy/rule engine
+2. MAL-style Lisp interpreter
+3. JSON parser + validator
+4. grep-like text search tool
+5. bytecode VM / interpreter
+6. artifact/update verifier
+7. regex engine
+8. small TCP/HTTP service
+9. Lox interpreter
+10. file tree scanner + policy checker
+11. package/archive indexer
+12. HSM/key-use policy engine
+
+This set is strong because:
+
+- 1, 6, 12 show Concrete’s niche
+- 2, 5, 9 stress runtime/interpreter shape
+- 3, 4, 7 stress text/parser workloads
+- 8, 10, 11 stress systems/module/stdlib reality
 
 ## Interpreter Target
 
@@ -225,6 +261,27 @@ Recommended use:
 - **First-wave:** MAL, JSON, and eventually Lox/TOML/regex depending on progress
 - **Later but important:** SQLite-style miniature database, WASM subset
 - **Secondary comparison baselines:** Wren/Lua-style small VM, Scheme/Lisp educational interpreters, Brainfuck
+
+## What To De-Prioritize
+
+Avoid spending too much early effort on:
+
+- Brainfuck as a major deliverable
+- multiple near-duplicate Lisp/Scheme interpreters
+- too many pure algorithm benchmarks
+- workloads that mostly test LLVM rather than Concrete
+- examples that need lots of ecosystem glue before they reveal anything meaningful
+
+## Per-Program Output
+
+Every serious program in the suite should leave behind:
+
+- correctness status
+- performance snapshot
+- memory, binary-size, and compile-time notes
+- language gaps found
+- stdlib gaps found
+- whether Concrete looked stronger, weaker, or just different from Rust/Zig/C
 
 ## Success Conditions
 

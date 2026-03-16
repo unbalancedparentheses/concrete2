@@ -407,6 +407,12 @@ Primary surfaces:
 
 1. write multiple real programs in the 10k-30k line range, not only stress tests or compiler fixtures — **not started**
 2. choose programs with different pressure shapes: parser/validator/policy engine, systems utility, data-structure-heavy workload, networked or service-style component, one high-integrity-profile candidate, and at least one well-known interpreter/runtime workload (for example a MAL-style Lisp) — **not started**
+   - do not treat the suite as 20 equal examples; treat it as a ladder where each program is chosen to expose a different maturity boundary
+   - optimize for:
+     - different pressure shapes
+     - external comparability
+     - a clear “why Concrete?” signal
+     - enough overlap for findings to compound without filling the suite with duplicates
    - the first implementation tranche should be explicit, not implicit:
      1. policy/rule engine
      2. MAL-style Lisp interpreter
@@ -414,7 +420,33 @@ Primary surfaces:
      4. grep-like text search tool
      5. bytecode VM / interpreter
      6. artifact/update verifier
-   - this is a reordering, not a replacement: MAL moves up to second, but JSON / grep / VM / artifact-verifier remain part of the intended first wave
+   - this first wave should be treated as the real proof ladder:
+     - policy/rule engine proves the authority/auditability niche
+     - MAL proves parser/runtime/interpreter pressure
+     - JSON and grep prove text/parser/streaming reality
+     - bytecode VM proves control-flow/runtime/codegen pressure
+     - artifact verifier returns to Concrete’s intended critical-software niche
+   - the second wave should be explicit too:
+     1. regex engine
+     2. Lox interpreter
+     3. small TCP/HTTP service
+     4. file tree scanner + policy checker
+     5. package/archive indexer
+     6. HSM/key-use policy engine
+   - if the suite needs to be cut down to the highest-value 12, keep:
+     1. policy/rule engine
+     2. MAL-style Lisp interpreter
+     3. JSON parser + validator
+     4. grep-like text search tool
+     5. bytecode VM / interpreter
+     6. artifact/update verifier
+     7. regex engine
+     8. small TCP/HTTP service
+     9. Lox interpreter
+     10. file tree scanner + policy checker
+     11. package/archive indexer
+     12. HSM/key-use policy engine
+   - this is a reordering and prioritization, not a replacement: MAL moves up to second, and the highest-value runtime/text/identity workloads move into the early ladder
    - the phase should also maintain an explicit external-tested workload track so Concrete is measured against known specs and known tests, not only self-chosen examples:
      - MAL (Make a Lisp) as the preferred staged interpreter/runtime workload
      - SQLite-style miniature database projects as a harder but high-value storage/runtime workload
@@ -426,6 +458,12 @@ Primary surfaces:
      - TOML / YAML / CSV parser suites, with TOML as the strongest shared-corpus target
      - WASM interpreter / validator subsets as a long-term semantics/runtime validation workload
      - Brainfuck interpreters as compact control-flow baselines, even if they are too toy-like to be a flagship workload
+   - de-prioritize:
+     - Brainfuck as a major deliverable
+     - multiple near-duplicate Lisp/Scheme interpreters
+     - too many pure algorithm benchmarks
+     - programs that mostly test LLVM instead of Concrete
+     - examples that require large amounts of ecosystem glue before they reveal meaningful language pressure
 3. use those programs to drive stdlib gap discovery, diagnostics pain points, package/workspace friction, report UX problems, and readability failures under sustained use — **not started**
    - current findings already justify the phase:
      - ~~real compiler blocker: enum fields inside structs can still panic layout (`Bug 005`)~~ — **fixed**
@@ -486,7 +524,7 @@ Primary surfaces:
 Deliverables:
 - a small corpus of serious Concrete programs large enough to pressure-test the language honestly
 - a documented 20-program comparison portfolio with estimated size, workload mix, and Rust/Zig/C reference targets
-- a clearly stated first-wave implementation order, with the policy/rule engine first and the MAL-style Lisp interpreter second
+- a clearly stated first-wave and second-wave implementation order, with the policy/rule engine first and the MAL-style Lisp interpreter second
 - comparative benchmark and evaluation baselines grounded in real workloads instead of micro-assumptions
 - cross-language comparison notes explaining not only speed but also correctness, code size, unsafe/trust surface, and auditability tradeoffs
 - at least one explicit interpreter/runtime comparison target grounded in a known external workload with tests (for example MAL-style Lisp), not only ad hoc internal programs
@@ -495,6 +533,7 @@ Deliverables:
 - a classified findings ledger showing which real-program issues are language, stdlib, tooling, runtime, or formalization problems
 - closure of the first-wave ergonomics findings before the mid-wave programs normalize workarounds as language shape
 - an example corpus that has been refreshed as fixes land, so older examples do not teach stale workaround patterns
+- per-program outcome records covering correctness, performance, memory, binary size, compile-time notes, language gaps, stdlib gaps, and whether Concrete looked stronger, weaker, or just different from Rust/Zig/C
 - proof that Concrete remains readable and auditable at larger scales, or an explicit record of where it fails
 - a clearer basis for the package, adoption, and operational phases because they are now shaped by real code rather than only design intent
 
