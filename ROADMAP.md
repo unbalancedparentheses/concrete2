@@ -511,6 +511,7 @@ Primary surfaces:
        - interpreter/runtime workloads also need stronger supporting runtime/data-structure ergonomics (frame-friendly environment patterns, richer collections); the first MAL environment slowdown was primarily an implementation issue, but it still exposed a thin toolbox for this workload class
        - ~~standalone benchmark programs have no easy path to use `std.time` without project/package setup (`Bug 012`)~~ — **fixed**: `clock_monotonic_ns` builtin added
      - ~~other real ergonomics gaps: aggregate `if` expressions (`Bug 008`) and non-working lowered `const` declarations (`Bug 009`)~~ — **both fixed**
+     - standalone files still cannot conveniently use std/project dependencies such as `std.fs.read_to_string`; this forces serious examples and benchmarks toward ad hoc `trusted extern fn` wrappers even when the better library surface already exists
    - strongest current interpretation from the first parser-heavy workloads:
      - Concrete’s differentiator is not generic explicitness but visible authority plus visible ownership discipline
      - the main open Phase H question is whether these explicit patterns stabilize into disciplined idioms or remain sustained verbosity
@@ -556,6 +557,7 @@ Primary surfaces:
      6. strengthen layout reports where real programs need them: padding visualization, clearer enum/layout detail, and better FFI-facing audit output — **not started**
         - design notes: [research/layout-reports.md](research/layout-reports.md)
      7. reduce the standalone vs project split so stdlib access, benchmarking, and examples do not require awkward scaffolding — **not started**
+        - concrete example: standalone benchmarks currently cannot conveniently use `std.fs.read_to_string`, so the fastest honest ingestion path exists but is not reachable without project/package setup
      8. design qualified module access (`Module.function()` or equivalent) so larger programs do not collapse into rename pressure — **not started**
      9. document runtime/stack pressure findings from deep-recursive workloads and decide what belongs to language, runtime, stdlib, or tooling — **not started**
      10. decide whether destructuring `let` earns its place for real-program clarity and parser/runtime code — **not started**

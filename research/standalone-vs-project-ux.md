@@ -29,3 +29,10 @@ Single-file examples and benchmarks should be able to do ordinary things without
 ## Why It Matters
 
 If this split stays awkward, Phase H examples will keep teaching workarounds instead of the intended language experience.
+
+Concrete example already observed in Phase H:
+
+- standalone benchmarks cannot conveniently use `std.fs.read_to_string`
+- as a result, serious parser benchmarks get pushed toward ad hoc `trusted extern fn` wrappers even though the better stdlib path already exists
+
+That makes this a real package/dependency resolution gap, not just a hypothetical UX note.
