@@ -51,6 +51,7 @@ If you want the highest-leverage current research first:
 19. [artifact-driven-compiler.md](artifact-driven-compiler.md) — stable artifacts, serialization, IDs, traceability, interface/body splits, and the real compiler driver (`P0`, `Open`)
 20. [adoption-strategy.md](adoption-strategy.md) — signature domains, showcases, onboarding, stability surface, and positioning for real user pull (`P1`, `Open`)
 21. [evidence-review-workflows.md](evidence-review-workflows.md) — evidence bundles, machine-readable reports, trust-drift diffing, and report-first review workflows (`P0`, `Open`)
+22. [package-testing-tooling.md](package-testing-tooling.md) — the project-facing `concrete test` workflow: discovery, filtering, failure UX, and package/workspace integration (`P0`, `Open`)
 
 ## Language Decisions
 
@@ -107,6 +108,7 @@ If you want the highest-leverage current research first:
 ## Process And Quality
 
 - [testing-strategy.md](testing-strategy.md) — gaps beyond current suites: fuzzing, property tests, report consistency, and differential testing (`P1`, `Open`)
+- [package-testing-tooling.md](package-testing-tooling.md) — package-aware `concrete test`, discovery rules, filtering, failure output, and workspace test UX (`P0`, `Open`)
 - [design-filters.md](design-filters.md) — feature-admission checklist and high-leverage design filters (`P1`, `Process`)
 - [optimization-policy.md](optimization-policy.md) — explicit optimization goals, non-goals, observability constraints, and regression expectations (`P1`, `Open`)
 - [developer-tooling.md](developer-tooling.md) — semantic recovery, editor/LSP baseline, debugging/observability, and project-facing CLI workflow (`P1`, `Open`)

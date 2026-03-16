@@ -632,6 +632,10 @@ After the policy engine, MAL, JSON parser, grep-like tool, and bytecode VM, the 
    - string/text helpers that still matter after the parser and grep results
    - collection/runtime maturity for interpreter and VM workloads
 5. continue backend/performance investigation only where new workloads still expose real cliffs after the vec-inlining fix
+6. make testing tooling part of package/project hardening rather than leaving it as shell-runner glue:
+   - package-aware `concrete test`
+   - better failure output and filtering
+   - testing workflow that grows naturally into workspace mode
 
 ### Priority Order For Closing The Gap To Rust
 
@@ -642,6 +646,7 @@ Concrete already looks better than Rust in a narrow auditability niche, but it d
    - stdlib/project dependency resolution
    - workspaces
    - `concrete build`, `concrete test`, `concrete run`
+   - better testing tooling around `concrete test` rather than treating test UX as an afterthought
    - incremental/artifact reuse
    - without this, serious programs keep paying workflow tax and teaching workarounds
 2. **ergonomics without abandoning explicitness**
@@ -745,9 +750,11 @@ Primary surfaces:
 7. split interface-facing artifacts from body-bearing artifacts cleanly enough to support package and dependency boundaries — **not started**
 8. make package/dependency reasoning operate on explicit graph artifacts instead of ad hoc file-level reconstruction — **not started**
 9. define the first real project-facing CLI workflow (`concrete build`, `concrete test`, `concrete run`) on top of the package model — **not started**
-10. design the first enforceable authority-budget path at module/package/subsystem scope, starting with report-backed policy rather than a second effect system — **not started**
-11. define the first provenance-aware publishing model for packages so publication can later be tied to trusted CI identity, explicit build metadata, and evidence outputs instead of only long-lived tokens — **not started**
-12. make the package graph and lockfile strong enough to support later evidence/trust bundles and trust-drift comparison without redesigning the package layer from scratch — **not started**
+10. make testing tooling a first-class part of the package/project model: package-aware discovery, filtering, cleaner failure output, and a path to workspace testing — **not started**
+    - design notes: [research/package-testing-tooling.md](research/package-testing-tooling.md)
+11. design the first enforceable authority-budget path at module/package/subsystem scope, starting with report-backed policy rather than a second effect system — **not started**
+12. define the first provenance-aware publishing model for packages so publication can later be tied to trusted CI identity, explicit build metadata, and evidence outputs instead of only long-lived tokens — **not started**
+13. make the package graph and lockfile strong enough to support later evidence/trust bundles and trust-drift comparison without redesigning the package layer from scratch — **not started**
 
 Deliverables:
 - incremental compilation: serialized pipeline artifacts, source-hash-based cache invalidation, module-level rebuild granularity
@@ -762,6 +769,7 @@ Deliverables:
 - a cleaner split between interface-bearing and body-bearing compiler artifacts for package/workspace use
 - an explicit package/dependency graph artifact strong enough to support later driver, cache, and report reuse work
 - a project-facing CLI model that grows out of the package/driver architecture instead of shell conventions
+- package-aware testing tooling that is part of the normal project workflow instead of a separate shell-level story
 - a first explicit module/package authority-budget path grounded in the package graph and existing capability reports
 - a documented provenance-aware publishing direction for packages, even if the first implementation remains local/private
 - package graph and lockfile semantics that can later carry trust/evidence metadata cleanly
