@@ -66,7 +66,8 @@ Still clearly not implemented:
 | **I** | Formalization and proof expansion | Not started |
 | **J** | Package and dependency ecosystem | Not started |
 | **K** | Adoption, positioning, and showcase pull | Not started |
-| **L** | Project and operational maturity | Not started |
+| **L1** | Project and operational maturity | Not started |
+| **L2** | Backend plurality and codegen maturity | Not started |
 | **M** | Concurrency maturity and runtime plurality | Not started |
 | **N** | Allocation profiles and bounded allocation | Not started |
 | **O** | Research phase and evidence-gated features | Not started |
@@ -77,25 +78,30 @@ Completed phases can still seed work that is intentionally finished later. Do no
 
 | Item | First Real Shape | Current Owning Phase | Status |
 |------|------------------|---------------------|--------|
-| Empirical cross-target FFI/ABI validation | **E** | **J / L** | Not started |
-| Verified FFI envelopes as a real user-facing boundary product | **E** | **L** | Research / partial direction only |
+| Empirical cross-target FFI/ABI validation | **E** | **J / L1** | Not started |
+| Verified FFI envelopes as a real user-facing boundary product | **E** | **L1** | Research / partial direction only |
 | Structural boundedness reports as a real maintained report mode | **E** | **N** | Not started |
 | Capability sandbox profiles as enforced build/profile contracts | **E** | **N / O** | Research / partial direction only |
 | Proof-backed authority reports tied to validated Core / proof-facing evidence | **F** | **I** | Not started |
 | Authority budgets as enforceable package/subsystem contracts | **F** | **J** | Research only |
-| Artifact-driven compiler driver with stable artifact IDs, serialization, interface/body splits, and build-graph orchestration | **D** | **J / L** | Partial only |
-| Machine-readable reports as a maintained surface | **D / F** | **L** | Not started |
-| Report-first review workflows over authority / alloc / layout / trusted / FFI evidence | **F** | **L** | Research only |
-| Semantic query/search tooling over compiler facts and reports | **F / H** | **L** | Research only |
-| Reproducible trust bundles linking source, compiler, reports, proofs, and artifact identity | **I** | **L** | Not started |
-| Cryptographically committed build/evidence bundles with replayable verification | **I / J / L** | **L** | Research only |
-| Review-policy gates over authority / trusted / FFI / proof-facing compiler facts | **F** | **L** | Research only |
-| Package/release trust-drift diffing | **J** | **L** | Not started |
-| Structured/type-aware fuzzing over real types, invariants, and report subjects | **D / H** | **L / O** | Research only |
-| Binary-linked proof-facing exports and "self-describing binary" artifact traceability | **I** | **I / L** | Research only |
-| Symbolic-execution addon over proof-facing artifacts | **I** | **I / L** | Research only |
+| Artifact-driven compiler driver with stable artifact IDs, serialization, interface/body splits, and build-graph orchestration | **D** | **J / L1** | Partial only |
+| Backend plurality over the SSA boundary, with alternate backend validation before backend-family sprawl | **D** | **L2** | Research only |
+| Machine-readable reports as a maintained surface | **D / F** | **L1** | Not started |
+| Report-first review workflows over authority / alloc / layout / trusted / FFI evidence | **F** | **L1** | Research only |
+| Semantic query/search tooling over compiler facts and reports | **F / H** | **L1** | Research only |
+| Reproducible trust bundles linking source, compiler, reports, proofs, and artifact identity | **I** | **L1** | Not started |
+| Cryptographically committed build/evidence bundles with replayable verification | **I / J / L1** | **L1** | Research only |
+| Review-policy gates over authority / trusted / FFI / proof-facing compiler facts | **F** | **L1** | Research only |
+| Package/release trust-drift diffing | **J** | **L1** | Not started |
+| Structured/type-aware fuzzing over real types, invariants, and report subjects | **D / H** | **L1 / O** | Research only |
+| Semantic compatibility / semver checking over API, capability, layout, and proof-facing surfaces | **J** | **L1** | Research only |
+| Coverage tooling across tests, reports, and proof-facing artifacts | **D / H** | **L1** | Research only |
+| Binary-linked proof-facing exports and "self-describing binary" artifact traceability | **I** | **I / L1** | Research only |
+| Symbolic-execution addon over proof-facing artifacts | **I** | **I / L1** | Research only |
+| Dynamic UB / invalid-behavior interpreter for `trusted` / `Unsafe` / FFI-heavy debugging | **E / F** | **O** | Research only |
 | Serious showcase workload turned into a flagship public review artifact | **H** | **K** | Not started |
 | Hardware capability mapping to MPU / TrustZone-style target isolation | **E / M** | **O** | Research only |
+| Developer-feedback-loop tooling (`check`, `watch`, narrow fix-its) | **A / C** | **L1** | Research only |
 
 ### Recent Progress
 
@@ -195,8 +201,9 @@ These ideas are important enough that they should always have an explicit roadma
 - **Phase I** owns proof-carrying audit artifacts: the first credible tie between validated Core, proof eligibility, selected proof references, and user-facing review artifacts.
 - **Phase J** owns authority budgets as enforced build contracts at package/subsystem boundaries, because packages are where authority drift stops being only a local function concern.
 - **Phase K** owns the public-facing flagship workload and review narrative that demonstrates why Concrete is different in practice, not only in architecture notes.
-- **Phase L** owns machine-readable reports, semantic query/search over compiler facts, report-first review workflows, reproducible trust bundles, and trust-drift diffing as maintained operational surfaces.
-- **Phase L** also owns any stronger bundle/provenance/review-policy product surface: cryptographically committed evidence bundles, bundle verification/rebuild commands, and CI-facing review gates over maintained compiler facts.
+- **Phase L1** owns machine-readable reports, semantic query/search over compiler facts, report-first review workflows, reproducible trust bundles, and trust-drift diffing as maintained operational surfaces.
+- **Phase L1** also owns any stronger bundle/provenance/review-policy product surface: cryptographically committed evidence bundles, bundle verification/rebuild commands, and CI-facing review gates over maintained compiler facts.
+- **Phase L2** owns backend plurality, alternate backend evaluation, emitted-code inspection quality, debug-info/codegen maturity, and backend-validation work over the SSA boundary.
 - **Phase O** owns any remaining evidence-gated extensions that still need staging before they deserve stable implementation contracts, especially new language/tool ideas that look promising but are not yet justified by Phase H evidence.
 - **Phase O** is also where target-specific ideas such as hardware-backed capability mapping should live until Concrete has enough embedded/runtime evidence to justify them.
 
@@ -857,7 +864,7 @@ Deliverables:
 Exit criterion:
 Concrete has a credible adoption story: users can understand what it is for, try it through polished examples, and see why it is distinct without reading the whole compiler roadmap.
 
-#### Phase L: Project And Operational Maturity
+#### Phase L1: Project And Operational Maturity
 
 Goal: turn Concrete from a strong compiler project into a durable, distributable, maintainable system.
 
@@ -904,12 +911,10 @@ Primary surfaces:
 17. define package and release diffing for trust drift: authority growth, allocation drift, layout drift, and trusted-boundary expansion — **not started**
    - the intended first-class surface is semantic diff tooling over machine-readable compiler facts, not a new language feature
 18. turn editor/LSP support into an explicit maintained product surface, starting from compiler-owned diagnostics/navigation rather than a separate semantic engine — **not started**
-19. define cross-compilation workflow expectations as part of the supported operational/build story, not only as backend target policy — **not started**
-20. implement and maintain usable debug-info emission as part of the supported tooling surface — at minimum, DWARF from EmitSSA sufficient for source locations and stack traces in lldb/gdb — **not started**
-21. implement and maintain the first explicit non-cleanup optimization layer — SSA-level function inlining with a stated policy that preserves capability/trust honesty and debug/report quality — **not started**
+19. define cross-compilation workflow expectations as part of the supported operational/build story, in coordination with the later backend-plurality phase rather than as a backend-only concern — **not started**
 22. define how evidence/trust bundles should carry provenance and attestable build identity so they can later interoperate cleanly with broader verification ecosystems without Concrete depending on them semantically — **not started**
 23. add per-function inspection tooling for compiler artifacts and reports — SSA, LLVM, and report slices for one function without requiring whole-program manual digging — **not started**
-    - this should help optimization work, auditability, and workflow debugging before heavier optimizer architecture is added
+    - this should compose directly with the later backend/codegen phase rather than being trapped in whole-program manual debugging
 24. make the operational proof workflow artifact-driven and tool-oriented rather than compiler-entangled — proof/evidence consumers should build on stable proof-facing artifacts, machine-readable outputs, and review bundles instead of expanding ordinary compile semantics — **not started**
 25. define the operational layered-proof workflow — how SMT, symbolic execution, and Lean-facing proof outputs compose over the same proof-facing artifacts without creating a second semantic authority — **not started**
 26. make proof sessions and proof-status results replayable across CI and review workflows — persistent proof results, obligation tracking, and proof-status drift should become part of the operational evidence story — **not started**
@@ -925,6 +930,13 @@ Primary surfaces:
    - the first useful version can stop at deterministic identities, machine-readable manifests, and reproducible rebuild checks before any signing/distribution policy becomes mandatory
 31. make review-policy checks first-class tooling over maintained compiler facts — authority growth, trusted-boundary changes, FFI introduction, proof-status drift, and bundle/release policy failures should be enforceable in CI without embedding approval policy in the language surface — **not started**
 32. define the narrow "self-describing binary" story as artifact traceability rather than executable mysticism — emitted binaries or release artifacts may carry or reference proof-facing/exported semantic subjects, report identities, and bundle manifests, but verification should still run against the explicit compiler artifacts that describe what was built — **not started**
+33. design semantic compatibility / semver checking over maintained compiler facts — package and release checks should reason about signature changes, capability growth, layout/ABI drift, proof-facing subject changes, and other review-relevant compatibility breaks rather than only text or typechecking survival — **not started**
+   - this should compose with package graph identity, machine-readable reports, and trust-drift tooling instead of becoming an isolated checker
+34. add coverage tooling as a maintained operational surface — ordinary test coverage, report/CLI mode coverage, and proof-facing coverage should all become visible enough to guide testing and review without pretending line coverage alone proves correctness — **not started**
+35. extend artifact inspection into binary-analysis tooling — size breakdowns, per-function emitted-IR/asm views, and source/Core/LLVM/asm mapping should become first-class inspection tools for optimization, audit, and release review — **not started**
+36. restore a fast developer feedback loop as a maintained product surface — a narrow `concrete check` path, file watching, and carefully scoped fix-it/autofix workflows should exist where they reduce iteration time without creating a second compiler semantics or hiding important authority/trust changes — **not started**
+   - the goal is faster reviewable iteration, not a cargo-clippy/rust-analyzer-sized side ecosystem
+37. define how dependency auditing should fit once the package model is real — vulnerability intake, authority-budget violations, capability/trust drift in dependencies, and semver/review-policy failures should eventually become part of package/release workflows rather than ad hoc external scripts — **not started**
 
 Deliverables:
 - a documented release and compatibility policy for language, stdlib, reports, and tooling surfaces
@@ -947,8 +959,6 @@ Deliverables:
 - stable identity/versioning rules for user/tool-visible artifacts so reports, proof exports, caches, and evidence bundles can remain reproducible and comparable
 - an explicit editor/LSP baseline (diagnostics, go-to-definition, hover/navigation) grounded in compiler artifacts
 - an explicit cross-compilation workflow story for supported vs experimental targets, including how target selection interacts with packages, reports, and artifacts
-- emitted debug metadata good enough for ordinary debugger workflows to show source locations and stack traces
-- a first explicit optimization layer beyond cleanup, with function inlining treated as policy-governed backend work rather than accidental folklore
 - a provenance-aware trust-bundle direction that ties package identity, build identity, reports, and evidence outputs together without turning package publication into a second semantic authority
 - per-function inspection tools that make emitted artifacts and report slices easy to inspect during optimization, audit, and tooling work
 - an operational proof workflow where stronger automation lives in first-class tooling over compiler artifacts, not in the mandatory semantic compile path
@@ -959,9 +969,76 @@ Deliverables:
 - a reproducible bundle direction that can later grow into cryptographically committed evidence packages without turning signing policy into language semantics
 - review-policy tooling that treats authority, trust, FFI, and proof drift as first-class CI/release questions over compiler facts
 - a narrow self-describing-binary story rooted in exported proof/report artifacts and stable identities rather than unverifiable claims about the executable alone
+- semantic compatibility tooling that can explain review-relevant breaks in API, capability, layout, and proof-facing surfaces
+- coverage tooling that makes test depth, report coverage, and proof coverage visible without reducing quality to one metric
+- binary-analysis and mapping tools that expose size and emitted-code consequences in a way that supports optimization and audit work
+- a deliberate developer-feedback-loop surface (`check`, `watch`, narrow fix-its) that improves iteration speed without hiding semantics
+- a clear dependency-auditing direction once package identity, provenance, and policy surfaces are mature enough to support it honestly
 
 Exit criterion:
 Concrete is not only architecturally strong internally, but also operable, reproducible, documentable, and maintainable as a long-term project, with a real driver/artifact model rather than only a pass library plus CLI entry points.
+
+#### Phase L2: Backend Plurality And Codegen Maturity
+
+Goal: make backend work explicit, testable, and replaceable over the SSA boundary without turning backend experimentation into a second semantic center for the project.
+
+This phase exists because "backend work" currently spans too many concerns:
+
+- alternate backends
+- codegen validation
+- debug-info quality
+- emitted-code inspection
+- backend-facing optimization policy
+- target selection and cross-backend confidence
+
+Those concerns are real, but they should not stay implicit inside the broader operational-maturity phase.
+
+The intended shape is:
+
+- SSA remains the only backend input
+- alternate backends are evaluated as consumers of cleaned/verified SSA
+- backend plurality is added first for validation value, then for user-facing value if it earns the cost
+- codegen quality is judged on auditability and inspectability as well as performance
+
+Primary surfaces:
+- [docs/PASSES.md](docs/PASSES.md)
+- [research/qbe-backend.md](research/qbe-backend.md)
+- [research/mlir-backend-shape.md](research/mlir-backend-shape.md)
+- [research/optimization-policy.md](research/optimization-policy.md)
+- [research/artifact-driven-compiler.md](research/artifact-driven-compiler.md)
+- [Concrete/EmitSSA.lean](/Users/unbalancedparen/projects/concrete/Concrete/EmitSSA.lean)
+- backend driver/toolchain integration
+- backend-oriented tests and inspection tooling
+
+1. make backend plurality explicit over the SSA boundary in the implementation, not only in architecture notes — **not started**
+2. add a second backend experiment primarily as a validation tool, not as an immediate replacement for LLVM — **not started**
+   - the first serious lightweight candidate is QBE via `SSA -> QBE IL`
+3. define cross-backend validation strategy so alternate backends improve compiler confidence rather than just increasing code volume — **not started**
+   - shared test corpus
+   - backend-differential checks where practical
+   - clear backend-specific exclusions when the target surface really differs
+4. define the criteria for keeping or discarding an alternate backend: correctness, maintenance burden, code quality, determinism, debug friendliness, and audit value — **not started**
+5. implement and maintain usable debug-info emission as a backend quality requirement — at minimum, DWARF from EmitSSA sufficient for source locations and stack traces in lldb/gdb — **not started**
+6. implement and maintain the first explicit non-cleanup optimization layer — SSA-level function inlining with a stated policy that preserves capability/trust honesty and debug/report quality — **not started**
+7. extend per-function and binary-analysis inspection so emitted IR/asm, size breakdowns, and source/Core/LLVM/asm mapping are first-class backend tools rather than ad hoc debugging work — **not started**
+8. define how cross-compilation and target selection interact with backend plurality, supported targets, and backend-family expectations — **not started**
+9. evaluate additional backend families only after the second-backend experiment is honest and measured — **not started**
+   - C / Wasm style backends may be worth exploring
+   - MLIR remains optional and only if it earns its complexity
+10. keep self-hosting-adjacent backend ideas disciplined — experiments like "QBE in Concrete" should remain long-horizon until an ordinary QBE backend has already proved strategically valuable — **not started**
+
+Deliverables:
+- an explicit backend-plurality architecture over SSA
+- a second backend experiment with clear success/failure criteria
+- backend-validation workflows that improve confidence in lowering and code generation
+- debug metadata good enough for ordinary debugger workflows
+- a first explicit backend optimization layer with a stated policy
+- emitted-code inspection and binary-analysis tools that support optimization, audit, and release review
+- a documented cross-compilation/backend-target story that does not blur backend validation with semantic meaning
+- an explicit decision framework for whether lightweight alternate backends such as QBE earn long-term support
+
+Exit criterion:
+Concrete has a real backend-maturity story rather than only "LLVM works today": SSA is the stable backend boundary, alternate backends can be evaluated honestly, codegen quality is inspectable, and backend plurality is either justified by evidence or rejected with reasons.
 
 #### Phase M: Concurrency Maturity And Runtime Plurality
 
@@ -1089,6 +1166,14 @@ Primary surfaces:
 12. evaluate hardware capability mapping only as long-horizon target/runtime research, not as current language-surface direction — **not started**
    - the default stance should be target-specific backend/runtime integration over existing capability/report/profile surfaces, not a new general-purpose capability calculus
    - do not let MPU / TrustZone ideas distort the hosted/high-level roadmap before Concrete has enough embedded/high-integrity target evidence
+13. evaluate whether a MIRI-style interpreter for Concrete is worth the implementation cost as a development/debugging tool for `trusted`, `Unsafe`, pointer, and FFI-heavy code — **not started**
+   - default stance: if pursued, it should be a narrow artifact/debugging consumer over validated Core / lowered artifacts, not a second semantics or a replacement for proofs
+   - it is useful only if it finds real classes of invalid behavior that reports, tests, sanitizers, and proof tooling do not already catch cheaply
+14. explicitly keep the following out of roadmap priority until Concrete is much more mature: crater-scale ecosystem testing, remote build execution, hot reload, and REPL/playground work — **not started**
+   - these are not banned forever, but they are below the line relative to auditability, proof-facing tooling, package semantics, and operational evidence work
+15. evaluate whether a constrained playground or REPL has a legitimate place as tooling rather than language center-of-gravity — **not started**
+   - default stance: if explored, prefer a narrow artifact/query/debug shell or example-oriented playground over a fully stateful low-level language REPL
+   - it should not become a reason to hide ownership, authority, or cleanup semantics, and it should not outrank `check`, `watch`, reports, or proof/evidence tooling
 
 Deliverables:
 - a maintained canonical research index for the highest-leverage undecided ideas
@@ -1100,6 +1185,9 @@ Deliverables:
 - an explicit decision record for whether type-directed fuzzing belongs in maintained tooling and test infrastructure or should remain outside the supported surface
 - an explicit decision record for whether ghost / proof-only syntax belongs in the language at all or should remain outside the source surface until proof artifacts mature
 - an explicit decision record for whether hardware-backed capability mapping belongs in Concrete's core roadmap, target-specific tooling, or not at all
+- an explicit decision record for whether a dynamic UB / invalid-behavior interpreter materially strengthens Concrete's development and audit story enough to justify its cost
+- an explicit decision record that ecosystem-scale and interactive-environment ideas remain intentionally below the line until package, evidence, and tooling maturity warrant them
+- an explicit decision record for whether a constrained playground/REPL helps Concrete enough as tooling to justify its semantic and operational cost
 - protection against accidental feature loss-by-forgetting as the roadmap evolves
 
 Exit criterion:
@@ -1118,7 +1206,8 @@ Concrete has an explicit place for serious but undecided ideas, and the project 
 - **Phase I** matters because Concrete's proof story is too central to remain only a cross-cutting aspiration. This is where formalization becomes a real workstream instead of “initial theorems plus later hope.”
 - **Phase J** matters because package and dependency semantics are part of the language experience once real projects exist. Incremental compilation is the first item — without it, multi-package builds recompile the world.
 - **Phase K** matters because technically coherent languages still fail if nobody can quickly understand why to use them, what they are for, or how to get started well.
-- **Phase L** matters because long-term projects fail just as easily from weak operational discipline as from weak compiler architecture.
+- **Phase L1** matters because long-term projects fail just as easily from weak operational discipline as from weak compiler architecture.
+- **Phase L2** matters because backend plurality, codegen inspection, and emitted-code quality should be explicit engineering work, not an afterthought buried inside the general operational phase.
 - **Phase M** matters because concurrency is one of the easiest places for a language to lose clarity, and Concrete should only broaden it once it can do so without importing async fragmentation and hidden runtime culture.
 - **Phase N** matters because allocation behavior is one of Concrete's clearest opportunities to become unusually strong for high-integrity and audit-heavy low-level code, but only if it is implemented conservatively enough to stay explainable.
 - **Phase O** matters because valuable ideas should not have only two states, “immediate phase work” or “forgotten”. Concrete needs an explicit place to evaluate and either adopt or reject evidence-gated features.
