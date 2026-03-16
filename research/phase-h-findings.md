@@ -63,6 +63,39 @@ What remains:
 - standalone vs project workflow friction
 - runtime/stack pressure clarity
 
+### JSON Parser
+
+What it proved:
+
+- Concrete’s capability system makes authority boundaries legible at the signature level in a way that is immediately useful in real code
+- the ownership model is real enough to shape parser structure, not just to decorate APIs
+- the language can already carry a non-trivial recursive-descent parser with pools, modules, `Copy` structs, `Vec` generics, and recursive value construction
+
+What felt strong:
+
+- visible authority plus visible ownership discipline is Concrete’s clearest differentiator
+- pure helpers are visibly pure, allocating functions visibly allocate, and effectful output visibly declares capabilities
+- the builder-builtin approach is verbose but honest: no hidden allocations, no extra grammar, no disguised effects
+- module structure, builtin interception, `Copy` structs, and generic `Vec` support were strong enough to carry a real parser
+
+What felt awkward:
+
+- explicit linear-ownership pressure still forces code reshaping patterns that do not yet feel idiomatic
+- `drop_string` pressure remains a real signal: cleanup is honest, but repeated destruction can become easy to forget and mechanically noisy
+- `&mut` string-building patterns are workable but repetitive
+- the lack of destructuring or non-enum pattern-style binding makes some parser/test code more verbose than it needs to be
+- repeated multi-pool argument plumbing becomes noisy without better helper/abstraction patterns
+
+What it implies:
+
+- the central Phase H question is no longer “can Concrete carry real programs?” but “do explicit patterns stabilize into disciplined idioms or sustained verbosity?”
+- future fixes should prefer compression patterns over hidden magic:
+  - helper APIs
+  - cleanup idioms
+  - stronger stdlib conventions
+  - qualification and abstraction tools that preserve explicitness
+- syntax growth should remain the last step, not the first response, unless repeated real-program evidence shows that library and workflow patterns are insufficient
+
 ## Current Open Findings
 
 ### Formatting / interpolation
@@ -109,3 +142,12 @@ Before any new surface change is adopted from a Phase H finding:
 2. decide whether it belongs in language, stdlib, tooling, or runtime
 3. write the narrowest design that solves the real problem
 4. record why library/workflow fixes are insufficient if syntax is being proposed
+
+## Standing Phase H Question
+
+For every serious program, ask:
+
+- are explicit authority and ownership patterns becoming stable idioms?
+- or are they remaining honest but exhausting ceremony?
+
+That question is now one of the most important evaluation criteria for the phase.

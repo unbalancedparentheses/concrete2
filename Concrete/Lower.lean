@@ -893,8 +893,9 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
     let okLabel ← freshLabel "try.ok"
     let errLabel ← freshLabel "try.err"
     terminateBlock (.condBr (.reg cmpDst .bool) okLabel errLabel)
-    -- Err path: return the whole enum
+    -- Err path: return the whole enum (run deferred calls first)
     startBlock errLabel
+    emitDeferredCalls
     terminateBlock (.ret (some iVal))
     -- Ok path: extract the Ok value from payload using aligned offset
     startBlock okLabel
@@ -1568,7 +1569,6 @@ partial def lowerStmt (stmt : CStmt) : LowerM Unit := do
         let bVal ← lowerExpr valExpr
         emit (.store bVal (.reg slot info.resultTy))
       | _, _ => pure ()
-      emitDeferredCalls
       let vars ← snapshotVars
       let label ← getCurrentLabel
       addBreakEdgeToLoop vars label info.exitLabel

@@ -477,6 +477,10 @@ Primary surfaces:
        - interpreter/runtime workloads also need stronger supporting runtime/data-structure ergonomics (frame-friendly environment patterns, richer collections); the first MAL environment slowdown was primarily an implementation issue, but it still exposed a thin toolbox for this workload class
        - ~~standalone benchmark programs have no easy path to use `std.time` without project/package setup (`Bug 012`)~~ — **fixed**: `clock_monotonic_ns` builtin added
      - ~~other real ergonomics gaps: aggregate `if` expressions (`Bug 008`) and non-working lowered `const` declarations (`Bug 009`)~~ — **both fixed**
+   - strongest current interpretation from the first parser-heavy workloads:
+     - Concrete’s differentiator is not generic explicitness but visible authority plus visible ownership discipline
+     - the main open Phase H question is whether these explicit patterns stabilize into disciplined idioms or remain sustained verbosity
+     - future fixes should prefer compression patterns (helper APIs, cleanup idioms, stdlib conventions, qualification tools) before syntax growth
    - several initial complaints turned out to be misdiagnosed and should **not** be treated as roadmap gaps:
      - `print` / `println` already exist in `std.io`
      - `&&` / `||` already exist and are tested
@@ -730,16 +734,21 @@ Primary surfaces:
 6. add explicit compatibility and bootstrap-trust policy — **not started**
 7. make certification-style evidence and traceability practical — **not started**
 8. make reproducible trust bundles practical if the evidence story earns it — **not started**
+   - target shape: source/build identity + report outputs + artifact IDs + proof-facing references bundled into one reviewable output
 9. define whether evidence authenticity and build/dependency trust need explicit operational policy — **not started**
+   - include package/dependency trust drift as a first-class review question, not just a changelog problem
 10. define debugging/observability expectations as a maintained product surface — **not started** (this item covers the operational/maintenance policy around debug info quality, stack trace fidelity, and inspection workflows; implementation work is captured below)
 11. define whether and how artifact serialization / disk-backed compiler artifacts become part of the supported workflow — **not started** (incremental compilation is in Phase H; this item covers the stability/versioning policy for serialized artifacts)
 12. define the long-term bootstrap/self-hosting stance explicitly — **not started**
 13. make the compiler-driver/build-graph layer explicit instead of leaving orchestration as thin CLI glue — **not started**
 14. define stable artifact identity/versioning rules for reports, caches, proof/export subjects, and build outputs — **not started**
-15. turn editor/LSP support into an explicit maintained product surface, starting from compiler-owned diagnostics/navigation rather than a separate semantic engine — **not started**
-16. define cross-compilation workflow expectations as part of the supported operational/build story, not only as backend target policy — **not started**
-17. implement and maintain usable debug-info emission as part of the supported tooling surface — at minimum, DWARF from EmitSSA sufficient for source locations and stack traces in lldb/gdb — **not started**
-18. implement and maintain the first explicit non-cleanup optimization layer — SSA-level function inlining with a stated policy that preserves capability/trust honesty and debug/report quality — **not started**
+15. make machine-readable report output a maintained operational surface, not just an ad hoc export path — **not started**
+16. design a report-first review workflow for high-integrity and audit-heavy codepaths, including policy failures over authority/alloc/layout/trusted/FFI evidence — **not started**
+17. define package and release diffing for trust drift: authority growth, allocation drift, layout drift, and trusted-boundary expansion — **not started**
+18. turn editor/LSP support into an explicit maintained product surface, starting from compiler-owned diagnostics/navigation rather than a separate semantic engine — **not started**
+19. define cross-compilation workflow expectations as part of the supported operational/build story, not only as backend target policy — **not started**
+20. implement and maintain usable debug-info emission as part of the supported tooling surface — at minimum, DWARF from EmitSSA sufficient for source locations and stack traces in lldb/gdb — **not started**
+21. implement and maintain the first explicit non-cleanup optimization layer — SSA-level function inlining with a stated policy that preserves capability/trust honesty and debug/report quality — **not started**
 
 Deliverables:
 - a documented release and compatibility policy for language, stdlib, reports, and tooling surfaces
@@ -749,6 +758,9 @@ Deliverables:
 - an explicit bootstrap-trust and compatibility policy
 - a practical evidence/traceability story linking source, reports, proofs, and build artifacts
 - a documented direction for reproducible trust bundles as the operational form of the evidence story
+- a machine-readable report story strong enough for CI, review tooling, and later certification workflows
+- a report-first high-integrity review workflow that turns authority/alloc/layout/trusted/FFI facts into a coherent operational surface
+- a practical trust-drift diffing story for packages and releases
 - a documented deprecation/migration policy for language, reports, and tooling surfaces
 - an explicit direction for editor/tooling support as a maintained product surface
 - an explicit operational trust policy for builds, dependencies, and evidence authenticity if trust bundles become real outputs

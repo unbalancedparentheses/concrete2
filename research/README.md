@@ -49,6 +49,7 @@ If you want the highest-leverage current research first:
 17. [trust-multipliers.md](trust-multipliers.md) — proof-backed reports, sandbox profiles, authority budgets, FFI envelopes, trust bundles, and showcase workloads (`P0`, `Open`)
 18. [artifact-driven-compiler.md](artifact-driven-compiler.md) — stable artifacts, serialization, IDs, traceability, interface/body splits, and the real compiler driver (`P0`, `Open`)
 19. [adoption-strategy.md](adoption-strategy.md) — signature domains, showcases, onboarding, stability surface, and positioning for real user pull (`P1`, `Open`)
+20. [evidence-review-workflows.md](evidence-review-workflows.md) — evidence bundles, machine-readable reports, trust-drift diffing, and report-first review workflows (`P0`, `Open`)
 
 ## Language Decisions
 
@@ -95,6 +96,7 @@ If you want the highest-leverage current research first:
 - [formalization-breakdown.md](formalization-breakdown.md) — the full proof effort split into semantic, language-guarantee, compiler-preservation, and evidence tracks (`P0`, `Open`)
 - [proof-evidence-artifacts.md](proof-evidence-artifacts.md) — how reports, artifacts, proofs, and reproducibility could reinforce each other (`P0`, `Open`)
 - [trust-multipliers.md](trust-multipliers.md) — how authority, runtime, proof, and evidence work could combine into Concrete-specific differentiators (`P0`, `Open`)
+- [evidence-review-workflows.md](evidence-review-workflows.md) — evidence bundles, machine-readable reports, trust-drift diffing, and report-first review workflows (`P0`, `Open`)
 - [package-model.md](package-model.md) — package identity, dependency semantics, workspaces, and the boundary to authority-aware dependencies (`P0`, `Open`)
 - [artifact-driven-compiler.md](artifact-driven-compiler.md) — what it would take to make the named pipeline artifacts operationally real (`P0`, `Open`)
 - [file-summary-frontend.md](file-summary-frontend.md) — summary-based frontend direction and artifact boundaries (`P1`, `Adopted`)
@@ -117,6 +119,7 @@ If you want the highest-leverage current research first:
 - [competitive-gap-analysis.md](competitive-gap-analysis.md) — what other systems languages may still have, which gaps matter, and where Concrete should aim to be stronger instead (`P1`, `Open`)
 - [complete-language-system.md](complete-language-system.md) — what still separates a strong language/compiler from a complete language system (`P1`, `Open`)
 - [adoption-strategy.md](adoption-strategy.md) — what Concrete needs beyond architecture to become understandable, memorable, and worth trying (`P1`, `Open`)
+- [evidence-review-workflows.md](evidence-review-workflows.md) — the clearest route to making Concrete visibly better in audit-heavy practice without adding language cleverness (`P0`, `Open`)
 - [showcase-workloads.md](showcase-workloads.md) — real programs Concrete should eventually implement well, including showcase/stress-test targets (`P2`, `Open`)
 - [candidate-ideas.md](candidate-ideas.md) — Concrete-specific candidate compiler/language/tooling ideas (`P2`, `Research`)
 - [external-ideas.md](external-ideas.md) — useful ideas borrowed from other languages (`P2`, `Research`)
