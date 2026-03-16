@@ -589,7 +589,8 @@ Primary surfaces:
         - std is located automatically relative to the compiler binary, with `CONCRETE_STD` as an override for unusual setups
         - example manifests no longer need path-based `std = { path = ... }` entries
      8. ~~design qualified module access (`Module.function()` or equivalent) so larger programs do not collapse into rename pressure~~ **done for first real cases** — qualified submodule access now works for plain functions, mixed imported + qualified access, two-submodule access, top-level + qualified coexistence, qualified submodule `extern fn`, and qualified submodule struct/import interaction
-        - remaining limitation: parent/submodule or sibling-submodule functions with the same leaf name still collide at the LLVM symbol layer because function definitions still emit bare names; this is a later backend naming issue, not a remaining blocker on the basic qualified-access surface
+        - remaining limitations: parent/submodule or sibling-submodule functions with the same leaf name still collide at the LLVM symbol layer because function definitions still emit bare names, and inline sibling modules still require `import` rather than sibling `::` access
+        - this is enough for the first real workloads, but it is not the final namespace-completion story
      9. decide how runtime argument access should live at the user-facing surface after the first `argc` / `argv` implementation proves itself in real command-line tools — **not started**
         - the grep-like tool made process arguments a real language/runtime surface, not just generated-C glue
      10. document and fix backend/performance cliffs exposed by runtime-heavy workloads — **in progress**
@@ -679,7 +680,7 @@ Concrete already looks better than Rust in a narrow auditability niche, but it d
 2. **ergonomics without abandoning explicitness**
    - ~~text/output layer: mixed-arg `print` / `println`~~ — done
    - interpolation only if still justified by real-program evidence
-   - ~~qualified module access~~ — done
+   - qualified module access — landed for non-collision cases; same-name collisions across submodules remain an open backend limitation
    - remaining high-value helper APIs and cleanup idioms
    - the goal is not more magic; it is better compression of honest code
 3. **hot-path performance after the workflow floor is fixed**

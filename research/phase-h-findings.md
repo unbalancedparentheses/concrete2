@@ -39,7 +39,7 @@ What closed:
 What remains:
 
 - formatting/interpolation
-- qualified module access pressure in larger multi-module code
+- qualified module access: basic `mod::fn` landed, but same-name collisions across submodules remain an open backend limitation
 
 ### MAL Interpreter
 
@@ -214,6 +214,33 @@ Benchmark results (9.3MB file):
 | `shasum` (Perl/C) | ~25ms |
 | Python `hashlib` (C openssl) | ~20ms |
 
+### C Comparison Benchmarks
+
+All five example programs were benchmarked head-to-head against equivalent C implementations compiled with `cc -O2`. Concrete programs compiled through the standard pipeline (LLVM IR + `clang -O2`).
+
+| Example | Workload | C avg | Concrete avg | Ratio |
+|---|---|---|---|---|
+| verify (conhash) | SHA-256, 10MB file | 98ms | 101ms | ~1.0x |
+| vm | fib(35) bytecode | 303ms | 274ms | ~0.9x |
+| policy_engine | RBAC eval, 27 cases | 64ms | 70ms | ~1.1x |
+| json | recursive-descent, 27 cases | 64ms | 78ms | ~1.2x |
+| grep (plain search) | 100k lines, pattern match | 70ms | 116ms | ~1.6x |
+| grep (case-insensitive) | 100k lines, -i -n | 21ms | 60ms | ~2.8x |
+| grep (count only) | 100k lines, -c | 9ms | 17ms | ~1.8x |
+
+What this shows:
+
+- verify, vm, policy_engine, json are at rough parity with C (0.9x–1.2x) — this is the expected result for a language that compiles to LLVM IR with `-O2`
+- vm at 0.9x is interesting but should be presented as parity, not a consistent advantage, until repeatedly confirmed across more workloads
+- grep is the outlier at 1.6x–2.8x — the string/output path (`println`, per-line string operations) is the bottleneck, giving a concrete next optimization target
+- the case-insensitive gap (2.8x) is larger than plain search (1.6x), suggesting per-character string processing cost is the dominant factor
+
+What it implies:
+
+- Concrete's `-O2` backend produces code in the same performance class as hand-written C for compute-heavy and collection-heavy workloads
+- the remaining gap is concentrated in string I/O paths, not in the core language model or ownership overhead
+- optimizing the string/output path (buffered writes, avoiding per-call overhead) is the highest-leverage performance work remaining
+
 ## Phase H Retrospective
 
 ### What Phase H proved
@@ -240,8 +267,10 @@ Not "can Concrete express real programs?" but "do its explicit patterns become s
 3. **Runtime-oriented collection maturity** — MAL and the VM both need maps, nested mutable structures, runtime-friendly patterns
 4. **Backend inlining / codegen policy cliffs** — the VM showed that tiny builtin calls in hot loops can distort performance dramatically if LLVM is not given enough shape information
 5. **User-facing runtime argument surface** — `argc`/`argv` work in practice, but the final public shape is not settled
-6. **~~Qualified module access~~** — CLOSED: file-based `mod::fn` access, mixed imported + qualified access, two-submodule qualified access, top-level + qualified coexistence, qualified submodule `extern fn`, qualified submodule struct/import, same-leaf-name collision across submodules, parent/submodule same-leaf-name coexistence, and import-with-alias collision are now covered by targeted tests. Submodule function definitions are emitted with module-prefixed LLVM symbols to prevent collisions.
-   - remaining limitation: inline sibling modules (`mod A {}` / `mod B {}`) cannot use `::` qualified access across siblings — they must use `import`. This is a module-structure constraint (qualified access is parent→child only), not a backend issue.
+6. **Qualified module access** — partially closed. File-based `mod::fn` access, mixed imported + qualified access, two-submodule qualified access, top-level + qualified coexistence, qualified submodule `extern fn`, and qualified submodule struct/import all work via linker aliases (qualified call `math_add` → bare definition `add`).
+   - **open limitation — same-name collisions**: two submodules defining a function with the same leaf name produce LLVM symbol collisions because definitions still emit bare names. An earlier attempt to prefix definitions at emit time (`emittedFnName`) was reverted — it broke function references, internal call sites, and monomorphized names. 3 collision tests are disabled. A correct fix needs to rename consistently across all passes (mono, lower, emit), not just at the emit boundary.
+   - **open limitation — inline sibling modules**: `mod A {}` / `mod B {}` cannot use `::` across siblings — must use `import`
+   - the non-collision qualified-access surface is landed and useful; the collision case is a real backend limitation
 7. **Runtime / stack pressure classification** — MAL exposed this; still needs a cleaner language-vs-runtime-vs-tooling decision
 
 ## Current Open Findings
