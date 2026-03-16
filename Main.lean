@@ -373,7 +373,7 @@ partial def loadDependency (depName : String) (depPath : String)
   let source ← try
     readFile libPath
   catch _ =>
-    return .error s!"dependency '{depName}': cannot read {libPath}"
+    return .error s!"error: dependency '{depName}': cannot read {libPath}\nhint: check the path in [dependencies] or ensure the dependency has src/lib.con"
   match parse source with
   | .error e => return .error s!"dependency '{depName}': parse error: {e}"
   | .ok modules =>
@@ -399,7 +399,7 @@ def compileBuild (projectRoot : String) (outputPath : Option String) (emitLLVM :
     match ← findBuiltinStd with
     | some stdPath => pure (("std", stdPath) :: userDeps)
     | none =>
-      IO.eprintln "warning: builtin std not found (set CONCRETE_STD or add std to [dependencies])"
+      IO.eprintln "warning: builtin std not found\nhint: set CONCRETE_STD=/path/to/std or add std = { path = \"...\" } to [dependencies]"
       pure userDeps
 
   -- Load all dependencies
@@ -425,7 +425,7 @@ def compileBuild (projectRoot : String) (outputPath : Option String) (emitLLVM :
   catch _ => pure none
   match sourceResult with
   | none =>
-    IO.eprintln s!"cannot read {mainPath}"
+    IO.eprintln s!"error: cannot read {mainPath}\nhint: projects need a src/main.con entry point"
     return 1
   | some source =>
 
@@ -543,7 +543,7 @@ partial def compileTestBuild (projectRoot : String) (moduleFilter : Option Strin
   catch _ => pure none
   match sourceResult with
   | none =>
-    IO.eprintln s!"cannot read {mainPath}"
+    IO.eprintln s!"error: cannot read {mainPath}\nhint: projects need a src/main.con entry point"
     return 1
   | some source =>
 
@@ -630,7 +630,7 @@ def main (args : List String) : IO UInt32 := do
     let cwd ← IO.currentDir
     match ← findProjectRoot cwd.toString with
     | none =>
-      IO.eprintln "No Concrete.toml found in current directory or parent"
+      IO.eprintln "error: no Concrete.toml found in current directory or parent\nhint: create one with [package] section, or run from a project directory"
       return 1
     | some root =>
       let emitLLVM := args.contains "--emit-llvm"
@@ -643,7 +643,7 @@ def main (args : List String) : IO UInt32 := do
     let cwd ← IO.currentDir
     match ← findProjectRoot cwd.toString with
     | none =>
-      IO.eprintln "No Concrete.toml found in current directory or parent"
+      IO.eprintln "error: no Concrete.toml found in current directory or parent\nhint: create one with [package] section, or run from a project directory"
       return 1
     | some root =>
       -- Build to a temporary path
@@ -671,7 +671,7 @@ def main (args : List String) : IO UInt32 := do
     let cwd ← IO.currentDir
     match ← findProjectRoot cwd.toString with
     | none =>
-      IO.eprintln "No Concrete.toml found in current directory or parent"
+      IO.eprintln "error: no Concrete.toml found in current directory or parent\nhint: create one with [package] section, or run from a project directory"
       return 1
     | some root =>
       let modFilter := match args with
