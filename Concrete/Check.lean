@@ -1823,19 +1823,23 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
     | .call _ _ _ _ => pure ()
     | _ => throwCheck .deferBodyNotCall (some stmt.getSpan)
     let _ ← checkExpr body
-    -- If it's destroy(varName), mark varName as reserved
+    -- Any variable consumed by the deferred call should be reserved, not consumed.
+    -- The actual consumption happens at scope exit.
     match body with
-    | .call _ fname _ args =>
-      if fname == destroyMethodName then
-        match args.head? with
-        | some (.ident _ varName) =>
+    | .call _ _fname _ args =>
+      for arg in args do
+        match arg with
+        | .ident _ varName =>
           let env ← getEnv
-          let vars' := env.vars.map fun (n, vi) =>
-            if n == varName then (n, { vi with state := .reserved })
-            else (n, vi)
-          setEnv { env with vars := vars' }
+          match env.vars.lookup varName with
+          | some info =>
+            if info.state == .consumed then
+              let vars' := env.vars.map fun (n, vi) =>
+                if n == varName then (n, { vi with state := .reserved })
+                else (n, vi)
+              setEnv { env with vars := vars' }
+          | none => pure ()
         | _ => pure ()
-      else pure ()
     | _ => pure ()
   | .borrowIn _ var ref region isMut body =>
     -- Check that var exists

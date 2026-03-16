@@ -92,3 +92,33 @@ These ideas fall into three categories:
 - **Evidence-gated later ideas**: typestate and package-level authority budgets
 
 The roadmap should mention them so they remain visible, but not all of them should become phases immediately.
+
+## Current Phase Mapping
+
+This is the current best-fit phase mapping for the concrete sequencing discussed so far:
+
+1. **`defer`**
+   - **Phase H**
+   - rationale: highest-leverage real-program ergonomics improvement; best evaluated under sustained-use pressure
+
+2. **Cheap reports**
+   - allocation classification (`NoAlloc`, direct alloc, transitive alloc, structurally unbounded/unknown)
+     - **Phase N**
+   - layout padding/details
+     - **Phase H**
+   - structural boundedness / execution-boundedness report
+     - **Phase N**
+
+3. **Arena allocation**
+   - **Phase H**
+   - rationale: only adopt if real programs show that the current `Vec`-pool pattern materially hurts clarity, performance, or boundedness
+
+4. **Authority budgets**
+   - module-level experiments
+     - **Phase O** if explored before the package model is mature
+   - package/subsystem enforcement
+     - **Phase J**
+
+5. **Typestate**
+   - **Phase O**
+   - rationale: evidence-gated; do not add phantom-type typestate without stronger real-program demand

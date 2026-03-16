@@ -1138,6 +1138,9 @@ run_ok "$TESTDIR/test_match_exhaustive_nested.con" 42
 run_ok "$TESTDIR/test_linearity_branch_agree.con" 42
 run_ok "$TESTDIR/test_linearity_match_consume.con" 42
 run_ok "$TESTDIR/test_defer_linearity.con" 42
+run_ok "$TESTDIR/test_defer_drop_string.con" "hello
+hello
+1"
 run_ok "$TESTDIR/test_trait_multi_bound.con" 42
 run_err "$TESTDIR/error_linearity_branch_disagree.con" "consumed in one branch"
 run_err "$TESTDIR/error_linearity_double_consume.con" "used after move"

@@ -62,6 +62,7 @@ structure LowerState where
       Maps (varName, allocaReg, ty). Field assignment GEPs directly into
       the alloca instead of phi-transporting whole struct values. -/
   promotedAllocas : List (String × String × Ty) := []
+  deferStack : List CExpr := []
 
 abbrev LowerM := ExceptT String (StateM LowerState)
 
@@ -1171,6 +1172,12 @@ partial def lastExprVal (body : List CStmt) (_ty : Ty) : LowerM SVal := do
     | none => pure .unit
   | _ => pure .unit
 
+/-- Emit all deferred calls in LIFO order. -/
+private partial def emitDeferredCalls : LowerM Unit := do
+  let s ← get
+  for body in s.deferStack do
+    let _ ← lowerExpr body
+
 partial def lowerStmt (stmt : CStmt) : LowerM Unit := do
   match stmt with
   | .letDecl name _mutable _ty value =>
@@ -1183,9 +1190,11 @@ partial def lowerStmt (stmt : CStmt) : LowerM Unit := do
 
   | .return_ (some value) _retTy =>
     let val ← lowerExpr value
+    emitDeferredCalls
     terminateBlock (.ret (some val))
 
   | .return_ none _retTy =>
+    emitDeferredCalls
     terminateBlock (.ret none)
 
   | .expr e =>
@@ -1559,6 +1568,7 @@ partial def lowerStmt (stmt : CStmt) : LowerM Unit := do
         let bVal ← lowerExpr valExpr
         emit (.store bVal (.reg slot info.resultTy))
       | _, _ => pure ()
+      emitDeferredCalls
       let vars ← snapshotVars
       let label ← getCurrentLabel
       addBreakEdgeToLoop vars label info.exitLabel
@@ -1576,7 +1586,7 @@ partial def lowerStmt (stmt : CStmt) : LowerM Unit := do
     | none => pure ()
 
   | .defer body =>
-    let _ ← lowerExpr body
+    modify fun s => { s with deferStack := body :: s.deferStack }
 
   | .borrowIn var ref _region isMut refTy body =>
     -- Create a memory slot for the borrowed variable, set ref to point to it
@@ -1630,6 +1640,7 @@ def lowerFn (f : CFnDef) (structDefs : List CStructDef) (enumDefs : List CEnumDe
     -- If the function hasn't terminated, add implicit return
     let term ← currentBlockTerminated
     if !term then
+      emitDeferredCalls
       if f.retTy == Ty.unit then
         terminateBlock (.ret none)
       else
