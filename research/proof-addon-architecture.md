@@ -332,6 +332,51 @@ The strongest ideas to avoid are:
 - forcing every proof through one backend
 - growing a large new specification language before the current artifact/traceability story is mature
 
+## Narrow SMT Export Direction
+
+One plausible extension of the addon workflow is a narrow SMT-export mode.
+
+The important word is narrow.
+
+Concrete should not aim for:
+
+- whole-language SMT export
+- a second semantic authority beside the compiler and Lean formalization
+- an SMT-driven redesign of the language surface
+
+The useful direction is:
+
+- export selected proof subjects or proof obligations
+- export only proof-facing fragments grounded in compiler artifacts
+- use SMT export as one backend for fast automatic checks
+
+That could support checks such as:
+
+- panic-freedom for selected functions
+- simple bounds or reachability obligations
+- arithmetic side conditions
+
+This fits the addon architecture because:
+
+- the compiler remains the producer of semantic artifacts
+- SMT tooling remains an optional consumer
+- Lean remains the place for the deeper semantic proofs and durable proof references
+
+## Philosophy Check
+
+The proof-addon direction remains compatible with Concrete only if it stays:
+
+- artifact-driven
+- explicit
+- optional
+- subordinate to the existing semantic and proof boundaries
+
+It becomes a bad fit if it turns into:
+
+- hidden proof work in ordinary builds
+- language-surface pressure for solver convenience
+- a growing second semantics around annotations or proof-only syntax
+
 Example surface:
 
 ```text

@@ -93,6 +93,7 @@ Completed phases can still seed work that is intentionally finished later. Do no
 ### Recent Progress
 
 - **Cross-cutting differentiator ideas now have explicit phase ownership**: proof-carrying audit artifacts, authority budgets as build contracts, verified FFI envelopes, structural boundedness reports, reproducible trust bundles, serious showcase workloads, capability sandbox profiles, proof-backed authority reports, machine-readable reports, report-first review workflows, and trust-drift diffing should all live in named phases rather than only in scattered research notes.
+- these differentiators should prefer report/tooling/artifact work over language-surface growth unless there is strong evidence that tooling cannot carry the value cleanly
 - **Phase E complete** (all 11 items): `docs/EXECUTION_MODEL.md` is the central reference. Covers hosted/freestanding model, runtime boundary, abort-on-OOM (builtins + stdlib), FFI ownership boundary, `#[repr(C)]` by-value calling convention for extern fn, target/platform support policy, stdlib execution model alignment, execution profiles direction, performance validation direction, verified FFI envelopes direction, and concurrency design (threads-first, structured, capability-gated).
 - **Test runner parallelized and narrowed** (commits `1619220`, `6049d89`): `run_tests.sh` defaults to parallel (`nproc` cores), adds `--fast` (default), `--full`, `--filter`, `--stdlib`, `--O2`, `--codegen`, `--report` modes. Partial runs warn clearly. `--fast` is the documented standard developer workflow. This is a strong Phase A solution, but it is still script-level orchestration rather than a deeper artifact-cached or dependency-aware test system.
 - **Aggregate loop lowering hardened** (commit `e68acc0`): aggregate loop variables promoted to entry-block allocas. Field assignment GEPs directly into stable storage.
@@ -713,6 +714,9 @@ Primary surfaces:
 7. make the user-program proof workflow more real: exporting/referencing proof subjects, documenting proof-facing artifacts, and tying the workflow to ordinary compiler outputs — **not started**
    - the intended shape is artifact-driven and addon-friendly: stronger proof automation should consume proof-facing compiler artifacts rather than becoming part of every ordinary compile
    - the intended proof stack is layered: SMT and symbolic execution for fast automatic discharge, Lean for deeper semantic proofs and durable proof references
+   - proof obligations should become explicit artifacts rather than only implicit tool failures
+   - the workflow should support targeted proof subjects or harness-like entry points instead of only whole-program ambitions
+   - proof failures should become more explanatory where feasible, including counterexample-style output for automatically checked properties
 
 Deliverables:
 - a substantially broader formal semantics than the current pure Core fragment
@@ -887,6 +891,7 @@ Primary surfaces:
 15. make machine-readable report output a maintained operational surface, not just an ad hoc export path — **not started**
 16. design a report-first review workflow for high-integrity and audit-heavy codepaths, including policy failures over authority/alloc/layout/trusted/FFI evidence — **not started**
 17. define package and release diffing for trust drift: authority growth, allocation drift, layout drift, and trusted-boundary expansion — **not started**
+   - the intended first-class surface is semantic diff tooling over machine-readable compiler facts, not a new language feature
 18. turn editor/LSP support into an explicit maintained product surface, starting from compiler-owned diagnostics/navigation rather than a separate semantic engine — **not started**
 19. define cross-compilation workflow expectations as part of the supported operational/build story, not only as backend target policy — **not started**
 20. implement and maintain usable debug-info emission as part of the supported tooling surface — at minimum, DWARF from EmitSSA sufficient for source locations and stack traces in lldb/gdb — **not started**
@@ -896,6 +901,8 @@ Primary surfaces:
     - this should help optimization work, auditability, and workflow debugging before heavier optimizer architecture is added
 24. make the operational proof workflow artifact-driven and tool-oriented rather than compiler-entangled — proof/evidence consumers should build on stable proof-facing artifacts, machine-readable outputs, and review bundles instead of expanding ordinary compile semantics — **not started**
 25. define the operational layered-proof workflow — how SMT, symbolic execution, and Lean-facing proof outputs compose over the same proof-facing artifacts without creating a second semantic authority — **not started**
+26. make proof sessions and proof-status results replayable across CI and review workflows — persistent proof results, obligation tracking, and proof-status drift should become part of the operational evidence story — **not started**
+   - SMT export or other automatic proof consumers should remain narrow artifact consumers, not drivers of language-surface growth or a second semantics
 
 Deliverables:
 - a documented release and compatibility policy for language, stdlib, reports, and tooling surfaces

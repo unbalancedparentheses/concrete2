@@ -54,6 +54,7 @@ If you want the highest-leverage current research first:
 22. [package-testing-tooling.md](package-testing-tooling.md) — the project-facing `concrete test` workflow: discovery, filtering, failure UX, and package/workspace integration (`P0`, `Open`)
 23. [compiler-dataflow-ideas.md](compiler-dataflow-ideas.md) — what Burn, Timely/Differential, Noria, rustc, Salsa, and newer compiler stacks suggest for Concrete’s future artifact driver, incremental state, maintained reports, and inspection UX (`P1`, `Open`)
 24. [proof-addon-architecture.md](proof-addon-architecture.md) — keep the compiler proof-friendly, but make heavier proof automation an artifact-consuming addon workflow instead of part of every ordinary build (`P0`, `Open`)
+25. [semantic-diff-and-trust-drift.md](semantic-diff-and-trust-drift.md) — semantic/package/release diffing for authority, allocation, layout, trusted boundaries, and later proof-status drift (`P0`, `Open`)
 
 ## Language Decisions
 
@@ -106,6 +107,7 @@ If you want the highest-leverage current research first:
 - [artifact-driven-compiler.md](artifact-driven-compiler.md) — what it would take to make the named pipeline artifacts operationally real (`P0`, `Open`)
 - [compiler-dataflow-ideas.md](compiler-dataflow-ideas.md) — dataflow- and query-inspired ideas for incremental artifacts, partial materialization, maintained reports, and per-function inspection (`P1`, `Open`)
 - [proof-addon-architecture.md](proof-addon-architecture.md) — why stronger proof automation should consume compiler artifacts instead of living inside the semantic core (`P0`, `Open`)
+- [semantic-diff-and-trust-drift.md](semantic-diff-and-trust-drift.md) — how trust-drift diffing should become a first-class review tool over machine-readable compiler facts (`P0`, `Open`)
 - [file-summary-frontend.md](file-summary-frontend.md) — summary-based frontend direction and artifact boundaries (`P1`, `Adopted`)
 - [mlir-backend-shape.md](mlir-backend-shape.md) — where MLIR should sit if it earns its complexity later (`P1`, `Research`)
 
