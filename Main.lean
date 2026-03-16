@@ -3,7 +3,7 @@ import Concrete
 open Concrete
 
 def usage : String :=
-  "Usage: concrete <file.con> [-o output] [--emit-llvm] [--emit-core] [--emit-ssa] [--test] [--test --module <name>] [--report caps|unsafe|layout|interface|alloc|mono|authority|proof] [--fmt]"
+  "Usage: concrete <file.con> [-o output] [--emit-llvm] [--emit-core] [--emit-ssa] [--test] [--test --module <name>] [--report caps|unsafe|layout|interface|alloc|mono|authority|proof] [--fmt]\n       concrete build [-o output] [--emit-llvm]"
 
 def writeFile (path : String) (content : String) : IO Unit := do
   IO.FS.writeFile ⟨path⟩ content
@@ -50,12 +50,23 @@ partial def resolveModules (baseDir : String) (m : Module) (parsedPaths : List S
     if isModuleStub sub then
       let filePath := if baseDir == "" then sub.name ++ ".con"
                       else baseDir ++ "/" ++ sub.name ++ ".con"
+      -- Try name.con first, then name/mod.con for directory modules
+      let dirPath := if baseDir == "" then sub.name ++ "/mod.con"
+                     else baseDir ++ "/" ++ sub.name ++ "/mod.con"
+      let (actualPath, source) ← do
+        match ← (try pure (some (← readFile filePath)) catch _ => pure none) with
+        | some s => pure (filePath, s)
+        | none =>
+          match ← (try pure (some (← readFile dirPath)) catch _ => pure none) with
+          | some s => pure (dirPath, s)
+          | none => return .error s!"module file not found: {filePath} or {dirPath}"
+      let filePath := actualPath
+      -- For directory modules, resolve sub-stubs from the subdirectory
+      let subBaseDir := if actualPath == dirPath then
+        if baseDir == "" then sub.name else baseDir ++ "/" ++ sub.name
+      else baseDir
       if paths.contains filePath then
         return .error s!"circular module import: {filePath}"
-      let source ← try
-        readFile filePath
-      catch _ =>
-        return .error s!"module file not found: {filePath}"
       sources := sources ++ [(filePath, source)]
       match parse source with
       | .error e => return .error s!"error in module '{sub.name}': {e}"
@@ -63,7 +74,7 @@ partial def resolveModules (baseDir : String) (m : Module) (parsedPaths : List S
         match subModules with
         | [subMod] =>
           paths := paths ++ [filePath]
-          match ← resolveModules baseDir { subMod with name := sub.name } paths sources with
+          match ← resolveModules subBaseDir { subMod with name := sub.name } paths sources with
           | .ok (resolved, newPaths, newSources) =>
             paths := newPaths
             sources := newSources
@@ -256,7 +267,216 @@ def compileAndReport (inputPath : String) (reportType : String) : IO UInt32 := d
     IO.eprintln s!"Unknown report type: {reportType}. Use: caps, unsafe, layout, interface, alloc, mono, authority, proof"
     return 1
 
+-- ============================================================
+-- Concrete.toml project support
+-- ============================================================
+
+/-- Minimal TOML parser for Concrete.toml: extracts dependency paths.
+    Only handles the format: `name = { path = "...", ... }` under `[dependencies]`. -/
+def parseDependencies (content : String) : List (String × String) :=
+  let lines := content.splitOn "\n"
+  let rec go (ls : List String) (inDeps : Bool) (acc : List (String × String)) :=
+    match ls with
+    | [] => acc
+    | l :: rest =>
+      let trimmed := l.trimAscii.toString
+      if trimmed.startsWith "[dependencies]" then
+        go rest true acc
+      else if trimmed.startsWith "[" then
+        -- New section, stop parsing dependencies
+        go rest false acc
+      else if inDeps && trimmed.length > 0 then
+        -- Try to parse: name = { path = "...", ... }
+        match trimmed.splitOn "=" with
+        | name :: valParts =>
+          let depName := name.trimAscii.toString
+          let valStr := "=".intercalate valParts  -- rejoin after first =
+          -- Extract path = "..." from the value
+          match valStr.splitOn "path" with
+          | _ :: pathRest :: _ =>
+            let afterPath := ("path".intercalate [pathRest])  -- text after "path"
+            -- Find first quote after =
+            match afterPath.splitOn "\"" with
+            | _ :: pathVal :: _ =>
+              go rest true (acc ++ [(depName, pathVal)])
+            | _ => go rest true acc
+          | _ => go rest true acc
+        | _ => go rest true acc
+      else
+        go rest inDeps acc
+  go lines false []
+
+/-- Find Concrete.toml by walking up from a directory. -/
+def findProjectRoot (startDir : String) : IO (Option String) := do
+  let tomlPath := startDir ++ "/Concrete.toml"
+  let tomlExists ← try
+    let _ ← IO.FS.readFile ⟨tomlPath⟩
+    pure true
+  catch _ => pure false
+  if tomlExists then
+    return some startDir
+  -- Try parent directory (one level up)
+  let parent := dirOf startDir
+  if parent == startDir then return none
+  let parentToml := parent ++ "/Concrete.toml"
+  let parentExists ← try
+    let _ ← IO.FS.readFile ⟨parentToml⟩
+    pure true
+  catch _ => pure false
+  if parentExists then
+    return some parent
+  return none
+
+/-- Resolve a dependency path relative to the project root. -/
+def resolveDependencyPath (projectRoot : String) (depPath : String) : String :=
+  if depPath.startsWith "/" then depPath
+  else projectRoot ++ "/" ++ depPath
+
+/-- Load and parse a dependency's lib.con, resolving its submodules. -/
+partial def loadDependency (depName : String) (depPath : String)
+    : IO (Except String (List Module × SourceMap)) := do
+  let libPath := depPath ++ "/src/lib.con"
+  let source ← try
+    readFile libPath
+  catch _ =>
+    return .error s!"dependency '{depName}': cannot read {libPath}"
+  match parse source with
+  | .error e => return .error s!"dependency '{depName}': parse error: {e}"
+  | .ok modules =>
+    let baseDir := depPath ++ "/src"
+    match ← resolveAllModules baseDir modules libPath with
+    | .error e => return .error s!"dependency '{depName}': {e}"
+    | .ok (resolved, srcMap) =>
+      let srcMap := [(libPath, source)] ++ srcMap
+      return .ok (resolved, srcMap)
+
+/-- Compile a project from Concrete.toml. -/
+def compileBuild (projectRoot : String) (outputPath : Option String) (emitLLVM : Bool) : IO UInt32 := do
+  -- Read Concrete.toml
+  let tomlPath := projectRoot ++ "/Concrete.toml"
+  let tomlContent ← readFile tomlPath
+  let deps := parseDependencies tomlContent
+
+  -- Load all dependencies
+  let mut depModules : List Module := []
+  let mut depSrcMap : SourceMap := []
+  for (depName, depPath) in deps do
+    let resolvedPath := resolveDependencyPath projectRoot depPath
+    match ← loadDependency depName resolvedPath with
+    | .error e =>
+      IO.eprintln e
+      return 1
+    | .ok (modules, srcMap) =>
+      depModules := depModules ++ modules
+      depSrcMap := depSrcMap ++ srcMap
+
+  -- Load project's main source
+  let mainPath := projectRoot ++ "/src/main.con"
+  let sourceResult ← try
+    let s ← readFile mainPath
+    pure (some s)
+  catch _ => pure none
+  match sourceResult with
+  | none =>
+    IO.eprintln s!"cannot read {mainPath}"
+    return 1
+  | some source =>
+
+  -- Parse the project source
+  match Pipeline.parse source with
+  | .error ds =>
+    IO.eprintln (renderDiagnostics ds (sourceMap := [(mainPath, source)]))
+    return 1
+  | .ok parsed =>
+  -- Resolve project's own mod X; stubs
+  let baseDir := projectRoot ++ "/src"
+  match ← Pipeline.resolveFiles baseDir parsed mainPath resolveAllModules with
+  | .error ds =>
+    IO.eprintln (renderDiagnostics ds (sourceMap := [(mainPath, source)]))
+    return 1
+  | .ok (resolvedParsed, subSrcMap) =>
+    -- Merge: dependency modules come first, then project modules
+    let allModules : List Module := depModules ++ resolvedParsed.modules
+    let allSrcMap : SourceMap := [(mainPath, source)] ++ subSrcMap ++ depSrcMap
+    let merged : ParsedProgram := { modules := allModules }
+
+    -- Now run the standard pipeline from buildSummary onward
+    let summary := Pipeline.buildSummary merged
+    match Pipeline.resolve merged summary with
+    | .error ds =>
+      IO.eprintln (renderDiagnostics ds (sourceMap := allSrcMap))
+      return 1
+    | .ok resolvedProg =>
+    -- Only check project modules (skip dependency modules which are already validated)
+    let depNames := depModules.map (·.name)
+    let projectResolved : List ResolvedModule :=
+      resolvedProg.modules.filter fun rm => !depNames.contains rm.module.name
+    let projectResolvedProg : ResolvedProgram := { modules := projectResolved }
+    match Pipeline.check projectResolvedProg summary with
+    | .error ds =>
+      IO.eprintln (renderDiagnostics ds (sourceMap := allSrcMap))
+      return 1
+    | .ok () =>
+    match Pipeline.elaborate resolvedProg summary with
+    | .error ds =>
+      IO.eprintln (renderDiagnostics ds (sourceMap := allSrcMap))
+      return 1
+    | .ok elabProg =>
+    match Pipeline.coreCheck elabProg with
+    | .error ds =>
+      IO.eprintln (renderDiagnostics ds (sourceMap := allSrcMap))
+      return 1
+    | .ok validCore =>
+    match Pipeline.monomorphize validCore with
+    | .error ds =>
+      IO.eprintln (renderDiagnostics ds (sourceMap := allSrcMap))
+      return 1
+    | .ok mono =>
+    match Pipeline.lower mono with
+    | .error ds =>
+      IO.eprintln (renderDiagnostics ds (sourceMap := allSrcMap))
+      return 1
+    | .ok ssa =>
+      let llvmIR := Pipeline.emit ssa
+      let llPath := mainPath ++ ".ll"
+      writeFile llPath llvmIR
+      if emitLLVM then
+        IO.println llvmIR
+        return 0
+      -- Determine output path
+      let outPath := match outputPath with
+        | some p => p
+        | none =>
+          -- Extract package name from Concrete.toml
+          let nameLines := tomlContent.splitOn "\n" |>.filter (·.trimAscii.toString.startsWith "name")
+          match nameLines with
+          | l :: _ =>
+            match l.splitOn "\"" with
+            | _ :: n :: _ => n
+            | _ => "a.out"
+          | _ => "a.out"
+      let exitCode ← runCmd "clang" #[llPath, "-o", outPath, "-Wno-override-module", "-O2"]
+      if exitCode != 0 then
+        IO.eprintln "clang compilation failed"
+        return exitCode
+      IO.FS.removeFile ⟨llPath⟩
+      IO.println s!"Built {outPath}"
+      return 0
+
 def main (args : List String) : IO UInt32 := do
+  -- Check for "build" command first (before generic single-arg pattern)
+  if args.head? == some "build" then
+    let cwd ← IO.currentDir
+    match ← findProjectRoot cwd.toString with
+    | none =>
+      IO.eprintln "No Concrete.toml found in current directory or parent"
+      return 1
+    | some root =>
+      let emitLLVM := args.contains "--emit-llvm"
+      let outPath := match args with
+        | _ :: "-o" :: p :: _ => some p
+        | _ => none
+      return ← compileBuild root outPath emitLLVM
   match args with
   | [] =>
     IO.eprintln usage

@@ -146,6 +146,7 @@ structure LLVMFnDef where
   retTy : LLVMTy
   params : List (String × LLVMTy)
   blocks : List LLVMBlock
+  alwaysInline : Bool := false
   deriving Inhabited, Repr
 
 -- ============================================================

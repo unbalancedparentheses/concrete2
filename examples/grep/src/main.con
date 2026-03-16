@@ -1,0 +1,235 @@
+// cgrep — a grep-like tool in Concrete
+//
+// Usage: cgrep [options] <pattern> <file>...
+//   -n  print line numbers
+//   -c  count matching lines only
+//   -v  invert match (print non-matching lines)
+//   -i  case-insensitive matching
+//
+// Demonstrates: line-oriented I/O, argument parsing, string operations,
+// capability tracking, and streaming text processing.
+// Now built as a project using std.fs for file I/O.
+
+mod cgrep {
+    import std.fs.{read_to_string, FsError};
+    import std.result.{Result};
+
+    // --- Argv access (runtime, not yet in std) ---
+
+    trusted extern fn __concrete_get_argc() -> i32;
+    trusted extern fn __concrete_get_argv(idx: i32) -> *const u8;
+    trusted extern fn strlen(s: *const u8) -> u64;
+
+    trusted fn argv_to_string(idx: i32) with(Alloc) -> String {
+        let raw: *const u8 = __concrete_get_argv(idx);
+        if raw == (0 as *const u8) { return ""; }
+        let len: u64 = strlen(raw);
+        let mut s: String = "";
+        string_reserve(&mut s, (len + 1) as Int);
+        let mut i: u64 = 0;
+        while i < len {
+            let p: *const u8 = raw + i;
+            let ch: u8 = *p;
+            string_push_char(&mut s, ch as Int);
+            i = i + 1;
+        }
+        return s;
+    }
+
+    // --- String helpers ---
+
+    fn to_lower(s: &String) with(Alloc) -> String {
+        let len: Int = string_length(s);
+        let mut result: String = "";
+        string_reserve(&mut result, len);
+        let mut i: Int = 0;
+        while i < len {
+            let ch: Int = string_char_at(s, i);
+            if ch >= 65 && ch <= 90 {
+                string_push_char(&mut result, ch + 32);
+            } else {
+                string_push_char(&mut result, ch);
+            }
+            i = i + 1;
+        }
+        return result;
+    }
+
+    fn contains_pattern(line: &String, pattern: &String, case_insensitive: bool) with(Alloc) -> bool {
+        if case_insensitive {
+            let lower_line: String = to_lower(line);
+            let lower_pat: String = to_lower(pattern);
+            let found: bool = string_contains(&lower_line, &lower_pat);
+            drop_string(lower_line);
+            drop_string(lower_pat);
+            return found;
+        }
+        return string_contains(line, pattern);
+    }
+
+    // --- Core grep logic ---
+
+    fn grep_content(content: &String, pattern: &String, filename: &String,
+                    show_numbers: bool, count_only: bool, invert: bool,
+                    case_insensitive: bool, show_filename: bool) with(Console, Alloc) -> i32 {
+        let len: Int = string_length(content);
+        let mut line_start: Int = 0;
+        let mut line_num: Int = 1;
+        let mut match_count: i32 = 0;
+        let mut pos: Int = 0;
+
+        while pos <= len {
+            let at_end: bool = pos == len;
+            let mut is_newline: bool = false;
+            if !at_end {
+                is_newline = string_char_at(content, pos) == 10;
+            }
+
+            if is_newline || at_end {
+                if pos > line_start || !at_end {
+                    let line: String = string_slice(content, line_start, pos);
+                    let matched: bool = contains_pattern(&line, pattern, case_insensitive);
+
+                    let mut should_print: bool = false;
+                    if matched && !invert { should_print = true; }
+                    if !matched && invert { should_print = true; }
+
+                    if should_print {
+                        match_count = match_count + 1;
+                        if !count_only {
+                            let mut out: String = "";
+                            if show_filename {
+                                string_append(&mut out, filename);
+                                string_push_char(&mut out, 58);  // ':'
+                            }
+                            if show_numbers {
+                                string_append_int(&mut out, line_num);
+                                string_push_char(&mut out, 58);  // ':'
+                            }
+                            string_append(&mut out, &line);
+                            print_string(&out);
+                            print_char(10);
+                            drop_string(out);
+                        }
+                    }
+                    drop_string(line);
+                }
+                line_num = line_num + 1;
+                line_start = pos + 1;
+            }
+            pos = pos + 1;
+        }
+
+        if count_only {
+            let mut count_out: String = "";
+            if show_filename {
+                string_append(&mut count_out, filename);
+                string_push_char(&mut count_out, 58);  // ':'
+            }
+            string_append_int(&mut count_out, match_count as Int);
+            print_string(&count_out);
+            print_char(10);
+            drop_string(count_out);
+        }
+
+        return match_count;
+    }
+
+    // --- Main ---
+
+    fn is_flag(idx: i32) with(Alloc) -> bool {
+        let arg: String = argv_to_string(idx);
+        let len: Int = string_length(&arg);
+        let mut result: bool = false;
+        if len >= 2 {
+            if string_char_at(&arg, 0) == 45 {
+                result = true;
+            }
+        }
+        drop_string(arg);
+        return result;
+    }
+
+    fn has_flag(idx: i32, flag_char: Int) with(Alloc) -> bool {
+        let arg: String = argv_to_string(idx);
+        let mut result: bool = false;
+        let len: Int = string_length(&arg);
+        if len >= 2 {
+            if string_char_at(&arg, 0) == 45 {
+                if string_char_at(&arg, 1) == flag_char {
+                    result = true;
+                }
+            }
+        }
+        drop_string(arg);
+        return result;
+    }
+
+    pub fn main() with(Std) -> Int {
+        let argc: i32 = __concrete_get_argc();
+
+        // Phase 1: count flags to find where pattern starts
+        let mut show_numbers: bool = false;
+        let mut count_only: bool = false;
+        let mut invert: bool = false;
+        let mut case_insensitive: bool = false;
+        let mut pattern_idx: i32 = 1;
+
+        // Scan flags
+        while pattern_idx < argc && is_flag(pattern_idx) {
+            if has_flag(pattern_idx, 110) { show_numbers = true; }       // -n
+            if has_flag(pattern_idx, 99) { count_only = true; }          // -c
+            if has_flag(pattern_idx, 118) { invert = true; }             // -v
+            if has_flag(pattern_idx, 105) { case_insensitive = true; }   // -i
+            pattern_idx = pattern_idx + 1;
+        }
+
+        // Need at least pattern + one file
+        let remaining: i32 = argc - pattern_idx;
+        if remaining < 2 {
+            let mut usage: String = "Usage: cgrep [-n] [-c] [-v] [-i] <pattern> <file>...\n";
+            print_string(&usage);
+            drop_string(usage);
+            return 1;
+        }
+
+        // Phase 2: grep files
+        let pattern: String = argv_to_string(pattern_idx);
+        let num_files: i32 = argc - pattern_idx - 1;
+        let show_filename: bool = num_files > 1;
+        let mut total_matches: i32 = 0;
+        let mut fi: i32 = pattern_idx + 1;
+
+        while fi < argc {
+            let filename: String = argv_to_string(fi);
+            let result: Result<String, FsError> = read_to_string(&filename);
+            match result {
+                Result#Ok { value } => {
+                    let content_len: Int = string_length(&value);
+                    if content_len > 0 {
+                        let matches: i32 = grep_content(&value, &pattern, &filename,
+                                                        show_numbers, count_only, invert,
+                                                        case_insensitive, show_filename);
+                        total_matches = total_matches + matches;
+                    }
+                    drop_string(value);
+                },
+                Result#Err { error } => {
+                    let mut err: String = "cgrep: cannot open '";
+                    string_append(&mut err, &filename);
+                    let mut err2: String = "'\n";
+                    string_append(&mut err, &err2);
+                    drop_string(err2);
+                    print_string(&err);
+                    drop_string(err);
+                }
+            }
+            drop_string(filename);
+            fi = fi + 1;
+        }
+
+        drop_string(pattern);
+        if total_matches > 0 { return 0; }
+        return 1;
+    }
+}

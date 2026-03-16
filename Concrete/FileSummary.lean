@@ -206,12 +206,24 @@ partial def buildFileSummary (m : Module) : FileSummary :=
     imports := m.imports
     submoduleSummaries := m.submodules.map fun sub => (sub.name, buildFileSummary sub) }
 
+/-- Recursively collect all submodule entries with all qualification prefixes.
+    For each submodule, we register it under every suffix of its fully qualified path.
+    E.g. for top-level `project` containing `mymod` containing `submodule`:
+    - `project.mymod.submodule`, `mymod.submodule`, `submodule` -/
+private partial def flattenSubmodules (prefixes : List String) (summary : FileSummary)
+    : List (String × FileSummary) :=
+  summary.submoduleSummaries.foldl (fun acc (subName, subSummary) =>
+    -- Build all qualified names: each prefix + "." + subName, plus the bare subName
+    let qualNames := prefixes.map (· ++ "." ++ subName) ++ [subName]
+    let entries := qualNames.map fun qn => (qn, subSummary)
+    -- Recurse with the new set of prefixes for deeper nesting
+    acc ++ entries ++ flattenSubmodules qualNames subSummary
+  ) []
+
 def buildSummaryTable (modules : List Module) : List (String × FileSummary) :=
   modules.foldl (fun acc m =>
     let summary := buildFileSummary m
-    let subEntries := summary.submoduleSummaries.foldl (fun acc2 (subName, subSummary) =>
-      acc2 ++ [(m.name ++ "." ++ subName, subSummary), (subName, subSummary)]
-    ) []
+    let subEntries := flattenSubmodules [m.name] summary
     acc ++ [(m.name, summary)] ++ subEntries
   ) []
 

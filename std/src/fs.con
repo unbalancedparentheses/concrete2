@@ -4,7 +4,7 @@ mod fs {
     import std.bytes.{Bytes};
     import std.result.{Result};
 
-    pub enum FsError {
+    pub enum Copy FsError {
         OpenFailed,
     }
 

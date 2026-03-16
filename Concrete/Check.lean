@@ -2192,14 +2192,16 @@ def checkModule (m : Module) (summary : FileSummary)
   }
   let allTraits := builtinDestroyTrait :: m.traits
   -- Merge impl block type params into each method's typeParams, track impl type for Self
+  -- Only check THIS module's impl/traitImpl methods (not imported ones whose bodies may
+  -- reference functions not in scope here).
   let regularFns : List (FnDef × Option Ty) := m.functions.map fun f => (f, none)
-  let implMethodPairs : List (FnDef × Option Ty) := allImplBlocks.foldl (fun acc ib =>
+  let implMethodPairs : List (FnDef × Option Ty) := m.implBlocks.foldl (fun acc ib =>
     let implTy := if ib.typeParams.isEmpty then tyFromName ib.typeName
                   else Ty.generic ib.typeName (ib.typeParams.map Ty.typeVar)
     acc ++ ib.methods.map fun f =>
       ({ f with typeParams := ib.typeParams ++ f.typeParams }, some implTy)
   ) []
-  let traitImplMethodPairs : List (FnDef × Option Ty) := allTraitImpls.foldl (fun acc tb =>
+  let traitImplMethodPairs : List (FnDef × Option Ty) := m.traitImpls.foldl (fun acc tb =>
     let implTy := if tb.typeParams.isEmpty then tyFromName tb.typeName
                   else Ty.generic tb.typeName (tb.typeParams.map Ty.typeVar)
     acc ++ tb.methods.map fun f =>

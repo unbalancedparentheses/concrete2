@@ -99,13 +99,32 @@ The first package-model milestones should be smaller:
 5. explicit public/private boundaries
 6. authority-aware dependency metadata later
 
+## Current State (2026-03-16)
+
+`concrete build` now works as a first implementation:
+
+- parses `Concrete.toml` for package name and path dependencies
+- resolves `mod X;` stubs from source directory (including `name/mod.con` directory modules)
+- loads dependency modules, merges with project modules, runs full pipeline
+- `cgrep` and `conhash` examples converted to use `std.fs` imports
+
+**Current limitation:** std is referenced as a path dependency (`std = { path = "../../std" }`). This is explicitly temporary. Phase J should make std a builtin dependency that the resolver supplies directly, removing path-based std references from all example/project manifests.
+
 ## Roadmap Placement
 
 This belongs mainly in:
 
-- **Phase H**: package and dependency ecosystem
+- **Phase J**: package and project model (first priority after Phase H)
 
-But it is also tied to:
+Phase J owns:
+
+- builtin std resolution (removing path-based std references)
+- workspace / multi-package repo support
+- `concrete build/test/run` maturity
+- recording std identity/version in lockfile without exposing as path dep
+- incremental / artifact direction
+
+Also tied to:
 
 - **Phase F**: authority-aware safety workflows
 - **Phase I**: operational maturity and evidence workflows

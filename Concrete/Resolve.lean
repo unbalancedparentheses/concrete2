@@ -441,18 +441,49 @@ def resolveShallow (moduleSummaries : List FileSummary)
     acc ++ s.traitImpls.map fun ti => (ti.typeName, ti.traitName)) []
   -- Build per-module export tables (public symbols only) from summaryTable
   let fullExportTable := summaryTable.map fun (n, s) => (n, s.publicNames)
-  -- Validate imports from summaries
-  let importErrors := moduleSummaries.foldl (fun errs s =>
-    s.imports.foldl (fun errs imp =>
+  -- Validate imports from summaries and add imported symbols to scope
+  let (importErrors, importedSymbols, importedTypes) := moduleSummaries.foldl (fun (errs, syms, tys) s =>
+    s.imports.foldl (fun (errs, syms, tys) imp =>
       match fullExportTable.find? (fun (n, _) => n == imp.moduleName) with
-      | none => errs ++ [mkResolveDiag (.unknownModule imp.moduleName) (some imp.span)]
+      | none => (errs ++ [mkResolveDiag (.unknownModule imp.moduleName) (some imp.span)], syms, tys)
       | some (_, pubNames) =>
-        imp.symbols.foldl (fun errs sym =>
-          if pubNames.contains sym.name then errs
-          else errs ++ [mkResolveDiag (.notPublicInModule sym.name imp.moduleName) (some imp.span)]
-        ) errs
-    ) errs
-  ) []
+        -- Look up the full module summary to get type info for imported symbols
+        let modSummary := summaryTable.find? fun (n, _) => n == imp.moduleName
+        imp.symbols.foldl (fun (errs, syms, tys) sym =>
+          if pubNames.contains sym.name then
+            let localName := sym.effectiveName
+            -- Try to bring the symbol into scope from the module summary
+            match modSummary with
+            | some (_, ms) =>
+              -- Check if it's a function
+              match ms.functions.find? fun (n, _) => n == sym.name with
+              | some (_, fs) =>
+                let entry := (localName, SymKind.fn (fs.params.map fun (n, ty) => { name := n, ty := ty }) fs.retTy)
+                (errs, syms ++ [entry], tys)
+              | none =>
+              -- Check if it's an extern fn
+              match ms.externFnSigs.find? fun (n, _) => n == sym.name with
+              | some (_, fs) =>
+                let entry := (localName, SymKind.fn (fs.params.map fun (n, ty) => { name := n, ty := ty }) fs.retTy)
+                (errs, syms ++ [entry], tys)
+              | none =>
+              -- Check if it's a struct
+              match ms.structs.find? fun st => st.name == sym.name with
+              | some st =>
+                (errs, syms ++ [(localName, SymKind.struct st)], tys ++ [localName])
+              | none =>
+              -- Check if it's an enum
+              match ms.enums.find? fun e => e.name == sym.name with
+              | some e =>
+                (errs, syms ++ [(localName, SymKind.enum e)], tys ++ [localName])
+              | none => (errs, syms, tys)
+            | none => (errs, syms, tys)
+          else (errs ++ [mkResolveDiag (.notPublicInModule sym.name imp.moduleName) (some imp.span)], syms, tys)
+        ) (errs, syms, tys)
+    ) (errs, syms, tys)
+  ) (([] : Diagnostics), ([] : List (String × SymKind)), ([] : List String))
+  let combinedScope := { symbols := combinedScope.symbols ++ importedSymbols }
+  let combinedTypes := combinedTypes ++ importedTypes
   { globalScope := combinedScope
   , knownTypes := combinedTypes
   , traitMethods := traitMethods

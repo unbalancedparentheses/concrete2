@@ -162,7 +162,8 @@ private def printFnDecl (d : LLVMFnDecl) : String :=
 private def printFnDef (f : LLVMFnDef) : String :=
   let paramStr := ", ".intercalate (f.params.map fun (n, t) => printLLVMTy t ++ " %" ++ n)
   let blockStrs := f.blocks.map printBlock
-  s!"define {printLLVMTy f.retTy} @{f.name}({paramStr}) \{\n" ++
+  let inlineAttr := if f.alwaysInline then " alwaysinline" else ""
+  s!"define {printLLVMTy f.retTy} @{f.name}({paramStr}){inlineAttr} \{\n" ++
     "\n".intercalate blockStrs ++ "\n}\n"
 
 -- ============================================================

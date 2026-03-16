@@ -737,7 +737,7 @@ def getVecBuiltinFns (specs : List (Nat × Nat)) : List LLVMFnDef :=
   -- -------------------------------------------------------
   -- Size-independent: vec_len
   -- -------------------------------------------------------
-  let vecLen : LLVMFnDef := { name := "vec_len", retTy := .i64, params := [("vec", .ptr)], blocks := [
+  let vecLen : LLVMFnDef := { name := "vec_len", retTy := .i64, params := [("vec", .ptr)], alwaysInline := true, blocks := [
     ⟨"entry", [
       vecGep "lp" "vec" 1, .load "len" .i64 (.reg "lp")
     ], .ret .i64 (some (.reg "len"))⟩] }
@@ -776,7 +776,7 @@ def getVecBuiltinFns (specs : List (Nat × Nat)) : List LLVMFnDef :=
         vecGep "cp" "v" 2, .store .i64 (.intLit ic) (.reg "cp"),
         .load "r" vecTy (.reg "v")
       ], .ret vecTy (some (.reg "r"))⟩]
-    let vecNew : LLVMFnDef := { name := newName, retTy := vecTy, params := [], blocks := vecNewBlocks }
+    let vecNew : LLVMFnDef := { name := newName, retTy := vecTy, params := [], alwaysInline := true, blocks := vecNewBlocks }
     -- vec_push_{es}(vec: ptr, val: ptr) -> void
     let vecPushBlocks : List LLVMBlock := [
       ⟨"entry", [
@@ -801,7 +801,7 @@ def getVecBuiltinFns (specs : List (Nat × Nat)) : List LLVMFnDef :=
         .binOp "newlen" .add .i64 (.reg "len") (.intLit 1),
         .store .i64 (.reg "newlen") (.reg "lp")
       ], .ret .void none⟩]
-    let vecPush : LLVMFnDef := { name := pushName, retTy := .void, params := [("vec", .ptr), ("val", .ptr)], blocks := vecPushBlocks }
+    let vecPush : LLVMFnDef := { name := pushName, retTy := .void, params := [("vec", .ptr), ("val", .ptr)], alwaysInline := true, blocks := vecPushBlocks }
     -- vec_get_{es}(vec: ptr, idx: i64) -> ptr
     let vecGetBlocks : List LLVMBlock := [
       ⟨"entry", [
@@ -809,7 +809,7 @@ def getVecBuiltinFns (specs : List (Nat × Nat)) : List LLVMFnDef :=
         .binOp "offset" .mul .i64 (.reg "idx") (.intLit es),
         .gep "slot" .i8 (.reg "data") [(.i64, .reg "offset")]
       ], .ret .ptr (some (.reg "slot"))⟩]
-    let vecGet : LLVMFnDef := { name := getName, retTy := .ptr, params := [("vec", .ptr), ("idx", .i64)], blocks := vecGetBlocks }
+    let vecGet : LLVMFnDef := { name := getName, retTy := .ptr, params := [("vec", .ptr), ("idx", .i64)], alwaysInline := true, blocks := vecGetBlocks }
     -- vec_set_{es}(vec: ptr, idx: i64, val: ptr) -> void
     let vecSetBlocks : List LLVMBlock := [
       ⟨"entry", [
@@ -818,7 +818,7 @@ def getVecBuiltinFns (specs : List (Nat × Nat)) : List LLVMFnDef :=
         .gep "slot" .i8 (.reg "data") [(.i64, .reg "offset")],
         .memcpy (.reg "slot") (.reg "val") esNat
       ], .ret .void none⟩]
-    let vecSet : LLVMFnDef := { name := setName, retTy := .void, params := [("vec", .ptr), ("idx", .i64), ("val", .ptr)], blocks := vecSetBlocks }
+    let vecSet : LLVMFnDef := { name := setName, retTy := .void, params := [("vec", .ptr), ("idx", .i64), ("val", .ptr)], alwaysInline := true, blocks := vecSetBlocks }
     acc ++ [vecNew, vecPush, vecGet, vecSet]
   ) ([] : List LLVMFnDef)
   -- -------------------------------------------------------
@@ -853,7 +853,7 @@ def getVecBuiltinFns (specs : List (Nat × Nat)) : List LLVMFnDef :=
         .store .i32 (.intLit 1) (.reg "res2"),
         .load "r2" optTy (.reg "res2")
       ], .ret optTy (some (.reg "r2"))⟩]
-    let vecPop : LLVMFnDef := { name := popName, retTy := optTy, params := [("vec", .ptr)], blocks := vecPopBlocks }
+    let vecPop : LLVMFnDef := { name := popName, retTy := optTy, params := [("vec", .ptr)], alwaysInline := true, blocks := vecPopBlocks }
     acc ++ [vecPop]
   ) ([] : List LLVMFnDef)
   [vecLen, vecFree] ++ sizedFns ++ popFns
