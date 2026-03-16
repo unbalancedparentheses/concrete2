@@ -101,6 +101,49 @@ The design should stay:
 - grep-able
 - aligned with existing capability names and reports
 
+## Implementation Path
+
+### Step 1: Module-level budgets (no package model needed)
+
+```con
+#[authority(Alloc)]
+mod Parser {
+    // All functions here may only use Alloc
+    // Transitive call to Console/File/etc. is a compile error
+}
+```
+
+**Effort**: ~1 week
+- Parser: `#[authority(...)]` attribute on `mod` declarations (1 day)
+- AST: `authorityBudget : Option (List String)` on module definitions
+- New checking pass: walk module, resolve transitive caps via existing BFS, check containment (2-3 days)
+- Integration with `--report authority`: show budget violations (1 day)
+
+**What makes this easy**: `--report authority` already computes the exact transitive capability set per function. Budget checking is just `transitive_caps ⊆ declared_budget`.
+
+### Step 2: Package-level budgets (requires package model)
+
+Deferred until the package model lands (Phase J). Would add budget declarations to package manifests and check cross-dependency authority.
+
+### Difficulty summary
+
+| Component | Effort | Prerequisite |
+|-----------|--------|-------------|
+| Module-level `#[authority(...)]` | 1 week | None |
+| Report integration | 1 day | Module-level budgets |
+| Package-level budgets | 2-3 weeks | Package model |
+| Cross-dependency enforcement | 1-2 weeks | Package-level budgets |
+
+### Evidence from Phase H programs
+
+The JSON parser already has natural authority boundaries:
+- `Lex` module: pure (no capabilities needed)
+- `Parser` module: Alloc only
+- `Printer` module: Console + Alloc
+- `Main` module: Std (everything)
+
+Module-level budgets would formalize and enforce what's already implicit.
+
 ## Relation To The Roadmap
 
 This idea spans two phases most directly:

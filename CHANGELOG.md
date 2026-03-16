@@ -10,6 +10,24 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Phase H: builder builtins, JSON parser, cleanup ergonomics, future feature research
+
+**Builder builtins:** Added `string_append_int(&mut String, Int)` and `string_append_bool(&mut String, bool)` builtins for zero-grammar-cost mixed-type string building. These avoid intermediate allocations and interpolation syntax while keeping capabilities explicit. Design rationale in `research/text-and-output-design.md`.
+
+**Bug 010 semantics fix:** `string_substr(s, start, len)` was previously aliased to `string_slice(s, start, end)` despite different contracts. Now has its own intrinsic ID and LLVM implementation that computes `end = start + len` before delegating to `string_slice`.
+
+**JSON parser:** Added `examples/json/main.con` — ~450-line recursive-descent JSON parser + validator. Covers objects, arrays, strings (with escapes), integers, booleans, null. Includes comprehensive test harness: primitives, whitespace handling, nested structures, invalid input rejection. Passes at O0 and O2. First sustained pressure test of the builder builtins approach and linear string ownership at scale.
+
+**Cleanup ergonomics design:** Documented 5 options for reducing linear ownership friction in `research/cleanup-ergonomics.md`. Immediate priorities: (1) `defer` statement for scope-end cleanup, (2) additional mutation-oriented string APIs. Deferred: Destroy trait, scoped helpers, borrowed slices. Roadmap updated with all items and revisit triggers.
+
+**Future feature research:** Six research notes analyzing difficulty and design for features that multiply Concrete's value beyond capabilities:
+- `research/allocation-budgets.md` — NoAlloc/BoundedAlloc sub-capabilities; report-only classification (1-2 days) → enforcement (1-2 weeks) → byte-level budgets (3-4 weeks)
+- `research/arena-allocation.md` — bump-pointer arenas replacing manual Vec pools; ~1 week; simpler than Vec (no realloc)
+- `research/execution-cost-tracking.md` — structural boundedness reports (1-2 days) → abstract cost counting (2-3 weeks) → WCET (external tool)
+- `research/typestate.md` — ownership-based two-state works today; phantom types for multi-state (2-3 weeks) deferred pending evidence
+- `research/authority-budgets.md` — updated with module-level `#[authority(...)]` path (~1 week); package-level deferred to Phase J
+- `research/layout-reports.md` — padding visualization, enum layout, ABI flags; 3-4 days; pure report formatting
+
 ### Phase H bug fixes: Bug 005, 008, 009 fixed; if-expression, const lowering, enum-in-struct
 
 **Bug 008 — If-else expression:** If-else now works as an expression (`let x: i32 = if cond { 10 } else { 20 };`). Added `ifExpr` to AST/Core, `parseExprBlock` in parser, elaboration with hint propagation, and lowering using alloca+condBr+store+load with type casts. Changes across 10 files (AST, Core, Parser, Elab, Check, Lower, Format, Resolve, CoreCanonicalize, Mono, CoreCheck).
