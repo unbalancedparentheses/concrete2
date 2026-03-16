@@ -24,6 +24,76 @@ The right shape is:
 - reproducible inputs and outputs
 - authority/evidence integrated from day one
 
+The user-facing shape should feel like one coherent toolchain:
+
+- one binary: `concrete`
+- package management as subcommands, not a second executable
+- Cargo-like everyday UX
+- Concrete-specific authority/report/evidence outputs
+
+## Example-First UX
+
+This design is easiest to explain through normal user flows.
+
+### Create a project
+
+```bash
+concrete new verifier
+cd verifier
+concrete run
+```
+
+Generated layout:
+
+```text
+verifier/
+  Concrete.toml
+  src/
+    main.con
+```
+
+### Build and test
+
+```bash
+concrete build
+concrete test
+concrete run
+concrete check
+```
+
+### Inspect reports
+
+```bash
+concrete report authority
+concrete report alloc
+concrete graph
+```
+
+### Add a dependency
+
+```bash
+concrete add sha2 --path ../sha2
+```
+
+### Build a release binary
+
+```bash
+concrete build --release
+```
+
+### Build an evidence bundle later
+
+```bash
+concrete build --release --evidence out/
+```
+
+This should feel like one system:
+
+- compiler
+- package manager
+- report engine
+- artifact/evidence workflow
+
 ## Design Goals
 
 1. Keep the user surface small and obvious.
@@ -31,6 +101,104 @@ The right shape is:
 3. Treat packages as authority and trust boundaries, not only dependency buckets.
 4. Reuse compiler artifacts instead of rediscovering the world on every build.
 5. Leave room for evidence bundles, trust drift, and proof-facing outputs later.
+
+## What To Learn From Existing Package Managers
+
+Concrete should not copy any one package manager whole.
+It should take the strongest parts from a few systems that are good for different reasons.
+
+| System | What it contributes | Why it is good |
+|---|---|---|
+| **Cargo** | familiar commands, obvious project layout, low-friction everyday workflow | it makes ordinary development easy without requiring users to think about the build graph all day |
+| **Go modules** | simplicity, small manifest surface, low-ceremony defaults | it proves a package manager can stay boring and still work well for real projects |
+| **Nix** | reproducibility, explicit inputs/outputs, graph honesty | it treats builds as something that should be inspectable and repeatable rather than shell folklore |
+| **Elm** | ecosystem restraint, compatibility discipline, willingness to say no | it keeps the package ecosystem coherent by refusing complexity that weakens user trust |
+| **Bazel / Buck2** | internal build-graph rigor, cacheability, incremental correctness | they are excellent models for what the package/build engine should look like under the hood, even if their UX is too heavy for Concrete |
+
+### Cargo
+
+Cargo is good because it gets the day-to-day workflow right:
+
+- `build`
+- `run`
+- `test`
+- simple manifests
+- obvious project layout
+
+Concrete should copy that surface familiarity.
+That is the right level of friction for ordinary users.
+
+What Concrete should not copy:
+
+- feature-flag complexity
+- build-script sprawl
+- implicit dependency magic
+
+### Go Modules
+
+Go modules are good because they stay small.
+
+They show that a package system can succeed with:
+
+- a minimal manifest
+- boring defaults
+- straightforward UX
+
+Concrete should copy that bias toward simplicity.
+If a package feature needs a long explanation, it is probably too heavy for the MVP.
+
+### Nix
+
+Nix is good because it treats builds honestly.
+
+The most valuable Nix ideas for Concrete are:
+
+- exact inputs matter
+- the dependency/build graph should be explicit
+- reproducibility is a first-class property
+- build outputs should be explainable
+
+Concrete should copy this mindset, not the full Nix language.
+
+That means:
+
+- graph artifacts
+- lockfiles
+- stable artifact identities
+- cache keys tied to real inputs
+- evidence bundles that can be reproduced
+
+What Concrete should not copy:
+
+- the Nix language itself
+- lazy evaluation complexity
+- a second complicated world users must learn just to build code
+
+### Elm
+
+Elm is good because it values ecosystem quality over ecosystem freedom.
+
+Concrete should learn from Elm's willingness to constrain:
+
+- what packages can do
+- how compatibility is expressed
+- how much complexity is tolerated in the ecosystem
+
+That is directly aligned with Concrete's identity.
+It is better to have a smaller, more coherent package world than a larger one full of hidden behavior and accidental complexity.
+
+### Bazel / Buck2
+
+Bazel and Buck2 are great not because their UX should be copied, but because their internal model is strong.
+
+Concrete should borrow from them:
+
+- explicit build graphs
+- incremental correctness
+- strong artifact/caching discipline
+
+But keep that mostly under the hood.
+Users should feel Cargo/Go simplicity, not Bazel complexity.
 
 ## Manifest Shape
 
@@ -68,7 +236,39 @@ The manifest should stay declarative.
 No embedded scripting language.
 No arbitrary build hooks in the MVP.
 
+### Manifest By Example
+
+```toml
+[package]
+name = "verifier"
+version = "0.1.0"
+edition = "2026"
+
+[targets]
+bin = ["src/main.con"]
+lib = ["src/lib.con"]
+
+[dependencies]
+std = "builtin"
+sha2 = { path = "../sha2" }
+hex = { registry = "default", version = "0.2.1" }
+
+[authority_budget]
+package = ["Alloc", "File"]
+forbid = ["Network", "Process"]
+
+[profile.dev]
+opt = "O0"
+
+[profile.release]
+opt = "O2"
+```
+
+This should be readable without learning a second programming language.
+
 ## CLI Shape
+
+Use one binary: `concrete`.
 
 The first commands should be:
 
@@ -87,6 +287,14 @@ Later:
 
 The package manager should not become a second compiler.
 It should resolve graphs, manage lockfiles, and invoke the compiler with explicit inputs.
+
+Single-file mode can still exist as a convenience:
+
+```bash
+concrete file.con
+```
+
+But package/project mode should be the default path for serious code.
 
 ## Dependency Sources
 
@@ -121,6 +329,32 @@ The workspace should provide:
 - shared package graph
 - shared authority/trust policy checks
 - shared incremental rebuild context
+
+### Workspace UX
+
+```toml
+[workspace]
+members = ["packages/*"]
+```
+
+```bash
+concrete build --workspace
+concrete test --workspace
+concrete graph
+```
+
+Example output:
+
+```text
+workspace: satellite-stack
+  verifier -> sha2
+  verifier -> hex
+  control_cli -> verifier
+
+authority budgets:
+  verifier: [Alloc, File]
+  control_cli: [Alloc, File, Console]
+```
 
 ## Lockfile
 
@@ -180,6 +414,18 @@ Then the build should fail if transitive authority exceeds the declared budget.
 
 This turns capabilities from local function facts into subsystem policy.
 
+### Authority Budget UX
+
+This is the kind of failure Concrete should make easy to read:
+
+```text
+error: authority budget violated for package `verifier`
+forbidden capability introduced: Network
+path: verifier.main -> fetch_manifest -> tcp_read
+```
+
+That is a much more Concrete-like package experience than plain dependency resolution.
+
 ## Reproducibility: Nix Ideas Worth Copying
 
 Concrete should borrow several ideas from Nix:
@@ -222,6 +468,41 @@ Concrete should care early about:
 
 This aligns with later trust bundles and report-first review workflows.
 
+### Reproducibility UX
+
+Ordinary builds:
+
+```bash
+concrete build --release
+```
+
+Should produce:
+
+```text
+build/
+  verifier
+Concrete.lock
+.concrete/
+  graph.json
+  artifacts/
+```
+
+Later evidence-oriented builds:
+
+```bash
+concrete build --release --evidence out/
+```
+
+Could produce:
+
+```text
+out/
+  verifier
+  reports/authority.json
+  reports/alloc.json
+  manifest.json
+```
+
 ## Nix Ideas Not Worth Copying
 
 Concrete should not copy:
@@ -248,6 +529,198 @@ But it should avoid Cargo’s more complex edges early:
 - feature unification explosion
 - build.rs-style arbitrary hooks
 - overly implicit dependency magic
+
+## UI/UX Principles
+
+The package manager should be explained mostly through examples, not abstract theory.
+
+The intended experience is:
+
+- **Cargo-like on the surface**
+- **Go-like in simplicity**
+- **Nix-like in reproducibility discipline**
+- **Elm-like in ecosystem restraint**
+- **Bazel/Buck2-like underneath in build-graph rigor**
+
+Another way to say it:
+
+- commands should feel ordinary
+- manifests should feel boring
+- outputs should feel explicit
+- graph/artifact behavior should be strict and reproducible
+- ecosystem growth should be intentionally constrained
+
+## Other Package Managers Worth Studying
+
+Cargo and Nix are the two most obvious references, but they are not the only useful ones.
+
+### Go modules
+
+Best for:
+
+- simplicity
+- low-friction defaults
+- small manifest surface
+- straightforward everyday UX
+
+Concrete should copy the bias toward boring, obvious workflows.
+
+### Dune / opam
+
+Best for:
+
+- clean separation between package management and build orchestration
+- multi-package/project structure
+- explicit project/build discipline
+
+Concrete should study these for workspace/build graph clarity.
+
+### pnpm
+
+Best for:
+
+- deterministic installs
+- shared package storage
+- workspace ergonomics
+
+Concrete does not need pnpm's full model, but its storage/workspace discipline is worth studying.
+
+### Bazel / Buck2
+
+Best for:
+
+- explicit build graphs
+- artifact/caching rigor
+- large-scale incremental correctness
+
+Concrete should copy the graph discipline, not the user-facing complexity.
+
+### Elm package system
+
+Best for:
+
+- ecosystem restraint
+- compatibility discipline
+- keeping the package surface coherent
+
+Concrete should study Elm mainly as a warning against package-manager sprawl and weak ecosystem constraints.
+
+### Poetry / uv
+
+Best for:
+
+- onboarding ergonomics
+- lockfile expectations
+- simple project workflow commands
+
+Useful mostly as a UX reference, not as a deep architectural model.
+
+## Recommended Synthesis
+
+The strongest Concrete-specific blend is probably:
+
+- **Cargo** for surface familiarity
+- **Nix** for reproducibility and graph honesty
+- **Go modules** for simplicity
+- **Bazel/Buck2** for build graph rigor
+- **Elm** for ecosystem discipline
+
+That gives Concrete:
+
+- a small user surface
+- explicit graph and artifact discipline
+- reproducible builds
+- room for authority/evidence integration
+- resistance to package-system complexity creep
+
+Another way to say it:
+
+- **Cargo** and **Go** should dominate the day-to-day UX
+- **Nix** should dominate reproducibility and input/output honesty
+- **Elm** should dominate ecosystem restraint and compatibility discipline
+- **Bazel/Buck2** should dominate the internal build-graph model, not the user-facing interface
+
+That is a better fit for Concrete than copying any one system whole.
+
+## What To Avoid
+
+If Concrete follows the synthesis above, it should explicitly avoid:
+
+- arbitrary build scripts as a default extension mechanism
+- feature-flag explosion and feature unification complexity
+- overly permissive dependency sources
+- hidden or surprising resolution behavior
+- package-manager sprawl that weakens auditability
+- a second complex DSL for describing builds
+
+## Bazel / Buck2: What To Steal And What Not To Steal
+
+Bazel and Buck2 are primarily build systems, not package managers in the Cargo sense.
+
+What they are excellent at:
+
+- explicit build dependency graphs
+- deterministic rebuild logic
+- strong incremental correctness
+- cacheability keyed by real inputs
+- treating artifacts and targets as first-class build nodes
+
+That makes them valuable to Concrete as architectural inspiration for:
+
+- package graph artifacts
+- incremental compilation
+- interface/body artifact separation
+- reproducible build orchestration
+
+What Concrete should not copy from them:
+
+- heavy user-facing complexity
+- large rule languages or build DSLs
+- monorepo-first assumptions
+- the expectation that ordinary users should think in build-graph internals every day
+
+So the right approach is:
+
+- **Bazel/Buck2 underneath**
+  for graph rigor and caching discipline
+- **Cargo/Go on the surface**
+  for normal developer workflow
+
+## Concrete Package Manager Philosophy
+
+The package manager should feel like:
+
+- simple surface
+- strict graph
+- disciplined ecosystem
+
+That is the package-management equivalent of Concrete's language philosophy:
+
+- explicit where it matters
+- small enough to audit
+- strong enough to scale
+- hostile to hidden behavior and accidental complexity
+
+## One-Binary Rule
+
+Concrete should use one binary for the compiler, package manager, reports, and later evidence workflow:
+
+- `concrete build`
+- `concrete run`
+- `concrete test`
+- `concrete check`
+- `concrete report`
+- `concrete graph`
+- `concrete new`
+
+Not:
+
+- one compiler binary
+- one package-manager binary
+- one report binary
+
+Internally these should be separate modules.
+Externally they should feel like one coherent toolchain.
 
 ## Compiler Boundary
 
