@@ -194,6 +194,56 @@ What it implies:
   - inlining policy and backend shaping for repeated vector operations
   - whether tightly-audited unchecked/internal collection paths are ever justified
 
+### Artifact Verifier (conhash)
+
+What it proved:
+
+- Concrete's capability system is not just a correctness feature — it is the audit trail itself
+- an auditor can verify from signatures alone that the hasher (`with(Alloc)`) never touches the filesystem or network, the file reader (`with(File, Alloc)`) cannot leak data to the console, and the reporter (`with(Console)`) cannot read or modify files
+- SHA-256 implemented in pure Concrete (bitwise ops on `u32`) matches `shasum` and Python `hashlib` at ~23ms on 9.3MB — LLVM -O2 optimizes Concrete's bit manipulation to near-C quality
+- this is the first Phase H program where the capability annotations are the *point*, not a side benefit
+
+What it exposed:
+
+- the `trusted` boundary is clean: only `read_file_raw` and `sha256` (which needs raw pointer arithmetic for padding/block processing) require `trusted`, everything else is safe Concrete
+- linearity friction with conditional initialization (`if argc >= 3 { ... }`) required a helper function workaround — evidence for the destructuring/conditional-init open finding
+
+Benchmark results (9.3MB file):
+
+| Tool | SHA-256 time |
+|---|---|
+| Concrete `conhash` | ~23ms |
+| `shasum` (Perl/C) | ~25ms |
+| Python `hashlib` (C openssl) | ~20ms |
+
+## Phase H Retrospective
+
+### What Phase H proved
+
+Concrete is credible on real programs. Policy engine, MAL interpreter, JSON parser, grep, bytecode VM, and artifact verifier all worked. This is no longer a toy-language question.
+
+`-O2` changes the performance story completely. JSON and grep show Concrete competitive with Python on real text workloads. Earlier "Concrete is much slower" conclusions were mostly `-O0` artifacts.
+
+Real workloads found real compiler bugs: enum-in-struct layout panic, cross-module string literal collision, alloca-in-loops stack blowup, string literal in loop invalid IR, const lowering gap, if-expression gap, standalone print/timing gaps, substring/loop string-building gaps. These were valuable because they came from programs, not synthetic cases.
+
+`defer` was high leverage. It removed significant cleanup boilerplate, now has credible scope semantics, and explicit cleanup still works but with much less noise.
+
+Concrete's differentiator is real. Visible authority in signatures, visible ownership/cleanup in code — now proven under real code, not just in docs. The artifact verifier is the clearest demonstration: capability signatures *are* the security audit.
+
+### What the main open question became
+
+Not "can Concrete express real programs?" but "do its explicit patterns become stable idioms or stay as exhausting ceremony?"
+
+### Priority fixes from Phase H evidence
+
+1. **Standalone vs project dependency resolution** — serious examples still can't conveniently use `std.fs.read_to_string` or other stdlib facilities; this is a real workflow problem, not a nice-to-have
+2. **Formatting / interpolation / text output** — too much manual string building for real programs
+3. **Runtime-oriented collection maturity** — MAL and the VM both need maps, nested mutable structures, runtime-friendly patterns
+4. **Collection hot-path performance** — the VM is the first clear gap-to-C workload; repeated `vec_get`/`vec_set`/`vec_push`/`vec_pop` in hot loops are a real optimization target
+5. **User-facing runtime argument surface** — `argc`/`argv` work in practice, but the final public shape is not settled
+6. **Qualified module access** — still missing for larger multi-module programs
+7. **Runtime / stack pressure classification** — MAL exposed this; still needs a cleaner language-vs-runtime-vs-tooling decision
+
 ## Current Open Findings
 
 ### Formatting / interpolation
@@ -231,6 +281,12 @@ What it implies:
 - Class: `stdlib/runtime`, `tooling/workflow`
 - Why it matters: real command-line tools need a stable way to access process arguments without dropping into generated-C details or ad hoc wrappers
 - Current state: first `argc` / `argv` support exists and works for `cgrep`, but the final user-facing surface is still undecided
+
+### Collection hot-path performance
+
+- Class: `backend/performance`
+- Why it matters: the bytecode VM showed a 3.4x gap to C on a dispatch-heavy workload, entirely from safe collection overhead (`vec_get`/`vec_set`/`vec_push`/`vec_pop` function calls with bounds checking in a hot loop)
+- Current state: first clear optimization target; options include inlining policy, unchecked internal paths, or backend shaping for repeated vector operations
 
 ### Runtime / stack pressure
 
