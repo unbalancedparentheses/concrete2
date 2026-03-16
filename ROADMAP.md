@@ -497,12 +497,24 @@ Primary surfaces:
      4. ~~add loop-friendly string building (`Bug 011`)~~ — **fixed**
      5. ~~give standalone benchmark programs an easy timing path (`Bug 012`)~~ — **fixed**
    - next findings-closure track from the first wave of real programs:
-     1. add a real text/output layer: formatting, interpolation, and logging-friendly output helpers — **not started**
-     2. improve runtime-oriented collection maturity for interpreter/runtime workloads: maps, nested mutable structures, and frame-friendly patterns — **not started**
-     3. reduce the standalone vs project split so stdlib access, benchmarking, and examples do not require awkward scaffolding — **not started**
-     4. design qualified module access (`Module.function()` or equivalent) so larger programs do not collapse into rename pressure — **not started**
-     5. document runtime/stack pressure findings from deep-recursive workloads and decide what belongs to language, runtime, stdlib, or tooling — **not started**
-     6. decide whether destructuring `let` earns its place for real-program clarity and parser/runtime code — **not started**
+     1. add `defer` statement for explicit scope-end cleanup — **not started**
+        - highest-leverage ergonomics change: eliminates duplicated `drop_string` on every early-return path
+        - preserves explicit ownership discipline (no implicit destructors, no GC)
+        - scope: parser, elaboration, SSA lowering (insert cleanup before exit points), linear checker
+        - design notes: [research/cleanup-ergonomics.md](research/cleanup-ergonomics.md)
+     2. add remaining mutation-oriented string APIs (`string_clear`, `string_starts_with`, `string_ends_with`) — **not started**
+        - builder pattern proven by JSON parser; remaining gap is keyword-matching temporary allocations
+     3. add a real text/output layer: formatting, interpolation, and logging-friendly output helpers — **not started**
+        - builder builtins (`string_append_int`, `string_append_bool`) landed; interpolation deferred pending evidence from 10k+ LOC scale
+        - design notes: [research/text-and-output-design.md](research/text-and-output-design.md)
+     4. improve runtime-oriented collection maturity for interpreter/runtime workloads: maps, nested mutable structures, and frame-friendly patterns — **not started**
+     5. reduce the standalone vs project split so stdlib access, benchmarking, and examples do not require awkward scaffolding — **not started**
+     6. design qualified module access (`Module.function()` or equivalent) so larger programs do not collapse into rename pressure — **not started**
+     7. document runtime/stack pressure findings from deep-recursive workloads and decide what belongs to language, runtime, stdlib, or tooling — **not started**
+     8. decide whether destructuring `let` earns its place for real-program clarity and parser/runtime code — **not started**
+     9. unify destruction ergonomics via general `drop(x)` / `Destroy` trait — **deferred** (revisit when stdlib has 5+ distinct drop-like functions)
+     10. scoped helper abstractions for resource cleanup — **deferred** (prerequisite: `defer`; revisit at 1k+ LOC programs)
+     11. selective borrow-friendly APIs / `&str`-style borrowed slices — **deferred** (revisit after `defer` + mutation APIs used in 2-3 programs)
    - classify every serious-program finding before acting on it:
      - language surface
      - stdlib/runtime support
@@ -512,6 +524,7 @@ Primary surfaces:
    - use the following research notes as the design staging area before adding new surface:
      - `research/phase-h-findings.md`
      - `research/text-and-output-design.md`
+     - `research/cleanup-ergonomics.md`
      - `research/module-qualification.md`
      - `research/runtime-collections.md`
      - `research/standalone-vs-project-ux.md`
