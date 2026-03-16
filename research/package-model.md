@@ -101,14 +101,16 @@ The first package-model milestones should be smaller:
 
 ## Current State (2026-03-16)
 
-`concrete build` now works as a first implementation:
+`concrete build`, `concrete run`, and `concrete test` all work:
 
 - parses `Concrete.toml` for package name and path dependencies
 - resolves `mod X;` stubs from source directory (including `name/mod.con` directory modules)
 - loads dependency modules, merges with project modules, runs full pipeline
-- `cgrep` and `conhash` examples converted to use `std.fs` imports
-
-**Current limitation:** std is referenced as a path dependency (`std = { path = "../../std" }`). This is explicitly temporary. Phase J should make std a builtin dependency that the resolver supplies directly, removing path-based std references from all example/project manifests.
+- `cgrep`, `conhash`, and `project` examples converted to use std imports
+- **builtin std resolution**: std is found automatically relative to the compiler binary (or via `CONCRETE_STD` env var). No `std = { path = "..." }` needed in user manifests.
+- **`concrete run`**: builds to temp binary, executes with inherited stdio, cleans up. Supports `-- args...`.
+- **`concrete test`**: project-aware test mode. Loads dependencies, compiles in test mode, runs test binary. Supports `--module` filter.
+- **error messages**: actionable hints for missing Concrete.toml, missing src/main.con, bad dependency paths.
 
 ## Roadmap Placement
 
@@ -116,11 +118,11 @@ This belongs mainly in:
 
 - **Phase J**: package and project model (first priority after Phase H)
 
-Phase J owns:
+Phase J remaining work:
 
-- builtin std resolution (removing path-based std references)
+- ~~builtin std resolution~~ **DONE**
+- ~~`concrete build/test/run`~~ **DONE** (basic versions)
 - workspace / multi-package repo support
-- `concrete build/test/run` maturity
 - recording std identity/version in lockfile without exposing as path dep
 - incremental / artifact direction
 
