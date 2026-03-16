@@ -655,8 +655,11 @@ After the policy engine, MAL, JSON parser, grep-like tool, and bytecode VM, the 
 5. keep closing Phase H findings through the narrowest fixes first:
    - runtime argument surface
    - string/text helpers that still matter after the parser and grep results
+   - grep string/output bottlenecks now that compute-heavy workloads are near parity and grep remains the clearest text-I/O gap
+   - same-name collision handling for qualified module access, which still needs a real pre-emit naming fix rather than alias-only workarounds
    - collection/runtime maturity for interpreter and VM workloads
 6. continue backend/performance investigation only where new workloads still expose real cliffs after the vec-inlining fix
+   - current clearest target: grep-style string/output overhead rather than parser or VM compute loops
 7. improve testing tooling on top of the now-landed package workflow:
    - better failure output and filtering
    - testing workflow that grows naturally into workspace mode
@@ -695,6 +698,22 @@ Concrete already looks better than Rust in a narrow auditability niche, but it d
    - release/compatibility discipline
 
 This order matters. Package/project work removes false friction first; only then do ergonomics, performance, and productization land in the right user-facing context.
+
+### Current Phase H Judgment
+
+The current state of Phase H is much clearer than it was earlier:
+
+- performance credibility is now largely established across JSON, verifier, VM, and other compute-heavy workloads
+- the main remaining performance-specific signal is grep-style string and output handling
+- the deeper remaining Phase H question is now ergonomic rather than raw speed: do Concrete's explicit patterns feel like disciplined idioms or sustained ceremony?
+
+That means the remaining high-value Phase H work is mostly:
+
+- closing the last obvious runtime/string/output bottlenecks
+- fixing namespace/completeness issues such as same-name qualified-access collisions
+- deciding whether the remaining language pressure is genuinely language pressure or mostly stdlib/tooling pressure
+
+Once those are in better shape, the center of gravity should move cleanly toward Phase J package/workspace maturity rather than continuing to treat Phase H as mainly a performance question.
 
 Exit criterion:
 Concrete has been exercised by multiple serious programs large enough to reveal structural weaknesses, and the project has used those results to drive the next package/adoption/operational phases.
