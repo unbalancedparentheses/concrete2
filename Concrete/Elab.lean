@@ -1309,7 +1309,12 @@ partial def elabModule (m : Module) (summary : FileSummary)
         methodNames := tb.methods.map (·.name),
         methodRetTys := tb.methods.map fun f => (f.name, f.retTy),
         builtinTraitId := traitBuiltinId : CTraitImpl }
-    linkerAliases := imports.linkerAliases
+    linkerAliases := imports.linkerAliases ++ summary.submoduleSummaries.foldl (fun acc (subName, subSummary) =>
+      acc
+      ++ (subSummary.functions.map fun (fnName, _) => (subName ++ "_" ++ fnName, fnName))
+      ++ (subSummary.externFnSigs.map fun (efName, _) => (subName ++ "_" ++ efName, efName))
+      ++ (subSummary.implMethodSigs.map fun (msName, _) => (subName ++ "_" ++ msName, msName))
+    ) []
   }
 
 -- ============================================================

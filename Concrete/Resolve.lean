@@ -362,7 +362,7 @@ private def buildGlobalScopeFromSummary (s : FileSummary) : Scope × List String
       (s!"{subName}_{name}", SymKind.fn (fs.params.map fun (n, ty) => { name := n, ty := ty }) fs.retTy))
     ++ (subS.structs.map fun st => (st.name, SymKind.struct st))
     ++ (subS.enums.map fun e => (e.name, SymKind.enum e))
-    ++ (subS.externFns.map fun ef => (ef.name, SymKind.externFn ef.params ef.retTy))
+    ++ (subS.externFns.map fun ef => (s!"{subName}_{ef.name}", SymKind.externFn ef.params ef.retTy))
     ++ (subS.constants.map fun c => (c.name, SymKind.const c.ty))
     ++ (implSigsToSymbols subS.implMethodSigs)
   ) []
