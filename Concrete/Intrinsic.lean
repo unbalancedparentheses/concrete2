@@ -27,6 +27,7 @@ inductive IntrinsicId where
   | stringLength | stringConcat | stringEq | stringSlice | stringSubstr
   | stringCharAt | stringContains | stringTrim | dropString
   | stringPushChar | stringAppend | stringAppendInt | stringAppendBool
+  | stringReserve
 
   -- Conversion
   | intToString | stringToInt | boolToString | floatToString
@@ -82,6 +83,7 @@ def resolveIntrinsic (name : String) : Option IntrinsicId :=
   | "string_append_int"  | "String_append_int"  => some .stringAppendInt
   | "string_append_bool" | "String_append_bool" => some .stringAppendBool
   | "string_substr"    | "String_substr"    => some .stringSubstr
+  | "string_reserve"   | "String_reserve"   => some .stringReserve
 
   -- Conversion
   | "int_to_string"  => some .intToString
@@ -142,6 +144,7 @@ def IntrinsicId.canonicalName : IntrinsicId → String
   | .stringAppend => "string_append"
   | .stringAppendInt => "string_append_int"
   | .stringAppendBool => "string_append_bool"
+  | .stringReserve => "string_reserve"
   | .intToString => "int_to_string"
   | .stringToInt => "string_to_int"
   | .boolToString => "bool_to_string"
@@ -162,7 +165,8 @@ def IntrinsicId.capability : IntrinsicId → Option String
   | .getArgs | .abort => some "Process"
   -- Alloc
   | .alloc | .free
-  | .vecNew | .vecPush | .vecPop | .vecFree => some "Alloc"
+  | .vecNew | .vecPush | .vecPop | .vecFree
+  | .stringReserve => some "Alloc"
   -- Console
   | .printString | .printInt | .printChar => some "Console"
   -- Clock

@@ -1048,6 +1048,18 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       let bTy ← checkExpr bArg (some .bool)
       expectTy .bool bTy "string_append_bool() second argument" (some e.getSpan)
       return .unit
+    -- Intercept string_reserve(&mut s, cap)
+    if intrinsic == some .stringReserve then
+      if args.length != 2 then throwCheck (.builtinWrongArgCount "string_reserve" 2) (some e.getSpan)
+      let strArg := match args with | a :: _ => a | [] => Expr.intLit default 0
+      let capArg := match args with | _ :: b :: _ => b | _ => Expr.intLit default 0
+      let strTy ← checkExpr strArg
+      match strTy with
+      | .refMut .string => pure ()
+      | _ => throwCheck (.builtinWrongFirstArg "string_reserve" "&mut String as first argument" (tyToString strTy)) (some e.getSpan)
+      let capTy ← checkExpr capArg (some .int)
+      expectTy .int capTy "string_reserve() capacity argument" (some e.getSpan)
+      return .unit
     -- Intercept vec_push(&mut v, val)
     if intrinsic == some .vecPush then
       if args.length != 2 then throwCheck (.builtinWrongArgCount "vec_push" 2) (some e.getSpan)

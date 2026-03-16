@@ -58,10 +58,20 @@ structure EmitSSAState where
   vecElemSpecs : List (Nat × Nat) := []
   /-- Names of extern functions (for C ABI calling convention at call sites). -/
   externFnNames : List String := []
+  /-- Alloca instructions to hoist to the function entry block.
+      Allocas emitted inside loop bodies would otherwise grow the stack
+      on every iteration; collecting them here and prepending to the
+      entry block makes LLVM reuse the same stack slot. -/
+  entryAllocas : Array LLVMInstr := #[]
 
 /-- Append a structured instruction to the current block. -/
 private def emitStructured (s : EmitSSAState) (instr : LLVMInstr) : EmitSSAState :=
   { s with currentInstrs := s.currentInstrs.push instr }
+
+/-- Record an alloca to be hoisted to the function entry block.
+    This prevents stack growth when the alloca textually appears in a loop. -/
+private def emitEntryAlloca (s : EmitSSAState) (instr : LLVMInstr) : EmitSSAState :=
+  { s with entryAllocas := s.entryAllocas.push instr }
 
 /-- Append a type definition to the module. -/
 private def emitTypeDef (s : EmitSSAState) (line : String) : EmitSSAState :=
@@ -308,7 +318,7 @@ private def materializeStrConst (s : EmitSSAState) (name : String) : EmitSSAStat
   -- Allocate %struct.String on stack
   let (s, strTmp) := freshLocal s
   let strName := (strTmp.drop 1).toString
-  let s := emitStructured s (.alloca strName (.struct_ "String"))
+  let s := emitEntryAlloca s (.alloca strName (.struct_ "String"))
   -- Store ptr field (index 0)
   let (s, ptrField) := freshLocal s
   let ptrFieldName := (ptrField.drop 1).toString
@@ -348,7 +358,7 @@ private def ensurePtrOp (s : EmitSSAState) (v : SVal) : EmitSSAState × LLVMOper
     let llTy := tyToLLVMTy s v.ty
     let (s, tmp) := freshLocal s
     let tmpName := (tmp.drop 1).toString
-    let s := emitStructured s (.alloca tmpName llTy)
+    let s := emitEntryAlloca s (.alloca tmpName llTy)
     let s := emitStructured s (.store llTy (svalToOperand s v) (.reg tmpName))
     (s, .reg tmpName)
   else
@@ -357,6 +367,11 @@ private def ensurePtrOp (s : EmitSSAState) (v : SVal) : EmitSSAState × LLVMOper
 /-- Ensure any value is available as a pointer.
     Unlike ensurePtrOp, this also wraps scalars via alloca+store. -/
 private def ensureValAsPtr (s : EmitSSAState) (v : SVal) : EmitSSAState × LLVMOperand :=
+  match v with
+  | .strConst name =>
+    let (s, strTmp) := materializeStrConst s name
+    (s, .reg (strTmp.drop 1).toString)
+  | _ =>
   if isKnownPtr s v then
     (s, svalToOperand s v)
   else if isRefOrPtrTy v.ty then
@@ -365,7 +380,7 @@ private def ensureValAsPtr (s : EmitSSAState) (v : SVal) : EmitSSAState × LLVMO
     let llTy := tyToLLVMTy s v.ty
     let (s, tmp) := freshLocal s
     let tmpName := (tmp.drop 1).toString
-    let s := emitStructured s (.alloca tmpName llTy)
+    let s := emitEntryAlloca s (.alloca tmpName llTy)
     let s := emitStructured s (.store llTy (svalToOperand s v) (.reg tmpName))
     (s, .reg tmpName)
 
@@ -527,7 +542,7 @@ private def emitSInst (s : EmitSSAState) (inst : SInst) : EmitSSAState :=
             else
               let (s, tmp) := freshLocal s
               let tmpName := (tmp.drop 1).toString
-              let s := emitStructured s (.alloca tmpName valTy)
+              let s := emitEntryAlloca s (.alloca tmpName valTy)
               let s := emitStructured s (.store valTy (svalToOperand s a) (.reg tmpName))
               (s, .reg tmpName)
           let (s, flat) := freshLocal s
@@ -540,7 +555,7 @@ private def emitSInst (s : EmitSSAState) (inst : SInst) : EmitSSAState :=
             else
               let (s, tmp) := freshLocal s
               let tmpName := (tmp.drop 1).toString
-              let s := emitStructured s (.alloca tmpName valTy)
+              let s := emitEntryAlloca s (.alloca tmpName valTy)
               let s := emitStructured s (.store valTy (svalToOperand s a) (.reg tmpName))
               (s, .reg tmpName)
           let (s, lo) := freshLocal s
@@ -560,7 +575,7 @@ private def emitSInst (s : EmitSSAState) (inst : SInst) : EmitSSAState :=
           else
             let (s, tmp) := freshLocal s
             let tmpName := (tmp.drop 1).toString
-            let s := emitStructured s (.alloca tmpName valTy)
+            let s := emitEntryAlloca s (.alloca tmpName valTy)
             let s := emitStructured s (.store valTy (svalToOperand s a) (.reg tmpName))
             (s, ops ++ [(.ptr, .reg tmpName)])
       else if paramTy == .ptr && valTy != .ptr then
@@ -572,7 +587,7 @@ private def emitSInst (s : EmitSSAState) (inst : SInst) : EmitSSAState :=
         else
           let (s, tmp) := freshLocal s
           let tmpName := (tmp.drop 1).toString
-          let s := emitStructured s (.alloca tmpName valTy)
+          let s := emitEntryAlloca s (.alloca tmpName valTy)
           let s := emitStructured s (.store valTy (svalToOperand s a) (.reg tmpName))
           (s, ops ++ [(.ptr, .reg tmpName)])
       else
@@ -605,14 +620,14 @@ private def emitSInst (s : EmitSSAState) (inst : SInst) : EmitSSAState :=
       -- Alloca struct, store i64 into it, use alloca as the dst register
       match dst with
       | some dstName =>
-        let s := emitStructured s (.alloca dstName (tyToLLVMTy s retTy))
+        let s := emitEntryAlloca s (.alloca dstName (tyToLLVMTy s retTy))
         let s := emitStructured s (.store .i64 (.reg flatRetName) (.reg dstName))
         markPtr s dstName
       | none => s
     else
       emitStructured s (.call dst retLLTy callTarget argOps)
   | .alloca dst ty =>
-    let s := emitStructured s (.alloca dst (tyToLLVMTy s ty))
+    let s := emitEntryAlloca s (.alloca dst (tyToLLVMTy s ty))
     markPtr s dst
   | .load dst ptr ty =>
     let (s, ptrOp) := ensurePtrOp s ptr
@@ -675,7 +690,7 @@ private def emitSInst (s : EmitSSAState) (inst : SInst) : EmitSSAState :=
         if ssaIsPassByPtr s srcTy then
           let (s, tmp) := freshLocal s
           let tmpName := (tmp.drop 1).toString
-          let s := emitStructured s (.alloca tmpName srcLLTy)
+          let s := emitEntryAlloca s (.alloca tmpName srcLLTy)
           let s := emitStructured s (.store srcLLTy valOp (.reg tmpName))
           let s := emitStructured s (.gep dst .i8 (.reg tmpName) [(.i32, .intLit 0)])
           markPtr s dst
@@ -708,7 +723,7 @@ private def emitSInst (s : EmitSSAState) (inst : SInst) : EmitSSAState :=
       -- Fallback: alloca+store+load to "bitcast"
       let (s, tmp) := freshLocal s
       let tmpName := (tmp.drop 1).toString
-      let s := emitStructured s (.alloca tmpName srcLLTy)
+      let s := emitEntryAlloca s (.alloca tmpName srcLLTy)
       let s := emitStructured s (.store srcLLTy valOp (.reg tmpName))
       emitStructured s (.load dst dstLLTy (.reg tmpName))
   | .memcpy dst src size =>
@@ -780,7 +795,7 @@ private def emitSFnDef (s : EmitSSAState) (f : SFnDef) (isUserMain : Bool) : Emi
   let fnName := if isUserMain then "user_main" else f.name
   let params := f.params.map fun (n, t) => (n, paramTyToLLVMTy s t)
   -- Reset per-function state
-  let s := { s with currentBlocks := #[], fnParams := f.params }
+  let s := { s with currentBlocks := #[], fnParams := f.params, entryAllocas := #[] }
   -- Mark struct-type params as pointers, track fn params for indirect calls
   let s := f.params.foldl (fun s (n, t) =>
     match t with
@@ -789,16 +804,22 @@ private def emitSFnDef (s : EmitSSAState) (f : SFnDef) (isUserMain : Bool) : Emi
   ) s
   -- Emit all blocks
   let s := f.blocks.foldl emitSBlock s
+  -- Hoist all allocas to the entry block so they are not repeated inside loops
+  let blocks := s.currentBlocks.toList
+  let blocks := match blocks with
+    | entry :: rest =>
+      { entry with instrs := s.entryAllocas.toList ++ entry.instrs } :: rest
+    | [] => []
   -- Build structured function definition
   let fnDef : LLVMFnDef := {
     name := fnName
     retTy := retTy
     params := params
-    blocks := s.currentBlocks.toList
+    blocks := blocks
   }
   let s := { s with moduleFunctions := s.moduleFunctions.push fnDef }
   -- Reset per-function state
-  { s with ptrRegs := [], fnParams := [], fnTypeRegs := [], currentBlocks := #[], currentInstrs := #[] }
+  { s with ptrRegs := [], fnParams := [], fnTypeRegs := [], currentBlocks := #[], currentInstrs := #[], entryAllocas := #[] }
 
 -- ============================================================
 -- Emit struct/enum type definitions

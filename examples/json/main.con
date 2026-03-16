@@ -133,7 +133,7 @@ mod Parser {
     }
 
     // Parse a JSON string (opening " already checked by caller)
-    // Uses flag pattern to avoid consuming linear `buf` inside loop.
+    // Uses flag pattern for loop control:
     //   done=0: still scanning, done=1: found closing quote, done=2: error
     fn parse_string(s: &String, pos: i32,
                     strings: &mut Vec<String>) with(Alloc) -> ParseResult {
@@ -216,27 +216,24 @@ mod Parser {
 
         // true
         let kw_true: String = "true";
+        defer drop_string(kw_true);
         if match_keyword(s, p, &kw_true) {
-            drop_string(kw_true);
             return ParseResult { val: mk_bool(1), pos: p + 4 };
         }
-        drop_string(kw_true);
 
         // false
         let kw_false: String = "false";
+        defer drop_string(kw_false);
         if match_keyword(s, p, &kw_false) {
-            drop_string(kw_false);
             return ParseResult { val: mk_bool(0), pos: p + 5 };
         }
-        drop_string(kw_false);
 
         // null
         let kw_null: String = "null";
+        defer drop_string(kw_null);
         if match_keyword(s, p, &kw_null) {
-            drop_string(kw_null);
             return ParseResult { val: mk_null(), pos: p + 4 };
         }
-        drop_string(kw_null);
 
         // Array
         if ch == 91 { // '['
@@ -398,19 +395,19 @@ mod Printer {
                      vals: &mut Vec<Val>) with(Console, Alloc) {
         if v.tag == 0 {
             let s: String = "null";
+            defer drop_string(s);
             print_string(&s);
-            drop_string(s);
             return;
         }
         if v.tag == 1 {
             if v.data == 1 {
                 let s: String = "true";
+                defer drop_string(s);
                 print_string(&s);
-                drop_string(s);
             } else {
                 let s: String = "false";
+                defer drop_string(s);
                 print_string(&s);
-                drop_string(s);
             }
             return;
         }
@@ -421,8 +418,8 @@ mod Printer {
         if v.tag == 3 {
             print_char(34); // "
             let s: String = vec_get::<String>(strings, v.data as Int);
+            defer drop_string(s);
             print_string(&s);
-            drop_string(s);
             print_char(34); // "
             return;
         }
@@ -452,8 +449,8 @@ mod Printer {
                 let kv: KVPair = vec_get::<KVPair>(kvpairs, (desc.start + i) as Int);
                 print_char(34); // "
                 let k: String = vec_get::<String>(strings, kv.key as Int);
+                defer drop_string(k);
                 print_string(&k);
-                drop_string(k);
                 print_char(34); // "
                 print_char(58); // :
                 let val: Val = Val { tag: kv.val_tag, data: kv.val_data };
@@ -465,9 +462,9 @@ mod Printer {
         }
         if v.tag == 6 {
             let mut msg: String = "ERROR@";
+            defer drop_string(msg);
             string_append_int(&mut msg, v.data as Int);
             print_string(&msg);
-            drop_string(msg);
             return;
         }
     }
@@ -504,16 +501,16 @@ mod Main {
                 kvpairs: &mut Vec<KVPair>,
                 vals: &mut Vec<Val>,
                 err_code: Int) with(Console, Alloc) -> Int {
+        defer drop_string(input);
         let v: Val = parse_json(&input, strings, arrays, objects, kvpairs, vals);
-        drop_string(input);
         if v.tag != expected_tag {
             let mut msg: String = "FAIL: expected tag ";
+            defer drop_string(msg);
             string_append_int(&mut msg, expected_tag as Int);
             string_append(&mut msg, &" got ");
             string_append_int(&mut msg, v.tag as Int);
             print_string(&msg);
             print_char(10);
-            drop_string(msg);
             return err_code;
         }
         return 0;
@@ -527,10 +524,11 @@ mod Main {
                 kvpairs: &mut Vec<KVPair>,
                 vals: &mut Vec<Val>,
                 err_code: Int) with(Console, Alloc) -> Int {
+        defer drop_string(input);
         let v: Val = parse_json(&input, strings, arrays, objects, kvpairs, vals);
-        drop_string(input);
         if v.tag != expected_tag || v.data != expected_data {
             let mut msg: String = "FAIL: expected (";
+            defer drop_string(msg);
             string_append_int(&mut msg, expected_tag as Int);
             string_append(&mut msg, &",");
             string_append_int(&mut msg, expected_data as Int);
@@ -541,7 +539,6 @@ mod Main {
             string_append(&mut msg, &")");
             print_string(&msg);
             print_char(10);
-            drop_string(msg);
             return err_code;
         }
         return 0;
@@ -555,8 +552,8 @@ mod Main {
                   kvpairs: &mut Vec<KVPair>,
                   vals: &mut Vec<Val>,
                   err_code: Int) with(Alloc) -> Int {
+        defer drop_string(input);
         let v: Val = parse_json(&input, strings, arrays, objects, kvpairs, vals);
-        drop_string(input);
         if !is_error(v) { return err_code; }
         return 0;
     }
@@ -585,6 +582,7 @@ mod Main {
         let mut objects: Vec<ObjDesc> = vec_new::<ObjDesc>();
         let mut kvpairs: Vec<KVPair> = vec_new::<KVPair>();
         let mut vals: Vec<Val> = vec_new::<Val>();
+        defer cleanup(strings, arrays, objects, kvpairs, vals);
 
         let mut err: Int = 0;
 
@@ -592,130 +590,129 @@ mod Main {
 
         err = test_val("null", 0, 0,
                        &mut strings, &mut arrays, &mut objects, &mut kvpairs, &mut vals, 10);
-        if err != 0 { cleanup(strings, arrays, objects, kvpairs, vals); return err; }
+        if err != 0 { return err; }
 
         err = test_val("true", 1, 1,
                        &mut strings, &mut arrays, &mut objects, &mut kvpairs, &mut vals, 11);
-        if err != 0 { cleanup(strings, arrays, objects, kvpairs, vals); return err; }
+        if err != 0 { return err; }
 
         err = test_val("false", 1, 0,
                        &mut strings, &mut arrays, &mut objects, &mut kvpairs, &mut vals, 12);
-        if err != 0 { cleanup(strings, arrays, objects, kvpairs, vals); return err; }
+        if err != 0 { return err; }
 
         err = test_val("42", 2, 42,
                        &mut strings, &mut arrays, &mut objects, &mut kvpairs, &mut vals, 13);
-        if err != 0 { cleanup(strings, arrays, objects, kvpairs, vals); return err; }
+        if err != 0 { return err; }
 
         err = test_val("-7", 2, 0 - 7,
                        &mut strings, &mut arrays, &mut objects, &mut kvpairs, &mut vals, 14);
-        if err != 0 { cleanup(strings, arrays, objects, kvpairs, vals); return err; }
+        if err != 0 { return err; }
 
         err = test_val("0", 2, 0,
                        &mut strings, &mut arrays, &mut objects, &mut kvpairs, &mut vals, 15);
-        if err != 0 { cleanup(strings, arrays, objects, kvpairs, vals); return err; }
+        if err != 0 { return err; }
 
         // ---- Strings ----
 
         err = test_tag("\"hello\"", 3,
                        &mut strings, &mut arrays, &mut objects, &mut kvpairs, &mut vals, 20);
-        if err != 0 { cleanup(strings, arrays, objects, kvpairs, vals); return err; }
+        if err != 0 { return err; }
 
         err = test_tag("\"\"", 3,
                        &mut strings, &mut arrays, &mut objects, &mut kvpairs, &mut vals, 21);
-        if err != 0 { cleanup(strings, arrays, objects, kvpairs, vals); return err; }
+        if err != 0 { return err; }
 
         err = test_tag("\"hello\\nworld\"", 3,
                        &mut strings, &mut arrays, &mut objects, &mut kvpairs, &mut vals, 22);
-        if err != 0 { cleanup(strings, arrays, objects, kvpairs, vals); return err; }
+        if err != 0 { return err; }
 
         // ---- Whitespace handling ----
 
         err = test_val("  42  ", 2, 42,
                        &mut strings, &mut arrays, &mut objects, &mut kvpairs, &mut vals, 25);
-        if err != 0 { cleanup(strings, arrays, objects, kvpairs, vals); return err; }
+        if err != 0 { return err; }
 
         err = test_val(" \n\t true \n", 1, 1,
                        &mut strings, &mut arrays, &mut objects, &mut kvpairs, &mut vals, 26);
-        if err != 0 { cleanup(strings, arrays, objects, kvpairs, vals); return err; }
+        if err != 0 { return err; }
 
         // ---- Arrays ----
 
         err = test_tag("[]", 4,
                        &mut strings, &mut arrays, &mut objects, &mut kvpairs, &mut vals, 30);
-        if err != 0 { cleanup(strings, arrays, objects, kvpairs, vals); return err; }
+        if err != 0 { return err; }
 
         err = test_tag("[1]", 4,
                        &mut strings, &mut arrays, &mut objects, &mut kvpairs, &mut vals, 31);
-        if err != 0 { cleanup(strings, arrays, objects, kvpairs, vals); return err; }
+        if err != 0 { return err; }
 
         err = test_tag("[1, 2, 3]", 4,
                        &mut strings, &mut arrays, &mut objects, &mut kvpairs, &mut vals, 32);
-        if err != 0 { cleanup(strings, arrays, objects, kvpairs, vals); return err; }
+        if err != 0 { return err; }
 
         err = test_tag("[true, null, 42, \"hi\"]", 4,
                        &mut strings, &mut arrays, &mut objects, &mut kvpairs, &mut vals, 33);
-        if err != 0 { cleanup(strings, arrays, objects, kvpairs, vals); return err; }
+        if err != 0 { return err; }
 
         err = test_tag("[[1, 2], [3, 4]]", 4,
                        &mut strings, &mut arrays, &mut objects, &mut kvpairs, &mut vals, 34);
-        if err != 0 { cleanup(strings, arrays, objects, kvpairs, vals); return err; }
+        if err != 0 { return err; }
 
         // ---- Objects ----
 
         err = test_tag("{}", 5,
                        &mut strings, &mut arrays, &mut objects, &mut kvpairs, &mut vals, 40);
-        if err != 0 { cleanup(strings, arrays, objects, kvpairs, vals); return err; }
+        if err != 0 { return err; }
 
         err = test_tag("{\"a\": 1}", 5,
                        &mut strings, &mut arrays, &mut objects, &mut kvpairs, &mut vals, 41);
-        if err != 0 { cleanup(strings, arrays, objects, kvpairs, vals); return err; }
+        if err != 0 { return err; }
 
         err = test_tag("{\"x\": 1, \"y\": 2}", 5,
                        &mut strings, &mut arrays, &mut objects, &mut kvpairs, &mut vals, 42);
-        if err != 0 { cleanup(strings, arrays, objects, kvpairs, vals); return err; }
+        if err != 0 { return err; }
 
         err = test_tag("{\"name\": \"alice\", \"age\": 30, \"active\": true}", 5,
                        &mut strings, &mut arrays, &mut objects, &mut kvpairs, &mut vals, 43);
-        if err != 0 { cleanup(strings, arrays, objects, kvpairs, vals); return err; }
+        if err != 0 { return err; }
 
         // Nested object
         err = test_tag("{\"a\": {\"b\": 1}}", 5,
                        &mut strings, &mut arrays, &mut objects, &mut kvpairs, &mut vals, 44);
-        if err != 0 { cleanup(strings, arrays, objects, kvpairs, vals); return err; }
+        if err != 0 { return err; }
 
         // Object with array value
         err = test_tag("{\"items\": [1, 2, 3]}", 5,
                        &mut strings, &mut arrays, &mut objects, &mut kvpairs, &mut vals, 45);
-        if err != 0 { cleanup(strings, arrays, objects, kvpairs, vals); return err; }
+        if err != 0 { return err; }
 
         // ---- Invalid JSON ----
 
         err = test_error("", &mut strings, &mut arrays, &mut objects, &mut kvpairs, &mut vals, 50);
-        if err != 0 { cleanup(strings, arrays, objects, kvpairs, vals); return err; }
+        if err != 0 { return err; }
 
         err = test_error("[", &mut strings, &mut arrays, &mut objects, &mut kvpairs, &mut vals, 51);
-        if err != 0 { cleanup(strings, arrays, objects, kvpairs, vals); return err; }
+        if err != 0 { return err; }
 
         err = test_error("{\"a\"}", &mut strings, &mut arrays, &mut objects, &mut kvpairs, &mut vals, 52);
-        if err != 0 { cleanup(strings, arrays, objects, kvpairs, vals); return err; }
+        if err != 0 { return err; }
 
         err = test_error("\"unterminated", &mut strings, &mut arrays, &mut objects, &mut kvpairs, &mut vals, 53);
-        if err != 0 { cleanup(strings, arrays, objects, kvpairs, vals); return err; }
+        if err != 0 { return err; }
 
         err = test_error("[1,]", &mut strings, &mut arrays, &mut objects, &mut kvpairs, &mut vals, 54);
-        if err != 0 { cleanup(strings, arrays, objects, kvpairs, vals); return err; }
+        if err != 0 { return err; }
 
         // Trailing content
         err = test_error("42 extra", &mut strings, &mut arrays, &mut objects, &mut kvpairs, &mut vals, 55);
-        if err != 0 { cleanup(strings, arrays, objects, kvpairs, vals); return err; }
+        if err != 0 { return err; }
 
         // ---- Complex nested structure ----
 
         err = test_tag("{\"users\": [{\"name\": \"alice\", \"age\": 30}, {\"name\": \"bob\", \"age\": 25}], \"count\": 2}", 5,
                        &mut strings, &mut arrays, &mut objects, &mut kvpairs, &mut vals, 60);
-        if err != 0 { cleanup(strings, arrays, objects, kvpairs, vals); return err; }
+        if err != 0 { return err; }
 
-        cleanup(strings, arrays, objects, kvpairs, vals);
         return 0;
     }
 }

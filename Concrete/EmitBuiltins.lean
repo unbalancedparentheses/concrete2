@@ -642,6 +642,30 @@ def getBuiltinFns : List LLVMFnDef × List LLVMGlobal × List LLVMFnDecl :=
       ], .ret .void none⟩] }
 
   -- -------------------------------------------------------
+  -- string_reserve (ensure capacity >= current cap + reserve_amt)
+  -- If current capacity is already sufficient, this is a no-op.
+  -- -------------------------------------------------------
+  let fnStringReserve : LLVMFnDef :=
+    { name := "string_reserve", retTy := .void, params := [("s", .ptr), ("extra", .i64)], blocks := [
+      ⟨"entry", [
+        strGep "sr_cap_ptr" "s" 2,
+        .load "sr_cap" .i64 (.reg "sr_cap_ptr"),
+        strGep "sr_len_ptr" "s" 1,
+        .load "sr_len" .i64 (.reg "sr_len_ptr"),
+        .binOp "sr_needed" .add .i64 (.reg "sr_len") (.reg "extra"),
+        .binOp "sr_need_grow" .icmpUgt .i64 (.reg "sr_needed") (.reg "sr_cap")
+      ], .condBr (.reg "sr_need_grow") "sr_grow" "sr_done"⟩,
+      ⟨"sr_grow", [
+        strGep "sr_data_ptr" "s" 0,
+        .load "sr_data" .ptr (.reg "sr_data_ptr"),
+        .call (some "sr_newbuf.raw") .ptr (.global "realloc") [(.ptr, .reg "sr_data"), (.i64, .reg "sr_needed")],
+        .call (some "sr_newbuf") .ptr (.global "__concrete_check_oom") [(.ptr, .reg "sr_newbuf.raw")],
+        .store .ptr (.reg "sr_newbuf") (.reg "sr_data_ptr"),
+        .store .i64 (.reg "sr_needed") (.reg "sr_cap_ptr")
+      ], .br "sr_done"⟩,
+      ⟨"sr_done", [], .ret .void none⟩] }
+
+  -- -------------------------------------------------------
   -- clock_monotonic_ns (monotonic clock in nanoseconds)
   -- Uses clock_gettime(CLOCK_MONOTONIC=6 on macOS, 1 on Linux)
   -- -------------------------------------------------------
@@ -688,7 +712,7 @@ def getBuiltinFns : List LLVMFnDef × List LLVMGlobal × List LLVMFnDecl :=
     fnFloatToString, fnStringTrim,
     fnPrintString, fnPrintInt, fnPrintChar,
     fnStringPushChar, fnStringAppend, fnStringAppendInt, fnStringAppendBool,
-    fnClockMonotonicNs
+    fnStringReserve, fnClockMonotonicNs
   ]
   (fns, globals, decls)
 

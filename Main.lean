@@ -120,7 +120,7 @@ def compileSSA (inputPath : String) (outputPath : String) (emitLLVM : Bool) : IO
       IO.println llvmIR
       return 0
     -- Compile with clang
-    let exitCode ← runCmd "clang" #[llPath, "-o", outputPath, "-Wno-override-module"]
+    let exitCode ← runCmd "clang" #[llPath, "-o", outputPath, "-Wno-override-module", "-O2"]
     if exitCode != 0 then
       IO.eprintln "clang compilation failed"
       return exitCode
@@ -151,7 +151,7 @@ def compileTest (inputPath : String) (moduleFilter : Option String := none) : IO
     let llPath := inputPath ++ ".test.ll"
     let outPath := inputPath ++ ".test"
     writeFile llPath llvmIR
-    let exitCode ← runCmd "clang" #[llPath, "-o", outPath, "-Wno-override-module"]
+    let exitCode ← runCmd "clang" #[llPath, "-o", outPath, "-Wno-override-module", "-O2"]
     if exitCode != 0 then
       IO.eprintln "clang compilation failed"
       IO.eprintln s!"LLVM IR left at: {llPath}"

@@ -1167,6 +1167,8 @@ run_ok "$TESTDIR/test_defer_nested_lifo.con" "cba
 0"
 run_ok "$TESTDIR/test_defer_loop_inner_return.con" "IIIIO
 3"
+run_ok "$TESTDIR/test_alloca_loop_stress.con" 200000
+run_ok "$TESTDIR/test_string_literal_in_loop.con" 5
 run_ok "$TESTDIR/test_trait_multi_bound.con" 42
 run_err "$TESTDIR/error_defer_linear_reuse.con"  "reserved by defer"
 run_err "$TESTDIR/error_linearity_branch_disagree.con" "consumed in one branch"
