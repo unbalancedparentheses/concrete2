@@ -96,6 +96,13 @@ What it implies:
   - qualification and abstraction tools that preserve explicitness
 - syntax growth should remain the last step, not the first response, unless repeated real-program evidence shows that library and workflow patterns are insufficient
 
+What closed after scoped `defer` landed:
+
+- the JSON parser now uses `defer` throughout and dropped roughly 40 lines of cleanup boilerplate
+- the biggest win was `defer cleanup(...)` in `main`, which turned repeated `if err != 0 { cleanup(...); return err; }` blocks into plain early returns
+- repeated keyword-matching and output cleanup paths also became smaller and less error-prone
+- this is evidence that explicit cleanup can become materially less noisy without hiding ownership or destruction
+
 ## Current Open Findings
 
 ### Formatting / interpolation

@@ -45,6 +45,8 @@ What landed:
 - deferred calls run at block exit, loop-iteration exit, `break`, `continue`, early return, and implicit function end
 - the checker reserves deferred values instead of consuming them immediately
 - additional regression coverage now includes block scope, loop iteration, break/continue, and consuming-call LIFO behavior
+- the JSON parser was updated to use `defer` throughout, removing roughly 40 lines of duplicated cleanup boilerplate
+- the largest practical win was replacing repeated `if err != 0 { cleanup(...); return err; }` blocks in `main` with straight early returns guarded by one scoped `defer cleanup(...)`
 
 Follow-on concern:
 

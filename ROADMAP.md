@@ -71,6 +71,25 @@ Still clearly not implemented:
 | **N** | Allocation profiles and bounded allocation | Not started |
 | **O** | Research phase and evidence-gated features | Not started |
 
+### Cross-Phase Carry-Overs
+
+Completed phases can still seed work that is intentionally finished later. Do not reopen those phases unless their original exit criteria were wrong. Track the carry-over here instead.
+
+| Item | First Real Shape | Current Owning Phase | Status |
+|------|------------------|---------------------|--------|
+| Empirical cross-target FFI/ABI validation | **E** | **J / L** | Not started |
+| Verified FFI envelopes as a real user-facing boundary product | **E** | **L** | Research / partial direction only |
+| Structural boundedness reports as a real maintained report mode | **E** | **N** | Not started |
+| Capability sandbox profiles as enforced build/profile contracts | **E** | **N / O** | Research / partial direction only |
+| Proof-backed authority reports tied to validated Core / proof-facing evidence | **F** | **I** | Not started |
+| Authority budgets as enforceable package/subsystem contracts | **F** | **J** | Research only |
+| Artifact-driven compiler driver with stable artifact IDs, serialization, interface/body splits, and build-graph orchestration | **D** | **J / L** | Partial only |
+| Machine-readable reports as a maintained surface | **D / F** | **L** | Not started |
+| Report-first review workflows over authority / alloc / layout / trusted / FFI evidence | **F** | **L** | Research only |
+| Reproducible trust bundles linking source, compiler, reports, proofs, and artifact identity | **I** | **L** | Not started |
+| Package/release trust-drift diffing | **J** | **L** | Not started |
+| Serious showcase workload turned into a flagship public review artifact | **H** | **K** | Not started |
+
 ### Recent Progress
 
 - **Cross-cutting differentiator ideas now have explicit phase ownership**: proof-carrying audit artifacts, authority budgets as build contracts, verified FFI envelopes, structural boundedness reports, reproducible trust bundles, serious showcase workloads, capability sandbox profiles, proof-backed authority reports, machine-readable reports, report-first review workflows, and trust-drift diffing should all live in named phases rather than only in scattered research notes.
