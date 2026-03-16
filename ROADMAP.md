@@ -520,7 +520,12 @@ Primary surfaces:
      - the earlier “Concrete is much slower than Python” story was largely a benchmark-mode artifact from `-O0` and naive ingestion paths
      - at `-O2`, the JSON parser is competitive with Python's `json.loads`
      - the grep-like tool shows that this competitiveness generalizes to a different workload shape: streaming text search rather than recursive-descent parsing
-     - the bytecode VM is the first benchmark that clearly exposes a real performance gap to optimized C: Concrete is still far faster than Python, but safe collection operations in a hot dispatch loop now show a measurable abstraction cost
+     - the bytecode VM exposed a real backend/codegen cliff rather than a fundamental collection-cost wall: once tiny vec builtins were marked `alwaysinline`, Concrete matched the comparable C heap-`Vec` implementation on the benchmark
+   - the first four serious benchmarked workloads now give a clearer portfolio picture:
+     - JSON parser: recursive descent, string pools, parser/text pressure; competitive with Python and no longer obviously out-of-class for native implementations on this workload
+     - grep-like tool: line-oriented I/O, streaming, pattern matching; roughly Python-class and competitive with system grep depending on output mode
+     - bytecode VM: dispatch loops and stack operations; far faster than Python and now effectively in the same class as the comparable C heap-`Vec` implementation after fixing vec builtin inlining
+     - artifact/update verifier: the next flagship auditability case, where capability signatures themselves become part of the review artifact and the example should become the first polished review bundle
    - several initial complaints turned out to be misdiagnosed and should **not** be treated as roadmap gaps:
      - `print` / `println` already exist in `std.io`
      - `&&` / `||` already exist and are tested
@@ -566,9 +571,10 @@ Primary surfaces:
      8. design qualified module access (`Module.function()` or equivalent) so larger programs do not collapse into rename pressure — **not started**
      9. decide how runtime argument access should live at the user-facing surface after the first `argc` / `argv` implementation proves itself in real command-line tools — **not started**
         - the grep-like tool made process arguments a real language/runtime surface, not just generated-C glue
-     10. investigate collection hot-path performance for runtime-heavy workloads — **not started**
-        - the bytecode VM shows a real gap to optimized C driven largely by repeated `vec_get` / `vec_set` / `vec_push` / `vec_pop` overhead in the dispatch loop
-        - this is the first benchmark where Concrete's abstraction/safety tax is both measurable and structurally explainable
+     10. document and fix backend/performance cliffs exposed by runtime-heavy workloads — **in progress**
+        - the first major cliff was the bytecode VM: tiny vec builtins were not being inlined, leaving 17+ function calls per dispatch iteration
+        - after adding `alwaysinline` on vec builtins, Concrete matched the comparable C heap-`Vec` version on the benchmark
+        - continue checking future runtime-heavy workloads for missed inlining, missed shaping, or other backend-policy issues before treating the surface model itself as the problem
      11. document runtime/stack pressure findings from deep-recursive workloads and decide what belongs to language, runtime, stdlib, or tooling — **not started**
      12. decide whether destructuring `let` earns its place for real-program clarity and parser/runtime code — **not started**
      13. unify destruction ergonomics via general `drop(x)` / `Destroy` trait — **deferred** (revisit when stdlib has 5+ distinct drop-like functions)
@@ -615,14 +621,47 @@ Deliverables:
 
 After the policy engine, MAL, JSON parser, grep-like tool, and bytecode VM, the highest-value next work is:
 
-1. use the VM result to investigate collection hot-path overhead before drawing broader performance conclusions
-2. continue the first-wave ladder with the artifact/update verifier as the next flagship critical-software workload
-3. keep recording per-program benchmark interpretation, not just raw timings, so the project distinguishes parser wins, streaming wins, and runtime-loop costs clearly
+1. make the artifact/update verifier the next flagship Phase H workload and treat it as the main “why Concrete?” proof point
+   - it should become the first polished review artifact, not just another benchmark
+   - it should carry code, tests, benchmark results, and audit/report outputs together
+2. write and maintain a stable Phase H comparison summary so the project has one canonical “what the examples taught us” document
+3. keep recording per-program benchmark interpretation, not just raw timings, so the project distinguishes parser wins, streaming wins, runtime-loop wins, and backend-policy cliffs clearly
 4. keep closing Phase H findings through the narrowest fixes first:
    - project/std resolution for real examples and benchmarks
    - runtime argument surface
    - string/text helpers that still matter after the parser and grep results
    - collection/runtime maturity for interpreter and VM workloads
+5. continue backend/performance investigation only where new workloads still expose real cliffs after the vec-inlining fix
+
+### Priority Order For Closing The Gap To Rust
+
+Concrete already looks better than Rust in a narrow auditability niche, but it does not yet look better as a general systems language. The shortest path to closing that gap is:
+
+1. **package/project model first**
+   - clean `Concrete.toml` resolution
+   - stdlib/project dependency resolution
+   - workspaces
+   - `concrete build`, `concrete test`, `concrete run`
+   - incremental/artifact reuse
+   - without this, serious programs keep paying workflow tax and teaching workarounds
+2. **ergonomics without abandoning explicitness**
+   - text/output layer
+   - formatting / interpolation or a strong alternative
+   - qualified module access
+   - remaining high-value helper APIs and cleanup idioms
+   - the goal is not more magic; it is better compression of honest code
+3. **hot-path performance after the workflow floor is fixed**
+   - especially collection hot loops exposed by the VM
+   - backend/inlining policy for repeated `vec_*` operations
+   - keep validating against parser, streaming, VM, and later verifier workloads
+4. **interop and product maturity**
+   - better project-facing FFI workflow
+   - generated headers / cleaner C-ABI use
+   - machine-readable reports
+   - debug-info, observability, editor/LSP baseline
+   - release/compatibility discipline
+
+This order matters. Package/project work removes false friction first; only then do ergonomics, performance, and productization land in the right user-facing context.
 
 Exit criterion:
 Concrete has been exercised by multiple serious programs large enough to reveal structural weaknesses, and the project has used those results to drive the next package/adoption/operational phases.
@@ -679,6 +718,12 @@ Goal: make Concrete usable for real multi-module and multi-package projects with
 
 For serious use, this phase is unavoidable. High-integrity or proof-oriented code still needs a clean project model, dependency semantics, and workspace behavior that are explicit rather than ad hoc.
 
+This phase should also establish the package-facing side of the evidence story:
+
+- trusted publishing direction
+- provenance-aware package identity
+- package graph artifacts that later support evidence/trust bundles
+
 Primary surfaces:
 - [research/authority-budgets.md](research/authority-budgets.md)
 - [research/artifact-driven-compiler.md](research/artifact-driven-compiler.md)
@@ -691,7 +736,9 @@ Primary surfaces:
 
 1. design and implement incremental compilation — serialize pipeline artifacts (`ResolvedProgram`, `ValidatedCore`, `SSAProgram`) to disk, add cache invalidation by source hash, skip unchanged modules — **not started**. This is the prerequisite for packages to scale: without it, every build recompiles the world. The artifact pipeline is already much stronger than before, but real incrementality still depends on cleaner interface/body artifact splitting, stable identities, and driver/cache work — not only serialization.
 2. define the package and dependency model explicitly — **not started**
+   - this must treat the stdlib as a builtin dependency, not a repo-relative path dependency in user manifests
 3. define stdlib vs third-party package boundaries — **not started**
+   - remove path-based std references from example/project manifests as the package model becomes real
 4. define workspace and multi-package behavior — **not started**
 5. make dependency and package UX part of the language-user experience — **not started**
 6. ensure docs, tooling, and CI reflect the same package/project model — **not started**
@@ -699,11 +746,14 @@ Primary surfaces:
 8. make package/dependency reasoning operate on explicit graph artifacts instead of ad hoc file-level reconstruction — **not started**
 9. define the first real project-facing CLI workflow (`concrete build`, `concrete test`, `concrete run`) on top of the package model — **not started**
 10. design the first enforceable authority-budget path at module/package/subsystem scope, starting with report-backed policy rather than a second effect system — **not started**
+11. define the first provenance-aware publishing model for packages so publication can later be tied to trusted CI identity, explicit build metadata, and evidence outputs instead of only long-lived tokens — **not started**
+12. make the package graph and lockfile strong enough to support later evidence/trust bundles and trust-drift comparison without redesigning the package layer from scratch — **not started**
 
 Deliverables:
 - incremental compilation: serialized pipeline artifacts, source-hash-based cache invalidation, module-level rebuild granularity
 - a documented package/dependency model with project-root and resolution semantics
 - a defined boundary between stdlib and third-party packages
+- stdlib resolution that works as a builtin dependency rather than a checkout-layout path hack
 - a documented workspace/multi-package model
 - dependency/package tooling and CI behavior aligned with the same model
 - an authority-budget path at package or subsystem boundaries
@@ -713,6 +763,8 @@ Deliverables:
 - an explicit package/dependency graph artifact strong enough to support later driver, cache, and report reuse work
 - a project-facing CLI model that grows out of the package/driver architecture instead of shell conventions
 - a first explicit module/package authority-budget path grounded in the package graph and existing capability reports
+- a documented provenance-aware publishing direction for packages, even if the first implementation remains local/private
+- package graph and lockfile semantics that can later carry trust/evidence metadata cleanly
 
 Exit criterion:
 Concrete has an explicit package/dependency model that supports real projects without relying on ad-hoc repo-local conventions, has a credible path to enforcing authority budgets at package or subsystem boundaries, and no longer depends on muddy interface/body artifact boundaries to reason about packages.
@@ -775,6 +827,7 @@ This phase is where the evidence story becomes operational:
 - reproducible and reviewable outputs
 - explicit compatibility policy
 - certification-style traceability between source, reports, proofs, and builds
+- provenance/trust bundles that can later align with broader attestation ecosystems
 
 Primary surfaces:
 - [README.md](README.md)
@@ -811,6 +864,7 @@ Primary surfaces:
 19. define cross-compilation workflow expectations as part of the supported operational/build story, not only as backend target policy — **not started**
 20. implement and maintain usable debug-info emission as part of the supported tooling surface — at minimum, DWARF from EmitSSA sufficient for source locations and stack traces in lldb/gdb — **not started**
 21. implement and maintain the first explicit non-cleanup optimization layer — SSA-level function inlining with a stated policy that preserves capability/trust honesty and debug/report quality — **not started**
+22. define how evidence/trust bundles should carry provenance and attestable build identity so they can later interoperate cleanly with broader verification ecosystems without Concrete depending on them semantically — **not started**
 
 Deliverables:
 - a documented release and compatibility policy for language, stdlib, reports, and tooling surfaces
@@ -835,6 +889,7 @@ Deliverables:
 - an explicit cross-compilation workflow story for supported vs experimental targets, including how target selection interacts with packages, reports, and artifacts
 - emitted debug metadata good enough for ordinary debugger workflows to show source locations and stack traces
 - a first explicit optimization layer beyond cleanup, with function inlining treated as policy-governed backend work rather than accidental folklore
+- a provenance-aware trust-bundle direction that ties package identity, build identity, reports, and evidence outputs together without turning package publication into a second semantic authority
 
 Exit criterion:
 Concrete is not only architecturally strong internally, but also operable, reproducible, documentable, and maintainable as a long-term project, with a real driver/artifact model rather than only a pass library plus CLI entry points.

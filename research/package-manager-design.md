@@ -113,6 +113,7 @@ It should take the strongest parts from a few systems that are good for differen
 | **Go modules** | simplicity, small manifest surface, low-ceremony defaults | it proves a package manager can stay boring and still work well for real projects |
 | **Nix** | reproducibility, explicit inputs/outputs, graph honesty | it treats builds as something that should be inspectable and repeatable rather than shell folklore |
 | **Elm** | ecosystem restraint, compatibility discipline, willingness to say no | it keeps the package ecosystem coherent by refusing complexity that weakens user trust |
+| **uv** | workspace coherence, lock/sync discipline, simple project commands | it shows how project state can stay consistent without making the user think about environment internals |
 | **Bazel / Buck2** | internal build-graph rigor, cacheability, incremental correctness | they are excellent models for what the package/build engine should look like under the hood, even if their UX is too heavy for Concrete |
 
 ### Cargo
@@ -174,6 +175,91 @@ What Concrete should not copy:
 - lazy evaluation complexity
 - a second complicated world users must learn just to build code
 
+### Package Management As Trust Infrastructure
+
+Concrete should treat package management as more than dependency download.
+
+It should also eventually be part of:
+
+- package integrity
+- publishing/authentication policy
+- provenance and attestations
+- trust/evidence bundles
+
+In other words, package management should become part of the audit story, not sit outside it.
+
+### Trusted publishing, provenance, and trust ecosystems
+
+Recent package-manager ecosystems increasingly treat publishing as part of the supply-chain trust story, not just as file upload.
+
+Concrete should learn from that direction too.
+
+#### Trusted publishing
+
+Trusted publishing means packages are published from a trusted build identity, usually CI, instead of from a long-lived API token.
+
+So the story becomes:
+
+- not “someone had the secret and uploaded a package”
+- but “this exact CI workflow from this exact repo/tag published this artifact”
+
+That is stronger because it ties publishing to a real build process and a verifiable source context.
+
+#### Provenance by default
+
+Provenance means the published artifact carries machine-verifiable information about where it came from.
+
+In Concrete terms, a future published package could be tied to:
+
+- source commit/hash
+- compiler version/commit
+- dependency graph hash
+- target/profile
+- report hashes
+- evidence bundle hash
+
+That would let users answer:
+
+- what source produced this artifact?
+- what toolchain produced it?
+- what exact package/dependency graph was used?
+
+#### Why this matters for Concrete
+
+Concrete already cares about:
+
+- auditability
+- explicit trust
+- explicit authority
+- reproducibility
+- evidence
+
+So package publication should fit the same philosophy.
+Publishing should eventually be part of the evidence story, not outside it.
+
+#### SLSA / Sigstore-style alignment
+
+Concrete does not need to implement those ecosystems wholesale, but it should avoid designing itself into a dead end that cannot interoperate with them later.
+
+The important idea is:
+
+- Concrete should produce evidence/trust bundles that can later map cleanly to broader provenance/attestation systems
+
+That means a published package should eventually be able to carry:
+
+- the package artifact
+- reports
+- build manifest
+- trust/evidence metadata
+- later, signatures or attestations over those outputs
+
+So the Concrete story becomes:
+
+- trusted publishing = trusted way to publish
+- provenance = verifiable origin of the artifact
+- evidence/trust bundle = Concrete-specific review package
+- SLSA/Sigstore alignment = ability to integrate with broader supply-chain verification ecosystems later
+
 ### Elm
 
 Elm is good because it values ecosystem quality over ecosystem freedom.
@@ -186,6 +272,23 @@ Concrete should learn from Elm's willingness to constrain:
 
 That is directly aligned with Concrete's identity.
 It is better to have a smaller, more coherent package world than a larger one full of hidden behavior and accidental complexity.
+
+### uv
+
+`uv` is useful mainly as a UX reference.
+
+What it gets right:
+
+- workspace-first coherence
+- shared lockfile expectations
+- commands that keep project state synchronized without surprising the user
+
+Concrete should copy the coherence, not the Python-environment complexity.
+
+The important lesson is:
+
+- normal commands should keep project state and lockfile state coherent
+- workspaces should feel like one project, not a pile of loosely related packages
 
 ### Bazel / Buck2
 
@@ -200,9 +303,67 @@ Concrete should borrow from them:
 But keep that mostly under the hood.
 Users should feel Cargo/Go simplicity, not Bazel complexity.
 
+## Lockfile Modes
+
+Concrete should not treat the lockfile as just “present” or “absent.”
+
+It should eventually support explicit modes such as:
+
+- `update`
+- `refresh`
+- `error`
+- `off`
+
+The point is to make dependency resolution behavior visible and policy-friendly.
+
+That matters especially for:
+
+- offline or hermetic builds
+- CI
+- high-integrity review
+- evidence/trust bundles
+
+Audit-heavy projects should be able to say:
+
+- do not change dependency resolution during this build
+- fail if the lockfile is stale
+
+That is much stronger than silently mutating project state.
+
+## Workspace And Sync Coherence
+
+Concrete should copy the idea that project commands should keep the workspace in a coherent state.
+
+That does not mean copying Python environment management.
+It means:
+
+- one workspace lockfile
+- consistent graph resolution across members
+- commands that do not surprise the user by drifting project state silently
+
+The package manager should feel like:
+
+- if you build, run, or test the workspace, you are doing so against a coherent resolved graph
+- if the graph needs to change, that change should be explicit
+
 ## Manifest Shape
 
 One package should be described by one `Concrete.toml`.
+
+The stdlib should be treated as a builtin dependency, not as a repo-relative path dependency.
+So the intended model is:
+
+- `std = "builtin"`
+- or later, implicit std availability in normal package mode if that proves cleaner
+
+What should not survive into the real package model:
+
+```toml
+[dependencies]
+std = { path = "../../std", version = "0.1.0" }
+```
+
+That is an implementation workaround tied to checkout layout, not a real package-system contract.
 
 Example:
 
@@ -266,6 +427,12 @@ opt = "O2"
 
 This should be readable without learning a second programming language.
 
+`std = "builtin"` means:
+
+- the stdlib is always resolved by the toolchain
+- projects do not depend on repository-relative std paths
+- lockfiles and package graphs should still record the std identity/version even though the manifest does not point at a filesystem path
+
 ## CLI Shape
 
 Use one binary: `concrete`.
@@ -301,7 +468,7 @@ But package/project mode should be the default path for serious code.
 The MVP should support only:
 
 1. `builtin`
-   - for std
+   - for std and any future toolchain-shipped packages
 2. `path`
    - for local packages and workspaces
 3. `registry`

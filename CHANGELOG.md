@@ -10,6 +10,16 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Phase H: vec builtin inlining removes the VM gap to C
+
+**VM hot-path investigation:** The first bytecode VM benchmark initially showed Concrete about 3.4x slower than the comparable C heap-`Vec` implementation. Investigation found the main cause was not bounds checking or an inherent safe-collection tax, but missing inlining on tiny vec builtins in the hot dispatch loop.
+
+**LLVM alwaysinline support:** Added `alwaysInline` to `LLVMFnDef`, taught `EmitLLVM.lean` to emit the `alwaysinline` attribute, and marked vec builtins accordingly. This lets LLVM optimize across repeated `vec_get`, `vec_set`, `vec_push`, `vec_pop`, and `vec_len` calls in runtime-heavy loops.
+
+**Benchmark result:** On the VM `fib(35)` workload, Concrete improved from ~785ms to ~257ms after the inlining fix, matching the comparable C heap-`Vec` implementation at ~260ms and remaining far faster than Python.
+
+**What changed strategically:** The VM result no longer supports the claim that Concrete currently pays a large unavoidable abstraction cost for safe collections. The first major runtime-heavy performance cliff was a backend/codegen policy issue, and fixing it materially strengthened the Phase H performance story.
+
 ### Phase H: cgrep proves JSON was not a one-off performance result
 
 **`cgrep` example:** Added `examples/grep/main.con`, a ~220-line grep-like tool supporting `-n`, `-c`, `-v`, `-i`, multiple files, filename prefixes, and error reporting for missing files.

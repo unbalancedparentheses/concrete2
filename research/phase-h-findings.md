@@ -169,30 +169,28 @@ What it implies:
 What it proved:
 
 - Concrete is now clearly in a real systems-language band on runtime-heavy code, not only on parser/text workloads
-- the VM is the first Phase H workload that cleanly separates Concrete from C's performance class instead of mostly validating optimizer/codegen competence
-- the current collection surface is good enough to build a real VM, but hot-loop collection overhead is now a visible cost center
+- the VM exposed a backend/codegen policy issue that real parser/text workloads did not: tiny vec builtins were not being inlined in the dispatch loop
+- the current collection surface is good enough to build a real VM, and the remaining performance question turned out to be optimizer shaping rather than an inherent collection-cost wall
 
 Benchmark results (`fib(35)` workload):
 
 | VM | Time |
 |---|---|
-| C `-O2` | 233ms |
-| Concrete `-O2` | 795ms |
+| Concrete `-O2` before vec inlining fix | ~785ms |
+| Concrete `-O2` after vec inlining fix | ~257ms |
+| C `-O2` heap-`Vec` version | ~260ms |
 | Python | 15,223ms |
 
 What it exposed:
 
-- the dominant gap to C is not obviously the VM structure itself, but the cost of repeated safe collection operations (`vec_get`, `vec_set`, `vec_push`, `vec_pop`) in the dispatch loop
-- this is the first benchmark where Concrete's abstraction/safety tax is both measurable and easy to explain
+- the dominant initial gap to C was not bounds checks or a fundamental safety tax; it was function-call overhead from non-inlined `vec_get`, `vec_set`, `vec_push`, `vec_pop`, and `vec_len` in the hot dispatch loop
+- once vec builtins were marked `alwaysinline`, the gap to the comparable C heap-`Vec` implementation disappeared on this benchmark
 
 What it implies:
 
-- Concrete is still about 19x faster than Python here, so the language/runtime path is not the problem
-- Concrete is about 3.4x slower than optimized C on this hot-loop VM workload, which makes collection hot-path optimization a real next-step target
-- future performance work should focus on:
-  - collection hot-path overhead
-  - inlining policy and backend shaping for repeated vector operations
-  - whether tightly-audited unchecked/internal collection paths are ever justified
+- Concrete is still about 59x faster than Python here, so the language/runtime path is clearly credible
+- this benchmark no longer supports the claim that Concrete currently pays a large unavoidable abstraction cost in safe collection code
+- future performance work should focus first on backend inlining policy and other compiler/codegen cliffs before assuming the surface model itself is too expensive
 
 ### Artifact Verifier (conhash)
 
@@ -236,10 +234,10 @@ Not "can Concrete express real programs?" but "do its explicit patterns become s
 
 ### Priority fixes from Phase H evidence
 
-1. **Standalone vs project dependency resolution** — serious examples still can't conveniently use `std.fs.read_to_string` or other stdlib facilities; this is a real workflow problem, not a nice-to-have
+1. **~~Standalone vs project dependency resolution~~** — CLOSED: `concrete build` now works with `Concrete.toml`, `mod X;` directory modules, and cross-module imports; `cgrep` and `conhash` examples converted to use `std.fs.read_to_string` / `std.fs.read_file`; current `std = { path = "..." }` is a temporary hack — Phase J should make std a builtin dependency
 2. **Formatting / interpolation / text output** — too much manual string building for real programs
 3. **Runtime-oriented collection maturity** — MAL and the VM both need maps, nested mutable structures, runtime-friendly patterns
-4. **Collection hot-path performance** — the VM is the first clear gap-to-C workload; repeated `vec_get`/`vec_set`/`vec_push`/`vec_pop` in hot loops are a real optimization target
+4. **Backend inlining / codegen policy cliffs** — the VM showed that tiny builtin calls in hot loops can distort performance dramatically if LLVM is not given enough shape information
 5. **User-facing runtime argument surface** — `argc`/`argv` work in practice, but the final public shape is not settled
 6. **Qualified module access** — still missing for larger multi-module programs
 7. **Runtime / stack pressure classification** — MAL exposed this; still needs a cleaner language-vs-runtime-vs-tooling decision
@@ -274,7 +272,7 @@ Not "can Concrete express real programs?" but "do its explicit patterns become s
 
 - Class: `tooling/workflow`
 - Why it matters: examples and benchmarks should not need awkward scaffolding to reach common stdlib utilities
-- Current state: improved by builtins, but still a visible split
+- Current state: **largely closed** — `concrete build` with `Concrete.toml` now works; `cgrep` and `conhash` use `std.fs` imports; remaining work is making std a builtin dependency (Phase J) instead of a path dependency
 
 ### Runtime argument surface
 
@@ -282,11 +280,11 @@ Not "can Concrete express real programs?" but "do its explicit patterns become s
 - Why it matters: real command-line tools need a stable way to access process arguments without dropping into generated-C details or ad hoc wrappers
 - Current state: first `argc` / `argv` support exists and works for `cgrep`, but the final user-facing surface is still undecided
 
-### Collection hot-path performance
+### Backend inlining / codegen policy cliffs
 
 - Class: `backend/performance`
-- Why it matters: the bytecode VM showed a 3.4x gap to C on a dispatch-heavy workload, entirely from safe collection overhead (`vec_get`/`vec_set`/`vec_push`/`vec_pop` function calls with bounds checking in a hot loop)
-- Current state: first clear optimization target; options include inlining policy, unchecked internal paths, or backend shaping for repeated vector operations
+- Why it matters: the bytecode VM initially showed a large gap to C that disappeared once vec builtins were marked `alwaysinline`; this is strong evidence that backend shaping can dominate perceived language cost
+- Current state: the first major VM performance cliff was fixed; future performance analysis should check for similar missed-inlining or missed-shaping cases before proposing new unsafe or unchecked surfaces
 
 ### Runtime / stack pressure
 

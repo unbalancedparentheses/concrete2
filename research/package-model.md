@@ -43,6 +43,13 @@ Without a coherent answer, the language stays repo-local longer than it should.
 - what counts as "the stdlib" versus ordinary packages?
 - what package capabilities, if any, differ for stdlib code?
 
+The intended answer should be:
+
+- the stdlib is a builtin package dependency
+- user projects should not point at std through repo-relative paths
+- the resolver should supply std identity/version directly
+- lockfiles and package graphs should still record which std version/build identity a project resolved against
+
 ## Why Concrete's Package Model Should Be Different
 
 Concrete should not stop at "packages can import packages."
@@ -87,9 +94,10 @@ The first package-model milestones should be smaller:
 
 1. local package identity
 2. path dependencies
-3. workspaces / multi-package repos
-4. explicit public/private boundaries
-5. authority-aware dependency metadata later
+3. builtin std dependency resolution (replace repo-path std manifests)
+4. workspaces / multi-package repos
+5. explicit public/private boundaries
+6. authority-aware dependency metadata later
 
 ## Roadmap Placement
 
