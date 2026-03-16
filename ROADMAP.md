@@ -711,6 +711,8 @@ Primary surfaces:
 5. prove more language guarantees around capabilities, ownership, trust boundaries, and other rules that users are meant to rely on — **not started**
 6. push selected compiler-preservation work further where it is tractable and high-value, especially around explicit artifact boundaries — **not started**
 7. make the user-program proof workflow more real: exporting/referencing proof subjects, documenting proof-facing artifacts, and tying the workflow to ordinary compiler outputs — **not started**
+   - the intended shape is artifact-driven and addon-friendly: stronger proof automation should consume proof-facing compiler artifacts rather than becoming part of every ordinary compile
+   - the intended proof stack is layered: SMT and symbolic execution for fast automatic discharge, Lean for deeper semantic proofs and durable proof references
 
 Deliverables:
 - a substantially broader formal semantics than the current pure Core fragment
@@ -718,6 +720,8 @@ Deliverables:
 - stronger traceability from source to validated Core to proof-facing artifacts
 - a clearer split between language-guarantee proofs, user-program proofs, and compiler-preservation proofs
 - a practical path for selected Concrete programs to be proved in Lean without pretending the entire language is already formalized
+- an explicit architecture where proof-facing artifacts support stronger external proof tooling without turning the compiler itself into a theorem prover
+- a layered proof workflow where fast automation and Lean-backed proofs reinforce each other instead of competing for semantic authority
 - a proof roadmap grounded in the language that survived real-program pressure testing, not only in idealized fragments
 
 Exit criterion:
@@ -857,6 +861,7 @@ Primary surfaces:
 - [research/compiler-dataflow-ideas.md](research/compiler-dataflow-ideas.md)
 - [research/developer-tooling.md](research/developer-tooling.md)
 - [research/proof-evidence-artifacts.md](research/proof-evidence-artifacts.md)
+- [research/proof-addon-architecture.md](research/proof-addon-architecture.md)
 - [research/trust-multipliers.md](research/trust-multipliers.md)
 - CI config
 - release/build tooling
@@ -889,6 +894,8 @@ Primary surfaces:
 22. define how evidence/trust bundles should carry provenance and attestable build identity so they can later interoperate cleanly with broader verification ecosystems without Concrete depending on them semantically — **not started**
 23. add per-function inspection tooling for compiler artifacts and reports — SSA, LLVM, and report slices for one function without requiring whole-program manual digging — **not started**
     - this should help optimization work, auditability, and workflow debugging before heavier optimizer architecture is added
+24. make the operational proof workflow artifact-driven and tool-oriented rather than compiler-entangled — proof/evidence consumers should build on stable proof-facing artifacts, machine-readable outputs, and review bundles instead of expanding ordinary compile semantics — **not started**
+25. define the operational layered-proof workflow — how SMT, symbolic execution, and Lean-facing proof outputs compose over the same proof-facing artifacts without creating a second semantic authority — **not started**
 
 Deliverables:
 - a documented release and compatibility policy for language, stdlib, reports, and tooling surfaces
@@ -915,6 +922,8 @@ Deliverables:
 - a first explicit optimization layer beyond cleanup, with function inlining treated as policy-governed backend work rather than accidental folklore
 - a provenance-aware trust-bundle direction that ties package identity, build identity, reports, and evidence outputs together without turning package publication into a second semantic authority
 - per-function inspection tools that make emitted artifacts and report slices easy to inspect during optimization, audit, and tooling work
+- an operational proof workflow where stronger automation lives in first-class tooling over compiler artifacts, not in the mandatory semantic compile path
+- a coherent layered-proof workflow where automated checks and Lean-backed proofs share artifacts, obligations, and evidence outputs cleanly
 
 Exit criterion:
 Concrete is not only architecturally strong internally, but also operable, reproducible, documentable, and maintainable as a long-term project, with a real driver/artifact model rather than only a pass library plus CLI entry points.
