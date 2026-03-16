@@ -158,6 +158,36 @@ This fits best in:
 - later **Phase E** / **Phase I**
 - long-horizon workload and demonstration planning
 
+### 8. Machine-readable reports and report-first review workflows
+
+Human-readable reports are not enough if Concrete is meant to support CI, review tooling, certification-style workflows, or durable audit artifacts.
+
+The stronger direction is:
+
+- stable machine-readable report outputs
+- review commands or CI modes that evaluate authority, allocation, layout, trusted, FFI, and proof-facing facts together
+- policy failures based on those compiler facts rather than ad hoc scripts
+
+This fits best in:
+
+- **Phase L**: operational report surfaces and review workflows
+- later **Phase O** for any stricter evidence-gated policy layers that still need research
+
+### 9. Trust-drift diffing
+
+Once packages, reports, and evidence outputs are more stable, Concrete should be able to answer review questions like:
+
+- what new authority did this package gain?
+- where did allocation appear or disappear?
+- what FFI layout or trusted boundary changed?
+
+This is a natural extension of evidence bundles and machine-readable reports, but important enough to call out directly.
+
+This fits best in:
+
+- **Phase J**: authority-aware package/dependency policy direction
+- **Phase L**: maintained package/release trust-drift diffing
+
 ## Why These Ideas Belong Together
 
 These ideas form a coherent stack:
@@ -168,6 +198,8 @@ These ideas form a coherent stack:
 4. structural boundedness reports make execution risk visible
 5. proof-backed authority reports strengthen trust claims
 6. reproducible trust bundles package the evidence into something reviewable
+7. machine-readable reports and review workflows make the evidence consumable
+8. trust-drift diffing makes version-to-version review practical
 
 That stack is more aligned with Concrete than a random collection of new language features.
 
@@ -187,7 +219,9 @@ This note depends on or extends:
 - **Phase E**: verified FFI envelopes, capability sandbox profiles, structural boundedness reports
 - **Phase F**: proof-backed authority reports, stronger authority ergonomics, wrapper/alias patterns
 - **Phase H**: package/subsystem authority budgets
-- **Phase I**: reproducible trust bundles and evidence packaging
+- **Phase I**: reproducible trust bundles and proof-facing evidence packaging
+- **Phase J**: authority-aware package policy and early trust-drift direction
+- **Phase L**: machine-readable reports, report-first review workflows, and maintained trust-drift diffing
 - **Later / long horizon**: showcase workloads as end-to-end demonstrations and stress targets
 
 ## What Not To Do

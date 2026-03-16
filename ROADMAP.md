@@ -73,6 +73,7 @@ Still clearly not implemented:
 
 ### Recent Progress
 
+- **Cross-cutting differentiator ideas now have explicit phase ownership**: proof-carrying audit artifacts, authority budgets as build contracts, verified FFI envelopes, structural boundedness reports, reproducible trust bundles, serious showcase workloads, capability sandbox profiles, proof-backed authority reports, machine-readable reports, report-first review workflows, and trust-drift diffing should all live in named phases rather than only in scattered research notes.
 - **Phase E complete** (all 11 items): `docs/EXECUTION_MODEL.md` is the central reference. Covers hosted/freestanding model, runtime boundary, abort-on-OOM (builtins + stdlib), FFI ownership boundary, `#[repr(C)]` by-value calling convention for extern fn, target/platform support policy, stdlib execution model alignment, execution profiles direction, performance validation direction, verified FFI envelopes direction, and concurrency design (threads-first, structured, capability-gated).
 - **Test runner parallelized and narrowed** (commits `1619220`, `6049d89`): `run_tests.sh` defaults to parallel (`nproc` cores), adds `--fast` (default), `--full`, `--filter`, `--stdlib`, `--O2`, `--codegen`, `--report` modes. Partial runs warn clearly. `--fast` is the documented standard developer workflow. This is a strong Phase A solution, but it is still script-level orchestration rather than a deeper artifact-cached or dependency-aware test system.
 - **Aggregate loop lowering hardened** (commit `e68acc0`): aggregate loop variables promoted to entry-block allocas. Field assignment GEPs directly into stable storage.
@@ -156,6 +157,19 @@ Still clearly not implemented:
 | 6 | Backend plurality (C/Wasm, later MLIR) | Not started |
 
 ### Execution Phases
+
+## Cross-Cutting Idea Placement
+
+These ideas are important enough that they should always have an explicit roadmap home, even when the implementation work remains exploratory.
+
+- **Phase E** owns verified FFI envelopes, structural boundedness reports, and capability sandbox profiles as part of the execution-model and runtime-safety story.
+- **Phase F** owns proof-backed authority reports as part of the safety/reporting product surface.
+- **Phase H** owns serious showcase workloads and the first real pressure-testing of whether reports, authority boundaries, and evidence remain useful under sustained real code.
+- **Phase I** owns proof-carrying audit artifacts: the first credible tie between validated Core, proof eligibility, selected proof references, and user-facing review artifacts.
+- **Phase J** owns authority budgets as enforced build contracts at package/subsystem boundaries, because packages are where authority drift stops being only a local function concern.
+- **Phase K** owns the public-facing flagship workload and review narrative that demonstrates why Concrete is different in practice, not only in architecture notes.
+- **Phase L** owns machine-readable reports, report-first review workflows, reproducible trust bundles, and trust-drift diffing as maintained operational surfaces.
+- **Phase O** owns any remaining evidence-gated extensions that still need staging before they deserve stable implementation contracts.
 
 #### Phase A: Fast Feedback And Compiler Stability
 
@@ -451,8 +465,9 @@ Primary surfaces:
    - this is a reordering and prioritization, not a replacement: MAL moves up to second, and the highest-value runtime/text/identity workloads move into the early ladder
    - the phase should also maintain an explicit external-tested workload track so Concrete is measured against known specs and known tests, not only self-chosen examples:
      - MAL (Make a Lisp) as the preferred staged interpreter/runtime workload
+     - Lox / Crafting Interpreters as the second major interpreter target
+     - TOML parser as the next structured-parser workload with strong shared corpora
      - SQLite-style miniature database projects as a harder but high-value storage/runtime workload
-     - Crafting Interpreters / Lox as a parser + resolver + runtime workload with a known spec and test corpus
      - Wren / Lua-style small VM/interpreter clones for recognizable bytecode/runtime pressure
      - Scheme/Lisp educational interpreters (SICP/Norvig-style) as secondary interpreter references, even if MAL remains the preferred Lisp target
      - regex engine projects for parser + automata + performance pressure
@@ -507,6 +522,8 @@ Primary surfaces:
         - highest-leverage ergonomics change landed: removes duplicated `drop_string` on early-return paths while preserving explicit cleanup
         - scoped defer semantics landed in lowering instead of the earlier flat function-scoped approximation
         - preserves explicit ownership discipline (no implicit destructors, no GC)
+        - control-flow coverage now includes block exit, loop iteration exit, `break`, `continue`, early return, and implicit function end
+        - current tradeoff: cleanup code is duplicated at exit sites; if real programs show IR bloat, later cleanup outlining can optimize that without changing semantics
         - follow-on work stays in cleanup ergonomics, not in whether `defer` exists
         - design notes: [research/cleanup-ergonomics.md](research/cleanup-ergonomics.md)
      2. add remaining mutation-oriented string APIs (`string_clear`, `string_starts_with`, `string_ends_with`) — **not started**

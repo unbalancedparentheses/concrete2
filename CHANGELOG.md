@@ -10,6 +10,16 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Phase H: scope-aware defer semantics and control-flow cleanup coverage
+
+**Scoped defer semantics:** `defer` now lowers as true scope-exit cleanup rather than a flat function-scoped approximation. Deferred calls run at block exit, loop-iteration exit, `break`, `continue`, early return, and implicit function end.
+
+**Checker fix:** deferred calls now reserve consumed variables generally instead of handling only `destroy(...)`. This lets any consuming call used in a `defer` body reserve its arguments until the deferred execution point.
+
+**Regression coverage:** added control-flow tests for block scope, loop iteration, `break`, `continue`, consuming-call LIFO behavior, and linear-reuse errors under `defer`.
+
+**Current tradeoff:** cleanup code is emitted independently at exit sites. This is intentionally simple and correct; if real programs later show meaningful IR bloat, cleanup outlining into shared blocks can be revisited as a backend optimization.
+
 ### Phase H: builder builtins, JSON parser, cleanup ergonomics, future feature research
 
 **Builder builtins:** Added `string_append_int(&mut String, Int)` and `string_append_bool(&mut String, bool)` builtins for zero-grammar-cost mixed-type string building. These avoid intermediate allocations and interpolation syntax while keeping capabilities explicit. Design rationale in `research/text-and-output-design.md`.

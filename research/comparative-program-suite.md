@@ -70,28 +70,30 @@ This mix gives both:
 
 ## Recommended 20-Program Suite
 
+This is the broader “cool + comparable + finishable” portfolio. The target size for most of these should stay under roughly `10k-20k` LOC.
+
 | # | Program | Bucket | Why It Matters | Est. LOC | Compare Against |
 |---|---------|--------|----------------|----------|-----------------|
-| 1 | JSON parser + validator | Standard | parsing, trees, errors, allocation | 10k-15k | Rust, Zig, C |
-| 2 | Schema-driven config/manifest checker | Standard | validation, diagnostics, policy logic | 10k-15k | Rust, Zig, C |
-| 3 | grep-like text search tool | Standard | strings, files, streaming, performance | 10k-20k | Rust, Zig, C |
-| 4 | log processing/query pipeline | Standard | parsing, transforms, aggregation | 15k-25k | Rust, Zig, C |
-| 5 | bytecode VM / interpreter | Standard | dispatch, control flow, runtime values | 15k-25k | Rust, Zig, C |
-| 6 | graph/search kernel | Standard | collections, queues, algorithmic pressure | 10k-20k | Rust, Zig, C |
-| 7 | priority-queue / scheduler kernel | Standard | heaps, ordering, event flow | 10k-15k | Rust, Zig, C |
-| 8 | inverted index / search core | Data structure | `HashMap`/`Vec` pressure, indexing | 20k-30k | Rust, Zig, C |
-| 9 | diff / matcher engine | Data structure | strings, algorithms, memory behavior | 15k-25k | Rust, Zig, C |
-| 10 | small TCP/HTTP service | Standard | networking, parsing, module structure | 15k-25k | Rust, Zig, C |
-| 11 | file tree scanner + policy checker | Systems | paths, traversal, explicit authority | 10k-20k | Rust, Zig, C |
-| 12 | package/archive indexer | Systems | file formats, hashing, metadata | 15k-25k | Rust, Zig, C |
-| 13 | job/pipeline runner | Systems | process/file/env boundaries, errors | 15k-25k | Rust, Zig, C |
-| 14 | parser + symbol table + AST checker | Systems | language-tool workload, diagnostics pressure | 20k-30k | Rust, Zig, C |
-| 15 | text/template transformation engine | Systems | strings, parsing, output correctness | 10k-20k | Rust, Zig, C |
-| 16 | policy/rule engine | Identity | explicit authority, auditability, decision logic | 15k-25k | Rust, Zig, C |
-| 17 | artifact/update verifier | Identity | hashes, signatures, policy, critical path | 15k-25k | Rust, Zig, C |
-| 18 | command authorization gatekeeper | Identity | narrow authority, audit reports, control boundary | 10k-20k | Rust, Zig, C |
-| 19 | protocol/message validator | Identity | bounded parsing, correctness, high-integrity fit | 10k-20k | Rust, Zig, C |
-| 20 | MAL-style Lisp interpreter | Identity | known staged interpreter workload with tests; reader/evaluator/env pressure | 15k-25k | Rust, Zig, C |
+| 1 | MAL-style Lisp interpreter | Standard | staged interpreter workload with tests; reader/evaluator/env pressure | 15k-20k | Rust, Zig, C |
+| 2 | Lox interpreter | Standard | known parser + resolver + runtime target from Crafting Interpreters | 15k-20k | Rust, Zig, C |
+| 3 | JSON parser + validator | Standard | parsing, trees, errors, allocation | 10k-15k | Rust, Zig, C |
+| 4 | TOML parser | Standard | richer structured parsing with shared test corpora | 10k-20k | Rust, Zig, C |
+| 5 | grep-like text search tool | Standard | strings, files, streaming, performance | 10k-20k | Rust, Zig, C |
+| 6 | regex engine | Standard | parser + automata + performance pressure | 10k-20k | Rust, Zig, C |
+| 7 | bytecode VM / interpreter | Standard | dispatch, control flow, runtime values | 15k-20k | Rust, Zig, C |
+| 8 | artifact/update verifier | Identity | hashes, signatures, policy, critical path | 10k-20k | Rust, Zig, C |
+| 9 | policy/rule engine | Identity | explicit authority, auditability, decision logic | 10k-20k | Rust, Zig, C |
+| 10 | protocol/message validator | Identity | bounded parsing, correctness, high-integrity fit | 10k-20k | Rust, Zig, C |
+| 11 | small TCP/HTTP service | Systems | networking, parsing, module structure | 10k-20k | Rust, Zig, C |
+| 12 | file tree scanner + policy checker | Systems | paths, traversal, explicit authority | 10k-20k | Rust, Zig, C |
+| 13 | package/archive indexer | Systems | file formats, hashing, metadata | 10k-20k | Rust, Zig, C |
+| 14 | text/template transformer | Systems | strings, parsing, output correctness | 10k-20k | Rust, Zig, C |
+| 15 | log processing/query pipeline | Systems | parsing, transforms, aggregation | 10k-20k | Rust, Zig, C |
+| 16 | diff / matcher engine | Data structure | strings, algorithms, memory behavior | 10k-20k | Rust, Zig, C |
+| 17 | inverted index / search core | Data structure | `HashMap`/`Vec` pressure, indexing | 15k-20k | Rust, Zig, C |
+| 18 | scheduler / event engine | Data structure | heaps, ordering, event flow | 10k-20k | Rust, Zig, C |
+| 19 | SQLite-style miniature database | Systems | serious storage/runtime comparison target | 15k-20k | Rust, Zig, C |
+| 20 | WASM validator/interpreter subset | Standard | semantics/runtime validation with strong external comparability | 10k-20k | Rust, Zig, C |
 
 ## How To Use Existing Work
 
@@ -116,14 +118,14 @@ Good inputs to reuse:
 
 These are the best first programs for direct Rust/Zig/C credibility:
 
-1. JSON parser + validator
-2. grep-like text search tool
-3. log processing/query pipeline
-4. bytecode VM / interpreter
-5. graph/search kernel
-6. priority-queue / scheduler kernel
-7. small TCP/HTTP service
-8. diff / matcher engine
+1. MAL-style Lisp interpreter
+2. Lox interpreter
+3. JSON parser + validator
+4. TOML parser
+5. grep-like text search tool
+6. regex engine
+7. bytecode VM / interpreter
+8. small TCP/HTTP service
 
 These workloads already have obvious equivalents in neighboring languages.
 
@@ -133,8 +135,8 @@ These are the strongest programs for showing why Concrete should exist at all:
 
 1. policy/rule engine
 2. artifact/update verifier
-3. command authorization gatekeeper
-4. protocol/message validator
+3. protocol/message validator
+4. HSM/key-use policy engine
 5. MAL-style Lisp interpreter
 
 These are especially important because they stress:
@@ -258,8 +260,9 @@ Best options:
 
 Recommended use:
 
-- **First-wave:** MAL, JSON, and eventually Lox/TOML/regex depending on progress
-- **Later but important:** SQLite-style miniature database, WASM subset
+- **First-wave:** MAL, JSON, grep, bytecode VM, artifact verifier
+- **Second-wave:** regex, Lox, small TCP/HTTP service, file tree scanner, package/archive indexer, HSM/key-use policy engine
+- **Later but important:** TOML parser, SQLite-style miniature database, WASM subset
 - **Secondary comparison baselines:** Wren/Lua-style small VM, Scheme/Lisp educational interpreters, Brainfuck
 
 ## What To De-Prioritize

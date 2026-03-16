@@ -104,3 +104,11 @@ The main long-term opportunity is:
 - but “turn reports, artifacts, policies, and proofs into one operational evidence workflow”
 
 That should become increasingly explicit in the formalization, package, and operational-maturity phases.
+
+## Explicit Roadmap Placement
+
+- **Phase I**: proof-carrying audit artifacts and the first proof-facing review outputs
+- **Phase J**: authority budgets as package/subsystem build contracts
+- **Phase K**: flagship showcase workloads and public review narratives
+- **Phase L**: machine-readable reports, report-first review workflows, reproducible trust bundles, and trust-drift diffing
+- **Phase O**: any stronger evidence-gated features that still need research before they become stable commitments

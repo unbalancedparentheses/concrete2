@@ -1,6 +1,6 @@
 # Cleanup Ergonomics Design
 
-Status: active — items 1-2 in progress during Phase H, items 3-5 deferred
+Status: active — item 1 landed during Phase H, item 2 in progress, items 3-5 deferred
 
 ## Problem
 
@@ -14,7 +14,7 @@ The JSON parser was the first sustained test of this friction at scale (~450 lin
 
 ## Design Options
 
-### 1. `defer drop_string(s)` as standard idiom — DO NOW
+### 1. `defer drop_string(s)` as standard idiom — LANDED
 
 Keep destruction explicit, but eliminate the "forgot a drop on an early return" class of bugs.
 
@@ -37,9 +37,20 @@ if match_keyword(s, p, &kw) {
 }
 ```
 
-This is the highest-leverage single change. It preserves explicitness while eliminating duplicated cleanup on branching control flow. Go proved this pattern works.
+This was the highest-leverage single change. It preserves explicitness while eliminating duplicated cleanup on branching control flow. Go proved this pattern works.
 
-Implementation scope: parser (new `defer` statement), elaboration, SSA lowering (insert cleanup before every exit point in the defer scope), linear checker (defer counts as consuming the variable).
+What landed:
+
+- `defer` now uses scope-aware lowering rather than the earlier flat function-scoped approximation
+- deferred calls run at block exit, loop-iteration exit, `break`, `continue`, early return, and implicit function end
+- the checker reserves deferred values instead of consuming them immediately
+- additional regression coverage now includes block scope, loop iteration, break/continue, and consuming-call LIFO behavior
+
+Follow-on concern:
+
+- defer-heavy control flow may duplicate cleanup IR at multiple exit sites
+- this is acceptable for now because correctness and clear scope semantics matter more than minimizing IR size
+- if real programs show meaningful IR bloat, cleanup outlining into shared blocks can be revisited later
 
 ### 2. More mutation-oriented string APIs — DO NOW
 
@@ -65,9 +76,9 @@ Small stdlib patterns that own a resource and clean it up at scope end via expli
 
 Example: a `with_temp_string(fn(&mut String))` pattern, or a `StringPool` that owns all allocated strings and frees them in one call.
 
-Prerequisites: `defer` (item 1), possibly closures or function pointers.
+Prerequisites: scoped `defer` (now landed), possibly closures or function pointers.
 
-When to revisit: when programs reach 1k+ lines and the pool/cleanup boilerplate dominates function signatures.
+When to revisit: when programs reach 1k+ lines and explicit `defer` still leaves too much ceremony in helper-heavy code.
 
 ### 4. General `drop(x)` via Destroy trait — LATER
 
@@ -83,16 +94,16 @@ Many functions should take `&String` instead of forcing owned `String` churn. Th
 
 The deeper fix would be `&str`-style borrowed string slices (pointing into an existing string without owning), but this has significant grammar and proof cost.
 
-When to revisit: when `defer` + mutation APIs have been in use for 2-3 programs and the remaining friction is measured, not speculated.
+When to revisit: when scoped `defer` + mutation APIs have been in use for 2-3 programs and the remaining friction is measured, not speculated.
 
 ## Design Principles
 
 - Keep cleanup explicit — no implicit destructor insertion, no GC, no hidden lifetime extension
-- Make `defer` the dominant cleanup pattern
+- Make scoped `defer` the dominant cleanup pattern
 - Reduce temporary allocations with better string/builder APIs
 - Unify destruction ergonomics over time so individual `drop_X` calls don't feel like manual bookkeeping
 - Every improvement should pass the DESIGN_POLICY.md admission criteria
 
 ## Evidence Source
 
-The JSON parser (`examples/json/main.con`) is the first real pressure test. The `parse_string` function had to be restructured from early-return-with-drop to flag-pattern-with-post-loop-drop because the linear checker prevents consuming variables declared outside a loop. `defer` would have made the original early-return structure work.
+The JSON parser (`examples/json/main.con`) was the first real pressure test. The `parse_string` function had to be restructured from early-return-with-drop to flag-pattern-with-post-loop-drop because the linear checker prevented consuming variables declared outside a loop. Scoped `defer` addresses that class of cleanup problem directly.
