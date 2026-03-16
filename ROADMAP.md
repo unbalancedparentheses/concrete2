@@ -86,8 +86,10 @@ Completed phases can still seed work that is intentionally finished later. Do no
 | Artifact-driven compiler driver with stable artifact IDs, serialization, interface/body splits, and build-graph orchestration | **D** | **J / L** | Partial only |
 | Machine-readable reports as a maintained surface | **D / F** | **L** | Not started |
 | Report-first review workflows over authority / alloc / layout / trusted / FFI evidence | **F** | **L** | Research only |
+| Semantic query/search tooling over compiler facts and reports | **F / H** | **L** | Research only |
 | Reproducible trust bundles linking source, compiler, reports, proofs, and artifact identity | **I** | **L** | Not started |
 | Package/release trust-drift diffing | **J** | **L** | Not started |
+| Structured/type-aware fuzzing over real types, invariants, and report subjects | **D / H** | **L / O** | Research only |
 | Serious showcase workload turned into a flagship public review artifact | **H** | **K** | Not started |
 
 ### Recent Progress
@@ -188,8 +190,8 @@ These ideas are important enough that they should always have an explicit roadma
 - **Phase I** owns proof-carrying audit artifacts: the first credible tie between validated Core, proof eligibility, selected proof references, and user-facing review artifacts.
 - **Phase J** owns authority budgets as enforced build contracts at package/subsystem boundaries, because packages are where authority drift stops being only a local function concern.
 - **Phase K** owns the public-facing flagship workload and review narrative that demonstrates why Concrete is different in practice, not only in architecture notes.
-- **Phase L** owns machine-readable reports, report-first review workflows, reproducible trust bundles, and trust-drift diffing as maintained operational surfaces.
-- **Phase O** owns any remaining evidence-gated extensions that still need staging before they deserve stable implementation contracts.
+- **Phase L** owns machine-readable reports, semantic query/search over compiler facts, report-first review workflows, reproducible trust bundles, and trust-drift diffing as maintained operational surfaces.
+- **Phase O** owns any remaining evidence-gated extensions that still need staging before they deserve stable implementation contracts, especially new language/tool ideas that look promising but are not yet justified by Phase H evidence.
 
 #### Phase A: Fast Feedback And Compiler Stability
 
@@ -559,9 +561,9 @@ Primary surfaces:
         - design notes: [research/cleanup-ergonomics.md](research/cleanup-ergonomics.md)
      2. add remaining mutation-oriented string APIs (`string_clear`, `string_starts_with`, `string_ends_with`) — **not started**
         - builder pattern proven by JSON parser; remaining gap is keyword-matching temporary allocations
-     3. add a real text/output layer: mixed-arg `print` / `println`, then interpolation only if real code still needs it — **not started**
-        - builder builtins (`string_append_int`, `string_append_bool`) landed and proved the ownership/cost model, but builder-only output is still too noisy
-        - preferred sequence now is: mixed-arg `print` / `println` first, interpolation later if the examples still justify it, trait-based formatting deferred
+     3. ~~add a real text/output layer: mixed-arg `print` / `println`, then interpolation only if real code still needs it~~ — **done** (commit `1b0d21f`)
+        - mixed-arg `print` / `println` builtins landed: variadic, desugared at elaboration into individual typed print calls (`print_string`, `print_int`, `print_bool`, `print_char`); supports String, Int, i32, u32, bool, char; does not shadow stdlib print/println when they exist in scope
+        - remaining: interpolation only if real code still needs it, trait-based formatting deferred
         - design notes: [research/text-and-output-design.md](research/text-and-output-design.md)
      4. improve runtime-oriented collection maturity for interpreter/runtime workloads: maps, nested mutable structures, and frame-friendly patterns — **not started**
      5. evaluate arena allocation against the existing `Vec`-as-pool pattern and adopt it only if real programs show a clear win in clarity, performance, or boundedness — **not started**
@@ -657,9 +659,9 @@ Concrete already looks better than Rust in a narrow auditability niche, but it d
    - incremental/artifact reuse
    - without this, serious programs keep paying workflow tax and teaching workarounds
 2. **ergonomics without abandoning explicitness**
-   - text/output layer
-   - mixed-arg `print` / `println` first, then interpolation only if still justified
-   - qualified module access
+   - ~~text/output layer: mixed-arg `print` / `println`~~ — done
+   - interpolation only if still justified by real-program evidence
+   - ~~qualified module access~~ — done
    - remaining high-value helper APIs and cleanup idioms
    - the goal is not more magic; it is better compression of honest code
 3. **hot-path performance after the workflow floor is fixed**
@@ -903,6 +905,13 @@ Primary surfaces:
 25. define the operational layered-proof workflow — how SMT, symbolic execution, and Lean-facing proof outputs compose over the same proof-facing artifacts without creating a second semantic authority — **not started**
 26. make proof sessions and proof-status results replayable across CI and review workflows — persistent proof results, obligation tracking, and proof-status drift should become part of the operational evidence story — **not started**
    - SMT export or other automatic proof consumers should remain narrow artifact consumers, not drivers of language-surface growth or a second semantics
+27. add semantic query/search tooling over maintained compiler facts and report outputs — users should be able to ask review questions such as "who requires Network but not TLS-like wrappers?", "where does allocation enter?", or "which functions are proof-eligible?" without turning the frontend into a query-first compiler architecture — **not started**
+   - this should consume machine-readable artifacts, summary data, and stable report subjects
+   - the target is review, audit, and workflow speed, not a second semantic engine or daemon-first compiler design
+28. make semantic diff/trust-drift and semantic query/search feel like one coherent operational surface rather than unrelated tools — direct queries, saved review checks, CI policy gates, and package/release diffing should all run on the same maintained machine-readable facts — **not started**
+29. evaluate structured/type-aware fuzzing as a maintained tooling layer over compiler facts, stdlib invariants, and user-declared bounds, rather than as a core language feature — **not started**
+   - the likely first wins are parser robustness, operation-trace testing for core collections, and property-style generators for parse/format and bounded packet-like types
+   - if this work grows, it should stay a consumer of summaries, reports, and test metadata rather than a new semantic authority
 
 Deliverables:
 - a documented release and compatibility policy for language, stdlib, reports, and tooling surfaces
@@ -931,6 +940,9 @@ Deliverables:
 - per-function inspection tools that make emitted artifacts and report slices easy to inspect during optimization, audit, and tooling work
 - an operational proof workflow where stronger automation lives in first-class tooling over compiler artifacts, not in the mandatory semantic compile path
 - a coherent layered-proof workflow where automated checks and Lean-backed proofs share artifacts, obligations, and evidence outputs cleanly
+- a semantic query/search surface that lets users and CI ask authority, allocation, trust, layout, and proof-eligibility questions directly over maintained compiler facts
+- a coherent operational relationship between query/search, per-function inspection, and trust-drift diffing so the same facts support exploration, review, and release gating
+- a maintained stance on structured/type-aware fuzzing as tooling over Concrete artifacts and invariants, not uncontrolled language-surface growth
 
 Exit criterion:
 Concrete is not only architecturally strong internally, but also operable, reproducible, documentable, and maintainable as a long-term project, with a real driver/artifact model rather than only a pass library plus CLI entry points.
@@ -1048,12 +1060,26 @@ Primary surfaces:
 4. explicitly evaluate typestate after more real programs, rather than inferring need from theory alone — **not started**
 5. evaluate whether heap-vs-stack allocation should remain report/profile information or become an explicit capability split (`AllocHeap` / `AllocStack`) — **not started**
 6. record "not now" or "not worth it" decisions for ideas that fail the design filters, instead of letting them silently drift — **not started**
+7. evaluate binary-format DSLs and parser/serializer derivation only against real protocol/config workload pressure — **not started**
+   - the default stance should be library + report + proof tooling first
+   - only adopt new surface syntax if ordinary libraries and proof/report consumers cannot carry the value cleanly
+8. evaluate semantic query/search ideas as tooling over compiler artifacts, reports, and summaries rather than as justification for a query-first compiler architecture — **not started**
+9. evaluate type-directed fuzzing/generator tooling as a narrow consumer of types, bounds, and invariants — **not started**
+   - prefer parser fuzzing, collection operation-trace testing, and parse/format/property generators before any derive-heavy language design
+10. explicitly reject or defer heavy protocol/session/choreography machinery unless multiple serious workloads prove that ownership + runtime state checks are insufficient — **not started**
+11. evaluate ghost / proof-only syntax only after ProofCore and proof-facing artifacts are materially stronger — **not started**
+   - default stance: do not add proof-looking surface syntax until the proof pipeline can justify what those constructs mean, how they erase, and how they attach to validated Core
+   - if revisited, prefer a narrow artifact/proof-consumer story before broad source-level annotation systems
 
 Deliverables:
 - a maintained canonical research index for the highest-leverage undecided ideas
 - explicit adoption, defer, or reject records for evidence-gated features
 - a clearer mapping from research ideas to the phases they would naturally join if adopted
 - an explicit decision record for whether heap-vs-stack allocation distinction belongs in reports/profiles only or in the capability surface
+- an explicit decision record for whether binary-format surface syntax earns its grammar/proof cost or should remain library/tooling-driven
+- an explicit decision record for whether semantic query/search belongs purely to operational tooling or needs any language-facing surface at all
+- an explicit decision record for whether type-directed fuzzing belongs in maintained tooling and test infrastructure or should remain outside the supported surface
+- an explicit decision record for whether ghost / proof-only syntax belongs in the language at all or should remain outside the source surface until proof artifacts mature
 - protection against accidental feature loss-by-forgetting as the roadmap evolves
 
 Exit criterion:

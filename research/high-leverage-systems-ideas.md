@@ -23,8 +23,11 @@ It exists so these ideas stay visible, comparable, and cross-linked even when th
 | Layout reports | 1 day for padding, 3-4 days for strong report pass | 3-4 days total for the near-term report set | Research only | [layout-reports.md](layout-reports.md) |
 | Typestate | 0 for ownership-based irreversible transitions | 2-3 weeks for phantom-type typestate | Research only; wait for evidence | [typestate.md](typestate.md) |
 | Authority budgets | ~1 week for module-level budgets | package-level enforcement depends on package model | Research only; blocked on package maturity | [authority-budgets.md](authority-budgets.md) |
+| Semantic query/search tooling | 2-4 days for per-function report slices and simple fact queries | 1-2 weeks for maintained query/search surface over machine-readable artifacts | Research only; strong operational fit | [semantic-diff-and-trust-drift.md](semantic-diff-and-trust-drift.md) |
+| Type-aware fuzzing/tool-generated invariants | 1-2 days for parser/container/property expansions | 1-2 weeks for maintained generator/fuzz tooling over types and bounds | Research only; prefer tooling over syntax | [testing-strategy.md](testing-strategy.md) |
+| Binary format DSL / derived parsers | none without real workload pressure | several weeks if promoted to surface syntax and proof-backed derivation | Research only; evidence-gated | [binary-format-dsl.md](binary-format-dsl.md) |
 
-## Why These Six Matter
+## Why These Ideas Matter
 
 These ideas are worth tracking because they improve Concrete where it most wants to be unusually strong:
 
@@ -34,6 +37,9 @@ These ideas are worth tracking because they improve Concrete where it most wants
 - **layout reports** turn existing layout authority into a first-class artifact
 - **typestate** is a possible extension of linear ownership if real programs justify it
 - **authority budgets** scale capabilities from local facts into subsystem/package policy
+- **semantic query/search tooling** lets users ask review questions directly over compiler facts instead of manually stitching reports together
+- **type-aware fuzzing/tool-generated invariants** improves confidence in stdlib/runtime behavior without growing the core language
+- **binary format DSLs** may eventually help protocol/config-heavy workloads, but only if they outperform ordinary library/tool/report approaches enough to justify new syntax
 
 ## Report-First Wins
 
@@ -42,6 +48,7 @@ The fastest additions from this set are report-oriented, not language-oriented:
 1. `--report alloc` classification (`NoAlloc`, direct alloc, transitive alloc, structurally unbounded/unknown)
 2. `--report layout` padding visualization and stronger enum/layout detail
 3. `--report boundedness` or equivalent structural execution-cost classification
+4. per-function inspection and semantic query/search over maintained report subjects
 
 These are high leverage because they:
 
@@ -83,13 +90,29 @@ Ownership-based irreversible transitions already cover the most important case.
 Keep the idea alive because it is one of the best long-term supply-chain differentiators.
 Prefer module-level experiments before package-level enforcement.
 
+### 7. Semantic query/search tooling
+
+Adopt this only as operational tooling over maintained compiler facts.
+Do not let it drag Concrete into a query-first compiler architecture or daemon-heavy semantic model.
+
+### 8. Type-aware fuzzing/tool-generated invariants
+
+Keep this as tooling first.
+The strongest early wins are parser fuzzing, collection operation-trace testing, and round-trip/property generators for existing stdlib APIs.
+
+### 9. Binary format DSL / derived parsers
+
+Treat this as evidence-gated.
+If real workloads keep wanting binary/protocol schemas, derived parse/serialize pairs, and round-trip evidence, it may earn a place later.
+Until then, prefer library patterns, layout/protocol reports, and proof/tool consumers over new core syntax.
+
 ## Roadmap Relation
 
 These ideas fall into three categories:
 
 - **Committed direction**: allocation profiles / `NoAlloc` / stronger alloc reports (Phase N)
-- **Strong research candidates**: arena allocation, layout reports, execution boundedness reports
-- **Evidence-gated later ideas**: typestate and package-level authority budgets
+- **Strong research candidates**: arena allocation, layout reports, execution boundedness reports, semantic query/search tooling
+- **Evidence-gated later ideas**: typestate, package-level authority budgets, binary format DSLs, and any derive-heavy fuzzing surface
 
 The roadmap should mention them so they remain visible, but not all of them should become phases immediately.
 
@@ -122,3 +145,18 @@ This is the current best-fit phase mapping for the concrete sequencing discussed
 5. **Typestate**
    - **Phase O**
    - rationale: evidence-gated; do not add phantom-type typestate without stronger real-program demand
+
+6. **Semantic query/search tooling**
+   - **Phase L**
+   - rationale: strongest fit is maintained operational tooling over machine-readable reports, per-function inspection, and trust-drift workflows
+
+7. **Type-aware fuzzing/tool-generated invariants**
+   - early tooling and testing growth
+     - **Phase L**
+   - if any language-surface version is proposed later
+     - **Phase O**
+
+8. **Binary format DSL / derived parsers**
+   - evidence-gated exploration
+     - **Phase O**
+   - only move earlier if a serious protocol-heavy workload proves that ordinary library/report/proof tooling is not enough
