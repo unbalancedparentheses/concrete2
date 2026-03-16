@@ -164,6 +164,36 @@ What it implies:
 - Concrete's `-O2` performance is now credible across at least two recognizable text workloads
 - the next useful pressure point should be runtime/control-flow heavy code again (bytecode VM) or a flagship critical-software workload (artifact/update verifier), not another parser-only benchmark
 
+### Bytecode VM Benchmark
+
+What it proved:
+
+- Concrete is now clearly in a real systems-language band on runtime-heavy code, not only on parser/text workloads
+- the VM is the first Phase H workload that cleanly separates Concrete from C's performance class instead of mostly validating optimizer/codegen competence
+- the current collection surface is good enough to build a real VM, but hot-loop collection overhead is now a visible cost center
+
+Benchmark results (`fib(35)` workload):
+
+| VM | Time |
+|---|---|
+| C `-O2` | 233ms |
+| Concrete `-O2` | 795ms |
+| Python | 15,223ms |
+
+What it exposed:
+
+- the dominant gap to C is not obviously the VM structure itself, but the cost of repeated safe collection operations (`vec_get`, `vec_set`, `vec_push`, `vec_pop`) in the dispatch loop
+- this is the first benchmark where Concrete's abstraction/safety tax is both measurable and easy to explain
+
+What it implies:
+
+- Concrete is still about 19x faster than Python here, so the language/runtime path is not the problem
+- Concrete is about 3.4x slower than optimized C on this hot-loop VM workload, which makes collection hot-path optimization a real next-step target
+- future performance work should focus on:
+  - collection hot-path overhead
+  - inlining policy and backend shaping for repeated vector operations
+  - whether tightly-audited unchecked/internal collection paths are ever justified
+
 ## Current Open Findings
 
 ### Formatting / interpolation

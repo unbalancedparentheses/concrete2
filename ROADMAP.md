@@ -520,6 +520,7 @@ Primary surfaces:
      - the earlier “Concrete is much slower than Python” story was largely a benchmark-mode artifact from `-O0` and naive ingestion paths
      - at `-O2`, the JSON parser is competitive with Python's `json.loads`
      - the grep-like tool shows that this competitiveness generalizes to a different workload shape: streaming text search rather than recursive-descent parsing
+     - the bytecode VM is the first benchmark that clearly exposes a real performance gap to optimized C: Concrete is still far faster than Python, but safe collection operations in a hot dispatch loop now show a measurable abstraction cost
    - several initial complaints turned out to be misdiagnosed and should **not** be treated as roadmap gaps:
      - `print` / `println` already exist in `std.io`
      - `&&` / `||` already exist and are tested
@@ -565,11 +566,14 @@ Primary surfaces:
      8. design qualified module access (`Module.function()` or equivalent) so larger programs do not collapse into rename pressure — **not started**
      9. decide how runtime argument access should live at the user-facing surface after the first `argc` / `argv` implementation proves itself in real command-line tools — **not started**
         - the grep-like tool made process arguments a real language/runtime surface, not just generated-C glue
-     10. document runtime/stack pressure findings from deep-recursive workloads and decide what belongs to language, runtime, stdlib, or tooling — **not started**
-     11. decide whether destructuring `let` earns its place for real-program clarity and parser/runtime code — **not started**
-     12. unify destruction ergonomics via general `drop(x)` / `Destroy` trait — **deferred** (revisit when stdlib has 5+ distinct drop-like functions)
-     13. scoped helper abstractions for resource cleanup — **deferred** (prerequisite now satisfied; revisit at 1k+ LOC programs if explicit `defer` still leaves too much ceremony)
-     14. selective borrow-friendly APIs / `&str`-style borrowed slices — **deferred** (revisit after scoped `defer` + mutation APIs are used in 2-3 programs)
+     10. investigate collection hot-path performance for runtime-heavy workloads — **not started**
+        - the bytecode VM shows a real gap to optimized C driven largely by repeated `vec_get` / `vec_set` / `vec_push` / `vec_pop` overhead in the dispatch loop
+        - this is the first benchmark where Concrete's abstraction/safety tax is both measurable and structurally explainable
+     11. document runtime/stack pressure findings from deep-recursive workloads and decide what belongs to language, runtime, stdlib, or tooling — **not started**
+     12. decide whether destructuring `let` earns its place for real-program clarity and parser/runtime code — **not started**
+     13. unify destruction ergonomics via general `drop(x)` / `Destroy` trait — **deferred** (revisit when stdlib has 5+ distinct drop-like functions)
+     14. scoped helper abstractions for resource cleanup — **deferred** (prerequisite now satisfied; revisit at 1k+ LOC programs if explicit `defer` still leaves too much ceremony)
+     15. selective borrow-friendly APIs / `&str`-style borrowed slices — **deferred** (revisit after scoped `defer` + mutation APIs are used in 2-3 programs)
    - classify every serious-program finding before acting on it:
      - language surface
      - stdlib/runtime support
@@ -606,6 +610,19 @@ Deliverables:
 - per-program outcome records covering correctness, performance, memory, binary size, compile-time notes, language gaps, stdlib gaps, and whether Concrete looked stronger, weaker, or just different from Rust/Zig/C
 - proof that Concrete remains readable and auditable at larger scales, or an explicit record of where it fails
 - a clearer basis for the package, adoption, and operational phases because they are now shaped by real code rather than only design intent
+
+### Immediate Next Steps
+
+After the policy engine, MAL, JSON parser, grep-like tool, and bytecode VM, the highest-value next work is:
+
+1. use the VM result to investigate collection hot-path overhead before drawing broader performance conclusions
+2. continue the first-wave ladder with the artifact/update verifier as the next flagship critical-software workload
+3. keep recording per-program benchmark interpretation, not just raw timings, so the project distinguishes parser wins, streaming wins, and runtime-loop costs clearly
+4. keep closing Phase H findings through the narrowest fixes first:
+   - project/std resolution for real examples and benchmarks
+   - runtime argument surface
+   - string/text helpers that still matter after the parser and grep results
+   - collection/runtime maturity for interpreter and VM workloads
 
 Exit criterion:
 Concrete has been exercised by multiple serious programs large enough to reveal structural weaknesses, and the project has used those results to drive the next package/adoption/operational phases.
