@@ -10,6 +10,18 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Phase J groundwork: package/project workflow hardening lands
+
+**Builtin std resolution:** std is now resolved automatically relative to the compiler binary instead of requiring repo-relative path dependencies in user manifests. `CONCRETE_STD` provides an override for unusual setups. Example `Concrete.toml` files no longer need `std = { path = ... }`.
+
+**`concrete run`:** Added a first clean project-facing run flow. It builds to a temporary binary, executes it with inherited stdio, forwards `-- args...`, and cleans up without extra “built” noise.
+
+**`concrete test`:** Added a package-aware test flow with builtin std resolution, dependency loading, test binary execution, cleanup, and `--module` filtering.
+
+**Workflow diagnostics:** Missing `Concrete.toml`, missing `src/main.con`, and bad dependency paths now produce more actionable package/workflow errors instead of vague failures. Missing builtin std now produces a clearer warning with a hint about `CONCRETE_STD` or an explicit dependency path.
+
+**What changed strategically:** Package mode is now a real workflow, not just a roadmap intention. The next priorities move to text/output direction, verifier polish, testing-tooling refinement, workspace support, and incremental/package graph work.
+
 ### Phase H: vec builtin inlining removes the VM gap to C
 
 **VM hot-path investigation:** The first bytecode VM benchmark initially showed Concrete about 3.4x slower than the comparable C heap-`Vec` implementation. Investigation found the main cause was not bounds checking or an inherent safe-collection tax, but missing inlining on tiny vec builtins in the hot dispatch loop.

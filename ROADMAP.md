@@ -566,8 +566,10 @@ Primary surfaces:
         - design notes: [research/arena-allocation.md](research/arena-allocation.md)
      6. strengthen layout reports where real programs need them: padding visualization, clearer enum/layout detail, and better FFI-facing audit output — **not started**
         - design notes: [research/layout-reports.md](research/layout-reports.md)
-     7. reduce the standalone vs project split so stdlib access, benchmarking, and examples do not require awkward scaffolding — **not started**
-        - concrete example: standalone benchmarks currently cannot conveniently use `std.fs.read_to_string`, so the fastest honest ingestion path exists but is not reachable without project/package setup
+     7. ~~reduce the standalone vs project split so stdlib access, benchmarking, and examples do not require awkward scaffolding~~ — **fixed**
+        - `concrete build`, `concrete run`, and `concrete test` now work in package mode with builtin std resolution
+        - std is located automatically relative to the compiler binary, with `CONCRETE_STD` as an override for unusual setups
+        - example manifests no longer need path-based `std = { path = ... }` entries
      8. design qualified module access (`Module.function()` or equivalent) so larger programs do not collapse into rename pressure — **not started**
      9. decide how runtime argument access should live at the user-facing surface after the first `argc` / `argv` implementation proves itself in real command-line tools — **not started**
         - the grep-like tool made process arguments a real language/runtime surface, not just generated-C glue
@@ -621,19 +623,21 @@ Deliverables:
 
 After the policy engine, MAL, JSON parser, grep-like tool, and bytecode VM, the highest-value next work is:
 
-1. make the artifact/update verifier the next flagship Phase H workload and treat it as the main “why Concrete?” proof point
+1. finish the text/output direction decision and move from builder-only pressure findings to a clear user-facing output model
+   - decide formatting vs interpolation vs builder-first as the primary direction
+   - implement only the narrowest surface the evidence supports
+2. make the artifact/update verifier the next flagship Phase H workload and treat it as the main “why Concrete?” proof point
    - it should become the first polished review artifact, not just another benchmark
    - it should carry code, tests, benchmark results, and audit/report outputs together
-2. write and maintain a stable Phase H comparison summary so the project has one canonical “what the examples taught us” document
-3. keep recording per-program benchmark interpretation, not just raw timings, so the project distinguishes parser wins, streaming wins, runtime-loop wins, and backend-policy cliffs clearly
-4. keep closing Phase H findings through the narrowest fixes first:
-   - project/std resolution for real examples and benchmarks
+3. write and maintain a stable Phase H comparison summary so the project has one canonical “what the examples taught us” document
+4. keep recording per-program benchmark interpretation, not just raw timings, so the project distinguishes parser wins, streaming wins, runtime-loop wins, and backend-policy cliffs clearly
+5. keep closing Phase H findings through the narrowest fixes first:
    - runtime argument surface
    - string/text helpers that still matter after the parser and grep results
+   - qualified module access
    - collection/runtime maturity for interpreter and VM workloads
-5. continue backend/performance investigation only where new workloads still expose real cliffs after the vec-inlining fix
-6. make testing tooling part of package/project hardening rather than leaving it as shell-runner glue:
-   - package-aware `concrete test`
+6. continue backend/performance investigation only where new workloads still expose real cliffs after the vec-inlining fix
+7. improve testing tooling on top of the now-landed package workflow:
    - better failure output and filtering
    - testing workflow that grows naturally into workspace mode
 
@@ -749,7 +753,9 @@ Primary surfaces:
 6. ensure docs, tooling, and CI reflect the same package/project model — **not started**
 7. split interface-facing artifacts from body-bearing artifacts cleanly enough to support package and dependency boundaries — **not started**
 8. make package/dependency reasoning operate on explicit graph artifacts instead of ad hoc file-level reconstruction — **not started**
-9. define the first real project-facing CLI workflow (`concrete build`, `concrete test`, `concrete run`) on top of the package model — **not started**
+9. define the first real project-facing CLI workflow (`concrete build`, `concrete test`, `concrete run`) on top of the package model — **done**
+   - package mode now supports builtin std resolution, `concrete run`, `concrete test`, dependency loading, temp-binary execution, cleanup, and more actionable workflow diagnostics
+   - follow-on work is testing/workspace polish, not whether a first project-facing workflow exists
 10. make testing tooling a first-class part of the package/project model: package-aware discovery, filtering, cleaner failure output, and a path to workspace testing — **not started**
     - design notes: [research/package-testing-tooling.md](research/package-testing-tooling.md)
 11. design the first enforceable authority-budget path at module/package/subsystem scope, starting with report-backed policy rather than a second effect system — **not started**

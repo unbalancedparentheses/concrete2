@@ -60,7 +60,7 @@ What closed:
 What remains:
 
 - runtime-oriented collection maturity
-- standalone vs project workflow friction
+- final runtime argument surface design
 - runtime/stack pressure clarity
 
 ### JSON Parser
@@ -235,6 +235,7 @@ Not "can Concrete express real programs?" but "do its explicit patterns become s
 ### Priority fixes from Phase H evidence
 
 1. **~~Standalone vs project dependency resolution~~** — CLOSED: `concrete build` now works with `Concrete.toml`, `mod X;` directory modules, and cross-module imports; `cgrep` and `conhash` examples converted to use `std.fs.read_to_string` / `std.fs.read_file`; current `std = { path = "..." }` is a temporary hack — Phase J should make std a builtin dependency
+   - update: builtin std resolution is now landed as well; std is found automatically relative to the compiler binary, with `CONCRETE_STD` as an override for unusual setups
 2. **Formatting / interpolation / text output** — too much manual string building for real programs
 3. **Runtime-oriented collection maturity** — MAL and the VM both need maps, nested mutable structures, runtime-friendly patterns
 4. **Backend inlining / codegen policy cliffs** — the VM showed that tiny builtin calls in hot loops can distort performance dramatically if LLVM is not given enough shape information
@@ -272,7 +273,7 @@ Not "can Concrete express real programs?" but "do its explicit patterns become s
 
 - Class: `tooling/workflow`
 - Why it matters: examples and benchmarks should not need awkward scaffolding to reach common stdlib utilities
-- Current state: **largely closed** — `concrete build` with `Concrete.toml` now works; `cgrep` and `conhash` use `std.fs` imports; remaining work is making std a builtin dependency (Phase J) instead of a path dependency
+- Current state: **closed for current workflow purposes** — `concrete build`, `concrete run`, and `concrete test` now work in package mode; std is resolved automatically relative to the compiler binary, with `CONCRETE_STD` as an override; remaining work is broader package/workspace maturity, not basic std access
 
 ### Runtime argument surface
 
