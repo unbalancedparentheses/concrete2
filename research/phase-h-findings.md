@@ -138,6 +138,32 @@ Benchmark results (9.3MB JSON, warm cache):
 | Concrete -O2 (new default) | 3ms | 40ms | 43ms |
 | Python json.loads | — | 46ms | 46ms |
 
+### Grep-Like Tool Benchmark
+
+What it proved:
+
+- the JSON result generalizes to a structurally different workload: streaming/text scanning rather than recursive descent over one preloaded buffer
+- Concrete at `-O2` is competitive on line-oriented text processing and pattern matching, not only parser-style workloads
+- output cost now shows up separately from match cost in a useful way: count-only is much cheaper than printing matched lines
+
+What surfaced:
+
+- runtime argument access (`argc` / `argv`) is now a real user-facing need for systems utilities, not just an implementation detail
+- standalone/project friction still matters because richer stdlib/project surfaces are easier to justify once programs start behaving like real command-line tools
+
+Benchmark results (13MB log-like file, 200k lines, pattern `error`):
+
+| Tool | Count-only | With output |
+|---|---|---|
+| Concrete `cgrep` | 35ms | 95ms |
+| Python | 34ms | — |
+| macOS `grep` | 83ms | 88ms |
+
+What it implies:
+
+- Concrete's `-O2` performance is now credible across at least two recognizable text workloads
+- the next useful pressure point should be runtime/control-flow heavy code again (bytecode VM) or a flagship critical-software workload (artifact/update verifier), not another parser-only benchmark
+
 ## Current Open Findings
 
 ### Formatting / interpolation
@@ -169,6 +195,12 @@ Benchmark results (9.3MB JSON, warm cache):
 - Class: `tooling/workflow`
 - Why it matters: examples and benchmarks should not need awkward scaffolding to reach common stdlib utilities
 - Current state: improved by builtins, but still a visible split
+
+### Runtime argument surface
+
+- Class: `stdlib/runtime`, `tooling/workflow`
+- Why it matters: real command-line tools need a stable way to access process arguments without dropping into generated-C details or ad hoc wrappers
+- Current state: first `argc` / `argv` support exists and works for `cgrep`, but the final user-facing surface is still undecided
 
 ### Runtime / stack pressure
 

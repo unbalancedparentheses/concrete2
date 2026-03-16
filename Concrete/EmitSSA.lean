@@ -862,16 +862,43 @@ private def emitExternDecls (s : EmitSSAState) (externFns : List (String × List
 
 /-- Emit the main wrapper that calls user_main and prints the result.
     For void/unit return types, the wrapper just calls user_main without printing.
-    For int/bool/other scalar types, it prints the result. -/
+    For int/bool/other scalar types, it prints the result.
+    The wrapper accepts (argc, argv) from the C runtime and saves them
+    to globals so user code can access them via __concrete_get_argc/argv. -/
 private def emitMainWrapper (s : EmitSSAState) (retTy : Ty) : EmitSSAState :=
   let retLLTy := tyToLLVMTy s retTy
   let ret0 : LLVMTerm := .ret .i32 (some (.intLit 0))
   let printfTarget : LLVMOperand := .global "printf"
+  -- Emit globals and accessor functions for argc/argv
+  let s := emitGlobal s { name := "__concrete_argc", ty := .i32, value := "0", mutable := true }
+  let s := emitGlobal s { name := "__concrete_argv", ty := .ptr, value := "null", mutable := true }
+  -- __concrete_get_argc() -> i32
+  let getArgcFn : LLVMFnDef :=
+    { name := "__concrete_get_argc", retTy := .i32, params := [], blocks := [
+      ⟨"entry", [
+        .load "argc" .i32 (.global "__concrete_argc")
+      ], .ret .i32 (some (.reg "argc"))⟩] }
+  let s := { s with moduleFunctions := s.moduleFunctions.push getArgcFn }
+  -- __concrete_get_argv(idx: i32) -> ptr
+  let getArgvFn : LLVMFnDef :=
+    { name := "__concrete_get_argv", retTy := .ptr, params := [("idx", .i32)], blocks := [
+      ⟨"entry", [
+        .load "argv" .ptr (.global "__concrete_argv"),
+        .cast "idx64" .sext .i32 (.reg "idx") .i64,
+        .gep "argp" .ptr (.reg "argv") [(.i64, .reg "idx64")],
+        .load "arg" .ptr (.reg "argp")
+      ], .ret .ptr (some (.reg "arg"))⟩] }
+  let s := { s with moduleFunctions := s.moduleFunctions.push getArgvFn }
+  -- Save argc/argv at the start of main, then call user_main
+  let saveArgcArgv : List LLVMInstr := [
+    .store .i32 (.reg "argc") (.global "__concrete_argc"),
+    .store .ptr (.reg "argv") (.global "__concrete_argv")
+  ]
   let mkMainFn (blk : LLVMBlock) : LLVMFnDef :=
-    { name := "main", retTy := .i32, params := [], blocks := [blk] }
+    { name := "main", retTy := .i32, params := [("argc", .i32), ("argv", .ptr)], blocks := [blk] }
   if retLLTy == .void then
     -- Unit/void return: just call, no print
-    let instrs : List LLVMInstr := [.call none .void (.global "user_main") []]
+    let instrs : List LLVMInstr := saveArgcArgv ++ [.call none .void (.global "user_main") []]
     let mainFn := mkMainFn ⟨"entry", instrs, ret0⟩
     { s with moduleFunctions := s.moduleFunctions.push mainFn }
   else if retLLTy == .i1 then
@@ -879,7 +906,7 @@ private def emitMainWrapper (s : EmitSSAState) (retTy : Ty) : EmitSSAState :=
     let s := emitGlobal s { name := "fmt.true", ty := .array 5 .i8, value := "c\"true\\00\"" }
     let s := emitGlobal s { name := "fmt.false", ty := .array 6 .i8, value := "c\"false\\00\"" }
     let s := emitGlobal s { name := "fmt.main.s", ty := .array 4 .i8, value := "c\"%s\\0A\\00\"" }
-    let instrs : List LLVMInstr := [
+    let instrs : List LLVMInstr := saveArgcArgv ++ [
       .call (some "result") .i1 (.global "user_main") [],
       .gep "true_str" (.array 5 .i8) (.global "fmt.true") [(.i32, .intLit 0), (.i32, .intLit 0)],
       .gep "false_str" (.array 6 .i8) (.global "fmt.false") [(.i32, .intLit 0), (.i32, .intLit 0)],
@@ -892,7 +919,7 @@ private def emitMainWrapper (s : EmitSSAState) (retTy : Ty) : EmitSSAState :=
   else if retLLTy == .i64 then
     -- i64 return: print with %lld
     let s := emitGlobal s { name := "fmt.main", ty := .array 6 .i8, value := "c\"%lld\\0A\\00\"" }
-    let instrs : List LLVMInstr := [
+    let instrs : List LLVMInstr := saveArgcArgv ++ [
       .call (some "result") .i64 (.global "user_main") [],
       .gep "fmt" (.array 6 .i8) (.global "fmt.main") [(.i32, .intLit 0), (.i32, .intLit 0)],
       .callVariadic none .i32 printfTarget [(.ptr, .reg "fmt"), (.i64, .reg "result")]
@@ -903,7 +930,7 @@ private def emitMainWrapper (s : EmitSSAState) (retTy : Ty) : EmitSSAState :=
     -- Smaller integer return: widen to i64, then print
     let castOp : LLVMCastOp := if ssaIsSignedInt retTy then .sext else .zext
     let s := emitGlobal s { name := "fmt.main", ty := .array 6 .i8, value := "c\"%lld\\0A\\00\"" }
-    let instrs : List LLVMInstr := [
+    let instrs : List LLVMInstr := saveArgcArgv ++ [
       .call (some "result") retLLTy (.global "user_main") [],
       .cast "result64" castOp retLLTy (.reg "result") .i64,
       .gep "fmt" (.array 6 .i8) (.global "fmt.main") [(.i32, .intLit 0), (.i32, .intLit 0)],
@@ -913,7 +940,7 @@ private def emitMainWrapper (s : EmitSSAState) (retTy : Ty) : EmitSSAState :=
     { s with moduleFunctions := s.moduleFunctions.push mainFn }
   else
     -- For other types (structs, strings, etc.), just call and return 0
-    let instrs : List LLVMInstr := [.call (some "result") retLLTy (.global "user_main") []]
+    let instrs : List LLVMInstr := saveArgcArgv ++ [.call (some "result") retLLTy (.global "user_main") []]
     let mainFn := mkMainFn ⟨"entry", instrs, ret0⟩
     { s with moduleFunctions := s.moduleFunctions.push mainFn }
 

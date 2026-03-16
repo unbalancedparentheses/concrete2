@@ -170,7 +170,8 @@ private def printFnDef (f : LLVMFnDef) : String :=
 -- ============================================================
 
 private def printGlobal (g : LLVMGlobal) : String :=
-  s!"@{g.name} = {g.linkage} constant {printLLVMTy g.ty} {g.value}"
+  let kind := if g.mutable then "global" else "constant"
+  s!"@{g.name} = {g.linkage} {kind} {printLLVMTy g.ty} {g.value}"
 
 -- ============================================================
 -- Module printing

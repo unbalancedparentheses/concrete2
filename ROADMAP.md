@@ -516,6 +516,10 @@ Primary surfaces:
      - Concrete’s differentiator is not generic explicitness but visible authority plus visible ownership discipline
      - the main open Phase H question is whether these explicit patterns stabilize into disciplined idioms or remain sustained verbosity
      - future fixes should prefer compression patterns (helper APIs, cleanup idioms, stdlib conventions, qualification tools) before syntax growth
+   - current benchmark interpretation is materially stronger than it was before the JSON and grep passes:
+     - the earlier “Concrete is much slower than Python” story was largely a benchmark-mode artifact from `-O0` and naive ingestion paths
+     - at `-O2`, the JSON parser is competitive with Python's `json.loads`
+     - the grep-like tool shows that this competitiveness generalizes to a different workload shape: streaming text search rather than recursive-descent parsing
    - several initial complaints turned out to be misdiagnosed and should **not** be treated as roadmap gaps:
      - `print` / `println` already exist in `std.io`
      - `&&` / `||` already exist and are tested
@@ -559,11 +563,13 @@ Primary surfaces:
      7. reduce the standalone vs project split so stdlib access, benchmarking, and examples do not require awkward scaffolding — **not started**
         - concrete example: standalone benchmarks currently cannot conveniently use `std.fs.read_to_string`, so the fastest honest ingestion path exists but is not reachable without project/package setup
      8. design qualified module access (`Module.function()` or equivalent) so larger programs do not collapse into rename pressure — **not started**
-     9. document runtime/stack pressure findings from deep-recursive workloads and decide what belongs to language, runtime, stdlib, or tooling — **not started**
-     10. decide whether destructuring `let` earns its place for real-program clarity and parser/runtime code — **not started**
-     11. unify destruction ergonomics via general `drop(x)` / `Destroy` trait — **deferred** (revisit when stdlib has 5+ distinct drop-like functions)
-     12. scoped helper abstractions for resource cleanup — **deferred** (prerequisite now satisfied; revisit at 1k+ LOC programs if explicit `defer` still leaves too much ceremony)
-     13. selective borrow-friendly APIs / `&str`-style borrowed slices — **deferred** (revisit after scoped `defer` + mutation APIs are used in 2-3 programs)
+     9. decide how runtime argument access should live at the user-facing surface after the first `argc` / `argv` implementation proves itself in real command-line tools — **not started**
+        - the grep-like tool made process arguments a real language/runtime surface, not just generated-C glue
+     10. document runtime/stack pressure findings from deep-recursive workloads and decide what belongs to language, runtime, stdlib, or tooling — **not started**
+     11. decide whether destructuring `let` earns its place for real-program clarity and parser/runtime code — **not started**
+     12. unify destruction ergonomics via general `drop(x)` / `Destroy` trait — **deferred** (revisit when stdlib has 5+ distinct drop-like functions)
+     13. scoped helper abstractions for resource cleanup — **deferred** (prerequisite now satisfied; revisit at 1k+ LOC programs if explicit `defer` still leaves too much ceremony)
+     14. selective borrow-friendly APIs / `&str`-style borrowed slices — **deferred** (revisit after scoped `defer` + mutation APIs are used in 2-3 programs)
    - classify every serious-program finding before acting on it:
      - language surface
      - stdlib/runtime support

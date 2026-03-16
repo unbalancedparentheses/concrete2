@@ -158,6 +158,7 @@ structure LLVMGlobal where
   ty : LLVMTy
   value : String    -- raw LLVM constant expression (e.g. `c"hello\00"`)
   linkage : String := "private"
+  mutable : Bool := false  -- if true, emit `global` instead of `constant`
   deriving Inhabited, Repr
 
 /-- A named type definition (struct or enum). -/

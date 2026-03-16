@@ -10,6 +10,22 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Phase H: cgrep proves JSON was not a one-off performance result
+
+**`cgrep` example:** Added `examples/grep/main.con`, a ~220-line grep-like tool supporting `-n`, `-c`, `-v`, `-i`, multiple files, filename prefixes, and error reporting for missing files.
+
+**Runtime argv support:** Added runtime access to process arguments through `__concrete_get_argc()` / `__concrete_get_argv(idx)` with globals populated from the generated C `main`. This required mutable LLVM globals support (`LLVMGlobal.mutable`) so user code can consume command-line arguments without handwritten C shims.
+
+**Benchmark result:** On a 13MB, 200k-line text workload searching for `error`, Concrete `cgrep` is competitive with mainstream tools:
+
+- Concrete count-only: ~35ms
+- Python count-only: ~34ms
+- macOS grep count-only: ~83ms
+- Concrete with output: ~95ms
+- macOS grep with output: ~88ms
+
+The important result is not the exact ranking. It is that the earlier JSON parser win at `-O2` generalizes to a structurally different text/streaming workload rather than being a parser-specific accident.
+
 ### Phase H: codegen fixes, -O2 default, JSON benchmark proves competitive performance
 
 **Alloca hoisting (Bug 013):** All `alloca` instructions now emitted in function entry block via `entryAllocas` field in EmitSSAState. Previously, allocas inside loop bodies grew the stack every iteration, causing stack overflow at ~130k iterations in recursive parsers.
