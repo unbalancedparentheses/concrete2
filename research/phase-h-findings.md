@@ -236,12 +236,12 @@ Not "can Concrete express real programs?" but "do its explicit patterns become s
 
 1. **~~Standalone vs project dependency resolution~~** — CLOSED: `concrete build` now works with `Concrete.toml`, `mod X;` directory modules, and cross-module imports; `cgrep` and `conhash` examples converted to use `std.fs.read_to_string` / `std.fs.read_file`; current `std = { path = "..." }` is a temporary hack — Phase J should make std a builtin dependency
    - update: builtin std resolution is now landed as well; std is found automatically relative to the compiler binary, with `CONCRETE_STD` as an override for unusual setups
-2. **Formatting / interpolation / text output** — too much manual string building for real programs
+2. **Formatting / interpolation / text output** — mixed-arg `print` / `println` landed (commit `1b0d21f`); remaining question is whether interpolation is still needed
 3. **Runtime-oriented collection maturity** — MAL and the VM both need maps, nested mutable structures, runtime-friendly patterns
 4. **Backend inlining / codegen policy cliffs** — the VM showed that tiny builtin calls in hot loops can distort performance dramatically if LLVM is not given enough shape information
 5. **User-facing runtime argument surface** — `argc`/`argv` work in practice, but the final public shape is not settled
-6. **~~Qualified module access~~** — CLOSED for the first real workload cases: file-based `mod::fn` access, mixed imported + qualified access, two-submodule qualified access, top-level + qualified coexistence, qualified submodule `extern fn`, and qualified submodule struct/import interaction are now covered by targeted tests
-   - remaining limitation: parent/submodule or sibling-submodule functions with the same leaf name still collide at the LLVM symbol layer because function definitions still emit bare names; this is a backend naming issue, not a remaining resolution/elaboration design gap
+6. **~~Qualified module access~~** — CLOSED: file-based `mod::fn` access, mixed imported + qualified access, two-submodule qualified access, top-level + qualified coexistence, qualified submodule `extern fn`, qualified submodule struct/import, same-leaf-name collision across submodules, parent/submodule same-leaf-name coexistence, and import-with-alias collision are now covered by targeted tests. Submodule function definitions are emitted with module-prefixed LLVM symbols to prevent collisions.
+   - remaining limitation: inline sibling modules (`mod A {}` / `mod B {}`) cannot use `::` qualified access across siblings — they must use `import`. This is a module-structure constraint (qualified access is parent→child only), not a backend issue.
 7. **Runtime / stack pressure classification** — MAL exposed this; still needs a cleaner language-vs-runtime-vs-tooling decision
 
 ## Current Open Findings
@@ -250,14 +250,7 @@ Not "can Concrete express real programs?" but "do its explicit patterns become s
 
 - Class: `stdlib/runtime`, possibly `language`
 - Why it matters: real programs need readable output, logs, diagnostics, and message assembly
-- Current state: manual string building remains too verbose
-
-### Qualified module access
-
-- Class: `language`, `tooling/workflow`
-- Why it matters: larger programs should not depend on renaming to avoid collisions
-- Current state: first real qualified-access path is now landed and regression-tested for the covered cases
-- Remaining limitation: leaf-name collisions across parent/submodule or sibling submodules still need backend symbol-prefixing work; this is not a blocker for the now-landed qualified-access surface, but it does prevent calling the namespace story fully complete
+- Current state: mixed-arg `print` / `println` builtins landed (commit `1b0d21f`); manual string *building* is still verbose but output is now practical. Remaining question: whether string interpolation is justified by real-program evidence or whether `print`/`println` plus builder APIs are sufficient.
 
 ### Destructuring let
 

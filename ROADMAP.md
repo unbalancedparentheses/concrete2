@@ -88,9 +88,14 @@ Completed phases can still seed work that is intentionally finished later. Do no
 | Report-first review workflows over authority / alloc / layout / trusted / FFI evidence | **F** | **L** | Research only |
 | Semantic query/search tooling over compiler facts and reports | **F / H** | **L** | Research only |
 | Reproducible trust bundles linking source, compiler, reports, proofs, and artifact identity | **I** | **L** | Not started |
+| Cryptographically committed build/evidence bundles with replayable verification | **I / J / L** | **L** | Research only |
+| Review-policy gates over authority / trusted / FFI / proof-facing compiler facts | **F** | **L** | Research only |
 | Package/release trust-drift diffing | **J** | **L** | Not started |
 | Structured/type-aware fuzzing over real types, invariants, and report subjects | **D / H** | **L / O** | Research only |
+| Binary-linked proof-facing exports and "self-describing binary" artifact traceability | **I** | **I / L** | Research only |
+| Symbolic-execution addon over proof-facing artifacts | **I** | **I / L** | Research only |
 | Serious showcase workload turned into a flagship public review artifact | **H** | **K** | Not started |
+| Hardware capability mapping to MPU / TrustZone-style target isolation | **E / M** | **O** | Research only |
 
 ### Recent Progress
 
@@ -191,7 +196,9 @@ These ideas are important enough that they should always have an explicit roadma
 - **Phase J** owns authority budgets as enforced build contracts at package/subsystem boundaries, because packages are where authority drift stops being only a local function concern.
 - **Phase K** owns the public-facing flagship workload and review narrative that demonstrates why Concrete is different in practice, not only in architecture notes.
 - **Phase L** owns machine-readable reports, semantic query/search over compiler facts, report-first review workflows, reproducible trust bundles, and trust-drift diffing as maintained operational surfaces.
+- **Phase L** also owns any stronger bundle/provenance/review-policy product surface: cryptographically committed evidence bundles, bundle verification/rebuild commands, and CI-facing review gates over maintained compiler facts.
 - **Phase O** owns any remaining evidence-gated extensions that still need staging before they deserve stable implementation contracts, especially new language/tool ideas that look promising but are not yet justified by Phase H evidence.
+- **Phase O** is also where target-specific ideas such as hardware-backed capability mapping should live until Concrete has enough embedded/runtime evidence to justify them.
 
 #### Phase A: Fast Feedback And Compiler Stability
 
@@ -719,6 +726,7 @@ Primary surfaces:
    - proof obligations should become explicit artifacts rather than only implicit tool failures
    - the workflow should support targeted proof subjects or harness-like entry points instead of only whole-program ambitions
    - proof failures should become more explanatory where feasible, including counterexample-style output for automatically checked properties
+   - exported proof-facing artifacts may later be attached to emitted binaries or evidence bundles, but the semantic authority must remain the validated Core / proof-artifact chain rather than a vague "binary proves itself" claim
 
 Deliverables:
 - a substantially broader formal semantics than the current pure Core fragment
@@ -728,6 +736,7 @@ Deliverables:
 - a practical path for selected Concrete programs to be proved in Lean without pretending the entire language is already formalized
 - an explicit architecture where proof-facing artifacts support stronger external proof tooling without turning the compiler itself into a theorem prover
 - a layered proof workflow where fast automation and Lean-backed proofs reinforce each other instead of competing for semantic authority
+- a clearer exported-artifact story for proof subjects so later binaries, review bundles, or release artifacts can point back to stable proof-facing identities
 - a proof roadmap grounded in the language that survived real-program pressure testing, not only in idealized fragments
 
 Exit criterion:
@@ -912,6 +921,10 @@ Primary surfaces:
 29. evaluate structured/type-aware fuzzing as a maintained tooling layer over compiler facts, stdlib invariants, and user-declared bounds, rather than as a core language feature — **not started**
    - the likely first wins are parser robustness, operation-trace testing for core collections, and property-style generators for parse/format and bounded packet-like types
    - if this work grows, it should stay a consumer of summaries, reports, and test metadata rather than a new semantic authority
+30. design cryptographically committed build/evidence bundles and a replayable verification workflow — `concrete build --bundle` and `concrete verify-bundle --rebuild` should be treated as later operational products over artifact identity, reproducibility, and evidence outputs, not as a new language feature — **not started**
+   - the first useful version can stop at deterministic identities, machine-readable manifests, and reproducible rebuild checks before any signing/distribution policy becomes mandatory
+31. make review-policy checks first-class tooling over maintained compiler facts — authority growth, trusted-boundary changes, FFI introduction, proof-status drift, and bundle/release policy failures should be enforceable in CI without embedding approval policy in the language surface — **not started**
+32. define the narrow "self-describing binary" story as artifact traceability rather than executable mysticism — emitted binaries or release artifacts may carry or reference proof-facing/exported semantic subjects, report identities, and bundle manifests, but verification should still run against the explicit compiler artifacts that describe what was built — **not started**
 
 Deliverables:
 - a documented release and compatibility policy for language, stdlib, reports, and tooling surfaces
@@ -943,6 +956,9 @@ Deliverables:
 - a semantic query/search surface that lets users and CI ask authority, allocation, trust, layout, and proof-eligibility questions directly over maintained compiler facts
 - a coherent operational relationship between query/search, per-function inspection, and trust-drift diffing so the same facts support exploration, review, and release gating
 - a maintained stance on structured/type-aware fuzzing as tooling over Concrete artifacts and invariants, not uncontrolled language-surface growth
+- a reproducible bundle direction that can later grow into cryptographically committed evidence packages without turning signing policy into language semantics
+- review-policy tooling that treats authority, trust, FFI, and proof drift as first-class CI/release questions over compiler facts
+- a narrow self-describing-binary story rooted in exported proof/report artifacts and stable identities rather than unverifiable claims about the executable alone
 
 Exit criterion:
 Concrete is not only architecturally strong internally, but also operable, reproducible, documentable, and maintainable as a long-term project, with a real driver/artifact model rather than only a pass library plus CLI entry points.
@@ -1070,6 +1086,9 @@ Primary surfaces:
 11. evaluate ghost / proof-only syntax only after ProofCore and proof-facing artifacts are materially stronger — **not started**
    - default stance: do not add proof-looking surface syntax until the proof pipeline can justify what those constructs mean, how they erase, and how they attach to validated Core
    - if revisited, prefer a narrow artifact/proof-consumer story before broad source-level annotation systems
+12. evaluate hardware capability mapping only as long-horizon target/runtime research, not as current language-surface direction — **not started**
+   - the default stance should be target-specific backend/runtime integration over existing capability/report/profile surfaces, not a new general-purpose capability calculus
+   - do not let MPU / TrustZone ideas distort the hosted/high-level roadmap before Concrete has enough embedded/high-integrity target evidence
 
 Deliverables:
 - a maintained canonical research index for the highest-leverage undecided ideas
@@ -1080,6 +1099,7 @@ Deliverables:
 - an explicit decision record for whether semantic query/search belongs purely to operational tooling or needs any language-facing surface at all
 - an explicit decision record for whether type-directed fuzzing belongs in maintained tooling and test infrastructure or should remain outside the supported surface
 - an explicit decision record for whether ghost / proof-only syntax belongs in the language at all or should remain outside the source surface until proof artifacts mature
+- an explicit decision record for whether hardware-backed capability mapping belongs in Concrete's core roadmap, target-specific tooling, or not at all
 - protection against accidental feature loss-by-forgetting as the roadmap evolves
 
 Exit criterion:

@@ -819,12 +819,28 @@ run_ok "$TESTDIR/bin_oct_literal.con" 73
 # Phase 7b: Print / basic I/O
 run_ok "$TESTDIR/print_int_basic.con" "42"
 run_ok "$TESTDIR/print_bool_basic.con" "true"
+run_ok "$TESTDIR/builtin_println_mixed.con" "42
+hello
+true
+false"
+run_ok "$TESTDIR/builtin_print_multi_arg.con" "count: 42 ok: true"
+run_ok "$TESTDIR/builtin_println_i32.con" "42
+A"
 run_ok "$TESTDIR/print_in_loop.con" "0
 1
 2"
 
 # Phase 7c: Module file resolution
 run_ok "$TESTDIR/module_file/main.con" 42
+run_ok "$TESTDIR/module_qualified/main.con" 42
+run_ok "$TESTDIR/module_qualified_mixed/main.con" 42
+run_ok "$TESTDIR/module_qualified_two_mods/main.con" 42
+run_ok "$TESTDIR/module_qualified_toplevel_shadow/main.con" 42
+run_ok "$TESTDIR/module_qualified_extern/main.con" 42
+run_ok "$TESTDIR/module_qualified_impl/main.con" 42
+run_ok "$TESTDIR/module_qualified_collision/main.con" 54
+run_ok "$TESTDIR/module_qualified_parent_shadow/main.con" 42
+run_ok "$TESTDIR/module_import_collision/main.con" 54
 
 # Additional complex tests
 run_ok "$TESTDIR/complex_fibonacci_closure.con" 55
