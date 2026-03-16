@@ -62,7 +62,7 @@ Still clearly not implemented:
 | **E** | Runtime and execution model | Done |
 | **F** | Capability and safety productization | Done |
 | **G** | Language surface and feature discipline | Done |
-| **H** | Real-program pressure testing and performance validation | Not started |
+| **H** | Real-program pressure testing and performance validation | Active |
 | **I** | Formalization and proof expansion | Not started |
 | **J** | Package and dependency ecosystem | Not started |
 | **K** | Adoption, positioning, and showcase pull | Not started |
@@ -512,13 +512,15 @@ Primary surfaces:
      4. improve runtime-oriented collection maturity for interpreter/runtime workloads: maps, nested mutable structures, and frame-friendly patterns — **not started**
      5. evaluate arena allocation against the existing `Vec`-as-pool pattern and adopt it only if real programs show a clear win in clarity, performance, or boundedness — **not started**
         - design notes: [research/arena-allocation.md](research/arena-allocation.md)
-     6. reduce the standalone vs project split so stdlib access, benchmarking, and examples do not require awkward scaffolding — **not started**
-     7. design qualified module access (`Module.function()` or equivalent) so larger programs do not collapse into rename pressure — **not started**
-     8. document runtime/stack pressure findings from deep-recursive workloads and decide what belongs to language, runtime, stdlib, or tooling — **not started**
-     9. decide whether destructuring `let` earns its place for real-program clarity and parser/runtime code — **not started**
-     10. unify destruction ergonomics via general `drop(x)` / `Destroy` trait — **deferred** (revisit when stdlib has 5+ distinct drop-like functions)
-     11. scoped helper abstractions for resource cleanup — **deferred** (prerequisite: `defer`; revisit at 1k+ LOC programs)
-     12. selective borrow-friendly APIs / `&str`-style borrowed slices — **deferred** (revisit after `defer` + mutation APIs used in 2-3 programs)
+     6. strengthen layout reports where real programs need them: padding visualization, clearer enum/layout detail, and better FFI-facing audit output — **not started**
+        - design notes: [research/layout-reports.md](research/layout-reports.md)
+     7. reduce the standalone vs project split so stdlib access, benchmarking, and examples do not require awkward scaffolding — **not started**
+     8. design qualified module access (`Module.function()` or equivalent) so larger programs do not collapse into rename pressure — **not started**
+     9. document runtime/stack pressure findings from deep-recursive workloads and decide what belongs to language, runtime, stdlib, or tooling — **not started**
+     10. decide whether destructuring `let` earns its place for real-program clarity and parser/runtime code — **not started**
+     11. unify destruction ergonomics via general `drop(x)` / `Destroy` trait — **deferred** (revisit when stdlib has 5+ distinct drop-like functions)
+     12. scoped helper abstractions for resource cleanup — **deferred** (prerequisite: `defer`; revisit at 1k+ LOC programs)
+     13. selective borrow-friendly APIs / `&str`-style borrowed slices — **deferred** (revisit after `defer` + mutation APIs used in 2-3 programs)
    - classify every serious-program finding before acting on it:
      - language surface
      - stdlib/runtime support
@@ -874,12 +876,14 @@ Primary surfaces:
 2. record the dependency fit for each idea: which existing phase it belongs with if adopted later — **not started**
 3. require evidence from real programs, report usage, or package/runtime pressure before turning evidence-gated ideas into language surface — **not started**
 4. explicitly evaluate typestate after more real programs, rather than inferring need from theory alone — **not started**
-5. record "not now" or "not worth it" decisions for ideas that fail the design filters, instead of letting them silently drift — **not started**
+5. evaluate whether heap-vs-stack allocation should remain report/profile information or become an explicit capability split (`AllocHeap` / `AllocStack`) — **not started**
+6. record "not now" or "not worth it" decisions for ideas that fail the design filters, instead of letting them silently drift — **not started**
 
 Deliverables:
 - a maintained canonical research index for the highest-leverage undecided ideas
 - explicit adoption, defer, or reject records for evidence-gated features
 - a clearer mapping from research ideas to the phases they would naturally join if adopted
+- an explicit decision record for whether heap-vs-stack allocation distinction belongs in reports/profiles only or in the capability surface
 - protection against accidental feature loss-by-forgetting as the roadmap evolves
 
 Exit criterion:
@@ -928,57 +932,51 @@ These are concrete, implementable improvements that emerged from the bug fixes a
 
 ### Later
 
+This section is for later work that remains meaningful after the current phase structure.
+Do not use it to restate phases that already exist above.
+
 1. Backend plurality over SSA, but only after the current backend becomes structurally cleaner first.
-2. Runtime and execution-model maturity as an explicit phase once the compiler/tooling architecture is stable enough to support it well.
-3. Capability and safety productization as an explicit phase after the backend/trust foundations are strong enough.
-4. Language-surface and feature-discipline work as an explicit phase once the runtime/safety direction is clear.
-5. Real-program pressure testing and performance validation as an explicit phase once the language surface is disciplined enough that large programs can reveal meaningful weaknesses instead of churn.
-6. Formalization and proof expansion as an explicit phase once the language surface is disciplined and real-program pressure has clarified what is actually worth proving.
-7. Package and dependency ecosystem as an explicit phase once stdlib/tooling/runtime direction is stable enough to support real projects well.
-8. Adoption, positioning, and showcase pull as an explicit phase once the package/project story is strong enough that new users can actually try Concrete coherently.
-9. Project and operational maturity as an explicit phase once the current compiler/tooling architecture is stable enough to productize.
-10. Concurrency maturity and runtime plurality as an explicit later phase once the runtime, safety, formalization, package, adoption, and operational foundations are stable enough to support it well.
-9. Proof-driven narrowing of future feature additions.
-10. A clearer hosted vs freestanding / `no_std` split, but only after the runtime and stdlib boundaries are more stable.
-11. Execution-cost analysis as an audit/report extension.
+2. Proof-driven narrowing of future feature additions.
+3. A clearer hosted vs freestanding / `no_std` split, but only after the runtime and stdlib boundaries are more stable.
+4. Execution-cost analysis as an audit/report extension.
    - structural boundedness reports first
    - abstract cost estimation later
    - never at the cost of clarity in the core language
-12. Broaden the Lean-side proof workflow beyond the current pure-fragment scope (17 theorems over integers/booleans/arithmetic/conditionals). Next targets: structs, enums, match expressions, recursive functions, source-to-Core traceability, and export/tooling for external proof use.
-13. Potential later expansion of the Lean proof story beyond Core-level properties.
+5. Broaden the Lean-side proof workflow beyond the current pure-fragment scope (17 theorems over integers/booleans/arithmetic/conditionals). Next targets: structs, enums, match expressions, recursive functions, source-to-Core traceability, and export/tooling for external proof use.
+6. Potential later expansion of the Lean proof story beyond Core-level properties.
    - later broaden selected-function proofs toward effects, resources, capabilities, runtime interaction, and only then concurrency
    - later consider backend-level proof concerns such as richer compiler-preservation work across deeper lowering stacks or optional backend-family layers
    - do not treat either broader end-to-end program proofs or backend/MLIR-layer proof work as near-term substitutes for the validated-Core-first plan
-14. Treat contracts, richer invariants, and similar verification extensions as post-roadmap evaluation work, not as part of the main current philosophy.
+7. Treat contracts, richer invariants, and similar verification extensions as post-roadmap evaluation work, not as part of the main current philosophy.
    - only evaluate them after the simpler Concrete + Lean 4 proof story has proven insufficient
    - keep them out of the main phase plan until the core language, proof boundary, runtime model, and operational story are already stable
    - if adopted at all, treat them as a final optional verification-extension stage rather than as a prerequisite for the main roadmap
-15. Implement a real artificial-life showcase/stress-test in Concrete.
+8. Implement a real artificial-life showcase/stress-test in Concrete.
    - target a program in the spirit of Rabrg's `artificial-life` reproduction of "Computational Life: How Well-formed, Self-replicating Programs Emerge from Simple Interaction"
    - a 240x135 grid of 64-instruction Brainfuck-like programs, randomly initialized, locally paired, concatenated, executed for bounded steps, then split back apart
    - use it as a serious end-to-end stress test for runtime/performance, collections/buffers, formatting/reporting, and later proof/audit ambitions
    - treat it as a showcase workload once the runtime, stdlib, and backend are mature enough rather than as immediate Phase C compiler work
-16. Develop proof-backed authority reports as a later extension of the current capability/trust reports.
+9. Develop proof-backed authority reports as a later extension of the current capability/trust reports.
    - make it explicit which authority facts are compiler-checked, which depend on validated Core extraction, and which still rest on trusted/foreign assumptions
    - keep the first versions narrow and high-signal rather than pretending to prove the whole world
-17. Move toward verified FFI envelopes once the runtime/ABI boundary is explicit.
+10. Move toward verified FFI envelopes once the runtime/ABI boundary is explicit.
    - make foreign boundaries carry ABI, ownership, destruction, and capability assumptions more explicitly than raw `extern fn`
    - prefer wrapper/envelope approaches over broad new surface syntax
-18. Treat reproducible trust bundles as the operational destination of the evidence story.
+11. Treat reproducible trust bundles as the operational destination of the evidence story.
    - package reports, proof references, build identity, and artifact fingerprints together for audit/review workflows
    - only do this once the package/runtime/compatibility story is stable enough to make the bundle worth trusting
-19. Treat performance and incrementality as an explicit later maturity thread rather than ambient compiler folklore.
+12. Treat performance and incrementality as an explicit later maturity thread rather than ambient compiler folklore.
    - define profiling methodology and performance regression expectations
    - include a clear position on early optimization families such as function inlining rather than leaving all non-cleanup optimization implicit
    - define optimization policy explicitly enough that backend work has stated goals and stated non-goals
    - treat debug-info / observability maturity as a real backend quality axis, not accidental fallout of codegen work
    - make optimization policy explicit enough that "faster" does not silently trade away auditability or proof-friendliness
    - only add artifact serialization and incremental compilation once the artifact boundaries and compatibility story are boring enough to sustain them
-20. Treat bootstrap/self-hosting as an explicit strategic choice, not ambient ambition.
+13. Treat bootstrap/self-hosting as an explicit strategic choice, not ambient ambition.
    - decide whether Concrete should remain Lean-hosted, partially self-host, or eventually self-host
    - evaluate it against trust, proof leverage, implementation cost, and operational complexity rather than aesthetics
    - do not let self-hosting aspirations outrun the proof/runtime/package/operational story
-21. Keep a small set of research-backed systems ideas explicitly in view even when they are not yet phase-committed.
+14. Keep a small set of research-backed systems ideas explicitly in view even when they are not yet phase-committed.
    - canonical summary: [research/high-leverage-systems-ideas.md](research/high-leverage-systems-ideas.md)
    - allocation budgets / `NoAlloc` / restricted `BoundedAlloc(N)` are now phase-committed in Phase N
    - arena allocation remains a serious candidate because it formalizes the existing pool pattern in parser/interpreter-style programs
@@ -987,17 +985,17 @@ These are concrete, implementable improvements that emerged from the bug fixes a
    - typestate remains evidence-gated: ownership already covers the simplest irreversible transitions, and phantom-type typestate should only land if real programs justify it
    - authority budgets remain a strong long-term dependency/supply-chain idea, but package-level enforcement depends on the package model
    - if any of these ideas are later rejected, record that explicitly instead of letting them silently disappear
-22. Make the artifact model operationally real rather than nominal.
+15. Make the artifact model operationally real rather than nominal.
    - ensure pass APIs consume/produce named artifacts directly rather than drifting back to parsed-module-plus-table plumbing
    - introduce missing durable artifacts where needed (for example a checked-program boundary if the architecture continues to justify one, but do not freeze that exact split before the pass plumbing proves it)
    - keep artifact ownership explicit enough that tooling and reports do not rebuild semantic facts ad hoc
-23. Make source-to-Core-to-proof-to-SSA traceability a first-class compiler property.
+16. Make source-to-Core-to-proof-to-SSA traceability a first-class compiler property.
    - preserve stable source-origin identity through validated Core, proof/export subjects, monomorphized instances, and SSA origins
    - treat this as necessary for proof credibility, report credibility, and later debugging/evidence workflows
-24. Treat interface/body artifact splitting as a major architecture thread, not only an incremental-compilation detail.
+17. Treat interface/body artifact splitting as a major architecture thread, not only an incremental-compilation detail.
    - package, workspace, and dependency semantics should depend on explicit interface artifacts rather than body-bearing summaries wherever possible
    - avoid letting import/package reasoning stay coupled to more implementation detail than it needs
-25. Make the compiler-driver/build-graph layer explicit.
+18. Make the compiler-driver/build-graph layer explicit.
    - own package graph, target selection, cache lookup/store, report generation from artifacts, and invalidation rules in one orchestrator layer
    - do not let shell scripts and scattered CLI entry points become the accidental long-term build architecture
 
@@ -1116,4 +1114,4 @@ These are current choices that should continue constraining future work unless e
 
 ## Summary
 
-Concrete has a complete compiler pipeline, a real stdlib (33 modules, 16 collections), 663 tests (184 stdlib), a fully structured LLVM backend, audit reports, explicit artifact boundaries (`ValidatedCore`, `ProofCore`), a documented SSA backend contract, a first Lean 4 proof workflow (17 theorems over a pure Core fragment), a 20-program integration/regression/hardening corpus, and bug tracking in `docs/bugs/`. Phases A–D are done. Three compiler bugs (cross-module struct offsets, i32 literal type inference, borrow-move confusion) were found and fixed during Phase D integration testing. Compiler hardening complete: Lower.lean fallbacks are hard errors (`throw`), Layout.lean/EmitSSA.lean fallbacks are hard errors (`panic!`) with type variable leakage fixed, SSAVerify catches integer bit-width mismatches, cross-module type aliases fixed, borrow checker audited. Phase E (runtime and execution model) is next.
+Concrete has a complete compiler pipeline, a real stdlib (33 modules, 16 collections), 864 tests passing, a fully structured LLVM backend, audit reports, explicit artifact boundaries (`ValidatedCore`, `ProofCore`), a documented SSA backend contract, a first Lean 4 proof workflow (17 theorems over a pure Core fragment), a 20-program integration/regression/hardening corpus, and bug tracking in `docs/bugs/`. Phases A–G are done. Phase H is active: real-program pressure has already produced the policy engine, MAL-style interpreter work, JSON parser pressure, multiple bug fixes, and a concrete findings-closure track for ergonomics, report UX, and runtime/tooling follow-up. Compiler hardening is complete: Lower.lean fallbacks are hard errors (`throw`), Layout.lean/EmitSSA.lean fallbacks are hard errors (`panic!`) with type variable leakage fixed, SSAVerify catches integer bit-width mismatches, cross-module type aliases are fixed, and borrow edge cases have been audited.
