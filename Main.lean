@@ -332,6 +332,40 @@ def resolveDependencyPath (projectRoot : String) (depPath : String) : String :=
   if depPath.startsWith "/" then depPath
   else projectRoot ++ "/" ++ depPath
 
+/-- Check if a path contains a valid std library (has src/lib.con). -/
+def hasStdLib (path : String) : IO Bool := do
+  let libPath := path ++ "/src/lib.con"
+  try let _ ← IO.FS.readFile ⟨libPath⟩; pure true catch _ => pure false
+
+/-- Find the builtin std library relative to the compiler binary.
+    Searches common relative paths from the executable location.
+    Falls back to CONCRETE_STD environment variable. -/
+def findBuiltinStd : IO (Option String) := do
+  -- Try CONCRETE_STD environment variable first
+  let envStd ← IO.getEnv "CONCRETE_STD"
+  match envStd with
+  | some stdPath =>
+    let ok ← hasStdLib stdPath
+    if ok then return some stdPath
+  | none => pure ()
+  -- Find relative to compiler binary
+  let exePath ← IO.appPath
+  let exeDir := dirOf exePath.toString
+  -- Try common relative paths:
+  -- .lake/build/bin/concrete → ../../.. → repo root → std/
+  -- build/bin/concrete → ../.. → repo root → std/
+  -- bin/concrete → .. → repo root → std/
+  let candidates := [
+    exeDir ++ "/../../../std",   -- .lake/build/bin/
+    exeDir ++ "/../../std",      -- build/bin/
+    exeDir ++ "/../std",         -- bin/
+    exeDir ++ "/std"             -- same dir
+  ]
+  for candidate in candidates do
+    let ok ← hasStdLib candidate
+    if ok then return some candidate
+  return none
+
 /-- Load and parse a dependency's lib.con, resolving its submodules. -/
 partial def loadDependency (depName : String) (depPath : String)
     : IO (Except String (List Module × SourceMap)) := do
@@ -355,13 +389,26 @@ def compileBuild (projectRoot : String) (outputPath : Option String) (emitLLVM :
   -- Read Concrete.toml
   let tomlPath := projectRoot ++ "/Concrete.toml"
   let tomlContent ← readFile tomlPath
-  let deps := parseDependencies tomlContent
+  let userDeps := parseDependencies tomlContent
+
+  -- Inject builtin std if user didn't declare it explicitly
+  let hasStdDep := userDeps.any fun (name, _) => name == "std"
+  let deps ← if hasStdDep then
+    pure userDeps
+  else
+    match ← findBuiltinStd with
+    | some stdPath => pure (("std", stdPath) :: userDeps)
+    | none =>
+      IO.eprintln "warning: builtin std not found (set CONCRETE_STD or add std to [dependencies])"
+      pure userDeps
 
   -- Load all dependencies
   let mut depModules : List Module := []
   let mut depSrcMap : SourceMap := []
   for (depName, depPath) in deps do
-    let resolvedPath := resolveDependencyPath projectRoot depPath
+    -- For builtin std (injected above), depPath is already absolute
+    let resolvedPath := if depPath.startsWith "/" then depPath
+      else resolveDependencyPath projectRoot depPath
     match ← loadDependency depName resolvedPath with
     | .error e =>
       IO.eprintln e

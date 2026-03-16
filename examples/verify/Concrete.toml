@@ -1,8 +1,3 @@
 [package]
 name = "conhash"
 version = "0.1.0"
-
-[dependencies]
-# Temporary: std should be a builtin dependency, not a path dep.
-# Phase J will replace this with builtin std resolution.
-std = { path = "../../std", version = "0.1.0" }
