@@ -48,6 +48,13 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 The important result is not the exact ranking. It is that the earlier JSON parser win at `-O2` generalizes to a structurally different text/streaming workload rather than being a parser-specific accident.
 
+Later rebuilds after the mixed-arg `print` / `println` work exposed a more nuanced picture:
+
+- verify, JSON, VM, and policy-engine style workloads still sit roughly in the same performance class as the comparable C baselines on the current measurements
+- `cgrep` is now slower than the native C comparison on rebuilt runs, pointing to string/output handling as the current bottleneck rather than a broad backend regression
+
+That makes grep a useful continuing pressure test for text/output and string-I/O costs even though the overall Phase H performance story remains strong.
+
 ### Phase H: codegen fixes, -O2 default, JSON benchmark proves competitive performance
 
 **Alloca hoisting (Bug 013):** All `alloca` instructions now emitted in function entry block via `entryAllocas` field in EmitSSAState. Previously, allocas inside loop bodies grew the stack every iteration, causing stack overflow at ~130k iterations in recursive parsers.
