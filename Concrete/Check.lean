@@ -946,6 +946,19 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
           | _ => pure ()
           return nt.innerTy
         | none => throwCheckMsg s!"unwrap() requires a newtype argument, '{ntName}' is not a newtype"
+    -- Intercept print(...) / println(...) — variadic mixed-arg output
+    if intrinsic == some .print || intrinsic == some .println then
+      if args.isEmpty then throwCheckMsg s!"{fnName}() requires at least 1 argument"
+      for arg in args do
+        let argTy ← checkExpr arg
+        -- Accept: String (auto-borrowed), integer types, bool, char
+        match argTy with
+        | .string | .ref .string | .refMut .string => pure ()
+        | .int | .uint | .i32 | .u32 | .i16 | .u16 | .i8 | .u8 => pure ()
+        | .bool => pure ()
+        | .char => pure ()
+        | _ => throwCheckMsg s!"{fnName}() argument has unsupported type '{tyToString argTy}'; expected String, Int, u32, i32, bool, or char"
+      return .unit
     -- Intercept abort() calls
     if intrinsic == some .abort then
       if args.length != 0 then throwCheck (.builtinWrongArgCount "abort" 0) (some e.getSpan)

@@ -33,7 +33,9 @@ inductive IntrinsicId where
   | intToString | stringToInt | boolToString | floatToString
 
   -- I/O
-  | printString | printInt | printChar
+  | printString | printInt | printChar | printBool
+  -- Mixed-arg print (variadic, desugared in elaboration)
+  | print | println
 
   -- Timing
   | clockMonotonicNs
@@ -95,6 +97,9 @@ def resolveIntrinsic (name : String) : Option IntrinsicId :=
   | "print_string" => some .printString
   | "print_int"    => some .printInt
   | "print_char"   => some .printChar
+  | "print_bool"   => some .printBool
+  | "print"        => some .print
+  | "println"      => some .println
 
   -- Timing
   | "clock_monotonic_ns" => some .clockMonotonicNs
@@ -152,6 +157,9 @@ def IntrinsicId.canonicalName : IntrinsicId → String
   | .printString => "print_string"
   | .printInt => "print_int"
   | .printChar => "print_char"
+  | .printBool => "print_bool"
+  | .print => "print"
+  | .println => "println"
   | .clockMonotonicNs => "clock_monotonic_ns"
   | .getArgs => "get_args"
   | .abort => "abort"
@@ -168,7 +176,8 @@ def IntrinsicId.capability : IntrinsicId → Option String
   | .vecNew | .vecPush | .vecPop | .vecFree
   | .stringReserve => some "Alloc"
   -- Console
-  | .printString | .printInt | .printChar => some "Console"
+  | .printString | .printInt | .printChar | .printBool
+  | .print | .println => some "Console"
   -- Clock
   | .clockMonotonicNs => some "Clock"
   -- Pure (no capability required)

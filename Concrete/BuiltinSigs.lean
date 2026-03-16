@@ -29,6 +29,7 @@ def builtinFnSigs : List (String × FnSummary) := [
   ("print_string", { params := [("s", .ref .string)], retTy := .unit, capSet := .concrete ["Console"] }),
   ("print_int", { params := [("n", .int)], retTy := .unit, capSet := .concrete ["Console"] }),
   ("print_char", { params := [("c", .int)], retTy := .unit, capSet := .concrete ["Console"] }),
+  ("print_bool", { params := [("b", .bool)], retTy := .unit, capSet := .concrete ["Console"] }),
   ("clock_monotonic_ns", { params := [], retTy := .int, capSet := .concrete ["Clock"] }),
   ("string_reserve", { params := [("s", .refMut .string), ("cap", .int)], retTy := .unit, capSet := .concrete ["Alloc"] })
 ]

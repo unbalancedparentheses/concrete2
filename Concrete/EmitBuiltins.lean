@@ -479,6 +479,23 @@ def getBuiltinFns : List LLVMFnDef × List LLVMGlobal × List LLVMFnDecl :=
       ], .ret .void none⟩] }
 
   -- -------------------------------------------------------
+  -- print_bool — prints "true" or "false" to stdout
+  -- -------------------------------------------------------
+  let fnPrintBool : LLVMFnDef :=
+    { name := "print_bool", retTy := .void, params := [("b", .i1)], blocks := [
+      ⟨"entry", [
+        .binOp "is_true" .icmpEq .i1 (.reg "b") (.intLit 1)
+      ], .condBr (.reg "is_true") "print_true" "print_false"⟩,
+      ⟨"print_true", [
+        .gep "true_ptr" (.array 4 .i8) (.global ".str_true") [(.i64, .intLit 0), (.i64, .intLit 0)],
+        .call (some "tw") .i64 (.global "write") [(.i32, .intLit 1), (.ptr, .reg "true_ptr"), (.i64, .intLit 4)]
+      ], .ret .void none⟩,
+      ⟨"print_false", [
+        .gep "false_ptr" (.array 5 .i8) (.global ".str_false") [(.i64, .intLit 0), (.i64, .intLit 0)],
+        .call (some "fw") .i64 (.global "write") [(.i32, .intLit 1), (.ptr, .reg "false_ptr"), (.i64, .intLit 5)]
+      ], .ret .void none⟩] }
+
+  -- -------------------------------------------------------
   -- string_push_char (append a char to a mutable string in-place)
   -- -------------------------------------------------------
   let fnStringPushChar : LLVMFnDef :=
@@ -710,7 +727,7 @@ def getBuiltinFns : List LLVMFnDef × List LLVMGlobal × List LLVMFnDecl :=
     fnStringLength, fnDropString, fnStringConcat, fnStringSlice, fnStringSubstr, fnStringCharAt,
     fnStringContains, fnStringEq, fnIntToString, fnStringToInt, fnBoolToString,
     fnFloatToString, fnStringTrim,
-    fnPrintString, fnPrintInt, fnPrintChar,
+    fnPrintString, fnPrintInt, fnPrintChar, fnPrintBool,
     fnStringPushChar, fnStringAppend, fnStringAppendInt, fnStringAppendBool,
     fnStringReserve, fnClockMonotonicNs
   ]

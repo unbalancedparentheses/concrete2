@@ -895,6 +895,37 @@ partial def elabStmt (stmt : Stmt) : ElabM (List CStmt) := do
     let env ← getEnv
     return [.return_ none env.currentRetTy]
 
+  | .expr _ (.call _sp fnName _typeArgs args) =>
+    -- Desugar print/println into individual typed print calls
+    -- Only if not shadowed by a user/stdlib function with the same name
+    let existingFn ← lookupFnSig fnName
+    if existingFn.isNone && (fnName == "print" || fnName == "println") then
+      let mut stmts : List CStmt := []
+      for arg in args do
+        let cArg ← elabExpr arg
+        let printCall := match cArg.ty with
+          | .string =>
+            CStmt.expr (CExpr.call "print_string" [] [CExpr.borrow cArg (.ref .string)] .unit)
+          | .ref .string | .refMut .string =>
+            CStmt.expr (CExpr.call "print_string" [] [cArg] .unit)
+          | .int =>
+            CStmt.expr (CExpr.call "print_int" [] [cArg] .unit)
+          | .uint | .i32 | .i16 | .i8 | .u32 | .u16 | .u8 =>
+            CStmt.expr (CExpr.call "print_int" [] [CExpr.cast cArg .int] .unit)
+          | .bool =>
+            CStmt.expr (CExpr.call "print_bool" [] [cArg] .unit)
+          | .char =>
+            CStmt.expr (CExpr.call "print_char" [] [CExpr.cast cArg .int] .unit)
+          | _ =>
+            CStmt.expr (CExpr.call "print_string" [] [CExpr.strLit "<unprintable>"] .unit)
+        stmts := stmts ++ [printCall]
+      if fnName == "println" then
+        stmts := stmts ++ [CStmt.expr (CExpr.call "print_char" [] [CExpr.intLit 10 .int] .unit)]
+      return stmts
+    else
+      let cE ← elabExpr (.call _sp fnName _typeArgs args)
+      return [.expr cE]
+
   | .expr _ e =>
     let cE ← elabExpr e
     return [.expr cE]
