@@ -3,7 +3,7 @@ import Concrete
 open Concrete
 
 def usage : String :=
-  "Usage: concrete <file.con> [-o output] [--emit-llvm] [--emit-core] [--emit-ssa] [--test] [--test --module <name>] [--report caps|unsafe|layout|interface|alloc|mono|authority|proof] [--fmt]\n       concrete build [-o output] [--emit-llvm]\n       concrete run [-- args...]"
+  "Usage: concrete <file.con> [-o output] [--emit-llvm] [--emit-core] [--emit-ssa] [--test] [--test --module <name>] [--report caps|unsafe|layout|interface|alloc|mono|authority|proof] [--fmt]\n       concrete build [-o output] [--emit-llvm]\n       concrete run [-- args...]\n       concrete test [--module <name>]"
 
 def writeFile (path : String) (content : String) : IO Unit := do
   IO.FS.writeFile ⟨path⟩ content
@@ -510,6 +510,120 @@ def compileBuild (projectRoot : String) (outputPath : Option String) (emitLLVM :
       if !quiet then IO.println s!"Built {outPath}"
       return 0
 
+/-- Run tests for a project from Concrete.toml. Like compileBuild but in test mode. -/
+partial def compileTestBuild (projectRoot : String) (moduleFilter : Option String := none) : IO UInt32 := do
+  let tomlPath := projectRoot ++ "/Concrete.toml"
+  let tomlContent ← readFile tomlPath
+  let userDeps := parseDependencies tomlContent
+
+  -- Inject builtin std
+  let hasStdDep := userDeps.any fun (name, _) => name == "std"
+  let deps ← if hasStdDep then pure userDeps
+    else match ← findBuiltinStd with
+      | some stdPath => pure (("std", stdPath) :: userDeps)
+      | none => pure userDeps
+
+  -- Load dependencies
+  let mut depModules : List Module := []
+  let mut depSrcMap : SourceMap := []
+  for (depName, depPath) in deps do
+    let resolvedPath := if depPath.startsWith "/" then depPath
+      else resolveDependencyPath projectRoot depPath
+    match ← loadDependency depName resolvedPath with
+    | .error e => IO.eprintln e; return 1
+    | .ok (modules, srcMap) =>
+      depModules := depModules ++ modules
+      depSrcMap := depSrcMap ++ srcMap
+
+  -- Load project source
+  let mainPath := projectRoot ++ "/src/main.con"
+  let sourceResult ← try
+    let s ← readFile mainPath
+    pure (some s)
+  catch _ => pure none
+  match sourceResult with
+  | none =>
+    IO.eprintln s!"cannot read {mainPath}"
+    return 1
+  | some source =>
+
+  match Pipeline.parse source with
+  | .error ds =>
+    IO.eprintln (renderDiagnostics ds (sourceMap := [(mainPath, source)]))
+    return 1
+  | .ok parsed =>
+  let baseDir := projectRoot ++ "/src"
+  match ← Pipeline.resolveFiles baseDir parsed mainPath resolveAllModules with
+  | .error ds =>
+    IO.eprintln (renderDiagnostics ds (sourceMap := [(mainPath, source)]))
+    return 1
+  | .ok (resolvedParsed, subSrcMap) =>
+    let allModules := depModules ++ resolvedParsed.modules
+    let allSrcMap := [(mainPath, source)] ++ subSrcMap ++ depSrcMap
+    let merged : ParsedProgram := { modules := allModules }
+    let summary := Pipeline.buildSummary merged
+    match Pipeline.resolve merged summary with
+    | .error ds =>
+      IO.eprintln (renderDiagnostics ds (sourceMap := allSrcMap))
+      return 1
+    | .ok resolvedProg =>
+    let depNames := depModules.map (·.name)
+    let projectResolved :=
+      resolvedProg.modules.filter fun rm => !depNames.contains rm.module.name
+    let projectResolvedProg : ResolvedProgram := { modules := projectResolved }
+    match Pipeline.check projectResolvedProg summary with
+    | .error ds =>
+      IO.eprintln (renderDiagnostics ds (sourceMap := allSrcMap))
+      return 1
+    | .ok () =>
+    match Pipeline.elaborate resolvedProg summary with
+    | .error ds =>
+      IO.eprintln (renderDiagnostics ds (sourceMap := allSrcMap))
+      return 1
+    | .ok elabProg =>
+    match Pipeline.coreCheck elabProg with
+    | .error ds =>
+      IO.eprintln (renderDiagnostics ds (sourceMap := allSrcMap))
+      return 1
+    | .ok validCore =>
+    match Pipeline.monomorphize validCore with
+    | .error ds =>
+      IO.eprintln (renderDiagnostics ds (sourceMap := allSrcMap))
+      return 1
+    | .ok mono =>
+    match Pipeline.lower mono with
+    | .error ds =>
+      IO.eprintln (renderDiagnostics ds (sourceMap := allSrcMap))
+      return 1
+    | .ok ssa =>
+      let llvmIR := Pipeline.emit ssa (testMode := true) (moduleFilter := moduleFilter)
+      let llPath := mainPath ++ ".test.ll"
+      let outPath := "/tmp/concrete_test_" ++ toString (← IO.monoMsNow)
+      writeFile llPath llvmIR
+      let exitCode ← runCmd "clang" #[llPath, "-o", outPath, "-Wno-override-module", "-O2"]
+      if exitCode != 0 then
+        IO.eprintln "clang compilation failed"
+        IO.eprintln s!"LLVM IR left at: {llPath}"
+        return exitCode
+      let child ← IO.Process.spawn {
+        cmd := outPath
+        stdout := .piped
+        stderr := .piped
+      }
+      let stdout ← child.stdout.readToEnd
+      let stderr ← child.stderr.readToEnd
+      let testExit ← child.wait
+      IO.print stdout
+      if !stderr.isEmpty then IO.eprint stderr
+      if testExit != 0 then
+        IO.eprintln s!"Test binary exited with code {testExit}"
+        IO.eprintln s!"LLVM IR at: {llPath}"
+        IO.eprintln s!"Binary at: {outPath}"
+      else
+        IO.FS.removeFile ⟨llPath⟩
+        try IO.FS.removeFile ⟨outPath⟩ catch _ => pure ()
+      return testExit
+
 def main (args : List String) : IO UInt32 := do
   -- Check for "build" command first (before generic single-arg pattern)
   if args.head? == some "build" then
@@ -552,6 +666,18 @@ def main (args : List String) : IO UInt32 := do
       -- Clean up temp binary
       try IO.FS.removeFile ⟨tmpBin⟩ catch _ => pure ()
       return exitCode
+  -- concrete test [--module <name>]
+  if args.head? == some "test" then
+    let cwd ← IO.currentDir
+    match ← findProjectRoot cwd.toString with
+    | none =>
+      IO.eprintln "No Concrete.toml found in current directory or parent"
+      return 1
+    | some root =>
+      let modFilter := match args with
+        | _ :: "--module" :: m :: _ => some m
+        | _ => none
+      return ← compileTestBuild root modFilter
   match args with
   | [] =>
     IO.eprintln usage
