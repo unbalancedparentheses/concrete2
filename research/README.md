@@ -32,7 +32,7 @@ If you want the highest-leverage current research first:
 
 1. [high-leverage-systems-ideas.md](high-leverage-systems-ideas.md) — consolidated view of six recurring system-level ideas: allocation budgets, arenas, execution boundedness, layout reports, typestate, and authority budgets (`P0`, `Open`)
 2. [phase-h-findings.md](phase-h-findings.md) — classified findings from the first real programs, with language vs stdlib vs tooling vs runtime splits (`P0`, `Open`)
-3. [text-and-output-design.md](text-and-output-design.md) — formatting, interpolation, builders, and parser-oriented text support after the first Phase H programs (`P0`, `Open`)
+3. [text-and-output-design.md](text-and-output-design.md) — mixed-arg `print` / `println`, interpolation, builders, and parser-oriented text support after the first Phase H programs (`P0`, `Open`)
 4. [runtime-collections.md](runtime-collections.md) — what collection maturity should mean for interpreter/runtime workloads (`P1`, `Open`)
 5. [standalone-vs-project-ux.md](standalone-vs-project-ux.md) — smoothing the split between single-file examples and project-based stdlib usage (`P1`, `Open`)
 6. [module-qualification.md](module-qualification.md) — qualified access and namespace pressure in larger multi-module programs (`P1`, `Open`)
@@ -79,7 +79,7 @@ If you want the highest-leverage current research first:
 
 - [stdlib-design.md](stdlib-design.md) — stdlib direction, module priorities, and style rules (`P1`, `Open`, partially adopted)
 - [stdlib-api-cleanup.md](stdlib-api-cleanup.md) — cleaning builtin-style names and ownership surprises out of the public stdlib surface (`P1`, `Open`)
-- [text-and-output-design.md](text-and-output-design.md) — formatting, interpolation, builders, and parser/text support after first-wave real programs (`P0`, `Open`)
+- [text-and-output-design.md](text-and-output-design.md) — mixed-arg printing first, interpolation later if needed, and parser/text support after first-wave real programs (`P0`, `Open`)
 - [runtime-collections.md](runtime-collections.md) — interpreter/runtime-oriented collection maturity, patterns, and API gaps (`P1`, `Open`)
 - [arena-allocation.md](arena-allocation.md) — arena/bump allocation as a possible explicit resource model for parser/interpreter-style workloads (`P1`, `Open`)
 - [no-std-freestanding.md](no-std-freestanding.md) — future hosted vs freestanding / `no_std` split (`P1`, `Open`)

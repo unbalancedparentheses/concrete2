@@ -558,8 +558,9 @@ Primary surfaces:
         - design notes: [research/cleanup-ergonomics.md](research/cleanup-ergonomics.md)
      2. add remaining mutation-oriented string APIs (`string_clear`, `string_starts_with`, `string_ends_with`) — **not started**
         - builder pattern proven by JSON parser; remaining gap is keyword-matching temporary allocations
-     3. add a real text/output layer: formatting, interpolation, and logging-friendly output helpers — **not started**
-        - builder builtins (`string_append_int`, `string_append_bool`) landed; interpolation deferred pending evidence from 10k+ LOC scale
+     3. add a real text/output layer: mixed-arg `print` / `println`, then interpolation only if real code still needs it — **not started**
+        - builder builtins (`string_append_int`, `string_append_bool`) landed and proved the ownership/cost model, but builder-only output is still too noisy
+        - preferred sequence now is: mixed-arg `print` / `println` first, interpolation later if the examples still justify it, trait-based formatting deferred
         - design notes: [research/text-and-output-design.md](research/text-and-output-design.md)
      4. improve runtime-oriented collection maturity for interpreter/runtime workloads: maps, nested mutable structures, and frame-friendly patterns — **not started**
      5. evaluate arena allocation against the existing `Vec`-as-pool pattern and adopt it only if real programs show a clear win in clarity, performance, or boundedness — **not started**
@@ -624,8 +625,9 @@ Deliverables:
 After the policy engine, MAL, JSON parser, grep-like tool, and bytecode VM, the highest-value next work is:
 
 1. finish the text/output direction decision and move from builder-only pressure findings to a clear user-facing output model
-   - decide formatting vs interpolation vs builder-first as the primary direction
-   - implement only the narrowest surface the evidence supports
+   - mixed-arg `print` / `println` is now the preferred first step
+   - interpolation stays the likely next step for actual string construction if examples still justify it
+   - trait-based formatting remains deferred until it earns its keep
 2. make the artifact/update verifier the next flagship Phase H workload and treat it as the main “why Concrete?” proof point
    - it should become the first polished review artifact, not just another benchmark
    - it should carry code, tests, benchmark results, and audit/report outputs together
@@ -655,7 +657,7 @@ Concrete already looks better than Rust in a narrow auditability niche, but it d
    - without this, serious programs keep paying workflow tax and teaching workarounds
 2. **ergonomics without abandoning explicitness**
    - text/output layer
-   - formatting / interpolation or a strong alternative
+   - mixed-arg `print` / `println` first, then interpolation only if still justified
    - qualified module access
    - remaining high-value helper APIs and cleanup idioms
    - the goal is not more magic; it is better compression of honest code
