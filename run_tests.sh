@@ -1153,6 +1153,20 @@ run_ok "$TESTDIR/test_defer_consuming_lifo.con" "first second
 0"
 run_ok "$TESTDIR/test_defer_in_loop_func.con" "xxx
 3"
+run_ok "$TESTDIR/test_defer_block_scope.con" "inner
+1"
+run_ok "$TESTDIR/test_defer_loop_iteration.con" "xxx
+3"
+run_ok "$TESTDIR/test_defer_loop_break_scope.con" "yyy
+2"
+run_ok "$TESTDIR/test_defer_loop_continue_scope.con" "zzz
+3"
+run_ok "$TESTDIR/test_defer_try_nested.con" "inner outer
+109"
+run_ok "$TESTDIR/test_defer_nested_lifo.con" "cba
+0"
+run_ok "$TESTDIR/test_defer_loop_inner_return.con" "IIIIO
+3"
 run_ok "$TESTDIR/test_trait_multi_bound.con" 42
 run_err "$TESTDIR/error_defer_linear_reuse.con"  "reserved by defer"
 run_err "$TESTDIR/error_linearity_branch_disagree.con" "consumed in one branch"

@@ -905,7 +905,7 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
     terminateBlock (.condBr (.reg cmpDst .bool) okLabel errLabel)
     -- Err path: return the whole enum (run deferred calls first)
     startBlock errLabel
-    emitDeferredCalls
+    emitAllDeferredCalls
     terminateBlock (.ret (some iVal))
     -- Ok path: extract the Ok value from payload using aligned offset
     startBlock okLabel
@@ -1194,10 +1194,10 @@ private partial def emitAllDeferredCalls : LowerM Unit := do
   for frame in s.scopeStack do
     emitFrameDeferredCalls frame
 
-private def pushScope (kind : ScopeKind) : LowerM Unit := do
+private partial def pushScope (kind : ScopeKind) : LowerM Unit := do
   modify fun s => { s with scopeStack := { kind := kind } :: s.scopeStack }
 
-private def popScope : LowerM (Option ScopeFrame) := do
+private partial def popScope : LowerM (Option ScopeFrame) := do
   let s ← get
   match s.scopeStack with
   | [] => return none
@@ -1205,7 +1205,7 @@ private def popScope : LowerM (Option ScopeFrame) := do
     set { s with scopeStack := rest }
     return some frame
 
-private def addDeferredToCurrentScope (body : CExpr) : LowerM Unit := do
+private partial def addDeferredToCurrentScope (body : CExpr) : LowerM Unit := do
   modify fun s =>
     match s.scopeStack with
     | [] => s
@@ -1215,15 +1215,10 @@ private def addDeferredToCurrentScope (body : CExpr) : LowerM Unit := do
     Stops before the nearest loop marker or outer function scope. -/
 private partial def emitDeferredUntilLoop : LowerM Unit := do
   let s ← get
-  let rec go : List ScopeFrame → LowerM Unit
-    | [] => pure ()
-    | frame :: rest =>
-      match frame.kind with
-      | .loop | .function => pure ()
-      | .block =>
-        emitFrameDeferredCalls frame
-        go rest
-  go s.scopeStack
+  for frame in s.scopeStack do
+    match frame.kind with
+    | .loop | .function => break
+    | .block => emitFrameDeferredCalls frame
 
 partial def lowerStmt (stmt : CStmt) : LowerM Unit := do
   match stmt with

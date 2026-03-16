@@ -1912,9 +1912,9 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
       if !env.loopLabels.contains l then
         throwCheck (.unknownLoopLabel l) (some stmt.getSpan)
     | none => pure ()
-    -- Check all linear variables declared in the loop body are consumed
+    -- Check all linear variables declared in the loop body are consumed or reserved by defer
     for (name, info) in env.vars do
-      if !info.isCopy && info.state != .consumed && info.loopDepth >= env.loopDepth then
+      if !info.isCopy && info.state != .consumed && info.state != .reserved && info.loopDepth >= env.loopDepth then
         throwCheck (.breakSkipsUnconsumedLinear name) (some stmt.getSpan)
     -- Check break value if present (for while-as-expression)
     match value with
@@ -1939,9 +1939,9 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
       if !env.loopLabels.contains l then
         throwCheck (.unknownLoopLabel l) (some stmt.getSpan)
     | none => pure ()
-    -- Check all linear variables declared in the loop body are consumed
+    -- Check all linear variables declared in the loop body are consumed or reserved by defer
     for (name, info) in env.vars do
-      if !info.isCopy && info.state != .consumed && info.loopDepth >= env.loopDepth then
+      if !info.isCopy && info.state != .consumed && info.state != .reserved && info.loopDepth >= env.loopDepth then
         throwCheck (.continueSkipsUnconsumedLinear name) (some stmt.getSpan)
 
 partial def checkStmts (stmts : List Stmt) (retTy : Ty) : CheckM Unit := do
