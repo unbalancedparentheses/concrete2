@@ -85,7 +85,7 @@ The right MAL fix is a frame-bounded environment design, not a language workarou
 - **Bug 007** — Standalone print: fixed (`print_string`, `print_int`, `print_char` builtins)
 - **Bug 008** — If-expression: fixed (was statement-only, now works as expression)
 - **Bug 009** — Const lowering: fixed (constants inline during lowering)
-- **Bug 010** — Substring extraction: fixed (`string_slice` existed, added `string_substr` alias)
+- **Bug 010** — Substring extraction: fixed (`string_slice(start, end)` + `string_substr(start, len)` with correct semantics)
 - **Bug 011** — Linear string building: fixed (`string_push_char`, `string_append` with `&mut`)
 - **Bug 012** — Standalone timing: fixed (`clock_monotonic_ns` builtin)
 

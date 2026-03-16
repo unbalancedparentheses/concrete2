@@ -138,6 +138,16 @@ def getBuiltinFns : List LLVMFnDef × List LLVMGlobal × List LLVMFnDecl :=
     { name := "string_slice", retTy := strTy, params := [("s", .ptr), ("start", .i64), ("end_", .i64)], blocks := strSliceBlocks }
 
   -- -------------------------------------------------------
+  -- string_substr (start, len) — wrapper that calls string_slice(start, start+len)
+  -- -------------------------------------------------------
+  let fnStringSubstr : LLVMFnDef :=
+    { name := "string_substr", retTy := strTy, params := [("s", .ptr), ("start", .i64), ("len", .i64)], blocks := [
+      ⟨"entry", [
+        .binOp "end_" .add .i64 (.reg "start") (.reg "len"),
+        .call (some "result.ssub") strTy (.global "string_slice") [(.ptr, .reg "s"), (.i64, .reg "start"), (.i64, .reg "end_")]
+      ], .ret strTy (some (.reg "result.ssub"))⟩] }
+
+  -- -------------------------------------------------------
   -- string_char_at
   -- -------------------------------------------------------
   let strCharAtBlocks : List LLVMBlock := [
@@ -577,7 +587,7 @@ def getBuiltinFns : List LLVMFnDef × List LLVMGlobal × List LLVMFnDecl :=
 
   let fns : List LLVMFnDef := [
     getOOMCheckFn,
-    fnStringLength, fnDropString, fnStringConcat, fnStringSlice, fnStringCharAt,
+    fnStringLength, fnDropString, fnStringConcat, fnStringSlice, fnStringSubstr, fnStringCharAt,
     fnStringContains, fnStringEq, fnIntToString, fnStringToInt, fnBoolToString,
     fnFloatToString, fnStringTrim,
     fnPrintString, fnPrintInt, fnPrintChar,

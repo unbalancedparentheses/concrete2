@@ -31,6 +31,9 @@ This works, but it distorts normal parser structure and makes otherwise straight
 
 ## Fix
 
-`string_slice(s: &String, start: Int, end: Int) -> String` already existed as a builtin.
-Added `string_substr` as an alias that maps to the same intrinsic (`stringSlice`).
-Intrinsic name canonicalization in Elab.lean ensures aliases resolve to the same LLVM function.
+Two distinct operations now exist:
+
+- `string_slice(s: &String, start: Int, end: Int) -> String` — extracts chars from index `start` to `end` (exclusive). Both indices are clamped to `[0, length]`.
+- `string_substr(s: &String, start: Int, len: Int) -> String` — extracts `len` chars starting at index `start`. Implemented as `string_slice(s, start, start + len)`.
+
+`string_substr` has its own intrinsic ID (`stringSubstr`) and its own LLVM function that computes `end = start + len` before delegating to `string_slice`. The two operations have genuinely different semantics — `string_substr(s, 3, 2)` extracts 2 characters starting at position 3, while `string_slice(s, 3, 2)` returns empty (end < start).

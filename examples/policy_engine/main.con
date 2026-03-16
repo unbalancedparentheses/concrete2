@@ -119,21 +119,9 @@ mod Gate {
     import Domain.{ Rule, Request };
     import Evaluator.{ evaluate };
 
-    trusted extern fn putchar(c: i32) -> i32;
-
-    fn put(s: &String) with(Console) {
-        let len: Int = string_length(s);
-        let mut i: Int = 0;
-        while i < len {
-            let ch: Int = string_char_at(s, i);
-            putchar(ch as i32);
-            i = i + 1;
-        }
-    }
-
     // gate: evaluate a request and print a human-readable decision.
     // Requires Console — printing is an explicit side effect.
-    // Requires Alloc — string concatenation allocates.
+    // Requires Alloc — string building allocates.
     pub fn gate(rules: &mut Vec<Rule>, req: Request,
                 p_name: String, r_name: String,
                 a_name: String) with(Console, Alloc) -> i32 {
@@ -142,16 +130,21 @@ mod Gate {
         // Print: [ALLOW] admin read source_code
         let mut v_label: String = "DENY";
         if v == 1 { v_label = "ALLOW"; }
-        let s1: String = string_concat("[", v_label);
-        let s2: String = string_concat(s1, "] ");
-        let s3: String = string_concat(s2, p_name);
-        let s4: String = string_concat(s3, " ");
-        let s5: String = string_concat(s4, a_name);
-        let s6: String = string_concat(s5, " ");
-        let s7: String = string_concat(s6, r_name);
-        put(&s7);
-        putchar(10);
-        drop_string(s7);
+        let mut out: String = "[";
+        string_append(&mut out, &v_label);
+        string_append(&mut out, &"] ");
+        string_append(&mut out, &p_name);
+        string_append(&mut out, &" ");
+        string_append(&mut out, &a_name);
+        string_append(&mut out, &" ");
+        string_append(&mut out, &r_name);
+        print_string(&out);
+        print_char(10);
+        drop_string(out);
+        drop_string(v_label);
+        drop_string(p_name);
+        drop_string(r_name);
+        drop_string(a_name);
         return v;
     }
 }

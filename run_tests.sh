@@ -958,6 +958,12 @@ run_ok "$TESTDIR/bug_cross_module_struct_field.con" 42
 run_ok "$TESTDIR/bug_i32_literal_type.con" 42
 run_ok "$TESTDIR/bug_cross_module_mut_borrow.con" 42
 run_ok "$TESTDIR/bug_array_var_index_assign.con" 42
+run_ok "$TESTDIR/bug_if_expression.con" 0
+run_ok "$TESTDIR/bug_print_builtins.con" "hello 42
+0"
+run_ok "$TESTDIR/bug_string_building.con" 0
+run_ok "$TESTDIR/bug_clock_builtin.con" 0
+run_ok "$TESTDIR/bug_enum_in_struct.con" 0
 run_ok "$TESTDIR/hardening_int_literal_inference.con" 42
 run_ok "$TESTDIR/hardening_borrow_edge_cases.con" 42
 run_ok "$TESTDIR/hardening_cross_module_enum.con" 42
@@ -2166,6 +2172,12 @@ run_ok_O2 "$TESTDIR/bug_cross_module_struct_field.con" 42
 run_ok_O2 "$TESTDIR/bug_i32_literal_type.con" 42
 run_ok_O2 "$TESTDIR/bug_cross_module_mut_borrow.con" 42
 run_ok_O2 "$TESTDIR/bug_array_var_index_assign.con" 42
+run_ok_O2 "$TESTDIR/bug_if_expression.con" 0
+run_ok_O2 "$TESTDIR/bug_print_builtins.con" "hello 42
+0"
+run_ok_O2 "$TESTDIR/bug_string_building.con" 0
+## bug_clock_builtin excluded from O2: loop between clock calls gets optimized away
+run_ok_O2 "$TESTDIR/bug_enum_in_struct.con" 0
 
 # Hardening tests under O2
 run_ok_O2 "$TESTDIR/hardening_int_literal_inference.con" 42

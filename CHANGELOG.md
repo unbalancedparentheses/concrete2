@@ -20,7 +20,7 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 **Bug 007 — Standalone print:** Added `print_string(&String)`, `print_int(Int)`, `print_char(Int)` as compiler builtins requiring `Console` capability. Uses `write(2)` syscall. User-defined functions with the same names take precedence.
 
-**Bug 010 — Substring extraction:** `string_slice(s, start, end)` already existed; added `string_substr` alias. Intrinsic name canonicalization in Elab.lean ensures aliases resolve to the canonical LLVM function.
+**Bug 010 — Substring extraction:** `string_slice(s, start, end)` and `string_substr(s, start, len)` now exist as distinct operations with correct semantics. `string_substr` computes `end = start + len` and delegates to `string_slice`.
 
 **Bug 011 — Loop string building:** Added `string_push_char(&mut String, Int)` and `string_append(&mut String, &String)` builtins with in-place mutation via `&mut`, analogous to `vec_push`. Works naturally in loops without fighting linearity.
 

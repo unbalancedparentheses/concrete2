@@ -24,7 +24,7 @@ inductive IntrinsicId where
   | vecNew | vecPush | vecGet | vecSet | vecLen | vecPop | vecFree
 
   -- String operations
-  | stringLength | stringConcat | stringEq | stringSlice
+  | stringLength | stringConcat | stringEq | stringSlice | stringSubstr
   | stringCharAt | stringContains | stringTrim | dropString
   | stringPushChar | stringAppend
 
@@ -79,7 +79,7 @@ def resolveIntrinsic (name : String) : Option IntrinsicId :=
   | "drop_string"     | "String_drop"     => some .dropString
   | "string_push_char" | "String_push_char" => some .stringPushChar
   | "string_append"    | "String_append"    => some .stringAppend
-  | "string_substr"    | "String_substr"    => some .stringSlice
+  | "string_substr"    | "String_substr"    => some .stringSubstr
 
   -- Conversion
   | "int_to_string"  => some .intToString
@@ -131,6 +131,7 @@ def IntrinsicId.canonicalName : IntrinsicId → String
   | .stringConcat => "string_concat"
   | .stringEq => "string_eq"
   | .stringSlice => "string_slice"
+  | .stringSubstr => "string_substr"
   | .stringCharAt => "string_char_at"
   | .stringContains => "string_contains"
   | .stringTrim => "string_trim"

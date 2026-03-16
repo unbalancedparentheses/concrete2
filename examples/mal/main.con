@@ -54,39 +54,23 @@ mod Types {
     }
 }
 
-// ---- IO (putchar wrapper) ----
+// ---- IO (uses print builtins) ----
 
 mod IO {
-    trusted extern fn putchar(c: i32) -> i32;
-
     pub fn put_char(c: i32) with(Console) {
-        putchar(c);
+        print_char(c as Int);
     }
 
     pub fn put_str(s: &String) with(Console) {
-        let len: Int = string_length(s);
-        let mut i: Int = 0;
-        while i < len {
-            let ch: Int = string_char_at(s, i);
-            putchar(ch as i32);
-            i = i + 1;
-        }
+        print_string(s);
     }
 
     pub fn put_int(n: i32) with(Console) {
-        if n < 0 {
-            putchar(45); // '-'
-            put_int(0 - n);
-            return;
-        }
-        if n >= 10 {
-            put_int(n / 10);
-        }
-        putchar(48 + (n - (n / 10) * 10));
+        print_int(n as Int);
     }
 
     pub fn put_newline() with(Console) {
-        putchar(10);
+        print_char(10);
     }
 }
 

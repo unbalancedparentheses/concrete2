@@ -458,6 +458,30 @@ Primary surfaces:
      3. ~~add substring extraction or equivalent string slicing (`Bug 010`)~~ — **fixed**
      4. ~~add loop-friendly string building (`Bug 011`)~~ — **fixed**
      5. ~~give standalone benchmark programs an easy timing path (`Bug 012`)~~ — **fixed**
+   - next findings-closure track from the first wave of real programs:
+     1. add a real text/output layer: formatting, interpolation, and logging-friendly output helpers — **not started**
+     2. improve runtime-oriented collection maturity for interpreter/runtime workloads: maps, nested mutable structures, and frame-friendly patterns — **not started**
+     3. reduce the standalone vs project split so stdlib access, benchmarking, and examples do not require awkward scaffolding — **not started**
+     4. design qualified module access (`Module.function()` or equivalent) so larger programs do not collapse into rename pressure — **not started**
+     5. document runtime/stack pressure findings from deep-recursive workloads and decide what belongs to language, runtime, stdlib, or tooling — **not started**
+     6. decide whether destructuring `let` earns its place for real-program clarity and parser/runtime code — **not started**
+   - classify every serious-program finding before acting on it:
+     - language surface
+     - stdlib/runtime support
+     - tooling/workflow
+     - backend/performance
+     - formalization impact
+   - use the following research notes as the design staging area before adding new surface:
+     - `research/phase-h-findings.md`
+     - `research/text-and-output-design.md`
+     - `research/module-qualification.md`
+     - `research/runtime-collections.md`
+     - `research/standalone-vs-project-ux.md`
+     - `research/runtime-execution-pressure.md`
+   - keep the example corpus honest as fixes land:
+     - when a bug, builtin, stdlib helper, or workflow improvement removes a workaround, earlier Phase H examples should be updated to use the improved path
+     - examples should not preserve stale workarounds once the language/system has a better supported surface
+     - the example corpus should show the current best Concrete style, not historical accident
 
 Deliverables:
 - a small corpus of serious Concrete programs large enough to pressure-test the language honestly
@@ -468,11 +492,22 @@ Deliverables:
 - at least one explicit interpreter/runtime comparison target grounded in a known external workload with tests (for example MAL-style Lisp), not only ad hoc internal programs
 - a documented external-tested workload track covering known-spec / known-test programs beyond the first-wave portfolio
 - a concrete list of stdlib, diagnostics, package, and backend issues discovered only through sustained use
+- a classified findings ledger showing which real-program issues are language, stdlib, tooling, runtime, or formalization problems
+- closure of the first-wave ergonomics findings before the mid-wave programs normalize workarounds as language shape
+- an example corpus that has been refreshed as fixes land, so older examples do not teach stale workaround patterns
 - proof that Concrete remains readable and auditable at larger scales, or an explicit record of where it fails
 - a clearer basis for the package, adoption, and operational phases because they are now shaped by real code rather than only design intent
 
 Exit criterion:
 Concrete has been exercised by multiple serious programs large enough to reveal structural weaknesses, and the project has used those results to drive the next package/adoption/operational phases.
+
+Phase H should not end with only benchmark charts and example directories. It should leave behind a disciplined findings-closure path for the issues that real code exposed:
+
+- language issues that may justify surface changes
+- stdlib/runtime issues that should become library/tooling work instead of syntax creep
+- workflow friction that belongs in package/project tooling
+- runtime/performance constraints that should inform later execution and concurrency phases
+- formalization-impacting changes that must be staged before Phase I broadens proof scope
 
 #### Phase I: Formalization And Proof Expansion
 
