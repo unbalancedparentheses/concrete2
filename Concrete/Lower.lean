@@ -43,6 +43,16 @@ structure LoopInfo where
   /-- Optional loop label for labeled break/continue. -/
   loopLabel : Option String := none
 
+inductive ScopeKind where
+  | function
+  | block
+  | loop
+  deriving Inhabited, BEq
+
+structure ScopeFrame where
+  kind : ScopeKind
+  deferred : List CExpr := []
+
 structure LowerState where
   blocks : List SBlock
   currentLabel : String
@@ -62,7 +72,7 @@ structure LowerState where
       Maps (varName, allocaReg, ty). Field assignment GEPs directly into
       the alloca instead of phi-transporting whole struct values. -/
   promotedAllocas : List (String × String × Ty) := []
-  deferStack : List CExpr := []
+  scopeStack : List ScopeFrame := []
 
 abbrev LowerM := ExceptT String (StateM LowerState)
 
@@ -1174,10 +1184,46 @@ partial def lastExprVal (body : List CStmt) (_ty : Ty) : LowerM SVal := do
   | _ => pure .unit
 
 /-- Emit all deferred calls in LIFO order. -/
-private partial def emitDeferredCalls : LowerM Unit := do
-  let s ← get
-  for body in s.deferStack do
+private partial def emitFrameDeferredCalls (frame : ScopeFrame) : LowerM Unit := do
+  for body in frame.deferred do
     let _ ← lowerExpr body
+
+/-- Emit all deferred calls for all active scopes, from inner to outer. -/
+private partial def emitAllDeferredCalls : LowerM Unit := do
+  let s ← get
+  for frame in s.scopeStack do
+    emitFrameDeferredCalls frame
+
+private def pushScope (kind : ScopeKind) : LowerM Unit := do
+  modify fun s => { s with scopeStack := { kind := kind } :: s.scopeStack }
+
+private def popScope : LowerM (Option ScopeFrame) := do
+  let s ← get
+  match s.scopeStack with
+  | [] => return none
+  | frame :: rest =>
+    set { s with scopeStack := rest }
+    return some frame
+
+private def addDeferredToCurrentScope (body : CExpr) : LowerM Unit := do
+  modify fun s =>
+    match s.scopeStack with
+    | [] => s
+    | frame :: rest => { s with scopeStack := { frame with deferred := body :: frame.deferred } :: rest }
+
+/-- Emit deferred calls for scopes being exited by break/continue.
+    Stops before the nearest loop marker or outer function scope. -/
+private partial def emitDeferredUntilLoop : LowerM Unit := do
+  let s ← get
+  let rec go : List ScopeFrame → LowerM Unit
+    | [] => pure ()
+    | frame :: rest =>
+      match frame.kind with
+      | .loop | .function => pure ()
+      | .block =>
+        emitFrameDeferredCalls frame
+        go rest
+  go s.scopeStack
 
 partial def lowerStmt (stmt : CStmt) : LowerM Unit := do
   match stmt with
@@ -1191,11 +1237,11 @@ partial def lowerStmt (stmt : CStmt) : LowerM Unit := do
 
   | .return_ (some value) _retTy =>
     let val ← lowerExpr value
-    emitDeferredCalls
+    emitAllDeferredCalls
     terminateBlock (.ret (some val))
 
   | .return_ none _retTy =>
-    emitDeferredCalls
+    emitAllDeferredCalls
     terminateBlock (.ret none)
 
   | .expr e =>
@@ -1352,6 +1398,7 @@ partial def lowerStmt (stmt : CStmt) : LowerM Unit := do
       loopLabel := whileLabel
     }
     pushLoop loopInfo
+    pushScope .loop
     -- Lower condition (uses phi values)
     let condVal ← lowerExpr cond
     terminateBlock (.condBr condVal bodyLabel exitLabel)
@@ -1401,6 +1448,7 @@ partial def lowerStmt (stmt : CStmt) : LowerM Unit := do
         terminateBlock (.br headerLabel)
       -- Pop loop to get break/continue edges
       let loopInfoFinal ← popLoop
+      let _ ← popScope
       -- Build header phi instructions (step block is the back-edge source)
       let mut headerPhiInsts : List SInst := []
       for (name, phiReg, preVal, ty) in headerPhis do
@@ -1444,6 +1492,7 @@ partial def lowerStmt (stmt : CStmt) : LowerM Unit := do
     else do
     -- Pop loop to get break/continue edges
     let loopInfoFinal ← popLoop
+    let _ ← popScope
     -- Build header phi instructions (only for non-promoted scalar vars)
     let mut headerPhiInsts : List SInst := []
     for (name, phiReg, preVal, ty) in headerPhis do
@@ -1569,6 +1618,7 @@ partial def lowerStmt (stmt : CStmt) : LowerM Unit := do
         let bVal ← lowerExpr valExpr
         emit (.store bVal (.reg slot info.resultTy))
       | _, _ => pure ()
+      emitDeferredUntilLoop
       let vars ← snapshotVars
       let label ← getCurrentLabel
       addBreakEdgeToLoop vars label info.exitLabel
@@ -1579,6 +1629,7 @@ partial def lowerStmt (stmt : CStmt) : LowerM Unit := do
     match ← findLoopByLabel contLabel with
     | some info =>
       let target := if info.continueTarget != "" then info.continueTarget else info.headerLabel
+      emitDeferredUntilLoop
       let vars ← snapshotVars
       let label ← getCurrentLabel
       addContinueEdgeToLoop vars label info.headerLabel
@@ -1586,7 +1637,7 @@ partial def lowerStmt (stmt : CStmt) : LowerM Unit := do
     | none => pure ()
 
   | .defer body =>
-    modify fun s => { s with deferStack := body :: s.deferStack }
+    addDeferredToCurrentScope body
 
   | .borrowIn var ref _region isMut refTy body =>
     -- Create a memory slot for the borrowed variable, set ref to point to it
@@ -1608,11 +1659,18 @@ partial def lowerStmt (stmt : CStmt) : LowerM Unit := do
       setVar var (.reg loadBack innerTy)
 
 partial def lowerStmts (stmts : List CStmt) : LowerM Unit := do
+  pushScope .block
   for s in stmts do
     let term ← currentBlockTerminated
     if term then
-      return  -- Don't lower statements after a terminator
+      break
     lowerStmt s
+  let term ← currentBlockTerminated
+  match ← popScope with
+  | some frame =>
+    if !term then
+      emitFrameDeferredCalls frame
+  | none => pure ()
 
 end
 
@@ -1634,13 +1692,14 @@ def lowerFn (f : CFnDef) (structDefs : List CStructDef) (enumDefs : List CEnumDe
     enumDefs := enumDefs
     loopStack := []
     constants := constants
+    scopeStack := [{ kind := .function }]
   }
   let result := (do
     lowerStmts f.body
     -- If the function hasn't terminated, add implicit return
     let term ← currentBlockTerminated
     if !term then
-      emitDeferredCalls
+      emitAllDeferredCalls
       if f.retTy == Ty.unit then
         terminateBlock (.ret none)
       else

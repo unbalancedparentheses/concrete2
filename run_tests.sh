@@ -1141,7 +1141,20 @@ run_ok "$TESTDIR/test_defer_linearity.con" 42
 run_ok "$TESTDIR/test_defer_drop_string.con" "hello
 hello
 1"
+run_ok "$TESTDIR/test_defer_multi_consuming.con" "ab
+cd
+2"
+run_ok "$TESTDIR/test_defer_break_no_double.con" "ok
+3"
+run_ok "$TESTDIR/test_defer_nested_if.con" "yes
+yes
+1"
+run_ok "$TESTDIR/test_defer_consuming_lifo.con" "first second
+0"
+run_ok "$TESTDIR/test_defer_in_loop_func.con" "xxx
+3"
 run_ok "$TESTDIR/test_trait_multi_bound.con" 42
+run_err "$TESTDIR/error_defer_linear_reuse.con"  "reserved by defer"
 run_err "$TESTDIR/error_linearity_branch_disagree.con" "consumed in one branch"
 run_err "$TESTDIR/error_linearity_double_consume.con" "used after move"
 run_err "$TESTDIR/error_match_non_exhaustive.con" "non-exhaustive match"

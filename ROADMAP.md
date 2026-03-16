@@ -503,10 +503,11 @@ Primary surfaces:
      4. ~~add loop-friendly string building (`Bug 011`)~~ — **fixed**
      5. ~~give standalone benchmark programs an easy timing path (`Bug 012`)~~ — **fixed**
    - next findings-closure track from the first wave of real programs:
-     1. add `defer` statement for explicit scope-end cleanup — **not started**
-        - highest-leverage ergonomics change: eliminates duplicated `drop_string` on every early-return path
+     1. ~~add `defer` statement for explicit scope-end cleanup~~ — **fixed**
+        - highest-leverage ergonomics change landed: removes duplicated `drop_string` on early-return paths while preserving explicit cleanup
+        - scoped defer semantics landed in lowering instead of the earlier flat function-scoped approximation
         - preserves explicit ownership discipline (no implicit destructors, no GC)
-        - scope: parser, elaboration, SSA lowering (insert cleanup before exit points), linear checker
+        - follow-on work stays in cleanup ergonomics, not in whether `defer` exists
         - design notes: [research/cleanup-ergonomics.md](research/cleanup-ergonomics.md)
      2. add remaining mutation-oriented string APIs (`string_clear`, `string_starts_with`, `string_ends_with`) — **not started**
         - builder pattern proven by JSON parser; remaining gap is keyword-matching temporary allocations
@@ -523,8 +524,8 @@ Primary surfaces:
      9. document runtime/stack pressure findings from deep-recursive workloads and decide what belongs to language, runtime, stdlib, or tooling — **not started**
      10. decide whether destructuring `let` earns its place for real-program clarity and parser/runtime code — **not started**
      11. unify destruction ergonomics via general `drop(x)` / `Destroy` trait — **deferred** (revisit when stdlib has 5+ distinct drop-like functions)
-     12. scoped helper abstractions for resource cleanup — **deferred** (prerequisite: `defer`; revisit at 1k+ LOC programs)
-     13. selective borrow-friendly APIs / `&str`-style borrowed slices — **deferred** (revisit after `defer` + mutation APIs used in 2-3 programs)
+     12. scoped helper abstractions for resource cleanup — **deferred** (prerequisite now satisfied; revisit at 1k+ LOC programs if explicit `defer` still leaves too much ceremony)
+     13. selective borrow-friendly APIs / `&str`-style borrowed slices — **deferred** (revisit after scoped `defer` + mutation APIs are used in 2-3 programs)
    - classify every serious-program finding before acting on it:
      - language surface
      - stdlib/runtime support
