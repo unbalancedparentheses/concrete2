@@ -52,6 +52,7 @@ If you want the highest-leverage current research first:
 20. [adoption-strategy.md](adoption-strategy.md) — signature domains, showcases, onboarding, stability surface, and positioning for real user pull (`P1`, `Open`)
 21. [evidence-review-workflows.md](evidence-review-workflows.md) — evidence bundles, machine-readable reports, trust-drift diffing, and report-first review workflows (`P0`, `Open`)
 22. [package-testing-tooling.md](package-testing-tooling.md) — the project-facing `concrete test` workflow: discovery, filtering, failure UX, and package/workspace integration (`P0`, `Open`)
+23. [compiler-dataflow-ideas.md](compiler-dataflow-ideas.md) — what Burn, Timely/Differential, Noria, rustc, Salsa, and newer compiler stacks suggest for Concrete’s future artifact driver, incremental state, maintained reports, and inspection UX (`P1`, `Open`)
 
 ## Language Decisions
 
@@ -102,6 +103,7 @@ If you want the highest-leverage current research first:
 - [package-model.md](package-model.md) — package identity, dependency semantics, workspaces, and the boundary to authority-aware dependencies (`P0`, `Open`)
 - [package-manager-design.md](package-manager-design.md) — concrete CLI/manifest/lockfile/graph shape, plus what to steal from Cargo and Nix without inheriting their complexity (`P0`, `Open`)
 - [artifact-driven-compiler.md](artifact-driven-compiler.md) — what it would take to make the named pipeline artifacts operationally real (`P0`, `Open`)
+- [compiler-dataflow-ideas.md](compiler-dataflow-ideas.md) — dataflow- and query-inspired ideas for incremental artifacts, partial materialization, maintained reports, and per-function inspection (`P1`, `Open`)
 - [file-summary-frontend.md](file-summary-frontend.md) — summary-based frontend direction and artifact boundaries (`P1`, `Adopted`)
 - [mlir-backend-shape.md](mlir-backend-shape.md) — where MLIR should sit if it earns its complexity later (`P1`, `Research`)
 
