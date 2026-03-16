@@ -69,6 +69,7 @@ Still clearly not implemented:
 | **L** | Project and operational maturity | Not started |
 | **M** | Concurrency maturity and runtime plurality | Not started |
 | **N** | Allocation profiles and bounded allocation | Not started |
+| **O** | Research phase and evidence-gated features | Not started |
 
 ### Recent Progress
 
@@ -509,13 +510,15 @@ Primary surfaces:
         - builder builtins (`string_append_int`, `string_append_bool`) landed; interpolation deferred pending evidence from 10k+ LOC scale
         - design notes: [research/text-and-output-design.md](research/text-and-output-design.md)
      4. improve runtime-oriented collection maturity for interpreter/runtime workloads: maps, nested mutable structures, and frame-friendly patterns — **not started**
-     5. reduce the standalone vs project split so stdlib access, benchmarking, and examples do not require awkward scaffolding — **not started**
-     6. design qualified module access (`Module.function()` or equivalent) so larger programs do not collapse into rename pressure — **not started**
-     7. document runtime/stack pressure findings from deep-recursive workloads and decide what belongs to language, runtime, stdlib, or tooling — **not started**
-     8. decide whether destructuring `let` earns its place for real-program clarity and parser/runtime code — **not started**
-     9. unify destruction ergonomics via general `drop(x)` / `Destroy` trait — **deferred** (revisit when stdlib has 5+ distinct drop-like functions)
-     10. scoped helper abstractions for resource cleanup — **deferred** (prerequisite: `defer`; revisit at 1k+ LOC programs)
-     11. selective borrow-friendly APIs / `&str`-style borrowed slices — **deferred** (revisit after `defer` + mutation APIs used in 2-3 programs)
+     5. evaluate arena allocation against the existing `Vec`-as-pool pattern and adopt it only if real programs show a clear win in clarity, performance, or boundedness — **not started**
+        - design notes: [research/arena-allocation.md](research/arena-allocation.md)
+     6. reduce the standalone vs project split so stdlib access, benchmarking, and examples do not require awkward scaffolding — **not started**
+     7. design qualified module access (`Module.function()` or equivalent) so larger programs do not collapse into rename pressure — **not started**
+     8. document runtime/stack pressure findings from deep-recursive workloads and decide what belongs to language, runtime, stdlib, or tooling — **not started**
+     9. decide whether destructuring `let` earns its place for real-program clarity and parser/runtime code — **not started**
+     10. unify destruction ergonomics via general `drop(x)` / `Destroy` trait — **deferred** (revisit when stdlib has 5+ distinct drop-like functions)
+     11. scoped helper abstractions for resource cleanup — **deferred** (prerequisite: `defer`; revisit at 1k+ LOC programs)
+     12. selective borrow-friendly APIs / `&str`-style borrowed slices — **deferred** (revisit after `defer` + mutation APIs used in 2-3 programs)
    - classify every serious-program finding before acting on it:
      - language surface
      - stdlib/runtime support
@@ -530,6 +533,8 @@ Primary surfaces:
      - `research/runtime-collections.md`
      - `research/standalone-vs-project-ux.md`
      - `research/runtime-execution-pressure.md`
+     - `research/arena-allocation.md`
+     - `research/layout-reports.md`
    - keep the example corpus honest as fixes land:
      - when a bug, builtin, stdlib helper, or workflow improvement removes a workaround, earlier Phase H examples should be updated to use the improved path
      - examples should not preserve stale workarounds once the language/system has a better supported surface
@@ -625,6 +630,7 @@ Primary surfaces:
 7. split interface-facing artifacts from body-bearing artifacts cleanly enough to support package and dependency boundaries — **not started**
 8. make package/dependency reasoning operate on explicit graph artifacts instead of ad hoc file-level reconstruction — **not started**
 9. define the first real project-facing CLI workflow (`concrete build`, `concrete test`, `concrete run`) on top of the package model — **not started**
+10. design the first enforceable authority-budget path at module/package/subsystem scope, starting with report-backed policy rather than a second effect system — **not started**
 
 Deliverables:
 - incremental compilation: serialized pipeline artifacts, source-hash-based cache invalidation, module-level rebuild granularity
@@ -638,6 +644,7 @@ Deliverables:
 - a cleaner split between interface-bearing and body-bearing compiler artifacts for package/workspace use
 - an explicit package/dependency graph artifact strong enough to support later driver, cache, and report reuse work
 - a project-facing CLI model that grows out of the package/driver architecture instead of shell conventions
+- a first explicit module/package authority-budget path grounded in the package graph and existing capability reports
 
 Exit criterion:
 Concrete has an explicit package/dependency model that supports real projects without relying on ad-hoc repo-local conventions, has a credible path to enforcing authority budgets at package or subsystem boundaries, and no longer depends on muddy interface/body artifact boundaries to reason about packages.
@@ -830,6 +837,7 @@ Primary surfaces:
 5. restrict bounded-allocation checking to structurally explainable cases (for example: no recursion, bounded loops only, no dynamic-growth container calls without explicit bounded variants) — **not started**
 6. prototype a limited `BoundedAlloc(N)` form for the high-integrity profile and evaluate whether the ergonomics and diagnostics justify keeping it — **not started**
 7. connect allocation-profile results to reports, package/policy surfaces, and the longer proof/evidence story without making reports a second semantic authority — **not started**
+8. add structural execution-boundedness reporting alongside allocation profiles so high-integrity review can see both memory and control-flow boundedness together — **not started**
 
 Deliverables:
 - a stronger `--report alloc` output that classifies and explains allocation behavior per function
@@ -838,9 +846,44 @@ Deliverables:
 - bounded-friendly stdlib/API patterns where they are needed for real use
 - a prototype or adopted design for limited `BoundedAlloc(N)` checking, or an explicit decision to stop at `NoAlloc` plus reports if the complexity is not justified
 - report/profile integration that makes allocation behavior part of Concrete's evidence story for high-integrity code
+- structural execution-boundedness reporting that pairs naturally with `NoAlloc` and restricted bounded-allocation claims
 
 Exit criterion:
 Concrete can explain and enforce "does this function allocate?" cleanly, and it has either a credible restricted `BoundedAlloc(N)` model with good diagnostics or a deliberate documented decision to keep bounded allocation report-first rather than fully enforced.
+
+#### Phase O: Research Phase And Evidence-Gated Features
+
+Goal: keep high-value ideas visible, evaluated, and explicitly decided without forcing premature language growth or letting good ideas silently disappear.
+
+This phase exists for ideas that are clearly interesting but not yet justified as committed roadmap work.
+Its job is to turn "maybe" into one of three outcomes:
+
+- adopted in a later roadmap revision
+- kept as an open long-horizon direction
+- explicitly rejected with reasons
+
+Primary surfaces:
+- [research/high-leverage-systems-ideas.md](research/high-leverage-systems-ideas.md)
+- [research/typestate.md](research/typestate.md)
+- [research/arena-allocation.md](research/arena-allocation.md)
+- [research/layout-reports.md](research/layout-reports.md)
+- [research/execution-cost.md](research/execution-cost.md)
+- [research/authority-budgets.md](research/authority-budgets.md)
+
+1. keep a small canonical list of research-backed systems ideas visible and cross-linked — **not started**
+2. record the dependency fit for each idea: which existing phase it belongs with if adopted later — **not started**
+3. require evidence from real programs, report usage, or package/runtime pressure before turning evidence-gated ideas into language surface — **not started**
+4. explicitly evaluate typestate after more real programs, rather than inferring need from theory alone — **not started**
+5. record "not now" or "not worth it" decisions for ideas that fail the design filters, instead of letting them silently drift — **not started**
+
+Deliverables:
+- a maintained canonical research index for the highest-leverage undecided ideas
+- explicit adoption, defer, or reject records for evidence-gated features
+- a clearer mapping from research ideas to the phases they would naturally join if adopted
+- protection against accidental feature loss-by-forgetting as the roadmap evolves
+
+Exit criterion:
+Concrete has an explicit place for serious but undecided ideas, and the project records why those ideas were adopted, deferred, or rejected instead of letting them linger ambiguously outside the roadmap.
 
 ### Why These Phases Matter
 
@@ -858,6 +901,7 @@ Concrete can explain and enforce "does this function allocate?" cleanly, and it 
 - **Phase L** matters because long-term projects fail just as easily from weak operational discipline as from weak compiler architecture.
 - **Phase M** matters because concurrency is one of the easiest places for a language to lose clarity, and Concrete should only broaden it once it can do so without importing async fragmentation and hidden runtime culture.
 - **Phase N** matters because allocation behavior is one of Concrete's clearest opportunities to become unusually strong for high-integrity and audit-heavy low-level code, but only if it is implemented conservatively enough to stay explainable.
+- **Phase O** matters because valuable ideas should not have only two states, “immediate phase work” or “forgotten”. Concrete needs an explicit place to evaluate and either adopt or reject evidence-gated features.
 
 ### Compiler Hardening (between Phase D and Phase E)
 
@@ -934,17 +978,26 @@ These are concrete, implementable improvements that emerged from the bug fixes a
    - decide whether Concrete should remain Lean-hosted, partially self-host, or eventually self-host
    - evaluate it against trust, proof leverage, implementation cost, and operational complexity rather than aesthetics
    - do not let self-hosting aspirations outrun the proof/runtime/package/operational story
-21. Make the artifact model operationally real rather than nominal.
+21. Keep a small set of research-backed systems ideas explicitly in view even when they are not yet phase-committed.
+   - canonical summary: [research/high-leverage-systems-ideas.md](research/high-leverage-systems-ideas.md)
+   - allocation budgets / `NoAlloc` / restricted `BoundedAlloc(N)` are now phase-committed in Phase N
+   - arena allocation remains a serious candidate because it formalizes the existing pool pattern in parser/interpreter-style programs
+   - execution boundedness / cost reporting remains a report-first candidate because it fits the audit and high-integrity story well
+   - layout reports remain a likely quick win because the layout subsystem already exists and mostly needs stronger productization
+   - typestate remains evidence-gated: ownership already covers the simplest irreversible transitions, and phantom-type typestate should only land if real programs justify it
+   - authority budgets remain a strong long-term dependency/supply-chain idea, but package-level enforcement depends on the package model
+   - if any of these ideas are later rejected, record that explicitly instead of letting them silently disappear
+22. Make the artifact model operationally real rather than nominal.
    - ensure pass APIs consume/produce named artifacts directly rather than drifting back to parsed-module-plus-table plumbing
    - introduce missing durable artifacts where needed (for example a checked-program boundary if the architecture continues to justify one, but do not freeze that exact split before the pass plumbing proves it)
    - keep artifact ownership explicit enough that tooling and reports do not rebuild semantic facts ad hoc
-22. Make source-to-Core-to-proof-to-SSA traceability a first-class compiler property.
+23. Make source-to-Core-to-proof-to-SSA traceability a first-class compiler property.
    - preserve stable source-origin identity through validated Core, proof/export subjects, monomorphized instances, and SSA origins
    - treat this as necessary for proof credibility, report credibility, and later debugging/evidence workflows
-23. Treat interface/body artifact splitting as a major architecture thread, not only an incremental-compilation detail.
+24. Treat interface/body artifact splitting as a major architecture thread, not only an incremental-compilation detail.
    - package, workspace, and dependency semantics should depend on explicit interface artifacts rather than body-bearing summaries wherever possible
    - avoid letting import/package reasoning stay coupled to more implementation detail than it needs
-24. Make the compiler-driver/build-graph layer explicit.
+25. Make the compiler-driver/build-graph layer explicit.
    - own package graph, target selection, cache lookup/store, report generation from artifacts, and invalidation rules in one orchestrator layer
    - do not let shell scripts and scattered CLI entry points become the accidental long-term build architecture
 
