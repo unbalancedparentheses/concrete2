@@ -20,6 +20,67 @@ No mainstream systems language answers these at the type level today.
 - Intrinsic-level mapping: `vec_new`, `vec_push`, `alloc`, `free` → `Alloc` capability
 - CoreCheck validates capability requirements transitively
 
+## Comparison With Other Languages
+
+Concrete's proposed `NoAlloc` / `BoundedAlloc(N)` direction is adjacent to ideas that already exist elsewhere, but it is not the same thing.
+
+As far as this note can tell, a first-class function-level contract of the form "this function allocates at most N bytes" is unusual among mainstream systems languages. Nearby precedents exist, but not this exact effect form.
+
+### Ada / SPARK
+
+Ada and SPARK already support several useful bounded-memory mechanisms:
+
+- storage pools with explicit limits
+- fixed-capacity or bounded containers
+- restriction/profile-style controls such as forbidding implicit heap allocation
+
+These are real high-integrity tools, but the guarantee usually lives at the pool, type, container, or whole-program profile level.
+
+Typical Ada/SPARK-style guarantees:
+
+- "this access type allocates from this bounded pool"
+- "this container cannot grow past its fixed capacity"
+- "this profile forbids implicit heap allocation"
+
+That is different from a Concrete function-level contract such as:
+
+```con
+fn parse_header(buf: &Bytes) with(BoundedAlloc(128)) -> Header
+```
+
+The Concrete direction is more local and compositional:
+
+- the guarantee lives on the function
+- callers can reason about transitive allocation cost through call chains
+- reports can answer "why is this function not NoAlloc?" in the same way capability reports answer "why does this function need Console?"
+
+So Ada/SPARK are the closest practical relatives, but they mostly achieve bounded-memory behavior through construction and profile restrictions rather than a first-class per-function budget effect.
+
+### RTSJ (Real-Time Java)
+
+RTSJ uses scoped memory and fixed-size memory areas. This is again a real bounded-memory design, but the bound is attached to the memory region, not expressed as "this function allocates at most N bytes".
+
+### Rust (`no_std`)
+
+Rust's embedded and `no_std` styles get close to `NoAlloc` by convention or crate/runtime setup:
+
+- no global allocator
+- fixed-capacity data structures
+- explicit allocation only when an allocator is present
+
+This is useful and practical, but it is not a built-in function-level `NoAlloc` / `BoundedAlloc(N)` contract checked compositionally by the language.
+
+## Why Concrete's Version Is Different
+
+The distinctive part of the Concrete idea is not merely "bounded memory exists somewhere in the program." It is:
+
+- function-local authority/effect surface
+- transitive reasoning through direct call graphs
+- audit-friendly compiler reports
+- eventual alignment with the high-integrity profile and proof story
+
+That makes the idea stronger for review and evidence, but also harder to implement than pool-based or profile-based restrictions alone.
+
 ## Design Options
 
 ### Option A: Refine Alloc into sub-capabilities

@@ -68,6 +68,7 @@ Still clearly not implemented:
 | **K** | Adoption, positioning, and showcase pull | Not started |
 | **L** | Project and operational maturity | Not started |
 | **M** | Concurrency maturity and runtime plurality | Not started |
+| **N** | Allocation profiles and bounded allocation | Not started |
 
 ### Recent Progress
 
@@ -798,6 +799,49 @@ Deliverables:
 Exit criterion:
 Concrete has one coherent concurrency story: structured by default, threads-first underneath, message-passing biased, and able to admit specialized evented runtime models later without losing auditability or runtime clarity.
 
+#### Phase N: Allocation Profiles And Bounded Allocation
+
+Goal: turn allocation behavior into a stronger audit and high-integrity surface without forcing Concrete into a large effect calculus or dependent-type design.
+
+This phase is intentionally late.
+Concrete should first validate its real-program pressures, proof expansion, package model, operational maturity, and concurrency/runtime shape.
+Only then should it attempt a stricter bounded-allocation story beyond today's binary `with(Alloc)` capability.
+
+The intended shape is deliberately narrow:
+
+- strengthen `--report alloc` into a more explanatory summary surface
+- add enforceable `NoAlloc` checking as the first real profile
+- explore a restricted `BoundedAlloc(N)` subset only where the bound is structurally explainable
+- prefer capacity-aware APIs and explicit restrictions over clever inference
+
+Primary surfaces:
+- [research/allocation-budgets.md](research/allocation-budgets.md)
+- [research/high-integrity-profile.md](research/high-integrity-profile.md)
+- [research/arena-allocation.md](research/arena-allocation.md)
+- [research/execution-cost.md](research/execution-cost.md)
+- [docs/EXECUTION_MODEL.md](docs/EXECUTION_MODEL.md)
+- [docs/SAFETY.md](docs/SAFETY.md)
+- allocation-related stdlib and report tooling
+
+1. make `--report alloc` more structurally useful: classify functions as `NoAlloc`, direct alloc, transitive alloc, and structurally unbounded/unknown — **not started**
+2. add an enforceable `NoAlloc` profile/check that rejects direct or transitive allocation in marked code — **not started**
+3. define which allocation operations are admissible in bounded contexts and which stdlib APIs need bounded-capacity or within-capacity variants — **not started**
+4. design a conservative function-summary model for restricted allocation bounds that composes across direct calls — **not started**
+5. restrict bounded-allocation checking to structurally explainable cases (for example: no recursion, bounded loops only, no dynamic-growth container calls without explicit bounded variants) — **not started**
+6. prototype a limited `BoundedAlloc(N)` form for the high-integrity profile and evaluate whether the ergonomics and diagnostics justify keeping it — **not started**
+7. connect allocation-profile results to reports, package/policy surfaces, and the longer proof/evidence story without making reports a second semantic authority — **not started**
+
+Deliverables:
+- a stronger `--report alloc` output that classifies and explains allocation behavior per function
+- an enforceable `NoAlloc` profile for code that must not allocate
+- a documented restricted bounded-allocation model with explicit non-goals
+- bounded-friendly stdlib/API patterns where they are needed for real use
+- a prototype or adopted design for limited `BoundedAlloc(N)` checking, or an explicit decision to stop at `NoAlloc` plus reports if the complexity is not justified
+- report/profile integration that makes allocation behavior part of Concrete's evidence story for high-integrity code
+
+Exit criterion:
+Concrete can explain and enforce "does this function allocate?" cleanly, and it has either a credible restricted `BoundedAlloc(N)` model with good diagnostics or a deliberate documented decision to keep bounded allocation report-first rather than fully enforced.
+
 ### Why These Phases Matter
 
 - **Phase A** matters because a slow feedback loop drags down every compiler task, and backend-sensitive lowering bugs destroy trust in every other part of the compiler.
@@ -813,6 +857,7 @@ Concrete has one coherent concurrency story: structured by default, threads-firs
 - **Phase K** matters because technically coherent languages still fail if nobody can quickly understand why to use them, what they are for, or how to get started well.
 - **Phase L** matters because long-term projects fail just as easily from weak operational discipline as from weak compiler architecture.
 - **Phase M** matters because concurrency is one of the easiest places for a language to lose clarity, and Concrete should only broaden it once it can do so without importing async fragmentation and hidden runtime culture.
+- **Phase N** matters because allocation behavior is one of Concrete's clearest opportunities to become unusually strong for high-integrity and audit-heavy low-level code, but only if it is implemented conservatively enough to stay explainable.
 
 ### Compiler Hardening (between Phase D and Phase E)
 
