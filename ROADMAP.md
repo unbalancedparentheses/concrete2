@@ -572,7 +572,8 @@ Primary surfaces:
         - `concrete build`, `concrete run`, and `concrete test` now work in package mode with builtin std resolution
         - std is located automatically relative to the compiler binary, with `CONCRETE_STD` as an override for unusual setups
         - example manifests no longer need path-based `std = { path = ... }` entries
-     8. design qualified module access (`Module.function()` or equivalent) so larger programs do not collapse into rename pressure — **not started**
+     8. ~~design qualified module access (`Module.function()` or equivalent) so larger programs do not collapse into rename pressure~~ **done for first real cases** — qualified submodule access now works for plain functions, mixed imported + qualified access, two-submodule access, top-level + qualified coexistence, qualified submodule `extern fn`, and qualified submodule struct/import interaction
+        - remaining limitation: parent/submodule or sibling-submodule functions with the same leaf name still collide at the LLVM symbol layer because function definitions still emit bare names; this is a later backend naming issue, not a remaining blocker on the basic qualified-access surface
      9. decide how runtime argument access should live at the user-facing surface after the first `argc` / `argv` implementation proves itself in real command-line tools — **not started**
         - the grep-like tool made process arguments a real language/runtime surface, not just generated-C glue
      10. document and fix backend/performance cliffs exposed by runtime-heavy workloads — **in progress**
@@ -637,7 +638,6 @@ After the policy engine, MAL, JSON parser, grep-like tool, and bytecode VM, the 
 5. keep closing Phase H findings through the narrowest fixes first:
    - runtime argument surface
    - string/text helpers that still matter after the parser and grep results
-   - qualified module access
    - collection/runtime maturity for interpreter and VM workloads
 6. continue backend/performance investigation only where new workloads still expose real cliffs after the vec-inlining fix
 7. improve testing tooling on top of the now-landed package workflow:

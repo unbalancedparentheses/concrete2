@@ -240,7 +240,8 @@ Not "can Concrete express real programs?" but "do its explicit patterns become s
 3. **Runtime-oriented collection maturity** — MAL and the VM both need maps, nested mutable structures, runtime-friendly patterns
 4. **Backend inlining / codegen policy cliffs** — the VM showed that tiny builtin calls in hot loops can distort performance dramatically if LLVM is not given enough shape information
 5. **User-facing runtime argument surface** — `argc`/`argv` work in practice, but the final public shape is not settled
-6. **Qualified module access** — still missing for larger multi-module programs
+6. **~~Qualified module access~~** — CLOSED for the first real workload cases: file-based `mod::fn` access, mixed imported + qualified access, two-submodule qualified access, top-level + qualified coexistence, qualified submodule `extern fn`, and qualified submodule struct/import interaction are now covered by targeted tests
+   - remaining limitation: parent/submodule or sibling-submodule functions with the same leaf name still collide at the LLVM symbol layer because function definitions still emit bare names; this is a backend naming issue, not a remaining resolution/elaboration design gap
 7. **Runtime / stack pressure classification** — MAL exposed this; still needs a cleaner language-vs-runtime-vs-tooling decision
 
 ## Current Open Findings
@@ -255,7 +256,8 @@ Not "can Concrete express real programs?" but "do its explicit patterns become s
 
 - Class: `language`, `tooling/workflow`
 - Why it matters: larger programs should not depend on renaming to avoid collisions
-- Current state: no `Module.function()`-style access path
+- Current state: first real qualified-access path is now landed and regression-tested for the covered cases
+- Remaining limitation: leaf-name collisions across parent/submodule or sibling submodules still need backend symbol-prefixing work; this is not a blocker for the now-landed qualified-access surface, but it does prevent calling the namespace story fully complete
 
 ### Destructuring let
 
