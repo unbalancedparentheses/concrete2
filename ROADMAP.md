@@ -622,6 +622,8 @@ Primary surfaces:
      4. improve runtime-oriented collection maturity for interpreter/runtime workloads: maps, nested mutable structures, and frame-friendly patterns — **done**
         - traversal surface complete: `for_each` (side effects), `fold<A>` (stateful traversal), `keys()`/`values()`/`elements()` (materialization)
         - `fold<A>` was blocked by a compiler bug: method-level generics crashed at lowering (self type lost generic args + generic structs only instantiated once). Fixed in `c0c5b54`.
+        - truth-to-philosophy end-state: explicit per-container traversal remains the semantic core; thin syntax sugar is acceptable only if it lowers transparently to that core
+        - if more traversal power is ever needed, prefer narrow early-exit helpers (`find`, `any`, `all`, `try_fold`) over a Rust-style iterator/combinator ecosystem
         - no iterator tower, no closures, no cursor/lifetime model — per-container APIs only
         - design notes: [research/iterators.md](research/iterators.md)
      5. evaluate arena allocation against the existing `Vec`-as-pool pattern and adopt it only if real programs show a clear win in clarity, performance, or boundedness — **not started**
