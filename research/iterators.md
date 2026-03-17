@@ -26,18 +26,50 @@ The traversal story is now complete with three tiers:
 
 `fold<A>` was blocked by a compiler bug: method-level generics (`fn fold<A>` inside `impl<K,V>`) parsed but crashed at lowering because (a) self parameter types lost their generic args and (b) generic structs were only instantiated once at the LLVM level. Fixed in `c0c5b54`.
 
+This is the right **current** design and also the right **base** for the long-term design.
+
 ## Design Decisions
 
 - **No cursors**: would require borrowing lifetimes, which go against Concrete's design (inference-heavy, murkier diagnostics, phase coupling)
 - **No closures**: `fold` threads state through the return value instead of capturing mutable locals
 - **No iterator trait**: per-container APIs cover the need; a shared protocol adds complexity without proven benefit
 - **No lazy adapter chains**: explicit traversal only
+- **No hidden control flow**: traversal semantics should remain obvious from container APIs and ordinary call structure
+
+## End-Game Design
+
+The best end-state is not a Rust-style iterator ecosystem.
+
+It is:
+
+1. **explicit per-container traversal as the semantic truth**
+   - `for_each`
+   - `fold<A>`
+   - materialization helpers such as `keys()` / `values()` / `elements()`
+2. **optional thin syntax sugar later**
+   - only if it lowers directly and transparently to the existing traversal APIs
+   - for example, a future `for` loop form would be acceptable only as sugar over the already-explicit traversal model
+3. **small targeted additions only if real programs force them**
+   - the most likely remaining gap is not “full iterators,” but narrow early-exit helpers such as:
+     - `find`
+     - `any`
+     - `all`
+     - `try_fold`
+
+The design center should remain:
+
+- explicit traversal
+- explicit allocation
+- explicit control flow
+
+not a compositional abstraction tower.
 
 ## What Was Considered And Rejected
 
 - Rust-style `trait Iterator<T> { fn next(&mut self) -> Option<T>; }` — requires trait system + lifetimes for cursors
 - C-style `fn for_each_ctx(ctx: *mut u8, f: fn(*mut u8, &K))` — too low-level for a default stdlib pattern
 - Cursor/handle-based iteration — requires lifetime tracking which Concrete won't add
+- trait-heavy combinator ecosystems (`map`, `filter`, `zip`, `collect` as a design center) — not aligned with Concrete's goals even if they are common elsewhere
 
 ## Evidence
 
@@ -48,6 +80,10 @@ Phase H programs showed the traversal pressure:
 
 ## Current Recommendation
 
-The traversal surface is sufficient. Revisit only if:
-- real programs show a pattern that `fold` + `for_each` + materialization can't cover
-- there is repeated evidence for a shared iteration protocol across containers
+The traversal surface is sufficient as the core model.
+
+Revisit only if:
+
+- real programs show a repeated early-exit pattern that `fold` + `for_each` + materialization cannot cover well
+- there is repeated evidence for a tiny shared protocol that does not introduce hidden semantics
+- thin syntax sugar can be justified without creating a second traversal model

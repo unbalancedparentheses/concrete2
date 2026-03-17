@@ -13,8 +13,9 @@
 // Demonstrates: persistence, line-oriented parsing, HashMap-based storage,
 // capability separation, and crash recovery via append-only log.
 //
-// Note: HashMap has no iterator yet, so we keep a parallel Vec<String> of keys
-// for the `list` and `compact` commands that need to enumerate all entries.
+// Note: We keep a parallel Vec<String> of keys for the `delete` command
+// (which needs swap-remove by key). The `list` and `compact` commands
+// use HashMap.fold to iterate all entries directly.
 
 mod kvstore {
     import std.fs.{read_to_string, write_file, append_file, file_exists, FsError};
@@ -277,32 +278,26 @@ mod kvstore {
         }
     }
 
+    // --- Fold callback: build a SET line for each key-value pair ---
+
+    fn build_set_line(acc: String, k: &String, v: &String) -> String {
+        let mut out: String = acc;
+        let mut prefix: String = "SET ";
+        string_append(&mut out, &prefix);
+        drop_string(prefix);
+        string_append(&mut out, k);
+        string_push_char(&mut out, 32);
+        string_append(&mut out, v);
+        string_push_char(&mut out, 10);
+        return out;
+    }
+
     // --- Compact: rewrite log with only live entries ---
 
     fn compact(map: &mut HashMap<String, String>, keys: &mut Vec<String>) with(Std) {
-        let mut out: String = "";
-        string_reserve(&mut out, 256);
-
-        let len: Int = vec_len::<String>(keys) as Int;
-        let mut i: Int = 0;
-        while i < len {
-            let k: String = vec_get::<String>(keys, i);
-            let val_opt: Option<&String> = map.get(&k);
-            match val_opt {
-                Option#Some { value } => {
-                    let mut prefix: String = "SET ";
-                    string_append(&mut out, &prefix);
-                    drop_string(prefix);
-                    string_append(&mut out, &k);
-                    string_push_char(&mut out, 32);
-                    string_append(&mut out, value);
-                    string_push_char(&mut out, 10);
-                },
-                Option#None => {}
-            }
-            forget_string(k);
-            i = i + 1;
-        }
+        let mut init: String = "";
+        string_reserve(&mut init, 256);
+        let out: String = map.fold::<String>(init, build_set_line);
 
         let data: Bytes = string_to_bytes(&out);
         let path: String = log_path();
@@ -367,6 +362,19 @@ mod kvstore {
         }
     }
 
+    // --- Fold callback: build a display line for each key-value pair ---
+
+    fn build_list_line(acc: String, k: &String, v: &String) -> String {
+        let mut out: String = acc;
+        string_append(&mut out, k);
+        let mut sep: String = " = ";
+        string_append(&mut out, &sep);
+        drop_string(sep);
+        string_append(&mut out, v);
+        string_push_char(&mut out, 10);
+        return out;
+    }
+
     // --- Command: list ---
 
     fn cmd_list(map: &mut HashMap<String, String>, keys: &mut Vec<String>) with(Std) {
@@ -376,22 +384,10 @@ mod kvstore {
             return;
         }
 
-        let mut i: Int = 0;
-        while i < len {
-            let k: String = vec_get::<String>(keys, i);
-            let val_opt: Option<&String> = map.get(&k);
-            match val_opt {
-                Option#Some { value } => {
-                    print_string(&k);
-                    print(" = ");
-                    print_string(value);
-                    print_char(10);
-                },
-                Option#None => {}
-            }
-            forget_string(k);
-            i = i + 1;
-        }
+        let mut init: String = "";
+        let out: String = map.fold::<String>(init, build_list_line);
+        print_string(&out);
+        drop_string(out);
     }
 
     // --- Usage ---
