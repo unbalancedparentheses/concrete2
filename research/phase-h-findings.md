@@ -224,9 +224,9 @@ All five example programs were benchmarked head-to-head against equivalent C imp
 | vm | fib(35) bytecode | 303ms | 274ms | ~0.9x |
 | policy_engine | RBAC eval, 27 cases | 64ms | 70ms | ~1.1x |
 | json | recursive-descent, 27 cases | 64ms | 78ms | ~1.2x |
-| grep (plain search) | 100k lines, pattern match | 70ms | 116ms | ~1.6x |
-| grep (case-insensitive) | 100k lines, -i -n | 21ms | 60ms | ~2.8x |
-| grep (count only) | 100k lines, -c | 9ms | 17ms | ~1.8x |
+| grep (plain search) | 100k lines, pattern match | 12ms | 23ms | ~1.9x |
+| grep (case-insensitive) | 100k lines, -i -n | 23ms | 40ms | ~1.7x |
+| grep (count only) | 100k lines, -c | 11ms | 18ms | ~1.6x |
 
 What this shows:
 
@@ -239,7 +239,7 @@ What it implies:
 
 - Concrete's `-O2` backend produces code in the same performance class as hand-written C for compute-heavy and collection-heavy workloads
 - the remaining gap is concentrated in string I/O paths, not in the core language model or ownership overhead
-- optimizing the string/output path (buffered writes, avoiding per-call overhead) is the highest-leverage performance work remaining
+- after switching print builtins from raw `write()` syscalls to buffered libc I/O (`printf`/`putchar`), the case-insensitive gap dropped from 2.8x to 1.7x; remaining gap is per-character `to_lower` cost rather than I/O overhead
 
 ## Phase H Retrospective
 
@@ -264,9 +264,9 @@ Not "can Concrete express real programs?" but "do its explicit patterns become s
 1. **~~Standalone vs project dependency resolution~~** — CLOSED: `concrete build` now works with `Concrete.toml`, `mod X;` directory modules, and cross-module imports; `cgrep` and `conhash` examples converted to use `std.fs.read_to_string` / `std.fs.read_file`; current `std = { path = "..." }` is a temporary hack — Phase J should make std a builtin dependency
    - update: builtin std resolution is now landed as well; std is found automatically relative to the compiler binary, with `CONCRETE_STD` as an override for unusual setups
 2. **Formatting / interpolation / text output** — mixed-arg `print` / `println` landed (commit `1b0d21f`); remaining question is whether interpolation is still needed
-3. **Runtime-oriented collection maturity** — MAL and the VM both need maps, nested mutable structures, runtime-friendly patterns
+3. **Runtime-oriented collection maturity** — HashMap iteration (`for_each`, `keys`, `values`) landed; remaining gap is nested mutable structures and frame-friendly patterns for interpreters/VMs
 4. **Backend inlining / codegen policy cliffs** — the VM showed that tiny builtin calls in hot loops can distort performance dramatically if LLVM is not given enough shape information
-5. **User-facing runtime argument surface** — `argc`/`argv` work in practice, but the final public shape is not settled
+5. **~~User-facing runtime argument surface~~** — CLOSED. `std.args` module provides `count()` and `get(idx)` API; examples converted; test-mode stubs handle the symbol gap
 6. **~~Qualified module access~~** — CLOSED. File-based `mod::fn` access, mixed imported + qualified access, two-submodule qualified access, top-level + qualified coexistence, qualified submodule `extern fn`, qualified submodule struct/import, same-name collision handling, and inline sibling `::` access all work.
    - same-name collisions: solved via Elab-time `prefixModuleFnNames` which renames submodule definitions consistently across all passes, with ambiguity detection (two submodules defining `add` requires qualified `math::add` / `util::add`)
    - inline sibling modules: `mod A {}` / `mod B {}` can now use `A::fn()` from `B` without explicit imports; sibling function sigs are injected across Resolve, Check, and Elab passes with linker aliases
@@ -278,7 +278,7 @@ Not "can Concrete express real programs?" but "do its explicit patterns become s
 
 - Class: `stdlib/runtime`, possibly `language`
 - Why it matters: real programs need readable output, logs, diagnostics, and message assembly
-- Current state: mixed-arg `print` / `println` builtins landed (commit `1b0d21f`); manual string *building* is still verbose but output is now practical. Remaining question: whether string interpolation is justified by real-program evidence or whether `print`/`println` plus builder APIs are sufficient.
+- Current state: mixed-arg `print` / `println` builtins landed (commit `1b0d21f`); manual string *building* is still verbose but output is now practical. Six Phase H programs (policy engine, MAL, JSON parser, grep, bytecode VM, artifact verifier) have all been written without string interpolation. `print`/`println` plus builder APIs have been sufficient for all real-program output needs so far. Interpolation remains available as a future option if sustained evidence from larger programs justifies it, but current evidence does not require it.
 
 ### Destructuring let
 
@@ -290,7 +290,7 @@ Not "can Concrete express real programs?" but "do its explicit patterns become s
 
 - Class: `stdlib/runtime`
 - Why it matters: interpreters, analyzers, and schedulers want maps, nested mutable structures, and clearer frame-friendly patterns
-- Current state: existing collection surface is usable but thin for this workload
+- Current state: HashMap iteration landed (`for_each`, `keys`, `values` methods with stdlib test); remaining gap is nested mutable structures and frame-friendly patterns
 
 ### Standalone vs project UX
 
@@ -298,11 +298,10 @@ Not "can Concrete express real programs?" but "do its explicit patterns become s
 - Why it matters: examples and benchmarks should not need awkward scaffolding to reach common stdlib utilities
 - Current state: **closed for current workflow purposes** — `concrete build`, `concrete run`, and `concrete test` now work in package mode; std is resolved automatically relative to the compiler binary, with `CONCRETE_STD` as an override; remaining work is broader package/workspace maturity, not basic std access
 
-### Runtime argument surface
+### ~~Runtime argument surface~~ — CLOSED
 
 - Class: `stdlib/runtime`, `tooling/workflow`
-- Why it matters: real command-line tools need a stable way to access process arguments without dropping into generated-C details or ad hoc wrappers
-- Current state: first `argc` / `argv` support exists and works for `cgrep`, but the final user-facing surface is still undecided
+- Resolution: `std.args` module landed with `count() -> Int` and `get(idx: Int) -> String` API. `cgrep` and `conhash` examples converted to use it. Test-mode stubs provide `__concrete_get_argc` (returns 0) and `__concrete_get_argv` (returns null) so stdlib compilation succeeds without the main wrapper.
 
 ### Backend inlining / codegen policy cliffs
 

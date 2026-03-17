@@ -439,7 +439,7 @@ def getBuiltinFns : List LLVMFnDef × List LLVMGlobal × List LLVMFnDecl :=
     { name := "string_trim", retTy := strTy, params := [("s", .ptr)], blocks := strTrimBlocks }
 
   -- -------------------------------------------------------
-  -- print_string (write string data to stdout)
+  -- print_string (buffered write via fwrite to stdout)
   -- -------------------------------------------------------
   let fnPrintString : LLVMFnDef :=
     { name := "print_string", retTy := .void, params := [("s", .ptr)], blocks := [
@@ -448,34 +448,29 @@ def getBuiltinFns : List LLVMFnDef × List LLVMGlobal × List LLVMFnDecl :=
         .load "ps_data" .ptr (.reg "ps_data_ptr"),
         strGep "ps_len_ptr" "s" 1,
         .load "ps_len" .i64 (.reg "ps_len_ptr"),
-        .call (some "ps_written") .i64 (.global "write") [(.i32, .intLit 1), (.ptr, .reg "ps_data"), (.i64, .reg "ps_len")]
+        .gep "ps_fmt" (.array 5 .i8) (.global ".fmt_str") [(.i64, .intLit 0), (.i64, .intLit 0)],
+        .cast "ps_len32" .trunc .i64 (.reg "ps_len") .i32,
+        .callVariadic (some "ps_written") .i32 (.global "printf") [(.ptr, .reg "ps_fmt"), (.i32, .reg "ps_len32"), (.ptr, .reg "ps_data")] [.ptr]
       ], .ret .void none⟩] }
 
   -- -------------------------------------------------------
-  -- print_int (convert to string, write, free buffer)
+  -- print_int (buffered write via printf)
   -- -------------------------------------------------------
   let fnPrintInt : LLVMFnDef :=
     { name := "print_int", retTy := .void, params := [("n", .i64)], blocks := [
       ⟨"entry", [
-        .call (some "pi_buf.raw") .ptr (.global "malloc") [(.i64, .intLit 32)],
-        .call (some "pi_buf") .ptr (.global "__concrete_check_oom") [(.ptr, .reg "pi_buf.raw")],
         .gep "pi_fmt" (.array 4 .i8) (.global ".fmt_ld") [(.i64, .intLit 0), (.i64, .intLit 0)],
-        .callVariadic (some "pi_written") .i32 (.global "snprintf") [(.ptr, .reg "pi_buf"), (.i64, .intLit 32), (.ptr, .reg "pi_fmt"), (.i64, .reg "n")] [.ptr, .i64, .ptr],
-        .cast "pi_wext" .sext .i32 (.reg "pi_written") .i64,
-        .call (some "pi_wr") .i64 (.global "write") [(.i32, .intLit 1), (.ptr, .reg "pi_buf"), (.i64, .reg "pi_wext")],
-        .call none .void (.global "free") [(.ptr, .reg "pi_buf")]
+        .callVariadic (some "pi_written") .i32 (.global "printf") [(.ptr, .reg "pi_fmt"), (.i64, .reg "n")] [.ptr]
       ], .ret .void none⟩] }
 
   -- -------------------------------------------------------
-  -- print_char (write single byte to stdout)
+  -- print_char (buffered write via putchar)
   -- -------------------------------------------------------
   let fnPrintChar : LLVMFnDef :=
     { name := "print_char", retTy := .void, params := [("c", .i64)], blocks := [
       ⟨"entry", [
-        .alloca "pc_byte" .i8,
-        .cast "pc_trunc" .trunc .i64 (.reg "c") .i8,
-        .store .i8 (.reg "pc_trunc") (.reg "pc_byte"),
-        .call (some "pc_wr") .i64 (.global "write") [(.i32, .intLit 1), (.ptr, .reg "pc_byte"), (.i64, .intLit 1)]
+        .cast "pc_int" .trunc .i64 (.reg "c") .i32,
+        .call (some "pc_wr") .i32 (.global "putchar") [(.i32, .reg "pc_int")]
       ], .ret .void none⟩] }
 
   -- -------------------------------------------------------
@@ -487,12 +482,12 @@ def getBuiltinFns : List LLVMFnDef × List LLVMGlobal × List LLVMFnDecl :=
         .binOp "is_true" .icmpEq .i1 (.reg "b") (.intLit 1)
       ], .condBr (.reg "is_true") "print_true" "print_false"⟩,
       ⟨"print_true", [
-        .gep "true_ptr" (.array 4 .i8) (.global ".str_true") [(.i64, .intLit 0), (.i64, .intLit 0)],
-        .call (some "tw") .i64 (.global "write") [(.i32, .intLit 1), (.ptr, .reg "true_ptr"), (.i64, .intLit 4)]
+        .gep "true_ptr" (.array 5 .i8) (.global ".str_true") [(.i64, .intLit 0), (.i64, .intLit 0)],
+        .callVariadic (some "tw") .i32 (.global "printf") [(.ptr, .reg "true_ptr")] [.ptr]
       ], .ret .void none⟩,
       ⟨"print_false", [
-        .gep "false_ptr" (.array 5 .i8) (.global ".str_false") [(.i64, .intLit 0), (.i64, .intLit 0)],
-        .call (some "fw") .i64 (.global "write") [(.i32, .intLit 1), (.ptr, .reg "false_ptr"), (.i64, .intLit 5)]
+        .gep "false_ptr" (.array 6 .i8) (.global ".str_false") [(.i64, .intLit 0), (.i64, .intLit 0)],
+        .callVariadic (some "fw") .i32 (.global "printf") [(.ptr, .reg "false_ptr")] [.ptr]
       ], .ret .void none⟩] }
 
   -- -------------------------------------------------------
@@ -706,8 +701,9 @@ def getBuiltinFns : List LLVMFnDef × List LLVMGlobal × List LLVMFnDecl :=
   -- -------------------------------------------------------
   let globals : List LLVMGlobal := [
     { name := ".fmt_ld", ty := .array 4 .i8, value := "c\"%ld\\00\"" },
-    { name := ".str_true", ty := .array 4 .i8, value := "c\"true\"" },
-    { name := ".str_false", ty := .array 5 .i8, value := "c\"false\"" },
+    { name := ".fmt_str", ty := .array 5 .i8, value := "c\"%.*s\\00\"" },
+    { name := ".str_true", ty := .array 5 .i8, value := "c\"true\\00\"" },
+    { name := ".str_false", ty := .array 6 .i8, value := "c\"false\\00\"" },
     { name := ".fmt_f", ty := .array 3 .i8, value := "c\"%g\\00\"" }
   ]
 
@@ -719,7 +715,8 @@ def getBuiltinFns : List LLVMFnDef × List LLVMGlobal × List LLVMFnDecl :=
   let decls : List LLVMFnDecl := [
     { name := "llvm.smax.i64", retTy := .i64, params := [.i64, .i64] },
     { name := "llvm.smin.i64", retTy := .i64, params := [.i64, .i64] },
-    { name := "clock_gettime", retTy := .i32, params := [.i32, .ptr] }
+    { name := "clock_gettime", retTy := .i32, params := [.i32, .ptr] },
+    { name := "putchar", retTy := .i32, params := [.i32] }
   ]
 
   let fns : List LLVMFnDef := [

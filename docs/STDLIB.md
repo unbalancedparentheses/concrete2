@@ -103,7 +103,7 @@ The first wave of stdlib foundation work has landed:
 
 - `vec`, `string`, and `io` have had real correctness/completeness work
 - `bytes`, `slice`, `text`, `path`, and `fs` now exist
-- `env`, `process`, and `net` are implemented
+- `env`, `process`, `net`, and `args` are implemented
 
 The next stdlib work should build on that foundation instead of restarting it.
 The trust/effect coherence pass is now in place:
@@ -125,6 +125,7 @@ Implemented:
 6. first real `fs` — done
 7. `env` and `process` — done
 8. `net` (TCP) — done
+9. `args` (command-line argument access) — done
 
 Typed error hardening is now in place across `fs`, `net`, `env`, and `bytes`.
 

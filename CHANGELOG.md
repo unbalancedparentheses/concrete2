@@ -10,6 +10,18 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Phase H findings closure: buffered I/O, std.args, collection iteration
+
+**Buffered I/O for print builtins:** Switched all print builtins (`print_string`, `print_int`, `print_char`, `print_bool`) from raw `write()` syscalls to buffered libc I/O (`printf`/`putchar`). The grep case-insensitive benchmark gap dropped from 2.8x to 1.7x vs C. Remaining grep gap is per-character `to_lower` cost, not I/O overhead.
+
+**`std.args` module:** Added `std.args` with `count() -> Int` and `get(idx: Int) -> String` for process argument access. `cgrep` and `conhash` examples converted from raw extern fn declarations to stdlib imports. Test-mode stubs emit `__concrete_get_argc` (returns 0) and `__concrete_get_argv` (returns null) so stdlib tests compile without the main wrapper.
+
+**HashMap iteration:** Added `for_each(&self, f: fn(&K, &V))`, `keys(&self) -> Vec<K>`, and `values(&self) -> Vec<V>` methods to `HashMap` with stdlib test coverage (`test_map_for_each`).
+
+**Text/interpolation decision:** Six Phase H programs written without string interpolation. `print`/`println` plus builder APIs are sufficient for current needs. Interpolation deferred until sustained evidence from larger programs justifies it.
+
+**What changed strategically:** Three of the five remaining open Phase H items are now closed (grep I/O bottleneck, runtime argument surface, text/interpolation decision). Collection iteration is in progress. The center of gravity is now moving toward Phase J package/workspace maturity.
+
 ### Qualified module access fully closed
 
 **Same-name collision fix:** Submodule function definitions are now renamed at elaboration time via `prefixModuleFnNames` (e.g., `add` in `math` → `math_add`), with cross-module call site rewriting via `crossModuleRenames`. This is consistent across all downstream passes (mono, lower, emit). Ambiguity detection ensures that two submodules defining the same leaf name require qualified access (`math::add` / `util::add`) rather than silently colliding.

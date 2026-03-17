@@ -1049,7 +1049,18 @@ def emitSModule (s : EmitSSAState) (m : SModule) (testMode : Bool := false) : Em
     emitSFnDef s f f.isEntryPoint
   ) s
   -- Main wrapper (skip in test mode — test runner provides main)
-  if testMode then s
+  if testMode then
+    -- Provide stubs for __concrete_get_argc/argv so std.args links in test mode
+    let s := emitGlobal s { name := "__concrete_argc", ty := .i32, value := "0", mutable := true }
+    let s := emitGlobal s { name := "__concrete_argv", ty := .ptr, value := "null", mutable := true }
+    let getArgcFn : LLVMFnDef :=
+      { name := "__concrete_get_argc", retTy := .i32, params := [], blocks := [
+        ⟨"entry", [], .ret .i32 (some (.intLit 0))⟩] }
+    let s := { s with moduleFunctions := s.moduleFunctions.push getArgcFn }
+    let getArgvFn : LLVMFnDef :=
+      { name := "__concrete_get_argv", retTy := .ptr, params := [("idx", .i32)], blocks := [
+        ⟨"entry", [], .ret .ptr (some (.null_))⟩] }
+    { s with moduleFunctions := s.moduleFunctions.push getArgvFn }
   else if hasMain then
     match m.functions.find? fun f => f.isEntryPoint with
     | some mainFn => emitMainWrapper s mainFn.retTy

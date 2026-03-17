@@ -2452,7 +2452,7 @@ check_collection_tests "Slice" \
 check_collection_tests "HashMap" \
     map_test_map_insert_len map_test_map_contains map_test_map_overwrite map_test_map_remove \
     map_test_map_remove_nonexistent map_test_map_get map_test_map_clear \
-    map_test_map_insert_reinsert_after_remove map_test_map_growth
+    map_test_map_insert_reinsert_after_remove map_test_map_for_each map_test_map_growth
 
 check_collection_tests "HashSet" \
     set_test_set_insert_contains set_test_set_remove \

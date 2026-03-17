@@ -28,6 +28,7 @@ mod std {
     mod time;
     mod fs;
     mod env;
+    mod args;
     mod process;
     mod net;
 }

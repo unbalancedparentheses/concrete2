@@ -176,7 +176,7 @@ Completed phases can still seed work that is intentionally finished later. Do no
   - **Cross-module types**: enums, traits (via wrappers), type aliases, and newtypes all work. Type alias bug fixed — was broken even in single-module usage (function signatures carried unresolved alias names). Newtype erasure at import boundaries prevents leaked newtype names from reaching Layout/EmitSSA.
   - Hardening tests in `lean_tests/hardening_*.con`.
 - 663 tests pass (184 stdlib), including 32 pass-level Lean tests, 44 report assertions, 46 golden tests, 20 integration/regression/hardening tests, and 16 collections verified.
-- **Phase 3 testing complete** (system-level validation): 903 tests pass. Added 6 large mixed-feature programs (200-340 lines each), ~75 O2 differential tests, 20 report consistency cross-checks, ABI interop test (Concrete↔C sizeof/offsetof), 5 diagnostic quality tests, `test_fuzz.sh` (1500 programs: parser/typecheck/valid), `test_perf.sh` (compile time/runtime/IR size/binary size regression tracking).
+- **Phase 3 testing complete** (system-level validation): 904 tests pass. Added 6 large mixed-feature programs (200-340 lines each), ~75 O2 differential tests, 20 report consistency cross-checks, ABI interop test (Concrete↔C sizeof/offsetof), 5 diagnostic quality tests, `test_fuzz.sh` (1500 programs: parser/typecheck/valid), `test_perf.sh` (compile time/runtime/IR size/binary size regression tracking).
 
 ### Compiler Improvement Checklist
 
@@ -579,7 +579,8 @@ Primary surfaces:
         - mixed-arg `print` / `println` builtins landed: variadic, desugared at elaboration into individual typed print calls (`print_string`, `print_int`, `print_bool`, `print_char`); supports String, Int, i32, u32, bool, char; does not shadow stdlib print/println when they exist in scope
         - remaining: interpolation only if real code still needs it, trait-based formatting deferred
         - design notes: [research/text-and-output-design.md](research/text-and-output-design.md)
-     4. improve runtime-oriented collection maturity for interpreter/runtime workloads: maps, nested mutable structures, and frame-friendly patterns — **not started**
+     4. improve runtime-oriented collection maturity for interpreter/runtime workloads: maps, nested mutable structures, and frame-friendly patterns — **in progress**
+        - HashMap iteration landed: `for_each`, `keys`, `values` methods added with stdlib test coverage
      5. evaluate arena allocation against the existing `Vec`-as-pool pattern and adopt it only if real programs show a clear win in clarity, performance, or boundedness — **not started**
         - design notes: [research/arena-allocation.md](research/arena-allocation.md)
      6. strengthen layout reports where real programs need them: padding visualization, clearer enum/layout detail, and better FFI-facing audit output — **not started**
@@ -589,8 +590,9 @@ Primary surfaces:
         - std is located automatically relative to the compiler binary, with `CONCRETE_STD` as an override for unusual setups
         - example manifests no longer need path-based `std = { path = ... }` entries
      8. ~~design qualified module access (`Module.function()` or equivalent) so larger programs do not collapse into rename pressure~~ **done** — qualified submodule access now works for plain functions, mixed imported + qualified access, two-submodule access, top-level + qualified coexistence, qualified submodule `extern fn`, qualified submodule struct/import interaction, same-name collision handling (via Elab-time definition prefixing), and inline sibling `::` access (mod A / mod B can use A::fn from B without import)
-     9. decide how runtime argument access should live at the user-facing surface after the first `argc` / `argv` implementation proves itself in real command-line tools — **not started**
-        - the grep-like tool made process arguments a real language/runtime surface, not just generated-C glue
+     9. ~~decide how runtime argument access should live at the user-facing surface~~ — **done**
+        - `std.args` module landed with `count()` and `get(idx)` API; `cgrep` and `conhash` examples converted from raw extern fns to stdlib imports
+        - test-mode stubs emit `__concrete_get_argc` (returns 0) and `__concrete_get_argv` (returns null) so stdlib tests compile without the main wrapper
      10. document and fix backend/performance cliffs exposed by runtime-heavy workloads — **in progress**
         - the first major cliff was the bytecode VM: tiny vec builtins were not being inlined, leaving 17+ function calls per dispatch iteration
         - after adding `alwaysinline` on vec builtins, Concrete matched the comparable C heap-`Vec` version on the benchmark
@@ -641,9 +643,8 @@ Deliverables:
 
 After the policy engine, MAL, JSON parser, grep-like tool, and bytecode VM, the highest-value next work is:
 
-1. finish the text/output direction decision and move from builder-only pressure findings to a clear user-facing output model
-   - mixed-arg `print` / `println` is now the preferred first step
-   - interpolation stays the likely next step for actual string construction if examples still justify it
+1. ~~finish the text/output direction decision~~ — **resolved**: six Phase H programs written without interpolation; `print`/`println` plus builder APIs are sufficient for current needs
+   - interpolation remains available as a future option if sustained evidence from larger programs justifies it
    - trait-based formatting remains deferred until it earns its keep
 2. make the artifact/update verifier the next flagship Phase H workload and treat it as the main “why Concrete?” proof point
    - it should become the first polished review artifact, not just another benchmark
@@ -651,11 +652,11 @@ After the policy engine, MAL, JSON parser, grep-like tool, and bytecode VM, the 
 3. write and maintain a stable Phase H comparison summary so the project has one canonical “what the examples taught us” document
 4. keep recording per-program benchmark interpretation, not just raw timings, so the project distinguishes parser wins, streaming wins, runtime-loop wins, and backend-policy cliffs clearly
 5. keep closing Phase H findings through the narrowest fixes first:
-   - runtime argument surface
+   - ~~runtime argument surface~~ — done: `std.args` module with `count()` / `get(idx)` API
    - string/text helpers that still matter after the parser and grep results
-   - grep string/output bottlenecks now that compute-heavy workloads are near parity and grep remains the clearest text-I/O gap
+   - ~~grep string/output bottlenecks~~ — done: switched print builtins from raw `write()` syscalls to buffered libc I/O (`printf`/`putchar`); case-insensitive gap dropped from 2.8x to 1.7x
    - ~~same-name collision handling for qualified module access~~ — done: Elab-time definition prefixing with cross-module renames
-   - collection/runtime maturity for interpreter and VM workloads
+   - collection/runtime maturity for interpreter and VM workloads — in progress: HashMap iteration (`for_each`, `keys`, `values`) landed
 6. continue backend/performance investigation only where new workloads still expose real cliffs after the vec-inlining fix
    - current clearest target: grep-style string/output overhead rather than parser or VM compute loops
 7. improve testing tooling on top of the now-landed package workflow:
@@ -707,7 +708,7 @@ The current state of Phase H is much clearer than it was earlier:
 
 That means the remaining high-value Phase H work is mostly:
 
-- closing the last obvious runtime/string/output bottlenecks
+- ~~closing the last obvious runtime/string/output bottlenecks~~ — done: buffered I/O landed, runtime argument surface closed
 - ~~fixing namespace/completeness issues such as same-name qualified-access collisions~~ — done
 - deciding whether the remaining language pressure is genuinely language pressure or mostly stdlib/tooling pressure
 
@@ -796,10 +797,12 @@ Primary surfaces:
 
 1. design and implement incremental compilation — serialize pipeline artifacts (`ResolvedProgram`, `ValidatedCore`, `SSAProgram`) to disk, add cache invalidation by source hash, skip unchanged modules — **not started**. This is the prerequisite for packages to scale: without it, every build recompiles the world. The artifact pipeline is already much stronger than before, but real incrementality still depends on cleaner interface/body artifact splitting, stable identities, and driver/cache work — not only serialization.
    - this should become a tested workflow surface, not only a hidden cache layer
-2. define the package and dependency model explicitly — **not started**
-   - this must treat the stdlib as a builtin dependency, not a repo-relative path dependency in user manifests
-3. define stdlib vs third-party package boundaries — **not started**
-   - remove path-based std references from example/project manifests as the package model becomes real
+2. define the package and dependency model explicitly — **partially done**
+   - stdlib is already a builtin dependency (resolved automatically relative to the compiler binary)
+   - remaining: third-party dependency resolution, version constraints, lockfile semantics
+3. define stdlib vs third-party package boundaries — **partially done**
+   - path-based std references removed from example manifests; std is now builtin
+   - remaining: explicit third-party package boundary semantics
 4. define workspace and multi-package behavior — **not started**
 5. make dependency and package UX part of the language-user experience — **not started**
 6. ensure docs, tooling, and CI reflect the same package/project model — **not started**
@@ -1443,4 +1446,4 @@ These are current choices that should continue constraining future work unless e
 
 ## Summary
 
-Concrete has a complete compiler pipeline, a real stdlib (33 modules, 16 collections), 903 tests passing, a fully structured LLVM backend, audit reports, explicit artifact boundaries (`ValidatedCore`, `ProofCore`), a documented SSA backend contract, a first Lean 4 proof workflow (17 theorems over a pure Core fragment), a 20-program integration/regression/hardening corpus, and bug tracking in `docs/bugs/`. Phases A–G are done. Phase H is active: real-program pressure has already produced the policy engine, MAL-style interpreter work, JSON parser pressure, multiple bug fixes, and a concrete findings-closure track for ergonomics, report UX, and runtime/tooling follow-up. Compiler hardening is complete: Lower.lean fallbacks are hard errors (`throw`), Layout.lean/EmitSSA.lean fallbacks are hard errors (`panic!`) with type variable leakage fixed, SSAVerify catches integer bit-width mismatches, cross-module type aliases are fixed, and borrow edge cases have been audited.
+Concrete has a complete compiler pipeline, a real stdlib (33 modules, 16 collections), 904 tests passing, a fully structured LLVM backend, audit reports, explicit artifact boundaries (`ValidatedCore`, `ProofCore`), a documented SSA backend contract, a first Lean 4 proof workflow (17 theorems over a pure Core fragment), a 20-program integration/regression/hardening corpus, and bug tracking in `docs/bugs/`. Phases A–G are done. Phase H is active: real-program pressure has already produced the policy engine, MAL-style interpreter work, JSON parser pressure, multiple bug fixes, and a concrete findings-closure track for ergonomics, report UX, and runtime/tooling follow-up. Compiler hardening is complete: Lower.lean fallbacks are hard errors (`throw`), Layout.lean/EmitSSA.lean fallbacks are hard errors (`panic!`) with type variable leakage fixed, SSAVerify catches integer bit-width mismatches, cross-module type aliases are fixed, and borrow edge cases have been audited.

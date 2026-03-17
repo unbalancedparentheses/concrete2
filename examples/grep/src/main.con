@@ -13,28 +13,7 @@
 mod cgrep {
     import std.fs.{read_to_string, FsError};
     import std.result.{Result};
-
-    // --- Argv access (runtime, not yet in std) ---
-
-    trusted extern fn __concrete_get_argc() -> i32;
-    trusted extern fn __concrete_get_argv(idx: i32) -> *const u8;
-    trusted extern fn strlen(s: *const u8) -> u64;
-
-    trusted fn argv_to_string(idx: i32) with(Alloc) -> String {
-        let raw: *const u8 = __concrete_get_argv(idx);
-        if raw == (0 as *const u8) { return ""; }
-        let len: u64 = strlen(raw);
-        let mut s: String = "";
-        string_reserve(&mut s, (len + 1) as Int);
-        let mut i: u64 = 0;
-        while i < len {
-            let p: *const u8 = raw + i;
-            let ch: u8 = *p;
-            string_push_char(&mut s, ch as Int);
-            i = i + 1;
-        }
-        return s;
-    }
+    import std.args.{count, get};
 
     // --- String helpers ---
 
@@ -137,43 +116,43 @@ mod cgrep {
 
     // --- Main ---
 
-    fn is_flag(idx: i32) with(Alloc) -> bool {
-        let arg: String = argv_to_string(idx);
-        let len: Int = string_length(&arg);
+    fn is_flag(idx: Int) with(Alloc) -> bool {
+        let a: String = get(idx);
+        let len: Int = string_length(&a);
         let mut result: bool = false;
         if len >= 2 {
-            if string_char_at(&arg, 0) == 45 {
+            if string_char_at(&a, 0) == 45 {
                 result = true;
             }
         }
-        drop_string(arg);
+        drop_string(a);
         return result;
     }
 
-    fn has_flag(idx: i32, flag_char: Int) with(Alloc) -> bool {
-        let arg: String = argv_to_string(idx);
+    fn has_flag(idx: Int, flag_char: Int) with(Alloc) -> bool {
+        let a: String = get(idx);
         let mut result: bool = false;
-        let len: Int = string_length(&arg);
+        let len: Int = string_length(&a);
         if len >= 2 {
-            if string_char_at(&arg, 0) == 45 {
-                if string_char_at(&arg, 1) == flag_char {
+            if string_char_at(&a, 0) == 45 {
+                if string_char_at(&a, 1) == flag_char {
                     result = true;
                 }
             }
         }
-        drop_string(arg);
+        drop_string(a);
         return result;
     }
 
     pub fn main() with(Std) -> Int {
-        let argc: i32 = __concrete_get_argc();
+        let argc: Int = count();
 
         // Phase 1: count flags to find where pattern starts
         let mut show_numbers: bool = false;
         let mut count_only: bool = false;
         let mut invert: bool = false;
         let mut case_insensitive: bool = false;
-        let mut pattern_idx: i32 = 1;
+        let mut pattern_idx: Int = 1;
 
         // Scan flags
         while pattern_idx < argc && is_flag(pattern_idx) {
@@ -185,7 +164,7 @@ mod cgrep {
         }
 
         // Need at least pattern + one file
-        let remaining: i32 = argc - pattern_idx;
+        let remaining: Int = argc - pattern_idx;
         if remaining < 2 {
             let mut usage: String = "Usage: cgrep [-n] [-c] [-v] [-i] <pattern> <file>...\n";
             print_string(&usage);
@@ -194,14 +173,14 @@ mod cgrep {
         }
 
         // Phase 2: grep files
-        let pattern: String = argv_to_string(pattern_idx);
-        let num_files: i32 = argc - pattern_idx - 1;
+        let pattern: String = get(pattern_idx);
+        let num_files: Int = argc - pattern_idx - 1;
         let show_filename: bool = num_files > 1;
         let mut total_matches: i32 = 0;
-        let mut fi: i32 = pattern_idx + 1;
+        let mut fi: Int = pattern_idx + 1;
 
         while fi < argc {
-            let filename: String = argv_to_string(fi);
+            let filename: String = get(fi);
             let result: Result<String, FsError> = read_to_string(&filename);
             match result {
                 Result#Ok { value } => {

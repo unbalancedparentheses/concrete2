@@ -24,12 +24,8 @@ mod conhash {
     import std.fs.{read_file, FsError};
     import std.result.{Result};
     import std.bytes.{Bytes};
+    import std.args.{count, get};
 
-    // --- Argv access (runtime, not yet in std) ---
-
-    trusted extern fn __concrete_get_argc() -> i32;
-    trusted extern fn __concrete_get_argv(idx: i32) -> *const u8;
-    trusted extern fn strlen(s: *const u8) -> u64;
     trusted extern fn malloc(size: u64) -> *mut u8;
     trusted extern fn free(ptr: *mut u8);
 
@@ -397,27 +393,9 @@ mod conhash {
         return matches;
     }
 
-    // --- Argv helper ---
-
-    trusted fn argv_to_string(idx: i32) with(Alloc) -> String {
-        let raw: *const u8 = __concrete_get_argv(idx);
-        if raw == (0 as *const u8) { return ""; }
-        let len: u64 = strlen(raw);
-        let mut s: String = "";
-        string_reserve(&mut s, (len + 1) as Int);
-        let mut i: u64 = 0;
-        while i < len {
-            let p: *const u8 = raw + i;
-            let ch: u8 = *p;
-            string_push_char(&mut s, ch as Int);
-            i = i + 1;
-        }
-        return s;
-    }
-
-    fn get_expected_hash(argc: i32) with(Alloc) -> String {
+    fn get_expected_hash(argc: Int) with(Alloc) -> String {
         if argc >= 3 {
-            return argv_to_string(2);
+            return get(2);
         }
         return "";
     }
@@ -425,7 +403,7 @@ mod conhash {
     // --- Main: with(Std) — entry point ---
 
     pub fn main() with(Std) -> Int {
-        let argc: i32 = __concrete_get_argc();
+        let argc: Int = count();
 
         if argc < 2 {
             let mut usage: String = "Usage: conhash <file> [expected_sha256]\n";
@@ -437,7 +415,7 @@ mod conhash {
             return 1;
         }
 
-        let filename: String = argv_to_string(1);
+        let filename: String = get(1);
         let expected: String = get_expected_hash(argc);
 
         let t0: Int = clock_monotonic_ns();

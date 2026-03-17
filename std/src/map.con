@@ -203,6 +203,53 @@ mod map {
             dealloc::<u8>(old_flags);
         }
 
+        /// Call a function for each key-value pair in the map.
+        pub fn for_each(&self, f: fn(&K, &V)) {
+            let i: u64 = 0;
+            while i < self.cap {
+                let flag_ptr: *mut u8 = self.flags + i;
+                let flag: u8 = *flag_ptr;
+                if flag == 1 {
+                    let key_ptr: *mut K = self.keys + i;
+                    let val_ptr: *mut V = self.values + i;
+                    f(key_ptr as &K, val_ptr as &V);
+                }
+                i = i + 1;
+            }
+        }
+
+        /// Collect all keys into a Vec.
+        pub fn keys(&self) with(Alloc) -> Vec<K> {
+            let mut result: Vec<K> = vec_new::<K>();
+            let i: u64 = 0;
+            while i < self.cap {
+                let flag_ptr: *mut u8 = self.flags + i;
+                let flag: u8 = *flag_ptr;
+                if flag == 1 {
+                    let key_ptr: *mut K = self.keys + i;
+                    vec_push::<K>(&mut result, *key_ptr);
+                }
+                i = i + 1;
+            }
+            return result;
+        }
+
+        /// Collect all values into a Vec.
+        pub fn values(&self) with(Alloc) -> Vec<V> {
+            let mut result: Vec<V> = vec_new::<V>();
+            let i: u64 = 0;
+            while i < self.cap {
+                let flag_ptr: *mut u8 = self.flags + i;
+                let flag: u8 = *flag_ptr;
+                if flag == 1 {
+                    let val_ptr: *mut V = self.values + i;
+                    vec_push::<V>(&mut result, *val_ptr);
+                }
+                i = i + 1;
+            }
+            return result;
+        }
+
         fn insert_for_grow(&mut self, key: K, value: V) {
             let hash_f: fn(&K) -> u64 = self.hash_fn;
             let h: u64 = hash_f(&key);
@@ -348,6 +395,34 @@ mod map {
             Option#None => { m.drop(); return 1; }
         }
         if m.len() != 1 { m.drop(); return 1; }
+        m.drop();
+        return 0;
+    }
+
+    #[test]
+    fn test_map_for_each() with(Alloc, Unsafe) -> i32 {
+        let mut m: HashMap<i32, i32> = HashMap::<i32, i32>::new(hash_i32, eq_i32);
+        m.insert(1, 10);
+        m.insert(2, 20);
+        m.insert(3, 30);
+        let mut sum: i32 = 0;
+        let ks: Vec<i32> = m.keys();
+        let i: u64 = 0;
+        while i < vec_len::<i32>(&ks) {
+            sum = sum + vec_get::<i32>(&ks, i);
+            i = i + 1;
+        }
+        vec_free::<i32>(ks);
+        if sum != 6 { m.drop(); return 1; }
+        let vs: Vec<i32> = m.values();
+        let mut vsum: i32 = 0;
+        let j: u64 = 0;
+        while j < vec_len::<i32>(&vs) {
+            vsum = vsum + vec_get::<i32>(&vs, j);
+            j = j + 1;
+        }
+        vec_free::<i32>(vs);
+        if vsum != 60 { m.drop(); return 1; }
         m.drop();
         return 0;
     }
