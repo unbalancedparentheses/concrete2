@@ -58,6 +58,11 @@ mod set {
             self.inner.clear();
         }
 
+        /// Call a function for each element in the set.
+        pub fn for_each(&self, f: fn(&K)) {
+            self.inner.keys_for_each(f);
+        }
+
         /// Collect all elements into a Vec.
         pub fn elements(&self) with(Alloc) -> Vec<K> {
             return self.inner.keys();

@@ -1150,6 +1150,7 @@ run_ok "$TESTDIR/union_basic.con" 42
 # === Type system soundness tests ===
 run_ok "$TESTDIR/test_generic_chain.con" 42
 run_ok "$TESTDIR/test_generic_nested_struct.con" 42
+run_ok "$TESTDIR/test_method_generic.con" 42
 run_ok "$TESTDIR/test_enum_recursive_sum.con" 42
 run_ok "$TESTDIR/test_match_exhaustive_nested.con" 42
 run_ok "$TESTDIR/test_linearity_branch_agree.con" 42

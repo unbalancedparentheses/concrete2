@@ -1281,7 +1281,8 @@ partial def parseImplBlock : ParseM (ImplBlock ⊕ ImplTraitBlock) := do
       let isPub := tk == .pub_
       if isPub then advance; tk ← peek
       let (f, selfKind) ← parseMethodDef
-      let selfTy := tyFromName typeName
+      let selfTy := if typeParams.isEmpty then tyFromName typeName
+                     else Ty.generic typeName (typeParams.map Ty.typeVar)
       let selfParam : List Param := match selfKind with
         | some .value => [{ name := "self", ty := selfTy }]
         | some .ref => [{ name := "self", ty := .ref selfTy }]
@@ -1303,7 +1304,8 @@ partial def parseImplBlock : ParseM (ImplBlock ⊕ ImplTraitBlock) := do
       if isPub then advance; tk ← peek
       let (f, selfKind) ← parseMethodDef
       -- Inject self parameter based on selfKind
-      let selfTy := tyFromName typeName
+      let selfTy := if typeParams.isEmpty then tyFromName typeName
+                     else Ty.generic typeName (typeParams.map Ty.typeVar)
       let selfParam : List Param := match selfKind with
         | some .value => [{ name := "self", ty := selfTy }]
         | some .ref => [{ name := "self", ty := .ref selfTy }]

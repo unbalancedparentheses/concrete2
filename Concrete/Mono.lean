@@ -1,5 +1,6 @@
 import Concrete.Core
 import Concrete.Shared
+import Concrete.Layout
 
 namespace Concrete
 
@@ -527,13 +528,303 @@ private partial def collectAllModuleAliases (m : CModule) : List (String × Stri
   let sub := m.submodules.foldl (fun acc s => acc ++ collectAllModuleAliases s) []
   own ++ sub
 
+-- ============================================================
+-- Post-mono struct monomorphization
+-- ============================================================
+
+/-- Builtin generic type names that have hardcoded layouts and should NOT be
+    monomorphized into concrete struct defs. -/
+private def builtinGenericNames : List String :=
+  ["Vec", "HashMap", "HashSet", "BinaryHeap", "Heap", "HeapArray"]
+
+/-- Compute a mangled struct name for a generic struct instantiation.
+    E.g., `Box` with `[.i32]` → `"Box_i32"`, `Box` with `[.int]` → `"Box_Int"`. -/
+private def monoStructName (baseName : String) (args : List Ty) : String :=
+  baseName ++ "_" ++ "_".intercalate (args.map tyToSuffix)
+
+/-- Collect all generic struct names (those with non-empty typeParams) from all modules. -/
+private partial def collectGenericStructNames (modules : List CModule) : List String :=
+  let rec go (m : CModule) : List String :=
+    let own := m.structs.filter (fun sd => !sd.typeParams.isEmpty) |>.map (·.name)
+    let sub := m.submodules.foldl (fun acc s => acc ++ go s) []
+    own ++ sub
+  modules.foldl (fun acc m => acc ++ go m) []
+
+/-- Collect all unique (name, args) pairs of generic struct instantiations from a Ty. -/
+private partial def collectGenericTyInstances (genericNames : List String) : Ty → List (String × List Ty)
+  | .generic name args =>
+    let self := if genericNames.contains name && !builtinGenericNames.contains name
+                then [(name, args)]
+                else []
+    let inner := args.foldl (fun acc a => acc ++ collectGenericTyInstances genericNames a) []
+    self ++ inner
+  | .ref t | .refMut t | .ptrMut t | .ptrConst t | .heap t | .heapArray t =>
+    collectGenericTyInstances genericNames t
+  | .array t _ => collectGenericTyInstances genericNames t
+  | .fn_ ps _ ret =>
+    ps.foldl (fun acc p => acc ++ collectGenericTyInstances genericNames p) [] ++
+    collectGenericTyInstances genericNames ret
+  | _ => []
+
+mutual
+/-- Collect generic struct instances from a CExpr. -/
+private partial def collectExprInstances (gn : List String) : CExpr → List (String × List Ty)
+  | .intLit _ ty | .floatLit _ ty | .ident _ ty | .binOp _ _ _ ty
+  | .unaryOp _ _ ty | .fnRef _ ty | .try_ _ ty | .allocCall _ _ ty => collectGenericTyInstances gn ty
+  | .boolLit _ | .strLit _ | .charLit _ => []
+  | .call _ targs args ty =>
+    targs.foldl (fun acc t => acc ++ collectGenericTyInstances gn t) [] ++
+    args.foldl (fun acc a => acc ++ collectExprInstances gn a) [] ++
+    collectGenericTyInstances gn ty
+  | .structLit _ targs fields ty =>
+    targs.foldl (fun acc t => acc ++ collectGenericTyInstances gn t) [] ++
+    fields.foldl (fun acc (_, e) => acc ++ collectExprInstances gn e) [] ++
+    collectGenericTyInstances gn ty
+  | .fieldAccess obj _ ty => collectExprInstances gn obj ++ collectGenericTyInstances gn ty
+  | .enumLit _ _ targs fields ty =>
+    targs.foldl (fun acc t => acc ++ collectGenericTyInstances gn t) [] ++
+    fields.foldl (fun acc (_, e) => acc ++ collectExprInstances gn e) [] ++
+    collectGenericTyInstances gn ty
+  | .match_ scrut arms ty =>
+    collectExprInstances gn scrut ++
+    arms.foldl (fun acc a => acc ++ collectArmInstances gn a) [] ++
+    collectGenericTyInstances gn ty
+  | .borrow inner ty | .borrowMut inner ty | .deref inner ty =>
+    collectExprInstances gn inner ++ collectGenericTyInstances gn ty
+  | .arrayLit elems ty =>
+    elems.foldl (fun acc e => acc ++ collectExprInstances gn e) [] ++ collectGenericTyInstances gn ty
+  | .arrayIndex arr idx ty =>
+    collectExprInstances gn arr ++ collectExprInstances gn idx ++ collectGenericTyInstances gn ty
+  | .cast inner t => collectExprInstances gn inner ++ collectGenericTyInstances gn t
+  | .whileExpr cond body elseBody ty =>
+    collectExprInstances gn cond ++ collectStmtsInstances gn body ++
+    collectStmtsInstances gn elseBody ++ collectGenericTyInstances gn ty
+  | .ifExpr cond then_ else_ ty =>
+    collectExprInstances gn cond ++ collectStmtsInstances gn then_ ++
+    collectStmtsInstances gn else_ ++ collectGenericTyInstances gn ty
+
+private partial def collectArmInstances (gn : List String) : CMatchArm → List (String × List Ty)
+  | .enumArm _ _ binds body =>
+    binds.foldl (fun acc (_, t) => acc ++ collectGenericTyInstances gn t) [] ++
+    collectStmtsInstances gn body
+  | .litArm val body => collectExprInstances gn val ++ collectStmtsInstances gn body
+  | .varArm _ ty body => collectGenericTyInstances gn ty ++ collectStmtsInstances gn body
+
+private partial def collectStmtInstances (gn : List String) : CStmt → List (String × List Ty)
+  | .letDecl _ _ ty val => collectGenericTyInstances gn ty ++ collectExprInstances gn val
+  | .assign _ val => collectExprInstances gn val
+  | .return_ (some v) ty => collectExprInstances gn v ++ collectGenericTyInstances gn ty
+  | .return_ none ty => collectGenericTyInstances gn ty
+  | .expr e => collectExprInstances gn e
+  | .ifElse c t el =>
+    collectExprInstances gn c ++ collectStmtsInstances gn t ++
+    match el with | some s => collectStmtsInstances gn s | none => []
+  | .while_ c body _ step =>
+    collectExprInstances gn c ++ collectStmtsInstances gn body ++ collectStmtsInstances gn step
+  | .fieldAssign obj _ val => collectExprInstances gn obj ++ collectExprInstances gn val
+  | .derefAssign target val => collectExprInstances gn target ++ collectExprInstances gn val
+  | .arrayIndexAssign arr idx val =>
+    collectExprInstances gn arr ++ collectExprInstances gn idx ++ collectExprInstances gn val
+  | .break_ (some v) _ => collectExprInstances gn v
+  | .break_ none _ | .continue_ _ => []
+  | .defer body => collectExprInstances gn body
+  | .borrowIn _ _ _ _ ty body =>
+    collectGenericTyInstances gn ty ++ collectStmtsInstances gn body
+
+private partial def collectStmtsInstances (gn : List String) : List CStmt → List (String × List Ty) :=
+  fun stmts => stmts.foldl (fun acc s => acc ++ collectStmtInstances gn s) []
+end
+
+/-- Collect all generic struct instances from a function.
+    Only collects from non-generic (concrete) functions — generic templates
+    still have unsubstituted type variables and should be ignored. -/
+private def collectFnInstances (gn : List String) (f : CFnDef) : List (String × List Ty) :=
+  -- Skip generic template functions (they have unsubstituted type vars)
+  if !f.typeParams.isEmpty then []
+  else
+  let paramInsts := f.params.foldl (fun acc (_, t) => acc ++ collectGenericTyInstances gn t) []
+  let retInst := collectGenericTyInstances gn f.retTy
+  let bodyInsts := collectStmtsInstances gn f.body
+  paramInsts ++ retInst ++ bodyInsts
+
+/-- Check if a type contains any unresolved type variables. -/
+private partial def hasTypeVar : Ty → Bool
+  | .typeVar _ => true
+  | .named _ => false  -- named types are concrete
+  | .generic _ args => args.any hasTypeVar
+  | .ref t | .refMut t | .ptrMut t | .ptrConst t | .heap t | .heapArray t => hasTypeVar t
+  | .array t _ => hasTypeVar t
+  | .fn_ ps _ ret => ps.any hasTypeVar || hasTypeVar ret
+  | _ => false
+
+/-- Deduplicate instances by (name, args) equality, filtering out any with type variables. -/
+private def dedupInstances (insts : List (String × List Ty)) : List (String × List Ty) :=
+  insts.foldl (fun acc (n, args) =>
+    if args.any hasTypeVar then acc  -- skip instances with unresolved type vars
+    else if acc.any (fun (n2, args2) => n == n2 && args == args2) then acc
+    else acc ++ [(n, args)]) []
+
+/-- Rewrite a Ty, replacing generic struct references with named monomorphized types.
+    `mapping` is a list of (baseName, args, mangledName). -/
+private partial def rewriteTy (mapping : List (String × List Ty × String)) : Ty → Ty
+  | .generic name args =>
+    match mapping.find? (fun (n, a, _) => n == name && a == args) with
+    | some (_, _, mangledName) => .named mangledName
+    | none => .generic name (args.map (rewriteTy mapping))
+  | .ref t => .ref (rewriteTy mapping t)
+  | .refMut t => .refMut (rewriteTy mapping t)
+  | .ptrMut t => .ptrMut (rewriteTy mapping t)
+  | .ptrConst t => .ptrConst (rewriteTy mapping t)
+  | .heap t => .heap (rewriteTy mapping t)
+  | .heapArray t => .heapArray (rewriteTy mapping t)
+  | .array t n => .array (rewriteTy mapping t) n
+  | .fn_ ps cs ret => .fn_ (ps.map (rewriteTy mapping)) cs (rewriteTy mapping ret)
+  | t => t
+
+mutual
+/-- Rewrite all types in a CExpr. -/
+private partial def rewriteExprTys (m : List (String × List Ty × String)) : CExpr → CExpr
+  | .intLit v ty => .intLit v (rewriteTy m ty)
+  | .floatLit v ty => .floatLit v (rewriteTy m ty)
+  | .boolLit b => .boolLit b
+  | .strLit s => .strLit s
+  | .charLit c => .charLit c
+  | .ident n ty => .ident n (rewriteTy m ty)
+  | .binOp op l r ty => .binOp op (rewriteExprTys m l) (rewriteExprTys m r) (rewriteTy m ty)
+  | .unaryOp op e ty => .unaryOp op (rewriteExprTys m e) (rewriteTy m ty)
+  | .call fn targs args ty =>
+    .call fn (targs.map (rewriteTy m)) (args.map (rewriteExprTys m)) (rewriteTy m ty)
+  | .structLit name targs fields ty =>
+    -- If this struct lit targets a generic struct being monomorphized, update the name
+    let ty' := rewriteTy m ty
+    let name' := match ty' with
+      | .named n => n   -- rewritten to mangled name
+      | _ => name
+    .structLit name' (targs.map (rewriteTy m)) (fields.map fun (n, e) => (n, rewriteExprTys m e)) ty'
+  | .fieldAccess obj f ty => .fieldAccess (rewriteExprTys m obj) f (rewriteTy m ty)
+  | .enumLit en v targs fields ty =>
+    .enumLit en v (targs.map (rewriteTy m)) (fields.map fun (n, e) => (n, rewriteExprTys m e)) (rewriteTy m ty)
+  | .match_ scrut arms ty =>
+    .match_ (rewriteExprTys m scrut) (arms.map (rewriteArmTys m)) (rewriteTy m ty)
+  | .borrow inner ty => .borrow (rewriteExprTys m inner) (rewriteTy m ty)
+  | .borrowMut inner ty => .borrowMut (rewriteExprTys m inner) (rewriteTy m ty)
+  | .deref inner ty => .deref (rewriteExprTys m inner) (rewriteTy m ty)
+  | .arrayLit elems ty => .arrayLit (elems.map (rewriteExprTys m)) (rewriteTy m ty)
+  | .arrayIndex arr idx ty => .arrayIndex (rewriteExprTys m arr) (rewriteExprTys m idx) (rewriteTy m ty)
+  | .cast inner t => .cast (rewriteExprTys m inner) (rewriteTy m t)
+  | .fnRef n ty => .fnRef n (rewriteTy m ty)
+  | .try_ inner ty => .try_ (rewriteExprTys m inner) (rewriteTy m ty)
+  | .allocCall inner alloc ty => .allocCall (rewriteExprTys m inner) (rewriteExprTys m alloc) (rewriteTy m ty)
+  | .whileExpr cond body elseBody ty =>
+    .whileExpr (rewriteExprTys m cond) (rewriteStmtsTys m body) (rewriteStmtsTys m elseBody) (rewriteTy m ty)
+  | .ifExpr cond then_ else_ ty =>
+    .ifExpr (rewriteExprTys m cond) (rewriteStmtsTys m then_) (rewriteStmtsTys m else_) (rewriteTy m ty)
+
+private partial def rewriteArmTys (m : List (String × List Ty × String)) : CMatchArm → CMatchArm
+  | .enumArm en v binds body =>
+    .enumArm en v (binds.map fun (n, t) => (n, rewriteTy m t)) (rewriteStmtsTys m body)
+  | .litArm val body => .litArm (rewriteExprTys m val) (rewriteStmtsTys m body)
+  | .varArm b ty body => .varArm b (rewriteTy m ty) (rewriteStmtsTys m body)
+
+private partial def rewriteStmtTys (m : List (String × List Ty × String)) : CStmt → CStmt
+  | .letDecl n mu ty val => .letDecl n mu (rewriteTy m ty) (rewriteExprTys m val)
+  | .assign n val => .assign n (rewriteExprTys m val)
+  | .return_ (some v) ty => .return_ (some (rewriteExprTys m v)) (rewriteTy m ty)
+  | .return_ none ty => .return_ none (rewriteTy m ty)
+  | .expr e => .expr (rewriteExprTys m e)
+  | .ifElse c t el =>
+    .ifElse (rewriteExprTys m c) (rewriteStmtsTys m t) (el.map (rewriteStmtsTys m))
+  | .while_ c body lbl step =>
+    .while_ (rewriteExprTys m c) (rewriteStmtsTys m body) lbl (rewriteStmtsTys m step)
+  | .fieldAssign obj f val => .fieldAssign (rewriteExprTys m obj) f (rewriteExprTys m val)
+  | .derefAssign target val => .derefAssign (rewriteExprTys m target) (rewriteExprTys m val)
+  | .arrayIndexAssign arr idx val =>
+    .arrayIndexAssign (rewriteExprTys m arr) (rewriteExprTys m idx) (rewriteExprTys m val)
+  | .break_ (some v) lbl => .break_ (some (rewriteExprTys m v)) lbl
+  | .break_ none lbl => .break_ none lbl
+  | .continue_ lbl => .continue_ lbl
+  | .defer body => .defer (rewriteExprTys m body)
+  | .borrowIn v r reg isMut ty body =>
+    .borrowIn v r reg isMut (rewriteTy m ty) (rewriteStmtsTys m body)
+
+private partial def rewriteStmtsTys (m : List (String × List Ty × String)) : List CStmt → List CStmt :=
+  List.map (rewriteStmtTys m)
+end
+
+/-- Rewrite a function def: replace all generic struct types with named monomorphized types. -/
+private def rewriteFnTys (mapping : List (String × List Ty × String)) (f : CFnDef) : CFnDef :=
+  { f with
+    params := f.params.map fun (n, t) => (n, rewriteTy mapping t)
+    retTy := rewriteTy mapping f.retTy
+    body := rewriteStmtsTys mapping f.body }
+
+/-- Recursively collect all struct defs from a module and its submodules. -/
+private partial def collectAllModuleStructs (m : CModule) : List CStructDef :=
+  let own := m.structs
+  let sub := m.submodules.foldl (fun acc s => acc ++ collectAllModuleStructs s) []
+  own ++ sub
+
+/-- Monomorphize generic struct definitions in a program.
+    Collects all usages of generic struct types, creates concrete struct defs,
+    and rewrites all references from `Ty.generic` to `Ty.named`. -/
+private partial def monoStructsInProgram (modules : List CModule) : List CModule :=
+  -- 1. Collect all generic struct names from all modules
+  let genericNames := collectGenericStructNames modules
+  if genericNames.isEmpty then modules
+  else
+  -- 2. Collect all struct defs (for substitution)
+  let allStructs := modules.foldl (fun acc m => acc ++ collectAllModuleStructs m) []
+  -- 3. Collect all generic struct instances from all functions across all modules
+  let allInsts := modules.foldl (fun acc m =>
+    (collectAllModuleFns m).foldl (fun acc f => acc ++ collectFnInstances genericNames f) acc) []
+  let uniqueInsts := dedupInstances allInsts
+  if uniqueInsts.isEmpty then modules
+  else
+  -- 4. Build the full mapping first: (baseName, args, mangledName)
+  let mapping := uniqueInsts.filterMap fun (name, args) =>
+    match allStructs.find? (fun sd => sd.name == name) with
+    | some _ => some (name, args, monoStructName name args)
+    | none => none
+  -- Then create concrete struct defs using the full mapping (so nested generics resolve)
+  let newStructs := mapping.filterMap fun (name, args, mangledName) =>
+    match allStructs.find? (fun sd => sd.name == name) with
+    | some sd =>
+      let substSd := Layout.substStructTypeArgs sd args
+      -- Rewrite field types: replace nested generic struct refs with their mangled names
+      let rewrittenFields := substSd.fields.map fun (fn, ft) => (fn, rewriteTy mapping ft)
+      some ({
+        name := mangledName
+        typeParams := []
+        fields := rewrittenFields
+        isPublic := sd.isPublic
+        isCopy := sd.isCopy
+        isReprC := sd.isReprC
+        isPacked := sd.isPacked
+        reprAlign := sd.reprAlign } : CStructDef)
+    | none => none
+  -- 5. Rewrite all modules: rewrite types in functions, add new struct defs to first module only
+  let rec rewriteModule (m : CModule) : CModule :=
+    { m with
+      functions := m.functions.map (rewriteFnTys mapping)
+      submodules := m.submodules.map rewriteModule }
+  match modules with
+  | [] => []
+  | first :: rest =>
+    let first' := rewriteModule first
+    let first' := { first' with structs := first'.structs ++ newStructs }
+    first' :: rest.map rewriteModule
+
+-- ============================================================
+-- Entry point
+-- ============================================================
+
 def monoProgram (modules : List CModule) : Except String (List CModule) :=
   let allFns := modules.foldl (fun acc m => acc ++ collectAllModuleFns m) []
   let allAliases := modules.foldl (fun acc m => acc ++ collectAllModuleAliases m) []
   let initState : MonoState := { allFns := allFns, linkerAliases := allAliases }
   let (result, _) := (modules.mapM monoModule).run initState |>.run
   match result with
-  | .ok ms => .ok ms
+  | .ok ms => .ok (monoStructsInProgram ms)
   | .error e => .error e
 
 end Concrete

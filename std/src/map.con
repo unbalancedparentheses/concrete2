@@ -218,6 +218,34 @@ mod map {
             }
         }
 
+        /// Call a function for each key in the map.
+        pub fn keys_for_each(&self, f: fn(&K)) {
+            let i: u64 = 0;
+            while i < self.cap {
+                let flag_ptr: *mut u8 = self.flags + i;
+                let flag: u8 = *flag_ptr;
+                if flag == 1 {
+                    let key_ptr: *mut K = self.keys + i;
+                    f(key_ptr as &K);
+                }
+                i = i + 1;
+            }
+        }
+
+        /// Call a function for each value in the map.
+        pub fn values_for_each(&self, f: fn(&V)) {
+            let i: u64 = 0;
+            while i < self.cap {
+                let flag_ptr: *mut u8 = self.flags + i;
+                let flag: u8 = *flag_ptr;
+                if flag == 1 {
+                    let val_ptr: *mut V = self.values + i;
+                    f(val_ptr as &V);
+                }
+                i = i + 1;
+            }
+        }
+
         /// Collect all keys into a Vec.
         pub fn keys(&self) with(Alloc) -> Vec<K> {
             let mut result: Vec<K> = vec_new::<K>();
