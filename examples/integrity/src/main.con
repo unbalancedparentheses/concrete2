@@ -19,6 +19,9 @@ mod fcheck {
     import std.result.{Result};
     import std.bytes.{Bytes};
     import std.args.{count, get};
+    import std.map.{HashMap};
+    import std.set.{HashSet};
+    import std.hash.{hash_string, eq_string};
 
     trusted extern fn malloc(size: u64) -> *mut u8;
     trusted extern fn free(ptr: *mut u8);
@@ -314,7 +317,7 @@ mod fcheck {
     }
 
     // ---------------------------------------------------------------
-    // Manifest I/O -- uses strings, no Vec<String> needed
+    // Manifest I/O -- HashMap for O(1) lookups, string scanning for iteration
     // ---------------------------------------------------------------
 
     // Convert a String to Bytes by copying char-by-char.
@@ -339,10 +342,11 @@ mod fcheck {
         }
     }
 
-    // Look up a path in manifest content. Returns the stored hash or empty string.
+    // Parse manifest content into a HashMap<String, String> (path -> hash).
     // Manifest format: "hex64:path\n" per line.
-    // Capability: with(Alloc) -- pure string processing.
-    fn lookup_in_manifest(manifest: &String, needle: &String) with(Alloc) -> String {
+    // Capability: trusted with(Alloc) -- HashMap internally requires Unsafe.
+    trusted fn parse_manifest_to_map(manifest: &String) with(Alloc) -> HashMap<String, String> {
+        let mut map: HashMap<String, String> = HashMap::<String, String>::new(hash_string, eq_string);
         let mlen: Int = string_length(manifest);
         let mut line_start: Int = 0;
         let mut pos: Int = 0;
@@ -359,13 +363,8 @@ mod fcheck {
                         let colon: Int = string_char_at(manifest, line_start + 64);
                         if colon == 58 {
                             let path_part: String = string_slice(manifest, line_start + 65, pos);
-                            let eq: bool = string_eq(&path_part, needle);
-                            if eq {
-                                let hash_part: String = string_slice(manifest, line_start, line_start + 64);
-                                drop_string(path_part);
-                                return hash_part;
-                            }
-                            drop_string(path_part);
+                            let hash_part: String = string_slice(manifest, line_start, line_start + 64);
+                            map.insert(path_part, hash_part);
                         }
                     }
                 }
@@ -373,7 +372,7 @@ mod fcheck {
             }
             pos = pos + 1;
         }
-        return "";
+        return map;
     }
 
     // Count entries in manifest and check if a given path is in a "seen" bit array.
@@ -401,41 +400,6 @@ mod fcheck {
             pos = pos + 1;
         }
         return cnt;
-    }
-
-    // Get the line-index of a path in the manifest (for marking as seen).
-    fn manifest_line_index(manifest: &String, needle: &String) with(Alloc) -> Int {
-        let mlen: Int = string_length(manifest);
-        let mut idx: Int = 0;
-        let mut line_start: Int = 0;
-        let mut pos: Int = 0;
-        while pos <= mlen {
-            let at_end: bool = pos == mlen;
-            let mut is_nl: bool = false;
-            if !at_end {
-                is_nl = string_char_at(manifest, pos) == 10;
-            }
-            if is_nl || at_end {
-                if pos > line_start {
-                    let llen: Int = pos - line_start;
-                    if llen > 65 {
-                        let colon: Int = string_char_at(manifest, line_start + 64);
-                        if colon == 58 {
-                            let path_part: String = string_slice(manifest, line_start + 65, pos);
-                            let eq: bool = string_eq(&path_part, needle);
-                            drop_string(path_part);
-                            if eq {
-                                return idx;
-                            }
-                        }
-                        idx = idx + 1;
-                    }
-                }
-                line_start = pos + 1;
-            }
-            pos = pos + 1;
-        }
-        return 0 - 1;
     }
 
     // Get the path at a given line index in the manifest.
@@ -654,15 +618,15 @@ mod fcheck {
                 let mut cnt_rem: Int = 0;
                 let mut cnt_err: Int = 0;
 
+                // Parse manifest into HashMap for O(1) lookups (path -> hash)
+                let mut manifest_map: HashMap<String, String> = parse_manifest_to_map(&manifest_content);
+
+                // Collect manifest paths into a Vec for removed-file detection
+                // (HashMap has no iterator, so we keep a parallel Vec)
                 let m_lines: Int = count_manifest_lines(&manifest_content);
 
-                // Seen flags: use a Vec<i32>
-                let mut seen: Vec<i32> = vec_new::<i32>();
-                let mut si: Int = 0;
-                while si < m_lines {
-                    vec_push::<i32>(&mut seen, 0);
-                    si = si + 1;
-                }
+                // Track which manifest paths were checked
+                let mut checked: HashSet<String> = HashSet::<String>::new(hash_string, eq_string);
 
                 // Check each file
                 let mut ci: Int = 3;
@@ -675,54 +639,56 @@ mod fcheck {
                         drop_string(chex);
                         cnt_err = cnt_err + 1;
                     } else {
-                        let stored: String = lookup_in_manifest(&manifest_content, &cpath);
-                        let stored_len: Int = string_length(&stored);
-                        if stored_len == 0 {
-                            let mut lbl: String = "ADDED    ";
-                            report_status(&lbl, &cpath);
-                            drop_string(lbl);
-                            cnt_add = cnt_add + 1;
-                        } else {
-                            // Mark as seen
-                            let midx: Int = manifest_line_index(&manifest_content, &cpath);
-                            if midx >= 0 {
-                                vec_set::<i32>(&mut seen, midx, 1);
-                            }
-                            let eq: bool = string_eq(&chex, &stored);
-                            if eq {
-                                let mut lbl2: String = "OK       ";
-                                report_status(&lbl2, &cpath);
-                                drop_string(lbl2);
-                                cnt_ok = cnt_ok + 1;
-                            } else {
-                                let mut lbl3: String = "MODIFIED ";
-                                report_status(&lbl3, &cpath);
-                                drop_string(lbl3);
-                                cnt_mod = cnt_mod + 1;
+                        let stored_opt: Option<&String> = manifest_map.get(&cpath);
+                        match stored_opt {
+                            Option#None => {
+                                let mut lbl: String = "ADDED    ";
+                                report_status(&lbl, &cpath);
+                                drop_string(lbl);
+                                cnt_add = cnt_add + 1;
+                            },
+                            Option#Some { value } => {
+                                // Mark this path as checked
+                                let mut cpath_copy: String = "";
+                                string_append(&mut cpath_copy, &cpath);
+                                checked.insert(cpath_copy);
+
+                                let eq: bool = string_eq(&chex, value);
+                                if eq {
+                                    let mut lbl2: String = "OK       ";
+                                    report_status(&lbl2, &cpath);
+                                    drop_string(lbl2);
+                                    cnt_ok = cnt_ok + 1;
+                                } else {
+                                    let mut lbl3: String = "MODIFIED ";
+                                    report_status(&lbl3, &cpath);
+                                    drop_string(lbl3);
+                                    cnt_mod = cnt_mod + 1;
+                                }
                             }
                         }
-                        drop_string(stored);
                         drop_string(chex);
                     }
                     drop_string(cpath);
                     ci = ci + 1;
                 }
 
-                // Report removed files
+                // Report removed files (in manifest but not checked)
+                // Use manifest_path_at to iterate since HashMap has no iterator
                 let mut ki: Int = 0;
                 while ki < m_lines {
-                    let flag: i32 = vec_get::<i32>(&seen, ki);
-                    if flag == 0 {
-                        let rp: String = manifest_path_at(&manifest_content, ki);
-                        let rp_len: Int = string_length(&rp);
-                        if rp_len > 0 {
+                    let rp: String = manifest_path_at(&manifest_content, ki);
+                    let rp_len: Int = string_length(&rp);
+                    if rp_len > 0 {
+                        let was_checked: bool = checked.contains(&rp);
+                        if !was_checked {
                             let mut lbl4: String = "REMOVED  ";
                             report_status(&lbl4, &rp);
                             drop_string(lbl4);
                             cnt_rem = cnt_rem + 1;
                         }
-                        drop_string(rp);
                     }
+                    drop_string(rp);
                     ki = ki + 1;
                 }
 
@@ -753,7 +719,8 @@ mod fcheck {
                 print_char(10);
                 drop_string(sum);
 
-                vec_free::<i32>(seen);
+                manifest_map.drop();
+                checked.drop();
 
                 if cnt_mod > 0 || cnt_rem > 0 || cnt_err > 0 {
                     exit_code = 1;

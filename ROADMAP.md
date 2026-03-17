@@ -619,6 +619,8 @@ Primary surfaces:
         - design notes: [research/text-and-output-design.md](research/text-and-output-design.md)
      4. improve runtime-oriented collection maturity for interpreter/runtime workloads: maps, nested mutable structures, and frame-friendly patterns — **in progress**
         - HashMap iteration landed: `for_each`, `keys`, `values` methods added with stdlib test coverage
+        - next likely need is narrow explicit traversal support (for example `HashSet.for_each` and maybe entry/key traversal helpers), but not a large Rust-style iterator ecosystem unless repeated evidence forces it
+        - design notes: [research/iterators.md](research/iterators.md)
      5. evaluate arena allocation against the existing `Vec`-as-pool pattern and adopt it only if real programs show a clear win in clarity, performance, or boundedness — **not started**
         - design notes: [research/arena-allocation.md](research/arena-allocation.md)
      6. strengthen layout reports where real programs need them: padding visualization, clearer enum/layout detail, and better FFI-facing audit output — **not started**

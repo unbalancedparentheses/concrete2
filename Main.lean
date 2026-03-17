@@ -11,6 +11,23 @@ def writeFile (path : String) (content : String) : IO Unit := do
 def readFile (path : String) : IO String := do
   IO.FS.readFile ⟨path⟩
 
+/-- Detect macOS SDK sysroot for clang linking. Returns `--sysroot=<path>` flag if found. -/
+def getMacOSSysrootFlags : IO (Array String) := do
+  -- Only relevant on macOS
+  let os ← IO.Process.output { cmd := "uname", args := #["-s"] }
+  if os.stdout.trimAscii.toString != "Darwin" then return #[]
+  -- Use xcrun to find the SDK path
+  let result ← IO.Process.output { cmd := "xcrun", args := #["--show-sdk-path"] }
+  if result.exitCode == 0 then
+    let sdkPath := result.stdout.trimAscii.toString
+    if sdkPath.length > 0 then return #[s!"--sysroot={sdkPath}"]
+  return #[]
+
+/-- Build clang arguments for linking LLVM IR to a native binary. -/
+def clangArgs (llPath : String) (outputPath : String) (extraFlags : Array String := #[]) : IO (Array String) := do
+  let sysrootFlags ← getMacOSSysrootFlags
+  return #[llPath, "-o", outputPath, "-Wno-override-module", "-O2"] ++ sysrootFlags ++ extraFlags
+
 def runCmd (cmd : String) (args : Array String) : IO UInt32 := do
   let child ← IO.Process.spawn {
     cmd := cmd
@@ -131,7 +148,8 @@ def compileSSA (inputPath : String) (outputPath : String) (emitLLVM : Bool) : IO
       IO.println llvmIR
       return 0
     -- Compile with clang
-    let exitCode ← runCmd "clang" #[llPath, "-o", outputPath, "-Wno-override-module", "-O2"]
+    let args ← clangArgs llPath outputPath
+    let exitCode ← runCmd "clang" args
     if exitCode != 0 then
       IO.eprintln "clang compilation failed"
       return exitCode
@@ -162,7 +180,8 @@ def compileTest (inputPath : String) (moduleFilter : Option String := none) : IO
     let llPath := inputPath ++ ".test.ll"
     let outPath := inputPath ++ ".test"
     writeFile llPath llvmIR
-    let exitCode ← runCmd "clang" #[llPath, "-o", outPath, "-Wno-override-module", "-O2"]
+    let args ← clangArgs llPath outPath
+    let exitCode ← runCmd "clang" args
     if exitCode != 0 then
       IO.eprintln "clang compilation failed"
       IO.eprintln s!"LLVM IR left at: {llPath}"
@@ -511,7 +530,8 @@ def compileBuild (projectRoot : String) (outputPath : Option String) (emitLLVM :
             | _ :: n :: _ => n
             | _ => "a.out"
           | _ => "a.out"
-      let exitCode ← runCmd "clang" #[llPath, "-o", outPath, "-Wno-override-module", "-O2"]
+      let args ← clangArgs llPath outPath
+      let exitCode ← runCmd "clang" args
       if exitCode != 0 then
         IO.eprintln "clang compilation failed"
         return exitCode
@@ -609,7 +629,8 @@ partial def compileTestBuild (projectRoot : String) (moduleFilter : Option Strin
       let llPath := mainPath ++ ".test.ll"
       let outPath := "/tmp/concrete_test_" ++ toString (← IO.monoMsNow)
       writeFile llPath llvmIR
-      let exitCode ← runCmd "clang" #[llPath, "-o", outPath, "-Wno-override-module", "-O2"]
+      let args ← clangArgs llPath outPath
+      let exitCode ← runCmd "clang" args
       if exitCode != 0 then
         IO.eprintln "clang compilation failed"
         IO.eprintln s!"LLVM IR left at: {llPath}"

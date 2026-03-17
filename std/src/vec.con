@@ -102,6 +102,16 @@ mod vec {
             dealloc(self.ptr);
         }
 
+        /// Call a function for each element in the vec.
+        pub fn for_each(&self, f: fn(&T)) {
+            let i: u64 = 0;
+            while i < self.len {
+                let target_ptr: *mut T = self.ptr + i;
+                f(target_ptr as &T);
+                i = i + 1;
+            }
+        }
+
         // TODO: insert, remove
     }
 

@@ -58,6 +58,11 @@ mod set {
             self.inner.clear();
         }
 
+        /// Collect all elements into a Vec.
+        pub fn elements(&self) with(Alloc) -> Vec<K> {
+            return self.inner.keys();
+        }
+
         pub fn drop(self) with(Alloc) {
             self.inner.drop();
         }
@@ -113,6 +118,27 @@ mod set {
         let removed: bool = s.remove(&k);
         if removed { s.drop(); return 1; }
         if s.len() != 1 { s.drop(); return 1; }
+        s.drop();
+        return 0;
+    }
+
+    #[test]
+    fn test_set_elements() with(Alloc, Unsafe) -> i32 {
+        let mut s: HashSet<i32> = HashSet::<i32>::new(hash_i32, eq_i32);
+        s.insert(10);
+        s.insert(20);
+        s.insert(30);
+        let elems: Vec<i32> = s.elements();
+        if vec_len::<i32>(&elems) != 3 { vec_free::<i32>(elems); s.drop(); return 1; }
+        // Sum elements to verify all are present (order not guaranteed)
+        let mut sum: i32 = 0;
+        let mut i: u64 = 0;
+        while i < vec_len::<i32>(&elems) {
+            sum = sum + vec_get::<i32>(&elems, i);
+            i = i + 1;
+        }
+        vec_free::<i32>(elems);
+        if sum != 60 { s.drop(); return 1; }
         s.drop();
         return 0;
     }

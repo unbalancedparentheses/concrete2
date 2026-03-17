@@ -10,8 +10,11 @@
 // On startup, replays the log to rebuild in-memory state.
 // compact rewrites the log with only current live key-value pairs.
 //
-// Demonstrates: persistence, line-oriented parsing, Vec-based storage,
+// Demonstrates: persistence, line-oriented parsing, HashMap-based storage,
 // capability separation, and crash recovery via append-only log.
+//
+// Note: HashMap has no iterator yet, so we keep a parallel Vec<String> of keys
+// for the `list` and `compact` commands that need to enumerate all entries.
 
 mod kvstore {
     import std.fs.{read_to_string, write_file, append_file, file_exists, FsError};
@@ -19,6 +22,8 @@ mod kvstore {
     import std.option.{Option};
     import std.args.{count, get};
     import std.bytes.{Bytes};
+    import std.map.{HashMap};
+    import std.hash.{hash_string, eq_string};
 
     // --- Forget a linear String without freeing (for shallow copies from vec_get) ---
 
@@ -73,9 +78,9 @@ mod kvstore {
         return "kvstore.log";
     }
 
-    // --- KV find: returns index or -1 ---
+    // --- Keys vec: find index of key, or -1 ---
 
-    fn kv_find(keys: &mut Vec<String>, key: &String) -> Int {
+    fn keys_find(keys: &mut Vec<String>, key: &String) -> Int {
         let len: Int = vec_len::<String>(keys) as Int;
         let mut i: Int = 0;
         while i < len {
@@ -90,49 +95,61 @@ mod kvstore {
         return 0 - 1;
     }
 
-    // --- KV set: insert or update ---
+    // --- Keys vec: swap-remove by key ---
 
-    fn kv_set(keys: &mut Vec<String>, vals: &mut Vec<String>, key: String, val: String) with(Alloc) {
-        let idx: Int = kv_find(keys, &key);
-        if idx >= 0 {
-            vec_set::<String>(vals, idx, val);
-            drop_string(key);
-        } else {
-            vec_push::<String>(keys, key);
-            vec_push::<String>(vals, val);
-        }
-    }
-
-    // --- KV delete: swap-remove ---
-
-    fn kv_delete(keys: &mut Vec<String>, vals: &mut Vec<String>, key: &String) with(Alloc) -> bool {
-        let idx: Int = kv_find(keys, key);
+    fn keys_remove(keys: &mut Vec<String>, key: &String) with(Alloc) {
+        let idx: Int = keys_find(keys, key);
         if idx < 0 {
-            return false;
+            return;
         }
         let len: Int = vec_len::<String>(keys) as Int;
         let last: Int = len - 1;
         if idx != last {
             let last_key: String = vec_get::<String>(keys, last);
-            let last_val: String = vec_get::<String>(vals, last);
             vec_set::<String>(keys, idx, last_key);
-            vec_set::<String>(vals, idx, last_val);
         }
         let pk: Option<String> = vec_pop::<String>(keys);
-        let pv: Option<String> = vec_pop::<String>(vals);
         match pk {
             Option#Some { value } => {
                 forget_string(value);
             },
             Option#None => {}
         }
-        match pv {
+    }
+
+    // --- KV set: insert or update in map, track key in keys vec ---
+
+    trusted fn kv_set_tracked(map: &mut HashMap<String, String>, keys: &mut Vec<String>, key: String, val: String) with(Alloc) {
+        let existed: bool = map.contains(&key);
+        let key_for_vec: String = clone_string(&key);
+        let old: Option<String> = map.insert(key, val);
+        match old {
             Option#Some { value } => {
-                forget_string(value);
+                drop_string(value);
             },
             Option#None => {}
         }
-        return true;
+        if existed {
+            drop_string(key_for_vec);
+        } else {
+            vec_push::<String>(keys, key_for_vec);
+        }
+    }
+
+    // --- KV delete: remove from map and keys vec ---
+
+    trusted fn kv_delete(map: &mut HashMap<String, String>, keys: &mut Vec<String>, key: &String) with(Alloc) -> bool {
+        let removed: Option<String> = map.remove(key);
+        match removed {
+            Option#Some { value } => {
+                drop_string(value);
+                keys_remove(keys, key);
+                return true;
+            },
+            Option#None => {
+                return false;
+            }
+        }
     }
 
     // --- Append a SET operation to the log ---
@@ -193,7 +210,7 @@ mod kvstore {
 
     // --- Parse log content line by line ---
 
-    fn parse_log_content(content: &String, keys: &mut Vec<String>, vals: &mut Vec<String>) with(Std) {
+    fn parse_log_content(content: &String, map: &mut HashMap<String, String>, keys: &mut Vec<String>) with(Std) {
         let len: Int = string_length(content);
         let mut line_start: Int = 0;
         let mut pos: Int = 0;
@@ -222,13 +239,13 @@ mod kvstore {
                             if space_pos > 4 {
                                 let skey: String = string_slice(&line, 4, space_pos);
                                 let sval: String = string_slice(&line, space_pos + 1, line_len);
-                                kv_set(keys, vals, skey, sval);
+                                kv_set_tracked(map, keys, skey, sval);
                             }
                         }
                         if c0 == 68 && c1 == 69 && c2 == 76 && c3 == 32 {
                             // "DEL " — rest of line is key
                             let dkey: String = string_slice(&line, 4, line_len);
-                            kv_delete(keys, vals, &dkey);
+                            kv_delete(map, keys, &dkey);
                             drop_string(dkey);
                         }
                     }
@@ -242,7 +259,7 @@ mod kvstore {
 
     // --- Replay log file ---
 
-    fn replay_log(keys: &mut Vec<String>, vals: &mut Vec<String>) with(Std) {
+    fn replay_log(map: &mut HashMap<String, String>, keys: &mut Vec<String>) with(Std) {
         let path: String = log_path();
         let exists: bool = file_exists(&path);
         if !exists {
@@ -253,7 +270,7 @@ mod kvstore {
         drop_string(path);
         match result {
             Result#Ok { value } => {
-                parse_log_content(&value, keys, vals);
+                parse_log_content(&value, map, keys);
                 drop_string(value);
             },
             Result#Err { error } => {}
@@ -262,7 +279,7 @@ mod kvstore {
 
     // --- Compact: rewrite log with only live entries ---
 
-    fn compact(keys: &mut Vec<String>, vals: &mut Vec<String>) with(Std) {
+    fn compact(map: &mut HashMap<String, String>, keys: &mut Vec<String>) with(Std) {
         let mut out: String = "";
         string_reserve(&mut out, 256);
 
@@ -270,16 +287,20 @@ mod kvstore {
         let mut i: Int = 0;
         while i < len {
             let k: String = vec_get::<String>(keys, i);
-            let v: String = vec_get::<String>(vals, i);
-            let mut prefix: String = "SET ";
-            string_append(&mut out, &prefix);
-            drop_string(prefix);
-            string_append(&mut out, &k);
-            string_push_char(&mut out, 32);
-            string_append(&mut out, &v);
-            string_push_char(&mut out, 10);
+            let val_opt: Option<&String> = map.get(&k);
+            match val_opt {
+                Option#Some { value } => {
+                    let mut prefix: String = "SET ";
+                    string_append(&mut out, &prefix);
+                    drop_string(prefix);
+                    string_append(&mut out, &k);
+                    string_push_char(&mut out, 32);
+                    string_append(&mut out, value);
+                    string_push_char(&mut out, 10);
+                },
+                Option#None => {}
+            }
             forget_string(k);
-            forget_string(v);
             i = i + 1;
         }
 
@@ -301,11 +322,11 @@ mod kvstore {
 
     // --- Command: set ---
 
-    fn cmd_set(keys: &mut Vec<String>, vals: &mut Vec<String>, key_arg: &String, val_arg: &String) with(Std) {
+    fn cmd_set(map: &mut HashMap<String, String>, keys: &mut Vec<String>, key_arg: &String, val_arg: &String) with(Std) {
         let key: String = clone_string(key_arg);
         let val: String = clone_string(val_arg);
         log_set(key_arg, val_arg);
-        kv_set(keys, vals, key, val);
+        kv_set_tracked(map, keys, key, val);
         print("Set '");
         print_string(key_arg);
         print("' = '");
@@ -315,24 +336,25 @@ mod kvstore {
 
     // --- Command: get ---
 
-    fn cmd_get(keys: &mut Vec<String>, vals: &mut Vec<String>, key_arg: &String) with(Std) {
-        let idx: Int = kv_find(keys, key_arg);
-        if idx >= 0 {
-            let val: String = vec_get::<String>(vals, idx);
-            print_string(&val);
-            print_char(10);
-            forget_string(val);
-        } else {
-            print("Key '");
-            print_string(key_arg);
-            println("' not found");
+    fn cmd_get(map: &mut HashMap<String, String>, key_arg: &String) with(Std) {
+        let val_opt: Option<&String> = map.get(key_arg);
+        match val_opt {
+            Option#Some { value } => {
+                print_string(value);
+                print_char(10);
+            },
+            Option#None => {
+                print("Key '");
+                print_string(key_arg);
+                println("' not found");
+            }
         }
     }
 
     // --- Command: delete ---
 
-    fn cmd_delete(keys: &mut Vec<String>, vals: &mut Vec<String>, key_arg: &String) with(Std) {
-        let deleted: bool = kv_delete(keys, vals, key_arg);
+    fn cmd_delete(map: &mut HashMap<String, String>, keys: &mut Vec<String>, key_arg: &String) with(Std) {
+        let deleted: bool = kv_delete(map, keys, key_arg);
         if deleted {
             log_del(key_arg);
             print("Deleted '");
@@ -347,7 +369,7 @@ mod kvstore {
 
     // --- Command: list ---
 
-    fn cmd_list(keys: &mut Vec<String>, vals: &mut Vec<String>) with(Std) {
+    fn cmd_list(map: &mut HashMap<String, String>, keys: &mut Vec<String>) with(Std) {
         let len: Int = vec_len::<String>(keys) as Int;
         if len == 0 {
             println("(empty)");
@@ -357,13 +379,17 @@ mod kvstore {
         let mut i: Int = 0;
         while i < len {
             let k: String = vec_get::<String>(keys, i);
-            let v: String = vec_get::<String>(vals, i);
-            print_string(&k);
-            print(" = ");
-            print_string(&v);
-            print_char(10);
+            let val_opt: Option<&String> = map.get(&k);
+            match val_opt {
+                Option#Some { value } => {
+                    print_string(&k);
+                    print(" = ");
+                    print_string(value);
+                    print_char(10);
+                },
+                Option#None => {}
+            }
             forget_string(k);
-            forget_string(v);
             i = i + 1;
         }
     }
@@ -389,9 +415,9 @@ mod kvstore {
             return 1;
         }
 
+        let mut map: HashMap<String, String> = HashMap::<String, String>::new(hash_string, eq_string);
         let mut keys: Vec<String> = vec_new::<String>();
-        let mut vals: Vec<String> = vec_new::<String>();
-        replay_log(&mut keys, &mut vals);
+        replay_log(&mut map, &mut keys);
 
         let cmd: String = get(1);
 
@@ -410,7 +436,7 @@ mod kvstore {
             } else {
                 let key: String = get(2);
                 let val: String = get(3);
-                cmd_set(&mut keys, &mut vals, &key, &val);
+                cmd_set(&mut map, &mut keys, &key, &val);
                 drop_string(val);
                 drop_string(key);
             }
@@ -421,7 +447,7 @@ mod kvstore {
                     exit_code = 1;
                 } else {
                     let key: String = get(2);
-                    cmd_get(&mut keys, &mut vals, &key);
+                    cmd_get(&mut map, &key);
                     drop_string(key);
                 }
             } else {
@@ -431,15 +457,15 @@ mod kvstore {
                         exit_code = 1;
                     } else {
                         let key: String = get(2);
-                        cmd_delete(&mut keys, &mut vals, &key);
+                        cmd_delete(&mut map, &mut keys, &key);
                         drop_string(key);
                     }
                 } else {
                     if str_eq(&cmd, &list_str) {
-                        cmd_list(&mut keys, &mut vals);
+                        cmd_list(&mut map, &mut keys);
                     } else {
                         if str_eq(&cmd, &compact_str) {
-                            compact(&mut keys, &mut vals);
+                            compact(&mut map, &mut keys);
                         } else {
                             print("Unknown command: ");
                             print_string(&cmd);
@@ -459,7 +485,7 @@ mod kvstore {
         drop_string(set_str);
         drop_string(cmd);
         vec_free::<String>(keys);
-        vec_free::<String>(vals);
+        map.drop();
         return exit_code;
     }
 }

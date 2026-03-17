@@ -214,22 +214,25 @@ mod net {
 
         pub fn read_all(&self, buf: &mut Bytes) with(Unsafe, Alloc, Network) -> i64 {
             let total: i64 = 0;
-            let tmp: [u8; 4096] = [0; 4096];
+            // Use heap buffer because &tmp on stack arrays creates borrow copies,
+            // so recv would write into a copy that the read loop never sees.
+            let tmp: *mut u8 = grow::<u8>(0 as *mut u8, 4096);
             let reading: bool = true;
             while reading {
-                let n: i64 = recv(self.fd, &tmp as *mut u8, 4096, 0);
+                let n: i64 = recv(self.fd, tmp, 4096, 0);
                 if n <= 0 {
                     reading = false;
                 } else {
                     let i: i64 = 0;
                     while i < n {
-                        let p: *const u8 = (&tmp as *const u8) + (i as u64);
+                        let p: *const u8 = (tmp as *const u8) + (i as u64);
                         buf.push(*(p as *mut u8));
                         i = i + 1;
                     }
                     total = total + n;
                 }
             }
+            dealloc::<u8>(tmp);
             return total;
         }
 
