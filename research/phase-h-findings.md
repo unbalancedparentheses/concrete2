@@ -312,11 +312,16 @@ Current state:
 
 - the second-wave list is now evidence-backed rather than purely aspirational
 - `TOML parser` looks like a clean exemplar candidate
-- `file integrity monitor` and `key-value store` are valuable bug-finders, but their current workaround-heavy forms should not be treated as the final exemplars until the `HashMap<String, String>` package-build bug is fixed
-- `simple HTTP server` is a valid workload choice, but its current status is blocked on a real stdlib portability bug in `std.net`
-- the most important new findings from this wave are:
-  - Bug 016: cross-module generic monomorphization/linking for `HashMap<String, String>` in package builds
-  - Bug 017: Linux-only socket constants in `std.net`
+- `file integrity monitor` and `key-value store` found the HashMap cross-module linking bug (now fixed); their pool-based workarounds can be replaced with direct HashMap usage
+- `simple HTTP server` found the macOS socket constants bug (now fixed); networking works cross-platform, but HTTP parsing has a code-level bug returning 400
+- `Lox interpreter` (1,052 loc) compiles/runs cleanly — tree-walk eval with closures, scoping, control flow
+- the most important new findings from this wave were:
+  - Bug 016: cross-module generic monomorphization/linking for `HashMap<String, String>` in package builds — **fixed** in `bdb2d7f` (linker alias resolution in Mono.lean lookupFn + EmitSSA svalToOperand + capability mismatch in HashMap/HashSet constructors)
+  - Bug 017: Linux-only socket constants in `std.net` — **fixed** in `bdb2d7f` (runtime uname() platform detection, platform-aware sockaddr_in filling)
+- remaining cleanup:
+  - `TOML parser` can be treated as a likely exemplar once its tree is cleaned up
+  - `file integrity monitor` and `key-value store` can now use `HashMap<String, String>` directly — pool-based workarounds can be replaced
+  - `simple HTTP server` networking works cross-platform now, but HTTP request parsing returns 400 for curl — code-level parsing bug, not stdlib
 
 ## Phase H Retrospective
 
