@@ -11,7 +11,7 @@ mod set {
     }
 
     impl<K> HashSet<K> {
-        pub fn new(hash_fn: fn(&K) with(Alloc, Unsafe) -> u64, eq_fn: fn(&K, &K) -> bool) with(Alloc, Unsafe) -> HashSet<K> {
+        pub fn new(hash_fn: fn(&K) -> u64, eq_fn: fn(&K, &K) -> bool) with(Alloc, Unsafe) -> HashSet<K> {
             let s: HashSet<K> = HashSet::<K> {
                 inner: HashMap::<K, u8>::new(hash_fn, eq_fn),
             };

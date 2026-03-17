@@ -307,6 +307,8 @@ private def inferTypeArgs (typeParams : List String) (formalParams : List (Strin
 structure MonoState where
   /-- All original function definitions (for lookup). -/
   allFns : List CFnDef
+  /-- Linker aliases from all modules (local name → prefixed definition name). -/
+  linkerAliases : List (String × String) := []
   /-- Queue of monomorphized functions to process. -/
   queue : List (String × CFnDef) := []
   /-- Already-generated mono names (avoid duplicates). -/
@@ -316,7 +318,14 @@ abbrev MonoM := ExceptT String (StateM MonoState)
 
 private def lookupFn (name : String) : MonoM (Option CFnDef) := do
   let st ← get
-  return st.allFns.find? fun f => f.name == name
+  -- Try direct lookup first
+  match st.allFns.find? fun f => f.name == name with
+  | some f => return some f
+  | none =>
+    -- Try resolving through linker aliases (e.g., HashMap_contains → map_HashMap_contains)
+    match st.linkerAliases.lookup name with
+    | some resolvedName => return st.allFns.find? fun f => f.name == resolvedName
+    | none => return none
 
 /-- Get names of all generic functions (non-empty typeParams). -/
 private def getGenericFnNames : MonoM (List String) := do
@@ -513,9 +522,15 @@ private partial def collectAllModuleFns (m : CModule) : List CFnDef :=
   let sub := m.submodules.foldl (fun acc s => acc ++ collectAllModuleFns s) []
   own ++ sub
 
+private partial def collectAllModuleAliases (m : CModule) : List (String × String) :=
+  let own := m.linkerAliases
+  let sub := m.submodules.foldl (fun acc s => acc ++ collectAllModuleAliases s) []
+  own ++ sub
+
 def monoProgram (modules : List CModule) : Except String (List CModule) :=
   let allFns := modules.foldl (fun acc m => acc ++ collectAllModuleFns m) []
-  let initState : MonoState := { allFns := allFns }
+  let allAliases := modules.foldl (fun acc m => acc ++ collectAllModuleAliases m) []
+  let initState : MonoState := { allFns := allFns, linkerAliases := allAliases }
   let (result, _) := (modules.mapM monoModule).run initState |>.run
   match result with
   | .ok ms => .ok ms

@@ -165,10 +165,16 @@ private def floatTyToLLVMTy : Ty → LLVMTy
   | _ => .double
 
 /-- Convert an SVal to a structured LLVM operand. -/
-private def svalToOperand (_s : EmitSSAState) (v : SVal) : LLVMOperand :=
+private def svalToOperand (s : EmitSSAState) (v : SVal) : LLVMOperand :=
   match v with
   | .reg name _ =>
-    if name.startsWith "@fnref." then .global (name.drop 7).toString
+    if name.startsWith "@fnref." then
+      let bareName := (name.drop 7).toString
+      -- Resolve linker aliases for function pointer references (e.g., hash_i32 → hash_hash_i32)
+      let resolved := match s.linkerAliases.lookup bareName with
+        | some orig => orig
+        | none => bareName
+      .global resolved
     else .reg name
   | .intConst val _ => .intLit val
   | .floatConst val _ => .floatLit val

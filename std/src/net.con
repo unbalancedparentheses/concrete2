@@ -1,12 +1,72 @@
 mod net {
-    import std.libc.{socket,bind,listen,accept,connect,close,send,recv,htons,inet_pton,setsockopt};
+    import std.libc.{socket,bind,listen,accept,connect,close,send,recv,htons,inet_pton,setsockopt,uname};
     import std.alloc.{grow,dealloc};
     import std.libc.{fork as libc_fork, exit as libc_exit, waitpid as libc_waitpid};
     import std.bytes.{Bytes};
     import std.result.{Result};
 
-    // AF_INET = 2, SOCK_STREAM = 1, SOL_SOCKET = 1, SO_REUSEADDR = 2
+    // AF_INET = 2, SOCK_STREAM = 1
+    // SOL_SOCKET: Linux = 1, macOS = 65535
+    // SO_REUSEADDR: Linux = 2, macOS = 4
     // struct sockaddr_in is 16 bytes on all Unix platforms
+    // macOS sockaddr_in has sin_len (1 byte) + sin_family (1 byte) at offset 0
+    // Linux sockaddr_in has sin_family (2 bytes) at offset 0
+
+    // Detect macOS at runtime via uname().sysname[0] == 'D' (Darwin)
+    trusted fn is_darwin() with(Unsafe, Alloc) -> bool {
+        // utsname is at least 390 bytes on Linux (5*65+...), 5*256=1280 on macOS
+        // Allocate 1280 to be safe on both
+        let buf: *mut u8 = grow::<u8>(0 as *mut u8, 1280);
+        let ret: i32 = uname(buf);
+        let result: bool = false;
+        if ret == 0 {
+            // sysname is at offset 0: "Darwin" on macOS, "Linux" on Linux
+            let ch: u8 = *buf;
+            result = ch == 68;  // 'D'
+        }
+        dealloc::<u8>(buf);
+        return result;
+    }
+
+    trusted fn sol_socket() with(Unsafe, Alloc) -> i32 {
+        if is_darwin() { return 65535; }
+        return 1;
+    }
+
+    trusted fn so_reuseaddr() with(Unsafe, Alloc) -> i32 {
+        if is_darwin() { return 4; }
+        return 2;
+    }
+
+    // Fill sockaddr_in at the given pointer, handling macOS vs Linux layout
+    trusted fn fill_sockaddr_in(sa: *mut u8, port: u16, addr: &String) with(Unsafe, Alloc) -> i32 {
+        let darwin: bool = is_darwin();
+        if darwin {
+            // macOS: sin_len=16 at offset 0, sin_family=AF_INET at offset 1
+            *sa = 16;
+            let p1: *mut u8 = sa + 1;
+            *p1 = 2;  // AF_INET
+        } else {
+            // Linux: sin_family=AF_INET (2) at offset 0 (2 bytes little-endian)
+            *sa = 2;
+            let p1: *mut u8 = sa + 1;
+            *p1 = 0;
+        }
+
+        // sin_port at offset 2 (network byte order) — same on both
+        let port_n: u16 = htons(port);
+        let port_ptr: *mut u8 = sa + 2;
+        let port_src: *const u8 = &port_n as *const u8;
+        *port_ptr = *port_src;
+        let port_ptr2: *mut u8 = sa + 3;
+        let port_src2: *const u8 = port_src + 1;
+        *port_ptr2 = *port_src2;
+
+        // sin_addr at offset 4 (inet_pton returns 1 on success) — same on both
+        let addr_dst: *mut u8 = sa + 4;
+        let pton_ret: i32 = inet_pton(2, addr.ptr as *const u8, addr_dst);
+        return pton_ret;
+    }
 
     pub enum NetError {
         SocketFailed,
@@ -28,19 +88,19 @@ mod net {
                 return Result::<TcpListener, NetError>#Err { error: NetError#SocketFailed };
             }
 
-            // setsockopt SO_REUSEADDR
+            // setsockopt SO_REUSEADDR (platform-aware constants)
             let one: i32 = 1;
             let one_ptr: *const u8 = &one as *const u8;
-            let setsockopt_ret: i32 = setsockopt(fd, 1, 2, one_ptr, 4);
+            let sol: i32 = sol_socket();
+            let so_reuse: i32 = so_reuseaddr();
+            let setsockopt_ret: i32 = setsockopt(fd, sol, so_reuse, one_ptr, 4);
             if setsockopt_ret != 0 {
                 close(fd);
                 return Result::<TcpListener, NetError>#Err { error: NetError#SetsockoptFailed };
             }
 
-            // Build sockaddr_in (16 bytes)
+            // Build sockaddr_in (16 bytes, zeroed)
             let sa: *mut u8 = grow::<u8>(0 as *mut u8, 16);
-
-            // Zero out
             let i: u64 = 0;
             while i < 16 {
                 let p: *mut u8 = sa + i;
@@ -48,21 +108,8 @@ mod net {
                 i = i + 1;
             }
 
-            // sin_family = AF_INET (2) at offset 0 (2 bytes, little-endian on most platforms)
-            *sa = 2;
-
-            // sin_port at offset 2 (network byte order)
-            let port_n: u16 = htons(port);
-            let port_ptr: *mut u8 = sa + 2;
-            let port_src: *const u8 = &port_n as *const u8;
-            *port_ptr = *port_src;
-            let port_ptr2: *mut u8 = sa + 3;
-            let port_src2: *const u8 = port_src + 1;
-            *port_ptr2 = *port_src2;
-
-            // sin_addr at offset 4 (inet_pton returns 1 on success)
-            let addr_dst: *mut u8 = sa + 4;
-            let pton_ret: i32 = inet_pton(2, addr.ptr as *const u8, addr_dst);
+            // Fill sockaddr_in (handles macOS vs Linux layout)
+            let pton_ret: i32 = fill_sockaddr_in(sa, port, addr);
             if pton_ret != 1 {
                 dealloc::<u8>(sa);
                 close(fd);
@@ -114,10 +161,8 @@ mod net {
                 return Result::<TcpStream, NetError>#Err { error: NetError#SocketFailed };
             }
 
-            // Build sockaddr_in (16 bytes)
+            // Build sockaddr_in (16 bytes, zeroed)
             let sa: *mut u8 = grow::<u8>(0 as *mut u8, 16);
-
-            // Zero out
             let i: u64 = 0;
             while i < 16 {
                 let p: *mut u8 = sa + i;
@@ -125,21 +170,8 @@ mod net {
                 i = i + 1;
             }
 
-            // sin_family = AF_INET
-            *sa = 2;
-
-            // sin_port at offset 2
-            let port_n: u16 = htons(port);
-            let port_ptr: *mut u8 = sa + 2;
-            let port_src: *const u8 = &port_n as *const u8;
-            *port_ptr = *port_src;
-            let port_ptr2: *mut u8 = sa + 3;
-            let port_src2: *const u8 = port_src + 1;
-            *port_ptr2 = *port_src2;
-
-            // sin_addr at offset 4 (inet_pton returns 1 on success)
-            let addr_dst: *mut u8 = sa + 4;
-            let pton_ret: i32 = inet_pton(2, addr.ptr as *const u8, addr_dst);
+            // Fill sockaddr_in (handles macOS vs Linux layout)
+            let pton_ret: i32 = fill_sockaddr_in(sa, port, addr);
             if pton_ret != 1 {
                 dealloc::<u8>(sa);
                 close(fd);

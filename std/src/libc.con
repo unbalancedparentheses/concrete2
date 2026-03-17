@@ -42,6 +42,9 @@ mod libc {
     extern fn rand() -> i32;
     extern fn srand(seed: u32);
 
+    // Platform detection
+    extern fn uname(buf: *mut u8) -> i32;
+
     // Networking
     extern fn socket(domain: i32, typ: i32, protocol: i32) -> i32;
     extern fn bind(sockfd: i32, addr: *const u8, addrlen: u32) -> i32;
