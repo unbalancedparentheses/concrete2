@@ -255,6 +255,17 @@ Real workloads found real compiler bugs: enum-in-struct layout panic, cross-modu
 
 Concrete's differentiator is real. Visible authority in signatures, visible ownership/cleanup in code — now proven under real code, not just in docs. The artifact verifier is the clearest demonstration: capability signatures *are* the security audit.
 
+### What Phase H fixed
+
+Phase H closed a meaningful set of issues that were exposed only by sustained real-program work:
+
+- standalone/project workflow is credible for current use: package mode, builtin std resolution, examples moved onto stdlib surfaces
+- text/output is practical: mixed-arg `print` / `println` landed, buffered compiler print builtins removed the worst output-path overhead, and parser/grep-style programs no longer need awkward print scaffolding
+- runtime argument access has a stable current surface via `std.args`
+- qualified module access is complete for the practical cases that real programs needed, including same-name collisions and inline sibling `::` access
+- a first round of runtime-oriented collection support landed through HashMap iteration helpers
+- major backend shaping cliffs were identified by real workloads and fixed where the evidence was strongest, especially the VM inlining cliff
+
 ### What the main open question became
 
 Not "can Concrete express real programs?" but "do its explicit patterns become stable idioms or stay as exhausting ceremony?"
@@ -272,7 +283,29 @@ Not "can Concrete express real programs?" but "do its explicit patterns become s
    - inline sibling modules: `mod A {}` / `mod B {}` can now use `A::fn()` from `B` without explicit imports; sibling function sigs are injected across Resolve, Check, and Elab passes with linker aliases
 7. **Runtime / stack pressure classification** — MAL exposed this; still needs a cleaner language-vs-runtime-vs-tooling decision
 
-## Current Open Findings
+## Phase H Close-Out Judgment
+
+Phase H is effectively past the discovery stage. The project no longer needs this phase to prove that Concrete can handle real programs or that its backend can reach C-class performance on serious workloads.
+
+What remains is narrower:
+
+- a small set of runtime/stdlib/ergonomics questions that still need classification rather than broad new language growth
+- continued benchmark interpretation where new workloads expose a concentrated bottleneck
+- a final judgment about which remaining pain points belong to Phase H cleanup versus later package/runtime/formalization work
+
+The center of gravity should now move toward Phase J:
+
+- the biggest remaining structural gap is package/workspace/incremental maturity, not proof-of-life examples
+- remaining Phase H issues are mostly library/runtime/tooling follow-through, not existential validation of the language
+- Phase I and Phase J now have better inputs because the language has already been pressured by real programs instead of only by pass tests and medium examples
+
+Phase H should therefore be treated as:
+
+- proven in its core purpose
+- still carrying a short cleanup tail
+- no longer the main strategic center of the roadmap
+
+## Remaining Open Findings
 
 ### Formatting / interpolation
 

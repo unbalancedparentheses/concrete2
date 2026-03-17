@@ -103,6 +103,38 @@ Completed phases can still seed work that is intentionally finished later. Do no
 | Hardware capability mapping to MPU / TrustZone-style target isolation | **E / M** | **O** | Research only |
 | Developer-feedback-loop tooling (`check`, `watch`, narrow fix-its) | **A / C** | **L1** | Research only |
 
+### Pre-H Carry-Over Work Order
+
+Use the carry-over table to decide ownership, but use this order to decide sequencing.
+
+1. **Now** — work that should shape current Phase J and early L1 architecture
+   - artifact-driven compiler driver direction
+   - stable artifact IDs, serialization policy, and interface/body split
+   - build-graph/package-graph orchestration
+   - machine-readable reports
+   - first report-first review workflow baseline
+   - empirical cross-target FFI/ABI validation
+   - authority budgets at package/subsystem scope
+2. **Soon** — work that should become concrete once artifacts and reports are stable enough to consume
+   - verified FFI envelopes
+   - proof-backed authority reports
+   - reproducible trust bundles and cryptographically committed evidence bundles
+   - semantic query/search tooling over compiler facts
+   - review-policy gates over authority / trusted / FFI / proof-facing facts
+   - coverage tooling across tests, reports, and proof-facing artifacts
+3. **Later** — valuable work that should not drive current sequencing
+   - backend plurality and alternate-backend validation
+   - structural boundedness reports
+   - capability sandbox profiles
+   - deeper test-system productization beyond the current runner/cache baseline
+
+Priority within this ordering should stay explicit:
+
+1. artifact/package/report architecture first
+2. FFI validation and package-scope authority policy second
+3. broader operational evidence surfaces after the artifact/report layer is stable
+4. backend plurality, boundedness, sandboxing, and deeper test-system productization only after the earlier architectural bottlenecks are cleaner
+
 ### Recent Progress
 
 - **Cross-cutting differentiator ideas now have explicit phase ownership**: proof-carrying audit artifacts, authority budgets as build contracts, verified FFI envelopes, structural boundedness reports, reproducible trust bundles, serious showcase workloads, capability sandbox profiles, proof-backed authority reports, machine-readable reports, report-first review workflows, and trust-drift diffing should all live in named phases rather than only in scattered research notes.
@@ -478,27 +510,25 @@ Primary surfaces:
      - JSON and grep prove text/parser/streaming reality
      - bytecode VM proves control-flow/runtime/codegen pressure
      - artifact verifier returns to Concrete’s intended critical-software niche
-   - the second wave should be explicit too:
-     1. regex engine
-     2. Lox interpreter
-     3. small TCP/HTTP service
-     4. file tree scanner + policy checker
-     5. package/archive indexer
-     6. HSM/key-use policy engine
-   - if the suite needs to be cut down to the highest-value 12, keep:
+   - the second wave should be explicit too, chosen for maximum new pressure rather than overlap with the first wave:
+     1. TOML parser — external conformance suite (700+ cases), richer grammar than JSON, externally verifiable correctness
+     2. file integrity monitor — recursive directory traversal, manifest persistence, extends verifier SHA-256, capability showcase (scanner reads but cannot modify, reporter writes but cannot read files)
+     3. key-value store — persistence, write-ahead log, crash recovery, byte-level serialization, first real storage pressure
+     4. simple HTTP server — blocking single-threaded, request parsing, static file serving, capability boundary between network and filesystem
+   - the earlier second-wave list (regex engine, Lox, package/archive indexer, HSM policy engine) was deprioritized because:
+     - regex engine and Lox overlap heavily with first-wave interpreter/parser pressure (MAL, VM, JSON)
+     - the revised list optimizes for new pressure shapes (external conformance, persistence, networking, filesystem depth) rather than more of the same
+   - if the suite needs to be cut down to the highest-value 10, keep:
      1. policy/rule engine
      2. MAL-style Lisp interpreter
      3. JSON parser + validator
      4. grep-like text search tool
      5. bytecode VM / interpreter
      6. artifact/update verifier
-     7. regex engine
-     8. small TCP/HTTP service
-     9. Lox interpreter
-     10. file tree scanner + policy checker
-     11. package/archive indexer
-     12. HSM/key-use policy engine
-   - this is a reordering and prioritization, not a replacement: MAL moves up to second, and the highest-value runtime/text/identity workloads move into the early ladder
+     7. TOML parser
+     8. file integrity monitor
+     9. key-value store
+     10. simple HTTP server
    - the phase should also maintain an explicit external-tested workload track so Concrete is measured against known specs and known tests, not only self-chosen examples:
      - MAL (Make a Lisp) as the preferred staged interpreter/runtime workload
      - Lox / Crafting Interpreters as the second major interpreter target
@@ -646,7 +676,7 @@ After the policy engine, MAL, JSON parser, grep-like tool, and bytecode VM, the 
 1. ~~finish the text/output direction decision~~ — **resolved**: six Phase H programs written without interpolation; `print`/`println` plus builder APIs are sufficient for current needs
    - interpolation remains available as a future option if sustained evidence from larger programs justifies it
    - trait-based formatting remains deferred until it earns its keep
-2. make the artifact/update verifier the next flagship Phase H workload and treat it as the main “why Concrete?” proof point
+2. ~~make the artifact/update verifier the next flagship Phase H workload and treat it as the main “why Concrete?” proof point~~ — done in substance
    - it should become the first polished review artifact, not just another benchmark
    - it should carry code, tests, benchmark results, and audit/report outputs together
 3. write and maintain a stable Phase H comparison summary so the project has one canonical “what the examples taught us” document
@@ -703,7 +733,8 @@ This order matters. Package/project work removes false friction first; only then
 The current state of Phase H is much clearer than it was earlier:
 
 - performance credibility is now largely established across JSON, verifier, VM, and other compute-heavy workloads
-- the main remaining performance-specific signal is grep-style string and output handling
+- the artifact/update verifier now serves as the clearest flagship "why Concrete?" workload rather than just another benchmark
+- the main remaining performance-specific signal is grep-style string and output handling, and even that is now a concentrated optimization problem rather than a general language-speed concern
 - the deeper remaining Phase H question is now ergonomic rather than raw speed: do Concrete's explicit patterns feel like disciplined idioms or sustained ceremony?
 
 That means the remaining high-value Phase H work is mostly:
@@ -711,8 +742,9 @@ That means the remaining high-value Phase H work is mostly:
 - ~~closing the last obvious runtime/string/output bottlenecks~~ — done: buffered I/O landed, runtime argument surface closed
 - ~~fixing namespace/completeness issues such as same-name qualified-access collisions~~ — done
 - deciding whether the remaining language pressure is genuinely language pressure or mostly stdlib/tooling pressure
+- leaving behind a clean findings ledger so Phase J package/workspace work starts from real evidence instead of open-ended Phase H uncertainty
 
-Once those are in better shape, the center of gravity should move cleanly toward Phase J package/workspace maturity rather than continuing to treat Phase H as mainly a performance question.
+Phase H is therefore effectively past open-ended discovery. It still has a short cleanup tail, but it no longer needs to remain the strategic center of the roadmap. The next major center of gravity should move cleanly toward Phase J package/workspace maturity rather than continuing to treat Phase H as mainly a performance question.
 
 Exit criterion:
 Concrete has been exercised by multiple serious programs large enough to reveal structural weaknesses, and the project has used those results to drive the next package/adoption/operational phases.
