@@ -519,10 +519,12 @@ Primary surfaces:
      - TOML parser compiles/runs cleanly
      - file integrity monitor compiles/runs — originally exposed `HashMap<String, String>` package-build failure (Bug 016, fixed in `bdb2d7f`)
      - key-value store compiles/runs — independently exposed the same Bug 016 (fixed)
-     - simple HTTP server compiles — originally blocked by Linux-only socket constants in `std.net` (Bug 017, fixed in `bdb2d7f`); HTTP request parsing still returns 400 for curl — code-level bug, not stdlib
-     - Lox tree-walk interpreter compiles/runs cleanly (1,052 loc)
+      - simple HTTP server compiles/runs — originally blocked by Linux-only socket constants in `std.net` (Bug 017, fixed in `bdb2d7f`); current remaining coupling is the Bug 018 heap-buffer workaround for stack-array borrowing
+      - Lox tree-walk interpreter compiles/runs cleanly (1,052 loc)
    - this means the second wave is already earning its keep as a bug-finding track, not only as a future showcase list
-   - Bug 016 (cross-module HashMap linking) and Bug 017 (macOS socket constants) are both fixed; remaining work is cleaning up workaround-heavy data models in integrity/kvstore and fixing the HTTP parser bug
+   - Bug 016 (cross-module HashMap linking) and Bug 017 (macOS socket constants) are both fixed
+   - the main remaining second-wave correctness finding is Bug 018: borrowing stack arrays for writable FFI access can create copies instead of stable references
+   - remaining work is cleaning up workaround-heavy data models in integrity/kvstore, removing heap-buffer workarounds after Bug 018 is fixed, and then finishing HTTP parser cleanup
    - the earlier second-wave list (regex engine, Lox, package/archive indexer, HSM policy engine) was deprioritized because:
      - regex engine and Lox overlap heavily with first-wave interpreter/parser pressure (MAL, VM, JSON)
      - the revised list optimizes for new pressure shapes (external conformance, persistence, networking, filesystem depth) rather than more of the same

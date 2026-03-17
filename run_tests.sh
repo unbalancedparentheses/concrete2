@@ -980,6 +980,7 @@ run_ok "$TESTDIR/bug_print_builtins.con" "hello 42
 run_ok "$TESTDIR/bug_string_building.con" 0
 run_ok "$TESTDIR/bug_clock_builtin.con" 0
 run_ok "$TESTDIR/bug_enum_in_struct.con" 0
+echo "skip $TESTDIR/bug_stack_array_borrow_copy.con (open bug 018: stack array borrow creates copy)"
 run_ok "$TESTDIR/hardening_int_literal_inference.con" 42
 run_ok "$TESTDIR/hardening_borrow_edge_cases.con" 42
 run_ok "$TESTDIR/hardening_cross_module_enum.con" 42
@@ -2228,6 +2229,7 @@ run_ok_O2 "$TESTDIR/bug_print_builtins.con" "hello 42
 run_ok_O2 "$TESTDIR/bug_string_building.con" 0
 ## bug_clock_builtin excluded from O2: loop between clock calls gets optimized away
 run_ok_O2 "$TESTDIR/bug_enum_in_struct.con" 0
+echo "skip $TESTDIR/bug_stack_array_borrow_copy.con under O2 (open bug 018: stack array borrow creates copy)"
 
 # Hardening tests under O2
 run_ok_O2 "$TESTDIR/hardening_int_literal_inference.con" 42

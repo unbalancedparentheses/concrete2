@@ -1,6 +1,12 @@
 # Bug 016: Cross-Module Generic Monomorphization Can Fail To Link In Package Builds
 
-Status: open
+Status: fixed
+
+## Fix
+
+Fixed in commit `bdb2d7f`.
+
+The monomorphization/emission path now resolves linker aliases when looking up and emitting cross-module generic references, including function pointer references.
 
 ## Symptom
 

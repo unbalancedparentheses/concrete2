@@ -318,10 +318,11 @@ Current state:
 - the most important new findings from this wave were:
   - Bug 016: cross-module generic monomorphization/linking for `HashMap<String, String>` in package builds — **fixed** in `bdb2d7f` (linker alias resolution in Mono.lean lookupFn + EmitSSA svalToOperand + capability mismatch in HashMap/HashSet constructors)
   - Bug 017: Linux-only socket constants in `std.net` — **fixed** in `bdb2d7f` (runtime uname() platform detection, platform-aware sockaddr_in filling)
+  - Bug 018: borrowing a stack array for writable FFI access can create a copy instead of a stable reference — still open, currently worked around with heap buffers in networking paths
 - remaining cleanup:
   - `TOML parser` can be treated as a likely exemplar once its tree is cleaned up
   - `file integrity monitor` and `key-value store` can now use `HashMap<String, String>` directly — pool-based workarounds can be replaced
-  - `simple HTTP server` networking works cross-platform now, but HTTP request parsing returns 400 for curl — code-level parsing bug, not stdlib
+  - `simple HTTP server` now has its stdlib blocker and request-parsing issue cleared, but it is still coupled to the Bug 018 heap-buffer workaround until stack-array borrowing is fixed
 
 ## Phase H Retrospective
 

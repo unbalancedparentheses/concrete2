@@ -1,6 +1,12 @@
 # Bug 017: `std.net` Socket Constants Are Linux-Only
 
-Status: open
+Status: fixed
+
+## Fix
+
+Fixed in commit `bdb2d7f`.
+
+`std.net` now uses platform-aware socket constants and platform-aware `sockaddr_in` filling instead of hardcoded Linux values.
 
 ## Symptom
 
