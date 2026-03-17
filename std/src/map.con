@@ -203,6 +203,23 @@ mod map {
             dealloc::<u8>(old_flags);
         }
 
+        /// Fold over all key-value pairs, threading an accumulator.
+        pub fn fold<A>(&self, init: A, f: fn(A, &K, &V) -> A) -> A {
+            let mut acc: A = init;
+            let i: u64 = 0;
+            while i < self.cap {
+                let flag_ptr: *mut u8 = self.flags + i;
+                let flag: u8 = *flag_ptr;
+                if flag == 1 {
+                    let key_ptr: *mut K = self.keys + i;
+                    let val_ptr: *mut V = self.values + i;
+                    acc = f(acc, key_ptr as &K, val_ptr as &V);
+                }
+                i = i + 1;
+            }
+            return acc;
+        }
+
         /// Call a function for each key-value pair in the map.
         pub fn for_each(&self, f: fn(&K, &V)) {
             let i: u64 = 0;
@@ -216,6 +233,38 @@ mod map {
                 }
                 i = i + 1;
             }
+        }
+
+        /// Fold over keys only, threading an accumulator.
+        pub fn keys_fold<A>(&self, init: A, f: fn(A, &K) -> A) -> A {
+            let mut acc: A = init;
+            let i: u64 = 0;
+            while i < self.cap {
+                let flag_ptr: *mut u8 = self.flags + i;
+                let flag: u8 = *flag_ptr;
+                if flag == 1 {
+                    let key_ptr: *mut K = self.keys + i;
+                    acc = f(acc, key_ptr as &K);
+                }
+                i = i + 1;
+            }
+            return acc;
+        }
+
+        /// Fold over values only, threading an accumulator.
+        pub fn values_fold<A>(&self, init: A, f: fn(A, &V) -> A) -> A {
+            let mut acc: A = init;
+            let i: u64 = 0;
+            while i < self.cap {
+                let flag_ptr: *mut u8 = self.flags + i;
+                let flag: u8 = *flag_ptr;
+                if flag == 1 {
+                    let val_ptr: *mut V = self.values + i;
+                    acc = f(acc, val_ptr as &V);
+                }
+                i = i + 1;
+            }
+            return acc;
         }
 
         /// Call a function for each key in the map.
@@ -472,6 +521,28 @@ mod map {
         if !(m.contains(&k0)) { m.drop(); return 1; }
         if !(m.contains(&k25)) { m.drop(); return 1; }
         if !(m.contains(&k49)) { m.drop(); return 1; }
+        m.drop();
+        return 0;
+    }
+
+    fn sum_values(acc: i32, _k: &i32, v: &i32) -> i32 {
+        return acc + *v;
+    }
+
+    fn sum_keys(acc: i32, k: &i32) -> i32 {
+        return acc + *k;
+    }
+
+    #[test]
+    fn test_map_fold() with(Alloc, Unsafe) -> i32 {
+        let mut m: HashMap<i32, i32> = HashMap::<i32, i32>::new(hash_i32, eq_i32);
+        m.insert(1, 10);
+        m.insert(2, 20);
+        m.insert(3, 30);
+        let vsum: i32 = m.fold::<i32>(0, sum_values);
+        if vsum != 60 { m.drop(); return 1; }
+        let ksum: i32 = m.keys_fold::<i32>(0, sum_keys);
+        if ksum != 6 { m.drop(); return 1; }
         m.drop();
         return 0;
     }

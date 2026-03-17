@@ -102,6 +102,18 @@ mod vec {
             dealloc(self.ptr);
         }
 
+        /// Fold over all elements, threading an accumulator.
+        pub fn fold<A>(&self, init: A, f: fn(A, &T) -> A) -> A {
+            let mut acc: A = init;
+            let i: u64 = 0;
+            while i < self.len {
+                let target_ptr: *mut T = self.ptr + i;
+                acc = f(acc, target_ptr as &T);
+                i = i + 1;
+            }
+            return acc;
+        }
+
         /// Call a function for each element in the vec.
         pub fn for_each(&self, f: fn(&T)) {
             let i: u64 = 0;
@@ -322,6 +334,22 @@ mod vec {
             Option#None => {}
         }
         if v.is_empty() == false { v.drop(); return 1; }
+        v.drop();
+        return 0;
+    }
+
+    fn add_i32(acc: i32, x: &i32) -> i32 {
+        return acc + *x;
+    }
+
+    #[test]
+    fn test_vec_fold() with(Alloc) -> i32 {
+        let mut v: Vec<i32> = Vec::<i32>::new();
+        v.push(10);
+        v.push(20);
+        v.push(30);
+        let sum: i32 = v.fold::<i32>(0, add_i32);
+        if sum != 60 { v.drop(); return 1; }
         v.drop();
         return 0;
     }

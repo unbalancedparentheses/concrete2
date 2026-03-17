@@ -58,6 +58,11 @@ mod set {
             self.inner.clear();
         }
 
+        /// Fold over all elements, threading an accumulator.
+        pub fn fold<A>(&self, init: A, f: fn(A, &K) -> A) -> A {
+            return self.inner.keys_fold::<A>(init, f);
+        }
+
         /// Call a function for each element in the set.
         pub fn for_each(&self, f: fn(&K)) {
             self.inner.keys_for_each(f);
@@ -160,6 +165,22 @@ mod set {
         if s.len() != 1 { s.drop(); return 1; }
         let k: i32 = 3;
         if !(s.contains(&k)) { s.drop(); return 1; }
+        s.drop();
+        return 0;
+    }
+
+    fn add_i32(acc: i32, x: &i32) -> i32 {
+        return acc + *x;
+    }
+
+    #[test]
+    fn test_set_fold() with(Alloc, Unsafe) -> i32 {
+        let mut s: HashSet<i32> = HashSet::<i32>::new(hash_i32, eq_i32);
+        s.insert(10);
+        s.insert(20);
+        s.insert(30);
+        let sum: i32 = s.fold::<i32>(0, add_i32);
+        if sum != 60 { s.drop(); return 1; }
         s.drop();
         return 0;
     }
