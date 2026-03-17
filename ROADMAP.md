@@ -588,9 +588,7 @@ Primary surfaces:
         - `concrete build`, `concrete run`, and `concrete test` now work in package mode with builtin std resolution
         - std is located automatically relative to the compiler binary, with `CONCRETE_STD` as an override for unusual setups
         - example manifests no longer need path-based `std = { path = ... }` entries
-     8. ~~design qualified module access (`Module.function()` or equivalent) so larger programs do not collapse into rename pressure~~ **done for first real cases** — qualified submodule access now works for plain functions, mixed imported + qualified access, two-submodule access, top-level + qualified coexistence, qualified submodule `extern fn`, and qualified submodule struct/import interaction
-        - remaining limitations: parent/submodule or sibling-submodule functions with the same leaf name still collide at the LLVM symbol layer because function definitions still emit bare names, and inline sibling modules still require `import` rather than sibling `::` access
-        - this is enough for the first real workloads, but it is not the final namespace-completion story
+     8. ~~design qualified module access (`Module.function()` or equivalent) so larger programs do not collapse into rename pressure~~ **done** — qualified submodule access now works for plain functions, mixed imported + qualified access, two-submodule access, top-level + qualified coexistence, qualified submodule `extern fn`, qualified submodule struct/import interaction, same-name collision handling (via Elab-time definition prefixing), and inline sibling `::` access (mod A / mod B can use A::fn from B without import)
      9. decide how runtime argument access should live at the user-facing surface after the first `argc` / `argv` implementation proves itself in real command-line tools — **not started**
         - the grep-like tool made process arguments a real language/runtime surface, not just generated-C glue
      10. document and fix backend/performance cliffs exposed by runtime-heavy workloads — **in progress**
@@ -656,7 +654,7 @@ After the policy engine, MAL, JSON parser, grep-like tool, and bytecode VM, the 
    - runtime argument surface
    - string/text helpers that still matter after the parser and grep results
    - grep string/output bottlenecks now that compute-heavy workloads are near parity and grep remains the clearest text-I/O gap
-   - same-name collision handling for qualified module access, which still needs a real pre-emit naming fix rather than alias-only workarounds
+   - ~~same-name collision handling for qualified module access~~ — done: Elab-time definition prefixing with cross-module renames
    - collection/runtime maturity for interpreter and VM workloads
 6. continue backend/performance investigation only where new workloads still expose real cliffs after the vec-inlining fix
    - current clearest target: grep-style string/output overhead rather than parser or VM compute loops
@@ -683,7 +681,7 @@ Concrete already looks better than Rust in a narrow auditability niche, but it d
 2. **ergonomics without abandoning explicitness**
    - ~~text/output layer: mixed-arg `print` / `println`~~ — done
    - interpolation only if still justified by real-program evidence
-   - qualified module access — landed for non-collision cases; same-name collisions across submodules remain an open backend limitation
+   - ~~qualified module access~~ — done: collisions, inline sibling `::` access, and all prior cases now work
    - remaining high-value helper APIs and cleanup idioms
    - the goal is not more magic; it is better compression of honest code
 3. **hot-path performance after the workflow floor is fixed**
@@ -710,7 +708,7 @@ The current state of Phase H is much clearer than it was earlier:
 That means the remaining high-value Phase H work is mostly:
 
 - closing the last obvious runtime/string/output bottlenecks
-- fixing namespace/completeness issues such as same-name qualified-access collisions
+- ~~fixing namespace/completeness issues such as same-name qualified-access collisions~~ — done
 - deciding whether the remaining language pressure is genuinely language pressure or mostly stdlib/tooling pressure
 
 Once those are in better shape, the center of gravity should move cleanly toward Phase J package/workspace maturity rather than continuing to treat Phase H as mainly a performance question.

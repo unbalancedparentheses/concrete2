@@ -434,6 +434,23 @@ def resolveShallow (moduleSummaries : List FileSummary)
     let (sScope, sTypes) := buildGlobalScopeFromSummary s
     ({ symbols := scope.symbols ++ sScope.symbols }, types ++ sTypes)
   ) ({ symbols := [] : Scope }, ([] : List String))
+  -- For inline sibling modules (mod A {} mod B {}), register qualified names (A_fn)
+  -- so that B can use A::fn() syntax (parsed as A_fn).
+  let siblingQualified : List (String × SymKind) := moduleSummaries.foldl (fun acc s =>
+    if s.name == "main" then acc
+    else
+      let qualFns : List (String × SymKind) :=
+        (s.functions.filter fun (name, _) => s.publicNames.contains name).map fun (name, fs) =>
+          (s.name ++ "_" ++ name, SymKind.fn (fs.params.map fun (n, ty) => { name := n, ty := ty }) fs.retTy)
+      let qualExterns : List (String × SymKind) :=
+        (s.externFns.filter fun ef => s.publicNames.contains ef.name).map fun ef =>
+          (s.name ++ "_" ++ ef.name, SymKind.externFn ef.params ef.retTy)
+      let qualImpls : List (String × SymKind) :=
+        (s.implMethodSigs.filter fun (name, _) => s.publicNames.contains name).map fun (name, fs) =>
+          (s.name ++ "_" ++ name, SymKind.fn (fs.params.map fun (n, ty) => { name := n, ty := ty }) fs.retTy)
+      acc ++ qualFns ++ qualExterns ++ qualImpls
+  ) []
+  let combinedScope : Scope := { symbols := combinedScope.symbols ++ siblingQualified }
   -- Collect trait methods and trait impls from all summaries
   let traitMethods := moduleSummaries.foldl (fun acc s =>
     acc ++ s.traits.map fun t => (t.name, t.methods.map (·.name))) []

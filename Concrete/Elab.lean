@@ -1109,6 +1109,119 @@ def elabFn (f : FnDef) (implTy : Option Ty := none) : ElabM CFnDef := do
   }
 
 -- ============================================================
+-- Submodule function name prefixing
+-- ============================================================
+
+mutual
+/-- Rename function references in a CExpr tree using a lookup table. -/
+partial def renameFnExpr (rmap : List (String × String)) : CExpr → CExpr
+  | .call fn targs args ty =>
+    let fn' := rmap.lookup fn |>.getD fn
+    .call fn' targs (args.map (renameFnExpr rmap)) ty
+  | .fnRef name ty =>
+    let name' := rmap.lookup name |>.getD name
+    .fnRef name' ty
+  | .ident name ty =>
+    -- Only rename function-typed idents (fn refs used as values), not local variables
+    match ty with
+    | .fn_ .. =>
+      let name' := rmap.lookup name |>.getD name
+      .ident name' ty
+    | _ => .ident name ty
+  | .binOp op l r ty => .binOp op (renameFnExpr rmap l) (renameFnExpr rmap r) ty
+  | .unaryOp op e ty => .unaryOp op (renameFnExpr rmap e) ty
+  | .structLit n ta fs ty =>
+    .structLit n ta (fs.map fun (fn, e) => (fn, renameFnExpr rmap e)) ty
+  | .fieldAccess obj f ty => .fieldAccess (renameFnExpr rmap obj) f ty
+  | .enumLit en v ta fs ty =>
+    .enumLit en v ta (fs.map fun (fn, e) => (fn, renameFnExpr rmap e)) ty
+  | .match_ scrut arms ty =>
+    .match_ (renameFnExpr rmap scrut) (arms.map (renameFnArm rmap)) ty
+  | .borrow inner ty => .borrow (renameFnExpr rmap inner) ty
+  | .borrowMut inner ty => .borrowMut (renameFnExpr rmap inner) ty
+  | .deref inner ty => .deref (renameFnExpr rmap inner) ty
+  | .arrayLit elems ty => .arrayLit (elems.map (renameFnExpr rmap)) ty
+  | .arrayIndex arr idx ty =>
+    .arrayIndex (renameFnExpr rmap arr) (renameFnExpr rmap idx) ty
+  | .cast inner t => .cast (renameFnExpr rmap inner) t
+  | .try_ inner ty => .try_ (renameFnExpr rmap inner) ty
+  | .allocCall inner alloc ty =>
+    .allocCall (renameFnExpr rmap inner) (renameFnExpr rmap alloc) ty
+  | .whileExpr cond body elseBody ty =>
+    .whileExpr (renameFnExpr rmap cond)
+      (renameFnStmts rmap body) (renameFnStmts rmap elseBody) ty
+  | .ifExpr cond then_ else_ ty =>
+    .ifExpr (renameFnExpr rmap cond)
+      (renameFnStmts rmap then_) (renameFnStmts rmap else_) ty
+  | e => e
+
+partial def renameFnArm (rmap : List (String × String)) : CMatchArm → CMatchArm
+  | .enumArm en v binds body => .enumArm en v binds (renameFnStmts rmap body)
+  | .litArm val body =>
+    .litArm (renameFnExpr rmap val) (renameFnStmts rmap body)
+  | .varArm b ty body => .varArm b ty (renameFnStmts rmap body)
+
+partial def renameFnStmt (rmap : List (String × String)) : CStmt → CStmt
+  | .letDecl n m ty val => .letDecl n m ty (renameFnExpr rmap val)
+  | .assign n val => .assign n (renameFnExpr rmap val)
+  | .return_ (some v) ty => .return_ (some (renameFnExpr rmap v)) ty
+  | .expr e => .expr (renameFnExpr rmap e)
+  | .ifElse c t el =>
+    .ifElse (renameFnExpr rmap c)
+      (renameFnStmts rmap t) (el.map (renameFnStmts rmap))
+  | .while_ c body lbl step =>
+    .while_ (renameFnExpr rmap c)
+      (renameFnStmts rmap body) lbl (renameFnStmts rmap step)
+  | .fieldAssign obj f val =>
+    .fieldAssign (renameFnExpr rmap obj) f (renameFnExpr rmap val)
+  | .derefAssign target val =>
+    .derefAssign (renameFnExpr rmap target) (renameFnExpr rmap val)
+  | .arrayIndexAssign arr idx val =>
+    .arrayIndexAssign (renameFnExpr rmap arr)
+      (renameFnExpr rmap idx) (renameFnExpr rmap val)
+  | .break_ (some v) lbl => .break_ (some (renameFnExpr rmap v)) lbl
+  | .defer body => .defer (renameFnExpr rmap body)
+  | .borrowIn v r reg isMut ty body =>
+    .borrowIn v r reg isMut ty (renameFnStmts rmap body)
+  | s => s
+
+partial def renameFnStmts (rmap : List (String × String))
+    (stmts : List CStmt) : List CStmt :=
+  stmts.map (renameFnStmt rmap)
+end
+
+/-- Prefix all function definitions and internal call sites in a CModule.
+    Used to give submodule functions unique LLVM symbols
+    (e.g., `add` in submodule `math` becomes `math_add`).
+    Extern functions are NOT prefixed (they reference real C symbols). -/
+partial def prefixModuleFnNames (pfx : String) (cm : CModule) : CModule :=
+  -- Build rename map: bare name → prefixed name for all non-extern functions
+  let fnRenames : List (String × String) :=
+    cm.functions.map fun f => (f.name, pfx ++ "_" ++ f.name)
+  -- Also prefix impl method names referenced in traitImpls
+  let implRenames : List (String × String) :=
+    cm.traitImpls.foldl (fun acc ti =>
+      acc ++ (ti.methodNames.map fun mn => (mn, pfx ++ "_" ++ mn))
+    ) []
+  let rmap := fnRenames ++ implRenames
+  -- Prefix function definitions and rewrite their bodies
+  let prefixedFns := cm.functions.map fun f =>
+    { f with
+      name := pfx ++ "_" ++ f.name
+      body := renameFnStmts rmap f.body }
+  -- Prefix trait impl method names
+  let prefixedTraitImpls := cm.traitImpls.map fun ti =>
+    { ti with methodNames := ti.methodNames.map fun mn =>
+        rmap.lookup mn |>.getD mn }
+  -- Recursively prefix nested submodules
+  let prefixedSubs := cm.submodules.map fun sub =>
+    prefixModuleFnNames (pfx ++ "_" ++ sub.name) sub
+  { cm with
+    functions := prefixedFns
+    traitImpls := prefixedTraitImpls
+    submodules := prefixedSubs }
+
+-- ============================================================
 -- Build environment from module (mirrors checkModule setup)
 -- ============================================================
 
@@ -1116,7 +1229,8 @@ def elabFn (f : FnDef) (implTy : Option Ty := none) : ElabM CFnDef := do
 
 partial def elabModule (m : Module) (summary : FileSummary)
     (imports : ResolvedImports := {})
-    (summaryTable : List (String × FileSummary) := []) : Except Diagnostics CModule :=
+    (summaryTable : List (String × FileSummary) := [])
+    (prefixSubs : Bool := true) : Except Diagnostics CModule :=
   -- Use pre-built summaries from FileSummary
   let userFnSigs := summary.functions
   let externSigs := summary.externFnSigs
@@ -1277,12 +1391,46 @@ partial def elabModule (m : Module) (summary : FileSummary)
         structs := subImports.structs ++ filteredStructs
         enums := subImports.enums ++ filteredEnums
         implMethodSigs := subImports.implMethodSigs ++ siblingImplMethodSigs }
-      match elabModule sub subSummary subImports summaryTable with
+      match elabModule sub subSummary subImports summaryTable (prefixSubs := false) with
       | .ok csub => .ok (lst ++ [csub])
       | .error ds => .error (ds.map fun d => { d with message := s!"in submodule '{sub.name}': {d.message}" })
   match cSubmodules with
   | .error e => .error e
-  | .ok subs =>
+  | .ok rawSubs =>
+  -- Apply prefixing to each submodule (only at the outermost elabModule call).
+  -- prefixModuleFnNames recursively handles nested submodules in one pass.
+  let subs := if prefixSubs then
+    rawSubs.zip (m.submodules.map (·.name)) |>.map fun (csub, subName) =>
+      prefixModuleFnNames subName csub
+  else rawSubs
+  -- Cross-module rename: rewrite call sites so the monomorphizer sees prefixed names.
+  -- Build global rename map: bare submodule fn name → prefixed name.
+  let allSubFnPairs : List (String × String) := if !prefixSubs then [] else
+    summary.submoduleSummaries.foldl (fun acc (subName, subSummary) =>
+      acc
+      ++ (subSummary.functions.map fun (fnName, _) => (fnName, subName ++ "_" ++ fnName))
+      ++ (subSummary.implMethodSigs.map fun (msName, _) => (msName, subName ++ "_" ++ msName))
+    ) []
+  -- Count bare-name occurrences to detect ambiguity (same name in multiple submodules).
+  let bareCounts : List (String × Nat) := allSubFnPairs.foldl (fun acc (bare, _) =>
+    match acc.find? fun (n, _) => n == bare with
+    | some _ => acc.map fun (n, c) => if n == bare then (n, c + 1) else (n, c)
+    | none => acc ++ [(bare, 1)]
+  ) []
+  -- Keep only unambiguous mappings; exclude names the parent module defines itself.
+  let parentFnNames := fns.map fun f => f.name
+  let crossModuleRenames := allSubFnPairs.filter fun (bare, _) =>
+    (match bareCounts.find? fun (n, _) => n == bare with
+     | some (_, c) => c == 1
+     | none => true)
+    && !(parentFnNames.contains bare)
+  -- Rewrite cross-module call sites in the parent's function bodies.
+  let fns := fns.map fun f =>
+    { f with body := renameFnStmts crossModuleRenames f.body }
+  -- Rewrite cross-module call sites in submodule function bodies (sibling references).
+  let subs := subs.map fun csub =>
+    { csub with functions := csub.functions.map fun f =>
+        { f with body := renameFnStmts crossModuleRenames f.body } }
   .ok {
     name := m.name
     structs := cStructs ++ cImportedStructs
@@ -1310,14 +1458,70 @@ partial def elabModule (m : Module) (summary : FileSummary)
         methodRetTys := tb.methods.map fun f => (f.name, f.retTy),
         builtinTraitId := traitBuiltinId : CTraitImpl }
     linkerAliases :=
-      imports.linkerAliases
-      -- Qualified call aliases: subName_fnName → fnName (bare definition)
-      -- When user writes math::add, parser mangles to math_add; definition is just add.
+      -- Import aliases: imported bare name → prefixed definition (subName_fnName)
+      -- When user writes `import math.{add}` and calls `add(...)`, the call emits `@add`
+      -- but the definition is `@math_add`. This alias bridges the gap.
+      m.imports.foldl (fun acc imp =>
+        match summary.submoduleSummaries.find? fun (n, _) => n == imp.moduleName with
+        | some (subName, subSummary) =>
+          acc ++ imp.symbols.foldl (fun acc sym =>
+            let origName := sym.name
+            let localName := match sym.alias with | some a => a | none => origName
+            -- Only alias regular functions (not externs — those keep bare C names)
+            if subSummary.functions.any fun (n, _) => n == origName then
+              acc ++ [(localName, subName ++ "_" ++ origName)]
+            else if subSummary.implMethodSigs.any fun (n, _) => n == origName then
+              acc ++ [(localName, subName ++ "_" ++ origName)]
+            else acc
+          ) []
+        | none => acc
+      ) []
+      ++ imports.linkerAliases
+      -- Impl method aliases: TypeName_method → subName_TypeName_method
+      -- Method dispatch produces `Bytes_drop` but definition is `bytes_Bytes_drop`.
       ++ summary.submoduleSummaries.foldl (fun acc (subName, subSummary) =>
         acc
-        ++ (subSummary.functions.map fun (fnName, _) => (subName ++ "_" ++ fnName, fnName))
+        ++ (subSummary.implMethodSigs.map fun (msName, _) => (msName, subName ++ "_" ++ msName))
+      ) []
+      -- Extern fn aliases: qualified call (subName_efName) → bare C symbol (efName)
+      -- Extern functions are NOT prefixed (they reference real C symbols).
+      ++ summary.submoduleSummaries.foldl (fun acc (subName, subSummary) =>
+        acc
         ++ (subSummary.externFnSigs.map fun (efName, _) => (subName ++ "_" ++ efName, efName))
-        ++ (subSummary.implMethodSigs.map fun (msName, _) => (subName ++ "_" ++ msName, msName))
+      ) []
+      -- Nested submodule import aliases: when importing from a nested module path
+      -- (e.g., `import std.fs.{read_file}` or `import mymod.sub.{test}`), the
+      -- function definition is prefixed with the submodule path. Generate aliases
+      -- so calls using the imported bare name resolve to the prefixed definition.
+      -- For local nested imports (first component is a local submodule), use the
+      -- full path as prefix. For cross-package imports, drop the package name.
+      ++ m.imports.foldl (fun acc imp =>
+        let parts := imp.moduleName.splitOn "."
+        if parts.length < 2 then acc
+        else
+          -- Already handled by local submodule aliases above?
+          match summary.submoduleSummaries.find? fun (n, _) => n == imp.moduleName with
+          | some _ => acc  -- already handled above
+          | none =>
+            -- Determine prefix: if first component is a local submodule, use full path;
+            -- otherwise (cross-package), drop the first component (package name).
+            let isLocalNested := summary.submoduleSummaries.any fun (n, _) =>
+              n == (parts.head?.getD "")
+            let subPath := if isLocalNested then parts else parts.drop 1
+            let subPrefix := "_".intercalate subPath ++ "_"
+            -- Look up the module summary to check which symbols are functions
+            match summaryTable.find? fun (n, _) => n == imp.moduleName with
+            | some (_, modSummary) =>
+              acc ++ imp.symbols.foldl (fun acc sym =>
+                let origName := sym.name
+                let localName := match sym.alias with | some a => a | none => origName
+                if modSummary.functions.any fun (n, _) => n == origName then
+                  acc ++ [(localName, subPrefix ++ origName)]
+                else if modSummary.implMethodSigs.any fun (n, _) => n == origName then
+                  acc ++ [(localName, subPrefix ++ origName)]
+                else acc
+              ) []
+            | none => acc
       ) []
   }
 
@@ -1327,9 +1531,15 @@ partial def elabModule (m : Module) (summary : FileSummary)
 
 def elabProgram (resolved : List ResolvedModule)
     (summaryTable : List (String × FileSummary) := []) : Except Diagnostics (List CModule) :=
+  -- Build sibling module summaries for inline modules (mod A {} mod B {}).
+  let moduleSummaryList : List (String × FileSummary) := resolved.map fun rm =>
+    let m := rm.module
+    (m.name, match summaryTable.find? fun (n, _) => n == m.name with
+      | some (_, s) => s
+      | none => buildFileSummary m)
   let (cms, allErrors) := resolved.foldl (fun (acc, errs) rm =>
     let m := rm.module
-    let summary := match summaryTable.find? fun (n, _) => n == m.name with
+    let summary := match moduleSummaryList.find? fun (n, _) => n == m.name with
       | some (_, s) => s
       | none => buildFileSummary m
     match liftStringError "elab" (resolveImports m.imports summaryTable
@@ -1337,6 +1547,23 @@ def elabProgram (resolved : List ResolvedModule)
         (fun sym modName => ElabError.message (.notPublicInModule sym modName))) with
     | .error ds => (acc, errs ++ ds)
     | .ok imports =>
+      -- Inject sibling module functions for qualified :: access
+      let siblingFns : List (String × FnSummary) := moduleSummaryList.foldl (fun acc (sibName, sibSummary) =>
+        if sibName == m.name || sibName == "main" then acc
+        else acc ++ (sibSummary.functions.filter fun (name, _) =>
+          sibSummary.publicNames.contains name).map fun (name, fs) =>
+            (sibName ++ "_" ++ name, fs)
+      ) []
+      -- Linker aliases: math_add → add (qualified call name → bare definition name)
+      let siblingAliases : List (String × String) := moduleSummaryList.foldl (fun acc (sibName, sibSummary) =>
+        if sibName == m.name || sibName == "main" then acc
+        else acc ++ (sibSummary.functions.filter fun (name, _) =>
+          sibSummary.publicNames.contains name).map fun (name, _) =>
+            (sibName ++ "_" ++ name, name)
+      ) []
+      let imports := { imports with
+        functions := imports.functions ++ siblingFns
+        linkerAliases := imports.linkerAliases ++ siblingAliases }
       match elabModule m summary imports summaryTable with
       | .ok cm => (acc ++ [cm], errs)
       | .error ds => (acc, errs ++ ds)

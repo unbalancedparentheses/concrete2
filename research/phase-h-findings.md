@@ -39,7 +39,7 @@ What closed:
 What remains:
 
 - formatting/interpolation
-- qualified module access: basic `mod::fn` landed, but same-name collisions across submodules remain an open backend limitation
+- ~~qualified module access~~: fully closed — `mod::fn`, same-name collisions, and inline sibling `::` access all work
 
 ### MAL Interpreter
 
@@ -267,10 +267,9 @@ Not "can Concrete express real programs?" but "do its explicit patterns become s
 3. **Runtime-oriented collection maturity** — MAL and the VM both need maps, nested mutable structures, runtime-friendly patterns
 4. **Backend inlining / codegen policy cliffs** — the VM showed that tiny builtin calls in hot loops can distort performance dramatically if LLVM is not given enough shape information
 5. **User-facing runtime argument surface** — `argc`/`argv` work in practice, but the final public shape is not settled
-6. **Qualified module access** — partially closed. File-based `mod::fn` access, mixed imported + qualified access, two-submodule qualified access, top-level + qualified coexistence, qualified submodule `extern fn`, and qualified submodule struct/import all work via linker aliases (qualified call `math_add` → bare definition `add`).
-   - **open limitation — same-name collisions**: two submodules defining a function with the same leaf name produce LLVM symbol collisions because definitions still emit bare names. An earlier attempt to prefix definitions at emit time (`emittedFnName`) was reverted — it broke function references, internal call sites, and monomorphized names. 3 collision tests are disabled. A correct fix needs to rename consistently across all passes (mono, lower, emit), not just at the emit boundary.
-   - **open limitation — inline sibling modules**: `mod A {}` / `mod B {}` cannot use `::` across siblings — must use `import`
-   - the non-collision qualified-access surface is landed and useful; the collision case is a real backend limitation
+6. **~~Qualified module access~~** — CLOSED. File-based `mod::fn` access, mixed imported + qualified access, two-submodule qualified access, top-level + qualified coexistence, qualified submodule `extern fn`, qualified submodule struct/import, same-name collision handling, and inline sibling `::` access all work.
+   - same-name collisions: solved via Elab-time `prefixModuleFnNames` which renames submodule definitions consistently across all passes, with ambiguity detection (two submodules defining `add` requires qualified `math::add` / `util::add`)
+   - inline sibling modules: `mod A {}` / `mod B {}` can now use `A::fn()` from `B` without explicit imports; sibling function sigs are injected across Resolve, Check, and Elab passes with linker aliases
 7. **Runtime / stack pressure classification** — MAL exposed this; still needs a cleaner language-vs-runtime-vs-tooling decision
 
 ## Current Open Findings

@@ -10,6 +10,14 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Qualified module access fully closed
+
+**Same-name collision fix:** Submodule function definitions are now renamed at elaboration time via `prefixModuleFnNames` (e.g., `add` in `math` → `math_add`), with cross-module call site rewriting via `crossModuleRenames`. This is consistent across all downstream passes (mono, lower, emit). Ambiguity detection ensures that two submodules defining the same leaf name require qualified access (`math::add` / `util::add`) rather than silently colliding.
+
+**Inline sibling `::` access:** `mod A {} mod B {}` can now use `A::fn()` from `B` without explicit `import` statements. Sibling module function signatures are injected consistently through Resolve, Check, and Elab passes, with linker aliases bridging qualified call names to bare definitions.
+
+**What changed strategically:** The two remaining qualified-access limitations (same-name collisions and inline sibling `::`) were the last namespace gaps blocking multi-module code from feeling natural. Both are now closed. The remaining open findings are narrower: text construction/interpolation, runtime-oriented collections, runtime argument surface, and runtime/stack-pressure classification.
+
 ### Phase J groundwork: package/project workflow hardening lands
 
 **Builtin std resolution:** std is now resolved automatically relative to the compiler binary instead of requiring repo-relative path dependencies in user manifests. `CONCRETE_STD` provides an override for unusual setups. Example `Concrete.toml` files no longer need `std = { path = ... }`.

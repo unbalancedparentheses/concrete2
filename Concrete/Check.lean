@@ -2235,9 +2235,16 @@ def checkModule (m : Module) (summary : FileSummary)
     happened) and uses summary table for import resolution. -/
 def checkProgram (resolved : List ResolvedModule)
     (summaryTable : List (String × FileSummary) := []) : Except Diagnostics Unit :=
+  -- Build sibling module summaries for inline modules (mod A {} mod B {}).
+  -- Each module's summary is indexed by name for qualified :: access.
+  let moduleSummaryList : List (String × FileSummary) := resolved.map fun rm =>
+    let m := rm.module
+    (m.name, match summaryTable.find? fun (n, _) => n == m.name with
+      | some (_, s) => s
+      | none => buildFileSummary m)
   let allErrors := resolved.foldl (fun errs rm =>
     let m := rm.module
-    let summary := match summaryTable.find? fun (n, _) => n == m.name with
+    let summary := match moduleSummaryList.find? fun (n, _) => n == m.name with
       | some (_, s) => s
       | none => buildFileSummary m
     match liftStringError "check" (resolveImports m.imports summaryTable
@@ -2245,6 +2252,14 @@ def checkProgram (resolved : List ResolvedModule)
         (fun sym modName => CheckError.message (.notPublicInModule sym modName))) with
     | .error ds => errs ++ ds
     | .ok imports =>
+      -- Inject sibling module functions for qualified :: access
+      let siblingFns : List (String × FnSummary) := moduleSummaryList.foldl (fun acc (sibName, sibSummary) =>
+        if sibName == m.name || sibName == "main" then acc
+        else acc ++ (sibSummary.functions.filter fun (name, _) =>
+          sibSummary.publicNames.contains name).map fun (name, fs) =>
+            (sibName ++ "_" ++ name, fs)
+      ) []
+      let imports := { imports with functions := imports.functions ++ siblingFns }
       match checkModule m summary imports with
       | .ok () => errs
       | .error ds => errs ++ ds

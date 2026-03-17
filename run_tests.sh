@@ -838,9 +838,9 @@ run_ok "$TESTDIR/module_qualified_two_mods/main.con" 42
 run_ok "$TESTDIR/module_qualified_toplevel_shadow/main.con" 42
 run_ok "$TESTDIR/module_qualified_extern/main.con" 42
 run_ok "$TESTDIR/module_qualified_impl/main.con" 42
-# Collision tests disabled — same-name functions in different submodules
-# produce LLVM symbol collisions (known limitation, tracked for future fix):
-# module_qualified_collision, module_qualified_parent_shadow, module_import_collision
+run_ok "$TESTDIR/module_qualified_collision/main.con" 54
+run_ok "$TESTDIR/module_qualified_parent_shadow/main.con" 42
+run_ok "$TESTDIR/module_import_collision/main.con" 54
 
 # Additional complex tests
 run_ok "$TESTDIR/complex_fibonacci_closure.con" 55
@@ -1232,6 +1232,7 @@ run_ok "$TESTDIR/test_module_nested.con" 42
 run_ok "$TESTDIR/test_module_struct_method.con" 42
 run_ok "$TESTDIR/test_module_enum_match.con" 42
 run_ok "$TESTDIR/test_module_reexport_type.con" 42
+run_ok "$TESTDIR/test_module_sibling_qualified.con" 29
 run_ok "$TESTDIR/test_deeply_nested_expr.con" 42
 run_ok "$TESTDIR/test_many_params.con" 42
 run_ok "$TESTDIR/test_empty_struct.con" 42
@@ -2384,75 +2385,78 @@ check_collection_tests() {
 }
 
 check_collection_tests "Vec" \
-    test_vec_get_in_bounds test_vec_get_out_of_bounds test_vec_get_empty \
-    test_pop_some test_pop_none \
-    test_vec_set test_vec_clear_reuse test_vec_push_growth test_vec_pop_until_empty
+    vec_test_vec_get_in_bounds vec_test_vec_get_out_of_bounds vec_test_vec_get_empty \
+    vec_test_pop_some vec_test_pop_none \
+    vec_test_vec_set vec_test_vec_clear_reuse vec_test_vec_push_growth vec_test_vec_pop_until_empty
 
 check_collection_tests "Fs" \
-    test_file_exists test_write_read_roundtrip \
-    test_fs_open_nonexistent test_fs_create_bad_path \
-    test_read_file_nonexistent test_write_to_readonly test_write_file_bad_path \
-    test_read_file_empty test_append_file test_seek_tell \
-    test_read_to_string_nonexistent test_read_to_string_roundtrip test_append_file_bad_path \
-    test_read_past_eof test_seek_past_end test_read_to_string_empty
+    fs_test_file_exists fs_test_write_read_roundtrip \
+    fs_test_fs_open_nonexistent fs_test_fs_create_bad_path \
+    fs_test_read_file_nonexistent fs_test_write_to_readonly fs_test_write_file_bad_path \
+    fs_test_read_file_empty fs_test_append_file fs_test_seek_tell \
+    fs_test_read_to_string_nonexistent fs_test_read_to_string_roundtrip fs_test_append_file_bad_path \
+    fs_test_read_past_eof fs_test_seek_past_end fs_test_read_to_string_empty
 
 check_collection_tests "Process" \
-    test_wait_invalid_pid test_kill_invalid_pid test_signal_constants \
-    test_getpid test_kill_signal_zero \
-    test_kill_invalid_signal test_wait_invalid_pid_negative test_kill_pid_zero_exists
+    process_test_wait_invalid_pid process_test_kill_invalid_pid process_test_signal_constants \
+    process_test_getpid process_test_kill_signal_zero \
+    process_test_kill_invalid_signal process_test_wait_invalid_pid_negative process_test_kill_pid_zero_exists
 
 check_collection_tests "Net" \
-    test_connect_refused test_connect_bad_address test_bind_bad_address \
-    test_connect_bad_address_ipv6 \
-    test_bind_empty_address test_write_to_refused_connection \
-    test_read_from_unconnected_socket test_bind_duplicate_port
+    net_test_connect_refused net_test_connect_bad_address net_test_bind_bad_address \
+    net_test_connect_bad_address_ipv6 \
+    net_test_bind_empty_address net_test_write_to_refused_connection \
+    net_test_read_from_unconnected_socket net_test_bind_duplicate_port
 
 check_collection_tests "Deque" \
-    test_push_back_pop_front test_push_front_pop_back test_deque_pop_empty \
-    test_get test_growth_wrapping test_mixed_push_pop \
-    test_deque_wrap_stress test_deque_clear_reuse
+    deque_test_push_back_pop_front deque_test_push_front_pop_back deque_test_deque_pop_empty \
+    deque_test_get deque_test_growth_wrapping deque_test_mixed_push_pop \
+    deque_test_deque_wrap_stress deque_test_deque_clear_reuse
 
 check_collection_tests "BinaryHeap" \
-    test_max_heap_basic test_min_heap_basic test_heap_pop_empty test_heap_stress \
-    test_heap_sorted_output test_heap_push_pop_interleaved \
-    test_heap_peek_empty test_heap_clear_reuse
+    heap_test_max_heap_basic heap_test_min_heap_basic heap_test_heap_pop_empty heap_test_heap_stress \
+    heap_test_heap_sorted_output heap_test_heap_push_pop_interleaved \
+    heap_test_heap_peek_empty heap_test_heap_clear_reuse
 
 check_collection_tests "OrderedMap" \
-    test_insert_and_get test_sorted_order test_overwrite test_omap_remove test_get_missing \
-    test_omap_remove_empty test_omap_min_max_empty test_omap_clear_reuse \
-    test_omap_insert_remove_stress
+    ordered_map_test_insert_and_get ordered_map_test_sorted_order ordered_map_test_overwrite \
+    ordered_map_test_omap_remove ordered_map_test_get_missing \
+    ordered_map_test_omap_remove_empty ordered_map_test_omap_min_max_empty ordered_map_test_omap_clear_reuse \
+    ordered_map_test_omap_insert_remove_stress
 
 check_collection_tests "OrderedSet" \
-    test_insert_contains test_oset_remove test_min_max test_duplicate_insert \
-    test_oset_insert_remove_stress test_oset_clear_reuse
+    ordered_set_test_insert_contains ordered_set_test_oset_remove ordered_set_test_min_max \
+    ordered_set_test_duplicate_insert \
+    ordered_set_test_oset_insert_remove_stress ordered_set_test_oset_clear_reuse
 
 check_collection_tests "BitSet" \
-    test_set_and_test test_unset test_count test_union test_intersect test_with_capacity \
-    test_loop_set_small test_bitset_word_boundaries test_bitset_large_stress \
-    test_len_is_logical_size test_beyond_logical_size test_unset_beyond_logical_size \
-    test_non_monotonic_sets test_unset_preserves_len test_intersect_preserves_len \
-    test_bitset_clear_reuse
+    bitset_test_set_and_test bitset_test_unset bitset_test_count bitset_test_union \
+    bitset_test_intersect bitset_test_with_capacity \
+    bitset_test_loop_set_small bitset_test_bitset_word_boundaries bitset_test_bitset_large_stress \
+    bitset_test_len_is_logical_size bitset_test_beyond_logical_size bitset_test_unset_beyond_logical_size \
+    bitset_test_non_monotonic_sets bitset_test_unset_preserves_len bitset_test_intersect_preserves_len \
+    bitset_test_bitset_clear_reuse
 
 check_collection_tests "Option" \
-    test_option_some test_option_none test_option_match
+    option_test_option_some option_test_option_none option_test_option_match
 
 check_collection_tests "Result" \
-    test_result_ok test_result_err test_result_match
+    result_test_result_ok result_test_result_err result_test_result_match
 
 check_collection_tests "Text" \
-    test_text_from_string test_text_get_unchecked test_text_eq test_text_empty
+    text_test_text_from_string text_test_text_get_unchecked text_test_text_eq text_test_text_empty
 
 check_collection_tests "Slice" \
-    test_slice_len test_slice_get_unchecked test_slice_empty test_mutslice_set_get
+    slice_test_slice_len slice_test_slice_get_unchecked slice_test_slice_empty slice_test_mutslice_set_get
 
 check_collection_tests "HashMap" \
-    test_map_insert_len test_map_contains test_map_overwrite test_map_remove \
-    test_map_remove_nonexistent test_map_get test_map_clear \
-    test_map_insert_reinsert_after_remove test_map_growth
+    map_test_map_insert_len map_test_map_contains map_test_map_overwrite map_test_map_remove \
+    map_test_map_remove_nonexistent map_test_map_get map_test_map_clear \
+    map_test_map_insert_reinsert_after_remove map_test_map_growth
 
 check_collection_tests "HashSet" \
-    test_set_insert_contains test_set_remove \
-    test_set_duplicate_insert test_set_remove_nonexistent test_set_clear_reuse
+    set_test_set_insert_contains set_test_set_remove \
+    set_test_set_duplicate_insert set_test_set_remove_nonexistent set_test_set_clear_reuse
 
 fi # end section: collection
 
