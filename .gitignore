@@ -22,6 +22,12 @@ examples/grep/cgrep
 examples/verify/conhash
 examples/project/project
 examples/json/main
+examples/toml/toml_parser
+examples/integrity/fcheck
+examples/kvstore/kvstore
+examples/kvstore/kvstore.log
+examples/http/http_server
+examples/lox/lox
 
 # Compiled test binaries (keep .con sources, ignore extensionless binaries)
 lean_tests/trait_numeric_abs

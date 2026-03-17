@@ -1,0 +1,781 @@
+// fcheck - file integrity checker in Concrete
+//
+// Usage:
+//   fcheck scan  <manifest-file> <file1> [file2] ...
+//     Hash each file with SHA-256, write manifest (path:hash lines).
+//
+//   fcheck check <manifest-file> <file1> [file2] ...
+//     Re-hash each file, compare against stored manifest, report changes.
+//
+// Capability separation:
+//   sha256, hex_encode   -- with(Alloc)           -- pure computation, no I/O
+//   hash_file            -- with(File, Alloc)      -- reads files, cannot print
+//   report_*             -- with(Console, Alloc)   -- output only, cannot read files
+//   write_manifest       -- with(File, Alloc)      -- writes manifest, cannot print
+//   main                 -- with(Std)              -- entry point, orchestrates
+
+mod fcheck {
+    import std.fs.{read_file, read_to_string, write_file, FsError};
+    import std.result.{Result};
+    import std.bytes.{Bytes};
+    import std.args.{count, get};
+
+    trusted extern fn malloc(size: u64) -> *mut u8;
+    trusted extern fn free(ptr: *mut u8);
+
+    // ---------------------------------------------------------------
+    // SHA-256: with(Alloc) -- pure computation, no I/O
+    // ---------------------------------------------------------------
+
+    fn k_val(i: i32) -> u32 {
+        if i == 0 { return 0x428a2f98; }
+        if i == 1 { return 0x71374491; }
+        if i == 2 { return 0xb5c0fbcf; }
+        if i == 3 { return 0xe9b5dba5; }
+        if i == 4 { return 0x3956c25b; }
+        if i == 5 { return 0x59f111f1; }
+        if i == 6 { return 0x923f82a4; }
+        if i == 7 { return 0xab1c5ed5; }
+        if i == 8 { return 0xd807aa98; }
+        if i == 9 { return 0x12835b01; }
+        if i == 10 { return 0x243185be; }
+        if i == 11 { return 0x550c7dc3; }
+        if i == 12 { return 0x72be5d74; }
+        if i == 13 { return 0x80deb1fe; }
+        if i == 14 { return 0x9bdc06a7; }
+        if i == 15 { return 0xc19bf174; }
+        if i == 16 { return 0xe49b69c1; }
+        if i == 17 { return 0xefbe4786; }
+        if i == 18 { return 0x0fc19dc6; }
+        if i == 19 { return 0x240ca1cc; }
+        if i == 20 { return 0x2de92c6f; }
+        if i == 21 { return 0x4a7484aa; }
+        if i == 22 { return 0x5cb0a9dc; }
+        if i == 23 { return 0x76f988da; }
+        if i == 24 { return 0x983e5152; }
+        if i == 25 { return 0xa831c66d; }
+        if i == 26 { return 0xb00327c8; }
+        if i == 27 { return 0xbf597fc7; }
+        if i == 28 { return 0xc6e00bf3; }
+        if i == 29 { return 0xd5a79147; }
+        if i == 30 { return 0x06ca6351; }
+        if i == 31 { return 0x14292967; }
+        if i == 32 { return 0x27b70a85; }
+        if i == 33 { return 0x2e1b2138; }
+        if i == 34 { return 0x4d2c6dfc; }
+        if i == 35 { return 0x53380d13; }
+        if i == 36 { return 0x650a7354; }
+        if i == 37 { return 0x766a0abb; }
+        if i == 38 { return 0x81c2c92e; }
+        if i == 39 { return 0x92722c85; }
+        if i == 40 { return 0xa2bfe8a1; }
+        if i == 41 { return 0xa81a664b; }
+        if i == 42 { return 0xc24b8b70; }
+        if i == 43 { return 0xc76c51a3; }
+        if i == 44 { return 0xd192e819; }
+        if i == 45 { return 0xd6990624; }
+        if i == 46 { return 0xf40e3585; }
+        if i == 47 { return 0x106aa070; }
+        if i == 48 { return 0x19a4c116; }
+        if i == 49 { return 0x1e376c08; }
+        if i == 50 { return 0x2748774c; }
+        if i == 51 { return 0x34b0bcb5; }
+        if i == 52 { return 0x391c0cb3; }
+        if i == 53 { return 0x4ed8aa4a; }
+        if i == 54 { return 0x5b9cca4f; }
+        if i == 55 { return 0x682e6ff3; }
+        if i == 56 { return 0x748f82ee; }
+        if i == 57 { return 0x78a5636f; }
+        if i == 58 { return 0x84c87814; }
+        if i == 59 { return 0x8cc70208; }
+        if i == 60 { return 0x90befffa; }
+        if i == 61 { return 0xa4506ceb; }
+        if i == 62 { return 0xbef9a3f7; }
+        return 0xc67178f2;
+    }
+
+    fn rotr(x: u32, n: u32) -> u32 {
+        return (x >> n) | (x << (32 - n));
+    }
+
+    fn ch(x: u32, y: u32, z: u32) -> u32 {
+        return (x & y) ^ ((~x) & z);
+    }
+
+    fn maj(x: u32, y: u32, z: u32) -> u32 {
+        return (x & y) ^ (x & z) ^ (y & z);
+    }
+
+    fn sigma0(x: u32) -> u32 {
+        return rotr(x, 2) ^ rotr(x, 13) ^ rotr(x, 22);
+    }
+
+    fn sigma1(x: u32) -> u32 {
+        return rotr(x, 6) ^ rotr(x, 11) ^ rotr(x, 25);
+    }
+
+    fn lsigma0(x: u32) -> u32 {
+        return rotr(x, 7) ^ rotr(x, 18) ^ (x >> 3);
+    }
+
+    fn lsigma1(x: u32) -> u32 {
+        return rotr(x, 17) ^ rotr(x, 19) ^ (x >> 10);
+    }
+
+    trusted fn sha256(data: *mut u8, data_len: u64) with(Alloc) -> Vec<u32> {
+        let mut h0: u32 = 0x6a09e667;
+        let mut h1: u32 = 0xbb67ae85;
+        let mut h2: u32 = 0x3c6ef372;
+        let mut h3: u32 = 0xa54ff53a;
+        let mut h4: u32 = 0x510e527f;
+        let mut h5: u32 = 0x9b05688c;
+        let mut h6: u32 = 0x1f83d9ab;
+        let mut h7: u32 = 0x5be0cd19;
+
+        let bit_len: u64 = data_len * 8;
+        let mut padded_len: u64 = data_len + 9;
+        let rem: u64 = padded_len % 64;
+        if rem != 0 {
+            padded_len = padded_len + (64 - rem);
+        }
+
+        let padded: *mut u8 = malloc(padded_len);
+        let mut ci: u64 = 0;
+        while ci < data_len {
+            let src: *mut u8 = data + ci;
+            let dst: *mut u8 = padded + ci;
+            *dst = *src;
+            ci = ci + 1;
+        }
+        let pad_byte: *mut u8 = padded + data_len;
+        *pad_byte = 0x80;
+        let mut zi: u64 = data_len + 1;
+        while zi < padded_len - 8 {
+            let zp: *mut u8 = padded + zi;
+            *zp = 0;
+            zi = zi + 1;
+        }
+        let mut li: u64 = 0;
+        while li < 8 {
+            let shift: u64 = (7 - li) * 8;
+            let lp: *mut u8 = padded + (padded_len - 8 + li);
+            *lp = ((bit_len >> shift) & 0xFF) as u8;
+            li = li + 1;
+        }
+
+        let num_blocks: u64 = padded_len / 64;
+        let mut block: u64 = 0;
+        let w_buf: *mut u8 = malloc(256);
+
+        while block < num_blocks {
+            let block_ptr: *mut u8 = padded + (block * 64);
+            let mut wi: u32 = 0;
+            while wi < 16 {
+                let bp: *mut u8 = block_ptr + ((wi * 4) as u64);
+                let b0: u32 = (*(bp)) as u32;
+                let b1: u32 = (*(bp + 1)) as u32;
+                let b2: u32 = (*(bp + 2)) as u32;
+                let b3: u32 = (*(bp + 3)) as u32;
+                let word: u32 = (b0 << 24) | (b1 << 16) | (b2 << 8) | b3;
+                let wp: *mut u32 = (w_buf + ((wi * 4) as u64)) as *mut u32;
+                *wp = word;
+                wi = wi + 1;
+            }
+            while wi < 64 {
+                let w2p: *mut u32 = (w_buf + (((wi - 2) * 4) as u64)) as *mut u32;
+                let w7p: *mut u32 = (w_buf + (((wi - 7) * 4) as u64)) as *mut u32;
+                let w15p: *mut u32 = (w_buf + (((wi - 15) * 4) as u64)) as *mut u32;
+                let w16p: *mut u32 = (w_buf + (((wi - 16) * 4) as u64)) as *mut u32;
+                let s0: u32 = lsigma0(*w15p);
+                let s1: u32 = lsigma1(*w2p);
+                let new_w: u32 = *w16p + s0 + *w7p + s1;
+                let nwp: *mut u32 = (w_buf + ((wi * 4) as u64)) as *mut u32;
+                *nwp = new_w;
+                wi = wi + 1;
+            }
+
+            let mut a: u32 = h0;
+            let mut b: u32 = h1;
+            let mut c: u32 = h2;
+            let mut d: u32 = h3;
+            let mut e: u32 = h4;
+            let mut f: u32 = h5;
+            let mut g: u32 = h6;
+            let mut h: u32 = h7;
+
+            let mut ri: i32 = 0;
+            while ri < 64 {
+                let rwp: *mut u32 = (w_buf + ((ri as u32 * 4) as u64)) as *mut u32;
+                let t1: u32 = h + sigma1(e) + ch(e, f, g) + k_val(ri) + *rwp;
+                let t2: u32 = sigma0(a) + maj(a, b, c);
+                h = g;
+                g = f;
+                f = e;
+                e = d + t1;
+                d = c;
+                c = b;
+                b = a;
+                a = t1 + t2;
+                ri = ri + 1;
+            }
+
+            h0 = h0 + a;
+            h1 = h1 + b;
+            h2 = h2 + c;
+            h3 = h3 + d;
+            h4 = h4 + e;
+            h5 = h5 + f;
+            h6 = h6 + g;
+            h7 = h7 + h;
+
+            block = block + 1;
+        }
+
+        free(w_buf);
+        free(padded);
+
+        let mut result: Vec<u32> = vec_new::<u32>();
+        vec_push::<u32>(&mut result, h0);
+        vec_push::<u32>(&mut result, h1);
+        vec_push::<u32>(&mut result, h2);
+        vec_push::<u32>(&mut result, h3);
+        vec_push::<u32>(&mut result, h4);
+        vec_push::<u32>(&mut result, h5);
+        vec_push::<u32>(&mut result, h6);
+        vec_push::<u32>(&mut result, h7);
+        return result;
+    }
+
+    // ---------------------------------------------------------------
+    // Hex encoding: with(Alloc) -- pure formatting
+    // ---------------------------------------------------------------
+
+    fn hex_digit(nibble: u32) -> Int {
+        if nibble < 10 { return (48 + nibble) as Int; }
+        return (87 + nibble) as Int;
+    }
+
+    fn hex_encode_u32(val: u32, out: &mut String) with(Alloc) {
+        let mut shift: i32 = 28;
+        while shift >= 0 {
+            let nibble: u32 = (val >> (shift as u32)) & 0xF;
+            string_push_char(out, hex_digit(nibble));
+            shift = shift - 4;
+        }
+    }
+
+    trusted fn hash_to_hex(hash: &mut Vec<u32>) with(Alloc) -> String {
+        let mut hex: String = "";
+        string_reserve(&mut hex, 64);
+        let mut i: Int = 0;
+        while i < 8 {
+            let word: u32 = vec_get::<u32>(hash, i);
+            hex_encode_u32(word, &mut hex);
+            i = i + 1;
+        }
+        return hex;
+    }
+
+    // ---------------------------------------------------------------
+    // File reading: with(File, Alloc) -- reads files, cannot print
+    // ---------------------------------------------------------------
+
+    struct Copy FileData { ptr: *mut u8, len: u64 }
+
+    trusted fn read_file_raw(path: &String) with(File, Alloc) -> FileData {
+        let result: Result<Bytes, FsError> = read_file(path);
+        match result {
+            Result#Ok { value } => {
+                let fd: FileData = FileData { ptr: value.ptr, len: value.len };
+                return fd;
+            },
+            Result#Err { error } => {
+                return FileData { ptr: 0 as *mut u8, len: 0 };
+            }
+        }
+    }
+
+    trusted fn free_file_data(fd: FileData) with(Alloc) {
+        if fd.ptr != (0 as *mut u8) {
+            free(fd.ptr);
+        }
+    }
+
+    trusted fn hash_file(path: &String) with(File, Alloc) -> String {
+        let fd: FileData = read_file_raw(path);
+        if fd.ptr == (0 as *mut u8) {
+            return "";
+        }
+        let mut hash: Vec<u32> = sha256(fd.ptr, fd.len);
+        free_file_data(fd);
+        let hex: String = hash_to_hex(&mut hash);
+        vec_free::<u32>(hash);
+        return hex;
+    }
+
+    // ---------------------------------------------------------------
+    // Manifest I/O -- uses strings, no Vec<String> needed
+    // ---------------------------------------------------------------
+
+    // Convert a String to Bytes by copying char-by-char.
+    // Append a String's chars to a Bytes buffer.
+    fn append_string_to_bytes(buf: &mut Bytes, s: &String) with(Alloc) {
+        let slen: Int = string_length(s);
+        let mut i: Int = 0;
+        while i < slen {
+            let ch: Int = string_char_at(s, i);
+            buf.push(ch as u8);
+            i = i + 1;
+        }
+    }
+
+    // Write Bytes to a file.
+    // Capability: with(File, Alloc) -- writes file, cannot print.
+    trusted fn write_bytes_to_file(mpath: &String, data: &Bytes) with(File, Alloc) -> bool {
+        let result: Result<u64, FsError> = write_file(mpath, data);
+        match result {
+            Result#Ok { value } => { return true; },
+            Result#Err { error } => { return false; }
+        }
+    }
+
+    // Look up a path in manifest content. Returns the stored hash or empty string.
+    // Manifest format: "hex64:path\n" per line.
+    // Capability: with(Alloc) -- pure string processing.
+    fn lookup_in_manifest(manifest: &String, needle: &String) with(Alloc) -> String {
+        let mlen: Int = string_length(manifest);
+        let mut line_start: Int = 0;
+        let mut pos: Int = 0;
+        while pos <= mlen {
+            let at_end: bool = pos == mlen;
+            let mut is_nl: bool = false;
+            if !at_end {
+                is_nl = string_char_at(manifest, pos) == 10;
+            }
+            if is_nl || at_end {
+                if pos > line_start {
+                    let llen: Int = pos - line_start;
+                    if llen > 65 {
+                        let colon: Int = string_char_at(manifest, line_start + 64);
+                        if colon == 58 {
+                            let path_part: String = string_slice(manifest, line_start + 65, pos);
+                            let eq: bool = string_eq(&path_part, needle);
+                            if eq {
+                                let hash_part: String = string_slice(manifest, line_start, line_start + 64);
+                                drop_string(path_part);
+                                return hash_part;
+                            }
+                            drop_string(path_part);
+                        }
+                    }
+                }
+                line_start = pos + 1;
+            }
+            pos = pos + 1;
+        }
+        return "";
+    }
+
+    // Count entries in manifest and check if a given path is in a "seen" bit array.
+    // The seen array is a Vec<i32> indexed by manifest line number.
+    fn count_manifest_lines(manifest: &String) with(Alloc) -> Int {
+        let mlen: Int = string_length(manifest);
+        let mut cnt: Int = 0;
+        let mut line_start: Int = 0;
+        let mut pos: Int = 0;
+        while pos <= mlen {
+            let at_end: bool = pos == mlen;
+            let mut is_nl: bool = false;
+            if !at_end {
+                is_nl = string_char_at(manifest, pos) == 10;
+            }
+            if is_nl || at_end {
+                if pos > line_start {
+                    let llen: Int = pos - line_start;
+                    if llen > 65 {
+                        cnt = cnt + 1;
+                    }
+                }
+                line_start = pos + 1;
+            }
+            pos = pos + 1;
+        }
+        return cnt;
+    }
+
+    // Get the line-index of a path in the manifest (for marking as seen).
+    fn manifest_line_index(manifest: &String, needle: &String) with(Alloc) -> Int {
+        let mlen: Int = string_length(manifest);
+        let mut idx: Int = 0;
+        let mut line_start: Int = 0;
+        let mut pos: Int = 0;
+        while pos <= mlen {
+            let at_end: bool = pos == mlen;
+            let mut is_nl: bool = false;
+            if !at_end {
+                is_nl = string_char_at(manifest, pos) == 10;
+            }
+            if is_nl || at_end {
+                if pos > line_start {
+                    let llen: Int = pos - line_start;
+                    if llen > 65 {
+                        let colon: Int = string_char_at(manifest, line_start + 64);
+                        if colon == 58 {
+                            let path_part: String = string_slice(manifest, line_start + 65, pos);
+                            let eq: bool = string_eq(&path_part, needle);
+                            drop_string(path_part);
+                            if eq {
+                                return idx;
+                            }
+                        }
+                        idx = idx + 1;
+                    }
+                }
+                line_start = pos + 1;
+            }
+            pos = pos + 1;
+        }
+        return 0 - 1;
+    }
+
+    // Get the path at a given line index in the manifest.
+    fn manifest_path_at(manifest: &String, target_idx: Int) with(Alloc) -> String {
+        let mlen: Int = string_length(manifest);
+        let mut idx: Int = 0;
+        let mut line_start: Int = 0;
+        let mut pos: Int = 0;
+        while pos <= mlen {
+            let at_end: bool = pos == mlen;
+            let mut is_nl: bool = false;
+            if !at_end {
+                is_nl = string_char_at(manifest, pos) == 10;
+            }
+            if is_nl || at_end {
+                if pos > line_start {
+                    let llen: Int = pos - line_start;
+                    if llen > 65 {
+                        if idx == target_idx {
+                            let path_part: String = string_slice(manifest, line_start + 65, pos);
+                            return path_part;
+                        }
+                        idx = idx + 1;
+                    }
+                }
+                line_start = pos + 1;
+            }
+            pos = pos + 1;
+        }
+        return "";
+    }
+
+    // Read manifest file, returning its contents or empty string on error.
+    fn read_manifest_file(path: &String) with(File, Alloc) -> String {
+        let result: Result<String, FsError> = read_to_string(path);
+        match result {
+            Result#Ok { value } => {
+                return value;
+            },
+            Result#Err { error } => {
+                return "";
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // Reporting: with(Console, Alloc) -- output only, cannot read files
+    // ---------------------------------------------------------------
+
+    fn report_status(label: &String, path: &String) with(Console, Alloc) {
+        let mut msg: String = "  ";
+        string_append(&mut msg, label);
+        string_append(&mut msg, path);
+        print_string(&msg);
+        print_char(10);
+        drop_string(msg);
+    }
+
+    fn report_scan_line(path: &String, hash: &String) with(Console, Alloc) {
+        let mut msg: String = "  ";
+        string_append(&mut msg, hash);
+        string_push_char(&mut msg, 32);
+        string_push_char(&mut msg, 32);
+        string_append(&mut msg, path);
+        print_string(&msg);
+        print_char(10);
+        drop_string(msg);
+    }
+
+    fn report_file_error(path: &String) with(Console, Alloc) {
+        let mut msg: String = "  ERROR    ";
+        string_append(&mut msg, path);
+        let mut rsn: String = ": cannot read file";
+        string_append(&mut msg, &rsn);
+        drop_string(rsn);
+        print_string(&msg);
+        print_char(10);
+        drop_string(msg);
+    }
+
+    // ---------------------------------------------------------------
+    // Main: with(Std) -- entry point
+    // ---------------------------------------------------------------
+
+    pub fn main() with(Std) -> Int {
+        let argc: Int = count();
+
+        if argc < 4 {
+            let mut u1: String = "fcheck - file integrity checker\n\nUsage:\n";
+            print_string(&u1);
+            drop_string(u1);
+            let mut u2: String = "  fcheck scan  <manifest> <file1> [file2] ...\n";
+            print_string(&u2);
+            drop_string(u2);
+            let mut u3: String = "    Hash files with SHA-256, write manifest.\n\n";
+            print_string(&u3);
+            drop_string(u3);
+            let mut u4: String = "  fcheck check <manifest> <file1> [file2] ...\n";
+            print_string(&u4);
+            drop_string(u4);
+            let mut u5: String = "    Compare files against manifest, report changes.\n";
+            print_string(&u5);
+            drop_string(u5);
+            return 1;
+        }
+
+        let command: String = get(1);
+        let manifest_path: String = get(2);
+
+        // Detect command
+        let mut is_scan: bool = false;
+        let mut is_check: bool = false;
+        let cmd_len: Int = string_length(&command);
+        if cmd_len == 4 {
+            if string_char_at(&command, 0) == 115 &&
+               string_char_at(&command, 1) == 99 &&
+               string_char_at(&command, 2) == 97 &&
+               string_char_at(&command, 3) == 110 {
+                is_scan = true;
+            }
+        }
+        if cmd_len == 5 {
+            if string_char_at(&command, 0) == 99 &&
+               string_char_at(&command, 1) == 104 &&
+               string_char_at(&command, 2) == 101 &&
+               string_char_at(&command, 3) == 99 &&
+               string_char_at(&command, 4) == 107 {
+                is_check = true;
+            }
+        }
+
+        let mut exit_code: Int = 0;
+
+        if is_scan {
+            // --- SCAN: hash files, build manifest as Bytes, write to file ---
+            let mut manifest_bytes: Bytes = Bytes::new();
+            let mut scan_errors: Int = 0;
+            let mut nfiles: Int = 0;
+
+            let mut smsg: String = "Scanning files...\n";
+            print_string(&smsg);
+            drop_string(smsg);
+
+            let mut fi: Int = 3;
+            while fi < argc {
+                let fpath: String = get(fi);
+                let fhex: String = hash_file(&fpath);
+                let fhex_len: Int = string_length(&fhex);
+                if fhex_len == 0 {
+                    report_file_error(&fpath);
+                    drop_string(fhex);
+                    scan_errors = scan_errors + 1;
+                } else {
+                    report_scan_line(&fpath, &fhex);
+                    // Append to manifest bytes: "hash:path\n"
+                    append_string_to_bytes(&mut manifest_bytes, &fhex);
+                    manifest_bytes.push(58);
+                    append_string_to_bytes(&mut manifest_bytes, &fpath);
+                    manifest_bytes.push(10);
+                    drop_string(fhex);
+                    nfiles = nfiles + 1;
+                }
+                drop_string(fpath);
+                fi = fi + 1;
+            }
+
+            if nfiles > 0 {
+                let wok: bool = write_bytes_to_file(&manifest_path, &manifest_bytes);
+                if wok {
+                    let mut wm: String = "\nManifest written to ";
+                    string_append(&mut wm, &manifest_path);
+                    let mut wm2: String = " (";
+                    string_append(&mut wm, &wm2);
+                    drop_string(wm2);
+                    string_append_int(&mut wm, nfiles);
+                    let mut wm3: String = " files)\n";
+                    string_append(&mut wm, &wm3);
+                    drop_string(wm3);
+                    print_string(&wm);
+                    drop_string(wm);
+                } else {
+                    let mut em: String = "fcheck: error writing manifest\n";
+                    print_string(&em);
+                    drop_string(em);
+                    scan_errors = scan_errors + 1;
+                }
+            }
+            manifest_bytes.drop();
+
+            if scan_errors > 0 { exit_code = 1; }
+
+        } else if is_check {
+            // --- CHECK: read manifest, re-hash files, compare ---
+            let manifest_content: String = read_manifest_file(&manifest_path);
+            let manifest_len: Int = string_length(&manifest_content);
+            let manifest_ok: bool = manifest_len > 0;
+
+            if !manifest_ok {
+                let mut em2: String = "fcheck: cannot read manifest '";
+                string_append(&mut em2, &manifest_path);
+                let mut em3: String = "' (empty or missing)\n";
+                string_append(&mut em2, &em3);
+                drop_string(em3);
+                print_string(&em2);
+                drop_string(em2);
+            }
+
+            if manifest_ok {
+                let mut cmsg: String = "Checking files...\n";
+                print_string(&cmsg);
+                drop_string(cmsg);
+
+                let mut cnt_ok: Int = 0;
+                let mut cnt_add: Int = 0;
+                let mut cnt_mod: Int = 0;
+                let mut cnt_rem: Int = 0;
+                let mut cnt_err: Int = 0;
+
+                let m_lines: Int = count_manifest_lines(&manifest_content);
+
+                // Seen flags: use a Vec<i32>
+                let mut seen: Vec<i32> = vec_new::<i32>();
+                let mut si: Int = 0;
+                while si < m_lines {
+                    vec_push::<i32>(&mut seen, 0);
+                    si = si + 1;
+                }
+
+                // Check each file
+                let mut ci: Int = 3;
+                while ci < argc {
+                    let cpath: String = get(ci);
+                    let chex: String = hash_file(&cpath);
+                    let chex_len: Int = string_length(&chex);
+                    if chex_len == 0 {
+                        report_file_error(&cpath);
+                        drop_string(chex);
+                        cnt_err = cnt_err + 1;
+                    } else {
+                        let stored: String = lookup_in_manifest(&manifest_content, &cpath);
+                        let stored_len: Int = string_length(&stored);
+                        if stored_len == 0 {
+                            let mut lbl: String = "ADDED    ";
+                            report_status(&lbl, &cpath);
+                            drop_string(lbl);
+                            cnt_add = cnt_add + 1;
+                        } else {
+                            // Mark as seen
+                            let midx: Int = manifest_line_index(&manifest_content, &cpath);
+                            if midx >= 0 {
+                                vec_set::<i32>(&mut seen, midx, 1);
+                            }
+                            let eq: bool = string_eq(&chex, &stored);
+                            if eq {
+                                let mut lbl2: String = "OK       ";
+                                report_status(&lbl2, &cpath);
+                                drop_string(lbl2);
+                                cnt_ok = cnt_ok + 1;
+                            } else {
+                                let mut lbl3: String = "MODIFIED ";
+                                report_status(&lbl3, &cpath);
+                                drop_string(lbl3);
+                                cnt_mod = cnt_mod + 1;
+                            }
+                        }
+                        drop_string(stored);
+                        drop_string(chex);
+                    }
+                    drop_string(cpath);
+                    ci = ci + 1;
+                }
+
+                // Report removed files
+                let mut ki: Int = 0;
+                while ki < m_lines {
+                    let flag: i32 = vec_get::<i32>(&seen, ki);
+                    if flag == 0 {
+                        let rp: String = manifest_path_at(&manifest_content, ki);
+                        let rp_len: Int = string_length(&rp);
+                        if rp_len > 0 {
+                            let mut lbl4: String = "REMOVED  ";
+                            report_status(&lbl4, &rp);
+                            drop_string(lbl4);
+                            cnt_rem = cnt_rem + 1;
+                        }
+                        drop_string(rp);
+                    }
+                    ki = ki + 1;
+                }
+
+                // Summary
+                print_char(10);
+                let mut sum: String = "Summary: ";
+                string_append_int(&mut sum, cnt_ok);
+                let mut s1: String = " ok, ";
+                string_append(&mut sum, &s1);
+                drop_string(s1);
+                string_append_int(&mut sum, cnt_add);
+                let mut s2: String = " added, ";
+                string_append(&mut sum, &s2);
+                drop_string(s2);
+                string_append_int(&mut sum, cnt_mod);
+                let mut s3: String = " modified, ";
+                string_append(&mut sum, &s3);
+                drop_string(s3);
+                string_append_int(&mut sum, cnt_rem);
+                let mut s4: String = " removed, ";
+                string_append(&mut sum, &s4);
+                drop_string(s4);
+                string_append_int(&mut sum, cnt_err);
+                let mut s5: String = " errors";
+                string_append(&mut sum, &s5);
+                drop_string(s5);
+                print_string(&sum);
+                print_char(10);
+                drop_string(sum);
+
+                vec_free::<i32>(seen);
+
+                if cnt_mod > 0 || cnt_rem > 0 || cnt_err > 0 {
+                    exit_code = 1;
+                }
+            } else {
+                exit_code = 1;
+            }
+            drop_string(manifest_content);
+
+        } else {
+            let mut err: String = "fcheck: unknown command '";
+            string_append(&mut err, &command);
+            let mut err2: String = "'. Use 'scan' or 'check'.\n";
+            string_append(&mut err, &err2);
+            drop_string(err2);
+            print_string(&err);
+            drop_string(err);
+            exit_code = 1;
+        }
+
+        drop_string(command);
+        drop_string(manifest_path);
+        return exit_code;
+    }
+}

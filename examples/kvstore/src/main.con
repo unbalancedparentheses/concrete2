@@ -1,0 +1,465 @@
+// kvstore — a persistent key-value store in Concrete
+//
+// Usage: kvstore set <key> <value>
+//        kvstore get <key>
+//        kvstore delete <key>
+//        kvstore list
+//        kvstore compact
+//
+// Persists data to an append-only log file (kvstore.log).
+// On startup, replays the log to rebuild in-memory state.
+// compact rewrites the log with only current live key-value pairs.
+//
+// Demonstrates: persistence, line-oriented parsing, Vec-based storage,
+// capability separation, and crash recovery via append-only log.
+
+mod kvstore {
+    import std.fs.{read_to_string, write_file, append_file, file_exists, FsError};
+    import std.result.{Result};
+    import std.option.{Option};
+    import std.args.{count, get};
+    import std.bytes.{Bytes};
+
+    // --- Forget a linear String without freeing (for shallow copies from vec_get) ---
+
+    fn forget_string(s: String) {
+        // Consumes the linear value without dropping.
+        // Used for shallow copies returned by vec_get that share backing memory.
+    }
+
+    // --- String-to-Bytes conversion for file I/O ---
+
+    fn string_to_bytes(s: &String) with(Alloc) -> Bytes {
+        let len: Int = string_length(s);
+        let mut b: Bytes = Bytes::with_capacity(len as u64);
+        let mut i: Int = 0;
+        while i < len {
+            let ch: Int = string_char_at(s, i);
+            b.push(ch as u8);
+            i = i + 1;
+        }
+        return b;
+    }
+
+    // --- Clone a borrowed string ---
+
+    fn clone_string(s: &String) with(Alloc) -> String {
+        let mut result: String = "";
+        string_append(&mut result, s);
+        return result;
+    }
+
+    // --- String comparison helper ---
+
+    fn str_eq(a: &String, b: &String) -> bool {
+        let alen: Int = string_length(a);
+        let blen: Int = string_length(b);
+        if alen != blen {
+            return false;
+        }
+        let mut i: Int = 0;
+        while i < alen {
+            if string_char_at(a, i) != string_char_at(b, i) {
+                return false;
+            }
+            i = i + 1;
+        }
+        return true;
+    }
+
+    // --- Log file path ---
+
+    fn log_path() with(Alloc) -> String {
+        return "kvstore.log";
+    }
+
+    // --- KV find: returns index or -1 ---
+
+    fn kv_find(keys: &mut Vec<String>, key: &String) -> Int {
+        let len: Int = vec_len::<String>(keys) as Int;
+        let mut i: Int = 0;
+        while i < len {
+            let k: String = vec_get::<String>(keys, i);
+            let eq: bool = str_eq(&k, key);
+            forget_string(k);
+            if eq {
+                return i;
+            }
+            i = i + 1;
+        }
+        return 0 - 1;
+    }
+
+    // --- KV set: insert or update ---
+
+    fn kv_set(keys: &mut Vec<String>, vals: &mut Vec<String>, key: String, val: String) with(Alloc) {
+        let idx: Int = kv_find(keys, &key);
+        if idx >= 0 {
+            vec_set::<String>(vals, idx, val);
+            drop_string(key);
+        } else {
+            vec_push::<String>(keys, key);
+            vec_push::<String>(vals, val);
+        }
+    }
+
+    // --- KV delete: swap-remove ---
+
+    fn kv_delete(keys: &mut Vec<String>, vals: &mut Vec<String>, key: &String) with(Alloc) -> bool {
+        let idx: Int = kv_find(keys, key);
+        if idx < 0 {
+            return false;
+        }
+        let len: Int = vec_len::<String>(keys) as Int;
+        let last: Int = len - 1;
+        if idx != last {
+            let last_key: String = vec_get::<String>(keys, last);
+            let last_val: String = vec_get::<String>(vals, last);
+            vec_set::<String>(keys, idx, last_key);
+            vec_set::<String>(vals, idx, last_val);
+        }
+        let pk: Option<String> = vec_pop::<String>(keys);
+        let pv: Option<String> = vec_pop::<String>(vals);
+        match pk {
+            Option#Some { value } => {
+                forget_string(value);
+            },
+            Option#None => {}
+        }
+        match pv {
+            Option#Some { value } => {
+                forget_string(value);
+            },
+            Option#None => {}
+        }
+        return true;
+    }
+
+    // --- Append a SET operation to the log ---
+
+    fn log_set(key: &String, val: &String) with(Std) {
+        let mut line: String = "SET ";
+        string_append(&mut line, key);
+        string_push_char(&mut line, 32);  // space
+        string_append(&mut line, val);
+        string_push_char(&mut line, 10);  // newline
+        let data: Bytes = string_to_bytes(&line);
+        let path: String = log_path();
+        let result: Result<u64, FsError> = append_file(&path, &data);
+        match result {
+            Result#Ok { value } => {},
+            Result#Err { error } => {
+                println("Error: could not write to log file");
+            }
+        }
+        drop_string(path);
+        data.drop();
+        drop_string(line);
+    }
+
+    // --- Append a DEL operation to the log ---
+
+    fn log_del(key: &String) with(Std) {
+        let mut line: String = "DEL ";
+        string_append(&mut line, key);
+        string_push_char(&mut line, 10);  // newline
+        let data: Bytes = string_to_bytes(&line);
+        let path: String = log_path();
+        let result: Result<u64, FsError> = append_file(&path, &data);
+        match result {
+            Result#Ok { value } => {},
+            Result#Err { error } => {
+                println("Error: could not write to log file");
+            }
+        }
+        drop_string(path);
+        data.drop();
+        drop_string(line);
+    }
+
+    // --- Find first space in a string starting from a given position ---
+
+    fn find_space(s: &String, start: Int) -> Int {
+        let len: Int = string_length(s);
+        let mut i: Int = start;
+        while i < len {
+            if string_char_at(s, i) == 32 {
+                return i;
+            }
+            i = i + 1;
+        }
+        return 0 - 1;  // not found
+    }
+
+    // --- Parse log content line by line ---
+
+    fn parse_log_content(content: &String, keys: &mut Vec<String>, vals: &mut Vec<String>) with(Std) {
+        let len: Int = string_length(content);
+        let mut line_start: Int = 0;
+        let mut pos: Int = 0;
+
+        while pos <= len {
+            let at_end: bool = pos == len;
+            let mut is_newline: bool = false;
+            if !at_end {
+                is_newline = string_char_at(content, pos) == 10;
+            }
+
+            if is_newline || at_end {
+                if pos > line_start {
+                    let line: String = string_slice(content, line_start, pos);
+                    let line_len: Int = string_length(&line);
+
+                    if line_len >= 4 {
+                        let c0: Int = string_char_at(&line, 0);
+                        let c1: Int = string_char_at(&line, 1);
+                        let c2: Int = string_char_at(&line, 2);
+                        let c3: Int = string_char_at(&line, 3);
+
+                        if c0 == 83 && c1 == 69 && c2 == 84 && c3 == 32 {
+                            // "SET " — find the space between key and value
+                            let space_pos: Int = find_space(&line, 4);
+                            if space_pos > 4 {
+                                let skey: String = string_slice(&line, 4, space_pos);
+                                let sval: String = string_slice(&line, space_pos + 1, line_len);
+                                kv_set(keys, vals, skey, sval);
+                            }
+                        }
+                        if c0 == 68 && c1 == 69 && c2 == 76 && c3 == 32 {
+                            // "DEL " — rest of line is key
+                            let dkey: String = string_slice(&line, 4, line_len);
+                            kv_delete(keys, vals, &dkey);
+                            drop_string(dkey);
+                        }
+                    }
+                    drop_string(line);
+                }
+                line_start = pos + 1;
+            }
+            pos = pos + 1;
+        }
+    }
+
+    // --- Replay log file ---
+
+    fn replay_log(keys: &mut Vec<String>, vals: &mut Vec<String>) with(Std) {
+        let path: String = log_path();
+        let exists: bool = file_exists(&path);
+        if !exists {
+            drop_string(path);
+            return;
+        }
+        let result: Result<String, FsError> = read_to_string(&path);
+        drop_string(path);
+        match result {
+            Result#Ok { value } => {
+                parse_log_content(&value, keys, vals);
+                drop_string(value);
+            },
+            Result#Err { error } => {}
+        }
+    }
+
+    // --- Compact: rewrite log with only live entries ---
+
+    fn compact(keys: &mut Vec<String>, vals: &mut Vec<String>) with(Std) {
+        let mut out: String = "";
+        string_reserve(&mut out, 256);
+
+        let len: Int = vec_len::<String>(keys) as Int;
+        let mut i: Int = 0;
+        while i < len {
+            let k: String = vec_get::<String>(keys, i);
+            let v: String = vec_get::<String>(vals, i);
+            let mut prefix: String = "SET ";
+            string_append(&mut out, &prefix);
+            drop_string(prefix);
+            string_append(&mut out, &k);
+            string_push_char(&mut out, 32);
+            string_append(&mut out, &v);
+            string_push_char(&mut out, 10);
+            forget_string(k);
+            forget_string(v);
+            i = i + 1;
+        }
+
+        let data: Bytes = string_to_bytes(&out);
+        let path: String = log_path();
+        let result: Result<u64, FsError> = write_file(&path, &data);
+        match result {
+            Result#Ok { value } => {
+                println("Compacted log file");
+            },
+            Result#Err { error } => {
+                println("Error: could not write compacted log file");
+            }
+        }
+        drop_string(path);
+        data.drop();
+        drop_string(out);
+    }
+
+    // --- Command: set ---
+
+    fn cmd_set(keys: &mut Vec<String>, vals: &mut Vec<String>, key_arg: &String, val_arg: &String) with(Std) {
+        let key: String = clone_string(key_arg);
+        let val: String = clone_string(val_arg);
+        log_set(key_arg, val_arg);
+        kv_set(keys, vals, key, val);
+        print("Set '");
+        print_string(key_arg);
+        print("' = '");
+        print_string(val_arg);
+        println("'");
+    }
+
+    // --- Command: get ---
+
+    fn cmd_get(keys: &mut Vec<String>, vals: &mut Vec<String>, key_arg: &String) with(Std) {
+        let idx: Int = kv_find(keys, key_arg);
+        if idx >= 0 {
+            let val: String = vec_get::<String>(vals, idx);
+            print_string(&val);
+            print_char(10);
+            forget_string(val);
+        } else {
+            print("Key '");
+            print_string(key_arg);
+            println("' not found");
+        }
+    }
+
+    // --- Command: delete ---
+
+    fn cmd_delete(keys: &mut Vec<String>, vals: &mut Vec<String>, key_arg: &String) with(Std) {
+        let deleted: bool = kv_delete(keys, vals, key_arg);
+        if deleted {
+            log_del(key_arg);
+            print("Deleted '");
+            print_string(key_arg);
+            println("'");
+        } else {
+            print("Key '");
+            print_string(key_arg);
+            println("' not found");
+        }
+    }
+
+    // --- Command: list ---
+
+    fn cmd_list(keys: &mut Vec<String>, vals: &mut Vec<String>) with(Std) {
+        let len: Int = vec_len::<String>(keys) as Int;
+        if len == 0 {
+            println("(empty)");
+            return;
+        }
+
+        let mut i: Int = 0;
+        while i < len {
+            let k: String = vec_get::<String>(keys, i);
+            let v: String = vec_get::<String>(vals, i);
+            print_string(&k);
+            print(" = ");
+            print_string(&v);
+            print_char(10);
+            forget_string(k);
+            forget_string(v);
+            i = i + 1;
+        }
+    }
+
+    // --- Usage ---
+
+    fn print_usage() with(Console) {
+        println("Usage:");
+        println("  kvstore set <key> <value>");
+        println("  kvstore get <key>");
+        println("  kvstore delete <key>");
+        println("  kvstore list");
+        println("  kvstore compact");
+    }
+
+    // --- Main ---
+
+    pub fn main() with(Std) -> Int {
+        let argc: Int = count();
+
+        if argc < 2 {
+            print_usage();
+            return 1;
+        }
+
+        let mut keys: Vec<String> = vec_new::<String>();
+        let mut vals: Vec<String> = vec_new::<String>();
+        replay_log(&mut keys, &mut vals);
+
+        let cmd: String = get(1);
+
+        let set_str: String = "set";
+        let get_str: String = "get";
+        let delete_str: String = "delete";
+        let list_str: String = "list";
+        let compact_str: String = "compact";
+
+        let mut exit_code: Int = 0;
+
+        if str_eq(&cmd, &set_str) {
+            if argc < 4 {
+                println("Usage: kvstore set <key> <value>");
+                exit_code = 1;
+            } else {
+                let key: String = get(2);
+                let val: String = get(3);
+                cmd_set(&mut keys, &mut vals, &key, &val);
+                drop_string(val);
+                drop_string(key);
+            }
+        } else {
+            if str_eq(&cmd, &get_str) {
+                if argc < 3 {
+                    println("Usage: kvstore get <key>");
+                    exit_code = 1;
+                } else {
+                    let key: String = get(2);
+                    cmd_get(&mut keys, &mut vals, &key);
+                    drop_string(key);
+                }
+            } else {
+                if str_eq(&cmd, &delete_str) {
+                    if argc < 3 {
+                        println("Usage: kvstore delete <key>");
+                        exit_code = 1;
+                    } else {
+                        let key: String = get(2);
+                        cmd_delete(&mut keys, &mut vals, &key);
+                        drop_string(key);
+                    }
+                } else {
+                    if str_eq(&cmd, &list_str) {
+                        cmd_list(&mut keys, &mut vals);
+                    } else {
+                        if str_eq(&cmd, &compact_str) {
+                            compact(&mut keys, &mut vals);
+                        } else {
+                            print("Unknown command: ");
+                            print_string(&cmd);
+                            print_char(10);
+                            print_usage();
+                            exit_code = 1;
+                        }
+                    }
+                }
+            }
+        }
+
+        drop_string(compact_str);
+        drop_string(list_str);
+        drop_string(delete_str);
+        drop_string(get_str);
+        drop_string(set_str);
+        drop_string(cmd);
+        vec_free::<String>(keys);
+        vec_free::<String>(vals);
+        return exit_code;
+    }
+}
