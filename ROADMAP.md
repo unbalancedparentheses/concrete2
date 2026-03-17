@@ -515,6 +515,12 @@ Primary surfaces:
      2. file integrity monitor — recursive directory traversal, manifest persistence, extends verifier SHA-256, capability showcase (scanner reads but cannot modify, reporter writes but cannot read files)
      3. key-value store — persistence, write-ahead log, crash recovery, byte-level serialization, first real storage pressure
      4. simple HTTP server — blocking single-threaded, request parsing, static file serving, capability boundary between network and filesystem
+   - initial second-wave evidence now exists for all four:
+     - TOML parser compiles/runs cleanly
+     - file integrity monitor compiles/runs but exposed `HashMap<String, String>` package-build monomorphization/linking failure
+     - key-value store compiles/runs but independently exposed the same `HashMap<String, String>` package-build failure
+     - simple HTTP server compiles, but macOS use is blocked by Linux-only socket constants in `std.net`
+   - this means the second wave is already earning its keep as a bug-finding track, not only as a future showcase list
    - the earlier second-wave list (regex engine, Lox, package/archive indexer, HSM policy engine) was deprioritized because:
      - regex engine and Lox overlap heavily with first-wave interpreter/parser pressure (MAL, VM, JSON)
      - the revised list optimizes for new pressure shapes (external conformance, persistence, networking, filesystem depth) rather than more of the same

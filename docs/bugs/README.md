@@ -40,13 +40,15 @@ Those belong in:
 - [014_string_literal_in_loop_invalid_ir.md](014_string_literal_in_loop_invalid_ir.md)
 - [015_O0_default_distorted_real_workload_performance.md](015_O0_default_distorted_real_workload_performance.md)
 
+## Open Numbered Bugs
+
+- [016_cross_module_generic_monomorphization_link_failure.md](016_cross_module_generic_monomorphization_link_failure.md)
+- [017_std_net_socket_constants_are_linux_only.md](017_std_net_socket_constants_are_linux_only.md)
+
 ## Still Open, But Not Numbered Bugs
 
 These are real problems, but they are not all concrete compiler defects. Track them as Phase H findings / roadmap items until they either become fixed or are reduced to a reproducible bug:
 
 - formatting / interpolation
-- qualified module access
 - runtime-oriented collection maturity
-- standalone vs project dependency resolution
 - runtime / stack pressure classification
-- user-facing runtime argument surface (`argc` / `argv`)

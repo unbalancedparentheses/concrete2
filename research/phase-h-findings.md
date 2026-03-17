@@ -241,6 +241,83 @@ What it implies:
 - the remaining gap is concentrated in string I/O paths, not in the core language model or ownership overhead
 - after switching the compiler's print builtins from raw `write()` syscalls to buffered libc I/O (`printf`/`putchar`), the case-insensitive gap dropped from 2.8x to 1.7x; lower-level stdlib I/O helpers in `std.io` still expose direct/unbuffered `libc_write`-based behavior where appropriate; remaining gap is per-character `to_lower` cost rather than I/O overhead
 
+## Second-Wave Evidence
+
+The second-wave workload set is now no longer only a roadmap intention. Initial implementations exist for all four current second-wave targets and they already exposed useful pressure:
+
+### TOML Parser
+
+What it proved:
+
+- Concrete can carry a richer structured-parser workload than JSON while staying in the same general implementation style
+- external conformance-oriented parser work is feasible without inventing a radically different architecture from the JSON parser
+
+Current state:
+
+- compiles and runs
+- roughly 930 lines
+- supports key-value pairs, strings, integers, booleans, arrays, tables, inline tables, comments, and line-aware error reporting
+- uses a string-pool architecture similar to the JSON parser to avoid ownership/double-free pitfalls
+
+### File Integrity Monitor
+
+What it proved:
+
+- filesystem-walking and manifest-oriented integrity tooling is a strong continuation of the verifier story
+- capability separation still reads well in a scanner/reporter style tool
+
+What it exposed:
+
+- Bug 016: cross-module generic monomorphization/linking is still broken for real package builds of `HashMap<String, String>`
+
+Current state:
+
+- compiles and runs
+- all four outcomes work: `OK`, `MODIFIED`, `ADDED`, `REMOVED`
+- used direct manifest parsing as a workaround because `HashMap<String, String>` did not link correctly in package builds
+
+### Key-Value Store
+
+What it proved:
+
+- persistence and replay-oriented workloads are within reach for Concrete's current stdlib/runtime model
+- append-only log and compaction patterns can be expressed cleanly enough to be a meaningful storage-pressure workload
+
+What it exposed:
+
+- Bug 016: the same cross-module generic monomorphization/linking failure for `HashMap<String, String>` appears independently here, which makes it strong bug evidence rather than a one-off example quirk
+
+Current state:
+
+- compiles and runs
+- append-only log with replay and `SET` / `GET` / `DELETE` / `LIST` / `COMPACT`
+- used parallel `Vec`s as a workaround for the current `HashMap<String, String>` package-build failure
+
+### Simple HTTP Server
+
+What it proved:
+
+- a blocking single-threaded networked/service-style component is viable enough to compile through the current language and stdlib surfaces
+
+What it exposed:
+
+- Bug 017: `std.net` currently hardcodes Linux socket constants for `setsockopt`, which breaks macOS (`SOL_SOCKET` and `SO_REUSEADDR` values differ)
+
+Current state:
+
+- server code compiles
+- macOS bind/reuse behavior is blocked by the stdlib socket-constant bug rather than by the server structure itself
+
+### What the second wave already changed
+
+- the second-wave list is now evidence-backed rather than purely aspirational
+- `TOML parser` looks like a clean exemplar candidate
+- `file integrity monitor` and `key-value store` are valuable bug-finders, but their current workaround-heavy forms should not be treated as the final exemplars until the `HashMap<String, String>` package-build bug is fixed
+- `simple HTTP server` is a valid workload choice, but its current status is blocked on a real stdlib portability bug in `std.net`
+- the most important new findings from this wave are:
+  - Bug 016: cross-module generic monomorphization/linking for `HashMap<String, String>` in package builds
+  - Bug 017: Linux-only socket constants in `std.net`
+
 ## Phase H Retrospective
 
 ### What Phase H proved
