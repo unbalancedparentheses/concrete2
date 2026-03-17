@@ -239,7 +239,7 @@ What it implies:
 
 - Concrete's `-O2` backend produces code in the same performance class as hand-written C for compute-heavy and collection-heavy workloads
 - the remaining gap is concentrated in string I/O paths, not in the core language model or ownership overhead
-- after switching print builtins from raw `write()` syscalls to buffered libc I/O (`printf`/`putchar`), the case-insensitive gap dropped from 2.8x to 1.7x; remaining gap is per-character `to_lower` cost rather than I/O overhead
+- after switching the compiler's print builtins from raw `write()` syscalls to buffered libc I/O (`printf`/`putchar`), the case-insensitive gap dropped from 2.8x to 1.7x; lower-level stdlib I/O helpers in `std.io` still expose direct/unbuffered `libc_write`-based behavior where appropriate; remaining gap is per-character `to_lower` cost rather than I/O overhead
 
 ## Phase H Retrospective
 
