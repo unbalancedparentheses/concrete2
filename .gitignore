@@ -17,6 +17,12 @@ build/
 .cache/
 # Compiled example binaries (keep .con sources)
 /tmp/
+# Compiled example binaries (extensionless, built by `concrete build`)
+examples/grep/cgrep
+examples/verify/conhash
+examples/project/project
+examples/json/main
+
 # Compiled test binaries (keep .con sources, ignore extensionless binaries)
 lean_tests/trait_numeric_abs
 lean_tests/cap_alias_basic
