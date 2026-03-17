@@ -619,9 +619,10 @@ Primary surfaces:
         - mixed-arg `print` / `println` builtins landed: variadic, desugared at elaboration into individual typed print calls (`print_string`, `print_int`, `print_bool`, `print_char`); supports String, Int, i32, u32, bool, char; does not shadow stdlib print/println when they exist in scope
         - remaining: interpolation only if real code still needs it, trait-based formatting deferred
         - design notes: [research/text-and-output-design.md](research/text-and-output-design.md)
-     4. improve runtime-oriented collection maturity for interpreter/runtime workloads: maps, nested mutable structures, and frame-friendly patterns — **in progress**
-        - HashMap iteration landed: `for_each`, `keys`, `values` methods added with stdlib test coverage
-        - next likely need is narrow explicit traversal support (for example `HashSet.for_each` and maybe entry/key traversal helpers), but not a large Rust-style iterator ecosystem unless repeated evidence forces it
+     4. improve runtime-oriented collection maturity for interpreter/runtime workloads: maps, nested mutable structures, and frame-friendly patterns — **done**
+        - traversal surface complete: `for_each` (side effects), `fold<A>` (stateful traversal), `keys()`/`values()`/`elements()` (materialization)
+        - `fold<A>` was blocked by a compiler bug: method-level generics crashed at lowering (self type lost generic args + generic structs only instantiated once). Fixed in `c0c5b54`.
+        - no iterator tower, no closures, no cursor/lifetime model — per-container APIs only
         - design notes: [research/iterators.md](research/iterators.md)
      5. evaluate arena allocation against the existing `Vec`-as-pool pattern and adopt it only if real programs show a clear win in clarity, performance, or boundedness — **not started**
         - design notes: [research/arena-allocation.md](research/arena-allocation.md)
@@ -698,7 +699,7 @@ After the policy engine, MAL, JSON parser, grep-like tool, and bytecode VM, the 
    - string/text helpers that still matter after the parser and grep results
    - ~~grep string/output bottlenecks~~ — done: switched print builtins from raw `write()` syscalls to buffered libc I/O (`printf`/`putchar`); case-insensitive gap dropped from 2.8x to 1.7x
    - ~~same-name collision handling for qualified module access~~ — done: Elab-time definition prefixing with cross-module renames
-   - collection/runtime maturity for interpreter and VM workloads — in progress: HashMap iteration (`for_each`, `keys`, `values`) landed
+   - ~~collection/runtime maturity for interpreter and VM workloads~~ — done: `for_each`, `fold<A>`, `keys()`/`values()`/`elements()` on all containers; method-level generics compiler bug fixed (`c0c5b54`)
 6. continue backend/performance investigation only where new workloads still expose real cliffs after the vec-inlining fix
    - current clearest target: grep-style string/output overhead rather than parser or VM compute loops
 7. improve testing tooling on top of the now-landed package workflow:
