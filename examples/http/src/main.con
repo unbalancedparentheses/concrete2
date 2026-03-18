@@ -250,20 +250,16 @@ mod http_server {
 
     trusted fn handle_client(stream: TcpStream, root: &String) with(Std) {
         // Read request data (single recv, up to 4096 bytes)
-        // Use heap buffer because &buf on stack arrays creates copies (borrow semantics),
-        // so recv would write into a copy that buf_to_string never sees.
-        let buf: *mut u8 = malloc(4096);
-        let n: i64 = stream.read(buf, 4096);
+        let buf: [u8; 4096] = [0; 4096];
+        let n: i64 = stream.read(&buf as *mut u8, 4096);
 
         if n <= 0 {
-            free(buf);
             stream.close();
             return;
         }
 
         // Convert buffer to string for parsing
-        let raw: String = buf_to_string(buf as *const u8, n);
-        free(buf);
+        let raw: String = buf_to_string(&buf as *const u8, n);
 
         // Parse the HTTP request line
         let valid: bool = is_valid_request(&raw);

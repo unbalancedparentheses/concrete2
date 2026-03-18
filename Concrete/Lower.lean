@@ -138,10 +138,16 @@ private def lookupVar (name : String) : LowerM (Option SVal) := do
   -- Check if this variable is promoted to a stable alloca (aggregate in loop)
   match s.promotedAllocas.find? fun (n, _, _) => n == name with
   | some (_, allocaReg, ty) =>
-    -- Load current value from the alloca
-    let loadDst ← freshReg "pload."
-    emit (.load loadDst (.reg allocaReg ty) ty)
-    return some (.reg loadDst ty)
+    match ty with
+    | .array _ _ =>
+      -- Arrays are pass-by-ptr: the alloca pointer IS the array value.
+      -- No load needed — returning the alloca register directly.
+      return some (.reg allocaReg ty)
+    | _ =>
+      -- Load current value from the alloca
+      let loadDst ← freshReg "pload."
+      emit (.load loadDst (.reg allocaReg ty) ty)
+      return some (.reg loadDst ty)
   | none =>
     return s.vars.lookup name
 
