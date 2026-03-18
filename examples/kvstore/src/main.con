@@ -27,14 +27,9 @@ mod kvstore {
     import std.hash.{hash_string, eq_string};
     import std.vec.{Vec};
 
-    // --- Forget a linear String without freeing (for shallow copies from vec_get) ---
-
+    // Consumes a linear String without freeing its backing memory.
     fn forget_string(s: String) {
-        // Consumes the linear value without dropping.
-        // Used for shallow copies returned by vec_get that share backing memory.
     }
-
-    // --- String-to-Bytes conversion for file I/O ---
 
     fn string_to_bytes(s: &String) with(Alloc) -> Bytes {
         let len: Int = string_length(s);
@@ -48,15 +43,11 @@ mod kvstore {
         return b;
     }
 
-    // --- Clone a borrowed string ---
-
     fn clone_string(s: &String) with(Alloc) -> String {
         let mut result: String = "";
         string_append(&mut result, s);
         return result;
     }
-
-    // --- String comparison helper ---
 
     fn str_eq(a: &String, b: &String) -> bool {
         let alen: Int = string_length(a);
@@ -74,13 +65,9 @@ mod kvstore {
         return true;
     }
 
-    // --- Log file path ---
-
     fn log_path() with(Alloc) -> String {
         return "kvstore.log";
     }
-
-    // --- Keys vec: find index of key, or -1 ---
 
     fn keys_find(keys: &mut Vec<String>, key: &String) -> Int {
         let len: Int = keys.len() as Int;
@@ -95,8 +82,6 @@ mod kvstore {
         }
         return 0 - 1;
     }
-
-    // --- Keys vec: swap-remove by key ---
 
     fn keys_remove(keys: &mut Vec<String>, key: &String) with(Alloc) {
         let idx: Int = keys_find(keys, key);
@@ -118,8 +103,6 @@ mod kvstore {
         }
     }
 
-    // --- KV set: insert or update in map, track key in keys vec ---
-
     trusted fn kv_set_tracked(map: &mut HashMap<String, String>, keys: &mut Vec<String>, key: String, val: String) with(Alloc) {
         let existed: bool = map.contains(&key);
         let key_for_vec: String = clone_string(&key);
@@ -137,8 +120,6 @@ mod kvstore {
         }
     }
 
-    // --- KV delete: remove from map and keys vec ---
-
     trusted fn kv_delete(map: &mut HashMap<String, String>, keys: &mut Vec<String>, key: &String) with(Alloc) -> bool {
         let removed: Option<String> = map.remove(key);
         match removed {
@@ -152,8 +133,6 @@ mod kvstore {
             }
         }
     }
-
-    // --- Append a SET operation to the log ---
 
     fn log_set(key: &String, val: &String) with(Std) {
         let mut line: String = "SET ";
@@ -175,8 +154,6 @@ mod kvstore {
         drop_string(line);
     }
 
-    // --- Append a DEL operation to the log ---
-
     fn log_del(key: &String) with(Std) {
         let mut line: String = "DEL ";
         string_append(&mut line, key);
@@ -195,8 +172,6 @@ mod kvstore {
         drop_string(line);
     }
 
-    // --- Find first space in a string starting from a given position ---
-
     fn find_space(s: &String, start: Int) -> Int {
         let len: Int = string_length(s);
         let mut i: Int = start;
@@ -208,8 +183,6 @@ mod kvstore {
         }
         return 0 - 1;  // not found
     }
-
-    // --- Parse log content line by line ---
 
     fn parse_log_content(content: &String, map: &mut HashMap<String, String>, keys: &mut Vec<String>) with(Std) {
         let len: Int = string_length(content);
@@ -258,8 +231,6 @@ mod kvstore {
         }
     }
 
-    // --- Replay log file ---
-
     fn replay_log(map: &mut HashMap<String, String>, keys: &mut Vec<String>) with(Std) {
         let path: String = log_path();
         let exists: bool = file_exists(&path);
@@ -278,8 +249,6 @@ mod kvstore {
         }
     }
 
-    // --- Fold callback: build a SET line for each key-value pair ---
-
     fn build_set_line(acc: String, k: &String, v: &String) -> String {
         let mut out: String = acc;
         let mut prefix: String = "SET ";
@@ -291,8 +260,6 @@ mod kvstore {
         string_push_char(&mut out, 10);
         return out;
     }
-
-    // --- Compact: rewrite log with only live entries ---
 
     fn compact(map: &mut HashMap<String, String>, keys: &mut Vec<String>) with(Std) {
         let mut init: String = "";
@@ -315,8 +282,6 @@ mod kvstore {
         drop_string(out);
     }
 
-    // --- Command: set ---
-
     fn cmd_set(map: &mut HashMap<String, String>, keys: &mut Vec<String>, key_arg: &String, val_arg: &String) with(Std) {
         let key: String = clone_string(key_arg);
         let val: String = clone_string(val_arg);
@@ -328,8 +293,6 @@ mod kvstore {
         print_string(val_arg);
         println("'");
     }
-
-    // --- Command: get ---
 
     fn cmd_get(map: &mut HashMap<String, String>, key_arg: &String) with(Std) {
         let val_opt: Option<&String> = map.get(key_arg);
@@ -346,8 +309,6 @@ mod kvstore {
         }
     }
 
-    // --- Command: delete ---
-
     fn cmd_delete(map: &mut HashMap<String, String>, keys: &mut Vec<String>, key_arg: &String) with(Std) {
         let deleted: bool = kv_delete(map, keys, key_arg);
         if deleted {
@@ -362,8 +323,6 @@ mod kvstore {
         }
     }
 
-    // --- Fold callback: build a display line for each key-value pair ---
-
     fn build_list_line(acc: String, k: &String, v: &String) -> String {
         let mut out: String = acc;
         string_append(&mut out, k);
@@ -374,8 +333,6 @@ mod kvstore {
         string_push_char(&mut out, 10);
         return out;
     }
-
-    // --- Command: list ---
 
     fn cmd_list(map: &mut HashMap<String, String>, keys: &mut Vec<String>) with(Std) {
         let len: Int = keys.len() as Int;
@@ -390,8 +347,6 @@ mod kvstore {
         drop_string(out);
     }
 
-    // --- Usage ---
-
     fn print_usage() with(Console) {
         println("Usage:");
         println("  kvstore set <key> <value>");
@@ -400,8 +355,6 @@ mod kvstore {
         println("  kvstore list");
         println("  kvstore compact");
     }
-
-    // --- Main ---
 
     pub fn main() with(Std) -> Int {
         let argc: Int = count();
@@ -436,42 +389,34 @@ mod kvstore {
                 drop_string(val);
                 drop_string(key);
             }
-        } else {
-            if str_eq(&cmd, &get_str) {
-                if argc < 3 {
-                    println("Usage: kvstore get <key>");
-                    exit_code = 1;
-                } else {
-                    let key: String = get(2);
-                    cmd_get(&mut map, &key);
-                    drop_string(key);
-                }
+        } else if str_eq(&cmd, &get_str) {
+            if argc < 3 {
+                println("Usage: kvstore get <key>");
+                exit_code = 1;
             } else {
-                if str_eq(&cmd, &delete_str) {
-                    if argc < 3 {
-                        println("Usage: kvstore delete <key>");
-                        exit_code = 1;
-                    } else {
-                        let key: String = get(2);
-                        cmd_delete(&mut map, &mut keys, &key);
-                        drop_string(key);
-                    }
-                } else {
-                    if str_eq(&cmd, &list_str) {
-                        cmd_list(&mut map, &mut keys);
-                    } else {
-                        if str_eq(&cmd, &compact_str) {
-                            compact(&mut map, &mut keys);
-                        } else {
-                            print("Unknown command: ");
-                            print_string(&cmd);
-                            print_char(10);
-                            print_usage();
-                            exit_code = 1;
-                        }
-                    }
-                }
+                let key: String = get(2);
+                cmd_get(&mut map, &key);
+                drop_string(key);
             }
+        } else if str_eq(&cmd, &delete_str) {
+            if argc < 3 {
+                println("Usage: kvstore delete <key>");
+                exit_code = 1;
+            } else {
+                let key: String = get(2);
+                cmd_delete(&mut map, &mut keys, &key);
+                drop_string(key);
+            }
+        } else if str_eq(&cmd, &list_str) {
+            cmd_list(&mut map, &mut keys);
+        } else if str_eq(&cmd, &compact_str) {
+            compact(&mut map, &mut keys);
+        } else {
+            print("Unknown command: ");
+            print_string(&cmd);
+            print_char(10);
+            print_usage();
+            exit_code = 1;
         }
 
         drop_string(compact_str);

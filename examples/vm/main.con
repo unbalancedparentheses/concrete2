@@ -23,8 +23,6 @@
 //  16  CALL addr  — push return address, jump to addr
 //  17  RET        — pop return address, jump back
 //  18  PRINT      — print top of stack (does not pop)
-//  19  LOAD idx   — push local variable at frame offset idx
-//  20  STORE idx  — pop and store into local variable at frame offset idx
 //  21  NEG        — negate top of stack
 
 // --- Opcodes ---
@@ -48,8 +46,6 @@ fn op_jnz() -> i32 { return 15; }
 fn op_call() -> i32 { return 16; }
 fn op_ret() -> i32 { return 17; }
 fn op_print() -> i32 { return 18; }
-fn op_load() -> i32 { return 19; }
-fn op_store() -> i32 { return 20; }
 fn op_neg() -> i32 { return 21; }
 
 // --- VM State ---
@@ -322,135 +318,12 @@ fn build_fib_program(n: i32) with(Alloc) -> Vec<i32> {
     return prog;
 }
 
-// --- Iterative sum program for correctness test ---
-// Computes sum(1..N) = N*(N+1)/2
-//
-// Layout:
-//   0: PUSH 0       — accumulator
-//   2: PUSH 1       — counter i=1
-//   loop (addr 4):
-//   4: DUP          — [acc, i, i]
-//   5: PUSH N       — [acc, i, i, N]
-//   7: GT           — [acc, i, i>N]
-//   8: JNZ done     — if i>N, exit
-//  10: SWAP         — [i, acc]
-//  11: DUP          — [i, acc, acc]  -- wait, need different approach
-// Actually simpler: use a different layout
-
-fn build_sum_program(n: i32) with(Alloc) -> Vec<i32> {
-    let mut prog: Vec<i32> = vec_new::<i32>();
-
-    // sum = 0, i = 1
-    // 0: PUSH 0         — sum
-    emit2(&mut prog, 1, 0);
-    // 2: PUSH 1         — i
-    emit2(&mut prog, 1, 1);
-
-    // loop (addr 4):
-    // 4: DUP            — [sum, i, i]
-    emit(&mut prog, 3);
-    // 5: PUSH N         — [sum, i, i, N]
-    emit2(&mut prog, 1, n);
-    // 7: GT             — [sum, i, i>N]
-    emit(&mut prog, 12);
-    // 8: JNZ done(20)   — if i>N, exit loop
-    emit2(&mut prog, 15, 20);
-
-    // body:
-    // 10: DUP           — [sum, i, i]
-    emit(&mut prog, 3);
-    // 11: SWAP          — need to get sum+i
-    // Actually: stack is [sum, i]. We want sum+i and i+1.
-    // Let's do: DUP i, then rotate to add.
-    // [sum, i] -> DUP -> [sum, i, i] -> rotate...
-    // Simpler: just swap, dup, rotate, add, swap, push 1, add
-    // [sum, i] -> SWAP -> [i, sum] -> DUP(2nd from stack?)
-    // The issue is we don't have OVER. Let me use a different approach.
-    //
-    // Use SWAP to get: [i, sum], then add: [i+sum], then SWAP back?
-    // No, we lose i.
-    //
-    // Better: [sum, i] -> DUP -> [sum, i, i] ->
-    //   rotate: need sum on top with i below
-    // Actually simplest: just use the stack carefully:
-    // [sum, i]
-    // SWAP    -> [i, sum]
-    // DUP(2)  -- no DUP(N) opcode
-    //
-    // Let me restructure: keep i on top, sum below.
-    // [sum, i] -> DUP -> [sum, i, i]
-    // 10: DUP
-    emit(&mut prog, 3);
-    // Stack: [sum, i, i]
-    // 11: PUSH 2 (for rotation trick: swap the copy of i under sum)
-    // Actually let's just do the math differently.
-    // We want: new_sum = sum + i, new_i = i + 1
-    // Stack: [sum, i, i] (after DUP at line 10)
-    // Let's go back. Clear emit from addr 10 and redo.
-    // Hmm, we already emitted. Let me just restart this function properly.
-
-    vec_free::<i32>(prog);
-    let mut prog2: Vec<i32> = vec_new::<i32>();
-
-    // Better approach: keep [i, sum] on stack (i on top, sum below)
-    // 0: PUSH 0         — sum = 0
-    emit2(&mut prog2, 1, 0);
-    // 2: PUSH 1         — i = 1
-    emit2(&mut prog2, 1, 1);
-
-    // loop (addr 4):
-    // Check: is i > N?
-    // 4: DUP            — [sum, i, i]
-    emit(&mut prog2, 3);
-    // 5: PUSH N         — [sum, i, i, N]
-    emit2(&mut prog2, 1, n);
-    // 7: GT             — [sum, i, (i>N)?]
-    emit(&mut prog2, 12);
-    // 8: JNZ done(22)   — if i > N, exit
-    emit2(&mut prog2, 15, 22);
-
-    // sum += i: [sum, i]
-    // 10: SWAP          — [i, sum]
-    emit(&mut prog2, 4);
-    // 11: DUP           — [i, sum, sum]  -- no, want [i, sum] and we need i
-    // Actually: [sum, i] -> DUP -> [sum, i, i] -> SWAP(top two) -> [sum, i, i]
-    // Hmm. Problem: SWAP only swaps top two elements.
-    //
-    // Different approach entirely. Just store i in a "local" (via stack tricks)
-    // or accept O(n) code that's simple.
-    //
-    // Simplest possible:
-    // [sum, i]
-    // DUP i          -> [sum, i, i]
-    // PUSH -2 ROT?   -- no ROT opcode
-    //
-    // OK, add it with SWAP/DUP:
-    // Stack: [sum, i]
-    // 10: SWAP        -> [i, sum]
-    emit(&mut prog2, 4);
-    // 11: DUP         -> [i, sum, sum]
-    //  No wait. I need sum + i, but i is now below sum.
-    // Let me do:
-    // [sum, i] -> DUP -> [sum, i, i]
-    //
-    // Restart more carefully.
-    vec_free::<i32>(prog2);
-    return build_sum_simple(n);
-}
-
-// Simpler sum: compute iteratively using only the operations we have.
-// Use two stack slots for sum and counter, accessed via careful stack ops.
-fn build_sum_simple(n: i32) with(Alloc) -> Vec<i32> {
+// --- Arithmetic test program ---
+// Computes 3 + 4 * 5 - 2 = 21
+fn build_arith_test() with(Alloc) -> Vec<i32> {
     let mut p: Vec<i32> = vec_new::<i32>();
 
-    // Linear unrolled approach: just push N, N-1, ..., 1 and add them all.
-    // This avoids the stack-juggling problem entirely.
-    // For small N this is fine for a correctness test.
-
-    // Actually, let me use the fib program for benchmarking (it's the interesting one)
-    // and make a simple correctness test here:
-
-    // Compute: 3 + 4 * 5 - 2 = 21
+    // 3 + 4 * 5 - 2 = 21
     // 0: PUSH 4
     emit2(&mut p, 1, 4);
     // 2: PUSH 5
@@ -475,7 +348,7 @@ fn build_sum_simple(n: i32) with(Alloc) -> Vec<i32> {
 
 fn main() with(Std) -> Int {
     // Correctness test: 3 + 4*5 - 2 = 21
-    let mut arith_prog: Vec<i32> = build_sum_simple(0);
+    let mut arith_prog: Vec<i32> = build_arith_test();
     let arith_result: i32 = vm_run(&mut arith_prog);
     vec_free::<i32>(arith_prog);
 
