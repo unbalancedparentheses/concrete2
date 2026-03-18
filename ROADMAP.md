@@ -687,38 +687,46 @@ Deliverables:
 
 ### Immediate Next Steps
 
-After the policy engine, MAL, JSON parser, grep-like tool, and bytecode VM, the highest-value next work is:
+The examples audit (12 programs, 6k+ lines) identified where Concrete's friction actually lives. The following is ordered by impact on real code — do them in this order.
 
-1. ~~finish the text/output direction decision~~ — **resolved**: six Phase H programs written without interpolation; `print`/`println` plus builder APIs are sufficient for current needs
-   - interpolation remains available as a future option if sustained evidence from larger programs justifies it
-   - trait-based formatting remains deferred until it earns its keep
-2. ~~make the artifact/update verifier the next flagship Phase H workload and treat it as the main “why Concrete?” proof point~~ — done in substance
-   - it should become the first polished review artifact, not just another benchmark
-   - it should carry code, tests, benchmark results, and audit/report outputs together
-3. write and maintain a stable Phase H comparison summary so the project has one canonical “what the examples taught us” document
-4. keep recording per-program benchmark interpretation, not just raw timings, so the project distinguishes parser wins, streaming wins, runtime-loop wins, and backend-policy cliffs clearly
-5. keep closing Phase H findings through the narrowest fixes first:
-   - ~~runtime argument surface~~ — done: `std.args` module with `count()` / `get(idx)` API
-   - **string ergonomics (immediate priority)**: the #1 source of example code bloat
-     - add `eq(a: &String, b: &String) -> bool` to `std.string` — reimplemented in kvstore, grep, and others
-     - add `clone(s: &String) -> String` to `std.string` — every example has its own `clone_string` helper
-     - add `.drop()` method on String for consistency with Vec (currently uses freestanding `drop_string`)
-     - consider `.print()` method on String to match Vec's `.drop()` pattern
-   - **match on integers**: vm, json, toml, lox, mal all dispatch on integer tags with if/else chains; parser+check change, not a deep compiler change
-   - **shared stdlib modules**: extract SHA-256 (duplicated between integrity and verify), parser helpers, string-to-bytes conversion
-   - cleaner collection access patterns for linear values before inventing heavier language machinery
-   - ~~grep string/output bottlenecks~~ — done: switched print builtins from raw `write()` syscalls to buffered libc I/O (`printf`/`putchar`); case-insensitive gap dropped from 2.8x to 1.7x
-   - ~~same-name collision handling for qualified module access~~ — done: Elab-time definition prefixing with cross-module renames
-   - ~~collection/runtime maturity for interpreter and VM workloads~~ — done: `for_each`, `fold<A>`, `keys()`/`values()`/`elements()` on all containers; method-level generics compiler bug fixed (`c0c5b54`)
-6. continue backend/performance investigation only where new workloads still expose real cliffs after the vec-inlining fix
-   - current clearest target: grep-style string/output overhead rather than parser or VM compute loops
-7. improve testing tooling on top of the now-landed package workflow:
-   - better failure output and filtering
-   - testing workflow that grows naturally into workspace mode
-8. keep the current backend work honest about future plurality:
-   - preserve SSA as the only backend boundary
-   - avoid baking new LLVM-only assumptions into earlier phases
-   - treat QBE as the first lightweight second-backend candidate once backend plurality work actually begins
+#### 1. String ergonomics — the #1 pain point
+
+Every example is 30-40% string ceremony. This is the single change that would make Concrete code look like a real language instead of C-with-capabilities.
+
+- add `eq(a: &String, b: &String) -> bool` to `std.string` — reimplemented in kvstore, grep, and others
+- add `clone(s: &String) -> String` to `std.string` — every example has its own `clone_string` helper
+- add `.drop()` method on String for consistency with Vec (currently uses freestanding `drop_string`)
+- `print`/`println` should accept `&String` directly
+- `==` on strings (long-term, once operator overloading or trait-based equality exists)
+
+The `str_eq` helper is reimplemented in kvstore and elsewhere. `drop_string` vs `.drop()` inconsistency is confusing. These changes would eliminate hundreds of lines across the examples.
+
+#### 2. Match on integers
+
+The VM dispatch loop is 20 if/else branches because there's no `match` on `i32`. This is a parser+check change, not a deep compiler change. It would immediately improve every example that dispatches on tags (vm, json, toml, lox, mal — that's 5 of 12 examples).
+
+#### 3. Extract shared stdlib modules
+
+SHA-256 is duplicated between integrity and verify. String-to-bytes conversion is reimplemented in multiple examples. A `std.crypto.sha256` module and better String APIs would cut duplication and make examples look like they belong to a real ecosystem.
+
+#### 4. Fix `import` in project mode
+
+`import math.{add}` fails with “not public” in project mode even when the function is `pub`. This works fine in single-file mode. This is a real bug that would bite anyone trying to write multi-module projects.
+
+#### 5. Deferred (important but not where the friction is)
+
+Phase I formalization, Phase J package ecosystem, and QBE backend are important but they don't improve the experience of writing Concrete today. The examples tell you where the friction is, and it's all in items 1-4.
+
+#### Completed prior steps
+
+- ~~text/output direction~~ — resolved: `print`/`println` with mixed args sufficient
+- ~~artifact verifier as flagship workload~~ — done
+- ~~runtime argument surface~~ — done: `std.args` module
+- ~~grep string/output bottlenecks~~ — done: buffered libc I/O
+- ~~qualified module access~~ — done: `mod::fn` works
+- ~~collection/runtime maturity~~ — done: `for_each`, `fold<A>`, `keys()`/`values()`/`elements()`
+- ~~Bug 018 (stack array borrow-copy)~~ — fixed: `f8f1bf8`
+- ~~Bug 019 (method-level generics crash)~~ — fixed: `c0c5b54`
 
 ### Priority Order For Closing The Gap To Rust
 
@@ -734,13 +742,12 @@ Concrete already looks better than Rust in a narrow auditability niche, but it d
    - without this, serious programs keep paying workflow tax and teaching workarounds
 2. **stdlib and ergonomics without abandoning explicitness**
    - ~~text/output layer: mixed-arg `print` / `println`~~ — done
-   - interpolation only if still justified by real-program evidence
-   - ~~qualified module access~~ — done: collisions, inline sibling `::` access, and all prior cases now work
-   - **string ergonomics (next priority)**: `std.string` needs `eq`, `clone`; String needs `.drop()` method; examples currently reimplement string comparison and cloning everywhere — this is the single highest-impact change for code quality
-   - **match on integers (next priority)**: 5 of 12 examples dispatch on integer tags with if/else chains; adding `match` on `i32`/`u32`/etc. would immediately improve vm, json, toml, lox, mal
-   - shared stdlib building blocks: SHA-256 (duplicated), string-to-bytes (duplicated), parser helpers
+   - ~~qualified module access~~ — done
+   - **string ergonomics (next)**: `std.string` needs `eq`, `clone`; String needs `.drop()` method; examples reimplement string comparison and cloning everywhere — highest-impact single change
+   - **match on integers (next)**: 5 of 12 examples dispatch on integer tags with if/else chains
+   - **shared stdlib modules**: extract duplicated SHA-256, string-to-bytes, parser helpers
+   - **fix `import` in project mode**: `pub` functions not recognized as public in package builds
    - cleaner collection patterns for linear values where examples still fight the container surface
-   - remaining high-value helper APIs and cleanup idioms
    - the goal is not more magic; it is better compression of honest code
 3. **hot-path performance after the workflow floor is fixed**
    - especially collection hot loops exposed by the VM
