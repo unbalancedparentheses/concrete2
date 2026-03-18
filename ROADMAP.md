@@ -699,8 +699,13 @@ After the policy engine, MAL, JSON parser, grep-like tool, and bytecode VM, the 
 4. keep recording per-program benchmark interpretation, not just raw timings, so the project distinguishes parser wins, streaming wins, runtime-loop wins, and backend-policy cliffs clearly
 5. keep closing Phase H findings through the narrowest fixes first:
    - ~~runtime argument surface~~ — done: `std.args` module with `count()` / `get(idx)` API
-   - string/text helpers that still matter after the parser and grep results
-   - reusable stdlib building blocks so examples stop reinventing pools, hashing helpers, parser support, and storage support code
+   - **string ergonomics (immediate priority)**: the #1 source of example code bloat
+     - add `eq(a: &String, b: &String) -> bool` to `std.string` — reimplemented in kvstore, grep, and others
+     - add `clone(s: &String) -> String` to `std.string` — every example has its own `clone_string` helper
+     - add `.drop()` method on String for consistency with Vec (currently uses freestanding `drop_string`)
+     - consider `.print()` method on String to match Vec's `.drop()` pattern
+   - **match on integers**: vm, json, toml, lox, mal all dispatch on integer tags with if/else chains; parser+check change, not a deep compiler change
+   - **shared stdlib modules**: extract SHA-256 (duplicated between integrity and verify), parser helpers, string-to-bytes conversion
    - cleaner collection access patterns for linear values before inventing heavier language machinery
    - ~~grep string/output bottlenecks~~ — done: switched print builtins from raw `write()` syscalls to buffered libc I/O (`printf`/`putchar`); case-insensitive gap dropped from 2.8x to 1.7x
    - ~~same-name collision handling for qualified module access~~ — done: Elab-time definition prefixing with cross-module renames
@@ -731,8 +736,9 @@ Concrete already looks better than Rust in a narrow auditability niche, but it d
    - ~~text/output layer: mixed-arg `print` / `println`~~ — done
    - interpolation only if still justified by real-program evidence
    - ~~qualified module access~~ — done: collisions, inline sibling `::` access, and all prior cases now work
-   - string/text ergonomics first: reduce manual string building, duplicated pools, and per-character ceremony
-   - shared stdlib building blocks next: parser/storage/integrity helpers that stop examples from reimplementing the same support code
+   - **string ergonomics (next priority)**: `std.string` needs `eq`, `clone`; String needs `.drop()` method; examples currently reimplement string comparison and cloning everywhere — this is the single highest-impact change for code quality
+   - **match on integers (next priority)**: 5 of 12 examples dispatch on integer tags with if/else chains; adding `match` on `i32`/`u32`/etc. would immediately improve vm, json, toml, lox, mal
+   - shared stdlib building blocks: SHA-256 (duplicated), string-to-bytes (duplicated), parser helpers
    - cleaner collection patterns for linear values where examples still fight the container surface
    - remaining high-value helper APIs and cleanup idioms
    - the goal is not more magic; it is better compression of honest code
