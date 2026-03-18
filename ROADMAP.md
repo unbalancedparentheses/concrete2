@@ -208,7 +208,7 @@ Priority within this ordering should stay explicit:
   - **Cross-module types**: enums, traits (via wrappers), type aliases, and newtypes all work. Type alias bug fixed — was broken even in single-module usage (function signatures carried unresolved alias names). Newtype erasure at import boundaries prevents leaked newtype names from reaching Layout/EmitSSA.
   - Hardening tests in `lean_tests/hardening_*.con`.
 - 663 tests pass (184 stdlib), including 32 pass-level Lean tests, 44 report assertions, 46 golden tests, 20 integration/regression/hardening tests, and 16 collections verified.
-- **Phase 3 testing complete** (system-level validation): 904 tests pass. Added 6 large mixed-feature programs (200-340 lines each), ~75 O2 differential tests, 20 report consistency cross-checks, ABI interop test (Concrete↔C sizeof/offsetof), 5 diagnostic quality tests, `test_fuzz.sh` (1500 programs: parser/typecheck/valid), `test_perf.sh` (compile time/runtime/IR size/binary size regression tracking).
+- **Phase 3 testing complete** (system-level validation): 911 tests pass (2 skipped). Added 6 large mixed-feature programs (200-340 lines each), ~75 O2 differential tests, 20 report consistency cross-checks, ABI interop test (Concrete↔C sizeof/offsetof), 5 diagnostic quality tests, `test_fuzz.sh` (1500 programs: parser/typecheck/valid), `test_perf.sh` (compile time/runtime/IR size/binary size regression tracking).
 
 ### Compiler Improvement Checklist
 
@@ -519,13 +519,13 @@ Primary surfaces:
      - TOML parser compiles/runs cleanly
      - file integrity monitor compiles/runs — originally exposed `HashMap<String, String>` package-build failure (Bug 016, fixed in `bdb2d7f`)
      - key-value store compiles/runs — independently exposed the same Bug 016 (fixed)
-      - simple HTTP server compiles/runs — originally blocked by Linux-only socket constants in `std.net` (Bug 017, fixed in `bdb2d7f`); current remaining coupling is the Bug 018 heap-buffer workaround for stack-array borrowing
+      - simple HTTP server compiles/runs — originally blocked by Linux-only socket constants in `std.net` (Bug 017, fixed in `bdb2d7f`); Bug 018 (stack-array borrow-copy) is now also fixed — heap-buffer workarounds can be replaced with direct stack arrays
       - Lox tree-walk interpreter compiles/runs cleanly (1,052 loc)
    - this means the second wave is already earning its keep as a bug-finding track, not only as a future showcase list
-   - Bug 016 (cross-module HashMap linking), Bug 017 (macOS socket constants), and Bug 019 (method-level generics crash at lowering) are all fixed
+   - Bug 016 (cross-module HashMap linking), Bug 017 (macOS socket constants), Bug 018 (stack-array borrow-copy), and Bug 019 (method-level generics crash at lowering) are all fixed
    - Bug 019 (`c0c5b54`) was the most impactful: it unblocked `fold<A>` on all containers and generic method patterns generally. Two root causes: (a) parser created bare Self type instead of `Box<T>` for self params in generic impls; (b) generic structs only instantiated once at LLVM level, causing silent value truncation between `Box<i32>` and `Box<i64>`
-   - the main remaining second-wave correctness finding is Bug 018: borrowing stack arrays for writable FFI access can create copies instead of stable references (workaround: heap-allocate with malloc)
-   - remaining work is cleaning up workaround-heavy data models in integrity/kvstore, removing heap-buffer workarounds after Bug 018 is fixed, and then finishing HTTP parser cleanup
+   - Bug 018 (stack-array borrow-copy) is now fixed: Lower.lean no longer emits `.cast` for array borrows, so `&buf` aliases the original stack allocation instead of creating a copy
+   - remaining work is cleaning up workaround-heavy data models in integrity/kvstore, replacing heap-buffer workarounds with direct stack arrays now that Bug 018 is fixed, and then finishing HTTP parser cleanup
    - the earlier second-wave list (regex engine, Lox, package/archive indexer, HSM policy engine) was deprioritized because:
      - regex engine and Lox overlap heavily with first-wave interpreter/parser pressure (MAL, VM, JSON)
      - the revised list optimizes for new pressure shapes (external conformance, persistence, networking, filesystem depth) rather than more of the same
@@ -1494,4 +1494,4 @@ These are current choices that should continue constraining future work unless e
 
 ## Summary
 
-Concrete has a complete compiler pipeline, a real stdlib (33 modules, 16 collections), 904 tests passing, a fully structured LLVM backend, audit reports, explicit artifact boundaries (`ValidatedCore`, `ProofCore`), a documented SSA backend contract, a first Lean 4 proof workflow (17 theorems over a pure Core fragment), a 20-program integration/regression/hardening corpus, and bug tracking in `docs/bugs/`. Phases A–G are done. Phase H is active: real-program pressure has already produced the policy engine, MAL-style interpreter work, JSON parser pressure, multiple bug fixes, and a concrete findings-closure track for ergonomics, report UX, and runtime/tooling follow-up. Compiler hardening is complete: Lower.lean fallbacks are hard errors (`throw`), Layout.lean/EmitSSA.lean fallbacks are hard errors (`panic!`) with type variable leakage fixed, SSAVerify catches integer bit-width mismatches, cross-module type aliases are fixed, and borrow edge cases have been audited.
+Concrete has a complete compiler pipeline, a real stdlib (33 modules, 16 collections), 911 tests passing (2 skipped), a fully structured LLVM backend, audit reports, explicit artifact boundaries (`ValidatedCore`, `ProofCore`), a documented SSA backend contract, a first Lean 4 proof workflow (17 theorems over a pure Core fragment), a 20-program integration/regression/hardening corpus, and bug tracking in `docs/bugs/`. Phases A–G are done. Phase H is active: real-program pressure has already produced the policy engine, MAL-style interpreter work, JSON parser pressure, multiple bug fixes, and a concrete findings-closure track for ergonomics, report UX, and runtime/tooling follow-up. Compiler hardening is complete: Lower.lean fallbacks are hard errors (`throw`), Layout.lean/EmitSSA.lean fallbacks are hard errors (`panic!`) with type variable leakage fixed, SSAVerify catches integer bit-width mismatches, cross-module type aliases are fixed, and borrow edge cases have been audited.

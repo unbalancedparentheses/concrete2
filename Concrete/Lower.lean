@@ -832,6 +832,12 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
       let dst ← freshReg
       emit (.cast dst iVal ty)
       return .reg dst ty
+    | .array _ _ =>
+      -- Arrays are always stack-allocated (the SVal is already a pointer).
+      -- No codegen needed — just retype the register.
+      match iVal with
+      | .reg name _ => return .reg name ty
+      | _ => return iVal
     | _ =>
       let slot ← freshReg "borrow."
       emit (.alloca slot innerTy)
@@ -846,6 +852,10 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
       let dst ← freshReg
       emit (.cast dst iVal ty)
       return .reg dst ty
+    | .array _ _ =>
+      match iVal with
+      | .reg name _ => return .reg name ty
+      | _ => return iVal
     | _ =>
       let slot ← freshReg "borrowmut."
       emit (.alloca slot innerTy)
