@@ -21,7 +21,7 @@ backtracking. Key design points:
 - **Top-level `mod`**: left-factored; `mod name` is consumed once, then
   `{` vs `;` decides inline block vs file import.
 
-New syntax must satisfy the LL(1) invariant. See `research/ll1-grammar.md`.
+New syntax must satisfy the LL(1) invariant. See `research/compiler/ll1-grammar.md`.
 -/
 
 namespace Concrete

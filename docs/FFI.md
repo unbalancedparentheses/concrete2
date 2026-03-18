@@ -162,4 +162,4 @@ This doc should expand if the FFI surface grows substantially, for example:
 - low-level FFI helper patterns in the stdlib
 - continued hardening of builtin and stdlib internals around the implemented `trusted` boundary
 
-For the exploratory direction behind those ideas, see [../research/unsafe-structure.md](../research/unsafe-structure.md) and [../research/trusted-boundary.md](../research/trusted-boundary.md).
+For the exploratory direction behind those ideas, see [../research/language/unsafe-structure.md](../research/language/unsafe-structure.md) and [../research/language/trusted-boundary.md](../research/language/trusted-boundary.md).

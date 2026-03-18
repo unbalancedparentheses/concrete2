@@ -31,7 +31,7 @@ The compiler is written in [Lean 4](https://leanprover.github.io/lean4/doc/setup
 - prove properties of the language/compiler itself
 - prove selected Concrete programs through explicit Core semantics
 
-For the longer identity and proof story, see [docs/IDENTITY.md](docs/IDENTITY.md) and [research/proving-concrete-functions-in-lean.md](research/proving-concrete-functions-in-lean.md).
+For the longer identity and proof story, see [docs/IDENTITY.md](docs/IDENTITY.md) and [research/proof-evidence/proving-concrete-functions-in-lean.md](research/proof-evidence/proving-concrete-functions-in-lean.md).
 
 ## Current Stage
 

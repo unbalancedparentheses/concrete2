@@ -6,14 +6,21 @@ This is the stable "what we learned" document for Phase H. It covers every serio
 
 ## Programs Built
 
-Six real programs, in order of construction:
+Phase H ended with a broader corpus than the original first six programs. The most important examples are:
 
 1. **Policy engine** — rule evaluation with enum/struct composition
 2. **MAL interpreter** — ~1150-line Make-A-Lisp with linked-list environments, symbol interning, cons cell pool
-3. **JSON parser** — ~450-line recursive-descent parser with string pools, `Copy` structs, `Vec` generics, recursive value construction
-4. **cgrep** — ~220-line grep-like tool with `-n`, `-c`, `-v`, `-i` flags, multiple files, error reporting
+3. **JSON parser** — recursive-descent parser with string pools, `Copy` structs, `Vec` generics, recursive value construction
+4. **cgrep** — grep-like tool with `-n`, `-c`, `-v`, `-i` flags, multiple files, error reporting
 5. **Bytecode VM** — stack-based VM with 22 opcodes, CALL/RET, fib(35) benchmark
 6. **conhash** — artifact integrity verifier with SHA-256, capability-based audit trail
+7. **TOML parser** — richer structured parser with comments, arrays, tables, inline tables, and line-oriented error reporting
+8. **File integrity monitor** — manifest persistence, SHA-256 reuse, recursive scan/check workflow
+9. **Key-value store** — append-only log, replay, compaction, explicit storage pressure
+10. **Simple HTTP server** — blocking single-threaded server, request parsing, file/network boundary pressure
+11. **Lox interpreter** — ~1050-line tree-walk interpreter with closures, scoping, control flow
+
+This is enough to treat Phase H as a real program corpus rather than a handful of isolated demos.
 
 ## Performance Picture
 
@@ -64,8 +71,12 @@ Every bug below was discovered by a real program, not a synthetic test.
 | 013: alloca hoisting | JSON benchmark | `alloca` inside loops grows stack every iteration | `entryAllocas` field, entry-block emission |
 | 014: string literal in loop | JSON benchmark | `ensureValAsPtr` missing `.strConst` case | Added case, routes through `materializeStrConst` |
 | 015: missing `-O2` | JSON benchmark | Clang invoked without optimization flags | `-O2` now default for regular and test compilation |
+| 016: cross-module generic monomorphization/linking | integrity monitor, kvstore | `HashMap<String, String>` package builds failed to emit/resolve needed symbols | monomorphization / alias resolution fix |
+| 017: Linux-only socket constants | HTTP server | `std.net` hardcoded Linux `setsockopt` constants on macOS | platform-aware socket constants/layout |
+| 018: stack array borrow-copy | HTTP server, `std.net` | borrowing stack arrays for writable FFI access could create copies instead of stable references | array borrows retype directly; promoted allocas skip invalid load path |
+| 019: method-level generics lowering crash | container traversal work, generic examples | generic self types and generic struct instantiations were not carried concretely through monomorphization/lowering | proper `Self<T...>` handling + per-instantiation LLVM struct emission |
 
-Total: 11 compiler bugs found and fixed from 6 programs. This is strong evidence that real-program pressure is the most productive way to find bugs in this compiler.
+Total: 15 major compiler/stdlib bugs found and fixed from sustained real-program work. This is strong evidence that real-program pressure is the most productive way to find bugs in this compiler.
 
 ## Language Features That Landed During Phase H
 
@@ -74,12 +85,15 @@ Total: 11 compiler bugs found and fixed from 6 programs. This is strong evidence
 - **Runtime argv** — `__concrete_get_argc()` / `__concrete_get_argv(idx)` via mutable LLVM globals
 - **Scoped `defer`** — true scope-exit cleanup with LIFO ordering, covering block exit, loop iteration, break, continue, early return, nested scopes. Removed ~40 lines of cleanup boilerplate from the JSON parser.
 - **`concrete build`** — project compilation from `Concrete.toml` with dependency resolution, directory modules, cross-module imports. `cgrep` and `conhash` converted to use `std.fs` imports.
+- **Qualified module access** — `mod::fn` paths, same-name collision handling, and inline sibling `::` access
+- **Container traversal surface** — `for_each`, `fold<A>`, and explicit materialization helpers on `Vec`, `HashMap`, and `HashSet`
+- **Method-level generics** — now work end-to-end, which unlocked `fold<A>` as a normal stdlib method rather than a special case
 
 ## What Phase H Proved
 
 ### The language works for real programs
 
-Six structurally different programs compiled and ran correctly. This is no longer a question.
+The language now carries parsers, interpreters, CLI tools, storage code, integrity tooling, and a small network server. This is no longer a question.
 
 ### The differentiator is real
 
@@ -100,7 +114,7 @@ Scope-aware `defer` removed significant cleanup boilerplate without hiding owner
 
 ### Real programs find real bugs
 
-11 compiler bugs from 6 programs. Every bug was structurally interesting (layout panics, invalid IR, stack overflow from allocas, missing codegen cases). Synthetic test suites did not find these.
+The later second-wave examples kept paying off after the first six programs: they exposed cross-module generic failures, platform-specific stdlib assumptions, stack-array borrow lowering bugs, and method-level generic/monomorphization gaps. Synthetic test suites did not find these first.
 
 ## What Phase H Left Open
 
@@ -121,23 +135,22 @@ But some patterns remain genuinely verbose:
 
 ### Open findings carrying forward
 
-1. **Formatting / interpolation** — `stdlib/runtime`, possibly `language`. Manual string building remains too verbose for real programs.
-2. **Qualified module access** — `language`, `tooling/workflow`. No `Module.function()` path; name collisions required renaming (`hex_digit` → `conhash_hex_digit` in conhash).
-3. **Collection hot-path performance** — `backend/performance`. ~~3.4x gap to C on VM dispatch loop.~~ **RESOLVED**: gap was caused by non-inlined vec builtins. Adding `alwaysinline` to generated LLVM IR eliminated it (785ms → 257ms, matching C's 260ms).
-4. **Runtime-oriented collections** — `stdlib/runtime`. Interpreters want maps, nested mutable structures, frame-friendly patterns.
-5. **Runtime argument surface** — `stdlib/runtime`. `argc`/`argv` work but the final user-facing shape is undecided.
-6. **Destructuring let** — `language`. Parser/runtime code wants clearer binding of paired results.
-7. **Runtime / stack pressure** — `backend/performance`, `stdlib/runtime`. Deep recursion limits not classified.
+1. **Formatting / interpolation** — `stdlib/runtime`, possibly `language`. Interpolation is not currently justified by evidence, but the design question remains recorded.
+2. **Collection hot-path performance** — `backend/performance`. ~~3.4x gap to C on VM dispatch loop.~~ **RESOLVED**: gap was caused by non-inlined vec builtins. Adding `alwaysinline` to generated LLVM IR eliminated it (785ms → 257ms, matching C's 260ms).
+3. **Runtime-oriented collections** — `stdlib/runtime`. Traversal is in much better shape, but interpreters still want nested mutable structures and frame-friendly patterns.
+4. **Runtime argument surface** — `stdlib/runtime`. **Mostly resolved** through `std.args`; remaining work is broader package/workflow polish rather than raw argument access.
+5. **Destructuring let** — `language`. Parser/runtime code wants clearer binding of paired results.
+6. **Runtime / stack pressure** — `backend/performance`, `stdlib/runtime`. Deep recursion limits not classified.
 
 ### What comes next
 
 Phase J (package/project model) is the #1 priority:
-- builtin std resolution (current path-based std is a temporary hack)
+- workspace and multi-package semantics
 - `concrete build/test/run` maturity
-- workspace support
 - incremental compilation direction
+- package/dependency and testing-tooling maturity
 
-Then: text/output ergonomics, collection hot-path performance, interop/product maturity.
+Then: testing/tooling refinement, text/output ergonomics only if evidence changes, and later backend-plurality/product-maturity work.
 
 ## Standing Evaluation Criterion
 

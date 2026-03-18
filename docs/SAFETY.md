@@ -188,7 +188,7 @@ The high-integrity profile is a cross-phase synthesis, not a single feature:
 - Not a justification for uncontrolled feature growth plus "safe mode" later
 - Not a vague marketing term without compiler and report consequences
 
-The profile direction is documented in detail in [../research/high-integrity-profile.md](../research/high-integrity-profile.md).
+The profile direction is documented in detail in [../research/language/high-integrity-profile.md](../research/language/high-integrity-profile.md).
 
 ## How The Pieces Fit Together
 

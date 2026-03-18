@@ -4,10 +4,10 @@ Status: provisional reference
 
 This document captures the current stable direction for the standard library.
 
-For the exploratory design notes behind it, see [../research/stdlib-design.md](../research/stdlib-design.md). For active priorities, see [../ROADMAP.md](../ROADMAP.md).
+For the exploratory design notes behind it, see [../research/stdlib-runtime/stdlib-design.md](../research/stdlib-runtime/stdlib-design.md). For active priorities, see [../ROADMAP.md](../ROADMAP.md).
 
 Use this file for the stable direction.
-Use [../research/stdlib-design.md](../research/stdlib-design.md) for the broader exploratory comparisons, language borrowings, and future-facing design space.
+Use [../research/stdlib-runtime/stdlib-design.md](../research/stdlib-runtime/stdlib-design.md) for the broader exploratory comparisons, language borrowings, and future-facing design space.
 If this file and the research note ever differ, treat this file as the stable project direction and the research note as exploratory background.
 
 ## Design Rules
@@ -28,7 +28,7 @@ For low-level internals, the split is now:
 - pointer-level implementation unsafety is contained by `trusted fn` / `trusted impl`
 - foreign boundaries (`extern fn`) remain under `with(Unsafe)` even inside trusted code
 
-See [SAFETY.md](SAFETY.md) for the full safety model and [../research/trusted-boundary.md](../research/trusted-boundary.md) for the exploratory design notes.
+See [SAFETY.md](SAFETY.md) for the full safety model and [../research/language/trusted-boundary.md](../research/language/trusted-boundary.md) for the exploratory design notes.
 
 **Capability aliases** (e.g., `cap IO = File + Console;`) can reduce signature repetition in stdlib and user code. See [FFI.md](FFI.md).
 
@@ -410,7 +410,7 @@ This fits the implemented three-way split between:
 - **`trusted`** = containment of internal pointer-level implementation techniques (raw ptr deref, arithmetic, casts) behind a safe API — callers do not need `Unsafe` just because a container uses raw pointers internally
 - **`with(Unsafe)`** = authority to cross foreign boundaries (FFI, transmute) — always explicit, even inside `trusted` code
 
-See [../research/trusted-boundary.md](../research/trusted-boundary.md) for the full design.
+See [../research/language/trusted-boundary.md](../research/language/trusted-boundary.md) for the full design.
 
 ## Later Additions
 

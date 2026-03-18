@@ -12,6 +12,17 @@ These files are exploratory unless they explicitly say otherwise. Once a design 
 - use `docs/` for stable rules and implementation contracts
 - use `research/` for design work that is still being explored, sharpened, or staged for later phases
 
+## Directory Layout
+
+- `research/language/` — language-surface decisions, exclusions, and evidence-gated language ideas
+- `research/stdlib-runtime/` — stdlib shape, text/string direction, collections, execution/runtime pressure, targets, and resource models
+- `research/compiler/` — compiler architecture, backend direction, artifact/dataflow work, semantic diffing, and performance/backend research
+- `research/proof-evidence/` — formalization, proof workflows, evidence artifacts, trust bundles, and review/report direction
+- `research/packages-tooling/` — package model, testing workflow, developer tooling, authority budgets, and project/workspace UX
+- `research/workloads/` — Phase H findings, comparison suites, showcase workloads, and example-driven pressure notes
+- `research/process/` — quality/process notes such as testing strategy
+- `research/meta/` — broader strategy, gap analysis, candidate ideas, and long-horizon synthesis
+
 ## Priority Key
 
 - `P0` = highest-value current research, directly connected to active or next roadmap phases
@@ -25,121 +36,126 @@ These files are exploratory unless they explicitly say otherwise. Once a design 
 - `Excluded` = intentionally not in the language surface
 - `Process` = decision filter or project rule
 - `Research` = broader exploration, not a current design commitment
+- `Closed` = the design question is no longer open, but the note remains as historical context
 
 ## Start Here
 
 If you want the highest-leverage current research first:
 
-1. [high-leverage-systems-ideas.md](high-leverage-systems-ideas.md) — consolidated view of six recurring system-level ideas: allocation budgets, arenas, execution boundedness, layout reports, typestate, and authority budgets (`P0`, `Open`)
-2. [phase-h-findings.md](phase-h-findings.md) — classified findings from the first real programs, with language vs stdlib vs tooling vs runtime splits (`P0`, `Open`)
-3. [text-and-output-design.md](text-and-output-design.md) — mixed-arg `print` / `println`, interpolation, builders, and parser-oriented text support after the first Phase H programs (`P0`, `Open`)
-4. [runtime-collections.md](runtime-collections.md) — what collection maturity should mean for interpreter/runtime workloads (`P1`, `Open`)
-5. [iterators.md](iterators.md) — narrow explicit traversal support for real containers without importing a full iterator ecosystem (`P1`, `Open`)
-6. [standalone-vs-project-ux.md](standalone-vs-project-ux.md) — smoothing the split between single-file examples and project-based stdlib usage (`P1`, `Open`)
-7. [module-qualification.md](module-qualification.md) — qualified access and namespace pressure in larger multi-module programs (`P1`, `Open`)
-8. [runtime-execution-pressure.md](runtime-execution-pressure.md) — stack/runtime pressure signals from deep-recursive and runtime-heavy Phase H workloads (`P1`, `Open`)
-9. [comparative-program-suite.md](comparative-program-suite.md) — the 20-program cross-language suite for correctness, auditability, and performance comparison against Rust, Zig, and C (`P1`, `Open`)
-10. [ten-x-improvements.md](ten-x-improvements.md) — the biggest long-term multipliers for Concrete (`P0`, `Open`)
-11. [formalization-roi.md](formalization-roi.md) — what to prove first and why (`P0`, `Open`)
-12. [proving-concrete-functions-in-lean.md](proving-concrete-functions-in-lean.md) — how selected Concrete functions could be proved in Lean 4 (`P0`, `Open`)
-13. [formalization-breakdown.md](formalization-breakdown.md) — the full formalization effort broken into proof tracks, dependencies, and milestones (`P0`, `Open`)
-14. [high-integrity-profile.md](high-integrity-profile.md) — what a stricter high-integrity / provable Concrete profile could be (`P0`, `Open`)
-15. [authority-budgets.md](authority-budgets.md) — package/subsystem authority limits and authority-aware dependency policy (`P0`, `Open`)
-16. [proof-evidence-artifacts.md](proof-evidence-artifacts.md) — tying reports, artifacts, reproducibility, and later proof references into one evidence story (`P0`, `Open`)
-17. [package-model.md](package-model.md) — what the eventual project/package model must decide (`P0`, `Open`)
-18. [package-manager-design.md](package-manager-design.md) — Cargo-simple surface, Nix-inspired reproducibility, graph artifacts, and authority-aware package management (`P0`, `Open`)
-19. [trust-multipliers.md](trust-multipliers.md) — proof-backed reports, sandbox profiles, authority budgets, FFI envelopes, trust bundles, and showcase workloads (`P0`, `Open`)
-20. [artifact-driven-compiler.md](artifact-driven-compiler.md) — stable artifacts, serialization, IDs, traceability, interface/body splits, and the real compiler driver (`P0`, `Open`)
-21. [adoption-strategy.md](adoption-strategy.md) — signature domains, showcases, onboarding, stability surface, and positioning for real user pull (`P1`, `Open`)
-22. [evidence-review-workflows.md](evidence-review-workflows.md) — evidence bundles, machine-readable reports, trust-drift diffing, and report-first review workflows (`P0`, `Open`)
-23. [package-testing-tooling.md](package-testing-tooling.md) — the project-facing `concrete test` workflow: discovery, filtering, failure UX, and package/workspace integration (`P0`, `Open`)
-24. [compiler-dataflow-ideas.md](compiler-dataflow-ideas.md) — what Burn, Timely/Differential, Noria, rustc, Salsa, and newer compiler stacks suggest for Concrete’s future artifact driver, incremental state, maintained reports, and inspection UX (`P1`, `Open`)
-25. [proof-addon-architecture.md](proof-addon-architecture.md) — keep the compiler proof-friendly, but make heavier proof automation an artifact-consuming addon workflow instead of part of every ordinary build (`P0`, `Open`)
-26. [semantic-diff-and-trust-drift.md](semantic-diff-and-trust-drift.md) — semantic/package/release diffing for authority, allocation, layout, trusted boundaries, and later proof-status drift (`P0`, `Open`)
-27. [qbe-backend.md](qbe-backend.md) — lightweight alternate-backend research: `Concrete SSA -> QBE IL` as a backend-plurality experiment (`P1`, `Open`)
-28. [qbe-in-concrete.md](qbe-in-concrete.md) — the larger long-horizon idea of implementing QBE itself in Concrete, separate from merely targeting QBE (`P2`, `Research`)
+1. [workloads/phase-h-findings.md](workloads/phase-h-findings.md) — classified findings from the real-program corpus (`P0`, `Open`)
+2. [proof-evidence/formalization-roi.md](proof-evidence/formalization-roi.md) — what to prove first and why (`P0`, `Open`)
+3. [proof-evidence/formalization-breakdown.md](proof-evidence/formalization-breakdown.md) — the full formalization effort split into tracks and milestones (`P0`, `Open`)
+4. [compiler/artifact-driven-compiler.md](compiler/artifact-driven-compiler.md) — stable artifacts, IDs, traceability, and the real compiler driver (`P0`, `Open`)
+5. [packages-tooling/package-model.md](packages-tooling/package-model.md) — the eventual package/dependency model (`P0`, `Open`)
+6. [packages-tooling/package-testing-tooling.md](packages-tooling/package-testing-tooling.md) — package/workspace test workflow design (`P0`, `Open`)
+7. [proof-evidence/evidence-review-workflows.md](proof-evidence/evidence-review-workflows.md) — evidence bundles, machine-readable reports, and review workflows (`P0`, `Open`)
+8. [compiler/semantic-diff-and-trust-drift.md](compiler/semantic-diff-and-trust-drift.md) — semantic/package/release diffing over compiler facts (`P0`, `Open`)
+9. [stdlib-runtime/text-and-output-design.md](stdlib-runtime/text-and-output-design.md) — current text/output direction (`P0`, `Open`)
+10. [stdlib-runtime/runtime-collections.md](stdlib-runtime/runtime-collections.md) — collection maturity for interpreter/runtime workloads (`P1`, `Open`)
+11. [stdlib-runtime/iterators.md](stdlib-runtime/iterators.md) — explicit traversal support without an iterator tower (`P1`, `Open`)
+12. [meta/high-leverage-systems-ideas.md](meta/high-leverage-systems-ideas.md) — recurring high-value systems ideas (`P0`, `Open`)
+13. [proof-evidence/trust-multipliers.md](proof-evidence/trust-multipliers.md) — the strongest combined differentiators across proof, runtime, and evidence (`P0`, `Open`)
+14. [compiler/qbe-backend.md](compiler/qbe-backend.md) — lightweight alternate-backend research (`P1`, `Open`)
 
-## Language Decisions
+## Language
 
-- [builtin-vs-stdlib.md](builtin-vs-stdlib.md) — what belongs in compiler/runtime builtins versus the public stdlib (`P0`, `Open`, partially adopted)
-- [capability-sandboxing.md](capability-sandboxing.md) — ways to make `with(...)` better at expressing restricted authority and sandboxing (`P0`, `Open`, partially adopted)
-- [high-integrity-profile.md](high-integrity-profile.md) — stricter profile/subset for critical code across runtime, safety, language discipline, and evidence (`P0`, `Open`)
-- [high-integrity-examples.md](high-integrity-examples.md) — concrete allowed/restricted examples for the future high-integrity profile (`P0`, `Open`)
-- [authority-budgets.md](authority-budgets.md) — package/subsystem authority budgets and dependency policy (`P0`, `Open`)
-- [unsafe-structure.md](unsafe-structure.md) — how to make `Unsafe` more inspectable and better contained without complicating the language (`P1`, `Open`, partially adopted)
-- [trusted-boundary.md](trusted-boundary.md) — explicit `trusted fn` / `trusted impl` design for containing implementation unsafety (`P1`, `Adopted`)
-- [derived-equality-design.md](derived-equality-design.md) — possible derived structural equality for user-defined types (`P2`, `Open`)
-- [heap-ownership-design.md](heap-ownership-design.md) — chosen `Heap<T>` ownership model (`P1`, `Adopted`)
-- [heap-access-revisited.md](heap-access-revisited.md) — follow-up on heap access syntax and tradeoffs (`P2`, `Open`)
-- [external-ll1-checker.md](external-ll1-checker.md) — external grammar + LL(1) checker as a syntax guardrail (`P1`, `Open`)
-- [ll1-grammar.md](ll1-grammar.md) — strict LL(1) rule, known parser backtrack sites, and cleanup criteria (`P1`, `Process`)
-- [union.md](union.md) — whether unions fit Concrete's design (`P2`, `Open`)
+- [language/builtin-vs-stdlib.md](language/builtin-vs-stdlib.md) — what belongs in compiler/runtime builtins versus the public stdlib (`P0`, `Open`, partially adopted)
+- [language/capability-sandboxing.md](language/capability-sandboxing.md) — restricted authority and sandboxing direction (`P0`, `Open`, partially adopted)
+- [language/high-integrity-profile.md](language/high-integrity-profile.md) — stricter profile/subset for critical code (`P0`, `Open`)
+- [language/binary-format-dsl.md](language/binary-format-dsl.md) — binary parser/serializer DSL direction (`P2`, `Research`)
+- [language/cleanup-ergonomics.md](language/cleanup-ergonomics.md) — reducing ownership/cleanup friction without hiding it (`P1`, `Open`)
+- [language/const-generics-comptime.md](language/const-generics-comptime.md) — const generics versus comptime, and where the philosophy line should stay (`P2`, `Research`)
+- [language/derived-equality-design.md](language/derived-equality-design.md) — possible derived structural equality (`P2`, `Open`)
+- [language/heap-ownership-design.md](language/heap-ownership-design.md) — chosen `Heap<T>` ownership model (`P1`, `Adopted`)
+- [language/heap-access-revisited.md](language/heap-access-revisited.md) — follow-up on heap access syntax and tradeoffs (`P2`, `Open`)
+- [language/module-qualification.md](language/module-qualification.md) — historical note on qualified access and namespace pressure (`P1`, `Closed`)
+- [language/no-closures.md](language/no-closures.md) — why Concrete excludes closures (`P1`, `Excluded`)
+- [language/no-trait-objects.md](language/no-trait-objects.md) — why Concrete excludes trait objects (`P1`, `Excluded`)
+- [language/pre-post-conditions.md](language/pre-post-conditions.md) — contracts/specification support and why it stays later/optional (`P1`, `Open`)
+- [language/trusted-boundary.md](language/trusted-boundary.md) — explicit `trusted fn` / `trusted impl` containment design (`P1`, `Adopted`)
+- [language/typestate.md](language/typestate.md) — typestate direction and limits (`P1`, `Open`)
+- [language/union.md](language/union.md) — whether unions fit Concrete’s design (`P2`, `Open`)
+- [language/unsafe-structure.md](language/unsafe-structure.md) — making `Unsafe` more inspectable without a heavier language (`P1`, `Open`, partially adopted)
 
-## Excluded By Design
+## Stdlib And Runtime
 
-- [no-closures.md](no-closures.md) — why Concrete excludes closures (`P1`, `Excluded`)
-- [no-trait-objects.md](no-trait-objects.md) — why Concrete excludes trait objects (`P1`, `Excluded`)
+- [stdlib-runtime/stdlib-design.md](stdlib-runtime/stdlib-design.md) — stdlib direction, priorities, and style rules (`P1`, `Open`, partially adopted)
+- [stdlib-runtime/stdlib-api-cleanup.md](stdlib-runtime/stdlib-api-cleanup.md) — cleaning builtin-shaped names and ownership surprises out of the public stdlib (`P1`, `Open`)
+- [stdlib-runtime/text-and-output-design.md](stdlib-runtime/text-and-output-design.md) — mixed-arg printing first, interpolation later if needed (`P0`, `Open`)
+- [stdlib-runtime/runtime-collections.md](stdlib-runtime/runtime-collections.md) — collection maturity for interpreter/runtime workloads (`P1`, `Open`)
+- [stdlib-runtime/iterators.md](stdlib-runtime/iterators.md) — explicit traversal support and the case against a broad iterator ecosystem (`P1`, `Open`)
+- [stdlib-runtime/arena-allocation.md](stdlib-runtime/arena-allocation.md) — arena/bump allocation for parser/interpreter-style workloads (`P1`, `Open`)
+- [stdlib-runtime/allocation-budgets.md](stdlib-runtime/allocation-budgets.md) — `NoAlloc`, `BoundedAlloc(N)`, and allocation reporting (`P0`, `Open`)
+- [stdlib-runtime/execution-cost.md](stdlib-runtime/execution-cost.md) — structural cost reports and bounded execution direction (`P1`, `Open`)
+- [stdlib-runtime/execution-cost-tracking.md](stdlib-runtime/execution-cost-tracking.md) — tracking/externalizing execution-cost obligations (`P1`, `Open`)
+- [stdlib-runtime/layout-reports.md](stdlib-runtime/layout-reports.md) — layout/ABI audit report improvements (`P1`, `Open`)
+- [stdlib-runtime/concurrency.md](stdlib-runtime/concurrency.md) — near-term concurrency direction (`P1`, `Open`)
+- [stdlib-runtime/long-term-concurrency.md](stdlib-runtime/long-term-concurrency.md) — long-horizon layered concurrency model (`P1`, `Open`)
+- [stdlib-runtime/no-std-freestanding.md](stdlib-runtime/no-std-freestanding.md) — hosted vs freestanding / `no_std` split (`P1`, `Open`)
+- [stdlib-runtime/runtime-execution-pressure.md](stdlib-runtime/runtime-execution-pressure.md) — runtime/stack pressure from deep-recursive workloads (`P1`, `Open`)
+- [stdlib-runtime/target-platform-policy.md](stdlib-runtime/target-platform-policy.md) — support tiers, ABI promises, and target policy (`P1`, `Open`)
+- [stdlib-runtime/hardware-capability-mapping.md](stdlib-runtime/hardware-capability-mapping.md) — hardware-backed capability ideas (`P2`, `Research`)
 
-## Standard Library And Runtime Direction
+## Compiler
 
-- [stdlib-design.md](stdlib-design.md) — stdlib direction, module priorities, and style rules (`P1`, `Open`, partially adopted)
-- [stdlib-api-cleanup.md](stdlib-api-cleanup.md) — cleaning builtin-style names and ownership surprises out of the public stdlib surface (`P1`, `Open`)
-- [text-and-output-design.md](text-and-output-design.md) — mixed-arg printing first, interpolation later if needed, and parser/text support after first-wave real programs (`P0`, `Open`)
-- [runtime-collections.md](runtime-collections.md) — interpreter/runtime-oriented collection maturity, patterns, and API gaps (`P1`, `Open`)
-- [iterators.md](iterators.md) — explicit traversal support and the case against a broad iterator ecosystem (`P1`, `Open`)
-- [arena-allocation.md](arena-allocation.md) — arena/bump allocation as a possible explicit resource model for parser/interpreter-style workloads (`P1`, `Open`)
-- [no-std-freestanding.md](no-std-freestanding.md) — future hosted vs freestanding / `no_std` split (`P1`, `Open`)
-- [concurrency.md](concurrency.md) — concurrency direction before async-style features (`P1`, `Open`)
-- [long-term-concurrency.md](long-term-concurrency.md) — layered long-term concurrency target: structured concurrency over threads first, evented I/O later (`P1`, `Open`)
-- [target-platform-policy.md](target-platform-policy.md) — support tiers, ABI promises, and what counts as a supported vs experimental target (`P1`, `Open`)
-- [allocation-budgets.md](allocation-budgets.md) — `NoAlloc`, restricted `BoundedAlloc(N)`, and stronger allocation reports (`P0`, `Open`)
-- [execution-cost.md](execution-cost.md) — structural cost reports, bounded instruction counts, and WCET direction (`P1`, `Open`)
-- [layout-reports.md](layout-reports.md) — stronger layout/ABI audit reports, including padding and enum details (`P1`, `Open`)
-- [pre-post-conditions.md](pre-post-conditions.md) — contracts/specification support and why it stays later/optional (`P1`, `Open`)
-- [standalone-vs-project-ux.md](standalone-vs-project-ux.md) — what should just work in single-file mode versus the package/project model (`P1`, `Open`)
+- [compiler/artifact-driven-compiler.md](compiler/artifact-driven-compiler.md) — operationalizing named compiler artifacts (`P0`, `Open`)
+- [compiler/compiler-dataflow-ideas.md](compiler/compiler-dataflow-ideas.md) — dataflow/query-inspired artifact and inspection ideas (`P1`, `Open`)
+- [compiler/external-ll1-checker.md](compiler/external-ll1-checker.md) — external grammar + LL(1) checker (`P1`, `Open`)
+- [compiler/file-summary-frontend.md](compiler/file-summary-frontend.md) — summary-based frontend direction (`P1`, `Adopted`)
+- [compiler/ll1-grammar.md](compiler/ll1-grammar.md) — strict LL(1) rule and parser cleanup criteria (`P1`, `Process`)
+- [compiler/mlir-backend-shape.md](compiler/mlir-backend-shape.md) — where MLIR should sit if it earns its complexity (`P1`, `Research`)
+- [compiler/miri-style-interpreter.md](compiler/miri-style-interpreter.md) — interpreter/tooling direction for stronger semantic checking (`P2`, `Research`)
+- [compiler/optimization-policy.md](compiler/optimization-policy.md) — optimization goals, non-goals, and observability constraints (`P1`, `Open`)
+- [compiler/qbe-backend.md](compiler/qbe-backend.md) — lightweight alternate-backend research (`P1`, `Open`)
+- [compiler/qbe-in-concrete.md](compiler/qbe-in-concrete.md) — long-horizon self-hosting/backend-implementation idea (`P2`, `Research`)
+- [compiler/semantic-diff-and-trust-drift.md](compiler/semantic-diff-and-trust-drift.md) — semantic/trust-drift diffing over compiler facts (`P0`, `Open`)
+- [compiler/semantic-diff.md](compiler/semantic-diff.md) — broader semantic diff/query ideas (`P2`, `Research`)
+- [compiler/vec-inline-investigation.md](compiler/vec-inline-investigation.md) — VM/codegen inline-cliff investigation (`P1`, `Adopted`)
 
-## Compiler Architecture
+## Proof And Evidence
 
-- [formalization-roi.md](formalization-roi.md) — best order for proving Core, effects, ownership, and Core→SSA preservation (`P0`, `Open`)
-- [proving-concrete-functions-in-lean.md](proving-concrete-functions-in-lean.md) — how Concrete functions could be represented and proved in Lean 4 (`P0`, `Open`)
-- [formalization-breakdown.md](formalization-breakdown.md) — the full proof effort split into semantic, language-guarantee, compiler-preservation, and evidence tracks (`P0`, `Open`)
-- [proof-evidence-artifacts.md](proof-evidence-artifacts.md) — how reports, artifacts, proofs, and reproducibility could reinforce each other (`P0`, `Open`)
-- [trust-multipliers.md](trust-multipliers.md) — how authority, runtime, proof, and evidence work could combine into Concrete-specific differentiators (`P0`, `Open`)
-- [evidence-review-workflows.md](evidence-review-workflows.md) — evidence bundles, machine-readable reports, trust-drift diffing, and report-first review workflows (`P0`, `Open`)
-- [package-model.md](package-model.md) — package identity, dependency semantics, workspaces, and the boundary to authority-aware dependencies (`P0`, `Open`)
-- [package-manager-design.md](package-manager-design.md) — concrete CLI/manifest/lockfile/graph shape, plus what to steal from Cargo and Nix without inheriting their complexity (`P0`, `Open`)
-- [artifact-driven-compiler.md](artifact-driven-compiler.md) — what it would take to make the named pipeline artifacts operationally real (`P0`, `Open`)
-- [compiler-dataflow-ideas.md](compiler-dataflow-ideas.md) — dataflow- and query-inspired ideas for incremental artifacts, partial materialization, maintained reports, and per-function inspection (`P1`, `Open`)
-- [proof-addon-architecture.md](proof-addon-architecture.md) — why stronger proof automation should consume compiler artifacts instead of living inside the semantic core (`P0`, `Open`)
-- [semantic-diff-and-trust-drift.md](semantic-diff-and-trust-drift.md) — how trust-drift diffing should become a first-class review tool over machine-readable compiler facts (`P0`, `Open`)
-- [qbe-backend.md](qbe-backend.md) — whether QBE is the right lightweight alternate backend to test against the current LLVM path (`P1`, `Open`)
-- [qbe-in-concrete.md](qbe-in-concrete.md) — the much larger self-hosting/backend-implementation direction that should only be considered after a QBE backend proves valuable (`P2`, `Research`)
-- [file-summary-frontend.md](file-summary-frontend.md) — summary-based frontend direction and artifact boundaries (`P1`, `Adopted`)
-- [mlir-backend-shape.md](mlir-backend-shape.md) — where MLIR should sit if it earns its complexity later (`P1`, `Research`)
+- [proof-evidence/formalization-roi.md](proof-evidence/formalization-roi.md) — best order for proving semantics and guarantees (`P0`, `Open`)
+- [proof-evidence/formalization-breakdown.md](proof-evidence/formalization-breakdown.md) — full proof effort split into tracks and dependencies (`P0`, `Open`)
+- [proof-evidence/proving-concrete-functions-in-lean.md](proof-evidence/proving-concrete-functions-in-lean.md) — how selected Concrete functions could be proved in Lean 4 (`P0`, `Open`)
+- [proof-evidence/proof-addon-architecture.md](proof-evidence/proof-addon-architecture.md) — proof automation as an artifact-consuming addon workflow (`P0`, `Open`)
+- [proof-evidence/proof-evidence-artifacts.md](proof-evidence/proof-evidence-artifacts.md) — tying reports, artifacts, proofs, and reproducibility together (`P0`, `Open`)
+- [proof-evidence/evidence-review-workflows.md](proof-evidence/evidence-review-workflows.md) — evidence bundles, review workflows, and maintained reports (`P0`, `Open`)
+- [proof-evidence/trust-multipliers.md](proof-evidence/trust-multipliers.md) — combined differentiators across proof, runtime, and evidence (`P0`, `Open`)
+- [proof-evidence/cryptographic-source-commitments.md](proof-evidence/cryptographic-source-commitments.md) — cryptographic source/bundle provenance (`P1`, `Open`)
+- [proof-evidence/proof-carrying-supply-chain.md](proof-evidence/proof-carrying-supply-chain.md) — proof/evidence-aware supply-chain direction (`P2`, `Research`)
+- [proof-evidence/self-describing-binaries.md](proof-evidence/self-describing-binaries.md) — binary-to-proof/evidence traceability direction (`P2`, `Research`)
+
+## Packages And Tooling
+
+- [packages-tooling/package-model.md](packages-tooling/package-model.md) — package identity, dependency semantics, and workspaces (`P0`, `Open`)
+- [packages-tooling/package-manager-design.md](packages-tooling/package-manager-design.md) — CLI/manifest/lockfile/graph shape (`P0`, `Open`)
+- [packages-tooling/package-testing-tooling.md](packages-tooling/package-testing-tooling.md) — package-aware `concrete test` workflow (`P0`, `Open`)
+- [packages-tooling/authority-budgets.md](packages-tooling/authority-budgets.md) — authority budgets and dependency policy (`P0`, `Open`)
+- [packages-tooling/developer-tooling.md](packages-tooling/developer-tooling.md) — editor/LSP, debugging, and CLI workflow direction (`P1`, `Open`)
+- [packages-tooling/repl-and-playground.md](packages-tooling/repl-and-playground.md) — REPL/playground direction (`P2`, `Research`)
+- [packages-tooling/standalone-vs-project-ux.md](packages-tooling/standalone-vs-project-ux.md) — single-file versus project UX (`P1`, `Open`)
+
+## Workloads And Examples
+
+- [workloads/phase-h-findings.md](workloads/phase-h-findings.md) — classified findings from real programs (`P0`, `Open`)
+- [workloads/phase-h-summary.md](workloads/phase-h-summary.md) — canonical summary of what Phase H taught (`P0`, `Open`)
+- [workloads/comparative-program-suite.md](workloads/comparative-program-suite.md) — real-program comparison portfolio against Rust/Zig/C (`P1`, `Open`)
+- [workloads/showcase-workloads.md](workloads/showcase-workloads.md) — serious programs Concrete should eventually implement well (`P1`, `Open`)
+- [workloads/high-integrity-examples.md](workloads/high-integrity-examples.md) — example shapes for the future high-integrity profile (`P1`, `Open`)
+- [workloads/adoption-strategy.md](workloads/adoption-strategy.md) — signature domains, showcases, onboarding, and public pull (`P1`, `Open`)
 
 ## Process And Quality
 
-- [testing-strategy.md](testing-strategy.md) — gaps beyond current suites: fuzzing, property tests, report consistency, and differential testing (`P1`, `Open`)
-- [package-testing-tooling.md](package-testing-tooling.md) — package-aware `concrete test`, discovery rules, filtering, failure output, and workspace test UX (`P0`, `Open`)
-- [design-filters.md](design-filters.md) — feature-admission checklist and high-leverage design filters (`P1`, `Process`)
-- [optimization-policy.md](optimization-policy.md) — explicit optimization goals, non-goals, observability constraints, and regression expectations (`P1`, `Open`)
-- [developer-tooling.md](developer-tooling.md) — semantic recovery, editor/LSP baseline, debugging/observability, and project-facing CLI workflow (`P1`, `Open`)
-- [comparative-program-suite.md](comparative-program-suite.md) — the real-program comparison portfolio for large-scale pressure testing after the language surface stabilizes (`P1`, `Open`)
-- [phase-h-findings.md](phase-h-findings.md) — classified real-program findings so Phase H drives disciplined follow-up instead of ad hoc surface growth (`P0`, `Open`)
-- [module-qualification.md](module-qualification.md) — qualified access and namespace pressure in larger programs (`P1`, `Open`)
-- [runtime-execution-pressure.md](runtime-execution-pressure.md) — execution-model pressure from deep-recursive/runtime-heavy workloads (`P1`, `Open`)
+- [process/testing-strategy.md](process/testing-strategy.md) — gaps beyond the current suites: fuzzing, property tests, and differential testing (`P1`, `Open`)
 
-## Meta And Long-Horizon Direction
+## Meta And Long-Horizon
 
-- [ten-x-improvements.md](ten-x-improvements.md) — the relatively small set of changes that could dramatically raise Concrete's value (`P0`, `Open`)
-- [competitive-gap-analysis.md](competitive-gap-analysis.md) — what other systems languages may still have, which gaps matter, and where Concrete should aim to be stronger instead (`P1`, `Open`)
-- [complete-language-system.md](complete-language-system.md) — what still separates a strong language/compiler from a complete language system (`P1`, `Open`)
-- [adoption-strategy.md](adoption-strategy.md) — what Concrete needs beyond architecture to become understandable, memorable, and worth trying (`P1`, `Open`)
-- [evidence-review-workflows.md](evidence-review-workflows.md) — the clearest route to making Concrete visibly better in audit-heavy practice without adding language cleverness (`P0`, `Open`)
-- [showcase-workloads.md](showcase-workloads.md) — real programs Concrete should eventually implement well, including showcase/stress-test targets (`P2`, `Open`)
-- [candidate-ideas.md](candidate-ideas.md) — Concrete-specific candidate compiler/language/tooling ideas (`P2`, `Research`)
-- [external-ideas.md](external-ideas.md) — useful ideas borrowed from other languages (`P2`, `Research`)
-- [trust-multipliers.md](trust-multipliers.md) — the strongest combined roadmap/research differentiators across auditability, proofs, runtime restrictions, and evidence (`P0`, `Open`)
+- [meta/high-leverage-systems-ideas.md](meta/high-leverage-systems-ideas.md) — recurring high-value systems ideas (`P0`, `Open`)
+- [meta/ten-x-improvements.md](meta/ten-x-improvements.md) — the biggest long-term multipliers for Concrete (`P0`, `Open`)
+- [meta/competitive-gap-analysis.md](meta/competitive-gap-analysis.md) — what other systems languages still have and which gaps matter (`P1`, `Open`)
+- [meta/complete-language-system.md](meta/complete-language-system.md) — what still separates a strong compiler from a complete language system (`P1`, `Open`)
+- [meta/candidate-ideas.md](meta/candidate-ideas.md) — Concrete-specific candidate language/compiler/tooling ideas (`P2`, `Research`)
+- [meta/external-ideas.md](meta/external-ideas.md) — useful ideas borrowed from other languages (`P2`, `Research`)
 
 ## Placement Rule
 

@@ -88,5 +88,5 @@ That is narrower than "prove the whole compiler," but it is also much more achie
 
 - [Project Direction](./direction.md)
 - [Architecture](./architecture.md)
-- [research/proving-concrete-functions-in-lean.md](../../../research/proving-concrete-functions-in-lean.md)
-- [research/formalization-roi.md](../../../research/formalization-roi.md)
+- [research/proof-evidence/proving-concrete-functions-in-lean.md](../../../research/proof-evidence/proving-concrete-functions-in-lean.md)
+- [research/proof-evidence/formalization-roi.md](../../../research/proof-evidence/formalization-roi.md)

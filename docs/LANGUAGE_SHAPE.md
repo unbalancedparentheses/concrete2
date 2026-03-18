@@ -101,4 +101,4 @@ These are areas where the current design may evolve, but only under explicit cri
 - [DECISIONS.md](DECISIONS.md) — recorded "no" and "not yet" decisions
 - [SAFETY.md](SAFETY.md) — the three-way trust/capability/unsafe model
 - [PROVABLE_SUBSET.md](PROVABLE_SUBSET.md) — proof-eligible subset definition
-- [../research/high-integrity-profile.md](../research/high-integrity-profile.md) — high-integrity profile direction
+- [../research/language/high-integrity-profile.md](../research/language/high-integrity-profile.md) — high-integrity profile direction

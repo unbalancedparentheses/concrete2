@@ -10,6 +10,18 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Phase H hardening: Bug 018 fixed, method-level generics land, project examples modernized
+
+**Bug 018 fixed:** stack-array borrows used for writable FFI paths no longer create stale-copy behavior. Array borrows now retype directly instead of going through the cast path that triggered redundant alloca+store emission. `std.net` and the HTTP example can use stack arrays again instead of heap-buffer workarounds.
+
+**Promoted alloca handling:** lowered array locals now skip the invalid load path in loop/promoted-allocation cases, which closes the remaining stack-array correctness path exposed during the HTTP/server work.
+
+**Method-level generics:** generic methods now work end-to-end, including correct generic `Self<T...>` handling and distinct LLVM struct emission per concrete instantiation. This unlocked `fold<A>` on `Vec`, `HashMap`, and `HashSet` as ordinary stdlib methods rather than one-off APIs.
+
+**Project example modernization:** the project-based examples (`integrity`, `verify`, `kvstore`, `lox`, `toml`) were migrated from the old free-function `vec_*` style to the `Vec` method API where the semantics are a clean fit. `kvstore` intentionally keeps `vec_get` / `vec_set` in the swap-remove path because it still relies on the current shallow-copy behavior there for linear `String` values.
+
+**What changed strategically:** Bug 018 was the last remaining open correctness bug directly carried forward from Phase H. The remaining open work is no longer “fix the language enough for real programs,” but Phase J package/workspace maturity, testing/tooling refinement, and evidence-gated follow-up questions.
+
 ### Phase H findings closure: buffered I/O, std.args, collection iteration
 
 **Buffered I/O for compiler print builtins:** Switched the compiler's print builtins (`print_string`, `print_int`, `print_char`, `print_bool`) from raw `write()` syscalls to buffered libc I/O (`printf`/`putchar`). Lower-level stdlib I/O helpers in `std.io` still expose direct/unbuffered `libc_write`-based behavior where appropriate. The grep case-insensitive benchmark gap dropped from 2.8x to 1.7x vs C. Remaining grep gap is per-character `to_lower` cost, not I/O overhead.
@@ -87,7 +99,7 @@ That makes grep a useful continuing pressure test for text/output and string-I/O
 
 **`Bytes.to_string()`:** Zero-copy ownership transfer from Bytes to String in std/src/bytes.con (identical struct layout, no copy needed).
 
-**JSON benchmark result:** Concrete parses 9.3MB JSON in 40ms at -O2, matching or slightly beating Python's `json.loads` (46ms). Earlier 185ms measurements were -O0 artifacts. Full breakdown in `research/phase-h-findings.md`.
+**JSON benchmark result:** Concrete parses 9.3MB JSON in 40ms at -O2, matching or slightly beating Python's `json.loads` (46ms). Earlier 185ms measurements were -O0 artifacts. Full breakdown in `research/workloads/phase-h-findings.md`.
 
 ### Phase H: scope-aware defer semantics and control-flow cleanup coverage
 
@@ -101,21 +113,21 @@ That makes grep a useful continuing pressure test for text/output and string-I/O
 
 ### Phase H: builder builtins, JSON parser, cleanup ergonomics, future feature research
 
-**Builder builtins:** Added `string_append_int(&mut String, Int)` and `string_append_bool(&mut String, bool)` builtins for zero-grammar-cost mixed-type string building. These avoid intermediate allocations and interpolation syntax while keeping capabilities explicit. Design rationale in `research/text-and-output-design.md`.
+**Builder builtins:** Added `string_append_int(&mut String, Int)` and `string_append_bool(&mut String, bool)` builtins for zero-grammar-cost mixed-type string building. These avoid intermediate allocations and interpolation syntax while keeping capabilities explicit. Design rationale in `research/stdlib-runtime/text-and-output-design.md`.
 
 **Bug 010 semantics fix:** `string_substr(s, start, len)` was previously aliased to `string_slice(s, start, end)` despite different contracts. Now has its own intrinsic ID and LLVM implementation that computes `end = start + len` before delegating to `string_slice`.
 
 **JSON parser:** Added `examples/json/main.con` — ~450-line recursive-descent JSON parser + validator. Covers objects, arrays, strings (with escapes), integers, booleans, null. Includes comprehensive test harness: primitives, whitespace handling, nested structures, invalid input rejection. Passes at O0 and O2. First sustained pressure test of the builder builtins approach and linear string ownership at scale.
 
-**Cleanup ergonomics design:** Documented 5 options for reducing linear ownership friction in `research/cleanup-ergonomics.md`. Immediate priorities: (1) `defer` statement for scope-end cleanup, (2) additional mutation-oriented string APIs. Deferred: Destroy trait, scoped helpers, borrowed slices. Roadmap updated with all items and revisit triggers.
+**Cleanup ergonomics design:** Documented 5 options for reducing linear ownership friction in `research/language/cleanup-ergonomics.md`. Immediate priorities: (1) `defer` statement for scope-end cleanup, (2) additional mutation-oriented string APIs. Deferred: Destroy trait, scoped helpers, borrowed slices. Roadmap updated with all items and revisit triggers.
 
 **Future feature research:** Six research notes analyzing difficulty and design for features that multiply Concrete's value beyond capabilities:
-- `research/allocation-budgets.md` — NoAlloc/BoundedAlloc sub-capabilities; report-only classification (1-2 days) → enforcement (1-2 weeks) → byte-level budgets (3-4 weeks)
-- `research/arena-allocation.md` — bump-pointer arenas replacing manual Vec pools; ~1 week; simpler than Vec (no realloc)
-- `research/execution-cost-tracking.md` — structural boundedness reports (1-2 days) → abstract cost counting (2-3 weeks) → WCET (external tool)
-- `research/typestate.md` — ownership-based two-state works today; phantom types for multi-state (2-3 weeks) deferred pending evidence
-- `research/authority-budgets.md` — updated with module-level `#[authority(...)]` path (~1 week); package-level deferred to Phase J
-- `research/layout-reports.md` — padding visualization, enum layout, ABI flags; 3-4 days; pure report formatting
+- `research/stdlib-runtime/allocation-budgets.md` — NoAlloc/BoundedAlloc sub-capabilities; report-only classification (1-2 days) → enforcement (1-2 weeks) → byte-level budgets (3-4 weeks)
+- `research/stdlib-runtime/arena-allocation.md` — bump-pointer arenas replacing manual Vec pools; ~1 week; simpler than Vec (no realloc)
+- `research/stdlib-runtime/execution-cost-tracking.md` — structural boundedness reports (1-2 days) → abstract cost counting (2-3 weeks) → WCET (external tool)
+- `research/language/typestate.md` — ownership-based two-state works today; phantom types for multi-state (2-3 weeks) deferred pending evidence
+- `research/packages-tooling/authority-budgets.md` — updated with module-level `#[authority(...)]` path (~1 week); package-level deferred to Phase J
+- `research/stdlib-runtime/layout-reports.md` — padding visualization, enum layout, ABI flags; 3-4 days; pure report formatting
 
 ### Phase H bug fixes: Bug 005, 008, 009 fixed; if-expression, const lowering, enum-in-struct
 
@@ -278,8 +290,8 @@ The roadmap now separates:
 
 Research notes now include:
 
-- `research/concurrency.md` for the near-term Phase E direction
-- `research/long-term-concurrency.md` for the long-horizon layered concurrency target
+- `research/stdlib-runtime/concurrency.md` for the near-term Phase E direction
+- `research/stdlib-runtime/long-term-concurrency.md` for the long-horizon layered concurrency target
 
 This makes the sequencing explicit: define the runtime boundary first, then broaden concurrency only after runtime, safety, package, and operational foundations are stable enough to support it well.
 

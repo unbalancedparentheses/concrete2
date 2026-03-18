@@ -354,10 +354,10 @@ Primary surfaces:
 - [docs/EXECUTION_MODEL.md](docs/EXECUTION_MODEL.md)
 - [docs/VALUE_MODEL.md](docs/VALUE_MODEL.md)
 - [docs/STDLIB.md](docs/STDLIB.md)
-- [research/concurrency.md](research/concurrency.md)
-- [research/high-integrity-profile.md](research/high-integrity-profile.md)
-- [research/no-std-freestanding.md](research/no-std-freestanding.md)
-- [research/trust-multipliers.md](research/trust-multipliers.md)
+- [research/stdlib-runtime/concurrency.md](research/stdlib-runtime/concurrency.md)
+- [research/language/high-integrity-profile.md](research/language/high-integrity-profile.md)
+- [research/stdlib-runtime/no-std-freestanding.md](research/stdlib-runtime/no-std-freestanding.md)
+- [research/proof-evidence/trust-multipliers.md](research/proof-evidence/trust-multipliers.md)
 - runtime-facing stdlib and FFI boundaries
 
 1. define the hosted vs freestanding model more explicitly — **done** — `docs/EXECUTION_MODEL.md` documents hosted-only target, stdlib layer classification (core/alloc/hosted), future freestanding direction
@@ -403,11 +403,11 @@ This phase carries the safety side of the eventual high-integrity profile:
 Primary surfaces:
 - [docs/DIAGNOSTICS.md](docs/DIAGNOSTICS.md)
 - [Concrete/Report.lean](/Users/unbalancedparen/projects/concrete/Concrete/Report.lean)
-- [research/authority-budgets.md](research/authority-budgets.md)
-- [research/capability-sandboxing.md](research/capability-sandboxing.md)
-- [research/developer-tooling.md](research/developer-tooling.md)
-- [research/trust-multipliers.md](research/trust-multipliers.md)
-- [research/unsafe-structure.md](research/unsafe-structure.md)
+- [research/packages-tooling/authority-budgets.md](research/packages-tooling/authority-budgets.md)
+- [research/language/capability-sandboxing.md](research/language/capability-sandboxing.md)
+- [research/packages-tooling/developer-tooling.md](research/packages-tooling/developer-tooling.md)
+- [research/proof-evidence/trust-multipliers.md](research/proof-evidence/trust-multipliers.md)
+- [research/language/unsafe-structure.md](research/language/unsafe-structure.md)
 
 1. improve capability and trust ergonomics — **done** — added actionable hints to all capability-related error messages in both Check.lean and CoreCheck.lean: `missingCapability` (suggests `with(Cap)` on calling function or trusted wrapper), `insufficientCapabilities` (same), `cannotInferCapVariable` (explains explicit capability binding), pointer/alloc operation errors (specific `with(Unsafe)` or `with(Alloc)` hints)
 2. deepen capability/trust reporting — **done** — `--report authority` (transitive authority analysis with BFS call-chain traces per capability) and `--report proof` (ProofCore eligibility with exclusion reasons: capabilities, trusted, extern, raw pointers) implemented in `Report.lean`, dispatched from `Main.lean`, regression-tested with 15 semantic assertions
@@ -439,7 +439,7 @@ Primary surfaces:
 - [docs/DECISIONS.md](docs/DECISIONS.md) — recorded "no" and "not yet" decisions
 - [docs/LANGUAGE_SHAPE.md](docs/LANGUAGE_SHAPE.md) — long-term language shape commitments
 - [docs/PROVABLE_SUBSET.md](docs/PROVABLE_SUBSET.md) — proof-eligible subset definition
-- [research/high-integrity-profile.md](research/high-integrity-profile.md)
+- [research/language/high-integrity-profile.md](research/language/high-integrity-profile.md)
 - language-design research notes
 
 1. define explicit feature-admission criteria — **done**
@@ -484,8 +484,8 @@ Primary surfaces:
 - large Concrete programs and example repos
 - [docs/STDLIB.md](docs/STDLIB.md)
 - [docs/TESTING.md](docs/TESTING.md)
-- [research/comparative-program-suite.md](research/comparative-program-suite.md)
-- [research/showcase-workloads.md](research/showcase-workloads.md)
+- [research/workloads/comparative-program-suite.md](research/workloads/comparative-program-suite.md)
+- [research/workloads/showcase-workloads.md](research/workloads/showcase-workloads.md)
 - performance validation notes
 - package/workspace and report workflows as they exist at that point
 
@@ -525,7 +525,7 @@ Primary surfaces:
    - Bug 016 (cross-module HashMap linking), Bug 017 (macOS socket constants), Bug 018 (stack-array borrow-copy), and Bug 019 (method-level generics crash at lowering) are all fixed
    - Bug 019 (`c0c5b54`) was the most impactful: it unblocked `fold<A>` on all containers and generic method patterns generally. Two root causes: (a) parser created bare Self type instead of `Box<T>` for self params in generic impls; (b) generic structs only instantiated once at LLVM level, causing silent value truncation between `Box<i32>` and `Box<i64>`
    - Bug 018 (stack-array borrow-copy) is now fixed: Lower.lean no longer emits `.cast` for array borrows, so `&buf` aliases the original stack allocation instead of creating a copy
-   - remaining work is cleaning up workaround-heavy data models in integrity/kvstore, replacing heap-buffer workarounds with direct stack arrays now that Bug 018 is fixed, and then finishing HTTP parser cleanup
+   - remaining work is now example and stdlib polish rather than compiler-bug cleanup: keep integrity/kvstore/http teaching the current best Concrete style, reduce duplicated helper patterns, and keep removing stale workaround code as supported surfaces improve
    - the earlier second-wave list (regex engine, Lox, package/archive indexer, HSM policy engine) was deprioritized because:
      - regex engine and Lox overlap heavily with first-wave interpreter/parser pressure (MAL, VM, JSON)
      - the revised list optimizes for new pressure shapes (external conformance, persistence, networking, filesystem depth) rather than more of the same
@@ -613,24 +613,24 @@ Primary surfaces:
         - control-flow coverage now includes block exit, loop iteration exit, `break`, `continue`, early return, and implicit function end
         - current tradeoff: cleanup code is duplicated at exit sites; if real programs show IR bloat, later cleanup outlining can optimize that without changing semantics
         - follow-on work stays in cleanup ergonomics, not in whether `defer` exists
-        - design notes: [research/cleanup-ergonomics.md](research/cleanup-ergonomics.md)
+        - design notes: [research/language/cleanup-ergonomics.md](research/language/cleanup-ergonomics.md)
      2. add remaining mutation-oriented string APIs (`string_clear`, `string_starts_with`, `string_ends_with`) — **not started**
         - builder pattern proven by JSON parser; remaining gap is keyword-matching temporary allocations
      3. ~~add a real text/output layer: mixed-arg `print` / `println`, then interpolation only if real code still needs it~~ — **done** (commit `1b0d21f`)
         - mixed-arg `print` / `println` builtins landed: variadic, desugared at elaboration into individual typed print calls (`print_string`, `print_int`, `print_bool`, `print_char`); supports String, Int, i32, u32, bool, char; does not shadow stdlib print/println when they exist in scope
         - remaining: interpolation only if real code still needs it, trait-based formatting deferred
-        - design notes: [research/text-and-output-design.md](research/text-and-output-design.md)
+        - design notes: [research/stdlib-runtime/text-and-output-design.md](research/stdlib-runtime/text-and-output-design.md)
      4. improve runtime-oriented collection maturity for interpreter/runtime workloads: maps, nested mutable structures, and frame-friendly patterns — **done**
         - traversal surface complete: `for_each` (side effects), `fold<A>` (stateful traversal), `keys()`/`values()`/`elements()` (materialization)
         - `fold<A>` was blocked by a compiler bug: method-level generics crashed at lowering (self type lost generic args + generic structs only instantiated once). Fixed in `c0c5b54`.
         - truth-to-philosophy end-state: explicit per-container traversal remains the semantic core; thin syntax sugar is acceptable only if it lowers transparently to that core
         - if more traversal power is ever needed, prefer narrow early-exit helpers (`find`, `any`, `all`, `try_fold`) over a Rust-style iterator/combinator ecosystem
         - no iterator tower, no closures, no cursor/lifetime model — per-container APIs only
-        - design notes: [research/iterators.md](research/iterators.md)
+        - design notes: [research/stdlib-runtime/iterators.md](research/stdlib-runtime/iterators.md)
      5. evaluate arena allocation against the existing `Vec`-as-pool pattern and adopt it only if real programs show a clear win in clarity, performance, or boundedness — **not started**
-        - design notes: [research/arena-allocation.md](research/arena-allocation.md)
+        - design notes: [research/stdlib-runtime/arena-allocation.md](research/stdlib-runtime/arena-allocation.md)
      6. strengthen layout reports where real programs need them: padding visualization, clearer enum/layout detail, and better FFI-facing audit output — **not started**
-        - design notes: [research/layout-reports.md](research/layout-reports.md)
+        - design notes: [research/stdlib-runtime/layout-reports.md](research/stdlib-runtime/layout-reports.md)
      7. ~~reduce the standalone vs project split so stdlib access, benchmarking, and examples do not require awkward scaffolding~~ — **fixed**
         - `concrete build`, `concrete run`, and `concrete test` now work in package mode with builtin std resolution
         - std is located automatically relative to the compiler binary, with `CONCRETE_STD` as an override for unusual setups
@@ -655,15 +655,15 @@ Primary surfaces:
      - backend/performance
      - formalization impact
    - use the following research notes as the design staging area before adding new surface:
-     - `research/phase-h-findings.md`
-     - `research/text-and-output-design.md`
-     - `research/cleanup-ergonomics.md`
-     - `research/module-qualification.md`
-     - `research/runtime-collections.md`
-     - `research/standalone-vs-project-ux.md`
-     - `research/runtime-execution-pressure.md`
-     - `research/arena-allocation.md`
-     - `research/layout-reports.md`
+     - `research/workloads/phase-h-findings.md`
+     - `research/stdlib-runtime/text-and-output-design.md`
+     - `research/language/cleanup-ergonomics.md`
+     - `research/language/module-qualification.md`
+     - `research/stdlib-runtime/runtime-collections.md`
+     - `research/packages-tooling/standalone-vs-project-ux.md`
+     - `research/stdlib-runtime/runtime-execution-pressure.md`
+     - `research/stdlib-runtime/arena-allocation.md`
+     - `research/stdlib-runtime/layout-reports.md`
    - keep the example corpus honest as fixes land:
      - when a bug, builtin, stdlib helper, or workflow improvement removes a workaround, earlier Phase H examples should be updated to use the improved path
      - examples should not preserve stale workarounds once the language/system has a better supported surface
@@ -700,6 +700,8 @@ After the policy engine, MAL, JSON parser, grep-like tool, and bytecode VM, the 
 5. keep closing Phase H findings through the narrowest fixes first:
    - ~~runtime argument surface~~ — done: `std.args` module with `count()` / `get(idx)` API
    - string/text helpers that still matter after the parser and grep results
+   - reusable stdlib building blocks so examples stop reinventing pools, hashing helpers, parser support, and storage support code
+   - cleaner collection access patterns for linear values before inventing heavier language machinery
    - ~~grep string/output bottlenecks~~ — done: switched print builtins from raw `write()` syscalls to buffered libc I/O (`printf`/`putchar`); case-insensitive gap dropped from 2.8x to 1.7x
    - ~~same-name collision handling for qualified module access~~ — done: Elab-time definition prefixing with cross-module renames
    - ~~collection/runtime maturity for interpreter and VM workloads~~ — done: `for_each`, `fold<A>`, `keys()`/`values()`/`elements()` on all containers; method-level generics compiler bug fixed (`c0c5b54`)
@@ -725,10 +727,13 @@ Concrete already looks better than Rust in a narrow auditability niche, but it d
    - better testing tooling around `concrete test` rather than treating test UX as an afterthought
    - incremental/artifact reuse
    - without this, serious programs keep paying workflow tax and teaching workarounds
-2. **ergonomics without abandoning explicitness**
+2. **stdlib and ergonomics without abandoning explicitness**
    - ~~text/output layer: mixed-arg `print` / `println`~~ — done
    - interpolation only if still justified by real-program evidence
    - ~~qualified module access~~ — done: collisions, inline sibling `::` access, and all prior cases now work
+   - string/text ergonomics first: reduce manual string building, duplicated pools, and per-character ceremony
+   - shared stdlib building blocks next: parser/storage/integrity helpers that stop examples from reimplementing the same support code
+   - cleaner collection patterns for linear values where examples still fight the container surface
    - remaining high-value helper APIs and cleanup idioms
    - the goal is not more magic; it is better compression of honest code
 3. **hot-path performance after the workflow floor is fixed**
@@ -758,6 +763,7 @@ That means the remaining high-value Phase H work is mostly:
 - ~~closing the last obvious runtime/string/output bottlenecks~~ — done: buffered I/O landed, runtime argument surface closed
 - ~~fixing namespace/completeness issues such as same-name qualified-access collisions~~ — done
 - deciding whether the remaining language pressure is genuinely language pressure or mostly stdlib/tooling pressure
+- prioritizing string/text ergonomics, reusable stdlib building blocks, and cleaner collection patterns before new syntax
 - leaving behind a clean findings ledger so Phase J package/workspace work starts from real evidence instead of open-ended Phase H uncertainty
 
 Phase H is therefore effectively past open-ended discovery. It still has a short cleanup tail, but it no longer needs to remain the strategic center of the roadmap. The next major center of gravity should move cleanly toward Phase J package/workspace maturity rather than continuing to treat Phase H as mainly a performance question.
@@ -784,9 +790,9 @@ This phase is intentionally after language-discipline work and real-program pres
 - before the later package/adoption/operational phases become the center of gravity, so the proof story remains a structural part of the language rather than an indefinitely deferred side thread
 
 Primary surfaces:
-- [research/formalization-breakdown.md](research/formalization-breakdown.md)
-- [research/formalization-roi.md](research/formalization-roi.md)
-- [research/proving-concrete-functions-in-lean.md](research/proving-concrete-functions-in-lean.md)
+- [research/proof-evidence/formalization-breakdown.md](research/proof-evidence/formalization-breakdown.md)
+- [research/proof-evidence/formalization-roi.md](research/proof-evidence/formalization-roi.md)
+- [research/proof-evidence/proving-concrete-functions-in-lean.md](research/proof-evidence/proving-concrete-functions-in-lean.md)
 - [Concrete/ProofCore.lean](/Users/unbalancedparen/projects/concrete/Concrete/ProofCore.lean)
 - [Concrete/Proof.lean](/Users/unbalancedparen/projects/concrete/Concrete/Proof.lean)
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
@@ -833,11 +839,11 @@ This phase should also establish the package-facing side of the evidence story:
 - package graph artifacts that later support evidence/trust bundles
 
 Primary surfaces:
-- [research/authority-budgets.md](research/authority-budgets.md)
-- [research/artifact-driven-compiler.md](research/artifact-driven-compiler.md)
-- [research/compiler-dataflow-ideas.md](research/compiler-dataflow-ideas.md)
-- [research/developer-tooling.md](research/developer-tooling.md)
-- [research/trust-multipliers.md](research/trust-multipliers.md)
+- [research/packages-tooling/authority-budgets.md](research/packages-tooling/authority-budgets.md)
+- [research/compiler/artifact-driven-compiler.md](research/compiler/artifact-driven-compiler.md)
+- [research/compiler/compiler-dataflow-ideas.md](research/compiler/compiler-dataflow-ideas.md)
+- [research/packages-tooling/developer-tooling.md](research/packages-tooling/developer-tooling.md)
+- [research/proof-evidence/trust-multipliers.md](research/proof-evidence/trust-multipliers.md)
 - project/package metadata
 - import resolution and project-root semantics
 - stdlib vs third-party package boundaries
@@ -860,12 +866,12 @@ Primary surfaces:
    - package mode now supports builtin std resolution, `concrete run`, `concrete test`, dependency loading, temp-binary execution, cleanup, and more actionable workflow diagnostics
    - follow-on work is testing/workspace polish, not whether a first project-facing workflow exists
 10. make testing tooling a first-class part of the package/project model: package-aware discovery, filtering, cleaner failure output, and a path to workspace testing — **not started**
-    - design notes: [research/package-testing-tooling.md](research/package-testing-tooling.md)
+    - design notes: [research/packages-tooling/package-testing-tooling.md](research/packages-tooling/package-testing-tooling.md)
 11. design the first enforceable authority-budget path at module/package/subsystem scope, starting with report-backed policy rather than a second effect system — **not started**
 12. define the first provenance-aware publishing model for packages so publication can later be tied to trusted CI identity, explicit build metadata, and evidence outputs instead of only long-lived tokens — **not started**
 13. make the package graph and lockfile strong enough to support later evidence/trust bundles and trust-drift comparison without redesigning the package layer from scratch — **not started**
 14. decide whether package/profile/target compatibility needs to be tracked more explicitly than whole-package support, especially for hosted/freestanding splits and later high-integrity profiles — **not started**
-    - design notes: [research/compiler-dataflow-ideas.md](research/compiler-dataflow-ideas.md)
+    - design notes: [research/compiler/compiler-dataflow-ideas.md](research/compiler/compiler-dataflow-ideas.md)
 
 Deliverables:
 - incremental compilation: serialized pipeline artifacts, source-hash-based cache invalidation, module-level rebuild granularity
@@ -912,9 +918,9 @@ This phase is intentionally after the package/project, real-program pressure-tes
 Primary surfaces:
 - [README.md](README.md)
 - [docs/IDENTITY.md](docs/IDENTITY.md)
-- [research/adoption-strategy.md](research/adoption-strategy.md)
-- [research/showcase-workloads.md](research/showcase-workloads.md)
-- [research/complete-language-system.md](research/complete-language-system.md)
+- [research/workloads/adoption-strategy.md](research/workloads/adoption-strategy.md)
+- [research/workloads/showcase-workloads.md](research/workloads/showcase-workloads.md)
+- [research/meta/complete-language-system.md](research/meta/complete-language-system.md)
 - project templates, examples, docs, and editor/onboarding surfaces
 
 1. define one or two signature domains where Concrete should be unusually strong — **not started**
@@ -952,12 +958,12 @@ This phase is where the evidence story becomes operational:
 Primary surfaces:
 - [README.md](README.md)
 - [docs/README.md](docs/README.md)
-- [research/artifact-driven-compiler.md](research/artifact-driven-compiler.md)
-- [research/compiler-dataflow-ideas.md](research/compiler-dataflow-ideas.md)
-- [research/developer-tooling.md](research/developer-tooling.md)
-- [research/proof-evidence-artifacts.md](research/proof-evidence-artifacts.md)
-- [research/proof-addon-architecture.md](research/proof-addon-architecture.md)
-- [research/trust-multipliers.md](research/trust-multipliers.md)
+- [research/compiler/artifact-driven-compiler.md](research/compiler/artifact-driven-compiler.md)
+- [research/compiler/compiler-dataflow-ideas.md](research/compiler/compiler-dataflow-ideas.md)
+- [research/packages-tooling/developer-tooling.md](research/packages-tooling/developer-tooling.md)
+- [research/proof-evidence/proof-evidence-artifacts.md](research/proof-evidence/proof-evidence-artifacts.md)
+- [research/proof-evidence/proof-addon-architecture.md](research/proof-evidence/proof-addon-architecture.md)
+- [research/proof-evidence/trust-multipliers.md](research/proof-evidence/trust-multipliers.md)
 - CI config
 - release/build tooling
 - project/package metadata
@@ -1075,10 +1081,10 @@ The intended shape is:
 
 Primary surfaces:
 - [docs/PASSES.md](docs/PASSES.md)
-- [research/qbe-backend.md](research/qbe-backend.md)
-- [research/mlir-backend-shape.md](research/mlir-backend-shape.md)
-- [research/optimization-policy.md](research/optimization-policy.md)
-- [research/artifact-driven-compiler.md](research/artifact-driven-compiler.md)
+- [research/compiler/qbe-backend.md](research/compiler/qbe-backend.md)
+- [research/compiler/mlir-backend-shape.md](research/compiler/mlir-backend-shape.md)
+- [research/compiler/optimization-policy.md](research/compiler/optimization-policy.md)
+- [research/compiler/artifact-driven-compiler.md](research/compiler/artifact-driven-compiler.md)
 - [Concrete/EmitSSA.lean](/Users/unbalancedparen/projects/concrete/Concrete/EmitSSA.lean)
 - backend driver/toolchain integration
 - backend-oriented tests and inspection tooling
@@ -1129,10 +1135,10 @@ The intended long-term shape is:
 - no unrestricted detached async ecosystem as the primary language identity
 
 Primary surfaces:
-- [research/concurrency.md](research/concurrency.md)
-- [research/long-term-concurrency.md](research/long-term-concurrency.md)
-- [research/high-integrity-profile.md](research/high-integrity-profile.md)
-- [research/trust-multipliers.md](research/trust-multipliers.md)
+- [research/stdlib-runtime/concurrency.md](research/stdlib-runtime/concurrency.md)
+- [research/stdlib-runtime/long-term-concurrency.md](research/stdlib-runtime/long-term-concurrency.md)
+- [research/language/high-integrity-profile.md](research/language/high-integrity-profile.md)
+- [research/proof-evidence/trust-multipliers.md](research/proof-evidence/trust-multipliers.md)
 - runtime-facing stdlib surfaces
 - capability/report tooling
 
@@ -1172,10 +1178,10 @@ The intended shape is deliberately narrow:
 - prefer capacity-aware APIs and explicit restrictions over clever inference
 
 Primary surfaces:
-- [research/allocation-budgets.md](research/allocation-budgets.md)
-- [research/high-integrity-profile.md](research/high-integrity-profile.md)
-- [research/arena-allocation.md](research/arena-allocation.md)
-- [research/execution-cost.md](research/execution-cost.md)
+- [research/stdlib-runtime/allocation-budgets.md](research/stdlib-runtime/allocation-budgets.md)
+- [research/language/high-integrity-profile.md](research/language/high-integrity-profile.md)
+- [research/stdlib-runtime/arena-allocation.md](research/stdlib-runtime/arena-allocation.md)
+- [research/stdlib-runtime/execution-cost.md](research/stdlib-runtime/execution-cost.md)
 - [docs/EXECUTION_MODEL.md](docs/EXECUTION_MODEL.md)
 - [docs/SAFETY.md](docs/SAFETY.md)
 - allocation-related stdlib and report tooling
@@ -1213,12 +1219,12 @@ Its job is to turn "maybe" into one of three outcomes:
 - explicitly rejected with reasons
 
 Primary surfaces:
-- [research/high-leverage-systems-ideas.md](research/high-leverage-systems-ideas.md)
-- [research/typestate.md](research/typestate.md)
-- [research/arena-allocation.md](research/arena-allocation.md)
-- [research/layout-reports.md](research/layout-reports.md)
-- [research/execution-cost.md](research/execution-cost.md)
-- [research/authority-budgets.md](research/authority-budgets.md)
+- [research/meta/high-leverage-systems-ideas.md](research/meta/high-leverage-systems-ideas.md)
+- [research/language/typestate.md](research/language/typestate.md)
+- [research/stdlib-runtime/arena-allocation.md](research/stdlib-runtime/arena-allocation.md)
+- [research/stdlib-runtime/layout-reports.md](research/stdlib-runtime/layout-reports.md)
+- [research/stdlib-runtime/execution-cost.md](research/stdlib-runtime/execution-cost.md)
+- [research/packages-tooling/authority-budgets.md](research/packages-tooling/authority-budgets.md)
 
 1. keep a small canonical list of research-backed systems ideas visible and cross-linked — **not started**
 2. record the dependency fit for each idea: which existing phase it belongs with if adopted later — **not started**
@@ -1355,7 +1361,7 @@ Do not use it to restate phases that already exist above.
    - evaluate it against trust, proof leverage, implementation cost, and operational complexity rather than aesthetics
    - do not let self-hosting aspirations outrun the proof/runtime/package/operational story
 14. Keep a small set of research-backed systems ideas explicitly in view even when they are not yet phase-committed.
-   - canonical summary: [research/high-leverage-systems-ideas.md](research/high-leverage-systems-ideas.md)
+   - canonical summary: [research/meta/high-leverage-systems-ideas.md](research/meta/high-leverage-systems-ideas.md)
    - allocation budgets / `NoAlloc` / restricted `BoundedAlloc(N)` are now phase-committed in Phase N
    - arena allocation remains a serious candidate because it formalizes the existing pool pattern in parser/interpreter-style programs
    - execution boundedness / cost reporting remains a report-first candidate because it fits the audit and high-integrity story well
@@ -1444,14 +1450,14 @@ These are not the immediate implementation queue, but they remain some of the hi
    - later, stricter capability sandbox profiles and authority budgets
 
 For more on these longer-horizon themes, see:
-- [research/ten-x-improvements.md](research/ten-x-improvements.md)
-- [research/capability-sandboxing.md](research/capability-sandboxing.md)
-- [research/unsafe-structure.md](research/unsafe-structure.md)
-- [research/no-std-freestanding.md](research/no-std-freestanding.md)
-- [research/long-term-concurrency.md](research/long-term-concurrency.md)
-- [research/optimization-policy.md](research/optimization-policy.md)
-- [research/target-platform-policy.md](research/target-platform-policy.md)
-- [research/complete-language-system.md](research/complete-language-system.md)
+- [research/meta/ten-x-improvements.md](research/meta/ten-x-improvements.md)
+- [research/language/capability-sandboxing.md](research/language/capability-sandboxing.md)
+- [research/language/unsafe-structure.md](research/language/unsafe-structure.md)
+- [research/stdlib-runtime/no-std-freestanding.md](research/stdlib-runtime/no-std-freestanding.md)
+- [research/stdlib-runtime/long-term-concurrency.md](research/stdlib-runtime/long-term-concurrency.md)
+- [research/compiler/optimization-policy.md](research/compiler/optimization-policy.md)
+- [research/stdlib-runtime/target-platform-policy.md](research/stdlib-runtime/target-platform-policy.md)
+- [research/meta/complete-language-system.md](research/meta/complete-language-system.md)
 
 ## Status Legend
 

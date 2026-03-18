@@ -4,7 +4,7 @@ This directory contains the current standard library sources.
 
 The detailed design direction for the stdlib lives in:
 
-- [`research/stdlib-design.md`](../research/stdlib-design.md)
+- [`research/stdlib-runtime/stdlib-design.md`](../research/stdlib-runtime/stdlib-design.md)
 
 That document is the main source of truth for:
 

@@ -17,7 +17,7 @@ These are structural constraints. Reversing any of them would require rethinking
 ### No closures
 
 **Status:** Decided (2026-03-08)
-**Detail:** [../research/no-closures.md](../research/no-closures.md)
+**Detail:** [../research/language/no-closures.md](../research/language/no-closures.md)
 
 Closures bundle code and hidden captured data into a single opaque value. This violates three invariants: all code paths known at compile time, no hidden control flow, no hidden data flow.
 
@@ -32,7 +32,7 @@ Closures bundle code and hidden captured data into a single opaque value. This v
 ### No trait objects
 
 **Status:** Decided (2026-03-08)
-**Detail:** [../research/no-trait-objects.md](../research/no-trait-objects.md)
+**Detail:** [../research/language/no-trait-objects.md](../research/language/no-trait-objects.md)
 
 Trait objects (`dyn Trait`) hide dispatch behind an opaque vtable at runtime. This violates: all code paths known at compile time, no hidden control flow.
 
@@ -47,7 +47,7 @@ Trait objects (`dyn Trait`) hide dispatch behind an opaque vtable at runtime. Th
 ### No source-generating macros
 
 **Status:** Decided (2026-03-09)
-**Detail:** [../research/candidate-ideas.md](../research/candidate-ideas.md) (rejected candidates section)
+**Detail:** [../research/meta/candidate-ideas.md](../research/meta/candidate-ideas.md) (rejected candidates section)
 
 Source-generating macros destroy file-local parsing, couple early phases to late semantic information, and make audit output unreliable. They violate phase separation and locality.
 
@@ -78,7 +78,7 @@ These are not rejected. They are explicitly sequenced as "not yet" to avoid prem
 ### Freestanding / no-std mode — not yet
 
 **Status:** Deferred
-**Detail:** [../research/no-std-freestanding.md](../research/no-std-freestanding.md)
+**Detail:** [../research/stdlib-runtime/no-std-freestanding.md](../research/stdlib-runtime/no-std-freestanding.md)
 
 A freestanding mode (no libc, no hosted stdlib, explicit allocator) would be valuable for embedded, kernel, and audit-critical targets. Deferred because the hosted stdlib boundary is not yet stable enough. The capability system and explicit allocation model make this easier to add later.
 
@@ -95,7 +95,7 @@ A mechanism where a trusted wrapper could absorb `with(Unsafe)` and expose only 
 ### Concurrency — not yet
 
 **Status:** Deferred
-**Detail:** [../research/concurrency.md](../research/concurrency.md)
+**Detail:** [../research/stdlib-runtime/concurrency.md](../research/stdlib-runtime/concurrency.md)
 
 Concrete should only broaden concurrency once it can do so without importing async fragmentation and hidden runtime culture. The current implementation is single-threaded; the planned direction is explicit, threads-first concurrency with structured long-term evolution. No async/await, no goroutines, no thread pool runtime.
 
@@ -104,7 +104,7 @@ Concrete should only broaden concurrency once it can do so without importing asy
 ### Pre/post conditions — not yet
 
 **Status:** Deferred
-**Detail:** [../research/pre-post-conditions.md](../research/pre-post-conditions.md)
+**Detail:** [../research/language/pre-post-conditions.md](../research/language/pre-post-conditions.md)
 
 Contract annotations on functions (requires/ensures) would strengthen the proof story. Deferred because the ProofCore extraction and Lean proof story must mature first. Adding contracts before the proof pipeline is ready creates unverified annotations that look like guarantees.
 
@@ -113,14 +113,14 @@ Contract annotations on functions (requires/ensures) would strengthen the proof 
 ### Derived structural equality — not yet
 
 **Status:** Deferred
-**Detail:** [../research/derived-equality-design.md](../research/derived-equality-design.md)
+**Detail:** [../research/language/derived-equality-design.md](../research/language/derived-equality-design.md)
 
 Auto-deriving `==` for structs with all-Copy fields. Deferred because it requires deciding the trait/derive mechanism more carefully.
 
 ### Package/dependency model — not yet
 
 **Status:** Deferred
-**Detail:** [../research/package-model.md](../research/package-model.md)
+**Detail:** [../research/packages-tooling/package-model.md](../research/packages-tooling/package-model.md)
 
 A real package manager and dependency system. Deferred until the language surface is stable and real programs have been written to validate the model.
 

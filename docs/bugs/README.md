@@ -19,7 +19,7 @@ Do not use it for:
 Those belong in:
 
 - [ROADMAP.md](../../ROADMAP.md)
-- [research/phase-h-findings.md](../../research/phase-h-findings.md)
+- [research/workloads/phase-h-findings.md](../../research/workloads/phase-h-findings.md)
 - the relevant research note under `research/`
 
 ## Fixed Bugs

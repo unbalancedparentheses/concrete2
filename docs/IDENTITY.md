@@ -215,7 +215,7 @@ Compared to mainstream systems languages, Concrete's intended difference is not 
 
 Compared to verification-first languages, Concrete is trying to keep low-level runtime, FFI, layout, and ownership concerns first-class instead of treating them as secondary escape hatches.
 
-For a fuller comparison of what other languages may still have even after Concrete's planned phases, see [../research/competitive-gap-analysis.md](../research/competitive-gap-analysis.md).
+For a fuller comparison of what other languages may still have even after Concrete's planned phases, see [../research/meta/competitive-gap-analysis.md](../research/meta/competitive-gap-analysis.md).
 
 ## Non-Goals
 

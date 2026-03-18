@@ -89,5 +89,5 @@ This direction spans several later phases:
 ## Where To Go Deeper
 
 - [Project Direction](./direction.md)
-- [research/high-integrity-profile.md](../../../research/high-integrity-profile.md)
-- [research/pre-post-conditions.md](../../../research/pre-post-conditions.md)
+- [research/language/high-integrity-profile.md](../../../research/language/high-integrity-profile.md)
+- [research/language/pre-post-conditions.md](../../../research/language/pre-post-conditions.md)

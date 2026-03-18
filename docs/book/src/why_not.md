@@ -12,7 +12,7 @@ Closures tend to hide capture and lifetime structure unless the language pays a 
 
 See also:
 
-- `research/no-closures.md`
+- `research/language/no-closures.md`
 
 ## Why Not Trait Objects?
 
@@ -22,7 +22,7 @@ Trait objects bring hidden indirection and more runtime semantics than the langu
 
 See also:
 
-- `research/no-trait-objects.md`
+- `research/language/no-trait-objects.md`
 
 ## Why Not Contracts First?
 
@@ -36,7 +36,7 @@ Contracts may still make sense later, but they are not part of the core philosop
 
 See also:
 
-- `research/pre-post-conditions.md`
+- `research/language/pre-post-conditions.md`
 
 ## Why Not MLIR First?
 
@@ -52,7 +52,7 @@ MLIR can be evaluated later if it earns its complexity.
 
 See also:
 
-- `research/mlir-backend-shape.md`
+- `research/compiler/mlir-backend-shape.md`
 
 ## Why Not Self-Hosting First?
 

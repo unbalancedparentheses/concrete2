@@ -312,8 +312,8 @@ Current state:
 
 - the second-wave list is now evidence-backed rather than purely aspirational
 - `TOML parser` looks like a clean exemplar candidate
-- `file integrity monitor` and `key-value store` found the HashMap cross-module linking bug (now fixed); their pool-based workarounds can be replaced with direct HashMap usage
-- `simple HTTP server` found the macOS socket constants bug (now fixed); networking works cross-platform, but HTTP parsing has a code-level bug returning 400
+- `file integrity monitor` and `key-value store` found the HashMap cross-module linking bug (now fixed); both now use direct `HashMap<String, String>` storage rather than the earlier workaround shapes, though `kvstore` still intentionally keeps a parallel key `Vec<String>` for enumeration and swap-remove semantics
+- `simple HTTP server` found the macOS socket constants bug (now fixed) and later exercised the stack-array borrow path that exposed Bug 018; it now builds/runs without the earlier heap-buffer workaround
 - `Lox interpreter` (1,052 loc) compiles/runs cleanly — tree-walk eval with closures, scoping, control flow
 - the most important new findings from this wave were:
   - Bug 016: cross-module generic monomorphization/linking for `HashMap<String, String>` in package builds — **fixed** in `bdb2d7f` (linker alias resolution in Mono.lean lookupFn + EmitSSA svalToOperand + capability mismatch in HashMap/HashSet constructors)
@@ -322,8 +322,9 @@ Current state:
   - Bug 019: method-level generics crash at lowering — **fixed** in `c0c5b54`. Two issues: (a) Parser created bare Self type (`Box`) instead of `Box<T>` for self parameters in generic impls; (b) generic structs like `Box<T>` were only instantiated once at the LLVM level — `Box<i32>` and `Box<i64>` shared the same layout, causing silent value truncation. This blocked any method with its own type parameter (`fn fold<A>`, `fn map<U>`). Fix: `selfTy` now uses `Ty.generic` with type params, and post-monomorphization pass creates distinct LLVM struct types for each instantiation.
 - remaining cleanup:
   - `TOML parser` can be treated as a likely exemplar once its tree is cleaned up
-  - `file integrity monitor` and `key-value store` can now use `HashMap<String, String>` directly — pool-based workarounds can be replaced
-  - `simple HTTP server` now has its stdlib blocker and request-parsing issue cleared, but it is still coupled to the Bug 018 heap-buffer workaround until stack-array borrowing is fixed
+  - `file integrity monitor` now uses direct `HashMap<String, String>` / `HashSet<String>` structures
+  - `key-value store` now uses direct `HashMap<String, String>` storage, while intentionally retaining a parallel key `Vec<String>` for explicit enumeration order and swap-remove behavior
+  - `simple HTTP server` no longer needs the Bug 018 heap-buffer workaround after the borrow fix; remaining work is ordinary example polish rather than a compiler/std blocker
   - Bug 019 (method-level generics) is the most impactful compiler fix from second-wave work: it unblocked `fold<A>` on all containers and generic method patterns generally
 
 ## Phase H Retrospective
