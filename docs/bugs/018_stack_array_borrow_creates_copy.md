@@ -1,6 +1,6 @@
 # Bug 018: Borrowing A Stack Array Can Create A Copy Instead Of A Stable Reference
 
-Status: open
+Status: fixed (f8f1bf8)
 
 ## Symptom
 
