@@ -31,6 +31,7 @@ mod toml_parser {
     import std.fs.{read_to_string, FsError};
     import std.result.{Result};
     import std.args.{count, get};
+    import std.vec.{Vec};
 
     // ---- Value types ----
 
@@ -78,23 +79,23 @@ mod toml_parser {
     // stored in a Vec<i32> as pairs.
 
     fn pool_store(buf: &mut String, meta: &mut Vec<i32>, s: &String) with(Alloc) -> i32 {
-        let idx: i32 = (vec_len::<i32>(meta) as i32) / 2;
+        let idx: i32 = (meta.len() as i32) / 2;
         let offset: i32 = string_length(s) as i32;  // use s's length first
         let buf_len: i32 = string_length(s) as i32;  // placeholder
         // Get buffer length by checking meta or computing from content
         // Actually, we need buf length. Since buf is &mut, we can't call string_length on it.
         // Track buffer length via the last offset + length in meta.
-        let meta_len: Int = vec_len::<i32>(meta) as Int;
+        let meta_len: Int = meta.len() as Int;
         let mut buf_offset: i32 = 0;
         if meta_len >= 2 {
-            let last_off: i32 = vec_get::<i32>(meta, meta_len - 2);
-            let last_len: i32 = vec_get::<i32>(meta, meta_len - 1);
+            let last_off: i32 = *meta.get_unchecked((meta_len - 2) as u64);
+            let last_len: i32 = *meta.get_unchecked((meta_len - 1) as u64);
             buf_offset = last_off + last_len;
         }
         let slen: i32 = string_length(s) as i32;
         string_append(buf, s);
-        vec_push::<i32>(meta, buf_offset);
-        vec_push::<i32>(meta, slen);
+        meta.push(buf_offset);
+        meta.push(slen);
         return idx;
     }
 
@@ -107,8 +108,8 @@ mod toml_parser {
 
     // Retrieve a string from the pool as a new owned String
     fn pool_get(buf: &String, meta: &Vec<i32>, idx: i32) with(Alloc) -> String {
-        let off: i32 = vec_get::<i32>(meta, (idx * 2) as Int);
-        let slen: i32 = vec_get::<i32>(meta, (idx * 2 + 1) as Int);
+        let off: i32 = *meta.get_unchecked((idx * 2) as u64);
+        let slen: i32 = *meta.get_unchecked((idx * 2 + 1) as u64);
         if slen == 0 {
             return "";
         }
@@ -117,8 +118,8 @@ mod toml_parser {
 
     // Print a string from the pool without allocating a copy
     fn pool_print(buf: &String, meta: &Vec<i32>, idx: i32) with(Console, Alloc) {
-        let off: i32 = vec_get::<i32>(meta, (idx * 2) as Int);
-        let slen: i32 = vec_get::<i32>(meta, (idx * 2 + 1) as Int);
+        let off: i32 = *meta.get_unchecked((idx * 2) as u64);
+        let slen: i32 = *meta.get_unchecked((idx * 2 + 1) as u64);
         if slen > 0 {
             let s: String = string_slice(buf, off as Int, (off + slen) as Int);
             print_string(&s);
@@ -422,18 +423,18 @@ mod toml_parser {
         let mut p: i32 = skip_trivia(s, pos);
 
         if p < len && string_char_at(s, p as Int) == 93 {
-            let idx: i32 = vec_len::<ArrayDesc>(arrays) as i32;
-            let start: i32 = vec_len::<Val>(vals) as i32;
-            vec_push::<ArrayDesc>(arrays, ArrayDesc { start: start, len: 0 });
+            let idx: i32 = arrays.len() as i32;
+            let start: i32 = vals.len() as i32;
+            arrays.push(ArrayDesc { start: start, len: 0 });
             return ParseResult { val: mk_array_val(idx), pos: p + 1 };
         }
 
-        let start: i32 = vec_len::<Val>(vals) as i32;
+        let start: i32 = vals.len() as i32;
         let mut arr_count: i32 = 0;
 
         let r: ParseResult = parse_value(s, p, pool_buf, pool_meta, arrays, tables, kvpairs, vals);
         if is_error(r.val) { return r; }
-        vec_push::<Val>(vals, r.val);
+        vals.push(r.val);
         arr_count = arr_count + 1;
         p = skip_trivia(s, r.pos);
 
@@ -444,7 +445,7 @@ mod toml_parser {
             }
             let elem: ParseResult = parse_value(s, p, pool_buf, pool_meta, arrays, tables, kvpairs, vals);
             if is_error(elem.val) { return elem; }
-            vec_push::<Val>(vals, elem.val);
+            vals.push(elem.val);
             arr_count = arr_count + 1;
             p = skip_trivia(s, elem.pos);
         }
@@ -453,8 +454,8 @@ mod toml_parser {
             return err_result(p, line_at(s, p));
         }
 
-        let idx: i32 = vec_len::<ArrayDesc>(arrays) as i32;
-        vec_push::<ArrayDesc>(arrays, ArrayDesc { start: start, len: arr_count });
+        let idx: i32 = arrays.len() as i32;
+        arrays.push(ArrayDesc { start: start, len: arr_count });
         return ParseResult { val: mk_array_val(idx), pos: p + 1 };
     }
 
@@ -469,14 +470,14 @@ mod toml_parser {
         let mut p: i32 = skip_ws(s, pos);
 
         if p < len && string_char_at(s, p as Int) == 125 {
-            let idx: i32 = vec_len::<TableDesc>(tables) as i32;
-            let start: i32 = vec_len::<KVPair>(kvpairs) as i32;
-            vec_push::<TableDesc>(tables, TableDesc { start: start, len: 0 });
+            let idx: i32 = tables.len() as i32;
+            let start: i32 = kvpairs.len() as i32;
+            tables.push(TableDesc { start: start, len: 0 });
             return ParseResult { val: mk_table_val(idx), pos: p + 1 };
         }
 
         // Stage kv triples to avoid interleaving with nested inline table kvpairs
-        let mut staging: Vec<i32> = vec_new::<i32>();
+        let mut staging: Vec<i32> = Vec::<i32>::new();
         let mut tbl_count: i32 = 0;
         let mut has_error: bool = false;
         let mut error_pos: i32 = 0;
@@ -485,23 +486,23 @@ mod toml_parser {
         // First kv pair
         let key_r: ParseResult = parse_key(s, p, pool_buf, pool_meta);
         if is_error(key_r.val) {
-            vec_free::<i32>(staging);
+            staging.drop();
             return key_r;
         }
         p = skip_ws(s, key_r.pos);
         if p >= len || string_char_at(s, p as Int) != 61 {
-            vec_free::<i32>(staging);
+            staging.drop();
             return err_result(p, line_at(s, p));
         }
         p = p + 1;
         let val_r: ParseResult = parse_value(s, p, pool_buf, pool_meta, arrays, tables, kvpairs, vals);
         if is_error(val_r.val) {
-            vec_free::<i32>(staging);
+            staging.drop();
             return val_r;
         }
-        vec_push::<i32>(&mut staging, key_r.val.data);
-        vec_push::<i32>(&mut staging, val_r.val.tag);
-        vec_push::<i32>(&mut staging, val_r.val.data);
+        staging.push(key_r.val.data);
+        staging.push(val_r.val.tag);
+        staging.push(val_r.val.data);
         tbl_count = tbl_count + 1;
         p = skip_ws(s, val_r.pos);
 
@@ -530,9 +531,9 @@ mod toml_parser {
                         error_pos = p;
                         error_line = next_val.val.data;
                     } else {
-                        vec_push::<i32>(&mut staging, next_key.val.data);
-                        vec_push::<i32>(&mut staging, next_val.val.tag);
-                        vec_push::<i32>(&mut staging, next_val.val.data);
+                        staging.push(next_key.val.data);
+                        staging.push(next_val.val.tag);
+                        staging.push(next_val.val.data);
                         tbl_count = tbl_count + 1;
                         p = skip_ws(s, next_val.pos);
                     }
@@ -541,30 +542,30 @@ mod toml_parser {
         }
 
         if has_error {
-            vec_free::<i32>(staging);
+            staging.drop();
             return err_result(error_pos, error_line);
         }
 
         if p >= len || string_char_at(s, p as Int) != 125 {
-            vec_free::<i32>(staging);
+            staging.drop();
             return err_result(p, line_at(s, p));
         }
 
         // Flush staged kvpairs contiguously
-        let start: i32 = vec_len::<KVPair>(kvpairs) as i32;
-        let n: Int = vec_len::<i32>(&staging) as Int;
+        let start: i32 = kvpairs.len() as i32;
+        let n: Int = staging.len() as Int;
         let mut si: Int = 0;
         while si < n {
-            let sk: i32 = vec_get::<i32>(&staging, si);
-            let sv: i32 = vec_get::<i32>(&staging, si + 1);
-            let sd: i32 = vec_get::<i32>(&staging, si + 2);
-            vec_push::<KVPair>(kvpairs, KVPair { key: sk, val_tag: sv, val_data: sd });
+            let sk: i32 = *staging.get_unchecked(si as u64);
+            let sv: i32 = *staging.get_unchecked((si + 1) as u64);
+            let sd: i32 = *staging.get_unchecked((si + 2) as u64);
+            kvpairs.push(KVPair { key: sk, val_tag: sv, val_data: sd });
             si = si + 3;
         }
-        vec_free::<i32>(staging);
+        staging.drop();
 
-        let idx: i32 = vec_len::<TableDesc>(tables) as i32;
-        vec_push::<TableDesc>(tables, TableDesc { start: start, len: tbl_count });
+        let idx: i32 = tables.len() as i32;
+        tables.push(TableDesc { start: start, len: tbl_count });
         return ParseResult { val: mk_table_val(idx), pos: p + 1 };
     }
 
@@ -624,16 +625,16 @@ mod toml_parser {
     fn flush_section(staging: &Vec<i32>, staging_start: Int,
                      kvpairs: &mut Vec<KVPair>,
                      tables: &mut Vec<TableDesc>) with(Alloc) -> i32 {
-        let n: Int = vec_len::<i32>(staging) as Int;
+        let n: Int = staging.len() as Int;
         let num_entries: i32 = ((n - staging_start) / 3) as i32;
-        let kv_start: i32 = vec_len::<KVPair>(kvpairs) as i32;
+        let kv_start: i32 = kvpairs.len() as i32;
 
         let mut i: Int = staging_start;
         while i < n {
-            let key: i32 = vec_get::<i32>(staging, i);
-            let vtag: i32 = vec_get::<i32>(staging, i + 1);
-            let vdata: i32 = vec_get::<i32>(staging, i + 2);
-            vec_push::<KVPair>(kvpairs, KVPair {
+            let key: i32 = *staging.get_unchecked(i as u64);
+            let vtag: i32 = *staging.get_unchecked((i + 1) as u64);
+            let vdata: i32 = *staging.get_unchecked((i + 2) as u64);
+            kvpairs.push(KVPair {
                 key: key,
                 val_tag: vtag,
                 val_data: vdata,
@@ -641,8 +642,8 @@ mod toml_parser {
             i = i + 3;
         }
 
-        let tbl_idx: i32 = vec_len::<TableDesc>(tables) as i32;
-        vec_push::<TableDesc>(tables, TableDesc { start: kv_start, len: num_entries });
+        let tbl_idx: i32 = tables.len() as i32;
+        tables.push(TableDesc { start: kv_start, len: num_entries });
         return tbl_idx;
     }
 
@@ -656,8 +657,8 @@ mod toml_parser {
         let len: i32 = string_length(s) as i32;
         let mut pos: i32 = 0;
 
-        let mut staging: Vec<i32> = vec_new::<i32>();
-        let mut root_staging: Vec<i32> = vec_new::<i32>();
+        let mut staging: Vec<i32> = Vec::<i32>::new();
+        let mut root_staging: Vec<i32> = Vec::<i32>::new();
 
         let mut section_start: Int = 0;
         let mut section_key: i32 = 0 - 1;
@@ -673,12 +674,12 @@ mod toml_parser {
             if ch == 91 {
                 if in_named_section {
                     let tbl_idx: i32 = flush_section(&staging, section_start, kvpairs, tables);
-                    vec_push::<i32>(&mut root_staging, section_key);
-                    vec_push::<i32>(&mut root_staging, 4);
-                    vec_push::<i32>(&mut root_staging, tbl_idx);
+                    root_staging.push(section_key);
+                    root_staging.push(4);
+                    root_staging.push(tbl_idx);
                 }
 
-                section_start = vec_len::<i32>(&staging) as Int;
+                section_start = staging.len() as Int;
                 in_named_section = true;
 
                 pos = pos + 1;
@@ -706,13 +707,13 @@ mod toml_parser {
                     has_error = true;
                 } else {
                     if in_named_section {
-                        vec_push::<i32>(&mut staging, kv.key_idx);
-                        vec_push::<i32>(&mut staging, kv.val_tag);
-                        vec_push::<i32>(&mut staging, kv.val_data);
+                        staging.push(kv.key_idx);
+                        staging.push(kv.val_tag);
+                        staging.push(kv.val_data);
                     } else {
-                        vec_push::<i32>(&mut root_staging, kv.key_idx);
-                        vec_push::<i32>(&mut root_staging, kv.val_tag);
-                        vec_push::<i32>(&mut root_staging, kv.val_data);
+                        root_staging.push(kv.key_idx);
+                        root_staging.push(kv.val_tag);
+                        root_staging.push(kv.val_data);
                     }
                     pos = kv.end_pos;
                     pos = skip_trivia(s, pos);
@@ -721,21 +722,21 @@ mod toml_parser {
         }
 
         if has_error {
-            vec_free::<i32>(staging);
-            vec_free::<i32>(root_staging);
+            staging.drop();
+            root_staging.drop();
             return mk_error_val(error_line);
         }
 
         if in_named_section {
             let tbl_idx: i32 = flush_section(&staging, section_start, kvpairs, tables);
-            vec_push::<i32>(&mut root_staging, section_key);
-            vec_push::<i32>(&mut root_staging, 4);
-            vec_push::<i32>(&mut root_staging, tbl_idx);
+            root_staging.push(section_key);
+            root_staging.push(4);
+            root_staging.push(tbl_idx);
         }
-        vec_free::<i32>(staging);
+        staging.drop();
 
         let root_idx: i32 = flush_section(&root_staging, 0, kvpairs, tables);
-        vec_free::<i32>(root_staging);
+        root_staging.drop();
 
         return mk_table_val(root_idx);
     }
@@ -782,7 +783,7 @@ mod toml_parser {
             return;
         }
         if v.tag == 3 {
-            let desc: ArrayDesc = vec_get::<ArrayDesc>(arrays, v.data as Int);
+            let desc: ArrayDesc = *arrays.get_unchecked(v.data as u64);
             if desc.len == 0 {
                 let e: String = "[]";
                 print_string(&e);
@@ -794,7 +795,7 @@ mod toml_parser {
             let mut i: i32 = 0;
             while i < desc.len {
                 print_indent(depth + 1);
-                let elem: Val = vec_get::<Val>(vals, (desc.start + i) as Int);
+                let elem: Val = *vals.get_unchecked((desc.start + i) as u64);
                 print_val(elem, depth + 1, pool_buf, pool_meta, arrays, tables, kvpairs, vals);
                 if i < desc.len - 1 {
                     print_char(44);
@@ -807,7 +808,7 @@ mod toml_parser {
             return;
         }
         if v.tag == 4 {
-            let desc: TableDesc = vec_get::<TableDesc>(tables, v.data as Int);
+            let desc: TableDesc = *tables.get_unchecked(v.data as u64);
             if desc.len == 0 {
                 let e: String = "{}";
                 print_string(&e);
@@ -818,7 +819,7 @@ mod toml_parser {
             print_char(10);
             let mut i: i32 = 0;
             while i < desc.len {
-                let kv: KVPair = vec_get::<KVPair>(kvpairs, (desc.start + i) as Int);
+                let kv: KVPair = *kvpairs.get_unchecked((desc.start + i) as u64);
                 print_indent(depth + 1);
                 pool_print(pool_buf, pool_meta, kv.key);
                 let eq: String = " = ";
@@ -849,11 +850,11 @@ mod toml_parser {
                tables: Vec<TableDesc>, kvpairs: Vec<KVPair>,
                vals: Vec<Val>) with(Alloc) {
         drop_string(pool_buf);
-        vec_free::<i32>(pool_meta);
-        vec_free::<ArrayDesc>(arrays);
-        vec_free::<TableDesc>(tables);
-        vec_free::<KVPair>(kvpairs);
-        vec_free::<Val>(vals);
+        pool_meta.drop();
+        arrays.drop();
+        tables.drop();
+        kvpairs.drop();
+        vals.drop();
     }
 
     // ---- Entry point ----
@@ -880,11 +881,11 @@ mod toml_parser {
             Result#Ok { value } => {
                 let mut pool_buf: String = "";
                 string_reserve(&mut pool_buf, 1024);
-                let mut pool_meta: Vec<i32> = vec_new::<i32>();
-                let mut arrays: Vec<ArrayDesc> = vec_new::<ArrayDesc>();
-                let mut tables: Vec<TableDesc> = vec_new::<TableDesc>();
-                let mut kvpairs: Vec<KVPair> = vec_new::<KVPair>();
-                let mut vals: Vec<Val> = vec_new::<Val>();
+                let mut pool_meta: Vec<i32> = Vec::<i32>::new();
+                let mut arrays: Vec<ArrayDesc> = Vec::<ArrayDesc>::new();
+                let mut tables: Vec<TableDesc> = Vec::<TableDesc>::new();
+                let mut kvpairs: Vec<KVPair> = Vec::<KVPair>::new();
+                let mut vals: Vec<Val> = Vec::<Val>::new();
 
                 let root: Val = parse_document(&value, &mut pool_buf, &mut pool_meta,
                                                &mut arrays, &mut tables, &mut kvpairs, &mut vals);

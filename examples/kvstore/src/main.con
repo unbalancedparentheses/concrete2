@@ -25,6 +25,7 @@ mod kvstore {
     import std.bytes.{Bytes};
     import std.map.{HashMap};
     import std.hash.{hash_string, eq_string};
+    import std.vec.{Vec};
 
     // --- Forget a linear String without freeing (for shallow copies from vec_get) ---
 
@@ -82,12 +83,11 @@ mod kvstore {
     // --- Keys vec: find index of key, or -1 ---
 
     fn keys_find(keys: &mut Vec<String>, key: &String) -> Int {
-        let len: Int = vec_len::<String>(keys) as Int;
+        let len: Int = keys.len() as Int;
         let mut i: Int = 0;
         while i < len {
-            let k: String = vec_get::<String>(keys, i);
-            let eq: bool = str_eq(&k, key);
-            forget_string(k);
+            let k: &String = keys.get_unchecked(i as u64);
+            let eq: bool = str_eq(k, key);
             if eq {
                 return i;
             }
@@ -103,13 +103,13 @@ mod kvstore {
         if idx < 0 {
             return;
         }
-        let len: Int = vec_len::<String>(keys) as Int;
+        let len: Int = keys.len() as Int;
         let last: Int = len - 1;
         if idx != last {
             let last_key: String = vec_get::<String>(keys, last);
             vec_set::<String>(keys, idx, last_key);
         }
-        let pk: Option<String> = vec_pop::<String>(keys);
+        let pk: Option<String> = keys.pop();
         match pk {
             Option#Some { value } => {
                 forget_string(value);
@@ -133,7 +133,7 @@ mod kvstore {
         if existed {
             drop_string(key_for_vec);
         } else {
-            vec_push::<String>(keys, key_for_vec);
+            keys.push(key_for_vec);
         }
     }
 
@@ -378,7 +378,7 @@ mod kvstore {
     // --- Command: list ---
 
     fn cmd_list(map: &mut HashMap<String, String>, keys: &mut Vec<String>) with(Std) {
-        let len: Int = vec_len::<String>(keys) as Int;
+        let len: Int = keys.len() as Int;
         if len == 0 {
             println("(empty)");
             return;
@@ -412,7 +412,7 @@ mod kvstore {
         }
 
         let mut map: HashMap<String, String> = HashMap::<String, String>::new(hash_string, eq_string);
-        let mut keys: Vec<String> = vec_new::<String>();
+        let mut keys: Vec<String> = Vec::<String>::new();
         replay_log(&mut map, &mut keys);
 
         let cmd: String = get(1);
@@ -480,7 +480,7 @@ mod kvstore {
         drop_string(get_str);
         drop_string(set_str);
         drop_string(cmd);
-        vec_free::<String>(keys);
+        keys.drop();
         map.drop();
         return exit_code;
     }

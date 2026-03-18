@@ -30,7 +30,7 @@ This is the right **current** design and also the right **base** for the long-te
 
 ## Design Decisions
 
-- **No cursors**: would require borrowing lifetimes, which go against Concrete's design (inference-heavy, murkier diagnostics, phase coupling)
+- **No cursors**: would require borrowing lifetimes, which Concrete will never add. Lifetimes fail multiple design filters (inference-heavy, murkier diagnostics, phase coupling). This is a permanent design decision, not a deferral.
 - **No closures**: `fold` threads state through the return value instead of capturing mutable locals
 - **No iterator trait**: per-container APIs cover the need; a shared protocol adds complexity without proven benefit
 - **No lazy adapter chains**: explicit traversal only
@@ -77,6 +77,17 @@ Phase H programs showed the traversal pressure:
 - kvstore needed parallel `Vec<String>` because HashMap had no traversal (now uses HashMap + fold)
 - integrity monitor used O(n) linear manifest scanning (now uses HashMap + HashSet with fold)
 - `for_each` alone was insufficient because it can't accumulate without closures
+
+## Post-Landing Evidence
+
+Migration audit across all Phase H examples confirmed the traversal APIs are useful but narrow:
+
+- **kvstore**: uses `HashMap.fold<String>` for compact/list — clean fit
+- **vm, mal, policy_engine, integrity, verify, lox, toml**: all keep explicit `while` loops because their iteration patterns need early exit, multiple mutable accumulators, captured context, or are state machines (VM dispatch)
+- **for_each** is useful for simple side-effect traversal but rare in practice — most side-effect loops also need accumulation
+- **fold** is the right core primitive for stateful traversal without closures, but only fits pure-accumulation patterns
+
+The bigger ergonomic win is not fold/for_each adoption but migrating from old `vec_get`/`vec_len` free-function API to the method API (`v.get()`, `v.len()`, `v.push()`). This is blocked for single-file examples (vm, mal, policy_engine) which can't access `std.vec` without project conversion.
 
 ## Current Recommendation
 

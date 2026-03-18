@@ -318,11 +318,13 @@ Current state:
 - the most important new findings from this wave were:
   - Bug 016: cross-module generic monomorphization/linking for `HashMap<String, String>` in package builds — **fixed** in `bdb2d7f` (linker alias resolution in Mono.lean lookupFn + EmitSSA svalToOperand + capability mismatch in HashMap/HashSet constructors)
   - Bug 017: Linux-only socket constants in `std.net` — **fixed** in `bdb2d7f` (runtime uname() platform detection, platform-aware sockaddr_in filling)
-  - Bug 018: borrowing a stack array for writable FFI access can create a copy instead of a stable reference — still open, currently worked around with heap buffers in networking paths
+  - Bug 018: borrowing a stack array for writable FFI access can create a copy instead of a stable reference — **workaround** (heap-allocate with `malloc`), not fixed. This is a systemic issue: any code that passes `&array` to FFI for mutation then reads it back will see stale data because each `&` creates a fresh copy. Affects networking, file I/O, and any FFI that writes through a pointer parameter.
+  - Bug 019: method-level generics crash at lowering — **fixed** in `c0c5b54`. Two issues: (a) Parser created bare Self type (`Box`) instead of `Box<T>` for self parameters in generic impls; (b) generic structs like `Box<T>` were only instantiated once at the LLVM level — `Box<i32>` and `Box<i64>` shared the same layout, causing silent value truncation. This blocked any method with its own type parameter (`fn fold<A>`, `fn map<U>`). Fix: `selfTy` now uses `Ty.generic` with type params, and post-monomorphization pass creates distinct LLVM struct types for each instantiation.
 - remaining cleanup:
   - `TOML parser` can be treated as a likely exemplar once its tree is cleaned up
   - `file integrity monitor` and `key-value store` can now use `HashMap<String, String>` directly — pool-based workarounds can be replaced
   - `simple HTTP server` now has its stdlib blocker and request-parsing issue cleared, but it is still coupled to the Bug 018 heap-buffer workaround until stack-array borrowing is fixed
+  - Bug 019 (method-level generics) is the most impactful compiler fix from second-wave work: it unblocked `fold<A>` on all containers and generic method patterns generally
 
 ## Phase H Retrospective
 
@@ -406,7 +408,13 @@ Phase H should therefore be treated as:
 
 - Class: `stdlib/runtime`
 - Why it matters: interpreters, analyzers, and schedulers want maps, nested mutable structures, and clearer frame-friendly patterns
-- Current state: HashMap iteration landed (`for_each`, `keys`, `values` methods with stdlib test); remaining gap is nested mutable structures and frame-friendly patterns
+- Current state: full traversal surface landed — `for_each`, `fold<A>`, `keys()`/`values()`/`elements()` on Vec, HashMap, and HashSet. Bug 019 fix (`c0c5b54`) unblocked method-level generics which was the prerequisite for `fold<A>`. Remaining gap is nested mutable structures and frame-friendly patterns. Design decision: no iterator tower, no closures, no cursor/lifetime model — explicit per-container traversal only.
+
+### Stack array borrow-copy (Bug 018)
+
+- Class: `backend/performance`, `language`
+- Why it matters: `&buf` on a stack `[u8; 4096]` creates a fresh copy each time. FFI writes into copy #1, subsequent reads see copy #2 (all zeros). This is systemic — affects any code that passes `&array` to FFI for mutation then reads it back.
+- Current state: **workaround only** (heap-allocate with `malloc`). Not fixed at the compiler level. Affected HTTP server networking paths. This is a real compiler bug, not a design question — the borrow should alias the original, not create a copy.
 
 ### Standalone vs project UX
 

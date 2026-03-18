@@ -25,6 +25,7 @@ mod Lox {
     import std.fs.{read_to_string, FsError};
     import std.result.{Result};
     import std.args.{count, get};
+    import std.vec.{Vec};
 
     // ================================================================
     // String Pool — Vec<i32> for chars, Vec<StrMeta> for (offset,len)
@@ -33,15 +34,15 @@ mod Lox {
     struct Copy StrMeta { offset: i32, length: i32, }
 
     fn sp_store(chars: &mut Vec<i32>, meta: &mut Vec<StrMeta>, s: &String) with(Alloc) -> i32 {
-        let idx: i32 = vec_len::<StrMeta>(meta) as i32;
-        let off: i32 = vec_len::<i32>(chars) as i32;
+        let idx: i32 = meta.len() as i32;
+        let off: i32 = chars.len() as i32;
         let slen: i32 = string_length(s) as i32;
         let mut i: i32 = 0;
         while i < slen {
-            vec_push::<i32>(chars, string_char_at(s, i as Int) as i32);
+            chars.push(string_char_at(s, i as Int) as i32);
             i = i + 1;
         }
-        vec_push::<StrMeta>(meta, StrMeta { offset: off, length: slen });
+        meta.push(StrMeta { offset: off, length: slen });
         return idx;
     }
 
@@ -53,12 +54,12 @@ mod Lox {
 
     fn sp_eq(chars: &mut Vec<i32>, meta: &mut Vec<StrMeta>, a: i32, b: i32) -> bool {
         if a == b { return true; }
-        let ma: StrMeta = vec_get::<StrMeta>(meta, a as Int);
-        let mb: StrMeta = vec_get::<StrMeta>(meta, b as Int);
+        let ma: StrMeta = *meta.get_unchecked(a as u64);
+        let mb: StrMeta = *meta.get_unchecked(b as u64);
         if ma.length != mb.length { return false; }
         let mut i: i32 = 0;
         while i < ma.length {
-            if vec_get::<i32>(chars, (ma.offset + i) as Int) != vec_get::<i32>(chars, (mb.offset + i) as Int) {
+            if *chars.get_unchecked((ma.offset + i) as u64) != *chars.get_unchecked((mb.offset + i) as u64) {
                 return false;
             }
             i = i + 1;
@@ -67,30 +68,30 @@ mod Lox {
     }
 
     fn sp_print(chars: &mut Vec<i32>, meta: &mut Vec<StrMeta>, idx: i32) with(Console) {
-        let m: StrMeta = vec_get::<StrMeta>(meta, idx as Int);
+        let m: StrMeta = *meta.get_unchecked(idx as u64);
         let mut i: i32 = 0;
         while i < m.length {
-            print_char(vec_get::<i32>(chars, (m.offset + i) as Int) as Int);
+            print_char(*chars.get_unchecked((m.offset + i) as u64) as Int);
             i = i + 1;
         }
     }
 
     fn sp_concat(chars: &mut Vec<i32>, meta: &mut Vec<StrMeta>, a: i32, b: i32) with(Alloc) -> i32 {
-        let ma: StrMeta = vec_get::<StrMeta>(meta, a as Int);
-        let mb: StrMeta = vec_get::<StrMeta>(meta, b as Int);
-        let idx: i32 = vec_len::<StrMeta>(meta) as i32;
-        let off: i32 = vec_len::<i32>(chars) as i32;
+        let ma: StrMeta = *meta.get_unchecked(a as u64);
+        let mb: StrMeta = *meta.get_unchecked(b as u64);
+        let idx: i32 = meta.len() as i32;
+        let off: i32 = chars.len() as i32;
         let mut i: i32 = 0;
         while i < ma.length {
-            vec_push::<i32>(chars, vec_get::<i32>(chars, (ma.offset + i) as Int));
+            chars.push(*chars.get_unchecked((ma.offset + i) as u64));
             i = i + 1;
         }
         i = 0;
         while i < mb.length {
-            vec_push::<i32>(chars, vec_get::<i32>(chars, (mb.offset + i) as Int));
+            chars.push(*chars.get_unchecked((mb.offset + i) as u64));
             i = i + 1;
         }
-        vec_push::<StrMeta>(meta, StrMeta { offset: off, length: ma.length + mb.length });
+        meta.push(StrMeta { offset: off, length: ma.length + mb.length });
         return idx;
     }
 
@@ -100,12 +101,12 @@ mod Lox {
     struct Copy NumEntry { val: i32, }
 
     fn num_store(nums: &mut Vec<NumEntry>, v: i32) with(Alloc) -> i32 {
-        let idx: i32 = vec_len::<NumEntry>(nums) as i32;
-        vec_push::<NumEntry>(nums, NumEntry { val: v });
+        let idx: i32 = nums.len() as i32;
+        nums.push(NumEntry { val: v });
         return idx;
     }
     fn num_get(nums: &mut Vec<NumEntry>, idx: i32) -> i32 {
-        return vec_get::<NumEntry>(nums, idx as Int).val;
+        return nums.get_unchecked(idx as u64).val;
     }
 
     // ================================================================
@@ -179,42 +180,42 @@ mod Lox {
             let ch: i32 = string_char_at(src, pos as Int) as i32;
             if ch==32||ch==9||ch==13 { pos=pos+1; }
             else if ch==10 { line=line+1; pos=pos+1; }
-            else if ch==40 { vec_push::<Token>(tokens,Token{typ:1,data:0,line:line}); pos=pos+1; }
-            else if ch==41 { vec_push::<Token>(tokens,Token{typ:2,data:0,line:line}); pos=pos+1; }
-            else if ch==123{ vec_push::<Token>(tokens,Token{typ:3,data:0,line:line}); pos=pos+1; }
-            else if ch==125{ vec_push::<Token>(tokens,Token{typ:4,data:0,line:line}); pos=pos+1; }
-            else if ch==44 { vec_push::<Token>(tokens,Token{typ:5,data:0,line:line}); pos=pos+1; }
-            else if ch==46 { vec_push::<Token>(tokens,Token{typ:6,data:0,line:line}); pos=pos+1; }
-            else if ch==45 { vec_push::<Token>(tokens,Token{typ:7,data:0,line:line}); pos=pos+1; }
-            else if ch==43 { vec_push::<Token>(tokens,Token{typ:8,data:0,line:line}); pos=pos+1; }
-            else if ch==59 { vec_push::<Token>(tokens,Token{typ:9,data:0,line:line}); pos=pos+1; }
-            else if ch==42 { vec_push::<Token>(tokens,Token{typ:11,data:0,line:line}); pos=pos+1; }
+            else if ch==40 { tokens.push(Token{typ:1,data:0,line:line}); pos=pos+1; }
+            else if ch==41 { tokens.push(Token{typ:2,data:0,line:line}); pos=pos+1; }
+            else if ch==123{ tokens.push(Token{typ:3,data:0,line:line}); pos=pos+1; }
+            else if ch==125{ tokens.push(Token{typ:4,data:0,line:line}); pos=pos+1; }
+            else if ch==44 { tokens.push(Token{typ:5,data:0,line:line}); pos=pos+1; }
+            else if ch==46 { tokens.push(Token{typ:6,data:0,line:line}); pos=pos+1; }
+            else if ch==45 { tokens.push(Token{typ:7,data:0,line:line}); pos=pos+1; }
+            else if ch==43 { tokens.push(Token{typ:8,data:0,line:line}); pos=pos+1; }
+            else if ch==59 { tokens.push(Token{typ:9,data:0,line:line}); pos=pos+1; }
+            else if ch==42 { tokens.push(Token{typ:11,data:0,line:line}); pos=pos+1; }
             else if ch==33 { // !
                 if pos+1<len && string_char_at(src,(pos+1) as Int) as i32==61 {
-                    vec_push::<Token>(tokens,Token{typ:13,data:0,line:line}); pos=pos+2;
+                    tokens.push(Token{typ:13,data:0,line:line}); pos=pos+2;
                 } else {
-                    vec_push::<Token>(tokens,Token{typ:12,data:0,line:line}); pos=pos+1;
+                    tokens.push(Token{typ:12,data:0,line:line}); pos=pos+1;
                 }
             }
             else if ch==61 { // =
                 if pos+1<len && string_char_at(src,(pos+1) as Int) as i32==61 {
-                    vec_push::<Token>(tokens,Token{typ:15,data:0,line:line}); pos=pos+2;
+                    tokens.push(Token{typ:15,data:0,line:line}); pos=pos+2;
                 } else {
-                    vec_push::<Token>(tokens,Token{typ:14,data:0,line:line}); pos=pos+1;
+                    tokens.push(Token{typ:14,data:0,line:line}); pos=pos+1;
                 }
             }
             else if ch==60 { // <
                 if pos+1<len && string_char_at(src,(pos+1) as Int) as i32==61 {
-                    vec_push::<Token>(tokens,Token{typ:19,data:0,line:line}); pos=pos+2;
+                    tokens.push(Token{typ:19,data:0,line:line}); pos=pos+2;
                 } else {
-                    vec_push::<Token>(tokens,Token{typ:18,data:0,line:line}); pos=pos+1;
+                    tokens.push(Token{typ:18,data:0,line:line}); pos=pos+1;
                 }
             }
             else if ch==62 { // >
                 if pos+1<len && string_char_at(src,(pos+1) as Int) as i32==61 {
-                    vec_push::<Token>(tokens,Token{typ:17,data:0,line:line}); pos=pos+2;
+                    tokens.push(Token{typ:17,data:0,line:line}); pos=pos+2;
                 } else {
-                    vec_push::<Token>(tokens,Token{typ:16,data:0,line:line}); pos=pos+1;
+                    tokens.push(Token{typ:16,data:0,line:line}); pos=pos+1;
                 }
             }
             else if ch==47 { // /
@@ -222,13 +223,13 @@ mod Lox {
                     pos=pos+2;
                     while pos<len && string_char_at(src,pos as Int) as i32!=10 { pos=pos+1; }
                 } else {
-                    vec_push::<Token>(tokens,Token{typ:10,data:0,line:line}); pos=pos+1;
+                    tokens.push(Token{typ:10,data:0,line:line}); pos=pos+1;
                 }
             }
             else if ch==34 { // string literal
                 pos=pos+1;
                 // Store string chars directly into pool (no intermediate String)
-                let str_off: i32 = vec_len::<i32>(sp_chars) as i32;
+                let str_off: i32 = sp_chars.len() as i32;
                 let mut str_len: i32 = 0;
                 let mut done: i32 = 0;
                 while pos<len && done==0 {
@@ -238,25 +239,25 @@ mod Lox {
                         pos=pos+1;
                         if pos<len {
                             let esc: i32 = string_char_at(src,pos as Int) as i32;
-                            if esc==110 { vec_push::<i32>(sp_chars,10); str_len=str_len+1; }
-                            else if esc==116 { vec_push::<i32>(sp_chars,9); str_len=str_len+1; }
-                            else if esc==34 { vec_push::<i32>(sp_chars,34); str_len=str_len+1; }
-                            else if esc==92 { vec_push::<i32>(sp_chars,92); str_len=str_len+1; }
-                            else { vec_push::<i32>(sp_chars,esc); str_len=str_len+1; }
+                            if esc==110 { sp_chars.push(10); str_len=str_len+1; }
+                            else if esc==116 { sp_chars.push(9); str_len=str_len+1; }
+                            else if esc==34 { sp_chars.push(34); str_len=str_len+1; }
+                            else if esc==92 { sp_chars.push(92); str_len=str_len+1; }
+                            else { sp_chars.push(esc); str_len=str_len+1; }
                             pos=pos+1;
                         }
                     } else {
                         if sc==10 { line=line+1; }
-                        vec_push::<i32>(sp_chars,sc);
+                        sp_chars.push(sc);
                         str_len=str_len+1;
                         pos=pos+1;
                     }
                 }
                 if done==1 {
                     pos=pos+1;
-                    let idx: i32 = vec_len::<StrMeta>(sp_meta) as i32;
-                    vec_push::<StrMeta>(sp_meta,StrMeta{offset:str_off,length:str_len});
-                    vec_push::<Token>(tokens,Token{typ:21,data:idx,line:line});
+                    let idx: i32 = sp_meta.len() as i32;
+                    sp_meta.push(StrMeta{offset:str_off,length:str_len});
+                    tokens.push(Token{typ:21,data:idx,line:line});
                 } else { return 0-1; }
             }
             else if is_digit(ch) {
@@ -270,7 +271,7 @@ mod Lox {
                     while pos<len && is_digit(string_char_at(src,pos as Int) as i32) { pos=pos+1; }
                 }
                 let idx: i32 = num_store(nums,n);
-                vec_push::<Token>(tokens,Token{typ:22,data:idx,line:line});
+                tokens.push(Token{typ:22,data:idx,line:line});
             }
             else if is_alpha(ch) {
                 let start: i32 = pos;
@@ -279,23 +280,23 @@ mod Lox {
                 let tt: i32 = keyword_type(src,start,klen);
                 if tt==20 {
                     // Store identifier chars directly into pool
-                    let id_off: i32 = vec_len::<i32>(sp_chars) as i32;
+                    let id_off: i32 = sp_chars.len() as i32;
                     let id_len: i32 = pos - start;
                     let mut ii: i32 = start;
                     while ii < pos {
-                        vec_push::<i32>(sp_chars, string_char_at(src, ii as Int) as i32);
+                        sp_chars.push(string_char_at(src, ii as Int) as i32);
                         ii = ii + 1;
                     }
-                    let idx: i32 = vec_len::<StrMeta>(sp_meta) as i32;
-                    vec_push::<StrMeta>(sp_meta, StrMeta{offset:id_off,length:id_len});
-                    vec_push::<Token>(tokens,Token{typ:20,data:idx,line:line});
+                    let idx: i32 = sp_meta.len() as i32;
+                    sp_meta.push(StrMeta{offset:id_off,length:id_len});
+                    tokens.push(Token{typ:20,data:idx,line:line});
                 } else {
-                    vec_push::<Token>(tokens,Token{typ:tt,data:0,line:line});
+                    tokens.push(Token{typ:tt,data:0,line:line});
                 }
             }
             else { pos=pos+1; }
         }
-        vec_push::<Token>(tokens,Token{typ:0,data:0,line:line});
+        tokens.push(Token{typ:0,data:0,line:line});
         return 0;
     }
 
@@ -313,8 +314,8 @@ mod Lox {
     struct Copy CallInfo { callee: i32, args_start: i32, args_count: i32, }
 
     fn node_new(nodes: &mut Vec<Node>, typ: i32, data: i32) with(Alloc) -> i32 {
-        let idx: i32 = vec_len::<Node>(nodes) as i32;
-        vec_push::<Node>(nodes, Node{typ:typ,data:data});
+        let idx: i32 = nodes.len() as i32;
+        nodes.push(Node{typ:typ,data:data});
         return idx;
     }
 
@@ -326,18 +327,18 @@ mod Lox {
     struct Copy Parser { current: i32, }
 
     fn peek(p: &mut Parser, tokens: &mut Vec<Token>) -> Token {
-        return vec_get::<Token>(tokens, p.current as Int);
+        return *tokens.get_unchecked(p.current as u64);
     }
     fn advance(p: &mut Parser, tokens: &mut Vec<Token>) -> Token {
-        let t: Token = vec_get::<Token>(tokens, p.current as Int);
+        let t: Token = *tokens.get_unchecked(p.current as u64);
         p.current = p.current + 1;
         return t;
     }
     fn check_tok(p: &mut Parser, tokens: &mut Vec<Token>, typ: i32) -> bool {
-        return vec_get::<Token>(tokens, p.current as Int).typ == typ;
+        return tokens.get_unchecked(p.current as u64).typ == typ;
     }
     fn match_tok(p: &mut Parser, tokens: &mut Vec<Token>, typ: i32) -> bool {
-        if vec_get::<Token>(tokens, p.current as Int).typ == typ {
+        if tokens.get_unchecked(p.current as u64).typ == typ {
             p.current = p.current + 1;
             return true;
         }
@@ -370,24 +371,24 @@ mod Lox {
         if nt.typ!=20 { return 0-1; }
         let name_idx: i32 = nt.data;
         if !match_tok(p,toks,1) { return 0-1; } // (
-        let ps: i32 = vec_len::<i32>(params) as i32;
+        let ps: i32 = params.len() as i32;
         let mut pc: i32 = 0;
         if !check_tok(p,toks,2) {
             let pt: Token = advance(p,toks);
             if pt.typ!=20 { return 0-1; }
-            vec_push::<i32>(params,pt.data); pc=pc+1;
+            params.push(pt.data); pc=pc+1;
             while match_tok(p,toks,5) {
                 let pt2: Token = advance(p,toks);
                 if pt2.typ!=20 { return 0-1; }
-                vec_push::<i32>(params,pt2.data); pc=pc+1;
+                params.push(pt2.data); pc=pc+1;
             }
         }
         if !match_tok(p,toks,2) { return 0-1; } // )
         if !match_tok(p,toks,3) { return 0-1; } // {
         let body: i32 = parse_block(p,toks,nodes,bins,asns,vds,blks,ifs,whs,fns,cls,stmts,params,args,sp_chars,sp_meta,nums);
         if body<0 { return 0-1; }
-        let fi: i32 = vec_len::<FunInfo>(fns) as i32;
-        vec_push::<FunInfo>(fns,FunInfo{name_idx:name_idx,params_start:ps,params_count:pc,body_node:body});
+        let fi: i32 = fns.len() as i32;
+        fns.push(FunInfo{name_idx:name_idx,params_start:ps,params_count:pc,body_node:body});
         return node_new(nodes,15,fi);
     }
 
@@ -406,8 +407,8 @@ mod Lox {
             if init<0 { return 0-1; }
         }
         if !match_tok(p,toks,9) { return 0-1; } // ;
-        let vi: i32 = vec_len::<VarDeclInfo>(vds) as i32;
-        vec_push::<VarDeclInfo>(vds,VarDeclInfo{name_idx:nt.data,init_node:init});
+        let vi: i32 = vds.len() as i32;
+        vds.push(VarDeclInfo{name_idx:nt.data,init_node:init});
         return node_new(nodes,11,vi);
     }
 
@@ -445,8 +446,8 @@ mod Lox {
                 else_b = parse_statement(p,toks,nodes,bins,asns,vds,blks,ifs,whs,fns,cls,stmts,params,args,sp_chars,sp_meta,nums);
                 if else_b<0 { return 0-1; }
             }
-            let ii: i32 = vec_len::<IfInfo>(ifs) as i32;
-            vec_push::<IfInfo>(ifs,IfInfo{cond:cond,then_branch:then_b,else_branch:else_b});
+            let ii: i32 = ifs.len() as i32;
+            ifs.push(IfInfo{cond:cond,then_branch:then_b,else_branch:else_b});
             return node_new(nodes,13,ii);
         }
         if match_tok(p,toks,35) { // while
@@ -456,8 +457,8 @@ mod Lox {
             if !match_tok(p,toks,2) { return 0-1; }
             let body: i32 = parse_statement(p,toks,nodes,bins,asns,vds,blks,ifs,whs,fns,cls,stmts,params,args,sp_chars,sp_meta,nums);
             if body<0 { return 0-1; }
-            let wi: i32 = vec_len::<WhileInfo>(whs) as i32;
-            vec_push::<WhileInfo>(whs,WhileInfo{cond:cond,body:body});
+            let wi: i32 = whs.len() as i32;
+            whs.push(WhileInfo{cond:cond,body:body});
             return node_new(nodes,14,wi);
         }
         if match_tok(p,toks,26) { // for -> desugar to while
@@ -487,21 +488,21 @@ mod Lox {
             if body<0 { return 0-1; }
             if incr>=0 {
                 let is: i32 = node_new(nodes,10,incr);
-                let bs: i32 = vec_len::<i32>(stmts) as i32;
-                vec_push::<i32>(stmts,body); vec_push::<i32>(stmts,is);
-                let bi: i32 = vec_len::<BlockInfo>(blks) as i32;
-                vec_push::<BlockInfo>(blks,BlockInfo{start:bs,count:2});
+                let bs: i32 = stmts.len() as i32;
+                stmts.push(body); stmts.push(is);
+                let bi: i32 = blks.len() as i32;
+                blks.push(BlockInfo{start:bs,count:2});
                 body = node_new(nodes,12,bi);
             }
             if cond<0 { cond = node_new(nodes,2,1); }
-            let wi: i32 = vec_len::<WhileInfo>(whs) as i32;
-            vec_push::<WhileInfo>(whs,WhileInfo{cond:cond,body:body});
+            let wi: i32 = whs.len() as i32;
+            whs.push(WhileInfo{cond:cond,body:body});
             let wn: i32 = node_new(nodes,14,wi);
             if init>=0 {
-                let bs: i32 = vec_len::<i32>(stmts) as i32;
-                vec_push::<i32>(stmts,init); vec_push::<i32>(stmts,wn);
-                let bi: i32 = vec_len::<BlockInfo>(blks) as i32;
-                vec_push::<BlockInfo>(blks,BlockInfo{start:bs,count:2});
+                let bs: i32 = stmts.len() as i32;
+                stmts.push(init); stmts.push(wn);
+                let bi: i32 = blks.len() as i32;
+                blks.push(BlockInfo{start:bs,count:2});
                 return node_new(nodes,12,bi);
             }
             return wn;
@@ -525,22 +526,22 @@ mod Lox {
         nums: &mut Vec<NumEntry>) with(Alloc) -> i32 {
         // Collect node IDs into temp vec first, then push contiguously to stmts.
         // This avoids interleaving with nested block pushes.
-        let mut tmp: Vec<i32> = vec_new::<i32>();
+        let mut tmp: Vec<i32> = Vec::<i32>::new();
         let mut parse_ok: bool = true;
         while parse_ok && !check_tok(p,toks,4) && !check_tok(p,toks,0) {
             let d: i32 = parse_declaration(p,toks,nodes,bins,asns,vds,blks,ifs,whs,fns,cls,stmts,params,args,sp_chars,sp_meta,nums);
             if d<0 { parse_ok = false; }
-            else { vec_push::<i32>(&mut tmp,d); }
+            else { tmp.push(d); }
         }
         if parse_ok { if !match_tok(p,toks,4) { parse_ok = false; } } // }
-        if !parse_ok { vec_free::<i32>(tmp); return 0-1; }
-        let bs: i32 = vec_len::<i32>(stmts) as i32;
-        let cnt: i32 = vec_len::<i32>(&tmp) as i32;
+        if !parse_ok { tmp.drop(); return 0-1; }
+        let bs: i32 = stmts.len() as i32;
+        let cnt: i32 = tmp.len() as i32;
         let mut i: i32 = 0;
-        while i<cnt { vec_push::<i32>(stmts,vec_get::<i32>(&tmp,i as Int)); i=i+1; }
-        vec_free::<i32>(tmp);
-        let bi: i32 = vec_len::<BlockInfo>(blks) as i32;
-        vec_push::<BlockInfo>(blks,BlockInfo{start:bs,count:cnt});
+        while i<cnt { stmts.push(*tmp.get_unchecked(i as u64)); i=i+1; }
+        tmp.drop();
+        let bi: i32 = blks.len() as i32;
+        blks.push(BlockInfo{start:bs,count:cnt});
         return node_new(nodes,12,bi);
     }
 
@@ -566,12 +567,12 @@ mod Lox {
         let expr: i32 = parse_or(p,toks,nodes,bins,asns,vds,blks,ifs,whs,fns,cls,stmts,params,args,sp_chars,sp_meta,nums);
         if expr<0 { return 0-1; }
         if match_tok(p,toks,14) { // =
-            let lnode: Node = vec_get::<Node>(nodes, expr as Int);
+            let lnode: Node = *nodes.get_unchecked(expr as u64);
             if lnode.typ!=7 { return 0-1; }
             let val: i32 = parse_assignment(p,toks,nodes,bins,asns,vds,blks,ifs,whs,fns,cls,stmts,params,args,sp_chars,sp_meta,nums);
             if val<0 { return 0-1; }
-            let ai: i32 = vec_len::<AssignInfo>(asns) as i32;
-            vec_push::<AssignInfo>(asns,AssignInfo{name_idx:lnode.data,value_node:val});
+            let ai: i32 = asns.len() as i32;
+            asns.push(AssignInfo{name_idx:lnode.data,value_node:val});
             return node_new(nodes,8,ai);
         }
         return expr;
@@ -589,8 +590,8 @@ mod Lox {
         while match_tok(p,toks,30) {
             let right: i32 = parse_and(p,toks,nodes,bins,asns,vds,blks,ifs,whs,fns,cls,stmts,params,args,sp_chars,sp_meta,nums);
             if right<0 { return 0-1; }
-            let bi: i32 = vec_len::<BinaryInfo>(bins) as i32;
-            vec_push::<BinaryInfo>(bins,BinaryInfo{left:left,right:right,op:1});
+            let bi: i32 = bins.len() as i32;
+            bins.push(BinaryInfo{left:left,right:right,op:1});
             left = node_new(nodes,18,bi);
         }
         return left;
@@ -608,8 +609,8 @@ mod Lox {
         while match_tok(p,toks,23) {
             let right: i32 = parse_equality(p,toks,nodes,bins,asns,vds,blks,ifs,whs,fns,cls,stmts,params,args,sp_chars,sp_meta,nums);
             if right<0 { return 0-1; }
-            let bi: i32 = vec_len::<BinaryInfo>(bins) as i32;
-            vec_push::<BinaryInfo>(bins,BinaryInfo{left:left,right:right,op:0});
+            let bi: i32 = bins.len() as i32;
+            bins.push(BinaryInfo{left:left,right:right,op:0});
             left = node_new(nodes,18,bi);
         }
         return left;
@@ -630,13 +631,13 @@ mod Lox {
             if t.typ==15 { p.current=p.current+1;
                 let r: i32 = parse_comparison(p,toks,nodes,bins,asns,vds,blks,ifs,whs,fns,cls,stmts,params,args,sp_chars,sp_meta,nums);
                 if r<0 { return 0-1; }
-                let bi: i32 = vec_len::<BinaryInfo>(bins) as i32;
-                vec_push::<BinaryInfo>(bins,BinaryInfo{left:left,right:r,op:8}); left=node_new(nodes,6,bi);
+                let bi: i32 = bins.len() as i32;
+                bins.push(BinaryInfo{left:left,right:r,op:8}); left=node_new(nodes,6,bi);
             } else if t.typ==13 { p.current=p.current+1;
                 let r: i32 = parse_comparison(p,toks,nodes,bins,asns,vds,blks,ifs,whs,fns,cls,stmts,params,args,sp_chars,sp_meta,nums);
                 if r<0 { return 0-1; }
-                let bi: i32 = vec_len::<BinaryInfo>(bins) as i32;
-                vec_push::<BinaryInfo>(bins,BinaryInfo{left:left,right:r,op:9}); left=node_new(nodes,6,bi);
+                let bi: i32 = bins.len() as i32;
+                bins.push(BinaryInfo{left:left,right:r,op:9}); left=node_new(nodes,6,bi);
             } else { cont=false; }
         }
         return left;
@@ -660,8 +661,8 @@ mod Lox {
             if op>=0 { p.current=p.current+1;
                 let r: i32 = parse_term(p,toks,nodes,bins,asns,vds,blks,ifs,whs,fns,cls,stmts,params,args,sp_chars,sp_meta,nums);
                 if r<0 { return 0-1; }
-                let bi: i32 = vec_len::<BinaryInfo>(bins) as i32;
-                vec_push::<BinaryInfo>(bins,BinaryInfo{left:left,right:r,op:op}); left=node_new(nodes,6,bi);
+                let bi: i32 = bins.len() as i32;
+                bins.push(BinaryInfo{left:left,right:r,op:op}); left=node_new(nodes,6,bi);
             } else { cont=false; }
         }
         return left;
@@ -682,13 +683,13 @@ mod Lox {
             if t.typ==8 { p.current=p.current+1;
                 let r: i32 = parse_factor(p,toks,nodes,bins,asns,vds,blks,ifs,whs,fns,cls,stmts,params,args,sp_chars,sp_meta,nums);
                 if r<0 { return 0-1; }
-                let bi: i32 = vec_len::<BinaryInfo>(bins) as i32;
-                vec_push::<BinaryInfo>(bins,BinaryInfo{left:left,right:r,op:0}); left=node_new(nodes,6,bi);
+                let bi: i32 = bins.len() as i32;
+                bins.push(BinaryInfo{left:left,right:r,op:0}); left=node_new(nodes,6,bi);
             } else if t.typ==7 { p.current=p.current+1;
                 let r: i32 = parse_factor(p,toks,nodes,bins,asns,vds,blks,ifs,whs,fns,cls,stmts,params,args,sp_chars,sp_meta,nums);
                 if r<0 { return 0-1; }
-                let bi: i32 = vec_len::<BinaryInfo>(bins) as i32;
-                vec_push::<BinaryInfo>(bins,BinaryInfo{left:left,right:r,op:1}); left=node_new(nodes,6,bi);
+                let bi: i32 = bins.len() as i32;
+                bins.push(BinaryInfo{left:left,right:r,op:1}); left=node_new(nodes,6,bi);
             } else { cont=false; }
         }
         return left;
@@ -709,13 +710,13 @@ mod Lox {
             if t.typ==11 { p.current=p.current+1;
                 let r: i32 = parse_unary(p,toks,nodes,bins,asns,vds,blks,ifs,whs,fns,cls,stmts,params,args,sp_chars,sp_meta,nums);
                 if r<0 { return 0-1; }
-                let bi: i32 = vec_len::<BinaryInfo>(bins) as i32;
-                vec_push::<BinaryInfo>(bins,BinaryInfo{left:left,right:r,op:2}); left=node_new(nodes,6,bi);
+                let bi: i32 = bins.len() as i32;
+                bins.push(BinaryInfo{left:left,right:r,op:2}); left=node_new(nodes,6,bi);
             } else if t.typ==10 { p.current=p.current+1;
                 let r: i32 = parse_unary(p,toks,nodes,bins,asns,vds,blks,ifs,whs,fns,cls,stmts,params,args,sp_chars,sp_meta,nums);
                 if r<0 { return 0-1; }
-                let bi: i32 = vec_len::<BinaryInfo>(bins) as i32;
-                vec_push::<BinaryInfo>(bins,BinaryInfo{left:left,right:r,op:3}); left=node_new(nodes,6,bi);
+                let bi: i32 = bins.len() as i32;
+                bins.push(BinaryInfo{left:left,right:r,op:3}); left=node_new(nodes,6,bi);
             } else { cont=false; }
         }
         return left;
@@ -750,21 +751,21 @@ mod Lox {
         let mut callee: i32 = parse_primary(p,toks,nodes,bins,asns,vds,blks,ifs,whs,fns,cls,stmts,params,args,sp_chars,sp_meta,nums);
         if callee<0 { return 0-1; }
         while match_tok(p,toks,1) { // (
-            let as_: i32 = vec_len::<i32>(args) as i32;
+            let as_: i32 = args.len() as i32;
             let mut ac: i32 = 0;
             if !check_tok(p,toks,2) {
                 let a: i32 = parse_expression(p,toks,nodes,bins,asns,vds,blks,ifs,whs,fns,cls,stmts,params,args,sp_chars,sp_meta,nums);
                 if a<0 { return 0-1; }
-                vec_push::<i32>(args,a); ac=ac+1;
+                args.push(a); ac=ac+1;
                 while match_tok(p,toks,5) {
                     let a2: i32 = parse_expression(p,toks,nodes,bins,asns,vds,blks,ifs,whs,fns,cls,stmts,params,args,sp_chars,sp_meta,nums);
                     if a2<0 { return 0-1; }
-                    vec_push::<i32>(args,a2); ac=ac+1;
+                    args.push(a2); ac=ac+1;
                 }
             }
             if !match_tok(p,toks,2) { return 0-1; } // )
-            let ci: i32 = vec_len::<CallInfo>(cls) as i32;
-            vec_push::<CallInfo>(cls,CallInfo{callee:callee,args_start:as_,args_count:ac});
+            let ci: i32 = cls.len() as i32;
+            cls.push(CallInfo{callee:callee,args_start:as_,args_count:ac});
             callee = node_new(nodes,17,ci);
         }
         return callee;
@@ -801,22 +802,22 @@ mod Lox {
         sp_chars: &mut Vec<i32>, sp_meta: &mut Vec<StrMeta>,
         nums: &mut Vec<NumEntry>) with(Alloc) -> i32 {
         // Collect node IDs into temp vec first, then push contiguously to stmts.
-        let mut tmp: Vec<i32> = vec_new::<i32>();
+        let mut tmp: Vec<i32> = Vec::<i32>::new();
         let mut p: Parser = Parser{current:0};
         let mut parse_ok: bool = true;
         while parse_ok && !check_tok(&mut p,toks,0) {
             let d: i32 = parse_declaration(&mut p,toks,nodes,bins,asns,vds,blks,ifs,whs,fns,cls,stmts,params,args,sp_chars,sp_meta,nums);
             if d<0 { parse_ok = false; }
-            else { vec_push::<i32>(&mut tmp,d); }
+            else { tmp.push(d); }
         }
-        if !parse_ok { vec_free::<i32>(tmp); return 0-1; }
-        let bs: i32 = vec_len::<i32>(stmts) as i32;
-        let cnt: i32 = vec_len::<i32>(&tmp) as i32;
+        if !parse_ok { tmp.drop(); return 0-1; }
+        let bs: i32 = stmts.len() as i32;
+        let cnt: i32 = tmp.len() as i32;
         let mut i: i32 = 0;
-        while i<cnt { vec_push::<i32>(stmts,vec_get::<i32>(&tmp,i as Int)); i=i+1; }
-        vec_free::<i32>(tmp);
-        let bi: i32 = vec_len::<BlockInfo>(blks) as i32;
-        vec_push::<BlockInfo>(blks,BlockInfo{start:bs,count:cnt});
+        while i<cnt { stmts.push(*tmp.get_unchecked(i as u64)); i=i+1; }
+        tmp.drop();
+        let bi: i32 = blks.len() as i32;
+        blks.push(BlockInfo{start:bs,count:cnt});
         return node_new(nodes,12,bi);
     }
 
@@ -850,25 +851,25 @@ mod Lox {
     struct Copy Binding { name_idx: i32, val_tag: i32, val_data: i32, prev: i32, }
 
     fn lox_env_new(envs: &mut Vec<EnvMeta>, parent: i32) with(Alloc) -> i32 {
-        let eid: i32 = vec_len::<EnvMeta>(envs) as i32;
-        vec_push::<EnvMeta>(envs,EnvMeta{parent:parent,last:0-1});
+        let eid: i32 = envs.len() as i32;
+        envs.push(EnvMeta{parent:parent,last:0-1});
         return eid;
     }
     fn lox_env_set(envs: &mut Vec<EnvMeta>, ebs: &mut Vec<Binding>,
                eid: i32, name: i32, v: RVal) with(Alloc) {
-        let meta: EnvMeta = vec_get::<EnvMeta>(envs, eid as Int);
-        let idx: i32 = vec_len::<Binding>(ebs) as i32;
-        vec_push::<Binding>(ebs,Binding{name_idx:name,val_tag:v.tag,val_data:v.data,prev:meta.last});
-        vec_set::<EnvMeta>(envs,eid as Int,EnvMeta{parent:meta.parent,last:idx});
+        let meta: EnvMeta = *envs.get_unchecked(eid as u64);
+        let idx: i32 = ebs.len() as i32;
+        ebs.push(Binding{name_idx:name,val_tag:v.tag,val_data:v.data,prev:meta.last});
+        envs.set_unchecked(eid as u64,EnvMeta{parent:meta.parent,last:idx});
     }
     fn lox_env_get(envs: &mut Vec<EnvMeta>, ebs: &mut Vec<Binding>,
                eid: i32, name: i32, sp_chars: &mut Vec<i32>, sp_meta: &mut Vec<StrMeta>) -> RVal {
         let mut cur: i32 = eid;
         while cur>=0 {
-            let meta: EnvMeta = vec_get::<EnvMeta>(envs, cur as Int);
+            let meta: EnvMeta = *envs.get_unchecked(cur as u64);
             let mut idx: i32 = meta.last;
             while idx>=0 {
-                let b: Binding = vec_get::<Binding>(ebs, idx as Int);
+                let b: Binding = *ebs.get_unchecked(idx as u64);
                 if sp_eq(sp_chars,sp_meta,name,b.name_idx) {
                     return RVal{tag:b.val_tag,data:b.val_data};
                 }
@@ -882,12 +883,12 @@ mod Lox {
                   eid: i32, name: i32, v: RVal, sp_chars: &mut Vec<i32>, sp_meta: &mut Vec<StrMeta>) -> bool {
         let mut cur: i32 = eid;
         while cur>=0 {
-            let meta: EnvMeta = vec_get::<EnvMeta>(envs, cur as Int);
+            let meta: EnvMeta = *envs.get_unchecked(cur as u64);
             let mut idx: i32 = meta.last;
             while idx>=0 {
-                let b: Binding = vec_get::<Binding>(ebs, idx as Int);
+                let b: Binding = *ebs.get_unchecked(idx as u64);
                 if sp_eq(sp_chars,sp_meta,name,b.name_idx) {
-                    vec_set::<Binding>(ebs,idx as Int,Binding{name_idx:b.name_idx,val_tag:v.tag,val_data:v.data,prev:b.prev});
+                    ebs.set_unchecked(idx as u64,Binding{name_idx:b.name_idx,val_tag:v.tag,val_data:v.data,prev:b.prev});
                     return true;
                 }
                 idx = b.prev;
@@ -914,7 +915,7 @@ mod Lox {
         envs: &mut Vec<EnvMeta>, ebs: &mut Vec<Binding>,
         closures: &mut Vec<ClosureInfo>, rvs: &mut Vec<RetVal>) with(Console, Alloc) -> RVal {
         if ni<0 { return rv_nil(); }
-        let nd: Node = vec_get::<Node>(nodes, ni as Int);
+        let nd: Node = *nodes.get_unchecked(ni as u64);
 
         if nd.typ==0 { return rv_num(nd.data); }   // NUM_LIT
         if nd.typ==1 { return rv_str(nd.data); }   // STR_LIT
@@ -936,7 +937,7 @@ mod Lox {
         }
         // BINARY
         if nd.typ==6 {
-            let info: BinaryInfo = vec_get::<BinaryInfo>(bins, nd.data as Int);
+            let info: BinaryInfo = *bins.get_unchecked(nd.data as u64);
             let lv: RVal = eval_node(info.left,eid,nodes,bins,asns,vds,blks,ifs,whs,fns,cls,stmts,params,args,sp_chars,sp_meta,nums,envs,ebs,closures,rvs);
             if lv.tag==5 { return lv; }
             let rv: RVal = eval_node(info.right,eid,nodes,bins,asns,vds,blks,ifs,whs,fns,cls,stmts,params,args,sp_chars,sp_meta,nums,envs,ebs,closures,rvs);
@@ -962,7 +963,7 @@ mod Lox {
         if nd.typ==7 { return lox_env_get(envs,ebs,eid,nd.data,sp_chars,sp_meta); }
         // ASSIGN
         if nd.typ==8 {
-            let ai: AssignInfo = vec_get::<AssignInfo>(asns, nd.data as Int);
+            let ai: AssignInfo = *asns.get_unchecked(nd.data as u64);
             let val: RVal = eval_node(ai.value_node,eid,nodes,bins,asns,vds,blks,ifs,whs,fns,cls,stmts,params,args,sp_chars,sp_meta,nums,envs,ebs,closures,rvs);
             if val.tag==5 { return val; }
             lox_env_assign(envs,ebs,eid,ai.name_idx,val,sp_chars,sp_meta);
@@ -982,7 +983,7 @@ mod Lox {
         }
         // VAR_DECL
         if nd.typ==11 {
-            let vi: VarDeclInfo = vec_get::<VarDeclInfo>(vds, nd.data as Int);
+            let vi: VarDeclInfo = *vds.get_unchecked(nd.data as u64);
             let mut val: RVal = rv_nil();
             if vi.init_node>=0 {
                 val = eval_node(vi.init_node,eid,nodes,bins,asns,vds,blks,ifs,whs,fns,cls,stmts,params,args,sp_chars,sp_meta,nums,envs,ebs,closures,rvs);
@@ -993,12 +994,12 @@ mod Lox {
         }
         // BLOCK
         if nd.typ==12 {
-            let bi: BlockInfo = vec_get::<BlockInfo>(blks, nd.data as Int);
+            let bi: BlockInfo = *blks.get_unchecked(nd.data as u64);
             let benv: i32 = lox_env_new(envs,eid);
             let mut result: RVal = rv_nil();
             let mut i: i32 = 0;
             while i<bi.count {
-                let si: i32 = vec_get::<i32>(stmts, (bi.start+i) as Int);
+                let si: i32 = *stmts.get_unchecked((bi.start+i) as u64);
                 result = eval_node(si,benv,nodes,bins,asns,vds,blks,ifs,whs,fns,cls,stmts,params,args,sp_chars,sp_meta,nums,envs,ebs,closures,rvs);
                 if result.tag==5 { return result; }
                 i=i+1;
@@ -1007,7 +1008,7 @@ mod Lox {
         }
         // IF_STMT
         if nd.typ==13 {
-            let ii: IfInfo = vec_get::<IfInfo>(ifs, nd.data as Int);
+            let ii: IfInfo = *ifs.get_unchecked(nd.data as u64);
             let cond: RVal = eval_node(ii.cond,eid,nodes,bins,asns,vds,blks,ifs,whs,fns,cls,stmts,params,args,sp_chars,sp_meta,nums,envs,ebs,closures,rvs);
             if cond.tag==5 { return cond; }
             if is_truthy(cond) {
@@ -1020,7 +1021,7 @@ mod Lox {
         }
         // WHILE_STMT
         if nd.typ==14 {
-            let wi: WhileInfo = vec_get::<WhileInfo>(whs, nd.data as Int);
+            let wi: WhileInfo = *whs.get_unchecked(nd.data as u64);
             let mut wd: bool = false;
             while !wd {
                 let cond: RVal = eval_node(wi.cond,eid,nodes,bins,asns,vds,blks,ifs,whs,fns,cls,stmts,params,args,sp_chars,sp_meta,nums,envs,ebs,closures,rvs);
@@ -1035,50 +1036,50 @@ mod Lox {
         }
         // FUN_DECL
         if nd.typ==15 {
-            let fi: FunInfo = vec_get::<FunInfo>(fns, nd.data as Int);
-            let ci: i32 = vec_len::<ClosureInfo>(closures) as i32;
-            vec_push::<ClosureInfo>(closures,ClosureInfo{fun_data:nd.data,env_id:eid});
+            let fi: FunInfo = *fns.get_unchecked(nd.data as u64);
+            let ci: i32 = closures.len() as i32;
+            closures.push(ClosureInfo{fun_data:nd.data,env_id:eid});
             lox_env_set(envs,ebs,eid,fi.name_idx,rv_fun(ci));
             return rv_nil();
         }
         // RETURN_STMT
         if nd.typ==16 {
             if nd.data<0 {
-                let ri: i32 = vec_len::<RetVal>(rvs) as i32;
-                vec_push::<RetVal>(rvs,RetVal{tag:0,data:0});
+                let ri: i32 = rvs.len() as i32;
+                rvs.push(RetVal{tag:0,data:0});
                 return rv_ret(ri);
             }
             let val: RVal = eval_node(nd.data,eid,nodes,bins,asns,vds,blks,ifs,whs,fns,cls,stmts,params,args,sp_chars,sp_meta,nums,envs,ebs,closures,rvs);
             if val.tag==5 { return val; }
-            let ri: i32 = vec_len::<RetVal>(rvs) as i32;
-            vec_push::<RetVal>(rvs,RetVal{tag:val.tag,data:val.data});
+            let ri: i32 = rvs.len() as i32;
+            rvs.push(RetVal{tag:val.tag,data:val.data});
             return rv_ret(ri);
         }
         // CALL
         if nd.typ==17 {
-            let ci: CallInfo = vec_get::<CallInfo>(cls, nd.data as Int);
+            let ci: CallInfo = *cls.get_unchecked(nd.data as u64);
             let callee: RVal = eval_node(ci.callee,eid,nodes,bins,asns,vds,blks,ifs,whs,fns,cls,stmts,params,args,sp_chars,sp_meta,nums,envs,ebs,closures,rvs);
             if callee.tag==5 { return callee; }
             if callee.tag!=4 { return rv_nil(); }
-            let cl: ClosureInfo = vec_get::<ClosureInfo>(closures, callee.data as Int);
-            let fi: FunInfo = vec_get::<FunInfo>(fns, cl.fun_data as Int);
+            let cl: ClosureInfo = *closures.get_unchecked(callee.data as u64);
+            let fi: FunInfo = *fns.get_unchecked(cl.fun_data as u64);
             let fenv: i32 = lox_env_new(envs,cl.env_id);
             let mut pi: i32 = 0;
             while pi<fi.params_count && pi<ci.args_count {
-                let pn: i32 = vec_get::<i32>(params, (fi.params_start+pi) as Int);
-                let an: i32 = vec_get::<i32>(args, (ci.args_start+pi) as Int);
+                let pn: i32 = *params.get_unchecked((fi.params_start+pi) as u64);
+                let an: i32 = *args.get_unchecked((ci.args_start+pi) as u64);
                 let av: RVal = eval_node(an,eid,nodes,bins,asns,vds,blks,ifs,whs,fns,cls,stmts,params,args,sp_chars,sp_meta,nums,envs,ebs,closures,rvs);
                 if av.tag==5 { return av; }
                 lox_env_set(envs,ebs,fenv,pn,av);
                 pi=pi+1;
             }
             let br: RVal = eval_node(fi.body_node,fenv,nodes,bins,asns,vds,blks,ifs,whs,fns,cls,stmts,params,args,sp_chars,sp_meta,nums,envs,ebs,closures,rvs);
-            if br.tag==5 { let rv: RetVal = vec_get::<RetVal>(rvs, br.data as Int); return RVal{tag:rv.tag,data:rv.data}; }
+            if br.tag==5 { let rv: RetVal = *rvs.get_unchecked(br.data as u64); return RVal{tag:rv.tag,data:rv.data}; }
             return br;
         }
         // LOGICAL
         if nd.typ==18 {
-            let li: BinaryInfo = vec_get::<BinaryInfo>(bins, nd.data as Int);
+            let li: BinaryInfo = *bins.get_unchecked(nd.data as u64);
             let lv: RVal = eval_node(li.left,eid,nodes,bins,asns,vds,blks,ifs,whs,fns,cls,stmts,params,args,sp_chars,sp_meta,nums,envs,ebs,closures,rvs);
             if lv.tag==5 { return lv; }
             if li.op==1 { if is_truthy(lv) { return lv; } }
@@ -1119,50 +1120,50 @@ mod Lox {
         }
         if !ok { drop_string(source); return 1; }
 
-        let mut sp_chars: Vec<i32> = vec_new::<i32>();
-        let mut sp_meta: Vec<StrMeta> = vec_new::<StrMeta>();
-        let mut nums: Vec<NumEntry> = vec_new::<NumEntry>();
-        let mut tokens: Vec<Token> = vec_new::<Token>();
-        let mut nodes: Vec<Node> = vec_new::<Node>();
-        let mut bins: Vec<BinaryInfo> = vec_new::<BinaryInfo>();
-        let mut asns: Vec<AssignInfo> = vec_new::<AssignInfo>();
-        let mut vds: Vec<VarDeclInfo> = vec_new::<VarDeclInfo>();
-        let mut blks: Vec<BlockInfo> = vec_new::<BlockInfo>();
-        let mut ifs_pool: Vec<IfInfo> = vec_new::<IfInfo>();
-        let mut whs: Vec<WhileInfo> = vec_new::<WhileInfo>();
-        let mut fns_pool: Vec<FunInfo> = vec_new::<FunInfo>();
-        let mut cls: Vec<CallInfo> = vec_new::<CallInfo>();
-        let mut stmts: Vec<i32> = vec_new::<i32>();
-        let mut par: Vec<i32> = vec_new::<i32>();
-        let mut arg: Vec<i32> = vec_new::<i32>();
-        let mut envs: Vec<EnvMeta> = vec_new::<EnvMeta>();
-        let mut ebs: Vec<Binding> = vec_new::<Binding>();
-        let mut closures: Vec<ClosureInfo> = vec_new::<ClosureInfo>();
-        let mut rvs: Vec<RetVal> = vec_new::<RetVal>();
+        let mut sp_chars: Vec<i32> = Vec::<i32>::new();
+        let mut sp_meta: Vec<StrMeta> = Vec::<StrMeta>::new();
+        let mut nums: Vec<NumEntry> = Vec::<NumEntry>::new();
+        let mut tokens: Vec<Token> = Vec::<Token>::new();
+        let mut nodes: Vec<Node> = Vec::<Node>::new();
+        let mut bins: Vec<BinaryInfo> = Vec::<BinaryInfo>::new();
+        let mut asns: Vec<AssignInfo> = Vec::<AssignInfo>::new();
+        let mut vds: Vec<VarDeclInfo> = Vec::<VarDeclInfo>::new();
+        let mut blks: Vec<BlockInfo> = Vec::<BlockInfo>::new();
+        let mut ifs_pool: Vec<IfInfo> = Vec::<IfInfo>::new();
+        let mut whs: Vec<WhileInfo> = Vec::<WhileInfo>::new();
+        let mut fns_pool: Vec<FunInfo> = Vec::<FunInfo>::new();
+        let mut cls: Vec<CallInfo> = Vec::<CallInfo>::new();
+        let mut stmts: Vec<i32> = Vec::<i32>::new();
+        let mut par: Vec<i32> = Vec::<i32>::new();
+        let mut arg: Vec<i32> = Vec::<i32>::new();
+        let mut envs: Vec<EnvMeta> = Vec::<EnvMeta>::new();
+        let mut ebs: Vec<Binding> = Vec::<Binding>::new();
+        let mut closures: Vec<ClosureInfo> = Vec::<ClosureInfo>::new();
+        let mut rvs: Vec<RetVal> = Vec::<RetVal>::new();
 
         let sr: i32 = scan(&source,&mut tokens,&mut sp_chars,&mut sp_meta,&mut nums);
         drop_string(source);
         if sr<0 { println("Error: scanning failed");
-            vec_free::<i32>(sp_chars); vec_free::<StrMeta>(sp_meta); vec_free::<NumEntry>(nums);
-            vec_free::<Token>(tokens); vec_free::<Node>(nodes); vec_free::<BinaryInfo>(bins);
-            vec_free::<AssignInfo>(asns); vec_free::<VarDeclInfo>(vds); vec_free::<BlockInfo>(blks);
-            vec_free::<IfInfo>(ifs_pool); vec_free::<WhileInfo>(whs); vec_free::<FunInfo>(fns_pool);
-            vec_free::<CallInfo>(cls); vec_free::<i32>(stmts); vec_free::<i32>(par);
-            vec_free::<i32>(arg); vec_free::<EnvMeta>(envs); vec_free::<Binding>(ebs);
-            vec_free::<ClosureInfo>(closures); vec_free::<RetVal>(rvs);
+            sp_chars.drop(); sp_meta.drop(); nums.drop();
+            tokens.drop(); nodes.drop(); bins.drop();
+            asns.drop(); vds.drop(); blks.drop();
+            ifs_pool.drop(); whs.drop(); fns_pool.drop();
+            cls.drop(); stmts.drop(); par.drop();
+            arg.drop(); envs.drop(); ebs.drop();
+            closures.drop(); rvs.drop();
             return 1;
         }
 
         let prog: i32 = parse_program(&mut tokens,&mut nodes,&mut bins,&mut asns,&mut vds,&mut blks,
             &mut ifs_pool,&mut whs,&mut fns_pool,&mut cls,&mut stmts,&mut par,&mut arg,&mut sp_chars,&mut sp_meta,&mut nums);
         if prog<0 { println("Error: parsing failed");
-            vec_free::<i32>(sp_chars); vec_free::<StrMeta>(sp_meta); vec_free::<NumEntry>(nums);
-            vec_free::<Token>(tokens); vec_free::<Node>(nodes); vec_free::<BinaryInfo>(bins);
-            vec_free::<AssignInfo>(asns); vec_free::<VarDeclInfo>(vds); vec_free::<BlockInfo>(blks);
-            vec_free::<IfInfo>(ifs_pool); vec_free::<WhileInfo>(whs); vec_free::<FunInfo>(fns_pool);
-            vec_free::<CallInfo>(cls); vec_free::<i32>(stmts); vec_free::<i32>(par);
-            vec_free::<i32>(arg); vec_free::<EnvMeta>(envs); vec_free::<Binding>(ebs);
-            vec_free::<ClosureInfo>(closures); vec_free::<RetVal>(rvs);
+            sp_chars.drop(); sp_meta.drop(); nums.drop();
+            tokens.drop(); nodes.drop(); bins.drop();
+            asns.drop(); vds.drop(); blks.drop();
+            ifs_pool.drop(); whs.drop(); fns_pool.drop();
+            cls.drop(); stmts.drop(); par.drop();
+            arg.drop(); envs.drop(); ebs.drop();
+            closures.drop(); rvs.drop();
             return 1;
         }
 
@@ -1171,13 +1172,13 @@ mod Lox {
             &mut ifs_pool,&mut whs,&mut fns_pool,&mut cls,&mut stmts,&mut par,&mut arg,
             &mut sp_chars,&mut sp_meta,&mut nums,&mut envs,&mut ebs,&mut closures,&mut rvs);
 
-        vec_free::<i32>(sp_chars); vec_free::<StrMeta>(sp_meta); vec_free::<NumEntry>(nums);
-        vec_free::<Token>(tokens); vec_free::<Node>(nodes); vec_free::<BinaryInfo>(bins);
-        vec_free::<AssignInfo>(asns); vec_free::<VarDeclInfo>(vds); vec_free::<BlockInfo>(blks);
-        vec_free::<IfInfo>(ifs_pool); vec_free::<WhileInfo>(whs); vec_free::<FunInfo>(fns_pool);
-        vec_free::<CallInfo>(cls); vec_free::<i32>(stmts); vec_free::<i32>(par);
-        vec_free::<i32>(arg); vec_free::<EnvMeta>(envs); vec_free::<Binding>(ebs);
-        vec_free::<ClosureInfo>(closures); vec_free::<RetVal>(rvs);
+        sp_chars.drop(); sp_meta.drop(); nums.drop();
+        tokens.drop(); nodes.drop(); bins.drop();
+        asns.drop(); vds.drop(); blks.drop();
+        ifs_pool.drop(); whs.drop(); fns_pool.drop();
+        cls.drop(); stmts.drop(); par.drop();
+        arg.drop(); envs.drop(); ebs.drop();
+        closures.drop(); rvs.drop();
         return 0;
     }
 }

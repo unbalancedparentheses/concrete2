@@ -22,6 +22,7 @@ mod fcheck {
     import std.map.{HashMap};
     import std.set.{HashSet};
     import std.hash.{hash_string, eq_string};
+    import std.vec.{Vec};
 
     trusted extern fn malloc(size: u64) -> *mut u8;
     trusted extern fn free(ptr: *mut u8);
@@ -237,15 +238,15 @@ mod fcheck {
         free(w_buf);
         free(padded);
 
-        let mut result: Vec<u32> = vec_new::<u32>();
-        vec_push::<u32>(&mut result, h0);
-        vec_push::<u32>(&mut result, h1);
-        vec_push::<u32>(&mut result, h2);
-        vec_push::<u32>(&mut result, h3);
-        vec_push::<u32>(&mut result, h4);
-        vec_push::<u32>(&mut result, h5);
-        vec_push::<u32>(&mut result, h6);
-        vec_push::<u32>(&mut result, h7);
+        let mut result: Vec<u32> = Vec::<u32>::new();
+        result.push(h0);
+        result.push(h1);
+        result.push(h2);
+        result.push(h3);
+        result.push(h4);
+        result.push(h5);
+        result.push(h6);
+        result.push(h7);
         return result;
     }
 
@@ -272,7 +273,7 @@ mod fcheck {
         string_reserve(&mut hex, 64);
         let mut i: Int = 0;
         while i < 8 {
-            let word: u32 = vec_get::<u32>(hash, i);
+            let word: u32 = *hash.get_unchecked(i as u64);
             hex_encode_u32(word, &mut hex);
             i = i + 1;
         }
@@ -312,7 +313,7 @@ mod fcheck {
         let mut hash: Vec<u32> = sha256(fd.ptr, fd.len);
         free_file_data(fd);
         let hex: String = hash_to_hex(&mut hash);
-        vec_free::<u32>(hash);
+        hash.drop();
         return hex;
     }
 

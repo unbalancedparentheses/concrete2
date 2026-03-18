@@ -522,8 +522,9 @@ Primary surfaces:
       - simple HTTP server compiles/runs — originally blocked by Linux-only socket constants in `std.net` (Bug 017, fixed in `bdb2d7f`); current remaining coupling is the Bug 018 heap-buffer workaround for stack-array borrowing
       - Lox tree-walk interpreter compiles/runs cleanly (1,052 loc)
    - this means the second wave is already earning its keep as a bug-finding track, not only as a future showcase list
-   - Bug 016 (cross-module HashMap linking) and Bug 017 (macOS socket constants) are both fixed
-   - the main remaining second-wave correctness finding is Bug 018: borrowing stack arrays for writable FFI access can create copies instead of stable references
+   - Bug 016 (cross-module HashMap linking), Bug 017 (macOS socket constants), and Bug 019 (method-level generics crash at lowering) are all fixed
+   - Bug 019 (`c0c5b54`) was the most impactful: it unblocked `fold<A>` on all containers and generic method patterns generally. Two root causes: (a) parser created bare Self type instead of `Box<T>` for self params in generic impls; (b) generic structs only instantiated once at LLVM level, causing silent value truncation between `Box<i32>` and `Box<i64>`
+   - the main remaining second-wave correctness finding is Bug 018: borrowing stack arrays for writable FFI access can create copies instead of stable references (workaround: heap-allocate with malloc)
    - remaining work is cleaning up workaround-heavy data models in integrity/kvstore, removing heap-buffer workarounds after Bug 018 is fixed, and then finishing HTTP parser cleanup
    - the earlier second-wave list (regex engine, Lox, package/archive indexer, HSM policy engine) was deprioritized because:
      - regex engine and Lox overlap heavily with first-wave interpreter/parser pressure (MAL, VM, JSON)
