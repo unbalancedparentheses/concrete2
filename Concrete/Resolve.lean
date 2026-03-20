@@ -364,7 +364,8 @@ private def buildGlobalScopeFromSummary (s : FileSummary) : Scope × List String
     ++ (subS.enums.map fun e => (e.name, SymKind.enum e))
     ++ (subS.externFns.map fun ef => (s!"{subName}_{ef.name}", SymKind.externFn ef.params ef.retTy))
     ++ (subS.constants.map fun c => (c.name, SymKind.const c.ty))
-    ++ (implSigsToSymbols subS.implMethodSigs)
+    ++ (implSigsToSymbols (subS.implMethodSigs.filter fun (name, _) =>
+        subS.publicNames.contains name))
   ) []
   let types := types ++ s.submoduleSummaries.foldl (fun acc (_, subS) =>
     acc

@@ -1366,7 +1366,8 @@ partial def elabModule (m : Module) (summary : FileSummary)
   let siblingEnums := summary.submoduleSummaries.foldl (fun acc (_, subSummary) =>
     acc ++ subSummary.enums) ([] : List EnumDef)
   let siblingImplMethodSigs := summary.submoduleSummaries.foldl (fun acc (_, subSummary) =>
-    acc ++ subSummary.implMethodSigs) ([] : List (String × FnSummary))
+    acc ++ (subSummary.implMethodSigs.filter fun (name, _) =>
+      subSummary.publicNames.contains name)) ([] : List (String × FnSummary))
   let cSubmodules := m.submodules.foldl (init := (Except.ok [] : Except Diagnostics (List CModule))) fun acc sub =>
     match acc with
     | .error e => .error e

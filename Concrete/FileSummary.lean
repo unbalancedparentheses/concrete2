@@ -173,9 +173,9 @@ partial def buildFileSummary (m : Module) : FileSummary :=
   let pubConstants := m.constants.filter (·.isPublic) |>.map (·.name)
   let pubAliases := m.typeAliases.filter (·.isPublic) |>.map (·.name)
   let pubImplMethods := m.implBlocks.foldl (fun acc ib =>
-    acc ++ ib.methods.map (·.name)) []
+    acc ++ (ib.methods.filter (·.isPublic)).map (fun f => ib.typeName ++ "_" ++ f.name)) []
   let pubTraitImplMethods := m.traitImpls.foldl (fun acc ti =>
-    acc ++ ti.methods.map (·.name)) []
+    acc ++ (ti.methods.filter (·.isPublic)).map (fun f => ti.typeName ++ "_" ++ f.name)) []
   let publicNames := pubFns ++ pubStructs ++ pubEnums ++ pubTraits ++ pubExterns
                      ++ pubConstants ++ pubAliases ++ pubImplMethods ++ pubTraitImplMethods
   let externFnSigs := m.externFns.map fun ef =>
@@ -258,9 +258,9 @@ def resolveImports (imports : List ImportDecl)
             let structImpls := summary.implBlocks.filter fun ib => ib.typeName == origName
             let structTraitImpls := summary.traitImpls.filter fun tb => tb.typeName == origName
             let mangledNames := structImpls.foldl (fun ns ib =>
-              ns ++ ib.methods.map fun f => ib.typeName ++ "_" ++ f.name) []
+              ns ++ (ib.methods.filter (·.isPublic)).map fun f => ib.typeName ++ "_" ++ f.name) []
               ++ structTraitImpls.foldl (fun ns tb =>
-              ns ++ tb.methods.map fun f => tb.typeName ++ "_" ++ f.name) []
+              ns ++ (tb.methods.filter (·.isPublic)).map fun f => tb.typeName ++ "_" ++ f.name) []
             let matchingSigs := summary.implMethodSigs.filter fun (name, _) =>
               mangledNames.contains name
             .ok { acc with structs := acc.structs ++ [sd],

@@ -1242,6 +1242,9 @@ run_ok "$TESTDIR/test_enum_many_variants.con" 42
 run_ok "$TESTDIR/test_defer_early_return.con" 42
 run_ok "$TESTDIR/test_defer_loop_break.con" 42
 run_err "$TESTDIR/error_module_private.con" "is not public"
+run_err "$TESTDIR/error_private_impl_method.con" "no method"
+run_err "$TESTDIR/error_private_trait_impl_method.con" "no method"
+run_ok "$TESTDIR/pub_impl_method.con" 30
 run_err "$TESTDIR/error_deeply_nested_type_mismatch.con" "type mismatch"
 
 # === ABI / FFI tests ===
