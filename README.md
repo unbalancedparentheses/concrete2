@@ -11,73 +11,54 @@
 
 </div>
 
-Status: project entry point
-
 >Most ideas come from previous ideas - Alan C. Kay, The Early History Of Smalltalk
 
-Concrete is a systems programming language for **correctness-focused low-level work**. The design rule is simple: if the compiler cannot explain what a feature means, the feature probably does not belong. The language stays explicit, LL(1)-parseable, and hostile to hidden control flow.
+Concrete is a systems language where capability requirements, trust boundaries, and ownership are visible in every function signature — written in Lean 4 so the compiler itself can be a proof target.
 
-Concrete is not trying to win by piling on features. Its real pitch is **auditable low-level programming with explicit authority and trust boundaries, built on a small language and a proof-friendly compiler**.
+## The Core Idea
 
-In practice, that means:
+In mainstream systems languages, function signatures usually do not tell you whether code may read files, use the network, or allocate memory. In Concrete, those effects are declared:
 
-- visible capabilities instead of ambient effects
-- visible `trusted` and `Unsafe` boundaries instead of hand-wavy escape hatches
-- explicit ownership and cleanup instead of hidden runtime behavior
-- compiler artifacts and reports that try to explain what the program means
+```con
+fn parse_json(input: &String) with(Alloc) -> JsonValue { ... }
+fn serve(port: u16) with(Network, Alloc, Console) -> Int { ... }
+fn sha256(data: &Bytes) with(Alloc) -> String { ... }
+```
 
-The compiler is written in [Lean 4](https://leanprover.github.io/lean4/doc/setup.html), and the long-term goal is two-layered:
+`parse_json` can allocate but can't touch the filesystem or network. `sha256` can allocate but provably never reads a file. This isn't a convention — the compiler enforces it. A function can only call functions whose capabilities are a subset of its own.
 
-- prove properties of the language/compiler itself
-- prove selected Concrete programs through explicit Core semantics
+The real payoff shows up in something like an artifact verifier: `sha256() with(Alloc)` cannot touch the filesystem. `read_file() with(File, Alloc)` cannot leak to the console. `report() with(Console)` cannot read files. An auditor can verify the authority boundaries from the signatures alone, without first reading the function bodies.
 
-For the longer identity and proof story, see [docs/IDENTITY.md](docs/IDENTITY.md) and [research/proof-evidence/proving-concrete-functions-in-lean.md](research/proof-evidence/proving-concrete-functions-in-lean.md).
+### The three-way trust split
 
-## Current Stage
+Rust has one keyword: `unsafe`. Concrete splits this into three distinct things:
 
-Concrete is past the "interesting design" stage and into "serious language project with real architecture."
+1. **Capabilities** (`with(File, Network)`) — semantic effects visible to callers. "This function does I/O."
+2. **`trusted`** — containment of pointer-level tricks behind a safe API. Only permits pointer arithmetic, raw deref, raw assignment, pointer casts. Does NOT permit FFI calls, does NOT suppress capabilities, does NOT relax ownership.
+3. **`with(Unsafe)`** — authority to cross foreign boundaries (FFI, transmute). Required even inside `trusted` code.
 
-What is already real:
+In Rust, when you see `unsafe`, you don't know if it's "pointer arithmetic I've proven correct" or "calling into C code that might do anything." In Concrete, those are syntactically and semantically different, and the compiler reports on them separately.
 
-- a complete internal compiler pipeline with explicit artifacts such as `ValidatedCore` and `ProofCore`
-- a coherent safety model built around capabilities, `trusted`, `Unsafe`, and compiler reports
-- a structured LLVM backend with SSA verification and documented backend contracts
-- an initial Lean-side proof workflow over a pure Core fragment
-- a large regression suite covering the compiler, stdlib, reports, ABI edges, and optimization-sensitive cases
+### The compiler as an audit machine
 
-What is not proven yet:
+Concrete has 8 built-in report modes:
 
-- large-program ergonomics under sustained use
-- package/workspace workflow
-- operational maturity as a long-term language toolchain
-- broader formalization beyond the current pure proof fragment
+- `--report caps` — per-function capabilities
+- `--report authority` — for each capability, which functions require it and through which call chain
+- `--report unsafe` — where are the trust boundaries, extern functions, and unsafe crossings?
+- `--report alloc` — where does allocation happen, and where is cleanup?
+- `--report proof` — which functions are pure enough to be formally proved?
+- `--report layout` — struct sizes, alignment, and field offsets
+- `--report interface` — public API surface
+- `--report mono` — which monomorphized generic code actually exists
 
-That is why the next major phase is [Phase H](ROADMAP.md): large-program pressure testing and performance validation. The next proof point is not another small feature. It is whether Concrete stays readable, explicit, and fast enough when it has to carry real software.
+These are structured compiler outputs derived from the same semantic analysis that type-checks the code. Not linting — real facts about the program.
 
 ## What Concrete Looks Like
 
-These are the kinds of boundaries Concrete tries to make obvious in source code.
-The interesting claim is mechanical, not rhetorical: the gatekeeper below can read policy and emit an alert, but the actual decision core stays pure, and no function silently grows new authority.
-
-Pure decision core:
+Pure decision core — no capabilities needed, testable on its own:
 
 ```con
-struct Command {
-    opcode: Int,
-    target: Int,
-    remote: Bool,
-}
-
-struct Policy {
-    max_target: Int,
-    allow_remote: Bool,
-}
-
-enum Decision {
-    Allow,
-    Deny,
-}
-
 fn allow_command(cmd: Command, policy: Policy) -> Decision {
     if cmd.target > policy.max_target {
         return Decision#Deny;
@@ -89,166 +70,93 @@ fn allow_command(cmd: Command, policy: Policy) -> Decision {
 }
 ```
 
-Trusted low-level wrappers:
+Trusted wrapper — pointer unsafety contained behind a safe API:
 
 ```con
-trusted extern fn fopen(name: *mut u8, mode: *mut u8) -> *const u8;
-trusted extern fn fclose(file: *const u8) -> i32;
-trusted extern fn fseek(file: *const u8, offset: i64, whence: i32) -> i32;
-trusted extern fn ftell(file: *const u8) -> i64;
-trusted extern fn malloc(size: u64) -> *mut u8;
-trusted extern fn free(ptr: *mut u8);
-trusted extern fn putchar(c: i32) -> i32;
-
-// helper functions like string_to_cstr(...) and mode_cstr(...)
-// stay inside the trusted wrapper layer too.
-trusted fn load_policy(path: &String) with(File) -> Policy {
-    let path_buf: *mut u8 = string_to_cstr(path);
-    let mode_buf: *mut u8 = mode_cstr(114); // "r"
-    let fp: *const u8 = fopen(path_buf, mode_buf);
-    free(mode_buf);
-    free(path_buf);
-    fseek(fp, 0, 2);
-    let size: i64 = ftell(fp);
-    fclose(fp);
-    return Policy {
-        max_target: size as Int,
-        allow_remote: false,
-    };
-}
-
-trusted fn emit_denial() with(Console) {
-    putchar(68); // D
-    putchar(69); // E
-    putchar(78); // N
-    putchar(89); // Y
-    putchar(10); // \n
-}
-
-fn evaluate_command(path: &String, cmd: Command) with(File, Console) -> Decision {
-    let policy: Policy = load_policy(path);
-    let decision: Decision = allow_command(cmd, policy);
-    match decision {
-        Decision#Allow => { return Decision#Allow; },
-        Decision#Deny => {
-            emit_denial();
-            return Decision#Deny;
-        }
-    }
+trusted fn load_policy(path: &String) with(File, Alloc) -> Policy {
+    let result: Result<String, FsError> = read_to_string(path);
+    // ... parse the file contents into a Policy ...
 }
 ```
+
+Callers see `load_policy(path) with(File, Alloc)` — they know it reads files and allocates, but the raw pointer work is invisible to them. The `trusted` boundary is one declaration, not ambient privilege.
 
 Explicit resource cleanup:
 
 ```con
-struct AuditHandle { fd: Int }
-
-impl Destroy for AuditHandle {
-    fn destroy(&self) {
-        // close the descriptor here
-    }
-}
-
-fn inspect_handle(h: AuditHandle) -> Int {
-    defer destroy(h);
-    return h.fd;
+fn process_request(stream: TcpStream, root: &String) with(Std) {
+    let buf: [u8; 4096] = [0; 4096];
+    let n: i64 = stream.read(&buf as *mut u8, 4096);
+    // ... handle request ...
+    stream.close();
 }
 ```
 
-These examples show why Concrete is aimed at critical low-level components instead of general convenience:
+Cleanup is written in the function body. No hidden destructors, no runtime finalization. Ownership is explicit and the compiler enforces linearity — forgetting to consume a resource is a compile error.
 
-- the decision logic is pure and testable on its own
-- policy loading and alert emission have separate, visible authority budgets
-- the raw C boundary is concentrated inside small trusted wrappers instead of leaking everywhere
-- cleanup is written in the function body with `defer destroy(...)`, not hidden in a runtime or convention
-- the compiler surface makes a stronger audit claim than Rust, Zig, or C usually do by default: who can decide, who can read policy, who can emit, and where trust starts
+## The Proof Story
 
-Tiny trusted boundary:
+The compiler is written in Lean 4. This enables two layers of proof:
 
-```con
-trusted extern fn abs(x: Int) -> Int;
+1. **Prove the compiler** — type soundness, ownership coherence, capability preservation, Core→SSA lowering correctness. This is proving the language rules are right.
+2. **Prove user programs** — through formalized Core semantics, a Concrete function's behavior can be stated and proved as a Lean theorem. This means you could write a hash function in Concrete (real systems language, real FFI, real memory layout) and prove it correct in Lean (real theorem prover).
 
-fn saturating_distance(x: Int, y: Int) -> Int {
-    let delta: Int = x - y;
-    return abs(delta);
-}
-```
+The architecture keeps proof tooling separate from compilation. The compiler produces stable artifacts (`ValidatedCore`, `ProofCore`); proof tools consume them. This avoids pushing proof search into the normal compile path.
 
-That second example is deliberately small. It shows the other half of Concrete's story:
+Currently: 17 proven theorems over a pure Core fragment. The formalization is narrow but the architecture is designed to grow.
 
-- the low-level foreign binding is explicit and named
-- the trusted boundary is one declaration, not ambient privilege
-- callers do not need to carry `Unsafe` just to use an audited pure foreign function
+## Research Directions
 
-For more examples, see [`examples/`](examples).
+The most developed ideas in the [research/](research/) directory are roadmap and research directions, not already-landed product surfaces:
 
-## Why Concrete Exists
+**Authority budgets** — capabilities already tell you what each function requires. Budgets would make this enforceable at module and package scope: "this module may only use `Alloc`." If any function inside transitively reaches `Network`, the build would fail. The transitive capability set is already computed; budget checking is set containment. ([research/packages-tooling/authority-budgets.md](research/packages-tooling/authority-budgets.md))
 
-Concrete was created to close a gap between low-level programming and mechanized reasoning.
+**Allocation budgets** — `with(Alloc)` is currently binary. The proposal classifies functions as NoAlloc / Bounded / Unbounded by walking the call graph. This would push allocation reporting into a stricter audit surface. ([research/stdlib-runtime/allocation-budgets.md](research/stdlib-runtime/allocation-budgets.md))
 
-Most systems languages optimize for control, performance, and interoperability, but they leave many important questions harder to answer mechanically than they should be. Concrete is trying to make those questions easier:
+**Execution cost tracking** — structural classification of functions as bounded or unbounded (loops, recursion, call depth). For bounded functions, compute abstract operation counts via IPET. Concrete is unusually tractable here: no dynamic dispatch, no closures, no hidden allocation. ([research/stdlib-runtime/execution-cost.md](research/stdlib-runtime/execution-cost.md))
 
-- what authority it has
-- where resources are created and destroyed
-- where `Unsafe` and `trusted` boundaries exist
-- what the compiler actually means by the program
+**Semantic diff and trust drift** — diff trust-relevant properties across two versions: authority changes, new trusted boundaries, allocation shifts. Not source text diffs — semantic fact diffs. ([research/compiler/semantic-diff-and-trust-drift.md](research/compiler/semantic-diff-and-trust-drift.md))
 
-Lean 4 matters here because it gives Concrete a credible path to proving both compiler properties and selected user programs, without turning the implementation language itself into a proof assistant. The deeper version of that story lives in [docs/IDENTITY.md](docs/IDENTITY.md).
+**Proof addon architecture** — the compiler produces stable proof-facing artifacts; proof tooling is a separate consumer (SMT, symbolic execution, Lean export). This avoids fusing proof search into compilation. ([research/proof-evidence/proof-addon-architecture.md](research/proof-evidence/proof-addon-architecture.md))
+
+**AI-assisted optimization** — the report system produces structured semantic facts (authority, allocation, purity, trust boundaries), not just pass/fail. This creates a tight feedback loop for automated agents: try a refactoring, check whether the compiler's structured report changed in the intended direction ("did this function become NoAlloc?", "did the authority set shrink?", "did more functions become proof-eligible?"). Semantic guardrails mean an agent can verify that a faster version didn't silently grow its trust surface.
 
 ## Where Concrete Fits
 
-Concrete is not trying to replace Rust, C++, or Go as a general-purpose systems language. Its strongest case is narrower: software that must be small, explicit, reviewable, and honest about power.
+Concrete is not trying to replace Rust, Zig, or C for general-purpose systems programming. Its case is narrower: software that must be small, explicit, reviewable, and honest about power.
 
-The most compelling targets are mission-critical components with narrow authority and clear trust boundaries, for example:
+The most compelling targets are high-consequence components with narrow authority:
 
 - boot, update, and artifact verification tools
 - key-handling and cryptographic policy helpers
-- policy engines and authorization layers
-- configuration, manifest, and protocol validators
 - safety/security guard processes with tightly bounded behavior
+- industrial control safety interlocks, medical-device policy kernels
 - audited wrappers around critical C libraries or hardware interfaces
-- small supervisory/control kernels inside larger systems
 
-If the full roadmap lands, the more interesting destination is not only "safer CLI tools." It is small high-consequence components such as:
+**Compared to Rust:** Smaller surface, less abstraction, more explicit authority. Rust's `unsafe` covers everything Concrete splits into three checkable surfaces. Rust has no way to declare that a crate may not do network I/O.
 
-- spacecraft or satellite command gatekeepers
-- industrial control safety interlocks
-- medical-device policy kernels
-- secure update and attestation roots
-- cryptographic control-plane decision cores
-- cross-domain or high-assurance data-release policy engines
+**Compared to Zig:** Shares the low-level explicitness, but pushes harder on ownership, capability tracking, and proof-oriented structure.
 
-This is the kind of software where Concrete should eventually offer something meaningfully different from Rust: not a broader ecosystem, but a stronger story around explicit authority, auditable trust boundaries, restricted profiles, and proof/evidence-friendly compilation.
+**Compared to verification languages (F\*, SPARK):** Keeps low-level runtime, FFI, layout, and ownership first-class instead of treating them as escape hatches.
 
-Concrete is a poor fit for software that mainly wins from ecosystem breadth, heavy async frameworks, or very large general-purpose application stacks. The goal is not "systems language for everything." The goal is "systems language for software that must be explicit enough to inspect, constrain, and trust."
+## Current State
 
-## Why Not Rust, Zig, or C?
+The compiler implements the full pipeline: `Parse → Resolve → Check → Elab → CoreCheck → Mono → Lower → EmitSSA → LLVM IR`.
 
-Because Concrete is trying to optimize for a different balance.
+What exists: centralized ABI/layout, 8 report modes with 59 assertions, `trusted`/capability boundaries, a real stdlib (vec, string, io, bytes, fs, net, hash, time, parse, test, and 8 collection types), `#[test]` execution, `concrete build`/`test`/`run`, and 12 example programs that have pressure-tested parsers, interpreters, storage, networking, and integrity workloads.
 
-- **Compared to Rust:** Concrete is aiming for a smaller surface, less abstraction machinery, more explicit authority, and a compiler architecture that is easier to audit and formalize.
-- **Compared to Zig:** Concrete shares the low-level explicitness, but pushes harder on ownership discipline, capability tracking, and proof-oriented structure.
-- **Compared to C:** Concrete wants the same kind of low-level reach without leaving ownership, effects, and trust boundaries to convention.
+What doesn't exist yet: incremental compilation, third-party dependencies, backend plurality, broad formalization, a runtime.
 
-The goal is not to out-feature those languages. The goal is to be unusually good at auditable, correctness-focused systems code.
+For priorities, see [ROADMAP.md](ROADMAP.md). For landed milestones, see [CHANGELOG.md](CHANGELOG.md).
 
-## Doc Map
-
-- [docs/README.md](docs/README.md) — stable documentation index
-- [docs/IDENTITY.md](docs/IDENTITY.md) — project identity, differentiators, and current maturity
-- [ROADMAP.md](ROADMAP.md) — active and future work
-- [CHANGELOG.md](CHANGELOG.md) — completed milestones
-- [docs/TESTING.md](docs/TESTING.md) — test structure and verification layers
-- [research/README.md](research/README.md) — exploratory design notes
-
-## Try It Now
+## Try It
 
 ```bash
 make build
-.lake/build/bin/concrete input.con -o output && ./output
+.lake/build/bin/concrete examples/snippets/hello_world.con -o /tmp/hello && /tmp/hello
 ```
 
-Concrete already enforces linearity. The compiler rejects programs that forget or reuse resources:
+The compiler enforces linearity — forgetting or reusing a resource is a compile error:
 
 ```
 struct Resource { value: Int }
@@ -260,8 +168,8 @@ fn consume(r: Resource) -> Int {
 fn main() -> Int {
     let r: Resource = Resource { value: 42 };
     let v: Int = consume(r);  // r is consumed here
-    // Using r again: compile error "linear variable 'r' used after move"
-    // Forgetting to use r: compile error "linear variable 'r' was never consumed"
+    // Using r again: "linear variable 'r' used after move"
+    // Forgetting r: "linear variable 'r' was never consumed"
     return v;
 }
 ```
@@ -275,6 +183,15 @@ make build    # or: lake build
 make test     # runs the full test suite
 make clean    # or: lake clean
 ```
+
+## Doc Map
+
+- [docs/IDENTITY.md](docs/IDENTITY.md) — project identity and vision
+- [docs/SAFETY.md](docs/SAFETY.md) — the three-way trust model
+- [ROADMAP.md](ROADMAP.md) — what's next
+- [CHANGELOG.md](CHANGELOG.md) — what's landed
+- [research/](research/) — design research and future directions
+- [docs/](docs/README.md) — full documentation index
 
 ## License
 

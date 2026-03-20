@@ -2,256 +2,146 @@
 
 Status: stable reference
 
-This document states what Concrete is trying to be, what it is optimizing for, and what it is not trying to win on.
+This document states what Concrete is, what it optimizes for, and what it is not.
 
 For feature admission criteria, see [DESIGN_POLICY.md](DESIGN_POLICY.md). For recorded "no" and "not yet" decisions, see [DECISIONS.md](DECISIONS.md). For long-term shape commitments, see [LANGUAGE_SHAPE.md](LANGUAGE_SHAPE.md).
 
-## Positioning
+## What Concrete Is
 
-Concrete is a low-level language optimized for auditability, explicit trust, and proof-friendly compiler architecture.
+A systems language where capability requirements, trust boundaries, and ownership are visible in every function signature — written in Lean 4 so the compiler itself can be a proof target.
 
-It is not trying to win by having the largest feature set, the most metaprogramming, or the broadest ecosystem first. Its intended advantage is that important low-level properties stay explicit enough to inspect, report, audit, and eventually prove.
+The bet is that for high-consequence code (firmware, security boundaries, safety-critical components), being able to answer "what authority does this module have?" and "which functions are pure enough to prove?" matters more than having a large ecosystem or maximal expressiveness.
 
-The clearest long-term fit is not "general systems programming for everything." It is software that must be small, explicit, reviewable, and honest about power: high-integrity components, audit-heavy infrastructure, security-sensitive utilities, and other mission-critical kernels where narrow authority and visible trust boundaries matter more than ecosystem breadth.
+## The Three-Way Trust Split
 
-## Current Stage
+Most systems languages have one escape hatch. Rust has `unsafe`. C has... everything. Concrete splits trust into three orthogonal mechanisms:
 
-Concrete is now in the middle ground between "language design document" and "mature language ecosystem."
+| Mechanism | What it covers | Visibility |
+|-----------|---------------|------------|
+| **Capabilities** (`with(File, Network)`) | Semantic effects visible to callers | In function signatures |
+| **`trusted`** | Pointer-level implementation unsafety behind safe APIs | At declaration site only |
+| **`with(Unsafe)`** | Authority to cross foreign boundaries (FFI, transmute) | In function signatures, even inside trusted code |
 
-What is already true:
+**Why this matters:** In Rust, `unsafe` covers raw pointer arithmetic, FFI calls, and transmute with identical syntax. You can't distinguish "contained implementation unsafety behind a safe interface" from "this function crosses a foreign boundary." Concrete makes these syntactically and semantically different, and the compiler reports on them separately.
 
-- the compiler architecture is real and explicit
-- the safety story is coherent enough to inspect and teach
-- the language surface has been deliberately narrowed instead of allowed to drift
-- the proof story has started in concrete form rather than staying aspirational
+**What `trusted` specifically permits:** pointer arithmetic, raw pointer dereference, raw pointer assignment, pointer-involving casts. Nothing else. It does NOT suppress capabilities, does NOT permit FFI without `with(Unsafe)`, does NOT relax linearity.
 
-What is not true yet:
+**Nine capabilities:** `File`, `Network`, `Clock`, `Env`, `Random`, `Process`, `Console`, `Alloc`, `Unsafe`. A function can only call functions whose capabilities are a subset of its own.
 
-- Concrete has not been pressure-tested by enough large programs
-- package and workspace workflow are not yet first-class
-- the operational/tooling story is not yet mature
-- the formalization story is still narrow compared to the final ambition
+## The Compiler as Audit Machine
 
-That makes the current stage important. Concrete is no longer trying to prove that it has an identity. It is trying to prove that the identity holds up under real use. That is why the next major validation step is the real-program pressure-testing phase.
+The compiler doesn't just accept or reject programs. It answers questions about them:
 
-## Why Concrete Exists
+- `--report authority` — per-capability function lists with transitive call-chain traces. "Why does `serve` need `File`? Because `serve → log_request → append_file`."
+- `--report unsafe` — trust boundary analysis: how many trusted functions, extern functions, unsafe crossings
+- `--report alloc` — allocation and cleanup summaries, leak warnings
+- `--report proof` — which functions are pure enough to be formally proved (no capabilities, not trusted, no extern calls)
+- `--report layout` — struct/enum sizes, alignment, field offsets
+- `--report mono` — what monomorphized code actually exists
+- `--report interface` — public API surface
+- `--report caps` — per-function capabilities
 
-Concrete was created to close a gap between systems programming and mechanized reasoning.
+These are structured compiler outputs, not linting. They derive from the same semantic analysis that type-checks the code. The goal is that a reviewer can understand a Concrete program's authority structure without reading the implementation.
 
-Most systems languages optimize for control, performance, and interoperability, but leave many important questions hard to answer mechanically: where authority enters, where resources are allocated and destroyed, where trust boundaries are crossed, and what the compiler really means by a program. Proof assistants make those questions tractable, but they are not the same thing as an everyday low-level systems language.
+## The Proof Story
 
-Lean 4 is central to Concrete's proof story, but Lean is still a theorem prover first, not a low-level systems language. It has a runtime and garbage collector, and it is not designed as the place where you would normally implement non-GC systems code with explicit ownership, layout, FFI, and resource management. Concrete exists so the implementation language can stay low-level and explicit while Lean 4 is leveraged to prove properties about it.
+The compiler is written in Lean 4. This enables two layers of proof:
 
-The core idea is that systems code should not only run fast or expose low-level control. It should also make important facts visible:
+**Layer 1 — prove the compiler:** type soundness, ownership/linearity coherence, capability/trust rule preservation, Core-to-SSA lowering correctness. These are proofs that the language rules work as intended.
 
-- what authority it has
-- where resources are created and destroyed
-- where `Unsafe` and `trusted` boundaries exist
-- what the compiler actually means by the program
+**Layer 2 — prove user programs:** through formalized Core semantics, a Concrete function's behavior can be stated and proved as a Lean theorem. A hash function written in Concrete (real systems language, real FFI, real memory layout) could be proved correct in Lean (real theorem prover), with a well-defined semantic bridge between them.
 
-Concrete is trying to bridge that gap. The project exists to make low-level programming explicit enough to audit, honest enough to trust, and structured enough to eventually prove.
+The architecture keeps proof tooling separate from compilation. The compiler produces stable artifacts (`ValidatedCore`, `ProofCore`); proof tools consume them. `ProofCore` is the pure subset — functions with no capabilities, not trusted, no extern calls. This is the subset where formal proofs are tractable.
 
-## Core Differentiators
+Currently: 17 proven theorems over a pure Core fragment. Narrow, but the architecture is designed to grow without contaminating the compile path.
 
-### 1. Auditability As A First-Class Goal
+## Research Directions
 
-Concrete should become unusually good at telling users:
+These are the most developed ideas in [research/](../research/). None are implemented yet, but each is grounded in the current compiler architecture.
 
-- where authority enters
-- where allocation happens
-- where cleanup/destruction happens
-- where `trusted` enters
-- what layout/ABI a type really has
-- what monomorphized code actually exists
+### Authority Budgets
 
-Many languages treat this as secondary tooling. Concrete should treat it as part of the language/compiler identity.
+Capabilities tell you what each function requires. Authority budgets extend this to modules and packages as enforceable constraints:
 
-### 2. Explicit Trust And Capability Boundaries
+```con
+#[authority(Alloc)]
+mod Parser {
+    // Any function here that transitively reaches Network or File
+    // is a compile error
+}
+```
 
-Concrete's safety story is built from explicit surfaces:
+At the package level: "dependency `json_parser` may only use `Alloc`." If the next release adds logging, the build fails. The transitive capability set is already computed by `--report authority`; budget checking is set containment.
 
-- capabilities
-- `Unsafe`
-- `trusted fn`
-- `trusted impl`
-- `trusted extern fn`
-- audit/report outputs
+This is unusual among mainstream systems languages. Rust, for example, has no mechanism to declare that a crate is limited to specific side effects.
 
-The differentiator is not merely "has unsafe code". It is that trust and authority should be explicit, inspectable, and honest. The organizing principle is a three-way split: capabilities for semantic effects, `trusted` for contained implementation unsafety, and `with(Unsafe)` for foreign boundaries. See [SAFETY.md](SAFETY.md) for the full model.
+See [../research/packages-tooling/authority-budgets.md](../research/packages-tooling/authority-budgets.md).
 
-### 3. Small Semantic Surface
+### Allocation Budgets
 
-Concrete should stay small enough that:
+`with(Alloc)` is currently binary. The proposal adds gradations: NoAlloc (already works), Bounded (allocates but provably bounded), Unbounded (current default). The first step is classification by call-graph analysis — no language change needed.
 
-- ordinary names are ordinary
-- semantics are explicit
-- compiler magic is minimized
-- the trusted computing base stays easier to reason about
+The intended direction is more compositional than the usual whole-program or whole-crate story. Ada/SPARK have pool-level bounds; Rust gets `no_std` by convention. Concrete's proposed version is per-function and compositional.
 
-This is why semantic cleanup and feature discipline matter so much in the roadmap.
+See [../research/stdlib-runtime/allocation-budgets.md](../research/stdlib-runtime/allocation-budgets.md).
 
-### 4. Proof-Friendly Compiler Architecture
+### Execution Cost Tracking
 
-Concrete's compiler is being shaped around:
+Structural classification of functions: bounded or unbounded loops, recursive or not, max static call depth. For bounded functions, abstract instruction counts via IPET. Concrete is unusually tractable for this: no dynamic dispatch, no closures, no hidden allocation, clean SSA CFG.
 
-- clear Core semantics
-- SSA as a real backend boundary
-- explicit pass structure
-- formalization targets that match the architecture
+See [../research/stdlib-runtime/execution-cost.md](../research/stdlib-runtime/execution-cost.md).
 
-This is meant to make the language unusually compatible with mechanized trust claims rather than treating proof work as an afterthought.
+### Semantic Diff and Trust Drift
 
-Concrete's long-term proof story has two layers:
+Diff trust-relevant properties across two versions — not source text, but semantic facts. Authority changes, new trusted boundaries, allocation shifts. The compiler already computes all these facts; semantic diff is structured comparison of report outputs.
 
-- proving properties of the language/compiler in Lean
-- eventually proving properties of selected Concrete programs in Lean through formalized Core semantics
+See [../research/compiler/semantic-diff-and-trust-drift.md](../research/compiler/semantic-diff-and-trust-drift.md).
 
-Examples of the first layer:
+### Proof Addon Architecture
 
-- the type system is sound
-- ownership and linearity rules are coherent
-- capability and trust rules are preserved
-- lowering from Core to SSA preserves meaning
+Proof tooling as a separate consumer of compiler artifacts, not fused into compilation. SMT discharge, symbolic execution, and Lean export would all work from the same stable `ValidatedCore`/`ProofCore` artifacts. This avoids making proof failure a compile failure.
 
-Examples of the second layer:
+See [../research/proof-evidence/proof-addon-architecture.md](../research/proof-evidence/proof-addon-architecture.md).
 
-- a function returns the right result
-- a data-structure operation preserves its invariant
-- a parser round-trips with a formatter
-- a critical routine respects a specification
+## Where Concrete Fits
 
-The difference matters:
+Concrete is not trying to replace Rust, Zig, or C for general-purpose systems programming. Its case is narrower: software that must be small, explicit, reviewable, and honest about power.
 
-- proving the language/compiler gives trust in the language rules and compiler pipeline
-- proving selected Concrete programs gives trust in specific pieces of user code
+Target use cases:
 
-Both matter, but they are not the same. One is language trust and compiler trust. The other is program trust.
-
-That second goal is important because it turns proof-friendliness from a compiler implementation detail into a real language differentiator.
-
-It is also important as a concrete project milestone, not only as a vague long-term ambition. Concrete should reach a point where a user can write selected Concrete code, then use Lean 4 to prove properties about that code through validated Core semantics. That is one of the clearest breakthroughs the roadmap is trying to produce.
-
-The practical shape of that idea is important:
-
-- Concrete is the low-level implementation language
-- Lean 4 is the theorem and proof environment that Concrete leverages
-- formalized Core semantics are the bridge between them
-
-That is appealing because it points toward something stronger than "compiler in Lean". It points toward real executable systems code written in Concrete and proved with Lean 4, using Lean's theorem ecosystem without requiring the implementation itself to live inside a GC-oriented proof language runtime.
-
-### 5. Resource / Safety Honesty Without A Giant Surface
-
-Concrete is aiming for a strong ownership/capability/trust story without requiring the language to become maximally large or magical.
-
-The goal is not to out-Rust Rust on every dimension. The goal is to offer a smaller, more explicit system that is easier to audit and reason about.
-
-### 6. Explainability As Part Of The Product
-
-Concrete should not stop at "accepted" or "rejected". It should become unusually good at answering:
-
-- why a capability is required
-- why code crosses an `Unsafe` or `trusted` boundary
-- why a value is dropped or consumed where it is
-- why a layout, ABI, or monomorphization outcome occurred
-
-This is part of the same identity as auditability. A language built for explicit reasoning should also be built to explain its own decisions clearly.
-
-### 7. Reproducible And Inspectable Compiler Outputs
-
-Concrete should eventually produce artifacts and builds that are not only correct enough to use, but inspectable and reproducible enough to trust operationally.
-
-That means moving toward:
-
-- explicit, durable compiler artifacts
-- reproducible enough builds and tests to trust failures
-- outputs that support reports, audits, tooling, and later proof workflows from the same underlying facts
-
-This is not a separate identity from the proof story. It is part of what makes a low-level language operationally trustworthy.
-
-### 8. A Future High-Integrity Profile
-
-Concrete should eventually support a clearly defined high-integrity or provable subset/profile for critical code.
-
-The important idea is not "add more syntax for verification." The important idea is:
-
-- restricted execution profiles such as no-allocation or bounded-allocation modes
-- tighter restrictions around `Unsafe`, `trusted`, FFI, and ambient authority
-- analyzable concurrency rules rather than unconstrained concurrency by default
-- stronger evidence, reports, and traceability for review-heavy code
-
-This fits Concrete better than a large contract system as a first move. It preserves the language's bias toward explicitness, analyzability, and smaller trusted surfaces.
-
-## Competitive Stance
-
-Concrete does not need to beat every systems language on every axis.
-
-It is not primarily trying to out-compete:
-
-- Rust on ecosystem scale, borrow-checker polish, or macro power
-- Zig on comptime, build integration, or cross-compilation ergonomics
-- Odin on minimal syntax or data-oriented workflow simplicity
-- Vale on every ownership-region experiment
-
-Concrete should instead be strongest where those languages are not explicitly centered:
-
-- auditability
-- explicit authority/trust boundaries
-- proof-friendly compiler structure
-- a smaller and more honest semantic surface
-- a path toward high-integrity profiles for critical systems without requiring Concrete to become a giant verification-first language
-
-The most interesting target is not just "safer CLI tools." It is small high-consequence components inside larger critical systems, for example:
-
-- boot/update verification roots
-- key-handling or cryptographic policy helpers
-- command gatekeepers for hardware or remote systems
-- industrial or medical safety-policy kernels
-- audited wrappers around critical C or device interfaces
+- boot, update, and artifact verification tools
+- key-handling and cryptographic policy helpers
+- safety/security guard processes with tightly bounded behavior
+- industrial control safety interlocks, medical-device policy kernels
+- audited wrappers around critical C libraries or hardware interfaces
 - cross-domain or high-assurance data-release policy engines
 
-Compared to Lean, Concrete is not trying to be a proof assistant. It is trying to be the low-level language that Lean 4 can reason about well.
+### Competitive Stance
 
-Compared to mainstream systems languages, Concrete's intended difference is not "more features". It is unusually explicit authority, trust, resource, and compiler-meaning boundaries, with a style that should stay closer to Austral's clarity than to feature accumulation.
+**vs. Rust:** Not competing on ecosystem, borrow-checker polish, or macro power. Competing on auditability and explicit authority. Rust's `unsafe` covers everything Concrete splits into three checkable surfaces. Rust has no capability system for declaring that a crate may not do network I/O.
 
-Compared to verification-first languages, Concrete is trying to keep low-level runtime, FFI, layout, and ownership concerns first-class instead of treating them as secondary escape hatches.
+**vs. Zig:** Shares low-level explicitness. Concrete pushes harder on ownership, capability tracking, and proof structure.
 
-For a fuller comparison of what other languages may still have even after Concrete's planned phases, see [../research/meta/competitive-gap-analysis.md](../research/meta/competitive-gap-analysis.md).
+**vs. verification languages (F\*, SPARK):** Keeps low-level runtime, FFI, layout, and ownership first-class. Verification-first languages treat these as escape hatches.
+
+**vs. Lean:** Concrete is not a proof assistant. It is the low-level language that Lean 4 reasons about.
 
 ## Non-Goals
 
-Concrete should avoid drifting into these as identity goals:
+- feature-count competition
+- hidden semantic behavior keyed off public names
+- cleverness that makes auditability harder
+- large convenience surfaces inside the compiler
+- treating ecosystem size as more important than semantic clarity
 
-- feature-count competition for its own sake
-- hidden semantic behavior keyed off ordinary public names
-- cleverness that makes auditability or proof work harder
-- large convenience surfaces inside the compiler instead of the stdlib
-- treating self-hosting or ecosystem size as more important than semantic and trust clarity
+## Design Filters
 
-## What Concrete Must Be Able To Show
+Every proposed feature must pass a checklist (see [DESIGN_POLICY.md](DESIGN_POLICY.md) and [../research/design-filters.md](../research/design-filters.md)):
 
-To justify its identity, Concrete should eventually be able to show users:
+- Does it make behavior more visible or less visible?
+- Is dispatch still statically known?
+- Can the compiler own it with one clear pass?
+- Does it help or hurt the proof story?
+- Is the benefit real for audited low-level code, or just ergonomics?
 
-- what code requires which authority, and why
-- what code crosses `Unsafe` and `trusted` boundaries
-- what runtime/layout/ABI choices actually occurred
-- what code was generated after monomorphization
-- where allocation and destruction happen
-
-Over time, this should grow from function-level explanation into component-level control. A stronger future Concrete should be able to say not only "what authority does this function require?" but also "what authority is this package, dependency, or subsystem allowed to require at all?"
-
-If Concrete cannot show these things clearly, it is not yet delivering its intended differentiator.
-
-Concrete should also be able to explain those facts clearly and, over time, reproduce them reliably enough that users can trust them across machines and environments.
-
-## Why The Proof Direction Is Useful
-
-This direction is useful because it lets Concrete justify a stronger claim than "the compiler seems well-designed."
-
-It means:
-
-- the language and compiler can be reasoned about in Lean
-- selected Concrete programs can eventually be reasoned about in Lean too
-
-That matters because it validates the language design, validates the compiler architecture choices around Core and SSA, creates a real differentiator for security- and audit-sensitive code, and helps keep future language growth disciplined.
-
-It is also one of the clearest reasons Concrete exists at all: systems languages usually give low-level power, proof systems usually give reasoning power, and Concrete is trying to make those two meet cleanly.
+Guiding principle: "Copy constraints before copying features." The languages Concrete learns from most (Zig, Austral, SPARK) are most useful where they say "no."
