@@ -144,7 +144,7 @@ But some patterns remain genuinely verbose:
 
 ### What comes next
 
-Phase J (package/project model) is the #1 priority:
+Phase H still has a short cleanup tail, but the next major architectural priority is Phase J (package/project model):
 - workspace and multi-package semantics
 - `concrete build/test/run` maturity
 - incremental compilation direction

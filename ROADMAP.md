@@ -15,28 +15,22 @@ The Lean 4 compiler implements the full current pipeline:
 
 `Parse -> Resolve -> Check -> Elab -> CoreCheck -> Mono -> Lower -> EmitSSA -> LLVM IR`
 
-What exists:
-- centralized ABI/layout in `Layout.lean`
-- native diagnostics and report surfaces
-- explicit `trusted fn` / `trusted impl` / `trusted extern fn` boundaries
-- a real stdlib foundation and collection set
-- `#[test]` execution through the real compiler path
-- `concrete build`, `concrete test`, and `concrete run`
-- a real example corpus that has already pressured parsers, interpreters, storage, networking, and integrity workloads
+Major landed state belongs in [CHANGELOG.md](CHANGELOG.md). The short version is:
+- the core compiler pipeline, stdlib foundation, report surfaces, and project workflow are real
+- the main missing structural pieces are package/artifact architecture, broader formalization, backend plurality, and a fuller runtime story
 
-What still does not exist:
-- incremental compilation and a real artifact-driven compiler driver
-- third-party dependency semantics and workspaces
-- backend plurality over SSA
-- broad formalization beyond the current narrow proof fragment
-- a runtime story beyond the current hosted execution model
+Current active work:
+- finishing the remaining high-leverage Phase H cleanup items exposed by real programs
+
+Next major build-out:
+- **Phase J Foundation** — artifact, package, and workspace architecture
 
 ## Phase Status
 
 | Phase | Focus | Status |
 |------|-------|--------|
 | A-G | Core language, safety, testing, execution model | Done |
-| H | Real-program pressure testing | Discovery complete — follow-through carried into later steps |
+| H | Real-program pressure testing | Active — discovery complete, cleanup in progress |
 | I | Formalization and proof expansion | Not started |
 | J | Package and dependency ecosystem | Not started |
 | K | Adoption and showcase | Not started |
@@ -52,15 +46,59 @@ Phase H detail lives in:
 
 The phase itself succeeded in purpose: Concrete was exercised by real programs, structural weaknesses were exposed, and the project now has evidence-backed priorities. What remains from Phase H is follow-through, not discovery:
 - package/project/tooling follow-through now lives in **Phase J**
-- stdlib/language friction follow-through now lives in **Post-H Ergonomics Cleanup**
-- runtime/stack pressure classification and cross-language comparison follow-through remain recorded in the Phase H notes, but no longer justify keeping Phase H itself open as the active roadmap center
+- stdlib/language friction follow-through now lives in **Phase H Cleanup**
+- runtime/stack pressure classification and cross-language comparison follow-through remain recorded in the Phase H notes
 - long-horizon questions remain recorded in the research notes until evidence justifies implementation
+
+Interpretation:
+- **Phase H is still active as cleanup**
+- **Phase J is the next major architectural build-out**
+- small high-leverage H cleanup items should still land whenever they are cheaper than beginning a large J subproject
 
 ## Linear Sequence
 
-### 1. Phase J Foundation: Artifact And Package Architecture
+### 1. Phase H Cleanup: Finish The Remaining Real-Program Follow-Through
 
-This is the first real priority. It is the largest structural blocker left in the project.
+Discovery is complete. The remaining work is to turn the highest-leverage findings into stable language/stdlib/tooling improvements without reopening H as an open-ended exploration phase.
+
+Do next:
+1. match on integers
+2. fix `import` in project mode where `pub` functions still fail incorrectly
+3. extract shared stdlib modules where examples are still duplicating obvious support code
+   - especially parser/storage/integrity helpers like SHA-256 and common string/bytes utilities
+4. finish the next string-ergonomics layer
+   - `starts_with`
+   - `ends_with`
+   - `contains`
+5. improve collection patterns for linear values where examples still fight the container surface
+6. classify the remaining runtime/stack pressure findings cleanly as language, runtime, stdlib, or tooling
+7. keep cross-language comparison follow-through recorded and land it only where it still changes judgment
+
+Do later, only if evidence still demands it:
+- string `==`
+- destructuring `let`
+
+Why first:
+- these are still the most visible daily-writing friction points found by real programs
+- several of them are cheap compared to the structural work in J
+- keeping them explicit prevents the roadmap from pretending all remaining work is architectural
+
+Primary references:
+- [research/workloads/phase-h-findings.md](research/workloads/phase-h-findings.md)
+- [research/stdlib-runtime/text-and-output-design.md](research/stdlib-runtime/text-and-output-design.md)
+- [research/stdlib-runtime/runtime-collections.md](research/stdlib-runtime/runtime-collections.md)
+- [research/stdlib-runtime/iterators.md](research/stdlib-runtime/iterators.md)
+- [research/language/cleanup-ergonomics.md](research/language/cleanup-ergonomics.md)
+
+Exit criterion:
+- examples stop reimplementing obvious string/helpers repeatedly
+- the current best Concrete style is visible in the example corpus
+- remaining language-pressure candidates are clearly evidence-backed rather than general frustration
+- the remaining runtime/stack questions are classified rather than left ambient
+
+### 2. Phase J Foundation: Artifact And Package Architecture
+
+This is the next major architectural priority. It is the largest structural blocker left in the project once the short Phase H cleanup tail is under control.
 
 Do next:
 1. incremental compilation: serialize pipeline artifacts, cache by source hash, skip unchanged modules
@@ -94,44 +132,6 @@ Exit criterion:
 - the first authority-budget path is structurally possible
 - cross-target FFI/ABI validation is no longer hand-wavy
 - the package graph is not heading toward a publishing/trust-model redesign
-
-### 2. Post-H Ergonomics Cleanup: Remove The Most Obvious Writing Friction
-
-After the package/artifact floor is cleaner, fix the highest-leverage friction exposed by real programs.
-
-Do next:
-1. match on integers
-2. fix `import` in project mode where `pub` functions still fail incorrectly
-3. extract shared stdlib modules where examples are still duplicating obvious support code
-   - especially parser/storage/integrity helpers like SHA-256 and common string/bytes utilities
-4. finish the next string-ergonomics layer
-   - `starts_with`
-   - `ends_with`
-   - `contains`
-5. improve collection patterns for linear values where examples still fight the container surface
-6. classify the remaining runtime/stack pressure findings cleanly as language, runtime, stdlib, or tooling
-
-Do later, only if evidence still demands it:
-- string `==`
-- destructuring `let`
-
-Why here:
-- Phase H proved the language can carry real programs
-- the next issue is whether those programs look like good Concrete or disciplined workaround code
-- most remaining pain is in stdlib/helper surface, not in the core semantics
-
-Primary references:
-- [research/workloads/phase-h-findings.md](research/workloads/phase-h-findings.md)
-- [research/stdlib-runtime/text-and-output-design.md](research/stdlib-runtime/text-and-output-design.md)
-- [research/stdlib-runtime/runtime-collections.md](research/stdlib-runtime/runtime-collections.md)
-- [research/stdlib-runtime/iterators.md](research/stdlib-runtime/iterators.md)
-- [research/language/cleanup-ergonomics.md](research/language/cleanup-ergonomics.md)
-
-Exit criterion:
-- examples stop reimplementing obvious string/helpers repeatedly
-- the current best Concrete style is visible in the example corpus
-- remaining language-pressure candidates are clearly evidence-backed rather than general frustration
-- the remaining runtime/stack questions are classified rather than left ambient
 
 ### 3. Phase I: Formalization And Proof Expansion
 
@@ -255,21 +255,6 @@ Primary references:
 - [research/meta/ten-x-improvements.md](research/meta/ten-x-improvements.md)
 - [research/language/typestate.md](research/language/typestate.md)
 
-## AI-Assisted Optimization Via Structured Reports
-
-Concrete's report system (`--report authority`, `--report alloc`, `--report proof`, etc.) produces structured, machine-readable facts about programs — not just "it compiled" but "here's what authority each function has, where allocation happens, which functions are pure." This creates an unusually tight feedback loop for automated optimization agents (in the style of Karpathy's autoresearch).
-
-Specific opportunities:
-
-- **Allocation minimization**: `--report alloc` identifies which functions allocate. An agent can try refactoring a function from `Unbounded` to `Bounded` or `NoAlloc`, with the compiler as the oracle — not benchmark noise.
-- **Purity expansion**: `--report proof` identifies which functions are pure enough to prove. An agent can systematically restructure code to make more functions proof-eligible — extracting pure cores, pushing capabilities to boundaries.
-- **Authority narrowing**: `--report authority` shows the transitive call chain behind every capability. An agent can try to eliminate unnecessary authority — "this function only needs `File` because of one logging call; restructure so the core logic becomes pure."
-- **Performance with semantic guardrails**: unlike blind benchmark-driven optimization, an agent can verify that a faster version didn't silently grow its trust surface or authority requirements.
-
-The key property is that Concrete's reports turn program properties into **checkable assertions**. An automated loop needs a tight feedback signal, and "did the compiler's structured report change in the way I intended?" is a much better signal than "did the benchmark number go up?" This was not designed for AI agents, but it creates exactly the kind of machine-readable semantic feedback that makes automated reasoning over code tractable.
-
-This is not a phase — it is a cross-cutting capability that becomes more useful as the report system, authority budgets, and allocation classification mature. The earliest practical starting point is after machine-readable report outputs land (Phase L1), but experiments with the current text-based reports could start at any time.
-
 ## Design Constraints
 
 - keep the parser LL(1)
@@ -303,3 +288,4 @@ For more:
 - [research/meta/ten-x-improvements.md](research/meta/ten-x-improvements.md)
 - [research/language/capability-sandboxing.md](research/language/capability-sandboxing.md)
 - [research/proof-evidence/trust-multipliers.md](research/proof-evidence/trust-multipliers.md)
+- [research/meta/ai-assisted-optimization.md](research/meta/ai-assisted-optimization.md)
