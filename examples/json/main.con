@@ -146,6 +146,37 @@ mod Lex {
         }
         return true;
     }
+
+    // Match "true" at position without allocating a String
+    pub fn match_true(s: &String, pos: i32) -> bool {
+        let slen: i32 = string_length(s) as i32;
+        if pos + 4 > slen { return false; }
+        return string_char_at(s, pos as Int) as i32 == 116       // t
+            && string_char_at(s, (pos + 1) as Int) as i32 == 114 // r
+            && string_char_at(s, (pos + 2) as Int) as i32 == 117 // u
+            && string_char_at(s, (pos + 3) as Int) as i32 == 101;// e
+    }
+
+    // Match "false" at position without allocating a String
+    pub fn match_false(s: &String, pos: i32) -> bool {
+        let slen: i32 = string_length(s) as i32;
+        if pos + 5 > slen { return false; }
+        return string_char_at(s, pos as Int) as i32 == 102       // f
+            && string_char_at(s, (pos + 1) as Int) as i32 == 97  // a
+            && string_char_at(s, (pos + 2) as Int) as i32 == 108 // l
+            && string_char_at(s, (pos + 3) as Int) as i32 == 115 // s
+            && string_char_at(s, (pos + 4) as Int) as i32 == 101;// e
+    }
+
+    // Match "null" at position without allocating a String
+    pub fn match_null(s: &String, pos: i32) -> bool {
+        let slen: i32 = string_length(s) as i32;
+        if pos + 4 > slen { return false; }
+        return string_char_at(s, pos as Int) as i32 == 110       // n
+            && string_char_at(s, (pos + 1) as Int) as i32 == 117 // u
+            && string_char_at(s, (pos + 2) as Int) as i32 == 108 // l
+            && string_char_at(s, (pos + 3) as Int) as i32 == 108;// l
+    }
 }
 
 // ---- Parser ----
@@ -154,7 +185,8 @@ mod Parser {
     import Types.{ Val, ArrayDesc, ObjDesc, KVPair,
                    mk_null, mk_bool, mk_number, mk_string,
                    mk_array, mk_object, mk_error, is_error };
-    import Lex.{ is_digit, skip_ws, match_keyword, map_escape, classify_start };
+    import Lex.{ is_digit, skip_ws, map_escape, classify_start,
+                  match_true, match_false, match_null };
     import StringPool.{ store };
 
     pub struct Copy ParseResult {
@@ -255,22 +287,16 @@ mod Parser {
             return parse_object(s, p + 1, strings, arrays, objects, kvpairs, vals);
         }
 
-        // Keywords: true, false, null
-        let kw_true: String = "true";
-        defer drop_string(kw_true);
-        if match_keyword(s, p, &kw_true) {
+        // Keywords: true, false, null — matched without heap allocation
+        if match_true(s, p) {
             return ParseResult { val: mk_bool(1), pos: p + 4 };
         }
 
-        let kw_false: String = "false";
-        defer drop_string(kw_false);
-        if match_keyword(s, p, &kw_false) {
+        if match_false(s, p) {
             return ParseResult { val: mk_bool(0), pos: p + 5 };
         }
 
-        let kw_null: String = "null";
-        defer drop_string(kw_null);
-        if match_keyword(s, p, &kw_null) {
+        if match_null(s, p) {
             return ParseResult { val: mk_null(), pos: p + 4 };
         }
 

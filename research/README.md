@@ -56,6 +56,7 @@ If you want the highest-leverage current research first:
 12. [meta/high-leverage-systems-ideas.md](meta/high-leverage-systems-ideas.md) — recurring high-value systems ideas (`P0`, `Open`)
 13. [proof-evidence/trust-multipliers.md](proof-evidence/trust-multipliers.md) — the strongest combined differentiators across proof, runtime, and evidence (`P0`, `Open`)
 14. [compiler/qbe-backend.md](compiler/qbe-backend.md) — lightweight alternate-backend research (`P1`, `Open`)
+15. [meta/ai-assisted-optimization.md](meta/ai-assisted-optimization.md) — optimization/refactoring loops driven by structured compiler reports (`P1`, `Research`)
 
 ## Language
 
@@ -154,6 +155,7 @@ If you want the highest-leverage current research first:
 - [meta/ten-x-improvements.md](meta/ten-x-improvements.md) — the biggest long-term multipliers for Concrete (`P0`, `Open`)
 - [meta/competitive-gap-analysis.md](meta/competitive-gap-analysis.md) — what other systems languages still have and which gaps matter (`P1`, `Open`)
 - [meta/complete-language-system.md](meta/complete-language-system.md) — what still separates a strong compiler from a complete language system (`P1`, `Open`)
+- [meta/ai-assisted-optimization.md](meta/ai-assisted-optimization.md) — optimization/refactoring guided by structured report outputs (`P1`, `Research`)
 - [meta/candidate-ideas.md](meta/candidate-ideas.md) — Concrete-specific candidate language/compiler/tooling ideas (`P2`, `Research`)
 - [meta/external-ideas.md](meta/external-ideas.md) — useful ideas borrowed from other languages (`P2`, `Research`)
 
