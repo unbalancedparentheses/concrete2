@@ -45,6 +45,16 @@ mod Types {
 
     pub fn is_error(v: Val) -> bool { return v.tag == 6; }
 
+    // Pure check: does the value's tag match?
+    pub fn check_tag(v: Val, expected_tag: i32) -> bool {
+        return v.tag == expected_tag;
+    }
+
+    // Pure check: does the value's tag and data match?
+    pub fn check_val(v: Val, expected_tag: i32, expected_data: i32) -> bool {
+        return v.tag == expected_tag && v.data == expected_data;
+    }
+
     // Array descriptor: (start_index, length) into the values pool
     pub struct Copy ArrayDesc {
         start: i32,
@@ -87,6 +97,20 @@ mod Lex {
         return ch >= 48 && ch <= 57;
     }
 
+    // Map an escape code to its output character, or -1 for invalid.
+    // Pure decision logic extracted from parse_string.
+    pub fn map_escape(esc: i32) -> i32 {
+        if esc == 34 { return 34; }   // \"
+        if esc == 92 { return 92; }   // \\
+        if esc == 47 { return 47; }   // \/
+        if esc == 110 { return 10; }  // \n
+        if esc == 116 { return 9; }   // \t
+        if esc == 114 { return 13; }  // \r
+        if esc == 98 { return 8; }    // \b
+        if esc == 102 { return 12; }  // \f
+        return 0 - 1;
+    }
+
     pub fn skip_ws(s: &String, pos: i32) -> i32 {
         let len: i32 = string_length(s) as i32;
         let mut p: i32 = pos;
@@ -96,6 +120,16 @@ mod Lex {
             p = p + 1;
         }
         return p;
+    }
+
+    // Classify what JSON value type starts with this character.
+    // Returns: 0=string, 1=number, 2=array, 3=object, -1=keyword/unknown
+    pub fn classify_start(ch: i32) -> i32 {
+        if ch == 34 { return 0; }                    // " -> string
+        if is_digit(ch) || ch == 45 { return 1; }    // digit or - -> number
+        if ch == 91 { return 2; }                     // [ -> array
+        if ch == 123 { return 3; }                    // { -> object
+        return 0 - 1;                                 // keyword or invalid
     }
 
     // Check if string matches a keyword at position
@@ -120,7 +154,7 @@ mod Parser {
     import Types.{ Val, ArrayDesc, ObjDesc, KVPair,
                    mk_null, mk_bool, mk_number, mk_string,
                    mk_array, mk_object, mk_error, is_error };
-    import Lex.{ is_digit, skip_ws, match_keyword };
+    import Lex.{ is_digit, skip_ws, match_keyword, map_escape, classify_start };
     import StringPool.{ store };
 
     pub struct Copy ParseResult {
@@ -150,15 +184,11 @@ mod Parser {
                 if p >= len { done = 2; }
                 else {
                     let esc: i32 = string_char_at(s, p as Int) as i32;
-                    if esc == 34 { string_push_char(&mut buf, 34); }       // \"
-                    else if esc == 92 { string_push_char(&mut buf, 92); }  // \\
-                    else if esc == 47 { string_push_char(&mut buf, 47); }  // \/
-                    else if esc == 110 { string_push_char(&mut buf, 10); } // \n
-                    else if esc == 116 { string_push_char(&mut buf, 9); }  // \t
-                    else if esc == 114 { string_push_char(&mut buf, 13); } // \r
-                    else if esc == 98 { string_push_char(&mut buf, 8); }   // \b
-                    else if esc == 102 { string_push_char(&mut buf, 12); } // \f
-                    else { done = 2; }  // unknown escape
+                    let mapped: i32 = map_escape(esc);
+                    if mapped < 0 { done = 2; }
+                    else {
+                        string_push_char(&mut buf, mapped as Int);
+                    }
                     if done == 0 { p = p + 1; }
                 }
             } else {
@@ -207,42 +237,41 @@ mod Parser {
         if p >= len { return err(p); }
 
         let ch: i32 = string_char_at(s, p as Int) as i32;
+        let kind: i32 = classify_start(ch);
 
         // String
-        if ch == 34 { return parse_string(s, p, strings); }
+        if kind == 0 { return parse_string(s, p, strings); }
 
         // Number
-        if is_digit(ch) || ch == 45 { return parse_number(s, p); }
+        if kind == 1 { return parse_number(s, p); }
 
-        // true
+        // Array
+        if kind == 2 {
+            return parse_array(s, p + 1, strings, arrays, objects, kvpairs, vals);
+        }
+
+        // Object
+        if kind == 3 {
+            return parse_object(s, p + 1, strings, arrays, objects, kvpairs, vals);
+        }
+
+        // Keywords: true, false, null
         let kw_true: String = "true";
         defer drop_string(kw_true);
         if match_keyword(s, p, &kw_true) {
             return ParseResult { val: mk_bool(1), pos: p + 4 };
         }
 
-        // false
         let kw_false: String = "false";
         defer drop_string(kw_false);
         if match_keyword(s, p, &kw_false) {
             return ParseResult { val: mk_bool(0), pos: p + 5 };
         }
 
-        // null
         let kw_null: String = "null";
         defer drop_string(kw_null);
         if match_keyword(s, p, &kw_null) {
             return ParseResult { val: mk_null(), pos: p + 4 };
-        }
-
-        // Array
-        if ch == 91 { // '['
-            return parse_array(s, p + 1, strings, arrays, objects, kvpairs, vals);
-        }
-
-        // Object
-        if ch == 123 { // '{'
-            return parse_object(s, p + 1, strings, arrays, objects, kvpairs, vals);
         }
 
         return err(p);
@@ -473,9 +502,16 @@ mod Printer {
 // ---- Test harness ----
 
 mod Main {
-    import Types.{ Val, ArrayDesc, ObjDesc, KVPair, mk_error, is_error };
+    import Types.{ Val, ArrayDesc, ObjDesc, KVPair, mk_error, is_error, check_tag, check_val };
     import Parser.{ ParseResult, parse_value };
     import Lex.{ skip_ws };
+
+    // Pure check: did parsing consume the entire input (after skipping trailing whitespace)?
+    fn is_fully_consumed(input: &String, pos: i32) -> bool {
+        let p: i32 = skip_ws(input, pos);
+        let len: i32 = string_length(input) as i32;
+        return p >= len;
+    }
 
     // Parse a complete JSON string. Verifies entire input is consumed.
     fn parse_json(input: &String,
@@ -486,10 +522,10 @@ mod Main {
                   vals: &mut Vec<Val>) with(Alloc) -> Val {
         let r: ParseResult = parse_value(input, 0, strings, arrays, objects, kvpairs, vals);
         if is_error(r.val) { return r.val; }
-        // Check trailing content
-        let p: i32 = skip_ws(input, r.pos);
-        let len: i32 = string_length(input) as i32;
-        if p < len { return mk_error(p); }
+        if !is_fully_consumed(input, r.pos) {
+            let p: i32 = skip_ws(input, r.pos);
+            return mk_error(p);
+        }
         return r.val;
     }
 
@@ -503,7 +539,7 @@ mod Main {
                 err_code: Int) with(Console, Alloc) -> Int {
         defer drop_string(input);
         let v: Val = parse_json(&input, strings, arrays, objects, kvpairs, vals);
-        if v.tag != expected_tag {
+        if !check_tag(v, expected_tag) {
             let mut msg: String = "FAIL: expected tag ";
             defer drop_string(msg);
             string_append_int(&mut msg, expected_tag as Int);
@@ -526,7 +562,7 @@ mod Main {
                 err_code: Int) with(Console, Alloc) -> Int {
         defer drop_string(input);
         let v: Val = parse_json(&input, strings, arrays, objects, kvpairs, vals);
-        if v.tag != expected_tag || v.data != expected_data {
+        if !check_val(v, expected_tag, expected_data) {
             let mut msg: String = "FAIL: expected (";
             defer drop_string(msg);
             string_append_int(&mut msg, expected_tag as Int);
