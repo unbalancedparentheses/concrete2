@@ -13,4 +13,4 @@ Constants now inline correctly during lowering. Added `constants` field to `Lowe
 - Updated `lowerExpr` `.ident` case: when a variable is not found in scope, checks `constants` and inlines the constant expression
 - Updated `lowerFn` and `lowerModule` to thread constants through
 
-`examples/constants.con` now compiles and runs correctly.
+`examples/snippets/constants.con` now compiles and runs correctly.

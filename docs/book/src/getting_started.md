@@ -24,7 +24,7 @@ Typical workflow:
 git clone https://github.com/unbalancedparentheses/concrete2.git
 cd concrete2
 make build
-.lake/build/bin/concrete examples/hello.con -o /tmp/hello
+.lake/build/bin/concrete examples/snippets/hello_world.con -o /tmp/hello
 /tmp/hello
 ```
 

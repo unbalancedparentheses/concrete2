@@ -50,7 +50,7 @@ The compiler binary is then available at:
 Compile and run a small example:
 
 ```bash
-.lake/build/bin/concrete examples/hello.con -o /tmp/hello
+.lake/build/bin/concrete examples/snippets/hello_world.con -o /tmp/hello
 /tmp/hello
 ```
 

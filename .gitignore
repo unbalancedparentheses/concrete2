@@ -15,8 +15,7 @@ build/
 .vscode/
 .env
 .cache/
-# Compiled example binaries (keep .con sources)
-/tmp/
+
 # Compiled example binaries (extensionless, built by `concrete build`)
 examples/grep/cgrep
 examples/verify/conhash
@@ -28,6 +27,17 @@ examples/kvstore/kvstore
 examples/kvstore/kvstore.log
 examples/http/http_server
 examples/lox/lox
+examples/vm/vm
+examples/mal/mal
+examples/policy_engine/policy_engine
+
+# C benchmark binaries (compiled from bench_c.c)
+examples/grep/cgrep_c
+examples/json/bench_c
+examples/verify/conhash_c
+examples/vm/bench_c
+examples/mal/bench_c
+examples/policy_engine/bench_c
 
 # Compiled test binaries (keep .con sources, ignore extensionless binaries)
 lean_tests/trait_numeric_abs
@@ -45,3 +55,6 @@ scripts/check_ll1_rs
 
 # Performance baselines (machine-specific)
 .perf-baseline
+
+# Temporary
+/tmp/
