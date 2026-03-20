@@ -21,7 +21,7 @@ check-grammar:
 	$(NIX_DEVELOP) python3 scripts/check_ll1.py grammar/concrete.ebnf
 
 paper:
-	typst compile paper/main.typ paper/main.pdf
+	$(NIX_DEVELOP) typst compile paper/main.typ paper/main.pdf
 
 clean:
 	$(NIX_DEVELOP) lake clean

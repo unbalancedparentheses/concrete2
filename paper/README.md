@@ -2,16 +2,16 @@
 
 This directory contains a Typst paper draft for Concrete.
 
-Typst is not vendored in this repository. Install `typst` locally before using the commands below.
+Typst is provided through the repository's nix dev shell.
 
-To build it locally:
+To build the paper:
 
 ```sh
-typst compile paper/main.typ paper/main.pdf
+make paper
 ```
 
 To watch for changes while editing:
 
 ```sh
-typst watch paper/main.typ paper/main.pdf
+XDG_CACHE_HOME=$(pwd)/.cache nix --extra-experimental-features "nix-command flakes" develop --command typst watch paper/main.typ paper/main.pdf
 ```

@@ -31,6 +31,7 @@
             coreutils
             python3
             rustc
+            typst
           ];
         };
       });
