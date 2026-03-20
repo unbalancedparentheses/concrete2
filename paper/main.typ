@@ -2,23 +2,83 @@
   title: "Concrete: Explicit Systems Programming With Visible Authority and Ownership",
   author: "Concrete Project Draft",
 )
-#set page(margin: (x: 1in, y: 1in))
-#set text(font: "Libertinus Serif", size: 11pt)
+#set page(
+  paper: "us-letter",
+  margin: (x: 0.72in, y: 0.72in),
+  columns: 2,
+  number-align: center,
+)
+#set par(justify: true, leading: 0.62em)
+#set text(font: "Libertinus Serif", size: 10pt)
+#set heading(numbering: "1.")
 
-#align(center)[
-  = Concrete: Explicit Systems Programming With Visible Authority and Ownership
-  Concrete Project Draft
+#let muted = rgb("#555555")
+#let accent = rgb("#16324f")
+#let light = rgb("#edf3f8")
+
+#show heading.where(level: 1): it => [
+  #v(0.9em)
+  #set text(12pt, weight: "semibold", fill: accent)
+  #it.body
+  #v(0.25em)
 ]
 
-= Abstract
+#show heading.where(level: 2): it => [
+  #v(0.55em)
+  #set text(10pt, weight: "semibold", fill: accent)
+  #it.body
+  #v(0.15em)
+]
 
-Concrete is an experimental systems language built around one primary goal: make semantically important program facts visible enough to audit directly. In Concrete, authority is visible in function signatures, ownership is visible in value movement and cleanup, and low-level implementation unsafety is isolated by explicit trusted boundaries rather than being diffused through ordinary code. The language targets hosted systems programming without a garbage collector, without a virtual machine, and without a large hidden runtime. This paper summarizes the language model, the current compiler architecture, the execution and standard-library direction, and the evidence gained from sustained real-program pressure testing. The main result is not that Concrete already has the breadth of a mature systems ecosystem. It does not. The result is that a small language with visible authority and visible ownership can already carry parsers, interpreters, storage tools, integrity tooling, and networked programs while preserving a simpler audit story than abstraction-heavy alternatives.
+#let callout(title, body) = block(
+  inset: 10pt,
+  radius: 6pt,
+  fill: light,
+  stroke: (paint: accent, thickness: 0.6pt),
+)[
+  #set text(size: 9.2pt)
+  #text(weight: "semibold", fill: accent)[#title]
+  #v(0.35em)
+  #body
+]
+
+#show: doc => [
+  #set page(columns: 1)
+  #align(center)[
+    #text(18pt, weight: "bold", fill: accent)[Concrete: Explicit Systems Programming With Visible Authority and Ownership]
+    #v(0.45em)
+    #text(10pt, fill: muted)[Concrete Project Draft]
+  ]
+
+  #v(0.9em)
+  #callout(
+    [Abstract],
+    [
+      Concrete is an experimental systems language built around one primary goal: make semantically important program facts visible enough to audit directly. In Concrete, authority is visible in function signatures, ownership is visible in value movement and cleanup, and low-level implementation unsafety is isolated by explicit trusted boundaries rather than being diffused through ordinary code. The language targets hosted systems programming without a garbage collector, without a virtual machine, and without a large hidden runtime. This paper summarizes the language model, the current compiler architecture, the execution and standard-library direction, and the evidence gained from sustained real-program pressure testing. The main result is not that Concrete already has the breadth of a mature systems ecosystem. It does not. The result is that a small language with visible authority and visible ownership can already carry parsers, interpreters, storage tools, integrity tooling, and networked programs while preserving a simpler audit story than abstraction-heavy alternatives.
+    ],
+  )
+
+  #v(0.6em)
+  #set page(columns: 2)
+  #doc
+]
 
 = Introduction
 
 Most systems languages claim some combination of performance, control, and safety. Concrete is aimed at a narrower but important target: auditability. The design question is not only whether a program is fast or memory-safe, but whether the language keeps the important parts of program behavior mechanically understandable. If a function allocates, that should be visible. If a function can read files, open sockets, or cross a foreign boundary, that should be visible. If a library relies on pointer-level implementation techniques, the containment boundary should be explicit and inspectable.
 
 This motivation pushes the language toward a different set of tradeoffs than mainstream languages usually optimize for. Concrete prefers explicitness over abstraction towers, reportable compiler facts over opaque optimization folklore, and a small language surface over broad feature accumulation. The project is therefore best understood not as a broad Rust competitor, but as an attempt to identify a sharper point in the design space: explicit systems programming with visible authority, visible ownership, and a small runtime boundary.
+
+#callout(
+  [Contributions],
+  [
+    This draft makes four concrete claims:
+    - Concrete treats authority, ownership, and trust boundaries as first-class audit surfaces.
+    - The compiler architecture already exposes stable artifacts and report modes that preserve those surfaces.
+    - Real-program evidence from Phase H is strong enough to validate the direction, even if the ecosystem is still early.
+    - The remaining work is best understood as deepening a coherent model, not replacing a failed one.
+  ],
+)
 
 = Thesis
 
@@ -46,15 +106,24 @@ Concrete uses named compile-time capabilities for semantic effects. A function t
 
 The intended calling discipline is monotone: if $f$ calls $g$, then $A(g) subset.eq A(f)$. In other words, callers must explicitly carry the authority required by their callees. This is a simple rule, but it creates a much stronger audit surface than ambient access to files, networking, or allocation.
 
-== Trusted containment
+== The Three-Way Split
 
 Concrete separates semantic effects from low-level implementation techniques. Capabilities describe what the code is allowed to do semantically. The `trusted` boundary marks where pointer arithmetic, raw pointer dereference, raw pointer assignment, and pointer-involving casts are intentionally concentrated. Foreign calls remain explicit through `with(Unsafe)` rather than being silently absorbed.
 
-This yields a three-way split:
-
-- capabilities for caller-visible semantic effects
-- `trusted` for pointer-level containment
-- `with(Unsafe)` for explicit foreign-boundary authority
+#figure(
+  table(
+    columns: (1.1fr, 1.35fr, 1.2fr),
+    inset: 6pt,
+    stroke: 0.4pt + gray,
+    table.header(
+      [*Mechanism*], [*What it covers*], [*Visibility*],
+    ),
+    [Capabilities], [Caller-visible semantic effects], [Function signatures],
+    [`trusted`], [Pointer-level containment for implementations], [Declaration sites],
+    [`with(Unsafe)`], [Explicit foreign-boundary authority], [Function signatures],
+  ),
+  caption: [Concrete's central safety split.],
+)
 
 The split matters because it avoids conflating "this code can allocate" with "this code performs raw pointer tricks internally." Those are different audit questions, and the language keeps them separate.
 
@@ -85,13 +154,10 @@ The design intent can be expressed by the following properties:
 
 1. Signature visibility:
    for semantically effectful code, $A(f)$ is visible in the source signature.
-
 2. Containment visibility:
    pointer-level implementation techniques are concentrated so that $U(f)$ is sparse and inspectable.
-
 3. Report recoverability:
    relevant semantic facts about $f$ should be derivable into $R(f)$ from the ordinary compiler pipeline rather than from a second semantic system.
-
 4. Proof-eligibility filter:
    a pure function with empty authority set, no trusted origin, and no foreign boundary can be considered a candidate for the provable fragment.
 
@@ -107,7 +173,12 @@ The proof boundary sits after `CoreCheck` and before monomorphization, materiali
 
 The execution model is deliberately thin. Concrete currently targets hosted systems programming on a POSIX-like environment with libc available. It has no garbage collector, no virtual machine, no hidden runtime initialization, no panic-unwind machinery, and no ambient cleanup hook. Programs begin in `main`, call into the compiled user program, and exit through ordinary process termination. Heap allocation currently goes through libc `malloc` and `realloc`, with abort-on-OOM as the explicit default policy.
 
-This means Concrete does have a runtime boundary, but not a large managed runtime. The runtime boundary is the set of external symbols and conventions required to link and execute a compiled program.
+#callout(
+  [Interpretation],
+  [
+    Concrete does have a runtime boundary, but not a large managed runtime. The runtime boundary is the set of external symbols and conventions required to link and execute a compiled program.
+  ],
+)
 
 = Standard Library Direction
 
@@ -131,15 +202,23 @@ This layering matters because it makes host assumptions auditable now and create
 
 The strongest evidence for Concrete does not come from toy examples. It comes from the Phase H workload corpus, which includes a policy engine, a large MAL interpreter, a JSON parser, a grep-like tool, a bytecode virtual machine, an integrity verifier, a TOML parser, a file-integrity monitor, a key-value store, a simple HTTP server, and a Lox interpreter.
 
-That corpus established several important points.
+That corpus established several important points. First, the language can already carry serious programs. Parsers, interpreters, CLI tools, storage workflows, integrity tooling, and networked code are no longer hypothetical targets. Second, the claimed audit differentiator is real in code that matters. The integrity verifier is the clearest example: capability signatures are not decorative. They act as a readable security decomposition. Third, optimization folklore is a poor substitute for measurement. Early performance conclusions were distorted by compilation without optimization. Under `-O2`, Concrete matched Python and system tools on text-heavy workloads and matched C on a dispatch-heavy VM benchmark once a missed-inlining cliff in vec builtins was removed. Fourth, explicit cleanup can become less noisy without becoming hidden. Scoped `defer` eliminated a substantial amount of repeated cleanup code in the JSON parser while preserving a clear destruction story.
 
-First, the language can already carry serious programs. Parsers, interpreters, CLI tools, storage workflows, integrity tooling, and networked code are no longer hypothetical targets.
-
-Second, the claimed audit differentiator is real in code that matters. The integrity verifier is the clearest example: capability signatures are not decorative. They act as a readable security decomposition. Hashing logic can be visibly separated from file access and from console reporting.
-
-Third, optimization folklore is a poor substitute for measurement. Early performance conclusions were distorted by compilation without optimization. Under `-O2`, Concrete matched Python and system tools on text-heavy workloads and matched C on a dispatch-heavy VM benchmark once a missed-inlining cliff in vec builtins was removed.
-
-Fourth, explicit cleanup can become less noisy without becoming hidden. Scoped `defer` eliminated a substantial amount of repeated cleanup code in the JSON parser while preserving a clear destruction story.
+#figure(
+  table(
+    columns: (1.45fr, 0.7fr, 0.8fr, 0.8fr),
+    inset: 6pt,
+    stroke: 0.4pt + gray,
+    table.header(
+      [*Workload*], [*Concrete*], [*Python*], [*C/System*],
+    ),
+    [JSON parse 9.3MB], [40ms], [46ms], [--],
+    [grep 13MB count-only], [35ms], [34ms], [83ms],
+    [VM fib(35), after inline fix], [257ms], [15223ms], [260ms],
+    [SHA-256 9.3MB], [23ms], [20ms], [25ms],
+  ),
+  caption: [Representative Phase H results at `-O2` on Apple Silicon.],
+)
 
 = Evaluation
 
