@@ -167,6 +167,18 @@ Do next:
 4. define the public stability / experimental surface
 5. sharpen positioning relative to neighboring systems languages
 
+Demo types, ranked by impact:
+1. **"Spot the bug" side-by-side** — same program in C/Rust/Concrete, C has a hidden capability leak, Concrete catches it at compile time
+2. **Live audit of a real dependency** — take a C library's API, show how `with()` signatures reveal what it actually touches
+3. **Privilege-separated tool end-to-end** — build a tool on video where hasher can't touch network, reporter can't read files
+4. **Formal proof demo** — write a function, state a property in Lean, prove it ("correct because proved, not because tested")
+5. **Performance benchmark against C** — SHA-256, JSON parsing, etc. Systems language credibility requires being in the same ballpark
+6. **Capability escalation attack (blocked)** — deliberately try to sneak network access into a pure function, compiler says no
+7. **Rewrite a 500-line C file** — line count stays similar but capabilities make the security model explicit
+8. **Interactive playground / REPL** — browser-based "try Concrete in 30 seconds" (highest reach, highest build cost)
+9. **Package ecosystem demo** — import std.sha256, std.hex, build a tool. Shows the language is practical
+10. **Conference talk with storytelling** — "we had a bug that capabilities would have caught" (narrative-driven, not self-distributing)
+
 Primary references:
 - [research/workloads/adoption-strategy.md](research/workloads/adoption-strategy.md)
 - [research/workloads/showcase-workloads.md](research/workloads/showcase-workloads.md)
