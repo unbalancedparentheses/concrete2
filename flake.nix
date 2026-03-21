@@ -32,6 +32,7 @@
             python3
             rustc
             typst
+            zola
           ];
         };
       });

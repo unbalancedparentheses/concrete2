@@ -1,4 +1,4 @@
-.PHONY: build test test-full test-ssa test-fuzz clean check-grammar paper
+.PHONY: build test test-full test-ssa test-fuzz clean check-grammar paper docs-site docs-serve
 
 NIX_DEVELOP = XDG_CACHE_HOME=$(CURDIR)/.cache nix --extra-experimental-features "nix-command flakes" develop --command
 
@@ -22,6 +22,12 @@ check-grammar:
 
 paper:
 	$(NIX_DEVELOP) typst compile paper/main.typ paper/main.pdf
+
+docs-site:
+	$(NIX_DEVELOP) zola --root site build
+
+docs-serve:
+	$(NIX_DEVELOP) zola --root site serve --interface 127.0.0.1 --port 18080
 
 clean:
 	$(NIX_DEVELOP) lake clean

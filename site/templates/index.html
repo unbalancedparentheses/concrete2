@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="hero">
+  <h2>The Concrete standard library and reference</h2>
+  <p class="lede">
+    Stable reference documentation for Concrete.
+  </p>
+</section>
+
+<section class="module-groups">
+  <div class="group">
+    <h3>Modules</h3>
+    <ul class="module-list">
+      <li><strong>bytes</strong>: owned byte buffers and low-level I/O-facing data</li>
+      <li><strong>slice</strong>: borrowed contiguous views</li>
+      <li><strong>text</strong>: borrowed text views</li>
+      <li><strong>path</strong>: path handling without hidden filesystem effects</li>
+      <li><strong>fs</strong>: files, directories, metadata, and handles</li>
+      <li><strong>env</strong>: environment lookup and process environment access</li>
+      <li><strong>process</strong>: process execution and status</li>
+      <li><strong>net</strong>: networking support</li>
+      <li><strong>args</strong>: command-line argument access</li>
+      <li><strong>fmt</strong>: formatting and output</li>
+      <li><strong>hash</strong>: hashing support</li>
+      <li><strong>rand</strong>: random generation</li>
+      <li><strong>time</strong>: clocks, durations, and timing</li>
+      <li><strong>map</strong>: associative containers</li>
+      <li><strong>set</strong>: membership containers</li>
+      <li><strong>parse</strong>: parsing helpers</li>
+    </ul>
+  </div>
+
+  <div class="group primary-index">
+    <h3>Reference</h3>
+    <ul class="index-list">
+      <li><a href="{{ get_url(path='@/reference/STDLIB.md') }}">stdlib</a><span>current module direction, implemented foundation, and priority gaps</span></li>
+      <li><a href="{{ get_url(path='@/reference/SAFETY.md') }}">safety</a><span>capabilities, trusted, Unsafe, proof boundary, and high-integrity direction</span></li>
+      <li><a href="{{ get_url(path='@/reference/ARCHITECTURE.md') }}">architecture</a><span>compiler pipeline, artifact flow, and pass boundaries</span></li>
+      <li><a href="{{ get_url(path='@/reference/PASSES.md') }}">passes</a><span>per-pass contracts and what each phase may assume</span></li>
+      <li><a href="{{ get_url(path='@/reference/ABI.md') }}">abi</a><span>layout rules, FFI safety, and representation constraints</span></li>
+      <li><a href="{{ get_url(path='@/reference/FFI.md') }}">ffi</a><span>externs, raw pointers, and the foreign boundary</span></li>
+      <li><a href="{{ get_url(path='@/reference/DIAGNOSTICS.md') }}">diagnostics</a><span>current diagnostics model and staged work</span></li>
+      <li><a href="{{ get_url(path='@/reference/TESTING.md') }}">testing</a><span>test suites, scope, and what each path is for</span></li>
+      <li><a href="{{ get_url(path='@/reference/VALUE_MODEL.md') }}">value_model</a><span>ownership, borrowing, values, and resources</span></li>
+      <li><a href="{{ get_url(path='@/reference/EXECUTION_MODEL.md') }}">execution_model</a><span>runtime boundary, allocation model, profiles, and hosted assumptions</span></li>
+      <li><a href="{{ get_url(path='@/reference/IDENTITY.md') }}">identity</a><span>what Concrete is optimizing for and what it is not trying to be</span></li>
+      <li><a href="{{ get_url(path='@/reference/DECISIONS.md') }}">decisions</a><span>explicit “no” and “not yet” design commitments</span></li>
+    </ul>
+  </div>
+</section>
+
+<section class="secondary-index">
+  <h3>Guide</h3>
+  <ul class="index-list compact-index">
+    <li><a href="{{ get_url(path='@/guide/landing.md') }}">why_concrete</a><span>project motivation and positioning</span></li>
+    <li><a href="{{ get_url(path='@/guide/intro.md') }}">language_overview</a><span>a compact overview of the language</span></li>
+    <li><a href="{{ get_url(path='@/guide/getting_started.md') }}">getting_started</a><span>build, install, and create a project</span></li>
+    <li><a href="{{ get_url(path='@/guide/stdlib.md') }}">stdlib_guide</a><span>introductory overview of the current stdlib</span></li>
+    <li><a href="{{ get_url(path='@/guide/reports.md') }}">reports</a><span>how compiler reports fit together</span></li>
+    <li><a href="{{ get_url(path='@/guide/internal/overview.md') }}">internal_overview</a><span>architecture, IR, and builder notes</span></li>
+  </ul>
+</section>
+{% endblock content %}
