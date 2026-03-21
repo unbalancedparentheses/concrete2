@@ -312,7 +312,9 @@ partial def ccCheckExpr (e : CExpr) : StateM CoreCheckEnv Unit := do
   | .match_ scrutinee arms _ty =>
     ccCheckExpr scrutinee
     -- Check match arm coverage for enums
-    let scrTy := scrutinee.ty
+    -- Auto-deref through references (match on &T should check T)
+    let scrTy := match scrutinee.ty with
+      | .ref t => t | .refMut t => t | t => t
     let tyName := match scrTy with | .named n => some n | .generic n _ => some n | _ => none
     let hasWildcard := arms.any fun arm =>
       match arm with | .varArm _ _ _ => true | _ => false

@@ -16,6 +16,9 @@ mod std {
     mod path;
     mod fmt;
     mod parse;
+    mod ascii;
+    mod hex;
+    mod sha256;
     mod hash;
     mod map;
     mod set;

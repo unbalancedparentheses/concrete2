@@ -104,6 +104,85 @@ mod string {
             dealloc::<u8>(self.ptr);
         }
 
+        /// Check if this string starts with the given prefix.
+        pub fn starts_with(&self, prefix: &String) -> bool {
+            if prefix.len > self.len {
+                return false;
+            }
+            if prefix.len == 0 {
+                return true;
+            }
+            let result: i32 = memcmp(self.ptr as *const u8, prefix.ptr as *const u8, prefix.len);
+            return result == 0;
+        }
+
+        /// Check if this string ends with the given suffix.
+        pub fn ends_with(&self, suffix: &String) -> bool {
+            if suffix.len > self.len {
+                return false;
+            }
+            if suffix.len == 0 {
+                return true;
+            }
+            let offset: u64 = self.len - suffix.len;
+            let start: *mut u8 = self.ptr + offset;
+            let result: i32 = memcmp(start as *const u8, suffix.ptr as *const u8, suffix.len);
+            return result == 0;
+        }
+
+        /// Check if this string contains the given needle as a substring.
+        pub fn contains(&self, needle: &String) -> bool {
+            if needle.len > self.len {
+                return false;
+            }
+            if needle.len == 0 {
+                return true;
+            }
+            let limit: u64 = self.len - needle.len;
+            let i: u64 = 0;
+            while i <= limit {
+                let start: *mut u8 = self.ptr + i;
+                let result: i32 = memcmp(start as *const u8, needle.ptr as *const u8, needle.len);
+                if result == 0 {
+                    return true;
+                }
+                i = i + 1;
+            }
+            return false;
+        }
+
+        /// Return a new string with all ASCII uppercase letters converted to lowercase.
+        pub fn to_lower(&self) with(Alloc) -> String {
+            let out: String = String::new();
+            let i: u64 = 0;
+            while i < self.len {
+                let c: u8 = (self.get_unchecked(i)) as u8;
+                if c >= 65 && c <= 90 {
+                    out.push_char((c + 32) as char);
+                } else {
+                    out.push_char(c as char);
+                }
+                i = i + 1;
+            }
+            return out;
+        }
+
+        /// Return a new string with all ASCII lowercase letters converted to uppercase.
+        pub fn to_upper(&self) with(Alloc) -> String {
+            let out: String = String::new();
+            let i: u64 = 0;
+            while i < self.len {
+                let c: u8 = (self.get_unchecked(i)) as u8;
+                if c >= 97 && c <= 122 {
+                    out.push_char((c - 32) as char);
+                } else {
+                    out.push_char(c as char);
+                }
+                i = i + 1;
+            }
+            return out;
+        }
+
         // TODO: insert, remove
     }
 
@@ -234,5 +313,80 @@ mod string {
 
     pub fn int_to_digit<T>(value: T) -> char {
         return (value + 48) as char;
+    }
+
+    #[test]
+    fn test_starts_with() with(Alloc) -> i32 {
+        let s: String = "hello world";
+        let prefix: String = "hello";
+        let bad: String = "world";
+        let empty: String = "";
+        let r1: bool = s.starts_with(&prefix);
+        if r1 == false { s.drop(); prefix.drop(); bad.drop(); empty.drop(); return 1; }
+        let r2: bool = s.starts_with(&bad);
+        if r2 { s.drop(); prefix.drop(); bad.drop(); empty.drop(); return 1; }
+        let r3: bool = s.starts_with(&empty);
+        if r3 == false { s.drop(); prefix.drop(); bad.drop(); empty.drop(); return 1; }
+        s.drop();
+        prefix.drop();
+        bad.drop();
+        empty.drop();
+        return 0;
+    }
+
+    #[test]
+    fn test_ends_with() with(Alloc) -> i32 {
+        let s: String = "hello world";
+        let suffix: String = "world";
+        let bad: String = "hello";
+        let r1: bool = s.ends_with(&suffix);
+        if r1 == false { s.drop(); suffix.drop(); bad.drop(); return 1; }
+        let r2: bool = s.ends_with(&bad);
+        if r2 { s.drop(); suffix.drop(); bad.drop(); return 1; }
+        s.drop();
+        suffix.drop();
+        bad.drop();
+        return 0;
+    }
+
+    #[test]
+    fn test_contains() with(Alloc) -> i32 {
+        let s: String = "hello world";
+        let needle: String = "lo wo";
+        let bad: String = "xyz";
+        let r1: bool = s.contains(&needle);
+        if r1 == false { s.drop(); needle.drop(); bad.drop(); return 1; }
+        let r2: bool = s.contains(&bad);
+        if r2 { s.drop(); needle.drop(); bad.drop(); return 1; }
+        s.drop();
+        needle.drop();
+        bad.drop();
+        return 0;
+    }
+
+    #[test]
+    fn test_to_lower() with(Alloc) -> i32 {
+        let s: String = "Hello World 123";
+        let lower: String = s.to_lower();
+        let expected: String = "hello world 123";
+        let ok: bool = lower.eq(&expected);
+        s.drop();
+        lower.drop();
+        expected.drop();
+        if ok { return 0; }
+        return 1;
+    }
+
+    #[test]
+    fn test_to_upper() with(Alloc) -> i32 {
+        let s: String = "Hello World 123";
+        let upper: String = s.to_upper();
+        let expected: String = "HELLO WORLD 123";
+        let ok: bool = upper.eq(&expected);
+        s.drop();
+        upper.drop();
+        expected.drop();
+        if ok { return 0; }
+        return 1;
     }
 }
