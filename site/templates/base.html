@@ -13,16 +13,18 @@
       <a class="brand" href="{{ get_url(path='@/_index.md') }}">
         <img src="{{ get_url(path='logo.png') }}" alt="Concrete logo" width="128" height="128">
       </a>
-      <div class="header-title">
-        <h1><a href="{{ get_url(path='@/_index.md') }}">Concrete documentation</a></h1>
-      </div>
-      <nav class="main-nav">
+      <div class="header-main">
+        <div class="header-title">
+          <h1><a href="{{ get_url(path='@/_index.md') }}">Concrete documentation</a></h1>
+        </div>
+        <nav class="main-nav">
         <a href="{{ get_url(path='@/_index.md') }}">Home</a>
         <a href="{{ get_url(path='@/reference/_index.md') }}">Docs</a>
         <a href="{{ get_url(path='@/guide/_index.md') }}">Guide</a>
         <a href="{{ get_url(path='@/paper.md') }}">Paper</a>
         <a href="{{ config.extra.repo_url }}">Repository</a>
-      </nav>
+        </nav>
+      </div>
     </div>
   </header>
   <main class="wrap page-shell">
