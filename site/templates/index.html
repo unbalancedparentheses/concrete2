@@ -14,19 +14,24 @@
 <section class="home-example">
   <div class="group">
     <h3>Visible In The Source</h3>
-    <pre><code>fn read_manifest(path: &String) with(File, Alloc) -&gt; String {
-    let text: String = fs::read_to_string(path)?;
-    defer drop_string(text);
-    return parse_manifest(&text)?;
+    <pre><code>fn fetch_and_cache(url: &String, path: &String)
+with(Network, File, Alloc) -&gt; Manifest {
+    let body: String = http::get_text(url)?;
+    defer drop_string(body);
+    fs::write_string(path, &body)?;
+    return parse_manifest(&body)?;
 }
 
+extern fn crypto_sha256(ptr: RawPtr, len: USize, out: RawPtr)
+with(Unsafe) -&gt; Void
+
 trusted fn sha256_bytes(bytes: &Bytes) -&gt; Hash {
-    // pointer-level implementation details live here
+    // raw pointer and foreign-call details stay contained here
 }
 </code></pre>
     <p class="panel-copy">
-      The point is not syntax. The point is that file authority, allocation, cleanup, and trusted
-      implementation boundaries remain obvious at the place where a reviewer looks first.
+      The point is not syntax. The point is that network access, file access, allocation, cleanup,
+      trusted internals, and foreign unsafety remain obvious at the place where a reviewer looks first.
     </p>
   </div>
 </section>
@@ -36,13 +41,15 @@ trusted fn sha256_bytes(bytes: &Bytes) -&gt; Hash {
     <h3>Why This Matters</h3>
     <p class="panel-copy wide-copy">
       Concrete is aimed at systems code where hidden authority, hidden cleanup, and fuzzy trust
-      boundaries make review harder than it should be. It tries to produce programs whose semantics are
-      easier to inspect directly and easier for tooling to summarize mechanically.
+      boundaries make review harder than it should be. It is for people auditing systems code,
+      security-sensitive tools, and infrastructure where hidden costs or hidden authority make review
+      materially worse.
     </p>
     <p class="panel-copy wide-copy">
       That means explicit capabilities instead of ambient authority, explicit ownership and cleanup
       instead of hidden runtime machinery, and explicit trust boundaries between ordinary safe code,
-      trusted internals, foreign code, and proof-oriented subsets.
+      trusted internals, foreign code, and proof-oriented subsets. It tries to produce programs whose
+      semantics are easier to inspect directly and easier for tooling to summarize mechanically.
     </p>
   </div>
 
