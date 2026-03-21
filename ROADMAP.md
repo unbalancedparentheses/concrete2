@@ -62,17 +62,20 @@ Interpretation:
 Discovery is complete. The remaining work is to turn the highest-leverage findings into stable language/stdlib/tooling improvements without reopening H as an open-ended exploration phase.
 
 Do next:
-1. match on integers
-2. fix `import` in project mode where `pub` functions still fail incorrectly
-3. extract shared stdlib modules where examples are still duplicating obvious support code
+1. finish integer literal match validation
+   - basic integer literal matching already lowers/codegens; remaining work is type-check validation against the scrutinee and a clear exhaustiveness rule for non-enum literal matches
+2. extract shared stdlib modules where examples are still duplicating obvious support code
    - especially parser/storage/integrity helpers like SHA-256 and common string/bytes utilities
-4. finish the next string-ergonomics layer
+3. finish the next string-ergonomics layer
    - `starts_with`
    - `ends_with`
    - `contains`
-5. improve collection patterns for linear values where examples still fight the container surface
-6. classify the remaining runtime/stack pressure findings cleanly as language, runtime, stdlib, or tooling
-7. keep cross-language comparison follow-through recorded and land it only where it still changes judgment
+4. improve collection patterns for linear values where examples still fight the container surface
+5. classify the remaining runtime/stack pressure findings cleanly as language, runtime, stdlib, or tooling
+6. keep cross-language comparison follow-through recorded and land it only where it still changes judgment
+
+Recently landed from this cleanup track:
+- fix `import` / `pub` visibility so private impl methods and private trait-impl methods no longer leak across module boundaries via import or method-call syntax
 
 Do later, only if evidence still demands it:
 - string `==`

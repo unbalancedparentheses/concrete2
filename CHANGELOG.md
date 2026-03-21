@@ -10,6 +10,16 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Phase H cleanup: impl-method visibility hardened, paper workflow added, remaining cleanup narrowed
+
+**Impl-method visibility fix:** private impl methods and private trait-impl methods are no longer callable across module boundaries via method syntax and no longer leak through imports. Four summary/resolution/elaboration paths now consistently respect `isPublic`: `buildFileSummary` public-name construction, `resolveImports` struct-method exposure, sibling impl-signature injection in Elab, and submodule impl-signature injection in Resolve.
+
+**Regression coverage:** added `error_private_impl_method.con`, `error_private_trait_impl_method.con`, and `pub_impl_method.con` so the privacy boundary is exercised in both negative and positive form.
+
+**Paper workflow:** added a nix-backed Typst paper flow under `paper/`, including `make paper`, dev-shell Typst support, generated-PDF ignore rules, and an initial serious project paper draft. This does not change compiler semantics, but it does turn the paper into a reproducible artifact in the repo instead of a side document.
+
+**What changed strategically:** one more concrete Phase H cleanup bug is now closed, and the remaining cleanup tail is narrower and clearer. The next cheap semantic win is not “add match on integers from scratch,” but finish literal-pattern validation and exhaustiveness policy for the already partially working integer-match path.
+
 ### Phase H hardening: Bug 018 fixed, method-level generics land, project examples modernized
 
 **Bug 018 fixed:** stack-array borrows used for writable FFI paths no longer create stale-copy behavior. Array borrows now retype directly instead of going through the cast path that triggered redundant alloca+store emission. `std.net` and the HTTP example can use stack arrays again instead of heap-buffer workarounds.
