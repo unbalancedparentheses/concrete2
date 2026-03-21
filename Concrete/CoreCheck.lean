@@ -62,6 +62,7 @@ inductive CoreCheckError where
   | matchArmWrongEnum (armEnum : String) (scrutineeEnum : String)
   | duplicateMatchArm (variant : String)
   | variantFieldCountMismatch (variant : String) (expected : Nat) (actual : Nat)
+  | matchNonEnumNoDefault
   -- Control flow
   | whileCondNotBool (ty : String)
   | ifCondNotBool (ty : String)
@@ -109,6 +110,7 @@ def CoreCheckError.message : CoreCheckError → String
   | .matchArmWrongEnum armEnum scrutineeEnum => s!"match arm has enum '{armEnum}' but scrutinee is '{scrutineeEnum}'"
   | .duplicateMatchArm variant => s!"duplicate match arm for variant '{variant}'"
   | .variantFieldCountMismatch variant expected actual => s!"variant '{variant}' has {expected} fields but arm binds {actual}"
+  | .matchNonEnumNoDefault => "non-exhaustive match on non-enum type requires a default '_' arm"
   | .whileCondNotBool ty => s!"while condition must be Bool, got {ty}"
   | .ifCondNotBool ty => s!"if condition must be Bool, got {ty}"
   | .breakOutsideLoop => "break outside of loop"
@@ -312,14 +314,14 @@ partial def ccCheckExpr (e : CExpr) : StateM CoreCheckEnv Unit := do
     -- Check match arm coverage for enums
     let scrTy := scrutinee.ty
     let tyName := match scrTy with | .named n => some n | .generic n _ => some n | _ => none
+    let hasWildcard := arms.any fun arm =>
+      match arm with | .varArm _ _ _ => true | _ => false
     match tyName with
     | some name =>
       match ← lookupEnum name with
       | some ed =>
         let variantNames := ed.variants.map fun (vn, _) => vn
         let mut seenVariants : List String := []
-        let hasWildcard := arms.any fun arm =>
-          match arm with | .varArm _ _ _ => true | _ => false
         for arm in arms do
           match arm with
           | .enumArm armEnum variant bindings _ =>
@@ -341,8 +343,18 @@ partial def ccCheckExpr (e : CExpr) : StateM CoreCheckEnv Unit := do
           for vn in variantNames do
             if !seenVariants.contains vn then
               addCCError (.matchMissingVariant name vn)
-      | none => pure ()
-    | none => pure ()
+      | none =>
+        -- Named type but not an enum: require default arm
+        if !hasWildcard then
+          addCCError .matchNonEnumNoDefault
+    | none =>
+      -- Non-named type (Int, Bool, etc.): require default arm unless Bool is fully covered
+      if !hasWildcard then
+        let boolExhaustive := scrTy == .bool &&
+          (arms.any fun a => match a with | .litArm (.boolLit true) _ => true | _ => false) &&
+          (arms.any fun a => match a with | .litArm (.boolLit false) _ => true | _ => false)
+        if !boolExhaustive then
+          addCCError .matchNonEnumNoDefault
     for arm in arms do
       ccCheckMatchArm arm
 

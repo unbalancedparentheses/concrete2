@@ -10,6 +10,16 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Phase H cleanup: match on integers and bools lands as validated language feature
+
+**Integer and bool literal match patterns:** match on integer and bool values now has parser support for negative integer literals (`-1 => ...`) and bool literals (`true => ...`, `false => ...`). Integer match codegen already worked; this change adds the missing semantic validation layer.
+
+**Non-enum exhaustiveness checking:** CoreCheck now requires a default `_` arm for non-enum matches (integer, char, etc.). Bool matches are exempt when both `true` and `false` arms are present. Previously, missing a default arm compiled silently and fell through to `unreachable` at runtime.
+
+**Regression coverage:** added `match_int_basic.con`, `match_int_default.con`, `match_int_negative.con`, `match_bool.con` (positive), and `error_match_int_no_default.con`, `error_match_bool_no_false.con` (negative).
+
+**What changed strategically:** "match on integers" moves from roadmap cleanup to landed feature. The remaining literal-pattern scope (char, float, string) stays out of scope until evidence demands it.
+
 ### Phase H cleanup: impl-method visibility hardened, paper workflow added, remaining cleanup narrowed
 
 **Impl-method visibility fix:** private impl methods and private trait-impl methods are no longer callable across module boundaries via method syntax and no longer leak through imports. Four summary/resolution/elaboration paths now consistently respect `isPublic`: `buildFileSummary` public-name construction, `resolveImports` struct-method exposure, sibling impl-signature injection in Elab, and submodule impl-signature injection in Resolve.

@@ -658,6 +658,10 @@ run_ok "$TESTDIR/struct_loop_break.con"  42
 run_ok "$TESTDIR/struct_nested_loop.con" 42
 run_ok "$TESTDIR/struct_if_else_merge.con" 42
 run_ok "$TESTDIR/struct_match_merge.con" 42
+run_ok "$TESTDIR/match_int_basic.con" 42
+run_ok "$TESTDIR/match_int_default.con" 42
+run_ok "$TESTDIR/match_int_negative.con" 42
+run_ok "$TESTDIR/match_bool.con" 42
 run_ok "$TESTDIR/linear_consume.con"     42
 run_ok "$TESTDIR/linear_branch_agree.con" 42
 run_ok "$TESTDIR/linear_loop_inner.con"  3
@@ -1193,6 +1197,8 @@ run_err "$TESTDIR/error_defer_linear_reuse.con"  "reserved by defer"
 run_err "$TESTDIR/error_linearity_branch_disagree.con" "consumed in one branch"
 run_err "$TESTDIR/error_linearity_double_consume.con" "used after move"
 run_err "$TESTDIR/error_match_non_exhaustive.con" "non-exhaustive match"
+run_err "$TESTDIR/error_match_int_no_default.con" "non-exhaustive match"
+run_err "$TESTDIR/error_match_bool_no_false.con" "non-exhaustive match"
 run_err "$TESTDIR/error_generic_bound_missing.con" "no method"
 
 # === Codegen edge case tests ===

@@ -1078,7 +1078,7 @@ partial def parseMatchArmBody : ParseM (List Stmt) := do
 partial def parseMatchArm : ParseM MatchArm := do
   let sp ← peekSpan
   let firstTk ← peek
-  -- Check for literal pattern (integer)
+  -- Check for literal pattern (integer, negative integer, bool)
   match firstTk with
   | .intLit n =>
     advance
@@ -1090,6 +1090,32 @@ partial def parseMatchArm : ParseM MatchArm := do
     let tk2 ← peek
     if tk2 == .comma then advance
     return .litArm sp (.intLit sp n) body
+  | .minus =>
+    advance
+    let numTk ← peek
+    match numTk with
+    | .intLit n =>
+      advance
+      let arrowTk ← peek
+      if arrowTk == .fatArrow then advance
+      else if arrowTk == .arrow then advance
+      else throw s!"expected => or -> in match arm, got {arrowTk}"
+      let body ← parseMatchArmBody
+      let tk2 ← peek
+      if tk2 == .comma then advance
+      return .litArm sp (.unaryOp sp .neg (.intLit sp n)) body
+    | _ => throw s!"expected integer after '-' in match pattern, got {numTk}"
+  | .true_ | .false_ =>
+    let boolVal := firstTk == .true_
+    advance
+    let arrowTk ← peek
+    if arrowTk == .fatArrow then advance
+    else if arrowTk == .arrow then advance
+    else throw s!"expected => or -> in match arm, got {arrowTk}"
+    let body ← parseMatchArmBody
+    let tk2 ← peek
+    if tk2 == .comma then advance
+    return .litArm sp (.boolLit sp boolVal) body
   | .ident name =>
     advance
     let next ← peek

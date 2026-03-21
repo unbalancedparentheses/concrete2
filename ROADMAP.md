@@ -62,9 +62,7 @@ Interpretation:
 Discovery is complete. The remaining work is to turn the highest-leverage findings into stable language/stdlib/tooling improvements without reopening H as an open-ended exploration phase.
 
 Do next:
-1. finish integer literal match validation
-   - basic integer literal matching already lowers/codegens; remaining work is type-check validation against the scrutinee and a clear exhaustiveness rule for non-enum literal matches
-2. extract shared stdlib modules where examples are still duplicating obvious support code
+1. extract shared stdlib modules where examples are still duplicating obvious support code
    - especially parser/storage/integrity helpers like SHA-256 and common string/bytes utilities
 3. finish the next string-ergonomics layer
    - `starts_with`
@@ -75,6 +73,7 @@ Do next:
 6. keep cross-language comparison follow-through recorded and land it only where it still changes judgment
 
 Recently landed from this cleanup track:
+- match on integers and bools: parser support for negative int and bool literal patterns, CoreCheck exhaustiveness for non-enum matches (default arm required unless Bool is fully covered)
 - fix `import` / `pub` visibility so private impl methods and private trait-impl methods no longer leak across module boundaries via import or method-call syntax
 
 Do later, only if evidence still demands it:
