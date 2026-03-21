@@ -1,5 +1,5 @@
 +++
-title = "DESIGN POLICY"
+title = "Design Policy"
 +++
 
 # Design Policy
@@ -8,9 +8,9 @@ Status: standing policy
 
 This document defines the admission criteria for language features, compiler features, and borrowed ideas. It is the gate that every proposed change must pass through.
 
-For recorded decisions (permanent "no" and deferred "not yet"), see [DECISIONS.md](DECISIONS.md).
-For the language identity, see [IDENTITY.md](IDENTITY.md).
-For the original research note, see [../research/design-filters.md](../research/design-filters.md).
+For recorded decisions (permanent "no" and deferred "not yet"), see [DECISIONS](@/reference/DECISIONS.md).
+For the language identity, see [IDENTITY](@/reference/IDENTITY.md).
+For the original research note, see [../research/design-filters](https://github.com/unbalancedparentheses/concrete2/blob/main/research/design-filters.md).
 
 ## Admission Principle
 

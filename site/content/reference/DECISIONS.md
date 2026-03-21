@@ -1,5 +1,5 @@
 +++
-title = "DECISIONS"
+title = "Decisions"
 +++
 
 # Language Decisions
@@ -10,9 +10,9 @@ This document records first-class "no" and "not yet" decisions for Concrete. The
 
 Every entry records what was decided, why, and what Concrete does instead. Permanent decisions are load-bearing constraints the verification and auditability stories depend on. Deferred decisions are not rejected, just sequenced.
 
-For the admission criteria applied to new features, see [DESIGN_POLICY.md](DESIGN_POLICY.md).
-For the language identity and positioning, see [IDENTITY.md](IDENTITY.md).
-For the safety model, see [SAFETY.md](SAFETY.md).
+For the admission criteria applied to new features, see [DESIGN_POLICY](@/reference/DESIGN_POLICY.md).
+For the language identity and positioning, see [IDENTITY](@/reference/IDENTITY.md).
+For the safety model, see [SAFETY](@/reference/SAFETY.md).
 
 ## Permanent Decisions
 
@@ -21,7 +21,7 @@ These are structural constraints. Reversing any of them would require rethinking
 ### No closures
 
 **Status:** Decided (2026-03-08)
-**Detail:** [../research/language/no-closures.md](../research/language/no-closures.md)
+**Detail:** [../research/language/no-closures](https://github.com/unbalancedparentheses/concrete2/blob/main/research/language/no-closures.md)
 
 Closures bundle code and hidden captured data into a single opaque value. This violates three invariants: all code paths known at compile time, no hidden control flow, no hidden data flow.
 
@@ -36,7 +36,7 @@ Closures bundle code and hidden captured data into a single opaque value. This v
 ### No trait objects
 
 **Status:** Decided (2026-03-08)
-**Detail:** [../research/language/no-trait-objects.md](../research/language/no-trait-objects.md)
+**Detail:** [../research/language/no-trait-objects](https://github.com/unbalancedparentheses/concrete2/blob/main/research/language/no-trait-objects.md)
 
 Trait objects (`dyn Trait`) hide dispatch behind an opaque vtable at runtime. This violates: all code paths known at compile time, no hidden control flow.
 
@@ -51,7 +51,7 @@ Trait objects (`dyn Trait`) hide dispatch behind an opaque vtable at runtime. Th
 ### No source-generating macros
 
 **Status:** Decided (2026-03-09)
-**Detail:** [../research/meta/candidate-ideas.md](../research/meta/candidate-ideas.md) (rejected candidates section)
+**Detail:** [../research/meta/candidate-ideas](https://github.com/unbalancedparentheses/concrete2/blob/main/research/meta/candidate-ideas.md) (rejected candidates section)
 
 Source-generating macros destroy file-local parsing, couple early phases to late semantic information, and make audit output unreliable. They violate phase separation and locality.
 
@@ -73,7 +73,7 @@ Concrete does not have type inference beyond local let-binding inference. No HM-
 
 **Status:** Decided (2026-03-15)
 
-`trusted` permits exactly four pointer-level operations (arithmetic, deref, assign, cast) without `with(Unsafe)`. It does not suppress capabilities, does not permit extern calls, does not relax linearity. See [SAFETY.md](SAFETY.md).
+`trusted` permits exactly four pointer-level operations (arithmetic, deref, assign, cast) without `with(Unsafe)`. It does not suppress capabilities, does not permit extern calls, does not relax linearity. See [SAFETY](@/reference/SAFETY.md).
 
 ## Deferred Decisions
 
@@ -82,7 +82,7 @@ These are not rejected. They are explicitly sequenced as "not yet" to avoid prem
 ### Freestanding / no-std mode — not yet
 
 **Status:** Deferred
-**Detail:** [../research/stdlib-runtime/no-std-freestanding.md](../research/stdlib-runtime/no-std-freestanding.md)
+**Detail:** [../research/stdlib-runtime/no-std-freestanding](https://github.com/unbalancedparentheses/concrete2/blob/main/research/stdlib-runtime/no-std-freestanding.md)
 
 A freestanding mode (no libc, no hosted stdlib, explicit allocator) would be valuable for embedded, kernel, and audit-critical targets. Deferred because the hosted stdlib boundary is not yet stable enough. The capability system and explicit allocation model make this easier to add later.
 
@@ -99,7 +99,7 @@ A mechanism where a trusted wrapper could absorb `with(Unsafe)` and expose only 
 ### Concurrency — not yet
 
 **Status:** Deferred
-**Detail:** [../research/stdlib-runtime/concurrency.md](../research/stdlib-runtime/concurrency.md)
+**Detail:** [../research/stdlib-runtime/concurrency](https://github.com/unbalancedparentheses/concrete2/blob/main/research/stdlib-runtime/concurrency.md)
 
 Concrete should only broaden concurrency once it can do so without importing async fragmentation and hidden runtime culture. The current implementation is single-threaded; the planned direction is explicit, threads-first concurrency with structured long-term evolution. No async/await, no goroutines, no thread pool runtime.
 
@@ -108,7 +108,7 @@ Concrete should only broaden concurrency once it can do so without importing asy
 ### Pre/post conditions — not yet
 
 **Status:** Deferred
-**Detail:** [../research/language/pre-post-conditions.md](../research/language/pre-post-conditions.md)
+**Detail:** [../research/language/pre-post-conditions](https://github.com/unbalancedparentheses/concrete2/blob/main/research/language/pre-post-conditions.md)
 
 Contract annotations on functions (requires/ensures) would strengthen the proof story. Deferred because the ProofCore extraction and Lean proof story must mature first. Adding contracts before the proof pipeline is ready creates unverified annotations that look like guarantees.
 
@@ -117,14 +117,14 @@ Contract annotations on functions (requires/ensures) would strengthen the proof 
 ### Derived structural equality — not yet
 
 **Status:** Deferred
-**Detail:** [../research/language/derived-equality-design.md](../research/language/derived-equality-design.md)
+**Detail:** [../research/language/derived-equality-design](https://github.com/unbalancedparentheses/concrete2/blob/main/research/language/derived-equality-design.md)
 
 Auto-deriving `==` for structs with all-Copy fields. Deferred because it requires deciding the trait/derive mechanism more carefully.
 
 ### Package/dependency model — not yet
 
 **Status:** Deferred
-**Detail:** [../research/packages-tooling/package-model.md](../research/packages-tooling/package-model.md)
+**Detail:** [../research/packages-tooling/package-model](https://github.com/unbalancedparentheses/concrete2/blob/main/research/packages-tooling/package-model.md)
 
 A real package manager and dependency system. Deferred until the language surface is stable and real programs have been written to validate the model.
 

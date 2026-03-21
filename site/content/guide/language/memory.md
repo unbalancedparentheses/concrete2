@@ -240,7 +240,7 @@ The point is not just to avoid a garbage collector. The point is to make resourc
 
 ## Related Chapters
 
-- [Variables](./variables.md)
-- [Functions](./functions.md)
-- [Structs](./structs.md)
-- [Control flow](./control_flow.md)
+- [Variables](@/guide/language/variables.md)
+- [Functions](@/guide/language/functions.md)
+- [Structs](@/guide/language/structs.md)
+- [Control flow](@/guide/language/control_flow.md)

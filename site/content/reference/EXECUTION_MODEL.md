@@ -1,5 +1,5 @@
 +++
-title = "EXECUTION MODEL"
+title = "Execution Model"
 +++
 
 # Execution Model
@@ -8,10 +8,10 @@ Status: reference
 
 This document defines Concrete's execution model: how programs start, allocate, fail, and interact with the host environment. It covers the hosted/freestanding distinction, the runtime boundary, the memory/allocation strategy, target support policy, stdlib alignment, execution profiles, performance validation, verified FFI envelopes, and the concurrency direction.
 
-For the value and ownership model, see [VALUE_MODEL.md](VALUE_MODEL.md).
-For the safety model (capabilities, trusted, Unsafe), see [SAFETY.md](SAFETY.md).
-For ABI and layout details, see [ABI.md](ABI.md).
-For stdlib module inventory, see [STDLIB.md](STDLIB.md).
+For the value and ownership model, see [VALUE_MODEL](@/reference/VALUE_MODEL.md).
+For the safety model (capabilities, trusted, Unsafe), see [SAFETY](@/reference/SAFETY.md).
+For ABI and layout details, see [ABI](@/reference/ABI.md).
+For stdlib module inventory, see [STDLIB](@/reference/STDLIB.md).
 
 ---
 
@@ -206,7 +206,7 @@ All memory layout decisions are centralized in `Concrete/Layout.lean`:
 - `#[repr(C)]` provides C-compatible layout for FFI structs
 - `#[repr(align(N))]` sets minimum alignment
 
-See [ABI.md](ABI.md) for full details.
+See [ABI](@/reference/ABI.md) for full details.
 
 ### Future directions
 
@@ -222,7 +222,7 @@ See [ABI.md](ABI.md) for full details.
 
 ## FFI and Runtime Ownership Boundary
 
-This section documents how ownership, capabilities, and resource tracking interact with the FFI boundary. For FFI type rules and safety checks, see [FFI.md](FFI.md). For ABI and calling convention details, see [ABI.md](ABI.md).
+This section documents how ownership, capabilities, and resource tracking interact with the FFI boundary. For FFI type rules and safety checks, see [FFI](@/reference/FFI.md). For ABI and calling convention details, see [ABI](@/reference/ABI.md).
 
 ### Capability model at the FFI boundary
 
@@ -280,7 +280,7 @@ This prevents accidentally passing a managed Concrete type to C code that doesn'
 
 `#[repr(C)]` structs in `extern fn` signatures are passed by value following the platform C ABI. LLVM handles the register/stack lowering for the target architecture. Internal Concrete function calls use pointer-based passing for all aggregates.
 
-For full calling convention details, see [ABI.md](ABI.md).
+For full calling convention details, see [ABI](@/reference/ABI.md).
 
 ### Known gaps and future directions
 

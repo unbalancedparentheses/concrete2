@@ -121,13 +121,13 @@ pre {
 }
 
 .page-shell {
-  padding: 0 96px 4rem;
-  max-width: 800px;
+  padding: 0 72px 4rem;
+  max-width: 860px;
 }
 
 .hero,
 .section-head {
-  margin-bottom: 0.8rem;
+  margin-bottom: 0.55rem;
 }
 
 .hero {
@@ -137,16 +137,16 @@ pre {
 .hero h1,
 .hero h2,
 .section-head h1 {
-  font-size: 1.35rem;
+  font-size: 1.22rem;
   line-height: 1.2;
-  margin: 0 0 0.35rem;
+  margin: 0 0 0.2rem;
   max-width: none;
 }
 
 .lede,
 .section-copy,
 .doc-body {
-  max-width: 72ch;
+  max-width: 68ch;
 }
 
 .lede {
@@ -197,14 +197,29 @@ pre {
 
 .module-groups {
   display: grid;
-  gap: 1rem;
-  margin-top: 1rem;
+  gap: 1.4rem;
+  margin-top: 0.5rem;
   grid-template-columns: 1fr 1fr;
+}
+
+.home-intro {
+  display: grid;
+  gap: 1.4rem;
+  grid-template-columns: 1fr 1fr;
+  margin-top: 0.65rem;
+}
+
+.home-panels {
+  display: grid;
+  gap: 1.2rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 1.1rem;
 }
 
 .module-list {
   margin: 0;
   padding-left: 1.25rem;
+  max-width: 34ch;
 }
 
 .module-list.wide {
@@ -213,7 +228,7 @@ pre {
 
 .module-list li {
   break-inside: avoid;
-  margin: 0.25rem 0;
+  margin: 0.18rem 0;
 }
 
 .muted {
@@ -227,7 +242,7 @@ pre {
 }
 
 .index-list li {
-  padding: 0.32rem 0;
+  padding: 0.24rem 0;
   border-top: 1px solid var(--line);
 }
 
@@ -247,15 +262,48 @@ pre {
 }
 
 .secondary-index {
-  margin-top: 1rem;
+  margin-top: 0.4rem;
+}
+
+.panel-copy {
+  margin: 0 0 0.5rem;
+  max-width: 34ch;
 }
 
 .compact-index li {
-  padding: 0.24rem 0;
+  padding: 0.2rem 0;
 }
 
 .doc-page {
-  max-width: 78ch;
+  max-width: 68ch;
+}
+
+.doc-page .section-head {
+  margin-bottom: 0.45rem;
+}
+
+.doc-page .section-head h1 {
+  font-size: 1.06rem;
+}
+
+.doc-body p,
+.doc-body li {
+  line-height: 1.28;
+}
+
+.doc-body table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0 1.25rem;
+  font-size: 0.96rem;
+}
+
+.doc-body th,
+.doc-body td {
+  border: 1px solid var(--line);
+  padding: 0.4rem 0.5rem;
+  text-align: left;
+  vertical-align: top;
 }
 
 .narrow h1 {
@@ -305,6 +353,14 @@ pre {
   }
 
   .module-groups {
+    grid-template-columns: 1fr;
+  }
+
+  .home-intro {
+    grid-template-columns: 1fr;
+  }
+
+  .home-panels {
     grid-template-columns: 1fr;
   }
 

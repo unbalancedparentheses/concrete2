@@ -57,7 +57,7 @@ Those are active future goals, not shipped claims.
 
 Read:
 
-- [Repository README](../../../README.md)
-- [Roadmap](../../../ROADMAP.md)
-- [Changelog](../../../CHANGELOG.md)
-- [Testing Concrete](./testing.md)
+- [Repository README](https://github.com/unbalancedparentheses/concrete2/blob/main/README.md)
+- [Roadmap](https://github.com/unbalancedparentheses/concrete2/blob/main/ROADMAP.md)
+- [Changelog](https://github.com/unbalancedparentheses/concrete2/blob/main/CHANGELOG.md)
+- [Testing Concrete](@/guide/testing.md)

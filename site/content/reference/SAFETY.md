@@ -1,5 +1,5 @@
 +++
-title = "SAFETY"
+title = "Safety"
 +++
 
 # Safety Model
@@ -8,12 +8,12 @@ Status: stable reference
 
 This document is the central reference for Concrete's safety model. It defines the organizing principles, explains how the pieces fit together, and points to the detailed references for each subsystem.
 
-For ownership and linearity, see [VALUE_MODEL.md](VALUE_MODEL.md).
-For FFI, trusted boundaries, and capability aliases, see [FFI.md](FFI.md).
-For diagnostics and error recovery, see [DIAGNOSTICS.md](DIAGNOSTICS.md).
-For pass contracts and report modes, see [PASSES.md](PASSES.md).
-For the execution model and runtime boundary, see [EXECUTION_MODEL.md](EXECUTION_MODEL.md).
-For the stdlib module inventory and capability mapping, see [STDLIB.md](STDLIB.md).
+For ownership and linearity, see [VALUE_MODEL](@/reference/VALUE_MODEL.md).
+For FFI, trusted boundaries, and capability aliases, see [FFI](@/reference/FFI.md).
+For diagnostics and error recovery, see [DIAGNOSTICS](@/reference/DIAGNOSTICS.md).
+For pass contracts and report modes, see [PASSES](@/reference/PASSES.md).
+For the execution model and runtime boundary, see [EXECUTION_MODEL](@/reference/EXECUTION_MODEL.md).
+For the stdlib module inventory and capability mapping, see [STDLIB](@/reference/STDLIB.md).
 
 ## The Three-Way Split
 
@@ -46,7 +46,7 @@ cap IO = File + Console;
 fn log(msg: &String) with(IO) { ... }
 ```
 
-Aliases expand at parse time. The rest of the compiler sees only concrete capability names. See [FFI.md](FFI.md) for details.
+Aliases expand at parse time. The rest of the compiler sees only concrete capability names. See [FFI](@/reference/FFI.md) for details.
 
 **`Std` macro**: `with(Std)` expands to all standard capabilities except `Unsafe`.
 
@@ -80,7 +80,7 @@ trusted impl Vec<T> {
 - `trusted impl` — all methods in the impl block
 - `trusted extern fn` — audited foreign binding
 
-The stdlib demonstrates this pattern throughout: `trusted impl Vec<T>`, `trusted impl HashMap<K, V>`, `trusted impl TextFile`, `trusted fn print/println`. See [FFI.md](FFI.md) for wrapper patterns.
+The stdlib demonstrates this pattern throughout: `trusted impl Vec<T>`, `trusted impl HashMap<K, V>`, `trusted impl TextFile`, `trusted fn print/println`. See [FFI](@/reference/FFI.md) for wrapper patterns.
 
 ### `with(Unsafe)`
 
@@ -102,7 +102,7 @@ Concrete uses linear types by default for structs and enums. This provides compi
 - `borrow(x) { ... }` creates scoped references without consuming
 - `Heap<T>` is linear — must be freed, cannot be silently dropped
 
-Primitives, `&T`, raw pointers, and function pointers are Copy. See [VALUE_MODEL.md](VALUE_MODEL.md) for the full value category table.
+Primitives, `&T`, raw pointers, and function pointers are Copy. See [VALUE_MODEL](@/reference/VALUE_MODEL.md) for the full value category table.
 
 ## Audit Reports
 
@@ -119,7 +119,7 @@ Concrete's compiler produces eight report modes for audit and inspection:
 | `--report interface` | Public API surface: functions, types, traits |
 | `--report mono` | Generic function count and monomorphization specializations |
 
-These are audit-oriented outputs, not a second semantic pipeline. All modes consume validated compiler artifacts from the existing pipeline. See [PASSES.md](PASSES.md) for details and the 59 regression assertions.
+These are audit-oriented outputs, not a second semantic pipeline. All modes consume validated compiler artifacts from the existing pipeline. See [PASSES](@/reference/PASSES.md) for details and the 59 regression assertions.
 
 ## Error Model
 
@@ -135,7 +135,7 @@ Errors accumulate at two granularities:
 - Across functions/modules: each function is checked independently
 - Within function bodies: per-statement recovery catches independent errors without cascading
 
-Capability-related errors include actionable `hint:` text suggesting specific fixes. See [DIAGNOSTICS.md](DIAGNOSTICS.md) for the full error model.
+Capability-related errors include actionable `hint:` text suggesting specific fixes. See [DIAGNOSTICS](@/reference/DIAGNOSTICS.md) for the full error model.
 
 ## Proof Boundary
 
@@ -151,7 +151,7 @@ The proof boundary sits after CoreCheck and before Mono, materialized as the `Va
 
 **Excluded:** Functions with capabilities, trusted/unsafe functions, extern functions, entry points.
 
-`Concrete/Proof.lean` defines formal evaluation semantics for the pure Core fragment and proves properties (abs, max, clamp correctness, structural lemmas, conditional reduction, arithmetic). See [PROVABLE_SUBSET.md](PROVABLE_SUBSET.md) for the full definition of the proof-eligible subset, and [ARCHITECTURE.md](ARCHITECTURE.md) for the proof architecture.
+`Concrete/Proof.lean` defines formal evaluation semantics for the pure Core fragment and proves properties (abs, max, clamp correctness, structural lemmas, conditional reduction, arithmetic). See [PROVABLE_SUBSET](@/reference/PROVABLE_SUBSET.md) for the full definition of the proof-eligible subset, and [ARCHITECTURE](@/reference/ARCHITECTURE.md) for the proof architecture.
 
 ## High-Integrity Profile Direction
 
@@ -192,7 +192,7 @@ The high-integrity profile is a cross-phase synthesis, not a single feature:
 - Not a justification for uncontrolled feature growth plus "safe mode" later
 - Not a vague marketing term without compiler and report consequences
 
-The profile direction is documented in detail in [../research/language/high-integrity-profile.md](../research/language/high-integrity-profile.md).
+The profile direction is documented in detail in [../research/language/high-integrity-profile](https://github.com/unbalancedparentheses/concrete2/blob/main/research/language/high-integrity-profile.md).
 
 ## How The Pieces Fit Together
 
@@ -243,13 +243,13 @@ High-Integrity ── future profile: same language, stricter rules
 
 | Topic | Primary doc | Also mentioned in |
 |-------|------------|-------------------|
-| Capabilities | This document, [FFI.md](FFI.md) | [PASSES.md](PASSES.md), [STDLIB.md](STDLIB.md) |
-| Trusted boundaries | [FFI.md](FFI.md) | This document, [STDLIB.md](STDLIB.md) |
-| Capability aliases | [FFI.md](FFI.md) | [PASSES.md](PASSES.md) |
-| Linearity / ownership | [VALUE_MODEL.md](VALUE_MODEL.md) | This document |
-| Error model | [DIAGNOSTICS.md](DIAGNOSTICS.md) | [PASSES.md](PASSES.md) |
-| Report modes | [PASSES.md](PASSES.md) | This document |
-| Proof boundary | [ARCHITECTURE.md](ARCHITECTURE.md) | This document, [PASSES.md](PASSES.md) |
-| Execution model | [EXECUTION_MODEL.md](EXECUTION_MODEL.md) | [STDLIB.md](STDLIB.md) |
-| High-integrity profile | This document | [IDENTITY.md](IDENTITY.md), [EXECUTION_MODEL.md](EXECUTION_MODEL.md) |
-| ABI / FFI safety | [ABI.md](ABI.md) | [FFI.md](FFI.md), [VALUE_MODEL.md](VALUE_MODEL.md) |
+| Capabilities | This document, [FFI](@/reference/FFI.md) | [PASSES](@/reference/PASSES.md), [STDLIB](@/reference/STDLIB.md) |
+| Trusted boundaries | [FFI](@/reference/FFI.md) | This document, [STDLIB](@/reference/STDLIB.md) |
+| Capability aliases | [FFI](@/reference/FFI.md) | [PASSES](@/reference/PASSES.md) |
+| Linearity / ownership | [VALUE_MODEL](@/reference/VALUE_MODEL.md) | This document |
+| Error model | [DIAGNOSTICS](@/reference/DIAGNOSTICS.md) | [PASSES](@/reference/PASSES.md) |
+| Report modes | [PASSES](@/reference/PASSES.md) | This document |
+| Proof boundary | [ARCHITECTURE](@/reference/ARCHITECTURE.md) | This document, [PASSES](@/reference/PASSES.md) |
+| Execution model | [EXECUTION_MODEL](@/reference/EXECUTION_MODEL.md) | [STDLIB](@/reference/STDLIB.md) |
+| High-integrity profile | This document | [IDENTITY](@/reference/IDENTITY.md), [EXECUTION_MODEL](@/reference/EXECUTION_MODEL.md) |
+| ABI / FFI safety | [ABI](@/reference/ABI.md) | [FFI](@/reference/FFI.md), [VALUE_MODEL](@/reference/VALUE_MODEL.md) |

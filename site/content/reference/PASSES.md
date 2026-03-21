@@ -1,12 +1,12 @@
 +++
-title = "PASSES"
+title = "Passes"
 +++
 
 # Compiler Pass Contracts
 
 This document describes each pass in the Concrete compiler pipeline, its signature, preconditions, postconditions, error conditions, and the invariant it establishes.
 
-For the safety model enforced by these passes, see [SAFETY.md](SAFETY.md).
+For the safety model enforced by these passes, see [SAFETY](@/reference/SAFETY.md).
 
 ## Pipeline Overview
 

@@ -92,6 +92,6 @@ This direction spans several later phases:
 
 ## Where To Go Deeper
 
-- [Project Direction](./direction.md)
-- [research/language/high-integrity-profile.md](../../../research/language/high-integrity-profile.md)
-- [research/language/pre-post-conditions.md](../../../research/language/pre-post-conditions.md)
+- [Project Direction](@/guide/direction.md)
+- [research/language/high-integrity-profile](https://github.com/unbalancedparentheses/concrete2/blob/main/research/language/high-integrity-profile.md)
+- [research/language/pre-post-conditions](https://github.com/unbalancedparentheses/concrete2/blob/main/research/language/pre-post-conditions.md)

@@ -23,5 +23,5 @@ For the more current stable reference, also see:
 
 Good starting pages in this section:
 
-- [Architecture](../architecture.md)
-- [Current Architecture Truth](../architecture_truth.md)
+- [Architecture](@/guide/architecture.md)
+- [Current Architecture Truth](@/guide/architecture_truth.md)

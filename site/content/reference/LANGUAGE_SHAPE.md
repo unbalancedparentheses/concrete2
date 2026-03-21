@@ -1,12 +1,12 @@
 +++
-title = "LANGUAGE SHAPE"
+title = "Language Shape"
 +++
 
 # Language Shape
 
 Status: standing reference
 
-This document makes Concrete's long-term language shape decisions explicit instead of letting them emerge from local convenience. It synthesizes commitments from [IDENTITY.md](IDENTITY.md), [DESIGN_POLICY.md](DESIGN_POLICY.md), [DECISIONS.md](DECISIONS.md), and [SAFETY.md](SAFETY.md) into a single picture of what Concrete is becoming.
+This document makes Concrete's long-term language shape decisions explicit instead of letting them emerge from local convenience. It synthesizes commitments from [IDENTITY](@/reference/IDENTITY.md), [DESIGN_POLICY](@/reference/DESIGN_POLICY.md), [DECISIONS](@/reference/DECISIONS.md), and [SAFETY](@/reference/SAFETY.md) into a single picture of what Concrete is becoming.
 
 ## The Language Concrete Is Trying To Be
 
@@ -44,7 +44,7 @@ Semantic effects (file, network, allocation, etc.) are declared in function sign
 - `trusted` — audited pointer-level containment behind safe APIs
 - `with(Unsafe)` — foreign boundary authority
 
-Each concept does one thing. They do not overlap. See [SAFETY.md](SAFETY.md).
+Each concept does one thing. They do not overlap. See [SAFETY](@/reference/SAFETY.md).
 
 ### Ownership model: linear by default
 
@@ -92,17 +92,17 @@ These are areas where the current design may evolve, but only under explicit cri
 
 ## Shape Principles
 
-1. **Features must earn admission.** The default answer to "should we add X?" is "not yet." See [DESIGN_POLICY.md](DESIGN_POLICY.md).
+1. **Features must earn admission.** The default answer to "should we add X?" is "not yet." See [DESIGN_POLICY](@/reference/DESIGN_POLICY.md).
 2. **Removals are improvements.** Making the language smaller (removing `main!()`, narrowing `trusted`) makes it more coherent.
 3. **Constraints compound.** Each "no" decision makes the remaining language easier to verify, teach, and audit.
 4. **Real programs test shape.** The language shape should be validated by writing serious programs (Phase H), not by thought experiments alone.
-5. **Document "no" decisions.** A rejected feature with a recorded rationale is more valuable than a feature added without one. See [DECISIONS.md](DECISIONS.md).
+5. **Document "no" decisions.** A rejected feature with a recorded rationale is more valuable than a feature added without one. See [DECISIONS](@/reference/DECISIONS.md).
 
 ## Related Documents
 
-- [IDENTITY.md](IDENTITY.md) — what Concrete is and is not
-- [DESIGN_POLICY.md](DESIGN_POLICY.md) — feature admission criteria
-- [DECISIONS.md](DECISIONS.md) — recorded "no" and "not yet" decisions
-- [SAFETY.md](SAFETY.md) — the three-way trust/capability/unsafe model
-- [PROVABLE_SUBSET.md](PROVABLE_SUBSET.md) — proof-eligible subset definition
-- [../research/language/high-integrity-profile.md](../research/language/high-integrity-profile.md) — high-integrity profile direction
+- [IDENTITY](@/reference/IDENTITY.md) — what Concrete is and is not
+- [DESIGN_POLICY](@/reference/DESIGN_POLICY.md) — feature admission criteria
+- [DECISIONS](@/reference/DECISIONS.md) — recorded "no" and "not yet" decisions
+- [SAFETY](@/reference/SAFETY.md) — the three-way trust/capability/unsafe model
+- [PROVABLE_SUBSET](@/reference/PROVABLE_SUBSET.md) — proof-eligible subset definition
+- [../research/language/high-integrity-profile](https://github.com/unbalancedparentheses/concrete2/blob/main/research/language/high-integrity-profile.md) — high-integrity profile direction

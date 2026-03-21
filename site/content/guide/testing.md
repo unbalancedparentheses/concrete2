@@ -81,4 +81,4 @@ Relevant files:
 
 ## Where To Go Deeper
 
-For the stable testing reference, read [`docs/TESTING.md`](../../TESTING.md).
+For the stable testing reference, read [`docs/TESTING.md`](@/reference/TESTING.md).

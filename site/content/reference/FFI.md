@@ -1,5 +1,5 @@
 +++
-title = "FFI"
+title = "Ffi"
 +++
 
 # FFI and Unsafe Boundary
@@ -8,7 +8,7 @@ Status: stable reference
 
 This document describes the current foreign-function interface boundary and the role of `Unsafe` in Concrete.
 
-For the full safety model (capabilities, trusted, Unsafe, proof boundary), see [SAFETY.md](SAFETY.md). For layout and representation rules, see [ABI.md](ABI.md). For active priorities, see [../ROADMAP.md](../ROADMAP.md).
+For the full safety model (capabilities, trusted, Unsafe, proof boundary), see [SAFETY](@/reference/SAFETY.md). For layout and representation rules, see [ABI](@/reference/ABI.md). For active priorities, see [../ROADMAP](https://github.com/unbalancedparentheses/concrete2/blob/main/ROADMAP.md).
 
 ## Core Principles
 
@@ -166,4 +166,4 @@ This doc should expand if the FFI surface grows substantially, for example:
 - low-level FFI helper patterns in the stdlib
 - continued hardening of builtin and stdlib internals around the implemented `trusted` boundary
 
-For the exploratory direction behind those ideas, see [../research/language/unsafe-structure.md](../research/language/unsafe-structure.md) and [../research/language/trusted-boundary.md](../research/language/trusted-boundary.md).
+For the exploratory direction behind those ideas, see [../research/language/unsafe-structure](https://github.com/unbalancedparentheses/concrete2/blob/main/research/language/unsafe-structure.md) and [../research/language/trusted-boundary](https://github.com/unbalancedparentheses/concrete2/blob/main/research/language/trusted-boundary.md).

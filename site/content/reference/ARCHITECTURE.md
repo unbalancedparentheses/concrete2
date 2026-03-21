@@ -1,12 +1,12 @@
 +++
-title = "ARCHITECTURE"
+title = "Architecture"
 +++
 
 # Compiler Architecture
 
 Status: stable reference
 
-This document is the architecture/reference companion to [ROADMAP.md](../ROADMAP.md).
+This document is the architecture/reference companion to [ROADMAP](https://github.com/unbalancedparentheses/concrete2/blob/main/ROADMAP.md).
 
 Use it for:
 - pipeline shape
@@ -15,7 +15,7 @@ Use it for:
 - architecture work phases (A1-A10)
 - invariants and subsystem boundaries
 
-For active priorities and remaining work, see [ROADMAP.md](../ROADMAP.md). For landed milestones, see [CHANGELOG.md](../CHANGELOG.md). For the safety model (capabilities, trusted, Unsafe, proof boundary), see [SAFETY.md](SAFETY.md). For feature admission criteria and language shape, see [DESIGN_POLICY.md](DESIGN_POLICY.md) and [LANGUAGE_SHAPE.md](LANGUAGE_SHAPE.md).
+For active priorities and remaining work, see [ROADMAP](https://github.com/unbalancedparentheses/concrete2/blob/main/ROADMAP.md). For landed milestones, see [CHANGELOG](https://github.com/unbalancedparentheses/concrete2/blob/main/CHANGELOG.md). For the safety model (capabilities, trusted, Unsafe, proof boundary), see [SAFETY](@/reference/SAFETY.md). For feature admission criteria and language shape, see [DESIGN_POLICY](@/reference/DESIGN_POLICY.md) and [LANGUAGE_SHAPE](@/reference/LANGUAGE_SHAPE.md).
 
 ## Current Pipeline
 
@@ -280,7 +280,7 @@ Excludes:
 
 ### Proof-Oriented Core Direction
 
-`ProofCore` (`Concrete/ProofCore.lean`) is a restricted, proof-oriented view of `ValidatedCore`.  It is a filter, not a separate IR — the semantic authority remains CoreCheck. See [PROVABLE_SUBSET.md](PROVABLE_SUBSET.md) for the full definition of the proof-eligible subset.
+`ProofCore` (`Concrete/ProofCore.lean`) is a restricted, proof-oriented view of `ValidatedCore`.  It is a filter, not a separate IR — the semantic authority remains CoreCheck. See [PROVABLE_SUBSET](@/reference/PROVABLE_SUBSET.md) for the full definition of the proof-eligible subset.
 
 **Currently included** (via `extractProofCore`):
 

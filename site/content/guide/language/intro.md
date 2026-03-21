@@ -80,12 +80,12 @@ So when the language chooses explicitness over shorthand, that is usually intent
 
 The next chapters are meant as a guided tour, not a formal spec.
 
-- [Modules](./modules.md) explains how code is organized
-- [Variables](./variables.md) explains binding, mutation, and ownership expectations
-- [Memory Management](./memory.md) explains `Heap<T>`, `with(Alloc)`, and explicit cleanup
-- [Functions](./functions.md) explains capabilities, generics, and method shape
-- [Structs](./structs.md) explains data layout and mutation
-- [Enums](./enums.md) explains variants and pattern matching
-- [Control flow](./control_flow.md) explains `if`, `match`, and loops
+- [Modules](@/guide/language/modules.md) explains how code is organized
+- [Variables](@/guide/language/variables.md) explains binding, mutation, and ownership expectations
+- [Memory Management](@/guide/language/memory.md) explains `Heap<T>`, `with(Alloc)`, and explicit cleanup
+- [Functions](@/guide/language/functions.md) explains capabilities, generics, and method shape
+- [Structs](@/guide/language/structs.md) explains data layout and mutation
+- [Enums](@/guide/language/enums.md) explains variants and pattern matching
+- [Control flow](@/guide/language/control_flow.md) explains `if`, `match`, and loops
 
 For stable lower-level references after that, use the root docs in `docs/`.

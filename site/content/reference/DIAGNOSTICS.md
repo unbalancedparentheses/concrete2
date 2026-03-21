@@ -1,5 +1,5 @@
 +++
-title = "DIAGNOSTICS"
+title = "Diagnostics"
 +++
 
 # Diagnostics
@@ -8,7 +8,7 @@ Status: stable reference
 
 This document describes Concrete's diagnostics model and the remaining diagnostics work.
 
-For pass ownership, see [PASSES.md](PASSES.md). For active priorities, see [../ROADMAP.md](../ROADMAP.md). For the safety model that diagnostics enforce, see [SAFETY.md](SAFETY.md). For the eight audit report modes, see [PASSES.md](PASSES.md).
+For pass ownership, see [PASSES](@/reference/PASSES.md). For active priorities, see [../ROADMAP](https://github.com/unbalancedparentheses/concrete2/blob/main/ROADMAP.md). For the safety model that diagnostics enforce, see [SAFETY](@/reference/SAFETY.md). For the eight audit report modes, see [PASSES](@/reference/PASSES.md).
 
 ## Current Model
 

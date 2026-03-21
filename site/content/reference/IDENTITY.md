@@ -1,5 +1,5 @@
 +++
-title = "IDENTITY"
+title = "Identity"
 +++
 
 # Concrete Identity
@@ -8,7 +8,7 @@ Status: stable reference
 
 This document states what Concrete is, what it optimizes for, and what it is not.
 
-For feature admission criteria, see [DESIGN_POLICY.md](DESIGN_POLICY.md). For recorded "no" and "not yet" decisions, see [DECISIONS.md](DECISIONS.md). For long-term shape commitments, see [LANGUAGE_SHAPE.md](LANGUAGE_SHAPE.md).
+For feature admission criteria, see [DESIGN_POLICY](@/reference/DESIGN_POLICY.md). For recorded "no" and "not yet" decisions, see [DECISIONS](@/reference/DECISIONS.md). For long-term shape commitments, see [LANGUAGE_SHAPE](@/reference/LANGUAGE_SHAPE.md).
 
 ## What Concrete Is
 
@@ -79,7 +79,7 @@ At the package level: "dependency `json_parser` may only use `Alloc`." If the ne
 
 This is unusual among mainstream systems languages. Rust, for example, has no mechanism to declare that a crate is limited to specific side effects.
 
-See [../research/packages-tooling/authority-budgets.md](../research/packages-tooling/authority-budgets.md).
+See [../research/packages-tooling/authority-budgets](https://github.com/unbalancedparentheses/concrete2/blob/main/research/packages-tooling/authority-budgets.md).
 
 ### Allocation Budgets
 
@@ -87,25 +87,25 @@ See [../research/packages-tooling/authority-budgets.md](../research/packages-too
 
 The intended direction is more compositional than the usual whole-program or whole-crate story. Ada/SPARK have pool-level bounds; Rust gets `no_std` by convention. Concrete's proposed version is per-function and compositional.
 
-See [../research/stdlib-runtime/allocation-budgets.md](../research/stdlib-runtime/allocation-budgets.md).
+See [../research/stdlib-runtime/allocation-budgets](https://github.com/unbalancedparentheses/concrete2/blob/main/research/stdlib-runtime/allocation-budgets.md).
 
 ### Execution Cost Tracking
 
 Structural classification of functions: bounded or unbounded loops, recursive or not, max static call depth. For bounded functions, abstract instruction counts via IPET. Concrete is unusually tractable for this: no dynamic dispatch, no closures, no hidden allocation, clean SSA CFG.
 
-See [../research/stdlib-runtime/execution-cost.md](../research/stdlib-runtime/execution-cost.md).
+See [../research/stdlib-runtime/execution-cost](https://github.com/unbalancedparentheses/concrete2/blob/main/research/stdlib-runtime/execution-cost.md).
 
 ### Semantic Diff and Trust Drift
 
 Diff trust-relevant properties across two versions — not source text, but semantic facts. Authority changes, new trusted boundaries, allocation shifts. The compiler already computes all these facts; semantic diff is structured comparison of report outputs.
 
-See [../research/compiler/semantic-diff-and-trust-drift.md](../research/compiler/semantic-diff-and-trust-drift.md).
+See [../research/compiler/semantic-diff-and-trust-drift](https://github.com/unbalancedparentheses/concrete2/blob/main/research/compiler/semantic-diff-and-trust-drift.md).
 
 ### Proof Addon Architecture
 
 Proof tooling as a separate consumer of compiler artifacts, not fused into compilation. SMT discharge, symbolic execution, and Lean export would all work from the same stable `ValidatedCore`/`ProofCore` artifacts. This avoids making proof failure a compile failure.
 
-See [../research/proof-evidence/proof-addon-architecture.md](../research/proof-evidence/proof-addon-architecture.md).
+See [../research/proof-evidence/proof-addon-architecture](https://github.com/unbalancedparentheses/concrete2/blob/main/research/proof-evidence/proof-addon-architecture.md).
 
 ## Where Concrete Fits
 
@@ -140,7 +140,7 @@ Target use cases:
 
 ## Design Filters
 
-Every proposed feature must pass a checklist (see [DESIGN_POLICY.md](DESIGN_POLICY.md) and [../research/design-filters.md](../research/design-filters.md)):
+Every proposed feature must pass a checklist (see [DESIGN_POLICY](@/reference/DESIGN_POLICY.md) and [../research/design-filters](https://github.com/unbalancedparentheses/concrete2/blob/main/research/design-filters.md)):
 
 - Does it make behavior more visible or less visible?
 - Is dispatch still statically known?

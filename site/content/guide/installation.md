@@ -74,4 +74,4 @@ Run the full suite before merge-level changes:
 
 - Concrete is still changing quickly; building from source is the expected path.
 - If you are debugging the compiler itself, prefer running `.lake/build/bin/concrete` directly instead of copying it into a global location.
-- If you want a public-facing project overview before installation details, see [Why Concrete](./landing.md).
+- If you want a public-facing project overview before installation details, see [Why Concrete](@/guide/landing.md).

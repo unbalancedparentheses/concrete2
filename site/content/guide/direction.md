@@ -61,7 +61,7 @@ So the project is not waiting for "fully verified compiler or nothing." Phase D 
 
 Read:
 
-- [`ROADMAP.md`](../../../ROADMAP.md)
-- [`CHANGELOG.md`](../../../CHANGELOG.md)
-- [`docs/IDENTITY.md`](../../IDENTITY.md)
-- [`research/README.md`](../../../research/README.md)
+- [`ROADMAP.md`](https://github.com/unbalancedparentheses/concrete2/blob/main/ROADMAP.md)
+- [`CHANGELOG.md`](https://github.com/unbalancedparentheses/concrete2/blob/main/CHANGELOG.md)
+- [`docs/IDENTITY.md`](@/reference/IDENTITY.md)
+- [`research/README.md`](https://github.com/unbalancedparentheses/concrete2/blob/main/research/README.md)

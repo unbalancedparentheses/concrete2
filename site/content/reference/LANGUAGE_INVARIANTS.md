@@ -1,5 +1,5 @@
 +++
-title = "LANGUAGE INVARIANTS"
+title = "Language Invariants"
 +++
 
 # Language Invariants

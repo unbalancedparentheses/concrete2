@@ -2,63 +2,89 @@
 
 {% block content %}
 <section class="hero">
-  <h2>The Concrete standard library and reference</h2>
+  <p class="eyebrow">Concrete</p>
+  <h2>A systems language for code that must stay understandable under audit.</h2>
   <p class="lede">
-    Stable reference documentation for Concrete.
+    Concrete is built around a simple claim: semantically important program facts should stay visible.
+    Authority should stay visible in function signatures. Ownership and cleanup should stay visible in
+    value movement. Unsafe implementation techniques should stay behind explicit trusted boundaries
+    instead of diffusing through ordinary code. The goal is not maximal convenience. The goal is a
+    language whose behavior, authority surface, and trust boundaries are easier to review mechanically
+    and easier for humans to audit.
   </p>
 </section>
 
-<section class="module-groups">
+<section class="home-intro">
   <div class="group">
-    <h3>Modules</h3>
+    <h3>What Concrete Optimizes For</h3>
     <ul class="module-list">
-      <li><strong>bytes</strong>: owned byte buffers and low-level I/O-facing data</li>
-      <li><strong>slice</strong>: borrowed contiguous views</li>
-      <li><strong>text</strong>: borrowed text views</li>
-      <li><strong>path</strong>: path handling without hidden filesystem effects</li>
-      <li><strong>fs</strong>: files, directories, metadata, and handles</li>
-      <li><strong>env</strong>: environment lookup and process environment access</li>
-      <li><strong>process</strong>: process execution and status</li>
-      <li><strong>net</strong>: networking support</li>
-      <li><strong>args</strong>: command-line argument access</li>
-      <li><strong>fmt</strong>: formatting and output</li>
-      <li><strong>hash</strong>: hashing support</li>
-      <li><strong>rand</strong>: random generation</li>
-      <li><strong>time</strong>: clocks, durations, and timing</li>
-      <li><strong>map</strong>: associative containers</li>
-      <li><strong>set</strong>: membership containers</li>
-      <li><strong>parse</strong>: parsing helpers</li>
+      <li><strong>Auditability</strong>: important semantic facts should remain legible instead of disappearing behind abstraction layers</li>
+      <li><strong>Visible authority</strong>: capabilities stay part of the program surface rather than collapsing into ambient authority</li>
+      <li><strong>Visible ownership</strong>: allocation, transfer, and cleanup stay explicit enough to inspect</li>
+      <li><strong>Explicit trust boundaries</strong>: safe code, trusted internals, foreign unsafety, and proof-oriented subsets stay separate and named</li>
+      <li><strong>Small understandable runtime</strong>: no GC, no hidden finalization, no large managed-runtime model</li>
+      <li><strong>Mechanically reviewable evidence</strong>: compiler reports for capabilities, unsafe, allocation, proof, and high-integrity questions</li>
     </ul>
   </div>
 
-  <div class="group primary-index">
-    <h3>Reference</h3>
-    <ul class="index-list">
-      <li><a href="{{ get_url(path='@/reference/STDLIB.md') }}">stdlib</a><span>current module direction, implemented foundation, and priority gaps</span></li>
-      <li><a href="{{ get_url(path='@/reference/SAFETY.md') }}">safety</a><span>capabilities, trusted, Unsafe, proof boundary, and high-integrity direction</span></li>
-      <li><a href="{{ get_url(path='@/reference/ARCHITECTURE.md') }}">architecture</a><span>compiler pipeline, artifact flow, and pass boundaries</span></li>
-      <li><a href="{{ get_url(path='@/reference/PASSES.md') }}">passes</a><span>per-pass contracts and what each phase may assume</span></li>
-      <li><a href="{{ get_url(path='@/reference/ABI.md') }}">abi</a><span>layout rules, FFI safety, and representation constraints</span></li>
-      <li><a href="{{ get_url(path='@/reference/FFI.md') }}">ffi</a><span>externs, raw pointers, and the foreign boundary</span></li>
-      <li><a href="{{ get_url(path='@/reference/DIAGNOSTICS.md') }}">diagnostics</a><span>current diagnostics model and staged work</span></li>
-      <li><a href="{{ get_url(path='@/reference/TESTING.md') }}">testing</a><span>test suites, scope, and what each path is for</span></li>
-      <li><a href="{{ get_url(path='@/reference/VALUE_MODEL.md') }}">value_model</a><span>ownership, borrowing, values, and resources</span></li>
-      <li><a href="{{ get_url(path='@/reference/EXECUTION_MODEL.md') }}">execution_model</a><span>runtime boundary, allocation model, profiles, and hosted assumptions</span></li>
-      <li><a href="{{ get_url(path='@/reference/IDENTITY.md') }}">identity</a><span>what Concrete is optimizing for and what it is not trying to be</span></li>
-      <li><a href="{{ get_url(path='@/reference/DECISIONS.md') }}">decisions</a><span>explicit “no” and “not yet” design commitments</span></li>
+  <div class="group">
+    <h3>What Concrete Is Not</h3>
+    <ul class="module-list">
+      <li><strong>Not convenience-first</strong>: it does not try to erase ownership, authority, or cleanup costs for the sake of surface ergonomics</li>
+      <li><strong>Not a hidden-runtime language</strong>: it is not moving toward GC, invisible finalization, or background semantic work outside the code’s visible execution model</li>
+      <li><strong>Not abstraction-maximizing</strong>: features have to earn their place by improving clarity or capability, not by making code look shorter in isolation</li>
+      <li><strong>Not “safe by vibes”</strong>: the project separates safe code, trusted implementation techniques, and foreign unsafety explicitly</li>
+      <li><strong>Not a proof-only project</strong>: proofs matter, but they sit on top of a practical hosted systems language rather than replacing one</li>
     </ul>
   </div>
 </section>
 
-<section class="secondary-index">
-  <h3>Guide</h3>
-  <ul class="index-list compact-index">
+<section class="secondary-index home-start">
+  <h3>Start Here</h3>
+  <ul class="index-list">
     <li><a href="{{ get_url(path='@/guide/landing.md') }}">why_concrete</a><span>project motivation and positioning</span></li>
-    <li><a href="{{ get_url(path='@/guide/intro.md') }}">language_overview</a><span>a compact overview of the language</span></li>
-    <li><a href="{{ get_url(path='@/guide/getting_started.md') }}">getting_started</a><span>build, install, and create a project</span></li>
-    <li><a href="{{ get_url(path='@/guide/stdlib.md') }}">stdlib_guide</a><span>introductory overview of the current stdlib</span></li>
-    <li><a href="{{ get_url(path='@/guide/reports.md') }}">reports</a><span>how compiler reports fit together</span></li>
-    <li><a href="{{ get_url(path='@/guide/internal/overview.md') }}">internal_overview</a><span>architecture, IR, and builder notes</span></li>
+    <li><a href="{{ get_url(path='@/guide/getting_started.md') }}">getting_started</a><span>build the compiler and run a program</span></li>
+    <li><a href="{{ get_url(path='@/reference/STDLIB.md') }}">stdlib</a><span>current standard library direction</span></li>
+    <li><a href="{{ get_url(path='@/reference/SAFETY.md') }}">safety</a><span>capabilities, trusted, Unsafe, proof boundary</span></li>
+    <li><a href="{{ get_url(path='@/paper.md') }}">paper</a><span>research paper, build notes, and source links</span></li>
+    <li><a href="https://github.com/unbalancedparentheses/concrete2/blob/main/ROADMAP.md">roadmap</a><span>active work and sequencing</span></li>
   </ul>
+</section>
+
+<section class="home-panels">
+  <div class="group">
+    <h3>Docs</h3>
+    <p class="panel-copy">
+      Stable reference material for the language model, compiler pipeline, safety rules, ABI, diagnostics,
+      testing, and stdlib direction.
+    </p>
+    <ul class="index-list compact-index">
+      <li><a href="{{ get_url(path='@/reference/_index.md') }}">reference</a><span>stable contracts and implementation boundaries</span></li>
+      <li><a href="{{ get_url(path='@/guide/_index.md') }}">guide</a><span>narrative walkthrough for language and tooling</span></li>
+      <li><a href="{{ get_url(path='@/reference/STDLIB.md') }}">stdlib</a><span>current module direction and priorities</span></li>
+    </ul>
+  </div>
+
+  <div class="group">
+    <h3>Paper</h3>
+    <p class="panel-copy">
+      A compact research-style statement of the project thesis, architecture, and current evidence.
+    </p>
+    <ul class="index-list compact-index">
+      <li><a href="{{ get_url(path='@/paper.md') }}">paper</a><span>paper landing page and build notes</span></li>
+      <li><a href="https://github.com/unbalancedparentheses/concrete2/blob/main/paper/main.typ">paper_source</a><span>Typst source in the repository</span></li>
+    </ul>
+  </div>
+
+  <div class="group">
+    <h3>Status</h3>
+    <p class="panel-copy">
+      Concrete is active and still evolving. Use the roadmap and changelog for the current state of the tree.
+    </p>
+    <ul class="index-list compact-index">
+      <li><a href="https://github.com/unbalancedparentheses/concrete2/blob/main/ROADMAP.md">roadmap</a><span>active work and sequencing</span></li>
+      <li><a href="https://github.com/unbalancedparentheses/concrete2/blob/main/CHANGELOG.md">changelog</a><span>landed milestones and project history</span></li>
+    </ul>
+  </div>
 </section>
 {% endblock content %}

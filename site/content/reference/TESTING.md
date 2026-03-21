@@ -1,5 +1,5 @@
 +++
-title = "TESTING"
+title = "Testing"
 +++
 
 # Testing

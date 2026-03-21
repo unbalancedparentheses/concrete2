@@ -1,5 +1,5 @@
 +++
-title = "Reference"
+title = "Index"
 description = "Stable contracts for the language model, compiler, safety rules, ABI, diagnostics, testing, and stdlib direction."
 +++
 

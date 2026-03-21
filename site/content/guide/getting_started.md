@@ -17,7 +17,7 @@ Concrete is still source-first. The language and compiler are moving quickly, so
 
 If you only want to try the compiler from the repository:
 
-1. install the required dependencies from [Installation](./installation.md)
+1. install the required dependencies from [Installation](@/guide/installation.md)
 2. build the compiler
 3. compile a small `.con` file
 4. run the output binary
@@ -34,7 +34,7 @@ make build
 
 ## What To Read Next
 
-- [Installation](./installation.md) for dependencies and build setup
-- [Creating a project](./project.md) for the `concrete new` workflow
-- [The Language](./language/intro.md) for the current language shape
-- [Internal Details](./internal/index.md) if you want to understand the compiler pipeline
+- [Installation](@/guide/installation.md) for dependencies and build setup
+- [Creating a project](@/guide/project.md) for the `concrete new` workflow
+- [The Language](@/guide/language/intro.md) for the current language shape
+- [Internal Details](@/guide/internal/overview.md) if you want to understand the compiler pipeline

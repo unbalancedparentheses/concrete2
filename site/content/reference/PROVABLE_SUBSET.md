@@ -1,5 +1,5 @@
 +++
-title = "PROVABLE SUBSET"
+title = "Provable Subset"
 +++
 
 # Provable Subset
@@ -8,7 +8,7 @@ Status: standing reference
 
 This document defines the clearly analyzable, proof-eligible subset of Concrete. It specifies what is included, what is excluded, why, and how the subset connects to the proof pipeline.
 
-For the safety model, see [SAFETY.md](SAFETY.md). For the proof architecture, see [ARCHITECTURE.md](ARCHITECTURE.md). For the formalization roadmap, see [../research/proof-evidence/formalization-breakdown.md](../research/proof-evidence/formalization-breakdown.md). For language decisions that shape this subset, see [DECISIONS.md](DECISIONS.md).
+For the safety model, see [SAFETY](@/reference/SAFETY.md). For the proof architecture, see [ARCHITECTURE](@/reference/ARCHITECTURE.md). For the formalization roadmap, see [../research/proof-evidence/formalization-breakdown](https://github.com/unbalancedparentheses/concrete2/blob/main/research/proof-evidence/formalization-breakdown.md). For language decisions that shape this subset, see [DECISIONS](@/reference/DECISIONS.md).
 
 ## Definition
 
@@ -175,7 +175,7 @@ Exclusion reasons are specific: "requires capabilities: X", "trusted boundary", 
 
 ### ProofCore vs High-Integrity Profile
 
-The **provable subset** (ProofCore) and the **high-integrity profile** (see [SAFETY.md](SAFETY.md)) are related but different:
+The **provable subset** (ProofCore) and the **high-integrity profile** (see [SAFETY](@/reference/SAFETY.md)) are related but different:
 
 | | Provable subset | High-integrity profile |
 |---|---|---|
@@ -211,7 +211,7 @@ The provable subset's shape follows directly from Concrete's permanent language 
 
 ## Future Direction
 
-Tracked in [../research/proof-evidence/formalization-breakdown.md](../research/proof-evidence/formalization-breakdown.md). The main expansion axes are:
+Tracked in [../research/proof-evidence/formalization-breakdown](https://github.com/unbalancedparentheses/concrete2/blob/main/research/proof-evidence/formalization-breakdown.md). The main expansion axes are:
 
 1. **Richer proof semantics** — structs, enums, match, recursion in `Proof.lean`
 2. **Source-to-Core traceability** — connecting proof results back to user-visible source locations
