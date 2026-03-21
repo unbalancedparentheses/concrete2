@@ -1,4 +1,4 @@
-base_url = "http://localhost:1111"
+base_url = "https://unbalancedparentheses.github.io/concrete2"
 title = "Concrete Documentation"
 description = "Reference and guide documentation for Concrete"
 compile_sass = false
@@ -10,4 +10,4 @@ minify_html = true
 smart_punctuation = true
 
 [extra]
-repo_url = "https://github.com/federico-carrone/concrete"
+repo_url = "https://github.com/unbalancedparentheses/concrete2"
