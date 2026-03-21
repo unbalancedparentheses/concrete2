@@ -180,6 +180,7 @@ private def svalToOperand (s : EmitSSAState) (v : SVal) : LLVMOperand :=
   | .floatConst val _ => .floatLit val
   | .boolConst b => .boolLit b
   | .strConst name => .global name
+  | .strConstRef name => .global name  -- fallback; normally handled by ensurePtrOp
   | .unit => .undef
 
 /-- LLVM type for function parameters (pass-by-ptr types → ptr). -/
@@ -342,6 +343,37 @@ private def materializeStrConst (s : EmitSSAState) (name : String) : EmitSSAStat
   let s := emitStructured s (.store .i64 (.intLit arrLen) (.reg capFieldName))
   (s, strTmp)
 
+/-- Materialize a borrowed string constant as a %struct.String pointer.
+    Points directly at the global constant — no malloc, no memcpy.
+    Cap is set to 0 to signal this is not a heap-owned buffer. -/
+private def materializeStrConstRef (s : EmitSSAState) (name : String) : EmitSSAState × String :=
+  let strLen := (s.stringLengths.find? fun (n, _) => n == name).map (·.2) |>.getD 0
+  let arrLen := strLen + 1
+  -- GEP into the global char array (read-only pointer)
+  let (s, gepTmp) := freshLocal s
+  let gepName := (gepTmp.drop 1).toString
+  let s := emitStructured s (.gep gepName (.array arrLen .i8) (.global name) [(.i32, .intLit 0), (.i32, .intLit 0)])
+  -- Allocate %struct.String on stack (no heap allocation)
+  let (s, strTmp) := freshLocal s
+  let strName := (strTmp.drop 1).toString
+  let s := emitEntryAlloca s (.alloca strName (.struct_ "String"))
+  -- Store ptr field (index 0) — points directly at global constant
+  let (s, ptrField) := freshLocal s
+  let ptrFieldName := (ptrField.drop 1).toString
+  let s := emitStructured s (.gep ptrFieldName (.struct_ "String") (.reg strName) [(.i32, .intLit 0), (.i32, .intLit 0)])
+  let s := emitStructured s (.store .ptr (.reg gepName) (.reg ptrFieldName))
+  -- Store len field (index 1)
+  let (s, lenField) := freshLocal s
+  let lenFieldName := (lenField.drop 1).toString
+  let s := emitStructured s (.gep lenFieldName (.struct_ "String") (.reg strName) [(.i32, .intLit 0), (.i32, .intLit 1)])
+  let s := emitStructured s (.store .i64 (.intLit strLen) (.reg lenFieldName))
+  -- Store cap field (index 2) — 0 signals non-owned / non-freeable
+  let (s, capField) := freshLocal s
+  let capFieldName := (capField.drop 1).toString
+  let s := emitStructured s (.gep capFieldName (.struct_ "String") (.reg strName) [(.i32, .intLit 0), (.i32, .intLit 2)])
+  let s := emitStructured s (.store .i64 (.intLit 0) (.reg capFieldName))
+  (s, strTmp)
+
 /-- If the SVal is not known to be a ptr but has a pass-by-ptr type,
     emit alloca+store to convert it. Returns (state, ptrString). -/
 private def isRefOrPtrTy : Ty → Bool
@@ -354,6 +386,9 @@ private def ensurePtrOp (s : EmitSSAState) (v : SVal) : EmitSSAState × LLVMOper
   match v with
   | .strConst name =>
     let (s, strTmp) := materializeStrConst s name
+    (s, .reg (strTmp.drop 1).toString)
+  | .strConstRef name =>
+    let (s, strTmp) := materializeStrConstRef s name
     (s, .reg (strTmp.drop 1).toString)
   | _ =>
   if isKnownPtr s v then
@@ -376,6 +411,9 @@ private def ensureValAsPtr (s : EmitSSAState) (v : SVal) : EmitSSAState × LLVMO
   match v with
   | .strConst name =>
     let (s, strTmp) := materializeStrConst s name
+    (s, .reg (strTmp.drop 1).toString)
+  | .strConstRef name =>
+    let (s, strTmp) := materializeStrConstRef s name
     (s, .reg (strTmp.drop 1).toString)
   | _ =>
   if isKnownPtr s v then
@@ -536,6 +574,10 @@ private def emitSInst (s : EmitSSAState) (inst : SInst) : EmitSSAState :=
         -- String constants always passed as ptr to %struct.String
         let (s, strPtr) := materializeStrConst s name
         (s, ops ++ [(.ptr, .reg (strPtr.drop 1).toString)])
+      | .strConstRef name =>
+        -- Borrowed string constants: no heap alloc, points at global
+        let (s, strPtr) := materializeStrConstRef s name
+        (s, ops ++ [(.ptr, .reg (strPtr.drop 1).toString)])
       | _ =>
       let valTy := tyToLLVMTy s a.ty
       -- Extern call with repr(C) struct: flatten to integer registers per C ABI.
@@ -650,6 +692,11 @@ private def emitSInst (s : EmitSSAState) (inst : SInst) : EmitSSAState :=
       let (s, srcPtr) := materializeStrConst s name
       let sz := ssaTySize s .string
       emitStructured s (.memcpy ptrOp (.reg (srcPtr.drop 1).toString) sz)
+    | .strConstRef name =>
+      -- Copy borrowed string struct (no heap alloc) to destination
+      let (s, srcPtr) := materializeStrConstRef s name
+      let sz := ssaTySize s .string
+      emitStructured s (.memcpy ptrOp (.reg (srcPtr.drop 1).toString) sz)
     | _ =>
     -- If the value is a known pointer but typed as a struct, it is
     -- actually a pointer to the struct (e.g. a pass-by-ptr param).
@@ -672,6 +719,11 @@ private def emitSInst (s : EmitSSAState) (inst : SInst) : EmitSSAState :=
     | .strConst name =>
       -- String constant → ptr: materialize the %struct.String and return ptr
       let (s, strPtr) := materializeStrConst s name
+      let s := emitStructured s (.gep dst .i8 (.reg (strPtr.drop 1).toString) [(.i32, .intLit 0)])
+      markPtr s dst
+    | .strConstRef name =>
+      -- Borrowed string constant → ptr: materialize without heap alloc
+      let (s, strPtr) := materializeStrConstRef s name
       let s := emitStructured s (.gep dst .i8 (.reg (strPtr.drop 1).toString) [(.i32, .intLit 0)])
       markPtr s dst
     | _ =>
@@ -754,6 +806,10 @@ private def emitSTerm (s : EmitSSAState) (t : STerm) : EmitSSAState × LLVMTerm 
       let tmpName := (tmp.drop 1).toString
       let s := emitStructured s (.load tmpName llTy (.reg (ptr.drop 1).toString))
       (s, .ret llTy (some (.reg tmpName)))
+    | .strConstRef name =>
+      -- Borrowed string constant ref: materialize without heap alloc, return ptr
+      let (s, ptr) := materializeStrConstRef s name
+      (s, .ret .ptr (some (.reg (ptr.drop 1).toString)))
     | _ =>
     if isKnownPtr s v && ssaIsPassByPtr s v.ty then
       -- Value is a pointer to a struct (e.g. pass-by-ptr param); load it

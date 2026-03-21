@@ -832,6 +832,10 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
   | .borrow inner ty =>
     let iVal ← lowerExpr inner
     let innerTy := iVal.ty
+    -- Special case: borrowing a string literal → strConstRef (no heap alloc)
+    match iVal with
+    | .strConst name => return .strConstRef name
+    | _ =>
     -- If the inner value is not already a pointer/ref, alloca + store to get an address
     match innerTy with
     | .ref _ | .refMut _ | .ptrMut _ | .ptrConst _ | .heap _ =>
@@ -1773,6 +1777,9 @@ private def renameSVal (rmap : List (String × String)) : SVal → SVal
   | .strConst name => match rmap.lookup name with
     | some newName => .strConst newName
     | none => .strConst name
+  | .strConstRef name => match rmap.lookup name with
+    | some newName => .strConstRef newName
+    | none => .strConstRef name
   | other => other
 
 private def renameStrConstsInInst (rmap : List (String × String)) : SInst → SInst

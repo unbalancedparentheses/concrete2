@@ -67,6 +67,26 @@ mod string {
             self.len = self.len + 1;
         }
 
+        /// Append another string's contents to this string.
+        pub fn append(&mut self, other: &String) with(Alloc) {
+            if other.len == 0 {
+                return;
+            }
+            let needed: u64 = self.len + other.len;
+            while self.cap < needed {
+                self.grow();
+            }
+            let dst: *mut u8 = self.ptr + self.len;
+            memcpy(dst, other.ptr as *const u8, other.len);
+            self.len = needed;
+        }
+
+        /// Append an integer formatted as decimal to this string.
+        pub fn append_int(&mut self, n: Int) with(Alloc) {
+            // Use the builtin string_append_int
+            string_append_int(self, n);
+        }
+
         fn grow(&mut self) with(Alloc) {
             let new_cap: u64 = max::<u64>(self.cap, 4) * 2;
             self.ptr = grow::<u8>(self.ptr, new_cap);
@@ -304,6 +324,42 @@ mod string {
         original.drop();
         copy.drop();
         if equal { return 0; }
+        return 1;
+    }
+
+    #[test]
+    fn test_str_append() with(Alloc) -> i32 {
+        let mut s: String = "hello";
+        s.append(&" world");
+        let expected: String = "hello world";
+        let ok: bool = s.eq(&expected);
+        s.drop();
+        expected.drop();
+        if ok { return 0; }
+        return 1;
+    }
+
+    #[test]
+    fn test_str_append_empty() with(Alloc) -> i32 {
+        let mut s: String = "hello";
+        s.append(&"");
+        let expected: String = "hello";
+        let ok: bool = s.eq(&expected);
+        s.drop();
+        expected.drop();
+        if ok { return 0; }
+        return 1;
+    }
+
+    #[test]
+    fn test_str_append_int() with(Alloc) -> i32 {
+        let mut s: String = "count: ";
+        s.append_int(42);
+        let expected: String = "count: 42";
+        let ok: bool = s.eq(&expected);
+        s.drop();
+        expected.drop();
+        if ok { return 0; }
         return 1;
     }
 

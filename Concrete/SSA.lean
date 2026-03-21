@@ -19,6 +19,7 @@ inductive SVal where
   | floatConst (val : Float) (ty : Ty)
   | boolConst (val : Bool)
   | strConst (val : String)
+  | strConstRef (val : String)  -- borrowed string literal: no heap alloc, points at global
   | unit
 
 -- ============================================================
@@ -86,6 +87,7 @@ def SVal.ty : SVal → Ty
   | .floatConst _ t => t
   | .boolConst _ => .bool
   | .strConst _ => .string
+  | .strConstRef _ => .ref .string
   | .unit => .unit
 
 -- ============================================================
@@ -127,6 +129,7 @@ private def ppSVal : SVal → String
   | .floatConst v _ => toString v
   | .boolConst b => if b then "1" else "0"
   | .strConst s => s!"@str.{s.hash}"
+  | .strConstRef s => s!"&@str.{s.hash}"
   | .unit => "void"
 
 private def binOpToStr : BinOp → String

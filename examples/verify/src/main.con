@@ -17,8 +17,6 @@
 //   - the file reader cannot leak data to the console
 //   - the reporter cannot read or modify files
 //   - only main() and verify_artifact() can bridge these boundaries
-//
-// Now built as a project using std.fs for file I/O.
 
 mod conhash {
     import std.fs.{read_file, FsError};
@@ -28,6 +26,7 @@ mod conhash {
     import std.vec.{Vec};
     import std.sha256.{hash_raw};
     import std.hex.{encode_u32_vec};
+    import std.string.{String};
 
     trusted extern fn free(ptr: *mut u8);
 
@@ -58,43 +57,37 @@ mod conhash {
 
     fn report_hash(filename: &String, hex: &String) with(Console) {
         print_string(hex);
-        let mut sep: String = "  ";
-        print_string(&sep);
-        drop_string(sep);
+        print_string(&"  ");
         print_string(filename);
         print_char(10);
     }
 
-    fn report_ok(filename: &String) with(Console, Alloc) {
+    fn report_ok(filename: &String) with(Console) {
         print_string(filename);
-        let mut msg: String = ": OK\n";
-        print_string(&msg);
-        drop_string(msg);
+        print_string(&": OK\n");
     }
 
     fn report_fail(filename: &String, expected: &String, actual: &String) with(Console, Alloc) {
         print_string(filename);
-        let mut msg: String = ": FAILED\n  expected: ";
-        string_append(&mut msg, expected);
-        let mut msg2: String = "\n  actual:   ";
-        string_append(&mut msg, &msg2);
-        drop_string(msg2);
-        string_append(&mut msg, actual);
-        string_push_char(&mut msg, 10);
+        let mut msg: String = String::new();
+        msg.append(&": FAILED\n  expected: ");
+        msg.append(expected);
+        msg.append(&"\n  actual:   ");
+        msg.append(actual);
+        msg.push_char(10 as char);
         print_string(&msg);
-        drop_string(msg);
+        msg.drop();
     }
 
     fn report_error(filename: &String, reason: &String) with(Console, Alloc) {
-        let mut msg: String = "conhash: ";
-        string_append(&mut msg, filename);
-        let mut msg2: String = ": ";
-        string_append(&mut msg, &msg2);
-        drop_string(msg2);
-        string_append(&mut msg, reason);
-        string_push_char(&mut msg, 10);
+        let mut msg: String = String::new();
+        msg.append(&"conhash: ");
+        msg.append(filename);
+        msg.append(&": ");
+        msg.append(reason);
+        msg.push_char(10 as char);
         print_string(&msg);
-        drop_string(msg);
+        msg.drop();
     }
 
     // --- Verification: bridges File, Console, Alloc ---
@@ -102,9 +95,7 @@ mod conhash {
     trusted fn verify_artifact(filename: &String, expected_hex: &String) with(File, Console, Alloc) -> bool {
         let fd: FileData = read_file_raw(filename);
         if fd.ptr == (0 as *mut u8) {
-            let mut reason: String = "cannot open file";
-            report_error(filename, &reason);
-            drop_string(reason);
+            report_error(filename, &"cannot open file");
             return false;
         }
 
@@ -113,20 +104,20 @@ mod conhash {
         let actual_hex: String = encode_u32_vec(&hash);
         hash.drop();
 
-        let expected_len: Int = string_length(expected_hex);
-        if expected_len == 0 {
+        let expected_empty: bool = expected_hex.is_empty();
+        if expected_empty {
             report_hash(filename, &actual_hex);
-            drop_string(actual_hex);
+            actual_hex.drop();
             return true;
         }
 
-        let matches: bool = string_eq(&actual_hex, expected_hex);
+        let matches: bool = actual_hex.eq(expected_hex);
         if matches {
             report_ok(filename);
         } else {
             report_fail(filename, expected_hex, &actual_hex);
         }
-        drop_string(actual_hex);
+        actual_hex.drop();
         return matches;
     }
 
@@ -143,12 +134,8 @@ mod conhash {
         let argc: Int = count();
 
         if argc < 2 {
-            let mut usage: String = "Usage: conhash <file> [expected_sha256]\n";
-            print_string(&usage);
-            drop_string(usage);
-            let mut desc: String = "  Without expected hash: prints SHA-256 of file\n  With expected hash: verifies file integrity\n";
-            print_string(&desc);
-            drop_string(desc);
+            print_string(&"Usage: conhash <file> [expected_sha256]\n");
+            print_string(&"  Without expected hash: prints SHA-256 of file\n  With expected hash: verifies file integrity\n");
             return 1;
         }
 
@@ -160,16 +147,15 @@ mod conhash {
         let t1: Int = clock_monotonic_ns();
 
         let elapsed_ms: Int = (t1 - t0) / 1000000;
-        let mut timing: String = "(";
-        string_append_int(&mut timing, elapsed_ms);
-        let mut timing2: String = " ms)\n";
-        string_append(&mut timing, &timing2);
-        drop_string(timing2);
+        let mut timing: String = String::new();
+        timing.append(&"(");
+        timing.append_int(elapsed_ms);
+        timing.append(&" ms)\n");
         print_string(&timing);
-        drop_string(timing);
+        timing.drop();
 
-        drop_string(expected);
-        drop_string(filename);
+        expected.drop();
+        filename.drop();
 
         if ok { return 0; }
         return 1;

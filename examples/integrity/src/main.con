@@ -15,6 +15,7 @@ mod fcheck {
     import std.vec.{Vec};
     import std.sha256.{hash_raw};
     import std.hex.{encode_u32_vec};
+    import std.string.{String};
 
     trusted extern fn free(ptr: *mut u8);
 
@@ -56,10 +57,10 @@ mod fcheck {
     // Manifest I/O
 
     fn append_string_to_bytes(buf: &mut Bytes, s: &String) with(Alloc) {
-        let slen: Int = string_length(s);
-        let mut i: Int = 0;
+        let slen: u64 = s.len();
+        let mut i: u64 = 0;
         while i < slen {
-            let ch: Int = string_char_at(s, i);
+            let ch: char = s.get_unchecked(i);
             buf.push(ch as u8);
             i = i + 1;
         }
@@ -92,8 +93,7 @@ mod fcheck {
                         if colon == 58 {
                             let path_part: String = string_slice(manifest, line_start + 65, pos);
                             let hash_part: String = string_slice(manifest, line_start, line_start + 64);
-                            let mut path_copy: String = "";
-                            string_append(&mut path_copy, &path_part);
+                            let path_copy: String = path_part.clone();
                             map.insert(path_part, hash_part);
                             paths.push(path_copy);
                         }
@@ -120,55 +120,45 @@ mod fcheck {
     // Reporting
 
     fn report_status(label: &String, path: &String) with(Console, Alloc) {
-        let mut msg: String = "  ";
-        string_append(&mut msg, label);
-        string_append(&mut msg, path);
+        let mut msg: String = String::new();
+        msg.append(&"  ");
+        msg.append(label);
+        msg.append(path);
         print_string(&msg);
         print_char(10);
-        drop_string(msg);
+        msg.drop();
     }
 
     fn report_scan_line(path: &String, hash: &String) with(Console, Alloc) {
-        let mut msg: String = "  ";
-        string_append(&mut msg, hash);
-        string_push_char(&mut msg, 32);
-        string_push_char(&mut msg, 32);
-        string_append(&mut msg, path);
+        let mut msg: String = String::new();
+        msg.append(&"  ");
+        msg.append(hash);
+        msg.append(&"  ");
+        msg.append(path);
         print_string(&msg);
         print_char(10);
-        drop_string(msg);
+        msg.drop();
     }
 
     fn report_file_error(path: &String) with(Console, Alloc) {
-        let mut msg: String = "  ERROR    ";
-        string_append(&mut msg, path);
-        let mut rsn: String = ": cannot read file";
-        string_append(&mut msg, &rsn);
-        drop_string(rsn);
+        let mut msg: String = String::new();
+        msg.append(&"  ERROR    ");
+        msg.append(path);
+        msg.append(&": cannot read file");
         print_string(&msg);
         print_char(10);
-        drop_string(msg);
+        msg.drop();
     }
 
     pub fn main() with(Std) -> Int {
         let argc: Int = count();
 
         if argc < 4 {
-            let mut u1: String = "fcheck - file integrity checker\n\nUsage:\n";
-            print_string(&u1);
-            drop_string(u1);
-            let mut u2: String = "  fcheck scan  <manifest> <file1> [file2] ...\n";
-            print_string(&u2);
-            drop_string(u2);
-            let mut u3: String = "    Hash files with SHA-256, write manifest.\n\n";
-            print_string(&u3);
-            drop_string(u3);
-            let mut u4: String = "  fcheck check <manifest> <file1> [file2] ...\n";
-            print_string(&u4);
-            drop_string(u4);
-            let mut u5: String = "    Compare files against manifest, report changes.\n";
-            print_string(&u5);
-            drop_string(u5);
+            print_string(&"fcheck - file integrity checker\n\nUsage:\n");
+            print_string(&"  fcheck scan  <manifest> <file1> [file2] ...\n");
+            print_string(&"    Hash files with SHA-256, write manifest.\n\n");
+            print_string(&"  fcheck check <manifest> <file1> [file2] ...\n");
+            print_string(&"    Compare files against manifest, report changes.\n");
             return 1;
         }
 
@@ -176,26 +166,12 @@ mod fcheck {
         let manifest_path: String = get(2);
 
         // Detect command
-        let mut is_scan: bool = false;
-        let mut is_check: bool = false;
-        let cmd_len: Int = string_length(&command);
-        if cmd_len == 4 {
-            if string_char_at(&command, 0) == 115 &&
-               string_char_at(&command, 1) == 99 &&
-               string_char_at(&command, 2) == 97 &&
-               string_char_at(&command, 3) == 110 {
-                is_scan = true;
-            }
-        }
-        if cmd_len == 5 {
-            if string_char_at(&command, 0) == 99 &&
-               string_char_at(&command, 1) == 104 &&
-               string_char_at(&command, 2) == 101 &&
-               string_char_at(&command, 3) == 99 &&
-               string_char_at(&command, 4) == 107 {
-                is_check = true;
-            }
-        }
+        let scan_cmd: String = "scan";
+        let check_cmd: String = "check";
+        let is_scan: bool = command.eq(&scan_cmd);
+        let is_check: bool = command.eq(&check_cmd);
+        scan_cmd.drop();
+        check_cmd.drop();
 
         let mut exit_code: Int = 0;
 
@@ -205,51 +181,43 @@ mod fcheck {
             let mut scan_errors: Int = 0;
             let mut nfiles: Int = 0;
 
-            let mut smsg: String = "Scanning files...\n";
-            print_string(&smsg);
-            drop_string(smsg);
+            print_string(&"Scanning files...\n");
 
             let mut fi: Int = 3;
             while fi < argc {
                 let fpath: String = get(fi);
                 let fhex: String = hash_file(&fpath);
-                let fhex_len: Int = string_length(&fhex);
-                if fhex_len == 0 {
+                let fhex_empty: bool = fhex.is_empty();
+                if fhex_empty {
                     report_file_error(&fpath);
-                    drop_string(fhex);
+                    fhex.drop();
                     scan_errors = scan_errors + 1;
                 } else {
                     report_scan_line(&fpath, &fhex);
-                    // Append to manifest bytes: "hash:path\n"
                     append_string_to_bytes(&mut manifest_bytes, &fhex);
                     manifest_bytes.push(58);
                     append_string_to_bytes(&mut manifest_bytes, &fpath);
                     manifest_bytes.push(10);
-                    drop_string(fhex);
+                    fhex.drop();
                     nfiles = nfiles + 1;
                 }
-                drop_string(fpath);
+                fpath.drop();
                 fi = fi + 1;
             }
 
             if nfiles > 0 {
                 let wok: bool = write_bytes_to_file(&manifest_path, &manifest_bytes);
                 if wok {
-                    let mut wm: String = "\nManifest written to ";
-                    string_append(&mut wm, &manifest_path);
-                    let mut wm2: String = " (";
-                    string_append(&mut wm, &wm2);
-                    drop_string(wm2);
-                    string_append_int(&mut wm, nfiles);
-                    let mut wm3: String = " files)\n";
-                    string_append(&mut wm, &wm3);
-                    drop_string(wm3);
+                    let mut wm: String = String::new();
+                    wm.append(&"\nManifest written to ");
+                    wm.append(&manifest_path);
+                    wm.append(&" (");
+                    wm.append_int(nfiles);
+                    wm.append(&" files)\n");
                     print_string(&wm);
-                    drop_string(wm);
+                    wm.drop();
                 } else {
-                    let mut em: String = "fcheck: error writing manifest\n";
-                    print_string(&em);
-                    drop_string(em);
+                    print_string(&"fcheck: error writing manifest\n");
                     scan_errors = scan_errors + 1;
                 }
             }
@@ -260,23 +228,19 @@ mod fcheck {
         } else if is_check {
             // --- CHECK: read manifest, re-hash files, compare ---
             let manifest_content: String = read_manifest_file(&manifest_path);
-            let manifest_len: Int = string_length(&manifest_content);
-            let manifest_ok: bool = manifest_len > 0;
-
-            if !manifest_ok {
-                let mut em2: String = "fcheck: cannot read manifest '";
-                string_append(&mut em2, &manifest_path);
-                let mut em3: String = "' (empty or missing)\n";
-                string_append(&mut em2, &em3);
-                drop_string(em3);
-                print_string(&em2);
-                drop_string(em2);
-            }
+            let manifest_ok: bool = manifest_content.is_empty();
 
             if manifest_ok {
-                let mut cmsg: String = "Checking files...\n";
-                print_string(&cmsg);
-                drop_string(cmsg);
+                let mut em: String = String::new();
+                em.append(&"fcheck: cannot read manifest '");
+                em.append(&manifest_path);
+                em.append(&"' (empty or missing)\n");
+                print_string(&em);
+                em.drop();
+            }
+
+            if !manifest_ok {
+                print_string(&"Checking files...\n");
 
                 let mut cnt_ok: Int = 0;
                 let mut cnt_add: Int = 0;
@@ -288,64 +252,52 @@ mod fcheck {
                 let mut manifest_paths: Vec<String> = Vec::<String>::new();
                 parse_manifest(&manifest_content, &mut manifest_map, &mut manifest_paths);
 
-                // Track which manifest paths were checked
                 let mut checked: HashSet<String> = HashSet::<String>::new(hash_string, eq_string);
 
-                // Check each file
                 let mut ci: Int = 3;
                 while ci < argc {
                     let cpath: String = get(ci);
                     let chex: String = hash_file(&cpath);
-                    let chex_len: Int = string_length(&chex);
-                    if chex_len == 0 {
+                    let chex_empty: bool = chex.is_empty();
+                    if chex_empty {
                         report_file_error(&cpath);
-                        drop_string(chex);
+                        chex.drop();
                         cnt_err = cnt_err + 1;
                     } else {
                         let stored_opt: Option<&String> = manifest_map.get(&cpath);
                         match stored_opt {
                             Option#None => {
-                                let mut lbl: String = "ADDED    ";
-                                report_status(&lbl, &cpath);
-                                drop_string(lbl);
+                                report_status(&"ADDED    ", &cpath);
                                 cnt_add = cnt_add + 1;
                             },
                             Option#Some { value } => {
-                                // Mark this path as checked
-                                let mut cpath_copy: String = "";
-                                string_append(&mut cpath_copy, &cpath);
+                                let cpath_copy: String = cpath.clone();
                                 checked.insert(cpath_copy);
 
-                                let eq: bool = string_eq(&chex, value);
+                                let eq: bool = chex.eq(value);
                                 if eq {
-                                    let mut lbl2: String = "OK       ";
-                                    report_status(&lbl2, &cpath);
-                                    drop_string(lbl2);
+                                    report_status(&"OK       ", &cpath);
                                     cnt_ok = cnt_ok + 1;
                                 } else {
-                                    let mut lbl3: String = "MODIFIED ";
-                                    report_status(&lbl3, &cpath);
-                                    drop_string(lbl3);
+                                    report_status(&"MODIFIED ", &cpath);
                                     cnt_mod = cnt_mod + 1;
                                 }
                             }
                         }
-                        drop_string(chex);
+                        chex.drop();
                     }
-                    drop_string(cpath);
+                    cpath.drop();
                     ci = ci + 1;
                 }
 
-                // Report removed files (in manifest but not checked)
+                // Report removed files
                 let m_count: Int = manifest_paths.len() as Int;
                 let mut ki: Int = 0;
                 while ki < m_count {
                     let rp: &String = manifest_paths.get_unchecked(ki as u64);
                     let was_checked: bool = checked.contains(rp);
                     if !was_checked {
-                        let mut lbl4: String = "REMOVED  ";
-                        report_status(&lbl4, rp);
-                        drop_string(lbl4);
+                        report_status(&"REMOVED  ", rp);
                         cnt_rem = cnt_rem + 1;
                     }
                     ki = ki + 1;
@@ -353,30 +305,21 @@ mod fcheck {
 
                 // Summary
                 print_char(10);
-                let mut sum: String = "Summary: ";
-                string_append_int(&mut sum, cnt_ok);
-                let mut s1: String = " ok, ";
-                string_append(&mut sum, &s1);
-                drop_string(s1);
-                string_append_int(&mut sum, cnt_add);
-                let mut s2: String = " added, ";
-                string_append(&mut sum, &s2);
-                drop_string(s2);
-                string_append_int(&mut sum, cnt_mod);
-                let mut s3: String = " modified, ";
-                string_append(&mut sum, &s3);
-                drop_string(s3);
-                string_append_int(&mut sum, cnt_rem);
-                let mut s4: String = " removed, ";
-                string_append(&mut sum, &s4);
-                drop_string(s4);
-                string_append_int(&mut sum, cnt_err);
-                let mut s5: String = " errors";
-                string_append(&mut sum, &s5);
-                drop_string(s5);
+                let mut sum: String = String::new();
+                sum.append(&"Summary: ");
+                sum.append_int(cnt_ok);
+                sum.append(&" ok, ");
+                sum.append_int(cnt_add);
+                sum.append(&" added, ");
+                sum.append_int(cnt_mod);
+                sum.append(&" modified, ");
+                sum.append_int(cnt_rem);
+                sum.append(&" removed, ");
+                sum.append_int(cnt_err);
+                sum.append(&" errors");
                 print_string(&sum);
                 print_char(10);
-                drop_string(sum);
+                sum.drop();
 
                 manifest_paths.drop();
                 manifest_map.drop();
@@ -388,21 +331,20 @@ mod fcheck {
             } else {
                 exit_code = 1;
             }
-            drop_string(manifest_content);
+            manifest_content.drop();
 
         } else {
-            let mut err: String = "fcheck: unknown command '";
-            string_append(&mut err, &command);
-            let mut err2: String = "'. Use 'scan' or 'check'.\n";
-            string_append(&mut err, &err2);
-            drop_string(err2);
+            let mut err: String = String::new();
+            err.append(&"fcheck: unknown command '");
+            err.append(&command);
+            err.append(&"'. Use 'scan' or 'check'.\n");
             print_string(&err);
-            drop_string(err);
+            err.drop();
             exit_code = 1;
         }
 
-        drop_string(command);
-        drop_string(manifest_path);
+        command.drop();
+        manifest_path.drop();
         return exit_code;
     }
 }
