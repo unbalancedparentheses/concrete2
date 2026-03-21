@@ -127,7 +127,7 @@ pre {
 
 .hero,
 .section-head {
-  margin-bottom: 0.55rem;
+  margin-bottom: 0.7rem;
 }
 
 .hero {
@@ -137,9 +137,9 @@ pre {
 .hero h1,
 .hero h2,
 .section-head h1 {
-  font-size: 1.22rem;
-  line-height: 1.2;
-  margin: 0 0 0.2rem;
+  font-size: 1.7rem;
+  line-height: 1.12;
+  margin: 0 0 0.35rem;
   max-width: none;
 }
 
@@ -151,6 +151,7 @@ pre {
 
 .lede {
   margin: 0;
+  font-size: 1.02rem;
 }
 
 .eyebrow {
@@ -204,16 +205,27 @@ pre {
 
 .home-intro {
   display: grid;
-  gap: 1.4rem;
+  gap: 1.6rem;
   grid-template-columns: 1fr 1fr;
-  margin-top: 0.65rem;
+  margin-top: 1rem;
+}
+
+.home-example {
+  margin-top: 1rem;
+}
+
+.home-example pre {
+  margin: 0 0 0.75rem;
+  max-width: 100%;
+  padding: 0.7rem 0.9rem;
+  font-size: 0.96rem;
 }
 
 .home-panels {
   display: grid;
   gap: 1.2rem;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  margin-top: 1.1rem;
+  margin-top: 1.35rem;
 }
 
 .module-list {
@@ -268,6 +280,10 @@ pre {
 .panel-copy {
   margin: 0 0 0.5rem;
   max-width: 34ch;
+}
+
+.wide-copy {
+  max-width: 48ch;
 }
 
 .compact-index li {

@@ -3,39 +3,57 @@
 {% block content %}
 <section class="hero">
   <p class="eyebrow">Concrete</p>
-  <h2>A systems language for code that must stay understandable under audit.</h2>
+  <h2>Concrete keeps authority, ownership, and trust boundaries visible.</h2>
   <p class="lede">
-    Concrete is built around a simple claim: semantically important program facts should stay visible.
-    Authority should stay visible in function signatures. Ownership and cleanup should stay visible in
-    value movement. Unsafe implementation techniques should stay behind explicit trusted boundaries
-    instead of diffusing through ordinary code. The goal is not maximal convenience. The goal is a
-    language whose behavior, authority surface, and trust boundaries are easier to review mechanically
-    and easier for humans to audit.
+    If a function allocates, reaches the filesystem, crosses into foreign code, or depends on trusted
+    internals, Concrete wants that fact to remain visible. The language is designed for programs whose
+    behavior needs to stay legible under review, not for hiding operational reality behind convenience.
   </p>
+</section>
+
+<section class="home-example">
+  <div class="group">
+    <h3>Visible In The Source</h3>
+    <pre><code>fn read_manifest(path: &String) with(File, Alloc) -&gt; String {
+    let text: String = fs::read_to_string(path)?;
+    defer drop_string(text);
+    return parse_manifest(&text)?;
+}
+
+trusted fn sha256_bytes(bytes: &Bytes) -&gt; Hash {
+    // pointer-level implementation details live here
+}
+</code></pre>
+    <p class="panel-copy">
+      The point is not syntax. The point is that file authority, allocation, cleanup, and trusted
+      implementation boundaries remain obvious at the place where a reviewer looks first.
+    </p>
+  </div>
 </section>
 
 <section class="home-intro">
   <div class="group">
-    <h3>What Concrete Optimizes For</h3>
-    <ul class="module-list">
-      <li><strong>Auditability</strong>: important semantic facts should remain legible instead of disappearing behind abstraction layers</li>
-      <li><strong>Visible authority</strong>: capabilities stay part of the program surface rather than collapsing into ambient authority</li>
-      <li><strong>Visible ownership</strong>: allocation, transfer, and cleanup stay explicit enough to inspect</li>
-      <li><strong>Explicit trust boundaries</strong>: safe code, trusted internals, foreign unsafety, and proof-oriented subsets stay separate and named</li>
-      <li><strong>Small understandable runtime</strong>: no GC, no hidden finalization, no large managed-runtime model</li>
-      <li><strong>Mechanically reviewable evidence</strong>: compiler reports for capabilities, unsafe, allocation, proof, and high-integrity questions</li>
-    </ul>
+    <h3>Why This Matters</h3>
+    <p class="panel-copy wide-copy">
+      Concrete is aimed at systems code where hidden authority, hidden cleanup, and fuzzy trust
+      boundaries make review harder than it should be. It tries to produce programs whose semantics are
+      easier to inspect directly and easier for tooling to summarize mechanically.
+    </p>
+    <p class="panel-copy wide-copy">
+      That means explicit capabilities instead of ambient authority, explicit ownership and cleanup
+      instead of hidden runtime machinery, and explicit trust boundaries between ordinary safe code,
+      trusted internals, foreign code, and proof-oriented subsets.
+    </p>
   </div>
 
   <div class="group">
     <h3>What Concrete Is Not</h3>
-    <ul class="module-list">
-      <li><strong>Not convenience-first</strong>: it does not try to erase ownership, authority, or cleanup costs for the sake of surface ergonomics</li>
-      <li><strong>Not a hidden-runtime language</strong>: it is not moving toward GC, invisible finalization, or background semantic work outside the code’s visible execution model</li>
-      <li><strong>Not abstraction-maximizing</strong>: features have to earn their place by improving clarity or capability, not by making code look shorter in isolation</li>
-      <li><strong>Not “safe by vibes”</strong>: the project separates safe code, trusted implementation techniques, and foreign unsafety explicitly</li>
-      <li><strong>Not a proof-only project</strong>: proofs matter, but they sit on top of a practical hosted systems language rather than replacing one</li>
-    </ul>
+    <p class="panel-copy wide-copy">
+      Concrete is not trying to maximize convenience by erasing operational facts. It is not moving
+      toward GC, invisible finalization, or a large managed runtime. It is not a proof-only project,
+      and it is not trying to blur together safe code, trusted implementation techniques, and foreign
+      unsafety. The language is intentionally opinionated about keeping those boundaries explicit.
+    </p>
   </div>
 </section>
 
