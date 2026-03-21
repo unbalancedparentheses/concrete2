@@ -117,7 +117,7 @@ The trust/effect coherence pass is now in place:
 
 Implemented:
 
-1. stronger `vec`, `string`, and `io` — done
+1. stronger `vec`, `string`, and `io` — done (String now includes `append`, `append_int`, `eq`, `clone`, `starts_with`, `ends_with`, `contains`, `to_lower`, `to_upper`)
 2. `bytes` — done
 3. `slice` — done
 4. borrowed text views via `text` — done
@@ -126,6 +126,10 @@ Implemented:
 7. `env` and `process` — done
 8. `net` (TCP) — done
 9. `args` (command-line argument access) — done
+
+10. `sha256` (SHA-256 hashing) — done
+11. `hex` (hex encode/decode) — done
+12. `ascii` (char classification: `is_digit`, `is_alpha`, `is_whitespace`, etc.) — done
 
 Typed error hardening is now in place across `fs`, `net`, `env`, and `bytes`.
 
@@ -172,6 +176,43 @@ Useful later, but not early priorities:
 The rule is: add collections only when they improve low-level work materially, and keep their ownership, allocation, and error behavior as explicit as `Vec` and `HashMap`.
 
 ## Core Module Direction
+
+### `std.string`
+
+Owned mutable string with explicit allocation and linear ownership.
+
+**String building:** Use `append` with borrowed literals for zero-alloc string construction:
+
+```concrete
+let mut msg: String = String::new();
+msg.append(&"Summary: ");     // no temp, no drop — &"literal" is zero-alloc
+msg.append_int(count);         // append formatted integer
+msg.append(&" items");
+print_string(&msg);
+msg.drop();                    // explicit cleanup of the one owned value
+```
+
+**Methods:**
+- `new() -> String` — empty string
+- `len() -> u64`, `cap() -> u64`, `is_empty() -> bool` — queries
+- `get(at: u64) -> Option<char>` — bounds-checked access
+- `get_unchecked(at: u64) -> char` — unchecked access
+- `push_char(c: char)` — append single character
+- `append(&mut self, other: &String)` — append borrowed string (use with `&"literal"` for zero-alloc)
+- `append_int(&mut self, n: Int)` — append formatted integer
+- `eq(&self, other: &String) -> bool` — byte equality
+- `clone(&self) -> String` — independent copy
+- `starts_with`, `ends_with`, `contains` — substring search
+- `to_lower`, `to_upper` — ASCII case conversion
+- `clear()` — reset length without deallocation
+- `drop(self)` — explicit deallocation
+
+**Preferred cleanup style:** `defer s.drop()` at declaration site for genuinely owned locals:
+```concrete
+let filename: String = get(1);
+defer filename.drop();
+// ... use filename freely, drop runs at scope exit
+```
 
 ### `std.bytes`
 

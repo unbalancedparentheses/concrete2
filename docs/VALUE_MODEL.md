@@ -26,6 +26,25 @@ For FFI and trust boundaries, see [FFI.md](FFI.md).
 - **Copy types** can be used multiple times. Primitives, `&T`, raw pointers, and function pointers are always Copy. Structs and enums opt in with a `Copy` marker.
 - **Linear types** must be consumed exactly once. All structs and enums are linear by default. Branches must agree on consumption. Loops cannot consume linear variables from outer scope.
 
+## Borrowed String Literals
+
+`&"literal"` produces a borrowed `&String` that points directly at the global constant — no heap allocation, no copy. The resulting `String` struct has `cap = 0` to signal it is not heap-owned and must not be freed.
+
+This means string building can consume borrowed literal text without temporary ownership:
+
+```concrete
+// Zero-alloc: no temp created, nothing to drop
+sum.append(&" ok, ");
+print_string(&"hello\n");
+```
+
+Owned string literals (`let s: String = "hello"`) still heap-allocate a mutable copy, since the caller owns and may mutate or drop the value. The distinction is:
+
+| Form | Allocates | Ownership | Must drop |
+|------|-----------|-----------|-----------|
+| `let s: String = "hello"` | Yes (heap copy) | Caller owns | Yes |
+| `&"hello"` | No (points at global) | Borrowed | No |
+
 ## Newtype
 
 ```concrete

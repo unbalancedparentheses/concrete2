@@ -10,6 +10,28 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Phase H cleanup: zero-alloc borrowed string literals, String.append method, example modernization
+
+**Zero-alloc borrowed string literals:** `&"literal"` now points directly at the global constant — no malloc, no memcpy. Previously, every string literal materialization heap-allocated a copy even when only borrowed. The compiler adds a new `strConstRef` SSA variant that Lower emits for `borrow(strLit)` and EmitSSA translates to a stack-only `%struct.String` referencing the global, with `cap = 0` to signal non-owned.
+
+**String.append and String.append_int methods:** `String` now has `append(&mut self, other: &String)` and `append_int(&mut self, n: Int)` methods in the stdlib. Combined with zero-alloc borrowed literals, string building no longer requires temporary owned strings:
+
+```concrete
+// Before: 3 lines per literal append
+let mut suffix: String = " ok, ";
+string_append(&mut sum, &suffix);
+drop_string(suffix);
+
+// After: 1 line, no temp, no drop
+sum.append(&" ok, ");
+```
+
+**Example modernization:** integrity example went from 38 → 0 `drop_string` calls, verify from 15 → 0. All eliminated drops were cleaning up temporaries forced by the old API. Real owned-value drops remain explicit via `.drop()`.
+
+**Stdlib additions:** `std.sha256` (SHA-256 hashing), `std.hex` (hex encode/decode), `std.ascii` (char classification). `String` gained `starts_with`, `ends_with`, `contains`, `to_lower`, `to_upper`, `clone`, `eq` methods.
+
+**What changed strategically:** the main collection/string ergonomics pain point from Phase H is now addressed at the right level — by eliminating unnecessary ownership churn rather than hiding cleanup. Examples now reflect the intended Concrete style: explicit drops for real ownership, zero-cost borrows for literals.
+
 ### Phase H cleanup: match on integers and bools lands as validated language feature
 
 **Integer and bool literal match patterns:** match on integer and bool values now has parser support for negative integer literals (`-1 => ...`) and bool literals (`true => ...`, `false => ...`). Integer match codegen already worked; this change adds the missing semantic validation layer.

@@ -318,6 +318,7 @@ CoreCheck is the post-elaboration semantic authority. It owns all legality rules
 - SSA form: each variable assignment produces a unique register.
 - Phi nodes inserted at control flow merge points.
 - String literals extracted as globals, deduplicated by value across all functions, with globally unique names (`str.0`, `str.1`, ...). Per-function references are renamed to match the global canonical names.
+- Borrowed string literals (`&"literal"`) produce `strConstRef` values instead of `strConst`, signaling that EmitSSA should reference the global constant directly without heap allocation.
 - Generic functions filtered out (only concrete/monomorphized lowered).
 - Every block has exactly one terminator (`br`, `condBr`, `ret`, `unreachable`).
 

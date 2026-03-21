@@ -62,17 +62,16 @@ Interpretation:
 Discovery is complete. The remaining work is to turn the highest-leverage findings into stable language/stdlib/tooling improvements without reopening H as an open-ended exploration phase.
 
 Do next:
-1. extract shared stdlib modules where examples are still duplicating obvious support code
-   - especially parser/storage/integrity helpers like SHA-256 and common string/bytes utilities
-3. finish the next string-ergonomics layer
-   - `starts_with`
-   - `ends_with`
-   - `contains`
-4. improve collection patterns for linear values where examples still fight the container surface
-5. classify the remaining runtime/stack pressure findings cleanly as language, runtime, stdlib, or tooling
-6. keep cross-language comparison follow-through recorded and land it only where it still changes judgment
+1. migrate remaining examples (grep, json, lox, toml, kvstore, http) to the new string API
+2. classify the remaining runtime/stack pressure findings cleanly as language, runtime, stdlib, or tooling
+3. keep cross-language comparison follow-through recorded and land it only where it still changes judgment
 
 Recently landed from this cleanup track:
+- zero-alloc borrowed string literals: `&"literal"` now points at the global constant with no heap allocation, eliminating temporary-string ownership churn
+- `String.append`, `String.append_int` methods: idiomatic string building without temporary owned strings
+- `std.sha256`, `std.hex`, `std.ascii` stdlib modules: examples no longer duplicate SHA-256, hex encoding, or char classification
+- `String` methods: `starts_with`, `ends_with`, `contains`, `to_lower`, `to_upper`, `clone`, `eq`
+- integrity and verify examples modernized: 53 `drop_string` calls eliminated, examples now show the intended Concrete style
 - match on integers and bools: parser support for negative int and bool literal patterns, CoreCheck exhaustiveness for non-enum matches (default arm required unless Bool is fully covered)
 - fix `import` / `pub` visibility so private impl methods and private trait-impl methods no longer leak across module boundaries via import or method-call syntax
 
