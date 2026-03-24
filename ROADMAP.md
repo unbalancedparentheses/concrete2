@@ -26,11 +26,10 @@ The remaining work is narrow and evidence-backed. Do not reopen H as open-ended 
 **Tasks:**
 1. match-as-expression: value-producing `match` so linear types can be bound from branches without dummy-init workarounds — done when `let x = match ... { }` parses and type-checks
 2. clean up stdlib output surface so examples stop using builtin-shaped `print_string` / `print_char` — done when stdlib output reads like coherent library code rather than builtin vocabulary
-3. write a classification of remaining runtime/stack pressure findings into language, runtime, stdlib, or tooling — done when there is a document in `research/` that assigns each finding to exactly one owner
-
-**Not next:**
-1. string `==` operator
-2. broader destructuring syntax
+3. `string.split` and `string.trim` — parser examples reimplement split by hand repeatedly; no workaround exists — done when `String` has `split`, `trim`, `trim_left`, `trim_right` methods
+4. string `==` operator — `.eq()` works but is friction at scale — done when `==` and `!=` work on `String` values
+5. path decomposition: `parent`, `file_name`, `extension` — path construction exists but decomposition is completely absent — done when `Path` or `PathBuf` has all three methods
+6. write a classification of remaining runtime/stack pressure findings into language, runtime, stdlib, or tooling — done when there is a document in `research/` that assigns each finding to exactly one owner
 
 **References:** [phase-h-findings](research/workloads/phase-h-findings.md), [text-and-output-design](research/stdlib-runtime/text-and-output-design.md), [cleanup-ergonomics](research/language/cleanup-ergonomics.md)
 
