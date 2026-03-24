@@ -33,25 +33,7 @@ The remaining work is narrow and evidence-backed. Do not reopen H as open-ended 
 
 **References:** [phase-h-findings](research/workloads/phase-h-findings.md), [text-and-output-design](research/stdlib-runtime/text-and-output-design.md), [cleanup-ergonomics](research/language/cleanup-ergonomics.md)
 
-## 2. Stdlib Gaps and New Examples
-
-**Status:** not started. Do this after Phase H cleanup, before package architecture.
-
-The current examples are all string-heavy (parsers, grep, HTTP). None exercise Concrete's differentiators: capabilities, linear types, trusted boundaries, low-level systems work. The stdlib also has gaps that block non-text workloads.
-
-**Stdlib tasks:**
-1. `fs.readdir` / `fs.walk` — no way to list directory contents — done when a file walker example can traverse a directory tree
-2. buffered I/O — `io.TextFile` does a syscall per byte read — done when grep-style line reading doesn't pay per-byte syscall cost
-3. `string.index_of` / `string.last_index_of` — parsers do this manually with while loops — done when substring search is a method call
-4. `string.replace` — no way to substitute substrings — done when string replacement is a method call
-
-**Example tasks (exercise Concrete's differentiators):**
-1. packet parser with capability separation — parser has `Alloc` only, sender has `Net` + `Console`, shows capability boundaries preventing parser bugs from touching the network — done when the example compiles and demonstrates capability violation is a compile error
-2. ELF/binary inspector — exercises `#[repr(C)]`, raw pointer casts, `packed` structs, binary format handling — done when it reads and prints real ELF headers
-
-**References:** [phase-h-findings](research/workloads/phase-h-findings.md), [showcase-workloads](research/workloads/showcase-workloads.md)
-
-## 3. Package and Artifact Architecture (Phase J)
+## 2. Package and Artifact Architecture (Phase J)
 
 **Status:** not started. This is the next major architectural build-out once H cleanup is done.
 
@@ -67,7 +49,7 @@ The current examples are all string-heavy (parsers, grep, HTTP). None exercise C
 
 **References:** [artifact-driven-compiler](research/compiler/artifact-driven-compiler.md), [package-model](research/packages-tooling/package-model.md), [package-manager-design](research/packages-tooling/package-manager-design.md), [package-testing-tooling](research/packages-tooling/package-testing-tooling.md)
 
-## 4. Formalization and Proof Expansion (Phase I)
+## 3. Formalization and Proof Expansion (Phase I)
 
 **Status:** not started. Do this after package/artifact boundaries are cleaner.
 
@@ -81,7 +63,7 @@ The current examples are all string-heavy (parsers, grep, HTTP). None exercise C
 
 **References:** [formalization-breakdown](research/proof-evidence/formalization-breakdown.md), [formalization-roi](research/proof-evidence/formalization-roi.md), [proving-concrete-functions-in-lean](research/proof-evidence/proving-concrete-functions-in-lean.md), [proof-addon-architecture](research/proof-evidence/proof-addon-architecture.md)
 
-## 5. Adoption and Showcase (Phase K)
+## 4. Adoption and Showcase (Phase K)
 
 **Status:** not started. Only after the package model and the biggest ergonomics gaps are under control.
 
@@ -103,10 +85,12 @@ The current examples are all string-heavy (parsers, grep, HTTP). None exercise C
 8. Interactive playground / REPL — highest reach, highest cost
 9. Package ecosystem demo — practical stdlib usage
 10. Conference talk with storytelling — narrative-driven
+11. Packet parser — binary protocol decoding with capability-controlled I/O
+12. ELF inspector — structured binary parsing, no `Unsafe` in user code
 
 **References:** [adoption-strategy](research/workloads/adoption-strategy.md), [showcase-workloads](research/workloads/showcase-workloads.md)
 
-## 6. Project and Operational Maturity (Phase L1)
+## 5. Project and Operational Maturity (Phase L1)
 
 **Status:** not started. This turns the compiler into a durable reviewable operational system.
 
@@ -123,7 +107,7 @@ The current examples are all string-heavy (parsers, grep, HTTP). None exercise C
 
 **References:** [evidence-review-workflows](research/proof-evidence/evidence-review-workflows.md), [proof-evidence-artifacts](research/proof-evidence/proof-evidence-artifacts.md), [trust-multipliers](research/proof-evidence/trust-multipliers.md), [developer-tooling](research/packages-tooling/developer-tooling.md)
 
-## 7. Backend Plurality (Phase L2)
+## 6. Backend Plurality (Phase L2)
 
 **Status:** not started. Keep explicit and late.
 
@@ -135,7 +119,7 @@ The current examples are all string-heavy (parsers, grep, HTTP). None exercise C
 
 **References:** [qbe-backend](research/compiler/qbe-backend.md), [qbe-in-concrete](research/compiler/qbe-in-concrete.md), [mlir-backend-shape](research/compiler/mlir-backend-shape.md), [optimization-policy](research/compiler/optimization-policy.md)
 
-## 8. Concurrency (Phase M)
+## 7. Concurrency (Phase M)
 
 **Status:** not started. Keep the model explicit, small, and late.
 
@@ -146,7 +130,7 @@ The current examples are all string-heavy (parsers, grep, HTTP). None exercise C
 
 **References:** [concurrency](research/stdlib-runtime/concurrency.md), [long-term-concurrency](research/stdlib-runtime/long-term-concurrency.md)
 
-## 9. Allocation Profiles (Phase N)
+## 8. Allocation Profiles (Phase N)
 
 **Status:** not started. Do this after the broader compiler/runtime structure is more stable.
 
@@ -158,7 +142,7 @@ The current examples are all string-heavy (parsers, grep, HTTP). None exercise C
 
 References: [allocation-budgets](research/stdlib-runtime/allocation-budgets.md), [arena-allocation](research/stdlib-runtime/arena-allocation.md), [execution-cost](research/stdlib-runtime/execution-cost.md)
 
-## 10. Research and Evidence-Gated Features (Phase O)
+## 9. Research and Evidence-Gated Features (Phase O)
 
 **Status:** not started. Keep visible without forcing premature language growth.
 
