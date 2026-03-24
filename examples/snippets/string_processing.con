@@ -17,7 +17,7 @@ fn parse_and_sum(input: String) with(Std) -> Int {
                 Result#Ok { value } => { sum = sum + value; },
                 Result#Err { value } => {},
             }
-            drop_string(part);
+            part.drop();
             start = i + 1;
         }
         i = i + 1;
@@ -31,10 +31,10 @@ fn parse_and_sum(input: String) with(Std) -> Int {
             Result#Ok { value } => { sum = sum + value; },
             Result#Err { value } => {},
         }
-        drop_string(last);
+        last.drop();
     }
 
-    drop_string(input);
+    input.drop();
     return sum;
 }
 
@@ -42,11 +42,12 @@ fn main() with(Std) -> Int {
     let input: String = "10,20,30,40";
     let result: Int = parse_and_sum(input);
     // Print: "Sum: 100"
-    let label: String = "Sum: ";
     let num_str: String = int_to_string(result);
-    let msg: String = string_concat(label, num_str);
+    let mut msg: String = "Sum: ";
+    msg.append(&num_str);
+    num_str.drop();
     print_string(&msg);
     print_char(10);
-    drop_string(msg);
+    msg.drop();
     return result;
 }
