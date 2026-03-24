@@ -1,6 +1,6 @@
 # Concrete Roadmap
 
-This document answers one question: what should happen next, in order.
+This document answers one question: **what should happen next, in order.**
 
 For landed milestones, see [CHANGELOG.md](CHANGELOG.md).
 For compiler structure, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/PASSES.md](docs/PASSES.md).
@@ -9,264 +9,160 @@ For subsystem references, see [docs/FFI.md](docs/FFI.md), [docs/ABI.md](docs/ABI
 
 Concrete should stay small enough to remain readable, auditable, and mechanically understandable. New work should be judged by grammar cost, audit cost, and proof cost, not only by expressiveness.
 
-## Current Position
+## Where We Are
 
-The Lean 4 compiler implements the full current pipeline:
+The Lean 4 compiler implements the full pipeline:
 
-`Parse -> Resolve -> Check -> Elab -> CoreCheck -> Mono -> Lower -> EmitSSA -> LLVM IR`
+`Parse → Resolve → Check → Elab → CoreCheck → Mono → Lower → EmitSSA → LLVM IR`
 
-Major landed state belongs in [CHANGELOG.md](CHANGELOG.md). The short version is:
-- the core compiler pipeline, stdlib foundation, report surfaces, and project workflow are real
-- the main missing structural pieces are package/artifact architecture, broader formalization, backend plurality, and a fuller runtime story
+The core language, stdlib foundation, report surfaces, and project workflow are real. Phase H (real-program pressure testing) is nearly complete — discovery is done, cleanup is wrapping up. The main missing structural pieces are package/artifact architecture, broader formalization, backend plurality, and a fuller runtime story.
 
-Current active work:
-- finishing the remaining high-leverage Phase H cleanup items exposed by real programs
+## What Happens Next
 
-Next major build-out:
-- **Phase J Foundation** — artifact, package, and workspace architecture
+### 1. Finish Phase H Cleanup
 
-## Phase Status
+**Status:** active — discovery complete, cleanup wrapping up.
 
-| Phase | Focus | Status |
-|------|-------|--------|
-| A-G | Core language, safety, testing, execution model | Done |
-| H | Real-program pressure testing | Active — discovery complete, cleanup in progress |
-| I | Formalization and proof expansion | Not started |
-| J | Package and dependency ecosystem | Not started |
-| K | Adoption and showcase | Not started |
-| L1 | Project and operational maturity | Not started |
-| L2 | Backend plurality and codegen maturity | Not started |
-| M | Concurrency maturity and runtime plurality | Not started |
-| N | Allocation profiles and bounded allocation | Not started |
-| O | Research phase and evidence-gated features | Not started |
-
-Phase H detail lives in:
-- [research/workloads/phase-h-summary.md](research/workloads/phase-h-summary.md)
-- [research/workloads/phase-h-findings.md](research/workloads/phase-h-findings.md)
-
-The phase itself succeeded in purpose: Concrete was exercised by real programs, structural weaknesses were exposed, and the project now has evidence-backed priorities. What remains from Phase H is follow-through, not discovery:
-- package/project/tooling follow-through now lives in **Phase J**
-- stdlib/language friction follow-through now lives in **Phase H Cleanup**
-- runtime/stack pressure classification and cross-language comparison follow-through remain recorded in the Phase H notes
-- long-horizon questions remain recorded in the research notes until evidence justifies implementation
-
-Interpretation:
-- **Phase H is still active as cleanup**
-- **Phase J is the next major architectural build-out**
-- small high-leverage H cleanup items should still land whenever they are cheaper than beginning a large J subproject
-
-## Linear Sequence
-
-### 1. Phase H Cleanup: Finish The Remaining Real-Program Follow-Through
-
-Discovery is complete. The remaining work is to turn the highest-leverage findings into stable language/stdlib/tooling improvements without reopening H as an open-ended exploration phase.
+The remaining work is narrow and evidence-backed. Do not reopen H as open-ended exploration.
 
 Do next:
-1. migrate remaining examples (grep, json, lox, toml, kvstore, http) to the new string API
-2. classify the remaining runtime/stack pressure findings cleanly as language, runtime, stdlib, or tooling
-3. keep cross-language comparison follow-through recorded and land it only where it still changes judgment
+1. match-as-expression: value-producing `match` so linear types can be bound from branches without dummy-init workarounds
+2. classify remaining runtime/stack pressure findings as language, runtime, stdlib, or tooling
+3. clean up stdlib output surface so examples stop using builtin-shaped `print_string` / `print_char`
 
-Recently landed from this cleanup track:
-- zero-alloc borrowed string literals: `&"literal"` now points at the global constant with no heap allocation, eliminating temporary-string ownership churn
-- `String.append`, `String.append_int` methods: idiomatic string building without temporary owned strings
-- `std.sha256`, `std.hex`, `std.ascii` stdlib modules: examples no longer duplicate SHA-256, hex encoding, or char classification
-- `String` methods: `starts_with`, `ends_with`, `contains`, `to_lower`, `to_upper`, `clone`, `eq`
-- integrity and verify examples modernized: 53 `drop_string` calls eliminated, examples now show the intended Concrete style
-- match on integers and bools: parser support for negative int and bool literal patterns, CoreCheck exhaustiveness for non-enum matches (default arm required unless Bool is fully covered)
-- fix `import` / `pub` visibility so private impl methods and private trait-impl methods no longer leak across module boundaries via import or method-call syntax
-
-Do later, only if evidence still demands it:
-- string `==`
-- destructuring `let`
-
-Why first:
-- these are still the most visible daily-writing friction points found by real programs
-- several of them are cheap compared to the structural work in J
-- keeping them explicit prevents the roadmap from pretending all remaining work is architectural
-
-Primary references:
-- [research/workloads/phase-h-findings.md](research/workloads/phase-h-findings.md)
-- [research/stdlib-runtime/text-and-output-design.md](research/stdlib-runtime/text-and-output-design.md)
-- [research/stdlib-runtime/runtime-collections.md](research/stdlib-runtime/runtime-collections.md)
-- [research/stdlib-runtime/iterators.md](research/stdlib-runtime/iterators.md)
-- [research/language/cleanup-ergonomics.md](research/language/cleanup-ergonomics.md)
+Do later, only if evidence demands it:
+- string `==` operator
+- broader destructuring syntax
 
 Exit criterion:
-- examples stop reimplementing obvious string/helpers repeatedly
-- the current best Concrete style is visible in the example corpus
-- remaining language-pressure candidates are clearly evidence-backed rather than general frustration
-- the remaining runtime/stack questions are classified rather than left ambient
+- examples show the intended Concrete style without workarounds
+- expression ergonomics pressure is classified as "needs a feature" vs "needs a better idiom"
+- runtime/stack questions are classified, not ambient
 
-### 2. Phase J Foundation: Artifact And Package Architecture
+References: [phase-h-findings](research/workloads/phase-h-findings.md), [text-and-output-design](research/stdlib-runtime/text-and-output-design.md), [cleanup-ergonomics](research/language/cleanup-ergonomics.md)
 
-This is the next major architectural priority. It is the largest structural blocker left in the project once the short Phase H cleanup tail is under control.
+### 2. Package and Artifact Architecture (Phase J)
+
+**Status:** not started. Largest structural blocker once H cleanup is done.
 
 Do next:
-1. incremental compilation: serialize pipeline artifacts, cache by source hash, skip unchanged modules
-2. define the third-party dependency model: version constraints, lockfile semantics, dependency resolution
-3. split interface-facing artifacts from body-bearing artifacts
-4. define workspace and multi-package behavior
-5. make package/dependency reasoning operate on explicit graph artifacts
-6. make testing tooling package-aware
-7. define the first authority-budget path at module/package scope
-8. complete empirical cross-target FFI/ABI validation for the package/workspace model
-9. define the provenance-aware publishing direction early enough that package identity and graph artifacts do not need redesign later
-
-Why first:
-- without this, serious projects still pay workflow tax
-- later proof, adoption, and operational work all depend on cleaner artifact and package boundaries
-- it is a stronger bottleneck than any one local language-ergonomics issue
-
-Primary references:
-- [research/compiler/artifact-driven-compiler.md](research/compiler/artifact-driven-compiler.md)
-- [research/packages-tooling/package-model.md](research/packages-tooling/package-model.md)
-- [research/packages-tooling/package-manager-design.md](research/packages-tooling/package-manager-design.md)
-- [research/packages-tooling/package-testing-tooling.md](research/packages-tooling/package-testing-tooling.md)
-- [research/compiler/compiler-dataflow-ideas.md](research/compiler/compiler-dataflow-ideas.md)
+1. incremental compilation: serialize artifacts, cache by source hash, skip unchanged modules
+2. third-party dependency model: version constraints, lockfile, resolution
+3. split interface artifacts from body artifacts
+4. workspace and multi-package support
+5. package-aware testing tooling
+6. first authority-budget path at module/package scope
+7. cross-target FFI/ABI validation
+8. provenance-aware publishing direction (before package identity needs redesign)
 
 Exit criterion:
 - incremental rebuilds exist
 - package/dependency semantics are explicit
 - workspaces are real
-- interface/body artifact boundaries are no longer muddy
-- package graph artifacts are explicit enough to support later trust/publishing work
-- the first authority-budget path is structurally possible
-- cross-target FFI/ABI validation is no longer hand-wavy
-- the package graph is not heading toward a publishing/trust-model redesign
+- package graph supports later trust/publishing work
 
-### 3. Phase I: Formalization And Proof Expansion
+References: [artifact-driven-compiler](research/compiler/artifact-driven-compiler.md), [package-model](research/packages-tooling/package-model.md), [package-manager-design](research/packages-tooling/package-manager-design.md), [package-testing-tooling](research/packages-tooling/package-testing-tooling.md)
 
-Once the artifact/package model is cleaner and the language surface has absorbed the biggest real-program friction, deepen the proof story.
+### 3. Formalization and Proof Expansion (Phase I)
+
+**Status:** not started.
 
 Do next:
 1. broaden the pure Core proof fragment
 2. stabilize the provable subset as an actual target
-3. add source-to-Core and Core-to-proof traceability
-4. make proof-backed authority reports a real artifact rather than only a research direction
-5. make the user-program proof workflow real and artifact-driven
-6. push selected compiler-preservation work further where it is tractable
-
-Primary references:
-- [research/proof-evidence/formalization-breakdown.md](research/proof-evidence/formalization-breakdown.md)
-- [research/proof-evidence/formalization-roi.md](research/proof-evidence/formalization-roi.md)
-- [research/proof-evidence/proving-concrete-functions-in-lean.md](research/proof-evidence/proving-concrete-functions-in-lean.md)
-- [research/proof-evidence/proof-addon-architecture.md](research/proof-evidence/proof-addon-architecture.md)
+3. source-to-Core and Core-to-proof traceability
+4. proof-backed authority reports as real artifacts
+5. user-program proof workflow, artifact-driven
 
 Exit criterion:
-- the proof workflow is broader, clearer, and tied to stable artifacts rather than only to a narrow pure fragment
+- proof workflow is broader, clearer, and tied to stable artifacts
 
-### 4. Phase K: Adoption, Positioning, And Showcase Pull
+References: [formalization-breakdown](research/proof-evidence/formalization-breakdown.md), [formalization-roi](research/proof-evidence/formalization-roi.md), [proving-concrete-functions-in-lean](research/proof-evidence/proving-concrete-functions-in-lean.md), [proof-addon-architecture](research/proof-evidence/proof-addon-architecture.md)
 
-Only after the package floor and the biggest ergonomics problems are under better control should Concrete optimize for public pull.
+### 4. Adoption and Showcase (Phase K)
+
+**Status:** not started. Only after package model and ergonomics are solid.
 
 Do next:
-1. define signature domains where Concrete should be unusually strong
-2. curate the public showcase corpus
+1. define domains where Concrete should be unusually strong
+2. curate public showcase corpus
 3. improve onboarding and example presentation
-4. define the public stability / experimental surface
-5. sharpen positioning relative to neighboring systems languages
+4. define stability / experimental surface
+5. sharpen positioning vs neighboring systems languages
 
 Demo types, ranked by impact:
-1. **"Spot the bug" side-by-side** — same program in C/Rust/Concrete, C has a hidden capability leak, Concrete catches it at compile time
-2. **Live audit of a real dependency** — take a C library's API, show how `with()` signatures reveal what it actually touches
-3. **Privilege-separated tool end-to-end** — build a tool on video where hasher can't touch network, reporter can't read files
-4. **Formal proof demo** — write a function, state a property in Lean, prove it ("correct because proved, not because tested")
-5. **Performance benchmark against C** — SHA-256, JSON parsing, etc. Systems language credibility requires being in the same ballpark
-6. **Capability escalation attack (blocked)** — deliberately try to sneak network access into a pure function, compiler says no
-7. **Rewrite a 500-line C file** — line count stays similar but capabilities make the security model explicit
-8. **Interactive playground / REPL** — browser-based "try Concrete in 30 seconds" (highest reach, highest build cost)
-9. **Package ecosystem demo** — import std.sha256, std.hex, build a tool. Shows the language is practical
-10. **Conference talk with storytelling** — "we had a bug that capabilities would have caught" (narrative-driven, not self-distributing)
+1. "Spot the bug" side-by-side — C/Rust/Concrete, C has a hidden capability leak
+2. Live audit of a real dependency — `with()` signatures reveal what code touches
+3. Privilege-separated tool end-to-end — hasher can't touch network, reporter can't read files
+4. Formal proof demo — correct because proved, not because tested
+5. Performance benchmark against C — SHA-256, JSON parsing
+6. Capability escalation attack (blocked) — compiler says no
+7. Rewrite a 500-line C file — capabilities make security explicit
+8. Interactive playground / REPL — highest reach, highest cost
+9. Package ecosystem demo — practical stdlib usage
+10. Conference talk with storytelling — narrative-driven
 
-Primary references:
-- [research/workloads/adoption-strategy.md](research/workloads/adoption-strategy.md)
-- [research/workloads/showcase-workloads.md](research/workloads/showcase-workloads.md)
-- [research/meta/complete-language-system.md](research/meta/complete-language-system.md)
+References: [adoption-strategy](research/workloads/adoption-strategy.md), [showcase-workloads](research/workloads/showcase-workloads.md)
 
-### 5. Phase L1: Project And Operational Maturity
+### 5. Project and Operational Maturity (Phase L1)
 
-Turn the language/compiler into a durable operational system.
+**Status:** not started.
 
 Do next:
 1. machine-readable reports
-2. verified FFI envelopes and reportable FFI boundary facts
+2. verified FFI envelopes
 3. trust bundles and report-first review workflows
 4. semantic query/search over compiler facts
-5. semantic compatibility checks and trust-drift diffing
-6. review-policy gates over authority, trusted, FFI, and proof-facing facts
-7. coverage tooling over tests, reports, and proof-facing artifacts
+5. compatibility checks and trust-drift diffing
+6. review-policy gates
+7. coverage tooling over tests, reports, and proof artifacts
 8. release/compatibility discipline
-9. editor/LSP baseline, developer feedback loop, and dependency auditing
+9. editor/LSP baseline and dependency auditing
 
-Primary references:
-- [research/proof-evidence/evidence-review-workflows.md](research/proof-evidence/evidence-review-workflows.md)
-- [research/proof-evidence/proof-evidence-artifacts.md](research/proof-evidence/proof-evidence-artifacts.md)
-- [research/proof-evidence/trust-multipliers.md](research/proof-evidence/trust-multipliers.md)
-- [research/packages-tooling/developer-tooling.md](research/packages-tooling/developer-tooling.md)
+References: [evidence-review-workflows](research/proof-evidence/evidence-review-workflows.md), [trust-multipliers](research/proof-evidence/trust-multipliers.md), [developer-tooling](research/packages-tooling/developer-tooling.md)
 
-### 6. Phase L2: Backend Plurality And Codegen Maturity
+### 6. Backend Plurality (Phase L2)
 
-Backend plurality should remain explicit and late.
+**Status:** not started. Keep explicit and late.
 
 Do next:
-1. stabilize SSA as the backend contract in practice
-2. evaluate QBE as the first lightweight second-backend experiment
-3. add cross-backend validation and stronger emitted-code inspection
-4. improve debug-info and codegen maturity
+1. stabilize SSA as the backend contract
+2. evaluate QBE as first lightweight second backend
+3. cross-backend validation and emitted-code inspection
+4. debug-info and codegen maturity
 
-Primary references:
-- [research/compiler/qbe-backend.md](research/compiler/qbe-backend.md)
-- [research/compiler/qbe-in-concrete.md](research/compiler/qbe-in-concrete.md)
-- [research/compiler/mlir-backend-shape.md](research/compiler/mlir-backend-shape.md)
-- [research/compiler/optimization-policy.md](research/compiler/optimization-policy.md)
+References: [qbe-backend](research/compiler/qbe-backend.md), [qbe-in-concrete](research/compiler/qbe-in-concrete.md), [mlir-backend-shape](research/compiler/mlir-backend-shape.md), [optimization-policy](research/compiler/optimization-policy.md)
 
-### 7. Phase M: Concurrency Maturity And Runtime Plurality
+### 7. Concurrency (Phase M)
 
-Keep the concurrency story explicit, auditable, and small.
+**Status:** not started.
 
 Intended shape:
 - structured concurrency as semantic center
-- OS threads plus message passing as the base primitive
-- evented I/O only as a later specialized model
+- OS threads + message passing as base primitive
+- evented I/O only as later specialized model
 
-Primary references:
-- [research/stdlib-runtime/concurrency.md](research/stdlib-runtime/concurrency.md)
-- [research/stdlib-runtime/long-term-concurrency.md](research/stdlib-runtime/long-term-concurrency.md)
+References: [concurrency](research/stdlib-runtime/concurrency.md), [long-term-concurrency](research/stdlib-runtime/long-term-concurrency.md)
 
-### 8. Phase N: Allocation Profiles And Bounded Allocation
+### 8. Allocation Profiles (Phase N)
 
-Strengthen allocation behavior as an audit and high-integrity surface.
+**Status:** not started.
 
 Do next:
 1. strengthen `--report alloc`
-2. add enforceable `NoAlloc`
-3. add structural boundedness reports where they remain explainable
-4. only explore `BoundedAlloc(N)` where the story remains structurally explainable
+2. enforceable `NoAlloc`
+3. structural boundedness reports where explainable
+4. `BoundedAlloc(N)` only where structurally explainable
 
-Primary references:
-- [research/stdlib-runtime/allocation-budgets.md](research/stdlib-runtime/allocation-budgets.md)
-- [research/stdlib-runtime/arena-allocation.md](research/stdlib-runtime/arena-allocation.md)
-- [research/stdlib-runtime/execution-cost.md](research/stdlib-runtime/execution-cost.md)
+References: [allocation-budgets](research/stdlib-runtime/allocation-budgets.md), [arena-allocation](research/stdlib-runtime/arena-allocation.md), [execution-cost](research/stdlib-runtime/execution-cost.md)
 
-### 9. Phase O: Research And Evidence-Gated Features
+### 9. Research and Evidence-Gated Features (Phase O)
 
-Keep high-value ideas visible without forcing premature language growth.
+**Status:** not started. Keep visible without forcing premature language growth.
 
-Candidates:
-- typestate
-- arena allocation
-- execution boundedness
-- layout reports
-- binary-format DSLs
-- ghost/proof-only syntax
-- hardware capability mapping
-- capability sandbox profiles
-- Miri-style interpreter direction
+Candidates: typestate, arena allocation, execution boundedness, layout reports, binary-format DSLs, ghost/proof-only syntax, hardware capability mapping, capability sandbox profiles, Miri-style interpreter.
 
-Primary references:
-- [research/meta/high-leverage-systems-ideas.md](research/meta/high-leverage-systems-ideas.md)
-- [research/meta/ten-x-improvements.md](research/meta/ten-x-improvements.md)
-- [research/language/typestate.md](research/language/typestate.md)
+References: [high-leverage-systems-ideas](research/meta/high-leverage-systems-ideas.md), [ten-x-improvements](research/meta/ten-x-improvements.md), [typestate](research/language/typestate.md)
 
 ## Design Constraints
 
@@ -283,22 +179,3 @@ Primary references:
 - formalization scope is still narrow
 - type-coercion completeness is not proved, only hardened
 - the linearity checker is tested heavily but not formally audited
-
-## Longer-Horizon Multipliers
-
-1. proof-backed trust claims
-2. stronger audit outputs
-3. a smaller trusted computing base
-4. a better capability/sandboxing story
-
-Important carry-forwards from earlier phases that are still owned later:
-- proof-backed authority reports belong to **Phase I** and later **L1**
-- verified FFI envelopes, compatibility checking, trust-drift diffing, and coverage tooling belong to **L1**
-- structural boundedness reports belong to **N**
-- capability sandbox profiles belong to **O** unless earlier evidence forces them forward
-
-For more:
-- [research/meta/ten-x-improvements.md](research/meta/ten-x-improvements.md)
-- [research/language/capability-sandboxing.md](research/language/capability-sandboxing.md)
-- [research/proof-evidence/trust-multipliers.md](research/proof-evidence/trust-multipliers.md)
-- [research/meta/ai-assisted-optimization.md](research/meta/ai-assisted-optimization.md)
