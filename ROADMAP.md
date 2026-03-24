@@ -47,10 +47,7 @@ The current examples are all string-heavy (parsers, grep, HTTP). None exercise C
 
 **Example tasks (exercise Concrete's differentiators):**
 1. packet parser with capability separation — parser has `Alloc` only, sender has `Net` + `Console`, shows capability boundaries preventing parser bugs from touching the network — done when the example compiles and demonstrates capability violation is a compile error
-2. memory allocator (arena or bump) — exercises `trusted`, pointer arithmetic, `Unsafe` capability — done when the allocator works and allocation profiles can report on it
-3. ELF/binary inspector — exercises `#[repr(C)]`, raw pointer casts, `packed` structs, binary format handling — done when it reads and prints real ELF headers
-4. bytecode compiler — compiles a small expression language to bytecode, pairs with the existing VM example — done when it produces bytecode the VM can execute
-5. ring buffer — fixed-size, no allocation after init, exercises `trusted` and `NoAlloc`-friendly patterns — done when it works without heap allocation after construction
+2. ELF/binary inspector — exercises `#[repr(C)]`, raw pointer casts, `packed` structs, binary format handling — done when it reads and prints real ELF headers
 
 **References:** [phase-h-findings](research/workloads/phase-h-findings.md), [showcase-workloads](research/workloads/showcase-workloads.md)
 
