@@ -17,8 +17,6 @@ The Lean 4 compiler implements the full pipeline:
 
 The core language, stdlib foundation, report surfaces, and project workflow are real. Phase H (real-program pressure testing) is nearly complete: discovery is done, cleanup is wrapping up. The main missing structural pieces are package/artifact architecture, broader formalization, backend plurality, and a fuller runtime story.
 
-## The Sequence
-
 ## 1. Finish Phase H Cleanup
 
 **Status:** active — discovery complete, cleanup wrapping up.
@@ -159,6 +157,8 @@ Candidates:
 9. Miri-style interpreter
 
 References: [high-leverage-systems-ideas](research/meta/high-leverage-systems-ideas.md), [ten-x-improvements](research/meta/ten-x-improvements.md), [typestate](research/language/typestate.md)
+
+---
 
 ## Design Constraints
 
