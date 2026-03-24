@@ -98,6 +98,7 @@ inductive CheckError where
   | assignToImmutable (name : String)
   | assignToFrozen (name : String)
   | assignToBorrowed (name : String)
+  | assignOverwritesLinear (name : String)
   -- Slice 2: Type mismatch / operator
   | typeMismatch (ctx : String) (expected : String) (actual : String)
   | cannotDerefNonRef
@@ -182,6 +183,7 @@ def CheckError.message : CheckError → String
   | .assignToImmutable name => s!"cannot assign to immutable variable '{name}'"
   | .assignToFrozen name => s!"cannot assign to '{name}': variable is frozen by borrow block"
   | .assignToBorrowed name => s!"cannot assign to '{name}': variable is borrowed"
+  | .assignOverwritesLinear name => s!"cannot reassign linear variable '{name}'"
   -- Slice 2
   | .typeMismatch ctx expected actual => s!"type mismatch in {ctx}: expected {expected}, got {actual}"
   -- arrayIndexNotInteger, indexingNonArray, cannotCast moved to CoreCheck
@@ -258,6 +260,7 @@ def CheckError.hint : CheckError → Option String
   | .cannotMutBorrowImmutable _ => some "declare with 'let mut' to allow mutable borrowing"
   | .assignToFrozen _ => some "the variable is frozen by an active borrow block"
   | .assignToBorrowed _ => some "wait for the borrow to end before assigning"
+  | .assignOverwritesLinear _ => some "linear variables cannot be reassigned — use a new binding instead"
   | .missingCapability _ cap caller => some s!"add 'with({cap})' to '{caller}', or wrap the call in a function that declares it"
   | .cannotInferCapVariable cap _ => some s!"provide an explicit capability for '{cap}' at the call site"
   | _ => none
@@ -1721,6 +1724,9 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
         throwCheck (.assignToImmutable name) (some stmt.getSpan)
       if info.state == .frozen then
         throwCheck (.assignToFrozen name) (some stmt.getSpan)
+      -- Linear variables cannot be reassigned. One binding, one resource.
+      if !info.isCopy then
+        throwCheck (.assignOverwritesLinear name) (some stmt.getSpan)
       let env ← getEnv
       let activeRefs := activeBorrowRefs env name
       if activeRefs.any (fun refInfo => match refInfo.ty with | .ref _ | .refMut _ => true | _ => false) then

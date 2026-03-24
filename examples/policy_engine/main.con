@@ -128,10 +128,9 @@ mod Gate {
         let v: i32 = evaluate(rules, req);
 
         // Print: [ALLOW] admin read source_code
-        let mut v_label: String = "DENY";
-        if v == 1 { v_label = "ALLOW"; }
+        let v_label: &String = if v == 1 { &"ALLOW" } else { &"DENY" };
         let mut out: String = "[";
-        out.append(&v_label);
+        out.append(v_label);
         out.append(&"] ");
         out.append(&p_name);
         out.append(&" ");
@@ -141,7 +140,6 @@ mod Gate {
         print_string(&out);
         print_char(10);
         out.drop();
-        v_label.drop();
         p_name.drop();
         r_name.drop();
         a_name.drop();
