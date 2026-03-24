@@ -26,7 +26,7 @@ The remaining work is narrow and evidence-backed. Do not reopen H as open-ended 
 **Tasks:**
 1. match-as-expression: value-producing `match` so linear types can be bound from branches without dummy-init workarounds — done when `let x = match ... { }` parses and type-checks
 2. clean up stdlib output surface so examples stop using builtin-shaped `print_string` / `print_char` — done when stdlib output reads like coherent library code rather than builtin vocabulary
-3. classify remaining runtime/stack pressure findings as language, runtime, stdlib, or tooling — done when every finding has a clear owner and runtime/stack questions are not ambient
+3. write a classification of remaining runtime/stack pressure findings into language, runtime, stdlib, or tooling — done when there is a document in `research/` that assigns each finding to exactly one owner
 
 **Not next:**
 1. string `==` operator
@@ -39,14 +39,14 @@ The remaining work is narrow and evidence-backed. Do not reopen H as open-ended 
 **Status:** not started. This is the next major architectural build-out once H cleanup is done.
 
 **Tasks:**
-1. incremental compilation: serialize artifacts, cache by source hash, skip unchanged modules — done when unchanged modules are skipped on rebuild
-2. third-party dependency model: version constraints, lockfile, resolution — done when package/dependency semantics are explicit
-3. split interface artifacts from body artifacts — done when interface/body boundaries are clean enough for separate caching
-4. workspace and multi-package support — done when workspaces are real
-5. package-aware testing tooling — done when tests can target individual packages
-6. first authority-budget path at module/package scope — done when the authority-budget path is structurally possible
-7. cross-target FFI/ABI validation — done when validation is empirical, not hand-wavy
-8. provenance-aware publishing direction — done when the package graph is not heading toward a trust-model redesign
+1. incremental compilation: serialize pipeline artifacts, cache by source hash, skip unchanged modules — done when unchanged modules are skipped on rebuild
+2. split interface artifacts from body artifacts — done when interface/body boundaries are clean enough for separate caching (needed before dependency resolution can be fast)
+3. third-party dependency model: version constraints, lockfile, resolution — done when package/dependency semantics are explicit
+4. workspace and multi-package support — done when a multi-package project builds and tests from a single root (depends on dependency model)
+5. package-aware testing tooling — done when tests can target individual packages (depends on workspaces)
+6. cross-target FFI/ABI validation — done when validation is empirical, not hand-wavy (depends on package boundaries being real)
+7. first authority-budget path at module/package scope — done when the authority-budget path is structurally possible (depends on package graph)
+8. provenance-aware publishing direction — done when the package graph is not heading toward a trust-model redesign (design-only, no implementation yet)
 
 **References:** [artifact-driven-compiler](research/compiler/artifact-driven-compiler.md), [package-model](research/packages-tooling/package-model.md), [package-manager-design](research/packages-tooling/package-manager-design.md), [package-testing-tooling](research/packages-tooling/package-testing-tooling.md)
 
