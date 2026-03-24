@@ -87,6 +87,9 @@ The remaining work is narrow and evidence-backed. Do not reopen H as open-ended 
 10. Conference talk with storytelling — narrative-driven
 11. Packet parser — binary protocol decoding with capability-controlled I/O
 12. ELF inspector — structured binary parsing, no `Unsafe` in user code
+ 13. FFI example — minimal C interop with `with(Unsafe)` only at the boundary and `trusted` wrappers around the foreign surface
+ 14. Ownership-heavy data structure — linked list or tree using `Heap<T>`, linear ownership, and deterministic cleanup
+ 15. No-alloc example — fixed-buffer state machine or ring buffer, but only once the allocation-profile story is concrete enough to make the example honest
 
 **References:** [adoption-strategy](research/workloads/adoption-strategy.md), [showcase-workloads](research/workloads/showcase-workloads.md)
 
