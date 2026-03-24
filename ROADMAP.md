@@ -9,7 +9,7 @@ For subsystem references, see [docs/FFI.md](docs/FFI.md), [docs/ABI.md](docs/ABI
 
 Concrete should stay small enough to remain readable, auditable, and mechanically understandable. New work should be judged by grammar cost, audit cost, and proof cost, not only by expressiveness.
 
-## Where We Are
+## Current Position
 
 The Lean 4 compiler implements the full pipeline:
 
@@ -28,8 +28,9 @@ The remaining work is narrow and evidence-backed. Do not reopen H as open-ended 
 2. clean up stdlib output surface so examples stop using builtin-shaped `print_string` / `print_char` — done when stdlib output reads like coherent library code rather than builtin vocabulary
 3. `string.split` and `string.trim` — parser examples reimplement split by hand repeatedly; no workaround exists — done when `String` has `split`, `trim`, `trim_left`, `trim_right` methods
 4. path decomposition: `parent`, `file_name`, `extension` — path construction exists but decomposition is completely absent — done when `Path` or `PathBuf` has all three methods
-5. write a classification of remaining runtime/stack pressure findings into language, runtime, stdlib, or tooling — done when there is a document in `research/` that assigns each finding to exactly one owner
-6. string `==` operator — `.eq()` works but is friction at scale — done when `==` and `!=` work on `String` values
+5. minimal FFI pressure test — FFI is implemented but has zero small end-to-end validations — done when there is one minimal example that calls C from Concrete with `with(Unsafe)` at the boundary and `trusted` wrappers
+6. write a classification of remaining runtime/stack pressure findings into language, runtime, stdlib, or tooling — done when there is a document in `research/` that assigns each finding to exactly one owner
+7. string `==` operator — `.eq()` works but is friction at scale — done when `==` and `!=` work on `String` values
 
 **References:** [phase-h-findings](research/workloads/phase-h-findings.md), [text-and-output-design](research/stdlib-runtime/text-and-output-design.md), [cleanup-ergonomics](research/language/cleanup-ergonomics.md)
 
@@ -74,22 +75,23 @@ The remaining work is narrow and evidence-backed. Do not reopen H as open-ended 
 4. define stability / experimental surface — done when users know what is stable and what is not
 5. sharpen positioning vs neighboring systems languages — done when the pitch is one paragraph, not a lecture
 
-**Demo types, ranked by impact:**
-1. "Spot the bug" side-by-side — C/Rust/Concrete, C has a hidden capability leak
-2. Live audit of a real dependency — `with()` signatures reveal what code touches
-3. Privilege-separated tool end-to-end — hasher can't touch network, reporter can't read files
-4. Formal proof demo — correct because proved, not because tested
+**Examples to build (ranked by what they prove about the language):**
+1. Packet parser — binary protocol decoding with capability-controlled I/O, shows `with()` separation between parser and network
+2. ELF inspector — structured binary parsing with `#[repr(C)]`, `packed`, raw pointers; no `Unsafe` in user code
+3. FFI showcase — C library interop (e.g., zlib or sqlite) with `with(Unsafe)` at the boundary and `trusted` wrappers
+4. Ownership-heavy data structure — linked list or tree using `Heap<T>`, linear ownership, and deterministic cleanup
+5. Privilege-separated tool — hasher can't touch network, reporter can't read files (capability demo)
+6. No-alloc example — fixed-buffer state machine or ring buffer (depends on Phase 8 allocation-profile work being far enough along)
+
+**Presentation formats (ranked by reach):**
+1. Live audit of a real dependency — `with()` signatures reveal what code touches
+2. Capability escalation attack (blocked) — compiler says no
+3. Formal proof demo — correct because proved, not because tested
+4. "Spot the bug" side-by-side — C/Rust/Concrete, C has a hidden capability leak
 5. Performance benchmark against C — SHA-256, JSON parsing
-6. Capability escalation attack (blocked) — compiler says no
-7. Rewrite a 500-line C file — capabilities make security explicit
-8. Interactive playground / REPL — highest reach, highest cost
-9. Package ecosystem demo — practical stdlib usage
-10. Conference talk with storytelling — narrative-driven
-11. Packet parser — binary protocol decoding with capability-controlled I/O
-12. ELF inspector — structured binary parsing, no `Unsafe` in user code
- 13. FFI example — minimal C interop with `with(Unsafe)` only at the boundary and `trusted` wrappers around the foreign surface
- 14. Ownership-heavy data structure — linked list or tree using `Heap<T>`, linear ownership, and deterministic cleanup
- 15. No-alloc example — fixed-buffer state machine or ring buffer, but only once the allocation-profile story is concrete enough to make the example honest
+6. Interactive playground / REPL — highest reach, highest cost
+7. Package ecosystem demo — practical stdlib usage
+8. Conference talk with storytelling — narrative-driven
 
 **References:** [adoption-strategy](research/workloads/adoption-strategy.md), [showcase-workloads](research/workloads/showcase-workloads.md)
 
@@ -105,8 +107,9 @@ The remaining work is narrow and evidence-backed. Do not reopen H as open-ended 
 5. compatibility checks and trust-drift diffing — done when version bumps surface semantic/trust changes automatically
 6. review-policy gates — done when CI can enforce authority, trust, FFI, and proof-facing policies
 7. coverage tooling over tests, reports, and proof artifacts — done when coverage gaps across all three are visible
-8. release/compatibility discipline — done when there is a versioning policy and it is enforced
-9. editor/LSP baseline and dependency auditing — done when there is basic editor support and dependency audit tooling
+8. editor/LSP baseline — done when there is basic editor support with go-to-definition and diagnostics
+9. dependency auditing — done when dependencies can be audited for capability and trust properties
+10. release/compatibility discipline — done when there is a versioning policy and it is enforced
 
 **References:** [evidence-review-workflows](research/proof-evidence/evidence-review-workflows.md), [proof-evidence-artifacts](research/proof-evidence/proof-evidence-artifacts.md), [trust-multipliers](research/proof-evidence/trust-multipliers.md), [developer-tooling](research/packages-tooling/developer-tooling.md)
 
@@ -166,19 +169,19 @@ The remaining work is narrow and evidence-backed. Do not reopen H as open-ended 
 
 ## Design Constraints
 
-- keep the parser LL(1)
-- keep SSA as the only backend boundary
-- prefer stable storage for mutable aggregate loop state over phi transport
-- avoid parallel semantic lowering paths
-- keep builtins minimal and implementation-shaped; keep stdlib clean and user-facing
-- keep trust, capability, and foreign boundaries explicit and auditable
+1. keep the parser LL(1)
+2. keep SSA as the only backend boundary
+3. prefer stable storage for mutable aggregate loop state over phi transport
+4. avoid parallel semantic lowering paths
+5. keep builtins minimal and implementation-shaped; keep stdlib clean and user-facing
+6. keep trust, capability, and foreign boundaries explicit and auditable
 
 ## Current Risks
 
-- mutable aggregate lowering can still be too backend-sensitive if promoted storage is incomplete
-- formalization scope is still narrow
-- type-coercion completeness is not proved, only hardened
-- the linearity checker is tested heavily but not formally audited
+1. mutable aggregate lowering can still be too backend-sensitive if promoted storage is incomplete
+2. formalization scope is still narrow
+3. type-coercion completeness is not proved, only hardened
+4. the linearity checker is tested heavily but not formally audited
 
 ## Longer-Horizon Multipliers
 
@@ -186,11 +189,5 @@ The remaining work is narrow and evidence-backed. Do not reopen H as open-ended 
 2. stronger audit outputs
 3. a smaller trusted computing base
 4. a better capability/sandboxing story
-
-Important carry-forwards from earlier phases that are still owned later:
-- proof-backed authority reports belong to **Phase I** and later **L1**
-- verified FFI envelopes, compatibility checking, trust-drift diffing, and coverage tooling belong to **L1**
-- structural boundedness reports belong to **N**
-- capability sandbox profiles belong to **O** unless earlier evidence forces them forward
 
 **References:** [ten-x-improvements](research/meta/ten-x-improvements.md), [capability-sandboxing](research/language/capability-sandboxing.md), [trust-multipliers](research/proof-evidence/trust-multipliers.md), [ai-assisted-optimization](research/meta/ai-assisted-optimization.md)
