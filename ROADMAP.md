@@ -15,11 +15,11 @@ The Lean 4 compiler implements the full pipeline:
 
 `Parse → Resolve → Check → Elab → CoreCheck → Mono → Lower → EmitSSA → LLVM IR`
 
-The core language, stdlib foundation, report surfaces, and project workflow are real. Phase H (real-program pressure testing) is nearly complete — discovery is done, cleanup is wrapping up. The main missing structural pieces are package/artifact architecture, broader formalization, backend plurality, and a fuller runtime story.
+The core language, stdlib foundation, report surfaces, and project workflow are real. Phase H (real-program pressure testing) is nearly complete: discovery is done, cleanup is wrapping up. The main missing structural pieces are package/artifact architecture, broader formalization, backend plurality, and a fuller runtime story.
 
-## What Happens Next
+## The Sequence
 
-### 1. Finish Phase H Cleanup
+## 1. Finish Phase H Cleanup
 
 **Status:** active — discovery complete, cleanup wrapping up.
 
@@ -27,23 +27,24 @@ The remaining work is narrow and evidence-backed. Do not reopen H as open-ended 
 
 Do next:
 1. match-as-expression: value-producing `match` so linear types can be bound from branches without dummy-init workarounds
-2. classify remaining runtime/stack pressure findings as language, runtime, stdlib, or tooling
-3. clean up stdlib output surface so examples stop using builtin-shaped `print_string` / `print_char`
+2. clean up stdlib output surface so examples stop using builtin-shaped `print_string` / `print_char`
+3. classify remaining runtime/stack pressure findings as language, runtime, stdlib, or tooling
 
 Do later, only if evidence demands it:
-- string `==` operator
-- broader destructuring syntax
+1. string `==` operator
+2. broader destructuring syntax
 
 Exit criterion:
-- examples show the intended Concrete style without workarounds
-- expression ergonomics pressure is classified as "needs a feature" vs "needs a better idiom"
-- runtime/stack questions are classified, not ambient
+1. examples show the intended Concrete style without workarounds
+2. expression ergonomics pressure is classified as "needs a feature" vs "needs a better idiom"
+3. stdlib output reads like coherent library code rather than builtin vocabulary
+4. runtime/stack questions are classified, not ambient
 
 References: [phase-h-findings](research/workloads/phase-h-findings.md), [text-and-output-design](research/stdlib-runtime/text-and-output-design.md), [cleanup-ergonomics](research/language/cleanup-ergonomics.md)
 
-### 2. Package and Artifact Architecture (Phase J)
+## 2. Package and Artifact Architecture (Phase J)
 
-**Status:** not started. Largest structural blocker once H cleanup is done.
+**Status:** not started. This is the next major architectural build-out once H cleanup is done.
 
 Do next:
 1. incremental compilation: serialize artifacts, cache by source hash, skip unchanged modules
@@ -56,16 +57,16 @@ Do next:
 8. provenance-aware publishing direction (before package identity needs redesign)
 
 Exit criterion:
-- incremental rebuilds exist
-- package/dependency semantics are explicit
-- workspaces are real
-- package graph supports later trust/publishing work
+1. incremental rebuilds exist
+2. package/dependency semantics are explicit
+3. workspaces are real
+4. package graph supports later trust/publishing work
 
 References: [artifact-driven-compiler](research/compiler/artifact-driven-compiler.md), [package-model](research/packages-tooling/package-model.md), [package-manager-design](research/packages-tooling/package-manager-design.md), [package-testing-tooling](research/packages-tooling/package-testing-tooling.md)
 
-### 3. Formalization and Proof Expansion (Phase I)
+## 3. Formalization and Proof Expansion (Phase I)
 
-**Status:** not started.
+**Status:** not started. Do this after package/artifact boundaries are cleaner.
 
 Do next:
 1. broaden the pure Core proof fragment
@@ -75,13 +76,13 @@ Do next:
 5. user-program proof workflow, artifact-driven
 
 Exit criterion:
-- proof workflow is broader, clearer, and tied to stable artifacts
+1. proof workflow is broader, clearer, and tied to stable artifacts
 
 References: [formalization-breakdown](research/proof-evidence/formalization-breakdown.md), [formalization-roi](research/proof-evidence/formalization-roi.md), [proving-concrete-functions-in-lean](research/proof-evidence/proving-concrete-functions-in-lean.md), [proof-addon-architecture](research/proof-evidence/proof-addon-architecture.md)
 
-### 4. Adoption and Showcase (Phase K)
+## 4. Adoption and Showcase (Phase K)
 
-**Status:** not started. Only after package model and ergonomics are solid.
+**Status:** not started. Only after the package model and the biggest ergonomics gaps are under control.
 
 Do next:
 1. define domains where Concrete should be unusually strong
@@ -104,9 +105,9 @@ Demo types, ranked by impact:
 
 References: [adoption-strategy](research/workloads/adoption-strategy.md), [showcase-workloads](research/workloads/showcase-workloads.md)
 
-### 5. Project and Operational Maturity (Phase L1)
+## 5. Project and Operational Maturity (Phase L1)
 
-**Status:** not started.
+**Status:** not started. This turns the compiler into a durable reviewable operational system.
 
 Do next:
 1. machine-readable reports
@@ -121,7 +122,7 @@ Do next:
 
 References: [evidence-review-workflows](research/proof-evidence/evidence-review-workflows.md), [trust-multipliers](research/proof-evidence/trust-multipliers.md), [developer-tooling](research/packages-tooling/developer-tooling.md)
 
-### 6. Backend Plurality (Phase L2)
+## 6. Backend Plurality (Phase L2)
 
 **Status:** not started. Keep explicit and late.
 
@@ -133,20 +134,20 @@ Do next:
 
 References: [qbe-backend](research/compiler/qbe-backend.md), [qbe-in-concrete](research/compiler/qbe-in-concrete.md), [mlir-backend-shape](research/compiler/mlir-backend-shape.md), [optimization-policy](research/compiler/optimization-policy.md)
 
-### 7. Concurrency (Phase M)
+## 7. Concurrency (Phase M)
 
-**Status:** not started.
+**Status:** not started. Keep the model explicit, small, and late.
 
 Intended shape:
-- structured concurrency as semantic center
-- OS threads + message passing as base primitive
-- evented I/O only as later specialized model
+1. structured concurrency as semantic center
+2. OS threads + message passing as base primitive
+3. evented I/O only as later specialized model
 
 References: [concurrency](research/stdlib-runtime/concurrency.md), [long-term-concurrency](research/stdlib-runtime/long-term-concurrency.md)
 
-### 8. Allocation Profiles (Phase N)
+## 8. Allocation Profiles (Phase N)
 
-**Status:** not started.
+**Status:** not started. Do this after the broader compiler/runtime structure is more stable.
 
 Do next:
 1. strengthen `--report alloc`
@@ -156,11 +157,20 @@ Do next:
 
 References: [allocation-budgets](research/stdlib-runtime/allocation-budgets.md), [arena-allocation](research/stdlib-runtime/arena-allocation.md), [execution-cost](research/stdlib-runtime/execution-cost.md)
 
-### 9. Research and Evidence-Gated Features (Phase O)
+## 9. Research and Evidence-Gated Features (Phase O)
 
 **Status:** not started. Keep visible without forcing premature language growth.
 
-Candidates: typestate, arena allocation, execution boundedness, layout reports, binary-format DSLs, ghost/proof-only syntax, hardware capability mapping, capability sandbox profiles, Miri-style interpreter.
+Candidates:
+1. typestate
+2. arena allocation
+3. execution boundedness
+4. layout reports
+5. binary-format DSLs
+6. ghost/proof-only syntax
+7. hardware capability mapping
+8. capability sandbox profiles
+9. Miri-style interpreter
 
 References: [high-leverage-systems-ideas](research/meta/high-leverage-systems-ideas.md), [ten-x-improvements](research/meta/ten-x-improvements.md), [typestate](research/language/typestate.md)
 
@@ -179,3 +189,18 @@ References: [high-leverage-systems-ideas](research/meta/high-leverage-systems-id
 - formalization scope is still narrow
 - type-coercion completeness is not proved, only hardened
 - the linearity checker is tested heavily but not formally audited
+
+## Longer-Horizon Multipliers
+
+1. proof-backed trust claims
+2. stronger audit outputs
+3. a smaller trusted computing base
+4. a better capability/sandboxing story
+
+Important carry-forwards from earlier phases that are still owned later:
+- proof-backed authority reports belong to **Phase I** and later **L1**
+- verified FFI envelopes, compatibility checking, trust-drift diffing, and coverage tooling belong to **L1**
+- structural boundedness reports belong to **N**
+- capability sandbox profiles belong to **O** unless earlier evidence forces them forward
+
+References: [ten-x-improvements](research/meta/ten-x-improvements.md), [capability-sandboxing](research/language/capability-sandboxing.md), [trust-multipliers](research/proof-evidence/trust-multipliers.md), [ai-assisted-optimization](research/meta/ai-assisted-optimization.md)
