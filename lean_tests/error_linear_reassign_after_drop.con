@@ -4,7 +4,6 @@ mod test {
         let mut s: String = "hello";
         drop_string(s);
         s = "world";
-        drop_string(s);
         return 0;
     }
 }
