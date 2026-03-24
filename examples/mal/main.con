@@ -993,7 +993,7 @@ mod Main {
                 expected: i32,
                 err_code: Int) with(Console, Alloc) -> Int {
         let ast: Val = read_str(&input, syms, pool);
-        drop_string(input);
+        input.drop();
         if is_error(ast) { return err_code; }
         let result: Val = eval(ast, env_id, pool, envs, bindings, closures);
         if is_error(result) { return err_code; }
@@ -1023,7 +1023,7 @@ mod Main {
                  expected: i32,
                  err_code: Int) with(Console, Alloc) -> Int {
         let ast: Val = read_str(&input, syms, pool);
-        drop_string(input);
+        input.drop();
         if is_error(ast) { return err_code; }
         let result: Val = eval(ast, env_id, pool, envs, bindings, closures);
         if is_error(result) { return err_code; }
@@ -1047,7 +1047,7 @@ mod Main {
            input: String,
            err_code: Int) with(Alloc) -> Int {
         let ast: Val = read_str(&input, syms, pool);
-        drop_string(input);
+        input.drop();
         if is_error(ast) { return err_code; }
         let result: Val = eval(ast, env_id, pool, envs, bindings, closures);
         if is_error(result) { return err_code; }

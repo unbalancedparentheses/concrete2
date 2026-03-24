@@ -353,12 +353,10 @@ fn main() with(Std) -> Int {
     vec_free::<i32>(arith_prog);
 
     let mut m0: String = "arith test: ";
-    string_append_int(&mut m0, arith_result as Int);
-    let mut m0e: String = " (expected 21)\n";
-    string_append(&mut m0, &m0e);
-    drop_string(m0e);
+    m0.append_int(arith_result as Int);
+    m0.append(&" (expected 21)\n");
     print_string(&m0);
-    drop_string(m0);
+    m0.drop();
 
     // Benchmark: fib(35) via recursive VM calls
     let mut fib_prog: Vec<i32> = build_fib_program(35);
@@ -370,16 +368,12 @@ fn main() with(Std) -> Int {
 
     let elapsed_ms: Int = (t1 - t0) / 1000000;
     let mut m1: String = "fib(35) = ";
-    string_append_int(&mut m1, fib_result as Int);
-    let mut m1b: String = ", vm time: ";
-    string_append(&mut m1, &m1b);
-    drop_string(m1b);
-    string_append_int(&mut m1, elapsed_ms);
-    let mut m1c: String = " ms\n";
-    string_append(&mut m1, &m1c);
-    drop_string(m1c);
+    m1.append_int(fib_result as Int);
+    m1.append(&", vm time: ");
+    m1.append_int(elapsed_ms);
+    m1.append(&" ms\n");
     print_string(&m1);
-    drop_string(m1);
+    m1.drop();
 
     return 0;
 }

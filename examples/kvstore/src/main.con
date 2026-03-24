@@ -45,7 +45,7 @@ mod kvstore {
 
     fn clone_string(s: &String) with(Alloc) -> String {
         let mut result: String = "";
-        string_append(&mut result, s);
+        result.append(s);
         return result;
     }
 
@@ -109,12 +109,12 @@ mod kvstore {
         let old: Option<String> = map.insert(key, val);
         match old {
             Option#Some { value } => {
-                drop_string(value);
+                value.drop();
             },
             Option#None => {}
         }
         if existed {
-            drop_string(key_for_vec);
+            key_for_vec.drop();
         } else {
             keys.push(key_for_vec);
         }
@@ -124,7 +124,7 @@ mod kvstore {
         let removed: Option<String> = map.remove(key);
         match removed {
             Option#Some { value } => {
-                drop_string(value);
+                value.drop();
                 keys_remove(keys, key);
                 return true;
             },
@@ -135,10 +135,11 @@ mod kvstore {
     }
 
     fn log_set(key: &String, val: &String) with(Std) {
-        let mut line: String = "SET ";
-        string_append(&mut line, key);
+        let mut line: String = "";
+        line.append(&"SET ");
+        line.append(key);
         string_push_char(&mut line, 32);  // space
-        string_append(&mut line, val);
+        line.append(val);
         string_push_char(&mut line, 10);  // newline
         let data: Bytes = string_to_bytes(&line);
         let path: String = log_path();
@@ -149,14 +150,15 @@ mod kvstore {
                 println("Error: could not write to log file");
             }
         }
-        drop_string(path);
+        path.drop();
         data.drop();
-        drop_string(line);
+        line.drop();
     }
 
     fn log_del(key: &String) with(Std) {
-        let mut line: String = "DEL ";
-        string_append(&mut line, key);
+        let mut line: String = "";
+        line.append(&"DEL ");
+        line.append(key);
         string_push_char(&mut line, 10);  // newline
         let data: Bytes = string_to_bytes(&line);
         let path: String = log_path();
@@ -167,9 +169,9 @@ mod kvstore {
                 println("Error: could not write to log file");
             }
         }
-        drop_string(path);
+        path.drop();
         data.drop();
-        drop_string(line);
+        line.drop();
     }
 
     fn find_space(s: &String, start: Int) -> Int {
@@ -220,10 +222,10 @@ mod kvstore {
                             // "DEL " — rest of line is key
                             let dkey: String = string_slice(&line, 4, line_len);
                             kv_delete(map, keys, &dkey);
-                            drop_string(dkey);
+                            dkey.drop();
                         }
                     }
-                    drop_string(line);
+                    line.drop();
                 }
                 line_start = pos + 1;
             }
@@ -235,15 +237,15 @@ mod kvstore {
         let path: String = log_path();
         let exists: bool = file_exists(&path);
         if !exists {
-            drop_string(path);
+            path.drop();
             return;
         }
         let result: Result<String, FsError> = read_to_string(&path);
-        drop_string(path);
+        path.drop();
         match result {
             Result#Ok { value } => {
                 parse_log_content(&value, map, keys);
-                drop_string(value);
+                value.drop();
             },
             Result#Err { error } => {}
         }
@@ -251,12 +253,10 @@ mod kvstore {
 
     fn build_set_line(acc: String, k: &String, v: &String) -> String {
         let mut out: String = acc;
-        let mut prefix: String = "SET ";
-        string_append(&mut out, &prefix);
-        drop_string(prefix);
-        string_append(&mut out, k);
+        out.append(&"SET ");
+        out.append(k);
         string_push_char(&mut out, 32);
-        string_append(&mut out, v);
+        out.append(v);
         string_push_char(&mut out, 10);
         return out;
     }
@@ -277,9 +277,9 @@ mod kvstore {
                 println("Error: could not write compacted log file");
             }
         }
-        drop_string(path);
+        path.drop();
         data.drop();
-        drop_string(out);
+        out.drop();
     }
 
     fn cmd_set(map: &mut HashMap<String, String>, keys: &mut Vec<String>, key_arg: &String, val_arg: &String) with(Std) {
@@ -325,11 +325,9 @@ mod kvstore {
 
     fn build_list_line(acc: String, k: &String, v: &String) -> String {
         let mut out: String = acc;
-        string_append(&mut out, k);
-        let mut sep: String = " = ";
-        string_append(&mut out, &sep);
-        drop_string(sep);
-        string_append(&mut out, v);
+        out.append(k);
+        out.append(&" = ");
+        out.append(v);
         string_push_char(&mut out, 10);
         return out;
     }
@@ -344,7 +342,7 @@ mod kvstore {
         let mut init: String = "";
         let out: String = map.fold::<String>(init, build_list_line);
         print_string(&out);
-        drop_string(out);
+        out.drop();
     }
 
     fn print_usage() with(Console) {
@@ -370,15 +368,9 @@ mod kvstore {
 
         let cmd: String = get(1);
 
-        let set_str: String = "set";
-        let get_str: String = "get";
-        let delete_str: String = "delete";
-        let list_str: String = "list";
-        let compact_str: String = "compact";
-
         let mut exit_code: Int = 0;
 
-        if str_eq(&cmd, &set_str) {
+        if str_eq(&cmd, &"set") {
             if argc < 4 {
                 println("Usage: kvstore set <key> <value>");
                 exit_code = 1;
@@ -386,30 +378,30 @@ mod kvstore {
                 let key: String = get(2);
                 let val: String = get(3);
                 cmd_set(&mut map, &mut keys, &key, &val);
-                drop_string(val);
-                drop_string(key);
+                val.drop();
+                key.drop();
             }
-        } else if str_eq(&cmd, &get_str) {
+        } else if str_eq(&cmd, &"get") {
             if argc < 3 {
                 println("Usage: kvstore get <key>");
                 exit_code = 1;
             } else {
                 let key: String = get(2);
                 cmd_get(&mut map, &key);
-                drop_string(key);
+                key.drop();
             }
-        } else if str_eq(&cmd, &delete_str) {
+        } else if str_eq(&cmd, &"delete") {
             if argc < 3 {
                 println("Usage: kvstore delete <key>");
                 exit_code = 1;
             } else {
                 let key: String = get(2);
                 cmd_delete(&mut map, &mut keys, &key);
-                drop_string(key);
+                key.drop();
             }
-        } else if str_eq(&cmd, &list_str) {
+        } else if str_eq(&cmd, &"list") {
             cmd_list(&mut map, &mut keys);
-        } else if str_eq(&cmd, &compact_str) {
+        } else if str_eq(&cmd, &"compact") {
             compact(&mut map, &mut keys);
         } else {
             print("Unknown command: ");
@@ -419,12 +411,7 @@ mod kvstore {
             exit_code = 1;
         }
 
-        drop_string(compact_str);
-        drop_string(list_str);
-        drop_string(delete_str);
-        drop_string(get_str);
-        drop_string(set_str);
-        drop_string(cmd);
+        cmd.drop();
         keys.drop();
         map.drop();
         return exit_code;

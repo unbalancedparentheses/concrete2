@@ -84,7 +84,7 @@ mod http_server {
 
     fn resolve_path(root: &String, url_path: &String) with(Alloc) -> String {
         let mut full_path: String = "";
-        string_append(&mut full_path, root);
+        full_path.append(root);
 
         let path_len: Int = string_length(url_path);
 
@@ -92,15 +92,13 @@ mod http_server {
         if path_len == 1 {
             let ch: Int = string_char_at(url_path, 0);
             if ch == 47 { // '/'
-                let idx: String = "/index.html";
-                string_append(&mut full_path, &idx);
-                drop_string(idx);
+                full_path.append(&"/index.html");
                 return full_path;
             }
         }
 
         // Otherwise append the URL path directly
-        string_append(&mut full_path, url_path);
+        full_path.append(url_path);
         return full_path;
     }
 
@@ -141,11 +139,9 @@ mod http_server {
     fn build_200_response(body: &String) with(Alloc) -> String {
         let body_len: Int = string_length(body);
         let mut resp: String = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: ";
-        string_append_int(&mut resp, body_len);
-        let headers_end: String = "\r\nConnection: close\r\n\r\n";
-        string_append(&mut resp, &headers_end);
-        drop_string(headers_end);
-        string_append(&mut resp, body);
+        resp.append_int(body_len);
+        resp.append(&"\r\nConnection: close\r\n\r\n");
+        resp.append(body);
         return resp;
     }
 
@@ -153,12 +149,10 @@ mod http_server {
         let body: String = "<html><body><h1>404 Not Found</h1></body></html>";
         let body_len: Int = string_length(&body);
         let mut resp: String = "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: ";
-        string_append_int(&mut resp, body_len);
-        let headers_end: String = "\r\nConnection: close\r\n\r\n";
-        string_append(&mut resp, &headers_end);
-        drop_string(headers_end);
-        string_append(&mut resp, &body);
-        drop_string(body);
+        resp.append_int(body_len);
+        resp.append(&"\r\nConnection: close\r\n\r\n");
+        resp.append(&body);
+        body.drop();
         return resp;
     }
 
@@ -166,12 +160,10 @@ mod http_server {
         let body: String = "<html><body><h1>405 Method Not Allowed</h1></body></html>";
         let body_len: Int = string_length(&body);
         let mut resp: String = "HTTP/1.1 405 Method Not Allowed\r\nContent-Type: text/html\r\nContent-Length: ";
-        string_append_int(&mut resp, body_len);
-        let headers_end: String = "\r\nAllow: GET\r\nConnection: close\r\n\r\n";
-        string_append(&mut resp, &headers_end);
-        drop_string(headers_end);
-        string_append(&mut resp, &body);
-        drop_string(body);
+        resp.append_int(body_len);
+        resp.append(&"\r\nAllow: GET\r\nConnection: close\r\n\r\n");
+        resp.append(&body);
+        body.drop();
         return resp;
     }
 
@@ -179,12 +171,10 @@ mod http_server {
         let body: String = "<html><body><h1>400 Bad Request</h1></body></html>";
         let body_len: Int = string_length(&body);
         let mut resp: String = "HTTP/1.1 400 Bad Request\r\nContent-Type: text/html\r\nContent-Length: ";
-        string_append_int(&mut resp, body_len);
-        let headers_end: String = "\r\nConnection: close\r\n\r\n";
-        string_append(&mut resp, &headers_end);
-        drop_string(headers_end);
-        string_append(&mut resp, &body);
-        drop_string(body);
+        resp.append_int(body_len);
+        resp.append(&"\r\nConnection: close\r\n\r\n");
+        resp.append(&body);
+        body.drop();
         return resp;
     }
 
@@ -192,12 +182,10 @@ mod http_server {
         let body: String = "<html><body><h1>403 Forbidden</h1></body></html>";
         let body_len: Int = string_length(&body);
         let mut resp: String = "HTTP/1.1 403 Forbidden\r\nContent-Type: text/html\r\nContent-Length: ";
-        string_append_int(&mut resp, body_len);
-        let headers_end: String = "\r\nConnection: close\r\n\r\n";
-        string_append(&mut resp, &headers_end);
-        drop_string(headers_end);
-        string_append(&mut resp, &body);
-        drop_string(body);
+        resp.append_int(body_len);
+        resp.append(&"\r\nConnection: close\r\n\r\n");
+        resp.append(&body);
+        body.drop();
         return resp;
     }
 
@@ -267,15 +255,15 @@ mod http_server {
         if !valid {
             let resp: String = build_400_response();
             send_string(&stream, &resp);
-            drop_string(resp);
-            drop_string(raw);
+            resp.drop();
+            raw.drop();
             stream.close();
             return;
         }
 
         let method: String = parse_method(&raw);
         let path: String = parse_path(&raw);
-        drop_string(raw);
+        raw.drop();
 
         // Log the request
         println("  ", method, " ", path);
@@ -284,27 +272,27 @@ mod http_server {
         if !is_get(&method) {
             let resp: String = build_405_response();
             send_string(&stream, &resp);
-            drop_string(resp);
-            drop_string(method);
-            drop_string(path);
+            resp.drop();
+            method.drop();
+            path.drop();
             stream.close();
             return;
         }
-        drop_string(method);
+        method.drop();
 
         // Check for path traversal
         if !is_path_safe(&path) {
             let resp: String = build_403_response();
             send_string(&stream, &resp);
-            drop_string(resp);
-            drop_string(path);
+            resp.drop();
+            path.drop();
             stream.close();
             return;
         }
 
         // Resolve file path
         let file_path: String = resolve_path(root, &path);
-        drop_string(path);
+        path.drop();
 
         // Check if file exists and read it
         let exists: bool = file_exists(&file_path);
@@ -312,23 +300,23 @@ mod http_server {
             let body: String = read_file_body(&file_path);
             let body_len: Int = string_length(&body);
             if body_len == 0 {
-                drop_string(body);
+                body.drop();
                 let resp: String = build_404_response();
                 send_string(&stream, &resp);
-                drop_string(resp);
+                resp.drop();
             } else {
                 let resp: String = build_200_response(&body);
-                drop_string(body);
+                body.drop();
                 send_string(&stream, &resp);
-                drop_string(resp);
+                resp.drop();
             }
         } else {
             let resp: String = build_404_response();
             send_string(&stream, &resp);
-            drop_string(resp);
+            resp.drop();
         }
 
-        drop_string(file_path);
+        file_path.drop();
         stream.close();
     }
 
@@ -350,7 +338,7 @@ mod http_server {
                     println("Invalid port, using default 8080");
                 }
             }
-            drop_string(port_arg);
+            port_arg.drop();
         }
 
         // Parse root directory from second argument (default ".")
@@ -361,7 +349,7 @@ mod http_server {
         println("Listening on 127.0.0.1:", port);
 
         let bind_result: Result<TcpListener, NetError> = TcpListener::bind(&addr, port);
-        drop_string(addr);
+        addr.drop();
 
         match bind_result {
             Result#Ok { value } => {
@@ -384,12 +372,12 @@ mod http_server {
                 }
 
                 listener.close();
-                drop_string(root);
+                root.drop();
             },
             Result#Err { error } => {
                 drop_net_error(error);
                 println("Failed to bind to port. Is it already in use?");
-                drop_string(root);
+                root.drop();
                 return 1;
             }
         }

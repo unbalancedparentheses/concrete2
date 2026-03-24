@@ -232,7 +232,7 @@ mod Parser {
             let idx: i32 = store(strings, buf);
             return ParseResult { val: mk_string(idx), pos: p + 1 };
         }
-        drop_string(buf);
+        buf.drop();
         return err(p);
     }
 
@@ -449,20 +449,14 @@ mod Printer {
                      kvpairs: &mut Vec<KVPair>,
                      vals: &mut Vec<Val>) with(Console, Alloc) {
         if v.tag == 0 {
-            let s: String = "null";
-            defer drop_string(s);
-            print_string(&s);
+            print_string(&"null");
             return;
         }
         if v.tag == 1 {
             if v.data == 1 {
-                let s: String = "true";
-                defer drop_string(s);
-                print_string(&s);
+                print_string(&"true");
             } else {
-                let s: String = "false";
-                defer drop_string(s);
-                print_string(&s);
+                print_string(&"false");
             }
             return;
         }
@@ -473,7 +467,7 @@ mod Printer {
         if v.tag == 3 {
             print_char(34); // "
             let s: String = vec_get::<String>(strings, v.data as Int);
-            defer drop_string(s);
+            defer s.drop();
             print_string(&s);
             print_char(34); // "
             return;
@@ -504,7 +498,7 @@ mod Printer {
                 let kv: KVPair = vec_get::<KVPair>(kvpairs, (desc.start + i) as Int);
                 print_char(34); // "
                 let k: String = vec_get::<String>(strings, kv.key as Int);
-                defer drop_string(k);
+                defer k.drop();
                 print_string(&k);
                 print_char(34); // "
                 print_char(58); // :
@@ -517,8 +511,8 @@ mod Printer {
         }
         if v.tag == 6 {
             let mut msg: String = "ERROR@";
-            defer drop_string(msg);
-            string_append_int(&mut msg, v.data as Int);
+            defer msg.drop();
+            msg.append_int(v.data as Int);
             print_string(&msg);
             return;
         }
@@ -563,14 +557,14 @@ mod Main {
                 kvpairs: &mut Vec<KVPair>,
                 vals: &mut Vec<Val>,
                 err_code: Int) with(Console, Alloc) -> Int {
-        defer drop_string(input);
+        defer input.drop();
         let v: Val = parse_json(&input, strings, arrays, objects, kvpairs, vals);
         if !check_tag(v, expected_tag) {
             let mut msg: String = "FAIL: expected tag ";
-            defer drop_string(msg);
-            string_append_int(&mut msg, expected_tag as Int);
-            string_append(&mut msg, &" got ");
-            string_append_int(&mut msg, v.tag as Int);
+            defer msg.drop();
+            msg.append_int(expected_tag as Int);
+            msg.append(&" got ");
+            msg.append_int(v.tag as Int);
             print_string(&msg);
             print_char(10);
             return err_code;
@@ -586,19 +580,19 @@ mod Main {
                 kvpairs: &mut Vec<KVPair>,
                 vals: &mut Vec<Val>,
                 err_code: Int) with(Console, Alloc) -> Int {
-        defer drop_string(input);
+        defer input.drop();
         let v: Val = parse_json(&input, strings, arrays, objects, kvpairs, vals);
         if !check_val(v, expected_tag, expected_data) {
             let mut msg: String = "FAIL: expected (";
-            defer drop_string(msg);
-            string_append_int(&mut msg, expected_tag as Int);
-            string_append(&mut msg, &",");
-            string_append_int(&mut msg, expected_data as Int);
-            string_append(&mut msg, &") got (");
-            string_append_int(&mut msg, v.tag as Int);
-            string_append(&mut msg, &",");
-            string_append_int(&mut msg, v.data as Int);
-            string_append(&mut msg, &")");
+            defer msg.drop();
+            msg.append_int(expected_tag as Int);
+            msg.append(&",");
+            msg.append_int(expected_data as Int);
+            msg.append(&") got (");
+            msg.append_int(v.tag as Int);
+            msg.append(&",");
+            msg.append_int(v.data as Int);
+            msg.append(&")");
             print_string(&msg);
             print_char(10);
             return err_code;
@@ -614,7 +608,7 @@ mod Main {
                   kvpairs: &mut Vec<KVPair>,
                   vals: &mut Vec<Val>,
                   err_code: Int) with(Alloc) -> Int {
-        defer drop_string(input);
+        defer input.drop();
         let v: Val = parse_json(&input, strings, arrays, objects, kvpairs, vals);
         if !is_error(v) { return err_code; }
         return 0;
@@ -628,7 +622,7 @@ mod Main {
         let mut si: Int = 0;
         while si < slen {
             let s: String = vec_get::<String>(&mut strings, si);
-            drop_string(s);
+            s.drop();
             si = si + 1;
         }
         vec_free::<String>(strings);

@@ -131,20 +131,20 @@ mod Gate {
         let mut v_label: String = "DENY";
         if v == 1 { v_label = "ALLOW"; }
         let mut out: String = "[";
-        string_append(&mut out, &v_label);
-        string_append(&mut out, &"] ");
-        string_append(&mut out, &p_name);
-        string_append(&mut out, &" ");
-        string_append(&mut out, &a_name);
-        string_append(&mut out, &" ");
-        string_append(&mut out, &r_name);
+        out.append(&v_label);
+        out.append(&"] ");
+        out.append(&p_name);
+        out.append(&" ");
+        out.append(&a_name);
+        out.append(&" ");
+        out.append(&r_name);
         print_string(&out);
         print_char(10);
-        drop_string(out);
-        drop_string(v_label);
-        drop_string(p_name);
-        drop_string(r_name);
-        drop_string(a_name);
+        out.drop();
+        v_label.drop();
+        p_name.drop();
+        r_name.drop();
+        a_name.drop();
         return v;
     }
 }

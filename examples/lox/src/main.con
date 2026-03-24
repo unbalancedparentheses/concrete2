@@ -48,7 +48,7 @@ mod Lox {
 
     fn sp_store_owned(chars: &mut Vec<i32>, meta: &mut Vec<StrMeta>, s: String) with(Alloc) -> i32 {
         let idx: i32 = sp_store(chars, meta, &s);
-        drop_string(s);
+        s.drop();
         return idx;
     }
 
@@ -1110,7 +1110,7 @@ mod Lox {
 
         let filename: String = get(1);
         let result: Result<String, FsError> = read_to_string(&filename);
-        drop_string(filename);
+        filename.drop();
 
         let mut source: String = "";
         let mut ok: bool = false;
@@ -1118,7 +1118,7 @@ mod Lox {
             Result#Ok { value } => { source = value; ok = true; },
             Result#Err { error } => { println("Error: could not read file"); }
         }
-        if !ok { drop_string(source); return 1; }
+        if !ok { source.drop(); return 1; }
 
         let mut sp_chars: Vec<i32> = Vec::<i32>::new();
         let mut sp_meta: Vec<StrMeta> = Vec::<StrMeta>::new();
@@ -1142,7 +1142,7 @@ mod Lox {
         let mut rvs: Vec<RetVal> = Vec::<RetVal>::new();
 
         let sr: i32 = scan(&source,&mut tokens,&mut sp_chars,&mut sp_meta,&mut nums);
-        drop_string(source);
+        source.drop();
         if sr<0 { println("Error: scanning failed");
             sp_chars.drop(); sp_meta.drop(); nums.drop();
             tokens.drop(); nodes.drop(); bins.drop();

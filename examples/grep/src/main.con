@@ -39,8 +39,8 @@ mod cgrep {
             let lower_line: String = to_lower(line);
             let lower_pat: String = to_lower(pattern);
             let found: bool = string_contains(&lower_line, &lower_pat);
-            drop_string(lower_line);
-            drop_string(lower_pat);
+            lower_line.drop();
+            lower_pat.drop();
             return found;
         }
         return string_contains(line, pattern);
@@ -78,20 +78,20 @@ mod cgrep {
                         if !count_only {
                             let mut out: String = "";
                             if show_filename {
-                                string_append(&mut out, filename);
+                                out.append(filename);
                                 string_push_char(&mut out, 58);  // ':'
                             }
                             if show_numbers {
-                                string_append_int(&mut out, line_num);
+                                out.append_int(line_num);
                                 string_push_char(&mut out, 58);  // ':'
                             }
-                            string_append(&mut out, &line);
+                            out.append(&line);
                             print_string(&out);
                             print_char(10);
-                            drop_string(out);
+                            out.drop();
                         }
                     }
-                    drop_string(line);
+                    line.drop();
                 }
                 line_num = line_num + 1;
                 line_start = pos + 1;
@@ -102,13 +102,13 @@ mod cgrep {
         if count_only {
             let mut count_out: String = "";
             if show_filename {
-                string_append(&mut count_out, filename);
+                count_out.append(filename);
                 string_push_char(&mut count_out, 58);  // ':'
             }
-            string_append_int(&mut count_out, match_count as Int);
+            count_out.append_int(match_count as Int);
             print_string(&count_out);
             print_char(10);
-            drop_string(count_out);
+            count_out.drop();
         }
 
         return match_count;
@@ -125,7 +125,7 @@ mod cgrep {
                 result = true;
             }
         }
-        drop_string(a);
+        a.drop();
         return result;
     }
 
@@ -140,7 +140,7 @@ mod cgrep {
                 }
             }
         }
-        drop_string(a);
+        a.drop();
         return result;
     }
 
@@ -166,9 +166,7 @@ mod cgrep {
         // Need at least pattern + one file
         let remaining: Int = argc - pattern_idx;
         if remaining < 2 {
-            let mut usage: String = "Usage: cgrep [-n] [-c] [-v] [-i] <pattern> <file>...\n";
-            print_string(&usage);
-            drop_string(usage);
+            print_string(&"Usage: cgrep [-n] [-c] [-v] [-i] <pattern> <file>...\n");
             return 1;
         }
 
@@ -191,23 +189,21 @@ mod cgrep {
                                                         case_insensitive, show_filename);
                         total_matches = total_matches + matches;
                     }
-                    drop_string(value);
+                    value.drop();
                 },
                 Result#Err { error } => {
                     let mut err: String = "cgrep: cannot open '";
-                    string_append(&mut err, &filename);
-                    let mut err2: String = "'\n";
-                    string_append(&mut err, &err2);
-                    drop_string(err2);
+                    err.append(&filename);
+                    err.append(&"'\n");
                     print_string(&err);
-                    drop_string(err);
+                    err.drop();
                 }
             }
-            drop_string(filename);
+            filename.drop();
             fi = fi + 1;
         }
 
-        drop_string(pattern);
+        pattern.drop();
         if total_matches > 0 { return 0; }
         return 1;
     }

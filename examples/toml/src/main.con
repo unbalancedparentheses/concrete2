@@ -93,7 +93,7 @@ mod toml_parser {
             buf_offset = last_off + last_len;
         }
         let slen: i32 = string_length(s) as i32;
-        string_append(buf, s);
+        buf.append(s);
         meta.push(buf_offset);
         meta.push(slen);
         return idx;
@@ -102,7 +102,7 @@ mod toml_parser {
     // Store a string built by the parser (takes ownership and drops after storing)
     fn pool_store_owned(buf: &mut String, meta: &mut Vec<i32>, s: String) with(Alloc) -> i32 {
         let idx: i32 = pool_store(buf, meta, &s);
-        drop_string(s);
+        s.drop();
         return idx;
     }
 
@@ -123,7 +123,7 @@ mod toml_parser {
         if slen > 0 {
             let s: String = string_slice(buf, off as Int, (off + slen) as Int);
             print_string(&s);
-            drop_string(s);
+            s.drop();
         }
     }
 
@@ -265,7 +265,7 @@ mod toml_parser {
             let idx: i32 = pool_store_owned(pool_buf, pool_meta, buf);
             return ParseResult { val: mk_string_val(idx), pos: p + 1 };
         }
-        drop_string(buf);
+        buf.drop();
         return err_result(pos, line_at(s, pos));
     }
 
@@ -292,7 +292,7 @@ mod toml_parser {
             let idx: i32 = pool_store_owned(pool_buf, pool_meta, buf);
             return ParseResult { val: mk_string_val(idx), pos: p + 1 };
         }
-        drop_string(buf);
+        buf.drop();
         return err_result(pos, line_at(s, pos));
     }
 
@@ -379,18 +379,14 @@ mod toml_parser {
             return parse_literal_string(s, p, pool_buf, pool_meta);
         }
 
-        let kw_true: String = "true";
-        defer drop_string(kw_true);
-        if match_keyword(s, p, &kw_true) {
+        if match_keyword(s, p, &"true") {
             let after: i32 = p + 4;
             if after >= len || !is_bare_key_char(string_char_at(s, after as Int)) {
                 return ParseResult { val: mk_bool_val(1), pos: p + 4 };
             }
         }
 
-        let kw_false: String = "false";
-        defer drop_string(kw_false);
-        if match_keyword(s, p, &kw_false) {
+        if match_keyword(s, p, &"false") {
             let after: i32 = p + 5;
             if after >= len || !is_bare_key_char(string_char_at(s, after as Int)) {
                 return ParseResult { val: mk_bool_val(0), pos: p + 5 };
@@ -746,9 +742,7 @@ mod toml_parser {
     fn print_indent(depth: i32) with(Console, Alloc) {
         let mut i: i32 = 0;
         while i < depth {
-            let sp: String = "  ";
-            print_string(&sp);
-            drop_string(sp);
+            print_string(&"  ");
             i = i + 1;
         }
     }
@@ -772,22 +766,16 @@ mod toml_parser {
         }
         if v.tag == 2 {
             if v.data == 1 {
-                let t: String = "true";
-                print_string(&t);
-                drop_string(t);
+                print_string(&"true");
             } else {
-                let f: String = "false";
-                print_string(&f);
-                drop_string(f);
+                print_string(&"false");
             }
             return;
         }
         if v.tag == 3 {
             let desc: ArrayDesc = *arrays.get_unchecked(v.data as u64);
             if desc.len == 0 {
-                let e: String = "[]";
-                print_string(&e);
-                drop_string(e);
+                print_string(&"[]");
                 return;
             }
             print_char(91);
@@ -810,9 +798,7 @@ mod toml_parser {
         if v.tag == 4 {
             let desc: TableDesc = *tables.get_unchecked(v.data as u64);
             if desc.len == 0 {
-                let e: String = "{}";
-                print_string(&e);
-                drop_string(e);
+                print_string(&"{}");
                 return;
             }
             print_char(123);
@@ -822,9 +808,7 @@ mod toml_parser {
                 let kv: KVPair = *kvpairs.get_unchecked((desc.start + i) as u64);
                 print_indent(depth + 1);
                 pool_print(pool_buf, pool_meta, kv.key);
-                let eq: String = " = ";
-                print_string(&eq);
-                drop_string(eq);
+                print_string(&" = ");
                 let inner_val: Val = Val { tag: kv.val_tag, data: kv.val_data };
                 print_val(inner_val, depth + 1, pool_buf, pool_meta, arrays, tables, kvpairs, vals);
                 print_char(10);
@@ -836,9 +820,9 @@ mod toml_parser {
         }
         if v.tag == 5 {
             let mut msg: String = "ERROR at line ";
-            string_append_int(&mut msg, v.data as Int);
+            msg.append_int(v.data as Int);
             print_string(&msg);
-            drop_string(msg);
+            msg.drop();
             return;
         }
     }
@@ -849,7 +833,7 @@ mod toml_parser {
                arrays: Vec<ArrayDesc>,
                tables: Vec<TableDesc>, kvpairs: Vec<KVPair>,
                vals: Vec<Val>) with(Alloc) {
-        drop_string(pool_buf);
+        pool_buf.drop();
         pool_meta.drop();
         arrays.drop();
         tables.drop();
@@ -863,14 +847,10 @@ mod toml_parser {
         let argc: Int = count();
 
         if argc < 2 {
-            let u1: String = "Usage: toml_parser <file.toml>";
-            print_string(&u1);
+            print_string(&"Usage: toml_parser <file.toml>");
             print_char(10);
-            drop_string(u1);
-            let u2: String = "  Parses a TOML file and prints the parsed structure.";
-            print_string(&u2);
+            print_string(&"  Parses a TOML file and prints the parsed structure.");
             print_char(10);
-            drop_string(u2);
             return 1;
         }
 
@@ -892,38 +872,34 @@ mod toml_parser {
 
                 if is_error(root) {
                     let mut errmsg: String = "Parse error at line ";
-                    string_append_int(&mut errmsg, root.data as Int);
+                    errmsg.append_int(root.data as Int);
                     print_string(&errmsg);
                     print_char(10);
-                    drop_string(errmsg);
-                    drop_string(value);
-                    drop_string(filename);
+                    errmsg.drop();
+                    value.drop();
+                    filename.drop();
                     cleanup(pool_buf, pool_meta, arrays, tables, kvpairs, vals);
                     return 1;
                 }
 
-                let hdr: String = "--- Parsed TOML ---";
-                print_string(&hdr);
+                print_string(&"--- Parsed TOML ---");
                 print_char(10);
-                drop_string(hdr);
                 print_val(root, 0, &pool_buf, &pool_meta, &arrays, &tables, &kvpairs, &vals);
                 print_char(10);
 
-                drop_string(value);
-                drop_string(filename);
+                value.drop();
+                filename.drop();
                 cleanup(pool_buf, pool_meta, arrays, tables, kvpairs, vals);
                 return 0;
             },
             Result#Err { error } => {
                 let mut errmsg: String = "Error: cannot open '";
-                string_append(&mut errmsg, &filename);
-                let mut errmsg2: String = "'";
-                string_append(&mut errmsg, &errmsg2);
-                drop_string(errmsg2);
+                errmsg.append(&filename);
+                errmsg.append(&"'");
                 print_string(&errmsg);
                 print_char(10);
-                drop_string(errmsg);
-                drop_string(filename);
+                errmsg.drop();
+                filename.drop();
                 return 1;
             }
         }
