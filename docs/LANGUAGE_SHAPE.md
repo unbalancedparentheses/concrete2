@@ -44,7 +44,7 @@ Each concept does one thing. They do not overlap. See [SAFETY.md](SAFETY.md).
 
 ### Ownership model: linear by default
 
-All structs and enums are linear (must be consumed exactly once) unless marked `Copy`. Branches must agree on consumption. Loops cannot consume linear variables from outer scope. Resources have deterministic destruction.
+All structs and enums are linear (must be consumed exactly once) unless marked `Copy`. Linear variables cannot be reassigned — one binding, one resource. Branches must agree on consumption. Loops cannot consume linear variables from outer scope. Resources have deterministic destruction.
 
 **Depends on:** Linearity checking in Check.
 **Enables:** Resource safety without GC, deterministic cleanup.

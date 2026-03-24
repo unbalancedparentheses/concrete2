@@ -150,7 +150,7 @@ Resolve is strictly a shallow/interface validation pass. It operates on `FileSum
 
 **Postconditions:**
 - Types are consistent across expressions, statements, and function signatures.
-- Linearity discipline enforced: linear variables consumed exactly once.
+- Linearity discipline enforced: linear variables consumed exactly once, cannot be reassigned.
 - Capability discipline validated: callers possess required capabilities.
 - `defer` and borrow blocks are well-formed.
 - Cross-module imports resolved via export tables.
