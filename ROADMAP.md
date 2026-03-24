@@ -46,7 +46,8 @@ The remaining work is narrow and evidence-backed. Do not reopen H as open-ended 
 5. package-aware testing tooling — done when tests can target individual packages (depends on workspaces)
 6. cross-target FFI/ABI validation — done when validation is empirical, not hand-wavy (depends on package boundaries being real)
 7. first authority-budget path at module/package scope — done when the authority-budget path is structurally possible (depends on package graph)
-8. provenance-aware publishing direction — done when the package graph is not heading toward a trust-model redesign (design-only, no implementation yet)
+8. package manifest parsing and version-constraint support — done when the toolchain can parse its own manifest format and version constraints without ad hoc logic
+9. provenance-aware publishing direction — done when the package graph is not heading toward a trust-model redesign (design-only, no implementation yet)
 
 **References:** [artifact-driven-compiler](research/compiler/artifact-driven-compiler.md), [package-model](research/packages-tooling/package-model.md), [package-manager-design](research/packages-tooling/package-manager-design.md), [package-testing-tooling](research/packages-tooling/package-testing-tooling.md)
 
@@ -131,7 +132,7 @@ The remaining work is narrow and evidence-backed. Do not reopen H as open-ended 
 
 **Tasks:**
 1. structured concurrency as semantic center — done when concurrency primitives enforce structured lifetimes
-2. OS threads + message passing as base primitive — done when thread + channel programs work end-to-end
+2. OS threads + message passing as base primitive — done when thread + channel programs work end-to-end; likely first pieces are `std.thread`, typed channels, and only the minimum `std.sync` surface needed to make that model usable
 3. evented I/O only as later specialized model — done when the async story is explicit and opt-in, not default
 
 **References:** [concurrency](research/stdlib-runtime/concurrency.md), [long-term-concurrency](research/stdlib-runtime/long-term-concurrency.md)
