@@ -1112,13 +1112,13 @@ mod Lox {
         let result: Result<String, FsError> = read_to_string(&filename);
         filename.drop();
 
-        let mut source: String = "";
-        let mut ok: bool = false;
-        match result {
-            Result#Ok { value } => { source = value; ok = true; },
-            Result#Err { error } => { println("Error: could not read file"); }
-        }
-        if !ok { source.drop(); return 1; }
+        let source: String = match result {
+            Result#Ok { value } => value,
+            Result#Err { error } => {
+                println("Error: could not read file");
+                return 1;
+            }
+        };
 
         let mut sp_chars: Vec<i32> = Vec::<i32>::new();
         let mut sp_meta: Vec<StrMeta> = Vec::<StrMeta>::new();
