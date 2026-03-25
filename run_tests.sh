@@ -1102,6 +1102,11 @@ run_err "$TESTDIR/error_assign_immutable.con" "cannot assign to immutable"
 run_err "$TESTDIR/error_assign_overwrites_linear.con" "cannot reassign linear variable"
 run_err "$TESTDIR/error_linear_reassign_after_drop.con" "cannot reassign linear variable"
 run_ok  "$TESTDIR/copy_reassign.con" 0
+# Match-as-expression
+run_ok  "$TESTDIR/match_expr.con" 0
+run_ok  "$TESTDIR/match_expr_linear.con" 0
+run_ok  "$TESTDIR/match_expr_return_arm.con" 0
+run_err "$TESTDIR/error_match_arm_type_mismatch.con" "match arm type"
 run_err "$TESTDIR/error_arrow_not_heap.con" "arrow access"
 # repr(C) / FFI safety errors
 run_err "$TESTDIR/error_repr_c_generic.con" "cannot have type parameters"

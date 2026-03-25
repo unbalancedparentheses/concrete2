@@ -642,6 +642,12 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
             setVar bname (.reg loadDst bty)
           lowerStmts body
           let bodyVal ← lastExprVal body ty
+          -- Cast if arm result type differs from expected type (e.g., Int → i32)
+          let bodyVal ← if bodyVal.ty != ty && bodyVal.ty != .unit then do
+            let castReg ← freshReg "matchcast."
+            emit (.cast castReg bodyVal ty)
+            pure (.reg castReg ty)
+          else pure bodyVal
           let term ← currentBlockTerminated
           if !term then
             allArmsTerminated := false
@@ -659,6 +665,12 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
           setVar binding scrVal
           lowerStmts body
           let bodyVal ← lastExprVal body ty
+          -- Cast if arm result type differs from expected type (e.g., Int → i32)
+          let bodyVal ← if bodyVal.ty != ty && bodyVal.ty != .unit then do
+            let castReg ← freshReg "matchcast."
+            emit (.cast castReg bodyVal ty)
+            pure (.reg castReg ty)
+          else pure bodyVal
           let term ← currentBlockTerminated
           if !term then
             allArmsTerminated := false
@@ -678,6 +690,12 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
           startBlock armLabel
           lowerStmts body
           let bodyVal ← lastExprVal body ty
+          -- Cast if arm result type differs from expected type (e.g., Int → i32)
+          let bodyVal ← if bodyVal.ty != ty && bodyVal.ty != .unit then do
+            let castReg ← freshReg "matchcast."
+            emit (.cast castReg bodyVal ty)
+            pure (.reg castReg ty)
+          else pure bodyVal
           let term ← currentBlockTerminated
           if !term then
             allArmsTerminated := false
@@ -711,6 +729,12 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
           startBlock armLabel
           lowerStmts body
           let bodyVal ← lastExprVal body ty
+          -- Cast if arm result type differs from expected type (e.g., Int → i32)
+          let bodyVal ← if bodyVal.ty != ty && bodyVal.ty != .unit then do
+            let castReg ← freshReg "matchcast."
+            emit (.cast castReg bodyVal ty)
+            pure (.reg castReg ty)
+          else pure bodyVal
           let term ← currentBlockTerminated
           if !term then
             allArmsTerminated := false
@@ -728,6 +752,12 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
           setVar binding scrVal
           lowerStmts body
           let bodyVal ← lastExprVal body ty
+          -- Cast if arm result type differs from expected type (e.g., Int → i32)
+          let bodyVal ← if bodyVal.ty != ty && bodyVal.ty != .unit then do
+            let castReg ← freshReg "matchcast."
+            emit (.cast castReg bodyVal ty)
+            pure (.reg castReg ty)
+          else pure bodyVal
           let term ← currentBlockTerminated
           if !term then
             allArmsTerminated := false
@@ -744,6 +774,12 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
           startBlock armLabel
           lowerStmts body
           let bodyVal ← lastExprVal body ty
+          -- Cast if arm result type differs from expected type (e.g., Int → i32)
+          let bodyVal ← if bodyVal.ty != ty && bodyVal.ty != .unit then do
+            let castReg ← freshReg "matchcast."
+            emit (.cast castReg bodyVal ty)
+            pure (.reg castReg ty)
+          else pure bodyVal
           let term ← currentBlockTerminated
           if !term then
             allArmsTerminated := false

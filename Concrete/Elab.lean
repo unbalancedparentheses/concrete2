@@ -515,9 +515,8 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
           let cBody ← elabStmts body
           cArms := cArms ++ [.enumArm en v [] cBody]
       setEnv envBefore
-    let resultTy := if enumName != "" then
-      if enumTypeArgs.isEmpty then Ty.named enumName else Ty.generic enumName enumTypeArgs
-    else innerTyR
+    -- Result type comes from the arm bodies (checked by Check), not the scrutinee
+    let resultTy := match hint with | some t => t | none => .unit
     return .match_ cScrut cArms resultTy
 
   | .borrow _ inner =>

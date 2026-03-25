@@ -105,6 +105,7 @@ inductive CheckError where
   | whileBreakTypeMismatch (breakTy : String) (elseTy : String)
   | ifCondNotBool (ty : String)
   | ifBranchTypeMismatch (thenTy : String) (elseTy : String)
+  | matchArmTypeMismatch (firstTy : String) (armTy : String)
   | breakTypeMismatch (valTy : String) (prevTy : String)
   -- arrayLiteralEmpty, cannotAssignThroughNonMutRef moved to CoreCheck
   -- Slice 3: Borrow/escape/freeze
@@ -191,6 +192,7 @@ def CheckError.message : CheckError → String
   | .whileBreakTypeMismatch breakTy elseTy => s!"while-expression break type '{breakTy}' does not match else type '{elseTy}'"
   | .ifCondNotBool ty => s!"if condition must be Bool, got {ty}"
   | .ifBranchTypeMismatch thenTy elseTy => s!"if-expression then type '{thenTy}' does not match else type '{elseTy}'"
+  | .matchArmTypeMismatch firstTy armTy => s!"match arm type '{armTy}' does not match first arm type '{firstTy}'"
   | .breakTypeMismatch valTy prevTy => s!"break value type '{valTy}' does not match previous break type '{prevTy}'"
   -- cannotAssignThroughNonMutRef, arrayLiteralEmpty moved to CoreCheck
   -- Slice 3
@@ -879,7 +881,13 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
     let thenInit := then_.dropLast
     checkStmts thenInit env.currentRetTy
     let thenTy ← match then_.getLast? with
-      | some (.expr _ e) => checkExpr e hint
+      | some (.expr _ tExpr) => do
+        let ty ← checkExpr tExpr hint
+        -- Trailing expression is a value move — consume linear variables
+        match tExpr with
+        | .ident _ varName => consumeVarIfExists varName (some e.getSpan)
+        | _ => pure ()
+        pure ty
       | some (.return_ _ v) =>
         match v with
         | some rv => let _ ← checkExpr rv; pure Ty.never
@@ -892,7 +900,12 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
     let elseInit := else_.dropLast
     checkStmts elseInit env.currentRetTy
     let elseTy ← match else_.getLast? with
-      | some (.expr _ e) => checkExpr e hint
+      | some (.expr _ eExpr) => do
+        let ty ← checkExpr eExpr hint
+        match eExpr with
+        | .ident _ varName => consumeVarIfExists varName (some e.getSpan)
+        | _ => pure ()
+        pure ty
       | some (.return_ _ v) =>
         match v with
         | some rv => let _ ← checkExpr rv; pure Ty.never
@@ -1414,22 +1427,50 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
         -- Linearity across arms: snapshot env, check each arm, ensure all agree
         let envBefore ← getEnv
         let mut firstArmVars : Option (List (String × VarInfo)) := none
+        let mut matchResultTy : Ty := .unit
+        let mut firstArmDone := false
         for arm in arms do
           setEnv envBefore
-          match arm with
-          | .mk _ _armEnum armVariant bindings body =>
+          let body ← match arm with
+          | .mk _ _armEnum armVariant bindings body => do
             -- Bind variant fields in scope (substitute generic type args)
             let ev := (ed.variants.find? fun v => v.name == armVariant).get!
             let typeMapping := ed.typeParams.zip enumTypeArgs
             for (binding, sf) in bindings.zip ev.fields do
               addVar binding (substTy typeMapping sf.ty)
-            let curEnv ← getEnv
-            checkStmts body curEnv.currentRetTy
-          | .litArm _ _val body =>
-            checkStmts body envBefore.currentRetTy
-          | .varArm _ binding body =>
+            pure body
+          | .litArm _ _val body => pure body
+          | .varArm _ binding body => do
             addVar binding innerTyR
-            checkStmts body envBefore.currentRetTy
+            pure body
+          -- Check all stmts except the last, then extract type from last
+          let bodyInit := body.dropLast
+          let curEnv ← getEnv
+          checkStmts bodyInit curEnv.currentRetTy
+          let armTy ← match body.getLast? with
+            | some (.expr _ armExpr) => do
+              let ty ← checkExpr armExpr hint
+              -- Trailing expression is a value move — consume linear variables
+              match armExpr with
+              | .ident _ varName => consumeVarIfExists varName (some e.getSpan)
+              | _ => pure ()
+              pure ty
+            | some (.return_ _ v) =>
+              match v with
+              | some rv => let _ ← checkExpr rv; pure Ty.never
+              | none => pure Ty.never
+            | some other =>
+              checkStmt other curEnv.currentRetTy
+              pure Ty.unit
+            | none => pure Ty.unit
+          -- Unify arm types
+          if !firstArmDone then
+            matchResultTy := armTy
+            firstArmDone := true
+          else
+            if armTy != matchResultTy && armTy != .never && matchResultTy != .never then
+              throwCheck (.matchArmTypeMismatch (tyToString matchResultTy) (tyToString armTy)) (some e.getSpan)
+            if matchResultTy == .never then matchResultTy := armTy
           let envAfterArm ← getEnv
           match firstArmVars with
           | none => firstArmVars := some envAfterArm.vars
@@ -1457,7 +1498,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
             | none => (n, vi)
           setEnv { envBefore with vars := vars' }
         | none => setEnv envBefore
-        return .named enumName
+        return matchResultTy
       | none => throwCheck (.unknownEnumType enumName) (some e.getSpan)
     else
       -- Value-pattern match (integer/bool literals, variable bindings)
@@ -1465,19 +1506,38 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       | .ident _ varName => useVar varName (some e.getSpan)
       | _ => pure ()
       let envBefore ← getEnv
-      let mut resultTy := scrTy
+      let mut matchResultTy : Ty := .unit
+      let mut firstArmDone := false
       for arm in arms do
         setEnv envBefore
-        match arm with
-        | .litArm _ _val body =>
-          checkStmts body envBefore.currentRetTy
-        | .varArm _ binding body =>
+        let body ← match arm with
+        | .litArm _ _val body => pure body
+        | .varArm _ binding body => do
           addVar binding scrTy
-          checkStmts body envBefore.currentRetTy
-        | .mk _ _ _ _ body =>
-          checkStmts body envBefore.currentRetTy
+          pure body
+        | .mk _ _ _ _ body => pure body
+        -- Check all stmts except the last, then extract type from last
+        let bodyInit := body.dropLast
+        checkStmts bodyInit envBefore.currentRetTy
+        let armTy ← match body.getLast? with
+          | some (.expr _ armExpr) => checkExpr armExpr hint
+          | some (.return_ _ v) =>
+            match v with
+            | some rv => let _ ← checkExpr rv; pure Ty.never
+            | none => pure Ty.never
+          | some other =>
+            checkStmt other envBefore.currentRetTy
+            pure Ty.unit
+          | none => pure Ty.unit
+        if !firstArmDone then
+          matchResultTy := armTy
+          firstArmDone := true
+        else
+          if armTy != matchResultTy && armTy != .never && matchResultTy != .never then
+            throwCheck (.matchArmTypeMismatch (tyToString matchResultTy) (tyToString armTy)) (some e.getSpan)
+          if matchResultTy == .never then matchResultTy := armTy
       setEnv envBefore
-      return resultTy
+      return matchResultTy
   | .borrow _ inner =>
     let innerTy ← checkExpr inner
     -- Check the variable is not moved or already mutably borrowed

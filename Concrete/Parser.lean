@@ -1057,7 +1057,7 @@ partial def parseMatchArms : ParseM (List MatchArm) := do
 partial def parseMatchArmBody : ParseM (List Stmt) := do
   let bodyTk ← peek
   if bodyTk == .lbrace then
-    parseBlock
+    parseExprBlock
   else if bodyTk == .return_ then
     let sp ← peekSpan
     advance
@@ -1072,8 +1072,12 @@ partial def parseMatchArmBody : ParseM (List Stmt) := do
     if tk2 == .semicolon then advance
     pure [.return_ sp value]
   else do
-    let stmt ← parseStmt
-    pure [stmt]
+    -- Bare expression arm body (for match-as-expression: => expr,)
+    let sp ← peekSpan
+    let expr ← parseExpr
+    let nextTk ← peek
+    if nextTk == .semicolon then advance
+    pure [.expr sp expr]
 
 partial def parseMatchArm : ParseM MatchArm := do
   let sp ← peekSpan
