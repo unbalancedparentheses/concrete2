@@ -1,5 +1,6 @@
 import Concrete.AST
 import Concrete.Shared
+import Concrete.Intrinsic
 
 namespace Concrete
 
@@ -231,8 +232,8 @@ def resolveImports (imports : List ImportDecl)
     (summaryTable : List (String × FileSummary))
     (unknownModuleMsg : String → String)
     (notPublicMsg : String → String → String)
-    : Except String ResolvedImports :=
-  imports.foldlM (init := {}) fun acc imp =>
+    : Except String ResolvedImports := do
+  let resolved ← imports.foldlM (init := ({} : ResolvedImports)) fun acc imp =>
     match summaryTable.lookup imp.moduleName with
     | none => .error (unknownModuleMsg imp.moduleName)
     | some summary =>
@@ -274,5 +275,25 @@ def resolveImports (imports : List ImportDecl)
               match summary.typeAliases.find? fun ta => ta.isPublic && ta.name == origName with
               | some ta => .ok { acc with typeAliases := acc.typeAliases ++ [(localName, ta.targetTy)] }
               | none => .error (notPublicMsg origName imp.moduleName)
+  -- Auto-include impl methods for builtin types (String, Vec, etc.) from all
+  -- loaded modules, so methods like String.drop() work without explicit import.
+  let builtinNames := builtinTypeNames
+  let builtinResult := summaryTable.foldl (init := resolved) fun acc (_, summary) =>
+    let builtinImpls := summary.implBlocks.filter fun ib => List.elem ib.typeName builtinNames
+    let builtinTraitImpls := summary.traitImpls.filter fun tb => List.elem tb.typeName builtinNames
+    let mangledNames := builtinImpls.foldl (fun ns ib =>
+      ns ++ (ib.methods.filter (·.isPublic)).map fun f => ib.typeName ++ "_" ++ f.name) []
+      ++ builtinTraitImpls.foldl (fun ns tb =>
+      ns ++ (tb.methods.filter (·.isPublic)).map fun f => tb.typeName ++ "_" ++ f.name) []
+    let newSigs := summary.implMethodSigs.filter fun (name, _) =>
+      mangledNames.contains name && !(acc.implMethodSigs.any fun (n, _) => n == name)
+    let newImpls := builtinImpls.filter fun ib =>
+      !(acc.implBlocks.any fun existing => existing.typeName == ib.typeName && existing.methods.length == ib.methods.length)
+    let newTraitImpls := builtinTraitImpls.filter fun tb =>
+      !(acc.traitImpls.any fun existing => existing.typeName == tb.typeName && existing.methods.length == tb.methods.length)
+    { acc with implMethodSigs := acc.implMethodSigs ++ newSigs,
+               implBlocks := acc.implBlocks ++ newImpls,
+               traitImpls := acc.traitImpls ++ newTraitImpls }
+  pure builtinResult
 
 end Concrete
