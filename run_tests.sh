@@ -2591,7 +2591,31 @@ fi # end section: perf
 echo ""
 flush_jobs
 
+# --- Project-level tests (require Concrete.toml + std) ---
+echo "=== Project-level tests ==="
+for projdir in "$TESTDIR"/*/; do
+    if [ -f "$projdir/Concrete.toml" ]; then
+        projname=$(basename "$projdir")
+        output=$( cd "$projdir" && ../../.lake/build/bin/concrete build -o /tmp/test_proj_"$projname" 2>&1 ) && build_ok=true || build_ok=false
+        if $build_ok; then
+            run_result=$(/tmp/test_proj_"$projname" 2>&1) && run_exit=0 || run_exit=$?
+            if [ "$run_exit" -eq 0 ]; then
+                echo "  ok  $projname"
+                PASS=$((PASS + 1))
+            else
+                echo "  FAIL $projname — exit $run_exit"
+                FAIL=$((FAIL + 1))
+            fi
+        else
+            echo "  FAIL $projname — build failed: $output"
+            FAIL=$((FAIL + 1))
+        fi
+        rm -f /tmp/test_proj_"$projname"
+    fi
+done
+
 # --- Summary ---
+echo ""
 echo "=== Results ==="
 echo "  passed:  $PASS"
 echo "  failed:  $FAIL"
