@@ -149,7 +149,21 @@ The remaining work is narrow and evidence-backed. Do not reopen H as open-ended 
 
 **References:** [allocation-budgets](research/stdlib-runtime/allocation-budgets.md), [arena-allocation](research/stdlib-runtime/arena-allocation.md), [execution-cost](research/stdlib-runtime/execution-cost.md)
 
-## 9. Research and Evidence-Gated Features (Phase O)
+## 9. Predictable Execution (Phase P)
+
+**Status:** not started. Do this after allocation profiles and the first explicit concurrency model exist.
+
+**Tasks:**
+1. define a restricted analyzable execution profile — done when there is a documented profile covering allocation, recursion, loops, concurrency, and FFI boundaries
+2. extend reports for boundedness and timing-relevant effects — done when the compiler can surface unknown loop bounds, recursion, blocking operations, FFI timing boundaries, and other sources of execution uncertainty
+3. make the restricted profile enforceable where structurally possible — done when code outside the profile fails clearly rather than relying on convention
+4. define the concurrency subset for analyzable systems — done when the project has a clear answer on whether this profile is single-threaded first or uses a Ravenscar-style restricted concurrency model
+5. define the backend and target assumptions — done when it is explicit what can be claimed at the source/compiler level versus what requires target-specific timing models
+6. validate the model with bounded examples — done when there are small examples such as a fixed-buffer parser, bounded-state controller, or ring buffer that fit the profile cleanly
+
+**References:** [allocation-budgets](research/stdlib-runtime/allocation-budgets.md), [execution-cost](research/stdlib-runtime/execution-cost.md), [concurrency](research/stdlib-runtime/concurrency.md), [long-term-concurrency](research/stdlib-runtime/long-term-concurrency.md)
+
+## 10. Research and Evidence-Gated Features (Phase O)
 
 **Status:** not started. Keep visible without forcing premature language growth.
 
