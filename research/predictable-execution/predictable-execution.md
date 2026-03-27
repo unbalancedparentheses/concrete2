@@ -156,14 +156,21 @@ That separation is essential for credibility.
 
 ## Candidate Validation Examples
 
-The profile should be tested on small but meaningful examples:
+The profile should be tested on small but meaningful examples. Each example should exercise a different subset of profile rules so the full surface is covered.
 
-1. fixed-buffer parser
-2. bounded-state controller
-3. ring buffer with no post-init allocation
-4. single-purpose packet decoder with no FFI and no dynamic concurrency
+| Example | NoAlloc | No recursion | Bounded loops | No FFI | No blocking | Single-threaded | Fixed-capacity types |
+|---|---|---|---|---|---|---|---|
+| Fixed-buffer parser | yes | yes | yes (input length) | yes | yes | yes | yes |
+| Bounded-state controller | yes | yes | yes (state transitions) | yes | yes | yes | no |
+| Ring buffer | yes | yes | yes (capacity) | yes | yes | yes | yes |
+| Packet decoder | yes | yes | yes (packet length) | yes | yes | yes | yes |
 
-Later, the bounded-allocation subprofile should be tested on examples that allocate only under structurally explainable limits.
+Later, the bounded-allocation subprofile should be tested on examples that allocate under structurally explainable limits:
+
+| Example | Bounded alloc | Key constraint |
+|---|---|---|
+| Fixed-capacity map builder | yes | capacity from construction |
+| Bounded message processor | yes | allocation proportional to fixed channel depth |
 
 These should validate whether the profile is realistic, not just elegant on paper.
 
@@ -178,11 +185,14 @@ Related work:
 3. [../stdlib-runtime/concurrency.md](../stdlib-runtime/concurrency.md)
 4. [../stdlib-runtime/long-term-concurrency.md](../stdlib-runtime/long-term-concurrency.md)
 
-Future supporting notes may include:
+Supporting notes:
 
-1. `bounded-loops.md`
-2. `analyzable-concurrency.md`
-3. `ffi-boundaries.md`
+1. [bounded-loops.md](bounded-loops.md)
+2. [analyzable-concurrency.md](analyzable-concurrency.md)
+3. [ffi-boundaries.md](ffi-boundaries.md)
+4. [blocking-effects.md](blocking-effects.md)
+5. [fixed-capacity-stdlib.md](fixed-capacity-stdlib.md)
+6. [stack-bounds.md](stack-bounds.md)
 
 ## Bottom Line
 
