@@ -23,14 +23,18 @@ The core language, stdlib foundation, report surfaces, and project workflow are 
 
 The remaining work is narrow and evidence-backed. Do not reopen H as open-ended exploration.
 
+**Landed during cleanup:**
+1. match-as-expression — value-producing `match` for branch-produced values, including linear cases
+
 **Tasks:**
-1. match-as-expression: value-producing `match` so linear types can be bound from branches without dummy-init workarounds — done when `let x = match ... { }` parses and type-checks
-2. clean up stdlib output surface so examples stop using builtin-shaped `print_string` / `print_char` — done when stdlib output reads like coherent library code rather than builtin vocabulary
-3. `string.split` and `string.trim` — parser examples reimplement split by hand repeatedly; no workaround exists — done when `String` has `split`, `trim`, `trim_left`, `trim_right` methods
-4. path decomposition: `parent`, `file_name`, `extension` — path construction exists but decomposition is completely absent — done when `Path` or `PathBuf` has all three methods
-5. minimal FFI pressure test — FFI is implemented but has zero small end-to-end validations — done when there is one minimal example that calls C from Concrete with `with(Unsafe)` at the boundary and `trusted` wrappers
-6. write a classification of remaining runtime/stack pressure findings into language, runtime, stdlib, or tooling — done when there is a document in `research/` that assigns each finding to exactly one owner
-7. string `==` operator — `.eq()` works but is friction at scale — done when `==` and `!=` work on `String` values
+1. clean up stdlib output surface so examples stop using builtin-shaped `print_string` / `print_char` — done when stdlib output reads like coherent library code rather than builtin vocabulary
+2. `string.split` and `string.trim` — parser examples reimplement split by hand repeatedly; no workaround exists — done when `String` has `split`, `trim`, `trim_left`, `trim_right` methods
+3. path decomposition: `parent`, `file_name`, `extension` — path construction exists but decomposition is completely absent — done when `Path` or `PathBuf` has all three methods
+4. minimal FFI pressure test — FFI is implemented but has zero small end-to-end validations — done when there is one minimal example that calls C from Concrete with `with(Unsafe)` at the boundary and `trusted` wrappers
+5. write a classification of remaining runtime/stack pressure findings into language, runtime, stdlib, or tooling — done when there is a document in `research/` that assigns each finding to exactly one owner
+
+**Not next unless Phase H evidence still demands it:**
+1. string `==` operator — `.eq()` works but is friction at scale — done when `==` and `!=` work on `String` values
 
 **References:** [phase-h-findings](research/workloads/phase-h-findings.md), [text-and-output-design](research/stdlib-runtime/text-and-output-design.md), [cleanup-ergonomics](research/language/cleanup-ergonomics.md)
 
@@ -68,6 +72,8 @@ The remaining work is narrow and evidence-backed. Do not reopen H as open-ended 
 ## 4. Adoption and Showcase (Phase K)
 
 **Status:** not started. Only after the package model and the biggest ergonomics gaps are under control.
+
+The showcase corpus should deliberately rebalance away from mostly text-heavy examples and toward binary parsing, ownership-heavy structures, capability-separated tools, FFI boundaries, and no-allocation-friendly systems code.
 
 **Tasks:**
 1. define domains where Concrete should be unusually strong — done when signature strengths are written down
@@ -155,8 +161,8 @@ The remaining work is narrow and evidence-backed. Do not reopen H as open-ended 
 
 **Tasks:**
 1. define a restricted analyzable execution profile — done when there is a documented profile covering a recursion ban, no unrestricted allocation, loop-bound rules, concurrency limits, blocking-operation limits, and FFI boundaries
-2. define the reported operational/trust effect set — done when the compiler has a clear report model for `may_block`, `crosses_ffi`, `uses_trusted`, recursion/call-cycle status, unknown loop bounds, concurrency usage, and allocation class
-3. extend reports for boundedness and timing-relevant effects — done when the compiler can surface unknown loop bounds, recursion, blocking operations, FFI timing boundaries, and other sources of execution uncertainty
+2. define the reported operational/trust effect set — done when the compiler has a clear taxonomy and report model for `may_block`, `crosses_ffi`, `uses_trusted`, recursion/call-cycle status, unknown loop bounds, concurrency usage, and allocation class
+3. implement boundedness and timing-relevant reports from that model — done when the compiler can surface unknown loop bounds, recursion, blocking operations, FFI timing boundaries, and other sources of execution uncertainty
 4. make the restricted profile enforceable where structurally possible — done when recursion, unknown-bound loops, unrestricted allocation, blocking operations, unrestricted FFI, and disallowed concurrency fail clearly at compile time rather than relying on convention
 5. define the concurrency subset for analyzable systems — done when the project has a clear answer on whether this profile is single-threaded first or uses a Ravenscar-style restricted concurrency model
 6. define a tighter bounded-allocation subprofile — done when there is a clear next-stage profile for structurally bounded allocation rather than only a binary no-allocation rule
