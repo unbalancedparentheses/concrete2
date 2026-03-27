@@ -154,12 +154,13 @@ The remaining work is narrow and evidence-backed. Do not reopen H as open-ended 
 **Status:** not started. Do this after allocation profiles and the first explicit concurrency model exist.
 
 **Tasks:**
-1. define a restricted analyzable execution profile — done when there is a documented profile covering allocation, recursion, loops, concurrency, and FFI boundaries
+1. define a restricted analyzable execution profile — done when there is a documented profile covering a recursion ban, no unrestricted allocation, loop-bound rules, concurrency limits, blocking-operation limits, and FFI boundaries
 2. extend reports for boundedness and timing-relevant effects — done when the compiler can surface unknown loop bounds, recursion, blocking operations, FFI timing boundaries, and other sources of execution uncertainty
-3. make the restricted profile enforceable where structurally possible — done when code outside the profile fails clearly rather than relying on convention
+3. make the restricted profile enforceable where structurally possible — done when recursion, unknown-bound loops, unrestricted allocation, blocking operations, unrestricted FFI, and disallowed concurrency fail clearly at compile time rather than relying on convention
 4. define the concurrency subset for analyzable systems — done when the project has a clear answer on whether this profile is single-threaded first or uses a Ravenscar-style restricted concurrency model
-5. define the backend and target assumptions — done when it is explicit what can be claimed at the source/compiler level versus what requires target-specific timing models
-6. validate the model with bounded examples — done when there are small examples such as a fixed-buffer parser, bounded-state controller, or ring buffer that fit the profile cleanly
+5. define a tighter bounded-allocation subprofile — done when there is a clear next-stage profile for structurally bounded allocation rather than only a binary no-allocation rule
+6. define the backend and target assumptions — done when it is explicit what can be claimed at the source/compiler level versus what requires target-specific timing models
+7. validate the model with bounded examples — done when there are small examples such as a fixed-buffer parser, bounded-state controller, or ring buffer that fit the profile cleanly
 
 **References:** [predictable-execution](research/predictable-execution/predictable-execution.md), [allocation-budgets](research/stdlib-runtime/allocation-budgets.md), [execution-cost](research/stdlib-runtime/execution-cost.md), [concurrency](research/stdlib-runtime/concurrency.md), [long-term-concurrency](research/stdlib-runtime/long-term-concurrency.md)
 
@@ -170,7 +171,7 @@ The remaining work is narrow and evidence-backed. Do not reopen H as open-ended 
 **Candidates:**
 1. typestate
 2. arena allocation
-3. execution boundedness
+3. target-specific timing models
 4. layout reports
 5. binary-format DSLs
 6. ghost/proof-only syntax

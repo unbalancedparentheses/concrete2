@@ -44,14 +44,25 @@ Concrete needs a documented restricted profile that says what is allowed if a pr
 
 Likely ingredients:
 
-1. no heap allocation, or only allocation under a structurally bounded profile
-2. no recursion, or only recursion with explicit proof/structural bound
+1. no unrestricted heap allocation
+2. no recursion
 3. no loops without a known bound or accepted analysis boundary
 4. no unrestricted FFI
-5. no unstructured concurrency
-6. no hidden runtime services outside the selected execution model
+5. no blocking operations in the first profile
+6. no unstructured concurrency
+7. no hidden runtime services outside the selected execution model
 
 This should become a concrete profile, not a vague aspiration.
+
+The first profile should be strict and compiler-enforced:
+
+1. recursion is a compile error
+2. call-graph cycles are a compile error
+3. unknown-bound loops are a compile error unless the language later grows an accepted bound mechanism
+4. unrestricted allocation is a compile error
+5. unrestricted FFI is a compile error
+6. blocking operations are a compile error
+7. disallowed concurrency constructs are a compile error
 
 ### 2. What should the compiler report?
 
@@ -87,6 +98,11 @@ Some are harder and may begin as report-only:
 4. target-specific timing bounds
 
 Concrete should separate these clearly.
+
+There should likely be two stages:
+
+1. a first profile with a simple `NoAlloc` rule
+2. a later tighter bounded-allocation subprofile for code that can allocate, but only under structurally explainable limits
 
 ### 4. What is the concurrency story?
 
@@ -146,6 +162,8 @@ The profile should be tested on small but meaningful examples:
 2. bounded-state controller
 3. ring buffer with no post-init allocation
 4. single-purpose packet decoder with no FFI and no dynamic concurrency
+
+Later, the bounded-allocation subprofile should be tested on examples that allocate only under structurally explainable limits.
 
 These should validate whether the profile is realistic, not just elegant on paper.
 
