@@ -15,16 +15,53 @@ The Lean 4 compiler implements the full pipeline:
 
 `Parse → Resolve → Check → Elab → CoreCheck → Mono → Lower → EmitSSA → LLVM IR`
 
-The core language, stdlib foundation, report surfaces, and project workflow are real. Phase H (real-program pressure testing) is nearly complete: discovery is done, cleanup is wrapping up. The main missing structural pieces are package/artifact architecture, broader formalization, backend plurality, and a fuller runtime story.
+The core language, stdlib foundation, report surfaces, and project workflow are real. Phase H proved the language against real programs. The next question is no longer "can Concrete express this?" but "can Concrete demonstrate its thesis-level ideas clearly enough to justify the project?"
 
-## 1. Finish Phase H Cleanup
+## 1. Real-Program Validation Complete
 
-**Status:** active — discovery complete, cleanup wrapping up.
+**Status:** complete enough to stop treating it as the main track.
 
-The remaining work is narrow and evidence-backed. Do not reopen H as open-ended exploration.
+Phase H did its job: it exposed real-program pressure, forced the linearity and output questions into the open, and produced a focused backlog. Do not reopen it as open-ended exploration.
 
 **Landed during cleanup:**
 1. match-as-expression — value-producing `match` for branch-produced values, including linear cases
+
+**Moved forward as a separate polish track:**
+1. output cleanup
+2. `string.split` / `string.trim`
+3. path decomposition
+4. minimal FFI pressure test
+5. runtime/stack findings classification
+6. maybe `string ==`
+
+**References:** [phase-h-findings](research/workloads/phase-h-findings.md), [text-and-output-design](research/stdlib-runtime/text-and-output-design.md), [cleanup-ergonomics](research/language/cleanup-ergonomics.md)
+
+## 2. Thesis Validation
+
+**Status:** not started. This is now the main track.
+
+Concrete's deepest claim is the combination of:
+
+1. capability-visible architecture
+2. bounded / predictable execution
+3. proof-backed evidence tied to the compiler pipeline
+
+This phase exists to test whether those ideas hold up in implementation, reports, and real examples.
+
+**Tasks:**
+1. enforceable `NoAlloc` — done when functions outside the allowed allocation profile fail clearly at compile time
+2. define the reported operational/trust effect set — done when the compiler has a clear taxonomy and report model for `may_block`, `crosses_ffi`, `uses_trusted`, recursion/call-cycle status, unknown loop bounds, concurrency usage, and allocation class
+3. implement boundedness and timing-relevant reports from that model — done when the compiler can surface unknown loop bounds, recursion, blocking operations, FFI timing boundaries, and other sources of execution uncertainty
+4. define and enforce a first predictable-execution profile — done when recursion, unknown-bound loops, unrestricted allocation, blocking operations, unrestricted FFI, and disallowed concurrency fail clearly at compile time
+5. prove selected user-facing functions and report properties — done when the project can demonstrate end-to-end proof-backed evidence on a meaningful restricted fragment
+6. define the backend/source trust boundary for evidence claims — done when it is explicit which claims hold at source/report level and where backend assumptions begin
+7. validate the thesis with bounded and evidence-carrying examples — done when a small set of examples demonstrates capability visibility, predictable execution, and proof-backed evidence together
+
+**References:** [predictable-execution](research/predictable-execution/predictable-execution.md), [effect-taxonomy](research/predictable-execution/effect-taxonomy.md), [allocation-budgets](research/stdlib-runtime/allocation-budgets.md), [execution-cost](research/stdlib-runtime/execution-cost.md), [backend-traceability](research/compiler/backend-traceability.md), [failure-semantics](research/language/failure-semantics.md), [trusted-code-policy](research/language/trusted-code-policy.md), [interrupt-signal-model](research/language/interrupt-signal-model.md)
+
+## 3. Stdlib and Example Polish
+
+**Status:** not started. This is the carried-forward cleanup tail from Phase H.
 
 **Tasks:**
 1. clean up stdlib output surface so examples stop using builtin-shaped `print_string` / `print_char` — done when stdlib output reads like coherent library code rather than builtin vocabulary
@@ -32,15 +69,13 @@ The remaining work is narrow and evidence-backed. Do not reopen H as open-ended 
 3. path decomposition: `parent`, `file_name`, `extension` — path construction exists but decomposition is completely absent — done when `Path` or `PathBuf` has all three methods
 4. minimal FFI pressure test — FFI is implemented but has zero small end-to-end validations — done when there is one minimal example that calls C from Concrete with `with(Unsafe)` at the boundary and `trusted` wrappers
 5. write a classification of remaining runtime/stack pressure findings into language, runtime, stdlib, or tooling — done when there is a document in `research/` that assigns each finding to exactly one owner
-
-**Not next unless Phase H evidence still demands it:**
-1. string `==` operator — `.eq()` works but is friction at scale — done when `==` and `!=` work on `String` values
+6. string `==` operator only if the examples still justify it — done when `==` and `!=` work on `String` values
 
 **References:** [phase-h-findings](research/workloads/phase-h-findings.md), [text-and-output-design](research/stdlib-runtime/text-and-output-design.md), [cleanup-ergonomics](research/language/cleanup-ergonomics.md)
 
-## 2. Package and Artifact Architecture (Phase J)
+## 4. Package and Artifact Architecture
 
-**Status:** not started. This is the next major architectural build-out once H cleanup is done.
+**Status:** not started. This is the next major architectural build-out after the first thesis-validation slice is real enough to justify the surrounding infrastructure.
 
 **Tasks:**
 1. incremental compilation: serialize pipeline artifacts, cache by source hash, skip unchanged modules — done when unchanged modules are skipped on rebuild
@@ -55,9 +90,9 @@ The remaining work is narrow and evidence-backed. Do not reopen H as open-ended 
 
 **References:** [artifact-driven-compiler](research/compiler/artifact-driven-compiler.md), [package-model](research/packages-tooling/package-model.md), [package-manager-design](research/packages-tooling/package-manager-design.md), [package-testing-tooling](research/packages-tooling/package-testing-tooling.md)
 
-## 3. Formalization and Proof Expansion (Phase I)
+## 5. Formalization and Proof Expansion
 
-**Status:** not started. Do this after package/artifact boundaries are cleaner.
+**Status:** not started. Do this after package/artifact boundaries are cleaner, but expect selected proof work to start earlier inside Thesis Validation.
 
 **Tasks:**
 1. broaden the pure Core proof fragment — done when the provable subset covers more than the current narrow pure fragment
@@ -69,7 +104,7 @@ The remaining work is narrow and evidence-backed. Do not reopen H as open-ended 
 
 **References:** [formalization-breakdown](research/proof-evidence/formalization-breakdown.md), [formalization-roi](research/proof-evidence/formalization-roi.md), [proving-concrete-functions-in-lean](research/proof-evidence/proving-concrete-functions-in-lean.md), [proof-addon-architecture](research/proof-evidence/proof-addon-architecture.md)
 
-## 4. Adoption and Showcase (Phase K)
+## 6. Adoption and Showcase
 
 **Status:** not started. Only after the package model and the biggest ergonomics gaps are under control.
 
@@ -102,7 +137,7 @@ The showcase corpus should deliberately rebalance away from mostly text-heavy ex
 
 **References:** [adoption-strategy](research/workloads/adoption-strategy.md), [showcase-workloads](research/workloads/showcase-workloads.md)
 
-## 5. Project and Operational Maturity (Phase L1)
+## 7. Project and Operational Maturity
 
 **Status:** not started. This turns the compiler into a durable reviewable operational system.
 
@@ -120,7 +155,7 @@ The showcase corpus should deliberately rebalance away from mostly text-heavy ex
 
 **References:** [evidence-review-workflows](research/proof-evidence/evidence-review-workflows.md), [proof-evidence-artifacts](research/proof-evidence/proof-evidence-artifacts.md), [trust-multipliers](research/proof-evidence/trust-multipliers.md), [developer-tooling](research/packages-tooling/developer-tooling.md)
 
-## 6. Backend Plurality (Phase L2)
+## 8. Backend Plurality
 
 **Status:** not started. Keep explicit and late.
 
@@ -132,7 +167,7 @@ The showcase corpus should deliberately rebalance away from mostly text-heavy ex
 
 **References:** [qbe-backend](research/compiler/qbe-backend.md), [qbe-in-concrete](research/compiler/qbe-in-concrete.md), [mlir-backend-shape](research/compiler/mlir-backend-shape.md), [optimization-policy](research/compiler/optimization-policy.md)
 
-## 7. Concurrency (Phase M)
+## 9. Concurrency
 
 **Status:** not started. Keep the model explicit, small, and late.
 
@@ -143,7 +178,7 @@ The showcase corpus should deliberately rebalance away from mostly text-heavy ex
 
 **References:** [concurrency](research/stdlib-runtime/concurrency.md), [long-term-concurrency](research/stdlib-runtime/long-term-concurrency.md)
 
-## 8. Allocation Profiles (Phase N)
+## 10. Allocation Profiles
 
 **Status:** not started. Do this after the broader compiler/runtime structure is more stable.
 
@@ -155,9 +190,9 @@ The showcase corpus should deliberately rebalance away from mostly text-heavy ex
 
 **References:** [allocation-budgets](research/stdlib-runtime/allocation-budgets.md), [arena-allocation](research/stdlib-runtime/arena-allocation.md), [execution-cost](research/stdlib-runtime/execution-cost.md)
 
-## 9. Predictable Execution (Phase P)
+## 11. Predictable Execution
 
-**Status:** not started. Do this after allocation profiles and the first explicit concurrency model exist.
+**Status:** partially pulled forward into Thesis Validation. The remaining work here is the broader, more mature predictable-execution program after the first thesis-level validation succeeds.
 
 **Tasks:**
 1. define a restricted analyzable execution profile — done when there is a documented profile covering a recursion ban, no unrestricted allocation, loop-bound rules, concurrency limits, blocking-operation limits, and FFI boundaries
@@ -171,7 +206,7 @@ The showcase corpus should deliberately rebalance away from mostly text-heavy ex
 
 **References:** [predictable-execution](research/predictable-execution/predictable-execution.md), [effect-taxonomy](research/predictable-execution/effect-taxonomy.md), [allocation-budgets](research/stdlib-runtime/allocation-budgets.md), [execution-cost](research/stdlib-runtime/execution-cost.md), [concurrency](research/stdlib-runtime/concurrency.md), [long-term-concurrency](research/stdlib-runtime/long-term-concurrency.md), [backend-traceability](research/compiler/backend-traceability.md), [failure-semantics](research/language/failure-semantics.md), [trusted-code-policy](research/language/trusted-code-policy.md), [interrupt-signal-model](research/language/interrupt-signal-model.md)
 
-## 10. Research and Evidence-Gated Features (Phase O)
+## 12. Research and Evidence-Gated Features
 
 **Status:** not started. Keep visible without forcing premature language growth.
 
