@@ -974,7 +974,7 @@ mod Lox {
             let val: RVal = eval_node(nd.data,eid,nodes,bins,asns,vds,blks,ifs,whs,fns,cls,stmts,params,args,sp_chars,sp_meta,nums,envs,ebs,closures,rvs);
             if val.tag==5 { return val; }
             print_rval(val,sp_chars,sp_meta,nums);
-            print_char(10);
+            println("");
             return rv_nil();
         }
         // EXPR_STMT

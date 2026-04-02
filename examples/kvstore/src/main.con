@@ -287,24 +287,17 @@ mod kvstore {
         let val: String = clone_string(val_arg);
         log_set(key_arg, val_arg);
         kv_set_tracked(map, keys, key, val);
-        print("Set '");
-        print_string(key_arg);
-        print("' = '");
-        print_string(val_arg);
-        println("'");
+        println("Set '", key_arg, "' = '", val_arg, "'");
     }
 
     fn cmd_get(map: &mut HashMap<String, String>, key_arg: &String) with(Std) {
         let val_opt: Option<&String> = map.get(key_arg);
         match val_opt {
             Option#Some { value } => {
-                print_string(value);
-                print_char(10);
+                println(value);
             },
             Option#None => {
-                print("Key '");
-                print_string(key_arg);
-                println("' not found");
+                println("Key '", key_arg, "' not found");
             }
         }
     }
@@ -313,13 +306,9 @@ mod kvstore {
         let deleted: bool = kv_delete(map, keys, key_arg);
         if deleted {
             log_del(key_arg);
-            print("Deleted '");
-            print_string(key_arg);
-            println("'");
+            println("Deleted '", key_arg, "'");
         } else {
-            print("Key '");
-            print_string(key_arg);
-            println("' not found");
+            println("Key '", key_arg, "' not found");
         }
     }
 
@@ -341,7 +330,7 @@ mod kvstore {
 
         let mut init: String = "";
         let out: String = map.fold::<String>(init, build_list_line);
-        print_string(&out);
+        print(out);
         out.drop();
     }
 
@@ -404,9 +393,7 @@ mod kvstore {
         } else if str_eq(&cmd, &"compact") {
             compact(&mut map, &mut keys);
         } else {
-            print("Unknown command: ");
-            print_string(&cmd);
-            print_char(10);
+            println("Unknown command: ", cmd);
             print_usage();
             exit_code = 1;
         }

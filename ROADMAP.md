@@ -27,7 +27,7 @@ Phase H did its job: it exposed real-program pressure, forced the linearity and 
 1. match-as-expression — value-producing `match` for branch-produced values, including linear cases
 
 **Moved forward as a separate polish track:**
-1. output cleanup
+1. ~~output cleanup~~ — done: all examples use `print`/`println` variadic builtins, no raw `print_string`/`print_char`/`print_int` in user-facing code
 2. `string.split` / `string.trim`
 3. path decomposition
 4. minimal FFI pressure test
@@ -57,7 +57,7 @@ This phase exists to test whether those ideas hold up in implementation, reports
 6. define the backend/source trust boundary for evidence claims — done when it is explicit which claims hold at source/report level and where backend assumptions begin
 7. validate the thesis with bounded and evidence-carrying examples — done when a small set of examples demonstrates capability visibility, predictable execution, and proof-backed evidence together
 
-**References:** [predictable-execution](research/predictable-execution/predictable-execution.md), [effect-taxonomy](research/predictable-execution/effect-taxonomy.md), [allocation-budgets](research/stdlib-runtime/allocation-budgets.md), [execution-cost](research/stdlib-runtime/execution-cost.md), [backend-traceability](research/compiler/backend-traceability.md), [failure-semantics](research/language/failure-semantics.md), [trusted-code-policy](research/language/trusted-code-policy.md), [interrupt-signal-model](research/language/interrupt-signal-model.md)
+**References:** [thesis-validation](research/thesis-validation/thesis-validation.md), [noalloc-enforcement](research/thesis-validation/noalloc-enforcement.md), [boundedness-reports](research/thesis-validation/boundedness-reports.md), [proof-slice](research/thesis-validation/proof-slice.md), [validation-examples](research/thesis-validation/validation-examples.md), [predictable-execution](research/predictable-execution/predictable-execution.md), [effect-taxonomy](research/predictable-execution/effect-taxonomy.md), [allocation-budgets](research/stdlib-runtime/allocation-budgets.md), [execution-cost](research/stdlib-runtime/execution-cost.md), [backend-traceability](research/compiler/backend-traceability.md), [failure-semantics](research/language/failure-semantics.md), [trusted-code-policy](research/language/trusted-code-policy.md), [interrupt-signal-model](research/language/interrupt-signal-model.md)
 
 ## 3. Stdlib and Example Polish
 
