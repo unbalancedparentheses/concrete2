@@ -13,28 +13,26 @@
 
 >Most ideas come from previous ideas - Alan C. Kay, The Early History Of Smalltalk
 
-Concrete is a systems language where capability requirements, trust boundaries, and ownership are visible in every function signature — written in Lean 4 so the compiler itself can be a proof target.
+Concrete is a no-GC systems language where authority, trust boundaries, and ownership are explicit enough to audit, restrict, and eventually prove. The compiler is written in Lean 4 so the language can grow toward proof-backed evidence instead of stopping at type checking.
 
-## The Long-Term Thesis
+## The Thesis
 
-Concrete is trying to make four things explicit enough to audit, restrict, and eventually prove at the function boundary:
+Concrete is trying to make four things visible at the function boundary:
 
 1. **Authority** — what resources code may touch
 2. **Operational behavior** — what it may allocate, block on, recurse through, or run unboundedly
 3. **Trust boundaries** — where it relies on `trusted`, FFI, or backend assumptions
 4. **Evidence level** — whether a claim is only reported, compiler-enforced, or mechanically proved
 
-The short version is:
+Short version:
 
 - Rust makes memory safety explicit.
 - Lean makes proofs explicit.
 - Concrete is trying to make operational power explicit.
 
-That is the core bet of the project.
+## The Core Mechanism
 
-## The Core Idea
-
-In mainstream systems languages, function signatures usually do not tell you whether code may read files, use the network, or allocate memory. In Concrete, those effects are declared:
+In mainstream systems languages, function signatures usually do not tell you whether code may read files, use the network, or allocate memory. In Concrete, those facts are declared:
 
 ```con
 fn parse_json(input: &String) with(Alloc) -> JsonValue { ... }
@@ -42,33 +40,20 @@ fn serve(port: u16) with(Network, Alloc, Console) -> Int { ... }
 fn sha256(data: &Bytes) with(Alloc) -> String { ... }
 ```
 
-`parse_json` can allocate but can't touch the filesystem or network. `sha256` can allocate but provably never reads a file. This isn't a convention — the compiler enforces it. A function can only call functions whose capabilities are a subset of its own.
+`parse_json` can allocate but cannot touch the filesystem or network. `sha256` can allocate but cannot read a file. This is not a convention — the compiler enforces it. A function can only call functions whose capabilities are a subset of its own.
 
-The real payoff shows up in something like an artifact verifier: `sha256() with(Alloc)` cannot touch the filesystem. `read_file() with(File, Alloc)` cannot leak to the console. `report() with(Console)` cannot read files. An auditor can verify the authority boundaries from the signatures alone, without first reading the function bodies.
+The payoff is architectural: an auditor can verify authority boundaries from function signatures before reading the bodies.
 
-## What Concrete Is Trying To Make Visible
+## Flagship Direction
 
-For a function, Concrete wants it to become possible to know:
+The clearest validation target is a capability-separated packet decoder:
 
-1. what it can touch
-2. what it can allocate
-3. what it can block on
-4. what trust boundaries it crosses
-5. whether its execution is structurally bounded
-6. whether the claim is only reported, compiler-enforced, or proved
-
-That is a much bigger idea than "safe systems language." It is closer to a systems language with explicit operational semantics at the function boundary.
-
-## Flagship Validation Example
-
-The clearest example of the thesis is a capability-separated packet decoder with:
-
-1. a network-facing wrapper that has `with(Network)`
+1. a network-facing wrapper with `with(Network)`
 2. a parser core with no network authority, no allocation, no blocking, no FFI, and bounded loops
 3. compiler reports showing the parser core is profile-compatible
 4. a Lean theorem over one real parser property
 
-That kind of example shows all the parts of the thesis together:
+That single example would demonstrate:
 
 1. visible authority
 2. predictable restricted behavior
@@ -148,23 +133,9 @@ The compiler is written in Lean 4. This enables two layers of proof:
 
 The architecture keeps proof tooling separate from compilation. The compiler produces stable artifacts (`ValidatedCore`, `ProofCore`); proof tools consume them. This avoids pushing proof search into the normal compile path.
 
-Currently: 17 proven theorems over a pure Core fragment. The formalization is narrow but the architecture is designed to grow.
+Currently: 17 proven theorems over a pure Core fragment. The formalization is still narrow, but the architecture is aimed at growing from pure Core proofs toward proof-backed evidence over selected systems-facing code.
 
-## Research Directions
-
-The most developed ideas in the [research/](research/) directory are roadmap and research directions, not already-landed product surfaces:
-
-**Authority budgets** — capabilities already tell you what each function requires. Budgets would make this enforceable at module and package scope: "this module may only use `Alloc`." If any function inside transitively reaches `Network`, the build would fail. The transitive capability set is already computed; budget checking is set containment. ([research/packages-tooling/authority-budgets.md](research/packages-tooling/authority-budgets.md))
-
-**Allocation budgets** — `with(Alloc)` is currently binary. The proposal classifies functions as NoAlloc / Bounded / Unbounded by walking the call graph. This would push allocation reporting into a stricter audit surface. ([research/stdlib-runtime/allocation-budgets.md](research/stdlib-runtime/allocation-budgets.md))
-
-**Execution cost tracking** — structural classification of functions as bounded or unbounded (loops, recursion, call depth). For bounded functions, compute abstract operation counts via IPET. Concrete is unusually tractable here: no dynamic dispatch, no closures, no hidden allocation. ([research/stdlib-runtime/execution-cost.md](research/stdlib-runtime/execution-cost.md))
-
-**Semantic diff and trust drift** — diff trust-relevant properties across two versions: authority changes, new trusted boundaries, allocation shifts. Not source text diffs — semantic fact diffs. ([research/compiler/semantic-diff-and-trust-drift.md](research/compiler/semantic-diff-and-trust-drift.md))
-
-**Proof addon architecture** — the compiler produces stable proof-facing artifacts; proof tooling is a separate consumer (SMT, symbolic execution, Lean export). This avoids fusing proof search into compilation. ([research/proof-evidence/proof-addon-architecture.md](research/proof-evidence/proof-addon-architecture.md))
-
-**AI-assisted optimization** — the report system produces structured semantic facts (authority, allocation, purity, trust boundaries), not just pass/fail. This creates a tight feedback loop for automated agents: try a refactoring, check whether the compiler's structured report changed in the intended direction ("did this function become NoAlloc?", "did the authority set shrink?", "did more functions become proof-eligible?"). Semantic guardrails mean an agent can verify that a faster version didn't silently grow its trust surface.
+## Current Research Center
 
 The current center of gravity is [research/thesis-validation/](research/thesis-validation/):
 
@@ -172,7 +143,11 @@ The current center of gravity is [research/thesis-validation/](research/thesis-v
 2. [objective-matrix.md](research/thesis-validation/objective-matrix.md)
 3. [thesis-validation.md](research/thesis-validation/thesis-validation.md)
 
-These notes define the main experimental track: validate capability-visible architecture, predictable execution, and proof-backed evidence together rather than as disconnected ideas.
+Those notes define the current experimental track:
+
+1. capability-visible architecture
+2. predictable execution
+3. proof-backed evidence
 
 ## Where Concrete Fits
 
@@ -186,21 +161,19 @@ The most compelling targets are high-consequence components with narrow authorit
 - industrial control safety interlocks, medical-device policy kernels
 - audited wrappers around critical C libraries or hardware interfaces
 
-**Compared to Rust:** Smaller surface, less abstraction, more explicit authority. Rust's `unsafe` covers everything Concrete splits into three checkable surfaces. Rust has no way to declare that a crate may not do network I/O or to attach operational/boundedness evidence in the same style.
+**Compared to Rust:** smaller surface, more explicit authority, stricter trust split.
 
-**Compared to Zig:** Shares the low-level explicitness, but pushes harder on ownership, capability tracking, operational reporting, and proof-oriented structure.
+**Compared to Zig:** similar low-level explicitness, but more ownership, capability, and proof structure.
 
-**Compared to verification languages (F\*, SPARK):** Keeps low-level runtime, FFI, layout, and ownership first-class instead of treating them as escape hatches.
-
-**Compared to Lean:** Lean is the proof language. Concrete is trying to be the low-level no-GC systems language whose authority, operational behavior, and evidence boundaries are explicit enough for Lean to reason about credibly.
+**Compared to Lean:** Lean is the proof language. Concrete is trying to be the no-GC systems language whose behavior is explicit enough for Lean to reason about credibly.
 
 ## Current State
 
 The compiler implements the full pipeline: `Parse → Resolve → Check → Elab → CoreCheck → Mono → Lower → EmitSSA → LLVM IR`.
 
-What exists: centralized ABI/layout, 8 report modes with 59 assertions, `trusted`/capability boundaries, a real stdlib (vec, string, io, bytes, fs, net, hash, time, parse, test, and 8 collection types), `#[test]` execution, `concrete build`/`test`/`run`, and 12 example programs that have pressure-tested parsers, interpreters, storage, networking, and integrity workloads.
+What exists: centralized ABI/layout, 8 report modes with 59 assertions, `trusted`/capability boundaries, a real stdlib, `#[test]` execution, `concrete build`/`test`/`run`, and example programs that have pressure-tested parsers, interpreters, storage, networking, and integrity workloads.
 
-What doesn't exist yet: incremental compilation, third-party dependencies, backend plurality, broad formalization, a runtime.
+What does not exist yet: incremental compilation, third-party dependencies, backend plurality, broad formalization, and the full thesis-validation stack around bounded execution and proof-backed evidence.
 
 For priorities, see [ROADMAP.md](ROADMAP.md). For landed milestones, see [CHANGELOG.md](CHANGELOG.md).
 
@@ -245,6 +218,8 @@ make clean    # or: lake clean
 - [docs/SAFETY.md](docs/SAFETY.md) — the three-way trust model
 - [ROADMAP.md](ROADMAP.md) — what's next
 - [CHANGELOG.md](CHANGELOG.md) — what's landed
+- [research/thesis-validation/core-thesis.md](research/thesis-validation/core-thesis.md) — the clearest statement of the long-term thesis
+- [research/thesis-validation/objective-matrix.md](research/thesis-validation/objective-matrix.md) — what the flagship examples are meant to prove
 - [research/](research/) — design research and future directions
 - [docs/](docs/README.md) — full documentation index
 

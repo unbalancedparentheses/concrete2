@@ -21,6 +21,12 @@ The deeper thesis is that Concrete should make four things explicit enough to au
 
 That is the sense in which Concrete is trying to make operational power explicit, not just memory safety or proof objects in isolation.
 
+Short version:
+
+1. Rust makes memory safety explicit.
+2. Lean makes proofs explicit.
+3. Concrete is trying to make operational power explicit.
+
 ## The Three-Way Trust Split
 
 Most systems languages have one escape hatch. Rust has `unsafe`. C has... everything. Concrete splits trust into three orthogonal mechanisms:
@@ -66,13 +72,7 @@ Currently: 17 proven theorems over a pure Core fragment. Narrow, but the archite
 
 ## Thesis-Level Direction
 
-Concrete's long-term claim is not merely:
-
-1. capability-visible functions
-2. a nice trust split
-3. some formalization work
-
-It is the combination of:
+Concrete's long-term claim is the combination of:
 
 1. visible authority at the function boundary
 2. reportable and enforceable operational behavior such as allocation, blocking, recursion, and boundedness
@@ -152,11 +152,11 @@ Target use cases:
 
 ### Competitive Stance
 
-**vs. Rust:** Not competing on ecosystem, borrow-checker polish, or macro power. Competing on auditability and explicit authority. Rust's `unsafe` covers everything Concrete splits into three checkable surfaces. Rust has no capability system for declaring that a crate may not do network I/O.
+**vs. Rust:** not competing on ecosystem or macro power; competing on auditability, explicit authority, and trust boundaries.
 
-**vs. Zig:** Shares low-level explicitness. Concrete pushes harder on ownership, capability tracking, and proof structure.
+**vs. Zig:** shares low-level explicitness, but pushes harder on ownership, capability tracking, and proof structure.
 
-**vs. verification languages (F\*, SPARK):** Keeps low-level runtime, FFI, layout, and ownership first-class. Verification-first languages treat these as escape hatches.
+**vs. verification languages (F\*, SPARK):** keeps low-level runtime, FFI, layout, and ownership first-class.
 
 **vs. Lean:** Concrete is not a proof assistant. It is the low-level language that Lean 4 reasons about.
 
