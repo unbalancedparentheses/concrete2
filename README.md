@@ -15,6 +15,23 @@
 
 Concrete is a systems language where capability requirements, trust boundaries, and ownership are visible in every function signature — written in Lean 4 so the compiler itself can be a proof target.
 
+## The Long-Term Thesis
+
+Concrete is trying to make four things explicit enough to audit, restrict, and eventually prove at the function boundary:
+
+1. **Authority** — what resources code may touch
+2. **Operational behavior** — what it may allocate, block on, recurse through, or run unboundedly
+3. **Trust boundaries** — where it relies on `trusted`, FFI, or backend assumptions
+4. **Evidence level** — whether a claim is only reported, compiler-enforced, or mechanically proved
+
+The short version is:
+
+- Rust makes memory safety explicit.
+- Lean makes proofs explicit.
+- Concrete is trying to make operational power explicit.
+
+That is the core bet of the project.
+
 ## The Core Idea
 
 In mainstream systems languages, function signatures usually do not tell you whether code may read files, use the network, or allocate memory. In Concrete, those effects are declared:
@@ -28,6 +45,34 @@ fn sha256(data: &Bytes) with(Alloc) -> String { ... }
 `parse_json` can allocate but can't touch the filesystem or network. `sha256` can allocate but provably never reads a file. This isn't a convention — the compiler enforces it. A function can only call functions whose capabilities are a subset of its own.
 
 The real payoff shows up in something like an artifact verifier: `sha256() with(Alloc)` cannot touch the filesystem. `read_file() with(File, Alloc)` cannot leak to the console. `report() with(Console)` cannot read files. An auditor can verify the authority boundaries from the signatures alone, without first reading the function bodies.
+
+## What Concrete Is Trying To Make Visible
+
+For a function, Concrete wants it to become possible to know:
+
+1. what it can touch
+2. what it can allocate
+3. what it can block on
+4. what trust boundaries it crosses
+5. whether its execution is structurally bounded
+6. whether the claim is only reported, compiler-enforced, or proved
+
+That is a much bigger idea than "safe systems language." It is closer to a systems language with explicit operational semantics at the function boundary.
+
+## Flagship Validation Example
+
+The clearest example of the thesis is a capability-separated packet decoder with:
+
+1. a network-facing wrapper that has `with(Network)`
+2. a parser core with no network authority, no allocation, no blocking, no FFI, and bounded loops
+3. compiler reports showing the parser core is profile-compatible
+4. a Lean theorem over one real parser property
+
+That kind of example shows all the parts of the thesis together:
+
+1. visible authority
+2. predictable restricted behavior
+3. proof-backed claim on real systems code
 
 ### The three-way trust split
 
@@ -121,6 +166,14 @@ The most developed ideas in the [research/](research/) directory are roadmap and
 
 **AI-assisted optimization** — the report system produces structured semantic facts (authority, allocation, purity, trust boundaries), not just pass/fail. This creates a tight feedback loop for automated agents: try a refactoring, check whether the compiler's structured report changed in the intended direction ("did this function become NoAlloc?", "did the authority set shrink?", "did more functions become proof-eligible?"). Semantic guardrails mean an agent can verify that a faster version didn't silently grow its trust surface.
 
+The current center of gravity is [research/thesis-validation/](research/thesis-validation/):
+
+1. [core-thesis.md](research/thesis-validation/core-thesis.md)
+2. [objective-matrix.md](research/thesis-validation/objective-matrix.md)
+3. [thesis-validation.md](research/thesis-validation/thesis-validation.md)
+
+These notes define the main experimental track: validate capability-visible architecture, predictable execution, and proof-backed evidence together rather than as disconnected ideas.
+
 ## Where Concrete Fits
 
 Concrete is not trying to replace Rust, Zig, or C for general-purpose systems programming. Its case is narrower: software that must be small, explicit, reviewable, and honest about power.
@@ -133,11 +186,13 @@ The most compelling targets are high-consequence components with narrow authorit
 - industrial control safety interlocks, medical-device policy kernels
 - audited wrappers around critical C libraries or hardware interfaces
 
-**Compared to Rust:** Smaller surface, less abstraction, more explicit authority. Rust's `unsafe` covers everything Concrete splits into three checkable surfaces. Rust has no way to declare that a crate may not do network I/O.
+**Compared to Rust:** Smaller surface, less abstraction, more explicit authority. Rust's `unsafe` covers everything Concrete splits into three checkable surfaces. Rust has no way to declare that a crate may not do network I/O or to attach operational/boundedness evidence in the same style.
 
-**Compared to Zig:** Shares the low-level explicitness, but pushes harder on ownership, capability tracking, and proof-oriented structure.
+**Compared to Zig:** Shares the low-level explicitness, but pushes harder on ownership, capability tracking, operational reporting, and proof-oriented structure.
 
 **Compared to verification languages (F\*, SPARK):** Keeps low-level runtime, FFI, layout, and ownership first-class instead of treating them as escape hatches.
+
+**Compared to Lean:** Lean is the proof language. Concrete is trying to be the low-level no-GC systems language whose authority, operational behavior, and evidence boundaries are explicit enough for Lean to reason about credibly.
 
 ## Current State
 

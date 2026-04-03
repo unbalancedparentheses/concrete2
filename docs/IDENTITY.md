@@ -12,6 +12,15 @@ A systems language where capability requirements, trust boundaries, and ownershi
 
 The bet is that for high-consequence code (firmware, security boundaries, safety-critical components), being able to answer "what authority does this module have?" and "which functions are pure enough to prove?" matters more than having a large ecosystem or maximal expressiveness.
 
+The deeper thesis is that Concrete should make four things explicit enough to audit, restrict, and prove:
+
+1. authority
+2. operational behavior
+3. trust boundaries
+4. evidence level
+
+That is the sense in which Concrete is trying to make operational power explicit, not just memory safety or proof objects in isolation.
+
 ## The Three-Way Trust Split
 
 Most systems languages have one escape hatch. Rust has `unsafe`. C has... everything. Concrete splits trust into three orthogonal mechanisms:
@@ -55,9 +64,34 @@ The architecture keeps proof tooling separate from compilation. The compiler pro
 
 Currently: 17 proven theorems over a pure Core fragment. Narrow, but the architecture is designed to grow without contaminating the compile path.
 
+## Thesis-Level Direction
+
+Concrete's long-term claim is not merely:
+
+1. capability-visible functions
+2. a nice trust split
+3. some formalization work
+
+It is the combination of:
+
+1. visible authority at the function boundary
+2. reportable and enforceable operational behavior such as allocation, blocking, recursion, and boundedness
+3. explicit trust boundaries
+4. proof-backed evidence tied to compiler artifacts
+
+If that combination works, a reviewer can ask far more precise questions about a function than most mainstream systems languages make practical.
+
 ## Research Directions
 
 These are the most developed ideas in [research/](../research/). None are implemented yet, but each is grounded in the current compiler architecture.
+
+The current thesis-validation center of gravity is:
+
+1. [../research/thesis-validation/core-thesis.md](../research/thesis-validation/core-thesis.md)
+2. [../research/thesis-validation/objective-matrix.md](../research/thesis-validation/objective-matrix.md)
+3. [../research/thesis-validation/thesis-validation.md](../research/thesis-validation/thesis-validation.md)
+
+Those notes define the experimental target more directly than the older broad research notes do.
 
 ### Authority Budgets
 
@@ -125,6 +159,12 @@ Target use cases:
 **vs. verification languages (F\*, SPARK):** Keeps low-level runtime, FFI, layout, and ownership first-class. Verification-first languages treat these as escape hatches.
 
 **vs. Lean:** Concrete is not a proof assistant. It is the low-level language that Lean 4 reasons about.
+
+The intended relationship is:
+
+1. Lean remains the proof language
+2. Concrete remains the systems language
+3. the interesting question is how much low-level, no-GC systems code can still carry useful proof-backed evidence
 
 ## Non-Goals
 

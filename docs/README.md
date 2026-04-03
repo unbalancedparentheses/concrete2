@@ -30,6 +30,7 @@ The `book/` subdirectory is for tutorial-style and user-facing structured docume
 - Read [../README.md](../README.md) first for project overview, current status, and build/test instructions.
 - Read [../ROADMAP.md](../ROADMAP.md) for active and future work.
 - Read [../CHANGELOG.md](../CHANGELOG.md) for completed milestones.
+- Read [../research/thesis-validation/core-thesis.md](../research/thesis-validation/core-thesis.md) and [../research/thesis-validation/objective-matrix.md](../research/thesis-validation/objective-matrix.md) if you want the current long-term thesis and the flagship validation examples.
 - Read [PASSES.md](PASSES.md) early if you want to understand where compiler responsibility lives today.
 - Use this `docs/` directory for stable reference material, not exploratory design notes.
 
