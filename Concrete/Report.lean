@@ -872,5 +872,185 @@ def proofReport (modules : List CModule) : String :=
   let summary := s!"\nTotals: {allFns.length} functions, {eligible.length} eligible for ProofCore, {excluded} excluded"
   s!"{header}\n\n{"\n\n".intercalate body}\n{summary}\n"
 
+-- ============================================================
+-- Report 9: Recursion / Call-Cycle Detection (--report recursion)
+-- ============================================================
+-- Detects direct recursion (self-calls) and mutual recursion
+-- (call cycles) using Tarjan's SCC algorithm on the call graph.
+-- This is the foundation for the predictable-execution profile:
+-- functions in cycles cannot be proven to terminate statically.
+
+/-- Mutable state for Tarjan's SCC algorithm. -/
+private structure TarjanState where
+  index    : Nat                           -- next index to assign
+  stack    : List String                   -- DFS stack
+  onStack  : List String                   -- fast membership check
+  indices  : List (String × Nat)           -- node → discovery index
+  lowlinks : List (String × Nat)           -- node → lowlink
+  sccs     : List (List String)            -- completed SCCs
+
+private def TarjanState.empty : TarjanState :=
+  { index := 0, stack := [], onStack := [], indices := [], lowlinks := [], sccs := [] }
+
+private def lookupNat (assoc : List (String × Nat)) (key : String) : Nat :=
+  match assoc.find? (fun (k, _) => k == key) with
+  | some (_, v) => v
+  | none => 0
+
+private def setNat (assoc : List (String × Nat)) (key : String) (val : Nat) : List (String × Nat) :=
+  match assoc.findIdx? (fun (k, _) => k == key) with
+  | some idx => assoc.set idx (key, val)
+  | none => assoc ++ [(key, val)]
+
+/-- Tarjan's SCC — iterative with an explicit work stack to avoid Lean stack overflow
+    on large call graphs.  Each frame records the node being visited and where we are
+    in its adjacency list.  When we finish all successors we pop the frame and propagate
+    lowlinks exactly as in the recursive version. -/
+private def tarjanSCC (graph : CallGraph) : List (List String) :=
+  -- Collect all nodes that appear as keys OR as callees
+  let allNodes := graph.foldl (fun acc (fn, callees) =>
+    let acc := if acc.contains fn then acc else acc ++ [fn]
+    callees.foldl (fun a c => if a.contains c then a else a ++ [c]) acc) []
+  -- Work-stack frame: (node, remaining-successors, lowlink-so-far)
+  let rec processStack
+    (work : List (String × List String × Nat))
+    (st : TarjanState)
+    (fuel : Nat) : TarjanState :=
+    match fuel with
+    | 0 => st
+    | fuel + 1 =>
+      match work with
+      | [] => st
+      | (v, [], _vLow) :: rest =>
+        -- All successors of v processed.  Finalise v.
+        let vLow := lookupNat st.lowlinks v
+        let vIdx := lookupNat st.indices v
+        -- If v is a root, pop its SCC from the stack
+        let st := if vLow == vIdx then
+          let rec popScc (stk : List String) (scc : List String) :=
+            match stk with
+            | [] => (scc, [])
+            | w :: stk' =>
+              let scc := scc ++ [w]
+              if w == v then (scc, stk')
+              else popScc stk' scc
+          let (scc, newStack) := popScc st.stack []
+          let newOnStack := st.onStack.filter (fun n => !scc.contains n)
+          { st with stack := newStack, onStack := newOnStack, sccs := st.sccs ++ [scc] }
+        else st
+        -- Propagate lowlink to parent frame
+        match rest with
+        | [] => processStack [] st fuel
+        | (pv, pRemain, _pLow) :: grandRest =>
+          let pLow := lookupNat st.lowlinks pv
+          let newPLow := if vLow < pLow then vLow else pLow
+          let st := { st with lowlinks := setNat st.lowlinks pv newPLow }
+          processStack ((pv, pRemain, newPLow) :: grandRest) st fuel
+      | (v, w :: ws, _vLow) :: rest =>
+        -- Next successor w of v
+        if (st.indices.find? (fun (k, _) => k == w)).isNone then
+          -- w not yet visited — "recurse" by pushing a new frame
+          let wIdx := st.index
+          let st := { st with
+            index := st.index + 1
+            indices := st.indices ++ [(w, wIdx)]
+            lowlinks := st.lowlinks ++ [(w, wIdx)]
+            stack := [w] ++ st.stack
+            onStack := [w] ++ st.onStack }
+          let wCallees := match graph.find? (fun (n, _) => n == w) with
+            | some (_, cs) => cs
+            | none => []
+          processStack ((w, wCallees, wIdx) :: (v, ws, lookupNat st.lowlinks v) :: rest) st fuel
+        else if st.onStack.contains w then
+          -- w on stack — update lowlink
+          let vLow := lookupNat st.lowlinks v
+          let wIdx := lookupNat st.indices w
+          let newLow := if wIdx < vLow then wIdx else vLow
+          let st := { st with lowlinks := setNat st.lowlinks v newLow }
+          processStack ((v, ws, newLow) :: rest) st fuel
+        else
+          -- w already completed — skip
+          processStack ((v, ws, lookupNat st.lowlinks v) :: rest) st fuel
+  -- Kick off: visit each unvisited node
+  let st := allNodes.foldl (fun st v =>
+    if (st.indices.find? (fun (k, _) => k == v)).isSome then st
+    else
+      let vIdx := st.index
+      let st := { st with
+        index := st.index + 1
+        indices := st.indices ++ [(v, vIdx)]
+        lowlinks := st.lowlinks ++ [(v, vIdx)]
+        stack := [v] ++ st.stack
+        onStack := [v] ++ st.onStack }
+      let vCallees := match graph.find? (fun (n, _) => n == v) with
+        | some (_, cs) => cs
+        | none => []
+      processStack [(v, vCallees, vIdx)] st (allNodes.length * allNodes.length + allNodes.length)
+  ) TarjanState.empty
+  st.sccs
+
+/-- Recursion classification for a function. -/
+inductive RecursionKind where
+  | none          -- not in any cycle
+  | direct        -- calls itself
+  | mutual        -- in a cycle with other functions
+  deriving BEq
+
+/-- Classify each function given the SCCs and the call graph. -/
+private def classifyRecursion (graph : CallGraph) (sccs : List (List String))
+    : List (String × RecursionKind × List String) :=
+  sccs.foldl (fun acc scc =>
+    match scc with
+    | [single] =>
+      -- Check for self-call
+      let callees := match graph.find? (fun (n, _) => n == single) with
+        | some (_, cs) => cs
+        | none => []
+      if callees.contains single then
+        acc ++ [(single, .direct, [single])]
+      else
+        acc ++ [(single, .none, [])]
+    | members =>
+      -- All members of a multi-node SCC are mutually recursive
+      let entries := members.map fun m => (m, RecursionKind.mutual, members)
+      acc ++ entries
+  ) []
+
+/-- Format the recursion report. -/
+def recursionReport (modules : List CModule) : String :=
+  let header := "=== Recursion / Call-Cycle Report ==="
+  let graph := buildCallGraph modules
+  let sccs := tarjanSCC graph
+  let classifications := classifyRecursion graph sccs
+  -- Separate into categories
+  let directRec := classifications.filter fun (_, k, _) => k == .direct
+  let mutualRec := classifications.filter fun (_, k, _) => k == .mutual
+  let nonRec := classifications.filter fun (_, k, _) => k == .none
+  -- Group mutual recursion by cycle (deduplicate SCC listings)
+  let mutualCycles := sccs.filter (fun scc => scc.length > 1)
+  -- Build output
+  let directSection :=
+    if directRec.isEmpty then []
+    else
+      [s!"Direct recursion ({directRec.length} functions):"] ++
+      directRec.map (fun (fn, _, _) => s!"  {fn} -> {fn}") ++ [""]
+  let mutualSection :=
+    if mutualCycles.isEmpty then []
+    else
+      [s!"Mutual recursion ({mutualCycles.length} cycles):"] ++
+      mutualCycles.map (fun cycle =>
+        let cycleStr := " -> ".intercalate cycle
+        match cycle.head? with
+        | some h => s!"  cycle: {cycleStr} -> {h}"
+        | none => s!"  cycle: {cycleStr}") ++ [""]
+  let totalFns := classifications.length
+  let recursiveFns := directRec.length + mutualRec.length
+  let summaryLine := s!"Totals: {totalFns} functions, {nonRec.length} non-recursive, {directRec.length} direct recursion, {mutualRec.length} in mutual cycles"
+  let acyclicNote :=
+    if recursiveFns == 0 then ["", "No recursion detected — all call paths are acyclic."]
+    else []
+  let allLines := [header, ""] ++ directSection ++ mutualSection ++ [summaryLine] ++ acyclicNote
+  "\n".intercalate allLines ++ "\n"
+
 end Report
 end Concrete
