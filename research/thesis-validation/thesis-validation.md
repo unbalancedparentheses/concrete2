@@ -20,6 +20,7 @@ Concrete should be able to demonstrate, in implementation rather than aspiration
 2. execution-relevant facts can be surfaced mechanically
 3. a restricted execution profile can be made precise
 4. proof-backed evidence can attach to selected user-facing code and compiler reports
+5. determinism, cleanup cost, and host-call opacity are visible enough that "predictable" does not hide obvious blind spots
 
 ## Main Workstreams
 
@@ -29,6 +30,7 @@ The thesis-validation track breaks into four workstreams:
 2. operational/trust effect reporting
 3. first predictable-execution profile
 4. proof-backed evidence on a restricted fragment
+5. validation of determinism, cleanup cost, and host-call classification
 
 ## What Success Looks Like
 
@@ -38,6 +40,16 @@ This phase is successful when Concrete can point to a small but credible demonst
 2. compiler reports identifying blocking, FFI, trusted use, recursion, unknown loop bounds, and allocation class
 3. a predictable-execution profile that rejects code structurally outside the profile
 4. selected user-facing functions with proof-backed claims connected to the actual compiler pipeline
+5. explicit answers on four thesis-level invariants:
+   - whether lowering/codegen can silently introduce allocation
+   - whether any analyzed path can escape through indirect calls
+   - what boundedness guarantees apply on failure paths
+   - where LLVM/backend timing assumptions begin
+6. explicit answers on four practical predictability questions:
+   - whether a function is deterministic with respect to time, randomness, and iteration order
+   - whether cleanup work is bounded on success paths
+   - whether cleanup work is bounded on failure paths
+   - whether host calls are classified as blocking, timing-opaque, or trust-boundary crossings
 
 ## Relationship To Other Notes
 
@@ -67,3 +79,4 @@ That means:
 2. report one real class of execution uncertainty
 3. define one real restricted profile
 4. prove one real class of claims over real user-facing code
+5. show that the proofs and reports remain usable after at least one real refactor
