@@ -1016,6 +1016,182 @@ private def classifyRecursion (graph : CallGraph) (sccs : List (List String))
       acc ++ entries
   ) []
 
+-- ============================================================
+-- Loop-boundedness classification
+-- ============================================================
+-- Classifies each loop in a function as bounded or unbounded.
+-- A loop is considered structurally bounded when it has:
+--   1. A comparison condition (var < expr, var >= expr, etc.)
+--   2. A non-empty step (from for-loop desugaring)
+-- This is conservative: anything not structurally recognizable
+-- as bounded is classified as unbounded.
+
+/-- Is this condition a comparison that suggests a bounded loop? -/
+private def isBoundedCond (cond : CExpr) : Bool :=
+  match cond with
+  | .binOp op _ _ _ =>
+    op == .lt || op == .gt || op == .leq || op == .geq || op == .neq
+  | _ => false
+
+/-- Loop boundedness for a single loop. -/
+inductive LoopBound where
+  | bounded    -- structurally recognizable bound
+  | unbounded  -- cannot determine bound statically
+  deriving BEq
+
+mutual
+/-- Collect loop-boundedness classifications from an expression. -/
+partial def collectLoopBoundsExpr (e : CExpr) : List LoopBound :=
+  match e with
+  | .whileExpr cond body elseBody _ =>
+    let thisBound := if isBoundedCond cond then .bounded else .unbounded
+    [thisBound] ++ collectLoopBoundsStmts body ++ collectLoopBoundsStmts elseBody
+  | .call _ _ args _ => args.foldl (fun acc a => acc ++ collectLoopBoundsExpr a) []
+  | .binOp _ l r _ => collectLoopBoundsExpr l ++ collectLoopBoundsExpr r
+  | .unaryOp _ e _ => collectLoopBoundsExpr e
+  | .structLit _ _ fields _ => fields.foldl (fun acc (_, v) => acc ++ collectLoopBoundsExpr v) []
+  | .fieldAccess obj _ _ => collectLoopBoundsExpr obj
+  | .enumLit _ _ _ fields _ => fields.foldl (fun acc (_, v) => acc ++ collectLoopBoundsExpr v) []
+  | .match_ scrut arms _ =>
+    collectLoopBoundsExpr scrut ++ arms.foldl (fun acc a => acc ++ collectLoopBoundsArm a) []
+  | .borrow inner _ | .borrowMut inner _ | .deref inner _ => collectLoopBoundsExpr inner
+  | .arrayLit elems _ => elems.foldl (fun acc e => acc ++ collectLoopBoundsExpr e) []
+  | .arrayIndex arr idx _ => collectLoopBoundsExpr arr ++ collectLoopBoundsExpr idx
+  | .cast inner _ | .try_ inner _ => collectLoopBoundsExpr inner
+  | .allocCall inner alloc _ => collectLoopBoundsExpr inner ++ collectLoopBoundsExpr alloc
+  | .ifExpr c t e _ => collectLoopBoundsExpr c ++ collectLoopBoundsStmts t ++ collectLoopBoundsStmts e
+  | _ => []
+
+partial def collectLoopBoundsArm (arm : CMatchArm) : List LoopBound :=
+  match arm with
+  | .enumArm _ _ _ body => collectLoopBoundsStmts body
+  | .litArm v body => collectLoopBoundsExpr v ++ collectLoopBoundsStmts body
+  | .varArm _ _ body => collectLoopBoundsStmts body
+
+partial def collectLoopBoundsStmt (s : CStmt) : List LoopBound :=
+  match s with
+  | .while_ cond body _ step =>
+    let hasStep := !step.isEmpty
+    let thisBound := if isBoundedCond cond && hasStep then .bounded else .unbounded
+    [thisBound] ++ collectLoopBoundsStmts body
+  | .letDecl _ _ _ v => collectLoopBoundsExpr v
+  | .assign _ v => collectLoopBoundsExpr v
+  | .return_ (some v) _ => collectLoopBoundsExpr v
+  | .return_ none _ => []
+  | .expr e => collectLoopBoundsExpr e
+  | .ifElse c t el =>
+    collectLoopBoundsExpr c ++ collectLoopBoundsStmts t ++
+    match el with | some stmts => collectLoopBoundsStmts stmts | none => []
+  | .fieldAssign obj _ v => collectLoopBoundsExpr obj ++ collectLoopBoundsExpr v
+  | .derefAssign t v => collectLoopBoundsExpr t ++ collectLoopBoundsExpr v
+  | .arrayIndexAssign arr idx v =>
+    collectLoopBoundsExpr arr ++ collectLoopBoundsExpr idx ++ collectLoopBoundsExpr v
+  | .break_ (some v) _ => collectLoopBoundsExpr v
+  | .break_ none _ | .continue_ _ => []
+  | .defer body => collectLoopBoundsExpr body
+  | .borrowIn _ _ _ _ _ body => collectLoopBoundsStmts body
+
+partial def collectLoopBoundsStmts (ss : List CStmt) : List LoopBound :=
+  ss.foldl (fun acc s => acc ++ collectLoopBoundsStmt s) []
+end
+
+/-- Classify a function's loop boundedness. -/
+private def classifyLoops (body : List CStmt) : String :=
+  let bounds := collectLoopBoundsStmts body
+  if bounds.isEmpty then "no loops"
+  else if bounds.all (· == .bounded) then "bounded"
+  else if bounds.all (· == .unbounded) then "unbounded"
+  else "mixed"
+
+-- ============================================================
+-- Report 10: Combined Effects Summary (--report effects)
+-- ============================================================
+-- Per-function view unifying: capabilities, allocation class,
+-- recursion/cycle status, loop boundedness, crosses FFI, uses trusted.
+
+/-- Per-function effects summary record. -/
+private structure FnEffects where
+  name       : String
+  capSet     : CapSet
+  allocates  : Bool
+  frees      : Bool
+  defers     : Bool
+  recursion  : String       -- "none", "direct", or "mutual: a, b, c"
+  loops      : String       -- "no loops", "bounded", "unbounded", or "mixed"
+  crossesFfi : Bool         -- calls any extern function
+  isTrusted  : Bool
+  isPublic   : Bool
+
+private def fmtEffectsRow (e : FnEffects) : String :=
+  let pub := if e.isPublic then "pub " else "    "
+  let caps := ppCapSet e.capSet
+  let allocClass :=
+    if e.allocates && e.defers then "alloc+defer"
+    else if e.allocates && e.frees then "alloc+free"
+    else if e.allocates then "alloc"
+    else if e.frees then "free-only"
+    else if e.defers then "defer-only"
+    else "none"
+  let trusted := if e.isTrusted then "yes" else "no"
+  let ffi := if e.crossesFfi then "yes" else "no"
+  s!"  {pub}{e.name}\n    caps: {caps}  alloc: {allocClass}  recursion: {e.recursion}  loops: {e.loops}  ffi: {ffi}  trusted: {trusted}"
+
+private partial def effectsForModule
+    (externNames : List String)
+    (recMap : List (String × RecursionKind × List String))
+    (m : CModule) : List FnEffects :=
+  let fns := m.functions.map fun f =>
+    let callees := collectCallsStmts f.body |>.eraseDups
+    let allocs := callees.filter isAllocCall
+    let frees := callees.filter isFreeCall
+    let defs := collectDefersStmts f.body
+    let rec_ := match recMap.find? (fun (n, _, _) => n == f.name) with
+      | some (_, .direct, _) => "direct"
+      | some (_, .mutual, members) =>
+        let others := members.filter (· != f.name)
+        s!"mutual: {", ".intercalate others}"
+      | _ => "none"
+    let crossesFfi := callees.any fun c => externNames.contains c
+    let loopClass := classifyLoops f.body
+    { name := f.name
+      capSet := f.capSet
+      allocates := !allocs.isEmpty
+      frees := !frees.isEmpty
+      defers := !defs.isEmpty
+      recursion := rec_
+      loops := loopClass
+      crossesFfi := crossesFfi
+      isTrusted := f.isTrusted
+      isPublic := f.isPublic }
+  fns ++ m.submodules.foldl (fun acc sub =>
+    acc ++ effectsForModule externNames recMap sub) []
+
+def effectsReport (modules : List CModule) : String :=
+  let header := "=== Combined Effects Report ==="
+  -- Build shared analysis results
+  let graph := buildCallGraph modules
+  let sccs := tarjanSCC graph
+  let recMap := classifyRecursion graph sccs
+  let externNames := modules.foldl (fun acc m => acc ++ collectExternNames m) []
+  -- Collect per-function effects
+  let allEffects := modules.foldl (fun acc m =>
+    acc ++ effectsForModule externNames recMap m) []
+  -- Format per-module
+  let body := modules.map fun m =>
+    let modEffects := effectsForModule externNames recMap m
+    let fnLines := modEffects.map fmtEffectsRow
+    s!"module {m.name}:\n{"\n".intercalate fnLines}"
+  -- Summary counts
+  let total := allEffects.length
+  let pure := (allEffects.filter fun e => e.capSet == .empty).length
+  let allocating := (allEffects.filter (·.allocates)).length
+  let recursive := (allEffects.filter fun e => e.recursion != "none").length
+  let unboundedLoops := (allEffects.filter fun e => e.loops == "unbounded" || e.loops == "mixed").length
+  let ffi := (allEffects.filter (·.crossesFfi)).length
+  let trusted := (allEffects.filter (·.isTrusted)).length
+  let summary := s!"\nTotals: {total} functions, {pure} pure, {allocating} allocating, {recursive} recursive, {unboundedLoops} unbounded loops, {ffi} cross FFI, {trusted} trusted"
+  s!"{header}\n\n{"\n\n".intercalate body}\n{summary}\n"
+
 /-- Format the recursion report. -/
 def recursionReport (modules : List CModule) : String :=
   let header := "=== Recursion / Call-Cycle Report ==="

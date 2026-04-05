@@ -275,6 +275,9 @@ def compileAndReport (inputPath : String) (reportType : String) : IO UInt32 := d
     if reportType == "proof" then
       IO.println (Report.proofReport validCore.coreModules)
       return 0
+    if reportType == "effects" then
+      IO.println (Report.effectsReport validCore.coreModules)
+      return 0
     if reportType == "recursion" then
       IO.println (Report.recursionReport validCore.coreModules)
       return 0
@@ -286,7 +289,7 @@ def compileAndReport (inputPath : String) (reportType : String) : IO UInt32 := d
       | .ok mono =>
         IO.println (Report.monoReport validCore.coreModules mono.coreModules)
         return 0
-    IO.eprintln s!"Unknown report type: {reportType}. Use: caps, unsafe, layout, interface, alloc, mono, authority, proof, recursion"
+    IO.eprintln s!"Unknown report type: {reportType}. Use: caps, unsafe, layout, interface, alloc, mono, authority, proof, effects, recursion"
     return 1
 
 -- ============================================================
