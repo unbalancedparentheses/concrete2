@@ -2106,6 +2106,41 @@ check_profile "$TESTDIR/../examples/packet/src/main.con" predictable \
     "predictable packet decoder: main fails for blocking" \
     "predictable packet decoder: main should fail"
 
+# === Evidence level tests (--report effects + proved) ===
+
+echo ""
+echo "=== Evidence level tests ==="
+
+# parse_byte has a Lean proof → evidence: proved (name + detail on adjacent lines)
+check_report "$TESTDIR/report_check_predictable_core_vs_shell.con" effects \
+    "evidence: proved" \
+    "evidence: parse_byte shows proved (has Lean proof)" \
+    "evidence: parse_byte should show proved"
+
+# validate passes profile but has no proof → evidence: enforced
+check_report "$TESTDIR/report_check_predictable_core_vs_shell.con" effects \
+    "loops: bounded.*evidence: enforced" \
+    "evidence: validate shows enforced (passes profile, no proof)" \
+    "evidence: validate should show enforced"
+
+# main fails profile (blocking I/O) → evidence: reported
+check_report "$TESTDIR/report_check_predictable_core_vs_shell.con" effects \
+    "evidence: reported" \
+    "evidence: main shows reported (fails profile)" \
+    "evidence: main should show reported"
+
+# Summary includes proved count
+check_report "$TESTDIR/report_check_predictable_core_vs_shell.con" effects \
+    "1 proved" \
+    "evidence summary: 1 proved function" \
+    "evidence summary: wrong proved count"
+
+# Packet decoder: trusted functions show trusted-assumption
+check_report "$TESTDIR/../examples/packet/src/main.con" effects \
+    "trusted-assumption" \
+    "evidence: packet decoder has trusted-assumption functions" \
+    "evidence: packet decoder should have trusted-assumption"
+
 fi # end section: report
 
 # === Codegen differential tests ===

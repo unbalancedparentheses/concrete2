@@ -3,6 +3,7 @@ import Concrete.Layout
 import Concrete.FileSummary
 import Concrete.AST
 import Concrete.Intrinsic
+import Concrete.Proof
 
 namespace Concrete
 namespace Report
@@ -1163,8 +1164,10 @@ private partial def effectsForModule
     let hasBlocking := concreteCaps.any fun c =>
       c == "File" || c == "Network" || c == "Process"
     let passesProfile := !hasRecursion && !hasUnboundedLoops && !hasAlloc && !hasFfi && !hasBlocking
+    let hasProof := Proof.provedFunctions.contains f.name
     let evidenceLevel :=
       if f.isTrusted then "trusted-assumption"
+      else if hasProof && passesProfile then "proved"
       else if passesProfile then "enforced"
       else "reported"
     { name := f.name
@@ -1204,10 +1207,11 @@ def effectsReport (modules : List CModule) : String :=
   let unboundedLoops := (allEffects.filter fun e => e.loops == "unbounded" || e.loops == "mixed").length
   let ffi := (allEffects.filter (·.crossesFfi)).length
   let trusted := (allEffects.filter (·.isTrusted)).length
+  let proved := (allEffects.filter fun e => e.evidence == "proved").length
   let enforced := (allEffects.filter fun e => e.evidence == "enforced").length
   let trustedAssumption := (allEffects.filter fun e => e.evidence == "trusted-assumption").length
   let reported := (allEffects.filter fun e => e.evidence == "reported").length
-  let summary := s!"\nTotals: {total} functions, {pure} pure, {allocating} allocating, {recursive} recursive, {unboundedLoops} unbounded loops, {ffi} cross FFI, {trusted} trusted\nEvidence: {enforced} enforced, {trustedAssumption} trusted-assumption, {reported} reported"
+  let summary := s!"\nTotals: {total} functions, {pure} pure, {allocating} allocating, {recursive} recursive, {unboundedLoops} unbounded loops, {ffi} cross FFI, {trusted} trusted\nEvidence: {proved} proved, {enforced} enforced, {trustedAssumption} trusted-assumption, {reported} reported"
   s!"{header}\n\n{"\n\n".intercalate body}\n{summary}\n"
 
 /-- Format the recursion report. -/

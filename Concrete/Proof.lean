@@ -181,11 +181,19 @@ def clampExpr : PExpr :=
 
 def clampFn : PFnDef := { name := "clamp", params := ["x", "lo", "hi"], body := clampExpr }
 
+/-- `fn parse_byte(data: Int, offset: Int) -> Int { return data + offset; }`
+    First proof-connected function from the packet decoder core. -/
+def parseByteExpr : PExpr :=
+  .binOp .add (.var "data") (.var "offset")
+
+def parseByteFn : PFnDef := { name := "parse_byte", params := ["data", "offset"], body := parseByteExpr }
+
 /-- Function table for proofs. -/
 def proofFns : FnTable
   | "abs" => some absFn
   | "max" => some maxFn
   | "clamp" => some clampFn
+  | "parse_byte" => some parseByteFn
   | _ => none
 
 -- ============================================================
@@ -282,5 +290,39 @@ theorem eval_mul_lits (a b : Int) (fuel : Nat) (fns : FnTable) (env : Env) :
     eval fns env (fuel + 1) (.binOp .mul (.lit (.int a)) (.lit (.int b)))
     = some (.int (a * b)) := by
   simp [eval, evalBinOp]
+
+-- ============================================================
+-- Packet decoder core: parse_byte
+-- ============================================================
+
+/-- Helper: evaluate parse_byte with given inputs. -/
+def evalParseByte (data offset : Int) : Option PVal :=
+  eval proofFns ((Env.empty.bind "data" (.int data)).bind "offset" (.int offset)) 10 parseByteExpr
+
+/-- parse_byte(10, 3) = 13 -/
+theorem parse_byte_10_3 : evalParseByte 10 3 = some (.int 13) := by native_decide
+
+/-- parse_byte(0, 0) = 0 -/
+theorem parse_byte_zero : evalParseByte 0 0 = some (.int 0) := by native_decide
+
+/-- parse_byte(255, 1) = 256 -/
+theorem parse_byte_boundary : evalParseByte 255 1 = some (.int 256) := by native_decide
+
+/-- Universal: parse_byte(a, b) = a + b for all integers.
+    This is the first universally quantified proof over a Concrete function. -/
+theorem parse_byte_correct (a b : Int) (fuel : Nat) :
+    eval proofFns ((Env.empty.bind "data" (.int a)).bind "offset" (.int b))
+      (fuel + 1) parseByteExpr
+    = some (.int (a + b)) := by
+  simp [parseByteExpr, eval, Env.bind, evalBinOp]
+
+-- ============================================================
+-- Proved functions registry
+-- ============================================================
+
+/-- Functions with completed Lean proofs. The effects report upgrades
+    evidence level from "enforced" to "proved" for these functions.
+    Each entry is the function name as it appears in Concrete source. -/
+def provedFunctions : List String := ["parse_byte"]
 
 end Concrete.Proof
