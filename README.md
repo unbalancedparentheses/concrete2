@@ -13,16 +13,12 @@
 
 >Most ideas come from previous ideas - Alan C. Kay, The Early History Of Smalltalk
 
-Concrete is a no-GC systems language where authority, trust boundaries, and ownership are explicit enough to audit, restrict, and eventually prove. The compiler is written in Lean 4 so the language can grow toward proof-backed evidence instead of stopping at type checking.
+Concrete is a no-GC systems language where the compiler can make four things visible:
 
-## The Thesis
-
-Concrete is trying to make four things visible at the function boundary:
-
-1. **Authority** — what resources code may touch
-2. **Operational behavior** — what it may allocate, block on, recurse through, or run unboundedly
-3. **Trust boundaries** — where it relies on `trusted`, FFI, or backend assumptions
-4. **Evidence level** — whether a claim is only reported, compiler-enforced, or mechanically proved
+1. what a function can touch
+2. whether it allocates, blocks, recurses, or runs unboundedly
+3. where it crosses trust boundaries
+4. whether those claims are reported, enforced, or proved
 
 Short version:
 
@@ -30,110 +26,114 @@ Short version:
 - Lean makes proofs explicit.
 - Concrete is trying to make operational power explicit.
 
-## The Core Mechanism
+## What Concrete Can Show Today
 
-In mainstream systems languages, function signatures usually do not tell you whether code may read files, use the network, or allocate memory. In Concrete, those facts are declared:
+The clearest current example is a packet decoder split into:
 
-```con
-fn parse_json(input: &String) with(Alloc) -> JsonValue { ... }
-fn serve(port: u16) with(Network, Alloc, Console) -> Int { ... }
-fn sha256(data: &Bytes) with(Alloc) -> String { ... }
-```
+1. an I/O shell that is expected to fail the predictable profile
+2. a parser core that passes the predictable profile
+3. one parser-core function that already appears as `proved` in the report
 
-`parse_json` can allocate but cannot touch the filesystem or network. `sha256` can allocate but cannot read a file. This is not a convention — the compiler enforces it. A function can only call functions whose capabilities are a subset of its own.
+That means Concrete can already demonstrate, in one example:
 
-The payoff is architectural: an auditor can verify authority boundaries from function signatures before reading the bodies.
+1. visible authority boundaries
+2. compiler-enforced predictable-core checks
+3. compiler-visible evidence levels
 
-## Flagship Direction
-
-The clearest validation target is a capability-separated packet decoder:
-
-1. a network-facing wrapper with `with(Network)`
-2. a parser core with no network authority, no allocation, no blocking, no FFI, and bounded loops
-3. compiler reports showing the parser core is profile-compatible
-4. a Lean theorem over one real parser property
-
-That single example would demonstrate:
-
-1. visible authority
-2. predictable restricted behavior
-3. proof-backed claim on real systems code
-
-### The three-way trust split
-
-Rust has one keyword: `unsafe`. Concrete splits this into three distinct things:
-
-1. **Capabilities** (`with(File, Network)`) — semantic effects visible to callers. "This function does I/O."
-2. **`trusted`** — containment of pointer-level tricks behind a safe API. Only permits pointer arithmetic, raw deref, raw assignment, pointer casts. Does NOT permit FFI calls, does NOT suppress capabilities, does NOT relax ownership.
-3. **`with(Unsafe)`** — authority to cross foreign boundaries (FFI, transmute). Required even inside `trusted` code.
-
-In Rust, when you see `unsafe`, you don't know if it's "pointer arithmetic I've proven correct" or "calling into C code that might do anything." In Concrete, those are syntactically and semantically different, and the compiler reports on them separately.
-
-### The compiler as an audit machine
-
-Concrete has 8 built-in report modes:
-
-- `--report caps` — per-function capabilities
-- `--report authority` — for each capability, which functions require it and through which call chain
-- `--report unsafe` — where are the trust boundaries, extern functions, and unsafe crossings?
-- `--report alloc` — where does allocation happen, and where is cleanup?
-- `--report proof` — which functions are pure enough to be formally proved?
-- `--report layout` — struct sizes, alignment, and field offsets
-- `--report interface` — public API surface
-- `--report mono` — which monomorphized generic code actually exists
-
-These are structured compiler outputs derived from the same semantic analysis that type-checks the code. Not linting — real facts about the program.
-
-## What Concrete Looks Like
-
-Pure decision core — no capabilities needed, testable on its own:
+## The Packet-Decoder Shape
 
 ```con
-fn allow_command(cmd: Command, policy: Policy) -> Decision {
-    if cmd.target > policy.max_target {
-        return Decision#Deny;
+struct Header {
+    version: u8,
+    kind: u8,
+    len: u16,
+}
+
+// Capability-free helper in the parser core.
+fn parse_byte(data: Int, offset: Int) -> Int {
+    return data + offset;
+}
+
+// Predictable parser core: no I/O, no FFI, no blocking.
+fn decode_header(buf: &Bytes) -> Result<Header, ParseError> {
+    if buf.len() < 4 {
+        return Result#Err { error: ParseError#TooShort };
     }
-    if cmd.remote && policy.allow_remote == false {
-        return Decision#Deny;
+
+    let version: u8 = buf.get_unchecked(0);
+    let kind: u8 = buf.get_unchecked(1);
+    let b2: u8 = buf.get_unchecked(2);
+    let b3: u8 = buf.get_unchecked(3);
+    let len: u16 = ((b2 as u16) << 8) | (b3 as u16);
+
+    if len > buf.len() as u16 {
+        return Result#Err { error: ParseError#LengthOutOfBounds };
     }
-    return Decision#Allow;
+
+    return Result#Ok {
+        value: Header { version, kind, len }
+    };
 }
 ```
 
-Trusted wrapper — pointer unsafety contained behind a safe API:
+The shell does I/O and should fail the predictable profile. The parser core should pass. That split is the point.
 
-```con
-trusted fn load_policy(path: &String) with(File, Alloc) -> Policy {
-    let result: Result<String, FsError> = read_to_string(path);
-    // ... parse the file contents into a Policy ...
-}
-```
+## What The Compiler Reports
 
-Callers see `load_policy(path) with(File, Alloc)` — they know it reads files and allocates, but the raw pointer work is invisible to them. The `trusted` boundary is one declaration, not ambient privilege.
+Concrete is trying to make the function boundary informative enough that you can ask:
 
-Explicit resource cleanup:
+1. what authority does this function have?
+2. does it allocate?
+3. does it recurse?
+4. are its loops bounded?
+5. does it block?
+6. does it cross FFI or trusted boundaries?
+7. is the answer merely reported, enforced, or proved?
 
-```con
-fn process_request(stream: TcpStream, root: &String) with(Std) {
-    let buf: [u8; 4096] = [0; 4096];
-    let n: i64 = stream.read(&buf as *mut u8, 4096);
-    // ... handle request ...
-    stream.close();
-}
-```
+The effects/evidence report is the center of gravity:
 
-Cleanup is written in the function body. No hidden destructors, no runtime finalization. Ownership is explicit and the compiler enforces linearity — forgetting to consume a resource is a compile error.
+- `reported` — the compiler can classify it
+- `enforced` — the compiler can reject violations
+- `proved` — a linked Lean theorem backs the claim
+- `trusted-assumption` — the claim depends on an explicit trust boundary
 
-## The Proof Story
+## The First Predictable Profile
 
-The compiler is written in Lean 4. This enables two layers of proof:
+Concrete now has a first `--check predictable` slice. It rejects functions that:
 
-1. **Prove the compiler** — type soundness, ownership coherence, capability preservation, Core→SSA lowering correctness. This is proving the language rules are right.
-2. **Prove user programs** — through formalized Core semantics, a Concrete function's behavior can be stated and proved as a Lean theorem. This means you could write a hash function in Concrete (real systems language, real FFI, real memory layout) and prove it correct in Lean (real theorem prover).
+1. recurse or participate in call cycles
+2. contain unbounded or mixed loop classifications
+3. allocate
+4. cross FFI
+5. block through file/network/process-style authority
 
-The architecture keeps proof tooling separate from compilation. The compiler produces stable artifacts (`ValidatedCore`, `ProofCore`); proof tools consume them. This avoids pushing proof search into the normal compile path.
+This is intentionally per-function and per-core, not a fake "whole program must be predictable" story.
 
-Currently: 17 proven theorems over a pure Core fragment. The formalization is still narrow, but the architecture is aimed at growing from pure Core proofs toward proof-backed evidence over selected systems-facing code.
+## The Proof Direction
+
+The compiler is written in Lean 4. The aim is not only to prove the compiler, but to connect selected Concrete functions to Lean theorems and surface that link back in compiler reports.
+
+Today, the first proof slice is live:
+
+1. a small parser-core function has a Lean theorem
+2. the report shows that function as `proved`
+3. the packet-decoder example demonstrates the intended end-to-end shape
+
+The next proof step is to move from the helper-level theorem to a real parser-core safety property.
+
+## Why This Is Different
+
+Most systems languages give you some of these, but not all in one place:
+
+1. **Rust** gives strong safety, but most operational properties are still implicit in bodies and callees.
+2. **Zig** gives explicit systems control, but not this kind of compiler-visible effects/evidence model.
+3. **Lean** gives theorem proving, but it is not trying to be a no-GC systems language with explicit authority boundaries.
+
+Concrete is trying to combine:
+
+1. capability-visible architecture
+2. predictable execution checks
+3. proof-backed evidence tied to compiler artifacts
 
 ## Current Research Center
 
@@ -149,31 +149,28 @@ Those notes define the current experimental track:
 2. predictable execution
 3. proof-backed evidence
 
-## Where Concrete Fits
-
-Concrete is not trying to replace Rust, Zig, or C for general-purpose systems programming. Its case is narrower: software that must be small, explicit, reviewable, and honest about power.
-
-The most compelling targets are high-consequence components with narrow authority:
-
-- boot, update, and artifact verification tools
-- key-handling and cryptographic policy helpers
-- safety/security guard processes with tightly bounded behavior
-- industrial control safety interlocks, medical-device policy kernels
-- audited wrappers around critical C libraries or hardware interfaces
-
-**Compared to Rust:** smaller surface, more explicit authority, stricter trust split.
-
-**Compared to Zig:** similar low-level explicitness, but more ownership, capability, and proof structure.
-
-**Compared to Lean:** Lean is the proof language. Concrete is trying to be the no-GC systems language whose behavior is explicit enough for Lean to reason about credibly.
-
 ## Current State
 
-The compiler implements the full pipeline: `Parse → Resolve → Check → Elab → CoreCheck → Mono → Lower → EmitSSA → LLVM IR`.
+The compiler implements the full pipeline:
 
-What exists: centralized ABI/layout, 8 report modes with 59 assertions, `trusted`/capability boundaries, a real stdlib, `#[test]` execution, `concrete build`/`test`/`run`, and example programs that have pressure-tested parsers, interpreters, storage, networking, and integrity workloads.
+`Parse -> Resolve -> Check -> Elab -> CoreCheck -> Mono -> Lower -> EmitSSA -> LLVM IR`
 
-What does not exist yet: incremental compilation, third-party dependencies, backend plurality, broad formalization, and the full thesis-validation stack around bounded execution and proof-backed evidence.
+What exists:
+
+1. capability and trust-boundary checking
+2. a unified effects/evidence report
+3. a first predictable-execution profile check
+4. a first Lean proof slice connected to the report
+5. a real stdlib and example corpus
+6. real compiler reports, tests, and example programs
+
+What does not exist yet:
+
+1. broad proof coverage
+2. bounded-capacity types
+3. stack-depth reporting
+4. incremental compilation and package architecture
+5. backend plurality
 
 For priorities, see [ROADMAP.md](ROADMAP.md). For landed milestones, see [CHANGELOG.md](CHANGELOG.md).
 
@@ -184,42 +181,25 @@ make build
 .lake/build/bin/concrete examples/snippets/hello_world.con -o /tmp/hello && /tmp/hello
 ```
 
-The compiler enforces linearity — forgetting or reusing a resource is a compile error:
-
-```
-struct Resource { value: Int }
-
-fn consume(r: Resource) -> Int {
-    return r.value;
-}
-
-fn main() -> Int {
-    let r: Resource = Resource { value: 42 };
-    let v: Int = consume(r);  // r is consumed here
-    // Using r again: "linear variable 'r' used after move"
-    // Forgetting r: "linear variable 'r' was never consumed"
-    return v;
-}
-```
-
 ## Building
 
 Requires [Lean 4](https://leanprover.github.io/lean4/doc/setup.html) (v4.28.0+) and clang.
 
 ```bash
-make build    # or: lake build
-make test     # runs the full test suite
-make clean    # or: lake clean
+make build
+make test
+make clean
 ```
 
 ## Doc Map
 
 - [docs/IDENTITY.md](docs/IDENTITY.md) — project identity and vision
-- [docs/SAFETY.md](docs/SAFETY.md) — the three-way trust model
-- [ROADMAP.md](ROADMAP.md) — what's next
-- [CHANGELOG.md](CHANGELOG.md) — what's landed
-- [research/thesis-validation/core-thesis.md](research/thesis-validation/core-thesis.md) — the clearest statement of the long-term thesis
+- [docs/SAFETY.md](docs/SAFETY.md) — the trust and capability model
+- [ROADMAP.md](ROADMAP.md) — what is next
+- [CHANGELOG.md](CHANGELOG.md) — what landed
+- [research/thesis-validation/core-thesis.md](research/thesis-validation/core-thesis.md) — the clearest statement of the thesis
 - [research/thesis-validation/objective-matrix.md](research/thesis-validation/objective-matrix.md) — what the flagship examples are meant to prove
+- [research/proof-evidence/provable-properties.md](research/proof-evidence/provable-properties.md) — what Concrete should try to prove
 - [research/](research/) — design research and future directions
 - [docs/](docs/README.md) — full documentation index
 

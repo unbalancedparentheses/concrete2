@@ -21,10 +21,17 @@ A proof slice keeps the problem credible:
 The first proof targets should likely be:
 
 1. small user-facing pure functions in the provable subset
-2. selected report properties such as allocation absence or simple authority facts
-3. traceability from source function to extracted proof object
+2. parser and validator safety properties on bounded systems cores
+3. selected report properties such as allocation absence or simple authority facts
+4. traceability from source function to extracted proof object
 
 This is enough to show the thesis without claiming universal proof coverage.
+
+The strongest next step after the first helper-level proof is:
+
+1. one real packet-decoder parser-core theorem
+2. one visible `proved` entry in the effects report
+3. one quick proof-maintenance check after a refactor
 
 ## Candidate Scope
 

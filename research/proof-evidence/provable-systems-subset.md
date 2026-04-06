@@ -23,6 +23,7 @@ The first provable systems subset may include:
 2. bounded computation over bytes, slices, fixed buffers, and simple structs
 3. capability-free or tightly capability-restricted functions
 4. explicit failure via `Result`
+5. small report-linked claims over selected compiler analyses
 
 It may exclude, at first:
 
@@ -38,3 +39,4 @@ It may exclude, at first:
 2. examples that live inside it
 3. a clear relation to the broader language
 4. a clear relation to predictable execution and high-integrity profiles
+5. a clear list of property classes that are worth proving first
