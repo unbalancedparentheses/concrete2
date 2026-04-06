@@ -21,6 +21,7 @@ Concrete should be able to demonstrate, in implementation rather than aspiration
 3. a restricted execution profile can be made precise
 4. proof-backed evidence can attach to selected user-facing code and compiler reports
 5. determinism, cleanup cost, and host-call opacity are visible enough that "predictable" does not hide obvious blind spots
+6. the claimed reports, checks, and proofs survive adversarial examples designed to break or confuse them
 
 ## Main Workstreams
 
@@ -31,6 +32,7 @@ The thesis-validation track breaks into four workstreams:
 3. first predictable-execution profile
 4. proof-backed evidence on a restricted fragment
 5. validation of determinism, cleanup cost, and host-call classification
+6. adversarial validation of every thesis-level claim
 
 ## What Success Looks Like
 
@@ -50,6 +52,11 @@ This phase is successful when Concrete can point to a small but credible demonst
    - whether cleanup work is bounded on success paths
    - whether cleanup work is bounded on failure paths
    - whether host calls are classified as blocking, timing-opaque, or trust-boundary crossings
+7. adversarial suites for the main thesis claims:
+   - predictable-profile gates
+   - effects/evidence reporting
+   - proof/report linkage
+   - flagship-example regressions
 
 ## Relationship To Other Notes
 
@@ -80,3 +87,4 @@ That means:
 3. define one real restricted profile
 4. prove one real class of claims over real user-facing code
 5. show that the proofs and reports remain usable after at least one real refactor
+6. show that the compiler resists targeted counterexamples intended to confuse or bypass the thesis claims
