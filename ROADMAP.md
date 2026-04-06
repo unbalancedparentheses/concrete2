@@ -74,6 +74,12 @@ This phase exists to test whether those ideas hold up in implementation, reports
 23. mark which report claims are reported, enforced, proved, or trusted-assumption-based — done when the evidence level is visible in the unified report
 24. validate the thesis with flagship bounded and evidence-carrying examples — done when a small set of examples demonstrates capability visibility, predictable execution, proof-backed evidence, and policy enforcement together
 
+**Near-Term Sequence:**
+1. stabilize the first predictable-execution slice with tests and clear per-function diagnostics
+2. expose evidence level in the unified report so "reported", "enforced", "proved", and "trusted assumption" are visible distinctions
+3. use the packet decoder as the first flagship thesis example: the parsing core should pass the predictable profile while the I/O shell is expected to fail
+4. prove one small parser-core property from that example through the Concrete-to-Lean pipeline so the first end-to-end thesis demo is visible and concrete
+
 **References:** [core-thesis](research/thesis-validation/core-thesis.md), [objective-matrix](research/thesis-validation/objective-matrix.md), [thesis-validation](research/thesis-validation/thesis-validation.md), [noalloc-enforcement](research/thesis-validation/noalloc-enforcement.md), [boundedness-reports](research/thesis-validation/boundedness-reports.md), [proof-slice](research/thesis-validation/proof-slice.md), [validation-examples](research/thesis-validation/validation-examples.md), [concrete-to-lean-pipeline](research/proof-evidence/concrete-to-lean-pipeline.md), [spec-attachment](research/proof-evidence/spec-attachment.md), [effectful-proofs](research/proof-evidence/effectful-proofs.md), [provable-systems-subset](research/proof-evidence/provable-systems-subset.md), [predictable-execution](research/predictable-execution/predictable-execution.md), [effect-taxonomy](research/predictable-execution/effect-taxonomy.md), [allocation-budgets](research/stdlib-runtime/allocation-budgets.md), [execution-cost](research/stdlib-runtime/execution-cost.md), [backend-traceability](research/compiler/backend-traceability.md), [failure-semantics](research/language/failure-semantics.md), [trusted-code-policy](research/language/trusted-code-policy.md), [interrupt-signal-model](research/language/interrupt-signal-model.md)
 
 ## 3. Stdlib and Example Polish

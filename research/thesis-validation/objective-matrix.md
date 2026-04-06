@@ -97,3 +97,9 @@ Why:
 2. it can be made no-allocation and non-blocking in the core
 3. it has a realistic proof target
 4. it is recognizably systems code rather than a toy
+
+The intended first end-to-end slice is:
+
+1. the parsing core passes the predictable-execution profile
+2. the I/O shell fails for the right reasons
+3. one small parser-core property is proved through the Concrete-to-Lean pipeline
