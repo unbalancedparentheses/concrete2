@@ -2141,6 +2141,60 @@ check_report "$TESTDIR/../examples/packet/src/main.con" effects \
     "evidence: packet decoder has trusted-assumption functions" \
     "evidence: packet decoder should have trusted-assumption"
 
+# --- Proof maintenance: rename drops evidence ---
+check_report "$TESTDIR/report_evidence_rename_drops.con" effects \
+    "read_byte" \
+    "evidence maintenance: renamed function exists in report" \
+    "evidence maintenance: renamed function missing from report"
+
+check_report "$TESTDIR/report_evidence_rename_drops.con" effects \
+    "evidence: proved" \
+    "evidence maintenance: renamed function should not be proved" \
+    "evidence maintenance: renamed function wrongly proved" "!"
+
+check_report "$TESTDIR/report_evidence_rename_drops.con" effects \
+    "0 proved" \
+    "evidence maintenance: 0 proved after rename" \
+    "evidence maintenance: wrong proved count after rename"
+
+# --- Proof maintenance: stable across refactor ---
+check_report "$TESTDIR/report_evidence_stable.con" effects \
+    "evidence: proved" \
+    "evidence maintenance: parse_byte stays proved with surrounding changes" \
+    "evidence maintenance: parse_byte lost proof after refactor"
+
+check_report "$TESTDIR/report_evidence_stable.con" effects \
+    "1 proved" \
+    "evidence maintenance: exactly 1 proved in refactored file" \
+    "evidence maintenance: wrong proved count in refactored file"
+
+# --- check_length: bounds guard with Lean proof ---
+check_report "$TESTDIR/report_evidence_check_length.con" effects \
+    "evidence: proved" \
+    "evidence: check_length shows proved (bounds guard theorem)" \
+    "evidence: check_length should show proved"
+
+check_report "$TESTDIR/report_evidence_check_length.con" effects \
+    "1 proved, 1 enforced" \
+    "evidence: check_length file has 1 proved + 1 enforced" \
+    "evidence: check_length file wrong evidence counts"
+
+# --- Thesis demo: all three pillars ---
+check_report "$TESTDIR/../examples/thesis_demo/src/main.con" effects \
+    "2 proved, 2 enforced, 0 trusted-assumption, 1 reported" \
+    "thesis demo: evidence counts 2/2/0/1" \
+    "thesis demo: wrong evidence counts"
+
+check_profile "$TESTDIR/../examples/thesis_demo/src/main.con" predictable \
+    "4 passed" \
+    "thesis demo: 4 functions pass predictable" \
+    "thesis demo: wrong pass count"
+
+check_profile "$TESTDIR/../examples/thesis_demo/src/main.con" predictable \
+    "main.*may block" \
+    "thesis demo: only main fails (blocking I/O)" \
+    "thesis demo: unexpected failure reason"
+
 fi # end section: report
 
 # === Codegen differential tests ===
