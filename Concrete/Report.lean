@@ -1121,6 +1121,7 @@ private structure FnEffects where
   crossesFfi : Bool         -- calls any extern function
   isTrusted  : Bool
   isPublic   : Bool
+  evidence   : String       -- "enforced", "reported", or "trusted-assumption"
 
 private def fmtEffectsRow (e : FnEffects) : String :=
   let pub := if e.isPublic then "pub " else "    "
@@ -1134,7 +1135,7 @@ private def fmtEffectsRow (e : FnEffects) : String :=
     else "none"
   let trusted := if e.isTrusted then "yes" else "no"
   let ffi := if e.crossesFfi then "yes" else "no"
-  s!"  {pub}{e.name}\n    caps: {caps}  alloc: {allocClass}  recursion: {e.recursion}  loops: {e.loops}  ffi: {ffi}  trusted: {trusted}"
+  s!"  {pub}{e.name}\n    caps: {caps}  alloc: {allocClass}  recursion: {e.recursion}  loops: {e.loops}  ffi: {ffi}  trusted: {trusted}  evidence: {e.evidence}"
 
 private partial def effectsForModule
     (externNames : List String)
@@ -1153,6 +1154,19 @@ private partial def effectsForModule
       | _ => "none"
     let crossesFfi := callees.any fun c => externNames.contains c
     let loopClass := classifyLoops f.body
+    -- Evidence level: enforced if passes all 5 predictable gates
+    let hasRecursion := rec_ != "none"
+    let hasUnboundedLoops := loopClass == "unbounded" || loopClass == "mixed"
+    let hasAlloc := !allocs.isEmpty
+    let hasFfi := crossesFfi
+    let (concreteCaps, _) := f.capSet.normalize
+    let hasBlocking := concreteCaps.any fun c =>
+      c == "File" || c == "Network" || c == "Process"
+    let passesProfile := !hasRecursion && !hasUnboundedLoops && !hasAlloc && !hasFfi && !hasBlocking
+    let evidenceLevel :=
+      if f.isTrusted then "trusted-assumption"
+      else if passesProfile then "enforced"
+      else "reported"
     { name := f.name
       capSet := f.capSet
       allocates := !allocs.isEmpty
@@ -1162,7 +1176,8 @@ private partial def effectsForModule
       loops := loopClass
       crossesFfi := crossesFfi
       isTrusted := f.isTrusted
-      isPublic := f.isPublic }
+      isPublic := f.isPublic
+      evidence := evidenceLevel }
   fns ++ m.submodules.foldl (fun acc sub =>
     acc ++ effectsForModule externNames recMap sub) []
 
@@ -1189,7 +1204,10 @@ def effectsReport (modules : List CModule) : String :=
   let unboundedLoops := (allEffects.filter fun e => e.loops == "unbounded" || e.loops == "mixed").length
   let ffi := (allEffects.filter (·.crossesFfi)).length
   let trusted := (allEffects.filter (·.isTrusted)).length
-  let summary := s!"\nTotals: {total} functions, {pure} pure, {allocating} allocating, {recursive} recursive, {unboundedLoops} unbounded loops, {ffi} cross FFI, {trusted} trusted"
+  let enforced := (allEffects.filter fun e => e.evidence == "enforced").length
+  let trustedAssumption := (allEffects.filter fun e => e.evidence == "trusted-assumption").length
+  let reported := (allEffects.filter fun e => e.evidence == "reported").length
+  let summary := s!"\nTotals: {total} functions, {pure} pure, {allocating} allocating, {recursive} recursive, {unboundedLoops} unbounded loops, {ffi} cross FFI, {trusted} trusted\nEvidence: {enforced} enforced, {trustedAssumption} trusted-assumption, {reported} reported"
   s!"{header}\n\n{"\n\n".intercalate body}\n{summary}\n"
 
 /-- Format the recursion report. -/
