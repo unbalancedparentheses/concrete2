@@ -402,6 +402,68 @@ check_report_multi() {
     fi
 }
 
+# --- Profile check assertion ---
+# check_profile FILE PROFILE GREP_PATTERN OK_MSG FAIL_MSG [NEGATE]
+# Compiles FILE with --check PROFILE, greps for PATTERN.
+# If NEGATE is "!" then the pattern must NOT match.
+# Note: --check may return non-zero exit (profile violation), so we suppress errors.
+check_profile() {
+    local file="$1" profile="$2" pattern="$3" ok_msg="$4" fail_msg="$5"
+    local negate="${6:-}"
+    local output
+    output=$($COMPILER "$file" --check "$profile" 2>&1 || true)
+    local matched=0
+    if echo "$output" | grep -q "$pattern"; then
+        matched=1
+    fi
+    if [ "$negate" = "!" ]; then
+        if [ "$matched" -eq 0 ]; then
+            echo "  ok  $ok_msg"
+            PASS=$((PASS + 1))
+        else
+            echo "FAIL  $fail_msg"
+            echo "$output"
+            FAIL=$((FAIL + 1))
+            save_failure "$(path_key "$fail_msg")" "$COMPILER $file --check $profile" "$output"
+        fi
+    else
+        if [ "$matched" -eq 1 ]; then
+            echo "  ok  $ok_msg"
+            PASS=$((PASS + 1))
+        else
+            echo "FAIL  $fail_msg"
+            echo "$output"
+            FAIL=$((FAIL + 1))
+            save_failure "$(path_key "$fail_msg")" "$COMPILER $file --check $profile" "$output"
+        fi
+    fi
+}
+
+# check_profile_multi FILE PROFILE OK_MSG FAIL_MSG PATTERN1 [PATTERN2 ...]
+# All patterns must match.
+check_profile_multi() {
+    local file="$1" profile="$2" ok_msg="$3" fail_msg="$4"
+    shift 4
+    local output
+    output=$($COMPILER "$file" --check "$profile" 2>&1 || true)
+    local all_match=1
+    for pattern in "$@"; do
+        if ! echo "$output" | grep -q "$pattern"; then
+            all_match=0
+            break
+        fi
+    done
+    if [ "$all_match" -eq 1 ]; then
+        echo "  ok  $ok_msg"
+        PASS=$((PASS + 1))
+    else
+        echo "FAIL  $fail_msg"
+        echo "$output"
+        FAIL=$((FAIL + 1))
+        save_failure "$(path_key "$fail_msg")" "$COMPILER $file --check $profile" "$output"
+    fi
+}
+
 # --- Emit output helper (cached) ---
 # cached_emit FILE FLAG — returns cached output of $COMPILER FILE FLAG
 cached_emit() {
@@ -1955,6 +2017,94 @@ else
     echo "FAIL  phase3_diag_hint_quality.con missing hint"
     FAIL=$((FAIL + 1))
 fi
+
+# === Predictable profile tests (--check predictable) ===
+
+echo ""
+echo "=== Predictable profile tests ==="
+
+# --- Gate 0: full pass (all functions pass all five gates) ---
+check_profile "$TESTDIR/report_check_predictable_pass.con" predictable \
+    "predictable profile: pass" \
+    "predictable_pass.con passes all five gates" \
+    "predictable_pass.con should pass but failed"
+
+check_profile "$TESTDIR/report_check_predictable_pass.con" predictable \
+    "4 functions checked" \
+    "predictable_pass.con checks all 4 functions" \
+    "predictable_pass.con wrong function count"
+
+# --- Gate 1: recursion rejection ---
+check_profile "$TESTDIR/report_check_predictable_fail_recursion.con" predictable \
+    "countdown.*direct recursion" \
+    "predictable rejects direct recursion" \
+    "predictable should reject recursion"
+
+check_profile "$TESTDIR/report_check_predictable_fail_recursion.con" predictable \
+    "1 function(s) failed" \
+    "predictable recursion: 1 failed" \
+    "predictable recursion: wrong fail count"
+
+# --- Gate 2: unbounded loop rejection ---
+check_profile "$TESTDIR/report_check_predictable_fail_loops.con" predictable \
+    "spin.*unbounded loops" \
+    "predictable rejects unbounded while loop" \
+    "predictable should reject unbounded loop"
+
+# --- Gate 3: allocation rejection ---
+check_profile "$TESTDIR/report_check_predictable_fail_alloc.con" predictable \
+    "heap_op.*allocates" \
+    "predictable rejects allocation" \
+    "predictable should reject allocation"
+
+# --- Gate 4: FFI rejection ---
+check_profile "$TESTDIR/report_check_predictable_fail_ffi.con" predictable \
+    "call_extern.*calls extern" \
+    "predictable rejects FFI/extern calls" \
+    "predictable should reject FFI"
+
+# --- Gate 5: blocking rejection ---
+check_profile "$TESTDIR/report_check_predictable_fail_blocking.con" predictable \
+    "read_something.*may block.*File" \
+    "predictable rejects blocking I/O (File)" \
+    "predictable should reject blocking"
+
+check_profile "$TESTDIR/report_check_predictable_fail_blocking.con" predictable \
+    "main.*may block.*File" \
+    "predictable rejects blocking I/O in main (File)" \
+    "predictable should reject blocking in main"
+
+# --- Core vs shell: thesis demo ---
+check_profile "$TESTDIR/report_check_predictable_core_vs_shell.con" predictable \
+    "1 function(s) failed, 3 passed" \
+    "predictable core-vs-shell: 3 pass, 1 fail (main)" \
+    "predictable core-vs-shell: wrong pass/fail split"
+
+check_profile "$TESTDIR/report_check_predictable_core_vs_shell.con" predictable \
+    "main.*may block" \
+    "predictable core-vs-shell: main fails for blocking" \
+    "predictable core-vs-shell: main should fail"
+
+check_profile "$TESTDIR/report_check_predictable_core_vs_shell.con" predictable \
+    "parse_byte" \
+    "predictable core-vs-shell: parse_byte not in violations" \
+    "predictable core-vs-shell: parse_byte wrongly rejected" "!"
+
+check_profile "$TESTDIR/report_check_predictable_core_vs_shell.con" predictable \
+    "validate" \
+    "predictable core-vs-shell: validate not in violations" \
+    "predictable core-vs-shell: validate wrongly rejected" "!"
+
+# --- Packet decoder: flagship thesis example ---
+check_profile_multi "$TESTDIR/../examples/packet/src/main.con" predictable \
+    "predictable packet decoder: 16 pass, main fails" \
+    "predictable packet decoder: wrong pass/fail split" \
+    "1 function(s) failed" "16 passed"
+
+check_profile "$TESTDIR/../examples/packet/src/main.con" predictable \
+    "main.*may block" \
+    "predictable packet decoder: main fails for blocking" \
+    "predictable packet decoder: main should fail"
 
 fi # end section: report
 
