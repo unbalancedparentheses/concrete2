@@ -1228,5 +1228,84 @@ def recursionReport (modules : List CModule) : String :=
   let allLines := [header, ""] ++ directSection ++ mutualSection ++ [summaryLine] ++ acyclicNote
   "\n".intercalate allLines ++ "\n"
 
+-- ============================================================
+-- Profile checks (--check predictable)
+-- ============================================================
+-- Enforces the predictable-execution profile gate:
+--   1. No recursion / call cycles
+--   2. No unbounded or mixed loop classifications
+--   3. No allocation (alloc/vec_new intrinsic calls)
+--   4. No FFI (extern function calls)
+--   5. No blocking (File/Network/Process capabilities)
+-- Returns a list of violation strings (empty = pass).
+
+/-- Capabilities that imply potentially blocking I/O. -/
+private def blockingCaps : List String :=
+  ["File", "Network", "Process"]
+
+/-- A single profile violation. -/
+structure ProfileViolation where
+  fnName   : String
+  reason   : String
+
+private partial def checkPredictableModule
+    (recMap : List (String × RecursionKind × List String))
+    (externNames : List String)
+    (m : CModule) : List ProfileViolation :=
+  let fnViolations := m.functions.foldl (fun acc f =>
+    -- 1. Recursion
+    let recViolations := match recMap.find? (fun (n, _, _) => n == f.name) with
+      | some (_, .direct, _) =>
+        [{ fnName := f.name, reason := "direct recursion" }]
+      | some (_, .mutual, members) =>
+        let others := members.filter (· != f.name)
+        [{ fnName := f.name, reason := s!"mutual recursion with {", ".intercalate others}" }]
+      | _ => []
+    -- 2. Loop boundedness
+    let loopClass := classifyLoops f.body
+    let loopViolations :=
+      if loopClass == "unbounded" then
+        [{ fnName := f.name, reason := "unbounded loops" }]
+      else if loopClass == "mixed" then
+        [{ fnName := f.name, reason := "mixed loop boundedness (some loops unbounded)" }]
+      else []
+    -- 3. Allocation
+    let callees := collectCallsStmts f.body |>.eraseDups
+    let allocs := callees.filter isAllocCall
+    let allocViolations := if allocs.isEmpty then []
+      else [{ fnName := f.name, reason := s!"allocates ({", ".intercalate allocs})" }]
+    -- 4. FFI
+    let externCalls := callees.filter fun c => externNames.contains c
+    let ffiViolations := if externCalls.isEmpty then []
+      else [{ fnName := f.name, reason := s!"calls extern ({", ".intercalate externCalls})" }]
+    -- 5. Blocking
+    let (concreteCaps, _) := f.capSet.normalize
+    let blockingUsed := concreteCaps.filter fun c => blockingCaps.contains c
+    let blockViolations := if blockingUsed.isEmpty then []
+      else [{ fnName := f.name, reason := s!"may block ({", ".intercalate blockingUsed})" }]
+    acc ++ recViolations ++ loopViolations ++ allocViolations ++ ffiViolations ++ blockViolations) []
+  fnViolations ++ m.submodules.foldl (fun acc sub =>
+    acc ++ checkPredictableModule recMap externNames sub) []
+
+/-- Check the predictable-execution profile. Returns (pass, report string). -/
+def checkPredictable (modules : List CModule) : Bool × String :=
+  let graph := buildCallGraph modules
+  let sccs := tarjanSCC graph
+  let recMap := classifyRecursion graph sccs
+  let externNames := modules.foldl (fun acc m => acc ++ collectExternNames m) []
+  let violations := modules.foldl (fun acc m =>
+    acc ++ checkPredictableModule recMap externNames m) []
+  let allFns := modules.foldl (fun acc m => acc ++ collectAllFnDefs m) []
+  let violatingFns := (violations.map (·.fnName)).eraseDups
+  let passingFns := allFns.length - violatingFns.length
+  if violations.isEmpty then
+    (true, s!"predictable profile: pass ({allFns.length} functions checked)\n")
+  else
+    let header := "predictable profile: FAIL"
+    let lines := violations.map fun v =>
+      s!"  error: {v.fnName} — {v.reason}"
+    let summary := s!"\n{violatingFns.length} function(s) failed, {passingFns} passed"
+    (false, s!"{header}\n\n{"\n".intercalate lines}\n{summary}\n")
+
 end Report
 end Concrete

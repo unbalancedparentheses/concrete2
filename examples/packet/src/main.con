@@ -72,10 +72,8 @@ mod packet {
     // Bounded loop: exactly 8 iterations (header bytes 0-7).
     trusted fn compute_checksum(data: *const u8) -> u16 {
         let mut acc: u16 = 0;
-        let mut i: u64 = 0;
-        while i < 8 {
+        for (let mut i: u64 = 0; i < 8; i = i + 1) {
             acc = acc ^ (read_u8(data, i) as u16);
-            i = i + 1;
         }
         return acc;
     }
@@ -132,12 +130,10 @@ mod packet {
     trusted fn extract_payload(data: *const u8, out: *mut u8, payload_len: u64) -> u64 {
         let max: u64 = 1490;
         let copy_len: u64 = if payload_len < max { payload_len } else { max };
-        let mut i: u64 = 0;
-        while i < copy_len {
+        for (let mut i: u64 = 0; i < copy_len; i = i + 1) {
             let byte: u8 = read_u8(data, 10 + i);
             let dst: *mut u8 = out + i;
             *dst = byte;
-            i = i + 1;
         }
         return copy_len;
     }
@@ -209,10 +205,8 @@ mod packet {
         write_u16_be(buf, 8, checksum);
 
         // Fill payload with ascending bytes
-        let mut i: u64 = 0;
-        while i < (payload_len as u64) {
+        for (let mut i: u64 = 0; i < (payload_len as u64); i = i + 1) {
             write_u8(buf, 10 + i, ((i & 255) as u8));
-            i = i + 1;
         }
 
         return 10 + (payload_len as u64);

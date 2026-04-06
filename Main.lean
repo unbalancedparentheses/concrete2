@@ -232,6 +232,21 @@ def compileAndEmit (inputPath : String) (mode : String) : IO UInt32 := do
         IO.println (ppSModule sm)
       return 0
 
+/-- Run pipeline and check a profile constraint. -/
+def compileAndCheck (inputPath : String) (checkType : String) : IO UInt32 := do
+  let source ← readFile inputPath
+  match ← Pipeline.runFrontend inputPath source resolveAllModules with
+  | .error ds =>
+    IO.eprintln (renderDiagnostics ds (sourceMap := [(inputPath, source)]))
+    return 1
+  | .ok (_, _, validCore, _) =>
+    if checkType == "predictable" then
+      let (pass, report) := Report.checkPredictable validCore.coreModules
+      IO.println report
+      return if pass then 0 else 1
+    IO.eprintln s!"Unknown check type: {checkType}. Use: predictable"
+    return 1
+
 /-- Run pipeline to needed depth and produce a report. -/
 def compileAndReport (inputPath : String) (reportType : String) : IO UInt32 := do
   let source ← readFile inputPath
@@ -733,6 +748,8 @@ def main (args : List String) : IO UInt32 := do
     compileAndEmit inputPath "ssa"
   | [inputPath, "-o", outputPath] =>
     compileSSA inputPath outputPath false
+  | [inputPath, "--check", checkType] =>
+    compileAndCheck inputPath checkType
   | [inputPath, "--report", reportType] =>
     compileAndReport inputPath reportType
   | [inputPath, "--fmt"] =>
