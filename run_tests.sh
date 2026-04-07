@@ -2195,6 +2195,90 @@ check_profile "$TESTDIR/../examples/thesis_demo/src/main.con" predictable \
     "thesis demo: only main fails (blocking I/O)" \
     "thesis demo: unexpected failure reason"
 
+# === Adversarial tests ===
+
+echo ""
+echo "=== Adversarial tests ==="
+
+# --- Proof integrity: wrong semantics still shows "proved" (known gap) ---
+check_report "$TESTDIR/adversarial_proof_wrong_semantics.con" effects \
+    "evidence: proved" \
+    "adversarial: name-only proof match is a known gap (documents limitation)" \
+    "adversarial: proof matching changed unexpectedly"
+
+# --- Proof integrity: impure function cannot be "proved" ---
+check_report "$TESTDIR/adversarial_proof_impure.con" effects \
+    "evidence: proved" \
+    "adversarial: impure parse_byte correctly blocked from proved" \
+    "adversarial: impure function wrongly claimed as proved" "!"
+
+check_report "$TESTDIR/adversarial_proof_impure.con" effects \
+    "evidence: reported" \
+    "adversarial: impure parse_byte shows reported" \
+    "adversarial: impure parse_byte should be reported"
+
+# --- Evidence: trusted overrides proof ---
+check_report "$TESTDIR/adversarial_evidence_trusted_not_proved.con" effects \
+    "evidence: trusted-assumption" \
+    "adversarial: trusted parse_byte shows trusted-assumption, not proved" \
+    "adversarial: trusted function should not claim proved"
+
+check_report "$TESTDIR/adversarial_evidence_trusted_not_proved.con" effects \
+    "evidence: proved" \
+    "adversarial: trusted parse_byte not proved" \
+    "adversarial: trusted function wrongly shows proved" "!"
+
+# --- Profile: mutual recursion caught ---
+check_profile "$TESTDIR/adversarial_profile_mutual_recursion.con" predictable \
+    "mutual recursion" \
+    "adversarial: mutual recursion detected by profile" \
+    "adversarial: mutual recursion not caught"
+
+check_profile "$TESTDIR/adversarial_profile_mutual_recursion.con" predictable \
+    "2 function(s) failed" \
+    "adversarial: both ping and pong flagged" \
+    "adversarial: mutual recursion wrong fail count"
+
+# --- Profile: hidden Alloc capability caught ---
+check_profile "$TESTDIR/adversarial_profile_hidden_alloc.con" predictable \
+    "has Alloc capability" \
+    "adversarial: Alloc capability detected even without intrinsic calls" \
+    "adversarial: Alloc capability not caught"
+
+check_profile "$TESTDIR/adversarial_profile_hidden_alloc.con" predictable \
+    "3 function(s) failed" \
+    "adversarial: all 3 Alloc functions flagged" \
+    "adversarial: hidden Alloc wrong fail count"
+
+# --- Profile: all 5 violations in one function ---
+check_profile "$TESTDIR/adversarial_all_violations.con" predictable \
+    "direct recursion" \
+    "adversarial: all-violations recursion detected" \
+    "adversarial: all-violations recursion missed"
+
+check_profile "$TESTDIR/adversarial_all_violations.con" predictable \
+    "unbounded loops" \
+    "adversarial: all-violations unbounded loops detected" \
+    "adversarial: all-violations unbounded loops missed"
+
+check_profile "$TESTDIR/adversarial_all_violations.con" predictable \
+    "has Alloc capability" \
+    "adversarial: all-violations Alloc detected" \
+    "adversarial: all-violations Alloc missed"
+
+check_profile "$TESTDIR/adversarial_all_violations.con" predictable \
+    "calls extern" \
+    "adversarial: all-violations FFI detected" \
+    "adversarial: all-violations FFI missed"
+
+check_profile "$TESTDIR/adversarial_all_violations.con" predictable \
+    "may block" \
+    "adversarial: all-violations blocking detected" \
+    "adversarial: all-violations blocking missed"
+
+# --- Capability: escalation rejected at compile time ---
+run_err "$TESTDIR/adversarial_cap_escalation.con" "but caller has"
+
 fi # end section: report
 
 # === Codegen differential tests ===

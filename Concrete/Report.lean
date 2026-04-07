@@ -1156,14 +1156,14 @@ private partial def effectsForModule
     let crossesFfi := callees.any fun c => externNames.contains c
     let loopClass := classifyLoops f.body
     -- Evidence level: enforced if passes all 5 predictable gates
+    let (concreteCaps, _) := f.capSet.normalize
     let hasRecursion := rec_ != "none"
     let hasUnboundedLoops := loopClass == "unbounded" || loopClass == "mixed"
-    let hasAlloc := !allocs.isEmpty
+    let hasAllocEvidence := !allocs.isEmpty || concreteCaps.any (· == "Alloc")
     let hasFfi := crossesFfi
-    let (concreteCaps, _) := f.capSet.normalize
     let hasBlocking := concreteCaps.any fun c =>
       c == "File" || c == "Network" || c == "Process"
-    let passesProfile := !hasRecursion && !hasUnboundedLoops && !hasAlloc && !hasFfi && !hasBlocking
+    let passesProfile := !hasRecursion && !hasUnboundedLoops && !hasAllocEvidence && !hasFfi && !hasBlocking
     let hasProof := Proof.provedFunctions.contains f.name
     let evidenceLevel :=
       if f.isTrusted then "trusted-assumption"
@@ -1291,11 +1291,17 @@ private partial def checkPredictableModule
       else if loopClass == "mixed" then
         [{ fnName := f.name, reason := "mixed loop boundedness (some loops unbounded)" }]
       else []
-    -- 3. Allocation
+    -- 3. Allocation (intrinsic calls OR Alloc capability)
     let callees := collectCallsStmts f.body |>.eraseDups
     let allocs := callees.filter isAllocCall
-    let allocViolations := if allocs.isEmpty then []
-      else [{ fnName := f.name, reason := s!"allocates ({", ".intercalate allocs})" }]
+    let (fnCaps, _) := f.capSet.normalize
+    let hasAllocCap := fnCaps.any (· == "Alloc")
+    let allocViolations :=
+      if !allocs.isEmpty then
+        [{ fnName := f.name, reason := s!"allocates ({", ".intercalate allocs})" }]
+      else if hasAllocCap then
+        [{ fnName := f.name, reason := "has Alloc capability" }]
+      else []
     -- 4. FFI
     let externCalls := callees.filter fun c => externNames.contains c
     let ffiViolations := if externCalls.isEmpty then []
