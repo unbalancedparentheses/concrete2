@@ -33,6 +33,91 @@ private def padNum (n : Nat) (w : Nat) : String :=
   else String.ofList (List.replicate (w - s.length) ' ') ++ s
 
 -- ============================================================
+-- Body fingerprinting (proof identity verification)
+-- ============================================================
+-- Produces a canonical string from CExpr/CStmt structure.
+-- Used to verify that a function's body matches the PExpr
+-- encoding in Proof.lean. If the body changes, the fingerprint
+-- changes, and "proved" evidence is revoked.
+
+private partial def fingerprintExpr : CExpr → String
+  | .intLit v _ => s!"(int {v})"
+  | .floatLit v _ => s!"(float {v})"
+  | .boolLit v => s!"(bool {v})"
+  | .strLit v => s!"(str {repr v})"
+  | .charLit v => s!"(char {repr v})"
+  | .ident name _ => s!"(var {name})"
+  | .binOp op lhs rhs _ => s!"(binop {repr op} {fingerprintExpr lhs} {fingerprintExpr rhs})"
+  | .unaryOp op inner _ => s!"(unary {repr op} {fingerprintExpr inner})"
+  | .call fn _ args _ => s!"(call {fn} {fingerprintExprs args})"
+  | .structLit name _ fields _ =>
+    let fs := fields.map fun (n, e) => s!"{n}={fingerprintExpr e}"
+    s!"(struct {name} {" ".intercalate fs})"
+  | .fieldAccess obj field _ => s!"(field {fingerprintExpr obj} {field})"
+  | .enumLit en v _ fields _ =>
+    let fs := fields.map fun (n, e) => s!"{n}={fingerprintExpr e}"
+    s!"(enum {en}::{v} {" ".intercalate fs})"
+  | .match_ scr arms _ =>
+    let as_ := arms.map fingerprintArm
+    s!"(match {fingerprintExpr scr} {" ".intercalate as_})"
+  | .borrow inner _ => s!"(borrow {fingerprintExpr inner})"
+  | .borrowMut inner _ => s!"(borrowmut {fingerprintExpr inner})"
+  | .deref inner _ => s!"(deref {fingerprintExpr inner})"
+  | .arrayLit elems _ => s!"(array {fingerprintExprs elems})"
+  | .arrayIndex arr idx _ => s!"(index {fingerprintExpr arr} {fingerprintExpr idx})"
+  | .cast inner ty => s!"(cast {fingerprintExpr inner} {repr ty})"
+  | .fnRef name _ => s!"(fnref {name})"
+  | .try_ inner _ => s!"(try {fingerprintExpr inner})"
+  | .allocCall inner alloc _ => s!"(alloc {fingerprintExpr inner} {fingerprintExpr alloc})"
+  | .whileExpr cond body els _ => s!"(while {fingerprintExpr cond} {fingerprintStmts body} {fingerprintStmts els})"
+  | .ifExpr cond th el _ => s!"(if {fingerprintExpr cond} {fingerprintStmts th} {fingerprintStmts el})"
+where
+  fingerprintExprs (es : List CExpr) : String :=
+    " ".intercalate (es.map fingerprintExpr)
+  fingerprintArm : CMatchArm → String
+    | .enumArm en v binds body => s!"(arm {en}::{v} [{" ".intercalate (binds.map Prod.fst)}] {fingerprintStmts body})"
+    | .litArm val body => s!"(lit {fingerprintExpr val} {fingerprintStmts body})"
+    | .varArm b _ body => s!"(var {b} {fingerprintStmts body})"
+  fingerprintStmt : CStmt → String
+    | .letDecl name _ _ val => s!"(let {name} {fingerprintExpr val})"
+    | .assign name val => s!"(set {name} {fingerprintExpr val})"
+    | .return_ (some val) _ => s!"(ret {fingerprintExpr val})"
+    | .return_ none _ => "(ret)"
+    | .expr e => fingerprintExpr e
+    | .ifElse cond th (some el) => s!"(if {fingerprintExpr cond} {fingerprintStmts th} {fingerprintStmts el})"
+    | .ifElse cond th none => s!"(if {fingerprintExpr cond} {fingerprintStmts th})"
+    | .while_ cond body _ step => s!"(while {fingerprintExpr cond} {fingerprintStmts body} {fingerprintStmts step})"
+    | .fieldAssign obj f val => s!"(setfield {fingerprintExpr obj} {f} {fingerprintExpr val})"
+    | .derefAssign tgt val => s!"(setderef {fingerprintExpr tgt} {fingerprintExpr val})"
+    | .arrayIndexAssign arr idx val => s!"(setindex {fingerprintExpr arr} {fingerprintExpr idx} {fingerprintExpr val})"
+    | .break_ _ lbl => s!"(break {lbl})"
+    | .continue_ lbl => s!"(continue {lbl})"
+    | .defer body => s!"(defer {fingerprintExpr body})"
+    | .borrowIn v r rg m _ body => s!"(borrowin {v} {r} {rg} {m} {fingerprintStmts body})"
+  fingerprintStmts (ss : List CStmt) : String :=
+    "[" ++ " ".intercalate (ss.map fingerprintStmt) ++ "]"
+
+/-- Compute a body fingerprint for proof identity verification. -/
+def bodyFingerprint (body : List CStmt) : String :=
+  fingerprintStmts body
+where
+  fingerprintStmts (ss : List CStmt) : String :=
+    "[" ++ " ".intercalate (ss.map fingerprintStmt) ++ "]"
+  fingerprintStmt := fingerprintExpr.fingerprintStmt
+  fingerprintExpr := Report.fingerprintExpr
+
+/-- Print body fingerprints for all functions (development tool). -/
+partial def fingerprintReport (modules : List CModule) : String :=
+  let allFns := modules.foldl (fun acc m => acc ++ collectFns m) []
+  let lines := allFns.map fun f =>
+    let fp := bodyFingerprint f.body
+    s!"  {f.name}: \"{fp}\""
+  "=== Body Fingerprints ===\n" ++ "\n".intercalate lines ++ "\n"
+where
+  collectFns (m : CModule) : List CFnDef :=
+    m.functions ++ m.submodules.foldl (fun acc sub => acc ++ collectFns sub) []
+
+-- ============================================================
 -- Body-walking infrastructure
 -- ============================================================
 -- Shared recursive traversal of Core IR (CExpr/CStmt/CMatchArm)
@@ -1164,7 +1249,9 @@ private partial def effectsForModule
     let hasBlocking := concreteCaps.any fun c =>
       c == "File" || c == "Network" || c == "Process"
     let passesProfile := !hasRecursion && !hasUnboundedLoops && !hasAllocEvidence && !hasFfi && !hasBlocking
-    let hasProof := Proof.provedFunctions.contains f.name
+    let fp := bodyFingerprint f.body
+    let hasProof := Proof.provedFunctions.any fun (name, expectedFp) =>
+      name == f.name && expectedFp == fp
     let evidenceLevel :=
       if f.isTrusted then "trusted-assumption"
       else if hasProof && passesProfile then "proved"

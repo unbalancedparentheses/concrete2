@@ -2200,11 +2200,16 @@ check_profile "$TESTDIR/../examples/thesis_demo/src/main.con" predictable \
 echo ""
 echo "=== Adversarial tests ==="
 
-# --- Proof integrity: wrong semantics still shows "proved" (known gap) ---
+# --- Proof integrity: wrong semantics detected via body fingerprint ---
 check_report "$TESTDIR/adversarial_proof_wrong_semantics.con" effects \
     "evidence: proved" \
-    "adversarial: name-only proof match is a known gap (documents limitation)" \
-    "adversarial: proof matching changed unexpectedly"
+    "adversarial: wrong-semantics parse_byte not proved (fingerprint mismatch)" \
+    "adversarial: wrong-semantics parse_byte should not be proved" "!"
+
+check_report "$TESTDIR/adversarial_proof_wrong_semantics.con" effects \
+    "evidence: enforced" \
+    "adversarial: wrong-semantics parse_byte drops to enforced" \
+    "adversarial: wrong-semantics parse_byte should be enforced"
 
 # --- Proof integrity: impure function cannot be "proved" ---
 check_report "$TESTDIR/adversarial_proof_impure.con" effects \

@@ -375,7 +375,14 @@ theorem check_length_accepts_valid (len : Int) (h : 10 ≤ len) (fuel : Nat) :
 
 /-- Functions with completed Lean proofs. The effects report upgrades
     evidence level from "enforced" to "proved" for these functions.
-    Each entry is the function name as it appears in Concrete source. -/
-def provedFunctions : List String := ["parse_byte", "check_length"]
+    Each entry is (function name, expected body fingerprint).
+    If the function body changes, the fingerprint will not match and
+    "proved" evidence is revoked — the proof must be updated to match. -/
+def provedFunctions : List (String × String) :=
+  [ ("parse_byte",
+     "[(ret (binop Concrete.BinOp.add (var data) (var offset)))]")
+  , ("check_length",
+     "[(if (binop Concrete.BinOp.lt (var len) (int 10)) [(ret (int 1))]) (ret (int 0))]")
+  ]
 
 end Concrete.Proof
