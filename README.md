@@ -13,9 +13,26 @@
 
 >Most ideas come from previous ideas - Alan C. Kay, The Early History Of Smalltalk
 
-Concrete is a no-GC systems language where the compiler can make four things visible:
+Concrete is a systems programming language where the compiler makes operational power explicit.
 
-1. what a function can touch
+## The Language
+
+Concrete is a compiled, statically typed systems language that targets LLVM IR.
+
+- **No garbage collector.** Memory is managed through ownership and borrowing, checked at compile time. There is no runtime GC, no reference counting behind the scenes.
+- **Linear type system.** Every non-Copy value must be consumed exactly once. The compiler rejects programs that leak, double-free, or use after move.
+- **Copy vs linear.** Types are either `Copy` (freely duplicated — integers, small structs) or linear (must be explicitly consumed or destroyed). Structs opt in to `Copy`; heap-owning types are linear by default.
+- **Capability-based effects.** Side effects are tracked through capabilities declared in function signatures: `with(File)`, `with(Console)`, `with(Alloc)`. A function with no capabilities is pure — it cannot do I/O, allocate, or touch the outside world.
+- **Explicit trust boundaries.** `trusted` marks code the compiler cannot fully verify (pointer arithmetic, FFI). Everything else is checked. The boundary is visible and auditable.
+- **Explicit allocation.** Heap allocation requires the `Alloc` capability. Stack allocation is the default. If a function doesn't say `with(Alloc)`, it doesn't allocate.
+
+The compiler is written in Lean 4.
+
+## The Thesis
+
+Most systems languages give you safety or control. Concrete is trying to also make the following visible at the function boundary:
+
+1. what authority a function has (capabilities)
 2. whether it allocates, blocks, recurses, or runs unboundedly
 3. where it crosses trust boundaries
 4. whether those claims are reported, enforced, or proved
@@ -26,23 +43,9 @@ Short version:
 - Lean makes proofs explicit.
 - Concrete is trying to make operational power explicit.
 
-## What Concrete Can Show Today
+## What This Looks Like
 
-The clearest current example is [examples/thesis_demo/src/main.con](examples/thesis_demo/src/main.con).
-
-It demonstrates, in one file:
-
-1. an I/O shell that is expected to fail the predictable profile
-2. a predictable core that passes the profile
-3. two functions that already appear as `proved` in the report
-
-That means Concrete can already demonstrate:
-
-1. visible authority boundaries
-2. compiler-enforced predictable-core checks
-3. compiler-visible evidence levels
-
-## The Thesis Demo
+The clearest example is [examples/thesis_demo/src/main.con](examples/thesis_demo/src/main.con):
 
 ```con
 fn parse_byte(data: Int, offset: Int) -> Int {
@@ -78,143 +81,76 @@ pub fn main() with(Std) -> Int {
 }
 ```
 
-The split is the point:
+Read the signatures. `parse_byte`, `check_length`, and `validate` have no capabilities — they are pure. `report` can write to the console and nothing else. `main` has `Std` (the full standard capability set) because it is the entry point.
 
-1. `parse_byte` and `check_length` are proved
-2. `validate` and `report` are enforced and pass the predictable profile
-3. `main` is only reported, because it does I/O through `Std`
+The compiler can tell you what each function does:
 
-Concrete is not pretending the whole program is predictable. It is making the core/shell boundary explicit.
-
-## Try The Thesis Demo
-
-```bash
-make build
-.lake/build/bin/concrete examples/thesis_demo/src/main.con --report effects
-.lake/build/bin/concrete examples/thesis_demo/src/main.con --check predictable
+```
+parse_byte     evidence: proved           — Lean theorem: ∀ a b, parse_byte(a,b) = a+b
+check_length   evidence: proved           — Lean theorem: rejects iff len < 10
+validate       evidence: enforced         — passes all 5 predictable-execution gates
+report         evidence: enforced         — Console only, no blocking, no allocation
+main           evidence: reported         — has blocking I/O through Std
 ```
 
-Expected shape:
-
-```text
-parse_byte     caps:none  alloc:no  recursion:none  loops:no loops  ffi:no  trusted:no  evidence:proved
-check_length   caps:none  alloc:no  recursion:none  loops:no loops  ffi:no  trusted:no  evidence:proved
-validate       caps:none  alloc:no  recursion:none  loops:bounded   ffi:no  trusted:no  evidence:enforced
-report         caps:Console          recursion:none  loops:no loops  ffi:no  trusted:no  evidence:enforced
-main           caps:Std              recursion:none  loops:no loops  ffi:no  trusted:no  evidence:reported
-
-Evidence: 2 proved, 2 enforced, 0 trusted-assumption, 1 reported
-```
-
-```text
---check predictable
-
-parse_byte     PASS
-check_length   PASS
-validate       PASS
-report         PASS
-main           FAIL  (blocking I/O through Std)
-```
+The split is the point. Concrete is not pretending the whole program is predictable. It is making the core/shell boundary explicit.
 
 ## What The Compiler Reports
 
-Concrete is trying to make the function boundary informative enough that you can ask:
+The effects/evidence report (`--report effects`) summarizes every function across seven axes: capabilities, allocation, recursion, loop boundedness, FFI, trust, and evidence level.
 
-1. what authority does this function have?
-2. does it allocate?
-3. does it recurse?
-4. are its loops bounded?
-5. does it block?
-6. does it cross FFI or trusted boundaries?
-7. is the answer merely reported, enforced, or proved?
+Evidence levels:
 
-The effects/evidence report is the center of gravity:
+- **proved** — a linked Lean 4 theorem backs the claim
+- **enforced** — the compiler can reject violations (passes all 5 predictable gates)
+- **reported** — the compiler can classify it but cannot enforce the predictable profile
+- **trusted-assumption** — the claim depends on an explicit trust boundary
 
-- `reported` — the compiler can classify it
-- `enforced` — the compiler can reject violations
-- `proved` — a linked Lean theorem backs the claim
-- `trusted-assumption` — the claim depends on an explicit trust boundary
-
-## The First Predictable Profile
-
-Concrete now has a first `--check predictable` slice. It rejects functions that:
+The predictable profile (`--check predictable`) rejects functions that:
 
 1. recurse or participate in call cycles
-2. contain unbounded or mixed loop classifications
-3. allocate
-4. cross FFI
-5. block through file/network/process-style authority
+2. contain unbounded loops
+3. allocate (or declare the Alloc capability)
+4. cross FFI boundaries
+5. block through file/network/process capabilities
 
-This is intentionally per-function and per-core, not a fake "whole program must be predictable" story.
+This is per-function, not whole-program.
 
 ## The Proof Direction
 
-The compiler is written in Lean 4. The aim is not only to prove the compiler, but to connect selected Concrete functions to Lean theorems and surface that link back in compiler reports.
+The compiler is written in Lean 4. The aim is to connect selected Concrete functions to Lean theorems and surface that link in compiler reports.
 
 Today, the first proof slice is live:
 
-1. helper-level parser-core correctness is proved (`parse_byte`)
-2. a real parser guard property is proved (`check_length`)
+1. `parse_byte` correctness: `∀ a b, parse_byte(a, b) = a + b`
+2. `check_length` bounds guard: `∀ len < 10, rejects` and `∀ len ≥ 10, accepts`
 3. the report shows those functions as `proved`
-4. the thesis demo demonstrates the intended end-to-end shape
 
-The next proof step is to move from the guard-level theorem to a deeper parser-core safety property.
-
-## Language Foundations
-
-Concrete is a systems language. The operational visibility described above sits on top of real low-level foundations:
-
-- **Linear type system** — every non-Copy value must be consumed exactly once. The compiler tracks ownership at every point and rejects programs that leak, double-free, or use after move.
-- **No garbage collector** — memory is managed through ownership, borrowing, and explicit allocation. There is no runtime GC, no reference counting hidden behind the scenes.
-- **Ownership and borrowing** — mutable and immutable borrows are checked at compile time. Borrow scopes prevent aliased mutation.
-- **Copy vs linear distinction** — types are either `Copy` (can be freely duplicated, like integers and small structs) or linear (must be explicitly consumed or destroyed). Structs opt in to `Copy`; heap-owning types are linear by default.
-- **Explicit allocation** — heap allocation requires the `Alloc` capability. Functions that allocate declare it in their signature. Stack allocation is the default.
-- **Capability-based effects** — I/O, allocation, FFI, and other side effects are tracked through capabilities (`with(File)`, `with(Console)`, `with(Alloc)`). A pure function has no capabilities and cannot perform effects.
-- **Trust boundaries** — `trusted` marks code that the compiler cannot fully verify (pointer arithmetic, FFI). Everything else is checked. The boundary is explicit and auditable.
-- **Compiles to LLVM IR** — the backend emits LLVM IR, compiled by clang. No interpreter, no VM.
+The next proof step is to move from guard-level theorems to deeper parser-core safety properties.
 
 ## Why This Is Different
 
-Most systems languages give you some of these, but not all in one place:
+1. **Rust** gives strong memory safety, but most operational properties (does it block? does it allocate? are its loops bounded?) are still implicit.
+2. **Zig** gives explicit systems control, but not compiler-visible effects or evidence levels.
+3. **Lean** gives theorem proving, but is not a no-GC systems language with explicit authority boundaries.
 
-1. **Rust** gives strong safety, but most operational properties are still implicit in bodies and callees.
-2. **Zig** gives explicit systems control, but not this kind of compiler-visible effects/evidence model.
-3. **Lean** gives theorem proving, but it is not trying to be a no-GC systems language with explicit authority boundaries.
-
-Concrete is trying to combine:
-
-1. capability-visible architecture
-2. predictable execution checks
-3. proof-backed evidence tied to compiler artifacts
-
-## Current Research Center
-
-The current center of gravity is [research/thesis-validation/](research/thesis-validation/):
-
-1. [core-thesis.md](research/thesis-validation/core-thesis.md)
-2. [objective-matrix.md](research/thesis-validation/objective-matrix.md)
-3. [thesis-validation.md](research/thesis-validation/thesis-validation.md)
-
-Those notes define the current experimental track:
-
-1. capability-visible architecture
-2. predictable execution
-3. proof-backed evidence
+Concrete is trying to combine: capability-visible architecture, predictable execution checks, and proof-backed evidence tied to compiler artifacts.
 
 ## Current State
 
 The compiler implements the full pipeline:
 
-`Parse -> Resolve -> Check -> Elab -> CoreCheck -> Mono -> Lower -> EmitSSA -> LLVM IR`
+`Parse → Resolve → Check → Elab → CoreCheck → Mono → Lower → EmitSSA → LLVM IR`
 
 What exists:
 
-1. capability and trust-boundary checking
-2. a unified effects/evidence report
-3. a first predictable-execution profile check
-4. parser-core Lean proofs connected to the report
-5. a real stdlib and example corpus
-6. real compiler reports, tests, and example programs
+1. linear type system with ownership, borrowing, and Copy/linear distinction
+2. capability and trust-boundary checking
+3. unified effects/evidence report
+4. predictable-execution profile check
+5. parser-core Lean proofs connected to the report
+6. a real stdlib (Vec, String, HashMap, Option, Result, ...) and example corpus
+7. adversarial tests proving the compiler catches violations
 
 What does not exist yet:
 
@@ -230,6 +166,8 @@ For priorities, see [ROADMAP.md](ROADMAP.md). For landed milestones, see [CHANGE
 
 ```bash
 make build
+.lake/build/bin/concrete examples/thesis_demo/src/main.con --report effects
+.lake/build/bin/concrete examples/thesis_demo/src/main.con --check predictable
 .lake/build/bin/concrete examples/snippets/hello_world.con -o /tmp/hello && /tmp/hello
 ```
 
