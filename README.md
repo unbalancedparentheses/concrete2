@@ -28,55 +28,93 @@ Short version:
 
 ## What Concrete Can Show Today
 
-The clearest current example is a packet decoder split into:
+The clearest current example is [examples/thesis_demo/src/main.con](examples/thesis_demo/src/main.con).
+
+It demonstrates, in one file:
 
 1. an I/O shell that is expected to fail the predictable profile
-2. a parser core that passes the predictable profile
-3. one parser-core function that already appears as `proved` in the report
+2. a predictable core that passes the profile
+3. two functions that already appear as `proved` in the report
 
-That means Concrete can already demonstrate, in one example:
+That means Concrete can already demonstrate:
 
 1. visible authority boundaries
 2. compiler-enforced predictable-core checks
 3. compiler-visible evidence levels
 
-## The Packet-Decoder Shape
+## The Thesis Demo
 
 ```con
-struct Header {
-    version: u8,
-    kind: u8,
-    len: u16,
-}
-
-// Capability-free helper in the parser core.
 fn parse_byte(data: Int, offset: Int) -> Int {
     return data + offset;
 }
 
-// Predictable parser core: no I/O, no FFI, no blocking.
-fn decode_header(buf: &Bytes) -> Result<Header, ParseError> {
-    if buf.len() < 4 {
-        return Result#Err { error: ParseError#TooShort };
+fn check_length(len: Int) -> Int {
+    if len < 10 { return 1; }
+    return 0;
+}
+
+fn validate(data: Int, len: Int) -> Int {
+    if check_length(len) != 0 { return 1; }
+
+    let mut checksum: Int = 0;
+    for (let mut i: Int = 0; i < len; i = i + 1) {
+        checksum = checksum + parse_byte(data, i);
     }
 
-    let version: u8 = buf.get_unchecked(0);
-    let kind: u8 = buf.get_unchecked(1);
-    let b2: u8 = buf.get_unchecked(2);
-    let b3: u8 = buf.get_unchecked(3);
-    let len: u16 = ((b2 as u16) << 8) | (b3 as u16);
+    if checksum == 0 { return 2; }
+    return 0;
+}
 
-    if len > buf.len() as u16 {
-        return Result#Err { error: ParseError#LengthOutOfBounds };
-    }
+fn report(result: Int) with(Console) {
+    if result == 0 { println("ok"); }
+    else { println("fail"); }
+}
 
-    return Result#Ok {
-        value: Header { version, kind, len }
-    };
+pub fn main() with(Std) -> Int {
+    let result: Int = validate(42, 10);
+    report(result);
+    return result;
 }
 ```
 
-The shell does I/O and should fail the predictable profile. The parser core should pass. That split is the point.
+The split is the point:
+
+1. `parse_byte` and `check_length` are proved
+2. `validate` and `report` are enforced and pass the predictable profile
+3. `main` is only reported, because it does I/O through `Std`
+
+Concrete is not pretending the whole program is predictable. It is making the core/shell boundary explicit.
+
+## Try The Thesis Demo
+
+```bash
+make build
+.lake/build/bin/concrete examples/thesis_demo/src/main.con --report effects
+.lake/build/bin/concrete examples/thesis_demo/src/main.con --check predictable
+```
+
+Expected shape:
+
+```text
+parse_byte     caps:none  alloc:no  recursion:none  loops:no loops  ffi:no  trusted:no  evidence:proved
+check_length   caps:none  alloc:no  recursion:none  loops:no loops  ffi:no  trusted:no  evidence:proved
+validate       caps:none  alloc:no  recursion:none  loops:bounded   ffi:no  trusted:no  evidence:enforced
+report         caps:Console          recursion:none  loops:no loops  ffi:no  trusted:no  evidence:enforced
+main           caps:Std              recursion:none  loops:no loops  ffi:no  trusted:no  evidence:reported
+
+Evidence: 2 proved, 2 enforced, 0 trusted-assumption, 1 reported
+```
+
+```text
+--check predictable
+
+parse_byte     PASS
+check_length   PASS
+validate       PASS
+report         PASS
+main           FAIL  (blocking I/O through Std)
+```
 
 ## What The Compiler Reports
 
@@ -115,11 +153,25 @@ The compiler is written in Lean 4. The aim is not only to prove the compiler, bu
 
 Today, the first proof slice is live:
 
-1. a small parser-core function has a Lean theorem
-2. the report shows that function as `proved`
-3. the packet-decoder example demonstrates the intended end-to-end shape
+1. helper-level parser-core correctness is proved (`parse_byte`)
+2. a real parser guard property is proved (`check_length`)
+3. the report shows those functions as `proved`
+4. the thesis demo demonstrates the intended end-to-end shape
 
-The next proof step is to move from the helper-level theorem to a real parser-core safety property.
+The next proof step is to move from the guard-level theorem to a deeper parser-core safety property.
+
+## Language Foundations
+
+Concrete is a systems language. The operational visibility described above sits on top of real low-level foundations:
+
+- **Linear type system** — every non-Copy value must be consumed exactly once. The compiler tracks ownership at every point and rejects programs that leak, double-free, or use after move.
+- **No garbage collector** — memory is managed through ownership, borrowing, and explicit allocation. There is no runtime GC, no reference counting hidden behind the scenes.
+- **Ownership and borrowing** — mutable and immutable borrows are checked at compile time. Borrow scopes prevent aliased mutation.
+- **Copy vs linear distinction** — types are either `Copy` (can be freely duplicated, like integers and small structs) or linear (must be explicitly consumed or destroyed). Structs opt in to `Copy`; heap-owning types are linear by default.
+- **Explicit allocation** — heap allocation requires the `Alloc` capability. Functions that allocate declare it in their signature. Stack allocation is the default.
+- **Capability-based effects** — I/O, allocation, FFI, and other side effects are tracked through capabilities (`with(File)`, `with(Console)`, `with(Alloc)`). A pure function has no capabilities and cannot perform effects.
+- **Trust boundaries** — `trusted` marks code that the compiler cannot fully verify (pointer arithmetic, FFI). Everything else is checked. The boundary is explicit and auditable.
+- **Compiles to LLVM IR** — the backend emits LLVM IR, compiled by clang. No interpreter, no VM.
 
 ## Why This Is Different
 
@@ -160,7 +212,7 @@ What exists:
 1. capability and trust-boundary checking
 2. a unified effects/evidence report
 3. a first predictable-execution profile check
-4. a first Lean proof slice connected to the report
+4. parser-core Lean proofs connected to the report
 5. a real stdlib and example corpus
 6. real compiler reports, tests, and example programs
 
