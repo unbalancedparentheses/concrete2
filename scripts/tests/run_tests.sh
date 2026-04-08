@@ -2314,6 +2314,63 @@ check_profile "$TESTDIR/adversarial_all_violations.con" predictable \
 # --- Capability: escalation rejected at compile time ---
 run_err "$TESTDIR/adversarial_cap_escalation.con" "but caller has"
 
+# --- Proof identity: same name in different module must not inherit proof ---
+check_report "$TESTDIR/adversarial_proof_cross_module.con" effects \
+    "1 proved, 3 enforced" \
+    "adversarial: cross-module same-name only 1 proved (qualified identity)" \
+    "adversarial: cross-module proof isolation failed"
+
+check_report "$TESTDIR/adversarial_proof_cross_module.con" effects \
+    "inner_parse_byte" \
+    "adversarial: inner parse_byte present in report" \
+    "adversarial: inner parse_byte missing from report"
+
+check_report "$TESTDIR/adversarial_proof_cross_module.con" effects \
+    "evidence: proved" \
+    "adversarial: outer parse_byte is proved" \
+    "adversarial: outer parse_byte should be proved"
+
+# --- Proof identity: wrong arity function not proved ---
+check_report "$TESTDIR/adversarial_proof_wrong_arity.con" effects \
+    "evidence: proved" \
+    "adversarial: wrong-arity parse_byte not proved" \
+    "adversarial: wrong-arity parse_byte should not be proved" "!"
+
+check_report "$TESTDIR/adversarial_proof_wrong_arity.con" effects \
+    "proof stale: body changed" \
+    "adversarial: wrong-arity parse_byte shows stale warning" \
+    "adversarial: wrong-arity should show stale warning"
+
+# --- Capability: trusted does not bypass callee capability checking ---
+run_err "$TESTDIR/adversarial_trusted_cap_laundering.con" "but caller has"
+
+# --- Loop: unbounded while with comparison but no progress ---
+check_report "$TESTDIR/adversarial_loop_disguised.con" effects \
+    "loops: unbounded" \
+    "adversarial: disguised unbounded loop detected" \
+    "adversarial: disguised unbounded loop not caught"
+
+check_report "$TESTDIR/adversarial_loop_disguised.con" effects \
+    "evidence: reported" \
+    "adversarial: unbounded loop function is reported (not enforced)" \
+    "adversarial: unbounded loop function should not be enforced"
+
+check_profile "$TESTDIR/adversarial_loop_disguised.con" predictable \
+    "spin.*unbounded" \
+    "adversarial: spin rejected by predictable profile" \
+    "adversarial: spin should fail predictable profile"
+
+# --- Fn pointer: indirect call does not claim proved ---
+check_report "$TESTDIR/adversarial_fn_ptr_indirect.con" effects \
+    "evidence: proved" \
+    "adversarial: fn pointer apply not proved" \
+    "adversarial: fn pointer apply should not be proved" "!"
+
+check_report "$TESTDIR/adversarial_fn_ptr_indirect.con" effects \
+    "0 proved, 3 enforced" \
+    "adversarial: fn pointer file has 0 proved (no registered proof)" \
+    "adversarial: fn pointer file wrong evidence counts"
+
 fi # end section: report
 
 # === Codegen differential tests ===
