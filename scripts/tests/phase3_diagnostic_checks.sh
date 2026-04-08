@@ -5,7 +5,7 @@
 #
 # If invoked standalone, set defaults:
 : "${COMPILER:=./.lake/build/bin/concrete}"
-: "${TESTDIR:=lean_tests}"
+: "${TESTDIR:=tests/programs}"
 : "${PASS:=0}"
 : "${FAIL:=0}"
 

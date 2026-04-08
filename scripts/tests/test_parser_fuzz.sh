@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+cd "$ROOT_DIR"
+
 # Parser fuzzing: generate random/malformed .con inputs and verify
 # the compiler never crashes (segfault, abort, hang).
 #

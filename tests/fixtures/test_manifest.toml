@@ -1,6 +1,6 @@
 # Test Manifest — reference metadata for all test cases
 #
-# This file is NOT consumed by run_tests.sh. Test execution is driven
+# This file is NOT consumed by scripts/tests/run_tests.sh. Test execution is driven
 # by the shell script's section structure. This manifest captures the
 # metadata that the shell sections encode implicitly, making it
 # queryable and auditable for documentation and future tooling.
@@ -79,7 +79,7 @@ description = "19+ pass-level tests exercising individual compiler passes on in-
 # --- Basics ---
 
 [[test]]
-file = "lean_tests/fib.con"
+file = "tests/programs/fib.con"
 category = "unit"
 kind = "run_ok"
 passes = ["parse", "check", "elab", "mono", "lower", "ssa_verify", "ssa_cleanup", "emit_ssa", "clang", "runtime"]
@@ -90,7 +90,7 @@ needs_clang = true
 multi_module = false
 
 [[test]]
-file = "lean_tests/arithmetic.con"
+file = "tests/programs/arithmetic.con"
 category = "unit"
 kind = "run_ok"
 passes = ["parse", "check", "elab", "mono", "lower", "emit_ssa", "clang", "runtime"]
@@ -101,7 +101,7 @@ needs_clang = true
 multi_module = false
 
 [[test]]
-file = "lean_tests/if_else.con"
+file = "tests/programs/if_else.con"
 category = "unit"
 kind = "run_ok"
 passes = ["parse", "check", "elab", "mono", "lower", "emit_ssa", "clang", "runtime"]
@@ -112,7 +112,7 @@ needs_clang = true
 multi_module = false
 
 [[test]]
-file = "lean_tests/while_loop.con"
+file = "tests/programs/while_loop.con"
 category = "unit"
 kind = "run_ok"
 passes = ["parse", "check", "elab", "mono", "lower", "emit_ssa", "clang", "runtime"]
@@ -123,7 +123,7 @@ needs_clang = true
 multi_module = false
 
 [[test]]
-file = "lean_tests/recursion.con"
+file = "tests/programs/recursion.con"
 category = "unit"
 kind = "run_ok"
 passes = ["parse", "check", "elab", "mono", "lower", "emit_ssa", "clang", "runtime"]
@@ -136,7 +136,7 @@ multi_module = false
 # --- Structs ---
 
 [[test]]
-file = "lean_tests/struct_basic.con"
+file = "tests/programs/struct_basic.con"
 category = "unit"
 kind = "run_ok"
 passes = ["parse", "check", "elab", "mono", "lower", "emit_ssa", "clang", "runtime"]
@@ -147,7 +147,7 @@ needs_clang = true
 multi_module = false
 
 [[test]]
-file = "lean_tests/struct_field_assign.con"
+file = "tests/programs/struct_field_assign.con"
 category = "unit"
 kind = "run_ok"
 passes = ["parse", "check", "elab", "mono", "lower", "emit_ssa", "clang", "runtime"]
@@ -158,7 +158,7 @@ needs_clang = true
 multi_module = false
 
 [[test]]
-file = "lean_tests/struct_loop_field_assign.con"
+file = "tests/programs/struct_loop_field_assign.con"
 category = "unit"
 kind = "run_ok"
 passes = ["parse", "check", "elab", "mono", "lower", "emit_ssa", "clang", "runtime"]
@@ -169,7 +169,7 @@ needs_clang = true
 multi_module = false
 
 [[test]]
-file = "lean_tests/struct_loop_break.con"
+file = "tests/programs/struct_loop_break.con"
 category = "unit"
 kind = "run_ok"
 passes = ["parse", "check", "elab", "mono", "lower", "emit_ssa", "clang", "runtime"]
@@ -180,7 +180,7 @@ needs_clang = true
 multi_module = false
 
 [[test]]
-file = "lean_tests/struct_nested_loop.con"
+file = "tests/programs/struct_nested_loop.con"
 category = "unit"
 kind = "run_ok"
 passes = ["parse", "check", "elab", "mono", "lower", "emit_ssa", "clang", "runtime"]
@@ -191,7 +191,7 @@ needs_clang = true
 multi_module = false
 
 [[test]]
-file = "lean_tests/struct_if_else_merge.con"
+file = "tests/programs/struct_if_else_merge.con"
 category = "unit"
 kind = "run_ok"
 passes = ["parse", "check", "elab", "mono", "lower", "emit_ssa", "clang", "runtime"]
@@ -202,7 +202,7 @@ needs_clang = true
 multi_module = false
 
 [[test]]
-file = "lean_tests/struct_match_merge.con"
+file = "tests/programs/struct_match_merge.con"
 category = "unit"
 kind = "run_ok"
 passes = ["parse", "check", "elab", "mono", "lower", "emit_ssa", "clang", "runtime"]
@@ -213,7 +213,7 @@ needs_clang = true
 multi_module = false
 
 [[test]]
-file = "lean_tests/struct_nested.con"
+file = "tests/programs/struct_nested.con"
 category = "unit"
 kind = "run_ok"
 passes = ["parse", "check", "elab", "mono", "lower", "emit_ssa", "clang", "runtime"]
@@ -226,7 +226,7 @@ multi_module = false
 # --- Linear ownership ---
 
 [[test]]
-file = "lean_tests/linear_consume.con"
+file = "tests/programs/linear_consume.con"
 category = "unit"
 kind = "run_ok"
 passes = ["parse", "check", "elab", "mono", "lower", "emit_ssa", "clang", "runtime"]
@@ -237,7 +237,7 @@ needs_clang = true
 multi_module = false
 
 [[test]]
-file = "lean_tests/linear_branch_agree.con"
+file = "tests/programs/linear_branch_agree.con"
 category = "unit"
 kind = "run_ok"
 passes = ["parse", "check", "elab", "mono", "lower", "emit_ssa", "clang", "runtime"]
@@ -248,7 +248,7 @@ needs_clang = true
 multi_module = false
 
 [[test]]
-file = "lean_tests/linear_loop_inner.con"
+file = "tests/programs/linear_loop_inner.con"
 category = "unit"
 kind = "run_ok"
 passes = ["parse", "check", "elab", "mono", "lower", "emit_ssa", "clang", "runtime"]
@@ -261,7 +261,7 @@ multi_module = false
 # --- Enums ---
 
 [[test]]
-file = "lean_tests/enum_basic.con"
+file = "tests/programs/enum_basic.con"
 category = "unit"
 kind = "run_ok"
 passes = ["parse", "check", "elab", "mono", "lower", "emit_ssa", "clang", "runtime"]
@@ -272,7 +272,7 @@ needs_clang = true
 multi_module = false
 
 [[test]]
-file = "lean_tests/enum_fields.con"
+file = "tests/programs/enum_fields.con"
 category = "unit"
 kind = "run_ok"
 passes = ["parse", "check", "elab", "mono", "lower", "emit_ssa", "clang", "runtime"]
@@ -283,7 +283,7 @@ needs_clang = true
 multi_module = false
 
 [[test]]
-file = "lean_tests/enum_linear.con"
+file = "tests/programs/enum_linear.con"
 category = "unit"
 kind = "run_ok"
 passes = ["parse", "check", "elab", "mono", "lower", "emit_ssa", "clang", "runtime"]
@@ -296,7 +296,7 @@ multi_module = false
 # --- Borrows ---
 
 [[test]]
-file = "lean_tests/borrow_read.con"
+file = "tests/programs/borrow_read.con"
 category = "unit"
 kind = "run_ok"
 passes = ["parse", "check", "elab", "mono", "lower", "emit_ssa", "clang", "runtime"]
@@ -307,7 +307,7 @@ needs_clang = true
 multi_module = false
 
 [[test]]
-file = "lean_tests/borrow_mut.con"
+file = "tests/programs/borrow_mut.con"
 category = "unit"
 kind = "run_ok"
 passes = ["parse", "check", "elab", "mono", "lower", "emit_ssa", "clang", "runtime"]
@@ -318,7 +318,7 @@ needs_clang = true
 multi_module = false
 
 [[test]]
-file = "lean_tests/borrow_no_consume.con"
+file = "tests/programs/borrow_no_consume.con"
 category = "unit"
 kind = "run_ok"
 passes = ["parse", "check", "elab", "mono", "lower", "emit_ssa", "clang", "runtime"]
@@ -331,7 +331,7 @@ multi_module = false
 # --- Generics ---
 
 [[test]]
-file = "lean_tests/generic_fn.con"
+file = "tests/programs/generic_fn.con"
 category = "unit"
 kind = "run_ok"
 passes = ["parse", "check", "elab", "mono", "lower", "emit_ssa", "clang", "runtime"]
@@ -342,7 +342,7 @@ needs_clang = true
 multi_module = false
 
 [[test]]
-file = "lean_tests/generic_struct.con"
+file = "tests/programs/generic_struct.con"
 category = "unit"
 kind = "run_ok"
 passes = ["parse", "check", "elab", "mono", "lower", "emit_ssa", "clang", "runtime"]
@@ -355,7 +355,7 @@ multi_module = false
 # --- Traits ---
 
 [[test]]
-file = "lean_tests/trait_basic.con"
+file = "tests/programs/trait_basic.con"
 category = "unit"
 kind = "run_ok"
 passes = ["parse", "check", "elab", "mono", "lower", "emit_ssa", "clang", "runtime"]
@@ -366,7 +366,7 @@ needs_clang = true
 multi_module = false
 
 [[test]]
-file = "lean_tests/trait_multiple.con"
+file = "tests/programs/trait_multiple.con"
 category = "unit"
 kind = "run_ok"
 passes = ["parse", "check", "elab", "mono", "lower", "emit_ssa", "clang", "runtime"]
@@ -377,7 +377,7 @@ needs_clang = true
 multi_module = false
 
 [[test]]
-file = "lean_tests/trait_dispatch_basic.con"
+file = "tests/programs/trait_dispatch_basic.con"
 category = "unit"
 kind = "run_ok"
 passes = ["parse", "check", "elab", "mono", "lower", "emit_ssa", "clang", "runtime"]
@@ -388,7 +388,7 @@ needs_clang = true
 multi_module = false
 
 [[test]]
-file = "lean_tests/trait_dispatch_multi.con"
+file = "tests/programs/trait_dispatch_multi.con"
 category = "unit"
 kind = "run_ok"
 passes = ["parse", "check", "elab", "mono", "lower", "emit_ssa", "clang", "runtime"]
@@ -399,7 +399,7 @@ needs_clang = true
 multi_module = false
 
 [[test]]
-file = "lean_tests/trait_dispatch_chain.con"
+file = "tests/programs/trait_dispatch_chain.con"
 category = "unit"
 kind = "run_ok"
 passes = ["parse", "check", "elab", "mono", "lower", "emit_ssa", "clang", "runtime"]
@@ -412,7 +412,7 @@ multi_module = false
 # --- Capabilities ---
 
 [[test]]
-file = "lean_tests/cap_basic.con"
+file = "tests/programs/cap_basic.con"
 category = "unit"
 kind = "run_ok"
 passes = ["parse", "check", "elab", "mono", "lower", "emit_ssa", "clang", "runtime"]
@@ -423,7 +423,7 @@ needs_clang = true
 multi_module = false
 
 [[test]]
-file = "lean_tests/cap_poly.con"
+file = "tests/programs/cap_poly.con"
 category = "unit"
 kind = "run_ok"
 passes = ["parse", "check", "elab", "mono", "lower", "emit_ssa", "clang", "runtime"]
@@ -436,7 +436,7 @@ multi_module = false
 # --- Modules ---
 
 [[test]]
-file = "lean_tests/module_basic.con"
+file = "tests/programs/module_basic.con"
 category = "unit"
 kind = "run_ok"
 passes = ["parse", "resolve", "check", "elab", "mono", "lower", "emit_ssa", "clang", "runtime"]
@@ -447,7 +447,7 @@ needs_clang = true
 multi_module = true
 
 [[test]]
-file = "lean_tests/module_struct.con"
+file = "tests/programs/module_struct.con"
 category = "unit"
 kind = "run_ok"
 passes = ["parse", "resolve", "check", "elab", "mono", "lower", "emit_ssa", "clang", "runtime"]
@@ -458,7 +458,7 @@ needs_clang = true
 multi_module = true
 
 [[test]]
-file = "lean_tests/module_file/main.con"
+file = "tests/programs/module_file/main.con"
 category = "unit"
 kind = "run_ok"
 passes = ["parse", "resolve", "check", "elab", "mono", "lower", "emit_ssa", "clang", "runtime"]
@@ -471,7 +471,7 @@ multi_module = true
 # --- Integration tests ---
 
 [[test]]
-file = "lean_tests/integration_text_processing.con"
+file = "tests/programs/integration_text_processing.con"
 category = "integration"
 kind = "run_ok"
 passes = ["parse", "check", "elab", "mono", "lower", "emit_ssa", "clang", "runtime"]
@@ -482,7 +482,7 @@ needs_clang = true
 multi_module = false
 
 [[test]]
-file = "lean_tests/integration_data_structures.con"
+file = "tests/programs/integration_data_structures.con"
 category = "integration"
 kind = "run_ok"
 passes = ["parse", "check", "elab", "mono", "lower", "emit_ssa", "clang", "runtime"]
@@ -493,7 +493,7 @@ needs_clang = true
 multi_module = false
 
 [[test]]
-file = "lean_tests/integration_error_handling.con"
+file = "tests/programs/integration_error_handling.con"
 category = "integration"
 kind = "run_ok"
 passes = ["parse", "check", "elab", "mono", "lower", "emit_ssa", "clang", "runtime"]
@@ -504,7 +504,7 @@ needs_clang = true
 multi_module = false
 
 [[test]]
-file = "lean_tests/integration_generic_pipeline.con"
+file = "tests/programs/integration_generic_pipeline.con"
 category = "integration"
 kind = "run_ok"
 passes = ["parse", "check", "elab", "mono", "lower", "emit_ssa", "clang", "runtime"]
@@ -515,7 +515,7 @@ needs_clang = true
 multi_module = false
 
 [[test]]
-file = "lean_tests/integration_state_machine.con"
+file = "tests/programs/integration_state_machine.con"
 category = "integration"
 kind = "run_ok"
 passes = ["parse", "check", "elab", "mono", "lower", "emit_ssa", "clang", "runtime"]
@@ -528,7 +528,7 @@ multi_module = false
 # --- Negative tests (selected representative entries) ---
 
 [[test]]
-file = "lean_tests/error_unconsumed.con"
+file = "tests/programs/error_unconsumed.con"
 category = "semantic"
 kind = "run_err"
 passes = ["parse", "check"]
@@ -539,7 +539,7 @@ needs_clang = false
 multi_module = false
 
 [[test]]
-file = "lean_tests/error_use_after_move.con"
+file = "tests/programs/error_use_after_move.con"
 category = "semantic"
 kind = "run_err"
 passes = ["parse", "check"]
@@ -550,7 +550,7 @@ needs_clang = false
 multi_module = false
 
 [[test]]
-file = "lean_tests/error_type_mismatch.con"
+file = "tests/programs/error_type_mismatch.con"
 category = "semantic"
 kind = "run_err"
 passes = ["parse", "check"]
@@ -561,7 +561,7 @@ needs_clang = false
 multi_module = false
 
 [[test]]
-file = "lean_tests/error_cap_pure.con"
+file = "tests/programs/error_cap_pure.con"
 category = "semantic"
 kind = "run_err"
 passes = ["parse", "check"]
@@ -572,7 +572,7 @@ needs_clang = false
 multi_module = false
 
 [[test]]
-file = "lean_tests/error_enum_nonexhaustive.con"
+file = "tests/programs/error_enum_nonexhaustive.con"
 category = "semantic"
 kind = "run_err"
 passes = ["parse", "check"]
@@ -583,7 +583,7 @@ needs_clang = false
 multi_module = false
 
 [[test]]
-file = "lean_tests/error_resolve_undeclared_span.con"
+file = "tests/programs/error_resolve_undeclared_span.con"
 category = "semantic"
 kind = "run_err"
 passes = ["parse", "resolve"]
@@ -594,7 +594,7 @@ needs_clang = false
 multi_module = false
 
 [[test]]
-file = "lean_tests/error_module_not_found.con"
+file = "tests/programs/error_module_not_found.con"
 category = "semantic"
 kind = "run_err"
 passes = ["parse", "resolve"]
@@ -605,7 +605,7 @@ needs_clang = false
 multi_module = true
 
 [[test]]
-file = "lean_tests/error_trait_missing_method.con"
+file = "tests/programs/error_trait_missing_method.con"
 category = "semantic"
 kind = "run_err"
 passes = ["parse", "check", "elab"]
@@ -616,7 +616,7 @@ needs_clang = false
 multi_module = false
 
 [[test]]
-file = "lean_tests/error_ffi_no_unsafe.con"
+file = "tests/programs/error_ffi_no_unsafe.con"
 category = "semantic"
 kind = "run_err"
 passes = ["parse", "check"]
@@ -629,7 +629,7 @@ multi_module = false
 # --- Report tests ---
 
 [[test]]
-file = "lean_tests/report_integration.con"
+file = "tests/programs/report_integration.con"
 category = "report"
 kind = "check_report"
 passes = ["parse", "check", "elab", "mono", "report"]
@@ -640,7 +640,7 @@ needs_clang = false
 multi_module = false
 
 [[test]]
-file = "lean_tests/integration_collection_pipeline.con"
+file = "tests/programs/integration_collection_pipeline.con"
 category = "report"
 kind = "check_report"
 passes = ["parse", "check", "elab", "mono", "report"]
@@ -653,7 +653,7 @@ multi_module = false
 # --- Codegen differential tests ---
 
 [[test]]
-file = "lean_tests/codegen_constfold.con"
+file = "tests/programs/codegen_constfold.con"
 category = "codegen"
 kind = "check_codegen"
 passes = ["parse", "check", "elab", "mono", "lower", "ssa_cleanup", "emit_ssa"]
@@ -664,7 +664,7 @@ needs_clang = false
 multi_module = false
 
 [[test]]
-file = "lean_tests/codegen_strength.con"
+file = "tests/programs/codegen_strength.con"
 category = "codegen"
 kind = "check_codegen"
 passes = ["parse", "check", "elab", "mono", "lower", "ssa_cleanup", "emit_ssa"]
@@ -677,7 +677,7 @@ multi_module = false
 # --- O2 regression tests ---
 
 [[test]]
-file = "lean_tests/struct_loop_field_assign.con"
+file = "tests/programs/struct_loop_field_assign.con"
 category = "regression"
 kind = "check_O2"
 passes = ["parse", "check", "elab", "mono", "lower", "emit_ssa", "clang"]
@@ -704,7 +704,7 @@ description = "189 stdlib #[test] functions across all modules"
 # --- Network tests (slow profile) ---
 
 [[test]]
-file = "lean_tests/net_tcp_roundtrip.con"
+file = "tests/programs/net_tcp_roundtrip.con"
 category = "integration"
 kind = "run_ok"
 passes = ["parse", "check", "elab", "mono", "lower", "emit_ssa", "clang", "runtime"]
@@ -717,7 +717,7 @@ multi_module = false
 # --- Property / trace tests ---
 
 [[test]]
-file = "lean_tests/fmt_parse_roundtrip.con"
+file = "tests/programs/fmt_parse_roundtrip.con"
 category = "property"
 kind = "run_ok"
 passes = ["parse", "check", "elab", "mono", "lower", "emit_ssa", "clang", "runtime"]
@@ -728,7 +728,7 @@ needs_clang = true
 multi_module = false
 
 [[test]]
-file = "lean_tests/vec_trace.con"
+file = "tests/programs/vec_trace.con"
 category = "property"
 kind = "run_ok"
 passes = ["parse", "check", "elab", "mono", "lower", "emit_ssa", "clang", "runtime"]
@@ -741,7 +741,7 @@ multi_module = false
 # --- Regression tests ---
 
 [[test]]
-file = "lean_tests/regress_deref_field_precedence.con"
+file = "tests/programs/regress_deref_field_precedence.con"
 category = "regression"
 kind = "run_ok"
 passes = ["parse", "check", "elab", "mono", "lower", "emit_ssa", "clang", "runtime"]
@@ -752,7 +752,7 @@ needs_clang = true
 multi_module = false
 
 [[test]]
-file = "lean_tests/regress_mut_field_writeback.con"
+file = "tests/programs/regress_mut_field_writeback.con"
 category = "regression"
 kind = "run_ok"
 passes = ["parse", "check", "elab", "mono", "lower", "emit_ssa", "clang", "runtime"]
@@ -763,7 +763,7 @@ needs_clang = true
 multi_module = false
 
 [[test]]
-file = "lean_tests/regress_void_phi.con"
+file = "tests/programs/regress_void_phi.con"
 category = "regression"
 kind = "run_ok"
 passes = ["parse", "check", "elab", "mono", "lower", "ssa_verify", "emit_ssa", "clang", "runtime"]
@@ -778,12 +778,12 @@ multi_module = false
 # category. The full set of 350+ test files follows the same
 # patterns. Tests not explicitly listed inherit defaults:
 #   category = "unit"
-#   kind = inferred from run_tests.sh section
+#   kind = inferred from scripts/tests/run_tests.sh section
 #   passes = full pipeline
 #   profile = "fast"
 #   owner_pass = inferred from filename prefix
 #   needs_clang = true (for run_ok/run_err), false (for check_*)
 #
 # A complete listing can be generated via:
-#   ./run_tests.sh --manifest
+#   ./scripts/tests/run_tests.sh --manifest
 # ============================================================

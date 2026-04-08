@@ -1,6 +1,6 @@
 # Dependency Map: compiler source → affected test sections
 #
-# This file is read by run_tests.sh --affected to select test sections
+# This file is read by scripts/tests/run_tests.sh --affected to select test sections
 # based on which compiler files changed. The runner parses the
 # [source."<path>"] blocks and extracts the `sections` array for each
 # changed file.
@@ -237,7 +237,7 @@ sections = ["stdlib", "collection"]
 categories = ["stdlib"]
 owner_pass = "runtime"
 
-[source."run_tests.sh"]
+[source."scripts/tests/run_tests.sh"]
 description = "Test runner"
 sections = []
 categories = []

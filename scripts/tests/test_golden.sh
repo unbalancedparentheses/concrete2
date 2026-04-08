@@ -2,11 +2,14 @@
 # Verify golden test baselines for --emit-core, --emit-ssa, and --fmt
 set -e
 
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+cd "$ROOT_DIR"
+
 COMPILER=".lake/build/bin/concrete"
-SRC_DIR="golden_tests/src"
-CORE_DIR="golden_tests/core"
-SSA_DIR="golden_tests/ssa"
-FMT_DIR="golden_tests/fmt"
+SRC_DIR="tests/golden/src"
+CORE_DIR="tests/golden/core"
+SSA_DIR="tests/golden/ssa"
+FMT_DIR="tests/golden/fmt"
 
 if [ ! -x "$COMPILER" ]; then
   echo "Error: compiler not found at $COMPILER. Run 'lake build' first."

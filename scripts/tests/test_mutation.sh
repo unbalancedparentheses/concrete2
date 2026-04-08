@@ -1,18 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+cd "$ROOT_DIR"
+
 # Mutation testing for the Concrete compiler.
 # Applies targeted source mutations, rebuilds, and checks if the test suite catches them.
 # A surviving mutation = a test gap.
 #
 # Usage:
-#   bash test_mutation.sh              # run all mutations
-#   bash test_mutation.sh --list       # list mutations without running
-#   bash test_mutation.sh --mutation N # run only mutation N
+#   bash scripts/tests/test_mutation.sh              # run all mutations
+#   bash scripts/tests/test_mutation.sh --list       # list mutations without running
+#   bash scripts/tests/test_mutation.sh --mutation N # run only mutation N
 
 LAKE="$HOME/.elan/bin/lake"
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-cd "$SCRIPT_DIR"
 
 KILLED=0
 SURVIVED=0
@@ -205,7 +206,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     *)
       echo "Unknown option: $1"
-      echo "Usage: bash test_mutation.sh [--list] [--mutation N]"
+      echo "Usage: bash scripts/tests/test_mutation.sh [--list] [--mutation N]"
       exit 1
       ;;
   esac
@@ -284,7 +285,7 @@ run_mutation() {
   # Try to build
   if $LAKE build > /tmp/mutation_build.log 2>&1; then
     # Build succeeded — run tests
-    if bash run_tests.sh --fast > /tmp/mutation_test.log 2>&1; then
+    if bash scripts/tests/run_tests.sh --fast > /tmp/mutation_test.log 2>&1; then
       result="SURVIVED"
       SURVIVED=$((SURVIVED + 1))
     else

@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+cd "$ROOT_DIR"
+
 # Structured fuzzing for the Concrete compiler.
-# Extends test_parser_fuzz.sh with type-checker and lowering stress.
+# Extends scripts/tests/test_parser_fuzz.sh with type-checker and lowering stress.
 #
 # Three modes:
 #   1. Parser fuzz: random/malformed inputs (must not crash)
@@ -10,11 +13,11 @@ set -euo pipefail
 #   3. Valid program generation: narrow-subset programs that must compile and run
 #
 # Usage:
-#   bash test_fuzz.sh              # run all modes (500 iterations each)
-#   bash test_fuzz.sh 1000         # custom iteration count
-#   bash test_fuzz.sh --parser     # parser mode only
-#   bash test_fuzz.sh --typecheck  # typecheck mode only
-#   bash test_fuzz.sh --valid      # valid program mode only
+#   bash scripts/tests/test_fuzz.sh              # run all modes (500 iterations each)
+#   bash scripts/tests/test_fuzz.sh 1000         # custom iteration count
+#   bash scripts/tests/test_fuzz.sh --parser     # parser mode only
+#   bash scripts/tests/test_fuzz.sh --typecheck  # typecheck mode only
+#   bash scripts/tests/test_fuzz.sh --valid      # valid program mode only
 
 COMPILER=".lake/build/bin/concrete"
 TMPDIR_FUZZ=$(mktemp -d)

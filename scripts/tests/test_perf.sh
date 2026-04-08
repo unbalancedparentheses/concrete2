@@ -1,18 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+cd "$ROOT_DIR"
+
 # Performance regression tracking for the Concrete compiler.
 # Measures compile time, runtime, and binary/IR size for representative programs.
 #
 # Usage:
-#   bash test_perf.sh              # run and print results
-#   bash test_perf.sh --save       # run and save baseline to .perf-baseline
-#   bash test_perf.sh --compare    # run and compare against saved baseline
+#   bash scripts/tests/test_perf.sh              # run and print results
+#   bash scripts/tests/test_perf.sh --save       # run and save baseline to .perf-baseline
+#   bash scripts/tests/test_perf.sh --compare    # run and compare against saved baseline
 #
 # This script does NOT fail on regressions — it reports them for human review.
 
 COMPILER=".lake/build/bin/concrete"
-TESTDIR="lean_tests"
+TESTDIR="tests/programs"
 TMPDIR_PERF=$(mktemp -d)
 trap 'rm -rf "$TMPDIR_PERF"' EXIT
 

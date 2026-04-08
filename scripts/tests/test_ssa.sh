@@ -2,6 +2,9 @@
 # Run all positive tests with --compile-ssa
 set -uo pipefail
 
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+cd "$ROOT_DIR"
+
 COMPILER=".lake/build/bin/concrete"
 OUTDIR=$(mktemp -d)
 RESDIR=$(mktemp -d)
@@ -14,11 +17,11 @@ TOTAL=0
 # Extract test cases handling multiline expected values, output as individual files
 python3 -c '
 import re, sys, os
-content = open("run_tests.sh").read()
+content = open("scripts/tests/run_tests.sh").read()
 pattern = r"""run_ok\s+"([^"]+)"\s+("([^"]*(?:\n[^"]*)*?)"|(\S+))"""
 resdir = sys.argv[1]
 for i, m in enumerate(re.finditer(pattern, content)):
-    path = m.group(1).replace("$TESTDIR/", "lean_tests/")
+    path = m.group(1).replace("$TESTDIR/", "tests/programs/")
     if m.group(3) is not None:
         expected = m.group(3)
     else:
@@ -33,8 +36,9 @@ for spec in "$RESDIR"/test_*.spec; do
     file=$(head -1 "$spec")
     expected=$(tail -n +2 "$spec")
     name=$(basename "$file" .con)
+    spec_id=$(basename "$spec" .spec)
     (
-        out="$OUTDIR/$name"
+        out="$OUTDIR/$spec_id"
         if ! $COMPILER "$file" -o "$out" > /dev/null 2>&1; then
             msg=$($COMPILER "$file" -o "$out" 2>&1 | head -1)
             echo "FAIL $name: $msg"
