@@ -108,14 +108,16 @@ where
 
 /-- Print body fingerprints for all functions (development tool). -/
 partial def fingerprintReport (modules : List CModule) : String :=
-  let allFns := modules.foldl (fun acc m => acc ++ collectFns m) []
-  let lines := allFns.map fun f =>
+  let allFns := modules.foldl (fun acc m => acc ++ collectQualFns "" m) []
+  let lines := allFns.map fun (qn, f) =>
     let fp := bodyFingerprint f.body
-    s!"  {f.name}: \"{fp}\""
+    s!"  {qn}: \"{fp}\""
   "=== Body Fingerprints ===\n" ++ "\n".intercalate lines ++ "\n"
 where
-  collectFns (m : CModule) : List CFnDef :=
-    m.functions ++ m.submodules.foldl (fun acc sub => acc ++ collectFns sub) []
+  collectQualFns (pfx : String) (m : CModule) : List (String × CFnDef) :=
+    let qp := if pfx == "" then m.name else pfx ++ "." ++ m.name
+    let fns := m.functions.map fun f => (qp ++ "." ++ f.name, f)
+    fns ++ m.submodules.foldl (fun acc sub => acc ++ collectQualFns qp sub) []
 
 -- ============================================================
 -- Body-walking infrastructure
@@ -1226,8 +1228,10 @@ private def fmtEffectsRow (e : FnEffects) : String :=
 private partial def effectsForModule
     (externNames : List String)
     (recMap : List (String × RecursionKind × List String))
-    (m : CModule) : List FnEffects :=
+    (m : CModule) (modulePath : String := "") : List FnEffects :=
+  let qualPrefix := if modulePath == "" then m.name else modulePath ++ "." ++ m.name
   let fns := m.functions.map fun f =>
+    let qualName := qualPrefix ++ "." ++ f.name
     let callees := collectCallsStmts f.body |>.eraseDups
     let allocs := callees.filter isAllocCall
     let frees := callees.filter isFreeCall
@@ -1251,9 +1255,9 @@ private partial def effectsForModule
     let passesProfile := !hasRecursion && !hasUnboundedLoops && !hasAllocEvidence && !hasFfi && !hasBlocking
     let fp := bodyFingerprint f.body
     let hasProof := Proof.provedFunctions.any fun (name, expectedFp) =>
-      name == f.name && expectedFp == fp
+      name == qualName && expectedFp == fp
     let proofStale := !hasProof && Proof.provedFunctions.any fun (name, _) =>
-      name == f.name
+      name == qualName
     let evidenceLevel :=
       if f.isTrusted then "trusted-assumption"
       else if hasProof && passesProfile then "proved"
@@ -1272,7 +1276,7 @@ private partial def effectsForModule
       isPublic := f.isPublic
       evidence := evidenceLevel }
   fns ++ m.submodules.foldl (fun acc sub =>
-    acc ++ effectsForModule externNames recMap sub) []
+    acc ++ effectsForModule externNames recMap sub qualPrefix) []
 
 def effectsReport (modules : List CModule) : String :=
   let header := "=== Combined Effects Report ==="

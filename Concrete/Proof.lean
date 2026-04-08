@@ -535,15 +535,17 @@ theorem decode_header_valid
 
 /-- Functions with completed Lean proofs. The effects report upgrades
     evidence level from "enforced" to "proved" for these functions.
-    Each entry is (function name, expected body fingerprint).
+    Each entry is (qualified function name, expected body fingerprint).
+    The qualified name is `module.fn` (e.g., `main.parse_byte`), so
+    same-named functions in different modules are disambiguated.
     If the function body changes, the fingerprint will not match and
     "proved" evidence is revoked — the proof must be updated to match. -/
 def provedFunctions : List (String × String) :=
-  [ ("parse_byte",
+  [ ("main.parse_byte",
      "[(ret (binop Concrete.BinOp.add (var data) (var offset)))]")
-  , ("check_length",
+  , ("main.check_length",
      "[(if (binop Concrete.BinOp.lt (var len) (int 10)) [(ret (int 1))]) (ret (int 0))]")
-  , ("decode_header",
+  , ("main.decode_header",
      "[(if (binop Concrete.BinOp.neq (call check_length (var len)) (int 0)) [(ret (int 1))]) (let version (call parse_byte (var data) (int 0))) (if (binop Concrete.BinOp.lt (var version) (int 1)) [(ret (int 2))]) (if (binop Concrete.BinOp.gt (var version) (int 2)) [(ret (int 2))]) (let payload_len (call parse_byte (var data) (int 1))) (if (binop Concrete.BinOp.gt (var payload_len) (binop Concrete.BinOp.sub (var len) (int 10))) [(ret (int 3))]) (ret (int 0))]")
   ]
 
