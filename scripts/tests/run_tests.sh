@@ -2193,6 +2193,17 @@ check_report "$TESTDIR/proof_decode_header.con" effects \
     "evidence: decode_header shows proved (parser-core proof)" \
     "evidence: decode_header should show proved"
 
+# --- Proof maintenance: refactored decode_header shows stale proof ---
+check_report "$TESTDIR/proof_maintenance_decode_header.con" effects \
+    "proof stale: body changed" \
+    "proof maintenance: refactored decode_header shows stale warning" \
+    "proof maintenance: should show stale warning after refactor"
+
+check_report "$TESTDIR/proof_maintenance_decode_header.con" effects \
+    "2 proved, 3 enforced" \
+    "proof maintenance: 2 proved (helpers) + 3 enforced after refactor" \
+    "proof maintenance: wrong evidence counts after refactor"
+
 # --- Thesis demo: all three pillars ---
 check_report "examples/thesis_demo/src/main.con" effects \
     "2 proved, 2 enforced, 0 trusted-assumption, 1 reported" \
