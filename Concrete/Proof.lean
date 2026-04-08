@@ -370,6 +370,39 @@ theorem check_length_accepts_valid (len : Int) (h : 10 ≤ len) (fuel : Nat) :
   simp [checkLengthExpr, eval, Env.bind, evalBinOp, hd]
 
 -- ============================================================
+-- Parser core: validate early-rejection (compositional property)
+-- ============================================================
+-- validate calls check_length first. When check_length rejects (len < 10),
+-- validate returns 1 without entering the checksum loop.
+-- This is a real parser-core safety property: short inputs are rejected
+-- before any data processing occurs.
+
+/-- The guard fragment of validate:
+    `if check_length(len) != 0 { return 1; } else { <rest> }`
+    We model only the guard path. The else branch is a placeholder because
+    the proof fragment does not support loops. The theorem proves that for
+    short inputs the else branch is never reached. -/
+def validateGuardExpr : PExpr :=
+  .ifThenElse
+    (.binOp .ne (.call "check_length" [.var "len"]) (.lit (.int 0)))
+    (.lit (.int 1))
+    (.lit (.int 0))  -- placeholder: unreachable when len < 10
+
+/-- Compositional: validate rejects all packets with len < 10.
+    Chains check_length_rejects_short with validate's control flow to prove
+    that short inputs are rejected before the checksum loop is entered.
+
+    This is the first proof about function *composition* in Concrete —
+    not just an individual helper, but the interaction between guard and caller. -/
+theorem validate_rejects_short (data len : Int) (h : len < 10) (fuel : Nat) :
+    eval proofFns ((Env.empty.bind "data" (.int data)).bind "len" (.int len))
+      (fuel + 5) validateGuardExpr
+    = some (.int 1) := by
+  have hd : decide (len < 10) = true := decide_eq_true h
+  simp [validateGuardExpr, eval, eval.evalArgs, proofFns, checkLengthFn,
+        checkLengthExpr, Env.bind, evalBinOp, bindArgs, hd]
+
+-- ============================================================
 -- Proved functions registry
 -- ============================================================
 

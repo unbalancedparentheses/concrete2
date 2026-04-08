@@ -2207,6 +2207,11 @@ check_report "$TESTDIR/adversarial_proof_wrong_semantics.con" effects \
     "adversarial: wrong-semantics parse_byte should not be proved" "!"
 
 check_report "$TESTDIR/adversarial_proof_wrong_semantics.con" effects \
+    "proof stale: body changed" \
+    "adversarial: wrong-semantics parse_byte shows stale proof warning" \
+    "adversarial: wrong-semantics should show stale proof warning"
+
+check_report "$TESTDIR/adversarial_proof_wrong_semantics.con" effects \
     "evidence: enforced" \
     "adversarial: wrong-semantics parse_byte drops to enforced" \
     "adversarial: wrong-semantics parse_byte should be enforced"

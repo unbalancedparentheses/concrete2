@@ -1252,9 +1252,12 @@ private partial def effectsForModule
     let fp := bodyFingerprint f.body
     let hasProof := Proof.provedFunctions.any fun (name, expectedFp) =>
       name == f.name && expectedFp == fp
+    let proofStale := !hasProof && Proof.provedFunctions.any fun (name, _) =>
+      name == f.name
     let evidenceLevel :=
       if f.isTrusted then "trusted-assumption"
       else if hasProof && passesProfile then "proved"
+      else if proofStale && passesProfile then "enforced (proof stale: body changed)"
       else if passesProfile then "enforced"
       else "reported"
     { name := f.name
@@ -1295,7 +1298,7 @@ def effectsReport (modules : List CModule) : String :=
   let ffi := (allEffects.filter (·.crossesFfi)).length
   let trusted := (allEffects.filter (·.isTrusted)).length
   let proved := (allEffects.filter fun e => e.evidence == "proved").length
-  let enforced := (allEffects.filter fun e => e.evidence == "enforced").length
+  let enforced := (allEffects.filter fun e => e.evidence.startsWith "enforced").length
   let trustedAssumption := (allEffects.filter fun e => e.evidence == "trusted-assumption").length
   let reported := (allEffects.filter fun e => e.evidence == "reported").length
   let summary := s!"\nTotals: {total} functions, {pure} pure, {allocating} allocating, {recursive} recursive, {unboundedLoops} unbounded loops, {ffi} cross FFI, {trusted} trusted\nEvidence: {proved} proved, {enforced} enforced, {trustedAssumption} trusted-assumption, {reported} reported"
