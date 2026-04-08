@@ -2182,6 +2182,17 @@ check_report "$TESTDIR/report_evidence_check_length.con" effects \
     "evidence: check_length file has 1 proved + 1 enforced" \
     "evidence: check_length file wrong evidence counts"
 
+# --- decode_header: proved parser-core function ---
+check_report "$TESTDIR/proof_decode_header.con" effects \
+    "3 proved, 1 enforced" \
+    "evidence: decode_header file has 3 proved + 1 enforced" \
+    "evidence: decode_header file wrong evidence counts"
+
+check_report "$TESTDIR/proof_decode_header.con" effects \
+    "evidence: proved" \
+    "evidence: decode_header shows proved (parser-core proof)" \
+    "evidence: decode_header should show proved"
+
 # --- Thesis demo: all three pillars ---
 check_report "examples/thesis_demo/src/main.con" effects \
     "2 proved, 2 enforced, 0 trusted-assumption, 1 reported" \
@@ -2203,11 +2214,21 @@ check_profile "examples/thesis_demo/src/main.con" predictable \
 echo ""
 echo "=== Adversarial tests ==="
 
-# --- Proof integrity: wrong semantics still shows "proved" (known gap) ---
+# --- Proof integrity: wrong semantics detected via body fingerprint ---
 check_report "$TESTDIR/adversarial_proof_wrong_semantics.con" effects \
     "evidence: proved" \
-    "adversarial: name-only proof match is a known gap (documents limitation)" \
-    "adversarial: proof matching changed unexpectedly"
+    "adversarial: wrong-semantics parse_byte not proved (fingerprint mismatch)" \
+    "adversarial: wrong-semantics parse_byte should not be proved" "!"
+
+check_report "$TESTDIR/adversarial_proof_wrong_semantics.con" effects \
+    "proof stale: body changed" \
+    "adversarial: wrong-semantics parse_byte shows stale proof warning" \
+    "adversarial: wrong-semantics should show stale proof warning"
+
+check_report "$TESTDIR/adversarial_proof_wrong_semantics.con" effects \
+    "evidence: enforced" \
+    "adversarial: wrong-semantics parse_byte drops to enforced" \
+    "adversarial: wrong-semantics parse_byte should be enforced"
 
 # --- Proof integrity: impure function cannot be "proved" ---
 check_report "$TESTDIR/adversarial_proof_impure.con" effects \

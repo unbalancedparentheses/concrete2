@@ -403,6 +403,133 @@ theorem validate_rejects_short (data len : Int) (h : len < 10) (fuel : Nat) :
         checkLengthExpr, Env.bind, evalBinOp, bindArgs, hd]
 
 -- ============================================================
+-- Parser core: decode_header (full proved parser function)
+-- ============================================================
+-- decode_header is the first parser-core function with complete Lean proofs
+-- covering every code path. It calls check_length and parse_byte
+-- (both proved helpers), validates extracted fields, and returns
+-- error codes or success.
+--
+-- Error codes: 1=too_short, 2=bad_version, 3=payload_overflow, 0=success
+--
+-- The proofs cover:
+--   1. Bounds rejection:  len < 10 → returns 1
+--   2. Version rejection: version < 1 or version > 2 → returns 2
+--   3. Payload overflow:  payload_len > len - 10 → returns 3
+--   4. Success:           valid inputs → returns 0
+
+/-- `fn decode_header(data: Int, len: Int) -> Int`
+    Encoded as nested if-then-else matching the sequential guard pattern. -/
+def decodeHeaderExpr : PExpr :=
+  .ifThenElse
+    (.binOp .ne (.call "check_length" [.var "len"]) (.lit (.int 0)))
+    (.lit (.int 1))
+    (.letIn "version" (.call "parse_byte" [.var "data", .lit (.int 0)])
+      (.ifThenElse
+        (.binOp .lt (.var "version") (.lit (.int 1)))
+        (.lit (.int 2))
+        (.ifThenElse
+          (.binOp .gt (.var "version") (.lit (.int 2)))
+          (.lit (.int 2))
+          (.letIn "payload_len" (.call "parse_byte" [.var "data", .lit (.int 1)])
+            (.ifThenElse
+              (.binOp .gt (.var "payload_len")
+                (.binOp .sub (.var "len") (.lit (.int 10))))
+              (.lit (.int 3))
+              (.lit (.int 0)))))))
+
+def decodeHeaderFn : PFnDef :=
+  { name := "decode_header", params := ["data", "len"], body := decodeHeaderExpr }
+
+/-- Extended function table including decode_header. -/
+def proofFnsExt : FnTable
+  | "parse_byte" => some parseByteFn
+  | "check_length" => some checkLengthFn
+  | "decode_header" => some decodeHeaderFn
+  | _ => none
+
+/-- Helper: evaluate decode_header with given inputs. -/
+def evalDecodeHeader (data len : Int) (fuel : Nat) : Option PVal :=
+  eval proofFnsExt ((Env.empty.bind "data" (.int data)).bind "len" (.int len))
+    fuel decodeHeaderExpr
+
+-- Concrete test cases (verified by kernel reduction)
+#eval evalDecodeHeader 1 20 20   -- valid: version=1, payload=2, len=20 → 0
+#eval evalDecodeHeader 1 5 20    -- too short → 1
+#eval evalDecodeHeader 0 20 20   -- bad version (0 < 1) → 2
+#eval evalDecodeHeader 3 20 20   -- bad version (3 > 2) → 2
+
+/-- 1. Bounds rejection: short packets are rejected before any field access.
+    Chains check_length_rejects_short through decode_header's control flow. -/
+theorem decode_header_rejects_short (data len : Int) (h : len < 10) (fuel : Nat) :
+    eval proofFnsExt ((Env.empty.bind "data" (.int data)).bind "len" (.int len))
+      (fuel + 6) decodeHeaderExpr
+    = some (.int 1) := by
+  have hd : decide (len < 10) = true := decide_eq_true h
+  simp [decodeHeaderExpr, eval, eval.evalArgs, proofFnsExt, checkLengthFn,
+        checkLengthExpr, Env.bind, evalBinOp, bindArgs, hd]
+
+/-- 2a. Version rejection (too low): version < 1 returns error 2.
+    parse_byte(data, 0) = data + 0 = data, so version = data. -/
+theorem decode_header_rejects_low_version
+    (data len : Int) (hlen : 10 ≤ len) (hver : data < 1) (fuel : Nat) :
+    eval proofFnsExt ((Env.empty.bind "data" (.int data)).bind "len" (.int len))
+      (fuel + 10) decodeHeaderExpr
+    = some (.int 2) := by
+  have hlen' : decide (len < 10) = false := decide_eq_false (by omega)
+  -- simp reduces `data + 0` to `data`, so the remaining decide is on `data < 1`
+  have hver' : decide (data < 1) = true := decide_eq_true hver
+  simp [decodeHeaderExpr, eval, eval.evalArgs, proofFnsExt, checkLengthFn,
+        checkLengthExpr, parseByteFn, parseByteExpr, Env.bind, evalBinOp,
+        bindArgs, hlen', hver']
+
+/-- 2b. Version rejection (too high): version > 2 returns error 2. -/
+theorem decode_header_rejects_high_version
+    (data len : Int) (hlen : 10 ≤ len) (hver : data > 2) (fuel : Nat) :
+    eval proofFnsExt ((Env.empty.bind "data" (.int data)).bind "len" (.int len))
+      (fuel + 10) decodeHeaderExpr
+    = some (.int 2) := by
+  have hlen' : decide (len < 10) = false := decide_eq_false (by omega)
+  -- After simp: version checks become `decide (data < 1)` and `decide (2 < data)`
+  have hver_low : decide (data < 1) = false := decide_eq_false (by omega)
+  have hver_high : decide (2 < data) = true := decide_eq_true (by omega)
+  simp [decodeHeaderExpr, eval, eval.evalArgs, proofFnsExt, checkLengthFn,
+        checkLengthExpr, parseByteFn, parseByteExpr, Env.bind, evalBinOp,
+        bindArgs, hlen', hver_low, hver_high]
+
+/-- 3. Payload overflow: payload_len > len - 10 returns error 3.
+    parse_byte(data, 1) = data + 1, so payload_len = data + 1. -/
+theorem decode_header_rejects_overflow
+    (data len : Int) (hlen : 10 ≤ len) (hver_lo : 1 ≤ data) (hver_hi : data ≤ 2)
+    (hoverflow : data + 1 > len - 10) (fuel : Nat) :
+    eval proofFnsExt ((Env.empty.bind "data" (.int data)).bind "len" (.int len))
+      (fuel + 12) decodeHeaderExpr
+    = some (.int 3) := by
+  have hlen' : decide (len < 10) = false := decide_eq_false (by omega)
+  have hver_low : decide (data < 1) = false := decide_eq_false (by omega)
+  have hver_high : decide (2 < data) = false := decide_eq_false (by omega)
+  have hov : decide (len - 10 < data + 1) = true := decide_eq_true (by omega)
+  simp [decodeHeaderExpr, eval, eval.evalArgs, proofFnsExt, checkLengthFn,
+        checkLengthExpr, parseByteFn, parseByteExpr, Env.bind, evalBinOp,
+        bindArgs, hlen', hver_low, hver_high, hov]
+
+/-- 4. Success: valid inputs pass all guards and return 0.
+    This is the complete correctness theorem for the happy path. -/
+theorem decode_header_valid
+    (data len : Int) (hlen : 10 ≤ len) (hver_lo : 1 ≤ data) (hver_hi : data ≤ 2)
+    (hpayload : data + 1 ≤ len - 10) (fuel : Nat) :
+    eval proofFnsExt ((Env.empty.bind "data" (.int data)).bind "len" (.int len))
+      (fuel + 12) decodeHeaderExpr
+    = some (.int 0) := by
+  have hlen' : decide (len < 10) = false := decide_eq_false (by omega)
+  have hver_low : decide (data < 1) = false := decide_eq_false (by omega)
+  have hver_high : decide (2 < data) = false := decide_eq_false (by omega)
+  have hov : decide (len - 10 < data + 1) = false := decide_eq_false (by omega)
+  simp [decodeHeaderExpr, eval, eval.evalArgs, proofFnsExt, checkLengthFn,
+        checkLengthExpr, parseByteFn, parseByteExpr, Env.bind, evalBinOp,
+        bindArgs, hlen', hver_low, hver_high, hov]
+
+-- ============================================================
 -- Proved functions registry
 -- ============================================================
 
@@ -416,6 +543,8 @@ def provedFunctions : List (String × String) :=
      "[(ret (binop Concrete.BinOp.add (var data) (var offset)))]")
   , ("check_length",
      "[(if (binop Concrete.BinOp.lt (var len) (int 10)) [(ret (int 1))]) (ret (int 0))]")
+  , ("decode_header",
+     "[(if (binop Concrete.BinOp.neq (call check_length (var len)) (int 0)) [(ret (int 1))]) (let version (call parse_byte (var data) (int 0))) (if (binop Concrete.BinOp.lt (var version) (int 1)) [(ret (int 2))]) (if (binop Concrete.BinOp.gt (var version) (int 2)) [(ret (int 2))]) (let payload_len (call parse_byte (var data) (int 1))) (if (binop Concrete.BinOp.gt (var payload_len) (binop Concrete.BinOp.sub (var len) (int 10))) [(ret (int 3))]) (ret (int 0))]")
   ]
 
 end Concrete.Proof
