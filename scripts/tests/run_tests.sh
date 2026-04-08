@@ -111,7 +111,7 @@ if [ "$MODE" = "manifest" ]; then
     echo "# category | kind | file"
     echo "#"
     # Pass-level Lean tests
-    echo "passlevel | lean_pass | PipelineTest.lean (32 tests)"
+    echo "passlevel | lean_pass | Concrete/PipelineTest.lean (32 tests)"
     # Positive tests (run_ok)
     for f in tests/programs/*.con; do
         base=$(basename "$f" .con)

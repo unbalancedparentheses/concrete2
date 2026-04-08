@@ -381,7 +381,7 @@ Phase D (testing, backend, and trust multipliers) is fully complete. Final items
 
 ### Phase D item 4 complete: FFI/ABI maturity
 
-`docs/ABI.md` documents what's stable (FFI-safe scalars, repr(C)/packed/align layout, extern fn), what's intentionally unstable (non-repr struct layout, enum representation, pass-by-ptr convention, symbol naming), platform assumptions (64-bit only, hardcoded sizes), the FFI safety model, and a cross-platform verification matrix. 4 layout verification tests added to `PipelineTest.lean` (scalar sizes, builtin sizes, repr(C) layout, pass-by-ptr decisions). Test suite: 651 tests (32 pass-level).
+`docs/ABI.md` documents what's stable (FFI-safe scalars, repr(C)/packed/align layout, extern fn), what's intentionally unstable (non-repr struct layout, enum representation, pass-by-ptr convention, symbol naming), platform assumptions (64-bit only, hardcoded sizes), the FFI safety model, and a cross-platform verification matrix. 4 layout verification tests added to `Concrete/PipelineTest.lean` (scalar sizes, builtin sizes, repr(C) layout, pass-by-ptr decisions). Test suite: 651 tests (32 pass-level).
 
 ### Phase D2 complete: backend contract, ValidatedCore, and proof workflow
 
@@ -398,7 +398,7 @@ What landed:
 Phase D1 is done — all "done means" criteria met. Testing is now a first-class compiler subsystem with dependency-aware selection, pass-level coverage for all compiler passes, and a documented coverage matrix.
 
 What landed:
-- **Pass-level Lean tests** (`PipelineTest.lean`, 28 tests): parse (4), frontend/check/elab (8), monomorphize (2), SSA lowering (2), SSA verify (3), SSA cleanup (2), SSA emit (2), full pipeline (5). Each pass tested in isolation on in-memory source strings — no clang, no file I/O, <1s total. Tests both success and error paths.
+- **Pass-level Lean tests** (`Concrete/PipelineTest.lean`, 28 tests): parse (4), frontend/check/elab (8), monomorphize (2), SSA lowering (2), SSA verify (3), SSA cleanup (2), SSA emit (2), full pipeline (5). Each pass tested in isolation on in-memory source strings — no clang, no file I/O, <1s total. Tests both success and error paths.
 - **Test metadata**: `test_manifest.toml` provides per-test reference metadata (category, kind, passes, profile, owner_pass — not consumed by the runner, serves as documentation and future tooling source). `test_dep_map.toml` maps 27 compiler source files to affected test sections and categories (consumed by `run_tests.sh --affected`).
 - **Dependency-aware selection**: `run_tests.sh --affected` auto-detects changed files via `git diff` and runs only affected test sections. Conservative mapping: `--affected Concrete/Report.lean` runs 72 tests (report + passlevel); `--affected Concrete/Lower.lean` runs 248 tests (positive + codegen + O2 + passlevel). Unknown files fall back to the full suite.
 - **Coverage matrix and determinism policy** (`docs/TESTING.md`): full coverage matrix by failure mode (17 categories) and by compiler pass (12 passes), determinism rules (fixed seeds, no wall-clock dependence, 3 timeout tiers, network isolation by default, parallel safety, quarantine/repair policy), compile-time baselines, and failure isolation documentation.

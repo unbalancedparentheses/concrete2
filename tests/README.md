@@ -12,7 +12,7 @@ Layout:
 Related entrypoints live outside this directory:
 
 - shell runners: [`../scripts/tests/`](../scripts/tests/README.md)
-- Lean pass-level executable: `PipelineTest.lean`
+- Lean pass-level executable: `Concrete/PipelineTest.lean`
 - Rust integration tests: `tests/*.rs`
 
 This split keeps:

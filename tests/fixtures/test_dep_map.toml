@@ -225,7 +225,7 @@ sections = ["positive", "negative", "testflag", "report", "codegen", "stdlib"]
 categories = ["unit", "semantic", "codegen", "report", "integration", "stdlib"]
 owner_pass = "all"
 
-[source."PipelineTest.lean"]
+[source."Concrete/PipelineTest.lean"]
 description = "Pass-level test harness"
 sections = ["passlevel"]
 categories = ["unit"]

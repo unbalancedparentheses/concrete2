@@ -58,11 +58,11 @@
 # format        — Concrete.Format (source formatter)
 
 # ============================================================
-# Pass-level Lean tests (PipelineTest.lean)
+# Pass-level Lean tests (Concrete/PipelineTest.lean)
 # ============================================================
 
 [[test]]
-file = "PipelineTest.lean"
+file = "Concrete/PipelineTest.lean"
 category = "unit"
 kind = "lean_pass"
 passes = ["parse", "check", "elab", "mono", "lower", "ssa_verify", "ssa_cleanup", "emit_ssa"]
