@@ -82,6 +82,18 @@ This phase exists to test whether those ideas hold up in implementation, reports
 4. prove one small parser-core property from that example through the Concrete-to-Lean pipeline so the first end-to-end thesis demo is visible and concrete
 5. harden each thesis claim with adversarial tests so the demo is not only persuasive when it works, but difficult to fake accidentally
 
+**Proof Workflow Sequence:**
+
+Do proof workflow before proof syntax.
+
+1. proof failure diagnostics — done when proof states distinguish `proved`, `proof stale`, `proof missing`, body/fingerprint mismatch, obligation failure, and unsupported proof target
+2. inspectable proof obligations — done when a report or artifact can show obligations such as `decode_header_rejects_short`, their status, and their dependencies
+3. source-to-ProofCore extraction report — done when users can inspect what checked Concrete semantics were extracted for proof
+4. external or Lean-attached function specs — done when a Concrete function can be linked to a reviewable spec without adding a broad source-level contract language first
+5. loop invariants — done when specs and obligations exist and the prover needs user-provided facts to reason through bounded loops
+6. ghost code — done only after a proof-backed example needs proof-only state, and the erasure/trust story is explicit
+7. effectful-proof boundary model — done when proofs can clearly stop at or model capabilities, FFI, `trusted`, blocking host calls, allocation, and backend assumptions
+
 **References:** [core-thesis](research/thesis-validation/core-thesis.md), [objective-matrix](research/thesis-validation/objective-matrix.md), [thesis-validation](research/thesis-validation/thesis-validation.md), [noalloc-enforcement](research/thesis-validation/noalloc-enforcement.md), [boundedness-reports](research/thesis-validation/boundedness-reports.md), [proof-slice](research/thesis-validation/proof-slice.md), [validation-examples](research/thesis-validation/validation-examples.md), [concrete-to-lean-pipeline](research/proof-evidence/concrete-to-lean-pipeline.md), [spec-attachment](research/proof-evidence/spec-attachment.md), [effectful-proofs](research/proof-evidence/effectful-proofs.md), [provable-systems-subset](research/proof-evidence/provable-systems-subset.md), [provable-properties](research/proof-evidence/provable-properties.md), [predictable-execution](research/predictable-execution/predictable-execution.md), [effect-taxonomy](research/predictable-execution/effect-taxonomy.md), [allocation-budgets](research/stdlib-runtime/allocation-budgets.md), [execution-cost](research/stdlib-runtime/execution-cost.md), [backend-traceability](research/compiler/backend-traceability.md), [failure-semantics](research/language/failure-semantics.md), [trusted-code-policy](research/language/trusted-code-policy.md), [interrupt-signal-model](research/language/interrupt-signal-model.md)
 
 ## 3. Stdlib and Example Polish
@@ -123,9 +135,13 @@ This phase exists to test whether those ideas hold up in implementation, reports
 1. broaden the pure Core proof fragment — done when the provable subset covers more than the current narrow pure fragment
 2. stabilize the provable subset as an actual target — done when users can know what is and isn't provable
 3. source-to-Core and Core-to-proof traceability — done when proof claims trace back to source
-4. proof-backed authority reports as real artifacts — done when reports are artifacts, not just a research direction
-5. user-program proof workflow, artifact-driven — done when a user can prove a property end-to-end
-6. push selected compiler-preservation work where tractable — done when preservation proofs cover the highest-value passes
+4. inspectable proof-obligation / verification-condition pipeline — done when generated obligations are artifacts with names, dependencies, statuses, and links to source/extracted Core
+5. external or attached function specs — done when specs can be linked to Concrete functions and generate inspectable proof obligations without requiring a broad source-level contract system
+6. proof failure diagnostics and proof UX — done when users can understand missing proofs, stale proofs, body mismatches, obligation failures, and unsupported proof targets without reading compiler internals
+7. proof-backed authority reports as real artifacts — done when reports are artifacts, not just a research direction
+8. user-program proof workflow, artifact-driven — done when a user can prove a property end-to-end
+9. push selected compiler-preservation work where tractable — done when preservation proofs cover the highest-value passes
+10. evaluate loop invariants and ghost code only after specs/obligations are real — done when at least one proof-backed example justifies proof-only source constructs and their erasure story is explicit
 
 **References:** [formalization-breakdown](research/proof-evidence/formalization-breakdown.md), [formalization-roi](research/proof-evidence/formalization-roi.md), [proving-concrete-functions-in-lean](research/proof-evidence/proving-concrete-functions-in-lean.md), [proof-addon-architecture](research/proof-evidence/proof-addon-architecture.md), [proof-ux-and-verification-influences](research/proof-evidence/proof-ux-and-verification-influences.md)
 

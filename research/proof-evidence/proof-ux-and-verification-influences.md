@@ -153,6 +153,42 @@ The strongest new ideas to test are:
 3. **Why3-style proof-obligation artifacts and proof-session workflow**
 4. **F*-style effectful-proof and extraction-boundary discipline**
 
+## Implementation Order
+
+Do not add all of the above as source syntax at once.
+
+Build proof workflow before proof syntax:
+
+1. **Proof diagnostics first.**
+   Make reports distinguish proved, proof stale, proof missing, function/body
+   mismatch, proof-obligation failure, and unsupported proof target.
+
+2. **Inspectable proof obligations.**
+   Add a report or artifact that names each generated proof task, its status,
+   and the functions / specs / assumptions it depends on.
+
+3. **Source-to-ProofCore extraction report.**
+   Let users inspect the proof-facing meaning extracted from checked Concrete
+   before asking them to debug proofs against it.
+
+4. **External or Lean-attached specs.**
+   Link specs to functions without adding a broad source-level contract language
+   first.
+
+5. **Loop invariants.**
+   Add them only after specs and obligations exist. Loop boundedness says that a
+   loop is structurally controlled; invariants are proof facts for reasoning
+   through the loop body.
+
+6. **Ghost code.**
+   Add proof-only source constructs only after an important proof needs
+   proof-only state, and after erasure is part of the trust story.
+
+7. **Effectful-proof boundary model.**
+   Define how proof handles or stops at capabilities, FFI, `trusted`, blocking
+   host calls, allocation, and backend assumptions before trying to prove
+   arbitrary effectful Concrete code.
+
 ## Rule
 
 Do not add these because another verification system has them.
