@@ -2707,6 +2707,215 @@ else
     FAIL=$((FAIL + 1))
 fi
 
+# =============================================================
+# Report-consistency tests: JSON ↔ human reports, intra-JSON
+# =============================================================
+echo ""
+echo "=== Report consistency tests ==="
+
+# Use report_integration.con — it has pure, alloc, trusted, extern, FFI, caps
+RC_FILE="$TESTDIR/report_integration.con"
+rc_json=$(cached_output "$RC_FILE" "--report diagnostics-json")
+rc_caps=$(cached_output "$RC_FILE" "--report caps")
+rc_effects=$(cached_output "$RC_FILE" "--report effects")
+rc_alloc=$(cached_output "$RC_FILE" "--report alloc")
+rc_unsafe=$(cached_output "$RC_FILE" "--report unsafe")
+
+# --- Layer 1: Intra-JSON consistency ---
+
+# 1a. Effects says pure_add is_pure:true → capability fact should have empty capabilities
+# (grep the JSON line for pure_add's capability fact and check for empty array)
+if echo "$rc_json" | grep -q '"kind": "capability".*"function": "pure_add".*"is_pure": true'; then
+    echo "  ok  consistency: capability fact agrees pure_add is pure"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  consistency: capability fact should show pure_add as pure"
+    FAIL=$((FAIL + 1))
+fi
+
+# 1b. Effects says uses_alloc allocates:true → an alloc fact for uses_alloc should exist
+if echo "$rc_json" | grep -q '"kind": "effects".*"function": "uses_alloc".*"allocates": true' && \
+   echo "$rc_json" | grep -q '"kind": "alloc".*"function": "uses_alloc"'; then
+    echo "  ok  consistency: effects allocates:true ↔ alloc fact exists for uses_alloc"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  consistency: effects/alloc disagree on uses_alloc allocation"
+    FAIL=$((FAIL + 1))
+fi
+
+# 1c. Effects says call_raw is_trusted:true → unsafe fact should have is_trusted:true
+if echo "$rc_json" | grep -q '"kind": "effects".*"function": "call_raw".*"is_trusted": true' && \
+   echo "$rc_json" | grep -q '"kind": "unsafe".*"function": "call_raw".*"is_trusted": true'; then
+    echo "  ok  consistency: effects/unsafe agree call_raw is trusted"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  consistency: effects/unsafe disagree on call_raw trusted status"
+    FAIL=$((FAIL + 1))
+fi
+
+# 1d. Effects says call_raw crosses_ffi:true → predictable_violation for call_raw should exist
+if echo "$rc_json" | grep -q '"kind": "effects".*"function": "call_raw".*"crosses_ffi": true' && \
+   echo "$rc_json" | grep -q '"kind": "predictable_violation".*"function": "call_raw"'; then
+    echo "  ok  consistency: effects crosses_ffi ↔ predictable_violation for call_raw"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  consistency: effects/predictable disagree on call_raw FFI violation"
+    FAIL=$((FAIL + 1))
+fi
+
+# 1e. Effects says pure_add evidence:enforced → proof_status should be eligible and waiting for proof
+# Note: JSON is one line, so we extract per-record to avoid cross-record grep matches
+pure_add_proof_state=$(echo "$rc_json" | grep -o '"kind": "proof_status"[^}]*"function": "main.pure_add"[^}]*' | grep -o '"state": "[^"]*"' | head -1)
+if echo "$rc_json" | grep -q '"kind": "effects".*"function": "pure_add".*"evidence": "enforced"' && \
+   [ "$pure_add_proof_state" = '"state": "no_proof"' ]; then
+    echo "  ok  consistency: effects enforced ↔ proof_status eligible/no_proof for pure_add"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  consistency: effects/proof_status disagree on pure_add eligibility (state=$pure_add_proof_state)"
+    FAIL=$((FAIL + 1))
+fi
+
+# 1f. Effects says call_raw evidence:trusted-assumption → proof_status should be trusted
+if echo "$rc_json" | grep -q '"kind": "effects".*"function": "call_raw".*"evidence": "trusted-assumption"' && \
+   echo "$rc_json" | grep -q '"kind": "proof_status".*"function": "main.call_raw".*"state": "trusted"'; then
+    echo "  ok  consistency: effects trusted-assumption ↔ proof_status trusted for call_raw"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  consistency: effects/proof_status disagree on call_raw trusted status"
+    FAIL=$((FAIL + 1))
+fi
+
+# 1g. alloc_no_free has potential_leak:true (allocates, no free, no defer, returns heap)
+if echo "$rc_json" | grep -q '"kind": "alloc".*"function": "alloc_no_free".*"potential_leak": false'; then
+    # returns_allocation is true so potential_leak should be false (caller responsible)
+    echo "  ok  consistency: alloc_no_free returns allocation, no leak flagged"
+    PASS=$((PASS + 1))
+else
+    # Check the alternative: potential_leak true would also be consistent if returns_allocation false
+    if echo "$rc_json" | grep -q '"kind": "alloc".*"function": "alloc_no_free".*"returns_allocation": true'; then
+        echo "  ok  consistency: alloc_no_free returns allocation, no leak flagged"
+        PASS=$((PASS + 1))
+    else
+        echo "FAIL  consistency: alloc_no_free should have returns_allocation or potential_leak"
+        FAIL=$((FAIL + 1))
+    fi
+fi
+
+# --- Layer 2: JSON ↔ human report consistency ---
+
+# 2a. Human caps says "pure_add : (pure)" → JSON effects has is_pure:true
+if echo "$rc_caps" | grep -q "pure_add : (pure)" && \
+   echo "$rc_json" | grep -q '"kind": "effects".*"function": "pure_add".*"is_pure": true'; then
+    echo "  ok  consistency: --report caps (pure) ↔ JSON is_pure for pure_add"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  consistency: caps/JSON disagree on pure_add purity"
+    FAIL=$((FAIL + 1))
+fi
+
+# 2b. Human caps says "uses_alloc : Alloc" → JSON capability has Alloc
+if echo "$rc_caps" | grep -q "uses_alloc : Alloc" && \
+   echo "$rc_json" | grep -q '"kind": "capability".*"function": "uses_alloc".*"Alloc"'; then
+    echo "  ok  consistency: --report caps Alloc ↔ JSON capability for uses_alloc"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  consistency: caps/JSON disagree on uses_alloc Alloc capability"
+    FAIL=$((FAIL + 1))
+fi
+
+# 2c. Human effects says "call_raw ... ffi: yes" → JSON effects has crosses_ffi:true
+if echo "$rc_effects" | grep -A1 "call_raw" | grep -q "ffi: yes" && \
+   echo "$rc_json" | grep -q '"kind": "effects".*"function": "call_raw".*"crosses_ffi": true'; then
+    echo "  ok  consistency: --report effects ffi:yes ↔ JSON crosses_ffi for call_raw"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  consistency: effects/JSON disagree on call_raw FFI status"
+    FAIL=$((FAIL + 1))
+fi
+
+# 2d. Human effects says "pure_add ... evidence: enforced" → JSON effects matches
+if echo "$rc_effects" | grep -A1 "pure_add" | grep -q "evidence: enforced" && \
+   echo "$rc_json" | grep -q '"kind": "effects".*"function": "pure_add".*"evidence": "enforced"'; then
+    echo "  ok  consistency: --report effects evidence ↔ JSON evidence for pure_add"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  consistency: effects/JSON disagree on pure_add evidence level"
+    FAIL=$((FAIL + 1))
+fi
+
+# 2e. Human alloc says "fn uses_alloc ... allocates: vec_new" → JSON alloc fact has vec_new
+if echo "$rc_alloc" | grep -A1 "fn uses_alloc" | grep -q "allocates: vec_new" && \
+   echo "$rc_json" | grep -q '"kind": "alloc".*"function": "uses_alloc".*"vec_new"'; then
+    echo "  ok  consistency: --report alloc vec_new ↔ JSON alloc for uses_alloc"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  consistency: alloc/JSON disagree on uses_alloc allocation calls"
+    FAIL=$((FAIL + 1))
+fi
+
+# 2f. Human alloc says "fn alloc_with_defer ... cleanup: defer free" → JSON alloc has defers
+if echo "$rc_alloc" | grep -A3 "fn alloc_with_defer" | grep -q "defer free" && \
+   echo "$rc_json" | grep -q '"kind": "alloc".*"function": "alloc_with_defer".*"defers":.*\['; then
+    echo "  ok  consistency: --report alloc defer ↔ JSON alloc defers for alloc_with_defer"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  consistency: alloc/JSON disagree on alloc_with_defer defer"
+    FAIL=$((FAIL + 1))
+fi
+
+# 2g. Human unsafe says "trusted fn call_raw" → JSON unsafe has is_trusted:true
+if echo "$rc_unsafe" | grep -q "trusted fn call_raw" && \
+   echo "$rc_json" | grep -q '"kind": "unsafe".*"function": "call_raw".*"is_trusted": true'; then
+    echo "  ok  consistency: --report unsafe trusted ↔ JSON unsafe for call_raw"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  consistency: unsafe/JSON disagree on call_raw trusted status"
+    FAIL=$((FAIL + 1))
+fi
+
+# 2h. Human unsafe says "wraps: extern raw_extern" → JSON unsafe has trust_boundary with raw_extern
+if echo "$rc_unsafe" | grep -q "wraps: extern raw_extern" && \
+   echo "$rc_json" | grep -q '"kind": "unsafe".*"function": "call_raw".*"trust_boundary":.*"extern raw_extern"'; then
+    echo "  ok  consistency: --report unsafe wraps ↔ JSON trust_boundary for call_raw"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  consistency: unsafe/JSON disagree on call_raw trust_boundary"
+    FAIL=$((FAIL + 1))
+fi
+
+# 2i. Human effects says "2 pure" in totals → JSON has exactly 2 effects facts with is_pure:true
+pure_count=$(echo "$rc_json" | grep -o '"kind": "effects"[^}]*"is_pure": true' | wc -l | tr -d ' ')
+if echo "$rc_effects" | grep -q "2 pure" && [ "$pure_count" = "2" ]; then
+    echo "  ok  consistency: --report effects 2 pure ↔ JSON has 2 pure effects facts"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  consistency: effects/JSON disagree on pure function count (human=2, json=$pure_count)"
+    FAIL=$((FAIL + 1))
+fi
+
+# 2j. Human alloc says "3 functions allocate" → JSON has exactly 3 alloc facts
+alloc_count=$(echo "$rc_json" | grep -o '"kind": "alloc"' | wc -l | tr -d ' ')
+if echo "$rc_alloc" | grep -q "3 functions allocate" && [ "$alloc_count" = "3" ]; then
+    echo "  ok  consistency: --report alloc 3 allocating ↔ JSON has 3 alloc facts"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  consistency: alloc/JSON disagree on allocating function count (human=3, json=$alloc_count)"
+    FAIL=$((FAIL + 1))
+fi
+
+# --- Layer 2 continued: recursion file ---
+# Human --check predictable fails with "direct recursion" → JSON has matching violation
+rc_rec_json=$(cached_output "$TESTDIR/report_check_predictable_fail_recursion.con" "--report diagnostics-json")
+rc_rec_human=$($COMPILER "$TESTDIR/report_check_predictable_fail_recursion.con" --check predictable 2>&1) || true
+if echo "$rc_rec_human" | grep -q "direct recursion" && \
+   echo "$rc_rec_json" | grep -q '"kind": "predictable_violation".*"reason": "direct recursion"'; then
+    echo "  ok  consistency: --check predictable recursion ↔ JSON violation for countdown"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  consistency: predictable/JSON disagree on recursion violation"
+    FAIL=$((FAIL + 1))
+fi
+
 fi # end section: report
 
 # === Codegen differential tests ===
