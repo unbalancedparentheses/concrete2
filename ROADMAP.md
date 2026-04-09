@@ -17,6 +17,32 @@ The Lean 4 compiler implements the full pipeline:
 
 The core language, stdlib foundation, report surfaces, and project workflow are real. Phase H proved the language against real programs. The next question is no longer "can Concrete express this?" but "can Concrete demonstrate its thesis-level ideas clearly enough to justify the project?"
 
+## Linear Execution Order
+
+Use this as the current critical path. The numbered sections below are backlog areas and reference inventories. This list is the execution order unless evidence forces a change.
+
+**Priority rule:** work from this list top-to-bottom. Do not start package management, new backends, concurrency, broad proof syntax, source-level contracts, package ecosystems, or showcase polish just because they have their own section below.
+
+1. finish the first thesis demo: predictable packet-decoder core, non-predictable I/O shell, effects/evidence report, proof-backed parser property, adversarial regressions
+2. add source locations to thesis-facing diagnostics and reports
+3. make predictable-profile failures Elm-clear: recursion, unbounded loops, allocation, blocking, FFI, trusted/host boundary
+4. make proof-evidence failures Elm-clear: proved, missing, stale, qualified-identity mismatch, body mismatch, unsupported target, obligation failed
+5. add a machine-readable effects/evidence report for the facts already in the human report
+6. move proof/spec/result attachment out of hardcoded compiler tables and into a reproducible registry artifact
+7. add `--report obligations`: named proof obligations, status, dependencies, linked function/spec/proof IDs
+8. add a source-to-ProofCore extraction report so reviewers can inspect what semantics a proof targets
+9. name Lean-attached specs explicitly; keep source-level spec syntax out until the workflow earns it
+10. prototype semantic diff / trust drift for capability, allocation, recursion, loop-boundedness, blocking, FFI, trusted, evidence level, and proof freshness
+11. prototype module/package policy checks for the existing thesis properties
+12. build one attacker-style thesis demo that introduces authority/resource/proof drift and shows Concrete catching it
+13. validate fixed-capacity usefulness with a no-alloc parser/validator or ring-buffer-style example
+14. design and implement the smallest bounded-capacity type path that makes predictable examples practical
+15. add stack-depth reporting for functions that pass the no-recursion profile
+16. classify host calls, cleanup paths, determinism sources, failure paths, and memory/UB boundaries for predictable/proved code
+17. add CI/CD evidence gates: tests, predictable check, stale-proof check, report artifact generation, proof-obligation status, trust-drift check
+18. return to stdlib/example polish: split/trim, path decomposition, minimal FFI pressure test
+19. only then expand packaging/artifacts, broader formalization, showcase corpus, QBE/backend experiments, concurrency, and long-horizon research
+
 ## 1. Real-Program Validation Complete
 
 **Status:** complete enough to stop treating it as the main track.
@@ -38,7 +64,7 @@ Phase H did its job: it exposed real-program pressure, forced the linearity and 
 
 ## 2. Thesis Validation
 
-**Status:** not started. This is now the main track.
+**Status:** in progress. This is now the main track. Follow the **Linear Execution Order** above before pulling in work from later phases.
 
 Concrete's deepest claim is the combination of:
 
@@ -71,16 +97,21 @@ This phase exists to test whether those ideas hold up in implementation, reports
 20. validate proof maintenance cost — done when at least one proof-backed example survives a nontrivial refactor and the project can judge whether proof drift is tolerable
 21. prototype semantic diff / trust drift for thesis properties — done when the compiler can show that a change introduced or removed allocation, recursion, FFI, trusted use, broader authority, blocking, or boundedness status
 22. prototype package/module-level thesis policies — done when selected modules or packages can be checked against profile-style restrictions such as `NoAlloc`, no FFI, or capability limits
-23. mark which report claims are reported, enforced, proved, or trusted-assumption-based — done when the evidence level is visible in the unified report
-24. add adversarial validation for every thesis claim — done when each major reported, enforced, or proved property has targeted pass cases, fail cases, near-miss cases, misleading cases designed to trick the checker, and regressions from real bugs
-25. validate the thesis with flagship bounded and evidence-carrying examples — done when a small set of examples demonstrates capability visibility, predictable execution, proof-backed evidence, policy enforcement, and adversarial hardening together
+23. prototype machine-readable effects/evidence output — done when at least the thesis-level facts are available as structured output, not only human terminal text
+24. move proof/spec/result registration out of hardcoded compiler tables — done when selected proof attachments can be loaded from a reproducible artifact or registry tied to function identity, body fingerprint, and proof result
+25. add source locations to reports and checks — done when effects, proof, obligation, fingerprint, predictable-profile, and trust diagnostics point at concrete source files and lines instead of only function names
+26. make thesis diagnostics Elm-clear — done when stale proofs, predictable-profile failures, capability escalation, trust-boundary crossings, allocation violations, recursion cycles, and unbounded loops are explained with short labels, source snippets where possible, direct causes, and actionable fixes
+27. mark which report claims are reported, enforced, proved, or trusted-assumption-based — done when the evidence level is visible in the unified report
+28. add adversarial validation for every thesis claim — done when each major reported, enforced, or proved property has targeted pass cases, fail cases, near-miss cases, misleading cases designed to trick the checker, and regressions from real bugs
+29. validate the thesis with flagship bounded and evidence-carrying examples — done when a small set of examples demonstrates capability visibility, predictable execution, proof-backed evidence, policy enforcement, and adversarial hardening together
 
-**Near-Term Sequence:**
+**Immediate Order Inside Phase 2:**
 1. stabilize the first predictable-execution slice with tests and clear per-function diagnostics
 2. expose evidence level in the unified report so "reported", "enforced", "proved", and "trusted assumption" are visible distinctions
 3. use the packet decoder as the first flagship thesis example: the parsing core should pass the predictable profile while the I/O shell is expected to fail
 4. prove one small parser-core property from that example through the Concrete-to-Lean pipeline so the first end-to-end thesis demo is visible and concrete
 5. harden each thesis claim with adversarial tests so the demo is not only persuasive when it works, but difficult to fake accidentally
+6. upgrade proof/predictability diagnostics before adding more proof syntax — stale proof, body mismatch, blocking, allocation, unbounded loop, recursion, and capability errors should say what happened, why it matters, and what the likely next edit is
 
 **Proof Workflow Sequence:**
 
@@ -89,16 +120,18 @@ Do proof workflow before proof syntax.
 1. proof failure diagnostics — done when proof states distinguish `proved`, `proof stale`, `proof missing`, body/fingerprint mismatch, obligation failure, and unsupported proof target
 2. inspectable proof obligations — done when a report or artifact can show obligations such as `decode_header_rejects_short`, their status, and their dependencies
 3. source-to-ProofCore extraction report — done when users can inspect what checked Concrete semantics were extracted for proof
-4. external or Lean-attached function specs — done when a Concrete function can be linked to a reviewable spec without adding a broad source-level contract language first
-5. loop invariants — done when specs and obligations exist and the prover needs user-provided facts to reason through bounded loops
-6. ghost code — done only after a proof-backed example needs proof-only state, and the erasure/trust story is explicit
-7. effectful-proof boundary model — done when proofs can clearly stop at or model capabilities, FFI, `trusted`, blocking host calls, allocation, and backend assumptions
+4. Lean-attached specs first — done when the current proof slice can name the spec/theorem for a Concrete function without changing Concrete source syntax
+5. external spec/proof/result registry next — done when specs, proof identities, proof results, fingerprints, obligation names, and trusted assumptions are loaded from a reproducible artifact instead of hardcoded compiler tables
+6. optional source-level spec markers later — done only if the Lean-attached/external workflow works and users need small Concrete syntax to point at specs or contracts
+7. loop invariants — done when specs and obligations exist and the prover needs user-provided facts to reason through bounded loops
+8. ghost code — done only after a proof-backed example needs proof-only state, and the erasure/trust story is explicit
+9. effectful-proof boundary model — done when proofs can clearly stop at or model capabilities, FFI, `trusted`, blocking host calls, allocation, and backend assumptions
 
-**References:** [core-thesis](research/thesis-validation/core-thesis.md), [objective-matrix](research/thesis-validation/objective-matrix.md), [thesis-validation](research/thesis-validation/thesis-validation.md), [noalloc-enforcement](research/thesis-validation/noalloc-enforcement.md), [boundedness-reports](research/thesis-validation/boundedness-reports.md), [proof-slice](research/thesis-validation/proof-slice.md), [validation-examples](research/thesis-validation/validation-examples.md), [concrete-to-lean-pipeline](research/proof-evidence/concrete-to-lean-pipeline.md), [spec-attachment](research/proof-evidence/spec-attachment.md), [effectful-proofs](research/proof-evidence/effectful-proofs.md), [provable-systems-subset](research/proof-evidence/provable-systems-subset.md), [provable-properties](research/proof-evidence/provable-properties.md), [predictable-execution](research/predictable-execution/predictable-execution.md), [effect-taxonomy](research/predictable-execution/effect-taxonomy.md), [allocation-budgets](research/stdlib-runtime/allocation-budgets.md), [execution-cost](research/stdlib-runtime/execution-cost.md), [backend-traceability](research/compiler/backend-traceability.md), [failure-semantics](research/language/failure-semantics.md), [trusted-code-policy](research/language/trusted-code-policy.md), [interrupt-signal-model](research/language/interrupt-signal-model.md)
+**References:** [core-thesis](research/thesis-validation/core-thesis.md), [objective-matrix](research/thesis-validation/objective-matrix.md), [thesis-validation](research/thesis-validation/thesis-validation.md), [noalloc-enforcement](research/thesis-validation/noalloc-enforcement.md), [boundedness-reports](research/thesis-validation/boundedness-reports.md), [proof-slice](research/thesis-validation/proof-slice.md), [validation-examples](research/thesis-validation/validation-examples.md), [concrete-to-lean-pipeline](research/proof-evidence/concrete-to-lean-pipeline.md), [spec-attachment](research/proof-evidence/spec-attachment.md), [effectful-proofs](research/proof-evidence/effectful-proofs.md), [provable-systems-subset](research/proof-evidence/provable-systems-subset.md), [provable-properties](research/proof-evidence/provable-properties.md), [predictable-execution](research/predictable-execution/predictable-execution.md), [effect-taxonomy](research/predictable-execution/effect-taxonomy.md), [allocation-budgets](research/stdlib-runtime/allocation-budgets.md), [execution-cost](research/stdlib-runtime/execution-cost.md), [backend-traceability](research/compiler/backend-traceability.md), [diagnostic-ux](research/compiler/diagnostic-ux.md), [failure-semantics](research/language/failure-semantics.md), [memory-ub-boundary](research/language/memory-ub-boundary.md), [trusted-code-policy](research/language/trusted-code-policy.md), [interrupt-signal-model](research/language/interrupt-signal-model.md)
 
-## 3. Stdlib and Example Polish
+## 3. Stdlib and Example Polish Backlog
 
-**Status:** not started. This is the carried-forward cleanup tail from Phase H.
+**Status:** deferred. Do after the current thesis/tooling critical path, except for small example polish that directly improves the thesis demo.
 
 **Tasks:**
 1. clean up stdlib output surface so examples stop using builtin-shaped `print_string` / `print_char` — done when stdlib output reads like coherent library code rather than builtin vocabulary
@@ -110,9 +143,9 @@ Do proof workflow before proof syntax.
 
 **References:** [phase-h-findings](research/workloads/phase-h-findings.md), [text-and-output-design](research/stdlib-runtime/text-and-output-design.md), [cleanup-ergonomics](research/language/cleanup-ergonomics.md)
 
-## 4. Package and Artifact Architecture
+## 4. Package and Artifact Architecture Backlog
 
-**Status:** not started. This is the next major architectural build-out after the first thesis-validation slice is real enough to justify the surrounding infrastructure.
+**Status:** deferred. Do after machine-readable thesis reports, external proof/spec/result artifacts, obligation reports, policy gates, and CI evidence gates prove what the artifacts need to carry.
 
 **Tasks:**
 1. incremental compilation: serialize pipeline artifacts, cache by source hash, skip unchanged modules — done when unchanged modules are skipped on rebuild
@@ -127,16 +160,16 @@ Do proof workflow before proof syntax.
 
 **References:** [artifact-driven-compiler](research/compiler/artifact-driven-compiler.md), [package-model](research/packages-tooling/package-model.md), [package-manager-design](research/packages-tooling/package-manager-design.md), [package-testing-tooling](research/packages-tooling/package-testing-tooling.md)
 
-## 5. Formalization and Proof Expansion
+## 5. Formalization and Proof Expansion Backlog
 
-**Status:** not started. Do this after package/artifact boundaries are cleaner, but expect selected proof work to start earlier inside Thesis Validation.
+**Status:** staged. Selected proof workflow work is on the linear path now. Broad proof expansion, source-level spec syntax, loop invariants, ghost code, and compiler-preservation proofs stay later.
 
 **Tasks:**
 1. broaden the pure Core proof fragment — done when the provable subset covers more than the current narrow pure fragment
 2. stabilize the provable subset as an actual target — done when users can know what is and isn't provable
 3. source-to-Core and Core-to-proof traceability — done when proof claims trace back to source
 4. inspectable proof-obligation / verification-condition pipeline — done when generated obligations are artifacts with names, dependencies, statuses, and links to source/extracted Core
-5. external or attached function specs — done when specs can be linked to Concrete functions and generate inspectable proof obligations without requiring a broad source-level contract system
+5. spec-location progression — done when the workflow explicitly supports Lean-attached specs first, external spec/proof/result artifacts next, and source-level spec markers only after that proves useful
 6. proof failure diagnostics and proof UX — done when users can understand missing proofs, stale proofs, body mismatches, obligation failures, and unsupported proof targets without reading compiler internals
 7. proof-backed authority reports as real artifacts — done when reports are artifacts, not just a research direction
 8. user-program proof workflow, artifact-driven — done when a user can prove a property end-to-end
@@ -145,9 +178,9 @@ Do proof workflow before proof syntax.
 
 **References:** [formalization-breakdown](research/proof-evidence/formalization-breakdown.md), [formalization-roi](research/proof-evidence/formalization-roi.md), [proving-concrete-functions-in-lean](research/proof-evidence/proving-concrete-functions-in-lean.md), [proof-addon-architecture](research/proof-evidence/proof-addon-architecture.md), [proof-ux-and-verification-influences](research/proof-evidence/proof-ux-and-verification-influences.md)
 
-## 6. Adoption and Showcase
+## 6. Adoption and Showcase Backlog
 
-**Status:** not started. Only after the package model and the biggest ergonomics gaps are under control.
+**Status:** deferred. The packet-decoder thesis demo and one attacker-style thesis demo are on the linear path now. Broader showcase/adoption polish waits until proof/predictability/artifact workflow is credible.
 
 The showcase corpus should deliberately rebalance away from mostly text-heavy examples and toward binary parsing, ownership-heavy structures, capability-separated tools, FFI boundaries, and no-allocation-friendly systems code.
 
@@ -157,6 +190,7 @@ The showcase corpus should deliberately rebalance away from mostly text-heavy ex
 3. improve onboarding and example presentation — done when a newcomer can build something in under an hour
 4. define stability / experimental surface — done when users know what is stable and what is not
 5. sharpen positioning vs neighboring systems languages — done when the pitch is one paragraph, not a lecture
+6. build one attacker-style thesis demo — done when a malicious or accidental refactor introduces authority, allocation, recursion, blocking, FFI, trust, or proof drift, and Concrete catches it with report/policy/proof evidence
 
 **Examples to build (ranked by what they prove about the language):**
 1. Packet parser — binary protocol decoding with capability-controlled I/O, shows `with()` separation between parser and network
@@ -178,9 +212,9 @@ The showcase corpus should deliberately rebalance away from mostly text-heavy ex
 
 **References:** [adoption-strategy](research/workloads/adoption-strategy.md), [showcase-workloads](research/workloads/showcase-workloads.md)
 
-## 7. Project and Operational Maturity
+## 7. Project and Operational Maturity Backlog
 
-**Status:** not started. This turns the compiler into a durable reviewable operational system.
+**Status:** staged. Machine-readable thesis reports, source-location-rich evidence, review gates, and CI evidence gates are on the linear path now. Broader editor/dependency/release maturity waits.
 
 **Tasks:**
 1. machine-readable reports — done when report output is structured and parseable
@@ -189,16 +223,18 @@ The showcase corpus should deliberately rebalance away from mostly text-heavy ex
 4. semantic query/search over compiler facts — done when you can ask questions about the program and get structured answers
 5. compatibility checks and trust-drift diffing — done when version bumps surface semantic/trust changes automatically
 6. review-policy gates — done when CI can enforce authority, trust, FFI, and proof-facing policies
-7. coverage tooling over tests, reports, and proof artifacts — done when coverage gaps across all three are visible
-8. editor/LSP baseline — done when there is basic editor support with go-to-definition and diagnostics
-9. dependency auditing — done when dependencies can be audited for capability and trust properties
-10. release/compatibility discipline — done when there is a versioning policy and it is enforced
+7. CI/CD evidence gates — done when tests, `--check predictable`, stale-proof checks, proof-obligation status, report generation, and semantic/trust drift checks can be enforced in a noninteractive CI job
+8. source-location-rich report artifacts — done when machine-readable reports include source spans, qualified identities, fingerprints, artifact IDs, proof/spec/obligation IDs, evidence level, and trust assumptions
+9. coverage tooling over tests, reports, and proof artifacts — done when coverage gaps across all three are visible
+10. editor/LSP baseline — done when there is basic editor support with go-to-definition and diagnostics
+11. dependency auditing — done when dependencies can be audited for capability and trust properties
+12. release/compatibility discipline — done when there is a versioning policy and it is enforced
 
-**References:** [evidence-review-workflows](research/proof-evidence/evidence-review-workflows.md), [proof-evidence-artifacts](research/proof-evidence/proof-evidence-artifacts.md), [trust-multipliers](research/proof-evidence/trust-multipliers.md), [developer-tooling](research/packages-tooling/developer-tooling.md)
+**References:** [evidence-review-workflows](research/proof-evidence/evidence-review-workflows.md), [proof-evidence-artifacts](research/proof-evidence/proof-evidence-artifacts.md), [trust-multipliers](research/proof-evidence/trust-multipliers.md), [developer-tooling](research/packages-tooling/developer-tooling.md), [diagnostic-ux](research/compiler/diagnostic-ux.md)
 
-## 8. Backend Plurality
+## 8. Backend Plurality Backlog
 
-**Status:** not started. Keep explicit and late.
+**Status:** deferred. Do not start a second backend until proof attachment, evidence artifacts, predictable-profile claims, and the backend trust boundary are clearer.
 
 **Tasks:**
 1. stabilize SSA as the backend contract — done when SSA is the only interface between front and back end in practice
@@ -208,9 +244,9 @@ The showcase corpus should deliberately rebalance away from mostly text-heavy ex
 
 **References:** [qbe-backend](research/compiler/qbe-backend.md), [qbe-in-concrete](research/compiler/qbe-in-concrete.md), [mlir-backend-shape](research/compiler/mlir-backend-shape.md), [optimization-policy](research/compiler/optimization-policy.md)
 
-## 9. Concurrency
+## 9. Concurrency Backlog
 
-**Status:** not started. Keep the model explicit, small, and late.
+**Status:** deferred. Keep thesis-level predictability single-thread-friendly until the analyzable concurrency stance is explicit.
 
 **Tasks:**
 1. structured concurrency as semantic center — done when concurrency primitives enforce structured lifetimes
@@ -219,9 +255,9 @@ The showcase corpus should deliberately rebalance away from mostly text-heavy ex
 
 **References:** [concurrency](research/stdlib-runtime/concurrency.md), [long-term-concurrency](research/stdlib-runtime/long-term-concurrency.md)
 
-## 10. Allocation Profiles
+## 10. Allocation Profiles Backlog
 
-**Status:** not started. Do this after the broader compiler/runtime structure is more stable.
+**Status:** staged. Fixed-capacity usefulness and the smallest bounded-capacity path are on the linear path now. General allocation-profile design stays later.
 
 **Tasks:**
 1. strengthen `--report alloc` — done when the report accurately attributes every allocation to its source
@@ -232,9 +268,9 @@ The showcase corpus should deliberately rebalance away from mostly text-heavy ex
 
 **References:** [allocation-budgets](research/stdlib-runtime/allocation-budgets.md), [arena-allocation](research/stdlib-runtime/arena-allocation.md), [execution-cost](research/stdlib-runtime/execution-cost.md)
 
-## 11. Predictable Execution
+## 11. Predictable Execution Backlog
 
-**Status:** partially pulled forward into Thesis Validation. The remaining work here is the broader, more mature predictable-execution program after the first thesis-level validation succeeds.
+**Status:** staged. Stack-depth reporting and classification of host calls, cleanup, determinism, failure, memory/UB, and backend assumptions are on the linear path now. Exact timing/WCET remains later.
 
 **Tasks:**
 1. define a restricted analyzable execution profile — done when there is a documented profile covering a recursion ban, no unrestricted allocation, loop-bound rules, concurrency limits, blocking-operation limits, and FFI boundaries
@@ -249,11 +285,12 @@ The showcase corpus should deliberately rebalance away from mostly text-heavy ex
 10. define the backend and target assumptions — done when it is explicit what can be claimed at the source/compiler level versus what requires target-specific timing models, including the LLVM timing trust boundary
 11. define failure-path boundedness rules for the profile — done when the project can say whether abort is immediate, whether `defer` or cleanup runs on failure, and what boundedness guarantees hold on the failure path
 12. define arithmetic overflow behavior as a profile-level choice — done when the predictable profile can require trapping arithmetic (no silent corruption, bounded failure path), the performance path can allow wrapping (zero-cost, deterministic), and the effects report surfaces which mode each function uses
-13. validate the model with bounded examples — done when there are small examples such as a fixed-buffer parser, bounded-state controller, or ring buffer that fit the profile cleanly
+13. define the memory / UB model for predictable and proof-backed subsets — done when raw pointer validity, aliasing expectations, OOB behavior, uninitialized memory, integer casts, overflow, abort, trusted operations, and impossible branches are classified as checked, reported, trusted, excluded, or formally modeled
+14. validate the model with bounded examples — done when there are small examples such as a fixed-buffer parser, bounded-state controller, or ring buffer that fit the profile cleanly
 
-**References:** [predictable-execution](research/predictable-execution/predictable-execution.md), [effect-taxonomy](research/predictable-execution/effect-taxonomy.md), [allocation-budgets](research/stdlib-runtime/allocation-budgets.md), [execution-cost](research/stdlib-runtime/execution-cost.md), [concurrency](research/stdlib-runtime/concurrency.md), [long-term-concurrency](research/stdlib-runtime/long-term-concurrency.md), [backend-traceability](research/compiler/backend-traceability.md), [failure-semantics](research/language/failure-semantics.md), [trusted-code-policy](research/language/trusted-code-policy.md), [interrupt-signal-model](research/language/interrupt-signal-model.md)
+**References:** [predictable-execution](research/predictable-execution/predictable-execution.md), [effect-taxonomy](research/predictable-execution/effect-taxonomy.md), [allocation-budgets](research/stdlib-runtime/allocation-budgets.md), [execution-cost](research/stdlib-runtime/execution-cost.md), [concurrency](research/stdlib-runtime/concurrency.md), [long-term-concurrency](research/stdlib-runtime/long-term-concurrency.md), [backend-traceability](research/compiler/backend-traceability.md), [failure-semantics](research/language/failure-semantics.md), [memory-ub-boundary](research/language/memory-ub-boundary.md), [trusted-code-policy](research/language/trusted-code-policy.md), [interrupt-signal-model](research/language/interrupt-signal-model.md)
 
-## 12. Research and Evidence-Gated Features
+## 12. Research and Evidence-Gated Feature Backlog
 
 **Status:** not started. Keep visible without forcing premature language growth.
 
@@ -283,6 +320,7 @@ The showcase corpus should deliberately rebalance away from mostly text-heavy ex
 4. avoid parallel semantic lowering paths
 5. keep builtins minimal and implementation-shaped; keep stdlib clean and user-facing
 6. keep trust, capability, and foreign boundaries explicit and auditable
+7. make serious errors and report failures explain themselves: a user should know the violated rule, the source location, the reason it matters, and one plausible next action
 
 ## Current Risks
 

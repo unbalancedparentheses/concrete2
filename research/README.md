@@ -73,6 +73,9 @@ If you want the highest-leverage current research first:
 - [language/no-closures.md](language/no-closures.md) — why Concrete excludes closures (`P1`, `Excluded`)
 - [language/no-trait-objects.md](language/no-trait-objects.md) — why Concrete excludes trait objects (`P1`, `Excluded`)
 - [language/pre-post-conditions.md](language/pre-post-conditions.md) — contracts/specification support and why it stays later/optional (`P1`, `Open`)
+- [language/failure-semantics.md](language/failure-semantics.md) — failure model for abort, assertion failure, impossible paths, OOM, and restricted profiles (`P1`, `Open`)
+- [language/memory-ub-boundary.md](language/memory-ub-boundary.md) — memory/UB classification for predictable and proof-backed evidence claims (`P1`, `Open`)
+- [language/trusted-code-policy.md](language/trusted-code-policy.md) — trusted-code audit policy and restricted-profile behavior (`P1`, `Open`)
 - [language/trusted-boundary.md](language/trusted-boundary.md) — explicit `trusted fn` / `trusted impl` containment design (`P1`, `Adopted`)
 - [language/typestate.md](language/typestate.md) — typestate direction and limits (`P1`, `Open`)
 - [language/union.md](language/union.md) — whether unions fit Concrete’s design (`P2`, `Open`)
@@ -100,7 +103,9 @@ If you want the highest-leverage current research first:
 ## Compiler
 
 - [compiler/artifact-driven-compiler.md](compiler/artifact-driven-compiler.md) — operationalizing named compiler artifacts (`P0`, `Open`)
+- [compiler/backend-traceability.md](compiler/backend-traceability.md) — source/Core/SSA/LLVM/machine behavior traceability (`P1`, `Open`)
 - [compiler/compiler-dataflow-ideas.md](compiler/compiler-dataflow-ideas.md) — dataflow/query-inspired artifact and inspection ideas (`P1`, `Open`)
+- [compiler/diagnostic-ux.md](compiler/diagnostic-ux.md) — Elm-clear diagnostic goals for proof, report, predictable-profile, capability, and trust errors (`P0`, `Open`)
 - [compiler/external-ll1-checker.md](compiler/external-ll1-checker.md) — external grammar + LL(1) checker (`P1`, `Open`)
 - [compiler/file-summary-frontend.md](compiler/file-summary-frontend.md) — summary-based frontend direction (`P1`, `Adopted`)
 - [compiler/ll1-grammar.md](compiler/ll1-grammar.md) — strict LL(1) rule and parser cleanup criteria (`P1`, `Process`)

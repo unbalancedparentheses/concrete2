@@ -54,6 +54,7 @@ The eventual shape could look something like:
 - audit reports
 - build identity / hashes
 - proof-oriented exports for selected functions
+- proof / spec / result registries loaded by the compiler or review tooling
 - optional references to proofs or proof obligations
 
 all tied together clearly enough that a reviewer can answer:
@@ -62,6 +63,25 @@ all tied together clearly enough that a reviewer can answer:
 - what authority did it require?
 - what trust boundaries did it cross?
 - what proof artifacts, if any, correspond to it?
+
+## Avoid Hardcoded Proof Evidence
+
+Hardcoded proof registries inside the compiler are acceptable only for early
+thesis validation.
+
+The durable direction is external, reproducible proof evidence:
+
+- function identity
+- source/build identity
+- checked-Core or ProofCore identity
+- body fingerprint
+- spec identity
+- obligation identity
+- proof-result identity
+- trusted assumptions, if any
+
+Compiler reports can then consume the artifact and say `proved` without making
+the compiler source code itself the proof database.
 
 ## Why This Fits Concrete
 
