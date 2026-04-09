@@ -3,7 +3,7 @@ import Concrete
 open Concrete
 
 def usage : String :=
-  "Usage: concrete <file.con> [-o output] [--emit-llvm] [--emit-core] [--emit-ssa] [--test] [--test --module <name>] [--report caps|unsafe|layout|interface|alloc|mono|authority|proof|proof-status|diagnostics-json|effects|recursion|fingerprints] [--fmt]\n       concrete build [-o output] [--emit-llvm]\n       concrete run [-- args...]\n       concrete test [--module <name>]"
+  "Usage: concrete <file.con> [-o output] [--emit-llvm] [--emit-core] [--emit-ssa] [--test] [--test --module <name>] [--report caps|unsafe|layout|interface|alloc|mono|authority|proof|proof-status|diagnostics-json|effects|recursion|fingerprints] [--query KIND|KIND:FUNCTION|fn:FUNCTION] [--fmt]\n       concrete build [-o output] [--emit-llvm]\n       concrete run [-- args...]\n       concrete test [--module <name>]"
 
 def writeFile (path : String) (content : String) : IO Unit := do
   IO.FS.writeFile ⟨path⟩ content
@@ -318,6 +318,18 @@ def compileAndReport (inputPath : String) (reportType : String) : IO UInt32 := d
         return 0
     IO.eprintln s!"Unknown report type: {reportType}. Use: caps, unsafe, layout, interface, alloc, mono, authority, proof, proof-status, diagnostics-json, effects, recursion, fingerprints"
     return 1
+
+def compileAndQuery (inputPath : String) (query : String) : IO UInt32 := do
+  let source ← readFile inputPath
+  let mainSrcMap : SourceMap := [(inputPath, source)]
+  match ← Pipeline.runFrontend inputPath source resolveAllModules with
+  | .error ds =>
+    IO.eprintln (renderDiagnostics ds (sourceMap := mainSrcMap))
+    return 1
+  | .ok (parsed, _, validCore, _) =>
+    let locMap := Report.buildFnLocMap parsed.modules inputPath
+    IO.println (Report.queryFacts validCore.coreModules locMap query)
+    return 0
 
 -- ============================================================
 -- Concrete.toml project support
@@ -764,6 +776,8 @@ def main (args : List String) : IO UInt32 := do
     compileAndCheck inputPath checkType
   | [inputPath, "--report", reportType] =>
     compileAndReport inputPath reportType
+  | [inputPath, "--query", query] =>
+    compileAndQuery inputPath query
   | [inputPath, "--fmt"] =>
     let source ← readFile inputPath
     match parse source with

@@ -30,9 +30,9 @@ Current guardrails: keep specs in Lean-attached / artifact-registry form until o
 1. add machine-readable diagnostic records for the facts already used by human predictable/effects/proof-status output
 2. add a machine-readable effects/evidence report for the facts already in the human report
 3. add report-consistency tests that check machine-readable report facts against compiler semantics and selected executable behavior
-4. add a compiler fact query CLI over the machine-readable facts
-5. make authority tracing a first-class query: explain why a function requires File, Network, Process, Alloc, Unsafe, trusted, or blocking authority
-6. add an audit/explain mode that answers review questions from compiler facts instead of forcing reviewers to grep reports
+4. add a thin compiler fact query CLI over machine-readable facts: `--query effects`, `--query effects:parse_byte`, `--query fn:parse_byte`, `--query proof_status`, `--query predictable_violation`, `--query capability`, `--query unsafe`, and `--query alloc`; output filtered JSON, not a new report format
+5. add semantic fact queries after the thin filter works: `--query why-capability:main:File`, `--query predictable:decode_header`, `--query proof:decode_header`, `--query trust:call_raw`, `--query allocation:uses_alloc`, and `--query evidence:decode_header`; output answer-shaped JSON
+6. make authority tracing / audit explanation a first-class query: explain whether authority is declared directly or required through a call path; answer review questions from compiler facts instead of forcing reviewers to grep reports
 7. move proof/spec/result attachment out of hardcoded compiler tables and into a reproducible registry artifact
 8. add `--report obligations`: named proof obligations, status, dependencies, linked function/spec/proof IDs
 9. add a source-to-ProofCore extraction report so reviewers can inspect what semantics a proof targets

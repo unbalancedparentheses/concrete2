@@ -1985,8 +1985,8 @@ def collectAllocFacts (modules : List CModule) : List Val :=
   modules.foldl (fun acc m => acc ++ collectAllocFactsModule m) []
 
 open Json in
-/-- Produce JSON diagnostics combining all fact types. -/
-def diagnosticsJson (modules : List CModule) (locMap : FnLocMap := []) : String :=
+/-- Collect all facts into a flat list. -/
+private def collectAllFacts (modules : List CModule) (locMap : FnLocMap := []) : List Val :=
   let predictable := collectPredictableFacts modules locMap
   let proofStatus := collectProofStatusFacts modules locMap
   let effects := collectEffectsFacts modules locMap
@@ -1994,9 +1994,51 @@ def diagnosticsJson (modules : List CModule) (locMap : FnLocMap := []) : String 
   let unsafeFacts := collectUnsafeFacts modules
   let alloc := collectAllocFacts modules
   let base := predictable ++ proofStatus ++ effects
-  let allFacts := base ++ caps ++ unsafeFacts ++ alloc
-  let root := Val.arr allFacts
-  root.render
+  base ++ caps ++ unsafeFacts ++ alloc
+
+open Json in
+/-- Produce JSON diagnostics combining all fact types. -/
+def diagnosticsJson (modules : List CModule) (locMap : FnLocMap := []) : String :=
+  (Val.arr (collectAllFacts modules locMap)).render
+
+open Json in
+/-- Extract a string field from a JSON object. -/
+private def jsonGetStr (v : Val) (key : String) : Option String :=
+  match v with
+  | .obj kvs =>
+    match kvs.find? (fun (k, _) => k == key) with
+    | some (_, .str s) => some s
+    | _ => none
+  | _ => none
+
+open Json in
+/-- Query compiler facts by kind and optional function name.
+    Query format: "KIND" or "KIND:FUNCTION" or "fn:FUNCTION". -/
+def queryFacts (modules : List CModule) (locMap : FnLocMap := [])
+    (query : String) : String :=
+  let allFacts := collectAllFacts modules locMap
+  let (filterKind, filterFn) :=
+    match query.splitOn ":" with
+    | [kind, fnName] => (kind, some fnName)
+    | _ => (query, none)
+  let filtered :=
+    if filterKind == "fn" then
+      match filterFn with
+      | some fnName => allFacts.filter fun v =>
+          match jsonGetStr v "function" with
+          | some f => f == fnName || f.endsWith ("." ++ fnName)
+          | none => false
+      | none => []
+    else
+      let byKind := allFacts.filter fun v =>
+        jsonGetStr v "kind" == some filterKind
+      match filterFn with
+      | some fnName => byKind.filter fun v =>
+          match jsonGetStr v "function" with
+          | some f => f == fnName || f.endsWith ("." ++ fnName)
+          | none => false
+      | none => byKind
+  (Val.arr filtered).render
 
 end Report
 end Concrete
