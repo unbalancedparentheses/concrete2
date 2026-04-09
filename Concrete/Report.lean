@@ -4,6 +4,7 @@ import Concrete.FileSummary
 import Concrete.AST
 import Concrete.Intrinsic
 import Concrete.Proof
+import Concrete.Diagnostic
 
 namespace Concrete
 namespace Report
@@ -1470,10 +1471,12 @@ private def blockingCaps : List String :=
 
 /-- A single profile violation. -/
 structure ProfileViolation where
-  fnName       : String
-  reason       : String
-  loc          : Option SourceLoc := none   -- function definition
-  violationLoc : Option SourceLoc := none   -- offending construct (loop, call, etc.)
+  fnName        : String
+  reason        : String
+  hint          : String := ""                -- suggested fix
+  loc           : Option SourceLoc := none    -- function definition
+  violationLoc  : Option SourceLoc := none    -- offending construct (loop, call, etc.)
+  violationSpan : Option Span := none         -- full span for caret rendering
 
 private partial def checkPredictableModule
     (recMap : List (String × RecursionKind × List String))
@@ -1492,48 +1495,106 @@ private partial def checkPredictableModule
     -- 1. Recursion (function-level only for now)
     let recViolations := match recMap.find? (fun (n, _, _) => n == f.name) with
       | some (_, .direct, _) =>
-        [{ fnName := f.name, reason := "direct recursion", loc := fnLoc }]
+        [{ fnName := f.name, reason := "direct recursion"
+         , hint := "Use a loop or iterative approach instead of self-calls."
+         , loc := fnLoc }]
       | some (_, .mutual, members) =>
         let others := members.filter (· != f.name)
-        [{ fnName := f.name, reason := s!"mutual recursion with {", ".intercalate others}", loc := fnLoc }]
+        [{ fnName := f.name, reason := s!"mutual recursion with {", ".intercalate others}"
+         , hint := "Break the cycle by restructuring into a loop or state machine."
+         , loc := fnLoc }]
       | _ => []
     -- 2. Loop boundedness — point at the offending loop
     let loopClass := classifyLoops f.body
-    let loopViolLoc := mkViolLoc (findLoopSpan astBody)
+    let loopSpan := findLoopSpan astBody
+    let loopViolLoc := mkViolLoc loopSpan
     let loopViolations :=
       if loopClass == "unbounded" then
-        [{ fnName := f.name, reason := "unbounded loops", loc := fnLoc, violationLoc := loopViolLoc }]
+        [{ fnName := f.name, reason := "unbounded loops"
+         , hint := "Use a for loop with an explicit bound: for (let mut i = 0; i < n; i = i + 1)"
+         , loc := fnLoc, violationLoc := loopViolLoc, violationSpan := loopSpan }]
       else if loopClass == "mixed" then
-        [{ fnName := f.name, reason := "mixed loop boundedness (some loops unbounded)", loc := fnLoc, violationLoc := loopViolLoc }]
+        [{ fnName := f.name, reason := "mixed loop boundedness (some loops are unbounded)"
+         , hint := "Replace while(true) or while(flag) with a bounded for loop."
+         , loc := fnLoc, violationLoc := loopViolLoc, violationSpan := loopSpan }]
       else []
     -- 3. Allocation — point at the allocating call
     let callees := collectCallsStmts f.body |>.eraseDups
     let allocs := callees.filter isAllocCall
     let (fnCaps, _) := f.capSet.normalize
     let hasAllocCap := fnCaps.any (· == "Alloc")
-    let allocViolLoc := mkViolLoc (findCallSpan allocs astBody)
+    let allocSpan := findCallSpan allocs astBody
+    let allocViolLoc := mkViolLoc allocSpan
     let allocViolations :=
       if !allocs.isEmpty then
-        [{ fnName := f.name, reason := s!"allocates ({", ".intercalate allocs})", loc := fnLoc, violationLoc := allocViolLoc }]
+        [{ fnName := f.name, reason := s!"allocates ({", ".intercalate allocs})"
+         , hint := "Use a fixed-size array or stack buffer instead of heap allocation."
+         , loc := fnLoc, violationLoc := allocViolLoc, violationSpan := allocSpan }]
       else if hasAllocCap then
-        [{ fnName := f.name, reason := "has Alloc capability", loc := fnLoc }]
+        [{ fnName := f.name, reason := "has Alloc capability"
+         , hint := "Remove Alloc from the with(...) clause if this function does not need heap allocation."
+         , loc := fnLoc, violationSpan := match entry with | some e => some e.fnSpan | none => none }]
       else []
     -- 4. FFI — point at the extern call
     let externCalls := callees.filter fun c => externNames.contains c
-    let ffiViolLoc := mkViolLoc (findCallSpan externCalls astBody)
+    let ffiSpan := findCallSpan externCalls astBody
+    let ffiViolLoc := mkViolLoc ffiSpan
     let ffiViolations := if externCalls.isEmpty then []
-      else [{ fnName := f.name, reason := s!"calls extern ({", ".intercalate externCalls})", loc := fnLoc, violationLoc := ffiViolLoc }]
+      else [{ fnName := f.name, reason := s!"calls extern ({", ".intercalate externCalls})"
+            , hint := "Move the extern call to a non-predictable wrapper and call that instead."
+            , loc := fnLoc, violationLoc := ffiViolLoc, violationSpan := ffiSpan }]
     -- 5. Blocking — points at function signature (with-clause has no separate span)
     let (concreteCaps, _) := f.capSet.normalize
     let blockingUsed := concreteCaps.filter fun c => blockingCaps.contains c
     let blockViolations := if blockingUsed.isEmpty then []
-      else [{ fnName := f.name, reason := s!"may block ({", ".intercalate blockingUsed})", loc := fnLoc }]
+      else [{ fnName := f.name, reason := s!"may block ({", ".intercalate blockingUsed})"
+            , hint := s!"Remove {", ".intercalate blockingUsed} from with(...) or move I/O to a non-predictable caller."
+            , loc := fnLoc, violationSpan := match entry with | some e => some e.fnSpan | none => none }]
     acc ++ recViolations ++ loopViolations ++ allocViolations ++ ffiViolations ++ blockViolations) []
   fnViolations ++ m.submodules.foldl (fun acc sub =>
     acc ++ checkPredictableModule recMap externNames locMap sub qualPrefix) []
 
+/-- Extract a 1-indexed line from source text. Returns "" if out of bounds. -/
+private def getSourceLine (source : String) (lineNum : Nat) : String :=
+  let lines := source.splitOn "\n"
+  if lineNum == 0 then ""
+  else match lines[lineNum - 1]? with
+    | some l => l
+    | none => ""
+
+/-- Render a violation with Elm-style snippet formatting. -/
+private def renderViolation (v : ProfileViolation) (sourceMap : SourceMap) : String :=
+  -- Header: location + label
+  let locStr := match v.loc with | some l => s!"{fmtLoc (some l)}: " | none => ""
+  let header := s!"-- {locStr}{v.fnName} — {v.reason}"
+  -- Source snippet at the violation point (or function if no violation span)
+  let snippetSpan := v.violationSpan.orElse fun _ =>
+    match v.loc with | some (_, line) => some { line, col := 1 } | none => none
+  let snippetFile := match v.violationLoc with
+    | some (f, _) => f
+    | none => match v.loc with | some (f, _) => f | none => ""
+  let source := sourceMap.lookup snippetFile
+  let snippet := match snippetSpan, source with
+    | some sp, some src =>
+      let line := getSourceLine src sp.line
+      if line.isEmpty then ""
+      else
+        let lineNumStr := toString sp.line
+        let pad := lineNumStr.length
+        let gutter := String.ofList (List.replicate pad ' ')
+        let caretStart := if sp.col > 1 then sp.col - 1 else 0
+        let caretLen := if sp.endCol > sp.col then sp.endCol - sp.col else line.length - caretStart
+        let spaces := String.ofList (List.replicate caretStart ' ')
+        let carets := String.ofList (List.replicate caretLen '^')
+        s!"\n\n {lineNumStr} | {line}\n {gutter} | {spaces}{carets}"
+    | _, _ => ""
+  -- Hint
+  let hintStr := if v.hint.isEmpty then "" else s!"\n\n  hint: {v.hint}"
+  s!"{header}{snippet}{hintStr}"
+
 /-- Check the predictable-execution profile. Returns (pass, report string). -/
-def checkPredictable (modules : List CModule) (locMap : FnLocMap := []) : Bool × String :=
+def checkPredictable (modules : List CModule) (locMap : FnLocMap := [])
+    (sourceMap : SourceMap := []) : Bool × String :=
   let graph := buildCallGraph modules
   let sccs := tarjanSCC graph
   let recMap := classifyRecursion graph sccs
@@ -1547,14 +1608,9 @@ def checkPredictable (modules : List CModule) (locMap : FnLocMap := []) : Bool �
     (true, s!"predictable profile: pass ({allFns.length} functions checked)\n")
   else
     let header := "predictable profile: FAIL"
-    let lines := violations.map fun v =>
-      let locPrefix := match v.loc with | some l => s!"{fmtLoc (some l)}: " | none => ""
-      let violSuffix := match v.violationLoc with
-        | some l => s!"\n         ↳ {fmtLoc (some l)}"
-        | none => ""
-      s!"  error: {locPrefix}{v.fnName} — {v.reason}{violSuffix}"
-    let summary := s!"\n{violatingFns.length} function(s) failed, {passingFns} passed"
-    (false, s!"{header}\n\n{"\n".intercalate lines}\n{summary}\n")
+    let lines := violations.map fun v => renderViolation v sourceMap
+    let summary := s!"{violatingFns.length} function(s) failed, {passingFns} passed"
+    (false, s!"{header}\n\n{"\n\n".intercalate lines}\n\n{summary}\n")
 
 end Report
 end Concrete

@@ -241,8 +241,9 @@ def compileAndCheck (inputPath : String) (checkType : String) : IO UInt32 := do
     return 1
   | .ok (parsed, _, validCore, _) =>
     let locMap := Report.buildFnLocMap parsed.modules inputPath
+    let srcMap : SourceMap := [(inputPath, source)]
     if checkType == "predictable" then
-      let (pass, report) := Report.checkPredictable validCore.coreModules locMap
+      let (pass, report) := Report.checkPredictable validCore.coreModules locMap srcMap
       IO.println report
       return if pass then 0 else 1
     IO.eprintln s!"Unknown check type: {checkType}. Use: predictable"

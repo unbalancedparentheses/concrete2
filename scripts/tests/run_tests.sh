@@ -2067,7 +2067,7 @@ check_profile "$TESTDIR/report_check_predictable_fail_recursion.con" predictable
 
 # --- Gate 2: unbounded loop rejection ---
 check_profile "$TESTDIR/report_check_predictable_fail_loops.con" predictable \
-    "spin.*unbounded loops" \
+    "spin.*unbounded loop" \
     "predictable rejects unbounded while loop" \
     "predictable should reject unbounded loop"
 
@@ -2309,7 +2309,7 @@ check_profile "$TESTDIR/adversarial_all_violations.con" predictable \
     "adversarial: all-violations recursion missed"
 
 check_profile "$TESTDIR/adversarial_all_violations.con" predictable \
-    "unbounded loops" \
+    "unbounded loop" \
     "adversarial: all-violations unbounded loops detected" \
     "adversarial: all-violations unbounded loops missed"
 
@@ -2469,9 +2469,14 @@ check_profile "$TESTDIR/adversarial_profile_bounded_then_unbounded.con" predicta
     "adversarial: predictable failure missing file:line"
 
 check_profile "$TESTDIR/adversarial_profile_bounded_then_unbounded.con" predictable \
-    "↳.*adversarial_profile_bounded_then_unbounded.con:18" \
-    "adversarial: unbounded loop violation points at while statement" \
-    "adversarial: unbounded loop violation missing while location"
+    "18 |.*while true" \
+    "adversarial: unbounded loop violation shows while source line" \
+    "adversarial: unbounded loop violation missing while source line"
+
+check_profile "$TESTDIR/adversarial_profile_bounded_then_unbounded.con" predictable \
+    "hint: Use a for loop" \
+    "adversarial: predictable failure includes Elm-style hint" \
+    "adversarial: predictable failure missing Elm-style hint"
 
 fi # end section: report
 
