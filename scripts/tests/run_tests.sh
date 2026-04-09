@@ -3323,6 +3323,89 @@ else
     FAIL=$((FAIL + 1))
 fi
 
+# --- audit:fn ---
+echo ""
+echo "=== Audit query tests ==="
+
+# Pure function audit: enforced, pure, passes predictable, no alloc
+q_audit_pure=$(cached_output "$TESTDIR/report_integration.con" "--query audit:pure_add")
+if echo "$q_audit_pure" | grep -q '"evidence": "enforced"' && \
+   echo "$q_audit_pure" | grep -q '"is_pure": true' && \
+   echo "$q_audit_pure" | grep -q '"passes": true'; then
+    echo "  ok  audit:pure_add shows enforced, pure, passes predictable"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  audit:pure_add should show enforced + pure + passes"
+    echo "$q_audit_pure"
+    FAIL=$((FAIL + 1))
+fi
+
+# Trusted function audit: trusted-assumption, has authority traces, fails predictable
+q_audit_trusted=$(cached_output "$TESTDIR/report_integration.con" "--query audit:call_raw")
+if echo "$q_audit_trusted" | grep -q '"evidence": "trusted-assumption"' && \
+   echo "$q_audit_trusted" | grep -q '"is_trusted": true' && \
+   echo "$q_audit_trusted" | grep -q '"passes": false'; then
+    echo "  ok  audit:call_raw shows trusted-assumption, trusted, fails predictable"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  audit:call_raw should show trusted-assumption"
+    echo "$q_audit_trusted"
+    FAIL=$((FAIL + 1))
+fi
+
+# Audit includes authority traces
+if echo "$q_audit_trusted" | grep -q '"traces":' && \
+   echo "$q_audit_trusted" | grep -q '"origin": "extern"'; then
+    echo "  ok  audit:call_raw includes authority trace to extern"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  audit:call_raw should include authority traces"
+    FAIL=$((FAIL + 1))
+fi
+
+# Audit includes proof state and fingerprint
+if echo "$q_audit_pure" | grep -q '"state": "no_proof"' && \
+   echo "$q_audit_pure" | grep -q '"fingerprint":'; then
+    echo "  ok  audit:pure_add includes proof state and fingerprint"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  audit:pure_add should include proof state"
+    FAIL=$((FAIL + 1))
+fi
+
+# Audit includes allocation info
+if echo "$q_audit_pure" | grep -q '"allocates": \[\]' && \
+   echo "$q_audit_pure" | grep -q '"returns_allocation": false'; then
+    echo "  ok  audit:pure_add includes empty allocation info"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  audit:pure_add should include allocation info"
+    FAIL=$((FAIL + 1))
+fi
+
+# Allocating function audit
+q_audit_alloc=$(cached_output "$TESTDIR/report_integration.con" "--query audit:uses_alloc")
+if echo "$q_audit_alloc" | grep -q '"evidence": "reported"' && \
+   echo "$q_audit_alloc" | grep -q '"allocates":.*"vec_new"'; then
+    echo "  ok  audit:uses_alloc shows reported with vec_new allocation"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  audit:uses_alloc should show reported + vec_new"
+    echo "$q_audit_alloc"
+    FAIL=$((FAIL + 1))
+fi
+
+# Not found
+q_audit_missing=$(cached_output "$TESTDIR/report_integration.con" "--query audit:nonexistent")
+if echo "$q_audit_missing" | grep -q '"answer": "not_found"'; then
+    echo "  ok  audit:nonexistent answers not_found"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  audit:nonexistent should answer not_found"
+    echo "$q_audit_missing"
+    FAIL=$((FAIL + 1))
+fi
+
 fi # end section: report
 
 # === Codegen differential tests ===

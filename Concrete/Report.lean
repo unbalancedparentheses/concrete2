@@ -2251,6 +2251,108 @@ def evidenceQuery (modules : List CModule) (locMap : FnLocMap)
     ]).render
 
 open Json in
+/-- Handle an audit query for a single function. Bundles authority, predictable
+    profile, proof status, evidence, trust, and allocation into one answer. -/
+def auditQuery (modules : List CModule) (locMap : FnLocMap)
+    (fnName : String) : String :=
+  let graph := buildCallGraph modules
+  let sccs := tarjanSCC graph
+  let recMap := classifyRecursion graph sccs
+  let externNames := modules.foldl (fun acc m => acc ++ collectExternNames m) []
+  let capLookup := buildCapLookup modules
+  let fnLookup := buildFnLookup modules
+  let externLookup := buildExternLookup modules
+  -- Effects
+  let allEffects := modules.foldl (fun acc m =>
+    acc ++ effectsForModule externNames recMap locMap m) []
+  let fnEffects := allEffects.find? fun e => e.name == fnName
+  match fnEffects with
+  | none =>
+    (Val.obj [
+      ("kind", .str "query_answer"),
+      ("query", .str s!"audit:{fnName}"),
+      ("function", .str fnName),
+      ("answer", .str "not_found")
+    ]).render
+  | some eff =>
+    -- Capabilities with why traces
+    let (concreteCaps, _) := eff.capSet.normalize
+    let capTraces := concreteCaps.map fun cap =>
+      let trace := traceCapability fnLookup externLookup capLookup locMap fnName cap
+      let origin :=
+        if trace.isEmpty then "not_required"
+        else match trace with
+          | [.obj kvs] =>
+            match kvs.find? (fun (k, _) => k == "origin") with
+            | some (_, .str o) => o
+            | _ => "transitive"
+          | _ => "transitive"
+      .obj [("capability", .str cap), ("origin", .str origin), ("trace", .arr trace)]
+    -- Predictable
+    let violations := modules.foldl (fun acc m =>
+      acc ++ checkPredictableModule recMap externNames locMap m) []
+    let fnViolations := violations.filter fun v => v.fnName == fnName
+    let violationFacts := fnViolations.map fun v =>
+      .obj ([("gate", .str v.reason), ("hint", .str v.hint)]
+        ++ match v.violationLoc with
+          | some l => [("violation_loc", locToJson (some l))]
+          | none => [])
+    -- Proof
+    let entries := modules.foldl (fun acc m =>
+      acc ++ collectProofStatus externNames recMap locMap m) []
+    let fnProof := entries.find? fun e =>
+      e.bareName == fnName || e.qualName.endsWith ("." ++ fnName)
+    let proofState := match fnProof with
+      | some e => match e.state with
+        | .proved => "proved" | .stale => "stale" | .notProved => "no_proof"
+        | .notEligible => "not_eligible" | .trusted => "trusted"
+      | none => "unknown"
+    let fingerprint := match fnProof with
+      | some e => e.currentFp | none => ""
+    -- Allocation
+    let fnDef := fnLookup.find? (fun (n, _) => n == fnName)
+    let allocInfo := match fnDef with
+      | some (_, f) =>
+        let callees := collectCallsStmts f.body |>.eraseDups
+        let allocs := callees.filter isAllocCall
+        let frees := callees.filter isFreeCall
+        let defers := collectDefersStmts f.body
+        .obj [
+          ("allocates", .arr (allocs.map .str)),
+          ("frees", .arr (frees.map .str)),
+          ("defers", .arr (defers.map .str)),
+          ("returns_allocation", .bool (returnsAllocation f.retTy))
+        ]
+      | none => .obj [("allocates", .arr []), ("frees", .arr []), ("defers", .arr []),
+                       ("returns_allocation", .bool false)]
+    (Val.obj [
+      ("kind", .str "query_answer"),
+      ("query", .str s!"audit:{fnName}"),
+      ("function", .str fnName),
+      ("loc", locToJson eff.loc),
+      ("evidence", .str eff.evidence),
+      ("is_public", .bool eff.isPublic),
+      ("is_trusted", .bool eff.isTrusted),
+      ("authority", .obj [
+        ("capabilities", .arr (concreteCaps.map .str)),
+        ("is_pure", .bool concreteCaps.isEmpty),
+        ("traces", .arr capTraces)
+      ]),
+      ("predictable", .obj [
+        ("passes", .bool fnViolations.isEmpty),
+        ("violations", .arr violationFacts)
+      ]),
+      ("proof", .obj ([
+        ("state", .str proofState),
+        ("fingerprint", .str fingerprint)
+      ] ++ match fnProof with
+        | some e => if e.profileGates.isEmpty then []
+          else [("profile_gates", .arr (e.profileGates.map .str))]
+        | none => [])),
+      ("allocation", allocInfo)
+    ]).render
+
+open Json in
 /-- Query compiler facts by kind and optional function name.
     Query formats:
     - "KIND"                  — filter all facts by kind
@@ -2285,6 +2387,7 @@ def queryFacts (modules : List CModule) (locMap : FnLocMap := [])
     | ["predictable", fnName] => predictableQuery modules locMap fnName
     | ["proof", fnName] => proofQuery modules locMap fnName
     | ["evidence", fnName] => evidenceQuery modules locMap fnName
+    | ["audit", fnName] => auditQuery modules locMap fnName
     | ["fn", fnName] =>
       let allFacts := collectAllFacts modules locMap
       let filtered := allFacts.filter fun v =>
