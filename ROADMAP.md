@@ -13,9 +13,11 @@ Concrete should stay small enough to remain readable, auditable, and mechanicall
 
 The Lean 4 compiler implements the full pipeline:
 
-`Parse → Resolve → Check → Elab → CoreCheck → Mono → Lower → EmitSSA → LLVM IR`
+`Parse -> Resolve -> Check -> Elab -> CoreCheck -> Mono -> Lower -> EmitSSA -> LLVM IR`
 
-The core language, stdlib foundation, report surfaces, and project workflow are real. Phase H proved the language against real programs. Function-level source locations for `--check predictable` / `--report effects` and Elm-style predictable-profile errors are landed. The next question is no longer "can Concrete express this?" but "can Concrete demonstrate its thesis-level ideas clearly enough to justify the project?"
+The core language, stdlib foundation, report surfaces, proof-status diagnostics, and project workflow are real. Phase H proved the language against real programs. Function-level source locations for `--check predictable` / `--report effects`, Elm-style predictable-profile errors, and Elm-style proof/evidence status are landed.
+
+The next question is no longer "can Concrete express this?" but "can Concrete demonstrate its thesis clearly enough to justify the project?"
 
 ## Linear Roadmap
 
@@ -23,96 +25,101 @@ Do this list top-to-bottom. This is the roadmap. Completed history belongs in [C
 
 **Priority rule:** do not start package management, new backends, concurrency, broad proof syntax, source-level contracts, package ecosystems, or showcase polish until the earlier evidence/diagnostic/tooling steps make those later tasks concrete.
 
-Current guardrails: keep specs in Lean-attached / artifact-registry form until obligations and diagnostics work; build a normal fact CLI before the MCP; keep QBE/Yul/other backend work waiting until proof/evidence attachment and the backend trust boundary are trustworthy.
+Current guardrails: keep specs in Lean-attached / artifact-registry form until obligations and diagnostics work; build a normal fact CLI before the MCP; keep QBE/Yul/other backend work waiting until proof/evidence attachment, optimization policy, and the backend trust boundary are trustworthy.
 
-1. make proof-evidence failures Elm-clear: proved, missing, stale, qualified-identity mismatch, body mismatch, unsupported target, obligation failed
-2. add machine-readable diagnostic records for the facts already used by human predictable/effects/proof output
-3. add a machine-readable effects/evidence report for the facts already in the human report
-4. add audit/explain CLI: `--explain authority main.foo` shows why a function has File/Alloc/Unsafe/trusted/proof status, with the call path that created each requirement — this is the first step toward Concrete as a fact-producing audit machine, not just a compiler
-5. add authority path tracing as a first-class query: reviewer asks "why does this function need Network?", compiler answers with the call chain from the function to the capability source
-6. move proof/spec/result attachment out of hardcoded compiler tables and into a reproducible registry artifact
-7. add `--report obligations`: named proof obligations, status, dependencies, linked function/spec/proof IDs
-8. add a source-to-ProofCore extraction report so reviewers can inspect what semantics a proof targets
-9. name Lean-attached specs explicitly; keep source-level spec syntax out until the workflow earns it
-10. prototype semantic diff / trust drift for capability, allocation, recursion, loop-boundedness, blocking, FFI, trusted, evidence level, and proof freshness
-11. prototype module/package policy checks for the existing thesis properties
-12. define the thesis threat/accident model and build one attacker-style demo that introduces authority/resource/proof drift and shows Concrete catching it
-13. validate fixed-capacity usefulness with a no-alloc parser/validator or ring-buffer-style example
-14. design and implement the smallest bounded-capacity type path that makes predictable examples practical
-15. add stack-depth reporting for functions that pass the no-recursion profile
-16. classify host calls, cleanup paths, determinism sources, failure paths, and memory/UB boundaries for predictable/proved code
-17. add report consistency and fact consistency tests: verify that report claims match executable semantics and compiler behavior — reports are product surface, not debug output
-18. add CI/CD evidence gates: tests, predictable check, stale-proof check, report artifact generation, proof-obligation status, trust-drift check
-19. add testing hardening: grammar fuzzing for parser robustness, property-based stdlib traces (Vec/HashMap/String operation sequences), fmt round-trip and idempotency tests
-20. return to stdlib/example polish: split/trim, path decomposition, minimal FFI pressure test
-21. add a compiler fact query CLI over the machine-readable facts
-22. add an MCP server for Claude, ChatGPT, Codex, and research agents to query compiler facts after the CLI is useful
-23. produce an agent-readable performance research packet from benchmark, report, proof/evidence, size, and guardrail facts
-24. define optimization policy before backend work: what transformations are allowed, what evidence must be preserved, what the compiler is permitted to break — backend work without policy will drift
-25. evaluate QBE or another backend only after optimization policy and backend/source evidence boundaries are explicit
-26. establish no-std / freestanding split direction: predictable code should work without an allocator, relevant for embedded / SPARK-like credibility — design before implementing
-27. expand packaging/artifacts only after reports, registry, policies, and CI gates have proved what artifacts must carry
-28. add formatter coverage: idempotency, round-trip correctness, edge-case testing — not before proof/evidence work, but roadmap-visible
-29. improve standalone vs project UX: single-file examples should conveniently use stdlib without a project scaffold — if showing examples stays annoying, adoption suffers
+1. add machine-readable diagnostic records for the facts already used by human predictable/effects/proof-status output
+2. add a machine-readable effects/evidence report for the facts already in the human report
+3. add report-consistency tests that check machine-readable report facts against compiler semantics and selected executable behavior
+4. add a compiler fact query CLI over the machine-readable facts
+5. make authority tracing a first-class query: explain why a function requires File, Network, Process, Alloc, Unsafe, trusted, or blocking authority
+6. add an audit/explain mode that answers review questions from compiler facts instead of forcing reviewers to grep reports
+7. move proof/spec/result attachment out of hardcoded compiler tables and into a reproducible registry artifact
+8. add `--report obligations`: named proof obligations, status, dependencies, linked function/spec/proof IDs
+9. add a source-to-ProofCore extraction report so reviewers can inspect what semantics a proof targets
+10. name Lean-attached specs explicitly; keep source-level spec syntax out until the workflow earns it
+11. prototype semantic diff / trust drift for capability, allocation, recursion, loop-boundedness, blocking, FFI, trusted, evidence level, proof freshness, and proof-obligation status
+12. prototype module/package policy checks for the existing thesis properties
+13. define the thesis threat/accident model and build one attacker-style demo that introduces authority/resource/proof drift and shows Concrete catching it
+14. add CI/CD evidence gates: tests, predictable check, stale-proof check, report artifact generation, proof-obligation status, report-consistency status, policy status, and trust-drift check
+15. add an MCP server for Claude, ChatGPT, Codex, and research agents to query compiler facts after the normal fact CLI is useful
+16. produce an agent-readable performance research packet from benchmark, report, proof/evidence, size, and guardrail facts
+17. make the AI optimization loop explicit: generate packet, propose patch, run benchmarks, run evidence gates, reject patches that weaken proof/trust/predictability unless requested
+18. add grammar fuzzing for parser robustness and diagnostic stability
+19. add property-based tests for formatter/parser round-trips, selected stdlib containers, and fixed traces over Vec, String/Text, HashMap, parser cores, and report facts
+20. add targeted differential/codegen tests only where there is an executable oracle and a known backend risk
+21. validate fixed-capacity usefulness with a no-alloc parser/validator or ring-buffer-style example
+22. design and implement the smallest bounded-capacity type path that makes predictable examples practical
+23. add stack-depth reporting for functions that pass the no-recursion profile
+24. classify host calls, cleanup paths, determinism sources, failure paths, and memory/UB boundaries for predictable/proved code
+25. define the no-std / freestanding split for predictable and embedded-oriented code
+26. define standalone-file versus project UX so examples and small tools can use the stdlib without accidental workflow friction
+27. return to stdlib/example polish: split/trim, path decomposition, minimal FFI pressure test
+28. add a code formatter or make the existing formatter robust enough to be the default documentation/example workflow
+29. expand packaging/artifacts only after reports, registry, policies, and CI gates have proved what artifacts must carry
 30. expand formalization only after obligations, extraction reports, proof diagnostics, and attached specs are artifact-backed
 31. build a broader showcase corpus after the thesis workflow is credible
-32. start concurrency only after the predictable-execution / analyzable-concurrency stance is explicit
-33. pull research-gated language features (const generics, comptime, REPL, broad cleanup/drop redesign, C/Rust differential testing) into implementation only when a current example or proof needs them
-34. broaden the pure Core proof fragment after proof artifacts and diagnostics are usable
-35. stabilize the provable subset as an explicit user-facing target
-36. support artifact-driven user-program proofs end-to-end
-37. push selected compiler-preservation proofs where they protect evidence claims
-38. evaluate loop invariants only after specs and proof obligations are real
-31. evaluate ghost/proof-only code only after a proof-backed example needs it and the erasure story is explicit
-32. curate a public showcase corpus after the evidence workflow is credible
-33. improve onboarding so a newcomer can build one small program without project-author help
-34. define the stability / experimental boundary for public users
-35. sharpen the positioning against Rust, Zig, Lean, SPARK, Ada, Austral, Dafny, F*, and Why3 into one short page
-36. polish the packet/parser flagship example as the canonical thesis demo
-37. build an ELF or binary-format inspector showcase
-38. build an FFI showcase with a `trusted` wrapper and `with(Unsafe)` isolated at the boundary
-39. build an ownership-heavy data-structure showcase with linear ownership and deterministic cleanup
-40. build a privilege-separated tool where capability signatures prove the trusted core cannot touch files/network/processes
-41. stabilize SSA as the backend contract before experimenting with another backend
-42. evaluate QBE as the first lightweight second backend; either land a small path or record a clear rejection
-43. add cross-backend validation if a second backend lands
-44. add source-level debug-info support when codegen maturity becomes the bottleneck
-45. decide the analyzable-concurrency subset before implementing general concurrency
-46. implement OS threads + typed channels only after the concurrency stance is documented
-47. keep evented I/O as a later opt-in model, not the default concurrency story
-48. strengthen `--report alloc` so every user-visible allocation is attributed to a source location and call path
-49. add structural bounded-allocation reports where the compiler can explain the bound
-50. add `BoundedAlloc(N)` only where the bound is structurally explainable
-51. define a tighter bounded-allocation profile between `NoAlloc` and unrestricted allocation
-52. define stack-boundedness reporting and enforcement boundaries
-53. separate source-level stack-depth claims from backend/target stack claims
-54. define backend and target assumptions for timing, stack, calls, layout, undefined behavior, and proof/evidence boundaries
-55. define failure-path boundedness: abort, assertions, impossible branches, OOM-excluded profiles, `defer`, drops, and cleanup paths
-56. define arithmetic-overflow policy for predictable/proved profiles versus performance-oriented profiles
-57. validate predictable execution with bounded examples: fixed-buffer parser, bounded-state controller, fixed-capacity ring buffer, or equivalent
-58. implement incremental compilation artifacts after report/proof/policy artifacts are well-shaped
-59. split interface artifacts from body artifacts
-60. design and parse the package manifest
-61. add version constraints, dependency resolution, and a lockfile
-62. add workspace and multi-package support
-63. add package-aware test selection
-64. validate cross-target FFI/ABI from package boundaries
-65. add module/package authority budgets after package graphs are real
-66. define provenance-aware publishing before public package distribution
-67. add coverage tooling over tests, report facts, policy checks, obligations, and proof artifacts
-68. add editor/LSP support after diagnostics are structured
-69. add dependency auditing for capability, allocation, FFI, trust, evidence, and predictability drift
-70. add release / compatibility discipline when external users depend on the language
-71. research typestate only if a current state-machine/protocol example needs it
-72. research arena allocation after bounded-capacity and allocation-profile work exposes a concrete gap
-73. research target-specific timing models after source-level predictability and backend boundaries are explicit
-74. research exact WCET / runtime models only with a target/hardware model
-75. research exact stack-size claims across optimized machine code only with deeper backend/target integration
-76. research cache / pipeline behavior as target-level analysis, not a source-language promise
-77. research binary-format DSLs only if the packet/ELF examples show repeated parser boilerplate
-78. research hardware capability mapping after source-level capabilities and package policies are stable
-79. research capability sandbox profiles after authority reports and package policies are useful
-80. research a Miri-style interpreter only after the memory/UB model and proof subset are precise enough to execute symbolically
+32. define optimization policy before substantial backend work: allowed optimizations, evidence-preservation expectations, debug/release behavior, and report/codegen validation expectations
+33. evaluate QBE or another backend only after backend/source evidence boundaries and optimization policy are explicit
+34. start concurrency only after the predictable-execution / analyzable-concurrency stance is explicit
+35. pull research-gated language features into implementation only when a current example or proof needs them
+36. broaden the pure Core proof fragment after proof artifacts and diagnostics are usable
+37. stabilize the provable subset as an explicit user-facing target
+38. support artifact-driven user-program proofs end-to-end
+39. push selected compiler-preservation proofs where they protect evidence claims
+40. evaluate contracts / source-level preconditions only after Lean-attached specs, obligations, diagnostics, and the registry work
+41. evaluate loop invariants only after specs and proof obligations are real
+42. evaluate ghost/proof-only code only after a proof-backed example needs it and the erasure story is explicit
+43. curate a public showcase corpus after the evidence workflow is credible
+44. improve onboarding so a newcomer can build one small program without project-author help
+45. define the stability / experimental boundary for public users
+46. sharpen the positioning against Rust, Zig, Lean 4, SPARK/Ada, Austral, Dafny, F*, and Why3 into one short page
+47. polish the packet/parser flagship example as the canonical thesis demo
+48. build an ELF or binary-format inspector showcase
+49. build an FFI showcase with a `trusted` wrapper and `with(Unsafe)` isolated at the boundary
+50. build an ownership-heavy data-structure showcase with linear ownership and deterministic cleanup
+51. build a privilege-separated tool where capability signatures prove the trusted core cannot touch files/network/processes
+52. strengthen memory/layout audit reports with source locations, qualified names, repr/packed/align facts, trusted-pointer boundaries, and backend/target caveats
+53. stabilize SSA as the backend contract before experimenting with another backend
+54. evaluate QBE as the first lightweight second backend; either land a small path or record a clear rejection
+55. add cross-backend validation if a second backend lands
+56. add source-level debug-info support when codegen maturity becomes the bottleneck
+57. decide the analyzable-concurrency subset before implementing general concurrency
+58. implement OS threads + typed channels only after the concurrency stance is documented
+59. keep evented I/O as a later opt-in model, not the default concurrency story
+60. strengthen `--report alloc` so every user-visible allocation is attributed to a source location and call path
+61. add structural bounded-allocation reports where the compiler can explain the bound
+62. add `BoundedAlloc(N)` only where the bound is structurally explainable
+63. evaluate const-generics / comptime only when bounded capacity or artifact generation needs a narrow version of it
+64. define a tighter bounded-allocation profile between `NoAlloc` and unrestricted allocation
+65. define stack-boundedness reporting and enforcement boundaries
+66. separate source-level stack-depth claims from backend/target stack claims
+67. define backend and target assumptions for timing, stack, calls, layout, undefined behavior, and proof/evidence boundaries
+68. define failure-path boundedness: abort, assertions, impossible branches, OOM-excluded profiles, `defer`, drops, and cleanup paths
+69. define arithmetic-overflow policy for predictable/proved profiles versus performance-oriented profiles
+70. validate predictable execution with bounded examples: fixed-buffer parser, bounded-state controller, fixed-capacity ring buffer, or equivalent
+71. implement incremental compilation artifacts after report/proof/policy artifacts are well-shaped
+72. split interface artifacts from body artifacts
+73. design and parse the package manifest
+74. add version constraints, dependency resolution, and a lockfile
+75. add workspace and multi-package support
+76. add package-aware test selection
+77. validate cross-target FFI/ABI from package boundaries
+78. add module/package authority budgets after package graphs are real
+79. define provenance-aware publishing before public package distribution
+80. add coverage tooling over tests, report facts, policy checks, obligations, and proof artifacts
+81. add editor/LSP support after diagnostics are structured
+82. add dependency auditing for capability, allocation, FFI, trust, evidence, predictability, and proof-obligation drift
+83. add release / compatibility discipline when external users depend on the language
+84. research typestate only if a current state-machine/protocol example needs it
+85. research arena allocation after bounded-capacity and allocation-profile work exposes a concrete gap
+86. research target-specific timing models after source-level predictability and backend boundaries are explicit
+87. research exact WCET / runtime models only with a target/hardware model
+88. research exact stack-size claims across optimized machine code only with deeper backend/target integration
+89. research cache / pipeline behavior as target-level analysis, not a source-language promise
+90. research binary-format DSLs only if the packet/ELF examples show repeated parser boilerplate
+91. research hardware capability mapping after source-level capabilities and package policies are stable
+92. research capability sandbox profiles after authority reports and package policies are useful
+93. research a Miri-style interpreter only after the memory/UB model and proof subset are precise enough to execute symbolically
 
 ## Reference Map
 

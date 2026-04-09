@@ -8,9 +8,11 @@ For feature admission criteria, see [DESIGN_POLICY.md](DESIGN_POLICY.md). For re
 
 ## What Concrete Is
 
-A systems language where capability requirements, trust boundaries, and ownership are visible in every function signature — written in Lean 4 so the compiler itself can be a proof target.
+A small systems language for evidence-carrying software.
 
-The bet is that for high-consequence code (firmware, security boundaries, safety-critical components), being able to answer "what authority does this module have?" and "which functions are pure enough to prove?" matters more than having a large ecosystem or maximal expressiveness.
+Concrete is written in Lean 4 and is designed so capability requirements, resource risk, trust boundaries, and proof evidence can become compiler facts. It is not a proof assistant; it is the no-GC systems language that Lean 4 reasons about.
+
+The bet is that for high-consequence code (firmware, security boundaries, safety-critical components), being able to answer "what authority does this module have?", "how predictable is this core?", "which assumptions are trusted?", and "which claims are proved?" matters more than having a large ecosystem or maximal expressiveness.
 
 The deeper thesis is that Concrete should make four things explicit enough to audit, restrict, and prove:
 
@@ -23,9 +25,11 @@ That is the sense in which Concrete is trying to make operational power explicit
 
 Short version:
 
-1. Rust makes memory safety explicit.
-2. Lean makes proofs explicit.
-3. Concrete is trying to make operational power explicit.
+1. Rust makes memory-safety discipline explicit.
+2. Zig makes low-level control explicit.
+3. SPARK/Ada makes specifications, obligations, and assurance workflow explicit.
+4. Lean 4 makes proof a practical implementation and theorem-proving environment.
+5. Concrete is trying to make operational power and evidence explicit in native systems code.
 
 ## The Three-Way Trust Split
 
@@ -156,9 +160,9 @@ Target use cases:
 
 **vs. Zig:** shares low-level explicitness, but pushes harder on ownership, capability tracking, and proof structure.
 
-**vs. verification languages (F\*, SPARK):** keeps low-level runtime, FFI, layout, and ownership first-class.
+**vs. verification languages (F\*, SPARK/Ada):** wants the assurance discipline — specs, obligations, proof, trusted assumptions — while keeping low-level runtime, FFI, layout, explicit capabilities, and ownership first-class.
 
-**vs. Lean:** Concrete is not a proof assistant. It is the low-level language that Lean 4 reasons about.
+**vs. Lean:** Concrete is not a proof assistant. It is the low-level language that Lean 4 reasons about, and Lean 4 is also the implementation language of the compiler.
 
 The intended relationship is:
 

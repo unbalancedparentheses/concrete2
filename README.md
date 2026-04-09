@@ -13,11 +13,13 @@
 
 >Most ideas come from previous ideas - Alan C. Kay, The Early History Of Smalltalk
 
-Concrete is a systems programming language where the compiler makes operational power explicit.
+Concrete is a small systems programming language for evidence-carrying software.
+
+It is built in Lean 4 and aims to make authority, resource risk, trust boundaries, and proof evidence visible to the compiler, reviewers, CI, and AI tools.
 
 ## The Language
 
-Concrete is a compiled, statically typed systems language that targets LLVM IR.
+Concrete is a compiled, statically typed systems language that targets LLVM IR. It is not a proof assistant; it is a no-GC systems language that Lean 4 can reason about.
 
 - **No garbage collector.** Memory is managed through ownership and borrowing, checked at compile time. There is no runtime GC, no reference counting behind the scenes.
 - **Linear type system.** Every non-Copy value must be consumed exactly once. The compiler rejects programs that leak, double-free, or use after move.
@@ -30,7 +32,7 @@ The compiler is written in Lean 4.
 
 ## The Thesis
 
-Most systems languages give you safety or control. Concrete is trying to also make the following visible at the function boundary:
+Most systems languages give you safety or control. Concrete is trying to be a small, modern, SPARK-like systems language where the following are visible at the function boundary:
 
 1. what authority a function has (capabilities)
 2. whether it allocates, blocks, recurses, or runs unboundedly
@@ -40,8 +42,10 @@ Most systems languages give you safety or control. Concrete is trying to also ma
 Short version:
 
 - Rust makes memory safety explicit.
-- Lean makes proofs explicit.
-- Concrete is trying to make operational power explicit.
+- Zig makes low-level control explicit.
+- SPARK makes specifications and assurance central.
+- Lean 4 makes proof a practical implementation and theorem-proving environment.
+- Concrete is trying to make operational power and evidence explicit in native systems code.
 
 ## What This Looks Like
 
@@ -124,17 +128,19 @@ Today, the first proof slice is live:
 
 1. `parse_byte` correctness: `∀ a b, parse_byte(a, b) = a + b`
 2. `check_length` bounds guard: `∀ len < 10, rejects` and `∀ len ≥ 10, accepts`
-3. the report shows those functions as `proved`
+3. parser-core composition proofs in the packet-decoder proof slice
+4. the report shows those functions as `proved`
 
-The next proof step is to move from guard-level theorems to deeper parser-core safety properties.
+`--report proof-status` shows proved, stale, missing, ineligible, and trusted-proof-boundary states with source snippets, fingerprints, and hints.
 
 ## Why This Is Different
 
 1. **Rust** gives strong memory safety, but most operational properties (does it block? does it allocate? are its loops bounded?) are still implicit.
 2. **Zig** gives explicit systems control, but not compiler-visible effects or evidence levels.
-3. **Lean** gives theorem proving, but is not a no-GC systems language with explicit authority boundaries.
+3. **SPARK/Ada** gives contracts, proof obligations, and high-assurance workflow, but not a small modern systems surface with explicit function-level authority.
+4. **Lean 4** gives theorem proving, but is not a no-GC systems language with explicit authority boundaries.
 
-Concrete is trying to combine: capability-visible architecture, predictable execution checks, and proof-backed evidence tied to compiler artifacts.
+Concrete is trying to combine: Zig-like explicit systems control, SPARK-like assurance discipline, Lean 4-backed proof, capability-visible architecture, predictable execution checks, and proof-backed evidence tied to compiler artifacts.
 
 ## Current State
 
@@ -167,6 +173,7 @@ For priorities, see [ROADMAP.md](ROADMAP.md). For landed milestones, see [CHANGE
 ```bash
 make build
 .lake/build/bin/concrete examples/thesis_demo/src/main.con --report effects
+.lake/build/bin/concrete examples/thesis_demo/src/main.con --report proof-status
 .lake/build/bin/concrete examples/thesis_demo/src/main.con --check predictable
 .lake/build/bin/concrete examples/snippets/hello_world.con -o /tmp/hello && /tmp/hello
 ```

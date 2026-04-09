@@ -2,7 +2,9 @@
 
 **Status:** Open
 
-Concrete is trying to become a systems language where four things are explicit enough to audit, restrict, and prove at the function boundary.
+Concrete is trying to become a small systems language for evidence-carrying software.
+
+It is built in Lean 4 and aims to make four things explicit enough to audit, restrict, report, and prove at the function boundary.
 
 ## The Four Axes
 
@@ -63,6 +65,8 @@ This is the proof-and-evidence side of the thesis.
 
 Concrete is not trying to be "just another safe systems language."
 
+It is also not trying to be "Lean without a garbage collector" or "Rust with proofs."
+
 The deeper claim is:
 
 1. authority can be visible
@@ -80,7 +84,8 @@ Concrete is trying to make all four work together:
 
 1. Rust-like seriousness about compiler-enforced restrictions
 2. Zig-like explicitness and low-level control
-3. Lean-adjacent proof and artifact story
+3. SPARK/Ada-like attention to specs, proof obligations, and assurance workflow
+4. Lean 4-backed proof and artifact story
 
 The point is not to beat those languages at their own center of gravity. The point is to combine:
 
