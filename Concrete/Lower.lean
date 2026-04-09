@@ -1278,9 +1278,19 @@ private partial def emitDeferredUntilLoop : LowerM Unit := do
 
 partial def lowerStmt (stmt : CStmt) : LowerM Unit := do
   match stmt with
-  | .letDecl name _mutable _ty value =>
+  | .letDecl name mutable ty value =>
     let val ← lowerExpr value
-    setVar name val
+    -- Mutable arrays need a stable alloca so index-assignment works on a pointer.
+    -- Without this, `let mut d = b.data; d[0] = 99;` would try to GEP/store
+    -- into a value register instead of a stack allocation.
+    match mutable, ty with
+    | true, .array _ _ =>
+      let allocaReg ← freshReg s!"{name}.arr."
+      emit (.alloca allocaReg ty)
+      emit (.store val (.reg allocaReg ty))
+      addPromotedAlloca name allocaReg ty
+    | _, _ =>
+      setVar name val
 
   | .assign name value =>
     let val ← lowerExpr value
