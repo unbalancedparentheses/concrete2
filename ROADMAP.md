@@ -85,46 +85,49 @@ Current guardrails: keep specs in Lean-attached / artifact-registry form until o
 56. build a privilege-separated tool where capability signatures prove the trusted core cannot touch files/network/processes
 57. strengthen memory/layout audit reports with source locations, qualified names, repr/packed/align facts, trusted-pointer boundaries, and backend/target caveats
 58. stabilize SSA as the backend contract before experimenting with another backend
-59. evaluate QBE as the first lightweight second backend; either land a small path or record a clear rejection
-60. add cross-backend validation if a second backend lands
-61. add source-level debug-info support when codegen maturity becomes the bottleneck
-62. decide the analyzable-concurrency subset before implementing general concurrency
-63. implement OS threads + typed channels only after the concurrency stance is documented
-64. keep evented I/O as a later opt-in model, not the default concurrency story
-65. strengthen `--report alloc` so every user-visible allocation is attributed to a source location and call path
-66. add structural bounded-allocation reports where the compiler can explain the bound
-67. add `BoundedAlloc(N)` only where the bound is structurally explainable
-68. evaluate const-generics / comptime only when bounded capacity or artifact generation needs a narrow version of it
-69. define a tighter bounded-allocation profile between `NoAlloc` and unrestricted allocation
-70. define stack-boundedness reporting and enforcement boundaries
-71. separate source-level stack-depth claims from backend/target stack claims
-72. define backend and target assumptions for timing, stack, calls, layout, undefined behavior, and proof/evidence boundaries
-73. define failure-path boundedness: abort, assertions, impossible branches, OOM-excluded profiles, `defer`, drops, and cleanup paths
-74. define arithmetic-overflow policy for predictable/proved profiles versus performance-oriented profiles
-75. validate predictable execution with bounded examples: fixed-buffer parser, bounded-state controller, fixed-capacity ring buffer, or equivalent
-76. implement incremental compilation artifacts after report/proof/policy/interface artifacts are well-shaped: parsed/resolved/typed/lowered caches, dependency keys, invalidation rules, fact/proof invalidation, and clear rebuild explanations
-77. split interface artifacts from body artifacts at package/workspace scale
-78. design and parse the package manifest
-79. add version constraints, dependency resolution, and a lockfile
-80. add workspace and multi-package support
-81. add package-aware test selection
-82. validate cross-target FFI/ABI from package boundaries
-83. add module/package authority budgets after package graphs are real
-84. define provenance-aware publishing before public package distribution
-85. add coverage tooling over tests, report facts, policy checks, obligations, and proof artifacts
-86. add compiler-as-service / editor / LSP support after diagnostics and facts are structured; expose parser/checker/report/query entrypoints without forcing full executable compilation
-87. add dependency auditing for capability, allocation, FFI, trust, evidence, predictability, and proof-obligation drift
-88. add release / compatibility discipline when external users depend on the language
-89. research typestate only if a current state-machine/protocol example needs it
-90. research arena allocation after bounded-capacity and allocation-profile work exposes a concrete gap
-91. research target-specific timing models after source-level predictability and backend boundaries are explicit
-92. research exact WCET / runtime models only with a target/hardware model
-93. research exact stack-size claims across optimized machine code only with deeper backend/target integration
-94. research cache / pipeline behavior as target-level analysis, not a source-language promise
-95. research binary-format DSLs only if the packet/ELF examples show repeated parser boilerplate
-96. research hardware capability mapping after source-level capabilities and package policies are stable
-97. research capability sandbox profiles after authority reports and package policies are useful
-98. research a Miri-style interpreter only after the memory/UB model and proof subset are precise enough to execute symbolically
+59. evaluate a normalized mid-level IR only after traceability reports expose a concrete gap between typed Core and SSA; do not add a Rust-MIR-sized layer by default
+60. define a target/toolchain model before serious cross-compilation: target triple, data layout, linker, runtime/startup files, libc/no-libc expectation, clang/llc boundary, sanitizer/coverage hooks, and target assumptions
+61. evaluate sanitizer, source-coverage, LTO, and toolchain-integrated optimization support only after the backend contract and target/toolchain model are explicit
+62. evaluate QBE as the first lightweight second backend; either land a small path or record a clear rejection
+63. add cross-backend validation if a second backend lands
+64. add source-level debug-info support when codegen maturity becomes the bottleneck
+65. decide the analyzable-concurrency subset before implementing general concurrency
+66. implement OS threads + typed channels only after the concurrency stance is documented
+67. keep evented I/O as a later opt-in model, not the default concurrency story
+68. strengthen `--report alloc` so every user-visible allocation is attributed to a source location and call path
+69. add structural bounded-allocation reports where the compiler can explain the bound
+70. add `BoundedAlloc(N)` only where the bound is structurally explainable
+71. evaluate const-generics / comptime only when bounded capacity or artifact generation needs a narrow version of it
+72. define a tighter bounded-allocation profile between `NoAlloc` and unrestricted allocation
+73. define stack-boundedness reporting and enforcement boundaries
+74. separate source-level stack-depth claims from backend/target stack claims
+75. define backend and target assumptions for timing, stack, calls, layout, undefined behavior, and proof/evidence boundaries
+76. define failure-path boundedness: abort, assertions, impossible branches, OOM-excluded profiles, `defer`, drops, and cleanup paths
+77. define arithmetic-overflow policy for predictable/proved profiles versus performance-oriented profiles
+78. validate predictable execution with bounded examples: fixed-buffer parser, bounded-state controller, fixed-capacity ring buffer, or equivalent
+79. implement incremental compilation artifacts after report/proof/policy/interface artifacts are well-shaped: parsed/resolved/typed/lowered caches, dependency keys, invalidation rules, fact/proof invalidation, and clear rebuild explanations
+80. split interface artifacts from body artifacts at package/workspace scale
+81. design and parse the package manifest
+82. add version constraints, dependency resolution, and a lockfile
+83. add workspace and multi-package support
+84. add package-aware test selection
+85. validate cross-target FFI/ABI from package boundaries
+86. add module/package authority budgets after package graphs are real
+87. define provenance-aware publishing before public package distribution
+88. add coverage tooling over tests, report facts, policy checks, obligations, and proof artifacts
+89. add compiler-as-service / editor / LSP support after diagnostics and facts are structured; expose parser/checker/report/query entrypoints without forcing full executable compilation
+90. add dependency auditing for capability, allocation, FFI, trust, evidence, predictability, and proof-obligation drift
+91. add release / compatibility discipline when external users depend on the language
+92. research typestate only if a current state-machine/protocol example needs it
+93. research arena allocation after bounded-capacity and allocation-profile work exposes a concrete gap
+94. research target-specific timing models after source-level predictability and backend boundaries are explicit
+95. research exact WCET / runtime models only with a target/hardware model
+96. research exact stack-size claims across optimized machine code only with deeper backend/target integration
+97. research cache / pipeline behavior as target-level analysis, not a source-language promise
+98. research binary-format DSLs only if the packet/ELF examples show repeated parser boilerplate
+99. research hardware capability mapping after source-level capabilities and package policies are stable
+100. research capability sandbox profiles after authority reports and package policies are useful
+101. research a Miri-style interpreter only after the memory/UB model and proof subset are precise enough to execute symbolically
 
 ## Reference Map
 
