@@ -17,38 +17,44 @@ The Lean 4 compiler implements the full pipeline:
 
 The core language, stdlib foundation, report surfaces, and project workflow are real. Phase H proved the language against real programs. The next question is no longer "can Concrete express this?" but "can Concrete demonstrate its thesis-level ideas clearly enough to justify the project?"
 
-## Linear Execution Order
+## Current Linear Plan
 
 Use this as the current critical path. The numbered sections below are backlog areas and reference inventories. This list is the execution order unless evidence forces a change.
 
 **Priority rule:** work from this list top-to-bottom. Do not start package management, new backends, concurrency, broad proof syntax, source-level contracts, package ecosystems, or showcase polish just because they have their own section below.
 
-**Current guardrails:**
-1. finish or consciously set aside the current adversarial-test work before starting another broad test-writing pass
-2. add source file / line / span plumbing before rewriting thesis-facing errors; Elm-clear diagnostics need locations and snippets, not just nicer prose
-3. keep specs in Lean-attached / artifact-registry form until proof obligations, proof diagnostics, source locations, and stale-proof reporting are usable
-4. postpone QBE/Yul/other backend work until proof attachment, evidence artifacts, predictable-profile claims, and the backend trust boundary are trustworthy
-5. keep the next implementation small: source locations in `--check predictable` / `--report effects`, then upgrade those errors
+Current guardrails: finish or set aside the current adversarial-test work before starting another broad test-writing pass. Source locations come before Elm-clear errors; specs stay in Lean-attached / artifact-registry form until obligations and diagnostics work; QBE/Yul/other backend work waits until proof/evidence attachment and the backend trust boundary are trustworthy.
 
-1. finish the first thesis demo: predictable packet-decoder core, non-predictable I/O shell, effects/evidence report, proof-backed parser property, adversarial regressions
-2. add source locations to thesis-facing diagnostics and reports
-3. make predictable-profile failures Elm-clear: recursion, unbounded loops, allocation, blocking, FFI, trusted/host boundary
-4. make proof-evidence failures Elm-clear: proved, missing, stale, qualified-identity mismatch, body mismatch, unsupported target, obligation failed
-5. add a machine-readable effects/evidence report for the facts already in the human report
-6. move proof/spec/result attachment out of hardcoded compiler tables and into a reproducible registry artifact
-7. add `--report obligations`: named proof obligations, status, dependencies, linked function/spec/proof IDs
-8. add a source-to-ProofCore extraction report so reviewers can inspect what semantics a proof targets
-9. name Lean-attached specs explicitly; keep source-level spec syntax out until the workflow earns it
-10. prototype semantic diff / trust drift for capability, allocation, recursion, loop-boundedness, blocking, FFI, trusted, evidence level, and proof freshness
-11. prototype module/package policy checks for the existing thesis properties
-12. define the thesis threat/accident model and build one attacker-style demo that introduces authority/resource/proof drift and shows Concrete catching it
-13. validate fixed-capacity usefulness with a no-alloc parser/validator or ring-buffer-style example
-14. design and implement the smallest bounded-capacity type path that makes predictable examples practical
-15. add stack-depth reporting for functions that pass the no-recursion profile
-16. classify host calls, cleanup paths, determinism sources, failure paths, and memory/UB boundaries for predictable/proved code
-17. add CI/CD evidence gates: tests, predictable check, stale-proof check, report artifact generation, proof-obligation status, trust-drift check
-18. return to stdlib/example polish: split/trim, path decomposition, minimal FFI pressure test
-19. only then expand packaging/artifacts, broader formalization, showcase corpus, QBE/backend experiments, concurrency, and long-horizon research
+1. inspect existing source location plumbing; do not assume a broad IR-threading refactor is required
+2. add function-level source locations to `--check predictable`
+3. add function-level source locations to `--report effects`
+4. add violation-level locations where already available: offending loop, call, capability declaration, extern, allocation, trusted/host boundary
+5. make predictable-profile failures Elm-clear: recursion, unbounded loops, allocation, blocking, FFI, trusted/host boundary
+6. make proof-evidence failures Elm-clear: proved, missing, stale, qualified-identity mismatch, body mismatch, unsupported target, obligation failed
+7. add machine-readable diagnostic records for the facts already used by human predictable/effects/proof output
+8. add a machine-readable effects/evidence report for the facts already in the human report
+9. move proof/spec/result attachment out of hardcoded compiler tables and into a reproducible registry artifact
+10. add `--report obligations`: named proof obligations, status, dependencies, linked function/spec/proof IDs
+11. add a source-to-ProofCore extraction report so reviewers can inspect what semantics a proof targets
+12. name Lean-attached specs explicitly; keep source-level spec syntax out until the workflow earns it
+13. prototype semantic diff / trust drift for capability, allocation, recursion, loop-boundedness, blocking, FFI, trusted, evidence level, and proof freshness
+14. prototype module/package policy checks for the existing thesis properties
+15. define the thesis threat/accident model and build one attacker-style demo that introduces authority/resource/proof drift and shows Concrete catching it
+16. validate fixed-capacity usefulness with a no-alloc parser/validator or ring-buffer-style example
+17. design and implement the smallest bounded-capacity type path that makes predictable examples practical
+18. add stack-depth reporting for functions that pass the no-recursion profile
+19. classify host calls, cleanup paths, determinism sources, failure paths, and memory/UB boundaries for predictable/proved code
+20. add CI/CD evidence gates: tests, predictable check, stale-proof check, report artifact generation, proof-obligation status, trust-drift check
+21. return to stdlib/example polish: split/trim, path decomposition, minimal FFI pressure test
+22. add a compiler fact query CLI over the machine-readable facts
+23. add an agent / MCP query surface over the same facts after the CLI is useful
+24. produce an agent-readable performance research packet from benchmark, report, proof/evidence, size, and guardrail facts
+25. expand packaging/artifacts only after reports, registry, policies, and CI gates have proved what artifacts must carry
+26. expand formalization only after obligations, extraction reports, proof diagnostics, and attached specs are artifact-backed
+27. build a broader showcase corpus after the thesis workflow is credible
+28. evaluate QBE or another backend only after backend/source evidence boundaries are explicit
+29. start concurrency only after the predictable-execution / analyzable-concurrency stance is explicit
+30. pull research-gated language features into implementation only when a current example or proof needs them
 
 ## 1. Real-Program Validation Complete
 
@@ -71,7 +77,7 @@ Phase H did its job: it exposed real-program pressure, forced the linearity and 
 
 ## 2. Thesis Validation
 
-**Status:** in progress. This is now the main track. Follow the **Linear Execution Order** above before pulling in work from later phases.
+**Status:** in progress. This is now the main track. Follow the **Current Linear Plan** above before pulling in work from later backlog sections.
 
 Concrete's deepest claim is the combination of:
 
@@ -111,28 +117,6 @@ This phase exists to test whether those ideas hold up in implementation, reports
 27. mark which report claims are reported, enforced, proved, or trusted-assumption-based — done when the evidence level is visible in the unified report
 28. add adversarial validation for every thesis claim — done when each major reported, enforced, or proved property has targeted pass cases, fail cases, near-miss cases, misleading cases designed to trick the checker, and regressions from real bugs
 29. validate the thesis with flagship bounded and evidence-carrying examples — done when a small set of examples demonstrates capability visibility, predictable execution, proof-backed evidence, policy enforcement, and adversarial hardening together
-
-**Immediate Order Inside Phase 2:**
-1. stabilize the first predictable-execution slice with tests and clear per-function diagnostics
-2. expose evidence level in the unified report so "reported", "enforced", "proved", and "trusted assumption" are visible distinctions
-3. use the packet decoder as the first flagship thesis example: the parsing core should pass the predictable profile while the I/O shell is expected to fail
-4. prove one small parser-core property from that example through the Concrete-to-Lean pipeline so the first end-to-end thesis demo is visible and concrete
-5. harden each thesis claim with adversarial tests so the demo is not only persuasive when it works, but difficult to fake accidentally
-6. upgrade proof/predictability diagnostics before adding more proof syntax — stale proof, body mismatch, blocking, allocation, unbounded loop, recursion, and capability errors should say what happened, why it matters, and what the likely next edit is
-
-**Proof Workflow Sequence:**
-
-Do proof workflow before proof syntax.
-
-1. proof failure diagnostics — done when proof states distinguish `proved`, `proof stale`, `proof missing`, body/fingerprint mismatch, obligation failure, and unsupported proof target
-2. inspectable proof obligations — done when a report or artifact can show obligations such as `decode_header_rejects_short`, their status, and their dependencies
-3. source-to-ProofCore extraction report — done when users can inspect what checked Concrete semantics were extracted for proof
-4. Lean-attached specs first — done when the current proof slice can name the spec/theorem for a Concrete function without changing Concrete source syntax
-5. external spec/proof/result registry next — done when specs, proof identities, proof results, fingerprints, obligation names, and trusted assumptions are loaded from a reproducible artifact instead of hardcoded compiler tables
-6. optional source-level spec markers later — done only if the Lean-attached/external workflow works and users need small Concrete syntax to point at specs or contracts
-7. loop invariants — done when specs and obligations exist and the prover needs user-provided facts to reason through bounded loops
-8. ghost code — done only after a proof-backed example needs proof-only state, and the erasure/trust story is explicit
-9. effectful-proof boundary model — done when proofs can clearly stop at or model capabilities, FFI, `trusted`, blocking host calls, allocation, and backend assumptions
 
 **References:** [core-thesis](research/thesis-validation/core-thesis.md), [objective-matrix](research/thesis-validation/objective-matrix.md), [thesis-validation](research/thesis-validation/thesis-validation.md), [noalloc-enforcement](research/thesis-validation/noalloc-enforcement.md), [boundedness-reports](research/thesis-validation/boundedness-reports.md), [proof-slice](research/thesis-validation/proof-slice.md), [validation-examples](research/thesis-validation/validation-examples.md), [concrete-to-lean-pipeline](research/proof-evidence/concrete-to-lean-pipeline.md), [spec-attachment](research/proof-evidence/spec-attachment.md), [effectful-proofs](research/proof-evidence/effectful-proofs.md), [provable-systems-subset](research/proof-evidence/provable-systems-subset.md), [provable-properties](research/proof-evidence/provable-properties.md), [predictable-execution](research/predictable-execution/predictable-execution.md), [effect-taxonomy](research/predictable-execution/effect-taxonomy.md), [allocation-budgets](research/stdlib-runtime/allocation-budgets.md), [execution-cost](research/stdlib-runtime/execution-cost.md), [backend-traceability](research/compiler/backend-traceability.md), [diagnostic-ux](research/compiler/diagnostic-ux.md), [failure-semantics](research/language/failure-semantics.md), [memory-ub-boundary](research/language/memory-ub-boundary.md), [trusted-code-policy](research/language/trusted-code-policy.md), [interrupt-signal-model](research/language/interrupt-signal-model.md)
 
