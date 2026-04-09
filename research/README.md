@@ -119,6 +119,7 @@ If you want the highest-leverage current research first:
 - [proof-evidence/formalization-breakdown.md](proof-evidence/formalization-breakdown.md) — full proof effort split into tracks and dependencies (`P0`, `Open`)
 - [proof-evidence/proving-concrete-functions-in-lean.md](proof-evidence/proving-concrete-functions-in-lean.md) — how selected Concrete functions could be proved in Lean 4 (`P0`, `Open`)
 - [proof-evidence/proof-addon-architecture.md](proof-evidence/proof-addon-architecture.md) — proof automation as an artifact-consuming addon workflow (`P0`, `Open`)
+- [proof-evidence/proof-ux-and-verification-influences.md](proof-evidence/proof-ux-and-verification-influences.md) — reduced list of still-new proof/workflow ideas worth copying from SPARK, Dafny, Why3, and F* (`P1`, `Open`)
 - [proof-evidence/proof-evidence-artifacts.md](proof-evidence/proof-evidence-artifacts.md) — tying reports, artifacts, proofs, and reproducibility together (`P0`, `Open`)
 - [proof-evidence/evidence-review-workflows.md](proof-evidence/evidence-review-workflows.md) — evidence bundles, review workflows, and maintained reports (`P0`, `Open`)
 - [proof-evidence/trust-multipliers.md](proof-evidence/trust-multipliers.md) — combined differentiators across proof, runtime, and evidence (`P0`, `Open`)

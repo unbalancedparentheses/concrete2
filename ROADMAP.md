@@ -127,7 +127,7 @@ This phase exists to test whether those ideas hold up in implementation, reports
 5. user-program proof workflow, artifact-driven — done when a user can prove a property end-to-end
 6. push selected compiler-preservation work where tractable — done when preservation proofs cover the highest-value passes
 
-**References:** [formalization-breakdown](research/proof-evidence/formalization-breakdown.md), [formalization-roi](research/proof-evidence/formalization-roi.md), [proving-concrete-functions-in-lean](research/proof-evidence/proving-concrete-functions-in-lean.md), [proof-addon-architecture](research/proof-evidence/proof-addon-architecture.md)
+**References:** [formalization-breakdown](research/proof-evidence/formalization-breakdown.md), [formalization-roi](research/proof-evidence/formalization-roi.md), [proving-concrete-functions-in-lean](research/proof-evidence/proving-concrete-functions-in-lean.md), [proof-addon-architecture](research/proof-evidence/proof-addon-architecture.md), [proof-ux-and-verification-influences](research/proof-evidence/proof-ux-and-verification-influences.md)
 
 ## 6. Adoption and Showcase
 
