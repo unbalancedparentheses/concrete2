@@ -30,10 +30,18 @@ partial def buildFnLocMap (modules : List Module) (file : String) (pfx : String 
     let subLocs := buildFnLocMap m.submodules file qualPrefix
     acc ++ fnLocs ++ implLocs ++ traitImplLocs ++ subLocs) []
 
-/-- Format a source location as file:line. -/
-def fmtLoc (locMap : FnLocMap) (qualName : String) : String :=
+/-- Structured source location: (file, line). -/
+abbrev SourceLoc := String × Nat
+
+/-- Look up a function's source location. -/
+def lookupLoc (locMap : FnLocMap) (qualName : String) : Option SourceLoc :=
   match locMap.find? fun (n, _, _) => n == qualName with
-  | some (_, file, sp) => s!"{file}:{sp.line}"
+  | some (_, file, sp) => some (file, sp.line)
+  | none => none
+
+/-- Format a source location as "file:line". -/
+def fmtLoc : Option SourceLoc → String
+  | some (file, line) => s!"{file}:{line}"
   | none => ""
 
 -- ============================================================
@@ -1238,7 +1246,7 @@ private structure FnEffects where
   isTrusted  : Bool
   isPublic   : Bool
   evidence   : String       -- "enforced", "reported", or "trusted-assumption"
-  loc        : String       -- "file:line" or "" if unavailable
+  loc        : Option SourceLoc  -- structured (file, line), not pre-formatted
 
 private def fmtEffectsRow (e : FnEffects) : String :=
   let pub := if e.isPublic then "pub " else "    "
@@ -1252,7 +1260,7 @@ private def fmtEffectsRow (e : FnEffects) : String :=
     else "none"
   let trusted := if e.isTrusted then "yes" else "no"
   let ffi := if e.crossesFfi then "yes" else "no"
-  let locSuffix := if e.loc == "" then "" else s!"  @ {e.loc}"
+  let locSuffix := match e.loc with | some l => s!"  @ {fmtLoc (some l)}" | none => ""
   s!"  {pub}{e.name}\n    caps: {caps}  alloc: {allocClass}  recursion: {e.recursion}  loops: {e.loops}  ffi: {ffi}  trusted: {trusted}  evidence: {e.evidence}{locSuffix}"
 
 private partial def effectsForModule
@@ -1306,7 +1314,7 @@ private partial def effectsForModule
       isTrusted := f.isTrusted
       isPublic := f.isPublic
       evidence := evidenceLevel
-      loc := fmtLoc locMap qualName }
+      loc := lookupLoc locMap qualName }
   fns ++ m.submodules.foldl (fun acc sub =>
     acc ++ effectsForModule externNames recMap locMap sub qualPrefix) []
 
@@ -1395,7 +1403,7 @@ private def blockingCaps : List String :=
 structure ProfileViolation where
   fnName   : String
   reason   : String
-  loc      : String := ""   -- "file:line" or "" if unavailable
+  loc      : Option SourceLoc := none
 
 private partial def checkPredictableModule
     (recMap : List (String × RecursionKind × List String))
@@ -1405,7 +1413,7 @@ private partial def checkPredictableModule
   let qualPrefix := if modulePath == "" then m.name else modulePath ++ "." ++ m.name
   let fnViolations := m.functions.foldl (fun acc f =>
     let qualName := qualPrefix ++ "." ++ f.name
-    let fnLoc := fmtLoc locMap qualName
+    let fnLoc := lookupLoc locMap qualName
     -- 1. Recursion
     let recViolations := match recMap.find? (fun (n, _, _) => n == f.name) with
       | some (_, .direct, _) =>
@@ -1462,7 +1470,7 @@ def checkPredictable (modules : List CModule) (locMap : FnLocMap := []) : Bool �
   else
     let header := "predictable profile: FAIL"
     let lines := violations.map fun v =>
-      let locPrefix := if v.loc == "" then "" else s!"{v.loc}: "
+      let locPrefix := match v.loc with | some l => s!"{fmtLoc (some l)}: " | none => ""
       s!"  error: {locPrefix}{v.fnName} — {v.reason}"
     let summary := s!"\n{violatingFns.length} function(s) failed, {passingFns} passed"
     (false, s!"{header}\n\n{"\n".intercalate lines}\n{summary}\n")

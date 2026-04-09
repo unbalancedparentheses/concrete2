@@ -6,16 +6,16 @@ build:
 	$(NIX_DEVELOP) lake build
 
 test: build
-	$(NIX_DEVELOP) sh ./run_tests.sh
+	$(NIX_DEVELOP) sh ./scripts/tests/run_tests.sh
 
 test-full: build
-	$(NIX_DEVELOP) sh ./run_tests.sh --full
+	$(NIX_DEVELOP) sh ./scripts/tests/run_tests.sh --full
 
 test-ssa: build
-	$(NIX_DEVELOP) bash test_ssa.sh
+	$(NIX_DEVELOP) bash ./scripts/tests/test_ssa.sh
 
 test-fuzz: build
-	$(NIX_DEVELOP) bash test_parser_fuzz.sh
+	$(NIX_DEVELOP) bash ./scripts/tests/test_parser_fuzz.sh
 
 check-grammar:
 	$(NIX_DEVELOP) python3 scripts/check_ll1.py grammar/concrete.ebnf
