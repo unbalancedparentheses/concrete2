@@ -1612,5 +1612,130 @@ def checkPredictable (modules : List CModule) (locMap : FnLocMap := [])
     let summary := s!"{violatingFns.length} function(s) failed, {passingFns} passed"
     (false, s!"{header}\n\n{"\n\n".intercalate lines}\n\n{summary}\n")
 
+-- ============================================================
+-- Report: Proof Status (--report proof-status)
+-- ============================================================
+-- Per-function proof evidence with Elm-clear diagnostics for
+-- stale, missing, and ineligible states.
+
+/-- Proof status for a single function. -/
+inductive ProofState where
+  | proved          -- name + fingerprint match, passes profile
+  | stale           -- name matches but fingerprint changed
+  | notProved       -- passes profile, no registered proof
+  | notEligible     -- fails profile gates (recursion, alloc, etc.)
+  | trusted         -- marked trusted (bypasses proof)
+
+/-- Per-function proof status record. -/
+structure ProofStatusEntry where
+  qualName      : String
+  bareName      : String
+  state         : ProofState
+  currentFp     : String       -- current body fingerprint
+  expectedFp    : String       -- registered fingerprint (empty if no proof)
+  profileGates  : List String  -- reasons the function fails profile (empty if passes)
+  loc           : Option SourceLoc
+  fnSpan        : Option Span
+
+private partial def collectProofStatus
+    (externNames : List String)
+    (recMap : List (String × RecursionKind × List String))
+    (locMap : FnLocMap)
+    (m : CModule) (modulePath : String := "") : List ProofStatusEntry :=
+  let qualPrefix := if modulePath == "" then m.name else modulePath ++ "." ++ m.name
+  let entries := m.functions.map fun f =>
+    let qualName := qualPrefix ++ "." ++ f.name
+    let fp := bodyFingerprint f.body
+    let entry := lookupBody locMap qualName
+    let fnLoc := lookupLoc locMap qualName
+    let fnSp := entry.map (·.fnSpan)
+    -- Check profile gates
+    let callees := collectCallsStmts f.body |>.eraseDups
+    let allocs := callees.filter isAllocCall
+    let (concreteCaps, _) := f.capSet.normalize
+    let rec_ := match recMap.find? (fun (n, _, _) => n == f.name) with
+      | some (_, .direct, _) => "direct"
+      | some (_, .mutual, _) => "mutual"
+      | _ => "none"
+    let crossesFfi := callees.any fun c => externNames.contains c
+    let loopClass := classifyLoops f.body
+    let gates : List String :=
+      (if rec_ != "none" then [s!"recursion ({rec_})"] else []) ++
+      (if loopClass == "unbounded" || loopClass == "mixed" then ["unbounded loops"] else []) ++
+      (if !allocs.isEmpty || concreteCaps.any (· == "Alloc") then ["allocation"] else []) ++
+      (if crossesFfi then ["FFI"] else []) ++
+      (if concreteCaps.any fun c => c == "File" || c == "Network" || c == "Process"
+       then ["blocking I/O"] else [])
+    let passesProfile := gates.isEmpty
+    -- Determine proof state
+    let matchedProof := Proof.provedFunctions.find? fun (name, expectedFp) =>
+      name == qualName && expectedFp == fp
+    let staleProof := Proof.provedFunctions.find? fun (name, _) =>
+      name == qualName
+    let state :=
+      if f.isTrusted then .trusted
+      else if matchedProof.isSome && passesProfile then .proved
+      else if matchedProof.isNone && staleProof.isSome then .stale
+      else if !passesProfile then .notEligible
+      else .notProved
+    let expectedFp := match staleProof with
+      | some (_, efp) => efp
+      | none => ""
+    { qualName, bareName := f.name, state, currentFp := fp, expectedFp
+    , profileGates := gates, loc := fnLoc, fnSpan := fnSp }
+  entries ++ m.submodules.foldl (fun acc sub =>
+    acc ++ collectProofStatus externNames recMap locMap sub qualPrefix) []
+
+/-- Render a single proof status entry with Elm-clear formatting. -/
+private def renderProofStatusEntry (e : ProofStatusEntry) (sourceMap : SourceMap) : String :=
+  let locStr := fmtLoc e.loc
+  let fileStr := match e.loc with | some (f, _) => f | none => ""
+  let source := sourceMap.lookup fileStr
+  -- Source snippet
+  let snippet := match e.fnSpan, source with
+    | some sp, some src =>
+      let line := getSourceLine src sp.line
+      if line.isEmpty then ""
+      else
+        let lineNumStr := toString sp.line
+        let pad := lineNumStr.length
+        let gutter := String.ofList (List.replicate pad ' ')
+        let caretLen := line.length
+        let carets := String.ofList (List.replicate caretLen '^')
+        s!"\n\n {lineNumStr} | {line}\n {gutter} | {carets}"
+    | _, _ => ""
+  match e.state with
+  | .proved =>
+    s!"-- proved {String.ofList (List.replicate 48 '-')} {locStr}\n\n  ✓ `{e.qualName}` — proof matches current body.{snippet}"
+  | .stale =>
+    s!"-- proof stale {String.ofList (List.replicate 44 '-')} {locStr}\n\n  Function `{e.qualName}` has a registered proof, but the body changed.{snippet}\n\n  expected fingerprint:\n    {e.expectedFp}\n\n  current fingerprint:\n    {e.currentFp}\n\n  hint: Update the Lean proof in Concrete/Proof.lean, or restore the proved implementation."
+  | .notProved =>
+    s!"-- no proof {String.ofList (List.replicate 47 '-')} {locStr}\n\n  `{e.qualName}` passes the predictable profile but has no registered proof.{snippet}\n\n  current fingerprint:\n    {e.currentFp}\n\n  hint: Add a Lean proof for this function in Concrete/Proof.lean with the fingerprint above."
+  | .notEligible =>
+    let gateStr := ", ".intercalate e.profileGates
+    s!"-- not eligible {String.ofList (List.replicate 43 '-')} {locStr}\n\n  `{e.qualName}` cannot be proved: fails predictable profile ({gateStr}).{snippet}\n\n  hint: Remove {gateStr} to make this function eligible for proof."
+  | .trusted =>
+    s!"-- trusted {String.ofList (List.replicate 48 '-')} {locStr}\n\n  `{e.qualName}` is marked trusted — proof is bypassed (trusted assumption).{snippet}"
+
+/-- Proof status report with Elm-clear diagnostics. -/
+def proofStatusReport (modules : List CModule) (locMap : FnLocMap := [])
+    (sourceMap : SourceMap := []) : String :=
+  let header := "=== Proof Status Report ==="
+  let graph := buildCallGraph modules
+  let sccs := tarjanSCC graph
+  let recMap := classifyRecursion graph sccs
+  let externNames := modules.foldl (fun acc m => acc ++ collectExternNames m) []
+  let entries := modules.foldl (fun acc m =>
+    acc ++ collectProofStatus externNames recMap locMap m) []
+  let body := entries.map fun e => renderProofStatusEntry e sourceMap
+  -- Summary
+  let proved := (entries.filter fun e => e.state matches .proved).length
+  let stale := (entries.filter fun e => e.state matches .stale).length
+  let notProved := (entries.filter fun e => e.state matches .notProved).length
+  let notEligible := (entries.filter fun e => e.state matches .notEligible).length
+  let trusted := (entries.filter fun e => e.state matches .trusted).length
+  let summary := s!"Totals: {entries.length} functions — {proved} proved, {stale} stale, {notProved} unproved (eligible), {notEligible} ineligible, {trusted} trusted"
+  s!"{header}\n\n{"\n\n".intercalate body}\n\n{summary}\n"
+
 end Report
 end Concrete

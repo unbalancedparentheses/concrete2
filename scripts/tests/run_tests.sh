@@ -2478,6 +2478,47 @@ check_profile "$TESTDIR/adversarial_profile_bounded_then_unbounded.con" predicta
     "adversarial: predictable failure includes Elm-style hint" \
     "adversarial: predictable failure missing Elm-style hint"
 
+# --- Proof status report ---
+# Stale proof detection with fingerprint diff
+check_report "$TESTDIR/proof_maintenance_decode_header.con" proof-status \
+    "proof stale" \
+    "proof-status: stale proof detected" \
+    "proof-status: stale proof not detected"
+
+check_report "$TESTDIR/proof_maintenance_decode_header.con" proof-status \
+    "expected fingerprint" \
+    "proof-status: expected fingerprint shown" \
+    "proof-status: expected fingerprint missing"
+
+check_report "$TESTDIR/proof_maintenance_decode_header.con" proof-status \
+    "current fingerprint" \
+    "proof-status: current fingerprint shown" \
+    "proof-status: current fingerprint missing"
+
+# Proved function
+check_report "$TESTDIR/adversarial_profile_mixed_evidence.con" proof-status \
+    "proof matches current body" \
+    "proof-status: proved function shown" \
+    "proof-status: proved function missing"
+
+# Trusted function
+check_report "$TESTDIR/adversarial_profile_mixed_evidence.con" proof-status \
+    "trusted assumption" \
+    "proof-status: trusted function shown" \
+    "proof-status: trusted function missing"
+
+# Not eligible
+check_report "$TESTDIR/adversarial_profile_mixed_evidence.con" proof-status \
+    "fails predictable profile" \
+    "proof-status: ineligible function shown with reason" \
+    "proof-status: ineligible function missing"
+
+# Summary counts
+check_report "$TESTDIR/adversarial_profile_mixed_evidence.con" proof-status \
+    "1 proved.*0 stale.*2 unproved.*1 ineligible.*1 trusted" \
+    "proof-status: summary counts correct" \
+    "proof-status: summary counts wrong"
+
 fi # end section: report
 
 # === Codegen differential tests ===
