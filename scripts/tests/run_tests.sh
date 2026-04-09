@@ -2916,6 +2916,123 @@ else
     FAIL=$((FAIL + 1))
 fi
 
+# =============================================================
+# Fact query CLI tests (--query)
+# =============================================================
+echo ""
+echo "=== Fact query CLI tests ==="
+
+# --query effects returns only effects facts
+q_effects=$(cached_output "$TESTDIR/report_integration.con" "--query effects")
+if echo "$q_effects" | grep -q '"kind": "effects"' && \
+   ! echo "$q_effects" | grep -q '"kind": "alloc"' && \
+   ! echo "$q_effects" | grep -q '"kind": "capability"'; then
+    echo "  ok  --query effects: returns only effects kind"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  --query effects: should return only effects kind"
+    FAIL=$((FAIL + 1))
+fi
+
+# --query effects:pure_add returns exactly one fact
+q_pure=$(cached_output "$TESTDIR/report_integration.con" "--query effects:pure_add")
+if echo "$q_pure" | grep -q '"function": "pure_add"' && \
+   echo "$q_pure" | grep -q '"is_pure": true'; then
+    echo "  ok  --query effects:pure_add returns pure_add effects fact"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  --query effects:pure_add should return pure_add with is_pure"
+    FAIL=$((FAIL + 1))
+fi
+
+# --query fn:call_raw returns facts from multiple kinds
+q_fn=$(cached_output "$TESTDIR/report_integration.con" "--query fn:call_raw")
+if echo "$q_fn" | grep -q '"kind": "effects"' && \
+   echo "$q_fn" | grep -q '"kind": "unsafe"' && \
+   echo "$q_fn" | grep -q '"kind": "capability"'; then
+    echo "  ok  --query fn:call_raw returns effects + unsafe + capability facts"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  --query fn:call_raw should return multiple fact kinds"
+    FAIL=$((FAIL + 1))
+fi
+
+# --query alloc returns only alloc facts
+q_alloc=$(cached_output "$TESTDIR/report_integration.con" "--query alloc")
+if echo "$q_alloc" | grep -q '"kind": "alloc"' && \
+   ! echo "$q_alloc" | grep -q '"kind": "effects"'; then
+    echo "  ok  --query alloc: returns only alloc kind"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  --query alloc: should return only alloc kind"
+    FAIL=$((FAIL + 1))
+fi
+
+# --query unsafe returns only unsafe facts
+q_unsafe=$(cached_output "$TESTDIR/report_integration.con" "--query unsafe")
+if echo "$q_unsafe" | grep -q '"kind": "unsafe"' && \
+   ! echo "$q_unsafe" | grep -q '"kind": "effects"'; then
+    echo "  ok  --query unsafe: returns only unsafe kind"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  --query unsafe: should return only unsafe kind"
+    FAIL=$((FAIL + 1))
+fi
+
+# --query capability returns only capability facts
+q_cap=$(cached_output "$TESTDIR/report_integration.con" "--query capability")
+if echo "$q_cap" | grep -q '"kind": "capability"' && \
+   ! echo "$q_cap" | grep -q '"kind": "effects"'; then
+    echo "  ok  --query capability: returns only capability kind"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  --query capability: should return only capability kind"
+    FAIL=$((FAIL + 1))
+fi
+
+# --query proof_status returns only proof_status facts
+q_proof=$(cached_output "$TESTDIR/report_integration.con" "--query proof_status")
+if echo "$q_proof" | grep -q '"kind": "proof_status"' && \
+   ! echo "$q_proof" | grep -q '"kind": "effects"'; then
+    echo "  ok  --query proof_status: returns only proof_status kind"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  --query proof_status: should return only proof_status kind"
+    FAIL=$((FAIL + 1))
+fi
+
+# --query predictable_violation on file with violations
+q_viol=$(cached_output "$TESTDIR/report_check_predictable_fail_loops.con" "--query predictable_violation")
+if echo "$q_viol" | grep -q '"function": "spin"' && \
+   echo "$q_viol" | grep -q '"reason": "unbounded loops"'; then
+    echo "  ok  --query predictable_violation: returns spin violation"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  --query predictable_violation: should return spin violation"
+    FAIL=$((FAIL + 1))
+fi
+
+# --query predictable_violation on passing file returns empty array
+q_noviol=$(cached_output "$TESTDIR/report_check_predictable_pass.con" "--query predictable_violation")
+if [ "$q_noviol" = "[]" ]; then
+    echo "  ok  --query predictable_violation: empty for passing file"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  --query predictable_violation: should be empty for passing file"
+    FAIL=$((FAIL + 1))
+fi
+
+# --query fn:pure_add returns proof_status (qualified name match)
+q_fn_pure=$(cached_output "$TESTDIR/report_integration.con" "--query fn:pure_add")
+if echo "$q_fn_pure" | grep -q '"kind": "proof_status"' && \
+   echo "$q_fn_pure" | grep -q '"kind": "effects"'; then
+    echo "  ok  --query fn:pure_add returns proof_status + effects (qualified name match)"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  --query fn:pure_add should match qualified names like main.pure_add"
+    FAIL=$((FAIL + 1))
+fi
+
 fi # end section: report
 
 # === Codegen differential tests ===
