@@ -3184,6 +3184,145 @@ else
     FAIL=$((FAIL + 1))
 fi
 
+# =============================================================
+# Semantic query tests: predictable, proof, evidence
+# =============================================================
+echo ""
+echo "=== Semantic query tests ==="
+
+# --- predictable:fn ---
+
+# Passing function
+q_pred_pass=$(cached_output "$TESTDIR/report_integration.con" "--query predictable:pure_add")
+if echo "$q_pred_pass" | grep -q '"answer": "pass"' && \
+   echo "$q_pred_pass" | grep -q '"gates_failed": 0'; then
+    echo "  ok  predictable:pure_add answers pass with 0 gates failed"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  predictable:pure_add should answer pass"
+    echo "$q_pred_pass"
+    FAIL=$((FAIL + 1))
+fi
+
+# Failing function with multiple violations
+q_pred_fail=$(cached_output "$TESTDIR/report_integration.con" "--query predictable:main")
+if echo "$q_pred_fail" | grep -q '"answer": "fail"' && \
+   echo "$q_pred_fail" | grep -q '"gate":'; then
+    echo "  ok  predictable:main answers fail with violation gates"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  predictable:main should answer fail"
+    echo "$q_pred_fail"
+    FAIL=$((FAIL + 1))
+fi
+
+# Violation includes hint
+if echo "$q_pred_fail" | grep -q '"hint":'; then
+    echo "  ok  predictable:main violations include hints"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  predictable:main violations should include hints"
+    FAIL=$((FAIL + 1))
+fi
+
+# Unbounded loop violation
+q_pred_loop=$(cached_output "$TESTDIR/report_check_predictable_fail_loops.con" "--query predictable:spin")
+if echo "$q_pred_loop" | grep -q '"answer": "fail"' && \
+   echo "$q_pred_loop" | grep -q '"gate": "unbounded loops"'; then
+    echo "  ok  predictable:spin answers fail with unbounded loops gate"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  predictable:spin should fail with unbounded loops"
+    echo "$q_pred_loop"
+    FAIL=$((FAIL + 1))
+fi
+
+# --- proof:fn ---
+
+# Pure function: no_proof (eligible but unproved)
+q_proof_pure=$(cached_output "$TESTDIR/report_integration.con" "--query proof:pure_add")
+if echo "$q_proof_pure" | grep -q '"answer": "no_proof"' && \
+   echo "$q_proof_pure" | grep -q '"current_fingerprint":'; then
+    echo "  ok  proof:pure_add answers no_proof with fingerprint"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  proof:pure_add should answer no_proof"
+    echo "$q_proof_pure"
+    FAIL=$((FAIL + 1))
+fi
+
+# Trusted function: trusted
+q_proof_trusted=$(cached_output "$TESTDIR/report_integration.con" "--query proof:call_raw")
+if echo "$q_proof_trusted" | grep -q '"answer": "trusted"'; then
+    echo "  ok  proof:call_raw answers trusted"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  proof:call_raw should answer trusted"
+    echo "$q_proof_trusted"
+    FAIL=$((FAIL + 1))
+fi
+
+# Nonexistent function
+q_proof_missing=$(cached_output "$TESTDIR/report_integration.con" "--query proof:nonexistent")
+if echo "$q_proof_missing" | grep -q '"answer": "not_found"'; then
+    echo "  ok  proof:nonexistent answers not_found"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  proof:nonexistent should answer not_found"
+    echo "$q_proof_missing"
+    FAIL=$((FAIL + 1))
+fi
+
+# --- evidence:fn ---
+
+# Pure function: enforced (passes predictable, no proof yet)
+q_ev_pure=$(cached_output "$TESTDIR/report_integration.con" "--query evidence:pure_add")
+if echo "$q_ev_pure" | grep -q '"answer": "enforced"' && \
+   echo "$q_ev_pure" | grep -q '"passes_predictable": true' && \
+   echo "$q_ev_pure" | grep -q '"proof_state": "no_proof"'; then
+    echo "  ok  evidence:pure_add answers enforced, passes predictable, no proof"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  evidence:pure_add should be enforced"
+    echo "$q_ev_pure"
+    FAIL=$((FAIL + 1))
+fi
+
+# Trusted function: trusted-assumption
+q_ev_trusted=$(cached_output "$TESTDIR/report_integration.con" "--query evidence:call_raw")
+if echo "$q_ev_trusted" | grep -q '"answer": "trusted-assumption"' && \
+   echo "$q_ev_trusted" | grep -q '"is_trusted": true'; then
+    echo "  ok  evidence:call_raw answers trusted-assumption"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  evidence:call_raw should be trusted-assumption"
+    echo "$q_ev_trusted"
+    FAIL=$((FAIL + 1))
+fi
+
+# Failing function: reported (fails predictable)
+q_ev_fail=$(cached_output "$TESTDIR/report_integration.con" "--query evidence:main")
+if echo "$q_ev_fail" | grep -q '"answer": "reported"' && \
+   echo "$q_ev_fail" | grep -q '"passes_predictable": false'; then
+    echo "  ok  evidence:main answers reported, fails predictable"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  evidence:main should be reported"
+    echo "$q_ev_fail"
+    FAIL=$((FAIL + 1))
+fi
+
+# Not found
+q_ev_missing=$(cached_output "$TESTDIR/report_integration.con" "--query evidence:nonexistent")
+if echo "$q_ev_missing" | grep -q '"answer": "not_found"'; then
+    echo "  ok  evidence:nonexistent answers not_found"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  evidence:nonexistent should answer not_found"
+    echo "$q_ev_missing"
+    FAIL=$((FAIL + 1))
+fi
+
 fi # end section: report
 
 # === Codegen differential tests ===

@@ -2129,16 +2129,141 @@ def whyCapabilityQuery (modules : List CModule) (locMap : FnLocMap)
   result.render
 
 open Json in
+/-- Handle a predictable query for a single function. Returns answer-shaped JSON. -/
+def predictableQuery (modules : List CModule) (locMap : FnLocMap)
+    (fnName : String) : String :=
+  let graph := buildCallGraph modules
+  let sccs := tarjanSCC graph
+  let recMap := classifyRecursion graph sccs
+  let externNames := modules.foldl (fun acc m => acc ++ collectExternNames m) []
+  let violations := modules.foldl (fun acc m =>
+    acc ++ checkPredictableModule recMap externNames locMap m) []
+  let fnViolations := violations.filter fun v =>
+    v.fnName == fnName
+  let answer := if fnViolations.isEmpty then "pass" else "fail"
+  let gates := fnViolations.map fun v =>
+    .obj ([
+      ("gate", .str v.reason),
+      ("hint", .str v.hint)
+    ] ++ match v.loc with
+      | some l => [("loc", locToJson (some l))]
+      | none => []
+    ++ match v.violationLoc with
+      | some l => [("violation_loc", locToJson (some l))]
+      | none => [])
+  let result := Val.obj [
+    ("kind", .str "query_answer"),
+    ("query", .str s!"predictable:{fnName}"),
+    ("function", .str fnName),
+    ("answer", .str answer),
+    ("gates_failed", .num (Int.ofNat fnViolations.length)),
+    ("violations", .arr gates)
+  ]
+  result.render
+
+open Json in
+/-- Handle a proof query for a single function. Returns answer-shaped JSON. -/
+def proofQuery (modules : List CModule) (locMap : FnLocMap)
+    (fnName : String) : String :=
+  let graph := buildCallGraph modules
+  let sccs := tarjanSCC graph
+  let recMap := classifyRecursion graph sccs
+  let externNames := modules.foldl (fun acc m => acc ++ collectExternNames m) []
+  let entries := modules.foldl (fun acc m =>
+    acc ++ collectProofStatus externNames recMap locMap m) []
+  let fnEntry := entries.find? fun e =>
+    e.bareName == fnName || e.qualName == fnName || e.qualName.endsWith ("." ++ fnName)
+  match fnEntry with
+  | none =>
+    (Val.obj [
+      ("kind", .str "query_answer"),
+      ("query", .str s!"proof:{fnName}"),
+      ("function", .str fnName),
+      ("answer", .str "not_found")
+    ]).render
+  | some e =>
+    let stateStr := match e.state with
+      | .proved => "proved" | .stale => "stale" | .notProved => "no_proof"
+      | .notEligible => "not_eligible" | .trusted => "trusted"
+    let hintStr := match e.state with
+      | .stale => "Update the Lean proof in Concrete/Proof.lean, or restore the proved implementation."
+      | .notProved => "Add a Lean proof for this function in Concrete/Proof.lean with the current fingerprint."
+      | .notEligible => s!"Remove {", ".intercalate e.profileGates} to make this function eligible for proof."
+      | _ => ""
+    (Val.obj ([
+      ("kind", .str "query_answer"),
+      ("query", .str s!"proof:{fnName}"),
+      ("function", .str e.qualName),
+      ("answer", .str stateStr),
+      ("current_fingerprint", .str e.currentFp)
+    ] ++ (if e.expectedFp.isEmpty then [] else [("expected_fingerprint", .str e.expectedFp)])
+      ++ (if e.profileGates.isEmpty then [] else [("profile_gates", .arr (e.profileGates.map .str))])
+      ++ (if hintStr.isEmpty then [] else [("hint", .str hintStr)])
+      ++ [("loc", locToJson e.loc)])).render
+
+open Json in
+/-- Handle an evidence query for a single function. Returns answer-shaped JSON
+    combining predictable profile, proof status, and trust into one answer. -/
+def evidenceQuery (modules : List CModule) (locMap : FnLocMap)
+    (fnName : String) : String :=
+  let graph := buildCallGraph modules
+  let sccs := tarjanSCC graph
+  let recMap := classifyRecursion graph sccs
+  let externNames := modules.foldl (fun acc m => acc ++ collectExternNames m) []
+  -- Get effects for evidence level
+  let allEffects := modules.foldl (fun acc m =>
+    acc ++ effectsForModule externNames recMap locMap m) []
+  let fnEffects := allEffects.find? fun e => e.name == fnName
+  -- Get violations
+  let violations := modules.foldl (fun acc m =>
+    acc ++ checkPredictableModule recMap externNames locMap m) []
+  let fnViolations := violations.filter fun v => v.fnName == fnName
+  -- Get proof status
+  let entries := modules.foldl (fun acc m =>
+    acc ++ collectProofStatus externNames recMap locMap m) []
+  let fnProof := entries.find? fun e =>
+    e.bareName == fnName || e.qualName.endsWith ("." ++ fnName)
+  match fnEffects with
+  | none =>
+    (Val.obj [
+      ("kind", .str "query_answer"),
+      ("query", .str s!"evidence:{fnName}"),
+      ("function", .str fnName),
+      ("answer", .str "not_found")
+    ]).render
+  | some eff =>
+    let proofState := match fnProof with
+      | some e => match e.state with
+        | .proved => "proved" | .stale => "stale" | .notProved => "no_proof"
+        | .notEligible => "not_eligible" | .trusted => "trusted"
+      | none => "unknown"
+    let gatesFailed := fnViolations.map fun v => Val.str v.reason
+    (Val.obj [
+      ("kind", .str "query_answer"),
+      ("query", .str s!"evidence:{fnName}"),
+      ("function", .str fnName),
+      ("answer", .str eff.evidence),
+      ("is_trusted", .bool eff.isTrusted),
+      ("passes_predictable", .bool fnViolations.isEmpty),
+      ("proof_state", .str proofState),
+      ("gates_failed", .arr gatesFailed),
+      ("loc", locToJson eff.loc)
+    ]).render
+
+open Json in
 /-- Query compiler facts by kind and optional function name.
     Query formats:
     - "KIND"                  — filter all facts by kind
     - "KIND:FUNCTION"         — filter by kind + function
     - "fn:FUNCTION"           — all facts for one function
-    - "why-capability:FN:CAP" — trace why a function requires a capability -/
+    - "why-capability:FN:CAP" — trace why a function requires a capability
+    - "predictable:FN"        — predictable profile answer for one function
+    - "proof:FN"              — proof status answer for one function
+    - "evidence:FN"           — combined evidence answer for one function -/
 def queryFacts (modules : List CModule) (locMap : FnLocMap := [])
     (query : String) : String :=
   let parts := query.splitOn ":"
-  -- Semantic queries (answer-shaped)
+  -- Semantic queries: three-part (why-capability:fn:cap)
   if parts.length == 3 then
     match parts with
     | ["why-capability", fnName, cap] => whyCapabilityQuery modules locMap fnName cap
@@ -2154,29 +2279,36 @@ def queryFacts (modules : List CModule) (locMap : FnLocMap := [])
         | none => false
       (Val.arr filtered).render
   else
-    -- Flat filter queries
+  -- Semantic queries: two-part (predictable:fn, proof:fn, evidence:fn)
+  if parts.length == 2 then
+    match parts with
+    | ["predictable", fnName] => predictableQuery modules locMap fnName
+    | ["proof", fnName] => proofQuery modules locMap fnName
+    | ["evidence", fnName] => evidenceQuery modules locMap fnName
+    | ["fn", fnName] =>
+      let allFacts := collectAllFacts modules locMap
+      let filtered := allFacts.filter fun v =>
+        match jsonGetStr v "function" with
+        | some f => f == fnName || f.endsWith ("." ++ fnName)
+        | none => false
+      (Val.arr filtered).render
+    | _ =>
+      -- kind:function filter
+      let filterKind := parts[0]!
+      let filterFn := parts[1]!
+      let allFacts := collectAllFacts modules locMap
+      let byKind := allFacts.filter fun v =>
+        jsonGetStr v "kind" == some filterKind
+      let filtered := byKind.filter fun v =>
+        match jsonGetStr v "function" with
+        | some f => f == filterFn || f.endsWith ("." ++ filterFn)
+        | none => false
+      (Val.arr filtered).render
+  else
+    -- Single-word filter: all facts of this kind
     let allFacts := collectAllFacts modules locMap
-    let (filterKind, filterFn) :=
-      match parts with
-      | [kind, fnName] => (kind, some fnName)
-      | _ => (query, none)
-    let filtered :=
-      if filterKind == "fn" then
-        match filterFn with
-        | some fnName => allFacts.filter fun v =>
-            match jsonGetStr v "function" with
-            | some f => f == fnName || f.endsWith ("." ++ fnName)
-            | none => false
-        | none => []
-      else
-        let byKind := allFacts.filter fun v =>
-          jsonGetStr v "kind" == some filterKind
-        match filterFn with
-        | some fnName => byKind.filter fun v =>
-            match jsonGetStr v "function" with
-            | some f => f == fnName || f.endsWith ("." ++ fnName)
-            | none => false
-        | none => byKind
+    let filtered := allFacts.filter fun v =>
+      jsonGetStr v "kind" == some query
     (Val.arr filtered).render
 
 end Report
