@@ -3033,6 +3033,157 @@ else
     FAIL=$((FAIL + 1))
 fi
 
+# =============================================================
+# Authority trace query tests (--query why-capability)
+# =============================================================
+echo ""
+echo "=== Authority trace query tests ==="
+
+# Transitive: main requires Alloc via uses_alloc → vec_new (intrinsic)
+q_alloc=$(cached_output "$TESTDIR/report_integration.con" "--query why-capability:main:Alloc")
+if echo "$q_alloc" | grep -q '"answer": "transitive"' && \
+   echo "$q_alloc" | grep -q '"callee": "uses_alloc"' && \
+   echo "$q_alloc" | grep -q '"origin": "intrinsic"'; then
+    echo "  ok  why-capability:main:Alloc traces main → uses_alloc → intrinsic"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  why-capability:main:Alloc should trace transitive path"
+    echo "$q_alloc"
+    FAIL=$((FAIL + 1))
+fi
+
+# Declared: main declares File via with(Std)
+q_file=$(cached_output "$TESTDIR/report_integration.con" "--query why-capability:main:File")
+if echo "$q_file" | grep -q '"answer": "declared"' && \
+   echo "$q_file" | grep -q '"origin": "declared"'; then
+    echo "  ok  why-capability:main:File shows declared origin"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  why-capability:main:File should show declared"
+    echo "$q_file"
+    FAIL=$((FAIL + 1))
+fi
+
+# Transitive via extern: call_raw requires Unsafe via raw_extern (extern)
+q_unsafe=$(cached_output "$TESTDIR/report_integration.con" "--query why-capability:call_raw:Unsafe")
+if echo "$q_unsafe" | grep -q '"answer": "transitive"' && \
+   echo "$q_unsafe" | grep -q '"callee": "raw_extern"' && \
+   echo "$q_unsafe" | grep -q '"origin": "extern"'; then
+    echo "  ok  why-capability:call_raw:Unsafe traces call_raw → raw_extern (extern)"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  why-capability:call_raw:Unsafe should trace to extern"
+    echo "$q_unsafe"
+    FAIL=$((FAIL + 1))
+fi
+
+# Not required: pure_add does not require Alloc
+q_none=$(cached_output "$TESTDIR/report_integration.con" "--query why-capability:pure_add:Alloc")
+if echo "$q_none" | grep -q '"answer": "not_required"' && \
+   echo "$q_none" | grep -q '"trace": \[\]'; then
+    echo "  ok  why-capability:pure_add:Alloc returns not_required"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  why-capability:pure_add:Alloc should be not_required"
+    echo "$q_none"
+    FAIL=$((FAIL + 1))
+fi
+
+# Answer-shaped output has query_answer kind
+if echo "$q_alloc" | grep -q '"kind": "query_answer"'; then
+    echo "  ok  why-capability output has kind query_answer"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  why-capability output should have kind query_answer"
+    FAIL=$((FAIL + 1))
+fi
+
+# Declared origin includes source location
+if echo "$q_file" | grep -q '"loc":.*"file":.*"line":'; then
+    echo "  ok  why-capability declared origin includes source location"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  why-capability declared origin should include source location"
+    FAIL=$((FAIL + 1))
+fi
+
+# --- Adversarial authority trace tests ---
+AT_FILE="$TESTDIR/adversarial_authority_trace.con"
+
+# Mutual recursion: ping→pong cycle detected, not infinite loop
+q_cycle=$(cached_output "$AT_FILE" "--query why-capability:ping:Alloc")
+if echo "$q_cycle" | grep -q '"answer": "transitive"' && \
+   echo "$q_cycle" | grep -q '"error": "cycle"' && \
+   echo "$q_cycle" | grep -q '"origin": "intrinsic"'; then
+    echo "  ok  adversarial: mutual recursion cycle detected in authority trace"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  adversarial: mutual recursion should detect cycle"
+    echo "$q_cycle"
+    FAIL=$((FAIL + 1))
+fi
+
+# Diamond: both left_arm and right_arm traced
+q_diamond=$(cached_output "$AT_FILE" "--query why-capability:diamond:Alloc")
+if echo "$q_diamond" | grep -q '"callee": "left_arm"' && \
+   echo "$q_diamond" | grep -q '"callee": "right_arm"'; then
+    echo "  ok  adversarial: diamond dependency traces both arms"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  adversarial: diamond should trace both arms"
+    echo "$q_diamond"
+    FAIL=$((FAIL + 1))
+fi
+
+# Deep chain: entry → mid1 → mid2 → leaf → alloc (intrinsic)
+q_deep=$(cached_output "$AT_FILE" "--query why-capability:entry:Alloc")
+if echo "$q_deep" | grep -q '"callee": "mid1"' && \
+   echo "$q_deep" | grep -q '"callee": "mid2"' && \
+   echo "$q_deep" | grep -q '"callee": "leaf"' && \
+   echo "$q_deep" | grep -q '"origin": "intrinsic"'; then
+    echo "  ok  adversarial: deep chain traces entry → mid1 → mid2 → leaf → intrinsic"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  adversarial: deep chain should trace full path"
+    echo "$q_deep"
+    FAIL=$((FAIL + 1))
+fi
+
+# Trusted extern: uses_trusted should NOT require Unsafe
+q_trusted=$(cached_output "$AT_FILE" "--query why-capability:uses_trusted:Unsafe")
+if echo "$q_trusted" | grep -q '"answer": "not_required"'; then
+    echo "  ok  adversarial: trusted extern does not contribute Unsafe"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  adversarial: trusted extern should not contribute Unsafe"
+    echo "$q_trusted"
+    FAIL=$((FAIL + 1))
+fi
+
+# Untrusted extern: uses_raw traces to extern origin
+q_raw=$(cached_output "$AT_FILE" "--query why-capability:uses_raw:Unsafe")
+if echo "$q_raw" | grep -q '"answer": "transitive"' && \
+   echo "$q_raw" | grep -q '"callee": "raw_op"' && \
+   echo "$q_raw" | grep -q '"origin": "extern"'; then
+    echo "  ok  adversarial: untrusted extern traces to extern origin"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  adversarial: untrusted extern should trace to extern origin"
+    echo "$q_raw"
+    FAIL=$((FAIL + 1))
+fi
+
+# Nonexistent function returns not_required
+q_missing=$(cached_output "$AT_FILE" "--query why-capability:nonexistent:Alloc")
+if echo "$q_missing" | grep -q '"answer": "not_required"'; then
+    echo "  ok  adversarial: nonexistent function returns not_required"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  adversarial: nonexistent function should return not_required"
+    echo "$q_missing"
+    FAIL=$((FAIL + 1))
+fi
+
 fi # end section: report
 
 # === Codegen differential tests ===

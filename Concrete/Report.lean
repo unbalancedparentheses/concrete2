@@ -2011,34 +2011,173 @@ private def jsonGetStr (v : Val) (key : String) : Option String :=
     | _ => none
   | _ => none
 
+-- ============================================================
+-- Semantic query: why-capability trace
+-- ============================================================
+
+/-- Build a flat lookup of bare function names to CFnDef across module tree. -/
+private partial def buildFnLookupModule (m : CModule) : List (String × CFnDef) :=
+  let fns := m.functions.map fun f => (f.name, f)
+  fns ++ m.submodules.foldl (fun acc sub => acc ++ buildFnLookupModule sub) []
+
+private def buildFnLookup (modules : List CModule) : List (String × CFnDef) :=
+  modules.foldl (fun acc m => acc ++ buildFnLookupModule m) []
+
+/-- Build a flat extern name → trusted lookup. -/
+private partial def buildExternLookupModule (m : CModule) : List (String × Bool) :=
+  let exts := m.externFns.map fun (n, _, _, t) => (n, t)
+  exts ++ m.submodules.foldl (fun acc sub => acc ++ buildExternLookupModule sub) []
+
+private def buildExternLookup (modules : List CModule) : List (String × Bool) :=
+  modules.foldl (fun acc m => acc ++ buildExternLookupModule m) []
+
+open Json in
+/-- Trace why a function requires a specific capability.
+    Returns a list of trace steps from the queried function down to the origin.
+    Stops at: declared (with clause), extern, intrinsic, or depth limit.
+    visited prevents cycles. -/
+private partial def traceCapability
+    (fnLookup : List (String × CFnDef))
+    (externLookup : List (String × Bool))
+    (capLookup : CapLookup)
+    (locMap : FnLocMap)
+    (fnName : String) (cap : String)
+    (visited : List String := []) (depth : Nat := 0) : List Val :=
+  if depth > 20 then [.obj [("function", .str fnName), ("error", .str "depth limit")]]
+  else if visited.contains fnName then [.obj [("function", .str fnName), ("error", .str "cycle")]]
+  else
+    -- Is it an intrinsic?
+    match resolveIntrinsic fnName with
+    | some iid =>
+      match iid.capability with
+      | some icap =>
+        if icap == cap then [.obj [("function", .str fnName), ("origin", .str "intrinsic")]]
+        else []
+      | none => []
+    | none =>
+    -- Is it an extern?
+    match externLookup.find? (fun (n, _) => n == fnName) with
+    | some (_, trusted) =>
+      if !trusted then
+        -- Untrusted externs have Unsafe capability
+        if cap == unsafeCapName then
+          [.obj [("function", .str fnName), ("origin", .str "extern")]]
+        else []
+      else []  -- trusted externs have no capabilities
+    | none =>
+    -- Is it a user function?
+    match fnLookup.find? (fun (n, _) => n == fnName) with
+    | none => []
+    | some (_, f) =>
+      let (concreteCaps, _) := f.capSet.normalize
+      -- Check if this function even has the cap
+      if !concreteCaps.contains cap then []
+      else
+        let callees := collectCallsStmts f.body |>.eraseDups
+        let visited' := fnName :: visited
+        -- Find callees that contribute this cap
+        let contributors := callees.filter fun callee =>
+          match lookupCalleeCap capLookup callee with
+          | some cs => let (cc, _) := cs.normalize; cc.contains cap
+          | none => false
+        if contributors.isEmpty then
+          -- No callee contributes it → declared via with(...)
+          let loc := locMap.find? (fun e => e.qualName.endsWith ("." ++ fnName) || e.qualName == fnName)
+          let locVal := match loc with
+            | some e => locToJson (some (e.file, e.fnSpan.line))
+            | none => Val.null
+          [.obj [("function", .str fnName), ("origin", .str "declared"), ("loc", locVal)]]
+        else
+          -- Trace through each contributor
+          contributors.foldl (fun acc callee =>
+            let subTrace := traceCapability fnLookup externLookup capLookup locMap
+              callee cap visited' (depth + 1)
+            if subTrace.isEmpty then acc
+            else
+              let step := Val.obj [("function", .str fnName), ("edge", .str "calls"), ("callee", .str callee)]
+              acc ++ [step] ++ subTrace
+          ) []
+
+open Json in
+/-- Handle a why-capability query. Returns answer-shaped JSON. -/
+def whyCapabilityQuery (modules : List CModule) (locMap : FnLocMap)
+    (fnName : String) (cap : String) : String :=
+  let fnLookup := buildFnLookup modules
+  let externLookup := buildExternLookup modules
+  let capLookup := buildCapLookup modules
+  let trace := traceCapability fnLookup externLookup capLookup locMap fnName cap
+  let answer :=
+    if trace.isEmpty then "not_required"
+    else
+      -- Check if first trace step is a declaration (no transitive path)
+      match trace with
+      | [.obj kvs] =>
+        match kvs.find? (fun (k, _) => k == "origin") with
+        | some (_, .str "declared") => "declared"
+        | some (_, .str "intrinsic") => "intrinsic"
+        | some (_, .str "extern") => "extern"
+        | _ => "transitive"
+      | _ => "transitive"
+  let result := Val.obj [
+    ("kind", .str "query_answer"),
+    ("query", .str s!"why-capability:{fnName}:{cap}"),
+    ("function", .str fnName),
+    ("capability", .str cap),
+    ("answer", .str answer),
+    ("trace", .arr trace)
+  ]
+  result.render
+
 open Json in
 /-- Query compiler facts by kind and optional function name.
-    Query format: "KIND" or "KIND:FUNCTION" or "fn:FUNCTION". -/
+    Query formats:
+    - "KIND"                  — filter all facts by kind
+    - "KIND:FUNCTION"         — filter by kind + function
+    - "fn:FUNCTION"           — all facts for one function
+    - "why-capability:FN:CAP" — trace why a function requires a capability -/
 def queryFacts (modules : List CModule) (locMap : FnLocMap := [])
     (query : String) : String :=
-  let allFacts := collectAllFacts modules locMap
-  let (filterKind, filterFn) :=
-    match query.splitOn ":" with
-    | [kind, fnName] => (kind, some fnName)
-    | _ => (query, none)
-  let filtered :=
-    if filterKind == "fn" then
-      match filterFn with
-      | some fnName => allFacts.filter fun v =>
-          match jsonGetStr v "function" with
-          | some f => f == fnName || f.endsWith ("." ++ fnName)
-          | none => false
-      | none => []
-    else
-      let byKind := allFacts.filter fun v =>
-        jsonGetStr v "kind" == some filterKind
-      match filterFn with
-      | some fnName => byKind.filter fun v =>
-          match jsonGetStr v "function" with
-          | some f => f == fnName || f.endsWith ("." ++ fnName)
-          | none => false
-      | none => byKind
-  (Val.arr filtered).render
+  let parts := query.splitOn ":"
+  -- Semantic queries (answer-shaped)
+  if parts.length == 3 then
+    match parts with
+    | ["why-capability", fnName, cap] => whyCapabilityQuery modules locMap fnName cap
+    | _ =>
+      -- Fall through to kind:function filter
+      let filterKind := parts[0]!
+      let filterFn := parts[1]!
+      let allFacts := collectAllFacts modules locMap
+      let byKind := allFacts.filter fun v => jsonGetStr v "kind" == some filterKind
+      let filtered := byKind.filter fun v =>
+        match jsonGetStr v "function" with
+        | some f => f == filterFn || f.endsWith ("." ++ filterFn)
+        | none => false
+      (Val.arr filtered).render
+  else
+    -- Flat filter queries
+    let allFacts := collectAllFacts modules locMap
+    let (filterKind, filterFn) :=
+      match parts with
+      | [kind, fnName] => (kind, some fnName)
+      | _ => (query, none)
+    let filtered :=
+      if filterKind == "fn" then
+        match filterFn with
+        | some fnName => allFacts.filter fun v =>
+            match jsonGetStr v "function" with
+            | some f => f == fnName || f.endsWith ("." ++ fnName)
+            | none => false
+        | none => []
+      else
+        let byKind := allFacts.filter fun v =>
+          jsonGetStr v "kind" == some filterKind
+        match filterFn with
+        | some fnName => byKind.filter fun v =>
+            match jsonGetStr v "function" with
+            | some f => f == fnName || f.endsWith ("." ++ fnName)
+            | none => false
+        | none => byKind
+    (Val.arr filtered).render
 
 end Report
 end Concrete
