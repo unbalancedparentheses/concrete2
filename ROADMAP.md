@@ -23,6 +23,13 @@ Use this as the current critical path. The numbered sections below are backlog a
 
 **Priority rule:** work from this list top-to-bottom. Do not start package management, new backends, concurrency, broad proof syntax, source-level contracts, package ecosystems, or showcase polish just because they have their own section below.
 
+**Current guardrails:**
+1. finish or consciously set aside the current adversarial-test work before starting another broad test-writing pass
+2. add source file / line / span plumbing before rewriting thesis-facing errors; Elm-clear diagnostics need locations and snippets, not just nicer prose
+3. keep specs in Lean-attached / artifact-registry form until proof obligations, proof diagnostics, source locations, and stale-proof reporting are usable
+4. postpone QBE/Yul/other backend work until proof attachment, evidence artifacts, predictable-profile claims, and the backend trust boundary are trustworthy
+5. keep the next implementation small: source locations in `--check predictable` / `--report effects`, then upgrade those errors
+
 1. finish the first thesis demo: predictable packet-decoder core, non-predictable I/O shell, effects/evidence report, proof-backed parser property, adversarial regressions
 2. add source locations to thesis-facing diagnostics and reports
 3. make predictable-profile failures Elm-clear: recursion, unbounded loops, allocation, blocking, FFI, trusted/host boundary
@@ -34,7 +41,7 @@ Use this as the current critical path. The numbered sections below are backlog a
 9. name Lean-attached specs explicitly; keep source-level spec syntax out until the workflow earns it
 10. prototype semantic diff / trust drift for capability, allocation, recursion, loop-boundedness, blocking, FFI, trusted, evidence level, and proof freshness
 11. prototype module/package policy checks for the existing thesis properties
-12. build one attacker-style thesis demo that introduces authority/resource/proof drift and shows Concrete catching it
+12. define the thesis threat/accident model and build one attacker-style demo that introduces authority/resource/proof drift and shows Concrete catching it
 13. validate fixed-capacity usefulness with a no-alloc parser/validator or ring-buffer-style example
 14. design and implement the smallest bounded-capacity type path that makes predictable examples practical
 15. add stack-depth reporting for functions that pass the no-recursion profile
@@ -225,12 +232,13 @@ The showcase corpus should deliberately rebalance away from mostly text-heavy ex
 6. review-policy gates — done when CI can enforce authority, trust, FFI, and proof-facing policies
 7. CI/CD evidence gates — done when tests, `--check predictable`, stale-proof checks, proof-obligation status, report generation, and semantic/trust drift checks can be enforced in a noninteractive CI job
 8. source-location-rich report artifacts — done when machine-readable reports include source spans, qualified identities, fingerprints, artifact IDs, proof/spec/obligation IDs, evidence level, and trust assumptions
-9. coverage tooling over tests, reports, and proof artifacts — done when coverage gaps across all three are visible
-10. editor/LSP baseline — done when there is basic editor support with go-to-definition and diagnostics
-11. dependency auditing — done when dependencies can be audited for capability and trust properties
-12. release/compatibility discipline — done when there is a versioning policy and it is enforced
+9. agent-readable performance research packet — done when a noninteractive command can emit the current benchmark table, perf-baseline delta, compile-time summary, binary/IR-size summary, allocation/effects facts, hot examples, known perf hypotheses, and safety/evidence guardrails for an optimization agent
+10. coverage tooling over tests, reports, and proof artifacts — done when coverage gaps across all three are visible
+11. editor/LSP baseline — done when there is basic editor support with go-to-definition and diagnostics
+12. dependency auditing — done when dependencies can be audited for capability and trust properties
+13. release/compatibility discipline — done when there is a versioning policy and it is enforced
 
-**References:** [evidence-review-workflows](research/proof-evidence/evidence-review-workflows.md), [proof-evidence-artifacts](research/proof-evidence/proof-evidence-artifacts.md), [trust-multipliers](research/proof-evidence/trust-multipliers.md), [developer-tooling](research/packages-tooling/developer-tooling.md), [diagnostic-ux](research/compiler/diagnostic-ux.md)
+**References:** [evidence-review-workflows](research/proof-evidence/evidence-review-workflows.md), [proof-evidence-artifacts](research/proof-evidence/proof-evidence-artifacts.md), [trust-multipliers](research/proof-evidence/trust-multipliers.md), [developer-tooling](research/packages-tooling/developer-tooling.md), [diagnostic-ux](research/compiler/diagnostic-ux.md), [performance-research-packets](research/compiler/performance-research-packets.md)
 
 ## 8. Backend Plurality Backlog
 

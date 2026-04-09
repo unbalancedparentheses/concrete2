@@ -42,20 +42,20 @@ These files are exploratory unless they explicitly say otherwise. Once a design 
 
 If you want the highest-leverage current research first:
 
-1. [workloads/phase-h-findings.md](workloads/phase-h-findings.md) — classified findings from the real-program corpus (`P0`, `Open`)
-2. [proof-evidence/formalization-roi.md](proof-evidence/formalization-roi.md) — what to prove first and why (`P0`, `Open`)
-3. [proof-evidence/formalization-breakdown.md](proof-evidence/formalization-breakdown.md) — the full formalization effort split into tracks and milestones (`P0`, `Open`)
-4. [compiler/artifact-driven-compiler.md](compiler/artifact-driven-compiler.md) — stable artifacts, IDs, traceability, and the real compiler driver (`P0`, `Open`)
-5. [packages-tooling/package-model.md](packages-tooling/package-model.md) — the eventual package/dependency model (`P0`, `Open`)
-6. [packages-tooling/package-testing-tooling.md](packages-tooling/package-testing-tooling.md) — package/workspace test workflow design (`P0`, `Open`)
-7. [proof-evidence/evidence-review-workflows.md](proof-evidence/evidence-review-workflows.md) — evidence bundles, machine-readable reports, and review workflows (`P0`, `Open`)
-8. [compiler/semantic-diff-and-trust-drift.md](compiler/semantic-diff-and-trust-drift.md) — semantic/package/release diffing over compiler facts (`P0`, `Open`)
-9. [stdlib-runtime/text-and-output-design.md](stdlib-runtime/text-and-output-design.md) — current text/output direction (`P0`, `Open`)
-10. [stdlib-runtime/runtime-collections.md](stdlib-runtime/runtime-collections.md) — collection maturity for interpreter/runtime workloads (`P1`, `Open`)
-11. [stdlib-runtime/iterators.md](stdlib-runtime/iterators.md) — explicit traversal support without an iterator tower (`P1`, `Open`)
-12. [meta/high-leverage-systems-ideas.md](meta/high-leverage-systems-ideas.md) — recurring high-value systems ideas (`P0`, `Open`)
-13. [proof-evidence/trust-multipliers.md](proof-evidence/trust-multipliers.md) — the strongest combined differentiators across proof, runtime, and evidence (`P0`, `Open`)
-14. [compiler/qbe-backend.md](compiler/qbe-backend.md) — lightweight alternate-backend research (`P1`, `Open`)
+1. [thesis-validation/core-thesis.md](thesis-validation/core-thesis.md) — the core claim: authority, predictable execution, and evidence at function boundaries (`P0`, `Open`)
+2. [compiler/diagnostic-ux.md](compiler/diagnostic-ux.md) — Elm-clear diagnostic goals for proof, report, predictable-profile, capability, and trust errors (`P0`, `Open`)
+3. [proof-evidence/proof-evidence-artifacts.md](proof-evidence/proof-evidence-artifacts.md) — tying reports, artifacts, proofs, specs, results, and reproducibility together (`P0`, `Open`)
+4. [proof-evidence/spec-attachment.md](proof-evidence/spec-attachment.md) — where specs live now, how external registries come next, and why source spec syntax waits (`P0`, `Open`)
+5. [proof-evidence/concrete-to-lean-pipeline.md](proof-evidence/concrete-to-lean-pipeline.md) — traceable Concrete-to-Lean proof direction (`P0`, `Open`)
+6. [compiler/semantic-diff-and-trust-drift.md](compiler/semantic-diff-and-trust-drift.md) — semantic/package/release diffing over compiler facts (`P0`, `Open`)
+7. [compiler/performance-research-packets.md](compiler/performance-research-packets.md) — agent-readable performance/evidence packets for human or LLM optimization research (`P1`, `Open`)
+8. [language/memory-ub-boundary.md](language/memory-ub-boundary.md) — memory/UB classification for predictable and proof-backed evidence claims (`P1`, `Open`)
+9. [compiler/backend-traceability.md](compiler/backend-traceability.md) — source/Core/SSA/LLVM/machine behavior traceability (`P1`, `Open`)
+10. [language/failure-semantics.md](language/failure-semantics.md) — failure model for abort, assertion failure, impossible paths, OOM, and restricted profiles (`P1`, `Open`)
+11. [language/trusted-code-policy.md](language/trusted-code-policy.md) — trusted-code audit policy and restricted-profile behavior (`P1`, `Open`)
+12. [proof-evidence/formalization-roi.md](proof-evidence/formalization-roi.md) — what to prove first and why (`P0`, `Open`)
+13. [proof-evidence/formalization-breakdown.md](proof-evidence/formalization-breakdown.md) — the full formalization effort split into tracks and milestones (`P0`, `Open`)
+14. [proof-evidence/evidence-review-workflows.md](proof-evidence/evidence-review-workflows.md) — evidence bundles, machine-readable reports, and review workflows (`P0`, `Open`)
 15. [meta/ai-assisted-optimization.md](meta/ai-assisted-optimization.md) — optimization/refactoring loops driven by structured compiler reports (`P1`, `Research`)
 
 ## Language
@@ -112,6 +112,7 @@ If you want the highest-leverage current research first:
 - [compiler/mlir-backend-shape.md](compiler/mlir-backend-shape.md) — where MLIR should sit if it earns its complexity (`P1`, `Research`)
 - [compiler/miri-style-interpreter.md](compiler/miri-style-interpreter.md) — interpreter/tooling direction for stronger semantic checking (`P2`, `Research`)
 - [compiler/optimization-policy.md](compiler/optimization-policy.md) — optimization goals, non-goals, and observability constraints (`P1`, `Open`)
+- [compiler/performance-research-packets.md](compiler/performance-research-packets.md) — agent-readable performance/evidence packets for human or LLM optimization research (`P1`, `Open`)
 - [compiler/qbe-backend.md](compiler/qbe-backend.md) — lightweight alternate-backend research (`P1`, `Open`)
 - [compiler/qbe-in-concrete.md](compiler/qbe-in-concrete.md) — long-horizon self-hosting/backend-implementation idea (`P2`, `Research`)
 - [compiler/semantic-diff-and-trust-drift.md](compiler/semantic-diff-and-trust-drift.md) — semantic/trust-drift diffing over compiler facts (`P0`, `Open`)
@@ -150,6 +151,7 @@ If you want the highest-leverage current research first:
 - [workloads/showcase-workloads.md](workloads/showcase-workloads.md) — serious programs Concrete should eventually implement well (`P1`, `Open`)
 - [workloads/high-integrity-examples.md](workloads/high-integrity-examples.md) — example shapes for the future high-integrity profile (`P1`, `Open`)
 - [workloads/adoption-strategy.md](workloads/adoption-strategy.md) — signature domains, showcases, onboarding, and public pull (`P1`, `Open`)
+- [workloads/thesis-threat-model.md](workloads/thesis-threat-model.md) — the accidents and adversarial changes the thesis/report/proof workflow should catch (`P0`, `Open`)
 
 ## Process And Quality
 
