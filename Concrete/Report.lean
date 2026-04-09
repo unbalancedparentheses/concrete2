@@ -1737,5 +1737,119 @@ def proofStatusReport (modules : List CModule) (locMap : FnLocMap := [])
   let summary := s!"Totals: {entries.length} functions — {proved} proved, {stale} stale, {notProved} unproved (eligible), {notEligible} ineligible, {trusted} trusted"
   s!"{header}\n\n{"\n\n".intercalate body}\n\n{summary}\n"
 
+-- ============================================================
+-- Machine-readable facts (--report diagnostics-json)
+-- ============================================================
+-- Structured diagnostic records for predictable violations and
+-- proof-status entries. JSON output, no external dependencies.
+
+namespace Json
+
+/-- Escape a string for JSON output. -/
+private def escapeStr (s : String) : String :=
+  s.foldl (fun acc c =>
+    acc ++ match c with
+    | '"' => "\\\""
+    | '\\' => "\\\\"
+    | '\n' => "\\n"
+    | '\t' => "\\t"
+    | c => c.toString) ""
+
+/-- A minimal JSON value. -/
+inductive Val where
+  | str : String → Val
+  | num : Int → Val
+  | bool : Bool → Val
+  | null : Val
+  | arr : List Val → Val
+  | obj : List (String × Val) → Val
+
+/-- Render a JSON value. -/
+partial def Val.render : Val → String
+  | .str s => s!"\"{escapeStr s}\""
+  | .num n => toString n
+  | .bool b => if b then "true" else "false"
+  | .null => "null"
+  | .arr vs => s!"[{", ".intercalate (vs.map Val.render)}]"
+  | .obj kvs =>
+    let fields := kvs.map fun (k, v) => s!"\"{escapeStr k}\": {v.render}"
+    s!"\{{", ".intercalate fields}}"
+
+end Json
+
+open Json in
+/-- Convert a SourceLoc to a JSON object. -/
+private def locToJson : Option SourceLoc → Val
+  | some (file, line) => .obj [("file", .str file), ("line", .num line)]
+  | none => .null
+
+open Json in
+/-- Convert a ProfileViolation to a JSON fact. -/
+private def violationToFact (v : ProfileViolation) : Val :=
+  .obj [
+    ("kind", .str "predictable_violation"),
+    ("function", .str v.fnName),
+    ("state", .str "failed"),
+    ("reason", .str v.reason),
+    ("hint", .str v.hint),
+    ("loc", locToJson v.loc),
+    ("violation_loc", locToJson v.violationLoc)
+  ]
+
+open Json in
+/-- Convert a ProofStatusEntry to a JSON fact. -/
+private def proofStatusToFact (e : ProofStatusEntry) : Val :=
+  let stateStr := match e.state with
+    | .proved => "proved"
+    | .stale => "stale"
+    | .notProved => "no_proof"
+    | .notEligible => "not_eligible"
+    | .trusted => "trusted"
+  let hintStr := match e.state with
+    | .stale => "Update the Lean proof in Concrete/Proof.lean, or restore the proved implementation."
+    | .notProved => "Add a Lean proof for this function in Concrete/Proof.lean with the current fingerprint."
+    | .notEligible => s!"Remove {", ".intercalate e.profileGates} to make this function eligible for proof."
+    | _ => ""
+  .obj ([
+    ("kind", .str "proof_status"),
+    ("function", .str e.qualName),
+    ("state", .str stateStr),
+    ("loc", locToJson e.loc),
+    ("current_fingerprint", .str e.currentFp)
+  ] ++ (if e.expectedFp.isEmpty then [] else [("expected_fingerprint", .str e.expectedFp)])
+    ++ (if e.profileGates.isEmpty then [] else [("profile_gates", .arr (e.profileGates.map .str))])
+    ++ (if hintStr.isEmpty then [] else [("hint", .str hintStr)]))
+
+open Json in
+/-- Collect predictable violations as structured facts. -/
+def collectPredictableFacts (modules : List CModule) (locMap : FnLocMap := []) : List Val :=
+  let graph := buildCallGraph modules
+  let sccs := tarjanSCC graph
+  let recMap := classifyRecursion graph sccs
+  let externNames := modules.foldl (fun acc m => acc ++ collectExternNames m) []
+  let violations := modules.foldl (fun acc m =>
+    acc ++ checkPredictableModule recMap externNames locMap m) []
+  violations.map violationToFact
+
+open Json in
+/-- Collect proof-status entries as structured facts. -/
+def collectProofStatusFacts (modules : List CModule) (locMap : FnLocMap := []) : List Val :=
+  let graph := buildCallGraph modules
+  let sccs := tarjanSCC graph
+  let recMap := classifyRecursion graph sccs
+  let externNames := modules.foldl (fun acc m => acc ++ collectExternNames m) []
+  let entries := modules.foldl (fun acc m =>
+    acc ++ collectProofStatus externNames recMap locMap m) []
+  entries.map proofStatusToFact
+
+open Json in
+/-- Produce JSON diagnostics combining predictable + proof-status facts. -/
+def diagnosticsJson (modules : List CModule) (locMap : FnLocMap := []) : String :=
+  let predictable := collectPredictableFacts modules locMap
+  let proofStatus := collectProofStatusFacts modules locMap
+  let allFacts := predictable ++ proofStatus
+  let root := Val.arr allFacts
+  root.render
+
 end Report
 end Concrete

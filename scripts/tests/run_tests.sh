@@ -2519,6 +2519,111 @@ check_report "$TESTDIR/adversarial_profile_mixed_evidence.con" proof-status \
     "proof-status: summary counts correct" \
     "proof-status: summary counts wrong"
 
+# --- diagnostics-json: machine-readable diagnostic records ---
+echo ""
+echo "=== Diagnostics JSON tests ==="
+
+# Predictable violation produces JSON with correct kind and fields
+json_output=$(cached_output "$TESTDIR/report_check_predictable_fail_loops.con" "--report diagnostics-json")
+if echo "$json_output" | grep -q '"kind": "predictable_violation"'; then
+    echo "  ok  diagnostics-json: predictable_violation kind present"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  diagnostics-json: predictable_violation kind missing"
+    echo "$json_output"
+    FAIL=$((FAIL + 1))
+fi
+
+if echo "$json_output" | grep -q '"reason": "unbounded loops"'; then
+    echo "  ok  diagnostics-json: unbounded loops reason present"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  diagnostics-json: unbounded loops reason missing"
+    echo "$json_output"
+    FAIL=$((FAIL + 1))
+fi
+
+if echo "$json_output" | grep -q '"function": "spin"'; then
+    echo "  ok  diagnostics-json: spin function name present"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  diagnostics-json: spin function name missing"
+    echo "$json_output"
+    FAIL=$((FAIL + 1))
+fi
+
+# Source location present in violation
+if echo "$json_output" | grep -q '"loc":.*"file":.*"line":'; then
+    echo "  ok  diagnostics-json: source location present in violation"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  diagnostics-json: source location missing in violation"
+    echo "$json_output"
+    FAIL=$((FAIL + 1))
+fi
+
+# Violation location present (offending construct)
+if echo "$json_output" | grep -q '"violation_loc":.*"file":.*"line":'; then
+    echo "  ok  diagnostics-json: violation_loc present"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  diagnostics-json: violation_loc missing"
+    echo "$json_output"
+    FAIL=$((FAIL + 1))
+fi
+
+# Proof-status entries present
+if echo "$json_output" | grep -q '"kind": "proof_status"'; then
+    echo "  ok  diagnostics-json: proof_status kind present"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  diagnostics-json: proof_status kind missing"
+    echo "$json_output"
+    FAIL=$((FAIL + 1))
+fi
+
+# Proof-status entry has fingerprint
+if echo "$json_output" | grep -q '"current_fingerprint":'; then
+    echo "  ok  diagnostics-json: current_fingerprint present"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  diagnostics-json: current_fingerprint missing"
+    echo "$json_output"
+    FAIL=$((FAIL + 1))
+fi
+
+# Recursion violation produces JSON
+json_rec=$(cached_output "$TESTDIR/report_check_predictable_fail_recursion.con" "--report diagnostics-json")
+if echo "$json_rec" | grep -q '"reason": "direct recursion"'; then
+    echo "  ok  diagnostics-json: direct recursion reason present"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  diagnostics-json: direct recursion reason missing"
+    echo "$json_rec"
+    FAIL=$((FAIL + 1))
+fi
+
+# Passing file produces no predictable violations but has proof-status
+json_pass=$(cached_output "$TESTDIR/report_check_predictable_pass.con" "--report diagnostics-json")
+if echo "$json_pass" | grep -q '"kind": "proof_status"' && ! echo "$json_pass" | grep -q '"kind": "predictable_violation"'; then
+    echo "  ok  diagnostics-json: passing file has proof_status but no violations"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  diagnostics-json: passing file should have proof_status only"
+    echo "$json_pass"
+    FAIL=$((FAIL + 1))
+fi
+
+# Output is valid JSON array (starts with [ and ends with ])
+if echo "$json_output" | grep -q '^\[' && echo "$json_output" | grep -q '\]$'; then
+    echo "  ok  diagnostics-json: output is JSON array"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  diagnostics-json: output should be a JSON array"
+    echo "$json_output"
+    FAIL=$((FAIL + 1))
+fi
+
 fi # end section: report
 
 # === Codegen differential tests ===
