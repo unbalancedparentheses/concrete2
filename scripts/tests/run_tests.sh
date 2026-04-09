@@ -778,6 +778,23 @@ run_ok "$TESTDIR/destroy_trait.con" 42
 run_ok "$TESTDIR/copy_struct.con" 42
 run_ok "$TESTDIR/copy_enum.con" 42
 
+# Adversarial codegen tests
+run_ok "$TESTDIR/adversarial_codegen_deeply_nested_if.con" 42
+run_ok "$TESTDIR/adversarial_codegen_for_loop_zero_iters.con" 99
+run_ok "$TESTDIR/adversarial_codegen_cast_chain.con" 42
+run_ok "$TESTDIR/adversarial_codegen_many_params.con" 36
+run_ok "$TESTDIR/adversarial_codegen_enum_match.con" "$(printf '10\n25\n30\n42')"
+run_ok "$TESTDIR/adversarial_codegen_string_operations.con" "$(printf 'hello world\n11')"
+run_ok "$TESTDIR/adversarial_codegen_bool_logic.con" 42
+run_ok "$TESTDIR/adversarial_codegen_nested_struct_array.con" 37
+run_ok "$TESTDIR/adversarial_codegen_array_in_loop.con" 100
+run_ok "$TESTDIR/adversarial_codegen_struct_return_chain.con" 10
+run_ok "$TESTDIR/adversarial_codegen_array_bounds.con" 77
+run_ok "$TESTDIR/adversarial_codegen_large_struct.con" 55
+# Adversarial linear/cap positive tests
+run_ok "$TESTDIR/adversarial_linear_correct_chain.con" 30
+run_ok "$TESTDIR/adversarial_cap_correct_propagation.con" 0
+
 # abort test: compiles but exits with nonzero (signal)
 run_abort_worker() {
     local file="$1"
@@ -2370,6 +2387,75 @@ check_report "$TESTDIR/adversarial_fn_ptr_indirect.con" effects \
     "0 proved, 3 enforced" \
     "adversarial: fn pointer file has 0 proved (no registered proof)" \
     "adversarial: fn pointer file wrong evidence counts"
+
+# --- Linear type system: compiler rejects violations ---
+run_err "$TESTDIR/adversarial_linear_double_use.con" "used after move"
+run_err "$TESTDIR/adversarial_linear_leak.con" "was never consumed"
+run_err "$TESTDIR/adversarial_linear_branch_consume.con" "consumed in one branch"
+run_err "$TESTDIR/adversarial_linear_borrow_and_move.con" "frozen by borrow"
+
+# --- Linear type system: correct chain compiles and runs ---
+check_report "$TESTDIR/adversarial_linear_correct_chain.con" effects \
+    "5 functions" \
+    "adversarial: linear correct chain has expected function count" \
+    "adversarial: linear correct chain wrong function count"
+
+# --- Capability system: compiler rejects violations ---
+run_err "$TESTDIR/adversarial_cap_transitive.con" "but caller has"
+run_err "$TESTDIR/adversarial_cap_alloc_without_cap.con" "but caller has"
+run_err "$TESTDIR/adversarial_cap_subset.con" "but caller has"
+run_err "$TESTDIR/adversarial_cap_pure_no_io.con" "but caller has"
+
+# --- Capability system: correct propagation works ---
+check_report "$TESTDIR/adversarial_cap_correct_propagation.con" effects \
+    "3 functions" \
+    "adversarial: cap correct propagation compiles" \
+    "adversarial: cap correct propagation should compile"
+
+# --- Predictable profile: nested bounded loops pass ---
+check_profile "$TESTDIR/adversarial_profile_nested_loops.con" predictable \
+    "pass" \
+    "adversarial: nested bounded loops pass predictable" \
+    "adversarial: nested bounded loops should pass"
+
+check_report "$TESTDIR/adversarial_profile_nested_loops.con" effects \
+    "loops: bounded" \
+    "adversarial: nested loops classified as bounded" \
+    "adversarial: nested loops should be bounded"
+
+# --- Predictable profile: bounded vs unbounded in same file ---
+check_report "$TESTDIR/adversarial_profile_bounded_then_unbounded.con" effects \
+    "loops: unbounded" \
+    "adversarial: unbounded while(true) detected" \
+    "adversarial: unbounded while(true) not caught"
+
+# --- Predictable profile: deep pure call chain ---
+check_report "$TESTDIR/adversarial_profile_deep_call_chain.con" effects \
+    "0 reported" \
+    "adversarial: deep call chain all enforced (0 reported)" \
+    "adversarial: deep call chain should have 0 reported"
+
+# --- Predictable profile: all 4 evidence levels in one file ---
+check_report "$TESTDIR/adversarial_profile_mixed_evidence.con" effects \
+    "1 proved" \
+    "adversarial: mixed evidence has 1 proved" \
+    "adversarial: mixed evidence wrong proved count"
+
+check_report "$TESTDIR/adversarial_profile_mixed_evidence.con" effects \
+    "1 trusted-assumption" \
+    "adversarial: mixed evidence has 1 trusted-assumption" \
+    "adversarial: mixed evidence wrong trusted count"
+
+check_report "$TESTDIR/adversarial_profile_mixed_evidence.con" effects \
+    "1 reported" \
+    "adversarial: mixed evidence has 1 reported" \
+    "adversarial: mixed evidence wrong reported count"
+
+# --- Predictable profile: mutual recursion through 2 functions ---
+check_profile "$TESTDIR/adversarial_profile_recursive_through_two.con" predictable \
+    "alpha.*mutual\|beta.*mutual" \
+    "adversarial: mutual recursion A<->B detected" \
+    "adversarial: mutual recursion A<->B not caught"
 
 fi # end section: report
 
