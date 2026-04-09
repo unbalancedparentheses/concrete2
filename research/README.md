@@ -115,6 +115,7 @@ If you want the highest-leverage current research first:
 - [compiler/performance-research-packets.md](compiler/performance-research-packets.md) — agent-readable performance/evidence packets for human or LLM optimization research (`P1`, `Open`)
 - [compiler/qbe-backend.md](compiler/qbe-backend.md) — lightweight alternate-backend research (`P1`, `Open`)
 - [compiler/qbe-in-concrete.md](compiler/qbe-in-concrete.md) — long-horizon self-hosting/backend-implementation idea (`P2`, `Research`)
+- [compiler/semantic-query-interface.md](compiler/semantic-query-interface.md) — CLI/agent query interface over compiler-produced facts, inspired by neurosymbolic code-analysis tools (`P1`, `Open`)
 - [compiler/semantic-diff-and-trust-drift.md](compiler/semantic-diff-and-trust-drift.md) — semantic/trust-drift diffing over compiler facts (`P0`, `Open`)
 - [compiler/semantic-diff.md](compiler/semantic-diff.md) — broader semantic diff/query ideas (`P2`, `Research`)
 - [compiler/vec-inline-investigation.md](compiler/vec-inline-investigation.md) — VM/codegen inline-cliff investigation (`P1`, `Adopted`)

@@ -227,18 +227,20 @@ The showcase corpus should deliberately rebalance away from mostly text-heavy ex
 1. machine-readable reports — done when report output is structured and parseable
 2. verified FFI envelopes and reportable FFI boundary facts — done when FFI boundaries are auditable from report output
 3. trust bundles and report-first review workflows — done when reviews can be driven by compiler-emitted trust reports
-4. semantic query/search over compiler facts — done when you can ask questions about the program and get structured answers
-5. compatibility checks and trust-drift diffing — done when version bumps surface semantic/trust changes automatically
-6. review-policy gates — done when CI can enforce authority, trust, FFI, and proof-facing policies
-7. CI/CD evidence gates — done when tests, `--check predictable`, stale-proof checks, proof-obligation status, report generation, and semantic/trust drift checks can be enforced in a noninteractive CI job
-8. source-location-rich report artifacts — done when machine-readable reports include source spans, qualified identities, fingerprints, artifact IDs, proof/spec/obligation IDs, evidence level, and trust assumptions
-9. agent-readable performance research packet — done when a noninteractive command can emit the current benchmark table, perf-baseline delta, compile-time summary, binary/IR-size summary, allocation/effects facts, hot examples, known perf hypotheses, and safety/evidence guardrails for an optimization agent
-10. coverage tooling over tests, reports, and proof artifacts — done when coverage gaps across all three are visible
-11. editor/LSP baseline — done when there is basic editor support with go-to-definition and diagnostics
-12. dependency auditing — done when dependencies can be audited for capability and trust properties
-13. release/compatibility discipline — done when there is a versioning policy and it is enforced
+4. compiler fact query interface — done when a CLI can answer structural queries over compiler-produced facts, such as callers/callees, reachability, authority path, allocation path, proof impact, dead functions, call cycles, functions reaching FFI/trusted/blocking/Alloc, and why a predicate holds
+5. agent / MCP query surface over compiler facts — done when LLM tools can query the same fact graph without grepping source and get small structured answers with derivation/path traces
+6. semantic query/search over compiler facts — done when you can ask questions about the program and get structured answers
+7. compatibility checks and trust-drift diffing — done when version bumps surface semantic/trust changes automatically
+8. review-policy gates — done when CI can enforce authority, trust, FFI, and proof-facing policies
+9. CI/CD evidence gates — done when tests, `--check predictable`, stale-proof checks, proof-obligation status, report generation, and semantic/trust drift checks can be enforced in a noninteractive CI job
+10. source-location-rich report artifacts — done when machine-readable reports include source spans, qualified identities, fingerprints, artifact IDs, proof/spec/obligation IDs, evidence level, and trust assumptions
+11. agent-readable performance research packet — done when a noninteractive command can emit the current benchmark table, perf-baseline delta, compile-time summary, binary/IR-size summary, allocation/effects facts, hot examples, known perf hypotheses, and safety/evidence guardrails for an optimization agent
+12. coverage tooling over tests, reports, and proof artifacts — done when coverage gaps across all three are visible
+13. editor/LSP baseline — done when there is basic editor support with go-to-definition and diagnostics
+14. dependency auditing — done when dependencies can be audited for capability and trust properties
+15. release/compatibility discipline — done when there is a versioning policy and it is enforced
 
-**References:** [evidence-review-workflows](research/proof-evidence/evidence-review-workflows.md), [proof-evidence-artifacts](research/proof-evidence/proof-evidence-artifacts.md), [trust-multipliers](research/proof-evidence/trust-multipliers.md), [developer-tooling](research/packages-tooling/developer-tooling.md), [diagnostic-ux](research/compiler/diagnostic-ux.md), [performance-research-packets](research/compiler/performance-research-packets.md)
+**References:** [evidence-review-workflows](research/proof-evidence/evidence-review-workflows.md), [proof-evidence-artifacts](research/proof-evidence/proof-evidence-artifacts.md), [trust-multipliers](research/proof-evidence/trust-multipliers.md), [developer-tooling](research/packages-tooling/developer-tooling.md), [diagnostic-ux](research/compiler/diagnostic-ux.md), [semantic-query-interface](research/compiler/semantic-query-interface.md), [performance-research-packets](research/compiler/performance-research-packets.md)
 
 ## 8. Backend Plurality Backlog
 
