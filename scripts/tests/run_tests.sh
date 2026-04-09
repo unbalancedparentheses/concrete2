@@ -2468,6 +2468,11 @@ check_profile "$TESTDIR/adversarial_profile_bounded_then_unbounded.con" predicta
     "adversarial: predictable failure includes file:line" \
     "adversarial: predictable failure missing file:line"
 
+check_profile "$TESTDIR/adversarial_profile_bounded_then_unbounded.con" predictable \
+    "↳.*adversarial_profile_bounded_then_unbounded.con:18" \
+    "adversarial: unbounded loop violation points at while statement" \
+    "adversarial: unbounded loop violation missing while location"
+
 fi # end section: report
 
 # === Codegen differential tests ===

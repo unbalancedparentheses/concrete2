@@ -12,37 +12,106 @@ namespace Report
 -- Source location lookup
 -- ============================================================
 
-/-- Map from qualified function name to (file, span). -/
-abbrev FnLocMap := List (String × String × Span)
+/-- Structured source location: (file, line). -/
+abbrev SourceLoc := String × Nat
+
+/-- Per-function parsed AST info for span lookups. -/
+structure FnLocEntry where
+  qualName : String
+  file     : String
+  fnSpan   : Span
+  body     : List Stmt      -- parsed AST body (carries spans on every node)
+
+/-- Map from qualified function name to location + parsed body. -/
+abbrev FnLocMap := List FnLocEntry
 
 /-- Collect function locations from a parsed AST module tree. -/
 partial def buildFnLocMap (modules : List Module) (file : String) (pfx : String := "") : FnLocMap :=
   modules.foldl (fun acc m =>
     let qualPrefix := if pfx == "" then m.name else pfx ++ "." ++ m.name
     let fnLocs := m.functions.map fun f =>
-      (qualPrefix ++ "." ++ f.name, file, f.span)
+      { qualName := qualPrefix ++ "." ++ f.name, file, fnSpan := f.span, body := f.body }
     let implLocs := m.implBlocks.foldl (fun acc2 ib =>
       acc2 ++ ib.methods.map fun f =>
-        (qualPrefix ++ "." ++ f.name, file, f.span)) []
+        { qualName := qualPrefix ++ "." ++ f.name, file, fnSpan := f.span, body := f.body }) []
     let traitImplLocs := m.traitImpls.foldl (fun acc2 ti =>
       acc2 ++ ti.methods.map fun f =>
-        (qualPrefix ++ "." ++ f.name, file, f.span)) []
+        { qualName := qualPrefix ++ "." ++ f.name, file, fnSpan := f.span, body := f.body }) []
     let subLocs := buildFnLocMap m.submodules file qualPrefix
     acc ++ fnLocs ++ implLocs ++ traitImplLocs ++ subLocs) []
 
-/-- Structured source location: (file, line). -/
-abbrev SourceLoc := String × Nat
-
 /-- Look up a function's source location. -/
 def lookupLoc (locMap : FnLocMap) (qualName : String) : Option SourceLoc :=
-  match locMap.find? fun (n, _, _) => n == qualName with
-  | some (_, file, sp) => some (file, sp.line)
+  match locMap.find? fun e => e.qualName == qualName with
+  | some e => some (e.file, e.fnSpan.line)
   | none => none
+
+/-- Look up a function's parsed body for violation-span extraction. -/
+def lookupBody (locMap : FnLocMap) (qualName : String) : Option FnLocEntry :=
+  locMap.find? fun e => e.qualName == qualName
 
 /-- Format a source location as "file:line". -/
 def fmtLoc : Option SourceLoc → String
   | some (file, line) => s!"{file}:{line}"
   | none => ""
+
+-- ============================================================
+-- Violation-span extraction from parsed AST
+-- ============================================================
+
+/-- Find the first while/for loop span in a parsed statement list. -/
+partial def findLoopSpan : List Stmt → Option Span
+  | [] => none
+  | s :: rest =>
+    match s with
+    | .while_ sp _ _ _ => some sp
+    | .forLoop sp _ _ _ _ _ => some sp
+    | .ifElse _ _ thenB (some elseB) =>
+      findLoopSpan thenB |>.orElse fun _ => findLoopSpan elseB |>.orElse fun _ => findLoopSpan rest
+    | .ifElse _ _ thenB none =>
+      findLoopSpan thenB |>.orElse fun _ => findLoopSpan rest
+    | .borrowIn _ _ _ _ _ body =>
+      findLoopSpan body |>.orElse fun _ => findLoopSpan rest
+    | _ => findLoopSpan rest
+
+/-- Find the span of the first call to any of the given function names. -/
+partial def findCallSpan (targets : List String) : List Stmt → Option Span
+  | [] => none
+  | s :: rest =>
+    let fromExprs := findCallSpanExpr targets s
+    match fromExprs with
+    | some sp => some sp
+    | none => findCallSpan targets rest
+where
+  findCallSpanExpr (targets : List String) : Stmt → Option Span
+    | .expr _ e => findCallSpanInExpr targets e
+    | .letDecl _ _ _ _ e => findCallSpanInExpr targets e
+    | .assign _ _ e => findCallSpanInExpr targets e
+    | .return_ _ (some e) => findCallSpanInExpr targets e
+    | .ifElse _ cond thenB (some elseB) =>
+      findCallSpanInExpr targets cond
+      |>.orElse fun _ => findCallSpan targets thenB
+      |>.orElse fun _ => findCallSpan targets elseB
+    | .ifElse _ cond thenB none =>
+      findCallSpanInExpr targets cond
+      |>.orElse fun _ => findCallSpan targets thenB
+    | .while_ _ cond body _ =>
+      findCallSpanInExpr targets cond
+      |>.orElse fun _ => findCallSpan targets body
+    | .forLoop _ _ cond _ body _ =>
+      findCallSpanInExpr targets cond
+      |>.orElse fun _ => findCallSpan targets body
+    | .borrowIn _ _ _ _ _ body => findCallSpan targets body
+    | _ => none
+  findCallSpanInExpr (targets : List String) : Expr → Option Span
+    | .call sp fn _ args => if targets.contains fn then some sp
+      else args.foldl (fun acc a => acc.orElse fun _ => findCallSpanInExpr targets a) none
+    | .methodCall _ _ _ _ args => args.foldl (fun acc a => acc.orElse fun _ => findCallSpanInExpr targets a) none
+    | .binOp _ _ l r => (findCallSpanInExpr targets l).orElse fun _ => findCallSpanInExpr targets r
+    | .unaryOp _ _ e => findCallSpanInExpr targets e
+    | .ifExpr _ cond thenB elseB => (findCallSpanInExpr targets cond).orElse fun _ =>
+        (findCallSpan targets thenB).orElse fun _ => findCallSpan targets elseB
+    | _ => none
 
 -- ============================================================
 -- Helpers
@@ -1401,9 +1470,10 @@ private def blockingCaps : List String :=
 
 /-- A single profile violation. -/
 structure ProfileViolation where
-  fnName   : String
-  reason   : String
-  loc      : Option SourceLoc := none
+  fnName       : String
+  reason       : String
+  loc          : Option SourceLoc := none   -- function definition
+  violationLoc : Option SourceLoc := none   -- offending construct (loop, call, etc.)
 
 private partial def checkPredictableModule
     (recMap : List (String × RecursionKind × List String))
@@ -1414,7 +1484,12 @@ private partial def checkPredictableModule
   let fnViolations := m.functions.foldl (fun acc f =>
     let qualName := qualPrefix ++ "." ++ f.name
     let fnLoc := lookupLoc locMap qualName
-    -- 1. Recursion
+    let entry := lookupBody locMap qualName
+    let astBody := match entry with | some e => e.body | none => []
+    let fileStr := match entry with | some e => e.file | none => ""
+    let mkViolLoc (sp : Option Span) : Option SourceLoc :=
+      sp.bind fun s => if fileStr == "" then none else some (fileStr, s.line)
+    -- 1. Recursion (function-level only for now)
     let recViolations := match recMap.find? (fun (n, _, _) => n == f.name) with
       | some (_, .direct, _) =>
         [{ fnName := f.name, reason := "direct recursion", loc := fnLoc }]
@@ -1422,30 +1497,33 @@ private partial def checkPredictableModule
         let others := members.filter (· != f.name)
         [{ fnName := f.name, reason := s!"mutual recursion with {", ".intercalate others}", loc := fnLoc }]
       | _ => []
-    -- 2. Loop boundedness
+    -- 2. Loop boundedness — point at the offending loop
     let loopClass := classifyLoops f.body
+    let loopViolLoc := mkViolLoc (findLoopSpan astBody)
     let loopViolations :=
       if loopClass == "unbounded" then
-        [{ fnName := f.name, reason := "unbounded loops", loc := fnLoc }]
+        [{ fnName := f.name, reason := "unbounded loops", loc := fnLoc, violationLoc := loopViolLoc }]
       else if loopClass == "mixed" then
-        [{ fnName := f.name, reason := "mixed loop boundedness (some loops unbounded)", loc := fnLoc }]
+        [{ fnName := f.name, reason := "mixed loop boundedness (some loops unbounded)", loc := fnLoc, violationLoc := loopViolLoc }]
       else []
-    -- 3. Allocation (intrinsic calls OR Alloc capability)
+    -- 3. Allocation — point at the allocating call
     let callees := collectCallsStmts f.body |>.eraseDups
     let allocs := callees.filter isAllocCall
     let (fnCaps, _) := f.capSet.normalize
     let hasAllocCap := fnCaps.any (· == "Alloc")
+    let allocViolLoc := mkViolLoc (findCallSpan allocs astBody)
     let allocViolations :=
       if !allocs.isEmpty then
-        [{ fnName := f.name, reason := s!"allocates ({", ".intercalate allocs})", loc := fnLoc }]
+        [{ fnName := f.name, reason := s!"allocates ({", ".intercalate allocs})", loc := fnLoc, violationLoc := allocViolLoc }]
       else if hasAllocCap then
         [{ fnName := f.name, reason := "has Alloc capability", loc := fnLoc }]
       else []
-    -- 4. FFI
+    -- 4. FFI — point at the extern call
     let externCalls := callees.filter fun c => externNames.contains c
+    let ffiViolLoc := mkViolLoc (findCallSpan externCalls astBody)
     let ffiViolations := if externCalls.isEmpty then []
-      else [{ fnName := f.name, reason := s!"calls extern ({", ".intercalate externCalls})", loc := fnLoc }]
-    -- 5. Blocking
+      else [{ fnName := f.name, reason := s!"calls extern ({", ".intercalate externCalls})", loc := fnLoc, violationLoc := ffiViolLoc }]
+    -- 5. Blocking — points at function signature (with-clause has no separate span)
     let (concreteCaps, _) := f.capSet.normalize
     let blockingUsed := concreteCaps.filter fun c => blockingCaps.contains c
     let blockViolations := if blockingUsed.isEmpty then []
@@ -1471,7 +1549,10 @@ def checkPredictable (modules : List CModule) (locMap : FnLocMap := []) : Bool �
     let header := "predictable profile: FAIL"
     let lines := violations.map fun v =>
       let locPrefix := match v.loc with | some l => s!"{fmtLoc (some l)}: " | none => ""
-      s!"  error: {locPrefix}{v.fnName} — {v.reason}"
+      let violSuffix := match v.violationLoc with
+        | some l => s!"\n         ↳ {fmtLoc (some l)}"
+        | none => ""
+      s!"  error: {locPrefix}{v.fnName} — {v.reason}{violSuffix}"
     let summary := s!"\n{violatingFns.length} function(s) failed, {passingFns} passed"
     (false, s!"{header}\n\n{"\n".intercalate lines}\n{summary}\n")
 
