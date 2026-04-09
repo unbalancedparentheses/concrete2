@@ -1234,6 +1234,7 @@ partial def parseMethodParamList (selfKind : Option SelfKind) : ParseM (List Par
     parseParamList
 
 partial def parseMethodDef : ParseM (FnDef × Option SelfKind) := do
+  let sp ← peekSpan
   expect .fn
   let name ← expectIdent
   let (typeParams, typeBounds) ← parseTypeParams
@@ -1282,7 +1283,7 @@ partial def parseMethodDef : ParseM (FnDef × Option SelfKind) := do
   else
     pure .unit
   let body ← parseBlock
-  return ({ name, typeParams, typeBounds, params, retTy, body, capSet }, selfKind)
+  return ({ name, typeParams, typeBounds, params, retTy, body, capSet, span := sp }, selfKind)
 
 partial def parseImplBlock : ParseM (ImplBlock ⊕ ImplTraitBlock) := do
   expect .impl_
@@ -1418,6 +1419,7 @@ private def resolveCapVars (capParams : List String) (cs : CapSet) : CapSet :=
   | other => other
 
 partial def parseFnDef : ParseM FnDef := do
+  let sp ← peekSpan
   expect .fn
   let name ← expectIdent
   let (typeParams, typeBounds, capParams) ← parseTypeAndCapParams
@@ -1433,10 +1435,11 @@ partial def parseFnDef : ParseM FnDef := do
   else
     pure .unit
   let body ← parseBlock
-  return { name, typeParams, typeBounds, capParams, params, retTy, body, capSet }
+  return { name, typeParams, typeBounds, capParams, params, retTy, body, capSet, span := sp }
 
 /-- Parse a fn that may have a body ({...}) or be a declaration (;). -/
 partial def parseFnDefOrDecl : ParseM (FnDef ⊕ ExternFnDecl) := do
+  let sp ← peekSpan
   expect .fn
   let name ← expectIdent
   let (typeParams, typeBounds, capParams) ← parseTypeAndCapParams
@@ -1457,7 +1460,7 @@ partial def parseFnDefOrDecl : ParseM (FnDef ⊕ ExternFnDecl) := do
     return .inr { name, params, retTy }
   else
     let body ← parseBlock
-    return .inl { name, typeParams, typeBounds, capParams, params, retTy, body, capSet }
+    return .inl { name, typeParams, typeBounds, capParams, params, retTy, body, capSet, span := sp }
 
 partial def parseStructDef : ParseM StructDef := do
   expect .struct_

@@ -2457,6 +2457,17 @@ check_profile "$TESTDIR/adversarial_profile_recursive_through_two.con" predictab
     "adversarial: mutual recursion A<->B detected" \
     "adversarial: mutual recursion A<->B not caught"
 
+# --- Source locations in reports ---
+check_report "$TESTDIR/adversarial_profile_mixed_evidence.con" effects \
+    "@ .*adversarial_profile_mixed_evidence.con:" \
+    "adversarial: effects report includes source locations" \
+    "adversarial: effects report missing source locations"
+
+check_profile "$TESTDIR/adversarial_profile_bounded_then_unbounded.con" predictable \
+    "adversarial_profile_bounded_then_unbounded.con:[0-9].*spin" \
+    "adversarial: predictable failure includes file:line" \
+    "adversarial: predictable failure missing file:line"
+
 fi # end section: report
 
 # === Codegen differential tests ===

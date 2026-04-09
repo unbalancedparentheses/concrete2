@@ -9,6 +9,34 @@ namespace Concrete
 namespace Report
 
 -- ============================================================
+-- Source location lookup
+-- ============================================================
+
+/-- Map from qualified function name to (file, span). -/
+abbrev FnLocMap := List (String × String × Span)
+
+/-- Collect function locations from a parsed AST module tree. -/
+partial def buildFnLocMap (modules : List Module) (file : String) (pfx : String := "") : FnLocMap :=
+  modules.foldl (fun acc m =>
+    let qualPrefix := if pfx == "" then m.name else pfx ++ "." ++ m.name
+    let fnLocs := m.functions.map fun f =>
+      (qualPrefix ++ "." ++ f.name, file, f.span)
+    let implLocs := m.implBlocks.foldl (fun acc2 ib =>
+      acc2 ++ ib.methods.map fun f =>
+        (qualPrefix ++ "." ++ f.name, file, f.span)) []
+    let traitImplLocs := m.traitImpls.foldl (fun acc2 ti =>
+      acc2 ++ ti.methods.map fun f =>
+        (qualPrefix ++ "." ++ f.name, file, f.span)) []
+    let subLocs := buildFnLocMap m.submodules file qualPrefix
+    acc ++ fnLocs ++ implLocs ++ traitImplLocs ++ subLocs) []
+
+/-- Format a source location as file:line. -/
+def fmtLoc (locMap : FnLocMap) (qualName : String) : String :=
+  match locMap.find? fun (n, _, _) => n == qualName with
+  | some (_, file, sp) => s!"{file}:{sp.line}"
+  | none => ""
+
+-- ============================================================
 -- Helpers
 -- ============================================================
 
@@ -1210,6 +1238,7 @@ private structure FnEffects where
   isTrusted  : Bool
   isPublic   : Bool
   evidence   : String       -- "enforced", "reported", or "trusted-assumption"
+  loc        : String       -- "file:line" or "" if unavailable
 
 private def fmtEffectsRow (e : FnEffects) : String :=
   let pub := if e.isPublic then "pub " else "    "
@@ -1223,11 +1252,13 @@ private def fmtEffectsRow (e : FnEffects) : String :=
     else "none"
   let trusted := if e.isTrusted then "yes" else "no"
   let ffi := if e.crossesFfi then "yes" else "no"
-  s!"  {pub}{e.name}\n    caps: {caps}  alloc: {allocClass}  recursion: {e.recursion}  loops: {e.loops}  ffi: {ffi}  trusted: {trusted}  evidence: {e.evidence}"
+  let locSuffix := if e.loc == "" then "" else s!"  @ {e.loc}"
+  s!"  {pub}{e.name}\n    caps: {caps}  alloc: {allocClass}  recursion: {e.recursion}  loops: {e.loops}  ffi: {ffi}  trusted: {trusted}  evidence: {e.evidence}{locSuffix}"
 
 private partial def effectsForModule
     (externNames : List String)
     (recMap : List (String × RecursionKind × List String))
+    (locMap : FnLocMap)
     (m : CModule) (modulePath : String := "") : List FnEffects :=
   let qualPrefix := if modulePath == "" then m.name else modulePath ++ "." ++ m.name
   let fns := m.functions.map fun f =>
@@ -1274,11 +1305,12 @@ private partial def effectsForModule
       crossesFfi := crossesFfi
       isTrusted := f.isTrusted
       isPublic := f.isPublic
-      evidence := evidenceLevel }
+      evidence := evidenceLevel
+      loc := fmtLoc locMap qualName }
   fns ++ m.submodules.foldl (fun acc sub =>
-    acc ++ effectsForModule externNames recMap sub qualPrefix) []
+    acc ++ effectsForModule externNames recMap locMap sub qualPrefix) []
 
-def effectsReport (modules : List CModule) : String :=
+def effectsReport (modules : List CModule) (locMap : FnLocMap := []) : String :=
   let header := "=== Combined Effects Report ==="
   -- Build shared analysis results
   let graph := buildCallGraph modules
@@ -1287,10 +1319,10 @@ def effectsReport (modules : List CModule) : String :=
   let externNames := modules.foldl (fun acc m => acc ++ collectExternNames m) []
   -- Collect per-function effects
   let allEffects := modules.foldl (fun acc m =>
-    acc ++ effectsForModule externNames recMap m) []
+    acc ++ effectsForModule externNames recMap locMap m) []
   -- Format per-module
   let body := modules.map fun m =>
-    let modEffects := effectsForModule externNames recMap m
+    let modEffects := effectsForModule externNames recMap locMap m
     let fnLines := modEffects.map fmtEffectsRow
     s!"module {m.name}:\n{"\n".intercalate fnLines}"
   -- Summary counts
@@ -1363,27 +1395,32 @@ private def blockingCaps : List String :=
 structure ProfileViolation where
   fnName   : String
   reason   : String
+  loc      : String := ""   -- "file:line" or "" if unavailable
 
 private partial def checkPredictableModule
     (recMap : List (String × RecursionKind × List String))
     (externNames : List String)
-    (m : CModule) : List ProfileViolation :=
+    (locMap : FnLocMap)
+    (m : CModule) (modulePath : String := "") : List ProfileViolation :=
+  let qualPrefix := if modulePath == "" then m.name else modulePath ++ "." ++ m.name
   let fnViolations := m.functions.foldl (fun acc f =>
+    let qualName := qualPrefix ++ "." ++ f.name
+    let fnLoc := fmtLoc locMap qualName
     -- 1. Recursion
     let recViolations := match recMap.find? (fun (n, _, _) => n == f.name) with
       | some (_, .direct, _) =>
-        [{ fnName := f.name, reason := "direct recursion" }]
+        [{ fnName := f.name, reason := "direct recursion", loc := fnLoc }]
       | some (_, .mutual, members) =>
         let others := members.filter (· != f.name)
-        [{ fnName := f.name, reason := s!"mutual recursion with {", ".intercalate others}" }]
+        [{ fnName := f.name, reason := s!"mutual recursion with {", ".intercalate others}", loc := fnLoc }]
       | _ => []
     -- 2. Loop boundedness
     let loopClass := classifyLoops f.body
     let loopViolations :=
       if loopClass == "unbounded" then
-        [{ fnName := f.name, reason := "unbounded loops" }]
+        [{ fnName := f.name, reason := "unbounded loops", loc := fnLoc }]
       else if loopClass == "mixed" then
-        [{ fnName := f.name, reason := "mixed loop boundedness (some loops unbounded)" }]
+        [{ fnName := f.name, reason := "mixed loop boundedness (some loops unbounded)", loc := fnLoc }]
       else []
     -- 3. Allocation (intrinsic calls OR Alloc capability)
     let callees := collectCallsStmts f.body |>.eraseDups
@@ -1392,31 +1429,31 @@ private partial def checkPredictableModule
     let hasAllocCap := fnCaps.any (· == "Alloc")
     let allocViolations :=
       if !allocs.isEmpty then
-        [{ fnName := f.name, reason := s!"allocates ({", ".intercalate allocs})" }]
+        [{ fnName := f.name, reason := s!"allocates ({", ".intercalate allocs})", loc := fnLoc }]
       else if hasAllocCap then
-        [{ fnName := f.name, reason := "has Alloc capability" }]
+        [{ fnName := f.name, reason := "has Alloc capability", loc := fnLoc }]
       else []
     -- 4. FFI
     let externCalls := callees.filter fun c => externNames.contains c
     let ffiViolations := if externCalls.isEmpty then []
-      else [{ fnName := f.name, reason := s!"calls extern ({", ".intercalate externCalls})" }]
+      else [{ fnName := f.name, reason := s!"calls extern ({", ".intercalate externCalls})", loc := fnLoc }]
     -- 5. Blocking
     let (concreteCaps, _) := f.capSet.normalize
     let blockingUsed := concreteCaps.filter fun c => blockingCaps.contains c
     let blockViolations := if blockingUsed.isEmpty then []
-      else [{ fnName := f.name, reason := s!"may block ({", ".intercalate blockingUsed})" }]
+      else [{ fnName := f.name, reason := s!"may block ({", ".intercalate blockingUsed})", loc := fnLoc }]
     acc ++ recViolations ++ loopViolations ++ allocViolations ++ ffiViolations ++ blockViolations) []
   fnViolations ++ m.submodules.foldl (fun acc sub =>
-    acc ++ checkPredictableModule recMap externNames sub) []
+    acc ++ checkPredictableModule recMap externNames locMap sub qualPrefix) []
 
 /-- Check the predictable-execution profile. Returns (pass, report string). -/
-def checkPredictable (modules : List CModule) : Bool × String :=
+def checkPredictable (modules : List CModule) (locMap : FnLocMap := []) : Bool × String :=
   let graph := buildCallGraph modules
   let sccs := tarjanSCC graph
   let recMap := classifyRecursion graph sccs
   let externNames := modules.foldl (fun acc m => acc ++ collectExternNames m) []
   let violations := modules.foldl (fun acc m =>
-    acc ++ checkPredictableModule recMap externNames m) []
+    acc ++ checkPredictableModule recMap externNames locMap m) []
   let allFns := modules.foldl (fun acc m => acc ++ collectAllFnDefs m) []
   let violatingFns := (violations.map (·.fnName)).eraseDups
   let passingFns := allFns.length - violatingFns.length
@@ -1425,7 +1462,8 @@ def checkPredictable (modules : List CModule) : Bool × String :=
   else
     let header := "predictable profile: FAIL"
     let lines := violations.map fun v =>
-      s!"  error: {v.fnName} — {v.reason}"
+      let locPrefix := if v.loc == "" then "" else s!"{v.loc}: "
+      s!"  error: {locPrefix}{v.fnName} — {v.reason}"
     let summary := s!"\n{violatingFns.length} function(s) failed, {passingFns} passed"
     (false, s!"{header}\n\n{"\n".intercalate lines}\n{summary}\n")
 

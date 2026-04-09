@@ -239,9 +239,10 @@ def compileAndCheck (inputPath : String) (checkType : String) : IO UInt32 := do
   | .error ds =>
     IO.eprintln (renderDiagnostics ds (sourceMap := [(inputPath, source)]))
     return 1
-  | .ok (_, _, validCore, _) =>
+  | .ok (parsed, _, validCore, _) =>
+    let locMap := Report.buildFnLocMap parsed.modules inputPath
     if checkType == "predictable" then
-      let (pass, report) := Report.checkPredictable validCore.coreModules
+      let (pass, report) := Report.checkPredictable validCore.coreModules locMap
       IO.println report
       return if pass then 0 else 1
     IO.eprintln s!"Unknown check type: {checkType}. Use: predictable"
@@ -271,7 +272,8 @@ def compileAndReport (inputPath : String) (reportType : String) : IO UInt32 := d
   | .error ds =>
     IO.eprintln (renderDiagnostics ds (sourceMap := mainSrcMap))
     return 1
-  | .ok (_, _, validCore, srcMap) =>
+  | .ok (parsed, _, validCore, srcMap) =>
+    let locMap := Report.buildFnLocMap parsed.modules inputPath
     if reportType == "caps" then
       IO.println (Report.capabilityReport validCore.coreModules)
       return 0
@@ -291,7 +293,7 @@ def compileAndReport (inputPath : String) (reportType : String) : IO UInt32 := d
       IO.println (Report.proofReport validCore.coreModules)
       return 0
     if reportType == "effects" then
-      IO.println (Report.effectsReport validCore.coreModules)
+      IO.println (Report.effectsReport validCore.coreModules locMap)
       return 0
     if reportType == "recursion" then
       IO.println (Report.recursionReport validCore.coreModules)
