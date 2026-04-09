@@ -1843,11 +1843,158 @@ def collectProofStatusFacts (modules : List CModule) (locMap : FnLocMap := []) :
   entries.map proofStatusToFact
 
 open Json in
-/-- Produce JSON diagnostics combining predictable + proof-status facts. -/
+/-- Convert an FnEffects record to a JSON fact. -/
+private def effectsToFact (e : FnEffects) : Val :=
+  let (concreteCaps, _) := e.capSet.normalize
+  .obj [
+    ("kind", .str "effects"),
+    ("function", .str e.name),
+    ("capabilities", .arr (concreteCaps.map .str)),
+    ("is_pure", .bool (e.capSet == .empty)),
+    ("allocates", .bool e.allocates),
+    ("frees", .bool e.frees),
+    ("defers", .bool e.defers),
+    ("recursion", .str e.recursion),
+    ("loops", .str e.loops),
+    ("crosses_ffi", .bool e.crossesFfi),
+    ("is_trusted", .bool e.isTrusted),
+    ("is_public", .bool e.isPublic),
+    ("evidence", .str e.evidence),
+    ("loc", locToJson e.loc)
+  ]
+
+open Json in
+/-- Collect effects facts for all functions. -/
+def collectEffectsFacts (modules : List CModule) (locMap : FnLocMap := []) : List Val :=
+  let graph := buildCallGraph modules
+  let sccs := tarjanSCC graph
+  let recMap := classifyRecursion graph sccs
+  let externNames := modules.foldl (fun acc m => acc ++ collectExternNames m) []
+  let allEffects := modules.foldl (fun acc m =>
+    acc ++ effectsForModule externNames recMap locMap m) []
+  allEffects.map effectsToFact
+
+open Json in
+/-- Convert a per-function capability entry with why-traces to a JSON fact. -/
+private def capToFact (lookup : CapLookup) (f : CFnDef) : Val :=
+  let (concreteCaps, _) := f.capSet.normalize
+  let callees := collectCallsStmts f.body |>.eraseDups
+  let traces := concreteCaps.map fun cap =>
+    let contributors := callees.filter fun callee =>
+      match lookupCalleeCap lookup callee with
+      | some cs => let (cc, _) := cs.normalize; cc.contains cap
+      | none => false
+    .obj [
+      ("capability", .str cap),
+      ("source", .str (if contributors.isEmpty then "declared"
+        else ", ".intercalate contributors))
+    ]
+  .obj [
+    ("kind", .str "capability"),
+    ("function", .str f.name),
+    ("capabilities", .arr (concreteCaps.map .str)),
+    ("is_pure", .bool concreteCaps.isEmpty),
+    ("is_public", .bool f.isPublic),
+    ("why", .arr traces)
+  ]
+
+open Json in
+/-- Collect capability facts with why-traces for all functions. -/
+private partial def collectCapFactsModule (lookup : CapLookup) (m : CModule) : List Val :=
+  let fnFacts := m.functions.map (capToFact lookup)
+  let externFacts := m.externFns.map fun (n, _, _, trusted) =>
+    .obj [
+      ("kind", .str "capability"),
+      ("function", .str n),
+      ("capabilities", .arr (if trusted then [] else [Val.str unsafeCapName])),
+      ("is_pure", .bool trusted),
+      ("is_extern", .bool true),
+      ("is_trusted", .bool trusted),
+      ("why", .arr [])
+    ]
+  fnFacts ++ externFacts ++ m.submodules.foldl (fun acc sub =>
+    acc ++ collectCapFactsModule lookup sub) []
+
+open Json in
+def collectCapFacts (modules : List CModule) : List Val :=
+  let lookup := buildCapLookup modules
+  modules.foldl (fun acc m => acc ++ collectCapFactsModule lookup m) []
+
+open Json in
+/-- Convert a function's unsafe/trust boundary info to a JSON fact. -/
+private partial def collectUnsafeFactsModule (externNames : List String) (m : CModule) : List Val :=
+  let fnFacts := m.functions.filterMap fun f =>
+    let hasUnsafe := hasUnsafeCap f.capSet
+    let hasRawPtrs := fnUsesRawPtrs f
+    let trusted := f.isTrusted
+    if !hasUnsafe && !hasRawPtrs && !trusted then none
+    else
+      let boundary := if trusted then trustBoundaryAnalysis externNames f else []
+      some (.obj [
+        ("kind", .str "unsafe"),
+        ("function", .str f.name),
+        ("has_unsafe_cap", .bool hasUnsafe),
+        ("has_raw_pointers", .bool hasRawPtrs),
+        ("is_trusted", .bool trusted),
+        ("trust_boundary", .arr (boundary.map .str))
+      ])
+  let externFacts := m.externFns.map fun (n, _, _, trusted) =>
+    .obj [
+      ("kind", .str "unsafe"),
+      ("function", .str n),
+      ("is_extern", .bool true),
+      ("is_trusted", .bool trusted)
+    ]
+  fnFacts ++ externFacts ++ m.submodules.foldl (fun acc sub =>
+    acc ++ collectUnsafeFactsModule externNames sub) []
+
+open Json in
+def collectUnsafeFacts (modules : List CModule) : List Val :=
+  let externNames := modules.foldl (fun acc m => acc ++ collectExternNames m) []
+  modules.foldl (fun acc m => acc ++ collectUnsafeFactsModule externNames m) []
+
+open Json in
+/-- Convert a function's allocation info to a JSON fact. -/
+private def allocToFact (f : CFnDef) : Option Val :=
+  let callees := collectCallsStmts f.body |>.eraseDups
+  let allocs := callees.filter isAllocCall
+  let frees := callees.filter isFreeCall
+  let defers := collectDefersStmts f.body
+  if allocs.isEmpty && frees.isEmpty && defers.isEmpty then none
+  else
+    let returnsAlloc := returnsAllocation f.retTy
+    let leaks := !allocs.isEmpty && frees.isEmpty && defers.isEmpty && !returnsAlloc
+    some (.obj [
+      ("kind", .str "alloc"),
+      ("function", .str f.name),
+      ("allocates", .arr (allocs.map .str)),
+      ("frees", .arr (frees.map .str)),
+      ("defers", .arr (defers.map .str)),
+      ("returns_allocation", .bool returnsAlloc),
+      ("potential_leak", .bool leaks)
+    ])
+
+open Json in
+private partial def collectAllocFactsModule (m : CModule) : List Val :=
+  let fnFacts := m.functions.filterMap allocToFact
+  fnFacts ++ m.submodules.foldl (fun acc sub =>
+    acc ++ collectAllocFactsModule sub) []
+
+open Json in
+def collectAllocFacts (modules : List CModule) : List Val :=
+  modules.foldl (fun acc m => acc ++ collectAllocFactsModule m) []
+
+open Json in
+/-- Produce JSON diagnostics combining all fact types. -/
 def diagnosticsJson (modules : List CModule) (locMap : FnLocMap := []) : String :=
   let predictable := collectPredictableFacts modules locMap
   let proofStatus := collectProofStatusFacts modules locMap
-  let allFacts := predictable ++ proofStatus
+  let effects := collectEffectsFacts modules locMap
+  let caps := collectCapFacts modules
+  let unsafeFacts := collectUnsafeFacts modules
+  let alloc := collectAllocFacts modules
+  let base := predictable ++ proofStatus ++ effects
+  let allFacts := base ++ caps ++ unsafeFacts ++ alloc
   let root := Val.arr allFacts
   root.render
 

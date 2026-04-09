@@ -2624,6 +2624,89 @@ else
     FAIL=$((FAIL + 1))
 fi
 
+# --- Effects facts ---
+json_int=$(cached_output "$TESTDIR/report_integration.con" "--report diagnostics-json")
+
+if echo "$json_int" | grep -q '"kind": "effects"'; then
+    echo "  ok  diagnostics-json: effects kind present"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  diagnostics-json: effects kind missing"
+    FAIL=$((FAIL + 1))
+fi
+
+# Effects fact carries key fields
+if echo "$json_int" | grep -q '"is_pure":' && echo "$json_int" | grep -q '"evidence":'; then
+    echo "  ok  diagnostics-json: effects carries is_pure and evidence"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  diagnostics-json: effects missing is_pure or evidence"
+    FAIL=$((FAIL + 1))
+fi
+
+# Pure function has is_pure: true
+if echo "$json_int" | grep -q '"function": "pure_add".*"is_pure": true'; then
+    echo "  ok  diagnostics-json: pure_add has is_pure true"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  diagnostics-json: pure_add should have is_pure true"
+    FAIL=$((FAIL + 1))
+fi
+
+# --- Capability facts ---
+if echo "$json_int" | grep -q '"kind": "capability"'; then
+    echo "  ok  diagnostics-json: capability kind present"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  diagnostics-json: capability kind missing"
+    FAIL=$((FAIL + 1))
+fi
+
+# Capability fact has why traces
+if echo "$json_int" | grep -q '"why":'; then
+    echo "  ok  diagnostics-json: capability facts have why traces"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  diagnostics-json: capability facts missing why traces"
+    FAIL=$((FAIL + 1))
+fi
+
+# --- Unsafe facts ---
+if echo "$json_int" | grep -q '"kind": "unsafe"'; then
+    echo "  ok  diagnostics-json: unsafe kind present"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  diagnostics-json: unsafe kind missing"
+    FAIL=$((FAIL + 1))
+fi
+
+# Trusted function has trust_boundary
+if echo "$json_int" | grep -q '"trust_boundary":'; then
+    echo "  ok  diagnostics-json: trust_boundary present for trusted fn"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  diagnostics-json: trust_boundary missing"
+    FAIL=$((FAIL + 1))
+fi
+
+# --- Alloc facts ---
+if echo "$json_int" | grep -q '"kind": "alloc"'; then
+    echo "  ok  diagnostics-json: alloc kind present"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  diagnostics-json: alloc kind missing"
+    FAIL=$((FAIL + 1))
+fi
+
+# Alloc fact has allocates and frees arrays
+if echo "$json_int" | grep -q '"allocates":.*\[' && echo "$json_int" | grep -q '"potential_leak":'; then
+    echo "  ok  diagnostics-json: alloc fact carries allocates array and potential_leak"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  diagnostics-json: alloc fact missing allocates or potential_leak"
+    FAIL=$((FAIL + 1))
+fi
+
 fi # end section: report
 
 # === Codegen differential tests ===
