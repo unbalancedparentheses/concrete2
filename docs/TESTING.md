@@ -207,8 +207,8 @@ After an `--affected` run, the summary shows which files triggered which section
 | Metric | Value |
 |--------|-------|
 | Pass-level tests | <1s (32 tests, no I/O) |
-| Fast suite (`--fast`) | ~25-35s (~890 tests, parallel) |
-| Full suite (`--full`) | ~40-50s (~911 tests, 2 skipped, includes network, cross-target, perf) |
+| Fast suite (`--fast`) | ~25-35s (~1118 tests, parallel) |
+| Full suite (`--full`) | ~40-50s (~1121 tests, 3 skipped, includes network, cross-target, perf) |
 | Cache hit rate | 26/57 compilations saved per fast run |
 | Compiler build | ~30-45s (`lake build`) |
 | lli-accelerated suite | ~12s (when `LLI_PATH` is set) |

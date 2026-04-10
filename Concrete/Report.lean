@@ -10,6 +10,51 @@ namespace Concrete
 namespace Report
 
 -- ============================================================
+-- Proof registry: artifact-backed proof attachment
+-- ============================================================
+
+/-- A single proof registry entry linking a Concrete function to its proof. -/
+structure ProofRegistryEntry where
+  function        : String  -- qualified name, e.g. "main.parse_byte"
+  bodyFingerprint : String  -- expected body fingerprint
+  proof           : String  -- Lean proof name, e.g. "Concrete.Proof.parse_byte_correct"
+  spec            : String  -- spec name, e.g. "parse_byte_adds_offset"
+  deriving Repr, Inhabited
+
+/-- A proof registry is a list of proof attachment entries. -/
+abbrev ProofRegistry := List ProofRegistryEntry
+
+/-- Parse a proof registry from a JSON string.
+    Expected format:
+    { "version": 1, "proofs": [ { "function": "...", "body_fingerprint": "...", "proof": "...", "spec": "..." }, ... ] }
+    Minimal parser: extracts string fields from each object in the "proofs" array.
+    Returns empty list on any parse error. -/
+def parseRegistryJson (input : String) : ProofRegistry :=
+  -- Tiny targeted extractor: find all {...} blocks inside "proofs": [...]
+  -- Strategy: split by "function" key occurrences, extract fields from each block
+  let extractStr (block : String) (key : String) : String :=
+    let needle := s!"\"{key}\":"
+    match block.splitOn needle with
+    | [_, rest] =>
+      let rest := rest.trimLeft
+      if rest.startsWith "\"" then
+        let inner := (rest.drop 1).toString.splitOn "\"" |>.head!
+        inner
+      else ""
+    | _ => ""
+  -- Split into proof entry blocks by looking for "function" key occurrences
+  let blocks := input.splitOn "\"function\":"
+  -- Skip the first part (everything before first entry)
+  let entryBlocks := blocks.drop 1
+  entryBlocks.filterMap fun block =>
+    let fn := extractStr ("\"function\":" ++ block) "function"
+    let fp := extractStr block "body_fingerprint"
+    let pr := extractStr block "proof"
+    let sp := extractStr block "spec"
+    if fn.isEmpty then none
+    else some { function := fn, bodyFingerprint := fp, proof := pr, spec := sp }
+
+-- ============================================================
 -- Source location lookup
 -- ============================================================
 
@@ -1641,7 +1686,8 @@ private partial def collectProofStatus
     (externNames : List String)
     (recMap : List (String × RecursionKind × List String))
     (locMap : FnLocMap)
-    (m : CModule) (modulePath : String := "") : List ProofStatusEntry :=
+    (m : CModule) (modulePath : String := "")
+    (registry : ProofRegistry := []) : List ProofStatusEntry :=
   let qualPrefix := if modulePath == "" then m.name else modulePath ++ "." ++ m.name
   let entries := m.functions.map fun f =>
     let qualName := qualPrefix ++ "." ++ f.name
@@ -1667,24 +1713,32 @@ private partial def collectProofStatus
       (if concreteCaps.any fun c => c == "File" || c == "Network" || c == "Process"
        then ["blocking I/O"] else [])
     let passesProfile := gates.isEmpty
-    -- Determine proof state
+    -- Determine proof state: check both hardcoded table and registry
     let matchedProof := Proof.provedFunctions.find? fun (name, expectedFp) =>
       name == qualName && expectedFp == fp
+    let matchedRegistry := registry.find? fun re =>
+      re.function == qualName && re.bodyFingerprint == fp
+    let hasMatch := matchedProof.isSome || matchedRegistry.isSome
     let staleProof := Proof.provedFunctions.find? fun (name, _) =>
       name == qualName
+    let staleRegistry := registry.find? fun re =>
+      re.function == qualName
+    let hasStale := staleProof.isSome || staleRegistry.isSome
     let state :=
       if f.isTrusted then .trusted
-      else if matchedProof.isSome && passesProfile then .proved
-      else if matchedProof.isNone && staleProof.isSome then .stale
+      else if hasMatch && passesProfile then .proved
+      else if !hasMatch && hasStale then .stale
       else if !passesProfile then .notEligible
       else .notProved
     let expectedFp := match staleProof with
       | some (_, efp) => efp
-      | none => ""
+      | none => match staleRegistry with
+        | some re => re.bodyFingerprint
+        | none => ""
     { qualName, bareName := f.name, state, currentFp := fp, expectedFp
     , profileGates := gates, loc := fnLoc, fnSpan := fnSp }
   entries ++ m.submodules.foldl (fun acc sub =>
-    acc ++ collectProofStatus externNames recMap locMap sub qualPrefix) []
+    acc ++ collectProofStatus externNames recMap locMap sub qualPrefix registry) []
 
 /-- Render a single proof status entry with Elm-clear formatting. -/
 private def renderProofStatusEntry (e : ProofStatusEntry) (sourceMap : SourceMap) : String :=
@@ -1719,14 +1773,14 @@ private def renderProofStatusEntry (e : ProofStatusEntry) (sourceMap : SourceMap
 
 /-- Proof status report with Elm-clear diagnostics. -/
 def proofStatusReport (modules : List CModule) (locMap : FnLocMap := [])
-    (sourceMap : SourceMap := []) : String :=
+    (sourceMap : SourceMap := []) (registry : ProofRegistry := []) : String :=
   let header := "=== Proof Status Report ==="
   let graph := buildCallGraph modules
   let sccs := tarjanSCC graph
   let recMap := classifyRecursion graph sccs
   let externNames := modules.foldl (fun acc m => acc ++ collectExternNames m) []
   let entries := modules.foldl (fun acc m =>
-    acc ++ collectProofStatus externNames recMap locMap m) []
+    acc ++ collectProofStatus externNames recMap locMap m "" registry) []
   let body := entries.map fun e => renderProofStatusEntry e sourceMap
   -- Summary
   let proved := (entries.filter fun e => e.state matches .proved).length
@@ -1833,13 +1887,14 @@ def collectPredictableFacts (modules : List CModule) (locMap : FnLocMap := []) :
 
 open Json in
 /-- Collect proof-status entries as structured facts. -/
-def collectProofStatusFacts (modules : List CModule) (locMap : FnLocMap := []) : List Val :=
+def collectProofStatusFacts (modules : List CModule) (locMap : FnLocMap := [])
+    (registry : ProofRegistry := []) : List Val :=
   let graph := buildCallGraph modules
   let sccs := tarjanSCC graph
   let recMap := classifyRecursion graph sccs
   let externNames := modules.foldl (fun acc m => acc ++ collectExternNames m) []
   let entries := modules.foldl (fun acc m =>
-    acc ++ collectProofStatus externNames recMap locMap m) []
+    acc ++ collectProofStatus externNames recMap locMap m "" registry) []
   entries.map proofStatusToFact
 
 open Json in
@@ -1986,9 +2041,10 @@ def collectAllocFacts (modules : List CModule) : List Val :=
 
 open Json in
 /-- Collect all facts into a flat list. -/
-private def collectAllFacts (modules : List CModule) (locMap : FnLocMap := []) : List Val :=
+private def collectAllFacts (modules : List CModule) (locMap : FnLocMap := [])
+    (registry : ProofRegistry := []) : List Val :=
   let predictable := collectPredictableFacts modules locMap
-  let proofStatus := collectProofStatusFacts modules locMap
+  let proofStatus := collectProofStatusFacts modules locMap registry
   let effects := collectEffectsFacts modules locMap
   let caps := collectCapFacts modules
   let unsafeFacts := collectUnsafeFacts modules
@@ -1998,8 +2054,9 @@ private def collectAllFacts (modules : List CModule) (locMap : FnLocMap := []) :
 
 open Json in
 /-- Produce JSON diagnostics combining all fact types. -/
-def diagnosticsJson (modules : List CModule) (locMap : FnLocMap := []) : String :=
-  (Val.arr (collectAllFacts modules locMap)).render
+def diagnosticsJson (modules : List CModule) (locMap : FnLocMap := [])
+    (registry : ProofRegistry := []) : String :=
+  (Val.arr (collectAllFacts modules locMap registry)).render
 
 open Json in
 /-- Extract a string field from a JSON object. -/
@@ -2164,13 +2221,13 @@ def predictableQuery (modules : List CModule) (locMap : FnLocMap)
 open Json in
 /-- Handle a proof query for a single function. Returns answer-shaped JSON. -/
 def proofQuery (modules : List CModule) (locMap : FnLocMap)
-    (fnName : String) : String :=
+    (fnName : String) (registry : ProofRegistry := []) : String :=
   let graph := buildCallGraph modules
   let sccs := tarjanSCC graph
   let recMap := classifyRecursion graph sccs
   let externNames := modules.foldl (fun acc m => acc ++ collectExternNames m) []
   let entries := modules.foldl (fun acc m =>
-    acc ++ collectProofStatus externNames recMap locMap m) []
+    acc ++ collectProofStatus externNames recMap locMap m "" registry) []
   let fnEntry := entries.find? fun e =>
     e.bareName == fnName || e.qualName == fnName || e.qualName.endsWith ("." ++ fnName)
   match fnEntry with
@@ -2205,7 +2262,7 @@ open Json in
 /-- Handle an evidence query for a single function. Returns answer-shaped JSON
     combining predictable profile, proof status, and trust into one answer. -/
 def evidenceQuery (modules : List CModule) (locMap : FnLocMap)
-    (fnName : String) : String :=
+    (fnName : String) (registry : ProofRegistry := []) : String :=
   let graph := buildCallGraph modules
   let sccs := tarjanSCC graph
   let recMap := classifyRecursion graph sccs
@@ -2220,7 +2277,7 @@ def evidenceQuery (modules : List CModule) (locMap : FnLocMap)
   let fnViolations := violations.filter fun v => v.fnName == fnName
   -- Get proof status
   let entries := modules.foldl (fun acc m =>
-    acc ++ collectProofStatus externNames recMap locMap m) []
+    acc ++ collectProofStatus externNames recMap locMap m "" registry) []
   let fnProof := entries.find? fun e =>
     e.bareName == fnName || e.qualName.endsWith ("." ++ fnName)
   match fnEffects with
@@ -2254,7 +2311,7 @@ open Json in
 /-- Handle an audit query for a single function. Bundles authority, predictable
     profile, proof status, evidence, trust, and allocation into one answer. -/
 def auditQuery (modules : List CModule) (locMap : FnLocMap)
-    (fnName : String) : String :=
+    (fnName : String) (registry : ProofRegistry := []) : String :=
   let graph := buildCallGraph modules
   let sccs := tarjanSCC graph
   let recMap := classifyRecursion graph sccs
@@ -2299,7 +2356,7 @@ def auditQuery (modules : List CModule) (locMap : FnLocMap)
           | none => [])
     -- Proof
     let entries := modules.foldl (fun acc m =>
-      acc ++ collectProofStatus externNames recMap locMap m) []
+      acc ++ collectProofStatus externNames recMap locMap m "" registry) []
     let fnProof := entries.find? fun e =>
       e.bareName == fnName || e.qualName.endsWith ("." ++ fnName)
     let proofState := match fnProof with
@@ -2363,7 +2420,7 @@ open Json in
     - "proof:FN"              — proof status answer for one function
     - "evidence:FN"           — combined evidence answer for one function -/
 def queryFacts (modules : List CModule) (locMap : FnLocMap := [])
-    (query : String) : String :=
+    (query : String) (registry : ProofRegistry := []) : String :=
   let parts := query.splitOn ":"
   -- Semantic queries: three-part (why-capability:fn:cap)
   if parts.length == 3 then
@@ -2373,7 +2430,7 @@ def queryFacts (modules : List CModule) (locMap : FnLocMap := [])
       -- Fall through to kind:function filter
       let filterKind := parts[0]!
       let filterFn := parts[1]!
-      let allFacts := collectAllFacts modules locMap
+      let allFacts := collectAllFacts modules locMap registry
       let byKind := allFacts.filter fun v => jsonGetStr v "kind" == some filterKind
       let filtered := byKind.filter fun v =>
         match jsonGetStr v "function" with
@@ -2385,11 +2442,11 @@ def queryFacts (modules : List CModule) (locMap : FnLocMap := [])
   if parts.length == 2 then
     match parts with
     | ["predictable", fnName] => predictableQuery modules locMap fnName
-    | ["proof", fnName] => proofQuery modules locMap fnName
-    | ["evidence", fnName] => evidenceQuery modules locMap fnName
-    | ["audit", fnName] => auditQuery modules locMap fnName
+    | ["proof", fnName] => proofQuery modules locMap fnName registry
+    | ["evidence", fnName] => evidenceQuery modules locMap fnName registry
+    | ["audit", fnName] => auditQuery modules locMap fnName registry
     | ["fn", fnName] =>
-      let allFacts := collectAllFacts modules locMap
+      let allFacts := collectAllFacts modules locMap registry
       let filtered := allFacts.filter fun v =>
         match jsonGetStr v "function" with
         | some f => f == fnName || f.endsWith ("." ++ fnName)
@@ -2399,7 +2456,7 @@ def queryFacts (modules : List CModule) (locMap : FnLocMap := [])
       -- kind:function filter
       let filterKind := parts[0]!
       let filterFn := parts[1]!
-      let allFacts := collectAllFacts modules locMap
+      let allFacts := collectAllFacts modules locMap registry
       let byKind := allFacts.filter fun v =>
         jsonGetStr v "kind" == some filterKind
       let filtered := byKind.filter fun v =>
@@ -2409,7 +2466,7 @@ def queryFacts (modules : List CModule) (locMap : FnLocMap := [])
       (Val.arr filtered).render
   else
     -- Single-word filter: all facts of this kind
-    let allFacts := collectAllFacts modules locMap
+    let allFacts := collectAllFacts modules locMap registry
     let filtered := allFacts.filter fun v =>
       jsonGetStr v "kind" == some query
     (Val.arr filtered).render

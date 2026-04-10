@@ -3406,6 +3406,93 @@ else
     FAIL=$((FAIL + 1))
 fi
 
+echo ""
+echo "=== Proof registry artifact tests ==="
+
+REGISTRY_DIR="$TESTDIR/proof_registry_test"
+STALE_DIR="$TESTDIR/proof_registry_stale"
+MISS_DIR="$TESTDIR/proof_registry_miss"
+
+# Registry-backed proof: correct fingerprint → proved
+reg_proof=$(cached_output "$REGISTRY_DIR/test_proof_registry.con" "--report proof-status")
+if echo "$reg_proof" | grep -q "1 proved" && \
+   echo "$reg_proof" | grep -q "pure_add.*proof matches"; then
+    echo "  ok  registry proof: correct fingerprint → proved"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  registry proof: correct fingerprint should show proved"
+    echo "$reg_proof"
+    FAIL=$((FAIL + 1))
+fi
+
+# Registry query: proof:pure_add → proved
+reg_query=$(cached_output "$REGISTRY_DIR/test_proof_registry.con" "--query proof:pure_add")
+if echo "$reg_query" | grep -q '"answer": "proved"'; then
+    echo "  ok  registry query: proof:pure_add → proved"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  registry query: proof:pure_add should answer proved"
+    echo "$reg_query"
+    FAIL=$((FAIL + 1))
+fi
+
+# Stale registry: wrong fingerprint → stale
+stale_proof=$(cached_output "$STALE_DIR/test_proof_registry.con" "--report proof-status")
+if echo "$stale_proof" | grep -q "1 stale" && \
+   echo "$stale_proof" | grep -q "body changed"; then
+    echo "  ok  registry stale: wrong fingerprint → stale"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  registry stale: wrong fingerprint should show stale"
+    echo "$stale_proof"
+    FAIL=$((FAIL + 1))
+fi
+
+# Stale registry query: proof:pure_add → stale
+stale_query=$(cached_output "$STALE_DIR/test_proof_registry.con" "--query proof:pure_add")
+if echo "$stale_query" | grep -q '"answer": "stale"'; then
+    echo "  ok  registry stale query: proof:pure_add → stale"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  registry stale query: proof:pure_add should answer stale"
+    echo "$stale_query"
+    FAIL=$((FAIL + 1))
+fi
+
+# Miss registry: wrong function name → not proved
+miss_proof=$(cached_output "$MISS_DIR/test_proof_registry.con" "--report proof-status")
+if echo "$miss_proof" | grep -q "0 proved" && \
+   echo "$miss_proof" | grep -q "0 stale"; then
+    echo "  ok  registry miss: wrong function name → no proof"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  registry miss: wrong function name should show 0 proved, 0 stale"
+    echo "$miss_proof"
+    FAIL=$((FAIL + 1))
+fi
+
+# Miss registry query: proof:pure_add → no_proof (not stale, because name doesn't match)
+miss_query=$(cached_output "$MISS_DIR/test_proof_registry.con" "--query proof:pure_add")
+if echo "$miss_query" | grep -q '"answer": "no_proof"'; then
+    echo "  ok  registry miss query: proof:pure_add → no_proof"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  registry miss query: proof:pure_add should answer no_proof"
+    echo "$miss_query"
+    FAIL=$((FAIL + 1))
+fi
+
+# Hardcoded proof still works (backward compatibility)
+hardcoded_proof=$(cached_output "$TESTDIR/proof_decode_header.con" "--report proof-status")
+if echo "$hardcoded_proof" | grep -q "proved"; then
+    echo "  ok  hardcoded proof still works during registry transition"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  hardcoded proof should still work"
+    echo "$hardcoded_proof"
+    FAIL=$((FAIL + 1))
+fi
+
 fi # end section: report
 
 # === Codegen differential tests ===

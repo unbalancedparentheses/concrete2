@@ -249,6 +249,16 @@ def compileAndCheck (inputPath : String) (checkType : String) : IO UInt32 := do
     IO.eprintln s!"Unknown check type: {checkType}. Use: predictable"
     return 1
 
+/-- Try to load a proof registry from proof-registry.json next to the input file. -/
+def loadRegistry (inputPath : String) : IO Report.ProofRegistry := do
+  let dir := dirOf inputPath
+  let registryPath := dir ++ "/proof-registry.json"
+  try
+    let content ← readFile registryPath
+    return Report.parseRegistryJson content
+  catch _ =>
+    return []
+
 /-- Run pipeline to needed depth and produce a report. -/
 def compileAndReport (inputPath : String) (reportType : String) : IO UInt32 := do
   let source ← readFile inputPath
@@ -294,10 +304,12 @@ def compileAndReport (inputPath : String) (reportType : String) : IO UInt32 := d
       IO.println (Report.proofReport validCore.coreModules)
       return 0
     if reportType == "proof-status" then
-      IO.println (Report.proofStatusReport validCore.coreModules locMap srcMap)
+      let registry ← loadRegistry inputPath
+      IO.println (Report.proofStatusReport validCore.coreModules locMap srcMap (registry := registry))
       return 0
     if reportType == "diagnostics-json" then
-      IO.println (Report.diagnosticsJson validCore.coreModules locMap)
+      let registry ← loadRegistry inputPath
+      IO.println (Report.diagnosticsJson validCore.coreModules locMap (registry := registry))
       return 0
     if reportType == "effects" then
       IO.println (Report.effectsReport validCore.coreModules locMap)
@@ -328,7 +340,8 @@ def compileAndQuery (inputPath : String) (query : String) : IO UInt32 := do
     return 1
   | .ok (parsed, _, validCore, _) =>
     let locMap := Report.buildFnLocMap parsed.modules inputPath
-    IO.println (Report.queryFacts validCore.coreModules locMap query)
+    let registry ← loadRegistry inputPath
+    IO.println (Report.queryFacts validCore.coreModules locMap query (registry := registry))
     return 0
 
 -- ============================================================
