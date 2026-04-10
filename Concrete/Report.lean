@@ -1792,6 +1792,89 @@ def proofStatusReport (modules : List CModule) (locMap : FnLocMap := [])
   s!"{header}\n\n{"\n\n".intercalate body}\n\n{summary}\n"
 
 -- ============================================================
+-- Proof obligations report (--report obligations)
+-- ============================================================
+
+/-- A single proof obligation entry. -/
+structure ObligationEntry where
+  function     : String       -- qualified name
+  spec         : String       -- spec name (from registry, or empty)
+  proof        : String       -- proof name (from registry/hardcoded, or empty)
+  status       : String       -- proved | stale | missing_proof | not_eligible | trusted
+  dependencies : List String  -- qualified names of proved helpers this function calls
+  fingerprint  : String       -- current body fingerprint
+  source       : String       -- "registry" | "hardcoded" | "none"
+  loc          : Option SourceLoc
+
+/-- Find the callees of a named function in a module. -/
+private partial def findFunctionCallees (m : CModule) (name : String) : List String :=
+  match m.functions.find? (fun f => f.name == name) with
+  | some f => collectCallsStmts f.body |>.eraseDups
+  | none => m.submodules.foldl (fun acc sub => acc ++ findFunctionCallees sub name) []
+
+/-- Build obligation entries from proof status + registry. -/
+private partial def collectObligations
+    (modules : List CModule) (locMap : FnLocMap := [])
+    (registry : ProofRegistry := []) : List ObligationEntry :=
+  let graph := buildCallGraph modules
+  let sccs := tarjanSCC graph
+  let recMap := classifyRecursion graph sccs
+  let externNames := modules.foldl (fun acc m => acc ++ collectExternNames m) []
+  let proofEntries := modules.foldl (fun acc m =>
+    acc ++ collectProofStatus externNames recMap locMap m "" registry) []
+  -- Build set of proved function names for dependency tracking
+  let provedNames := proofEntries.filterMap fun e =>
+    if e.state matches .proved then some e.qualName else none
+  proofEntries.map fun e =>
+    let regEntry := registry.find? fun re => re.function == e.qualName
+    let hardcoded := Proof.provedFunctions.find? fun (name, _) => name == e.qualName
+    let specName := match regEntry with
+      | some re => re.spec
+      | none => ""
+    let proofName := match regEntry with
+      | some re => re.proof
+      | none => match hardcoded with
+        | some (name, _) => name ++ ".proof"
+        | none => ""
+    let src := match regEntry, hardcoded with
+      | some _, _ => "registry"
+      | none, some _ => "hardcoded"
+      | none, none => "none"
+    let statusStr := match e.state with
+      | .proved => "proved"
+      | .stale => "stale"
+      | .notProved => "missing_proof"
+      | .notEligible => "not_eligible"
+      | .trusted => "trusted"
+    -- Dependencies: which proved helpers does this function call?
+    let callees := match modules.foldl (fun acc m =>
+      acc ++ findFunctionCallees m e.bareName) [] with
+      | cs => cs.filter fun c => provedNames.any fun p => p.endsWith ("." ++ c)
+    { function := e.qualName, spec := specName, proof := proofName
+    , status := statusStr, dependencies := callees
+    , fingerprint := e.currentFp, source := src, loc := e.loc }
+
+/-- Render the obligations report as human-readable output. -/
+def obligationsReport (modules : List CModule) (locMap : FnLocMap := [])
+    (registry : ProofRegistry := []) : String :=
+  let entries := collectObligations modules locMap registry
+  let header := "=== Proof Obligations ==="
+  let body := entries.map fun e =>
+    let locStr := fmtLoc e.loc
+    let depsStr := if e.dependencies.isEmpty then "none"
+      else ", ".intercalate e.dependencies
+    let specStr := if e.spec.isEmpty then "(none)" else e.spec
+    let proofStr := if e.proof.isEmpty then "(none)" else e.proof
+    s!"  {e.function}\n    status:       {e.status}\n    spec:         {specStr}\n    proof:        {proofStr}\n    source:       {e.source}\n    fingerprint:  {e.fingerprint}\n    dependencies: {depsStr}\n    loc:          {locStr}"
+  let proved := (entries.filter fun e => e.status == "proved").length
+  let stale := (entries.filter fun e => e.status == "stale").length
+  let missing := (entries.filter fun e => e.status == "missing_proof").length
+  let notElig := (entries.filter fun e => e.status == "not_eligible").length
+  let trusted := (entries.filter fun e => e.status == "trusted").length
+  let summary := s!"Totals: {entries.length} obligations — {proved} proved, {stale} stale, {missing} missing, {notElig} not eligible, {trusted} trusted"
+  s!"{header}\n\n{"\n\n".intercalate body}\n\n{summary}\n"
+
+-- ============================================================
 -- Machine-readable facts (--report diagnostics-json)
 -- ============================================================
 -- Structured diagnostic records for predictable violations and
@@ -1896,6 +1979,28 @@ def collectProofStatusFacts (modules : List CModule) (locMap : FnLocMap := [])
   let entries := modules.foldl (fun acc m =>
     acc ++ collectProofStatus externNames recMap locMap m "" registry) []
   entries.map proofStatusToFact
+
+open Json in
+/-- Convert an obligation entry to a JSON fact. -/
+private def obligationToFact (e : ObligationEntry) : Val :=
+  .obj ([
+    ("kind", .str "obligation"),
+    ("function", .str e.function),
+    ("status", .str e.status),
+    ("spec", .str e.spec),
+    ("proof", .str e.proof),
+    ("source", .str e.source),
+    ("fingerprint", .str e.fingerprint),
+    ("dependencies", .arr (e.dependencies.map .str)),
+    ("loc", locToJson e.loc)
+  ])
+
+open Json in
+/-- Collect obligation facts for all functions. -/
+def collectObligationFacts (modules : List CModule) (locMap : FnLocMap := [])
+    (registry : ProofRegistry := []) : List Val :=
+  let entries := collectObligations modules locMap registry
+  entries.map obligationToFact
 
 open Json in
 /-- Convert an FnEffects record to a JSON fact. -/
@@ -2045,12 +2150,13 @@ private def collectAllFacts (modules : List CModule) (locMap : FnLocMap := [])
     (registry : ProofRegistry := []) : List Val :=
   let predictable := collectPredictableFacts modules locMap
   let proofStatus := collectProofStatusFacts modules locMap registry
+  let obligations := collectObligationFacts modules locMap registry
   let effects := collectEffectsFacts modules locMap
   let caps := collectCapFacts modules
   let unsafeFacts := collectUnsafeFacts modules
   let alloc := collectAllocFacts modules
-  let base := predictable ++ proofStatus ++ effects
-  base ++ caps ++ unsafeFacts ++ alloc
+  let base := predictable ++ proofStatus ++ obligations
+  base ++ effects ++ caps ++ unsafeFacts ++ alloc
 
 open Json in
 /-- Produce JSON diagnostics combining all fact types. -/

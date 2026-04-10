@@ -3493,6 +3493,115 @@ else
     FAIL=$((FAIL + 1))
 fi
 
+echo ""
+echo "=== Proof obligations report tests ==="
+
+# Obligations from registry: proved function shows spec, proof, source
+ob_proved=$(cached_output "$REGISTRY_DIR/test_proof_registry.con" "--report obligations")
+if echo "$ob_proved" | grep -q "status:.*proved" && \
+   echo "$ob_proved" | grep -q "spec:.*PureAdd.spec_add" && \
+   echo "$ob_proved" | grep -q "proof:.*PureAdd.add_comm" && \
+   echo "$ob_proved" | grep -q "source:.*registry"; then
+    echo "  ok  obligations: proved function shows spec, proof, registry source"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  obligations: proved function should show spec/proof/registry"
+    echo "$ob_proved"
+    FAIL=$((FAIL + 1))
+fi
+
+# Obligations: missing_proof shows none for spec/proof
+if echo "$ob_proved" | grep -A5 "main.main" | grep -q "status:.*missing_proof" && \
+   echo "$ob_proved" | grep -A5 "main.main" | grep -q "source:.*none"; then
+    echo "  ok  obligations: missing_proof function shows source:none"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  obligations: missing_proof should show source:none"
+    echo "$ob_proved"
+    FAIL=$((FAIL + 1))
+fi
+
+# Obligations: dependencies show proved callees
+if echo "$ob_proved" | grep -A7 "main.main" | grep -q "dependencies:.*pure_add"; then
+    echo "  ok  obligations: main depends on proved helper pure_add"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  obligations: main should depend on proved pure_add"
+    echo "$ob_proved"
+    FAIL=$((FAIL + 1))
+fi
+
+# Obligations: stale fingerprint
+ob_stale=$(cached_output "$STALE_DIR/test_proof_registry.con" "--report obligations")
+if echo "$ob_stale" | grep -q "status:.*stale" && \
+   echo "$ob_stale" | grep -q "1 stale"; then
+    echo "  ok  obligations: stale fingerprint → stale status"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  obligations: stale fingerprint should show stale"
+    echo "$ob_stale"
+    FAIL=$((FAIL + 1))
+fi
+
+# Obligations: summary totals
+if echo "$ob_proved" | grep -q "1 proved" && \
+   echo "$ob_proved" | grep -q "1 missing"; then
+    echo "  ok  obligations: summary shows 1 proved, 1 missing"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  obligations: summary should show 1 proved, 1 missing"
+    echo "$ob_proved"
+    FAIL=$((FAIL + 1))
+fi
+
+# Obligations JSON: query returns obligation facts
+ob_json=$(cached_output "$REGISTRY_DIR/test_proof_registry.con" "--query obligation")
+if echo "$ob_json" | grep -q '"kind": "obligation"' && \
+   echo "$ob_json" | grep -q '"status": "proved"' && \
+   echo "$ob_json" | grep -q '"spec": "PureAdd.spec_add"'; then
+    echo "  ok  obligations JSON: --query obligation returns obligation facts with spec"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  obligations JSON: --query obligation should return facts"
+    echo "$ob_json"
+    FAIL=$((FAIL + 1))
+fi
+
+# Obligations JSON: per-function filter
+ob_fn=$(cached_output "$REGISTRY_DIR/test_proof_registry.con" "--query obligation:pure_add")
+if echo "$ob_fn" | grep -q '"function": "main.pure_add"' && \
+   echo "$ob_fn" | grep -q '"source": "registry"'; then
+    echo "  ok  obligations JSON: --query obligation:pure_add returns filtered fact"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  obligations JSON: --query obligation:pure_add should filter"
+    echo "$ob_fn"
+    FAIL=$((FAIL + 1))
+fi
+
+# Obligations: not_eligible for allocating functions
+ob_mixed=$(cached_output "$TESTDIR/report_integration.con" "--report obligations")
+if echo "$ob_mixed" | grep -q "not_eligible" && \
+   echo "$ob_mixed" | grep -q "trusted"; then
+    echo "  ok  obligations: mixed program shows not_eligible + trusted"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  obligations: mixed program should show not_eligible + trusted"
+    echo "$ob_mixed"
+    FAIL=$((FAIL + 1))
+fi
+
+# Obligations: diagnostics-json includes obligation kind
+ob_diag=$(cached_output "$REGISTRY_DIR/test_proof_registry.con" "--report diagnostics-json")
+if echo "$ob_diag" | grep -q '"kind": "obligation"'; then
+    echo "  ok  obligations: diagnostics-json includes obligation facts"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  obligations: diagnostics-json should include obligation facts"
+    echo "$ob_diag"
+    FAIL=$((FAIL + 1))
+fi
+
 fi # end section: report
 
 # === Codegen differential tests ===

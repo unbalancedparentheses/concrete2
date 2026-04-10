@@ -3,7 +3,7 @@ import Concrete
 open Concrete
 
 def usage : String :=
-  "Usage: concrete <file.con> [-o output] [--emit-llvm] [--emit-core] [--emit-ssa] [--test] [--test --module <name>] [--report caps|unsafe|layout|interface|alloc|mono|authority|proof|proof-status|diagnostics-json|effects|recursion|fingerprints] [--query KIND|KIND:FUNCTION|fn:FUNCTION] [--fmt]\n       concrete build [-o output] [--emit-llvm]\n       concrete run [-- args...]\n       concrete test [--module <name>]"
+  "Usage: concrete <file.con> [-o output] [--emit-llvm] [--emit-core] [--emit-ssa] [--test] [--test --module <name>] [--report caps|unsafe|layout|interface|alloc|mono|authority|proof|proof-status|obligations|diagnostics-json|effects|recursion|fingerprints] [--query KIND|KIND:FUNCTION|fn:FUNCTION] [--fmt]\n       concrete build [-o output] [--emit-llvm]\n       concrete run [-- args...]\n       concrete test [--module <name>]"
 
 def writeFile (path : String) (content : String) : IO Unit := do
   IO.FS.writeFile ⟨path⟩ content
@@ -307,6 +307,10 @@ def compileAndReport (inputPath : String) (reportType : String) : IO UInt32 := d
       let registry ← loadRegistry inputPath
       IO.println (Report.proofStatusReport validCore.coreModules locMap srcMap (registry := registry))
       return 0
+    if reportType == "obligations" then
+      let registry ← loadRegistry inputPath
+      IO.println (Report.obligationsReport validCore.coreModules locMap (registry := registry))
+      return 0
     if reportType == "diagnostics-json" then
       let registry ← loadRegistry inputPath
       IO.println (Report.diagnosticsJson validCore.coreModules locMap (registry := registry))
@@ -328,7 +332,7 @@ def compileAndReport (inputPath : String) (reportType : String) : IO UInt32 := d
       | .ok mono =>
         IO.println (Report.monoReport validCore.coreModules mono.coreModules)
         return 0
-    IO.eprintln s!"Unknown report type: {reportType}. Use: caps, unsafe, layout, interface, alloc, mono, authority, proof, proof-status, diagnostics-json, effects, recursion, fingerprints"
+    IO.eprintln s!"Unknown report type: {reportType}. Use: caps, unsafe, layout, interface, alloc, mono, authority, proof, proof-status, obligations, diagnostics-json, effects, recursion, fingerprints"
     return 1
 
 def compileAndQuery (inputPath : String) (query : String) : IO UInt32 := do
