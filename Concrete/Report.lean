@@ -1681,6 +1681,9 @@ structure ProofStatusEntry where
   currentFp     : String       -- current body fingerprint
   expectedFp    : String       -- registered fingerprint (empty if no proof)
   profileGates  : List String  -- reasons the function fails profile (empty if passes)
+  specName      : String       -- spec name (from registry or derived)
+  proofName     : String       -- proof/theorem name (from registry or derived)
+  proofSource   : String       -- "registry" | "hardcoded" | "none"
   loc           : Option SourceLoc
   fnSpan        : Option Span
 
@@ -1737,8 +1740,16 @@ private partial def collectProofStatus
       | none => match staleRegistry with
         | some re => re.bodyFingerprint
         | none => ""
+    -- Spec and proof identity
+    let regEntry := registry.find? fun re => re.function == qualName
+    let (sName, pName, pSrc) := match regEntry with
+      | some re => (re.spec, re.proof, "registry")
+      | none => match staleProof with
+        | some (name, _) => (name ++ ".spec", name ++ ".proof", "hardcoded")
+        | none => ("", "", "none")
     { qualName, bareName := f.name, state, currentFp := fp, expectedFp
-    , profileGates := gates, loc := fnLoc, fnSpan := fnSp }
+    , profileGates := gates, specName := sName, proofName := pName
+    , proofSource := pSrc, loc := fnLoc, fnSpan := fnSp }
   entries ++ m.submodules.foldl (fun acc sub =>
     acc ++ collectProofStatus externNames recMap locMap sub qualPrefix registry) []
 
@@ -1973,6 +1984,8 @@ structure ExtractionEntry where
   unsupported : List String  -- constructs that blocked extraction
   fingerprint : String
   params      : List String
+  specName    : String       -- spec name (from registry or derived)
+  proofName   : String       -- proof name (from registry or derived)
   loc         : Option SourceLoc
 
 /-- Identify unsupported expression constructs. -/
@@ -2033,32 +2046,44 @@ private partial def identifyUnsupported (body : List CStmt) : List String :=
 private partial def collectExtractionEntries
     (externNames : List String)
     (locMap : FnLocMap)
-    (m : CModule) (modulePath : String := "") : List ExtractionEntry :=
+    (m : CModule) (modulePath : String := "")
+    (registry : ProofRegistry := []) : List ExtractionEntry :=
   let qualPrefix := if modulePath == "" then m.name else modulePath ++ "." ++ m.name
   let entries := m.functions.map fun f =>
     let qualName := qualPrefix ++ "." ++ f.name
     let fp := bodyFingerprint f.body
     let fnLoc := lookupLoc locMap qualName
     let paramNames := f.params.map (·.1)
+    let regEntry := registry.find? fun re => re.function == qualName
+    let (sName, pName) := match regEntry with
+      | some re => (re.spec, re.proof)
+      | none =>
+        let hardcoded := Proof.provedFunctions.find? fun (name, _) => name == qualName
+        match hardcoded with
+        | some (name, _) => (name ++ ".spec", name ++ ".proof")
+        | none => ("", "")
     if f.isProofEligible then
       let extracted := cStmtsToPExpr f.body
       let unsup := if extracted.isNone then
         identifyUnsupported f.body
       else []
       { qualName, eligible := true, extracted, excluded := []
-      , unsupported := unsup, fingerprint := fp, params := paramNames, loc := fnLoc }
+      , unsupported := unsup, fingerprint := fp, params := paramNames
+      , specName := sName, proofName := pName, loc := fnLoc }
     else
       let reasons := exclusionReasons f externNames
       { qualName, eligible := false, extracted := none, excluded := reasons
-      , unsupported := [], fingerprint := fp, params := paramNames, loc := fnLoc }
+      , unsupported := [], fingerprint := fp, params := paramNames
+      , specName := sName, proofName := pName, loc := fnLoc }
   entries ++ m.submodules.foldl (fun acc sub =>
-    acc ++ collectExtractionEntries externNames locMap sub qualPrefix) []
+    acc ++ collectExtractionEntries externNames locMap sub qualPrefix registry) []
 
 /-- Render the source-to-ProofCore extraction report. -/
-def extractionReport (modules : List CModule) (locMap : FnLocMap := []) : String :=
+def extractionReport (modules : List CModule) (locMap : FnLocMap := [])
+    (registry : ProofRegistry := []) : String :=
   let externNames := modules.foldl (fun acc m => acc ++ collectExternNames m) []
   let entries := modules.foldl (fun acc m =>
-    acc ++ collectExtractionEntries externNames locMap m) []
+    acc ++ collectExtractionEntries externNames locMap m "" registry) []
   let header := "=== Source-to-ProofCore Extraction ==="
   let body := entries.map fun e =>
     let locStr := fmtLoc e.loc
@@ -2069,7 +2094,9 @@ def extractionReport (modules : List CModule) (locMap : FnLocMap := []) : String
     else
       s!"excluded\n    reasons: {", ".intercalate e.excluded}"
     let paramStr := if e.params.isEmpty then "()" else "(" ++ ", ".intercalate e.params ++ ")"
-    s!"  {e.qualName}{paramStr}\n    status: {statusStr}\n    fingerprint: {e.fingerprint}\n    loc: {locStr}"
+    let specStr := if e.specName.isEmpty then "" else s!"\n    spec: {e.specName}"
+    let proofStr := if e.proofName.isEmpty then "" else s!"\n    proof: {e.proofName}"
+    s!"  {e.qualName}{paramStr}\n    status: {statusStr}{specStr}{proofStr}\n    fingerprint: {e.fingerprint}\n    loc: {locStr}"
   let extracted := (entries.filter fun e => e.eligible && e.extracted.isSome).length
   let eligFailed := (entries.filter fun e => e.eligible && e.extracted.isNone).length
   let excluded := (entries.filter fun e => !e.eligible).length
@@ -2087,6 +2114,8 @@ structure TraceEntry where
   extractionStatus : String     -- extracted | eligible_not_extractable | excluded
   proofCoreForm  : String       -- readable PExpr if extracted, else ""
   evidenceLevel  : String       -- proved | enforced | reported | trusted-assumption
+  specName       : String       -- spec name (from registry or derived)
+  proofName      : String       -- proof name (from registry or derived)
   coreNames      : List String  -- Core function names (pre-mono)
   monoNames      : List String  -- monomorphized specialization names
   ssaNames       : List String  -- SSA function names
@@ -2132,7 +2161,7 @@ private def collectTraceEntries
   -- Build extraction entries
   let externNames := coreModules.foldl (fun acc m => acc ++ collectExternNames m) []
   let extractionEntries := coreModules.foldl (fun acc m =>
-    acc ++ collectExtractionEntries externNames locMap m) []
+    acc ++ collectExtractionEntries externNames locMap m (registry := registry)) []
   -- Build proof status entries
   let graph := buildCallGraph coreModules
   let sccs := tarjanSCC graph
@@ -2187,6 +2216,8 @@ private def collectTraceEntries
     , monoNames := monoMatches
     , ssaNames := ssaNames
     , llvmNames := llvmNames
+    , specName := ext.specName
+    , proofName := ext.proofName
     , claimBoundary := boundary
     , loc := ext.loc }
 
@@ -2209,7 +2240,9 @@ def traceabilityReport
       else ", ".intercalate e.llvmNames
     let pcStr := if e.proofCoreForm.isEmpty then ""
       else s!"\n    proof_core:   {e.proofCoreForm}"
-    s!"  {e.sourceFunction}\n    evidence:     {e.evidenceLevel}\n    extraction:   {e.extractionStatus}{pcStr}\n    core:         {", ".intercalate e.coreNames}\n    mono:         {monoStr}\n    ssa:          {ssaStr}\n    llvm:         {llvmStr}\n    boundary:     {e.claimBoundary}\n    fingerprint:  {e.fingerprint}\n    loc:          {locStr}"
+    let specStr := if e.specName.isEmpty then "" else s!"\n    spec:         {e.specName}"
+    let proofStr := if e.proofName.isEmpty then "" else s!"\n    proof:        {e.proofName}"
+    s!"  {e.sourceFunction}\n    evidence:     {e.evidenceLevel}\n    extraction:   {e.extractionStatus}{pcStr}{specStr}{proofStr}\n    core:         {", ".intercalate e.coreNames}\n    mono:         {monoStr}\n    ssa:          {ssaStr}\n    llvm:         {llvmStr}\n    boundary:     {e.claimBoundary}\n    fingerprint:  {e.fingerprint}\n    loc:          {locStr}"
   let evidenceCounts := entries.foldl (fun acc e =>
     match e.evidenceLevel with
     | "proved" => { acc with fst := acc.fst + 1 }
@@ -2301,6 +2334,9 @@ private def proofStatusToFact (e : ProofStatusEntry) : Val :=
     ("loc", locToJson e.loc),
     ("current_fingerprint", .str e.currentFp)
   ] ++ (if e.expectedFp.isEmpty then [] else [("expected_fingerprint", .str e.expectedFp)])
+    ++ (if e.specName.isEmpty then [] else [("spec", .str e.specName)])
+    ++ (if e.proofName.isEmpty then [] else [("proof", .str e.proofName)])
+    ++ (if e.proofSource == "none" then [] else [("source", .str e.proofSource)])
     ++ (if e.profileGates.isEmpty then [] else [("profile_gates", .arr (e.profileGates.map .str))])
     ++ (if hintStr.isEmpty then [] else [("hint", .str hintStr)]))
 
@@ -2369,15 +2405,18 @@ private def extractionToFact (e : ExtractionEntry) : Val :=
     ("params", .arr (e.params.map .str)),
     ("loc", locToJson e.loc)
   ] ++ (if proofCoreStr.isEmpty then [] else [("proof_core", .str proofCoreStr)])
+    ++ (if e.specName.isEmpty then [] else [("spec", .str e.specName)])
+    ++ (if e.proofName.isEmpty then [] else [("proof", .str e.proofName)])
     ++ (if e.excluded.isEmpty then [] else [("excluded_reasons", .arr (e.excluded.map .str))])
     ++ (if e.unsupported.isEmpty then [] else [("unsupported", .arr (e.unsupported.map .str))]))
 
 open Json in
 /-- Collect extraction facts for all functions. -/
-def collectExtractionFacts (modules : List CModule) (locMap : FnLocMap := []) : List Val :=
+def collectExtractionFacts (modules : List CModule) (locMap : FnLocMap := [])
+    (registry : ProofRegistry := []) : List Val :=
   let externNames := modules.foldl (fun acc m => acc ++ collectExternNames m) []
   let entries := modules.foldl (fun acc m =>
-    acc ++ collectExtractionEntries externNames locMap m) []
+    acc ++ collectExtractionEntries externNames locMap m "" registry) []
   entries.map extractionToFact
 
 open Json in
@@ -2394,6 +2433,8 @@ private def traceToFact (e : TraceEntry) : Val :=
     ("llvm", .arr (e.llvmNames.map .str)),
     ("boundary", .str e.claimBoundary),
     ("fingerprint", .str e.fingerprint),
+    ("spec", .str e.specName),
+    ("proof", .str e.proofName),
     ("loc", locToJson e.loc)
   ] ++ (if e.proofCoreForm.isEmpty then [] else [("proof_core", .str e.proofCoreForm)]))
 
@@ -2582,7 +2623,7 @@ private def collectAllFacts (modules : List CModule) (locMap : FnLocMap := [])
   let predictable := collectPredictableFacts modules locMap
   let proofStatus := collectProofStatusFacts modules locMap registry
   let obligations := collectObligationFacts modules locMap registry
-  let extraction := collectExtractionFacts modules locMap
+  let extraction := collectExtractionFacts modules locMap (registry := registry)
   let effects := collectEffectsFacts modules locMap
   let caps := collectCapFacts modules
   let unsafeFacts := collectUnsafeFacts modules

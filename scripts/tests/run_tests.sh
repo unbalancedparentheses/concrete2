@@ -3832,6 +3832,92 @@ else
     FAIL=$((FAIL + 1))
 fi
 
+echo ""
+echo "=== Named spec/proof identity tests ==="
+
+# Extraction report: registry-backed function shows spec/proof names
+ext_spec=$(cached_output "$REGISTRY_DIR/test_proof_registry.con" "--report extraction")
+if echo "$ext_spec" | grep -A10 "main.pure_add" | grep -q "spec:.*PureAdd.spec_add" && \
+   echo "$ext_spec" | grep -A10 "main.pure_add" | grep -q "proof:.*PureAdd.add_comm"; then
+    echo "  ok  named-spec: extraction report shows spec/proof from registry"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  named-spec: extraction report should show spec/proof from registry"
+    echo "$ext_spec"
+    FAIL=$((FAIL + 1))
+fi
+
+# Extraction JSON: spec/proof fields present
+ext_spec_json=$(cached_output "$REGISTRY_DIR/test_proof_registry.con" "--query extraction:pure_add")
+if echo "$ext_spec_json" | grep -q '"spec": "PureAdd.spec_add"' && \
+   echo "$ext_spec_json" | grep -q '"proof": "PureAdd.add_comm"'; then
+    echo "  ok  named-spec: extraction JSON includes spec/proof fields"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  named-spec: extraction JSON should include spec/proof"
+    echo "$ext_spec_json"
+    FAIL=$((FAIL + 1))
+fi
+
+# Traceability report: shows spec/proof from registry
+tr_spec=$(cached_output "$REGISTRY_DIR/test_proof_registry.con" "--report traceability")
+if echo "$tr_spec" | grep -A15 "main.pure_add" | grep -q "spec:.*PureAdd.spec_add" && \
+   echo "$tr_spec" | grep -A15 "main.pure_add" | grep -q "proof:.*PureAdd.add_comm"; then
+    echo "  ok  named-spec: traceability report shows spec/proof from registry"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  named-spec: traceability report should show spec/proof"
+    echo "$tr_spec"
+    FAIL=$((FAIL + 1))
+fi
+
+# Traceability JSON: spec/proof fields present
+tr_spec_json=$(cached_output "$REGISTRY_DIR/test_proof_registry.con" "--query traceability:pure_add")
+if echo "$tr_spec_json" | grep -q '"spec": "PureAdd.spec_add"' && \
+   echo "$tr_spec_json" | grep -q '"proof": "PureAdd.add_comm"'; then
+    echo "  ok  named-spec: traceability JSON includes spec/proof fields"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  named-spec: traceability JSON should include spec/proof"
+    echo "$tr_spec_json"
+    FAIL=$((FAIL + 1))
+fi
+
+# Proof-status: shows spec/proof from registry
+ps_spec=$(cached_output "$REGISTRY_DIR/test_proof_registry.con" "--query proof_status:pure_add")
+if echo "$ps_spec" | grep -q '"spec": "PureAdd.spec_add"' && \
+   echo "$ps_spec" | grep -q '"proof": "PureAdd.add_comm"'; then
+    echo "  ok  named-spec: proof-status JSON includes spec/proof from registry"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  named-spec: proof-status JSON should include spec/proof"
+    echo "$ps_spec"
+    FAIL=$((FAIL + 1))
+fi
+
+# Obligations: shows spec/proof from registry
+ob_spec=$(cached_output "$REGISTRY_DIR/test_proof_registry.con" "--query obligation:pure_add")
+if echo "$ob_spec" | grep -q '"spec": "PureAdd.spec_add"' && \
+   echo "$ob_spec" | grep -q '"proof": "PureAdd.add_comm"'; then
+    echo "  ok  named-spec: obligations JSON includes spec/proof from registry"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  named-spec: obligations JSON should include spec/proof"
+    echo "$ob_spec"
+    FAIL=$((FAIL + 1))
+fi
+
+# Spec identity consistent: same spec name across extraction, traceability, proof-status
+if echo "$ext_spec_json" | grep -q '"spec": "PureAdd.spec_add"' && \
+   echo "$tr_spec_json" | grep -q '"spec": "PureAdd.spec_add"' && \
+   echo "$ps_spec" | grep -q '"spec": "PureAdd.spec_add"'; then
+    echo "  ok  named-spec: spec identity consistent across extraction/trace/proof-status"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  named-spec: spec identity should be consistent across reports"
+    FAIL=$((FAIL + 1))
+fi
+
 fi # end section: report
 
 # === Codegen differential tests ===
