@@ -4128,13 +4128,13 @@ cat > "$ADV_DIR/dupes_new.json" << 'ADVEOF'
 [{"kind":"proof_status","function":"foo","state":"proved","current_fingerprint":"abc"},{"kind":"proof_status","function":"foo","state":"stale","current_fingerprint":"xyz"}]
 ADVEOF
 adv_dupes=$($COMPILER diff "$ADV_DIR/dupes_old.json" "$ADV_DIR/dupes_new.json" 2>&1) && adv_dupes_exit=0 || adv_dupes_exit=$?
-# Duplicate keys should be rejected as a structured error
-if echo "$adv_dupes" | grep -qi "error.*duplicate"; then
-    echo "  ok  adv-diff: duplicate (kind, function) keys rejected as error"
+# Duplicate keys should be rejected as a structured error with exit code 2
+if echo "$adv_dupes" | grep -qi "error.*duplicate" && [ "$adv_dupes_exit" -eq 2 ]; then
+    echo "  ok  adv-diff: duplicate (kind, function) keys rejected (exit 2)"
     PASS=$((PASS + 1))
 else
-    echo "FAIL  adv-diff: duplicate keys should produce structured error"
-    echo "$adv_dupes"
+    echo "FAIL  adv-diff: duplicate keys should produce error with exit 2"
+    echo "$adv_dupes (exit=$adv_dupes_exit)"
     FAIL=$((FAIL + 1))
 fi
 
@@ -4301,6 +4301,121 @@ if echo "$adv_nofile" | grep -qi "error\|no such file\|does not exist"; then
 else
     echo "FAIL  adv-diff: nonexistent file should produce error"
     echo "$adv_nofile"
+    FAIL=$((FAIL + 1))
+fi
+
+# --- Strengthening direction: stale → proved ---
+
+cat > "$ADV_DIR/strengthen_old.json" << 'ADVEOF'
+[{"kind":"proof_status","function":"foo","state":"stale","current_fingerprint":"abc","spec":"Foo.spec","proof":"Foo.proof","source":"registry"}]
+ADVEOF
+cat > "$ADV_DIR/strengthen_new.json" << 'ADVEOF'
+[{"kind":"proof_status","function":"foo","state":"proved","current_fingerprint":"abc","spec":"Foo.spec","proof":"Foo.proof","source":"registry"}]
+ADVEOF
+adv_strength=$($COMPILER diff "$ADV_DIR/strengthen_old.json" "$ADV_DIR/strengthen_new.json" 2>&1) && adv_str_exit=0 || adv_str_exit=$?
+if echo "$adv_strength" | grep -q "TRUST STRENGTHENED" && \
+   echo "$adv_strength" | grep -q "state:.*stale.*proved" && \
+   [ "$adv_str_exit" -eq 0 ]; then
+    echo "  ok  adv-diff: stale→proved detected as strengthened (exit 0)"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  adv-diff: stale→proved should be strengthened with exit 0"
+    echo "$adv_strength"
+    FAIL=$((FAIL + 1))
+fi
+
+# --- Mixed drift: both weakened + strengthened in same diff ---
+
+cat > "$ADV_DIR/mixed_old.json" << 'ADVEOF'
+[{"kind":"proof_status","function":"foo","state":"stale","current_fingerprint":"abc"},{"kind":"proof_status","function":"bar","state":"proved","current_fingerprint":"xyz"}]
+ADVEOF
+cat > "$ADV_DIR/mixed_new.json" << 'ADVEOF'
+[{"kind":"proof_status","function":"foo","state":"proved","current_fingerprint":"abc"},{"kind":"proof_status","function":"bar","state":"stale","current_fingerprint":"xyz"}]
+ADVEOF
+adv_mixed=$($COMPILER diff "$ADV_DIR/mixed_old.json" "$ADV_DIR/mixed_new.json" 2>&1) && adv_mix_exit=0 || adv_mix_exit=$?
+if echo "$adv_mixed" | grep -q "TRUST WEAKENED" && \
+   echo "$adv_mixed" | grep -q "TRUST STRENGTHENED" && \
+   [ "$adv_mix_exit" -eq 1 ]; then
+    echo "  ok  adv-diff: mixed drift shows both weakened + strengthened (exit 1)"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  adv-diff: mixed drift should show both directions, exit 1"
+    echo "$adv_mixed"
+    FAIL=$((FAIL + 1))
+fi
+
+# --- Round-trip: real diagnostics-json → parse → diff ---
+
+# Generate real compiler JSON, diff it against itself (round-trip parse test)
+rt_json=$($COMPILER "$REGISTRY_DIR/test_proof_registry.con" --report diagnostics-json 2>/dev/null)
+echo "$rt_json" > "$ADV_DIR/rt_a.json"
+echo "$rt_json" > "$ADV_DIR/rt_b.json"
+adv_rt=$($COMPILER diff "$ADV_DIR/rt_a.json" "$ADV_DIR/rt_b.json" 2>&1) && adv_rt_exit=0 || adv_rt_exit=$?
+if echo "$adv_rt" | grep -q "No trust-relevant changes" && [ "$adv_rt_exit" -eq 0 ]; then
+    echo "  ok  adv-diff: round-trip real diagnostics-json parses and self-diffs clean"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  adv-diff: round-trip of real compiler JSON should self-diff clean"
+    echo "$adv_rt"
+    FAIL=$((FAIL + 1))
+fi
+
+# Round-trip with a different program (more complex JSON)
+rt_json2=$($COMPILER "$TESTDIR/report_integration.con" --report diagnostics-json 2>/dev/null)
+echo "$rt_json2" > "$ADV_DIR/rt_c.json"
+echo "$rt_json2" > "$ADV_DIR/rt_d.json"
+adv_rt2=$($COMPILER diff "$ADV_DIR/rt_c.json" "$ADV_DIR/rt_d.json" 2>&1) && adv_rt2_exit=0 || adv_rt2_exit=$?
+if echo "$adv_rt2" | grep -q "No trust-relevant changes" && [ "$adv_rt2_exit" -eq 0 ]; then
+    echo "  ok  adv-diff: round-trip complex program JSON self-diffs clean"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  adv-diff: round-trip of complex program JSON should self-diff clean"
+    echo "$adv_rt2"
+    FAIL=$((FAIL + 1))
+fi
+
+# Cross-program diff on real compiler output (not hand-crafted)
+adv_rt_cross=$($COMPILER diff "$ADV_DIR/rt_a.json" "$ADV_DIR/rt_c.json" 2>&1) && true || true
+if echo "$adv_rt_cross" | grep -q "Summary:.*changes" && \
+   echo "$adv_rt_cross" | grep -q "TRUST WEAKENED"; then
+    echo "  ok  adv-diff: cross-program diff on real JSON detects drift"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  adv-diff: cross-program diff on real JSON should detect drift"
+    echo "$adv_rt_cross"
+    FAIL=$((FAIL + 1))
+fi
+
+# --- Registry miss → empty spec/proof in extraction ---
+
+MISS_DIR="$TESTDIR/proof_registry_miss"
+ext_miss=$(cached_output "$MISS_DIR/test_proof_registry.con" "--report extraction")
+# pure_add should have no spec/proof since registry points to nonexistent_function
+if echo "$ext_miss" | grep -A10 "main.pure_add" | grep -q "status: extracted"; then
+    # Check that spec/proof lines are NOT present (registry miss)
+    if echo "$ext_miss" | grep -A10 "main.pure_add" | grep -q "spec:.*PureAdd"; then
+        echo "FAIL  adv-diff: registry miss should not show spec from unmatched registry"
+        echo "$ext_miss"
+        FAIL=$((FAIL + 1))
+    else
+        echo "  ok  adv-diff: registry miss → extraction has no spec/proof"
+        PASS=$((PASS + 1))
+    fi
+else
+    echo "FAIL  adv-diff: registry miss pure_add should still be extracted"
+    echo "$ext_miss"
+    FAIL=$((FAIL + 1))
+fi
+
+# Registry miss → empty spec/proof in extraction JSON
+ext_miss_json=$(cached_output "$MISS_DIR/test_proof_registry.con" "--query extraction:pure_add")
+if echo "$ext_miss_json" | grep -q '"spec": ""' || \
+   ! echo "$ext_miss_json" | grep -q '"spec": "PureAdd'; then
+    echo "  ok  adv-diff: registry miss → extraction JSON has empty spec"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  adv-diff: registry miss extraction JSON should have empty spec"
+    echo "$ext_miss_json"
     FAIL=$((FAIL + 1))
 fi
 
