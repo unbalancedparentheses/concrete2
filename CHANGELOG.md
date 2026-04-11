@@ -10,6 +10,30 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### ProofCore normalization lands as a canonical proof-target layer
+
+**Normalized proof target:** extracted `PExpr` terms are now normalized before they are exposed as the proof target. The normalization pass applies a deliberately small rewrite set:
+
+- algebraic identities (`x + 0`, `x * 1`, `x * 0`, `x - 0`)
+- commutative operand ordering for proof-facing expressions
+- dead-let elimination
+- let flattening
+- boolean short-circuiting for literal conditions
+
+This gives the proof pipeline a cleaner canonical target without pretending every source refactor should collapse to the same proof identity.
+
+**Architectural split preserved:** raw Core fingerprints remain the current proof attachment identity, while normalized `PExpr` is the canonical proof-facing term. That means:
+
+- proof maintenance and stale detection still use raw body fingerprints
+- proof extraction, traceability, and `proof_core` output now show a more canonical form
+- the compiler is ready for a later identity-model upgrade without forcing it into the normalization landing
+
+This is an important constraint because it keeps the current registry/proof workflow stable while improving the proof target itself.
+
+**Regression coverage:** adversarial tests now pin both the normalization rewrites and the qualified call-graph path, so the canonical proof target is not just an implementation detail. The proof pipeline now has explicit coverage for normalization behavior rather than only indirect extraction tests.
+
+**What changed strategically:** ProofCore is now not only an explicit pass, but also a more canonical proof target. The next architectural step is no longer “how do we normalize proof terms?” It is “what is the stable typed identity model for functions/specs/proofs that will sit on top of this normalized target?”
+
 ### ProofCore becomes the real proof-pipeline boundary
 
 **Explicit `Core -> ProofCore` pass:** `ProofCore.lean` now owns the proof-oriented compiler boundary instead of leaving proof extraction as mostly report-side logic. The pass computes and carries:
