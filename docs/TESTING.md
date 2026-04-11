@@ -54,7 +54,7 @@ Compile-and-run tests in `lean_tests/`:
 
 ### Stdlib Tests
 
-184 `#[test]` functions across all stdlib modules, compiled through the real compiler path. Module-targeted testing via `--stdlib-module <name>`.
+222 `#[test]` functions across all stdlib modules, compiled through the real compiler path. Module-targeted testing via `--stdlib-module <name>`.
 
 15 collection modules verified for test presence and correctness.
 
@@ -207,7 +207,7 @@ After an `--affected` run, the summary shows which files triggered which section
 | Metric | Value |
 |--------|-------|
 | Pass-level tests | <1s (32 tests, no I/O) |
-| Fast suite (`--fast`) | ~25-35s (~1288 tests, parallel) |
+| Fast suite (`--fast`) | ~25-35s (~1314 tests, parallel) |
 | Full suite (`--full`) | ~40-50s (~1150 tests, 3 skipped, includes network, cross-target, perf) |
 | Cache hit rate | 26/57 compilations saved per fast run |
 | Compiler build | ~30-45s (`lake build`) |
