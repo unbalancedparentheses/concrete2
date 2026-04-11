@@ -530,6 +530,145 @@ theorem decode_header_valid
         bindArgs, hlen', hver_low, hver_high, hov]
 
 -- ============================================================
+-- Crypto verification core (flagship example #2)
+-- ============================================================
+-- Three pure functions from examples/crypto_verify: a keyed tag
+-- computation, a tag verifier, and a nonce bounds checker.
+-- The proofs demonstrate security-critical verification in a
+-- second domain (crypto/auth) beyond the packet parser.
+
+/-- `fn compute_tag(key, message, nonce) -> Int { return key * message + nonce; }` -/
+def computeTagExpr : PExpr :=
+  .binOp .add (.binOp .mul (.var "key") (.var "message")) (.var "nonce")
+
+def computeTagFn : PFnDef :=
+  { name := "compute_tag", params := ["key", "message", "nonce"], body := computeTagExpr }
+
+/-- `fn verify_tag(key, message, nonce, expected_tag) -> Int {
+       let computed = compute_tag(key, message, nonce);
+       if computed == expected_tag { return 1; } else { return 0; }
+    }` -/
+def verifyTagExpr : PExpr :=
+  .letIn "computed" (.call "compute_tag" [.var "key", .var "message", .var "nonce"])
+    (.ifThenElse
+      (.binOp .eq (.var "computed") (.var "expected_tag"))
+      (.lit (.int 1))
+      (.lit (.int 0)))
+
+def verifyTagFn : PFnDef :=
+  { name := "verify_tag", params := ["key", "message", "nonce", "expected_tag"], body := verifyTagExpr }
+
+/-- `fn check_nonce(nonce, max_nonce) -> Int {
+       if nonce > 0 { if nonce <= max_nonce { return 1; } else { return 0; } }
+       else { return 0; }
+    }` -/
+def checkNonceExpr : PExpr :=
+  .ifThenElse
+    (.binOp .gt (.var "nonce") (.lit (.int 0)))
+    (.ifThenElse
+      (.binOp .le (.var "nonce") (.var "max_nonce"))
+      (.lit (.int 1))
+      (.lit (.int 0)))
+    (.lit (.int 0))
+
+def checkNonceFn : PFnDef :=
+  { name := "check_nonce", params := ["nonce", "max_nonce"], body := checkNonceExpr }
+
+/-- Function table for crypto verification proofs. -/
+def cryptoFns : FnTable
+  | "compute_tag" => some computeTagFn
+  | "verify_tag" => some verifyTagFn
+  | "check_nonce" => some checkNonceFn
+  | _ => none
+
+-- Evaluation helpers
+
+def evalComputeTag (key message nonce : Int) : Option PVal :=
+  eval cryptoFns
+    (((Env.empty.bind "key" (.int key)).bind "message" (.int message)).bind "nonce" (.int nonce))
+    10 computeTagExpr
+
+def evalVerifyTag (key message nonce expected : Int) (fuel : Nat) : Option PVal :=
+  let env := (((Env.empty.bind "key" (.int key)).bind "message" (.int message)).bind "nonce" (.int nonce)).bind "expected_tag" (.int expected)
+  eval cryptoFns env fuel verifyTagExpr
+
+def evalCheckNonce (nonce maxNonce : Int) : Option PVal :=
+  eval cryptoFns
+    ((Env.empty.bind "nonce" (.int nonce)).bind "max_nonce" (.int maxNonce))
+    10 checkNonceExpr
+
+-- Concrete test cases
+#eval evalComputeTag 42 100 7         -- some (int 4207)
+#eval evalVerifyTag 42 100 7 4207 20  -- some (int 1) — valid tag
+#eval evalVerifyTag 42 100 7 9999 20  -- some (int 0) — bad tag
+#eval evalCheckNonce 7 1000           -- some (int 1) — valid nonce
+#eval evalCheckNonce 0 1000           -- some (int 0) — zero nonce
+#eval evalCheckNonce 1001 1000        -- some (int 0) — over max
+
+-- Proofs
+
+/-- compute_tag is key * message + nonce for all integers. -/
+theorem compute_tag_correct (key message nonce : Int) (fuel : Nat) :
+    eval cryptoFns
+      (((Env.empty.bind "key" (.int key)).bind "message" (.int message)).bind "nonce" (.int nonce))
+      (fuel + 1) computeTagExpr
+    = some (.int (key * message + nonce)) := by
+  simp [computeTagExpr, eval, Env.bind, evalBinOp]
+
+/-- verify_tag returns 1 when the expected tag equals key * message + nonce.
+    This is the MAC verification correctness property: if verify succeeds,
+    the tag authenticates the message under the given key. -/
+theorem verify_tag_correct (key message nonce : Int) (fuel : Nat) :
+    let env := (((Env.empty.bind "key" (.int key)).bind "message" (.int message)).bind "nonce" (.int nonce)).bind "expected_tag" (.int (key * message + nonce))
+    eval cryptoFns env (fuel + 6) verifyTagExpr = some (.int 1) := by
+  simp [verifyTagExpr, eval, eval.evalArgs, cryptoFns, computeTagFn, computeTagExpr,
+        Env.bind, evalBinOp, bindArgs]
+
+/-- verify_tag returns 0 when the expected tag does not match.
+    This is the forgery rejection property: a wrong tag is always detected. -/
+theorem verify_tag_rejects (key message nonce expected : Int)
+    (h : expected ≠ key * message + nonce) (fuel : Nat) :
+    let env := (((Env.empty.bind "key" (.int key)).bind "message" (.int message)).bind "nonce" (.int nonce)).bind "expected_tag" (.int expected)
+    eval cryptoFns env (fuel + 6) verifyTagExpr = some (.int 0) := by
+  have hne : (key * message + nonce == expected) = false := by
+    show decide (key * message + nonce = expected) = false
+    exact decide_eq_false (Ne.symm h)
+  simp [verifyTagExpr, eval, eval.evalArgs, cryptoFns, computeTagFn, computeTagExpr,
+        Env.bind, evalBinOp, bindArgs, hne]
+
+/-- check_nonce returns 1 for nonces in range [1, max_nonce]. -/
+theorem check_nonce_accepts_valid (nonce maxNonce : Int)
+    (hpos : 0 < nonce) (hmax : nonce ≤ maxNonce) (fuel : Nat) :
+    eval cryptoFns
+      ((Env.empty.bind "nonce" (.int nonce)).bind "max_nonce" (.int maxNonce))
+      (fuel + 3) checkNonceExpr
+    = some (.int 1) := by
+  have hgt : decide (0 < nonce) = true := decide_eq_true hpos
+  have hle : decide (nonce ≤ maxNonce) = true := decide_eq_true hmax
+  simp [checkNonceExpr, eval, Env.bind, evalBinOp, hgt, hle]
+
+/-- check_nonce returns 0 for non-positive nonces. -/
+theorem check_nonce_rejects_nonpositive (nonce maxNonce : Int)
+    (h : nonce ≤ 0) (fuel : Nat) :
+    eval cryptoFns
+      ((Env.empty.bind "nonce" (.int nonce)).bind "max_nonce" (.int maxNonce))
+      (fuel + 2) checkNonceExpr
+    = some (.int 0) := by
+  have hgt : decide (0 < nonce) = false := decide_eq_false (by omega)
+  simp [checkNonceExpr, eval, Env.bind, evalBinOp, hgt]
+
+/-- check_nonce returns 0 for nonces exceeding the maximum. -/
+theorem check_nonce_rejects_over_max (nonce maxNonce : Int)
+    (hpos : 0 < nonce) (hover : maxNonce < nonce) (fuel : Nat) :
+    eval cryptoFns
+      ((Env.empty.bind "nonce" (.int nonce)).bind "max_nonce" (.int maxNonce))
+      (fuel + 3) checkNonceExpr
+    = some (.int 0) := by
+  have hgt : decide (0 < nonce) = true := decide_eq_true hpos
+  have hle : decide (nonce ≤ maxNonce) = false := decide_eq_false (by omega)
+  simp [checkNonceExpr, eval, Env.bind, evalBinOp, hgt, hle]
+
+-- ============================================================
 -- Proved functions registry
 -- ============================================================
 
@@ -547,6 +686,12 @@ def provedFunctions : List (String × String) :=
      "[(if (binop Concrete.BinOp.lt (var len) (int 10)) [(ret (int 1))]) (ret (int 0))]")
   , ("main.decode_header",
      "[(if (binop Concrete.BinOp.neq (call check_length (var len)) (int 0)) [(ret (int 1))]) (let version (call parse_byte (var data) (int 0))) (if (binop Concrete.BinOp.lt (var version) (int 1)) [(ret (int 2))]) (if (binop Concrete.BinOp.gt (var version) (int 2)) [(ret (int 2))]) (let payload_len (call parse_byte (var data) (int 1))) (if (binop Concrete.BinOp.gt (var payload_len) (binop Concrete.BinOp.sub (var len) (int 10))) [(ret (int 3))]) (ret (int 0))]")
+  , ("main.compute_tag",
+     "[(ret (binop Concrete.BinOp.add (binop Concrete.BinOp.mul (var key) (var message)) (var nonce)))]")
+  , ("main.verify_tag",
+     "[(let computed (call compute_tag (var key) (var message) (var nonce))) (if (binop Concrete.BinOp.eq (var computed) (var expected_tag)) [(ret (int 1))] [(ret (int 0))])]")
+  , ("main.check_nonce",
+     "[(if (binop Concrete.BinOp.gt (var nonce) (int 0)) [(if (binop Concrete.BinOp.leq (var nonce) (var max_nonce)) [(ret (int 1))] [(ret (int 0))])] [(ret (int 0))])]")
   ]
 
 end Concrete.Proof

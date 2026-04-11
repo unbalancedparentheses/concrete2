@@ -1,0 +1,20 @@
+[
+  {
+    "function": "main.compute_tag",
+    "body_fingerprint": "[(ret (binop Concrete.BinOp.add (binop Concrete.BinOp.mul (var key) (var message)) (var nonce)))]",
+    "proof": "CryptoVerify.compute_tag_correct",
+    "spec": "CryptoVerify.spec_compute_tag"
+  },
+  {
+    "function": "main.verify_tag",
+    "body_fingerprint": "[(let computed (call compute_tag (var key) (var message) (var nonce))) (if (binop Concrete.BinOp.eq (var computed) (var expected_tag)) [(ret (int 1))] [(ret (int 0))])]",
+    "proof": "CryptoVerify.verify_tag_correct",
+    "spec": "CryptoVerify.spec_verify_tag"
+  },
+  {
+    "function": "main.check_nonce",
+    "body_fingerprint": "[(if (binop Concrete.BinOp.gt (var nonce) (int 0)) [(if (binop Concrete.BinOp.leq (var nonce) (var max_nonce)) [(ret (int 1))] [(ret (int 0))])] [(ret (int 0))])]",
+    "proof": "CryptoVerify.check_nonce_rejects_nonpositive",
+    "spec": "CryptoVerify.spec_check_nonce"
+  }
+]

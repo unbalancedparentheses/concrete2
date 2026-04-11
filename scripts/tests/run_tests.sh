@@ -4581,6 +4581,243 @@ fi
 # Clean up
 rm -rf "$SNAP_DIR"
 
+# === Crypto verification core (flagship example #2) ===
+echo ""
+echo "=== Crypto verification core tests ==="
+
+CRYPTO_DIR="$ROOT_DIR/examples/crypto_verify/src"
+CRYPTO_SNAP_DIR=$(mktemp -d)
+
+# --- Snapshot tests ---
+
+# Snapshot generates correct fact count
+snap_crypto=$($COMPILER snapshot "$CRYPTO_DIR/main.con" -o "$CRYPTO_SNAP_DIR/good.facts.json" 2>&1)
+if echo "$snap_crypto" | grep -q "24 facts"; then
+    echo "  ok  crypto_verify: snapshot produces 24 facts"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  crypto_verify: expected 24 facts in snapshot"
+    echo "$snap_crypto"
+    FAIL=$((FAIL + 1))
+fi
+
+# All 3 core functions are proved
+if python3 -c "
+import json
+with open('$CRYPTO_SNAP_DIR/good.facts.json') as f:
+    s = json.load(f)
+assert s['summary']['proved'] == 3
+assert s['summary']['stale'] == 0
+assert s['summary']['no_proof'] == 1
+assert s['summary']['total_functions'] == 4
+" 2>/dev/null; then
+    echo "  ok  crypto_verify: summary shows 3 proved, 1 unproved, 0 stale"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  crypto_verify: summary proof counts incorrect"
+    FAIL=$((FAIL + 1))
+fi
+
+# All 3 obligations proved
+if python3 -c "
+import json
+with open('$CRYPTO_SNAP_DIR/good.facts.json') as f:
+    s = json.load(f)
+assert s['summary']['obligations_proved'] == 3
+assert s['summary']['obligations_missing'] == 1
+assert s['summary']['obligations_stale'] == 0
+" 2>/dev/null; then
+    echo "  ok  crypto_verify: 3 obligations proved, 1 missing (main)"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  crypto_verify: obligation counts incorrect"
+    FAIL=$((FAIL + 1))
+fi
+
+# All 3 core functions extracted
+if python3 -c "
+import json
+with open('$CRYPTO_SNAP_DIR/good.facts.json') as f:
+    s = json.load(f)
+assert s['summary']['extracted'] == 3
+assert s['summary']['excluded'] == 1
+" 2>/dev/null; then
+    echo "  ok  crypto_verify: 3 functions extracted, 1 excluded"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  crypto_verify: extraction counts incorrect"
+    FAIL=$((FAIL + 1))
+fi
+
+# Named specs present in facts
+if python3 -c "
+import json
+with open('$CRYPTO_SNAP_DIR/good.facts.json') as f:
+    s = json.load(f)
+facts = s['facts']
+proof_statuses = [f for f in facts if f['kind'] == 'proof_status' and f.get('spec')]
+assert len(proof_statuses) == 3
+specs = {f['function']: f['spec'] for f in proof_statuses}
+assert specs['main.compute_tag'] == 'CryptoVerify.spec_compute_tag'
+assert specs['main.verify_tag'] == 'CryptoVerify.spec_verify_tag'
+assert specs['main.check_nonce'] == 'CryptoVerify.spec_check_nonce'
+" 2>/dev/null; then
+    echo "  ok  crypto_verify: named specs present in proof_status facts"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  crypto_verify: named specs missing from proof_status facts"
+    FAIL=$((FAIL + 1))
+fi
+
+# ProofCore extraction content
+if python3 -c "
+import json
+with open('$CRYPTO_SNAP_DIR/good.facts.json') as f:
+    s = json.load(f)
+facts = s['facts']
+extractions = {f['function']: f for f in facts if f['kind'] == 'extraction' and f.get('proof_core')}
+assert '((key * message) + nonce)' in extractions['main.compute_tag']['proof_core']
+assert 'compute_tag' in extractions['main.verify_tag']['proof_core']
+assert 'nonce > 0' in extractions['main.check_nonce']['proof_core']
+" 2>/dev/null; then
+    echo "  ok  crypto_verify: ProofCore extraction content correct"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  crypto_verify: ProofCore extraction content incorrect"
+    FAIL=$((FAIL + 1))
+fi
+
+# All core functions are pure
+if python3 -c "
+import json
+with open('$CRYPTO_SNAP_DIR/good.facts.json') as f:
+    s = json.load(f)
+facts = s['facts']
+effects = {f['function']: f for f in facts if f['kind'] == 'effects'}
+for fn in ['compute_tag', 'verify_tag', 'check_nonce']:
+    assert effects[fn]['is_pure'] == True
+    assert effects[fn]['capabilities'] == []
+    assert effects[fn]['crosses_ffi'] == False
+" 2>/dev/null; then
+    echo "  ok  crypto_verify: all core functions are pure with no capabilities"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  crypto_verify: core functions should be pure with no capabilities"
+    FAIL=$((FAIL + 1))
+fi
+
+# --- Report tests ---
+
+# Proof status report shows 3 proved
+report_out=$($COMPILER "$CRYPTO_DIR/main.con" --report proof-status 2>&1)
+if echo "$report_out" | grep -q "3 proved" && echo "$report_out" | grep -q "1 unproved"; then
+    echo "  ok  crypto_verify: proof-status report shows 3 proved, 1 unproved"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  crypto_verify: proof-status report counts wrong"
+    echo "$report_out"
+    FAIL=$((FAIL + 1))
+fi
+
+# Each proved function shows checkmark
+for fn in compute_tag verify_tag check_nonce; do
+    if echo "$report_out" | grep -q "✓.*$fn"; then
+        echo "  ok  crypto_verify: $fn shows proved checkmark"
+        PASS=$((PASS + 1))
+    else
+        echo "FAIL  crypto_verify: $fn should show proved checkmark"
+        FAIL=$((FAIL + 1))
+    fi
+done
+
+# --- Drift detection tests ---
+
+# Generate drifted snapshot
+$COMPILER snapshot "$CRYPTO_DIR/main_drifted.con" -o "$CRYPTO_SNAP_DIR/drifted.facts.json" 2>/dev/null
+
+# Diff detects trust weakening (exit 1)
+diff_out=$($COMPILER diff "$CRYPTO_SNAP_DIR/good.facts.json" "$CRYPTO_SNAP_DIR/drifted.facts.json" 2>&1) && diff_exit=0 || diff_exit=$?
+if [ "$diff_exit" = "1" ]; then
+    echo "  ok  crypto_verify: drift detection exits 1 (trust weakened)"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  crypto_verify: drift detection should exit 1, got $diff_exit"
+    FAIL=$((FAIL + 1))
+fi
+
+# Diff reports proved → stale for compute_tag
+if echo "$diff_out" | grep -q "proved.*stale" && echo "$diff_out" | grep -q "compute_tag"; then
+    echo "  ok  crypto_verify: drift shows compute_tag proved → stale"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  crypto_verify: drift should show compute_tag proved → stale"
+    FAIL=$((FAIL + 1))
+fi
+
+# Diff reports proved → stale for check_nonce
+if echo "$diff_out" | grep -q "check_nonce"; then
+    echo "  ok  crypto_verify: drift shows check_nonce changed"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  crypto_verify: drift should show check_nonce changed"
+    FAIL=$((FAIL + 1))
+fi
+
+# verify_tag is NOT in the weakened list (unchanged)
+if ! echo "$diff_out" | grep "TRUST WEAKENED" -A 100 | grep -q "verify_tag"; then
+    echo "  ok  crypto_verify: verify_tag not flagged as weakened (unchanged)"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  crypto_verify: verify_tag should not be weakened"
+    FAIL=$((FAIL + 1))
+fi
+
+# JSON diff output works
+$COMPILER diff "$CRYPTO_SNAP_DIR/good.facts.json" "$CRYPTO_SNAP_DIR/drifted.facts.json" --json > "$CRYPTO_SNAP_DIR/diff.json" 2>&1 && diff_json_exit=0 || diff_json_exit=$?
+if python3 -c "
+import json
+with open('$CRYPTO_SNAP_DIR/diff.json') as f:
+    d = json.load(f)
+assert isinstance(d, list)
+weakened = [e for e in d if e.get('drift') == 'weakened']
+assert len(weakened) > 0
+assert len(d) > 0
+" 2>/dev/null; then
+    echo "  ok  crypto_verify: JSON diff output is valid with weakened entries"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  crypto_verify: JSON diff output invalid"
+    FAIL=$((FAIL + 1))
+fi
+
+# Self-diff is clean (exit 0)
+self_diff=$($COMPILER diff "$CRYPTO_SNAP_DIR/good.facts.json" "$CRYPTO_SNAP_DIR/good.facts.json" 2>&1) && self_exit=0 || self_exit=$?
+if [ "$self_exit" = "0" ]; then
+    echo "  ok  crypto_verify: self-diff exits 0 (no drift)"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  crypto_verify: self-diff should exit 0, got $self_exit"
+    FAIL=$((FAIL + 1))
+fi
+
+# Drifted snapshot shows stale proofs
+if python3 -c "
+import json
+with open('$CRYPTO_SNAP_DIR/drifted.facts.json') as f:
+    s = json.load(f)
+assert s['summary']['stale'] == 2
+assert s['summary']['proved'] == 1
+" 2>/dev/null; then
+    echo "  ok  crypto_verify: drifted snapshot shows 2 stale, 1 proved"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  crypto_verify: drifted snapshot stale counts wrong"
+    FAIL=$((FAIL + 1))
+fi
+
+# Clean up
+rm -rf "$CRYPTO_SNAP_DIR"
+
 fi # end section: report
 
 # === Codegen differential tests ===

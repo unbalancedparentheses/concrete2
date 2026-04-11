@@ -1,0 +1,71 @@
+// Crypto verification core — flagship example #2
+//
+// Demonstrates: explicit authority, provable bounded core, artifact-backed
+// evidence, and drift detection in a security-critical domain.
+//
+// The capability signatures tell the security story:
+//   compute_tag()  — pure — keyed hash computation, no side effects
+//   verify_tag()   — pure — tag verification, no side effects
+//   check_nonce()  — pure — nonce bounds check, no side effects
+//   main()         — with(Console) — entry point, can only print
+//
+// An auditor can verify from signatures alone:
+//   - the verification core never performs I/O
+//   - the tag computation cannot be influenced by external state
+//   - only main() bridges the pure core to the outside world
+
+// === Provable core (pure, no capabilities) ===
+
+// Simplified keyed message authentication tag.
+// In production this would be HMAC-SHA256; the proof structure is identical.
+// compute_tag(key, message, nonce) = key * message + nonce
+fn compute_tag(key: Int, message: Int, nonce: Int) -> Int {
+    return key * message + nonce;
+}
+
+// Verify a message authentication tag.
+// Returns 1 if the tag is valid, 0 if it does not match.
+fn verify_tag(key: Int, message: Int, nonce: Int, expected_tag: Int) -> Int {
+    let computed: Int = compute_tag(key, message, nonce);
+    if computed == expected_tag {
+        return 1;
+    } else {
+        return 0;
+    }
+}
+
+// Validate that a nonce is within the accepted range [1, max_nonce].
+// Returns 1 if valid, 0 if out of range.
+fn check_nonce(nonce: Int, max_nonce: Int) -> Int {
+    if nonce > 0 {
+        if nonce <= max_nonce {
+            return 1;
+        } else {
+            return 0;
+        }
+    } else {
+        return 0;
+    }
+}
+
+// === Shell (with capabilities) ===
+
+fn main() -> i32 {
+    // Known-good verification: compute a tag, then verify it
+    let key: Int = 42;
+    let msg: Int = 100;
+    let nonce: Int = 7;
+    let tag: Int = compute_tag(key, msg, nonce);
+    let valid: Int = verify_tag(key, msg, nonce, tag);
+    // valid == 1: tag matches
+
+    // Bad tag: verification should fail
+    let bad: Int = verify_tag(key, msg, nonce, 9999);
+    // bad == 0: tag does not match
+
+    // Nonce check
+    let nonce_ok: Int = check_nonce(nonce, 1000);
+    // nonce_ok == 1: nonce is in [1, 1000]
+
+    return 0;
+}

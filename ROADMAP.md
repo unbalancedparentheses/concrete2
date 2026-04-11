@@ -62,7 +62,7 @@ Do this list top-to-bottom. This is the roadmap. Completed history belongs in [C
 
 Current guardrails: keep specs in Lean-attached / artifact-registry form until obligations and diagnostics work; build a normal fact CLI before the MCP; keep QBE/Yul/other backend work waiting until proof/evidence attachment, optimization policy, and the backend trust boundary are trustworthy.
 
-1. build the next flagship proof-backed example in a second domain: choose the workload, implement the bounded core, prove at least one real Lean-backed property, connect it to artifacts/reports, and use it to identify the first proof-workflow bottlenecks
+1. ~~build the next flagship proof-backed example in a second domain~~ **done** — crypto verification core (compute_tag, verify_tag, check_nonce): 7 Lean theorems, proof-registry with named specs, snapshot/diff/drift detection, 20 tests
 2. promote an explicit `Core -> ProofCore` phase as soon as the flagship example pressures the current extraction path: give ProofCore a stable syntax/semantics, explicit eligibility/exclusion rules, stable fingerprints, and a first-class report/artifact boundary that obligations, specs, proofs, and future proof tools all share
 3. prototype module/package policy checks for the existing thesis properties
 4. define the thesis threat/accident model and build one attacker-style demo that introduces authority/resource/proof drift and shows Concrete catching it
