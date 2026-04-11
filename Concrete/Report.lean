@@ -4,6 +4,7 @@ import Concrete.FileSummary
 import Concrete.AST
 import Concrete.Intrinsic
 import Concrete.Proof
+import Concrete.ProofCore
 import Concrete.Diagnostic
 
 namespace Concrete
@@ -1875,6 +1876,206 @@ def obligationsReport (modules : List CModule) (locMap : FnLocMap := [])
   s!"{header}\n\n{"\n\n".intercalate body}\n\n{summary}\n"
 
 -- ============================================================
+-- Source-to-ProofCore extraction report (--report extraction)
+-- ============================================================
+
+/-- Map a Core BinOp to the proof-fragment PBinOp. Returns none for operators
+    not yet modeled in the proof fragment (div, mod, bitwise, logical). -/
+private def binOpToPBinOp : BinOp → Option Proof.PBinOp
+  | .add => some .add
+  | .sub => some .sub
+  | .mul => some .mul
+  | .eq  => some .eq
+  | .neq => some .ne
+  | .lt  => some .lt
+  | .leq => some .le
+  | .gt  => some .gt
+  | .geq => some .ge
+  | _    => none
+
+mutual
+/-- Translate a Core expression to proof-fragment PExpr.
+    Returns none for constructs not yet in the proof fragment. -/
+partial def cExprToPExpr : CExpr → Option Proof.PExpr
+  | .intLit n _ => some (.lit (.int n))
+  | .boolLit b => some (.lit (.bool b))
+  | .ident name _ => some (.var name)
+  | .binOp op lhs rhs _ => do
+    let pop ← binOpToPBinOp op
+    let pl ← cExprToPExpr lhs
+    let pr ← cExprToPExpr rhs
+    some (.binOp pop pl pr)
+  | .call fn _ args _ => do
+    let pargs ← args.mapM cExprToPExpr
+    some (.call fn pargs)
+  | .ifExpr cond thenBranch elseBranch _ => do
+    let pc ← cExprToPExpr cond
+    let pt ← cStmtsToPExpr thenBranch
+    let pe ← cStmtsToPExpr elseBranch
+    some (.ifThenElse pc pt pe)
+  | _ => none
+
+/-- Translate a Core statement list to a single proof-fragment PExpr.
+    Handles: return, let+rest, if/else, expression statements. -/
+partial def cStmtsToPExpr : List CStmt → Option Proof.PExpr
+  | [] => none
+  | [.return_ (some e) _] => cExprToPExpr e
+  | [.expr e] => cExprToPExpr e
+  | (.letDecl name _ _ val) :: rest => do
+    let pv ← cExprToPExpr val
+    let pb ← cStmtsToPExpr rest
+    some (.letIn name pv pb)
+  | [.ifElse cond thenBranch (some elseBranch)] => do
+    let pc ← cExprToPExpr cond
+    let pt ← cStmtsToPExpr thenBranch
+    let pe ← cStmtsToPExpr elseBranch
+    some (.ifThenElse pc pt pe)
+  | _ => none
+end
+
+/-- Pretty-print a PExpr as a readable S-expression. -/
+private def renderPExpr : Proof.PExpr → String
+  | .lit (.int n) => toString n
+  | .lit (.bool b) => toString b
+  | .var name => name
+  | .binOp op lhs rhs =>
+    let opStr := match op with
+      | .add => "+" | .sub => "-" | .mul => "*"
+      | .eq => "==" | .ne => "!=" | .lt => "<"
+      | .le => "<=" | .gt => ">" | .ge => ">="
+    s!"({renderPExpr lhs} {opStr} {renderPExpr rhs})"
+  | .letIn name val body =>
+    s!"let {name} = {renderPExpr val}; {renderPExpr body}"
+  | .ifThenElse cond t e =>
+    s!"if {renderPExpr cond} then {renderPExpr t} else {renderPExpr e}"
+  | .call fn args =>
+    let argsStr := ", ".intercalate (args.map renderPExpr)
+    s!"{fn}({argsStr})"
+
+/-- Identify why a function was excluded from ProofCore. -/
+private def exclusionReasons (f : CFnDef) (externNames : List String) : List String :=
+  let (concreteCaps, _) := f.capSet.normalize
+  let callees := collectCallsStmts f.body |>.eraseDups
+  (if !f.capSet.isEmpty then
+    [s!"has capabilities: {", ".intercalate concreteCaps}"] else []) ++
+  (if f.isTrusted then ["marked trusted"] else []) ++
+  (if f.isEntryPoint then ["is entry point (main)"] else []) ++
+  (if f.trustedImplOrigin.isSome then ["from trusted impl"] else []) ++
+  (if callees.any (fun c => externNames.contains c) then ["calls extern/FFI"] else [])
+
+/-- Extraction entry for one function. -/
+structure ExtractionEntry where
+  qualName    : String
+  eligible    : Bool
+  extracted   : Option Proof.PExpr
+  excluded    : List String  -- reasons if not eligible
+  unsupported : List String  -- constructs that blocked extraction
+  fingerprint : String
+  params      : List String
+  loc         : Option SourceLoc
+
+/-- Identify unsupported expression constructs. -/
+private partial def identifyUnsupportedExpr : CExpr → List String
+  | .floatLit .. => ["float literal"]
+  | .strLit .. => ["string literal"]
+  | .charLit .. => ["char literal"]
+  | .structLit .. => ["struct literal"]
+  | .fieldAccess .. => ["field access"]
+  | .enumLit .. => ["enum literal"]
+  | .match_ .. => ["match expression"]
+  | .borrow .. => ["borrow"]
+  | .borrowMut .. => ["mutable borrow"]
+  | .deref .. => ["deref"]
+  | .arrayLit .. => ["array literal"]
+  | .arrayIndex .. => ["array index"]
+  | .cast .. => ["cast"]
+  | .fnRef .. => ["function reference"]
+  | .try_ .. => ["try expression"]
+  | .allocCall .. => ["alloc call"]
+  | .whileExpr .. => ["while expression"]
+  | .unaryOp .. => ["unary operator"]
+  | .binOp op _ _ _ => match binOpToPBinOp op with
+    | none => [s!"unsupported operator: {repr op}"]
+    | some _ => []
+  | _ => []
+
+/-- Identify unsupported constructs in expressions within a statement. -/
+private partial def identifyUnsupportedStmt : CStmt → List String
+  | .letDecl _ _ _ val => identifyUnsupportedExpr val
+  | .return_ (some e) _ => identifyUnsupportedExpr e
+  | .expr e => identifyUnsupportedExpr e
+  | .ifElse cond thenBr elseBr =>
+    identifyUnsupportedExpr cond ++
+    thenBr.foldl (fun acc s => acc ++ identifyUnsupportedStmt s) [] ++
+    match elseBr with
+    | some stmts => stmts.foldl (fun acc s => acc ++ identifyUnsupportedStmt s) []
+    | none => ["if without else"]
+  | _ => []
+
+/-- Identify unsupported constructs in a function body that prevent extraction. -/
+private partial def identifyUnsupported (body : List CStmt) : List String :=
+  let stmtKinds := body.filterMap fun s => match s with
+    | .while_ .. => some "while loop"
+    | .fieldAssign .. => some "field assignment"
+    | .derefAssign .. => some "deref assignment"
+    | .arrayIndexAssign .. => some "array index assignment"
+    | .break_ .. => some "break"
+    | .continue_ .. => some "continue"
+    | .defer .. => some "defer"
+    | .borrowIn .. => some "borrow region"
+    | .assign .. => some "mutable assignment"
+    | _ => none
+  let exprKinds := body.foldl (fun acc s => acc ++ identifyUnsupportedStmt s) []
+  (stmtKinds ++ exprKinds).eraseDups
+
+/-- Collect extraction entries for all functions in a module. -/
+private partial def collectExtractionEntries
+    (externNames : List String)
+    (locMap : FnLocMap)
+    (m : CModule) (modulePath : String := "") : List ExtractionEntry :=
+  let qualPrefix := if modulePath == "" then m.name else modulePath ++ "." ++ m.name
+  let entries := m.functions.map fun f =>
+    let qualName := qualPrefix ++ "." ++ f.name
+    let fp := bodyFingerprint f.body
+    let fnLoc := lookupLoc locMap qualName
+    let paramNames := f.params.map (·.1)
+    if f.isProofEligible then
+      let extracted := cStmtsToPExpr f.body
+      let unsup := if extracted.isNone then
+        identifyUnsupported f.body
+      else []
+      { qualName, eligible := true, extracted, excluded := []
+      , unsupported := unsup, fingerprint := fp, params := paramNames, loc := fnLoc }
+    else
+      let reasons := exclusionReasons f externNames
+      { qualName, eligible := false, extracted := none, excluded := reasons
+      , unsupported := [], fingerprint := fp, params := paramNames, loc := fnLoc }
+  entries ++ m.submodules.foldl (fun acc sub =>
+    acc ++ collectExtractionEntries externNames locMap sub qualPrefix) []
+
+/-- Render the source-to-ProofCore extraction report. -/
+def extractionReport (modules : List CModule) (locMap : FnLocMap := []) : String :=
+  let externNames := modules.foldl (fun acc m => acc ++ collectExternNames m) []
+  let entries := modules.foldl (fun acc m =>
+    acc ++ collectExtractionEntries externNames locMap m) []
+  let header := "=== Source-to-ProofCore Extraction ==="
+  let body := entries.map fun e =>
+    let locStr := fmtLoc e.loc
+    let statusStr := if e.eligible then
+      match e.extracted with
+      | some pexpr => s!"extracted\n    ProofCore: {renderPExpr pexpr}"
+      | none => s!"eligible (extraction failed)\n    unsupported: {", ".intercalate e.unsupported}"
+    else
+      s!"excluded\n    reasons: {", ".intercalate e.excluded}"
+    let paramStr := if e.params.isEmpty then "()" else "(" ++ ", ".intercalate e.params ++ ")"
+    s!"  {e.qualName}{paramStr}\n    status: {statusStr}\n    fingerprint: {e.fingerprint}\n    loc: {locStr}"
+  let extracted := (entries.filter fun e => e.eligible && e.extracted.isSome).length
+  let eligFailed := (entries.filter fun e => e.eligible && e.extracted.isNone).length
+  let excluded := (entries.filter fun e => !e.eligible).length
+  let summary := s!"Totals: {entries.length} functions — {extracted} extracted, {eligFailed} eligible but not extractable, {excluded} excluded"
+  s!"{header}\n\n{"\n\n".intercalate body}\n\n{summary}\n"
+
+-- ============================================================
 -- Machine-readable facts (--report diagnostics-json)
 -- ============================================================
 -- Structured diagnostic records for predictable violations and
@@ -2001,6 +2202,37 @@ def collectObligationFacts (modules : List CModule) (locMap : FnLocMap := [])
     (registry : ProofRegistry := []) : List Val :=
   let entries := collectObligations modules locMap registry
   entries.map obligationToFact
+
+open Json in
+/-- Convert an extraction entry to a JSON fact. -/
+private def extractionToFact (e : ExtractionEntry) : Val :=
+  let statusStr := if e.eligible then
+    match e.extracted with
+    | some _ => "extracted"
+    | none => "eligible_not_extractable"
+  else "excluded"
+  let proofCoreStr := match e.extracted with
+    | some pexpr => renderPExpr pexpr
+    | none => ""
+  .obj ([
+    ("kind", .str "extraction"),
+    ("function", .str e.qualName),
+    ("status", .str statusStr),
+    ("eligible", .bool e.eligible),
+    ("fingerprint", .str e.fingerprint),
+    ("params", .arr (e.params.map .str)),
+    ("loc", locToJson e.loc)
+  ] ++ (if proofCoreStr.isEmpty then [] else [("proof_core", .str proofCoreStr)])
+    ++ (if e.excluded.isEmpty then [] else [("excluded_reasons", .arr (e.excluded.map .str))])
+    ++ (if e.unsupported.isEmpty then [] else [("unsupported", .arr (e.unsupported.map .str))]))
+
+open Json in
+/-- Collect extraction facts for all functions. -/
+def collectExtractionFacts (modules : List CModule) (locMap : FnLocMap := []) : List Val :=
+  let externNames := modules.foldl (fun acc m => acc ++ collectExternNames m) []
+  let entries := modules.foldl (fun acc m =>
+    acc ++ collectExtractionEntries externNames locMap m) []
+  entries.map extractionToFact
 
 open Json in
 /-- Convert an FnEffects record to a JSON fact. -/
@@ -2151,11 +2383,12 @@ private def collectAllFacts (modules : List CModule) (locMap : FnLocMap := [])
   let predictable := collectPredictableFacts modules locMap
   let proofStatus := collectProofStatusFacts modules locMap registry
   let obligations := collectObligationFacts modules locMap registry
+  let extraction := collectExtractionFacts modules locMap
   let effects := collectEffectsFacts modules locMap
   let caps := collectCapFacts modules
   let unsafeFacts := collectUnsafeFacts modules
   let alloc := collectAllocFacts modules
-  let base := predictable ++ proofStatus ++ obligations
+  let base := predictable ++ proofStatus ++ obligations ++ extraction
   base ++ effects ++ caps ++ unsafeFacts ++ alloc
 
 open Json in

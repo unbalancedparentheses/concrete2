@@ -3,7 +3,7 @@ import Concrete
 open Concrete
 
 def usage : String :=
-  "Usage: concrete <file.con> [-o output] [--emit-llvm] [--emit-core] [--emit-ssa] [--test] [--test --module <name>] [--report caps|unsafe|layout|interface|alloc|mono|authority|proof|proof-status|obligations|diagnostics-json|effects|recursion|fingerprints] [--query KIND|KIND:FUNCTION|fn:FUNCTION] [--fmt]\n       concrete build [-o output] [--emit-llvm]\n       concrete run [-- args...]\n       concrete test [--module <name>]"
+  "Usage: concrete <file.con> [-o output] [--emit-llvm] [--emit-core] [--emit-ssa] [--test] [--test --module <name>] [--report caps|unsafe|layout|interface|alloc|mono|authority|proof|proof-status|obligations|extraction|diagnostics-json|effects|recursion|fingerprints] [--query KIND|KIND:FUNCTION|fn:FUNCTION] [--fmt]\n       concrete build [-o output] [--emit-llvm]\n       concrete run [-- args...]\n       concrete test [--module <name>]"
 
 def writeFile (path : String) (content : String) : IO Unit := do
   IO.FS.writeFile ⟨path⟩ content
@@ -310,6 +310,9 @@ def compileAndReport (inputPath : String) (reportType : String) : IO UInt32 := d
     if reportType == "obligations" then
       let registry ← loadRegistry inputPath
       IO.println (Report.obligationsReport validCore.coreModules locMap (registry := registry))
+      return 0
+    if reportType == "extraction" then
+      IO.println (Report.extractionReport validCore.coreModules locMap)
       return 0
     if reportType == "diagnostics-json" then
       let registry ← loadRegistry inputPath

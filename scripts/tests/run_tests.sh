@@ -3602,6 +3602,118 @@ else
     FAIL=$((FAIL + 1))
 fi
 
+echo ""
+echo "=== Source-to-ProofCore extraction tests ==="
+
+# Pure function: extracted with ProofCore form
+ext_pure=$(cached_output "$REGISTRY_DIR/test_proof_registry.con" "--report extraction")
+if echo "$ext_pure" | grep -q "status: extracted" && \
+   echo "$ext_pure" | grep -q "ProofCore: (a + b)"; then
+    echo "  ok  extraction: pure_add extracted to (a + b)"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  extraction: pure_add should be extracted"
+    echo "$ext_pure"
+    FAIL=$((FAIL + 1))
+fi
+
+# Entry point: excluded with reason
+if echo "$ext_pure" | grep -A3 "main.main" | grep -q "excluded" && \
+   echo "$ext_pure" | grep -A3 "main.main" | grep -q "entry point"; then
+    echo "  ok  extraction: main excluded as entry point"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  extraction: main should be excluded"
+    echo "$ext_pure"
+    FAIL=$((FAIL + 1))
+fi
+
+# Mixed program: capabilities excluded with reasons
+ext_mixed=$(cached_output "$TESTDIR/report_integration.con" "--report extraction")
+if echo "$ext_mixed" | grep -A3 "uses_alloc" | grep -q "has capabilities: Alloc"; then
+    echo "  ok  extraction: uses_alloc excluded for Alloc capability"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  extraction: uses_alloc should be excluded for Alloc"
+    echo "$ext_mixed"
+    FAIL=$((FAIL + 1))
+fi
+
+# Trusted function: excluded with trusted reason
+if echo "$ext_mixed" | grep -A3 "call_raw" | grep -q "marked trusted"; then
+    echo "  ok  extraction: call_raw excluded as trusted"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  extraction: call_raw should be excluded as trusted"
+    echo "$ext_mixed"
+    FAIL=$((FAIL + 1))
+fi
+
+# Eligible but not extractable: struct literal, match
+ext_elig=$(cached_output "$TESTDIR/test_proof_eligible_pure.con" "--report extraction")
+if echo "$ext_elig" | grep -A3 "make_point" | grep -q "extraction failed" && \
+   echo "$ext_elig" | grep -A3 "make_point" | grep -q "struct literal"; then
+    echo "  ok  extraction: make_point eligible but blocked by struct literal"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  extraction: make_point should fail on struct literal"
+    echo "$ext_elig"
+    FAIL=$((FAIL + 1))
+fi
+
+if echo "$ext_elig" | grep -A3 "color_value" | grep -q "match expression"; then
+    echo "  ok  extraction: color_value eligible but blocked by match expression"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  extraction: color_value should fail on match expression"
+    echo "$ext_elig"
+    FAIL=$((FAIL + 1))
+fi
+
+# Summary totals
+if echo "$ext_pure" | grep -q "1 extracted" && \
+   echo "$ext_pure" | grep -q "1 excluded"; then
+    echo "  ok  extraction: summary shows correct totals"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  extraction: summary should show 1 extracted, 1 excluded"
+    echo "$ext_pure"
+    FAIL=$((FAIL + 1))
+fi
+
+# JSON query: extraction facts with proof_core
+ext_json=$(cached_output "$REGISTRY_DIR/test_proof_registry.con" "--query extraction:pure_add")
+if echo "$ext_json" | grep -q '"status": "extracted"' && \
+   echo "$ext_json" | grep -q '"proof_core": "(a + b)"'; then
+    echo "  ok  extraction JSON: --query extraction:pure_add returns proof_core"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  extraction JSON: --query extraction:pure_add should have proof_core"
+    echo "$ext_json"
+    FAIL=$((FAIL + 1))
+fi
+
+# Diagnostics-json includes extraction kind
+if echo "$ob_diag" | grep -q '"kind": "extraction"'; then
+    echo "  ok  extraction: diagnostics-json includes extraction facts"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  extraction: diagnostics-json should include extraction facts"
+    FAIL=$((FAIL + 1))
+fi
+
+# Excluded function JSON shows excluded_reasons
+ext_excl=$(cached_output "$TESTDIR/report_integration.con" "--query extraction:call_raw")
+if echo "$ext_excl" | grep -q '"status": "excluded"' && \
+   echo "$ext_excl" | grep -q '"excluded_reasons"'; then
+    echo "  ok  extraction JSON: excluded function shows excluded_reasons"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  extraction JSON: excluded function should show excluded_reasons"
+    echo "$ext_excl"
+    FAIL=$((FAIL + 1))
+fi
+
 fi # end section: report
 
 # === Codegen differential tests ===
