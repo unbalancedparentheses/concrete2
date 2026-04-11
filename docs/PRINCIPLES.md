@@ -42,7 +42,9 @@ proofs.
 7. **Artifact-first auditability**
    The compiler should emit facts and evidence artifacts that humans, CI, and AI
    tools can consume directly. Concrete should not rely on "read the compiler
-   source" as the audit workflow.
+   source" as the audit workflow. The primary audience is still humans, but the
+   same machine-readable explicitness is intentionally useful for LLM-assisted
+   coding and review.
 
 8. **Lean 4 proofs should attach to real Concrete code**
    The goal is not merely to reimplement functions in Lean. The language should

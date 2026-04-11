@@ -49,6 +49,8 @@ That artifact-first workflow matters because Concrete is trying to be useful for
 3. what is enforced, what is reported, what is proved, and what is merely trusted?
 4. what changed since the last reviewed version?
 
+Concrete is designed for humans first, not for LLMs. But the same explicitness also makes it unusually friendly to LLM-assisted coding, review, and optimization: authority, predictability, trust boundaries, and evidence are surfaced as compiler facts and queries instead of being left implicit in source code.
+
 Short version:
 
 1. Rust makes memory-safety discipline explicit.
