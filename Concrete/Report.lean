@@ -1198,6 +1198,14 @@ structure ProofStatusEntry where
   loc           : Option SourceLoc
   fnSpan        : Option Span
 
+/-- Convert ProofCore ObligationStatus to Report-side ProofState. -/
+private def obligationStatusToProofState : Concrete.ObligationStatus → ProofState
+  | .proved => .proved
+  | .stale => .stale
+  | .missing => .notProved
+  | .ineligible => .notEligible
+  | .trusted => .trusted
+
 private partial def collectProofStatus
     (pc : Concrete.ProofCore)
     (locMap : FnLocMap)
@@ -1206,48 +1214,28 @@ private partial def collectProofStatus
   let qualPrefix := if modulePath == "" then m.name else modulePath ++ "." ++ m.name
   let entries := m.functions.map fun f =>
     let qualName := qualPrefix ++ "." ++ f.name
-    let pcEntry := pc.entries.find? fun e => e.qualName == qualName
-    let pcExcl := pc.excluded.find? fun e => e.qualName == qualName
-    let fp := match pcEntry with
-      | some e => e.fingerprint
-      | none => match pcExcl with
-        | some e => e.fingerprint
-        | none => bodyFingerprint f.body
     let entry := lookupBody locMap qualName
     let fnLoc := lookupLoc locMap qualName
     let fnSp := entry.map (·.fnSpan)
-    -- Look up pre-computed eligibility from ProofCore
-    let eligibility := pc.allEligibility
-    let elig := eligibility.find? fun e => e.qualName == qualName
-    let gates := match elig with
-      | some e => e.sourceReasons ++ e.profileReasons
+    -- Look up pre-computed obligation from ProofCore
+    let obl := pc.obligations.find? fun o => o.functionId.qualName == qualName
+    let state := match obl with
+      | some o => obligationStatusToProofState o.status
+      | none => .notEligible
+    let fp := match obl with
+      | some o => o.functionId.fingerprint
+      | none => bodyFingerprint f.body
+    let gates := match obl with
+      | some o => o.profileGates
       | none => []
-    let passesProfile := match elig with
-      | some e => e.eligible
-      | none => false
-    -- Derive proof state from spec attachment + current fingerprint
-    let att := match pcEntry with
-      | some e => e.spec
-      | none => match pcExcl with
-        | some e => e.spec
-        | none => none
-    let state :=
-      if f.isTrusted then .trusted
-      else match att with
-      | some a =>
-        if a.expectedFp == fp && passesProfile then .proved
-        else if a.expectedFp != fp then .stale
-        else .notEligible
-      | none =>
-        if !passesProfile then .notEligible
-        else .notProved
-    let expectedFp := match att with
-      | some a => a.expectedFp
+    let expectedFp := match obl with
+      | some o => o.expectedFp
       | none => ""
-    -- Spec and proof identity from attachment
-    let (sName, pName, pSrc) := match att with
-      | some a => (a.specId.name, a.proofName,
-          match a.source with | .registry => "registry" | .hardcoded => "hardcoded")
+    let (sName, pName, pSrc) := match obl with
+      | some o => match o.spec with
+        | some a => (a.specId.name, a.proofName,
+            match a.source with | .registry => "registry" | .hardcoded => "hardcoded")
+        | none => ("", "", "none")
       | none => ("", "", "none")
     { qualName, bareName := f.name, state, currentFp := fp, expectedFp
     , profileGates := gates, specName := sName, proofName := pName
@@ -1307,7 +1295,7 @@ def proofStatusReport (modules : List CModule) (locMap : FnLocMap := [])
 -- Proof obligations report (--report obligations)
 -- ============================================================
 
-/-- A single proof obligation entry. -/
+/-- A single proof obligation entry (presentation layer). -/
 structure ObligationEntry where
   function     : String       -- qualified name
   spec         : String       -- spec name (from registry, or empty)
@@ -1318,41 +1306,26 @@ structure ObligationEntry where
   source       : String       -- "registry" | "hardcoded" | "none"
   loc          : Option SourceLoc
 
-/-- Find the callees of a named function in a module. -/
-private partial def findFunctionCallees (m : CModule) (name : String) : List String :=
-  match m.functions.find? (fun f => f.name == name) with
-  | some f => collectCallsStmts f.body |>.eraseDups
-  | none => m.submodules.foldl (fun acc sub => acc ++ findFunctionCallees sub name) []
-
-/-- Build obligation entries from proof status + registry. -/
-private partial def collectObligations
-    (modules : List CModule) (locMap : FnLocMap := [])
-    (registry : ProofRegistry := [])
-    (pc : Concrete.ProofCore) : List ObligationEntry :=
-  let proofEntries := modules.foldl (fun acc m =>
-    acc ++ collectProofStatus pc locMap m "" registry) []
-  -- Build set of proved function names for dependency tracking
-  let provedNames := proofEntries.filterMap fun e =>
-    if e.state matches .proved then some e.qualName else none
-  proofEntries.map fun e =>
-    let statusStr := match e.state with
-      | .proved => "proved"
-      | .stale => "stale"
-      | .notProved => "missing_proof"
-      | .notEligible => "not_eligible"
-      | .trusted => "trusted"
-    -- Dependencies: which proved helpers does this function call?
-    let callees := match modules.foldl (fun acc m =>
-      acc ++ findFunctionCallees m e.bareName) [] with
-      | cs => cs.filter fun c => provedNames.any fun p => p.endsWith ("." ++ c)
-    { function := e.qualName, spec := e.specName, proof := e.proofName
-    , status := statusStr, dependencies := callees
-    , fingerprint := e.currentFp, source := e.proofSource, loc := e.loc }
+/-- Convert a ProofCore obligation to a Report-side ObligationEntry. -/
+private def obligationToEntry (o : Concrete.Obligation) : ObligationEntry :=
+  let statusStr := match o.status with
+    | .proved => "proved"
+    | .stale => "stale"
+    | .missing => "missing_proof"
+    | .ineligible => "not_eligible"
+    | .trusted => "trusted"
+  let (sName, pName, src) := match o.spec with
+    | some a => (a.specId.name, a.proofName,
+        match a.source with | .registry => "registry" | .hardcoded => "hardcoded")
+    | none => ("", "", "none")
+  { function := o.functionId.qualName, spec := sName, proof := pName
+  , status := statusStr, dependencies := o.dependencies
+  , fingerprint := o.functionId.fingerprint, source := src, loc := o.loc }
 
 /-- Render the obligations report as human-readable output. -/
 def obligationsReport (modules : List CModule) (locMap : FnLocMap := [])
     (registry : ProofRegistry := []) (pc : Concrete.ProofCore) : String :=
-  let entries := collectObligations modules locMap registry pc
+  let entries := pc.obligations.map obligationToEntry
   let header := "=== Proof Obligations ==="
   let body := entries.map fun e =>
     let locStr := fmtLoc e.loc
@@ -1881,7 +1854,7 @@ open Json in
 /-- Collect obligation facts for all functions. -/
 def collectObligationFacts (modules : List CModule) (locMap : FnLocMap := [])
     (registry : ProofRegistry := []) (pc : Concrete.ProofCore) : List Val :=
-  let entries := collectObligations modules locMap registry pc
+  let entries := pc.obligations.map obligationToEntry
   entries.map obligationToFact
 
 open Json in

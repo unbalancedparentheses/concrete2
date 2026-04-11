@@ -3062,6 +3062,161 @@ check_report "$SPEC_PROG" extraction \
     "spec-identity: extraction report shows proof name" \
     "spec-identity: extraction report should show proof name"
 
+# --- Mechanical obligation generation ---
+# Tests that obligations are generated in ProofCore with correct status,
+# identity, and dependencies — not re-derived in Report.lean.
+
+OBL_DIR="$TESTDIR/adversarial_obligations"
+OBL_PROG="$OBL_DIR/test_obligations.con"
+$COMPILER snapshot "$OBL_PROG" -o "$TMPDIR/obl_gen.json" 2>/dev/null
+
+# All 5 obligation statuses present
+if python3 -c "
+import json
+with open('$TMPDIR/obl_gen.json') as f:
+    data = json.load(f)
+obs = {f['function']: f for f in data['facts'] if f['kind'] == 'obligation'}
+assert obs['main.pure_add']['status'] == 'proved', 'proved wrong'
+assert obs['main.pure_stale']['status'] == 'stale', 'stale wrong'
+assert obs['main.pure_no_spec']['status'] == 'missing_proof', 'missing wrong'
+assert obs['main.uses_alloc']['status'] == 'not_eligible', 'ineligible wrong'
+assert obs['main.trusted_op']['status'] == 'trusted', 'trusted wrong'
+" 2>/dev/null; then
+    echo "  ok  obligation-gen: all 5 statuses derived correctly"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  obligation-gen: should derive all 5 obligation statuses"
+    FAIL=$((FAIL + 1))
+fi
+
+# Obligation identity carries function fingerprint
+if python3 -c "
+import json
+with open('$TMPDIR/obl_gen.json') as f:
+    data = json.load(f)
+obs = {f['function']: f for f in data['facts'] if f['kind'] == 'obligation'}
+assert obs['main.pure_add']['fingerprint'] != '', 'add fingerprint empty'
+assert obs['main.pure_stale']['fingerprint'] != '', 'stale fingerprint empty'
+assert obs['main.pure_no_spec']['fingerprint'] != '', 'no_spec fingerprint empty'
+" 2>/dev/null; then
+    echo "  ok  obligation-gen: obligations carry function fingerprint"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  obligation-gen: obligations should carry function fingerprint"
+    FAIL=$((FAIL + 1))
+fi
+
+# Proved obligation carries spec identity from registry
+if python3 -c "
+import json
+with open('$TMPDIR/obl_gen.json') as f:
+    data = json.load(f)
+obs = {f['function']: f for f in data['facts'] if f['kind'] == 'obligation'}
+o = obs['main.pure_add']
+assert o['spec'] == 'add_commutativity', 'spec wrong'
+assert o['proof'] == 'Concrete.Proof.pure_add_correct', 'proof wrong'
+assert o['source'] == 'registry', 'source wrong'
+" 2>/dev/null; then
+    echo "  ok  obligation-gen: proved obligation carries spec identity"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  obligation-gen: proved obligation should carry spec identity"
+    FAIL=$((FAIL + 1))
+fi
+
+# Stale obligation carries spec but mismatched fingerprint
+if python3 -c "
+import json
+with open('$TMPDIR/obl_gen.json') as f:
+    data = json.load(f)
+obs = {f['function']: f for f in data['facts'] if f['kind'] == 'obligation'}
+o = obs['main.pure_stale']
+assert o['status'] == 'stale', 'not stale'
+assert o['spec'] == 'sub_identity', 'spec wrong'
+assert o['source'] == 'registry', 'source wrong'
+" 2>/dev/null; then
+    echo "  ok  obligation-gen: stale obligation attributable to fingerprint mismatch"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  obligation-gen: stale obligation should carry spec + registry source"
+    FAIL=$((FAIL + 1))
+fi
+
+# Missing obligation has no spec
+if python3 -c "
+import json
+with open('$TMPDIR/obl_gen.json') as f:
+    data = json.load(f)
+obs = {f['function']: f for f in data['facts'] if f['kind'] == 'obligation'}
+o = obs['main.pure_no_spec']
+assert o['status'] == 'missing_proof', 'not missing'
+assert o.get('spec', '') == '', 'should have no spec'
+assert o.get('source', '') == 'none', 'source should be none'
+" 2>/dev/null; then
+    echo "  ok  obligation-gen: missing obligation has no spec attachment"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  obligation-gen: missing obligation should have empty spec"
+    FAIL=$((FAIL + 1))
+fi
+
+# Dependencies track proved callees
+if python3 -c "
+import json
+with open('$TMPDIR/obl_gen.json') as f:
+    data = json.load(f)
+obs = {f['function']: f for f in data['facts'] if f['kind'] == 'obligation'}
+# main calls pure_add (proved), so main should list it as dependency
+deps = obs['main.main']['dependencies']
+assert 'main.pure_add' in deps, f'proved callee not in deps: {deps}'
+# pure_add has no proved callees
+assert obs['main.pure_add']['dependencies'] == [], 'leaf should have no deps'
+" 2>/dev/null; then
+    echo "  ok  obligation-gen: dependencies track proved callees from call graph"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  obligation-gen: dependencies should track proved callees"
+    FAIL=$((FAIL + 1))
+fi
+
+# Obligation status consistent with proof-status facts
+if python3 -c "
+import json
+with open('$TMPDIR/obl_gen.json') as f:
+    data = json.load(f)
+obs = {f['function']: f for f in data['facts'] if f['kind'] == 'obligation'}
+ps = {f['function']: f for f in data['facts'] if f['kind'] == 'proof_status'}
+status_map = {'proved': 'proved', 'stale': 'stale', 'missing_proof': 'no_proof',
+              'not_eligible': 'not_eligible', 'trusted': 'trusted'}
+for fn in obs:
+    obl_status = obs[fn]['status']
+    ps_state = ps[fn]['state']
+    expected = status_map.get(obl_status, obl_status)
+    assert ps_state == expected, f'{fn}: obligation={obl_status} vs proof_status={ps_state}'
+" 2>/dev/null; then
+    echo "  ok  obligation-gen: obligation status consistent with proof-status facts"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  obligation-gen: obligation status should match proof-status facts"
+    FAIL=$((FAIL + 1))
+fi
+
+# Human-readable obligations report shows all statuses
+check_report "$OBL_PROG" obligations \
+    "proved" \
+    "obligation-gen: obligations report shows proved" \
+    "obligation-gen: obligations report should show proved"
+
+check_report "$OBL_PROG" obligations \
+    "stale" \
+    "obligation-gen: obligations report shows stale" \
+    "obligation-gen: obligations report should show stale"
+
+check_report "$OBL_PROG" obligations \
+    "missing_proof" \
+    "obligation-gen: obligations report shows missing_proof" \
+    "obligation-gen: obligations report should show missing_proof"
+
 # --- diagnostics-json: machine-readable diagnostic records ---
 echo ""
 echo "=== Diagnostics JSON tests ==="
