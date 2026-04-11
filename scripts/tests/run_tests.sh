@@ -2798,6 +2798,160 @@ else
     FAIL=$((FAIL + 1))
 fi
 
+# --- ProofCore normalization ---
+# Tests that PExpr normalization rewrites are applied correctly.
+
+PCNORM="$TESTDIR/adversarial_proofcore_normalization.con"
+$COMPILER snapshot "$PCNORM" -o "$TMPDIR/norm_test.json" 2>/dev/null
+
+norm_check() {
+    local fn="$1" expect="$2" ok_msg="$3" fail_msg="$4"
+    local actual
+    actual=$(python3 -c "
+import json
+with open('$TMPDIR/norm_test.json') as f:
+    data = json.load(f)
+for fact in data['facts']:
+    if fact['kind'] == 'extraction' and fact['function'] == '$fn':
+        print(fact.get('proof_core', ''))
+        break
+" 2>/dev/null)
+    if [ "$actual" = "$expect" ]; then
+        echo "  ok  $ok_msg"
+        PASS=$((PASS + 1))
+    else
+        echo "FAIL  $fail_msg"
+        echo "    expected: $expect"
+        echo "    got:      $actual"
+        FAIL=$((FAIL + 1))
+    fi
+}
+
+norm_check "main.dead_let" "y" \
+    "proofcore-norm: dead let eliminated" \
+    "proofcore-norm: dead let should be eliminated"
+
+norm_check "main.add_zero" "x" \
+    "proofcore-norm: x+0 simplified to x" \
+    "proofcore-norm: x+0 should simplify to x"
+
+norm_check "main.zero_add" "x" \
+    "proofcore-norm: 0+x simplified to x" \
+    "proofcore-norm: 0+x should simplify to x"
+
+norm_check "main.mul_one" "x" \
+    "proofcore-norm: x*1 simplified to x" \
+    "proofcore-norm: x*1 should simplify to x"
+
+norm_check "main.one_mul" "x" \
+    "proofcore-norm: 1*x simplified to x" \
+    "proofcore-norm: 1*x should simplify to x"
+
+norm_check "main.mul_zero" "0" \
+    "proofcore-norm: x*0 simplified to 0" \
+    "proofcore-norm: x*0 should simplify to 0"
+
+norm_check "main.sub_zero" "x" \
+    "proofcore-norm: x-0 simplified to x" \
+    "proofcore-norm: x-0 should simplify to x"
+
+norm_check "main.comm_add" "(a + 3)" \
+    "proofcore-norm: 3+a canonicalized to a+3" \
+    "proofcore-norm: 3+a should canonicalize to a+3"
+
+norm_check "main.comm_mul" "(b * 7)" \
+    "proofcore-norm: 7*b canonicalized to b*7" \
+    "proofcore-norm: 7*b should canonicalize to b*7"
+
+norm_check "main.comm_alpha" "(a + b)" \
+    "proofcore-norm: b+a canonicalized to a+b" \
+    "proofcore-norm: b+a should canonicalize to a+b"
+
+norm_check "main.if_true" "x" \
+    "proofcore-norm: if true short-circuited" \
+    "proofcore-norm: if true should short-circuit"
+
+norm_check "main.if_false" "y" \
+    "proofcore-norm: if false short-circuited" \
+    "proofcore-norm: if false should short-circuit"
+
+norm_check "main.no_simplify" "let c = (a + b); (c * 2)" \
+    "proofcore-norm: non-trivial expr preserved" \
+    "proofcore-norm: non-trivial expr should be preserved"
+
+check_report "$PCNORM" extraction \
+    "13 extracted, 0 eligible but not extractable, 1 excluded" \
+    "proofcore-norm: summary totals correct" \
+    "proofcore-norm: summary totals wrong"
+
+# --- Qualified call graph identity ---
+# Tests that same-name functions in different modules get distinct qualified identities.
+
+PCQCG="$TESTDIR/adversarial_qualified_callgraph.con"
+$COMPILER snapshot "$PCQCG" -o "$TMPDIR/qcg_test.json" 2>/dev/null
+
+# Both helpers should exist as separate extraction entries
+if python3 -c "
+import json
+with open('$TMPDIR/qcg_test.json') as f:
+    data = json.load(f)
+fns = [f['function'] for f in data['facts'] if f['kind'] == 'extraction']
+assert 'alpha.helper' in fns, 'alpha.helper missing'
+assert 'beta.helper' in fns, 'beta.helper missing'
+assert 'alpha.caller' in fns, 'alpha.caller missing'
+assert 'beta.caller' in fns, 'beta.caller missing'
+" 2>/dev/null; then
+    echo "  ok  qualified-callgraph: same-name functions get distinct qualified identities"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  qualified-callgraph: same-name functions should get distinct qualified identities"
+    FAIL=$((FAIL + 1))
+fi
+
+# alpha.helper and beta.helper should have different proof_core content
+if python3 -c "
+import json
+with open('$TMPDIR/qcg_test.json') as f:
+    data = json.load(f)
+exts = {f['function']: f.get('proof_core','') for f in data['facts'] if f['kind'] == 'extraction'}
+assert exts['alpha.helper'] != exts['beta.helper'], 'same proof_core for different helpers'
+assert '+ 1' in exts['alpha.helper'], 'alpha.helper wrong content'
+assert '* 2' in exts['beta.helper'], 'beta.helper wrong content'
+" 2>/dev/null; then
+    echo "  ok  qualified-callgraph: distinct helpers have distinct ProofCore"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  qualified-callgraph: distinct helpers should have distinct ProofCore"
+    FAIL=$((FAIL + 1))
+fi
+
+# Neither helper should be marked recursive (no collision)
+if python3 -c "
+import json
+with open('$TMPDIR/qcg_test.json') as f:
+    data = json.load(f)
+for f in data['facts']:
+    if f['kind'] == 'extraction' and f['function'] in ('alpha.helper', 'beta.helper'):
+        assert f['status'] == 'extracted', f'{f[\"function\"]} not extracted: {f[\"status\"]}'
+" 2>/dev/null; then
+    echo "  ok  qualified-callgraph: no false recursion from name collision"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  qualified-callgraph: name collision causing false recursion"
+    FAIL=$((FAIL + 1))
+fi
+
+# Authority report should show chain traces correctly
+check_report "$TESTDIR/report_integration.con" authority \
+    "uses_alloc.*vec_new" \
+    "qualified-authority: uses_alloc chain traces vec_new" \
+    "qualified-authority: uses_alloc chain should trace vec_new"
+
+check_report "$TESTDIR/report_integration.con" authority \
+    "call_raw.*raw_extern" \
+    "qualified-authority: call_raw chain traces raw_extern" \
+    "qualified-authority: call_raw chain should trace raw_extern"
+
 # --- diagnostics-json: machine-readable diagnostic records ---
 echo ""
 echo "=== Diagnostics JSON tests ==="
@@ -4957,7 +5111,7 @@ with open('$CRYPTO_SNAP_DIR/good.facts.json') as f:
     s = json.load(f)
 facts = s['facts']
 extractions = {f['function']: f for f in facts if f['kind'] == 'extraction' and f.get('proof_core')}
-assert '((key * message) + nonce)' in extractions['main.compute_tag']['proof_core']
+assert '(nonce + (key * message))' in extractions['main.compute_tag']['proof_core']
 assert 'compute_tag' in extractions['main.verify_tag']['proof_core']
 assert 'nonce > 0' in extractions['main.check_nonce']['proof_core']
 " 2>/dev/null; then

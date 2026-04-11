@@ -535,6 +535,83 @@ def bodyFingerprint (body : List CStmt) : String :=
   fingerprintExpr.fingerprintStmts body
 
 -- ============================================================
+-- PExpr normalization
+-- ============================================================
+
+/-- Check whether a variable name occurs free in a PExpr. -/
+private partial def pexprFreeIn (name : String) : Proof.PExpr → Bool
+  | .lit _ => false
+  | .var n => n == name
+  | .binOp _ l r => pexprFreeIn name l || pexprFreeIn name r
+  | .letIn n v b => pexprFreeIn name v || (n != name && pexprFreeIn name b)
+  | .ifThenElse c t e => pexprFreeIn name c || pexprFreeIn name t || pexprFreeIn name e
+  | .call _ args => args.any (pexprFreeIn name)
+
+/-- Ordering key for commutative canonicalization.
+    vars sort before lits; among vars, alphabetical; among lits, by value. -/
+private def pexprSortKey : Proof.PExpr → (Nat × String)
+  | .var n => (0, n)
+  | .lit (.int n) => (1, toString n)
+  | .lit (.bool b) => (1, toString b)
+  | _ => (2, "")  -- compound exprs stay in place
+
+private def isCommutative : Proof.PBinOp → Bool
+  | .add | .mul | .eq | .ne => true
+  | _ => false
+
+/-- Normalize a PExpr to canonical form for stable proof attachment.
+    Applied once after Core→PExpr extraction, before storage.
+
+    Rewrites (applied bottom-up):
+    1. Dead let elimination:  let x = v; body  →  body  (when x ∉ FV(body))
+    2. Algebraic identities:  x+0→x, 0+x→x, x*1→x, 1*x→x, x*0→0, 0*x→0, x-0→x
+    3. Boolean short-circuit: if true then a else b → a, if false … → b
+    4. Let flattening:        let x = (let y=v; e); body → let y=v; let x=e; body
+    5. Commutative ordering:  add/mul/eq/ne operands sorted by (kind, name/value) -/
+partial def normalizePExpr : Proof.PExpr → Proof.PExpr
+  | .lit v => .lit v
+  | .var n => .var n
+  | .binOp op lhs rhs =>
+    let l := normalizePExpr lhs
+    let r := normalizePExpr rhs
+    -- Algebraic identities
+    match op, l, r with
+    | .add, .lit (.int 0), x | .add, x, .lit (.int 0) => x
+    | .sub, x, .lit (.int 0) => x
+    | .mul, .lit (.int 1), x | .mul, x, .lit (.int 1) => x
+    | .mul, .lit (.int 0), _ | .mul, _, .lit (.int 0) => .lit (.int 0)
+    | _, _, _ =>
+      -- Commutative canonicalization: sort operands
+      if isCommutative op then
+        let (ln, ls) := pexprSortKey l
+        let (rn, rs) := pexprSortKey r
+        let swap := ln > rn || (ln == rn && ls > rs)
+        if swap then .binOp op r l
+        else .binOp op l r
+      else .binOp op l r
+  | .letIn name val body =>
+    let v := normalizePExpr val
+    let b := normalizePExpr body
+    -- Dead let elimination
+    if !pexprFreeIn name b then b
+    -- Let flattening: let x = (let y = v'; e); body → let y = v'; let x = e; body
+    else match v with
+    | .letIn innerName innerVal innerBody =>
+      normalizePExpr (.letIn innerName innerVal (.letIn name innerBody b))
+    | _ => .letIn name v b
+  | .ifThenElse cond thenBr elseBr =>
+    let c := normalizePExpr cond
+    let t := normalizePExpr thenBr
+    let e := normalizePExpr elseBr
+    -- Boolean short-circuit
+    match c with
+    | .lit (.bool true) => t
+    | .lit (.bool false) => e
+    | _ => .ifThenElse c t e
+  | .call fn args =>
+    .call fn (args.map normalizePExpr)
+
+-- ============================================================
 -- Core → PExpr extraction
 -- ============================================================
 
@@ -795,7 +872,7 @@ private partial def extractModule
       (accE, accX ++ [{ qualName, bareName, fn := f, fingerprint := fp
                        , eligibility := elig, loc := elig.loc : ProofCoreExcluded }])
     else if elig.eligible then
-      let extracted := cStmtsToPExpr f.body
+      let extracted := cStmtsToPExpr f.body |>.map normalizePExpr
       let unsup := if extracted.isNone then identifyUnsupported f.body else []
       (accE ++ [{ qualName, bareName, fn := f, extracted, unsupported := unsup
                  , fingerprint := fp, params := f.params.map Prod.fst

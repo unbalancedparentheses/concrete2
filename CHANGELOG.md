@@ -10,6 +10,35 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### ProofCore becomes the real proof-pipeline boundary
+
+**Explicit `Core -> ProofCore` pass:** `ProofCore.lean` now owns the proof-oriented compiler boundary instead of leaving proof extraction as mostly report-side logic. The pass computes and carries:
+
+- proof eligibility
+- extracted `PExpr` forms
+- unsupported-construct classification
+- body fingerprints
+- call graph
+- recursion classification
+- loop analysis
+- extern-name context
+
+This turns ProofCore from a reporting helper into a real compiler artifact that the rest of the proof/evidence pipeline can consume.
+
+**Report consolidation:** the remaining shadow extraction pipeline in `Report.lean` is gone. Extraction report, extraction JSON facts, and traceability now read from `ProofCore` entries directly instead of recomputing extraction/eligibility from raw `CModule` functions. That makes report code presentation-only again and removes a serious risk of proof-pipeline drift.
+
+**Qualified proof identity:** proof-pipeline analysis now uses canonical qualified function names across the call graph and recursion machinery, so same-name functions in different modules no longer collide. This closes a real correctness gap that would have weakened the proof story in multi-module programs.
+
+**Compile-time result:** the new pass adds negligible overhead in practice. On current examples, compile-only versus compile-plus-proof-reporting remains within noise, and even larger examples remain frontend-dominated rather than ProofCore-dominated. That matters because the proof/evidence architecture is now getting stronger without making the compiler obviously heavier.
+
+**What changed strategically:** the proof architecture is no longer just "real enough to demo". The compiler now has a much cleaner proof boundary:
+
+1. validated Core
+2. explicit ProofCore artifact
+3. reports/facts/queries consuming that artifact
+
+That clears the way for the next real architectural step: normalize ProofCore before Lean attachment so proofs and fingerprints target a canonical proof form rather than incidental extracted structure.
+
 ### ELF file-I/O flagship closes cleanly; proof pipeline becomes eligibility-first
 
 **ELF file-I/O flagship cleanup:** the ELF example now fully closes the gap between "systems-shaped validator" and "real project-mode example". Runtime coverage exercises all shipped binary fixtures, including the bad-class path, and generated example binaries are kept out of the worktree so the flagship stays clean as a regression target.
