@@ -5,6 +5,7 @@ import Concrete.AST
 import Concrete.Intrinsic
 import Concrete.Proof
 import Concrete.ProofCore
+import Concrete.SSA
 import Concrete.Diagnostic
 
 namespace Concrete
@@ -2076,6 +2077,151 @@ def extractionReport (modules : List CModule) (locMap : FnLocMap := []) : String
   s!"{header}\n\n{"\n\n".intercalate body}\n\n{summary}\n"
 
 -- ============================================================
+-- Source/Core/SSA/LLVM traceability (--report traceability)
+-- ============================================================
+
+/-- A traceability entry for one function through the pipeline. -/
+structure TraceEntry where
+  sourceFunction : String       -- qualified source name
+  fingerprint    : String       -- body fingerprint at Core
+  extractionStatus : String     -- extracted | eligible_not_extractable | excluded
+  proofCoreForm  : String       -- readable PExpr if extracted, else ""
+  evidenceLevel  : String       -- proved | enforced | reported | trusted-assumption
+  coreNames      : List String  -- Core function names (pre-mono)
+  monoNames      : List String  -- monomorphized specialization names
+  ssaNames       : List String  -- SSA function names
+  llvmNames      : List String  -- LLVM symbol names
+  claimBoundary  : String       -- where the claim stops being guaranteed
+  loc            : Option SourceLoc
+
+/-- Collect all function names from SSA modules. -/
+private partial def collectSSANames (sm : SModule) (pfx : String := "") : List (String × String) :=
+  let modPfx := if pfx.isEmpty then sm.name else pfx ++ "." ++ sm.name
+  let fns := sm.functions.map fun f => (f.name, modPfx)
+  fns
+
+/-- Collect all function names from monomorphized Core modules. -/
+private partial def collectMonoFnNames (m : CModule) (pfx : String := "") : List String :=
+  let modPfx := if pfx.isEmpty then m.name else pfx ++ "." ++ m.name
+  let fns := m.functions.map fun f => modPfx ++ "." ++ f.name
+  fns ++ m.submodules.foldl (fun acc sub => acc ++ collectMonoFnNames sub modPfx) []
+
+/-- Determine the LLVM symbol name for a function. -/
+private def llvmSymbol (name : String) (isEntry : Bool) : String :=
+  if isEntry then "user_main" else name
+
+/-- Determine the claim boundary for a function. -/
+private def claimBoundaryFor (evidence : String) (extracted : Bool) : String :=
+  match evidence with
+  | "proved" =>
+    if extracted then "ProofCore (source-level proof, not preserved past Core)"
+    else "source (proof not extractable to ProofCore)"
+  | "enforced" => "source (passes predictable profile, no proof)"
+  | "trusted-assumption" => "source (trusted, no verification)"
+  | "reported" => "source (fails predictable profile)"
+  | _ => "source"
+
+/-- Build traceability entries by walking Core functions and looking up
+    their counterparts in mono/SSA stages. -/
+private def collectTraceEntries
+    (coreModules : List CModule)
+    (monoModules : List CModule)
+    (ssaModules : List SModule)
+    (locMap : FnLocMap := [])
+    (registry : ProofRegistry := []) : List TraceEntry :=
+  -- Build extraction entries
+  let externNames := coreModules.foldl (fun acc m => acc ++ collectExternNames m) []
+  let extractionEntries := coreModules.foldl (fun acc m =>
+    acc ++ collectExtractionEntries externNames locMap m) []
+  -- Build proof status entries
+  let graph := buildCallGraph coreModules
+  let sccs := tarjanSCC graph
+  let recMap := classifyRecursion graph sccs
+  let proofEntries := coreModules.foldl (fun acc m =>
+    acc ++ collectProofStatus externNames recMap locMap m "" registry) []
+  -- Collect mono names
+  let allMonoNames := monoModules.foldl (fun acc m => acc ++ collectMonoFnNames m) []
+  -- Collect SSA names
+  let allSSAFns := ssaModules.foldl (fun acc sm =>
+    acc ++ sm.functions.map fun f => (f.name, f.isEntryPoint)) []
+  -- Build entries
+  extractionEntries.map fun ext =>
+    let bareName := match ext.qualName.splitOn "." with
+      | parts => parts.getLast!
+    -- Find proof status
+    let proofEntry := proofEntries.find? fun e => e.qualName == ext.qualName
+    let evidence := match proofEntry with
+      | some e => match e.state with
+        | .proved => "proved"
+        | .stale => "stale"
+        | .notProved => "enforced"
+        | .notEligible => "reported"
+        | .trusted => "trusted-assumption"
+      | none => "unknown"
+    let extStatus := if ext.eligible then
+      (if ext.extracted.isSome then "extracted" else "eligible_not_extractable")
+    else "excluded"
+    let pcForm := match ext.extracted with
+      | some pexpr => renderPExpr pexpr
+      | none => ""
+    -- Mono names: find specializations that start with the bare name
+    let specPrefix := bareName ++ "_for_"
+    let matchesMono (mn : String) : Bool :=
+      if mn.endsWith ("." ++ bareName) then true
+      else
+        let parts := mn.splitOn specPrefix
+        parts.length != 1
+    let monoMatches := allMonoNames.filter matchesMono
+    -- SSA names: find matching functions
+    let ssaMatches := allSSAFns.filter fun (sn, _) =>
+      sn == bareName || sn.startsWith (bareName ++ "_for_")
+    let ssaNames := ssaMatches.map (·.1)
+    let llvmNames := ssaMatches.map fun (sn, isEntry) => llvmSymbol sn isEntry
+    let boundary := claimBoundaryFor evidence ext.extracted.isSome
+    { sourceFunction := ext.qualName
+    , fingerprint := ext.fingerprint
+    , extractionStatus := extStatus
+    , proofCoreForm := pcForm
+    , evidenceLevel := evidence
+    , coreNames := [ext.qualName]
+    , monoNames := monoMatches
+    , ssaNames := ssaNames
+    , llvmNames := llvmNames
+    , claimBoundary := boundary
+    , loc := ext.loc }
+
+/-- Render the traceability report. -/
+def traceabilityReport
+    (coreModules : List CModule)
+    (monoModules : List CModule)
+    (ssaModules : List SModule)
+    (locMap : FnLocMap := [])
+    (registry : ProofRegistry := []) : String :=
+  let entries := collectTraceEntries coreModules monoModules ssaModules locMap registry
+  let header := "=== Source/Core/SSA/LLVM Traceability ==="
+  let body := entries.map fun e =>
+    let locStr := fmtLoc e.loc
+    let monoStr := if e.monoNames.isEmpty then "(not monomorphized)"
+      else ", ".intercalate e.monoNames
+    let ssaStr := if e.ssaNames.isEmpty then "(not lowered)"
+      else ", ".intercalate e.ssaNames
+    let llvmStr := if e.llvmNames.isEmpty then "(not emitted)"
+      else ", ".intercalate e.llvmNames
+    let pcStr := if e.proofCoreForm.isEmpty then ""
+      else s!"\n    proof_core:   {e.proofCoreForm}"
+    s!"  {e.sourceFunction}\n    evidence:     {e.evidenceLevel}\n    extraction:   {e.extractionStatus}{pcStr}\n    core:         {", ".intercalate e.coreNames}\n    mono:         {monoStr}\n    ssa:          {ssaStr}\n    llvm:         {llvmStr}\n    boundary:     {e.claimBoundary}\n    fingerprint:  {e.fingerprint}\n    loc:          {locStr}"
+  let evidenceCounts := entries.foldl (fun acc e =>
+    match e.evidenceLevel with
+    | "proved" => { acc with fst := acc.fst + 1 }
+    | "enforced" => { acc with snd := { acc.snd with fst := acc.snd.fst + 1 } }
+    | "reported" => { acc with snd := { acc.snd with snd := { acc.snd.snd with fst := acc.snd.snd.fst + 1 } } }
+    | _ => { acc with snd := { acc.snd with snd := { acc.snd.snd with snd := acc.snd.snd.snd + 1 } } }
+    ) (0, (0, (0, 0)))
+  let (proved, (enforced, (reported, other))) := evidenceCounts
+  let summary := s!"Totals: {entries.length} functions — {proved} proved, {enforced} enforced, {reported} reported, {other} other"
+  s!"{header}\n\n{"\n\n".intercalate body}\n\n{summary}\n"
+
+-- ============================================================
 -- Machine-readable facts (--report diagnostics-json)
 -- ============================================================
 -- Structured diagnostic records for predictable violations and
@@ -2233,6 +2379,59 @@ def collectExtractionFacts (modules : List CModule) (locMap : FnLocMap := []) : 
   let entries := modules.foldl (fun acc m =>
     acc ++ collectExtractionEntries externNames locMap m) []
   entries.map extractionToFact
+
+open Json in
+/-- Convert a traceability entry to a JSON fact. -/
+private def traceToFact (e : TraceEntry) : Val :=
+  .obj ([
+    ("kind", .str "traceability"),
+    ("function", .str e.sourceFunction),
+    ("evidence", .str e.evidenceLevel),
+    ("extraction", .str e.extractionStatus),
+    ("core", .arr (e.coreNames.map .str)),
+    ("mono", .arr (e.monoNames.map .str)),
+    ("ssa", .arr (e.ssaNames.map .str)),
+    ("llvm", .arr (e.llvmNames.map .str)),
+    ("boundary", .str e.claimBoundary),
+    ("fingerprint", .str e.fingerprint),
+    ("loc", locToJson e.loc)
+  ] ++ (if e.proofCoreForm.isEmpty then [] else [("proof_core", .str e.proofCoreForm)]))
+
+open Json in
+/-- Collect traceability facts for all functions. -/
+def collectTraceabilityFacts
+    (coreModules : List CModule)
+    (monoModules : List CModule)
+    (ssaModules : List SModule)
+    (locMap : FnLocMap := [])
+    (registry : ProofRegistry := []) : List Val :=
+  let entries := collectTraceEntries coreModules monoModules ssaModules locMap registry
+  entries.map traceToFact
+
+open Json in
+/-- Query traceability facts, optionally filtered by function name. -/
+def queryTraceability
+    (coreModules : List CModule)
+    (monoModules : List CModule)
+    (ssaModules : List SModule)
+    (locMap : FnLocMap := [])
+    (fnFilter : Option String := none)
+    (registry : ProofRegistry := []) : String :=
+  let allFacts := collectTraceabilityFacts coreModules monoModules ssaModules locMap registry
+  let getStr (v : Val) (key : String) : Option String :=
+    match v with
+    | .obj kvs =>
+      match kvs.find? (fun (k, _) => k == key) with
+      | some (_, .str s) => some s
+      | _ => none
+    | _ => none
+  let filtered := match fnFilter with
+    | none => allFacts
+    | some fnName => allFacts.filter fun v =>
+      match getStr v "function" with
+      | some f => f == fnName || f.endsWith ("." ++ fnName)
+      | none => false
+  (Val.arr filtered).render
 
 open Json in
 /-- Convert an FnEffects record to a JSON fact. -/
@@ -2399,7 +2598,7 @@ def diagnosticsJson (modules : List CModule) (locMap : FnLocMap := [])
 
 open Json in
 /-- Extract a string field from a JSON object. -/
-private def jsonGetStr (v : Val) (key : String) : Option String :=
+def jsonGetStr (v : Val) (key : String) : Option String :=
   match v with
   | .obj kvs =>
     match kvs.find? (fun (k, _) => k == key) with

@@ -3714,6 +3714,124 @@ else
     FAIL=$((FAIL + 1))
 fi
 
+echo ""
+echo "=== Source/Core/SSA/LLVM traceability tests ==="
+
+# Proved function: full pipeline trace
+tr_proved=$(cached_output "$REGISTRY_DIR/test_proof_registry.con" "--report traceability")
+if echo "$tr_proved" | grep -A10 "main.pure_add" | grep -q "evidence:.*proved" && \
+   echo "$tr_proved" | grep -A10 "main.pure_add" | grep -q "extraction:.*extracted" && \
+   echo "$tr_proved" | grep -A10 "main.pure_add" | grep -q "ssa:.*pure_add" && \
+   echo "$tr_proved" | grep -A10 "main.pure_add" | grep -q "llvm:.*pure_add"; then
+    echo "  ok  traceability: proved function traces through all pipeline stages"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  traceability: proved function should trace through pipeline"
+    echo "$tr_proved"
+    FAIL=$((FAIL + 1))
+fi
+
+# Entry point: main → user_main in LLVM
+if echo "$tr_proved" | grep -A10 "main.main" | grep -q "llvm:.*user_main"; then
+    echo "  ok  traceability: main maps to user_main in LLVM"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  traceability: main should map to user_main in LLVM"
+    echo "$tr_proved"
+    FAIL=$((FAIL + 1))
+fi
+
+# Claim boundary: proved function shows ProofCore boundary
+if echo "$tr_proved" | grep -A10 "main.pure_add" | grep -q "boundary:.*ProofCore"; then
+    echo "  ok  traceability: proved function boundary at ProofCore"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  traceability: proved function should show ProofCore boundary"
+    echo "$tr_proved"
+    FAIL=$((FAIL + 1))
+fi
+
+# Generic function: shows monomorphized specializations
+tr_generic=$(cached_output "$TESTDIR/report_integration.con" "--report traceability")
+if echo "$tr_generic" | grep -A10 "main.identity" | grep -q "identity_for_i32"; then
+    echo "  ok  traceability: generic identity shows identity_for_i32 specialization"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  traceability: identity should show monomorphized specialization"
+    echo "$tr_generic"
+    FAIL=$((FAIL + 1))
+fi
+
+# Trusted function: trusted-assumption evidence, source boundary
+if echo "$tr_generic" | grep -A10 "main.call_raw" | grep -q "trusted-assumption" && \
+   echo "$tr_generic" | grep -A10 "main.call_raw" | grep -q "boundary:.*trusted"; then
+    echo "  ok  traceability: trusted function shows trusted-assumption + boundary"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  traceability: trusted function should show trusted-assumption"
+    echo "$tr_generic"
+    FAIL=$((FAIL + 1))
+fi
+
+# Reported function: fails predictable, source boundary
+if echo "$tr_generic" | grep -A10 "main.uses_alloc" | grep -q "evidence:.*reported" && \
+   echo "$tr_generic" | grep -A10 "main.uses_alloc" | grep -q "boundary:.*fails predictable"; then
+    echo "  ok  traceability: reported function shows fails predictable boundary"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  traceability: reported function should show fails predictable"
+    echo "$tr_generic"
+    FAIL=$((FAIL + 1))
+fi
+
+# Summary totals
+if echo "$tr_generic" | grep -q "2 enforced" && \
+   echo "$tr_generic" | grep -q "4 reported"; then
+    echo "  ok  traceability: summary totals correct"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  traceability: summary should show 2 enforced, 4 reported"
+    echo "$tr_generic"
+    FAIL=$((FAIL + 1))
+fi
+
+# JSON query: traceability facts
+tr_json=$(cached_output "$REGISTRY_DIR/test_proof_registry.con" "--query traceability:pure_add")
+if echo "$tr_json" | grep -q '"kind": "traceability"' && \
+   echo "$tr_json" | grep -q '"evidence": "proved"' && \
+   echo "$tr_json" | grep -q '"proof_core": "(a + b)"' && \
+   echo "$tr_json" | grep -q '"boundary":.*ProofCore'; then
+    echo "  ok  traceability JSON: --query traceability:pure_add returns full trace"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  traceability JSON: should return full trace"
+    echo "$tr_json"
+    FAIL=$((FAIL + 1))
+fi
+
+# JSON query: generic function shows mono names
+tr_json_gen=$(cached_output "$TESTDIR/report_integration.con" "--query traceability:identity")
+if echo "$tr_json_gen" | grep -q '"mono":.*identity_for_i32' && \
+   echo "$tr_json_gen" | grep -q '"ssa":.*identity_for_i32'; then
+    echo "  ok  traceability JSON: identity shows mono/SSA specializations"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  traceability JSON: identity should show specializations"
+    echo "$tr_json_gen"
+    FAIL=$((FAIL + 1))
+fi
+
+# JSON query: all traceability facts
+tr_json_all=$(cached_output "$REGISTRY_DIR/test_proof_registry.con" "--query traceability")
+if echo "$tr_json_all" | grep -q '"kind": "traceability"'; then
+    echo "  ok  traceability JSON: --query traceability returns all facts"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  traceability JSON: --query traceability should return facts"
+    echo "$tr_json_all"
+    FAIL=$((FAIL + 1))
+fi
+
 fi # end section: report
 
 # === Codegen differential tests ===

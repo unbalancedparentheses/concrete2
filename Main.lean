@@ -3,7 +3,7 @@ import Concrete
 open Concrete
 
 def usage : String :=
-  "Usage: concrete <file.con> [-o output] [--emit-llvm] [--emit-core] [--emit-ssa] [--test] [--test --module <name>] [--report caps|unsafe|layout|interface|alloc|mono|authority|proof|proof-status|obligations|extraction|diagnostics-json|effects|recursion|fingerprints] [--query KIND|KIND:FUNCTION|fn:FUNCTION] [--fmt]\n       concrete build [-o output] [--emit-llvm]\n       concrete run [-- args...]\n       concrete test [--module <name>]"
+  "Usage: concrete <file.con> [-o output] [--emit-llvm] [--emit-core] [--emit-ssa] [--test] [--test --module <name>] [--report caps|unsafe|layout|interface|alloc|mono|authority|proof|proof-status|obligations|extraction|traceability|diagnostics-json|effects|recursion|fingerprints] [--query KIND|KIND:FUNCTION|fn:FUNCTION] [--fmt]\n       concrete build [-o output] [--emit-llvm]\n       concrete run [-- args...]\n       concrete test [--module <name>]"
 
 def writeFile (path : String) (content : String) : IO Unit := do
   IO.FS.writeFile ⟨path⟩ content
@@ -327,6 +327,20 @@ def compileAndReport (inputPath : String) (reportType : String) : IO UInt32 := d
     if reportType == "fingerprints" then
       IO.println (Report.fingerprintReport validCore.coreModules)
       return 0
+    if reportType == "traceability" then
+      let registry ← loadRegistry inputPath
+      match Pipeline.monomorphize validCore with
+      | .error ds =>
+        IO.eprintln (renderDiagnostics ds (sourceMap := srcMap))
+        return 1
+      | .ok mono =>
+        match Pipeline.lower mono with
+        | .error ds =>
+          IO.eprintln (renderDiagnostics ds (sourceMap := srcMap))
+          return 1
+        | .ok ssa =>
+          IO.println (Report.traceabilityReport validCore.coreModules mono.coreModules ssa.ssaModules locMap (registry := registry))
+          return 0
     if reportType == "mono" then
       match Pipeline.monomorphize validCore with
       | .error ds =>
@@ -335,7 +349,7 @@ def compileAndReport (inputPath : String) (reportType : String) : IO UInt32 := d
       | .ok mono =>
         IO.println (Report.monoReport validCore.coreModules mono.coreModules)
         return 0
-    IO.eprintln s!"Unknown report type: {reportType}. Use: caps, unsafe, layout, interface, alloc, mono, authority, proof, proof-status, obligations, diagnostics-json, effects, recursion, fingerprints"
+    IO.eprintln s!"Unknown report type: {reportType}. Use: caps, unsafe, layout, interface, alloc, mono, authority, proof, proof-status, obligations|extraction|traceability|diagnostics-json, effects, recursion, fingerprints"
     return 1
 
 def compileAndQuery (inputPath : String) (query : String) : IO UInt32 := do
@@ -345,11 +359,28 @@ def compileAndQuery (inputPath : String) (query : String) : IO UInt32 := do
   | .error ds =>
     IO.eprintln (renderDiagnostics ds (sourceMap := mainSrcMap))
     return 1
-  | .ok (parsed, _, validCore, _) =>
+  | .ok (parsed, _, validCore, srcMap) =>
     let locMap := Report.buildFnLocMap parsed.modules inputPath
     let registry ← loadRegistry inputPath
-    IO.println (Report.queryFacts validCore.coreModules locMap query (registry := registry))
-    return 0
+    -- Traceability queries need the backend pipeline
+    let parts := query.splitOn ":"
+    if parts[0]! == "traceability" then
+      match Pipeline.monomorphize validCore with
+      | .error ds =>
+        IO.eprintln (renderDiagnostics ds (sourceMap := srcMap))
+        return 1
+      | .ok mono =>
+        match Pipeline.lower mono with
+        | .error ds =>
+          IO.eprintln (renderDiagnostics ds (sourceMap := srcMap))
+          return 1
+        | .ok ssa =>
+          let fnFilter := if parts.length == 2 then some parts[1]! else none
+          IO.println (Report.queryTraceability validCore.coreModules mono.coreModules ssa.ssaModules locMap fnFilter (registry := registry))
+          return 0
+    else
+      IO.println (Report.queryFacts validCore.coreModules locMap query (registry := registry))
+      return 0
 
 -- ============================================================
 -- Concrete.toml project support
