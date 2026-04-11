@@ -1,13 +1,13 @@
-// Crypto verification core — DRIFTED variant for drift testing
+// Toy authenticated-tag model — DRIFTED variant for drift testing
 //
 // Changes from original:
-//   1. compute_tag uses subtraction instead of addition (security-breaking)
+//   1. compute_tag uses subtraction instead of addition (breaks tag computation)
 //   2. check_nonce accepts nonce == 0 (off-by-one, weakens validation)
 //   3. verify_tag is unchanged
 
 // === Provable core (pure, no capabilities) ===
 
-// DRIFTED: changed + to - (security-breaking change)
+// DRIFTED: changed + to - (breaks tag computation)
 fn compute_tag(key: Int, message: Int, nonce: Int) -> Int {
     return key * message - nonce;
 }

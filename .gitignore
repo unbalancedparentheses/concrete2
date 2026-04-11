@@ -10,6 +10,7 @@ build/
 *.ast
 *.ll
 *.ir
+*.facts.json
 
 # Editor
 .vscode/

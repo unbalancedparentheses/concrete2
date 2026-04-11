@@ -62,7 +62,7 @@ Do this list top-to-bottom. This is the roadmap. Completed history belongs in [C
 
 Current guardrails: keep specs in Lean-attached / artifact-registry form until obligations and diagnostics work; build a normal fact CLI before the MCP; keep QBE/Yul/other backend work waiting until proof/evidence attachment, optimization policy, and the backend trust boundary are trustworthy.
 
-1. ~~build the next flagship proof-backed example in a second domain~~ **done** — crypto verification core (compute_tag, verify_tag, check_nonce): 7 Lean theorems, proof-registry with named specs, snapshot/diff/drift detection, 20 tests
+1. ~~build the next flagship proof-backed example in a second domain~~ **done** — toy authenticated-tag model (compute_tag, verify_tag, check_nonce): 8 Lean theorems including full-contract check_nonce_correct, proof-registry with real Lean symbol names, snapshot/diff/drift detection, 20 tests
 2. build the next stronger flagship systems example: an ELF / binary-header parser and validator with a file-I/O shell, a pure bounded parser core, at least one real Lean-backed parser property, and artifact/diff coverage
 3. promote an explicit `Core -> ProofCore` phase as soon as the flagship examples pressure the current extraction path: give ProofCore a stable syntax/semantics, explicit eligibility/exclusion rules, stable fingerprints, and a first-class report/artifact boundary that obligations, specs, proofs, and future proof tools all share
 4. prototype module/package policy checks for the existing thesis properties

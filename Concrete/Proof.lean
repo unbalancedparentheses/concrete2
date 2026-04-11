@@ -668,6 +668,27 @@ theorem check_nonce_rejects_over_max (nonce maxNonce : Int)
   have hle : decide (nonce ≤ maxNonce) = false := decide_eq_false (by omega)
   simp [checkNonceExpr, eval, Env.bind, evalBinOp, hgt, hle]
 
+/-- Full contract for check_nonce: returns 1 iff nonce ∈ [1, max_nonce], 0 otherwise.
+    This is the theorem attached in the proof registry for main.check_nonce. -/
+theorem check_nonce_correct (nonce maxNonce : Int) (fuel : Nat) :
+    eval cryptoFns
+      ((Env.empty.bind "nonce" (.int nonce)).bind "max_nonce" (.int maxNonce))
+      (fuel + 3) checkNonceExpr
+    = some (.int (if 0 < nonce ∧ nonce ≤ maxNonce then 1 else 0)) := by
+  by_cases hpos : 0 < nonce
+  · by_cases hle : nonce ≤ maxNonce
+    · have hgt : decide (0 < nonce) = true := decide_eq_true hpos
+      have hle' : decide (nonce ≤ maxNonce) = true := decide_eq_true hle
+      have hboth : 0 < nonce ∧ nonce ≤ maxNonce := ⟨hpos, hle⟩
+      simp [checkNonceExpr, eval, Env.bind, evalBinOp, hgt, hle', hboth]
+    · have hgt : decide (0 < nonce) = true := decide_eq_true hpos
+      have hle' : decide (nonce ≤ maxNonce) = false := decide_eq_false hle
+      have hnboth : ¬(0 < nonce ∧ nonce ≤ maxNonce) := fun h => hle h.2
+      simp [checkNonceExpr, eval, Env.bind, evalBinOp, hgt, hle', hnboth]
+  · have hgt : decide (0 < nonce) = false := decide_eq_false hpos
+    have hnboth : ¬(0 < nonce ∧ nonce ≤ maxNonce) := fun h => hpos h.1
+    simp [checkNonceExpr, eval, Env.bind, evalBinOp, hgt, hnboth]
+
 -- ============================================================
 -- Proved functions registry
 -- ============================================================

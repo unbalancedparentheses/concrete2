@@ -4658,9 +4658,9 @@ facts = s['facts']
 proof_statuses = [f for f in facts if f['kind'] == 'proof_status' and f.get('spec')]
 assert len(proof_statuses) == 3
 specs = {f['function']: f['spec'] for f in proof_statuses}
-assert specs['main.compute_tag'] == 'CryptoVerify.spec_compute_tag'
-assert specs['main.verify_tag'] == 'CryptoVerify.spec_verify_tag'
-assert specs['main.check_nonce'] == 'CryptoVerify.spec_check_nonce'
+assert specs['main.compute_tag'] == 'Concrete.Proof.computeTagExpr'
+assert specs['main.verify_tag'] == 'Concrete.Proof.verifyTagExpr'
+assert specs['main.check_nonce'] == 'Concrete.Proof.checkNonceExpr'
 " 2>/dev/null; then
     echo "  ok  crypto_verify: named specs present in proof_status facts"
     PASS=$((PASS + 1))

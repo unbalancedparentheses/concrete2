@@ -1,24 +1,20 @@
-// Crypto verification core — flagship example #2
+// Toy authenticated-tag model — flagship example #2
 //
-// Demonstrates: explicit authority, provable bounded core, artifact-backed
-// evidence, and drift detection in a security-critical domain.
+// A simplified message-authentication model over integer arithmetic.
+// Not cryptographic — the tag function is invertible and the "key" offers
+// no real secrecy. The value is in the proof structure, not the algorithm:
+//   - three pure functions with Lean-backed proofs
+//   - fingerprint-based drift detection when the code changes
+//   - snapshot/diff artifact story across versions
 //
-// The capability signatures tell the security story:
-//   compute_tag()  — pure — keyed hash computation, no side effects
-//   verify_tag()   — pure — tag verification, no side effects
-//   check_nonce()  — pure — nonce bounds check, no side effects
-//   main()         — with(Console) — entry point, can only print
-//
-// An auditor can verify from signatures alone:
-//   - the verification core never performs I/O
-//   - the tag computation cannot be influenced by external state
-//   - only main() bridges the pure core to the outside world
+// All four functions are pure (no capabilities). main() is the entry
+// point that exercises the core; it performs no I/O.
 
 // === Provable core (pure, no capabilities) ===
 
-// Simplified keyed message authentication tag.
-// In production this would be HMAC-SHA256; the proof structure is identical.
-// compute_tag(key, message, nonce) = key * message + nonce
+// Toy keyed tag: compute_tag(key, message, nonce) = key * message + nonce
+// This is NOT a real MAC. The proof structure (correctness, rejection,
+// range validation) would be identical for a real HMAC-SHA256 wrapper.
 fn compute_tag(key: Int, message: Int, nonce: Int) -> Int {
     return key * message + nonce;
 }
@@ -48,7 +44,7 @@ fn check_nonce(nonce: Int, max_nonce: Int) -> Int {
     }
 }
 
-// === Shell (with capabilities) ===
+// === Entry point (pure, no I/O) ===
 
 fn main() -> i32 {
     // Known-good verification: compute a tag, then verify it
