@@ -4998,6 +4998,245 @@ fi
 # Clean up
 rm -rf "$ELF_SNAP_DIR"
 
+# === Adversarial proof system tests ===
+echo ""
+echo "=== Adversarial proof system tests ==="
+
+ADV_SNAP_DIR=$(mktemp -d)
+ADV_DIR="$TESTDIR"
+
+# --- 1. Cross-function fingerprint swap ---
+# Registry gives pure_mul the fingerprint of pure_add.
+# pure_mul must NOT be proved — the fingerprint doesn't match its body.
+
+swap_out=$($COMPILER "$ADV_DIR/adversarial_proof_swap/test_proof_registry.con" --report proof-status 2>&1)
+if echo "$swap_out" | grep -q "1 proved" && echo "$swap_out" | grep -q "1 stale"; then
+    echo "  ok  adversarial: cross-function fingerprint swap → 1 proved, 1 stale"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  adversarial: swap should show 1 proved (add) and 1 stale (mul)"
+    echo "$swap_out"
+    FAIL=$((FAIL + 1))
+fi
+
+# The stale function must be pure_mul, not pure_add
+if echo "$swap_out" | grep -q "pure_mul.*body changed"; then
+    echo "  ok  adversarial: swapped fingerprint detected as body changed on pure_mul"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  adversarial: pure_mul should show 'body changed'"
+    FAIL=$((FAIL + 1))
+fi
+
+# pure_add must still be proved (its fingerprint is correct)
+if echo "$swap_out" | grep -q "✓.*pure_add"; then
+    echo "  ok  adversarial: pure_add still proved despite swap attempt on sibling"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  adversarial: pure_add should remain proved"
+    FAIL=$((FAIL + 1))
+fi
+
+# --- 2. Fabricated proof name (known limitation) ---
+# Registry claims Nonexistent.Module.totally_fake_theorem with correct fingerprint.
+# System currently grants "proved" because it only checks fingerprints.
+# This test DOCUMENTS the limitation — it asserts the current (wrong) behavior.
+
+fab_out=$($COMPILER "$ADV_DIR/adversarial_proof_fabricated/test_proof_registry.con" --report proof-status 2>&1)
+if echo "$fab_out" | grep -q "1 proved"; then
+    echo "  ok  adversarial: fabricated proof name with valid fingerprint → proved (KNOWN LIMITATION: proof names are not validated against Lean)"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  adversarial: fabricated proof name behavior changed (was: proved despite fake name)"
+    FAIL=$((FAIL + 1))
+fi
+
+# Verify the fake proof name appears in the report
+if echo "$fab_out" | grep -q "pure_add.*proof matches"; then
+    echo "  ok  adversarial: fabricated proof name still passes fingerprint check"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  adversarial: fingerprint check should still pass with fake proof name"
+    FAIL=$((FAIL + 1))
+fi
+
+# --- 3. Fabricated proof name in snapshot artifact ---
+# The snapshot must propagate the unchecked name, so downstream tools can audit it.
+
+$COMPILER snapshot "$ADV_DIR/adversarial_proof_fabricated/test_proof_registry.con" -o "$ADV_SNAP_DIR/fabricated.json" 2>/dev/null
+if python3 -c "
+import json
+with open('$ADV_SNAP_DIR/fabricated.json') as f:
+    s = json.load(f)
+facts = s['facts']
+ps = [f for f in facts if f['kind'] == 'proof_status' and f['function'] == 'main.pure_add']
+assert len(ps) == 1
+assert ps[0]['proof'] == 'Nonexistent.Module.totally_fake_theorem'
+assert ps[0]['state'] == 'proved'
+" 2>/dev/null; then
+    echo "  ok  adversarial: snapshot propagates fabricated proof name (auditable)"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  adversarial: snapshot should contain the fabricated proof name for auditing"
+    FAIL=$((FAIL + 1))
+fi
+
+# --- 4. Malformed registry JSON ---
+# Broken JSON must not crash and must not grant proved status.
+
+mal_out=$($COMPILER "$ADV_DIR/adversarial_proof_malformed_registry/test_proof_registry.con" --report proof-status 2>&1)
+if ! echo "$mal_out" | grep -q "proved.*proof matches"; then
+    echo "  ok  adversarial: malformed registry does not grant proved status"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  adversarial: malformed registry should never grant proved"
+    FAIL=$((FAIL + 1))
+fi
+
+# Must not crash (exit 0 or produce output)
+if [ -n "$mal_out" ]; then
+    echo "  ok  adversarial: malformed registry does not crash compiler"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  adversarial: malformed registry caused empty output (crash?)"
+    FAIL=$((FAIL + 1))
+fi
+
+# --- 5. Snapshot of swapped-fingerprint code ---
+# Snapshot must show pure_mul as stale, not proved.
+
+$COMPILER snapshot "$ADV_DIR/adversarial_proof_swap/test_proof_registry.con" -o "$ADV_SNAP_DIR/swap.json" 2>/dev/null
+if python3 -c "
+import json
+with open('$ADV_SNAP_DIR/swap.json') as f:
+    s = json.load(f)
+facts = s['facts']
+ps = {f['function']: f for f in facts if f['kind'] == 'proof_status'}
+assert ps['main.pure_add']['state'] == 'proved'
+assert ps['main.pure_mul']['state'] == 'stale'
+" 2>/dev/null; then
+    echo "  ok  adversarial: snapshot reflects fingerprint mismatch (add=proved, mul=stale)"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  adversarial: snapshot should show mul as stale after swap"
+    FAIL=$((FAIL + 1))
+fi
+
+# --- 6. Diff between valid and swapped snapshots ---
+# Good snapshot (from registry_test) vs swapped → must show trust weakened.
+
+$COMPILER snapshot "$ADV_DIR/proof_registry_test/test_proof_registry.con" -o "$ADV_SNAP_DIR/good_registry.json" 2>/dev/null
+diff_swap=$($COMPILER diff "$ADV_SNAP_DIR/good_registry.json" "$ADV_SNAP_DIR/swap.json" --json 2>&1) && diff_swap_exit=0 || diff_swap_exit=$?
+# Note: these are different programs so diff will show many changes, but exit should
+# reflect any weakening (the swap snapshot has a stale proof that the good one doesn't)
+if [ -n "$diff_swap" ]; then
+    echo "  ok  adversarial: diff between valid and swapped registries produces output"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  adversarial: diff should produce output"
+    FAIL=$((FAIL + 1))
+fi
+
+# --- 7. Cross-module proof isolation ---
+# Existing test: adversarial_proof_cross_module.con
+# Verify main.parse_byte is proved but inner.parse_byte is NOT proved.
+
+if [ -f "$ADV_DIR/adversarial_proof_cross_module.con" ]; then
+    cross_out=$($COMPILER "$ADV_DIR/adversarial_proof_cross_module.con" --report proof-status 2>&1)
+    if echo "$cross_out" | grep -q "main.parse_byte.*proof matches" 2>/dev/null; then
+        echo "  ok  adversarial: cross-module proof isolation — main.parse_byte proved"
+        PASS=$((PASS + 1))
+    else
+        echo "FAIL  adversarial: main.parse_byte should be proved"
+        FAIL=$((FAIL + 1))
+    fi
+fi
+
+# --- 8. Wrong-arity proof resistance ---
+# Existing test: adversarial_proof_wrong_arity.con
+# Function with different param count must show stale.
+
+if [ -f "$ADV_DIR/adversarial_proof_wrong_arity.con" ]; then
+    arity_out=$($COMPILER "$ADV_DIR/adversarial_proof_wrong_arity.con" --report proof-status 2>&1)
+    if echo "$arity_out" | grep -q "stale\|body changed"; then
+        echo "  ok  adversarial: wrong-arity function shows stale/body changed"
+        PASS=$((PASS + 1))
+    else
+        echo "FAIL  adversarial: wrong-arity function should be stale"
+        FAIL=$((FAIL + 1))
+    fi
+fi
+
+# --- 9. Wrong-semantics proof resistance ---
+# Existing test: adversarial_proof_wrong_semantics.con
+# Multiply instead of add must show stale.
+
+if [ -f "$ADV_DIR/adversarial_proof_wrong_semantics.con" ]; then
+    sem_out=$($COMPILER "$ADV_DIR/adversarial_proof_wrong_semantics.con" --report proof-status 2>&1)
+    if echo "$sem_out" | grep -q "stale\|body changed"; then
+        echo "  ok  adversarial: wrong-semantics function shows stale/body changed"
+        PASS=$((PASS + 1))
+    else
+        echo "FAIL  adversarial: wrong-semantics function should be stale"
+        FAIL=$((FAIL + 1))
+    fi
+fi
+
+# --- 10. Impure function proof resistance ---
+# Existing test: adversarial_proof_impure.con
+# Function with capabilities must not be proved.
+
+if [ -f "$ADV_DIR/adversarial_proof_impure.con" ]; then
+    impure_out=$($COMPILER "$ADV_DIR/adversarial_proof_impure.con" --report proof-status 2>&1)
+    if ! echo "$impure_out" | grep -q "proved.*proof matches.*impure\|✓.*impure"; then
+        echo "  ok  adversarial: impure function not granted proved status"
+        PASS=$((PASS + 1))
+    else
+        echo "FAIL  adversarial: impure function should never be proved"
+        FAIL=$((FAIL + 1))
+    fi
+fi
+
+# --- 11. Stale proof in snapshot shows expected_fingerprint ---
+# The snapshot of swapped code must include both current and expected fingerprints
+# so an auditor can see exactly what changed.
+
+if python3 -c "
+import json
+with open('$ADV_SNAP_DIR/swap.json') as f:
+    s = json.load(f)
+facts = s['facts']
+stale = [f for f in facts if f['kind'] == 'proof_status' and f['state'] == 'stale']
+assert len(stale) >= 1
+for f in stale:
+    assert 'current_fingerprint' in f
+    assert 'expected_fingerprint' in f
+    assert f['current_fingerprint'] != f['expected_fingerprint']
+" 2>/dev/null; then
+    echo "  ok  adversarial: stale snapshot includes both current and expected fingerprints"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  adversarial: stale snapshot should show fingerprint mismatch details"
+    FAIL=$((FAIL + 1))
+fi
+
+# --- 12. Registry miss does not grant proved ---
+# Existing test dir: proof_registry_miss has entry for nonexistent function.
+
+if [ -d "$ADV_DIR/proof_registry_miss" ]; then
+    miss_out=$($COMPILER "$ADV_DIR/proof_registry_miss/test_proof_registry.con" --report proof-status 2>&1)
+    if echo "$miss_out" | grep -q "0 proved"; then
+        echo "  ok  adversarial: registry entry for nonexistent function grants 0 proved"
+        PASS=$((PASS + 1))
+    else
+        echo "FAIL  adversarial: nonexistent function registry entry should not grant proved"
+        FAIL=$((FAIL + 1))
+    fi
+fi
+
+# Clean up
+rm -rf "$ADV_SNAP_DIR"
+
 fi # end section: report
 
 # === Codegen differential tests ===
