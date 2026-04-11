@@ -2519,6 +2519,285 @@ check_report "$TESTDIR/adversarial_profile_mixed_evidence.con" proof-status \
     "proof-status: summary counts correct" \
     "proof-status: summary counts wrong"
 
+# --- ProofCore eligibility classification ---
+# Tests that each eligibility gate (source, profile, trusted, entry) is classified correctly.
+
+PCELIG="$TESTDIR/adversarial_proofcore_eligibility.con"
+
+check_report "$PCELIG" eligibility \
+    "eligible.*pure_eligible" \
+    "proofcore-eligibility: pure function is eligible" \
+    "proofcore-eligibility: pure function should be eligible"
+
+check_report "$PCELIG" eligibility \
+    "trusted.*trusted_fn" \
+    "proofcore-eligibility: trusted function shows trusted" \
+    "proofcore-eligibility: trusted function not marked trusted"
+
+check_report "$PCELIG" eligibility \
+    "excluded.*file_fn" \
+    "proofcore-eligibility: File-cap function excluded" \
+    "proofcore-eligibility: File-cap function should be excluded"
+
+check_report "$PCELIG" eligibility \
+    "excluded.*recursive_fn" \
+    "proofcore-eligibility: recursive function excluded" \
+    "proofcore-eligibility: recursive function should be excluded"
+
+check_report "$PCELIG" eligibility \
+    "profile: recursion (direct)" \
+    "proofcore-eligibility: recursive function shows recursion profile reason" \
+    "proofcore-eligibility: recursive function missing recursion reason"
+
+check_report "$PCELIG" eligibility \
+    "excluded.*ffi_caller" \
+    "proofcore-eligibility: FFI caller excluded" \
+    "proofcore-eligibility: FFI caller should be excluded"
+
+check_report "$PCELIG" eligibility \
+    "profile: FFI" \
+    "proofcore-eligibility: FFI caller shows FFI profile reason" \
+    "proofcore-eligibility: FFI caller missing FFI reason"
+
+check_report "$PCELIG" eligibility \
+    "excluded.*main.main" \
+    "proofcore-eligibility: main is excluded" \
+    "proofcore-eligibility: main should be excluded"
+
+check_report "$PCELIG" eligibility \
+    "is entry point (main)" \
+    "proofcore-eligibility: main shows entry point reason" \
+    "proofcore-eligibility: main should show entry point reason"
+
+check_report "$PCELIG" eligibility \
+    "1 eligible, 4 excluded.*1 trusted" \
+    "proofcore-eligibility: summary counts correct" \
+    "proofcore-eligibility: summary counts wrong"
+
+# --- ProofCore extraction success/failure ---
+# Tests that PExpr extraction succeeds for simple arithmetic and fails for unsupported constructs.
+
+PCEXT="$TESTDIR/adversarial_proofcore_extraction.con"
+
+# Use snapshot JSON for precise extraction checks
+$COMPILER snapshot "$PCEXT" -o "$TMPDIR/ext_test.json" 2>/dev/null
+ext_check() {
+    local fn="$1" expect_status="$2" expect_unsup="$3" ok_msg="$4" fail_msg="$5"
+    local actual
+    actual=$(python3 -c "
+import json
+with open('$TMPDIR/ext_test.json') as f:
+    data = json.load(f)
+for fact in data['facts']:
+    if fact['kind'] == 'extraction' and fact['function'] == '$fn':
+        status = fact['status']
+        unsup = ','.join(fact.get('unsupported', []))
+        print(f'{status}|{unsup}')
+        break
+" 2>/dev/null)
+    local actual_status="${actual%%|*}"
+    local actual_unsup="${actual#*|}"
+    if [ "$actual_status" = "$expect_status" ]; then
+        if [ -z "$expect_unsup" ] || echo "$actual_unsup" | grep -q "$expect_unsup"; then
+            echo "  ok  $ok_msg"
+            PASS=$((PASS + 1))
+            return
+        fi
+    fi
+    echo "FAIL  $fail_msg"
+    echo "  got: status=$actual_status unsupported=$actual_unsup"
+    FAIL=$((FAIL + 1))
+}
+
+ext_check "main.add_simple" "extracted" "" \
+    "proofcore-extraction: add_simple extracted successfully" \
+    "proofcore-extraction: add_simple should be extracted"
+
+ext_check "main.uses_struct" "eligible_not_extractable" "struct literal" \
+    "proofcore-extraction: struct literal blocks extraction" \
+    "proofcore-extraction: struct literal should block extraction"
+
+ext_check "main.uses_while" "excluded" "" \
+    "proofcore-extraction: while loop excluded by eligibility" \
+    "proofcore-extraction: while loop should be excluded"
+
+ext_check "main.uses_match" "eligible_not_extractable" "match expression" \
+    "proofcore-extraction: match expression blocks extraction" \
+    "proofcore-extraction: match expression should block extraction"
+
+ext_check "main.uses_mut" "eligible_not_extractable" "mutable assignment" \
+    "proofcore-extraction: mutable assignment blocks extraction" \
+    "proofcore-extraction: mutable assignment should block extraction"
+
+check_report "$PCEXT" extraction \
+    "1 extracted, 3 eligible but not extractable, 2 excluded" \
+    "proofcore-extraction: summary totals correct" \
+    "proofcore-extraction: summary totals wrong"
+
+# --- ProofCore fingerprint properties ---
+# Tests fingerprint determinism: identical bodies → same fingerprint, different bodies → different.
+
+PCFP="$TESTDIR/adversarial_proofcore_fingerprint.con"
+
+# Use snapshot JSON to compare fingerprints programmatically
+$COMPILER snapshot "$PCFP" -o "$TMPDIR/fp_test.json" 2>/dev/null
+fp_add_v1=$(python3 -c "
+import json, sys
+with open('$TMPDIR/fp_test.json') as f:
+    data = json.load(f)
+for fact in data['facts']:
+    if fact['kind'] == 'extraction' and fact['function'] == 'main.add_v1':
+        print(fact['fingerprint']); break
+" 2>/dev/null)
+fp_add_v2=$(python3 -c "
+import json, sys
+with open('$TMPDIR/fp_test.json') as f:
+    data = json.load(f)
+for fact in data['facts']:
+    if fact['kind'] == 'extraction' and fact['function'] == 'main.add_v2':
+        print(fact['fingerprint']); break
+" 2>/dev/null)
+fp_sub_v1=$(python3 -c "
+import json, sys
+with open('$TMPDIR/fp_test.json') as f:
+    data = json.load(f)
+for fact in data['facts']:
+    if fact['kind'] == 'extraction' and fact['function'] == 'main.sub_v1':
+        print(fact['fingerprint']); break
+" 2>/dev/null)
+fp_add_comment=$(python3 -c "
+import json, sys
+with open('$TMPDIR/fp_test.json') as f:
+    data = json.load(f)
+for fact in data['facts']:
+    if fact['kind'] == 'extraction' and fact['function'] == 'main.add_with_comment':
+        print(fact['fingerprint']); break
+" 2>/dev/null)
+
+if [ "$fp_add_v1" = "$fp_add_v2" ] && [ -n "$fp_add_v1" ]; then
+    echo "  ok  proofcore-fingerprint: identical bodies produce identical fingerprints"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  proofcore-fingerprint: identical bodies should produce identical fingerprints"
+    echo "  add_v1=$fp_add_v1"
+    echo "  add_v2=$fp_add_v2"
+    FAIL=$((FAIL + 1))
+fi
+
+if [ "$fp_add_v1" != "$fp_sub_v1" ] && [ -n "$fp_add_v1" ] && [ -n "$fp_sub_v1" ]; then
+    echo "  ok  proofcore-fingerprint: different bodies produce different fingerprints"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  proofcore-fingerprint: different bodies should produce different fingerprints"
+    echo "  add_v1=$fp_add_v1"
+    echo "  sub_v1=$fp_sub_v1"
+    FAIL=$((FAIL + 1))
+fi
+
+if [ "$fp_add_v1" = "$fp_add_comment" ] && [ -n "$fp_add_v1" ]; then
+    echo "  ok  proofcore-fingerprint: comments do not affect fingerprint"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  proofcore-fingerprint: comments should not affect fingerprint"
+    echo "  add_v1=$fp_add_v1"
+    echo "  add_with_comment=$fp_add_comment"
+    FAIL=$((FAIL + 1))
+fi
+
+# --- ProofCore exclusion kinds ---
+# Tests each ExclusionKind value: source, profile, both.
+
+PCXK="$TESTDIR/adversarial_proofcore_exclusion_kinds.con"
+
+check_report "$PCXK" eligibility \
+    "eligible.*clean_fn" \
+    "proofcore-exclusion: clean function is eligible" \
+    "proofcore-exclusion: clean function should be eligible"
+
+check_report "$PCXK" eligibility \
+    "excluded.*source_only_fn" \
+    "proofcore-exclusion: source_only_fn is excluded" \
+    "proofcore-exclusion: source_only_fn should be excluded"
+
+check_report "$PCXK" eligibility \
+    "excluded.*profile_only_fn" \
+    "proofcore-exclusion: profile_only_fn is excluded" \
+    "proofcore-exclusion: profile_only_fn should be excluded"
+
+check_report "$PCXK" eligibility \
+    "excluded.*both_fn" \
+    "proofcore-exclusion: both_fn is excluded" \
+    "proofcore-exclusion: both_fn should be excluded"
+
+# Verify source_only has source reason but not profile
+check_report "$PCXK" eligibility \
+    "source: has capabilities: Unsafe" \
+    "proofcore-exclusion: source_only shows Unsafe source reason" \
+    "proofcore-exclusion: source_only should show Unsafe source reason"
+
+# Verify profile_only has recursion profile reason
+check_report "$PCXK" eligibility \
+    "profile: recursion (direct)" \
+    "proofcore-exclusion: profile_only shows recursion profile reason" \
+    "proofcore-exclusion: profile_only should show recursion profile reason"
+
+# Verify summary reflects exclusion kind breakdown
+check_report "$PCXK" eligibility \
+    "1 eligible, 4 excluded (1 source, 1 profile, 2 both), 0 trusted" \
+    "proofcore-exclusion: summary breakdown correct" \
+    "proofcore-exclusion: summary breakdown wrong"
+
+# Verify via snapshot JSON that exclusion_kind values are correct
+$COMPILER snapshot "$PCXK" -o "$TMPDIR/xk_test.json" 2>/dev/null
+xk_source=$(python3 -c "
+import json
+with open('$TMPDIR/xk_test.json') as f:
+    data = json.load(f)
+for fact in data['facts']:
+    if fact['kind'] == 'eligibility' and fact['function'] == 'main.source_only_fn':
+        print(fact['exclusion_kind']); break
+" 2>/dev/null)
+xk_profile=$(python3 -c "
+import json
+with open('$TMPDIR/xk_test.json') as f:
+    data = json.load(f)
+for fact in data['facts']:
+    if fact['kind'] == 'eligibility' and fact['function'] == 'main.profile_only_fn':
+        print(fact['exclusion_kind']); break
+" 2>/dev/null)
+xk_both=$(python3 -c "
+import json
+with open('$TMPDIR/xk_test.json') as f:
+    data = json.load(f)
+for fact in data['facts']:
+    if fact['kind'] == 'eligibility' and fact['function'] == 'main.both_fn':
+        print(fact['exclusion_kind']); break
+" 2>/dev/null)
+
+if [ "$xk_source" = "source" ]; then
+    echo "  ok  proofcore-exclusion: snapshot exclusion_kind=source for source_only_fn"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  proofcore-exclusion: snapshot exclusion_kind should be 'source' for source_only_fn (got: $xk_source)"
+    FAIL=$((FAIL + 1))
+fi
+
+if [ "$xk_profile" = "profile" ]; then
+    echo "  ok  proofcore-exclusion: snapshot exclusion_kind=profile for profile_only_fn"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  proofcore-exclusion: snapshot exclusion_kind should be 'profile' for profile_only_fn (got: $xk_profile)"
+    FAIL=$((FAIL + 1))
+fi
+
+if [ "$xk_both" = "both" ]; then
+    echo "  ok  proofcore-exclusion: snapshot exclusion_kind=both for both_fn"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  proofcore-exclusion: snapshot exclusion_kind should be 'both' for both_fn (got: $xk_both)"
+    FAIL=$((FAIL + 1))
+fi
+
 # --- diagnostics-json: machine-readable diagnostic records ---
 echo ""
 echo "=== Diagnostics JSON tests ==="

@@ -236,13 +236,43 @@ def returnsAllocation : Ty → Bool
 
 abbrev CallGraph := List (String × List String)
 
-private partial def buildCallGraphModule (m : CModule) : CallGraph :=
+/-- Collect all function names defined in a module tree (bare names). -/
+private partial def allDefinedNames (m : CModule) : List String :=
+  m.functions.map (·.name) ++ m.submodules.foldl (fun acc sub => acc ++ allDefinedNames sub) []
+
+/-- Qualify a callee name: if the bare name is defined in this compilation unit,
+    resolve it to qualified form. Otherwise keep it bare (it's an intrinsic or extern). -/
+private def qualifyCallee (qualPrefix : String) (definedNames : List (String × String))
+    (bare : String) : String :=
+  match definedNames.find? fun (b, _) => b == bare with
+  | some (_, qual) => qual
+  | none => bare
+
+/-- Build qualified name map: bare name → qualified name for all functions. -/
+private partial def buildQualNameMap (m : CModule) (pfx : String := "")
+    : List (String × String) :=
+  let qualPrefix := if pfx == "" then m.name else pfx ++ "." ++ m.name
+  let entries := m.functions.map fun f => (f.name, qualPrefix ++ "." ++ f.name)
+  entries ++ m.submodules.foldl (fun acc sub =>
+    acc ++ buildQualNameMap sub qualPrefix) []
+
+private partial def buildCallGraphModule (qualNameMap : List (String × String))
+    (m : CModule) (pfx : String := "") : CallGraph :=
+  let qualPrefix := if pfx == "" then m.name else pfx ++ "." ++ m.name
+  let resolveCallee (bare : String) : String :=
+    match qualNameMap.find? fun (b, _) => b == bare with
+    | some (_, qual) => qual
+    | none => bare  -- intrinsic, extern, or unknown
   let fnEntries := m.functions.map fun f =>
-    (f.name, collectCallsStmts f.body |>.eraseDups)
-  fnEntries ++ m.submodules.foldl (fun acc sub => acc ++ buildCallGraphModule sub) []
+    let qualName := qualPrefix ++ "." ++ f.name
+    let callees := collectCallsStmts f.body |>.eraseDups |>.map resolveCallee
+    (qualName, callees)
+  fnEntries ++ m.submodules.foldl (fun acc sub =>
+    acc ++ buildCallGraphModule qualNameMap sub qualPrefix) []
 
 def buildCallGraph (modules : List CModule) : CallGraph :=
-  modules.foldl (fun acc m => acc ++ buildCallGraphModule m) []
+  let qualNameMap := modules.foldl (fun acc m => acc ++ buildQualNameMap m) []
+  modules.foldl (fun acc m => acc ++ buildCallGraphModule qualNameMap m) []
 
 -- Tarjan's SCC
 
@@ -724,7 +754,7 @@ private def assessEligibility
     (if f.isEntryPoint then ["is entry point (main)"] else []) ++
     (if f.trustedImplOrigin.isSome then ["from trusted impl"] else [])
   let allocs := callees.filter isAllocCall
-  let rec_ := match recMap.find? (fun (n, _, _) => n == f.name) with
+  let rec_ := match recMap.find? (fun (n, _, _) => n == qualName) with
     | some (_, .direct, _) => "direct"
     | some (_, .mutual, _) => "mutual"
     | _ => "none"

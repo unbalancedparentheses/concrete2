@@ -320,7 +320,7 @@ def compileAndReport (inputPath : String) (reportType : String) : IO UInt32 := d
       return 0
     if reportType == "extraction" then
       let registry ← loadRegistry inputPath
-      IO.println (Report.extractionReport validCore.coreModules locMap (registry := registry) (pc := pc))
+      IO.println (Report.extractionReport (registry := registry) (pc := pc))
       return 0
     if reportType == "diagnostics-json" then
       let registry ← loadRegistry inputPath

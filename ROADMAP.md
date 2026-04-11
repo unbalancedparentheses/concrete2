@@ -81,49 +81,51 @@ Current guardrails: keep specs in Lean-attached / artifact-registry form until o
 2. ~~build the next stronger flagship systems example~~ **done** — ELF header validator with real file-I/O shell (trusted POSIX fopen/fread with(File)), pure validator core (5 functions, 0 capabilities), 6 Lean theorems including biconditional validate_header_correct, binary test fixtures (valid/bad_magic/bad_class/bad_version/too_short), project-mode build+run, 28 tests
 3. ~~close the ELF flagship cleanup loop~~ **done** — runtime coverage now includes `bad_class.bin`, generated example binaries are ignored, and the file-I/O shell example is clean enough to serve as the proof-pipeline driver
 4. ~~split proof eligibility from proof extraction/reporting~~ **done** — eligibility is computed first, `--report eligibility` and eligibility facts are real, snapshots include eligibility, and proof-status/obligation expectations now flow through the eligibility-first pipeline
-5. ~~promote an explicit `Core -> ProofCore` phase~~ **done** — ProofCore is now a real compiler pass (not report-side extraction): enriched `ProofCoreEntry` with eligibility, fingerprint, PExpr extraction, unsupported constructs; precomputed call graph, recursion map, extern names; all proof-related reports/facts/queries consume ProofCore instead of raw CModule; ~628 lines of duplicated analysis removed from Report.lean
-6. add a proof normalization pass before Lean attachment so proofs target canonical ProofCore rather than whatever Core shape happened to be produced: explicit lets/control flow, canonical operators, reduced syntactic noise, and stable identity handling
-7. define the stable attached spec model that the proof pipeline consumes before source-level contracts exist: named specs, function identity, pre/postcondition attachment shape, dependency identity, and how specs map onto ProofCore and obligations
-8. generate proof obligations from the explicit proof pipeline rather than treating them as mostly attached/report-side facts: make the obligations that block a proof visible, attributable, and mechanically derived from the current ProofCore/spec state
-9. make proof-oriented diagnostics first-class: unsupported-construct reasons, ineligibility reasons, blocked-obligation explanations, stale-proof explanations, and proof-target mismatch diagnostics should all come from the same pipeline
-10. make the memory/reference model explicit enough for broader proofs: ownership, aliasing assumptions, mutation semantics, pointer/reference boundaries, layout caveats, and where undefined-behavior reasoning begins or stops
-11. make effect/trust proof boundaries explicit enough for broader proofs: capabilities, blocking/host calls, allocation, FFI, `trusted` code, and exactly where proofs stop versus where assumptions begin
-12. make module/package policy checks a first-class architecture feature for the existing thesis properties, not just a report-side prototype
-13. define the thesis threat/accident model and build one attacker-style demo that introduces authority/resource/proof drift and shows Concrete catching it
-14. make the structured/source-spanned diagnostic engine uniform across parser, resolver, checker, elaboration, CoreCheck, report/query failures, proof/evidence failures, artifact/registry failures, package/interface failures, and backend-contract failures
-15. add CI/CD evidence gates: tests, predictable check, stale-proof check, report artifact generation, proof-obligation status, report-consistency status, policy status, and trust-drift check
-16. validate fixed-capacity usefulness with a no-alloc parser/validator or ring-buffer-style example
-17. design and implement the smallest bounded-capacity type path that makes predictable examples practical
-18. add stack-depth reporting for functions that pass the no-recursion profile
-19. classify host calls, cleanup paths, determinism sources, failure paths, and memory/UB boundaries for predictable/proved code
-20. define the no-std / freestanding split for predictable and embedded-oriented code
-21. define standalone-file versus project UX so examples and small tools can use the stdlib without accidental workflow friction
-22. define concrete project/bootstrap UX: `concrete new`, starter templates, standard layout conventions, and a first supported outsider workflow for trying the language without project-author help
-23. design the standard small-systems programming surface: fixed-capacity buffers/strings, binary parsing helpers, deterministic cleanup helpers, and small FFI-wrapper patterns that make the predictable/provable subset practical to use
-24. return to stdlib/example polish: split/trim, path decomposition, minimal FFI pressure test
-25. continue cleanup/destroy ergonomics only when examples force it: unified `drop(x)` / Destroy-style API, scoped cleanup helpers, borrow-friendly owner APIs, and report coverage for cleanup paths
-26. add a code formatter or make the existing formatter robust enough to be the default documentation/example workflow
-27. define formatter quality gates explicitly: idempotency, syntax preservation, comment stability, predictable output, and CI enforcement
-28. make the core/shell split a real pit of success: examples, diagnostics, library patterns, and policy defaults should push users toward bounded/provable cores and effectful shells by default
-29. write the standard architecture cookbook for Concrete: bounded parser + shell, trusted FFI wrapper + safe facade, privilege-separated service, ownership-heavy data structure, and fixed-capacity pipeline patterns
-30. define the first stable supported subset as a public milestone: the first production-shaped slice of Concrete that outsiders can rely on without having to understand the whole research roadmap
-31. write the thesis paper once the flagship examples, explicit ProofCore boundary, and evidence/policy/drift workflow are coherent enough to defend the core claim in one crisp story
-32. add grammar fuzzing for parser robustness and diagnostic stability
-33. add property-based tests for formatter/parser round-trips, selected stdlib containers, and fixed traces over Vec, String/Text, HashMap, parser cores, and report facts
-34. add targeted differential/codegen tests only where there is an executable oracle and a known backend risk
-35. add an MCP server for Claude, ChatGPT, Codex, and research agents to query compiler facts after the normal fact CLI is useful
-36. define a stable benchmark harness before performance packets: selected benchmark programs, repeatable runner, baseline artifacts, size/output checks, and enough metadata to compare patches honestly
-37. produce an agent-readable performance research packet from benchmark, report, proof/evidence, size, and guardrail facts
-38. make the AI optimization loop explicit: generate packet, propose patch, run benchmarks, run evidence gates, reject patches that weaken proof/trust/predictability unless requested
-39. document and version the fact/query JSON API before external tools depend on it: schema version, stable kind names, field names, location encoding, fingerprint fields, empty-result behavior, and error-result behavior
-40. make canonical qualified function identity consistent across all fact families; avoid mixing `parse_byte` and `main.parse_byte` in machine-readable facts unless the distinction is explicit and documented
-41. define and implement clear invalid-query diagnostics: malformed/unknown `--query` requests should produce either a structured query error or a deliberate empty answer, not ambiguous success
-42. define and check module/interface artifacts before package management: exported types, function signatures, capabilities, proof expectations, policy requirements, fact schema version, dependency fingerprints, and enough body/interface separation for later incremental compilation
-43. expand packaging/artifacts only after reports, registry, policies, interface artifacts, and CI gates have proved what artifacts must carry
-44. define proof-aware package artifacts explicitly: packages should eventually ship facts, obligations, proof status, trusted assumptions, and policy declarations as normal build artifacts
-45. build and curate a broader public showcase corpus after the thesis workflow is credible
-46. turn the showcase corpus into a curated showcase set where each example proves a different thesis claim, each has honest framing, each has report/snapshot/diff coverage, and each demonstrates at least one concrete thing the compiler catches
-47. sharpen the positioning against Rust, Zig, Lean 4, SPARK/Ada, Austral, Dafny, F*, and Why3 into one short page
+5. ~~promote an explicit `Core -> ProofCore` phase~~ **done in first form** — ProofCore is now a real compiler pass (not report-side extraction): enriched `ProofCoreEntry` with eligibility, fingerprint, PExpr extraction, unsupported constructs; precomputed call graph, recursion map, extern names; most proof-related reports/facts/queries now consume ProofCore instead of raw CModule; large duplicated analysis moved out of Report.lean
+6. finish the `ProofCore` consolidation: remove the remaining duplicated extraction/eligibility logic from `Report.lean`, and make extraction/traceability/fact surfaces read directly from `ProofCore` artifacts so report code is presentation-only
+7. qualify proof-pipeline identity end-to-end inside `ProofCore`: call graph, recursion analysis, eligibility, fingerprints, and later obligations must use canonical qualified function identity so same-name functions in different modules cannot collide
+8. add a proof normalization pass before Lean attachment so proofs target canonical ProofCore rather than whatever Core shape happened to be produced: explicit lets/control flow, canonical operators, reduced syntactic noise, and stable identity handling
+9. define the stable attached spec model that the proof pipeline consumes before source-level contracts exist: named specs, function identity, pre/postcondition attachment shape, dependency identity, and how specs map onto ProofCore and obligations
+10. generate proof obligations from the explicit proof pipeline rather than treating them as mostly attached/report-side facts: make the obligations that block a proof visible, attributable, and mechanically derived from the current ProofCore/spec state
+11. make proof-oriented diagnostics first-class: unsupported-construct reasons, ineligibility reasons, blocked-obligation explanations, stale-proof explanations, and proof-target mismatch diagnostics should all come from the same pipeline
+12. make the memory/reference model explicit enough for broader proofs: ownership, aliasing assumptions, mutation semantics, pointer/reference boundaries, layout caveats, and where undefined-behavior reasoning begins or stops
+13. make effect/trust proof boundaries explicit enough for broader proofs: capabilities, blocking/host calls, allocation, FFI, `trusted` code, and exactly where proofs stop versus where assumptions begin
+14. make module/package policy checks a first-class architecture feature for the existing thesis properties, not just a report-side prototype
+15. define the thesis threat/accident model and build one attacker-style demo that introduces authority/resource/proof drift and shows Concrete catching it
+16. make the structured/source-spanned diagnostic engine uniform across parser, resolver, checker, elaboration, CoreCheck, report/query failures, proof/evidence failures, artifact/registry failures, package/interface failures, and backend-contract failures
+17. add CI/CD evidence gates: tests, predictable check, stale-proof check, report artifact generation, proof-obligation status, report-consistency status, policy status, and trust-drift check
+18. validate fixed-capacity usefulness with a no-alloc parser/validator or ring-buffer-style example
+19. design and implement the smallest bounded-capacity type path that makes predictable examples practical
+20. add stack-depth reporting for functions that pass the no-recursion profile
+21. classify host calls, cleanup paths, determinism sources, failure paths, and memory/UB boundaries for predictable/proved code
+22. define the no-std / freestanding split for predictable and embedded-oriented code
+23. define standalone-file versus project UX so examples and small tools can use the stdlib without accidental workflow friction
+24. define concrete project/bootstrap UX: `concrete new`, starter templates, standard layout conventions, and a first supported outsider workflow for trying the language without project-author help
+25. design the standard small-systems programming surface: fixed-capacity buffers/strings, binary parsing helpers, deterministic cleanup helpers, and small FFI-wrapper patterns that make the predictable/provable subset practical to use
+26. return to stdlib/example polish: split/trim, path decomposition, minimal FFI pressure test
+27. continue cleanup/destroy ergonomics only when examples force it: unified `drop(x)` / Destroy-style API, scoped cleanup helpers, borrow-friendly owner APIs, and report coverage for cleanup paths
+28. add a code formatter or make the existing formatter robust enough to be the default documentation/example workflow
+29. define formatter quality gates explicitly: idempotency, syntax preservation, comment stability, predictable output, and CI enforcement
+30. make the core/shell split a real pit of success: examples, diagnostics, library patterns, and policy defaults should push users toward bounded/provable cores and effectful shells by default
+31. write the standard architecture cookbook for Concrete: bounded parser + shell, trusted FFI wrapper + safe facade, privilege-separated service, ownership-heavy data structure, and fixed-capacity pipeline patterns
+32. define the first stable supported subset as a public milestone: the first production-shaped slice of Concrete that outsiders can rely on without having to understand the whole research roadmap
+33. write the thesis paper once the flagship examples, explicit ProofCore boundary, and evidence/policy/drift workflow are coherent enough to defend the core claim in one crisp story
+34. add grammar fuzzing for parser robustness and diagnostic stability
+35. add property-based tests for formatter/parser round-trips, selected stdlib containers, and fixed traces over Vec, String/Text, HashMap, parser cores, and report facts
+36. add targeted differential/codegen tests only where there is an executable oracle and a known backend risk
+37. add an MCP server for Claude, ChatGPT, Codex, and research agents to query compiler facts after the normal fact CLI is useful
+38. define a stable benchmark harness before performance packets: selected benchmark programs, repeatable runner, baseline artifacts, size/output checks, and enough metadata to compare patches honestly
+39. produce an agent-readable performance research packet from benchmark, report, proof/evidence, size, and guardrail facts
+40. make the AI optimization loop explicit: generate packet, propose patch, run benchmarks, run evidence gates, reject patches that weaken proof/trust/predictability unless requested
+41. document and version the fact/query JSON API before external tools depend on it: schema version, stable kind names, field names, location encoding, fingerprint fields, empty-result behavior, and error-result behavior
+42. make canonical qualified function identity consistent across all fact families; avoid mixing `parse_byte` and `main.parse_byte` in machine-readable facts unless the distinction is explicit and documented
+43. define and implement clear invalid-query diagnostics: malformed/unknown `--query` requests should produce either a structured query error or a deliberate empty answer, not ambiguous success
+44. define and check module/interface artifacts before package management: exported types, function signatures, capabilities, proof expectations, policy requirements, fact schema version, dependency fingerprints, and enough body/interface separation for later incremental compilation
+45. expand packaging/artifacts only after reports, registry, policies, interface artifacts, and CI gates have proved what artifacts must carry
+46. define proof-aware package artifacts explicitly: packages should eventually ship facts, obligations, proof status, trusted assumptions, and policy declarations as normal build artifacts
+47. build and curate a broader public showcase corpus after the thesis workflow is credible
+48. turn the showcase corpus into a curated showcase set where each example proves a different thesis claim, each has honest framing, each has report/snapshot/diff coverage, and each demonstrates at least one concrete thing the compiler catches
+49. sharpen the positioning against Rust, Zig, Lean 4, SPARK/Ada, Austral, Dafny, F*, and Why3 into one short page
 48. write the migration/adoption playbook: what C/Rust/Zig code should move first, how to wrap existing libraries honestly, how to introduce Concrete into an existing system, and what should stay outside Concrete
 49. build the user-facing documentation set deliberately: a FAQ for predictable/proof/capability questions, a Concrete comparison guide against Rust, Zig, SPARK/Ada, Lean 4, and related tools, and the supporting material needed before the language book can stop churning
 50. define the showcase maintenance policy: showcase examples are first-class regression targets, must keep honest framing, must retain report/snapshot/diff coverage, and regressions in them count as serious thesis breaks

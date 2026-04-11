@@ -236,6 +236,28 @@ private partial def buildCapLookupModule (m : CModule) : CapLookup :=
 private def buildCapLookup (modules : List CModule) : CapLookup :=
   modules.foldl (fun acc m => acc ++ buildCapLookupModule m) []
 
+/-- Qualified-name cap lookup — keys match buildCallGraph's qualified nodes. -/
+private partial def buildQualCapLookupModule (m : CModule) (pfx : String := "")
+    : CapLookup :=
+  let qualPrefix := if pfx == "" then m.name else pfx ++ "." ++ m.name
+  let fnEntries := m.functions.map fun f =>
+    (qualPrefix ++ "." ++ f.name, f.capSet)
+  let externEntries := m.externFns.map fun (n, _, _, trusted) =>
+    (n, if trusted then .empty else .concrete [unsafeCapName])
+  fnEntries ++ externEntries ++ m.submodules.foldl (fun acc sub =>
+    acc ++ buildQualCapLookupModule sub qualPrefix) []
+
+private def buildQualCapLookup (modules : List CModule) : CapLookup :=
+  modules.foldl (fun acc m => acc ++ buildQualCapLookupModule m) []
+
+/-- Map bare function names → qualified names across all modules. -/
+private partial def buildBareToQualMap (m : CModule) (pfx : String := "")
+    : List (String × String) :=
+  let qualPrefix := if pfx == "" then m.name else pfx ++ "." ++ m.name
+  let entries := m.functions.map fun f => (f.name, qualPrefix ++ "." ++ f.name)
+  entries ++ m.submodules.foldl (fun acc sub =>
+    acc ++ buildBareToQualMap sub qualPrefix) []
+
 /-- Look up a callee's capability set. Checks user fns, externs, then intrinsics. -/
 private def lookupCalleeCap (lookup : CapLookup) (name : String) : Option CapSet :=
   match lookup.find? (fun (n, _) => n == name) with
@@ -758,8 +780,9 @@ private partial def collectFnsWithCap (m : CModule) (cap : String) : List CFnDef
 
 def authorityReport (modules : List CModule) : String :=
   let header := "=== Authority Report ==="
-  let lookup := buildCapLookup modules
+  let qualLookup := buildQualCapLookup modules
   let callGraph := buildCallGraph modules
+  let bareToQual := modules.foldl (fun acc m => acc ++ buildBareToQualMap m) []
   let allCaps := validCaps  -- all 9 capabilities
   let sections := allCaps.filterMap fun cap =>
     let fns := modules.foldl (fun acc m => acc ++ collectFnsWithCap m cap) []
@@ -768,9 +791,14 @@ def authorityReport (modules : List CModule) : String :=
       let capHeader := s!"capability {cap} ({fns.length} functions):"
       let fnLines := fns.map fun f =>
         let pubStr := if f.isPublic then "pub " else "    "
-        let chain := findCapChain callGraph lookup f.name cap
-        let chainStr := if chain.length <= 1 then "  <- declared"
-          else s!"  <- {" -> ".intercalate chain}"
+        let qualName := match bareToQual.find? (fun (b, _) => b == f.name) with
+          | some (_, q) => q | none => f.name
+        let chain := findCapChain callGraph qualLookup qualName cap
+        -- Display bare names in chain output for readability
+        let bareChain := chain.map fun n =>
+          match n.splitOn "." |>.getLast? with | some b => b | none => n
+        let chainStr := if bareChain.length <= 1 then "  <- declared"
+          else s!"  <- {" -> ".intercalate bareChain}"
         s!"  {pubStr}{f.name}{chainStr}"
       some (s!"{capHeader}\n{"\n".intercalate fnLines}")
   let allFns := modules.foldl (fun acc m => acc ++ collectAllFnDefs m) []
@@ -884,10 +912,10 @@ private partial def effectsForModule
     let allocs := callees.filter isAllocCall
     let frees := callees.filter isFreeCall
     let defs := collectDefersStmts f.body
-    let rec_ := match recMap.find? (fun (n, _, _) => n == f.name) with
+    let rec_ := match recMap.find? (fun (n, _, _) => n == qualName) with
       | some (_, .direct, _) => "direct"
       | some (_, .mutual, members) =>
-        let others := members.filter (· != f.name)
+        let others := members.filter (· != qualName)
         s!"mutual: {", ".intercalate others}"
       | _ => "none"
     let crossesFfi := callees.any fun c => externNames.contains c
@@ -1032,13 +1060,13 @@ private partial def checkPredictableModule
     let mkViolLoc (sp : Option Span) : Option SourceLoc :=
       sp.bind fun s => if fileStr == "" then none else some (fileStr, s.line)
     -- 1. Recursion (function-level only for now)
-    let recViolations := match recMap.find? (fun (n, _, _) => n == f.name) with
+    let recViolations := match recMap.find? (fun (n, _, _) => n == qualName) with
       | some (_, .direct, _) =>
         [{ fnName := f.name, reason := "direct recursion"
          , hint := "Use a loop or iterative approach instead of self-calls."
          , loc := fnLoc }]
       | some (_, .mutual, members) =>
-        let others := members.filter (· != f.name)
+        let others := members.filter (· != qualName)
         [{ fnName := f.name, reason := s!"mutual recursion with {", ".intercalate others}"
          , hint := "Break the cycle by restructuring into a loop or state machine."
          , loc := fnLoc }]
@@ -1157,63 +1185,6 @@ def checkPredictable (modules : List CModule) (locMap : FnLocMap := [])
 -- This is the single authoritative source for "is this function
 -- in the provable subset?" It runs BEFORE extraction or proof
 -- matching, and every downstream consumer reads it.
-
-/-- Compute eligibility for one function. Combines source-level checks
-    (capabilities, trusted, entry point) with profile gates (recursion,
-    loops, allocation, FFI, blocking I/O) into a single assessment.
-    Uses ProofCore helpers for body analysis. -/
-private def assessEligibility
-    (f : CFnDef) (qualName : String)
-    (externNames : List String)
-    (recMap : List (String × RecursionKind × List String))
-    (locMap : FnLocMap) : EligibilityEntry :=
-  let fnLoc := lookupLoc locMap qualName
-  -- Source-level check (structural)
-  let (concreteCaps, _) := f.capSet.normalize
-  let callees := collectCallsStmts f.body |>.eraseDups
-  let sourceReasons : List String :=
-    (if !f.capSet.isEmpty then
-      [s!"has capabilities: {", ".intercalate concreteCaps}"] else []) ++
-    (if f.isTrusted then ["marked trusted"] else []) ++
-    (if f.isEntryPoint then ["is entry point (main)"] else []) ++
-    (if f.trustedImplOrigin.isSome then ["from trusted impl"] else [])
-  -- Profile gates (runtime characteristics)
-  let allocs := callees.filter isAllocCall
-  let rec_ := match recMap.find? (fun (n, _, _) => n == f.name) with
-    | some (_, .direct, _) => "direct"
-    | some (_, .mutual, _) => "mutual"
-    | _ => "none"
-  let crossesFfi := callees.any fun c => externNames.contains c
-  let loopClass := classifyLoops f.body
-  let profileReasons : List String :=
-    (if rec_ != "none" then [s!"recursion ({rec_})"] else []) ++
-    (if loopClass == "unbounded" || loopClass == "mixed" then ["unbounded loops"] else []) ++
-    (if !allocs.isEmpty || concreteCaps.any (· == "Alloc") then ["allocation"] else []) ++
-    (if crossesFfi then ["FFI"] else []) ++
-    (if concreteCaps.any fun c => c == "File" || c == "Network" || c == "Process"
-     then ["blocking I/O"] else [])
-  let passesSource := sourceReasons.isEmpty
-  let passesProfile := profileReasons.isEmpty
-  let eligible := passesSource && passesProfile
-  let exclusionKind := if eligible then none
-    else if !passesSource && !passesProfile then some .both
-    else if !passesSource then some .source
-    else some .profile
-  { qualName, eligible, sourceReasons, profileReasons, exclusionKind
-  , isTrusted := f.isTrusted, loc := fnLoc }
-
-/-- Collect eligibility for all functions in a module tree. -/
-private partial def collectEligibility
-    (externNames : List String)
-    (recMap : List (String × RecursionKind × List String))
-    (locMap : FnLocMap)
-    (m : CModule) (modulePath : String := "") : List EligibilityEntry :=
-  let qualPrefix := if modulePath == "" then m.name else modulePath ++ "." ++ m.name
-  let entries := m.functions.map fun f =>
-    let qualName := qualPrefix ++ "." ++ f.name
-    assessEligibility f qualName externNames recMap locMap
-  entries ++ m.submodules.foldl (fun acc sub =>
-    acc ++ collectEligibility externNames recMap locMap sub qualPrefix) []
 
 /-- Render the eligibility report (--report eligibility). -/
 def eligibilityReport (pc : Concrete.ProofCore) : String :=
@@ -1485,17 +1456,6 @@ private def renderPExpr : Proof.PExpr → String
     let argsStr := ", ".intercalate (args.map renderPExpr)
     s!"{fn}({argsStr})"
 
-/-- Identify why a function was excluded from ProofCore. -/
-private def exclusionReasons (f : CFnDef) (externNames : List String) : List String :=
-  let (concreteCaps, _) := f.capSet.normalize
-  let callees := collectCallsStmts f.body |>.eraseDups
-  (if !f.capSet.isEmpty then
-    [s!"has capabilities: {", ".intercalate concreteCaps}"] else []) ++
-  (if f.isTrusted then ["marked trusted"] else []) ++
-  (if f.isEntryPoint then ["is entry point (main)"] else []) ++
-  (if f.trustedImplOrigin.isSome then ["from trusted impl"] else []) ++
-  (if callees.any (fun c => externNames.contains c) then ["calls extern/FFI"] else [])
-
 /-- Extraction entry for one function. -/
 structure ExtractionEntry where
   qualName    : String
@@ -1509,49 +1469,38 @@ structure ExtractionEntry where
   proofName   : String       -- proof name (from registry or derived)
   loc         : Option SourceLoc
 
+/-- Derive spec/proof names from registry or hardcoded provedFunctions. -/
+private def lookupSpecProof (qualName : String) (registry : ProofRegistry)
+    : String × String :=
+  match registry.find? fun re => re.function == qualName with
+  | some re => (re.spec, re.proof)
+  | none =>
+    match Proof.provedFunctions.find? fun (name, _) => name == qualName with
+    | some (name, _) => (name ++ ".spec", name ++ ".proof")
+    | none => ("", "")
 
-/-- Collect extraction entries for all functions in a module. -/
-private partial def collectExtractionEntries
-    (externNames : List String)
-    (locMap : FnLocMap)
-    (m : CModule) (modulePath : String := "")
+/-- Build extraction entries from ProofCore — the single source of truth
+    for eligibility, extraction, and fingerprinting. -/
+private def extractionEntriesFromPC (pc : Concrete.ProofCore)
     (registry : ProofRegistry := []) : List ExtractionEntry :=
-  let qualPrefix := if modulePath == "" then m.name else modulePath ++ "." ++ m.name
-  let entries := m.functions.map fun f =>
-    let qualName := qualPrefix ++ "." ++ f.name
-    let fp := bodyFingerprint f.body
-    let fnLoc := lookupLoc locMap qualName
-    let paramNames := f.params.map (·.1)
-    let regEntry := registry.find? fun re => re.function == qualName
-    let (sName, pName) := match regEntry with
-      | some re => (re.spec, re.proof)
-      | none =>
-        let hardcoded := Proof.provedFunctions.find? fun (name, _) => name == qualName
-        match hardcoded with
-        | some (name, _) => (name ++ ".spec", name ++ ".proof")
-        | none => ("", "")
-    if f.isProofEligible then
-      let extracted := cStmtsToPExpr f.body
-      let unsup := if extracted.isNone then
-        identifyUnsupported f.body
-      else []
-      { qualName, eligible := true, extracted, excluded := []
-      , unsupported := unsup, fingerprint := fp, params := paramNames
-      , specName := sName, proofName := pName, loc := fnLoc }
-    else
-      let reasons := exclusionReasons f externNames
-      { qualName, eligible := false, extracted := none, excluded := reasons
-      , unsupported := [], fingerprint := fp, params := paramNames
-      , specName := sName, proofName := pName, loc := fnLoc }
-  entries ++ m.submodules.foldl (fun acc sub =>
-    acc ++ collectExtractionEntries externNames locMap sub qualPrefix registry) []
+  let eligible := pc.entries.map fun e =>
+    let (sName, pName) := lookupSpecProof e.qualName registry
+    let excluded := e.eligibility.sourceReasons ++ e.eligibility.profileReasons
+    { qualName := e.qualName, eligible := true, extracted := e.extracted
+    , excluded := [], unsupported := e.unsupported, fingerprint := e.fingerprint
+    , params := e.params, specName := sName, proofName := pName, loc := e.loc }
+  let excludedEntries := pc.excluded.map fun e =>
+    let (sName, pName) := lookupSpecProof e.qualName registry
+    let reasons := e.eligibility.sourceReasons ++ e.eligibility.profileReasons
+    { qualName := e.qualName, eligible := false, extracted := none
+    , excluded := reasons, unsupported := [], fingerprint := e.fingerprint
+    , params := e.fn.params.map (·.1), specName := sName, proofName := pName, loc := e.loc }
+  eligible ++ excludedEntries
 
 /-- Render the source-to-ProofCore extraction report. -/
-def extractionReport (modules : List CModule) (locMap : FnLocMap := [])
-    (registry : ProofRegistry := []) (pc : Concrete.ProofCore) : String :=
-  let externNames := pc.externNames
-  let entries := modules.foldl (fun acc m =>
-    acc ++ collectExtractionEntries externNames locMap m "" registry) []
+def extractionReport (registry : ProofRegistry := [])
+    (pc : Concrete.ProofCore) : String :=
+  let entries := extractionEntriesFromPC pc registry
   let header := "=== Source-to-ProofCore Extraction ==="
   let body := entries.map fun e =>
     let locStr := fmtLoc e.loc
@@ -1627,10 +1576,8 @@ private def collectTraceEntries
     (locMap : FnLocMap := [])
     (registry : ProofRegistry := [])
     (pc : Concrete.ProofCore) : List TraceEntry :=
-  -- Build extraction entries
-  let externNames := pc.externNames
-  let extractionEntries := coreModules.foldl (fun acc m =>
-    acc ++ collectExtractionEntries externNames locMap m (registry := registry)) []
+  -- Build extraction entries from ProofCore
+  let extractionEntries := extractionEntriesFromPC pc registry
   -- Build proof status entries
   let proofEntries := coreModules.foldl (fun acc m =>
     acc ++ collectProofStatus pc locMap m "" registry) []
@@ -2033,11 +1980,9 @@ private def extractionToFact (e : ExtractionEntry) : Val :=
 
 open Json in
 /-- Collect extraction facts for all functions. -/
-def collectExtractionFacts (modules : List CModule) (locMap : FnLocMap := [])
-    (registry : ProofRegistry := []) (pc : Concrete.ProofCore) : List Val :=
-  let externNames := pc.externNames
-  let entries := modules.foldl (fun acc m =>
-    acc ++ collectExtractionEntries externNames locMap m "" registry) []
+def collectExtractionFacts (registry : ProofRegistry := [])
+    (pc : Concrete.ProofCore) : List Val :=
+  let entries := extractionEntriesFromPC pc registry
   entries.map extractionToFact
 
 open Json in
@@ -2246,7 +2191,7 @@ def collectCoreFacts (modules : List CModule) (locMap : FnLocMap := [])
   let predictable := collectPredictableFacts modules locMap pc
   let proofStatus := collectProofStatusFacts modules locMap registry pc
   let obligations := collectObligationFacts modules locMap registry pc
-  let extraction := collectExtractionFacts modules locMap (registry := registry) (pc := pc)
+  let extraction := collectExtractionFacts (registry := registry) (pc := pc)
   let effects := collectEffectsFacts modules locMap pc
   let caps := collectCapFacts modules
   let unsafeFacts := collectUnsafeFacts modules
