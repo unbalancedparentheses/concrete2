@@ -15,20 +15,22 @@
 
 Concrete is a small systems programming language for evidence-carrying software.
 
-It is built in Lean 4 and aims to make authority, resource risk, trust boundaries, and proof evidence visible to the compiler, reviewers, CI, and AI tools.
+It is built in Lean 4 and aims to make authority, predictable execution, resource risk, trust boundaries, and proof evidence visible to the compiler, reviewers, CI, and AI tools.
 
 ## The Language
 
-Concrete is a compiled, statically typed systems language that targets LLVM IR. It is not a proof assistant; it is a no-GC systems language that Lean 4 can reason about.
+Concrete is a compiled, statically typed systems language that targets LLVM IR. It is not a proof assistant; it is a minimalist, no-GC systems language that Lean 4 can reason about.
 
 - **No garbage collector.** Memory is managed through ownership and borrowing, checked at compile time. There is no runtime GC, no reference counting behind the scenes.
 - **Linear type system.** Every non-Copy value must be consumed exactly once. The compiler rejects programs that leak, double-free, or use after move.
 - **Copy vs linear.** Types are either `Copy` (freely duplicated — integers, small structs) or linear (must be explicitly consumed or destroyed). Structs opt in to `Copy`; heap-owning types are linear by default.
 - **Capability-based effects.** Side effects are tracked through capabilities declared in function signatures: `with(File)`, `with(Console)`, `with(Alloc)`. A function with no capabilities is pure — it cannot do I/O, allocate, or touch the outside world.
+- **Predictable execution analysis.** The compiler tracks recursion, loop boundedness, allocation, blocking, FFI, and trust boundaries so bounded cores can be identified and enforced separately from effectful shells.
 - **Explicit trust boundaries.** `trusted` marks code the compiler cannot fully verify (pointer arithmetic, FFI). Everything else is checked. The boundary is visible and auditable.
 - **Explicit allocation.** Heap allocation requires the `Alloc` capability. Stack allocation is the default. If a function doesn't say `with(Alloc)`, it doesn't allocate.
+- **Artifact-first auditability.** The compiler produces facts, proof status, obligations, extraction, traceability, and drift artifacts that CI and AI tools can consume directly.
 
-The compiler is written in Lean 4.
+The compiler is written in Lean 4, and selected Concrete functions can already be linked to real Lean 4 theorems.
 
 ## The Thesis
 
@@ -46,6 +48,13 @@ Short version:
 - SPARK makes specifications and assurance central.
 - Lean 4 makes proof a practical implementation and theorem-proving environment.
 - Concrete is trying to make operational power and evidence explicit in native systems code.
+
+The intended shape is a small auditable core over feature growth:
+
+- effectful shell at the boundary
+- bounded and analyzable core inside
+- explicit authority and trust markers
+- real Lean 4 proofs where the proof subset permits them
 
 ## What This Looks Like
 
@@ -142,6 +151,8 @@ Today, the first proof slice is live:
 
 Concrete is trying to combine: Zig-like explicit systems control, SPARK-like assurance discipline, Lean 4-backed proof, capability-visible architecture, predictable execution checks, and proof-backed evidence tied to compiler artifacts.
 
+For the stable language principles behind that shape, see [docs/PRINCIPLES.md](docs/PRINCIPLES.md).
+
 ## Current State
 
 The compiler implements the full pipeline:
@@ -191,6 +202,7 @@ make clean
 ## Doc Map
 
 - [docs/IDENTITY.md](docs/IDENTITY.md) — project identity and vision
+- [docs/PRINCIPLES.md](docs/PRINCIPLES.md) — the stable design principles behind the language shape
 - [docs/SAFETY.md](docs/SAFETY.md) — the trust and capability model
 - [ROADMAP.md](ROADMAP.md) — what is next
 - [CHANGELOG.md](CHANGELOG.md) — what landed

@@ -10,6 +10,16 @@ is the opposite: copy the constraints and workflow lessons that strengthen a
 small, auditable, no-GC systems language, and reject the machinery that would
 make Concrete less clear.
 
+The synthesis Concrete is aiming for is roughly:
+
+- Zig/Austral-style small explicit systems programming
+- SPARK/Dafny/Why3-style assurance workflow and proof discipline
+- Lean 4 as implementation language and proof environment
+- explicit capabilities, predictable-execution boundaries, and artifact-first auditability as the distinctive Concrete layer
+
+That synthesis only works if the result stays minimalist, linear/resource-aware,
+no-GC, and honest about what is enforced, reported, proved, or trusted.
+
 ## How To Read This
 
 Each influence is classified as:
@@ -36,6 +46,9 @@ Concrete does not take:
 - GC as the execution model
 - proof assistant ergonomics as the default programming style
 - dependent types as the default surface of the systems language
+
+The key distinction is that Concrete is Lean-implemented and Lean-provable in
+parts, but it is not trying to become "Lean without GC."
 
 ### Rust
 
@@ -64,6 +77,7 @@ Concrete takes:
 - explicit low-level control
 - no hidden GC
 - straightforward systems programming feel
+- preference for visible boundaries over language magic
 
 Concrete does not take:
 
@@ -95,6 +109,7 @@ Concrete already takes:
 - restricted analyzable profiles
 - assurance workflow as a first-class concern
 - explicit trust and review discipline
+- the idea that operational restrictions should be user-visible architectural tools
 
 Concrete still wants to add carefully:
 
@@ -130,6 +145,7 @@ Concrete wants to copy:
 - explicit proof-obligation artifacts
 - inspectable separation between code, specs, obligations, and proof results
 - proof workflow that feels like a real tool pipeline, not hidden magic
+- machine-consumable proof/audit artifacts rather than only human prose
 
 ### F*
 
@@ -252,6 +268,8 @@ Concrete should continue to reject:
 - hidden dynamic dispatch
 - proof-heavy source code as the ordinary programming style
 - adding verification features before the artifact/workflow path is usable
+- hidden runtime models that undermine systems-level auditability
+- turning the language into a theorem prover instead of a systems language
 
 ## Current Priority From These Influences
 

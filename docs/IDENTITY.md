@@ -10,7 +10,7 @@ For feature admission criteria, see [DESIGN_POLICY.md](DESIGN_POLICY.md). For re
 
 A small systems language for evidence-carrying software.
 
-Concrete is written in Lean 4 and is designed so capability requirements, resource risk, trust boundaries, and proof evidence can become compiler facts. It is not a proof assistant; it is the no-GC systems language that Lean 4 reasons about.
+Concrete is written in Lean 4 and is designed so capability requirements, predictable execution, resource risk, trust boundaries, and proof evidence can become compiler facts. It is not a proof assistant; it is the no-GC systems language that Lean 4 reasons about.
 
 The bet is that for high-consequence code (firmware, security boundaries, safety-critical components), being able to answer "what authority does this module have?", "how predictable is this core?", "which assumptions are trusted?", and "which claims are proved?" matters more than having a large ecosystem or maximal expressiveness.
 
@@ -23,6 +23,16 @@ The deeper thesis is that Concrete should make four things explicit enough to au
 
 That is the sense in which Concrete is trying to make operational power explicit, not just memory safety or proof objects in isolation.
 
+Concrete is not "Lean without GC." The intended shape is narrower and more practical:
+
+1. a minimalist systems language rather than a theorem-prover surface
+2. linear/resource-aware ownership instead of a hidden runtime memory model
+3. explicit capabilities and trust markers at boundaries
+4. predictable core versus effectful shell as a normal design pattern
+5. Lean 4 as both the implementation language of the compiler and the proof environment that can attach real theorems to Concrete code
+
+The design rule is small analyzable core over feature growth. If a feature makes behavior less visible, muddies boundaries, or weakens the proof/audit story, it is suspect by default.
+
 Concrete is not trying to stop at "the compiler can print interesting reports." The intended workflow is artifact-first:
 
 1. the compiler emits stable facts, evidence, proof, and traceability artifacts
@@ -31,6 +41,13 @@ Concrete is not trying to stop at "the compiler can print interesting reports." 
 4. reviewers answer audit questions from those artifacts without reading compiler internals
 
 If Concrete cannot support that workflow, the thesis is only partially successful.
+
+That artifact-first workflow matters because Concrete is trying to be useful for real systems review, not just language research. The compiler should act like an audit machine over ordinary systems code:
+
+1. what authority does this function or module have?
+2. is this core predictable or not?
+3. what is enforced, what is reported, what is proved, and what is merely trusted?
+4. what changed since the last reviewed version?
 
 Short version:
 
@@ -71,6 +88,7 @@ The compiler doesn't just accept or reject programs. It answers questions about 
 - `--report mono` — what monomorphized code actually exists
 - `--report interface` — public API surface
 - `--report caps` — per-function capabilities
+- `snapshot` / `diff` / semantic queries — stable artifacts for CI, review, and AI tools
 
 These are structured compiler outputs, not linting. They derive from the same semantic analysis that type-checks the code. The goal is that a reviewer can understand a Concrete program's authority structure without reading the implementation.
 
@@ -86,6 +104,12 @@ The architecture keeps proof tooling separate from compilation. The compiler pro
 
 Currently: 17 proven theorems over a pure Core fragment. Narrow, but the architecture is designed to grow without contaminating the compile path.
 
+The important distinction is:
+
+1. Concrete is implemented in Lean 4
+2. selected Concrete functions can already carry Lean 4-backed proofs
+3. the long-term goal is to enlarge the useful provable subset without turning ordinary systems programming into theorem-prover syntax
+
 ## Thesis-Level Direction
 
 Concrete's long-term claim is the combination of:
@@ -94,6 +118,13 @@ Concrete's long-term claim is the combination of:
 2. reportable and enforceable operational behavior such as allocation, blocking, recursion, and boundedness
 3. explicit trust boundaries
 4. proof-backed evidence tied to compiler artifacts
+
+The normal program shape this pushes toward is:
+
+1. a small pure or tightly-bounded core
+2. an effectful shell at the edge
+3. explicit authority and trust markers at the seam
+4. artifacts that make the seam visible to reviewers and tooling
 
 If that combination works, a reviewer can ask far more precise questions about a function than most mainstream systems languages make practical.
 
