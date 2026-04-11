@@ -105,6 +105,22 @@ Concrete's vision is only validated if this remains honest and usable in practic
 4. ergonomics and performance stay acceptable for the target systems use case
 5. reports state clearly where claims are enforced, analysis-only, proved, or still trusted at the backend/toolchain boundary
 
+## Biggest Remaining Multipliers
+
+The biggest remaining multipliers for Concrete are not random language features.
+They are the parts that most increase the value of the thesis:
+
+1. a stronger flagship systems example with real Lean-backed proof
+2. an explicit `ProofCore` boundary as a real compiler artifact
+3. module/package policy strong enough to enforce architecture
+4. a usable bounded-capacity predictable subset between `NoAlloc` and unrestricted allocation
+5. trust-drift and CI evidence gates as normal workflow
+6. an AI-native fact interface over stable compiler artifacts
+7. later, proof-aware package artifacts so dependencies can ship evidence and policy data as part of the build story
+
+Those are the parts most likely to make Concrete feel qualitatively different
+from ordinary systems languages rather than merely more explicit.
+
 ## Research Directions
 
 These are the most developed ideas in [research/](../research/). None are implemented yet, but each is grounded in the current compiler architecture.
