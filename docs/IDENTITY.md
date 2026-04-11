@@ -23,6 +23,15 @@ The deeper thesis is that Concrete should make four things explicit enough to au
 
 That is the sense in which Concrete is trying to make operational power explicit, not just memory safety or proof objects in isolation.
 
+Concrete is not trying to stop at "the compiler can print interesting reports." The intended workflow is artifact-first:
+
+1. the compiler emits stable facts, evidence, proof, and traceability artifacts
+2. teams enforce policies from those artifacts
+3. CI gates and AI tooling consume those artifacts directly
+4. reviewers answer audit questions from those artifacts without reading compiler internals
+
+If Concrete cannot support that workflow, the thesis is only partially successful.
+
 Short version:
 
 1. Rust makes memory-safety discipline explicit.
@@ -84,6 +93,14 @@ Concrete's long-term claim is the combination of:
 4. proof-backed evidence tied to compiler artifacts
 
 If that combination works, a reviewer can ask far more precise questions about a function than most mainstream systems languages make practical.
+
+Concrete's vision is only validated if this remains honest and usable in practice:
+
+1. one flagship example demonstrates the full thesis end-to-end
+2. bad changes cause visible drift in authority, predictability, trust, or proof status
+3. a second example in a different domain also fits the model
+4. ergonomics and performance stay acceptable for the target systems use case
+5. reports state clearly where claims are enforced, analysis-only, proved, or still trusted at the backend/toolchain boundary
 
 ## Research Directions
 

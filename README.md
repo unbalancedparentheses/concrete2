@@ -142,6 +142,27 @@ Today, the first proof slice is live:
 
 Concrete is trying to combine: Zig-like explicit systems control, SPARK-like assurance discipline, Lean 4-backed proof, capability-visible architecture, predictable execution checks, and proof-backed evidence tied to compiler artifacts.
 
+## What Validates The Vision
+
+Concrete is only interesting if this becomes an engineering workflow, not just a compiler demo.
+
+The vision is only validated if:
+
+1. a real flagship example shows explicit authority, a predictable core, a proof-backed property, artifact-backed evidence, and drift detection
+2. bad changes are caught automatically: widened authority, new allocation, new FFI, new blocking, predictable-profile regressions, stale proofs, or changed obligation/evidence status
+3. another engineer can answer audit questions from artifacts and queries without reading compiler internals
+4. the artifact story is real: facts, proof registry, obligations, extraction, traceability, drift, and CI gates exist as build artifacts
+5. a second example in a different domain also works
+6. the workflow remains small enough to use in ordinary bounded systems code
+7. performance is acceptable for the target systems use case
+8. the trust boundary is honest about what is enforced, reported, proved, or assumed, and where backend/toolchain assumptions begin
+
+Concrete is therefore aiming for an artifact-first workflow:
+
+- the compiler should emit stable facts, evidence, and proof artifacts
+- teams should be able to enforce policy from those artifacts
+- CI and AI tooling should be able to consume them without scraping human-readable output
+
 ## Current State
 
 The compiler implements the full pipeline:
