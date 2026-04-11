@@ -1,0 +1,214 @@
+# Concrete Influences
+
+Status: stable reference
+
+This document tracks the external languages and systems that Concrete learns
+from.
+
+It is not a claim that Concrete should become a blend of all of them. The point
+is the opposite: copy the constraints and workflow lessons that strengthen a
+small, auditable, no-GC systems language, and reject the machinery that would
+make Concrete less clear.
+
+## How To Read This
+
+Each influence is classified as:
+
+- **Copied** — already clearly present in Concrete
+- **Adapted** — an idea Concrete wants, but in a smaller or different form
+- **Rejected** — an idea Concrete intentionally does not want
+
+## Core Influences
+
+### Lean 4
+
+**Status:** Copied + adapted
+
+Concrete takes:
+
+- implementation in Lean 4
+- theorem-proving environment for compiler and user-program proofs
+- explicitness over hidden behavior
+- the expectation that important claims should eventually be machine-checked
+
+Concrete does not take:
+
+- GC as the execution model
+- proof assistant ergonomics as the default programming style
+- dependent types as the default surface of the systems language
+
+### Rust
+
+**Status:** Adapted
+
+Concrete takes:
+
+- serious compiler-enforced safety culture
+- explicit trust/unsafe boundary thinking
+- the idea that guarantees should be compiler facts, not conventions
+- engineering rigor around diagnostics, testing, and review discipline
+
+Concrete does not take:
+
+- borrow-checker and lifetime surface complexity
+- trait system scale
+- macro-heavy language growth
+
+### Zig
+
+**Status:** Adapted
+
+Concrete takes:
+
+- small-language pressure
+- explicit low-level control
+- no hidden GC
+- straightforward systems programming feel
+
+Concrete does not take:
+
+- "manual control first, proof/evidence later" as the whole philosophy
+
+### Austral
+
+**Status:** Copied + adapted
+
+Concrete takes:
+
+- visible capabilities in interfaces
+- linear ownership without a giant abstraction tower
+- auditability-first design
+- language-size discipline
+
+Concrete differs by pushing harder on:
+
+- proof/evidence artifacts
+- predictable execution reporting and enforcement
+- Lean-backed proof direction
+
+### SPARK / Ada
+
+**Status:** Adapted
+
+Concrete already takes:
+
+- restricted analyzable profiles
+- assurance workflow as a first-class concern
+- explicit trust and review discipline
+
+Concrete still wants to add carefully:
+
+- contracts
+- loop invariants
+- ghost code
+
+Concrete does not want:
+
+- a large language/kernel burden just to support proof-oriented features
+
+### Dafny
+
+**Status:** Adapted
+
+Concrete wants to copy:
+
+- proof usability
+- actionable proof diagnostics
+- proof maintenance ergonomics
+- a normal-feeling function/spec workflow
+
+Concrete does not want:
+
+- a source language that feels like a proof script by default
+
+### Why3 / WhyML
+
+**Status:** Adapted
+
+Concrete wants to copy:
+
+- explicit proof-obligation artifacts
+- inspectable separation between code, specs, obligations, and proof results
+- proof workflow that feels like a real tool pipeline, not hidden magic
+
+### F*
+
+**Status:** Adapted
+
+Concrete wants to copy:
+
+- clear effect/proof boundary thinking
+- explicit extraction/trust-boundary methodology
+- honesty about what is proved at source/proof-IR level versus what is trusted
+  in runtime, backend, FFI, or target
+
+Concrete does not want:
+
+- to become a full effect-typed proof language first and a systems language
+  second
+
+### ATS
+
+**Status:** Adapted
+
+Concrete takes:
+
+- serious resource-aware low-level programming
+- linearity as a practical systems tool
+
+Concrete does not want:
+
+- proof-term density in ordinary source code
+- a language surface that is too dense for audit-first use
+
+## Secondary Influences
+
+### Cyclone
+
+**Status:** Adapted lightly
+
+Concrete takes:
+
+- checked low-level subsets
+- the idea that dangerous operations should be visible and boring
+
+### Idris / Agda
+
+**Status:** Rejected as main surface, adapted as a lesson
+
+Concrete keeps only:
+
+- the lesson that proof/spec attachment should become more direct when users
+  choose it
+
+Concrete rejects:
+
+- making a full dependent-type surface the normal way to write systems code
+
+## What Concrete Is Not Copying
+
+Concrete should continue to reject:
+
+- trait/typeclass scale as a default language-expansion path
+- macros as the main extensibility story
+- hidden dynamic dispatch
+- proof-heavy source code as the ordinary programming style
+- adding verification features before the artifact/workflow path is usable
+
+## Current Priority From These Influences
+
+The highest-value still-missing ideas are:
+
+1. a small explicit spec surface
+2. loop invariants for real bounded examples
+3. proof UX and proof diagnostics
+4. stronger assurance workflow polish
+5. ghost code only if a real proof-backed example forces it
+
+Those fit Concrete's philosophy best because they strengthen:
+
+- explicit authority
+- explicit operational behavior
+- explicit evidence
+- explicit trust boundaries
+- an artifact-first review and CI workflow

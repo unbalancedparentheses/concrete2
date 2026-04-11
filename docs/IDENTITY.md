@@ -40,6 +40,9 @@ Short version:
 4. Lean 4 makes proof a practical implementation and theorem-proving environment.
 5. Concrete is trying to make operational power and evidence explicit in native systems code.
 
+For the explicit map of what Concrete copies, adapts, or rejects from other
+languages, see [INFLUENCES.md](INFLUENCES.md).
+
 ## The Three-Way Trust Split
 
 Most systems languages have one escape hatch. Rust has `unsafe`. C has... everything. Concrete splits trust into three orthogonal mechanisms:
@@ -113,6 +116,10 @@ The current thesis-validation center of gravity is:
 3. [../research/thesis-validation/thesis-validation.md](../research/thesis-validation/thesis-validation.md)
 
 Those notes define the experimental target more directly than the older broad research notes do.
+
+For the narrower question of which verification-language ideas actually fit
+Concrete's philosophy, see
+[../research/proof-evidence/verification-surface.md](../research/proof-evidence/verification-surface.md).
 
 ### Authority Budgets
 

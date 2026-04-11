@@ -7,6 +7,7 @@ This directory holds the stable reference docs for Concrete's implementation and
 Use these files as the primary reference once a design has moved out of exploration:
 
 - [IDENTITY.md](IDENTITY.md) — what Concrete is optimizing for, where it intends to differentiate, and what it is not trying to be
+- [INFLUENCES.md](INFLUENCES.md) — which external language ideas Concrete copies, adapts, or rejects
 - [SAFETY.md](SAFETY.md) — capabilities, `trusted`, `Unsafe`, proof boundary, and high-integrity direction
 - [EXECUTION_MODEL.md](EXECUTION_MODEL.md) — runtime boundary, allocation model, FFI/runtime contract, and execution profiles
 - [ARCHITECTURE.md](ARCHITECTURE.md) — compiler pipeline, artifact flow, pass boundaries, and architecture phase reference
