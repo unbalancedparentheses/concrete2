@@ -12,51 +12,6 @@ namespace Concrete
 namespace Report
 
 -- ============================================================
--- Proof registry: artifact-backed proof attachment
--- ============================================================
-
-/-- A single proof registry entry linking a Concrete function to its proof. -/
-structure ProofRegistryEntry where
-  function        : String  -- qualified name, e.g. "main.parse_byte"
-  bodyFingerprint : String  -- expected body fingerprint
-  proof           : String  -- Lean proof name, e.g. "Concrete.Proof.parse_byte_correct"
-  spec            : String  -- spec name, e.g. "parse_byte_adds_offset"
-  deriving Repr, Inhabited
-
-/-- A proof registry is a list of proof attachment entries. -/
-abbrev ProofRegistry := List ProofRegistryEntry
-
-/-- Parse a proof registry from a JSON string.
-    Expected format:
-    { "version": 1, "proofs": [ { "function": "...", "body_fingerprint": "...", "proof": "...", "spec": "..." }, ... ] }
-    Minimal parser: extracts string fields from each object in the "proofs" array.
-    Returns empty list on any parse error. -/
-def parseRegistryJson (input : String) : ProofRegistry :=
-  -- Tiny targeted extractor: find all {...} blocks inside "proofs": [...]
-  -- Strategy: split by "function" key occurrences, extract fields from each block
-  let extractStr (block : String) (key : String) : String :=
-    let needle := s!"\"{key}\":"
-    match block.splitOn needle with
-    | [_, rest] =>
-      let rest := rest.trimAsciiStart
-      if rest.startsWith "\"" then
-        let inner := (rest.drop 1).toString.splitOn "\"" |>.head!
-        inner
-      else ""
-    | _ => ""
-  -- Split into proof entry blocks by looking for "function" key occurrences
-  let blocks := input.splitOn "\"function\":"
-  -- Skip the first part (everything before first entry)
-  let entryBlocks := blocks.drop 1
-  entryBlocks.filterMap fun block =>
-    let fn := extractStr ("\"function\":" ++ block) "function"
-    let fp := extractStr block "body_fingerprint"
-    let pr := extractStr block "proof"
-    let sp := extractStr block "spec"
-    if fn.isEmpty then none
-    else some { function := fn, bodyFingerprint := fp, proof := pr, spec := sp }
-
--- ============================================================
 -- Source location lookup
 -- ============================================================
 
@@ -1270,35 +1225,30 @@ private partial def collectProofStatus
     let passesProfile := match elig with
       | some e => e.eligible
       | none => false
-    -- Determine proof state: check both hardcoded table and registry
-    let matchedProof := Proof.provedFunctions.find? fun (name, expectedFp) =>
-      name == qualName && expectedFp == fp
-    let matchedRegistry := registry.find? fun re =>
-      re.function == qualName && re.bodyFingerprint == fp
-    let hasMatch := matchedProof.isSome || matchedRegistry.isSome
-    let staleProof := Proof.provedFunctions.find? fun (name, _) =>
-      name == qualName
-    let staleRegistry := registry.find? fun re =>
-      re.function == qualName
-    let hasStale := staleProof.isSome || staleRegistry.isSome
+    -- Derive proof state from spec attachment + current fingerprint
+    let att := match pcEntry with
+      | some e => e.spec
+      | none => match pcExcl with
+        | some e => e.spec
+        | none => none
     let state :=
       if f.isTrusted then .trusted
-      else if hasMatch && passesProfile then .proved
-      else if !hasMatch && hasStale then .stale
-      else if !passesProfile then .notEligible
-      else .notProved
-    let expectedFp := match staleProof with
-      | some (_, efp) => efp
-      | none => match staleRegistry with
-        | some re => re.bodyFingerprint
-        | none => ""
-    -- Spec and proof identity
-    let regEntry := registry.find? fun re => re.function == qualName
-    let (sName, pName, pSrc) := match regEntry with
-      | some re => (re.spec, re.proof, "registry")
-      | none => match staleProof with
-        | some (name, _) => (name ++ ".spec", name ++ ".proof", "hardcoded")
-        | none => ("", "", "none")
+      else match att with
+      | some a =>
+        if a.expectedFp == fp && passesProfile then .proved
+        else if a.expectedFp != fp then .stale
+        else .notEligible
+      | none =>
+        if !passesProfile then .notEligible
+        else .notProved
+    let expectedFp := match att with
+      | some a => a.expectedFp
+      | none => ""
+    -- Spec and proof identity from attachment
+    let (sName, pName, pSrc) := match att with
+      | some a => (a.specId.name, a.proofName,
+          match a.source with | .registry => "registry" | .hardcoded => "hardcoded")
+      | none => ("", "", "none")
     { qualName, bareName := f.name, state, currentFp := fp, expectedFp
     , profileGates := gates, specName := sName, proofName := pName
     , proofSource := pSrc, loc := fnLoc, fnSpan := fnSp }
@@ -1385,20 +1335,6 @@ private partial def collectObligations
   let provedNames := proofEntries.filterMap fun e =>
     if e.state matches .proved then some e.qualName else none
   proofEntries.map fun e =>
-    let regEntry := registry.find? fun re => re.function == e.qualName
-    let hardcoded := Proof.provedFunctions.find? fun (name, _) => name == e.qualName
-    let specName := match regEntry with
-      | some re => re.spec
-      | none => ""
-    let proofName := match regEntry with
-      | some re => re.proof
-      | none => match hardcoded with
-        | some (name, _) => name ++ ".proof"
-        | none => ""
-    let src := match regEntry, hardcoded with
-      | some _, _ => "registry"
-      | none, some _ => "hardcoded"
-      | none, none => "none"
     let statusStr := match e.state with
       | .proved => "proved"
       | .stale => "stale"
@@ -1409,9 +1345,9 @@ private partial def collectObligations
     let callees := match modules.foldl (fun acc m =>
       acc ++ findFunctionCallees m e.bareName) [] with
       | cs => cs.filter fun c => provedNames.any fun p => p.endsWith ("." ++ c)
-    { function := e.qualName, spec := specName, proof := proofName
+    { function := e.qualName, spec := e.specName, proof := e.proofName
     , status := statusStr, dependencies := callees
-    , fingerprint := e.currentFp, source := src, loc := e.loc }
+    , fingerprint := e.currentFp, source := e.proofSource, loc := e.loc }
 
 /-- Render the obligations report as human-readable output. -/
 def obligationsReport (modules : List CModule) (locMap : FnLocMap := [])
@@ -1469,28 +1405,23 @@ structure ExtractionEntry where
   proofName   : String       -- proof name (from registry or derived)
   loc         : Option SourceLoc
 
-/-- Derive spec/proof names from registry or hardcoded provedFunctions. -/
-private def lookupSpecProof (qualName : String) (registry : ProofRegistry)
-    : String × String :=
-  match registry.find? fun re => re.function == qualName with
-  | some re => (re.spec, re.proof)
-  | none =>
-    match Proof.provedFunctions.find? fun (name, _) => name == qualName with
-    | some (name, _) => (name ++ ".spec", name ++ ".proof")
-    | none => ("", "")
+/-- Extract spec/proof names from a SpecAttachment, or empty strings if none. -/
+private def specNames (att : Option SpecAttachment) : String × String :=
+  match att with
+  | some a => (a.specId.name, a.proofName)
+  | none => ("", "")
 
 /-- Build extraction entries from ProofCore — the single source of truth
     for eligibility, extraction, and fingerprinting. -/
 private def extractionEntriesFromPC (pc : Concrete.ProofCore)
     (registry : ProofRegistry := []) : List ExtractionEntry :=
   let eligible := pc.entries.map fun e =>
-    let (sName, pName) := lookupSpecProof e.qualName registry
-    let excluded := e.eligibility.sourceReasons ++ e.eligibility.profileReasons
+    let (sName, pName) := specNames e.spec
     { qualName := e.qualName, eligible := true, extracted := e.extracted
     , excluded := [], unsupported := e.unsupported, fingerprint := e.fingerprint
     , params := e.params, specName := sName, proofName := pName, loc := e.loc }
   let excludedEntries := pc.excluded.map fun e =>
-    let (sName, pName) := lookupSpecProof e.qualName registry
+    let (sName, pName) := specNames e.spec
     let reasons := e.eligibility.sourceReasons ++ e.eligibility.profileReasons
     { qualName := e.qualName, eligible := false, extracted := none
     , excluded := reasons, unsupported := [], fingerprint := e.fingerprint

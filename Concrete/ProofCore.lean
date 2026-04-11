@@ -759,6 +759,97 @@ structure EligibilityEntry where
   loc            : Option SourceLoc
 
 -- ============================================================
+-- Proof registry types (moved from Report.lean)
+-- ============================================================
+
+/-- A single proof registry entry linking a Concrete function to its proof. -/
+structure ProofRegistryEntry where
+  function        : String  -- qualified name, e.g. "main.parse_byte"
+  bodyFingerprint : String  -- expected body fingerprint
+  proof           : String  -- Lean proof name, e.g. "Concrete.Proof.parse_byte_correct"
+  spec            : String  -- spec name, e.g. "parse_byte_adds_offset"
+  deriving Repr, Inhabited
+
+abbrev ProofRegistry := List ProofRegistryEntry
+
+/-- Parse a proof registry from a JSON string.
+    Expected format:
+    { "version": 1, "proofs": [ { "function": "...", "body_fingerprint": "...", "proof": "...", "spec": "..." }, ... ] }
+    Returns empty list on any parse error. -/
+def parseRegistryJson (input : String) : ProofRegistry :=
+  let extractStr (block : String) (key : String) : String :=
+    let needle := s!"\"{key}\":"
+    match block.splitOn needle with
+    | [_, rest] =>
+      let rest := rest.trimAsciiStart
+      if rest.startsWith "\"" then
+        let inner := (rest.drop 1).toString.splitOn "\"" |>.head!
+        inner
+      else ""
+    | _ => ""
+  let blocks := input.splitOn "\"function\":"
+  let entryBlocks := blocks.drop 1
+  entryBlocks.filterMap fun block =>
+    let fn := extractStr ("\"function\":" ++ block) "function"
+    let fp := extractStr block "body_fingerprint"
+    let pr := extractStr block "proof"
+    let sp := extractStr block "spec"
+    if fn.isEmpty then none
+    else some { function := fn, bodyFingerprint := fp, proof := pr, spec := sp }
+
+-- ============================================================
+-- Identity and spec attachment model
+-- ============================================================
+
+/-- Canonical function identity in the proof pipeline. -/
+structure FunctionIdentity where
+  qualName    : String       -- e.g. "main.parse_byte"
+  fingerprint : String       -- raw Core body fingerprint
+  deriving BEq, Repr
+
+/-- Spec identity — a named specification attached to a function. -/
+structure SpecIdentity where
+  name    : String           -- e.g. "parse_byte_adds_offset"
+  version : Option String := none
+  deriving BEq, Repr
+
+/-- How a spec binding was established. -/
+inductive SpecSource where
+  | hardcoded   -- from Proof.provedFunctions
+  | registry    -- from proof-registry.json
+  deriving BEq, Repr
+
+/-- Spec attachment for a function: identity binding only.
+    Proof status (proved/stale/unproved) is derived downstream by comparing
+    the attachment's expectedFp against the function's current fingerprint. -/
+structure SpecAttachment where
+  specId      : SpecIdentity
+  proofName   : String       -- e.g. "Concrete.Proof.parse_byte_correct"
+  source      : SpecSource
+  expectedFp  : String       -- fingerprint the proof was written against
+
+/-- Resolve spec attachment for a single function. Checks registry first,
+    then Proof.provedFunctions. Returns none if no spec is attached. -/
+private def resolveSpec (qualName : String)
+    (registry : ProofRegistry) : Option SpecAttachment :=
+  -- Check registry first
+  match registry.find? fun re => re.function == qualName with
+  | some re => some {
+      specId := { name := re.spec }
+      proofName := re.proof
+      source := .registry
+      expectedFp := re.bodyFingerprint }
+  | none =>
+    -- Check hardcoded
+    match Proof.provedFunctions.find? fun (name, _) => name == qualName with
+    | some (name, efp) => some {
+        specId := { name := name ++ ".spec" }
+        proofName := name ++ ".proof"
+        source := .hardcoded
+        expectedFp := efp }
+    | none => none
+
+-- ============================================================
 -- ProofCore artifact
 -- ============================================================
 
@@ -773,6 +864,7 @@ structure ProofCoreEntry where
   params      : List String
   eligibility : EligibilityEntry
   loc         : Option SourceLoc
+  spec        : Option SpecAttachment
 
 /-- A function excluded from ProofCore with reasons. -/
 structure ProofCoreExcluded where
@@ -782,6 +874,7 @@ structure ProofCoreExcluded where
   fingerprint : String
   eligibility : EligibilityEntry
   loc         : Option SourceLoc
+  spec        : Option SpecAttachment
 
 /-- The proof-oriented fragment of validated Core.
     This is the single artifact boundary between Core and the proof pipeline. -/
@@ -802,6 +895,61 @@ structure ProofCore where
   recMap      : List (String × RecursionKind × List String)
   /-- Extern function names. -/
   externNames : List String
+
+-- ============================================================
+-- Registry validation
+-- ============================================================
+
+/-- A registry validation issue. -/
+inductive RegistryIssue where
+  | unknownFunction (entry : ProofRegistryEntry)
+  | duplicateEntry (function : String) (count : Nat)
+  | conflictingEntry (function : String) (specs : List String)
+  | staleFingerprint (entry : ProofRegistryEntry) (currentFp : String)
+  deriving Repr
+
+/-- Validate a proof registry against a ProofCore artifact. -/
+def validateRegistry (pc : ProofCore) (registry : ProofRegistry) : List RegistryIssue :=
+  let allFns := pc.entries.map (·.qualName) ++ pc.excluded.map (·.qualName)
+  let entryFps : List (String × String) := pc.entries.map fun e => (e.qualName, e.fingerprint)
+  let exclFps : List (String × String) := pc.excluded.map fun e => (e.qualName, e.fingerprint)
+  let allFps := entryFps ++ exclFps
+  -- Check for unknown functions
+  let unknowns := registry.filterMap fun re =>
+    if allFns.contains re.function then none
+    else some (.unknownFunction re)
+  -- Check for duplicates
+  let grouped := registry.foldl (fun acc re =>
+    match acc.find? fun (f, _) => f == re.function with
+    | some (f, n) => acc.map fun (g, m) => if g == f then (g, m + 1) else (g, m)
+    | none => acc ++ [(re.function, 1)]) ([] : List (String × Nat))
+  let duplicates := grouped.filterMap fun (f, n) =>
+    if n > 1 then some (.duplicateEntry f n) else none
+  -- Check for conflicting specs (same function, different spec names)
+  let conflicts := grouped.filterMap fun (f, n) =>
+    if n <= 1 then none
+    else
+      let specs := (registry.filter fun re => re.function == f).map (·.spec) |>.eraseDups
+      if specs.length > 1 then some (.conflictingEntry f specs) else none
+  -- Check for stale fingerprints
+  let stales := registry.filterMap fun re =>
+    match allFps.find? fun (f, _) => f == re.function with
+    | some (_, currentFp) =>
+      if re.bodyFingerprint != currentFp then some (.staleFingerprint re currentFp)
+      else none
+    | none => none  -- already caught as unknown
+  unknowns ++ duplicates ++ conflicts ++ stales
+
+/-- Render a registry validation issue as a warning string. -/
+def renderRegistryIssue : RegistryIssue → String
+  | .unknownFunction re =>
+    s!"warning: registry entry for unknown function '{re.function}'"
+  | .duplicateEntry fn n =>
+    s!"warning: {n} duplicate registry entries for '{fn}'"
+  | .conflictingEntry fn specs =>
+    s!"warning: conflicting specs for '{fn}': {", ".intercalate specs}"
+  | .staleFingerprint re currentFp =>
+    s!"warning: stale fingerprint for '{re.function}' (registry: {re.bodyFingerprint.take 40}…, current: {currentFp.take 40}…)"
 
 -- ============================================================
 -- Extraction: Core modules → ProofCore
@@ -860,6 +1008,7 @@ private partial def extractModule
     (externNames : List String)
     (recMap : List (String × RecursionKind × List String))
     (locMap : List (String × SourceLoc))
+    (registry : ProofRegistry)
     (m : CModule) (modulePath : String := "")
     : List ProofCoreEntry × List ProofCoreExcluded :=
   let qualPrefix := if modulePath == "" then m.name else modulePath ++ "." ++ m.name
@@ -868,28 +1017,34 @@ private partial def extractModule
     let bareName := f.name
     let fp := bodyFingerprint f.body
     let elig := assessEligibility f qualName externNames recMap locMap
+    let sa := resolveSpec qualName registry
     if elig.isTrusted then
       (accE, accX ++ [{ qualName, bareName, fn := f, fingerprint := fp
-                       , eligibility := elig, loc := elig.loc : ProofCoreExcluded }])
+                       , eligibility := elig, loc := elig.loc
+                       , spec := sa : ProofCoreExcluded }])
     else if elig.eligible then
       let extracted := cStmtsToPExpr f.body |>.map normalizePExpr
       let unsup := if extracted.isNone then identifyUnsupported f.body else []
       (accE ++ [{ qualName, bareName, fn := f, extracted, unsupported := unsup
                  , fingerprint := fp, params := f.params.map Prod.fst
-                 , eligibility := elig, loc := elig.loc : ProofCoreEntry }], accX)
+                 , eligibility := elig, loc := elig.loc
+                 , spec := sa : ProofCoreEntry }], accX)
     else
       (accE, accX ++ [{ qualName, bareName, fn := f, fingerprint := fp
-                       , eligibility := elig, loc := elig.loc : ProofCoreExcluded }])
+                       , eligibility := elig, loc := elig.loc
+                       , spec := sa : ProofCoreExcluded }])
   ) ([], [])
   -- Recurse into submodules
   let (subEntries, subExcluded) := m.submodules.foldl (fun (accE, accX) sub =>
-    let (e, x) := extractModule externNames recMap locMap sub qualPrefix
+    let (e, x) := extractModule externNames recMap locMap registry sub qualPrefix
     (accE ++ e, accX ++ x)) ([], [])
   (entries ++ subEntries, excluded ++ subExcluded)
 
 /-- Extract the proof-oriented fragment from validated Core.
     This is the primary entry point for the proof pipeline. -/
-def extractProofCore (vc : ValidatedCore) (locMap : List (String × SourceLoc) := [])
+def extractProofCore (vc : ValidatedCore)
+    (locMap : List (String × SourceLoc) := [])
+    (registry : ProofRegistry := [])
     : ProofCore :=
   let modules := vc.coreModules
   let allModules := List.flatten (modules.map flattenModules)
@@ -898,9 +1053,9 @@ def extractProofCore (vc : ValidatedCore) (locMap : List (String × SourceLoc) :
   let sccs := tarjanSCC graph
   let recMap := classifyRecursion graph sccs
   let externNames := modules.foldl (fun acc m => acc ++ collectExternNames m) []
-  -- Extract entries and excluded
+  -- Extract entries and excluded (with spec attachment)
   let (entries, excluded) := modules.foldl (fun (accE, accX) m =>
-    let (e, x) := extractModule externNames recMap locMap m
+    let (e, x) := extractModule externNames recMap locMap registry m
     (accE ++ e, accX ++ x)) ([], [])
   -- Collect eligible types
   let sts := List.flatten (allModules.map (·.structs)) |>.filter CStructDef.isProofEligible

@@ -2952,6 +2952,116 @@ check_report "$TESTDIR/report_integration.con" authority \
     "qualified-authority: call_raw chain traces raw_extern" \
     "qualified-authority: call_raw chain should trace raw_extern"
 
+# --- Spec identity / attachment model ---
+# Tests that FunctionIdentity, SpecIdentity, and SpecAttachment flow through ProofCore.
+
+SPEC_DIR="$TESTDIR/adversarial_spec_identity"
+SPEC_PROG="$SPEC_DIR/test_spec.con"
+
+$COMPILER snapshot "$SPEC_PROG" -o "$TMPDIR/spec_identity.json" 2>/dev/null
+
+# Spec identity flows into extraction facts
+if python3 -c "
+import json
+with open('$TMPDIR/spec_identity.json') as f:
+    data = json.load(f)
+exts = {f['function']: f for f in data['facts'] if f['kind'] == 'extraction'}
+assert exts['main.pure_add'].get('spec') == 'add_commutativity', 'add spec wrong'
+assert exts['main.pure_add'].get('proof') == 'Concrete.Proof.pure_add_correct', 'add proof wrong'
+assert exts['main.pure_mul'].get('spec') == 'mul_associativity', 'mul spec wrong'
+assert exts['main.pure_mul'].get('proof') == 'Concrete.Proof.pure_mul_correct', 'mul proof wrong'
+" 2>/dev/null; then
+    echo "  ok  spec-identity: extraction facts carry spec/proof from registry"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  spec-identity: extraction facts should carry spec/proof from registry"
+    FAIL=$((FAIL + 1))
+fi
+
+# Spec identity flows into proof-status facts
+if python3 -c "
+import json
+with open('$TMPDIR/spec_identity.json') as f:
+    data = json.load(f)
+ps = {f['function']: f for f in data['facts'] if f['kind'] == 'proof_status'}
+assert ps['main.pure_add']['state'] == 'proved', 'add not proved'
+assert ps['main.pure_add'].get('spec') == 'add_commutativity', 'add spec wrong'
+assert ps['main.pure_add'].get('source') == 'registry', 'add source wrong'
+assert ps['main.pure_mul']['state'] == 'proved', 'mul not proved'
+assert ps['main.pure_mul'].get('spec') == 'mul_associativity', 'mul spec wrong'
+" 2>/dev/null; then
+    echo "  ok  spec-identity: proof-status facts carry spec/source from registry"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  spec-identity: proof-status facts should carry spec/source from registry"
+    FAIL=$((FAIL + 1))
+fi
+
+# Spec identity flows into obligation facts
+if python3 -c "
+import json
+with open('$TMPDIR/spec_identity.json') as f:
+    data = json.load(f)
+obs = {f['function']: f for f in data['facts'] if f['kind'] == 'obligation'}
+assert obs['main.pure_add']['spec'] == 'add_commutativity', 'add spec wrong'
+assert obs['main.pure_add']['proof'] == 'Concrete.Proof.pure_add_correct', 'add proof wrong'
+assert obs['main.pure_add']['source'] == 'registry', 'add source wrong'
+assert obs['main.pure_add']['status'] == 'proved', 'add not proved'
+" 2>/dev/null; then
+    echo "  ok  spec-identity: obligation facts carry spec/proof/source"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  spec-identity: obligation facts should carry spec/proof/source"
+    FAIL=$((FAIL + 1))
+fi
+
+# Entry point (main) has no spec attachment
+if python3 -c "
+import json
+with open('$TMPDIR/spec_identity.json') as f:
+    data = json.load(f)
+ps = {f['function']: f for f in data['facts'] if f['kind'] == 'proof_status'}
+assert ps['main.main']['state'] == 'not_eligible'
+assert ps['main.main'].get('spec', '') == ''
+assert ps['main.main'].get('proof', '') == ''
+" 2>/dev/null; then
+    echo "  ok  spec-identity: entry point has no spec attachment"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  spec-identity: entry point should have no spec attachment"
+    FAIL=$((FAIL + 1))
+fi
+
+# Spec identity is consistent across all fact families
+if python3 -c "
+import json
+with open('$TMPDIR/spec_identity.json') as f:
+    data = json.load(f)
+fn = 'main.pure_add'
+ext = [f for f in data['facts'] if f['kind'] == 'extraction' and f['function'] == fn][0]
+ps = [f for f in data['facts'] if f['kind'] == 'proof_status' and f['function'] == fn][0]
+ob = [f for f in data['facts'] if f['kind'] == 'obligation' and f['function'] == fn][0]
+assert ext.get('spec') == ps.get('spec') == ob.get('spec'), 'spec mismatch across families'
+assert ext.get('proof') == ps.get('proof') == ob.get('proof'), 'proof mismatch across families'
+" 2>/dev/null; then
+    echo "  ok  spec-identity: consistent across extraction/proof-status/obligation"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  spec-identity: spec should be consistent across all fact families"
+    FAIL=$((FAIL + 1))
+fi
+
+# Human-readable extraction report shows spec/proof
+check_report "$SPEC_PROG" extraction \
+    "spec: add_commutativity" \
+    "spec-identity: extraction report shows spec name" \
+    "spec-identity: extraction report should show spec name"
+
+check_report "$SPEC_PROG" extraction \
+    "proof: Concrete.Proof.pure_add_correct" \
+    "spec-identity: extraction report shows proof name" \
+    "spec-identity: extraction report should show proof name"
+
 # --- diagnostics-json: machine-readable diagnostic records ---
 echo ""
 echo "=== Diagnostics JSON tests ==="

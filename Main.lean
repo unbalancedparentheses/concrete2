@@ -252,12 +252,12 @@ def compileAndCheck (inputPath : String) (checkType : String) : IO UInt32 := do
     return 1
 
 /-- Try to load a proof registry from proof-registry.json next to the input file. -/
-def loadRegistry (inputPath : String) : IO Report.ProofRegistry := do
+def loadRegistry (inputPath : String) : IO Concrete.ProofRegistry := do
   let dir := dirOf inputPath
   let registryPath := dir ++ "/proof-registry.json"
   try
     let content ← readFile registryPath
-    return Report.parseRegistryJson content
+    return Concrete.parseRegistryJson content
   catch _ =>
     return []
 
@@ -288,7 +288,8 @@ def compileAndReport (inputPath : String) (reportType : String) : IO UInt32 := d
   | .ok (parsed, _, validCore, srcMap) =>
     let locMap := Report.buildFnLocMap parsed.modules inputPath
     let simpleLocMap := locMap.map fun e => (e.qualName, (e.file, e.fnSpan.line))
-    let pc := extractProofCore validCore simpleLocMap
+    let registry ← loadRegistry inputPath
+    let pc := extractProofCore validCore simpleLocMap registry
     if reportType == "caps" then
       IO.println (Report.capabilityReport validCore.coreModules)
       return 0
@@ -370,8 +371,8 @@ def compileAndQuery (inputPath : String) (query : String) : IO UInt32 := do
   | .ok (parsed, _, validCore, srcMap) =>
     let locMap := Report.buildFnLocMap parsed.modules inputPath
     let simpleLocMap := locMap.map fun e => (e.qualName, (e.file, e.fnSpan.line))
-    let pc := extractProofCore validCore simpleLocMap
     let registry ← loadRegistry inputPath
+    let pc := extractProofCore validCore simpleLocMap registry
     -- Traceability queries need the backend pipeline
     let parts := query.splitOn ":"
     if parts[0]! == "traceability" then
@@ -883,8 +884,8 @@ def main (args : List String) : IO UInt32 := do
       | .ok (parsed, _, validCore, _srcMap) =>
         let locMap := Report.buildFnLocMap parsed.modules inp
         let simpleLocMap := locMap.map fun e => (e.qualName, (e.file, e.fnSpan.line))
-        let pc := extractProofCore validCore simpleLocMap
         let registry ← loadRegistry inp
+        let pc := extractProofCore validCore simpleLocMap registry
         -- Collect core facts (same as diagnostics-json)
         let coreFacts := Report.collectCoreFacts validCore.coreModules locMap registry pc
         -- Run backend pipeline for traceability facts
