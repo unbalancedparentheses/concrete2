@@ -10,6 +10,44 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Fact artifact snapshots land as first-class workflow output
+
+**`concrete snapshot`:** Added a project-facing fact artifact command:
+
+```bash
+concrete snapshot <file.con> [-o output.json]
+```
+
+It writes a versioned JSON snapshot containing:
+
+- source path
+- timestamp
+- fact count
+- summary counts
+- the full fact array
+
+The snapshot bundles the existing evidence workflow into one machine-readable artifact surface:
+
+- effects
+- capability
+- unsafe / trust
+- allocation
+- proof status
+- obligations
+- extraction
+- traceability
+- predictable violations
+
+**Default artifact path:** when `-o` is omitted, the compiler writes `<file>.facts.json` next to the source file.
+
+**Diff interop:** `concrete diff` now accepts both raw fact arrays and snapshot objects by reading the `"facts"` field from the snapshot object. That means the intended workflow is now real:
+
+1. generate a baseline snapshot
+2. commit it or archive it in CI
+3. diff later snapshots against it
+
+**What changed strategically:** the evidence story is no longer spread across many reports only. Concrete now has a stable, versioned artifact that CI, tooling, and future MCP/AI integrations can consume directly. This closes the first item in the current thesis-validation roadmap and makes the next priorities clearer: a stronger second flagship example, ProofCore pressure from that example, policy enforcement, and CI evidence gates.
+
 ### Phase H cleanup: zero-alloc borrowed string literals, String.append method, example modernization
 
 **Zero-alloc borrowed string literals:** `&"literal"` now points directly at the global constant — no malloc, no memcpy. Previously, every string literal materialization heap-allocated a copy even when only borrowed. The compiler adds a new `strConstRef` SSA variant that Lower emits for `borrow(strLit)` and EmitSSA translates to a stack-only `%struct.String` referencing the global, with `cap = 0` to signal non-owned.
