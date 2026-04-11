@@ -4818,36 +4818,38 @@ fi
 # Clean up
 rm -rf "$CRYPTO_SNAP_DIR"
 
-# === ELF header field validator (flagship example #3) ===
+# === ELF header validator (flagship example — file I/O shell + proved core) ===
 echo ""
-echo "=== ELF header field validator tests ==="
+echo "=== ELF header validator tests ==="
 
 ELF_DIR="$ROOT_DIR/examples/elf_header/src"
 ELF_SNAP_DIR=$(mktemp -d)
+FIXTURE_DIR="$ROOT_DIR/tests/fixtures"
 
 # --- Snapshot tests ---
 
 snap_elf=$($COMPILER snapshot "$ELF_DIR/main.con" -o "$ELF_SNAP_DIR/good.json" 2>&1)
-if echo "$snap_elf" | grep -q "36 facts"; then
-    echo "  ok  elf_header: snapshot produces 36 facts"
+if echo "$snap_elf" | grep -q "65 facts"; then
+    echo "  ok  elf_header: snapshot produces 65 facts"
     PASS=$((PASS + 1))
 else
-    echo "FAIL  elf_header: expected 36 facts in snapshot"
+    echo "FAIL  elf_header: expected 65 facts in snapshot"
     echo "$snap_elf"
     FAIL=$((FAIL + 1))
 fi
 
-# 5 core functions proved, 1 unproved (main)
+# 8 functions: 5 proved, 2 trusted, 1 ineligible (main)
 if python3 -c "
 import json
 with open('$ELF_SNAP_DIR/good.json') as f:
     s = json.load(f)
 assert s['summary']['proved'] == 5
 assert s['summary']['stale'] == 0
-assert s['summary']['no_proof'] == 1
-assert s['summary']['total_functions'] == 6
+assert s['summary']['trusted'] == 2
+assert s['summary']['not_eligible'] == 1
+assert s['summary']['total_functions'] == 8
 " 2>/dev/null; then
-    echo "  ok  elf_header: summary shows 5 proved, 1 unproved, 0 stale"
+    echo "  ok  elf_header: summary shows 5 proved, 2 trusted, 1 ineligible"
     PASS=$((PASS + 1))
 else
     echo "FAIL  elf_header: summary proof counts incorrect"
@@ -4890,6 +4892,26 @@ else
     FAIL=$((FAIL + 1))
 fi
 
+# I/O shell: read_header_bytes has File capability, main has full Std
+if python3 -c "
+import json
+with open('$ELF_SNAP_DIR/good.json') as f:
+    s = json.load(f)
+facts = s['facts']
+effects = {f['function']: f for f in facts if f['kind'] == 'effects'}
+assert 'File' in effects['read_header_bytes']['capabilities']
+assert effects['read_header_bytes']['is_trusted'] == True
+assert effects['read_byte']['is_trusted'] == True
+assert effects['read_byte']['is_pure'] == True
+assert effects['main']['is_pure'] == False
+" 2>/dev/null; then
+    echo "  ok  elf_header: I/O shell has correct capabilities and trust"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  elf_header: I/O shell capabilities or trust wrong"
+    FAIL=$((FAIL + 1))
+fi
+
 # ProofCore extraction includes ELF magic constants
 if python3 -c "
 import json
@@ -4910,8 +4932,8 @@ fi
 # --- Report tests ---
 
 elf_report=$($COMPILER "$ELF_DIR/main.con" --report proof-status 2>&1)
-if echo "$elf_report" | grep -q "5 proved" && echo "$elf_report" | grep -q "1 unproved"; then
-    echo "  ok  elf_header: proof-status report shows 5 proved, 1 unproved"
+if echo "$elf_report" | grep -q "5 proved" && echo "$elf_report" | grep -q "1 ineligible" && echo "$elf_report" | grep -q "2 trusted"; then
+    echo "  ok  elf_header: proof-status report shows 5 proved, 1 ineligible, 2 trusted"
     PASS=$((PASS + 1))
 else
     echo "FAIL  elf_header: proof-status report counts wrong"
@@ -4928,6 +4950,35 @@ for fn in check_magic check_class check_data check_version validate_header; do
         FAIL=$((FAIL + 1))
     fi
 done
+
+# Effects report shows correct evidence levels
+elf_effects=$($COMPILER "$ELF_DIR/main.con" --report effects 2>&1)
+if echo "$elf_effects" | grep -q "5 proved" && echo "$elf_effects" | grep -q "2 trusted-assumption" && echo "$elf_effects" | grep -q "1 reported"; then
+    echo "  ok  elf_header: effects report evidence levels correct"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  elf_header: effects evidence levels wrong"
+    echo "$elf_effects"
+    FAIL=$((FAIL + 1))
+fi
+
+# read_header_bytes shows File capability in effects
+if echo "$elf_effects" | grep -A1 "read_header_bytes" | grep -q "caps: File"; then
+    echo "  ok  elf_header: read_header_bytes shows File capability"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  elf_header: read_header_bytes should show File capability"
+    FAIL=$((FAIL + 1))
+fi
+
+# read_byte is trusted but pure (no capabilities)
+if echo "$elf_effects" | grep -A1 "read_byte" | grep -q "caps: (pure)" && echo "$elf_effects" | grep -A1 "read_byte" | grep -q "trusted: yes"; then
+    echo "  ok  elf_header: read_byte is trusted + pure (pointer read only)"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  elf_header: read_byte should be trusted + pure"
+    FAIL=$((FAIL + 1))
+fi
 
 # --- Drift detection tests ---
 
@@ -4961,8 +5012,8 @@ else
     FAIL=$((FAIL + 1))
 fi
 
-# Unchanged functions NOT flagged as weakened
-if ! echo "$elf_diff" | grep "TRUST WEAKENED" -A 200 | grep -q "check_class"; then
+# Unchanged functions NOT flagged as weakened (check [~] lines only, not fingerprint text)
+if ! echo "$elf_diff" | grep '^\s*\[~\]' | grep -q "check_class"; then
     echo "  ok  elf_header: check_class not flagged as weakened (unchanged)"
     PASS=$((PASS + 1))
 else
@@ -4993,6 +5044,83 @@ assert s['summary']['proved'] <= 3
 else
     echo "FAIL  elf_header: drifted snapshot stale counts wrong"
     FAIL=$((FAIL + 1))
+fi
+
+# --- Build and run tests (project-mode compilation) ---
+
+# Build the project (must run from the project directory)
+elf_build_out=$(cd "$ROOT_DIR/examples/elf_header" && "$ROOT_DIR/$COMPILER" build 2>&1) && elf_build_exit=0 || elf_build_exit=$?
+if [ "$elf_build_exit" = "0" ]; then
+    echo "  ok  elf_header: project builds successfully"
+    PASS=$((PASS + 1))
+
+    # Run against valid ELF header fixture
+    elf_run_valid=$(cd "$ROOT_DIR/examples/elf_header" && "$ROOT_DIR/$COMPILER" run -- "$FIXTURE_DIR/valid_elf_header.bin" 2>&1)
+    if echo "$elf_run_valid" | grep -q "Result: valid ELF header"; then
+        echo "  ok  elf_header: run accepts valid ELF file"
+        PASS=$((PASS + 1))
+    else
+        echo "FAIL  elf_header: should accept valid ELF file"
+        echo "$elf_run_valid"
+        FAIL=$((FAIL + 1))
+    fi
+
+    # Valid header reports correct field details
+    if echo "$elf_run_valid" | grep -q "magic:.*valid" && echo "$elf_run_valid" | grep -q "class:.*64-bit" && echo "$elf_run_valid" | grep -q "version:.*valid"; then
+        echo "  ok  elf_header: run shows correct field details for valid header"
+        PASS=$((PASS + 1))
+    else
+        echo "FAIL  elf_header: field details wrong for valid header"
+        FAIL=$((FAIL + 1))
+    fi
+
+    # Run against bad magic fixture
+    elf_run_bad=$(cd "$ROOT_DIR/examples/elf_header" && "$ROOT_DIR/$COMPILER" run -- "$FIXTURE_DIR/bad_magic.bin" 2>&1)
+    if echo "$elf_run_bad" | grep -q "INVALID ELF header" && echo "$elf_run_bad" | grep -q "magic:.*INVALID"; then
+        echo "  ok  elf_header: run rejects bad magic"
+        PASS=$((PASS + 1))
+    else
+        echo "FAIL  elf_header: should reject bad magic"
+        echo "$elf_run_bad"
+        FAIL=$((FAIL + 1))
+    fi
+
+    # Run against bad version fixture
+    elf_run_badver=$(cd "$ROOT_DIR/examples/elf_header" && "$ROOT_DIR/$COMPILER" run -- "$FIXTURE_DIR/bad_version.bin" 2>&1)
+    if echo "$elf_run_badver" | grep -q "INVALID ELF header" && echo "$elf_run_badver" | grep -q "version:.*INVALID"; then
+        echo "  ok  elf_header: run rejects bad version"
+        PASS=$((PASS + 1))
+    else
+        echo "FAIL  elf_header: should reject bad version"
+        echo "$elf_run_badver"
+        FAIL=$((FAIL + 1))
+    fi
+
+    # Run against too-short file
+    elf_run_short=$(cd "$ROOT_DIR/examples/elf_header" && "$ROOT_DIR/$COMPILER" run -- "$FIXTURE_DIR/too_short.bin" 2>&1)
+    if echo "$elf_run_short" | grep -q "too short"; then
+        echo "  ok  elf_header: run rejects too-short file"
+        PASS=$((PASS + 1))
+    else
+        echo "FAIL  elf_header: should reject too-short file"
+        echo "$elf_run_short"
+        FAIL=$((FAIL + 1))
+    fi
+
+    # Run with no args shows usage
+    elf_run_usage=$(cd "$ROOT_DIR/examples/elf_header" && "$ROOT_DIR/$COMPILER" run 2>&1)
+    if echo "$elf_run_usage" | grep -q "Usage:"; then
+        echo "  ok  elf_header: run with no args shows usage"
+        PASS=$((PASS + 1))
+    else
+        echo "FAIL  elf_header: should show usage with no args"
+        echo "$elf_run_usage"
+        FAIL=$((FAIL + 1))
+    fi
+else
+    echo "FAIL  elf_header: project build failed"
+    echo "$elf_build_out"
+    FAIL=$((FAIL + 5))
 fi
 
 # Clean up
