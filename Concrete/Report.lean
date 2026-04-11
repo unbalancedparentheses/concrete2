@@ -2749,8 +2749,8 @@ def collectAllocFacts (modules : List CModule) : List Val :=
   modules.foldl (fun acc m => acc ++ collectAllocFactsModule m) []
 
 open Json in
-/-- Collect all facts into a flat list. -/
-private def collectAllFacts (modules : List CModule) (locMap : FnLocMap := [])
+/-- Collect all core facts (everything except traceability) into a flat list. -/
+def collectCoreFacts (modules : List CModule) (locMap : FnLocMap := [])
     (registry : ProofRegistry := []) : List Val :=
   let predictable := collectPredictableFacts modules locMap
   let proofStatus := collectProofStatusFacts modules locMap registry
@@ -2767,7 +2767,7 @@ open Json in
 /-- Produce JSON diagnostics combining all fact types. -/
 def diagnosticsJson (modules : List CModule) (locMap : FnLocMap := [])
     (registry : ProofRegistry := []) : String :=
-  (Val.arr (collectAllFacts modules locMap registry)).render
+  (Val.arr (collectCoreFacts modules locMap registry)).render
 
 open Json in
 /-- Extract a string field from a JSON object. -/
@@ -3141,7 +3141,7 @@ def queryFacts (modules : List CModule) (locMap : FnLocMap := [])
       -- Fall through to kind:function filter
       let filterKind := parts[0]!
       let filterFn := parts[1]!
-      let allFacts := collectAllFacts modules locMap registry
+      let allFacts := collectCoreFacts modules locMap registry
       let byKind := allFacts.filter fun v => jsonGetStr v "kind" == some filterKind
       let filtered := byKind.filter fun v =>
         match jsonGetStr v "function" with
@@ -3157,7 +3157,7 @@ def queryFacts (modules : List CModule) (locMap : FnLocMap := [])
     | ["evidence", fnName] => evidenceQuery modules locMap fnName registry
     | ["audit", fnName] => auditQuery modules locMap fnName registry
     | ["fn", fnName] =>
-      let allFacts := collectAllFacts modules locMap registry
+      let allFacts := collectCoreFacts modules locMap registry
       let filtered := allFacts.filter fun v =>
         match jsonGetStr v "function" with
         | some f => f == fnName || f.endsWith ("." ++ fnName)
@@ -3167,7 +3167,7 @@ def queryFacts (modules : List CModule) (locMap : FnLocMap := [])
       -- kind:function filter
       let filterKind := parts[0]!
       let filterFn := parts[1]!
-      let allFacts := collectAllFacts modules locMap registry
+      let allFacts := collectCoreFacts modules locMap registry
       let byKind := allFacts.filter fun v =>
         jsonGetStr v "kind" == some filterKind
       let filtered := byKind.filter fun v =>
@@ -3177,7 +3177,7 @@ def queryFacts (modules : List CModule) (locMap : FnLocMap := [])
       (Val.arr filtered).render
   else
     -- Single-word filter: all facts of this kind
-    let allFacts := collectAllFacts modules locMap registry
+    let allFacts := collectCoreFacts modules locMap registry
     let filtered := allFacts.filter fun v =>
       jsonGetStr v "kind" == some query
     (Val.arr filtered).render
@@ -3457,11 +3457,68 @@ def renderDiffJson (entries : List DiffEntry) : String :=
 
 open Json in
 /-- Parse a JSON string into a list of fact Vals.
-    Expects a JSON array at the top level. -/
+    Accepts either a raw JSON array or a snapshot object with a "facts" field. -/
 def parseFacts (jsonStr : String) : Option (List Val) :=
   match JsonParser.parse jsonStr with
   | some (.arr vs) => some vs
+  | some (.obj kvs) =>
+    match kvs.find? (fun (k, _) => k == "facts") with
+    | some (_, .arr vs) => some vs
+    | _ => none
   | _ => none
+
+-- ============================================================
+-- Fact artifact snapshot
+-- ============================================================
+
+open Json in
+/-- Build a summary object from a list of facts. -/
+private def buildSummaryFact (facts : List Val) : Val :=
+  let count (kind : String) := facts.filter (fun v => jsonGetStr v "kind" == some kind) |>.length
+  let proofFacts := facts.filter fun v => jsonGetStr v "kind" == some "proof_status"
+  let proofState (s : String) := proofFacts.filter (fun v => jsonGetStr v "state" == some s) |>.length
+  let obFacts := facts.filter fun v => jsonGetStr v "kind" == some "obligation"
+  let obStatus (s : String) := obFacts.filter (fun v => jsonGetStr v "status" == some s) |>.length
+  let extFacts := facts.filter fun v => jsonGetStr v "kind" == some "extraction"
+  let extStatus (s : String) := extFacts.filter (fun v => jsonGetStr v "status" == some s) |>.length
+  .obj [
+    ("total_functions", .num (proofFacts.length)),
+    ("proved", .num (proofState "proved")),
+    ("stale", .num (proofState "stale")),
+    ("no_proof", .num (proofState "no_proof")),
+    ("not_eligible", .num (proofState "not_eligible")),
+    ("trusted", .num (proofState "trusted")),
+    ("predictable_violations", .num (count "predictable_violation")),
+    ("obligations_proved", .num (obStatus "proved")),
+    ("obligations_missing", .num (obStatus "missing_proof")),
+    ("obligations_stale", .num (obStatus "stale")),
+    ("extracted", .num (extStatus "extracted")),
+    ("excluded", .num (extStatus "excluded")),
+    ("effects_facts", .num (count "effects")),
+    ("capability_facts", .num (count "capability")),
+    ("unsafe_facts", .num (count "unsafe")),
+    ("alloc_facts", .num (count "alloc")),
+    ("traceability_facts", .num (count "traceability"))
+  ]
+
+open Json in
+/-- Build the full snapshot JSON object with metadata, facts, and summary. -/
+def snapshotJson
+    (sourcePath : String)
+    (timestamp : String)
+    (coreFacts : List Val)
+    (traceFacts : List Val := []) : String :=
+  let allFacts := coreFacts ++ traceFacts
+  let summary := buildSummaryFact allFacts
+  let snapshot := Val.obj [
+    ("version", .num 1),
+    ("source", .str sourcePath),
+    ("timestamp", .str timestamp),
+    ("fact_count", .num allFacts.length),
+    ("summary", summary),
+    ("facts", .arr allFacts)
+  ]
+  snapshot.render
 
 end Report
 end Concrete

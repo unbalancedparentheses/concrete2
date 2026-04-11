@@ -4422,6 +4422,165 @@ fi
 # Clean up adversarial test files
 rm -rf "$ADV_DIR"
 
+echo ""
+echo "=== Fact artifact snapshot tests ==="
+
+SNAP_DIR="/tmp/concrete_snap_test"
+mkdir -p "$SNAP_DIR"
+
+# Basic snapshot generation
+snap_out=$($COMPILER snapshot "$REGISTRY_DIR/test_proof_registry.con" -o "$SNAP_DIR/proved.facts.json" 2>&1)
+if echo "$snap_out" | grep -q "Snapshot written" && [ -f "$SNAP_DIR/proved.facts.json" ]; then
+    echo "  ok  snapshot: generates file with success message"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  snapshot: should generate file"
+    echo "$snap_out"
+    FAIL=$((FAIL + 1))
+fi
+
+# Snapshot has correct structure (version, source, facts, summary)
+if python3 -c "
+import json, sys
+with open('$SNAP_DIR/proved.facts.json') as f:
+    s = json.load(f)
+assert s['version'] == 1
+assert 'source' in s
+assert 'timestamp' in s
+assert 'fact_count' in s
+assert isinstance(s['facts'], list)
+assert isinstance(s['summary'], dict)
+assert s['fact_count'] == len(s['facts'])
+" 2>/dev/null; then
+    echo "  ok  snapshot: JSON has version, source, timestamp, fact_count, facts, summary"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  snapshot: JSON structure should have all required fields"
+    FAIL=$((FAIL + 1))
+fi
+
+# Snapshot includes traceability facts (requires backend pipeline)
+if python3 -c "
+import json, sys
+with open('$SNAP_DIR/proved.facts.json') as f:
+    s = json.load(f)
+kinds = set(f['kind'] for f in s['facts'])
+assert 'traceability' in kinds
+assert 'proof_status' in kinds
+assert 'obligation' in kinds
+assert 'extraction' in kinds
+assert 'effects' in kinds
+assert 'capability' in kinds
+" 2>/dev/null; then
+    echo "  ok  snapshot: includes all fact kinds including traceability"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  snapshot: should include all fact kinds"
+    FAIL=$((FAIL + 1))
+fi
+
+# Summary counts match actual facts
+if python3 -c "
+import json, sys
+with open('$SNAP_DIR/proved.facts.json') as f:
+    s = json.load(f)
+sm = s['summary']
+facts = s['facts']
+ps = [f for f in facts if f['kind'] == 'proof_status']
+assert sm['total_functions'] == len(ps), f'{sm[\"total_functions\"]} != {len(ps)}'
+proved = [f for f in ps if f['state'] == 'proved']
+assert sm['proved'] == len(proved)
+trace = [f for f in facts if f['kind'] == 'traceability']
+assert sm['traceability_facts'] == len(trace)
+" 2>/dev/null; then
+    echo "  ok  snapshot: summary counts match actual fact counts"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  snapshot: summary counts should match facts"
+    FAIL=$((FAIL + 1))
+fi
+
+# Diff works with snapshot files (not just raw arrays)
+$COMPILER snapshot "$STALE_DIR/test_proof_registry.con" -o "$SNAP_DIR/stale.facts.json" 2>/dev/null
+snap_diff=$($COMPILER diff "$SNAP_DIR/proved.facts.json" "$SNAP_DIR/stale.facts.json" 2>&1) && snap_diff_exit=0 || snap_diff_exit=$?
+if echo "$snap_diff" | grep -q "TRUST WEAKENED" && \
+   echo "$snap_diff" | grep -q "state:.*proved.*stale" && \
+   [ "$snap_diff_exit" -eq 1 ]; then
+    echo "  ok  snapshot: diff works with snapshot files (detects proved→stale)"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  snapshot: diff should work with snapshot files"
+    echo "$snap_diff"
+    FAIL=$((FAIL + 1))
+fi
+
+# Snapshot diff catches traceability boundary drift (only visible with snapshots)
+if echo "$snap_diff" | grep -q "boundary:.*ProofCore.*source"; then
+    echo "  ok  snapshot: diff catches traceability boundary drift"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  snapshot: diff should catch traceability boundary changes"
+    echo "$snap_diff"
+    FAIL=$((FAIL + 1))
+fi
+
+# Self-diff on snapshot is clean
+snap_self=$($COMPILER diff "$SNAP_DIR/proved.facts.json" "$SNAP_DIR/proved.facts.json" 2>&1) && snap_self_exit=0 || snap_self_exit=$?
+if echo "$snap_self" | grep -q "No trust-relevant changes" && [ "$snap_self_exit" -eq 0 ]; then
+    echo "  ok  snapshot: self-diff on snapshot is clean"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  snapshot: self-diff on snapshot should be clean"
+    echo "$snap_self"
+    FAIL=$((FAIL + 1))
+fi
+
+# Mixed diff: snapshot file vs raw diagnostics-json array
+raw_json=$($COMPILER "$REGISTRY_DIR/test_proof_registry.con" --report diagnostics-json 2>/dev/null)
+echo "$raw_json" > "$SNAP_DIR/raw.json"
+snap_vs_raw=$($COMPILER diff "$SNAP_DIR/proved.facts.json" "$SNAP_DIR/raw.json" 2>&1) && snap_vr_exit=0 || snap_vr_exit=$?
+# Snapshot has traceability facts that raw doesn't → traceability facts appear as removed
+if [ "$snap_vr_exit" -eq 0 ] || [ "$snap_vr_exit" -eq 1 ]; then
+    echo "  ok  snapshot: diff handles snapshot vs raw array format"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  snapshot: diff should handle mixed formats (snapshot vs raw)"
+    echo "$snap_vs_raw"
+    FAIL=$((FAIL + 1))
+fi
+
+# Default output path: <file>.facts.json
+$COMPILER snapshot "$REGISTRY_DIR/test_proof_registry.con" 2>/dev/null
+if [ -f "$REGISTRY_DIR/test_proof_registry.facts.json" ]; then
+    echo "  ok  snapshot: default output path is <file>.facts.json"
+    PASS=$((PASS + 1))
+    rm -f "$REGISTRY_DIR/test_proof_registry.facts.json"
+else
+    echo "FAIL  snapshot: default output should be <file>.facts.json"
+    FAIL=$((FAIL + 1))
+fi
+
+# Complex program snapshot
+snap_complex=$($COMPILER snapshot "$TESTDIR/report_integration.con" -o "$SNAP_DIR/complex.facts.json" 2>&1)
+if echo "$snap_complex" | grep -q "Snapshot written" && \
+   python3 -c "
+import json
+with open('$SNAP_DIR/complex.facts.json') as f:
+    s = json.load(f)
+assert s['fact_count'] > 20
+assert s['summary']['predictable_violations'] > 0
+" 2>/dev/null; then
+    echo "  ok  snapshot: complex program snapshot has violations and many facts"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  snapshot: complex program snapshot should have violations"
+    echo "$snap_complex"
+    FAIL=$((FAIL + 1))
+fi
+
+# Clean up
+rm -rf "$SNAP_DIR"
+
 fi # end section: report
 
 # === Codegen differential tests ===

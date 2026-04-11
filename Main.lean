@@ -3,7 +3,7 @@ import Concrete
 open Concrete
 
 def usage : String :=
-  "Usage: concrete <file.con> [-o output] [--emit-llvm] [--emit-core] [--emit-ssa] [--test] [--test --module <name>] [--report caps|unsafe|layout|interface|alloc|mono|authority|proof|proof-status|obligations|extraction|traceability|diagnostics-json|effects|recursion|fingerprints] [--query KIND|KIND:FUNCTION|fn:FUNCTION] [--fmt]\n       concrete build [-o output] [--emit-llvm]\n       concrete run [-- args...]\n       concrete test [--module <name>]\n       concrete diff <old.json> <new.json> [--json]"
+  "Usage: concrete <file.con> [-o output] [--emit-llvm] [--emit-core] [--emit-ssa] [--test] [--test --module <name>] [--report caps|unsafe|layout|interface|alloc|mono|authority|proof|proof-status|obligations|extraction|traceability|diagnostics-json|effects|recursion|fingerprints] [--query KIND|KIND:FUNCTION|fn:FUNCTION] [--fmt]\n       concrete build [-o output] [--emit-llvm]\n       concrete run [-- args...]\n       concrete test [--module <name>]\n       concrete diff <old.json> <new.json> [--json]\n       concrete snapshot <file.con> [-o output.json]"
 
 def writeFile (path : String) (content : String) : IO Unit := do
   IO.FS.writeFile ⟨path⟩ content
@@ -848,6 +848,51 @@ def main (args : List String) : IO UInt32 := do
     | _ =>
       IO.eprintln "Usage: concrete diff <old.json> <new.json> [--json]"
       return 1
+  -- concrete snapshot <file.con> [-o output.json]
+  if args.head? == some "snapshot" then
+    let rest := args.drop 1
+    let inputPath := match rest with
+      | p :: _ => some p
+      | [] => none
+    match inputPath with
+    | none =>
+      IO.eprintln "Usage: concrete snapshot <file.con> [-o output.json]"
+      return 1
+    | some inp =>
+      let outputPath := match rest with
+        | _ :: "-o" :: p :: _ => p
+        | _ =>
+          if inp.endsWith ".con" then
+            String.ofList (inp.toList.take (inp.length - 4)) ++ ".facts.json"
+          else inp ++ ".facts.json"
+      let source ← readFile inp
+      let mainSrcMap : SourceMap := [(inp, source)]
+      match ← Pipeline.runFrontend inp source resolveAllModules with
+      | .error ds =>
+        IO.eprintln (renderDiagnostics ds (sourceMap := mainSrcMap))
+        return 1
+      | .ok (parsed, _, validCore, _srcMap) =>
+        let locMap := Report.buildFnLocMap parsed.modules inp
+        let registry ← loadRegistry inp
+        -- Collect core facts (same as diagnostics-json)
+        let coreFacts := Report.collectCoreFacts validCore.coreModules locMap registry
+        -- Run backend pipeline for traceability facts
+        let traceFacts ← match Pipeline.monomorphize validCore with
+          | .error _ => pure []
+          | .ok mono =>
+            match Pipeline.lower mono with
+            | .error _ => pure []
+            | .ok ssa =>
+              pure (Report.collectTraceabilityFacts
+                validCore.coreModules mono.coreModules ssa.ssaModules locMap (registry := registry))
+        -- Generate timestamp
+        let ms ← IO.monoMsNow
+        let timestamp := toString ms
+        let json := Report.snapshotJson inp timestamp coreFacts traceFacts
+        writeFile outputPath json
+        let factCount := coreFacts.length + traceFacts.length
+        IO.println s!"Snapshot written: {outputPath} ({factCount} facts)"
+        return 0
   match args with
   | [] =>
     IO.eprintln usage
