@@ -193,90 +193,18 @@ private def padNum (n : Nat) (w : Nat) : String :=
 -- encoding in Proof.lean. If the body changes, the fingerprint
 -- changes, and "proved" evidence is revoked.
 
-private partial def fingerprintExpr : CExpr → String
-  | .intLit v _ => s!"(int {v})"
-  | .floatLit v _ => s!"(float {v})"
-  | .boolLit v => s!"(bool {v})"
-  | .strLit v => s!"(str {repr v})"
-  | .charLit v => s!"(char {repr v})"
-  | .ident name _ => s!"(var {name})"
-  | .binOp op lhs rhs _ => s!"(binop {repr op} {fingerprintExpr lhs} {fingerprintExpr rhs})"
-  | .unaryOp op inner _ => s!"(unary {repr op} {fingerprintExpr inner})"
-  | .call fn _ args _ => s!"(call {fn} {fingerprintExprs args})"
-  | .structLit name _ fields _ =>
-    let fs := fields.map fun (n, e) => s!"{n}={fingerprintExpr e}"
-    s!"(struct {name} {" ".intercalate fs})"
-  | .fieldAccess obj field _ => s!"(field {fingerprintExpr obj} {field})"
-  | .enumLit en v _ fields _ =>
-    let fs := fields.map fun (n, e) => s!"{n}={fingerprintExpr e}"
-    s!"(enum {en}::{v} {" ".intercalate fs})"
-  | .match_ scr arms _ =>
-    let as_ := arms.map fingerprintArm
-    s!"(match {fingerprintExpr scr} {" ".intercalate as_})"
-  | .borrow inner _ => s!"(borrow {fingerprintExpr inner})"
-  | .borrowMut inner _ => s!"(borrowmut {fingerprintExpr inner})"
-  | .deref inner _ => s!"(deref {fingerprintExpr inner})"
-  | .arrayLit elems _ => s!"(array {fingerprintExprs elems})"
-  | .arrayIndex arr idx _ => s!"(index {fingerprintExpr arr} {fingerprintExpr idx})"
-  | .cast inner ty => s!"(cast {fingerprintExpr inner} {repr ty})"
-  | .fnRef name _ => s!"(fnref {name})"
-  | .try_ inner _ => s!"(try {fingerprintExpr inner})"
-  | .allocCall inner alloc _ => s!"(alloc {fingerprintExpr inner} {fingerprintExpr alloc})"
-  | .whileExpr cond body els _ => s!"(while {fingerprintExpr cond} {fingerprintStmts body} {fingerprintStmts els})"
-  | .ifExpr cond th el _ => s!"(if {fingerprintExpr cond} {fingerprintStmts th} {fingerprintStmts el})"
-where
-  fingerprintExprs (es : List CExpr) : String :=
-    " ".intercalate (es.map fingerprintExpr)
-  fingerprintArm : CMatchArm → String
-    | .enumArm en v binds body => s!"(arm {en}::{v} [{" ".intercalate (binds.map Prod.fst)}] {fingerprintStmts body})"
-    | .litArm val body => s!"(lit {fingerprintExpr val} {fingerprintStmts body})"
-    | .varArm b _ body => s!"(var {b} {fingerprintStmts body})"
-  fingerprintStmt : CStmt → String
-    | .letDecl name _ _ val => s!"(let {name} {fingerprintExpr val})"
-    | .assign name val => s!"(set {name} {fingerprintExpr val})"
-    | .return_ (some val) _ => s!"(ret {fingerprintExpr val})"
-    | .return_ none _ => "(ret)"
-    | .expr e => fingerprintExpr e
-    | .ifElse cond th (some el) => s!"(if {fingerprintExpr cond} {fingerprintStmts th} {fingerprintStmts el})"
-    | .ifElse cond th none => s!"(if {fingerprintExpr cond} {fingerprintStmts th})"
-    | .while_ cond body _ step => s!"(while {fingerprintExpr cond} {fingerprintStmts body} {fingerprintStmts step})"
-    | .fieldAssign obj f val => s!"(setfield {fingerprintExpr obj} {f} {fingerprintExpr val})"
-    | .derefAssign tgt val => s!"(setderef {fingerprintExpr tgt} {fingerprintExpr val})"
-    | .arrayIndexAssign arr idx val => s!"(setindex {fingerprintExpr arr} {fingerprintExpr idx} {fingerprintExpr val})"
-    | .break_ _ lbl => s!"(break {lbl})"
-    | .continue_ lbl => s!"(continue {lbl})"
-    | .defer body => s!"(defer {fingerprintExpr body})"
-    | .borrowIn v r rg m _ body => s!"(borrowin {v} {r} {rg} {m} {fingerprintStmts body})"
-  fingerprintStmts (ss : List CStmt) : String :=
-    "[" ++ " ".intercalate (ss.map fingerprintStmt) ++ "]"
-
-/-- Compute a body fingerprint for proof identity verification. -/
-def bodyFingerprint (body : List CStmt) : String :=
-  fingerprintStmts body
-where
-  fingerprintStmts (ss : List CStmt) : String :=
-    "[" ++ " ".intercalate (ss.map fingerprintStmt) ++ "]"
-  fingerprintStmt := fingerprintExpr.fingerprintStmt
-  fingerprintExpr := Report.fingerprintExpr
-
 /-- Print body fingerprints for all functions (development tool). -/
-partial def fingerprintReport (modules : List CModule) : String :=
-  let allFns := modules.foldl (fun acc m => acc ++ collectQualFns "" m) []
-  let lines := allFns.map fun (qn, f) =>
-    let fp := bodyFingerprint f.body
+def fingerprintReport (pc : Concrete.ProofCore) : String :=
+  let allEntries := pc.entries.map fun e => (e.qualName, e.fingerprint)
+  let allExcluded := pc.excluded.map fun e => (e.qualName, e.fingerprint)
+  let all := allEntries ++ allExcluded
+  let lines := all.map fun (qn, fp) =>
     s!"  {qn}: \"{fp}\""
   "=== Body Fingerprints ===\n" ++ "\n".intercalate lines ++ "\n"
-where
-  collectQualFns (pfx : String) (m : CModule) : List (String × CFnDef) :=
-    let qp := if pfx == "" then m.name else pfx ++ "." ++ m.name
-    let fns := m.functions.map fun f => (qp ++ "." ++ f.name, f)
-    fns ++ m.submodules.foldl (fun acc sub => acc ++ collectQualFns qp sub) []
 
 -- ============================================================
--- Body-walking infrastructure
+-- Report-specific data types
 -- ============================================================
--- Shared recursive traversal of Core IR (CExpr/CStmt/CMatchArm)
--- for collecting call sites, defer nodes, pointer ops, etc.
 
 /-- A call site found in a function body. -/
 structure CallSite where
@@ -290,166 +218,6 @@ structure AllocInfo where
   deferExprs : List String   -- descriptions of deferred expressions
   hasAllocCall : Bool        -- CExpr.allocCall node (with(Alloc = ...))
 
-mutual
-partial def collectCallsExpr (e : CExpr) : List String :=
-  match e with
-  | .call fn _ args _ => [fn] ++ args.foldl (fun acc a => acc ++ collectCallsExpr a) []
-  | .binOp _ l r _ => collectCallsExpr l ++ collectCallsExpr r
-  | .unaryOp _ e _ => collectCallsExpr e
-  | .structLit _ _ fields _ => fields.foldl (fun acc (_, v) => acc ++ collectCallsExpr v) []
-  | .fieldAccess obj _ _ => collectCallsExpr obj
-  | .enumLit _ _ _ fields _ => fields.foldl (fun acc (_, v) => acc ++ collectCallsExpr v) []
-  | .match_ scrut arms _ => collectCallsExpr scrut ++ arms.foldl (fun acc a => acc ++ collectCallsArm a) []
-  | .borrow inner _ | .borrowMut inner _ | .deref inner _ => collectCallsExpr inner
-  | .arrayLit elems _ => elems.foldl (fun acc e => acc ++ collectCallsExpr e) []
-  | .arrayIndex arr idx _ => collectCallsExpr arr ++ collectCallsExpr idx
-  | .cast inner _ | .try_ inner _ => collectCallsExpr inner
-  | .allocCall inner alloc _ => collectCallsExpr inner ++ collectCallsExpr alloc
-  | .whileExpr cond body elseBody _ =>
-    collectCallsExpr cond ++ collectCallsStmts body ++ collectCallsStmts elseBody
-  | _ => []  -- intLit, floatLit, boolLit, strLit, charLit, ident, fnRef
-
-partial def collectCallsArm (arm : CMatchArm) : List String :=
-  match arm with
-  | .enumArm _ _ _ body => collectCallsStmts body
-  | .litArm v body => collectCallsExpr v ++ collectCallsStmts body
-  | .varArm _ _ body => collectCallsStmts body
-
-partial def collectCallsStmt (s : CStmt) : List String :=
-  match s with
-  | .letDecl _ _ _ v => collectCallsExpr v
-  | .assign _ v => collectCallsExpr v
-  | .return_ (some v) _ => collectCallsExpr v
-  | .return_ none _ => []
-  | .expr e => collectCallsExpr e
-  | .ifElse c t el =>
-    collectCallsExpr c ++ collectCallsStmts t ++
-    match el with | some stmts => collectCallsStmts stmts | none => []
-  | .while_ c body _ step =>
-    collectCallsExpr c ++ collectCallsStmts body ++ collectCallsStmts step
-  | .fieldAssign obj _ v => collectCallsExpr obj ++ collectCallsExpr v
-  | .derefAssign t v => collectCallsExpr t ++ collectCallsExpr v
-  | .arrayIndexAssign arr idx v =>
-    collectCallsExpr arr ++ collectCallsExpr idx ++ collectCallsExpr v
-  | .break_ (some v) _ => collectCallsExpr v
-  | .break_ none _ | .continue_ _ => []
-  | .defer body => collectCallsExpr body
-  | .borrowIn _ _ _ _ _ body => collectCallsStmts body
-
-partial def collectCallsStmts (ss : List CStmt) : List String :=
-  ss.foldl (fun acc s => acc ++ collectCallsStmt s) []
-
--- Defer collection
-
-partial def collectDefersExpr (e : CExpr) : List String :=
-  match e with
-  | .call _ _ args _ => args.foldl (fun acc a => acc ++ collectDefersExpr a) []
-  | .binOp _ l r _ => collectDefersExpr l ++ collectDefersExpr r
-  | .unaryOp _ e _ => collectDefersExpr e
-  | .structLit _ _ fields _ => fields.foldl (fun acc (_, v) => acc ++ collectDefersExpr v) []
-  | .fieldAccess obj _ _ => collectDefersExpr obj
-  | .enumLit _ _ _ fields _ => fields.foldl (fun acc (_, v) => acc ++ collectDefersExpr v) []
-  | .match_ scrut arms _ =>
-    collectDefersExpr scrut ++ arms.foldl (fun acc a => acc ++ collectDefersArm a) []
-  | .borrow inner _ | .borrowMut inner _ | .deref inner _ => collectDefersExpr inner
-  | .arrayLit elems _ => elems.foldl (fun acc e => acc ++ collectDefersExpr e) []
-  | .arrayIndex arr idx _ => collectDefersExpr arr ++ collectDefersExpr idx
-  | .cast inner _ | .try_ inner _ => collectDefersExpr inner
-  | .allocCall inner alloc _ => collectDefersExpr inner ++ collectDefersExpr alloc
-  | .whileExpr cond body elseBody _ =>
-    collectDefersExpr cond ++ collectDefersStmts body ++ collectDefersStmts elseBody
-  | _ => []
-
-partial def collectDefersArm (arm : CMatchArm) : List String :=
-  match arm with
-  | .enumArm _ _ _ body => collectDefersStmts body
-  | .litArm v body => collectDefersExpr v ++ collectDefersStmts body
-  | .varArm _ _ body => collectDefersStmts body
-
-partial def collectDefersStmt (s : CStmt) : List String :=
-  match s with
-  | .defer body =>
-    -- Describe the deferred expression
-    let desc := match body with
-      | .call fn _ _ _ => s!"defer {fn}(...)"
-      | _ => "defer <expr>"
-    [desc] ++ collectDefersExpr body
-  | .letDecl _ _ _ v => collectDefersExpr v
-  | .assign _ v => collectDefersExpr v
-  | .return_ (some v) _ => collectDefersExpr v
-  | .return_ none _ => []
-  | .expr e => collectDefersExpr e
-  | .ifElse c t el =>
-    collectDefersExpr c ++ collectDefersStmts t ++
-    match el with | some stmts => collectDefersStmts stmts | none => []
-  | .while_ c body _ step =>
-    collectDefersExpr c ++ collectDefersStmts body ++ collectDefersStmts step
-  | .fieldAssign obj _ v => collectDefersExpr obj ++ collectDefersExpr v
-  | .derefAssign t v => collectDefersExpr t ++ collectDefersExpr v
-  | .arrayIndexAssign arr idx v =>
-    collectDefersExpr arr ++ collectDefersExpr idx ++ collectDefersExpr v
-  | .break_ (some v) _ => collectDefersExpr v
-  | .break_ none _ | .continue_ _ => []
-  | .borrowIn _ _ _ _ _ body => collectDefersStmts body
-
-partial def collectDefersStmts (ss : List CStmt) : List String :=
-  ss.foldl (fun acc s => acc ++ collectDefersStmt s) []
-
--- Raw pointer operation detection
-
-partial def hasRawPtrOpsExpr (e : CExpr) : Bool :=
-  match e with
-  | .deref inner ty =>
-    match ty with
-    | .ptrMut _ | .ptrConst _ => true
-    | _ => hasRawPtrOpsExpr inner
-  | .call _ _ args _ => args.any hasRawPtrOpsExpr
-  | .binOp _ l r _ => hasRawPtrOpsExpr l || hasRawPtrOpsExpr r
-  | .unaryOp _ e _ => hasRawPtrOpsExpr e
-  | .structLit _ _ fields _ => fields.any (fun (_, v) => hasRawPtrOpsExpr v)
-  | .fieldAccess obj _ _ => hasRawPtrOpsExpr obj
-  | .enumLit _ _ _ fields _ => fields.any (fun (_, v) => hasRawPtrOpsExpr v)
-  | .match_ scrut arms _ =>
-    hasRawPtrOpsExpr scrut || arms.any hasRawPtrOpsArm
-  | .borrow inner _ | .borrowMut inner _ => hasRawPtrOpsExpr inner
-  | .arrayLit elems _ => elems.any hasRawPtrOpsExpr
-  | .arrayIndex arr idx _ => hasRawPtrOpsExpr arr || hasRawPtrOpsExpr idx
-  | .cast inner _ | .try_ inner _ => hasRawPtrOpsExpr inner
-  | .allocCall inner alloc _ => hasRawPtrOpsExpr inner || hasRawPtrOpsExpr alloc
-  | .whileExpr cond body elseBody _ =>
-    hasRawPtrOpsExpr cond || hasRawPtrOpsStmts body || hasRawPtrOpsStmts elseBody
-  | _ => false
-
-partial def hasRawPtrOpsArm (arm : CMatchArm) : Bool :=
-  match arm with
-  | .enumArm _ _ _ body => hasRawPtrOpsStmts body
-  | .litArm v body => hasRawPtrOpsExpr v || hasRawPtrOpsStmts body
-  | .varArm _ _ body => hasRawPtrOpsStmts body
-
-partial def hasRawPtrOpsStmt (s : CStmt) : Bool :=
-  match s with
-  | .derefAssign _ _ => true
-  | .letDecl _ _ _ v => hasRawPtrOpsExpr v
-  | .assign _ v => hasRawPtrOpsExpr v
-  | .return_ (some v) _ => hasRawPtrOpsExpr v
-  | .return_ none _ => false
-  | .expr e => hasRawPtrOpsExpr e
-  | .ifElse c t el =>
-    hasRawPtrOpsExpr c || hasRawPtrOpsStmts t ||
-    match el with | some stmts => hasRawPtrOpsStmts stmts | none => false
-  | .while_ c body _ step =>
-    hasRawPtrOpsExpr c || hasRawPtrOpsStmts body || hasRawPtrOpsStmts step
-  | .fieldAssign obj _ v => hasRawPtrOpsExpr obj || hasRawPtrOpsExpr v
-  | .arrayIndexAssign arr idx v =>
-    hasRawPtrOpsExpr arr || hasRawPtrOpsExpr idx || hasRawPtrOpsExpr v
-  | .break_ (some v) _ => hasRawPtrOpsExpr v
-  | .break_ none _ | .continue_ _ => false
-  | .defer body => hasRawPtrOpsExpr body
-  | .borrowIn _ _ _ _ _ body => hasRawPtrOpsStmts body
-
-partial def hasRawPtrOpsStmts (ss : List CStmt) : Bool :=
-  ss.any hasRawPtrOpsStmt
-end
 
 -- ============================================================
 -- Callee CapSet lookup
@@ -488,13 +256,6 @@ private def calleeTag (lookup : CapLookup) (name : String) : String :=
     if (resolveIntrinsic name).isSome then " (intrinsic)"
     else " (unknown)"
 
--- ============================================================
--- Extern name lookup (for unsafe body analysis)
--- ============================================================
-
-private partial def collectExternNames (m : CModule) : List String :=
-  m.externFns.map (fun (n, _, _, _) => n) ++
-  m.submodules.foldl (fun acc sub => acc ++ collectExternNames sub) []
 
 -- ============================================================
 -- Report 1: Capability Summary with "why" traces (--report caps)
@@ -666,9 +427,9 @@ private partial def unsafeReportModule (externNames : List String)
     let lines := lines ++ subReports
     some ("\n".intercalate lines)
 
-def unsafeReport (modules : List CModule) : String :=
+def unsafeReport (modules : List CModule) (pc : Concrete.ProofCore) : String :=
   let header := "=== Unsafe Signature Summary ==="
-  let externNames := modules.foldl (fun acc m => acc ++ collectExternNames m) []
+  let externNames := pc.externNames
   let body := modules.filterMap (unsafeReportModule externNames · "")
   let (unsafeCount, ptrCount, externCount, trustedExternCount, trustedCount) :=
     modules.foldl (fun (a, b, c, d, e) m =>
@@ -883,35 +644,6 @@ def monoReport (preMono postMono : List CModule) : String :=
 -- Report 6: Allocation/Cleanup Summary (--report alloc)
 -- ============================================================
 
-/-- Intrinsic names that represent allocation. -/
-private def allocIntrinsics : List String :=
-  ["alloc", "vec_new", "Vec_new"]
-
-/-- Intrinsic names that represent deallocation/cleanup. -/
-private def freeIntrinsics : List String :=
-  ["free", "destroy", "vec_free", "Vec_free", "drop_string", "String_drop"]
-
-/-- Is this call name an alloc-family intrinsic? -/
-private def isAllocCall (name : String) : Bool :=
-  allocIntrinsics.contains name ||
-  -- Also catch Type_destroy patterns as not-alloc
-  match resolveIntrinsic name with
-  | some .alloc | some .vecNew => true
-  | _ => false
-
-/-- Is this call name a free/cleanup-family intrinsic? -/
-private def isFreeCall (name : String) : Bool :=
-  freeIntrinsics.contains name ||
-  name.endsWith "_destroy" ||
-  match resolveIntrinsic name with
-  | some .free | some .destroy | some .vecFree | some .dropString => true
-  | _ => false
-
-/-- Check if a return type suggests the allocation is returned to the caller. -/
-private def returnsAllocation : Ty → Bool
-  | .heap _ | .heapArray _ => true
-  | .generic "Vec" _ => true
-  | _ => false
 
 /-- Analyze allocation patterns in a single function. -/
 private def analyzeFnAlloc (f : CFnDef) : Option String :=
@@ -980,17 +712,6 @@ def allocReport (modules : List CModule) : String :=
 -- For each capability, show which functions require it and
 -- compute the transitive call chain that introduces it.
 
-/-- A flat map of function name → list of direct callees. -/
-abbrev CallGraph := List (String × List String)
-
-/-- Build a call graph from all modules. -/
-private partial def buildCallGraphModule (m : CModule) : CallGraph :=
-  let fnEntries := m.functions.map fun f =>
-    (f.name, collectCallsStmts f.body |>.eraseDups)
-  fnEntries ++ m.submodules.foldl (fun acc sub => acc ++ buildCallGraphModule sub) []
-
-private def buildCallGraph (modules : List CModule) : CallGraph :=
-  modules.foldl (fun acc m => acc ++ buildCallGraphModule m) []
 
 /-- All function defs across modules (flat). -/
 private partial def collectAllFnDefs (m : CModule) : List CFnDef :=
@@ -1102,9 +823,9 @@ private partial def proofReportModule (externNames : List String) (m : CModule) 
   let body := fnLines ++ subLines
   s!"{header}\n{"\n".intercalate body}"
 
-def proofReport (modules : List CModule) : String :=
+def proofReport (modules : List CModule) (pc : Concrete.ProofCore) : String :=
   let header := "=== Proof Eligibility Report ==="
-  let externNames := modules.foldl (fun acc m => acc ++ collectExternNames m) []
+  let externNames := pc.externNames
   let body := modules.map (proofReportModule externNames · "")
   let allFns := modules.foldl (fun acc m => acc ++ collectAllFnDefs m) []
   let eligible := allFns.filter fun f =>
@@ -1113,236 +834,6 @@ def proofReport (modules : List CModule) : String :=
   let summary := s!"\nTotals: {allFns.length} functions, {eligible.length} eligible for ProofCore, {excluded} excluded"
   s!"{header}\n\n{"\n\n".intercalate body}\n{summary}\n"
 
--- ============================================================
--- Report 9: Recursion / Call-Cycle Detection (--report recursion)
--- ============================================================
--- Detects direct recursion (self-calls) and mutual recursion
--- (call cycles) using Tarjan's SCC algorithm on the call graph.
--- This is the foundation for the predictable-execution profile:
--- functions in cycles cannot be proven to terminate statically.
-
-/-- Mutable state for Tarjan's SCC algorithm. -/
-private structure TarjanState where
-  index    : Nat                           -- next index to assign
-  stack    : List String                   -- DFS stack
-  onStack  : List String                   -- fast membership check
-  indices  : List (String × Nat)           -- node → discovery index
-  lowlinks : List (String × Nat)           -- node → lowlink
-  sccs     : List (List String)            -- completed SCCs
-
-private def TarjanState.empty : TarjanState :=
-  { index := 0, stack := [], onStack := [], indices := [], lowlinks := [], sccs := [] }
-
-private def lookupNat (assoc : List (String × Nat)) (key : String) : Nat :=
-  match assoc.find? (fun (k, _) => k == key) with
-  | some (_, v) => v
-  | none => 0
-
-private def setNat (assoc : List (String × Nat)) (key : String) (val : Nat) : List (String × Nat) :=
-  match assoc.findIdx? (fun (k, _) => k == key) with
-  | some idx => assoc.set idx (key, val)
-  | none => assoc ++ [(key, val)]
-
-/-- Tarjan's SCC — iterative with an explicit work stack to avoid Lean stack overflow
-    on large call graphs.  Each frame records the node being visited and where we are
-    in its adjacency list.  When we finish all successors we pop the frame and propagate
-    lowlinks exactly as in the recursive version. -/
-private def tarjanSCC (graph : CallGraph) : List (List String) :=
-  -- Collect all nodes that appear as keys OR as callees
-  let allNodes := graph.foldl (fun acc (fn, callees) =>
-    let acc := if acc.contains fn then acc else acc ++ [fn]
-    callees.foldl (fun a c => if a.contains c then a else a ++ [c]) acc) []
-  -- Work-stack frame: (node, remaining-successors, lowlink-so-far)
-  let rec processStack
-    (work : List (String × List String × Nat))
-    (st : TarjanState)
-    (fuel : Nat) : TarjanState :=
-    match fuel with
-    | 0 => st
-    | fuel + 1 =>
-      match work with
-      | [] => st
-      | (v, [], _vLow) :: rest =>
-        -- All successors of v processed.  Finalise v.
-        let vLow := lookupNat st.lowlinks v
-        let vIdx := lookupNat st.indices v
-        -- If v is a root, pop its SCC from the stack
-        let st := if vLow == vIdx then
-          let rec popScc (stk : List String) (scc : List String) :=
-            match stk with
-            | [] => (scc, [])
-            | w :: stk' =>
-              let scc := scc ++ [w]
-              if w == v then (scc, stk')
-              else popScc stk' scc
-          let (scc, newStack) := popScc st.stack []
-          let newOnStack := st.onStack.filter (fun n => !scc.contains n)
-          { st with stack := newStack, onStack := newOnStack, sccs := st.sccs ++ [scc] }
-        else st
-        -- Propagate lowlink to parent frame
-        match rest with
-        | [] => processStack [] st fuel
-        | (pv, pRemain, _pLow) :: grandRest =>
-          let pLow := lookupNat st.lowlinks pv
-          let newPLow := if vLow < pLow then vLow else pLow
-          let st := { st with lowlinks := setNat st.lowlinks pv newPLow }
-          processStack ((pv, pRemain, newPLow) :: grandRest) st fuel
-      | (v, w :: ws, _vLow) :: rest =>
-        -- Next successor w of v
-        if (st.indices.find? (fun (k, _) => k == w)).isNone then
-          -- w not yet visited — "recurse" by pushing a new frame
-          let wIdx := st.index
-          let st := { st with
-            index := st.index + 1
-            indices := st.indices ++ [(w, wIdx)]
-            lowlinks := st.lowlinks ++ [(w, wIdx)]
-            stack := [w] ++ st.stack
-            onStack := [w] ++ st.onStack }
-          let wCallees := match graph.find? (fun (n, _) => n == w) with
-            | some (_, cs) => cs
-            | none => []
-          processStack ((w, wCallees, wIdx) :: (v, ws, lookupNat st.lowlinks v) :: rest) st fuel
-        else if st.onStack.contains w then
-          -- w on stack — update lowlink
-          let vLow := lookupNat st.lowlinks v
-          let wIdx := lookupNat st.indices w
-          let newLow := if wIdx < vLow then wIdx else vLow
-          let st := { st with lowlinks := setNat st.lowlinks v newLow }
-          processStack ((v, ws, newLow) :: rest) st fuel
-        else
-          -- w already completed — skip
-          processStack ((v, ws, lookupNat st.lowlinks v) :: rest) st fuel
-  -- Kick off: visit each unvisited node
-  let st := allNodes.foldl (fun st v =>
-    if (st.indices.find? (fun (k, _) => k == v)).isSome then st
-    else
-      let vIdx := st.index
-      let st := { st with
-        index := st.index + 1
-        indices := st.indices ++ [(v, vIdx)]
-        lowlinks := st.lowlinks ++ [(v, vIdx)]
-        stack := [v] ++ st.stack
-        onStack := [v] ++ st.onStack }
-      let vCallees := match graph.find? (fun (n, _) => n == v) with
-        | some (_, cs) => cs
-        | none => []
-      processStack [(v, vCallees, vIdx)] st (allNodes.length * allNodes.length + allNodes.length)
-  ) TarjanState.empty
-  st.sccs
-
-/-- Recursion classification for a function. -/
-inductive RecursionKind where
-  | none          -- not in any cycle
-  | direct        -- calls itself
-  | mutual        -- in a cycle with other functions
-  deriving BEq
-
-/-- Classify each function given the SCCs and the call graph. -/
-private def classifyRecursion (graph : CallGraph) (sccs : List (List String))
-    : List (String × RecursionKind × List String) :=
-  sccs.foldl (fun acc scc =>
-    match scc with
-    | [single] =>
-      -- Check for self-call
-      let callees := match graph.find? (fun (n, _) => n == single) with
-        | some (_, cs) => cs
-        | none => []
-      if callees.contains single then
-        acc ++ [(single, .direct, [single])]
-      else
-        acc ++ [(single, .none, [])]
-    | members =>
-      -- All members of a multi-node SCC are mutually recursive
-      let entries := members.map fun m => (m, RecursionKind.mutual, members)
-      acc ++ entries
-  ) []
-
--- ============================================================
--- Loop-boundedness classification
--- ============================================================
--- Classifies each loop in a function as bounded or unbounded.
--- A loop is considered structurally bounded when it has:
---   1. A comparison condition (var < expr, var >= expr, etc.)
---   2. A non-empty step (from for-loop desugaring)
--- This is conservative: anything not structurally recognizable
--- as bounded is classified as unbounded.
-
-/-- Is this condition a comparison that suggests a bounded loop? -/
-private def isBoundedCond (cond : CExpr) : Bool :=
-  match cond with
-  | .binOp op _ _ _ =>
-    op == .lt || op == .gt || op == .leq || op == .geq || op == .neq
-  | _ => false
-
-/-- Loop boundedness for a single loop. -/
-inductive LoopBound where
-  | bounded    -- structurally recognizable bound
-  | unbounded  -- cannot determine bound statically
-  deriving BEq
-
-mutual
-/-- Collect loop-boundedness classifications from an expression. -/
-partial def collectLoopBoundsExpr (e : CExpr) : List LoopBound :=
-  match e with
-  | .whileExpr cond body elseBody _ =>
-    let thisBound := if isBoundedCond cond then .bounded else .unbounded
-    [thisBound] ++ collectLoopBoundsStmts body ++ collectLoopBoundsStmts elseBody
-  | .call _ _ args _ => args.foldl (fun acc a => acc ++ collectLoopBoundsExpr a) []
-  | .binOp _ l r _ => collectLoopBoundsExpr l ++ collectLoopBoundsExpr r
-  | .unaryOp _ e _ => collectLoopBoundsExpr e
-  | .structLit _ _ fields _ => fields.foldl (fun acc (_, v) => acc ++ collectLoopBoundsExpr v) []
-  | .fieldAccess obj _ _ => collectLoopBoundsExpr obj
-  | .enumLit _ _ _ fields _ => fields.foldl (fun acc (_, v) => acc ++ collectLoopBoundsExpr v) []
-  | .match_ scrut arms _ =>
-    collectLoopBoundsExpr scrut ++ arms.foldl (fun acc a => acc ++ collectLoopBoundsArm a) []
-  | .borrow inner _ | .borrowMut inner _ | .deref inner _ => collectLoopBoundsExpr inner
-  | .arrayLit elems _ => elems.foldl (fun acc e => acc ++ collectLoopBoundsExpr e) []
-  | .arrayIndex arr idx _ => collectLoopBoundsExpr arr ++ collectLoopBoundsExpr idx
-  | .cast inner _ | .try_ inner _ => collectLoopBoundsExpr inner
-  | .allocCall inner alloc _ => collectLoopBoundsExpr inner ++ collectLoopBoundsExpr alloc
-  | .ifExpr c t e _ => collectLoopBoundsExpr c ++ collectLoopBoundsStmts t ++ collectLoopBoundsStmts e
-  | _ => []
-
-partial def collectLoopBoundsArm (arm : CMatchArm) : List LoopBound :=
-  match arm with
-  | .enumArm _ _ _ body => collectLoopBoundsStmts body
-  | .litArm v body => collectLoopBoundsExpr v ++ collectLoopBoundsStmts body
-  | .varArm _ _ body => collectLoopBoundsStmts body
-
-partial def collectLoopBoundsStmt (s : CStmt) : List LoopBound :=
-  match s with
-  | .while_ cond body _ step =>
-    let hasStep := !step.isEmpty
-    let thisBound := if isBoundedCond cond && hasStep then .bounded else .unbounded
-    [thisBound] ++ collectLoopBoundsStmts body
-  | .letDecl _ _ _ v => collectLoopBoundsExpr v
-  | .assign _ v => collectLoopBoundsExpr v
-  | .return_ (some v) _ => collectLoopBoundsExpr v
-  | .return_ none _ => []
-  | .expr e => collectLoopBoundsExpr e
-  | .ifElse c t el =>
-    collectLoopBoundsExpr c ++ collectLoopBoundsStmts t ++
-    match el with | some stmts => collectLoopBoundsStmts stmts | none => []
-  | .fieldAssign obj _ v => collectLoopBoundsExpr obj ++ collectLoopBoundsExpr v
-  | .derefAssign t v => collectLoopBoundsExpr t ++ collectLoopBoundsExpr v
-  | .arrayIndexAssign arr idx v =>
-    collectLoopBoundsExpr arr ++ collectLoopBoundsExpr idx ++ collectLoopBoundsExpr v
-  | .break_ (some v) _ => collectLoopBoundsExpr v
-  | .break_ none _ | .continue_ _ => []
-  | .defer body => collectLoopBoundsExpr body
-  | .borrowIn _ _ _ _ _ body => collectLoopBoundsStmts body
-
-partial def collectLoopBoundsStmts (ss : List CStmt) : List LoopBound :=
-  ss.foldl (fun acc s => acc ++ collectLoopBoundsStmt s) []
-end
-
-/-- Classify a function's loop boundedness. -/
-private def classifyLoops (body : List CStmt) : String :=
-  let bounds := collectLoopBoundsStmts body
-  if bounds.isEmpty then "no loops"
-  else if bounds.all (· == .bounded) then "bounded"
-  else if bounds.all (· == .unbounded) then "unbounded"
-  else "mixed"
 
 -- ============================================================
 -- Report 10: Combined Effects Summary (--report effects)
@@ -1384,6 +875,7 @@ private partial def effectsForModule
     (externNames : List String)
     (recMap : List (String × RecursionKind × List String))
     (locMap : FnLocMap)
+    (pc : Concrete.ProofCore)
     (m : CModule) (modulePath : String := "") : List FnEffects :=
   let qualPrefix := if modulePath == "" then m.name else modulePath ++ "." ++ m.name
   let fns := m.functions.map fun f =>
@@ -1409,7 +901,8 @@ private partial def effectsForModule
     let hasBlocking := concreteCaps.any fun c =>
       c == "File" || c == "Network" || c == "Process"
     let passesProfile := !hasRecursion && !hasUnboundedLoops && !hasAllocEvidence && !hasFfi && !hasBlocking
-    let fp := bodyFingerprint f.body
+    let pcEntry := pc.entries.find? fun e => e.qualName == qualName
+    let fp := match pcEntry with | some e => e.fingerprint | none => bodyFingerprint f.body
     let hasProof := Proof.provedFunctions.any fun (name, expectedFp) =>
       name == qualName && expectedFp == fp
     let proofStale := !hasProof && Proof.provedFunctions.any fun (name, _) =>
@@ -1433,21 +926,20 @@ private partial def effectsForModule
       evidence := evidenceLevel
       loc := lookupLoc locMap qualName }
   fns ++ m.submodules.foldl (fun acc sub =>
-    acc ++ effectsForModule externNames recMap locMap sub qualPrefix) []
+    acc ++ effectsForModule externNames recMap locMap pc sub qualPrefix) []
 
-def effectsReport (modules : List CModule) (locMap : FnLocMap := []) : String :=
+def effectsReport (modules : List CModule) (locMap : FnLocMap := [])
+    (pc : Concrete.ProofCore) : String :=
   let header := "=== Combined Effects Report ==="
-  -- Build shared analysis results
-  let graph := buildCallGraph modules
-  let sccs := tarjanSCC graph
-  let recMap := classifyRecursion graph sccs
-  let externNames := modules.foldl (fun acc m => acc ++ collectExternNames m) []
+  -- Use shared analysis results from ProofCore
+  let recMap := pc.recMap
+  let externNames := pc.externNames
   -- Collect per-function effects
   let allEffects := modules.foldl (fun acc m =>
-    acc ++ effectsForModule externNames recMap locMap m) []
+    acc ++ effectsForModule externNames recMap locMap pc m) []
   -- Format per-module
   let body := modules.map fun m =>
-    let modEffects := effectsForModule externNames recMap locMap m
+    let modEffects := effectsForModule externNames recMap locMap pc m
     let fnLines := modEffects.map fmtEffectsRow
     s!"module {m.name}:\n{"\n".intercalate fnLines}"
   -- Summary counts
@@ -1466,11 +958,11 @@ def effectsReport (modules : List CModule) (locMap : FnLocMap := []) : String :=
   s!"{header}\n\n{"\n\n".intercalate body}\n{summary}\n"
 
 /-- Format the recursion report. -/
-def recursionReport (modules : List CModule) : String :=
+def recursionReport (pc : Concrete.ProofCore) : String :=
   let header := "=== Recursion / Call-Cycle Report ==="
-  let graph := buildCallGraph modules
+  let graph := pc.callGraph
   let sccs := tarjanSCC graph
-  let classifications := classifyRecursion graph sccs
+  let classifications := pc.recMap
   -- Separate into categories
   let directRec := classifications.filter fun (_, k, _) => k == .direct
   let mutualRec := classifications.filter fun (_, k, _) => k == .mutual
@@ -1641,11 +1133,9 @@ private def renderViolation (v : ProfileViolation) (sourceMap : SourceMap) : Str
 
 /-- Check the predictable-execution profile. Returns (pass, report string). -/
 def checkPredictable (modules : List CModule) (locMap : FnLocMap := [])
-    (sourceMap : SourceMap := []) : Bool × String :=
-  let graph := buildCallGraph modules
-  let sccs := tarjanSCC graph
-  let recMap := classifyRecursion graph sccs
-  let externNames := modules.foldl (fun acc m => acc ++ collectExternNames m) []
+    (sourceMap : SourceMap := []) (pc : Concrete.ProofCore) : Bool × String :=
+  let recMap := pc.recMap
+  let externNames := pc.externNames
   let violations := modules.foldl (fun acc m =>
     acc ++ checkPredictableModule recMap externNames locMap m) []
   let allFns := modules.foldl (fun acc m => acc ++ collectAllFnDefs m) []
@@ -1668,26 +1158,10 @@ def checkPredictable (modules : List CModule) (locMap : FnLocMap := [])
 -- in the provable subset?" It runs BEFORE extraction or proof
 -- matching, and every downstream consumer reads it.
 
-/-- Why a function is excluded from the provable subset. -/
-inductive ExclusionKind where
-  | source    -- structural: capabilities, trusted, entry point
-  | profile   -- runtime: recursion, loops, alloc, FFI, I/O
-  | both      -- fails both source and profile checks
-  deriving Repr
-
-/-- Per-function eligibility assessment. -/
-structure EligibilityEntry where
-  qualName       : String
-  eligible       : Bool           -- in the provable subset?
-  sourceReasons  : List String    -- source-level exclusion reasons
-  profileReasons : List String    -- predictable-profile gate failures
-  exclusionKind  : Option ExclusionKind  -- none if eligible
-  isTrusted      : Bool           -- marked trusted (separate from eligible)
-  loc            : Option SourceLoc
-
 /-- Compute eligibility for one function. Combines source-level checks
     (capabilities, trusted, entry point) with profile gates (recursion,
-    loops, allocation, FFI, blocking I/O) into a single assessment. -/
+    loops, allocation, FFI, blocking I/O) into a single assessment.
+    Uses ProofCore helpers for body analysis. -/
 private def assessEligibility
     (f : CFnDef) (qualName : String)
     (externNames : List String)
@@ -1742,14 +1216,8 @@ private partial def collectEligibility
     acc ++ collectEligibility externNames recMap locMap sub qualPrefix) []
 
 /-- Render the eligibility report (--report eligibility). -/
-def eligibilityReport (modules : List CModule) (locMap : FnLocMap := [])
-    (sourceMap : SourceMap := []) : String :=
-  let graph := buildCallGraph modules
-  let sccs := tarjanSCC graph
-  let recMap := classifyRecursion graph sccs
-  let externNames := modules.foldl (fun acc m => acc ++ collectExternNames m) []
-  let entries := modules.foldl (fun acc m =>
-    acc ++ collectEligibility externNames recMap locMap m) []
+def eligibilityReport (pc : Concrete.ProofCore) : String :=
+  let entries := pc.allEligibility
   let header := "=== Proof Eligibility Assessment ==="
   let body := entries.map fun e =>
     let locStr := fmtLoc e.loc
@@ -1805,18 +1273,25 @@ structure ProofStatusEntry where
   fnSpan        : Option Span
 
 private partial def collectProofStatus
-    (eligibility : List EligibilityEntry)
+    (pc : Concrete.ProofCore)
     (locMap : FnLocMap)
     (m : CModule) (modulePath : String := "")
     (registry : ProofRegistry := []) : List ProofStatusEntry :=
   let qualPrefix := if modulePath == "" then m.name else modulePath ++ "." ++ m.name
   let entries := m.functions.map fun f =>
     let qualName := qualPrefix ++ "." ++ f.name
-    let fp := bodyFingerprint f.body
+    let pcEntry := pc.entries.find? fun e => e.qualName == qualName
+    let pcExcl := pc.excluded.find? fun e => e.qualName == qualName
+    let fp := match pcEntry with
+      | some e => e.fingerprint
+      | none => match pcExcl with
+        | some e => e.fingerprint
+        | none => bodyFingerprint f.body
     let entry := lookupBody locMap qualName
     let fnLoc := lookupLoc locMap qualName
     let fnSp := entry.map (·.fnSpan)
-    -- Look up pre-computed eligibility
+    -- Look up pre-computed eligibility from ProofCore
+    let eligibility := pc.allEligibility
     let elig := eligibility.find? fun e => e.qualName == qualName
     let gates := match elig with
       | some e => e.sourceReasons ++ e.profileReasons
@@ -1857,7 +1332,7 @@ private partial def collectProofStatus
     , profileGates := gates, specName := sName, proofName := pName
     , proofSource := pSrc, loc := fnLoc, fnSpan := fnSp }
   entries ++ m.submodules.foldl (fun acc sub =>
-    acc ++ collectProofStatus eligibility locMap sub qualPrefix registry) []
+    acc ++ collectProofStatus pc locMap sub qualPrefix registry) []
 
 /-- Render a single proof status entry with Elm-clear formatting. -/
 private def renderProofStatusEntry (e : ProofStatusEntry) (sourceMap : SourceMap) : String :=
@@ -1892,17 +1367,11 @@ private def renderProofStatusEntry (e : ProofStatusEntry) (sourceMap : SourceMap
 
 /-- Proof status report with Elm-clear diagnostics. -/
 def proofStatusReport (modules : List CModule) (locMap : FnLocMap := [])
-    (sourceMap : SourceMap := []) (registry : ProofRegistry := []) : String :=
+    (sourceMap : SourceMap := []) (registry : ProofRegistry := [])
+    (pc : Concrete.ProofCore) : String :=
   let header := "=== Proof Status Report ==="
-  let graph := buildCallGraph modules
-  let sccs := tarjanSCC graph
-  let recMap := classifyRecursion graph sccs
-  let externNames := modules.foldl (fun acc m => acc ++ collectExternNames m) []
-  -- Compute eligibility first, then pass to proof-status
-  let eligibility := modules.foldl (fun acc m =>
-    acc ++ collectEligibility externNames recMap locMap m) []
   let entries := modules.foldl (fun acc m =>
-    acc ++ collectProofStatus eligibility locMap m "" registry) []
+    acc ++ collectProofStatus pc locMap m "" registry) []
   let body := entries.map fun e => renderProofStatusEntry e sourceMap
   -- Summary
   let proved := (entries.filter fun e => e.state matches .proved).length
@@ -1937,15 +1406,10 @@ private partial def findFunctionCallees (m : CModule) (name : String) : List Str
 /-- Build obligation entries from proof status + registry. -/
 private partial def collectObligations
     (modules : List CModule) (locMap : FnLocMap := [])
-    (registry : ProofRegistry := []) : List ObligationEntry :=
-  let graph := buildCallGraph modules
-  let sccs := tarjanSCC graph
-  let recMap := classifyRecursion graph sccs
-  let externNames := modules.foldl (fun acc m => acc ++ collectExternNames m) []
-  let eligibility := modules.foldl (fun acc m =>
-    acc ++ collectEligibility externNames recMap locMap m) []
+    (registry : ProofRegistry := [])
+    (pc : Concrete.ProofCore) : List ObligationEntry :=
   let proofEntries := modules.foldl (fun acc m =>
-    acc ++ collectProofStatus eligibility locMap m "" registry) []
+    acc ++ collectProofStatus pc locMap m "" registry) []
   -- Build set of proved function names for dependency tracking
   let provedNames := proofEntries.filterMap fun e =>
     if e.state matches .proved then some e.qualName else none
@@ -1980,8 +1444,8 @@ private partial def collectObligations
 
 /-- Render the obligations report as human-readable output. -/
 def obligationsReport (modules : List CModule) (locMap : FnLocMap := [])
-    (registry : ProofRegistry := []) : String :=
-  let entries := collectObligations modules locMap registry
+    (registry : ProofRegistry := []) (pc : Concrete.ProofCore) : String :=
+  let entries := collectObligations modules locMap registry pc
   let header := "=== Proof Obligations ==="
   let body := entries.map fun e =>
     let locStr := fmtLoc e.loc
@@ -2001,60 +1465,6 @@ def obligationsReport (modules : List CModule) (locMap : FnLocMap := [])
 -- ============================================================
 -- Source-to-ProofCore extraction report (--report extraction)
 -- ============================================================
-
-/-- Map a Core BinOp to the proof-fragment PBinOp. Returns none for operators
-    not yet modeled in the proof fragment (div, mod, bitwise, logical). -/
-private def binOpToPBinOp : BinOp → Option Proof.PBinOp
-  | .add => some .add
-  | .sub => some .sub
-  | .mul => some .mul
-  | .eq  => some .eq
-  | .neq => some .ne
-  | .lt  => some .lt
-  | .leq => some .le
-  | .gt  => some .gt
-  | .geq => some .ge
-  | _    => none
-
-mutual
-/-- Translate a Core expression to proof-fragment PExpr.
-    Returns none for constructs not yet in the proof fragment. -/
-partial def cExprToPExpr : CExpr → Option Proof.PExpr
-  | .intLit n _ => some (.lit (.int n))
-  | .boolLit b => some (.lit (.bool b))
-  | .ident name _ => some (.var name)
-  | .binOp op lhs rhs _ => do
-    let pop ← binOpToPBinOp op
-    let pl ← cExprToPExpr lhs
-    let pr ← cExprToPExpr rhs
-    some (.binOp pop pl pr)
-  | .call fn _ args _ => do
-    let pargs ← args.mapM cExprToPExpr
-    some (.call fn pargs)
-  | .ifExpr cond thenBranch elseBranch _ => do
-    let pc ← cExprToPExpr cond
-    let pt ← cStmtsToPExpr thenBranch
-    let pe ← cStmtsToPExpr elseBranch
-    some (.ifThenElse pc pt pe)
-  | _ => none
-
-/-- Translate a Core statement list to a single proof-fragment PExpr.
-    Handles: return, let+rest, if/else, expression statements. -/
-partial def cStmtsToPExpr : List CStmt → Option Proof.PExpr
-  | [] => none
-  | [.return_ (some e) _] => cExprToPExpr e
-  | [.expr e] => cExprToPExpr e
-  | (.letDecl name _ _ val) :: rest => do
-    let pv ← cExprToPExpr val
-    let pb ← cStmtsToPExpr rest
-    some (.letIn name pv pb)
-  | [.ifElse cond thenBranch (some elseBranch)] => do
-    let pc ← cExprToPExpr cond
-    let pt ← cStmtsToPExpr thenBranch
-    let pe ← cStmtsToPExpr elseBranch
-    some (.ifThenElse pc pt pe)
-  | _ => none
-end
 
 /-- Pretty-print a PExpr as a readable S-expression. -/
 private def renderPExpr : Proof.PExpr → String
@@ -2099,59 +1509,6 @@ structure ExtractionEntry where
   proofName   : String       -- proof name (from registry or derived)
   loc         : Option SourceLoc
 
-/-- Identify unsupported expression constructs. -/
-private partial def identifyUnsupportedExpr : CExpr → List String
-  | .floatLit .. => ["float literal"]
-  | .strLit .. => ["string literal"]
-  | .charLit .. => ["char literal"]
-  | .structLit .. => ["struct literal"]
-  | .fieldAccess .. => ["field access"]
-  | .enumLit .. => ["enum literal"]
-  | .match_ .. => ["match expression"]
-  | .borrow .. => ["borrow"]
-  | .borrowMut .. => ["mutable borrow"]
-  | .deref .. => ["deref"]
-  | .arrayLit .. => ["array literal"]
-  | .arrayIndex .. => ["array index"]
-  | .cast .. => ["cast"]
-  | .fnRef .. => ["function reference"]
-  | .try_ .. => ["try expression"]
-  | .allocCall .. => ["alloc call"]
-  | .whileExpr .. => ["while expression"]
-  | .unaryOp .. => ["unary operator"]
-  | .binOp op _ _ _ => match binOpToPBinOp op with
-    | none => [s!"unsupported operator: {repr op}"]
-    | some _ => []
-  | _ => []
-
-/-- Identify unsupported constructs in expressions within a statement. -/
-private partial def identifyUnsupportedStmt : CStmt → List String
-  | .letDecl _ _ _ val => identifyUnsupportedExpr val
-  | .return_ (some e) _ => identifyUnsupportedExpr e
-  | .expr e => identifyUnsupportedExpr e
-  | .ifElse cond thenBr elseBr =>
-    identifyUnsupportedExpr cond ++
-    thenBr.foldl (fun acc s => acc ++ identifyUnsupportedStmt s) [] ++
-    match elseBr with
-    | some stmts => stmts.foldl (fun acc s => acc ++ identifyUnsupportedStmt s) []
-    | none => ["if without else"]
-  | _ => []
-
-/-- Identify unsupported constructs in a function body that prevent extraction. -/
-private partial def identifyUnsupported (body : List CStmt) : List String :=
-  let stmtKinds := body.filterMap fun s => match s with
-    | .while_ .. => some "while loop"
-    | .fieldAssign .. => some "field assignment"
-    | .derefAssign .. => some "deref assignment"
-    | .arrayIndexAssign .. => some "array index assignment"
-    | .break_ .. => some "break"
-    | .continue_ .. => some "continue"
-    | .defer .. => some "defer"
-    | .borrowIn .. => some "borrow region"
-    | .assign .. => some "mutable assignment"
-    | _ => none
-  let exprKinds := body.foldl (fun acc s => acc ++ identifyUnsupportedStmt s) []
-  (stmtKinds ++ exprKinds).eraseDups
 
 /-- Collect extraction entries for all functions in a module. -/
 private partial def collectExtractionEntries
@@ -2191,8 +1548,8 @@ private partial def collectExtractionEntries
 
 /-- Render the source-to-ProofCore extraction report. -/
 def extractionReport (modules : List CModule) (locMap : FnLocMap := [])
-    (registry : ProofRegistry := []) : String :=
-  let externNames := modules.foldl (fun acc m => acc ++ collectExternNames m) []
+    (registry : ProofRegistry := []) (pc : Concrete.ProofCore) : String :=
+  let externNames := pc.externNames
   let entries := modules.foldl (fun acc m =>
     acc ++ collectExtractionEntries externNames locMap m "" registry) []
   let header := "=== Source-to-ProofCore Extraction ==="
@@ -2268,19 +1625,15 @@ private def collectTraceEntries
     (monoModules : List CModule)
     (ssaModules : List SModule)
     (locMap : FnLocMap := [])
-    (registry : ProofRegistry := []) : List TraceEntry :=
+    (registry : ProofRegistry := [])
+    (pc : Concrete.ProofCore) : List TraceEntry :=
   -- Build extraction entries
-  let externNames := coreModules.foldl (fun acc m => acc ++ collectExternNames m) []
+  let externNames := pc.externNames
   let extractionEntries := coreModules.foldl (fun acc m =>
     acc ++ collectExtractionEntries externNames locMap m (registry := registry)) []
   -- Build proof status entries
-  let graph := buildCallGraph coreModules
-  let sccs := tarjanSCC graph
-  let recMap := classifyRecursion graph sccs
-  let eligibility := coreModules.foldl (fun acc m =>
-    acc ++ collectEligibility externNames recMap locMap m) []
   let proofEntries := coreModules.foldl (fun acc m =>
-    acc ++ collectProofStatus eligibility locMap m "" registry) []
+    acc ++ collectProofStatus pc locMap m "" registry) []
   -- Collect mono names
   let allMonoNames := monoModules.foldl (fun acc m => acc ++ collectMonoFnNames m) []
   -- Collect SSA names
@@ -2340,8 +1693,9 @@ def traceabilityReport
     (monoModules : List CModule)
     (ssaModules : List SModule)
     (locMap : FnLocMap := [])
-    (registry : ProofRegistry := []) : String :=
-  let entries := collectTraceEntries coreModules monoModules ssaModules locMap registry
+    (registry : ProofRegistry := [])
+    (pc : Concrete.ProofCore) : String :=
+  let entries := collectTraceEntries coreModules monoModules ssaModules locMap registry pc
   let header := "=== Source/Core/SSA/LLVM Traceability ==="
   let body := entries.map fun e =>
     let locStr := fmtLoc e.loc
@@ -2587,11 +1941,10 @@ private def proofStatusToFact (e : ProofStatusEntry) : Val :=
 
 open Json in
 /-- Collect predictable violations as structured facts. -/
-def collectPredictableFacts (modules : List CModule) (locMap : FnLocMap := []) : List Val :=
-  let graph := buildCallGraph modules
-  let sccs := tarjanSCC graph
-  let recMap := classifyRecursion graph sccs
-  let externNames := modules.foldl (fun acc m => acc ++ collectExternNames m) []
+def collectPredictableFacts (modules : List CModule) (locMap : FnLocMap := [])
+    (pc : Concrete.ProofCore) : List Val :=
+  let recMap := pc.recMap
+  let externNames := pc.externNames
   let violations := modules.foldl (fun acc m =>
     acc ++ checkPredictableModule recMap externNames locMap m) []
   violations.map violationToFact
@@ -2619,27 +1972,16 @@ private def eligibilityToFact (e : EligibilityEntry) : Val :=
 
 open Json in
 /-- Collect eligibility facts for all functions. -/
-def collectEligibilityFacts (modules : List CModule) (locMap : FnLocMap := []) : List Val :=
-  let graph := buildCallGraph modules
-  let sccs := tarjanSCC graph
-  let recMap := classifyRecursion graph sccs
-  let externNames := modules.foldl (fun acc m => acc ++ collectExternNames m) []
-  let entries := modules.foldl (fun acc m =>
-    acc ++ collectEligibility externNames recMap locMap m) []
+def collectEligibilityFacts (pc : Concrete.ProofCore) : List Val :=
+  let entries := pc.allEligibility
   entries.map eligibilityToFact
 
 open Json in
 /-- Collect proof-status entries as structured facts. -/
 def collectProofStatusFacts (modules : List CModule) (locMap : FnLocMap := [])
-    (registry : ProofRegistry := []) : List Val :=
-  let graph := buildCallGraph modules
-  let sccs := tarjanSCC graph
-  let recMap := classifyRecursion graph sccs
-  let externNames := modules.foldl (fun acc m => acc ++ collectExternNames m) []
-  let eligibility := modules.foldl (fun acc m =>
-    acc ++ collectEligibility externNames recMap locMap m) []
+    (registry : ProofRegistry := []) (pc : Concrete.ProofCore) : List Val :=
   let entries := modules.foldl (fun acc m =>
-    acc ++ collectProofStatus eligibility locMap m "" registry) []
+    acc ++ collectProofStatus pc locMap m "" registry) []
   entries.map proofStatusToFact
 
 open Json in
@@ -2660,8 +2002,8 @@ private def obligationToFact (e : ObligationEntry) : Val :=
 open Json in
 /-- Collect obligation facts for all functions. -/
 def collectObligationFacts (modules : List CModule) (locMap : FnLocMap := [])
-    (registry : ProofRegistry := []) : List Val :=
-  let entries := collectObligations modules locMap registry
+    (registry : ProofRegistry := []) (pc : Concrete.ProofCore) : List Val :=
+  let entries := collectObligations modules locMap registry pc
   entries.map obligationToFact
 
 open Json in
@@ -2692,8 +2034,8 @@ private def extractionToFact (e : ExtractionEntry) : Val :=
 open Json in
 /-- Collect extraction facts for all functions. -/
 def collectExtractionFacts (modules : List CModule) (locMap : FnLocMap := [])
-    (registry : ProofRegistry := []) : List Val :=
-  let externNames := modules.foldl (fun acc m => acc ++ collectExternNames m) []
+    (registry : ProofRegistry := []) (pc : Concrete.ProofCore) : List Val :=
+  let externNames := pc.externNames
   let entries := modules.foldl (fun acc m =>
     acc ++ collectExtractionEntries externNames locMap m "" registry) []
   entries.map extractionToFact
@@ -2724,8 +2066,9 @@ def collectTraceabilityFacts
     (monoModules : List CModule)
     (ssaModules : List SModule)
     (locMap : FnLocMap := [])
-    (registry : ProofRegistry := []) : List Val :=
-  let entries := collectTraceEntries coreModules monoModules ssaModules locMap registry
+    (registry : ProofRegistry := [])
+    (pc : Concrete.ProofCore) : List Val :=
+  let entries := collectTraceEntries coreModules monoModules ssaModules locMap registry pc
   entries.map traceToFact
 
 open Json in
@@ -2736,8 +2079,9 @@ def queryTraceability
     (ssaModules : List SModule)
     (locMap : FnLocMap := [])
     (fnFilter : Option String := none)
-    (registry : ProofRegistry := []) : String :=
-  let allFacts := collectTraceabilityFacts coreModules monoModules ssaModules locMap registry
+    (registry : ProofRegistry := [])
+    (pc : Concrete.ProofCore) : String :=
+  let allFacts := collectTraceabilityFacts coreModules monoModules ssaModules locMap registry pc
   let getStr (v : Val) (key : String) : Option String :=
     match v with
     | .obj kvs =>
@@ -2776,13 +2120,12 @@ private def effectsToFact (e : FnEffects) : Val :=
 
 open Json in
 /-- Collect effects facts for all functions. -/
-def collectEffectsFacts (modules : List CModule) (locMap : FnLocMap := []) : List Val :=
-  let graph := buildCallGraph modules
-  let sccs := tarjanSCC graph
-  let recMap := classifyRecursion graph sccs
-  let externNames := modules.foldl (fun acc m => acc ++ collectExternNames m) []
+def collectEffectsFacts (modules : List CModule) (locMap : FnLocMap := [])
+    (pc : Concrete.ProofCore) : List Val :=
+  let recMap := pc.recMap
+  let externNames := pc.externNames
   let allEffects := modules.foldl (fun acc m =>
-    acc ++ effectsForModule externNames recMap locMap m) []
+    acc ++ effectsForModule externNames recMap locMap pc m) []
   allEffects.map effectsToFact
 
 open Json in
@@ -2898,13 +2241,13 @@ def collectAllocFacts (modules : List CModule) : List Val :=
 open Json in
 /-- Collect all core facts (everything except traceability) into a flat list. -/
 def collectCoreFacts (modules : List CModule) (locMap : FnLocMap := [])
-    (registry : ProofRegistry := []) : List Val :=
-  let eligibility := collectEligibilityFacts modules locMap
-  let predictable := collectPredictableFacts modules locMap
-  let proofStatus := collectProofStatusFacts modules locMap registry
-  let obligations := collectObligationFacts modules locMap registry
-  let extraction := collectExtractionFacts modules locMap (registry := registry)
-  let effects := collectEffectsFacts modules locMap
+    (registry : ProofRegistry := []) (pc : Concrete.ProofCore) : List Val :=
+  let eligibility := collectEligibilityFacts pc
+  let predictable := collectPredictableFacts modules locMap pc
+  let proofStatus := collectProofStatusFacts modules locMap registry pc
+  let obligations := collectObligationFacts modules locMap registry pc
+  let extraction := collectExtractionFacts modules locMap (registry := registry) (pc := pc)
+  let effects := collectEffectsFacts modules locMap pc
   let caps := collectCapFacts modules
   let unsafeFacts := collectUnsafeFacts modules
   let alloc := collectAllocFacts modules
@@ -2914,8 +2257,8 @@ def collectCoreFacts (modules : List CModule) (locMap : FnLocMap := [])
 open Json in
 /-- Produce JSON diagnostics combining all fact types. -/
 def diagnosticsJson (modules : List CModule) (locMap : FnLocMap := [])
-    (registry : ProofRegistry := []) : String :=
-  (Val.arr (collectCoreFacts modules locMap registry)).render
+    (registry : ProofRegistry := []) (pc : Concrete.ProofCore) : String :=
+  (Val.arr (collectCoreFacts modules locMap registry pc)).render
 
 open Json in
 /-- Extract a string field from a JSON object. -/
@@ -3047,11 +2390,9 @@ def whyCapabilityQuery (modules : List CModule) (locMap : FnLocMap)
 open Json in
 /-- Handle a predictable query for a single function. Returns answer-shaped JSON. -/
 def predictableQuery (modules : List CModule) (locMap : FnLocMap)
-    (fnName : String) : String :=
-  let graph := buildCallGraph modules
-  let sccs := tarjanSCC graph
-  let recMap := classifyRecursion graph sccs
-  let externNames := modules.foldl (fun acc m => acc ++ collectExternNames m) []
+    (fnName : String) (pc : Concrete.ProofCore) : String :=
+  let recMap := pc.recMap
+  let externNames := pc.externNames
   let violations := modules.foldl (fun acc m =>
     acc ++ checkPredictableModule recMap externNames locMap m) []
   let fnViolations := violations.filter fun v =>
@@ -3080,15 +2421,10 @@ def predictableQuery (modules : List CModule) (locMap : FnLocMap)
 open Json in
 /-- Handle a proof query for a single function. Returns answer-shaped JSON. -/
 def proofQuery (modules : List CModule) (locMap : FnLocMap)
-    (fnName : String) (registry : ProofRegistry := []) : String :=
-  let graph := buildCallGraph modules
-  let sccs := tarjanSCC graph
-  let recMap := classifyRecursion graph sccs
-  let externNames := modules.foldl (fun acc m => acc ++ collectExternNames m) []
-  let eligibility := modules.foldl (fun acc m =>
-    acc ++ collectEligibility externNames recMap locMap m) []
+    (fnName : String) (registry : ProofRegistry := [])
+    (pc : Concrete.ProofCore) : String :=
   let entries := modules.foldl (fun acc m =>
-    acc ++ collectProofStatus eligibility locMap m "" registry) []
+    acc ++ collectProofStatus pc locMap m "" registry) []
   let fnEntry := entries.find? fun e =>
     e.bareName == fnName || e.qualName == fnName || e.qualName.endsWith ("." ++ fnName)
   match fnEntry with
@@ -3123,24 +2459,21 @@ open Json in
 /-- Handle an evidence query for a single function. Returns answer-shaped JSON
     combining predictable profile, proof status, and trust into one answer. -/
 def evidenceQuery (modules : List CModule) (locMap : FnLocMap)
-    (fnName : String) (registry : ProofRegistry := []) : String :=
-  let graph := buildCallGraph modules
-  let sccs := tarjanSCC graph
-  let recMap := classifyRecursion graph sccs
-  let externNames := modules.foldl (fun acc m => acc ++ collectExternNames m) []
+    (fnName : String) (registry : ProofRegistry := [])
+    (pc : Concrete.ProofCore) : String :=
+  let recMap := pc.recMap
+  let externNames := pc.externNames
   -- Get effects for evidence level
   let allEffects := modules.foldl (fun acc m =>
-    acc ++ effectsForModule externNames recMap locMap m) []
+    acc ++ effectsForModule externNames recMap locMap pc m) []
   let fnEffects := allEffects.find? fun e => e.name == fnName
   -- Get violations
   let violations := modules.foldl (fun acc m =>
     acc ++ checkPredictableModule recMap externNames locMap m) []
   let fnViolations := violations.filter fun v => v.fnName == fnName
   -- Get proof status
-  let eligibility := modules.foldl (fun acc m =>
-    acc ++ collectEligibility externNames recMap locMap m) []
   let entries := modules.foldl (fun acc m =>
-    acc ++ collectProofStatus eligibility locMap m "" registry) []
+    acc ++ collectProofStatus pc locMap m "" registry) []
   let fnProof := entries.find? fun e =>
     e.bareName == fnName || e.qualName.endsWith ("." ++ fnName)
   match fnEffects with
@@ -3174,17 +2507,16 @@ open Json in
 /-- Handle an audit query for a single function. Bundles authority, predictable
     profile, proof status, evidence, trust, and allocation into one answer. -/
 def auditQuery (modules : List CModule) (locMap : FnLocMap)
-    (fnName : String) (registry : ProofRegistry := []) : String :=
-  let graph := buildCallGraph modules
-  let sccs := tarjanSCC graph
-  let recMap := classifyRecursion graph sccs
-  let externNames := modules.foldl (fun acc m => acc ++ collectExternNames m) []
+    (fnName : String) (registry : ProofRegistry := [])
+    (pc : Concrete.ProofCore) : String :=
+  let recMap := pc.recMap
+  let externNames := pc.externNames
   let capLookup := buildCapLookup modules
   let fnLookup := buildFnLookup modules
   let externLookup := buildExternLookup modules
   -- Effects
   let allEffects := modules.foldl (fun acc m =>
-    acc ++ effectsForModule externNames recMap locMap m) []
+    acc ++ effectsForModule externNames recMap locMap pc m) []
   let fnEffects := allEffects.find? fun e => e.name == fnName
   match fnEffects with
   | none =>
@@ -3218,10 +2550,8 @@ def auditQuery (modules : List CModule) (locMap : FnLocMap)
           | some l => [("violation_loc", locToJson (some l))]
           | none => [])
     -- Proof
-    let eligibility := modules.foldl (fun acc m =>
-      acc ++ collectEligibility externNames recMap locMap m) []
     let entries := modules.foldl (fun acc m =>
-      acc ++ collectProofStatus eligibility locMap m "" registry) []
+      acc ++ collectProofStatus pc locMap m "" registry) []
     let fnProof := entries.find? fun e =>
       e.bareName == fnName || e.qualName.endsWith ("." ++ fnName)
     let proofState := match fnProof with
@@ -3285,7 +2615,8 @@ open Json in
     - "proof:FN"              — proof status answer for one function
     - "evidence:FN"           — combined evidence answer for one function -/
 def queryFacts (modules : List CModule) (locMap : FnLocMap := [])
-    (query : String) (registry : ProofRegistry := []) : String :=
+    (query : String) (registry : ProofRegistry := [])
+    (pc : Concrete.ProofCore) : String :=
   let parts := query.splitOn ":"
   -- Semantic queries: three-part (why-capability:fn:cap)
   if parts.length == 3 then
@@ -3295,7 +2626,7 @@ def queryFacts (modules : List CModule) (locMap : FnLocMap := [])
       -- Fall through to kind:function filter
       let filterKind := parts[0]!
       let filterFn := parts[1]!
-      let allFacts := collectCoreFacts modules locMap registry
+      let allFacts := collectCoreFacts modules locMap registry pc
       let byKind := allFacts.filter fun v => jsonGetStr v "kind" == some filterKind
       let filtered := byKind.filter fun v =>
         match jsonGetStr v "function" with
@@ -3306,12 +2637,12 @@ def queryFacts (modules : List CModule) (locMap : FnLocMap := [])
   -- Semantic queries: two-part (predictable:fn, proof:fn, evidence:fn)
   if parts.length == 2 then
     match parts with
-    | ["predictable", fnName] => predictableQuery modules locMap fnName
-    | ["proof", fnName] => proofQuery modules locMap fnName registry
-    | ["evidence", fnName] => evidenceQuery modules locMap fnName registry
-    | ["audit", fnName] => auditQuery modules locMap fnName registry
+    | ["predictable", fnName] => predictableQuery modules locMap fnName pc
+    | ["proof", fnName] => proofQuery modules locMap fnName registry pc
+    | ["evidence", fnName] => evidenceQuery modules locMap fnName registry pc
+    | ["audit", fnName] => auditQuery modules locMap fnName registry pc
     | ["fn", fnName] =>
-      let allFacts := collectCoreFacts modules locMap registry
+      let allFacts := collectCoreFacts modules locMap registry pc
       let filtered := allFacts.filter fun v =>
         match jsonGetStr v "function" with
         | some f => f == fnName || f.endsWith ("." ++ fnName)
@@ -3321,7 +2652,7 @@ def queryFacts (modules : List CModule) (locMap : FnLocMap := [])
       -- kind:function filter
       let filterKind := parts[0]!
       let filterFn := parts[1]!
-      let allFacts := collectCoreFacts modules locMap registry
+      let allFacts := collectCoreFacts modules locMap registry pc
       let byKind := allFacts.filter fun v =>
         jsonGetStr v "kind" == some filterKind
       let filtered := byKind.filter fun v =>
@@ -3331,7 +2662,7 @@ def queryFacts (modules : List CModule) (locMap : FnLocMap := [])
       (Val.arr filtered).render
   else
     -- Single-word filter: all facts of this kind
-    let allFacts := collectCoreFacts modules locMap registry
+    let allFacts := collectCoreFacts modules locMap registry pc
     let filtered := allFacts.filter fun v =>
       jsonGetStr v "kind" == some query
     (Val.arr filtered).render

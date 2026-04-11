@@ -241,9 +241,11 @@ def compileAndCheck (inputPath : String) (checkType : String) : IO UInt32 := do
     return 1
   | .ok (parsed, _, validCore, _) =>
     let locMap := Report.buildFnLocMap parsed.modules inputPath
+    let simpleLocMap := locMap.map fun e => (e.qualName, (e.file, e.fnSpan.line))
+    let pc := extractProofCore validCore simpleLocMap
     let srcMap : SourceMap := [(inputPath, source)]
     if checkType == "predictable" then
-      let (pass, report) := Report.checkPredictable validCore.coreModules locMap srcMap
+      let (pass, report) := Report.checkPredictable validCore.coreModules locMap srcMap pc
       IO.println report
       return if pass then 0 else 1
     IO.eprintln s!"Unknown check type: {checkType}. Use: predictable"
@@ -285,11 +287,13 @@ def compileAndReport (inputPath : String) (reportType : String) : IO UInt32 := d
     return 1
   | .ok (parsed, _, validCore, srcMap) =>
     let locMap := Report.buildFnLocMap parsed.modules inputPath
+    let simpleLocMap := locMap.map fun e => (e.qualName, (e.file, e.fnSpan.line))
+    let pc := extractProofCore validCore simpleLocMap
     if reportType == "caps" then
       IO.println (Report.capabilityReport validCore.coreModules)
       return 0
     if reportType == "unsafe" then
-      IO.println (Report.unsafeReport validCore.coreModules)
+      IO.println (Report.unsafeReport validCore.coreModules pc)
       return 0
     if reportType == "layout" then
       IO.println (Report.layoutReport validCore.coreModules)
@@ -301,35 +305,35 @@ def compileAndReport (inputPath : String) (reportType : String) : IO UInt32 := d
       IO.println (Report.authorityReport validCore.coreModules)
       return 0
     if reportType == "proof" then
-      IO.println (Report.proofReport validCore.coreModules)
+      IO.println (Report.proofReport validCore.coreModules pc)
       return 0
     if reportType == "eligibility" then
-      IO.println (Report.eligibilityReport validCore.coreModules locMap srcMap)
+      IO.println (Report.eligibilityReport pc)
       return 0
     if reportType == "proof-status" then
       let registry ← loadRegistry inputPath
-      IO.println (Report.proofStatusReport validCore.coreModules locMap srcMap (registry := registry))
+      IO.println (Report.proofStatusReport validCore.coreModules locMap srcMap (registry := registry) (pc := pc))
       return 0
     if reportType == "obligations" then
       let registry ← loadRegistry inputPath
-      IO.println (Report.obligationsReport validCore.coreModules locMap (registry := registry))
+      IO.println (Report.obligationsReport validCore.coreModules locMap (registry := registry) (pc := pc))
       return 0
     if reportType == "extraction" then
       let registry ← loadRegistry inputPath
-      IO.println (Report.extractionReport validCore.coreModules locMap (registry := registry))
+      IO.println (Report.extractionReport validCore.coreModules locMap (registry := registry) (pc := pc))
       return 0
     if reportType == "diagnostics-json" then
       let registry ← loadRegistry inputPath
-      IO.println (Report.diagnosticsJson validCore.coreModules locMap (registry := registry))
+      IO.println (Report.diagnosticsJson validCore.coreModules locMap (registry := registry) (pc := pc))
       return 0
     if reportType == "effects" then
-      IO.println (Report.effectsReport validCore.coreModules locMap)
+      IO.println (Report.effectsReport validCore.coreModules locMap pc)
       return 0
     if reportType == "recursion" then
-      IO.println (Report.recursionReport validCore.coreModules)
+      IO.println (Report.recursionReport pc)
       return 0
     if reportType == "fingerprints" then
-      IO.println (Report.fingerprintReport validCore.coreModules)
+      IO.println (Report.fingerprintReport pc)
       return 0
     if reportType == "traceability" then
       let registry ← loadRegistry inputPath
@@ -343,7 +347,7 @@ def compileAndReport (inputPath : String) (reportType : String) : IO UInt32 := d
           IO.eprintln (renderDiagnostics ds (sourceMap := srcMap))
           return 1
         | .ok ssa =>
-          IO.println (Report.traceabilityReport validCore.coreModules mono.coreModules ssa.ssaModules locMap (registry := registry))
+          IO.println (Report.traceabilityReport validCore.coreModules mono.coreModules ssa.ssaModules locMap (registry := registry) (pc := pc))
           return 0
     if reportType == "mono" then
       match Pipeline.monomorphize validCore with
@@ -365,6 +369,8 @@ def compileAndQuery (inputPath : String) (query : String) : IO UInt32 := do
     return 1
   | .ok (parsed, _, validCore, srcMap) =>
     let locMap := Report.buildFnLocMap parsed.modules inputPath
+    let simpleLocMap := locMap.map fun e => (e.qualName, (e.file, e.fnSpan.line))
+    let pc := extractProofCore validCore simpleLocMap
     let registry ← loadRegistry inputPath
     -- Traceability queries need the backend pipeline
     let parts := query.splitOn ":"
@@ -380,10 +386,10 @@ def compileAndQuery (inputPath : String) (query : String) : IO UInt32 := do
           return 1
         | .ok ssa =>
           let fnFilter := if parts.length == 2 then some parts[1]! else none
-          IO.println (Report.queryTraceability validCore.coreModules mono.coreModules ssa.ssaModules locMap fnFilter (registry := registry))
+          IO.println (Report.queryTraceability validCore.coreModules mono.coreModules ssa.ssaModules locMap fnFilter (registry := registry) (pc := pc))
           return 0
     else
-      IO.println (Report.queryFacts validCore.coreModules locMap query (registry := registry))
+      IO.println (Report.queryFacts validCore.coreModules locMap query (registry := registry) (pc := pc))
       return 0
 
 -- ============================================================
@@ -876,9 +882,11 @@ def main (args : List String) : IO UInt32 := do
         return 1
       | .ok (parsed, _, validCore, _srcMap) =>
         let locMap := Report.buildFnLocMap parsed.modules inp
+        let simpleLocMap := locMap.map fun e => (e.qualName, (e.file, e.fnSpan.line))
+        let pc := extractProofCore validCore simpleLocMap
         let registry ← loadRegistry inp
         -- Collect core facts (same as diagnostics-json)
-        let coreFacts := Report.collectCoreFacts validCore.coreModules locMap registry
+        let coreFacts := Report.collectCoreFacts validCore.coreModules locMap registry pc
         -- Run backend pipeline for traceability facts
         let traceFacts ← match Pipeline.monomorphize validCore with
           | .error _ => pure []
@@ -887,7 +895,7 @@ def main (args : List String) : IO UInt32 := do
             | .error _ => pure []
             | .ok ssa =>
               pure (Report.collectTraceabilityFacts
-                validCore.coreModules mono.coreModules ssa.ssaModules locMap (registry := registry))
+                validCore.coreModules mono.coreModules ssa.ssaModules locMap (registry := registry) (pc := pc))
         -- Generate timestamp
         let ms ← IO.monoMsNow
         let timestamp := toString ms
