@@ -259,8 +259,12 @@ private partial def buildQualNameMap (m : CModule) (pfx : String := "")
 private partial def buildCallGraphModule (qualNameMap : List (String × String))
     (m : CModule) (pfx : String := "") : CallGraph :=
   let qualPrefix := if pfx == "" then m.name else pfx ++ "." ++ m.name
+  -- Resolve a bare callee name to its qualified name.
+  -- Prefer same-module match (qualPrefix.bare) over first global match.
   let resolveCallee (bare : String) : String :=
-    match qualNameMap.find? fun (b, _) => b == bare with
+    let sameModule := qualPrefix ++ "." ++ bare
+    if qualNameMap.any fun (_, q) => q == sameModule then sameModule
+    else match qualNameMap.find? fun (b, _) => b == bare with
     | some (_, qual) => qual
     | none => bare  -- intrinsic, extern, or unknown
   let fnEntries := m.functions.map fun f =>

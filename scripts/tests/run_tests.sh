@@ -3361,6 +3361,32 @@ else
     FAIL=$((FAIL + 1))
 fi
 
+# Test 8: Cross-module dependency uses correct qualified name
+XMOD_DIR="$TESTDIR/adversarial_crossmod_deps"
+XMOD_PROG="$XMOD_DIR/test_crossmod.con"
+$COMPILER snapshot "$XMOD_PROG" -o "$TMPDIR/xmod_deps.json" 2>/dev/null
+
+if python3 -c "
+import json
+with open('$TMPDIR/xmod_deps.json') as f:
+    data = json.load(f)
+obs = {f['function']: f for f in data['facts'] if f['kind'] == 'obligation'}
+# left.use_add calls left.add (proved) — dependency must be left.add
+left_deps = obs['left.use_add']['dependencies']
+assert 'left.add' in left_deps, f'left.use_add should depend on left.add: {left_deps}'
+assert 'right.add' not in left_deps, f'left.use_add should not depend on right.add: {left_deps}'
+# right.use_add calls right.add (proved) — dependency must be right.add
+right_deps = obs['right.use_add']['dependencies']
+assert 'right.add' in right_deps, f'right.use_add should depend on right.add: {right_deps}'
+assert 'left.add' not in right_deps, f'right.use_add should not depend on left.add: {right_deps}'
+" 2>/dev/null; then
+    echo "  ok  obligation-adv: cross-module dependency uses correct qualified name"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  obligation-adv: cross-module dependency should use correct qualified name"
+    FAIL=$((FAIL + 1))
+fi
+
 # --- Proof diagnostics adversarial tests (item 11) ---
 # Tests that diagnostics are generated as first-class pipeline objects.
 
