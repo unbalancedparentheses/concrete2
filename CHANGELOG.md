@@ -10,6 +10,29 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Stable attached spec identities land as a real proof-pipeline layer
+
+**Typed proof attachment model:** proof/spec attachment is no longer just free strings reconstructed in multiple report paths. The proof pipeline now has explicit identity types for:
+
+- function identity
+- spec identity
+- spec attachment source
+
+This separates *identity* from *status*: the compiler can now carry what proof/spec is attached to a function without collapsing that into `proved` / `stale` / `unproved` too early.
+
+**Centralized spec resolution:** the old scattered lookup logic has been replaced by one proof-pipeline path. Registry ownership moved out of report code and into the proof pipeline, so report/fact surfaces consume resolved attachments instead of re-deriving them independently.
+
+**Registry validation:** registry loading now has real consistency checks instead of silently accepting arbitrary entries. Validation distinguishes:
+
+- unknown function
+- duplicate entry
+- conflicting entry
+- stale fingerprint
+
+That makes the registry more honest as a proof artifact and prepares the transition from raw fingerprint-only attachment toward richer proof-target-aware identities.
+
+**What changed strategically:** the next step is no longer "attach strings to functions." Concrete now has a real identity layer between ProofCore and obligations. That is the right foundation for mechanical obligation generation and proof-oriented diagnostics.
+
 ### ProofCore normalization lands as a canonical proof-target layer
 
 **Normalized proof target:** extracted `PExpr` terms are now normalized before they are exposed as the proof target. The normalization pass applies a deliberately small rewrite set:

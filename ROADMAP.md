@@ -138,13 +138,14 @@ Current guardrails: keep specs in Lean-attached / artifact-registry form until o
 49. build the user-facing documentation set deliberately: a FAQ for predictable/proof/capability questions, a Concrete comparison guide against Rust, Zig, SPARK/Ada, Lean 4, and related tools, and the supporting material needed before the language book can stop churning
 50. define the showcase maintenance policy: showcase examples are first-class regression targets, must keep honest framing, must retain report/snapshot/diff coverage, and regressions in them count as serious thesis breaks; maintain the small/medium/big balance rather than letting the corpus collapse into only tiny demos
 51. define first public release criteria: the first stable supported subset, required examples across small, medium, and big workloads, required diagnostics, required proof workflow, required stdlib/project UX, and the minimum evidence/policy/tooling story for outsiders
-52. write the real language book/tutorial path only after the first stable supported subset and first public release criteria are concrete enough that teaching the language will not churn with every compiler refactor
-53. polish the packet/parser flagship example as the canonical thesis demo
-54. build an FFI showcase with a `trusted` wrapper and `with(Unsafe)` isolated at the boundary
-55. build an ownership-heavy data-structure showcase with linear ownership and deterministic cleanup
-56. build a privilege-separated tool where capability signatures prove the trusted core cannot touch files/network/processes
-57. build a fixed-capacity / no-alloc showcase that proves the predictable subset is practical for real bounded systems code
-58. build a real cryptography example only after the proof/artifact boundary is stronger: good candidates are constant-time equality + verification use, an HMAC verification core, an Ed25519 verification helper/core subset, or hash/parser/encoding correctness around a crypto-adjacent component
+52. ship the first real public language release once those criteria are actually met: version the release honestly, publish the supported subset and known limits, ship installable artifacts, and make the release promise narrower than the full roadmap
+53. write the real language book/tutorial path only after the first stable supported subset and first public release criteria are concrete enough that teaching the language will not churn with every compiler refactor
+54. polish the packet/parser flagship example as the canonical thesis demo
+55. build an FFI showcase with a `trusted` wrapper and `with(Unsafe)` isolated at the boundary
+56. build an ownership-heavy data-structure showcase with linear ownership and deterministic cleanup
+57. build a privilege-separated tool where capability signatures prove the trusted core cannot touch files/network/processes
+58. build a fixed-capacity / no-alloc showcase that proves the predictable subset is practical for real bounded systems code
+59. build a real cryptography example only after the proof/artifact boundary is stronger: good candidates are constant-time equality + verification use, an HMAC verification core, an Ed25519 verification helper/core subset, or hash/parser/encoding correctness around a crypto-adjacent component
 59. refine and stabilize the explicit `Core -> ProofCore` phase after the flagship has forced it into the open: keep the extraction semantics small, testable, and shared by obligations, specs, proofs, and future proof tools
 60. extend ProofCore and its semantics to cover more real Concrete constructs in a principled order: structs/fields, pattern matching, arrays/slices, borrows/dereferences, casts, cleanup/defer/drop behavior, and other constructs the flagship examples actually force into scope
 61. broaden proof obligation generation beyond the first pipeline slice so loop-related, memory-related, and contract-related proof work becomes mechanically inspectable instead of ad hoc
