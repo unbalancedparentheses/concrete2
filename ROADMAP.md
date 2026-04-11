@@ -19,6 +19,41 @@ The core language, stdlib foundation, report surfaces, proof-status diagnostics,
 
 The next question is no longer "can Concrete express this?" but "can Concrete demonstrate its thesis clearly enough to justify the project?"
 
+## Vision Validation Criteria
+
+Concrete's vision is only validated if real examples make the core claim hold in practice, not just in isolated reports.
+
+The project counts as directionally correct only when all of the following are true:
+
+1. one flagship example demonstrates the full thesis:
+   - explicit authority at function boundaries
+   - a predictable / bounded core
+   - at least one proof-backed property
+   - artifact-backed evidence
+   - drift detection when the code changes
+2. a bad change actually gets caught:
+   - widened authority
+   - new allocation / FFI / blocking
+   - broken predictable profile
+   - stale proof attachment
+   - changed obligation / evidence status
+3. another engineer can audit it without reading compiler internals:
+   - what can this function touch?
+   - is it predictable?
+   - is it proved?
+   - what is trusted?
+   - what changed?
+4. the artifact story is real:
+   facts, registry, obligations, extraction, traceability, drift, and CI gates exist as build artifacts, not compiler-internal hacks
+5. a second example in a different domain also works:
+   packet parser alone is not enough; examples such as a transaction validator, ELF inspector, or crypto verification core must also fit the model
+6. ergonomics are acceptable:
+   the evidence/proof workflow must stay small enough that ordinary bounded systems code is still reasonable to write
+7. performance is acceptable for the target use case:
+   the bounded/provable core cannot be so costly that the language becomes impractical for the systems domains it targets
+8. trust boundaries are explicit and honest:
+   the reports must make clear what is enforced by the compiler, what is analysis-only, what is proved in Lean, and where backend / target / toolchain assumptions begin
+
 ## Linear Roadmap
 
 Do this list top-to-bottom. This is the roadmap. Completed history belongs in [CHANGELOG.md](CHANGELOG.md), and detailed design belongs in `research/`. When items leave the active roadmap, update the changelog in the same cleanup.
