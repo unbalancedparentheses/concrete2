@@ -814,9 +814,13 @@ def main (args : List String) : IO UInt32 := do
       let newJson ← readFile newPath
       match Report.parseFacts oldJson, Report.parseFacts newJson with
       | some oldFacts, some newFacts =>
-        let entries := Report.diffFacts oldFacts newFacts
-        IO.println (Report.renderDiffReport entries)
-        return (if entries.any (·.drift == "weakened") then 1 else 0)
+        match Report.diffFacts oldFacts newFacts with
+        | .error e =>
+          IO.eprintln s!"error: {e}"
+          return 2
+        | .ok entries =>
+          IO.println (Report.renderDiffReport entries)
+          return (if entries.any (·.drift == "weakened") then 1 else 0)
       | none, _ =>
         IO.eprintln s!"error: could not parse JSON from {oldPath}"
         return 1
@@ -828,9 +832,13 @@ def main (args : List String) : IO UInt32 := do
       let newJson ← readFile newPath
       match Report.parseFacts oldJson, Report.parseFacts newJson with
       | some oldFacts, some newFacts =>
-        let entries := Report.diffFacts oldFacts newFacts
-        IO.println (Report.renderDiffJson entries)
-        return (if entries.any (·.drift == "weakened") then 1 else 0)
+        match Report.diffFacts oldFacts newFacts with
+        | .error e =>
+          IO.eprintln s!"error: {e}"
+          return 2
+        | .ok entries =>
+          IO.println (Report.renderDiffJson entries)
+          return (if entries.any (·.drift == "weakened") then 1 else 0)
       | none, _ =>
         IO.eprintln s!"error: could not parse JSON from {oldPath}"
         return 1

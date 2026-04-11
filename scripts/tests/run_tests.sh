@@ -4128,13 +4128,12 @@ cat > "$ADV_DIR/dupes_new.json" << 'ADVEOF'
 [{"kind":"proof_status","function":"foo","state":"proved","current_fingerprint":"abc"},{"kind":"proof_status","function":"foo","state":"stale","current_fingerprint":"xyz"}]
 ADVEOF
 adv_dupes=$($COMPILER diff "$ADV_DIR/dupes_old.json" "$ADV_DIR/dupes_new.json" 2>&1) && adv_dupes_exit=0 || adv_dupes_exit=$?
-# First match in new is identical to old → no change detected for it
-# The duplicate is silently ignored
-if echo "$adv_dupes" | grep -q "No trust-relevant changes"; then
-    echo "  ok  adv-diff: duplicate facts — only first match compared, duplicate invisible"
+# Duplicate keys should be rejected as a structured error
+if echo "$adv_dupes" | grep -qi "error.*duplicate"; then
+    echo "  ok  adv-diff: duplicate (kind, function) keys rejected as error"
     PASS=$((PASS + 1))
 else
-    echo "FAIL  adv-diff: duplicate facts should use first match (second invisible)"
+    echo "FAIL  adv-diff: duplicate keys should produce structured error"
     echo "$adv_dupes"
     FAIL=$((FAIL + 1))
 fi
@@ -4188,14 +4187,13 @@ cat > "$ADV_DIR/new_weak_new.json" << 'ADVEOF'
 [{"kind":"effects","function":"evil_fn","evidence":"reported","is_pure":"false","capabilities":"[Alloc]","allocates":"true","frees":"false","recursion":"none","loops":"none","crosses_ffi":"true","is_trusted":"false"}]
 ADVEOF
 adv_newweak=$($COMPILER diff "$ADV_DIR/new_weak_old.json" "$ADV_DIR/new_weak_new.json" 2>&1) && adv_nw_exit=0 || adv_nw_exit=$?
-# New effects facts default to "neutral" drift — this is a known gap
-# Test documents the current behavior
+# New function with weak evidence should be flagged as weakened
 if echo "$adv_newweak" | grep -q '\[+\].*effects.*evil_fn' && \
-   echo "$adv_newweak" | grep -q "OTHER CHANGES"; then
-    echo "  ok  adv-diff: new function with weak evidence marked as neutral (known gap)"
+   echo "$adv_newweak" | grep -q "TRUST WEAKENED"; then
+    echo "  ok  adv-diff: new function with weak evidence flagged as trust weakened"
     PASS=$((PASS + 1))
 else
-    echo "FAIL  adv-diff: new weak-evidence function should appear in diff"
+    echo "FAIL  adv-diff: new weak-evidence function should be flagged as weakened"
     echo "$adv_newweak"
     FAIL=$((FAIL + 1))
 fi
@@ -4232,6 +4230,65 @@ if echo "$adv_esc" | grep -q "TRUST WEAKENED" && \
 else
     echo "FAIL  adv-diff: escaped function names should still diff correctly"
     echo "$adv_esc"
+    FAIL=$((FAIL + 1))
+fi
+
+# --- New weak additions classified as weakened ---
+
+# New proof_status with no_proof → weakened
+cat > "$ADV_DIR/new_noproof_new.json" << 'ADVEOF'
+[{"kind":"proof_status","function":"bar","state":"no_proof","current_fingerprint":"xyz"}]
+ADVEOF
+adv_noproof=$($COMPILER diff "$ADV_DIR/new_weak_old.json" "$ADV_DIR/new_noproof_new.json" 2>&1) && true || true
+if echo "$adv_noproof" | grep -q "TRUST WEAKENED" && \
+   echo "$adv_noproof" | grep -q '\[+\].*proof_status.*bar'; then
+    echo "  ok  adv-diff: new no_proof fact flagged as weakened"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  adv-diff: new no_proof fact should be weakened"
+    echo "$adv_noproof"
+    FAIL=$((FAIL + 1))
+fi
+
+# New capability with is_pure=false → weakened
+cat > "$ADV_DIR/new_impure_new.json" << 'ADVEOF'
+[{"kind":"capability","function":"impure_fn","capabilities":"[Alloc]","is_pure":"false"}]
+ADVEOF
+adv_impure=$($COMPILER diff "$ADV_DIR/new_weak_old.json" "$ADV_DIR/new_impure_new.json" 2>&1) && true || true
+if echo "$adv_impure" | grep -q "TRUST WEAKENED"; then
+    echo "  ok  adv-diff: new impure capability fact flagged as weakened"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  adv-diff: new impure capability should be weakened"
+    echo "$adv_impure"
+    FAIL=$((FAIL + 1))
+fi
+
+# New proved fact → neutral (not weakened)
+cat > "$ADV_DIR/new_proved_new.json" << 'ADVEOF'
+[{"kind":"proof_status","function":"good","state":"proved","current_fingerprint":"abc"}]
+ADVEOF
+adv_proved=$($COMPILER diff "$ADV_DIR/new_weak_old.json" "$ADV_DIR/new_proved_new.json" 2>&1) && adv_proved_exit=0 || adv_proved_exit=$?
+if echo "$adv_proved" | grep -q "OTHER CHANGES" && [ "$adv_proved_exit" -eq 0 ]; then
+    echo "  ok  adv-diff: new proved fact is neutral (exit 0)"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  adv-diff: new proved fact should be neutral"
+    echo "$adv_proved"
+    FAIL=$((FAIL + 1))
+fi
+
+# Duplicate keys in old bundle → error
+cat > "$ADV_DIR/dupes_old_bundle.json" << 'ADVEOF'
+[{"kind":"effects","function":"foo","evidence":"proved"},{"kind":"effects","function":"foo","evidence":"stale"}]
+ADVEOF
+adv_old_dupes=$($COMPILER diff "$ADV_DIR/dupes_old_bundle.json" "$ADV_DIR/new_weak_old.json" 2>&1) && true || true
+if echo "$adv_old_dupes" | grep -qi "error.*duplicate.*old"; then
+    echo "  ok  adv-diff: duplicate keys in old bundle rejected"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  adv-diff: duplicate keys in old bundle should be rejected"
+    echo "$adv_old_dupes"
     FAIL=$((FAIL + 1))
 fi
 

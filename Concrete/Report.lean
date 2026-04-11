@@ -38,7 +38,7 @@ def parseRegistryJson (input : String) : ProofRegistry :=
     let needle := s!"\"{key}\":"
     match block.splitOn needle with
     | [_, rest] =>
-      let rest := rest.trimLeft
+      let rest := rest.trimAsciiStart
       if rest.startsWith "\"" then
         let inner := (rest.drop 1).toString.splitOn "\"" |>.head!
         inner
@@ -3298,18 +3298,91 @@ private def compareFacts (kind : String) (oldFact newFact : Val) : List FieldCha
     else some { field := f, oldVal := oldV, newVal := newV }
 
 open Json in
-/-- Build a keyed map: (kind, function) → Val for a list of facts. -/
+/-- Build a keyed map: (kind, function) → Val for a list of facts.
+    For fact kinds that allow multiple entries per function (e.g.,
+    predictable_violation), the key includes a disambiguator. -/
 private def keyFacts (facts : List Val) : List ((String × String) × Val) :=
   facts.filterMap fun v =>
     match jsonGetStr v "kind", jsonGetStr v "function" with
-    | some k, some f => some ((k, f), v)
+    | some k, some f =>
+      -- Disambiguate multi-per-function fact kinds
+      let suffix := match k with
+        | "predictable_violation" => (jsonGetStr v "reason").getD ""
+        | _ => ""
+      let key := if suffix.isEmpty then (k, f) else (k, f ++ ":" ++ suffix)
+      some (key, v)
     | _, _ => none
 
 open Json in
-/-- Diff two fact bundles and produce a list of DiffEntries. -/
-def diffFacts (oldFacts newFacts : List Val) : List DiffEntry :=
+/-- Classify a newly-added fact as weakened or neutral based on its content.
+    New functions with weak evidence, non-pure capabilities, FFI, or trust
+    markers are real drift and should be flagged. -/
+private def classifyNewFact (kind : String) (v : Val) : String :=
+  match kind with
+  | "predictable_violation" => "weakened"
+  | "unsafe" => "weakened"
+  | "effects" =>
+    let ev := (jsonGetVal v "evidence").map valDisplay |>.getD ""
+    let pure := (jsonGetVal v "is_pure").map valDisplay |>.getD ""
+    let ffi := (jsonGetVal v "crosses_ffi").map valDisplay |>.getD ""
+    let trusted := (jsonGetVal v "is_trusted").map valDisplay |>.getD ""
+    let caps := (jsonGetVal v "capabilities").map valDisplay |>.getD ""
+    if ev == "reported" || ev == "trusted-assumption" then "weakened"
+    else if pure == "false" then "weakened"
+    else if ffi == "true" then "weakened"
+    else if trusted == "true" then "weakened"
+    else if caps != "[]" && caps != "" then "weakened"
+    else "neutral"
+  | "capability" =>
+    let pure := (jsonGetVal v "is_pure").map valDisplay |>.getD ""
+    if pure == "false" then "weakened" else "neutral"
+  | "alloc" =>
+    let leak := (jsonGetVal v "potential_leak").map valDisplay |>.getD ""
+    if leak == "true" then "weakened" else "neutral"
+  | "proof_status" =>
+    let state := (jsonGetVal v "state").map valDisplay |>.getD ""
+    if state == "no_proof" || state == "not_eligible" || state == "stale" then "weakened"
+    else "neutral"
+  | "obligation" =>
+    let status := (jsonGetVal v "status").map valDisplay |>.getD ""
+    if status == "missing_proof" || status == "stale" then "weakened"
+    else "neutral"
+  | "extraction" =>
+    let status := (jsonGetVal v "status").map valDisplay |>.getD ""
+    if status == "excluded" then "weakened" else "neutral"
+  | "traceability" =>
+    let ev := (jsonGetVal v "evidence").map valDisplay |>.getD ""
+    if evidenceRank ev < 3 then "weakened" else "neutral"  -- below "enforced"
+  | _ => "neutral"
+
+open Json in
+/-- Find duplicate (kind, function) keys in a keyed fact list. -/
+private def findDuplicateKeys (keyed : List ((String × String) × Val))
+    : List (String × String) :=
+  let keys := keyed.map (·.1)
+  keys.foldl (fun (seen, dupes) key =>
+    if seen.contains key then
+      if dupes.contains key then (seen, dupes)
+      else (seen, dupes ++ [key])
+    else (seen ++ [key], dupes)
+  ) ([], []) |>.2
+
+open Json in
+/-- Diff two fact bundles and produce a list of DiffEntries.
+    Returns an error if either bundle contains duplicate (kind, function) keys. -/
+def diffFacts (oldFacts newFacts : List Val) : Except String (List DiffEntry) :=
   let oldKeyed := keyFacts oldFacts
   let newKeyed := keyFacts newFacts
+  -- Reject duplicate keys
+  let oldDupes := findDuplicateKeys oldKeyed
+  let newDupes := findDuplicateKeys newKeyed
+  if !oldDupes.isEmpty then
+    let desc := oldDupes.map fun (k, f) => s!"({k}, {f})"
+    .error s!"duplicate keys in old bundle: {", ".intercalate desc}"
+  else if !newDupes.isEmpty then
+    let desc := newDupes.map fun (k, f) => s!"({k}, {f})"
+    .error s!"duplicate keys in new bundle: {", ".intercalate desc}"
+  else
   -- Removed: in old but not new
   let removed := oldKeyed.filterMap fun ((k, f), _) =>
     if newKeyed.find? (fun (key, _) => key == (k, f)) |>.isNone then
@@ -3317,12 +3390,9 @@ def diffFacts (oldFacts newFacts : List Val) : List DiffEntry :=
            , changes := [], drift := "weakened" : DiffEntry }
     else none
   -- Added: in new but not old
-  let added := newKeyed.filterMap fun ((k, f), _) =>
+  let added := newKeyed.filterMap fun ((k, f), v) =>
     if oldKeyed.find? (fun (key, _) => key == (k, f)) |>.isNone then
-      let drift := match k with
-        | "predictable_violation" => "weakened"
-        | "unsafe" => "weakened"
-        | _ => "neutral"
+      let drift := classifyNewFact k v
       some { kind := k, function := f, category := "added"
            , changes := [], drift := drift : DiffEntry }
     else none
@@ -3341,7 +3411,7 @@ def diffFacts (oldFacts newFacts : List Val) : List DiffEntry :=
           else "neutral"
         some { kind := k, function := f, category := "changed"
              , changes := fieldChanges, drift := drift : DiffEntry }
-  removed ++ added ++ changed
+  .ok (removed ++ added ++ changed)
 
 /-- Render a diff report as human-readable text. -/
 def renderDiffReport (entries : List DiffEntry) : String :=
