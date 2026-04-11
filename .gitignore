@@ -32,6 +32,7 @@ examples/lox/lox
 examples/vm/vm
 examples/mal/mal
 examples/policy_engine/policy_engine
+examples/elf_header/elf_header
 
 # C benchmark binaries (compiled from bench_c.c)
 examples/grep/cgrep_c

@@ -207,7 +207,7 @@ After an `--affected` run, the summary shows which files triggered which section
 | Metric | Value |
 |--------|-------|
 | Pass-level tests | <1s (32 tests, no I/O) |
-| Fast suite (`--fast`) | ~25-35s (~1258 tests, parallel) |
+| Fast suite (`--fast`) | ~25-35s (~1259 tests, parallel) |
 | Full suite (`--full`) | ~40-50s (~1150 tests, 3 skipped, includes network, cross-target, perf) |
 | Cache hit rate | 26/57 compilations saved per fast run |
 | Compiler build | ~30-45s (`lake build`) |

@@ -1660,6 +1660,123 @@ def checkPredictable (modules : List CModule) (locMap : FnLocMap := [])
     (false, s!"{header}\n\n{"\n\n".intercalate lines}\n\n{summary}\n")
 
 -- ============================================================
+-- Proof Eligibility Assessment (first-class, shared by all
+-- proof pipeline consumers: proof-status, extraction,
+-- obligations, traceability, effects evidence)
+-- ============================================================
+-- This is the single authoritative source for "is this function
+-- in the provable subset?" It runs BEFORE extraction or proof
+-- matching, and every downstream consumer reads it.
+
+/-- Why a function is excluded from the provable subset. -/
+inductive ExclusionKind where
+  | source    -- structural: capabilities, trusted, entry point
+  | profile   -- runtime: recursion, loops, alloc, FFI, I/O
+  | both      -- fails both source and profile checks
+  deriving Repr
+
+/-- Per-function eligibility assessment. -/
+structure EligibilityEntry where
+  qualName       : String
+  eligible       : Bool           -- in the provable subset?
+  sourceReasons  : List String    -- source-level exclusion reasons
+  profileReasons : List String    -- predictable-profile gate failures
+  exclusionKind  : Option ExclusionKind  -- none if eligible
+  isTrusted      : Bool           -- marked trusted (separate from eligible)
+  loc            : Option SourceLoc
+
+/-- Compute eligibility for one function. Combines source-level checks
+    (capabilities, trusted, entry point) with profile gates (recursion,
+    loops, allocation, FFI, blocking I/O) into a single assessment. -/
+private def assessEligibility
+    (f : CFnDef) (qualName : String)
+    (externNames : List String)
+    (recMap : List (String × RecursionKind × List String))
+    (locMap : FnLocMap) : EligibilityEntry :=
+  let fnLoc := lookupLoc locMap qualName
+  -- Source-level check (structural)
+  let (concreteCaps, _) := f.capSet.normalize
+  let callees := collectCallsStmts f.body |>.eraseDups
+  let sourceReasons : List String :=
+    (if !f.capSet.isEmpty then
+      [s!"has capabilities: {", ".intercalate concreteCaps}"] else []) ++
+    (if f.isTrusted then ["marked trusted"] else []) ++
+    (if f.isEntryPoint then ["is entry point (main)"] else []) ++
+    (if f.trustedImplOrigin.isSome then ["from trusted impl"] else [])
+  -- Profile gates (runtime characteristics)
+  let allocs := callees.filter isAllocCall
+  let rec_ := match recMap.find? (fun (n, _, _) => n == f.name) with
+    | some (_, .direct, _) => "direct"
+    | some (_, .mutual, _) => "mutual"
+    | _ => "none"
+  let crossesFfi := callees.any fun c => externNames.contains c
+  let loopClass := classifyLoops f.body
+  let profileReasons : List String :=
+    (if rec_ != "none" then [s!"recursion ({rec_})"] else []) ++
+    (if loopClass == "unbounded" || loopClass == "mixed" then ["unbounded loops"] else []) ++
+    (if !allocs.isEmpty || concreteCaps.any (· == "Alloc") then ["allocation"] else []) ++
+    (if crossesFfi then ["FFI"] else []) ++
+    (if concreteCaps.any fun c => c == "File" || c == "Network" || c == "Process"
+     then ["blocking I/O"] else [])
+  let passesSource := sourceReasons.isEmpty
+  let passesProfile := profileReasons.isEmpty
+  let eligible := passesSource && passesProfile
+  let exclusionKind := if eligible then none
+    else if !passesSource && !passesProfile then some .both
+    else if !passesSource then some .source
+    else some .profile
+  { qualName, eligible, sourceReasons, profileReasons, exclusionKind
+  , isTrusted := f.isTrusted, loc := fnLoc }
+
+/-- Collect eligibility for all functions in a module tree. -/
+private partial def collectEligibility
+    (externNames : List String)
+    (recMap : List (String × RecursionKind × List String))
+    (locMap : FnLocMap)
+    (m : CModule) (modulePath : String := "") : List EligibilityEntry :=
+  let qualPrefix := if modulePath == "" then m.name else modulePath ++ "." ++ m.name
+  let entries := m.functions.map fun f =>
+    let qualName := qualPrefix ++ "." ++ f.name
+    assessEligibility f qualName externNames recMap locMap
+  entries ++ m.submodules.foldl (fun acc sub =>
+    acc ++ collectEligibility externNames recMap locMap sub qualPrefix) []
+
+/-- Render the eligibility report (--report eligibility). -/
+def eligibilityReport (modules : List CModule) (locMap : FnLocMap := [])
+    (sourceMap : SourceMap := []) : String :=
+  let graph := buildCallGraph modules
+  let sccs := tarjanSCC graph
+  let recMap := classifyRecursion graph sccs
+  let externNames := modules.foldl (fun acc m => acc ++ collectExternNames m) []
+  let entries := modules.foldl (fun acc m =>
+    acc ++ collectEligibility externNames recMap locMap m) []
+  let header := "=== Proof Eligibility Assessment ==="
+  let body := entries.map fun e =>
+    let locStr := fmtLoc e.loc
+    if e.isTrusted then
+      s!"  trusted    `{e.qualName}`  @ {locStr}\n             proof bypassed (trusted assumption)"
+    else if e.eligible then
+      s!"  eligible   `{e.qualName}`  @ {locStr}\n             in provable subset: pure, bounded, no FFI"
+    else
+      let srcStr := if e.sourceReasons.isEmpty then "" else
+        s!"\n             source: {", ".intercalate e.sourceReasons}"
+      let profStr := if e.profileReasons.isEmpty then "" else
+        s!"\n             profile: {", ".intercalate e.profileReasons}"
+      s!"  excluded   `{e.qualName}`  @ {locStr}{srcStr}{profStr}"
+  -- Summary
+  let eligible := (entries.filter (·.eligible)).length
+  let excluded := (entries.filter fun e => !e.eligible && !e.isTrusted).length
+  let trusted := (entries.filter (·.isTrusted)).length
+  let sourceOnly := (entries.filter fun e =>
+    !e.eligible && !e.isTrusted && !e.sourceReasons.isEmpty && e.profileReasons.isEmpty).length
+  let profileOnly := (entries.filter fun e =>
+    !e.eligible && !e.isTrusted && e.sourceReasons.isEmpty && !e.profileReasons.isEmpty).length
+  let bothReasons := (entries.filter fun e =>
+    !e.eligible && !e.isTrusted && !e.sourceReasons.isEmpty && !e.profileReasons.isEmpty).length
+  let summary := s!"Totals: {entries.length} functions — {eligible} eligible, {excluded} excluded ({sourceOnly} source, {profileOnly} profile, {bothReasons} both), {trusted} trusted"
+  s!"{header}\n\n{"\n".intercalate body}\n\n{summary}\n"
+
+-- ============================================================
 -- Report: Proof Status (--report proof-status)
 -- ============================================================
 -- Per-function proof evidence with Elm-clear diagnostics for
@@ -1688,8 +1805,7 @@ structure ProofStatusEntry where
   fnSpan        : Option Span
 
 private partial def collectProofStatus
-    (externNames : List String)
-    (recMap : List (String × RecursionKind × List String))
+    (eligibility : List EligibilityEntry)
     (locMap : FnLocMap)
     (m : CModule) (modulePath : String := "")
     (registry : ProofRegistry := []) : List ProofStatusEntry :=
@@ -1700,24 +1816,14 @@ private partial def collectProofStatus
     let entry := lookupBody locMap qualName
     let fnLoc := lookupLoc locMap qualName
     let fnSp := entry.map (·.fnSpan)
-    -- Check profile gates
-    let callees := collectCallsStmts f.body |>.eraseDups
-    let allocs := callees.filter isAllocCall
-    let (concreteCaps, _) := f.capSet.normalize
-    let rec_ := match recMap.find? (fun (n, _, _) => n == f.name) with
-      | some (_, .direct, _) => "direct"
-      | some (_, .mutual, _) => "mutual"
-      | _ => "none"
-    let crossesFfi := callees.any fun c => externNames.contains c
-    let loopClass := classifyLoops f.body
-    let gates : List String :=
-      (if rec_ != "none" then [s!"recursion ({rec_})"] else []) ++
-      (if loopClass == "unbounded" || loopClass == "mixed" then ["unbounded loops"] else []) ++
-      (if !allocs.isEmpty || concreteCaps.any (· == "Alloc") then ["allocation"] else []) ++
-      (if crossesFfi then ["FFI"] else []) ++
-      (if concreteCaps.any fun c => c == "File" || c == "Network" || c == "Process"
-       then ["blocking I/O"] else [])
-    let passesProfile := gates.isEmpty
+    -- Look up pre-computed eligibility
+    let elig := eligibility.find? fun e => e.qualName == qualName
+    let gates := match elig with
+      | some e => e.sourceReasons ++ e.profileReasons
+      | none => []
+    let passesProfile := match elig with
+      | some e => e.eligible
+      | none => false
     -- Determine proof state: check both hardcoded table and registry
     let matchedProof := Proof.provedFunctions.find? fun (name, expectedFp) =>
       name == qualName && expectedFp == fp
@@ -1751,7 +1857,7 @@ private partial def collectProofStatus
     , profileGates := gates, specName := sName, proofName := pName
     , proofSource := pSrc, loc := fnLoc, fnSpan := fnSp }
   entries ++ m.submodules.foldl (fun acc sub =>
-    acc ++ collectProofStatus externNames recMap locMap sub qualPrefix registry) []
+    acc ++ collectProofStatus eligibility locMap sub qualPrefix registry) []
 
 /-- Render a single proof status entry with Elm-clear formatting. -/
 private def renderProofStatusEntry (e : ProofStatusEntry) (sourceMap : SourceMap) : String :=
@@ -1792,8 +1898,11 @@ def proofStatusReport (modules : List CModule) (locMap : FnLocMap := [])
   let sccs := tarjanSCC graph
   let recMap := classifyRecursion graph sccs
   let externNames := modules.foldl (fun acc m => acc ++ collectExternNames m) []
+  -- Compute eligibility first, then pass to proof-status
+  let eligibility := modules.foldl (fun acc m =>
+    acc ++ collectEligibility externNames recMap locMap m) []
   let entries := modules.foldl (fun acc m =>
-    acc ++ collectProofStatus externNames recMap locMap m "" registry) []
+    acc ++ collectProofStatus eligibility locMap m "" registry) []
   let body := entries.map fun e => renderProofStatusEntry e sourceMap
   -- Summary
   let proved := (entries.filter fun e => e.state matches .proved).length
@@ -1833,8 +1942,10 @@ private partial def collectObligations
   let sccs := tarjanSCC graph
   let recMap := classifyRecursion graph sccs
   let externNames := modules.foldl (fun acc m => acc ++ collectExternNames m) []
+  let eligibility := modules.foldl (fun acc m =>
+    acc ++ collectEligibility externNames recMap locMap m) []
   let proofEntries := modules.foldl (fun acc m =>
-    acc ++ collectProofStatus externNames recMap locMap m "" registry) []
+    acc ++ collectProofStatus eligibility locMap m "" registry) []
   -- Build set of proved function names for dependency tracking
   let provedNames := proofEntries.filterMap fun e =>
     if e.state matches .proved then some e.qualName else none
@@ -2166,8 +2277,10 @@ private def collectTraceEntries
   let graph := buildCallGraph coreModules
   let sccs := tarjanSCC graph
   let recMap := classifyRecursion graph sccs
+  let eligibility := coreModules.foldl (fun acc m =>
+    acc ++ collectEligibility externNames recMap locMap m) []
   let proofEntries := coreModules.foldl (fun acc m =>
-    acc ++ collectProofStatus externNames recMap locMap m "" registry) []
+    acc ++ collectProofStatus eligibility locMap m "" registry) []
   -- Collect mono names
   let allMonoNames := monoModules.foldl (fun acc m => acc ++ collectMonoFnNames m) []
   -- Collect SSA names
@@ -2484,6 +2597,38 @@ def collectPredictableFacts (modules : List CModule) (locMap : FnLocMap := []) :
   violations.map violationToFact
 
 open Json in
+/-- Convert an eligibility entry to a JSON fact. -/
+private def eligibilityToFact (e : EligibilityEntry) : Val :=
+  let statusStr := if e.isTrusted then "trusted"
+    else if e.eligible then "eligible"
+    else "excluded"
+  let exclusionStr := match e.exclusionKind with
+    | some .source => "source"
+    | some .profile => "profile"
+    | some .both => "both"
+    | none => "none"
+  .obj ([
+    ("kind", .str "eligibility"),
+    ("function", .str e.qualName),
+    ("status", .str statusStr),
+    ("exclusion_kind", .str exclusionStr),
+    ("source_reasons", .arr (e.sourceReasons.map .str)),
+    ("profile_reasons", .arr (e.profileReasons.map .str)),
+    ("loc", locToJson e.loc)
+  ])
+
+open Json in
+/-- Collect eligibility facts for all functions. -/
+def collectEligibilityFacts (modules : List CModule) (locMap : FnLocMap := []) : List Val :=
+  let graph := buildCallGraph modules
+  let sccs := tarjanSCC graph
+  let recMap := classifyRecursion graph sccs
+  let externNames := modules.foldl (fun acc m => acc ++ collectExternNames m) []
+  let entries := modules.foldl (fun acc m =>
+    acc ++ collectEligibility externNames recMap locMap m) []
+  entries.map eligibilityToFact
+
+open Json in
 /-- Collect proof-status entries as structured facts. -/
 def collectProofStatusFacts (modules : List CModule) (locMap : FnLocMap := [])
     (registry : ProofRegistry := []) : List Val :=
@@ -2491,8 +2636,10 @@ def collectProofStatusFacts (modules : List CModule) (locMap : FnLocMap := [])
   let sccs := tarjanSCC graph
   let recMap := classifyRecursion graph sccs
   let externNames := modules.foldl (fun acc m => acc ++ collectExternNames m) []
+  let eligibility := modules.foldl (fun acc m =>
+    acc ++ collectEligibility externNames recMap locMap m) []
   let entries := modules.foldl (fun acc m =>
-    acc ++ collectProofStatus externNames recMap locMap m "" registry) []
+    acc ++ collectProofStatus eligibility locMap m "" registry) []
   entries.map proofStatusToFact
 
 open Json in
@@ -2752,6 +2899,7 @@ open Json in
 /-- Collect all core facts (everything except traceability) into a flat list. -/
 def collectCoreFacts (modules : List CModule) (locMap : FnLocMap := [])
     (registry : ProofRegistry := []) : List Val :=
+  let eligibility := collectEligibilityFacts modules locMap
   let predictable := collectPredictableFacts modules locMap
   let proofStatus := collectProofStatusFacts modules locMap registry
   let obligations := collectObligationFacts modules locMap registry
@@ -2760,7 +2908,7 @@ def collectCoreFacts (modules : List CModule) (locMap : FnLocMap := [])
   let caps := collectCapFacts modules
   let unsafeFacts := collectUnsafeFacts modules
   let alloc := collectAllocFacts modules
-  let base := predictable ++ proofStatus ++ obligations ++ extraction
+  let base := eligibility ++ predictable ++ proofStatus ++ obligations ++ extraction
   base ++ effects ++ caps ++ unsafeFacts ++ alloc
 
 open Json in
@@ -2937,8 +3085,10 @@ def proofQuery (modules : List CModule) (locMap : FnLocMap)
   let sccs := tarjanSCC graph
   let recMap := classifyRecursion graph sccs
   let externNames := modules.foldl (fun acc m => acc ++ collectExternNames m) []
+  let eligibility := modules.foldl (fun acc m =>
+    acc ++ collectEligibility externNames recMap locMap m) []
   let entries := modules.foldl (fun acc m =>
-    acc ++ collectProofStatus externNames recMap locMap m "" registry) []
+    acc ++ collectProofStatus eligibility locMap m "" registry) []
   let fnEntry := entries.find? fun e =>
     e.bareName == fnName || e.qualName == fnName || e.qualName.endsWith ("." ++ fnName)
   match fnEntry with
@@ -2987,8 +3137,10 @@ def evidenceQuery (modules : List CModule) (locMap : FnLocMap)
     acc ++ checkPredictableModule recMap externNames locMap m) []
   let fnViolations := violations.filter fun v => v.fnName == fnName
   -- Get proof status
+  let eligibility := modules.foldl (fun acc m =>
+    acc ++ collectEligibility externNames recMap locMap m) []
   let entries := modules.foldl (fun acc m =>
-    acc ++ collectProofStatus externNames recMap locMap m "" registry) []
+    acc ++ collectProofStatus eligibility locMap m "" registry) []
   let fnProof := entries.find? fun e =>
     e.bareName == fnName || e.qualName.endsWith ("." ++ fnName)
   match fnEffects with
@@ -3066,8 +3218,10 @@ def auditQuery (modules : List CModule) (locMap : FnLocMap)
           | some l => [("violation_loc", locToJson (some l))]
           | none => [])
     -- Proof
+    let eligibility := modules.foldl (fun acc m =>
+      acc ++ collectEligibility externNames recMap locMap m) []
     let entries := modules.foldl (fun acc m =>
-      acc ++ collectProofStatus externNames recMap locMap m "" registry) []
+      acc ++ collectProofStatus eligibility locMap m "" registry) []
     let fnProof := entries.find? fun e =>
       e.bareName == fnName || e.qualName.endsWith ("." ++ fnName)
     let proofState := match fnProof with
@@ -3481,6 +3635,8 @@ private def buildSummaryFact (facts : List Val) : Val :=
   let obStatus (s : String) := obFacts.filter (fun v => jsonGetStr v "status" == some s) |>.length
   let extFacts := facts.filter fun v => jsonGetStr v "kind" == some "extraction"
   let extStatus (s : String) := extFacts.filter (fun v => jsonGetStr v "status" == some s) |>.length
+  let eligFacts := facts.filter fun v => jsonGetStr v "kind" == some "eligibility"
+  let eligStatus (s : String) := eligFacts.filter (fun v => jsonGetStr v "status" == some s) |>.length
   .obj [
     ("total_functions", .num (proofFacts.length)),
     ("proved", .num (proofState "proved")),
@@ -3488,6 +3644,9 @@ private def buildSummaryFact (facts : List Val) : Val :=
     ("no_proof", .num (proofState "no_proof")),
     ("not_eligible", .num (proofState "not_eligible")),
     ("trusted", .num (proofState "trusted")),
+    ("eligibility_eligible", .num (eligStatus "eligible")),
+    ("eligibility_excluded", .num (eligStatus "excluded")),
+    ("eligibility_trusted", .num (eligStatus "trusted")),
     ("predictable_violations", .num (count "predictable_violation")),
     ("obligations_proved", .num (obStatus "proved")),
     ("obligations_missing", .num (obStatus "missing_proof")),

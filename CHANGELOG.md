@@ -10,6 +10,35 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### ELF file-I/O flagship closes cleanly; proof pipeline becomes eligibility-first
+
+**ELF file-I/O flagship cleanup:** the ELF example now fully closes the gap between "systems-shaped validator" and "real project-mode example". Runtime coverage exercises all shipped binary fixtures, including the bad-class path, and generated example binaries are kept out of the worktree so the flagship stays clean as a regression target.
+
+**Trusted shell + proved core split:** the example now demonstrates the intended Concrete evidence layering cleanly:
+
+- proved pure validator core
+- trusted low-level file/pointer boundary
+- reported entrypoint shell
+
+That makes the flagship a stronger thesis example than the earlier field-only validator, because it now has real file I/O while keeping the Lean-backed core unchanged and honest.
+
+**Eligibility-first proof pipeline:** proof processing no longer starts from extraction/report surfaces alone. The compiler now computes proof eligibility first and threads that result through the rest of the proof/evidence workflow.
+
+What is now real:
+
+- `--report eligibility`
+- eligibility facts in snapshots
+- eligibility-first proof-status / obligation accounting
+- updated fact counts and summary expectations across the examples
+
+**What changed strategically:** Concrete's proof story is no longer "report what seems extractable" first. It now has a clearer front door:
+
+1. determine whether a function is in the provable subset
+2. explain exclusions explicitly
+3. only then lower eligible functions into the proof pipeline
+
+That closes the next architectural gap after the ELF flagship and makes the following roadmap step much sharper: promote `Core -> ProofCore` into an explicit compiler phase rather than leaving proof extraction as a mostly report-side boundary.
+
 ### Fact artifact snapshots land as first-class workflow output
 
 **`concrete snapshot`:** Added a project-facing fact artifact command:

@@ -2515,7 +2515,7 @@ check_report "$TESTDIR/adversarial_profile_mixed_evidence.con" proof-status \
 
 # Summary counts
 check_report "$TESTDIR/adversarial_profile_mixed_evidence.con" proof-status \
-    "1 proved.*0 stale.*2 unproved.*1 ineligible.*1 trusted" \
+    "1 proved.*0 stale.*1 unproved.*2 ineligible.*1 trusted" \
     "proof-status: summary counts correct" \
     "proof-status: summary counts wrong"
 
@@ -3511,9 +3511,9 @@ else
 fi
 
 # Obligations: missing_proof shows none for spec/proof
-if echo "$ob_proved" | grep -A5 "main.main" | grep -q "status:.*missing_proof" && \
+if echo "$ob_proved" | grep -A5 "main.main" | grep -q "status:.*not_eligible" && \
    echo "$ob_proved" | grep -A5 "main.main" | grep -q "source:.*none"; then
-    echo "  ok  obligations: missing_proof function shows source:none"
+    echo "  ok  obligations: not_eligible function shows source:none"
     PASS=$((PASS + 1))
 else
     echo "FAIL  obligations: missing_proof should show source:none"
@@ -3545,8 +3545,9 @@ fi
 
 # Obligations: summary totals
 if echo "$ob_proved" | grep -q "1 proved" && \
-   echo "$ob_proved" | grep -q "1 missing"; then
-    echo "  ok  obligations: summary shows 1 proved, 1 missing"
+   echo "$ob_proved" | grep -q "0 missing" && \
+   echo "$ob_proved" | grep -q "1 not eligible"; then
+    echo "  ok  obligations: summary shows 1 proved, 0 missing, 1 not eligible"
     PASS=$((PASS + 1))
 else
     echo "FAIL  obligations: summary should show 1 proved, 1 missing"
@@ -4592,11 +4593,11 @@ CRYPTO_SNAP_DIR=$(mktemp -d)
 
 # Snapshot generates correct fact count
 snap_crypto=$($COMPILER snapshot "$CRYPTO_DIR/main.con" -o "$CRYPTO_SNAP_DIR/good.facts.json" 2>&1)
-if echo "$snap_crypto" | grep -q "24 facts"; then
-    echo "  ok  crypto_verify: snapshot produces 24 facts"
+if echo "$snap_crypto" | grep -q "28 facts"; then
+    echo "  ok  crypto_verify: snapshot produces 28 facts"
     PASS=$((PASS + 1))
 else
-    echo "FAIL  crypto_verify: expected 24 facts in snapshot"
+    echo "FAIL  crypto_verify: expected 28 facts in snapshot"
     echo "$snap_crypto"
     FAIL=$((FAIL + 1))
 fi
@@ -4608,10 +4609,11 @@ with open('$CRYPTO_SNAP_DIR/good.facts.json') as f:
     s = json.load(f)
 assert s['summary']['proved'] == 3
 assert s['summary']['stale'] == 0
-assert s['summary']['no_proof'] == 1
+assert s['summary']['no_proof'] == 0
+assert s['summary']['not_eligible'] == 1
 assert s['summary']['total_functions'] == 4
 " 2>/dev/null; then
-    echo "  ok  crypto_verify: summary shows 3 proved, 1 unproved, 0 stale"
+    echo "  ok  crypto_verify: summary shows 3 proved, 1 ineligible, 0 stale"
     PASS=$((PASS + 1))
 else
     echo "FAIL  crypto_verify: summary proof counts incorrect"
@@ -4624,10 +4626,10 @@ import json
 with open('$CRYPTO_SNAP_DIR/good.facts.json') as f:
     s = json.load(f)
 assert s['summary']['obligations_proved'] == 3
-assert s['summary']['obligations_missing'] == 1
+assert s['summary']['obligations_missing'] == 0
 assert s['summary']['obligations_stale'] == 0
 " 2>/dev/null; then
-    echo "  ok  crypto_verify: 3 obligations proved, 1 missing (main)"
+    echo "  ok  crypto_verify: 3 obligations proved, 0 missing"
     PASS=$((PASS + 1))
 else
     echo "FAIL  crypto_verify: obligation counts incorrect"
@@ -4710,8 +4712,8 @@ fi
 
 # Proof status report shows 3 proved
 report_out=$($COMPILER "$CRYPTO_DIR/main.con" --report proof-status 2>&1)
-if echo "$report_out" | grep -q "3 proved" && echo "$report_out" | grep -q "1 unproved"; then
-    echo "  ok  crypto_verify: proof-status report shows 3 proved, 1 unproved"
+if echo "$report_out" | grep -q "3 proved" && echo "$report_out" | grep -q "0 unproved" && echo "$report_out" | grep -q "1 ineligible"; then
+    echo "  ok  crypto_verify: proof-status report shows 3 proved, 0 unproved, 1 ineligible"
     PASS=$((PASS + 1))
 else
     echo "FAIL  crypto_verify: proof-status report counts wrong"
@@ -4829,11 +4831,11 @@ FIXTURE_DIR="$ROOT_DIR/tests/fixtures"
 # --- Snapshot tests ---
 
 snap_elf=$($COMPILER snapshot "$ELF_DIR/main.con" -o "$ELF_SNAP_DIR/good.json" 2>&1)
-if echo "$snap_elf" | grep -q "65 facts"; then
-    echo "  ok  elf_header: snapshot produces 65 facts"
+if echo "$snap_elf" | grep -q "73 facts"; then
+    echo "  ok  elf_header: snapshot produces 73 facts"
     PASS=$((PASS + 1))
 else
-    echo "FAIL  elf_header: expected 65 facts in snapshot"
+    echo "FAIL  elf_header: expected 73 facts in snapshot"
     echo "$snap_elf"
     FAIL=$((FAIL + 1))
 fi
@@ -5082,6 +5084,17 @@ if [ "$elf_build_exit" = "0" ]; then
     else
         echo "FAIL  elf_header: should reject bad magic"
         echo "$elf_run_bad"
+        FAIL=$((FAIL + 1))
+    fi
+
+    # Run against bad class fixture
+    elf_run_badcls=$(cd "$ROOT_DIR/examples/elf_header" && "$ROOT_DIR/$COMPILER" run -- "$FIXTURE_DIR/bad_class.bin" 2>&1)
+    if echo "$elf_run_badcls" | grep -q "INVALID ELF header" && echo "$elf_run_badcls" | grep -q "class:.*INVALID"; then
+        echo "  ok  elf_header: run rejects bad class"
+        PASS=$((PASS + 1))
+    else
+        echo "FAIL  elf_header: should reject bad class"
+        echo "$elf_run_badcls"
         FAIL=$((FAIL + 1))
     fi
 
