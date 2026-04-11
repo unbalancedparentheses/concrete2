@@ -2294,6 +2294,138 @@ partial def Val.render : Val → String
 
 end Json
 
+-- ============================================================
+-- Minimal JSON parser (reads back our own diagnostics output)
+-- ============================================================
+
+namespace JsonParser
+
+/-- Work on an Array of characters with Nat indices to avoid String.Pos issues. -/
+private def skipWS (cs : Array Char) (pos : Nat) : Nat :=
+  if h : pos < cs.size then
+    let c := cs[pos]
+    if c == ' ' || c == '\n' || c == '\r' || c == '\t' then skipWS cs (pos + 1)
+    else pos
+  else pos
+
+private partial def parseString (cs : Array Char) (pos : Nat) : Option (String × Nat) :=
+  if pos >= cs.size || cs[pos]! != '"' then none
+  else
+    let rec go (i : Nat) (acc : String) : Option (String × Nat) :=
+      if i >= cs.size then none
+      else
+        let c := cs[i]!
+        if c == '"' then some (acc, i + 1)
+        else if c == '\\' then
+          if i + 1 >= cs.size then none
+          else
+            let esc := cs[i + 1]!
+            let ch := match esc with
+              | '"' => '"'
+              | '\\' => '\\'
+              | 'n' => '\n'
+              | 't' => '\t'
+              | '/' => '/'
+              | _ => esc
+            go (i + 2) (acc.push ch)
+        else go (i + 1) (acc.push c)
+    go (pos + 1) ""
+
+private partial def parseNumber (cs : Array Char) (pos : Nat) : Option (Int × Nat) :=
+  let neg := pos < cs.size && cs[pos]! == '-'
+  let start := if neg then pos + 1 else pos
+  let rec go (i : Nat) (acc : Nat) : (Nat × Nat) :=
+    if i >= cs.size then (acc, i)
+    else
+      let c := cs[i]!
+      if c.isDigit then go (i + 1) (acc * 10 + (c.toNat - '0'.toNat))
+      else (acc, i)
+  let (n, endPos) := go start 0
+  if endPos == start then none
+  else some (if neg then -↑n else ↑n, endPos)
+
+private partial def matchWord (cs : Array Char) (pos : Nat) (word : String) : Bool :=
+  let wcs := word.toList
+  let rec go (i : Nat) (ws : List Char) : Bool :=
+    match ws with
+    | [] => true
+    | w :: rest =>
+      if pos + i >= cs.size then false
+      else if cs[pos + i]! == w then go (i + 1) rest
+      else false
+  go 0 wcs
+
+partial def parseValue (cs : Array Char) (pos : Nat) : Option (Json.Val × Nat) :=
+  let p := skipWS cs pos
+  if p >= cs.size then none
+  else
+    let c := cs[p]!
+    if c == '"' then
+      match parseString cs p with
+      | some (str, next) => some (.str str, next)
+      | none => none
+    else if c == '[' then
+      parseArray cs (p + 1)
+    else if c == '{' then
+      parseObject cs (p + 1)
+    else if c == 't' && matchWord cs p "true" then
+      some (.bool true, p + 4)
+    else if c == 'f' && matchWord cs p "false" then
+      some (.bool false, p + 5)
+    else if c == 'n' && matchWord cs p "null" then
+      some (.null, p + 4)
+    else if c == '-' || c.isDigit then
+      match parseNumber cs p with
+      | some (n, next) => some (.num n, next)
+      | none => none
+    else none
+
+where
+  parseArray (cs : Array Char) (pos : Nat) : Option (Json.Val × Nat) :=
+    let p := skipWS cs pos
+    if p < cs.size && cs[p]! == ']' then some (.arr [], p + 1)
+    else
+      let rec go (i : Nat) (acc : List Json.Val) : Option (Json.Val × Nat) :=
+        match parseValue cs i with
+        | none => none
+        | some (v, next) =>
+          let next := skipWS cs next
+          if next >= cs.size then none
+          else if cs[next]! == ']' then some (.arr (acc ++ [v]), next + 1)
+          else if cs[next]! == ',' then go (next + 1) (acc ++ [v])
+          else none
+      go p []
+
+  parseObject (cs : Array Char) (pos : Nat) : Option (Json.Val × Nat) :=
+    let p := skipWS cs pos
+    if p < cs.size && cs[p]! == '}' then some (.obj [], p + 1)
+    else
+      let rec go (i : Nat) (acc : List (String × Json.Val)) : Option (Json.Val × Nat) :=
+        let i := skipWS cs i
+        match parseString cs i with
+        | none => none
+        | some (key, next) =>
+          let next := skipWS cs next
+          if next >= cs.size || cs[next]! != ':' then none
+          else
+            match parseValue cs (next + 1) with
+            | none => none
+            | some (v, next) =>
+              let next := skipWS cs next
+              if next >= cs.size then none
+              else if cs[next]! == '}' then some (.obj (acc ++ [(key, v)]), next + 1)
+              else if cs[next]! == ',' then go (next + 1) (acc ++ [(key, v)])
+              else none
+      go p []
+
+def parse (s : String) : Option Json.Val :=
+  let cs := s.toList.toArray
+  match parseValue cs 0 with
+  | some (v, _) => some v
+  | none => none
+
+end JsonParser
+
 open Json in
 /-- Convert a SourceLoc to a JSON object. -/
 private def locToJson : Option SourceLoc → Val
@@ -3049,6 +3181,217 @@ def queryFacts (modules : List CModule) (locMap : FnLocMap := [])
     let filtered := allFacts.filter fun v =>
       jsonGetStr v "kind" == some query
     (Val.arr filtered).render
+
+-- ============================================================
+-- Semantic diff / trust drift
+-- ============================================================
+-- Compare two fact bundles (from diagnostics-json) and report
+-- changes in capabilities, allocation, evidence, proof state,
+-- spec/proof attachment, obligation status, etc.
+
+open Json in
+/-- Extract a string from a Val, returning "" for non-strings. -/
+private def valStr : Val → String
+  | .str s => s
+  | .num n => toString n
+  | .bool b => if b then "true" else "false"
+  | .null => "null"
+  | .arr vs => s!"[{", ".intercalate (vs.map valStr)}]"
+  | .obj _ => "{...}"
+
+open Json in
+/-- Get a field value from a JSON object as a Val. -/
+private def jsonGetVal (v : Val) (key : String) : Option Val :=
+  match v with
+  | .obj kvs => (kvs.find? fun (k, _) => k == key).map (·.2)
+  | _ => none
+
+open Json in
+/-- Render a Val to a short display string. -/
+private def valDisplay : Val → String
+  | .str s => s
+  | .num n => toString n
+  | .bool b => if b then "true" else "false"
+  | .null => "null"
+  | .arr vs => s!"[{", ".intercalate (vs.map valDisplay)}]"
+  | .obj _ => "{…}"
+
+/-- A single field change in a diff entry. -/
+structure FieldChange where
+  field : String
+  oldVal : String
+  newVal : String
+
+/-- A single diff entry for one (kind, function) pair. -/
+structure DiffEntry where
+  kind : String
+  function : String
+  category : String       -- "added" | "removed" | "changed"
+  changes : List FieldChange
+  drift : String          -- "weakened" | "strengthened" | "neutral"
+
+/-- Fields to compare for trust-relevant changes per fact kind. -/
+private def trustFields (kind : String) : List String :=
+  match kind with
+  | "proof_status" => ["state", "spec", "proof", "source", "current_fingerprint"]
+  | "obligation" => ["status", "spec", "proof", "source", "fingerprint"]
+  | "extraction" => ["status", "eligible", "spec", "proof", "proof_core", "fingerprint"]
+  | "effects" => ["capabilities", "is_pure", "allocates", "frees", "recursion",
+                   "loops", "crosses_ffi", "is_trusted", "evidence"]
+  | "capability" => ["capabilities", "is_pure"]
+  | "unsafe" => ["has_unsafe_cap", "has_raw_pointers", "is_trusted"]
+  | "alloc" => ["allocates", "frees", "defers", "potential_leak"]
+  | "predictable_violation" => ["state", "reason"]
+  | "traceability" => ["evidence", "extraction", "boundary", "spec", "proof", "fingerprint"]
+  | _ => []
+
+/-- Evidence level ordering for drift detection (higher = stronger). -/
+private def evidenceRank (s : String) : Nat :=
+  match s with
+  | "proved" => 5
+  | "stale" => 4
+  | "enforced" => 3
+  | "trusted-assumption" => 2
+  | "reported" => 1
+  | _ => 0
+
+/-- Proof state ordering (higher = stronger). -/
+private def proofStateRank (s : String) : Nat :=
+  match s with
+  | "proved" => 4
+  | "stale" => 3
+  | "no_proof" => 2
+  | "not_eligible" => 1
+  | "trusted" => 2
+  | _ => 0
+
+/-- Determine if a field change represents trust weakening. -/
+private def isWeakening (kind : String) (field : String) (oldV newV : String) : Bool :=
+  match kind, field with
+  | "proof_status", "state" => proofStateRank newV < proofStateRank oldV
+  | "obligation", "status" => proofStateRank newV < proofStateRank oldV
+  | "effects", "evidence" => evidenceRank newV < evidenceRank oldV
+  | "effects", "is_pure" => oldV == "true" && newV == "false"
+  | "effects", "is_trusted" => oldV == "false" && newV == "true"
+  | "effects", "crosses_ffi" => oldV == "false" && newV == "true"
+  | "capability", "is_pure" => oldV == "true" && newV == "false"
+  | "alloc", "potential_leak" => oldV == "false" && newV == "true"
+  | "traceability", "evidence" => evidenceRank newV < evidenceRank oldV
+  | "extraction", "status" =>
+    let oldRank := match oldV with | "extracted" => 3 | "eligible_not_extractable" => 2 | _ => 1
+    let newRank := match newV with | "extracted" => 3 | "eligible_not_extractable" => 2 | _ => 1
+    newRank < oldRank
+  | _, _ => false
+
+/-- Determine if a field change represents trust strengthening. -/
+private def isStrengthening (kind : String) (field : String) (oldV newV : String) : Bool :=
+  isWeakening kind field newV oldV
+
+open Json in
+/-- Compare two facts and return field changes. -/
+private def compareFacts (kind : String) (oldFact newFact : Val) : List FieldChange :=
+  let fields := trustFields kind
+  fields.filterMap fun f =>
+    let oldV := (jsonGetVal oldFact f).map valDisplay |>.getD ""
+    let newV := (jsonGetVal newFact f).map valDisplay |>.getD ""
+    if oldV == newV then none
+    else some { field := f, oldVal := oldV, newVal := newV }
+
+open Json in
+/-- Build a keyed map: (kind, function) → Val for a list of facts. -/
+private def keyFacts (facts : List Val) : List ((String × String) × Val) :=
+  facts.filterMap fun v =>
+    match jsonGetStr v "kind", jsonGetStr v "function" with
+    | some k, some f => some ((k, f), v)
+    | _, _ => none
+
+open Json in
+/-- Diff two fact bundles and produce a list of DiffEntries. -/
+def diffFacts (oldFacts newFacts : List Val) : List DiffEntry :=
+  let oldKeyed := keyFacts oldFacts
+  let newKeyed := keyFacts newFacts
+  -- Removed: in old but not new
+  let removed := oldKeyed.filterMap fun ((k, f), _) =>
+    if newKeyed.find? (fun (key, _) => key == (k, f)) |>.isNone then
+      some { kind := k, function := f, category := "removed"
+           , changes := [], drift := "weakened" : DiffEntry }
+    else none
+  -- Added: in new but not old
+  let added := newKeyed.filterMap fun ((k, f), _) =>
+    if oldKeyed.find? (fun (key, _) => key == (k, f)) |>.isNone then
+      let drift := match k with
+        | "predictable_violation" => "weakened"
+        | "unsafe" => "weakened"
+        | _ => "neutral"
+      some { kind := k, function := f, category := "added"
+           , changes := [], drift := drift : DiffEntry }
+    else none
+  -- Changed: in both, fields differ
+  let changed := oldKeyed.filterMap fun ((k, f), oldV) =>
+    match newKeyed.find? (fun (key, _) => key == (k, f)) with
+    | none => none
+    | some (_, newV) =>
+      let fieldChanges := compareFacts k oldV newV
+      if fieldChanges.isEmpty then none
+      else
+        let hasWeakening := fieldChanges.any fun fc => isWeakening k fc.field fc.oldVal fc.newVal
+        let hasStrengthening := fieldChanges.any fun fc => isStrengthening k fc.field fc.oldVal fc.newVal
+        let drift := if hasWeakening then "weakened"
+          else if hasStrengthening then "strengthened"
+          else "neutral"
+        some { kind := k, function := f, category := "changed"
+             , changes := fieldChanges, drift := drift : DiffEntry }
+  removed ++ added ++ changed
+
+/-- Render a diff report as human-readable text. -/
+def renderDiffReport (entries : List DiffEntry) : String :=
+  if entries.isEmpty then "No trust-relevant changes detected.\n"
+  else
+    let header := "=== Semantic Diff / Trust Drift ==="
+    -- Group by drift direction
+    let weakened := entries.filter (·.drift == "weakened")
+    let strengthened := entries.filter (·.drift == "strengthened")
+    let neutral := entries.filter (·.drift == "neutral")
+    let renderEntry (e : DiffEntry) : String :=
+      let tag := match e.category with
+        | "added" => "[+]"
+        | "removed" => "[-]"
+        | _ => "[~]"
+      let changesStr := if e.changes.isEmpty then ""
+        else "\n" ++ (e.changes.map fun fc =>
+          s!"      {fc.field}: {fc.oldVal} → {fc.newVal}").foldl (· ++ "\n" ++ ·) ""
+      s!"    {tag} {e.kind} / {e.function}{changesStr}"
+    let sections := []
+    let sections := if weakened.isEmpty then sections
+      else sections ++ [s!"  TRUST WEAKENED ({weakened.length}):\n{"\n".intercalate (weakened.map renderEntry)}"]
+    let sections := if strengthened.isEmpty then sections
+      else sections ++ [s!"  TRUST STRENGTHENED ({strengthened.length}):\n{"\n".intercalate (strengthened.map renderEntry)}"]
+    let sections := if neutral.isEmpty then sections
+      else sections ++ [s!"  OTHER CHANGES ({neutral.length}):\n{"\n".intercalate (neutral.map renderEntry)}"]
+    let summary := s!"Summary: {entries.length} changes — {weakened.length} weakened, {strengthened.length} strengthened, {neutral.length} neutral"
+    s!"{header}\n\n{"\n\n".intercalate sections}\n\n{summary}\n"
+
+open Json in
+/-- Render a diff as JSON for machine consumption. -/
+def renderDiffJson (entries : List DiffEntry) : String :=
+  let vals := entries.map fun e =>
+    Val.obj [
+      ("kind", .str e.kind),
+      ("function", .str e.function),
+      ("category", .str e.category),
+      ("drift", .str e.drift),
+      ("changes", .arr (e.changes.map fun fc =>
+        Val.obj [("field", .str fc.field), ("old", .str fc.oldVal), ("new", .str fc.newVal)]))
+    ]
+  (Val.arr vals).render
+
+open Json in
+/-- Parse a JSON string into a list of fact Vals.
+    Expects a JSON array at the top level. -/
+def parseFacts (jsonStr : String) : Option (List Val) :=
+  match JsonParser.parse jsonStr with
+  | some (.arr vs) => some vs
+  | _ => none
 
 end Report
 end Concrete

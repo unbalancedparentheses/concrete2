@@ -3918,6 +3918,114 @@ else
     FAIL=$((FAIL + 1))
 fi
 
+echo ""
+echo "=== Semantic diff / trust drift tests ==="
+
+STALE_DIR="$TESTDIR/proof_registry_stale"
+MISS_DIR="$TESTDIR/proof_registry_miss"
+
+# Generate fact bundles for diffing
+diff_baseline=$($COMPILER "$REGISTRY_DIR/test_proof_registry.con" --report diagnostics-json 2>/dev/null)
+diff_stale=$($COMPILER "$STALE_DIR/test_proof_registry.con" --report diagnostics-json 2>/dev/null)
+diff_mixed=$($COMPILER "$TESTDIR/report_integration.con" --report diagnostics-json 2>/dev/null)
+
+echo "$diff_baseline" > /tmp/concrete_diff_baseline.json
+echo "$diff_stale" > /tmp/concrete_diff_stale.json
+echo "$diff_mixed" > /tmp/concrete_diff_mixed.json
+
+# No changes: diff against itself
+diff_same=$($COMPILER diff /tmp/concrete_diff_baseline.json /tmp/concrete_diff_baseline.json 2>&1) && diff_same_exit=0 || diff_same_exit=$?
+if echo "$diff_same" | grep -q "No trust-relevant changes" && [ "$diff_same_exit" -eq 0 ]; then
+    echo "  ok  diff: no changes when diffing against self"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  diff: self-diff should report no changes"
+    echo "$diff_same"
+    FAIL=$((FAIL + 1))
+fi
+
+# Proved → stale: trust weakened
+diff_stale_out=$($COMPILER diff /tmp/concrete_diff_baseline.json /tmp/concrete_diff_stale.json 2>&1) && diff_stale_exit=0 || diff_stale_exit=$?
+if echo "$diff_stale_out" | grep -q "TRUST WEAKENED" && \
+   echo "$diff_stale_out" | grep -q "state: proved.*stale" && \
+   [ "$diff_stale_exit" -eq 1 ]; then
+    echo "  ok  diff: proved→stale detected as trust weakened (exit 1)"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  diff: proved→stale should be trust weakened"
+    echo "$diff_stale_out"
+    FAIL=$((FAIL + 1))
+fi
+
+# JSON output mode
+diff_json=$($COMPILER diff /tmp/concrete_diff_baseline.json /tmp/concrete_diff_stale.json --json 2>&1) && true || true
+if echo "$diff_json" | grep -q '"drift": "weakened"' && \
+   echo "$diff_json" | grep -q '"category": "changed"'; then
+    echo "  ok  diff: JSON output includes drift and category"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  diff: JSON output should include drift and category"
+    echo "$diff_json"
+    FAIL=$((FAIL + 1))
+fi
+
+# Different programs: detects added and changed facts
+diff_cross=$($COMPILER diff /tmp/concrete_diff_baseline.json /tmp/concrete_diff_mixed.json 2>&1) && true || true
+if echo "$diff_cross" | grep -q '\[+\]' && \
+   echo "$diff_cross" | grep -q '\[~\]'; then
+    echo "  ok  diff: cross-program diff shows added and changed facts"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  diff: cross-program diff should show added/changed facts"
+    echo "$diff_cross"
+    FAIL=$((FAIL + 1))
+fi
+
+# Evidence downgrade detected
+if echo "$diff_cross" | grep -q "evidence:.*enforced.*reported" || \
+   echo "$diff_cross" | grep -q "state:.*proved.*no_proof"; then
+    echo "  ok  diff: evidence downgrade detected in field changes"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  diff: should detect evidence downgrade"
+    echo "$diff_cross"
+    FAIL=$((FAIL + 1))
+fi
+
+# Summary line present
+if echo "$diff_stale_out" | grep -q "Summary:.*changes"; then
+    echo "  ok  diff: summary line present"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  diff: should have summary line"
+    echo "$diff_stale_out"
+    FAIL=$((FAIL + 1))
+fi
+
+# New predictable violations flagged as weakened
+if echo "$diff_cross" | grep -q '\[+\] predictable_violation'; then
+    echo "  ok  diff: new predictable violations flagged as trust weakened"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  diff: new predictable violations should be flagged"
+    echo "$diff_cross"
+    FAIL=$((FAIL + 1))
+fi
+
+# Spec/proof attachment changes visible
+if echo "$diff_cross" | grep -q "spec:.*PureAdd" || \
+   echo "$diff_cross" | grep -q "proof:.*PureAdd"; then
+    echo "  ok  diff: spec/proof attachment changes visible in diff"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  diff: spec/proof changes should be visible"
+    echo "$diff_cross"
+    FAIL=$((FAIL + 1))
+fi
+
+# Clean up
+rm -f /tmp/concrete_diff_baseline.json /tmp/concrete_diff_stale.json /tmp/concrete_diff_mixed.json
+
 fi # end section: report
 
 # === Codegen differential tests ===

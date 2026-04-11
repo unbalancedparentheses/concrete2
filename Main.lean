@@ -3,7 +3,7 @@ import Concrete
 open Concrete
 
 def usage : String :=
-  "Usage: concrete <file.con> [-o output] [--emit-llvm] [--emit-core] [--emit-ssa] [--test] [--test --module <name>] [--report caps|unsafe|layout|interface|alloc|mono|authority|proof|proof-status|obligations|extraction|traceability|diagnostics-json|effects|recursion|fingerprints] [--query KIND|KIND:FUNCTION|fn:FUNCTION] [--fmt]\n       concrete build [-o output] [--emit-llvm]\n       concrete run [-- args...]\n       concrete test [--module <name>]"
+  "Usage: concrete <file.con> [-o output] [--emit-llvm] [--emit-core] [--emit-ssa] [--test] [--test --module <name>] [--report caps|unsafe|layout|interface|alloc|mono|authority|proof|proof-status|obligations|extraction|traceability|diagnostics-json|effects|recursion|fingerprints] [--query KIND|KIND:FUNCTION|fn:FUNCTION] [--fmt]\n       concrete build [-o output] [--emit-llvm]\n       concrete run [-- args...]\n       concrete test [--module <name>]\n       concrete diff <old.json> <new.json> [--json]"
 
 def writeFile (path : String) (content : String) : IO Unit := do
   IO.FS.writeFile ⟨path⟩ content
@@ -805,6 +805,41 @@ def main (args : List String) : IO UInt32 := do
         | _ :: "--module" :: m :: _ => some m
         | _ => none
       return ← compileTestBuild root modFilter
+  -- concrete diff <old.json> <new.json> [--json]
+  if args.head? == some "diff" then
+    let rest := args.drop 1
+    match rest with
+    | [oldPath, newPath] =>
+      let oldJson ← readFile oldPath
+      let newJson ← readFile newPath
+      match Report.parseFacts oldJson, Report.parseFacts newJson with
+      | some oldFacts, some newFacts =>
+        let entries := Report.diffFacts oldFacts newFacts
+        IO.println (Report.renderDiffReport entries)
+        return (if entries.any (·.drift == "weakened") then 1 else 0)
+      | none, _ =>
+        IO.eprintln s!"error: could not parse JSON from {oldPath}"
+        return 1
+      | _, none =>
+        IO.eprintln s!"error: could not parse JSON from {newPath}"
+        return 1
+    | [oldPath, newPath, "--json"] =>
+      let oldJson ← readFile oldPath
+      let newJson ← readFile newPath
+      match Report.parseFacts oldJson, Report.parseFacts newJson with
+      | some oldFacts, some newFacts =>
+        let entries := Report.diffFacts oldFacts newFacts
+        IO.println (Report.renderDiffJson entries)
+        return (if entries.any (·.drift == "weakened") then 1 else 0)
+      | none, _ =>
+        IO.eprintln s!"error: could not parse JSON from {oldPath}"
+        return 1
+      | _, none =>
+        IO.eprintln s!"error: could not parse JSON from {newPath}"
+        return 1
+    | _ =>
+      IO.eprintln "Usage: concrete diff <old.json> <new.json> [--json]"
+      return 1
   match args with
   | [] =>
     IO.eprintln usage
