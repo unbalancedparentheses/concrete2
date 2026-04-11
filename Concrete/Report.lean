@@ -1178,9 +1178,10 @@ def eligibilityReport (pc : Concrete.ProofCore) : String :=
 
 /-- Proof status for a single function. -/
 inductive ProofState where
-  | proved          -- name + fingerprint match, passes profile
+  | proved          -- name + fingerprint match, extraction succeeded
   | stale           -- name matches but fingerprint changed
-  | notProved       -- passes profile, no registered proof
+  | notProved       -- passes profile, extractable, no registered proof
+  | blocked         -- eligible but extraction failed (unsupported constructs)
   | notEligible     -- fails profile gates (recursion, alloc, etc.)
   | trusted         -- marked trusted (bypasses proof)
 
@@ -1203,6 +1204,7 @@ private def obligationStatusToProofState : Concrete.ObligationStatus → ProofSt
   | .proved => .proved
   | .stale => .stale
   | .missing => .notProved
+  | .blocked => .blocked
   | .ineligible => .notEligible
   | .trusted => .trusted
 
@@ -1268,6 +1270,8 @@ private def renderProofStatusEntry (e : ProofStatusEntry) (sourceMap : SourceMap
     s!"-- proof stale {String.ofList (List.replicate 44 '-')} {locStr}\n\n  Function `{e.qualName}` has a registered proof, but the body changed.{snippet}\n\n  expected fingerprint:\n    {e.expectedFp}\n\n  current fingerprint:\n    {e.currentFp}\n\n  hint: Update the Lean proof in Concrete/Proof.lean, or restore the proved implementation."
   | .notProved =>
     s!"-- no proof {String.ofList (List.replicate 47 '-')} {locStr}\n\n  `{e.qualName}` passes the predictable profile but has no registered proof.{snippet}\n\n  current fingerprint:\n    {e.currentFp}\n\n  hint: Add a Lean proof for this function in Concrete/Proof.lean with the fingerprint above."
+  | .blocked =>
+    s!"-- blocked {String.ofList (List.replicate 48 '-')} {locStr}\n\n  `{e.qualName}` is eligible but uses unsupported constructs — extraction failed.{snippet}\n\n  hint: Remove unsupported constructs to enable proof extraction."
   | .notEligible =>
     let gateStr := ", ".intercalate e.profileGates
     s!"-- not eligible {String.ofList (List.replicate 43 '-')} {locStr}\n\n  `{e.qualName}` cannot be proved: fails predictable profile ({gateStr}).{snippet}\n\n  hint: Remove {gateStr} to make this function eligible for proof."
@@ -1286,9 +1290,10 @@ def proofStatusReport (modules : List CModule) (locMap : FnLocMap := [])
   let proved := (entries.filter fun e => e.state matches .proved).length
   let stale := (entries.filter fun e => e.state matches .stale).length
   let notProved := (entries.filter fun e => e.state matches .notProved).length
+  let blockedCnt := (entries.filter fun e => e.state matches .blocked).length
   let notEligible := (entries.filter fun e => e.state matches .notEligible).length
   let trusted := (entries.filter fun e => e.state matches .trusted).length
-  let summary := s!"Totals: {entries.length} functions — {proved} proved, {stale} stale, {notProved} unproved (eligible), {notEligible} ineligible, {trusted} trusted"
+  let summary := s!"Totals: {entries.length} functions — {proved} proved, {stale} stale, {notProved} unproved, {blockedCnt} blocked, {notEligible} ineligible, {trusted} trusted"
   s!"{header}\n\n{"\n\n".intercalate body}\n\n{summary}\n"
 
 -- ============================================================
@@ -1312,6 +1317,7 @@ private def obligationToEntry (o : Concrete.Obligation) : ObligationEntry :=
     | .proved => "proved"
     | .stale => "stale"
     | .missing => "missing_proof"
+    | .blocked => "blocked"
     | .ineligible => "not_eligible"
     | .trusted => "trusted"
   let (sName, pName, src) := match o.spec with
@@ -1337,10 +1343,62 @@ def obligationsReport (modules : List CModule) (locMap : FnLocMap := [])
   let proved := (entries.filter fun e => e.status == "proved").length
   let stale := (entries.filter fun e => e.status == "stale").length
   let missing := (entries.filter fun e => e.status == "missing_proof").length
+  let blockedCnt := (entries.filter fun e => e.status == "blocked").length
   let notElig := (entries.filter fun e => e.status == "not_eligible").length
   let trusted := (entries.filter fun e => e.status == "trusted").length
-  let summary := s!"Totals: {entries.length} obligations — {proved} proved, {stale} stale, {missing} missing, {notElig} not eligible, {trusted} trusted"
+  let summary := s!"Totals: {entries.length} obligations — {proved} proved, {stale} stale, {missing} missing, {blockedCnt} blocked, {notElig} not eligible, {trusted} trusted"
   s!"{header}\n\n{"\n\n".intercalate body}\n\n{summary}\n"
+
+-- ============================================================
+-- Proof diagnostics report (--report proof-diagnostics)
+-- ============================================================
+
+/-- Render a proof diagnostic kind as a short label. -/
+private def diagnosticKindLabel : Concrete.ProofDiagnosticKind → String
+  | .staleProof => "stale_proof"
+  | .missingProof => "missing_proof"
+  | .ineligible => "ineligible"
+  | .unsupportedConstruct => "unsupported_construct"
+  | .trusted => "trusted"
+
+/-- Render a proof diagnostic severity as a string. -/
+private def diagnosticSeverityLabel : Concrete.ProofDiagnosticSeverity → String
+  | .error => "error"
+  | .warning => "warning"
+  | .info => "info"
+
+/-- Render a single proof diagnostic in Elm-clear format. -/
+private def renderProofDiagnostic (d : Concrete.ProofDiagnostic) : String :=
+  let locStr := fmtLoc d.loc
+  let sevStr := diagnosticSeverityLabel d.severity
+  let kindStr := diagnosticKindLabel d.kind
+  let header := s!"-- {kindStr} [{sevStr}] {String.ofList (List.replicate (40 - kindStr.length) '-')} {locStr}"
+  let body := s!"  {d.message}"
+  let detailStr := if d.details.isEmpty then ""
+    else s!"\n  details: {", ".intercalate d.details}"
+  let fpStr := if d.fingerprint.isEmpty then ""
+    else s!"\n  fingerprint: {d.fingerprint}"
+  let expStr := if d.expectedFp.isEmpty then ""
+    else s!"\n  expected:    {d.expectedFp}"
+  let hintStr := if d.hint.isEmpty then ""
+    else s!"\n  hint: {d.hint}"
+  s!"{header}\n\n{body}{detailStr}{fpStr}{expStr}{hintStr}"
+
+/-- Human-readable proof diagnostics report. -/
+def proofDiagnosticsReport (pc : Concrete.ProofCore) : String :=
+  let header := "=== Proof Diagnostics ==="
+  let diags := pc.diagnostics
+  if diags.isEmpty then
+    s!"{header}\n\nNo proof diagnostics.\n"
+  else
+    let body := diags.map renderProofDiagnostic
+    let errors := (diags.filter fun d => d.severity == .error).length
+    let warnings := (diags.filter fun d => d.severity == .warning).length
+    let infos := (diags.filter fun d => d.severity == .info).length
+    let summary := s!"Totals: {diags.length} diagnostics — {errors} errors, {warnings} warnings, {infos} info"
+    s!"{header}\n\n{"\n\n".intercalate body}\n\n{summary}\n"
+
+-- proofDiagnosticToFact and collectProofDiagnosticFacts are defined after locToJson
 
 -- ============================================================
 -- Source-to-ProofCore extraction report (--report extraction)
@@ -1501,6 +1559,7 @@ private def collectTraceEntries
         | .proved => "proved"
         | .stale => "stale"
         | .notProved => "enforced"
+        | .blocked => "blocked"
         | .notEligible => "reported"
         | .trusted => "trusted-assumption"
       | none => "unknown"
@@ -1751,6 +1810,26 @@ private def locToJson : Option SourceLoc → Val
   | none => .null
 
 open Json in
+/-- Convert a proof diagnostic to a JSON fact. -/
+private def proofDiagnosticToFact (d : Concrete.ProofDiagnostic) : Val :=
+  .obj ([
+    ("kind", .str "proof_diagnostic"),
+    ("diagnostic_kind", .str (diagnosticKindLabel d.kind)),
+    ("severity", .str (diagnosticSeverityLabel d.severity)),
+    ("function", .str d.function),
+    ("message", .str d.message),
+    ("loc", locToJson d.loc)
+  ] ++ (if d.hint.isEmpty then [] else [("hint", .str d.hint)])
+    ++ (if d.details.isEmpty then [] else [("details", .arr (d.details.map .str))])
+    ++ (if d.fingerprint.isEmpty then [] else [("fingerprint", .str d.fingerprint)])
+    ++ (if d.expectedFp.isEmpty then [] else [("expected_fingerprint", .str d.expectedFp)]))
+
+open Json in
+/-- Collect proof diagnostic facts from ProofCore. -/
+def collectProofDiagnosticFacts (pc : Concrete.ProofCore) : List Val :=
+  pc.diagnostics.map proofDiagnosticToFact
+
+open Json in
 /-- Convert a ProfileViolation to a JSON fact. -/
 private def violationToFact (v : ProfileViolation) : Val :=
   .obj [
@@ -1770,11 +1849,13 @@ private def proofStatusToFact (e : ProofStatusEntry) : Val :=
     | .proved => "proved"
     | .stale => "stale"
     | .notProved => "no_proof"
+    | .blocked => "blocked"
     | .notEligible => "not_eligible"
     | .trusted => "trusted"
   let hintStr := match e.state with
     | .stale => "Update the Lean proof in Concrete/Proof.lean, or restore the proved implementation."
     | .notProved => "Add a Lean proof for this function in Concrete/Proof.lean with the current fingerprint."
+    | .blocked => "Remove unsupported constructs to enable proof extraction."
     | .notEligible => s!"Remove {", ".intercalate e.profileGates} to make this function eligible for proof."
     | _ => ""
   .obj ([
@@ -2100,8 +2181,9 @@ def collectCoreFacts (modules : List CModule) (locMap : FnLocMap := [])
   let caps := collectCapFacts modules
   let unsafeFacts := collectUnsafeFacts modules
   let alloc := collectAllocFacts modules
+  let proofDiags := collectProofDiagnosticFacts pc
   let base := eligibility ++ predictable ++ proofStatus ++ obligations ++ extraction
-  base ++ effects ++ caps ++ unsafeFacts ++ alloc
+  base ++ proofDiags ++ effects ++ caps ++ unsafeFacts ++ alloc
 
 open Json in
 /-- Produce JSON diagnostics combining all fact types. -/
@@ -2287,10 +2369,11 @@ def proofQuery (modules : List CModule) (locMap : FnLocMap)
   | some e =>
     let stateStr := match e.state with
       | .proved => "proved" | .stale => "stale" | .notProved => "no_proof"
-      | .notEligible => "not_eligible" | .trusted => "trusted"
+      | .blocked => "blocked" | .notEligible => "not_eligible" | .trusted => "trusted"
     let hintStr := match e.state with
       | .stale => "Update the Lean proof in Concrete/Proof.lean, or restore the proved implementation."
       | .notProved => "Add a Lean proof for this function in Concrete/Proof.lean with the current fingerprint."
+      | .blocked => "Remove unsupported constructs to enable proof extraction."
       | .notEligible => s!"Remove {", ".intercalate e.profileGates} to make this function eligible for proof."
       | _ => ""
     (Val.obj ([
@@ -2337,7 +2420,7 @@ def evidenceQuery (modules : List CModule) (locMap : FnLocMap)
     let proofState := match fnProof with
       | some e => match e.state with
         | .proved => "proved" | .stale => "stale" | .notProved => "no_proof"
-        | .notEligible => "not_eligible" | .trusted => "trusted"
+        | .blocked => "blocked" | .notEligible => "not_eligible" | .trusted => "trusted"
       | none => "unknown"
     let gatesFailed := fnViolations.map fun v => Val.str v.reason
     (Val.obj [
@@ -2406,7 +2489,7 @@ def auditQuery (modules : List CModule) (locMap : FnLocMap)
     let proofState := match fnProof with
       | some e => match e.state with
         | .proved => "proved" | .stale => "stale" | .notProved => "no_proof"
-        | .notEligible => "not_eligible" | .trusted => "trusted"
+        | .blocked => "blocked" | .notEligible => "not_eligible" | .trusted => "trusted"
       | none => "unknown"
     let fingerprint := match fnProof with
       | some e => e.currentFp | none => ""
@@ -2830,6 +2913,7 @@ private def buildSummaryFact (facts : List Val) : Val :=
     ("predictable_violations", .num (count "predictable_violation")),
     ("obligations_proved", .num (obStatus "proved")),
     ("obligations_missing", .num (obStatus "missing_proof")),
+    ("obligations_blocked", .num (obStatus "blocked")),
     ("obligations_stale", .num (obStatus "stale")),
     ("extracted", .num (extStatus "extracted")),
     ("excluded", .num (extStatus "excluded")),

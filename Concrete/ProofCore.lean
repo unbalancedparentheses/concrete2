@@ -856,9 +856,10 @@ private def resolveSpec (qualName : String)
 /-- Status of a proof obligation — derived from spec attachment,
     fingerprint comparison, and eligibility. -/
 inductive ObligationStatus where
-  | proved      -- spec attached, fingerprint matches, passes profile
+  | proved      -- spec attached, fingerprint matches, extraction succeeded
   | stale       -- spec attached, fingerprint changed
-  | missing     -- passes profile, no spec attached
+  | missing     -- passes profile, extractable, no spec attached
+  | blocked     -- eligible but extraction failed (unsupported constructs)
   | ineligible  -- fails profile gates
   | trusted     -- marked trusted
   deriving BEq, Repr
@@ -875,6 +876,40 @@ structure Obligation where
   profileGates : List String      -- reasons for ineligibility (empty if eligible)
   dependencies : List String      -- qualified names of proved callees
   loc          : Option SourceLoc
+
+-- ============================================================
+-- Proof diagnostics
+-- ============================================================
+
+/-- Classification of proof-oriented diagnostic. -/
+inductive ProofDiagnosticKind where
+  | staleProof           -- spec attached, fingerprint changed
+  | missingProof         -- eligible, no spec attached
+  | ineligible           -- fails profile gates
+  | unsupportedConstruct -- eligible, but extraction blocked by unsupported constructs
+  | trusted              -- marked trusted (informational)
+  deriving BEq, Repr
+
+/-- Severity of a proof diagnostic. -/
+inductive ProofDiagnosticSeverity where
+  | error    -- blocks proof (stale, unsupported)
+  | warning  -- needs attention (missing proof)
+  | info     -- informational (ineligible, trusted)
+  deriving BEq, Repr
+
+/-- A proof-pipeline diagnostic — the canonical format for proof failures,
+    warnings, and informational messages. Generated in ProofCore,
+    consumed read-only by Report.lean renderers. -/
+structure ProofDiagnostic where
+  kind       : ProofDiagnosticKind
+  severity   : ProofDiagnosticSeverity
+  function   : String         -- qualified name
+  message    : String         -- one-line summary
+  hint       : String         -- actionable suggestion (empty if none)
+  details    : List String    -- unsupported constructs, profile gates, etc.
+  fingerprint : String        -- current body fingerprint
+  expectedFp  : String        -- expected fingerprint (empty if none)
+  loc        : Option SourceLoc
 
 -- ============================================================
 -- ProofCore artifact
@@ -924,6 +959,8 @@ structure ProofCore where
   externNames : List String
   /-- Proof obligations generated from the proof pipeline. -/
   obligations : List Obligation := []
+  /-- Proof diagnostics generated from the proof pipeline. -/
+  diagnostics : List ProofDiagnostic := []
 
 -- ============================================================
 -- Registry validation
@@ -1069,18 +1106,22 @@ private partial def extractModule
     (accE ++ e, accX ++ x)) ([], [])
   (entries ++ subEntries, excluded ++ subExcluded)
 
-/-- Derive obligation status from eligibility, trust, and spec attachment. -/
+/-- Derive obligation status from eligibility, trust, extraction, and spec attachment. -/
 private def deriveObligationStatus
-    (eligible : Bool) (isTrusted : Bool)
+    (eligible : Bool) (isTrusted : Bool) (extracted : Bool)
     (spec : Option SpecAttachment) (currentFp : String) : ObligationStatus :=
   if isTrusted then .trusted
+  else if !eligible then
+    match spec with
+    | some a => if a.expectedFp != currentFp then .stale else .ineligible
+    | none => .ineligible
   else match spec with
   | some a =>
-    if a.expectedFp == currentFp && eligible then .proved
-    else if a.expectedFp != currentFp then .stale
-    else .ineligible
+    if a.expectedFp != currentFp then .stale
+    else if !extracted then .blocked
+    else .proved
   | none =>
-    if !eligible then .ineligible
+    if !extracted then .blocked
     else .missing
 
 /-- Generate proof obligations from extracted entries and excluded functions.
@@ -1091,8 +1132,9 @@ private def generateObligations
     (graph : CallGraph) : List Obligation :=
   -- Build obligations for extracted (eligible) entries
   let entryObls := entries.map fun e =>
+    let extracted := e.extracted.isSome
     let status := deriveObligationStatus e.eligibility.eligible
-        e.eligibility.isTrusted e.spec e.fingerprint
+        e.eligibility.isTrusted extracted e.spec e.fingerprint
     { functionId := { qualName := e.qualName, fingerprint := e.fingerprint }
     , bareName := e.bareName
     , status
@@ -1101,10 +1143,10 @@ private def generateObligations
     , profileGates := e.eligibility.sourceReasons ++ e.eligibility.profileReasons
     , dependencies := []  -- filled in second pass
     , loc := e.loc : Obligation }
-  -- Build obligations for excluded entries
+  -- Build obligations for excluded entries (never extracted)
   let exclObls := excluded.map fun e =>
     let status := deriveObligationStatus e.eligibility.eligible
-        e.eligibility.isTrusted e.spec e.fingerprint
+        e.eligibility.isTrusted false e.spec e.fingerprint
     { functionId := { qualName := e.qualName, fingerprint := e.fingerprint }
     , bareName := e.bareName
     , status
@@ -1123,6 +1165,49 @@ private def generateObligations
       | none => []
     { o with dependencies := callees }
 
+/-- Generate proof diagnostics from obligations and extraction results. -/
+private def generateDiagnostics
+    (obligations : List Obligation)
+    (entries : List ProofCoreEntry) : List ProofDiagnostic :=
+  -- Diagnostics from obligation status
+  let oblDiags := obligations.filterMap fun o =>
+    let qn := o.functionId.qualName
+    let fp := o.functionId.fingerprint
+    match o.status with
+    | .stale =>
+      some { kind := .staleProof, severity := .error, function := qn
+           , message := s!"`{qn}` has a registered proof, but the body changed."
+           , hint := "Update the Lean proof to match the current body, or restore the proved implementation."
+           , details := [], fingerprint := fp, expectedFp := o.expectedFp, loc := o.loc }
+    | .missing =>
+      some { kind := .missingProof, severity := .warning, function := qn
+           , message := s!"`{qn}` passes the predictable profile but has no registered proof."
+           , hint := "Add a Lean proof for this function with the current fingerprint."
+           , details := [], fingerprint := fp, expectedFp := "", loc := o.loc }
+    | .ineligible =>
+      some { kind := .ineligible, severity := .info, function := qn
+           , message := s!"`{qn}` cannot be proved: fails predictable profile."
+           , hint := if o.profileGates.isEmpty then ""
+               else s!"Remove {", ".intercalate o.profileGates} to make this function eligible."
+           , details := o.profileGates, fingerprint := fp, expectedFp := "", loc := o.loc }
+    | .blocked => none  -- handled by entry-level unsupported diagnostics with details
+    | .trusted =>
+      some { kind := .trusted, severity := .info, function := qn
+           , message := s!"`{qn}` is marked trusted — proof is bypassed."
+           , hint := "", details := [], fingerprint := fp, expectedFp := "", loc := o.loc }
+    | .proved => none
+  -- Diagnostics from unsupported constructs (eligible but extraction blocked)
+  let unsupDiags := entries.filterMap fun e =>
+    if e.extracted.isNone && !e.unsupported.isEmpty then
+      some { kind := .unsupportedConstruct, severity := .error, function := e.qualName
+           , message := s!"`{e.qualName}` is eligible but uses unsupported constructs."
+           , hint := s!"Remove {", ".intercalate e.unsupported} to enable extraction."
+           , details := e.unsupported
+           , fingerprint := e.fingerprint, expectedFp := ""
+           , loc := e.loc }
+    else none
+  oblDiags ++ unsupDiags
+
 /-- Extract the proof-oriented fragment from validated Core.
     This is the primary entry point for the proof pipeline. -/
 def extractProofCore (vc : ValidatedCore)
@@ -1140,14 +1225,15 @@ def extractProofCore (vc : ValidatedCore)
   let (entries, excluded) := modules.foldl (fun (accE, accX) m =>
     let (e, x) := extractModule externNames recMap locMap registry m
     (accE ++ e, accX ++ x)) ([], [])
-  -- Generate proof obligations
+  -- Generate proof obligations and diagnostics
   let obligations := generateObligations entries excluded graph
+  let diagnostics := generateDiagnostics obligations entries
   -- Collect eligible types
   let sts := List.flatten (allModules.map (·.structs)) |>.filter CStructDef.isProofEligible
   let ens := List.flatten (allModules.map (·.enums)) |>.filter CEnumDef.isProofEligible
   let tds := List.flatten (allModules.map (·.traitDefs))
   { entries, excluded, structs := sts, enums := ens, traitDefs := tds
-  , callGraph := graph, recMap, externNames, obligations }
+  , callGraph := graph, recMap, externNames, obligations, diagnostics }
 
 -- ============================================================
 -- Pretty-printing (for --report proofcore)

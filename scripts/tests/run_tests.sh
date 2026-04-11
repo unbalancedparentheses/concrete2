@@ -2515,7 +2515,7 @@ check_report "$TESTDIR/adversarial_profile_mixed_evidence.con" proof-status \
 
 # Summary counts
 check_report "$TESTDIR/adversarial_profile_mixed_evidence.con" proof-status \
-    "1 proved.*0 stale.*1 unproved.*2 ineligible.*1 trusted" \
+    "1 proved.*0 stale.*0 unproved.*1 blocked.*2 ineligible.*1 trusted" \
     "proof-status: summary counts correct" \
     "proof-status: summary counts wrong"
 
@@ -3216,6 +3216,255 @@ check_report "$OBL_PROG" obligations \
     "missing_proof" \
     "obligation-gen: obligations report shows missing_proof" \
     "obligation-gen: obligations report should show missing_proof"
+
+# --- Obligation model adversarial tests (item 10) ---
+# Tests obligation semantics: blocked status, precedence rules, dependency filtering.
+
+DIAG_DIR="$TESTDIR/adversarial_proof_diagnostics"
+DIAG_PROG="$DIAG_DIR/test_diag.con"
+$COMPILER snapshot "$DIAG_PROG" -o "$TMPDIR/diag_adv.json" 2>/dev/null
+
+# Test 1: Eligible but unextractable → blocked (not proved, not missing)
+if python3 -c "
+import json
+with open('$TMPDIR/diag_adv.json') as f:
+    data = json.load(f)
+obs = {f['function']: f for f in data['facts'] if f['kind'] == 'obligation'}
+o = obs['main.eligible_but_blocked']
+assert o['status'] == 'blocked', f'expected blocked, got {o[\"status\"]}'
+assert o['status'] != 'proved', 'should not be proved'
+assert o['status'] != 'missing_proof', 'should not be missing_proof'
+" 2>/dev/null; then
+    echo "  ok  obligation-adv: eligible-but-unextractable is blocked"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  obligation-adv: eligible-but-unextractable should be blocked"
+    FAIL=$((FAIL + 1))
+fi
+
+# Test 2: Registry proof on unextractable → blocked (not proved despite matching fingerprint)
+if python3 -c "
+import json
+with open('$TMPDIR/diag_adv.json') as f:
+    data = json.load(f)
+obs = {f['function']: f for f in data['facts'] if f['kind'] == 'obligation'}
+o = obs['main.registry_unextractable']
+assert o['status'] == 'blocked', f'expected blocked, got {o[\"status\"]}'
+assert o['spec'] == 'unextractable_spec', 'spec should be attached'
+assert o['source'] == 'registry', 'source should be registry'
+" 2>/dev/null; then
+    echo "  ok  obligation-adv: registry proof on unextractable stays blocked"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  obligation-adv: registry proof on unextractable should be blocked"
+    FAIL=$((FAIL + 1))
+fi
+
+# Test 3: Dependencies exclude non-proved callees
+if python3 -c "
+import json
+with open('$TMPDIR/diag_adv.json') as f:
+    data = json.load(f)
+obs = {f['function']: f for f in data['facts'] if f['kind'] == 'obligation'}
+deps = obs['main.main']['dependencies']
+# main calls pure_add (proved) — should be in deps
+assert 'main.pure_add' in deps, f'proved callee missing: {deps}'
+# main calls trusted_helper (trusted) — should NOT be in deps
+assert 'main.trusted_helper' not in deps, f'trusted callee in deps: {deps}'
+# main calls eligible_but_blocked (blocked) — should NOT be in deps
+assert 'main.eligible_but_blocked' not in deps, f'blocked callee in deps: {deps}'
+# main calls source_excluded (ineligible) — should NOT be in deps
+assert 'main.source_excluded' not in deps, f'ineligible callee in deps: {deps}'
+" 2>/dev/null; then
+    echo "  ok  obligation-adv: dependencies exclude non-proved callees"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  obligation-adv: dependencies should exclude non-proved callees"
+    FAIL=$((FAIL + 1))
+fi
+
+# Test 4: Trusted function with matching registry entry → stays trusted
+if python3 -c "
+import json
+with open('$TMPDIR/diag_adv.json') as f:
+    data = json.load(f)
+obs = {f['function']: f for f in data['facts'] if f['kind'] == 'obligation'}
+o = obs['main.trusted_helper']
+assert o['status'] == 'trusted', f'expected trusted, got {o[\"status\"]}'
+assert o['spec'] == 'trusted_spec', 'spec should still be attached'
+" 2>/dev/null; then
+    echo "  ok  obligation-adv: trusted with registry stays trusted"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  obligation-adv: trusted with registry should stay trusted"
+    FAIL=$((FAIL + 1))
+fi
+
+# Test 5: Ineligible with matching registry entry → stays ineligible
+if python3 -c "
+import json
+with open('$TMPDIR/diag_adv.json') as f:
+    data = json.load(f)
+obs = {f['function']: f for f in data['facts'] if f['kind'] == 'obligation'}
+o = obs['main.profile_excluded']
+assert o['status'] == 'not_eligible', f'expected not_eligible, got {o[\"status\"]}'
+assert o['spec'] == 'profile_excluded_spec', 'spec should still be attached'
+" 2>/dev/null; then
+    echo "  ok  obligation-adv: ineligible with matching registry stays ineligible"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  obligation-adv: ineligible with matching registry should stay ineligible"
+    FAIL=$((FAIL + 1))
+fi
+
+# Test 6: Source exclusion vs profile exclusion — distinct reasons
+if python3 -c "
+import json
+with open('$TMPDIR/diag_adv.json') as f:
+    data = json.load(f)
+ps = {f['function']: f for f in data['facts'] if f['kind'] == 'proof_status'}
+# source_excluded has capability gates
+gates_src = ps['main.source_excluded'].get('profile_gates', [])
+assert any('capabilities' in g for g in gates_src), f'source_excluded missing cap gate: {gates_src}'
+# profile_excluded has allocation gates
+gates_prof = ps['main.profile_excluded'].get('profile_gates', [])
+assert any('allocation' in g or 'Alloc' in g for g in gates_prof), f'profile_excluded missing alloc gate: {gates_prof}'
+# They should have different gate reasons
+assert gates_src != gates_prof, 'source and profile exclusions should have different reasons'
+" 2>/dev/null; then
+    echo "  ok  obligation-adv: source vs profile exclusion has distinct reasons"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  obligation-adv: source vs profile exclusion should have distinct reasons"
+    FAIL=$((FAIL + 1))
+fi
+
+# Test 7: Obligation and proof-status agree on blocked
+if python3 -c "
+import json
+with open('$TMPDIR/diag_adv.json') as f:
+    data = json.load(f)
+obs = {f['function']: f for f in data['facts'] if f['kind'] == 'obligation'}
+ps = {f['function']: f for f in data['facts'] if f['kind'] == 'proof_status'}
+status_map = {'proved': 'proved', 'stale': 'stale', 'missing_proof': 'no_proof',
+              'blocked': 'blocked', 'not_eligible': 'not_eligible', 'trusted': 'trusted'}
+for fn in obs:
+    obl_status = obs[fn]['status']
+    ps_state = ps[fn]['state']
+    expected = status_map.get(obl_status, obl_status)
+    assert ps_state == expected, f'{fn}: obl={obl_status} ps={ps_state} expected={expected}'
+" 2>/dev/null; then
+    echo "  ok  obligation-adv: obligation and proof-status agree on all statuses"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  obligation-adv: obligation and proof-status should agree"
+    FAIL=$((FAIL + 1))
+fi
+
+# --- Proof diagnostics adversarial tests (item 11) ---
+# Tests that diagnostics are generated as first-class pipeline objects.
+
+# Test 1: Blocked function produces unsupported_construct diagnostic
+if python3 -c "
+import json
+with open('$TMPDIR/diag_adv.json') as f:
+    data = json.load(f)
+diags = {f['function']: f for f in data['facts'] if f['kind'] == 'proof_diagnostic' and f['diagnostic_kind'] == 'unsupported_construct'}
+assert 'main.eligible_but_blocked' in diags, 'blocked function missing unsupported diagnostic'
+d = diags['main.eligible_but_blocked']
+assert d['severity'] == 'error', f'expected error severity, got {d[\"severity\"]}'
+assert 'mutable assignment' in d.get('details', []), f'missing unsupported detail: {d.get(\"details\", [])}'
+" 2>/dev/null; then
+    echo "  ok  proof-diag: blocked function has unsupported_construct diagnostic"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  proof-diag: blocked function should have unsupported_construct diagnostic"
+    FAIL=$((FAIL + 1))
+fi
+
+# Test 2: Ineligible function produces ineligible diagnostic
+if python3 -c "
+import json
+with open('$TMPDIR/diag_adv.json') as f:
+    data = json.load(f)
+diags = [f for f in data['facts'] if f['kind'] == 'proof_diagnostic' and f['function'] == 'main.source_excluded']
+assert len(diags) == 1, f'expected 1 diagnostic, got {len(diags)}'
+d = diags[0]
+assert d['diagnostic_kind'] == 'ineligible', f'expected ineligible, got {d[\"diagnostic_kind\"]}'
+assert d['severity'] == 'info', f'expected info, got {d[\"severity\"]}'
+" 2>/dev/null; then
+    echo "  ok  proof-diag: ineligible function has ineligible diagnostic"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  proof-diag: ineligible function should have ineligible diagnostic"
+    FAIL=$((FAIL + 1))
+fi
+
+# Test 3: Trusted function produces trusted diagnostic
+if python3 -c "
+import json
+with open('$TMPDIR/diag_adv.json') as f:
+    data = json.load(f)
+diags = [f for f in data['facts'] if f['kind'] == 'proof_diagnostic' and f['function'] == 'main.trusted_helper']
+assert len(diags) == 1, f'expected 1 diagnostic, got {len(diags)}'
+d = diags[0]
+assert d['diagnostic_kind'] == 'trusted', f'expected trusted, got {d[\"diagnostic_kind\"]}'
+assert d['severity'] == 'info', f'expected info, got {d[\"severity\"]}'
+" 2>/dev/null; then
+    echo "  ok  proof-diag: trusted function has trusted diagnostic"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  proof-diag: trusted function should have trusted diagnostic"
+    FAIL=$((FAIL + 1))
+fi
+
+# Test 4: Proved function has no diagnostic
+if python3 -c "
+import json
+with open('$TMPDIR/diag_adv.json') as f:
+    data = json.load(f)
+diags = [f for f in data['facts'] if f['kind'] == 'proof_diagnostic' and f['function'] == 'main.pure_add']
+assert len(diags) == 0, f'proved function should have no diagnostic, got {len(diags)}'
+" 2>/dev/null; then
+    echo "  ok  proof-diag: proved function has no diagnostic"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  proof-diag: proved function should have no diagnostic"
+    FAIL=$((FAIL + 1))
+fi
+
+# Test 5: Diagnostic JSON facts carry source location
+if python3 -c "
+import json
+with open('$TMPDIR/diag_adv.json') as f:
+    data = json.load(f)
+diags = [f for f in data['facts'] if f['kind'] == 'proof_diagnostic']
+for d in diags:
+    loc = d.get('loc', {})
+    assert loc and loc.get('file', '') != '', f'{d[\"function\"]} diagnostic missing source location'
+" 2>/dev/null; then
+    echo "  ok  proof-diag: diagnostic facts carry source location"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  proof-diag: diagnostic facts should carry source location"
+    FAIL=$((FAIL + 1))
+fi
+
+# Test 6: Human-readable proof-diagnostics report
+check_report "$DIAG_PROG" proof-diagnostics \
+    "unsupported_construct.*error" \
+    "proof-diag: report shows unsupported_construct error" \
+    "proof-diag: report should show unsupported_construct error"
+
+check_report "$DIAG_PROG" proof-diagnostics \
+    "ineligible.*info" \
+    "proof-diag: report shows ineligible info" \
+    "proof-diag: report should show ineligible info"
+
+check_report "$DIAG_PROG" proof-diagnostics \
+    "trusted.*info" \
+    "proof-diag: report shows trusted info" \
+    "proof-diag: report should show trusted info"
 
 # --- diagnostics-json: machine-readable diagnostic records ---
 echo ""
@@ -5291,11 +5540,11 @@ CRYPTO_SNAP_DIR=$(mktemp -d)
 
 # Snapshot generates correct fact count
 snap_crypto=$($COMPILER snapshot "$CRYPTO_DIR/main.con" -o "$CRYPTO_SNAP_DIR/good.facts.json" 2>&1)
-if echo "$snap_crypto" | grep -q "28 facts"; then
-    echo "  ok  crypto_verify: snapshot produces 28 facts"
+if echo "$snap_crypto" | grep -q "29 facts"; then
+    echo "  ok  crypto_verify: snapshot produces 29 facts"
     PASS=$((PASS + 1))
 else
-    echo "FAIL  crypto_verify: expected 28 facts in snapshot"
+    echo "FAIL  crypto_verify: expected 29 facts in snapshot"
     echo "$snap_crypto"
     FAIL=$((FAIL + 1))
 fi
@@ -5529,11 +5778,11 @@ FIXTURE_DIR="$ROOT_DIR/tests/fixtures"
 # --- Snapshot tests ---
 
 snap_elf=$($COMPILER snapshot "$ELF_DIR/main.con" -o "$ELF_SNAP_DIR/good.json" 2>&1)
-if echo "$snap_elf" | grep -q "73 facts"; then
-    echo "  ok  elf_header: snapshot produces 73 facts"
+if echo "$snap_elf" | grep -q "76 facts"; then
+    echo "  ok  elf_header: snapshot produces 76 facts"
     PASS=$((PASS + 1))
 else
-    echo "FAIL  elf_header: expected 73 facts in snapshot"
+    echo "FAIL  elf_header: expected 76 facts in snapshot"
     echo "$snap_elf"
     FAIL=$((FAIL + 1))
 fi
