@@ -1,0 +1,99 @@
+// ELF header field validator — DRIFTED variant for drift testing
+//
+// Changes from original:
+//   1. check_magic accepts 0x00 instead of 0x7F as first byte (breaks ELF magic)
+//   2. check_version accepts version 0 and 1 (weakens version check)
+//   3. All other functions unchanged
+
+// === Provable core (pure, no capabilities) ===
+
+// DRIFTED: first byte check changed from 127 to 0
+fn check_magic(b0: Int, b1: Int, b2: Int, b3: Int) -> Int {
+    if b0 == 0 {
+        if b1 == 69 {
+            if b2 == 76 {
+                if b3 == 70 {
+                    return 1;
+                } else {
+                    return 0;
+                }
+            } else {
+                return 0;
+            }
+        } else {
+            return 0;
+        }
+    } else {
+        return 0;
+    }
+}
+
+// Unchanged
+fn check_class(cls: Int) -> Int {
+    if cls == 1 {
+        return 1;
+    } else {
+        if cls == 2 {
+            return 1;
+        } else {
+            return 0;
+        }
+    }
+}
+
+// Unchanged
+fn check_data(encoding: Int) -> Int {
+    if encoding == 1 {
+        return 1;
+    } else {
+        if encoding == 2 {
+            return 1;
+        } else {
+            return 0;
+        }
+    }
+}
+
+// DRIFTED: accepts version 0 in addition to 1
+fn check_version(ver: Int) -> Int {
+    if ver == 1 {
+        return 1;
+    } else {
+        if ver == 0 {
+            return 1;
+        } else {
+            return 0;
+        }
+    }
+}
+
+// Unchanged
+fn validate_header(b0: Int, b1: Int, b2: Int, b3: Int,
+                   cls: Int, encoding: Int, ver: Int) -> Int {
+    let magic_ok: Int = check_magic(b0, b1, b2, b3);
+    if magic_ok == 1 {
+        let cls_ok: Int = check_class(cls);
+        if cls_ok == 1 {
+            let enc_ok: Int = check_data(encoding);
+            if enc_ok == 1 {
+                let ver_ok: Int = check_version(ver);
+                if ver_ok == 1 {
+                    return 1;
+                } else {
+                    return 0;
+                }
+            } else {
+                return 0;
+            }
+        } else {
+            return 0;
+        }
+    } else {
+        return 0;
+    }
+}
+
+fn main() -> i32 {
+    let valid: Int = validate_header(0, 69, 76, 70, 2, 1, 0);
+    return 0;
+}

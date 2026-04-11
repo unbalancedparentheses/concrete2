@@ -4818,6 +4818,186 @@ fi
 # Clean up
 rm -rf "$CRYPTO_SNAP_DIR"
 
+# === ELF header field validator (flagship example #3) ===
+echo ""
+echo "=== ELF header field validator tests ==="
+
+ELF_DIR="$ROOT_DIR/examples/elf_header/src"
+ELF_SNAP_DIR=$(mktemp -d)
+
+# --- Snapshot tests ---
+
+snap_elf=$($COMPILER snapshot "$ELF_DIR/main.con" -o "$ELF_SNAP_DIR/good.json" 2>&1)
+if echo "$snap_elf" | grep -q "36 facts"; then
+    echo "  ok  elf_header: snapshot produces 36 facts"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  elf_header: expected 36 facts in snapshot"
+    echo "$snap_elf"
+    FAIL=$((FAIL + 1))
+fi
+
+# 5 core functions proved, 1 unproved (main)
+if python3 -c "
+import json
+with open('$ELF_SNAP_DIR/good.json') as f:
+    s = json.load(f)
+assert s['summary']['proved'] == 5
+assert s['summary']['stale'] == 0
+assert s['summary']['no_proof'] == 1
+assert s['summary']['total_functions'] == 6
+" 2>/dev/null; then
+    echo "  ok  elf_header: summary shows 5 proved, 1 unproved, 0 stale"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  elf_header: summary proof counts incorrect"
+    FAIL=$((FAIL + 1))
+fi
+
+# Named specs use real Lean symbol names
+if python3 -c "
+import json
+with open('$ELF_SNAP_DIR/good.json') as f:
+    s = json.load(f)
+facts = s['facts']
+proof_statuses = {f['function']: f for f in facts if f['kind'] == 'proof_status' and f.get('proof')}
+assert proof_statuses['main.check_magic']['proof'] == 'Concrete.Proof.check_magic_correct'
+assert proof_statuses['main.validate_header']['proof'] == 'Concrete.Proof.validate_header_correct'
+assert proof_statuses['main.check_version']['spec'] == 'Concrete.Proof.checkVersionExpr'
+" 2>/dev/null; then
+    echo "  ok  elf_header: proof names match actual Lean symbols"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  elf_header: proof names don't match Lean symbols"
+    FAIL=$((FAIL + 1))
+fi
+
+# All 5 core functions are pure
+if python3 -c "
+import json
+with open('$ELF_SNAP_DIR/good.json') as f:
+    s = json.load(f)
+facts = s['facts']
+effects = {f['function']: f for f in facts if f['kind'] == 'effects'}
+for fn in ['check_magic', 'check_class', 'check_data', 'check_version', 'validate_header']:
+    assert effects[fn]['is_pure'] == True
+    assert effects[fn]['capabilities'] == []
+" 2>/dev/null; then
+    echo "  ok  elf_header: all core functions are pure with no capabilities"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  elf_header: core functions should be pure"
+    FAIL=$((FAIL + 1))
+fi
+
+# ProofCore extraction includes ELF magic constants
+if python3 -c "
+import json
+with open('$ELF_SNAP_DIR/good.json') as f:
+    s = json.load(f)
+facts = s['facts']
+extractions = {f['function']: f for f in facts if f['kind'] == 'extraction' and f.get('proof_core')}
+assert '127' in extractions['main.check_magic']['proof_core']
+assert '69' in extractions['main.check_magic']['proof_core']
+" 2>/dev/null; then
+    echo "  ok  elf_header: ProofCore extraction shows magic byte constants"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  elf_header: ProofCore extraction should contain magic bytes"
+    FAIL=$((FAIL + 1))
+fi
+
+# --- Report tests ---
+
+elf_report=$($COMPILER "$ELF_DIR/main.con" --report proof-status 2>&1)
+if echo "$elf_report" | grep -q "5 proved" && echo "$elf_report" | grep -q "1 unproved"; then
+    echo "  ok  elf_header: proof-status report shows 5 proved, 1 unproved"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  elf_header: proof-status report counts wrong"
+    echo "$elf_report"
+    FAIL=$((FAIL + 1))
+fi
+
+for fn in check_magic check_class check_data check_version validate_header; do
+    if echo "$elf_report" | grep -q "✓.*$fn"; then
+        echo "  ok  elf_header: $fn shows proved checkmark"
+        PASS=$((PASS + 1))
+    else
+        echo "FAIL  elf_header: $fn should show proved checkmark"
+        FAIL=$((FAIL + 1))
+    fi
+done
+
+# --- Drift detection tests ---
+
+$COMPILER snapshot "$ELF_DIR/main_drifted.con" -o "$ELF_SNAP_DIR/drifted.json" 2>/dev/null
+
+# Diff detects trust weakening (exit 1)
+elf_diff=$($COMPILER diff "$ELF_SNAP_DIR/good.json" "$ELF_SNAP_DIR/drifted.json" 2>&1) && elf_diff_exit=0 || elf_diff_exit=$?
+if [ "$elf_diff_exit" = "1" ]; then
+    echo "  ok  elf_header: drift detection exits 1 (trust weakened)"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  elf_header: drift detection should exit 1, got $elf_diff_exit"
+    FAIL=$((FAIL + 1))
+fi
+
+# Diff reports check_magic stale
+if echo "$elf_diff" | grep -q "check_magic" && echo "$elf_diff" | grep -q "proved.*stale"; then
+    echo "  ok  elf_header: drift shows check_magic proved → stale"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  elf_header: drift should show check_magic stale"
+    FAIL=$((FAIL + 1))
+fi
+
+# Diff reports check_version stale
+if echo "$elf_diff" | grep -q "check_version"; then
+    echo "  ok  elf_header: drift shows check_version changed"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  elf_header: drift should show check_version changed"
+    FAIL=$((FAIL + 1))
+fi
+
+# Unchanged functions NOT flagged as weakened
+if ! echo "$elf_diff" | grep "TRUST WEAKENED" -A 200 | grep -q "check_class"; then
+    echo "  ok  elf_header: check_class not flagged as weakened (unchanged)"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  elf_header: check_class should not be weakened"
+    FAIL=$((FAIL + 1))
+fi
+
+# Self-diff is clean (exit 0)
+self_diff=$($COMPILER diff "$ELF_SNAP_DIR/good.json" "$ELF_SNAP_DIR/good.json" 2>&1) && self_exit=0 || self_exit=$?
+if [ "$self_exit" = "0" ]; then
+    echo "  ok  elf_header: self-diff exits 0 (no drift)"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  elf_header: self-diff should exit 0, got $self_exit"
+    FAIL=$((FAIL + 1))
+fi
+
+# Drifted snapshot shows stale proofs
+if python3 -c "
+import json
+with open('$ELF_SNAP_DIR/drifted.json') as f:
+    s = json.load(f)
+assert s['summary']['stale'] >= 2
+assert s['summary']['proved'] <= 3
+" 2>/dev/null; then
+    echo "  ok  elf_header: drifted snapshot shows stale proofs"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  elf_header: drifted snapshot stale counts wrong"
+    FAIL=$((FAIL + 1))
+fi
+
+# Clean up
+rm -rf "$ELF_SNAP_DIR"
+
 fi # end section: report
 
 # === Codegen differential tests ===

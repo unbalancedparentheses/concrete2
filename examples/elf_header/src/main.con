@@ -1,0 +1,127 @@
+// ELF header field validator — flagship example #3
+//
+// Validates extracted ELF header fields against the ELF specification.
+// The core functions are pure validators over integer-typed fields;
+// they do not parse a byte stream (the language has no byte arrays yet).
+// Bytes are passed as integers in [0, 255].
+//
+// What this proves: if validate_header returns 1, then every field
+// check passed — magic bytes are 0x7F 'E' 'L' 'F', class is 1 or 2,
+// data encoding is 1 or 2, and ELF version is 1. The Lean theorems
+// cover both directions (soundness and completeness) for each checker,
+// plus a compositional soundness theorem for the full validator.
+//
+// All five core functions are pure (no capabilities, no I/O).
+// main() is the entry point that exercises the validators with
+// known-good and known-bad inputs.
+
+// === Provable core (pure, no capabilities) ===
+
+// Check ELF magic bytes: 0x7F (127), 0x45 ('E'), 0x4C ('L'), 0x46 ('F').
+// Returns 1 if all four bytes match, 0 otherwise.
+fn check_magic(b0: Int, b1: Int, b2: Int, b3: Int) -> Int {
+    if b0 == 127 {
+        if b1 == 69 {
+            if b2 == 76 {
+                if b3 == 70 {
+                    return 1;
+                } else {
+                    return 0;
+                }
+            } else {
+                return 0;
+            }
+        } else {
+            return 0;
+        }
+    } else {
+        return 0;
+    }
+}
+
+// Check ELF class field: 1 = 32-bit, 2 = 64-bit.
+// Returns 1 if valid, 0 otherwise.
+fn check_class(cls: Int) -> Int {
+    if cls == 1 {
+        return 1;
+    } else {
+        if cls == 2 {
+            return 1;
+        } else {
+            return 0;
+        }
+    }
+}
+
+// Check ELF data encoding: 1 = little-endian, 2 = big-endian.
+// Returns 1 if valid, 0 otherwise.
+fn check_data(encoding: Int) -> Int {
+    if encoding == 1 {
+        return 1;
+    } else {
+        if encoding == 2 {
+            return 1;
+        } else {
+            return 0;
+        }
+    }
+}
+
+// Check ELF version: must be 1 (EV_CURRENT).
+// Returns 1 if valid, 0 otherwise.
+fn check_version(ver: Int) -> Int {
+    if ver == 1 {
+        return 1;
+    } else {
+        return 0;
+    }
+}
+
+// Validate all ELF header fields.
+// Returns 1 only if every individual check passes.
+fn validate_header(b0: Int, b1: Int, b2: Int, b3: Int,
+                   cls: Int, encoding: Int, ver: Int) -> Int {
+    let magic_ok: Int = check_magic(b0, b1, b2, b3);
+    if magic_ok == 1 {
+        let cls_ok: Int = check_class(cls);
+        if cls_ok == 1 {
+            let enc_ok: Int = check_data(encoding);
+            if enc_ok == 1 {
+                let ver_ok: Int = check_version(ver);
+                if ver_ok == 1 {
+                    return 1;
+                } else {
+                    return 0;
+                }
+            } else {
+                return 0;
+            }
+        } else {
+            return 0;
+        }
+    } else {
+        return 0;
+    }
+}
+
+// === Entry point (pure, no I/O) ===
+
+fn main() -> i32 {
+    // Valid 64-bit little-endian ELF header fields
+    let valid: Int = validate_header(127, 69, 76, 70, 2, 1, 1);
+    // valid == 1
+
+    // Bad magic (first byte wrong)
+    let bad_magic: Int = validate_header(0, 69, 76, 70, 2, 1, 1);
+    // bad_magic == 0
+
+    // Bad class (3 is not valid)
+    let bad_class: Int = validate_header(127, 69, 76, 70, 3, 1, 1);
+    // bad_class == 0
+
+    // Bad version (0 is not EV_CURRENT)
+    let bad_ver: Int = validate_header(127, 69, 76, 70, 1, 2, 0);
+    // bad_ver == 0
+
+    return 0;
+}
