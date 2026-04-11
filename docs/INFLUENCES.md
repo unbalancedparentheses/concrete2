@@ -147,6 +147,20 @@ Concrete does not want:
 - to become a full effect-typed proof language first and a systems language
   second
 
+### Frama-C
+
+**Status:** Adapted lightly
+
+Concrete can learn from Frama-C:
+
+- practical contracts/invariants over low-level code
+- analyzable restricted subsets rather than "verify everything at once"
+- tool-assisted assurance workflow around ordinary systems programming
+
+Concrete should not copy:
+
+- a plugin-heavy or analysis-fragmented workflow as its primary UX
+
 ### ATS
 
 **Status:** Adapted
@@ -160,6 +174,50 @@ Concrete does not want:
 
 - proof-term density in ordinary source code
 - a language surface that is too dense for audit-first use
+
+### Liquid Haskell
+
+**Status:** Adapted lightly
+
+Concrete can learn from Liquid Haskell:
+
+- lightweight contract/refinement ideas for API-level properties
+- proving useful bounds and shape properties without turning the entire
+  language into a dependent-type system
+
+Concrete should not copy:
+
+- SMT/refinement machinery as the default explanation surface for ordinary
+  systems code
+
+### Vale
+
+**Status:** Adapted narrowly
+
+Concrete can learn from Vale:
+
+- proof-aware low-level boundary discipline
+- strong separation between trusted low-level envelopes and proved higher-level
+  properties
+- serious handling of cryptographic and security-sensitive code
+
+Vale matters more as a lesson in boundary discipline than as a surface-language
+model for Concrete.
+
+### CompCert
+
+**Status:** Adapted as compiler-trust influence
+
+Concrete can learn from CompCert:
+
+- explicit compiler-correctness mindset
+- honesty about backend trust boundaries
+- the value of proving selected compiler-preservation properties where they
+  protect real evidence claims
+
+CompCert is not a surface-language influence. It is a reminder that if
+Concrete's thesis depends on compiler-reported evidence, the compiler and
+backend contracts themselves eventually matter.
 
 ## Secondary Influences
 
