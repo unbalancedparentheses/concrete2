@@ -4026,6 +4026,230 @@ fi
 # Clean up
 rm -f /tmp/concrete_diff_baseline.json /tmp/concrete_diff_stale.json /tmp/concrete_diff_mixed.json
 
+echo ""
+echo "=== Adversarial diff tests ==="
+
+ADV_DIR="/tmp/concrete_adv_diff"
+mkdir -p "$ADV_DIR"
+
+# --- Malformed JSON input ---
+
+# Truncated JSON (unclosed array)
+echo '[{"kind":"effects","function":"foo"' > "$ADV_DIR/truncated.json"
+echo '[]' > "$ADV_DIR/empty_arr.json"
+adv_trunc=$($COMPILER diff "$ADV_DIR/truncated.json" "$ADV_DIR/empty_arr.json" 2>&1) && true || true
+if echo "$adv_trunc" | grep -qi "error.*parse\|could not parse"; then
+    echo "  ok  adv-diff: truncated JSON rejected with parse error"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  adv-diff: truncated JSON should produce parse error"
+    echo "$adv_trunc"
+    FAIL=$((FAIL + 1))
+fi
+
+# Non-array root (bare object)
+echo '{"kind":"effects","function":"foo"}' > "$ADV_DIR/bare_obj.json"
+adv_bare=$($COMPILER diff "$ADV_DIR/bare_obj.json" "$ADV_DIR/empty_arr.json" 2>&1) && true || true
+if echo "$adv_bare" | grep -qi "error.*parse\|could not parse"; then
+    echo "  ok  adv-diff: non-array JSON root rejected"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  adv-diff: non-array JSON root should be rejected"
+    echo "$adv_bare"
+    FAIL=$((FAIL + 1))
+fi
+
+# Empty file
+echo -n "" > "$ADV_DIR/empty_file.json"
+adv_empty=$($COMPILER diff "$ADV_DIR/empty_file.json" "$ADV_DIR/empty_arr.json" 2>&1) && true || true
+if echo "$adv_empty" | grep -qi "error.*parse\|could not parse"; then
+    echo "  ok  adv-diff: empty file rejected with parse error"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  adv-diff: empty file should produce parse error"
+    echo "$adv_empty"
+    FAIL=$((FAIL + 1))
+fi
+
+# --- Empty array diffs ---
+
+# Both empty → no changes
+adv_both_empty=$($COMPILER diff "$ADV_DIR/empty_arr.json" "$ADV_DIR/empty_arr.json" 2>&1) && adv_ee_exit=0 || adv_ee_exit=$?
+if echo "$adv_both_empty" | grep -q "No trust-relevant changes" && [ "$adv_ee_exit" -eq 0 ]; then
+    echo "  ok  adv-diff: both-empty diff reports no changes (exit 0)"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  adv-diff: both-empty diff should report no changes"
+    echo "$adv_both_empty"
+    FAIL=$((FAIL + 1))
+fi
+
+# --- Missing kind/function fields (silently dropped) ---
+
+# Fact without "function" field → should be excluded from diff
+cat > "$ADV_DIR/no_function.json" << 'ADVEOF'
+[{"kind":"effects","is_pure":true}]
+ADVEOF
+cat > "$ADV_DIR/normal_fact.json" << 'ADVEOF'
+[{"kind":"effects","function":"foo","is_pure":true}]
+ADVEOF
+adv_nofn=$($COMPILER diff "$ADV_DIR/no_function.json" "$ADV_DIR/normal_fact.json" 2>&1) && true || true
+# The fact without function should be dropped, so "foo" appears as added
+if echo "$adv_nofn" | grep -q '\[+\].*effects.*foo'; then
+    echo "  ok  adv-diff: fact without function field dropped, counterpart shows as added"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  adv-diff: missing function field should cause fact to be dropped"
+    echo "$adv_nofn"
+    FAIL=$((FAIL + 1))
+fi
+
+# Fact without "kind" field → should also be dropped
+cat > "$ADV_DIR/no_kind.json" << 'ADVEOF'
+[{"function":"foo","is_pure":true}]
+ADVEOF
+adv_nokind=$($COMPILER diff "$ADV_DIR/no_kind.json" "$ADV_DIR/normal_fact.json" 2>&1) && true || true
+if echo "$adv_nokind" | grep -q '\[+\].*effects.*foo'; then
+    echo "  ok  adv-diff: fact without kind field dropped, counterpart shows as added"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  adv-diff: missing kind field should cause fact to be dropped"
+    echo "$adv_nokind"
+    FAIL=$((FAIL + 1))
+fi
+
+# --- Duplicate (kind, function) in same bundle ---
+# Only first match is used — second duplicate is invisible
+
+cat > "$ADV_DIR/dupes_old.json" << 'ADVEOF'
+[{"kind":"proof_status","function":"foo","state":"proved","current_fingerprint":"abc"}]
+ADVEOF
+cat > "$ADV_DIR/dupes_new.json" << 'ADVEOF'
+[{"kind":"proof_status","function":"foo","state":"proved","current_fingerprint":"abc"},{"kind":"proof_status","function":"foo","state":"stale","current_fingerprint":"xyz"}]
+ADVEOF
+adv_dupes=$($COMPILER diff "$ADV_DIR/dupes_old.json" "$ADV_DIR/dupes_new.json" 2>&1) && adv_dupes_exit=0 || adv_dupes_exit=$?
+# First match in new is identical to old → no change detected for it
+# The duplicate is silently ignored
+if echo "$adv_dupes" | grep -q "No trust-relevant changes"; then
+    echo "  ok  adv-diff: duplicate facts — only first match compared, duplicate invisible"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  adv-diff: duplicate facts should use first match (second invisible)"
+    echo "$adv_dupes"
+    FAIL=$((FAIL + 1))
+fi
+
+# --- Fingerprint change without state change ---
+
+cat > "$ADV_DIR/fp_old.json" << 'ADVEOF'
+[{"kind":"proof_status","function":"foo","state":"proved","current_fingerprint":"abc","spec":"Foo.spec","proof":"Foo.proof","source":"registry"}]
+ADVEOF
+cat > "$ADV_DIR/fp_new.json" << 'ADVEOF'
+[{"kind":"proof_status","function":"foo","state":"proved","current_fingerprint":"xyz","spec":"Foo.spec","proof":"Foo.proof","source":"registry"}]
+ADVEOF
+adv_fp=$($COMPILER diff "$ADV_DIR/fp_old.json" "$ADV_DIR/fp_new.json" 2>&1) && adv_fp_exit=0 || adv_fp_exit=$?
+# Fingerprint changed but state is still proved → should detect change, neutral drift
+if echo "$adv_fp" | grep -q "current_fingerprint:.*abc.*xyz" && \
+   echo "$adv_fp" | grep -q "OTHER CHANGES"; then
+    echo "  ok  adv-diff: fingerprint change without state change detected as neutral"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  adv-diff: fingerprint-only change should be detected as neutral"
+    echo "$adv_fp"
+    FAIL=$((FAIL + 1))
+fi
+
+# --- Capability array grows (string-level diff) ---
+
+cat > "$ADV_DIR/cap_old.json" << 'ADVEOF'
+[{"kind":"effects","function":"foo","capabilities":"[]","is_pure":"true","allocates":"false","frees":"false","recursion":"none","loops":"none","crosses_ffi":"false","is_trusted":"false","evidence":"enforced"}]
+ADVEOF
+cat > "$ADV_DIR/cap_new.json" << 'ADVEOF'
+[{"kind":"effects","function":"foo","capabilities":"[Alloc, Network]","is_pure":"false","allocates":"false","frees":"false","recursion":"none","loops":"none","crosses_ffi":"false","is_trusted":"false","evidence":"reported"}]
+ADVEOF
+adv_cap=$($COMPILER diff "$ADV_DIR/cap_old.json" "$ADV_DIR/cap_new.json" 2>&1) && true || true
+if echo "$adv_cap" | grep -q "TRUST WEAKENED" && \
+   echo "$adv_cap" | grep -q "capabilities:" && \
+   echo "$adv_cap" | grep -q "evidence:.*enforced.*reported"; then
+    echo "  ok  adv-diff: capability growth + evidence downgrade detected as weakened"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  adv-diff: capability growth should be detected"
+    echo "$adv_cap"
+    FAIL=$((FAIL + 1))
+fi
+
+# --- New function with weak evidence appears as neutral (known gap) ---
+
+cat > "$ADV_DIR/new_weak_old.json" << 'ADVEOF'
+[]
+ADVEOF
+cat > "$ADV_DIR/new_weak_new.json" << 'ADVEOF'
+[{"kind":"effects","function":"evil_fn","evidence":"reported","is_pure":"false","capabilities":"[Alloc]","allocates":"true","frees":"false","recursion":"none","loops":"none","crosses_ffi":"true","is_trusted":"false"}]
+ADVEOF
+adv_newweak=$($COMPILER diff "$ADV_DIR/new_weak_old.json" "$ADV_DIR/new_weak_new.json" 2>&1) && adv_nw_exit=0 || adv_nw_exit=$?
+# New effects facts default to "neutral" drift — this is a known gap
+# Test documents the current behavior
+if echo "$adv_newweak" | grep -q '\[+\].*effects.*evil_fn' && \
+   echo "$adv_newweak" | grep -q "OTHER CHANGES"; then
+    echo "  ok  adv-diff: new function with weak evidence marked as neutral (known gap)"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  adv-diff: new weak-evidence function should appear in diff"
+    echo "$adv_newweak"
+    FAIL=$((FAIL + 1))
+fi
+
+# --- Removed fact detected as weakened ---
+
+cat > "$ADV_DIR/removed_old.json" << 'ADVEOF'
+[{"kind":"proof_status","function":"foo","state":"proved","current_fingerprint":"abc"}]
+ADVEOF
+adv_removed=$($COMPILER diff "$ADV_DIR/removed_old.json" "$ADV_DIR/new_weak_old.json" 2>&1) && true || true
+if echo "$adv_removed" | grep -q "TRUST WEAKENED" && \
+   echo "$adv_removed" | grep -q '\[-\].*proof_status.*foo'; then
+    echo "  ok  adv-diff: removed proof_status fact flagged as trust weakened"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  adv-diff: removed fact should be flagged as weakened"
+    echo "$adv_removed"
+    FAIL=$((FAIL + 1))
+fi
+
+# --- Escaped characters in function names ---
+
+cat > "$ADV_DIR/escape_old.json" << 'ADVEOF'
+[{"kind":"proof_status","function":"mod.fn_with\"quotes","state":"proved","current_fingerprint":"abc"}]
+ADVEOF
+cat > "$ADV_DIR/escape_new.json" << 'ADVEOF'
+[{"kind":"proof_status","function":"mod.fn_with\"quotes","state":"stale","current_fingerprint":"abc"}]
+ADVEOF
+adv_esc=$($COMPILER diff "$ADV_DIR/escape_old.json" "$ADV_DIR/escape_new.json" 2>&1) && true || true
+if echo "$adv_esc" | grep -q "TRUST WEAKENED" && \
+   echo "$adv_esc" | grep -q "state:.*proved.*stale"; then
+    echo "  ok  adv-diff: escaped quotes in function names handled correctly"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  adv-diff: escaped function names should still diff correctly"
+    echo "$adv_esc"
+    FAIL=$((FAIL + 1))
+fi
+
+# --- Nonexistent file path ---
+
+adv_nofile=$($COMPILER diff "/tmp/this_does_not_exist_12345.json" "$ADV_DIR/empty_arr.json" 2>&1) && true || true
+if echo "$adv_nofile" | grep -qi "error\|no such file\|does not exist"; then
+    echo "  ok  adv-diff: nonexistent file produces error"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  adv-diff: nonexistent file should produce error"
+    echo "$adv_nofile"
+    FAIL=$((FAIL + 1))
+fi
+
+# Clean up adversarial test files
+rm -rf "$ADV_DIR"
+
 fi # end section: report
 
 # === Codegen differential tests ===
