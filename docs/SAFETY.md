@@ -8,6 +8,7 @@ For ownership and linearity, see [VALUE_MODEL.md](VALUE_MODEL.md).
 For the current safe-memory guarantee boundary, see [MEMORY_GUARANTEES.md](MEMORY_GUARANTEES.md).
 For effect/trust proof boundaries, see [EFFECT_PROOF_BOUNDARIES.md](EFFECT_PROOF_BOUNDARIES.md).
 For the precise public guarantee statement, see [GUARANTEE_STATEMENT.md](GUARANTEE_STATEMENT.md).
+For the proof-claim taxonomy, see [CLAIM_TAXONOMY.md](CLAIM_TAXONOMY.md).
 For FFI, trusted boundaries, and capability aliases, see [FFI.md](FFI.md).
 For diagnostics and error recovery, see [DIAGNOSTICS.md](DIAGNOSTICS.md).
 For pass contracts and report modes, see [PASSES.md](PASSES.md).
