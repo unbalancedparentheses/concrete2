@@ -125,14 +125,14 @@ borrow mut owner as ref in Region {
 
 | Attempting | Owner already has | Result |
 |-----------|-------------------|--------|
-| Shared borrow (`&`) | No borrows | Allowed |
-| Shared borrow (`&`) | Shared borrows | Allowed |
-| Shared borrow (`&`) | Mutable borrow | **Error**: `cannotImmBorrowMutBorrowed` |
-| Mutable borrow (`&mut`) | No borrows | Allowed (owner must be `mut`) |
-| Mutable borrow (`&mut`) | Any borrows | **Error**: `cannotMutBorrowImmBorrowed` or `variableAlreadyMutBorrowed` |
+| Shared borrow (`&`) | No active borrow block | Allowed |
+| Shared borrow (`&`) | Owner already frozen by any borrow block | **Error**: `variableFrozenByBorrow` |
+| Mutable borrow (`&mut`) | No active borrow block | Allowed (owner must be `mut`) |
+| Mutable borrow (`&mut`) | Owner already frozen by any borrow block | **Error**: `variableFrozenByBorrow` |
 | Any borrow | Owner is `consumed` | **Error**: `cannotBorrowMoved` |
-| Any borrow | Owner is `frozen` | **Error**: `variableFrozenByBorrow` |
 | Mutable borrow | Owner is not `mut` | **Error**: `cannotMutBorrowImmutable` |
+
+Because borrow blocks freeze the owner for the entire duration of the block, Concrete does not currently support overlapping borrows of the same owner, even shared-with-shared. The checker uses a whole-owner freeze model rather than a borrow-count model for nested borrow-block composition.
 
 ### Borrow escape prevention
 

@@ -50,7 +50,7 @@ These properties are mechanically enforced by `Check.lean` and verified by adver
 | Double free | Linear value consumed once → second free is use-after-move |
 | Memory leak | Linear value forgotten → scope-exit error |
 | Dangling reference | Borrow block scoping → escape analysis |
-| Data race (aliasing) | Mutable borrow is exclusive; owner is frozen during borrow |
+| Invalid aliasing through safe references | Mutable borrow is exclusive; owner is frozen during borrow |
 
 ## Where the Safe Claim Has Boundaries
 

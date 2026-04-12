@@ -1,0 +1,21 @@
+// BUG/FINDING: &mut T is declared non-Copy (linear) in isCopyType,
+// but borrow-block mutable references are not consumed on function call.
+// The checker allows double use of a &mut ref; codegen then crashes.
+// This test documents the current behavior.
+//
+// This is a known gap: the borrow-block ref variable is treated as
+// usable (not consumed) when passed to a function, even though
+// isCopyType(&mut T) returns false.
+
+fn increment(x: &mut Int) {
+    *x = *x + 1;
+}
+
+fn main() -> Int {
+    let mut n: Int = 10;
+    borrow mut n as r in R {
+        increment(r);
+        increment(r);  // Should error but doesn't — gap in consumption tracking
+    }
+    return n;
+}

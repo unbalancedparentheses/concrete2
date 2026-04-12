@@ -1976,6 +1976,9 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
         throwCheck (.borrowRefShadows ref) (some stmt.getSpan)
       if (env.vars.lookup region).isSome then
         throwCheck (.borrowRegionShadows region) (some stmt.getSpan)
+      -- Check if variable is consumed (moved)
+      if !varInfo.isCopy && varInfo.state == .consumed then
+        throwCheck (.cannotBorrowMoved var) (some stmt.getSpan)
       -- Check if variable is frozen (already inside another borrow block)
       if varInfo.state == .frozen then
         throwCheck (.variableFrozenByBorrow var) (some stmt.getSpan)

@@ -1,18 +1,27 @@
-struct Resource { value: Int }
+// ERROR TEST: enum match arms disagree on linear consumption.
 
-fn consume(r: Resource) -> Int { return r.value; }
+enum Copy Choice {
+    A,
+    B,
+}
 
-enum Choice { A { }, B { } }
+struct Resource {
+    value: Int,
+}
 
-fn test(ch: Choice, r: Resource) -> Int {
-    match ch {
-        Choice#A { } => { return consume(r); },
-        Choice#B { } => { return 0; },
+fn consume(r: Resource) -> Int {
+    return r.value;
+}
+
+fn bad_enum_disagree(c: Choice) -> Int {
+    let r: Resource = Resource { value: 42 };
+    match c {
+        Choice#A => { let _x: Int = consume(r); },
+        Choice#B => { let _x: Int = 0; },
     }
+    return 0;
 }
 
 fn main() -> Int {
-    let r: Resource = Resource { value: 42 };
-    let ch: Choice = Choice#A { };
-    return test(ch, r);
+    return bad_enum_disagree(Choice#A);
 }

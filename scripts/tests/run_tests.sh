@@ -860,6 +860,21 @@ run_ok "$TESTDIR/adversarial_memory_edge_borrow_sequential.con" 335
 run_ok "$TESTDIR/adversarial_memory_edge_reserved_borrow.con" 42
 run_ok "$TESTDIR/adversarial_memory_edge_match_agree.con" 0
 run_ok "$TESTDIR/bug_int_match_consume.con" 0
+# Ownership/borrow adversarial tests
+run_ok "$TESTDIR/adversarial_borrow_then_consume.con" 84
+run_ok "$TESTDIR/adversarial_copy_no_linearity.con" 233
+run_ok "$TESTDIR/adversarial_copy_in_loop.con" 90
+run_ok "$TESTDIR/adversarial_return_consumes.con" 77
+run_ok "$TESTDIR/adversarial_shared_borrow_multi_use.con" 60
+run_ok "$TESTDIR/adversarial_nested_borrow_different_owners.con" 30
+run_ok "$TESTDIR/adversarial_linear_enum_consume.con" 37
+run_ok "$TESTDIR/adversarial_deep_branch_linear.con" 0
+run_ok "$TESTDIR/adversarial_for_loop_linear.con" 10
+run_ok "$TESTDIR/adversarial_multiple_defer_order.con" 6
+run_ok "$TESTDIR/adversarial_linear_field_read_no_consume.con" 90
+run_ok "$TESTDIR/adversarial_newtype_consume.con" 183
+run_ok "$TESTDIR/adversarial_heap_ownership.con" 360
+run_ok "$TESTDIR/adversarial_heap_defer_cleanup.con" 300
 
 # Capability polymorphism
 run_ok "$TESTDIR/cap_poly.con" 42
@@ -1158,6 +1173,23 @@ run_err "$TESTDIR/error_memory_edge_loop_consume_outer.con" "cannot consume line
 run_err "$TESTDIR/error_memory_edge_move_while_borrowed.con" "frozen by borrow block"
 run_err "$TESTDIR/error_memory_edge_defer_then_move.con" "reserved by defer"
 run_err "$TESTDIR/bug_int_match_disagree.con" "match arms disagree"
+# Trusted linearity enforcement
+run_err "$TESTDIR/error_trusted_use_after_move.con" "used after move"
+run_err "$TESTDIR/error_trusted_leak.con" "was never consumed"
+run_err "$TESTDIR/error_trusted_linear_reassign.con" "cannot reassign linear"
+# Heap ownership errors
+run_err "$TESTDIR/error_heap_double_free.con" "used after move"
+run_err "$TESTDIR/error_heap_use_after_free.con" "used after move"
+run_err "$TESTDIR/error_heap_deref_double.con" "used after move"
+run_err "$TESTDIR/error_heap_leak_no_free.con" "was never consumed"
+# Newtype/enum linearity errors
+run_err "$TESTDIR/error_newtype_double_unwrap.con" "used after move"
+run_err "$TESTDIR/error_linear_enum_leak.con" "was never consumed"
+run_err "$TESTDIR/error_enum_match_disagree.con" "match arms disagree"
+# Branch/borrow errors
+run_err "$TESTDIR/error_deep_branch_disagree.con" "consumed in one branch"
+run_err "$TESTDIR/error_borrow_consumed_var.con" "already moved"
+run_err "$TESTDIR/error_assign_frozen_by_borrow.con" "frozen by borrow block"
 # Bitwise errors
 run_err "$TESTDIR/error_bitwise_float.con" "type mismatch"
 # Print errors
