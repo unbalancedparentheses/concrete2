@@ -851,6 +851,16 @@ run_ok "$TESTDIR/borrow_named.con" 30
 run_ok "$TESTDIR/borrow_mut_named.con" 42
 run_ok "$TESTDIR/borrow_multi.con" 35
 
+# Memory semantics edge cases (valid programs)
+run_ok "$TESTDIR/adversarial_memory_edge_field_borrow.con" 13
+run_ok "$TESTDIR/adversarial_memory_edge_array_borrow.con" 30
+run_ok "$TESTDIR/adversarial_memory_edge_controlflow.con" 5
+run_ok "$TESTDIR/adversarial_memory_edge_defer.con" 45
+run_ok "$TESTDIR/adversarial_memory_edge_borrow_sequential.con" 335
+run_ok "$TESTDIR/adversarial_memory_edge_reserved_borrow.con" 42
+run_ok "$TESTDIR/adversarial_memory_edge_match_agree.con" 0
+run_ok "$TESTDIR/bug_int_match_consume.con" 0
+
 # Capability polymorphism
 run_ok "$TESTDIR/cap_poly.con" 42
 run_ok "$TESTDIR/cap_poly_chain.con" 42
@@ -1139,6 +1149,15 @@ run_err "$TESTDIR/error_break_linear_skip.con" "break would skip unconsumed line
 # Additional borrow errors
 run_err "$TESTDIR/error_borrow_double_mut.con"   "is frozen by borrow block"
 run_err "$TESTDIR/error_borrow_assign_frozen.con" "frozen by borrow block"
+# Memory semantics edge cases (must-reject)
+run_err "$TESTDIR/error_memory_edge_use_after_move.con" "used after move"
+run_err "$TESTDIR/error_memory_edge_linear_reassign.con" "cannot reassign linear"
+run_err "$TESTDIR/error_memory_edge_branch_disagree.con" "consumed in one branch"
+run_err "$TESTDIR/error_memory_edge_if_no_else_consume.con" "consumed in if-without-else"
+run_err "$TESTDIR/error_memory_edge_loop_consume_outer.con" "cannot consume linear variable"
+run_err "$TESTDIR/error_memory_edge_move_while_borrowed.con" "frozen by borrow block"
+run_err "$TESTDIR/error_memory_edge_defer_then_move.con" "reserved by defer"
+run_err "$TESTDIR/bug_int_match_disagree.con" "match arms disagree"
 # Bitwise errors
 run_err "$TESTDIR/error_bitwise_float.con" "type mismatch"
 # Print errors

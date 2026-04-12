@@ -2,98 +2,101 @@
 
 Status: active reference
 
-This document separates three things that are easy to blur together:
-
-1. what Concrete already enforces today
-2. what guarantee is reasonable to state publicly today
-3. what still needs semantic and proof-facing closure before the strongest claim is justified
+This document separates what the checker enforces today, what is safe to claim publicly, and what still needs closure. For the full operational semantics, see [MEMORY_SEMANTICS.md](MEMORY_SEMANTICS.md).
 
 For the value/reference categories, see [VALUE_MODEL.md](VALUE_MODEL.md).
 For the broader safety model, see [SAFETY.md](SAFETY.md).
 
-## Already Enforced Today
+## What the Checker Enforces Today
 
-Concrete already has a real checker-backed ownership and borrow discipline for safe code.
+These properties are mechanically enforced by `Check.lean` and verified by adversarial tests:
 
-The current implementation enforces:
+1. **No use-after-move.** A linear variable in `consumed` state cannot be read, borrowed, or moved. (Test: `error_memory_edge_use_after_move.con`)
 
-- linear ownership discipline
-- use-after-move rejection
-- unconsumed linear-value rejection at scope exit
-- mutable-vs-shared borrow conflict checking
-- borrow escape checking for borrow blocks
-- explicit cleanup via `destroy(...)` / `defer`
-- trusted/unsafe separation without relaxing linearity
+2. **No forgotten linear values.** Every linear variable must be consumed or reserved (via `defer`) by scope exit. (Test: linearity tests across the suite)
 
-This is not only a documentation claim. It is backed by checker logic and targeted tests for:
+3. **No borrow conflict.** Mutable borrows are exclusive; shared borrows are incompatible with mutable borrows. (Tests: `error_borrow_mut_conflict.con`, `error_double_mut_borrow.con`)
 
-- linearity violations
-- borrow errors
-- use-after-move
-- unconsumed values
-- borrow escape
-- defer/cleanup interaction
+4. **No borrow escape.** References created by borrow blocks cannot be assigned to variables that outlive the block. (Tests: `error_borrow_escape.con`, `error_escape_return.con`, `error_escape_field.con`)
+
+5. **No frozen-variable access.** A variable frozen by an active borrow block cannot be read, written, moved, or re-borrowed. (Test: `error_memory_edge_move_while_borrowed.con`)
+
+6. **No cross-loop consumption.** A linear variable from an outer scope cannot be consumed inside a loop body. (Test: `error_memory_edge_loop_consume_outer.con`)
+
+7. **No linear reassignment.** Linear variables cannot be reassigned. (Test: `error_memory_edge_linear_reassign.con`)
+
+8. **Branch agreement.** If/else branches and match arms must agree on consumption of pre-existing linear variables. (Tests: `error_memory_edge_branch_disagree.con`, `error_memory_edge_if_no_else_consume.con`, `bug_int_match_disagree.con`)
+
+9. **No skip past linear.** Break and continue cannot skip unconsumed linear variables. (Test: `error_break_linear_skip.con`)
+
+10. **Trusted code does not relax linearity.** `trusted` permits pointer arithmetic and raw pointer operations but does not suppress ownership, borrow, or scope-exit rules.
 
 ## Public Claim That Is Safe Today
 
-The safe public claim today is:
+**For safe Concrete code (no `trusted`, no `with(Unsafe)`), the checker enforces:**
 
-**Concrete already enforces a real ownership/borrow discipline for its safe subset, with explicit cleanup and explicit unsafe/trusted boundaries.**
+- No use of a value after it has been moved.
+- No leak of a linear value — every owned resource is consumed or has deferred cleanup.
+- No conflicting borrows — mutable access is exclusive, shared access precludes mutation.
+- No dangling safe references — references cannot escape their borrow block.
+- No silent reassignment of linear resources.
+- Deterministic cleanup ordering via `defer` (LIFO).
 
-More concretely, the language is already trying to reject:
+**What this rejects at compile time:**
 
-- use-after-free through the safe ownership model
-- double free through linear ownership and explicit destruction
-- leaks from forgotten linear values
-- dangling safe references from borrow-block escape
-- invalid mutable/shared borrow overlap in the checked safe subset
+| Bug class | Enforcement mechanism |
+|-----------|----------------------|
+| Use-after-free | Linear value consumed by `free`/`destroy` → subsequent use is use-after-move |
+| Double free | Linear value consumed once → second free is use-after-move |
+| Memory leak | Linear value forgotten → scope-exit error |
+| Dangling reference | Borrow block scoping → escape analysis |
+| Data race (aliasing) | Mutable borrow is exclusive; owner is frozen during borrow |
 
-This is a strong design claim about the current checker.
+## Where the Safe Claim Has Boundaries
 
-## What Is Not Yet Fully Closed
+These are honest boundaries, not bugs:
 
-The remaining gap is not "invent ownership." The remaining gap is to make the exact guarantee boundary centralized, explicit, and proof-facing.
+### Conservative (safe but restrictive)
 
-The still-open closure work is:
+- **Whole-value borrows only.** Borrowing a struct freezes the entire struct. Disjoint field borrows are not supported. This prevents some valid programs but never permits an invalid one.
+- **Whole-array borrows only.** No per-element borrow tracking. Same rationale.
+- **Scoped borrows only.** No Rust-style NLL or lifetime inference. References are confined to their borrow block. This is more restrictive than necessary but structurally sound.
 
-- one checker-matching memory/reference semantics document
-- one tighter safe-subset theorem/contract statement
-- closure on harder edge cases
-- proof/evidence integration for the memory model
+### Outside the checker's reach
 
-### Hard Edge Cases Still Needing Centralized Closure
+- **Raw pointers.** Once a value is behind `*mut T` / `*const T`, the checker does not track it. Raw pointer soundness is the responsibility of `trusted` code and is an audit concern.
+- **Arena/bulk-free patterns.** If an arena is freed while references to its contents exist, the references dangle. The checker cannot see the arena-allocation relationship.
+- **Cross-function reference use.** The checker trusts function signatures. If `fn foo(x: &T)` internally does something unsound with the reference (via `trusted`), the caller's checker does not detect it.
+- **Concurrency.** The model assumes single-threaded execution. Shared-memory concurrency would require `Send`/`Sync`-like constraints that do not exist yet. This is an **explicitly deferred boundary**.
 
-These areas are the ones that need one explicit, project-wide statement rather than scattered rules:
+### Not yet proof-backed
 
-- field and substructure borrows
-- array/slice element borrows
-- borrowed values across control-flow joins
-- heap-owner invalidation patterns such as arena reset/free-style APIs
-- future concurrency interaction
-- pointer/reference boundary cases
-- destruction with outstanding borrows
+The checker enforces the above properties, but:
 
-The checker already covers many practical cases. What is missing is the final consolidated semantics and public guarantee wording for all of them together.
+- There is no formal proof of checker soundness.
+- The guarantees are validated by adversarial tests and code review, not by a mechanized proof.
+- The proof/evidence pipeline (ProofCore, obligations, diagnostics) does not yet cover memory model properties.
 
-## Stronger Claim Not Yet Ready
+## Stronger Claim: Direction But Not Yet Justified
 
-The project is not yet ready to state the strongest public theorem-like claim in one centralized place, for example:
+The goal is to eventually state:
 
 **For safe Concrete code, there is no use-after-free, no double free, no dangling safe reference, and no invalid aliasing through safe references.**
 
-That is the direction of the design, but the exact public statement still needs:
+This requires:
 
-- the explicit memory/reference semantics item in the roadmap
-- the proof-facing articulation of that model
-- closure on the hard edge cases above
+- ~~one checker-matching memory/reference semantics document~~ **done** — [MEMORY_SEMANTICS.md](MEMORY_SEMANTICS.md)
+- ~~closure on hard edge cases~~ **done** — edge cases documented with status in MEMORY_SEMANTICS.md §13, adversarial tests for each, integer-match consumption bug fixed
+- proof-facing articulation of the memory model (future: connect to ProofCore/obligations)
+- formal checker soundness argument or mechanized proof (future)
 
 ## Why This Matters
 
 Without this document, it is too easy to make either of two mistakes:
 
 - understate the language by talking as if the checker does not already enforce a serious ownership model
-- overstate the language by claiming the fully centralized safe-memory theorem before the remaining semantic closure work is done
+- overstate the language by claiming the fully centralized safe-memory theorem before formal proof work is done
 
 The right current position is:
 
-**Concrete already has the core ownership/borrow design and a real checker. What remains is the final semantic consolidation and proof-facing articulation that turns checker behavior into the strongest explicit public guarantee.**
+**Concrete enforces a real ownership/borrow discipline with explicit cleanup and explicit trust boundaries. The enforced properties are documented, tested, and match the checker implementation. What remains is the proof-facing articulation that turns checker behavior into a formally backed guarantee.**

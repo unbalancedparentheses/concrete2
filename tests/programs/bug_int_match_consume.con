@@ -1,0 +1,25 @@
+// BUG TEST: integer match does not propagate consumption state.
+// All arms consume r, but the checker reports "never consumed" at scope exit.
+// This is a known gap in the value-pattern match handler.
+
+struct Resource {
+    value: Int,
+}
+
+fn consume(r: Resource) -> Int {
+    return r.value;
+}
+
+fn int_match_all_consume(x: Int) -> Int {
+    let r: Resource = Resource { value: 100 };
+    match x {
+        1 => { let _v: Int = consume(r); },
+        2 => { let _v: Int = consume(r); },
+        _ => { let _v: Int = consume(r); },
+    }
+    return 0;
+}
+
+fn main() -> Int {
+    return int_match_all_consume(1);
+}

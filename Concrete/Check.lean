@@ -1508,6 +1508,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
       let envBefore ← getEnv
       let mut matchResultTy : Ty := .unit
       let mut firstArmDone := false
+      let mut firstArmVars : Option (List (String × VarInfo)) := none
       for arm in arms do
         setEnv envBefore
         let body ← match arm with
@@ -1520,7 +1521,13 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
         let bodyInit := body.dropLast
         checkStmts bodyInit envBefore.currentRetTy
         let armTy ← match body.getLast? with
-          | some (.expr _ armExpr) => checkExpr armExpr hint
+          | some (.expr _ armExpr) => do
+            let ty ← checkExpr armExpr hint
+            -- Trailing expression is a value move — consume linear variables
+            match armExpr with
+            | .ident _ varName => consumeVarIfExists varName (some e.getSpan)
+            | _ => pure ()
+            pure ty
           | some (.return_ _ v) =>
             match v with
             | some rv => let _ ← checkExpr rv; pure Ty.never
@@ -1536,7 +1543,33 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
           if armTy != matchResultTy && armTy != .never && matchResultTy != .never then
             throwCheck (.matchArmTypeMismatch (tyToString matchResultTy) (tyToString armTy)) (some e.getSpan)
           if matchResultTy == .never then matchResultTy := armTy
-      setEnv envBefore
+        let envAfterArm ← getEnv
+        match firstArmVars with
+        | none => firstArmVars := some envAfterArm.vars
+        | some firstVars =>
+          -- Check agreement on pre-existing variables
+          for (name, infoBefore) in envBefore.vars do
+            if infoBefore.isCopy then continue
+            let state1 := match firstVars.lookup name with
+              | some info => info.state
+              | none => infoBefore.state
+            let state2 := match envAfterArm.vars.lookup name with
+              | some info => info.state
+              | none => infoBefore.state
+            let consumed1 := state1 == .consumed
+            let consumed2 := state2 == .consumed
+            if consumed1 != consumed2 then
+              throwCheck (.matchConsumptionDisagreement name) (some e.getSpan)
+      -- Apply the final state from first arm (they all agree)
+      match firstArmVars with
+      | some vars =>
+        let env ← getEnv
+        let vars' := env.vars.map fun (n, vi) =>
+          match vars.lookup n with
+          | some info => (n, { vi with state := info.state })
+          | none => (n, vi)
+        setEnv { envBefore with vars := vars' }
+      | none => setEnv envBefore
       return matchResultTy
   | .borrow _ inner =>
     let innerTy ← checkExpr inner
