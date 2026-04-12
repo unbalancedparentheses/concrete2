@@ -111,7 +111,6 @@ For the public guarantee statement, see [GUARANTEE_STATEMENT.md](GUARANTEE_STATE
 **Proof-facing status:** Not in proof model (no mutation/borrow constructs in PExpr).
 
 **Open gaps:**
-- `assignToBorrowed` — error exists but is currently unreachable (freeze check fires first). See §9.
 - Arena/bulk-free invalidation — outside checker's reach. Documented in MEMORY_GUARANTEES.md.
 
 ---
@@ -172,8 +171,6 @@ For the public guarantee statement, see [GUARANTEE_STATEMENT.md](GUARANTEE_STATE
 **Proof-facing status:** Not in proof model (defer/cleanup not in PExpr).
 
 **Open gaps:**
-- `continueSkipsUnconsumedLinear` — **covered** by `error_continue_skip_linear.con`.
-- `breakInDefer` / `continueInDefer` — currently unreachable (see §9).
 - Arena/FFI/circular-ownership leak paths — outside checker reach. Documented in MEMORY_GUARANTEES.md "No-Leak Guarantee Boundary."
 
 ---
@@ -224,22 +221,26 @@ For the public guarantee statement, see [GUARANTEE_STATEMENT.md](GUARANTEE_STATE
 
 ## 9. Error Kind Coverage Status
 
-### Covered by new tests
+### Covered by dedicated tests
 
 | Error kind | Test file | Status |
 |------------|-----------|--------|
 | `continueSkipsUnconsumedLinear` | `error_continue_skip_linear.con` | **Covered** |
 | `cannotMutBorrowImmutable` | `error_mut_borrow_immutable.con` | **Covered** |
 
-### Currently unreachable (defensive code)
+### Removed as dead code
 
-These error kinds exist in `Check.lean` but cannot be triggered in the current model:
+These error kinds were audited and removed from `Check.lean` because they were structurally unreachable:
 
-| Error kind | Why unreachable | Notes |
-|------------|-----------------|-------|
-| `breakInDefer` | `inDeferBody` flag (Check.lean:67) is never set to `true`. Defer takes a single call expression, not a block — break/continue cannot appear syntactically. | Defensive for future `defer { ... }` block syntax. |
-| `continueInDefer` | Same as `breakInDefer`. | Same. |
-| `assignToBorrowed` | Inside a borrow block the owner is frozen (`assignToFrozen` fires first at line 1842). Outside a borrow block there are no active borrow refs. The `activeBorrowRefs` check (line 1848) is shadowed by the freeze check. | Would become reachable if borrow refs could exist outside borrow blocks. |
-| `variableAlreadyMutBorrowed` | In borrow block creation (line 2010), the freeze check (`variableFrozenByBorrow`, line 2008) fires first since the owner is frozen by an outer borrow. | Would become reachable with non-block-scoped borrows. |
+| Error kind | Why removed |
+|------------|-------------|
+| `breakInDefer` | `defer` takes a single call expression (not a block), so `break` cannot appear syntactically inside a defer body. The `inDeferBody` flag was never set to `true`. |
+| `continueInDefer` | Same root cause as `breakInDefer`. |
+| `assignToBorrowed` | Inside a borrow block the owner is frozen, so `assignToFrozen` always fires first. Outside a borrow block there are no active borrow refs. The check was shadowed. |
+| `variableAlreadyMutBorrowed` | `mutBorrowed` was never set to `true` anywhere. The freeze check (`variableFrozenByBorrow`) also fires first for nested borrow blocks. |
+| `cannotMutBorrowAlreadyMutBorrowed` | Guarded by `mutBorrowed` which was never set to `true`. Dead. |
+| `cannotImmBorrowMutBorrowed` | Guarded by `mutBorrowed` which was never set to `true`. Dead. |
 
-These are not bugs — they are defensive checks for constructs that the current model does not permit but that future extensions might introduce.
+Also removed: `inDeferBody` field from `TypeEnv`, `mutBorrowed` field from `VarInfo`.
+
+If future language extensions reintroduce these state transitions (e.g., `defer { ... }` block syntax, non-block-scoped borrows), the corresponding checks should be re-added with tests.

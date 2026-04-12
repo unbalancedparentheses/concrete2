@@ -10,6 +10,18 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Unreachable checker error kinds audited and removed
+
+**Six dead error kinds pruned from Check.lean:** a checker audit determined that `breakInDefer`, `continueInDefer`, `assignToBorrowed`, `variableAlreadyMutBorrowed`, `cannotMutBorrowAlreadyMutBorrowed`, and `cannotImmBorrowMutBorrowed` were all structurally unreachable under the current language model:
+
+- `breakInDefer` / `continueInDefer`: `defer` takes a single call expression (not a block), so `break`/`continue` cannot appear syntactically. The `inDeferBody` flag was never set to `true`.
+- `assignToBorrowed`: shadowed by `assignToFrozen` — borrow refs only exist while the owner is frozen.
+- `variableAlreadyMutBorrowed`, `cannotMutBorrowAlreadyMutBorrowed`, `cannotImmBorrowMutBorrowed`: `mutBorrowed` was never set to `true` anywhere.
+
+Also removed: `inDeferBody` field from `TypeEnv`, `mutBorrowed` field from `VarInfo`.
+
+**Why this matters:** dead checker branches make the language claim less precise. The checker surface now matches reality — every remaining error kind is reachable and tested.
+
 ### Memory-model, borrow/aliasing, and cleanup/leak-boundary pressure test sets land
 
 **19 dedicated pressure tests covering three categories:** the project now has focused pressure tests that exercise the checker and docs against hard cases:

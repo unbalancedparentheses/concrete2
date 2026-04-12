@@ -43,7 +43,6 @@ structure VarInfo where
   isCopy : Bool
   loopDepth : Nat
   borrowCount : Nat := 0
-  mutBorrowed : Bool := false
   borrowedFrom : Option String := none
   mutable : Bool := true  -- whether the variable was declared with mut
   deriving Repr
@@ -64,7 +63,6 @@ structure TypeEnv where
   allFnSummarys : List (String × FnSummary) := []  -- all function signatures for fnRef resolution
   borrowRefs : List String := []          -- names of refs created by borrow blocks (for escape analysis)
   loopBreakTy : Option Ty := none         -- collects type from break-with-value in while-as-expression
-  inDeferBody : Bool := false             -- true when checking inside a defer body
   currentImplType : Option Ty := none     -- the Self type when inside an impl block
   loopLabels : List String := []          -- stack of active loop labels
   traitImpls : List (String × String) := []  -- (typeName, traitName) pairs for bound checking
@@ -97,7 +95,6 @@ inductive CheckError where
   | unknownLoopLabel (label : String)
   | assignToImmutable (name : String)
   | assignToFrozen (name : String)
-  | assignToBorrowed (name : String)
   | assignOverwritesLinear (name : String)
   -- Slice 2: Type mismatch / operator
   | typeMismatch (ctx : String) (expected : String) (actual : String)
@@ -112,12 +109,9 @@ inductive CheckError where
   | cannotBorrowMoved (name : String)
   | cannotBorrowMutablyBorrowed (name : String)
   | cannotMutBorrowAlreadyBorrowed (name : String)
-  | cannotMutBorrowAlreadyMutBorrowed (name : String)
   | cannotMutBorrowImmutable (name : String)
   | referenceEscapesBorrowBlock (name : String)
-  | variableAlreadyMutBorrowed (name : String)
   | cannotMutBorrowImmBorrowed (name : String)
-  | cannotImmBorrowMutBorrowed (name : String)
   -- Slice 4: Capability (only cap-poly resolution, simple checks in CoreCheck)
   | missingCapability (callee : String) (cap : String) (caller : String)
   | traitBoundNotSatisfied (typeName : String) (traitName : String) (context : String)
@@ -153,9 +147,7 @@ inductive CheckError where
   | tryOkNoField (enumName : String)
   -- Slice 6: Control flow/defer
   | breakOutsideLoop
-  | breakInDefer
   | continueOutsideLoop
-  | continueInDefer
   | deferBodyNotCall
   | reservedName (name : String)
   | unknownModule (name : String)
@@ -183,7 +175,6 @@ def CheckError.message : CheckError → String
   | .unknownLoopLabel label => s!"unknown loop label '{label}'"
   | .assignToImmutable name => s!"cannot assign to immutable variable '{name}'"
   | .assignToFrozen name => s!"cannot assign to '{name}': variable is frozen by borrow block"
-  | .assignToBorrowed name => s!"cannot assign to '{name}': variable is borrowed"
   | .assignOverwritesLinear name => s!"cannot reassign linear variable '{name}'"
   -- Slice 2
   | .typeMismatch ctx expected actual => s!"type mismatch in {ctx}: expected {expected}, got {actual}"
@@ -199,12 +190,9 @@ def CheckError.message : CheckError → String
   | .cannotBorrowMoved name => s!"cannot borrow '{name}': already moved"
   | .cannotBorrowMutablyBorrowed name => s!"cannot borrow '{name}': already mutably borrowed"
   | .cannotMutBorrowAlreadyBorrowed name => s!"cannot mutably borrow '{name}': already borrowed"
-  | .cannotMutBorrowAlreadyMutBorrowed name => s!"cannot mutably borrow '{name}': already mutably borrowed"
   | .cannotMutBorrowImmutable name => s!"cannot take mutable borrow of immutable variable '{name}'"
   | .referenceEscapesBorrowBlock name => s!"reference '{name}' cannot escape its borrow block"
-  | .variableAlreadyMutBorrowed name => s!"variable '{name}' is already mutably borrowed"
   | .cannotMutBorrowImmBorrowed name => s!"cannot mutably borrow '{name}': already immutably borrowed"
-  | .cannotImmBorrowMutBorrowed name => s!"cannot immutably borrow '{name}': already mutably borrowed"
   -- Slice 4
   | .missingCapability callee cap caller => s!"function '{callee}' requires capability '{cap}' but '{caller}' does not declare it"
   | .traitBoundNotSatisfied typeName traitName context => s!"type '{typeName}' does not implement trait '{traitName}' required by {context}"
@@ -243,9 +231,7 @@ def CheckError.message : CheckError → String
   | .tryOkNoField enumName => s!"Ok variant of '{enumName}' has no value field"
   -- Slice 6
   | .breakOutsideLoop => "break outside of loop"
-  | .breakInDefer => "break is not allowed inside defer"
   | .continueOutsideLoop => "continue outside of loop"
-  | .continueInDefer => "continue is not allowed inside defer"
   | .deferBodyNotCall => "defer body must be a function call"
   | .reservedName name => s!"'{name}' is a reserved identifier"
   | .unknownModule name => s!"unknown module '{name}'"
@@ -261,7 +247,6 @@ def CheckError.hint : CheckError → Option String
   | .referenceEscapesBorrowBlock _ => some "copy the data before the borrow block ends"
   | .cannotMutBorrowImmutable _ => some "declare with 'let mut' to allow mutable borrowing"
   | .assignToFrozen _ => some "the variable is frozen by an active borrow block"
-  | .assignToBorrowed _ => some "wait for the borrow to end before assigning"
   | .assignOverwritesLinear _ => some "linear variables cannot be reassigned — use a new binding instead"
   | .missingCapability _ cap caller => some s!"add 'with({cap})' to '{caller}', or wrap the call in a function that declares it"
   | .cannotInferCapVariable cap _ => some s!"provide an explicit capability for '{cap}' at the call site"
@@ -1590,7 +1575,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
           throwCheck (.cannotBorrowMoved varName) (some e.getSpan)
         let env ← getEnv
         let activeRefs := activeBorrowRefs env varName
-        if info.mutBorrowed || activeRefs.any (fun refInfo => match refInfo.ty with | .refMut _ => true | _ => false) then
+        if activeRefs.any (fun refInfo => match refInfo.ty with | .refMut _ => true | _ => false) then
           throwCheck (.cannotBorrowMutablyBorrowed varName) (some e.getSpan)
       | none => throwCheck (.undeclaredVariable varName) (some e.getSpan)
     | _ => pure ()
@@ -1607,8 +1592,6 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
         let activeRefs := activeBorrowRefs env varName
         if info.borrowCount > 0 || activeRefs.any (fun refInfo => match refInfo.ty with | .ref _ | .refMut _ => true | _ => false) then
           throwCheck (.cannotMutBorrowAlreadyBorrowed varName) (some e.getSpan)
-        if info.mutBorrowed then
-          throwCheck (.cannotMutBorrowAlreadyMutBorrowed varName) (some e.getSpan)
         if !info.mutable then
           throwCheck (.cannotMutBorrowImmutable varName) (some e.getSpan)
       | none => throwCheck (.undeclaredVariable varName) (some e.getSpan)
@@ -1844,10 +1827,6 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
       -- Linear variables cannot be reassigned. One binding, one resource.
       if !info.isCopy then
         throwCheck (.assignOverwritesLinear name) (some stmt.getSpan)
-      let env ← getEnv
-      let activeRefs := activeBorrowRefs env name
-      if activeRefs.any (fun refInfo => match refInfo.ty with | .ref _ | .refMut _ => true | _ => false) then
-        throwCheck (.assignToBorrowed name) (some stmt.getSpan)
       let valTy ← checkExpr value (some info.ty)
       expectTy info.ty valTy s!"assignment to '{name}'" (some stmt.getSpan)
     | none => throwCheck (.assignToUndeclaredVariable name) (some stmt.getSpan)
@@ -2006,13 +1985,9 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
       -- Check if variable is frozen (already inside another borrow block)
       if varInfo.state == .frozen then
         throwCheck (.variableFrozenByBorrow var) (some stmt.getSpan)
-      -- Check for mutable borrow conflict: if var is already mutably borrowed, error
-      if isMut && varInfo.mutBorrowed then
-        throwCheck (.variableAlreadyMutBorrowed var) (some stmt.getSpan)
+      -- Check for mutable borrow conflict: if var is already immutably borrowed, error
       if isMut && varInfo.borrowCount > 0 then
         throwCheck (.cannotMutBorrowImmBorrowed var) (some stmt.getSpan)
-      if !isMut && varInfo.mutBorrowed then
-        throwCheck (.cannotImmBorrowMutBorrowed var) (some stmt.getSpan)
       -- Save state and freeze the original variable
       let savedState := varInfo.state
       let vars' := env.vars.map fun (n, vi) =>
@@ -2053,8 +2028,6 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
     | none => throwCheck (.structHasNoField structName field) (some stmt.getSpan)
   | .break_ _ value lbl =>
     let env ← getEnv
-    if env.inDeferBody then
-      throwCheck .breakInDefer (some stmt.getSpan)
     if env.loopDepth == 0 then
       throwCheck .breakOutsideLoop (some stmt.getSpan)
     -- Validate label if present
@@ -2080,8 +2053,6 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
     | none => pure ()
   | .continue_ _ lbl =>
     let env ← getEnv
-    if env.inDeferBody then
-      throwCheck .continueInDefer (some stmt.getSpan)
     if env.loopDepth == 0 then
       throwCheck .continueOutsideLoop (some stmt.getSpan)
     -- Validate label if present
