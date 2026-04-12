@@ -85,36 +85,40 @@ Completed proof-foundation milestones now live in [CHANGELOG.md](CHANGELOG.md): 
 
 1. ~~close the remaining obligation-model correctness gaps~~ **done** — added `blocked` status for eligible-but-unextractable functions; stale takes precedence over blocked when spec has mismatched fingerprint; trust and ineligibility override matching registry entries; dependencies exclude non-proved callees; source vs profile exclusion carries distinct reasons; 7 adversarial obligation-semantics tests
 2. ~~make proof-oriented diagnostics first-class~~ **done** — `ProofDiagnosticKind`, `ProofDiagnosticSeverity`, and `ProofDiagnostic` types in ProofCore; diagnostics generated during `extractProofCore` from obligations + unsupported constructs; `--report proof-diagnostics` human-readable report; `proof_diagnostic` JSON facts in snapshots; `blocked` state in proof-status and obligation reports; 8 adversarial diagnostic tests
-3. make the memory/reference model explicit enough for broader proofs: ownership, aliasing assumptions, mutation semantics, pointer/reference boundaries, layout caveats, and where undefined-behavior reasoning begins or stops
+3. make the memory/reference model explicit enough for broader proofs and stronger public guarantees: consolidate one checker-matching semantics document; define the safe-memory guarantee statement for safe code; close the hard edge cases (field/substructure borrows, array/slice element borrows, control-flow joins, heap-owner invalidation patterns, future concurrency interaction); and connect that model cleanly to proof/evidence artifacts
 4. make effect/trust proof boundaries explicit enough for broader proofs: capabilities, blocking/host calls, allocation, FFI, `trusted` code, and exactly where proofs stop versus where assumptions begin
-5. make module/package policy checks a first-class architecture feature for the existing thesis properties, not just a report-side prototype
-6. define the thesis threat/accident model and build one attacker-style demo that introduces authority/resource/proof drift and shows Concrete catching it
-7. make the structured/source-spanned diagnostic engine uniform across parser, resolver, checker, elaboration, CoreCheck, report/query failures, proof/evidence failures, artifact/registry failures, package/interface failures, and backend-contract failures
-8. add CI/CD evidence gates: tests, predictable check, stale-proof check, report artifact generation, proof-obligation status, report-consistency status, policy status, and trust-drift check
-9. validate fixed-capacity usefulness with a no-alloc parser/validator or ring-buffer-style example
-10. design and implement the smallest bounded-capacity type path that makes predictable examples practical
-11. add stack-depth reporting for functions that pass the no-recursion profile
-12. classify host calls, cleanup paths, determinism sources, failure paths, and memory/UB boundaries for predictable/proved code
-13. define the no-std / freestanding split for predictable and embedded-oriented code
-14. define standalone-file versus project UX so examples and small tools can use the stdlib without accidental workflow friction
-15. define concrete project/bootstrap UX: `concrete new`, starter templates, standard layout conventions, and a first supported outsider workflow for trying the language without project-author help
-16. build the parser/decoder pressure set before freezing the stdlib target: JSON subset, HTTP request parser, and DNS packet parser, specifically to discover which parsing, slice/buffer, and result/error APIs are actually missing
-17. build the ownership-heavy structure pressure set before freezing the stdlib target: tree, ordered map, arena-backed graph, and intrusive list, specifically to discover which ownership, cleanup, and container APIs are actually missing
-18. build the trusted-wrapper / FFI pressure set before freezing the stdlib target: libc wrapper, checksum/hash wrapper, and OS call facade, specifically to discover which boundary, error/result, and hosted-only stdlib APIs are actually missing
-19. build the fixed-capacity / no-alloc pressure set before freezing the stdlib target: ring buffer, bounded queue, and fixed parser state machine, specifically to discover which bounded-capacity and predictable-subset APIs are actually missing
-20. define the first complete stdlib target for the stable subset using pressure from those example sets: name the exact modules and APIs that must exist for the first supported use cases, mark what is intentionally out of scope, record which surfaces are borrowed from Rust/Zig/Austral or other influences, and separate proof/predictability-friendly modules from hosted-only modules
-21. polish the stdlib and examples against that target: split or trim APIs that do not belong in the stable subset, clean up path/module decomposition, keep one minimal FFI pressure test, remove accidental API sprawl, and make the stable-subset stdlib feel complete rather than exploratory
-22. continue cleanup/destroy ergonomics only when examples force it: unified `drop(x)` / Destroy-style API, scoped cleanup helpers, borrow-friendly owner APIs, and report coverage for cleanup paths
-23. add a code formatter or make the existing formatter robust enough to be the default documentation/example workflow
-24. define formatter quality gates explicitly: idempotency, syntax preservation, comment stability, predictable output, and CI enforcement
-25. make the core/shell split a real pit of success: examples, diagnostics, library patterns, and policy defaults should push users toward bounded/provable cores and effectful shells by default
-26. write the standard architecture cookbook for Concrete: bounded parser + shell, trusted FFI wrapper + safe facade, privilege-separated service, ownership-heavy data structure, and fixed-capacity pipeline patterns, with example programs drawn from the same small/medium/big workload ladder the roadmap uses elsewhere
-27. define the first stable supported subset as a public milestone: the first production-shaped slice of Concrete that outsiders can rely on without having to understand the whole research roadmap, and tie it to a concrete workload bar across small, medium, and big programs rather than a few isolated demos
-28. write the thesis paper once the flagship examples, explicit ProofCore boundary, and evidence/policy/drift workflow are coherent enough to defend the core claim in one crisp story, using the small/medium/big workload ladder to show both isolated properties and larger-program survival
-29. add grammar fuzzing for parser robustness and diagnostic stability
-30. add property-based tests for formatter/parser round-trips, selected stdlib containers, and fixed traces over Vec, String/Text, HashMap, parser cores, and report facts
-31. add targeted differential/codegen tests only where there is an executable oracle and a known backend risk
-32. add an MCP server for Claude, ChatGPT, Codex, and research agents to query compiler facts after the normal fact CLI is useful
+5. write the precise public theorem/guarantee statement for Concrete's safe and proof-backed subsets: what safe code guarantees, what proof-backed code guarantees, what trusted code invalidates, and which backend/target assumptions still remain
+6. define the language-semantics versus proof-semantics boundary explicitly: where the proof model matches the language exactly, where it is intentionally narrower, and how users should read that boundary
+7. make the proof-claim taxonomy explicit across docs, reports, and release criteria: enforced by checker, reported by compiler, proved in Lean, trusted assumption, and backend/target assumption
+8. define the user-facing proof contract explicitly: what a proof artifact means, when it is stale, what invalidates it, what compatibility is promised, and what “proved” does and does not mean for users
+9. make module/package policy checks a first-class architecture feature for the existing thesis properties, not just a report-side prototype
+10. define the thesis threat/accident model and build one attacker-style demo that introduces authority/resource/proof drift and shows Concrete catching it
+11. make the structured/source-spanned diagnostic engine uniform across parser, resolver, checker, elaboration, CoreCheck, report/query failures, proof/evidence failures, artifact/registry failures, package/interface failures, and backend-contract failures
+12. add CI/CD evidence gates: tests, predictable check, stale-proof check, report artifact generation, proof-obligation status, report-consistency status, policy status, and trust-drift check
+13. validate fixed-capacity usefulness with a no-alloc parser/validator or ring-buffer-style example
+14. design and implement the smallest bounded-capacity type path that makes predictable examples practical
+15. add stack-depth reporting for functions that pass the no-recursion profile
+16. classify host calls, cleanup paths, determinism sources, failure paths, and memory/UB boundaries for predictable/proved code
+17. define the no-std / freestanding split for predictable and embedded-oriented code
+18. define standalone-file versus project UX so examples and small tools can use the stdlib without accidental workflow friction
+19. define concrete project/bootstrap UX: `concrete new`, starter templates, standard layout conventions, and a first supported outsider workflow for trying the language without project-author help
+20. build the parser/decoder pressure set before freezing the stdlib target: JSON subset, HTTP request parser, and DNS packet parser, specifically to discover which parsing, slice/buffer, and result/error APIs are actually missing
+21. build the ownership-heavy structure pressure set before freezing the stdlib target: tree, ordered map, arena-backed graph, and intrusive list, specifically to discover which ownership, cleanup, and container APIs are actually missing
+22. build the trusted-wrapper / FFI pressure set before freezing the stdlib target: libc wrapper, checksum/hash wrapper, and OS call facade, specifically to discover which boundary, error/result, and hosted-only stdlib APIs are actually missing
+23. build the fixed-capacity / no-alloc pressure set before freezing the stdlib target: ring buffer, bounded queue, and fixed parser state machine, specifically to discover which bounded-capacity and predictable-subset APIs are actually missing
+24. define the first complete stdlib target for the stable subset using pressure from those example sets: name the exact modules and APIs that must exist for the first supported use cases, mark what is intentionally out of scope, record which surfaces are borrowed from Rust/Zig/Austral or other influences, and separate proof/predictability-friendly modules from hosted-only modules
+25. polish the stdlib and examples against that target: split or trim APIs that do not belong in the stable subset, clean up path/module decomposition, keep one minimal FFI pressure test, remove accidental API sprawl, and make the stable-subset stdlib feel complete rather than exploratory
+26. continue cleanup/destroy ergonomics only when examples force it: unified `drop(x)` / Destroy-style API, scoped cleanup helpers, borrow-friendly owner APIs, and report coverage for cleanup paths
+27. add a code formatter or make the existing formatter robust enough to be the default documentation/example workflow
+28. define formatter quality gates explicitly: idempotency, syntax preservation, comment stability, predictable output, and CI enforcement
+29. make the core/shell split a real pit of success: examples, diagnostics, library patterns, and policy defaults should push users toward bounded/provable cores and effectful shells by default
+30. write the standard architecture cookbook for Concrete: bounded parser + shell, trusted FFI wrapper + safe facade, privilege-separated service, ownership-heavy data structure, and fixed-capacity pipeline patterns, with example programs drawn from the same small/medium/big workload ladder the roadmap uses elsewhere
+31. define the first stable supported subset as a public milestone: the first production-shaped slice of Concrete that outsiders can rely on without having to understand the whole research roadmap, and tie it to a concrete workload bar across small, medium, and big programs rather than a few isolated demos
+32. write the thesis paper once the flagship examples, explicit ProofCore boundary, and evidence/policy/drift workflow are coherent enough to defend the core claim in one crisp story, using the small/medium/big workload ladder to show both isolated properties and larger-program survival
+33. add grammar fuzzing for parser robustness and diagnostic stability
+34. add property-based tests for formatter/parser round-trips, selected stdlib containers, and fixed traces over Vec, String/Text, HashMap, parser cores, and report facts
+35. add targeted differential/codegen tests only where there is an executable oracle and a known backend risk
+36. add an MCP server for Claude, ChatGPT, Codex, and research agents to query compiler facts after the normal fact CLI is useful
 33. define a stable benchmark harness before performance packets: selected benchmark programs drawn from the same small/medium/big workload ladder, repeatable runner, baseline artifacts, size/output checks, and enough metadata to compare patches honestly
 34. produce an agent-readable performance research packet from benchmark, report, proof/evidence, size, and guardrail facts
 35. make the AI optimization loop explicit: generate packet, propose patch, run benchmarks, run evidence gates, reject patches that weaken proof/trust/predictability unless requested
