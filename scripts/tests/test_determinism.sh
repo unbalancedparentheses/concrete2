@@ -31,11 +31,12 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Report modes to test (all 17)
+# Report modes to test (all 18)
 REPORT_MODES=(
     caps unsafe layout interface alloc mono authority
     proof eligibility proof-status obligations extraction
     proof-diagnostics effects recursion fingerprints diagnostics-json
+    consistency
 )
 
 # Query kinds to test

@@ -3,7 +3,7 @@ import Concrete
 open Concrete
 
 def usage : String :=
-  "Usage: concrete <file.con> [-o output] [--emit-llvm] [--emit-core] [--emit-ssa] [--test] [--test --module <name>] [--report caps|unsafe|layout|interface|alloc|mono|authority|proof|eligibility|proof-status|obligations|extraction|proof-diagnostics|traceability|diagnostics-json|effects|recursion|fingerprints] [--query KIND|KIND:FUNCTION|fn:FUNCTION] [--fmt]\n       concrete build [-o output] [--emit-llvm]\n       concrete run [-- args...]\n       concrete test [--module <name>]\n       concrete diff <old.json> <new.json> [--json]\n       concrete snapshot <file.con> [-o output.json]"
+  "Usage: concrete <file.con> [-o output] [--emit-llvm] [--emit-core] [--emit-ssa] [--test] [--test --module <name>] [--report caps|unsafe|layout|interface|alloc|mono|authority|proof|eligibility|proof-status|obligations|extraction|proof-diagnostics|traceability|diagnostics-json|effects|recursion|fingerprints|consistency] [--query KIND|KIND:FUNCTION|fn:FUNCTION] [--fmt]\n       concrete build [-o output] [--emit-llvm]\n       concrete run [-- args...]\n       concrete test [--module <name>]\n       concrete diff <old.json> <new.json> [--json]\n       concrete snapshot <file.con> [-o output.json]"
 
 def writeFile (path : String) (content : String) : IO Unit := do
   IO.FS.writeFile ⟨path⟩ content
@@ -339,6 +339,10 @@ def compileAndReport (inputPath : String) (reportType : String) : IO UInt32 := d
     if reportType == "fingerprints" then
       IO.println (Report.fingerprintReport pc)
       return 0
+    if reportType == "consistency" then
+      let violations := pc.selfCheck
+      IO.println (ConsistencyViolation.render violations)
+      if violations.isEmpty then return 0 else return 1
     if reportType == "traceability" then
       let registry ← loadRegistry inputPath
       match Pipeline.monomorphize validCore with
@@ -361,7 +365,7 @@ def compileAndReport (inputPath : String) (reportType : String) : IO UInt32 := d
       | .ok mono =>
         IO.println (Report.monoReport validCore.coreModules mono.coreModules)
         return 0
-    IO.eprintln s!"Unknown report type: {reportType}. Use: caps, unsafe, layout, interface, alloc, mono, authority, proof, eligibility, proof-status, obligations|extraction|proof-diagnostics|traceability|diagnostics-json, effects, recursion, fingerprints"
+    IO.eprintln s!"Unknown report type: {reportType}. Use: caps, unsafe, layout, interface, alloc, mono, authority, proof, eligibility, proof-status, obligations|extraction|proof-diagnostics|traceability|diagnostics-json, effects, recursion, fingerprints, consistency"
     return 1
 
 def compileAndQuery (inputPath : String) (query : String) : IO UInt32 := do

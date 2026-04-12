@@ -208,7 +208,7 @@ After an `--affected` run, the summary shows which files triggered which section
 |--------|-------|
 | Pass-level tests | <1s (32 tests, no I/O) |
 | Fast suite (`--fast`) | ~25-35s (~1427 tests, parallel) |
-| Full suite (`--full`) | ~40-50s (~1450 tests, 1 skipped, includes network, cross-target, perf) |
+| Full suite (`--full`) | ~40-50s (~1450 tests + 468 consistency checks, 1 skipped, includes network, cross-target, perf, consistency) |
 | Cache hit rate | 26/57 compilations saved per fast run |
 | Compiler build | ~30-45s (`lake build`) |
 | lli-accelerated suite | ~12s (when `LLI_PATH` is set) |
@@ -427,3 +427,25 @@ Negative (error cases):
 - `pressure_err_linear_no_destroy.con` — linear struct goes out of scope
 - `pressure_err_destroy_then_use.con` — use after destroy consumption
 - `pressure_err_branch_leak.con` — consumed in one branch, leaked in other
+
+### Phase 5: Self-Consistency Checks (complete)
+
+Goal: verify that the compiler's internal data structures agree with each other — proof obligations match re-derivation, diagnostics agree with obligation status, extraction results are consistent with eligibility, and fingerprints are coherent across entries and obligations.
+
+`--report consistency` runs `ProofCore.selfCheck` with 13 cross-family invariants:
+
+- **OBL-KNOWN**: every obligation references a known function (entry or excluded)
+- **OBL-STATUS**: obligation status agrees with re-derivation via `deriveObligationStatus`
+- **PROVED-EXTRACTED**: proved status requires extraction=Some
+- **PROVED-FP**: proved status requires matching fingerprint
+- **PROVED-SPEC**: proved status requires spec attachment
+- **STALE-FP**: stale status requires mismatched fingerprint
+- **STALE-SPEC**: stale status requires spec attachment
+- **ENTRY-FP**: entry fingerprint matches obligation fingerprint
+- **EXTRACT-UNSUP**: extracted=Some implies empty unsupported list
+- **BLOCKED-UNSUP**: eligible + extracted=None implies non-empty unsupported list
+- **DEP-PROVED**: dependencies only reference proved obligations
+- **DUP-NAME**: no duplicate function names across entries and excluded
+- **DIAG-STATUS**: diagnostic kinds agree with obligation status
+
+All 468 compilable test programs pass with zero violations. Integrated into `--full` mode.

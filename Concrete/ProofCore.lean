@@ -669,6 +669,7 @@ end
 
 -- Unsupported construct identification
 
+mutual
 private partial def identifyUnsupportedExpr : CExpr → List String
   | .floatLit .. => ["float literal"]
   | .strLit .. => ["string literal"]
@@ -688,9 +689,17 @@ private partial def identifyUnsupportedExpr : CExpr → List String
   | .allocCall .. => ["alloc call"]
   | .whileExpr .. => ["while expression"]
   | .unaryOp .. => ["unary operator"]
-  | .binOp op _ _ _ => match binOpToPBinOp op with
-    | none => [s!"unsupported operator: {repr op}"]
-    | some _ => []
+  | .binOp op lhs rhs _ =>
+    let opUnsup := match binOpToPBinOp op with
+      | none => [s!"unsupported operator: {repr op}"]
+      | some _ => []
+    opUnsup ++ identifyUnsupportedExpr lhs ++ identifyUnsupportedExpr rhs
+  | .call _ _ args _ =>
+    args.foldl (fun acc a => acc ++ identifyUnsupportedExpr a) []
+  | .ifExpr cond thenBr elseBr _ =>
+    identifyUnsupportedExpr cond ++
+    thenBr.foldl (fun acc s => acc ++ identifyUnsupportedStmt s) [] ++
+    elseBr.foldl (fun acc s => acc ++ identifyUnsupportedStmt s) []
   | _ => []
 
 private partial def identifyUnsupportedStmt : CStmt → List String
@@ -704,8 +713,25 @@ private partial def identifyUnsupportedStmt : CStmt → List String
     | some stmts => stmts.foldl (fun acc s => acc ++ identifyUnsupportedStmt s) []
     | none => ["if without else"]
   | _ => []
+end
 
 def identifyUnsupported (body : List CStmt) : List String :=
+  -- Structural: empty body or void return
+  let structural :=
+    if body.isEmpty then ["empty body"]
+    else match body with
+    | [.return_ none _] => ["void return"]
+    | _ =>
+      -- Check for void return anywhere in body
+      let hasVoidRet := body.any fun s => match s with
+        | .return_ none _ => true
+        | _ => false
+      -- Check for multiple expression statements without final return
+      let hasReturn := body.any fun s => match s with
+        | .return_ .. => true
+        | _ => false
+      (if hasVoidRet then ["void return"] else []) ++
+      (if !hasReturn then ["no return statement"] else [])
   let stmtKinds := body.filterMap fun s => match s with
     | .while_ .. => some "while loop"
     | .fieldAssign .. => some "field assignment"
@@ -718,7 +744,7 @@ def identifyUnsupported (body : List CStmt) : List String :=
     | .assign .. => some "mutable assignment"
     | _ => none
   let exprKinds := body.foldl (fun acc s => acc ++ identifyUnsupportedStmt s) []
-  (stmtKinds ++ exprKinds).eraseDups
+  (structural ++ stmtKinds ++ exprKinds).eraseDups
 
 -- ============================================================
 -- Eligibility predicates
@@ -1266,5 +1292,165 @@ def ProofCore.findEntry (pc : ProofCore) (qualName : String) : Option ProofCoreE
 /-- Find an excluded entry by qualified name. -/
 def ProofCore.findExcluded (pc : ProofCore) (qualName : String) : Option ProofCoreExcluded :=
   pc.excluded.find? fun e => e.qualName == qualName
+
+-- ============================================================
+-- Self-consistency checks
+-- ============================================================
+
+/-- A consistency violation found by self-check. -/
+structure ConsistencyViolation where
+  invariant : String   -- short invariant name (e.g., "INV-1a")
+  function  : String   -- affected function (or "" for global)
+  message   : String   -- human-readable description
+  deriving Repr
+
+/-- Verify internal consistency of a ProofCore artifact.
+    Returns an empty list if all invariants hold. -/
+def ProofCore.selfCheck (pc : ProofCore) : List ConsistencyViolation :=
+  let allNames := (pc.entries.map (·.qualName)) ++ (pc.excluded.map (·.qualName))
+  let provedNames := pc.obligations.filterMap fun o =>
+    if o.status == .proved then some o.functionId.qualName else none
+
+  -- INV-1: Every obligation references a known function
+  let oblKnown := pc.obligations.filterMap fun o =>
+    let qn := o.functionId.qualName
+    if !allNames.contains qn then
+      some { invariant := "OBL-KNOWN", function := qn
+           , message := s!"obligation references unknown function '{qn}'" }
+    else none
+
+  -- INV-2: Obligation status agrees with re-derivation
+  let oblStatus := pc.obligations.filterMap fun o =>
+    let qn := o.functionId.qualName
+    match pc.findEntry qn with
+    | some e =>
+      let expected := deriveObligationStatus e.eligibility.eligible
+          e.eligibility.isTrusted e.extracted.isSome e.spec e.fingerprint
+      if o.status != expected then
+        some { invariant := "OBL-STATUS", function := qn
+             , message := s!"obligation status '{repr o.status}' disagrees with re-derived '{repr expected}'" }
+      else none
+    | none =>
+      match pc.findExcluded qn with
+      | some x =>
+        let expected := deriveObligationStatus x.eligibility.eligible
+            x.eligibility.isTrusted false x.spec x.fingerprint
+        if o.status != expected then
+          some { invariant := "OBL-STATUS", function := qn
+               , message := s!"obligation status '{repr o.status}' disagrees with re-derived '{repr expected}'" }
+        else none
+      | none => none  -- caught by OBL-KNOWN
+
+  -- INV-3: Proved status requires extraction
+  let provedExtracted := pc.obligations.filterMap fun o =>
+    if o.status != .proved then none
+    else match pc.findEntry o.functionId.qualName with
+    | some e =>
+      if e.extracted.isNone then
+        some { invariant := "PROVED-EXTRACTED", function := o.functionId.qualName
+             , message := "obligation is 'proved' but extraction is None" }
+      else none
+    | none =>
+      some { invariant := "PROVED-ENTRY", function := o.functionId.qualName
+           , message := "obligation is 'proved' but function is not in entries" }
+
+  -- INV-4: Proved status requires matching fingerprint
+  let provedFp := pc.obligations.filterMap fun o =>
+    if o.status != .proved then none
+    else match o.spec with
+    | some a =>
+      if a.expectedFp != o.functionId.fingerprint then
+        some { invariant := "PROVED-FP", function := o.functionId.qualName
+             , message := s!"obligation is 'proved' but fingerprints disagree" }
+      else none
+    | none =>
+      some { invariant := "PROVED-SPEC", function := o.functionId.qualName
+           , message := "obligation is 'proved' but has no spec attachment" }
+
+  -- INV-5: Stale status requires spec with different fingerprint
+  let staleFp := pc.obligations.filterMap fun o =>
+    if o.status != .stale then none
+    else match o.spec with
+    | some a =>
+      if a.expectedFp == o.functionId.fingerprint then
+        some { invariant := "STALE-FP", function := o.functionId.qualName
+             , message := "obligation is 'stale' but fingerprints match" }
+      else none
+    | none =>
+      some { invariant := "STALE-SPEC", function := o.functionId.qualName
+           , message := "obligation is 'stale' but has no spec attachment" }
+
+  -- INV-6: Entry fingerprint matches obligation fingerprint
+  let entryFp := pc.entries.filterMap fun e =>
+    match pc.obligations.find? fun o => o.functionId.qualName == e.qualName with
+    | some o =>
+      if o.functionId.fingerprint != e.fingerprint then
+        some { invariant := "ENTRY-FP", function := e.qualName
+             , message := s!"entry fingerprint disagrees with obligation fingerprint" }
+      else none
+    | none => none
+
+  -- INV-7: Entries with extracted=Some must have empty unsupported list
+  let extractUnsup := pc.entries.filterMap fun e =>
+    if e.extracted.isSome && !e.unsupported.isEmpty then
+      some { invariant := "EXTRACT-UNSUP", function := e.qualName
+           , message := "entry has extracted PExpr but also has unsupported constructs" }
+    else none
+
+  -- INV-8: Entries with extracted=None and eligible=true must have non-empty unsupported
+  let blockedUnsup := pc.entries.filterMap fun e =>
+    if e.extracted.isNone && e.eligibility.eligible && e.unsupported.isEmpty then
+      some { invariant := "BLOCKED-UNSUP", function := e.qualName
+           , message := "entry is eligible with no extraction but unsupported list is empty" }
+    else none
+
+  -- INV-9: Dependencies only reference proved obligations
+  let depProved := pc.obligations.foldl (fun acc o =>
+    acc ++ o.dependencies.filterMap fun dep =>
+      if !provedNames.contains dep then
+        some { invariant := "DEP-PROVED", function := o.functionId.qualName
+             , message := s!"dependency '{dep}' is not proved" }
+      else none) []
+
+  -- INV-10: No duplicate function names across entries and excluded
+  let allPcNames := pc.entries.map (·.qualName) ++ pc.excluded.map (·.qualName)
+  let dups := allPcNames.foldl (fun (seen, acc) name =>
+    if seen.contains name then
+      (seen, acc ++ [{ invariant := "DUP-NAME", function := name
+                     , message := "duplicate function in ProofCore" }])
+    else (name :: seen, acc)) ([], [])
+
+  -- INV-11: Diagnostic kinds agree with obligation status
+  let diagStatus := pc.diagnostics.filterMap fun d =>
+    match pc.obligations.find? fun o => o.functionId.qualName == d.function with
+    | some o =>
+      let statusOk := match d.kind with
+        | .staleProof => o.status == .stale
+        | .missingProof => o.status == .missing
+        | .ineligible => o.status == .ineligible
+        | .trusted => o.status == .trusted
+        | .unsupportedConstruct => o.status == .blocked || o.status == .stale
+      if !statusOk then
+        some { invariant := "DIAG-STATUS", function := d.function
+             , message := s!"diagnostic kind '{repr d.kind}' disagrees with obligation status '{repr o.status}'" }
+      else none
+    | none =>
+      if d.kind != .unsupportedConstruct then
+        some { invariant := "DIAG-OBL", function := d.function
+             , message := "diagnostic references function with no obligation" }
+      else none
+
+  oblKnown ++ oblStatus ++ provedExtracted ++ provedFp ++ staleFp
+    ++ entryFp ++ extractUnsup ++ blockedUnsup ++ depProved
+    ++ dups.2 ++ diagStatus
+
+/-- Format consistency violations as a human-readable report. -/
+def ConsistencyViolation.render (vs : List ConsistencyViolation) : String :=
+  if vs.isEmpty then "All consistency checks passed."
+  else
+    let header := s!"Found {vs.length} consistency violation(s):\n"
+    let body := vs.map fun v =>
+      s!"  [{v.invariant}] {v.function}: {v.message}"
+    header ++ "\n".intercalate body
 
 end Concrete

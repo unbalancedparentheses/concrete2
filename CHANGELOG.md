@@ -10,6 +10,16 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### ProofCore self-consistency checks and `--report consistency`
+
+**13 cross-family invariants** verify that proof obligations, diagnostics, extraction results, fingerprints, and eligibility data agree with each other inside the `ProofCore` artifact. The checks are wired into the compiler as `--report consistency` and run over all 468 compilable test programs with zero violations.
+
+**Invariants checked:** OBL-KNOWN (obligations reference known functions), OBL-STATUS (obligation status agrees with re-derivation), PROVED-EXTRACTED/FP/SPEC (proved status requires extraction + matching fingerprint + spec), STALE-FP/SPEC (stale status requires spec with mismatched fingerprint), ENTRY-FP (entry/obligation fingerprint agreement), EXTRACT-UNSUP (extraction ↔ unsupported list consistency), BLOCKED-UNSUP (eligible + no extraction → non-empty unsupported list), DEP-PROVED (dependencies only reference proved obligations), DUP-NAME (no duplicate function names), DIAG-STATUS (diagnostic kinds agree with obligation status).
+
+**Extraction pipeline fix:** `identifyUnsupported` now recurses into binOp/call/ifExpr children and detects empty-body, void-return, and no-return-statement patterns. Previously, functions with field access inside arithmetic (e.g., `p.first + p.second`) would fail extraction without recording the unsupported construct.
+
+**Test integration:** consistency checks run over all programs in `--full` mode. Determinism suite updated to include the `consistency` report mode.
+
 ### Compiler determinism verified and regression suite added
 
 **All compiler output paths are deterministic:** a comprehensive audit verified that all 17 report modes, all query modes, all IR emit modes (LLVM, SSA, Core), compiled binaries, and snapshot JSON (excluding the intentional timestamp field) produce byte-for-byte identical output across consecutive runs.
