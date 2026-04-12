@@ -1294,10 +1294,18 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
         expectTy pTy argTy s!"argument '{pName}' of '{fnName}'" (some e.getSpan)
         -- If arg is a bare identifier of a linear type, consume it —
         -- but NOT if the parameter type is a reference (borrow, not move).
+        -- Exception: borrow-block exclusive refs (&mut T) must be consumed on call,
+        -- since they are scoped linear views into an alloca.
+        -- Function parameter &mut T refs are reborrowable and not consumed.
         match arg with
         | .ident _ varName =>
           match pTy with
-          | .ref _ | .refMut _ => pure ()  -- borrowed parameter: don't consume
+          | .ref _ => pure ()  -- shared reference: Copy, no consume needed
+          | .refMut _ =>
+            let env ← getEnv
+            if env.borrowRefs.contains varName then
+              consumeVarIfExists varName (some e.getSpan)
+            else pure ()
           | _ => consumeVarIfExists varName (some e.getSpan)
         | _ => pure ()
       return retTy
@@ -1736,11 +1744,27 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
         match arg with
         | .ident _ varName => consumeVarIfExists varName (some e.getSpan)
         | _ => pure ()
-      -- If self param is by value (not &self/&mut self), consume the receiver
+      -- Consume the receiver when appropriate:
+      -- - &self: never consume (shared ref is Copy)
+      -- - &mut self: consume only if receiver is a borrow-block exclusive ref
+      --   (function param &mut refs are reborrowable; auto-borrowed values don't consume)
+      -- - self (by value): always consume
       match sig.params.head? with
       | some ("self", selfTy) =>
         match selfTy with
-        | .ref _ | .refMut _ => pure ()
+        | .ref _ => pure ()  -- shared reference: Copy, no consume needed
+        | .refMut _ =>
+          -- Only consume borrow-block refs (scoped linear views into an alloca).
+          match objTy with
+          | .refMut _ =>
+            match obj with
+            | .ident _ varName =>
+              let env ← getEnv
+              if env.borrowRefs.contains varName then
+                consumeVarIfExists varName (some e.getSpan)
+              else pure ()
+            | _ => pure ()
+          | _ => pure ()
         | _ =>
           -- Self is by value — this method consumes the receiver
           match obj with

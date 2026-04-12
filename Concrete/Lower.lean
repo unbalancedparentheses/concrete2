@@ -1701,7 +1701,9 @@ partial def lowerStmt (stmt : CStmt) : LowerM Unit := do
     addDeferredToCurrentScope body
 
   | .borrowIn var ref _region isMut refTy body =>
-    -- Create a memory slot for the borrowed variable, set ref to point to it
+    -- Create a memory slot for the borrowed variable, set ref to point to it.
+    -- The ref variable is stored with the full reference type (refMut T / ref T)
+    -- so that when passed as a function argument, the correct pointer type is emitted.
     let curVal ← lookupVar var
     let innerTy := match refTy with
       | .ref t | .refMut t | .ptrMut t | .ptrConst t => t
@@ -1711,7 +1713,7 @@ partial def lowerStmt (stmt : CStmt) : LowerM Unit := do
     match curVal with
     | some cv => emit (.store cv (.reg slot innerTy))
     | none => pure ()
-    setVar ref (.reg slot innerTy)
+    setVar ref (.reg slot refTy)
     lowerStmts body
     -- For mutable borrows, load back the value and update the original variable
     if isMut then

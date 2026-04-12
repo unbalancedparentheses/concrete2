@@ -876,6 +876,14 @@ run_ok "$TESTDIR/adversarial_newtype_consume.con" 183
 run_ok "$TESTDIR/adversarial_heap_ownership.con" 360
 run_ok "$TESTDIR/adversarial_heap_defer_cleanup.con" 300
 run_ok "$TESTDIR/adversarial_linear_array.con" 0
+run_ok "$TESTDIR/adversarial_mut_ref_deref_only.con" 15
+run_ok "$TESTDIR/adversarial_mut_ref_single_call.con" 11
+run_ok "$TESTDIR/adversarial_mut_ref_sequential_borrows.con" 12
+run_ok "$TESTDIR/adversarial_mut_ref_branch_both_consume.con" 11
+run_ok "$TESTDIR/adversarial_mut_ref_branch_neither.con" 15
+run_ok "$TESTDIR/adversarial_mut_ref_param_multi_use.con" 12
+run_ok "$TESTDIR/adversarial_mut_ref_deref_then_call.con" 16
+run_ok "$TESTDIR/adversarial_mut_ref_loop_deref.con" 5
 
 # Capability polymorphism
 run_ok "$TESTDIR/cap_poly.con" 42
@@ -1192,6 +1200,13 @@ run_err "$TESTDIR/error_deep_branch_disagree.con" "consumed in one branch"
 run_err "$TESTDIR/error_borrow_consumed_var.con" "already moved"
 run_err "$TESTDIR/error_assign_frozen_by_borrow.con" "frozen by borrow block"
 run_err "$TESTDIR/error_linear_array_leak.con" "was never consumed"
+# &mut T borrow-block ref consumption errors
+run_err "$TESTDIR/error_mut_ref_double_use.con" "used after move"
+run_err "$TESTDIR/error_mut_ref_double_call.con" "used after move"
+run_err "$TESTDIR/error_mut_ref_call_then_deref.con" "used after move"
+run_err "$TESTDIR/error_mut_ref_use_after_call.con" "used after move"
+run_err "$TESTDIR/error_mut_ref_branch_disagree.con" "consumed in one branch"
+run_err "$TESTDIR/error_mut_ref_loop_consume.con" "inside a loop"
 # Bitwise errors
 run_err "$TESTDIR/error_bitwise_float.con" "type mismatch"
 # Print errors

@@ -4,7 +4,7 @@ This document answers one question: **what should happen next, in order.**
 
 For landed milestones, see [CHANGELOG.md](CHANGELOG.md).
 For compiler structure, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/PASSES.md](docs/PASSES.md).
-For identity and safety, see [docs/IDENTITY.md](docs/IDENTITY.md) and [docs/SAFETY.md](docs/SAFETY.md).
+For identity and safety, see [docs/IDENTITY.md](docs/IDENTITY.md), [docs/SAFETY.md](docs/SAFETY.md), [docs/MUT_REF_SEMANTICS.md](docs/MUT_REF_SEMANTICS.md), and [docs/MUT_REF_CLOSURE.md](docs/MUT_REF_CLOSURE.md).
 For subsystem references, see [docs/FFI.md](docs/FFI.md), [docs/ABI.md](docs/ABI.md), [docs/DIAGNOSTICS.md](docs/DIAGNOSTICS.md), [docs/STDLIB.md](docs/STDLIB.md), [docs/VALUE_MODEL.md](docs/VALUE_MODEL.md), and [docs/EXECUTION_MODEL.md](docs/EXECUTION_MODEL.md).
 
 Concrete should stay small enough to remain readable, auditable, and mechanically understandable. New work should be judged by grammar cost, audit cost, and proof cost, not only by expressiveness.
@@ -86,12 +86,12 @@ Completed proof-foundation milestones now live in [CHANGELOG.md](CHANGELOG.md): 
 1. ~~close the remaining obligation-model correctness gaps~~ **done** — added `blocked` status for eligible-but-unextractable functions; stale takes precedence over blocked when spec has mismatched fingerprint; trust and ineligibility override matching registry entries; dependencies exclude non-proved callees; source vs profile exclusion carries distinct reasons; 7 adversarial obligation-semantics tests
 2. ~~make proof-oriented diagnostics first-class~~ **done** — `ProofDiagnosticKind`, `ProofDiagnosticSeverity`, and `ProofDiagnostic` types in ProofCore; diagnostics generated during `extractProofCore` from obligations + unsupported constructs; `--report proof-diagnostics` human-readable report; `proof_diagnostic` JSON facts in snapshots; `blocked` state in proof-status and obligation reports; 8 adversarial diagnostic tests
 3. ~~make the memory/reference model explicit enough for broader proofs and stronger public guarantees~~ **done with one explicit gap** — canonical MEMORY_SEMANTICS.md matching Check.lean; public safe-memory claim in MEMORY_GUARANTEES.md with honest boundaries; hard edge cases documented with status (field/substructure borrows: conservative whole-value freeze; array/slice element borrows: conservative whole-array; control-flow joins: fully enforced; owner invalidation: enforced within safe model; concurrency: explicitly deferred); fixed integer-match consumption tracking bug (value-pattern match now checks arm agreement and propagates state like enum-match); expanded adversarial memory edge-case tests; remaining near-term gap: `&mut T` linear-consumption semantics across call/use are not fully closed yet
-4. define the exact `&mut T` ownership/consumption semantics as the first memory-model closure task: on call, on return, on rebinding, on repeated use, on method calls, and across control-flow joins
+4. define the exact `&mut T` ownership/consumption semantics as the first memory-model closure task: on call, on return, on rebinding, on repeated use, on method calls, and across control-flow joins; keep [docs/MUT_REF_SEMANTICS.md](docs/MUT_REF_SEMANTICS.md) as the checker-matching source of truth
 5. enforce the `&mut T` rule in the checker and make illegal double-use fail early: exclusive references must be consumed/invalidated consistently on use instead of behaving differently by expression shape
 6. make checker and codegen agree on `&mut T` states so exclusive-reference misuse cannot survive checking and reach a codegen crash
 7. add a dedicated adversarial `&mut T` regression suite: call-use, return-use, rebind/copy attempts, branch/match agreement, method chains, cleanup interactions, and aliasing edge cases
 8. keep the public safe-memory claim explicitly narrower until the `&mut T` closure work is complete, then widen it deliberately once checker, codegen, docs, and tests agree
-9. add a dedicated `&mut T` closure checklist artifact: intended semantics, checker behavior, codegen assumptions, adversarial tests, open gaps, and current public-claim status all tracked in one place
+9. add a dedicated `&mut T` closure checklist artifact: intended semantics, checker behavior, codegen assumptions, adversarial tests, open gaps, and current public-claim status all tracked in one place; keep [docs/MUT_REF_CLOSURE.md](docs/MUT_REF_CLOSURE.md) as the checklist surface
 10. add a no-codegen-crash regression rule for safe-subset ownership mistakes: checker/codegen mismatches like the `&mut T` gap must become compiler errors, never late crashes
 11. define the no-leak guarantee boundary explicitly for safe code, pull leak-risk reporting into the same closure phase, and distinguish the strong no-leak claim from weaker allocation/cleanup audit reporting outside that strongest safe subset
 12. make effect/trust proof boundaries explicit enough for broader proofs: capabilities, blocking/host calls, allocation, FFI, `trusted` code, and exactly where proofs stop versus where assumptions begin
@@ -148,110 +148,109 @@ Completed proof-foundation milestones now live in [CHANGELOG.md](CHANGELOG.md): 
 63. make the AI optimization loop explicit: generate packet, propose patch, run benchmarks, run evidence gates, reject patches that weaken proof/trust/predictability unless requested
 64. document and version the fact/query JSON API before external tools depend on it: schema version, stable kind names, field names, location encoding, fingerprint fields, empty-result behavior, and error-result behavior
 65. make canonical qualified function identity consistent across all fact families; avoid mixing `parse_byte` and `main.parse_byte` in machine-readable facts unless the distinction is explicit and documented
-55. define and implement clear invalid-query diagnostics: malformed/unknown `--query` requests should produce either a structured query error or a deliberate empty answer, not ambiguous success
-56. harden malformed artifact, registry, and snapshot handling beyond query errors: corrupted files, duplicate/conflicting entries, partial snapshots, and broken bundles should fail with explicit diagnostics and regression coverage instead of drifting silently
-57. define and check module/interface artifacts before package management: exported types, function signatures, capabilities, proof expectations, policy requirements, fact schema version, dependency fingerprints, and enough body/interface separation for later incremental compilation
-58. expand packaging/artifacts only after reports, registry, policies, interface artifacts, and CI gates have proved what artifacts must carry
-59. define proof-aware package artifacts explicitly: packages should eventually ship facts, obligations, proof status, trusted assumptions, and policy declarations as normal build artifacts
-60. build and curate a broader public showcase corpus after the thesis workflow is credible, and shape it deliberately as small, medium, and big programs rather than a pile of demos: small programs should isolate one property, medium programs should test composition, and a few bigger programs should prove the language survives scale; the corpus must include borrow/aliasing programs and cleanup/leak-boundary programs, not only parsers and containers
-61. turn the showcase corpus into a curated showcase set where each example proves a different thesis claim, each has honest framing, each has report/snapshot/diff coverage, each demonstrates at least one concrete thing the compiler catches, and each is chosen with an oracle in mind when possible: fuzzing, differential testing, round-trip properties, model-based tests, or comparison against another mature implementation/spec; include explicit borrow/aliasing and cleanup/leak-boundary examples in that quality bar
-62. sharpen the positioning against Rust, Zig, Lean 4, SPARK/Ada, Austral, Dafny, F*, and Why3 into one short page
-63. write the migration/adoption playbook: what C/Rust/Zig code should move first, how to wrap existing libraries honestly, how to introduce Concrete into an existing system, and what should stay outside Concrete
-64. build the user-facing documentation set deliberately: a FAQ for predictable/proof/capability questions, a Concrete comparison guide against Rust, Zig, SPARK/Ada, Lean 4, and related tools, and the supporting material needed before the language book can stop churning
-65. define the showcase maintenance policy: showcase examples are first-class regression targets, must keep honest framing, must retain report/snapshot/diff coverage, and regressions in them count as serious thesis breaks; maintain the small/medium/big balance rather than letting the corpus collapse into only tiny demos
-66. define first public release criteria: the first stable supported subset, required examples across small, medium, and big workloads, required diagnostics, required proof workflow, required stdlib/project UX, and the minimum evidence/policy/tooling story for outsiders; the example bar must explicitly include parser/decoder, ownership-heavy, borrow/aliasing, trusted-wrapper/FFI, fixed-capacity, and cleanup/leak-boundary programs
-67. ship the first real public language release once those criteria are actually met: version the release honestly, publish the supported subset and known limits, ship installable artifacts, and make the release promise narrower than the full roadmap
-68. write the real language book/tutorial path only after the first stable supported subset and first public release criteria are concrete enough that teaching the language will not churn with every compiler refactor
-51. polish the packet/parser flagship example as the canonical thesis demo
-52. build an FFI showcase with a `trusted` wrapper and `with(Unsafe)` isolated at the boundary
-53. build an ownership-heavy data-structure showcase with linear ownership and deterministic cleanup
-54. build a privilege-separated tool where capability signatures prove the trusted core cannot touch files/network/processes
-55. build a fixed-capacity / no-alloc showcase that proves the predictable subset is practical for real bounded systems code
-56. build a real cryptography example only after the proof/artifact boundary is stronger: good candidates are constant-time equality + verification use, an HMAC verification core, an Ed25519 verification helper/core subset, or hash/parser/encoding correctness around a crypto-adjacent component
-57. refine and stabilize the explicit `Core -> ProofCore` phase after the flagship has forced it into the open: keep the extraction semantics small, testable, and shared by obligations, specs, proofs, and future proof tools
-58. extend ProofCore and its semantics to cover more real Concrete constructs in a principled order: structs/fields, pattern matching, arrays/slices, borrows/dereferences, casts, cleanup/defer/drop behavior, and other constructs the flagship examples actually force into scope
-59. broaden proof obligation generation beyond the first pipeline slice so loop-related, memory-related, and contract-related proof work becomes mechanically inspectable instead of ad hoc
-60. broaden the pure Core proof fragment after proof artifacts, diagnostics, the explicit ProofCore phase, normalization, and obligation generation are usable
-61. deepen the memory/reference model for proofs once the first explicit version exists: sharpen ownership, aliasing, mutation, pointer/reference, cleanup, and layout reasoning where real examples require it
-62. deepen the effect/trust proof boundaries once the first explicit version exists: prove more right up to capability, allocation, blocking, FFI, and trusted edges without pretending the edges disappear
-63. add a dedicated proof-regression test pipeline covering `Core -> ProofCore`, normalization stability, obligation generation, exclusion reasons, stale proof behavior, and proof artifact drift
-64. stabilize the provable subset as an explicit user-facing target
-65. define public release criteria for the provable subset: supported constructs, unsupported constructs, trust assumptions, proof artifact stability expectations, and what evidence claims users may rely on semantically
-66. stabilize proof artifact/schema compatibility alongside the fact/query schema: proof-status, obligations, extraction, traceability, fingerprints, spec identifiers, and proof identifiers need explicit compatibility rules before external users or tools depend on them
-67. validate proof attachments against actual Lean symbols and theorem identities: fabricated proof names, missing theorem references, and mismatched spec/theorem pairs must fail explicitly instead of surviving as registry-shaped metadata
-68. add end-to-end Lean attachment regression coverage: registry entries, proof names, theorem identities, extracted proof targets, and stale detection should be tested together so the Lean bridge is a checked boundary rather than a naming convention
-69. support artifact-driven user-program proofs end-to-end
-70. define the user proof-authoring and maintenance workflow explicitly: how a user writes/updates specs and proofs, regenerates artifacts, diagnoses stale or blocked proofs, and lands proof-preserving refactors without reading compiler internals
-71. make proof extraction and obligation generation scale to larger projects without collapsing usability: measure cost, identify bottlenecks, and keep the proof workflow tractable as the codebase grows
-72. add proof replay/caching on top of the artifact model so unchanged proof targets, fingerprints, and obligations do not have to be recomputed or revalidated from scratch in every workflow
-73. push selected compiler-preservation proofs where they protect evidence claims
-74. evaluate contracts / source-level preconditions only after Lean-attached specs, obligations, diagnostics, the registry work, and the explicit ProofCore boundary are real
-75. evaluate loop invariants only after specs and proof obligations are real
-76. evaluate ghost/proof-only code only after a proof-backed example needs it and the erasure story is explicit
-77. pull research-gated language features into implementation only when a current example or proof needs them
-76. define optimization policy before substantial backend work: allowed optimizations, evidence-preservation expectations, debug/release behavior, and report/codegen validation expectations
-77. research miscompile-focused differential validation before implementing it broadly: identify trustworthy oracles, artifact/codegen consistency checks, backend sanity checks, and the smallest high-value wrong-code detection corpus
-78. research optimization/debug transparency before deeper backend work: which transformations need explainable dumps, which passes need validation hooks, and how optimized/unoptimized evidence should be related without overclaiming
-79. stabilize SSA as the backend contract before experimenting with another backend
-80. evaluate a normalized mid-level IR only after traceability and backend-contract reports expose a concrete gap between typed Core and SSA; do not add a Rust-MIR-sized layer by default
-81. define a target/toolchain model before serious cross-compilation: target triple, data layout, linker, runtime/startup files, libc/no-libc expectation, clang/llc boundary, sanitizer/coverage hooks, and target assumptions
-82. evaluate sanitizer, source-coverage, LTO, and toolchain-integrated optimization support only after the backend contract and target/toolchain model are explicit
-83. evaluate QBE as the first lightweight second backend once backend/source evidence boundaries and optimization policy are explicit; either land a small path, record a clear rejection, or document why another backend would be warranted instead
-84. add cross-backend validation if a second backend lands
-85. add source-level debug-info support when codegen maturity becomes the bottleneck
-86. implement incremental compilation artifacts after report/proof/policy/interface artifacts are well-shaped: parsed/resolved/typed/lowered caches, dependency keys, invalidation rules, fact/proof invalidation, and clear rebuild explanations
-87. add clean-build versus incremental-build equivalence checks: the same source and toolchain state must produce identical facts, obligations, diagnostics, reports, and codegen outputs whether built from scratch or through incremental caches
-88. add compiler-process resource-hygiene checks for long-running workflows: repeated report/query/snapshot/incremental runs should not leak memory, file descriptors, temp artifacts, or subprocess state
-89. turn crash-repro tooling into a real reducer/minimizer workflow for parser/checker/proof/codegen failures so regressions can be shrunk automatically into stable repro cases
-90. define a canonical semantic test matrix: every important language rule and artifact guarantee should map to positive, negative, adversarial, and artifact-level regression coverage
-91. split interface artifacts from body artifacts at package/workspace scale
-92. research module-cycle and interface-hygiene enforcement before hardening it at package scale: import-cycle policy, interface/body mismatch handling, invalidation boundaries, and package-facing visibility rules
-93. design and parse the package manifest
-94. add version constraints, dependency resolution, and a lockfile
-95. add workspace and multi-package support
-96. add package-aware test selection
-97. validate cross-target FFI/ABI from package boundaries
-98. add module/package authority budgets after package graphs are real
-99. define provenance-aware publishing before public package distribution
-100. define package/dependency trust policy explicitly: how dependencies summarize trusted assumptions, how trust widens across package boundaries, how package-level evidence is reviewed, and how trust inheritance is made visible
-101. add compiler-as-service / editor / LSP support after diagnostics and facts are structured; expose parser/checker/report/query entrypoints without forcing full executable compilation
-102. define the LSP/editor feature scope explicitly: go-to-definition, hover/type info, diagnostics, formatting, rename, code actions, and fact/proof-aware language features
-103. add fact/proof-aware editor UX: capability/evidence hover, predictable/proof status per function, and jump/link surfaces for obligations, extraction, and traceability
-104. add a small human-friendly artifact viewer UX (CLI/TUI/web) for facts, diff, evidence, and proof state once the JSON/schema surfaces stabilize
-101. add dependency auditing for capability, allocation, FFI, trust, evidence, predictability, and proof-obligation drift
-102. add release / compatibility discipline when external users depend on the language
-103. define explicit language/versioning/deprecation policy across syntax, stdlib APIs, and proof/fact artifacts so users know what stability guarantees exist and how removals happen
-104. add stdlib quality gates for the bounded systems surface: API stability expectations, allocation/capability discipline, proof/predictability friendliness for core modules, and compatibility rules for example-grade helper APIs
-105. decide the analyzable-concurrency / predictable-execution subset before implementing general concurrency
-106. implement OS threads + typed channels only after the concurrency stance is documented
-107. keep evented I/O as a later opt-in model, not the default concurrency story
-108. strengthen `--report alloc` so every user-visible allocation is attributed to a source location and call path
-109. add structural bounded-allocation reports where the compiler can explain the bound
-110. add `BoundedAlloc(N)` only where the bound is structurally explainable
-111. evaluate const-generics / comptime only when bounded capacity or artifact generation needs a narrow version of it
-112. define a tighter bounded-allocation profile between `NoAlloc` and unrestricted allocation
-113. define stack-boundedness reporting and enforcement boundaries
-114. separate source-level stack-depth claims from backend/target stack claims
-115. define backend and target assumptions for timing, stack, calls, layout, undefined behavior, and proof/evidence boundaries
-116. define failure-path boundedness: abort, assertions, impossible branches, OOM-excluded profiles, `defer`, drops, and cleanup paths
-117. define arithmetic-overflow policy for predictable/proved profiles versus performance-oriented profiles
-118. validate predictable execution with bounded examples: fixed-buffer parser, bounded-state controller, fixed-capacity ring buffer, or equivalent
-119. strengthen memory/layout audit reports with source locations, qualified names, repr/packed/align facts, trusted-pointer boundaries, and backend/target caveats
-120. add coverage tooling over tests, report facts, policy checks, obligations, and proof artifacts
-121. improve onboarding so a newcomer can build one small program without project-author help
-122. define the stability / experimental boundary for public users
-123. expand formalization only after obligations, extraction reports, proof diagnostics, attached specs, the explicit ProofCore boundary, and the broader memory/effect model are artifact-backed
-124. research typestate only if a current state-machine/protocol example needs it
-125. research arena allocation after bounded-capacity and allocation-profile work exposes a concrete gap
-126. research target-specific timing models after source-level predictability and backend boundaries are explicit
-127. research exact WCET / runtime models only with a target/hardware model
-128. research exact stack-size claims across optimized machine code only with deeper backend/target integration
-129. research cache / pipeline behavior as target-level analysis, not a source-language promise
-130. research binary-format DSLs only if the packet/ELF examples show repeated parser boilerplate
-131. research hardware capability mapping after source-level capabilities and package policies are stable
-132. research capability sandbox profiles after authority reports and package policies are useful
-133. research a Miri-style interpreter only after the memory/UB model and proof subset are precise enough to execute symbolically
-
+66. define and implement clear invalid-query diagnostics: malformed/unknown `--query` requests should produce either a structured query error or a deliberate empty answer, not ambiguous success
+67. harden malformed artifact, registry, and snapshot handling beyond query errors: corrupted files, duplicate/conflicting entries, partial snapshots, and broken bundles should fail with explicit diagnostics and regression coverage instead of drifting silently
+68. define and check module/interface artifacts before package management: exported types, function signatures, capabilities, proof expectations, policy requirements, fact schema version, dependency fingerprints, and enough body/interface separation for later incremental compilation
+69. expand packaging/artifacts only after reports, registry, policies, interface artifacts, and CI gates have proved what artifacts must carry
+70. define proof-aware package artifacts explicitly: packages should eventually ship facts, obligations, proof status, trusted assumptions, and policy declarations as normal build artifacts
+71. build and curate a broader public showcase corpus after the thesis workflow is credible, and shape it deliberately as small, medium, and big programs rather than a pile of demos: small programs should isolate one property, medium programs should test composition, and a few bigger programs should prove the language survives scale; the corpus must include borrow/aliasing programs and cleanup/leak-boundary programs, not only parsers and containers
+72. turn the showcase corpus into a curated showcase set where each example proves a different thesis claim, each has honest framing, each has report/snapshot/diff coverage, each demonstrates at least one concrete thing the compiler catches, and each is chosen with an oracle in mind when possible: fuzzing, differential testing, round-trip properties, model-based tests, or comparison against another mature implementation/spec; include explicit borrow/aliasing and cleanup/leak-boundary examples in that quality bar
+73. sharpen the positioning against Rust, Zig, Lean 4, SPARK/Ada, Austral, Dafny, F*, and Why3 into one short page
+74. write the migration/adoption playbook: what C/Rust/Zig code should move first, how to wrap existing libraries honestly, how to introduce Concrete into an existing system, and what should stay outside Concrete
+75. build the user-facing documentation set deliberately: a FAQ for predictable/proof/capability questions, a Concrete comparison guide against Rust, Zig, SPARK/Ada, Lean 4, and related tools, and the supporting material needed before the language book can stop churning
+76. define the showcase maintenance policy: showcase examples are first-class regression targets, must keep honest framing, must retain report/snapshot/diff coverage, and regressions in them count as serious thesis breaks; maintain the small/medium/big balance rather than letting the corpus collapse into only tiny demos
+77. define first public release criteria: the first stable supported subset, required examples across small, medium, and big workloads, required diagnostics, required proof workflow, required stdlib/project UX, and the minimum evidence/policy/tooling story for outsiders; the example bar must explicitly include parser/decoder, ownership-heavy, borrow/aliasing, trusted-wrapper/FFI, fixed-capacity, and cleanup/leak-boundary programs
+78. ship the first real public language release once those criteria are actually met: version the release honestly, publish the supported subset and known limits, ship installable artifacts, and make the release promise narrower than the full roadmap
+79. write the real language book/tutorial path only after the first stable supported subset and first public release criteria are concrete enough that teaching the language will not churn with every compiler refactor
+80. polish the packet/parser flagship example as the canonical thesis demo
+81. build an FFI showcase with a `trusted` wrapper and `with(Unsafe)` isolated at the boundary
+82. build an ownership-heavy data-structure showcase with linear ownership and deterministic cleanup
+83. build a privilege-separated tool where capability signatures prove the trusted core cannot touch files/network/processes
+84. build a fixed-capacity / no-alloc showcase that proves the predictable subset is practical for real bounded systems code
+85. build a real cryptography example only after the proof/artifact boundary is stronger: good candidates are constant-time equality + verification use, an HMAC verification core, an Ed25519 verification helper/core subset, or hash/parser/encoding correctness around a crypto-adjacent component
+86. refine and stabilize the explicit `Core -> ProofCore` phase after the flagship has forced it into the open: keep the extraction semantics small, testable, and shared by obligations, specs, proofs, and future proof tools
+87. extend ProofCore and its semantics to cover more real Concrete constructs in a principled order: structs/fields, pattern matching, arrays/slices, borrows/dereferences, casts, cleanup/defer/drop behavior, and other constructs the flagship examples actually force into scope
+88. broaden proof obligation generation beyond the first pipeline slice so loop-related, memory-related, and contract-related proof work becomes mechanically inspectable instead of ad hoc
+89. broaden the pure Core proof fragment after proof artifacts, diagnostics, the explicit ProofCore phase, normalization, and obligation generation are usable
+90. deepen the memory/reference model for proofs once the first explicit version exists: sharpen ownership, aliasing, mutation, pointer/reference, cleanup, and layout reasoning where real examples require it
+91. deepen the effect/trust proof boundaries once the first explicit version exists: prove more right up to capability, allocation, blocking, FFI, and trusted edges without pretending the edges disappear
+92. add a dedicated proof-regression test pipeline covering `Core -> ProofCore`, normalization stability, obligation generation, exclusion reasons, stale proof behavior, and proof artifact drift
+93. stabilize the provable subset as an explicit user-facing target
+94. define public release criteria for the provable subset: supported constructs, unsupported constructs, trust assumptions, proof artifact stability expectations, and what evidence claims users may rely on semantically
+95. stabilize proof artifact/schema compatibility alongside the fact/query schema: proof-status, obligations, extraction, traceability, fingerprints, spec identifiers, and proof identifiers need explicit compatibility rules before external users or tools depend on them
+96. validate proof attachments against actual Lean symbols and theorem identities: fabricated proof names, missing theorem references, and mismatched spec/theorem pairs must fail explicitly instead of surviving as registry-shaped metadata
+97. add end-to-end Lean attachment regression coverage: registry entries, proof names, theorem identities, extracted proof targets, and stale detection should be tested together so the Lean bridge is a checked boundary rather than a naming convention
+98. support artifact-driven user-program proofs end-to-end
+99. define the user proof-authoring and maintenance workflow explicitly: how a user writes/updates specs and proofs, regenerates artifacts, diagnoses stale or blocked proofs, and lands proof-preserving refactors without reading compiler internals
+100. make proof extraction and obligation generation scale to larger projects without collapsing usability: measure cost, identify bottlenecks, and keep the proof workflow tractable as the codebase grows
+101. add proof replay/caching on top of the artifact model so unchanged proof targets, fingerprints, and obligations do not have to be recomputed or revalidated from scratch in every workflow
+102. push selected compiler-preservation proofs where they protect evidence claims
+103. evaluate contracts / source-level preconditions only after Lean-attached specs, obligations, diagnostics, the registry work, and the explicit ProofCore boundary are real
+104. evaluate loop invariants only after specs and proof obligations are real
+105. evaluate ghost/proof-only code only after a proof-backed example needs it and the erasure story is explicit
+106. pull research-gated language features into implementation only when a current example or proof needs them
+107. define optimization policy before substantial backend work: allowed optimizations, evidence-preservation expectations, debug/release behavior, and report/codegen validation expectations
+108. research miscompile-focused differential validation before implementing it broadly: identify trustworthy oracles, artifact/codegen consistency checks, backend sanity checks, and the smallest high-value wrong-code detection corpus
+109. research optimization/debug transparency before deeper backend work: which transformations need explainable dumps, which passes need validation hooks, and how optimized/unoptimized evidence should be related without overclaiming
+110. stabilize SSA as the backend contract before experimenting with another backend
+111. evaluate a normalized mid-level IR only after traceability and backend-contract reports expose a concrete gap between typed Core and SSA; do not add a Rust-MIR-sized layer by default
+112. define a target/toolchain model before serious cross-compilation: target triple, data layout, linker, runtime/startup files, libc/no-libc expectation, clang/llc boundary, sanitizer/coverage hooks, and target assumptions
+113. evaluate sanitizer, source-coverage, LTO, and toolchain-integrated optimization support only after the backend contract and target/toolchain model are explicit
+114. evaluate QBE as the first lightweight second backend once backend/source evidence boundaries and optimization policy are explicit; either land a small path, record a clear rejection, or document why another backend would be warranted instead
+115. add cross-backend validation if a second backend lands
+116. add source-level debug-info support when codegen maturity becomes the bottleneck
+117. implement incremental compilation artifacts after report/proof/policy/interface artifacts are well-shaped: parsed/resolved/typed/lowered caches, dependency keys, invalidation rules, fact/proof invalidation, and clear rebuild explanations
+118. add clean-build versus incremental-build equivalence checks: the same source and toolchain state must produce identical facts, obligations, diagnostics, reports, and codegen outputs whether built from scratch or through incremental caches
+119. add compiler-process resource-hygiene checks for long-running workflows: repeated report/query/snapshot/incremental runs should not leak memory, file descriptors, temp artifacts, or subprocess state
+120. turn crash-repro tooling into a real reducer/minimizer workflow for parser/checker/proof/codegen failures so regressions can be shrunk automatically into stable repro cases
+121. define a canonical semantic test matrix: every important language rule and artifact guarantee should map to positive, negative, adversarial, and artifact-level regression coverage
+122. split interface artifacts from body artifacts at package/workspace scale
+123. research module-cycle and interface-hygiene enforcement before hardening it at package scale: import-cycle policy, interface/body mismatch handling, invalidation boundaries, and package-facing visibility rules
+124. design and parse the package manifest
+125. add version constraints, dependency resolution, and a lockfile
+126. add workspace and multi-package support
+127. add package-aware test selection
+128. validate cross-target FFI/ABI from package boundaries
+129. add module/package authority budgets after package graphs are real
+130. define provenance-aware publishing before public package distribution
+131. define package/dependency trust policy explicitly: how dependencies summarize trusted assumptions, how trust widens across package boundaries, how package-level evidence is reviewed, and how trust inheritance is made visible
+132. add compiler-as-service / editor / LSP support after diagnostics and facts are structured; expose parser/checker/report/query entrypoints without forcing full executable compilation
+133. define the LSP/editor feature scope explicitly: go-to-definition, hover/type info, diagnostics, formatting, rename, code actions, and fact/proof-aware language features
+134. add fact/proof-aware editor UX: capability/evidence hover, predictable/proof status per function, and jump/link surfaces for obligations, extraction, and traceability
+135. add a small human-friendly artifact viewer UX (CLI/TUI/web) for facts, diff, evidence, and proof state once the JSON/schema surfaces stabilize
+136. add dependency auditing for capability, allocation, FFI, trust, evidence, predictability, and proof-obligation drift
+137. add release / compatibility discipline when external users depend on the language
+138. define explicit language/versioning/deprecation policy across syntax, stdlib APIs, and proof/fact artifacts so users know what stability guarantees exist and how removals happen
+139. add stdlib quality gates for the bounded systems surface: API stability expectations, allocation/capability discipline, proof/predictability friendliness for core modules, and compatibility rules for example-grade helper APIs
+140. decide the analyzable-concurrency / predictable-execution subset before implementing general concurrency
+141. implement OS threads + typed channels only after the concurrency stance is documented
+142. keep evented I/O as a later opt-in model, not the default concurrency story
+143. strengthen `--report alloc` so every user-visible allocation is attributed to a source location and call path
+144. add structural bounded-allocation reports where the compiler can explain the bound
+145. add `BoundedAlloc(N)` only where the bound is structurally explainable
+146. evaluate const-generics / comptime only when bounded capacity or artifact generation needs a narrow version of it
+147. define a tighter bounded-allocation profile between `NoAlloc` and unrestricted allocation
+148. define stack-boundedness reporting and enforcement boundaries
+149. separate source-level stack-depth claims from backend/target stack claims
+150. define backend and target assumptions for timing, stack, calls, layout, undefined behavior, and proof/evidence boundaries
+151. define failure-path boundedness: abort, assertions, impossible branches, OOM-excluded profiles, `defer`, drops, and cleanup paths
+152. define arithmetic-overflow policy for predictable/proved profiles versus performance-oriented profiles
+153. validate predictable execution with bounded examples: fixed-buffer parser, bounded-state controller, fixed-capacity ring buffer, or equivalent
+154. strengthen memory/layout audit reports with source locations, qualified names, repr/packed/align facts, trusted-pointer boundaries, and backend/target caveats
+155. add coverage tooling over tests, report facts, policy checks, obligations, and proof artifacts
+156. improve onboarding so a newcomer can build one small program without project-author help
+157. define the stability / experimental boundary for public users
+158. expand formalization only after obligations, extraction reports, proof diagnostics, attached specs, the explicit ProofCore boundary, and the broader memory/effect model are artifact-backed
+159. research typestate only if a current state-machine/protocol example needs it
+160. research arena allocation after bounded-capacity and allocation-profile work exposes a concrete gap
+161. research target-specific timing models after source-level predictability and backend boundaries are explicit
+162. research exact WCET / runtime models only with a target/hardware model
+163. research exact stack-size claims across optimized machine code only with deeper backend/target integration
+164. research cache / pipeline behavior as target-level analysis, not a source-language promise
+165. research binary-format DSLs only if the packet/ELF examples show repeated parser boilerplate
+166. research hardware capability mapping after source-level capabilities and package policies are stable
+167. research capability sandbox profiles after authority reports and package policies are useful
+168. research a Miri-style interpreter only after the memory/UB model and proof subset are precise enough to execute symbolically
 ## Reference Map
 
 The thesis references are [core-thesis](research/thesis-validation/core-thesis.md), [objective-matrix](research/thesis-validation/objective-matrix.md), [thesis-validation](research/thesis-validation/thesis-validation.md), [validation-examples](research/thesis-validation/validation-examples.md), [predictable-execution](research/predictable-execution/predictable-execution.md), [effect-taxonomy](research/predictable-execution/effect-taxonomy.md), [diagnostic-ux](research/compiler/diagnostic-ux.md), and [backend-traceability](research/compiler/backend-traceability.md).
