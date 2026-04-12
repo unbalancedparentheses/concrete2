@@ -6,6 +6,7 @@ For the safety model and three-way split, see [SAFETY.md](SAFETY.md).
 For the provable subset definition, see [PROVABLE_SUBSET.md](PROVABLE_SUBSET.md).
 For memory/ownership guarantees, see [MEMORY_GUARANTEES.md](MEMORY_GUARANTEES.md).
 For the execution model and runtime boundary, see [EXECUTION_MODEL.md](EXECUTION_MODEL.md).
+For the language-semantics vs proof-semantics boundary, see [PROOF_SEMANTICS_BOUNDARY.md](PROOF_SEMANTICS_BOUNDARY.md).
 
 ---
 

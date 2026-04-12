@@ -6,6 +6,7 @@ For the memory/ownership guarantee boundary, see [MEMORY_GUARANTEES.md](MEMORY_G
 For the effect/trust proof boundary, see [EFFECT_PROOF_BOUNDARIES.md](EFFECT_PROOF_BOUNDARIES.md).
 For the provable subset definition, see [PROVABLE_SUBSET.md](PROVABLE_SUBSET.md).
 For the safety model, see [SAFETY.md](SAFETY.md).
+For the language-semantics vs proof-semantics boundary, see [PROOF_SEMANTICS_BOUNDARY.md](PROOF_SEMANTICS_BOUNDARY.md).
 
 ---
 
