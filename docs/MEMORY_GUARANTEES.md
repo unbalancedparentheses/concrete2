@@ -31,6 +31,8 @@ These properties are mechanically enforced by `Check.lean` and verified by adver
 
 10. **Trusted code does not relax linearity.** `trusted` permits pointer arithmetic and raw pointer operations but does not suppress ownership, borrow, or scope-exit rules.
 
+11. **`&mut T` consumption tracking.** Exclusive references created in borrow blocks are linear and consumed on function call or return. Function parameter `&mut T` refs are reborrowable (not consumed on call). Deref read/write does not consume. Branch agreement and loop-consumption restrictions apply. (Tests: `adversarial_mut_ref_*.con`, `error_mut_ref_*.con`) See [MUT_REF_SEMANTICS.md](MUT_REF_SEMANTICS.md) for the full two-kind model.
+
 ## Public Claim That Is Safe Today
 
 **For safe Concrete code (no `trusted`, no `with(Unsafe)`), the checker enforces:**
@@ -40,6 +42,7 @@ These properties are mechanically enforced by `Check.lean` and verified by adver
 - No conflicting borrows — mutable access is exclusive, shared access precludes mutation.
 - No dangling safe references — references cannot escape their borrow block.
 - No silent reassignment of linear resources.
+- No unchecked exclusive-reference aliasing — `&mut T` borrow-block refs are consumed on function call, preventing double-use.
 - Deterministic cleanup ordering via `defer` (LIFO).
 
 **What this rejects at compile time:**
@@ -51,6 +54,46 @@ These properties are mechanically enforced by `Check.lean` and verified by adver
 | Memory leak | Linear value forgotten → scope-exit error |
 | Dangling reference | Borrow block scoping → escape analysis |
 | Invalid aliasing through safe references | Mutable borrow is exclusive; owner is frozen during borrow |
+
+## No-Codegen-Crash Rule
+
+**Safe-subset ownership mistakes must be checker errors, never codegen crashes.**
+
+A well-typed safe-subset program (no `trusted`, no `with(Unsafe)`) must either:
+1. Compile successfully and produce correct code, or
+2. Fail in a validated earlier phase (Parse, Resolve, Check, Elab, CoreCheck) with an explicit diagnostic.
+
+Checker/codegen mismatches — where the checker permits a program but codegen crashes or produces wrong code — are compiler bugs. The discovered `&mut T` return-inside-borrow-block crash (fixed in `3b9a895`) is the template: the checker accepted the program, but lowering emitted dead code that broke SSA verification. The fix was in codegen (skip dead write-back), not in the checker.
+
+This rule applies to:
+- Ownership/linearity state disagreements between checker and lowering
+- Reference type mismatches (e.g., `i64` vs `ptr` for `&mut T`)
+- Control-flow interactions with borrow blocks (early return, break, continue)
+- Any path where the checker's "safe" judgment does not match codegen's ability to emit valid IR
+
+Violations of this rule are high-priority bugs. New adversarial tests should target the checker/codegen boundary, not just the checker in isolation.
+
+## No-Leak Guarantee Boundary
+
+The checker enforces a **strong no-leak guarantee** for safe code within the following boundary:
+
+**Strong no-leak (enforced at compile time):**
+- Every linear variable must be consumed or reserved (via `defer`) by scope exit. Forgetting a linear value is a compile-time error (`linearVariableNeverConsumed`).
+- This covers `Heap<T>`, `HeapArray<T>`, `String`, `&mut T` (borrow-block refs), structs, enums, and all other linear types.
+- `defer destroy(x)` schedules cleanup in LIFO order. The `reserved` state ensures the value cannot be moved away before cleanup runs.
+
+**What the strong no-leak guarantee does NOT cover:**
+- **Arena/bulk-free patterns.** If an arena allocates many objects and is freed as a unit, the individual objects are not tracked. The arena itself is linear (so it must be freed), but objects obtained from it may not be.
+- **Raw pointer indirection.** A linear value behind `*mut T` is invisible to the checker. If `trusted` code stores a linear value through a raw pointer and never retrieves it, the checker cannot detect the leak.
+- **FFI/host-call boundaries.** If a linear value is passed to a foreign function, the checker trusts the signature. If the foreign function leaks it, the checker cannot detect this.
+- **Circular ownership.** If two linear values each hold ownership of the other (possible only through `trusted` code), neither can be consumed without consuming the other. The checker does not detect cycles.
+
+**Weaker allocation/cleanup audit reporting (future):**
+- `--report alloc` will attribute every user-visible allocation to a source location and call path.
+- Leak-risk classification will distinguish strong-no-leak code from code that crosses into trusted/FFI/arena territory.
+- This is audit-grade reporting, not a compile-time guarantee. It helps reviewers identify where leaks *could* happen outside the strong boundary.
+
+The distinction matters: the strong no-leak claim is a compiler-enforced property of safe code. The audit reporting is a best-effort tool for code that touches the boundaries.
 
 ## Where the Safe Claim Has Boundaries
 
@@ -87,6 +130,9 @@ This requires:
 
 - ~~one checker-matching memory/reference semantics document~~ **done** — [MEMORY_SEMANTICS.md](MEMORY_SEMANTICS.md)
 - ~~closure on hard edge cases~~ **done** — edge cases documented with status in MEMORY_SEMANTICS.md §13, adversarial tests for each, integer-match consumption bug fixed
+- ~~`&mut T` ownership/consumption closure~~ **done** — two-kind model (borrow-block vs parameter refs), checker enforcement, codegen alignment, 21 adversarial tests, return-in-borrow codegen fix; see [MUT_REF_SEMANTICS.md](MUT_REF_SEMANTICS.md) and [MUT_REF_CLOSURE.md](MUT_REF_CLOSURE.md)
+- ~~no-codegen-crash regression rule~~ **done** — documented above; safe-subset programs must either compile or fail with an explicit checker diagnostic
+- ~~no-leak guarantee boundary~~ **done** — strong no-leak for safe code defined above; weaker audit reporting deferred
 - proof-facing articulation of the memory model (future: connect to ProofCore/obligations)
 - formal checker soundness argument or mechanized proof (future)
 

@@ -56,7 +56,7 @@ All other types are linear. Linear values must be consumed exactly once before s
 
 - Structs and enums (default)
 - `String`
-- `&mut T` (exclusive reference — consumed on use)
+- `&mut T` (exclusive reference — see [MUT_REF_SEMANTICS.md](MUT_REF_SEMANTICS.md) for consumption rules)
 - `Heap<T>`, `HeapArray<T>`
 - Newtypes wrapping a linear inner type
 
@@ -142,7 +142,7 @@ If a reference created by a borrow block is assigned to a variable outside the b
 
 - Borrows do not consume the owner (the owner is frozen, not consumed).
 - The reference type `&T` is Copy — it can be passed to multiple functions within the borrow block.
-- The reference type `&mut T` is linear — it must be consumed exactly once.
+- The reference type `&mut T` is linear — see [MUT_REF_SEMANTICS.md](MUT_REF_SEMANTICS.md) for the two-kind consumption model (borrow-block refs vs function parameter refs).
 - Borrow blocks do not nest into the same owner (the inner borrow sees the owner as frozen).
 
 ---

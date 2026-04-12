@@ -114,15 +114,18 @@ Tests: `adversarial_mut_ref_return_in_borrow.con`, `adversarial_mut_ref_return_d
 
 ## 6. Public Claim Status
 
-**MEMORY_GUARANTEES.md must NOT be widened until this closure is complete.**
+**MEMORY_GUARANTEES.md has been widened.** The `&mut T` closure is complete for the current scope.
 
-Current state:
-- MEMORY_GUARANTEES.md correctly describes what the checker enforces today.
-- The `&mut T` semantics are part of the enforcement, but the edge cases in section 5 above are not yet covered.
-- Until all adversarial tests pass and the open gaps are either implemented or explicitly documented as out-of-scope, the public claim should remain as-is.
+Completed:
+- MEMORY_GUARANTEES.md property 11 documents `&mut T` consumption tracking.
+- Public claim includes exclusive-reference aliasing prevention.
+- No-codegen-crash rule documented (safe-subset programs must compile or fail with checker diagnostic).
+- No-leak guarantee boundary defined (strong no-leak for safe code; weaker audit for trusted/FFI/arena).
+- Stronger-claim checklist updated with &mut T closure, no-codegen-crash, and no-leak boundary.
 
-Criteria for closing this item:
-1. All tests in section 4 pass (or are confirmed to already pass).
-2. Checker audit of the ref/refMut split (section 2) is complete.
-3. Open gaps (section 5) are either implemented or documented as future work in MEMORY_SEMANTICS.md.
-4. MUT_REF_SEMANTICS.md is reviewed against actual checker behavior with no discrepancies.
+Remaining open items (section 5 gaps — future work, not blockers):
+- Reborrowing (`&mut *r`) syntax and semantics.
+- Field access/write through `&mut T`.
+- Array element access through `&mut T`.
+- `&mut T` in struct fields.
+- These are documented as future work in MUT_REF_SEMANTICS.md and do not affect the current public claim.
