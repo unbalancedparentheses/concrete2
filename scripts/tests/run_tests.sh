@@ -1214,6 +1214,9 @@ run_err "$TESTDIR/error_mut_ref_branch_disagree.con" "consumed in one branch"
 run_err "$TESTDIR/error_mut_ref_loop_consume.con" "inside a loop"
 run_err "$TESTDIR/error_mut_ref_rebind_then_use.con" "cannot escape"
 run_err "$TESTDIR/error_mut_ref_method_on_borrow_ref.con" "used after move"
+# Memory regression checklist gap-closing tests
+run_err "$TESTDIR/error_continue_skip_linear.con" "continue would skip unconsumed linear"
+run_err "$TESTDIR/error_mut_borrow_immutable.con" "cannot take mutable borrow of immutable"
 # Bitwise errors
 run_err "$TESTDIR/error_bitwise_float.con" "type mismatch"
 # Print errors
