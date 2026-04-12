@@ -6,6 +6,7 @@ This document separates what the checker enforces today, what is safe to claim p
 
 For the value/reference categories, see [VALUE_MODEL.md](VALUE_MODEL.md).
 For the broader safety model, see [SAFETY.md](SAFETY.md).
+For the precise public guarantee statement, see [GUARANTEE_STATEMENT.md](GUARANTEE_STATEMENT.md).
 
 ## What the Checker Enforces Today
 
