@@ -10,6 +10,21 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Proof/guarantee terminology gate
+
+**Canonical status terminology unified across all output surfaces.** The six proof/obligation status terms (`proved`, `stale`, `missing`, `blocked`, `ineligible`, `trusted`) are now defined once in `ObligationStatus.canonical` and used consistently across JSON facts, CLI reports, human-readable summaries, and documentation.
+
+**Three terminology drifts fixed:**
+- no\_proof / missing\_proof / not\_proved → `"missing"` (obligation and proof\_status JSON)
+- not\_eligible → `"ineligible"` (obligation and proof\_status JSON, summary text)
+- CLAIM_TAXONOMY.md table corrected to match actual emitted values
+
+**Terminology gate:** `scripts/tests/test_terminology_gate.sh` greps the codebase for banned non-canonical terms in quoted string contexts. Integrated into `--full` test mode. Prevents future drift by failing CI if old terms reappear.
+
+**`ProofState.canonical` and `ProofDiagnosticKind.canonical`** added alongside `ObligationStatus.canonical` — all renderers delegate to these functions instead of inline match expressions.
+
+See [docs/CLAIM_TAXONOMY.md](docs/CLAIM_TAXONOMY.md) §7.6 for the canonical terminology table.
+
 ### ProofCore self-consistency checks and `--report consistency`
 
 **13 cross-family invariants** verify that proof obligations, diagnostics, extraction results, fingerprints, and eligibility data agree with each other inside the `ProofCore` artifact. The checks are wired into the compiler as `--report consistency` and run over all 468 compilable test programs with zero violations.

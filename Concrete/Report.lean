@@ -1185,6 +1185,16 @@ inductive ProofState where
   | notEligible     -- fails profile gates (recursion, alloc, etc.)
   | trusted         -- marked trusted (bypasses proof)
 
+/-- Canonical string for a ProofState. Uses the same terminology as
+    ObligationStatus.canonical to prevent cross-surface drift. -/
+def ProofState.canonical : ProofState → String
+  | .proved     => "proved"
+  | .stale      => "stale"
+  | .notProved  => "missing"
+  | .blocked    => "blocked"
+  | .notEligible => "ineligible"
+  | .trusted    => "trusted"
+
 /-- Per-function proof status record. -/
 structure ProofStatusEntry where
   qualName      : String
@@ -1305,7 +1315,7 @@ structure ObligationEntry where
   function     : String       -- qualified name
   spec         : String       -- spec name (from registry, or empty)
   proof        : String       -- proof name (from registry/hardcoded, or empty)
-  status       : String       -- proved | stale | missing_proof | not_eligible | trusted
+  status       : String       -- proved | stale | missing | blocked | ineligible | trusted
   dependencies : List String  -- qualified names of proved helpers this function calls
   fingerprint  : String       -- current body fingerprint
   source       : String       -- "registry" | "hardcoded" | "none"
@@ -1313,13 +1323,7 @@ structure ObligationEntry where
 
 /-- Convert a ProofCore obligation to a Report-side ObligationEntry. -/
 private def obligationToEntry (o : Concrete.Obligation) : ObligationEntry :=
-  let statusStr := match o.status with
-    | .proved => "proved"
-    | .stale => "stale"
-    | .missing => "missing_proof"
-    | .blocked => "blocked"
-    | .ineligible => "not_eligible"
-    | .trusted => "trusted"
+  let statusStr := o.status.canonical
   let (sName, pName, src) := match o.spec with
     | some a => (a.specId.name, a.proofName,
         match a.source with | .registry => "registry" | .hardcoded => "hardcoded")
@@ -1342,11 +1346,11 @@ def obligationsReport (modules : List CModule) (locMap : FnLocMap := [])
     s!"  {e.function}\n    status:       {e.status}\n    spec:         {specStr}\n    proof:        {proofStr}\n    source:       {e.source}\n    fingerprint:  {e.fingerprint}\n    dependencies: {depsStr}\n    loc:          {locStr}"
   let proved := (entries.filter fun e => e.status == "proved").length
   let stale := (entries.filter fun e => e.status == "stale").length
-  let missing := (entries.filter fun e => e.status == "missing_proof").length
+  let missing := (entries.filter fun e => e.status == "missing").length
   let blockedCnt := (entries.filter fun e => e.status == "blocked").length
-  let notElig := (entries.filter fun e => e.status == "not_eligible").length
+  let inelig := (entries.filter fun e => e.status == "ineligible").length
   let trusted := (entries.filter fun e => e.status == "trusted").length
-  let summary := s!"Totals: {entries.length} obligations — {proved} proved, {stale} stale, {missing} missing, {blockedCnt} blocked, {notElig} not eligible, {trusted} trusted"
+  let summary := s!"Totals: {entries.length} obligations — {proved} proved, {stale} stale, {missing} missing, {blockedCnt} blocked, {inelig} ineligible, {trusted} trusted"
   s!"{header}\n\n{"\n\n".intercalate body}\n\n{summary}\n"
 
 -- ============================================================
@@ -1845,13 +1849,7 @@ private def violationToFact (v : ProfileViolation) : Val :=
 open Json in
 /-- Convert a ProofStatusEntry to a JSON fact. -/
 private def proofStatusToFact (e : ProofStatusEntry) : Val :=
-  let stateStr := match e.state with
-    | .proved => "proved"
-    | .stale => "stale"
-    | .notProved => "no_proof"
-    | .blocked => "blocked"
-    | .notEligible => "not_eligible"
-    | .trusted => "trusted"
+  let stateStr := e.state.canonical
   let hintStr := match e.state with
     | .stale => "Update the Lean proof in Concrete/Proof.lean, or restore the proved implementation."
     | .notProved => "Add a Lean proof for this function in Concrete/Proof.lean with the current fingerprint."
@@ -2367,9 +2365,7 @@ def proofQuery (modules : List CModule) (locMap : FnLocMap)
       ("answer", .str "not_found")
     ]).render
   | some e =>
-    let stateStr := match e.state with
-      | .proved => "proved" | .stale => "stale" | .notProved => "no_proof"
-      | .blocked => "blocked" | .notEligible => "not_eligible" | .trusted => "trusted"
+    let stateStr := e.state.canonical
     let hintStr := match e.state with
       | .stale => "Update the Lean proof in Concrete/Proof.lean, or restore the proved implementation."
       | .notProved => "Add a Lean proof for this function in Concrete/Proof.lean with the current fingerprint."
@@ -2418,9 +2414,7 @@ def evidenceQuery (modules : List CModule) (locMap : FnLocMap)
     ]).render
   | some eff =>
     let proofState := match fnProof with
-      | some e => match e.state with
-        | .proved => "proved" | .stale => "stale" | .notProved => "no_proof"
-        | .blocked => "blocked" | .notEligible => "not_eligible" | .trusted => "trusted"
+      | some e => e.state.canonical
       | none => "unknown"
     let gatesFailed := fnViolations.map fun v => Val.str v.reason
     (Val.obj [
@@ -2487,9 +2481,7 @@ def auditQuery (modules : List CModule) (locMap : FnLocMap)
     let fnProof := entries.find? fun e =>
       e.bareName == fnName || e.qualName.endsWith ("." ++ fnName)
     let proofState := match fnProof with
-      | some e => match e.state with
-        | .proved => "proved" | .stale => "stale" | .notProved => "no_proof"
-        | .blocked => "blocked" | .notEligible => "not_eligible" | .trusted => "trusted"
+      | some e => e.state.canonical
       | none => "unknown"
     let fingerprint := match fnProof with
       | some e => e.currentFp | none => ""
@@ -2677,9 +2669,10 @@ private def proofStateRank (s : String) : Nat :=
   match s with
   | "proved" => 4
   | "stale" => 3
-  | "no_proof" => 2
-  | "not_eligible" => 1
+  | "missing" => 2
+  | "ineligible" => 1
   | "trusted" => 2
+  | "blocked" => 1
   | _ => 0
 
 /-- Determine if a field change represents trust weakening. -/
@@ -2758,11 +2751,11 @@ private def classifyNewFact (kind : String) (v : Val) : String :=
     if leak == "true" then "weakened" else "neutral"
   | "proof_status" =>
     let state := (jsonGetVal v "state").map valDisplay |>.getD ""
-    if state == "no_proof" || state == "not_eligible" || state == "stale" then "weakened"
+    if state == "missing" || state == "ineligible" || state == "stale" then "weakened"
     else "neutral"
   | "obligation" =>
     let status := (jsonGetVal v "status").map valDisplay |>.getD ""
-    if status == "missing_proof" || status == "stale" then "weakened"
+    if status == "missing" || status == "stale" then "weakened"
     else "neutral"
   | "extraction" =>
     let status := (jsonGetVal v "status").map valDisplay |>.getD ""
@@ -2904,15 +2897,15 @@ private def buildSummaryFact (facts : List Val) : Val :=
     ("total_functions", .num (proofFacts.length)),
     ("proved", .num (proofState "proved")),
     ("stale", .num (proofState "stale")),
-    ("no_proof", .num (proofState "no_proof")),
-    ("not_eligible", .num (proofState "not_eligible")),
+    ("missing", .num (proofState "missing")),
+    ("ineligible", .num (proofState "ineligible")),
     ("trusted", .num (proofState "trusted")),
     ("eligibility_eligible", .num (eligStatus "eligible")),
     ("eligibility_excluded", .num (eligStatus "excluded")),
     ("eligibility_trusted", .num (eligStatus "trusted")),
     ("predictable_violations", .num (count "predictable_violation")),
     ("obligations_proved", .num (obStatus "proved")),
-    ("obligations_missing", .num (obStatus "missing_proof")),
+    ("obligations_missing", .num (obStatus "missing")),
     ("obligations_blocked", .num (obStatus "blocked")),
     ("obligations_stale", .num (obStatus "stale")),
     ("extracted", .num (extStatus "extracted")),

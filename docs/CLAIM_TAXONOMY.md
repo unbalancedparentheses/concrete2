@@ -129,7 +129,7 @@ Every statement the compiler makes about a program falls into exactly one of the
 |---------------|---------------------------|--------------------------------------|------------------------------|-----------------------------|-----------------------------|
 | Enforced | `"enforced"` | `"enforced"` | — | — | — |
 | Proved | `"proved"` | `"proved"` | `"proved"` | `"proved"` | — |
-| Reported | `"reported"` | `"reported"` | `"not_proved"` / `"blocked"` / `"not_eligible"` | `"missing_proof"` / `"not_eligible"` | `"eligible"` / `"excluded"` |
+| Reported | `"reported"` | `"reported"` | `"missing"` / `"blocked"` / `"ineligible"` | `"missing"` / `"ineligible"` | `"eligible"` / `"excluded"` |
 | Trusted assumption | `"trusted-assumption"` | `"trusted-assumption"` | `"trusted"` | `"trusted"` | `"trusted"` |
 | Backend/target | — | — | — | — | — |
 
@@ -160,9 +160,9 @@ Every statement the compiler makes about a program falls into exactly one of the
 | JSON `kind` | Fields carrying taxonomy info | Values |
 |-------------|-------------------------------|--------|
 | `"effects"` | `"evidence"` | `"proved"`, `"enforced"`, `"enforced (proof stale: body changed)"`, `"reported"`, `"trusted-assumption"` |
-| `"proof_status"` | `"state"` | `"proved"`, `"stale"`, `"not_proved"`, `"blocked"`, `"not_eligible"`, `"trusted"` |
+| `"proof_status"` | `"state"` | `"proved"`, `"stale"`, `"missing"`, `"blocked"`, `"ineligible"`, `"trusted"` |
 | `"eligibility"` | `"status"` | `"eligible"`, `"excluded"`, `"trusted"` |
-| `"obligation"` | `"status"` | `"proved"`, `"stale"`, `"missing_proof"`, `"not_eligible"`, `"trusted"`, `"blocked"` |
+| `"obligation"` | `"status"` | `"proved"`, `"stale"`, `"missing"`, `"blocked"`, `"ineligible"`, `"trusted"` |
 | `"traceability"` | `"evidence"`, `"boundary"` | Evidence: same as effects; Boundary: claim scope description |
 | `"proof_diagnostic"` | `"severity"` | `"warning"`, `"info"` |
 
@@ -239,3 +239,20 @@ For consistency across the project:
 4. **Always qualify "proof."** "Proof" in Concrete means a Lean 4 theorem over PExpr. It does not mean "evidence," "report," or "enforcement." If you mean something other than a Lean theorem, use a different word.
 
 5. **Use "trusted" only for the compiler mechanism.** `trusted fn` and `trusted extern fn` are specific Concrete keywords. Do not use "trusted" colloquially to mean "reliable" or "believed to be correct."
+
+6. **Use canonical status strings in all machine-readable output.** The six canonical proof/obligation status terms are defined in `ObligationStatus.canonical` and must be used consistently across all JSON facts, CLI status fields, and programmatic output:
+
+   | Canonical | Meaning | Former variants (now banned) |
+   |-----------|---------|------------------------------|
+   | `"proved"` | Spec attached, fingerprint matches, extraction succeeded | — |
+   | `"stale"` | Spec attached, fingerprint changed | — |
+   | `"missing"` | Eligible, extractable, no spec attached | (see below) |
+   | `"blocked"` | Eligible but extraction failed (unsupported constructs) | — |
+   | `"ineligible"` | Fails profile gates | (see below) |
+   | `"trusted"` | Marked trusted (proof bypassed) | — |
+
+   Banned former variants: `missing` replaces the former no\_proof, missing\_proof, and not\_proved. `ineligible` replaces the former not\_eligible.
+
+   **Note:** Diagnostic kind labels (stale\_proof, missing\_proof, unsupported\_construct) are a different domain — they describe the *type of diagnostic*, not the obligation status. These are intentionally more descriptive than status terms.
+
+   The terminology gate (`scripts/tests/test_terminology_gate.sh`) enforces this in CI.

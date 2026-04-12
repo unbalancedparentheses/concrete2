@@ -238,7 +238,7 @@ resolve_affected_sections() {
 
 # Resolve which sections are active based on MODE
 case "$MODE" in
-    full)    SECTION="passlevel,positive,negative,testflag,report,codegen,O2,stdlib,collection,xtarget,perf,determinism,consistency" ;;
+    full)    SECTION="passlevel,positive,negative,testflag,report,codegen,O2,stdlib,collection,xtarget,perf,determinism,consistency,terminology" ;;
     fast)    SECTION="passlevel,positive,negative,testflag,report,codegen,O2,stdlib,collection" ;;
     stdlib)  SECTION="stdlib,collection" ;;
     stdlib-module) SECTION="stdlib" ;;
@@ -3125,7 +3125,7 @@ import json
 with open('$TMPDIR/spec_identity.json') as f:
     data = json.load(f)
 ps = {f['function']: f for f in data['facts'] if f['kind'] == 'proof_status'}
-assert ps['main.main']['state'] == 'not_eligible'
+assert ps['main.main']['state'] == 'ineligible'
 assert ps['main.main'].get('spec', '') == ''
 assert ps['main.main'].get('proof', '') == ''
 " 2>/dev/null; then
@@ -3182,8 +3182,8 @@ with open('$TMPDIR/obl_gen.json') as f:
 obs = {f['function']: f for f in data['facts'] if f['kind'] == 'obligation'}
 assert obs['main.pure_add']['status'] == 'proved', 'proved wrong'
 assert obs['main.pure_stale']['status'] == 'stale', 'stale wrong'
-assert obs['main.pure_no_spec']['status'] == 'missing_proof', 'missing wrong'
-assert obs['main.uses_alloc']['status'] == 'not_eligible', 'ineligible wrong'
+assert obs['main.pure_no_spec']['status'] == 'missing', 'missing wrong'
+assert obs['main.uses_alloc']['status'] == 'ineligible', 'ineligible wrong'
 assert obs['main.trusted_op']['status'] == 'trusted', 'trusted wrong'
 " 2>/dev/null; then
     echo "  ok  obligation-gen: all 5 statuses derived correctly"
@@ -3253,7 +3253,7 @@ with open('$TMPDIR/obl_gen.json') as f:
     data = json.load(f)
 obs = {f['function']: f for f in data['facts'] if f['kind'] == 'obligation'}
 o = obs['main.pure_no_spec']
-assert o['status'] == 'missing_proof', 'not missing'
+assert o['status'] == 'missing', 'not missing'
 assert o.get('spec', '') == '', 'should have no spec'
 assert o.get('source', '') == 'none', 'source should be none'
 " 2>/dev/null; then
@@ -3290,8 +3290,8 @@ with open('$TMPDIR/obl_gen.json') as f:
     data = json.load(f)
 obs = {f['function']: f for f in data['facts'] if f['kind'] == 'obligation'}
 ps = {f['function']: f for f in data['facts'] if f['kind'] == 'proof_status'}
-status_map = {'proved': 'proved', 'stale': 'stale', 'missing_proof': 'no_proof',
-              'not_eligible': 'not_eligible', 'trusted': 'trusted'}
+status_map = {'proved': 'proved', 'stale': 'stale', 'missing': 'missing',
+              'ineligible': 'ineligible', 'trusted': 'trusted'}
 for fn in obs:
     obl_status = obs[fn]['status']
     ps_state = ps[fn]['state']
@@ -3317,9 +3317,9 @@ check_report "$OBL_PROG" obligations \
     "obligation-gen: obligations report should show stale"
 
 check_report "$OBL_PROG" obligations \
-    "missing_proof" \
-    "obligation-gen: obligations report shows missing_proof" \
-    "obligation-gen: obligations report should show missing_proof"
+    "missing" \
+    "obligation-gen: obligations report shows missing" \
+    "obligation-gen: obligations report should show missing"
 
 # --- Obligation model adversarial tests (item 10) ---
 # Tests obligation semantics: blocked status, precedence rules, dependency filtering.
@@ -3337,7 +3337,7 @@ obs = {f['function']: f for f in data['facts'] if f['kind'] == 'obligation'}
 o = obs['main.eligible_but_blocked']
 assert o['status'] == 'blocked', f'expected blocked, got {o[\"status\"]}'
 assert o['status'] != 'proved', 'should not be proved'
-assert o['status'] != 'missing_proof', 'should not be missing_proof'
+assert o['status'] != 'missing', 'should not be missing'
 " 2>/dev/null; then
     echo "  ok  obligation-adv: eligible-but-unextractable is blocked"
     PASS=$((PASS + 1))
@@ -3411,7 +3411,7 @@ with open('$TMPDIR/diag_adv.json') as f:
     data = json.load(f)
 obs = {f['function']: f for f in data['facts'] if f['kind'] == 'obligation'}
 o = obs['main.profile_excluded']
-assert o['status'] == 'not_eligible', f'expected not_eligible, got {o[\"status\"]}'
+assert o['status'] == 'ineligible', f'expected ineligible, got {o[\"status\"]}'
 assert o['spec'] == 'profile_excluded_spec', 'spec should still be attached'
 " 2>/dev/null; then
     echo "  ok  obligation-adv: ineligible with matching registry stays ineligible"
@@ -3450,8 +3450,8 @@ with open('$TMPDIR/diag_adv.json') as f:
     data = json.load(f)
 obs = {f['function']: f for f in data['facts'] if f['kind'] == 'obligation'}
 ps = {f['function']: f for f in data['facts'] if f['kind'] == 'proof_status'}
-status_map = {'proved': 'proved', 'stale': 'stale', 'missing_proof': 'no_proof',
-              'blocked': 'blocked', 'not_eligible': 'not_eligible', 'trusted': 'trusted'}
+status_map = {'proved': 'proved', 'stale': 'stale', 'missing': 'missing',
+              'blocked': 'blocked', 'ineligible': 'ineligible', 'trusted': 'trusted'}
 for fn in obs:
     obl_status = obs[fn]['status']
     ps_state = ps[fn]['state']
@@ -3844,8 +3844,8 @@ fi
 # Note: JSON is one line, so we extract per-record to avoid cross-record grep matches
 pure_add_proof_state=$(echo "$rc_json" | grep -o '"kind": "proof_status"[^}]*"function": "main.pure_add"[^}]*' | grep -o '"state": "[^"]*"' | head -1)
 if echo "$rc_json" | grep -q '"kind": "effects".*"function": "pure_add".*"evidence": "enforced"' && \
-   [ "$pure_add_proof_state" = '"state": "no_proof"' ]; then
-    echo "  ok  consistency: effects enforced ↔ proof_status eligible/no_proof for pure_add"
+   [ "$pure_add_proof_state" = '"state": "missing"' ]; then
+    echo "  ok  consistency: effects enforced ↔ proof_status eligible/missing for pure_add"
     PASS=$((PASS + 1))
 else
     echo "FAIL  consistency: effects/proof_status disagree on pure_add eligibility (state=$pure_add_proof_state)"
@@ -4316,14 +4316,14 @@ fi
 
 # --- proof:fn ---
 
-# Pure function: no_proof (eligible but unproved)
+# Pure function: missing (eligible but unproved)
 q_proof_pure=$(cached_output "$TESTDIR/report_integration.con" "--query proof:pure_add")
-if echo "$q_proof_pure" | grep -q '"answer": "no_proof"' && \
+if echo "$q_proof_pure" | grep -q '"answer": "missing"' && \
    echo "$q_proof_pure" | grep -q '"current_fingerprint":'; then
-    echo "  ok  proof:pure_add answers no_proof with fingerprint"
+    echo "  ok  proof:pure_add answers missing with fingerprint"
     PASS=$((PASS + 1))
 else
-    echo "FAIL  proof:pure_add should answer no_proof"
+    echo "FAIL  proof:pure_add should answer missing"
     echo "$q_proof_pure"
     FAIL=$((FAIL + 1))
 fi
@@ -4356,7 +4356,7 @@ fi
 q_ev_pure=$(cached_output "$TESTDIR/report_integration.con" "--query evidence:pure_add")
 if echo "$q_ev_pure" | grep -q '"answer": "enforced"' && \
    echo "$q_ev_pure" | grep -q '"passes_predictable": true' && \
-   echo "$q_ev_pure" | grep -q '"proof_state": "no_proof"'; then
+   echo "$q_ev_pure" | grep -q '"proof_state": "missing"'; then
     echo "  ok  evidence:pure_add answers enforced, passes predictable, no proof"
     PASS=$((PASS + 1))
 else
@@ -4441,7 +4441,7 @@ else
 fi
 
 # Audit includes proof state and fingerprint
-if echo "$q_audit_pure" | grep -q '"state": "no_proof"' && \
+if echo "$q_audit_pure" | grep -q '"state": "missing"' && \
    echo "$q_audit_pure" | grep -q '"fingerprint":'; then
     echo "  ok  audit:pure_add includes proof state and fingerprint"
     PASS=$((PASS + 1))
@@ -4548,13 +4548,13 @@ else
     FAIL=$((FAIL + 1))
 fi
 
-# Miss registry query: proof:pure_add → no_proof (not stale, because name doesn't match)
+# Miss registry query: proof:pure_add → missing (not stale, because name doesn't match)
 miss_query=$(cached_output "$MISS_DIR/test_proof_registry.con" "--query proof:pure_add")
-if echo "$miss_query" | grep -q '"answer": "no_proof"'; then
-    echo "  ok  registry miss query: proof:pure_add → no_proof"
+if echo "$miss_query" | grep -q '"answer": "missing"'; then
+    echo "  ok  registry miss query: proof:pure_add → missing"
     PASS=$((PASS + 1))
 else
-    echo "FAIL  registry miss query: proof:pure_add should answer no_proof"
+    echo "FAIL  registry miss query: proof:pure_add should answer missing"
     echo "$miss_query"
     FAIL=$((FAIL + 1))
 fi
@@ -4587,13 +4587,13 @@ else
     FAIL=$((FAIL + 1))
 fi
 
-# Obligations: missing_proof shows none for spec/proof
-if echo "$ob_proved" | grep -A5 "main.main" | grep -q "status:.*not_eligible" && \
+# Obligations: missing shows none for spec/proof
+if echo "$ob_proved" | grep -A5 "main.main" | grep -q "status:.*ineligible" && \
    echo "$ob_proved" | grep -A5 "main.main" | grep -q "source:.*none"; then
-    echo "  ok  obligations: not_eligible function shows source:none"
+    echo "  ok  obligations: ineligible function shows source:none"
     PASS=$((PASS + 1))
 else
-    echo "FAIL  obligations: missing_proof should show source:none"
+    echo "FAIL  obligations: missing should show source:none"
     echo "$ob_proved"
     FAIL=$((FAIL + 1))
 fi
@@ -4623,8 +4623,8 @@ fi
 # Obligations: summary totals
 if echo "$ob_proved" | grep -q "1 proved" && \
    echo "$ob_proved" | grep -q "0 missing" && \
-   echo "$ob_proved" | grep -q "1 not eligible"; then
-    echo "  ok  obligations: summary shows 1 proved, 0 missing, 1 not eligible"
+   echo "$ob_proved" | grep -q "1 ineligible"; then
+    echo "  ok  obligations: summary shows 1 proved, 0 missing, 1 ineligible"
     PASS=$((PASS + 1))
 else
     echo "FAIL  obligations: summary should show 1 proved, 1 missing"
@@ -4657,14 +4657,14 @@ else
     FAIL=$((FAIL + 1))
 fi
 
-# Obligations: not_eligible for allocating functions
+# Obligations: ineligible for allocating functions
 ob_mixed=$(cached_output "$TESTDIR/report_integration.con" "--report obligations")
-if echo "$ob_mixed" | grep -q "not_eligible" && \
+if echo "$ob_mixed" | grep -q "ineligible" && \
    echo "$ob_mixed" | grep -q "trusted"; then
-    echo "  ok  obligations: mixed program shows not_eligible + trusted"
+    echo "  ok  obligations: mixed program shows ineligible + trusted"
     PASS=$((PASS + 1))
 else
-    echo "FAIL  obligations: mixed program should show not_eligible + trusted"
+    echo "FAIL  obligations: mixed program should show ineligible + trusted"
     echo "$ob_mixed"
     FAIL=$((FAIL + 1))
 fi
@@ -5061,7 +5061,7 @@ fi
 
 # Evidence downgrade detected
 if echo "$diff_cross" | grep -q "evidence:.*enforced.*reported" || \
-   echo "$diff_cross" | grep -q "state:.*proved.*no_proof"; then
+   echo "$diff_cross" | grep -q "state:.*proved.*missing"; then
     echo "  ok  diff: evidence downgrade detected in field changes"
     PASS=$((PASS + 1))
 else
@@ -5313,17 +5313,17 @@ fi
 
 # --- New weak additions classified as weakened ---
 
-# New proof_status with no_proof → weakened
+# New proof_status with missing → weakened
 cat > "$ADV_DIR/new_noproof_new.json" << 'ADVEOF'
-[{"kind":"proof_status","function":"bar","state":"no_proof","current_fingerprint":"xyz"}]
+[{"kind":"proof_status","function":"bar","state":"missing","current_fingerprint":"xyz"}]
 ADVEOF
 adv_noproof=$($COMPILER diff "$ADV_DIR/new_weak_old.json" "$ADV_DIR/new_noproof_new.json" 2>&1) && true || true
 if echo "$adv_noproof" | grep -q "TRUST WEAKENED" && \
    echo "$adv_noproof" | grep -q '\[+\].*proof_status.*bar'; then
-    echo "  ok  adv-diff: new no_proof fact flagged as weakened"
+    echo "  ok  adv-diff: new missing fact flagged as weakened"
     PASS=$((PASS + 1))
 else
-    echo "FAIL  adv-diff: new no_proof fact should be weakened"
+    echo "FAIL  adv-diff: new missing fact should be weakened"
     echo "$adv_noproof"
     FAIL=$((FAIL + 1))
 fi
@@ -5686,8 +5686,8 @@ with open('$CRYPTO_SNAP_DIR/good.facts.json') as f:
     s = json.load(f)
 assert s['summary']['proved'] == 3
 assert s['summary']['stale'] == 0
-assert s['summary']['no_proof'] == 0
-assert s['summary']['not_eligible'] == 1
+assert s['summary']['missing'] == 0
+assert s['summary']['ineligible'] == 1
 assert s['summary']['total_functions'] == 4
 " 2>/dev/null; then
     echo "  ok  crypto_verify: summary shows 3 proved, 1 ineligible, 0 stale"
@@ -5925,7 +5925,7 @@ with open('$ELF_SNAP_DIR/good.json') as f:
 assert s['summary']['proved'] == 5
 assert s['summary']['stale'] == 0
 assert s['summary']['trusted'] == 2
-assert s['summary']['not_eligible'] == 1
+assert s['summary']['ineligible'] == 1
 assert s['summary']['total_functions'] == 8
 " 2>/dev/null; then
     echo "  ok  elf_header: summary shows 5 proved, 2 trusted, 1 ineligible"
@@ -7135,6 +7135,25 @@ else
 fi
 PASS=$((PASS + consistency_pass))
 fi # end section: consistency
+
+# === Terminology gate (full mode only) ===
+if section_active terminology; then
+echo ""
+echo "=== Terminology gate ==="
+if [ -f "scripts/tests/test_terminology_gate.sh" ]; then
+    term_output=$(bash scripts/tests/test_terminology_gate.sh 2>&1) || term_exit=$?
+    if [ "${term_exit:-0}" -gt 0 ]; then
+        echo "$term_output" | grep "FAIL:" | sed 's/^/  /'
+        FAIL=$((FAIL + 1))
+    else
+        echo "  Terminology gate passed"
+        PASS=$((PASS + 1))
+    fi
+else
+    echo "  SKIP: scripts/tests/test_terminology_gate.sh not found"
+    SKIP=$((SKIP + 1))
+fi
+fi # end section: terminology
 
 echo ""
 flush_jobs
