@@ -91,14 +91,16 @@ Completed proof-foundation milestones now live in [CHANGELOG.md](CHANGELOG.md): 
 6. make checker and codegen agree on `&mut T` states so exclusive-reference misuse cannot survive checking and reach a codegen crash
 7. add a dedicated adversarial `&mut T` regression suite: call-use, return-use, rebind/copy attempts, branch/match agreement, method chains, cleanup interactions, and aliasing edge cases
 8. keep the public safe-memory claim explicitly narrower until the `&mut T` closure work is complete, then widen it deliberately once checker, codegen, docs, and tests agree
-9. define the no-leak guarantee boundary explicitly for safe code, pull leak-risk reporting into the same closure phase, and distinguish the strong no-leak claim from weaker allocation/cleanup audit reporting outside that strongest safe subset
-10. make effect/trust proof boundaries explicit enough for broader proofs: capabilities, blocking/host calls, allocation, FFI, `trusted` code, and exactly where proofs stop versus where assumptions begin
-11. write the precise public theorem/guarantee statement for Concrete's safe and proof-backed subsets: what safe code guarantees, what proof-backed code guarantees, what trusted code invalidates, and which backend/target assumptions still remain
-12. define the language-semantics versus proof-semantics boundary explicitly: where the proof model matches the language exactly, where it is intentionally narrower, and how users should read that boundary
-13. make the proof-claim taxonomy explicit across docs, reports, and release criteria: enforced by checker, reported by compiler, proved in Lean, trusted assumption, and backend/target assumption
-14. define the user-facing proof contract explicitly: what a proof artifact means, when it is stale, what invalidates it, what compatibility is promised, and what “proved” does and does not mean for users
-15. add a safe-memory regression checklist artifact that tracks the hard cases, the current checker behavior, the doc claim, the test coverage, and the remaining proof-facing gap in one place
-16. build dedicated memory-model pressure tests, adversarial regressions, and examples that force the checker and docs to agree on the hard cases: field/substructure borrows, array/slice element borrows, borrow across control-flow joins, owner invalidation patterns, and borrow-heavy container code
+9. add a dedicated `&mut T` closure checklist artifact: intended semantics, checker behavior, codegen assumptions, adversarial tests, open gaps, and current public-claim status all tracked in one place
+10. add a no-codegen-crash regression rule for safe-subset ownership mistakes: checker/codegen mismatches like the `&mut T` gap must become compiler errors, never late crashes
+11. define the no-leak guarantee boundary explicitly for safe code, pull leak-risk reporting into the same closure phase, and distinguish the strong no-leak claim from weaker allocation/cleanup audit reporting outside that strongest safe subset
+12. make effect/trust proof boundaries explicit enough for broader proofs: capabilities, blocking/host calls, allocation, FFI, `trusted` code, and exactly where proofs stop versus where assumptions begin
+13. write the precise public theorem/guarantee statement for Concrete's safe and proof-backed subsets: what safe code guarantees, what proof-backed code guarantees, what trusted code invalidates, and which backend/target assumptions still remain
+14. define the language-semantics versus proof-semantics boundary explicitly: where the proof model matches the language exactly, where it is intentionally narrower, and how users should read that boundary
+15. make the proof-claim taxonomy explicit across docs, reports, and release criteria: enforced by checker, reported by compiler, proved in Lean, trusted assumption, and backend/target assumption
+16. define the user-facing proof contract explicitly: what a proof artifact means, when it is stale, what invalidates it, what compatibility is promised, and what “proved” does and does not mean for users
+17. add a safe-memory regression checklist artifact that tracks the hard cases, the current checker behavior, the doc claim, the test coverage, and the remaining proof-facing gap in one place
+18. build dedicated memory-model pressure tests, adversarial regressions, and examples that force the checker and docs to agree on the hard cases: field/substructure borrows, array/slice element borrows, borrow across control-flow joins, owner invalidation patterns, and borrow-heavy container code
 17. make compiler artifacts and reports deterministic/reproducible before CI evidence becomes central: the same source and toolchain inputs should produce the same facts, fingerprints, obligations, reports, and codegen outputs unless a deliberate nondeterministic mode is requested
 18. add a deterministic artifact regression suite over facts, fingerprints, obligations, reports, and snapshots so artifact drift is caught as a compiler bug rather than discovered informally
 19. add compiler self-consistency checks over artifact families: proof status, obligations, diagnostics, reports, facts, and fingerprints should be checked for internal agreement instead of trusting renderers not to drift
@@ -172,15 +174,17 @@ Completed proof-foundation milestones now live in [CHANGELOG.md](CHANGELOG.md): 
 64. stabilize the provable subset as an explicit user-facing target
 65. define public release criteria for the provable subset: supported constructs, unsupported constructs, trust assumptions, proof artifact stability expectations, and what evidence claims users may rely on semantically
 66. stabilize proof artifact/schema compatibility alongside the fact/query schema: proof-status, obligations, extraction, traceability, fingerprints, spec identifiers, and proof identifiers need explicit compatibility rules before external users or tools depend on them
-67. support artifact-driven user-program proofs end-to-end
-68. define the user proof-authoring and maintenance workflow explicitly: how a user writes/updates specs and proofs, regenerates artifacts, diagnoses stale or blocked proofs, and lands proof-preserving refactors without reading compiler internals
-69. make proof extraction and obligation generation scale to larger projects without collapsing usability: measure cost, identify bottlenecks, and keep the proof workflow tractable as the codebase grows
-70. add proof replay/caching on top of the artifact model so unchanged proof targets, fingerprints, and obligations do not have to be recomputed or revalidated from scratch in every workflow
-71. push selected compiler-preservation proofs where they protect evidence claims
-72. evaluate contracts / source-level preconditions only after Lean-attached specs, obligations, diagnostics, the registry work, and the explicit ProofCore boundary are real
-73. evaluate loop invariants only after specs and proof obligations are real
-74. evaluate ghost/proof-only code only after a proof-backed example needs it and the erasure story is explicit
-75. pull research-gated language features into implementation only when a current example or proof needs them
+67. validate proof attachments against actual Lean symbols and theorem identities: fabricated proof names, missing theorem references, and mismatched spec/theorem pairs must fail explicitly instead of surviving as registry-shaped metadata
+68. add end-to-end Lean attachment regression coverage: registry entries, proof names, theorem identities, extracted proof targets, and stale detection should be tested together so the Lean bridge is a checked boundary rather than a naming convention
+69. support artifact-driven user-program proofs end-to-end
+70. define the user proof-authoring and maintenance workflow explicitly: how a user writes/updates specs and proofs, regenerates artifacts, diagnoses stale or blocked proofs, and lands proof-preserving refactors without reading compiler internals
+71. make proof extraction and obligation generation scale to larger projects without collapsing usability: measure cost, identify bottlenecks, and keep the proof workflow tractable as the codebase grows
+72. add proof replay/caching on top of the artifact model so unchanged proof targets, fingerprints, and obligations do not have to be recomputed or revalidated from scratch in every workflow
+73. push selected compiler-preservation proofs where they protect evidence claims
+74. evaluate contracts / source-level preconditions only after Lean-attached specs, obligations, diagnostics, the registry work, and the explicit ProofCore boundary are real
+75. evaluate loop invariants only after specs and proof obligations are real
+76. evaluate ghost/proof-only code only after a proof-backed example needs it and the erasure story is explicit
+77. pull research-gated language features into implementation only when a current example or proof needs them
 76. define optimization policy before substantial backend work: allowed optimizations, evidence-preservation expectations, debug/release behavior, and report/codegen validation expectations
 77. research miscompile-focused differential validation before implementing it broadly: identify trustworthy oracles, artifact/codegen consistency checks, backend sanity checks, and the smallest high-value wrong-code detection corpus
 78. research optimization/debug transparency before deeper backend work: which transformations need explainable dumps, which passes need validation hooks, and how optimized/unoptimized evidence should be related without overclaiming
