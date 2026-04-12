@@ -200,20 +200,24 @@ Completed proof-foundation milestones now live in [CHANGELOG.md](CHANGELOG.md): 
 84. add cross-backend validation if a second backend lands
 85. add source-level debug-info support when codegen maturity becomes the bottleneck
 86. implement incremental compilation artifacts after report/proof/policy/interface artifacts are well-shaped: parsed/resolved/typed/lowered caches, dependency keys, invalidation rules, fact/proof invalidation, and clear rebuild explanations
-87. split interface artifacts from body artifacts at package/workspace scale
-88. research module-cycle and interface-hygiene enforcement before hardening it at package scale: import-cycle policy, interface/body mismatch handling, invalidation boundaries, and package-facing visibility rules
-89. design and parse the package manifest
-90. add version constraints, dependency resolution, and a lockfile
-91. add workspace and multi-package support
-92. add package-aware test selection
-93. validate cross-target FFI/ABI from package boundaries
-94. add module/package authority budgets after package graphs are real
-95. define provenance-aware publishing before public package distribution
-96. define package/dependency trust policy explicitly: how dependencies summarize trusted assumptions, how trust widens across package boundaries, how package-level evidence is reviewed, and how trust inheritance is made visible
-97. add compiler-as-service / editor / LSP support after diagnostics and facts are structured; expose parser/checker/report/query entrypoints without forcing full executable compilation
-98. define the LSP/editor feature scope explicitly: go-to-definition, hover/type info, diagnostics, formatting, rename, code actions, and fact/proof-aware language features
-99. add fact/proof-aware editor UX: capability/evidence hover, predictable/proof status per function, and jump/link surfaces for obligations, extraction, and traceability
-100. add a small human-friendly artifact viewer UX (CLI/TUI/web) for facts, diff, evidence, and proof state once the JSON/schema surfaces stabilize
+87. add clean-build versus incremental-build equivalence checks: the same source and toolchain state must produce identical facts, obligations, diagnostics, reports, and codegen outputs whether built from scratch or through incremental caches
+88. add compiler-process resource-hygiene checks for long-running workflows: repeated report/query/snapshot/incremental runs should not leak memory, file descriptors, temp artifacts, or subprocess state
+89. turn crash-repro tooling into a real reducer/minimizer workflow for parser/checker/proof/codegen failures so regressions can be shrunk automatically into stable repro cases
+90. define a canonical semantic test matrix: every important language rule and artifact guarantee should map to positive, negative, adversarial, and artifact-level regression coverage
+91. split interface artifacts from body artifacts at package/workspace scale
+92. research module-cycle and interface-hygiene enforcement before hardening it at package scale: import-cycle policy, interface/body mismatch handling, invalidation boundaries, and package-facing visibility rules
+93. design and parse the package manifest
+94. add version constraints, dependency resolution, and a lockfile
+95. add workspace and multi-package support
+96. add package-aware test selection
+97. validate cross-target FFI/ABI from package boundaries
+98. add module/package authority budgets after package graphs are real
+99. define provenance-aware publishing before public package distribution
+100. define package/dependency trust policy explicitly: how dependencies summarize trusted assumptions, how trust widens across package boundaries, how package-level evidence is reviewed, and how trust inheritance is made visible
+101. add compiler-as-service / editor / LSP support after diagnostics and facts are structured; expose parser/checker/report/query entrypoints without forcing full executable compilation
+102. define the LSP/editor feature scope explicitly: go-to-definition, hover/type info, diagnostics, formatting, rename, code actions, and fact/proof-aware language features
+103. add fact/proof-aware editor UX: capability/evidence hover, predictable/proof status per function, and jump/link surfaces for obligations, extraction, and traceability
+104. add a small human-friendly artifact viewer UX (CLI/TUI/web) for facts, diff, evidence, and proof state once the JSON/schema surfaces stabilize
 101. add dependency auditing for capability, allocation, FFI, trust, evidence, predictability, and proof-obligation drift
 102. add release / compatibility discipline when external users depend on the language
 103. define explicit language/versioning/deprecation policy across syntax, stdlib APIs, and proof/fact artifacts so users know what stability guarantees exist and how removals happen
