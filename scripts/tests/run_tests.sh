@@ -884,6 +884,9 @@ run_ok "$TESTDIR/adversarial_mut_ref_branch_neither.con" 15
 run_ok "$TESTDIR/adversarial_mut_ref_param_multi_use.con" 12
 run_ok "$TESTDIR/adversarial_mut_ref_deref_then_call.con" 16
 run_ok "$TESTDIR/adversarial_mut_ref_loop_deref.con" 5
+run_ok "$TESTDIR/adversarial_mut_ref_nested_borrow.con" 32
+run_ok "$TESTDIR/adversarial_mut_ref_param_return.con" 15
+run_ok "$TESTDIR/adversarial_mut_ref_method_on_owner.con" 13
 
 # Capability polymorphism
 run_ok "$TESTDIR/cap_poly.con" 42
@@ -1207,6 +1210,8 @@ run_err "$TESTDIR/error_mut_ref_call_then_deref.con" "used after move"
 run_err "$TESTDIR/error_mut_ref_use_after_call.con" "used after move"
 run_err "$TESTDIR/error_mut_ref_branch_disagree.con" "consumed in one branch"
 run_err "$TESTDIR/error_mut_ref_loop_consume.con" "inside a loop"
+run_err "$TESTDIR/error_mut_ref_rebind_then_use.con" "cannot escape"
+run_err "$TESTDIR/error_mut_ref_method_on_borrow_ref.con" "used after move"
 # Bitwise errors
 run_err "$TESTDIR/error_bitwise_float.con" "type mismatch"
 # Print errors
