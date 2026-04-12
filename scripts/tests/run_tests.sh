@@ -887,6 +887,8 @@ run_ok "$TESTDIR/adversarial_mut_ref_loop_deref.con" 5
 run_ok "$TESTDIR/adversarial_mut_ref_nested_borrow.con" 32
 run_ok "$TESTDIR/adversarial_mut_ref_param_return.con" 15
 run_ok "$TESTDIR/adversarial_mut_ref_method_on_owner.con" 13
+run_ok "$TESTDIR/adversarial_mut_ref_return_in_borrow.con" 15
+run_ok "$TESTDIR/adversarial_mut_ref_return_deref_in_borrow.con" 43
 
 # Capability polymorphism
 run_ok "$TESTDIR/cap_poly.con" 42

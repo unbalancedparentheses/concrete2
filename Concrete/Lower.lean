@@ -73,6 +73,9 @@ structure LowerState where
       the alloca instead of phi-transporting whole struct values. -/
   promotedAllocas : List (String × String × Ty) := []
   scopeStack : List ScopeFrame := []
+  /-- True after terminateBlock, cleared by startBlock. Used to detect
+      dead code after early returns inside borrow blocks. -/
+  blockTerminated : Bool := false
 
 abbrev LowerM := ExceptT String (StateM LowerState)
 
@@ -114,11 +117,11 @@ private def insertStoreBeforeTerm (blockLabel : String) (val : SVal) (dst : SVal
 private def terminateBlock (term : STerm) : LowerM Unit := do
   let s ← getState
   let block : SBlock := { label := s.currentLabel, insts := s.currentInsts, term := term }
-  setState { s with blocks := s.blocks ++ [block], currentInsts := [] }
+  setState { s with blocks := s.blocks ++ [block], currentInsts := [], blockTerminated := true }
 
 private def startBlock (label : String) : LowerM Unit := do
   let s ← getState
-  setState { s with currentLabel := label }
+  setState { s with currentLabel := label, blockTerminated := false }
 
 private def setVar (name : String) (val : SVal) : LowerM Unit := do
   let s ← getState
@@ -1704,22 +1707,28 @@ partial def lowerStmt (stmt : CStmt) : LowerM Unit := do
     -- Create a memory slot for the borrowed variable, set ref to point to it.
     -- The ref variable is stored with the full reference type (refMut T / ref T)
     -- so that when passed as a function argument, the correct pointer type is emitted.
+    -- The alloca is hoisted to the entry block so it dominates all uses, including
+    -- across early returns inside the borrow block body.
     let curVal ← lookupVar var
     let innerTy := match refTy with
       | .ref t | .refMut t | .ptrMut t | .ptrConst t => t
       | _ => refTy
     let slot ← freshReg "borrow."
-    emit (.alloca slot innerTy)
+    emitEntryAlloca (.alloca slot innerTy)
     match curVal with
     | some cv => emit (.store cv (.reg slot innerTy))
     | none => pure ()
     setVar ref (.reg slot refTy)
     lowerStmts body
-    -- For mutable borrows, load back the value and update the original variable
+    -- For mutable borrows, load back the value and update the original variable.
+    -- Skip write-back if the body terminated early (return/break) — the write-back
+    -- would be dead code and reference registers from non-dominating blocks.
     if isMut then
-      let loadBack ← freshReg "wb."
-      emit (.load loadBack (.reg slot innerTy) innerTy)
-      setVar var (.reg loadBack innerTy)
+      let s ← getState
+      if !s.blockTerminated then
+        let loadBack ← freshReg "wb."
+        emit (.load loadBack (.reg slot innerTy) innerTy)
+        setVar var (.reg loadBack innerTy)
 
 partial def lowerStmts (stmts : List CStmt) : LowerM Unit := do
   pushScope .block

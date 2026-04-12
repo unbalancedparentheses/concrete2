@@ -99,21 +99,16 @@ Creating `&mut *r` to pass a sub-borrow without consuming `r`. This would allow 
 
 Storing `&mut T` inside a struct. The struct becomes linear (it contains a linear field). The checker must track that consuming the struct consumes the `&mut T` inside it.
 
-### Return inside borrow block (codegen bug)
+### Return inside borrow block (fixed)
 
-`return` inside a `borrow mut` block causes an SSA verification error: `use of %borrow.0 before its definition in the same block`. The alloca for the borrow is emitted in the entry block, but early return disrupts the block ordering so the use appears before the definition. This is a real codegen bug in the lowering/SSA emission pipeline, not a checker issue. Reproducer:
+Previously, `return` inside a `borrow mut` block caused an SSA verification error. The borrow write-back was emitted as dead code after the return, creating a duplicate block label that confused the verifier.
 
-```concrete
-fn main() -> Int {
-    let mut n: Int = 10;
-    borrow mut n as r in R {
-        return *r;  // SSA verification error
-    }
-    return 0;
-}
-```
+Fixed by:
+1. Adding a `blockTerminated` flag to `LowerState`, set in `terminateBlock`, cleared in `startBlock`.
+2. Skipping the borrow write-back when `blockTerminated` is true (dead code after early return).
+3. Hoisting the borrow alloca to the entry block via `emitEntryAlloca` so it dominates all uses.
 
-Workaround: assign to a variable inside the borrow block, return after block exit.
+Tests: `adversarial_mut_ref_return_in_borrow.con`, `adversarial_mut_ref_return_deref_in_borrow.con`.
 
 ---
 
