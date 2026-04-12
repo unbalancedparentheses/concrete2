@@ -1113,6 +1113,26 @@ run_ok "$TESTDIR/hardening_cross_module_trait.con" 42
 run_ok "$TESTDIR/hardening_cross_module_type_alias.con" 42
 run_ok "$TESTDIR/struct_enum_field_vec.con" 123
 
+# Pressure tests: memory-model (item 6)
+run_ok "$TESTDIR/pressure_borrow_in_loop.con" 10
+run_ok "$TESTDIR/pressure_interleaved_linear.con" 30
+run_ok "$TESTDIR/pressure_nested_linear_struct.con" 7
+run_ok "$TESTDIR/pressure_branch_create_consume.con" 10
+run_ok "$TESTDIR/pressure_match_linear_arms.con" 42
+
+# Pressure tests: borrow/aliasing (item 7)
+run_ok "$TESTDIR/pressure_sequential_mut_ref.con" 18
+run_ok "$TESTDIR/pressure_param_ref_multiuse.con" 9
+run_ok "$TESTDIR/pressure_borrow_then_consume.con" 31
+
+# Pressure tests: cleanup/leak-boundary (item 8)
+run_ok "$TESTDIR/pressure_defer_nested.con" 42
+run_ok "$TESTDIR/pressure_defer_in_loop.con" 20
+run_ok "$TESTDIR/pressure_defer_with_borrow.con" 42
+run_ok "$TESTDIR/pressure_destroy_wrapper.con" 42
+run_ok "$TESTDIR/pressure_linear_helper_consume.con" 42
+run_ok "$TESTDIR/pressure_heap_defer_free.con" 42
+
 fi # end section: positive
 
 echo ""
@@ -1217,6 +1237,12 @@ run_err "$TESTDIR/error_mut_ref_method_on_borrow_ref.con" "used after move"
 # Memory regression checklist gap-closing tests
 run_err "$TESTDIR/error_continue_skip_linear.con" "continue would skip unconsumed linear"
 run_err "$TESTDIR/error_mut_borrow_immutable.con" "cannot take mutable borrow of immutable"
+# Pressure error tests: cleanup/leak-boundary (item 8)
+run_err "$TESTDIR/pressure_err_defer_then_move.con" "reserved by defer"
+run_err "$TESTDIR/pressure_err_heap_leak.con" "was never consumed"
+run_err "$TESTDIR/pressure_err_linear_no_destroy.con" "was never consumed"
+run_err "$TESTDIR/pressure_err_destroy_then_use.con" "used after move"
+run_err "$TESTDIR/pressure_err_branch_leak.con" "consumed in one branch"
 # Bitwise errors
 run_err "$TESTDIR/error_bitwise_float.con" "type mismatch"
 # Print errors

@@ -207,8 +207,8 @@ After an `--affected` run, the summary shows which files triggered which section
 | Metric | Value |
 |--------|-------|
 | Pass-level tests | <1s (32 tests, no I/O) |
-| Fast suite (`--fast`) | ~25-35s (~1383 tests, parallel) |
-| Full suite (`--full`) | ~40-50s (~1410 tests, 1 skipped, includes network, cross-target, perf) |
+| Fast suite (`--fast`) | ~25-35s (~1427 tests, parallel) |
+| Full suite (`--full`) | ~40-50s (~1450 tests, 1 skipped, includes network, cross-target, perf) |
 | Cache hit rate | 26/57 compilations saved per fast run |
 | Compiler build | ~30-45s (`lake build`) |
 | lli-accelerated suite | ~12s (when `LLI_PATH` is set) |
@@ -392,3 +392,38 @@ Each mutation takes 30-60s (rebuild + test). Full run: ~15 minutes. Not part of 
 - `phase3_diag_no_cascade.con` — single undeclared variable produces <5 errors
 - `phase3_diag_hint_quality.con` — capability error includes "hint:" text
 - `phase3_diag_type_mismatch.con` — error includes "expected" and "got"
+
+### Phase 4: Memory/Ownership Pressure Tests (complete)
+
+Goal: exercise the checker against the hardest memory/ownership cases — not just isolated error tests but composed patterns that force the checker, docs, and proof boundaries to agree.
+
+#### 4.1 Memory-model pressure (5 tests)
+
+- `pressure_borrow_in_loop.con` — fresh borrow block per loop iteration
+- `pressure_interleaved_linear.con` — two linear vars with interleaved borrow/consumption
+- `pressure_nested_linear_struct.con` — nested linear struct consumed whole
+- `pressure_branch_create_consume.con` — linear vars created/consumed within if/else branches
+- `pressure_match_linear_arms.con` — all match arms consuming same pre-existing linear var
+
+#### 4.2 Borrow/aliasing pressure (3 tests)
+
+- `pressure_sequential_mut_ref.con` — sequential deref write, deref read, deref write, then call on borrow-block `&mut T`
+- `pressure_param_ref_multiuse.con` — parameter `&mut T` ref passed through multi-function chain
+- `pressure_borrow_then_consume.con` — borrow linear struct for inspection, unfreeze, then consume
+
+#### 4.3 Cleanup/leak-boundary pressure (11 tests: 6 positive + 5 negative)
+
+Positive:
+- `pressure_defer_nested.con` — two defers in LIFO order
+- `pressure_defer_in_loop.con` — defer in function called from loop
+- `pressure_defer_with_borrow.con` — defer combined with borrow block
+- `pressure_destroy_wrapper.con` — Destroy trait satisfies linearity
+- `pressure_linear_helper_consume.con` — multi-hop linear consumption chain
+- `pressure_heap_defer_free.con` — heap alloc with deferred free (arrow access while reserved)
+
+Negative (error cases):
+- `pressure_err_defer_then_move.con` — move reserved-by-defer variable
+- `pressure_err_heap_leak.con` — heap pointer never freed
+- `pressure_err_linear_no_destroy.con` — linear struct goes out of scope
+- `pressure_err_destroy_then_use.con` — use after destroy consumption
+- `pressure_err_branch_leak.con` — consumed in one branch, leaked in other

@@ -22,6 +22,8 @@ For the public guarantee statement, see [GUARANTEE_STATEMENT.md](GUARANTEE_STATE
 - `error_borrow_frozen.con` — access frozen owner
 - `error_escape_field.con` — field-path escape
 - `hardening_borrow_edge_cases.con` — mixed borrow patterns
+- **pressure_borrow_then_consume.con** — borrow for inspection then consume after unfreeze
+- **pressure_nested_linear_struct.con** — nested linear struct consumed whole
 
 **Doc claim:** MEMORY_GUARANTEES.md §"Where the Safe Claim Has Boundaries" — "Whole-value borrows only." MEMORY_SEMANTICS.md §5 — "no partial borrows."
 
@@ -75,6 +77,9 @@ For the public guarantee statement, see [GUARANTEE_STATEMENT.md](GUARANTEE_STATE
 - `error_enum_match_disagree.con` — match arm disagree
 - `error_mut_ref_branch_disagree.con` — `&mut T` branch disagree
 - `bug_int_match_disagree.con` — integer match disagree (regression)
+- **pressure_branch_create_consume.con** — linear created/consumed within branches
+- **pressure_match_linear_arms.con** — all match arms consuming pre-existing linear
+- **pressure_err_branch_leak.con** — consumed in one branch, leaked in other
 
 **Doc claim:** MEMORY_SEMANTICS.md §7. MEMORY_GUARANTEES.md property 8.
 
@@ -118,6 +123,8 @@ For the public guarantee statement, see [GUARANTEE_STATEMENT.md](GUARANTEE_STATE
 **Current checker behavior:** Two-kind model enforced. Borrow-block refs tracked in `env.borrowRefs`. Function parameter refs not in `borrowRefs`, so not consumed on call.
 
 **Test coverage:** 11 adversarial + 8 error tests (see §5 in inventory above).
+- **pressure_sequential_mut_ref.con** — sequential deref read/write then call on borrow-block ref
+- **pressure_param_ref_multiuse.con** — parameter &mut ref across multiple function calls
 
 **Doc claim:** MEMORY_GUARANTEES.md property 11. MUT_REF_SEMANTICS.md. MUT_REF_CLOSURE.md.
 
@@ -148,6 +155,17 @@ For the public guarantee statement, see [GUARANTEE_STATEMENT.md](GUARANTEE_STATE
 - `error_trusted_leak.con` — trusted code must consume
 - `error_destroy_reserved.con` — destroy reserved variable
 - `error_break_linear_skip.con` — break skips unconsumed
+- **pressure_defer_nested.con** — two defers in LIFO order
+- **pressure_defer_in_loop.con** — defer in function called from loop
+- **pressure_defer_with_borrow.con** — defer combined with borrow block
+- **pressure_destroy_wrapper.con** — Destroy trait consumption
+- **pressure_linear_helper_consume.con** — multi-hop linear consumption chain
+- **pressure_heap_defer_free.con** — heap alloc with deferred free
+- **pressure_err_defer_then_move.con** — move reserved-by-defer variable (error)
+- **pressure_err_heap_leak.con** — heap pointer never freed (error)
+- **pressure_err_linear_no_destroy.con** — linear struct leaked (error)
+- **pressure_err_destroy_then_use.con** — use after destroy (error)
+- **pressure_err_branch_leak.con** — consumed in one branch only (error)
 
 **Doc claim:** MEMORY_GUARANTEES.md property 2, "No-Leak Guarantee Boundary." MEMORY_SEMANTICS.md §9.
 
@@ -192,6 +210,8 @@ For the public guarantee statement, see [GUARANTEE_STATEMENT.md](GUARANTEE_STATE
 - `error_break_linear_skip.con` — break skips linear
 - `adversarial_mut_ref_loop_deref.con` — deref in loop (allowed)
 - `adversarial_for_loop_linear.con` — linear in for loop
+- **pressure_borrow_in_loop.con** — fresh borrow block per loop iteration
+- **pressure_interleaved_linear.con** — two linear vars with interleaved borrow/consumption
 
 **Doc claim:** MEMORY_GUARANTEES.md property 6. MEMORY_SEMANTICS.md §7.
 
