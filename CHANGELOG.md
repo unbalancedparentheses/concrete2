@@ -10,6 +10,105 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Memory-model, borrow/aliasing, and cleanup/leak-boundary pressure test sets land
+
+**19 dedicated pressure tests covering three categories:** the project now has focused pressure tests that exercise the checker and docs against hard cases:
+
+- **Memory-model (5 tests):** fresh borrow per loop iteration, interleaved linear variables, nested linear struct consumption, branch-scoped linear creation/consumption, match arms consuming pre-existing linear values
+- **Borrow/aliasing (3 tests):** sequential deref read/write then call on borrow-block `&mut T`, parameter `&mut T` ref across multiple function calls, borrow-for-inspection then consume after unfreeze
+- **Cleanup/leak-boundary (11 tests, 6 positive + 5 negative):** nested defer LIFO ordering, defer in loop-called functions, defer combined with borrow blocks, Destroy-trait consumption, multi-hop helper consumption chains, heap alloc with deferred free, plus error cases for move-after-defer, heap leak, linear leak, use-after-destroy, and branch-disagree leak
+
+**Both positive and negative tests:** the cleanup/leak-boundary set includes error cases that prove the checker catches cleanup/leak mistakes, not just happy-path programs.
+
+**MEMORY_REGRESSION_CHECKLIST.md updated:** all eight checklist categories now reference the new pressure tests in their test inventories.
+
+### Memory/reference semantics, `&mut T` closure, and the first explicit no-leak boundary land
+
+**The safe-memory claim is now centralized and checker-matching:** Concrete now has a canonical memory/reference semantics document in [docs/MEMORY_SEMANTICS.md](docs/MEMORY_SEMANTICS.md), an explicit public guarantee statement in [docs/MEMORY_GUARANTEES.md](docs/MEMORY_GUARANTEES.md), and a dedicated `&mut T` closure tracker in [docs/MUT_REF_CLOSURE.md](docs/MUT_REF_CLOSURE.md). This is the point where the memory story stopped being scattered invariants and became one checked claim surface.
+
+**`&mut T` soundness-critical closure landed:** the compiler now distinguishes two real `&mut T` modes:
+
+- borrow-block `&mut T` refs are scoped linear views and are consumed on function call / return
+- function-parameter `&mut T` refs are reborrowable and not consumed on ordinary call use
+
+This closes the earlier checker/codegen mismatch where borrow-block `&mut T` refs could be reused in ways that later broke lowering/codegen.
+
+**Checker/codegen agreement was hardened, not just documented:** this arc included:
+
+- checker enforcement for borrow-block `&mut T` consumption
+- lowering fixes for reference-typed borrow variables instead of value-typed temporaries
+- the early-return-inside-borrow-block codegen fix
+- adversarial `&mut T` coverage for call-use, branch agreement, loop behavior, deref-vs-consume behavior, nested borrow blocks, method-call behavior, and return-in-borrow paths
+
+This is the point where the compiler can honestly say safe-subset ownership mistakes must fail early with diagnostics rather than survive checking and crash later in codegen.
+
+**The first explicit strong no-leak boundary is now stated:** Concrete now makes a real compile-time no-leak claim for the strong safe subset:
+
+- linear values must be consumed or reserved by scope exit
+- `defer` reserves cleanup in a way the checker tracks explicitly
+- the docs now separate this strong guarantee from weaker future audit/reporting around trusted, FFI, arena, and raw-pointer boundaries
+
+**What changed strategically:** the next work is no longer “finish the basic safe-memory story.” It is:
+
+- make effect/trust proof boundaries explicit
+- write the precise theorem/guarantee statement
+- define the language-semantics vs proof-semantics boundary
+- define the user-facing proof contract
+
+### First proof-foundation arc lands end-to-end
+
+**Two real proof-backed flagship examples:** the project now has two honest proof-backed examples that exercise different parts of the thesis:
+
+- a crypto-adjacent authenticated-tag core used as a second proof-backed domain
+- an ELF header validator with a real file-I/O shell, trusted POSIX boundary, and proved pure validation core
+
+These examples are not just demos. They carry snapshots, drift detection, registry-backed proof names, and adversarial tests, so they function as regression targets for the proof story.
+
+**Eligibility-first proof pipeline:** proof processing no longer starts from ad hoc report/extraction logic. The compiler now:
+
+1. determines proof eligibility first
+2. explains source and profile exclusions explicitly
+3. lowers only the resulting proof-facing fragment into `ProofCore`
+
+That closes the gap between “report what looks extractable” and “have an explicit provable subset.”
+
+**Explicit `Core -> ProofCore` compiler boundary:** `ProofCore` is now a real pass and the architectural owner of:
+
+- proof eligibility
+- extracted and normalized proof terms
+- unsupported-construct classification
+- raw body fingerprints
+- call graph and recursion analysis
+- spec attachment
+- proof obligations
+
+`Report.lean` is now a consumer of those artifacts rather than a shadow owner of proof semantics.
+
+**Normalized proof target + typed proof identity:** the proof pipeline now has:
+
+- normalized `PExpr` proof targets
+- typed `FunctionIdentity`
+- typed `SpecIdentity`
+- typed `SpecAttachment`
+- registry ownership and validation inside the proof pipeline
+
+This separates proof attachment *identity* from proof *status*, which is the right foundation for later diagnostics, compatibility guarantees, and proof maintenance tooling.
+
+**Mechanical obligations land as first-class artifacts:** proof obligations are now generated inside `ProofCore` rather than being mostly reconstructed in report code. The pipeline now carries:
+
+- stable obligation identity
+- mechanically derived obligation status
+- dependency tracking from the qualified call graph
+- read-only report/fact/query consumption of obligation artifacts
+
+This is the point where the proof system stops being “proof names plus reports” and becomes a real artifact-producing compiler workflow.
+
+**What changed strategically:** Concrete now has a serious Lean 4 proof architecture for a narrow but real subset. The next work is not “invent the proof pipeline” anymore. It is:
+
+- close the remaining first-slice obligation-model correctness gaps
+- make proof-oriented diagnostics first-class
+- make memory/reference and effect/trust proof boundaries explicit enough to broaden the provable subset honestly
+
 ### Stable attached spec identities land as a real proof-pipeline layer
 
 **Typed proof attachment model:** proof/spec attachment is no longer just free strings reconstructed in multiple report paths. The proof pipeline now has explicit identity types for:
