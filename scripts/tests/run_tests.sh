@@ -238,7 +238,7 @@ resolve_affected_sections() {
 
 # Resolve which sections are active based on MODE
 case "$MODE" in
-    full)    SECTION="passlevel,positive,negative,testflag,report,codegen,O2,stdlib,collection,xtarget,perf" ;;
+    full)    SECTION="passlevel,positive,negative,testflag,report,codegen,O2,stdlib,collection,xtarget,perf,determinism" ;;
     fast)    SECTION="passlevel,positive,negative,testflag,report,codegen,O2,stdlib,collection" ;;
     stdlib)  SECTION="stdlib,collection" ;;
     stdlib-module) SECTION="stdlib" ;;
@@ -7086,6 +7086,28 @@ else
     SKIP=$((SKIP + 1))
 fi
 fi # end section: perf
+
+# === Determinism regression check (full mode only) ===
+if section_active determinism; then
+echo ""
+echo "=== Determinism regression check ==="
+if [ -f "scripts/tests/test_determinism.sh" ]; then
+    det_output=$(bash scripts/tests/test_determinism.sh --quick 2>&1) || det_exit=$?
+    det_pass=$(echo "$det_output" | grep "passed:" | awk '{print $2}')
+    det_fail=$(echo "$det_output" | grep "failed:" | awk '{print $2}')
+    if [ "${det_fail:-0}" -gt 0 ]; then
+        echo "  FAIL: $det_fail determinism regressions detected"
+        echo "$det_output" | grep "FAIL:" | sed 's/^/    /'
+        FAIL=$((FAIL + det_fail))
+    else
+        echo "  All ${det_pass:-0} determinism checks passed"
+    fi
+    PASS=$((PASS + ${det_pass:-0}))
+else
+    echo "  SKIP: scripts/tests/test_determinism.sh not found"
+    SKIP=$((SKIP + 1))
+fi
+fi # end section: determinism
 
 echo ""
 flush_jobs

@@ -10,6 +10,18 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Compiler determinism verified and regression suite added
+
+**All compiler output paths are deterministic:** a comprehensive audit verified that all 17 report modes, all query modes, all IR emit modes (LLVM, SSA, Core), compiled binaries, and snapshot JSON (excluding the intentional timestamp field) produce byte-for-byte identical output across consecutive runs.
+
+**Why it works:** the compiler uses `List`-based collections throughout (no HashMap iteration in output paths), explicit sorting where needed (`CapSet.normalize`), deterministic register naming via monotonic counters, and no environment-dependent data in artifacts.
+
+**Deterministic artifact regression suite:** `scripts/tests/test_determinism.sh` verifies reproducibility across 12 representative programs × 27 output modes = 324 checks. Integrated into `run_tests.sh --full` as a quick 81-check gate.
+
+**Single known non-deterministic field:** the `timestamp` in snapshot JSON, which is intentional metadata. All tooling (`concrete diff`, the regression suite) strips it before comparison.
+
+See [docs/DETERMINISM.md](docs/DETERMINISM.md) for the full guarantee, verification methodology, and cross-version caveats.
+
 ### Unreachable checker error kinds audited and removed
 
 **Six dead error kinds pruned from Check.lean:** a checker audit determined that `breakInDefer`, `continueInDefer`, `assignToBorrowed`, `variableAlreadyMutBorrowed`, `cannotMutBorrowAlreadyMutBorrowed`, and `cannotImmBorrowMutBorrowed` were all structurally unreachable under the current language model:
