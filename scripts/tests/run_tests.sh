@@ -875,6 +875,7 @@ run_ok "$TESTDIR/adversarial_linear_field_read_no_consume.con" 90
 run_ok "$TESTDIR/adversarial_newtype_consume.con" 183
 run_ok "$TESTDIR/adversarial_heap_ownership.con" 360
 run_ok "$TESTDIR/adversarial_heap_defer_cleanup.con" 300
+run_ok "$TESTDIR/adversarial_linear_array.con" 0
 
 # Capability polymorphism
 run_ok "$TESTDIR/cap_poly.con" 42
@@ -1190,6 +1191,7 @@ run_err "$TESTDIR/error_enum_match_disagree.con" "match arms disagree"
 run_err "$TESTDIR/error_deep_branch_disagree.con" "consumed in one branch"
 run_err "$TESTDIR/error_borrow_consumed_var.con" "already moved"
 run_err "$TESTDIR/error_assign_frozen_by_borrow.con" "frozen by borrow block"
+run_err "$TESTDIR/error_linear_array_leak.con" "was never consumed"
 # Bitwise errors
 run_err "$TESTDIR/error_bitwise_float.con" "type mismatch"
 # Print errors
