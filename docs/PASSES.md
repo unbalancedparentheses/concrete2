@@ -346,6 +346,8 @@ ProofCore is a side-channel extraction — it does not sit in the compilation pi
 | DEP-PROVED | Dependencies only reference proved obligations |
 | DUP-NAME | No duplicate function names across entries and excluded |
 | DIAG-STATUS | Diagnostic kinds agree with obligation status |
+| ENTRY-OBL | Every entry has a corresponding obligation (no dropped obligations) |
+| EXCL-OBL | Every excluded function has a corresponding obligation |
 
 **Invariant established:** Proof-oriented fragment with internally consistent obligations, diagnostics, extraction results, and fingerprints. Machine-checked by `--report consistency`.
 
@@ -627,7 +629,7 @@ Each pass boundary has a different level of machine-checkability today. This tab
 | Check → Elab | No (Check is `Unit`-producing) | Type environment snapshot comparison |
 | Elab → CoreCheck | **Opt-in** (`--report verify`) | `verifyNoPlaceholders` exists but is not wired into the pipeline — only available via `--report verify`. `Ty.placeholder` legitimately survives in try/defer expressions (documented exception). Promoting to a pipeline gate requires fixing try/defer elaboration |
 | CoreCheck → ValidatedCore | **Partially** (opaque constructor) | Core IR semantic assertions: no capability violations, no type mismatches (re-check) |
-| ValidatedCore → ProofCore | **Yes** (`selfCheck`, 13 invariants) | Already machine-checked via `--report consistency` |
+| ValidatedCore → ProofCore | **Yes** (`selfCheck`, 15 invariants) | Already machine-checked via `--report consistency` |
 | ValidatedCore → Mono | **Yes** (`verifyPostMono`) | Hard gate: `Ty.typeVar` surviving monomorphization blocks compilation. Implemented in `Concrete/Verify.lean`, wired into `Pipeline.monomorphize` |
 | Mono → Lower | No (Lower input is trusted) | All generic calls resolved, no polymorphic function bodies |
 | Lower → SSAVerify | **Yes** (`ssaVerifyProgram`) | Already machine-checked: dominance, phi coverage, branch safety |

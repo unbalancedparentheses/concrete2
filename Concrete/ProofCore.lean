@@ -1465,9 +1465,25 @@ def ProofCore.selfCheck (pc : ProofCore) : List ConsistencyViolation :=
              , message := "diagnostic references function with no obligation" }
       else none
 
+  -- INV-12: Every entry must have a corresponding obligation (no dropped obligations)
+  let entryObl := pc.entries.filterMap fun e =>
+    match pc.obligations.find? fun o => o.functionId.qualName == e.qualName with
+    | some _ => none
+    | none =>
+      some { invariant := "ENTRY-OBL", function := e.qualName
+           , message := "entry has no corresponding obligation — obligation generation may have dropped this function" }
+
+  -- INV-13: Every excluded function must have a corresponding obligation
+  let excludedObl := pc.excluded.filterMap fun x =>
+    match pc.obligations.find? fun o => o.functionId.qualName == x.qualName with
+    | some _ => none
+    | none =>
+      some { invariant := "EXCL-OBL", function := x.qualName
+           , message := "excluded function has no corresponding obligation — obligation generation may have dropped this function" }
+
   oblKnown ++ oblStatus ++ provedExtracted ++ provedFp ++ staleFp
     ++ entryFp ++ extractUnsup ++ blockedUnsup ++ depProved
-    ++ dups.2 ++ diagStatus
+    ++ dups.2 ++ diagStatus ++ entryObl ++ excludedObl
 
 /-- Format consistency violations as a human-readable report. -/
 def ConsistencyViolation.render (vs : List ConsistencyViolation) : String :=

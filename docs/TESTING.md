@@ -432,7 +432,7 @@ Negative (error cases):
 
 Goal: verify that the compiler's internal data structures agree with each other — proof obligations match re-derivation, diagnostics agree with obligation status, extraction results are consistent with eligibility, and fingerprints are coherent across entries and obligations.
 
-`--report consistency` runs `ProofCore.selfCheck` with 13 cross-family invariants:
+`--report consistency` runs `ProofCore.selfCheck` with 15 cross-family invariants:
 
 - **OBL-KNOWN**: every obligation references a known function (entry or excluded)
 - **OBL-STATUS**: obligation status agrees with re-derivation via `deriveObligationStatus`
@@ -447,6 +447,8 @@ Goal: verify that the compiler's internal data structures agree with each other 
 - **DEP-PROVED**: dependencies only reference proved obligations
 - **DUP-NAME**: no duplicate function names across entries and excluded
 - **DIAG-STATUS**: diagnostic kinds agree with obligation status
+- **ENTRY-OBL**: every entry has a corresponding obligation (no dropped obligations)
+- **EXCL-OBL**: every excluded function has a corresponding obligation
 
 All 468 compilable test programs pass with zero violations. Integrated into `--full` mode.
 
