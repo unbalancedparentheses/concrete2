@@ -454,7 +454,7 @@ All 468 compilable test programs pass with zero violations. Integrated into `--f
 
 Goal: catch internal compiler invariant violations before bad state leaks downstream. Three verifier passes implemented in `Concrete/Verify.lean`:
 
-- **Post-Elab verifier** (`verifyNoPlaceholders`): detects `Ty.placeholder` surviving elaboration. Warning-level — 14 programs with try/defer expressions retain placeholder types (known elaboration gap, resolved during lowering). Wired into `Pipeline.coreCheck`.
+- **Post-Elab verifier** (`verifyNoPlaceholders`): detects `Ty.placeholder` surviving elaboration. Available only via `--report verify` (not wired into pipeline). 14 programs with try/defer expressions retain placeholder types — documented intentional exception, resolved during lowering.
 - **Post-Mono verifier** (`verifyPostMono`): hard gate — detects `Ty.typeVar` surviving monomorphization. Blocks compilation. Skips generic definitions (only checks monomorphized copies). Wired into `Pipeline.monomorphize`.
 - **LLVM IR validation** (`validateLLVMIR`): runs `llvm-as` on emitted `.ll` files before clang. Gracefully skips if llvm-as not on PATH. Wired into all four compilation paths.
 

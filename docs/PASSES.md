@@ -607,7 +607,7 @@ These are audit-oriented modes — they answer questions about what the program 
 | Declaration-level legality (trait/FFI/repr) | CoreCheck | Lower, EmitSSA |
 | Full type annotations | Elab | Mono, Lower, EmitSSA |
 | No type variables | Mono + `verifyPostMono` | Lower, EmitSSA (hard gate in Pipeline.monomorphize) |
-| No placeholder types (warning) | Elab + `verifyNoPlaceholders` | CoreCheck, Mono (warning-level; try/defer can retain placeholders) |
+| No placeholder types (opt-in) | `verifyNoPlaceholders` via `--report verify` | Not wired into pipeline; try/defer legitimately retain placeholders until lowering |
 | ProofCore self-consistency | ProofCore extraction | Report renderers, `--report consistency` |
 | Canonical status terminology | `ObligationStatus.canonical` | JSON facts, CLI reports, terminology gate |
 | SSA form / dominance | Lower, SSAVerify | SSACleanup, EmitSSA |
@@ -625,7 +625,7 @@ Each pass boundary has a different level of machine-checkability today. This tab
 | Parse → Resolve | No (Parse output is trusted) | Grammar conformance check, span coverage assertion |
 | Resolve → Check | No (Resolve output is trusted) | All identifiers in scope, no dangling references |
 | Check → Elab | No (Check is `Unit`-producing) | Type environment snapshot comparison |
-| Elab → CoreCheck | **Warning** (`verifyNoPlaceholders`) | Full Core IR well-formedness: all expressions typed, no surface AST remnants. Currently warning-level because `Ty.placeholder` legitimately survives in try/defer expressions |
+| Elab → CoreCheck | **Opt-in** (`--report verify`) | `verifyNoPlaceholders` exists but is not wired into the pipeline — only available via `--report verify`. `Ty.placeholder` legitimately survives in try/defer expressions (documented exception). Promoting to a pipeline gate requires fixing try/defer elaboration |
 | CoreCheck → ValidatedCore | **Partially** (opaque constructor) | Core IR semantic assertions: no capability violations, no type mismatches (re-check) |
 | ValidatedCore → ProofCore | **Yes** (`selfCheck`, 13 invariants) | Already machine-checked via `--report consistency` |
 | ValidatedCore → Mono | **Yes** (`verifyPostMono`) | Hard gate: `Ty.typeVar` surviving monomorphization blocks compilation. Implemented in `Concrete/Verify.lean`, wired into `Pipeline.monomorphize` |

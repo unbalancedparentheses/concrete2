@@ -98,8 +98,9 @@ def elaborate (resolved : ResolvedProgram) (summary : SummaryTable) : Except Dia
   | .ok coreModules => .ok { coreModules := canonicalizeProgram coreModules }
 
 /-- Validate elaborated Core IR.  This is the only way to construct a `ValidatedCore`.
-    Also runs the post-Elab verifier (no Ty.placeholder in the IR) as a warning —
-    placeholder can survive elaboration in try/defer expressions and is resolved by Mono. -/
+    Note: the post-Elab placeholder check (`verifyPostElab`) is **not** run here — it is
+    only available via `--report verify`. Placeholder legitimately survives elaboration
+    in try/defer expressions and is resolved during lowering. -/
 def coreCheck (elabProg : ElaboratedProgram) : Except Diagnostics ValidatedCore :=
   match coreCheckProgram elabProg.coreModules with
   | .error ds => .error ds
@@ -110,7 +111,7 @@ def coreCheck (elabProg : ElaboratedProgram) : Except Diagnostics ValidatedCore 
 def verifyPostElab (modules : List CModule) : Diagnostics :=
   (verifyNoPlaceholders modules).map fun d => { d with severity := .warning }
 
-/-- Monomorphize generic functions.  Runs the post-Mono verifier (no Ty.typeVar or Ty.placeholder). -/
+/-- Monomorphize generic functions.  Runs the post-Mono verifier (no Ty.typeVar). -/
 def monomorphize (vc : ValidatedCore) : Except Diagnostics MonomorphizedProgram :=
   match liftStringError "mono" (monoProgram vc.coreModules) with
   | .ok modules =>

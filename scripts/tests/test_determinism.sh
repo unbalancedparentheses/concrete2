@@ -117,11 +117,14 @@ for prog in "${PROGRAMS[@]}"; do
             "$TMPDIR_BASE/run2/${base}_${mode}.txt"
     done
 
-    # Test snapshot (strip timestamp before comparison)
+    # Test snapshot — strip timestamp before comparison.
+    # DOCUMENTED EXCEPTION: the snapshot "timestamp" field is intentionally
+    # nondeterministic (wall-clock time of snapshot creation). All other
+    # snapshot fields must be deterministic across identical inputs.
     $COMPILER snapshot "$prog" -o "$TMPDIR_BASE/run1/${base}_snapshot.json" > /dev/null 2>&1 || true
     $COMPILER snapshot "$prog" -o "$TMPDIR_BASE/run2/${base}_snapshot.json" > /dev/null 2>&1 || true
     if [ -f "$TMPDIR_BASE/run1/${base}_snapshot.json" ] && [ -f "$TMPDIR_BASE/run2/${base}_snapshot.json" ]; then
-        # Strip timestamp field for deterministic comparison
+        # Strip timestamp field (documented nondeterministic exception)
         python3 -c "
 import json, sys
 with open(sys.argv[1]) as f: d1 = json.load(f)
