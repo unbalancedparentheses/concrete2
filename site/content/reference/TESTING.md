@@ -1,7 +1,3 @@
-+++
-title = "Testing"
-+++
-
 # Testing
 
 Status: stable reference
@@ -58,7 +54,7 @@ Compile-and-run tests in `lean_tests/`:
 
 ### Stdlib Tests
 
-184 `#[test]` functions across all stdlib modules, compiled through the real compiler path. Module-targeted testing via `--stdlib-module <name>`.
+222 `#[test]` functions across all stdlib modules, compiled through the real compiler path. Module-targeted testing via `--stdlib-module <name>`.
 
 15 collection modules verified for test presence and correctness.
 
@@ -211,8 +207,8 @@ After an `--affected` run, the summary shows which files triggered which section
 | Metric | Value |
 |--------|-------|
 | Pass-level tests | <1s (32 tests, no I/O) |
-| Fast suite (`--fast`) | ~25-35s (~890 tests, parallel) |
-| Full suite (`--full`) | ~40-50s (~911 tests, 2 skipped, includes network, cross-target, perf) |
+| Fast suite (`--fast`) | ~25-35s (~1427 tests, parallel) |
+| Full suite (`--full`) | ~40-50s (~1450 tests + 468 consistency checks, 1 skipped, includes network, cross-target, perf, consistency) |
 | Cache hit rate | 26/57 compilations saved per fast run |
 | Compiler build | ~30-45s (`lake build`) |
 | lli-accelerated suite | ~12s (when `LLI_PATH` is set) |
@@ -396,3 +392,107 @@ Each mutation takes 30-60s (rebuild + test). Full run: ~15 minutes. Not part of 
 - `phase3_diag_no_cascade.con` — single undeclared variable produces <5 errors
 - `phase3_diag_hint_quality.con` — capability error includes "hint:" text
 - `phase3_diag_type_mismatch.con` — error includes "expected" and "got"
+
+### Phase 4: Memory/Ownership Pressure Tests (complete)
+
+Goal: exercise the checker against the hardest memory/ownership cases — not just isolated error tests but composed patterns that force the checker, docs, and proof boundaries to agree.
+
+#### 4.1 Memory-model pressure (5 tests)
+
+- `pressure_borrow_in_loop.con` — fresh borrow block per loop iteration
+- `pressure_interleaved_linear.con` — two linear vars with interleaved borrow/consumption
+- `pressure_nested_linear_struct.con` — nested linear struct consumed whole
+- `pressure_branch_create_consume.con` — linear vars created/consumed within if/else branches
+- `pressure_match_linear_arms.con` — all match arms consuming same pre-existing linear var
+
+#### 4.2 Borrow/aliasing pressure (3 tests)
+
+- `pressure_sequential_mut_ref.con` — sequential deref write, deref read, deref write, then call on borrow-block `&mut T`
+- `pressure_param_ref_multiuse.con` — parameter `&mut T` ref passed through multi-function chain
+- `pressure_borrow_then_consume.con` — borrow linear struct for inspection, unfreeze, then consume
+
+#### 4.3 Cleanup/leak-boundary pressure (11 tests: 6 positive + 5 negative)
+
+Positive:
+- `pressure_defer_nested.con` — two defers in LIFO order
+- `pressure_defer_in_loop.con` — defer in function called from loop
+- `pressure_defer_with_borrow.con` — defer combined with borrow block
+- `pressure_destroy_wrapper.con` — Destroy trait satisfies linearity
+- `pressure_linear_helper_consume.con` — multi-hop linear consumption chain
+- `pressure_heap_defer_free.con` — heap alloc with deferred free (arrow access while reserved)
+
+Negative (error cases):
+- `pressure_err_defer_then_move.con` — move reserved-by-defer variable
+- `pressure_err_heap_leak.con` — heap pointer never freed
+- `pressure_err_linear_no_destroy.con` — linear struct goes out of scope
+- `pressure_err_destroy_then_use.con` — use after destroy consumption
+- `pressure_err_branch_leak.con` — consumed in one branch, leaked in other
+
+### Phase 5: Self-Consistency Checks (complete)
+
+Goal: verify that the compiler's internal data structures agree with each other — proof obligations match re-derivation, diagnostics agree with obligation status, extraction results are consistent with eligibility, and fingerprints are coherent across entries and obligations.
+
+`--report consistency` runs `ProofCore.selfCheck` with 15 cross-family invariants:
+
+- **OBL-KNOWN**: every obligation references a known function (entry or excluded)
+- **OBL-STATUS**: obligation status agrees with re-derivation via `deriveObligationStatus`
+- **PROVED-EXTRACTED**: proved status requires extraction=Some
+- **PROVED-FP**: proved status requires matching fingerprint
+- **PROVED-SPEC**: proved status requires spec attachment
+- **STALE-FP**: stale status requires mismatched fingerprint
+- **STALE-SPEC**: stale status requires spec attachment
+- **ENTRY-FP**: entry fingerprint matches obligation fingerprint
+- **EXTRACT-UNSUP**: extracted=Some implies empty unsupported list
+- **BLOCKED-UNSUP**: eligible + extracted=None implies non-empty unsupported list
+- **DEP-PROVED**: dependencies only reference proved obligations
+- **DUP-NAME**: no duplicate function names across entries and excluded
+- **DIAG-STATUS**: diagnostic kinds agree with obligation status
+- **ENTRY-OBL**: every entry has a corresponding obligation (no dropped obligations)
+- **EXCL-OBL**: every excluded function has a corresponding obligation
+
+All 468 compilable test programs pass with zero violations. Integrated into `--full` mode.
+
+### Phase 6: Verifier Passes (complete)
+
+Goal: catch internal compiler invariant violations before bad state leaks downstream. Three verifier passes implemented in `Concrete/Verify.lean`:
+
+- **Post-Elab verifier** (`verifyNoPlaceholders`): detects `Ty.placeholder` surviving elaboration. Available only via `--report verify` (not wired into pipeline). 14 programs with try/defer expressions retain placeholder types — documented intentional exception, resolved during lowering.
+- **Post-Mono verifier** (`verifyPostMono`): hard gate — detects `Ty.typeVar` surviving monomorphization. Blocks compilation. Skips generic definitions (only checks monomorphized copies). Wired into `Pipeline.monomorphize`.
+- **LLVM IR validation** (`validateLLVMIR`): runs `llvm-as` on emitted `.ll` files before clang. Gracefully skips if llvm-as not on PATH. Wired into all four compilation paths.
+
+`--report verify` runs both post-Elab and post-Mono verifiers and reports results. All 385 non-error test programs pass with zero verifier errors. Integrated into `--full` mode.
+
+### Phase 7: Debug Bundle (complete)
+
+Goal: capture everything needed to reproduce a compilation failure in a stable directory layout.
+
+`concrete debug-bundle <file.con> [-o dir]` runs the full pipeline, accumulating artifacts at each stage. On failure or success, it writes a bundle containing: `manifest.json` (compiler version, source path, failure stage, artifact flags), `source/` (original source files), `diagnostics.txt`, `core.txt` (Core IR), `ssa.txt` (SSA IR), `llvm.ll` (LLVM IR), `consistency.txt` (ProofCore self-check), and `verify.txt` (post-Elab verifier results). Each artifact is only present if the pipeline reached the stage that produces it.
+
+The capture pipeline tracks 9 stages: parse, resolve, check, elaborate, coreCheck, mono, lower, emit, complete.
+
+### Phase 8: CI Trust Gate (complete)
+
+Goal: run the four correctness contracts automatically in CI so regressions in determinism, self-consistency, terminology, and verifier invariants are caught before merge.
+
+`./scripts/tests/run_tests.sh --trust-gate` runs only these sections:
+
+- **Determinism** — `test_determinism.sh --quick` across 18 report modes, 6 query kinds, 3 IR emit modes, and snapshot comparison
+- **Self-consistency** — `--report consistency` on all 468 compilable programs (15 ProofCore invariants)
+- **Terminology** — `test_terminology_gate.sh` enforcing canonical proof/obligation status terms
+- **Verifier passes** — `--report verify` on all 385 non-error programs
+
+The `trust-gate` CI job runs in parallel with the main test suite and SSA tests. Also available locally as `make test-trust-gate`.
+
+### Phase 9: Testcase Reducer (complete)
+
+Goal: automatically shrink failing programs to minimal reproduction cases.
+
+`concrete reduce <file.con> --predicate <pred> [-o output] [--verbose]` applies syntax-aware shrinking passes in a fixpoint loop: remove top-level items → remove statements → remove match arms → remove else branches. Repeats until no pass makes progress.
+
+10 predicates covering all pipeline stages: `parse-error`, `resolve-error`, `check-error`, `elab-error`, `core-check-error`, `mono-error`, `lower-error`, `consistency-violation`, `verify-warning`, `crash`. Substring matching via colon syntax (e.g., `check-error:expected Int`). For un-parseable programs, falls back to line-based reduction.
+
+### Phase 10: Uniform Diagnostic Engine (complete)
+
+Goal: every compiler phase emits the same structured `Diagnostic` shape.
+
+All pipeline phases now use `ExceptT Diagnostics` instead of `ExceptT String`: Parser (`throwParse`), Mono (`MonoM`), Lower (`throwLower`), alongside Resolve, Check, Elab, CoreCheck, and SSAVerify which already used structured diagnostics. Removed `liftStringError` wrappers from Pipeline.lean for mono and lower stages. All build warnings fixed (zero-warning build enforced).

@@ -21,7 +21,7 @@ namespace Concrete
 /-! ## Pipeline — cacheable compiler artifacts
 
 Each pipeline stage produces a named artifact type.
-Runner functions wrap the underlying pass with `liftStringError` / diagnostic handling.
+Runner functions wrap the underlying pass with diagnostic handling.
 No serialization yet — these types are the prerequisite for future `ToJson`/`FromJson` instances.
 -/
 
@@ -61,7 +61,7 @@ namespace Pipeline
 
 /-- Parse source code into a `ParsedProgram`. Expands capability aliases. -/
 def parse (source : String) : Except Diagnostics ParsedProgram :=
-  match liftStringError "parse" (Concrete.parse source) with
+  match Concrete.parse source with
   | .ok modules => .ok { modules := modules.map Module.expandCapAliases }
   | .error ds => .error ds
 
@@ -113,7 +113,7 @@ def verifyPostElab (modules : List CModule) : Diagnostics :=
 
 /-- Monomorphize generic functions.  Runs the post-Mono verifier (no Ty.typeVar). -/
 def monomorphize (vc : ValidatedCore) : Except Diagnostics MonomorphizedProgram :=
-  match liftStringError "mono" (monoProgram vc.coreModules) with
+  match monoProgram vc.coreModules with
   | .ok modules =>
     let monoDs := verifyPostMono modules
     if !monoDs.isEmpty then .error monoDs
@@ -122,10 +122,7 @@ def monomorphize (vc : ValidatedCore) : Except Diagnostics MonomorphizedProgram 
 
 /-- Lower to SSA, verify, and clean up. -/
 def lower (mono : MonomorphizedProgram) : Except Diagnostics SSAProgram := do
-  let ssaModules ← mono.coreModules.mapM (fun m =>
-    match lowerModule m with
-    | .ok sm => .ok sm
-    | .error e => .error [{ severity := .error, message := e, pass := "lower", span := none, hint := none }])
+  let ssaModules ← mono.coreModules.mapM (fun m => lowerModule m)
   match ssaVerifyProgram ssaModules with
   | .error ds => .error ds
   | .ok () =>

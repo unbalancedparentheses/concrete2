@@ -242,7 +242,7 @@ private partial def allDefinedNames (m : CModule) : List String :=
 
 /-- Qualify a callee name: if the bare name is defined in this compilation unit,
     resolve it to qualified form. Otherwise keep it bare (it's an intrinsic or extern). -/
-private def qualifyCallee (qualPrefix : String) (definedNames : List (String × String))
+private def qualifyCallee (_qualPrefix : String) (definedNames : List (String × String))
     (bare : String) : String :=
   match definedNames.find? fun (b, _) => b == bare with
   | some (_, qual) => qual
@@ -1042,7 +1042,7 @@ def validateRegistry (pc : ProofCore) (registry : ProofRegistry) : List Registry
   -- Check for duplicates
   let grouped := registry.foldl (fun acc re =>
     match acc.find? fun (f, _) => f == re.function with
-    | some (f, n) => acc.map fun (g, m) => if g == f then (g, m + 1) else (g, m)
+    | some (f, _n) => acc.map fun (g, m) => if g == f then (g, m + 1) else (g, m)
     | none => acc ++ [(re.function, 1)]) ([] : List (String × Nat))
   let duplicates := grouped.filterMap fun (f, n) =>
     if n > 1 then some (.duplicateEntry f n) else none

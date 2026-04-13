@@ -286,7 +286,7 @@ CoreCheck is the post-elaboration semantic authority. It owns all legality rules
 
 ## 7. Mono (Monomorphization)
 
-**Signature:** `monoProgram : List CModule → Except String (List CModule)`
+**Signature:** `monoProgram : List CModule → Except Diagnostics (List CModule)`
 
 **Preconditions:**
 - CoreCheck has passed.
@@ -360,7 +360,7 @@ ProofCore is a side-channel extraction — it does not sit in the compilation pi
 
 ## 8. Lower
 
-**Signature:** `lowerModule : CModule → SModule`
+**Signature:** `lowerModule : CModule → Except Diagnostics SModule`
 
 **Preconditions:**
 - Monomorphized Core IR (no type variables).

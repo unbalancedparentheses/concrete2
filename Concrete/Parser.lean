@@ -2,6 +2,7 @@ import Concrete.Token
 import Concrete.AST
 import Concrete.Lexer
 import Concrete.Shared
+import Concrete.Diagnostic
 
 /-!
 # Parser — Strictly LL(1)
@@ -32,9 +33,12 @@ structure ParserState where
   pendingGt : Bool := false  -- true when >> was split and one > remains
   deriving Repr, Inhabited
 
-abbrev ParseM := ExceptT String (StateM ParserState)
+abbrev ParseM := ExceptT Diagnostics (StateM ParserState)
 
-instance : Inhabited (ParseM α) := ⟨throw "uninhabited"⟩
+instance : Inhabited (ParseM α) := ⟨throw []⟩
+
+private def throwParse (msg : String) (span : Option Span := none) (hint : Option String := none) : ParseM α :=
+  throw [{ severity := .error, message := msg, pass := "parse", span := span, hint := hint }]
 
 def mkParserState (tokens : List Token) : ParserState :=
   { tokens := tokens.toArray, pos := 0 }
@@ -68,8 +72,7 @@ def expect (expected : TokenKind) : ParseM Unit := do
   else if expected == .gt && actual == .shr then
     -- Split >> into > + pending >, for nested generics like Option<Heap<T>>
     modify fun s => { s with pos := s.pos + 1, pendingGt := true }
-  else throw ("expected " ++ toString expected ++ ", got " ++ toString actual ++
-              " at " ++ toString sp.line ++ ":" ++ toString sp.col)
+  else throwParse s!"expected {expected}, got {actual}" (span := some sp)
 
 def expectIdent : ParseM String := do
   let tk ← peek
@@ -80,8 +83,7 @@ def expectIdent : ParseM String := do
   -- field names, variable names, and import symbols.
   | .cap_ => advance; return "cap"
   | .type_ => advance; return "type"
-  | other => throw ("expected identifier, got " ++ toString other ++
-                    " at " ++ toString sp.line ++ ":" ++ toString sp.col)
+  | other => throwParse s!"expected identifier, got {other}" (span := some sp)
 
 partial def parseType : ParseM Ty := do
   let tk ← peek
@@ -184,8 +186,7 @@ partial def parseType : ParseM Ty := do
       return .array elemTy n.toNat
     | other =>
       let sp ← peekSpan
-      throw ("expected array size literal, got " ++ toString other ++
-             " at " ++ toString sp.line ++ ":" ++ toString sp.col)
+      throwParse s!"expected array size literal, got {other}" (span := some sp)
   | .ident name =>
     advance
     -- Check for generic type: Name<T, U> or Name::<T, U>
@@ -222,8 +223,7 @@ partial def parseType : ParseM Ty := do
       return .named name
   | other =>
     let sp ← peekSpan
-    throw ("expected type, got " ++ toString other ++
-           " at " ++ toString sp.line ++ ":" ++ toString sp.col)
+    throwParse s!"expected type, got {other}" (span := some sp)
 
 def parseParam : ParseM Param := do
   let name ← expectIdent
@@ -450,7 +450,7 @@ partial def parsePrimary : ParseM Expr := do
             expect .gt
         | _ =>
           let sp ← peekSpan
-          throw s!"expected '<' or identifier after '::', got {afterDC} at {sp.line}:{sp.col}"
+          throwParse s!"expected '<' or identifier after '::', got {afterDC}" (span := some sp)
     let next2 ← peek
     if next2 == .lparen then
       advance
@@ -463,7 +463,7 @@ partial def parsePrimary : ParseM Expr := do
         expect .lparen
         let allocName ← expectIdent
         if allocName != "Alloc" then
-          throw "call-site with() can only bind Alloc"
+          throwParse "call-site with() can only bind Alloc"
         expect .assign
         let allocExpr ← parseExpr
         expect .rparen
@@ -569,7 +569,7 @@ partial def parsePrimary : ParseM Expr := do
             i := i + 1
         | _ =>
           let csp ← peekSpan
-          throw s!"expected integer count after ';' in array repeat, got {countTk} at {csp.line}:{csp.col}"
+          throwParse s!"expected integer count after ';' in array repeat, got {countTk}" (span := some csp)
       else
         while tk2 == .comma do
           advance
@@ -582,12 +582,10 @@ partial def parsePrimary : ParseM Expr := do
     return .arrayLit sp elems
   | .fn =>
     let sp ← peekSpan
-    throw ("closures are not supported; use a named function reference instead" ++
-           " at " ++ toString sp.line ++ ":" ++ toString sp.col)
+    throwParse "closures are not supported" (span := some sp) (hint := some "use a named function reference instead")
   | other =>
     let sp ← peekSpan
-    throw ("expected expression, got " ++ toString other ++
-           " at " ++ toString sp.line ++ ":" ++ toString sp.col)
+    throwParse s!"expected expression, got {other}" (span := some sp)
 
 partial def parseStructLitFields : ParseM (List (String × Expr)) := do
   let tk ← peek
@@ -832,7 +830,7 @@ partial def parseExprBlock : ParseM (List Stmt) := do
         | .deref _ target => stmts := stmts ++ [Stmt.derefAssign sp target rhs]
         | .arrayIndex _ arr idx => stmts := stmts ++ [Stmt.arrayIndexAssign sp arr idx rhs]
         | .arrowAccess _ obj field => stmts := stmts ++ [Stmt.arrowAssign sp obj field rhs]
-        | _ => throw s!"invalid assignment target"
+        | _ => throwParse "invalid assignment target"
       else
         -- Normal expression statement, need semicolon
         expect .semicolon
@@ -866,7 +864,7 @@ partial def parseStmt : ParseM Stmt := do
     match tk2 with
     | .while_ => parseWhile (some name)
     | .for_ => parseFor (some name)
-    | _ => throw "label can only precede while or for loops"
+    | _ => throwParse "label can only precede while or for loops"
   | .match_ => parseMatchStmt
   | .break_ =>
     advance
@@ -1005,15 +1003,15 @@ partial def parseFor (lbl : Option String) : ParseM Stmt := do
       -- for(existing_assignment; cond; step)
       -- Wait, if we're here the init was an expression, not a let.
       -- This shouldn't normally happen in the test suite. Skip for now.
-      throw "unsupported for loop syntax"
+      throwParse "unsupported for loop syntax"
     else if tk2 == .leq || tk2 == .lt || tk2 == .gt || tk2 == .geq then
       -- for (cond) { body } form where cond starts with an ident that we already parsed
       -- Need to continue parsing the comparison
       -- Actually, parseExpr should have consumed the whole condition. So tk2 should be rparen.
       -- If not, it means we have something unexpected.
-      throw "unexpected token in for loop"
+      throwParse "unexpected token in for loop"
     else
-      throw "unexpected token in for loop"
+      throwParse "unexpected token in for loop"
 
 /-- Parse an assignment expression without consuming the semicolon (for for-loop step). -/
 partial def parseExprOrAssignNoSemicolon : ParseM Stmt := do
@@ -1032,7 +1030,7 @@ partial def parseExprOrAssignNoSemicolon : ParseM Stmt := do
       return .fieldAssign e.getSpan obj field value
     | _ =>
       let sp ← peekSpan
-      throw ("invalid assignment target at " ++ toString sp.line ++ ":" ++ toString sp.col)
+      throwParse "invalid assignment target" (span := some sp)
   | _ => return .expr e.getSpan e
 
 partial def parseMatchStmt : ParseM Stmt := do
@@ -1089,7 +1087,7 @@ partial def parseMatchArm : ParseM MatchArm := do
     let arrowTk ← peek
     if arrowTk == .fatArrow then advance
     else if arrowTk == .arrow then advance
-    else throw s!"expected => or -> in match arm, got {arrowTk}"
+    else throwParse s!"expected => or -> in match arm, got {arrowTk}"
     let body ← parseMatchArmBody
     let tk2 ← peek
     if tk2 == .comma then advance
@@ -1103,19 +1101,19 @@ partial def parseMatchArm : ParseM MatchArm := do
       let arrowTk ← peek
       if arrowTk == .fatArrow then advance
       else if arrowTk == .arrow then advance
-      else throw s!"expected => or -> in match arm, got {arrowTk}"
+      else throwParse s!"expected => or -> in match arm, got {arrowTk}"
       let body ← parseMatchArmBody
       let tk2 ← peek
       if tk2 == .comma then advance
       return .litArm sp (.unaryOp sp .neg (.intLit sp n)) body
-    | _ => throw s!"expected integer after '-' in match pattern, got {numTk}"
+    | _ => throwParse s!"expected integer after '-' in match pattern, got {numTk}"
   | .true_ | .false_ =>
     let boolVal := firstTk == .true_
     advance
     let arrowTk ← peek
     if arrowTk == .fatArrow then advance
     else if arrowTk == .arrow then advance
-    else throw s!"expected => or -> in match arm, got {arrowTk}"
+    else throwParse s!"expected => or -> in match arm, got {arrowTk}"
     let body ← parseMatchArmBody
     let tk2 ← peek
     if tk2 == .comma then advance
@@ -1139,7 +1137,7 @@ partial def parseMatchArm : ParseM MatchArm := do
       let sep ← peek
       if sep == .hash then advance
       else if sep == .dot then advance
-      else throw s!"expected # or . in match pattern, got {sep}"
+      else throwParse s!"expected # or . in match pattern, got {sep}"
       let variant ← expectIdent
       -- Check for field bindings
       let next2 ← peek
@@ -1159,7 +1157,7 @@ partial def parseMatchArm : ParseM MatchArm := do
       let arrowTk ← peek
       if arrowTk == .fatArrow then advance
       else if arrowTk == .arrow then advance
-      else throw s!"expected => or -> in match arm, got {arrowTk}"
+      else throwParse s!"expected => or -> in match arm, got {arrowTk}"
       let body ← parseMatchArmBody
       let tk2 ← peek
       if tk2 == .comma then advance
@@ -1169,12 +1167,12 @@ partial def parseMatchArm : ParseM MatchArm := do
       let arrowTk := next
       if arrowTk == .fatArrow then advance
       else if arrowTk == .arrow then advance
-      else throw s!"expected => or -> in match arm, got {arrowTk}"
+      else throwParse s!"expected => or -> in match arm, got {arrowTk}"
       let body ← parseMatchArmBody
       let tk2 ← peek
       if tk2 == .comma then advance
       return .varArm sp name body
-  | _ => throw s!"expected match pattern, got {firstTk}"
+  | _ => throwParse s!"expected match pattern, got {firstTk}"
 
 partial def parseExprOrAssign : ParseM Stmt := do
   let e ← parseExpr
@@ -1209,14 +1207,13 @@ partial def parseExprOrAssign : ParseM Stmt := do
       return .arrowAssign e.getSpan obj field value
     | _ =>
       let sp ← peekSpan
-      throw ("invalid assignment target at " ++ toString sp.line ++ ":" ++ toString sp.col)
+      throwParse "invalid assignment target" (span := some sp)
   | .semicolon =>
     advance
     return .expr e.getSpan e
   | other =>
     let sp ← peekSpan
-    throw ("expected ';' or '=', got " ++ toString other ++
-           " at " ++ toString sp.line ++ ":" ++ toString sp.col)
+    throwParse s!"expected ';' or '=', got {other}" (span := some sp)
 
 end
 
@@ -1256,7 +1253,7 @@ partial def parseMethodDef : ParseM (FnDef × Option SelfKind) := do
         pure (some SelfKind.refMut, params)
       | _ =>
         let sp ← peekSpan
-        throw s!"expected 'self' after '&mut' in method parameter, got {tk3} at {sp.line}:{sp.col}"
+        throwParse s!"expected 'self' after '&mut' in method parameter, got {tk3}" (span := some sp)
     else
       match tk2 with
       | .ident "self" =>
@@ -1265,7 +1262,7 @@ partial def parseMethodDef : ParseM (FnDef × Option SelfKind) := do
         pure (some SelfKind.ref, params)
       | _ =>
         let sp ← peekSpan
-        throw s!"expected 'self' after '&' in method parameter, got {tk2} at {sp.line}:{sp.col}"
+        throwParse s!"expected 'self' after '&' in method parameter, got {tk2}" (span := some sp)
   | .ident "self" =>
     advance
     let params ← parseMethodParamList (some .value)
@@ -1377,7 +1374,7 @@ partial def parseTraitDef : ParseM TraitDef := do
           pure (some SelfKind.refMut, params)
         | _ =>
           let sp ← peekSpan
-          throw s!"expected 'self' after '&mut' in trait method parameter, got {tk4} at {sp.line}:{sp.col}"
+          throwParse s!"expected 'self' after '&mut' in trait method parameter, got {tk4}" (span := some sp)
       else
         match tk3 with
         | .ident "self" =>
@@ -1386,7 +1383,7 @@ partial def parseTraitDef : ParseM TraitDef := do
           pure (some SelfKind.ref, params)
         | _ =>
           let sp ← peekSpan
-          throw s!"expected 'self' after '&' in trait method parameter, got {tk3} at {sp.line}:{sp.col}"
+          throwParse s!"expected 'self' after '&' in trait method parameter, got {tk3}" (span := some sp)
     | .ident "self" =>
       advance
       let params ← parseMethodParamList (some .value)
@@ -1586,7 +1583,7 @@ partial def parseAttribute : ParseM (String × Option String × Option ReprOpts)
       | .strLit s => advance; pure s
       | _ =>
         let sp ← peekSpan
-        throw s!"expected string literal in attribute value at {sp.line}:{sp.col}"
+        throwParse "expected string literal in attribute value" (span := some sp)
     expect .rbracket
     return (key, some val, none)
   else if tk == .lparen && key == "repr" then
@@ -1609,11 +1606,11 @@ partial def parseAttribute : ParseM (String × Option String × Option ReprOpts)
           opts := { opts with reprAlign := some n.toNat }
         | _ =>
           let sp ← peekSpan
-          throw s!"expected integer literal in align() at {sp.line}:{sp.col}"
+          throwParse "expected integer literal in align()" (span := some sp)
         expect .rparen
       else
         let sp ← peekSpan
-        throw s!"unknown repr option '{arg}' at {sp.line}:{sp.col}"
+        throwParse s!"unknown repr option '{arg}'" (span := some sp)
       tk2 ← peek
       if tk2 == .comma then advance; tk2 ← peek
     expect .rparen
@@ -1708,7 +1705,7 @@ partial def parseModuleBody (stopToken : TokenKind) : ParseM Module := do
     if tk == .import_ then
       if pendingRepr.isSome then
         let sp ← peekSpan
-        throw s!"#[repr(...)] can only be applied to struct definitions, at {sp.line}:{sp.col}"
+        throwParse "#[repr(...)] can only be applied to struct definitions" (span := some sp)
       let imp ← parseImport
       imports := imports ++ [imp]
     else
@@ -1720,10 +1717,10 @@ partial def parseModuleBody (stopToken : TokenKind) : ParseM Module := do
       if tk == .struct_ then
         if isTrusted then
           let sp ← peekSpan
-          throw s!"'trusted' can only be applied to fn or impl, at {sp.line}:{sp.col}"
+          throwParse "'trusted' can only be applied to fn or impl" (span := some sp)
         if pendingIsTest then
           let sp ← peekSpan
-          throw s!"#[test] can only be applied to function definitions, at {sp.line}:{sp.col}"
+          throwParse "#[test] can only be applied to function definitions" (span := some sp)
         let s ← parseStructDef
         let reprC := pendingRepr.map (·.isReprC) |>.getD false
         let packed := pendingRepr.map (·.isPacked) |>.getD false
@@ -1734,7 +1731,7 @@ partial def parseModuleBody (stopToken : TokenKind) : ParseM Module := do
       else if tk == .hash then
         if isTrusted then
           let sp ← peekSpan
-          throw s!"'trusted' can only be applied to fn or impl, at {sp.line}:{sp.col}"
+          throwParse "'trusted' can only be applied to fn or impl" (span := some sp)
         -- Attribute before a declaration (after pub)
         let (key, _, reprOpts) ← parseAttribute
         if key == "repr" then
@@ -1745,15 +1742,15 @@ partial def parseModuleBody (stopToken : TokenKind) : ParseM Module := do
         -- Any non-struct declaration: reject dangling #[repr(...)]
         if pendingRepr.isSome then
           let sp ← peekSpan
-          throw s!"#[repr(...)] can only be applied to struct definitions, at {sp.line}:{sp.col}"
+          throwParse "#[repr(...)] can only be applied to struct definitions" (span := some sp)
         -- Reject #[test] on non-function declarations
         if pendingIsTest && tk != .fn then
           let sp ← peekSpan
-          throw s!"#[test] can only be applied to function definitions, at {sp.line}:{sp.col}"
+          throwParse "#[test] can only be applied to function definitions" (span := some sp)
         -- Reject 'trusted' on non-fn/impl/extern declarations
         if isTrusted && tk != .fn && tk != .impl_ && tk != .extern_ then
           let sp ← peekSpan
-          throw s!"'trusted' can only be applied to fn, impl, or extern fn, at {sp.line}:{sp.col}"
+          throwParse "'trusted' can only be applied to fn, impl, or extern fn" (span := some sp)
         if tk == .extern_ then
           let ext ← parseExternFn
           externFns := externFns ++ [{ ext with isPublic := isPub, isTrusted }]
@@ -1795,7 +1792,7 @@ partial def parseModuleBody (stopToken : TokenKind) : ParseM Module := do
           -- Validate all names are known capabilities
           for c in expanded do
             if !validCaps.contains c then
-              throw s!"unknown capability '{c}' in cap alias '{name}', at {sp.line}:{sp.col}"
+              throwParse s!"unknown capability '{c}' in cap alias '{name}'" (span := some sp)
           capAliases := capAliases ++ [{ name, caps := expanded, isPublic := isPub, span := sp }]
         else if tk == .newtype_ then
           let nt ← parseNewtypeDef
@@ -1840,7 +1837,7 @@ partial def parseModuleBody (stopToken : TokenKind) : ParseM Module := do
           structs := structs ++ [{ name, typeParams, fields, isPublic := isPub, isUnion := true }]
         else
           let sp ← peekSpan
-          throw s!"unexpected token {tk} at {sp.line}:{sp.col}"
+          throwParse s!"unexpected token {tk}" (span := some sp)
     tk ← peek
   return { name := "", structs, enums, functions := fns, imports, implBlocks, traits,
            traitImpls, constants, typeAliases, capAliases, externFns, newtypes, submodules }
@@ -1888,7 +1885,7 @@ partial def parseProgram : ParseM (List Module) := do
     let m ← parseModuleBody .eof
     return [{ m with name := "main" }]
 
-def parse (source : String) : Except String (List Module) :=
+def parse (source : String) : Except Diagnostics (List Module) :=
   let tokens := tokenize source
   let st := mkParserState tokens
   match (parseProgram.run.run st).1 with

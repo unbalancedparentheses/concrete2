@@ -680,7 +680,7 @@ theorem check_nonce_correct (nonce maxNonce : Int) (fuel : Nat) :
     · have hgt : decide (0 < nonce) = true := decide_eq_true hpos
       have hle' : decide (nonce ≤ maxNonce) = true := decide_eq_true hle
       have hboth : 0 < nonce ∧ nonce ≤ maxNonce := ⟨hpos, hle⟩
-      simp [checkNonceExpr, eval, Env.bind, evalBinOp, hgt, hle', hboth]
+      simp [checkNonceExpr, eval, Env.bind, evalBinOp, hboth]
     · have hgt : decide (0 < nonce) = true := decide_eq_true hpos
       have hle' : decide (nonce ≤ maxNonce) = false := decide_eq_false hle
       have hnboth : ¬(0 < nonce ∧ nonce ≤ maxNonce) := fun h => hle h.2
@@ -793,28 +793,28 @@ theorem check_magic_correct (b0 b1 b2 b3 : Int) (fuel : Nat) :
     = some (.int (if b0 = 127 ∧ b1 = 69 ∧ b2 = 76 ∧ b3 = 70 then 1 else 0)) := by
   by_cases h0 : b0 = 127 <;> by_cases h1 : b1 = 69 <;>
     by_cases h2 : b2 = 76 <;> by_cases h3 : b3 = 70 <;>
-    simp_all [checkMagicExpr, eval, Env.bind, evalBinOp, BEq.beq, decide_eq_false_iff_not]
+    simp_all [checkMagicExpr, eval, Env.bind, evalBinOp, BEq.beq]
 
 /-- check_class returns 1 iff cls is 1 or 2. -/
 theorem check_class_correct (cls : Int) (fuel : Nat) :
     eval elfFns (Env.empty.bind "cls" (.int cls)) (fuel + 3) checkClassExpr
     = some (.int (if cls = 1 ∨ cls = 2 then 1 else 0)) := by
   by_cases h1 : cls = 1 <;> by_cases h2 : cls = 2 <;>
-    simp_all [checkClassExpr, eval, Env.bind, evalBinOp, BEq.beq, decide_eq_false_iff_not]
+    simp_all [checkClassExpr, eval, Env.bind, evalBinOp, BEq.beq]
 
 /-- check_data returns 1 iff encoding is 1 or 2. -/
 theorem check_data_correct (encoding : Int) (fuel : Nat) :
     eval elfFns (Env.empty.bind "encoding" (.int encoding)) (fuel + 3) checkDataExpr
     = some (.int (if encoding = 1 ∨ encoding = 2 then 1 else 0)) := by
   by_cases h1 : encoding = 1 <;> by_cases h2 : encoding = 2 <;>
-    simp_all [checkDataExpr, eval, Env.bind, evalBinOp, BEq.beq, decide_eq_false_iff_not]
+    simp_all [checkDataExpr, eval, Env.bind, evalBinOp, BEq.beq]
 
 /-- check_version returns 1 iff ver is 1. -/
 theorem check_version_correct (ver : Int) (fuel : Nat) :
     eval elfFns (Env.empty.bind "ver" (.int ver)) (fuel + 2) checkVersionExpr
     = some (.int (if ver = 1 then 1 else 0)) := by
   by_cases h : ver = 1 <;>
-    simp_all [checkVersionExpr, eval, Env.bind, evalBinOp, BEq.beq, decide_eq_false_iff_not]
+    simp_all [checkVersionExpr, eval, Env.bind, evalBinOp, BEq.beq]
 
 /-- Full correctness of validate_header: returns 1 iff all ELF field
     constraints hold (magic = 0x7F 'E' 'L' 'F', class ∈ {1,2},
@@ -835,11 +835,11 @@ theorem validate_header_correct (b0 b1 b2 b3 cls encoding ver : Int) (fuel : Nat
       simp_all [validateHeaderExpr, eval, eval.evalArgs, elfFns,
           checkMagicFn, checkMagicExpr, checkClassFn, checkClassExpr,
           checkDataFn, checkDataExpr, checkVersionFn, checkVersionExpr,
-          Env.bind, evalBinOp, bindArgs, BEq.beq, decide_eq_false_iff_not]
+          Env.bind, evalBinOp, bindArgs, BEq.beq]
   -- Negative magic cases (any byte wrong): check_magic returns 0, short-circuit
   all_goals simp_all [validateHeaderExpr, eval, eval.evalArgs, elfFns,
       checkMagicFn, checkMagicExpr, Env.bind, evalBinOp, bindArgs,
-      BEq.beq, decide_eq_false_iff_not]
+      BEq.beq]
 
 -- ============================================================
 -- Proved functions registry

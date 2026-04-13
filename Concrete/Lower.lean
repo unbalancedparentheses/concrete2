@@ -2,6 +2,7 @@ import Concrete.Core
 import Concrete.SSA
 import Concrete.Layout
 import Concrete.Intrinsic
+import Concrete.Diagnostic
 
 namespace Concrete
 
@@ -77,7 +78,10 @@ structure LowerState where
       dead code after early returns inside borrow blocks. -/
   blockTerminated : Bool := false
 
-abbrev LowerM := ExceptT String (StateM LowerState)
+abbrev LowerM := ExceptT Diagnostics (StateM LowerState)
+
+private def throwLower (msg : String) : LowerM α :=
+  throw [{ severity := .error, message := msg, pass := "lower", span := none, hint := none }]
 
 private def getState : LowerM LowerState := get
 private def setState (s : LowerState) : LowerM Unit := set s
@@ -187,7 +191,7 @@ private def lookupStructFields (tyName : String) : LowerM (List (String × Ty)) 
   match s.structDefs.find? fun sd => sd.name == tyName with
   | some sd => return sd.fields
   | none =>
-    throw s!"Lower.lookupStructFields: struct '{tyName}' not found in struct defs"
+    throwLower s!"Lower.lookupStructFields: struct '{tyName}' not found in struct defs"
 
 /-- Get field index within a struct definition. Returns 0 if not found. -/
 private def fieldIndex (tyName : String) (fieldName : String) : LowerM Nat := do
@@ -195,7 +199,7 @@ private def fieldIndex (tyName : String) (fieldName : String) : LowerM Nat := do
   match (enumerate fields).find? fun (_, (n, _)) => n == fieldName with
   | some (idx, _) => return idx
   | none =>
-    throw s!"Lower.fieldIndex: field '{fieldName}' not found in struct '{tyName}'"
+    throwLower s!"Lower.fieldIndex: field '{fieldName}' not found in struct '{tyName}'"
 
 /-- Get variant index within an enum definition. Returns 0 if not found. -/
 private def variantIndex (enumName : String) (variantName : String) : LowerM Nat := do
@@ -205,9 +209,9 @@ private def variantIndex (enumName : String) (variantName : String) : LowerM Nat
     match (enumerate ed.variants).find? fun (_, (vn, _)) => vn == variantName with
     | some (idx, _) => return idx
     | none =>
-      throw s!"Lower.variantIndex: variant '{variantName}' not found in enum '{enumName}'"
+      throwLower s!"Lower.variantIndex: variant '{variantName}' not found in enum '{enumName}'"
   | none =>
-    throw s!"Lower.variantIndex: enum '{enumName}' not found in enum defs"
+    throwLower s!"Lower.variantIndex: enum '{enumName}' not found in enum defs"
 
 /-- Get variant fields within an enum definition. -/
 private def variantFields (enumName : String) (variantName : String) (typeArgs : List Ty := []) : LowerM (List (String × Ty)) := do
@@ -218,9 +222,9 @@ private def variantFields (enumName : String) (variantName : String) (typeArgs :
     match ed.variants.find? fun (vn, _) => vn == variantName with
     | some (_, fields) => return fields
     | none =>
-      throw s!"Lower.variantFields: variant '{variantName}' not found in enum '{enumName}'"
+      throwLower s!"Lower.variantFields: variant '{variantName}' not found in enum '{enumName}'"
   | none =>
-    throw s!"Lower.variantFields: enum '{enumName}' not found in enum defs"
+    throwLower s!"Lower.variantFields: enum '{enumName}' not found in enum defs"
 
 /-- Extract struct type name from a Ty, unwrapping references/pointers. -/
 private def structNameFromTy (ty : Ty) : LowerM String :=
@@ -230,7 +234,7 @@ private def structNameFromTy (ty : Ty) : LowerM String :=
   | .string => return "String"
   | .ref inner | .refMut inner | .ptrMut inner | .ptrConst inner => structNameFromTy inner
   | other =>
-    throw s!"Lower.structNameFromTy: unhandled type '{repr other}'"
+    throwLower s!"Lower.structNameFromTy: unhandled type '{repr other}'"
 
 /-- Build a Layout.Ctx from the current LowerState. -/
 private def getLayoutCtx : LowerM Layout.Ctx := do
@@ -1751,7 +1755,7 @@ end
 -- ============================================================
 
 def lowerFn (f : CFnDef) (structDefs : List CStructDef) (enumDefs : List CEnumDef)
-    (constants : List (String × Ty × CExpr) := []) : Except String (SFnDef × List (String × String)) :=
+    (constants : List (String × Ty × CExpr) := []) : Except Diagnostics (SFnDef × List (String × String)) :=
   let initState : LowerState := {
     blocks := []
     currentLabel := "entry"
@@ -1856,7 +1860,7 @@ private def renameStrConstsInTerm (rmap : List (String × String)) : STerm → S
   | .condBr cond tl el => .condBr (renameSVal rmap cond) tl el
   | other => other
 
-def lowerModule (m : CModule) : Except String SModule := do
+def lowerModule (m : CModule) : Except Diagnostics SModule := do
   let allFunctionsWithPath := collectAllFunctionsWithPath m
   -- Add synthetic String struct so fieldOffset can compute offsets for built-in .string type
   let syntheticStringDef : CStructDef := { name := "String", fields := [("ptr", .ptrMut .u8), ("len", .uint), ("cap", .uint)] }
@@ -1870,7 +1874,7 @@ def lowerModule (m : CModule) : Except String SModule := do
   let results ← concreteFns.foldlM (init := []) fun acc (f, path) =>
     match lowerFn f allStructs allEnums allConstants with
     | .ok (sfn, lits) => .ok (acc ++ [({ sfn with modulePath := path }, lits)])
-    | .error e => .error s!"Lower.lowerModule: failed to lower function '{f.name}': {e}"
+    | .error ds => .error (ds.map fun d => { d with message := s!"Lower.lowerModule: failed to lower function '{f.name}': {d.message}" })
   -- Build deduplicated globals list (by string value)
   -- Prefix with module name to avoid collisions across modules
   let globals := results.foldl (fun deduped (_, lits) =>

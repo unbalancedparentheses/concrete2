@@ -1333,8 +1333,8 @@ private def obligationToEntry (o : Concrete.Obligation) : ObligationEntry :=
   , fingerprint := o.functionId.fingerprint, source := src, loc := o.loc }
 
 /-- Render the obligations report as human-readable output. -/
-def obligationsReport (modules : List CModule) (locMap : FnLocMap := [])
-    (registry : ProofRegistry := []) (pc : Concrete.ProofCore) : String :=
+def obligationsReport (_modules : List CModule) (_locMap : FnLocMap := [])
+    (_registry : ProofRegistry := []) (pc : Concrete.ProofCore) : String :=
   let entries := pc.obligations.map obligationToEntry
   let header := "=== Proof Obligations ==="
   let body := entries.map fun e =>
@@ -1449,7 +1449,7 @@ private def specNames (att : Option SpecAttachment) : String × String :=
 /-- Build extraction entries from ProofCore — the single source of truth
     for eligibility, extraction, and fingerprinting. -/
 private def extractionEntriesFromPC (pc : Concrete.ProofCore)
-    (registry : ProofRegistry := []) : List ExtractionEntry :=
+    (_registry : ProofRegistry := []) : List ExtractionEntry :=
   let eligible := pc.entries.map fun e =>
     let (sName, pName) := specNames e.spec
     { qualName := e.qualName, eligible := true, extracted := e.extracted
@@ -1931,8 +1931,8 @@ private def obligationToFact (e : ObligationEntry) : Val :=
 
 open Json in
 /-- Collect obligation facts for all functions. -/
-def collectObligationFacts (modules : List CModule) (locMap : FnLocMap := [])
-    (registry : ProofRegistry := []) (pc : Concrete.ProofCore) : List Val :=
+def collectObligationFacts (_modules : List CModule) (_locMap : FnLocMap := [])
+    (_registry : ProofRegistry := []) (pc : Concrete.ProofCore) : List Val :=
   let entries := pc.obligations.map obligationToEntry
   entries.map obligationToFact
 

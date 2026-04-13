@@ -78,7 +78,7 @@ def evalPredicate (pred : Predicate) (source : String)
     match Pipeline.parse source with
     | .error _ => return false
     | .ok parsed =>
-    let srcMap : SourceMap := [("reduce.con", source)]
+    let _srcMap : SourceMap := [("reduce.con", source)]
     match ← Pipeline.resolveFiles "." parsed "reduce.con" resolveAllModules with
     | .error ds =>
       match pred with

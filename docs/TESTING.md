@@ -490,3 +490,9 @@ Goal: automatically shrink failing programs to minimal reproduction cases.
 `concrete reduce <file.con> --predicate <pred> [-o output] [--verbose]` applies syntax-aware shrinking passes in a fixpoint loop: remove top-level items → remove statements → remove match arms → remove else branches. Repeats until no pass makes progress.
 
 10 predicates covering all pipeline stages: `parse-error`, `resolve-error`, `check-error`, `elab-error`, `core-check-error`, `mono-error`, `lower-error`, `consistency-violation`, `verify-warning`, `crash`. Substring matching via colon syntax (e.g., `check-error:expected Int`). For un-parseable programs, falls back to line-based reduction.
+
+### Phase 10: Uniform Diagnostic Engine (complete)
+
+Goal: every compiler phase emits the same structured `Diagnostic` shape.
+
+All pipeline phases now use `ExceptT Diagnostics` instead of `ExceptT String`: Parser (`throwParse`), Mono (`MonoM`), Lower (`throwLower`), alongside Resolve, Check, Elab, CoreCheck, and SSAVerify which already used structured diagnostics. Removed `liftStringError` wrappers from Pipeline.lean for mono and lower stages. All build warnings fixed (zero-warning build enforced).

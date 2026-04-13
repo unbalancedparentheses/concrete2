@@ -10,6 +10,17 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Uniform diagnostic engine
+
+All compiler phases now emit the same structured `Diagnostic` shape (`severity`, `message`, `pass`, `span`, `hint`, `file`). Previously, Parser returned plain strings, Mono/Lower used `ExceptT String`, and Pipeline wrapped them with `liftStringError`. Now:
+
+- **Parser**: `ParseM` uses `ExceptT Diagnostics`, `throwParse` creates structured diagnostics with source spans
+- **Mono**: `MonoM` uses `ExceptT Diagnostics`, `monoProgram` returns `Except Diagnostics`
+- **Lower**: `LowerM` uses `ExceptT Diagnostics`, `throwLower` creates structured diagnostics, `lowerModule`/`lowerFn` return `Except Diagnostics`
+- **Pipeline**: removed `liftStringError "mono"` and inline Lower→Diagnostic wrapping
+
+Resolve, Check, Elab, CoreCheck, and SSAVerify already used `Diagnostics` natively.
+
 ### Testcase reducer
 
 **New CLI command:** `concrete reduce <file.con> --predicate <pred> [-o output] [--verbose]` shrinks failing programs while preserving the failure, using syntax-aware shrinking in a fixpoint loop.

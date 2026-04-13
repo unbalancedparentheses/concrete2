@@ -122,7 +122,7 @@ partial def resolveModules (baseDir : String) (m : Module) (parsedPaths : List S
         return .error s!"circular module import: {filePath}"
       sources := sources ++ [(filePath, source)]
       match parse source with
-      | .error e => return .error s!"error in module '{sub.name}': {e}"
+      | .error e => return .error s!"error in module '{sub.name}': {renderDiagnostics e}"
       | .ok subModules =>
         match subModules with
         | [subMod] =>
@@ -565,7 +565,7 @@ partial def loadDependency (depName : String) (depPath : String)
   catch _ =>
     return .error s!"error: dependency '{depName}': cannot read {libPath}\nhint: check the path in [dependencies] or ensure the dependency has src/lib.con"
   match parse source with
-  | .error e => return .error s!"dependency '{depName}': parse error: {e}"
+  | .error e => return .error s!"dependency '{depName}': parse error: {renderDiagnostics e}"
   | .ok modules =>
     let baseDir := depPath ++ "/src"
     match ← resolveAllModules baseDir modules libPath with
@@ -1082,7 +1082,7 @@ def main (args : List String) : IO UInt32 := do
     let source ← readFile inputPath
     match parse source with
     | .error e =>
-      IO.eprintln s!"parse error: {e}"
+      IO.eprintln s!"parse error: {renderDiagnostics e}"
       return 1
     | .ok modules =>
       IO.print (formatProgram modules)
