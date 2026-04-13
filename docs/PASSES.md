@@ -575,6 +575,8 @@ Source Text
 
 These reports are intended as compiler-facing audit outputs, not as a second semantic pipeline. All 8 modes are regression-tested with 59 semantic assertions in `run_tests.sh`.
 
+`DebugBundle` (`concrete debug-bundle <file.con> [-o dir]`) runs the full pipeline via `capturePipeline`, accumulating every available artifact at each stage, then writes the result to a stable directory layout via `writeBundle`. The bundle includes manifest, source files, diagnostics, Core IR, SSA IR, LLVM IR, ProofCore self-check results, and post-Elab verifier results — each present only if the pipeline reached the producing stage.
+
 - `--report authority` consumes canonicalized Core — for each capability, lists which functions require it with transitive call chain traces showing how the capability is introduced (BFS through the call graph)
 - `--report proof` consumes canonicalized Core — ProofCore eligibility analysis: marks each function as eligible (pure, no trusted/extern/pointer ops) or excluded with specific reasons
 

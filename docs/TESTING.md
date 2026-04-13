@@ -461,3 +461,11 @@ Goal: catch internal compiler invariant violations before bad state leaks downst
 - **LLVM IR validation** (`validateLLVMIR`): runs `llvm-as` on emitted `.ll` files before clang. Gracefully skips if llvm-as not on PATH. Wired into all four compilation paths.
 
 `--report verify` runs both post-Elab and post-Mono verifiers and reports results. All 385 non-error test programs pass with zero verifier errors. Integrated into `--full` mode.
+
+### Phase 7: Debug Bundle (complete)
+
+Goal: capture everything needed to reproduce a compilation failure in a stable directory layout.
+
+`concrete debug-bundle <file.con> [-o dir]` runs the full pipeline, accumulating artifacts at each stage. On failure or success, it writes a bundle containing: `manifest.json` (compiler version, source path, failure stage, artifact flags), `source/` (original source files), `diagnostics.txt`, `core.txt` (Core IR), `ssa.txt` (SSA IR), `llvm.ll` (LLVM IR), `consistency.txt` (ProofCore self-check), and `verify.txt` (post-Elab verifier results). Each artifact is only present if the pipeline reached the stage that produces it.
+
+The capture pipeline tracks 9 stages: parse, resolve, check, elaborate, coreCheck, mono, lower, emit, complete.

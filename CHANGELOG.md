@@ -10,6 +10,22 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Debug bundle for compiler failure reproduction
+
+**New CLI command:** `concrete debug-bundle <file.con> [-o dir]` runs the full pipeline, capturing every available artifact at the point of failure (or completion), and writes a stable directory layout for reproduction.
+
+**Bundle layout:**
+- `manifest.json` — compiler version, source path, failure stage, artifact availability
+- `source/` — original source files (main + submodules)
+- `diagnostics.txt` — rendered diagnostics at failure point
+- `core.txt` — Core IR dump (if elaboration succeeded)
+- `ssa.txt` — SSA IR dump (if lowering succeeded)
+- `llvm.ll` — LLVM IR (if emission succeeded)
+- `consistency.txt` — ProofCore self-check results (if available)
+- `verify.txt` — post-Elab verifier results (if available)
+
+The capture pipeline tracks 9 stages (parse, resolve, check, elaborate, coreCheck, mono, lower, emit, complete) and records which stage failed. Returns exit code 1 on pipeline failure, 0 on success.
+
 ### Determinism contract and nondeterminism audit closed
 
 **Determinism is now the default compiler contract.** Same source + same compiler binary + same toolchain = identical output for all report modes, query modes, IR emission, and snapshot content (excluding the documented `timestamp` metadata field).
