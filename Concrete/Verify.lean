@@ -184,9 +184,9 @@ end
 -- ============================================================
 
 /-- Verify a single function's IR against a type predicate.
-    Skips generic definitions (non-empty typeParams) — only monomorphized copies are checked. -/
-def verifyFnTypes (pred : Ty → Bool) (label : String) (fn : CFnDef) : List VerifyViolation :=
-  if !fn.typeParams.isEmpty then [] else
+    When `skipGenerics` is true, skips generic definitions (non-empty typeParams). -/
+def verifyFnTypes (pred : Ty → Bool) (label : String) (fn : CFnDef) (skipGenerics : Bool := false) : List VerifyViolation :=
+  if skipGenerics && !fn.typeParams.isEmpty then [] else
   -- Check parameter types
   let paramViolations := fn.params.foldl (fun acc (pname, t) =>
     acc ++ if pred t then [{ fnName := fn.name, message := s!"{label} in parameter '{pname}' type: {tyToStr t}" }] else []) []
@@ -199,18 +199,19 @@ def verifyFnTypes (pred : Ty → Bool) (label : String) (fn : CFnDef) : List Ver
     acc ++ collectStmtViolations fn.name pred label s) []
   paramViolations ++ retViolation ++ bodyViolations
 
-/-- Verify a module (and submodules) against a type predicate. -/
-partial def verifyModuleTypes (pred : Ty → Bool) (label : String) (m : CModule) : List VerifyViolation :=
+/-- Verify a module (and submodules) against a type predicate.
+    When `skipGenerics` is true, skips generic definitions (functions/structs/enums with typeParams). -/
+partial def verifyModuleTypes (pred : Ty → Bool) (label : String) (m : CModule) (skipGenerics : Bool := false) : List VerifyViolation :=
   let fnViolations := m.functions.foldl (fun acc fn =>
-    acc ++ verifyFnTypes pred label fn) []
-  -- Check struct field types (skip generic definitions)
+    acc ++ verifyFnTypes pred label fn skipGenerics) []
+  -- Check struct field types
   let structViolations := m.structs.foldl (fun acc s =>
-    if !s.typeParams.isEmpty then acc else
+    if skipGenerics && !s.typeParams.isEmpty then acc else
     s.fields.foldl (fun acc2 (fname, t) =>
       acc2 ++ if pred t then [{ fnName := s.name, message := s!"{label} in struct field '{fname}' type: {tyToStr t}" }] else []) acc) []
-  -- Check enum variant types (skip generic definitions)
+  -- Check enum variant types
   let enumViolations := m.enums.foldl (fun acc e =>
-    if !e.typeParams.isEmpty then acc else
+    if skipGenerics && !e.typeParams.isEmpty then acc else
     e.variants.foldl (fun acc2 (vname, fields) =>
       fields.foldl (fun acc3 (fname, t) =>
         acc3 ++ if pred t then [{ fnName := s!"{e.name}::{vname}", message := s!"{label} in enum field '{fname}' type: {tyToStr t}" }] else []) acc2) acc) []
@@ -225,7 +226,7 @@ partial def verifyModuleTypes (pred : Ty → Bool) (label : String) (m : CModule
     acc ++ if pred ty then [{ fnName := name, message := s!"{label} in constant type: {tyToStr ty}" }] else []) []
   -- Recurse into submodules
   let subViolations := m.submodules.foldl (fun acc sub =>
-    acc ++ verifyModuleTypes pred label sub) []
+    acc ++ verifyModuleTypes pred label sub skipGenerics) []
   fnViolations ++ structViolations ++ enumViolations ++ externViolations ++ constViolations ++ subViolations
 
 -- ============================================================
@@ -250,10 +251,11 @@ def verifyNoPlaceholders (modules : List CModule) : Diagnostics :=
   violationsToDiagnostics "post-elab" violations
 
 /-- **Post-Mono verifier**: no `Ty.typeVar` may survive monomorphization.
-    Run after `Pipeline.monomorphize`. -/
+    Run after `Pipeline.monomorphize`. Skips generic definitions — only
+    monomorphized copies are checked. -/
 def verifyNoTypeVars (modules : List CModule) : Diagnostics :=
   let violations := modules.foldl (fun acc m =>
-    acc ++ verifyModuleTypes Ty.containsTypeVar "Ty.typeVar found" m) []
+    acc ++ verifyModuleTypes Ty.containsTypeVar "Ty.typeVar found" m (skipGenerics := true)) []
   violationsToDiagnostics "post-mono" violations
 
 /-- **Post-Mono verifier**: checks no `Ty.typeVar` survives monomorphization.

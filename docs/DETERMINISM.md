@@ -1,6 +1,6 @@
 # Compiler Determinism
 
-Status: verified — all compiler output paths are deterministic given the same source and toolchain.
+Status: verified — compiler output is deterministic by default given the same source and toolchain, with explicitly documented exceptions.
 
 ## Guarantee
 
@@ -13,8 +13,8 @@ The same source file compiled with the same Concrete compiler binary produces id
 | LLVM IR | `--emit-llvm` | Deterministic |
 | SSA IR | `--emit-ssa` | Deterministic |
 | Core IR | `--emit-core` | Deterministic |
-| Compiled binary | `-o <path>` | Deterministic (LLVM codegen) |
-| Snapshot JSON | `snapshot` | Deterministic except `timestamp` field |
+| Compiled binary | `-o <path>` | Not tested (depends on LLVM/clang determinism) |
+| Snapshot JSON | `snapshot` | **Exception:** `timestamp` field is nondeterministic (wall-clock time) |
 
 ## Why It Works
 
@@ -47,4 +47,4 @@ The snapshot `concrete diff` command is the intended tool for detecting cross-ve
 
 ## Verification
 
-The deterministic artifact regression suite (`scripts/tests/test_determinism.sh`) verifies byte-for-byte reproducibility across all output paths on every test run.
+The deterministic artifact regression suite (`scripts/tests/test_determinism.sh`) verifies reproducibility for report modes, query modes, IR emission, and snapshot content (excluding timestamp). It does **not** test compiled binary reproducibility — that depends on LLVM/clang determinism which is outside the Concrete compiler's control.
