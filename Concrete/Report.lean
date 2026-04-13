@@ -1000,7 +1000,7 @@ structure ProfileViolation where
   violationLoc  : Option SourceLoc := none    -- offending construct (loop, call, etc.)
   violationSpan : Option Span := none         -- full span for caret rendering
 
-private partial def checkPredictableModule
+partial def checkPredictableModule
     (recMap : List (String × RecursionKind × List String))
     (externNames : List String)
     (locMap : FnLocMap)

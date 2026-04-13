@@ -28,6 +28,7 @@ Source Text
     │
     ├─→ ProofCore extraction (Concrete/ProofCore.lean) — pure fragment for Lean proofs
     ├─→ Proof semantics (Concrete/Proof.lean) — formal evaluation + first theorems
+    ├─→ Policy enforcement (Concrete/Policy.lean) — [policy] compile errors
     │
     ▼
   Mono ──── ValidatedCore → MonomorphizedProgram

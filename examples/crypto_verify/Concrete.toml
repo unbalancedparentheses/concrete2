@@ -1,2 +1,6 @@
 [package]
 name = "crypto_verify"
+
+[policy]
+predictable = true
+deny = ["Unsafe"]

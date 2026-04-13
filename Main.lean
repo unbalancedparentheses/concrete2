@@ -673,6 +673,18 @@ def compileBuild (projectRoot : String) (outputPath : Option String) (emitLLVM :
       IO.eprintln (renderDiagnostics ds (sourceMap := allSrcMap))
       return 1
     | .ok validCore =>
+    -- Enforce [policy] from Concrete.toml
+    let policy := parsePolicy tomlContent
+    if !policy.isEmpty then
+      let policyLocMap := Report.buildFnLocMap merged.modules mainPath
+      let simpleLocMap := policyLocMap.map fun e => (e.qualName, (e.file, e.fnSpan.line))
+      let registry ← loadRegistry mainPath
+      let pc := extractProofCore validCore simpleLocMap registry
+      let policyDs := enforcePolicy policy validCore.coreModules
+        (locMap := policyLocMap) (pc := pc) (depNames := depNames)
+      if hasErrors policyDs then
+        IO.eprintln (renderDiagnostics policyDs (sourceMap := allSrcMap))
+        return 1
     match Pipeline.monomorphize validCore with
     | .error ds =>
       IO.eprintln (renderDiagnostics ds (sourceMap := allSrcMap))
@@ -791,6 +803,18 @@ partial def compileTestBuild (projectRoot : String) (moduleFilter : Option Strin
       IO.eprintln (renderDiagnostics ds (sourceMap := allSrcMap))
       return 1
     | .ok validCore =>
+    -- Enforce [policy] from Concrete.toml
+    let policy := parsePolicy tomlContent
+    if !policy.isEmpty then
+      let policyLocMap := Report.buildFnLocMap merged.modules mainPath
+      let simpleLocMap := policyLocMap.map fun e => (e.qualName, (e.file, e.fnSpan.line))
+      let registry ← loadRegistry mainPath
+      let pc := extractProofCore validCore simpleLocMap registry
+      let policyDs := enforcePolicy policy validCore.coreModules
+        (locMap := policyLocMap) (pc := pc) (depNames := depNames)
+      if hasErrors policyDs then
+        IO.eprintln (renderDiagnostics policyDs (sourceMap := allSrcMap))
+        return 1
     match Pipeline.monomorphize validCore with
     | .error ds =>
       IO.eprintln (renderDiagnostics ds (sourceMap := allSrcMap))

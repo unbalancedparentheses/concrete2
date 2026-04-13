@@ -10,6 +10,19 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Package-level policy enforcement
+
+**`[policy]` section in Concrete.toml** makes thesis properties enforceable at the package level as compile errors, not just report-side analysis.
+
+Three policy constraints:
+- **`predictable = true`**: enforces the predictable-execution profile (no recursion, alloc, FFI, blocking I/O) — violations are compile errors
+- **`deny = ["Unsafe", ...]`**: forbids specific capabilities — any function declaring a denied capability fails compilation
+- **`require-proofs = true`**: all proof-eligible functions must have registered proofs (missing, stale, or blocked = compile error)
+
+Policy runs after CoreCheck, before monomorphization. Only project modules are checked (dependencies are excluded). `crypto_verify` example now uses `[policy] predictable = true, deny = ["Unsafe"]` as a demonstration.
+
+Implemented in `Concrete/Policy.lean` with `parsePolicy` (TOML parsing) and `enforcePolicy` (constraint checking). Wired into both `compileBuild` and `compileTests` in Main.lean.
+
 ### Error context chains
 
 Compiler diagnostics now carry a `context : List String` field that accumulates human-readable frames as errors propagate up the call stack. Example output:

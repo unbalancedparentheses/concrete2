@@ -515,3 +515,14 @@ Trust-gate now covers 5 contract sections (determinism, consistency, terminology
 Goal: compiler diagnostics accumulate human-readable context as errors propagate up.
 
 `Diagnostic` now carries a `context : List String` field. Helpers: `Diagnostic.addContext`, `Diagnostics.addContext`, `withContext` (monadic), `Except.addContext` (pure). Rendering appends `= while ...` lines. Annotated at: Check (per-module, per-function), Elab (per-module, per-function), Lower (per-function).
+
+### Phase 13: Module/Package Policy Checks (complete)
+
+Goal: make `[policy]` in `Concrete.toml` a first-class compile-error mechanism, not just report-side analysis.
+
+`Concrete/Policy.lean` implements `ProjectPolicy` with three constraint types:
+- **`predictable = true`**: enforces the predictable-execution profile (no recursion, alloc, FFI, blocking) as compile errors, reusing `Report.checkPredictableModule`
+- **`deny = ["Unsafe", ...]`**: forbids listed capabilities via `CFnDef.capSet.normalize` checking
+- **`require-proofs = true`**: requires Lean proofs for all eligible functions, rejecting `.missing`, `.stale`, `.blocked` obligation statuses
+
+`parsePolicy` parses the `[policy]` TOML section. `enforcePolicy` runs after CoreCheck on project modules only (dependencies excluded via `depNames`), returning structured `Diagnostics` with pass="policy". Wired into both `compileBuild` and `compileTests` in `Main.lean`. Evidence gate: `crypto_verify` example builds clean with `predictable = true` and `deny = ["Unsafe"]`.
