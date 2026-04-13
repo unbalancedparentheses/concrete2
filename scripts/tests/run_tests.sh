@@ -30,6 +30,7 @@ Modes:
   --O2               Only -O2 optimized-build regression tests
   --codegen           Only codegen differential + SSA structure tests
   --report            Only --report output verification tests
+  --trust-gate        Correctness contracts only: determinism, consistency, terminology, verify
   --affected          Auto-detect changed files (git diff) and run affected tests
   --affected FILES    Run tests affected by specific files (comma-separated)
   --manifest          List all test files with categories (no execution)
@@ -49,6 +50,7 @@ Recommended workflows:
   ./scripts/tests/run_tests.sh --stdlib               # after touching std/src/
   ./scripts/tests/run_tests.sh --stdlib-module map    # iterate on one stdlib module
   ./scripts/tests/run_tests.sh --O2                   # after lowering changes
+  ./scripts/tests/run_tests.sh --trust-gate            # correctness contracts only
   ./scripts/tests/run_tests.sh --full                 # pre-merge — complete coverage
   ./scripts/tests/run_tests.sh -j 1                   # debug ordering issues
   ./scripts/tests/run_tests.sh --affected             # run tests for uncommitted changes
@@ -77,6 +79,7 @@ while [ $# -gt 0 ]; do
         --O2)      MODE="O2"; shift ;;
         --codegen) MODE="codegen"; shift ;;
         --report)  MODE="report"; shift ;;
+        --trust-gate) MODE="trust-gate"; shift ;;
         --affected)
             MODE="affected"
             if [ $# -gt 1 ] && [[ "$2" != --* ]]; then
@@ -245,6 +248,7 @@ case "$MODE" in
     O2)      SECTION="O2" ;;
     codegen) SECTION="codegen,O2" ;;
     report)  SECTION="report" ;;
+    trust-gate) SECTION="determinism,consistency,terminology,verify" ;;
     affected)
         SECTION=$(resolve_affected_sections "$AFFECTED_FILES")
         echo "=== Affected mode ==="

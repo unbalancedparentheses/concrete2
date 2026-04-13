@@ -10,6 +10,17 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Minimal CI trust gate
+
+**Four correctness contracts now run automatically in CI** via a dedicated `trust-gate` job:
+
+- **Determinism regression** (`test_determinism.sh --quick`): verifies identical output across two compilations for 18 report modes, 6 query kinds, 3 IR emit modes, and snapshot comparison (excluding timestamp).
+- **Self-consistency** (`--report consistency`): runs ProofCore self-check (15 invariants) on all 468 compilable programs.
+- **Terminology gate** (`test_terminology_gate.sh`): enforces canonical proof/obligation status terms (`proved|stale|missing|blocked|ineligible|trusted`), rejects non-canonical variants.
+- **Verifier passes** (`--report verify`): runs post-Elab placeholder check and post-Mono typeVar check on all 385 non-error programs.
+
+**New CLI mode:** `./scripts/tests/run_tests.sh --trust-gate` runs only these four sections. Also available as `make test-trust-gate`.
+
 ### Debug bundle for compiler failure reproduction
 
 **New CLI command:** `concrete debug-bundle <file.con> [-o dir]` runs the full pipeline, capturing every available artifact at the point of failure (or completion), and writes a stable directory layout for reproduction.

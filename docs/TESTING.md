@@ -469,3 +469,16 @@ Goal: capture everything needed to reproduce a compilation failure in a stable d
 `concrete debug-bundle <file.con> [-o dir]` runs the full pipeline, accumulating artifacts at each stage. On failure or success, it writes a bundle containing: `manifest.json` (compiler version, source path, failure stage, artifact flags), `source/` (original source files), `diagnostics.txt`, `core.txt` (Core IR), `ssa.txt` (SSA IR), `llvm.ll` (LLVM IR), `consistency.txt` (ProofCore self-check), and `verify.txt` (post-Elab verifier results). Each artifact is only present if the pipeline reached the stage that produces it.
 
 The capture pipeline tracks 9 stages: parse, resolve, check, elaborate, coreCheck, mono, lower, emit, complete.
+
+### Phase 8: CI Trust Gate (complete)
+
+Goal: run the four correctness contracts automatically in CI so regressions in determinism, self-consistency, terminology, and verifier invariants are caught before merge.
+
+`./scripts/tests/run_tests.sh --trust-gate` runs only these sections:
+
+- **Determinism** — `test_determinism.sh --quick` across 18 report modes, 6 query kinds, 3 IR emit modes, and snapshot comparison
+- **Self-consistency** — `--report consistency` on all 468 compilable programs (15 ProofCore invariants)
+- **Terminology** — `test_terminology_gate.sh` enforcing canonical proof/obligation status terms
+- **Verifier passes** — `--report verify` on all 385 non-error programs
+
+The `trust-gate` CI job runs in parallel with the main test suite and SSA tests. Also available locally as `make test-trust-gate`.
