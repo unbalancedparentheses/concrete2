@@ -3,7 +3,7 @@ import Concrete
 open Concrete
 
 def usage : String :=
-  "Usage: concrete <file.con> [-o output] [--emit-llvm] [--emit-core] [--emit-ssa] [--test] [--test --module <name>] [--report caps|unsafe|layout|interface|alloc|mono|authority|proof|eligibility|proof-status|obligations|extraction|proof-diagnostics|traceability|diagnostics-json|effects|recursion|fingerprints|consistency] [--query KIND|KIND:FUNCTION|fn:FUNCTION] [--fmt]\n       concrete build [-o output] [--emit-llvm]\n       concrete run [-- args...]\n       concrete test [--module <name>]\n       concrete diff <old.json> <new.json> [--json]\n       concrete snapshot <file.con> [-o output.json]"
+  "Usage: concrete <file.con> [-o output] [--emit-llvm] [--emit-core] [--emit-ssa] [--test] [--test --module <name>] [--report caps|unsafe|layout|interface|alloc|mono|authority|proof|eligibility|proof-status|obligations|extraction|proof-diagnostics|traceability|diagnostics-json|effects|recursion|fingerprints|consistency|verify] [--query KIND|KIND:FUNCTION|fn:FUNCTION] [--fmt]\n       concrete build [-o output] [--emit-llvm]\n       concrete run [-- args...]\n       concrete test [--module <name>]\n       concrete diff <old.json> <new.json> [--json]\n       concrete snapshot <file.con> [-o output.json]"
 
 def writeFile (path : String) (content : String) : IO Unit := do
   IO.FS.writeFile ⟨path⟩ content
@@ -40,6 +40,24 @@ def runCmd (cmd : String) (args : Array String) : IO UInt32 := do
     let stderr ← child.stderr.readToEnd
     IO.eprintln stderr
   return exitCode
+
+/-- Validate LLVM IR via `llvm-as` (parse-only, no output).
+    Returns true if valid or if llvm-as is not found on PATH.
+    Returns false (and prints errors) if the IR is malformed. -/
+def validateLLVMIR (llPath : String) : IO Bool := do
+  -- Check if llvm-as is available
+  let which ← IO.Process.output { cmd := "which", args := #["llvm-as"] }
+  if which.exitCode != 0 then
+    return true  -- llvm-as not available; skip validation
+  let result ← IO.Process.output {
+    cmd := "llvm-as"
+    args := #[llPath, "-o", "/dev/null"]
+  }
+  if result.exitCode != 0 then
+    IO.eprintln s!"LLVM IR validation failed for {llPath}:"
+    IO.eprintln result.stderr
+    return false
+  return true
 
 /-- Check if a module is an empty stub from `mod X;` declaration. -/
 def isModuleStub (m : Module) : Bool :=
@@ -147,6 +165,11 @@ def compileSSA (inputPath : String) (outputPath : String) (emitLLVM : Bool) : IO
     if emitLLVM then
       IO.println llvmIR
       return 0
+    -- Validate LLVM IR (if llvm-as available)
+    let llValid ← validateLLVMIR llPath
+    if !llValid then
+      IO.FS.removeFile ⟨llPath⟩
+      return 1
     -- Compile with clang
     let args ← clangArgs llPath outputPath
     let exitCode ← runCmd "clang" args
@@ -180,6 +203,9 @@ def compileTest (inputPath : String) (moduleFilter : Option String := none) : IO
     let llPath := inputPath ++ ".test.ll"
     let outPath := inputPath ++ ".test"
     writeFile llPath llvmIR
+    -- Validate LLVM IR (if llvm-as available)
+    let llValid ← validateLLVMIR llPath
+    if !llValid then return 1
     let args ← clangArgs llPath outPath
     let exitCode ← runCmd "clang" args
     if exitCode != 0 then
@@ -343,6 +369,19 @@ def compileAndReport (inputPath : String) (reportType : String) : IO UInt32 := d
       let violations := pc.selfCheck
       IO.println (ConsistencyViolation.render violations)
       if violations.isEmpty then return 0 else return 1
+    if reportType == "verify" then
+      -- Post-Elab: placeholder check (warnings)
+      let elabDs := Pipeline.verifyPostElab validCore.coreModules
+      -- Post-Mono: typeVar check (errors)
+      match Pipeline.monomorphize validCore with
+      | .error ds =>
+        IO.eprintln (renderDiagnostics ds (sourceMap := srcMap))
+        return 1
+      | .ok mono =>
+        let monoDs := verifyPostMono mono.coreModules
+        let allDs := elabDs ++ monoDs
+        IO.println (renderVerifyDiagnostics allDs)
+        if monoDs.isEmpty then return 0 else return 1
     if reportType == "traceability" then
       let registry ← loadRegistry inputPath
       match Pipeline.monomorphize validCore with
@@ -365,7 +404,7 @@ def compileAndReport (inputPath : String) (reportType : String) : IO UInt32 := d
       | .ok mono =>
         IO.println (Report.monoReport validCore.coreModules mono.coreModules)
         return 0
-    IO.eprintln s!"Unknown report type: {reportType}. Use: caps, unsafe, layout, interface, alloc, mono, authority, proof, eligibility, proof-status, obligations|extraction|proof-diagnostics|traceability|diagnostics-json, effects, recursion, fingerprints, consistency"
+    IO.eprintln s!"Unknown report type: {reportType}. Use: caps, unsafe, layout, interface, alloc, mono, authority, proof, eligibility, proof-status, obligations|extraction|proof-diagnostics|traceability|diagnostics-json, effects, recursion, fingerprints, consistency, verify"
     return 1
 
 def compileAndQuery (inputPath : String) (query : String) : IO UInt32 := do
@@ -632,6 +671,11 @@ def compileBuild (projectRoot : String) (outputPath : Option String) (emitLLVM :
       if emitLLVM then
         IO.println llvmIR
         return 0
+      -- Validate LLVM IR (if llvm-as available)
+      let llValid ← validateLLVMIR llPath
+      if !llValid then
+        IO.FS.removeFile ⟨llPath⟩
+        return 1
       -- Determine output path
       let outPath := match outputPath with
         | some p => p
@@ -743,6 +787,9 @@ partial def compileTestBuild (projectRoot : String) (moduleFilter : Option Strin
       let llPath := mainPath ++ ".test.ll"
       let outPath := "/tmp/concrete_test_" ++ toString (← IO.monoMsNow)
       writeFile llPath llvmIR
+      -- Validate LLVM IR (if llvm-as available)
+      let llValid ← validateLLVMIR llPath
+      if !llValid then return 1
       let args ← clangArgs llPath outPath
       let exitCode ← runCmd "clang" args
       if exitCode != 0 then

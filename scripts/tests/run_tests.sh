@@ -238,7 +238,7 @@ resolve_affected_sections() {
 
 # Resolve which sections are active based on MODE
 case "$MODE" in
-    full)    SECTION="passlevel,positive,negative,testflag,report,codegen,O2,stdlib,collection,xtarget,perf,determinism,consistency,terminology" ;;
+    full)    SECTION="passlevel,positive,negative,testflag,report,codegen,O2,stdlib,collection,xtarget,perf,determinism,consistency,terminology,verify" ;;
     fast)    SECTION="passlevel,positive,negative,testflag,report,codegen,O2,stdlib,collection" ;;
     stdlib)  SECTION="stdlib,collection" ;;
     stdlib-module) SECTION="stdlib" ;;
@@ -7154,6 +7154,35 @@ else
     SKIP=$((SKIP + 1))
 fi
 fi # end section: terminology
+
+# === Verifier passes (full mode only) ===
+if section_active verify; then
+echo ""
+echo "=== Verifier passes ==="
+verify_pass=0
+verify_fail=0
+for f in "$TESTDIR"/*.con; do
+    bn=$(basename "$f")
+    case "$bn" in
+        error_*|adversarial_*|pressure_err_*|phase3_diag_*|bug_*) continue ;;
+    esac
+    output=$("$COMPILER" "$f" --report verify 2>&1) || true
+    if echo "$output" | grep -q "VERIFIER FAILED"; then
+        echo "  FAIL verify: $bn"
+        echo "$output" | grep "error:" | head -3 | sed 's/^/    /'
+        verify_fail=$((verify_fail + 1))
+    else
+        verify_pass=$((verify_pass + 1))
+    fi
+done
+if [ "$verify_fail" -gt 0 ]; then
+    echo "  $verify_fail programs have verifier errors"
+    FAIL=$((FAIL + verify_fail))
+else
+    echo "  All $verify_pass programs pass verifier checks"
+fi
+PASS=$((PASS + verify_pass))
+fi # end section: verify
 
 echo ""
 flush_jobs

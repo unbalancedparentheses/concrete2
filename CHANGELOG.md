@@ -10,6 +10,18 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Verifier passes for compiler boundaries
+
+**Three verifier passes added** that catch internal compiler invariant violations before bad state leaks downstream:
+
+- **Post-Elab verifier** (`verifyNoPlaceholders`): detects `Ty.placeholder` surviving elaboration. Currently warning-level — placeholder legitimately survives in try/defer expressions and is resolved during lowering. Identifies 14 programs with surviving placeholders (known elaboration gap, not a correctness bug).
+- **Post-Mono verifier** (`verifyNoTypeVars`): hard gate — detects `Ty.typeVar` surviving monomorphization. Blocks compilation if generic type variables leak into lowering. Skips generic definitions (only checks monomorphized copies).
+- **LLVM IR validation** (`validateLLVMIR`): runs `llvm-as` on emitted `.ll` files before clang. Gracefully skips if llvm-as not on PATH. Wired into all four compilation paths (compileSSA, compileTest, compileBuild, compileTestBuild).
+
+**New CLI mode:** `--report verify` runs both post-Elab (warnings) and post-Mono (errors) verifiers.
+
+**New file:** `Concrete/Verify.lean` — recursive IR walker that checks type predicates across all CExpr/CStmt/CMatchArm nodes, struct/enum fields, extern fn signatures, and constants.
+
 ### Pass invariants and contracts completed
 
 **PASSES.md now covers all 12 pipeline stages** with explicit signatures, preconditions, postconditions, error conditions, and invariants. Three sections added:

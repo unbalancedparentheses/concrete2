@@ -606,11 +606,13 @@ These are audit-oriented modes — they answer questions about what the program 
 | Match shape and coverage after elaboration | CoreCheck | Lower |
 | Declaration-level legality (trait/FFI/repr) | CoreCheck | Lower, EmitSSA |
 | Full type annotations | Elab | Mono, Lower, EmitSSA |
-| No type variables | Mono | Lower, EmitSSA |
+| No type variables | Mono + `verifyPostMono` | Lower, EmitSSA (hard gate in Pipeline.monomorphize) |
+| No placeholder types (warning) | Elab + `verifyNoPlaceholders` | CoreCheck, Mono (warning-level; try/defer can retain placeholders) |
 | ProofCore self-consistency | ProofCore extraction | Report renderers, `--report consistency` |
 | Canonical status terminology | `ObligationStatus.canonical` | JSON facts, CLI reports, terminology gate |
 | SSA form / dominance | Lower, SSAVerify | SSACleanup, EmitSSA |
 | No dead blocks | SSACleanup | EmitSSA |
+| LLVM IR well-formedness | `validateLLVMIR` (llvm-as) | clang (validated before linking, skips if llvm-as unavailable) |
 
 ---
 
@@ -623,21 +625,20 @@ Each pass boundary has a different level of machine-checkability today. This tab
 | Parse → Resolve | No (Parse output is trusted) | Grammar conformance check, span coverage assertion |
 | Resolve → Check | No (Resolve output is trusted) | All identifiers in scope, no dangling references |
 | Check → Elab | No (Check is `Unit`-producing) | Type environment snapshot comparison |
-| Elab → CoreCheck | No (Elab output is trusted) | Core IR well-formedness: all expressions typed, no surface AST remnants |
+| Elab → CoreCheck | **Warning** (`verifyNoPlaceholders`) | Full Core IR well-formedness: all expressions typed, no surface AST remnants. Currently warning-level because `Ty.placeholder` legitimately survives in try/defer expressions |
 | CoreCheck → ValidatedCore | **Partially** (opaque constructor) | Core IR semantic assertions: no capability violations, no type mismatches (re-check) |
 | ValidatedCore → ProofCore | **Yes** (`selfCheck`, 13 invariants) | Already machine-checked via `--report consistency` |
-| ValidatedCore → Mono | No (Mono input is trusted) | No type variables remain post-mono (grep for `typeVar`) |
+| ValidatedCore → Mono | **Yes** (`verifyPostMono`) | Hard gate: `Ty.typeVar` surviving monomorphization blocks compilation. Implemented in `Concrete/Verify.lean`, wired into `Pipeline.monomorphize` |
 | Mono → Lower | No (Lower input is trusted) | All generic calls resolved, no polymorphic function bodies |
 | Lower → SSAVerify | **Yes** (`ssaVerifyProgram`) | Already machine-checked: dominance, phi coverage, branch safety |
 | SSACleanup → SSAVerify | **Yes** (re-verified) | Already machine-checked post-cleanup |
-| SSAVerify → EmitSSA | No (EmitSSA trusts input) | LLVM IR validator (external: `llvm-as` or `opt -verify`) |
+| SSAVerify → EmitSSA | **Yes** (`validateLLVMIR`) | `llvm-as` validates emitted `.ll` files before clang. Gracefully skips if llvm-as not on PATH |
 
-**Priority for new verifier passes** (highest value first):
+**Remaining verifier priorities:**
 
-1. **Core IR well-formedness** (Elab → CoreCheck boundary): assert all expressions carry types, no elaboration artifacts remain, all function bodies are present. This is the most valuable because CoreCheck trusts Elab completely.
-2. **Post-Mono type-variable absence**: simple grep for `Ty.typeVar` in the monomorphized output. Cheap and catches real bugs.
-3. **LLVM IR validation**: pipe EmitSSA output through `llvm-as` to catch malformed IR before clang. External tool dependency but high value.
-4. **Parse span coverage**: every AST node has a non-empty span. Catches parser regressions that lose location info.
+1. **Parse span coverage**: every AST node has a non-empty span. Catches parser regressions that lose location info.
+2. **Core IR placeholder elimination**: promote post-Elab placeholder check from warning to error once try/defer elaboration fully resolves types.
+3. **Full Core IR well-formedness**: all expressions carry types, all function bodies are present, no elaboration artifacts remain.
 
 ---
 

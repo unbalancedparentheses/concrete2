@@ -14,6 +14,7 @@ import Concrete.Lower
 import Concrete.SSAVerify
 import Concrete.SSACleanup
 import Concrete.EmitSSA
+import Concrete.Verify
 
 namespace Concrete
 
@@ -96,16 +97,26 @@ def elaborate (resolved : ResolvedProgram) (summary : SummaryTable) : Except Dia
   | .error ds => .error ds
   | .ok coreModules => .ok { coreModules := canonicalizeProgram coreModules }
 
-/-- Validate elaborated Core IR.  This is the only way to construct a `ValidatedCore`. -/
+/-- Validate elaborated Core IR.  This is the only way to construct a `ValidatedCore`.
+    Also runs the post-Elab verifier (no Ty.placeholder in the IR) as a warning —
+    placeholder can survive elaboration in try/defer expressions and is resolved by Mono. -/
 def coreCheck (elabProg : ElaboratedProgram) : Except Diagnostics ValidatedCore :=
   match coreCheckProgram elabProg.coreModules with
   | .error ds => .error ds
   | .ok () => .ok { coreModules := elabProg.coreModules }
 
-/-- Monomorphize generic functions. -/
+/-- Run the post-Elab verifier (placeholder check) as a non-blocking diagnostic pass.
+    Returns warnings for any Ty.placeholder found; does not block compilation. -/
+def verifyPostElab (modules : List CModule) : Diagnostics :=
+  (verifyNoPlaceholders modules).map fun d => { d with severity := .warning }
+
+/-- Monomorphize generic functions.  Runs the post-Mono verifier (no Ty.typeVar or Ty.placeholder). -/
 def monomorphize (vc : ValidatedCore) : Except Diagnostics MonomorphizedProgram :=
   match liftStringError "mono" (monoProgram vc.coreModules) with
-  | .ok modules => .ok { coreModules := modules }
+  | .ok modules =>
+    let monoDs := verifyPostMono modules
+    if !monoDs.isEmpty then .error monoDs
+    else .ok { coreModules := modules }
   | .error ds => .error ds
 
 /-- Lower to SSA, verify, and clean up. -/

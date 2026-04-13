@@ -36,7 +36,7 @@ REPORT_MODES=(
     caps unsafe layout interface alloc mono authority
     proof eligibility proof-status obligations extraction
     proof-diagnostics effects recursion fingerprints diagnostics-json
-    consistency
+    consistency verify
 )
 
 # Query kinds to test
