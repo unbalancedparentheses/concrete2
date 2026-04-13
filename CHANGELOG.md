@@ -10,6 +10,18 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### CI/CD evidence gates
+
+**10 new evidence gates** in the trust-gate CI job verify proof, predictable, and report correctness:
+
+- **Predictable check**: `crypto_verify` must pass, `thesis_demo` must fail (has I/O)
+- **Stale-proof check**: no proof-bearing example has stale proofs (runs `--report proof-status`)
+- **Proof-obligation status**: `thesis_demo` has at least one proved obligation
+- **Report artifact generation**: all 18 `--report` modes produce non-empty output on `thesis_demo`
+- **Trust-drift check**: consistency and fingerprints pass on all proof-bearing examples
+
+Trust-gate now runs 5 contract sections: determinism, consistency, terminology, verify, evidence.
+
 ### Uniform diagnostic engine
 
 The core compiler pipeline now emits the same structured `Diagnostic` shape (`severity`, `message`, `pass`, `span`, `hint`, `file`) end-to-end. Previously, Parser returned plain strings, Mono/Lower used `ExceptT String`, and Pipeline wrapped them with `liftStringError`. Now:

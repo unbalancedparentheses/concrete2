@@ -30,7 +30,7 @@ Modes:
   --O2               Only -O2 optimized-build regression tests
   --codegen           Only codegen differential + SSA structure tests
   --report            Only --report output verification tests
-  --trust-gate        Correctness contracts only: determinism, consistency, terminology, verify
+  --trust-gate        Correctness contracts only: determinism, consistency, terminology, verify, evidence
   --affected          Auto-detect changed files (git diff) and run affected tests
   --affected FILES    Run tests affected by specific files (comma-separated)
   --manifest          List all test files with categories (no execution)
@@ -241,14 +241,14 @@ resolve_affected_sections() {
 
 # Resolve which sections are active based on MODE
 case "$MODE" in
-    full)    SECTION="passlevel,positive,negative,testflag,report,codegen,O2,stdlib,collection,xtarget,perf,determinism,consistency,terminology,verify" ;;
+    full)    SECTION="passlevel,positive,negative,testflag,report,codegen,O2,stdlib,collection,xtarget,perf,determinism,consistency,terminology,verify,evidence" ;;
     fast)    SECTION="passlevel,positive,negative,testflag,report,codegen,O2,stdlib,collection" ;;
     stdlib)  SECTION="stdlib,collection" ;;
     stdlib-module) SECTION="stdlib" ;;
     O2)      SECTION="O2" ;;
     codegen) SECTION="codegen,O2" ;;
     report)  SECTION="report" ;;
-    trust-gate) SECTION="determinism,consistency,terminology,verify" ;;
+    trust-gate) SECTION="determinism,consistency,terminology,verify,evidence" ;;
     affected)
         SECTION=$(resolve_affected_sections "$AFFECTED_FILES")
         echo "=== Affected mode ==="
@@ -7187,6 +7187,126 @@ else
 fi
 PASS=$((PASS + verify_pass))
 fi # end section: verify
+
+# === Evidence gates (CI/CD evidence for proof, predictable, stale, reports) ===
+if section_active evidence; then
+echo ""
+echo "=== Evidence gates ==="
+evidence_pass=0
+evidence_fail=0
+
+# --- Predictable check: crypto_verify must PASS ---
+if [ -f "examples/crypto_verify/src/main.con" ]; then
+    pred_out=$("$COMPILER" examples/crypto_verify/src/main.con --check predictable 2>&1) || true
+    if echo "$pred_out" | grep -q "predictable profile: pass"; then
+        echo "  ok  predictable: crypto_verify passes"
+        evidence_pass=$((evidence_pass + 1))
+    else
+        echo "  FAIL predictable: crypto_verify should pass"
+        echo "$pred_out" | head -3 | sed 's/^/    /'
+        evidence_fail=$((evidence_fail + 1))
+    fi
+fi
+
+# --- Predictable check: thesis_demo must FAIL (has I/O) ---
+if [ -f "examples/thesis_demo/src/main.con" ]; then
+    pred_out=$("$COMPILER" examples/thesis_demo/src/main.con --check predictable 2>&1) || true
+    if echo "$pred_out" | grep -q "predictable profile: FAIL"; then
+        echo "  ok  predictable: thesis_demo correctly fails (has I/O)"
+        evidence_pass=$((evidence_pass + 1))
+    else
+        echo "  FAIL predictable: thesis_demo should fail"
+        evidence_fail=$((evidence_fail + 1))
+    fi
+fi
+
+# --- Stale-proof check: no proof-status shows 'stale' on registry-bearing examples ---
+for reg in examples/*/src/proof-registry.json; do
+    [ -f "$reg" ] || continue
+    src_dir=$(dirname "$reg")
+    main_file="$src_dir/main.con"
+    [ -f "$main_file" ] || continue
+    example_name=$(basename "$(dirname "$src_dir")")
+    ps_out=$("$COMPILER" "$main_file" --report proof-status 2>&1) || true
+    if echo "$ps_out" | grep -q "^-- stale"; then
+        echo "  FAIL stale-proof: $example_name has stale proofs"
+        echo "$ps_out" | grep "^-- stale" | head -3 | sed 's/^/    /'
+        evidence_fail=$((evidence_fail + 1))
+    else
+        echo "  ok  stale-proof: $example_name — no stale proofs"
+        evidence_pass=$((evidence_pass + 1))
+    fi
+done
+
+# --- Proof-obligation status: thesis_demo has at least one proved obligation ---
+if [ -f "examples/thesis_demo/src/main.con" ]; then
+    ob_out=$("$COMPILER" examples/thesis_demo/src/main.con --report obligations 2>&1) || true
+    if echo "$ob_out" | grep -q "status:.*proved"; then
+        echo "  ok  obligations: thesis_demo has proved obligations"
+        evidence_pass=$((evidence_pass + 1))
+    else
+        echo "  FAIL obligations: thesis_demo should have proved obligations"
+        evidence_fail=$((evidence_fail + 1))
+    fi
+fi
+
+# --- Report artifact generation: all report modes produce non-empty output ---
+if [ -f "examples/thesis_demo/src/main.con" ]; then
+    report_ok=0
+    report_bad=0
+    for mode in caps unsafe layout alloc authority proof eligibility proof-status obligations \
+                proof-diagnostics extraction effects recursion fingerprints consistency verify traceability mono; do
+        rout=$("$COMPILER" examples/thesis_demo/src/main.con --report "$mode" 2>&1) || true
+        if [ -n "$rout" ]; then
+            report_ok=$((report_ok + 1))
+        else
+            echo "  FAIL report-gen: --report $mode produced empty output"
+            report_bad=$((report_bad + 1))
+        fi
+    done
+    if [ "$report_bad" -eq 0 ]; then
+        echo "  ok  report-gen: all $report_ok report modes produce output"
+        evidence_pass=$((evidence_pass + 1))
+    else
+        evidence_fail=$((evidence_fail + report_bad))
+    fi
+fi
+
+# --- Trust-drift: consistency + fingerprints on proof-bearing examples ---
+for reg in examples/*/src/proof-registry.json; do
+    [ -f "$reg" ] || continue
+    src_dir=$(dirname "$reg")
+    main_file="$src_dir/main.con"
+    [ -f "$main_file" ] || continue
+    example_name=$(basename "$(dirname "$src_dir")")
+    # Consistency
+    con_out=$("$COMPILER" "$main_file" --report consistency 2>&1) || true
+    if echo "$con_out" | grep -q "All consistency checks passed"; then
+        echo "  ok  trust-drift: $example_name consistency passes"
+        evidence_pass=$((evidence_pass + 1))
+    else
+        echo "  FAIL trust-drift: $example_name has consistency violations"
+        echo "$con_out" | head -3 | sed 's/^/    /'
+        evidence_fail=$((evidence_fail + 1))
+    fi
+    # Fingerprints (non-empty)
+    fp_out=$("$COMPILER" "$main_file" --report fingerprints 2>&1) || true
+    if [ -n "$fp_out" ]; then
+        echo "  ok  trust-drift: $example_name fingerprints present"
+        evidence_pass=$((evidence_pass + 1))
+    else
+        echo "  FAIL trust-drift: $example_name fingerprints empty"
+        evidence_fail=$((evidence_fail + 1))
+    fi
+done
+
+if [ "$evidence_fail" -gt 0 ]; then
+    echo "  $evidence_fail evidence gate failures"
+fi
+echo "  $evidence_pass evidence gates passed"
+PASS=$((PASS + evidence_pass))
+FAIL=$((FAIL + evidence_fail))
+fi # end section: evidence
 
 echo ""
 flush_jobs

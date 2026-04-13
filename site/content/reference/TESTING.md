@@ -495,4 +495,17 @@ Goal: automatically shrink failing programs to minimal reproduction cases.
 
 Goal: every compiler phase emits the same structured `Diagnostic` shape.
 
-All pipeline phases now use `ExceptT Diagnostics` instead of `ExceptT String`: Parser (`throwParse`), Mono (`MonoM`), Lower (`throwLower`), alongside Resolve, Check, Elab, CoreCheck, and SSAVerify which already used structured diagnostics. Removed `liftStringError` wrappers from Pipeline.lean for mono and lower stages. All build warnings fixed (zero-warning build enforced).
+All pipeline phases now use `ExceptT Diagnostics` instead of `ExceptT String`: Parser (`throwParse`), Mono (`MonoM`), Lower (`throwLower`), alongside Resolve, Check, Elab, CoreCheck, and SSAVerify which already used structured diagnostics. `liftStringError` eliminated entirely from the codebase. All build warnings fixed (zero-warning build enforced).
+
+### Phase 11: CI/CD Evidence Gates (complete)
+
+Goal: verify proof, predictable, and report correctness in CI.
+
+10 evidence gates added to the trust-gate CI section:
+- **Predictable check**: `crypto_verify` must pass, `thesis_demo` must fail (has I/O)
+- **Stale-proof check**: no proof-bearing example (`crypto_verify`, `elf_header`) has stale proofs
+- **Proof-obligation status**: `thesis_demo` has at least one proved obligation
+- **Report artifact generation**: all 18 `--report` modes produce non-empty output
+- **Trust-drift check**: consistency and fingerprints pass on all proof-bearing examples
+
+Trust-gate now covers 5 contract sections (determinism, consistency, terminology, verify, evidence) with 952 total checks.
