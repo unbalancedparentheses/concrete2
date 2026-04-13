@@ -2323,7 +2323,7 @@ def checkModule (m : Module) (summary : FileSummary)
     let result := (checkFn f).run env' |>.run
     match result with
     | (.ok (), finalEnv) => (errs, finalEnv)
-    | (.error ds, _) => (errs ++ ds, env)
+    | (.error ds, _) => (errs ++ ds.addContext s!"while checking function '{f.name}'", env)
   ) (([] : Diagnostics), initEnv)
   if allErrors.isEmpty then .ok ()
   else .error allErrors
@@ -2360,7 +2360,7 @@ def checkProgram (resolved : List ResolvedModule)
       let imports := { imports with functions := imports.functions ++ siblingFns }
       match checkModule m summary imports with
       | .ok () => errs
-      | .error ds => errs ++ ds
+      | .error ds => errs ++ ds.addContext s!"while checking module '{m.name}'"
   ) ([] : Diagnostics)
   if allErrors.isEmpty then .ok () else .error allErrors
 

@@ -1874,7 +1874,7 @@ def lowerModule (m : CModule) : Except Diagnostics SModule := do
   let results ← concreteFns.foldlM (init := []) fun acc (f, path) =>
     match lowerFn f allStructs allEnums allConstants with
     | .ok (sfn, lits) => .ok (acc ++ [({ sfn with modulePath := path }, lits)])
-    | .error ds => .error (ds.map fun d => { d with message := s!"Lower.lowerModule: failed to lower function '{f.name}': {d.message}" })
+    | .error ds => .error (ds.map (·.addContext s!"while lowering function '{f.name}'"))
   -- Build deduplicated globals list (by string value)
   -- Prefix with module name to avoid collisions across modules
   let globals := results.foldl (fun deduped (_, lits) =>

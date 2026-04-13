@@ -24,6 +24,7 @@ structure Diagnostic where
   span     : Option Span    -- line/col from Token.lean
   hint     : Option String  -- suggested fix
   file     : String := ""   -- source file path (empty = unknown)
+  context  : List String := []  -- context chain, outermost first
 
 abbrev Diagnostics := List Diagnostic
 
@@ -87,7 +88,9 @@ def Diagnostic.render (d : Diagnostic) (sourceMap : SourceMap := []) : String :=
   let snippetStr := match d.span, source with
     | some sp, some src => renderSnippet src sp
     | _, _ => ""
-  s!"{locStr}{severityStr d.severity}[{d.pass}]: {d.message}{snippetStr}{hintStr}"
+  let ctxStr := if d.context.isEmpty then ""
+    else "\n" ++ ("\n".intercalate (d.context.map fun c => s!"  = {c}"))
+  s!"{locStr}{severityStr d.severity}[{d.pass}]: {d.message}{snippetStr}{hintStr}{ctxStr}"
 
 def renderDiagnostics (ds : Diagnostics) (sourceMap : SourceMap := []) : String :=
   "\n".intercalate (ds.map fun d => d.render sourceMap)
@@ -98,5 +101,29 @@ def renderDiagnostics (ds : Diagnostics) (sourceMap : SourceMap := []) : String 
 
 def hasErrors (ds : Diagnostics) : Bool :=
   ds.any fun d => d.severity == .error
+
+-- ============================================================
+-- Context helpers
+-- ============================================================
+
+/-- Prepend a context frame to a diagnostic. -/
+def Diagnostic.addContext (d : Diagnostic) (ctx : String) : Diagnostic :=
+  { d with context := ctx :: d.context }
+
+/-- Prepend a context frame to all diagnostics in a list. -/
+def Diagnostics.addContext (ds : Diagnostics) (ctx : String) : Diagnostics :=
+  ds.map (·.addContext ctx)
+
+/-- Run a fallible computation; on error, prepend context to all diagnostics. -/
+def withContext [Monad m] (ctx : String) (action : ExceptT Diagnostics m α) : ExceptT Diagnostics m α :=
+  ExceptT.mk do
+    match ← action.run with
+    | .ok a => return .ok a
+    | .error ds => return .error (ds.map (·.addContext ctx))
+
+/-- Add context to an `Except Diagnostics` value. -/
+def Except.addContext (ctx : String) : Except Diagnostics α → Except Diagnostics α
+  | .ok a => .ok a
+  | .error ds => .error (ds.map (·.addContext ctx))
 
 end Concrete

@@ -509,3 +509,9 @@ Goal: verify proof, predictable, and report correctness in CI.
 - **Trust-drift check**: consistency and fingerprints pass on all proof-bearing examples
 
 Trust-gate now covers 5 contract sections (determinism, consistency, terminology, verify, evidence) with 952 total checks.
+
+### Phase 12: Error Context Chains (complete)
+
+Goal: compiler diagnostics accumulate human-readable context as errors propagate up.
+
+`Diagnostic` now carries a `context : List String` field. Helpers: `Diagnostic.addContext`, `Diagnostics.addContext`, `withContext` (monadic), `Except.addContext` (pure). Rendering appends `= while ...` lines. Annotated at: Check (per-module, per-function), Elab (per-module, per-function), Lower (per-function).

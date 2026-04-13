@@ -10,6 +10,26 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Error context chains
+
+Compiler diagnostics now carry a `context : List String` field that accumulates human-readable frames as errors propagate up the call stack. Example output:
+
+```
+test.con:2:5: error[check]: type mismatch in let binding 'x': expected i64, got String
+ 2 |     let x: Int = "hello";
+   |     ^
+  = while checking module 'main'
+  = while checking function 'foo'
+```
+
+**Infrastructure** (`Concrete/Diagnostic.lean`):
+- `Diagnostic.addContext` / `Diagnostics.addContext` — prepend a context frame
+- `withContext` — monadic combinator for `ExceptT Diagnostics m`
+- `Except.addContext` — pure combinator for `Except Diagnostics`
+- Rendering shows context as `= while ...` lines after the snippet
+
+**Annotated sites**: Check (per-module, per-function), Elab (per-module, per-function), Lower (per-function). Replaces the ad-hoc message-prepending in `lowerModule`.
+
 ### CI/CD evidence gates
 
 **10 new evidence gates** in the trust-gate CI job verify proof, predictable, and report correctness:

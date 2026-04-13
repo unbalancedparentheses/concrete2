@@ -1330,7 +1330,7 @@ partial def elabModule (m : Module) (summary : FileSummary)
       pure { cfn with name := finalName, trustedImplOrigin := implOrigin } : ElabM CFnDef).run env' |>.run
     match result with
     | (.ok cfn, finalEnv) => (acc ++ [cfn], errs, finalEnv)
-    | (.error ds, _) => (acc, errs ++ ds, env)
+    | (.error ds, _) => (acc, errs ++ ds.addContext s!"while elaborating function '{f.name}'", env)
   ) (([] : List CFnDef), ([] : Diagnostics), initEnv)
   if !fnErrors.isEmpty then .error fnErrors
   else
@@ -1568,7 +1568,7 @@ def elabProgram (resolved : List ResolvedModule)
         linkerAliases := imports.linkerAliases ++ siblingAliases }
       match elabModule m summary imports summaryTable with
       | .ok cm => (acc ++ [cm], errs)
-      | .error ds => (acc, errs ++ ds)
+      | .error ds => (acc, errs ++ ds.addContext s!"while elaborating module '{m.name}'")
   ) (([] : List CModule), ([] : Diagnostics))
   if allErrors.isEmpty then .ok cms else .error allErrors
 
