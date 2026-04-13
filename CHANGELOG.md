@@ -10,6 +10,10 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Compiler identity in debug bundles
+
+Debug bundle manifests now record real compiler identity instead of `concrete-dev`: version (`0.1.0`), git commit hash (with `-dirty` suffix for uncommitted changes), and Lean toolchain version. Example: `concrete 0.1.0 (abc1234) [leanprover/lean4:v4.28.0]`. Also adds `concrete --version` CLI flag.
+
 ### Minimal CI trust gate
 
 **Four correctness contracts now run automatically in CI** via a dedicated `trust-gate` job:
