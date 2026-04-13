@@ -10,6 +10,14 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Determinism contract and nondeterminism audit closed
+
+**Determinism is now the default compiler contract.** Same source + same compiler binary + same toolchain = identical output for all report modes, query modes, IR emission, and snapshot content (excluding the documented `timestamp` metadata field).
+
+**Nondeterminism source audit:** the compiler uses no HashMap/HashSet data structures (all collections are `List`-based), no random values, no PID/hostname access, stable `mergeSort` for all sorting, and deterministic register/fingerprint naming. The only nondeterministic sources are: (1) snapshot `timestamp` field (intentional wall-clock metadata), (2) temp file paths in `--test` mode (internal, not in output artifacts), (3) `CONCRETE_STD` environment variable (configuration, not output).
+
+**Verification:** `test_determinism.sh` runs in full test suite, covering all 20 report modes, query modes, IR emission, and snapshot comparison (excluding timestamp). Compiled binary reproducibility is explicitly not tested (depends on LLVM/clang, outside compiler scope).
+
 ### Verifier passes for compiler boundaries
 
 **Three verifier passes added** that catch internal compiler invariant violations before bad state leaks downstream:
