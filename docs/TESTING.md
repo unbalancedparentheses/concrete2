@@ -482,3 +482,11 @@ Goal: run the four correctness contracts automatically in CI so regressions in d
 - **Verifier passes** — `--report verify` on all 385 non-error programs
 
 The `trust-gate` CI job runs in parallel with the main test suite and SSA tests. Also available locally as `make test-trust-gate`.
+
+### Phase 9: Testcase Reducer (complete)
+
+Goal: automatically shrink failing programs to minimal reproduction cases.
+
+`concrete reduce <file.con> --predicate <pred> [-o output] [--verbose]` applies syntax-aware shrinking passes in a fixpoint loop: remove top-level items → remove statements → remove match arms → remove else branches. Repeats until no pass makes progress.
+
+10 predicates covering all pipeline stages: `parse-error`, `resolve-error`, `check-error`, `elab-error`, `core-check-error`, `mono-error`, `lower-error`, `consistency-violation`, `verify-warning`, `crash`. Substring matching via colon syntax (e.g., `check-error:expected Int`). For un-parseable programs, falls back to line-based reduction.

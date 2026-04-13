@@ -3,7 +3,7 @@ import Concrete
 open Concrete
 
 def usage : String :=
-  "Usage: concrete <file.con> [-o output] [--emit-llvm] [--emit-core] [--emit-ssa] [--test] [--test --module <name>] [--report caps|unsafe|layout|interface|alloc|mono|authority|proof|eligibility|proof-status|obligations|extraction|proof-diagnostics|traceability|diagnostics-json|effects|recursion|fingerprints|consistency|verify] [--query KIND|KIND:FUNCTION|fn:FUNCTION] [--fmt]\n       concrete build [-o output] [--emit-llvm]\n       concrete run [-- args...]\n       concrete test [--module <name>]\n       concrete diff <old.json> <new.json> [--json]\n       concrete snapshot <file.con> [-o output.json]\n       concrete debug-bundle <file.con> [-o dir]"
+  "Usage: concrete <file.con> [-o output] [--emit-llvm] [--emit-core] [--emit-ssa] [--test] [--test --module <name>] [--report caps|unsafe|layout|interface|alloc|mono|authority|proof|eligibility|proof-status|obligations|extraction|proof-diagnostics|traceability|diagnostics-json|effects|recursion|fingerprints|consistency|verify] [--query KIND|KIND:FUNCTION|fn:FUNCTION] [--fmt]\n       concrete build [-o output] [--emit-llvm]\n       concrete run [-- args...]\n       concrete test [--module <name>]\n       concrete diff <old.json> <new.json> [--json]\n       concrete snapshot <file.con> [-o output.json]\n       concrete debug-bundle <file.con> [-o dir]\n       concrete reduce <file.con> --predicate <pred> [-o output] [--verbose]\n       concrete --version"
 
 /-- Capture compiler identity: version, git commit, lean toolchain. -/
 def compilerIdentity : IO String := do
@@ -12,8 +12,9 @@ def compilerIdentity : IO String := do
     let r ← IO.Process.output { cmd := "git", args := #["rev-parse", "--short", "HEAD"] }
     if r.exitCode == 0 then
       let hash := r.stdout.trimAscii.toString
-      let d ← IO.Process.output { cmd := "git", args := #["diff", "--quiet", "HEAD"] }
-      pure (if d.exitCode != 0 then hash ++ "-dirty" else hash)
+      -- Check for tracked modifications and untracked files
+      let d ← IO.Process.output { cmd := "git", args := #["status", "--porcelain"] }
+      pure (if d.stdout.trimAscii.toString.isEmpty then hash else hash ++ "-dirty")
     else pure "unknown"
   catch _ => pure "unknown"
   let toolchain ← try
@@ -1002,6 +1003,51 @@ def main (args : List String) : IO UInt32 := do
         | none => "complete (no failure)"
       IO.println s!"Debug bundle written: {bundleDir}/ — {status}"
       return (if st.failStage.isSome then 1 else 0)
+  -- concrete reduce <file.con> --predicate <pred> [-o output] [--verbose]
+  if args.head? == some "reduce" then
+    let rest := args.drop 1
+    let inputPath := match rest with
+      | p :: _ => some p
+      | [] => none
+    match inputPath with
+    | none =>
+      IO.eprintln "Usage: concrete reduce <file.con> --predicate <pred> [-o output] [--verbose]"
+      IO.eprintln "Predicates: parse-error, resolve-error, check-error, elab-error, core-check-error,"
+      IO.eprintln "            mono-error, lower-error, consistency-violation, verify-warning, crash"
+      IO.eprintln "Substring match: check-error:expected Int"
+      return 1
+    | some inp =>
+      let predStr := match rest with
+        | _ :: "--predicate" :: p :: _ => some p
+        | _ => none
+      match predStr with
+      | none =>
+        IO.eprintln "error: --predicate is required"
+        return 1
+      | some ps =>
+        match Reduce.parsePredicate ps with
+        | none =>
+          IO.eprintln s!"error: unknown predicate '{ps}'"
+          return 1
+        | some pred =>
+          let outputPath := match rest with
+            | _ :: _ =>
+              let rec findO : List String → Option String
+                | "-o" :: p :: _ => some p
+                | _ :: rest => findO rest
+                | [] => none
+              findO rest
+            | [] => none
+          let outputPath := outputPath.getD (inp ++ ".reduced")
+          let verbose := rest.any (· == "--verbose")
+          let source ← readFile inp
+          if verbose then IO.eprintln s!"Reducing {inp} with predicate '{ps}'..."
+          let result ← Reduce.reduce source pred resolveAllModules verbose
+          writeFile outputPath result
+          let origLines := (source.splitOn "\n").length
+          let redLines := (result.splitOn "\n").length
+          IO.println s!"Reduced: {origLines} → {redLines} lines — {outputPath}"
+          return 0
   -- concrete --version
   if args == ["--version"] then
     let id ← compilerIdentity

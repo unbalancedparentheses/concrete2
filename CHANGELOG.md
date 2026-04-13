@@ -10,6 +10,20 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Testcase reducer
+
+**New CLI command:** `concrete reduce <file.con> --predicate <pred> [-o output] [--verbose]` shrinks failing programs while preserving the failure, using syntax-aware shrinking in a fixpoint loop.
+
+**Shrinking passes** (coarsest to finest):
+1. Remove entire top-level items (functions, structs, enums, impl blocks, traits, constants, etc.)
+2. Remove statements from function bodies
+3. Remove match arms (keeping at least one)
+4. Remove else branches from if statements
+
+**Predicates:** `parse-error`, `resolve-error`, `check-error`, `elab-error`, `core-check-error`, `mono-error`, `lower-error`, `consistency-violation`, `verify-warning`, `crash`. Substring matching via colon: `check-error:expected Int`.
+
+For programs that don't parse (parse-error predicate), falls back to line-based reduction. Implemented in `Concrete/Reduce.lean`.
+
 ### Compiler identity in debug bundles
 
 Debug bundle manifests now record real compiler identity instead of `concrete-dev`: version (`0.1.0`), git commit hash (with `-dirty` suffix for uncommitted changes), and Lean toolchain version. Example: `concrete 0.1.0 (abc1234) [leanprover/lean4:v4.28.0]`. Also adds `concrete --version` CLI flag.
