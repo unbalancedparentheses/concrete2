@@ -85,20 +85,21 @@ Completed proof-foundation milestones now live in [CHANGELOG.md](CHANGELOG.md): 
 
 The active roadmap below starts after that completed proof/memory closure work. If an item is done, move it to [CHANGELOG.md](CHANGELOG.md) instead of leaving it in the numbered task list.
 1. add testcase minimization/reduction workflow on top of the debug bundle so parser/checker/proof/codegen failures can be shrunk without losing the captured reproduction state
-2. add a minimal CI trust gate for the existing contracts: core suite, verifier checks, `--report consistency`, determinism regression, and the terminology gate should run automatically on normal CI
-3. make the structured/source-spanned diagnostic engine uniform across parser, resolver, checker, elaboration, CoreCheck, report/query failures, proof/evidence failures, artifact/registry failures, package/interface failures, and backend-contract failures
-4. add CI/CD evidence gates: tests, predictable check, stale-proof check, report artifact generation, proof-obligation status, report-consistency status, policy status, trust-drift check, and the new consistency/determinism gates
-5. add error-context and backtrace support so deep `Result`-based failures can accumulate human-meaningful context, capture stack traces where the runtime/target allows it, and surface that information consistently in diagnostics and developer tooling
-6. make module/package policy checks a first-class architecture feature for the existing thesis properties, not just a report-side prototype
-7. define the thesis threat/accident model and build one attacker-style demo that introduces authority/resource/proof drift and shows Concrete catching it
-8. validate fixed-capacity usefulness with a no-alloc parser/validator or ring-buffer-style example
-9. design and implement the smallest bounded-capacity type path that makes predictable examples practical
-10. add stack-depth reporting for functions that pass the no-recursion profile
-11. classify host calls, cleanup paths, determinism sources, failure paths, and memory/UB boundaries for predictable/proved code
-12. define the panic/abort/failure strategy explicitly before broader runtime and backend claims: decide abort-only versus any unwinding model, specify cleanup/no-leak behavior under failure, define FFI consequences, and state what proof-backed code may assume about panic/failure paths
-13. define the no-std / freestanding split for predictable and embedded-oriented code
-14. define standalone-file versus project UX so examples and small tools can use the stdlib without accidental workflow friction
-15. define concrete project/bootstrap UX: `concrete new`, starter templates, standard layout conventions, and a first supported outsider workflow for trying the language without project-author help
+2. replace placeholder debug-bundle version metadata with real compiler/build identity so bundles record an actual version/commit/toolchain contract instead of `concrete-dev`
+3. add a minimal CI trust gate for the existing contracts: core suite, verifier checks, `--report consistency`, determinism regression, and the terminology gate should run automatically on normal CI
+4. make the structured/source-spanned diagnostic engine uniform across parser, resolver, checker, elaboration, CoreCheck, report/query failures, proof/evidence failures, artifact/registry failures, package/interface failures, and backend-contract failures
+5. add CI/CD evidence gates: tests, predictable check, stale-proof check, report artifact generation, proof-obligation status, report-consistency status, policy status, trust-drift check, and the new consistency/determinism gates
+6. add error-context and backtrace support so deep `Result`-based failures can accumulate human-meaningful context, capture stack traces where the runtime/target allows it, and surface that information consistently in diagnostics and developer tooling
+7. make module/package policy checks a first-class architecture feature for the existing thesis properties, not just a report-side prototype
+8. define the thesis threat/accident model and build one attacker-style demo that introduces authority/resource/proof drift and shows Concrete catching it
+9. validate fixed-capacity usefulness with a no-alloc parser/validator or ring-buffer-style example
+10. design and implement the smallest bounded-capacity type path that makes predictable examples practical
+11. add stack-depth reporting for functions that pass the no-recursion profile
+12. classify host calls, cleanup paths, determinism sources, failure paths, and memory/UB boundaries for predictable/proved code
+13. define the panic/abort/failure strategy explicitly before broader runtime and backend claims: decide abort-only versus any unwinding model, specify cleanup/no-leak behavior under failure, define FFI consequences, and state what proof-backed code may assume about panic/failure paths
+14. define the no-std / freestanding split for predictable and embedded-oriented code
+15. define standalone-file versus project UX so examples and small tools can use the stdlib without accidental workflow friction
+16. define concrete project/bootstrap UX: `concrete new`, starter templates, standard layout conventions, and a first supported outsider workflow for trying the language without project-author help
 16. build the parser/decoder pressure set before freezing the stdlib target: JSON subset, HTTP request parser, and DNS packet parser, specifically to discover which parsing, slice/buffer, and result/error APIs are actually missing
 17. build the ownership-heavy structure pressure set before freezing the stdlib target: tree, ordered map, arena-backed graph, and intrusive list, specifically to discover which ownership, cleanup, and container APIs are actually missing
 18. build the borrow/aliasing program pressure set before freezing the stdlib target: sequential `&mut` workflows, borrow-heavy adapters, field/element borrow stress programs, iterator-like borrowing patterns, and other programs whose main job is to force the aliasing surface into the open
