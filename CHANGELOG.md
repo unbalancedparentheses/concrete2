@@ -10,6 +10,16 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Pass invariants and contracts completed
+
+**PASSES.md now covers all 12 pipeline stages** with explicit signatures, preconditions, postconditions, error conditions, and invariants. Three sections added:
+
+- **ProofCore extraction (§7b):** full contract with the 13 selfCheck invariants mapped in a table, failure modes, and non-guarantees (extraction faithfulness, fingerprint stability, proof soundness).
+- **Verifier-Pass Readiness table:** maps each of the 11 pass boundaries to what is machine-checked today (SSAVerify, ProofCore.selfCheck, ValidatedCore opaque constructor) vs what a future verifier pass would add (Core IR well-formedness, post-Mono type-variable absence, LLVM IR validation, parse span coverage).
+- **Failure Modes table:** documents what happens when each pass receives input violating its preconditions — identifying the weak boundaries (Check→Elab, Elab→CoreCheck) where violations propagate silently vs strong boundaries with type-system enforcement.
+
+Cross-pass invariant table updated with ProofCore self-consistency and canonical terminology rows.
+
 ### Proof/guarantee terminology gate
 
 **Canonical status terminology unified across all output surfaces.** The six proof/obligation status terms (`proved`, `stale`, `missing`, `blocked`, `ineligible`, `trusted`) are now defined once in `ObligationStatus.canonical` and used consistently across JSON facts, CLI reports, human-readable summaries, and documentation.

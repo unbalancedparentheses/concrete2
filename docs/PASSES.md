@@ -306,6 +306,56 @@ CoreCheck is the post-elaboration semantic authority. It owns all legality rules
 
 ---
 
+## 7b. ProofCore Extraction
+
+**Signature:** `extractProofCore : ValidatedCore → List (String × SourceLoc) → ProofRegistry → ProofCore`
+
+ProofCore is a side-channel extraction — it does not sit in the compilation pipeline (Mono does not depend on it), but it consumes the same `ValidatedCore` artifact that Mono does. It is the proof-oriented fragment of the compiler.
+
+**Preconditions:**
+- `ValidatedCore` from CoreCheck (capability discipline, type consistency, declaration legality all hold).
+- Location map from parsed source (for diagnostic source locations).
+- Proof registry (hardcoded proved functions + optional external registry).
+
+**Postconditions:**
+- Every function classified as either entry (eligible) or excluded (ineligible/trusted).
+- Eligible functions attempted for PExpr extraction; result is `Option PExpr`.
+- Unsupported constructs identified for blocked functions (non-empty list when extraction fails).
+- Obligations generated for all functions with mechanically derived status.
+- Diagnostics generated for stale proofs, missing proofs, ineligible functions, unsupported constructs.
+- Call graph and recursion classification computed.
+- Fingerprints computed for all functions.
+
+**Error conditions:**
+- None. ProofCore always succeeds (extraction failure is recorded as `extracted = none`, not as a hard error).
+
+**Self-consistency invariants** (13 checks, verified by `ProofCore.selfCheck`):
+
+| Invariant | What it checks |
+|-----------|---------------|
+| OBL-KNOWN | Every obligation references a known function (entry or excluded) |
+| OBL-STATUS | Obligation status agrees with re-derivation via `deriveObligationStatus` |
+| PROVED-EXTRACTED | Proved status requires `extracted = some` |
+| PROVED-FP | Proved status requires matching fingerprint |
+| PROVED-SPEC | Proved status requires spec attachment |
+| STALE-FP | Stale status requires mismatched fingerprint |
+| STALE-SPEC | Stale status requires spec attachment |
+| ENTRY-FP | Entry fingerprint matches obligation fingerprint |
+| EXTRACT-UNSUP | `extracted = some` implies empty unsupported list |
+| BLOCKED-UNSUP | Eligible + `extracted = none` implies non-empty unsupported list |
+| DEP-PROVED | Dependencies only reference proved obligations |
+| DUP-NAME | No duplicate function names across entries and excluded |
+| DIAG-STATUS | Diagnostic kinds agree with obligation status |
+
+**Invariant established:** Proof-oriented fragment with internally consistent obligations, diagnostics, extraction results, and fingerprints. Machine-checked by `--report consistency`.
+
+**What it does NOT guarantee:**
+- Extraction faithfulness (PExpr may not perfectly model the Core IR semantics).
+- Fingerprint stability across compiler versions.
+- Proof soundness (Lean theorems are external to this pass).
+
+---
+
 ## 8. Lower
 
 **Signature:** `lowerModule : CModule → SModule`
@@ -557,5 +607,55 @@ These are audit-oriented modes — they answer questions about what the program 
 | Declaration-level legality (trait/FFI/repr) | CoreCheck | Lower, EmitSSA |
 | Full type annotations | Elab | Mono, Lower, EmitSSA |
 | No type variables | Mono | Lower, EmitSSA |
+| ProofCore self-consistency | ProofCore extraction | Report renderers, `--report consistency` |
+| Canonical status terminology | `ObligationStatus.canonical` | JSON facts, CLI reports, terminology gate |
 | SSA form / dominance | Lower, SSAVerify | SSACleanup, EmitSSA |
 | No dead blocks | SSACleanup | EmitSSA |
+
+---
+
+## Verifier-Pass Readiness
+
+Each pass boundary has a different level of machine-checkability today. This table summarizes what exists and what a future verifier pass would need.
+
+| Boundary | Machine-checked today | Future verifier pass would add |
+|----------|----------------------|-------------------------------|
+| Parse → Resolve | No (Parse output is trusted) | Grammar conformance check, span coverage assertion |
+| Resolve → Check | No (Resolve output is trusted) | All identifiers in scope, no dangling references |
+| Check → Elab | No (Check is `Unit`-producing) | Type environment snapshot comparison |
+| Elab → CoreCheck | No (Elab output is trusted) | Core IR well-formedness: all expressions typed, no surface AST remnants |
+| CoreCheck → ValidatedCore | **Partially** (opaque constructor) | Core IR semantic assertions: no capability violations, no type mismatches (re-check) |
+| ValidatedCore → ProofCore | **Yes** (`selfCheck`, 13 invariants) | Already machine-checked via `--report consistency` |
+| ValidatedCore → Mono | No (Mono input is trusted) | No type variables remain post-mono (grep for `typeVar`) |
+| Mono → Lower | No (Lower input is trusted) | All generic calls resolved, no polymorphic function bodies |
+| Lower → SSAVerify | **Yes** (`ssaVerifyProgram`) | Already machine-checked: dominance, phi coverage, branch safety |
+| SSACleanup → SSAVerify | **Yes** (re-verified) | Already machine-checked post-cleanup |
+| SSAVerify → EmitSSA | No (EmitSSA trusts input) | LLVM IR validator (external: `llvm-as` or `opt -verify`) |
+
+**Priority for new verifier passes** (highest value first):
+
+1. **Core IR well-formedness** (Elab → CoreCheck boundary): assert all expressions carry types, no elaboration artifacts remain, all function bodies are present. This is the most valuable because CoreCheck trusts Elab completely.
+2. **Post-Mono type-variable absence**: simple grep for `Ty.typeVar` in the monomorphized output. Cheap and catches real bugs.
+3. **LLVM IR validation**: pipe EmitSSA output through `llvm-as` to catch malformed IR before clang. External tool dependency but high value.
+4. **Parse span coverage**: every AST node has a non-empty span. Catches parser regressions that lose location info.
+
+---
+
+## Failure Modes
+
+What happens when a pass receives input that violates its preconditions:
+
+| Pass | Precondition violated | Behavior |
+|------|----------------------|----------|
+| Parse | Non-UTF-8 input | Lean `String` handles this; parser may produce garbled token spans |
+| Resolve | Unparsed input | Cannot happen (type system: `ResolvedProgram` requires `ParsedProgram`) |
+| Check | Unresolved names | False "undeclared variable" errors cascade; error accumulation mitigates but does not eliminate |
+| Elab | Unchecked types | May produce Core IR with wrong types; CoreCheck catches some but not all |
+| CoreCheck | Un-elaborated AST | Cannot happen (type system: `ElaboratedProgram` wrapper) |
+| Mono | Unvalidated Core | May instantiate invalid generic code; Lower/EmitSSA may crash or produce wrong LLVM IR |
+| Lower | Type variables remain | `LowerM` throws on unknown type size; compilation fails with internal error |
+| SSAVerify | Malformed SSA | Reports specific structural violation; blocks compilation |
+| EmitSSA | Unverified SSA | Produces malformed LLVM IR; clang fails or miscompiles |
+| ProofCore | Unvalidated Core | Produces incorrect eligibility/extraction; selfCheck may detect some issues |
+
+**Key observation:** The boundaries with type-system enforcement (`ValidatedCore`, `MonomorphizedProgram`, `SSAProgram`) are the safest. The boundaries without it (Check output is `Unit`, Elab output is raw `List CModule`) are where precondition violations can propagate silently. The verifier passes listed above target exactly these weak boundaries.
