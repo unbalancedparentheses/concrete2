@@ -12,7 +12,7 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ### Uniform diagnostic engine
 
-All compiler phases now emit the same structured `Diagnostic` shape (`severity`, `message`, `pass`, `span`, `hint`, `file`). Previously, Parser returned plain strings, Mono/Lower used `ExceptT String`, and Pipeline wrapped them with `liftStringError`. Now:
+The core compiler pipeline now emits the same structured `Diagnostic` shape (`severity`, `message`, `pass`, `span`, `hint`, `file`) end-to-end. Previously, Parser returned plain strings, Mono/Lower used `ExceptT String`, and Pipeline wrapped them with `liftStringError`. Now:
 
 - **Parser**: `ParseM` uses `ExceptT Diagnostics`, `throwParse` creates structured diagnostics with source spans
 - **Mono**: `MonoM` uses `ExceptT Diagnostics`, `monoProgram` returns `Except Diagnostics`
@@ -21,7 +21,7 @@ All compiler phases now emit the same structured `Diagnostic` shape (`severity`,
 - **FileSummary**: `resolveImports` returns `Except Diagnostics` directly with a `pass` parameter
 - **Check/Elab**: import resolution errors now structured diagnostics without `liftStringError`
 
-`liftStringError` removed entirely — no longer exists in the codebase. All phases (Parse, Resolve, Check, Elab, CoreCheck, Mono, Lower, SSAVerify) now emit structured `Diagnostics` natively.
+`liftStringError` is removed entirely — it no longer exists in the codebase. All core phases (Parse, Resolve, Check, Elab, CoreCheck, Mono, Lower, SSAVerify) now emit structured `Diagnostics` natively.
 
 ### Testcase reducer
 
