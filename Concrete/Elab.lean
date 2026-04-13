@@ -1374,9 +1374,10 @@ partial def elabModule (m : Module) (summary : FileSummary)
       let subSummary := match summary.submoduleSummaries.find? fun (n, _) => n == sub.name with
         | some (_, s) => s
         | none => buildFileSummary sub
-      let subImports := match liftStringError "elab" (resolveImports sub.imports summaryTable
+      let subImports := match resolveImports sub.imports summaryTable
           (fun modName => ElabError.message (.unknownModule modName))
-          (fun sym modName => ElabError.message (.notPublicInModule sym modName))) with
+          (fun sym modName => ElabError.message (.notPublicInModule sym modName))
+          (pass := "elab") with
         | .ok imp => imp
         | .error _ => {}
       -- Inject sibling module types so submodules can reference each other's types
@@ -1542,9 +1543,10 @@ def elabProgram (resolved : List ResolvedModule)
     let summary := match moduleSummaryList.find? fun (n, _) => n == m.name with
       | some (_, s) => s
       | none => buildFileSummary m
-    match liftStringError "elab" (resolveImports m.imports summaryTable
+    match resolveImports m.imports summaryTable
         (fun modName => ElabError.message (.unknownModule modName))
-        (fun sym modName => ElabError.message (.notPublicInModule sym modName))) with
+        (fun sym modName => ElabError.message (.notPublicInModule sym modName))
+        (pass := "elab") with
     | .error ds => (acc, errs ++ ds)
     | .ok imports =>
       -- Inject sibling module functions for qualified :: access

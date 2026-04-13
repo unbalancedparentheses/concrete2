@@ -2344,9 +2344,10 @@ def checkProgram (resolved : List ResolvedModule)
     let summary := match moduleSummaryList.find? fun (n, _) => n == m.name with
       | some (_, s) => s
       | none => buildFileSummary m
-    match liftStringError "check" (resolveImports m.imports summaryTable
+    match resolveImports m.imports summaryTable
         (fun modName => CheckError.message (.unknownModule modName))
-        (fun sym modName => CheckError.message (.notPublicInModule sym modName))) with
+        (fun sym modName => CheckError.message (.notPublicInModule sym modName))
+        (pass := "check") with
     | .error ds => errs ++ ds
     | .ok imports =>
       -- Inject sibling module functions for qualified :: access

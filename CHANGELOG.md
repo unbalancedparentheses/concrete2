@@ -17,9 +17,11 @@ All compiler phases now emit the same structured `Diagnostic` shape (`severity`,
 - **Parser**: `ParseM` uses `ExceptT Diagnostics`, `throwParse` creates structured diagnostics with source spans
 - **Mono**: `MonoM` uses `ExceptT Diagnostics`, `monoProgram` returns `Except Diagnostics`
 - **Lower**: `LowerM` uses `ExceptT Diagnostics`, `throwLower` creates structured diagnostics, `lowerModule`/`lowerFn` return `Except Diagnostics`
-- **Pipeline**: removed `liftStringError "mono"` and inline Lower→Diagnostic wrapping
+- **Pipeline**: removed all `liftStringError` wrappers
+- **FileSummary**: `resolveImports` returns `Except Diagnostics` directly with a `pass` parameter
+- **Check/Elab**: import resolution errors now structured diagnostics without `liftStringError`
 
-Resolve, Check, Elab, CoreCheck, and SSAVerify already used `Diagnostics` natively.
+`liftStringError` removed entirely — no longer exists in the codebase. All phases (Parse, Resolve, Check, Elab, CoreCheck, Mono, Lower, SSAVerify) now emit structured `Diagnostics` natively.
 
 ### Testcase reducer
 

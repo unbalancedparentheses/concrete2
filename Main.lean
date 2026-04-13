@@ -361,7 +361,7 @@ def compileAndReport (inputPath : String) (reportType : String) : IO UInt32 := d
       return 0
     if reportType == "obligations" then
       let registry ← loadRegistry inputPath
-      IO.println (Report.obligationsReport validCore.coreModules locMap (registry := registry) (pc := pc))
+      IO.println (Report.obligationsReport validCore.coreModules locMap registry pc)
       return 0
     if reportType == "proof-diagnostics" then
       IO.println (Report.proofDiagnosticsReport (pc := pc))

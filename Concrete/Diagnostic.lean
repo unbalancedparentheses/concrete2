@@ -99,13 +99,4 @@ def renderDiagnostics (ds : Diagnostics) (sourceMap : SourceMap := []) : String 
 def hasErrors (ds : Diagnostics) : Bool :=
   ds.any fun d => d.severity == .error
 
--- ============================================================
--- Lift helpers
--- ============================================================
-
-/-- Convert an `Except String α` into `Except Diagnostics α`. -/
-def liftStringError (pass : String) : Except String α → Except Diagnostics α
-  | .ok a => .ok a
-  | .error msg => .error [{ severity := .error, message := msg, pass := pass, span := none, hint := none }]
-
 end Concrete

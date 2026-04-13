@@ -1,6 +1,7 @@
 import Concrete.AST
 import Concrete.Shared
 import Concrete.Intrinsic
+import Concrete.Diagnostic
 
 namespace Concrete
 
@@ -232,10 +233,11 @@ def resolveImports (imports : List ImportDecl)
     (summaryTable : List (String × FileSummary))
     (unknownModuleMsg : String → String)
     (notPublicMsg : String → String → String)
-    : Except String ResolvedImports := do
+    (pass : String := "resolve")
+    : Except Diagnostics ResolvedImports := do
   let resolved ← imports.foldlM (init := ({} : ResolvedImports)) fun acc imp =>
     match summaryTable.lookup imp.moduleName with
-    | none => .error (unknownModuleMsg imp.moduleName)
+    | none => .error [{ severity := .error, message := unknownModuleMsg imp.moduleName, pass := pass, span := none, hint := none }]
     | some summary =>
       -- Build alias map from the exporting module's type aliases and newtypes
       -- (newtypes are erased at module boundaries for imported signatures)
@@ -274,7 +276,7 @@ def resolveImports (imports : List ImportDecl)
             | none =>
               match summary.typeAliases.find? fun ta => ta.isPublic && ta.name == origName with
               | some ta => .ok { acc with typeAliases := acc.typeAliases ++ [(localName, ta.targetTy)] }
-              | none => .error (notPublicMsg origName imp.moduleName)
+              | none => .error [{ severity := .error, message := notPublicMsg origName imp.moduleName, pass := pass, span := none, hint := none }]
   -- Auto-include impl methods for builtin types (String, Vec, etc.) from all
   -- loaded modules, so methods like String.drop() work without explicit import.
   let builtinNames := builtinTypeNames
