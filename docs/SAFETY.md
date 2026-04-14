@@ -6,6 +6,9 @@ This document is the central reference for Concrete's safety model. It defines t
 
 For ownership and linearity, see [VALUE_MODEL.md](VALUE_MODEL.md).
 For the current safe-memory guarantee boundary, see [MEMORY_GUARANTEES.md](MEMORY_GUARANTEES.md).
+For named profiles (`safe`, `predictable`, `provable`, `high-integrity`), see [PROFILES.md](PROFILES.md).
+For the short public claim surface, see [CLAIMS_TODAY.md](CLAIMS_TODAY.md).
+For explicit trusted-computing-base accounting, see [TRUSTED_COMPUTING_BASE.md](TRUSTED_COMPUTING_BASE.md).
 For effect/trust proof boundaries, see [EFFECT_PROOF_BOUNDARIES.md](EFFECT_PROOF_BOUNDARIES.md).
 For the precise public guarantee statement, see [GUARANTEE_STATEMENT.md](GUARANTEE_STATEMENT.md).
 For the proof-claim taxonomy, see [CLAIM_TAXONOMY.md](CLAIM_TAXONOMY.md).

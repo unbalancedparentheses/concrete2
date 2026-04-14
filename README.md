@@ -150,8 +150,17 @@ Today, the first proof slice is live:
 2. **Zig** gives explicit systems control, but not compiler-visible effects or evidence levels.
 3. **SPARK/Ada** gives contracts, proof obligations, and high-assurance workflow, but not a small modern systems surface with explicit function-level authority.
 4. **Lean 4** gives theorem proving, but is not a no-GC systems language with explicit authority boundaries.
+5. **Austral** is close in spirit on explicit authority and small-language clarity, but not on Lean-backed proof artifacts.
+6. **Dafny / F* / Why3** are close on proof-oriented workflow, but they are not trying to be the same kind of low-level systems language.
+7. **MIRAI / static analysis for C** is close on “machine-checked evidence over low-level code,” but Concrete is designing the source language itself instead of inheriting C.
+8. **CompCert** is an influence on trusted-boundary discipline and compiler-trust culture, not on surface-language design.
+9. **Elm** is an influence on diagnostic quality.
+10. **OCaml** is an influence on module/library clarity.
+11. **Clojure / Elixir** are influences on documentation and discoverability standards.
 
-Concrete is trying to combine: Zig-like explicit systems control, SPARK-like assurance discipline, Lean 4-backed proof, capability-visible architecture, predictable execution checks, and proof-backed evidence tied to compiler artifacts.
+Concrete is trying to combine: Rust-like ownership, Zig-like explicit systems control, SPARK-like assurance discipline, Lean 4-backed proof, Austral-like capability clarity, predictable execution checks, and proof-backed evidence tied to compiler artifacts.
+
+For the fuller influence map, see [docs/INFLUENCES.md](docs/INFLUENCES.md).
 
 For the stable language principles behind that shape, see [docs/PRINCIPLES.md](docs/PRINCIPLES.md).
 
@@ -206,6 +215,10 @@ make clean
 - [docs/IDENTITY.md](docs/IDENTITY.md) — project identity and vision
 - [docs/PRINCIPLES.md](docs/PRINCIPLES.md) — the stable design principles behind the language shape
 - [docs/SAFETY.md](docs/SAFETY.md) — the trust and capability model
+- [docs/PROFILES.md](docs/PROFILES.md) — `safe`, `predictable`, `provable`, and the long-term `high-integrity` direction
+- [docs/CLAIMS_TODAY.md](docs/CLAIMS_TODAY.md) — the short public claim surface
+- [docs/TRUSTED_COMPUTING_BASE.md](docs/TRUSTED_COMPUTING_BASE.md) — what the strongest current claims still trust
+- [docs/INFLUENCES.md](docs/INFLUENCES.md) — the external language/tool influences behind Concrete
 - [ROADMAP.md](ROADMAP.md) — what is next
 - [CHANGELOG.md](CHANGELOG.md) — what landed
 - [research/thesis-validation/core-thesis.md](research/thesis-validation/core-thesis.md) — the clearest statement of the thesis
