@@ -526,3 +526,16 @@ Goal: make `[policy]` in `Concrete.toml` a first-class compile-error mechanism, 
 - **`require-proofs = true`**: requires Lean proofs for all eligible functions, rejecting `.missing`, `.stale`, `.blocked` obligation statuses
 
 `parsePolicy` parses the `[policy]` TOML section. `enforcePolicy` runs after CoreCheck on project modules only (dependencies excluded via `depNames`), returning structured `Diagnostics` with pass="policy". Wired into both `compileBuild` and `compileTests` in `Main.lean`. Evidence gate: `crypto_verify` example builds clean with `predictable = true` and `deny = ["Unsafe"]`.
+
+### Phase 14: Attacker-Style Drift Demo (complete)
+
+Goal: define the thesis threat/accident model and demonstrate Concrete catching authority/resource/proof drift end-to-end.
+
+Threat model defined in `docs/THREAT_MODEL.md` covering 6 categories: proof semantic drift, authority escalation, validation weakening, resource drift, trust boundary erosion, specification mismatch.
+
+Three end-to-end drift demos using `concrete snapshot` + `concrete diff`:
+- **`crypto_verify`**: `+` → `-` in tag computation, `>` → `>=` in nonce check — proof drift + validation weakening
+- **`elf_header`**: magic byte `127` → `0`, version accepts `0` — proof drift + validation weakening
+- **`thesis_demo`**: `+` → `-` in parse_byte, `validate` gains `with(File)` + unbounded `while` — proof drift + authority escalation + resource drift
+
+8 new drift-detection gates in CI evidence section verify: trust weakening detected, `proved → stale` transitions, `is_pure: true → false`, File capability escalation, unbounded loop drift. Trust-gate: 960 checks (up from 952).

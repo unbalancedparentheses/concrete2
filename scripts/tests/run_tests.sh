@@ -7300,6 +7300,83 @@ for reg in examples/*/src/proof-registry.json; do
     fi
 done
 
+# --- Drift demo: snapshot/diff detects trust weakening on all drifted examples ---
+echo ""
+echo "  --- Drift demo (snapshot/diff) ---"
+
+drift_check() {
+    local name="$1" original="$2" drifted="$3" expect_pattern="$4"
+    local orig_snap="$TMPDIR/drift_${name}_orig.json"
+    local drift_snap="$TMPDIR/drift_${name}_drift.json"
+    "$COMPILER" snapshot "$original" -o "$orig_snap" 2>/dev/null
+    "$COMPILER" snapshot "$drifted" -o "$drift_snap" 2>/dev/null
+    local diff_out
+    diff_out=$("$COMPILER" diff "$orig_snap" "$drift_snap" 2>&1) || true
+    local diff_exit=$?
+    # diff exits 1 on weakening (but we captured output, check for TRUST WEAKENED)
+    if echo "$diff_out" | grep -q "TRUST WEAKENED"; then
+        echo "  ok  drift-demo: $name — trust weakening detected"
+        evidence_pass=$((evidence_pass + 1))
+    else
+        echo "  FAIL drift-demo: $name — should detect trust weakening"
+        echo "$diff_out" | head -3 | sed 's/^/    /'
+        evidence_fail=$((evidence_fail + 1))
+    fi
+    # Check specific drift pattern
+    if [ -n "$expect_pattern" ]; then
+        if echo "$diff_out" | grep -q "$expect_pattern"; then
+            echo "  ok  drift-demo: $name — $expect_pattern found"
+            evidence_pass=$((evidence_pass + 1))
+        else
+            echo "  FAIL drift-demo: $name — expected '$expect_pattern' not found"
+            evidence_fail=$((evidence_fail + 1))
+        fi
+    fi
+}
+
+# crypto_verify: proof semantic drift (+ → -, > → >=)
+if [ -f "examples/crypto_verify/src/main.con" ] && [ -f "examples/crypto_verify/src/main_drifted.con" ]; then
+    drift_check "crypto_verify" \
+        "examples/crypto_verify/src/main.con" \
+        "examples/crypto_verify/src/main_drifted.con" \
+        "proved → stale"
+fi
+
+# elf_header: validation weakening (magic byte 127→0, version accepts 0)
+if [ -f "examples/elf_header/src/main.con" ] && [ -f "examples/elf_header/src/main_drifted.con" ]; then
+    drift_check "elf_header" \
+        "examples/elf_header/src/main.con" \
+        "examples/elf_header/src/main_drifted.con" \
+        "proved → stale"
+fi
+
+# thesis_demo: authority escalation + proof drift + resource drift
+if [ -f "examples/thesis_demo/src/main.con" ] && [ -f "examples/thesis_demo/src/main_drifted.con" ]; then
+    drift_check "thesis_demo" \
+        "examples/thesis_demo/src/main.con" \
+        "examples/thesis_demo/src/main_drifted.con" \
+        "is_pure: true → false"
+
+    # Also check authority escalation specifically
+    diff_out=$("$COMPILER" diff "$TMPDIR/drift_thesis_demo_orig.json" "$TMPDIR/drift_thesis_demo_drift.json" 2>&1) || true
+    if echo "$diff_out" | grep -q "capabilities.*File"; then
+        echo "  ok  drift-demo: thesis_demo — authority escalation (File) detected"
+        evidence_pass=$((evidence_pass + 1))
+    else
+        echo "  FAIL drift-demo: thesis_demo — should detect File capability escalation"
+        evidence_fail=$((evidence_fail + 1))
+    fi
+
+    # Check resource drift (bounded → unbounded)
+    if echo "$diff_out" | grep -q "loops.*bounded.*unbounded\|unbounded"; then
+        echo "  ok  drift-demo: thesis_demo — resource drift (unbounded loop) detected"
+        evidence_pass=$((evidence_pass + 1))
+    else
+        echo "  FAIL drift-demo: thesis_demo — should detect unbounded loop drift"
+        evidence_fail=$((evidence_fail + 1))
+    fi
+fi
+
 if [ "$evidence_fail" -gt 0 ]; then
     echo "  $evidence_fail evidence gate failures"
 fi

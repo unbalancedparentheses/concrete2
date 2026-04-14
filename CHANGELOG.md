@@ -10,6 +10,17 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Attacker-style drift demo and threat model
+
+**Thesis threat/accident model** defined in `docs/THREAT_MODEL.md`, covering six threat categories: proof semantic drift, authority escalation, validation weakening, resource drift, trust boundary erosion, and specification mismatch. Each threat maps to the compiler mechanism that catches it.
+
+Three end-to-end drift demos with drifted variants:
+- **`crypto_verify`**: `compute_tag` changes `+` to `-` (proof drift), `check_nonce` changes `>` to `>=` (validation weakening)
+- **`elf_header`**: `check_magic` first byte `127` → `0` (proof drift), `check_version` accepts `0` (validation weakening)
+- **`thesis_demo`**: `parse_byte` changes `+` to `-` (proof drift), `validate` gains `with(File)` + unbounded `while` (authority escalation + resource drift)
+
+All three demos verified via `concrete snapshot` + `concrete diff` pipeline, producing exit code 1 on trust weakening. 8 new drift-detection gates added to CI evidence section. Trust-gate now runs 960 checks (up from 952).
+
 ### Package-level policy enforcement
 
 **`[policy]` section in Concrete.toml** makes thesis properties enforceable at the package level as compile errors, not just report-side analysis.
