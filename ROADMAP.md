@@ -1,86 +1,35 @@
 # Concrete Roadmap
 
-This document answers one question: **what should happen next, in order.**
+This document is the active execution plan. It answers one question: **what should happen next, in what order?**
 
-For landed milestones, see [CHANGELOG.md](CHANGELOG.md).
-For compiler structure, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/PASSES.md](docs/PASSES.md).
-For identity and safety, see [docs/IDENTITY.md](docs/IDENTITY.md), [docs/SAFETY.md](docs/SAFETY.md), [docs/MUT_REF_SEMANTICS.md](docs/MUT_REF_SEMANTICS.md), [docs/MUT_REF_CLOSURE.md](docs/MUT_REF_CLOSURE.md), and [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md).
-For subsystem references, see [docs/FFI.md](docs/FFI.md), [docs/ABI.md](docs/ABI.md), [docs/DIAGNOSTICS.md](docs/DIAGNOSTICS.md), [docs/STDLIB.md](docs/STDLIB.md), [docs/VALUE_MODEL.md](docs/VALUE_MODEL.md), and [docs/EXECUTION_MODEL.md](docs/EXECUTION_MODEL.md).
+Read it as one continuous priority list. Phase titles are human scan markers, not separate queues, and task numbering never restarts.
 
-Concrete should stay small enough to remain readable, auditable, and mechanically understandable. New work should be judged by grammar cost, audit cost, and proof cost, not only by expressiveness.
+For landed work, see [CHANGELOG.md](CHANGELOG.md). For detailed design, see `docs/` and `research/`.
 
-## Current Position
+## Current State
 
-The Lean 4 compiler implements the full pipeline:
+Concrete already has a real Lean 4 compiler pipeline:
 
 `Parse -> Resolve -> Check -> Elab -> CoreCheck -> Mono -> Lower -> EmitSSA -> LLVM IR`
 
-The core language, stdlib foundation, report surfaces, proof-status diagnostics, and project workflow are real. Phase H proved the language against real programs. Function-level source locations for `--check predictable` / `--report effects`, Elm-style predictable-profile errors, and Elm-style proof/evidence status are landed.
+The core language, stdlib foundation, diagnostics, proof/evidence reports, project workflow, adversarial tests, trust-drift demos, and CI evidence gates are real. Recent adversarial compiler bugs are fixed and retained as regressions: LLVM function-name collisions, generic `Copy` struct validation, and top-level `main` after inline modules.
 
-Three compiler correctness bugs found by adversarial testing have been fixed with regression tests retained:
+The remaining question is no longer "can Concrete compile programs?" It is:
 
-- **LLVM IR name mangling collision** (codegen bug): same-name functions in different modules produced duplicate LLVM definitions. Fixed in EmitSSA by qualifying colliding names with module path; collision key uses `f.modulePath` to handle flattened submodules. 4 regression tests.
-- **Generic Copy struct core-check rejection** (checker bug): `struct Copy Box<T>` rejected because field type `.named "T"` wasn't recognized as a type parameter. Fixed in CoreCheck (pre-mono skip) + Verify.lean (post-mono validation rejects `Box<NonCopy>` instantiations). 6 regression tests.
-- **Top-level main alongside inline modules** (parser bug): `pub fn main()` after `mod` blocks was silently dropped. Fixed in Parser.lean by parsing remaining items as a sibling "main" module. 2 regression tests.
+**Can Concrete prove its thesis with real systems examples, honest trust boundaries, and a usable proof/evidence workflow?**
 
-The next question is no longer "can Concrete express this?" but "can Concrete demonstrate its thesis clearly enough to justify the project?"
+## First-Release Success Bar
 
-## Vision Validation Criteria
+Do not call the language releasable until these are true:
 
-Concrete's vision is only validated if real examples make the core claim hold in practice, not just in isolated reports.
+- A flagship example shows explicit authority, predictable/bounded code, at least one Lean-backed property, artifact-backed evidence, and drift detection.
+- Bad changes are caught by normal tools: widened authority, new allocation/FFI/blocking, predictable-profile breaks, stale proofs, and obligation/evidence drift.
+- Another engineer can audit a function without reading compiler internals: what it can touch, whether it is predictable, whether it is proved, what is trusted, and what changed.
+- At least one second-domain example works, so the thesis is not only a packet-parser story.
+- The supported stdlib/syntax/profile surface is narrow, documented, and stable enough for outsiders.
+- Trust boundaries are explicit: compiler-enforced, analysis-reported, Lean-proved, trusted-code, backend/toolchain, and target/runtime assumptions are not mixed.
 
-The project counts as directionally correct only when all of the following are true:
-
-1. one flagship example demonstrates the full thesis:
-   - explicit authority at function boundaries
-   - a predictable / bounded core
-   - at least one proof-backed property
-   - artifact-backed evidence
-   - drift detection when the code changes
-2. a bad change actually gets caught:
-   - widened authority
-   - new allocation / FFI / blocking
-   - broken predictable profile
-   - stale proof attachment
-   - changed obligation / evidence status
-3. another engineer can audit it without reading compiler internals:
-   - what can this function touch?
-   - is it predictable?
-   - is it proved?
-   - what is trusted?
-   - what changed?
-4. the artifact story is real:
-   facts, registry, obligations, extraction, traceability, drift, and CI gates exist as build artifacts, not compiler-internal hacks
-5. a second example in a different domain also works:
-   packet parser alone is not enough; examples such as a transaction validator, ELF inspector, or crypto verification core must also fit the model
-6. ergonomics are acceptable:
-   the evidence/proof workflow must stay small enough that ordinary bounded systems code is still reasonable to write
-7. performance is acceptable for the target use case:
-   the bounded/provable core cannot be so costly that the language becomes impractical for the systems domains it targets
-6. trust boundaries are explicit and honest:
-   the reports must make clear what is enforced by the compiler, what is analysis-only, what is proved in Lean, and where backend / target / toolchain assumptions begin
-
-## Highest-Leverage Multipliers
-
-These are the biggest remaining multipliers for Concrete's thesis.
-
-1. a stronger flagship example that is obviously real systems code
-2. an explicit `Core -> ProofCore` boundary
-3. module/package policy strong enough to enforce architecture, not just report it
-4. a bounded-capacity predictable subset that is usable for real code
-5. trust-drift and CI evidence gates as normal workflow
-6. an AI-native fact interface over stable compiler artifacts
-7. proof-aware package artifacts later, so packages can ship facts, obligations,
-   proof status, trusted assumptions, and policy declarations as part of their build story
-6. a small reference interpreter later, so the proof-relevant subset has an independent semantic oracle distinct from the optimizing compiler/backend path
-
-## Linear Roadmap
-
-Do this list top-to-bottom. This is the roadmap. Completed history belongs in [CHANGELOG.md](CHANGELOG.md), and detailed design belongs in `research/`. When items leave the active roadmap, update the changelog in the same cleanup.
-
-### How To Read This
-
-The roadmap is one continuous priority list. Phase titles are scan markers, not separate queues, and numbering never restarts. A later phase can be researched in parallel, but implementation should not jump ahead unless the earlier phase explicitly says the prerequisite is stable.
+## Priority Map
 
 | Phase | Items | Human goal |
 |---|---:|---|
@@ -100,19 +49,20 @@ The roadmap is one continuous priority list. Phase titles are scan markers, not 
 | 14. Public Readiness and User Tooling | 168-173 | Make the language easier to adopt, audit, and evolve publicly. |
 | 15. Long-Horizon Research Backlog | 174-185 | Keep speculative language/runtime/research ideas visible but clearly gated. |
 
-**Priority rule:** do not start package management, new backends, concurrency, broad proof syntax, source-level contracts, package ecosystems, or showcase polish until the earlier evidence/diagnostic/tooling steps make those later tasks concrete.
+## Operating Rules
 
-Current guardrails: keep specs in Lean-attached / artifact-registry form until obligations and diagnostics work; build a normal fact CLI before the MCP; keep QBE and other backend work waiting until proof/evidence attachment, optimization policy, and the backend trust boundary are trustworthy.
+- Do the numbered list top-to-bottom unless a later item is explicitly research-only or parallelizable.
+- When an item is completed, move it to [CHANGELOG.md](CHANGELOG.md) and renumber the remaining active list.
+- Judge new language features by grammar cost, audit cost, and proof cost, not just expressiveness.
+- Do not start package management, new backends, concurrency, broad proof syntax, source-level contracts, package ecosystems, or showcase polish until earlier evidence/diagnostic/tooling steps make them concrete.
+- Keep specs in Lean-attached / artifact-registry form until obligations and diagnostics are strong enough to support source-level contracts honestly.
+- Build a normal fact CLI before MCP/editor integrations.
+- Keep QBE and other backend work waiting until proof/evidence attachment, optimization policy, and backend trust boundaries are trustworthy.
+- Parallelize only low-risk inventories and docs while the active implementation path is proof/diagnostic/compiler-contract work.
 
-**Proof goal:** maximize the amount of real systems code that can honestly carry Lean 4-backed evidence, rather than pretending every Concrete program should become theorem-prover-friendly all at once.
+## Active List
 
-**Execution mode:** keep proof semantics, identity, supported-subset decisions, and other compiler-truth boundaries on the main linear path. Parallelize inventories, audits, regression-test expansion, CI wiring, benchmark setup, stdlib target inventories, cookbook/example planning, and public docs/landing-page work once the corresponding compiler contract is stable enough to avoid churn.
-
-**Current parallelization rule:** while the active work is obligation cleanup / diagnostics / proof-boundary semantics, keep those implementation tasks linear. In parallel, agents can safely work on proof-diagnostics audits, regression-test inventories, registry/stale-detection audits, stdlib target inventories, cookbook/example planning, formatter corpora, benchmark setup, FAQ/comparison/landing-page work, and book-outline preparation.
-
-Completed proof-foundation milestones now live in [CHANGELOG.md](CHANGELOG.md): crypto flagship, ELF flagship, eligibility-first proof flow, explicit `Core -> ProofCore`, ProofCore consolidation, qualified proof identity, proof normalization, stable attached specs, first-slice mechanical obligations, proof-oriented diagnostics, explicit memory/reference semantics, the `&mut T` closure arc, the no-codegen-crash rule, the first explicit no-leak guarantee boundary, the effect/trust proof boundary specification, the public guarantee statement, the language-semantics vs proof-semantics boundary specification, the proof-claim taxonomy, the user-facing proof contract, the safe-memory regression checklist, the memory-model pressure tests, the borrow/aliasing pressure set, the cleanup/leak-boundary pressure set, the unreachable-error-kind checker audit, the compiler determinism verification, the deterministic artifact regression suite, the determinism contract, the nondeterminism source audit, the uniform diagnostic engine across the core pipeline, module/package policy checks as first-class compile errors, the attacker-style drift demo with threat model, and the adversarial compiler-hardening corpus with hostile-workload scaling tests.
-
-The active roadmap below starts after that completed proof/memory closure work. If an item is done, move it to [CHANGELOG.md](CHANGELOG.md) instead of leaving it in the numbered task list.
+The active roadmap starts after the proof/memory/determinism/diagnostics/policy/adversarial-foundation work already recorded in [CHANGELOG.md](CHANGELOG.md).
 
 ### Phase 1: Compiler Integrity
 
