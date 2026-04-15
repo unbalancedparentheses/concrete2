@@ -17,6 +17,11 @@ The Lean 4 compiler implements the full pipeline:
 
 The core language, stdlib foundation, report surfaces, proof-status diagnostics, and project workflow are real. Phase H proved the language against real programs. Function-level source locations for `--check predictable` / `--report effects`, Elm-style predictable-profile errors, and Elm-style proof/evidence status are landed.
 
+Two compiler correctness bugs found by adversarial testing have been fixed with regression tests retained:
+
+- **LLVM IR name mangling collision** (codegen bug): same-name functions in different modules produced duplicate LLVM definitions. Fixed in EmitSSA by qualifying colliding names with module path. 4 regression tests.
+- **Generic Copy struct core-check rejection** (checker bug): `struct Copy Box<T>` rejected because field type `.named "T"` wasn't recognized as a type parameter. Fixed in CoreCheck by checking field type names against struct `typeParams`. 5 regression tests.
+
 The next question is no longer "can Concrete express this?" but "can Concrete demonstrate its thesis clearly enough to justify the project?"
 
 ## Vision Validation Criteria
@@ -121,7 +126,7 @@ The active roadmap below starts after that completed proof/memory closure work. 
 34. add property-based tests for formatter/parser round-trips, selected stdlib containers, and fixed traces over Vec, String/Text, HashMap, parser cores, and report facts
 35. add dedicated fuzzing infrastructure where there is a real oracle: grammar fuzzing, structure-aware parser fuzzing, coverage-guided fuzzing for high-risk surfaces, and a path to keep discovered crashes/miscompiles as stable regressions
 36. add targeted differential/codegen tests only where there is an executable oracle and a known backend risk
-37. build and maintain a named wrong-code regression corpus: every discovered miscompile, codegen bug, obligation bug, checker soundness bug, and proof-pipeline regression should land as a stable reproduction, not just disappear into the general suite
+37. build and maintain a named wrong-code regression corpus: every discovered miscompile, codegen bug, obligation bug, checker soundness bug, and proof-pipeline regression should land as a stable reproduction, not just disappear into the general suite (started: 9 regression tests from the LLVM IR name mangling and generic Copy struct bugs)
 38. add an MCP server for Claude, ChatGPT, Codex, and research agents to query compiler facts after the normal fact CLI is useful
 39. define a stable benchmark harness before performance packets: selected benchmark programs drawn from the same small/medium/big workload ladder, repeatable runner, baseline artifacts, size/output checks, and enough metadata to compare patches honestly
 40. add explicit compiler performance budgets on top of profiling: acceptable compile-time regressions, artifact-generation overhead, and memory-growth limits that CI and review can enforce

@@ -58,6 +58,10 @@ structure EmitSSAState where
   vecElemSpecs : List (Nat × Nat) := []
   /-- Names of extern functions (for C ABI calling convention at call sites). -/
   externFnNames : List String := []
+  /-- Set of bare function names that collide across modules. -/
+  collidingNames : List String := []
+  /-- Per-module linker aliases (reset per module, used before global aliases). -/
+  localAliases : List (String × String) := []
   /-- Alloca instructions to hoist to the function entry block.
       Allocas emitted inside loop bodies would otherwise grow the stack
       on every iteration; collecting them here and prepending to the
@@ -171,9 +175,11 @@ private def svalToOperand (s : EmitSSAState) (v : SVal) : LLVMOperand :=
     if name.startsWith "@fnref." then
       let bareName := (name.drop 7).toString
       -- Resolve linker aliases for function pointer references (e.g., hash_i32 → hash_hash_i32)
-      let resolved := match s.linkerAliases.lookup bareName with
+      let resolved := match s.localAliases.lookup bareName with
         | some orig => orig
-        | none => bareName
+        | none => match s.linkerAliases.lookup bareName with
+          | some orig => orig
+          | none => bareName
       .global resolved
     else .reg name
   | .intConst val _ => .intLit val
@@ -651,9 +657,12 @@ private def emitSInst (s : EmitSSAState) (inst : SInst) : EmitSSAState :=
         n == fn && match t with | .fn_ _ _ _ => true | _ => false)
       || s.fnTypeRegs.contains fn
     -- Resolve aliased imports to their real linker symbol
-    let linkerFn := match s.linkerAliases.lookup fn with
+    -- Check per-module aliases first (for colliding names), then global aliases
+    let linkerFn := match s.localAliases.lookup fn with
       | some orig => orig
-      | none => fn
+      | none => match s.linkerAliases.lookup fn with
+        | some orig => orig
+        | none => fn
     let callTarget : LLVMOperand := if isIndirect then
       if fn.startsWith "%" then .reg (fn.drop 1).toString
       else .reg fn
@@ -852,9 +861,16 @@ private def emitSBlock (s : EmitSSAState) (b : SBlock) : EmitSSAState :=
     currentInstrs := #[]
   }
 
+/-- Compute the LLVM function name for an SSA function, qualifying with modulePath
+    when the bare name collides across modules. -/
+private def llvmFnName (s : EmitSSAState) (f : SFnDef) : String :=
+  if s.collidingNames.contains f.name && !f.modulePath.isEmpty then
+    f.modulePath.replace "." "_" ++ "_" ++ f.name
+  else f.name
+
 private def emitSFnDef (s : EmitSSAState) (f : SFnDef) (isUserMain : Bool) : EmitSSAState :=
   let retTy := tyToLLVMTy s f.retTy
-  let fnName := if isUserMain then "user_main" else f.name
+  let fnName := if isUserMain then "user_main" else llvmFnName s f
   let params := f.params.map fun (n, t) => (n, paramTyToLLVMTy s t)
   -- Reset per-function state
   let s := { s with currentBlocks := #[], fnParams := f.params, entryAllocas := #[] }
@@ -1106,6 +1122,28 @@ def emitSModule (s : EmitSSAState) (m : SModule) (testMode : Bool := false) : Em
     { s with stringLengths := s.stringLengths ++ [(name, val.length)] }
   ) s
   -- Functions
+  -- Build per-module local aliases for colliding function names:
+  -- For each function in this module whose bare name collides across modules,
+  -- map bareName → modulePath_bareName so internal calls resolve correctly.
+  -- Also resolve colliding names through existing linker aliases (for imports).
+  let selfQualAliases := m.functions.foldl (fun acc f =>
+    if s.collidingNames.contains f.name && !f.modulePath.isEmpty then
+      let qualName := f.modulePath.replace "." "_" ++ "_" ++ f.name
+      acc ++ [(f.name, qualName)]
+    else acc
+  ) ([] : List (String × String))
+  -- For imported functions (via linker aliases), resolve bare → qualified
+  -- e.g., if linker alias says Alpha_compute → compute and compute collides,
+  -- reverse to: compute → Alpha_compute (the qualified def name)
+  let importQualAliases := m.linkerAliases.foldl (fun acc (qualCall, bareDef) =>
+    if s.collidingNames.contains bareDef then
+      -- qualCall is e.g. "Alpha_compute", bareDef is "compute"
+      -- The definition will be "Alpha_compute" after qualification
+      acc ++ [(bareDef, qualCall)]
+    else acc
+  ) ([] : List (String × String))
+  -- Local aliases: import aliases take priority (they specify which module was imported)
+  let s := { s with localAliases := importQualAliases ++ selfQualAliases }
   let hasMain := m.functions.any fun f => f.isEntryPoint
   let s := m.functions.foldl (fun s f =>
     emitSFnDef s f f.isEntryPoint
@@ -1195,20 +1233,22 @@ private def emitTestRunner (s : EmitSSAState) (modules : List SModule) (moduleFi
   else
     -- Emit globals for test name strings
     let s := testFns.foldl (fun s f =>
-      let nameLen := f.name.length + 1
-      let escaped := ssaEscapeStringForLLVM f.name
-      emitGlobal s { name := s!"test.name.{f.name}", ty := .array nameLen .i8, value := s!"c\"{escaped}\\00\"" }
+      let llName := llvmFnName s f
+      let nameLen := llName.length + 1
+      let escaped := ssaEscapeStringForLLVM llName
+      emitGlobal s { name := s!"test.name.{llName}", ty := .array nameLen .i8, value := s!"c\"{escaped}\\00\"" }
     ) s
     -- Emit format string globals
     let s := emitGlobal s { name := "fmt.test.pass", ty := .array 10 .i8, value := "c\"PASS: %s\\0A\\00\"" }
     let s := emitGlobal s { name := "fmt.test.fail", ty := .array 10 .i8, value := "c\"FAIL: %s\\0A\\00\"" }
     -- Helper: build test dispatch instructions for a given test at index i
     let mkTestDispatch (f : SFnDef) (i : String) : List LLVMInstr :=
-      let nameLen := f.name.length + 1
-      [ .comment s!"Test: {f.name}",
-        .call (some s!"result.{i}") .i32 (.global f.name) [],
+      let llName := llvmFnName s f
+      let nameLen := llName.length + 1
+      [ .comment s!"Test: {llName}",
+        .call (some s!"result.{i}") .i32 (.global llName) [],
         .binOp s!"is_pass.{i}" .icmpEq .i32 (.reg s!"result.{i}") (.intLit 0),
-        gep32 s!"name.{i}" (.array nameLen .i8) (.global s!"test.name.{f.name}") ]
+        gep32 s!"name.{i}" (.array nameLen .i8) (.global s!"test.name.{llName}") ]
     -- Build all blocks via fold over (remaining tests, index, accumulated blocks)
     -- Entry block gets alloca + store + first test dispatch
     let (blocks, _, _) := testFns.foldl (fun (acc, idx, rest) _f =>
@@ -1309,6 +1349,17 @@ def emitSSAProgram (modules : List SModule) (testMode : Bool := false) (moduleFi
   let allExternFns := modules.foldl (fun acc m => acc ++ m.externFns) []
   let allDefinedFns := modules.foldl (fun acc m => acc ++ m.functions.map (·.name)) []
   let s := emitExternDecls s allExternFns allDefinedFns
+  -- Detect function name collisions across modules: find bare names defined in 2+ modules
+  let fnNamesByModule := modules.foldl (fun acc m =>
+    acc ++ m.functions.map fun f => (f.name, m.name)
+  ) ([] : List (String × String))
+  let collidingNames := fnNamesByModule.foldl (fun acc (name, mod1) =>
+    if acc.contains name then acc
+    else if fnNamesByModule.any fun (n, mod2) => n == name && mod2 != mod1 then
+      acc ++ [name]
+    else acc
+  ) ([] : List String)
+  let s := { s with collidingNames := collidingNames }
   -- Emit each module
   let s := modules.foldl (fun s m => emitSModule s m testMode) s
   -- In test mode, emit the test runner instead of the normal main wrapper

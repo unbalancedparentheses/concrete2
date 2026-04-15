@@ -894,6 +894,61 @@ run_ok "$TESTDIR/adversarial_mut_ref_method_on_owner.con" 13
 run_ok "$TESTDIR/adversarial_mut_ref_return_in_borrow.con" 15
 run_ok "$TESTDIR/adversarial_mut_ref_return_deref_in_borrow.con" 43
 
+# Adversarial parser stress tests
+run_ok "$TESTDIR/adversarial_parser_complex_match.con" 42
+run_ok "$TESTDIR/adversarial_parser_deep_nesting.con" 42
+run_ok "$TESTDIR/adversarial_parser_empty_bodies.con" 42
+run_ok "$TESTDIR/adversarial_parser_long_expression.con" 50
+run_ok "$TESTDIR/adversarial_parser_many_locals.con" 42
+run_ok "$TESTDIR/adversarial_parser_many_params.con" 42
+run_ok "$TESTDIR/adversarial_parser_mixed_operators.con" 42
+run_ok "$TESTDIR/adversarial_parser_nested_parens.con" 42
+
+# Adversarial lowering stress tests
+run_ok "$TESTDIR/adversarial_lower_array_of_structs.con" 42
+run_ok "$TESTDIR/adversarial_lower_chain_of_calls.con" 42
+run_ok "$TESTDIR/adversarial_lower_defer_ordering.con" 42
+run_ok "$TESTDIR/adversarial_lower_enum_in_struct.con" 42
+run_ok "$TESTDIR/adversarial_lower_large_enum_payload.con" 42
+run_ok "$TESTDIR/adversarial_lower_many_match_arms.con" 42
+run_ok "$TESTDIR/adversarial_lower_nested_loops.con" 42
+run_ok "$TESTDIR/adversarial_lower_nested_struct_access.con" 42
+run_ok "$TESTDIR/adversarial_lower_struct_in_loop.con" 42
+
+# Adversarial monomorphization tests
+run_ok "$TESTDIR/adversarial_mono_generic_enum.con" 42
+run_ok "$TESTDIR/adversarial_mono_generic_return_struct.con" 42
+run_ok "$TESTDIR/adversarial_mono_many_instantiations.con" 42
+run_ok "$TESTDIR/adversarial_mono_nested_generics.con" 42
+run_ok "$TESTDIR/adversarial_mono_recursive_generic_struct.con" 42
+run_ok "$TESTDIR/adversarial_mono_trait_method_chain.con" 42
+run_ok "$TESTDIR/adversarial_mono_trait_multi_impl.con" 42
+
+# Adversarial module tests
+run_ok "$TESTDIR/adversarial_module_cap_across.con" "$(printf '0\n42')"
+run_ok "$TESTDIR/adversarial_module_deep_nesting.con" 42
+run_ok "$TESTDIR/adversarial_module_enum_across.con" 42
+run_ok "$TESTDIR/adversarial_module_many_siblings.con" 42
+run_ok "$TESTDIR/adversarial_module_same_name.con" 42
+run_ok "$TESTDIR/adversarial_module_struct_across.con" 42
+run_ok "$TESTDIR/adversarial_module_transitive.con" 42
+
+# Adversarial proof/report tests
+run_ok "$TESTDIR/adversarial_proof_generic_mono.con" 42
+run_ok "$TESTDIR/adversarial_proof_many_eligible.con" 55
+run_ok "$TESTDIR/adversarial_proof_mixed_eligibility.con" 42
+run_ok "$TESTDIR/adversarial_report_many_functions.con" 42
+
+# Adversarial scaling/hostile workload tests
+run_ok "$TESTDIR/adversarial_scale_deep_call_chain.con" 42
+run_ok "$TESTDIR/adversarial_scale_generic_explosion.con" 42
+run_ok "$TESTDIR/adversarial_scale_large_enum.con" 42
+run_ok "$TESTDIR/adversarial_scale_large_struct.con" 42
+run_ok "$TESTDIR/adversarial_scale_many_arrays.con" 42
+run_ok "$TESTDIR/adversarial_scale_many_enums.con" 42
+run_ok "$TESTDIR/adversarial_scale_many_functions.con" 42
+run_ok "$TESTDIR/adversarial_scale_nested_match.con" 42
+
 # Capability polymorphism
 run_ok "$TESTDIR/cap_poly.con" 42
 run_ok "$TESTDIR/cap_poly_chain.con" 42

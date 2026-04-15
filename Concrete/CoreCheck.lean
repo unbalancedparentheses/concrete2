@@ -594,6 +594,9 @@ private def isCopyTy (allStructs : List CStructDef) (allEnums : List CEnumDef) (
   | .bool | .float64 | .float32 | .char | .unit => true
   | .ref _ | .ptrMut _ | .ptrConst _ | .never => true
   | .fn_ _ _ _ => true
+  -- Type parameters are assumed Copy at definition time; concrete types are
+  -- validated after monomorphization when the type variable is substituted.
+  | .typeVar _ => true
   | .named name =>
     match allStructs.find? fun sd => sd.name == name with
     | some sd => sd.isCopy
@@ -616,7 +619,12 @@ def ccCheckModuleDecls (m : CModule)
       if m.traitImpls.any fun ti => ti.builtinTraitId == some .destroy && ti.typeName == sd.name then
         errors := errors ++ [mkDeclDiag (.copyDestroyConflict sd.name)]
       for (fname, fty) in sd.fields do
-        if !isCopyTy allStructs allEnums fty then
+        -- Skip Copy check for fields whose type is a type parameter of this struct.
+        -- After monomorphization, concrete types will be checked.
+        let isTypeParam := match fty with
+          | .named n => sd.typeParams.contains n
+          | _ => false
+        if !isTypeParam && !isCopyTy allStructs allEnums fty then
           errors := errors ++ [mkDeclDiag (.copyFieldNotCopy sd.name fname)]
   -- 2. Copy/Destroy conflict for enums
   for ed in m.enums do

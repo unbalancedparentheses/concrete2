@@ -92,7 +92,7 @@ Named real-program corpus (13 tests):
 | SSA cleanup | Pass-level | 2 | `cleanup/*` |
 | Codegen structure | Artifact | ~16 | `codegen_*`, struct/enum GEP/tag checks |
 | LLVM emission | Pass-level + Artifact | 2 + ~10 | `emit/*`, cross-representation checks |
-| Runtime behavior | E2E | ~180 | All positive run_ok tests |
+| Runtime behavior | E2E | ~560 | All positive run_ok tests |
 | -O2 regressions | E2E | ~90 | All computation, struct/enum, linearity, borrow, generic, trait, string, heap, vec, complex, integration, phase3 programs |
 | Report accuracy | Artifact | ~90 | `report_integration.con`, `report_*_check.con`, `test_proof_*.con`, phase3 consistency cross-checks |
 | ABI / FFI | E2E | 9 | `test_repr_c_*`, `test_fn_ptr_*`, `test_sizeof_*`, `test_ptr_round_trip`, `test_array_bounds`, `phase3_abi_interop` |
@@ -539,3 +539,25 @@ Three end-to-end drift demos using `concrete snapshot` + `concrete diff`:
 - **`thesis_demo`**: `+` → `-` in parse_byte, `validate` gains `with(File)` + unbounded `while` — proof drift + authority escalation + resource drift
 
 8 new drift-detection gates in CI evidence section verify: trust weakening detected, `proved → stale` transitions, `is_pure: true → false`, File capability escalation, unbounded loop drift. Trust-gate: 960 checks (up from 952).
+
+### Phase 15: Adversarial Compiler-Hardening Corpus (complete)
+
+Goal: hostile workloads that stress every compiler pass under scale, composition, and edge-case pressure.
+
+45 new test files across 6 categories (37 passing, 8 documenting known bugs):
+
+**Parser stress (8 tests)**: deep nesting (15 levels), long expressions (50 operators), many locals (30), many params (20), complex match (15 arms), empty bodies, nested parens (16 levels), mixed operator precedence.
+
+**Lowering stress (9 tests)**: 4-level nested struct access, 20-variant enum match, 4-level nested loops, struct create/consume in loops, enum-in-struct, large enum payloads, 10-function call chains, array-of-structs iteration, defer LIFO ordering.
+
+**Monomorphization stress (7 tests, all passing)**: generic enum with 3 types, 5-type instantiation fan-out, trait with 3 methods + 2 impls, trait with 3 impls + generic dispatch, generic return struct, recursive generic struct, nested generics.
+
+**Module stress (7 tests, all passing)**: 3-level deep module chain, struct/enum across module boundaries, transitive imports, capability propagation across modules, same-name functions across siblings.
+
+**Proof/report stress (5 tests, 3 passing)**: generic function with proof + monomorphization, 10 pure proof-eligible functions, mixed eligibility (pure/capability/trusted). 1 test documents a pre-existing bug (top-level main not included with inline modules). 1 test stresses report generation with 20 functions.
+
+**Scaling/hostile workloads (9 tests, all passing)**: 40-function chains, 25-variant enum, 20-deep struct transform chain, 20-field struct, 5 simultaneous enums, 3-level nested match, array operations, generic struct explosion.
+
+**Fixed compiler bugs (regression tests retained):**
+1. **LLVM IR function name mangling collision** — same-name functions in different modules produced duplicate LLVM definitions. Fixed by qualifying colliding names with module path in EmitSSA. Regression tests: `adversarial_module_same_name`, `adversarial_module_many_siblings`, `adversarial_module_struct_across`, `adversarial_module_enum_across`.
+2. **Generic Copy struct core-check failure** — `struct Copy Box<T>` rejected because field type `.named "T"` wasn't recognized as a type parameter. Fixed by checking field type names against struct `typeParams` in CoreCheck. Regression tests: `adversarial_mono_generic_return_struct`, `adversarial_mono_nested_generics`, `adversarial_mono_recursive_generic_struct`, `adversarial_mono_generic_enum`, `adversarial_scale_generic_explosion`.
