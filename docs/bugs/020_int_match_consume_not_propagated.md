@@ -1,6 +1,6 @@
 # Bug 020: Integer Match Does Not Propagate Consumption State
 
-**Status:** Open
+**Status:** Fixed
 **Discovered:** 2026-03-22
 **Discovered in:** `tests/programs/bug_int_match_consume.con`
 

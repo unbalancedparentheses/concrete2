@@ -1,6 +1,6 @@
-// BUG TEST: integer match does not propagate consumption state.
-// All arms consume r, but the checker reports "never consumed" at scope exit.
-// This is a known gap in the value-pattern match handler.
+// Regression test: integer match correctly propagates consumption state.
+// All arms consume r — checker must accept this without "never consumed" error.
+// (Bug 020: originally the value-pattern match handler did not propagate state.)
 
 struct Resource {
     value: Int,

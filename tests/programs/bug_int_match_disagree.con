@@ -1,5 +1,6 @@
-// BUG TEST: integer match does not check consumption agreement.
-// Only one arm consumes r — the checker should reject this but doesn't.
+// Regression test: integer match rejects consumption disagreement.
+// Only one arm consumes r — the checker must reject this.
+// (Bug 021: originally the value-pattern match handler did not check agreement.)
 
 struct Resource {
     value: Int,
