@@ -69,7 +69,7 @@ The active roadmap starts after the proof/memory/determinism/diagnostics/policy/
 
 ### Phase 1: Compiler Integrity and Artifact Truth
 
-1. add an explicit miscompile-hunting workflow: oracle-based wrong-code discovery, reducer-driven shrinking, stable corpus promotion, and a rule that every real wrong-code bug becomes a named regression
+1. make the miscompile-hunting workflow explicit and auditable without pretending the full oracle exists yet: record the current assets (`concrete reduce`, `concrete debug-bundle`, adversarial corpus, numbered bug ledger, determinism checks, mutation tests), define what is still missing (automatic bug-to-regression corpus audit, reducer-driven failure triage, wrong-code discovery predicates, and eventual reference-semantics oracle), and require every confirmed wrong-code/compiler-correctness bug to become a numbered bug entry plus a named, registered regression test; keep full oracle-based discovery tied to the later reference-interpreter work rather than marking this complete too early
 2. add a malformed-artifact attack set for snapshots, facts, proof registries, bundles, package metadata, and partial/corrupted outputs; require explicit diagnostics, never silent fallback or downgrade
 3. add state-desynchronization attack tests that try to force disagreement between obligations, proof status, diagnostics, facts, reports, fingerprints, and snapshots; these should fail loudly, not drift quietly
 4. define and implement clear invalid-query diagnostics: malformed/unknown `--query` requests should produce either a structured query error or a deliberate empty answer, not ambiguous success

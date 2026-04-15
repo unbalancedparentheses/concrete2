@@ -248,7 +248,7 @@ case "$MODE" in
     O2)      SECTION="O2" ;;
     codegen) SECTION="codegen,O2" ;;
     report)  SECTION="report" ;;
-    trust-gate) SECTION="determinism,consistency,terminology,verify,evidence" ;;
+    trust-gate) SECTION="determinism,consistency,terminology,verify,evidence,bugaudit" ;;
     affected)
         SECTION=$(resolve_affected_sections "$AFFECTED_FILES")
         echo "=== Affected mode ==="
@@ -1167,6 +1167,8 @@ run_ok "$TESTDIR/bug_string_building.con" 0
 run_ok "$TESTDIR/bug_clock_builtin.con" 0
 run_ok "$TESTDIR/bug_enum_in_struct.con" 0
 run_ok "$TESTDIR/bug_stack_array_borrow_copy.con" 42
+run_ok "$TESTDIR/bug_array_struct_field_mutation.con" "99
+0"
 run_ok "$TESTDIR/hardening_int_literal_inference.con" 42
 run_ok "$TESTDIR/hardening_borrow_edge_cases.con" 42
 run_ok "$TESTDIR/hardening_cross_module_enum.con" 42
@@ -6809,6 +6811,8 @@ run_ok_O2 "$TESTDIR/bug_string_building.con" 0
 ## bug_clock_builtin excluded from O2: loop between clock calls gets optimized away
 run_ok_O2 "$TESTDIR/bug_enum_in_struct.con" 0
 run_ok_O2 "$TESTDIR/bug_stack_array_borrow_copy.con" 42
+run_ok_O2 "$TESTDIR/bug_array_struct_field_mutation.con" "99
+0"
 
 # Hardening tests under O2
 run_ok_O2 "$TESTDIR/hardening_int_literal_inference.con" 42
@@ -7247,6 +7251,24 @@ PASS=$((PASS + verify_pass))
 fi # end section: verify
 
 # === Evidence gates (CI/CD evidence for proof, predictable, stale, reports) ===
+if section_active bugaudit; then
+echo ""
+echo "=== Bug-to-regression corpus audit ==="
+audit_out=$(bash "$ROOT_DIR/scripts/tests/audit_bug_corpus.sh" 2>&1)
+audit_exit=$?
+# Count pass/fail from audit output
+audit_pass=$(echo "$audit_out" | grep -c "^  ok " || true)
+audit_fail=$(echo "$audit_out" | grep -c "^  FAIL" || true)
+echo "$audit_out" | grep -E "^  (ok|FAIL|skip|warn)" | head -30
+if [ "$audit_exit" -eq 0 ]; then
+    echo "  bug corpus audit passed ($audit_pass mapped, 0 failures)"
+    PASS=$((PASS + 1))
+else
+    echo "  FAIL bug corpus audit: $audit_fail bug(s) missing regression coverage"
+    FAIL=$((FAIL + 1))
+fi
+fi # end section: bugaudit
+
 if section_active evidence; then
 echo ""
 echo "=== Evidence gates ==="
