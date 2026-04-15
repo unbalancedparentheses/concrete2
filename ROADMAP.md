@@ -17,10 +17,11 @@ The Lean 4 compiler implements the full pipeline:
 
 The core language, stdlib foundation, report surfaces, proof-status diagnostics, and project workflow are real. Phase H proved the language against real programs. Function-level source locations for `--check predictable` / `--report effects`, Elm-style predictable-profile errors, and Elm-style proof/evidence status are landed.
 
-Two compiler correctness bugs found by adversarial testing have been fixed with regression tests retained:
+Three compiler correctness bugs found by adversarial testing have been fixed with regression tests retained:
 
-- **LLVM IR name mangling collision** (codegen bug): same-name functions in different modules produced duplicate LLVM definitions. Fixed in EmitSSA by qualifying colliding names with module path. 4 regression tests.
-- **Generic Copy struct core-check rejection** (checker bug): `struct Copy Box<T>` rejected because field type `.named "T"` wasn't recognized as a type parameter. Fixed in CoreCheck by checking field type names against struct `typeParams`. 5 regression tests.
+- **LLVM IR name mangling collision** (codegen bug): same-name functions in different modules produced duplicate LLVM definitions. Fixed in EmitSSA by qualifying colliding names with module path; collision key uses `f.modulePath` to handle flattened submodules. 4 regression tests.
+- **Generic Copy struct core-check rejection** (checker bug): `struct Copy Box<T>` rejected because field type `.named "T"` wasn't recognized as a type parameter. Fixed in CoreCheck (pre-mono skip) + Verify.lean (post-mono validation rejects `Box<NonCopy>` instantiations). 6 regression tests.
+- **Top-level main alongside inline modules** (parser bug): `pub fn main()` after `mod` blocks was silently dropped. Fixed in Parser.lean by parsing remaining items as a sibling "main" module. 2 regression tests.
 
 The next question is no longer "can Concrete express this?" but "can Concrete demonstrate its thesis clearly enough to justify the project?"
 
@@ -77,9 +78,31 @@ These are the biggest remaining multipliers for Concrete's thesis.
 
 Do this list top-to-bottom. This is the roadmap. Completed history belongs in [CHANGELOG.md](CHANGELOG.md), and detailed design belongs in `research/`. When items leave the active roadmap, update the changelog in the same cleanup.
 
+### How To Read This
+
+The roadmap is one continuous priority list. Phase titles are scan markers, not separate queues, and numbering never restarts. A later phase can be researched in parallel, but implementation should not jump ahead unless the earlier phase explicitly says the prerequisite is stable.
+
+| Phase | Items | Human goal |
+|---|---:|---|
+| 1. Compiler Integrity | 1-4 | Make serious compiler failures reproducible, reduced, and permanent regressions. |
+| 2. Concrete-to-Lean Proof Pressure | 5-16 | Prove real Concrete functions with Lean through an end-to-end user workflow. |
+| 3. Predictable Core | 17-24 | Make bounded, predictable, failure-aware code usable before broadening scope. |
+| 4. Pre-Stdlib Pressure Workloads | 25-30 | Use real workloads to discover what the stdlib must actually provide. |
+| 5. Stdlib and Syntax Freeze | 31-40 | Define, build, polish, and freeze the first-release core stdlib and syntax surface. |
+| 6. Tooling, Tests, and Wrong-Code Corpus | 41-50 | Make examples, docs, formatting, fuzzing, and wrong-code capture normal workflow. |
+| 7. Performance, Artifacts, and Contract Hardening | 51-68 | Put budgets, schemas, reports, artifacts, and explicit failure behavior around the compiler. |
+| 8. Release Credibility and Showcase | 69-87 | Prepare honest public claims, profiles, showcases, install paths, and release criteria. |
+| 9. Proof Expansion and TCB | 88-113 | Grow ProofCore and proof claims after the narrow proof workflow is real. |
+| 10. Backend, Target, and Incremental Pipeline | 114-130 | Stabilize backend contracts, targets, incremental builds, and semantic regression coverage. |
+| 11. Package System and Dependency Trust | 131-143 | Add packages only after artifacts and trust summaries know what they must carry. |
+| 12. Editor, Artifact UX, and Compatibility | 144-151 | Expose facts, diagnostics, proof state, artifacts, and stability policy to users and tools. |
+| 13. Runtime Profiles, Allocation, and Predictability | 152-167 | Define concurrency, allocation, stack, failure, timing, and overflow boundaries. |
+| 14. Public Readiness and User Tooling | 168-173 | Make the language easier to adopt, audit, and evolve publicly. |
+| 15. Long-Horizon Research Backlog | 174-185 | Keep speculative language/runtime/research ideas visible but clearly gated. |
+
 **Priority rule:** do not start package management, new backends, concurrency, broad proof syntax, source-level contracts, package ecosystems, or showcase polish until the earlier evidence/diagnostic/tooling steps make those later tasks concrete.
 
-Current guardrails: keep specs in Lean-attached / artifact-registry form until obligations and diagnostics work; build a normal fact CLI before the MCP; keep QBE/Yul/other backend work waiting until proof/evidence attachment, optimization policy, and the backend trust boundary are trustworthy.
+Current guardrails: keep specs in Lean-attached / artifact-registry form until obligations and diagnostics work; build a normal fact CLI before the MCP; keep QBE and other backend work waiting until proof/evidence attachment, optimization policy, and the backend trust boundary are trustworthy.
 
 **Proof goal:** maximize the amount of real systems code that can honestly carry Lean 4-backed evidence, rather than pretending every Concrete program should become theorem-prover-friendly all at once.
 
@@ -90,10 +113,16 @@ Current guardrails: keep specs in Lean-attached / artifact-registry form until o
 Completed proof-foundation milestones now live in [CHANGELOG.md](CHANGELOG.md): crypto flagship, ELF flagship, eligibility-first proof flow, explicit `Core -> ProofCore`, ProofCore consolidation, qualified proof identity, proof normalization, stable attached specs, first-slice mechanical obligations, proof-oriented diagnostics, explicit memory/reference semantics, the `&mut T` closure arc, the no-codegen-crash rule, the first explicit no-leak guarantee boundary, the effect/trust proof boundary specification, the public guarantee statement, the language-semantics vs proof-semantics boundary specification, the proof-claim taxonomy, the user-facing proof contract, the safe-memory regression checklist, the memory-model pressure tests, the borrow/aliasing pressure set, the cleanup/leak-boundary pressure set, the unreachable-error-kind checker audit, the compiler determinism verification, the deterministic artifact regression suite, the determinism contract, the nondeterminism source audit, the uniform diagnostic engine across the core pipeline, module/package policy checks as first-class compile errors, the attacker-style drift demo with threat model, and the adversarial compiler-hardening corpus with hostile-workload scaling tests.
 
 The active roadmap below starts after that completed proof/memory closure work. If an item is done, move it to [CHANGELOG.md](CHANGELOG.md) instead of leaving it in the numbered task list.
+
+### Phase 1: Compiler Integrity
+
 1. add an explicit miscompile-hunting workflow: oracle-based wrong-code discovery, reducer-driven shrinking, stable corpus promotion, and a rule that every real wrong-code bug becomes a named regression
 2. add a malformed-artifact attack set for snapshots, facts, proof registries, bundles, package metadata, and partial/corrupted outputs; require explicit diagnostics, never silent fallback or downgrade
 3. add state-desynchronization attack tests that try to force disagreement between obligations, proof status, diagnostics, facts, reports, fingerprints, and snapshots; these should fail loudly, not drift quietly
 4. define a crash/miscompile-to-regression promotion policy so every serious compiler failure becomes a reduced repro, a tracked corpus entry, and a permanent regression test rather than tribal memory
+
+### Phase 2: Concrete-to-Lean Proof Pressure
+
 5. define the narrow Concrete-to-Lean proof pressure set before stdlib work: choose 3-5 small real Concrete functions, at least one conditional-heavy parser/validator function, one helper-composition function, and one intentionally excluded function so the workflow exercises proved, stale, blocked, missing, and ineligible states
 6. make ProofCore extraction for the pressure set reproducible and inspectable: each selected function should have a stable extracted form, fingerprint, eligibility reason, and obligation entry that can be reviewed without reading compiler internals
 7. generate or maintain Lean theorem stubs for the pressure set from compiler artifacts: function identity, spec name, proof target, parameters, and extracted expression should appear in a predictable Lean-facing shape that a user can complete manually
@@ -106,6 +135,9 @@ The active roadmap below starts after that completed proof/memory closure work. 
 14. define the user proof-authoring and maintenance workflow explicitly for that slice: how a user writes or updates specs and proofs, regenerates artifacts, diagnoses stale or blocked proofs, and lands proof-preserving refactors without reading compiler internals
 15. add a proof-workflow debug bundle or report bundle for the pressure set: source, extracted ProofCore, obligations, registry entries, Lean theorem names, fingerprints, diagnostics, and proof-status facts should be captured together for review and bug reports
 16. gate the narrow Concrete-to-Lean proof workflow in CI once stable: at minimum run extraction, registry validation, Lean theorem checking for the pressure set, stale-proof checks, and proof-status consistency as one evidence gate
+
+### Phase 3: Predictable Core
+
 17. validate fixed-capacity usefulness with a no-alloc parser/validator or ring-buffer-style example
 18. design and implement the smallest bounded-capacity type path that makes predictable examples practical
 19. add stack-depth reporting for functions that pass the no-recursion profile
@@ -114,12 +146,18 @@ The active roadmap below starts after that completed proof/memory closure work. 
 22. define the no-std / freestanding split for predictable and embedded-oriented code
 23. define standalone-file versus project UX so examples and small tools can use the stdlib without accidental workflow friction
 24. define concrete project/bootstrap UX: `concrete new`, starter templates, standard layout conventions, and a first supported outsider workflow for trying the language without project-author help
+
+### Phase 4: Pre-Stdlib Pressure Workloads
+
 25. build the parser/decoder pressure set before freezing the stdlib target: JSON subset, HTTP request parser, and DNS packet parser, specifically to discover which parsing, slice/buffer, and result/error APIs are actually missing
 26. build the ownership-heavy structure pressure set before freezing the stdlib target: tree, ordered map, arena-backed graph, and intrusive list, specifically to discover which ownership, cleanup, and container APIs are actually missing
 27. build the borrow/aliasing program pressure set before freezing the stdlib target: sequential `&mut` workflows, borrow-heavy adapters, field/element borrow stress programs, iterator-like borrowing patterns, and other programs whose main job is to force the aliasing surface into the open
 28. build the trusted-wrapper / FFI pressure set before freezing the stdlib target: libc wrapper, checksum/hash wrapper, and OS call facade, specifically to discover which boundary, error/result, and hosted-only stdlib APIs are actually missing
 29. build the fixed-capacity / no-alloc pressure set before freezing the stdlib target: ring buffer, bounded queue, and fixed parser state machine, specifically to discover which bounded-capacity and predictable-subset APIs are actually missing
 30. build the cleanup/leak-boundary program pressure set before freezing the stdlib target: nested defer-driven helpers, alloc/free facades, cleanup-heavy service code, and trusted/FFI cleanup boundaries that force leak reporting and destroy ergonomics to become honest
+
+### Phase 5: Stdlib and Syntax Freeze
+
 31. define the string/text encoding contract explicitly before the stable subset and stdlib freeze: make `String` and text encoding expectations, invalid-sequence handling, and byte-vs-text APIs precise so docs, stdlib, and FFI boundaries do not drift
 32. define the first-release core stdlib target with a quality bar closer to the best practical languages: Rust/OCaml-level module clarity, Zig/Odin-level systems utility, and Clojure/Elixir-level documentation/discoverability for the supported subset; name the exact proof/predictability-friendly modules and APIs that must exist, and mark what is intentionally out of scope
 33. define explicit stdlib design principles before polishing APIs: small orthogonal modules, obvious naming, predictable ownership/borrowing conventions, stable data/text/byte boundaries, and minimal hidden magic; use this as the filter for every new stdlib API
@@ -130,6 +168,9 @@ The active roadmap below starts after that completed proof/memory closure work. 
 38. validate the stdlib with canonical stdlib-backed example programs, not just unit tests: parser, ownership-heavy, FFI-boundary, fixed-capacity, and cleanup-heavy examples should all feel complete against the target surface and expose missing APIs quickly
 39. review syntax friction exposed by the pressure sets and stdlib/examples, but only through LL(1)-preserving changes: in particular, decide whether to unify qualification syntax by moving `Type#Variant` to the same `::` family as module qualification, clean up declaration modifier ordering such as `pub struct Copy Pair`, improve generic-construction ergonomics where surrounding type context already fixes the instantiation (for example allowing `let p: Pair<Int, Int> = Pair { ... }` with elaboration-time resolution rather than parser-level inference tricks), and revisit explicit field visibility only if real examples justify it; keep all such changes local, parser-regular, evidence-driven, and explicitly reject scope-heavy or context-sensitive additions such as bare enum variants, block `defer`, parser-driven generic inference, or multiple competing syntaxes for the same construct
 40. freeze the first-release stdlib surface explicitly: record which modules and syntax forms are stable, which remain experimental, and which are intentionally deferred so the first release does not keep drifting
+
+### Phase 6: Tooling, Tests, and Wrong-Code Corpus
+
 41. continue cleanup/destroy ergonomics only when examples force it: unified `drop(x)` / Destroy-style API, scoped cleanup helpers, borrow-friendly owner APIs, and report coverage for cleanup paths
 42. add structured logging/tracing/observability primitives for real services and tools: leveled logs, structured fields, spans/events where justified, and an honest split between minimal core APIs and hosted/runtime integrations
 43. add a code formatter or make the existing formatter robust enough to be the default documentation/example workflow
@@ -140,6 +181,9 @@ The active roadmap below starts after that completed proof/memory closure work. 
 48. add targeted differential/codegen tests only where there is an executable oracle and a known backend risk
 49. build and maintain a named wrong-code regression corpus: every discovered miscompile, codegen bug, obligation bug, checker soundness bug, and proof-pipeline regression should land as a stable reproduction, not just disappear into the general suite
 50. add an MCP server for Claude, ChatGPT, Codex, and research agents to query compiler facts after the normal fact CLI is useful
+
+### Phase 7: Performance, Artifacts, and Contract Hardening
+
 51. define a stable benchmark harness before performance packets: selected benchmark programs drawn from the same small/medium/big workload ladder, repeatable runner, baseline artifacts, size/output checks, and enough metadata to compare patches honestly
 52. add explicit compiler performance budgets on top of profiling: acceptable compile-time regressions, artifact-generation overhead, and memory-growth limits that CI and review can enforce
 53. add compile-time regression profiling: parse/check/elaboration/proof/report time, artifact-generation cost, and enough baseline data to keep the compiler usable as the proof pipeline grows
@@ -158,6 +202,9 @@ The active roadmap below starts after that completed proof/memory closure work. 
 66. harden malformed artifact, registry, and snapshot handling beyond query errors: corrupted files, duplicate/conflicting entries, partial snapshots, and broken bundles should fail with explicit diagnostics and regression coverage instead of drifting silently
 67. continue the compiler-as-a-contract cleanup: remove silent fallbacks, implicit downgrade paths, and “best effort” report behavior where the compiler should instead fail explicitly or emit a structured internal diagnostic
 68. define and check module/interface artifacts before package management: exported types, function signatures, capabilities, proof expectations, policy requirements, fact schema version, dependency fingerprints, and enough body/interface separation for later incremental compilation
+
+### Phase 8: Release Credibility and Showcase
+
 69. expand packaging/artifacts only after reports, registry, policies, interface artifacts, and CI gates have proved what artifacts must carry
 70. define proof-aware package artifacts explicitly: packages should eventually ship facts, obligations, proof status, trusted assumptions, policy declarations, and package-boundary evidence summaries as normal build artifacts
 71. build and curate a broader public showcase corpus after the thesis workflow is credible, and shape it deliberately as small, medium, and big programs rather than a pile of demos: small programs should isolate one property, medium programs should test composition, and a few bigger programs should prove the language survives scale; the corpus must include borrow/aliasing programs and cleanup/leak-boundary programs, not only parsers and containers
@@ -177,6 +224,9 @@ The active roadmap below starts after that completed proof/memory closure work. 
 85. ship the first real public language release once those criteria are actually met: version the release honestly, publish the supported subset and known limits, ship installable artifacts, and make the release promise narrower than the full roadmap
 86. write the real language book/tutorial path only after the first stable supported subset and first public release criteria are concrete enough that teaching the language will not churn with every compiler refactor
 87. add a REPL and lightweight playground workflow once the parser/checker diagnostics and project UX are stable enough that quick experimentation will reflect the real language instead of a toy front-end
+
+### Phase 9: Proof Expansion and TCB
+
 88. polish the packet/parser flagship example as the canonical thesis demo
 89. build an FFI showcase with a `trusted` wrapper and `with(Unsafe)` isolated at the boundary
 90. build an ownership-heavy data-structure showcase with linear ownership and deterministic cleanup
@@ -203,6 +253,9 @@ The active roadmap below starts after that completed proof/memory closure work. 
 111. evaluate loop invariants only after specs, proof obligations, and the proof UX/repair loop are real enough that users can diagnose failures without compiler-internal knowledge
 112. evaluate ghost/proof-only code only after a proof-backed example needs it and the erasure story is explicit
 113. pull research-gated language features into implementation only when a current example or proof needs them
+
+### Phase 10: Backend, Target, and Incremental Pipeline
+
 114. define optimization policy before substantial backend work: allowed optimizations, evidence-preservation expectations, debug/release behavior, and report/codegen validation expectations
 115. research miscompile-focused differential validation before implementing it broadly: identify trustworthy oracles, artifact/codegen consistency checks, backend sanity checks, and the smallest high-value wrong-code detection corpus
 116. research optimization/debug transparency before deeper backend work: which transformations need explainable dumps, which passes need validation hooks, and how optimized/unoptimized evidence should be related without overclaiming
@@ -220,6 +273,9 @@ The active roadmap below starts after that completed proof/memory closure work. 
 128. add compiler-process resource-hygiene checks for long-running workflows: repeated report/query/snapshot/incremental runs should not leak memory, file descriptors, temp artifacts, or subprocess state
 129. extend the first reducer/minimizer into a broader workflow: add package-aware and multi-file reduction, richer syntax-aware rewrites, and wrong-code / artifact-mismatch predicates on top of the landed single-file crash/verifier/consistency reducer
 130. define a canonical semantic test matrix: every important language rule and artifact guarantee should map to positive, negative, adversarial, and artifact-level regression coverage
+
+### Phase 11: Package System and Dependency Trust
+
 131. split interface artifacts from body artifacts at package/workspace scale
 132. research module-cycle and interface-hygiene enforcement before hardening it at package scale: import-cycle policy, interface/body mismatch handling, invalidation boundaries, and package-facing visibility rules
 133. design and parse the package manifest
@@ -233,6 +289,9 @@ The active roadmap below starts after that completed proof/memory closure work. 
 141. define provenance-aware publishing before public package distribution
 142. define package registry server protocol and trust model before a public ecosystem push: upload/download, index/search, yanking/deprecation, checksums/signatures, authentication, and compatibility with provenance/evidence artifacts
 143. define package/dependency trust policy explicitly: how dependencies summarize trusted assumptions, how trust widens across package boundaries, how package-level evidence is reviewed, and how trust inheritance is made visible
+
+### Phase 12: Editor, Artifact UX, and Compatibility
+
 144. add compiler-as-service / editor / LSP support after diagnostics and facts are structured; expose parser/checker/report/query entrypoints without forcing full executable compilation
 145. define the LSP/editor feature scope explicitly: go-to-definition, hover/type info, diagnostics, formatting, rename, code actions, and fact/proof-aware language features
 146. add fact/proof-aware editor UX: capability/evidence hover, predictable/proof status per function, and jump/link surfaces for obligations, extraction, and traceability
@@ -241,6 +300,9 @@ The active roadmap below starts after that completed proof/memory closure work. 
 149. add release / compatibility discipline when external users depend on the language
 150. define explicit language/versioning/deprecation policy across syntax, stdlib APIs, and proof/fact artifacts so users know what stability guarantees exist and how removals happen
 151. add stdlib quality gates for the bounded systems surface: API stability expectations, allocation/capability discipline, proof/predictability friendliness for core modules, and compatibility rules for example-grade helper APIs
+
+### Phase 13: Runtime Profiles, Allocation, and Predictability
+
 152. decide the analyzable-concurrency / predictable-execution subset before implementing general concurrency
 153. define the async/evented-I/O stance explicitly before deep runtime work: whether evented I/O stays library-level, whether async/await is intentionally out of scope, and what concurrency/runtime promises Concrete will or will not make
 154. implement OS threads + typed channels only after the concurrency stance is documented
@@ -257,12 +319,18 @@ The active roadmap below starts after that completed proof/memory closure work. 
 165. define failure-path boundedness: abort, assertions, impossible branches, OOM-excluded profiles, `defer`, drops, and cleanup paths
 166. define arithmetic-overflow policy for predictable/proved profiles versus performance-oriented profiles
 167. validate predictable execution with bounded examples: fixed-buffer parser, bounded-state controller, fixed-capacity ring buffer, or equivalent
+
+### Phase 14: Public Readiness and User Tooling
+
 168. strengthen memory/layout audit reports with source locations, qualified names, repr/packed/align facts, trusted-pointer boundaries, and backend/target caveats
 169. add coverage tooling over tests, report facts, policy checks, obligations, proof artifacts, and doc tests
 170. add memory-profiler and leak-debug integration for user programs once runtime/allocation profiling exists: heap snapshots or allocation tracing where the target allows it, leak-focused workflows, and a path to correlate runtime findings with `--report alloc`
 171. improve onboarding so a newcomer can build one small program without project-author help
 172. define the stability / experimental boundary for public users
 173. define the language evolution policy on top of that boundary: edition/versioning rules, deprecation windows, breaking-change policy, and how experimental features graduate into the supported subset
+
+### Phase 15: Long-Horizon Research Backlog
+
 174. expand formalization only after obligations, extraction reports, proof diagnostics, attached specs, the explicit ProofCore boundary, and the broader memory/effect model are artifact-backed
 175. research typestate only if a current state-machine/protocol example needs it
 176. research arena allocation after bounded-capacity and allocation-profile work exposes a concrete gap

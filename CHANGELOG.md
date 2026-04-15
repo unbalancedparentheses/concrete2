@@ -12,15 +12,19 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ### Fix: LLVM IR function name mangling collision
 
-Same-name functions in different modules produced duplicate LLVM definitions, causing LLVM validation failures. Fixed in `EmitSSA.lean` by detecting colliding function names across modules and qualifying them with their module path in the emitted IR. Per-module local aliases ensure call sites resolve to the correct qualified name. 4 regression tests (`adversarial_module_same_name`, `adversarial_module_many_siblings`, `adversarial_module_struct_across`, `adversarial_module_enum_across`).
+Same-name functions in different modules produced duplicate LLVM definitions. Fixed in `EmitSSA.lean`: collision detection uses `f.modulePath` (not just `m.name`) to handle flattened submodules. Colliding names are qualified with module path in emitted IR. Call resolution chains through local aliases after linker alias resolution, and skips aliases when the call target already matches a defined function. 4 regression tests.
 
 ### Fix: Generic Copy struct core-check failure
 
-`struct Copy Box<T> { val: T }` was rejected because core-check couldn't prove the type parameter `T` is Copy — field types stored as `.named "T"` rather than `.typeVar "T"` fell through to the "unknown type" case. Fixed in `CoreCheck.lean` by skipping the Copy field check when the field's type name matches one of the struct's `typeParams`. Concrete types are validated after monomorphization. 5 regression tests (`adversarial_mono_generic_return_struct`, `adversarial_mono_recursive_generic_struct`, `adversarial_mono_nested_generics`, `adversarial_mono_generic_enum`, `adversarial_scale_generic_explosion`).
+`struct Copy Box<T> { val: T }` was rejected because field type `.named "T"` wasn't recognized as a type parameter. Fixed in two places: `CoreCheck.lean` skips field Copy check when the type name matches a struct `typeParam`; `Verify.lean` adds post-mono Copy validation (`verifyCopyFieldsPostMono`) that rejects `Box<NonCopy>` instantiations as a compile error. 5 positive regression tests + 1 negative test (`error_copy_generic_non_copy_instantiation`).
+
+### Fix: Top-level main alongside inline modules
+
+`pub fn main()` after `mod` blocks was silently dropped by the parser. `parseProgram` returned after collecting inline modules without parsing remaining items. Fixed in `Parser.lean`: after the mod-parsing loop, remaining tokens are parsed as a sibling "main" module. 2 regression tests.
 
 ### Adversarial compiler-hardening corpus
 
-45 hostile test programs across 6 categories (parser, lowering, monomorphization, module, proof/report, scaling). All 45 pass and are wired into `run_tests.sh`.
+45 hostile test programs across 6 categories (parser, lowering, monomorphization, module, proof/report, scaling). All 47 registered in `run_tests.sh` (45 original + 2 previously missing).
 
 ### Attacker-style drift demo and threat model
 

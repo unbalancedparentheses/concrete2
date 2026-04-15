@@ -258,11 +258,44 @@ def verifyNoTypeVars (modules : List CModule) : Diagnostics :=
     acc ++ verifyModuleTypes Ty.containsTypeVar "Ty.typeVar found" m (skipGenerics := true)) []
   violationsToDiagnostics "post-mono" violations
 
-/-- **Post-Mono verifier**: checks no `Ty.typeVar` survives monomorphization.
-    Placeholder is intentionally not checked here — it can survive Elab/Mono for
-    try/defer expressions and is resolved during lowering. -/
+/-- Check whether a type is Copy, given the full post-mono struct and enum lists. -/
+private def isCopyTyPostMono (allStructs : List CStructDef) (allEnums : List CEnumDef) (ty : Ty) : Bool :=
+  match ty with
+  | .int | .uint | .i8 | .i16 | .i32 | .u8 | .u16 | .u32 => true
+  | .bool | .float64 | .float32 | .char | .unit => true
+  | .ref _ | .ptrMut _ | .ptrConst _ | .never => true
+  | .fn_ _ _ _ => true
+  | .named name =>
+    match allStructs.find? fun sd => sd.name == name with
+    | some sd => sd.isCopy
+    | none => match allEnums.find? fun ed => ed.name == name with
+      | some ed => ed.isCopy
+      | none => false
+  | _ => false
+
+/-- **Post-Mono Copy verifier**: monomorphized Copy structs must have all-Copy fields.
+    Generic Copy structs skip field checks pre-mono (type params are assumed Copy).
+    After monomorphization, concrete types are known and must be validated. -/
+def verifyCopyFieldsPostMono (modules : List CModule) : Diagnostics :=
+  let allStructs := modules.foldl (fun acc m => acc ++ m.structs) []
+  let allEnums := modules.foldl (fun acc m => acc ++ m.enums) []
+  let violations := allStructs.foldl (fun acc sd =>
+    if !sd.isCopy || !sd.typeParams.isEmpty then acc
+    else sd.fields.foldl (fun acc (fname, fty) =>
+      if isCopyTyPostMono allStructs allEnums fty then acc
+      else acc ++ [{ severity := .error
+                     message := s!"Copy struct '{sd.name}' has non-Copy field '{fname}' after monomorphization"
+                     pass := "post-mono"
+                     span := none
+                     hint := some "the generic type parameter was instantiated with a non-Copy type" }]
+    ) acc
+  ) ([] : Diagnostics)
+  violations
+
+/-- **Post-Mono verifier**: checks no `Ty.typeVar` survives monomorphization,
+    and validates Copy struct fields after generic instantiation. -/
 def verifyPostMono (modules : List CModule) : Diagnostics :=
-  verifyNoTypeVars modules
+  verifyNoTypeVars modules ++ verifyCopyFieldsPostMono modules
 
 -- ============================================================
 -- Rendering

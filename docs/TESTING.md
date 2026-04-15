@@ -544,20 +544,21 @@ Three end-to-end drift demos using `concrete snapshot` + `concrete diff`:
 
 Goal: hostile workloads that stress every compiler pass under scale, composition, and edge-case pressure.
 
-45 new test files across 6 categories (37 passing, 8 documenting known bugs):
+45 test files across 6 categories, all passing:
 
 **Parser stress (8 tests)**: deep nesting (15 levels), long expressions (50 operators), many locals (30), many params (20), complex match (15 arms), empty bodies, nested parens (16 levels), mixed operator precedence.
 
 **Lowering stress (9 tests)**: 4-level nested struct access, 20-variant enum match, 4-level nested loops, struct create/consume in loops, enum-in-struct, large enum payloads, 10-function call chains, array-of-structs iteration, defer LIFO ordering.
 
-**Monomorphization stress (7 tests, all passing)**: generic enum with 3 types, 5-type instantiation fan-out, trait with 3 methods + 2 impls, trait with 3 impls + generic dispatch, generic return struct, recursive generic struct, nested generics.
+**Monomorphization stress (7 tests)**: generic enum with 3 types, 5-type instantiation fan-out, trait with 3 methods + 2 impls, trait with 3 impls + generic dispatch, generic return struct, recursive generic struct, nested generics.
 
-**Module stress (7 tests, all passing)**: 3-level deep module chain, struct/enum across module boundaries, transitive imports, capability propagation across modules, same-name functions across siblings.
+**Module stress (7 tests)**: 3-level deep module chain, struct/enum across module boundaries, transitive imports, capability propagation across modules, same-name functions across siblings.
 
-**Proof/report stress (5 tests, 3 passing)**: generic function with proof + monomorphization, 10 pure proof-eligible functions, mixed eligibility (pure/capability/trusted). 1 test documents a pre-existing bug (top-level main not included with inline modules). 1 test stresses report generation with 20 functions.
+**Proof/report stress (5 tests)**: generic function with proof + monomorphization, 10 pure proof-eligible functions, mixed eligibility (pure/capability/trusted), module isolation with qualified calls, report generation with 20 functions.
 
-**Scaling/hostile workloads (9 tests, all passing)**: 40-function chains, 25-variant enum, 20-deep struct transform chain, 20-field struct, 5 simultaneous enums, 3-level nested match, array operations, generic struct explosion.
+**Scaling/hostile workloads (9 tests)**: 40-function chains, 25-variant enum, 20-deep struct transform chain, 20-field struct, 5 simultaneous enums, 3-level nested match, array operations, generic struct explosion, 12 sibling modules.
 
 **Fixed compiler bugs (regression tests retained):**
-1. **LLVM IR function name mangling collision** — same-name functions in different modules produced duplicate LLVM definitions. Fixed by qualifying colliding names with module path in EmitSSA. Regression tests: `adversarial_module_same_name`, `adversarial_module_many_siblings`, `adversarial_module_struct_across`, `adversarial_module_enum_across`.
-2. **Generic Copy struct core-check failure** — `struct Copy Box<T>` rejected because field type `.named "T"` wasn't recognized as a type parameter. Fixed by checking field type names against struct `typeParams` in CoreCheck. Regression tests: `adversarial_mono_generic_return_struct`, `adversarial_mono_nested_generics`, `adversarial_mono_recursive_generic_struct`, `adversarial_mono_generic_enum`, `adversarial_scale_generic_explosion`.
+1. **LLVM IR function name mangling collision** — same-name functions in different modules produced duplicate LLVM definitions. Fixed by qualifying colliding names with module path in EmitSSA; collision key uses `f.modulePath` to handle flattened submodules. Regression tests: `adversarial_module_same_name`, `adversarial_module_many_siblings`, `adversarial_module_struct_across`, `adversarial_module_enum_across`.
+2. **Generic Copy struct core-check failure** — `struct Copy Box<T>` rejected because field type `.named "T"` wasn't recognized as a type parameter. Fixed by checking field type names against struct `typeParams` in CoreCheck, plus post-mono Copy validation in Verify.lean that rejects `Box<NonCopy>` instantiations. Regression tests: `adversarial_mono_generic_return_struct`, `adversarial_mono_nested_generics`, `adversarial_mono_recursive_generic_struct`, `adversarial_mono_generic_enum`, `adversarial_scale_generic_explosion`, `error_copy_generic_non_copy_instantiation` (negative).
+3. **Top-level main alongside inline modules** — `pub fn main()` after `mod` blocks was silently dropped by the parser. Fixed by parsing remaining top-level items as a sibling "main" module. Regression tests: `adversarial_proof_module_isolation`, `adversarial_scale_many_modules`.

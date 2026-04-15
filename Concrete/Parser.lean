@@ -1874,7 +1874,13 @@ partial def parseProgram : ParseM (List Module) := do
         let m ← parseModule
         modules := modules ++ [m]
         tk3 ← peek
-      return modules
+      -- Parse remaining top-level items (e.g. `pub fn main()`) as a sibling "main" module
+      let tk4 ← peek
+      if tk4 != .eof then
+        let mainBody ← parseModuleBody .eof
+        return modules ++ [{ mainBody with name := "main" }]
+      else
+        return modules
     else
       -- 'mod X;' is a module import, part of the main module body
       expect .semicolon

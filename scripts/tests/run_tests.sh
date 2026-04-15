@@ -937,6 +937,7 @@ run_ok "$TESTDIR/adversarial_module_transitive.con" 42
 run_ok "$TESTDIR/adversarial_proof_generic_mono.con" 42
 run_ok "$TESTDIR/adversarial_proof_many_eligible.con" 55
 run_ok "$TESTDIR/adversarial_proof_mixed_eligibility.con" 42
+run_ok "$TESTDIR/adversarial_proof_module_isolation.con" 60
 run_ok "$TESTDIR/adversarial_report_many_functions.con" 42
 
 # Adversarial scaling/hostile workload tests
@@ -947,6 +948,7 @@ run_ok "$TESTDIR/adversarial_scale_large_struct.con" 42
 run_ok "$TESTDIR/adversarial_scale_many_arrays.con" 42
 run_ok "$TESTDIR/adversarial_scale_many_enums.con" 42
 run_ok "$TESTDIR/adversarial_scale_many_functions.con" 42
+run_ok "$TESTDIR/adversarial_scale_many_modules.con" 42
 run_ok "$TESTDIR/adversarial_scale_nested_match.con" 42
 
 # Capability polymorphism
@@ -1234,6 +1236,7 @@ run_err "$TESTDIR/error_continue_outside.con"    "continue outside of loop"
 run_err "$TESTDIR/error_defer_move.con"          "reserved by defer"
 run_err "$TESTDIR/error_copy_destroy.con"        "implements Destroy and cannot be Copy"
 run_err "$TESTDIR/error_copy_linear_field.con"   "contains non-copy field"
+run_err "$TESTDIR/error_copy_generic_non_copy_instantiation.con" "non-Copy field"
 run_err "$TESTDIR/error_destroy_no_impl.con"     "does not implement Destroy"
 run_err "$TESTDIR/error_destroy_reserved.con"    "is a reserved identifier"
 # Phase 5: Allocator errors

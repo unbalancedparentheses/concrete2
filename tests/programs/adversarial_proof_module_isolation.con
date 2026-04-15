@@ -1,6 +1,6 @@
-// Adversarial: three modules each with identically-named functions.
-// Proof identity is qualified (mod.fn), so each function must be tracked
-// independently. Tests that ProofCore does not merge or confuse them.
+// Adversarial: three modules each with identically-named functions,
+// plus a top-level main using qualified calls (alpha::compute).
+// Tests that ProofCore does not merge or confuse them.
 // Expected: 60 (10+20+30)
 
 mod alpha {

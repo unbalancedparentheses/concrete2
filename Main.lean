@@ -44,7 +44,7 @@ def getMacOSSysrootFlags : IO (Array String) := do
 /-- Build clang arguments for linking LLVM IR to a native binary. -/
 def clangArgs (llPath : String) (outputPath : String) (extraFlags : Array String := #[]) : IO (Array String) := do
   let sysrootFlags ← getMacOSSysrootFlags
-  return #[llPath, "-o", outputPath, "-Wno-override-module", "-O2"] ++ sysrootFlags ++ extraFlags
+  return #[llPath, "-o", outputPath, "-Wno-override-module", "-w", "-O2"] ++ sysrootFlags ++ extraFlags
 
 def runCmd (cmd : String) (args : Array String) : IO UInt32 := do
   let child ← IO.Process.spawn {

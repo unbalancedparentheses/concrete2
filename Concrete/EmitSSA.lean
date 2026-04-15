@@ -62,6 +62,8 @@ structure EmitSSAState where
   collidingNames : List String := []
   /-- Per-module linker aliases (reset per module, used before global aliases). -/
   localAliases : List (String × String) := []
+  /-- Set of all LLVM function names that will be emitted (for direct-match resolution). -/
+  definedFnNames : List String := []
   /-- Alloca instructions to hoist to the function entry block.
       Allocas emitted inside loop bodies would otherwise grow the stack
       on every iteration; collecting them here and prepending to the
@@ -175,11 +177,14 @@ private def svalToOperand (s : EmitSSAState) (v : SVal) : LLVMOperand :=
     if name.startsWith "@fnref." then
       let bareName := (name.drop 7).toString
       -- Resolve linker aliases for function pointer references (e.g., hash_i32 → hash_hash_i32)
-      let resolved := match s.localAliases.lookup bareName with
-        | some orig => orig
-        | none => match s.linkerAliases.lookup bareName with
+      let resolved := if s.definedFnNames.contains bareName then bareName
+        else match s.localAliases.lookup bareName with
           | some orig => orig
-          | none => bareName
+          | none => match s.linkerAliases.lookup bareName with
+            | some orig => match s.localAliases.lookup orig with
+              | some qual => qual
+              | none => orig
+            | none => bareName
       .global resolved
     else .reg name
   | .intConst val _ => .intLit val
@@ -656,13 +661,19 @@ private def emitSInst (s : EmitSSAState) (inst : SInst) : EmitSSAState :=
       || (s.fnParams.any fun (n, t) =>
         n == fn && match t with | .fn_ _ _ _ => true | _ => false)
       || s.fnTypeRegs.contains fn
-    -- Resolve aliased imports to their real linker symbol
-    -- Check per-module aliases first (for colliding names), then global aliases
-    let linkerFn := match s.localAliases.lookup fn with
-      | some orig => orig
-      | none => match s.linkerAliases.lookup fn with
+    -- Resolve aliased imports to their real linker symbol.
+    -- If the call target already matches a defined function, use it directly
+    -- (avoids alias chains that would de-qualify a qualified colliding name).
+    -- Otherwise: check per-module aliases first, then global aliases,
+    -- chaining through local aliases if the linker alias target also collides.
+    let linkerFn := if s.definedFnNames.contains fn then fn
+      else match s.localAliases.lookup fn with
         | some orig => orig
-        | none => fn
+        | none => match s.linkerAliases.lookup fn with
+          | some orig => match s.localAliases.lookup orig with
+            | some qual => qual
+            | none => orig
+          | none => fn
     let callTarget : LLVMOperand := if isIndirect then
       if fn.startsWith "%" then .reg (fn.drop 1).toString
       else .reg fn
@@ -1349,9 +1360,10 @@ def emitSSAProgram (modules : List SModule) (testMode : Bool := false) (moduleFi
   let allExternFns := modules.foldl (fun acc m => acc ++ m.externFns) []
   let allDefinedFns := modules.foldl (fun acc m => acc ++ m.functions.map (·.name)) []
   let s := emitExternDecls s allExternFns allDefinedFns
-  -- Detect function name collisions across modules: find bare names defined in 2+ modules
+  -- Detect function name collisions across modules: find bare names defined in 2+ module paths
+  -- Use f.modulePath (set by Lower) instead of m.name to handle flattened submodules correctly
   let fnNamesByModule := modules.foldl (fun acc m =>
-    acc ++ m.functions.map fun f => (f.name, m.name)
+    acc ++ (m.functions.map fun f => (f.name, if f.modulePath.isEmpty then m.name else f.modulePath))
   ) ([] : List (String × String))
   let collidingNames := fnNamesByModule.foldl (fun acc (name, mod1) =>
     if acc.contains name then acc
@@ -1360,6 +1372,11 @@ def emitSSAProgram (modules : List SModule) (testMode : Bool := false) (moduleFi
     else acc
   ) ([] : List String)
   let s := { s with collidingNames := collidingNames }
+  -- Build set of all LLVM function names (post-collision-qualification)
+  let definedFnNames := modules.foldl (fun acc m =>
+    acc ++ m.functions.map fun f => llvmFnName { s with collidingNames := collidingNames } f
+  ) ([] : List String)
+  let s := { s with definedFnNames := definedFnNames }
   -- Emit each module
   let s := modules.foldl (fun s m => emitSModule s m testMode) s
   -- In test mode, emit the test runner instead of the normal main wrapper
