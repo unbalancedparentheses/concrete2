@@ -480,7 +480,9 @@ Goal: run the four correctness contracts automatically in CI so regressions in d
 - **Self-consistency** — `--report consistency` on all 468 compilable programs (15 ProofCore invariants)
 - **Terminology** — `test_terminology_gate.sh` enforcing canonical proof/obligation status terms
 - **Verifier passes** — `--report verify` on all 385 non-error programs
-- **Malformed artifacts** — 19 attack tests: truncated/wrong-type/missing-field/duplicate-key snapshots, corrupted/empty/duplicate/empty-fingerprint registries, bad TOML dependencies/policies/sections/missing-package, bundle validation (missing/corrupted/partial manifests, valid bundle)
+- **Malformed artifacts** — 23 attack tests: truncated/wrong-type/missing-field/duplicate-key snapshots, corrupted/empty/duplicate/empty-fingerprint registries, valid-empty-registry acceptance, no-duplicate-warning check, bad TOML dependencies/policies/sections/missing-package, bundle validation (missing/corrupted/partial manifests, wrong field types, valid bundle), diff missing-file explicit diagnostic
+- **Invalid-query diagnostics** — 11 tests: empty query, unknown single/two/three-part kinds, empty segments, too many separators, valid kind/semantic/filter queries still work, error messages list known kinds
+- **State desynchronization** — 13 attack tests: registry-vs-fingerprint stale detection, registry-vs-function-identity unknown-function warning, conflicting specs, obligation-diagnostic cross-check, snapshot fact tampering, doctored snapshot drift detection, obligation-traceability identity agreement, stale-proof consistency invariants, snapshot-then-edit drift, trusted/ineligible function proof bypass
 - **Bug corpus audit** — `audit_bug_corpus.sh` verifies every numbered bug has a mapped regression test
 
 The `trust-gate` CI job runs in parallel with the main test suite and SSA tests. Also available locally as `make test-trust-gate`.
@@ -554,7 +556,7 @@ Three end-to-end drift demos using `concrete snapshot` + `concrete diff`:
 - **`elf_header`**: magic byte `127` → `0`, version accepts `0` — proof drift + validation weakening
 - **`thesis_demo`**: `+` → `-` in parse_byte, `validate` gains `with(File)` + unbounded `while` — proof drift + authority escalation + resource drift
 
-8 new drift-detection gates in CI evidence section verify: trust weakening detected, `proved → stale` transitions, `is_pure: true → false`, File capability escalation, unbounded loop drift. Trust-gate: 1026 checks (up from 960), now includes 19 malformed-artifact attack tests and bug corpus audit.
+8 new drift-detection gates in CI evidence section verify: trust weakening detected, `proved → stale` transitions, `is_pure: true → false`, File capability escalation, unbounded loop drift. Trust-gate: 1054 checks (up from 1039), now includes 23 malformed-artifact attack tests (4 new: bundle type validation, valid empty registry, no-duplicate-warning), 13 state-desynchronization attack tests, 11 invalid-query diagnostic tests, and bug corpus audit.
 
 ### Phase 15: Adversarial Compiler-Hardening Corpus (complete)
 

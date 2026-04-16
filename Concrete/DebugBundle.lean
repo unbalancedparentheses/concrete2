@@ -115,19 +115,52 @@ def validateBundle (bundleDir : String) : IO (List String) := do
   | some content =>
   -- Basic structural validation via string inspection
   let has (haystack needle : String) : Bool := (haystack.splitOn needle).length > 1
+  -- Extract the value after a "key": ... by splitting on the key and taking what follows the colon
+  let valAfter (haystack key : String) : Option String :=
+    match (haystack.splitOn key) with
+    | _ :: rest :: _ =>
+      let after := rest.trimAscii.toString
+      -- skip the colon
+      if after.startsWith ":" then some (after.drop 1 |>.trimAscii.toString)
+      else none
+    | _ => none
   let trimmed := content.trimAscii.toString
   if !trimmed.startsWith "{" || !trimmed.endsWith "}" then
     issues := issues ++ ["error: manifest.json is not a valid JSON object"]
   else
-    -- Check required fields
+    -- Check required fields exist
     for field in ["\"version\"", "\"source_path\"", "\"failed_at\"", "\"artifacts\""] do
       if !has content field then
         issues := issues ++ [s!"warning: manifest.json missing {field} field"]
-    -- Check artifacts sub-fields
+    -- Validate field types
+    match valAfter content "\"version\"" with
+    | some v =>
+      -- version must start with a digit (numeric)
+      if v.isEmpty || !(v.get 0 |>.isDigit) then
+        issues := issues ++ ["error: manifest.json \"version\" must be a number"]
+    | none => pure ()
+    match valAfter content "\"source_path\"" with
+    | some v =>
+      if !v.startsWith "\"" then
+        issues := issues ++ ["error: manifest.json \"source_path\" must be a string"]
+    | none => pure ()
+    -- failed_at may be a string or null (null means compilation succeeded)
+    match valAfter content "\"failed_at\"" with
+    | some v =>
+      if !(v.startsWith "\"" || v.startsWith "null") then
+        issues := issues ++ ["error: manifest.json \"failed_at\" must be a string or null"]
+    | none => pure ()
+    -- Check artifacts sub-fields and their types
     if has content "\"artifacts\"" then
       for sub in ["\"core_ir\"", "\"mono_ir\"", "\"ssa_ir\"", "\"llvm_ir\"", "\"proof_core\""] do
         if !has content sub then
           issues := issues ++ [s!"warning: manifest.json artifacts missing {sub} field"]
+        else
+          match valAfter content sub with
+          | some v =>
+            if !(v.startsWith "true" || v.startsWith "false") then
+              issues := issues ++ [s!"error: manifest.json artifacts {sub} must be a boolean"]
+          | none => pure ()
   -- Check source file exists
   let srcExists ← try
     let _ ← IO.FS.readFile ⟨bundleDir ++ "/source/main.con"⟩

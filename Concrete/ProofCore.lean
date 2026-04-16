@@ -824,9 +824,16 @@ def parseRegistryJson (input : String) : ProofRegistry × List String :=
   else
   let blocks := input.splitOn "\"function\":"
   let entryBlocks := blocks.drop 1
-  -- Non-trivial content but no "function": tokens → malformed
+  -- No "function": tokens — check whether the content looks like valid-but-empty JSON
   if entryBlocks.isEmpty && trimmed.length > 2 then
-    ([], [s!"warning: proof-registry.json is malformed (no valid entries found)"])
+    -- Accept: "[]", "[  ]", or objects/arrays that parse as valid empty structures
+    let looksValidEmpty := trimmed == "[]" ||
+      (trimmed.startsWith "[" && trimmed.endsWith "]") ||
+      (trimmed.startsWith "{" && trimmed.endsWith "}")
+    if !looksValidEmpty then
+      ([], [s!"warning: proof-registry.json is malformed (no valid entries found)"])
+    else
+      ([], [])
   else
   let entries := entryBlocks.filterMap fun block =>
     let fn := extractStr ("\"function\":" ++ block) "function"

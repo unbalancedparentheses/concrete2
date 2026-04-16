@@ -10,6 +10,44 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Invalid-query diagnostics
+
+`queryFacts` now returns `Except String String` — malformed/unknown queries produce explicit errors instead of silent empty arrays.
+
+- **Empty query**: explicit error with usage hint and known-kinds list
+- **Unknown kind** (single-word or two-part): error naming the unknown kind and listing all valid semantic and fact-filter kinds
+- **Empty segments** (leading/trailing/double colons): error identifying the malformed segment
+- **Unknown three-part kind**: error explaining only `why-capability:FN:CAP` uses three parts
+- **Too many separators**: error with max-separator guidance
+- **Kind validation**: single-word and `KIND:FUNCTION` filters validate against the 11 known fact kinds; unknown kinds produce errors instead of empty arrays
+
+`compileAndQuery` surfaces errors to stderr with nonzero exit. 11 regression tests wired into trust-gate. Trust-gate: 1054 pass, 0 fail.
+
+### State-desynchronization attack tests and cross-artifact validation
+
+13 adversarial tests that try to force disagreement between artifact families:
+
+- **Registry vs fingerprint**: stale fingerprint detected, proved status never granted
+- **Registry vs function identity**: unknown function warning surfaced via `validateRegistry`
+- **Registry conflicting specs**: duplicate/conflicting entries produce explicit warnings
+- **Obligations vs diagnostics**: stale obligation status matches stale diagnostic kind; all 13 selfCheck invariants hold under desync scenarios
+- **Snapshot drift**: doctored fact values detected as drift; snapshot-then-edit catches body changes via fingerprint diff
+- **Traceability vs proof identity**: traceability report covers all obligation function identities
+- **Trusted/ineligible bypass**: registry entry for trusted function never grants proved status
+
+Wired `validateRegistry` into `compileAndReport` so registry-level issues (unknown functions, stale fingerprints, conflicting specs) surface as stderr warnings on every report command. Trust-gate: 1039 pass, 0 fail.
+
+### Artifact validation hardening (bundle types, empty registry, diff diagnostics, warning dedup)
+
+Four follow-up fixes to close shallow-validation gaps found in review:
+
+- **Bundle type validation**: `validateBundle` now checks manifest field types — `version` must be numeric, `source_path` must be a string, `failed_at` must be a string or null, artifact flags must be booleans. Previously only checked substring presence.
+- **Valid empty registry**: `parseRegistryJson` no longer warns on `[]` or `{"version":1,"proofs":[]}` — an empty registry is a legitimate "no proofs yet" state, not malformed.
+- **Warning dedup**: removed duplicate `loadRegistryWarn` calls in `compileAndReport` — report branches now reuse the registry already loaded before ProofCore construction.
+- **Diff missing-file diagnostic**: `concrete diff` now checks file existence before reading, producing `error: file not found: <path>` instead of an uncaught IO exception.
+
+4 new regression tests (malformed tests 19-22). Trust-gate: 1043 pass, 0 fail.
+
 ### Malformed-artifact attack tests and explicit diagnostics
 
 Eliminated silent fallback/empty-success paths for all artifact families:

@@ -2528,6 +2528,15 @@ def auditQuery (modules : List CModule) (locMap : FnLocMap)
       ("allocation", allocInfo)
     ]).render
 
+/-- Known fact kinds that the compiler produces. -/
+def knownFactKinds : List String :=
+  ["proof_diagnostic", "predictable_violation", "proof_status", "eligibility",
+   "obligation", "extraction", "traceability", "effects", "capability", "unsafe", "alloc"]
+
+/-- Known semantic query prefixes. -/
+def knownQueryKinds : List String :=
+  ["predictable", "proof", "evidence", "audit", "fn", "why-capability", "traceability"]
+
 open Json in
 /-- Query compiler facts by kind and optional function name.
     Query formats:
@@ -2537,59 +2546,68 @@ open Json in
     - "why-capability:FN:CAP" — trace why a function requires a capability
     - "predictable:FN"        — predictable profile answer for one function
     - "proof:FN"              — proof status answer for one function
-    - "evidence:FN"           — combined evidence answer for one function -/
+    - "evidence:FN"           — combined evidence answer for one function
+    Returns Except.error for malformed/unknown queries, Except.ok for valid results. -/
 def queryFacts (modules : List CModule) (locMap : FnLocMap := [])
     (query : String) (registry : ProofRegistry := [])
-    (pc : Concrete.ProofCore) : String :=
+    (pc : Concrete.ProofCore) : Except String String :=
   let parts := query.splitOn ":"
+  let allKindsStr := s!"{", ".intercalate knownQueryKinds} (semantic), {", ".intercalate knownFactKinds} (fact filter)"
+  -- Reject empty query
+  if query.isEmpty then
+    .error s!"empty query string. Use --query KIND, --query KIND:FUNCTION, or --query predictable:FUNCTION. Known kinds: {allKindsStr}"
+  else
+  -- Reject queries with empty segments (leading/trailing/double colons)
+  if parts.any (·.isEmpty) then
+    .error s!"malformed query '{query}': contains empty segment. Use --query KIND:FUNCTION, not ':FUNCTION' or 'KIND:'"
+  else
   -- Semantic queries: three-part (why-capability:fn:cap)
   if parts.length == 3 then
     match parts with
-    | ["why-capability", fnName, cap] => whyCapabilityQuery modules locMap fnName cap
-    | _ =>
-      -- Fall through to kind:function filter
-      let filterKind := parts[0]!
-      let filterFn := parts[1]!
-      let allFacts := collectCoreFacts modules locMap registry pc
-      let byKind := allFacts.filter fun v => jsonGetStr v "kind" == some filterKind
-      let filtered := byKind.filter fun v =>
-        match jsonGetStr v "function" with
-        | some f => f == filterFn || f.endsWith ("." ++ filterFn)
-        | none => false
-      (Val.arr filtered).render
+    | ["why-capability", fnName, cap] => .ok (whyCapabilityQuery modules locMap fnName cap)
+    | [kind, _, _] =>
+      .error s!"unknown three-part query kind '{kind}'. Only 'why-capability:FN:CAP' uses three parts"
+    | _ => .error s!"malformed three-part query '{query}'"
   else
   -- Semantic queries: two-part (predictable:fn, proof:fn, evidence:fn)
   if parts.length == 2 then
     match parts with
-    | ["predictable", fnName] => predictableQuery modules locMap fnName pc
-    | ["proof", fnName] => proofQuery modules locMap fnName registry pc
-    | ["evidence", fnName] => evidenceQuery modules locMap fnName registry pc
-    | ["audit", fnName] => auditQuery modules locMap fnName registry pc
+    | ["predictable", fnName] => .ok (predictableQuery modules locMap fnName pc)
+    | ["proof", fnName] => .ok (proofQuery modules locMap fnName registry pc)
+    | ["evidence", fnName] => .ok (evidenceQuery modules locMap fnName registry pc)
+    | ["audit", fnName] => .ok (auditQuery modules locMap fnName registry pc)
     | ["fn", fnName] =>
       let allFacts := collectCoreFacts modules locMap registry pc
       let filtered := allFacts.filter fun v =>
         match jsonGetStr v "function" with
         | some f => f == fnName || f.endsWith ("." ++ fnName)
         | none => false
-      (Val.arr filtered).render
-    | _ =>
-      -- kind:function filter
-      let filterKind := parts[0]!
-      let filterFn := parts[1]!
+      .ok (Val.arr filtered).render
+    | [filterKind, filterFn] =>
+      -- kind:function filter — validate the kind is known
+      if knownFactKinds.contains filterKind then
+        let allFacts := collectCoreFacts modules locMap registry pc
+        let byKind := allFacts.filter fun v =>
+          jsonGetStr v "kind" == some filterKind
+        let filtered := byKind.filter fun v =>
+          match jsonGetStr v "function" with
+          | some f => f == filterFn || f.endsWith ("." ++ filterFn)
+          | none => false
+        .ok (Val.arr filtered).render
+      else
+        .error s!"unknown query kind '{filterKind}'. Known kinds: {allKindsStr}"
+    | _ => .error s!"malformed two-part query '{query}'"
+  else if parts.length == 1 then
+    -- Single-word filter: all facts of this kind — validate kind is known
+    if knownFactKinds.contains query then
       let allFacts := collectCoreFacts modules locMap registry pc
-      let byKind := allFacts.filter fun v =>
-        jsonGetStr v "kind" == some filterKind
-      let filtered := byKind.filter fun v =>
-        match jsonGetStr v "function" with
-        | some f => f == filterFn || f.endsWith ("." ++ filterFn)
-        | none => false
-      (Val.arr filtered).render
+      let filtered := allFacts.filter fun v =>
+        jsonGetStr v "kind" == some query
+      .ok (Val.arr filtered).render
+    else
+      .error s!"unknown query kind '{query}'. Known kinds: {allKindsStr}"
   else
-    -- Single-word filter: all facts of this kind
-    let allFacts := collectCoreFacts modules locMap registry pc
-    let filtered := allFacts.filter fun v =>
-      jsonGetStr v "kind" == some query
-    (Val.arr filtered).render
+    .error s!"malformed query '{query}': too many ':' separators (max 2, for why-capability:FN:CAP)"
 
 -- ============================================================
 -- Semantic diff / trust drift

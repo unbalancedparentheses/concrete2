@@ -346,6 +346,9 @@ def compileAndReport (inputPath : String) (reportType : String) : IO UInt32 := d
     let simpleLocMap := locMap.map fun e => (e.qualName, (e.file, e.fnSpan.line))
     let registry ← loadRegistryWarn inputPath
     let pc := extractProofCore validCore simpleLocMap registry
+    -- Validate registry against ProofCore and surface warnings
+    let regIssues := Concrete.validateRegistry pc registry
+    for issue in regIssues do IO.eprintln (Concrete.renderRegistryIssue issue)
     if reportType == "caps" then
       IO.println (Report.capabilityReport validCore.coreModules)
       return 0
@@ -368,22 +371,18 @@ def compileAndReport (inputPath : String) (reportType : String) : IO UInt32 := d
       IO.println (Report.eligibilityReport pc)
       return 0
     if reportType == "proof-status" then
-      let registry ← loadRegistryWarn inputPath
       IO.println (Report.proofStatusReport validCore.coreModules locMap srcMap (registry := registry) (pc := pc))
       return 0
     if reportType == "obligations" then
-      let registry ← loadRegistryWarn inputPath
       IO.println (Report.obligationsReport validCore.coreModules locMap registry pc)
       return 0
     if reportType == "proof-diagnostics" then
       IO.println (Report.proofDiagnosticsReport (pc := pc))
       return 0
     if reportType == "extraction" then
-      let registry ← loadRegistryWarn inputPath
       IO.println (Report.extractionReport (registry := registry) (pc := pc))
       return 0
     if reportType == "diagnostics-json" then
-      let registry ← loadRegistryWarn inputPath
       IO.println (Report.diagnosticsJson validCore.coreModules locMap (registry := registry) (pc := pc))
       return 0
     if reportType == "effects" then
@@ -413,7 +412,6 @@ def compileAndReport (inputPath : String) (reportType : String) : IO UInt32 := d
         IO.println (renderVerifyDiagnostics allDs)
         if monoDs.isEmpty then return 0 else return 1
     if reportType == "traceability" then
-      let registry ← loadRegistryWarn inputPath
       match Pipeline.monomorphize validCore with
       | .error ds =>
         IO.eprintln (renderDiagnostics ds (sourceMap := srcMap))
@@ -466,8 +464,13 @@ def compileAndQuery (inputPath : String) (query : String) : IO UInt32 := do
           IO.println (Report.queryTraceability validCore.coreModules mono.coreModules ssa.ssaModules locMap fnFilter (registry := registry) (pc := pc))
           return 0
     else
-      IO.println (Report.queryFacts validCore.coreModules locMap query (registry := registry) (pc := pc))
-      return 0
+      match Report.queryFacts validCore.coreModules locMap query (registry := registry) (pc := pc) with
+      | .ok result =>
+        IO.println result
+        return 0
+      | .error msg =>
+        IO.eprintln s!"error: {msg}"
+        return 1
 
 -- ============================================================
 -- Concrete.toml project support
@@ -964,10 +967,18 @@ def main (args : List String) : IO UInt32 := do
     let rest := args.drop 1
     match rest with
     | [oldPath, newPath] =>
-      let oldJson ← readFile oldPath
-      let newJson ← readFile newPath
-      let (oldParsed, oldWarns) := Report.parseFactsWarn oldJson
-      let (newParsed, newWarns) := Report.parseFactsWarn newJson
+      let oldJson ← try pure (some (← readFile oldPath)) catch _ => pure none
+      let newJson ← try pure (some (← readFile newPath)) catch _ => pure none
+      match oldJson, newJson with
+      | none, _ =>
+        IO.eprintln s!"error: file not found: {oldPath}"
+        return 1
+      | _, none =>
+        IO.eprintln s!"error: file not found: {newPath}"
+        return 1
+      | some oldJ, some newJ =>
+      let (oldParsed, oldWarns) := Report.parseFactsWarn oldJ
+      let (newParsed, newWarns) := Report.parseFactsWarn newJ
       for w in oldWarns do IO.eprintln s!"{oldPath}: {w}"
       for w in newWarns do IO.eprintln s!"{newPath}: {w}"
       match oldParsed, newParsed with
@@ -986,10 +997,18 @@ def main (args : List String) : IO UInt32 := do
         IO.eprintln s!"error: could not parse JSON from {newPath}"
         return 1
     | [oldPath, newPath, "--json"] =>
-      let oldJson ← readFile oldPath
-      let newJson ← readFile newPath
-      let (oldParsed2, oldWarns2) := Report.parseFactsWarn oldJson
-      let (newParsed2, newWarns2) := Report.parseFactsWarn newJson
+      let oldJson2 ← try pure (some (← readFile oldPath)) catch _ => pure none
+      let newJson2 ← try pure (some (← readFile newPath)) catch _ => pure none
+      match oldJson2, newJson2 with
+      | none, _ =>
+        IO.eprintln s!"error: file not found: {oldPath}"
+        return 1
+      | _, none =>
+        IO.eprintln s!"error: file not found: {newPath}"
+        return 1
+      | some oldJ2, some newJ2 =>
+      let (oldParsed2, oldWarns2) := Report.parseFactsWarn oldJ2
+      let (newParsed2, newWarns2) := Report.parseFactsWarn newJ2
       for w in oldWarns2 do IO.eprintln s!"{oldPath}: {w}"
       for w in newWarns2 do IO.eprintln s!"{newPath}: {w}"
       match oldParsed2, newParsed2 with
