@@ -295,15 +295,27 @@ def compileAndCheck (inputPath : String) (checkType : String) : IO UInt32 := do
     IO.eprintln s!"Unknown check type: {checkType}. Use: predictable"
     return 1
 
-/-- Try to load a proof registry from proof-registry.json next to the input file. -/
-def loadRegistry (inputPath : String) : IO Concrete.ProofRegistry := do
+/-- Try to load a proof registry from proof-registry.json next to the input file.
+    Returns (entries, warnings). Missing file is not a warning; corrupt file is. -/
+def loadRegistry (inputPath : String) : IO (Concrete.ProofRegistry × List String) := do
   let dir := dirOf inputPath
   let registryPath := dir ++ "/proof-registry.json"
+  let fileExists ← try
+    let _ ← IO.FS.readFile ⟨registryPath⟩
+    pure true
+  catch _ => pure false
+  if !fileExists then return ([], [])
   try
     let content ← readFile registryPath
     return Concrete.parseRegistryJson content
-  catch _ =>
-    return []
+  catch e =>
+    return ([], [s!"warning: could not read {registryPath}: {e}"])
+
+/-- Load registry and print any warnings to stderr. -/
+def loadRegistryWarn (inputPath : String) : IO Concrete.ProofRegistry := do
+  let (registry, warnings) ← loadRegistry inputPath
+  for w in warnings do IO.eprintln w
+  return registry
 
 /-- Run pipeline to needed depth and produce a report. -/
 def compileAndReport (inputPath : String) (reportType : String) : IO UInt32 := do
@@ -332,7 +344,7 @@ def compileAndReport (inputPath : String) (reportType : String) : IO UInt32 := d
   | .ok (parsed, _, validCore, srcMap) =>
     let locMap := Report.buildFnLocMap parsed.modules inputPath
     let simpleLocMap := locMap.map fun e => (e.qualName, (e.file, e.fnSpan.line))
-    let registry ← loadRegistry inputPath
+    let registry ← loadRegistryWarn inputPath
     let pc := extractProofCore validCore simpleLocMap registry
     if reportType == "caps" then
       IO.println (Report.capabilityReport validCore.coreModules)
@@ -356,22 +368,22 @@ def compileAndReport (inputPath : String) (reportType : String) : IO UInt32 := d
       IO.println (Report.eligibilityReport pc)
       return 0
     if reportType == "proof-status" then
-      let registry ← loadRegistry inputPath
+      let registry ← loadRegistryWarn inputPath
       IO.println (Report.proofStatusReport validCore.coreModules locMap srcMap (registry := registry) (pc := pc))
       return 0
     if reportType == "obligations" then
-      let registry ← loadRegistry inputPath
+      let registry ← loadRegistryWarn inputPath
       IO.println (Report.obligationsReport validCore.coreModules locMap registry pc)
       return 0
     if reportType == "proof-diagnostics" then
       IO.println (Report.proofDiagnosticsReport (pc := pc))
       return 0
     if reportType == "extraction" then
-      let registry ← loadRegistry inputPath
+      let registry ← loadRegistryWarn inputPath
       IO.println (Report.extractionReport (registry := registry) (pc := pc))
       return 0
     if reportType == "diagnostics-json" then
-      let registry ← loadRegistry inputPath
+      let registry ← loadRegistryWarn inputPath
       IO.println (Report.diagnosticsJson validCore.coreModules locMap (registry := registry) (pc := pc))
       return 0
     if reportType == "effects" then
@@ -401,7 +413,7 @@ def compileAndReport (inputPath : String) (reportType : String) : IO UInt32 := d
         IO.println (renderVerifyDiagnostics allDs)
         if monoDs.isEmpty then return 0 else return 1
     if reportType == "traceability" then
-      let registry ← loadRegistry inputPath
+      let registry ← loadRegistryWarn inputPath
       match Pipeline.monomorphize validCore with
       | .error ds =>
         IO.eprintln (renderDiagnostics ds (sourceMap := srcMap))
@@ -435,7 +447,7 @@ def compileAndQuery (inputPath : String) (query : String) : IO UInt32 := do
   | .ok (parsed, _, validCore, srcMap) =>
     let locMap := Report.buildFnLocMap parsed.modules inputPath
     let simpleLocMap := locMap.map fun e => (e.qualName, (e.file, e.fnSpan.line))
-    let registry ← loadRegistry inputPath
+    let registry ← loadRegistryWarn inputPath
     let pc := extractProofCore validCore simpleLocMap registry
     -- Traceability queries need the backend pipeline
     let parts := query.splitOn ":"
@@ -462,39 +474,40 @@ def compileAndQuery (inputPath : String) (query : String) : IO UInt32 := do
 -- ============================================================
 
 /-- Minimal TOML parser for Concrete.toml: extracts dependency paths.
-    Only handles the format: `name = { path = "...", ... }` under `[dependencies]`. -/
-def parseDependencies (content : String) : List (String × String) :=
+    Only handles the format: `name = { path = "...", ... }` under `[dependencies]`.
+    Returns (entries, warnings) — warnings are non-empty for unparseable lines. -/
+def parseDependencies (content : String) : List (String × String) × List String :=
   let lines := content.splitOn "\n"
-  let rec go (ls : List String) (inDeps : Bool) (acc : List (String × String)) :=
+  let rec go (ls : List String) (inDeps : Bool) (acc : List (String × String))
+      (warns : List String) :=
     match ls with
-    | [] => acc
+    | [] => (acc, warns)
     | l :: rest =>
       let trimmed := l.trimAscii.toString
       if trimmed.startsWith "[dependencies]" then
-        go rest true acc
+        go rest true acc warns
       else if trimmed.startsWith "[" then
-        -- New section, stop parsing dependencies
-        go rest false acc
-      else if inDeps && trimmed.length > 0 then
-        -- Try to parse: name = { path = "...", ... }
+        go rest false acc warns
+      else if inDeps && trimmed.length > 0 && !trimmed.startsWith "#" then
         match trimmed.splitOn "=" with
         | name :: valParts =>
           let depName := name.trimAscii.toString
-          let valStr := "=".intercalate valParts  -- rejoin after first =
-          -- Extract path = "..." from the value
+          let valStr := "=".intercalate valParts
           match valStr.splitOn "path" with
           | _ :: pathRest :: _ =>
-            let afterPath := ("path".intercalate [pathRest])  -- text after "path"
-            -- Find first quote after =
+            let afterPath := ("path".intercalate [pathRest])
             match afterPath.splitOn "\"" with
             | _ :: pathVal :: _ =>
-              go rest true (acc ++ [(depName, pathVal)])
+              go rest true (acc ++ [(depName, pathVal)]) warns
             | _ => go rest true acc
+              (warns ++ [s!"warning: Concrete.toml [dependencies]: could not parse path in '{trimmed}'"])
           | _ => go rest true acc
+            (warns ++ [s!"warning: Concrete.toml [dependencies]: missing 'path' in '{trimmed}'"])
         | _ => go rest true acc
+          (warns ++ [s!"warning: Concrete.toml [dependencies]: could not parse line '{trimmed}'"])
       else
-        go rest inDeps acc
-  go lines false []
+        go rest inDeps acc warns
+  go lines false [] []
 
 /-- Find Concrete.toml by walking up from a directory. -/
 def findProjectRoot (startDir : String) : IO (Option String) := do
@@ -579,7 +592,8 @@ def compileBuild (projectRoot : String) (outputPath : Option String) (emitLLVM :
   -- Read Concrete.toml
   let tomlPath := projectRoot ++ "/Concrete.toml"
   let tomlContent ← readFile tomlPath
-  let userDeps := parseDependencies tomlContent
+  let (userDeps, depWarnings) := parseDependencies tomlContent
+  for w in depWarnings do IO.eprintln w
 
   -- Inject builtin std if user didn't declare it explicitly
   let hasStdDep := userDeps.any fun (name, _) => name == "std"
@@ -674,11 +688,12 @@ def compileBuild (projectRoot : String) (outputPath : Option String) (emitLLVM :
       return 1
     | .ok validCore =>
     -- Enforce [policy] from Concrete.toml
-    let policy := parsePolicy tomlContent
+    let (policy, polWarnings) := parsePolicy tomlContent
+    for w in polWarnings do IO.eprintln w
     if !policy.isEmpty then
       let policyLocMap := Report.buildFnLocMap merged.modules mainPath
       let simpleLocMap := policyLocMap.map fun e => (e.qualName, (e.file, e.fnSpan.line))
-      let registry ← loadRegistry mainPath
+      let registry ← loadRegistryWarn mainPath
       let pc := extractProofCore validCore simpleLocMap registry
       let policyDs := enforcePolicy policy validCore.coreModules
         (locMap := policyLocMap) (pc := pc) (depNames := depNames)
@@ -731,7 +746,8 @@ def compileBuild (projectRoot : String) (outputPath : Option String) (emitLLVM :
 partial def compileTestBuild (projectRoot : String) (moduleFilter : Option String := none) : IO UInt32 := do
   let tomlPath := projectRoot ++ "/Concrete.toml"
   let tomlContent ← readFile tomlPath
-  let userDeps := parseDependencies tomlContent
+  let (userDeps, depWarnings2) := parseDependencies tomlContent
+  for w in depWarnings2 do IO.eprintln w
 
   -- Inject builtin std
   let hasStdDep := userDeps.any fun (name, _) => name == "std"
@@ -804,11 +820,12 @@ partial def compileTestBuild (projectRoot : String) (moduleFilter : Option Strin
       return 1
     | .ok validCore =>
     -- Enforce [policy] from Concrete.toml
-    let policy := parsePolicy tomlContent
+    let (policy, polWarnings) := parsePolicy tomlContent
+    for w in polWarnings do IO.eprintln w
     if !policy.isEmpty then
       let policyLocMap := Report.buildFnLocMap merged.modules mainPath
       let simpleLocMap := policyLocMap.map fun e => (e.qualName, (e.file, e.fnSpan.line))
-      let registry ← loadRegistry mainPath
+      let registry ← loadRegistryWarn mainPath
       let pc := extractProofCore validCore simpleLocMap registry
       let policyDs := enforcePolicy policy validCore.coreModules
         (locMap := policyLocMap) (pc := pc) (depNames := depNames)
@@ -980,7 +997,7 @@ def main (args : List String) : IO UInt32 := do
       | .ok (parsed, _, validCore, _srcMap) =>
         let locMap := Report.buildFnLocMap parsed.modules inp
         let simpleLocMap := locMap.map fun e => (e.qualName, (e.file, e.fnSpan.line))
-        let registry ← loadRegistry inp
+        let registry ← loadRegistryWarn inp
         let pc := extractProofCore validCore simpleLocMap registry
         -- Collect core facts (same as diagnostics-json)
         let coreFacts := Report.collectCoreFacts validCore.coreModules locMap registry pc

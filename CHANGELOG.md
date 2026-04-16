@@ -10,6 +10,20 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Malformed-artifact attack tests and explicit diagnostics
+
+Eliminated silent fallback/empty-success paths for corrupted artifacts:
+
+- **Proof-registry**: `parseRegistryJson` now returns warnings for malformed JSON, empty files, duplicate entries, and empty fingerprints. `loadRegistry` surfaces warnings to stderr instead of silently returning an empty list. Corrupted registries can no longer be confused with absent ones.
+- **Concrete.toml**: `parseDependencies` warns on unparseable dependency lines. `parsePolicy` warns on unrecognized keys in `[policy]`.
+- **Snapshot/diff**: Already had explicit error handling; added regression tests for truncated JSON and missing files.
+
+9 malformed-artifact attack tests wired into `--trust-gate` and `--full` modes covering: truncated snapshot JSON, corrupted/empty/duplicate registries, bad TOML dependencies, unrecognized policy keys, and non-existent diff inputs.
+
+### Bug-to-regression audit gate and failure triage
+
+CI-gated corpus audit (`audit_bug_corpus.sh`) enforces every numbered bug in `docs/bugs/` has a mapped regression test. Failure triage script (`triage_failure.sh`) wires `concrete reduce` and `concrete debug-bundle` into a single command. 21 numbered bugs, 16 mapped, 5 skipped with justification.
+
 ### Fix: LLVM IR function name mangling collision
 
 Same-name functions in different modules produced duplicate LLVM definitions. Fixed in `EmitSSA.lean`: collision detection uses `f.modulePath` (not just `m.name`) to handle flattened submodules. Colliding names are qualified with module path in emitted IR. Call resolution chains through local aliases after linker alias resolution, and skips aliases when the call target already matches a defined function. 4 regression tests.

@@ -54,30 +54,36 @@ private def parseValue (line : String) : String :=
   | _ :: rest => ("=".intercalate rest).trimAscii.toString
   | [] => ""
 
-/-- Parse the `[policy]` section from Concrete.toml content. -/
-def parsePolicy (content : String) : ProjectPolicy :=
+/-- Parse the `[policy]` section from Concrete.toml content.
+    Returns (policy, warnings) — warnings are non-empty for unrecognized keys. -/
+def parsePolicy (content : String) : ProjectPolicy × List String :=
   let lines := content.splitOn "\n"
-  let rec go (ls : List String) (inPolicy : Bool) (p : ProjectPolicy) : ProjectPolicy :=
+  let rec go (ls : List String) (inPolicy : Bool) (p : ProjectPolicy)
+      (warns : List String) : ProjectPolicy × List String :=
     match ls with
-    | [] => p
+    | [] => (p, warns)
     | l :: rest =>
       let trimmed := l.trimAscii.toString
       if trimmed.startsWith "[policy]" then
-        go rest true p
+        go rest true p warns
       else if trimmed.startsWith "[" then
-        go rest false p
+        go rest false p warns
       else if !trimmed.isEmpty && inPolicy && !trimmed.startsWith "#" then
         if trimmed.startsWith "predictable" then
-          go rest true { p with predictable := parseValue trimmed == "true" }
+          go rest true { p with predictable := parseValue trimmed == "true" } warns
         else if trimmed.startsWith "require-proofs" then
-          go rest true { p with requireProofs := parseValue trimmed == "true" }
+          go rest true { p with requireProofs := parseValue trimmed == "true" } warns
         else if trimmed.startsWith "deny" then
-          go rest true { p with deny := parseDenyList trimmed }
+          go rest true { p with deny := parseDenyList trimmed } warns
         else
+          let key := match trimmed.splitOn "=" with
+            | k :: _ => k.trimAscii.toString
+            | [] => trimmed
           go rest true p
+            (warns ++ [s!"warning: Concrete.toml [policy]: unrecognized key '{key}'"])
       else
-        go rest inPolicy p
-  go lines false {}
+        go rest inPolicy p warns
+  go lines false {} []
 
 -- ============================================================
 -- Enforcement

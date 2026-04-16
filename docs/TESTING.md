@@ -480,6 +480,8 @@ Goal: run the four correctness contracts automatically in CI so regressions in d
 - **Self-consistency** — `--report consistency` on all 468 compilable programs (15 ProofCore invariants)
 - **Terminology** — `test_terminology_gate.sh` enforcing canonical proof/obligation status terms
 - **Verifier passes** — `--report verify` on all 385 non-error programs
+- **Malformed artifacts** — 9 attack tests: truncated snapshot JSON, corrupted/empty/duplicate registries, bad TOML, unrecognized policy keys, missing diff inputs
+- **Bug corpus audit** — `audit_bug_corpus.sh` verifies every numbered bug has a mapped regression test
 
 The `trust-gate` CI job runs in parallel with the main test suite and SSA tests. Also available locally as `make test-trust-gate`.
 
@@ -538,7 +540,7 @@ Three end-to-end drift demos using `concrete snapshot` + `concrete diff`:
 - **`elf_header`**: magic byte `127` → `0`, version accepts `0` — proof drift + validation weakening
 - **`thesis_demo`**: `+` → `-` in parse_byte, `validate` gains `with(File)` + unbounded `while` — proof drift + authority escalation + resource drift
 
-8 new drift-detection gates in CI evidence section verify: trust weakening detected, `proved → stale` transitions, `is_pure: true → false`, File capability escalation, unbounded loop drift. Trust-gate: 960 checks (up from 952).
+8 new drift-detection gates in CI evidence section verify: trust weakening detected, `proved → stale` transitions, `is_pure: true → false`, File capability escalation, unbounded loop drift. Trust-gate: 1016 checks (up from 960), now includes malformed-artifact attack tests and bug corpus audit.
 
 ### Phase 15: Adversarial Compiler-Hardening Corpus (complete)
 

@@ -241,14 +241,14 @@ resolve_affected_sections() {
 
 # Resolve which sections are active based on MODE
 case "$MODE" in
-    full)    SECTION="passlevel,positive,negative,testflag,report,codegen,O2,stdlib,collection,xtarget,perf,determinism,consistency,terminology,verify,evidence" ;;
+    full)    SECTION="passlevel,positive,negative,testflag,report,codegen,O2,stdlib,collection,xtarget,perf,determinism,consistency,terminology,verify,evidence,malformed,bugaudit" ;;
     fast)    SECTION="passlevel,positive,negative,testflag,report,codegen,O2,stdlib,collection" ;;
     stdlib)  SECTION="stdlib,collection" ;;
     stdlib-module) SECTION="stdlib" ;;
     O2)      SECTION="O2" ;;
     codegen) SECTION="codegen,O2" ;;
     report)  SECTION="report" ;;
-    trust-gate) SECTION="determinism,consistency,terminology,verify,evidence,bugaudit" ;;
+    trust-gate) SECTION="determinism,consistency,terminology,verify,evidence,malformed,bugaudit" ;;
     affected)
         SECTION=$(resolve_affected_sections "$AFFECTED_FILES")
         echo "=== Affected mode ==="
@@ -7251,6 +7251,143 @@ PASS=$((PASS + verify_pass))
 fi # end section: verify
 
 # === Evidence gates (CI/CD evidence for proof, predictable, stale, reports) ===
+if section_active malformed; then
+echo ""
+echo "=== Malformed artifact attack tests ==="
+mal_pass=0
+mal_fail=0
+MAL_DIR=$(mktemp -d)
+
+# --- 1. Truncated snapshot JSON → explicit error, nonzero exit ---
+echo '[{"kind":"effects","function":"foo"' > "$MAL_DIR/truncated.json"
+echo '[]' > "$MAL_DIR/good.json"
+mal_out=$($COMPILER diff "$MAL_DIR/truncated.json" "$MAL_DIR/good.json" 2>&1) && mal_exit=0 || mal_exit=$?
+if [ "$mal_exit" -ne 0 ] && echo "$mal_out" | grep -q "error.*parse\|could not parse"; then
+    echo "  ok  malformed: truncated snapshot JSON produces explicit error"
+    mal_pass=$((mal_pass + 1))
+else
+    echo "  FAIL malformed: truncated snapshot JSON should produce explicit error (exit=$mal_exit)"
+    mal_fail=$((mal_fail + 1))
+fi
+
+# --- 2. Both snapshots truncated → errors for both ---
+mal_out2=$($COMPILER diff "$MAL_DIR/truncated.json" "$MAL_DIR/truncated.json" 2>&1) && mal_exit2=0 || mal_exit2=$?
+if [ "$mal_exit2" -ne 0 ]; then
+    echo "  ok  malformed: two truncated snapshots produce error"
+    mal_pass=$((mal_pass + 1))
+else
+    echo "  FAIL malformed: two truncated snapshots should fail"
+    mal_fail=$((mal_fail + 1))
+fi
+
+# --- 3. Corrupted proof-registry.json → warning (not silent empty) ---
+mkdir -p "$MAL_DIR/reg_corrupt"
+cp "$TESTDIR/adversarial_proof_malformed_registry/test_proof_registry.con" "$MAL_DIR/reg_corrupt/"
+echo '{"TOTALLY BROKEN' > "$MAL_DIR/reg_corrupt/proof-registry.json"
+mal_reg=$($COMPILER "$MAL_DIR/reg_corrupt/test_proof_registry.con" --report proof-status 2>&1)
+if echo "$mal_reg" | grep -q "warning.*malformed\|warning.*proof-registry"; then
+    echo "  ok  malformed: corrupted registry produces explicit warning"
+    mal_pass=$((mal_pass + 1))
+else
+    echo "  FAIL malformed: corrupted registry should produce warning"
+    echo "    output: $(echo "$mal_reg" | head -2)"
+    mal_fail=$((mal_fail + 1))
+fi
+# Must not grant proved status
+if ! echo "$mal_reg" | grep -q "proved.*proof matches"; then
+    echo "  ok  malformed: corrupted registry does not grant proved status"
+    mal_pass=$((mal_pass + 1))
+else
+    echo "  FAIL malformed: corrupted registry should never grant proved"
+    mal_fail=$((mal_fail + 1))
+fi
+
+# --- 4. Empty proof-registry.json → warning ---
+mkdir -p "$MAL_DIR/reg_empty"
+cp "$TESTDIR/adversarial_proof_malformed_registry/test_proof_registry.con" "$MAL_DIR/reg_empty/"
+printf '' > "$MAL_DIR/reg_empty/proof-registry.json"
+mal_empty=$($COMPILER "$MAL_DIR/reg_empty/test_proof_registry.con" --report proof-status 2>&1)
+if echo "$mal_empty" | grep -q "warning.*empty"; then
+    echo "  ok  malformed: empty registry produces explicit warning"
+    mal_pass=$((mal_pass + 1))
+else
+    echo "  FAIL malformed: empty registry should produce warning"
+    mal_fail=$((mal_fail + 1))
+fi
+
+# --- 5. Duplicate registry entries → warning ---
+mkdir -p "$MAL_DIR/reg_dupes"
+cp "$TESTDIR/adversarial_proof_malformed_registry/test_proof_registry.con" "$MAL_DIR/reg_dupes/"
+cat > "$MAL_DIR/reg_dupes/proof-registry.json" << 'REGEOF'
+[
+  {"function":"main.pure_add","body_fingerprint":"fp1","proof":"P1","spec":"S1"},
+  {"function":"main.pure_add","body_fingerprint":"fp2","proof":"P2","spec":"S2"}
+]
+REGEOF
+mal_dupes=$($COMPILER "$MAL_DIR/reg_dupes/test_proof_registry.con" --report proof-status 2>&1)
+if echo "$mal_dupes" | grep -q "warning.*duplicate"; then
+    echo "  ok  malformed: duplicate registry entries produce warning"
+    mal_pass=$((mal_pass + 1))
+else
+    echo "  FAIL malformed: duplicate registry entries should produce warning"
+    mal_fail=$((mal_fail + 1))
+fi
+
+# --- 6. Malformed Concrete.toml dependency → warning ---
+mkdir -p "$MAL_DIR/toml_bad/src"
+cat > "$MAL_DIR/toml_bad/src/main.con" << 'CONEOF'
+fn main() -> i32 { return 0; }
+CONEOF
+cat > "$MAL_DIR/toml_bad/Concrete.toml" << 'TOMLEOF'
+[package]
+name = "test"
+
+[dependencies]
+garbled line without equals
+
+[policy]
+unknown_future_key = true
+predictable = false
+TOMLEOF
+mal_toml=$(cd "$MAL_DIR/toml_bad" && $ROOT_DIR/$COMPILER build 2>&1) && toml_exit=0 || toml_exit=$?
+if echo "$mal_toml" | grep -q "warning.*Concrete.toml.*dependencies"; then
+    echo "  ok  malformed: bad Concrete.toml dependency line produces warning"
+    mal_pass=$((mal_pass + 1))
+else
+    echo "  FAIL malformed: bad Concrete.toml dependency line should produce warning"
+    echo "    output: $(echo "$mal_toml" | head -3)"
+    mal_fail=$((mal_fail + 1))
+fi
+
+# --- 7. Unrecognized Concrete.toml policy key → warning ---
+if echo "$mal_toml" | grep -q "warning.*Concrete.toml.*policy.*unrecognized"; then
+    echo "  ok  malformed: unrecognized policy key produces warning"
+    mal_pass=$((mal_pass + 1))
+else
+    echo "  FAIL malformed: unrecognized policy key should produce warning"
+    mal_fail=$((mal_fail + 1))
+fi
+
+# --- 8. Diff with non-existent file → error ---
+mal_nofile=$($COMPILER diff "/tmp/nonexistent_file_12345.json" "$MAL_DIR/good.json" 2>&1) && nofile_exit=0 || nofile_exit=$?
+if [ "$nofile_exit" -ne 0 ]; then
+    echo "  ok  malformed: diff with non-existent file produces error"
+    mal_pass=$((mal_pass + 1))
+else
+    echo "  FAIL malformed: diff with non-existent file should fail"
+    mal_fail=$((mal_fail + 1))
+fi
+
+rm -rf "$MAL_DIR"
+
+if [ "$mal_fail" -gt 0 ]; then
+    echo "  $mal_fail malformed artifact test failures"
+fi
+echo "  $mal_pass malformed artifact tests passed"
+PASS=$((PASS + mal_pass))
+FAIL=$((FAIL + mal_fail))
+fi # end section: malformed
+
 if section_active bugaudit; then
 echo ""
 echo "=== Bug-to-regression corpus audit ==="

@@ -805,8 +805,8 @@ abbrev ProofRegistry := List ProofRegistryEntry
 /-- Parse a proof registry from a JSON string.
     Expected format:
     { "version": 1, "proofs": [ { "function": "...", "body_fingerprint": "...", "proof": "...", "spec": "..." }, ... ] }
-    Returns empty list on any parse error. -/
-def parseRegistryJson (input : String) : ProofRegistry :=
+    Returns (entries, warnings). Warnings are non-empty when the input is malformed. -/
+def parseRegistryJson (input : String) : ProofRegistry × List String :=
   let extractStr (block : String) (key : String) : String :=
     let needle := s!"\"{key}\":"
     match block.splitOn needle with
@@ -817,15 +817,40 @@ def parseRegistryJson (input : String) : ProofRegistry :=
         inner
       else ""
     | _ => ""
+  let trimmed := input.trimAscii.toString
+  -- Empty file
+  if trimmed.isEmpty then
+    ([], ["warning: proof-registry.json is empty"])
+  else
   let blocks := input.splitOn "\"function\":"
   let entryBlocks := blocks.drop 1
-  entryBlocks.filterMap fun block =>
+  -- Non-trivial content but no "function": tokens → malformed
+  if entryBlocks.isEmpty && trimmed.length > 2 then
+    ([], [s!"warning: proof-registry.json is malformed (no valid entries found)"])
+  else
+  let entries := entryBlocks.filterMap fun block =>
     let fn := extractStr ("\"function\":" ++ block) "function"
     let fp := extractStr block "body_fingerprint"
     let pr := extractStr block "proof"
     let sp := extractStr block "spec"
     if fn.isEmpty then none
     else some { function := fn, bodyFingerprint := fp, proof := pr, spec := sp }
+  -- Check for duplicates
+  let dedupResult := entries.foldl (fun (acc : ProofRegistry × List String × List String) e =>
+    let (ds, ws, seen) := acc
+    if seen.contains e.function then
+      (ds, ws ++ [s!"warning: proof-registry.json contains duplicate entry for '{e.function}'"], seen)
+    else
+      (ds ++ [e], ws, seen ++ [e.function])
+  ) (([] : ProofRegistry), ([] : List String), ([] : List String))
+  let deduped := dedupResult.1
+  let dupeWarns := dedupResult.2.1
+  -- Check for empty fingerprints
+  let fpWarns := deduped.filterMap fun e =>
+    if e.bodyFingerprint.isEmpty then
+      some s!"warning: proof-registry.json entry '{e.function}' has empty body_fingerprint"
+    else none
+  (deduped, dupeWarns ++ fpWarns)
 
 -- ============================================================
 -- Identity and spec attachment model

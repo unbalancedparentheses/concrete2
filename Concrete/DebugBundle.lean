@@ -158,7 +158,8 @@ private def loadProofRegistry (inputPath : String) : IO ProofRegistry := do
   let regPath := dir ++ "/proof-registry.json"
   try
     let content ← IO.FS.readFile ⟨regPath⟩
-    return parseRegistryJson content
+    let (registry, _warnings) := parseRegistryJson content
+    return registry
   catch _ => return []
 
 /-- Run the full pipeline, capturing state at each stage.
