@@ -69,7 +69,7 @@ The active roadmap starts after the proof/memory/determinism/diagnostics/policy/
 
 ### Phase 1: Compiler Integrity and Artifact Truth
 
-*Done:* miscompile-hunting workflow (audit gate, triage script, bug ledger, reducer, debug-bundle); malformed-artifact attack set (19 tests across snapshots, registries, bundles, TOML, with documented warning/error policy); crash/miscompile-to-regression promotion policy (every numbered bug gets a named regression test, enforced by CI gate).
+*Done:* miscompile-hunting workflow infrastructure (audit gate, triage script, bug ledger, reducer, debug-bundle — oracle-based wrong-code discovery deferred to reference interpreter at item 108); malformed-artifact attack set (19 tests across snapshots, registries, bundles, TOML, with documented warning/error policy); crash/miscompile-to-regression promotion policy (every numbered bug gets a named regression test, enforced by CI gate).
 
 1. add state-desynchronization attack tests that try to force disagreement between obligations, proof status, diagnostics, facts, reports, fingerprints, and snapshots; these should fail loudly, not drift quietly
 2. define and implement clear invalid-query diagnostics: malformed/unknown `--query` requests should produce either a structured query error or a deliberate empty answer, not ambiguous success
