@@ -509,6 +509,33 @@ def parseDependencies (content : String) : List (String × String) × List Strin
         go rest inDeps acc warns
   go lines false [] []
 
+/-- Validate Concrete.toml content and return warnings for structural issues. -/
+def validateToml (content : String) : List String :=
+  let lines := content.splitOn "\n"
+  let trimmedLines := lines.map (·.trimAscii.toString)
+  let hasPackage := trimmedLines.any (·.startsWith "[package]")
+  -- Check [package] section
+  let pkgWarns := if !hasPackage then
+    ["warning: Concrete.toml missing [package] section"]
+  else
+    let inPkg := lines.foldl (fun (acc : Bool × Bool) l =>
+      let t := l.trimAscii.toString
+      if t.startsWith "[package]" then (true, acc.2)
+      else if t.startsWith "[" then (false, acc.2)
+      else if acc.1 && t.startsWith "name" then (acc.1, true)
+      else acc
+    ) (false, false)
+    if !inPkg.2 then ["warning: Concrete.toml [package] missing 'name' field"]
+    else []
+  -- Warn about unknown top-level sections
+  let knownSections := ["[package]", "[dependencies]", "[policy]"]
+  let sectionWarns := trimmedLines.filterMap fun l =>
+    if l.startsWith "[" && !l.startsWith "#" then
+      if knownSections.any (l.startsWith ·) then none
+      else some s!"warning: Concrete.toml has unrecognized section '{l}'"
+    else none
+  pkgWarns ++ sectionWarns
+
 /-- Find Concrete.toml by walking up from a directory. -/
 def findProjectRoot (startDir : String) : IO (Option String) := do
   let tomlPath := startDir ++ "/Concrete.toml"
@@ -589,9 +616,11 @@ partial def loadDependency (depName : String) (depPath : String)
 
 /-- Compile a project from Concrete.toml. -/
 def compileBuild (projectRoot : String) (outputPath : Option String) (emitLLVM : Bool) (quiet : Bool := false) : IO UInt32 := do
-  -- Read Concrete.toml
+  -- Read and validate Concrete.toml
   let tomlPath := projectRoot ++ "/Concrete.toml"
   let tomlContent ← readFile tomlPath
+  let tomlWarnings := validateToml tomlContent
+  for w in tomlWarnings do IO.eprintln w
   let (userDeps, depWarnings) := parseDependencies tomlContent
   for w in depWarnings do IO.eprintln w
 
@@ -746,6 +775,8 @@ def compileBuild (projectRoot : String) (outputPath : Option String) (emitLLVM :
 partial def compileTestBuild (projectRoot : String) (moduleFilter : Option String := none) : IO UInt32 := do
   let tomlPath := projectRoot ++ "/Concrete.toml"
   let tomlContent ← readFile tomlPath
+  let tomlWarnings2 := validateToml tomlContent
+  for w in tomlWarnings2 do IO.eprintln w
   let (userDeps, depWarnings2) := parseDependencies tomlContent
   for w in depWarnings2 do IO.eprintln w
 
@@ -935,7 +966,11 @@ def main (args : List String) : IO UInt32 := do
     | [oldPath, newPath] =>
       let oldJson ← readFile oldPath
       let newJson ← readFile newPath
-      match Report.parseFacts oldJson, Report.parseFacts newJson with
+      let (oldParsed, oldWarns) := Report.parseFactsWarn oldJson
+      let (newParsed, newWarns) := Report.parseFactsWarn newJson
+      for w in oldWarns do IO.eprintln s!"{oldPath}: {w}"
+      for w in newWarns do IO.eprintln s!"{newPath}: {w}"
+      match oldParsed, newParsed with
       | some oldFacts, some newFacts =>
         match Report.diffFacts oldFacts newFacts with
         | .error e =>
@@ -953,7 +988,11 @@ def main (args : List String) : IO UInt32 := do
     | [oldPath, newPath, "--json"] =>
       let oldJson ← readFile oldPath
       let newJson ← readFile newPath
-      match Report.parseFacts oldJson, Report.parseFacts newJson with
+      let (oldParsed2, oldWarns2) := Report.parseFactsWarn oldJson
+      let (newParsed2, newWarns2) := Report.parseFactsWarn newJson
+      for w in oldWarns2 do IO.eprintln s!"{oldPath}: {w}"
+      for w in newWarns2 do IO.eprintln s!"{newPath}: {w}"
+      match oldParsed2, newParsed2 with
       | some oldFacts, some newFacts =>
         match Report.diffFacts oldFacts newFacts with
         | .error e =>
@@ -1044,6 +1083,27 @@ def main (args : List String) : IO UInt32 := do
         | none => "complete (no failure)"
       IO.println s!"Debug bundle written: {bundleDir}/ — {status}"
       return (if st.failStage.isSome then 1 else 0)
+  -- concrete validate-bundle <dir>
+  if args.head? == some "validate-bundle" then
+    let rest := args.drop 1
+    match rest with
+    | [bundleDir] =>
+      let issues ← DebugBundle.validateBundle bundleDir
+      if issues.isEmpty then
+        IO.println s!"Bundle {bundleDir} is valid."
+        return 0
+      else
+        for issue in issues do IO.eprintln issue
+        let errors := issues.filter (·.startsWith "error")
+        if errors.isEmpty then
+          IO.println s!"Bundle {bundleDir} has {issues.length} warning(s)."
+          return 0
+        else
+          IO.eprintln s!"Bundle {bundleDir} has {errors.length} error(s)."
+          return 1
+    | _ =>
+      IO.eprintln "Usage: concrete validate-bundle <dir>"
+      return 1
   -- concrete reduce <file.con> --predicate <pred> [-o output] [--verbose]
   if args.head? == some "reduce" then
     let rest := args.drop 1

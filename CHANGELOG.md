@@ -12,13 +12,14 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ### Malformed-artifact attack tests and explicit diagnostics
 
-Eliminated silent fallback/empty-success paths for corrupted artifacts:
+Eliminated silent fallback/empty-success paths for all artifact families:
 
-- **Proof-registry**: `parseRegistryJson` now returns warnings for malformed JSON, empty files, duplicate entries, and empty fingerprints. `loadRegistry` surfaces warnings to stderr instead of silently returning an empty list. Corrupted registries can no longer be confused with absent ones.
-- **Concrete.toml**: `parseDependencies` warns on unparseable dependency lines. `parsePolicy` warns on unrecognized keys in `[policy]`.
-- **Snapshot/diff**: Already had explicit error handling; added regression tests for truncated JSON and missing files.
+- **Proof-registry**: `parseRegistryJson` returns warnings for malformed JSON, empty files, duplicate entries, and empty fingerprints. `loadRegistry` surfaces warnings to stderr instead of silently returning an empty list.
+- **Snapshot/diff**: `parseFactsWarn` validates fact schema — flags missing `kind`/`function` fields. Non-array JSON, duplicate fact keys, and truncated JSON all produce explicit errors.
+- **Concrete.toml**: `parseDependencies` warns on unparseable dependency lines. `parsePolicy` warns on unrecognized keys. `validateToml` warns on missing `[package]` section, missing `name` field, and unknown top-level sections.
+- **Debug bundles**: `concrete validate-bundle` command validates manifest.json structure: required fields (`version`, `source_path`, `failed_at`, `artifacts`), artifact sub-fields, and source directory presence. Corrupted/partial/missing manifests produce explicit errors or warnings.
 
-9 malformed-artifact attack tests wired into `--trust-gate` and `--full` modes covering: truncated snapshot JSON, corrupted/empty/duplicate registries, bad TOML dependencies, unrecognized policy keys, and non-existent diff inputs.
+19 malformed-artifact attack tests wired into `--trust-gate` and `--full` modes. Trust-gate: 1026 pass, 0 fail.
 
 ### Bug-to-regression audit gate and failure triage
 

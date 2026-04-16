@@ -480,10 +480,24 @@ Goal: run the four correctness contracts automatically in CI so regressions in d
 - **Self-consistency** — `--report consistency` on all 468 compilable programs (15 ProofCore invariants)
 - **Terminology** — `test_terminology_gate.sh` enforcing canonical proof/obligation status terms
 - **Verifier passes** — `--report verify` on all 385 non-error programs
-- **Malformed artifacts** — 9 attack tests: truncated snapshot JSON, corrupted/empty/duplicate registries, bad TOML, unrecognized policy keys, missing diff inputs
+- **Malformed artifacts** — 19 attack tests: truncated/wrong-type/missing-field/duplicate-key snapshots, corrupted/empty/duplicate/empty-fingerprint registries, bad TOML dependencies/policies/sections/missing-package, bundle validation (missing/corrupted/partial manifests, valid bundle)
 - **Bug corpus audit** — `audit_bug_corpus.sh` verifies every numbered bug has a mapped regression test
 
 The `trust-gate` CI job runs in parallel with the main test suite and SSA tests. Also available locally as `make test-trust-gate`.
+
+#### Malformed Artifact Error Policy
+
+Each artifact class has an explicit decision on warning vs hard error:
+
+| Artifact | Missing | Corrupt/Malformed | Schema Issue |
+|---|---|---|---|
+| **Snapshot JSON** | hard error (exit 1) | hard error (exit 1) | warning (missing fields) |
+| **Proof-registry** | silent (no file = no registry) | warning + empty registry | warning (duplicates, empty fingerprint) |
+| **Concrete.toml** | hard error (build fails) | warning (bad lines skipped) | warning (missing [package], unknown sections) |
+| **Debug bundle** | hard error (validate-bundle exit 1) | hard error (exit 1) | warning (missing fields) |
+| **Report mode** | n/a | n/a | hard error (unknown mode) |
+
+The principle: missing optional artifacts (registry, policy) are silent. Present-but-corrupt artifacts always produce a diagnostic. Schema violations that don't prevent operation are warnings; structural failures that prevent meaningful processing are errors.
 
 ### Phase 9: Testcase Reducer (complete)
 
@@ -540,7 +554,7 @@ Three end-to-end drift demos using `concrete snapshot` + `concrete diff`:
 - **`elf_header`**: magic byte `127` → `0`, version accepts `0` — proof drift + validation weakening
 - **`thesis_demo`**: `+` → `-` in parse_byte, `validate` gains `with(File)` + unbounded `while` — proof drift + authority escalation + resource drift
 
-8 new drift-detection gates in CI evidence section verify: trust weakening detected, `proved → stale` transitions, `is_pure: true → false`, File capability escalation, unbounded loop drift. Trust-gate: 1016 checks (up from 960), now includes malformed-artifact attack tests and bug corpus audit.
+8 new drift-detection gates in CI evidence section verify: trust weakening detected, `proved → stale` transitions, `is_pure: true → false`, File capability escalation, unbounded loop drift. Trust-gate: 1026 checks (up from 960), now includes 19 malformed-artifact attack tests and bug corpus audit.
 
 ### Phase 15: Adversarial Compiler-Hardening Corpus (complete)
 

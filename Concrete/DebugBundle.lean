@@ -101,6 +101,47 @@ def renderManifest (st : BundleState) (compilerVersion : String) : String :=
   }
 }"
 
+/-- Validate a debug bundle directory for structural integrity.
+    Uses string matching on manifest.json since we don't depend on a full JSON parser here.
+    Returns a list of issues found. Empty list means valid. -/
+def validateBundle (bundleDir : String) : IO (List String) := do
+  let mut issues : List String := []
+  let manifestPath := bundleDir ++ "/manifest.json"
+  let manifestContent ← try
+    pure (some (← IO.FS.readFile ⟨manifestPath⟩))
+  catch _ => pure none
+  match manifestContent with
+  | none => return ["error: manifest.json missing from bundle"]
+  | some content =>
+  -- Basic structural validation via string inspection
+  let has (haystack needle : String) : Bool := (haystack.splitOn needle).length > 1
+  let trimmed := content.trimAscii.toString
+  if !trimmed.startsWith "{" || !trimmed.endsWith "}" then
+    issues := issues ++ ["error: manifest.json is not a valid JSON object"]
+  else
+    -- Check required fields
+    for field in ["\"version\"", "\"source_path\"", "\"failed_at\"", "\"artifacts\""] do
+      if !has content field then
+        issues := issues ++ [s!"warning: manifest.json missing {field} field"]
+    -- Check artifacts sub-fields
+    if has content "\"artifacts\"" then
+      for sub in ["\"core_ir\"", "\"mono_ir\"", "\"ssa_ir\"", "\"llvm_ir\"", "\"proof_core\""] do
+        if !has content sub then
+          issues := issues ++ [s!"warning: manifest.json artifacts missing {sub} field"]
+  -- Check source file exists
+  let srcExists ← try
+    let _ ← IO.FS.readFile ⟨bundleDir ++ "/source/main.con"⟩
+    pure true
+  catch _ =>
+    -- Try with the source_path basename
+    try
+      let files ← System.FilePath.readDir ⟨bundleDir ++ "/source"⟩
+      pure (files.size > 0)
+    catch _ => pure false
+  if !srcExists then
+    issues := issues ++ ["warning: source/ directory missing or empty"]
+  return issues
+
 /-- Write the debug bundle to a directory. -/
 def writeBundle (bundleDir : String) (st : BundleState) (compilerVersion : String) : IO Unit := do
   -- Create directories

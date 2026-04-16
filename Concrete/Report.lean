@@ -2867,15 +2867,42 @@ def renderDiffJson (entries : List DiffEntry) : String :=
 
 open Json in
 /-- Parse a JSON string into a list of fact Vals.
-    Accepts either a raw JSON array or a snapshot object with a "facts" field. -/
-def parseFacts (jsonStr : String) : Option (List Val) :=
+    Accepts either a raw JSON array or a snapshot object with a "facts" field.
+    Returns (facts, warnings) where warnings flag schema issues. -/
+def parseFactsWarn (jsonStr : String) : Option (List Val) × List String :=
   match JsonParser.parse jsonStr with
-  | some (.arr vs) => some vs
+  | some (.arr vs) =>
+    let warnings := validateFactSchema vs
+    (some vs, warnings)
   | some (.obj kvs) =>
     match kvs.find? (fun (k, _) => k == "facts") with
-    | some (_, .arr vs) => some vs
-    | _ => none
-  | _ => none
+    | some (_, .arr vs) =>
+      let warnings := validateFactSchema vs
+      (some vs, warnings)
+    | _ => (none, ["error: snapshot JSON object has no \"facts\" array field"])
+  | some _ => (none, ["error: snapshot JSON is not an array or object"])
+  | none => (none, ["error: snapshot JSON failed to parse"])
+where
+  /-- Validate fact entries have required fields. -/
+  validateFactSchema (facts : List Val) : List String :=
+    let issues := facts.foldl (fun (acc : List String × Nat) v =>
+      let (ws, idx) := acc
+      let kindOk := (jsonGetStr v "kind").isSome
+      let funcOk := (jsonGetStr v "function").isSome
+      let ws := if !kindOk then
+        ws ++ [s!"warning: fact at index {idx} missing required \"kind\" field"]
+      else ws
+      let ws := if !funcOk then
+        ws ++ [s!"warning: fact at index {idx} missing required \"function\" field"]
+      else ws
+      (ws, idx + 1)
+    ) ([], 0)
+    issues.1
+
+open Json in
+/-- Backward-compatible wrapper: parse facts without warnings. -/
+def parseFacts (jsonStr : String) : Option (List Val) :=
+  (parseFactsWarn jsonStr).1
 
 -- ============================================================
 -- Fact artifact snapshot

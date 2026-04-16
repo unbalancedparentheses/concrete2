@@ -7378,6 +7378,138 @@ else
     mal_fail=$((mal_fail + 1))
 fi
 
+# --- 9. Snapshot facts with missing required fields → warnings ---
+echo '[{"kind":"effects"},{"function":"bar"}]' > "$MAL_DIR/missing_fields.json"
+mal_fields=$($COMPILER diff "$MAL_DIR/missing_fields.json" "$MAL_DIR/good.json" 2>&1)
+if echo "$mal_fields" | grep -q "warning.*missing required.*function" && echo "$mal_fields" | grep -q "warning.*missing required.*kind"; then
+    echo "  ok  malformed: snapshot facts with missing fields produce warnings"
+    mal_pass=$((mal_pass + 1))
+else
+    echo "  FAIL malformed: snapshot facts with missing fields should produce warnings"
+    mal_fail=$((mal_fail + 1))
+fi
+
+# --- 10. Snapshot that is not an array/object → error ---
+echo '"just a string"' > "$MAL_DIR/bad_type.json"
+mal_type=$($COMPILER diff "$MAL_DIR/bad_type.json" "$MAL_DIR/good.json" 2>&1) && type_exit=0 || type_exit=$?
+if [ "$type_exit" -ne 0 ] && echo "$mal_type" | grep -q "error"; then
+    echo "  ok  malformed: non-array snapshot JSON produces error"
+    mal_pass=$((mal_pass + 1))
+else
+    echo "  FAIL malformed: non-array snapshot JSON should produce error"
+    mal_fail=$((mal_fail + 1))
+fi
+
+# --- 11. Snapshot with duplicate fact keys → error ---
+echo '[{"kind":"effects","function":"foo","is_pure":true},{"kind":"effects","function":"foo","is_pure":false}]' > "$MAL_DIR/dupes.json"
+mal_dupe=$($COMPILER diff "$MAL_DIR/dupes.json" "$MAL_DIR/good.json" 2>&1) && dupe_exit=0 || dupe_exit=$?
+if [ "$dupe_exit" -ne 0 ] && echo "$mal_dupe" | grep -q "duplicate"; then
+    echo "  ok  malformed: snapshot with duplicate keys produces error"
+    mal_pass=$((mal_pass + 1))
+else
+    echo "  FAIL malformed: snapshot with duplicate keys should produce error"
+    mal_fail=$((mal_fail + 1))
+fi
+
+# --- 12. Registry with empty fingerprint → warning ---
+mkdir -p "$MAL_DIR/reg_empty_fp"
+cp "$TESTDIR/adversarial_proof_malformed_registry/test_proof_registry.con" "$MAL_DIR/reg_empty_fp/"
+cat > "$MAL_DIR/reg_empty_fp/proof-registry.json" << 'REGEOF'
+[{"function":"main.pure_add","body_fingerprint":"","proof":"P1","spec":"S1"}]
+REGEOF
+mal_fp=$($COMPILER "$MAL_DIR/reg_empty_fp/test_proof_registry.con" --report proof-status 2>&1)
+if echo "$mal_fp" | grep -q "warning.*empty body_fingerprint"; then
+    echo "  ok  malformed: registry with empty fingerprint produces warning"
+    mal_pass=$((mal_pass + 1))
+else
+    echo "  FAIL malformed: registry with empty fingerprint should produce warning"
+    mal_fail=$((mal_fail + 1))
+fi
+
+# --- 13. Bundle validation: missing manifest → error ---
+mkdir -p "$MAL_DIR/bundle_no_manifest/source"
+echo 'fn main() -> i32 { return 0; }' > "$MAL_DIR/bundle_no_manifest/source/main.con"
+bun_no=$($COMPILER validate-bundle "$MAL_DIR/bundle_no_manifest" 2>&1) && bun_no_exit=0 || bun_no_exit=$?
+if [ "$bun_no_exit" -ne 0 ] && echo "$bun_no" | grep -q "error.*manifest.json missing"; then
+    echo "  ok  malformed: bundle without manifest produces error"
+    mal_pass=$((mal_pass + 1))
+else
+    echo "  FAIL malformed: bundle without manifest should produce error"
+    mal_fail=$((mal_fail + 1))
+fi
+
+# --- 14. Bundle validation: corrupted manifest → error ---
+mkdir -p "$MAL_DIR/bundle_bad_manifest/source"
+echo 'fn main() -> i32 { return 0; }' > "$MAL_DIR/bundle_bad_manifest/source/main.con"
+echo 'NOT JSON' > "$MAL_DIR/bundle_bad_manifest/manifest.json"
+bun_bad=$($COMPILER validate-bundle "$MAL_DIR/bundle_bad_manifest" 2>&1) && bun_bad_exit=0 || bun_bad_exit=$?
+if [ "$bun_bad_exit" -ne 0 ] && echo "$bun_bad" | grep -q "error.*not a valid JSON"; then
+    echo "  ok  malformed: bundle with corrupted manifest produces error"
+    mal_pass=$((mal_pass + 1))
+else
+    echo "  FAIL malformed: bundle with corrupted manifest should produce error"
+    mal_fail=$((mal_fail + 1))
+fi
+
+# --- 15. Bundle validation: partial manifest (missing fields) → warnings ---
+mkdir -p "$MAL_DIR/bundle_partial/source"
+echo 'fn main() -> i32 { return 0; }' > "$MAL_DIR/bundle_partial/source/main.con"
+echo '{"version": 1}' > "$MAL_DIR/bundle_partial/manifest.json"
+bun_part=$($COMPILER validate-bundle "$MAL_DIR/bundle_partial" 2>&1)
+if echo "$bun_part" | grep -q "warning.*missing.*source_path" && echo "$bun_part" | grep -q "warning.*missing.*artifacts"; then
+    echo "  ok  malformed: bundle with partial manifest produces field warnings"
+    mal_pass=$((mal_pass + 1))
+else
+    echo "  FAIL malformed: bundle with partial manifest should produce field warnings"
+    mal_fail=$((mal_fail + 1))
+fi
+
+# --- 16. Bundle validation: valid bundle passes ---
+$COMPILER debug-bundle "$TESTDIR/bug_if_expression.con" -o "$MAL_DIR/valid_bundle" > /dev/null 2>&1
+bun_ok=$($COMPILER validate-bundle "$MAL_DIR/valid_bundle" 2>&1)
+if echo "$bun_ok" | grep -q "is valid"; then
+    echo "  ok  malformed: valid bundle passes validation"
+    mal_pass=$((mal_pass + 1))
+else
+    echo "  FAIL malformed: valid bundle should pass validation"
+    echo "    output: $(echo "$bun_ok" | head -3)"
+    mal_fail=$((mal_fail + 1))
+fi
+
+# --- 17. Concrete.toml missing [package] → warning ---
+mkdir -p "$MAL_DIR/toml_nopkg/src"
+echo 'fn main() -> i32 { return 0; }' > "$MAL_DIR/toml_nopkg/src/main.con"
+cat > "$MAL_DIR/toml_nopkg/Concrete.toml" << 'TOMLEOF'
+[dependencies]
+TOMLEOF
+mal_nopkg=$(cd "$MAL_DIR/toml_nopkg" && $ROOT_DIR/$COMPILER build 2>&1)
+if echo "$mal_nopkg" | grep -q "warning.*missing.*\[package\]"; then
+    echo "  ok  malformed: Concrete.toml without [package] produces warning"
+    mal_pass=$((mal_pass + 1))
+else
+    echo "  FAIL malformed: Concrete.toml without [package] should produce warning"
+    mal_fail=$((mal_fail + 1))
+fi
+
+# --- 18. Concrete.toml unknown section → warning ---
+mkdir -p "$MAL_DIR/toml_unk/src"
+echo 'fn main() -> i32 { return 0; }' > "$MAL_DIR/toml_unk/src/main.con"
+cat > "$MAL_DIR/toml_unk/Concrete.toml" << 'TOMLEOF'
+[package]
+name = "test"
+
+[alien_section]
+foo = "bar"
+TOMLEOF
+mal_unk=$(cd "$MAL_DIR/toml_unk" && $ROOT_DIR/$COMPILER build 2>&1)
+if echo "$mal_unk" | grep -q "warning.*unrecognized section"; then
+    echo "  ok  malformed: Concrete.toml with unknown section produces warning"
+    mal_pass=$((mal_pass + 1))
+else
+    echo "  FAIL malformed: Concrete.toml with unknown section should produce warning"
+    mal_fail=$((mal_fail + 1))
+fi
+
 rm -rf "$MAL_DIR"
 
 if [ "$mal_fail" -gt 0 ]; then
