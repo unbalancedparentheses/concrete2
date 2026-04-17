@@ -807,16 +807,17 @@ abbrev ProofRegistry := List ProofRegistryEntry
     { "version": 1, "proofs": [ { "function": "...", "body_fingerprint": "...", "proof": "...", "spec": "..." }, ... ] }
     Returns (entries, warnings). Warnings are non-empty when the input is malformed. -/
 def parseRegistryJson (input : String) : ProofRegistry × List String :=
-  let extractStr (block : String) (key : String) : String :=
+  let extractStr (block : String) (key : String) : Option String :=
     let needle := s!"\"{key}\":"
     match block.splitOn needle with
     | [_, rest] =>
       let rest := rest.trimAsciiStart
       if rest.startsWith "\"" then
-        let inner := (rest.drop 1).toString.splitOn "\"" |>.head!
-        inner
-      else ""
-    | _ => ""
+        match (rest.drop 1).toString.splitOn "\"" with
+        | inner :: _ => some inner
+        | [] => none
+      else none
+    | _ => none
   let trimmed := input.trimAscii.toString
   -- Empty file
   if trimmed.isEmpty then
@@ -835,13 +836,23 @@ def parseRegistryJson (input : String) : ProofRegistry × List String :=
     else
       ([], [])
   else
-  let entries := entryBlocks.filterMap fun block =>
+  let (entries, parseWarns) := entryBlocks.foldl (fun (acc : List ProofRegistryEntry × List String) block =>
+    let (es, ws) := acc
     let fn := extractStr ("\"function\":" ++ block) "function"
     let fp := extractStr block "body_fingerprint"
     let pr := extractStr block "proof"
     let sp := extractStr block "spec"
-    if fn.isEmpty then none
-    else some { function := fn, bodyFingerprint := fp, proof := pr, spec := sp }
+    match fn with
+    | none => (es, ws ++ ["warning: proof-registry.json entry has missing or malformed \"function\" field"])
+    | some fnVal =>
+      if fnVal.isEmpty then (es, ws ++ ["warning: proof-registry.json entry has empty \"function\" field"])
+      else
+        let entryWarns := (if fp.isNone then [s!"warning: proof-registry.json entry '{fnVal}' has missing \"body_fingerprint\" field"] else [])
+          ++ (if pr.isNone then [s!"warning: proof-registry.json entry '{fnVal}' has missing \"proof\" field"] else [])
+          ++ (if sp.isNone then [s!"warning: proof-registry.json entry '{fnVal}' has missing \"spec\" field"] else [])
+        (es ++ [{ function := fnVal, bodyFingerprint := fp.getD "", proof := pr.getD "", spec := sp.getD "" }],
+         ws ++ entryWarns)
+  ) (([] : List ProofRegistryEntry), ([] : List String))
   -- Check for duplicates
   let dedupResult := entries.foldl (fun (acc : ProofRegistry × List String × List String) e =>
     let (ds, ws, seen) := acc
@@ -857,7 +868,7 @@ def parseRegistryJson (input : String) : ProofRegistry × List String :=
     if e.bodyFingerprint.isEmpty then
       some s!"warning: proof-registry.json entry '{e.function}' has empty body_fingerprint"
     else none
-  (deduped, dupeWarns ++ fpWarns)
+  (deduped, parseWarns ++ dupeWarns ++ fpWarns)
 
 -- ============================================================
 -- Identity and spec attachment model
@@ -1135,11 +1146,12 @@ private def assessEligibility
   let rec_ := match recMap.find? (fun (n, _, _) => n == qualName) with
     | some (_, .direct, _) => "direct"
     | some (_, .mutual, _) => "mutual"
-    | _ => "none"
+    | some (_, .none, _) => "none"
+    | none => "unclassified"  -- function missing from SCC analysis
   let crossesFfi := callees.any fun c => externNames.contains c
   let loopClass := classifyLoops f.body
   let profileReasons : List String :=
-    (if rec_ != "none" then [s!"recursion ({rec_})"] else []) ++
+    (if rec_ != "none" && rec_ != "unclassified" then [s!"recursion ({rec_})"] else []) ++
     (if loopClass == "unbounded" || loopClass == "mixed" then ["unbounded loops"] else []) ++
     (if !allocs.isEmpty || concreteCaps.any (· == "Alloc") then ["allocation"] else []) ++
     (if crossesFfi then ["FFI"] else []) ++

@@ -556,7 +556,7 @@ Three end-to-end drift demos using `concrete snapshot` + `concrete diff`:
 - **`elf_header`**: magic byte `127` → `0`, version accepts `0` — proof drift + validation weakening
 - **`thesis_demo`**: `+` → `-` in parse_byte, `validate` gains `with(File)` + unbounded `while` — proof drift + authority escalation + resource drift
 
-8 new drift-detection gates in CI evidence section verify: trust weakening detected, `proved → stale` transitions, `is_pure: true → false`, File capability escalation, unbounded loop drift. Trust-gate: 1054 checks (up from 1039), now includes 23 malformed-artifact attack tests (4 new: bundle type validation, valid empty registry, no-duplicate-warning), 13 state-desynchronization attack tests, 11 invalid-query diagnostic tests, and bug corpus audit.
+8 new drift-detection gates in CI evidence section verify: trust weakening detected, `proved → stale` transitions, `is_pure: true → false`, File capability escalation, unbounded loop drift. Trust-gate: 1058 checks (up from 1039), now includes 27 malformed-artifact attack tests (4 new: registry missing-field warnings, diff `<missing>` sentinel, unknown fact kind drift, empty function warning), 13 state-desynchronization attack tests, 11 invalid-query diagnostic tests, and bug corpus audit.
 
 ### Phase 15: Adversarial Compiler-Hardening Corpus (complete)
 

@@ -1060,14 +1060,19 @@ def main (args : List String) : IO UInt32 := do
         -- Collect core facts (same as diagnostics-json)
         let coreFacts := Report.collectCoreFacts validCore.coreModules locMap registry pc
         -- Run backend pipeline for traceability facts
-        let traceFacts ← match Pipeline.monomorphize validCore with
-          | .error _ => pure []
+        let (traceFacts, traceWarns) ← match Pipeline.monomorphize validCore with
+          | .error ds =>
+            let msg := ds.map (·.message) |> ", ".intercalate
+            pure ([], [s!"warning: snapshot incomplete — monomorphization failed: {msg}"])
           | .ok mono =>
             match Pipeline.lower mono with
-            | .error _ => pure []
+            | .error ds =>
+              let msg := ds.map (·.message) |> ", ".intercalate
+              pure ([], [s!"warning: snapshot incomplete — lowering failed: {msg}"])
             | .ok ssa =>
               pure (Report.collectTraceabilityFacts
-                validCore.coreModules mono.coreModules ssa.ssaModules locMap (registry := registry) (pc := pc))
+                validCore.coreModules mono.coreModules ssa.ssaModules locMap (registry := registry) (pc := pc), [])
+        for w in traceWarns do IO.eprintln w
         -- Generate timestamp
         let ms ← IO.monoMsNow
         let timestamp := toString ms

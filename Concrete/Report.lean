@@ -826,7 +826,8 @@ def proofReport (modules : List CModule) (pc : Concrete.ProofCore) : String :=
 
 /-- Per-function effects summary record. -/
 private structure FnEffects where
-  name       : String
+  name       : String         -- bare name for display
+  qualName   : String         -- qualified name for facts (e.g. "main.parse_byte")
   capSet     : CapSet
   allocates  : Bool
   frees      : Bool
@@ -897,6 +898,7 @@ private partial def effectsForModule
       else if passesProfile then "enforced"
       else "reported"
     { name := f.name
+      qualName := qualName
       capSet := f.capSet
       allocates := !allocs.isEmpty
       frees := !frees.isEmpty
@@ -993,7 +995,8 @@ private def blockingCaps : List String :=
 
 /-- A single profile violation. -/
 structure ProfileViolation where
-  fnName        : String
+  fnName        : String         -- bare name for display
+  qualName      : String         -- qualified name for facts (e.g. "main.parse_byte")
   reason        : String
   hint          : String := ""                -- suggested fix
   loc           : Option SourceLoc := none    -- function definition
@@ -1017,12 +1020,12 @@ partial def checkPredictableModule
     -- 1. Recursion (function-level only for now)
     let recViolations := match recMap.find? (fun (n, _, _) => n == qualName) with
       | some (_, .direct, _) =>
-        [{ fnName := f.name, reason := "direct recursion"
+        [{ fnName := f.name, qualName := qualName, reason := "direct recursion"
          , hint := "Use a loop or iterative approach instead of self-calls."
          , loc := fnLoc }]
       | some (_, .mutual, members) =>
         let others := members.filter (· != qualName)
-        [{ fnName := f.name, reason := s!"mutual recursion with {", ".intercalate others}"
+        [{ fnName := f.name, qualName := qualName, reason := s!"mutual recursion with {", ".intercalate others}"
          , hint := "Break the cycle by restructuring into a loop or state machine."
          , loc := fnLoc }]
       | _ => []
@@ -1032,11 +1035,11 @@ partial def checkPredictableModule
     let loopViolLoc := mkViolLoc loopSpan
     let loopViolations :=
       if loopClass == "unbounded" then
-        [{ fnName := f.name, reason := "unbounded loops"
+        [{ fnName := f.name, qualName := qualName, reason := "unbounded loops"
          , hint := "Use a for loop with an explicit bound: for (let mut i = 0; i < n; i = i + 1)"
          , loc := fnLoc, violationLoc := loopViolLoc, violationSpan := loopSpan }]
       else if loopClass == "mixed" then
-        [{ fnName := f.name, reason := "mixed loop boundedness (some loops are unbounded)"
+        [{ fnName := f.name, qualName := qualName, reason := "mixed loop boundedness (some loops are unbounded)"
          , hint := "Replace while(true) or while(flag) with a bounded for loop."
          , loc := fnLoc, violationLoc := loopViolLoc, violationSpan := loopSpan }]
       else []
@@ -1049,11 +1052,11 @@ partial def checkPredictableModule
     let allocViolLoc := mkViolLoc allocSpan
     let allocViolations :=
       if !allocs.isEmpty then
-        [{ fnName := f.name, reason := s!"allocates ({", ".intercalate allocs})"
+        [{ fnName := f.name, qualName := qualName, reason := s!"allocates ({", ".intercalate allocs})"
          , hint := "Use a fixed-size array or stack buffer instead of heap allocation."
          , loc := fnLoc, violationLoc := allocViolLoc, violationSpan := allocSpan }]
       else if hasAllocCap then
-        [{ fnName := f.name, reason := "has Alloc capability"
+        [{ fnName := f.name, qualName := qualName, reason := "has Alloc capability"
          , hint := "Remove Alloc from the with(...) clause if this function does not need heap allocation."
          , loc := fnLoc, violationSpan := match entry with | some e => some e.fnSpan | none => none }]
       else []
@@ -1062,14 +1065,14 @@ partial def checkPredictableModule
     let ffiSpan := findCallSpan externCalls astBody
     let ffiViolLoc := mkViolLoc ffiSpan
     let ffiViolations := if externCalls.isEmpty then []
-      else [{ fnName := f.name, reason := s!"calls extern ({", ".intercalate externCalls})"
+      else [{ fnName := f.name, qualName := qualName, reason := s!"calls extern ({", ".intercalate externCalls})"
             , hint := "Move the extern call to a non-predictable wrapper and call that instead."
             , loc := fnLoc, violationLoc := ffiViolLoc, violationSpan := ffiSpan }]
     -- 5. Blocking — points at function signature (with-clause has no separate span)
     let (concreteCaps, _) := f.capSet.normalize
     let blockingUsed := concreteCaps.filter fun c => blockingCaps.contains c
     let blockViolations := if blockingUsed.isEmpty then []
-      else [{ fnName := f.name, reason := s!"may block ({", ".intercalate blockingUsed})"
+      else [{ fnName := f.name, qualName := qualName, reason := s!"may block ({", ".intercalate blockingUsed})"
             , hint := s!"Remove {", ".intercalate blockingUsed} from with(...) or move I/O to a non-predictable caller."
             , loc := fnLoc, violationSpan := match entry with | some e => some e.fnSpan | none => none }]
     acc ++ recViolations ++ loopViolations ++ allocViolations ++ ffiViolations ++ blockViolations) []
@@ -1566,7 +1569,7 @@ private def collectTraceEntries
         | .blocked => "blocked"
         | .notEligible => "reported"
         | .trusted => "trusted-assumption"
-      | none => "unknown"
+      | none => "missing"
     let extStatus := if ext.eligible then
       (if ext.extracted.isSome then "extracted" else "eligible_not_extractable")
     else "excluded"
@@ -1838,7 +1841,7 @@ open Json in
 private def violationToFact (v : ProfileViolation) : Val :=
   .obj [
     ("kind", .str "predictable_violation"),
-    ("function", .str v.fnName),
+    ("function", .str v.qualName),
     ("state", .str "failed"),
     ("reason", .str v.reason),
     ("hint", .str v.hint),
@@ -2031,7 +2034,7 @@ private def effectsToFact (e : FnEffects) : Val :=
   let (concreteCaps, _) := e.capSet.normalize
   .obj [
     ("kind", .str "effects"),
-    ("function", .str e.name),
+    ("function", .str e.qualName),
     ("capabilities", .arr (concreteCaps.map .str)),
     ("is_pure", .bool (e.capSet == .empty)),
     ("allocates", .bool e.allocates),
@@ -2058,7 +2061,7 @@ def collectEffectsFacts (modules : List CModule) (locMap : FnLocMap := [])
 
 open Json in
 /-- Convert a per-function capability entry with why-traces to a JSON fact. -/
-private def capToFact (lookup : CapLookup) (f : CFnDef) : Val :=
+private def capToFact (lookup : CapLookup) (qualName : String) (f : CFnDef) : Val :=
   let (concreteCaps, _) := f.capSet.normalize
   let callees := collectCallsStmts f.body |>.eraseDups
   let traces := concreteCaps.map fun cap =>
@@ -2073,7 +2076,7 @@ private def capToFact (lookup : CapLookup) (f : CFnDef) : Val :=
     ]
   .obj [
     ("kind", .str "capability"),
-    ("function", .str f.name),
+    ("function", .str qualName),
     ("capabilities", .arr (concreteCaps.map .str)),
     ("is_pure", .bool concreteCaps.isEmpty),
     ("is_public", .bool f.isPublic),
@@ -2082,12 +2085,13 @@ private def capToFact (lookup : CapLookup) (f : CFnDef) : Val :=
 
 open Json in
 /-- Collect capability facts with why-traces for all functions. -/
-private partial def collectCapFactsModule (lookup : CapLookup) (m : CModule) : List Val :=
-  let fnFacts := m.functions.map (capToFact lookup)
+private partial def collectCapFactsModule (lookup : CapLookup) (m : CModule) (modulePath : String := "") : List Val :=
+  let qualPrefix := if modulePath == "" then m.name else modulePath ++ "." ++ m.name
+  let fnFacts := m.functions.map fun f => capToFact lookup (qualPrefix ++ "." ++ f.name) f
   let externFacts := m.externFns.map fun (n, _, _, trusted) =>
     .obj [
       ("kind", .str "capability"),
-      ("function", .str n),
+      ("function", .str (qualPrefix ++ "." ++ n)),
       ("capabilities", .arr (if trusted then [] else [Val.str unsafeCapName])),
       ("is_pure", .bool trusted),
       ("is_extern", .bool true),
@@ -2095,7 +2099,7 @@ private partial def collectCapFactsModule (lookup : CapLookup) (m : CModule) : L
       ("why", .arr [])
     ]
   fnFacts ++ externFacts ++ m.submodules.foldl (fun acc sub =>
-    acc ++ collectCapFactsModule lookup sub) []
+    acc ++ collectCapFactsModule lookup sub qualPrefix) []
 
 open Json in
 def collectCapFacts (modules : List CModule) : List Val :=
@@ -2104,8 +2108,10 @@ def collectCapFacts (modules : List CModule) : List Val :=
 
 open Json in
 /-- Convert a function's unsafe/trust boundary info to a JSON fact. -/
-private partial def collectUnsafeFactsModule (externNames : List String) (m : CModule) : List Val :=
+private partial def collectUnsafeFactsModule (externNames : List String) (m : CModule) (modulePath : String := "") : List Val :=
+  let qualPrefix := if modulePath == "" then m.name else modulePath ++ "." ++ m.name
   let fnFacts := m.functions.filterMap fun f =>
+    let qualName := qualPrefix ++ "." ++ f.name
     let hasUnsafe := hasUnsafeCap f.capSet
     let hasRawPtrs := fnUsesRawPtrs f
     let trusted := f.isTrusted
@@ -2114,7 +2120,7 @@ private partial def collectUnsafeFactsModule (externNames : List String) (m : CM
       let boundary := if trusted then trustBoundaryAnalysis externNames f else []
       some (.obj [
         ("kind", .str "unsafe"),
-        ("function", .str f.name),
+        ("function", .str qualName),
         ("has_unsafe_cap", .bool hasUnsafe),
         ("has_raw_pointers", .bool hasRawPtrs),
         ("is_trusted", .bool trusted),
@@ -2123,12 +2129,12 @@ private partial def collectUnsafeFactsModule (externNames : List String) (m : CM
   let externFacts := m.externFns.map fun (n, _, _, trusted) =>
     .obj [
       ("kind", .str "unsafe"),
-      ("function", .str n),
+      ("function", .str (qualPrefix ++ "." ++ n)),
       ("is_extern", .bool true),
       ("is_trusted", .bool trusted)
     ]
   fnFacts ++ externFacts ++ m.submodules.foldl (fun acc sub =>
-    acc ++ collectUnsafeFactsModule externNames sub) []
+    acc ++ collectUnsafeFactsModule externNames sub qualPrefix) []
 
 open Json in
 def collectUnsafeFacts (modules : List CModule) : List Val :=
@@ -2137,7 +2143,7 @@ def collectUnsafeFacts (modules : List CModule) : List Val :=
 
 open Json in
 /-- Convert a function's allocation info to a JSON fact. -/
-private def allocToFact (f : CFnDef) : Option Val :=
+private def allocToFact (qualName : String) (f : CFnDef) : Option Val :=
   let callees := collectCallsStmts f.body |>.eraseDups
   let allocs := callees.filter isAllocCall
   let frees := callees.filter isFreeCall
@@ -2148,7 +2154,7 @@ private def allocToFact (f : CFnDef) : Option Val :=
     let leaks := !allocs.isEmpty && frees.isEmpty && defers.isEmpty && !returnsAlloc
     some (.obj [
       ("kind", .str "alloc"),
-      ("function", .str f.name),
+      ("function", .str qualName),
       ("allocates", .arr (allocs.map .str)),
       ("frees", .arr (frees.map .str)),
       ("defers", .arr (defers.map .str)),
@@ -2157,10 +2163,11 @@ private def allocToFact (f : CFnDef) : Option Val :=
     ])
 
 open Json in
-private partial def collectAllocFactsModule (m : CModule) : List Val :=
-  let fnFacts := m.functions.filterMap allocToFact
+private partial def collectAllocFactsModule (m : CModule) (modulePath : String := "") : List Val :=
+  let qualPrefix := if modulePath == "" then m.name else modulePath ++ "." ++ m.name
+  let fnFacts := m.functions.filterMap fun f => allocToFact (qualPrefix ++ "." ++ f.name) f
   fnFacts ++ m.submodules.foldl (fun acc sub =>
-    acc ++ collectAllocFactsModule sub) []
+    acc ++ collectAllocFactsModule sub qualPrefix) []
 
 open Json in
 def collectAllocFacts (modules : List CModule) : List Val :=
@@ -2394,16 +2401,17 @@ def evidenceQuery (modules : List CModule) (locMap : FnLocMap)
   -- Get effects for evidence level
   let allEffects := modules.foldl (fun acc m =>
     acc ++ effectsForModule externNames recMap locMap pc m) []
-  let fnEffects := allEffects.find? fun e => e.name == fnName
+  let matchFn (e : FnEffects) := e.name == fnName || e.qualName == fnName || e.qualName.endsWith ("." ++ fnName)
+  let fnEffects := allEffects.find? matchFn
   -- Get violations
   let violations := modules.foldl (fun acc m =>
     acc ++ checkPredictableModule recMap externNames locMap m) []
-  let fnViolations := violations.filter fun v => v.fnName == fnName
+  let fnViolations := violations.filter fun v => v.fnName == fnName || v.qualName == fnName || v.qualName.endsWith ("." ++ fnName)
   -- Get proof status
   let entries := modules.foldl (fun acc m =>
     acc ++ collectProofStatus pc locMap m "" registry) []
   let fnProof := entries.find? fun e =>
-    e.bareName == fnName || e.qualName.endsWith ("." ++ fnName)
+    e.bareName == fnName || e.qualName == fnName || e.qualName.endsWith ("." ++ fnName)
   match fnEffects with
   | none =>
     (Val.obj [
@@ -2415,12 +2423,12 @@ def evidenceQuery (modules : List CModule) (locMap : FnLocMap)
   | some eff =>
     let proofState := match fnProof with
       | some e => e.state.canonical
-      | none => "unknown"
+      | none => "missing"
     let gatesFailed := fnViolations.map fun v => Val.str v.reason
     (Val.obj [
       ("kind", .str "query_answer"),
       ("query", .str s!"evidence:{fnName}"),
-      ("function", .str fnName),
+      ("function", .str eff.qualName),
       ("answer", .str eff.evidence),
       ("is_trusted", .bool eff.isTrusted),
       ("passes_predictable", .bool fnViolations.isEmpty),
@@ -2443,7 +2451,7 @@ def auditQuery (modules : List CModule) (locMap : FnLocMap)
   -- Effects
   let allEffects := modules.foldl (fun acc m =>
     acc ++ effectsForModule externNames recMap locMap pc m) []
-  let fnEffects := allEffects.find? fun e => e.name == fnName
+  let fnEffects := allEffects.find? fun e => e.name == fnName || e.qualName == fnName || e.qualName.endsWith ("." ++ fnName)
   match fnEffects with
   | none =>
     (Val.obj [
@@ -2469,7 +2477,7 @@ def auditQuery (modules : List CModule) (locMap : FnLocMap)
     -- Predictable
     let violations := modules.foldl (fun acc m =>
       acc ++ checkPredictableModule recMap externNames locMap m) []
-    let fnViolations := violations.filter fun v => v.fnName == fnName
+    let fnViolations := violations.filter fun v => v.fnName == fnName || v.qualName == fnName || v.qualName.endsWith ("." ++ fnName)
     let violationFacts := fnViolations.map fun v =>
       .obj ([("gate", .str v.reason), ("hint", .str v.hint)]
         ++ match v.violationLoc with
@@ -2482,9 +2490,9 @@ def auditQuery (modules : List CModule) (locMap : FnLocMap)
       e.bareName == fnName || e.qualName.endsWith ("." ++ fnName)
     let proofState := match fnProof with
       | some e => e.state.canonical
-      | none => "unknown"
+      | none => "missing"
     let fingerprint := match fnProof with
-      | some e => e.currentFp | none => ""
+      | some e => e.currentFp | none => "<missing>"
     -- Allocation
     let fnDef := fnLookup.find? (fun (n, _) => n == fnName)
     let allocInfo := match fnDef with
@@ -2504,7 +2512,7 @@ def auditQuery (modules : List CModule) (locMap : FnLocMap)
     (Val.obj [
       ("kind", .str "query_answer"),
       ("query", .str s!"audit:{fnName}"),
-      ("function", .str fnName),
+      ("function", .str eff.qualName),
       ("loc", locToJson eff.loc),
       ("evidence", .str eff.evidence),
       ("is_public", .bool eff.isPublic),
@@ -2706,8 +2714,8 @@ private def isWeakening (kind : String) (field : String) (oldV newV : String) : 
   | "alloc", "potential_leak" => oldV == "false" && newV == "true"
   | "traceability", "evidence" => evidenceRank newV < evidenceRank oldV
   | "extraction", "status" =>
-    let oldRank := match oldV with | "extracted" => 3 | "eligible_not_extractable" => 2 | _ => 1
-    let newRank := match newV with | "extracted" => 3 | "eligible_not_extractable" => 2 | _ => 1
+    let oldRank := match oldV with | "extracted" => 3 | "eligible_not_extractable" => 2 | "excluded" => 1 | _ => 0
+    let newRank := match newV with | "extracted" => 3 | "eligible_not_extractable" => 2 | "excluded" => 1 | _ => 0
     newRank < oldRank
   | _, _ => false
 
@@ -2720,8 +2728,8 @@ open Json in
 private def compareFacts (kind : String) (oldFact newFact : Val) : List FieldChange :=
   let fields := trustFields kind
   fields.filterMap fun f =>
-    let oldV := (jsonGetVal oldFact f).map valDisplay |>.getD ""
-    let newV := (jsonGetVal newFact f).map valDisplay |>.getD ""
+    let oldV := (jsonGetVal oldFact f).map valDisplay |>.getD "<missing>"
+    let newV := (jsonGetVal newFact f).map valDisplay |>.getD "<missing>"
     if oldV == newV then none
     else some { field := f, oldVal := oldV, newVal := newV }
 
@@ -2750,38 +2758,47 @@ private def classifyNewFact (kind : String) (v : Val) : String :=
   | "predictable_violation" => "weakened"
   | "unsafe" => "weakened"
   | "effects" =>
-    let ev := (jsonGetVal v "evidence").map valDisplay |>.getD ""
-    let pure := (jsonGetVal v "is_pure").map valDisplay |>.getD ""
-    let ffi := (jsonGetVal v "crosses_ffi").map valDisplay |>.getD ""
-    let trusted := (jsonGetVal v "is_trusted").map valDisplay |>.getD ""
-    let caps := (jsonGetVal v "capabilities").map valDisplay |>.getD ""
-    if ev == "reported" || ev == "trusted-assumption" then "weakened"
-    else if pure == "false" then "weakened"
-    else if ffi == "true" then "weakened"
-    else if trusted == "true" then "weakened"
-    else if caps != "[]" && caps != "" then "weakened"
+    let ev := (jsonGetVal v "evidence").map valDisplay
+    let pure := (jsonGetVal v "is_pure").map valDisplay
+    let ffi := (jsonGetVal v "crosses_ffi").map valDisplay
+    let trusted := (jsonGetVal v "is_trusted").map valDisplay
+    let caps := (jsonGetVal v "capabilities").map valDisplay
+    -- Missing fields in a new fact are suspicious — treat as weakened
+    if ev.isNone || pure.isNone || ffi.isNone || trusted.isNone then "weakened"
+    else if ev == some "reported" || ev == some "trusted-assumption" then "weakened"
+    else if pure == some "false" then "weakened"
+    else if ffi == some "true" then "weakened"
+    else if trusted == some "true" then "weakened"
+    else if caps != some "[]" && caps.isSome then "weakened"
     else "neutral"
   | "capability" =>
-    let pure := (jsonGetVal v "is_pure").map valDisplay |>.getD ""
-    if pure == "false" then "weakened" else "neutral"
+    let pure := (jsonGetVal v "is_pure").map valDisplay
+    if pure.isNone then "weakened"  -- missing field is suspicious
+    else if pure == some "false" then "weakened" else "neutral"
   | "alloc" =>
-    let leak := (jsonGetVal v "potential_leak").map valDisplay |>.getD ""
-    if leak == "true" then "weakened" else "neutral"
+    let leak := (jsonGetVal v "potential_leak").map valDisplay
+    if leak.isNone then "weakened"
+    else if leak == some "true" then "weakened" else "neutral"
   | "proof_status" =>
-    let state := (jsonGetVal v "state").map valDisplay |>.getD ""
-    if state == "missing" || state == "ineligible" || state == "stale" then "weakened"
+    let state := (jsonGetVal v "state").map valDisplay
+    if state.isNone then "weakened"
+    else if state == some "missing" || state == some "ineligible" || state == some "stale" then "weakened"
     else "neutral"
   | "obligation" =>
-    let status := (jsonGetVal v "status").map valDisplay |>.getD ""
-    if status == "missing" || status == "stale" then "weakened"
+    let status := (jsonGetVal v "status").map valDisplay
+    if status.isNone then "weakened"
+    else if status == some "missing" || status == some "stale" then "weakened"
     else "neutral"
   | "extraction" =>
-    let status := (jsonGetVal v "status").map valDisplay |>.getD ""
-    if status == "excluded" then "weakened" else "neutral"
+    let status := (jsonGetVal v "status").map valDisplay
+    if status.isNone then "weakened"
+    else if status == some "excluded" then "weakened" else "neutral"
   | "traceability" =>
-    let ev := (jsonGetVal v "evidence").map valDisplay |>.getD ""
-    if evidenceRank ev < 3 then "weakened" else "neutral"  -- below "enforced"
-  | _ => "neutral"
+    let ev := (jsonGetVal v "evidence").map valDisplay
+    if ev.isNone then "weakened"
+    else if evidenceRank (ev.getD "") < 3 then "weakened" else "neutral"  -- below "enforced"
+  | "eligibility" | "proof_diagnostic" => "neutral"  -- informational fact kinds
+  | _ => "weakened"  -- unknown fact kind in new facts is suspicious
 
 open Json in
 /-- Find duplicate (kind, function) keys in a keyed fact list. -/

@@ -10,6 +10,39 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Canonical qualified function identity across all fact families
+
+All machine-readable fact kinds now use consistent qualified function names (e.g. `"main.parse_byte"` instead of `"parse_byte"`).
+
+- **Previously inconsistent**: `effects`, `capability`, `unsafe`, `alloc`, `predictable_violation` used bare names while `proof_status`, `obligation`, `extraction`, `traceability`, `eligibility`, `proof_diagnostic` used qualified names
+- **Now**: every `"function"` field in every fact kind uses the fully qualified `module.name` form
+- **FnEffects** and **ProfileViolation** structures now carry both `name` (bare, for display) and `qualName` (qualified, for facts)
+- **Query matching**: `fn:FUNCTION` and per-kind queries accept both bare and qualified names via suffix matching
+- **Fact generators updated**: `effectsForModule`, `capToFact`, `collectUnsafeFactsModule`, `allocToFact`, `violationToFact` all thread module path for qualification
+- Full test suite: 2559 pass, 0 fail
+
+### Phase 1 infrastructure closure: miscompile workflow and regression promotion
+
+The initial compiler-integrity workflow that used to live at the top of Phase 1 is now historical rather than active roadmap work:
+
+- **Miscompile-hunting workflow infrastructure**: the repo now has the basic machinery for reducing, capturing, and preserving compiler failures as named artifacts instead of tribal memory. The key pieces are `concrete reduce`, `concrete debug-bundle`, the numbered bug ledger in `docs/bugs/`, and the adversarial/wrong-code regression corpus.
+- **Crash/miscompile-to-regression promotion policy**: every numbered bug is required to have named regression coverage, enforced by CI via the bug-corpus audit gate.
+
+This closes the workflow/promotion half of the original roadmap item. Full oracle-based wrong-code discovery remains deferred to the later reference-interpreter / semantic-oracle work.
+
+### Compiler-as-a-contract cleanup
+
+Systematic removal of silent fallbacks, implicit downgrades, and "best effort" behavior across the report, proof, and codegen layers.
+
+- **Report.lean fact comparison**: missing JSON fields now show as `<missing>` instead of empty string; `compareFacts` and `classifyNewFact` distinguish missing data from real values
+- **Report.lean drift classification**: unknown fact kinds in new facts classified as `weakened` (not silently `neutral`); unknown extraction statuses ranked at 0 (not collapsed into `excluded`)
+- **Report.lean proof state**: missing proof entries now report `missing` instead of `unknown`; missing fingerprints report `<missing>` instead of empty string
+- **ProofCore.lean registry parsing**: replaced `head!` crash with safe extraction; `extractStr` returns `Option` — missing JSON fields produce per-field warnings instead of silent empty strings; empty function values explicitly warned
+- **ProofCore.lean recursion classification**: functions missing from SCC analysis classified as `unclassified` (not silently `none`)
+- **Main.lean snapshot**: mono/lower pipeline failures now emit explicit `warning: snapshot incomplete` diagnostic instead of silently dropping traceability facts
+- **EmitSSA.lean string constants**: missing string-length lookups now `panic!` with internal error instead of silently producing zero-length buffers
+- Trust-gate: 1058 checks, 4 new compiler-contract regression tests
+
 ### Invalid-query diagnostics
 
 `queryFacts` now returns `Except String String` — malformed/unknown queries produce explicit errors instead of silent empty arrays.

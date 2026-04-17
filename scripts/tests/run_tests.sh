@@ -3684,7 +3684,7 @@ else
     FAIL=$((FAIL + 1))
 fi
 
-if echo "$json_output" | grep -q '"function": "spin"'; then
+if echo "$json_output" | grep -q '"function": "main.spin"'; then
     echo "  ok  diagnostics-json: spin function name present"
     PASS=$((PASS + 1))
 else
@@ -3786,7 +3786,7 @@ else
 fi
 
 # Pure function has is_pure: true
-if echo "$json_int" | grep -q '"function": "pure_add".*"is_pure": true'; then
+if echo "$json_int" | grep -q '"function": "main.pure_add".*"is_pure": true'; then
     echo "  ok  diagnostics-json: pure_add has is_pure true"
     PASS=$((PASS + 1))
 else
@@ -3866,7 +3866,7 @@ rc_unsafe=$(cached_output "$RC_FILE" "--report unsafe")
 
 # 1a. Effects says pure_add is_pure:true → capability fact should have empty capabilities
 # (grep the JSON line for pure_add's capability fact and check for empty array)
-if echo "$rc_json" | grep -q '"kind": "capability".*"function": "pure_add".*"is_pure": true'; then
+if echo "$rc_json" | grep -q '"kind": "capability".*"function": "main.pure_add".*"is_pure": true'; then
     echo "  ok  consistency: capability fact agrees pure_add is pure"
     PASS=$((PASS + 1))
 else
@@ -3875,8 +3875,8 @@ else
 fi
 
 # 1b. Effects says uses_alloc allocates:true → an alloc fact for uses_alloc should exist
-if echo "$rc_json" | grep -q '"kind": "effects".*"function": "uses_alloc".*"allocates": true' && \
-   echo "$rc_json" | grep -q '"kind": "alloc".*"function": "uses_alloc"'; then
+if echo "$rc_json" | grep -q '"kind": "effects".*"function": "main.uses_alloc".*"allocates": true' && \
+   echo "$rc_json" | grep -q '"kind": "alloc".*"function": "main.uses_alloc"'; then
     echo "  ok  consistency: effects allocates:true ↔ alloc fact exists for uses_alloc"
     PASS=$((PASS + 1))
 else
@@ -3885,8 +3885,8 @@ else
 fi
 
 # 1c. Effects says call_raw is_trusted:true → unsafe fact should have is_trusted:true
-if echo "$rc_json" | grep -q '"kind": "effects".*"function": "call_raw".*"is_trusted": true' && \
-   echo "$rc_json" | grep -q '"kind": "unsafe".*"function": "call_raw".*"is_trusted": true'; then
+if echo "$rc_json" | grep -q '"kind": "effects".*"function": "main.call_raw".*"is_trusted": true' && \
+   echo "$rc_json" | grep -q '"kind": "unsafe".*"function": "main.call_raw".*"is_trusted": true'; then
     echo "  ok  consistency: effects/unsafe agree call_raw is trusted"
     PASS=$((PASS + 1))
 else
@@ -3895,8 +3895,8 @@ else
 fi
 
 # 1d. Effects says call_raw crosses_ffi:true → predictable_violation for call_raw should exist
-if echo "$rc_json" | grep -q '"kind": "effects".*"function": "call_raw".*"crosses_ffi": true' && \
-   echo "$rc_json" | grep -q '"kind": "predictable_violation".*"function": "call_raw"'; then
+if echo "$rc_json" | grep -q '"kind": "effects".*"function": "main.call_raw".*"crosses_ffi": true' && \
+   echo "$rc_json" | grep -q '"kind": "predictable_violation".*"function": "main.call_raw"'; then
     echo "  ok  consistency: effects crosses_ffi ↔ predictable_violation for call_raw"
     PASS=$((PASS + 1))
 else
@@ -3907,7 +3907,7 @@ fi
 # 1e. Effects says pure_add evidence:enforced → proof_status should be eligible and waiting for proof
 # Note: JSON is one line, so we extract per-record to avoid cross-record grep matches
 pure_add_proof_state=$(echo "$rc_json" | grep -o '"kind": "proof_status"[^}]*"function": "main.pure_add"[^}]*' | grep -o '"state": "[^"]*"' | head -1)
-if echo "$rc_json" | grep -q '"kind": "effects".*"function": "pure_add".*"evidence": "enforced"' && \
+if echo "$rc_json" | grep -q '"kind": "effects".*"function": "main.pure_add".*"evidence": "enforced"' && \
    [ "$pure_add_proof_state" = '"state": "missing"' ]; then
     echo "  ok  consistency: effects enforced ↔ proof_status eligible/missing for pure_add"
     PASS=$((PASS + 1))
@@ -3917,7 +3917,7 @@ else
 fi
 
 # 1f. Effects says call_raw evidence:trusted-assumption → proof_status should be trusted
-if echo "$rc_json" | grep -q '"kind": "effects".*"function": "call_raw".*"evidence": "trusted-assumption"' && \
+if echo "$rc_json" | grep -q '"kind": "effects".*"function": "main.call_raw".*"evidence": "trusted-assumption"' && \
    echo "$rc_json" | grep -q '"kind": "proof_status".*"function": "main.call_raw".*"state": "trusted"'; then
     echo "  ok  consistency: effects trusted-assumption ↔ proof_status trusted for call_raw"
     PASS=$((PASS + 1))
@@ -3927,13 +3927,13 @@ else
 fi
 
 # 1g. alloc_no_free has potential_leak:true (allocates, no free, no defer, returns heap)
-if echo "$rc_json" | grep -q '"kind": "alloc".*"function": "alloc_no_free".*"potential_leak": false'; then
+if echo "$rc_json" | grep -q '"kind": "alloc".*"function": "main.alloc_no_free".*"potential_leak": false'; then
     # returns_allocation is true so potential_leak should be false (caller responsible)
     echo "  ok  consistency: alloc_no_free returns allocation, no leak flagged"
     PASS=$((PASS + 1))
 else
     # Check the alternative: potential_leak true would also be consistent if returns_allocation false
-    if echo "$rc_json" | grep -q '"kind": "alloc".*"function": "alloc_no_free".*"returns_allocation": true'; then
+    if echo "$rc_json" | grep -q '"kind": "alloc".*"function": "main.alloc_no_free".*"returns_allocation": true'; then
         echo "  ok  consistency: alloc_no_free returns allocation, no leak flagged"
         PASS=$((PASS + 1))
     else
@@ -3946,7 +3946,7 @@ fi
 
 # 2a. Human caps says "pure_add : (pure)" → JSON effects has is_pure:true
 if echo "$rc_caps" | grep -q "pure_add : (pure)" && \
-   echo "$rc_json" | grep -q '"kind": "effects".*"function": "pure_add".*"is_pure": true'; then
+   echo "$rc_json" | grep -q '"kind": "effects".*"function": "main.pure_add".*"is_pure": true'; then
     echo "  ok  consistency: --report caps (pure) ↔ JSON is_pure for pure_add"
     PASS=$((PASS + 1))
 else
@@ -3956,7 +3956,7 @@ fi
 
 # 2b. Human caps says "uses_alloc : Alloc" → JSON capability has Alloc
 if echo "$rc_caps" | grep -q "uses_alloc : Alloc" && \
-   echo "$rc_json" | grep -q '"kind": "capability".*"function": "uses_alloc".*"Alloc"'; then
+   echo "$rc_json" | grep -q '"kind": "capability".*"function": "main.uses_alloc".*"Alloc"'; then
     echo "  ok  consistency: --report caps Alloc ↔ JSON capability for uses_alloc"
     PASS=$((PASS + 1))
 else
@@ -3966,7 +3966,7 @@ fi
 
 # 2c. Human effects says "call_raw ... ffi: yes" → JSON effects has crosses_ffi:true
 if echo "$rc_effects" | grep -A1 "call_raw" | grep -q "ffi: yes" && \
-   echo "$rc_json" | grep -q '"kind": "effects".*"function": "call_raw".*"crosses_ffi": true'; then
+   echo "$rc_json" | grep -q '"kind": "effects".*"function": "main.call_raw".*"crosses_ffi": true'; then
     echo "  ok  consistency: --report effects ffi:yes ↔ JSON crosses_ffi for call_raw"
     PASS=$((PASS + 1))
 else
@@ -3976,7 +3976,7 @@ fi
 
 # 2d. Human effects says "pure_add ... evidence: enforced" → JSON effects matches
 if echo "$rc_effects" | grep -A1 "pure_add" | grep -q "evidence: enforced" && \
-   echo "$rc_json" | grep -q '"kind": "effects".*"function": "pure_add".*"evidence": "enforced"'; then
+   echo "$rc_json" | grep -q '"kind": "effects".*"function": "main.pure_add".*"evidence": "enforced"'; then
     echo "  ok  consistency: --report effects evidence ↔ JSON evidence for pure_add"
     PASS=$((PASS + 1))
 else
@@ -3986,7 +3986,7 @@ fi
 
 # 2e. Human alloc says "fn uses_alloc ... allocates: vec_new" → JSON alloc fact has vec_new
 if echo "$rc_alloc" | grep -A1 "fn uses_alloc" | grep -q "allocates: vec_new" && \
-   echo "$rc_json" | grep -q '"kind": "alloc".*"function": "uses_alloc".*"vec_new"'; then
+   echo "$rc_json" | grep -q '"kind": "alloc".*"function": "main.uses_alloc".*"vec_new"'; then
     echo "  ok  consistency: --report alloc vec_new ↔ JSON alloc for uses_alloc"
     PASS=$((PASS + 1))
 else
@@ -3996,7 +3996,7 @@ fi
 
 # 2f. Human alloc says "fn alloc_with_defer ... cleanup: defer free" → JSON alloc has defers
 if echo "$rc_alloc" | grep -A3 "fn alloc_with_defer" | grep -q "defer free" && \
-   echo "$rc_json" | grep -q '"kind": "alloc".*"function": "alloc_with_defer".*"defers":.*\['; then
+   echo "$rc_json" | grep -q '"kind": "alloc".*"function": "main.alloc_with_defer".*"defers":.*\['; then
     echo "  ok  consistency: --report alloc defer ↔ JSON alloc defers for alloc_with_defer"
     PASS=$((PASS + 1))
 else
@@ -4006,7 +4006,7 @@ fi
 
 # 2g. Human unsafe says "trusted fn call_raw" → JSON unsafe has is_trusted:true
 if echo "$rc_unsafe" | grep -q "trusted fn call_raw" && \
-   echo "$rc_json" | grep -q '"kind": "unsafe".*"function": "call_raw".*"is_trusted": true'; then
+   echo "$rc_json" | grep -q '"kind": "unsafe".*"function": "main.call_raw".*"is_trusted": true'; then
     echo "  ok  consistency: --report unsafe trusted ↔ JSON unsafe for call_raw"
     PASS=$((PASS + 1))
 else
@@ -4016,7 +4016,7 @@ fi
 
 # 2h. Human unsafe says "wraps: extern raw_extern" → JSON unsafe has trust_boundary with raw_extern
 if echo "$rc_unsafe" | grep -q "wraps: extern raw_extern" && \
-   echo "$rc_json" | grep -q '"kind": "unsafe".*"function": "call_raw".*"trust_boundary":.*"extern raw_extern"'; then
+   echo "$rc_json" | grep -q '"kind": "unsafe".*"function": "main.call_raw".*"trust_boundary":.*"extern raw_extern"'; then
     echo "  ok  consistency: --report unsafe wraps ↔ JSON trust_boundary for call_raw"
     PASS=$((PASS + 1))
 else
@@ -4077,7 +4077,7 @@ fi
 
 # --query effects:pure_add returns exactly one fact
 q_pure=$(cached_output "$TESTDIR/report_integration.con" "--query effects:pure_add")
-if echo "$q_pure" | grep -q '"function": "pure_add"' && \
+if echo "$q_pure" | grep -q '"function": "main.pure_add"' && \
    echo "$q_pure" | grep -q '"is_pure": true'; then
     echo "  ok  --query effects:pure_add returns pure_add effects fact"
     PASS=$((PASS + 1))
@@ -4144,7 +4144,7 @@ fi
 
 # --query predictable_violation on file with violations
 q_viol=$(cached_output "$TESTDIR/report_check_predictable_fail_loops.con" "--query predictable_violation")
-if echo "$q_viol" | grep -q '"function": "spin"' && \
+if echo "$q_viol" | grep -q '"function": "main.spin"' && \
    echo "$q_viol" | grep -q '"reason": "unbounded loops"'; then
     echo "  ok  --query predictable_violation: returns spin violation"
     PASS=$((PASS + 1))
@@ -5837,7 +5837,7 @@ with open('$CRYPTO_SNAP_DIR/good.facts.json') as f:
     s = json.load(f)
 facts = s['facts']
 effects = {f['function']: f for f in facts if f['kind'] == 'effects'}
-for fn in ['compute_tag', 'verify_tag', 'check_nonce']:
+for fn in ['main.compute_tag', 'main.verify_tag', 'main.check_nonce']:
     assert effects[fn]['is_pure'] == True
     assert effects[fn]['capabilities'] == []
     assert effects[fn]['crosses_ffi'] == False
@@ -6024,7 +6024,7 @@ with open('$ELF_SNAP_DIR/good.json') as f:
     s = json.load(f)
 facts = s['facts']
 effects = {f['function']: f for f in facts if f['kind'] == 'effects'}
-for fn in ['check_magic', 'check_class', 'check_data', 'check_version', 'validate_header']:
+for fn in ['main.check_magic', 'main.check_class', 'main.check_data', 'main.check_version', 'main.validate_header']:
     assert effects[fn]['is_pure'] == True
     assert effects[fn]['capabilities'] == []
 " 2>/dev/null; then
@@ -6042,11 +6042,11 @@ with open('$ELF_SNAP_DIR/good.json') as f:
     s = json.load(f)
 facts = s['facts']
 effects = {f['function']: f for f in facts if f['kind'] == 'effects'}
-assert 'File' in effects['read_header_bytes']['capabilities']
-assert effects['read_header_bytes']['is_trusted'] == True
-assert effects['read_byte']['is_trusted'] == True
-assert effects['read_byte']['is_pure'] == True
-assert effects['main']['is_pure'] == False
+assert 'File' in effects['main.read_header_bytes']['capabilities']
+assert effects['main.read_header_bytes']['is_trusted'] == True
+assert effects['main.read_byte']['is_trusted'] == True
+assert effects['main.read_byte']['is_pure'] == True
+assert effects['main.main']['is_pure'] == False
 " 2>/dev/null; then
     echo "  ok  elf_header: I/O shell has correct capabilities and trust"
     PASS=$((PASS + 1))
@@ -7574,6 +7574,69 @@ if [ "$warn_count" -eq 1 ]; then
     mal_pass=$((mal_pass + 1))
 else
     echo "  FAIL malformed: registry warning should appear exactly once, got $warn_count"
+    mal_fail=$((mal_fail + 1))
+fi
+
+# --- 23. Registry entry with missing fields produces per-field warnings ---
+mkdir -p "$MAL_DIR/reg_missing_fields"
+cat > "$MAL_DIR/reg_missing_fields/test.con" <<'CONEOF'
+fn main() -> i32 {
+    return 0;
+}
+CONEOF
+cat > "$MAL_DIR/reg_missing_fields/proof-registry.json" <<'REGEOF'
+{ "version": 1, "proofs": [
+  { "function": "main" }
+] }
+REGEOF
+reg_mf=$($COMPILER "$MAL_DIR/reg_missing_fields/test.con" --report proof-status 2>&1)
+mf_bp=$(echo "$reg_mf" | grep -c 'missing "body_fingerprint"' || true)
+mf_pr=$(echo "$reg_mf" | grep -c 'missing "proof"' || true)
+mf_sp=$(echo "$reg_mf" | grep -c 'missing "spec"' || true)
+if [ "$mf_bp" -ge 1 ] && [ "$mf_pr" -ge 1 ] && [ "$mf_sp" -ge 1 ]; then
+    echo "  ok  malformed: registry entry with missing fields produces per-field warnings"
+    mal_pass=$((mal_pass + 1))
+else
+    echo "  FAIL malformed: registry missing-field warnings: bp=$mf_bp proof=$mf_pr spec=$mf_sp (expected >=1 each)"
+    mal_fail=$((mal_fail + 1))
+fi
+
+# --- 24. Diff shows <missing> for absent fields, not empty string ---
+echo '[{"kind":"effects","function":"foo","is_pure":true,"evidence":"enforced","capabilities":"[]","crosses_ffi":false,"is_trusted":false}]' > "$MAL_DIR/diff_old.json"
+echo '[{"kind":"effects","function":"foo","evidence":"enforced"}]' > "$MAL_DIR/diff_new.json"
+diff_out=$($COMPILER diff "$MAL_DIR/diff_old.json" "$MAL_DIR/diff_new.json" 2>&1) || true
+if echo "$diff_out" | grep -q "<missing>"; then
+    echo "  ok  malformed: diff reports <missing> for absent fields"
+    mal_pass=$((mal_pass + 1))
+else
+    echo "  FAIL malformed: diff should report <missing> for absent fields"
+    mal_fail=$((mal_fail + 1))
+fi
+
+# --- 25. New fact with unknown kind classified as weakened ---
+echo '[]' > "$MAL_DIR/drift_old.json"
+echo '[{"kind":"totally_unknown_kind","function":"bar"}]' > "$MAL_DIR/drift_new.json"
+drift_out=$($COMPILER diff "$MAL_DIR/drift_old.json" "$MAL_DIR/drift_new.json" 2>&1) || true
+if echo "$drift_out" | grep -q "weakened"; then
+    echo "  ok  malformed: unknown fact kind in new facts classified as weakened"
+    mal_pass=$((mal_pass + 1))
+else
+    echo "  FAIL malformed: unknown fact kind should be classified as weakened, not neutral"
+    mal_fail=$((mal_fail + 1))
+fi
+
+# --- 26. Registry entry with empty function value produces warning ---
+cat > "$MAL_DIR/reg_missing_fields/proof-registry.json" <<'REGEOF'
+{ "version": 1, "proofs": [
+  { "function": "", "body_fingerprint": "abc123", "proof": "test", "spec": "test" }
+] }
+REGEOF
+reg_nofn=$($COMPILER "$MAL_DIR/reg_missing_fields/test.con" --report proof-status 2>&1)
+if echo "$reg_nofn" | grep -q 'empty "function"'; then
+    echo "  ok  malformed: registry entry with empty function value produces warning"
+    mal_pass=$((mal_pass + 1))
+else
+    echo "  FAIL malformed: registry entry with empty function value should produce warning"
     mal_fail=$((mal_fail + 1))
 fi
 

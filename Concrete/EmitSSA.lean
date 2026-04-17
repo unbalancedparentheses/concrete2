@@ -322,7 +322,9 @@ private def ssaEscapeStringForLLVM (str : String) : String :=
 /-- Materialize a string constant as a %struct.String pointer.
     Allocates a %struct.String, stores {ptr to chars, length}, returns ptr. -/
 private def materializeStrConst (s : EmitSSAState) (name : String) : EmitSSAState × String :=
-  let strLen := (s.stringLengths.find? fun (n, _) => n == name).map (·.2) |>.getD 0
+  let strLen : Nat := match s.stringLengths.find? fun (n, _) => n == name with
+    | some (_, n) => n
+    | none => panic! s!"internal error: string constant '{name}' not found in stringLengths table"
   let arrLen := strLen + 1  -- includes null terminator in the global
   -- GEP into the global char array
   let (s, gepTmp) := freshLocal s
@@ -346,7 +348,7 @@ private def materializeStrConst (s : EmitSSAState) (name : String) : EmitSSAStat
   let (s, lenField) := freshLocal s
   let lenFieldName := (lenField.drop 1).toString
   let s := emitStructured s (.gep lenFieldName (.struct_ "String") (.reg strName) [(.i32, .intLit 0), (.i32, .intLit 1)])
-  let s := emitStructured s (.store .i64 (.intLit strLen) (.reg lenFieldName))
+  let s := emitStructured s (.store .i64 (.intLit (Int.ofNat strLen)) (.reg lenFieldName))
   -- Store cap field (index 2)
   let (s, capField) := freshLocal s
   let capFieldName := (capField.drop 1).toString
@@ -358,7 +360,9 @@ private def materializeStrConst (s : EmitSSAState) (name : String) : EmitSSAStat
     Points directly at the global constant — no malloc, no memcpy.
     Cap is set to 0 to signal this is not a heap-owned buffer. -/
 private def materializeStrConstRef (s : EmitSSAState) (name : String) : EmitSSAState × String :=
-  let strLen := (s.stringLengths.find? fun (n, _) => n == name).map (·.2) |>.getD 0
+  let strLen : Nat := match s.stringLengths.find? fun (n, _) => n == name with
+    | some (_, n) => n
+    | none => panic! s!"internal error: string constant '{name}' not found in stringLengths table"
   let arrLen := strLen + 1
   -- GEP into the global char array (read-only pointer)
   let (s, gepTmp) := freshLocal s
@@ -377,7 +381,7 @@ private def materializeStrConstRef (s : EmitSSAState) (name : String) : EmitSSAS
   let (s, lenField) := freshLocal s
   let lenFieldName := (lenField.drop 1).toString
   let s := emitStructured s (.gep lenFieldName (.struct_ "String") (.reg strName) [(.i32, .intLit 0), (.i32, .intLit 1)])
-  let s := emitStructured s (.store .i64 (.intLit strLen) (.reg lenFieldName))
+  let s := emitStructured s (.store .i64 (.intLit (Int.ofNat strLen)) (.reg lenFieldName))
   -- Store cap field (index 2) — 0 signals non-owned / non-freeable
   let (s, capField) := freshLocal s
   let capFieldName := (capField.drop 1).toString
@@ -819,9 +823,9 @@ private def emitSTerm (s : EmitSSAState) (t : STerm) : EmitSSAState × LLVMTerm 
     let llTy := tyToLLVMTy s v.ty
     if llTy == .void then (s, .ret .void none)
     else match v with
-    | .strConst _ =>
+    | .strConst name =>
       -- String constant: materialize as struct, load, return by value
-      let (s, ptr) := materializeStrConst s (match v with | .strConst n => n | _ => "")
+      let (s, ptr) := materializeStrConst s name
       let (s, tmp) := freshLocal s
       let tmpName := (tmp.drop 1).toString
       let s := emitStructured s (.load tmpName llTy (.reg (ptr.drop 1).toString))
