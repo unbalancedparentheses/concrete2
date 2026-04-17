@@ -3,7 +3,7 @@ import Concrete
 open Concrete
 
 def usage : String :=
-  "Usage: concrete <file.con> [-o output] [--emit-llvm] [--emit-core] [--emit-ssa] [--test] [--test --module <name>] [--report caps|unsafe|layout|interface|alloc|mono|authority|proof|eligibility|proof-status|obligations|extraction|lean-stubs|check-proofs|proof-diagnostics|traceability|diagnostics-json|effects|recursion|fingerprints|consistency|verify] [--query KIND|KIND:FUNCTION|fn:FUNCTION] [--fmt]\n       concrete build [-o output] [--emit-llvm]\n       concrete run [-- args...]\n       concrete test [--module <name>]\n       concrete diff <old.json> <new.json> [--json]\n       concrete snapshot <file.con> [-o output.json]\n       concrete debug-bundle <file.con> [-o dir]\n       concrete reduce <file.con> --predicate <pred> [-o output] [--verbose]\n       concrete --version"
+  "Usage: concrete <file.con> [-o output] [--emit-llvm] [--emit-core] [--emit-ssa] [--test] [--test --module <name>] [--report caps|unsafe|layout|interface|alloc|mono|authority|proof|eligibility|proof-status|obligations|extraction|lean-stubs|check-proofs|proof-diagnostics|traceability|diagnostics-json|effects|recursion|fingerprints|consistency|verify] [--query KIND|KIND:FUNCTION|fn:FUNCTION] [--fmt]\n       concrete build [-o output] [--emit-llvm]\n       concrete check\n       concrete run [-- args...]\n       concrete test [--module <name>]\n       concrete diff <old.json> <new.json> [--json]\n       concrete snapshot <file.con> [-o output.json]\n       concrete debug-bundle <file.con> [-o dir]\n       concrete reduce <file.con> --predicate <pred> [-o output] [--verbose]\n       concrete --version"
 
 /-- Capture compiler identity: version, git commit, lean toolchain. -/
 def compilerIdentity : IO String := do
@@ -704,9 +704,17 @@ partial def loadDependency (depName : String) (depPath : String)
       let srcMap := [(libPath, source)] ++ srcMap
       return .ok (resolved, srcMap)
 
-/-- Compile a project from Concrete.toml. -/
-def compileBuild (projectRoot : String) (outputPath : Option String) (emitLLVM : Bool) (quiet : Bool := false) : IO UInt32 := do
-  -- Read and validate Concrete.toml
+/-- Shared context produced by loading a project from Concrete.toml. -/
+structure ProjectContext where
+  validCore   : ValidatedCore
+  parsed      : ParsedProgram      -- merged modules (deps + project)
+  allSrcMap   : SourceMap
+  tomlContent : String
+  mainPath    : String
+  depNames    : List String
+
+/-- Load a project to ValidatedCore. Shared by build, test, and check. -/
+partial def loadProject (projectRoot : String) (stripTestFns : Bool := false) : IO (Except UInt32 ProjectContext) := do
   let tomlPath := projectRoot ++ "/Concrete.toml"
   let tomlContent ← readFile tomlPath
   let tomlWarnings := validateToml tomlContent
@@ -729,13 +737,12 @@ def compileBuild (projectRoot : String) (outputPath : Option String) (emitLLVM :
   let mut depModules : List Module := []
   let mut depSrcMap : SourceMap := []
   for (depName, depPath) in deps do
-    -- For builtin std (injected above), depPath is already absolute
     let resolvedPath := if depPath.startsWith "/" then depPath
       else resolveDependencyPath projectRoot depPath
     match ← loadDependency depName resolvedPath with
     | .error e =>
       IO.eprintln e
-      return 1
+      return Except.error 1  -- early exit
     | .ok (modules, srcMap) =>
       depModules := depModules ++ modules
       depSrcMap := depSrcMap ++ srcMap
@@ -749,44 +756,40 @@ def compileBuild (projectRoot : String) (outputPath : Option String) (emitLLVM :
   match sourceResult with
   | none =>
     IO.eprintln s!"error: cannot read {mainPath}\nhint: projects need a src/main.con entry point"
-    return 1
+    return Except.error 1
   | some source =>
 
   -- Parse the project source
   match Pipeline.parse source with
   | .error ds =>
     IO.eprintln (renderDiagnostics ds (sourceMap := [(mainPath, source)]))
-    return 1
+    return Except.error 1
   | .ok parsed =>
-  -- Resolve project's own mod X; stubs
   let baseDir := projectRoot ++ "/src"
   match ← Pipeline.resolveFiles baseDir parsed mainPath resolveAllModules with
   | .error ds =>
     IO.eprintln (renderDiagnostics ds (sourceMap := [(mainPath, source)]))
-    return 1
+    return Except.error 1
   | .ok (resolvedParsed, subSrcMap) =>
-    -- Strip #[test] functions from dependency modules (they aren't needed for regular builds
-    -- and can trigger capability/monomorphization errors for test-only code paths)
-    let stripTests : Module → Module := fun m =>
-      { m with
-        functions := m.functions.filter fun f => !f.isTest
-        submodules := m.submodules.map fun sub =>
-          { sub with functions := sub.functions.filter fun f => !f.isTest }
-      }
-    let depModulesClean := depModules.map stripTests
-    -- Merge: dependency modules come first, then project modules
-    let allModules : List Module := depModulesClean ++ resolvedParsed.modules
+    -- Optionally strip #[test] functions from dependency modules
+    let depModulesUsed := if stripTestFns then
+      let stripTests : Module → Module := fun m =>
+        { m with
+          functions := m.functions.filter fun f => !f.isTest
+          submodules := m.submodules.map fun sub =>
+            { sub with functions := sub.functions.filter fun f => !f.isTest }
+        }
+      depModules.map stripTests
+    else depModules
+    let allModules : List Module := depModulesUsed ++ resolvedParsed.modules
     let allSrcMap : SourceMap := [(mainPath, source)] ++ subSrcMap ++ depSrcMap
     let merged : ParsedProgram := { modules := allModules }
-
-    -- Now run the standard pipeline from buildSummary onward
     let summary := Pipeline.buildSummary merged
     match Pipeline.resolve merged summary with
     | .error ds =>
       IO.eprintln (renderDiagnostics ds (sourceMap := allSrcMap))
-      return 1
+      return Except.error 1
     | .ok resolvedProg =>
-    -- Only check project modules (skip dependency modules which are already validated)
     let depNames := depModules.map (·.name)
     let projectResolved : List ResolvedModule :=
       resolvedProg.modules.filter fun rm => !depNames.contains rm.module.name
@@ -794,26 +797,35 @@ def compileBuild (projectRoot : String) (outputPath : Option String) (emitLLVM :
     match Pipeline.check projectResolvedProg summary with
     | .error ds =>
       IO.eprintln (renderDiagnostics ds (sourceMap := allSrcMap))
-      return 1
+      return Except.error 1
     | .ok () =>
     match Pipeline.elaborate resolvedProg summary with
     | .error ds =>
       IO.eprintln (renderDiagnostics ds (sourceMap := allSrcMap))
-      return 1
+      return Except.error 1
     | .ok elabProg =>
     match Pipeline.coreCheck elabProg with
     | .error ds =>
       IO.eprintln (renderDiagnostics ds (sourceMap := allSrcMap))
-      return 1
+      return Except.error 1
     | .ok validCore =>
+    return Except.ok { validCore, parsed := merged, allSrcMap, tomlContent, mainPath, depNames }
+
+/-- Compile a project from Concrete.toml. -/
+def compileBuild (projectRoot : String) (outputPath : Option String) (emitLLVM : Bool) (quiet : Bool := false) : IO UInt32 := do
+  match ← loadProject projectRoot (stripTestFns := true) with
+  | .error exitCode => return exitCode
+  | .ok ctx =>
+    let { validCore, parsed, allSrcMap, tomlContent, mainPath, depNames, .. } := ctx
     -- Enforce [policy] from Concrete.toml
     let (policy, polWarnings) := parsePolicy tomlContent
     for w in polWarnings do IO.eprintln w
+    -- Always compute ProofCore for summary and policy
+    let policyLocMap := Report.buildFnLocMap parsed.modules mainPath
+    let simpleLocMap := policyLocMap.map fun e => (e.qualName, (e.file, e.fnSpan.line))
+    let registry ← loadRegistryWarn mainPath
+    let pc := extractProofCore validCore simpleLocMap registry
     if !policy.isEmpty then
-      let policyLocMap := Report.buildFnLocMap merged.modules mainPath
-      let simpleLocMap := policyLocMap.map fun e => (e.qualName, (e.file, e.fnSpan.line))
-      let registry ← loadRegistryWarn mainPath
-      let pc := extractProofCore validCore simpleLocMap registry
       let policyDs := enforcePolicy policy validCore.coreModules
         (locMap := policyLocMap) (pc := pc) (depNames := depNames)
       if hasErrors policyDs then
@@ -858,93 +870,23 @@ def compileBuild (projectRoot : String) (outputPath : Option String) (emitLLVM :
         IO.eprintln "clang compilation failed"
         return exitCode
       IO.FS.removeFile ⟨llPath⟩
-      if !quiet then IO.println s!"Built {outPath}"
+      if !quiet then
+        IO.println s!"Built {outPath}"
+        -- Print proof summary line
+        IO.println (Report.proofSummaryLine pc)
       return 0
 
 /-- Run tests for a project from Concrete.toml. Like compileBuild but in test mode. -/
 partial def compileTestBuild (projectRoot : String) (moduleFilter : Option String := none) : IO UInt32 := do
-  let tomlPath := projectRoot ++ "/Concrete.toml"
-  let tomlContent ← readFile tomlPath
-  let tomlWarnings2 := validateToml tomlContent
-  for w in tomlWarnings2 do IO.eprintln w
-  let (userDeps, depWarnings2) := parseDependencies tomlContent
-  for w in depWarnings2 do IO.eprintln w
-
-  -- Inject builtin std
-  let hasStdDep := userDeps.any fun (name, _) => name == "std"
-  let deps ← if hasStdDep then pure userDeps
-    else match ← findBuiltinStd with
-      | some stdPath => pure (("std", stdPath) :: userDeps)
-      | none => pure userDeps
-
-  -- Load dependencies
-  let mut depModules : List Module := []
-  let mut depSrcMap : SourceMap := []
-  for (depName, depPath) in deps do
-    let resolvedPath := if depPath.startsWith "/" then depPath
-      else resolveDependencyPath projectRoot depPath
-    match ← loadDependency depName resolvedPath with
-    | .error e => IO.eprintln e; return 1
-    | .ok (modules, srcMap) =>
-      depModules := depModules ++ modules
-      depSrcMap := depSrcMap ++ srcMap
-
-  -- Load project source
-  let mainPath := projectRoot ++ "/src/main.con"
-  let sourceResult ← try
-    let s ← readFile mainPath
-    pure (some s)
-  catch _ => pure none
-  match sourceResult with
-  | none =>
-    IO.eprintln s!"error: cannot read {mainPath}\nhint: projects need a src/main.con entry point"
-    return 1
-  | some source =>
-
-  match Pipeline.parse source with
-  | .error ds =>
-    IO.eprintln (renderDiagnostics ds (sourceMap := [(mainPath, source)]))
-    return 1
-  | .ok parsed =>
-  let baseDir := projectRoot ++ "/src"
-  match ← Pipeline.resolveFiles baseDir parsed mainPath resolveAllModules with
-  | .error ds =>
-    IO.eprintln (renderDiagnostics ds (sourceMap := [(mainPath, source)]))
-    return 1
-  | .ok (resolvedParsed, subSrcMap) =>
-    let allModules := depModules ++ resolvedParsed.modules
-    let allSrcMap := [(mainPath, source)] ++ subSrcMap ++ depSrcMap
-    let merged : ParsedProgram := { modules := allModules }
-    let summary := Pipeline.buildSummary merged
-    match Pipeline.resolve merged summary with
-    | .error ds =>
-      IO.eprintln (renderDiagnostics ds (sourceMap := allSrcMap))
-      return 1
-    | .ok resolvedProg =>
-    let depNames := depModules.map (·.name)
-    let projectResolved :=
-      resolvedProg.modules.filter fun rm => !depNames.contains rm.module.name
-    let projectResolvedProg : ResolvedProgram := { modules := projectResolved }
-    match Pipeline.check projectResolvedProg summary with
-    | .error ds =>
-      IO.eprintln (renderDiagnostics ds (sourceMap := allSrcMap))
-      return 1
-    | .ok () =>
-    match Pipeline.elaborate resolvedProg summary with
-    | .error ds =>
-      IO.eprintln (renderDiagnostics ds (sourceMap := allSrcMap))
-      return 1
-    | .ok elabProg =>
-    match Pipeline.coreCheck elabProg with
-    | .error ds =>
-      IO.eprintln (renderDiagnostics ds (sourceMap := allSrcMap))
-      return 1
-    | .ok validCore =>
+  match ← loadProject projectRoot with
+  | .error exitCode => return exitCode
+  | .ok ctx =>
+    let { validCore, parsed, allSrcMap, tomlContent, mainPath, depNames, .. } := ctx
     -- Enforce [policy] from Concrete.toml
     let (policy, polWarnings) := parsePolicy tomlContent
     for w in polWarnings do IO.eprintln w
     if !policy.isEmpty then
-      let policyLocMap := Report.buildFnLocMap merged.modules mainPath
+      let policyLocMap := Report.buildFnLocMap parsed.modules mainPath
       let simpleLocMap := policyLocMap.map fun e => (e.qualName, (e.file, e.fnSpan.line))
       let registry ← loadRegistryWarn mainPath
       let pc := extractProofCore validCore simpleLocMap registry
@@ -1049,6 +991,46 @@ def main (args : List String) : IO UInt32 := do
         | _ :: "--module" :: m :: _ => some m
         | _ => none
       return ← compileTestBuild root modFilter
+  -- concrete check — run frontend + proof status without codegen
+  if args.head? == some "check" then
+    let cwd ← IO.currentDir
+    match ← findProjectRoot cwd.toString with
+    | none =>
+      IO.eprintln "error: no Concrete.toml found in current directory or parent\nhint: create one with [package] section, or run from a project directory"
+      return 1
+    | some root =>
+      match ← loadProject root (stripTestFns := true) with
+      | .error exitCode => return exitCode
+      | .ok ctx =>
+        let { validCore, parsed, allSrcMap, tomlContent, mainPath, depNames, .. } := ctx
+        -- Enforce [policy] from Concrete.toml
+        let (policy, polWarnings) := parsePolicy tomlContent
+        for w in polWarnings do IO.eprintln w
+        let policyLocMap := Report.buildFnLocMap parsed.modules mainPath
+        let simpleLocMap := policyLocMap.map fun e => (e.qualName, (e.file, e.fnSpan.line))
+        let registry ← loadRegistryWarn mainPath
+        let pc := extractProofCore validCore simpleLocMap registry
+        -- Validate registry
+        let regIssues := Concrete.validateRegistry pc registry
+        for issue in regIssues do
+          IO.eprintln (Concrete.renderRegistryIssue issue)
+        if !policy.isEmpty then
+          let policyDs := enforcePolicy policy validCore.coreModules
+            (locMap := policyLocMap) (pc := pc) (depNames := depNames)
+          if hasErrors policyDs then
+            IO.eprintln (renderDiagnostics policyDs (sourceMap := allSrcMap))
+            return 1
+        -- Print proof status report
+        let srcMap := ctx.allSrcMap
+        IO.println (Report.proofStatusReport validCore.coreModules policyLocMap srcMap (registry := registry) (pc := pc))
+        -- Print next steps if any
+        let nextSteps := Report.proofNextSteps pc
+        if !nextSteps.isEmpty then IO.println nextSteps
+        -- Exit code: 0 if all eligible proved, 1 if any stale/missing/blocked
+        let hasIssues := pc.obligations.any fun o =>
+          o.status == .stale || o.status == .missing || o.status == .blocked
+        let hasRegistryErrors := regIssues.any (·.isError)
+        return (if hasIssues || hasRegistryErrors then 1 else 0)
   -- concrete diff <old.json> <new.json> [--json]
   if args.head? == some "diff" then
     let rest := args.drop 1

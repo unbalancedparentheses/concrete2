@@ -10,6 +10,26 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Coherent build / check / prove workflow (Phase 2, item 11)
+
+`concrete build` now shows a proof summary line after every successful build:
+```
+Built myproject
+Proofs: 2 proved, 1 stale, 7 missing, 53 blocked
+```
+
+`concrete check` is a new project-level command that runs the frontend and proof pipeline without codegen:
+- Prints the full proof-status report (same as `--report proof-status`)
+- Shows prioritized "Next steps" (stale first, then missing, then blocked — at most 3 items)
+- Exits 0 if all eligible functions proved, exits 1 if any stale/missing/blocked
+- Build exit code is NOT affected by proof status (only policy violations cause non-zero)
+
+Internal refactor: `loadProject` shared function eliminates 60-line duplication between `compileBuild`, `compileTestBuild`, and the new `compileCheck`.
+
+10 new workflow tests: build summary presence/content, build exit code (0 despite stale), check report/next-steps/exit-code/totals/error-handling.
+
+Trust-gate: 1189 pass, 0 fail.
+
 ### Blocked/ineligible proof pressure tests (Phase 2, item 10)
 
 Blocked and ineligible proof diagnostics now explain exactly why a function cannot be proved:

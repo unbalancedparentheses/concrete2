@@ -1314,6 +1314,51 @@ def proofStatusReport (modules : List CModule) (locMap : FnLocMap := [])
   let summary := s!"Totals: {entries.length} functions — {proved} proved, {stale} stale, {notProved} unproved, {blockedCnt} blocked, {notEligible} ineligible, {trusted} trusted"
   s!"{header}\n\n{"\n\n".intercalate body}\n\n{summary}\n"
 
+/-- Compact one-line proof summary suitable for build output. -/
+def proofSummaryLine (pc : Concrete.ProofCore) : String :=
+  let obls := pc.obligations
+  let proved := (obls.filter fun o => o.status == .proved).length
+  let stale := (obls.filter fun o => o.status == .stale).length
+  let missing := (obls.filter fun o => o.status == .missing).length
+  let blocked := (obls.filter fun o => o.status == .blocked).length
+  let ineligible := (obls.filter fun o => o.status == .ineligible).length
+  let trusted := (obls.filter fun o => o.status == .trusted).length
+  let eligible := proved + stale + missing + blocked
+  if eligible == 0 && ineligible == 0 && trusted == 0 then
+    "Proofs: no eligible functions"
+  else if eligible == 0 then
+    s!"Proofs: no eligible functions ({ineligible} ineligible, {trusted} trusted)"
+  else if stale == 0 && missing == 0 && blocked == 0 then
+    s!"Proofs: {proved}/{eligible} proved"
+  else
+    let parts : List String :=
+      (if proved != 0 then [s!"{proved} proved"] else []) ++
+      (if stale != 0 then [s!"{stale} stale"] else []) ++
+      (if missing != 0 then [s!"{missing} missing"] else []) ++
+      (if blocked != 0 then [s!"{blocked} blocked"] else [])
+    s!"Proofs: {", ".intercalate parts}"
+
+/-- Actionable "next steps" for the proof workflow — at most 3 items,
+    prioritized: stale first, then missing, then blocked. -/
+def proofNextSteps (pc : Concrete.ProofCore) : String :=
+  let stales := pc.obligations.filter fun o => o.status == .stale
+  let missing := pc.obligations.filter fun o => o.status == .missing
+  let blocked := pc.obligations.filter fun o => o.status == .blocked
+  let staleItems := stales.map fun o =>
+    s!"  - fix stale proof for {o.functionId.qualName} (body changed, update fingerprint)"
+  let missingItems := missing.map fun o =>
+    s!"  - add proof for {o.functionId.qualName} (eligible, extractable, no registry entry)"
+  let blockedItems := (pc.entries.filter fun e => e.extracted.isNone && !e.unsupported.isEmpty).map fun e =>
+    s!"  - unblock {e.qualName} (uses {", ".intercalate e.unsupported})"
+  let allItems := staleItems ++ missingItems ++ blockedItems
+  if allItems.isEmpty then ""
+  else
+    let shown := allItems.take 3
+    let more := if allItems.length != shown.length
+        then s!"\n  ... and {allItems.length - shown.length} more"
+        else ""
+    s!"Next steps:\n{"\n".intercalate shown}{more}"
+
 -- ============================================================
 -- Proof obligations report (--report obligations)
 -- ============================================================
