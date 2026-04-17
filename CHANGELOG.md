@@ -10,6 +10,18 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Lean theorem stub generation (Phase 2, item 4)
+
+`--report lean-stubs` generates ready-to-use Lean source from ProofCore extraction:
+
+- **PExpr definitions**: Each extracted function gets a `fooExpr : PExpr` definition with Lean constructors matching the extracted form
+- **PFnDef entries**: Name, parameter list, and body reference
+- **Function table**: `generatedFns : FnTable` with all extracted functions
+- **Eval helpers**: `eval_foo` wrappers binding parameters to the function table
+- **Theorem stubs**: `theorem foo_correct ... = sorry` with correct parameter signatures, env bindings, and ProofCore docstring
+
+Only extractable functions appear — excluded (capabilities) and blocked (unsupported constructs) are omitted. 10 new trust-gate assertions. Trust-gate: 1125 pass, 0 fail.
+
 ### Proof pressure set inspectable end-to-end (Phase 2, item 2)
 
 Fixed effects report evidence discrepancy: `--report effects` was computing evidence from hardcoded `Proof.provedFunctions` instead of using `pc.obligations` (the single source of truth that includes registry proofs). `check_nonce` and `validate_header` now correctly show `evidence: proved` instead of `evidence: enforced (proof stale: body changed)`.

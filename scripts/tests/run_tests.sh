@@ -8493,6 +8493,107 @@ else
     evidence_fail=$((evidence_fail + 1))
 fi
 
+# --- Pressure set: lean-stubs report ---
+pp_lean=$($COMPILER examples/proof_pressure/src/main.con --report lean-stubs 2>/dev/null)
+
+# 25. Lean stubs: generates 4 PExpr definitions (one per extractable function)
+stub_count=$(echo "$pp_lean" | grep -c "def .*Expr : PExpr")
+if [ "$stub_count" -eq 4 ]; then
+    echo "  ok  pressure-lean: 4 PExpr definitions generated"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL pressure-lean: expected 4 PExpr defs, got $stub_count"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 26. Lean stubs: generates function table with all 4 entries
+if echo "$pp_lean" | grep -q "def generatedFns"; then
+    echo "  ok  pressure-lean: function table generated"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL pressure-lean: function table missing"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 27. Lean stubs: check_nonce has .ifThenElse constructor
+if echo "$pp_lean" | grep -A5 "check_nonceExpr" | grep -q ".ifThenElse"; then
+    echo "  ok  pressure-lean: check_nonce uses .ifThenElse constructor"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL pressure-lean: check_nonce should use .ifThenElse"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 28. Lean stubs: validate_header has .letIn and .call constructors
+if echo "$pp_lean" | grep -A5 "validate_headerExpr" | grep -q ".letIn"; then
+    echo "  ok  pressure-lean: validate_header uses .letIn constructor"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL pressure-lean: validate_header should use .letIn"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 29. Lean stubs: compute_checksum has .binOp .add constructor
+if echo "$pp_lean" | grep -A5 "compute_checksumExpr" | grep -q ".binOp .add"; then
+    echo "  ok  pressure-lean: compute_checksum uses .binOp .add"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL pressure-lean: compute_checksum should use .binOp .add"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 30. Lean stubs: 4 theorem stubs generated
+thm_count=$(echo "$pp_lean" | grep -c "^theorem")
+if [ "$thm_count" -eq 4 ]; then
+    echo "  ok  pressure-lean: 4 theorem stubs generated"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL pressure-lean: expected 4 theorem stubs, got $thm_count"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 31. Lean stubs: theorem names match function names
+if echo "$pp_lean" | grep -q "theorem check_nonce_correct" && \
+   echo "$pp_lean" | grep -q "theorem validate_header_correct" && \
+   echo "$pp_lean" | grep -q "theorem compute_checksum_correct" && \
+   echo "$pp_lean" | grep -q "theorem clamp_value_correct"; then
+    echo "  ok  pressure-lean: theorem names match function names"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL pressure-lean: theorem names should match function names"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 32. Lean stubs: excluded functions (format_result, main) are NOT in stubs
+if ! echo "$pp_lean" | grep -q "format_resultExpr" && \
+   ! echo "$pp_lean" | grep -q "classify_rangeExpr"; then
+    echo "  ok  pressure-lean: excluded/blocked functions omitted from stubs"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL pressure-lean: excluded/blocked functions should not appear"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 33. Lean stubs: deterministic across runs
+pp_lean2=$($COMPILER examples/proof_pressure/src/main.con --report lean-stubs 2>/dev/null)
+if [ "$pp_lean" = "$pp_lean2" ]; then
+    echo "  ok  pressure-lean: lean-stubs deterministic across runs"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL pressure-lean: lean-stubs differ between runs"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 34. Lean stubs: eval helpers generated for each function
+eval_count=$(echo "$pp_lean" | grep -c "^def eval_")
+if [ "$eval_count" -eq 4 ]; then
+    echo "  ok  pressure-lean: 4 eval helpers generated"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL pressure-lean: expected 4 eval helpers, got $eval_count"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
 if [ "$evidence_fail" -gt 0 ]; then
     echo "  $evidence_fail evidence gate failures"
 fi

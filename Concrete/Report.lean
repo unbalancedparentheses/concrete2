@@ -1488,6 +1488,90 @@ def extractionReport (registry : ProofRegistry := [])
   s!"{header}\n\n{"\n\n".intercalate body}\n\n{summary}\n"
 
 -- ============================================================
+-- Lean theorem stubs (--report lean-stubs)
+-- ============================================================
+
+/-- Render a PExpr as Lean constructor syntax (Concrete.Proof.PExpr). -/
+private def renderPExprAsLean : Proof.PExpr → String
+  | .lit (.int n) =>
+    if n < 0 then s!".lit (.int ({n}))"
+    else s!".lit (.int {n})"
+  | .lit (.bool b) => s!".lit (.bool {b})"
+  | .var name => s!".var \"{name}\""
+  | .binOp op lhs rhs =>
+    let opStr := match op with
+      | .add => ".add" | .sub => ".sub" | .mul => ".mul"
+      | .eq => ".eq" | .ne => ".ne" | .lt => ".lt"
+      | .le => ".le" | .gt => ".gt" | .ge => ".ge"
+    s!".binOp {opStr}\n      ({renderPExprAsLean lhs})\n      ({renderPExprAsLean rhs})"
+  | .letIn name val body =>
+    s!".letIn \"{name}\"\n      ({renderPExprAsLean val})\n      ({renderPExprAsLean body})"
+  | .ifThenElse cond t e =>
+    s!".ifThenElse\n      ({renderPExprAsLean cond})\n      ({renderPExprAsLean t})\n      ({renderPExprAsLean e})"
+  | .call fn args =>
+    let argsLean := args.map fun a => s!"({renderPExprAsLean a})"
+    s!".call \"{fn}\" [{", ".intercalate argsLean}]"
+
+/-- Convert a function's bare name to a Lean-safe identifier. -/
+private def leanIdent (name : String) : String :=
+  name.map fun c => if c == '-' then '_' else c
+
+/-- Generate Lean theorem stubs for all extracted functions. -/
+def leanStubsReport (pc : Concrete.ProofCore)
+    (registry : ProofRegistry := []) : String :=
+  let entries := extractionEntriesFromPC pc registry
+  let extracted := entries.filter fun e => e.eligible && e.extracted.isSome
+  if extracted.isEmpty then "-- No extractable functions found.\n"
+  else
+  let header := "import Concrete.Proof\n\nnamespace Concrete.Proof.Generated\n\nopen Concrete.Proof in"
+  -- Build function table entries
+  let fnDefs := extracted.map fun e =>
+    let name := leanIdent (e.qualName.splitOn "." |>.getLast!)
+    let pexpr := match e.extracted with | some p => renderPExprAsLean p | none => "sorry"
+    let paramsLean := e.params.map fun p => s!"\"{p}\""
+    let paramsList := "[" ++ ", ".intercalate paramsLean ++ "]"
+    s!"/-- Extracted from `{e.qualName}`. -/\ndef {name}Expr : PExpr :=\n    {pexpr}\n\ndef {name}Fn : PFnDef :=\n  \{ name := \"{name}\", params := {paramsList}, body := {name}Expr }"
+  -- Build function table
+  let tableCases := extracted.map fun e =>
+    let name := leanIdent (e.qualName.splitOn "." |>.getLast!)
+    s!"  | \"{name}\" => some {name}Fn"
+  let tableStr := s!"def generatedFns : FnTable\n{"\n".intercalate tableCases}\n  | _ => none"
+  -- Build eval helpers
+  let evalHelpers := extracted.map fun e =>
+    let name := leanIdent (e.qualName.splitOn "." |>.getLast!)
+    let paramBinds := e.params.foldl (fun acc p =>
+      if acc.isEmpty then s!"(Env.empty.bind \"{p}\" (.int {p}))"
+      else s!"({acc}.bind \"{p}\" (.int {p}))"
+    ) ""
+    let paramSig := " ".intercalate (e.params.map fun p => s!"({p} : Int)")
+    s!"def eval_{name} {paramSig} (fuel : Nat := 20) : Option PVal :=\n  eval generatedFns {paramBinds} fuel {name}Expr"
+  -- Build theorem stubs
+  let theoremStubs := extracted.map fun e =>
+    let name := leanIdent (e.qualName.splitOn "." |>.getLast!)
+    let paramSig := " ".intercalate (e.params.map fun p => s!"({p} : Int)")
+    let paramBinds := e.params.foldl (fun acc p =>
+      if acc.isEmpty then s!"(Env.empty.bind \"{p}\" (.int {p}))"
+      else s!"({acc}.bind \"{p}\" (.int {p}))"
+    ) ""
+    let specName := if e.specName.isEmpty then s!"{name}_correct" else
+      s!"{name}_correct"
+    let pcStr := match e.extracted with | some p => renderPExpr p | none => "?"
+    s!"/-- TODO: State the correctness property for `{e.qualName}`.\n    Current ProofCore: {pcStr} -/\ntheorem {specName} {paramSig} (fuel : Nat) :\n    eval generatedFns {paramBinds}\n      (fuel + 1) {name}Expr\n    = sorry := by\n  sorry"
+  -- Assemble
+  let body := [
+    header,
+    "\n" ++ "\n\n".intercalate fnDefs,
+    "\n\n" ++ tableStr,
+    "\n\n" ++ "\n\n".intercalate evalHelpers,
+    "\n\n-- ============================================================",
+    "-- Theorem stubs — fill in the specification and proof",
+    "-- ============================================================",
+    "\n" ++ "\n\n".intercalate theoremStubs,
+    "\nend Concrete.Proof.Generated"
+  ]
+  "\n".intercalate body ++ "\n"
+
+-- ============================================================
 -- Source/Core/SSA/LLVM traceability (--report traceability)
 -- ============================================================
 
