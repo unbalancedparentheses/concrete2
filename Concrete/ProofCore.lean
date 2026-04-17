@@ -1341,7 +1341,7 @@ private def generateDiagnostics
       some { kind := .ineligible, severity := .info, function := qn
            , message := s!"`{qn}` cannot be proved: fails predictable profile."
            , hint := if o.profileGates.isEmpty then ""
-               else s!"Remove {", ".intercalate o.profileGates} to make this function eligible."
+               else s!"Address these constraints to make this function eligible: {", ".intercalate o.profileGates}."
            , details := o.profileGates, fingerprint := fp, expectedFp := "", loc := o.loc }
     | .blocked => none  -- handled by entry-level unsupported diagnostics with details
     | .trusted =>

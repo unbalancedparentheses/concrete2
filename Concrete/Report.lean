@@ -1204,6 +1204,7 @@ structure ProofStatusEntry where
   currentFp     : String       -- current body fingerprint
   expectedFp    : String       -- registered fingerprint (empty if no proof)
   profileGates  : List String  -- reasons the function fails profile (empty if passes)
+  unsupported   : List String  -- unsupported constructs (empty unless blocked)
   specName      : String       -- spec name (from registry or derived)
   proofName     : String       -- proof/theorem name (from registry or derived)
   proofSource   : String       -- "registry" | "hardcoded" | "none"
@@ -1250,8 +1251,12 @@ private partial def collectProofStatus
             match a.source with | .registry => "registry" | .hardcoded => "hardcoded")
         | none => ("", "", "none")
       | none => ("", "", "none")
+    -- Look up unsupported constructs from ProofCore entry (for blocked functions)
+    let unsup := match pc.entries.find? fun e => e.qualName == qualName with
+      | some e => e.unsupported
+      | none => []
     { qualName, bareName := f.name, state, currentFp := fp, expectedFp
-    , profileGates := gates, specName := sName, proofName := pName
+    , profileGates := gates, unsupported := unsup, specName := sName, proofName := pName
     , proofSource := pSrc, loc := fnLoc, fnSpan := fnSp }
   entries ++ m.submodules.foldl (fun acc sub =>
     acc ++ collectProofStatus pc locMap sub qualPrefix registry) []
@@ -1282,10 +1287,12 @@ private def renderProofStatusEntry (e : ProofStatusEntry) (sourceMap : SourceMap
   | .notProved =>
     s!"-- no proof {String.ofList (List.replicate 47 '-')} {locStr}\n\n  `{e.qualName}` passes the predictable profile but has no registered proof.{snippet}\n\n  current fingerprint:\n    {e.currentFp}\n\n  hint: Add a Lean proof for this function in Concrete/Proof.lean with the fingerprint above."
   | .blocked =>
-    s!"-- blocked {String.ofList (List.replicate 48 '-')} {locStr}\n\n  `{e.qualName}` is eligible but uses unsupported constructs — extraction failed.{snippet}\n\n  hint: Remove unsupported constructs to enable proof extraction."
+    let unsupStr := if e.unsupported.isEmpty then "unsupported constructs"
+        else ", ".intercalate e.unsupported
+    s!"-- blocked {String.ofList (List.replicate 48 '-')} {locStr}\n\n  `{e.qualName}` is eligible but uses unsupported constructs — extraction failed.{snippet}\n\n  unsupported: {unsupStr}\n\n  hint: Remove {unsupStr} to enable proof extraction."
   | .notEligible =>
     let gateStr := ", ".intercalate e.profileGates
-    s!"-- not eligible {String.ofList (List.replicate 43 '-')} {locStr}\n\n  `{e.qualName}` cannot be proved: fails predictable profile ({gateStr}).{snippet}\n\n  hint: Remove {gateStr} to make this function eligible for proof."
+    s!"-- not eligible {String.ofList (List.replicate 43 '-')} {locStr}\n\n  `{e.qualName}` cannot be proved: fails predictable profile ({gateStr}).{snippet}\n\n  reasons: {gateStr}\n\n  hint: Address these constraints to make this function eligible for proof."
   | .trusted =>
     s!"-- trusted {String.ofList (List.replicate 48 '-')} {locStr}\n\n  `{e.qualName}` is marked trusted — proof is bypassed (trusted assumption).{snippet}"
 
@@ -1964,8 +1971,11 @@ private def proofStatusToFact (e : ProofStatusEntry) : Val :=
   let hintStr := match e.state with
     | .stale => "Update the Lean proof in Concrete/Proof.lean, or restore the proved implementation."
     | .notProved => "Add a Lean proof for this function in Concrete/Proof.lean with the current fingerprint."
-    | .blocked => "Remove unsupported constructs to enable proof extraction."
-    | .notEligible => s!"Remove {", ".intercalate e.profileGates} to make this function eligible for proof."
+    | .blocked =>
+      let unsupStr := if e.unsupported.isEmpty then "unsupported constructs"
+          else ", ".intercalate e.unsupported
+      s!"Remove {unsupStr} to enable proof extraction."
+    | .notEligible => "Address these constraints to make this function eligible for proof."
     | _ => ""
   .obj ([
     ("kind", .str "proof_status"),
@@ -1978,6 +1988,7 @@ private def proofStatusToFact (e : ProofStatusEntry) : Val :=
     ++ (if e.proofName.isEmpty then [] else [("proof", .str e.proofName)])
     ++ (if e.proofSource == "none" then [] else [("source", .str e.proofSource)])
     ++ (if e.profileGates.isEmpty then [] else [("profile_gates", .arr (e.profileGates.map .str))])
+    ++ (if e.unsupported.isEmpty then [] else [("unsupported", .arr (e.unsupported.map .str))])
     ++ (if hintStr.isEmpty then [] else [("hint", .str hintStr)]))
 
 open Json in

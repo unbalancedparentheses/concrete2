@@ -8891,6 +8891,324 @@ fi
 
 rm -rf "$REPAIR_DIR"
 
+# --- Blocked/ineligible proof pressure tests (item 10) ---
+
+INELIG_SRC="tests/programs/adversarial_proof_ineligible_pressure.con"
+BLOCKED_SRC="tests/programs/adversarial_proof_blocked_pressure.con"
+BOUNDARY_SRC="tests/programs/adversarial_proof_boundary_pressure.con"
+
+# Collect outputs
+inelig_ps=$($COMPILER "$INELIG_SRC" --report proof-status 2>&1)
+inelig_ob=$($COMPILER "$INELIG_SRC" --report obligations 2>&1)
+blocked_ps=$($COMPILER "$BLOCKED_SRC" --report proof-status 2>&1)
+blocked_ob=$($COMPILER "$BLOCKED_SRC" --report obligations 2>&1)
+boundary_ps=$($COMPILER "$BOUNDARY_SRC" --report proof-status 2>&1)
+
+# 57. Ineligible: File capability named in reasons
+if echo "$inelig_ps" | grep -A6 "caps_file" | grep -q "has capabilities: File"; then
+    echo "  ok  ineligible-pressure: File capability named in reasons"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL ineligible-pressure: File capability should be named in reasons"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 58. Ineligible: Network capability named in reasons
+if echo "$inelig_ps" | grep -A6 "caps_network" | grep -q "has capabilities: Network"; then
+    echo "  ok  ineligible-pressure: Network capability named in reasons"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL ineligible-pressure: Network capability should be named in reasons"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 59. Ineligible: Process capability named in reasons
+if echo "$inelig_ps" | grep -A6 "caps_process" | grep -q "has capabilities: Process"; then
+    echo "  ok  ineligible-pressure: Process capability named in reasons"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL ineligible-pressure: Process capability should be named in reasons"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 60. Ineligible: Unsafe capability named in reasons
+if echo "$inelig_ps" | grep -A6 "caps_unsafe" | grep -q "has capabilities: Unsafe"; then
+    echo "  ok  ineligible-pressure: Unsafe capability named in reasons"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL ineligible-pressure: Unsafe capability should be named in reasons"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 61. Ineligible: trusted function shows trusted, not ineligible
+if echo "$inelig_ps" | grep -B5 "trusted_fn" | grep -q -- "-- trusted"; then
+    echo "  ok  ineligible-pressure: trusted function shows trusted status"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL ineligible-pressure: trusted function should show trusted status"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 62. Ineligible: direct recursion named in reasons
+if echo "$inelig_ps" | grep -A6 "recursive_fn" | grep -q "recursion (direct)"; then
+    echo "  ok  ineligible-pressure: direct recursion named in reasons"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL ineligible-pressure: direct recursion should be named in reasons"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 63. Ineligible: mutual recursion named in reasons
+if echo "$inelig_ps" | grep -A6 "mutual_a" | grep -q "recursion (mutual)"; then
+    echo "  ok  ineligible-pressure: mutual recursion named in reasons"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL ineligible-pressure: mutual recursion should be named in reasons"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 64. Ineligible: FFI named in reasons
+if echo "$inelig_ps" | grep -A6 "ffi_fn" | grep -q "FFI"; then
+    echo "  ok  ineligible-pressure: FFI named in reasons"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL ineligible-pressure: FFI should be named in reasons"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 65. Ineligible: allocation named in reasons
+if echo "$inelig_ps" | grep -A6 "alloc_fn" | grep -q "allocation"; then
+    echo "  ok  ineligible-pressure: allocation named in reasons"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL ineligible-pressure: allocation should be named in reasons"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 66. Ineligible: combo shows multiple reasons
+if echo "$inelig_ps" | grep -A6 "combo_fn" | grep "has capabilities: File" | grep -q "recursion (direct)"; then
+    echo "  ok  ineligible-pressure: combo function shows multiple reasons"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL ineligible-pressure: combo function should show multiple reasons"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 67. Ineligible: clean_fn is missing (eligible), not ineligible
+if echo "$inelig_ps" | grep -B5 "clean_fn" | grep -q -- "-- no proof"; then
+    echo "  ok  ineligible-pressure: clean_fn correctly shows missing, not ineligible"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL ineligible-pressure: clean_fn should show missing, not ineligible"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 68. Ineligible: entry point named in reasons
+if echo "$inelig_ps" | grep -A6 'main\.main' | grep -q "is entry point (main)"; then
+    echo "  ok  ineligible-pressure: entry point named in reasons"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL ineligible-pressure: entry point should be named in reasons"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 69. Ineligible: obligations report matches proof-status
+inelig_ob_inelig=$(echo "$inelig_ob" | grep "status:.*ineligible" | wc -l | tr -d ' ')
+inelig_ps_inelig=$(echo "$inelig_ps" | grep "not eligible" | wc -l | tr -d ' ')
+if [ "$inelig_ob_inelig" = "$inelig_ps_inelig" ]; then
+    echo "  ok  ineligible-pressure: obligations count ($inelig_ob_inelig) matches proof-status count"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL ineligible-pressure: obligations ineligible count ($inelig_ob_inelig) != proof-status count ($inelig_ps_inelig)"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 70. Ineligible: hint does NOT say 'Remove is entry point'
+if ! echo "$inelig_ps" | grep -q "Remove.*is entry point"; then
+    echo "  ok  ineligible-pressure: hint does not suggest removing entry point"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL ineligible-pressure: hint should not suggest removing entry point"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 71. Blocked: struct literal named in unsupported
+if echo "$blocked_ps" | grep -A8 "uses_struct" | grep -q "struct literal"; then
+    echo "  ok  blocked-pressure: struct literal named in unsupported"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL blocked-pressure: struct literal should be named in unsupported"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 72. Blocked: match expression named in unsupported
+if echo "$blocked_ps" | grep -A8 "uses_match" | grep -q "match expression"; then
+    echo "  ok  blocked-pressure: match expression named in unsupported"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL blocked-pressure: match expression should be named in unsupported"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 73. Blocked: mutable assignment named in unsupported
+if echo "$blocked_ps" | grep -A8 "uses_mut" | grep -q "mutable assignment"; then
+    echo "  ok  blocked-pressure: mutable assignment named in unsupported"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL blocked-pressure: mutable assignment should be named in unsupported"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 74. Blocked: string literal named in unsupported
+if echo "$blocked_ps" | grep -A8 "uses_string" | grep -q "string literal"; then
+    echo "  ok  blocked-pressure: string literal named in unsupported"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL blocked-pressure: string literal should be named in unsupported"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 75. Blocked: if without else named in unsupported
+if echo "$blocked_ps" | grep -A8 "uses_if_no_else" | grep -q "if without else"; then
+    echo "  ok  blocked-pressure: if-without-else named in unsupported"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL blocked-pressure: if-without-else should be named in unsupported"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 76. Blocked: extractable_fn is missing (extractable), not blocked
+if echo "$blocked_ps" | grep -B5 "extractable_fn" | grep -q -- "-- no proof"; then
+    echo "  ok  blocked-pressure: extractable_fn correctly shows missing, not blocked"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL blocked-pressure: extractable_fn should show missing, not blocked"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 77. Blocked: obligations report shows blocked status
+blocked_ob_count=$(echo "$blocked_ob" | grep "status:.*blocked" | wc -l | tr -d ' ')
+blocked_ps_count=$(echo "$blocked_ps" | grep "^-- blocked" | wc -l | tr -d ' ')
+if [ "$blocked_ob_count" = "$blocked_ps_count" ]; then
+    echo "  ok  blocked-pressure: obligations blocked count ($blocked_ob_count) matches proof-status"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL blocked-pressure: obligations blocked count ($blocked_ob_count) != proof-status ($blocked_ps_count)"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 78. Blocked: proof-status totals line shows blocked count
+if echo "$blocked_ps" | grep -q "5 blocked"; then
+    echo "  ok  blocked-pressure: totals line shows 5 blocked"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL blocked-pressure: totals line should show 5 blocked"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 79. Boundary: registry entry for blocked function → error
+BOUNDARY_DIR=$(mktemp -d)
+cp "$BOUNDARY_SRC" "$BOUNDARY_DIR/test.con"
+cat > "$BOUNDARY_DIR/proof-registry.json" <<'REGEOF'
+{"version":1,"proofs":[{"function":"main.blocked_fn","body_fingerprint":"fake","proof":"Proof.blocked_fn_correct","spec":"s"}]}
+REGEOF
+boundary_reg_rc=0
+boundary_reg_out=$($COMPILER "$BOUNDARY_DIR/test.con" --report proof-status 2>&1) || boundary_reg_rc=$?
+if [ "$boundary_reg_rc" -ne 0 ] && echo "$boundary_reg_out" | grep -q "extraction-blocked"; then
+    echo "  ok  boundary-pressure: registry entry for blocked function produces error"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL boundary-pressure: registry entry for blocked function should produce error"
+    echo "    rc=$boundary_reg_rc"
+    echo "    out: $(echo "$boundary_reg_out" | grep -i "error\|block" | head -3)"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 80. Boundary: registry entry for ineligible function → error
+cat > "$BOUNDARY_DIR/proof-registry.json" <<'REGEOF'
+{"version":1,"proofs":[{"function":"main.ineligible_fn","body_fingerprint":"fake","proof":"Proof.ineligible_fn_correct","spec":"s"}]}
+REGEOF
+boundary_ine_rc=0
+boundary_ine_out=$($COMPILER "$BOUNDARY_DIR/test.con" --report proof-status 2>&1) || boundary_ine_rc=$?
+if [ "$boundary_ine_rc" -ne 0 ] && echo "$boundary_ine_out" | grep -q "ineligible"; then
+    echo "  ok  boundary-pressure: registry entry for ineligible function produces error"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL boundary-pressure: registry entry for ineligible function should produce error"
+    echo "    rc=$boundary_ine_rc"
+    echo "    out: $(echo "$boundary_ine_out" | grep -i "error\|ineligible" | head -3)"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 81. Boundary: combo_profile shows both source and profile reasons
+if echo "$boundary_ps" | grep -A6 "combo_profile" | grep "has capabilities: Alloc" | grep -q "recursion (direct)"; then
+    echo "  ok  boundary-pressure: combo_profile shows both source and profile reasons"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL boundary-pressure: combo_profile should show both source and profile reasons"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 82. Boundary: consistency check passes for ineligible pressure set
+inelig_con=$($COMPILER "$INELIG_SRC" --report consistency 2>&1)
+if echo "$inelig_con" | grep -q "All.*pass\|0 failures"; then
+    echo "  ok  boundary-pressure: consistency check passes for ineligible functions"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL boundary-pressure: consistency check should pass for ineligible functions"
+    echo "    $(echo "$inelig_con" | grep -i "fail" | head -3)"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 83. Boundary: consistency check passes for blocked functions
+blocked_con=$($COMPILER "$BLOCKED_SRC" --report consistency 2>&1)
+if echo "$blocked_con" | grep -q "All.*pass\|0 failures"; then
+    echo "  ok  boundary-pressure: consistency check passes for blocked functions"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL boundary-pressure: consistency check should pass for blocked functions"
+    echo "    $(echo "$blocked_con" | grep -i "fail" | head -3)"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 84. Boundary: diagnostics-json includes unsupported field for blocked functions
+blocked_json=$($COMPILER "$BLOCKED_SRC" --report diagnostics-json 2>/dev/null)
+if echo "$blocked_json" | python3 -c "
+import json, sys
+data = json.loads(sys.stdin.read())
+blocked = [f for f in data['facts'] if f.get('kind') == 'proof_status' and f.get('state') == 'blocked']
+assert len(blocked) > 0, 'no blocked facts'
+for b in blocked:
+    assert 'unsupported' in b, f'missing unsupported field in {b[\"function\"]}'
+    assert len(b['unsupported']) > 0, f'empty unsupported for {b[\"function\"]}'
+" 2>/dev/null; then
+    echo "  ok  boundary-pressure: diagnostics-json includes unsupported field for blocked"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL boundary-pressure: diagnostics-json should include unsupported field for blocked"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 85. Boundary: diagnostics-json includes profile_gates for ineligible functions
+inelig_json=$($COMPILER "$INELIG_SRC" --report diagnostics-json 2>/dev/null)
+if echo "$inelig_json" | python3 -c "
+import json, sys
+data = json.loads(sys.stdin.read())
+inelig = [f for f in data['facts'] if f.get('kind') == 'proof_status' and f.get('state') == 'ineligible']
+assert len(inelig) > 0, 'no ineligible facts'
+for i in inelig:
+    assert 'profile_gates' in i, f'missing profile_gates in {i[\"function\"]}'
+    assert len(i['profile_gates']) > 0, f'empty profile_gates for {i[\"function\"]}'
+" 2>/dev/null; then
+    echo "  ok  boundary-pressure: diagnostics-json includes profile_gates for ineligible"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL boundary-pressure: diagnostics-json should include profile_gates for ineligible"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+rm -rf "$BOUNDARY_DIR"
+
 if [ "$evidence_fail" -gt 0 ]; then
     echo "  $evidence_fail evidence gate failures"
 fi

@@ -10,6 +10,19 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Blocked/ineligible proof pressure tests (Phase 2, item 10)
+
+Blocked and ineligible proof diagnostics now explain exactly why a function cannot be proved:
+
+- **Blocked diagnostics** list specific unsupported constructs: struct literal, match expression, mutable assignment, string literal, if-without-else. Previously said only "unsupported constructs" without detail.
+- **Ineligible diagnostics** list specific reasons: capabilities (File, Network, Process, Unsafe, Alloc), recursion (direct, mutual), FFI, allocation, blocking I/O, entry point, trusted. Previously suggested "Remove is entry point (main)" — now says "Address these constraints."
+- **JSON output** (`diagnostics-json`) includes `unsupported` array for blocked and `profile_gates` array for ineligible functions.
+- **Registry validation** rejects entries targeting blocked functions (extraction-blocked error) and ineligible functions (ineligible function error).
+
+29 new adversarial pressure tests: 14 ineligible-reason coverage (each capability, recursion type, FFI, allocation, combo, entry point, trusted, boundary), 8 blocked-construct coverage (each unsupported construct type, boundary), 7 boundary tests (registry-targeting errors, combined reasons, consistency invariants, JSON fields).
+
+Trust-gate: 1179 pass, 0 fail.
+
 ### Lean kernel checking and stale-proof repair (Phase 2, items 7-9)
 
 `--report check-proofs` invokes the Lean kernel to verify that proof theorems referenced in the registry or hardcoded list actually exist and type-check:
