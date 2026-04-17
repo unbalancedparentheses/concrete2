@@ -10,6 +10,20 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Lean kernel checking and stale-proof repair (Phase 2, items 7-9)
+
+`--report check-proofs` invokes the Lean kernel to verify that proof theorems referenced in the registry or hardcoded list actually exist and type-check:
+- Generates a temporary Lean file with `#check @TheoremName` for each proved/stale obligation
+- Invokes `lake env lean` using the project's pinned toolchain
+- Reports per-theorem results: verified or failed (with exit code 1 on any failure)
+- Shows Lean toolchain version for reproducibility
+
+`provedFunctions` extended from `(name, fingerprint)` pairs to `(name, fingerprint, theoremName)` triples — hardcoded proofs now carry explicit Lean theorem references instead of generated `_correct` suffixes.
+
+End-to-end Lean attachment tests verify consistency across proof-status, obligations, extraction, and check-proofs reports. Stale-proof repair tests cover the full cycle: proved → mutate → stale (with fingerprint drift) → update registry → proved again → kernel check passes.
+
+Trust-gate: 1147 pass, 0 fail.
+
 ### Registry integrity validation (Phase 2, item 6)
 
 `validateRegistry` checks proof-registry.json entries against ProofCore state:

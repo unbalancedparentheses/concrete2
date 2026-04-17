@@ -852,29 +852,40 @@ theorem validate_header_correct (b0 b1 b2 b3 cls encoding ver : Int) (fuel : Nat
     same-named functions in different modules are disambiguated.
     If the function body changes, the fingerprint will not match and
     "proved" evidence is revoked — the proof must be updated to match. -/
-def provedFunctions : List (String × String) :=
+def provedFunctions : List (String × String × String) :=
   [ ("main.parse_byte",
-     "[(ret (binop Concrete.BinOp.add (var data) (var offset)))]")
+     "[(ret (binop Concrete.BinOp.add (var data) (var offset)))]",
+     "Concrete.Proof.parse_byte_correct")
   , ("main.check_length",
-     "[(if (binop Concrete.BinOp.lt (var len) (int 10)) [(ret (int 1))]) (ret (int 0))]")
+     "[(if (binop Concrete.BinOp.lt (var len) (int 10)) [(ret (int 1))]) (ret (int 0))]",
+     "Concrete.Proof.check_length_rejects_short")
   , ("main.decode_header",
-     "[(if (binop Concrete.BinOp.neq (call check_length (var len)) (int 0)) [(ret (int 1))]) (let version (call parse_byte (var data) (int 0))) (if (binop Concrete.BinOp.lt (var version) (int 1)) [(ret (int 2))]) (if (binop Concrete.BinOp.gt (var version) (int 2)) [(ret (int 2))]) (let payload_len (call parse_byte (var data) (int 1))) (if (binop Concrete.BinOp.gt (var payload_len) (binop Concrete.BinOp.sub (var len) (int 10))) [(ret (int 3))]) (ret (int 0))]")
+     "[(if (binop Concrete.BinOp.neq (call check_length (var len)) (int 0)) [(ret (int 1))]) (let version (call parse_byte (var data) (int 0))) (if (binop Concrete.BinOp.lt (var version) (int 1)) [(ret (int 2))]) (if (binop Concrete.BinOp.gt (var version) (int 2)) [(ret (int 2))]) (let payload_len (call parse_byte (var data) (int 1))) (if (binop Concrete.BinOp.gt (var payload_len) (binop Concrete.BinOp.sub (var len) (int 10))) [(ret (int 3))]) (ret (int 0))]",
+     "Concrete.Proof.decode_header_rejects_short")
   , ("main.compute_tag",
-     "[(ret (binop Concrete.BinOp.add (binop Concrete.BinOp.mul (var key) (var message)) (var nonce)))]")
+     "[(ret (binop Concrete.BinOp.add (binop Concrete.BinOp.mul (var key) (var message)) (var nonce)))]",
+     "Concrete.Proof.compute_tag_correct")
   , ("main.verify_tag",
-     "[(let computed (call compute_tag (var key) (var message) (var nonce))) (if (binop Concrete.BinOp.eq (var computed) (var expected_tag)) [(ret (int 1))] [(ret (int 0))])]")
+     "[(let computed (call compute_tag (var key) (var message) (var nonce))) (if (binop Concrete.BinOp.eq (var computed) (var expected_tag)) [(ret (int 1))] [(ret (int 0))])]",
+     "Concrete.Proof.verify_tag_correct")
   , ("main.check_nonce",
-     "[(if (binop Concrete.BinOp.gt (var nonce) (int 0)) [(if (binop Concrete.BinOp.leq (var nonce) (var max_nonce)) [(ret (int 1))] [(ret (int 0))])] [(ret (int 0))])]")
+     "[(if (binop Concrete.BinOp.gt (var nonce) (int 0)) [(if (binop Concrete.BinOp.leq (var nonce) (var max_nonce)) [(ret (int 1))] [(ret (int 0))])] [(ret (int 0))])]",
+     "Concrete.Proof.check_nonce_correct")
   , ("main.check_magic",
-     "[(if (binop Concrete.BinOp.eq (var b0) (int 127)) [(if (binop Concrete.BinOp.eq (var b1) (int 69)) [(if (binop Concrete.BinOp.eq (var b2) (int 76)) [(if (binop Concrete.BinOp.eq (var b3) (int 70)) [(ret (int 1))] [(ret (int 0))])] [(ret (int 0))])] [(ret (int 0))])] [(ret (int 0))])]")
+     "[(if (binop Concrete.BinOp.eq (var b0) (int 127)) [(if (binop Concrete.BinOp.eq (var b1) (int 69)) [(if (binop Concrete.BinOp.eq (var b2) (int 76)) [(if (binop Concrete.BinOp.eq (var b3) (int 70)) [(ret (int 1))] [(ret (int 0))])] [(ret (int 0))])] [(ret (int 0))])] [(ret (int 0))])]",
+     "Concrete.Proof.check_magic_correct")
   , ("main.check_class",
-     "[(if (binop Concrete.BinOp.eq (var cls) (int 1)) [(ret (int 1))] [(if (binop Concrete.BinOp.eq (var cls) (int 2)) [(ret (int 1))] [(ret (int 0))])])]")
+     "[(if (binop Concrete.BinOp.eq (var cls) (int 1)) [(ret (int 1))] [(if (binop Concrete.BinOp.eq (var cls) (int 2)) [(ret (int 1))] [(ret (int 0))])])]",
+     "Concrete.Proof.check_class_correct")
   , ("main.check_data",
-     "[(if (binop Concrete.BinOp.eq (var encoding) (int 1)) [(ret (int 1))] [(if (binop Concrete.BinOp.eq (var encoding) (int 2)) [(ret (int 1))] [(ret (int 0))])])]")
+     "[(if (binop Concrete.BinOp.eq (var encoding) (int 1)) [(ret (int 1))] [(if (binop Concrete.BinOp.eq (var encoding) (int 2)) [(ret (int 1))] [(ret (int 0))])])]",
+     "Concrete.Proof.check_data_correct")
   , ("main.check_version",
-     "[(if (binop Concrete.BinOp.eq (var ver) (int 1)) [(ret (int 1))] [(ret (int 0))])]")
+     "[(if (binop Concrete.BinOp.eq (var ver) (int 1)) [(ret (int 1))] [(ret (int 0))])]",
+     "Concrete.Proof.check_version_correct")
   , ("main.validate_header",
-     "[(let magic_ok (call check_magic (var b0) (var b1) (var b2) (var b3))) (if (binop Concrete.BinOp.eq (var magic_ok) (int 1)) [(let cls_ok (call check_class (var cls))) (if (binop Concrete.BinOp.eq (var cls_ok) (int 1)) [(let enc_ok (call check_data (var encoding))) (if (binop Concrete.BinOp.eq (var enc_ok) (int 1)) [(let ver_ok (call check_version (var ver))) (if (binop Concrete.BinOp.eq (var ver_ok) (int 1)) [(ret (int 1))] [(ret (int 0))])] [(ret (int 0))])] [(ret (int 0))])] [(ret (int 0))])]")
+     "[(let magic_ok (call check_magic (var b0) (var b1) (var b2) (var b3))) (if (binop Concrete.BinOp.eq (var magic_ok) (int 1)) [(let cls_ok (call check_class (var cls))) (if (binop Concrete.BinOp.eq (var cls_ok) (int 1)) [(let enc_ok (call check_data (var encoding))) (if (binop Concrete.BinOp.eq (var enc_ok) (int 1)) [(let ver_ok (call check_version (var ver))) (if (binop Concrete.BinOp.eq (var ver_ok) (int 1)) [(ret (int 1))] [(ret (int 0))])] [(ret (int 0))])] [(ret (int 0))])] [(ret (int 0))])]",
+     "Concrete.Proof.validate_header_correct")
   ]
 
 end Concrete.Proof

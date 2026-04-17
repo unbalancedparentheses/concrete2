@@ -8672,6 +8672,225 @@ fi
 # Clean up temp registry
 rm -f "$REG_DIR/proof-registry.json"
 
+# --- Lean kernel checking (item 7) ---
+
+# 41. check-proofs: hardcoded proofs are kernel-verified
+cp_out=$($COMPILER tests/programs/proof_decode_header.con --report check-proofs 2>&1)
+if echo "$cp_out" | grep -q "Kernel-verified" && echo "$cp_out" | grep -q "parse_byte"; then
+    echo "  ok  check-proofs: hardcoded proofs kernel-verified"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL check-proofs: hardcoded proofs should be kernel-verified"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 42. check-proofs: pressure set shows verified + failed
+cp_pp=$($COMPILER examples/proof_pressure/src/main.con --report check-proofs 2>&1) || true
+if echo "$cp_pp" | grep -q "Kernel-verified (2)" && echo "$cp_pp" | grep -q "Failed (1)"; then
+    echo "  ok  check-proofs: pressure set 2 verified, 1 failed"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL check-proofs: pressure set should have 2 verified, 1 failed"
+    echo "    got: $(echo "$cp_pp" | grep "Summary:")"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 43. check-proofs: fake proof name detected
+CP_DIR=$(mktemp -d)
+cat > "$CP_DIR/test.con" <<'CONEOF'
+fn pure_add(a: Int, b: Int) -> Int {
+  return a + b;
+}
+fn main() -> i32 { return 0; }
+CONEOF
+cat > "$CP_DIR/proof-registry.json" <<'REGEOF'
+{"version":1,"proofs":[{"function":"main.pure_add","body_fingerprint":"[(ret (binop Concrete.BinOp.add (var a) (var b)))]","proof":"Concrete.Proof.DOES_NOT_EXIST","spec":"s"}]}
+REGEOF
+cp_fake_rc=0
+cp_fake=$($COMPILER "$CP_DIR/test.con" --report check-proofs 2>&1) || cp_fake_rc=$?
+if echo "$cp_fake" | grep -q "Failed (1)" && echo "$cp_fake" | grep -q "DOES_NOT_EXIST"; then
+    echo "  ok  check-proofs: fake proof name rejected by Lean kernel"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL check-proofs: fake proof name should be rejected"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 44. check-proofs: exit code 1 when proofs fail
+if [ "$cp_fake_rc" -ne 0 ]; then
+    echo "  ok  check-proofs: exit code 1 on kernel check failure"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL check-proofs: should exit 1 when kernel check fails"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 45. check-proofs: shows toolchain version
+if echo "$cp_out" | grep -q "Toolchain:.*lean4"; then
+    echo "  ok  check-proofs: reports Lean toolchain version"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL check-proofs: should report toolchain version"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 46. check-proofs: exit code 0 when all proofs pass
+cp_good_rc=0
+$COMPILER tests/programs/proof_decode_header.con --report check-proofs > /dev/null 2>&1 || cp_good_rc=$?
+if [ "$cp_good_rc" -eq 0 ]; then
+    echo "  ok  check-proofs: exit code 0 when all proofs pass"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL check-proofs: should exit 0 when all proofs pass"
+    evidence_fail=$((evidence_fail + 1))
+fi
+rm -rf "$CP_DIR"
+
+# --- End-to-end Lean attachment workflow (item 8) ---
+
+# 47. E2E: proved function has correct proof-status + obligations + check-proofs
+e2e_ps=$($COMPILER tests/programs/proof_decode_header.con --report proof-status 2>&1)
+e2e_ob=$($COMPILER tests/programs/proof_decode_header.con --report obligations 2>&1)
+if echo "$e2e_ps" | grep -q "proved" && echo "$e2e_ob" | grep -q "status:.*proved" && echo "$cp_out" | grep -q "Kernel-verified"; then
+    echo "  ok  e2e-lean: proved function consistent across proof-status, obligations, and check-proofs"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL e2e-lean: proved function should be consistent across all reports"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 48. E2E: stale function shows stale in proof-status + obligations
+e2e_pp_ps=$($COMPILER examples/proof_pressure/src/main.con --report proof-status 2>&1) || true
+e2e_pp_ob=$($COMPILER examples/proof_pressure/src/main.con --report obligations 2>&1) || true
+if echo "$e2e_pp_ps" | grep -B5 "compute_checksum" | grep -q "proof stale" && echo "$e2e_pp_ob" | grep -A3 "compute_checksum" | grep -q "status:.*stale"; then
+    echo "  ok  e2e-lean: stale function consistent across proof-status and obligations"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL e2e-lean: stale function should be consistent across reports"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 49. E2E: registry proof name matches check-proofs theorem name
+if echo "$cp_pp" | grep -q "check_nonce.*Concrete.Proof.check_nonce_correct"; then
+    echo "  ok  e2e-lean: registry proof name matches kernel-checked theorem"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL e2e-lean: registry proof name should appear in check-proofs output"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 50. E2E: fingerprint in obligations matches extraction fingerprint
+e2e_ext=$($COMPILER examples/proof_pressure/src/main.con --report extraction 2>&1) || true
+e2e_ob_fp=$(echo "$e2e_pp_ob" | grep -A8 "check_nonce" | grep -o '\[.*\]' | head -1)
+e2e_ext_fp=$(echo "$e2e_ext" | grep -A5 "check_nonce" | grep -o '\[.*\]' | head -1)
+if [ -n "$e2e_ob_fp" ] && [ "$e2e_ob_fp" = "$e2e_ext_fp" ]; then
+    echo "  ok  e2e-lean: obligation fingerprint matches extraction fingerprint"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL e2e-lean: obligation and extraction fingerprints should match"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# --- Stale-proof repair workflow (item 9) ---
+
+REPAIR_DIR=$(mktemp -d)
+# Create a function with a proof
+cat > "$REPAIR_DIR/repair.con" <<'CONEOF'
+fn pure_add(a: Int, b: Int) -> Int {
+  return a + b;
+}
+fn main() -> i32 { return 0; }
+CONEOF
+# Get the fingerprint
+repair_fp=$($COMPILER "$REPAIR_DIR/repair.con" --report fingerprints 2>&1)
+orig_fp=$(echo "$repair_fp" | grep "pure_add" | grep -o '\[.*\]')
+
+# Create registry with correct fingerprint
+cat > "$REPAIR_DIR/proof-registry.json" <<REGEOF
+{"version":1,"proofs":[{"function":"main.pure_add","body_fingerprint":"$orig_fp","proof":"Concrete.Proof.parse_byte_correct","spec":"s"}]}
+REGEOF
+
+# 51. Repair: initially proved
+repair_ps=$($COMPILER "$REPAIR_DIR/repair.con" --report proof-status 2>&1)
+if echo "$repair_ps" | grep -q "proved"; then
+    echo "  ok  stale-repair: function initially proved"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL stale-repair: function should initially be proved"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 52. Repair: mutate function body → stale
+cat > "$REPAIR_DIR/repair.con" <<'CONEOF'
+fn pure_add(a: Int, b: Int) -> Int {
+  return a - b;
+}
+fn main() -> i32 { return 0; }
+CONEOF
+repair_stale=$($COMPILER "$REPAIR_DIR/repair.con" --report proof-status 2>&1)
+if echo "$repair_stale" | grep -q "proof stale\|stale"; then
+    echo "  ok  stale-repair: mutated function detected as stale"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL stale-repair: mutated function should be stale"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 53. Repair: stale report shows fingerprint drift
+if echo "$repair_stale" | grep -q "current fingerprint"; then
+    echo "  ok  stale-repair: stale report shows current fingerprint for repair"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL stale-repair: stale report should show current fingerprint"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 54. Repair: update registry with new fingerprint → proved again
+new_fp=$($COMPILER "$REPAIR_DIR/repair.con" --report fingerprints 2>&1 | grep "pure_add" | grep -o '\[.*\]')
+cat > "$REPAIR_DIR/proof-registry.json" <<REGEOF
+{"version":1,"proofs":[{"function":"main.pure_add","body_fingerprint":"$new_fp","proof":"Concrete.Proof.parse_byte_correct","spec":"s"}]}
+REGEOF
+repair_fixed=$($COMPILER "$REPAIR_DIR/repair.con" --report proof-status 2>&1)
+if echo "$repair_fixed" | grep -q "proved.*proof matches\|-- proved"; then
+    echo "  ok  stale-repair: updated fingerprint restores proved status"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL stale-repair: updated fingerprint should restore proved status"
+    echo "    got: $(echo "$repair_fixed" | head -5)"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 55. Repair: restore original function body → proved with original registry
+cat > "$REPAIR_DIR/repair.con" <<'CONEOF'
+fn pure_add(a: Int, b: Int) -> Int {
+  return a + b;
+}
+fn main() -> i32 { return 0; }
+CONEOF
+cat > "$REPAIR_DIR/proof-registry.json" <<REGEOF
+{"version":1,"proofs":[{"function":"main.pure_add","body_fingerprint":"$orig_fp","proof":"Concrete.Proof.parse_byte_correct","spec":"s"}]}
+REGEOF
+repair_restored=$($COMPILER "$REPAIR_DIR/repair.con" --report proof-status 2>&1)
+if echo "$repair_restored" | grep -q "proved"; then
+    echo "  ok  stale-repair: restoring original body restores proved status"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL stale-repair: restoring original body should restore proved"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 56. Repair: kernel check on repaired function
+repair_check=$($COMPILER "$REPAIR_DIR/repair.con" --report check-proofs 2>&1)
+if echo "$repair_check" | grep -q "Kernel-verified"; then
+    echo "  ok  stale-repair: repaired function passes kernel check"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL stale-repair: repaired function should pass kernel check"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+rm -rf "$REPAIR_DIR"
+
 if [ "$evidence_fail" -gt 0 ]; then
     echo "  $evidence_fail evidence gate failures"
 fi

@@ -914,10 +914,11 @@ private def resolveSpec (qualName : String)
       expectedFp := re.bodyFingerprint }
   | none =>
     -- Check hardcoded
-    match Proof.provedFunctions.find? fun (name, _) => name == qualName with
-    | some (name, efp) => some {
+    match Proof.provedFunctions.find? fun (name, _, _) => name == qualName with
+    | some (name, efp, theoremName) =>
+      some {
         specId := { name := name ++ ".spec" }
-        proofName := name ++ ".proof"
+        proofName := theoremName
         source := .hardcoded
         expectedFp := efp }
     | none => none
