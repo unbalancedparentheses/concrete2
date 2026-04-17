@@ -1523,7 +1523,7 @@ def leanStubsReport (pc : Concrete.ProofCore)
   let extracted := entries.filter fun e => e.eligible && e.extracted.isSome
   if extracted.isEmpty then "-- No extractable functions found.\n"
   else
-  let header := "import Concrete.Proof\n\nnamespace Concrete.Proof.Generated\n\nopen Concrete.Proof in"
+  let header := "import Concrete.Proof\n\nnamespace Concrete.Proof.Generated\n\nopen Concrete.Proof"
   -- Build function table entries
   let fnDefs := extracted.map fun e =>
     let name := leanIdent (e.qualName.splitOn "." |>.getLast!)

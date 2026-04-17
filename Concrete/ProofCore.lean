@@ -1078,7 +1078,23 @@ inductive RegistryIssue where
   | duplicateEntry (function : String) (count : Nat)
   | conflictingEntry (function : String) (specs : List String)
   | staleFingerprint (entry : ProofRegistryEntry) (currentFp : String)
+  | ineligibleFunction (entry : ProofRegistryEntry) (reasons : List String)
+  | emptyProofName (entry : ProofRegistryEntry)
+  | emptySpecName (entry : ProofRegistryEntry)
+  | extractionBlocked (entry : ProofRegistryEntry) (unsupported : List String)
   deriving Repr
+
+/-- Registry issues that are errors (attachment integrity violations)
+    vs warnings (informational). -/
+def RegistryIssue.isError : RegistryIssue → Bool
+  | .unknownFunction _ => true
+  | .duplicateEntry _ _ => true
+  | .conflictingEntry _ _ => true
+  | .staleFingerprint _ _ => false  -- stale is a warning, not an error
+  | .ineligibleFunction _ _ => true
+  | .emptyProofName _ => true
+  | .emptySpecName _ => true
+  | .extractionBlocked _ _ => true
 
 /-- Validate a proof registry against a ProofCore artifact. -/
 def validateRegistry (pc : ProofCore) (registry : ProofRegistry) : List RegistryIssue :=
@@ -1110,18 +1126,46 @@ def validateRegistry (pc : ProofCore) (registry : ProofRegistry) : List Registry
       if re.bodyFingerprint != currentFp then some (.staleFingerprint re currentFp)
       else none
     | none => none  -- already caught as unknown
-  unknowns ++ duplicates ++ conflicts ++ stales
+  -- Check for entries targeting ineligible functions
+  let ineligibles := registry.filterMap fun re =>
+    match pc.excluded.find? fun e => e.qualName == re.function with
+    | some ex =>
+      let reasons := ex.eligibility.sourceReasons ++ ex.eligibility.profileReasons
+      some (.ineligibleFunction re reasons)
+    | none => none
+  -- Check for entries targeting extraction-blocked functions
+  let blocked := registry.filterMap fun re =>
+    match pc.entries.find? fun e => e.qualName == re.function with
+    | some entry =>
+      if entry.extracted.isNone && !entry.unsupported.isEmpty then
+        some (.extractionBlocked re entry.unsupported)
+      else none
+    | none => none
+  -- Check for empty proof/spec names
+  let emptyProofs := registry.filterMap fun re =>
+    if re.proof.isEmpty then some (.emptyProofName re) else none
+  let emptySpecs := registry.filterMap fun re =>
+    if re.spec.isEmpty then some (.emptySpecName re) else none
+  unknowns ++ duplicates ++ conflicts ++ stales ++ ineligibles ++ blocked ++ emptyProofs ++ emptySpecs
 
-/-- Render a registry validation issue as a warning string. -/
+/-- Render a registry validation issue as a diagnostic string. -/
 def renderRegistryIssue : RegistryIssue → String
   | .unknownFunction re =>
-    s!"warning: registry entry for unknown function '{re.function}'"
+    s!"error: registry entry for unknown function '{re.function}'"
   | .duplicateEntry fn n =>
-    s!"warning: {n} duplicate registry entries for '{fn}'"
+    s!"error: {n} duplicate registry entries for '{fn}'"
   | .conflictingEntry fn specs =>
-    s!"warning: conflicting specs for '{fn}': {", ".intercalate specs}"
+    s!"error: conflicting specs for '{fn}': {", ".intercalate specs}"
   | .staleFingerprint re currentFp =>
     s!"warning: stale fingerprint for '{re.function}' (registry: {re.bodyFingerprint.take 40}…, current: {currentFp.take 40}…)"
+  | .ineligibleFunction re reasons =>
+    s!"error: registry entry for ineligible function '{re.function}' ({", ".intercalate reasons})"
+  | .emptyProofName re =>
+    s!"error: registry entry for '{re.function}' has empty proof name"
+  | .emptySpecName re =>
+    s!"error: registry entry for '{re.function}' has empty spec name"
+  | .extractionBlocked re unsupported =>
+    s!"error: registry entry for '{re.function}' targets extraction-blocked function (unsupported: {", ".intercalate unsupported})"
 
 -- ============================================================
 -- Extraction: Core modules → ProofCore
@@ -1225,6 +1269,7 @@ private def deriveObligationStatus
   else match spec with
   | some a =>
     if a.expectedFp != currentFp then .stale
+    else if a.source == .hardcoded then .proved  -- hardcoded proofs done in Lean, extraction not required
     else if !extracted then .blocked
     else .proved
   | none =>
@@ -1418,9 +1463,10 @@ def ProofCore.selfCheck (pc : ProofCore) : List ConsistencyViolation :=
         else none
       | none => none  -- caught by OBL-KNOWN
 
-  -- INV-3: Proved status requires extraction
+  -- INV-3: Proved status requires extraction (unless proof source is hardcoded)
   let provedExtracted := pc.obligations.filterMap fun o =>
     if o.status != .proved then none
+    else if o.spec.any (·.source == .hardcoded) then none  -- hardcoded proofs bypass extraction
     else match pc.findEntry o.functionId.qualName with
     | some e =>
       if e.extracted.isNone then
@@ -1507,6 +1553,7 @@ def ProofCore.selfCheck (pc : ProofCore) : List ConsistencyViolation :=
         | .ineligible => o.status == .ineligible
         | .trusted => o.status == .trusted
         | .unsupportedConstruct => o.status == .blocked || o.status == .stale
+            || (o.status == .proved && o.spec.any (·.source == .hardcoded))
       if !statusOk then
         some { invariant := "DIAG-STATUS", function := d.function
              , message := s!"diagnostic kind '{repr d.kind}' disagrees with obligation status '{repr o.status}'" }

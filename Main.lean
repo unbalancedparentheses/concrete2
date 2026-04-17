@@ -346,9 +346,11 @@ def compileAndReport (inputPath : String) (reportType : String) : IO UInt32 := d
     let simpleLocMap := locMap.map fun e => (e.qualName, (e.file, e.fnSpan.line))
     let registry ← loadRegistryWarn inputPath
     let pc := extractProofCore validCore simpleLocMap registry
-    -- Validate registry against ProofCore and surface warnings
+    -- Validate registry against ProofCore and surface warnings/errors
     let regIssues := Concrete.validateRegistry pc registry
-    for issue in regIssues do IO.eprintln (Concrete.renderRegistryIssue issue)
+    for issue in regIssues do
+      IO.eprintln (Concrete.renderRegistryIssue issue)
+    let hasRegistryErrors := regIssues.any (·.isError)
     if reportType == "caps" then
       IO.println (Report.capabilityReport validCore.coreModules)
       return 0
@@ -372,10 +374,10 @@ def compileAndReport (inputPath : String) (reportType : String) : IO UInt32 := d
       return 0
     if reportType == "proof-status" then
       IO.println (Report.proofStatusReport validCore.coreModules locMap srcMap (registry := registry) (pc := pc))
-      return 0
+      return (if hasRegistryErrors then 1 else 0)
     if reportType == "obligations" then
       IO.println (Report.obligationsReport validCore.coreModules locMap registry pc)
-      return 0
+      return (if hasRegistryErrors then 1 else 0)
     if reportType == "proof-diagnostics" then
       IO.println (Report.proofDiagnosticsReport (pc := pc))
       return 0

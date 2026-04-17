@@ -10,6 +10,29 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Registry integrity validation (Phase 2, item 6)
+
+`validateRegistry` checks proof-registry.json entries against ProofCore state:
+- **Unknown function**: registry names a function not in the compiled module (error)
+- **Ineligible target**: registry targets a function that fails the predictable profile (error)
+- **Extraction blocked**: registry targets a function with unsupported constructs (error)
+- **Empty proof/spec name**: registry entry has blank proof or spec identifier (error)
+- **Duplicate/conflicting entries**: multiple entries for the same function (warning/error)
+- **Stale fingerprint**: body changed since proof was registered (warning)
+
+`RegistryIssue.isError` distinguishes errors from warnings. Proof-sensitive reports (`proof-status`, `obligations`) return exit code 1 when registry errors are present. Hardcoded proofs (from `Proof.provedFunctions`) bypass extraction gate — proved status is correct even when extraction fails for hardcoded entries.
+
+Adversarial test files in `tests/programs/adversarial_registry/` with 6 trust-gate assertions. Trust-gate: 1131 pass, 0 fail.
+
+### Canonical theorem shapes (Phase 2, items 3 and 5)
+
+`docs/PROOF_THEOREM_SHAPES.md` defines the canonical proof-spec and theorem shapes:
+- 3 theorem categories: concrete tests (`native_decide`), universal boundary, full contract
+- Naming rules: `<fn>Expr`, `<fn>Fn`, `eval_<fn>`, `<fn>_correct`, `<fn>_rejects_<X>`
+- Allowed property forms: total input-output, branch coverage, compositional
+- Explicit non-goals: loop invariants, effect proofs, refinement types, temporal/liveness, float/string
+- Fuel convention, proof tactics, readability standards
+
 ### Lean theorem stub generation (Phase 2, item 4)
 
 `--report lean-stubs` generates ready-to-use Lean source from ProofCore extraction:

@@ -7608,7 +7608,7 @@ cat > "$MAL_DIR/reg_missing_fields/proof-registry.json" <<'REGEOF'
   { "function": "main" }
 ] }
 REGEOF
-reg_mf=$($COMPILER "$MAL_DIR/reg_missing_fields/test.con" --report proof-status 2>&1)
+reg_mf=$($COMPILER "$MAL_DIR/reg_missing_fields/test.con" --report proof-status 2>&1) || true
 mf_bp=$(echo "$reg_mf" | grep -c 'missing "body_fingerprint"' || true)
 mf_pr=$(echo "$reg_mf" | grep -c 'missing "proof"' || true)
 mf_sp=$(echo "$reg_mf" | grep -c 'missing "spec"' || true)
@@ -7650,7 +7650,7 @@ cat > "$MAL_DIR/reg_missing_fields/proof-registry.json" <<'REGEOF'
   { "function": "", "body_fingerprint": "abc123", "proof": "test", "spec": "test" }
 ] }
 REGEOF
-reg_nofn=$($COMPILER "$MAL_DIR/reg_missing_fields/test.con" --report proof-status 2>&1)
+reg_nofn=$($COMPILER "$MAL_DIR/reg_missing_fields/test.con" --report proof-status 2>&1) || true
 if echo "$reg_nofn" | grep -q 'empty "function"'; then
     echo "  ok  malformed: registry entry with empty function value produces warning"
     mal_pass=$((mal_pass + 1))
@@ -7848,8 +7848,8 @@ cp "$DESYNC_DIR/desync_base.con" "$DESYNC_DIR/unknown_fn/"
 cat > "$DESYNC_DIR/unknown_fn/proof-registry.json" << 'REGEOF'
 [{"function":"main.does_not_exist","body_fingerprint":"fp1","proof":"P1","spec":"S1"}]
 REGEOF
-unknown_out=$($COMPILER "$DESYNC_DIR/unknown_fn/desync_base.con" --report proof-status 2>&1)
-if echo "$unknown_out" | grep -q "warning.*unknown function\|warning.*registry.*unknown"; then
+unknown_out=$($COMPILER "$DESYNC_DIR/unknown_fn/desync_base.con" --report proof-status 2>&1) || true
+if echo "$unknown_out" | grep -q "unknown function\|registry.*unknown"; then
     echo "  ok  desync: registry references unknown function → warning"
     desync_pass=$((desync_pass + 1))
 else
@@ -7867,8 +7867,8 @@ cat > "$DESYNC_DIR/conflict_specs/proof-registry.json" << 'REGEOF'
   {"function":"main.pure_add","body_fingerprint":"fp1","proof":"P2","spec":"Spec_B"}
 ]
 REGEOF
-conflict_out=$($COMPILER "$DESYNC_DIR/conflict_specs/desync_base.con" --report proof-status 2>&1)
-if echo "$conflict_out" | grep -q "warning.*conflict\|warning.*duplicate"; then
+conflict_out=$($COMPILER "$DESYNC_DIR/conflict_specs/desync_base.con" --report proof-status 2>&1) || true
+if echo "$conflict_out" | grep -q "conflict\|duplicate"; then
     echo "  ok  desync: conflicting specs for same function → warning"
     desync_pass=$((desync_pass + 1))
 else
@@ -8015,7 +8015,7 @@ cp "$DESYNC_DIR/desync_io.con" "$DESYNC_DIR/io_reg/"
 cat > "$DESYNC_DIR/io_reg/proof-registry.json" << 'REGEOF'
 [{"function":"main.side_effect","body_fingerprint":"any","proof":"P1","spec":"S1"}]
 REGEOF
-io_out=$($COMPILER "$DESYNC_DIR/io_reg/desync_io.con" --report proof-status 2>&1)
+io_out=$($COMPILER "$DESYNC_DIR/io_reg/desync_io.con" --report proof-status 2>&1) || true
 # Trusted function — registry should not grant proved status (proof bypassed)
 if ! echo "$io_out" | grep -q "proved.*proof matches"; then
     echo "  ok  desync: registry for trusted function does not grant proved"
@@ -8027,7 +8027,7 @@ fi
 
 # --- 12. Evidence extraction vs obligation: blocked function can't be proved ---
 # Even with correct fingerprint, blocked (unsupported construct) shouldn't be proved
-io_obl=$($COMPILER "$DESYNC_DIR/io_reg/desync_io.con" --report obligations 2>&1)
+io_obl=$($COMPILER "$DESYNC_DIR/io_reg/desync_io.con" --report obligations 2>&1) || true
 if echo "$io_obl" | grep -A3 "side_effect" | grep -q "status:.*ineligible\|status:.*blocked\|status:.*missing\|status:.*trusted"; then
     echo "  ok  desync: blocked/ineligible/trusted function not proved despite registry entry"
     desync_pass=$((desync_pass + 1))
@@ -8593,6 +8593,84 @@ else
     echo "  FAIL pressure-lean: expected 4 eval helpers, got $eval_count"
     evidence_fail=$((evidence_fail + 1))
 fi
+
+# --- Registry integrity validation (adversarial registries) ---
+REG_DIR="tests/programs/adversarial_registry"
+
+# 35. Fabricated function name → error + exit 1
+cp "$REG_DIR/fabricated_function.json" "$REG_DIR/proof-registry.json"
+reg_rc=0
+reg_out=$($COMPILER "$REG_DIR/main.con" --report proof-status 2>&1) || reg_rc=$?
+if [ "$reg_rc" -ne 0 ] && echo "$reg_out" | grep -q "error:.*unknown function.*nonexistent"; then
+    echo "  ok  registry-integrity: fabricated function name rejected"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL registry-integrity: fabricated function should be rejected"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 36. Ineligible function target → error + exit 1
+cp "$REG_DIR/ineligible_target.json" "$REG_DIR/proof-registry.json"
+reg_rc=0
+reg_out=$($COMPILER "$REG_DIR/main.con" --report proof-status 2>&1) || reg_rc=$?
+if [ "$reg_rc" -ne 0 ] && echo "$reg_out" | grep -q "error:.*ineligible function.*format_result"; then
+    echo "  ok  registry-integrity: ineligible function target rejected"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL registry-integrity: ineligible function target should be rejected"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 37. Empty proof name → error + exit 1
+cp "$REG_DIR/empty_proof_name.json" "$REG_DIR/proof-registry.json"
+reg_rc=0
+reg_out=$($COMPILER "$REG_DIR/main.con" --report proof-status 2>&1) || reg_rc=$?
+if [ "$reg_rc" -ne 0 ] && echo "$reg_out" | grep -q "error:.*empty proof name"; then
+    echo "  ok  registry-integrity: empty proof name rejected"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL registry-integrity: empty proof name should be rejected"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 38. Empty spec name → error + exit 1
+cp "$REG_DIR/empty_spec_name.json" "$REG_DIR/proof-registry.json"
+reg_rc=0
+reg_out=$($COMPILER "$REG_DIR/main.con" --report proof-status 2>&1) || reg_rc=$?
+if [ "$reg_rc" -ne 0 ] && echo "$reg_out" | grep -q "error:.*empty spec name"; then
+    echo "  ok  registry-integrity: empty spec name rejected"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL registry-integrity: empty spec name should be rejected"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 39. Duplicate entries → warning (deduped at parse time)
+cp "$REG_DIR/duplicate_entries.json" "$REG_DIR/proof-registry.json"
+reg_rc=0
+reg_out=$($COMPILER "$REG_DIR/main.con" --report proof-status 2>&1) || reg_rc=$?
+if echo "$reg_out" | grep -q "warning:.*duplicate entry"; then
+    echo "  ok  registry-integrity: duplicate entries produce warning"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL registry-integrity: duplicate entries should produce warning"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 40. Clean registry (pressure set) → exit 0
+cp examples/proof_pressure/src/proof-registry.json "$REG_DIR/proof-registry.json"
+$COMPILER "$REG_DIR/main.con" --report proof-status > /dev/null 2>&1
+reg_rc=$?
+if [ "$reg_rc" -eq 0 ]; then
+    echo "  ok  registry-integrity: clean registry passes (boundary)"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL registry-integrity: clean registry should pass"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# Clean up temp registry
+rm -f "$REG_DIR/proof-registry.json"
 
 if [ "$evidence_fail" -gt 0 ]; then
     echo "  $evidence_fail evidence gate failures"
