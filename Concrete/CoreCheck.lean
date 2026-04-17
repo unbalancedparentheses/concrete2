@@ -160,12 +160,63 @@ private def capSetToString : CapSet → String
   | .var name => name
   | .union a b => s!"{capSetToString a} + {capSetToString b}"
 
-private def addError (msg : String) (hint : Option String := none) : StateM CoreCheckEnv Unit := do
+def CoreCheckError.code : CoreCheckError → String
+  -- Type consistency (E0500–E0519)
+  | .typeMismatchVariable _ _ _ => "E0500"
+  | .arithmeticOnNonNumeric _ => "E0501"
+  | .binaryOperandMismatch _ _ => "E0502"
+  | .comparisonOperandMismatch _ _ => "E0503"
+  | .comparisonResultNotBool _ => "E0504"
+  | .logicalOnNonBool _ _ => "E0505"
+  | .bitwiseOnNonInteger _ => "E0506"
+  | .negationOnNonNumeric _ => "E0507"
+  | .logicalNotOnNonBool _ => "E0508"
+  | .bitwiseNotOnNonInteger _ => "E0509"
+  -- Capability discipline (E0520–E0529)
+  | .insufficientCapabilities _ _ _ => "E0520"
+  | .missingCapability _ _ _ => "E0521"
+  | .argCountMismatch _ _ _ => "E0522"
+  -- Match coverage (E0530–E0539)
+  | .matchMissingVariant _ _ => "E0530"
+  | .matchArmWrongEnum _ _ => "E0531"
+  | .duplicateMatchArm _ => "E0532"
+  | .variantFieldCountMismatch _ _ _ => "E0533"
+  | .matchNonEnumNoDefault => "E0534"
+  -- Control flow (E0540–E0549)
+  | .whileCondNotBool _ => "E0540"
+  | .ifCondNotBool _ => "E0541"
+  | .breakOutsideLoop => "E0542"
+  | .continueOutsideLoop => "E0543"
+  -- Type legality (E0550–E0559)
+  | .arrayLiteralEmpty => "E0550"
+  | .arrayIndexNotInteger _ => "E0551"
+  | .indexingNonArray _ => "E0552"
+  | .cannotCast _ _ => "E0553"
+  | .cannotDerefNonRef _ => "E0554"
+  | .cannotAssignThroughNonMutRef _ => "E0555"
+  -- Return type (E0560)
+  | .returnTypeMismatch _ _ => "E0560"
+  -- Module-level validation (E0570–E0589)
+  | .copyDestroyConflict _ => "E0570"
+  | .copyFieldNotCopy _ _ => "E0571"
+  | .reprCHasGenerics _ => "E0572"
+  | .reprCFieldNotFFISafe _ _ _ => "E0573"
+  | .externFnParamNotFFISafe _ _ _ => "E0574"
+  | .externFnReturnNotFFISafe _ _ => "E0575"
+  | .reprPackedAndAlignConflict _ => "E0576"
+  | .reprAlignNotPowerOfTwo _ _ => "E0577"
+  | .reservedFnName _ => "E0578"
+  | .builtinTraitRedeclared => "E0579"
+  | .unknownTrait _ => "E0580"
+  | .missingTraitMethod _ _ => "E0581"
+  | .traitMethodRetTyMismatch _ _ _ => "E0582"
+
+private def addError (msg : String) (hint : Option String := none) (code : String := "") : StateM CoreCheckEnv Unit := do
   let env ← getEnv
-  setEnv { env with errors := env.errors ++ [{ severity := .error, message := msg, pass := "core-check", span := none, hint := hint }] }
+  setEnv { env with errors := env.errors ++ [{ severity := .error, message := msg, pass := "core-check", span := none, hint := hint, code := code }] }
 
 private def addCCError (e : CoreCheckError) : StateM CoreCheckEnv Unit :=
-  addError e.message e.hint
+  addError e.message e.hint e.code
 
 private def addVar (name : String) (ty : Ty) : StateM CoreCheckEnv Unit := do
   let env ← getEnv

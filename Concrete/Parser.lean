@@ -38,7 +38,7 @@ abbrev ParseM := ExceptT Diagnostics (StateM ParserState)
 instance : Inhabited (ParseM α) := ⟨throw []⟩
 
 private def throwParse (msg : String) (span : Option Span := none) (hint : Option String := none) : ParseM α :=
-  throw [{ severity := .error, message := msg, pass := "parse", span := span, hint := hint }]
+  throw [{ severity := .error, message := msg, pass := "parse", span := span, hint := hint, code := "E0001" }]
 
 def mkParserState (tokens : List Token) : ParserState :=
   { tokens := tokens.toArray, pos := 0 }

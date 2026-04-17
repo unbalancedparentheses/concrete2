@@ -23,6 +23,7 @@ structure Diagnostic where
   pass     : String         -- "check", "elab", "ssa-verify", etc.
   span     : Option Span    -- line/col from Token.lean
   hint     : Option String  -- suggested fix
+  code     : String := ""   -- stable error code (e.g. "E0201"), empty if unclassified
   file     : String := ""   -- source file path (empty = unknown)
   context  : List String := []  -- context chain, outermost first
 
@@ -90,7 +91,8 @@ def Diagnostic.render (d : Diagnostic) (sourceMap : SourceMap := []) : String :=
     | _, _ => ""
   let ctxStr := if d.context.isEmpty then ""
     else "\n" ++ ("\n".intercalate (d.context.map fun c => s!"  = {c}"))
-  s!"{locStr}{severityStr d.severity}[{d.pass}]: {d.message}{snippetStr}{hintStr}{ctxStr}"
+  let codeStr := if d.code.isEmpty then "" else s!"({d.code}) "
+  s!"{locStr}{severityStr d.severity}[{d.pass}]: {codeStr}{d.message}{snippetStr}{hintStr}{ctxStr}"
 
 def renderDiagnostics (ds : Diagnostics) (sourceMap : SourceMap := []) : String :=
   "\n".intercalate (ds.map fun d => d.render sourceMap)

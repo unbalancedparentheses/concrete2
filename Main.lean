@@ -385,6 +385,12 @@ def compileAndReport (inputPath : String) (reportType : String) : IO UInt32 := d
     if reportType == "diagnostics-json" then
       IO.println (Report.diagnosticsJson validCore.coreModules locMap (registry := registry) (pc := pc))
       return 0
+    if reportType == "schema" then
+      IO.println Report.schemaReport
+      return 0
+    if reportType == "diagnostic-codes" then
+      IO.println Report.diagnosticCodesReport
+      return 0
     if reportType == "effects" then
       IO.println (Report.effectsReport validCore.coreModules locMap pc)
       return 0
@@ -432,7 +438,7 @@ def compileAndReport (inputPath : String) (reportType : String) : IO UInt32 := d
       | .ok mono =>
         IO.println (Report.monoReport validCore.coreModules mono.coreModules)
         return 0
-    IO.eprintln s!"Unknown report type: {reportType}. Use: caps, unsafe, layout, interface, alloc, mono, authority, proof, eligibility, proof-status, obligations|extraction|proof-diagnostics|traceability|diagnostics-json, effects, recursion, fingerprints, consistency, verify"
+    IO.eprintln s!"Unknown report type: {reportType}. Use: caps, unsafe, layout, interface, alloc, mono, authority, proof, eligibility, proof-status, obligations|extraction|proof-diagnostics|traceability|diagnostics-json|schema|diagnostic-codes, effects, recursion, fingerprints, consistency, verify"
     return 1
 
 def compileAndQuery (inputPath : String) (query : String) : IO UInt32 := do

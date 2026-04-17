@@ -10,6 +10,28 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Stable diagnostic and error-code taxonomy
+
+All compiler diagnostics now carry stable error codes, documented with machine-readable listings.
+
+- **172 error codes** assigned across all 10 compiler passes: parse (E0001), resolve (E0100–E0111), check (E0200–E0285), elab (E0400–E0419), core-check (E0500–E0582), verify (E0600–E0601), lower (E0602), policy (E0610–E0612), ssa-verify (E0700–E0715), proof (E0800–E0804)
+- **`code` field** added to `Diagnostic` structure; rendered in human-readable output as `error[pass]: (E0XXX) message`
+- **Proof diagnostic JSON** facts include `code` field for machine consumers
+- **`--report diagnostic-codes`** produces machine-readable JSON listing all codes with pass, severity, description, severity meanings, and compatibility rules
+- **Compatibility contract**: codes are stable identifiers; never reassigned; new codes may be added; retired codes never reused; consumers should tolerate unknown codes
+- 7 new error-code trust-gate tests; full suite: 2575 pass, 0 fail; trust-gate: 1074 pass, 0 fail
+
+### Fact/query JSON API versioning
+
+All machine-readable JSON output is now versioned with stable schema contracts.
+
+- **Versioned envelope**: `diagnostics-json` and all fact-filter queries wrap results in `{schema_version, schema_kind, fact_kinds, fact_count, facts}` instead of bare arrays
+- **Query answers versioned**: all `query_answer` objects include `schema_version` field
+- **Snapshot versioned**: `concrete snapshot` output includes `schema_version` alongside existing `version` field
+- **Schema report**: `--report schema` produces a machine-readable JSON schema definition documenting all 11 fact kinds, 7 query kinds, required/optional fields per kind, location encoding, envelope shapes, and compatibility rules
+- **Policies documented**: empty-result returns envelope with `fact_count: 0` (not an error); malformed queries return plain-text error on stderr; consumers should ignore unknown fields for forward-compatibility; adding optional fields does not bump `schema_version`
+- 9 new api-versioning trust-gate tests; full suite: 2568 pass, 0 fail; trust-gate: 1067 pass, 0 fail
+
 ### Canonical qualified function identity across all fact families
 
 All machine-readable fact kinds now use consistent qualified function names (e.g. `"main.parse_byte"` instead of `"parse_byte"`).

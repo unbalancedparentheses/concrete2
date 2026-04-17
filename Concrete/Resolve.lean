@@ -102,11 +102,25 @@ structure ShallowResult where
   traitImpls : List (String × String)
   errors : Diagnostics
 
+def ResolveError.code : ResolveError → String
+  | .undeclaredVariable _ => "E0100"
+  | .unknownFunction _ => "E0101"
+  | .unknownStructType _ => "E0102"
+  | .unknownEnumVariant _ _ => "E0103"
+  | .notAnEnum _ => "E0104"
+  | .unknownEnum _ => "E0105"
+  | .unknownStaticMethod _ _ => "E0106"
+  | .unknownFunctionRef _ => "E0107"
+  | .unknownType _ => "E0108"
+  | .selfOutsideImpl => "E0109"
+  | .unknownModule _ => "E0110"
+  | .notPublicInModule _ _ => "E0111"
+
 private def addError (ctx : ResolveCtx) (err : ResolveError) (span : Option Span := none) : ResolveCtx :=
-  { ctx with errors := ctx.errors ++ [{ severity := .error, message := err.message, pass := "resolve", span := span, hint := none }] }
+  { ctx with errors := ctx.errors ++ [{ severity := .error, message := err.message, pass := "resolve", span := span, hint := none, code := err.code }] }
 
 private def mkResolveDiag (err : ResolveError) (span : Option Span := none) : Diagnostic :=
-  { severity := .error, message := err.message, pass := "resolve", span := span, hint := none }
+  { severity := .error, message := err.message, pass := "resolve", span := span, hint := none, code := err.code }
 
 private def pushScope (ctx : ResolveCtx) : ResolveCtx :=
   { ctx with localScopes := [] :: ctx.localScopes }

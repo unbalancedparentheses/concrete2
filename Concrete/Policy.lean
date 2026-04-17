@@ -105,6 +105,7 @@ private def enforcePredictable (projectModules : List CModule) (pc : ProofCore)
       pass := "policy"
       span := v.violationSpan
       hint := if v.hint.isEmpty then some "required by [policy] predictable = true" else some v.hint
+      code := "E0610"
       file := file
       context := [s!"in function '{v.fnName}'"] }
 
@@ -119,6 +120,7 @@ private def enforceDeny (projectModules : List CModule) (denyCaps : List String)
                  pass := "policy"
                  span := none
                  hint := some s!"remove with({cap}) or change [policy] deny list"
+                 code := "E0611"
                  file := ""
                  context := [s!"in function '{f.name}'"] }
         else none
@@ -137,6 +139,7 @@ private def enforceRequireProofs (pc : ProofCore) : Diagnostics :=
         pass := "policy"
         span := span
         hint := some hint
+        code := "E0612"
         file := file }
     match o.status with
     | .missing => some (mkDiag

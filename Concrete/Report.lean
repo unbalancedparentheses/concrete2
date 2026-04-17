@@ -1810,6 +1810,31 @@ def parse (s : String) : Option Json.Val :=
 
 end JsonParser
 
+/-- Schema version for the machine-readable JSON API.
+    Bump this when adding required fields or removing fields.
+    Adding optional fields is backwards-compatible and does not bump the version. -/
+def schemaVersion : Nat := 1
+
+/-- Known fact kinds that the compiler produces. -/
+def knownFactKinds : List String :=
+  ["proof_diagnostic", "predictable_violation", "proof_status", "eligibility",
+   "obligation", "extraction", "traceability", "effects", "capability", "unsafe", "alloc"]
+
+/-- Known semantic query prefixes. -/
+def knownQueryKinds : List String :=
+  ["predictable", "proof", "evidence", "audit", "fn", "why-capability", "traceability"]
+
+open Json in
+/-- Wrap a list of facts in a versioned envelope. -/
+def factsEnvelope (facts : List Val) : Val :=
+  .obj [
+    ("schema_version", .num (Int.ofNat schemaVersion)),
+    ("schema_kind", .str "facts"),
+    ("fact_kinds", .arr (knownFactKinds.map .str)),
+    ("fact_count", .num (Int.ofNat facts.length)),
+    ("facts", .arr facts)
+  ]
+
 open Json in
 /-- Convert a SourceLoc to a JSON object. -/
 private def locToJson : Option SourceLoc → Val
@@ -1821,6 +1846,7 @@ open Json in
 private def proofDiagnosticToFact (d : Concrete.ProofDiagnostic) : Val :=
   .obj ([
     ("kind", .str "proof_diagnostic"),
+    ("code", .str d.kind.code),
     ("diagnostic_kind", .str (diagnosticKindLabel d.kind)),
     ("severity", .str (diagnosticSeverityLabel d.severity)),
     ("function", .str d.function),
@@ -2026,7 +2052,7 @@ def queryTraceability
       match getStr v "function" with
       | some f => f == fnName || f.endsWith ("." ++ fnName)
       | none => false
-  (Val.arr filtered).render
+  (factsEnvelope filtered).render
 
 open Json in
 /-- Convert an FnEffects record to a JSON fact. -/
@@ -2191,10 +2217,10 @@ def collectCoreFacts (modules : List CModule) (locMap : FnLocMap := [])
   base ++ proofDiags ++ effects ++ caps ++ unsafeFacts ++ alloc
 
 open Json in
-/-- Produce JSON diagnostics combining all fact types. -/
+/-- Produce JSON diagnostics combining all fact types in a versioned envelope. -/
 def diagnosticsJson (modules : List CModule) (locMap : FnLocMap := [])
     (registry : ProofRegistry := []) (pc : Concrete.ProofCore) : String :=
-  (Val.arr (collectCoreFacts modules locMap registry pc)).render
+  (factsEnvelope (collectCoreFacts modules locMap registry pc)).render
 
 open Json in
 /-- Extract a string field from a JSON object. -/
@@ -2314,6 +2340,7 @@ def whyCapabilityQuery (modules : List CModule) (locMap : FnLocMap)
         | _ => "transitive"
       | _ => "transitive"
   let result := Val.obj [
+    ("schema_version", .num (Int.ofNat schemaVersion)),
     ("kind", .str "query_answer"),
     ("query", .str s!"why-capability:{fnName}:{cap}"),
     ("function", .str fnName),
@@ -2345,6 +2372,7 @@ def predictableQuery (modules : List CModule) (locMap : FnLocMap)
       | some l => [("violation_loc", locToJson (some l))]
       | none => [])
   let result := Val.obj [
+    ("schema_version", .num (Int.ofNat schemaVersion)),
     ("kind", .str "query_answer"),
     ("query", .str s!"predictable:{fnName}"),
     ("function", .str fnName),
@@ -2366,6 +2394,7 @@ def proofQuery (modules : List CModule) (locMap : FnLocMap)
   match fnEntry with
   | none =>
     (Val.obj [
+      ("schema_version", .num (Int.ofNat schemaVersion)),
       ("kind", .str "query_answer"),
       ("query", .str s!"proof:{fnName}"),
       ("function", .str fnName),
@@ -2380,6 +2409,7 @@ def proofQuery (modules : List CModule) (locMap : FnLocMap)
       | .notEligible => s!"Remove {", ".intercalate e.profileGates} to make this function eligible for proof."
       | _ => ""
     (Val.obj ([
+      ("schema_version", .num (Int.ofNat schemaVersion)),
       ("kind", .str "query_answer"),
       ("query", .str s!"proof:{fnName}"),
       ("function", .str e.qualName),
@@ -2415,6 +2445,7 @@ def evidenceQuery (modules : List CModule) (locMap : FnLocMap)
   match fnEffects with
   | none =>
     (Val.obj [
+      ("schema_version", .num (Int.ofNat schemaVersion)),
       ("kind", .str "query_answer"),
       ("query", .str s!"evidence:{fnName}"),
       ("function", .str fnName),
@@ -2426,6 +2457,7 @@ def evidenceQuery (modules : List CModule) (locMap : FnLocMap)
       | none => "missing"
     let gatesFailed := fnViolations.map fun v => Val.str v.reason
     (Val.obj [
+      ("schema_version", .num (Int.ofNat schemaVersion)),
       ("kind", .str "query_answer"),
       ("query", .str s!"evidence:{fnName}"),
       ("function", .str eff.qualName),
@@ -2455,6 +2487,7 @@ def auditQuery (modules : List CModule) (locMap : FnLocMap)
   match fnEffects with
   | none =>
     (Val.obj [
+      ("schema_version", .num (Int.ofNat schemaVersion)),
       ("kind", .str "query_answer"),
       ("query", .str s!"audit:{fnName}"),
       ("function", .str fnName),
@@ -2510,6 +2543,7 @@ def auditQuery (modules : List CModule) (locMap : FnLocMap)
       | none => .obj [("allocates", .arr []), ("frees", .arr []), ("defers", .arr []),
                        ("returns_allocation", .bool false)]
     (Val.obj [
+      ("schema_version", .num (Int.ofNat schemaVersion)),
       ("kind", .str "query_answer"),
       ("query", .str s!"audit:{fnName}"),
       ("function", .str eff.qualName),
@@ -2535,15 +2569,6 @@ def auditQuery (modules : List CModule) (locMap : FnLocMap)
         | none => [])),
       ("allocation", allocInfo)
     ]).render
-
-/-- Known fact kinds that the compiler produces. -/
-def knownFactKinds : List String :=
-  ["proof_diagnostic", "predictable_violation", "proof_status", "eligibility",
-   "obligation", "extraction", "traceability", "effects", "capability", "unsafe", "alloc"]
-
-/-- Known semantic query prefixes. -/
-def knownQueryKinds : List String :=
-  ["predictable", "proof", "evidence", "audit", "fn", "why-capability", "traceability"]
 
 open Json in
 /-- Query compiler facts by kind and optional function name.
@@ -2590,7 +2615,7 @@ def queryFacts (modules : List CModule) (locMap : FnLocMap := [])
         match jsonGetStr v "function" with
         | some f => f == fnName || f.endsWith ("." ++ fnName)
         | none => false
-      .ok (Val.arr filtered).render
+      .ok (factsEnvelope filtered).render
     | [filterKind, filterFn] =>
       -- kind:function filter — validate the kind is known
       if knownFactKinds.contains filterKind then
@@ -2601,7 +2626,7 @@ def queryFacts (modules : List CModule) (locMap : FnLocMap := [])
           match jsonGetStr v "function" with
           | some f => f == filterFn || f.endsWith ("." ++ filterFn)
           | none => false
-        .ok (Val.arr filtered).render
+        .ok (factsEnvelope filtered).render
       else
         .error s!"unknown query kind '{filterKind}'. Known kinds: {allKindsStr}"
     | _ => .error s!"malformed two-part query '{query}'"
@@ -2611,7 +2636,7 @@ def queryFacts (modules : List CModule) (locMap : FnLocMap := [])
       let allFacts := collectCoreFacts modules locMap registry pc
       let filtered := allFacts.filter fun v =>
         jsonGetStr v "kind" == some query
-      .ok (Val.arr filtered).render
+      .ok (factsEnvelope filtered).render
     else
       .error s!"unknown query kind '{query}'. Known kinds: {allKindsStr}"
   else
@@ -2989,6 +3014,7 @@ def snapshotJson
   let allFacts := coreFacts ++ traceFacts
   let summary := buildSummaryFact allFacts
   let snapshot := Val.obj [
+    ("schema_version", .num (Int.ofNat schemaVersion)),
     ("version", .num 1),
     ("source", .str sourcePath),
     ("timestamp", .str timestamp),
@@ -2997,6 +3023,359 @@ def snapshotJson
     ("facts", .arr allFacts)
   ]
   snapshot.render
+
+open Json in
+/-- Produce the JSON API schema definition. Documents all fact kinds, their fields,
+    query response shapes, location encoding, and compatibility rules. -/
+def schemaReport : String :=
+  let loc := Val.obj [
+    ("type", .str "object|null"),
+    ("fields", .obj [("file", .str "string"), ("line", .str "number")]),
+    ("note", .str "null when source location is unavailable")
+  ]
+  let fieldSpec (required optional : List (String × String)) : Val :=
+    .obj [
+      ("required", .arr (required.map fun (k, v) => .obj [("name", .str k), ("type", .str v)])),
+      ("optional", .arr (optional.map fun (k, v) => .obj [("name", .str k), ("type", .str v)]))
+    ]
+  let factSchemas := Val.obj [
+    ("proof_diagnostic", fieldSpec
+      [("kind", "string"), ("code", "string"), ("diagnostic_kind", "string"), ("severity", "string"),
+       ("function", "string"), ("message", "string"), ("loc", "location")]
+      [("hint", "string"), ("details", "string[]"), ("fingerprint", "string"),
+       ("expected_fingerprint", "string")]),
+    ("predictable_violation", fieldSpec
+      [("kind", "string"), ("function", "string"), ("state", "string"),
+       ("reason", "string"), ("hint", "string"), ("loc", "location"),
+       ("violation_loc", "location")]
+      []),
+    ("proof_status", fieldSpec
+      [("kind", "string"), ("function", "string"), ("state", "string"),
+       ("loc", "location"), ("current_fingerprint", "string")]
+      [("expected_fingerprint", "string"), ("spec", "string"), ("proof", "string"),
+       ("source", "string"), ("profile_gates", "string[]"), ("hint", "string")]),
+    ("eligibility", fieldSpec
+      [("kind", "string"), ("function", "string"), ("status", "string"),
+       ("exclusion_kind", "string"), ("source_reasons", "string[]"),
+       ("profile_reasons", "string[]"), ("loc", "location")]
+      []),
+    ("obligation", fieldSpec
+      [("kind", "string"), ("function", "string"), ("status", "string"),
+       ("spec", "string"), ("proof", "string"), ("source", "string"),
+       ("fingerprint", "string"), ("dependencies", "string[]"), ("loc", "location")]
+      []),
+    ("extraction", fieldSpec
+      [("kind", "string"), ("function", "string"), ("status", "string"),
+       ("eligible", "boolean"), ("fingerprint", "string"), ("params", "string[]"),
+       ("loc", "location")]
+      [("proof_core", "string"), ("spec", "string"), ("proof", "string"),
+       ("excluded_reasons", "string[]"), ("unsupported", "string[]")]),
+    ("traceability", fieldSpec
+      [("kind", "string"), ("function", "string"), ("evidence", "string"),
+       ("extraction", "string"), ("core", "string[]"), ("mono", "string[]"),
+       ("ssa", "string[]"), ("llvm", "string[]"), ("boundary", "string"),
+       ("fingerprint", "string"), ("spec", "string"), ("proof", "string"),
+       ("loc", "location")]
+      [("proof_core", "string")]),
+    ("effects", fieldSpec
+      [("kind", "string"), ("function", "string"), ("capabilities", "string[]"),
+       ("is_pure", "boolean"), ("allocates", "boolean"), ("frees", "boolean"),
+       ("defers", "boolean"), ("recursion", "string"), ("loops", "string"),
+       ("crosses_ffi", "boolean"), ("is_trusted", "boolean"), ("is_public", "boolean"),
+       ("evidence", "string"), ("loc", "location")]
+      []),
+    ("capability", fieldSpec
+      [("kind", "string"), ("function", "string"), ("capabilities", "string[]"),
+       ("is_pure", "boolean"), ("why", "object[]")]
+      [("is_public", "boolean"), ("is_extern", "boolean"), ("is_trusted", "boolean")]),
+    ("unsafe", fieldSpec
+      [("kind", "string"), ("function", "string")]
+      [("has_unsafe_cap", "boolean"), ("has_raw_pointers", "boolean"),
+       ("is_trusted", "boolean"), ("trust_boundary", "string[]"),
+       ("is_extern", "boolean")]),
+    ("alloc", fieldSpec
+      [("kind", "string"), ("function", "string"), ("allocates", "string[]"),
+       ("frees", "string[]"), ("defers", "string[]"), ("returns_allocation", "boolean"),
+       ("potential_leak", "boolean")]
+      [])
+  ]
+  let querySchemas := Val.obj [
+    ("why-capability", .obj [
+      ("format", .str "why-capability:FUNCTION:CAPABILITY"),
+      ("response", .str "query_answer with answer, trace")]),
+    ("predictable", .obj [
+      ("format", .str "predictable:FUNCTION"),
+      ("response", .str "query_answer with answer, gates_failed, violations")]),
+    ("proof", .obj [
+      ("format", .str "proof:FUNCTION"),
+      ("response", .str "query_answer with answer, current_fingerprint")]),
+    ("evidence", .obj [
+      ("format", .str "evidence:FUNCTION"),
+      ("response", .str "query_answer with answer, is_trusted, passes_predictable, proof_state")]),
+    ("audit", .obj [
+      ("format", .str "audit:FUNCTION"),
+      ("response", .str "query_answer with authority, predictable, proof, allocation")]),
+    ("fn", .obj [
+      ("format", .str "fn:FUNCTION"),
+      ("response", .str "facts envelope — all facts for one function")]),
+    ("traceability", .obj [
+      ("format", .str "traceability[:FUNCTION]"),
+      ("response", .str "facts envelope — traceability facts, optionally filtered")])
+  ]
+  let schema := Val.obj [
+    ("schema_version", .num (Int.ofNat schemaVersion)),
+    ("fact_kinds", .arr (knownFactKinds.map .str)),
+    ("query_kinds", .arr (knownQueryKinds.map .str)),
+    ("location_encoding", loc),
+    ("fact_schemas", factSchemas),
+    ("query_schemas", querySchemas),
+    ("envelopes", .obj [
+      ("facts", .obj [
+        ("description", .str "Wraps fact arrays from diagnostics-json and fact-filter queries"),
+        ("fields", .obj [
+          ("schema_version", .str "number"),
+          ("schema_kind", .str "\"facts\""),
+          ("fact_kinds", .str "string[] — canonical list of known fact kinds"),
+          ("fact_count", .str "number"),
+          ("facts", .str "object[] — the fact objects")])]),
+      ("query_answer", .obj [
+        ("description", .str "Wraps semantic query responses"),
+        ("fields", .obj [
+          ("schema_version", .str "number"),
+          ("kind", .str "\"query_answer\""),
+          ("query", .str "string — the original query string"),
+          ("function", .str "string — qualified function name"),
+          ("answer", .str "string — query-specific answer value")])]),
+      ("snapshot", .obj [
+        ("description", .str "Full snapshot with metadata, summary, and facts"),
+        ("fields", .obj [
+          ("schema_version", .str "number"),
+          ("version", .str "number — snapshot format version"),
+          ("source", .str "string"),
+          ("timestamp", .str "string"),
+          ("fact_count", .str "number"),
+          ("summary", .str "object"),
+          ("facts", .str "object[]")])])
+    ]),
+    ("policies", .obj [
+      ("empty_result", .str "A query that matches zero facts returns a facts envelope with an empty facts array and fact_count 0. Semantic queries for unknown functions return a query_answer with answer \"not_found\". Neither case is an error."),
+      ("error_result", .str "Malformed or unknown queries return an error string on stderr and exit code 1. Errors are never encoded in JSON — they use plain text on stderr."),
+      ("function_names", .str "All function fields use qualified names (e.g. \"main.parse_byte\"). Queries accept either bare or qualified names."),
+      ("compatibility", .str "Adding new optional fields or new fact kinds is backwards-compatible and does not bump schema_version. Removing fields, changing field types, renaming fields, or changing required/optional status bumps schema_version. Consumers should ignore unknown fields and unknown fact kinds for forward-compatibility.")
+    ])
+  ]
+  schema.render
+
+open Json in
+/-- Produce a machine-readable listing of all stable diagnostic error codes. -/
+def diagnosticCodesReport : String :=
+  let entry (code pass severity description : String) : Val :=
+    .obj [("code", .str code), ("pass", .str pass), ("severity", .str severity), ("description", .str description)]
+  let codes : List Val := [
+    -- Parse (E0001)
+    entry "E0001" "parse" "error" "syntax error",
+    -- Resolve (E0100–E0111)
+    entry "E0100" "resolve" "error" "undeclared variable",
+    entry "E0101" "resolve" "error" "unknown function",
+    entry "E0102" "resolve" "error" "unknown struct type",
+    entry "E0103" "resolve" "error" "unknown enum variant",
+    entry "E0104" "resolve" "error" "not an enum",
+    entry "E0105" "resolve" "error" "unknown enum",
+    entry "E0106" "resolve" "error" "unknown static method",
+    entry "E0107" "resolve" "error" "unknown function reference",
+    entry "E0108" "resolve" "error" "unknown type",
+    entry "E0109" "resolve" "error" "Self outside impl block",
+    entry "E0110" "resolve" "error" "unknown module",
+    entry "E0111" "resolve" "error" "symbol not public in module",
+    -- Check: name/variable/linearity (E0200–E0219)
+    entry "E0200" "check" "error" "Self outside impl block",
+    entry "E0201" "check" "error" "undeclared variable",
+    entry "E0202" "check" "error" "assignment to undeclared variable",
+    entry "E0203" "check" "error" "variable frozen by borrow",
+    entry "E0204" "check" "error" "cannot move linear variable: borrowed",
+    entry "E0205" "check" "error" "linear variable used after move",
+    entry "E0206" "check" "error" "variable reserved by defer",
+    entry "E0207" "check" "error" "cannot consume linear variable in loop",
+    entry "E0208" "check" "error" "linear variable never consumed",
+    entry "E0209" "check" "error" "match arms disagree on consumption",
+    entry "E0210" "check" "error" "break skips unconsumed linear variable",
+    entry "E0211" "check" "error" "continue skips unconsumed linear variable",
+    entry "E0212" "check" "error" "linear consumed in one branch not other",
+    entry "E0213" "check" "error" "linear consumed in then-branch (no else)",
+    entry "E0214" "check" "error" "borrow ref shadows existing name",
+    entry "E0215" "check" "error" "borrow region shadows existing name",
+    entry "E0216" "check" "error" "unknown loop label",
+    entry "E0217" "check" "error" "assignment to immutable variable",
+    entry "E0218" "check" "error" "assignment to frozen variable",
+    entry "E0219" "check" "error" "reassignment of linear variable",
+    -- Check: type mismatch (E0220–E0229)
+    entry "E0220" "check" "error" "type mismatch",
+    entry "E0221" "check" "error" "dereference of non-reference type",
+    entry "E0222" "check" "error" "while break/else type mismatch",
+    entry "E0223" "check" "error" "if condition not Bool",
+    entry "E0224" "check" "error" "if branch type mismatch",
+    entry "E0225" "check" "error" "match arm type mismatch",
+    entry "E0226" "check" "error" "break value type mismatch",
+    -- Check: borrow/escape (E0230–E0235)
+    entry "E0230" "check" "error" "cannot borrow: already moved",
+    entry "E0231" "check" "error" "cannot borrow: already mutably borrowed",
+    entry "E0232" "check" "error" "cannot mutably borrow: already borrowed",
+    entry "E0233" "check" "error" "cannot mutably borrow immutable variable",
+    entry "E0234" "check" "error" "reference escapes borrow block",
+    entry "E0235" "check" "error" "cannot mutably borrow: already immutably borrowed",
+    -- Check: capability (E0240–E0242)
+    entry "E0240" "check" "error" "missing capability",
+    entry "E0241" "check" "error" "trait bound not satisfied",
+    entry "E0242" "check" "error" "cannot infer capability variable",
+    -- Check: struct/enum/function (E0250–E0277)
+    entry "E0250" "check" "error" "unknown struct type",
+    entry "E0251" "check" "error" "struct has no field",
+    entry "E0252" "check" "error" "missing field in literal",
+    entry "E0253" "check" "error" "unknown field in literal",
+    entry "E0254" "check" "error" "field access on non-struct",
+    entry "E0255" "check" "error" "heap access required",
+    entry "E0256" "check" "error" "arrow access on non-heap type",
+    entry "E0257" "check" "error" "arrow access on non-struct inner type",
+    entry "E0258" "check" "error" "arrow assign on non-heap type",
+    entry "E0259" "check" "error" "arrow assign on non-struct",
+    entry "E0260" "check" "error" "unknown variant",
+    entry "E0261" "check" "error" "unknown enum type",
+    entry "E0262" "check" "error" "wrong argument count",
+    entry "E0263" "check" "error" "undeclared function",
+    entry "E0264" "check" "error" "no method on type",
+    entry "E0265" "check" "error" "no method on type variable",
+    entry "E0266" "check" "error" "method call on non-named type",
+    entry "E0267" "check" "error" "unknown function reference",
+    entry "E0268" "check" "error" "builtin wrong argument count",
+    entry "E0269" "check" "error" "builtin wrong type argument count",
+    entry "E0270" "check" "error" "builtin wrong first argument type",
+    entry "E0271" "check" "error" "builtin bad key type",
+    entry "E0272" "check" "error" "destroy requires named type",
+    entry "E0273" "check" "error" "type does not implement Destroy",
+    entry "E0274" "check" "error" "free requires Heap type",
+    entry "E0275" "check" "error" "? operator requires Result type",
+    entry "E0276" "check" "error" "? operator requires Ok/Err variants",
+    entry "E0277" "check" "error" "Ok variant has no value field",
+    -- Check: control flow (E0280–E0285)
+    entry "E0280" "check" "error" "break outside loop",
+    entry "E0281" "check" "error" "continue outside loop",
+    entry "E0282" "check" "error" "defer body must be a function call",
+    entry "E0283" "check" "error" "reserved identifier",
+    entry "E0284" "check" "error" "unknown module",
+    entry "E0285" "check" "error" "symbol not public in module",
+    -- Elab (E0400–E0419)
+    entry "E0400" "elab" "error" "Self outside impl block",
+    entry "E0401" "elab" "error" "undeclared variable",
+    entry "E0402" "elab" "error" "undeclared function",
+    entry "E0403" "elab" "error" "unknown function reference",
+    entry "E0404" "elab" "error" "assignment to undeclared variable",
+    entry "E0405" "elab" "error" "borrow of undeclared variable",
+    entry "E0406" "elab" "error" "unknown struct type",
+    entry "E0407" "elab" "error" "arrow access on unknown struct",
+    entry "E0408" "elab" "error" "struct has no field",
+    entry "E0409" "elab" "error" "field access on non-struct",
+    entry "E0410" "elab" "error" "unknown enum type",
+    entry "E0411" "elab" "error" "unknown variant",
+    entry "E0412" "elab" "error" "missing field in variant",
+    entry "E0413" "elab" "error" "no method on type variable",
+    entry "E0414" "elab" "error" "no method on type",
+    entry "E0415" "elab" "error" "method call on non-named type",
+    entry "E0416" "elab" "error" "empty array literal",
+    entry "E0417" "elab" "error" "submodule elaboration error",
+    entry "E0418" "elab" "error" "unknown module",
+    entry "E0419" "elab" "error" "symbol not public in module",
+    -- Core-check: type consistency (E0500–E0509)
+    entry "E0500" "core-check" "error" "variable type mismatch",
+    entry "E0501" "core-check" "error" "arithmetic on non-numeric type",
+    entry "E0502" "core-check" "error" "binary operand type mismatch",
+    entry "E0503" "core-check" "error" "comparison operand type mismatch",
+    entry "E0504" "core-check" "error" "comparison result not Bool",
+    entry "E0505" "core-check" "error" "logical operator on non-Bool",
+    entry "E0506" "core-check" "error" "bitwise operator on non-integer",
+    entry "E0507" "core-check" "error" "negation on non-numeric type",
+    entry "E0508" "core-check" "error" "logical not on non-Bool",
+    entry "E0509" "core-check" "error" "bitwise not on non-integer",
+    -- Core-check: capability (E0520–E0522)
+    entry "E0520" "core-check" "error" "insufficient capabilities",
+    entry "E0521" "core-check" "error" "missing capability",
+    entry "E0522" "core-check" "error" "argument count mismatch",
+    -- Core-check: match coverage (E0530–E0534)
+    entry "E0530" "core-check" "error" "non-exhaustive match: missing variant",
+    entry "E0531" "core-check" "error" "match arm wrong enum",
+    entry "E0532" "core-check" "error" "duplicate match arm",
+    entry "E0533" "core-check" "error" "variant field count mismatch",
+    entry "E0534" "core-check" "error" "non-enum match without default arm",
+    -- Core-check: control flow (E0540–E0543)
+    entry "E0540" "core-check" "error" "while condition not Bool",
+    entry "E0541" "core-check" "error" "if condition not Bool",
+    entry "E0542" "core-check" "error" "break outside loop",
+    entry "E0543" "core-check" "error" "continue outside loop",
+    -- Core-check: type legality (E0550–E0560)
+    entry "E0550" "core-check" "error" "empty array literal",
+    entry "E0551" "core-check" "error" "array index not integer",
+    entry "E0552" "core-check" "error" "indexing non-array type",
+    entry "E0553" "core-check" "error" "cannot cast between types",
+    entry "E0554" "core-check" "error" "dereference of non-reference type",
+    entry "E0555" "core-check" "error" "assign through non-mutable reference",
+    entry "E0560" "core-check" "error" "return type mismatch",
+    -- Core-check: module validation (E0570–E0582)
+    entry "E0570" "core-check" "error" "Copy/Destroy conflict",
+    entry "E0571" "core-check" "error" "Copy struct has non-Copy field",
+    entry "E0572" "core-check" "error" "repr(C) struct has generics",
+    entry "E0573" "core-check" "error" "repr(C) field not FFI-safe",
+    entry "E0574" "core-check" "error" "extern fn parameter not FFI-safe",
+    entry "E0575" "core-check" "error" "extern fn return not FFI-safe",
+    entry "E0576" "core-check" "error" "repr(packed) and repr(align) conflict",
+    entry "E0577" "core-check" "error" "repr(align) not power of two",
+    entry "E0578" "core-check" "error" "reserved function name",
+    entry "E0579" "core-check" "error" "builtin trait redeclared",
+    entry "E0580" "core-check" "error" "unknown trait",
+    entry "E0581" "core-check" "error" "missing trait method",
+    entry "E0582" "core-check" "error" "trait method return type mismatch",
+    -- Verify/lower (E0600–E0602)
+    entry "E0600" "verify" "error" "post-elab: placeholder type survived elaboration",
+    entry "E0601" "verify" "error" "post-mono: type variable survived monomorphization",
+    entry "E0602" "lower" "error" "lowering failure",
+    -- Policy (E0610–E0612)
+    entry "E0610" "policy" "error" "predictable profile violation",
+    entry "E0611" "policy" "error" "denied capability used",
+    entry "E0612" "policy" "error" "proof-eligible function unproved",
+    -- SSA-verify (E0700–E0715)
+    entry "E0700" "ssa-verify" "error" "duplicate register definition",
+    entry "E0701" "ssa-verify" "error" "function has no blocks",
+    entry "E0702" "ssa-verify" "error" "use before definition",
+    entry "E0703" "ssa-verify" "error" "use in non-dominating block",
+    entry "E0704" "ssa-verify" "error" "undefined register",
+    entry "E0705" "ssa-verify" "error" "branch to unknown label",
+    entry "E0706" "ssa-verify" "error" "phi missing predecessor",
+    entry "E0707" "ssa-verify" "error" "phi extra predecessor",
+    entry "E0708" "ssa-verify" "error" "phi not dominated by source",
+    entry "E0709" "ssa-verify" "error" "phi uses undefined register",
+    entry "E0710" "ssa-verify" "error" "phi type mismatch",
+    entry "E0711" "ssa-verify" "error" "call arity mismatch",
+    entry "E0712" "ssa-verify" "error" "ret void in non-void function",
+    entry "E0713" "ssa-verify" "error" "ret value in void function",
+    entry "E0714" "ssa-verify" "error" "phi on aggregate type",
+    entry "E0715" "ssa-verify" "error" "binop operand type mismatch",
+    -- Proof diagnostics (E0800–E0804)
+    entry "E0800" "proof" "error" "stale proof: fingerprint changed",
+    entry "E0801" "proof" "warning" "missing proof: eligible but unproved",
+    entry "E0802" "proof" "info" "ineligible: fails profile gates",
+    entry "E0803" "proof" "error" "blocked: unsupported construct in extraction",
+    entry "E0804" "proof" "info" "trusted: marked trusted"
+  ]
+  (Val.obj [
+    ("schema_version", .num (Int.ofNat schemaVersion)),
+    ("code_count", .num (Int.ofNat codes.length)),
+    ("codes", .arr codes),
+    ("severity_meanings", .obj [
+      ("error", .str "blocks compilation or proof pipeline"),
+      ("warning", .str "needs attention but allows continuation"),
+      ("info", .str "informational, no action required"),
+      ("note", .str "additional context for another diagnostic")
+    ]),
+    ("compatibility", .str "Error codes are stable identifiers. A code will not be reassigned to a different meaning. New codes may be added. Codes may be retired (no longer emitted) but not reused. Consumers should tolerate unknown codes.")
+  ]).render
 
 end Report
 end Concrete

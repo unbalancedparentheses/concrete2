@@ -988,6 +988,14 @@ def ProofDiagnosticKind.canonical : ProofDiagnosticKind → String
   | .unsupportedConstruct => "blocked"
   | .trusted              => "trusted"
 
+/-- Stable error code for proof diagnostic kinds. -/
+def ProofDiagnosticKind.code : ProofDiagnosticKind → String
+  | .staleProof           => "E0800"
+  | .missingProof         => "E0801"
+  | .ineligible           => "E0802"
+  | .unsupportedConstruct => "E0803"
+  | .trusted              => "E0804"
+
 /-- Severity of a proof diagnostic. -/
 inductive ProofDiagnosticSeverity where
   | error    -- blocks proof (stale, unsupported)

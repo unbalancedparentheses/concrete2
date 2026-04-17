@@ -92,8 +92,30 @@ def ElabError.hint : ElabError → Option String
   | .methodCallOnNonNamedType => some "method calls require a named type"
   | _ => none
 
+def ElabError.code : ElabError → String
+  | .selfOutsideImpl => "E0400"
+  | .undeclaredVariable _ => "E0401"
+  | .undeclaredFunction _ => "E0402"
+  | .unknownFunctionRef _ => "E0403"
+  | .assignToUndeclaredVariable _ => "E0404"
+  | .borrowUndeclaredVariable _ => "E0405"
+  | .unknownStructType _ => "E0406"
+  | .arrowAccessUnknownStruct _ => "E0407"
+  | .structHasNoField _ _ => "E0408"
+  | .fieldAccessNonStruct => "E0409"
+  | .unknownEnumType _ => "E0410"
+  | .unknownVariant _ _ => "E0411"
+  | .missingFieldInVariant _ _ _ => "E0412"
+  | .noMethodOnTypeVar _ _ => "E0413"
+  | .noMethodOnType _ _ => "E0414"
+  | .methodCallOnNonNamedType => "E0415"
+  | .arrayLiteralEmpty => "E0416"
+  | .inSubmodule _ _ => "E0417"
+  | .unknownModule _ => "E0418"
+  | .notPublicInModule _ _ => "E0419"
+
 def throwElab (e : ElabError) (span : Option Span := none) : ElabM α :=
-  throw [{ severity := .error, message := e.message, pass := "elab", span := span, hint := e.hint }]
+  throw [{ severity := .error, message := e.message, pass := "elab", span := span, hint := e.hint, code := e.code }]
 
 private def getEnv : ElabM ElabEnv := get
 private def setEnv (env : ElabEnv) : ElabM Unit := set env

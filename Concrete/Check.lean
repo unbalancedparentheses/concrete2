@@ -252,8 +252,86 @@ def CheckError.hint : CheckError → Option String
   | .cannotInferCapVariable cap _ => some s!"provide an explicit capability for '{cap}' at the call site"
   | _ => none
 
+def CheckError.code : CheckError → String
+  -- Slice 1: Name/variable/linearity (E0200–E0219)
+  | .selfOutsideImpl => "E0200"
+  | .undeclaredVariable _ => "E0201"
+  | .assignToUndeclaredVariable _ => "E0202"
+  | .variableFrozenByBorrow _ => "E0203"
+  | .cannotMoveLinearBorrowed _ => "E0204"
+  | .variableUsedAfterMove _ => "E0205"
+  | .variableReservedByDefer _ => "E0206"
+  | .cannotConsumeLinearInLoop _ => "E0207"
+  | .linearVariableNeverConsumed _ => "E0208"
+  | .matchConsumptionDisagreement _ => "E0209"
+  | .breakSkipsUnconsumedLinear _ => "E0210"
+  | .continueSkipsUnconsumedLinear _ => "E0211"
+  | .linearConsumedOneBranchNotOther _ => "E0212"
+  | .linearConsumedNoBranch _ _ => "E0213"
+  | .borrowRefShadows _ => "E0214"
+  | .borrowRegionShadows _ => "E0215"
+  | .unknownLoopLabel _ => "E0216"
+  | .assignToImmutable _ => "E0217"
+  | .assignToFrozen _ => "E0218"
+  | .assignOverwritesLinear _ => "E0219"
+  -- Slice 2: Type mismatch (E0220–E0229)
+  | .typeMismatch _ _ _ => "E0220"
+  | .cannotDerefNonRef => "E0221"
+  | .whileBreakTypeMismatch _ _ => "E0222"
+  | .ifCondNotBool _ => "E0223"
+  | .ifBranchTypeMismatch _ _ => "E0224"
+  | .matchArmTypeMismatch _ _ => "E0225"
+  | .breakTypeMismatch _ _ => "E0226"
+  -- Slice 3: Borrow/escape (E0230–E0239)
+  | .cannotBorrowMoved _ => "E0230"
+  | .cannotBorrowMutablyBorrowed _ => "E0231"
+  | .cannotMutBorrowAlreadyBorrowed _ => "E0232"
+  | .cannotMutBorrowImmutable _ => "E0233"
+  | .referenceEscapesBorrowBlock _ => "E0234"
+  | .cannotMutBorrowImmBorrowed _ => "E0235"
+  -- Slice 4: Capability (E0240–E0249)
+  | .missingCapability _ _ _ => "E0240"
+  | .traitBoundNotSatisfied _ _ _ => "E0241"
+  | .cannotInferCapVariable _ _ => "E0242"
+  -- Slice 5: Struct/enum/function (E0250–E0279)
+  | .unknownStructType _ => "E0250"
+  | .structHasNoField _ _ => "E0251"
+  | .missingFieldInLiteral _ _ => "E0252"
+  | .unknownFieldInLiteral _ _ => "E0253"
+  | .fieldAccessNonStruct => "E0254"
+  | .heapAccessRequired _ _ => "E0255"
+  | .arrowAccessNotHeap _ => "E0256"
+  | .arrowAccessNonStruct => "E0257"
+  | .arrowAssignNotHeap _ => "E0258"
+  | .arrowAssignNonStruct => "E0259"
+  | .unknownVariant _ _ => "E0260"
+  | .unknownEnumType _ => "E0261"
+  | .wrongArgCount _ _ _ => "E0262"
+  | .undeclaredFunction _ => "E0263"
+  | .noMethodOnType _ _ => "E0264"
+  | .noMethodOnTypeVar _ _ => "E0265"
+  | .methodCallOnNonNamedType => "E0266"
+  | .unknownFunctionRef _ => "E0267"
+  | .builtinWrongArgCount _ _ => "E0268"
+  | .builtinWrongTypeArgCount _ _ => "E0269"
+  | .builtinWrongFirstArg _ _ _ => "E0270"
+  | .builtinBadKeyType _ _ => "E0271"
+  | .destroyRequiresNamed _ => "E0272"
+  | .typeDoesNotImplDestroy _ => "E0273"
+  | .freeRequiresHeap _ => "E0274"
+  | .tryRequiresResult => "E0275"
+  | .tryRequiresOkErrVariants => "E0276"
+  | .tryOkNoField _ => "E0277"
+  -- Slice 6: Control flow (E0280–E0289)
+  | .breakOutsideLoop => "E0280"
+  | .continueOutsideLoop => "E0281"
+  | .deferBodyNotCall => "E0282"
+  | .reservedName _ => "E0283"
+  | .unknownModule _ => "E0284"
+  | .notPublicInModule _ _ => "E0285"
+
 def throwCheck (e : CheckError) (span : Option Span := none) : CheckM α :=
-  throw [{ severity := .error, message := e.message, pass := "check", span := span, hint := e.hint }]
+  throw [{ severity := .error, message := e.message, pass := "check", span := span, hint := e.hint, code := e.code }]
 
 private def throwCheckMsg (msg : String) (span : Option Span := none) : CheckM α :=
   throw [{ severity := .error, message := msg, pass := "check", span := span, hint := none }]

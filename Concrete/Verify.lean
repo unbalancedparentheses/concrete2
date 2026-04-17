@@ -241,6 +241,7 @@ def violationsToDiagnostics (pass : String) (violations : List VerifyViolation) 
     pass := "verify"
     span := none
     hint := some "this is an internal compiler error — please report it"
+    code := if pass == "post-elab" then "E0600" else "E0601"
   }
 
 /-- **Post-Elab verifier**: no `Ty.placeholder` may survive elaboration.

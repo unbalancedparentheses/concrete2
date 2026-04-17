@@ -81,7 +81,7 @@ structure LowerState where
 abbrev LowerM := ExceptT Diagnostics (StateM LowerState)
 
 private def throwLower (msg : String) : LowerM α :=
-  throw [{ severity := .error, message := msg, pass := "lower", span := none, hint := none }]
+  throw [{ severity := .error, message := msg, pass := "lower", span := none, hint := none, code := "E0602" }]
 
 private def getState : LowerM LowerState := get
 private def setState (s : LowerState) : LowerM Unit := set s
