@@ -30,7 +30,7 @@ Modes:
   --O2               Only -O2 optimized-build regression tests
   --codegen           Only codegen differential + SSA structure tests
   --report            Only --report output verification tests
-  --trust-gate        Correctness contracts only: determinism, consistency, terminology, verify, evidence
+  --trust-gate        Correctness contracts only: determinism, consistency, terminology, verify, evidence, apiversioning
   --affected          Auto-detect changed files (git diff) and run affected tests
   --affected FILES    Run tests affected by specific files (comma-separated)
   --manifest          List all test files with categories (no execution)
@@ -241,14 +241,14 @@ resolve_affected_sections() {
 
 # Resolve which sections are active based on MODE
 case "$MODE" in
-    full)    SECTION="passlevel,positive,negative,testflag,report,codegen,O2,stdlib,collection,xtarget,perf,determinism,consistency,terminology,verify,evidence,malformed,query,desync,bugaudit" ;;
+    full)    SECTION="passlevel,positive,negative,testflag,report,codegen,O2,stdlib,collection,xtarget,perf,determinism,consistency,terminology,verify,evidence,malformed,query,desync,bugaudit,apiversioning,errorcodes,policy" ;;
     fast)    SECTION="passlevel,positive,negative,testflag,report,codegen,O2,stdlib,collection" ;;
     stdlib)  SECTION="stdlib,collection" ;;
     stdlib-module) SECTION="stdlib" ;;
     O2)      SECTION="O2" ;;
     codegen) SECTION="codegen,O2" ;;
     report)  SECTION="report" ;;
-    trust-gate) SECTION="determinism,consistency,terminology,verify,evidence,malformed,query,desync,bugaudit" ;;
+    trust-gate) SECTION="determinism,consistency,terminology,verify,evidence,malformed,query,desync,bugaudit,apiversioning,errorcodes,policy" ;;
     affected)
         SECTION=$(resolve_affected_sections "$AFFECTED_FILES")
         echo "=== Affected mode ==="
@@ -1341,9 +1341,9 @@ run_err "$TESTDIR/error_cap_deep_missing.con" "but caller has"
 run_err "$TESTDIR/error_borrow_double_mut.con" "frozen by borrow"
 
 # Span-bearing diagnostics (Resolve errors include line:col prefix)
-run_err "$TESTDIR/error_resolve_undeclared_span.con" "4:12: error[resolve]: undeclared variable"
-run_err "$TESTDIR/error_resolve_unknown_func_span.con" "3:18: error[resolve]: unknown function"
-run_err "$TESTDIR/error_resolve_unknown_type.con" "error[resolve]: unknown type 'Foo'"
+run_err "$TESTDIR/error_resolve_undeclared_span.con" "4:12: error[resolve]: (E0100) undeclared variable"
+run_err "$TESTDIR/error_resolve_unknown_func_span.con" "3:18: error[resolve]: (E0101) unknown function"
+run_err "$TESTDIR/error_resolve_unknown_type.con" "error[resolve]: (E0108) unknown type 'Foo'"
 run_err "$TESTDIR/error_resolve_not_enum.con" "is not an enum"
 run_err "$TESTDIR/error_resolve_multi_errors.con" "unknown function 'unknown2'"
 run_err "$TESTDIR/error_resolve_unknown_enum.con" "unknown enum 'Phantom'"
@@ -2574,6 +2574,24 @@ run_err "$TESTDIR/adversarial_cap_alloc_without_cap.con" "but caller has"
 run_err "$TESTDIR/adversarial_cap_subset.con" "but caller has"
 run_err "$TESTDIR/adversarial_cap_pure_no_io.con" "but caller has"
 
+# --- Negative adversarial: ownership/borrow hostile patterns ---
+run_err "$TESTDIR/adversarial_neg_double_move_branch.con" "consumed in if-without-else"
+run_err "$TESTDIR/adversarial_neg_borrow_outlives_owner.con" "frozen by borrow"
+run_err "$TESTDIR/adversarial_neg_mut_ref_alias.con" "frozen by borrow"
+run_err "$TESTDIR/adversarial_neg_move_loop_body.con" "inside a loop"
+
+# --- Negative adversarial: module/visibility abuse ---
+run_err "$TESTDIR/adversarial_neg_private_fn_call.con" "is not public"
+run_err "$TESTDIR/adversarial_neg_private_struct_field.con" "unknown struct type"
+
+# --- Negative adversarial: capability abuse ---
+run_err "$TESTDIR/adversarial_neg_cap_escalate_indirect.con" "but caller has"
+run_err "$TESTDIR/adversarial_neg_cap_forge.con" "but caller has"
+
+# --- Negative adversarial: type system abuse ---
+run_err "$TESTDIR/adversarial_neg_enum_variant_type_mismatch.con" "type mismatch"
+run_err "$TESTDIR/adversarial_neg_return_type_mismatch.con" "type mismatch"
+
 # --- Capability system: correct propagation works ---
 check_report "$TESTDIR/adversarial_cap_correct_propagation.con" effects \
     "3 functions" \
@@ -3755,12 +3773,12 @@ else
     FAIL=$((FAIL + 1))
 fi
 
-# Output is valid JSON array (starts with [ and ends with ])
-if echo "$json_output" | grep -q '^\[' && echo "$json_output" | grep -q '\]$'; then
-    echo "  ok  diagnostics-json: output is JSON array"
+# Output is valid JSON envelope (starts with { and ends with })
+if echo "$json_output" | grep -q '^\{' && echo "$json_output" | grep -q '\}$'; then
+    echo "  ok  diagnostics-json: output is JSON envelope"
     PASS=$((PASS + 1))
 else
-    echo "FAIL  diagnostics-json: output should be a JSON array"
+    echo "FAIL  diagnostics-json: output should be a JSON envelope"
     echo "$json_output"
     FAIL=$((FAIL + 1))
 fi
@@ -4153,13 +4171,14 @@ else
     FAIL=$((FAIL + 1))
 fi
 
-# --query predictable_violation on passing file returns empty array
+# --query predictable_violation on passing file returns envelope with fact_count 0
 q_noviol=$(cached_output "$TESTDIR/report_check_predictable_pass.con" "--query predictable_violation")
-if [ "$q_noviol" = "[]" ]; then
+if echo "$q_noviol" | grep -q '"fact_count": 0' && \
+   echo "$q_noviol" | grep -q '"facts": \[\]'; then
     echo "  ok  --query predictable_violation: empty for passing file"
     PASS=$((PASS + 1))
 else
-    echo "FAIL  --query predictable_violation: should be empty for passing file"
+    echo "FAIL  --query predictable_violation: should be empty envelope for passing file"
     FAIL=$((FAIL + 1))
 fi
 
@@ -5677,13 +5696,13 @@ else
     FAIL=$((FAIL + 1))
 fi
 
-# Mixed diff: snapshot file vs raw diagnostics-json array
+# Mixed diff: snapshot file vs raw diagnostics-json envelope
 raw_json=$($COMPILER "$REGISTRY_DIR/test_proof_registry.con" --report diagnostics-json 2>/dev/null)
 echo "$raw_json" > "$SNAP_DIR/raw.json"
 snap_vs_raw=$($COMPILER diff "$SNAP_DIR/proved.facts.json" "$SNAP_DIR/raw.json" 2>&1) && snap_vr_exit=0 || snap_vr_exit=$?
 # Snapshot has traceability facts that raw doesn't → traceability facts appear as removed
 if [ "$snap_vr_exit" -eq 0 ] || [ "$snap_vr_exit" -eq 1 ]; then
-    echo "  ok  snapshot: diff handles snapshot vs raw array format"
+    echo "  ok  snapshot: diff handles snapshot vs raw envelope format"
     PASS=$((PASS + 1))
 else
     echo "FAIL  snapshot: diff should handle mixed formats (snapshot vs raw)"
@@ -8242,6 +8261,368 @@ PASS=$((PASS + evidence_pass))
 FAIL=$((FAIL + evidence_fail))
 fi # end section: evidence
 
+# === API versioning envelope tests ===
+if section_active apiversioning; then
+echo ""
+echo "=== API versioning envelope tests ==="
+api_pass=0
+api_fail=0
+
+api_env=$($COMPILER "$TESTDIR/report_integration.con" --report diagnostics-json 2>/dev/null)
+
+# 1. diagnostics-json has schema_version = 1
+if echo "$api_env" | grep -q '"schema_version": 1'; then
+    echo "  ok  api-versioning: diagnostics-json has schema_version 1"
+    api_pass=$((api_pass + 1))
+else
+    echo "FAIL  api-versioning: diagnostics-json should have schema_version 1"
+    api_fail=$((api_fail + 1))
+fi
+
+# 2. diagnostics-json has schema_kind = "facts"
+if echo "$api_env" | grep -q '"schema_kind": "facts"'; then
+    echo "  ok  api-versioning: diagnostics-json has schema_kind facts"
+    api_pass=$((api_pass + 1))
+else
+    echo "FAIL  api-versioning: diagnostics-json should have schema_kind facts"
+    api_fail=$((api_fail + 1))
+fi
+
+# 3. diagnostics-json has fact_kinds with all 11 kinds
+if python3 -c "
+import json, sys
+env = json.loads(sys.stdin.read())
+fk = set(env['fact_kinds'])
+expected = {'proof_diagnostic','predictable_violation','proof_status','eligibility','obligation','extraction','traceability','effects','capability','unsafe','alloc'}
+assert fk == expected, f'got {fk}'
+" <<< "$api_env" 2>/dev/null; then
+    echo "  ok  api-versioning: diagnostics-json fact_kinds has all 11 kinds"
+    api_pass=$((api_pass + 1))
+else
+    echo "FAIL  api-versioning: diagnostics-json fact_kinds should have all 11 kinds"
+    api_fail=$((api_fail + 1))
+fi
+
+# 4. diagnostics-json fact_count matches actual facts length
+if python3 -c "
+import json, sys
+env = json.loads(sys.stdin.read())
+assert env['fact_count'] == len(env['facts']), f'{env[\"fact_count\"]} != {len(env[\"facts\"])}'
+assert env['fact_count'] > 0
+" <<< "$api_env" 2>/dev/null; then
+    echo "  ok  api-versioning: diagnostics-json fact_count matches facts length"
+    api_pass=$((api_pass + 1))
+else
+    echo "FAIL  api-versioning: diagnostics-json fact_count should match facts length"
+    api_fail=$((api_fail + 1))
+fi
+
+# 5. semantic query has schema_version
+q_pred=$($COMPILER "$TESTDIR/report_integration.con" --query "predictable:pure_add" 2>/dev/null)
+if echo "$q_pred" | grep -q '"schema_version": 1'; then
+    echo "  ok  api-versioning: query_answer has schema_version 1"
+    api_pass=$((api_pass + 1))
+else
+    echo "FAIL  api-versioning: query_answer should have schema_version 1"
+    api_fail=$((api_fail + 1))
+fi
+
+# 6. fact-filter query returns versioned envelope
+q_fn=$($COMPILER "$TESTDIR/report_integration.con" --query "fn:pure_add" 2>/dev/null)
+if echo "$q_fn" | grep -q '"schema_kind": "facts"' && \
+   echo "$q_fn" | grep -q '"schema_version": 1'; then
+    echo "  ok  api-versioning: fact-filter query returns versioned envelope"
+    api_pass=$((api_pass + 1))
+else
+    echo "FAIL  api-versioning: fact-filter query should return versioned envelope"
+    api_fail=$((api_fail + 1))
+fi
+
+# 7. --report schema outputs valid JSON with expected fields
+schema_out=$($COMPILER "$TESTDIR/report_integration.con" --report schema 2>/dev/null)
+if python3 -c "
+import json, sys
+s = json.loads(sys.stdin.read())
+for k in ['schema_version','fact_kinds','query_kinds','fact_schemas','query_schemas','envelopes','policies','location_encoding']:
+    assert k in s, f'missing key: {k}'
+assert s['schema_version'] == 1
+assert len(s['fact_kinds']) == 11
+assert len(s['query_kinds']) == 7
+" <<< "$schema_out" 2>/dev/null; then
+    echo "  ok  api-versioning: --report schema has all expected fields"
+    api_pass=$((api_pass + 1))
+else
+    echo "FAIL  api-versioning: --report schema should have all expected fields"
+    api_fail=$((api_fail + 1))
+fi
+
+# 8. kind-filter query returns envelope with fact_count > 0
+q_eff=$($COMPILER "$TESTDIR/report_integration.con" --query "effects" 2>/dev/null)
+if echo "$q_eff" | grep -q '"schema_version": 1' && \
+   echo "$q_eff" | grep -q '"fact_count":' && \
+   ! echo "$q_eff" | grep -q '"fact_count": 0'; then
+    echo "  ok  api-versioning: kind-filter query returns envelope with facts"
+    api_pass=$((api_pass + 1))
+else
+    echo "FAIL  api-versioning: kind-filter query should return envelope with facts"
+    api_fail=$((api_fail + 1))
+fi
+
+# 9. empty-result policy: unknown function returns envelope with fact_count 0
+q_empty=$($COMPILER "$TESTDIR/report_integration.con" --query "effects:nonexistent_function_xyz" 2>/dev/null)
+if echo "$q_empty" | grep -q '"schema_version": 1' && \
+   echo "$q_empty" | grep -q '"fact_count": 0'; then
+    echo "  ok  api-versioning: empty result returns envelope with fact_count 0"
+    api_pass=$((api_pass + 1))
+else
+    echo "FAIL  api-versioning: empty result should return envelope with fact_count 0"
+    api_fail=$((api_fail + 1))
+fi
+
+echo "  $api_pass api versioning gates passed"
+PASS=$((PASS + api_pass))
+FAIL=$((FAIL + api_fail))
+fi # end section: apiversioning
+
+# === Error code taxonomy tests ===
+if section_active errorcodes; then
+echo ""
+echo "=== Error code taxonomy tests ==="
+ec_pass=0
+ec_fail=0
+
+# 1. --report diagnostic-codes outputs valid JSON with all expected fields
+dc_out=$($COMPILER "$TESTDIR/report_integration.con" --report diagnostic-codes 2>/dev/null)
+if python3 -c "
+import json, sys
+d = json.loads(sys.stdin.read())
+assert d['schema_version'] == 1
+assert d['code_count'] >= 170
+assert d['code_count'] == len(d['codes'])
+assert 'severity_meanings' in d
+assert 'compatibility' in d
+" <<< "$dc_out" 2>/dev/null; then
+    echo "  ok  error-codes: --report diagnostic-codes has expected structure"
+    ec_pass=$((ec_pass + 1))
+else
+    echo "FAIL  error-codes: --report diagnostic-codes should have expected structure"
+    ec_fail=$((ec_fail + 1))
+fi
+
+# 2. All codes have required fields
+if python3 -c "
+import json, sys
+d = json.loads(sys.stdin.read())
+for c in d['codes']:
+    assert 'code' in c and 'pass' in c and 'severity' in c and 'description' in c, f'missing field in {c}'
+    assert c['code'].startswith('E'), f'code should start with E: {c[\"code\"]}'
+    assert c['severity'] in ('error', 'warning', 'info', 'note'), f'bad severity: {c[\"severity\"]}'
+" <<< "$dc_out" 2>/dev/null; then
+    echo "  ok  error-codes: all codes have required fields and valid values"
+    ec_pass=$((ec_pass + 1))
+else
+    echo "FAIL  error-codes: codes should have code, pass, severity, description"
+    ec_fail=$((ec_fail + 1))
+fi
+
+# 3. No duplicate codes
+if python3 -c "
+import json, sys
+d = json.loads(sys.stdin.read())
+codes = [c['code'] for c in d['codes']]
+assert len(codes) == len(set(codes)), f'duplicate codes: {[c for c in codes if codes.count(c) > 1]}'
+" <<< "$dc_out" 2>/dev/null; then
+    echo "  ok  error-codes: no duplicate error codes"
+    ec_pass=$((ec_pass + 1))
+else
+    echo "FAIL  error-codes: should have no duplicate codes"
+    ec_fail=$((ec_fail + 1))
+fi
+
+# 4. Codes cover all passes
+if python3 -c "
+import json, sys
+d = json.loads(sys.stdin.read())
+passes = set(c['pass'] for c in d['codes'])
+expected = {'parse', 'resolve', 'check', 'elab', 'core-check', 'verify', 'lower', 'policy', 'ssa-verify', 'proof'}
+assert expected.issubset(passes), f'missing passes: {expected - passes}'
+" <<< "$dc_out" 2>/dev/null; then
+    echo "  ok  error-codes: codes cover all compiler passes"
+    ec_pass=$((ec_pass + 1))
+else
+    echo "FAIL  error-codes: codes should cover all passes"
+    ec_fail=$((ec_fail + 1))
+fi
+
+# 5. Rendered diagnostic includes error code
+err_out=$($COMPILER "$TESTDIR/error_resolve_undeclared_span.con" 2>&1) || true
+if echo "$err_out" | grep -q '(E0100)'; then
+    echo "  ok  error-codes: rendered diagnostic includes error code"
+    ec_pass=$((ec_pass + 1))
+else
+    echo "FAIL  error-codes: rendered diagnostic should include error code"
+    echo "$err_out" | head -1
+    ec_fail=$((ec_fail + 1))
+fi
+
+# 6. Proof diagnostic JSON fact includes code field
+pd_out=$($COMPILER "$TESTDIR/report_integration.con" --report diagnostics-json 2>/dev/null)
+if echo "$pd_out" | grep -q '"code": "E080'; then
+    echo "  ok  error-codes: proof_diagnostic fact includes code field"
+    ec_pass=$((ec_pass + 1))
+else
+    echo "FAIL  error-codes: proof_diagnostic fact should include code field"
+    ec_fail=$((ec_fail + 1))
+fi
+
+# 7. Codes are deterministic across runs
+dc_out2=$($COMPILER "$TESTDIR/report_integration.con" --report diagnostic-codes 2>/dev/null)
+if [ "$dc_out" = "$dc_out2" ]; then
+    echo "  ok  error-codes: diagnostic-codes output is deterministic"
+    ec_pass=$((ec_pass + 1))
+else
+    echo "FAIL  error-codes: diagnostic-codes should be deterministic across runs"
+    ec_fail=$((ec_fail + 1))
+fi
+
+echo "  $ec_pass error code gates passed"
+PASS=$((PASS + ec_pass))
+FAIL=$((FAIL + ec_fail))
+fi # end section: errorcodes
+
+echo ""
+flush_jobs
+
+# ============================================================
+# Policy enforcement adversarial tests
+# ============================================================
+
+if section_active policy; then
+echo ""
+echo "=== Policy enforcement adversarial tests ==="
+pol_pass=0
+pol_fail=0
+ROOT_DIR_ABS=$(cd "$(dirname "$0")/../.." && pwd)
+
+# Helper: policy project must fail with expected error
+policy_err() {
+    local projdir="$1"
+    local expected="$2"
+    local label="$3"
+    local projname
+    projname=$(basename "$projdir")
+    local output
+    output=$( cd "$projdir" && "$ROOT_DIR_ABS/$COMPILER" build 2>&1 ) && build_exit=0 || build_exit=$?
+    if [ "$build_exit" -ne 0 ] && echo "$output" | grep -qF -- "$expected"; then
+        echo "  ok  policy: $label"
+        pol_pass=$((pol_pass + 1))
+    else
+        echo "  FAIL policy: $label (exit=$build_exit)"
+        echo "    expected: $expected"
+        echo "    got: $(echo "$output" | head -2)"
+        pol_fail=$((pol_fail + 1))
+    fi
+}
+
+# Helper: policy project must compile and run successfully
+policy_ok() {
+    local projdir="$1"
+    local label="$2"
+    local projname
+    projname=$(basename "$projdir")
+    local output
+    output=$( cd "$projdir" && "$ROOT_DIR_ABS/$COMPILER" build -o /tmp/test_pol_"$projname" 2>&1 ) && build_ok=true || build_ok=false
+    if $build_ok; then
+        local run_result
+        run_result=$(/tmp/test_pol_"$projname" 2>&1) && run_exit=0 || run_exit=$?
+        rm -f /tmp/test_pol_"$projname"
+        if [ "$run_exit" -eq 0 ]; then
+            echo "  ok  policy: $label"
+            pol_pass=$((pol_pass + 1))
+        else
+            echo "  FAIL policy: $label — run exit $run_exit"
+            pol_fail=$((pol_fail + 1))
+        fi
+    else
+        echo "  FAIL policy: $label — build failed: $(echo "$output" | head -2)"
+        pol_fail=$((pol_fail + 1))
+    fi
+}
+
+# --- Negative: policy violations must be rejected ---
+
+# 1. deny = ["Unsafe"] rejects Unsafe capability
+policy_err "$TESTDIR/adversarial_policy_deny_unsafe" \
+    "capability 'Unsafe' is denied" \
+    "deny rejects Unsafe (E0611)"
+
+# 2. deny = ["File", "Network"] rejects both capabilities
+policy_err "$TESTDIR/adversarial_policy_deny_multi" \
+    "is denied" \
+    "deny rejects multiple caps (E0611)"
+
+# 3. predictable = true rejects recursion
+policy_err "$TESTDIR/adversarial_policy_predictable_recursion" \
+    "direct recursion" \
+    "predictable rejects recursion (E0610)"
+
+# 4. predictable = true rejects allocation
+policy_err "$TESTDIR/adversarial_policy_predictable_alloc" \
+    "has Alloc capability" \
+    "predictable rejects Alloc (E0610)"
+
+# 5. predictable = true rejects extern/FFI
+policy_err "$TESTDIR/adversarial_policy_predictable_ffi" \
+    "calls extern" \
+    "predictable rejects FFI (E0610)"
+
+# 6. predictable = true rejects blocking I/O
+policy_err "$TESTDIR/adversarial_policy_predictable_blocking" \
+    "may block" \
+    "predictable rejects blocking I/O (E0610)"
+
+# 7. Combined: predictable + deny fires both E0610 and E0611
+policy_err "$TESTDIR/adversarial_policy_combined" \
+    "direct recursion" \
+    "combined: predictable catches recursion"
+policy_err "$TESTDIR/adversarial_policy_combined" \
+    "is denied" \
+    "combined: deny catches Unsafe"
+
+# 8. require-proofs = true rejects eligible but missing proof
+policy_err "$TESTDIR/adversarial_policy_require_proofs_missing" \
+    "is proof-eligible but unproved" \
+    "require-proofs rejects missing proof (E0612)"
+
+# 9. require-proofs = true rejects stale proof
+policy_err "$TESTDIR/adversarial_policy_require_proofs_stale" \
+    "has a stale proof" \
+    "require-proofs rejects stale proof (E0612)"
+
+# 10. require-proofs = true rejects blocked extraction
+policy_err "$TESTDIR/adversarial_policy_require_proofs_blocked" \
+    "is proof-eligible but extraction failed" \
+    "require-proofs rejects blocked proof (E0612)"
+
+# --- Positive boundary: legal code under policy must pass ---
+
+# 11. deny = ["Unsafe"] allows safe caps (Console)
+policy_ok "$TESTDIR/adversarial_policy_deny_pass" \
+    "deny allows safe caps (boundary)"
+
+# 12. predictable = true allows pure bounded code
+policy_ok "$TESTDIR/adversarial_policy_predictable_pass" \
+    "predictable allows pure code (boundary)"
+
+# 13. Empty [policy] section imposes no restrictions
+policy_ok "$TESTDIR/adversarial_policy_empty" \
+    "empty policy allows everything (boundary)"
+
+echo "  $pol_pass policy gates passed"
+PASS=$((PASS + pol_pass))
+FAIL=$((FAIL + pol_fail))
+fi # end section: policy
+
 echo ""
 flush_jobs
 
@@ -8250,6 +8631,8 @@ echo "=== Project-level tests ==="
 for projdir in "$TESTDIR"/*/; do
     if [ -f "$projdir/Concrete.toml" ]; then
         projname=$(basename "$projdir")
+        # Skip adversarial policy projects — they are tested in the policy section
+        case "$projname" in adversarial_policy_*) continue ;; esac
         output=$( cd "$projdir" && "$ROOT_DIR/$COMPILER" build -o /tmp/test_proj_"$projname" 2>&1 ) && build_ok=true || build_ok=false
         if $build_ok; then
             run_result=$(/tmp/test_proj_"$projname" 2>&1) && run_exit=0 || run_exit=$?

@@ -45,7 +45,7 @@ Compiler output is cached by `(file, flags)` key. Multi-assertion report tests r
 
 Compile-and-run tests in `lean_tests/`:
 - **Positive (~230)**: compile, run, check exit code matches expected value
-- **Negative (~170)**: compile, expect specific error message in stderr
+- **Negative (~180)**: compile, expect specific error message in stderr
 - **Abort (1)**: compile, run, expect crash
 - **Test flag (4)**: `--test` mode with pass/fail/mixed/submodule programs
 - **O2 (~90)**: same programs compiled with `-O2`, check same results
@@ -208,7 +208,7 @@ After an `--affected` run, the summary shows which files triggered which section
 |--------|-------|
 | Pass-level tests | <1s (32 tests, no I/O) |
 | Fast suite (`--fast`) | ~25-35s (~1427 tests, parallel) |
-| Full suite (`--full`) | ~40-50s (~1450 tests + 468 consistency checks, 1 skipped, includes network, cross-target, perf, consistency) |
+| Full suite (`--full`) | ~40-50s (~2596 tests, 1 skipped, includes network, cross-target, perf, consistency, policy) |
 | Cache hit rate | 26/57 compilations saved per fast run |
 | Compiler build | ~30-45s (`lake build`) |
 | lli-accelerated suite | ~12s (when `LLI_PATH` is set) |
@@ -526,7 +526,7 @@ Goal: verify proof, predictable, and report correctness in CI.
 - **Report artifact generation**: all 18 `--report` modes produce non-empty output
 - **Trust-drift check**: consistency and fingerprints pass on all proof-bearing examples
 
-Trust-gate now covers 5 contract sections (determinism, consistency, terminology, verify, evidence) with 952 total checks.
+Trust-gate now covers 5 contract sections (determinism, consistency, terminology, verify, evidence) with 952 total checks (before later phases added more).
 
 ### Phase 12: Error Context Chains (complete)
 
@@ -556,13 +556,13 @@ Three end-to-end drift demos using `concrete snapshot` + `concrete diff`:
 - **`elf_header`**: magic byte `127` → `0`, version accepts `0` — proof drift + validation weakening
 - **`thesis_demo`**: `+` → `-` in parse_byte, `validate` gains `with(File)` + unbounded `while` — proof drift + authority escalation + resource drift
 
-8 new drift-detection gates in CI evidence section verify: trust weakening detected, `proved → stale` transitions, `is_pure: true → false`, File capability escalation, unbounded loop drift. Trust-gate: 1058 checks (up from 1039), now includes 27 malformed-artifact attack tests (4 new: registry missing-field warnings, diff `<missing>` sentinel, unknown fact kind drift, empty function warning), 13 state-desynchronization attack tests, 11 invalid-query diagnostic tests, and bug corpus audit.
+8 new drift-detection gates in CI evidence section verify: trust weakening detected, `proved → stale` transitions, `is_pure: true → false`, File capability escalation, unbounded loop drift. Trust-gate: 1088 checks, now includes 27 malformed-artifact attack tests (4 new: registry missing-field warnings, diff `<missing>` sentinel, unknown fact kind drift, empty function warning), 13 state-desynchronization attack tests, 11 invalid-query diagnostic tests, 9 API versioning envelope tests, 7 error code taxonomy tests, 14 policy enforcement adversarial tests, and bug corpus audit.
 
 ### Phase 15: Adversarial Compiler-Hardening Corpus (complete)
 
 Goal: hostile workloads that stress every compiler pass under scale, composition, and edge-case pressure.
 
-45 test files across 6 categories, all passing:
+45 positive test files across 6 categories, all passing. Plus 11 policy enforcement tests (8 negative + 3 boundary positive, trust-gate) and 10 negative adversarial tests (hostile code the compiler must reject):
 
 **Parser stress (8 tests)**: deep nesting (15 levels), long expressions (50 operators), many locals (30), many params (20), complex match (15 arms), empty bodies, nested parens (16 levels), mixed operator precedence.
 
@@ -575,6 +575,47 @@ Goal: hostile workloads that stress every compiler pass under scale, composition
 **Proof/report stress (5 tests)**: generic function with proof + monomorphization, 10 pure proof-eligible functions, mixed eligibility (pure/capability/trusted), module isolation with qualified calls, report generation with 20 functions.
 
 **Scaling/hostile workloads (9 tests)**: 40-function chains, 25-variant enum, 20-deep struct transform chain, 20-field struct, 5 simultaneous enums, 3-level nested match, array operations, generic struct explosion, 12 sibling modules.
+
+**Policy enforcement adversarial tests (14 tests, trust-gate):**
+
+Negative (must be rejected, 11 tests):
+- `adversarial_policy_deny_unsafe` — deny=["Unsafe"], code uses Unsafe capability (E0611)
+- `adversarial_policy_deny_multi` — deny=["File","Network"], code uses both (E0611)
+- `adversarial_policy_predictable_recursion` — predictable=true, recursive function (E0610)
+- `adversarial_policy_predictable_alloc` — predictable=true, uses Alloc cap (E0610)
+- `adversarial_policy_predictable_ffi` — predictable=true, extern FFI call (E0610)
+- `adversarial_policy_predictable_blocking` — predictable=true, uses File cap (E0610)
+- `adversarial_policy_combined` — predictable+deny, both E0610 and E0611 (2 assertions)
+- `adversarial_policy_require_proofs_missing` — require-proofs=true, eligible function has no proof (E0612)
+- `adversarial_policy_require_proofs_stale` — require-proofs=true, stale registry fingerprint (E0612)
+- `adversarial_policy_require_proofs_blocked` — require-proofs=true, eligible-but-unextractable function (E0612)
+
+Positive boundary (must pass, 3 tests):
+- `adversarial_policy_deny_pass` — deny=["Unsafe"], code only uses Console (allowed)
+- `adversarial_policy_predictable_pass` — predictable=true, pure bounded code (allowed)
+- `adversarial_policy_empty` — empty [policy] section, no restrictions (allowed)
+
+There is intentionally no `require-proofs=true` passing boundary yet. Today that policy is enforced at whole-program scope, and the hosted stdlib still contains proof-eligible functions without attached proofs. A true passing boundary belongs after a no-std mode or stdlib proof coverage exists.
+
+**Negative adversarial tests (10 tests, hostile code that must be rejected):**
+
+Ownership/borrow abuse (4 tests):
+- `adversarial_neg_double_move_branch` — move in one branch, use after if
+- `adversarial_neg_borrow_outlives_owner` — consume owner while borrow is active
+- `adversarial_neg_mut_ref_alias` — nested mutable borrows of same variable
+- `adversarial_neg_move_loop_body` — consume linear value inside loop
+
+Module/visibility abuse (2 tests):
+- `adversarial_neg_private_fn_call` — call non-pub function from outside module
+- `adversarial_neg_private_struct_field` — use non-pub struct type from outside module
+
+Capability abuse (2 tests):
+- `adversarial_neg_cap_escalate_indirect` — pure→pure→needs_file chain (escalation)
+- `adversarial_neg_cap_forge` — pure function calls println without Console
+
+Type system abuse (2 tests):
+- `adversarial_neg_enum_variant_type_mismatch` — wrong payload type in enum constructor
+- `adversarial_neg_return_type_mismatch` — return Bool from Int-typed function
 
 **Fixed compiler bugs (regression tests retained):**
 1. **LLVM IR function name mangling collision** — same-name functions in different modules produced duplicate LLVM definitions. Fixed by qualifying colliding names with module path in EmitSSA; collision key uses `f.modulePath` to handle flattened submodules. Regression tests: `adversarial_module_same_name`, `adversarial_module_many_siblings`, `adversarial_module_struct_across`, `adversarial_module_enum_across`.
