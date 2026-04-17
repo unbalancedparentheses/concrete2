@@ -10,6 +10,19 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Proof pressure set inspectable end-to-end (Phase 2, item 2)
+
+Fixed effects report evidence discrepancy: `--report effects` was computing evidence from hardcoded `Proof.provedFunctions` instead of using `pc.obligations` (the single source of truth that includes registry proofs). `check_nonce` and `validate_header` now correctly show `evidence: proved` instead of `evidence: enforced (proof stale: body changed)`.
+
+24 trust-gate assertions verify the pressure set across all report modes:
+- **Extraction** (6): ProofCore forms for `check_nonce`/`clamp_value`, extraction failure for `classify_range` with field-access blocker, Console exclusion for `format_result`, totals (4/1/2)
+- **Obligations** (4): dependency tracking (`validate_header` → `check_nonce`), registry source, missing spec, totals match proof-status
+- **Eligibility** (2): totals (5/2), entry-point exclusion
+- **Effects/evidence** (3): proved evidence for registry-backed proofs, stale annotation, totals (2 proved)
+- **Determinism** (2): fingerprints and extraction stable across runs
+
+Trust-gate: 1115 pass, 0 fail.
+
 ### Proof pressure set defined (Phase 2, item 1)
 
 6-function proof pressure set in `examples/proof_pressure/` exercising all proof obligation states:

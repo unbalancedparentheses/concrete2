@@ -885,18 +885,16 @@ private partial def effectsForModule
     let hasBlocking := concreteCaps.any fun c =>
       c == "File" || c == "Network" || c == "Process"
     let passesProfile := !hasRecursion && !hasUnboundedLoops && !hasAllocEvidence && !hasFfi && !hasBlocking
-    let pcEntry := pc.entries.find? fun e => e.qualName == qualName
-    let fp := match pcEntry with | some e => e.fingerprint | none => bodyFingerprint f.body
-    let hasProof := Proof.provedFunctions.any fun (name, expectedFp) =>
-      name == qualName && expectedFp == fp
-    let proofStale := !hasProof && Proof.provedFunctions.any fun (name, _) =>
-      name == qualName
+    let obl := pc.obligations.find? fun o => o.functionId.qualName == qualName
     let evidenceLevel :=
       if f.isTrusted then "trusted-assumption"
-      else if hasProof && passesProfile then "proved"
-      else if proofStale && passesProfile then "enforced (proof stale: body changed)"
-      else if passesProfile then "enforced"
-      else "reported"
+      else match obl with
+      | some o => match o.status with
+        | .proved => if passesProfile then "proved" else "reported"
+        | .stale => if passesProfile then "enforced (proof stale: body changed)" else "reported"
+        | .trusted => "trusted-assumption"
+        | _ => if passesProfile then "enforced" else "reported"
+      | none => if passesProfile then "enforced" else "reported"
     { name := f.name
       qualName := qualName
       capSet := f.capSet

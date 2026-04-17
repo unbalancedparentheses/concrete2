@@ -8320,6 +8320,179 @@ else
     evidence_fail=$((evidence_fail + 1))
 fi
 
+# --- Pressure set: extraction report ---
+pp_ext=$($COMPILER examples/proof_pressure/src/main.con --report extraction 2>/dev/null)
+
+# 8. Extraction: check_nonce has correct ProofCore form
+if echo "$pp_ext" | grep -A2 "check_nonce" | grep -q "if (nonce < 0) then 1 else if (nonce > max_nonce) then 2 else 0"; then
+    echo "  ok  pressure-ext: check_nonce ProofCore form correct"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL pressure-ext: check_nonce ProofCore form wrong"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 9. Extraction: clamp_value has correct ProofCore form
+if echo "$pp_ext" | grep -A2 "clamp_value" | grep -q "if (x < lo) then lo else if (x > hi) then hi else x"; then
+    echo "  ok  pressure-ext: clamp_value ProofCore form correct"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL pressure-ext: clamp_value ProofCore form wrong"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 10. Extraction: classify_range is eligible but extraction failed
+if echo "$pp_ext" | grep -A2 "classify_range" | grep -q "eligible (extraction failed)"; then
+    echo "  ok  pressure-ext: classify_range extraction failed (blocked)"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL pressure-ext: classify_range should show extraction failed"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 11. Extraction: classify_range blocked by field access
+if echo "$pp_ext" | grep -A5 "classify_range" | grep -q "field access"; then
+    echo "  ok  pressure-ext: classify_range blocked by field access"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL pressure-ext: classify_range should cite field access as blocker"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 12. Extraction: format_result is excluded with Console reason
+if echo "$pp_ext" | grep -A5 "format_result" | grep -q "has capabilities: Console"; then
+    echo "  ok  pressure-ext: format_result excluded (Console capability)"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL pressure-ext: format_result should cite Console capability"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 13. Extraction totals: 4 extracted, 1 not extractable, 2 excluded
+if echo "$pp_ext" | grep -q "4 extracted.*1 eligible but not extractable.*2 excluded"; then
+    echo "  ok  pressure-ext: extraction totals correct (4/1/2)"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL pressure-ext: extraction totals should be 4/1/2"
+    echo "    got: $(echo "$pp_ext" | grep "Totals:")"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# --- Pressure set: obligations report ---
+pp_obl=$($COMPILER examples/proof_pressure/src/main.con --report obligations 2>/dev/null)
+
+# 14. Obligations: validate_header depends on check_nonce
+if echo "$pp_obl" | grep -A8 "main.validate_header" | grep -q "dependencies: main.check_nonce"; then
+    echo "  ok  pressure-obl: validate_header depends on check_nonce"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL pressure-obl: validate_header should depend on check_nonce"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 15. Obligations: proved functions cite registry as source
+if echo "$pp_obl" | grep -A5 "main.check_nonce" | grep -q "source:.*registry"; then
+    echo "  ok  pressure-obl: check_nonce proof source is registry"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL pressure-obl: check_nonce should cite registry as source"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 16. Obligations: missing function has no spec
+if echo "$pp_obl" | grep -A5 "main.clamp_value" | grep -q "spec:.*(none)"; then
+    echo "  ok  pressure-obl: clamp_value has no spec (missing)"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL pressure-obl: clamp_value should have no spec"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 17. Obligations totals match proof-status totals
+if echo "$pp_obl" | grep -q "2 proved.*1 stale.*1 missing.*1 blocked.*2 ineligible"; then
+    echo "  ok  pressure-obl: obligation totals match proof-status"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL pressure-obl: obligation totals should match proof-status"
+    echo "    got: $(echo "$pp_obl" | grep "Totals:")"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# --- Pressure set: eligibility report ---
+pp_elig=$($COMPILER examples/proof_pressure/src/main.con --report eligibility 2>/dev/null)
+
+# 18. Eligibility: 5 eligible, 2 excluded
+if echo "$pp_elig" | grep -q "5 eligible.*2 excluded"; then
+    echo "  ok  pressure-elig: eligibility totals correct (5/2)"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL pressure-elig: eligibility totals should be 5 eligible, 2 excluded"
+    echo "    got: $(echo "$pp_elig" | grep "Totals:")"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 19. Eligibility: main excluded as entry point
+if echo "$pp_elig" | grep -A2 "main.main" | grep -q "entry point"; then
+    echo "  ok  pressure-elig: main excluded as entry point"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL pressure-elig: main should be excluded as entry point"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# --- Pressure set: effects/evidence consistency ---
+pp_eff=$($COMPILER examples/proof_pressure/src/main.con --report effects 2>/dev/null)
+
+# 20. Effects: check_nonce evidence is proved (not enforced)
+if echo "$pp_eff" | grep -A1 "check_nonce" | grep -q "evidence: proved"; then
+    echo "  ok  pressure-eff: check_nonce evidence is proved"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL pressure-eff: check_nonce evidence should be proved"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 21. Effects: compute_checksum evidence shows stale
+if echo "$pp_eff" | grep -A1 "compute_checksum" | grep -q "proof stale"; then
+    echo "  ok  pressure-eff: compute_checksum evidence shows stale"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL pressure-eff: compute_checksum evidence should show stale"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 22. Effects: evidence totals show 2 proved
+if echo "$pp_eff" | grep -q "Evidence: 2 proved"; then
+    echo "  ok  pressure-eff: effects evidence totals show 2 proved"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL pressure-eff: effects evidence should show 2 proved"
+    echo "    got: $(echo "$pp_eff" | grep "Evidence:")"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# --- Pressure set: fingerprint determinism ---
+# 23. Fingerprints are deterministic across runs
+pp_fp1=$($COMPILER examples/proof_pressure/src/main.con --report fingerprints 2>/dev/null)
+pp_fp2=$($COMPILER examples/proof_pressure/src/main.con --report fingerprints 2>/dev/null)
+if [ "$pp_fp1" = "$pp_fp2" ]; then
+    echo "  ok  pressure-fp: fingerprints deterministic across runs"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL pressure-fp: fingerprints differ between runs"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 24. Extraction is deterministic across runs
+pp_ext2=$($COMPILER examples/proof_pressure/src/main.con --report extraction 2>/dev/null)
+if [ "$pp_ext" = "$pp_ext2" ]; then
+    echo "  ok  pressure-fp: extraction deterministic across runs"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL pressure-fp: extraction differs between runs"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
 if [ "$evidence_fail" -gt 0 ]; then
     echo "  $evidence_fail evidence gate failures"
 fi
