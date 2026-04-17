@@ -8253,6 +8253,73 @@ if [ -f "examples/thesis_demo/src/main.con" ] && [ -f "examples/thesis_demo/src/
     fi
 fi
 
+# --- Proof pressure set: all 6 target states in one file ---
+pp_out=$($COMPILER examples/proof_pressure/src/main.con --report proof-status 2>/dev/null)
+
+# 1. check_nonce is proved
+if echo "$pp_out" | grep -B5 "check_nonce" | grep -q "^-- proved"; then
+    echo "  ok  pressure-set: check_nonce is proved"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL pressure-set: check_nonce should be proved"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 2. validate_header is proved
+if echo "$pp_out" | grep -B5 "validate_header" | grep -q "^-- proved"; then
+    echo "  ok  pressure-set: validate_header is proved"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL pressure-set: validate_header should be proved"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 3. compute_checksum is stale
+if echo "$pp_out" | grep -B5 "compute_checksum" | grep -q "proof stale"; then
+    echo "  ok  pressure-set: compute_checksum is stale"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL pressure-set: compute_checksum should be stale"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 4. format_result is ineligible
+if echo "$pp_out" | grep -B5 "format_result" | grep -q "not eligible"; then
+    echo "  ok  pressure-set: format_result is ineligible"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL pressure-set: format_result should be ineligible"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 5. clamp_value is missing (no proof)
+if echo "$pp_out" | grep -B5 "clamp_value" | grep -q "no proof"; then
+    echo "  ok  pressure-set: clamp_value is missing (no proof)"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL pressure-set: clamp_value should be missing (no proof)"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 6. classify_range is blocked
+if echo "$pp_out" | grep -B5 "classify_range" | grep -q "^-- blocked"; then
+    echo "  ok  pressure-set: classify_range is blocked"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL pressure-set: classify_range should be blocked"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
+# 7. Totals line has all 6 states accounted for
+if echo "$pp_out" | grep -q "2 proved.*1 stale.*1 unproved.*1 blocked.*2 ineligible"; then
+    echo "  ok  pressure-set: totals match expected (2 proved, 1 stale, 1 unproved, 1 blocked, 2 ineligible)"
+    evidence_pass=$((evidence_pass + 1))
+else
+    echo "  FAIL pressure-set: totals should be 2 proved, 1 stale, 1 unproved, 1 blocked, 2 ineligible"
+    echo "    got: $(echo "$pp_out" | grep "Totals:")"
+    evidence_fail=$((evidence_fail + 1))
+fi
+
 if [ "$evidence_fail" -gt 0 ]; then
     echo "  $evidence_fail evidence gate failures"
 fi

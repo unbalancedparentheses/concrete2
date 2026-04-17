@@ -58,6 +58,7 @@ If you want the highest-leverage current research first:
 14. [proof-evidence/formalization-breakdown.md](proof-evidence/formalization-breakdown.md) — the full formalization effort split into tracks and milestones (`P0`, `Open`)
 15. [proof-evidence/evidence-review-workflows.md](proof-evidence/evidence-review-workflows.md) — evidence bundles, machine-readable reports, and review workflows (`P0`, `Open`)
 16. [meta/ai-assisted-optimization.md](meta/ai-assisted-optimization.md) — optimization/refactoring loops driven by structured compiler reports (`P1`, `Research`)
+17. [proof-evidence/vericoding-and-evidence-product.md](proof-evidence/vericoding-and-evidence-product.md) — how Concrete should compete on reviewable verification products rather than NL-to-spec hype (`P0`, `Open`)
 
 ## Language
 
@@ -131,6 +132,7 @@ If you want the highest-leverage current research first:
 - [proof-evidence/verification-surface.md](proof-evidence/verification-surface.md) — which verification features fit Concrete's philosophy, and in what order (`P0`, `Open`)
 - [proof-evidence/proof-evidence-artifacts.md](proof-evidence/proof-evidence-artifacts.md) — tying reports, artifacts, proofs, and reproducibility together (`P0`, `Open`)
 - [proof-evidence/evidence-review-workflows.md](proof-evidence/evidence-review-workflows.md) — evidence bundles, review workflows, and maintained reports (`P0`, `Open`)
+- [proof-evidence/vericoding-and-evidence-product.md](proof-evidence/vericoding-and-evidence-product.md) — what Concrete should copy, avoid, and do better than current vericoding systems (`P0`, `Open`)
 - [proof-evidence/trust-multipliers.md](proof-evidence/trust-multipliers.md) — combined differentiators across proof, runtime, and evidence (`P0`, `Open`)
 - [proof-evidence/cryptographic-source-commitments.md](proof-evidence/cryptographic-source-commitments.md) — cryptographic source/bundle provenance (`P1`, `Open`)
 - [proof-evidence/proof-carrying-supply-chain.md](proof-evidence/proof-carrying-supply-chain.md) — proof/evidence-aware supply-chain direction (`P2`, `Research`)

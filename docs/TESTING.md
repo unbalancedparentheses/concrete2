@@ -556,7 +556,7 @@ Three end-to-end drift demos using `concrete snapshot` + `concrete diff`:
 - **`elf_header`**: magic byte `127` → `0`, version accepts `0` — proof drift + validation weakening
 - **`thesis_demo`**: `+` → `-` in parse_byte, `validate` gains `with(File)` + unbounded `while` — proof drift + authority escalation + resource drift
 
-8 new drift-detection gates in CI evidence section verify: trust weakening detected, `proved → stale` transitions, `is_pure: true → false`, File capability escalation, unbounded loop drift. Trust-gate: 1088 checks, now includes 27 malformed-artifact attack tests (4 new: registry missing-field warnings, diff `<missing>` sentinel, unknown fact kind drift, empty function warning), 13 state-desynchronization attack tests, 11 invalid-query diagnostic tests, 9 API versioning envelope tests, 7 error code taxonomy tests, 14 policy enforcement adversarial tests, and bug corpus audit.
+8 new drift-detection gates in CI evidence section verify: trust weakening detected, `proved → stale` transitions, `is_pure: true → false`, File capability escalation, unbounded loop drift. 7 new proof-pressure-set gates verify all 6 obligation states (proved, stale, missing, blocked, ineligible) plus totals line against `examples/proof_pressure/`. Trust-gate: 1098 checks, now includes 27 malformed-artifact attack tests (4 new: registry missing-field warnings, diff `<missing>` sentinel, unknown fact kind drift, empty function warning), 13 state-desynchronization attack tests, 11 invalid-query diagnostic tests, 9 API versioning envelope tests, 7 error code taxonomy tests, 14 policy enforcement adversarial tests, 7 proof pressure set regression gates, and bug corpus audit.
 
 ### Phase 15: Adversarial Compiler-Hardening Corpus (complete)
 

@@ -10,6 +10,19 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Proof pressure set defined (Phase 2, item 1)
+
+6-function proof pressure set in `examples/proof_pressure/` exercising all proof obligation states:
+
+- **`check_nonce`** (proved) — conditional-heavy validator with correct registry fingerprint
+- **`validate_header`** (proved) — helper-composition, calls `check_nonce`, correct fingerprint
+- **`compute_checksum`** (stale) — registry has old fingerprint from before `+ 1` body edit
+- **`format_result`** (ineligible) — has `Console` capability, outside proof boundary by design
+- **`clamp_value`** (missing) — pure, extractable, no registry entry yet
+- **`classify_range`** (blocked) — pure, eligible, but uses struct field access (unsupported in extraction)
+
+Design doc: `docs/PROOF_PRESSURE_SET.md`. Registry: `examples/proof_pressure/src/proof-registry.json`. 7 new trust-gate regression assertions verify all states + totals. Trust-gate: 1098 pass, 0 fail.
+
 ### Stable diagnostic and error-code taxonomy
 
 All compiler diagnostics now carry stable error codes, documented with machine-readable listings.
