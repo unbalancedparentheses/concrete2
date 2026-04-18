@@ -10,6 +10,20 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Canonical "claims today" surface (Phase 2, item 20)
+
+`docs/CLAIMS_TODAY.md` rewritten as the canonical short public statement of current guarantees:
+
+- **9 sections**: compiler-enforced guarantees, proof-backed guarantees, proof workflow and evidence pipeline, compiler-reported analysis, profile status, explicit non-claims, trusted computing base, vocabulary rules, machine-readable evidence
+- **Compiler-enforced**: 12 properties (ownership, linearity, borrows, capabilities, cleanup, control flow) with mechanisms; explicit non-coverage (bounds, overflow, stack, termination, checker soundness)
+- **Proof-backed**: eligibility gates, 3 theorem shapes (concrete test, boundary, full contract), 6 obligation states, precise meaning of "proved" (PExpr + unbounded Int + fingerprint match), 5 explicit non-claims (binary correctness, checker soundness, composition, coverage, all-properties)
+- **Proof workflow**: 10 working capabilities (extraction, lean-stubs, registry, kernel verification, proof-status, diagnostics with E0800–E0807, dependency graph, evidence bundle, `concrete check`, CI proof gate); rename and stale detection
+- **Profiles**: safe (real, enforced), predictable (partially real), provable (real for current subset), high-integrity (named direction)
+- **TCB**: 6 layers (compiler, Lean kernel, registry/fingerprint, backend/toolchain, runtime/target/OS, trusted/foreign boundaries)
+- **Machine-readable**: JSON facts for proof_status, obligation, evidence, eligibility, proof-bundle, diagnostics-json
+- Every claim carries its taxonomy class; cross-references 8 detailed documents
+- Docs-only change — no new code, no test changes
+
 ### Proof evidence CI gate (Phase 2, item 19)
 
 `scripts/ci/proof_gate.sh` runs the complete proof workflow as one CI gate:
