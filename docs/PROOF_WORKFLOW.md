@@ -449,6 +449,7 @@ concrete src/main.con --report diagnostics-json | jq '.facts[] | select(.kind ==
 | `--report check-proofs` | Lean kernel verification | After writing a proof — "does the theorem actually compile?" |
 | `--report proof-diagnostics` | Failure taxonomy | When check fails — "why did it fail and how do I fix it?" |
 | `--report proof-deps` | Dependency graph | After a callee change — "which callers are affected?" |
+| `--report proof-bundle` | JSON evidence bundle | CI, review, release evidence — "what is proved, under what assumptions?" |
 | `--report diagnostic-codes` | Error code registry | Reference — "what does E0805 mean?" |
 
 ---

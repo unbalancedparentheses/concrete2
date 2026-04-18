@@ -10,6 +10,18 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Proof evidence bundle (Phase 2, item 18)
+
+`--report proof-bundle` produces a single JSON evidence bundle for review, CI, and release evidence:
+
+- **Metadata**: source path, timestamp, compiler identity (version + git commit + Lean toolchain)
+- **Summary**: obligation counts by status (proved/stale/missing/blocked/ineligible/trusted), extraction counts, diagnostic severity breakdown, dependency stats
+- **Assumptions**: explicit section documenting proof model (PExpr + unbounded Int), unverified compilation chain, integer model gap, per-function composition limitation, checker soundness assumption, fingerprint stability
+- **Registry**: full proof-registry.json entries with function, fingerprint, proof name, spec name
+- **Dependency graph**: proved and stale dependency edges between functions
+- **Facts**: all proof-related facts (proof_status, obligation, extraction, proof_diagnostic, eligibility) — non-proof facts excluded
+- 15 trust-gate tests verify: schema version/kind, source/compiler/timestamp metadata, summary obligation counts, extraction counts, diagnostic severity counts, assumptions fields, registry entries, dependency graph edges (proved and stale), all 5 fact kinds present, fact_count consistency, clean-file baseline, exit codes, non-proof fact exclusion
+
 ### "How to Prove a Concrete Function" tutorial (Phase 2, item 17)
 
 Canonical outsider-facing tutorial added to the book (`docs/book/src/proving.md`):

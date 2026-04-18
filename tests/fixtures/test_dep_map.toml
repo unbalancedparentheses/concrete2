@@ -198,14 +198,14 @@ test_patterns = ["fmt_*"]
 
 [source."Concrete/ProofCore.lean"]
 description = "Proof obligation pipeline, diagnostics, taxonomy"
-sections = ["evidence", "taxonomy", "workflow"]
+sections = ["evidence", "taxonomy", "workflow", "bundle"]
 categories = ["proof"]
 owner_pass = "proof"
 test_patterns = ["proof_pressure/*"]
 
 [source."Concrete/Report.lean"]
 description = "Audit report generation"
-sections = ["report", "taxonomy", "workflow"]
+sections = ["report", "taxonomy", "workflow", "bundle"]
 categories = ["report"]
 owner_pass = "report"
 test_patterns = ["report_*"]

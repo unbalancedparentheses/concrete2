@@ -2397,6 +2397,103 @@ def diagnosticsJson (modules : List CModule) (locMap : FnLocMap := [])
   (factsEnvelope (collectCoreFacts modules locMap registry pc)).render
 
 open Json in
+/-- Build proof-specific summary from proof-related facts. -/
+private def buildProofSummary (pc : Concrete.ProofCore) : Val :=
+  let obCount (s : Concrete.ObligationStatus) := (pc.obligations.filter fun o => o.status == s).length
+  let diagCount (k : Concrete.ProofDiagnosticKind) := (pc.diagnostics.filter fun d => d.kind == k).length
+  let extractedCount := (pc.entries.filter fun e => e.extracted.isSome).length
+  let blockedCount := (pc.entries.filter fun e => e.extracted.isNone && !e.unsupported.isEmpty).length
+  let excludedCount := pc.excluded.length
+  let depsCount := (pc.obligations.filter fun o => !o.dependencies.isEmpty).length
+  let staleDepsCount := (pc.obligations.filter fun o => !o.staleDeps.isEmpty).length
+  .obj [
+    ("total_functions", .num (pc.obligations.length)),
+    ("proved", .num (obCount .proved)),
+    ("stale", .num (obCount .stale)),
+    ("missing", .num (obCount .missing)),
+    ("blocked", .num (obCount .blocked)),
+    ("ineligible", .num (obCount .ineligible)),
+    ("trusted", .num (obCount .trusted)),
+    ("extracted", .num extractedCount),
+    ("extraction_blocked", .num blockedCount),
+    ("excluded", .num excludedCount),
+    ("diagnostics_errors", .num ((pc.diagnostics.filter fun d => d.severity == .error).length)),
+    ("diagnostics_warnings", .num ((pc.diagnostics.filter fun d => d.severity == .warning).length)),
+    ("diagnostics_info", .num ((pc.diagnostics.filter fun d => d.severity == .info).length)),
+    ("stale_proof_count", .num (diagCount .staleProof)),
+    ("missing_proof_count", .num (diagCount .missingProof)),
+    ("attachment_integrity_count", .num (diagCount .attachmentIntegrity)),
+    ("functions_with_dependencies", .num depsCount),
+    ("functions_with_stale_deps", .num staleDepsCount)
+  ]
+
+open Json in
+/-- Convert a registry entry to a JSON value. -/
+private def registryEntryToJson (e : Concrete.ProofRegistryEntry) : Val :=
+  .obj [
+    ("function", .str e.function),
+    ("body_fingerprint", .str e.bodyFingerprint),
+    ("proof", .str e.proof),
+    ("spec", .str e.spec)
+  ]
+
+open Json in
+/-- Convert a dependency edge to a JSON value. -/
+private def depEdgeToJson (o : Concrete.Obligation) : Val :=
+  .obj [
+    ("function", .str o.functionId.qualName),
+    ("status", .str o.status.canonical),
+    ("proved_deps", .arr (o.dependencies.map .str)),
+    ("stale_deps", .arr (o.staleDeps.map .str))
+  ]
+
+open Json in
+/-- Produce a proof-workflow evidence bundle combining all proof-related data. -/
+def proofBundleJson
+    (sourcePath : String)
+    (timestamp : String)
+    (compilerIdent : String)
+    (modules : List CModule)
+    (locMap : FnLocMap := [])
+    (registry : ProofRegistry := [])
+    (pc : Concrete.ProofCore) : String :=
+  -- Proof-related facts
+  let proofStatusFacts := collectProofStatusFacts modules locMap registry pc
+  let obligationFacts := collectObligationFacts modules locMap registry pc
+  let extractionFacts := collectExtractionFacts (registry := registry) (pc := pc)
+  let diagnosticFacts := collectProofDiagnosticFacts pc
+  let eligibilityFacts := collectEligibilityFacts pc
+  let allFacts := proofStatusFacts ++ obligationFacts ++ extractionFacts ++ diagnosticFacts ++ eligibilityFacts
+  -- Registry entries
+  let registryJson := registry.map registryEntryToJson
+  -- Dependency edges (only functions that have deps or stale deps)
+  let depEdges := (pc.obligations.filter fun o =>
+    !o.dependencies.isEmpty || !o.staleDeps.isEmpty).map depEdgeToJson
+  -- Assumptions
+  let assumptions := Val.obj [
+    ("proof_model", .str "PExpr with Lean unbounded Int, pure functional semantics"),
+    ("compilation_chain", .str "Core IR → SSA → LLVM IR → binary: unverified"),
+    ("integer_model", .str "PExpr uses unbounded Int; binary uses 64-bit fixed-width"),
+    ("composition", .str "per-function proofs; cross-function composition not verified"),
+    ("checker_soundness", .str "Concrete checker (Check.lean) correctness is assumed, not proved"),
+    ("fingerprint_stability", .str "stable within compiler version; may change across versions")
+  ]
+  let bundle := Val.obj [
+    ("schema_version", .num (Int.ofNat schemaVersion)),
+    ("schema_kind", .str "proof_bundle"),
+    ("source", .str sourcePath),
+    ("timestamp", .str timestamp),
+    ("compiler", .str compilerIdent),
+    ("summary", buildProofSummary pc),
+    ("assumptions", assumptions),
+    ("registry", .arr registryJson),
+    ("dependency_graph", .arr depEdges),
+    ("fact_count", .num allFacts.length),
+    ("facts", .arr allFacts)
+  ]
+  bundle.render
+
+open Json in
 /-- Extract a string field from a JSON object. -/
 def jsonGetStr (v : Val) (key : String) : Option String :=
   match v with
