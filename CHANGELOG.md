@@ -10,6 +10,16 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Active roadmap reset after former phases 1-2
+
+Completed former roadmap Phases 1 and 2 are now treated as historical milestones rather than active plan items:
+
+- Former **Phase 1** compiler-integrity work and former **Phase 2** proof-workflow work remain recorded in this changelog
+- The active roadmap now starts at former Phase 3, renumbered as active **Phase 1**
+- Task numbering did not restart; active work still begins at item `23`
+- This is a roadmap cleanup, not a semantic change in project scope
+- The remaining roadmap now has **14 active phases**
+
 ### Trusted-computing-base accounting (Phase 2, item 22)
 
 `docs/TRUSTED_COMPUTING_BASE.md` rewritten as canonical TCB reference:

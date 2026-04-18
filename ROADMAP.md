@@ -2,7 +2,7 @@
 
 This document is the active execution plan. It answers one question: **what should happen next, in what order?**
 
-Read the active list top-to-bottom through Phase 2. After Phase 2, use the explicit **Post-Phase-2 Dependency Order** below rather than assuming later phase numbers are a strict execution sequence. Phase titles are human scan markers, not separate queues, and task numbering never restarts.
+Read the active list with the explicit **Active Dependency Order** below rather than assuming phase numbers are a strict execution sequence. The 14 phase numbers below are thematic buckets for remaining work, and task numbering never restarts.
 
 For landed work, see [CHANGELOG.md](CHANGELOG.md). For detailed design, see `docs/` and `research/`.
 
@@ -34,37 +34,35 @@ Do not call the language releasable until these are true:
 
 | Phase | Items | Human goal |
 |---|---:|---|
-| 1. Compiler Integrity and Artifact Truth | complete | Make serious compiler failures, artifact drift, identity drift, schema drift, and diagnostic drift fail explicitly. |
-| 2. Concrete-to-Lean Proof Pressure and Claim Boundaries | 1-22 | Prove real Concrete functions with Lean while keeping claims, profiles, and TCB boundaries honest. |
-| 3. Predictable Core | 23-30 | Make bounded, predictable, failure-aware code usable before broadening scope. |
-| 4. Pre-Stdlib Pressure Workloads | 31-36 | Use real workloads to discover what the stdlib must actually provide. |
-| 5. Stdlib and Syntax Freeze | 37-50 | Define, build, polish, and freeze the first-release stdlib, visibility, error, binary parsing, and LL(1) syntax surface. |
-| 6. Tooling, Tests, and Wrong-Code Corpus | 51-60 | Make examples, docs, formatting, fuzzing, and wrong-code capture normal workflow. |
-| 7. Performance, Artifacts, and Contract Hardening | 61-73 | Put budgets, reports, artifacts, and explicit failure behavior around the compiler. |
-| 8. Release Credibility and Showcase | 74-93 | Prepare honest public positioning and release packaging only after the broader proof/toolchain surface is stable enough to defend publicly. |
-| 9. Proof Expansion and Provable Subset | 94-118 | Grow ProofCore, obligations, and provable-subset claims only after the surrounding language, stdlib, tooling, and runtime-profile surface is stable enough that the new proofs mean something durable. |
-| 10. Backend, Target, and Incremental Pipeline | 119-135 | Stabilize backend contracts, targets, incremental builds, and semantic regression coverage. |
-| 11. Compiler Verification and Preservation Proofs | 136-145 | Scope and prove selected compiler properties only after the proof workflow, backend contract, and artifact semantics are stable enough to justify them. |
-| 12. Package System and Dependency Trust | 146-159 | Add packages only after artifacts, visibility, and trust summaries know what they must carry. |
-| 13. Editor, Artifact UX, and Compatibility | 160-168 | Expose facts, diagnostics, proof state, artifacts, compatibility tests, and stability policy to users and tools. |
-| 14. Runtime Profiles, Allocation, and Predictability | 169-184 | Define concurrency, allocation, stack, failure, timing, and overflow boundaries early enough that proof and release claims do not outrun the runtime model. |
-| 15. Public Readiness and User Tooling | 185-191 | Make the language easier to adopt, audit, govern, and evolve publicly. |
-| 16. Long-Horizon Research Backlog | 192-203 | Keep speculative language/runtime/research ideas visible but clearly gated. |
+| 1. Predictable Core | 23-30 | Make bounded, predictable, failure-aware code usable before broadening scope. |
+| 2. Pre-Stdlib Pressure Workloads | 31-36 | Use real workloads to discover what the stdlib must actually provide. |
+| 3. Stdlib and Syntax Freeze | 37-50 | Define, build, polish, and freeze the first-release stdlib, visibility, error, binary parsing, and LL(1) syntax surface. |
+| 4. Tooling, Tests, and Wrong-Code Corpus | 51-60 | Make examples, docs, formatting, fuzzing, and wrong-code capture normal workflow. |
+| 5. Performance, Artifacts, and Contract Hardening | 61-73 | Put budgets, reports, artifacts, and explicit failure behavior around the compiler. |
+| 6. Release Credibility and Showcase | 74-93 | Prepare honest public positioning and release packaging only after the broader proof/toolchain surface is stable enough to defend publicly. |
+| 7. Proof Expansion and Provable Subset | 94-118 | Grow ProofCore, obligations, and provable-subset claims only after the surrounding language, stdlib, tooling, and runtime-profile surface is stable enough that the new proofs mean something durable. |
+| 8. Backend, Target, and Incremental Pipeline | 119-135 | Stabilize backend contracts, targets, incremental builds, and semantic regression coverage. |
+| 9. Compiler Verification and Preservation Proofs | 136-145 | Scope and prove selected compiler properties only after the proof workflow, backend contract, and artifact semantics are stable enough to justify them. |
+| 10. Package System and Dependency Trust | 146-159 | Add packages only after artifacts, visibility, and trust summaries know what they must carry. |
+| 11. Editor, Artifact UX, and Compatibility | 160-168 | Expose facts, diagnostics, proof state, artifacts, compatibility tests, and stability policy to users and tools. |
+| 12. Runtime Profiles, Allocation, and Predictability | 169-184 | Define concurrency, allocation, stack, failure, timing, and overflow boundaries early enough that proof and release claims do not outrun the runtime model. |
+| 13. Public Readiness and User Tooling | 185-191 | Make the language easier to adopt, audit, govern, and evolve publicly. |
+| 14. Long-Horizon Research Backlog | 192-203 | Keep speculative language/runtime/research ideas visible but clearly gated. |
 
-## Post-Phase-2 Dependency Order
+## Active Dependency Order
 
-After Phase 2, do not treat later phase numbers as a strict execution sequence. They are thematic buckets. Use this dependency order when deciding what to do next:
+Do not treat the remaining phase numbers as a strict execution sequence. They are thematic buckets. Use this dependency order when deciding what to do next:
 
-1. **Make the surrounding language stable enough to prove against**: Phases 3, 4, and 5. First make predictable code practical, then let real workloads pressure the language, then freeze the first-release stdlib/syntax surface.
-2. **Make the workflow operationally trustworthy**: Phases 6, 7, and 14. Before broadening proof claims, harden tests, wrong-code capture, artifacts, profiling, allocation/leak reporting, and runtime-profile boundaries.
-3. **Broaden the provable subset on top of that stable surface**: Phases 9 and 10. Once the language/runtime/toolchain surfaces stop drifting, expand ProofCore coverage, obligation generation, backend contracts, and incremental/equivalence guarantees.
-4. **Only then package the public story**: Phase 8, followed by Phases 12, 13, and 15 as needed. Public showcases, release criteria, package trust, editor UX, onboarding, and governance should rest on stable evidence rather than aspirational internals.
-5. **Treat compiler verification as a later trust multiplier, not a prerequisite for the first credible release**: Phase 11 comes after the proof workflow, backend assumptions, and artifact contracts are already clear.
-6. **Keep research-gated ideas fenced off**: Phase 16 stays last unless a concrete earlier example forces one of those topics forward.
+1. **Make the surrounding language stable enough to prove against**: Phases 1, 2, and 3. First make predictable code practical, then let real workloads pressure the language, then freeze the first-release stdlib/syntax surface.
+2. **Make the workflow operationally trustworthy**: Phases 4, 5, and 12. Before broadening proof claims, harden tests, wrong-code capture, artifacts, profiling, allocation/leak reporting, and runtime-profile boundaries.
+3. **Broaden the provable subset on top of that stable surface**: Phases 7 and 8. Once the language/runtime/toolchain surfaces stop drifting, expand ProofCore coverage, obligation generation, backend contracts, and incremental/equivalence guarantees.
+4. **Only then package the public story**: Phase 6, followed by Phases 10, 11, and 13 as needed. Public showcases, release criteria, package trust, editor UX, onboarding, and governance should rest on stable evidence rather than aspirational internals.
+5. **Treat compiler verification as a later trust multiplier, not a prerequisite for the first credible release**: Phase 9 comes after the proof workflow, backend assumptions, and artifact contracts are already clear.
+6. **Keep research-gated ideas fenced off**: Phase 14 stays last unless a concrete earlier example forces one of those topics forward.
 
 ## Operating Rules
 
-- Do the numbered list top-to-bottom through Phase 2. After that, follow the **Post-Phase-2 Dependency Order** instead of treating later phase numbers as a strict queue.
+- Follow the **Active Dependency Order** instead of treating phase numbers as a strict queue.
 - When an item is completed, move it to [CHANGELOG.md](CHANGELOG.md) and renumber the remaining active list.
 - Judge new language features by grammar cost, audit cost, and proof cost, not just expressiveness.
 - Do not start package management, new backends, concurrency, broad proof syntax, source-level contracts, package ecosystems, or showcase polish until earlier evidence/diagnostic/tooling steps make them concrete.
@@ -76,48 +74,13 @@ After Phase 2, do not treat later phase numbers as a strict execution sequence. 
 
 ## Active List
 
-The active roadmap starts after the proof/memory/determinism/diagnostics/policy/adversarial-foundation work already recorded in [CHANGELOG.md](CHANGELOG.md).
+The active roadmap starts after the completed compiler-integrity and proof-workflow foundation now recorded in [CHANGELOG.md](CHANGELOG.md). Former roadmap Phases 1 and 2 are historical; the active remaining work is renumbered below as Phases 1-14.
 
-### Phase 1: Compiler Integrity and Artifact Truth
-
-Expected outcome example: a function like `fn abs(x: Int) -> Int { if x < 0 { return 0 - x; } return x; }` compiles through the normal pipeline, and malformed artifacts, desynchronized proof state, and bad queries fail with explicit diagnostics instead of silent fallback.
-
-All Phase 1 items are complete — see [CHANGELOG.md](CHANGELOG.md) for details.
-
-### Phase 2: Concrete-to-Lean Proof Pressure and Claim Boundaries
-
-Expected outcome example: a function like `fn check_nonce(n: Int) -> Bool { if n < 0 { return false; } if n > 255 { return false; } return true; }` has an extracted ProofCore form, fingerprint, obligation, theorem attachment, and visible `proved/stale/missing/blocked/ineligible` status without reading compiler internals.
-
-The remaining Phase 2 gaps are not about generating more proof-looking artifacts. They are about making the Lean workflow stable under refactor, explicit about claim scope, compositional, repairable, and reviewable by outsiders. The main milestone is not “more proof generation”; it is “turn generated artifacts into a trustworthy Lean workflow with machine-readable claim boundaries and enough evidence that another engineer can review what is actually proved.”
-
-1. ~~define the narrow Concrete-to-Lean proof pressure set before stdlib work: choose 3-5 small real Concrete functions, at least one conditional-heavy parser/validator function, one helper-composition function, and one intentionally excluded function so the workflow exercises proved, stale, blocked, missing, and ineligible states~~ — **done**: 6-function pressure set in `examples/proof_pressure/` covering proved (2), stale (1), missing (1), blocked (1), ineligible (2); design doc in `docs/PROOF_PRESSURE_SET.md`; 7 regression gates in trust-gate evidence section
-2. ~~make ProofCore extraction for the pressure set reproducible and inspectable: each selected function should have a stable extracted form, fingerprint, eligibility reason, and obligation entry that can be reviewed without reading compiler internals~~ — **done**: fixed effects/evidence discrepancy (was using hardcoded proofs, now uses obligations); 24 trust-gate assertions cover extraction forms, status/blockers, obligation deps/sources, eligibility reasons, effects consistency, and determinism
-3. ~~define the canonical early proof-spec and theorem shapes for the narrow slice: decide the first allowed property forms, theorem statement patterns, naming rules, and explicit non-goals so generated stubs do not drift into ad hoc one-offs~~ — **done**: `docs/PROOF_THEOREM_SHAPES.md` defines 3 theorem categories (concrete tests, universal boundary, full contract), naming rules (`<fn>Expr`, `<fn>Fn`, `eval_<fn>`, `<fn>_correct`), allowed property forms, explicit non-goals, fuel convention, and readability standards
-4. ~~generate or maintain Lean theorem stubs for the pressure set from compiler artifacts: function identity, spec name, proof target, parameters, and extracted expression should appear in a predictable Lean-facing shape that a user can complete manually~~ — **done**: `--report lean-stubs` generates PExpr defs, PFnDef entries, function table, eval helpers, and `sorry`-based theorem stubs from extraction; 10 trust-gate assertions
-5. ~~set a readability quality bar for extracted ProofCore and generated theorem stubs: the proof target should be deterministic and human-workable, not merely machine-correct, so a user can actually write the attached Lean proof from the emitted artifact~~ — **done**: readability standards codified in `docs/PROOF_THEOREM_SHAPES.md` §Readability; lean-stubs output uses constructor syntax with named fields; extraction forms are deterministic (verified by trust-gate fingerprint determinism tests)
-6. ~~validate Lean theorem identity and attachment integrity as a checked boundary: fabricated proof names, missing theorem references, mismatched spec/theorem pairs, and registry/body mismatches must fail explicitly before user proof artifacts are treated as trustworthy~~ — **done**: `validateRegistry` checks unknown functions, ineligible targets, extraction-blocked targets, empty proof/spec names, duplicate/conflicting entries; `RegistryIssue.isError` distinguishes errors from warnings; proof-sensitive reports return exit 1 on errors; 6 adversarial registry tests + 5 adversarial test files in `tests/programs/adversarial_registry/`
-7. ~~wire actual Lean kernel checking into the narrow proof workflow: a proof should count as proved only when the referenced Lean theorem exists and the relevant Lean module checks under the pinned toolchain, not merely because a registry entry names it~~ — **done**: `--report check-proofs` generates temp Lean file with `#check @TheoremName` for each proved/stale obligation, invokes `lake env lean`, parses results per-theorem; hardcoded proof names now carry explicit theorem references in `provedFunctions` triple; 6 trust-gate assertions
-8. ~~add end-to-end Lean attachment regression coverage for the narrow proof slice: registry entries, proof names, theorem identities, extracted proof targets, actual Lean checking, stale detection, and proof-status facts should be tested together as one workflow~~ — **done**: 4 end-to-end tests verify proved/stale consistency across proof-status, obligations, extraction, and check-proofs; fingerprint identity verified between obligation and extraction reports
-9. ~~add stale-proof repair pressure tests: mutate a proved Concrete function, require the report to show the exact fingerprint/body drift, then restore or update the attachment and verify the status returns to proved~~ — **done**: 6 stale-repair tests: initial proved → mutate body → stale detected with fingerprint drift → update registry fingerprint → proved restored → restore original body → proved restored → kernel check passes
-10. ~~add blocked/ineligible proof pressure tests: include unsupported constructs, capability/trusted boundaries, and effectful functions so the proof workflow explains why a function is not proved without overclaiming~~ — **done**: blocked diagnostics now list specific unsupported constructs (struct literal, match expression, mutable assignment, string literal, if-without-else); ineligible diagnostics list specific reasons (capabilities, recursion, FFI, allocation, blocking I/O, entry point, trusted); hints no longer suggest removing structural properties; 29 adversarial pressure tests verify every ineligibility reason, every blocked construct, registry-targeting-blocked/ineligible errors, consistency invariants, and JSON diagnostic fields
-11. ~~make build / check / report / prove feel like one coherent product workflow for the narrow slice: proof status, stale detection, blocked/ineligible states, spec/claim scope, and artifact-backed evidence should be part of the normal toolchain story rather than sidecar research output~~ — **done**: `concrete build` now shows a proof summary line after every successful build (e.g., "Proofs: 2 proved, 1 stale, 7 missing, 53 blocked"); `concrete check` runs frontend + ProofCore without codegen, prints the full proof-status report with actionable next-steps, and exits 1 if any obligations are stale/missing/blocked; `loadProject` shared function eliminates duplication between build/test/check; 10 workflow tests verify build summary, check output, exit codes, next-steps priority, and error handling
-12. ~~scope `require-proofs` enforcement to the user package: today `enforceRequireProofs` checks all obligations including stdlib, which makes the policy unusable in practice; scope it to project modules only (matching how `enforcePredictable` and `enforceDeny` already filter by `depNames`), then add a real passing boundary test once scoped enforcement exists~~ — **done**: added `ProofCore.scopeToUser` utility that filters obligations/entries/excluded/diagnostics to user-package modules by matching qualified-name prefixes against `depNames`; `enforceRequireProofs` now checks only user obligations; `concrete build` proof summary counts only user functions; `concrete check` reports only user functions with a "(N dependency obligations hidden)" footer; exit code based on user obligations only; 10 scoping tests verify build/check output filtering, totals bounds, no std.* leakage, next-steps scoping, require-proofs user-only enforcement, and require-proofs negative catch
-13. ~~define proof attachment stability and refactor behavior: make it explicit when theorem attachments survive renames, moves, helper extraction, module splits, or equivalent refactors, when they must go stale, which identities are stable versus fingerprint-derived, and how reports/artifacts distinguish “attachment migrated”, “attachment preserved”, and “attachment invalidated”~~ — **done**: attachment identity = qualified name + body fingerprint; rename detection added to `validateRegistry` — when an orphaned registry entry's fingerprint matches a current function under a different name, the diagnostic says “appears renamed to 'new.name'” with an update hint; `unknownFunction` diagnostic now distinguishes removal from rename; 10 adversarial stability tests verify: rename detection via fingerprint match, removed function as unknown, body change → stale, unchanged body → proved preserved, variable rename → stale, helper extraction → stale, comments don't invalidate, rename hint text, operator change → stale, adding new function doesn't affect existing proof
-14. ~~define proof dependency and composition semantics for attached theorems: make helper-proof dependencies explicit, emit a machine-readable dependency graph showing which proof-bearing functions depend on which proved helpers/specs, and specify how helper proof changes propagate through attached theorem status, stale detection, and repair workflow~~ — **done**: `staleDeps` field on `Obligation` tracks which proved callees have gone stale; `--report proof-deps` shows the full dependency graph with proved/stale edges; obligations report renders stale deps inline; JSON output includes `stale_deps` array; INV-14 consistency check validates staleDeps correctness; 11 adversarial tests verify dependency graph output, stale dependency propagation (helper goes stale → caller's staleDeps updated), proved-to-proved edges, JSON fields, and consistency invariants
-15. ~~refine the proof failure taxonomy beyond one coarse `blocked` bucket: distinguish unsupported construct, effect boundary, trusted boundary, extraction limitation, theorem lookup failure, attachment integrity failure, and Lean check failure; give each a stable machine-readable code, a human-readable explanation, and a clear repair class so users know what to fix first~~ — **done**: 8 `ProofDiagnosticKind` variants (staleProof, missingProof, ineligible, unsupportedConstruct, trusted, attachmentIntegrity, theoremLookup, leanCheckFailure) with stable error codes E0800–E0807; 10 failure classes (stale_proof, missing_proof, unsupported_construct, effect_boundary, structural_gate, entry_point, trusted_boundary, attachment_integrity, theorem_lookup, lean_check_failure); 6 repair classes (theorem_update, add_proof, code_rewrite, policy_change, registry_update, none); `IneligibleCategory` now drives typed ineligible classification via `Obligation.ineligCat` instead of substring heuristics; theorem-lookup and Lean-check failures flow through normal proof diagnostics and machine-readable facts; `concrete diff` disambiguates multiple diagnostics per function by `diagnostic_kind`; 15 adversarial taxonomy tests verify class/code correctness, attachment-integrity generation, E0805–E0807 registration, JSON correctness, and diff deduplication
-16. ~~define the user proof-authoring and maintenance workflow explicitly for that slice: how a user chooses a claim shape, writes or updates specs and proofs, regenerates artifacts, diagnoses stale or blocked proofs, repairs attachments, reviews dependency fallout, and lands proof-preserving refactors without reading compiler internals~~ — **done**: `docs/PROOF_WORKFLOW.md` defines the complete 12-step workflow: choose a function (eligibility gates, extraction gates, claim shapes), generate lean-stubs, write the proof, attach via registry, verify with `concrete check` and `check-proofs`, diagnose failures (8 diagnostic kinds with failure/repair classes), repair stale proofs (fingerprint-driven), review dependency fallout via `proof-deps`, and land proof-preserving refactors (rename detection, refactor checklist); command reference table covers all 9 proof-related commands; end-to-end example walks through proving `clamp_value`; 15 workflow trust-gate tests verify extraction reports, lean-stubs generation, proof-status states, diagnostics, dependency edges, fingerprint consistency, stale repair cycles, and rename detection
-17. ~~write one canonical “how to prove a Concrete function” workflow document for outsiders: choose a function, inspect extraction, generate the stub, write the Lean theorem, attach it, verify it, understand the exact claim scope and assumptions, and recover from stale or blocked states~~ — **done**: `docs/book/src/proving.md` is a step-by-step tutorial that walks an outsider through proving `clamp_value`: check eligibility with `--report extraction`, see the full picture with `--report proof-status`, generate stubs with `--report lean-stubs`, write and verify the Lean proof, attach via `proof-registry.json`, verify with `check-proofs`, understand the exact claim scope (what is proved vs not), diagnose stale/blocked/ineligible states with `--report proof-diagnostics`, maintain proofs over time (dependency tracking, refactor survival table, rename detection), and use `concrete check` as the daily driver; includes real compiler output examples and a quick-reference command table; added to the book's SUMMARY.md table of contents
-18. ~~add a proof-workflow debug bundle or report bundle for the pressure set, then harden it toward a stable evidence bundle: source, extracted ProofCore, obligations, registry entries, Lean theorem names, fingerprints, diagnostics, proof-status facts, proof dependency edges, relevant toolchain identity, explicit claim class (`helper fact`, `boundary property`, `full contract`), and explicit assumption scope should be captured together for review, bug reports, CI, and later release evidence so a reviewer can answer “what exactly is proved, under what assumptions, and where is the theorem?” without reconstruction~~ — **done**: `--report proof-bundle` produces a single JSON evidence bundle with: `schema_kind: “proof_bundle”`, source path, timestamp, compiler identity (version + git commit + Lean toolchain), proof summary (obligation counts by status, extraction counts, diagnostic severity counts, dependency stats), explicit assumptions section (proof model, compilation chain, integer model, composition, checker soundness, fingerprint stability), full registry entries, dependency graph with proved/stale edges, and all proof-related facts (proof_status, obligation, extraction, proof_diagnostic, eligibility) — excludes non-proof facts (capability, unsafe, alloc, effects); 15 trust-gate bundle tests verify schema, metadata, summary counts, assumptions, registry entries, dependency graph edges, fact kinds, fact_count consistency, clean-file baseline, exit codes, and non-proof fact exclusion
-19. ~~gate the narrow Concrete-to-Lean proof workflow in CI once stable: at minimum run extraction, registry validation, Lean theorem checking for the pressure set, stale-proof checks, proof-status consistency, evidence-bundle generation, and determinism checks as one evidence gate with one failure surface~~ — **done**: `scripts/ci/proof_gate.sh` runs 20 checks across 8 sections (extraction, registry validation, proof-status consistency, proof diagnostics, proof dependencies, evidence bundle, determinism, Lean theorem checking) against the proof pressure set as one gate with one exit code; wired as `proof-gate` job in `.github/workflows/lean_action_ci.yml` running in parallel with trust-gate and main tests; `make test-proof-gate` Makefile target; 7 trust-gate tests verify script existence/executability, full pass on pressure set, all 20 checks run, all 8 sections covered, compiler identity shown, CI workflow wiring, and Makefile target
-20. ~~keep a canonical “claims today” surface current before the first major release: one short public document backed by machine-readable proof/evidence artifacts that states what Concrete guarantees today, what it does not guarantee yet, what proof/enforcement/report/trusted claim class each promise belongs to, which claim shapes are supported, and what assumptions/backends/trusted boundaries remain~~ — **done**: `docs/CLAIMS_TODAY.md` rewritten as the canonical short public reference with 9 sections: compiler-enforced guarantees (12 properties with mechanism), proof-backed guarantees (eligibility gates, 3 theorem shapes, 6 obligation states, explicit non-claims), proof workflow and evidence pipeline (10 working capabilities, diagnostic taxonomy with E0800–E0807, evidence bundle, rename/stale detection), compiler-reported analysis (9 report commands), profile status (safe/predictable/provable/high-integrity with current reality), 10 explicit non-claims, trusted computing base (6 TCB layers), vocabulary rules (5 claim classes), and machine-readable evidence surface (6 JSON/CLI entry points); every claim carries its taxonomy class; cross-references PROOF_CONTRACT.md, PROOF_WORKFLOW.md, PROOF_THEOREM_SHAPES.md, PROFILES.md, TRUSTED_COMPUTING_BASE.md, CLAIM_TAXONOMY.md, GUARANTEE_STATEMENT.md, and MEMORY_GUARANTEES.md
-21. ~~publish named user-facing profiles before the first major release: make `safe`, `predictable`, `provable`, and the longer-term `high-integrity` direction explicit, define the exact gate/report/evidence expectations for each profile, and say which are current, which are partial, and which remain future-facing~~ — **done**: `docs/PROFILES.md` rewritten as canonical reference with per-profile gate/report/evidence tables: safe (7 enforced gates, 5 report commands, evidence artifacts), predictable (5 gates with advisory and policy-enforced modes, 4 report commands, JSON violation facts, explicit today-vs-remaining table), provable (10 eligibility gates, 6 obligation states, 3 theorem shapes, 10 report commands, evidence bundle + CI gate), high-integrity (named direction with intended restrictions, nothing profile-specific implemented yet); relationship diagram showing overlap without subset relationships; each profile carries explicit status (real/partial/future) and claim class
-22. ~~keep explicit trusted-computing-base accounting current for the strongest claims: Concrete checker assumptions, Lean kernel assumptions, registry/trusted-code assumptions, backend/toolchain assumptions, target/runtime assumptions, and any profile-specific claim-scope limits should stay visible in one canonical place as the project evolves~~ — **done**: `docs/TRUSTED_COMPUTING_BASE.md` rewritten as canonical reference with 6 TCB layers, each specifying what is trusted, what is actively verified, and what is not claimed; new profile-specific TCB section maps safe/predictable/provable/high-integrity claims to their TCB dependencies with explicit weights (critical/assumed/gap/boundary); 4 strongest-current-claims breakdowns (safe-code guarantees, theorem claims, predictable claims, workflow determinism); references proof-bundle assumptions, CI proof gate, adversarial test coverage, fingerprint determinism, and registry validation; remaining trust surfaces called out explicitly (checker soundness, PExpr extraction fidelity, eval soundness, integer-representation gap)
-
-### Phase 3: Predictable Core
+### Phase 1: Predictable Core
 
 Expected outcome example: a bounded helper like `fn sum4(a0: Int, a1: Int, a2: Int, a3: Int, len: Int) -> Int { ... }` can be shown to run without allocation, recursion, or blocking, with explicit failure and stack assumptions.
 
-23. validate fixed-capacity usefulness with a no-alloc parser/validator or ring-buffer-style example
+23. validate fixed-capacity usefulness with a no-alloc parser/validator or ring-buffer-style example: at minimum a ring buffer, bounded queue, fixed parser state machine, or bounded-state controller should prove the bounded subset is not toy-only
 24. design and implement the smallest bounded-capacity type path that makes predictable examples practical
 25. add stack-depth reporting for functions that pass the no-recursion profile
 26. classify host calls, cleanup paths, determinism sources, failure paths, and memory/UB boundaries for predictable/proved code
@@ -126,18 +89,18 @@ Expected outcome example: a bounded helper like `fn sum4(a0: Int, a1: Int, a2: I
 29. define standalone-file versus project UX so examples and small tools can use the stdlib without accidental workflow friction
 30. define concrete project/bootstrap UX: `concrete new`, starter templates, standard layout conventions, and a first supported outsider workflow for trying the language without project-author help
 
-### Phase 4: Pre-Stdlib Pressure Workloads
+### Phase 2: Pre-Stdlib Pressure Workloads
 
 Expected outcome example: real programs such as a JSON subset parser, DNS packet parser, ring buffer, and intrusive list compile cleanly enough to reveal exactly which stdlib, result/error, byte, and ownership APIs are still missing.
 
-31. build the parser/decoder pressure set before freezing the stdlib target: JSON subset, HTTP request parser, and DNS packet parser, specifically to discover which parsing, slice/buffer, and result/error APIs are actually missing
-32. build the ownership-heavy structure pressure set before freezing the stdlib target: tree, ordered map, arena-backed graph, and intrusive list, specifically to discover which ownership, cleanup, and container APIs are actually missing
-33. build the borrow/aliasing program pressure set before freezing the stdlib target: sequential `&mut` workflows, borrow-heavy adapters, field/element borrow stress programs, iterator-like borrowing patterns, and other programs whose main job is to force the aliasing surface into the open
-34. build the trusted-wrapper / FFI pressure set before freezing the stdlib target: libc wrapper, checksum/hash wrapper, and OS call facade, specifically to discover which boundary, error/result, and hosted-only stdlib APIs are actually missing
-35. build the fixed-capacity / no-alloc pressure set before freezing the stdlib target: ring buffer, bounded queue, and fixed parser state machine, specifically to discover which bounded-capacity and predictable-subset APIs are actually missing
-36. build the cleanup/leak-boundary program pressure set before freezing the stdlib target: nested defer-driven helpers, alloc/free facades, cleanup-heavy service code, and trusted/FFI cleanup boundaries that force leak reporting and destroy ergonomics to become honest
+31. build the parser/decoder pressure set before freezing the stdlib target: JSON subset, HTTP request parser, DNS packet parser, and at least one fixed-buffer binary parser with explicit endian handling, specifically to discover which parsing, slice/buffer, byte-cursor, and result/error APIs are actually missing
+32. build the ownership-heavy structure pressure set before freezing the stdlib target: tree, ordered map, arena-backed graph, and intrusive list, specifically to discover which ownership, cleanup, mutation, and container APIs are actually missing
+33. build the borrow/aliasing program pressure set before freezing the stdlib target: sequential `&mut` workflows, borrow-heavy adapters, field/element borrow stress programs, iterator-like borrowing patterns, reborrow-heavy examples, and other programs whose main job is to force the aliasing surface into the open
+34. build the trusted-wrapper / FFI pressure set before freezing the stdlib target: libc wrapper, checksum/hash wrapper, OS call facade, and one C-ABI library example, specifically to discover which boundary, error/result, header-generation, and hosted-only stdlib APIs are actually missing
+35. build the fixed-capacity / no-alloc pressure set before freezing the stdlib target: ring buffer, bounded queue, fixed parser state machine, and bounded-state controller, specifically to discover which bounded-capacity and predictable-subset APIs are actually missing
+36. build the cleanup/leak-boundary program pressure set before freezing the stdlib target: nested defer-driven helpers, alloc/free facades, cleanup-heavy service code, cleanup-heavy FFI wrappers, and trusted/FFI cleanup boundaries that force leak reporting, destroy ergonomics, and honest no-leak-vs-audit-only framing to become explicit
 
-### Phase 5: Stdlib and Syntax Freeze
+### Phase 3: Stdlib and Syntax Freeze
 
 Expected outcome example: parser-facing code such as `let len = cur.read_u16_be();` and proof-friendly helpers such as `res.map_err(...)` exist in a stable stdlib/syntax surface that is explicit, teachable, and still LL(1).
 
@@ -156,7 +119,7 @@ Expected outcome example: parser-facing code such as `let len = cur.read_u16_be(
 49. review syntax friction exposed by the pressure sets and stdlib/examples, but only through LL(1)-preserving changes: in particular, decide whether to unify qualification syntax by moving `Type#Variant` to the same `::` family as module qualification, clean up declaration modifier ordering such as `pub struct Copy Pair`, improve generic-construction ergonomics where surrounding type context already fixes the instantiation (for example allowing `let p: Pair<Int, Int> = Pair { ... }` with elaboration-time resolution rather than parser-level inference tricks), and revisit explicit field visibility only if real examples justify it; keep all such changes local, parser-regular, evidence-driven, and explicitly reject scope-heavy or context-sensitive additions such as bare enum variants, block `defer`, parser-driven generic inference, or multiple competing syntaxes for the same construct
 50. freeze the first-release stdlib surface explicitly: record which modules and syntax forms are stable, which remain experimental, and which are intentionally deferred so the first release does not keep drifting
 
-### Phase 6: Tooling, Tests, and Wrong-Code Corpus
+### Phase 4: Tooling, Tests, and Wrong-Code Corpus
 
 Expected outcome example: a proved parser helper and an ownership-heavy negative test both live in normal workflows with formatter output, doc examples, fuzz/property hooks where relevant, and named wrong-code regressions if the compiler ever drifts.
 
@@ -171,7 +134,7 @@ Expected outcome example: a proved parser helper and an ownership-heavy negative
 59. build and maintain a named wrong-code regression corpus: every discovered miscompile, codegen bug, obligation bug, checker soundness bug, and proof-pipeline regression should land as a stable reproduction, not just disappear into the general suite
 60. add an MCP server for Claude, ChatGPT, Codex, and research agents to query compiler facts after the normal fact CLI is useful
 
-### Phase 7: Performance, Artifacts, and Contract Hardening
+### Phase 5: Performance, Artifacts, and Contract Hardening
 
 Expected outcome example: a proof-bearing function ships with stable report artifacts, benchmark numbers, allocation/leak visibility, and compiler dumps that let a reviewer connect source behavior to evidence and performance.
 
@@ -189,21 +152,21 @@ Expected outcome example: a proof-bearing function ships with stable report arti
 72. make the AI optimization loop explicit: generate packet, propose patch, run benchmarks, run evidence gates, reject patches that weaken proof/trust/predictability unless requested
 73. define and check module/interface artifacts before package management: exported types, function signatures, capabilities, proof expectations, policy requirements, fact schema version, dependency fingerprints, and enough body/interface separation for later incremental compilation
 
-### Phase 8: Release Credibility and Showcase
+### Phase 6: Release Credibility and Showcase
 
 Expected outcome example: a flagship packet/header validator has explicit authority, one Lean-backed property, report/snapshot/diff coverage, and a release evidence bundle that tells an outsider exactly what is proved and what is assumed.
 
 74. expand packaging/artifacts only after reports, registry, policies, interface artifacts, and CI gates have proved what artifacts must carry
 75. define proof-aware package artifacts explicitly: packages should eventually ship facts, obligations, proof status, trusted assumptions, policy declarations, and package-boundary evidence summaries as normal build artifacts
-76. build and curate a broader public showcase corpus after the thesis workflow is credible, and shape it deliberately as small, medium, and big programs rather than a pile of demos: small programs should isolate one property, medium programs should test composition, and a few bigger programs should prove the language survives scale; the corpus must include borrow/aliasing programs and cleanup/leak-boundary programs, not only parsers and containers
-77. turn the showcase corpus into a curated showcase set where each example proves a different thesis claim, each has honest framing, each has report/snapshot/diff coverage, each demonstrates at least one concrete thing the compiler catches, and each is chosen with an oracle in mind when possible: fuzzing, differential testing, round-trip properties, model-based tests, or comparison against another mature implementation/spec; include explicit borrow/aliasing and cleanup/leak-boundary examples in that quality bar
+76. build and curate a broader public showcase corpus after the thesis workflow is credible, and shape it deliberately as small, medium, and big programs rather than a pile of demos: small programs should isolate one property, medium programs should test composition, and a few bigger programs should prove the language survives scale; the corpus must include borrow/aliasing programs, cleanup/leak-boundary programs, at least one ownership-heavy medium example, and at least one bounded/no-alloc medium example, not only parsers and containers
+77. turn the showcase corpus into a curated showcase set where each example proves a different thesis claim, each has honest framing, each has report/snapshot/diff coverage, each demonstrates at least one concrete thing the compiler catches, and each is chosen with an oracle in mind when possible: fuzzing, differential testing, round-trip properties, model-based tests, or comparison against another mature implementation/spec; include explicit borrow/aliasing, cleanup/leak-boundary, privilege/authority, ownership-heavy, and bounded/no-alloc examples in that quality bar
 78. publish a supported-workload matrix before the first major release: explicitly separate first-class supported workloads, showcase-only workloads, and research-only workloads so the public claim matches the actual language surface
 79. harden semantic diff / trust-drift review into a first-class workflow over stable facts and package/release artifacts, not just a research note or one-off diff tool: this should grow to include proof-target drift, theorem/attachment drift, claim-scope drift, package-boundary evidence drift, and a reviewer-facing proof-diff story that answers what changed, what is still proved, and which assumptions moved
 80. sharpen the positioning against Rust, Zig, Lean 4, SPARK/Ada, Austral, Dafny, F*, and Why3 into one short page
 81. write the migration/adoption playbook: what C/Rust/Zig code should move first, how to wrap existing libraries honestly, how to introduce Concrete into an existing system, and what should stay outside Concrete; include C-header scaffolding and stale-proof repair suggestions before broader migration automation
 82. build the user-facing documentation set deliberately: a FAQ for predictable/proof/capability questions, a Concrete comparison guide against Rust, Zig, SPARK/Ada, Lean 4, and related tools, and the supporting material needed before the language book can stop churning
 83. define the showcase maintenance policy: showcase examples are first-class regression targets, must keep honest framing, must retain report/snapshot/diff coverage, and regressions in them count as serious thesis breaks; maintain the small/medium/big balance rather than letting the corpus collapse into only tiny demos
-84. build a named big-workload flagship set, not just small pressure examples: at minimum one real protocol/parser security example, one crypto/security proof example, one privilege-separated tool, one ownership-heavy medium program, and one bounded/no-alloc medium program
+84. build a named big-workload flagship set, not just small pressure examples: at minimum one real protocol/parser security example, one crypto/security proof example, one privilege-separated tool, one ownership-heavy medium program, and one bounded/no-alloc medium program; the set should be explicit enough that no core thesis area is represented only by snippets
 85. require each big-workload flagship to have honest proof/trust boundary framing, report/snapshot/diff coverage, and an oracle when possible (fuzzing, differential testing, round-trip properties, or model-based checks) so they function as real validation workloads instead of marketing demos
 86. define first public release criteria: the first stable supported subset, required examples across small, medium, and big workloads, required diagnostics, required proof workflow, required stdlib/project UX, and the minimum evidence/policy/tooling story for outsiders; the example bar must explicitly include parser/decoder, ownership-heavy, borrow/aliasing, trusted-wrapper/FFI, fixed-capacity, cleanup/leak-boundary, the named big-workload programs, the named profile surfaces, and a release evidence contract for each flagship example (proof/report/diff artifacts plus explicit assumptions)
 87. define a public security and soundness disclosure policy before first release: how users report compiler soundness bugs, miscompiles, stdlib safety bugs, proof-evidence bugs, and trusted-boundary issues, plus expected triage and embargo handling
@@ -214,16 +177,16 @@ Expected outcome example: a flagship packet/header validator has explicit author
 92. write the real language book/tutorial path only after the first stable supported subset and first public release criteria are concrete enough that teaching the language will not churn with every compiler refactor
 93. add a REPL and lightweight playground workflow once the parser/checker diagnostics and project UX are stable enough that quick experimentation will reflect the real language instead of a toy front-end
 
-### Phase 9: Proof Expansion and Provable Subset
+### Phase 7: Proof Expansion and Provable Subset
 
 Expected outcome example: helper-composition code such as `fn validate_header(...) -> Bool { if !check_magic(...) { return false; } return check_class(c); }` can carry a Lean-backed claim that successful return implies multiple structural invariants, not just one tiny helper fact.
 
-94. polish the packet/parser flagship example as the canonical thesis demo
-95. build an FFI showcase with a `trusted` wrapper and `with(Unsafe)` isolated at the boundary
-96. build an ownership-heavy data-structure showcase with linear ownership and deterministic cleanup
-97. build a privilege-separated tool where capability signatures prove the trusted core cannot touch files/network/processes
-98. build a fixed-capacity / no-alloc showcase that proves the predictable subset is practical for real bounded systems code
-99. build a real cryptography example only after the proof/artifact boundary is stronger: good candidates are constant-time equality + verification use, an HMAC verification core, an Ed25519 verification helper/core subset, or hash/parser/encoding correctness around a crypto-adjacent component
+94. polish the packet/parser flagship example as the canonical thesis demo; likely candidates are the packet, HTTP, DNS, or ELF parser surfaces, but at least one must become the explicit flagship with oracle-backed validation
+95. build an FFI showcase with a `trusted` wrapper and `with(Unsafe)` isolated at the boundary; good candidates are a libc wrapper, checksum/hash wrapper, OS call facade, or C-ABI library example
+96. build an ownership-heavy data-structure showcase with linear ownership and deterministic cleanup; likely candidates are an ordered map, intrusive list, tree, or arena-backed graph
+97. build a privilege-separated tool where capability signatures prove the trusted core cannot touch files/network/processes; it should be a real medium program, not only a tiny policy toy
+98. build a fixed-capacity / no-alloc showcase that proves the predictable subset is practical for real bounded systems code; likely candidates are a ring buffer, bounded queue, bounded-state controller, or fixed parser state machine
+99. build a real cryptography example only after the proof/artifact boundary is stronger: good candidates are constant-time equality + verification use, an HMAC verification core, an Ed25519 verification helper/core subset, or hash/parser/encoding correctness around a crypto-adjacent component; the goal is to prove the system is useful on security-sensitive code rather than only format parsing
 100. refine and stabilize the explicit `Core -> ProofCore` phase after the flagship has forced it into the open: keep the extraction semantics small, testable, and shared by obligations, specs, proofs, and future proof tools
 101. extend ProofCore and its semantics to cover more real Concrete constructs in a principled order: structs/fields, pattern matching, arrays/slices, borrows/dereferences, casts, cleanup/defer/drop behavior, and other constructs the flagship examples actually force into scope
 102. broaden proof obligation generation beyond the first pipeline slice so loop-related, memory-related, and contract-related proof work becomes mechanically inspectable instead of ad hoc
@@ -244,7 +207,7 @@ Expected outcome example: helper-composition code such as `fn validate_header(..
 117. evaluate ghost/proof-only code only after a proof-backed example needs it and the erasure story is explicit
 118. pull research-gated language features into implementation only when a current example or proof needs them
 
-### Phase 10: Backend, Target, and Incremental Pipeline
+### Phase 8: Backend, Target, and Incremental Pipeline
 
 Expected outcome example: the same pure function and proof artifacts produce equivalent facts, obligations, diagnostics, and outputs across clean builds, incremental builds, and supported backend/target configurations under documented assumptions.
 
@@ -266,7 +229,7 @@ Expected outcome example: the same pure function and proof artifacts produce equ
 134. extend the first reducer/minimizer into a broader workflow: add package-aware and multi-file reduction, richer syntax-aware rewrites, and wrong-code / artifact-mismatch predicates on top of the landed single-file crash/verifier/consistency reducer
 135. define a canonical semantic test matrix: every important language rule and artifact guarantee should map to positive, negative, adversarial, and artifact-level regression coverage
 
-### Phase 11: Compiler Verification and Preservation Proofs
+### Phase 9: Compiler Verification and Preservation Proofs
 
 Expected outcome example: a simple function like `fn add1(x: Int) -> Int { return x + 1; }` is not only user-proved for a property, but also backed by proofs that `Core -> ProofCore` extraction and selected normalization/preservation steps keep its intended pure meaning intact.
 
@@ -281,7 +244,7 @@ Expected outcome example: a simple function like `fn add1(x: Int) -> Int { retur
 144. use the small reference interpreter as an executable semantic oracle for the proof-relevant subset and compare interpreter behavior against ProofCore semantics and compiled behavior where the target model permits
 145. decide whether full end-to-end compiler correctness is in scope; if yes, define the restricted source subset, target/backend assumptions, proof architecture, and explicit non-goals before implementation begins
 
-### Phase 12: Package System and Dependency Trust
+### Phase 10: Package System and Dependency Trust
 
 Expected outcome example: a package exporting `pub fn parse_version(...) -> Int` also exports package-level facts about proof status, trusted assumptions, and authority surface so downstream users can review trust widening before adoption.
 
@@ -300,7 +263,7 @@ Expected outcome example: a package exporting `pub fn parse_version(...) -> Int`
 158. define package registry server protocol and trust model before a public ecosystem push: upload/download, index/search, yanking/deprecation, checksums/signatures, authentication, and compatibility with provenance/evidence artifacts
 159. define package/dependency trust policy explicitly: how dependencies summarize trusted assumptions, how trust widens across package boundaries, how package-level evidence is reviewed, and how trust inheritance is made visible
 
-### Phase 13: Editor, Artifact UX, and Compatibility
+### Phase 11: Editor, Artifact UX, and Compatibility
 
 Expected outcome example: hovering over `fn check_nonce(...) -> Bool` in an editor shows capability status, proof status, predictable status, and theorem/obligation links from the same underlying artifact model.
 
@@ -314,7 +277,7 @@ Expected outcome example: hovering over `fn check_nonce(...) -> Bool` in an edit
 167. define explicit language/versioning/deprecation policy across syntax, stdlib APIs, and proof/fact artifacts so users know what stability guarantees exist and how removals happen
 168. add stdlib quality gates for the bounded systems surface: API stability expectations, allocation/capability discipline, proof/predictability friendliness for core modules, and compatibility rules for example-grade helper APIs
 
-### Phase 14: Runtime Profiles, Allocation, and Predictability
+### Phase 12: Runtime Profiles, Allocation, and Predictability
 
 Expected outcome example: a bounded queue or parser helper can carry claims like “no allocation” or “bounded allocation,” explicit overflow policy, and explicit failure-path assumptions rather than hand-wavy runtime promises.
 
@@ -335,7 +298,7 @@ Expected outcome example: a bounded queue or parser helper can carry claims like
 183. define arithmetic-overflow policy for predictable/proved profiles versus performance-oriented profiles
 184. validate predictable execution with bounded examples: fixed-buffer parser, bounded-state controller, fixed-capacity ring buffer, or equivalent
 
-### Phase 15: Public Readiness and User Tooling
+### Phase 13: Public Readiness and User Tooling
 
 Expected outcome example: a new user can install Concrete, run one proof-bearing example, inspect its evidence bundle, and understand what is proved, enforced, reported, or trusted without reading the compiler source.
 
@@ -347,7 +310,7 @@ Expected outcome example: a new user can install Concrete, run one proof-bearing
 190. define the language evolution policy on top of that boundary: edition/versioning rules, deprecation windows, breaking-change policy, and how experimental features graduate into the supported subset
 191. define public governance and decision process for language evolution: how syntax changes, profile changes, stdlib stabilization, breaking changes, and security-relevant decisions are proposed, reviewed, accepted, and documented
 
-### Phase 16: Long-Horizon Research Backlog
+### Phase 14: Long-Horizon Research Backlog
 
 Expected outcome example: future ideas such as typestate, arena proofs, richer timing models, or Miri-style semantic checking stay clearly gated until Concrete already has a stable artifact/proof/evidence foundation.
 
