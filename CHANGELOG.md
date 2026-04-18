@@ -10,6 +10,17 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Proof evidence CI gate (Phase 2, item 19)
+
+`scripts/ci/proof_gate.sh` runs the complete proof workflow as one CI gate:
+
+- **20 checks across 8 sections**: extraction (4), registry validation (2), proof-status consistency (3), proof diagnostics (3), proof dependencies (2), evidence bundle (2), determinism (2), Lean theorem checking (2)
+- Runs against the proof pressure set (`examples/proof_pressure/`)
+- One exit code: 0 if all pass, 1 if any fail
+- Wired as `proof-gate` job in GitHub Actions CI (`.github/workflows/lean_action_ci.yml`), runs in parallel with trust-gate
+- `make test-proof-gate` Makefile target for local use
+- 7 trust-gate tests verify: script exists/executable, passes on pressure set, runs all 20 checks, covers all 8 sections, shows compiler identity, CI workflow wired, Makefile target present
+
 ### Proof evidence bundle (Phase 2, item 18)
 
 `--report proof-bundle` produces a single JSON evidence bundle for review, CI, and release evidence:

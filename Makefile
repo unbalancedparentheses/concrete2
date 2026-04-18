@@ -1,4 +1,4 @@
-.PHONY: build test test-full test-trust-gate test-ssa test-fuzz clean check-grammar paper docs-site docs-serve
+.PHONY: build test test-full test-trust-gate test-proof-gate test-ssa test-fuzz clean check-grammar paper docs-site docs-serve
 
 NIX_DEVELOP = XDG_CACHE_HOME=$(CURDIR)/.cache nix --extra-experimental-features "nix-command flakes" develop --command
 
@@ -13,6 +13,9 @@ test-full: build
 
 test-trust-gate: build
 	$(NIX_DEVELOP) sh ./scripts/tests/run_tests.sh --trust-gate
+
+test-proof-gate: build
+	$(NIX_DEVELOP) bash ./scripts/ci/proof_gate.sh
 
 test-ssa: build
 	$(NIX_DEVELOP) bash ./scripts/tests/test_ssa.sh

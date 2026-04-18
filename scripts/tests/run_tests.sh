@@ -30,7 +30,7 @@ Modes:
   --O2               Only -O2 optimized-build regression tests
   --codegen           Only codegen differential + SSA structure tests
   --report            Only --report output verification tests
-  --trust-gate        Correctness contracts only: determinism, consistency, terminology, verify, evidence, apiversioning, taxonomy, workflow, bundle
+  --trust-gate        Correctness contracts only: determinism, consistency, terminology, verify, evidence, apiversioning, taxonomy, workflow, bundle, proofgate
   --affected          Auto-detect changed files (git diff) and run affected tests
   --affected FILES    Run tests affected by specific files (comma-separated)
   --manifest          List all test files with categories (no execution)
@@ -241,14 +241,14 @@ resolve_affected_sections() {
 
 # Resolve which sections are active based on MODE
 case "$MODE" in
-    full)    SECTION="passlevel,positive,negative,testflag,report,codegen,O2,stdlib,collection,xtarget,perf,determinism,consistency,terminology,verify,evidence,malformed,query,desync,bugaudit,apiversioning,errorcodes,policy,taxonomy,workflow,bundle" ;;
+    full)    SECTION="passlevel,positive,negative,testflag,report,codegen,O2,stdlib,collection,xtarget,perf,determinism,consistency,terminology,verify,evidence,malformed,query,desync,bugaudit,apiversioning,errorcodes,policy,taxonomy,workflow,bundle,proofgate" ;;
     fast)    SECTION="passlevel,positive,negative,testflag,report,codegen,O2,stdlib,collection" ;;
     stdlib)  SECTION="stdlib,collection" ;;
     stdlib-module) SECTION="stdlib" ;;
     O2)      SECTION="O2" ;;
     codegen) SECTION="codegen,O2" ;;
     report)  SECTION="report" ;;
-    trust-gate) SECTION="determinism,consistency,terminology,verify,evidence,malformed,query,desync,bugaudit,apiversioning,errorcodes,policy,taxonomy,workflow,bundle" ;;
+    trust-gate) SECTION="determinism,consistency,terminology,verify,evidence,malformed,query,desync,bugaudit,apiversioning,errorcodes,policy,taxonomy,workflow,bundle,proofgate" ;;
     affected)
         SECTION=$(resolve_affected_sections "$AFFECTED_FILES")
         echo "=== Affected mode ==="
@@ -10249,6 +10249,98 @@ echo "  $pb_pass bundle gates passed"
 PASS=$((PASS + pb_pass))
 FAIL=$((FAIL + pb_fail))
 fi # end section: bundle
+
+echo ""
+flush_jobs
+
+# ============================================================
+# Proof gate CI script tests (item 19)
+# ============================================================
+
+if section_active proofgate; then
+echo ""
+echo "=== Proof gate CI tests ==="
+pg_pass=0
+pg_fail=0
+
+GATE_SCRIPT="$ROOT_DIR/scripts/ci/proof_gate.sh"
+
+# 1. Proof gate script exists and is executable
+if [ -x "$GATE_SCRIPT" ]; then
+    echo "  ok  proofgate: script exists and is executable"
+    pg_pass=$((pg_pass + 1))
+else
+    echo "  FAIL proofgate: script should exist and be executable"
+    pg_fail=$((pg_fail + 1))
+fi
+
+# 2. Proof gate passes on the pressure set
+pg_out=$(bash "$GATE_SCRIPT" 2>&1) || true
+pg_exit=$?
+if [ "$pg_exit" -eq 0 ]; then
+    echo "  ok  proofgate: passes on proof pressure set (exit 0)"
+    pg_pass=$((pg_pass + 1))
+else
+    echo "  FAIL proofgate: should pass on proof pressure set"
+    pg_fail=$((pg_fail + 1))
+fi
+
+# 3. Proof gate reports all 20 checks
+if echo "$pg_out" | grep -q "passed: 20 / 20"; then
+    echo "  ok  proofgate: runs all 20 checks"
+    pg_pass=$((pg_pass + 1))
+else
+    echo "  FAIL proofgate: should run all 20 checks"
+    pg_fail=$((pg_fail + 1))
+fi
+
+# 4. Proof gate covers all 8 sections
+if echo "$pg_out" | grep -q "Extraction" && \
+   echo "$pg_out" | grep -q "Registry" && \
+   echo "$pg_out" | grep -q "Proof-status" && \
+   echo "$pg_out" | grep -q "Proof diagnostics" && \
+   echo "$pg_out" | grep -q "Proof dependencies" && \
+   echo "$pg_out" | grep -q "Evidence bundle" && \
+   echo "$pg_out" | grep -q "Determinism" && \
+   echo "$pg_out" | grep -q "Lean theorem"; then
+    echo "  ok  proofgate: covers all 8 check sections"
+    pg_pass=$((pg_pass + 1))
+else
+    echo "  FAIL proofgate: should cover all 8 sections"
+    pg_fail=$((pg_fail + 1))
+fi
+
+# 5. Proof gate shows compiler identity
+if echo "$pg_out" | grep -q "compiler:.*concrete"; then
+    echo "  ok  proofgate: shows compiler identity"
+    pg_pass=$((pg_pass + 1))
+else
+    echo "  FAIL proofgate: should show compiler identity"
+    pg_fail=$((pg_fail + 1))
+fi
+
+# 6. CI workflow includes proof-gate job
+if grep -q "proof-gate" "$ROOT_DIR/.github/workflows/lean_action_ci.yml"; then
+    echo "  ok  proofgate: CI workflow includes proof-gate job"
+    pg_pass=$((pg_pass + 1))
+else
+    echo "  FAIL proofgate: CI workflow should include proof-gate job"
+    pg_fail=$((pg_fail + 1))
+fi
+
+# 7. Makefile includes test-proof-gate target
+if grep -q "test-proof-gate" "$ROOT_DIR/Makefile"; then
+    echo "  ok  proofgate: Makefile includes test-proof-gate target"
+    pg_pass=$((pg_pass + 1))
+else
+    echo "  FAIL proofgate: Makefile should include test-proof-gate target"
+    pg_fail=$((pg_fail + 1))
+fi
+
+echo "  $pg_pass proofgate gates passed"
+PASS=$((PASS + pg_pass))
+FAIL=$((FAIL + pg_fail))
+fi # end section: proofgate
 
 echo ""
 flush_jobs
