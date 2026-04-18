@@ -2,6 +2,9 @@ name = "concrete"
 version = "0.1.0"
 defaultTargets = ["concrete"]
 
+[leanOptions]
+warningAsError = true
+
 [[lean_lib]]
 name = "Concrete"
 

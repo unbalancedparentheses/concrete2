@@ -136,7 +136,7 @@ def validateBundle (bundleDir : String) : IO (List String) := do
     match valAfter content "\"version\"" with
     | some v =>
       -- version must start with a digit (numeric)
-      if v.isEmpty || !(v.get 0 |>.isDigit) then
+      if v.isEmpty || !(v.front |>.isDigit) then
         issues := issues ++ ["error: manifest.json \"version\" must be a number"]
     | none => pure ()
     match valAfter content "\"source_path\"" with

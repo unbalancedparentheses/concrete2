@@ -162,7 +162,7 @@ def enforcePolicy (policy : ProjectPolicy) (modules : List CModule)
   let projectModules := modules.filter fun m => !depNames.contains m.name
   let ds1 := if policy.predictable then enforcePredictable projectModules pc locMap else []
   let ds2 := if !policy.deny.isEmpty then enforceDeny projectModules policy.deny else []
-  let ds3 := if policy.requireProofs then enforceRequireProofs pc else []
+  let ds3 := if policy.requireProofs then enforceRequireProofs (pc.scopeToUser depNames) else []
   ds1 ++ ds2 ++ ds3
 
 end Concrete

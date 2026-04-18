@@ -3,7 +3,7 @@ import Concrete
 open Concrete
 
 def usage : String :=
-  "Usage: concrete <file.con> [-o output] [--emit-llvm] [--emit-core] [--emit-ssa] [--test] [--test --module <name>] [--report caps|unsafe|layout|interface|alloc|mono|authority|proof|eligibility|proof-status|obligations|extraction|lean-stubs|check-proofs|proof-diagnostics|traceability|diagnostics-json|effects|recursion|fingerprints|consistency|verify] [--query KIND|KIND:FUNCTION|fn:FUNCTION] [--fmt]\n       concrete build [-o output] [--emit-llvm]\n       concrete check\n       concrete run [-- args...]\n       concrete test [--module <name>]\n       concrete diff <old.json> <new.json> [--json]\n       concrete snapshot <file.con> [-o output.json]\n       concrete debug-bundle <file.con> [-o dir]\n       concrete reduce <file.con> --predicate <pred> [-o output] [--verbose]\n       concrete --version"
+  "Usage: concrete <file.con> [-o output] [--emit-llvm] [--emit-core] [--emit-ssa] [--test] [--test --module <name>] [--report caps|unsafe|layout|interface|alloc|mono|authority|proof|eligibility|proof-status|obligations|extraction|lean-stubs|check-proofs|proof-diagnostics|proof-deps|traceability|diagnostics-json|effects|recursion|fingerprints|consistency|verify] [--query KIND|KIND:FUNCTION|fn:FUNCTION] [--fmt]\n       concrete build [-o output] [--emit-llvm]\n       concrete check\n       concrete run [-- args...]\n       concrete test [--module <name>]\n       concrete diff <old.json> <new.json> [--json]\n       concrete snapshot <file.con> [-o output.json]\n       concrete debug-bundle <file.con> [-o dir]\n       concrete reduce <file.con> --predicate <pred> [-o output] [--verbose]\n       concrete --version"
 
 /-- Capture compiler identity: version, git commit, lean toolchain. -/
 def compilerIdentity : IO String := do
@@ -378,6 +378,9 @@ def compileAndReport (inputPath : String) (reportType : String) : IO UInt32 := d
     if reportType == "obligations" then
       IO.println (Report.obligationsReport validCore.coreModules locMap registry pc)
       return (if hasRegistryErrors then 1 else 0)
+    if reportType == "proof-deps" then
+      IO.println (Report.proofDepsReport pc)
+      return 0
     if reportType == "proof-diagnostics" then
       IO.println (Report.proofDiagnosticsReport (pc := pc))
       return 0
@@ -456,6 +459,13 @@ def compileAndReport (inputPath : String) (reportType : String) : IO UInt32 := d
       if generalFailure then
         out := out ++ s!"\n  Lean check failed (exit code {result.exitCode}):\n"
         out := out ++ s!"    {combined.take 500}\n"
+      -- Generate taxonomy diagnostics for failures
+      let checkDiags := Concrete.checkProofResultsToDiagnostics
+        (failed.map fun (fn, pn) => (fn, pn, true))
+      if !checkDiags.isEmpty then
+        out := out ++ s!"\n  Diagnostics ({checkDiags.length}):\n"
+        for d in checkDiags do
+          out := out ++ s!"    [{d.kind.code}] {d.function}: failure={d.failureClass}, repair={d.repairClass}\n"
       out := out ++ s!"\nSummary: {verified.length} verified, {failed.length} failed"
       if generalFailure then
         out := out ++ " (general compilation error)"
@@ -519,7 +529,7 @@ def compileAndReport (inputPath : String) (reportType : String) : IO UInt32 := d
       | .ok mono =>
         IO.println (Report.monoReport validCore.coreModules mono.coreModules)
         return 0
-    IO.eprintln s!"Unknown report type: {reportType}. Use: caps, unsafe, layout, interface, alloc, mono, authority, proof, eligibility, proof-status, obligations|extraction|proof-diagnostics|traceability|diagnostics-json|schema|diagnostic-codes, effects, recursion, fingerprints, consistency, verify"
+    IO.eprintln s!"Unknown report type: {reportType}. Use: caps, unsafe, layout, interface, alloc, mono, authority, proof, eligibility, proof-status, obligations, extraction, proof-diagnostics, proof-deps, traceability, diagnostics-json, schema, diagnostic-codes, effects, recursion, fingerprints, consistency, verify"
     return 1
 
 def compileAndQuery (inputPath : String) (query : String) : IO UInt32 := do
@@ -872,8 +882,8 @@ def compileBuild (projectRoot : String) (outputPath : Option String) (emitLLVM :
       IO.FS.removeFile ⟨llPath⟩
       if !quiet then
         IO.println s!"Built {outPath}"
-        -- Print proof summary line
-        IO.println (Report.proofSummaryLine pc)
+        -- Print proof summary line (user package only)
+        IO.println (Report.proofSummaryLine (pc.scopeToUser depNames))
       return 0
 
 /-- Run tests for a project from Concrete.toml. Like compileBuild but in test mode. -/
@@ -1020,14 +1030,21 @@ def main (args : List String) : IO UInt32 := do
           if hasErrors policyDs then
             IO.eprintln (renderDiagnostics policyDs (sourceMap := allSrcMap))
             return 1
-        -- Print proof status report
+        -- Scope to user package for reporting and exit code
+        let userModules := validCore.coreModules.filter fun m => !depNames.contains m.name
+        let userPc := pc.scopeToUser depNames
+        -- Print proof status report (user package only)
         let srcMap := ctx.allSrcMap
-        IO.println (Report.proofStatusReport validCore.coreModules policyLocMap srcMap (registry := registry) (pc := pc))
+        IO.println (Report.proofStatusReport userModules policyLocMap srcMap (registry := registry) (pc := userPc))
         -- Print next steps if any
-        let nextSteps := Report.proofNextSteps pc
+        let nextSteps := Report.proofNextSteps userPc
         if !nextSteps.isEmpty then IO.println nextSteps
-        -- Exit code: 0 if all eligible proved, 1 if any stale/missing/blocked
-        let hasIssues := pc.obligations.any fun o =>
+        -- Show dependency context
+        let depOblCount := pc.obligations.length - userPc.obligations.length
+        if depOblCount > 0 then
+          IO.println s!"\n({depOblCount} dependency obligations hidden — use --report proof-status for full view)"
+        -- Exit code: 0 if all user-package eligible proved, 1 if any stale/missing/blocked
+        let hasIssues := userPc.obligations.any fun o =>
           o.status == .stale || o.status == .missing || o.status == .blocked
         let hasRegistryErrors := regIssues.any (·.isError)
         return (if hasIssues || hasRegistryErrors then 1 else 0)

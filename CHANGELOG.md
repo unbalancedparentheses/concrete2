@@ -10,6 +10,60 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Refined proof failure taxonomy (Phase 2, item 15)
+
+Proof diagnostics now carry fine-grained failure and repair classifications covering the full proof pipeline:
+
+- **8 diagnostic kinds**: staleProof (E0800), missingProof (E0801), ineligible (E0802), unsupportedConstruct (E0803), trusted (E0804), attachmentIntegrity (E0805), theoremLookup (E0806), leanCheckFailure (E0807)
+- **10 failure classes**: `stale_proof`, `missing_proof`, `unsupported_construct`, `effect_boundary`, `structural_gate`, `entry_point`, `trusted_boundary`, `attachment_integrity`, `theorem_lookup`, `lean_check_failure`
+- **6 repair classes**: `theorem_update`, `add_proof`, `code_rewrite`, `policy_change`, `registry_update`, `none`
+- `IneligibleCategory` enum for typed sub-classification (replaces brittle substring checks)
+- `registryIssuesToDiagnostics` converts all RegistryIssue variants into attachment_integrity diagnostics, wired into `extractProofCore`
+- `checkProofResultsToDiagnostics` converts check-proofs failures into theorem_lookup/lean_check_failure diagnostics
+- `concrete diff` disambiguates multiple diagnostics per function using `diagnostic_kind` as suffix key
+- Text rendering shows `failure:` and `repair:` lines; JSON includes `failure_class` and `repair_class`; schema updated
+- 15 adversarial taxonomy tests verify all failure/repair classes in text and JSON, attachment_integrity generation from stale registry, E0805-E0807 in diagnostic-codes, and diff deduplication
+
+### Proof dependency and composition semantics (Phase 2, item 14)
+
+Proof dependencies are now explicit and propagated:
+
+- `staleDeps` field on obligations tracks which proved callees have gone stale
+- `--report proof-deps` shows the full dependency graph:
+  ```
+  main.validate_header [proved]
+    → main.check_nonce (proved)
+
+  main.main [ineligible]
+    → main.validate_header (proved)
+    → main.compute_checksum (stale)
+  ```
+- Obligations report renders `stale deps:` inline when present
+- JSON `diagnostics-json` includes `stale_deps` array on obligation facts
+- INV-14 consistency check validates staleDeps correctness
+- 11 adversarial tests cover dependency graph output, stale propagation, JSON fields
+
+### Proof attachment stability under refactors (Phase 2, item 13)
+
+Proof attachment rules are now explicit and tested. The stability semantics:
+
+- **Proof survives**: qualified name unchanged + body fingerprint unchanged (comments, whitespace, adding sibling functions don't affect it)
+- **Proof goes stale**: body changes (operator change, variable rename, helper extraction, added/removed statements)
+- **Proof lost (rename detected)**: function renamed but body unchanged — registry validation now detects this via fingerprint matching and reports "appears renamed to 'new.name'" with an update hint
+- **Proof lost (removed)**: function deleted entirely — reported as "unknown function (removed or renamed)"
+
+10 adversarial stability tests cover all scenarios.
+
+### User-package proof scoping (Phase 2, item 12)
+
+Proof reporting and policy enforcement now scope to user/package modules only. Stdlib and dependency obligations are filtered out of all output surfaces:
+
+- `concrete build` summary counts only user functions: `Proofs: 2 proved, 1 stale, 1 missing, 1 blocked`
+- `concrete check` report shows only user functions with a footer: `(324 dependency obligations hidden)`
+- `require-proofs = true` enforces only on user-package obligations
+- Exit codes based on user obligations only — stdlib blocked/missing won't fail your build
+- `ProofCore.scopeToUser` utility filters by qualified-name prefix against `depNames`
+
 ### Coherent build / check / prove workflow (Phase 2, item 11)
 
 `concrete build` now shows a proof summary line after every successful build:

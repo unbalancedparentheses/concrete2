@@ -1343,7 +1343,6 @@ def proofSummaryLine (pc : Concrete.ProofCore) : String :=
 def proofNextSteps (pc : Concrete.ProofCore) : String :=
   let stales := pc.obligations.filter fun o => o.status == .stale
   let missing := pc.obligations.filter fun o => o.status == .missing
-  let blocked := pc.obligations.filter fun o => o.status == .blocked
   let staleItems := stales.map fun o =>
     s!"  - fix stale proof for {o.functionId.qualName} (body changed, update fingerprint)"
   let missingItems := missing.map fun o =>
@@ -1370,6 +1369,7 @@ structure ObligationEntry where
   proof        : String       -- proof name (from registry/hardcoded, or empty)
   status       : String       -- proved | stale | missing | blocked | ineligible | trusted
   dependencies : List String  -- qualified names of proved helpers this function calls
+  staleDeps    : List String  -- proved callees whose proof has gone stale
   fingerprint  : String       -- current body fingerprint
   source       : String       -- "registry" | "hardcoded" | "none"
   loc          : Option SourceLoc
@@ -1382,7 +1382,7 @@ private def obligationToEntry (o : Concrete.Obligation) : ObligationEntry :=
         match a.source with | .registry => "registry" | .hardcoded => "hardcoded")
     | none => ("", "", "none")
   { function := o.functionId.qualName, spec := sName, proof := pName
-  , status := statusStr, dependencies := o.dependencies
+  , status := statusStr, dependencies := o.dependencies, staleDeps := o.staleDeps
   , fingerprint := o.functionId.fingerprint, source := src, loc := o.loc }
 
 /-- Render the obligations report as human-readable output. -/
@@ -1394,9 +1394,11 @@ def obligationsReport (_modules : List CModule) (_locMap : FnLocMap := [])
     let locStr := fmtLoc e.loc
     let depsStr := if e.dependencies.isEmpty then "none"
       else ", ".intercalate e.dependencies
+    let staleDepsStr := if e.staleDeps.isEmpty then ""
+      else s!"\n    stale deps:   {", ".intercalate e.staleDeps}"
     let specStr := if e.spec.isEmpty then "(none)" else e.spec
     let proofStr := if e.proof.isEmpty then "(none)" else e.proof
-    s!"  {e.function}\n    status:       {e.status}\n    spec:         {specStr}\n    proof:        {proofStr}\n    source:       {e.source}\n    fingerprint:  {e.fingerprint}\n    dependencies: {depsStr}\n    loc:          {locStr}"
+    s!"  {e.function}\n    status:       {e.status}\n    spec:         {specStr}\n    proof:        {proofStr}\n    source:       {e.source}\n    fingerprint:  {e.fingerprint}\n    dependencies: {depsStr}{staleDepsStr}\n    loc:          {locStr}"
   let proved := (entries.filter fun e => e.status == "proved").length
   let stale := (entries.filter fun e => e.status == "stale").length
   let missing := (entries.filter fun e => e.status == "missing").length
@@ -1405,6 +1407,33 @@ def obligationsReport (_modules : List CModule) (_locMap : FnLocMap := [])
   let trusted := (entries.filter fun e => e.status == "trusted").length
   let summary := s!"Totals: {entries.length} obligations — {proved} proved, {stale} stale, {missing} missing, {blockedCnt} blocked, {inelig} ineligible, {trusted} trusted"
   s!"{header}\n\n{"\n\n".intercalate body}\n\n{summary}\n"
+
+-- ============================================================
+-- Proof dependency graph report (--report proof-deps)
+-- ============================================================
+
+/-- Render the proof dependency graph as a human-readable report.
+    Shows proved functions and their proved/stale helper dependencies. -/
+def proofDepsReport (pc : Concrete.ProofCore) : String :=
+  let header := "=== Proof Dependency Graph ==="
+  -- Show only obligations that have dependencies or stale deps
+  let withDeps := pc.obligations.filter fun o =>
+    !o.dependencies.isEmpty || !o.staleDeps.isEmpty
+  let noDeps := pc.obligations.filter fun o =>
+    o.status == .proved && o.dependencies.isEmpty && o.staleDeps.isEmpty
+  let body := withDeps.map fun o =>
+    let statusTag := o.status.canonical
+    let depLines := o.dependencies.map fun d => s!"    → {d} (proved)"
+    let staleLines := o.staleDeps.map fun d => s!"    → {d} (stale)"
+    let allLines := depLines ++ staleLines
+    s!"  {o.functionId.qualName} [{statusTag}]\n{"\n".intercalate allLines}"
+  let isolatedNames := noDeps.map fun o => s!"  {o.functionId.qualName} [proved, no dependencies]"
+  let provedCount := (pc.obligations.filter fun o => o.status == .proved).length
+  let withStaleCount := (withDeps.filter fun o => !o.staleDeps.isEmpty).length
+  let summary := s!"Summary: {provedCount} proved functions, {withDeps.length} with dependencies, {withStaleCount} with stale dependencies"
+  let sections := if body.isEmpty && isolatedNames.isEmpty then ["  (no proof dependencies)"]
+    else body ++ (if isolatedNames.isEmpty then [] else [""] ++ isolatedNames)
+  s!"{header}\n\n{"\n\n".intercalate sections}\n\n{summary}\n"
 
 -- ============================================================
 -- Proof diagnostics report (--report proof-diagnostics)
@@ -1417,6 +1446,9 @@ private def diagnosticKindLabel : Concrete.ProofDiagnosticKind → String
   | .ineligible => "ineligible"
   | .unsupportedConstruct => "unsupported_construct"
   | .trusted => "trusted"
+  | .attachmentIntegrity => "attachment_integrity"
+  | .theoremLookup => "theorem_lookup"
+  | .leanCheckFailure => "lean_check_failure"
 
 /-- Render a proof diagnostic severity as a string. -/
 private def diagnosticSeverityLabel : Concrete.ProofDiagnosticSeverity → String
@@ -1431,6 +1463,7 @@ private def renderProofDiagnostic (d : Concrete.ProofDiagnostic) : String :=
   let kindStr := diagnosticKindLabel d.kind
   let header := s!"-- {kindStr} [{sevStr}] {String.ofList (List.replicate (40 - kindStr.length) '-')} {locStr}"
   let body := s!"  {d.message}"
+  let classStr := s!"\n  failure:     {d.failureClass}\n  repair:      {d.repairClass}"
   let detailStr := if d.details.isEmpty then ""
     else s!"\n  details: {", ".intercalate d.details}"
   let fpStr := if d.fingerprint.isEmpty then ""
@@ -1439,7 +1472,7 @@ private def renderProofDiagnostic (d : Concrete.ProofDiagnostic) : String :=
     else s!"\n  expected:    {d.expectedFp}"
   let hintStr := if d.hint.isEmpty then ""
     else s!"\n  hint: {d.hint}"
-  s!"{header}\n\n{body}{detailStr}{fpStr}{expStr}{hintStr}"
+  s!"{header}\n\n{body}{classStr}{detailStr}{fpStr}{expStr}{hintStr}"
 
 /-- Human-readable proof diagnostics report. -/
 def proofDiagnosticsReport (pc : Concrete.ProofCore) : String :=
@@ -1983,6 +2016,8 @@ private def proofDiagnosticToFact (d : Concrete.ProofDiagnostic) : Val :=
     ("code", .str d.kind.code),
     ("diagnostic_kind", .str (diagnosticKindLabel d.kind)),
     ("severity", .str (diagnosticSeverityLabel d.severity)),
+    ("failure_class", .str d.failureClass),
+    ("repair_class", .str d.repairClass),
     ("function", .str d.function),
     ("message", .str d.message),
     ("loc", locToJson d.loc)
@@ -2093,6 +2128,7 @@ private def obligationToFact (e : ObligationEntry) : Val :=
     ("source", .str e.source),
     ("fingerprint", .str e.fingerprint),
     ("dependencies", .arr (e.dependencies.map .str)),
+    ("stale_deps", .arr (e.staleDeps.map .str)),
     ("loc", locToJson e.loc)
   ])
 
@@ -2907,6 +2943,7 @@ private def keyFacts (facts : List Val) : List ((String × String) × Val) :=
       -- Disambiguate multi-per-function fact kinds
       let suffix := match k with
         | "predictable_violation" => (jsonGetStr v "reason").getD ""
+        | "proof_diagnostic" => (jsonGetStr v "diagnostic_kind").getD ""
         | _ => ""
       let key := if suffix.isEmpty then (k, f) else (k, f ++ ":" ++ suffix)
       some (key, v)
@@ -3179,7 +3216,8 @@ def schemaReport : String :=
   let factSchemas := Val.obj [
     ("proof_diagnostic", fieldSpec
       [("kind", "string"), ("code", "string"), ("diagnostic_kind", "string"), ("severity", "string"),
-       ("function", "string"), ("message", "string"), ("loc", "location")]
+       ("function", "string"), ("message", "string"), ("loc", "location"),
+       ("failure_class", "string"), ("repair_class", "string")]
       [("hint", "string"), ("details", "string[]"), ("fingerprint", "string"),
        ("expected_fingerprint", "string")]),
     ("predictable_violation", fieldSpec
@@ -3200,7 +3238,8 @@ def schemaReport : String :=
     ("obligation", fieldSpec
       [("kind", "string"), ("function", "string"), ("status", "string"),
        ("spec", "string"), ("proof", "string"), ("source", "string"),
-       ("fingerprint", "string"), ("dependencies", "string[]"), ("loc", "location")]
+       ("fingerprint", "string"), ("dependencies", "string[]"),
+       ("stale_deps", "string[]"), ("loc", "location")]
       []),
     ("extraction", fieldSpec
       [("kind", "string"), ("function", "string"), ("status", "string"),
@@ -3495,12 +3534,15 @@ def diagnosticCodesReport : String :=
     entry "E0713" "ssa-verify" "error" "ret value in void function",
     entry "E0714" "ssa-verify" "error" "phi on aggregate type",
     entry "E0715" "ssa-verify" "error" "binop operand type mismatch",
-    -- Proof diagnostics (E0800–E0804)
+    -- Proof diagnostics (E0800–E0807)
     entry "E0800" "proof" "error" "stale proof: fingerprint changed",
     entry "E0801" "proof" "warning" "missing proof: eligible but unproved",
     entry "E0802" "proof" "info" "ineligible: fails profile gates",
     entry "E0803" "proof" "error" "blocked: unsupported construct in extraction",
-    entry "E0804" "proof" "info" "trusted: marked trusted"
+    entry "E0804" "proof" "info" "trusted: marked trusted",
+    entry "E0805" "proof" "error" "attachment integrity: registry entry is invalid",
+    entry "E0806" "proof" "warning" "theorem lookup: Lean proof name not found",
+    entry "E0807" "proof" "error" "lean check failure: Lean kernel rejected proof"
   ]
   (Val.obj [
     ("schema_version", .num (Int.ofNat schemaVersion)),

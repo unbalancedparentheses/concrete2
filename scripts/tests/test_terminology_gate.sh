@@ -47,7 +47,7 @@ for entry in "${BANNED_TERMS[@]}"; do
     # Exclude diagnostic kind labels (stale_proof, missing_proof, unsupported_construct)
     # which are a different semantic domain from obligation/proof statuses.
     matches=$(check_files | xargs grep -rn "\"${old}\"\|'${old}'" 2>/dev/null \
-        | grep -v "diagnosticKindLabel\|diagnostic_kind\|DiagnosticKind\|missingProof.*missing_proof\|staleProof.*stale_proof\|unsupportedConstruct.*unsupported_construct" \
+        | grep -v "diagnosticKindLabel\|diagnostic_kind\|DiagnosticKind\|missingProof.*missing_proof\|staleProof.*stale_proof\|unsupportedConstruct.*unsupported_construct\|failure_class\|failureClassOf\|valid_failures\|diags\[(" \
         | grep -v "Former variants\|now banned\|→.*canonical\|→.*missing\|→.*ineligible\|(now banned)" || true)
 
     if [ -n "$matches" ]; then

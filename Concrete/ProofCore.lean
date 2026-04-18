@@ -927,6 +927,14 @@ private def resolveSpec (qualName : String)
 -- Obligation model
 -- ============================================================
 
+/-- Classify why a function is ineligible, based on source and profile reasons.
+    Typed enum — drives failure/repair class without substring matching. -/
+inductive IneligibleCategory where
+  | entryPoint      -- is entry point (main)
+  | effectBoundary  -- has capabilities
+  | structuralGate  -- recursion, loops, allocation, FFI, blocking I/O, or combo
+  deriving BEq, Repr
+
 /-- Status of a proof obligation — derived from spec attachment,
     fingerprint comparison, and eligibility. -/
 inductive ObligationStatus where
@@ -964,7 +972,9 @@ structure Obligation where
   spec         : Option SpecAttachment
   expectedFp   : String           -- from attachment, or ""
   profileGates : List String      -- reasons for ineligibility (empty if eligible)
+  ineligCat    : Option IneligibleCategory  -- typed ineligibility classification
   dependencies : List String      -- qualified names of proved callees
+  staleDeps    : List String      -- proved callees whose proof has gone stale
   loc          : Option SourceLoc
 
 -- ============================================================
@@ -978,6 +988,9 @@ inductive ProofDiagnosticKind where
   | ineligible           -- fails profile gates
   | unsupportedConstruct -- eligible, but extraction blocked by unsupported constructs
   | trusted              -- marked trusted (informational)
+  | attachmentIntegrity  -- registry entry is invalid (unknown function, duplicate, etc.)
+  | theoremLookup        -- Lean proof name not found
+  | leanCheckFailure     -- Lean kernel rejected the proof
   deriving BEq, Repr
 
 /-- Canonical string for diagnostic kind. Maps to the ObligationStatus
@@ -988,6 +1001,9 @@ def ProofDiagnosticKind.canonical : ProofDiagnosticKind → String
   | .ineligible           => "ineligible"
   | .unsupportedConstruct => "blocked"
   | .trusted              => "trusted"
+  | .attachmentIntegrity  => "attachment_integrity"
+  | .theoremLookup        => "theorem_lookup"
+  | .leanCheckFailure     => "lean_check_failure"
 
 /-- Stable error code for proof diagnostic kinds. -/
 def ProofDiagnosticKind.code : ProofDiagnosticKind → String
@@ -996,27 +1012,84 @@ def ProofDiagnosticKind.code : ProofDiagnosticKind → String
   | .ineligible           => "E0802"
   | .unsupportedConstruct => "E0803"
   | .trusted              => "E0804"
+  | .attachmentIntegrity  => "E0805"
+  | .theoremLookup        => "E0806"
+  | .leanCheckFailure     => "E0807"
 
 /-- Severity of a proof diagnostic. -/
 inductive ProofDiagnosticSeverity where
-  | error    -- blocks proof (stale, unsupported)
-  | warning  -- needs attention (missing proof)
+  | error    -- blocks proof (stale, unsupported, attachment, lean check)
+  | warning  -- needs attention (missing proof, theorem lookup)
   | info     -- informational (ineligible, trusted)
   deriving BEq, Repr
+
+private def strContains (haystack : String) (needle : String) : Bool :=
+  (haystack.splitOn needle).length > 1
+
+/-- Determine ineligible category from source and profile gate reasons.
+    Source reasons (capabilities, entry point) take priority over profile. -/
+def classifyIneligible (sourceReasons profileReasons : List String) : IneligibleCategory :=
+  if sourceReasons.any (strContains · "entry point") then .entryPoint
+  else if sourceReasons.any (strContains · "capabilities") then .effectBoundary
+  else if profileReasons.any (strContains · "capabilities") then .effectBoundary
+  else .structuralGate
+
+/-- Failure class for an ineligible function, driven by typed category. -/
+def IneligibleCategory.failureClass : IneligibleCategory → String
+  | .entryPoint     => "entry_point"
+  | .effectBoundary => "effect_boundary"
+  | .structuralGate => "structural_gate"
+
+/-- Repair class for an ineligible function, driven by typed category. -/
+def IneligibleCategory.repairClass : IneligibleCategory → String
+  | .entryPoint     => "none"
+  | .effectBoundary => "policy_change"
+  | .structuralGate => "code_rewrite"
+
+/-- Failure class — what kind of failure prevents proof.
+    Finer-grained than ProofDiagnosticKind: splits ineligible into
+    effect_boundary, structural_gate, entry_point via typed IneligibleCategory;
+    adds attachment_integrity, theorem_lookup, lean_check_failure. -/
+def failureClassOf (kind : ProofDiagnosticKind)
+    (ineligCat : Option IneligibleCategory := none) : String :=
+  match kind with
+  | .staleProof           => "stale_proof"
+  | .missingProof         => "missing_proof"
+  | .unsupportedConstruct => "unsupported_construct"
+  | .trusted              => "trusted_boundary"
+  | .attachmentIntegrity  => "attachment_integrity"
+  | .theoremLookup        => "theorem_lookup"
+  | .leanCheckFailure     => "lean_check_failure"
+  | .ineligible           => (ineligCat.getD .structuralGate).failureClass
+
+/-- Repair class — what action resolves this failure. -/
+def repairClassOf (kind : ProofDiagnosticKind)
+    (ineligCat : Option IneligibleCategory := none) : String :=
+  match kind with
+  | .staleProof           => "theorem_update"
+  | .missingProof         => "add_proof"
+  | .unsupportedConstruct => "code_rewrite"
+  | .trusted              => "none"
+  | .attachmentIntegrity  => "registry_update"
+  | .theoremLookup        => "add_proof"
+  | .leanCheckFailure     => "theorem_update"
+  | .ineligible           => (ineligCat.getD .structuralGate).repairClass
 
 /-- A proof-pipeline diagnostic — the canonical format for proof failures,
     warnings, and informational messages. Generated in ProofCore,
     consumed read-only by Report.lean renderers. -/
 structure ProofDiagnostic where
-  kind       : ProofDiagnosticKind
-  severity   : ProofDiagnosticSeverity
-  function   : String         -- qualified name
-  message    : String         -- one-line summary
-  hint       : String         -- actionable suggestion (empty if none)
-  details    : List String    -- unsupported constructs, profile gates, etc.
-  fingerprint : String        -- current body fingerprint
-  expectedFp  : String        -- expected fingerprint (empty if none)
-  loc        : Option SourceLoc
+  kind         : ProofDiagnosticKind
+  severity     : ProofDiagnosticSeverity
+  function     : String         -- qualified name
+  message      : String         -- one-line summary
+  hint         : String         -- actionable suggestion (empty if none)
+  details      : List String    -- unsupported constructs, profile gates, etc.
+  failureClass : String         -- fine-grained failure category
+  repairClass  : String         -- what action resolves this
+  fingerprint  : String         -- current body fingerprint
+  expectedFp   : String         -- expected fingerprint (empty if none)
+  loc          : Option SourceLoc
 
 -- ============================================================
 -- ProofCore artifact
@@ -1076,6 +1149,7 @@ structure ProofCore where
 /-- A registry validation issue. -/
 inductive RegistryIssue where
   | unknownFunction (entry : ProofRegistryEntry)
+  | renamedFunction (entry : ProofRegistryEntry) (newName : String)
   | duplicateEntry (function : String) (count : Nat)
   | conflictingEntry (function : String) (specs : List String)
   | staleFingerprint (entry : ProofRegistryEntry) (currentFp : String)
@@ -1089,6 +1163,7 @@ inductive RegistryIssue where
     vs warnings (informational). -/
 def RegistryIssue.isError : RegistryIssue → Bool
   | .unknownFunction _ => true
+  | .renamedFunction _ _ => true
   | .duplicateEntry _ _ => true
   | .conflictingEntry _ _ => true
   | .staleFingerprint _ _ => false  -- stale is a warning, not an error
@@ -1103,10 +1178,15 @@ def validateRegistry (pc : ProofCore) (registry : ProofRegistry) : List Registry
   let entryFps : List (String × String) := pc.entries.map fun e => (e.qualName, e.fingerprint)
   let exclFps : List (String × String) := pc.excluded.map fun e => (e.qualName, e.fingerprint)
   let allFps := entryFps ++ exclFps
-  -- Check for unknown functions
+  -- Check for unknown functions (with rename detection via fingerprint matching)
   let unknowns := registry.filterMap fun re =>
     if allFns.contains re.function then none
-    else some (.unknownFunction re)
+    else
+      -- Fingerprint-based rename detection: if a current function has the same
+      -- fingerprint as the orphaned registry entry, it was likely renamed.
+      match allFps.find? fun (_, fp) => fp == re.bodyFingerprint with
+      | some (newName, _) => some (.renamedFunction re newName)
+      | none => some (.unknownFunction re)
   -- Check for duplicates
   let grouped := registry.foldl (fun acc re =>
     match acc.find? fun (f, _) => f == re.function with
@@ -1152,7 +1232,9 @@ def validateRegistry (pc : ProofCore) (registry : ProofRegistry) : List Registry
 /-- Render a registry validation issue as a diagnostic string. -/
 def renderRegistryIssue : RegistryIssue → String
   | .unknownFunction re =>
-    s!"error: registry entry for unknown function '{re.function}'"
+    s!"error: registry entry for unknown function '{re.function}' (function was removed or renamed — update or remove the registry entry)"
+  | .renamedFunction re newName =>
+    s!"error: registry entry for '{re.function}' appears renamed to '{newName}' (same fingerprint) — update the registry entry's function field to '{newName}'"
   | .duplicateEntry fn n =>
     s!"error: {n} duplicate registry entries for '{fn}'"
   | .conflictingEntry fn specs =>
@@ -1167,6 +1249,68 @@ def renderRegistryIssue : RegistryIssue → String
     s!"error: registry entry for '{re.function}' has empty spec name"
   | .extractionBlocked re unsupported =>
     s!"error: registry entry for '{re.function}' targets extraction-blocked function (unsupported: {", ".intercalate unsupported})"
+
+/-- Convert registry validation issues into proof diagnostics with
+    the attachment_integrity failure class. -/
+def registryIssuesToDiagnostics (issues : List RegistryIssue) : List ProofDiagnostic :=
+  issues.filterMap fun issue =>
+    let sev := if issue.isError then ProofDiagnosticSeverity.error else .warning
+    let det : List String := match issue with
+      | .unknownFunction _ => ["unknown function"]
+      | .renamedFunction _ newName => [s!"renamed to {newName}"]
+      | .duplicateEntry _ n => [s!"{n} duplicate entries"]
+      | .conflictingEntry _ specs => specs
+      | .staleFingerprint _ _ => ["stale fingerprint"]
+      | .ineligibleFunction _ reasons => reasons
+      | .emptyProofName _ => ["empty proof name"]
+      | .emptySpecName _ => ["empty spec name"]
+      | .extractionBlocked _ unsupported => unsupported
+    let fn := match issue with
+      | .unknownFunction re | .renamedFunction re _ | .staleFingerprint re _
+      | .ineligibleFunction re _ | .emptyProofName re | .emptySpecName re
+      | .extractionBlocked re _ => re.function
+      | .duplicateEntry f _ | .conflictingEntry f _ => f
+    some { kind := .attachmentIntegrity, severity := sev, function := fn
+         , message := renderRegistryIssue issue
+         , hint := match issue with
+           | .unknownFunction _ => "Remove the registry entry or update the function name."
+           | .renamedFunction _ newName => s!"Update the registry entry's function field to '{newName}'."
+           | .duplicateEntry _ _ => "Remove duplicate registry entries."
+           | .conflictingEntry _ _ => "Ensure each function has exactly one spec."
+           | .staleFingerprint _ _ => "Update the registry fingerprint to match the current body."
+           | .ineligibleFunction _ _ => "Remove the registry entry or make the function eligible."
+           | .emptyProofName _ => "Add a proof name to the registry entry."
+           | .emptySpecName _ => "Add a spec name to the registry entry."
+           | .extractionBlocked _ _ => "Remove the registry entry or fix unsupported constructs."
+         , details := det
+         , failureClass := failureClassOf .attachmentIntegrity
+         , repairClass := repairClassOf .attachmentIntegrity
+         , fingerprint := match issue with
+           | .staleFingerprint _ currentFp => currentFp
+           | _ => ""
+         , expectedFp := match issue with
+           | .staleFingerprint re _ => re.bodyFingerprint
+           | _ => ""
+         , loc := none }
+
+/-- Convert check-proofs results into proof diagnostics. Each failed
+    theorem produces either a theorem_lookup or lean_check_failure diagnostic. -/
+def checkProofResultsToDiagnostics
+    (failures : List (String × String × Bool))  -- (function, proofName, isLookupFailure)
+    : List ProofDiagnostic :=
+  failures.map fun (fn, proofName, isLookup) =>
+    let kind := if isLookup then ProofDiagnosticKind.theoremLookup else .leanCheckFailure
+    let det := [proofName]
+    { kind, severity := if isLookup then .warning else .error, function := fn
+    , message := if isLookup
+        then s!"Lean theorem '{proofName}' not found for `{fn}`."
+        else s!"Lean kernel rejected proof '{proofName}' for `{fn}`."
+    , hint := if isLookup
+        then s!"Ensure '{proofName}' is defined in Concrete/Proof.lean and imported."
+        else s!"Fix the Lean proof '{proofName}' so it type-checks."
+    , details := det, failureClass := failureClassOf kind
+    , repairClass := repairClassOf kind
+    , fingerprint := "", expectedFp := "", loc := none }
 
 -- ============================================================
 -- Extraction: Core modules → ProofCore
@@ -1288,35 +1432,49 @@ private def generateObligations
     let extracted := e.extracted.isSome
     let status := deriveObligationStatus e.eligibility.eligible
         e.eligibility.isTrusted extracted e.spec e.fingerprint
+    let cat := if status == .ineligible
+      then some (classifyIneligible e.eligibility.sourceReasons e.eligibility.profileReasons)
+      else none
     { functionId := { qualName := e.qualName, fingerprint := e.fingerprint }
     , bareName := e.bareName
     , status
     , spec := e.spec
     , expectedFp := match e.spec with | some a => a.expectedFp | none => ""
     , profileGates := e.eligibility.sourceReasons ++ e.eligibility.profileReasons
+    , ineligCat := cat
     , dependencies := []  -- filled in second pass
+    , staleDeps := []
     , loc := e.loc : Obligation }
   -- Build obligations for excluded entries (never extracted)
   let exclObls := excluded.map fun e =>
     let status := deriveObligationStatus e.eligibility.eligible
         e.eligibility.isTrusted false e.spec e.fingerprint
+    let cat := if status == .ineligible
+      then some (classifyIneligible e.eligibility.sourceReasons e.eligibility.profileReasons)
+      else none
     { functionId := { qualName := e.qualName, fingerprint := e.fingerprint }
     , bareName := e.bareName
     , status
     , spec := e.spec
     , expectedFp := match e.spec with | some a => a.expectedFp | none => ""
     , profileGates := e.eligibility.sourceReasons ++ e.eligibility.profileReasons
+    , ineligCat := cat
     , dependencies := []
+    , staleDeps := []
     , loc := e.loc : Obligation }
   let allObls := entryObls ++ exclObls
-  -- Second pass: fill in dependencies (proved callees)
+  -- Second pass: fill in dependencies (proved callees) and stale dependencies
   let provedNames := allObls.filterMap fun o =>
     if o.status == .proved then some o.functionId.qualName else none
+  let staleNames := allObls.filterMap fun o =>
+    if o.status == .stale then some o.functionId.qualName else none
   allObls.map fun o =>
-    let callees := match graph.find? fun (n, _) => n == o.functionId.qualName with
-      | some (_, cs) => cs.filter fun c => provedNames.contains c
+    let allCallees := match graph.find? fun (n, _) => n == o.functionId.qualName with
+      | some (_, cs) => cs
       | none => []
-    { o with dependencies := callees }
+    let provedCallees := allCallees.filter fun c => provedNames.contains c
+    let staleCallees := allCallees.filter fun c => staleNames.contains c
+    { o with dependencies := provedCallees, staleDeps := staleCallees }
 
 /-- Generate proof diagnostics from obligations and extraction results. -/
 private def generateDiagnostics
@@ -1331,23 +1489,32 @@ private def generateDiagnostics
       some { kind := .staleProof, severity := .error, function := qn
            , message := s!"`{qn}` has a registered proof, but the body changed."
            , hint := "Update the Lean proof to match the current body, or restore the proved implementation."
-           , details := [], fingerprint := fp, expectedFp := o.expectedFp, loc := o.loc }
+           , details := [], failureClass := failureClassOf .staleProof
+           , repairClass := repairClassOf .staleProof
+           , fingerprint := fp, expectedFp := o.expectedFp, loc := o.loc }
     | .missing =>
       some { kind := .missingProof, severity := .warning, function := qn
            , message := s!"`{qn}` passes the predictable profile but has no registered proof."
            , hint := "Add a Lean proof for this function with the current fingerprint."
-           , details := [], fingerprint := fp, expectedFp := "", loc := o.loc }
+           , details := [], failureClass := failureClassOf .missingProof
+           , repairClass := repairClassOf .missingProof
+           , fingerprint := fp, expectedFp := "", loc := o.loc }
     | .ineligible =>
+      let det := o.profileGates
       some { kind := .ineligible, severity := .info, function := qn
            , message := s!"`{qn}` cannot be proved: fails predictable profile."
-           , hint := if o.profileGates.isEmpty then ""
-               else s!"Address these constraints to make this function eligible: {", ".intercalate o.profileGates}."
-           , details := o.profileGates, fingerprint := fp, expectedFp := "", loc := o.loc }
+           , hint := if det.isEmpty then ""
+               else s!"Address these constraints to make this function eligible: {", ".intercalate det}."
+           , details := det, failureClass := failureClassOf .ineligible o.ineligCat
+           , repairClass := repairClassOf .ineligible o.ineligCat
+           , fingerprint := fp, expectedFp := "", loc := o.loc }
     | .blocked => none  -- handled by entry-level unsupported diagnostics with details
     | .trusted =>
       some { kind := .trusted, severity := .info, function := qn
            , message := s!"`{qn}` is marked trusted — proof is bypassed."
-           , hint := "", details := [], fingerprint := fp, expectedFp := "", loc := o.loc }
+           , hint := "", details := [], failureClass := failureClassOf .trusted
+           , repairClass := repairClassOf .trusted
+           , fingerprint := fp, expectedFp := "", loc := o.loc }
     | .proved => none
   -- Diagnostics from unsupported constructs (eligible but extraction blocked)
   let unsupDiags := entries.filterMap fun e =>
@@ -1355,7 +1522,8 @@ private def generateDiagnostics
       some { kind := .unsupportedConstruct, severity := .error, function := e.qualName
            , message := s!"`{e.qualName}` is eligible but uses unsupported constructs."
            , hint := s!"Remove {", ".intercalate e.unsupported} to enable extraction."
-           , details := e.unsupported
+           , details := e.unsupported, failureClass := failureClassOf .unsupportedConstruct
+           , repairClass := repairClassOf .unsupportedConstruct
            , fingerprint := e.fingerprint, expectedFp := ""
            , loc := e.loc }
     else none
@@ -1380,7 +1548,14 @@ def extractProofCore (vc : ValidatedCore)
     (accE ++ e, accX ++ x)) ([], [])
   -- Generate proof obligations and diagnostics
   let obligations := generateObligations entries excluded graph
-  let diagnostics := generateDiagnostics obligations entries
+  let oblDiags := generateDiagnostics obligations entries
+  -- Generate attachment-integrity diagnostics from registry validation
+  let regIssues := validateRegistry
+    { entries, excluded, structs := [], enums := [], traitDefs := []
+    , callGraph := graph, recMap, externNames, obligations := [], diagnostics := [] }
+    registry
+  let regDiags := registryIssuesToDiagnostics regIssues
+  let diagnostics := oblDiags ++ regDiags
   -- Collect eligible types
   let sts := List.flatten (allModules.map (·.structs)) |>.filter CStructDef.isProofEligible
   let ens := List.flatten (allModules.map (·.enums)) |>.filter CEnumDef.isProofEligible
@@ -1536,6 +1711,15 @@ def ProofCore.selfCheck (pc : ProofCore) : List ConsistencyViolation :=
              , message := s!"dependency '{dep}' is not proved" }
       else none) []
 
+  -- INV-14: staleDeps only reference stale obligations
+  let staleOblNames := (pc.obligations.filter fun o => o.status == .stale).map (·.functionId.qualName)
+  let depStale := pc.obligations.foldl (fun acc o =>
+    acc ++ o.staleDeps.filterMap fun dep =>
+      if !staleOblNames.contains dep then
+        some { invariant := "DEP-STALE", function := o.functionId.qualName
+             , message := s!"stale dependency '{dep}' is not actually stale" }
+      else none) []
+
   -- INV-10: No duplicate function names across entries and excluded
   let allPcNames := pc.entries.map (·.qualName) ++ pc.excluded.map (·.qualName)
   let dups := allPcNames.foldl (fun (seen, acc) name =>
@@ -1555,12 +1739,17 @@ def ProofCore.selfCheck (pc : ProofCore) : List ConsistencyViolation :=
         | .trusted => o.status == .trusted
         | .unsupportedConstruct => o.status == .blocked || o.status == .stale
             || (o.status == .proved && o.spec.any (·.source == .hardcoded))
+        | .attachmentIntegrity => true  -- registry issues may target any obligation status
+        | .theoremLookup => true        -- generated from check-proofs, status may be proved/stale
+        | .leanCheckFailure => true     -- generated from check-proofs, status may be proved/stale
       if !statusOk then
         some { invariant := "DIAG-STATUS", function := d.function
              , message := s!"diagnostic kind '{repr d.kind}' disagrees with obligation status '{repr o.status}'" }
       else none
     | none =>
-      if d.kind != .unsupportedConstruct then
+      -- Registry/check-proofs diagnostics may reference functions without obligations
+      if d.kind != .unsupportedConstruct && d.kind != .attachmentIntegrity
+         && d.kind != .theoremLookup && d.kind != .leanCheckFailure then
         some { invariant := "DIAG-OBL", function := d.function
              , message := "diagnostic references function with no obligation" }
       else none
@@ -1582,7 +1771,7 @@ def ProofCore.selfCheck (pc : ProofCore) : List ConsistencyViolation :=
            , message := "excluded function has no corresponding obligation — obligation generation may have dropped this function" }
 
   oblKnown ++ oblStatus ++ provedExtracted ++ provedFp ++ staleFp
-    ++ entryFp ++ extractUnsup ++ blockedUnsup ++ depProved
+    ++ entryFp ++ extractUnsup ++ blockedUnsup ++ depProved ++ depStale
     ++ dups.2 ++ diagStatus ++ entryObl ++ excludedObl
 
 /-- Format consistency violations as a human-readable report. -/
@@ -1593,5 +1782,18 @@ def ConsistencyViolation.render (vs : List ConsistencyViolation) : String :=
     let body := vs.map fun v =>
       s!"  [{v.invariant}] {v.function}: {v.message}"
     header ++ "\n".intercalate body
+
+/-- Filter this ProofCore to only include functions from user/package modules.
+    Dependency functions (whose qualName starts with a depName) are excluded. -/
+def ProofCore.scopeToUser (pc : ProofCore) (depNames : List String) : ProofCore :=
+  let isUser (qn : String) : Bool :=
+    let topModule := match qn.splitOn "." with | m :: _ => m | [] => qn
+    !depNames.contains topModule
+  { pc with
+    entries     := pc.entries.filter     fun e => isUser e.qualName
+    excluded    := pc.excluded.filter    fun e => isUser e.qualName
+    obligations := pc.obligations.filter fun o => isUser o.functionId.qualName
+    diagnostics := pc.diagnostics.filter fun d => isUser d.function
+  }
 
 end Concrete

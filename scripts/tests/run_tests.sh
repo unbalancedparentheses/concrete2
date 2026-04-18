@@ -30,7 +30,7 @@ Modes:
   --O2               Only -O2 optimized-build regression tests
   --codegen           Only codegen differential + SSA structure tests
   --report            Only --report output verification tests
-  --trust-gate        Correctness contracts only: determinism, consistency, terminology, verify, evidence, apiversioning
+  --trust-gate        Correctness contracts only: determinism, consistency, terminology, verify, evidence, apiversioning, taxonomy
   --affected          Auto-detect changed files (git diff) and run affected tests
   --affected FILES    Run tests affected by specific files (comma-separated)
   --manifest          List all test files with categories (no execution)
@@ -241,14 +241,14 @@ resolve_affected_sections() {
 
 # Resolve which sections are active based on MODE
 case "$MODE" in
-    full)    SECTION="passlevel,positive,negative,testflag,report,codegen,O2,stdlib,collection,xtarget,perf,determinism,consistency,terminology,verify,evidence,malformed,query,desync,bugaudit,apiversioning,errorcodes,policy" ;;
+    full)    SECTION="passlevel,positive,negative,testflag,report,codegen,O2,stdlib,collection,xtarget,perf,determinism,consistency,terminology,verify,evidence,malformed,query,desync,bugaudit,apiversioning,errorcodes,policy,taxonomy" ;;
     fast)    SECTION="passlevel,positive,negative,testflag,report,codegen,O2,stdlib,collection" ;;
     stdlib)  SECTION="stdlib,collection" ;;
     stdlib-module) SECTION="stdlib" ;;
     O2)      SECTION="O2" ;;
     codegen) SECTION="codegen,O2" ;;
     report)  SECTION="report" ;;
-    trust-gate) SECTION="determinism,consistency,terminology,verify,evidence,malformed,query,desync,bugaudit,apiversioning,errorcodes,policy" ;;
+    trust-gate) SECTION="determinism,consistency,terminology,verify,evidence,malformed,query,desync,bugaudit,apiversioning,errorcodes,policy,taxonomy" ;;
     affected)
         SECTION=$(resolve_affected_sections "$AFFECTED_FILES")
         echo "=== Affected mode ==="
@@ -9582,6 +9582,229 @@ fi # end section: policy
 echo ""
 flush_jobs
 
+# ============================================================
+# Proof failure taxonomy tests (item 15)
+# ============================================================
+
+if section_active taxonomy; then
+echo ""
+echo "=== Proof failure taxonomy tests ==="
+tx_pass=0
+tx_fail=0
+
+# Use proof_pressure which has all 5 diagnostic kinds
+PP_FILE="examples/proof_pressure/src/main.con"
+tx_text=$($COMPILER "$PP_FILE" --report proof-diagnostics 2>/dev/null)
+tx_json=$($COMPILER "$PP_FILE" --report diagnostics-json 2>/dev/null)
+
+# 1. Text output: stale_proof shows failure: stale_proof, repair: theorem_update
+if echo "$tx_text" | grep -A3 "compute_checksum" | grep -q "failure:.*stale_proof" && \
+   echo "$tx_text" | grep -A4 "compute_checksum" | grep -q "repair:.*theorem_update"; then
+    echo "  ok  taxonomy: stale_proof → failure=stale_proof, repair=theorem_update"
+    tx_pass=$((tx_pass + 1))
+else
+    echo "  FAIL taxonomy: stale_proof should map to failure=stale_proof, repair=theorem_update"
+    tx_fail=$((tx_fail + 1))
+fi
+
+# 2. Text output: missing_proof shows failure: missing_proof, repair: add_proof
+if echo "$tx_text" | grep -A3 "clamp_value" | grep -q "failure:.*missing_proof" && \
+   echo "$tx_text" | grep -A4 "clamp_value" | grep -q "repair:.*add_proof"; then
+    echo "  ok  taxonomy: missing_proof → failure=missing_proof, repair=add_proof"
+    tx_pass=$((tx_pass + 1))
+else
+    echo "  FAIL taxonomy: missing_proof should map to failure=missing_proof, repair=add_proof"
+    tx_fail=$((tx_fail + 1))
+fi
+
+# 3. Text output: ineligible with capabilities shows failure: effect_boundary, repair: policy_change
+if echo "$tx_text" | grep -A3 "format_result" | grep -q "failure:.*effect_boundary" && \
+   echo "$tx_text" | grep -A4 "format_result" | grep -q "repair:.*policy_change"; then
+    echo "  ok  taxonomy: ineligible+caps → failure=effect_boundary, repair=policy_change"
+    tx_pass=$((tx_pass + 1))
+else
+    echo "  FAIL taxonomy: ineligible+caps should map to failure=effect_boundary, repair=policy_change"
+    tx_fail=$((tx_fail + 1))
+fi
+
+# 4. Text output: ineligible with entry point shows failure: entry_point, repair: none
+if echo "$tx_text" | grep -A3 'main.*cannot be proved' | grep -q "failure:.*entry_point" && \
+   echo "$tx_text" | grep -A4 'main.*cannot be proved' | grep -q "repair:.*none"; then
+    echo "  ok  taxonomy: ineligible+entry_point → failure=entry_point, repair=none"
+    tx_pass=$((tx_pass + 1))
+else
+    echo "  FAIL taxonomy: ineligible+entry_point should map to failure=entry_point, repair=none"
+    tx_fail=$((tx_fail + 1))
+fi
+
+# 5. Text output: unsupported_construct shows failure: unsupported_construct, repair: code_rewrite
+if echo "$tx_text" | grep -A3 "classify_range" | grep -q "failure:.*unsupported_construct" && \
+   echo "$tx_text" | grep -A4 "classify_range" | grep -q "repair:.*code_rewrite"; then
+    echo "  ok  taxonomy: unsupported_construct → failure=unsupported_construct, repair=code_rewrite"
+    tx_pass=$((tx_pass + 1))
+else
+    echo "  FAIL taxonomy: unsupported_construct should map to failure=unsupported_construct, repair=code_rewrite"
+    tx_fail=$((tx_fail + 1))
+fi
+
+# 6. JSON output: all 5 facts have failure_class and repair_class fields
+if python3 -c "
+import json, sys
+d = json.loads(sys.stdin.read())
+proof_diags = [f for f in d['facts'] if f.get('kind') == 'proof_diagnostic']
+assert len(proof_diags) >= 5, f'expected >=5 proof diagnostics, got {len(proof_diags)}'
+for f in proof_diags:
+    assert 'failure_class' in f, f'missing failure_class in {f[\"function\"]}'
+    assert 'repair_class' in f, f'missing repair_class in {f[\"function\"]}'
+    assert f['failure_class'] != '', f'empty failure_class in {f[\"function\"]}'
+    assert f['repair_class'] != '', f'empty repair_class in {f[\"function\"]}'
+" <<< "$tx_json" 2>/dev/null; then
+    echo "  ok  taxonomy: JSON — all proof diagnostics have failure_class and repair_class"
+    tx_pass=$((tx_pass + 1))
+else
+    echo "  FAIL taxonomy: JSON proof diagnostics should have failure_class and repair_class"
+    tx_fail=$((tx_fail + 1))
+fi
+
+# 7. JSON output: correct failure_class values for each function
+if python3 -c "
+import json, sys
+d = json.loads(sys.stdin.read())
+# Group by (function, diagnostic_kind) to handle multiple diagnostics per function
+diags = {(f['function'], f['diagnostic_kind']): f for f in d['facts'] if f.get('kind') == 'proof_diagnostic'}
+assert diags[('main.compute_checksum', 'stale_proof')]['failure_class'] == 'stale_proof'
+assert diags[('main.clamp_value', 'missing_proof')]['failure_class'] == 'missing_proof'
+assert diags[('main.format_result', 'ineligible')]['failure_class'] == 'effect_boundary'
+assert diags[('main.main', 'ineligible')]['failure_class'] == 'entry_point'
+assert diags[('main.classify_range', 'unsupported_construct')]['failure_class'] == 'unsupported_construct'
+" <<< "$tx_json" 2>/dev/null; then
+    echo "  ok  taxonomy: JSON — failure_class values are correct per function"
+    tx_pass=$((tx_pass + 1))
+else
+    echo "  FAIL taxonomy: JSON — failure_class values are wrong"
+    tx_fail=$((tx_fail + 1))
+fi
+
+# 8. JSON output: correct repair_class values for each function
+if python3 -c "
+import json, sys
+d = json.loads(sys.stdin.read())
+diags = {(f['function'], f['diagnostic_kind']): f for f in d['facts'] if f.get('kind') == 'proof_diagnostic'}
+assert diags[('main.compute_checksum', 'stale_proof')]['repair_class'] == 'theorem_update'
+assert diags[('main.clamp_value', 'missing_proof')]['repair_class'] == 'add_proof'
+assert diags[('main.format_result', 'ineligible')]['repair_class'] == 'policy_change'
+assert diags[('main.main', 'ineligible')]['repair_class'] == 'none'
+assert diags[('main.classify_range', 'unsupported_construct')]['repair_class'] == 'code_rewrite'
+" <<< "$tx_json" 2>/dev/null; then
+    echo "  ok  taxonomy: JSON — repair_class values are correct per function"
+    tx_pass=$((tx_pass + 1))
+else
+    echo "  FAIL taxonomy: JSON — repair_class values are wrong"
+    tx_fail=$((tx_fail + 1))
+fi
+
+# 9. Schema includes failure_class and repair_class as required fields
+schema_out=$($COMPILER "$PP_FILE" --report schema 2>/dev/null)
+if echo "$schema_out" | grep -q "failure_class" && echo "$schema_out" | grep -q "repair_class"; then
+    echo "  ok  taxonomy: schema includes failure_class and repair_class"
+    tx_pass=$((tx_pass + 1))
+else
+    echo "  FAIL taxonomy: schema should include failure_class and repair_class"
+    tx_fail=$((tx_fail + 1))
+fi
+
+# 10. Failure classes are a closed set — no unexpected values
+if python3 -c "
+import json, sys
+d = json.loads(sys.stdin.read())
+valid_failures = {'stale_proof', 'missing_proof', 'unsupported_construct', 'effect_boundary', 'structural_gate', 'entry_point', 'trusted_boundary', 'attachment_integrity', 'theorem_lookup', 'lean_check_failure'}
+valid_repairs = {'theorem_update', 'add_proof', 'code_rewrite', 'policy_change', 'registry_update', 'none'}
+for f in d['facts']:
+    if f.get('kind') == 'proof_diagnostic':
+        assert f['failure_class'] in valid_failures, f'unexpected failure_class: {f[\"failure_class\"]}'
+        assert f['repair_class'] in valid_repairs, f'unexpected repair_class: {f[\"repair_class\"]}'
+" <<< "$tx_json" 2>/dev/null; then
+    echo "  ok  taxonomy: all failure/repair classes are from the valid set"
+    tx_pass=$((tx_pass + 1))
+else
+    echo "  FAIL taxonomy: found unexpected failure or repair class values"
+    tx_fail=$((tx_fail + 1))
+fi
+
+# 11. Attachment integrity diagnostics appear for stale registry entries
+if echo "$tx_text" | grep -q "attachment_integrity"; then
+    echo "  ok  taxonomy: attachment_integrity diagnostic appears for stale registry"
+    tx_pass=$((tx_pass + 1))
+else
+    echo "  FAIL taxonomy: attachment_integrity diagnostic should appear for stale registry"
+    tx_fail=$((tx_fail + 1))
+fi
+
+# 12. Attachment integrity diagnostic has repair=registry_update
+if echo "$tx_text" | grep -A4 "attachment_integrity" | grep -q "repair:.*registry_update"; then
+    echo "  ok  taxonomy: attachment_integrity → repair=registry_update"
+    tx_pass=$((tx_pass + 1))
+else
+    echo "  FAIL taxonomy: attachment_integrity should map to repair=registry_update"
+    tx_fail=$((tx_fail + 1))
+fi
+
+# 13. JSON: attachment_integrity diagnostic present with correct failure/repair class
+if python3 -c "
+import json, sys
+d = json.loads(sys.stdin.read())
+ai = [f for f in d['facts'] if f.get('diagnostic_kind') == 'attachment_integrity']
+assert len(ai) >= 1, f'expected >=1 attachment_integrity diagnostics, got {len(ai)}'
+for f in ai:
+    assert f['failure_class'] == 'attachment_integrity', f'wrong failure_class: {f[\"failure_class\"]}'
+    assert f['repair_class'] == 'registry_update', f'wrong repair_class: {f[\"repair_class\"]}'
+    assert f['code'] == 'E0805', f'wrong code: {f[\"code\"]}'
+" <<< "$tx_json" 2>/dev/null; then
+    echo "  ok  taxonomy: JSON — attachment_integrity has correct class/code"
+    tx_pass=$((tx_pass + 1))
+else
+    echo "  FAIL taxonomy: JSON — attachment_integrity should have correct class/code"
+    tx_fail=$((tx_fail + 1))
+fi
+
+# 14. Error codes E0805-E0807 registered in diagnostic-codes report
+dc_out=$($COMPILER "$PP_FILE" --report diagnostic-codes 2>/dev/null)
+if python3 -c "
+import json, sys
+d = json.loads(sys.stdin.read())
+codes = {c['code'] for c in d['codes']}
+assert 'E0805' in codes, 'E0805 (attachment_integrity) missing'
+assert 'E0806' in codes, 'E0806 (theorem_lookup) missing'
+assert 'E0807' in codes, 'E0807 (lean_check_failure) missing'
+" <<< "$dc_out" 2>/dev/null; then
+    echo "  ok  taxonomy: E0805-E0807 registered in diagnostic-codes"
+    tx_pass=$((tx_pass + 1))
+else
+    echo "  FAIL taxonomy: E0805-E0807 should be registered in diagnostic-codes"
+    tx_fail=$((tx_fail + 1))
+fi
+
+# 15. Diff handles multiple diagnostics per function without duplicate key error
+tx_snap1=$($COMPILER "$PP_FILE" --report diagnostics-json 2>/dev/null)
+tx_snap2=$($COMPILER "$PP_FILE" --report diagnostics-json 2>/dev/null)
+tx_diff_out=$(echo "$tx_snap1" > /tmp/tx_snap1.json && echo "$tx_snap2" > /tmp/tx_snap2.json && $COMPILER diff /tmp/tx_snap1.json /tmp/tx_snap2.json 2>&1) || tx_diff_exit=$?
+if ! echo "$tx_diff_out" | grep -q "duplicate keys"; then
+    echo "  ok  taxonomy: diff handles multiple diagnostics per function"
+    tx_pass=$((tx_pass + 1))
+else
+    echo "  FAIL taxonomy: diff should handle multiple diagnostics per function"
+    tx_fail=$((tx_fail + 1))
+fi
+rm -f /tmp/tx_snap1.json /tmp/tx_snap2.json
+
+echo "  $tx_pass taxonomy gates passed"
+PASS=$((PASS + tx_pass))
+FAIL=$((FAIL + tx_fail))
+fi # end section: taxonomy
+
+echo ""
+flush_jobs
+
 # --- Project-level tests (require Concrete.toml + std) ---
 echo "=== Project-level tests ==="
 for projdir in "$TESTDIR"/*/; do
@@ -9726,6 +9949,652 @@ echo "  $wf_pass workflow tests passed"
 PASS=$((PASS + wf_pass))
 FAIL=$((FAIL + wf_fail))
 fi # end workflow tests
+
+# --- User-package scoping tests (item 12) ---
+if section_active evidence || section_active trust-gate; then
+echo ""
+echo "=== Proof scoping tests ==="
+sc_pass=0
+sc_fail=0
+
+PP_DIR="examples/proof_pressure"
+
+# 1. Build summary counts only user functions (not 300+ stdlib)
+sc_build=$(cd "$PP_DIR" && "$ROOT_DIR/$COMPILER" build -o /tmp/test_sc_pp 2>&1)
+sc_summary=$(echo "$sc_build" | grep "^Proofs:")
+if echo "$sc_summary" | grep -qE "^Proofs: [0-9]+ proved, [0-9]+ stale, [0-9]+ missing, [0-9]+ blocked$"; then
+    echo "  ok  scoping: build summary shows user-only counts"
+    sc_pass=$((sc_pass + 1))
+else
+    echo "  FAIL scoping: build summary should show user-only counts"
+    echo "    got: $sc_summary"
+    sc_fail=$((sc_fail + 1))
+fi
+rm -f /tmp/test_sc_pp
+
+# 2. Build summary does not include large stdlib counts (total should be < 20)
+sc_total=$(echo "$sc_summary" | grep -oE '[0-9]+' | paste -sd+ - | bc)
+if [ "$sc_total" -lt 20 ]; then
+    echo "  ok  scoping: build summary total < 20 (user-only, not stdlib)"
+    sc_pass=$((sc_pass + 1))
+else
+    echo "  FAIL scoping: build summary total should be < 20 (got $sc_total, likely includes stdlib)"
+    sc_fail=$((sc_fail + 1))
+fi
+
+# 3. Check output has no std.* function entries
+sc_check=$(cd "$PP_DIR" && "$ROOT_DIR/$COMPILER" check 2>&1) || true
+if ! echo "$sc_check" | grep -q '`std\.'; then
+    echo "  ok  scoping: check report has no std.* functions"
+    sc_pass=$((sc_pass + 1))
+else
+    echo "  FAIL scoping: check report should not include std.* functions"
+    sc_fail=$((sc_fail + 1))
+fi
+
+# 4. Check output only shows main.* functions
+if echo "$sc_check" | grep '`main\.' | grep -q "main\."; then
+    echo "  ok  scoping: check report shows main.* functions"
+    sc_pass=$((sc_pass + 1))
+else
+    echo "  FAIL scoping: check report should show main.* functions"
+    sc_fail=$((sc_fail + 1))
+fi
+
+# 5. Check totals line has small count (user functions only)
+sc_totals=$(echo "$sc_check" | grep "^Totals:")
+sc_fn_count=$(echo "$sc_totals" | grep -oE '^Totals: [0-9]+' | grep -oE '[0-9]+')
+if [ -n "$sc_fn_count" ] && [ "$sc_fn_count" -lt 20 ]; then
+    echo "  ok  scoping: check totals count < 20 (user-only)"
+    sc_pass=$((sc_pass + 1))
+else
+    echo "  FAIL scoping: check totals should be < 20 (got $sc_fn_count)"
+    sc_fail=$((sc_fail + 1))
+fi
+
+# 6. Check shows dependency obligations hidden footer
+if echo "$sc_check" | grep -q "dependency obligations hidden"; then
+    echo "  ok  scoping: check shows dependency obligations hidden footer"
+    sc_pass=$((sc_pass + 1))
+else
+    echo "  FAIL scoping: check should show dependency obligations hidden footer"
+    sc_fail=$((sc_fail + 1))
+fi
+
+# 7. Check exit code based on user obligations only
+# (proof_pressure has stale/missing user obligations, so still exits 1)
+sc_check_rc=0
+(cd "$PP_DIR" && "$ROOT_DIR/$COMPILER" check >/dev/null 2>&1) || sc_check_rc=$?
+if [ "$sc_check_rc" -eq 1 ]; then
+    echo "  ok  scoping: check exit code reflects user obligations"
+    sc_pass=$((sc_pass + 1))
+else
+    echo "  FAIL scoping: check should exit 1 for user stale/missing (got $sc_check_rc)"
+    sc_fail=$((sc_fail + 1))
+fi
+
+# 8. Next steps only reference main.* functions
+sc_next=$(echo "$sc_check" | sed -n '/^Next steps:/,/^$/p')
+if echo "$sc_next" | grep -q "main\." && ! echo "$sc_next" | grep -q "std\."; then
+    echo "  ok  scoping: next steps reference only user functions"
+    sc_pass=$((sc_pass + 1))
+else
+    echo "  FAIL scoping: next steps should only reference user functions"
+    sc_fail=$((sc_fail + 1))
+fi
+
+# 9. require-proofs policy only enforces on user package
+# main is entry point (ineligible), so require-proofs should not trigger
+# stdlib functions are ineligible/blocked/trusted — require-proofs should ignore them
+SC_TMPDIR=$(mktemp -d)
+mkdir -p "$SC_TMPDIR/src"
+cat > "$SC_TMPDIR/Concrete.toml" << 'TOML'
+[package]
+name = "scope_test"
+version = "0.1.0"
+
+[policy]
+require-proofs = true
+TOML
+cat > "$SC_TMPDIR/src/main.con" << 'CON'
+pub fn main() -> Int {
+    return 0;
+}
+CON
+sc_rp_rc=0
+sc_rp_out=$(cd "$SC_TMPDIR" && "$ROOT_DIR/$COMPILER" build -o /tmp/test_sc_rp 2>&1) || sc_rp_rc=$?
+if [ "$sc_rp_rc" -eq 0 ]; then
+    echo "  ok  scoping: require-proofs passes when user code needs no proofs"
+    sc_pass=$((sc_pass + 1))
+else
+    echo "  FAIL scoping: require-proofs should pass for ineligible-only user code (got exit $sc_rp_rc)"
+    echo "    out: $(echo "$sc_rp_out" | tail -5)"
+    sc_fail=$((sc_fail + 1))
+fi
+rm -f /tmp/test_sc_rp
+rm -rf "$SC_TMPDIR"
+
+# 10. require-proofs still catches user-package violations
+SC_TMPDIR2=$(mktemp -d)
+mkdir -p "$SC_TMPDIR2/src"
+cat > "$SC_TMPDIR2/Concrete.toml" << 'TOML'
+[package]
+name = "scope_test2"
+version = "0.1.0"
+
+[policy]
+require-proofs = true
+TOML
+cat > "$SC_TMPDIR2/src/main.con" << 'CON'
+fn add(a: Int, b: Int) -> Int {
+    return a + b;
+}
+
+pub fn main() -> Int {
+    return add(1, 2);
+}
+CON
+sc_rp2_rc=0
+sc_rp2_out=$(cd "$SC_TMPDIR2" && "$ROOT_DIR/$COMPILER" build -o /tmp/test_sc_rp2 2>&1) || sc_rp2_rc=$?
+if [ "$sc_rp2_rc" -ne 0 ] && echo "$sc_rp2_out" | grep -q "policy violation.*main\.add"; then
+    echo "  ok  scoping: require-proofs catches user-package missing proof"
+    sc_pass=$((sc_pass + 1))
+else
+    echo "  FAIL scoping: require-proofs should catch user missing proof (exit=$sc_rp2_rc)"
+    echo "    out: $(echo "$sc_rp2_out" | tail -5)"
+    sc_fail=$((sc_fail + 1))
+fi
+rm -f /tmp/test_sc_rp2
+rm -rf "$SC_TMPDIR2"
+
+if [ "$sc_fail" -gt 0 ]; then
+    echo "  $sc_fail scoping test failures"
+fi
+echo "  $sc_pass scoping tests passed"
+PASS=$((PASS + sc_pass))
+FAIL=$((FAIL + sc_fail))
+fi # end scoping tests
+
+# --- Proof attachment stability tests (item 13) ---
+if section_active evidence || section_active trust-gate; then
+echo ""
+echo "=== Proof attachment stability tests ==="
+st_pass=0
+st_fail=0
+
+# All tests create temp projects with a registry entry, then exercise a refactor scenario.
+# The fingerprint for `fn add(a: Int, b: Int) -> Int { return a + b; }` is:
+ADD_FP='[(ret (binop Concrete.BinOp.add (var a) (var b)))]'
+
+# Helper: create a temp project with a registry entry
+make_stability_project() {
+    local dir
+    dir=$(mktemp -d)
+    mkdir -p "$dir/src"
+    cat > "$dir/Concrete.toml" << 'TOML'
+[package]
+name = "stability_test"
+version = "0.1.0"
+TOML
+    echo "$dir"
+}
+
+# 1. Rename detection: function renamed, body unchanged → renamedFunction diagnostic
+ST1_DIR=$(make_stability_project)
+cat > "$ST1_DIR/src/main.con" << 'CON'
+fn sum(a: Int, b: Int) -> Int {
+    return a + b;
+}
+
+pub fn main() -> Int {
+    return sum(1, 2);
+}
+CON
+# Registry still references old name "main.add"
+SUM_FP='[(ret (binop Concrete.BinOp.add (var a) (var b)))]'
+cat > "$ST1_DIR/src/proof-registry.json" << EOF
+{ "version": 1, "proofs": [{ "function": "main.add", "body_fingerprint": "$SUM_FP", "proof": "add_correct", "spec": "add_spec" }] }
+EOF
+st1_out=$("$COMPILER" "$ST1_DIR/src/main.con" --report proof-status 2>&1) || true
+if echo "$st1_out" | grep -q "appears renamed to.*main.sum"; then
+    echo "  ok  stability: rename detected via fingerprint match"
+    st_pass=$((st_pass + 1))
+else
+    echo "  FAIL stability: rename should be detected via fingerprint match"
+    echo "    out: $(echo "$st1_out" | grep -i "rename\|unknown" | head -3)"
+    st_fail=$((st_fail + 1))
+fi
+rm -rf "$ST1_DIR"
+
+# 2. Unknown function: function removed entirely → unknownFunction diagnostic
+ST2_DIR=$(make_stability_project)
+cat > "$ST2_DIR/src/main.con" << 'CON'
+pub fn main() -> Int {
+    return 42;
+}
+CON
+cat > "$ST2_DIR/src/proof-registry.json" << EOF
+{ "version": 1, "proofs": [{ "function": "main.add", "body_fingerprint": "$ADD_FP", "proof": "add_correct", "spec": "add_spec" }] }
+EOF
+st2_out=$("$COMPILER" "$ST2_DIR/src/main.con" --report proof-status 2>&1) || true
+if echo "$st2_out" | grep -q "unknown function.*main.add"; then
+    echo "  ok  stability: removed function detected as unknown"
+    st_pass=$((st_pass + 1))
+else
+    echo "  FAIL stability: removed function should be detected as unknown"
+    echo "    out: $(echo "$st2_out" | grep -i "unknown\|error" | head -3)"
+    st_fail=$((st_fail + 1))
+fi
+rm -rf "$ST2_DIR"
+
+# 3. Body change makes proof stale: same name, different body → stale fingerprint
+ST3_DIR=$(make_stability_project)
+cat > "$ST3_DIR/src/main.con" << 'CON'
+fn add(a: Int, b: Int) -> Int {
+    return a + b + 1;
+}
+
+pub fn main() -> Int {
+    return add(1, 2);
+}
+CON
+cat > "$ST3_DIR/src/proof-registry.json" << EOF
+{ "version": 1, "proofs": [{ "function": "main.add", "body_fingerprint": "$ADD_FP", "proof": "add_correct", "spec": "add_spec" }] }
+EOF
+st3_out=$("$COMPILER" "$ST3_DIR/src/main.con" --report proof-status 2>&1) || true
+if echo "$st3_out" | grep -q "stale"; then
+    echo "  ok  stability: body change produces stale proof"
+    st_pass=$((st_pass + 1))
+else
+    echo "  FAIL stability: body change should produce stale proof"
+    echo "    out: $(echo "$st3_out" | head -5)"
+    st_fail=$((st_fail + 1))
+fi
+rm -rf "$ST3_DIR"
+
+# 4. Identical body preserves proof: name + body unchanged → proved
+ST4_DIR=$(make_stability_project)
+cat > "$ST4_DIR/src/main.con" << 'CON'
+fn add(a: Int, b: Int) -> Int {
+    return a + b;
+}
+
+pub fn main() -> Int {
+    return add(1, 2);
+}
+CON
+cat > "$ST4_DIR/src/proof-registry.json" << EOF
+{ "version": 1, "proofs": [{ "function": "main.add", "body_fingerprint": "$ADD_FP", "proof": "add_correct", "spec": "add_spec" }] }
+EOF
+st4_out=$("$COMPILER" "$ST4_DIR/src/main.con" --report proof-status 2>&1) || true
+if echo "$st4_out" | grep -q "proved" && echo "$st4_out" | grep -q "main.add"; then
+    echo "  ok  stability: unchanged function preserves proof"
+    st_pass=$((st_pass + 1))
+else
+    echo "  FAIL stability: unchanged function should preserve proof"
+    echo "    out: $(echo "$st4_out" | head -5)"
+    st_fail=$((st_fail + 1))
+fi
+rm -rf "$ST4_DIR"
+
+# 5. Variable rename invalidates proof: `a + b` → `x + y` changes fingerprint
+ST5_DIR=$(make_stability_project)
+cat > "$ST5_DIR/src/main.con" << 'CON'
+fn add(x: Int, y: Int) -> Int {
+    return x + y;
+}
+
+pub fn main() -> Int {
+    return add(1, 2);
+}
+CON
+cat > "$ST5_DIR/src/proof-registry.json" << EOF
+{ "version": 1, "proofs": [{ "function": "main.add", "body_fingerprint": "$ADD_FP", "proof": "add_correct", "spec": "add_spec" }] }
+EOF
+st5_out=$("$COMPILER" "$ST5_DIR/src/main.con" --report proof-status 2>&1) || true
+if echo "$st5_out" | grep -q "stale"; then
+    echo "  ok  stability: variable rename makes proof stale"
+    st_pass=$((st_pass + 1))
+else
+    echo "  FAIL stability: variable rename should make proof stale"
+    echo "    out: $(echo "$st5_out" | head -5)"
+    st_fail=$((st_fail + 1))
+fi
+rm -rf "$ST5_DIR"
+
+# 6. Helper extraction invalidates proof: body refactored to call helper
+ST6_DIR=$(make_stability_project)
+cat > "$ST6_DIR/src/main.con" << 'CON'
+fn helper(a: Int, b: Int) -> Int {
+    return a + b;
+}
+
+fn add(a: Int, b: Int) -> Int {
+    return helper(a, b);
+}
+
+pub fn main() -> Int {
+    return add(1, 2);
+}
+CON
+cat > "$ST6_DIR/src/proof-registry.json" << EOF
+{ "version": 1, "proofs": [{ "function": "main.add", "body_fingerprint": "$ADD_FP", "proof": "add_correct", "spec": "add_spec" }] }
+EOF
+st6_out=$("$COMPILER" "$ST6_DIR/src/main.con" --report proof-status 2>&1) || true
+if echo "$st6_out" | grep -q "stale"; then
+    echo "  ok  stability: helper extraction makes proof stale"
+    st_pass=$((st_pass + 1))
+else
+    echo "  FAIL stability: helper extraction should make proof stale"
+    echo "    out: $(echo "$st6_out" | head -5)"
+    st_fail=$((st_fail + 1))
+fi
+rm -rf "$ST6_DIR"
+
+# 7. Comment/whitespace changes do not affect fingerprint (body preserved)
+ST7_DIR=$(make_stability_project)
+cat > "$ST7_DIR/src/main.con" << 'CON'
+// This function has lots of comments
+fn add(a: Int, b: Int) -> Int {
+    // compute sum
+    return a + b; // return it
+}
+
+pub fn main() -> Int {
+    return add(1, 2);
+}
+CON
+cat > "$ST7_DIR/src/proof-registry.json" << EOF
+{ "version": 1, "proofs": [{ "function": "main.add", "body_fingerprint": "$ADD_FP", "proof": "add_correct", "spec": "add_spec" }] }
+EOF
+st7_out=$("$COMPILER" "$ST7_DIR/src/main.con" --report proof-status 2>&1) || true
+if echo "$st7_out" | grep -q -- "-- proved" && ! echo "$st7_out" | grep -q "proof stale"; then
+    echo "  ok  stability: comments do not invalidate proof"
+    st_pass=$((st_pass + 1))
+else
+    echo "  FAIL stability: comments should not invalidate proof"
+    echo "    out: $(echo "$st7_out" | head -5)"
+    st_fail=$((st_fail + 1))
+fi
+rm -rf "$ST7_DIR"
+
+# 8. Rename hint includes the new name for easy registry update
+if echo "$st1_out" 2>/dev/null | grep -q "update the registry"; then
+    echo "  ok  stability: rename diagnostic includes update hint"
+    st_pass=$((st_pass + 1))
+else
+    # Re-run test 1 to get output
+    ST8_DIR=$(make_stability_project)
+    cat > "$ST8_DIR/src/main.con" << 'CON'
+fn sum(a: Int, b: Int) -> Int {
+    return a + b;
+}
+pub fn main() -> Int {
+    return sum(1, 2);
+}
+CON
+    cat > "$ST8_DIR/src/proof-registry.json" << EOF
+{ "version": 1, "proofs": [{ "function": "main.add", "body_fingerprint": "$SUM_FP", "proof": "add_correct", "spec": "add_spec" }] }
+EOF
+    st8_out=$("$COMPILER" "$ST8_DIR/src/main.con" --report proof-status 2>&1) || true
+    if echo "$st8_out" | grep -q "update the registry"; then
+        echo "  ok  stability: rename diagnostic includes update hint"
+        st_pass=$((st_pass + 1))
+    else
+        echo "  FAIL stability: rename diagnostic should include update hint"
+        echo "    out: $(echo "$st8_out" | grep -i "rename" | head -3)"
+        st_fail=$((st_fail + 1))
+    fi
+    rm -rf "$ST8_DIR"
+fi
+
+# 9. Operator change invalidates proof: a + b → a - b
+ST9_DIR=$(make_stability_project)
+cat > "$ST9_DIR/src/main.con" << 'CON'
+fn add(a: Int, b: Int) -> Int {
+    return a - b;
+}
+
+pub fn main() -> Int {
+    return add(1, 2);
+}
+CON
+cat > "$ST9_DIR/src/proof-registry.json" << EOF
+{ "version": 1, "proofs": [{ "function": "main.add", "body_fingerprint": "$ADD_FP", "proof": "add_correct", "spec": "add_spec" }] }
+EOF
+st9_out=$("$COMPILER" "$ST9_DIR/src/main.con" --report proof-status 2>&1) || true
+if echo "$st9_out" | grep -q "stale"; then
+    echo "  ok  stability: operator change makes proof stale"
+    st_pass=$((st_pass + 1))
+else
+    echo "  FAIL stability: operator change should make proof stale"
+    echo "    out: $(echo "$st9_out" | head -5)"
+    st_fail=$((st_fail + 1))
+fi
+rm -rf "$ST9_DIR"
+
+# 10. Adding a new function does not affect existing proof
+ST10_DIR=$(make_stability_project)
+cat > "$ST10_DIR/src/main.con" << 'CON'
+fn add(a: Int, b: Int) -> Int {
+    return a + b;
+}
+
+fn mul(a: Int, b: Int) -> Int {
+    return a * b;
+}
+
+pub fn main() -> Int {
+    return add(1, 2) + mul(3, 4);
+}
+CON
+cat > "$ST10_DIR/src/proof-registry.json" << EOF
+{ "version": 1, "proofs": [{ "function": "main.add", "body_fingerprint": "$ADD_FP", "proof": "add_correct", "spec": "add_spec" }] }
+EOF
+st10_out=$("$COMPILER" "$ST10_DIR/src/main.con" --report proof-status 2>&1) || true
+if echo "$st10_out" | grep -q -- "-- proved" && echo "$st10_out" | grep -q "main.add.*proof matches"; then
+    echo "  ok  stability: adding new function does not affect existing proof"
+    st_pass=$((st_pass + 1))
+else
+    echo "  FAIL stability: adding new function should not affect existing proof"
+    echo "    out: $(echo "$st10_out" | head -5)"
+    st_fail=$((st_fail + 1))
+fi
+rm -rf "$ST10_DIR"
+
+if [ "$st_fail" -gt 0 ]; then
+    echo "  $st_fail stability test failures"
+fi
+echo "  $st_pass stability tests passed"
+PASS=$((PASS + st_pass))
+FAIL=$((FAIL + st_fail))
+fi # end stability tests
+
+# --- Proof dependency and composition tests (item 14) ---
+if section_active evidence || section_active trust-gate; then
+echo ""
+echo "=== Proof dependency tests ==="
+pd_pass=0
+pd_fail=0
+
+# Fingerprints for test functions
+ADD_FP='[(ret (binop Concrete.BinOp.add (var a) (var b)))]'
+# helper: a + b, caller: helper(x, y) → fingerprint is (call helper ...)
+CALL_HELPER_FP='[(ret (call helper (var x) (var y)))]'
+
+make_dep_project() {
+    local dir
+    dir=$(mktemp -d)
+    mkdir -p "$dir/src"
+    cat > "$dir/Concrete.toml" << 'TOML'
+[package]
+name = "dep_test"
+version = "0.1.0"
+TOML
+    echo "$dir"
+}
+
+# 1. proof-deps report exists and shows dependency graph
+pd1_out=$("$COMPILER" examples/proof_pressure/src/main.con --report proof-deps 2>/dev/null)
+if echo "$pd1_out" | grep -q "=== Proof Dependency Graph ==="; then
+    echo "  ok  deps: proof-deps report produces output"
+    pd_pass=$((pd_pass + 1))
+else
+    echo "  FAIL deps: proof-deps report should produce output"
+    pd_fail=$((pd_fail + 1))
+fi
+
+# 2. proof-deps shows proved dependency edges
+if echo "$pd1_out" | grep -q "main.check_nonce (proved)"; then
+    echo "  ok  deps: proof-deps shows proved dependency edge"
+    pd_pass=$((pd_pass + 1))
+else
+    echo "  FAIL deps: proof-deps should show proved dependency edge"
+    echo "    out: $(echo "$pd1_out" | head -10)"
+    pd_fail=$((pd_fail + 1))
+fi
+
+# 3. proof-deps shows stale dependency edges
+if echo "$pd1_out" | grep -q "main.compute_checksum (stale)"; then
+    echo "  ok  deps: proof-deps shows stale dependency edge"
+    pd_pass=$((pd_pass + 1))
+else
+    echo "  FAIL deps: proof-deps should show stale dependency edge"
+    pd_fail=$((pd_fail + 1))
+fi
+
+# 4. proof-deps shows summary with stale dep count
+if echo "$pd1_out" | grep -q "with stale dependencies"; then
+    echo "  ok  deps: proof-deps shows stale dep count in summary"
+    pd_pass=$((pd_pass + 1))
+else
+    echo "  FAIL deps: proof-deps should show stale dep count"
+    pd_fail=$((pd_fail + 1))
+fi
+
+# 5. Obligations report shows stale deps field when present
+pd5_out=$("$COMPILER" examples/proof_pressure/src/main.con --report obligations 2>/dev/null)
+if echo "$pd5_out" | grep -q "stale deps:"; then
+    echo "  ok  deps: obligations report shows stale deps field"
+    pd_pass=$((pd_pass + 1))
+else
+    echo "  FAIL deps: obligations report should show stale deps field"
+    pd_fail=$((pd_fail + 1))
+fi
+
+# 6. Stale deps reference stale helper in obligations
+if echo "$pd5_out" | grep -q "stale deps:.*main.compute_checksum"; then
+    echo "  ok  deps: obligations stale deps reference stale helper"
+    pd_pass=$((pd_pass + 1))
+else
+    echo "  FAIL deps: obligations stale deps should reference stale helper"
+    pd_fail=$((pd_fail + 1))
+fi
+
+# 7. JSON output includes stale_deps field
+pd7_out=$("$COMPILER" examples/proof_pressure/src/main.con --report diagnostics-json 2>/dev/null)
+if echo "$pd7_out" | grep -q '"stale_deps"'; then
+    echo "  ok  deps: JSON output includes stale_deps field"
+    pd_pass=$((pd_pass + 1))
+else
+    echo "  FAIL deps: JSON output should include stale_deps field"
+    pd_fail=$((pd_fail + 1))
+fi
+
+# 8. Proved caller with proved helper: dependency is recorded
+PD8_DIR=$(make_dep_project)
+cat > "$PD8_DIR/src/main.con" << 'CON'
+fn helper(a: Int, b: Int) -> Int {
+    return a + b;
+}
+
+fn caller(x: Int, y: Int) -> Int {
+    return helper(x, y);
+}
+
+pub fn main() -> Int {
+    return caller(1, 2);
+}
+CON
+HELPER_FP='[(ret (binop Concrete.BinOp.add (var a) (var b)))]'
+CALLER_FP='[(ret (call helper (var x) (var y)))]'
+cat > "$PD8_DIR/src/proof-registry.json" << EOF
+{ "version": 1, "proofs": [
+  { "function": "main.helper", "body_fingerprint": "$HELPER_FP", "proof": "helper_correct", "spec": "helper_spec" },
+  { "function": "main.caller", "body_fingerprint": "$CALLER_FP", "proof": "caller_correct", "spec": "caller_spec" }
+] }
+EOF
+pd8_out=$("$COMPILER" "$PD8_DIR/src/main.con" --report proof-deps 2>/dev/null)
+if echo "$pd8_out" | grep -q "main.caller" && echo "$pd8_out" | grep -q "main.helper (proved)"; then
+    echo "  ok  deps: proved caller shows proved helper dependency"
+    pd_pass=$((pd_pass + 1))
+else
+    echo "  FAIL deps: proved caller should show proved helper dependency"
+    echo "    out: $(echo "$pd8_out" | head -10)"
+    pd_fail=$((pd_fail + 1))
+fi
+rm -rf "$PD8_DIR"
+
+# 9. Helper goes stale → caller's staleDeps reflects it
+PD9_DIR=$(make_dep_project)
+cat > "$PD9_DIR/src/main.con" << 'CON'
+fn helper(a: Int, b: Int) -> Int {
+    return a + b + 1;
+}
+
+fn caller(x: Int, y: Int) -> Int {
+    return helper(x, y);
+}
+
+pub fn main() -> Int {
+    return caller(1, 2);
+}
+CON
+# Registry has old fingerprint for helper (before +1 was added) but correct for caller
+cat > "$PD9_DIR/src/proof-registry.json" << EOF
+{ "version": 1, "proofs": [
+  { "function": "main.helper", "body_fingerprint": "$HELPER_FP", "proof": "helper_correct", "spec": "helper_spec" },
+  { "function": "main.caller", "body_fingerprint": "$CALLER_FP", "proof": "caller_correct", "spec": "caller_spec" }
+] }
+EOF
+pd9_deps=$("$COMPILER" "$PD9_DIR/src/main.con" --report proof-deps 2>/dev/null)
+if echo "$pd9_deps" | grep -q "main.helper (stale)"; then
+    echo "  ok  deps: stale helper appears in caller's dependency graph"
+    pd_pass=$((pd_pass + 1))
+else
+    echo "  FAIL deps: stale helper should appear in caller's dependency graph"
+    echo "    out: $(echo "$pd9_deps" | head -10)"
+    pd_fail=$((pd_fail + 1))
+fi
+pd9_obls=$("$COMPILER" "$PD9_DIR/src/main.con" --report obligations 2>/dev/null)
+if echo "$pd9_obls" | grep -A10 "main.caller" | grep -q "stale deps:.*main.helper"; then
+    echo "  ok  deps: stale helper listed in caller's stale deps"
+    pd_pass=$((pd_pass + 1))
+else
+    echo "  FAIL deps: stale helper should be in caller's stale deps"
+    echo "    out: $(echo "$pd9_obls" | head -20)"
+    pd_fail=$((pd_fail + 1))
+fi
+rm -rf "$PD9_DIR"
+
+# 10. Consistency check (INV-14): stale deps invariant passes
+pd10_out=$("$COMPILER" examples/proof_pressure/src/main.con --report consistency 2>/dev/null)
+if echo "$pd10_out" | grep -q "All consistency checks passed"; then
+    echo "  ok  deps: consistency check passes with stale deps"
+    pd_pass=$((pd_pass + 1))
+else
+    echo "  FAIL deps: consistency check should pass with stale deps"
+    echo "    out: $(echo "$pd10_out" | head -5)"
+    pd_fail=$((pd_fail + 1))
+fi
+
+if [ "$pd_fail" -gt 0 ]; then
+    echo "  $pd_fail dependency test failures"
+fi
+echo "  $pd_pass dependency tests passed"
+PASS=$((PASS + pd_pass))
+FAIL=$((FAIL + pd_fail))
+fi # end dependency tests
 
 # --- Summary ---
 echo ""
