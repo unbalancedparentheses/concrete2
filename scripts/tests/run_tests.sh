@@ -10422,18 +10422,24 @@ else
     fc_fail=$((fc_fail + 1))
 fi
 
-# 6. Trusted functions are classified as trusted-assumption
+# 6. Only test-packet builders are trusted (build_msg, build_bad_version, build_bad_type, build_payload_overflow)
 trusted_ok=true
-for fn in read_u8 read_u16_be write_u8 i32_buf_read ring_contains compute_tag validate_message; do
+for fn in build_msg build_bad_version build_bad_type build_payload_overflow; do
     if ! echo "$fc_effects" | grep -A1 "$fn" | grep -q "trusted: yes"; then
         trusted_ok=false
     fi
 done
+# Validation core must NOT be trusted
+for fn in read_u8 read_u16_be ring_contains ring_push compute_tag validate_message; do
+    if echo "$fc_effects" | grep -A1 "$fn" | grep -q "trusted: yes"; then
+        trusted_ok=false
+    fi
+done
 if $trusted_ok; then
-    echo "  ok  fixedcap: byte-access functions are trusted-assumption"
+    echo "  ok  fixedcap: only test-packet builders are trusted"
     fc_pass=$((fc_pass + 1))
 else
-    echo "  FAIL fixedcap: byte-access functions should be trusted-assumption"
+    echo "  FAIL fixedcap: only test-packet builders should be trusted"
     fc_fail=$((fc_fail + 1))
 fi
 

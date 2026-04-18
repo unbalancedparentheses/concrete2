@@ -272,6 +272,7 @@ private def isCopyTyPostMono (allStructs : List CStructDef) (allEnums : List CEn
     | none => match allEnums.find? fun ed => ed.name == name with
       | some ed => ed.isCopy
       | none => false
+  | .array elem _ => isCopyTyPostMono allStructs allEnums elem
   | _ => false
 
 /-- **Post-Mono Copy verifier**: monomorphized Copy structs must have all-Copy fields.

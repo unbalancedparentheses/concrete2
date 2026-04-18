@@ -654,6 +654,7 @@ private def isCopyTy (allStructs : List CStructDef) (allEnums : List CEnumDef) (
     | none => match allEnums.find? fun ed => ed.name == name with
       | some ed => ed.isCopy
       | none => false
+  | .array elem _ => isCopyTy allStructs allEnums elem
   | _ => false
 
 private def mkDeclDiag (e : CoreCheckError) : Diagnostic :=
