@@ -1,0 +1,5 @@
+[package]
+name = "fixed_capacity"
+
+[policy]
+predictable = true

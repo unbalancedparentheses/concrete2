@@ -10,6 +10,19 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Fixed-capacity validation (Phase 3, item 23)
+
+`examples/fixed_capacity/` — bounded message validator with ring buffer for replay detection:
+
+- **23 functions**, all pass `--check predictable`, `predictable = true` policy enforced
+- **Ring buffer**: fixed `[u8; 64]` array (16 i32 slots), modular head/count, Copy `RingState` struct returned by value — replay detection for recent sequence numbers
+- **Message validator**: 8-byte fixed header (version, type, seq, payload_len, XOR tag), 5 pure validation functions, bounded tag computation
+- **Trust boundary**: 13 trusted byte-access helpers (narrow: pointer read/write only, zero capabilities), 5 pure validators + 2 result constructors have no trust at all
+- **8 runtime tests**: valid data/heartbeat/reset, replay rejection, too_short, bad_version, bad_type, payload_overflow
+- **Validated findings**: fixed arrays + trusted pointer access + Copy structs + bounded for loops = practical no-alloc pattern for real bounded-state processing
+- **Gaps discovered**: no safe array indexing (all array access requires trusted pointer arithmetic), proof extraction blocked on `struct literal` and `if-without-else`, no trusted blocks (must factor into separate functions)
+- **12 trust-gate fixedcap tests**: build, run, predictable pass, evidence levels, trust classification, bounded loops, zero allocation, proof eligibility, extraction gaps, policy declaration, capability-free validation core
+
 ### Active roadmap reset after former phases 1-2
 
 Completed former roadmap Phases 1 and 2 are now treated as historical milestones rather than active plan items:

@@ -30,7 +30,7 @@ Modes:
   --O2               Only -O2 optimized-build regression tests
   --codegen           Only codegen differential + SSA structure tests
   --report            Only --report output verification tests
-  --trust-gate        Correctness contracts only: determinism, consistency, terminology, verify, evidence, apiversioning, taxonomy, workflow, bundle, proofgate
+  --trust-gate        Correctness contracts only: determinism, consistency, terminology, verify, evidence, apiversioning, taxonomy, workflow, bundle, proofgate, fixedcap
   --affected          Auto-detect changed files (git diff) and run affected tests
   --affected FILES    Run tests affected by specific files (comma-separated)
   --manifest          List all test files with categories (no execution)
@@ -241,14 +241,14 @@ resolve_affected_sections() {
 
 # Resolve which sections are active based on MODE
 case "$MODE" in
-    full)    SECTION="passlevel,positive,negative,testflag,report,codegen,O2,stdlib,collection,xtarget,perf,determinism,consistency,terminology,verify,evidence,malformed,query,desync,bugaudit,apiversioning,errorcodes,policy,taxonomy,workflow,bundle,proofgate" ;;
+    full)    SECTION="passlevel,positive,negative,testflag,report,codegen,O2,stdlib,collection,xtarget,perf,determinism,consistency,terminology,verify,evidence,malformed,query,desync,bugaudit,apiversioning,errorcodes,policy,taxonomy,workflow,bundle,proofgate,fixedcap" ;;
     fast)    SECTION="passlevel,positive,negative,testflag,report,codegen,O2,stdlib,collection" ;;
     stdlib)  SECTION="stdlib,collection" ;;
     stdlib-module) SECTION="stdlib" ;;
     O2)      SECTION="O2" ;;
     codegen) SECTION="codegen,O2" ;;
     report)  SECTION="report" ;;
-    trust-gate) SECTION="determinism,consistency,terminology,verify,evidence,malformed,query,desync,bugaudit,apiversioning,errorcodes,policy,taxonomy,workflow,bundle,proofgate" ;;
+    trust-gate) SECTION="determinism,consistency,terminology,verify,evidence,malformed,query,desync,bugaudit,apiversioning,errorcodes,policy,taxonomy,workflow,bundle,proofgate,fixedcap" ;;
     affected)
         SECTION=$(resolve_affected_sections "$AFFECTED_FILES")
         echo "=== Affected mode ==="
@@ -10341,6 +10341,167 @@ echo "  $pg_pass proofgate gates passed"
 PASS=$((PASS + pg_pass))
 FAIL=$((FAIL + pg_fail))
 fi # end section: proofgate
+
+# ============================================================
+# Fixed-capacity validation tests (Phase 3, item 23)
+# ============================================================
+
+if section_active fixedcap; then
+echo ""
+echo "=== Fixed-capacity validation tests ==="
+fc_pass=0
+fc_fail=0
+
+FC_SRC="examples/fixed_capacity/src/main.con"
+FC_DIR="$ROOT_DIR/examples/fixed_capacity"
+
+# 1. Fixed-capacity example compiles with predictable policy
+fc_build_out=$( cd "$FC_DIR" && "$ROOT_DIR/$COMPILER" build 2>&1 ) && fc_build_ok=true || fc_build_ok=false
+if $fc_build_ok; then
+    echo "  ok  fixedcap: builds with predictable=true policy"
+    fc_pass=$((fc_pass + 1))
+else
+    echo "  FAIL fixedcap: should build with predictable=true policy"
+    echo "       $fc_build_out"
+    fc_fail=$((fc_fail + 1))
+fi
+
+# 2. Fixed-capacity example runs and all tests pass (exit 0)
+if $fc_build_ok; then
+    fc_run_out=$( "$FC_DIR/fixed_capacity" 2>&1 ) && fc_run_exit=0 || fc_run_exit=$?
+    if [ "$fc_run_exit" -eq 0 ] && echo "$fc_run_out" | grep -q "All 8 tests passed"; then
+        echo "  ok  fixedcap: runs with all 8 tests passing"
+        fc_pass=$((fc_pass + 1))
+    else
+        echo "  FAIL fixedcap: should run with all 8 tests passing (exit=$fc_run_exit)"
+        fc_fail=$((fc_fail + 1))
+    fi
+else
+    echo "  SKIP fixedcap: run (build failed)"
+    fc_fail=$((fc_fail + 1))
+fi
+
+# 3. All functions pass --check predictable
+fc_pred=$("$COMPILER" "$FC_SRC" --check predictable 2>&1) && fc_pred_exit=0 || fc_pred_exit=$?
+if [ "$fc_pred_exit" -eq 0 ] && echo "$fc_pred" | grep -q "pass"; then
+    echo "  ok  fixedcap: all functions pass --check predictable"
+    fc_pass=$((fc_pass + 1))
+else
+    echo "  FAIL fixedcap: should pass --check predictable"
+    fc_fail=$((fc_fail + 1))
+fi
+
+# 4. Pure validation functions have evidence=enforced (not trusted)
+fc_effects=$("$COMPILER" "$FC_SRC" --report effects 2>&1)
+pure_enforced=true
+for fn in validate_version validate_msg_type validate_payload_len validate_total_len validate_tag; do
+    if ! echo "$fc_effects" | grep -A1 "$fn" | grep -q "evidence: enforced"; then
+        pure_enforced=false
+    fi
+done
+if $pure_enforced; then
+    echo "  ok  fixedcap: pure validators have evidence=enforced"
+    fc_pass=$((fc_pass + 1))
+else
+    echo "  FAIL fixedcap: pure validators should have evidence=enforced"
+    fc_fail=$((fc_fail + 1))
+fi
+
+# 5. Pure validation functions are not trusted
+pure_not_trusted=true
+for fn in validate_version validate_msg_type validate_payload_len validate_total_len validate_tag; do
+    if echo "$fc_effects" | grep -A1 "$fn" | grep -q "trusted: yes"; then
+        pure_not_trusted=false
+    fi
+done
+if $pure_not_trusted; then
+    echo "  ok  fixedcap: pure validators are not trusted"
+    fc_pass=$((fc_pass + 1))
+else
+    echo "  FAIL fixedcap: pure validators should not be trusted"
+    fc_fail=$((fc_fail + 1))
+fi
+
+# 6. Trusted functions are classified as trusted-assumption
+trusted_ok=true
+for fn in read_u8 read_u16_be write_u8 i32_buf_read ring_contains compute_tag validate_message; do
+    if ! echo "$fc_effects" | grep -A1 "$fn" | grep -q "trusted: yes"; then
+        trusted_ok=false
+    fi
+done
+if $trusted_ok; then
+    echo "  ok  fixedcap: byte-access functions are trusted-assumption"
+    fc_pass=$((fc_pass + 1))
+else
+    echo "  FAIL fixedcap: byte-access functions should be trusted-assumption"
+    fc_fail=$((fc_fail + 1))
+fi
+
+# 7. Ring buffer loop is bounded
+if echo "$fc_effects" | grep -A1 "ring_contains" | grep -q "loops: bounded"; then
+    echo "  ok  fixedcap: ring buffer scan has bounded loops"
+    fc_pass=$((fc_pass + 1))
+else
+    echo "  FAIL fixedcap: ring buffer scan should have bounded loops"
+    fc_fail=$((fc_fail + 1))
+fi
+
+# 8. Zero allocation in all functions
+if ! echo "$fc_effects" | grep -v "^$" | grep "alloc:" | grep -v "alloc: none" | grep -q .; then
+    echo "  ok  fixedcap: zero allocation across all functions"
+    fc_pass=$((fc_pass + 1))
+else
+    echo "  FAIL fixedcap: should have zero allocation"
+    fc_fail=$((fc_fail + 1))
+fi
+
+# 9. Extraction report shows pure validators as eligible
+fc_extract=$("$COMPILER" "$FC_SRC" --report extraction 2>&1)
+if echo "$fc_extract" | grep -A2 "validate_version" | grep -q "eligible"; then
+    echo "  ok  fixedcap: pure validators are proof-eligible"
+    fc_pass=$((fc_pass + 1))
+else
+    echo "  FAIL fixedcap: pure validators should be proof-eligible"
+    fc_fail=$((fc_fail + 1))
+fi
+
+# 10. Extraction blocked on struct literal and if-without-else (known gaps)
+if echo "$fc_extract" | grep -q "struct literal" && echo "$fc_extract" | grep -q "if without else"; then
+    echo "  ok  fixedcap: extraction blocked on known gaps (struct literal, if-without-else)"
+    fc_pass=$((fc_pass + 1))
+else
+    echo "  FAIL fixedcap: extraction should show struct literal and if-without-else gaps"
+    fc_fail=$((fc_fail + 1))
+fi
+
+# 11. Concrete.toml has predictable policy
+if grep -q 'predictable = true' "$FC_DIR/Concrete.toml"; then
+    echo "  ok  fixedcap: Concrete.toml declares predictable=true"
+    fc_pass=$((fc_pass + 1))
+else
+    echo "  FAIL fixedcap: Concrete.toml should declare predictable=true"
+    fc_fail=$((fc_fail + 1))
+fi
+
+# 12. No capabilities on validation core (pure functions)
+pure_caps=true
+for fn in validate_version validate_msg_type validate_payload_len validate_total_len validate_tag ok_result err_result; do
+    if ! echo "$fc_effects" | grep -A1 "$fn" | grep -q "caps: (pure)"; then
+        pure_caps=false
+    fi
+done
+if $pure_caps; then
+    echo "  ok  fixedcap: validation core is capability-free (pure)"
+    fc_pass=$((fc_pass + 1))
+else
+    echo "  FAIL fixedcap: validation core should be capability-free"
+    fc_fail=$((fc_fail + 1))
+fi
+
+echo "  $fc_pass fixedcap gates passed"
+PASS=$((PASS + fc_pass))
+FAIL=$((FAIL + fc_fail))
+fi # end section: fixedcap
 
 echo ""
 flush_jobs
