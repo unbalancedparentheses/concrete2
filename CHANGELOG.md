@@ -10,6 +10,16 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Stack-depth reporting (Phase 3, item 25)
+
+`--report stack-depth` for functions that pass the no-recursion profile:
+
+- **Per-function analysis**: frame size (bytes) from params + locals via `Layout.tySize`, max call depth from acyclic call graph, worst-case stack bound (sum of frame sizes along deepest chain)
+- **Recursive handling**: recursive functions shown as "unbounded" — only non-recursive functions get numeric bounds
+- **Implementation**: `stackDepthReport` in Report.lean, `collectLocalTys` collects all local variable types from function bodies (recursive into nested scopes), `computeCallDepths` does memoized DFS on the call graph
+- **Wired**: `--report stack-depth` dispatch in Main.lean, added to usage string
+- **12 trust-gate stackdepth tests**: report structure, frame bytes, call depth, stack bounds, leaf vs caller depth, bound >= frame invariant, totals, max stack, fixed_capacity 0 recursive, source locations
+
 ### Copy struct array fix + safe-indexing rewrite (Phase 3, item 24)
 
 Compiler bug fix + example rewrite eliminating most trusted code from `examples/fixed_capacity/`:

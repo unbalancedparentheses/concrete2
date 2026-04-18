@@ -30,7 +30,7 @@ Modes:
   --O2               Only -O2 optimized-build regression tests
   --codegen           Only codegen differential + SSA structure tests
   --report            Only --report output verification tests
-  --trust-gate        Correctness contracts only: determinism, consistency, terminology, verify, evidence, apiversioning, taxonomy, workflow, bundle, proofgate, fixedcap
+  --trust-gate        Correctness contracts only: determinism, consistency, terminology, verify, evidence, apiversioning, taxonomy, workflow, bundle, proofgate, fixedcap, stackdepth
   --affected          Auto-detect changed files (git diff) and run affected tests
   --affected FILES    Run tests affected by specific files (comma-separated)
   --manifest          List all test files with categories (no execution)
@@ -241,14 +241,14 @@ resolve_affected_sections() {
 
 # Resolve which sections are active based on MODE
 case "$MODE" in
-    full)    SECTION="passlevel,positive,negative,testflag,report,codegen,O2,stdlib,collection,xtarget,perf,determinism,consistency,terminology,verify,evidence,malformed,query,desync,bugaudit,apiversioning,errorcodes,policy,taxonomy,workflow,bundle,proofgate,fixedcap" ;;
+    full)    SECTION="passlevel,positive,negative,testflag,report,codegen,O2,stdlib,collection,xtarget,perf,determinism,consistency,terminology,verify,evidence,malformed,query,desync,bugaudit,apiversioning,errorcodes,policy,taxonomy,workflow,bundle,proofgate,fixedcap,stackdepth" ;;
     fast)    SECTION="passlevel,positive,negative,testflag,report,codegen,O2,stdlib,collection" ;;
     stdlib)  SECTION="stdlib,collection" ;;
     stdlib-module) SECTION="stdlib" ;;
     O2)      SECTION="O2" ;;
     codegen) SECTION="codegen,O2" ;;
     report)  SECTION="report" ;;
-    trust-gate) SECTION="determinism,consistency,terminology,verify,evidence,malformed,query,desync,bugaudit,apiversioning,errorcodes,policy,taxonomy,workflow,bundle,proofgate,fixedcap" ;;
+    trust-gate) SECTION="determinism,consistency,terminology,verify,evidence,malformed,query,desync,bugaudit,apiversioning,errorcodes,policy,taxonomy,workflow,bundle,proofgate,fixedcap,stackdepth" ;;
     affected)
         SECTION=$(resolve_affected_sections "$AFFECTED_FILES")
         echo "=== Affected mode ==="
@@ -10508,6 +10508,135 @@ echo "  $fc_pass fixedcap gates passed"
 PASS=$((PASS + fc_pass))
 FAIL=$((FAIL + fc_fail))
 fi # end section: fixedcap
+
+if section_active stackdepth; then
+echo ""
+echo "=== Stack-depth reporting tests ==="
+sd_pass=0
+sd_fail=0
+
+# 1. --report stack-depth produces output on crypto_verify
+sd_crypto=$("$COMPILER" examples/crypto_verify/src/main.con --report stack-depth 2>&1)
+if echo "$sd_crypto" | grep -q "Stack-Depth Report"; then
+    echo "  ok  stackdepth: crypto_verify produces report"
+    sd_pass=$((sd_pass + 1))
+else
+    echo "  FAIL stackdepth: crypto_verify should produce report"
+    sd_fail=$((sd_fail + 1))
+fi
+
+# 2. Reports frame bytes for each function
+if echo "$sd_crypto" | grep -q "frame:.*bytes"; then
+    echo "  ok  stackdepth: reports frame bytes"
+    sd_pass=$((sd_pass + 1))
+else
+    echo "  FAIL stackdepth: should report frame bytes"
+    sd_fail=$((sd_fail + 1))
+fi
+
+# 3. Reports call depth
+if echo "$sd_crypto" | grep -q "depth:"; then
+    echo "  ok  stackdepth: reports call depth"
+    sd_pass=$((sd_pass + 1))
+else
+    echo "  FAIL stackdepth: should report call depth"
+    sd_fail=$((sd_fail + 1))
+fi
+
+# 4. Reports stack bound
+if echo "$sd_crypto" | grep -q "stack:.*bytes"; then
+    echo "  ok  stackdepth: reports stack bound"
+    sd_pass=$((sd_pass + 1))
+else
+    echo "  FAIL stackdepth: should report stack bound"
+    sd_fail=$((sd_fail + 1))
+fi
+
+# 5. Leaf functions have depth 0
+if echo "$sd_crypto" | grep -A1 "compute_tag" | grep -q "depth: 0"; then
+    echo "  ok  stackdepth: leaf function has depth 0"
+    sd_pass=$((sd_pass + 1))
+else
+    echo "  FAIL stackdepth: leaf function should have depth 0"
+    sd_fail=$((sd_fail + 1))
+fi
+
+# 6. Callers have depth > 0
+if echo "$sd_crypto" | grep -A1 "main" | grep -q "depth: [1-9]"; then
+    echo "  ok  stackdepth: caller has depth > 0"
+    sd_pass=$((sd_pass + 1))
+else
+    echo "  FAIL stackdepth: caller should have depth > 0"
+    sd_fail=$((sd_fail + 1))
+fi
+
+# 7. Stack bound >= frame bytes for all functions
+sd_valid=true
+while IFS= read -r line; do
+    frame=$(echo "$line" | grep -o 'frame: [0-9]*' | grep -o '[0-9]*')
+    stack=$(echo "$line" | grep -o 'stack: [0-9]*' | grep -o '[0-9]*')
+    if [ -n "$frame" ] && [ -n "$stack" ] && [ "$stack" -lt "$frame" ]; then
+        sd_valid=false
+    fi
+done <<< "$(echo "$sd_crypto" | grep "frame:")"
+if $sd_valid; then
+    echo "  ok  stackdepth: stack bound >= frame bytes for all functions"
+    sd_pass=$((sd_pass + 1))
+else
+    echo "  FAIL stackdepth: stack bound should be >= frame bytes"
+    sd_fail=$((sd_fail + 1))
+fi
+
+# 8. Summary shows totals
+if echo "$sd_crypto" | grep -q "Totals:.*functions.*bounded"; then
+    echo "  ok  stackdepth: summary shows totals"
+    sd_pass=$((sd_pass + 1))
+else
+    echo "  FAIL stackdepth: summary should show totals"
+    sd_fail=$((sd_fail + 1))
+fi
+
+# 9. Summary shows max stack bound
+if echo "$sd_crypto" | grep -q "Max stack bound:.*bytes"; then
+    echo "  ok  stackdepth: summary shows max stack bound"
+    sd_pass=$((sd_pass + 1))
+else
+    echo "  FAIL stackdepth: summary should show max stack bound"
+    sd_fail=$((sd_fail + 1))
+fi
+
+# 10. Fixed-capacity all functions bounded (no recursive)
+sd_fc=$("$COMPILER" examples/fixed_capacity/src/main.con --report stack-depth 2>&1)
+if echo "$sd_fc" | grep -q "0 recursive (unbounded)"; then
+    echo "  ok  stackdepth: fixed_capacity has 0 recursive functions"
+    sd_pass=$((sd_pass + 1))
+else
+    echo "  FAIL stackdepth: fixed_capacity should have 0 recursive functions"
+    sd_fail=$((sd_fail + 1))
+fi
+
+# 11. Fixed-capacity main has depth > 0 (calls validators)
+if echo "$sd_fc" | grep -A1 "  main" | grep -q "depth: [1-9]"; then
+    echo "  ok  stackdepth: fixed_capacity main has call depth > 0"
+    sd_pass=$((sd_pass + 1))
+else
+    echo "  FAIL stackdepth: fixed_capacity main should have call depth > 0"
+    sd_fail=$((sd_fail + 1))
+fi
+
+# 12. Source locations present
+if echo "$sd_crypto" | grep -q "@ examples/crypto_verify/src/main.con"; then
+    echo "  ok  stackdepth: source locations present"
+    sd_pass=$((sd_pass + 1))
+else
+    echo "  FAIL stackdepth: should show source locations"
+    sd_fail=$((sd_fail + 1))
+fi
+
+echo "  $sd_pass stackdepth gates passed"
+PASS=$((PASS + sd_pass))
+FAIL=$((FAIL + sd_fail))
+fi # end section: stackdepth
 
 echo ""
 flush_jobs

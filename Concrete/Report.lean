@@ -977,6 +977,169 @@ def recursionReport (pc : Concrete.ProofCore) : String :=
   "\n".intercalate allLines ++ "\n"
 
 -- ============================================================
+-- Report 11: Stack-Depth Report (--report stack-depth)
+-- ============================================================
+-- For functions that pass the no-recursion profile (recursion: none),
+-- reports:
+--   1. Frame size (bytes): sum of parameter and local variable sizes
+--   2. Max call depth: longest path in the acyclic call graph
+--   3. Worst-case stack bound (bytes): sum of frame sizes along deepest chain
+--
+-- Recursive functions are listed separately with "unbounded" stack depth.
+
+/-- Per-function stack-depth record. -/
+private structure FnStackInfo where
+  qualName   : String
+  name       : String
+  frameBytes : Nat
+  callDepth  : Nat           -- 0 = leaf
+  stackBound : Nat           -- worst-case bytes through this call chain
+  isRecursive : Bool
+  loc        : Option SourceLoc
+
+/-- Collect all local variable types from a function body (recursive into nested scopes). -/
+private partial def collectLocalTys : List CStmt → List Ty
+  | [] => []
+  | s :: rest =>
+    let here := match s with
+    | .letDecl _ _ ty _ => [ty]
+    | .ifElse _ then_ (some else_) => collectLocalTys then_ ++ collectLocalTys else_
+    | .ifElse _ then_ none => collectLocalTys then_
+    | .while_ _ body _ step => collectLocalTys body ++ collectLocalTys step
+    | .borrowIn _ _ _ _ refTy body => [refTy] ++ collectLocalTys body
+    | _ => []
+    here ++ collectLocalTys rest
+
+/-- Compute frame size in bytes for a function: parameters + locals. -/
+private def computeFrameBytes (ctx : Layout.Ctx) (f : CFnDef) : Nat :=
+  let paramBytes := f.params.foldl (fun acc (_, ty) => acc + Layout.tySize ctx ty) 0
+  let localTys := collectLocalTys f.body
+  let localBytes := localTys.foldl (fun acc ty => acc + Layout.tySize ctx ty) 0
+  -- Return address (8 bytes on 64-bit)
+  8 + paramBytes + localBytes
+
+/-- Compute max call depth and worst-case stack bound for each non-recursive function.
+    Uses memoized DFS on the acyclic call graph. -/
+private partial def computeCallDepths
+    (frameSizes : List (String × Nat))
+    (callGraph : CallGraph)
+    (recMap : List (String × RecursionKind × List String))
+    : List (String × Nat × Nat) :=  -- (qualName, maxDepth, stackBound)
+  let isRecursive (fn : String) : Bool :=
+    match recMap.find? (fun (n, _, _) => n == fn) with
+    | some (_, .none, _) => false
+    | some _ => true
+    | none => false
+  let getFrame (fn : String) : Nat :=
+    match frameSizes.find? (fun (n, _) => n == fn) with
+    | some (_, sz) => sz
+    | none => 0
+  let getCallees (fn : String) : List String :=
+    match callGraph.find? (fun (n, _) => n == fn) with
+    | some (_, cs) => cs
+    | none => []
+  -- Memoized DFS: returns (depth, stackBound) for a function
+  let rec dfs (fn : String) (visited : List String)
+      (memo : List (String × Nat × Nat)) (fuel : Nat)
+      : (Nat × Nat) × List (String × Nat × Nat) :=
+    match fuel with
+    | 0 => ((0, getFrame fn), memo)
+    | fuel + 1 =>
+      match memo.find? (fun (n, _, _) => n == fn) with
+      | some (_, d, s) => ((d, s), memo)
+      | none =>
+        if isRecursive fn || visited.contains fn then
+          ((0, getFrame fn), memo)
+        else
+          let callees := getCallees fn |>.filter (fun c =>
+            !isRecursive c && frameSizes.any (fun (n, _) => n == c))
+          let (maxD, maxS, memo) := callees.foldl (fun (bestD, bestS, m) c =>
+            let ((cd, cs), m) := dfs c (fn :: visited) m fuel
+            let d := cd + 1
+            let s := cs + getFrame fn
+            if s > bestS then (d, s, m) else (bestD, bestS, m)
+          ) (0, getFrame fn, memo)
+          let memo := memo ++ [(fn, maxD, maxS)]
+          ((maxD, maxS), memo)
+  -- Process all non-recursive functions
+  let allFns := frameSizes.filter (fun (n, _) => !isRecursive n)
+  let fuel := frameSizes.length * frameSizes.length + frameSizes.length
+  let memo := allFns.foldl (fun (memo : List (String × Nat × Nat)) (fn, _) =>
+    let (_, memo) := dfs fn [] memo fuel
+    memo
+  ) []
+  memo
+
+private def fmtStackRow (info : FnStackInfo) : String :=
+  let locSuffix := match info.loc with | some l => s!"  @ {fmtLoc (some l)}" | none => ""
+  if info.isRecursive then
+    s!"  {info.name}\n    frame: {info.frameBytes} bytes  depth: unbounded (recursive)  stack: unbounded{locSuffix}"
+  else
+    s!"  {info.name}\n    frame: {info.frameBytes} bytes  depth: {info.callDepth}  stack: {info.stackBound} bytes{locSuffix}"
+
+private partial def collectStackFns
+    (ctx : Layout.Ctx)
+    (recMap : List (String × RecursionKind × List String))
+    (locMap : FnLocMap)
+    (m : CModule) (pfx : String := "")
+    : List (String × String × Nat × Bool × Option SourceLoc) :=
+  let qualPrefix := if pfx == "" then m.name else pfx ++ "." ++ m.name
+  let fns := m.functions.map fun f =>
+    let qualName := qualPrefix ++ "." ++ f.name
+    let frame := computeFrameBytes ctx f
+    let isRec := match recMap.find? (fun (n, _, _) => n == qualName) with
+      | some (_, .none, _) => false
+      | some _ => true
+      | none => false
+    (qualName, f.name, frame, isRec, lookupLoc locMap qualName)
+  fns ++ m.submodules.foldl (fun acc sub =>
+    acc ++ collectStackFns ctx recMap locMap sub qualPrefix) []
+
+/-- Stack-depth report for functions passing the no-recursion profile. -/
+def stackDepthReport (modules : List CModule) (locMap : FnLocMap := [])
+    (pc : Concrete.ProofCore) : String :=
+  let ctx := buildLayoutCtx modules
+  let recMap := pc.recMap
+  let callGraph := pc.callGraph
+  let allFns := modules.foldl (fun acc m =>
+    acc ++ collectStackFns ctx recMap locMap m) []
+  let frameSizes := allFns.map fun (qn, _, frame, _, _) => (qn, frame)
+  -- Compute call depths
+  let depths := computeCallDepths frameSizes callGraph recMap
+  -- Build FnStackInfo records
+  let infos := allFns.map fun (qn, name, frame, isRec, loc) =>
+    if isRec then
+      { qualName := qn, name := name, frameBytes := frame,
+        callDepth := 0, stackBound := 0, isRecursive := true, loc := loc : FnStackInfo }
+    else
+      match depths.find? (fun (n, _, _) => n == qn) with
+      | some (_, d, s) =>
+        { qualName := qn, name := name, frameBytes := frame,
+          callDepth := d, stackBound := s, isRecursive := false, loc := loc : FnStackInfo }
+      | none =>
+        { qualName := qn, name := name, frameBytes := frame,
+          callDepth := 0, stackBound := frame, isRecursive := false, loc := loc : FnStackInfo }
+  -- Format
+  let header := "=== Stack-Depth Report ==="
+  let body := modules.map fun m =>
+    let qualPrefix := m.name
+    let modInfos := infos.filter fun i => i.qualName.startsWith (qualPrefix ++ ".")
+    let fnLines := modInfos.map fmtStackRow
+    s!"module {m.name}:\n{"\n".intercalate fnLines}"
+  -- Summary
+  let bounded := infos.filter (!·.isRecursive)
+  let recursive := infos.filter (·.isRecursive)
+  let maxStack := bounded.foldl (fun best i => if i.stackBound > best then i.stackBound else best) 0
+  let maxName := match bounded.foldl (fun best i =>
+    match best with
+    | none => some i
+    | some b => if i.stackBound > b.stackBound then some i else best) none with
+    | some i => i.name
+    | none => "(none)"
+  let summary := s!"\nTotals: {infos.length} functions, {bounded.length} bounded, {recursive.length} recursive (unbounded)\nMax stack bound: {maxStack} bytes ({maxName})"
+  s!"{header}\n\n{"\n\n".intercalate body}\n{summary}\n"
+
+-- ============================================================
 -- Profile checks (--check predictable)
 -- ============================================================
 -- Enforces the predictable-execution profile gate:
