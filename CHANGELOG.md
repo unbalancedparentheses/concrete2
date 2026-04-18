@@ -10,6 +10,31 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Trusted-computing-base accounting (Phase 2, item 22)
+
+`docs/TRUSTED_COMPUTING_BASE.md` rewritten as canonical TCB reference:
+
+- **6 TCB layers**: Concrete checker/compiler, Lean kernel, proof registry/fingerprint machinery, backend/toolchain, runtime/target/OS, trusted/foreign code boundaries
+- Each layer specifies: what is trusted, what is actively verified, what is not claimed
+- **Profile-specific TCB**: new section maps each profile (safe, predictable, provable, high-integrity) to its TCB dependencies with explicit weights (critical/assumed/gap/boundary)
+- **4 strongest-claim breakdowns**: safe-code guarantees, theorem claims, predictable claims, workflow determinism — each with per-layer status
+- References proof-bundle assumptions, CI proof gate, adversarial test coverage, fingerprint determinism, registry validation
+- Remaining trust surfaces explicit: checker soundness, PExpr extraction fidelity, eval soundness, integer-representation gap
+- Docs-only change — no new code, no test changes
+
+### Named user-facing profiles (Phase 2, item 21)
+
+`docs/PROFILES.md` rewritten as canonical profile reference:
+
+- **4 profiles** with per-profile gate/report/evidence tables
+- **Safe**: 7 enforced gates, 5 report commands, evidence artifacts; explicit non-coverage (bounds, overflow, stack, termination, checker soundness)
+- **Predictable**: 5 gates (recursion, loops, allocation, blocking, FFI) with advisory and policy-enforced modes; JSON violation facts; explicit today-vs-remaining table
+- **Provable**: 10 eligibility gates, 6 obligation states, 3 theorem shapes, 10 report commands; evidence bundle + CI gate; precise "proved" semantics and non-claims
+- **High-integrity**: named direction with intended restrictions; nothing profile-specific implemented yet
+- **Relationship diagram** showing profiles overlap without being strict subsets
+- Each profile carries explicit status (real/partial/future) and claim class
+- Docs-only change — no new code, no test changes
+
 ### Canonical "claims today" surface (Phase 2, item 20)
 
 `docs/CLAIMS_TODAY.md` rewritten as the canonical short public statement of current guarantees:
