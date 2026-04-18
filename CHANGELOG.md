@@ -10,6 +10,29 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### "How to Prove a Concrete Function" tutorial (Phase 2, item 17)
+
+Canonical outsider-facing tutorial added to the book (`docs/book/src/proving.md`):
+
+- Step-by-step walkthrough proving `clamp_value` from the proof pressure set
+- Real compiler output at every step: extraction, proof-status, lean-stubs, check-proofs, proof-diagnostics, proof-deps
+- Explicit claim scope section: what is proved (Lean-kernel-checked PExpr property) and what is NOT (binary correctness, overflow, safety, composition)
+- Recovery guide: stale proofs, ineligible functions, blocked extraction, detailed diagnostics
+- Maintenance: dependency tracking, refactor survival table, rename detection, daily `concrete check` workflow
+- Quick-reference command table for all proof-related commands
+- Added to book SUMMARY.md table of contents
+
+### Proof-authoring and maintenance workflow (Phase 2, item 16)
+
+Complete user-facing proof workflow defined and tested:
+
+- `docs/PROOF_WORKFLOW.md` — 12-step canonical workflow document covering: function eligibility, stub generation, proof writing, registry attachment, verification (`concrete check`, `check-proofs`), failure diagnosis (8 diagnostic kinds), stale repair, dependency fallout review, and proof-preserving refactors
+- Command reference table for all 9 proof-related CLI commands
+- End-to-end example: proving `clamp_value` from the pressure set
+- Rename detection workflow: orphaned registry entries matched by fingerprint
+- Refactor checklist: which changes preserve proofs, which invalidate, and how to recover
+- 15 trust-gate workflow tests: extraction reports, lean-stubs generation, proof-status states, proof-diagnostics classes, proof-deps edges, fingerprint consistency, stale repair cycles, rename detection, obligation totals, and diagnostic-codes coverage
+
 ### Refined proof failure taxonomy (Phase 2, item 15)
 
 Proof diagnostics now carry fine-grained failure and repair classifications covering the full proof pipeline:

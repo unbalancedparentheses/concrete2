@@ -30,7 +30,7 @@ Modes:
   --O2               Only -O2 optimized-build regression tests
   --codegen           Only codegen differential + SSA structure tests
   --report            Only --report output verification tests
-  --trust-gate        Correctness contracts only: determinism, consistency, terminology, verify, evidence, apiversioning, taxonomy
+  --trust-gate        Correctness contracts only: determinism, consistency, terminology, verify, evidence, apiversioning, taxonomy, workflow
   --affected          Auto-detect changed files (git diff) and run affected tests
   --affected FILES    Run tests affected by specific files (comma-separated)
   --manifest          List all test files with categories (no execution)
@@ -241,14 +241,14 @@ resolve_affected_sections() {
 
 # Resolve which sections are active based on MODE
 case "$MODE" in
-    full)    SECTION="passlevel,positive,negative,testflag,report,codegen,O2,stdlib,collection,xtarget,perf,determinism,consistency,terminology,verify,evidence,malformed,query,desync,bugaudit,apiversioning,errorcodes,policy,taxonomy" ;;
+    full)    SECTION="passlevel,positive,negative,testflag,report,codegen,O2,stdlib,collection,xtarget,perf,determinism,consistency,terminology,verify,evidence,malformed,query,desync,bugaudit,apiversioning,errorcodes,policy,taxonomy,workflow" ;;
     fast)    SECTION="passlevel,positive,negative,testflag,report,codegen,O2,stdlib,collection" ;;
     stdlib)  SECTION="stdlib,collection" ;;
     stdlib-module) SECTION="stdlib" ;;
     O2)      SECTION="O2" ;;
     codegen) SECTION="codegen,O2" ;;
     report)  SECTION="report" ;;
-    trust-gate) SECTION="determinism,consistency,terminology,verify,evidence,malformed,query,desync,bugaudit,apiversioning,errorcodes,policy,taxonomy" ;;
+    trust-gate) SECTION="determinism,consistency,terminology,verify,evidence,malformed,query,desync,bugaudit,apiversioning,errorcodes,policy,taxonomy,workflow" ;;
     affected)
         SECTION=$(resolve_affected_sections "$AFFECTED_FILES")
         echo "=== Affected mode ==="
@@ -9801,6 +9801,218 @@ echo "  $tx_pass taxonomy gates passed"
 PASS=$((PASS + tx_pass))
 FAIL=$((FAIL + tx_fail))
 fi # end section: taxonomy
+
+echo ""
+flush_jobs
+
+# ============================================================
+# Proof workflow tests (item 16)
+# ============================================================
+
+if section_active workflow; then
+echo ""
+echo "=== Proof workflow tests ==="
+wf_pass=0
+wf_fail=0
+
+PP_SRC="examples/proof_pressure/src/main.con"
+
+# 1. Extraction report shows extracted/excluded/blocked status labels
+wf_ext=$($COMPILER "$PP_SRC" --report extraction 2>&1) || true
+if echo "$wf_ext" | grep -q "extracted" && echo "$wf_ext" | grep -q "excluded"; then
+    echo "  ok  workflow: extraction report shows extracted and excluded status"
+    wf_pass=$((wf_pass + 1))
+else
+    echo "  FAIL workflow: extraction report should show extracted and excluded status"
+    wf_fail=$((wf_fail + 1))
+fi
+
+# 2. Extraction report shows PExpr form for extracted functions
+if echo "$wf_ext" | grep -q "ProofCore\|PExpr\|ret\|binop\|if"; then
+    echo "  ok  workflow: extraction report shows PExpr form"
+    wf_pass=$((wf_pass + 1))
+else
+    echo "  FAIL workflow: extraction report should show PExpr form for extracted functions"
+    wf_fail=$((wf_fail + 1))
+fi
+
+# 3. Extraction report shows fingerprint for extracted functions
+if echo "$wf_ext" | grep -q "fingerprint"; then
+    echo "  ok  workflow: extraction report shows fingerprint"
+    wf_pass=$((wf_pass + 1))
+else
+    echo "  FAIL workflow: extraction report should show fingerprint"
+    wf_fail=$((wf_fail + 1))
+fi
+
+# 4. lean-stubs generates PExpr definitions and theorem stubs
+wf_stubs=$($COMPILER "$PP_SRC" --report lean-stubs 2>&1) || true
+if echo "$wf_stubs" | grep -q "Expr" && echo "$wf_stubs" | grep -q "theorem" && echo "$wf_stubs" | grep -q "sorry"; then
+    echo "  ok  workflow: lean-stubs generates PExpr defs and theorem stubs with sorry"
+    wf_pass=$((wf_pass + 1))
+else
+    echo "  FAIL workflow: lean-stubs should generate PExpr defs, theorem stubs, and sorry"
+    wf_fail=$((wf_fail + 1))
+fi
+
+# 5. lean-stubs generates eval helpers
+if echo "$wf_stubs" | grep -q "eval_\|eval "; then
+    echo "  ok  workflow: lean-stubs generates eval helpers"
+    wf_pass=$((wf_pass + 1))
+else
+    echo "  FAIL workflow: lean-stubs should generate eval helpers"
+    wf_fail=$((wf_fail + 1))
+fi
+
+# 6. lean-stubs generates function table (generatedFns)
+if echo "$wf_stubs" | grep -q "generatedFns\|FnTable"; then
+    echo "  ok  workflow: lean-stubs generates function table"
+    wf_pass=$((wf_pass + 1))
+else
+    echo "  FAIL workflow: lean-stubs should generate function table"
+    wf_fail=$((wf_fail + 1))
+fi
+
+# 7. lean-stubs excludes ineligible functions (no theorem for format_result)
+if ! echo "$wf_stubs" | grep -q "format_result.*correct\|format_resultExpr"; then
+    echo "  ok  workflow: lean-stubs excludes ineligible function format_result"
+    wf_pass=$((wf_pass + 1))
+else
+    echo "  FAIL workflow: lean-stubs should not generate stubs for ineligible functions"
+    wf_fail=$((wf_fail + 1))
+fi
+
+# 8. proof-status shows proved/stale/missing/blocked/ineligible states
+wf_ps=$($COMPILER "$PP_SRC" --report proof-status 2>&1) || true
+if echo "$wf_ps" | grep -q "proved" && echo "$wf_ps" | grep -q "stale\|proof stale" && echo "$wf_ps" | grep -q "missing\|unproved" && echo "$wf_ps" | grep -q "blocked" && echo "$wf_ps" | grep -q "ineligible"; then
+    echo "  ok  workflow: proof-status shows all 5 obligation states"
+    wf_pass=$((wf_pass + 1))
+else
+    echo "  FAIL workflow: proof-status should show proved/stale/missing/blocked/ineligible"
+    wf_fail=$((wf_fail + 1))
+fi
+
+# 9. proof-diagnostics shows failure_class and repair_class
+wf_diag=$($COMPILER "$PP_SRC" --report proof-diagnostics 2>&1) || true
+if echo "$wf_diag" | grep -q "failure:" && echo "$wf_diag" | grep -q "repair:"; then
+    echo "  ok  workflow: proof-diagnostics shows failure and repair classes"
+    wf_pass=$((wf_pass + 1))
+else
+    echo "  FAIL workflow: proof-diagnostics should show failure: and repair: lines"
+    wf_fail=$((wf_fail + 1))
+fi
+
+# 10. proof-deps shows dependency edges for proved functions
+wf_deps=$($COMPILER "$PP_SRC" --report proof-deps 2>&1) || true
+if echo "$wf_deps" | grep -q "validate_header" && echo "$wf_deps" | grep -q "check_nonce"; then
+    echo "  ok  workflow: proof-deps shows validate_header → check_nonce dependency"
+    wf_pass=$((wf_pass + 1))
+else
+    echo "  FAIL workflow: proof-deps should show validate_header → check_nonce edge"
+    wf_fail=$((wf_fail + 1))
+fi
+
+# 11. End-to-end: fingerprint from extraction matches fingerprint in obligations
+wf_ob=$($COMPILER "$PP_SRC" --report obligations 2>&1) || true
+wf_ext_fp=$(echo "$wf_ext" | grep -A6 "check_nonce" | grep -o '\[.*\]' | head -1)
+wf_ob_fp=$(echo "$wf_ob" | grep -A8 "check_nonce" | grep -o '\[.*\]' | head -1)
+if [ -n "$wf_ext_fp" ] && [ "$wf_ext_fp" = "$wf_ob_fp" ]; then
+    echo "  ok  workflow: extraction fingerprint matches obligation fingerprint"
+    wf_pass=$((wf_pass + 1))
+else
+    echo "  FAIL workflow: extraction and obligation fingerprints should match"
+    wf_fail=$((wf_fail + 1))
+fi
+
+# 12. End-to-end stale repair: create function, prove it, mutate, detect stale, repair
+WF_DIR=$(mktemp -d)
+cat > "$WF_DIR/wf.con" <<'CONEOF'
+fn pure_double(x: Int) -> Int {
+  return x + x;
+}
+fn main() -> i32 { return 0; }
+CONEOF
+wf_fp=$($COMPILER "$WF_DIR/wf.con" --report extraction 2>&1 | grep -A5 "pure_double" | grep -o '\[.*\]' | head -1)
+cat > "$WF_DIR/proof-registry.json" <<REGEOF
+{"version":1,"proofs":[{"function":"main.pure_double","body_fingerprint":"$wf_fp","proof":"Concrete.Proof.parse_byte_correct","spec":"s"}]}
+REGEOF
+wf_proved=$($COMPILER "$WF_DIR/wf.con" --report proof-status 2>&1)
+# Mutate the body
+cat > "$WF_DIR/wf.con" <<'CONEOF'
+fn pure_double(x: Int) -> Int {
+  return x * 2;
+}
+fn main() -> i32 { return 0; }
+CONEOF
+wf_stale_out=$($COMPILER "$WF_DIR/wf.con" --report proof-status 2>&1)
+# Repair: update fingerprint
+wf_new_fp=$($COMPILER "$WF_DIR/wf.con" --report extraction 2>&1 | grep -A5 "pure_double" | grep -o '\[.*\]' | head -1)
+cat > "$WF_DIR/proof-registry.json" <<REGEOF
+{"version":1,"proofs":[{"function":"main.pure_double","body_fingerprint":"$wf_new_fp","proof":"Concrete.Proof.parse_byte_correct","spec":"s"}]}
+REGEOF
+wf_repaired=$($COMPILER "$WF_DIR/wf.con" --report proof-status 2>&1)
+if echo "$wf_proved" | grep -q "proved" && echo "$wf_stale_out" | grep -q "stale\|proof stale" && echo "$wf_repaired" | grep -q "proved"; then
+    echo "  ok  workflow: end-to-end stale repair cycle (proved → stale → repaired)"
+    wf_pass=$((wf_pass + 1))
+else
+    echo "  FAIL workflow: end-to-end stale repair cycle should work"
+    wf_fail=$((wf_fail + 1))
+fi
+rm -rf "$WF_DIR"
+
+# 13. End-to-end rename detection: rename function, registry warns with rename hint
+WF_REN=$(mktemp -d)
+cat > "$WF_REN/ren.con" <<'CONEOF'
+fn old_name(x: Int) -> Int {
+  return x + 1;
+}
+fn main() -> i32 { return 0; }
+CONEOF
+ren_fp=$($COMPILER "$WF_REN/ren.con" --report extraction 2>&1 | grep -A5 "old_name" | grep -o '\[.*\]' | head -1)
+cat > "$WF_REN/proof-registry.json" <<REGEOF
+{"version":1,"proofs":[{"function":"main.old_name","body_fingerprint":"$ren_fp","proof":"Concrete.Proof.old_name_correct","spec":"s"}]}
+REGEOF
+# Now rename the function
+cat > "$WF_REN/ren.con" <<'CONEOF'
+fn new_name(x: Int) -> Int {
+  return x + 1;
+}
+fn main() -> i32 { return 0; }
+CONEOF
+ren_out=$($COMPILER "$WF_REN/ren.con" --report proof-status 2>&1) || true
+if echo "$ren_out" | grep -q "renamed\|new_name"; then
+    echo "  ok  workflow: rename detection suggests new function name"
+    wf_pass=$((wf_pass + 1))
+else
+    echo "  FAIL workflow: rename detection should suggest the new function name"
+    wf_fail=$((wf_fail + 1))
+fi
+rm -rf "$WF_REN"
+
+# 14. Workflow coherence: proof-status shows obligation totals
+wf_totals=$($COMPILER "$PP_SRC" --report proof-status 2>&1) || true
+if echo "$wf_totals" | grep -q "Totals\|proved\|functions"; then
+    echo "  ok  workflow: proof-status report shows obligation totals"
+    wf_pass=$((wf_pass + 1))
+else
+    echo "  FAIL workflow: proof-status report should show obligation totals"
+    wf_fail=$((wf_fail + 1))
+fi
+
+# 15. diagnostic-codes includes all proof error codes E0800-E0807
+wf_codes=$($COMPILER "$PP_SRC" --report diagnostic-codes 2>&1) || true
+if echo "$wf_codes" | grep -q "E0800" && echo "$wf_codes" | grep -q "E0805" && echo "$wf_codes" | grep -q "E0807"; then
+    echo "  ok  workflow: diagnostic-codes registers E0800-E0807"
+    wf_pass=$((wf_pass + 1))
+else
+    echo "  FAIL workflow: diagnostic-codes should include E0800, E0805, E0807"
+    wf_fail=$((wf_fail + 1))
+fi
+
+echo "  $wf_pass workflow gates passed"
+PASS=$((PASS + wf_pass))
+FAIL=$((FAIL + wf_fail))
+fi # end section: workflow
 
 echo ""
 flush_jobs

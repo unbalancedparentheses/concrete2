@@ -22,6 +22,7 @@ Use these files as the primary reference once a design has moved out of explorat
 - [DESIGN_POLICY.md](DESIGN_POLICY.md) — feature-admission criteria and design filter
 - [DECISIONS.md](DECISIONS.md) — first-class "no" and "not yet" decisions
 - [LANGUAGE_SHAPE.md](LANGUAGE_SHAPE.md) — long-term structural commitments for the language
+- [PROOF_WORKFLOW.md](PROOF_WORKFLOW.md) — proof-authoring and maintenance workflow: choose, generate, write, attach, verify, diagnose, repair, refactor
 - [PROVABLE_SUBSET.md](PROVABLE_SUBSET.md) — current proof-eligible subset and its boundary
 - [LANGUAGE_INVARIANTS.md](LANGUAGE_INVARIANTS.md) — the language rules that must hold across every phase
 - [STDLIB.md](STDLIB.md) — current stable stdlib direction and module priorities
