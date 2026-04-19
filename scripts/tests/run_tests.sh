@@ -940,6 +940,27 @@ run_ok "$TESTDIR/adversarial_proof_mixed_eligibility.con" 42
 run_ok "$TESTDIR/adversarial_proof_module_isolation.con" 60
 run_ok "$TESTDIR/adversarial_report_many_functions.con" 42
 
+# Adversarial error-flow tests (Copy enum error propagation patterns)
+run_ok "$TESTDIR/adversarial_errorflow_many_error_variants.con" 0
+run_ok "$TESTDIR/adversarial_errorflow_nested_result.con" 0
+run_ok "$TESTDIR/adversarial_errorflow_chain_propagation.con" 0
+run_ok "$TESTDIR/adversarial_errorflow_struct_in_error.con" 0
+run_ok "$TESTDIR/adversarial_errorflow_multiple_enums.con" 0
+run_ok "$TESTDIR/adversarial_errorflow_match_all_paths.con" 0
+run_ok "$TESTDIR/adversarial_errorflow_many_variants.con" 0
+
+# Adversarial stack-depth programs (compile-and-run, also tested in stackdepth section)
+run_ok "$TESTDIR/adversarial_stackdepth_deep_chain.con" 1
+run_ok "$TESTDIR/adversarial_stackdepth_wide_fan.con" 0
+run_ok "$TESTDIR/adversarial_stackdepth_mixed_recursion.con" 0
+run_ok "$TESTDIR/adversarial_stackdepth_large_frame.con" 0
+run_ok "$TESTDIR/adversarial_stackdepth_diamond.con" 0
+run_ok "$TESTDIR/adversarial_stackdepth_zero_params.con" 0
+
+# Adversarial predictable boundary programs (pure ones that should pass)
+run_ok "$TESTDIR/adversarial_predict_bound_nested_match.con" 0
+run_ok "$TESTDIR/adversarial_predict_bound_copy_enum_chain.con" 0
+
 # Adversarial scaling/hostile workload tests
 run_ok "$TESTDIR/adversarial_scale_deep_call_chain.con" 42
 run_ok "$TESTDIR/adversarial_scale_generic_explosion.con" 42
@@ -9574,6 +9595,58 @@ policy_ok "$TESTDIR/adversarial_policy_predictable_pass" \
 policy_ok "$TESTDIR/adversarial_policy_empty" \
     "empty policy allows everything (boundary)"
 
+# --- Standalone predictable boundary adversarial tests ---
+
+# 14. Direct recursion fails predictable
+pred_direct=$("$COMPILER" "$TESTDIR/adversarial_predict_bound_direct_recursion.con" --check predictable 2>&1) && pred_direct_exit=0 || pred_direct_exit=$?
+if [ "$pred_direct_exit" -ne 0 ] && echo "$pred_direct" | grep -q "direct recursion"; then
+    echo "  ok  policy: direct recursion fails predictable"
+    pol_pass=$((pol_pass + 1))
+else
+    echo "  FAIL policy: direct recursion should fail predictable"
+    pol_fail=$((pol_fail + 1))
+fi
+
+# 15. Mutual recursion fails predictable
+pred_mutual=$("$COMPILER" "$TESTDIR/adversarial_predict_bound_mutual_recursion.con" --check predictable 2>&1) && pred_mutual_exit=0 || pred_mutual_exit=$?
+if [ "$pred_mutual_exit" -ne 0 ] && echo "$pred_mutual" | grep -q "mutual recursion"; then
+    echo "  ok  policy: mutual recursion fails predictable"
+    pol_pass=$((pol_pass + 1))
+else
+    echo "  FAIL policy: mutual recursion should fail predictable"
+    pol_fail=$((pol_fail + 1))
+fi
+
+# 16. Hidden allocation (3-level chain) fails predictable
+pred_alloc=$("$COMPILER" "$TESTDIR/adversarial_predict_bound_hidden_alloc.con" --check predictable 2>&1) && pred_alloc_exit=0 || pred_alloc_exit=$?
+if [ "$pred_alloc_exit" -ne 0 ] && echo "$pred_alloc" | grep -q "Alloc capability"; then
+    echo "  ok  policy: hidden alloc chain fails predictable"
+    pol_pass=$((pol_pass + 1))
+else
+    echo "  FAIL policy: hidden alloc chain should fail predictable"
+    pol_fail=$((pol_fail + 1))
+fi
+
+# 17. Nested match (pure) passes predictable
+pred_match=$("$COMPILER" "$TESTDIR/adversarial_predict_bound_nested_match.con" --check predictable 2>&1) && pred_match_exit=0 || pred_match_exit=$?
+if [ "$pred_match_exit" -eq 0 ] && echo "$pred_match" | grep -q "pass"; then
+    echo "  ok  policy: deeply nested match passes predictable"
+    pol_pass=$((pol_pass + 1))
+else
+    echo "  FAIL policy: deeply nested match should pass predictable"
+    pol_fail=$((pol_fail + 1))
+fi
+
+# 18. Copy enum chain (pure) passes predictable
+pred_chain=$("$COMPILER" "$TESTDIR/adversarial_predict_bound_copy_enum_chain.con" --check predictable 2>&1) && pred_chain_exit=0 || pred_chain_exit=$?
+if [ "$pred_chain_exit" -eq 0 ] && echo "$pred_chain" | grep -q "pass"; then
+    echo "  ok  policy: Copy enum chain passes predictable"
+    pol_pass=$((pol_pass + 1))
+else
+    echo "  FAIL policy: Copy enum chain should pass predictable"
+    pol_fail=$((pol_fail + 1))
+fi
+
 echo "  $pol_pass policy gates passed"
 PASS=$((PASS + pol_pass))
 FAIL=$((FAIL + pol_fail))
@@ -10751,6 +10824,135 @@ if echo "$sd_crypto" | grep -q "@ examples/crypto_verify/src/main.con"; then
     sd_pass=$((sd_pass + 1))
 else
     echo "  FAIL stackdepth: should show source locations"
+    sd_fail=$((sd_fail + 1))
+fi
+
+# --- Adversarial stack-depth tests ---
+
+# 13. Deep chain: main has depth 12 (12-function chain)
+sd_deep=$("$COMPILER" tests/programs/adversarial_stackdepth_deep_chain.con --report stack-depth 2>&1)
+if echo "$sd_deep" | grep -A1 "  main" | grep -q "depth: 12"; then
+    echo "  ok  stackdepth: deep chain main has depth 12"
+    sd_pass=$((sd_pass + 1))
+else
+    echo "  FAIL stackdepth: deep chain main should have depth 12"
+    sd_fail=$((sd_fail + 1))
+fi
+
+# 14. Deep chain: leaf (step_12) has depth 0
+if echo "$sd_deep" | grep -A1 "step_12" | grep -q "depth: 0"; then
+    echo "  ok  stackdepth: deep chain leaf has depth 0"
+    sd_pass=$((sd_pass + 1))
+else
+    echo "  FAIL stackdepth: deep chain leaf should have depth 0"
+    sd_fail=$((sd_fail + 1))
+fi
+
+# 15. Deep chain: 13 bounded, 0 recursive
+if echo "$sd_deep" | grep -q "13 bounded, 0 recursive"; then
+    echo "  ok  stackdepth: deep chain all 13 bounded, 0 recursive"
+    sd_pass=$((sd_pass + 1))
+else
+    echo "  FAIL stackdepth: deep chain should show 13 bounded, 0 recursive"
+    sd_fail=$((sd_fail + 1))
+fi
+
+# 16. Wide fan: main has depth 1 (not 8 — max not sum)
+sd_wide=$("$COMPILER" tests/programs/adversarial_stackdepth_wide_fan.con --report stack-depth 2>&1)
+if echo "$sd_wide" | grep -A1 "  main" | grep -q "depth: 1"; then
+    echo "  ok  stackdepth: wide fan main has depth 1 (max not sum)"
+    sd_pass=$((sd_pass + 1))
+else
+    echo "  FAIL stackdepth: wide fan main should have depth 1"
+    sd_fail=$((sd_fail + 1))
+fi
+
+# 17. Wide fan: all 8 leaves have depth 0
+sd_wide_leaves=$(echo "$sd_wide" | grep "depth: 0" | wc -l | tr -d ' ')
+if [ "$sd_wide_leaves" -eq 8 ]; then
+    echo "  ok  stackdepth: wide fan has 8 leaves with depth 0"
+    sd_pass=$((sd_pass + 1))
+else
+    echo "  FAIL stackdepth: wide fan should have 8 leaves with depth 0 (got $sd_wide_leaves)"
+    sd_fail=$((sd_fail + 1))
+fi
+
+# 18. Mixed recursion: 3 bounded, 3 recursive (unbounded)
+sd_mixed=$("$COMPILER" tests/programs/adversarial_stackdepth_mixed_recursion.con --report stack-depth 2>&1)
+if echo "$sd_mixed" | grep -q "3 bounded, 3 recursive (unbounded)"; then
+    echo "  ok  stackdepth: mixed has 3 bounded, 3 recursive"
+    sd_pass=$((sd_pass + 1))
+else
+    echo "  FAIL stackdepth: mixed should have 3 bounded, 3 recursive"
+    sd_fail=$((sd_fail + 1))
+fi
+
+# 19. Mixed recursion: recurse shows unbounded
+if echo "$sd_mixed" | grep -A1 "  recurse" | grep -q "unbounded"; then
+    echo "  ok  stackdepth: direct recursion shows unbounded"
+    sd_pass=$((sd_pass + 1))
+else
+    echo "  FAIL stackdepth: direct recursion should show unbounded"
+    sd_fail=$((sd_fail + 1))
+fi
+
+# 20. Mixed recursion: mutual_a shows unbounded
+if echo "$sd_mixed" | grep -A1 "mutual_a" | grep -q "unbounded"; then
+    echo "  ok  stackdepth: mutual recursion shows unbounded"
+    sd_pass=$((sd_pass + 1))
+else
+    echo "  FAIL stackdepth: mutual recursion should show unbounded"
+    sd_fail=$((sd_fail + 1))
+fi
+
+# 21. Mixed recursion: pure_caller has real depth (bounded)
+if echo "$sd_mixed" | grep -A1 "pure_caller" | grep -q "depth: 1"; then
+    echo "  ok  stackdepth: non-recursive in mixed file has real depth"
+    sd_pass=$((sd_pass + 1))
+else
+    echo "  FAIL stackdepth: non-recursive in mixed file should have real depth"
+    sd_fail=$((sd_fail + 1))
+fi
+
+# 22. Large frame: big_frame has frame > 100 bytes
+sd_large=$("$COMPILER" tests/programs/adversarial_stackdepth_large_frame.con --report stack-depth 2>&1)
+sd_big_frame=$(echo "$sd_large" | grep -A1 "big_frame" | grep -o 'frame: [0-9]*' | grep -o '[0-9]*')
+if [ -n "$sd_big_frame" ] && [ "$sd_big_frame" -gt 100 ]; then
+    echo "  ok  stackdepth: large frame function has frame > 100 bytes ($sd_big_frame)"
+    sd_pass=$((sd_pass + 1))
+else
+    echo "  FAIL stackdepth: large frame function should have frame > 100 bytes (got $sd_big_frame)"
+    sd_fail=$((sd_fail + 1))
+fi
+
+# 23. Diamond: node_a has depth 2 (A->B->D or A->C->D)
+sd_diamond=$("$COMPILER" tests/programs/adversarial_stackdepth_diamond.con --report stack-depth 2>&1)
+if echo "$sd_diamond" | grep -A1 "node_a" | grep -q "depth: 2"; then
+    echo "  ok  stackdepth: diamond node_a has depth 2"
+    sd_pass=$((sd_pass + 1))
+else
+    echo "  FAIL stackdepth: diamond node_a should have depth 2"
+    sd_fail=$((sd_fail + 1))
+fi
+
+# 24. Diamond: B and C both have depth 1
+sd_b_depth=$(echo "$sd_diamond" | grep -A1 "node_b" | grep -o 'depth: [0-9]*' | grep -o '[0-9]*')
+sd_c_depth=$(echo "$sd_diamond" | grep -A1 "node_c" | grep -o 'depth: [0-9]*' | grep -o '[0-9]*')
+if [ "$sd_b_depth" = "1" ] && [ "$sd_c_depth" = "1" ]; then
+    echo "  ok  stackdepth: diamond B and C both have depth 1"
+    sd_pass=$((sd_pass + 1))
+else
+    echo "  FAIL stackdepth: diamond B=$sd_b_depth and C=$sd_c_depth should both be depth 1"
+    sd_fail=$((sd_fail + 1))
+fi
+
+# 25. Zero params: bare_leaf has minimum frame (8 bytes)
+sd_zero=$("$COMPILER" tests/programs/adversarial_stackdepth_zero_params.con --report stack-depth 2>&1)
+if echo "$sd_zero" | grep -A1 "bare_leaf" | grep -q "frame: 8 bytes"; then
+    echo "  ok  stackdepth: zero-param leaf has minimum frame (8 bytes)"
+    sd_pass=$((sd_pass + 1))
+else
+    echo "  FAIL stackdepth: zero-param leaf should have minimum frame (8 bytes)"
     sd_fail=$((sd_fail + 1))
 fi
 
