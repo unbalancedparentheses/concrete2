@@ -580,7 +580,7 @@ Goal: hostile workloads that stress every compiler pass under scale, composition
 
 **Stack-depth stress (6 tests)**: 12-function deep call chain (depth=12), 8-leaf wide fan (depth=1, not 8), mixed recursive/non-recursive, large frame (>100 bytes), diamond call pattern (deduplication), zero-param minimum frame (8 bytes).
 
-**Pipeline stress (4 tests)**: 3-stage error conversion with unified AppError, severity classification with is_fatal/is_retriable, partial success with intermediate state preservation, 4-check fan-in first-failure reporting.
+**Pipeline stress (4 tests)**: 3-stage error conversion with unified AppError, severity classification with is_fatal/is_retriable, partial success with intermediate state preservation, 4-check fan-in first-failure reporting. **Known issue**: `adversarial_pipeline_partial_success.con` crashes lli (LLVM interpreter JIT, LLVM 21.1.8) on the `Partial { state: PartialState, error: PipeErr }` variant layout; native compilation via clang works correctly — this is an lli-only bug, not a Concrete codegen issue.
 
 **Predictable boundary stress (5 tests)**: deeply nested match (pure, passes), Copy enum construct/match chain (passes), direct recursion (fails), mutual recursion (fails), hidden 3-level alloc chain (fails).
 

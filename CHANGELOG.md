@@ -21,6 +21,7 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 - **Policy enforced**: `predictable = true` in Concrete.toml, all functions pass `--check predictable`
 - **9 runtime tests**: success path, 3 validation failures, 2 auth failures, 1 rate limit, admin action, action-2 path
 - **4 pipeline adversarial programs**: stage conversion with unified AppError, severity classification with is_fatal/is_retriable, partial success with intermediate state preservation, fan-in first-failure reporting
+- **Known lli bug**: `adversarial_pipeline_partial_success.con` crashes lli (LLVM 21.1.8 JIT) on complex enum variant with struct+enum payload; native compilation works correctly — interpreter-only issue, not a Concrete codegen bug
 - **10 trust-gate serviceerrors tests**: build, run, predictable check, effects, trusted count, allocation, error code functions, pipeline handlers, policy, purity
 - **Trust-gate total**: 1358 checks
 
