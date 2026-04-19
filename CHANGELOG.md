@@ -10,6 +10,14 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Example inventory, lifecycle, and no-duplicate rule (Phase 1, items 37-39)
+
+Three documentation items establishing governance for the example set:
+
+- **`docs/EXAMPLE_INVENTORY.md`** (item 37): canonical inventory of all 20 named examples — 3 flagship (crypto_verify, elf_header, proof_pressure), 5 canonical (fixed_capacity, parse_validate, service_errors, thesis_demo, packet), 10 pressure (grep, http, integrity, json, kvstore, lox, mal, policy_engine, toml, verify), 2 supporting (project, snippets). Each entry records path, owning phase, claim, oracle strategy, test gates, and promotion status. Multi-phase ownership table. Promotion log.
+- **`docs/EXAMPLE_LIFECYCLE.md`** (item 38): 4 promotion levels (pressure → canonical → flagship → permanent regression target) with explicit bars, promotion path, anti-patterns (unnamed workload, test-free canonical, duplicate workload, phantom flagship), and new-example checklist.
+- **`docs/EXAMPLE_NO_DUPLICATES.md`** (item 39): rule against creating near-duplicate examples; reuse with multi-phase ownership. When-to-reuse vs when-to-create criteria. Current near-duplicates to watch.
+
 ### Service-style error propagation example (Phase 1, item 30)
 
 `examples/service_errors/` — 4-stage service-style request handler for the predictable subset:
