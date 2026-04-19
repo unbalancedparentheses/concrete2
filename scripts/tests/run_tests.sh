@@ -10670,12 +10670,12 @@ else
     pv_fail=$((pv_fail + 1))
 fi
 
-# 7. Custom error enum (ParseError) and result enum (ParseResult) compile
+# 7. ParseError enum and Result<Header, ParseError> compile
 if echo "$pv_effects" | grep -q "parse_header" && echo "$pv_effects" | grep -q "error_code"; then
-    echo "  ok  parsevalidate: custom ParseError/ParseResult enums work"
+    echo "  ok  parsevalidate: ParseError enum and stdlib Result work"
     pv_pass=$((pv_pass + 1))
 else
-    echo "  FAIL parsevalidate: custom error/result enums should compile and appear in effects"
+    echo "  FAIL parsevalidate: ParseError and Result should compile and appear in effects"
     pv_fail=$((pv_fail + 1))
 fi
 

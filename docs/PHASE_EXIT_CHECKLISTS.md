@@ -22,7 +22,7 @@ Each phase has a "phase closes when..." list tied to concrete outputs. A phase i
   - `fixed_capacity` example proves the pattern works
 - [x] Error propagation patterns documented with examples
   - `parse_validate` (single-stage, 6 error categories)
-  - `service_errors` (multi-stage, 3 error enums + unified error)
+  - `service_errors` (multi-stage, 3 error enums + unified ServiceError, all using builtin Result<T, E>)
 - [x] Example governance in place
   - `docs/EXAMPLE_INVENTORY.md` (all 20 examples catalogued)
   - `docs/EXAMPLE_LIFECYCLE.md` (promotion levels defined)
