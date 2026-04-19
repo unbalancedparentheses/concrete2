@@ -5,6 +5,14 @@ mod slice {
     }
 
     trusted impl<T> Slice<T> {
+        pub fn get(&self, at: u64) -> Option<&T> {
+            if at >= self.len {
+                return Option::<&T>#None;
+            }
+            let target_ptr: *const T = self.ptr + at;
+            return Option::<&T>#Some { value: target_ptr as &T };
+        }
+
         pub fn get_unchecked(&self, at: u64) -> &T {
             let target_ptr: *const T = self.ptr + at;
             return target_ptr as &T;
@@ -25,9 +33,26 @@ mod slice {
     }
 
     trusted impl<T> MutSlice<T> {
+        pub fn get(&self, at: u64) -> Option<&T> {
+            if at >= self.len {
+                return Option::<&T>#None;
+            }
+            let target_ptr: *mut T = self.ptr + at;
+            return Option::<&T>#Some { value: target_ptr as &T };
+        }
+
         pub fn get_unchecked(&self, at: u64) -> &T {
             let target_ptr: *mut T = self.ptr + at;
             return target_ptr as &T;
+        }
+
+        pub fn set(&mut self, at: u64, value: T) -> bool {
+            if at >= self.len {
+                return false;
+            }
+            let target_ptr: *mut T = self.ptr + at;
+            *target_ptr = value;
+            return true;
         }
 
         pub fn set_unchecked(&mut self, at: u64, value: T) {
@@ -44,6 +69,7 @@ mod slice {
         }
     }
 
+    import std.option.{Option};
     import std.vec.{Vec};
     import std.test.{assert_eq, assert_true};
 

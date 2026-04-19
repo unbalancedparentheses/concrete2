@@ -165,13 +165,13 @@ Borrowed contiguous views.
 | `len`, `is_empty` | methods |
 | `get_unchecked` | method |
 
-Checked `get(at) -> Option<&T>` and `subslice(start, end)` are HIGH priority gaps. The module is experimental because the checked/unchecked API boundary is not yet settled.
+Checked `get(at) -> Option<&T>` is now implemented on both `Slice` and `MutSlice`. `subslice(start, end)` is still a gap. The module is experimental because the full API boundary is not yet settled.
 
 Source: [STDLIB_TARGET.md](STDLIB_TARGET.md), [STDLIB_AUDIT.md](STDLIB_AUDIT.md)
 
-#### `std.numeric` -- experimental (not yet implemented)
+#### `std.numeric` -- experimental (implemented)
 
-Endian-aware byte reading, checked arithmetic, byte cursor.
+Endian-aware byte reading, byte cursor, byte writer. 9 tests pass.
 
 | Item | Kind |
 |------|------|

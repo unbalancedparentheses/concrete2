@@ -78,7 +78,7 @@ Each phase has a "phase closes when..." list tied to concrete outputs. A phase i
 - [x] String/text/bytes boundary is explicit at parser and FFI edges
   - Covered in STRING_TEXT_CONTRACT.md sections 3, 6, 10 (98d2cbc)
 - [x] Checked indexing and slice/view contract stabilized
-  - Contract defined in BYTE_CURSOR_API.md and STDLIB_AUDIT.md; implementation pending (std.numeric, slice.get)
+  - Contract defined in BYTE_CURSOR_API.md; std.numeric implemented (891d561, 9 tests); Slice/MutSlice checked `get` implemented
 - [x] Core stdlib modules implemented: bytes, option/result, slices, basic collections
   - 38 modules exist in std/src/; audit in STDLIB_AUDIT.md; Tier 1 helpers added to option/result/bytes/math (98d2cbc)
 - [ ] Runtime-oriented collection maturity is demonstrated for interpreter/runtime-style workloads
@@ -92,8 +92,8 @@ Each phase has a "phase closes when..." list tied to concrete outputs. A phase i
   - `docs/SYNTAX_FREEZE_REVIEW.md`, `docs/PATTERN_DESTRUCTURING.md` (98d2cbc); `let...else` approved, implementation pending
 - [x] Visibility rules stable (pub/non-pub at module and struct level)
   - `docs/VISIBILITY_AND_MODULE_HYGIENE.md` (98d2cbc); existing 3-pass enforcement confirmed adequate
-- [ ] Endian byte APIs exist (read_u16_be, write_u32_le, etc.)
-  - Design in `docs/BYTE_CURSOR_API.md`; implementation pending (std.numeric)
+- [x] Endian byte APIs exist (read_u16_be, write_u32_le, etc.)
+  - `std/src/numeric.con`: ByteCursor with read_u8/u16/u32/u64 BE/LE, ByteWriter with write_u8/u16/u32 BE/LE (891d561)
 - [ ] Layout/ABI contract surface is explicit about stable vs opaque representations
 - [x] Module hygiene proven (no accidental namespace pollution)
   - `docs/VISIBILITY_AND_MODULE_HYGIENE.md` Part 2 (98d2cbc); selective imports enforced, no glob imports
@@ -106,7 +106,7 @@ Each phase has a "phase closes when..." list tied to concrete outputs. A phase i
 
 **Verification**: `examples/parse_validate/` and `examples/service_errors/` work with stdlib types (not custom Copy enums), one fixed-capacity example uses the checked indexing/slice surface, one string-heavy medium workload such as `grep` or `policy_engine` uses the intended formatting/text APIs, and one interpreter/runtime-heavy workload such as `mal` or `lox` exercises the intended collection/runtime surface.
 
-**Current status**: 11/18 exit criteria done (design). 7 remaining require implementation: std.numeric, checked slice, example rewrites, medium workloads, opaque wrappers, layout/ABI, formatting ergonomics.
+**Current status**: 13/18 exit criteria done. 5 remaining: example rewrites onto stdlib, medium workloads (string-heavy + runtime-heavy), opaque wrappers, layout/ABI, formatting ergonomics.
 
 ## Phase 4: Tooling, Tests, Wrong-Code Corpus
 

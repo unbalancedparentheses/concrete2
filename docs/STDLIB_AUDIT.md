@@ -24,8 +24,8 @@ The stdlib has 38 modules. Most hosted-layer and collection modules are effectiv
 
 | # | Gap | Priority | Blocked By | Status |
 |---|-----|----------|-----------|--------|
-| 1 | `std.numeric` module does not exist — ByteCursor, endian read/write, checked narrowing | CRITICAL | All 5 parser pressure tests | Not started — see BYTE_CURSOR_API.md |
-| 2 | `std.slice` missing checked `get(at) -> Option<&T>` | HIGH | Parser + fixcap programs | Not started |
+| 1 | `std.numeric` module — ByteCursor, endian read/write, checked narrowing | CRITICAL | All 5 parser pressure tests | **Implemented** (891d561) — 9 tests pass |
+| 2 | `std.slice` checked `get(at) -> Option<&T>` | HIGH | Parser + fixcap programs | **Implemented** — checked `get` on Slice and MutSlice, checked `set` on MutSlice |
 | 3 | `std.option` missing `unwrap_or`, `ok_or` | HIGH | All programs with ad hoc result enums | **Fixed in this audit** |
 | 4 | `std.result` missing `unwrap_or`, `ok`, `err` | HIGH | All error-propagation programs | **Fixed in this audit** |
 | 5 | `std.bytes` missing `eq` | HIGH | Parser programs doing byte comparison | **Fixed in this audit** |
