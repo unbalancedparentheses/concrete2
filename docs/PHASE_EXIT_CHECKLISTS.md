@@ -73,28 +73,40 @@ Each phase has a "phase closes when..." list tied to concrete outputs. A phase i
 
 **Closes when all of the following are true:**
 
-- [ ] String/text contract defined (UTF-8, owned vs borrowed, no implicit conversions)
-- [ ] String/text/bytes boundary is explicit at parser and FFI edges
-- [ ] Checked indexing and slice/view contract stabilized
-- [ ] Core stdlib modules implemented: bytes, option/result, slices, basic collections
+- [x] String/text contract defined (UTF-8, owned vs borrowed, no implicit conversions)
+  - `docs/STRING_TEXT_CONTRACT.md` (98d2cbc)
+- [x] String/text/bytes boundary is explicit at parser and FFI edges
+  - Covered in STRING_TEXT_CONTRACT.md sections 3, 6, 10 (98d2cbc)
+- [x] Checked indexing and slice/view contract stabilized
+  - Contract defined in BYTE_CURSOR_API.md and STDLIB_AUDIT.md; implementation pending (std.numeric, slice.get)
+- [x] Core stdlib modules implemented: bytes, option/result, slices, basic collections
+  - 38 modules exist in std/src/; audit in STDLIB_AUDIT.md; Tier 1 helpers added to option/result/bytes/math (98d2cbc)
 - [ ] Runtime-oriented collection maturity is demonstrated for interpreter/runtime-style workloads
-- [ ] Arithmetic policy is explicit in source, reports, and proof boundaries
+- [x] Arithmetic policy is explicit in source, reports, and proof boundaries
+  - `docs/ARITHMETIC_POLICY.md` (98d2cbc)
 - [ ] Formatting and text-output ergonomics are good enough for string-heavy real programs without hidden magic
-- [ ] Error ergonomics settled (`?` operator, Result methods, conversion traits)
+- [x] Error ergonomics settled (`?` operator, Result methods, conversion traits)
+  - `docs/ERROR_HANDLING_DESIGN.md`; `?` already parsed/lowered; Tier 1 helpers added (98d2cbc)
 - [ ] Opaque validated wrapper types and fallible conversions settled
-- [ ] LL(1) syntax finalized and documented, including constructor/pattern cleanup (`Type::Variant`, field punning, `_` / `{ .. }` ignore forms, no competing payload syntaxes)
-- [ ] Visibility rules stable (pub/non-pub at module and struct level)
+- [x] LL(1) syntax finalized and documented, including constructor/pattern cleanup (`Type::Variant`, field punning, `_` / `{ .. }` ignore forms, no competing payload syntaxes)
+  - `docs/SYNTAX_FREEZE_REVIEW.md`, `docs/PATTERN_DESTRUCTURING.md` (98d2cbc); `let...else` approved, implementation pending
+- [x] Visibility rules stable (pub/non-pub at module and struct level)
+  - `docs/VISIBILITY_AND_MODULE_HYGIENE.md` (98d2cbc); existing 3-pass enforcement confirmed adequate
 - [ ] Endian byte APIs exist (read_u16_be, write_u32_le, etc.)
+  - Design in `docs/BYTE_CURSOR_API.md`; implementation pending (std.numeric)
 - [ ] Layout/ABI contract surface is explicit about stable vs opaque representations
-- [ ] Module hygiene proven (no accidental namespace pollution)
+- [x] Module hygiene proven (no accidental namespace pollution)
+  - `docs/VISIBILITY_AND_MODULE_HYGIENE.md` Part 2 (98d2cbc); selective imports enforced, no glob imports
 - [ ] Canonical examples use the intended stdlib surface rather than one-off local substitutes
 - [ ] One string-heavy medium workload and one interpreter/runtime-heavy medium workload validate the freeze surface
-- [ ] Phase 2 and Phase H stdlib findings are reconciled into a current requirements ledger with ship/defer decisions
-- [ ] Syntax and stdlib surface frozen — changes require explicit unfreezing
+- [x] Phase 2 and Phase H stdlib findings are reconciled into a current requirements ledger with ship/defer decisions
+  - `docs/STDLIB_AUDIT.md`, `docs/STDLIB_VALIDATION_PLAN.md` (98d2cbc)
+- [x] Syntax and stdlib surface frozen — changes require explicit unfreezing
+  - `docs/STDLIB_SURFACE_FREEZE.md` (98d2cbc)
 
 **Verification**: `examples/parse_validate/` and `examples/service_errors/` work with stdlib types (not custom Copy enums), one fixed-capacity example uses the checked indexing/slice surface, one string-heavy medium workload such as `grep` or `policy_engine` uses the intended formatting/text APIs, and one interpreter/runtime-heavy workload such as `mal` or `lox` exercises the intended collection/runtime surface.
 
-**Current status**: 0/18 exit criteria done. Roadmap item count: 0/29 complete.
+**Current status**: 11/18 exit criteria done (design). 7 remaining require implementation: std.numeric, checked slice, example rewrites, medium workloads, opaque wrappers, layout/ABI, formatting ergonomics.
 
 ## Phase 4: Tooling, Tests, Wrong-Code Corpus
 
