@@ -10,6 +10,16 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### No-std split, standalone UX, project bootstrap (Phase 1, items 34-36)
+
+Three design documents defining developer-facing UX for different project shapes:
+
+- **`docs/FREESTANDING_SPLIT.md`** (item 34): freestanding vs hosted execution targets. Freestanding = no stdlib, no capabilities, no libc, pure computation. Hosted = full stdlib, main entry point, all capabilities. Feature table (18 items), concrete examples from fixed_capacity (freestanding-ready) and parse_validate (hosted). Freestanding is a strict subset of predictable.
+- **`docs/STANDALONE_VS_PROJECT.md`** (item 35): standalone file (`concrete myfile.con`) vs project (`concrete build` with Concrete.toml). Standalone for scripts/snippets, project for stdlib/policy/modules. Proposed `--stdlib` flag bridge. Migration path from standalone to project.
+- **`docs/PROJECT_BOOTSTRAP.md`** (item 36): `concrete new` command design with 3 templates (predictable, library, ffi), standard layout conventions, Concrete.toml field reference, first outsider workflow.
+
+Phase 1 (Predictable Core) now has 17/18 items done. Only item 31 (interpreter) remains.
+
 ### Per-phase exit checklists (Phase 1, item 40)
 
 `docs/PHASE_EXIT_CHECKLISTS.md` — exit criteria for phases 1-7:

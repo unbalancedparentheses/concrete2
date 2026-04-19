@@ -38,7 +38,7 @@ Each phase has a "phase closes when..." list tied to concrete outputs. A phase i
 
 **Verification command**: `./scripts/tests/run_tests.sh --trust-gate` passes with 0 failures.
 
-**Current status**: 14/18 items done. Remaining: items 31 (interpreter), 34 (no-std), 35 (standalone UX), 36 (project bootstrap).
+**Current status**: 17/18 items done. Remaining: item 31 (interpreter).
 
 ## Phase 2: Pre-Stdlib Pressure Workloads
 
