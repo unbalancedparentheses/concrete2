@@ -10,6 +10,19 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Canonical parse/validate error-flow example (Phase 1, item 29)
+
+`examples/parse_validate/` — canonical error-flow example for the predictable subset:
+
+- **Custom error types**: `enum Copy ParseError` (6 categories: TooShort, BadVersion, BadType, PayloadTooBig, Truncated, BadChecksum), `struct Copy Header`, `enum Copy ParseResult { Ok { header }, Err { error } }`
+- **Explicit propagation**: match-based error handling, every error path visible in source, no hidden control flow
+- **Pure functions**: 9 functions, all `caps: (pure)`, `evidence: enforced`, zero trusted, zero allocation
+- **Bounded**: `compute_checksum` XOR fold over fixed-size array with bounded loop; all others loop-free
+- **Policy enforced**: `predictable = true` in Concrete.toml, all functions pass `--check predictable`
+- **8 runtime tests**: valid header, bad version, bad type, too short, payload overflow, bad checksum, valid with payload, truncated — all pass (exit 0)
+- **SSA-verify bug discovered**: accumulator-style match (many sequential `match` + mutable counter) triggers E0703 dominator violation; early-return style works correctly
+- **10 trust-gate parsevalidate tests**: build, run, predictable check, effects, trusted count, allocation, enum compilation, bounded loop, policy, purity
+
 ### Predictable failure discipline (Phase 3, item 28)
 
 `docs/PREDICTABLE_FAILURE_DISCIPLINE.md` — failure-only discipline for predictable-profile code:

@@ -30,7 +30,7 @@ Modes:
   --O2               Only -O2 optimized-build regression tests
   --codegen           Only codegen differential + SSA structure tests
   --report            Only --report output verification tests
-  --trust-gate        Correctness contracts only: determinism, consistency, terminology, verify, evidence, apiversioning, taxonomy, workflow, bundle, proofgate, fixedcap, stackdepth
+  --trust-gate        Correctness contracts only: determinism, consistency, terminology, verify, evidence, apiversioning, taxonomy, workflow, bundle, proofgate, fixedcap, parsevalidate, stackdepth
   --affected          Auto-detect changed files (git diff) and run affected tests
   --affected FILES    Run tests affected by specific files (comma-separated)
   --manifest          List all test files with categories (no execution)
@@ -241,14 +241,14 @@ resolve_affected_sections() {
 
 # Resolve which sections are active based on MODE
 case "$MODE" in
-    full)    SECTION="passlevel,positive,negative,testflag,report,codegen,O2,stdlib,collection,xtarget,perf,determinism,consistency,terminology,verify,evidence,malformed,query,desync,bugaudit,apiversioning,errorcodes,policy,taxonomy,workflow,bundle,proofgate,fixedcap,stackdepth" ;;
+    full)    SECTION="passlevel,positive,negative,testflag,report,codegen,O2,stdlib,collection,xtarget,perf,determinism,consistency,terminology,verify,evidence,malformed,query,desync,bugaudit,apiversioning,errorcodes,policy,taxonomy,workflow,bundle,proofgate,fixedcap,parsevalidate,stackdepth" ;;
     fast)    SECTION="passlevel,positive,negative,testflag,report,codegen,O2,stdlib,collection" ;;
     stdlib)  SECTION="stdlib,collection" ;;
     stdlib-module) SECTION="stdlib" ;;
     O2)      SECTION="O2" ;;
     codegen) SECTION="codegen,O2" ;;
     report)  SECTION="report" ;;
-    trust-gate) SECTION="determinism,consistency,terminology,verify,evidence,malformed,query,desync,bugaudit,apiversioning,errorcodes,policy,taxonomy,workflow,bundle,proofgate,fixedcap,stackdepth" ;;
+    trust-gate) SECTION="determinism,consistency,terminology,verify,evidence,malformed,query,desync,bugaudit,apiversioning,errorcodes,policy,taxonomy,workflow,bundle,proofgate,fixedcap,parsevalidate,stackdepth" ;;
     affected)
         SECTION=$(resolve_affected_sections "$AFFECTED_FILES")
         echo "=== Affected mode ==="
@@ -10508,6 +10508,127 @@ echo "  $fc_pass fixedcap gates passed"
 PASS=$((PASS + fc_pass))
 FAIL=$((FAIL + fc_fail))
 fi # end section: fixedcap
+
+if section_active parsevalidate; then
+echo ""
+echo "=== Parse-validate error-flow tests ==="
+pv_pass=0
+pv_fail=0
+
+PV_SRC="examples/parse_validate/src/main.con"
+PV_DIR="$ROOT_DIR/examples/parse_validate"
+
+# 1. Builds with predictable=true policy
+pv_build_out=$( cd "$PV_DIR" && "$ROOT_DIR/$COMPILER" build 2>&1 ) && pv_build_ok=true || pv_build_ok=false
+if $pv_build_ok; then
+    echo "  ok  parsevalidate: builds with predictable=true policy"
+    pv_pass=$((pv_pass + 1))
+else
+    echo "  FAIL parsevalidate: should build with predictable=true policy"
+    echo "       $pv_build_out"
+    pv_fail=$((pv_fail + 1))
+fi
+
+# 2. Runs and all 8 tests pass (exit 0)
+if $pv_build_ok; then
+    pv_run_exit=0
+    "$PV_DIR/parse_validate" 2>&1 || pv_run_exit=$?
+    if [ "$pv_run_exit" -eq 0 ]; then
+        echo "  ok  parsevalidate: runs with all 8 tests passing (exit 0)"
+        pv_pass=$((pv_pass + 1))
+    else
+        echo "  FAIL parsevalidate: should exit 0, got $pv_run_exit"
+        pv_fail=$((pv_fail + 1))
+    fi
+else
+    echo "  SKIP parsevalidate: run (build failed)"
+    pv_fail=$((pv_fail + 1))
+fi
+
+# 3. All functions pass --check predictable
+pv_pred=$("$COMPILER" "$PV_SRC" --check predictable 2>&1) && pv_pred_exit=0 || pv_pred_exit=$?
+if [ "$pv_pred_exit" -eq 0 ] && echo "$pv_pred" | grep -q "pass"; then
+    echo "  ok  parsevalidate: all functions pass --check predictable"
+    pv_pass=$((pv_pass + 1))
+else
+    echo "  FAIL parsevalidate: should pass --check predictable"
+    pv_fail=$((pv_fail + 1))
+fi
+
+# 4. All 9 functions are pure with evidence=enforced
+pv_effects=$("$COMPILER" "$PV_SRC" --report effects 2>&1)
+if echo "$pv_effects" | grep -q "9 pure" && echo "$pv_effects" | grep -q "9 enforced"; then
+    echo "  ok  parsevalidate: all 9 functions are pure with evidence=enforced"
+    pv_pass=$((pv_pass + 1))
+else
+    echo "  FAIL parsevalidate: all 9 functions should be pure with evidence=enforced"
+    pv_fail=$((pv_fail + 1))
+fi
+
+# 5. Zero trusted functions
+if echo "$pv_effects" | grep -q "0 trusted"; then
+    echo "  ok  parsevalidate: zero trusted functions"
+    pv_pass=$((pv_pass + 1))
+else
+    echo "  FAIL parsevalidate: should have zero trusted functions"
+    pv_fail=$((pv_fail + 1))
+fi
+
+# 6. Zero allocation across all functions
+if ! echo "$pv_effects" | grep -v "^$" | grep "alloc:" | grep -v "alloc: none" | grep -q .; then
+    echo "  ok  parsevalidate: zero allocation across all functions"
+    pv_pass=$((pv_pass + 1))
+else
+    echo "  FAIL parsevalidate: should have zero allocation"
+    pv_fail=$((pv_fail + 1))
+fi
+
+# 7. Custom error enum (ParseError) and result enum (ParseResult) compile
+if echo "$pv_effects" | grep -q "parse_header" && echo "$pv_effects" | grep -q "error_code"; then
+    echo "  ok  parsevalidate: custom ParseError/ParseResult enums work"
+    pv_pass=$((pv_pass + 1))
+else
+    echo "  FAIL parsevalidate: custom error/result enums should compile and appear in effects"
+    pv_fail=$((pv_fail + 1))
+fi
+
+# 8. compute_checksum has bounded loop (the only loop in the example)
+if echo "$pv_effects" | grep -A1 "compute_checksum" | grep -q "loops: bounded"; then
+    echo "  ok  parsevalidate: compute_checksum has bounded loop"
+    pv_pass=$((pv_pass + 1))
+else
+    echo "  FAIL parsevalidate: compute_checksum should have bounded loop"
+    pv_fail=$((pv_fail + 1))
+fi
+
+# 9. Concrete.toml has predictable policy
+if grep -q 'predictable = true' "$PV_DIR/Concrete.toml"; then
+    echo "  ok  parsevalidate: Concrete.toml declares predictable=true"
+    pv_pass=$((pv_pass + 1))
+else
+    echo "  FAIL parsevalidate: Concrete.toml should declare predictable=true"
+    pv_fail=$((pv_fail + 1))
+fi
+
+# 10. All core validators are capability-free (pure)
+pv_pure_caps=true
+for fn in validate_version validate_msg_type validate_payload_len validate_total_len validate_checksum compute_checksum parse_header error_code; do
+    if ! echo "$pv_effects" | grep -A1 "$fn" | grep -q "caps: (pure)"; then
+        pv_pure_caps=false
+    fi
+done
+if $pv_pure_caps; then
+    echo "  ok  parsevalidate: all core functions are capability-free (pure)"
+    pv_pass=$((pv_pass + 1))
+else
+    echo "  FAIL parsevalidate: all core functions should be capability-free"
+    pv_fail=$((pv_fail + 1))
+fi
+
+echo "  $pv_pass parsevalidate gates passed"
+PASS=$((PASS + pv_pass))
+FAIL=$((FAIL + pv_fail))
+fi # end section: parsevalidate
 
 if section_active stackdepth; then
 echo ""
