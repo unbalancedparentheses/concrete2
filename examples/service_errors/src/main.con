@@ -1,0 +1,327 @@
+// service_errors — service-style error propagation for the predictable subset
+//
+// Demonstrates a multi-stage request handler where every failure category
+// is explicit and reviewable:
+//   1. Validate: check request fields for well-formedness
+//   2. Authorize: check token validity and permission level
+//   3. Rate-limit: check per-user quota
+//   4. Process: execute business logic and produce a response
+//
+// Error design:
+//   - Each stage has its own error enum (explicit failure taxonomy)
+//   - A unified ServiceError enum wraps all stage errors with codes
+//   - ServiceResult carries Ok or Err — no hidden exceptions or panics
+//   - Error codes are deterministic: stage prefix + variant code
+//
+// All functions pass --check predictable:
+//   no recursion, bounded loops, no alloc, no FFI, no capabilities
+//
+// Policy: predictable = true
+
+mod service_errors {
+
+    // ---- Request ----
+
+    struct Copy Request {
+        user_id: i32,
+        token: i32,
+        action: i32,
+        payload: i32,
+    }
+
+    // ---- Stage 1: Validation ----
+
+    enum Copy ValidateError {
+        BadUserId,
+        BadAction,
+        PayloadTooLarge,
+    }
+
+    fn validate_error_code(e: ValidateError) -> i32 {
+        match e {
+            ValidateError#BadUserId => { return 101; },
+            ValidateError#BadAction => { return 102; },
+            ValidateError#PayloadTooLarge => { return 103; },
+        }
+    }
+
+    enum Copy ValidateResult {
+        Ok { val: i32 },
+        Err { error: ValidateError },
+    }
+
+    fn validate(req: Request) -> ValidateResult {
+        if req.user_id <= 0 {
+            return ValidateResult#Err { error: ValidateError#BadUserId };
+        }
+        if req.action < 1 {
+            return ValidateResult#Err { error: ValidateError#BadAction };
+        }
+        if req.action > 3 {
+            return ValidateResult#Err { error: ValidateError#BadAction };
+        }
+        if req.payload > 1000 {
+            return ValidateResult#Err { error: ValidateError#PayloadTooLarge };
+        }
+        return ValidateResult#Ok { val: 1 };
+    }
+
+    // ---- Stage 2: Authorization ----
+
+    enum Copy AuthError {
+        InvalidToken,
+        InsufficientPermission,
+    }
+
+    fn auth_error_code(e: AuthError) -> i32 {
+        match e {
+            AuthError#InvalidToken => { return 201; },
+            AuthError#InsufficientPermission => { return 202; },
+        }
+    }
+
+    enum Copy AuthResult {
+        Ok { val: i32 },
+        Err { error: AuthError },
+    }
+
+    fn authorize(req: Request) -> AuthResult {
+        // Token must be positive and match user_id * 7 (simple scheme)
+        if req.token <= 0 {
+            return AuthResult#Err { error: AuthError#InvalidToken };
+        }
+        let expected_token: i32 = req.user_id * 7;
+        if req.token != expected_token {
+            return AuthResult#Err { error: AuthError#InvalidToken };
+        }
+        // Action 3 (admin) requires user_id < 100
+        if req.action == 3 {
+            if req.user_id >= 100 {
+                return AuthResult#Err { error: AuthError#InsufficientPermission };
+            }
+        }
+        return AuthResult#Ok { val: 1 };
+    }
+
+    // ---- Stage 3: Rate limiting ----
+
+    enum Copy RateLimitError {
+        QuotaExceeded,
+    }
+
+    fn rate_error_code(e: RateLimitError) -> i32 {
+        match e {
+            RateLimitError#QuotaExceeded => { return 301; },
+        }
+    }
+
+    enum Copy RateResult {
+        Ok { val: i32 },
+        Err { error: RateLimitError },
+    }
+
+    fn check_rate_limit(user_id: i32, payload: i32) -> RateResult {
+        // Users with id > 900 are throttled; payload > 500 exceeds burst
+        if user_id > 900 {
+            return RateResult#Err { error: RateLimitError#QuotaExceeded };
+        }
+        if payload > 500 {
+            if user_id > 500 {
+                return RateResult#Err { error: RateLimitError#QuotaExceeded };
+            }
+        }
+        return RateResult#Ok { val: 1 };
+    }
+
+    // ---- Stage 4: Processing ----
+
+    struct Copy Response {
+        status: i32,
+        result_val: i32,
+    }
+
+    fn process_action(action: i32, payload: i32) -> Response {
+        // action 1: echo payload doubled
+        // action 2: echo payload + 100
+        // action 3: admin — echo payload * 3
+        if action == 1 {
+            return Response { status: 200, result_val: payload * 2 };
+        }
+        if action == 2 {
+            return Response { status: 200, result_val: payload + 100 };
+        }
+        return Response { status: 200, result_val: payload * 3 };
+    }
+
+    // ---- Unified error ----
+
+    enum Copy ServiceError {
+        Validation { code: i32 },
+        Auth { code: i32 },
+        RateLimit { code: i32 },
+    }
+
+    fn service_error_code(e: ServiceError) -> i32 {
+        match e {
+            ServiceError#Validation { code } => { return code; },
+            ServiceError#Auth { code } => { return code; },
+            ServiceError#RateLimit { code } => { return code; },
+        }
+    }
+
+    // ---- Service result ----
+
+    enum Copy ServiceResult {
+        Ok { response: Response },
+        Err { error: ServiceError },
+    }
+
+    // ---- Pipeline: each stage returns early on error ----
+
+    fn handle_validated(req: Request) -> ServiceResult {
+        match authorize(req) {
+            AuthResult#Err { error } => {
+                return ServiceResult#Err {
+                    error: ServiceError#Auth { code: auth_error_code(error) }
+                };
+            },
+            AuthResult#Ok { val } => {
+                return handle_authorized(req);
+            },
+        }
+    }
+
+    fn handle_authorized(req: Request) -> ServiceResult {
+        match check_rate_limit(req.user_id, req.payload) {
+            RateResult#Err { error } => {
+                return ServiceResult#Err {
+                    error: ServiceError#RateLimit { code: rate_error_code(error) }
+                };
+            },
+            RateResult#Ok { val } => {
+                let resp: Response = process_action(req.action, req.payload);
+                return ServiceResult#Ok { response: resp };
+            },
+        }
+    }
+
+    fn handle_request(req: Request) -> ServiceResult {
+        match validate(req) {
+            ValidateResult#Err { error } => {
+                return ServiceResult#Err {
+                    error: ServiceError#Validation { code: validate_error_code(error) }
+                };
+            },
+            ValidateResult#Ok { val } => {
+                return handle_validated(req);
+            },
+        }
+    }
+
+    // ---- Tests ----
+
+    pub fn main() -> Int {
+        // Test 1: successful request (user=10, token=70, action=1, payload=50)
+        let ok_req: Request = Request {
+            user_id: 10, token: 70, action: 1, payload: 50
+        };
+        match handle_request(ok_req) {
+            ServiceResult#Ok { response } => {
+                if response.status != 200 { return 10; }
+                if response.result_val != 100 { return 11; }
+            },
+            ServiceResult#Err { error } => { return 12; },
+        }
+
+        // Test 2: validation error — bad user_id (0)
+        let bad_user: Request = Request {
+            user_id: 0, token: 0, action: 1, payload: 50
+        };
+        match handle_request(bad_user) {
+            ServiceResult#Ok { response } => { return 20; },
+            ServiceResult#Err { error } => {
+                if service_error_code(error) != 101 { return 21; }
+            },
+        }
+
+        // Test 3: validation error — bad action (5)
+        let bad_action: Request = Request {
+            user_id: 10, token: 70, action: 5, payload: 50
+        };
+        match handle_request(bad_action) {
+            ServiceResult#Ok { response } => { return 30; },
+            ServiceResult#Err { error } => {
+                if service_error_code(error) != 102 { return 31; }
+            },
+        }
+
+        // Test 4: validation error — payload too large (1500)
+        let big_payload: Request = Request {
+            user_id: 10, token: 70, action: 1, payload: 1500
+        };
+        match handle_request(big_payload) {
+            ServiceResult#Ok { response } => { return 40; },
+            ServiceResult#Err { error } => {
+                if service_error_code(error) != 103 { return 41; }
+            },
+        }
+
+        // Test 5: auth error — invalid token
+        let bad_token: Request = Request {
+            user_id: 10, token: 99, action: 1, payload: 50
+        };
+        match handle_request(bad_token) {
+            ServiceResult#Ok { response } => { return 50; },
+            ServiceResult#Err { error } => {
+                if service_error_code(error) != 201 { return 51; }
+            },
+        }
+
+        // Test 6: auth error — insufficient permission (admin action, user >= 100)
+        let no_perm: Request = Request {
+            user_id: 100, token: 700, action: 3, payload: 50
+        };
+        match handle_request(no_perm) {
+            ServiceResult#Ok { response } => { return 60; },
+            ServiceResult#Err { error } => {
+                if service_error_code(error) != 202 { return 61; }
+            },
+        }
+
+        // Test 7: rate limit error — user > 900
+        let throttled: Request = Request {
+            user_id: 901, token: 6307, action: 1, payload: 50
+        };
+        match handle_request(throttled) {
+            ServiceResult#Ok { response } => { return 70; },
+            ServiceResult#Err { error } => {
+                if service_error_code(error) != 301 { return 71; }
+            },
+        }
+
+        // Test 8: successful admin action (user=10, token=70, action=3, payload=20)
+        let admin_req: Request = Request {
+            user_id: 10, token: 70, action: 3, payload: 20
+        };
+        match handle_request(admin_req) {
+            ServiceResult#Ok { response } => {
+                if response.status != 200 { return 80; }
+                if response.result_val != 60 { return 81; }
+            },
+            ServiceResult#Err { error } => { return 82; },
+        }
+
+        // Test 9: action=2 with valid request
+        let action2: Request = Request {
+            user_id: 5, token: 35, action: 2, payload: 200
+        };
+        match handle_request(action2) {
+            ServiceResult#Ok { response } => {
+                if response.result_val != 300 { return 91; }
+            },
+            ServiceResult#Err { error } => { return 90; },
+        }
+
+        return 0;
+    }
+}

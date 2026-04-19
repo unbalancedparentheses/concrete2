@@ -10,6 +10,20 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Service-style error propagation example (Phase 1, item 30)
+
+`examples/service_errors/` — 4-stage service-style request handler for the predictable subset:
+
+- **4-stage pipeline**: validate → authorize → rate-limit → process, each with its own error enum
+- **3 stage-specific error enums**: `ValidateError` (BadUserId, BadAction, PayloadTooLarge), `AuthError` (InvalidToken, InsufficientPermission), `RateLimitError` (QuotaExceeded), plus unified `ServiceError` with deterministic error codes (101-103, 201-202, 301)
+- **Custom types**: `Request` struct, `Response` struct, `ServiceResult` enum (Ok/Err)
+- **Pure functions**: 12 functions, all `caps: (pure)`, `evidence: enforced`, zero trusted, zero allocation
+- **Policy enforced**: `predictable = true` in Concrete.toml, all functions pass `--check predictable`
+- **9 runtime tests**: success path, 3 validation failures, 2 auth failures, 1 rate limit, admin action, action-2 path
+- **4 pipeline adversarial programs**: stage conversion with unified AppError, severity classification with is_fatal/is_retriable, partial success with intermediate state preservation, fan-in first-failure reporting
+- **10 trust-gate serviceerrors tests**: build, run, predictable check, effects, trusted count, allocation, error code functions, pipeline handlers, policy, purity
+- **Trust-gate total**: 1358 checks
+
 ### Canonical parse/validate error-flow example (Phase 1, item 29)
 
 `examples/parse_validate/` — canonical error-flow example for the predictable subset:
