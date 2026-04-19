@@ -33,6 +33,10 @@ examples/vm/vm
 examples/mal/mal
 examples/policy_engine/policy_engine
 examples/elf_header/elf_header
+examples/crypto_verify/crypto_verify
+examples/parse_validate/parse_validate
+examples/proof_pressure/proof_pressure
+examples/service_errors/service_errors
 
 # C benchmark binaries (compiled from bench_c.c)
 examples/grep/cgrep_c
@@ -43,6 +47,8 @@ examples/mal/bench_c
 examples/policy_engine/bench_c
 
 # Compiled test binaries (keep .con sources, ignore extensionless binaries)
+tests/programs/builtin_method_no_import/builtin_method_no_import
+
 lean_tests/trait_numeric_abs
 lean_tests/cap_alias_basic
 lean_tests/cap_alias_pub
