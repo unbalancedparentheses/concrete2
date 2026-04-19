@@ -10,6 +10,22 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Per-phase exit checklists (Phase 1, item 40)
+
+`docs/PHASE_EXIT_CHECKLISTS.md` — exit criteria for phases 1-7:
+
+- **Phase 1 (Predictable Core)**: 10 criteria — canonical examples trust-gate tested, boundaries documented, stack-depth working, error propagation patterned, example governance, diagnostic UX designed, trusted boundary guide, no-std split, interpreter. Current: 14/18 items done
+- **Phases 2-7**: concrete exit criteria tied to specific outputs (pressure examples, stdlib freeze, tooling, benchmarks, showcase, proof expansion)
+- **Phases 8-14**: deferred until earlier phases approach completion
+- **Update protocol**: check boxes as criteria are met, add commit hash, close phase when all checked
+
+### Diagnostic UX and trusted boundary guide (Phase 1, items 32-33)
+
+Two design documents establishing quality standards:
+
+- **`docs/DIAGNOSTIC_UX.md`** (item 32): diagnostic quality tiers (good / missing "why" / bare), target format (rule + location + why + hint), 4 priority categories (policy violations, extraction blockers with per-construct explanations, ownership/linearity, stale proof repair). No new Lean types needed — existing Diagnostic fields sufficient
+- **`docs/TRUSTED_BOUNDARY_GUIDE.md`** (item 33): 4 canonical wrapper patterns (raw pointer reads, FFI shell, safe alternative, multi-layer orchestration), audit checklists for trusted fn (7 items) and trusted extern fn (4 items), report/evidence material references
+
 ### Example inventory, lifecycle, and no-duplicate rule (Phase 1, items 37-39)
 
 Three documentation items establishing governance for the example set:
