@@ -9647,6 +9647,16 @@ else
     pol_fail=$((pol_fail + 1))
 fi
 
+# 19. While loop fails predictable (unbounded)
+pred_while=$("$COMPILER" "$TESTDIR/adversarial_predict_bound_while_loop.con" --check predictable 2>&1) && pred_while_exit=0 || pred_while_exit=$?
+if [ "$pred_while_exit" -ne 0 ] && echo "$pred_while" | grep -q "unbounded loop"; then
+    echo "  ok  policy: while loop fails predictable (unbounded)"
+    pol_pass=$((pol_pass + 1))
+else
+    echo "  FAIL policy: while loop should fail predictable"
+    pol_fail=$((pol_fail + 1))
+fi
+
 echo "  $pol_pass policy gates passed"
 PASS=$((PASS + pol_pass))
 FAIL=$((FAIL + pol_fail))
