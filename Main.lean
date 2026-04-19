@@ -3,7 +3,7 @@ import Concrete
 open Concrete
 
 def usage : String :=
-  "Usage: concrete <file.con> [-o output] [--emit-llvm] [--emit-core] [--emit-ssa] [--test] [--test --module <name>] [--report caps|unsafe|layout|interface|alloc|mono|authority|proof|eligibility|proof-status|obligations|extraction|lean-stubs|check-proofs|proof-diagnostics|proof-deps|proof-bundle|traceability|diagnostics-json|effects|recursion|stack-depth|fingerprints|consistency|verify] [--query KIND|KIND:FUNCTION|fn:FUNCTION] [--fmt]\n       concrete build [-o output] [--emit-llvm]\n       concrete check\n       concrete run [-- args...]\n       concrete test [--module <name>]\n       concrete diff <old.json> <new.json> [--json]\n       concrete snapshot <file.con> [-o output.json]\n       concrete debug-bundle <file.con> [-o dir]\n       concrete reduce <file.con> --predicate <pred> [-o output] [--verbose]\n       concrete --version"
+  "Usage: concrete <file.con> [-o output] [--emit-llvm] [--emit-core] [--emit-ssa] [--test] [--test --module <name>] [--interp] [--report caps|unsafe|layout|interface|alloc|mono|authority|proof|eligibility|proof-status|obligations|extraction|lean-stubs|check-proofs|proof-diagnostics|proof-deps|proof-bundle|traceability|diagnostics-json|effects|recursion|stack-depth|fingerprints|consistency|verify] [--query KIND|KIND:FUNCTION|fn:FUNCTION] [--fmt]\n       concrete build [-o output] [--emit-llvm]\n       concrete check\n       concrete run [-- args...]\n       concrete test [--module <name>]\n       concrete diff <old.json> <new.json> [--json]\n       concrete snapshot <file.con> [-o output.json]\n       concrete debug-bundle <file.con> [-o dir]\n       concrete reduce <file.con> --predicate <pred> [-o output] [--verbose]\n       concrete --version"
 
 /-- Capture compiler identity: version, git commit, lean toolchain. -/
 def compilerIdentity : IO String := do
@@ -198,6 +198,22 @@ def compileSSA (inputPath : String) (outputPath : String) (emitLLVM : Bool) : IO
     IO.FS.removeFile ⟨llPath⟩
     IO.println s!"Compiled {inputPath} -> {outputPath}"
     return 0
+
+/-- Interpret a program via the source-level interpreter (no codegen). -/
+def interpProgram (inputPath : String) : IO UInt32 := do
+  let source ← readFile inputPath
+  match ← Pipeline.runFrontend inputPath source resolveAllModules with
+  | .error ds =>
+    IO.eprintln (renderDiagnostics ds (sourceMap := [(inputPath, source)]))
+    return 1
+  | .ok (_, _, validCore, _) =>
+    match Interp.interpret validCore.coreModules with
+    | .error msg =>
+      IO.eprintln msg
+      return 1
+    | .ok exitCode =>
+      if exitCode == 0 then return 0
+      else return (exitCode.toNat % 256).toUInt32
 
 /-- Compile and run tests: Parse → ... → EmitSSA (test mode) → clang → run -/
 def compileTest (inputPath : String) (moduleFilter : Option String := none) : IO UInt32 := do
@@ -1286,6 +1302,8 @@ def main (args : List String) : IO UInt32 := do
     compileTest inputPath (moduleFilter := some moduleName)
   | [inputPath, "--emit-llvm"] =>
     compileSSA inputPath "" true
+  | [inputPath, "--interp"] =>
+    interpProgram inputPath
   | [inputPath, "--emit-core"] =>
     compileAndEmit inputPath "core"
   | [inputPath, "--emit-ssa"] =>

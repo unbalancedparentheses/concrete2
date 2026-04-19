@@ -248,7 +248,7 @@ case "$MODE" in
     O2)      SECTION="O2" ;;
     codegen) SECTION="codegen,O2" ;;
     report)  SECTION="report" ;;
-    trust-gate) SECTION="determinism,consistency,terminology,verify,evidence,malformed,query,desync,bugaudit,apiversioning,errorcodes,policy,taxonomy,workflow,bundle,proofgate,fixedcap,parsevalidate,serviceerrors,stackdepth" ;;
+    trust-gate) SECTION="determinism,consistency,terminology,verify,evidence,malformed,query,desync,bugaudit,apiversioning,errorcodes,policy,taxonomy,workflow,bundle,proofgate,fixedcap,parsevalidate,serviceerrors,stackdepth,interp" ;;
     affected)
         SECTION=$(resolve_affected_sections "$AFFECTED_FILES")
         echo "=== Affected mode ==="
@@ -11095,6 +11095,188 @@ echo "  $sd_pass stackdepth gates passed"
 PASS=$((PASS + sd_pass))
 FAIL=$((FAIL + sd_fail))
 fi # end section: stackdepth
+
+if section_active interp; then
+echo ""
+echo "=== Interpreter (semantic oracle) tests ==="
+interp_pass=0
+interp_fail=0
+
+# 1. parse_validate: interpreter matches compiled exit code (0)
+PV_SRC="examples/parse_validate/src/main.con"
+pv_interp_exit=0
+"$COMPILER" "$PV_SRC" --interp 2>/dev/null || pv_interp_exit=$?
+if [ "$pv_interp_exit" -eq 0 ]; then
+    echo "  ok  interp: parse_validate returns exit 0"
+    interp_pass=$((interp_pass + 1))
+else
+    echo "  FAIL interp: parse_validate should return exit 0, got $pv_interp_exit"
+    interp_fail=$((interp_fail + 1))
+fi
+
+# 2. Simple function call: add(2,3) == 5
+cat > /tmp/interp_test_call.con << 'TESTEOF'
+fn add(a: i32, b: i32) -> i32 {
+    return a + b;
+}
+pub fn main() -> Int {
+    let x: i32 = add(2, 3);
+    if x == 5 { return 0; }
+    return 1;
+}
+TESTEOF
+call_exit=0
+"$COMPILER" /tmp/interp_test_call.con --interp 2>/dev/null || call_exit=$?
+if [ "$call_exit" -eq 0 ]; then
+    echo "  ok  interp: function calls work (add 2 3 == 5)"
+    interp_pass=$((interp_pass + 1))
+else
+    echo "  FAIL interp: function call test should return 0, got $call_exit"
+    interp_fail=$((interp_fail + 1))
+fi
+
+# 3. Array indexing in bounded loop
+cat > /tmp/interp_test_arr.con << 'TESTEOF'
+pub fn main() -> Int {
+    let arr: [i32; 4] = [10, 20, 30, 40];
+    let mut acc: i32 = 0;
+    for (let mut i: i32 = 0; i < 4; i = i + 1) {
+        acc = acc + arr[i];
+    }
+    if acc == 100 { return 0; }
+    return 1;
+}
+TESTEOF
+arr_exit=0
+"$COMPILER" /tmp/interp_test_arr.con --interp 2>/dev/null || arr_exit=$?
+if [ "$arr_exit" -eq 0 ]; then
+    echo "  ok  interp: array indexing in bounded loop"
+    interp_pass=$((interp_pass + 1))
+else
+    echo "  FAIL interp: array loop test should return 0, got $arr_exit"
+    interp_fail=$((interp_fail + 1))
+fi
+
+# 4. Struct creation and field access
+cat > /tmp/interp_test_struct.con << 'TESTEOF'
+struct Copy Point {
+    x: i32,
+    y: i32,
+}
+fn make_point(x: i32, y: i32) -> Point {
+    return Point { x: x, y: y };
+}
+pub fn main() -> Int {
+    let p: Point = make_point(10, 20);
+    if p.x != 10 { return 1; }
+    if p.y != 20 { return 2; }
+    return 0;
+}
+TESTEOF
+struct_exit=0
+"$COMPILER" /tmp/interp_test_struct.con --interp 2>/dev/null || struct_exit=$?
+if [ "$struct_exit" -eq 0 ]; then
+    echo "  ok  interp: struct creation and field access"
+    interp_pass=$((interp_pass + 1))
+else
+    echo "  FAIL interp: struct test should return 0, got $struct_exit"
+    interp_fail=$((interp_fail + 1))
+fi
+
+# 5. Enum match with field bindings
+cat > /tmp/interp_test_enum.con << 'TESTEOF'
+enum Copy Result {
+    Ok { val: i32 },
+    Err { code: i32 },
+}
+fn try_parse(ok: i32) -> Result {
+    if ok == 1 { return Result#Ok { val: 42 }; }
+    return Result#Err { code: 99 };
+}
+pub fn main() -> Int {
+    match try_parse(1) {
+        Result#Ok { val } => {
+            if val != 42 { return 1; }
+        },
+        Result#Err { code } => { return 2; },
+    }
+    match try_parse(0) {
+        Result#Ok { val } => { return 3; },
+        Result#Err { code } => {
+            if code != 99 { return 4; }
+        },
+    }
+    return 0;
+}
+TESTEOF
+enum_exit=0
+"$COMPILER" /tmp/interp_test_enum.con --interp 2>/dev/null || enum_exit=$?
+if [ "$enum_exit" -eq 0 ]; then
+    echo "  ok  interp: enum match with field bindings"
+    interp_pass=$((interp_pass + 1))
+else
+    echo "  FAIL interp: enum match test should return 0, got $enum_exit"
+    interp_fail=$((interp_fail + 1))
+fi
+
+# 6. XOR bitwise operation (used by parse_validate checksum)
+cat > /tmp/interp_test_xor.con << 'TESTEOF'
+pub fn main() -> Int {
+    let a: i32 = 1 ^ 2;
+    if a != 3 { return 1; }
+    let b: i32 = 3 ^ 0;
+    if b != 3 { return 2; }
+    let c: i32 = 255 ^ 255;
+    if c != 0 { return 3; }
+    return 0;
+}
+TESTEOF
+xor_exit=0
+"$COMPILER" /tmp/interp_test_xor.con --interp 2>/dev/null || xor_exit=$?
+if [ "$xor_exit" -eq 0 ]; then
+    echo "  ok  interp: XOR bitwise operation"
+    interp_pass=$((interp_pass + 1))
+else
+    echo "  FAIL interp: XOR test should return 0, got $xor_exit"
+    interp_fail=$((interp_fail + 1))
+fi
+
+# 7. Unsupported construct produces clear diagnostic
+cat > /tmp/interp_test_unsup.con << 'TESTEOF'
+pub fn main() -> Int {
+    let x: f64 = 3.14;
+    return 0;
+}
+TESTEOF
+unsup_out=$("$COMPILER" /tmp/interp_test_unsup.con --interp 2>&1) && unsup_exit=0 || unsup_exit=$?
+if [ "$unsup_exit" -ne 0 ] && echo "$unsup_out" | grep -q "interp:.*not yet supported"; then
+    echo "  ok  interp: unsupported construct gives clear diagnostic"
+    interp_pass=$((interp_pass + 1))
+else
+    echo "  FAIL interp: should fail with 'interp: ... not yet supported'"
+    interp_fail=$((interp_fail + 1))
+fi
+
+# 8. Interpreter matches compiled binary for parse_validate
+pv_compiled_exit=0
+if "$COMPILER" "$PV_SRC" -o /tmp/interp_pv_compiled 2>/dev/null; then
+    /tmp/interp_pv_compiled 2>/dev/null || pv_compiled_exit=$?
+    if [ "$pv_interp_exit" -eq "$pv_compiled_exit" ]; then
+        echo "  ok  interp: parse_validate interp exit ($pv_interp_exit) matches compiled ($pv_compiled_exit)"
+        interp_pass=$((interp_pass + 1))
+    else
+        echo "  FAIL interp: exit mismatch: interp=$pv_interp_exit compiled=$pv_compiled_exit"
+        interp_fail=$((interp_fail + 1))
+    fi
+else
+    echo "  SKIP interp: compiled binary comparison (compile failed)"
+    interp_fail=$((interp_fail + 1))
+fi
+
+echo "  $interp_pass interpreter gates passed"
+PASS=$((PASS + interp_pass))
+FAIL=$((FAIL + interp_fail))
+fi # end section: interp
 
 echo ""
 flush_jobs

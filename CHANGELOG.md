@@ -10,6 +10,16 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Source-level interpreter / semantic oracle (Phase 1, item 31)
+
+`Concrete/Interp.lean` — source-level interpreter operating on validated Core IR. CLI: `concrete <file.con> --interp`. Evaluates the predictable/core subset without codegen (no LLVM, no clang).
+
+- **Supported**: integer/bool, let/assign, if/else, function calls, structs (creation + field access + field assign), enums (creation + match with field bindings), arrays (literal + indexing + index assign), bounded for/while loops, cast, binary ops (arithmetic + comparison + bitwise XOR/AND/OR), unary ops, break/continue
+- **Unsupported (explicit diagnostics)**: borrow, deref, float, string, char, defer, try, alloc, whileExpr, fnRef
+- **First target**: `examples/parse_validate/` — all 8 tests pass, exit code matches compiled binary
+- **Trust-gate**: 8 interp tests (parse_validate, function calls, array loops, structs, enum match, XOR bitwise, unsupported diagnostic, compiled-vs-interpreted comparison). Total trust-gate: 1366 checks
+- **Key design**: fuel-based evaluation with explicit control flow propagation (return/break/continue as `Flow` inductive). For-loop step field only runs on `continue` (step already appended to body by desugaring)
+
 ### No-std split, standalone UX, project bootstrap (Phase 1, items 34-36)
 
 Three design documents defining developer-facing UX for different project shapes:

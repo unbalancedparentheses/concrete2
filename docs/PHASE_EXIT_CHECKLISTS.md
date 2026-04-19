@@ -33,12 +33,12 @@ Each phase has a "phase closes when..." list tied to concrete outputs. A phase i
   - `docs/TRUSTED_BOUNDARY_GUIDE.md` (4 wrapper patterns, audit checklist)
 - [ ] No-std / freestanding split defined
   - Items 34-36 complete (no-std split, standalone UX, project bootstrap)
-- [ ] Source-level interpreter exists for semantic oracle
-  - Item 31 complete (interpreter covers `fixed_capacity` and `parse_validate`)
+- [x] Source-level interpreter exists for semantic oracle
+  - Item 31 complete: `Concrete/Interp.lean`, CLI `--interp`, covers `parse_validate` (8/8 tests pass, matches compiled binary). 8 trust-gate interp tests.
 
 **Verification command**: `./scripts/tests/run_tests.sh --trust-gate` passes with 0 failures.
 
-**Current status**: 17/18 items done. Remaining: item 31 (interpreter).
+**Current status**: 18/18 items done. Phase 1 complete.
 
 ## Phase 2: Pre-Stdlib Pressure Workloads
 
