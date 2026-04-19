@@ -74,21 +74,27 @@ Each phase has a "phase closes when..." list tied to concrete outputs. A phase i
 **Closes when all of the following are true:**
 
 - [ ] String/text contract defined (UTF-8, owned vs borrowed, no implicit conversions)
+- [ ] String/text/bytes boundary is explicit at parser and FFI edges
 - [ ] Checked indexing and slice/view contract stabilized
 - [ ] Core stdlib modules implemented: bytes, option/result, slices, basic collections
+- [ ] Runtime-oriented collection maturity is demonstrated for interpreter/runtime-style workloads
 - [ ] Arithmetic policy is explicit in source, reports, and proof boundaries
+- [ ] Formatting and text-output ergonomics are good enough for string-heavy real programs without hidden magic
 - [ ] Error ergonomics settled (`?` operator, Result methods, conversion traits)
 - [ ] Opaque validated wrapper types and fallible conversions settled
-- [ ] LL(1) syntax finalized and documented
+- [ ] LL(1) syntax finalized and documented, including constructor/pattern cleanup (`Type::Variant`, field punning, `_` / `{ .. }` ignore forms, no competing payload syntaxes)
 - [ ] Visibility rules stable (pub/non-pub at module and struct level)
 - [ ] Endian byte APIs exist (read_u16_be, write_u32_le, etc.)
 - [ ] Layout/ABI contract surface is explicit about stable vs opaque representations
 - [ ] Module hygiene proven (no accidental namespace pollution)
+- [ ] Canonical examples use the intended stdlib surface rather than one-off local substitutes
+- [ ] One string-heavy medium workload and one interpreter/runtime-heavy medium workload validate the freeze surface
+- [ ] Phase 2 and Phase H stdlib findings are reconciled into a current requirements ledger with ship/defer decisions
 - [ ] Syntax and stdlib surface frozen — changes require explicit unfreezing
 
-**Verification**: `examples/parse_validate/` and `examples/service_errors/` work with stdlib types (not custom Copy enums), and `examples/grep/` uses stdlib string APIs.
+**Verification**: `examples/parse_validate/` and `examples/service_errors/` work with stdlib types (not custom Copy enums), one fixed-capacity example uses the checked indexing/slice surface, one string-heavy medium workload such as `grep` or `policy_engine` uses the intended formatting/text APIs, and one interpreter/runtime-heavy workload such as `mal` or `lox` exercises the intended collection/runtime surface.
 
-**Current status**: 0/12 exit criteria done. Roadmap item count: 0/23 complete.
+**Current status**: 0/18 exit criteria done. Roadmap item count: 0/29 complete.
 
 ## Phase 4: Tooling, Tests, Wrong-Code Corpus
 
