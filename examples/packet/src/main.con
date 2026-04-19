@@ -105,24 +105,24 @@ mod packet {
         }
 
         // Bytes 2-3: payload length (big-endian u16)
-        let mut payload_len: u64 = 0;
-        let rp: Result<u64, CursorError> = cur.read_u16_be();
+        let mut payload_len: u16 = 0;
+        let rp: Result<u16, CursorError> = cur.read_u16_be();
         match rp {
             Result#Ok { value } => { payload_len = value; },
             Result#Err { error } => { return err_result(1); },
         }
 
         // Bytes 4-7: sequence number (big-endian u32)
-        let mut seq_num: u64 = 0;
-        let rs: Result<u64, CursorError> = cur.read_u32_be();
+        let mut seq_num: u32 = 0;
+        let rs: Result<u32, CursorError> = cur.read_u32_be();
         match rs {
             Result#Ok { value } => { seq_num = value; },
             Result#Err { error } => { return err_result(1); },
         }
 
         // Bytes 8-9: checksum (big-endian u16)
-        let mut checksum: u64 = 0;
-        let rc: Result<u64, CursorError> = cur.read_u16_be();
+        let mut checksum: u16 = 0;
+        let rc: Result<u16, CursorError> = cur.read_u16_be();
         match rc {
             Result#Ok { value } => { checksum = value; },
             Result#Err { error } => { return err_result(1); },
@@ -130,12 +130,12 @@ mod packet {
 
         // Validate checksum (XOR fold of bytes 0-7)
         let computed: u16 = compute_checksum(data);
-        if (computed as u64) != checksum {
+        if computed != checksum {
             return err_result(3);
         }
 
         // Verify payload fits in the received data
-        let total: u64 = 10 + payload_len;
+        let total: u64 = 10 + (payload_len as u64);
         if total > len {
             return err_result(4);
         }

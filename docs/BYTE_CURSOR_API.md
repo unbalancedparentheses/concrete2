@@ -118,7 +118,6 @@ All read methods return `Result<T, CursorError>`. On success, the cursor positio
 
 ```
 pub fn read_u8(&mut self) -> Result<u8, CursorError>
-pub fn read_i8(&mut self) -> Result<i8, CursorError>
 ```
 
 ### 16-bit reads
@@ -126,8 +125,6 @@ pub fn read_i8(&mut self) -> Result<i8, CursorError>
 ```
 pub fn read_u16_be(&mut self) -> Result<u16, CursorError>
 pub fn read_u16_le(&mut self) -> Result<u16, CursorError>
-pub fn read_i16_be(&mut self) -> Result<i16, CursorError>
-pub fn read_i16_le(&mut self) -> Result<i16, CursorError>
 ```
 
 ### 32-bit reads
@@ -135,8 +132,6 @@ pub fn read_i16_le(&mut self) -> Result<i16, CursorError>
 ```
 pub fn read_u32_be(&mut self) -> Result<u32, CursorError>
 pub fn read_u32_le(&mut self) -> Result<u32, CursorError>
-pub fn read_i32_be(&mut self) -> Result<i32, CursorError>
-pub fn read_i32_le(&mut self) -> Result<i32, CursorError>
 ```
 
 ### 64-bit reads
@@ -144,24 +139,22 @@ pub fn read_i32_le(&mut self) -> Result<i32, CursorError>
 ```
 pub fn read_u64_be(&mut self) -> Result<u64, CursorError>
 pub fn read_u64_le(&mut self) -> Result<u64, CursorError>
-pub fn read_i64_be(&mut self) -> Result<i64, CursorError>
-pub fn read_i64_le(&mut self) -> Result<i64, CursorError>
 ```
+
+**Deferred:** Signed read variants (`read_i8`, `read_i16_be/le`, `read_i32_be/le`, `read_i64_be/le`) are not yet implemented. They will be added when a use case demands them. The unsigned variants cover all current pressure tests and examples.
 
 ### Raw byte reads
 
 ```
-/// Read exactly `n` bytes as a sub-slice. Returns a pointer and length
-/// into the cursor's underlying buffer (no copy, no allocation).
-/// Advances position by `n`.
-pub fn read_bytes(&mut self, n: u64) -> Result<Slice<u8>, CursorError>
-
 /// Skip `n` bytes without reading them. Advances position by `n`.
-pub fn skip(&mut self, n: u64) -> Result<(), CursorError>
+/// Returns the new position on success.
+pub fn skip(&mut self, n: u64) -> Result<u64, CursorError>
 
 /// Peek at the next byte without advancing position.
 pub fn peek_u8(&self) -> Result<u8, CursorError>
 ```
+
+**Deferred:** `read_bytes` (returns `Slice<u8>` sub-view) is not yet implemented.
 
 ### Implementation note
 
@@ -215,29 +208,24 @@ trusted pub fn from_raw(data: *mut u8, cap: u64) -> ByteWriter
 
 ### Write methods
 
-All write methods return `Result<(), CursorError>`. On success, the writer position advances. On failure (not enough capacity), the position is unchanged.
+All write methods return `Result<u64, CursorError>`. On success, the writer position advances and the new position is returned. On failure (not enough capacity), the position is unchanged.
+
+**Implementation note:** The original design specified `Result<(), CursorError>` as the return type. The implementation returns the new position (`u64`) instead, which is more useful for callers that need to track write offsets and avoids a unit-type Result that must still be consumed (linear types). This is the settled API.
 
 ```
-pub fn write_u8(&mut self, val: u8) -> Result<(), CursorError>
-pub fn write_i8(&mut self, val: i8) -> Result<(), CursorError>
+pub fn write_u8(&mut self, val: u8) -> Result<u64, CursorError>
 
-pub fn write_u16_be(&mut self, val: u16) -> Result<(), CursorError>
-pub fn write_u16_le(&mut self, val: u16) -> Result<(), CursorError>
-pub fn write_i16_be(&mut self, val: i16) -> Result<(), CursorError>
-pub fn write_i16_le(&mut self, val: i16) -> Result<(), CursorError>
+pub fn write_u16_be(&mut self, val: u16) -> Result<u64, CursorError>
+pub fn write_u16_le(&mut self, val: u16) -> Result<u64, CursorError>
 
-pub fn write_u32_be(&mut self, val: u32) -> Result<(), CursorError>
-pub fn write_u32_le(&mut self, val: u32) -> Result<(), CursorError>
-pub fn write_i32_be(&mut self, val: i32) -> Result<(), CursorError>
-pub fn write_i32_le(&mut self, val: i32) -> Result<(), CursorError>
+pub fn write_u32_be(&mut self, val: u32) -> Result<u64, CursorError>
+pub fn write_u32_le(&mut self, val: u32) -> Result<u64, CursorError>
 
-pub fn write_u64_be(&mut self, val: u64) -> Result<(), CursorError>
-pub fn write_u64_le(&mut self, val: u64) -> Result<(), CursorError>
-pub fn write_i64_be(&mut self, val: i64) -> Result<(), CursorError>
-pub fn write_i64_le(&mut self, val: i64) -> Result<(), CursorError>
-
-pub fn write_bytes(&mut self, data: &Slice<u8>) -> Result<(), CursorError>
+pub fn write_u64_be(&mut self, val: u64) -> Result<u64, CursorError>
+pub fn write_u64_le(&mut self, val: u64) -> Result<u64, CursorError>
 ```
+
+**Deferred:** Signed write variants (`write_i8`, `write_i16_be/le`, `write_i32_be/le`, `write_i64_be/le`) and `write_bytes` are not yet implemented. They will be added when a use case demands them.
 
 ### Position queries
 

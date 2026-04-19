@@ -54,7 +54,7 @@ Compile-and-run tests in `lean_tests/`:
 
 ### Stdlib Tests
 
-222 `#[test]` functions across all stdlib modules, compiled through the real compiler path. Module-targeted testing via `--stdlib-module <name>`.
+238 `#[test]` functions across all stdlib modules, compiled through the real compiler path. Module-targeted testing via `--stdlib-module <name>`.
 
 15 collection modules verified for test presence and correctness.
 
@@ -97,7 +97,7 @@ Named real-program corpus (13 tests):
 | Report accuracy | Artifact | ~90 | `report_integration.con`, `report_*_check.con`, `test_proof_*.con`, phase3 consistency cross-checks |
 | ABI / FFI | E2E | 9 | `test_repr_c_*`, `test_fn_ptr_*`, `test_sizeof_*`, `test_ptr_round_trip`, `test_array_bounds`, `phase3_abi_interop` |
 | Layout/ABI | Pass-level | 4 | Scalar sizes, builtin sizes, repr(C), pass-by-ptr |
-| Stdlib correctness | Stdlib | 184 | All `#[test]` functions |
+| Stdlib correctness | Stdlib | 238 | All `#[test]` functions |
 | Collection integrity | Stdlib | 15 modules | Collection verification section |
 | Multi-module | E2E | 22 | `module_*`, `summary_*`, `module_file/` |
 | Formatter | Property | 4 | `fmt_parse_roundtrip.con`, golden tests |

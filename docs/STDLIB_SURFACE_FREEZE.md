@@ -187,7 +187,7 @@ Endian-aware byte reading, byte cursor, byte writer. 9 tests pass.
 | `saturating_add`, `saturating_sub`, `saturating_mul` | compiler intrinsics |
 | `try_narrow_*` | fn (checked narrowing helpers) |
 
-This module does not exist yet. It is the #1 priority gap. The API is designed in [BYTE_CURSOR_API.md](BYTE_CURSOR_API.md) and [ARITHMETIC_POLICY.md](ARITHMETIC_POLICY.md). It is experimental until implementation is validated against the parser pressure tests.
+Implemented in `std/src/numeric.con`. ByteCursor and ByteWriter provide typed endian reads/writes. Validated by `examples/packet/` (uses `ByteCursor` for all header reads) and 9 unit tests in the module. Checked arithmetic and narrowing helpers are not yet implemented. Signed variants (`read_i16_be`, etc.) are deferred.
 
 Source: [BYTE_CURSOR_API.md](BYTE_CURSOR_API.md), [ARITHMETIC_POLICY.md](ARITHMETIC_POLICY.md), [STDLIB_TARGET.md](STDLIB_TARGET.md)
 
