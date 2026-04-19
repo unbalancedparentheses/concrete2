@@ -10,6 +10,19 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Predictable/proved boundary classification (Phase 3, item 26)
+
+`docs/PREDICTABLE_BOUNDARIES.md` — comprehensive classification of runtime boundaries for predictable and proved code:
+
+- **Host calls**: only `write(2)` reachable from predictable code (Console); all heap, string, Vec, FFI, and blocking operations excluded by five gates
+- **Cleanup paths**: defer runs LIFO on normal return/scope exit; abort/OOM/signals not reachable; all data stack-only
+- **Determinism**: source-level shape deterministic (bounded loops, acyclic calls); timing, binary layout, cache behavior explicitly not claimed
+- **Failure paths**: integer overflow wraps silently (LLVM default), array OOB is UB (no runtime check), stack overflow via OS guard page; OOM and abort not reachable
+- **Memory/UB boundaries**: ownership enforcement prevents UAF/double-free/null-deref/dangling-ref in safe code; array OOB, overflow, division by zero remain as UB sources
+- **Proved functions**: Lean theorem over PExpr, not binary; unbounded integer gap; per-function scope; no composition theorem
+- **Profile interaction**: summary table showing safe × predictable × proved property matrix
+- **Verification commands**: 8 CLI commands mapped to specific audit questions
+
 ### Stack-depth reporting (Phase 3, item 25)
 
 `--report stack-depth` for functions that pass the no-recursion profile:

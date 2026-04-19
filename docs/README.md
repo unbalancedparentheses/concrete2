@@ -13,6 +13,7 @@ Use these files as the primary reference once a design has moved out of explorat
 - [PROFILES.md](PROFILES.md) — named user-facing profiles: `safe`, `predictable`, `provable`, and the long-term `high-integrity` direction
 - [CLAIMS_TODAY.md](CLAIMS_TODAY.md) — the short public claim surface: what Concrete claims today, what it does not, and what remains trusted
 - [TRUSTED_COMPUTING_BASE.md](TRUSTED_COMPUTING_BASE.md) — explicit trusted-computing-base accounting for Concrete's strongest current claims
+- [PREDICTABLE_BOUNDARIES.md](PREDICTABLE_BOUNDARIES.md) — host calls, cleanup paths, determinism sources, failure paths, and memory/UB boundaries for predictable/proved code
 - [EXECUTION_MODEL.md](EXECUTION_MODEL.md) — runtime boundary, allocation model, FFI/runtime contract, and execution profiles
 - [ARCHITECTURE.md](ARCHITECTURE.md) — compiler pipeline, artifact flow, pass boundaries, and architecture phase reference
 - [PASSES.md](PASSES.md) — pass-by-pass contracts, ownership boundaries, and what each phase may assume
