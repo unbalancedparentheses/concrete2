@@ -21,6 +21,20 @@ mod option {
         pub fn is_none(&self) -> bool {
             return !(self.is_some());
         }
+
+        pub fn unwrap_or(self, default: T) -> T {
+            match self {
+                Option#Some { value } => { return value; },
+                Option#None => { return default; },
+            }
+        }
+
+        pub fn ok_or<E>(self, err: E) -> Result<T, E> {
+            match self {
+                Option#Some { value } => { return Result::<T, E>#Ok { value: value }; },
+                Option#None => { return Result::<T, E>#Err { error: err }; },
+            }
+        }
     }
 
     import std.test.{assert_true, assert_eq};

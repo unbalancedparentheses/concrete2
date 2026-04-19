@@ -23,6 +23,27 @@ mod result {
         pub fn is_err(&self) -> bool {
             return !(self.is_ok());
         }
+
+        pub fn unwrap_or(self, default: T) -> T {
+            match self {
+                Result#Ok { value } => { return value; },
+                Result#Err { error } => { return default; },
+            }
+        }
+
+        pub fn ok(self) -> Option<T> {
+            match self {
+                Result#Ok { value } => { return Option::<T>#Some { value: value }; },
+                Result#Err { error } => { return Option::<T>#None; },
+            }
+        }
+
+        pub fn err(self) -> Option<E> {
+            match self {
+                Result#Ok { value } => { return Option::<E>#None; },
+                Result#Err { error } => { return Option::<E>#Some { value: error }; },
+            }
+        }
     }
 
     import std.test.{assert_true, assert_eq};

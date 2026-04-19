@@ -87,6 +87,20 @@ mod bytes {
             self.cap = new_cap;
         }
 
+        pub fn eq(&self, other: &Bytes) -> bool {
+            if self.len != other.len {
+                return false;
+            }
+            let i: u64 = 0;
+            while i < self.len {
+                if self.get_unchecked(i) != other.get_unchecked(i) {
+                    return false;
+                }
+                i = i + 1;
+            }
+            return true;
+        }
+
         pub fn append_bytes(&mut self, other: &Bytes) with(Alloc) {
             let i: u64 = 0;
             while i < other.len {
