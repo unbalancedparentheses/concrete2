@@ -10,35 +10,35 @@ Each phase has a "phase closes when..." list tied to concrete outputs. A phase i
 
 - [ ] 5+ canonical examples are trust-gate tested with `--check predictable` passing
   - `fixed_capacity` (12 tests), `parse_validate` (10 tests), `service_errors` (10 tests), `thesis_demo` (8+ tests), `packet` (4 tests)
-- [ ] Predictable boundaries explicitly documented
+- [x] Predictable boundaries explicitly documented
   - `docs/PREDICTABLE_BOUNDARIES.md` (host calls, cleanup, determinism, failure, memory)
   - `docs/PREDICTABLE_FAILURE_DISCIPLINE.md` (allowed/excluded failure modes)
   - `docs/FAILURE_STRATEGY.md` (abort-only, defer, no-leak)
-- [ ] Stack-depth reporting works end-to-end
+- [x] Stack-depth reporting works end-to-end
   - `--report stack-depth` shows per-function frame size, max call depth, worst-case bound
   - 25 trust-gate stack-depth tests pass
-- [ ] Bounded-capacity types are practical
+- [x] Bounded-capacity types are practical
   - Copy structs with fixed arrays compile and pass predictable
   - `fixed_capacity` example proves the pattern works
-- [ ] Error propagation patterns documented with examples
+- [x] Error propagation patterns documented with examples
   - `parse_validate` (single-stage, 6 error categories)
   - `service_errors` (multi-stage, 3 error enums + unified error)
-- [ ] Example governance in place
+- [x] Example governance in place
   - `docs/EXAMPLE_INVENTORY.md` (all 20 examples catalogued)
   - `docs/EXAMPLE_LIFECYCLE.md` (promotion levels defined)
   - `docs/EXAMPLE_NO_DUPLICATES.md` (reuse rule)
-- [ ] Diagnostic UX design documented
+- [x] Diagnostic UX design documented
   - `docs/DIAGNOSTIC_UX.md` (quality tiers, target format, priority categories)
-- [ ] Trusted boundary guide written
+- [x] Trusted boundary guide written
   - `docs/TRUSTED_BOUNDARY_GUIDE.md` (4 wrapper patterns, audit checklist)
-- [ ] No-std / freestanding split defined
-  - Items 34-36 complete (no-std split, standalone UX, project bootstrap)
+- [x] No-std / freestanding split defined
+  - `docs/FREESTANDING_SPLIT.md`, `docs/STANDALONE_VS_PROJECT.md`, and `docs/PROJECT_BOOTSTRAP.md` define the intended boundary and workflows
 - [x] Source-level interpreter exists for semantic oracle
   - Item 31 complete: `Concrete/Interp.lean`, CLI `--interp`, covers `parse_validate` (8/8 tests pass, matches compiled binary). 8 trust-gate interp tests.
 
 **Verification command**: `./scripts/tests/run_tests.sh --trust-gate` passes with 0 failures.
 
-**Current status**: 18/18 items done. Phase 1 complete.
+**Current status**: 9/10 exit criteria done. Remaining blocker: expand trust-gated canonical-example coverage. Roadmap item count: 18/22 complete, 4 open (32-34, 39).
 
 ## Phase 2: Pre-Stdlib Pressure Workloads
 
@@ -74,17 +74,21 @@ Each phase has a "phase closes when..." list tied to concrete outputs. A phase i
 **Closes when all of the following are true:**
 
 - [ ] String/text contract defined (UTF-8, owned vs borrowed, no implicit conversions)
+- [ ] Checked indexing and slice/view contract stabilized
 - [ ] Core stdlib modules implemented: bytes, option/result, slices, basic collections
+- [ ] Arithmetic policy is explicit in source, reports, and proof boundaries
 - [ ] Error ergonomics settled (`?` operator, Result methods, conversion traits)
+- [ ] Opaque validated wrapper types and fallible conversions settled
 - [ ] LL(1) syntax finalized and documented
 - [ ] Visibility rules stable (pub/non-pub at module and struct level)
 - [ ] Endian byte APIs exist (read_u16_be, write_u32_le, etc.)
+- [ ] Layout/ABI contract surface is explicit about stable vs opaque representations
 - [ ] Module hygiene proven (no accidental namespace pollution)
 - [ ] Syntax and stdlib surface frozen — changes require explicit unfreezing
 
 **Verification**: `examples/parse_validate/` and `examples/service_errors/` work with stdlib types (not custom Copy enums), and `examples/grep/` uses stdlib string APIs.
 
-**Current status**: 0/19 items done.
+**Current status**: 0/12 exit criteria done. Roadmap item count: 0/23 complete.
 
 ## Phase 4: Tooling, Tests, Wrong-Code Corpus
 

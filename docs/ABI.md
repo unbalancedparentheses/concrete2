@@ -2,6 +2,8 @@
 
 This document describes Concrete's current ABI stability, FFI safety model, platform assumptions, and what is intentionally left unstable.
 
+For the exploratory design direction behind the source-facing `repr` surface, see [../research/language/layout-contract-surface.md](../research/language/layout-contract-surface.md).
+
 ## Stability Summary
 
 | Area | Status | Stable? |
@@ -157,6 +159,20 @@ These are not hypothetical — they are current implementation gaps that affect 
 1. **No empirical cross-platform validation.** Layout is verified by Lean unit tests and by cross-target IR compilation (25 programs verified against x86_64 via clang). There are no runtime cross-platform tests — only same-platform Concrete↔C interop validation (sizeof/offsetof/by-value passing on ARM64).
 
 2. **Struct return flattening limited to ≤ 8 bytes.** Extern fns returning repr(C) structs ≤ 8 bytes have the return value correctly flattened to i64. Larger struct returns still use pointer indirection, which may not match the C ABI for 9-16 byte structs.
+
+## Desired Source-Level Contract Surface
+
+Before Concrete freezes its first public stdlib and FFI story, the source-level layout contract should become smaller and sharper than the current implementation accident.
+
+The intended direction is:
+
+- explicit `repr` forms define the stable layout surface; unannotated structs stay compiler-controlled
+- `#[repr(C)]`, `#[repr(packed)]`, and `#[repr(align(N))]` remain the only first-class guaranteed layout forms unless a later note justifies more
+- transparent wrappers should only land if the wrapper/newtype story stays simple and obviously zero-cost
+- enums remain intentionally out of the stable FFI layout surface
+- reports and package/interface artifacts should say whether a type's layout is guaranteed or opaque, not force reviewers to infer it from context
+
+The language should not promise a large Rust-style menu of representation tricks unless each one clears the same audit and proof bar as the rest of the surface.
 
 ## What We Intentionally Do Not Promise
 

@@ -1,6 +1,6 @@
 # Profiles
 
-Status: canonical reference (Phase 2, item 21)
+Status: canonical reference
 
 This document defines the four Concrete profiles, the exact gates/reports/evidence each provides today, and which are current, partial, or future-facing.
 
@@ -128,9 +128,11 @@ This is the restricted execution-oriented profile aimed at code that should be e
 | Loop boundedness classification | Working |
 | Allocation detection | Working |
 | Blocking/FFI detection | Working |
-| Stack-depth reporting | Working (`--report stack-depth`, Phase 3 item 25) |
-| Failure discipline | Defined ([PREDICTABLE_FAILURE_DISCIPLINE.md](PREDICTABLE_FAILURE_DISCIPLINE.md), Phase 3 item 28) |
-| No-std/freestanding split | Not yet (Phase 3, item 31) |
+| Stack-depth reporting | Working (`--report stack-depth`) |
+| Failure discipline | Defined ([PREDICTABLE_FAILURE_DISCIPLINE.md](PREDICTABLE_FAILURE_DISCIPLINE.md)) |
+| Checked indexing / slice-view contract | Not yet — indexing and views still need one explicit checked/unchecked surface across arrays and borrowed views |
+| Overflow-mode visibility | Not yet — arithmetic still wraps silently today and reports do not expose a chosen source-level policy |
+| No-std/freestanding split | Not yet as an implemented profile mode; design is documented in [FREESTANDING_SPLIT.md](FREESTANDING_SPLIT.md) |
 | Full predictable profile enforcement as a first-class surface | Not yet — five gates exist but the complete bounded-execution discipline is still being tightened |
 
 ### Claim class

@@ -63,6 +63,8 @@ If you want the highest-leverage current research first:
 ## Language
 
 - [language/builtin-vs-stdlib.md](language/builtin-vs-stdlib.md) — what belongs in compiler/runtime builtins versus the public stdlib (`P0`, `Open`, partially adopted)
+- [language/checked-indexing-and-slice-views.md](language/checked-indexing-and-slice-views.md) — checked access, borrowed views, and the safe/unchecked split for arrays and buffers (`P0`, `Open`)
+- [language/arithmetic-overflow-policy.md](language/arithmetic-overflow-policy.md) — explicit overflow modes, profile defaults, and proof/report visibility (`P0`, `Open`)
 - [language/capability-sandboxing.md](language/capability-sandboxing.md) — restricted authority and sandboxing direction (`P0`, `Open`, partially adopted)
 - [language/high-integrity-profile.md](language/high-integrity-profile.md) — stricter profile/subset for critical code (`P0`, `Open`)
 - [language/binary-format-dsl.md](language/binary-format-dsl.md) — binary parser/serializer DSL direction (`P2`, `Research`)
@@ -74,7 +76,9 @@ If you want the highest-leverage current research first:
 - [language/module-qualification.md](language/module-qualification.md) — historical note on qualified access and namespace pressure (`P1`, `Closed`)
 - [language/no-closures.md](language/no-closures.md) — why Concrete excludes closures (`P1`, `Excluded`)
 - [language/no-trait-objects.md](language/no-trait-objects.md) — why Concrete excludes trait objects (`P1`, `Excluded`)
+- [language/opaque-validated-types.md](language/opaque-validated-types.md) — zero-cost validated wrappers, smart constructors, and explicit conversion rules (`P0`, `Open`)
 - [language/pre-post-conditions.md](language/pre-post-conditions.md) — contracts/specification support and why it stays later/optional (`P1`, `Open`)
+- [language/layout-contract-surface.md](language/layout-contract-surface.md) — which `repr` forms belong in the stable source contract and which should stay opaque (`P0`, `Open`)
 - [language/failure-semantics.md](language/failure-semantics.md) — failure model for abort, assertion failure, impossible paths, OOM, and restricted profiles (`P1`, `Open`)
 - [language/memory-ub-boundary.md](language/memory-ub-boundary.md) — memory/UB classification for predictable and proof-backed evidence claims (`P1`, `Open`)
 - [language/trusted-code-policy.md](language/trusted-code-policy.md) — trusted-code audit policy and restricted-profile behavior (`P1`, `Open`)
