@@ -11326,6 +11326,29 @@ else
     interp_fail=$((interp_fail + 1))
 fi
 
+# 12. Match-arm mutations to outer variables must persist
+cat > /tmp/interp_test_match_mut.con << 'TESTEOF'
+enum Copy E { A }
+pub fn main() -> Int {
+    let e: E = E#A;
+    let mut x: i32 = 1;
+    match e {
+        E#A => { x = 2; },
+    }
+    if x == 2 { return 0; }
+    return 1;
+}
+TESTEOF
+match_mut_out=$("$COMPILER" /tmp/interp_test_match_mut.con --interp 2>/dev/null)
+match_mut_exit=$?
+if [ "$match_mut_exit" -eq 0 ] && echo "$match_mut_out" | grep -q "^0$"; then
+    echo "  ok  interp: match-arm mutations to outer variables persist"
+    interp_pass=$((interp_pass + 1))
+else
+    echo "  FAIL interp: match-arm mutation lost (x should be 2 after match)"
+    interp_fail=$((interp_fail + 1))
+fi
+
 echo "  $interp_pass interpreter gates passed"
 PASS=$((PASS + interp_pass))
 FAIL=$((FAIL + interp_fail))

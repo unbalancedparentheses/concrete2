@@ -15,7 +15,7 @@ open Concrete
     - No borrow/deref/pointer operations
     - No float, char, string values
     - No overflow/truncation (arbitrary-precision integers)
-    - Match arm mutations do not propagate to outer scope
+    - Expression-level match (inside let/return) does not propagate mutations
 -/
 
 -- ============================================================
@@ -338,6 +338,41 @@ partial def evalMatchBody (fns : List CFnDef) (env : Env) (body : List CStmt) : 
   let (_, flow) ← evalStmts fns env body
   return flow
 
+/-- Statement-level match: returns (env, flow) so outer-variable mutations persist.
+    Block-local let bindings and arm bindings are trimmed via scope restoration. -/
+partial def evalMatchStmt (fns : List CFnDef) (env : Env) (scrutinee : IVal) (arms : List CMatchArm) : Except String (Env × Flow) :=
+  match arms with
+  | [] => .error "interp: no matching arm in match expression"
+  | arm :: rest =>
+    match arm with
+    | .enumArm enumName variant bindings body =>
+      match scrutinee with
+      | .enum_ sEnum sVariant sFields =>
+        if sEnum == enumName && sVariant == variant then do
+          let outerLen := env.length
+          let armEnv := bindEnumFields env bindings sFields
+          let (bodyEnv, flow) ← evalStmts fns armEnv body
+          let restoredEnv := bodyEnv.drop (bodyEnv.length - outerLen)
+          return (restoredEnv, flow)
+        else
+          evalMatchStmt fns env scrutinee rest
+      | _ => evalMatchStmt fns env scrutinee rest
+    | .litArm value body => do
+      let litVal ← evalExprVal fns env value
+      if matchLit scrutinee litVal then do
+        let outerLen := env.length
+        let (bodyEnv, flow) ← evalStmts fns env body
+        let restoredEnv := bodyEnv.drop (bodyEnv.length - outerLen)
+        return (restoredEnv, flow)
+      else
+        evalMatchStmt fns env scrutinee rest
+    | .varArm binding _ body => do
+      let outerLen := env.length
+      let armEnv := envBind env binding scrutinee
+      let (bodyEnv, flow) ← evalStmts fns armEnv body
+      let restoredEnv := bodyEnv.drop (bodyEnv.length - outerLen)
+      return (restoredEnv, flow)
+
 partial def evalStmt (fns : List CFnDef) (env : Env) (s : CStmt) : Except String (Env × Flow) := do
   match s with
   | .letDecl name _ _ value => do
@@ -364,6 +399,11 @@ partial def evalStmt (fns : List CFnDef) (env : Env) (s : CStmt) : Except String
 
   | .return_ none _ =>
     return (env, .ret .unit)
+
+  | .expr (.match_ scrutinee arms _) => do
+    -- Statement-level match: propagate outer-variable mutations
+    let sv ← evalExprVal fns env scrutinee
+    evalMatchStmt fns env sv arms
 
   | .expr e => do
     let f ← evalExpr fns env e
