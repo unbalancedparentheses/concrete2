@@ -15,18 +15,24 @@
 //   Bytes 10+:  payload (payload_length bytes)
 //
 // Capability design:
-//   read_u16_be, read_u32_be    — PURE (no capabilities, trusted for ptr)
-//   compute_checksum            — PURE (no capabilities, bounded loop: 8 iters)
-//   decode_header               — PURE (no capabilities, no allocation, bounded)
-//   extract_payload             — PURE (no capabilities, bounded by payload_len)
-//   report_result               — with(Console) only — cannot read files or network
-//   main                        — with(Std) entry point
+//   compute_checksum    — PURE (no capabilities, bounded loop: 8 iters)
+//   decode_header       — PURE (no capabilities, no allocation, bounded)
+//   extract_payload     — PURE (no capabilities, bounded by payload_len)
+//   report_result       — with(Console) only — cannot read files or network
+//   main                — with(Std) entry point
+//
+// Stdlib usage:
+//   std.numeric.ByteCursor  — sequential bounds-checked byte reading
+//   No hand-rolled endian read functions — ByteCursor provides
+//   read_u8, read_u16_be, read_u32_be with automatic position tracking.
 
 mod packet {
 
+    import std.numeric.{ByteCursor, CursorError};
+    import std.result.{Result};
+
     // ---- Result types (Copy, stack-only, no heap) ----
 
-    // Result struct using uniform i32 fields to avoid layout issues.
     // error: 0=ok, 1=too_short, 2=bad_version, 3=bad_checksum, 4=truncated
     struct Copy DecodeResult {
         version: i32,
@@ -45,35 +51,21 @@ mod packet {
         };
     }
 
-    // ---- Pure byte helpers (no capabilities) ----
-    //
-    // trusted: raw pointer dereference.
-    // An auditor sees: trusted + no capabilities = reads memory, nothing else.
+    // ---- Checksum: XOR fold of header bytes 0-7 ----
+    // Bounded: exactly 8 iterations.
+    // Uses ByteCursor — no raw pointer dereferences in this function.
 
-    trusted fn read_u8(data: *const u8, offset: u64) -> u8 {
-        let p: *const u8 = data + offset;
-        return *(p as *mut u8);
-    }
-
-    trusted fn read_u16_be(data: *const u8, offset: u64) -> u16 {
-        let hi: u16 = read_u8(data, offset) as u16;
-        let lo: u16 = read_u8(data, offset + 1) as u16;
-        return (hi << 8) | lo;
-    }
-
-    trusted fn read_u32_be(data: *const u8, offset: u64) -> u32 {
-        let b0: u32 = read_u8(data, offset) as u32;
-        let b1: u32 = read_u8(data, offset + 1) as u32;
-        let b2: u32 = read_u8(data, offset + 2) as u32;
-        let b3: u32 = read_u8(data, offset + 3) as u32;
-        return (b0 << 24) | (b1 << 16) | (b2 << 8) | b3;
-    }
-
-    // Bounded loop: exactly 8 iterations (header bytes 0-7).
-    trusted fn compute_checksum(data: *const u8) -> u16 {
+    fn compute_checksum(data: *const u8) -> u16 {
+        let mut cur: ByteCursor = ByteCursor::from_raw(data, 8);
         let mut acc: u16 = 0;
         for (let mut i: u64 = 0; i < 8; i = i + 1) {
-            acc = acc ^ (read_u8(data, i) as u16);
+            let mut byte: u8 = 0;
+            let r: Result<u8, CursorError> = cur.read_u8();
+            match r {
+                Result#Ok { value } => { byte = value; },
+                Result#Err { error } => {},
+            }
+            acc = acc ^ (byte as u16);
         }
         return acc;
     }
@@ -83,33 +75,67 @@ mod packet {
     // NO CAPABILITIES. Cannot allocate, cannot do I/O, cannot block.
     // All loops bounded. No recursion. Stack-only data.
     //
-    // A reviewer reads the signature and knows everything this function
-    // can and cannot do — without reading the body.
+    // Uses ByteCursor for sequential, bounds-checked reading.
+    // No hand-rolled endian functions — std.numeric provides them.
 
-    trusted fn decode_header(data: *const u8, len: u64) -> DecodeResult {
-        // Need at least 10 bytes for a valid header
+    fn decode_header(data: *const u8, len: u64) -> DecodeResult {
         if len < 10 {
             return err_result(1);
         }
 
-        let version: u8 = read_u8(data, 0);
+        let mut cur: ByteCursor = ByteCursor::from_raw(data, len);
+
+        // Byte 0: version
+        let mut version: u8 = 0;
+        let rv: Result<u8, CursorError> = cur.read_u8();
+        match rv {
+            Result#Ok { value } => { version = value; },
+            Result#Err { error } => { return err_result(1); },
+        }
         if version != 1 {
             return err_result(2);
         }
 
-        let msg_type: u8 = read_u8(data, 1);
-        let payload_len: u16 = read_u16_be(data, 2);
-        let seq_num: u32 = read_u32_be(data, 4);
-        let checksum: u16 = read_u16_be(data, 8);
+        // Byte 1: message type
+        let mut msg_type: u8 = 0;
+        let rt: Result<u8, CursorError> = cur.read_u8();
+        match rt {
+            Result#Ok { value } => { msg_type = value; },
+            Result#Err { error } => { return err_result(1); },
+        }
+
+        // Bytes 2-3: payload length (big-endian u16)
+        let mut payload_len: u64 = 0;
+        let rp: Result<u64, CursorError> = cur.read_u16_be();
+        match rp {
+            Result#Ok { value } => { payload_len = value; },
+            Result#Err { error } => { return err_result(1); },
+        }
+
+        // Bytes 4-7: sequence number (big-endian u32)
+        let mut seq_num: u64 = 0;
+        let rs: Result<u64, CursorError> = cur.read_u32_be();
+        match rs {
+            Result#Ok { value } => { seq_num = value; },
+            Result#Err { error } => { return err_result(1); },
+        }
+
+        // Bytes 8-9: checksum (big-endian u16)
+        let mut checksum: u64 = 0;
+        let rc: Result<u64, CursorError> = cur.read_u16_be();
+        match rc {
+            Result#Ok { value } => { checksum = value; },
+            Result#Err { error } => { return err_result(1); },
+        }
 
         // Validate checksum (XOR fold of bytes 0-7)
         let computed: u16 = compute_checksum(data);
-        if computed != checksum {
+        if (computed as u64) != checksum {
             return err_result(3);
         }
 
         // Verify payload fits in the received data
-        let total: u64 = 10 + (payload_len as u64);
+        let total: u64 = 10 + payload_len;
         if total > len {
             return err_result(4);
         }
@@ -127,11 +153,19 @@ mod packet {
 
     // Copy payload into a fixed output buffer.
     // Bounded: loops at most payload_len iterations, capped at 1490.
+    // Uses ByteCursor for reads (starting after 10-byte header).
     trusted fn extract_payload(data: *const u8, out: *mut u8, payload_len: u64) -> u64 {
         let max: u64 = 1490;
         let copy_len: u64 = if payload_len < max { payload_len } else { max };
+        let payload_start: *const u8 = data + 10;
+        let mut src: ByteCursor = ByteCursor::from_raw(payload_start, copy_len);
         for (let mut i: u64 = 0; i < copy_len; i = i + 1) {
-            let byte: u8 = read_u8(data, 10 + i);
+            let mut byte: u8 = 0;
+            let r: Result<u8, CursorError> = src.read_u8();
+            match r {
+                Result#Ok { value } => { byte = value; },
+                Result#Err { error } => {},
+            }
             let dst: *mut u8 = out + i;
             *dst = byte;
         }
@@ -139,8 +173,6 @@ mod packet {
     }
 
     // ---- Reporting: with(Console) only ----
-    //
-    // Can print. Cannot allocate, read files, or touch the network.
 
     fn type_label(t: u8) with(Console) {
         if t == 0 { print("ping"); }
@@ -174,7 +206,7 @@ mod packet {
         println(" bytes");
     }
 
-    // ---- Test packet construction ----
+    // ---- Test packet construction (trusted byte writes) ----
 
     trusted fn write_u8(buf: *mut u8, offset: u64, val: u8) {
         let p: *mut u8 = buf + offset;

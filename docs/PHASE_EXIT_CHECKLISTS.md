@@ -97,7 +97,10 @@ Each phase has a "phase closes when..." list tied to concrete outputs. A phase i
 - [ ] Layout/ABI contract surface is explicit about stable vs opaque representations
 - [x] Module hygiene proven (no accidental namespace pollution)
   - `docs/VISIBILITY_AND_MODULE_HYGIENE.md` Part 2 (98d2cbc); selective imports enforced, no glob imports
-- [ ] Canonical examples use the intended stdlib surface rather than one-off local substitutes
+- [x] Canonical examples use the intended stdlib surface rather than one-off local substitutes
+  - `parse_validate`: uses builtin `Result<Header, ParseError>` (removed custom `ParseResult`)
+  - `service_errors`: uses builtin `Result<T, E>` for all 4 stage results (removed `ValidateResult`, `AuthResult`, `RateResult`, `ServiceResult`)
+  - `packet`: uses `std.numeric.ByteCursor` for all reads (removed hand-rolled `read_u8`, `read_u16_be`, `read_u32_be`)
 - [ ] One string-heavy medium workload and one interpreter/runtime-heavy medium workload validate the freeze surface
 - [x] Phase 2 and Phase H stdlib findings are reconciled into a current requirements ledger with ship/defer decisions
   - `docs/STDLIB_AUDIT.md`, `docs/STDLIB_VALIDATION_PLAN.md` (98d2cbc)
@@ -106,7 +109,7 @@ Each phase has a "phase closes when..." list tied to concrete outputs. A phase i
 
 **Verification**: `examples/parse_validate/` and `examples/service_errors/` work with stdlib types (not custom Copy enums), one fixed-capacity example uses the checked indexing/slice surface, one string-heavy medium workload such as `grep` or `policy_engine` uses the intended formatting/text APIs, and one interpreter/runtime-heavy workload such as `mal` or `lox` exercises the intended collection/runtime surface.
 
-**Current status**: 13/18 exit criteria done. 5 remaining: example rewrites onto stdlib, medium workloads (string-heavy + runtime-heavy), opaque wrappers, layout/ABI, formatting ergonomics.
+**Current status**: 14/18 exit criteria done. 4 remaining: medium workloads (string-heavy + runtime-heavy), opaque wrappers, layout/ABI, formatting ergonomics.
 
 ## Phase 4: Tooling, Tests, Wrong-Code Corpus
 

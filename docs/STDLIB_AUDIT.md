@@ -8,15 +8,13 @@ Audit of existing `std/src/` modules against the stdlib target, design principle
 
 ## Summary
 
-The stdlib has 38 modules. Most hosted-layer and collection modules are effectively complete for a first release. The critical gaps are in the core layer: missing endian/numeric module, incomplete Result/Option helpers, and missing checked access on slices.
+The stdlib has 38 modules. Most hosted-layer and collection modules are effectively complete for a first release. The remaining gaps are in the alloc layer: vec insert/remove, bytes sub-view, and text checked get.
 
-**Modules complete for first release (no changes needed):** ascii, test, fmt, parse, hash, sha256, hex, map, set, ordered_map, ordered_set, heap, io, fs, env, process, net, rand, args
+**Modules complete for first release (no changes needed):** ascii, test, fmt, parse, hash, sha256, hex, map, set, ordered_map, ordered_set, heap, io, fs, env, process, net, rand, args, numeric
 
-**Modules needing small additions (done in this audit):** option, result, math, bytes
+**Modules with small additions done:** option (`unwrap_or`, `ok_or`), result (`unwrap_or`, `ok`, `err`), math (`abs`), bytes (`eq`), slice (checked `get`/`set`)
 
-**Modules needing medium work:** slice, vec, text, deque, bitset
-
-**Critical missing module:** numeric (ByteCursor, endian read/write, checked narrowing)
+**Modules needing medium work:** vec, text, deque, bitset
 
 ---
 

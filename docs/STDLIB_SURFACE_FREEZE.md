@@ -894,8 +894,8 @@ Per [STDLIB_VALIDATION_PLAN.md](STDLIB_VALIDATION_PLAN.md), the following canoni
 | `examples/service_errors/` | Required: rewrite with `Result` + `map_err` + `?` | `Result.map_err` (Tier 2, pending) |
 | `examples/grep/` | Required: use `std.ascii`, `String` methods, remove magic constants | Existing stdlib surface |
 | `examples/fixed_capacity/` | Required: use `Result<T, E>` for ValidateResult | Existing stdlib surface |
-| `examples/elf_header/` | Nice-to-have: use `ByteCursor` | `std.numeric` (not yet implemented) |
-| `examples/packet/` | Nice-to-have: use `ByteCursor` + `ByteWriter` | `std.numeric` (not yet implemented) |
+| `examples/elf_header/` | Nice-to-have: use `ByteCursor` | `std.numeric` (implemented, 891d561) |
+| `examples/packet/` | Required: rewrite with `ByteCursor` + `ByteWriter` | `std.numeric` (implemented, 891d561) |
 
 Per [STDLIB_DOCUMENTATION_PLAN.md](STDLIB_DOCUMENTATION_PLAN.md), at least Tier 1 and Tier 2 modules (priorities 1-12) must be fully documented before the first release.
 

@@ -280,11 +280,9 @@ mod net;
 
 Recommendation: Mark `libc` and `ptr` as non-public (remove `pub` from their items, or add a `#[internal]` annotation if the language supports it). They should be importable by other std modules but not by user code.
 
-### 3.5 `std.numeric` is missing
+### 3.5 `std.numeric` — implemented
 
-STDLIB_TARGET identifies `std.numeric` (endian read/write + checked arithmetic) as the highest-priority new module. It does not exist yet. Every parser pressure program hand-rolls endian byte reads.
-
-Recommendation: Implement `std.numeric` as described in STDLIB_TARGET. This is roadmap item 68 and the single highest-value stdlib addition.
+`std.numeric` is implemented (891d561) with `ByteCursor`, `ByteWriter`, standalone endian functions (`read_be16_at`, `read_be32_at`, `read_le32_at`), and 9 tests. The `examples/packet/` rewrite onto ByteCursor validates the API surface.
 
 ---
 

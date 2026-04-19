@@ -517,11 +517,9 @@ If an example CANNOT be rewritten with stdlib, that is a stdlib gap. Each gap is
 
 **Current workaround.** Hand-rolled endian read/write functions in every program.
 
-**Stdlib gap.** `std.numeric` with `ByteCursor`, `ByteWriter`, standalone endian functions, and checked narrowing is specified in BYTE_CURSOR_API.md but not yet implemented.
+**Stdlib gap.** Resolved. `std.numeric` with `ByteCursor`, `ByteWriter`, and standalone endian functions is implemented (891d561, 9 tests pass). Checked narrowing deferred to Tier 2.
 
-**Recommendation.** Implement `std.numeric` as specified. This is the #1 priority gap per STDLIB_TARGET.md.
-
-**Severity.** HIGH. Blocks all binary parser validation.
+**Status.** DONE. `examples/packet/` rewrite onto ByteCursor is the first validation target.
 
 ### Gap 7: `Result.map_err` not yet implemented
 

@@ -33,6 +33,8 @@ examples/vm/vm
 examples/mal/mal
 examples/policy_engine/policy_engine
 examples/elf_header/elf_header
+examples/packet/packet
+examples/fixed_capacity/fixed_capacity
 examples/crypto_verify/crypto_verify
 examples/parse_validate/parse_validate
 examples/proof_pressure/proof_pressure
