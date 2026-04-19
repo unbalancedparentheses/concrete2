@@ -128,9 +128,9 @@ This is the restricted execution-oriented profile aimed at code that should be e
 | Loop boundedness classification | Working |
 | Allocation detection | Working |
 | Blocking/FFI detection | Working |
-| Stack-depth reporting | Not yet (Phase 3, item 25) |
-| Failure-path analysis | Not yet (Phase 3, item 27) |
-| No-std/freestanding split | Not yet (Phase 3, item 28) |
+| Stack-depth reporting | Working (`--report stack-depth`, Phase 3 item 25) |
+| Failure discipline | Defined ([PREDICTABLE_FAILURE_DISCIPLINE.md](PREDICTABLE_FAILURE_DISCIPLINE.md), Phase 3 item 28) |
+| No-std/freestanding split | Not yet (Phase 3, item 31) |
 | Full predictable profile enforcement as a first-class surface | Not yet — five gates exist but the complete bounded-execution discipline is still being tightened |
 
 ### Claim class

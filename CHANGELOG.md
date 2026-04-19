@@ -10,6 +10,16 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Predictable failure discipline (Phase 3, item 28)
+
+`docs/PREDICTABLE_FAILURE_DISCIPLINE.md` — failure-only discipline for predictable-profile code:
+
+- **Allowed**: explicit `Result<T, E>` return, error codes (`i32`, enum), sentinel values, `?` propagation
+- **Excluded**: abort, OOM, panic, unwinding, exceptions, blocking I/O failure, FFI failure, `longjmp` — all blocked by the five predictable gates
+- **Remaining gaps**: integer overflow (silent wrap) and array OOB (UB) — neither is hidden control flow
+- **Verification**: `--check predictable` + `--report effects` + `--report stack-depth`
+- **PROFILES.md updated**: stack-depth and failure discipline rows now show "Working"/"Defined"
+
 ### Failure strategy (Phase 3, item 27)
 
 `docs/FAILURE_STRATEGY.md` — definitive failure/panic strategy:

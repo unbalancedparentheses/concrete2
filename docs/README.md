@@ -15,6 +15,7 @@ Use these files as the primary reference once a design has moved out of explorat
 - [TRUSTED_COMPUTING_BASE.md](TRUSTED_COMPUTING_BASE.md) — explicit trusted-computing-base accounting for Concrete's strongest current claims
 - [PREDICTABLE_BOUNDARIES.md](PREDICTABLE_BOUNDARIES.md) — host calls, cleanup paths, determinism sources, failure paths, and memory/UB boundaries for predictable/proved code
 - [FAILURE_STRATEGY.md](FAILURE_STRATEGY.md) — abort-only decision, cleanup guarantees, FFI failure consequences, and proof-backed code failure assumptions
+- [PREDICTABLE_FAILURE_DISCIPLINE.md](PREDICTABLE_FAILURE_DISCIPLINE.md) — allowed and excluded failure forms for predictable-profile code
 - [EXECUTION_MODEL.md](EXECUTION_MODEL.md) — runtime boundary, allocation model, FFI/runtime contract, and execution profiles
 - [ARCHITECTURE.md](ARCHITECTURE.md) — compiler pipeline, artifact flow, pass boundaries, and architecture phase reference
 - [PASSES.md](PASSES.md) — pass-by-pass contracts, ownership boundaries, and what each phase may assume
