@@ -11257,19 +11257,72 @@ else
     interp_fail=$((interp_fail + 1))
 fi
 
-# 8. Interpreter matches compiled binary for parse_validate
-pv_compiled_exit=0
+# 8. Interpreter matches compiled binary for parse_validate (exit code AND stdout)
 if "$COMPILER" "$PV_SRC" -o /tmp/interp_pv_compiled 2>/dev/null; then
-    /tmp/interp_pv_compiled 2>/dev/null || pv_compiled_exit=$?
-    if [ "$pv_interp_exit" -eq "$pv_compiled_exit" ]; then
-        echo "  ok  interp: parse_validate interp exit ($pv_interp_exit) matches compiled ($pv_compiled_exit)"
+    pv_compiled_out=$(/tmp/interp_pv_compiled 2>/dev/null) && pv_compiled_exit=0 || pv_compiled_exit=$?
+    pv_interp_out=$("$COMPILER" "$PV_SRC" --interp 2>/dev/null) && pv_interp_exit2=0 || pv_interp_exit2=$?
+    if [ "$pv_interp_exit2" -eq "$pv_compiled_exit" ] && [ "$pv_interp_out" = "$pv_compiled_out" ]; then
+        echo "  ok  interp: parse_validate interp matches compiled (exit=$pv_compiled_exit, stdout='$pv_compiled_out')"
         interp_pass=$((interp_pass + 1))
     else
-        echo "  FAIL interp: exit mismatch: interp=$pv_interp_exit compiled=$pv_compiled_exit"
+        echo "  FAIL interp: mismatch: interp(exit=$pv_interp_exit2,out='$pv_interp_out') vs compiled(exit=$pv_compiled_exit,out='$pv_compiled_out')"
         interp_fail=$((interp_fail + 1))
     fi
 else
     echo "  SKIP interp: compiled binary comparison (compile failed)"
+    interp_fail=$((interp_fail + 1))
+fi
+
+# 9. Scope isolation: block-local let bindings must not leak out of if-branches
+cat > /tmp/interp_test_scope.con << 'TESTEOF'
+pub fn main() -> Int {
+    let x: i32 = 1;
+    if true { let x: i32 = 2; }
+    if x == 1 { return 0; }
+    return 1;
+}
+TESTEOF
+scope_exit=0
+"$COMPILER" /tmp/interp_test_scope.con --interp 2>/dev/null || scope_exit=$?
+if [ "$scope_exit" -eq 0 ]; then
+    echo "  ok  interp: if-branch let bindings do not leak to outer scope"
+    interp_pass=$((interp_pass + 1))
+else
+    echo "  FAIL interp: scope leak — if-branch let binding visible after branch (exit=$scope_exit)"
+    interp_fail=$((interp_fail + 1))
+fi
+
+# 10. Negative array index must error, not silently write element 0
+cat > /tmp/interp_test_negidx.con << 'TESTEOF'
+pub fn main() -> Int {
+    let mut arr: [i32; 4] = [10, 20, 30, 40];
+    arr[0 - 1] = 99;
+    if arr[0] == 10 { return 0; }
+    return 1;
+}
+TESTEOF
+negidx_out=$("$COMPILER" /tmp/interp_test_negidx.con --interp 2>&1) && negidx_exit=0 || negidx_exit=$?
+if [ "$negidx_exit" -ne 0 ] && echo "$negidx_out" | grep -qi "negative\|out of bounds"; then
+    echo "  ok  interp: negative array index produces error diagnostic"
+    interp_pass=$((interp_pass + 1))
+else
+    echo "  FAIL interp: negative array index should error, got exit=$negidx_exit"
+    interp_fail=$((interp_fail + 1))
+fi
+
+# 11. Observable contract: interp should print return value and exit 0 (like compiled)
+cat > /tmp/interp_test_contract.con << 'TESTEOF'
+pub fn main() -> Int {
+    return 7;
+}
+TESTEOF
+contract_out=$("$COMPILER" /tmp/interp_test_contract.con --interp 2>/dev/null)
+contract_exit=$?
+if [ "$contract_exit" -eq 0 ] && echo "$contract_out" | grep -q "^7$"; then
+    echo "  ok  interp: prints return value and exits 0 (matches compiled contract)"
+    interp_pass=$((interp_pass + 1))
+else
+    echo "  FAIL interp: should print '7' and exit 0, got stdout='$contract_out' exit=$contract_exit"
     interp_fail=$((interp_fail + 1))
 fi
 

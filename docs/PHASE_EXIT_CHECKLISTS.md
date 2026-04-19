@@ -44,24 +44,30 @@ Each phase has a "phase closes when..." list tied to concrete outputs. A phase i
 
 **Closes when all of the following are true:**
 
-- [ ] Parser/decoder pressure set exists (JSON subset, DNS, HTTP, binary)
-  - At least 2 parsers compile and run, revealing specific stdlib gaps
-- [ ] Ownership-heavy structures tested (tree, arena graph, intrusive list)
-  - At least 2 ownership pressure programs compile, documenting borrow/move gaps
-- [ ] Borrow/aliasing patterns documented
-  - Sequential `&mut`, iterator-like adapters tested
-- [ ] Trusted-wrapper / FFI pressure tested
-  - libc wrapper, checksum, OS facade — each compiles and reports effects
-- [ ] Fixed-capacity / no-alloc pressure extended
-  - Beyond `fixed_capacity`: ring buffer, bounded queue, state machine
-- [ ] Cleanup/leak boundary tested
-  - Nested defer, alloc/free facades, FFI cleanup
-- [ ] All gap findings documented in a "stdlib requirements" list
-  - Each pressure example documents: what worked, what is missing, what needs stdlib support
+- [x] Parser/decoder pressure set exists (JSON subset, DNS, HTTP, binary)
+  - 5 parsers compile and run: json_subset, http_request, dns_header, dns_packet, binary_endian
+  - Gaps: no string type, no byte cursor stdlib, no byte comparison, if/else chains for integer matching
+- [x] Ownership-heavy structures tested (tree, arena graph, intrusive list)
+  - 9 programs compile and run: tree, ordered_map, arena_graph, intrusive_list, nested/interleaved/helper/match linear patterns, destroy wrapper
+  - Gaps: no recursive types (array-backed only), no generics, linear types require explicit destroy
+- [x] Borrow/aliasing patterns documented
+  - 5 programs compile and run: sequential_mut_ref, borrow_in_loop, borrow_then_consume, param_ref_multiuse, branch_create_consume
+  - Gaps: no partial borrows, no iterator pattern (no closures/generics)
+- [x] Trusted-wrapper / FFI pressure tested
+  - 4 programs compile and run: ffi_libc_wrapper, ffi_checksum, ffi_os_facade, ffi_cabi
+  - Gaps: no string passing to C, C struct interop requires manual layout
+- [x] Fixed-capacity / no-alloc pressure extended
+  - 4 programs compile and run: fixcap_ring_buffer, fixcap_bounded_queue, fixcap_state_machine, fixcap_controller
+  - Gaps: no generics, no const generics, manual fixed-point arithmetic
+- [x] Cleanup/leak boundary tested
+  - 4 run + 5 error-expected programs: defer_nested, defer_in_loop, defer_with_borrow, heap_defer_free + 5 err_ programs correctly rejected
+  - Gaps: manual defer ordering verification, no scope-guard abstraction
+- [x] All gap findings documented in a "stdlib requirements" list
+  - Each category documents gaps in ROADMAP.md items 45-50 and this checklist
 
-**Verification**: each pressure example either compiles and runs, or documents the specific gap that prevents it.
+**Verification**: all 36 pressure programs compile and run (or correctly fail for error-expected cases). Gap findings documented per category.
 
-**Current status**: 0/6 items done.
+**Current status**: 7/7 items done. Phase 2 complete.
 
 ## Phase 3: Stdlib and Syntax Freeze
 

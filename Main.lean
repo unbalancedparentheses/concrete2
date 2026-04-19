@@ -212,8 +212,9 @@ def interpProgram (inputPath : String) : IO UInt32 := do
       IO.eprintln msg
       return 1
     | .ok exitCode =>
-      if exitCode == 0 then return 0
-      else return (exitCode.toNat % 256).toUInt32
+      -- Match compiled binary contract: print return value, exit 0
+      IO.println s!"{exitCode}"
+      return 0
 
 /-- Compile and run tests: Parse → ... → EmitSSA (test mode) → clang → run -/
 def compileTest (inputPath : String) (moduleFilter : Option String := none) : IO UInt32 := do

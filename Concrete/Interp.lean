@@ -376,10 +376,19 @@ partial def evalStmt (fns : List CFnDef) (env : Env) (s : CStmt) : Except String
   | .ifElse cond thenBody elseBody => do
     let cf ← evalExpr fns env cond
     match cf with
-    | .val (.bool true) => evalStmts fns env thenBody
+    | .val (.bool true) =>
+      let outerLen := env.length
+      let (branchEnv, flow) ← evalStmts fns env thenBody
+      -- Restore scope: drop block-local let bindings, keep mutations to outer vars
+      let restoredEnv := branchEnv.drop (branchEnv.length - outerLen)
+      return (restoredEnv, flow)
     | .val (.bool false) =>
       match elseBody with
-      | some body => evalStmts fns env body
+      | some body =>
+        let outerLen := env.length
+        let (branchEnv, flow) ← evalStmts fns env body
+        let restoredEnv := branchEnv.drop (branchEnv.length - outerLen)
+        return (restoredEnv, flow)
       | none => return (env, .val .unit)
     | .val _ => .error "interp: if condition is not a boolean"
     | .ret v => return (env, .ret v)
@@ -406,6 +415,8 @@ partial def evalStmt (fns : List CFnDef) (env : Env) (s : CStmt) : Except String
     let idxVal ← evalExprVal fns env idx
     match idxVal with
     | .int i _ =>
+      if i < 0 then .error s!"interp: negative array index {i} on assignment"
+      else
       match arr with
       | .ident name _ =>
         match envGet env name with

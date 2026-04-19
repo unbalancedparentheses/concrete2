@@ -17,8 +17,14 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 - **Supported**: integer/bool, let/assign, if/else, function calls, structs (creation + field access + field assign), enums (creation + match with field bindings), arrays (literal + indexing + index assign), bounded for/while loops, cast, binary ops (arithmetic + comparison + bitwise XOR/AND/OR), unary ops, break/continue
 - **Unsupported (explicit diagnostics)**: borrow, deref, float, string, char, defer, try, alloc, whileExpr, fnRef
 - **First target**: `examples/parse_validate/` — all 8 tests pass, exit code matches compiled binary
-- **Trust-gate**: 8 interp tests (parse_validate, function calls, array loops, structs, enum match, XOR bitwise, unsupported diagnostic, compiled-vs-interpreted comparison). Total trust-gate: 1366 checks
+- **Trust-gate**: 11 interp tests (parse_validate, function calls, array loops, structs, enum match, XOR bitwise, unsupported diagnostic, compiled-vs-interpreted comparison, scope isolation, negative index, observable contract). Total trust-gate: 1403 checks
 - **Key design**: fuel-based evaluation with explicit control flow propagation (return/break/continue as `Flow` inductive). For-loop step field only runs on `continue` (step already appended to body by desugaring)
+
+### Interpreter semantic fixes (3 bugs)
+
+- **Scope isolation**: if-branches and else-branches now restore outer scope after evaluation — block-local `let` bindings no longer leak. Fix: trim env back to outer length after branch (`Interp.lean:376`).
+- **Negative array index**: `arrayIndexAssign` now checks `i < 0` before `toNat` conversion, producing "negative array index" error instead of silently writing element 0 (`Interp.lean:404`).
+- **Observable contract**: `--interp` now prints the return value to stdout and exits 0, matching compiled binary behavior. Previously it returned the value as a process exit code and printed nothing (`Main.lean:203`).
 
 ### No-std split, standalone UX, project bootstrap (Phase 1, items 34-36)
 
