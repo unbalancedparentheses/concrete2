@@ -10,6 +10,18 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Failure strategy (Phase 3, item 27)
+
+`docs/FAILURE_STRATEGY.md` — definitive failure/panic strategy:
+
+- **Abort-only**: no panic, no unwinding, no catch — permanent design commitment
+- **Cleanup guarantees**: defer runs LIFO on all normal exits (return, `?`, break, scope exit); skipped on abort/signal
+- **No-leak on normal paths**: linear ownership + defer; leak-on-abort acceptable (OS reclaims)
+- **Failure taxonomy**: explicit errors (`Result`), abort (OOM/user/stdlib), hardware traps (SIGSEGV/SIGFPE), undefined behavior (array OOB, integer overflow)
+- **FFI consequences**: trust-based contracts, `longjmp` is UB, no cleanup for extern-triggered abort
+- **Proof assumptions**: proved code avoids all failure sources by construction; integer overflow and array OOB are known gaps between proof model and runtime
+- **8 summary commitments** for the failure model
+
 ### Predictable/proved boundary classification (Phase 3, item 26)
 
 `docs/PREDICTABLE_BOUNDARIES.md` — comprehensive classification of runtime boundaries for predictable and proved code:
