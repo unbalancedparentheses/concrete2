@@ -82,12 +82,18 @@ Each phase has a "phase closes when..." list tied to concrete outputs. A phase i
 - [x] Core stdlib modules implemented: bytes, option/result, slices, basic collections
   - 38 modules exist in std/src/; audit in STDLIB_AUDIT.md; Tier 1 helpers added to option/result/bytes/math (98d2cbc)
 - [ ] Runtime-oriented collection maturity is demonstrated for interpreter/runtime-style workloads
+  - Design frozen: `docs/RUNTIME_COLLECTIONS.md` (2026-04-20). Stdlib surface committed (Vec, HashMap, OrderedMap, OrderedSet, Set, Deque, Bytes, String); environments/intern pools/multimaps stay example-only.
+  - Demo partial: `lox` runs but still uses ad hoc `Vec<Binding>` tables. Rewrite onto canonical `HashMap<String, Value>` + `Vec<Frame>` shape remains, plus `HashMap::get_mut` / `insert` return value in `std.map`. See `docs/STDLIB_FREEZE_LEDGER.md` L-1..L-3.
 - [x] Arithmetic policy is explicit in source, reports, and proof boundaries
   - `docs/ARITHMETIC_POLICY.md` (98d2cbc)
-- [ ] Formatting and text-output ergonomics are good enough for string-heavy real programs without hidden magic
+- [x] Formatting and text-output ergonomics are good enough for string-heavy real programs without hidden magic
+  - Design frozen: `docs/FORMATTING_OUTPUT.md` (2026-04-20). `print` / `println` / `append(&mut buf, ...)` variadic triad; no format strings, no interpolation, no trait-driven formatting.
+  - Shipped: variadic `append` desugar in Elab + Check intercept + `IntrinsicId.append`. Test: `tests/programs/variadic_append.con`. grep migration to variadic append is a follow-up cleanup (not freeze-blocking).
 - [x] Error ergonomics settled (`?` operator, Result methods, conversion traits)
   - `docs/ERROR_HANDLING_DESIGN.md`; `?` already parsed/lowered; Tier 1 helpers added (98d2cbc)
 - [ ] Opaque validated wrapper types and fallible conversions settled
+  - Design frozen: `docs/VALIDATED_WRAPPERS.md` (2026-04-20). `PascalCase` names, `try_new` / `try_from_<src>` / `.0`, no implicit coercion, module-local error enums.
+  - Demo: `tests/programs/newtype_validated.con` (Port over u16). Known compiler gaps (doc §8): method dispatch on newtypes resolves to inner type; `Layout.tySize`/`tyAlign` don't resolve newtype names inside enum payloads. Both block the canonical-wrappers-in-stdlib requirement.
 - [x] Enum/static qualification syntax is finalized and documented
   - `Type::Variant` / `Type::method(...)` is the only shipped qualification surface; `#` is gone from the compiler, formatter, stdlib, examples, and canonical docs
 - [x] Remaining constructor/pattern ergonomics are settled
@@ -96,14 +102,16 @@ Each phase has a "phase closes when..." list tied to concrete outputs. A phase i
   - `docs/VISIBILITY_AND_MODULE_HYGIENE.md` (98d2cbc); existing 3-pass enforcement confirmed adequate
 - [x] Endian byte APIs exist (read_u16_be, write_u32_le, etc.)
   - `std/src/numeric.con`: ByteCursor with read_u8/u16/u32/u64 BE/LE, ByteWriter with write_u8/u16/u32 BE/LE (891d561)
-- [ ] Layout/ABI contract surface is explicit about stable vs opaque representations
+- [x] Layout/ABI contract surface is explicit about stable vs opaque representations
+  - Design frozen: `docs/LAYOUT_CONTRACT.md` (2026-04-20). Four stable repr forms (none/opaque, `#[repr(C)]`, `#[repr(packed)]`, `#[repr(align(N))]`); `#[repr(transparent)]` rejected; report fact set enumerated.
 - [x] Module hygiene proven (no accidental namespace pollution)
   - `docs/VISIBILITY_AND_MODULE_HYGIENE.md` Part 2 (98d2cbc); selective imports enforced, no glob imports
 - [x] Canonical examples use the intended stdlib surface rather than one-off local substitutes
   - `parse_validate`: uses builtin `Result<Header, ParseError>` (removed custom `ParseResult`)
   - `service_errors`: uses builtin `Result<T, E>` for all 4 stage results (removed `ValidateResult`, `AuthResult`, `RateResult`, `ServiceResult`)
   - `packet`: uses `std.numeric.ByteCursor` for all reads (removed hand-rolled `read_u8`, `read_u16_be`, `read_u32_be`)
-- [ ] One string-heavy medium workload and one interpreter/runtime-heavy medium workload validate the freeze surface
+- [x] One string-heavy medium workload and one interpreter/runtime-heavy medium workload validate the freeze surface
+  - Ledger: `docs/STDLIB_FREEZE_LEDGER.md` (2026-04-20). String-heavy: `examples/grep` (207 lines, G-1..G-4). Runtime-heavy: `examples/lox` (1 183 lines, 48 fns, L-1..L-6). Each finding is classified (missing API / bad ergonomics / missing pattern / deferred / compiler gap) with a resolution path.
 - [x] Phase 2 and Phase H stdlib findings are reconciled into a current requirements ledger with ship/defer decisions
   - `docs/STDLIB_AUDIT.md`, `docs/STDLIB_VALIDATION_PLAN.md` (98d2cbc)
 - [x] Syntax and stdlib surface frozen — changes require explicit unfreezing
@@ -111,7 +119,7 @@ Each phase has a "phase closes when..." list tied to concrete outputs. A phase i
 
 **Verification**: `examples/parse_validate/` and `examples/service_errors/` work with stdlib types (not custom Copy enums), one fixed-capacity example uses the checked indexing/slice surface, one string-heavy medium workload such as `grep` or `policy_engine` uses the intended formatting/text APIs, and one interpreter/runtime-heavy workload such as `mal` or `lox` exercises the intended collection/runtime surface.
 
-**Current status**: 14/19 exit criteria done. 5 remaining: runtime-oriented collections, formatting/text-output ergonomics, opaque wrappers, layout/ABI, and medium-workload validation.
+**Current status**: 17/19 exit criteria done. 2 remaining: runtime-oriented collection demonstration (design frozen; lox rewrite + `HashMap::get_mut`/`insert` return pending) and opaque wrappers (design frozen; compiler gaps on newtype method dispatch and enum-payload layout still block canonical stdlib wrappers).
 
 ## Phase 4: Tooling, Tests, Wrong-Code Corpus
 

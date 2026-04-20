@@ -1193,6 +1193,7 @@ run_ok "$TESTDIR/bug_if_expression.con" 0
 run_ok "$TESTDIR/bug_print_builtins.con" "hello 42
 0"
 run_ok "$TESTDIR/bug_string_building.con" 0
+run_ok "$TESTDIR/variadic_append.con" 0
 run_ok "$TESTDIR/bug_clock_builtin.con" 0
 run_ok "$TESTDIR/bug_enum_in_struct.con" 0
 run_ok "$TESTDIR/bug_stack_array_borrow_copy.con" 42
@@ -1602,6 +1603,7 @@ run_ok "$TESTDIR/newtype_basic.con" 42
 run_ok "$TESTDIR/newtype_copy.con" 20
 run_ok "$TESTDIR/newtype_linear.con" 7
 run_ok "$TESTDIR/newtype_generic.con" 100
+run_ok "$TESTDIR/newtype_validated.con" 8081
 run_err "$TESTDIR/error_newtype_no_implicit.con" "type mismatch"
 run_err "$TESTDIR/error_newtype_wrong_inner.con" "type mismatch"
 
@@ -6856,6 +6858,7 @@ run_ok_O2 "$TESTDIR/bug_if_expression.con" 0
 run_ok_O2 "$TESTDIR/bug_print_builtins.con" "hello 42
 0"
 run_ok_O2 "$TESTDIR/bug_string_building.con" 0
+run_ok_O2 "$TESTDIR/variadic_append.con" 0
 ## bug_clock_builtin excluded from O2: loop between clock calls gets optimized away
 run_ok_O2 "$TESTDIR/bug_enum_in_struct.con" 0
 run_ok_O2 "$TESTDIR/bug_stack_array_borrow_copy.con" 42

@@ -916,7 +916,7 @@ partial def elabStmt (stmt : Stmt) : ElabM (List CStmt) := do
     let env ← getEnv
     return [.return_ none env.currentRetTy]
 
-  | .expr _ (.call _sp fnName _typeArgs args) =>
+  | .expr sp (.call _sp fnName _typeArgs args) =>
     -- Desugar print/println into individual typed print calls
     -- Only if not shadowed by a user/stdlib function with the same name
     let existingFn ← lookupFnSig fnName
@@ -943,6 +943,47 @@ partial def elabStmt (stmt : Stmt) : ElabM (List CStmt) := do
       if fnName == "println" then
         stmts := stmts ++ [CStmt.expr (CExpr.call "print_char" [] [CExpr.intLit 10 .int] .unit)]
       return stmts
+    -- Desugar variadic append(&mut buf, ...) into typed string_append calls.
+    -- Only fires if (a) not shadowed by a user fn, (b) at least one arg,
+    -- (c) first arg elaborates to &mut String. Otherwise fall through and
+    -- let normal elaboration produce the usual "undeclared function" error.
+    else if existingFn.isNone && fnName == "append" then
+    match args with
+    | bufArg :: rest =>
+      let cBuf ← elabExpr bufArg
+      match cBuf.ty with
+      | .refMut .string =>
+        let mut stmts : List CStmt := []
+        for arg in rest do
+          let cArg ← elabExpr arg
+          let call ← match cArg.ty with
+            | .string =>
+              pure (CStmt.expr (CExpr.call "string_append" [] [cBuf, CExpr.borrow cArg (.ref .string)] .unit))
+            | .ref .string | .refMut .string =>
+              pure (CStmt.expr (CExpr.call "string_append" [] [cBuf, cArg] .unit))
+            | .int =>
+              pure (CStmt.expr (CExpr.call "string_append_int" [] [cBuf, cArg] .unit))
+            | .uint | .i32 | .i16 | .i8 | .u32 | .u16 | .u8 =>
+              pure (CStmt.expr (CExpr.call "string_append_int" [] [cBuf, CExpr.cast cArg .int] .unit))
+            | .bool =>
+              pure (CStmt.expr (CExpr.call "string_append_bool" [] [cBuf, cArg] .unit))
+            | .char =>
+              pure (CStmt.expr (CExpr.call "string_push_char" [] [cBuf, CExpr.cast cArg .int] .unit))
+            | _ =>
+              throw [{ severity := .error
+                     , message := s!"append() argument has unsupported type; expected String/&String/&mut String, Int/Uint/i8..i32/u8..u32, bool, or char"
+                     , pass := "elab"
+                     , span := some sp
+                     , hint := some "pass primitive values or string references; complex values must be formatted first"
+                     , code := "E0420" }]
+          stmts := stmts ++ [call]
+        return stmts
+      | _ =>
+        let cE ← elabExpr (.call _sp fnName _typeArgs args)
+        return [.expr cE]
+    | [] =>
+      let cE ← elabExpr (.call _sp fnName _typeArgs args)
+      return [.expr cE]
     else
       let cE ← elabExpr (.call _sp fnName _typeArgs args)
       return [.expr cE]

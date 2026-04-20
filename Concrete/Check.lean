@@ -1036,8 +1036,27 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
         | .int | .uint | .i32 | .u32 | .i16 | .u16 | .i8 | .u8 => pure ()
         | .bool => pure ()
         | .char => pure ()
-        | _ => throwCheckMsg s!"{fnName}() argument has unsupported type '{tyToString argTy}'; expected String, Int, u32, i32, bool, or char"
+        | _ => throwCheckMsg s!"{fnName}() argument has unsupported type '{tyToString argTy}'; expected String/&String/&mut String, Int/Uint/i8..i32/u8..u32, bool, or char"
       return .unit
+    -- Intercept append(&mut buf, ...) — variadic mixed-arg buffer append
+    if intrinsic == some .append then
+      match args with
+      | bufArg :: rest =>
+        let bufTy ← checkExpr bufArg
+        match bufTy with
+        | .refMut .string => pure ()
+        | _ => throwCheckMsg s!"append() first argument must be &mut String, got '{tyToString bufTy}'"
+        if rest.isEmpty then throwCheckMsg s!"append() requires at least 2 arguments (&mut String, ...values)"
+        for arg in rest do
+          let argTy ← checkExpr arg
+          match argTy with
+          | .string | .ref .string | .refMut .string => pure ()
+          | .int | .uint | .i32 | .u32 | .i16 | .u16 | .i8 | .u8 => pure ()
+          | .bool => pure ()
+          | .char => pure ()
+          | _ => throwCheckMsg s!"append() argument has unsupported type '{tyToString argTy}'; expected String/&String/&mut String, Int/Uint/i8..i32/u8..u32, bool, or char"
+        return .unit
+      | [] => throwCheckMsg s!"append() requires at least 2 arguments (&mut String, ...values)"
     -- Intercept abort() calls
     if intrinsic == some .abort then
       if args.length != 0 then throwCheck (.builtinWrongArgCount "abort" 0) (some e.getSpan)
