@@ -323,6 +323,15 @@ partial def resolveStmt (ctx : ResolveCtx) (stmt : Stmt) : ResolveCtx :=
     resolveStmts ctx body
   | .arrowAssign _ obj _ value =>
     resolveExpr (resolveExpr ctx obj) value
+  | .letDestructure _ _ _ bindings value elseBody =>
+    let ctx := resolveExpr ctx value
+    let ctx := match elseBody with
+      | some body => resolveStmts ctx body
+      | none => ctx
+    bindings.foldl (fun c b => addLocal c b (.var none false)) ctx
+  | .letStructDestructure _ _ bindings value =>
+    let ctx := resolveExpr ctx value
+    bindings.foldl (fun c b => addLocal c b (.var none false)) ctx
 end
 
 -- ============================================================

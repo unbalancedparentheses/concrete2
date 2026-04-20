@@ -116,14 +116,20 @@ partial def fmtExprAt (ind : Nat) : Expr → String
   | .paren _ inner => s!"({fmtExprAt ind inner})"
   | .structLit _ name typeArgs fields =>
     let targsStr := if typeArgs.isEmpty then "" else s!"::<{", ".intercalate (typeArgs.map fmtTy)}>"
-    let fs := fields.map fun (k, v) => s!"{k}: {fmtExprAt ind v}"
+    let fs := fields.map fun (k, v) =>
+      match v with
+      | .ident _ n => if n == k then k else s!"{k}: {fmtExprAt ind v}"
+      | _ => s!"{k}: {fmtExprAt ind v}"
     s!"{name}{targsStr} \{ {", ".intercalate fs} }"
   | .fieldAccess _ obj field => s!"{fmtExprAt ind obj}.{field}"
   | .enumLit _ enumName variant typeArgs fields =>
     let targsStr := if typeArgs.isEmpty then "" else s!"::<{", ".intercalate (typeArgs.map fmtTy)}>"
     if fields.isEmpty then s!"{enumName}{targsStr}::{variant}"
     else
-      let fs := fields.map fun (k, v) => s!"{k}: {fmtExprAt ind v}"
+      let fs := fields.map fun (k, v) =>
+        match v with
+        | .ident _ n => if n == k then k else s!"{k}: {fmtExprAt ind v}"
+        | _ => s!"{k}: {fmtExprAt ind v}"
       s!"{enumName}{targsStr}::{variant} \{ {", ".intercalate fs} }"
   | .match_ _ scrutinee arms =>
     let pfx := indent ind
@@ -246,6 +252,15 @@ partial def fmtStmt (ind : Nat) (s : Stmt) : String :=
     let mutStr := if isMut then "mut " else ""
     s!"{pfx}borrow {mutStr}{var} as {ref} in {region} \{\n{"\n".intercalate (body.map (fmtStmt (ind + 1)))}\n{pfx}}"
   | .arrowAssign _ obj field value => s!"{pfx}{fmtExprAt ind obj}->{field} = {fmtExprAt ind value};"
+  | .letDestructure _ enumName variant bindings value elseBody =>
+    let bs := ", ".intercalate bindings
+    let elseStr := match elseBody with
+      | some body => s!" else \{\n{"\n".intercalate (body.map (fmtStmt (ind + 1)))}\n{pfx}}"
+      | none => ""
+    s!"{pfx}let {enumName}::{variant} \{ {bs} } = {fmtExprAt ind value}{elseStr};"
+  | .letStructDestructure _ structName bindings value =>
+    let bs := ", ".intercalate bindings
+    s!"{pfx}let {structName} \{ {bs} } = {fmtExprAt ind value};"
 end
 
 /-- Format an expression (convenience wrapper, uses indent 0). -/

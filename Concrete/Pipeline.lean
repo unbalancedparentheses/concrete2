@@ -87,6 +87,11 @@ def resolve (prog : ParsedProgram) (summary : SummaryTable) : Except Diagnostics
   | .ok resolved => .ok { modules := resolved }
   | .error ds => .error ds
 
+/-- Desugar destructuring let statements before Check and Elab see them. -/
+def desugar (resolved : ResolvedProgram) : ResolvedProgram :=
+  { modules := resolved.modules.map fun rm =>
+      { rm with module := desugarModule rm.module } }
+
 /-- Type-checking pass. Consumes resolved program (proving name resolution happened). -/
 def check (resolved : ResolvedProgram) (summary : SummaryTable) : Except Diagnostics Unit :=
   checkProgram resolved.modules summary.entries
@@ -162,6 +167,7 @@ def runFrontend (inputPath source : String)
     match Pipeline.resolve resolved summary with
     | .error ds => return .error ds
     | .ok resolvedProg =>
+    let resolvedProg := Pipeline.desugar resolvedProg
     match Pipeline.check resolvedProg summary with
     | .error ds => return .error ds
     | .ok () =>

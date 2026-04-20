@@ -1512,7 +1512,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
             pure body
           | .litArm _ _val body => pure body
           | .varArm _ binding body => do
-            addVar binding innerTyR
+            if binding != "_" then addVar binding innerTyR
             pure body
           -- Check all stmts except the last, then extract type from last
           let bodyInit := body.dropLast
@@ -1585,7 +1585,7 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
         let body ← match arm with
         | .litArm _ _val body => pure body
         | .varArm _ binding body => do
-          addVar binding scrTy
+          if binding != "_" then addVar binding scrTy
           pure body
         | .mk _ _ _ _ body => pure body
         -- Check all stmts except the last, then extract type from last
@@ -2143,6 +2143,9 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
     for (name, info) in env.vars do
       if !info.isCopy && info.state != .consumed && info.state != .reserved && info.loopDepth >= env.loopDepth then
         throwCheck (.continueSkipsUnconsumedLinear name) (some stmt.getSpan)
+  -- These are desugared before reaching Check; should never appear
+  | .letDestructure _ _ _ _ _ _ => pure ()
+  | .letStructDestructure _ _ _ _ => pure ()
 
 partial def checkStmts (stmts : List Stmt) (retTy : Ty) : CheckM Unit := do
   let mut accumulated : Diagnostics := []

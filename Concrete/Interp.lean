@@ -331,7 +331,7 @@ partial def evalMatch (fns : List CFnDef) (env : Env) (scrutinee : IVal) (arms :
       else
         evalMatch fns env scrutinee rest
     | .varArm binding _ body =>
-      let armEnv := envBind env binding scrutinee
+      let armEnv := if binding == "_" then env else envBind env binding scrutinee
       evalMatchBody fns armEnv body
 
 partial def evalMatchBody (fns : List CFnDef) (env : Env) (body : List CStmt) : Except String Flow := do
@@ -368,7 +368,7 @@ partial def evalMatchStmt (fns : List CFnDef) (env : Env) (scrutinee : IVal) (ar
         evalMatchStmt fns env scrutinee rest
     | .varArm binding _ body => do
       let outerLen := env.length
-      let armEnv := envBind env binding scrutinee
+      let armEnv := if binding == "_" then env else envBind env binding scrutinee
       let (bodyEnv, flow) ← evalStmts fns armEnv body
       let restoredEnv := bodyEnv.drop (bodyEnv.length - outerLen)
       return (restoredEnv, flow)

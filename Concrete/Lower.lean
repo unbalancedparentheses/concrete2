@@ -669,7 +669,7 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
         | .varArm binding _bindTy body =>
           terminateBlock (.br armLabel)
           startBlock armLabel
-          setVar binding scrVal
+          if binding != "_" then setVar binding scrVal
           lowerStmts body
           let bodyVal ← lastExprVal body ty
           -- Cast if arm result type differs from expected type (e.g., Int → i32)
@@ -756,7 +756,7 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
         | .varArm binding _bindTy body =>
           terminateBlock (.br armLabel)
           startBlock armLabel
-          setVar binding scrVal
+          if binding != "_" then setVar binding scrVal
           lowerStmts body
           let bodyVal ← lastExprVal body ty
           -- Cast if arm result type differs from expected type (e.g., Int → i32)

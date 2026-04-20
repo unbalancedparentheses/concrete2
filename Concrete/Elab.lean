@@ -499,7 +499,7 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
             let cBody ← elabStmts body
             cArms := cArms ++ [.litArm cVal cBody]
           | .varArm _ binding body =>
-            addVar binding innerTyR
+            if binding != "_" then addVar binding innerTyR
             let cBody ← elabStmts body
             cArms := cArms ++ [.varArm binding innerTyR cBody]
         setEnv envBefore
@@ -513,7 +513,7 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
             let cBody ← elabStmts body
             cArms := cArms ++ [.litArm cVal cBody]
           | .varArm _ binding body =>
-            addVar binding innerTyR
+            if binding != "_" then addVar binding innerTyR
             let cBody ← elabStmts body
             cArms := cArms ++ [.varArm binding innerTyR cBody]
           | .mk _ en v _ body =>
@@ -530,7 +530,7 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
           let cBody ← elabStmts body
           cArms := cArms ++ [.litArm cVal cBody]
         | .varArm _ binding body =>
-          addVar binding innerTyR
+          if binding != "_" then addVar binding innerTyR
           let cBody ← elabStmts body
           cArms := cArms ++ [.varArm binding innerTyR cBody]
         | .mk _ en v _ body =>
@@ -1035,6 +1035,13 @@ partial def elabStmt (stmt : Stmt) : ElabM (List CStmt) := do
     let cDeref := CExpr.deref cObj innerTy
     let cVal ← elabExpr value
     return [.fieldAssign cDeref field cVal]
+
+  -- These are desugared by desugarStmts before elabStmt is called.
+  -- Catch-all for exhaustiveness — should never fire.
+  | .letDestructure sp _ _ _ _ _ =>
+    throwElab (.unknownEnumType "internal: letDestructure not desugared") (some sp)
+  | .letStructDestructure sp _ _ _ =>
+    throwElab (.unknownStructType "internal: letStructDestructure not desugared") (some sp)
 
 partial def elabStmts (stmts : List Stmt) : ElabM (List CStmt) := do
   let mut result : List CStmt := []

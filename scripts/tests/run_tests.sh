@@ -731,6 +731,10 @@ run_ok "$TESTDIR/match_int_basic.con" 42
 run_ok "$TESTDIR/match_int_default.con" 42
 run_ok "$TESTDIR/match_int_negative.con" 42
 run_ok "$TESTDIR/match_bool.con" 42
+run_ok "$TESTDIR/wildcard_pattern.con" 0
+run_ok "$TESTDIR/field_punning.con" 0
+run_ok "$TESTDIR/let_else.con" 0
+run_ok "$TESTDIR/struct_destructure.con" 0
 run_ok "$TESTDIR/linear_consume.con"     42
 run_ok "$TESTDIR/linear_branch_agree.con" 42
 run_ok "$TESTDIR/linear_loop_inner.con"  3

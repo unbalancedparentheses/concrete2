@@ -616,18 +616,30 @@ partial def parseStructLitFields : ParseM (List (String × Expr)) := do
   let tk ← peek
   if tk == .rbrace then return []
   let mut fields : List (String × Expr) := []
+  let sp ← peekSpan
   let firstName ← expectIdent
-  expect .colon
-  let firstVal ← parseExpr
+  let tk2 ← peek
+  let firstVal ← if tk2 == .colon then
+    advance
+    parseExpr
+  else
+    -- Field punning: { value } means { value: value }
+    pure (.ident sp firstName)
   fields := [(firstName, firstVal)]
   let mut tk ← peek
   while tk == .comma do
     advance
     tk ← peek
     if tk == .rbrace then break  -- trailing comma
+    let fsp ← peekSpan
     let fieldName ← expectIdent
-    expect .colon
-    let fieldVal ← parseExpr
+    let tk3 ← peek
+    let fieldVal ← if tk3 == .colon then
+      advance
+      parseExpr
+    else
+      -- Field punning: { name } means { name: name }
+      pure (.ident fsp fieldName)
     fields := fields ++ [(fieldName, fieldVal)]
     tk ← peek
   return fields
@@ -906,6 +918,17 @@ partial def parseStmt : ParseM Stmt := do
     return .borrowIn sp var ref region isMut body
   | _ => parseExprOrAssign
 
+partial def parseBindingList : ParseM (List String) := do
+  let mut bindings : List String := []
+  let mut tk ← peek
+  while tk != .rbrace && tk != .eof do
+    let bindName ← expectIdent
+    bindings := bindings ++ [bindName]
+    tk ← peek
+    if tk == .comma then advance; tk ← peek
+  expect .rbrace
+  return bindings
+
 partial def parseLet : ParseM Stmt := do
   let sp ← peekSpan
   expect .«let»
@@ -913,17 +936,49 @@ partial def parseLet : ParseM Stmt := do
   let isMut := tk == .mut
   if isMut then advance
   let name ← expectIdent
+  -- Check for destructuring pattern:
+  --   let Type::Variant { bindings } = expr [else { body }];   (enum destructuring)
+  --   let StructType { bindings } = expr;                      (struct destructuring)
+  let isTypeName := name.length > 0 && (name.toList.head!).isUpper
   let tk ← peek
-  let ty ← if tk == .colon then
+  if isTypeName && tk == .doubleColon then
+    -- Enum destructuring: let Type::Variant { bindings } = expr [else { body }];
     advance
-    let t ← parseType
-    pure (some t)
+    let variant ← expectIdent
+    expect .lbrace
+    let bindings ← parseBindingList
+    expect .assign
+    let value ← parseExpr
+    -- Check for else clause
+    let tk2 ← peek
+    let elseBody ← if tk2 == .else_ then
+      advance
+      let body ← parseBlock
+      pure (some body)
+    else
+      pure none
+    expect .semicolon
+    return .letDestructure sp name variant bindings value elseBody
+  else if isTypeName && tk == .lbrace then
+    -- Struct destructuring: let StructType { bindings } = expr;
+    advance
+    let bindings ← parseBindingList
+    expect .assign
+    let value ← parseExpr
+    expect .semicolon
+    return .letStructDestructure sp name bindings value
   else
-    pure none
-  expect .assign
-  let value ← parseExpr
-  expect .semicolon
-  return .letDecl sp name isMut ty value
+    -- Normal let binding
+    let ty ← if tk == .colon then
+      advance
+      let t ← parseType
+      pure (some t)
+    else
+      pure none
+    expect .assign
+    let value ← parseExpr
+    expect .semicolon
+    return .letDecl sp name isMut ty value
 
 partial def parseReturn : ParseM Stmt := do
   let sp ← peekSpan
