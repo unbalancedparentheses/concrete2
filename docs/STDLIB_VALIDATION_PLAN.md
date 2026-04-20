@@ -4,7 +4,7 @@ Status: Phase 3, item 61
 
 This document maps each canonical example and pressure test to the stdlib APIs it should use, identifies which programs can be rewritten to use stdlib types instead of ad hoc copies, and defines what "validated" means.
 
-Status note: the `parse_validate` and `service_errors` rewrites described below are now landed. They are kept here as validation rationale and as a template for the remaining canonical-example rewrites.
+Status note: the `parse_validate` and `service_errors` rewrites are landed. Sections 2.1 and 2.2 are marked DONE. The remaining sections are kept as a template for future rewrites.
 
 For the stdlib module inventory, see [STDLIB_TARGET.md](STDLIB_TARGET.md).
 For error handling ergonomics, see [ERROR_HANDLING_DESIGN.md](ERROR_HANDLING_DESIGN.md).
@@ -55,54 +55,13 @@ Programs that pass `--check predictable` continue to pass after rewriting. Progr
 
 ## 2. Example-by-Example Plan
 
-### 2.1 `examples/parse_validate/` --- Phase 3 exit criterion (REQUIRED)
+### 2.1 `examples/parse_validate/` --- Phase 3 exit criterion (DONE)
 
-**Current state.** Defines a custom `ParseResult` enum with `Ok { header }` and `Err { error }` variants, structurally identical to `Result<Header, ParseError>`. Defines a custom `ParseError` Copy enum (6 variants). Individual validators return `i32` (0 = success, nonzero = failure) and the composite `parse_header` function converts these to `ParseResult` through if-then-return chains.
+**Status.** Rewritten to use `std.result.Result<Header, ParseError>` with `?` error propagation. Custom `ParseResult` enum removed. Validators return `Result<(), ParseError>`. Landed and verified (e29389e, 053472b).
 
-**Stdlib types currently used.** None. The program is entirely self-contained with no stdlib imports.
+### 2.2 `examples/service_errors/` --- Phase 3 exit criterion (DONE)
 
-**What it should use after stdlib is complete.**
-- `Result<Header, ParseError>` instead of the custom `ParseResult` enum.
-- `?` operator for error propagation in `parse_header`, replacing the `if validate_x(...) != 0 { return Err; }` chains.
-- Individual validators should return `Result<(), ParseError>` or `Result<T, ParseError>` instead of `i32`.
-
-**Changes needed.**
-1. Remove the `ParseResult` enum definition.
-2. Import `Result`.
-3. Change `parse_header` return type from `ParseResult` to `Result<Header, ParseError>`.
-4. Change individual validators (e.g., `validate_version`) to return `Result<(), ParseError>` instead of `i32`.
-5. Use `?` in `parse_header` to chain validators: `validate_version(data[0])?;` instead of the if-then-return pattern.
-6. Update test `match` arms from `ParseResult::Ok` / `ParseResult::Err` to `Result::Ok` / `Result::Err`.
-7. Verify `--check predictable` still passes.
-
-**Priority.** REQUIRED for Phase 3 exit.
-
-### 2.2 `examples/service_errors/` --- Phase 3 exit criterion (REQUIRED)
-
-**Current state.** Defines three stage-specific result enums (`ValidateResult`, `AuthResult`, `RateResult`) and a unified `ServiceResult`, all structurally identical to `Result<i32, StageError>` and `Result<Response, ServiceError>`. Each pipeline stage uses a 9-line match block to convert one error type to the unified `ServiceError`. The pipeline is split across three functions (`handle_request`, `handle_validated`, `handle_authorized`) solely because each match block is long enough to warrant extraction.
-
-**Stdlib types currently used.** None.
-
-**What it should use after stdlib is complete.**
-- `Result<i32, ValidateError>`, `Result<i32, AuthError>`, `Result<i32, RateLimitError>` for stage functions.
-- `Result<Response, ServiceError>` for the unified pipeline.
-- `Result.map_err` + `?` for error type conversion at each stage boundary.
-- The three intermediate functions (`handle_request`, `handle_validated`, `handle_authorized`) collapse into a single `handle_request` using `map_err` + `?` chaining.
-
-**Changes needed.**
-1. Remove all four custom result enums (`ValidateResult`, `AuthResult`, `RateResult`, `ServiceResult`).
-2. Import `Result`.
-3. Change `validate` to return `Result<i32, ValidateError>`.
-4. Change `authorize` to return `Result<i32, AuthError>`.
-5. Change `check_rate_limit` to return `Result<i32, RateLimitError>`.
-6. Define three error-conversion functions: `fn to_validate_svc(e: ValidateError) -> ServiceError`, `fn to_auth_svc(e: AuthError) -> ServiceError`, `fn to_rate_svc(e: RateLimitError) -> ServiceError`.
-7. Rewrite `handle_request` as a single function using `validate(req).map_err(to_validate_svc)?;` chains.
-8. Remove `handle_validated` and `handle_authorized` (absorbed into `handle_request`).
-9. Update test assertions to match on `Result::Ok` / `Result::Err`.
-
-**Dependency.** Requires `Result.map_err` (Tier 2 in ERROR_HANDLING_DESIGN.md, needs function-pointer-in-generic validation). If `map_err` is not available, the fallback is: keep explicit match blocks but use `Result<T, E>` instead of custom enums, and use `?` where the error type matches.
-
-**Priority.** REQUIRED for Phase 3 exit.
+**Status.** Rewritten to use `std.result.Result<T, E>` with explicit match conversion at stage boundaries (`map_err` not yet available, so conversion functions used with manual match). Custom result enums removed. Landed and verified (053472b, 6d56806).
 
 ### 2.3 `examples/grep/` --- Phase 3 exit criterion (REQUIRED)
 
