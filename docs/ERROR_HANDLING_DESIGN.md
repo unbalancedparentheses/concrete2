@@ -54,18 +54,18 @@ With `Result<T, E>` plus `unwrap_or` or `?`, these ad hoc types are unnecessary 
 
 #### Pain point 2: Verbose match cascades in multi-stage pipelines
 
-The `service_errors` example defines three stage-specific result enums (ValidateResult, AuthResult, RateResult) and a unified ServiceResult. Each pipeline stage requires a full match block to convert one error type to another:
+The shipped `service_errors` example already uses builtin `Result<T, E>` throughout, but it still has to spell out a full match block each time one stage-specific error enum is converted into the unified `ServiceError`:
 
 ```
 // From examples/service_errors/src/main.con
-fn handle_request(req: Request) -> ServiceResult {
+fn handle_request(req: Request) -> Result<Response, ServiceError> {
     match validate(req) {
-        ValidateResult#Err { error } => {
-            return ServiceResult#Err {
-                error: ServiceError#Validation { code: validate_error_code(error) }
+        Result::Err { error } => {
+            return Result::<Response, ServiceError>::Err {
+                error: ServiceError::Validation { code: validate_error_code(error) }
             };
         },
-        ValidateResult#Ok { val } => {
+        Result::Ok { value } => {
             return handle_validated(req);
         },
     }
@@ -74,20 +74,11 @@ fn handle_request(req: Request) -> ServiceResult {
 
 This is 9 lines for what is conceptually "propagate the error with a type conversion." With `map_err` or a `with_context`-style helper, this would be 1-2 lines. With `?` (already supported), the propagation itself is one character, but the error type conversion still requires a manual wrapping step before `?` can apply.
 
-#### Pain point 3: Custom result enums duplicating Result
+#### Pain point 3: Builtin Result still needs better library relief
 
-The `parse_validate` example defines its own `ParseResult` enum:
+The `parse_validate` example no longer defines a custom `ParseResult`; it uses builtin `Result<Header, ParseError>` directly. That cleaned up the public surface and made `?` possible in principle, but the remaining ergonomic pressure did not disappear. Without helpers like `map_err`, `and_then`, and the later destructuring forms, fallible code still expands into explicit match blocks quickly.
 
-```
-enum Copy ParseResult {
-    Ok { header: Header },
-    Err { error: ParseError },
-}
-```
-
-This is structurally identical to `Result<Header, ParseError>` but incompatible with it. The program cannot use `?` on a `ParseResult` because the `?` operator only works with enums that have `Ok` and `Err` variants with the right field names. If the program used `Result<Header, ParseError>` directly, `?` would work and the custom enum would be unnecessary.
-
-The reason the example avoids `Result<Header, ParseError>` is that without helpers, `Result` provides no advantage over a custom enum: either way, every access requires a full match.
+That is the right tradeoff for now: one canonical `Result` is much better than two competing surfaces. The remaining job is library relief and narrowly-scoped syntax relief, not inventing more result types.
 
 ### Target Ergonomics
 
@@ -103,7 +94,7 @@ fn parse_header(data: [i32; 8], len: i32) -> Result<Header, ParseError> {
     let payload_len: i32 = validate_payload_len(data[2], 240)?;
     validate_total_len(len, 4 + payload_len)?;
     validate_checksum(data[4], compute_checksum(data, 4))?;
-    return Result::<Header, ParseError>#Ok { value: Header {
+    return Result::<Header, ParseError>::Ok { value: Header {
         version: version, msg_type: msg_type,
         payload_len: payload_len, checksum: data[4],
     }};
@@ -119,7 +110,7 @@ fn handle_request(req: Request) -> Result<Response, ServiceError> {
     check_rate_limit(req.user_id, req.payload)
         .map_err_with::<ServiceError>(to_service_rate)?;
     let resp: Response = process_action(req.action, req.payload);
-    return Result::<Response, ServiceError>#Ok { value: resp };
+    return Result::<Response, ServiceError>::Ok { value: resp };
 }
 ```
 
@@ -223,8 +214,8 @@ Returns the Ok value, or `default` if Err. Consumes the Result.
 impl<T, E> Result<T, E> {
     pub fn unwrap_or(self, default: T) -> T {
         match self {
-            Result#Ok { value } => { return value; },
-            Result#Err { error } => { return default; },
+            Result::Ok { value } => { return value; },
+            Result::Err { error } => { return default; },
         }
     }
 }
@@ -239,8 +230,8 @@ Converts `Result<T, E>` to `Option<T>`, discarding the error.
 impl<T, E> Result<T, E> {
     pub fn ok(self) -> Option<T> {
         match self {
-            Result#Ok { value } => { return Option::<T>#Some { value: value }; },
-            Result#Err { error } => { return Option::<T>#None; },
+            Result::Ok { value } => { return Option::<T>::Some { value: value }; },
+            Result::Err { error } => { return Option::<T>::None; },
         }
     }
 }
@@ -255,8 +246,8 @@ Converts `Result<T, E>` to `Option<E>`, discarding the success value.
 impl<T, E> Result<T, E> {
     pub fn err(self) -> Option<E> {
         match self {
-            Result#Ok { value } => { return Option::<E>#None; },
-            Result#Err { error } => { return Option::<E>#Some { value: error }; },
+            Result::Ok { value } => { return Option::<E>::None; },
+            Result::Err { error } => { return Option::<E>::Some { value: error }; },
         }
     }
 }
@@ -273,11 +264,11 @@ Transforms the Ok value, leaving Err untouched.
 impl<T, E> Result<T, E> {
     pub fn map<U>(self, f: fn(T) -> U) -> Result<U, E> {
         match self {
-            Result#Ok { value } => {
-                return Result::<U, E>#Ok { value: f(value) };
+            Result::Ok { value } => {
+                return Result::<U, E>::Ok { value: f(value) };
             },
-            Result#Err { error } => {
-                return Result::<U, E>#Err { error: error };
+            Result::Err { error } => {
+                return Result::<U, E>::Err { error: error };
             },
         }
     }
@@ -291,11 +282,11 @@ Transforms the Err value, leaving Ok untouched. This is the critical helper for 
 impl<T, E> Result<T, E> {
     pub fn map_err<F>(self, f: fn(E) -> F) -> Result<T, F> {
         match self {
-            Result#Ok { value } => {
-                return Result::<T, F>#Ok { value: value };
+            Result::Ok { value } => {
+                return Result::<T, F>::Ok { value: value };
             },
-            Result#Err { error } => {
-                return Result::<T, F>#Err { error: f(error) };
+            Result::Err { error } => {
+                return Result::<T, F>::Err { error: f(error) };
             },
         }
     }
@@ -306,7 +297,7 @@ impl<T, E> Result<T, E> {
 
 ```
 fn to_service_error(e: ValidateError) -> ServiceError {
-    return ServiceError#Validation { code: validate_error_code(e) };
+    return ServiceError::Validation { code: validate_error_code(e) };
 }
 
 fn handle_request(req: Request) -> Result<Response, ServiceError> {
@@ -322,8 +313,8 @@ Chains a fallible operation on the Ok value.
 impl<T, E> Result<T, E> {
     pub fn and_then<U>(self, f: fn(T) -> Result<U, E>) -> Result<U, E> {
         match self {
-            Result#Ok { value } => { return f(value); },
-            Result#Err { error } => { return Result::<U, E>#Err { error: error }; },
+            Result::Ok { value } => { return f(value); },
+            Result::Err { error } => { return Result::<U, E>::Err { error: error }; },
         }
     }
 }
@@ -336,8 +327,8 @@ Chains a fallible recovery on the Err value.
 impl<T, E> Result<T, E> {
     pub fn or_else<F>(self, f: fn(E) -> Result<T, F>) -> Result<T, F> {
         match self {
-            Result#Ok { value } => { return Result::<T, F>#Ok { value: value }; },
-            Result#Err { error } => { return f(error); },
+            Result::Ok { value } => { return Result::<T, F>::Ok { value: value }; },
+            Result::Err { error } => { return f(error); },
         }
     }
 }
@@ -350,8 +341,8 @@ Returns the Ok value, or computes a fallback from the error.
 impl<T, E> Result<T, E> {
     pub fn unwrap_or_else(self, f: fn(E) -> T) -> T {
         match self {
-            Result#Ok { value } => { return value; },
-            Result#Err { error } => { return f(error); },
+            Result::Ok { value } => { return value; },
+            Result::Err { error } => { return f(error); },
         }
     }
 }
@@ -362,7 +353,7 @@ impl<T, E> Result<T, E> {
 **`with_context(self, ctx: C) -> Result<T, ContextError<C, E>>`**
 Wraps the error with additional context. This requires a generic `ContextError` wrapper type or a convention for context-carrying error enums. The design depends on how error enums compose in practice.
 
-**Deferred because:** the right design depends on real error-wrapping patterns emerging from more examples. The service_errors example uses flat enum wrapping (ServiceError#Validation { code }), not nested context. Until we see code that genuinely needs nested context (not just error conversion), this is premature.
+**Deferred because:** the right design depends on real error-wrapping patterns emerging from more examples. The service_errors example uses flat enum wrapping (ServiceError::Validation { code }), not nested context. Until we see code that genuinely needs nested context (not just error conversion), this is premature.
 
 **Workaround:** use `map_err` with a function that wraps the error in a larger enum variant. This is what the service_errors example already does, and it is explicit and auditable.
 
@@ -383,8 +374,8 @@ Returns the Some value, or `default` if None.
 impl<T> Option<T> {
     pub fn unwrap_or(self, default: T) -> T {
         match self {
-            Option#Some { value } => { return value; },
-            Option#None => { return default; },
+            Option::Some { value } => { return value; },
+            Option::None => { return default; },
         }
     }
 }
@@ -397,11 +388,11 @@ Converts `Option<T>` to `Result<T, E>`, using the provided error if None.
 impl<T> Option<T> {
     pub fn ok_or<E>(self, err: E) -> Result<T, E> {
         match self {
-            Option#Some { value } => {
-                return Result::<T, E>#Ok { value: value };
+            Option::Some { value } => {
+                return Result::<T, E>::Ok { value: value };
             },
-            Option#None => {
-                return Result::<T, E>#Err { error: err };
+            Option::None => {
+                return Result::<T, E>::Err { error: err };
             },
         }
     }
@@ -411,7 +402,7 @@ impl<T> Option<T> {
 This is the bridge between Option and Result. It enables patterns like:
 
 ```
-let user: User = lookup(id).ok_or::<LookupError>(LookupError#NotFound)?;
+let user: User = lookup(id).ok_or::<LookupError>(LookupError::NotFound)?;
 ```
 
 #### Tier 2: Ship If Function-Pointer-in-Generic Works
@@ -423,10 +414,10 @@ Transforms the Some value.
 impl<T> Option<T> {
     pub fn map<U>(self, f: fn(T) -> U) -> Option<U> {
         match self {
-            Option#Some { value } => {
-                return Option::<U>#Some { value: f(value) };
+            Option::Some { value } => {
+                return Option::<U>::Some { value: f(value) };
             },
-            Option#None => { return Option::<U>#None; },
+            Option::None => { return Option::<U>::None; },
         }
     }
 }
@@ -471,8 +462,8 @@ The `?` operator:
 ```
 let __tmp: Result<T, E> = expr;
 match __tmp {
-    Result#Ok { value } => { /* v = value; continue */ },
-    Result#Err { error } => {
+    Result::Ok { value } => { /* v = value; continue */ },
+    Result::Err { error } => {
         /* run all deferred calls */
         return __tmp;
     },
@@ -554,9 +545,9 @@ enum Copy ParseError {
 fn parse_int(c: Cursor) -> Result<IntValue, ParseError> {
     // ...
     if digits == 0 {
-        return Result::<IntValue, ParseError>#Err { error: ParseError#NoDigits };
+        return Result::<IntValue, ParseError>::Err { error: ParseError::NoDigits };
     }
-    return Result::<IntValue, ParseError>#Ok { value: IntValue {
+    return Result::<IntValue, ParseError>::Ok { value: IntValue {
         cursor: cur, value: val * sign
     }};
 }
@@ -579,12 +570,12 @@ The ad hoc `ok: i32` field is gone. Error handling is compiler-enforced. The `?`
 
 fn handle_request(req: Request) -> ServiceResult {
     match validate(req) {
-        ValidateResult#Err { error } => {
-            return ServiceResult#Err {
-                error: ServiceError#Validation { code: validate_error_code(error) }
+        ValidateResult::Err { error } => {
+            return ServiceResult::Err {
+                error: ServiceError::Validation { code: validate_error_code(error) }
             };
         },
-        ValidateResult#Ok { val } => {
+        ValidateResult::Ok { val } => {
             return handle_validated(req);
         },
     }
@@ -595,15 +586,15 @@ fn handle_request(req: Request) -> ServiceResult {
 
 ```
 fn to_validate_svc(e: ValidateError) -> ServiceError {
-    return ServiceError#Validation { code: validate_error_code(e) };
+    return ServiceError::Validation { code: validate_error_code(e) };
 }
 
 fn to_auth_svc(e: AuthError) -> ServiceError {
-    return ServiceError#Auth { code: auth_error_code(e) };
+    return ServiceError::Auth { code: auth_error_code(e) };
 }
 
 fn to_rate_svc(e: RateLimitError) -> ServiceError {
-    return ServiceError#RateLimit { code: rate_error_code(e) };
+    return ServiceError::RateLimit { code: rate_error_code(e) };
 }
 
 fn handle_request(req: Request) -> Result<Response, ServiceError> {
@@ -612,7 +603,7 @@ fn handle_request(req: Request) -> Result<Response, ServiceError> {
     check_rate_limit(req.user_id, req.payload)
         .map_err::<ServiceError>(to_rate_svc)?;
     let resp: Response = process_action(req.action, req.payload);
-    return Result::<Response, ServiceError>#Ok { value: resp };
+    return Result::<Response, ServiceError>::Ok { value: resp };
 }
 ```
 
@@ -643,10 +634,10 @@ if pr.ok == 0 {
 ```
 fn int_ring_pop(r: IntRing) -> Option<PopValue> {
     if r.count == 0 {
-        return Option::<PopValue>#None;
+        return Option::<PopValue>::None;
     }
     // ...
-    return Option::<PopValue>#Some { value: PopValue { val: val, ring: new_ring } };
+    return Option::<PopValue>::Some { value: PopValue { val: val, ring: new_ring } };
 }
 
 let pop: Option<PopValue> = int_ring_pop(ring);

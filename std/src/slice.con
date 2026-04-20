@@ -7,10 +7,10 @@ mod slice {
     trusted impl<T> Slice<T> {
         pub fn get(&self, at: u64) -> Option<&T> {
             if at >= self.len {
-                return Option::<&T>#None;
+                return Option::<&T>::None;
             }
             let target_ptr: *const T = self.ptr + at;
-            return Option::<&T>#Some { value: target_ptr as &T };
+            return Option::<&T>::Some { value: target_ptr as &T };
         }
 
         pub fn get_unchecked(&self, at: u64) -> &T {
@@ -35,10 +35,10 @@ mod slice {
     trusted impl<T> MutSlice<T> {
         pub fn get(&self, at: u64) -> Option<&T> {
             if at >= self.len {
-                return Option::<&T>#None;
+                return Option::<&T>::None;
             }
             let target_ptr: *mut T = self.ptr + at;
-            return Option::<&T>#Some { value: target_ptr as &T };
+            return Option::<&T>::Some { value: target_ptr as &T };
         }
 
         pub fn get_unchecked(&self, at: u64) -> &T {
@@ -68,8 +68,6 @@ mod slice {
             return self.len == 0;
         }
     }
-
-    import std.option.{Option};
     import std.vec.{Vec};
     import std.test.{assert_eq, assert_true};
 
@@ -138,29 +136,29 @@ mod slice {
         // In-bounds access should return Some
         let r0: Option<&i32> = s.get(0);
         match r0 {
-            Option#Some { value } => {
+            Option::Some { value } => {
                 if !assert_eq::<i32>(*value, 10, "get(0) should be 10") { v.drop(); return 1; }
             },
-            Option#None => { v.drop(); return 2; },
+            Option::None => { v.drop(); return 2; },
         }
         let r2: Option<&i32> = s.get(2);
         match r2 {
-            Option#Some { value } => {
+            Option::Some { value } => {
                 if !assert_eq::<i32>(*value, 30, "get(2) should be 30") { v.drop(); return 1; }
             },
-            Option#None => { v.drop(); return 3; },
+            Option::None => { v.drop(); return 3; },
         }
 
         // Out-of-bounds access should return None
         let oob: Option<&i32> = s.get(3);
         match oob {
-            Option#Some { value } => { v.drop(); return 4; },
-            Option#None => {},
+            Option::Some { value } => { v.drop(); return 4; },
+            Option::None => {},
         }
         let oob2: Option<&i32> = s.get(100);
         match oob2 {
-            Option#Some { value } => { v.drop(); return 5; },
-            Option#None => {},
+            Option::Some { value } => { v.drop(); return 5; },
+            Option::None => {},
         }
 
         v.drop();
@@ -177,17 +175,17 @@ mod slice {
         // In-bounds get
         let r0: Option<&i32> = ms.get(0);
         match r0 {
-            Option#Some { value } => {
+            Option::Some { value } => {
                 if !assert_eq::<i32>(*value, 42, "get(0) should be 42") { v.drop(); return 1; }
             },
-            Option#None => { v.drop(); return 2; },
+            Option::None => { v.drop(); return 2; },
         }
 
         // Out-of-bounds get
         let oob: Option<&i32> = ms.get(2);
         match oob {
-            Option#Some { value } => { v.drop(); return 3; },
-            Option#None => {},
+            Option::Some { value } => { v.drop(); return 3; },
+            Option::None => {},
         }
 
         v.drop();

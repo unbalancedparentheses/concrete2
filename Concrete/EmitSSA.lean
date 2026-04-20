@@ -1323,7 +1323,7 @@ def emitSSAProgram (modules : List SModule) (testMode : Bool := false) (moduleFi
       builtinId := some .option }
   let resultDef : CEnumDef :=
     { name := resultEnumName, typeParams := ["T", "E"],
-      variants := [(okVariantName, [("value", .typeVar "T")]), (errVariantName, [("value", .typeVar "E")])],
+      variants := [(okVariantName, [("value", .typeVar "T")]), (errVariantName, [("error", .typeVar "E")])],
       builtinId := some .result }
   let builtinEnums : List CEnumDef := [optionDef, resultDef]
   let s := { s with structDefs := allStructs, enumDefs := builtinEnums ++ allEnums }

@@ -14,11 +14,9 @@ backtracking. Key design points:
   commits; it must be followed by `self` or `mut self`, otherwise error.
 - **Turbofish in types** (`Name::<T>`): `::` in type position commits to
   turbofish; `<` is required after `::`.
-- **Turbofish / module path in expressions** (`name::<T>`, `mod::name`):
-  `::` commits; must be followed by `<` or an identifier.
-- **Enum dot-syntax** (`Enum.Variant`): handled in `parsePostfix` after
-  `.field` is already consumed; decided by checking if both base name and
-  field name start with an uppercase letter.
+- **Turbofish / qualification in expressions** (`name::<T>`, `mod::name`,
+  `Type::Variant`, `Type::method(...)`): `::` commits; LL(1) disambiguation
+  happens with the next token and, for `ident`, the base-name casing.
 - **Top-level `mod`**: left-factored; `mod name` is consumed once, then
   `{` vs `;` decides inline block vs file import.
 
@@ -417,42 +415,88 @@ partial def parsePrimary : ParseM Expr := do
   | .ident name =>
     let sp ← peekSpan
     advance
-    -- Check for turbofish or module path: name::<Type, ...> or mod::name(...)
+    -- Check for turbofish or qualification:
+    --   name::<Type, ...>
+    --   mod::name(...)
+    --   Type::Variant
+    --   Type::method(...)
     let next ← peek
-    let mut qualName := name
     let mut typeArgs : List Ty := []
     if next == .doubleColon then
       advance  -- consume '::', committed
       let afterDC ← peek
       if afterDC == .lt then
-        -- Turbofish: name::<Type, ...>
         advance
         typeArgs ← parseTypeArgList
         expect .gt
-        -- Check for chained ::method after turbofish: Name::<T>::method(args)
-        let afterTF ← peek
-        if afterTF == .doubleColon then
-          advance
-          let methodName ← expectIdent
-          qualName := name ++ "_" ++ methodName
       else
         match afterDC with
         | .ident nextName =>
-          -- Module path: mod::name
           advance
-          qualName := name ++ "_" ++ nextName
-          -- Check for turbofish after module path: mod::name::<T>
-          let next3 ← peek
-          if next3 == .doubleColon then
-            advance
-            expect .lt
-            typeArgs ← parseTypeArgList
-            expect .gt
+          let isTypeName := name.length > 0 && (name.toList.head!).isUpper
+          let next2 ← peek
+          if isTypeName then
+            if next2 == .lparen then
+              advance
+              let args ← parseCallArgs
+              expect .rparen
+              return .staticMethodCall sp name nextName [] args
+            else if next2 == .lbrace then
+              expect .lbrace
+              let fields ← parseStructLitFields
+              expect .rbrace
+              return .enumLit sp name nextName [] fields
+            else
+              return .enumLit sp name nextName [] []
+          else
+            let qualName := name ++ "_" ++ nextName
+            let mut qualTypeArgs : List Ty := []
+            if next2 == .doubleColon then
+              advance
+              expect .lt
+              qualTypeArgs ← parseTypeArgList
+              expect .gt
+            let next3 ← peek
+            if next3 == .lparen then
+              advance
+              let args ← parseCallArgs
+              expect .rparen
+              let wtk ← peek
+              if wtk == .with_ then
+                advance
+                expect .lparen
+                let allocName ← expectIdent
+                if allocName != "Alloc" then
+                  throwParse "call-site with() can only bind Alloc"
+                expect .assign
+                let allocExpr ← parseExpr
+                expect .rparen
+                return .allocCall sp (.call sp qualName qualTypeArgs args) allocExpr
+              else
+                return .call sp qualName qualTypeArgs args
+            else
+              return .ident sp qualName
         | _ =>
           let sp ← peekSpan
           throwParse s!"expected '<' or identifier after '::', got {afterDC}" (span := some sp)
     let next2 ← peek
-    if next2 == .lparen then
+    if next2 == .doubleColon then
+      advance
+      let memberName ← expectIdent
+      let next3 ← peek
+      if next3 == .lparen then
+        advance
+        let args ← parseCallArgs
+        expect .rparen
+        return .staticMethodCall sp name memberName typeArgs args
+      else if next3 == .lbrace then
+        expect .lbrace
+        let fields ← parseStructLitFields
+        expect .rbrace
+        return .enumLit sp name memberName typeArgs fields
+      else
+        return .enumLit sp name memberName typeArgs []
+    else if next2 == .lparen then
       advance
       let args ← parseCallArgs
       expect .rparen
@@ -467,28 +511,9 @@ partial def parsePrimary : ParseM Expr := do
         expect .assign
         let allocExpr ← parseExpr
         expect .rparen
-        return .allocCall sp (.call sp qualName typeArgs args) allocExpr
+        return .allocCall sp (.call sp name typeArgs args) allocExpr
       else
-        return .call sp qualName typeArgs args
-    else if next2 == .hash then
-      -- Enum literal or static method call: Name#Variant { ... } or Name#method(args)
-      advance
-      let variant ← expectIdent
-      let next3 ← peek
-      if next3 == .lparen then
-        -- Static method call: TypeName#method(args)
-        advance
-        let args ← parseCallArgs
-        expect .rparen
-        return .staticMethodCall sp name variant typeArgs args
-      else if next3 == .lbrace then
-        expect .lbrace
-        let fields ← parseStructLitFields
-        expect .rbrace
-        return .enumLit sp name variant typeArgs fields
-      else
-        -- Fieldless enum literal: Name#Variant (no braces)
-        return .enumLit sp name variant typeArgs []
+        return .call sp name typeArgs args
     else if next2 == .lbrace then
       -- Could be struct literal: Name[::<Type>] { field: val, ... }
       if name.length > 0 && (name.toList.head!).isUpper then
@@ -617,38 +642,23 @@ partial def parsePostfixNoAs (e : Expr) : ParseM Expr := do
       let fieldName ← match nextTk with
         | .intLit n => advance; pure (toString n)
         | _ => expectIdent
-      let isEnumLit := match result with
-        | .ident _ baseName => baseName.length > 0 && (baseName.toList.head!).isUpper
-                               && fieldName.length > 0 && (fieldName.toList.head!).isUpper
-        | _ => false
-      if isEnumLit then
-        let baseName := match result with | .ident _ n => n | _ => ""
-        let next ← peek
-        if next == .lbrace then
-          advance
-          let fields ← parseStructLitFields
-          expect .rbrace
-          result := .enumLit result.getSpan baseName fieldName [] fields
-        else
-          result := .enumLit result.getSpan baseName fieldName [] []
+      let next ← peek
+      if next == .doubleColon then
+        advance
+        expect .lt
+        let targs ← parseTypeArgList
+        expect .gt
+        expect .lparen
+        let args ← parseCallArgs
+        expect .rparen
+        result := .methodCall result.getSpan result fieldName targs args
+      else if next == .lparen then
+        advance
+        let args ← parseCallArgs
+        expect .rparen
+        result := .methodCall result.getSpan result fieldName [] args
       else
-        let next ← peek
-        if next == .doubleColon then
-          advance
-          expect .lt
-          let targs ← parseTypeArgList
-          expect .gt
-          expect .lparen
-          let args ← parseCallArgs
-          expect .rparen
-          result := .methodCall result.getSpan result fieldName targs args
-        else if next == .lparen then
-          advance
-          let args ← parseCallArgs
-          expect .rparen
-          result := .methodCall result.getSpan result fieldName [] args
-        else
-          result := .fieldAccess result.getSpan result fieldName
+        result := .fieldAccess result.getSpan result fieldName
     else if tk == .question then
       advance
       result := .try_ result.getSpan result
@@ -675,41 +685,25 @@ partial def parsePostfix (e : Expr) : ParseM Expr := do
       let fieldName ← match nextTk with
         | .intLit n => advance; pure (toString n)
         | _ => expectIdent
-      -- Check for enum literal: UppercaseName.UppercaseVariant (LL(1): decided by case)
-      let isEnumLit := match result with
-        | .ident _ baseName => baseName.length > 0 && (baseName.toList.head!).isUpper
-                               && fieldName.length > 0 && (fieldName.toList.head!).isUpper
-        | _ => false
-      if isEnumLit then
-        let baseName := match result with | .ident _ n => n | _ => ""
-        let next ← peek
-        if next == .lbrace then
-          advance
-          let fields ← parseStructLitFields
-          expect .rbrace
-          result := .enumLit result.getSpan baseName fieldName [] fields
-        else
-          result := .enumLit result.getSpan baseName fieldName [] []
+      -- Check if this is a method call: .name(args) or .name::<T>(args)
+      let next ← peek
+      if next == .doubleColon then
+        -- Method call with turbofish: .name::<T, U>(args)
+        advance
+        expect .lt
+        let targs ← parseTypeArgList
+        expect .gt
+        expect .lparen
+        let args ← parseCallArgs
+        expect .rparen
+        result := .methodCall result.getSpan result fieldName targs args
+      else if next == .lparen then
+        advance
+        let args ← parseCallArgs
+        expect .rparen
+        result := .methodCall result.getSpan result fieldName [] args
       else
-        -- Check if this is a method call: .name(args) or .name::<T>(args)
-        let next ← peek
-        if next == .doubleColon then
-          -- Method call with turbofish: .name::<T, U>(args)
-          advance
-          expect .lt
-          let targs ← parseTypeArgList
-          expect .gt
-          expect .lparen
-          let args ← parseCallArgs
-          expect .rparen
-          result := .methodCall result.getSpan result fieldName targs args
-        else if next == .lparen then
-          advance
-          let args ← parseCallArgs
-          expect .rparen
-          result := .methodCall result.getSpan result fieldName [] args
-        else
-          result := .fieldAccess result.getSpan result fieldName
+        result := .fieldAccess result.getSpan result fieldName
     else if tk == .question then
       advance
       result := .try_ result.getSpan result
@@ -1121,23 +1115,17 @@ partial def parseMatchArm : ParseM MatchArm := do
   | .ident name =>
     advance
     let next ← peek
-    -- Check if this is EnumName#Variant or EnumName.Variant
-    if next == .hash || next == .dot || next == .doubleColon then
+    if next == .doubleColon then
       let enumName := name
-      -- Check for turbofish: EnumName::<T>#Variant
-      let _typeArgs ← if next == .doubleColon then
-        advance
+      advance
+      let _typeArgs ← if (← peek) == .lt then
         expect .lt
         let targs ← parseTypeArgList
         expect .gt
+        expect .doubleColon
         pure targs
       else
         pure []
-      -- Support both # and . as enum separator
-      let sep ← peek
-      if sep == .hash then advance
-      else if sep == .dot then advance
-      else throwParse s!"expected # or . in match pattern, got {sep}"
       let variant ← expectIdent
       -- Check for field bindings
       let next2 ← peek

@@ -4,6 +4,8 @@ Status: design document (Phase 3, item 62)
 
 This document designs pattern destructuring for Concrete. The goal is to reduce match verbosity for common enum-extraction patterns without introducing name resolution magic, inference, or parser backtracking. Every form described here desugars to an existing `match` expression and preserves the LL(1) grammar invariant.
 
+Note: some examples below use older schematic names such as `ParseResult` or `ServiceResult` to isolate the destructuring shape. The shipped canonical examples now use builtin `Result<T, E>` directly.
+
 For the LL(1) grammar commitment, see `research/compiler/ll1-grammar.md`.
 For what Concrete permanently excludes, see [ANTI_FEATURES.md](ANTI_FEATURES.md).
 For the error handling context that motivates this, see [ERROR_HANDLING_DESIGN.md](ERROR_HANDLING_DESIGN.md).
@@ -22,12 +24,12 @@ From `examples/service_errors/src/main.con`, lines 208-219:
 ```
 fn handle_request(req: Request) -> ServiceResult {
     match validate(req) {
-        ValidateResult#Err { error } => {
-            return ServiceResult#Err {
-                error: ServiceError#Validation { code: validate_error_code(error) }
+        ValidateResult::Err { error } => {
+            return ServiceResult::Err {
+                error: ServiceError::Validation { code: validate_error_code(error) }
             };
         },
-        ValidateResult#Ok { val } => {
+        ValidateResult::Ok { val } => {
             return handle_validated(req);
         },
     }
@@ -42,13 +44,13 @@ From `examples/parse_validate/src/main.con`, lines 162-170:
 
 ```
 match parse_header(good, 5) {
-    ParseResult#Ok { header } => {
+    ParseResult::Ok { header } => {
         if header.version != 1 { return 11; }
         if header.msg_type != 2 { return 12; }
         if header.payload_len != 0 { return 13; }
         if header.checksum != 3 { return 14; }
     },
-    ParseResult#Err { error } => { return 10; },
+    ParseResult::Err { error } => { return 10; },
 }
 ```
 
@@ -60,8 +62,8 @@ From `examples/service_errors/src/main.con`, lines 240-245:
 
 ```
 match handle_request(bad_user) {
-    ServiceResult#Ok { response } => { return 20; },
-    ServiceResult#Err { error } => {
+    ServiceResult::Ok { response } => { return 20; },
+    ServiceResult::Err { error } => {
         if service_error_code(error) != 101 { return 21; }
     },
 }
@@ -80,7 +82,7 @@ In `examples/service_errors/src/main.con`: 9 match blocks for tests, 3 match blo
 ### Syntax
 
 ```
-let Type#Variant { field1, field2 } = expr;
+let Type::Variant { field1, field2 } = expr;
 ```
 
 ### When this is safe
@@ -100,7 +102,7 @@ enum Token {
     Ident { name: String },
 }
 
-let Token#Ident { name } = next_token();
+let Token::Ident { name } = next_token();
 // `name` is now bound
 ```
 
@@ -112,7 +114,7 @@ let Point { x, y } = make_point();
 // `x` and `y` are now bound
 ```
 
-Note: struct destructuring uses `let Type { field1, field2 } = expr;` (no `#Variant` because structs have no variants). The parser distinguishes this from enum destructuring by the absence of `#`.
+Note: struct destructuring uses `let Type { field1, field2 } = expr;` (no `::Variant` because structs have no variants). The parser distinguishes this from enum destructuring by the absence of `::Variant`.
 
 ### LL(1) parse rule
 
@@ -127,8 +129,8 @@ The new production adds an alternative path after `let`:
 ```
 LetStmt ::= 'let' ['mut'] LetTarget [':' Type] '=' Expr ';'
 
-LetTarget ::= IDENT                                    -- plain binding (existing)
-            | IDENT '#' IDENT '{' BindingList '}'      -- enum destructure
+LetTarget ::= IDENT                                     -- plain binding (existing)
+            | IDENT '::' IDENT '{' BindingList '}'      -- enum destructure
             | IDENT '{' BindingList '}'                 -- struct destructure
 
 BindingList ::= IDENT (',' IDENT)* [',']
@@ -136,7 +138,7 @@ BindingList ::= IDENT (',' IDENT)* [',']
 
 **LL(1) analysis:** After `let` (and optional `mut`), the parser reads an IDENT. It then peeks at the next token:
 
-- `#` -- enum destructuring. Committed. Read variant name, expect `{`, read bindings, expect `}`.
+- `::` -- enum destructuring. Committed. Read variant name, expect `{`, read bindings, expect `}`.
 - `{` -- struct destructuring (only if IDENT starts with uppercase, same convention as struct literals). Committed. Read bindings, expect `}`.
 - `:` or `=` -- plain let binding (existing path).
 
@@ -145,14 +147,14 @@ This is decided with one token of lookahead after consuming the first IDENT. No 
 ### Desugaring
 
 ```
-let Option#Some { value } = expr;
+let Option::Some { value } = expr;
 ```
 
 Desugars to:
 
 ```
 match expr {
-    Option#Some { value } => {},
+    Option::Some { value } => {},
 }
 ```
 
@@ -181,7 +183,7 @@ Or equivalently, to a single-arm match where the struct is the sole "variant."
 ### Syntax
 
 ```
-let Type#Variant { field1, field2 } = expr else {
+let Type::Variant { field1, field2 } = expr else {
     // diverging body: must return, break, continue, or abort
 };
 ```
@@ -195,9 +197,9 @@ If `expr` matches the pattern, the bindings are introduced into the surrounding 
 **Extract Ok or return the error:**
 
 ```
-let Result#Ok { value } = validate(req) else {
-    return ServiceResult#Err {
-        error: ServiceError#Validation { code: validate_error_code(error) }
+let Result::Ok { value } = validate(req) else {
+    return ServiceResult::Err {
+        error: ServiceError::Validation { code: validate_error_code(error) }
     };
 };
 // `value` is now bound, continue with the happy path
@@ -216,12 +218,12 @@ For cases where the error value is needed, a full match remains the right tool:
 ```
 // When you need the error value, use match -- this is the right tool
 match validate(req) {
-    ValidateResult#Ok { val } => {
+    ValidateResult::Ok { val } => {
         // continue
     },
-    ValidateResult#Err { error } => {
-        return ServiceResult#Err {
-            error: ServiceError#Validation { code: validate_error_code(error) }
+    ValidateResult::Err { error } => {
+        return ServiceResult::Err {
+            error: ServiceError::Validation { code: validate_error_code(error) }
         };
     },
 }
@@ -231,7 +233,7 @@ match validate(req) {
 
 ```
 // Extract the header or return a fixed error code
-let ParseResult#Ok { header } = parse_header(good, 5) else {
+let ParseResult::Ok { header } = parse_header(good, 5) else {
     return 10;
 };
 if header.version != 1 { return 11; }
@@ -240,14 +242,14 @@ if header.msg_type != 2 { return 12; }
 
 ```
 // Extract a value or use a default via return-from-block
-let Option#Some { value } = lookup(key) else {
+let Option::Some { value } = lookup(key) else {
     return default_value;
 };
 ```
 
 ```
 // In a loop: skip non-matching items
-let PacketType#Data { payload } = classify(raw) else {
+let PacketType::Data { payload } = classify(raw) else {
     continue;
 };
 process(payload);
@@ -273,7 +275,7 @@ Note: a plain `let x = expr else { ... };` (without a destructuring pattern) is 
 ### Desugaring
 
 ```
-let Result#Ok { value } = expr else {
+let Result::Ok { value } = expr else {
     return err;
 };
 // ... rest of function using `value` ...
@@ -283,7 +285,7 @@ Desugars to:
 
 ```
 match expr {
-    Result#Ok { value } => {
+    Result::Ok { value } => {
         // ... rest of function using `value` ...
     },
     _ => {
@@ -320,20 +322,20 @@ These boundaries are deliberate. Each exclusion avoids a specific source of comp
 let Some(x) = expr;
 
 // MUST write:
-let Option#Some { value } = expr;
+let Option::Some { value } = expr;
 ```
 
-Bare variant names (`Some`, `Ok`, `Err`) require the parser or resolver to know which enum a variant belongs to. This couples parsing to name resolution -- a phase separation violation. Concrete's `Type#Variant` syntax makes the enum explicit at every use site. This is more verbose but eliminates an entire category of ambiguity.
+Bare variant names (`Some`, `Ok`, `Err`) require the parser or resolver to know which enum a variant belongs to. This couples parsing to name resolution -- a phase separation violation. Concrete's `Type::Variant` syntax makes the enum explicit at every use site. This is more verbose but eliminates an entire category of ambiguity.
 
 ### No nested patterns
 
 ```
 // NOT supported:
-let Result#Ok { value: Option#Some { inner } } = expr;
+let Result::Ok { value: Option::Some { inner } } = expr;
 
 // Instead, destructure in stages:
-let Result#Ok { value } = expr else { return err; };
-let Option#Some { inner } = value else { return err2; };
+let Result::Ok { value } = expr else { return err; };
+let Option::Some { inner } = value else { return err2; };
 ```
 
 Nested patterns require recursive pattern parsing, complicate error messages, and make the desugaring non-trivial (multiple match levels). Staged destructuring is more explicit and produces better error locations.
@@ -342,7 +344,7 @@ Nested patterns require recursive pattern parsing, complicate error messages, an
 
 ```
 // NOT supported:
-if let Option#Some { value } = expr {
+if let Option::Some { value } = expr {
     // use value
 }
 ```
@@ -353,7 +355,7 @@ if let Option#Some { value } = expr {
 
 ```
 // NOT supported:
-while let Option#Some { item } = iter.next() {
+while let Option::Some { item } = iter.next() {
     // process item
 }
 ```
@@ -364,7 +366,7 @@ Same reasoning as `if let`. Deferred. When Concrete gains iterator patterns, `wh
 
 ```
 // NOT supported:
-fn process(Result#Ok { value }: Result<i32, Error>) -> i32 { ... }
+fn process(Result::Ok { value }: Result<i32, Error>) -> i32 { ... }
 ```
 
 Function parameter patterns require the parser to handle patterns in parameter position, complicating `parseParam`. They also make function signatures harder to read. Concrete requires explicit parameter names and types.
@@ -374,7 +376,7 @@ Function parameter patterns require the parser to handle patterns in parameter p
 ```
 // NOT supported:
 match expr {
-    Option#Some { value } if value > 0 => { ... },
+    Option::Some { value } if value > 0 => { ... },
     _ => { ... },
 }
 ```
@@ -394,7 +396,7 @@ Concrete does not have tuple types. Structs serve the same role with named field
 
 ```
 // NOT supported:
-let Result#Ok { value: _ } = expr;
+let Result::Ok { value: _ } = expr;
 ```
 
 For the first release, every binding name in a destructuring pattern binds a variable. There is no wildcard. If a field is not needed, bind it and let the unused-variable checker flag it (or, for Copy types, simply ignore it). Wildcards can be added later without grammar changes -- `_` is already a valid identifier character, but a standalone `_` would need to be special-cased.
@@ -407,14 +409,14 @@ For the first release, every binding name in a destructuring pattern binds a var
 
 Source:
 ```
-let EnumType#Variant { a, b, c } = expr;
+let EnumType::Variant { a, b, c } = expr;
 CONTINUATION
 ```
 
 Desugars to:
 ```
 match expr {
-    EnumType#Variant { a, b, c } => {
+    EnumType::Variant { a, b, c } => {
         CONTINUATION
     },
 }
@@ -446,7 +448,7 @@ Note on linearity: if the struct is linear, all fields must be bound. Binding a 
 
 Source:
 ```
-let EnumType#Variant { a, b } = expr else {
+let EnumType::Variant { a, b } = expr else {
     DIVERGING_BODY
 };
 CONTINUATION
@@ -455,7 +457,7 @@ CONTINUATION
 Desugars to:
 ```
 match expr {
-    EnumType#Variant { a, b } => {
+    EnumType::Variant { a, b } => {
         CONTINUATION
     },
     _ => {
@@ -470,7 +472,7 @@ The wildcard arm handles all non-matching variants. The checker verifies that `D
 
 Source:
 ```
-let mut EnumType#Variant { a } = expr else {
+let mut EnumType::Variant { a } = expr else {
     return err;
 };
 a = a + 1;
@@ -480,7 +482,7 @@ The `mut` applies to the bound variables. Desugars with mutable bindings:
 
 ```
 match expr {
-    EnumType#Variant { a } => {
+    EnumType::Variant { a } => {
         let mut a = a;  // rebind as mutable
         a = a + 1;
     },
@@ -530,7 +532,7 @@ Modified logic after reading the first IDENT:
 ```
 let name ← expectIdent
 let tk ← peek
-if tk == .hash then
+if tk == .doubleColon then
   -- Enum destructuring: name is the enum type name
   advance
   let variant ← expectIdent
@@ -583,7 +585,7 @@ Every new decision point uses one-token lookahead:
 
 | After consuming | Peek token | Decision |
 |----------------|------------|----------|
-| `let [mut] IDENT` | `#` | Enum destructuring |
+| `let [mut] IDENT` | `::` | Enum destructuring |
 | `let [mut] IDENT` | `{` (+ uppercase check) | Struct destructuring |
 | `let [mut] IDENT` | `:` or `=` | Plain let binding |
 | `... = Expr` | `else` | Has else clause |
@@ -599,7 +601,7 @@ Destructuring must respect Concrete's linear ownership model.
 
 ### Consuming the scrutinee
 
-When `let Type#Variant { a, b } = expr`, the expression `expr` is consumed. Its value is moved into the match. If the pattern matches, the variant's fields become new bindings. The original value no longer exists.
+When `let Type::Variant { a, b } = expr`, the expression `expr` is consumed. Its value is moved into the match. If the pattern matches, the variant's fields become new bindings. The original value no longer exists.
 
 For Copy types, this is trivially correct -- the value is copied into the match, and the bindings are copies of the fields.
 
@@ -611,8 +613,8 @@ If a linear enum variant has three fields and the destructuring only binds two, 
 
 ```
 // Error: linear type Result<File, IoError> -- all fields must be bound
-let Result#Ok { value } = open(path) else { return err; };
-// This is fine IF Result<File, IoError>#Ok has exactly one field named `value`
+let Result::Ok { value } = open(path) else { return err; };
+// This is fine IF Result<File, IoError>::Ok has exactly one field named `value`
 ```
 
 ### `let...else` and the wildcard arm
@@ -634,17 +636,17 @@ For Copy enum variants, binding a subset of fields is allowed. Un-bound fields a
 **Before** (8 lines):
 ```
 match parse_header(good, 5) {
-    ParseResult#Ok { header } => {
+    ParseResult::Ok { header } => {
         if header.version != 1 { return 11; }
         if header.msg_type != 2 { return 12; }
     },
-    ParseResult#Err { error } => { return 10; },
+    ParseResult::Err { error } => { return 10; },
 }
 ```
 
 **After** (5 lines):
 ```
-let ParseResult#Ok { header } = parse_header(good, 5) else {
+let ParseResult::Ok { header } = parse_header(good, 5) else {
     return 10;
 };
 if header.version != 1 { return 11; }
@@ -659,12 +661,12 @@ The control flow is linear instead of nested. The happy path is at the top inden
 ```
 fn handle_request(req: Request) -> ServiceResult {
     match validate(req) {
-        ValidateResult#Err { error } => {
-            return ServiceResult#Err {
-                error: ServiceError#Validation { code: validate_error_code(error) }
+        ValidateResult::Err { error } => {
+            return ServiceResult::Err {
+                error: ServiceError::Validation { code: validate_error_code(error) }
             };
         },
-        ValidateResult#Ok { val } => {
+        ValidateResult::Ok { val } => {
             return handle_validated(req);
         },
     }
@@ -675,12 +677,12 @@ fn handle_request(req: Request) -> ServiceResult {
 ```
 fn handle_request(req: Request) -> ServiceResult {
     match validate(req) {
-        ValidateResult#Err { error } => {
-            return ServiceResult#Err {
-                error: ServiceError#Validation { code: validate_error_code(error) }
+        ValidateResult::Err { error } => {
+            return ServiceResult::Err {
+                error: ServiceError::Validation { code: validate_error_code(error) }
             };
         },
-        ValidateResult#Ok { val } => {
+        ValidateResult::Ok { val } => {
             return handle_validated(req);
         },
     }
@@ -694,8 +696,8 @@ This is an important boundary: `let...else` does not help when the else block ne
 **Before** (5 lines, repeated 9 times in service_errors):
 ```
 match handle_request(bad_user) {
-    ServiceResult#Ok { response } => { return 20; },
-    ServiceResult#Err { error } => {
+    ServiceResult::Ok { response } => { return 20; },
+    ServiceResult::Err { error } => {
         if service_error_code(error) != 101 { return 21; }
     },
 }
@@ -703,7 +705,7 @@ match handle_request(bad_user) {
 
 **After** (3 lines):
 ```
-let ServiceResult#Err { error } = handle_request(bad_user) else {
+let ServiceResult::Err { error } = handle_request(bad_user) else {
     return 20;
 };
 if service_error_code(error) != 101 { return 21; }
@@ -737,7 +739,7 @@ let Ok(value) = validate(req) else {
 };
 ```
 
-Rust uses bare variant names (`Ok`, `Err`). This works because Rust's name resolution knows which enum a variant belongs to. Concrete cannot do this without coupling the parser to name resolution (violates phase separation). Concrete requires `Type#Variant` instead.
+Rust uses bare variant names (`Ok`, `Err`). This works because Rust's name resolution knows which enum a variant belongs to. Concrete cannot do this without coupling the parser to name resolution (violates phase separation). Concrete requires `Type::Variant` instead.
 
 Rust allows nested patterns (`let Ok(Some(x)) = ...`). Concrete does not, by design, to keep the first release simple.
 
@@ -780,7 +782,7 @@ Zig's `orelse` provides a fallback when an optional/error union is null/error. T
 | Feature | Concrete | Rust | Swift | Kotlin | Zig |
 |---------|----------|------|-------|--------|-----|
 | Keyword | `let...else` | `let...else` | `guard let...else` | `val...?:` | `orelse` / `if` capture |
-| Requires full type | Yes (`Type#Variant`) | No (bare variant) | No (implicit optional) | No (nullable) | No (error union) |
+| Requires full type | Yes (`Type::Variant`) | No (bare variant) | No (implicit optional) | No (nullable) | No (error union) |
 | Nested patterns | No | Yes | No | N/A | No |
 | Else block access to error | No | No | No | N/A | Yes |
 | Else must diverge | Yes | Yes | Yes | No (Elvis returns value) | No (orelse returns value) |
@@ -805,10 +807,10 @@ No changes are needed to Core IR, SSA, LLVM emission, or the proof pipeline. The
 
 These are not part of this design but would be natural additions later:
 
-- **`if let`**: `if let Type#Variant { x } = expr { ... }` -- syntactic sugar for a match with two arms (one matching, one fallthrough). Adds convenience for "do something if it matches" without the divergence requirement.
-- **`while let`**: `while let Type#Variant { x } = expr { ... }` -- loop while a pattern matches. Useful with iterators.
+- **`if let`**: `if let Type::Variant { x } = expr { ... }` -- syntactic sugar for a match with two arms (one matching, one fallthrough). Adds convenience for "do something if it matches" without the divergence requirement.
+- **`while let`**: `while let Type::Variant { x } = expr { ... }` -- loop while a pattern matches. Useful with iterators.
 - **`_` wildcard in binding lists**: Allow `_` to discard a field without binding it. Requires special-casing `_` in the binding list parser. Useful for Copy types where not all fields are needed.
-- **Nested patterns**: `let Result#Ok { value: Option#Some { inner } } = expr else { ... }` -- multi-level destructuring in a single statement. Requires recursive pattern parsing.
-- **Else block with error access**: `let Result#Ok { value } = expr else |other| { ... }` -- the else block receives the non-matching value. Requires a binding syntax in the else clause.
+- **Nested patterns**: `let Result::Ok { value: Option::Some { inner } } = expr else { ... }` -- multi-level destructuring in a single statement. Requires recursive pattern parsing.
+- **Else block with error access**: `let Result::Ok { value } = expr else |other| { ... }` -- the else block receives the non-matching value. Requires a binding syntax in the else clause.
 
 Each of these can be added incrementally without breaking existing code.

@@ -18,63 +18,35 @@ For stdlib API friction, see [STDLIB_API_REVIEW.md](STDLIB_API_REVIEW.md).
 
 ## Part 1: Syntax Friction Review (Item 66)
 
-### 1.1 `Type#Variant` vs `::` for Enum Variant Access
+### 1.1 `Type::Variant` as the Canonical Enum Qualifier
 
-**Current state.** Concrete uses three different separators for three different namespace operations:
+**Current state.** Concrete now uses:
 
 | Separator | Meaning | Example |
 |-----------|---------|---------|
-| `.` | Module path, field access, method call | `std.io.println`, `s.len()`, `header.version` |
-| `::` | Generic instantiation, static method | `Vec::<i32>::new()`, `HashMap::<K, V>::new(...)` |
-| `#` | Enum variant construction and pattern matching | `Option::<i32>#Some { value: 42 }`, `ParseError#TooShort` |
+| `.` | Field access and method call | `s.len()`, `header.version` |
+| `::` | Module qualification, generic instantiation, enum/static qualification | `std::fs::read_to_string`, `Vec::<i32>::new()`, `Option::<i32>::Some { value: 42 }`, `ParseError::TooShort` |
 
-**Real code showing the friction.** From `std/src/fs.con`:
+The old `#` separator is gone from the shipped language surface.
 
-```
-return Result::<File, FsError>#Err { error: FsError#OpenFailed };
-```
+**Decision.** `Type::Variant` / `Type::method(...)` is the canonical qualification form.
 
-From `std/src/net.con`:
+**Why this fits the language.**
 
-```
-return Result::<TcpListener, NetError>#Err { error: NetError#SocketFailed };
-```
+1. **It removes a language-specific oddity without hiding semantics.** The type name stays explicit at every use site; only the separator changed.
+2. **It keeps the surface smaller.** One qualification syntax is easier to teach and review than separate `#` and `::` rules.
+3. **It stays LL(1).** After `Name::`, the parser can still decide with one token of lookahead plus the existing base-name casing rule:
+   - `<` continues the turbofish
+   - lowercase `ident` under a lowercase base name is a module-qualified path
+   - uppercase-type base names followed by `ident` produce enum/static qualification
 
-From `std/src/option.con` tests:
+**What is intentionally not allowed.**
 
-```
-let o: Option<i32> = Option::<i32>#Some { value: 42 };
-```
+- Bare variants such as `Ok` / `Err`
+- Keeping `#` as a permanent second spelling
+- Reintroducing `Enum.Variant` as a public alternate surface
 
-**The question: should `#` be unified with `::`?**
-
-If unified, the above would become:
-
-```
-return Result::<File, FsError>::Err { error: FsError::OpenFailed };
-```
-
-**Analysis.**
-
-Arguments for keeping `#`:
-
-1. **LL(1) disambiguation is trivial.** After `Name`, `#` unambiguously means "enum variant." After `Name`, `::` currently means either turbofish (`Name::<T>`) or module path (`mod::name`). Adding variant access to `::` requires distinguishing three meanings after `::`: `<` (turbofish), lowercase ident (module path), uppercase ident (variant). This is still LL(1) -- the next token disambiguates -- but it adds a third branch.
-
-2. **Visual distinction aids comprehension.** `FsError#OpenFailed` instantly signals "this is a variant." `FsError::OpenFailed` looks identical to a static method call or module-qualified name. In review, the `#` is a visual marker for data construction vs code invocation.
-
-3. **Match arms are clearer.** `ParseError#TooShort => { ... }` vs `ParseError::TooShort => { ... }` -- the former is visually distinct from expression syntax.
-
-Arguments for unifying with `::`:
-
-1. **Fewer symbols to learn.** Rust programmers expect `::` for all qualification. The `#` is non-standard.
-
-2. **Consistency.** `Vec::<i32>::new()` already uses `::` for static methods on generic types. `Option::<i32>::Some` would be the same pattern applied to variants.
-
-3. **Reduces the "three namespace" complaint.** Three different separators for three different namespace operations is unusual across languages.
-
-**LL(1) impact.** Unifying is LL(1)-safe. The parser already handles `Name::` followed by `<` (turbofish) or ident (module path). Adding uppercase-ident-followed-by-`{` (variant with fields) or uppercase-ident-not-followed-by-`(` (fieldless variant) is one more branch, decided by the token after `::`.
-
-**Recommendation: DEFER.** The `#` separator works, is visually distinctive, and has been used consistently across all examples and stdlib. Changing it now would touch every `.con` file in the repository and every match arm in every test. The cost of the change exceeds the friction. If user feedback after first release strongly favors `::`, it can be changed mechanically. The parser already supports `.` as an alternative for match patterns (`EnumName.Variant` works alongside `EnumName#Variant` in match arms).
+`::` solved the qualification problem. The remaining syntax work is now the narrower ergonomics set: field punning, ignore/rest patterns, and destructuring forms.
 
 ---
 
@@ -136,9 +108,9 @@ The pattern is pervasive and consistent. Every Copy type in every file uses `str
 **Current state.** Constructing a generic enum variant requires fully specifying all type parameters:
 
 ```
-return Result::<File, FsError>#Err { error: FsError#OpenFailed };
-return Option::<i32>#Some { value: 42 };
-return Option::<&V>#None;
+return Result::<File, FsError>::Err { error: FsError::OpenFailed };
+return Option::<i32>::Some { value: 42 };
+return Option::<&V>::None;
 ```
 
 **The friction.** When the return type of the function is `Result<File, FsError>`, the type parameters on the construction are fully redundant:
@@ -146,34 +118,34 @@ return Option::<&V>#None;
 ```
 fn open(path: &String) with(File) -> Result<File, FsError> {
     // The return type already tells us T=File, E=FsError
-    return Result::<File, FsError>#Ok { value: f };  // redundant
+    return Result::<File, FsError>::Ok { value: f };  // redundant
 }
 ```
 
-In `std/src/map.con`, the `HashMap` implementation has 23 lines that construct `Option::<V>#None`, `Option::<V>#Some`, `Option::<&V>#Some`, etc. Each repeats the type parameter that the method signature already determines.
+In `std/src/map.con`, the `HashMap` implementation has 23 lines that construct `Option::<V>::None`, `Option::<V>::Some`, `Option::<&V>::Some`, etc. Each repeats the type parameter that the method signature already determines.
 
 From `std/src/vec.con`:
 
 ```
 pub fn pop(&mut self) -> Option<T> {
     if self.len == 0 {
-        return Option::<T>#None;  // T is known from the method signature
+        return Option::<T>::None;  // T is known from the method signature
     }
     self.len = self.len - 1;
     let target_ptr: *mut T = self.ptr + self.len;
-    return Option::<T>#Some { value: *target_ptr };  // same
+    return Option::<T>::Some { value: *target_ptr };  // same
 }
 ```
 
 **What would help.** Elaboration-time type inference on enum variant construction. If the expected type is known (from return type, let-binding annotation, or function argument position), the type parameters could be omitted:
 
 ```
-return Result#Ok { value: f };     // infer <File, FsError> from return type
-return Option#None;                // infer <T> from return type
-let o: Option<i32> = Option#Some { value: 42 };  // infer <i32> from annotation
+return Result::Ok { value: f };     // infer <File, FsError> from return type
+return Option::None;                // infer <T> from return type
+let o: Option<i32> = Option::Some { value: 42 };  // infer <i32> from annotation
 ```
 
-**LL(1) impact.** None. This is purely an elaboration/type-checking change. The parser already produces `enumLit` nodes with a possibly-empty type argument list. When the turbofish is absent (`Option#Some` without `::<T>`), the type argument list is empty and elaboration fills it in. No grammar change is needed.
+**LL(1) impact.** None. This is purely an elaboration/type-checking change. The parser already produces `enumLit` nodes with a possibly-empty type argument list. When the turbofish is absent (`Option::Some` without `::<T>`), the type argument list is empty and elaboration fills it in. No grammar change is needed.
 
 **Constraints.** This does not violate the "no Hindley-Milner inference" rule in ANTI_FEATURES.md. It is local inference: the expected type is immediately available from the enclosing let-binding or return statement. No global constraint solving is needed. This is comparable to Rust's ability to write `Ok(value)` when the return type is known, or Go's `return nil` when the return type is `error`.
 
@@ -188,20 +160,20 @@ let o: Option<i32> = Option#Some { value: 42 };  // infer <i32> from annotation
 **Current state.** Beyond the generic parameter repetition (1.3), enum variant construction requires repeating the enum type name even for non-generic enums:
 
 ```
-return ParseResult#Err { error: ParseError#TooShort };
-return ParseResult#Err { error: ParseError#BadVersion };
-return ParseResult#Err { error: ParseError#BadType };
-return ParseResult#Err { error: ParseError#PayloadTooBig };
-return ParseResult#Err { error: ParseError#Truncated };
-return ParseResult#Err { error: ParseError#BadChecksum };
+return ParseResult::Err { error: ParseError::TooShort };
+return ParseResult::Err { error: ParseError::BadVersion };
+return ParseResult::Err { error: ParseError::BadType };
+return ParseResult::Err { error: ParseError::PayloadTooBig };
+return ParseResult::Err { error: ParseError::Truncated };
+return ParseResult::Err { error: ParseError::BadChecksum };
 ```
 
 From `examples/service_errors/src/main.con`:
 
 ```
-return ValidateResult#Err { error: ValidateError#BadUserId };
-return ValidateResult#Err { error: ValidateError#BadAction };
-return ValidateResult#Err { error: ValidateError#PayloadTooLarge };
+return ValidateResult::Err { error: ValidateError::BadUserId };
+return ValidateResult::Err { error: ValidateError::BadAction };
+return ValidateResult::Err { error: ValidateError::PayloadTooLarge };
 ```
 
 **Analysis.** The outer enum type (`ParseResult`, `ValidateResult`) must always be specified because the parser does not know the expected type. The inner error enum (`ParseError`) must be specified because Concrete has no way to infer which enum type a bare variant belongs to.
@@ -209,10 +181,10 @@ return ValidateResult#Err { error: ValidateError#PayloadTooLarge };
 If 1.3 is implemented (elaboration-time inference for generic types), then `Result` replaces `ParseResult` and the construction becomes:
 
 ```
-return Result#Err { error: ParseError#TooShort };
+return Result::Err { error: ParseError::TooShort };
 ```
 
-This is a significant improvement. The inner `ParseError#TooShort` cannot be shortened further without either import-based variant flattening (bringing `TooShort` into scope) or contextual variant resolution (knowing that the `error:` field expects a `ParseError`). Both would require semantic information during parsing or elaboration changes.
+This is a significant improvement. The inner `ParseError::TooShort` cannot be shortened further without either import-based variant flattening (bringing `TooShort` into scope) or contextual variant resolution (knowing that the `error:` field expects a `ParseError`). Both would require semantic information during parsing or elaboration changes.
 
 **Recommendation: DEFER.** The remaining verbosity after 1.3 is acceptable. Each variant construction names the type explicitly, which is Concrete's design intent ("every type is visible where it matters"). If sustained real-program pressure demonstrates this is too painful, contextual variant inference for fields with known enum types could be considered post-freeze. This would be an elaboration change, not a syntax change.
 
@@ -224,13 +196,13 @@ This is a significant improvement. The inner `ParseError#TooShort` cannot be sho
 
 ```
 match result {
-    Option#Some { value } => {
+    Option::Some { value } => {
         if *value != 10 {
             v.drop();
             return 1;
         }
     },
-    Option#None => {
+    Option::None => {
         v.drop();
         return 1;
     }
@@ -245,18 +217,18 @@ match result {
 
 3. **Match-as-expression works but is limited.** The parser supports bare expression bodies for match arms (`=> expr,`) and block expression bodies (`=> { expr }`). This is sufficient for current use.
 
-4. **No nested pattern matching.** Match arms destructure only one level: `EnumName#Variant { field }`. There is no nested destructuring like `Result#Ok { value: Option#Some { inner } }`. This is consistent with Concrete's explicit philosophy but means nested enums require multiple match statements.
+4. **No nested pattern matching.** Match arms destructure only one level: `EnumName::Variant { field }`. There is no nested destructuring like `Result::Ok { value: Option::Some { inner } }`. This is consistent with Concrete's explicit philosophy but means nested enums require multiple match statements.
 
 **Real code showing clean usage.** From `examples/grep/src/main.con`:
 
 ```
 match result {
-    Result#Ok { value } => {
+    Result::Ok { value } => {
         let content_len: Int = string_length(&value);
         // ...
         value.drop();
     },
-    Result#Err { error } => {
+    Result::Err { error } => {
         // ...
     }
 }
@@ -276,15 +248,13 @@ This is clear, explicit, and matches the language's philosophy.
 
 ```
 import std.fs.{read_to_string, FsError};
-import std.result.{Result};
-import std.option.{Option};
 import std.hash.{hash_string, eq_string};
 import std.vec.{Vec};
 ```
 
 **Friction points observed.**
 
-1. **Single-symbol imports are verbose.** `import std.result.{Result};` requires braces for a single symbol. A non-braced form (`import std.result.Result;`) would save characters but adds an alternative production.
+1. **Single-symbol imports are verbose.** Builtin `Result` / `Option` no longer need imports, but ordinary one-symbol imports like `import std.vec.{Vec};` still require braces. A non-braced form (`import std.vec.Vec;`) would save characters but adds an alternative production.
 
 2. **No glob imports.** There is no `import std.fs.*` or `import std.fs.{*}`. Every symbol must be named. This is intentional (visibility, auditability) and consistent with ANTI_FEATURES.md ("every import is visible").
 
@@ -296,7 +266,6 @@ import std.vec.{Vec};
 
 ```
 import std.fs.{read_file, read_to_string, write_file, FsError};
-import std.result.{Result};
 import std.bytes.{Bytes};
 import std.args.{count, get};
 import std.map.{HashMap};
@@ -484,11 +453,11 @@ Building a string requires multiple append calls. There is no string interpolati
 
 | # | Pain Point | Relief Type | Status | Notes |
 |---|-----------|------------|--------|-------|
-| 1 | **Generic enum construction verbosity** (`Result::<T, E>#Ok`) | Elaboration-time inference | **CHANGE** | Highest-impact single improvement. No parser change. |
+| 1 | **Generic enum construction verbosity** (`Result::<T, E>::Ok`) | Elaboration-time inference | **CHANGE** | Highest-impact single improvement. No parser change. |
 | 2 | **Verbose error propagation (multi-step)** | Library: `map_err` + `?` | Freeze as-is | `?` exists. `map_err` is a library addition (ERROR_HANDLING_DESIGN.md). |
 | 3 | **Ad hoc result types instead of `Result<T, E>`** | Library: `unwrap_or` on Result/Option | Freeze as-is | Stdlib addition, not syntax. See ERROR_HANDLING_DESIGN.md items. |
 | 4 | **`Vec::<T>::new()` type repetition on let-binding** | Elaboration-time inference | **CHANGE** | Same mechanism as #1. `let mut v: Vec<i32> = Vec::new();` with type inferred from LHS. |
-| 5 | **`Option::<T>#None` / `Option::<T>#Some` everywhere** | Elaboration-time inference | **CHANGE** | Same mechanism as #1. |
+| 5 | **`Option::<T>::None` / `Option::<T>::Some` everywhere** | Elaboration-time inference | **CHANGE** | Same mechanism as #1. |
 | 6 | **Custom result enums duplicating `Result<T, E>`** | Library: Result helpers | Freeze as-is | Once `unwrap_or` and `?` are usable, custom result enums become unnecessary. |
 | 7 | **Deeply nested if-else for byte dispatch** | Already supported: match on integer | Freeze as-is | Document integer match patterns. |
 | 8 | **Fixed-array construction boilerplate** | Library helpers | **Deferred** | `[0; 256]` already works. More complex initializations need either comptime (deferred) or helper functions. |
@@ -516,9 +485,9 @@ Building a string requires multiple append calls. There is no string interpolati
 ```
 fn open(path: &String) with(File) -> Result<File, FsError> {
     if fp == (0 as *const u8) {
-        return Result::<File, FsError>#Err { error: FsError#OpenFailed };
+        return Result::<File, FsError>::Err { error: FsError::OpenFailed };
     }
-    return Result::<File, FsError>#Ok { value: f };
+    return Result::<File, FsError>::Ok { value: f };
 }
 ```
 
@@ -527,13 +496,13 @@ fn open(path: &String) with(File) -> Result<File, FsError> {
 ```
 fn open(path: &String) with(File) -> Result<File, FsError> {
     if fp == (0 as *const u8) {
-        return Result#Err { error: FsError#OpenFailed };
+        return Result::Err { error: FsError::OpenFailed };
     }
-    return Result#Ok { value: f };
+    return Result::Ok { value: f };
 }
 ```
 
-**Scope of impact.** Every `Result::<T, E>#Variant` and `Option::<T>#Variant` construction in the stdlib and examples -- conservatively 100+ sites. Also applies to user-defined generic enums.
+**Scope of impact.** Every `Result::<T, E>::Variant` and `Option::<T>::Variant` construction in the stdlib and examples -- conservatively 100+ sites. Also applies to user-defined generic enums.
 
 **What must be true.** The expected type must be unambiguously available from one of:
 - Return type of the enclosing function (for `return` statements)
@@ -542,7 +511,7 @@ fn open(path: &String) with(File) -> Result<File, FsError> {
 
 If the expected type is not available, the existing turbofish syntax remains required and the existing error message applies.
 
-**LL(1) impact.** Zero. The parser already handles `EnumName#Variant` with no type arguments (the type argument list is empty). The change is in the type checker, which fills in the missing type arguments from context.
+**LL(1) impact.** Zero. The parser already handles `EnumName::Variant` with no type arguments (the type argument list is empty). The change is in the type checker, which fills in the missing type arguments from context.
 
 ---
 
@@ -671,7 +640,7 @@ pos = pos + 1;
 
 | Item | Action | Type | Affects |
 |------|--------|------|---------|
-| Generic enum inference (#1) | Implement elaboration-time type parameter inference | Type checker | All `Result::<T, E>#Variant` and `Option::<T>#Variant` sites |
+| Generic enum inference (#1) | Implement elaboration-time type parameter inference | Type checker | All `Result::<T, E>::Variant` and `Option::<T>::Variant` sites |
 | Constructor inference (#4) | Same mechanism as #1 | Type checker | All `Type::<T>::new()` sites where LHS type is annotated |
 | Match arm arrow (#14) | Document `=>` as canonical; consider warning for `->` | Documentation | Style consistency |
 

@@ -1285,7 +1285,7 @@ partial def elabModule (m : Module) (summary : FileSummary)
     name := resultEnumName, typeParams := ["T", "E"],
     variants := [
       { name := okVariantName, fields := [{ name := "value", ty := .typeVar "T" }] },
-      { name := errVariantName, fields := [{ name := "value", ty := .typeVar "E" }] }
+      { name := errVariantName, fields := [{ name := "error", ty := .typeVar "E" }] }
     ], isCopy := false, builtinId := some .result
   }
   let hasUserResult := m.enums.any fun ed => ed.name == resultEnumName

@@ -220,7 +220,7 @@ All fallible stdlib operations use the same error pattern:
 - The `?` operator propagates errors without hidden control flow.
 
 **The rules**:
-- No module invents its own result type. All use `std.result.Result<T, E>`.
+- No module invents its own result type. All use the canonical builtin `Result<T, E>`.
 - Error enums are small, flat, and named by module. `FsError` has variants like `NotFound`, `PermissionDenied`, `IoFailed`. Not `Error(String)`.
 - Conversion between error types is explicit. `ServiceError::from_auth_error(e)` is a function call, not an implicit trait implementation.
 

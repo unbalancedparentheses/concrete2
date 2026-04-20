@@ -73,20 +73,20 @@ mod $NAME {
     enum Copy Result { Ok { value: i32 }, Err { error: ParseError } }
 
     fn validate(input: [i32; 4], len: i32) -> Result {
-        if len < 1 { return Result#Err { error: ParseError#TooShort }; }
+        if len < 1 { return Result::Err { error: ParseError::TooShort }; }
         let mut sum: i32 = 0;
         for (let mut i: i32 = 0; i < len; i = i + 1) {
             sum = sum + input[i];
         }
-        if sum < 0 { return Result#Err { error: ParseError#OutOfRange }; }
-        return Result#Ok { value: sum };
+        if sum < 0 { return Result::Err { error: ParseError::OutOfRange }; }
+        return Result::Ok { value: sum };
     }
 
     pub fn main() -> Int {
         let data: [i32; 4] = [10, 20, 30, 40];
         match validate(data, 4) {
-            Result#Ok { value } => { if value != 100 { return 1; } },
-            Result#Err { error } => { return 2; },
+            Result::Ok { value } => { if value != 100 { return 1; } },
+            Result::Err { error } => { return 2; },
         }
         return 0;
     }

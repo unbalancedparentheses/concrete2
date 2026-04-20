@@ -12,7 +12,6 @@
 
 mod cgrep {
     import std.fs.{read_to_string, FsError};
-    import std.result.{Result};
     import std.args.{count, get};
 
     // --- String helpers ---
@@ -179,7 +178,7 @@ mod cgrep {
             let filename: String = get(fi);
             let result: Result<String, FsError> = read_to_string(&filename);
             match result {
-                Result#Ok { value } => {
+                Result::Ok { value } => {
                     let content_len: Int = string_length(&value);
                     if content_len > 0 {
                         let matches: i32 = grep_content(&value, &pattern, &filename,
@@ -189,7 +188,7 @@ mod cgrep {
                     }
                     value.drop();
                 },
-                Result#Err { error } => {
+                Result::Err { error } => {
                     let mut err: String = "cgrep: cannot open '";
                     err.append(&filename);
                     err.append(&"'");

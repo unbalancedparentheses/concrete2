@@ -20,7 +20,6 @@
 
 mod conhash {
     import std.fs.{read_file, FsError};
-    import std.result.{Result};
     import std.bytes.{Bytes};
     import std.args.{count, get};
     import std.vec.{Vec};
@@ -37,11 +36,11 @@ mod conhash {
     trusted fn read_file_raw(path: &String) with(File, Alloc) -> FileData {
         let result: Result<Bytes, FsError> = read_file(path);
         match result {
-            Result#Ok { value } => {
+            Result::Ok { value } => {
                 let fd: FileData = FileData { ptr: value.ptr, len: value.len };
                 return fd;
             },
-            Result#Err { error } => {
+            Result::Err { error } => {
                 return FileData { ptr: 0 as *mut u8, len: 0 };
             }
         }

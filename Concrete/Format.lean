@@ -121,10 +121,10 @@ partial def fmtExprAt (ind : Nat) : Expr → String
   | .fieldAccess _ obj field => s!"{fmtExprAt ind obj}.{field}"
   | .enumLit _ enumName variant typeArgs fields =>
     let targsStr := if typeArgs.isEmpty then "" else s!"::<{", ".intercalate (typeArgs.map fmtTy)}>"
-    if fields.isEmpty then s!"{enumName}{targsStr}#{variant} \{}"
+    if fields.isEmpty then s!"{enumName}{targsStr}::{variant}"
     else
       let fs := fields.map fun (k, v) => s!"{k}: {fmtExprAt ind v}"
-      s!"{enumName}{targsStr}#{variant} \{ {", ".intercalate fs} }"
+      s!"{enumName}{targsStr}::{variant} \{ {", ".intercalate fs} }"
   | .match_ _ scrutinee arms =>
     let pfx := indent ind
     let armsStr := arms.map (fmtMatchArm ind)
@@ -141,7 +141,7 @@ partial def fmtExprAt (ind : Nat) : Expr → String
     s!"{fmtExprAt ind obj}.{method}{targsStr}({", ".intercalate (args.map (fmtExprAt ind))})"
   | .staticMethodCall _ typeName method typeArgs args =>
     let targsStr := if typeArgs.isEmpty then "" else s!"::<{", ".intercalate (typeArgs.map fmtTy)}>"
-    s!"{typeName}#{method}{targsStr}({", ".intercalate (args.map (fmtExprAt ind))})"
+    s!"{typeName}{targsStr}::{method}({", ".intercalate (args.map (fmtExprAt ind))})"
   | .fnRef _ name => name
   | .arrowAccess _ obj field => s!"{fmtExprAt ind obj}->{field}"
   | .allocCall _ inner allocExpr => s!"{fmtExprAt ind inner} with(Alloc = {fmtExprAt ind allocExpr})"
@@ -174,7 +174,7 @@ partial def fmtMatchArm (baseInd : Nat) (arm : MatchArm) : String :=
     let bindsStr := if bindings.isEmpty then ""
       else s!" \{ {", ".intercalate bindings} }"
     let bodyStr := body.map (fmtStmt bodyInd)
-    s!"{pfx}{enumName}#{variant}{bindsStr} => \{\n{"\n".intercalate bodyStr}\n{pfx}},"
+    s!"{pfx}{enumName}::{variant}{bindsStr} => \{\n{"\n".intercalate bodyStr}\n{pfx}},"
   | .litArm _ value body =>
     let bodyStr := body.map (fmtStmt bodyInd)
     s!"{pfx}{fmtExprAt baseInd value} => \{\n{"\n".intercalate bodyStr}\n{pfx}},"

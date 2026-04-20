@@ -102,7 +102,6 @@ Every module documentation should include at least one **standalone example** th
 
 ```
 import std.vec.{Vec};
-import std.option.{Option};
 
 fn main() with(Alloc) -> i32 {
     let mut v: Vec<i32> = Vec::<i32>::new();
@@ -114,10 +113,10 @@ fn main() with(Alloc) -> i32 {
 
     let r: Option<&i32> = v.get(1);
     match r {
-        Option#Some { value } => {
+        Option::Some { value } => {
             // *value is 20
         },
-        Option#None => {
+        Option::None => {
             // index out of bounds
         }
     }
@@ -130,7 +129,6 @@ fn main() with(Alloc) -> i32 {
 
 ```
 import std.fs.{read_to_string, FsError};
-import std.result.{Result};
 import std.io.{println};
 
 fn main() with(Unsafe, Alloc, Console) -> i32 {
@@ -139,11 +137,11 @@ fn main() with(Unsafe, Alloc, Console) -> i32 {
     path.drop();
 
     match result {
-        Result#Ok { value } => {
+        Result::Ok { value } => {
             println(&value);
             value.drop();
         },
-        Result#Err { error } => {
+        Result::Err { error } => {
             let msg: String = "Failed to read file";
             println(&msg);
             msg.drop();

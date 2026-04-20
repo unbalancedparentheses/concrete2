@@ -560,8 +560,7 @@ Every syntax construct in the language and its freeze status.
 | `with(...)` | Capability declaration on function signatures |
 | `?` | Postfix error propagation operator (desugars to match + early return) |
 | `as` | Explicit type cast (widening, narrowing, reinterpretation) |
-| `#` | Enum variant separator (`Type#Variant`) |
-| `::` | Generic instantiation and static method access |
+| `::` | Generic instantiation, enum/static qualification (`Type::Variant`, `Type::method(...)`), and module qualification |
 | `.` | Module path, field access, method call |
 | `&` / `&mut` | Borrow and mutable borrow in expressions and types |
 | `*` (dereference) | Pointer/reference dereference |
@@ -575,9 +574,9 @@ Every syntax construct in the language and its freeze status.
 
 | Form | Description | Design doc |
 |------|-------------|------------|
-| `let Type#Variant { fields } = expr;` | Irrefutable enum destructuring | [PATTERN_DESTRUCTURING.md](PATTERN_DESTRUCTURING.md) |
+| `let Type::Variant { fields } = expr;` | Irrefutable enum destructuring | [PATTERN_DESTRUCTURING.md](PATTERN_DESTRUCTURING.md) |
 | `let StructType { fields } = expr;` | Irrefutable struct destructuring | [PATTERN_DESTRUCTURING.md](PATTERN_DESTRUCTURING.md) |
-| `let Type#Variant { fields } = expr else { diverging_body };` | Refutable destructuring with else | [PATTERN_DESTRUCTURING.md](PATTERN_DESTRUCTURING.md) |
+| `let Type::Variant { fields } = expr else { diverging_body };` | Refutable destructuring with else | [PATTERN_DESTRUCTURING.md](PATTERN_DESTRUCTURING.md) |
 | Elaboration-time generic inference | Omit type params when context provides them | [SYNTAX_FREEZE_REVIEW.md](SYNTAX_FREEZE_REVIEW.md) #1, #4 |
 
 These are designed, LL(1)-verified, and approved. They may be implemented before release. Once implemented, they become stable.
@@ -893,7 +892,7 @@ Per [STDLIB_VALIDATION_PLAN.md](STDLIB_VALIDATION_PLAN.md), the following canoni
 | `examples/parse_validate/` | Required: rewrite with `Result<T, E>` and `?` | `Result.unwrap_or` (done), `?` (done) |
 | `examples/service_errors/` | Required: rewrite with `Result` + `map_err` + `?` | `Result.map_err` (Tier 2, pending) |
 | `examples/grep/` | Required: use `std.ascii`, `String` methods, remove magic constants | Existing stdlib surface |
-| `examples/fixed_capacity/` | Required: use `Result<T, E>` for ValidateResult | Existing stdlib surface |
+| `examples/fixed_capacity/` | Required: replace ad hoc `ValidateResult` with builtin `Result<T, E>` | Existing stdlib surface |
 | `examples/elf_header/` | Nice-to-have: use `ByteCursor` | `std.numeric` (implemented, 891d561) |
 | `examples/packet/` | Required: rewrite with `ByteCursor` + `ByteWriter` | `std.numeric` (implemented, 891d561) |
 

@@ -71,7 +71,7 @@ A `ByteCursor` is a borrowed, non-owning view into a byte buffer with an advanci
 
 **Position advances on read.** Each successful `read_*` call advances `pos` by the number of bytes consumed. This eliminates the manual offset tracking that dominates the pressure tests. Failed reads do not advance position.
 
-**Bounds checking on every read.** Every read method checks whether enough bytes remain before accessing the buffer. On insufficient data, the method returns `Result#Err` with a `CursorError`. No out-of-bounds access is possible through the public API.
+**Bounds checking on every read.** Every read method checks whether enough bytes remain before accessing the buffer. On insufficient data, the method returns `Result::Err` with a `CursorError`. No out-of-bounds access is possible through the public API.
 
 **Immutable data.** The cursor borrows the data immutably. It cannot modify the underlying buffer. Write operations use a separate `ByteWriter` type (section 4).
 
@@ -163,12 +163,12 @@ Each endian read is a thin wrapper over bounds-checked byte access plus bit shif
 ```
 pub fn read_u16_be(&mut self) -> Result<u16, CursorError> {
     if self.remaining() < 2 {
-        return Result::<u16, CursorError>#Err { error: CursorError#UnexpectedEnd };
+        return Result::<u16, CursorError>::Err { error: CursorError::UnexpectedEnd };
     }
     let hi: u16 = self.byte_at(self.pos) as u16;
     let lo: u16 = self.byte_at(self.pos + 1) as u16;
     self.pos = self.pos + 2;
-    return Result::<u16, CursorError>#Ok { value: (hi << 8) | lo };
+    return Result::<u16, CursorError>::Ok { value: (hi << 8) | lo };
 }
 ```
 
@@ -283,33 +283,33 @@ fn parse_dns_header(buf: [u8; 64], len: u64) -> Result<DnsHeader, CursorError> {
     let mut cur: ByteCursor = ByteCursor::from_raw(&buf as *const u8, len);
 
     let id: u16 = match cur.read_u16_be() {
-        Result#Ok { value } => value,
-        Result#Err { error } => return Result::<DnsHeader, CursorError>#Err { error: error },
+        Result::Ok { value } => value,
+        Result::Err { error } => return Result::<DnsHeader, CursorError>::Err { error: error },
     };
     let raw_flags: u16 = match cur.read_u16_be() {
-        Result#Ok { value } => value,
-        Result#Err { error } => return Result::<DnsHeader, CursorError>#Err { error: error },
+        Result::Ok { value } => value,
+        Result::Err { error } => return Result::<DnsHeader, CursorError>::Err { error: error },
     };
     let qdcount: u16 = match cur.read_u16_be() {
-        Result#Ok { value } => value,
-        Result#Err { error } => return Result::<DnsHeader, CursorError>#Err { error: error },
+        Result::Ok { value } => value,
+        Result::Err { error } => return Result::<DnsHeader, CursorError>::Err { error: error },
     };
     let ancount: u16 = match cur.read_u16_be() {
-        Result#Ok { value } => value,
-        Result#Err { error } => return Result::<DnsHeader, CursorError>#Err { error: error },
+        Result::Ok { value } => value,
+        Result::Err { error } => return Result::<DnsHeader, CursorError>::Err { error: error },
     };
     let nscount: u16 = match cur.read_u16_be() {
-        Result#Ok { value } => value,
-        Result#Err { error } => return Result::<DnsHeader, CursorError>#Err { error: error },
+        Result::Ok { value } => value,
+        Result::Err { error } => return Result::<DnsHeader, CursorError>::Err { error: error },
     };
     let arcount: u16 = match cur.read_u16_be() {
-        Result#Ok { value } => value,
-        Result#Err { error } => return Result::<DnsHeader, CursorError>#Err { error: error },
+        Result::Ok { value } => value,
+        Result::Err { error } => return Result::<DnsHeader, CursorError>::Err { error: error },
     };
 
     let flags: DnsFlags = parse_flags(raw_flags as i32);
 
-    return Result::<DnsHeader, CursorError>#Ok {
+    return Result::<DnsHeader, CursorError>::Ok {
         value: DnsHeader {
             id: id as i32,
             flags: flags,
@@ -344,35 +344,35 @@ fn parse_frame(buf: [u8; 256], len: u64) -> Result<FrameHeader, CursorError> {
     let mut cur: ByteCursor = ByteCursor::from_raw(&buf as *const u8, len);
 
     let magic: u32 = match cur.read_u32_be() {
-        Result#Ok { value } => value,
-        Result#Err { error } => return Result::<FrameHeader, CursorError>#Err { error: error },
+        Result::Ok { value } => value,
+        Result::Err { error } => return Result::<FrameHeader, CursorError>::Err { error: error },
     };
     if magic != 0xDEADBEEF {
-        return Result::<FrameHeader, CursorError>#Err {
-            error: CursorError#InvalidData
+        return Result::<FrameHeader, CursorError>::Err {
+            error: CursorError::InvalidData
         };
     }
 
     let version: u8 = match cur.read_u8() {
-        Result#Ok { value } => value,
-        Result#Err { error } => return Result::<FrameHeader, CursorError>#Err { error: error },
+        Result::Ok { value } => value,
+        Result::Err { error } => return Result::<FrameHeader, CursorError>::Err { error: error },
     };
     let flags: u8 = match cur.read_u8() {
-        Result#Ok { value } => value,
-        Result#Err { error } => return Result::<FrameHeader, CursorError>#Err { error: error },
+        Result::Ok { value } => value,
+        Result::Err { error } => return Result::<FrameHeader, CursorError>::Err { error: error },
     };
     let seq_num: u16 = match cur.read_u16_be() {
-        Result#Ok { value } => value,
-        Result#Err { error } => return Result::<FrameHeader, CursorError>#Err { error: error },
+        Result::Ok { value } => value,
+        Result::Err { error } => return Result::<FrameHeader, CursorError>::Err { error: error },
     };
     // Mixed endianness: payload length is little-endian
     let payload_len: u32 = match cur.read_u32_le() {
-        Result#Ok { value } => value,
-        Result#Err { error } => return Result::<FrameHeader, CursorError>#Err { error: error },
+        Result::Ok { value } => value,
+        Result::Err { error } => return Result::<FrameHeader, CursorError>::Err { error: error },
     };
     let checksum: u32 = match cur.read_u32_be() {
-        Result#Ok { value } => value,
-        Result#Err { error } => return Result::<FrameHeader, CursorError>#Err { error: error },
+        Result::Ok { value } => value,
+        Result::Err { error } => return Result::<FrameHeader, CursorError>::Err { error: error },
     };
 
     // ... validate and return ...
@@ -394,16 +394,16 @@ fn parse_elf_ident(data: *const u8, len: u64) -> Result<ElfIdent, CursorError> {
     let magic2: u8 = match cur.read_u8() { ... };
     let magic3: u8 = match cur.read_u8() { ... };
 
-    if magic0 != 0x7F { return err(CursorError#InvalidData); }
-    if magic1 != 0x45 { return err(CursorError#InvalidData); }  // 'E'
-    if magic2 != 0x4C { return err(CursorError#InvalidData); }  // 'L'
-    if magic3 != 0x46 { return err(CursorError#InvalidData); }  // 'F'
+    if magic0 != 0x7F { return err(CursorError::InvalidData); }
+    if magic1 != 0x45 { return err(CursorError::InvalidData); }  // 'E'
+    if magic2 != 0x4C { return err(CursorError::InvalidData); }  // 'L'
+    if magic3 != 0x46 { return err(CursorError::InvalidData); }  // 'F'
 
     let class: u8 = match cur.read_u8() { ... };
     let data_encoding: u8 = match cur.read_u8() { ... };
     let version: u8 = match cur.read_u8() { ... };
 
-    return Result::<ElfIdent, CursorError>#Ok {
+    return Result::<ElfIdent, CursorError>::Ok {
         value: ElfIdent { class: class, data: data_encoding, version: version }
     };
 }
@@ -437,11 +437,11 @@ pub enum CursorError {
 
 ```
 match cur.read_u32_be() {
-    Result#Ok { value } => { /* use value */ },
-    Result#Err { error } => {
+    Result::Ok { value } => { /* use value */ },
+    Result::Err { error } => {
         match error {
-            CursorError#UnexpectedEnd => { /* handle truncation */ },
-            CursorError#InvalidData => { /* handle bad data */ },
+            CursorError::UnexpectedEnd => { /* handle truncation */ },
+            CursorError::InvalidData => { /* handle bad data */ },
         }
     },
 }

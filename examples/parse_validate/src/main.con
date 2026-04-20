@@ -97,36 +97,36 @@ mod parse_validate {
     fn parse_header(data: [i32; 8], len: i32) -> Result<Header, ParseError> {
         // Gate: minimum 5 fields needed
         if validate_total_len(len, 5) != 0 {
-            return Result::<Header, ParseError>#Err { value: ParseError#TooShort };
+            return Result::<Header, ParseError>::Err { error: ParseError::TooShort };
         }
 
         // Field 0: version (must be 1)
         if validate_version(data[0]) != 0 {
-            return Result::<Header, ParseError>#Err { value: ParseError#BadVersion };
+            return Result::<Header, ParseError>::Err { error: ParseError::BadVersion };
         }
 
         // Field 1: message type (1-4)
         if validate_msg_type(data[1]) != 0 {
-            return Result::<Header, ParseError>#Err { value: ParseError#BadType };
+            return Result::<Header, ParseError>::Err { error: ParseError::BadType };
         }
 
         // Field 2: payload length (0-240)
         if validate_payload_len(data[2], 240) != 0 {
-            return Result::<Header, ParseError>#Err { value: ParseError#PayloadTooBig };
+            return Result::<Header, ParseError>::Err { error: ParseError::PayloadTooBig };
         }
 
         // Check total length covers header + payload
         if validate_total_len(len, 4 + data[2]) != 0 {
-            return Result::<Header, ParseError>#Err { value: ParseError#Truncated };
+            return Result::<Header, ParseError>::Err { error: ParseError::Truncated };
         }
 
         // Field 4: checksum (XOR fold of fields 0-3)
         let computed: i32 = compute_checksum(data, 4);
         if validate_checksum(data[4], computed) != 0 {
-            return Result::<Header, ParseError>#Err { value: ParseError#BadChecksum };
+            return Result::<Header, ParseError>::Err { error: ParseError::BadChecksum };
         }
 
-        return Result::<Header, ParseError>#Ok { value: Header {
+        return Result::<Header, ParseError>::Ok { value: Header {
             version: data[0],
             msg_type: data[1],
             payload_len: data[2],
@@ -138,12 +138,12 @@ mod parse_validate {
 
     fn error_code(e: ParseError) -> i32 {
         match e {
-            ParseError#TooShort => { return 1; },
-            ParseError#BadVersion => { return 2; },
-            ParseError#BadType => { return 3; },
-            ParseError#PayloadTooBig => { return 4; },
-            ParseError#Truncated => { return 5; },
-            ParseError#BadChecksum => { return 6; },
+            ParseError::TooShort => { return 1; },
+            ParseError::BadVersion => { return 2; },
+            ParseError::BadType => { return 3; },
+            ParseError::PayloadTooBig => { return 4; },
+            ParseError::Truncated => { return 5; },
+            ParseError::BadChecksum => { return 6; },
         }
     }
 
@@ -153,75 +153,75 @@ mod parse_validate {
         // Test 1: valid header [ver=1, type=2, plen=0, pad=0, cs=1^2^0^0=3]
         let good: [i32; 8] = [1, 2, 0, 0, 3, 0, 0, 0];
         match parse_header(good, 5) {
-            Result#Ok { value } => {
+            Result::Ok { value } => {
                 if value.version != 1 { return 11; }
                 if value.msg_type != 2 { return 12; }
                 if value.payload_len != 0 { return 13; }
                 if value.checksum != 3 { return 14; }
             },
-            Result#Err { value } => { return 10; },
+            Result::Err { error } => { return 10; },
         }
 
         // Test 2: bad version (99) → BadVersion (code 2)
         let bad_ver: [i32; 8] = [99, 2, 0, 0, 0, 0, 0, 0];
         match parse_header(bad_ver, 5) {
-            Result#Ok { value } => { return 20; },
-            Result#Err { value } => {
-                if error_code(value) != 2 { return 21; }
+            Result::Ok { value } => { return 20; },
+            Result::Err { error } => {
+                if error_code(error) != 2 { return 21; }
             },
         }
 
         // Test 3: bad type (0) → BadType (code 3)
         let bad_type: [i32; 8] = [1, 0, 0, 0, 0, 0, 0, 0];
         match parse_header(bad_type, 5) {
-            Result#Ok { value } => { return 30; },
-            Result#Err { value } => {
-                if error_code(value) != 3 { return 31; }
+            Result::Ok { value } => { return 30; },
+            Result::Err { error } => {
+                if error_code(error) != 3 { return 31; }
             },
         }
 
         // Test 4: too short (len=2) → TooShort (code 1)
         let short: [i32; 8] = [0, 0, 0, 0, 0, 0, 0, 0];
         match parse_header(short, 2) {
-            Result#Ok { value } => { return 40; },
-            Result#Err { value } => {
-                if error_code(value) != 1 { return 41; }
+            Result::Ok { value } => { return 40; },
+            Result::Err { error } => {
+                if error_code(error) != 1 { return 41; }
             },
         }
 
         // Test 5: payload overflow (241 > 240) → PayloadTooBig (code 4)
         let overflow: [i32; 8] = [1, 1, 241, 0, 0, 0, 0, 0];
         match parse_header(overflow, 5) {
-            Result#Ok { value } => { return 50; },
-            Result#Err { value } => {
-                if error_code(value) != 4 { return 51; }
+            Result::Ok { value } => { return 50; },
+            Result::Err { error } => {
+                if error_code(error) != 4 { return 51; }
             },
         }
 
         // Test 6: bad checksum → BadChecksum (code 6)
         let bad_cs: [i32; 8] = [1, 2, 0, 0, 99, 0, 0, 0];
         match parse_header(bad_cs, 5) {
-            Result#Ok { value } => { return 60; },
-            Result#Err { value } => {
-                if error_code(value) != 6 { return 61; }
+            Result::Ok { value } => { return 60; },
+            Result::Err { error } => {
+                if error_code(error) != 6 { return 61; }
             },
         }
 
         // Test 7: valid with payload [ver=1, type=1, plen=3, pad=0, cs=1^1^3^0=3]
         let with_payload: [i32; 8] = [1, 1, 3, 0, 3, 10, 20, 30];
         match parse_header(with_payload, 8) {
-            Result#Ok { value } => {
+            Result::Ok { value } => {
                 if value.payload_len != 3 { return 71; }
             },
-            Result#Err { value } => { return 70; },
+            Result::Err { error } => { return 70; },
         }
 
         // Test 8: truncated (plen=3 but only 5 fields total, need 7) → Truncated (code 5)
         let trunc: [i32; 8] = [1, 1, 3, 0, 3, 0, 0, 0];
         match parse_header(trunc, 5) {
-            Result#Ok { value } => { return 80; },
-            Result#Err { value } => {
-                if error_code(value) != 5 { return 81; }
+            Result::Ok { value } => { return 80; },
+            Result::Err { error } => {
+                if error_code(error) != 5 { return 81; }
             },
         }
 

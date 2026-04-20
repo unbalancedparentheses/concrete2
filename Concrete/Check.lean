@@ -1461,16 +1461,16 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) : CheckM Ty := do
           match fields.find? fun (fn, _) => fn == sf.name with
           | some (_, expr) =>
             let exprTy ← checkExpr expr (some fieldTy)
-            expectTy fieldTy exprTy s!"field '{sf.name}' of {enumName}#{variant}" (some e.getSpan)
+            expectTy fieldTy exprTy s!"field '{sf.name}' of {enumName}::{variant}" (some e.getSpan)
             -- Consume linear variables used as enum fields
             match expr with
             | .ident _ varName => consumeVarIfExists varName (some e.getSpan)
             | _ => pure ()
-          | none => throwCheck (.missingFieldInLiteral sf.name s!"{enumName}#{variant}") (some e.getSpan)
+          | none => throwCheck (.missingFieldInLiteral sf.name s!"{enumName}::{variant}") (some e.getSpan)
         for (fn, _) in fields do
           match ev.fields.find? fun sf => sf.name == fn with
           | some _ => pure ()
-          | none => throwCheck (.unknownFieldInLiteral fn s!"{enumName}#{variant}") (some e.getSpan)
+          | none => throwCheck (.unknownFieldInLiteral fn s!"{enumName}::{variant}") (some e.getSpan)
         if effectiveTypeArgs.isEmpty then return .named enumName
         else return .generic enumName effectiveTypeArgs
       | none => throwCheck (.unknownVariant variant enumName) (some e.getSpan)
@@ -2338,7 +2338,7 @@ def checkModule (m : Module) (summary : FileSummary)
     typeParams := ["T", "E"]
     variants := [
       { name := okVariantName, fields := [{ name := "value", ty := .typeVar "T" }] },
-      { name := errVariantName, fields := [{ name := "value", ty := .typeVar "E" }] }
+      { name := errVariantName, fields := [{ name := "error", ty := .typeVar "E" }] }
     ]
     isCopy := false
     builtinId := some .result

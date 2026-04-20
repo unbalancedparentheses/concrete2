@@ -29,7 +29,6 @@
 mod packet {
 
     import std.numeric.{ByteCursor, CursorError};
-    import std.result.{Result};
 
     // ---- Result types (Copy, stack-only, no heap) ----
 
@@ -62,8 +61,8 @@ mod packet {
             let mut byte: u8 = 0;
             let r: Result<u8, CursorError> = cur.read_u8();
             match r {
-                Result#Ok { value } => { byte = value; },
-                Result#Err { error } => {},
+                Result::Ok { value } => { byte = value; },
+                Result::Err { error } => {},
             }
             acc = acc ^ (byte as u16);
         }
@@ -89,8 +88,8 @@ mod packet {
         let mut version: u8 = 0;
         let rv: Result<u8, CursorError> = cur.read_u8();
         match rv {
-            Result#Ok { value } => { version = value; },
-            Result#Err { error } => { return err_result(1); },
+            Result::Ok { value } => { version = value; },
+            Result::Err { error } => { return err_result(1); },
         }
         if version != 1 {
             return err_result(2);
@@ -100,32 +99,32 @@ mod packet {
         let mut msg_type: u8 = 0;
         let rt: Result<u8, CursorError> = cur.read_u8();
         match rt {
-            Result#Ok { value } => { msg_type = value; },
-            Result#Err { error } => { return err_result(1); },
+            Result::Ok { value } => { msg_type = value; },
+            Result::Err { error } => { return err_result(1); },
         }
 
         // Bytes 2-3: payload length (big-endian u16)
         let mut payload_len: u16 = 0;
         let rp: Result<u16, CursorError> = cur.read_u16_be();
         match rp {
-            Result#Ok { value } => { payload_len = value; },
-            Result#Err { error } => { return err_result(1); },
+            Result::Ok { value } => { payload_len = value; },
+            Result::Err { error } => { return err_result(1); },
         }
 
         // Bytes 4-7: sequence number (big-endian u32)
         let mut seq_num: u32 = 0;
         let rs: Result<u32, CursorError> = cur.read_u32_be();
         match rs {
-            Result#Ok { value } => { seq_num = value; },
-            Result#Err { error } => { return err_result(1); },
+            Result::Ok { value } => { seq_num = value; },
+            Result::Err { error } => { return err_result(1); },
         }
 
         // Bytes 8-9: checksum (big-endian u16)
         let mut checksum: u16 = 0;
         let rc: Result<u16, CursorError> = cur.read_u16_be();
         match rc {
-            Result#Ok { value } => { checksum = value; },
-            Result#Err { error } => { return err_result(1); },
+            Result::Ok { value } => { checksum = value; },
+            Result::Err { error } => { return err_result(1); },
         }
 
         // Validate checksum (XOR fold of bytes 0-7)
@@ -163,8 +162,8 @@ mod packet {
             let mut byte: u8 = 0;
             let r: Result<u8, CursorError> = src.read_u8();
             match r {
-                Result#Ok { value } => { byte = value; },
-                Result#Err { error } => {},
+                Result::Ok { value } => { byte = value; },
+                Result::Err { error } => {},
             }
             let dst: *mut u8 = out + i;
             *dst = byte;

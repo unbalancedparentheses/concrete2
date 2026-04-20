@@ -539,10 +539,10 @@ partial def IVal.toString : IVal → String
     let fs := ", ".intercalate (fields.map fun (n, v) => s!"{n}: {v.toString}")
     name ++ " { " ++ fs ++ " }"
   | .enum_ ename variant fields =>
-    if fields.isEmpty then ename ++ "#" ++ variant
+    if fields.isEmpty then ename ++ "::" ++ variant
     else
       let fs := ", ".intercalate (fields.map fun (n, v) => s!"{n}: {v.toString}")
-      ename ++ "#" ++ variant ++ " { " ++ fs ++ " }"
+      ename ++ "::" ++ variant ++ " { " ++ fs ++ " }"
   | .array elems _ _ =>
     let es := ", ".intercalate (elems.toList.map IVal.toString)
     "[" ++ es ++ "]"

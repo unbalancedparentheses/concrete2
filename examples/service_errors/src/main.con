@@ -39,26 +39,26 @@ mod service_errors {
 
     fn validate_error_code(e: ValidateError) -> i32 {
         match e {
-            ValidateError#BadUserId => { return 101; },
-            ValidateError#BadAction => { return 102; },
-            ValidateError#PayloadTooLarge => { return 103; },
+            ValidateError::BadUserId => { return 101; },
+            ValidateError::BadAction => { return 102; },
+            ValidateError::PayloadTooLarge => { return 103; },
         }
     }
 
     fn validate(req: Request) -> Result<i32, ValidateError> {
         if req.user_id <= 0 {
-            return Result::<i32, ValidateError>#Err { value: ValidateError#BadUserId };
+            return Result::<i32, ValidateError>::Err { error: ValidateError::BadUserId };
         }
         if req.action < 1 {
-            return Result::<i32, ValidateError>#Err { value: ValidateError#BadAction };
+            return Result::<i32, ValidateError>::Err { error: ValidateError::BadAction };
         }
         if req.action > 3 {
-            return Result::<i32, ValidateError>#Err { value: ValidateError#BadAction };
+            return Result::<i32, ValidateError>::Err { error: ValidateError::BadAction };
         }
         if req.payload > 1000 {
-            return Result::<i32, ValidateError>#Err { value: ValidateError#PayloadTooLarge };
+            return Result::<i32, ValidateError>::Err { error: ValidateError::PayloadTooLarge };
         }
-        return Result::<i32, ValidateError>#Ok { value: 1 };
+        return Result::<i32, ValidateError>::Ok { value: 1 };
     }
 
     // ---- Stage 2: Authorization ----
@@ -70,27 +70,27 @@ mod service_errors {
 
     fn auth_error_code(e: AuthError) -> i32 {
         match e {
-            AuthError#InvalidToken => { return 201; },
-            AuthError#InsufficientPermission => { return 202; },
+            AuthError::InvalidToken => { return 201; },
+            AuthError::InsufficientPermission => { return 202; },
         }
     }
 
     fn authorize(req: Request) -> Result<i32, AuthError> {
         // Token must be positive and match user_id * 7 (simple scheme)
         if req.token <= 0 {
-            return Result::<i32, AuthError>#Err { value: AuthError#InvalidToken };
+            return Result::<i32, AuthError>::Err { error: AuthError::InvalidToken };
         }
         let expected_token: i32 = req.user_id * 7;
         if req.token != expected_token {
-            return Result::<i32, AuthError>#Err { value: AuthError#InvalidToken };
+            return Result::<i32, AuthError>::Err { error: AuthError::InvalidToken };
         }
         // Action 3 (admin) requires user_id < 100
         if req.action == 3 {
             if req.user_id >= 100 {
-                return Result::<i32, AuthError>#Err { value: AuthError#InsufficientPermission };
+                return Result::<i32, AuthError>::Err { error: AuthError::InsufficientPermission };
             }
         }
-        return Result::<i32, AuthError>#Ok { value: 1 };
+        return Result::<i32, AuthError>::Ok { value: 1 };
     }
 
     // ---- Stage 3: Rate limiting ----
@@ -101,21 +101,21 @@ mod service_errors {
 
     fn rate_error_code(e: RateLimitError) -> i32 {
         match e {
-            RateLimitError#QuotaExceeded => { return 301; },
+            RateLimitError::QuotaExceeded => { return 301; },
         }
     }
 
     fn check_rate_limit(user_id: i32, payload: i32) -> Result<i32, RateLimitError> {
         // Users with id > 900 are throttled; payload > 500 exceeds burst
         if user_id > 900 {
-            return Result::<i32, RateLimitError>#Err { value: RateLimitError#QuotaExceeded };
+            return Result::<i32, RateLimitError>::Err { error: RateLimitError::QuotaExceeded };
         }
         if payload > 500 {
             if user_id > 500 {
-                return Result::<i32, RateLimitError>#Err { value: RateLimitError#QuotaExceeded };
+                return Result::<i32, RateLimitError>::Err { error: RateLimitError::QuotaExceeded };
             }
         }
-        return Result::<i32, RateLimitError>#Ok { value: 1 };
+        return Result::<i32, RateLimitError>::Ok { value: 1 };
     }
 
     // ---- Stage 4: Processing ----
@@ -148,9 +148,9 @@ mod service_errors {
 
     fn service_error_code(e: ServiceError) -> i32 {
         match e {
-            ServiceError#Validation { code } => { return code; },
-            ServiceError#Auth { code } => { return code; },
-            ServiceError#RateLimit { code } => { return code; },
+            ServiceError::Validation { code } => { return code; },
+            ServiceError::Auth { code } => { return code; },
+            ServiceError::RateLimit { code } => { return code; },
         }
     }
 
@@ -158,12 +158,12 @@ mod service_errors {
 
     fn handle_validated(req: Request) -> Result<Response, ServiceError> {
         match authorize(req) {
-            Result#Err { value } => {
-                return Result::<Response, ServiceError>#Err {
-                    value: ServiceError#Auth { code: auth_error_code(value) }
+            Result::Err { error } => {
+                return Result::<Response, ServiceError>::Err {
+                    error: ServiceError::Auth { code: auth_error_code(error) }
                 };
             },
-            Result#Ok { value } => {
+            Result::Ok { value } => {
                 return handle_authorized(req);
             },
         }
@@ -171,26 +171,26 @@ mod service_errors {
 
     fn handle_authorized(req: Request) -> Result<Response, ServiceError> {
         match check_rate_limit(req.user_id, req.payload) {
-            Result#Err { value } => {
-                return Result::<Response, ServiceError>#Err {
-                    value: ServiceError#RateLimit { code: rate_error_code(value) }
+            Result::Err { error } => {
+                return Result::<Response, ServiceError>::Err {
+                    error: ServiceError::RateLimit { code: rate_error_code(error) }
                 };
             },
-            Result#Ok { value } => {
+            Result::Ok { value } => {
                 let resp: Response = process_action(req.action, req.payload);
-                return Result::<Response, ServiceError>#Ok { value: resp };
+                return Result::<Response, ServiceError>::Ok { value: resp };
             },
         }
     }
 
     fn handle_request(req: Request) -> Result<Response, ServiceError> {
         match validate(req) {
-            Result#Err { value } => {
-                return Result::<Response, ServiceError>#Err {
-                    value: ServiceError#Validation { code: validate_error_code(value) }
+            Result::Err { error } => {
+                return Result::<Response, ServiceError>::Err {
+                    error: ServiceError::Validation { code: validate_error_code(error) }
                 };
             },
-            Result#Ok { value } => {
+            Result::Ok { value } => {
                 return handle_validated(req);
             },
         }
@@ -204,11 +204,11 @@ mod service_errors {
             user_id: 10, token: 70, action: 1, payload: 50
         };
         match handle_request(ok_req) {
-            Result#Ok { value } => {
+            Result::Ok { value } => {
                 if value.status != 200 { return 10; }
                 if value.result_val != 100 { return 11; }
             },
-            Result#Err { value } => { return 12; },
+            Result::Err { error } => { return 12; },
         }
 
         // Test 2: validation error — bad user_id (0)
@@ -216,9 +216,9 @@ mod service_errors {
             user_id: 0, token: 0, action: 1, payload: 50
         };
         match handle_request(bad_user) {
-            Result#Ok { value } => { return 20; },
-            Result#Err { value } => {
-                if service_error_code(value) != 101 { return 21; }
+            Result::Ok { value } => { return 20; },
+            Result::Err { error } => {
+                if service_error_code(error) != 101 { return 21; }
             },
         }
 
@@ -227,9 +227,9 @@ mod service_errors {
             user_id: 10, token: 70, action: 5, payload: 50
         };
         match handle_request(bad_action) {
-            Result#Ok { value } => { return 30; },
-            Result#Err { value } => {
-                if service_error_code(value) != 102 { return 31; }
+            Result::Ok { value } => { return 30; },
+            Result::Err { error } => {
+                if service_error_code(error) != 102 { return 31; }
             },
         }
 
@@ -238,9 +238,9 @@ mod service_errors {
             user_id: 10, token: 70, action: 1, payload: 1500
         };
         match handle_request(big_payload) {
-            Result#Ok { value } => { return 40; },
-            Result#Err { value } => {
-                if service_error_code(value) != 103 { return 41; }
+            Result::Ok { value } => { return 40; },
+            Result::Err { error } => {
+                if service_error_code(error) != 103 { return 41; }
             },
         }
 
@@ -249,9 +249,9 @@ mod service_errors {
             user_id: 10, token: 99, action: 1, payload: 50
         };
         match handle_request(bad_token) {
-            Result#Ok { value } => { return 50; },
-            Result#Err { value } => {
-                if service_error_code(value) != 201 { return 51; }
+            Result::Ok { value } => { return 50; },
+            Result::Err { error } => {
+                if service_error_code(error) != 201 { return 51; }
             },
         }
 
@@ -260,9 +260,9 @@ mod service_errors {
             user_id: 100, token: 700, action: 3, payload: 50
         };
         match handle_request(no_perm) {
-            Result#Ok { value } => { return 60; },
-            Result#Err { value } => {
-                if service_error_code(value) != 202 { return 61; }
+            Result::Ok { value } => { return 60; },
+            Result::Err { error } => {
+                if service_error_code(error) != 202 { return 61; }
             },
         }
 
@@ -271,9 +271,9 @@ mod service_errors {
             user_id: 901, token: 6307, action: 1, payload: 50
         };
         match handle_request(throttled) {
-            Result#Ok { value } => { return 70; },
-            Result#Err { value } => {
-                if service_error_code(value) != 301 { return 71; }
+            Result::Ok { value } => { return 70; },
+            Result::Err { error } => {
+                if service_error_code(error) != 301 { return 71; }
             },
         }
 
@@ -282,11 +282,11 @@ mod service_errors {
             user_id: 10, token: 70, action: 3, payload: 20
         };
         match handle_request(admin_req) {
-            Result#Ok { value } => {
+            Result::Ok { value } => {
                 if value.status != 200 { return 80; }
                 if value.result_val != 60 { return 81; }
             },
-            Result#Err { value } => { return 82; },
+            Result::Err { error } => { return 82; },
         }
 
         // Test 9: action=2 with valid request
@@ -294,10 +294,10 @@ mod service_errors {
             user_id: 5, token: 35, action: 2, payload: 200
         };
         match handle_request(action2) {
-            Result#Ok { value } => {
+            Result::Ok { value } => {
                 if value.result_val != 300 { return 91; }
             },
-            Result#Err { value } => { return 90; },
+            Result::Err { error } => { return 90; },
         }
 
         return 0;

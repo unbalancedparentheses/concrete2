@@ -120,12 +120,12 @@ def enumSource : String :=
 }
 fn area(s: &Shape) -> i32 {
     match *s {
-        Shape#Circle { radius } => { return radius * radius; },
-        Shape#Rect { w, h } => { return w * h; }
+        Shape::Circle { radius } => { return radius * radius; },
+        Shape::Rect { w, h } => { return w * h; }
     }
 }
 fn main() -> Int {
-    let s: Shape = Shape#Rect { w: 6, h: 7 };
+    let s: Shape = Shape::Rect { w: 6, h: 7 };
     return area(&s) as Int;
 }"
 

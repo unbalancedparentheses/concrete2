@@ -1,6 +1,4 @@
 mod numeric {
-    import std.option.{Option};
-    import std.result.{Result};
 
     // ---- CursorError ----
 
@@ -47,50 +45,50 @@ mod numeric {
 
         pub fn read_u8(&mut self) -> Result<u8, CursorError> {
             if self.pos >= self.len {
-                return Result::<u8, CursorError>#Err { error: CursorError#UnexpectedEnd };
+                return Result::<u8, CursorError>::Err { error: CursorError::UnexpectedEnd };
             }
             let p: *const u8 = self.ptr + self.pos;
             let val: u8 = *(p as *mut u8);
             self.pos = self.pos + 1;
-            return Result::<u8, CursorError>#Ok { value: val };
+            return Result::<u8, CursorError>::Ok { value: val };
         }
 
         pub fn peek_u8(&self) -> Result<u8, CursorError> {
             if self.pos >= self.len {
-                return Result::<u8, CursorError>#Err { error: CursorError#UnexpectedEnd };
+                return Result::<u8, CursorError>::Err { error: CursorError::UnexpectedEnd };
             }
             let p: *const u8 = self.ptr + self.pos;
             let val: u8 = *(p as *mut u8);
-            return Result::<u8, CursorError>#Ok { value: val };
+            return Result::<u8, CursorError>::Ok { value: val };
         }
 
         // ---- Skip ----
 
         pub fn skip(&mut self, n: u64) -> Result<u64, CursorError> {
             if self.pos + n > self.len {
-                return Result::<u64, CursorError>#Err { error: CursorError#UnexpectedEnd };
+                return Result::<u64, CursorError>::Err { error: CursorError::UnexpectedEnd };
             }
             self.pos = self.pos + n;
-            return Result::<u64, CursorError>#Ok { value: self.pos };
+            return Result::<u64, CursorError>::Ok { value: self.pos };
         }
 
         // ---- Big-endian reads ----
 
         pub fn read_u16_be(&mut self) -> Result<u16, CursorError> {
             if self.pos + 2 > self.len {
-                return Result::<u16, CursorError>#Err { error: CursorError#UnexpectedEnd };
+                return Result::<u16, CursorError>::Err { error: CursorError::UnexpectedEnd };
             }
             let p: *const u8 = self.ptr + self.pos;
             let b0: u16 = (*(p as *mut u8)) as u16;
             let p1: *const u8 = p + 1;
             let b1: u16 = (*(p1 as *mut u8)) as u16;
             self.pos = self.pos + 2;
-            return Result::<u16, CursorError>#Ok { value: (b0 << 8) | b1 };
+            return Result::<u16, CursorError>::Ok { value: (b0 << 8) | b1 };
         }
 
         pub fn read_u32_be(&mut self) -> Result<u32, CursorError> {
             if self.pos + 4 > self.len {
-                return Result::<u32, CursorError>#Err { error: CursorError#UnexpectedEnd };
+                return Result::<u32, CursorError>::Err { error: CursorError::UnexpectedEnd };
             }
             let p: *const u8 = self.ptr + self.pos;
             let b0: u32 = (*(p as *mut u8)) as u32;
@@ -101,12 +99,12 @@ mod numeric {
             let p3: *const u8 = p + 3;
             let b3: u32 = (*(p3 as *mut u8)) as u32;
             self.pos = self.pos + 4;
-            return Result::<u32, CursorError>#Ok { value: (b0 << 24) | (b1 << 16) | (b2 << 8) | b3 };
+            return Result::<u32, CursorError>::Ok { value: (b0 << 24) | (b1 << 16) | (b2 << 8) | b3 };
         }
 
         pub fn read_u64_be(&mut self) -> Result<u64, CursorError> {
             if self.pos + 8 > self.len {
-                return Result::<u64, CursorError>#Err { error: CursorError#UnexpectedEnd };
+                return Result::<u64, CursorError>::Err { error: CursorError::UnexpectedEnd };
             }
             let p: *const u8 = self.ptr + self.pos;
             let b0: u64 = (*(p as *mut u8)) as u64;
@@ -125,26 +123,26 @@ mod numeric {
             let p7: *const u8 = p + 7;
             let b7: u64 = (*(p7 as *mut u8)) as u64;
             self.pos = self.pos + 8;
-            return Result::<u64, CursorError>#Ok { value: (b0 << 56) | (b1 << 48) | (b2 << 40) | (b3 << 32) | (b4 << 24) | (b5 << 16) | (b6 << 8) | b7 };
+            return Result::<u64, CursorError>::Ok { value: (b0 << 56) | (b1 << 48) | (b2 << 40) | (b3 << 32) | (b4 << 24) | (b5 << 16) | (b6 << 8) | b7 };
         }
 
         // ---- Little-endian reads ----
 
         pub fn read_u16_le(&mut self) -> Result<u16, CursorError> {
             if self.pos + 2 > self.len {
-                return Result::<u16, CursorError>#Err { error: CursorError#UnexpectedEnd };
+                return Result::<u16, CursorError>::Err { error: CursorError::UnexpectedEnd };
             }
             let p: *const u8 = self.ptr + self.pos;
             let b0: u16 = (*(p as *mut u8)) as u16;
             let p1: *const u8 = p + 1;
             let b1: u16 = (*(p1 as *mut u8)) as u16;
             self.pos = self.pos + 2;
-            return Result::<u16, CursorError>#Ok { value: b0 | (b1 << 8) };
+            return Result::<u16, CursorError>::Ok { value: b0 | (b1 << 8) };
         }
 
         pub fn read_u32_le(&mut self) -> Result<u32, CursorError> {
             if self.pos + 4 > self.len {
-                return Result::<u32, CursorError>#Err { error: CursorError#UnexpectedEnd };
+                return Result::<u32, CursorError>::Err { error: CursorError::UnexpectedEnd };
             }
             let p: *const u8 = self.ptr + self.pos;
             let b0: u32 = (*(p as *mut u8)) as u32;
@@ -155,12 +153,12 @@ mod numeric {
             let p3: *const u8 = p + 3;
             let b3: u32 = (*(p3 as *mut u8)) as u32;
             self.pos = self.pos + 4;
-            return Result::<u32, CursorError>#Ok { value: b0 | (b1 << 8) | (b2 << 16) | (b3 << 24) };
+            return Result::<u32, CursorError>::Ok { value: b0 | (b1 << 8) | (b2 << 16) | (b3 << 24) };
         }
 
         pub fn read_u64_le(&mut self) -> Result<u64, CursorError> {
             if self.pos + 8 > self.len {
-                return Result::<u64, CursorError>#Err { error: CursorError#UnexpectedEnd };
+                return Result::<u64, CursorError>::Err { error: CursorError::UnexpectedEnd };
             }
             let p: *const u8 = self.ptr + self.pos;
             let b0: u64 = (*(p as *mut u8)) as u64;
@@ -179,7 +177,7 @@ mod numeric {
             let p7: *const u8 = p + 7;
             let b7: u64 = (*(p7 as *mut u8)) as u64;
             self.pos = self.pos + 8;
-            return Result::<u64, CursorError>#Ok { value: b0 | (b1 << 8) | (b2 << 16) | (b3 << 24) | (b4 << 32) | (b5 << 40) | (b6 << 48) | (b7 << 56) };
+            return Result::<u64, CursorError>::Ok { value: b0 | (b1 << 8) | (b2 << 16) | (b3 << 24) | (b4 << 32) | (b5 << 40) | (b6 << 48) | (b7 << 56) };
         }
     }
 
@@ -244,19 +242,19 @@ mod numeric {
 
         pub fn write_u8(&mut self, val: u8) -> Result<u64, CursorError> {
             if self.pos >= self.len {
-                return Result::<u64, CursorError>#Err { error: CursorError#UnexpectedEnd };
+                return Result::<u64, CursorError>::Err { error: CursorError::UnexpectedEnd };
             }
             let p: *mut u8 = self.ptr + self.pos;
             *p = val;
             self.pos = self.pos + 1;
-            return Result::<u64, CursorError>#Ok { value: self.pos };
+            return Result::<u64, CursorError>::Ok { value: self.pos };
         }
 
         // ---- Big-endian writes ----
 
         pub fn write_u16_be(&mut self, val: u16) -> Result<u64, CursorError> {
             if self.pos + 2 > self.len {
-                return Result::<u64, CursorError>#Err { error: CursorError#UnexpectedEnd };
+                return Result::<u64, CursorError>::Err { error: CursorError::UnexpectedEnd };
             }
             let v: u64 = val as u64;
             let p: *mut u8 = self.ptr + self.pos;
@@ -264,12 +262,12 @@ mod numeric {
             let p1: *mut u8 = p + 1;
             *p1 = (v & 0xFF) as u8;
             self.pos = self.pos + 2;
-            return Result::<u64, CursorError>#Ok { value: self.pos };
+            return Result::<u64, CursorError>::Ok { value: self.pos };
         }
 
         pub fn write_u32_be(&mut self, val: u32) -> Result<u64, CursorError> {
             if self.pos + 4 > self.len {
-                return Result::<u64, CursorError>#Err { error: CursorError#UnexpectedEnd };
+                return Result::<u64, CursorError>::Err { error: CursorError::UnexpectedEnd };
             }
             let v: u64 = val as u64;
             let p: *mut u8 = self.ptr + self.pos;
@@ -281,12 +279,12 @@ mod numeric {
             let p3: *mut u8 = p + 3;
             *p3 = (v & 0xFF) as u8;
             self.pos = self.pos + 4;
-            return Result::<u64, CursorError>#Ok { value: self.pos };
+            return Result::<u64, CursorError>::Ok { value: self.pos };
         }
 
         pub fn write_u64_be(&mut self, val: u64) -> Result<u64, CursorError> {
             if self.pos + 8 > self.len {
-                return Result::<u64, CursorError>#Err { error: CursorError#UnexpectedEnd };
+                return Result::<u64, CursorError>::Err { error: CursorError::UnexpectedEnd };
             }
             let p: *mut u8 = self.ptr + self.pos;
             *p = ((val >> 56) & 0xFF) as u8;
@@ -305,14 +303,14 @@ mod numeric {
             let p7: *mut u8 = p + 7;
             *p7 = (val & 0xFF) as u8;
             self.pos = self.pos + 8;
-            return Result::<u64, CursorError>#Ok { value: self.pos };
+            return Result::<u64, CursorError>::Ok { value: self.pos };
         }
 
         // ---- Little-endian writes ----
 
         pub fn write_u16_le(&mut self, val: u16) -> Result<u64, CursorError> {
             if self.pos + 2 > self.len {
-                return Result::<u64, CursorError>#Err { error: CursorError#UnexpectedEnd };
+                return Result::<u64, CursorError>::Err { error: CursorError::UnexpectedEnd };
             }
             let v: u64 = val as u64;
             let p: *mut u8 = self.ptr + self.pos;
@@ -320,12 +318,12 @@ mod numeric {
             let p1: *mut u8 = p + 1;
             *p1 = ((v >> 8) & 0xFF) as u8;
             self.pos = self.pos + 2;
-            return Result::<u64, CursorError>#Ok { value: self.pos };
+            return Result::<u64, CursorError>::Ok { value: self.pos };
         }
 
         pub fn write_u32_le(&mut self, val: u32) -> Result<u64, CursorError> {
             if self.pos + 4 > self.len {
-                return Result::<u64, CursorError>#Err { error: CursorError#UnexpectedEnd };
+                return Result::<u64, CursorError>::Err { error: CursorError::UnexpectedEnd };
             }
             let v: u64 = val as u64;
             let p: *mut u8 = self.ptr + self.pos;
@@ -337,12 +335,12 @@ mod numeric {
             let p3: *mut u8 = p + 3;
             *p3 = ((v >> 24) & 0xFF) as u8;
             self.pos = self.pos + 4;
-            return Result::<u64, CursorError>#Ok { value: self.pos };
+            return Result::<u64, CursorError>::Ok { value: self.pos };
         }
 
         pub fn write_u64_le(&mut self, val: u64) -> Result<u64, CursorError> {
             if self.pos + 8 > self.len {
-                return Result::<u64, CursorError>#Err { error: CursorError#UnexpectedEnd };
+                return Result::<u64, CursorError>::Err { error: CursorError::UnexpectedEnd };
             }
             let p: *mut u8 = self.ptr + self.pos;
             *p = (val & 0xFF) as u8;
@@ -361,7 +359,7 @@ mod numeric {
             let p7: *mut u8 = p + 7;
             *p7 = ((val >> 56) & 0xFF) as u8;
             self.pos = self.pos + 8;
-            return Result::<u64, CursorError>#Ok { value: self.pos };
+            return Result::<u64, CursorError>::Ok { value: self.pos };
         }
     }
 
@@ -377,10 +375,10 @@ mod numeric {
 
         let r0: Result<u8, CursorError> = cur.read_u8();
         match r0 {
-            Result#Ok { value } => {
+            Result::Ok { value } => {
                 if !assert_eq::<u8>(value, 0xDE, "first byte should be 0xDE") { return 1; }
             },
-            Result#Err { error } => { return 2; }
+            Result::Err { error } => { return 2; }
         }
         if !assert_eq::<u64>(cur.remaining(), 3, "remaining should be 3") { return 3; }
         return 0;
@@ -393,10 +391,10 @@ mod numeric {
 
         let r: Result<u16, CursorError> = cur.read_u16_be();
         match r {
-            Result#Ok { value } => {
+            Result::Ok { value } => {
                 if !assert_eq::<u16>(value, 0x1234, "u16 BE should be 0x1234") { return 1; }
             },
-            Result#Err { error } => { return 2; }
+            Result::Err { error } => { return 2; }
         }
         if !assert_eq::<u64>(cur.pos(), 2, "pos should be 2") { return 3; }
         return 0;
@@ -409,10 +407,10 @@ mod numeric {
 
         let r: Result<u16, CursorError> = cur.read_u16_le();
         match r {
-            Result#Ok { value } => {
+            Result::Ok { value } => {
                 if !assert_eq::<u16>(value, 0x1234, "u16 LE should be 0x1234") { return 1; }
             },
-            Result#Err { error } => { return 2; }
+            Result::Err { error } => { return 2; }
         }
         return 0;
     }
@@ -424,10 +422,10 @@ mod numeric {
 
         let r: Result<u32, CursorError> = cur.read_u32_be();
         match r {
-            Result#Ok { value } => {
+            Result::Ok { value } => {
                 if !assert_eq::<u32>(value, 0x12345678, "u32 BE should be 0x12345678") { return 1; }
             },
-            Result#Err { error } => { return 2; }
+            Result::Err { error } => { return 2; }
         }
         if !assert_true(cur.is_empty(), "cursor should be empty") { return 3; }
         return 0;
@@ -440,10 +438,10 @@ mod numeric {
 
         let r: Result<u32, CursorError> = cur.read_u32_le();
         match r {
-            Result#Ok { value } => {
+            Result::Ok { value } => {
                 if !assert_eq::<u32>(value, 0x12345678, "u32 LE should be 0x12345678") { return 1; }
             },
-            Result#Err { error } => { return 2; }
+            Result::Err { error } => { return 2; }
         }
         return 0;
     }
@@ -456,8 +454,8 @@ mod numeric {
         // Reading u32 from 2-byte buffer should fail
         let r: Result<u32, CursorError> = cur.read_u32_be();
         match r {
-            Result#Ok { value } => { return 1; },
-            Result#Err { error } => {
+            Result::Ok { value } => { return 1; },
+            Result::Err { error } => {
                 // Expected: UnexpectedEnd
             }
         }
@@ -473,8 +471,8 @@ mod numeric {
 
         let skip_r: Result<u64, CursorError> = cur.skip(4);
         match skip_r {
-            Result#Ok { value } => {},
-            Result#Err { error } => { return 1; }
+            Result::Ok { value } => {},
+            Result::Err { error } => { return 1; }
         }
         if !assert_eq::<u64>(cur.pos(), 4, "pos should be 4 after skip") { return 2; }
         if !assert_eq::<u64>(cur.remaining(), 4, "remaining should be 4") { return 3; }
@@ -482,8 +480,8 @@ mod numeric {
         // Skip past end should fail
         let skip_r2: Result<u64, CursorError> = cur.skip(5);
         match skip_r2 {
-            Result#Ok { value } => { return 4; },
-            Result#Err { error } => {}
+            Result::Ok { value } => { return 4; },
+            Result::Err { error } => {}
         }
         // Position unchanged
         if !assert_eq::<u64>(cur.pos(), 4, "pos should still be 4") { return 5; }
@@ -498,32 +496,32 @@ mod numeric {
         // Write BE u16
         let wr1: Result<u64, CursorError> = w.write_u16_be(0x1234 as u16);
         match wr1 {
-            Result#Ok { value } => {},
-            Result#Err { error } => { return 1; }
+            Result::Ok { value } => {},
+            Result::Err { error } => { return 1; }
         }
 
         // Write LE u32
         let wr2: Result<u64, CursorError> = w.write_u32_le(0x12345678 as u32);
         match wr2 {
-            Result#Ok { value } => {},
-            Result#Err { error } => { return 2; }
+            Result::Ok { value } => {},
+            Result::Err { error } => { return 2; }
         }
 
         // Read back
         let mut cur: ByteCursor = ByteCursor::from_raw(&buf as *const u8, 16);
         let rd1: Result<u16, CursorError> = cur.read_u16_be();
         match rd1 {
-            Result#Ok { value } => {
+            Result::Ok { value } => {
                 if !assert_eq::<u16>(value, 0x1234, "roundtrip u16 BE") { return 3; }
             },
-            Result#Err { error } => { return 4; }
+            Result::Err { error } => { return 4; }
         }
         let rd2: Result<u32, CursorError> = cur.read_u32_le();
         match rd2 {
-            Result#Ok { value } => {
+            Result::Ok { value } => {
                 if !assert_eq::<u32>(value, 0x12345678, "roundtrip u32 LE") { return 5; }
             },
-            Result#Err { error } => { return 6; }
+            Result::Err { error } => { return 6; }
         }
         return 0;
     }
@@ -546,26 +544,26 @@ mod numeric {
 
         let magic_r: Result<u16, CursorError> = cur.read_u16_be();
         match magic_r {
-            Result#Ok { value } => {
+            Result::Ok { value } => {
                 if value != 0xCAFE { return 1; }
             },
-            Result#Err { error } => { return 2; }
+            Result::Err { error } => { return 2; }
         }
 
         let len_r: Result<u32, CursorError> = cur.read_u32_le();
         match len_r {
-            Result#Ok { value } => {
+            Result::Ok { value } => {
                 if value != 100 { return 3; }
             },
-            Result#Err { error } => { return 4; }
+            Result::Err { error } => { return 4; }
         }
 
         let ver_r: Result<u8, CursorError> = cur.read_u8();
         match ver_r {
-            Result#Ok { value } => {
+            Result::Ok { value } => {
                 if (value as u64) != 2 { return 5; }
             },
-            Result#Err { error } => { return 6; }
+            Result::Err { error } => { return 6; }
         }
 
         if !assert_eq::<u64>(cur.pos(), 7, "pos should be 7") { return 7; }

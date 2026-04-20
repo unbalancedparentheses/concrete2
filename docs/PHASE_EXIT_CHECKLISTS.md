@@ -88,8 +88,10 @@ Each phase has a "phase closes when..." list tied to concrete outputs. A phase i
 - [x] Error ergonomics settled (`?` operator, Result methods, conversion traits)
   - `docs/ERROR_HANDLING_DESIGN.md`; `?` already parsed/lowered; Tier 1 helpers added (98d2cbc)
 - [ ] Opaque validated wrapper types and fallible conversions settled
-- [x] LL(1) syntax finalized and documented, including constructor/pattern cleanup (`Type::Variant`, field punning, `_` / `{ .. }` ignore forms, no competing payload syntaxes)
-  - `docs/SYNTAX_FREEZE_REVIEW.md`, `docs/PATTERN_DESTRUCTURING.md` (98d2cbc); `let...else` approved, implementation pending
+- [x] Enum/static qualification syntax is finalized and documented
+  - `Type::Variant` / `Type::method(...)` is the only shipped qualification surface; `#` is gone from the compiler, formatter, stdlib, examples, and canonical docs
+- [ ] Remaining constructor/pattern ergonomics are settled
+  - Field punning, `_` / `{ .. }` ignore forms, and the destructuring surface are still pending; `let...else` remains design-approved but unimplemented
 - [x] Visibility rules stable (pub/non-pub at module and struct level)
   - `docs/VISIBILITY_AND_MODULE_HYGIENE.md` (98d2cbc); existing 3-pass enforcement confirmed adequate
 - [x] Endian byte APIs exist (read_u16_be, write_u32_le, etc.)
@@ -109,7 +111,7 @@ Each phase has a "phase closes when..." list tied to concrete outputs. A phase i
 
 **Verification**: `examples/parse_validate/` and `examples/service_errors/` work with stdlib types (not custom Copy enums), one fixed-capacity example uses the checked indexing/slice surface, one string-heavy medium workload such as `grep` or `policy_engine` uses the intended formatting/text APIs, and one interpreter/runtime-heavy workload such as `mal` or `lox` exercises the intended collection/runtime surface.
 
-**Current status**: 14/18 exit criteria done. 4 remaining: medium workloads (string-heavy + runtime-heavy), opaque wrappers, layout/ABI, formatting ergonomics.
+**Current status**: 13/19 exit criteria done. 6 remaining: runtime-oriented collections, formatting/text-output ergonomics, opaque wrappers, remaining constructor/pattern ergonomics, layout/ABI, and medium-workload validation.
 
 ## Phase 4: Tooling, Tests, Wrong-Code Corpus
 

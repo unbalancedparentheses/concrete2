@@ -113,8 +113,8 @@ Rationale:
 
 ```
 match result {
-    Result#Ok { value } => { ... },
-    Result#Err { error } => { ... },
+    Result::Ok { value } => { ... },
+    Result::Err { error } => { ... },
 }
 ```
 
@@ -200,7 +200,7 @@ The `--report interface` output is already deterministic (same input produces sa
    pub fn std.vec.Vec_new<T>() -> Vec<T>  [caps: (pure)]
    pub fn std.vec.Vec_push<T>(&mut self, value: T)  [caps: Alloc]
    pub struct std.vec.Vec<T> { ptr: *mut T, len: u64, cap: u64 }
-   pub enum std.option.Option<T> { Some { value: T }, None }
+   pub enum Option<T> { Some { value: T }, None }
    pub trait std.hash.Hash { hash }
    ```
 

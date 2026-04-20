@@ -4,6 +4,8 @@ Status: Phase 3, item 61
 
 This document maps each canonical example and pressure test to the stdlib APIs it should use, identifies which programs can be rewritten to use stdlib types instead of ad hoc copies, and defines what "validated" means.
 
+Status note: the `parse_validate` and `service_errors` rewrites described below are now landed. They are kept here as validation rationale and as a template for the remaining canonical-example rewrites.
+
 For the stdlib module inventory, see [STDLIB_TARGET.md](STDLIB_TARGET.md).
 For error handling ergonomics, see [ERROR_HANDLING_DESIGN.md](ERROR_HANDLING_DESIGN.md).
 For byte cursor APIs, see [BYTE_CURSOR_API.md](BYTE_CURSOR_API.md).
@@ -19,7 +21,7 @@ An example program is "stdlib-validated" when all of the following are true:
 
 ### 1.1 Uses stdlib Result/Option instead of custom Copy enums
 
-The program uses `std.result.Result<T, E>` and `std.option.Option<T>` for fallible operations instead of defining its own structurally identical enums (`ParseResult`, `ValidateResult`, `AuthResult`, `ServiceResult`, etc.). The `?` operator is used where the error type matches the enclosing function's return type. Where error types differ, `map_err` + `?` is used instead of manual match-and-convert blocks.
+The program uses `Result<T, E>` and `Option<T>` for fallible operations instead of defining its own structurally identical enums (`ParseResult`, `ValidateResult`, `AuthResult`, `ServiceResult`, etc.). The `?` operator is used where the error type matches the enclosing function's return type. Where error types differ, `map_err` + `?` is used instead of manual match-and-convert blocks.
 
 ### 1.2 Uses stdlib String/Bytes instead of raw arrays where appropriate
 
@@ -60,17 +62,17 @@ Programs that pass `--check predictable` continue to pass after rewriting. Progr
 **Stdlib types currently used.** None. The program is entirely self-contained with no stdlib imports.
 
 **What it should use after stdlib is complete.**
-- `std.result.Result<Header, ParseError>` instead of the custom `ParseResult` enum.
+- `Result<Header, ParseError>` instead of the custom `ParseResult` enum.
 - `?` operator for error propagation in `parse_header`, replacing the `if validate_x(...) != 0 { return Err; }` chains.
 - Individual validators should return `Result<(), ParseError>` or `Result<T, ParseError>` instead of `i32`.
 
 **Changes needed.**
 1. Remove the `ParseResult` enum definition.
-2. Import `std.result.Result`.
+2. Import `Result`.
 3. Change `parse_header` return type from `ParseResult` to `Result<Header, ParseError>`.
 4. Change individual validators (e.g., `validate_version`) to return `Result<(), ParseError>` instead of `i32`.
 5. Use `?` in `parse_header` to chain validators: `validate_version(data[0])?;` instead of the if-then-return pattern.
-6. Update test `match` arms from `ParseResult#Ok` / `ParseResult#Err` to `Result#Ok` / `Result#Err`.
+6. Update test `match` arms from `ParseResult::Ok` / `ParseResult::Err` to `Result::Ok` / `Result::Err`.
 7. Verify `--check predictable` still passes.
 
 **Priority.** REQUIRED for Phase 3 exit.
@@ -82,21 +84,21 @@ Programs that pass `--check predictable` continue to pass after rewriting. Progr
 **Stdlib types currently used.** None.
 
 **What it should use after stdlib is complete.**
-- `std.result.Result<i32, ValidateError>`, `Result<i32, AuthError>`, `Result<i32, RateLimitError>` for stage functions.
-- `std.result.Result<Response, ServiceError>` for the unified pipeline.
+- `Result<i32, ValidateError>`, `Result<i32, AuthError>`, `Result<i32, RateLimitError>` for stage functions.
+- `Result<Response, ServiceError>` for the unified pipeline.
 - `Result.map_err` + `?` for error type conversion at each stage boundary.
 - The three intermediate functions (`handle_request`, `handle_validated`, `handle_authorized`) collapse into a single `handle_request` using `map_err` + `?` chaining.
 
 **Changes needed.**
 1. Remove all four custom result enums (`ValidateResult`, `AuthResult`, `RateResult`, `ServiceResult`).
-2. Import `std.result.Result`.
+2. Import `Result`.
 3. Change `validate` to return `Result<i32, ValidateError>`.
 4. Change `authorize` to return `Result<i32, AuthError>`.
 5. Change `check_rate_limit` to return `Result<i32, RateLimitError>`.
 6. Define three error-conversion functions: `fn to_validate_svc(e: ValidateError) -> ServiceError`, `fn to_auth_svc(e: AuthError) -> ServiceError`, `fn to_rate_svc(e: RateLimitError) -> ServiceError`.
 7. Rewrite `handle_request` as a single function using `validate(req).map_err(to_validate_svc)?;` chains.
 8. Remove `handle_validated` and `handle_authorized` (absorbed into `handle_request`).
-9. Update test assertions to match on `Result#Ok` / `Result#Err`.
+9. Update test assertions to match on `Result::Ok` / `Result::Err`.
 
 **Dependency.** Requires `Result.map_err` (Tier 2 in ERROR_HANDLING_DESIGN.md, needs function-pointer-in-generic validation). If `map_err` is not available, the fallback is: keep explicit match blocks but use `Result<T, E>` instead of custom enums, and use `?` where the error type matches.
 
@@ -104,14 +106,14 @@ Programs that pass `--check predictable` continue to pass after rewriting. Progr
 
 ### 2.3 `examples/grep/` --- Phase 3 exit criterion (REQUIRED)
 
-**Current state.** Already uses several stdlib types: `std.fs.read_to_string`, `std.result.Result`, `std.args`. However, it has significant hand-rolled code:
+**Current state.** Already uses several stdlib types: `std.fs.read_to_string`, `Result`, `std.args`. However, it has significant hand-rolled code:
 - `to_lower` reimplements ASCII case conversion with magic constants (65, 90, 32).
 - `contains_pattern` calls `string_contains` but wraps it in manual case conversion.
 - Flag parsing uses magic character codes (45 for '-', 110 for 'n', 99 for 'c', etc.).
 - Line splitting uses manual `string_char_at` scanning for newlines (character code 10).
 - Output construction uses `string_push_char(&mut out, 58)` instead of `out.append(&":")`.
 
-**Stdlib types currently used.** `std.fs.read_to_string`, `std.result.Result`, `std.args.count`, `std.args.get`, `std.fs.FsError`. Also uses `String` (implicit via stdlib).
+**Stdlib types currently used.** `std.fs.read_to_string`, `Result`, `std.args.count`, `std.args.get`, `std.fs.FsError`. Also uses `String` (implicit via stdlib).
 
 **What it should use after stdlib is complete.**
 - `std.ascii.to_lower` for case conversion instead of hand-rolling the 65/90/32 range check.
@@ -162,7 +164,7 @@ Programs that pass `--check predictable` continue to pass after rewriting. Progr
 **What it should use after stdlib is complete.**
 - `std.ascii.is_digit`, `std.ascii.is_whitespace` instead of hand-rolled character classification.
 - `std.parse.Cursor` (the text cursor) for position tracking instead of manual `pos: i32` threading.
-- `std.result.Result<Val, ParseError>` instead of the ad hoc `ParseResult` with error-as-tag-6 pattern.
+- `Result<Val, ParseError>` instead of the ad hoc `ParseResult` with error-as-tag-6 pattern.
 - `String.eq` or `string_eq` for keyword matching instead of byte-by-byte comparison loops.
 
 **Changes needed.**
@@ -176,7 +178,7 @@ Programs that pass `--check predictable` continue to pass after rewriting. Progr
 
 ### 2.6 `examples/http/` --- nice-to-have
 
-**Current state.** A minimal HTTP/1.1 server. Already uses `std.net`, `std.fs`, `std.result.Result`, `std.args`, `std.parse`, `std.option.Option`. Hand-rolls: `find_space` for request parsing, `is_get` method check using character codes, `is_path_safe` for path traversal detection, `buf_to_string` for byte-to-string conversion, `send_string` for string-to-network conversion.
+**Current state.** A minimal HTTP/1.1 server. Already uses `std.net`, `std.fs`, `Result`, `std.args`, `std.parse`, `Option`. Hand-rolls: `find_space` for request parsing, `is_get` method check using character codes, `is_path_safe` for path traversal detection, `buf_to_string` for byte-to-string conversion, `send_string` for string-to-network conversion.
 
 **Stdlib types currently used.** `TcpListener`, `TcpStream`, `NetError`, `read_to_string`, `file_exists`, `FsError`, `Result`, `Option`, `parse_uint`, `count`, `get`.
 
@@ -231,7 +233,7 @@ Programs that pass `--check predictable` continue to pass after rewriting. Progr
 
 ### 2.9 `examples/kvstore/` --- nice-to-have
 
-**Current state.** A persistent key-value store using `HashMap<String, String>`, `Vec<String>`, file I/O. Already uses significant stdlib surface: `std.fs`, `std.result.Result`, `std.option.Option`, `std.args`, `std.bytes.Bytes`, `std.map.HashMap`, `std.hash`, `std.vec.Vec`.
+**Current state.** A persistent key-value store using `HashMap<String, String>`, `Vec<String>`, file I/O. Already uses significant stdlib surface: `std.fs`, `Result`, `Option`, `std.args`, `std.bytes.Bytes`, `std.map.HashMap`, `std.hash`, `std.vec.Vec`.
 
 Hand-rolls: `str_eq` for string comparison (has a local implementation despite `String.eq` existing), `clone_string`, `string_to_bytes`, `find_space`, line-by-line log parsing.
 
@@ -278,7 +280,7 @@ Hand-rolls: `str_eq` for string comparison (has a local implementation despite `
 
 **Stdlib types currently used.** `Vec<T>` (implicitly).
 
-**What it should use.** Minimal changes needed. The example already demonstrates the capability story well. Could use `std.result.Result` for the evaluate return if desired, but the current `i32` return (1 = allow, 0 = deny) is clean for the predictable subset.
+**What it should use.** Minimal changes needed. The example already demonstrates the capability story well. Could use `Result` for the evaluate return if desired, but the current `i32` return (1 = allow, 0 = deny) is clean for the predictable subset.
 
 **Priority.** Nice-to-have.
 
@@ -555,7 +557,7 @@ The order below maximizes feedback on the stdlib surface by tackling the most co
 
 Difficulty: LOW. The rewrite is mechanical: replace `ParseResult` with `Result<Header, ParseError>`, adopt `?`. No new stdlib APIs needed beyond what exists (`Result`, `?`). Validates that `Result<T, E>` with Copy payloads works end-to-end.
 
-Validates: Result generic instantiation, `?` operator with user error enums, match on `Result#Ok`/`Result#Err`.
+Validates: Result generic instantiation, `?` operator with user error enums, match on `Result::Ok`/`Result::Err`.
 
 **Step 2: `examples/service_errors/` --> stdlib Result + map_err (or fallback)**
 
@@ -635,8 +637,8 @@ Validates: Collection reliability for interpreter workloads, Phase 3 exit criter
 
 | Example | Required stdlib change | Blocking gaps | Status |
 |---------|----------------------|---------------|--------|
-| `examples/parse_validate/` | Replace `ParseResult` with `Result<Header, ParseError>`, use `?` | None | Not started |
-| `examples/service_errors/` | Replace 4 custom result enums with `Result<T, E>`, use `map_err` + `?` | Gap 7 (`map_err` -- has fallback) | Not started |
+| `examples/parse_validate/` | Replace `ParseResult` with `Result<Header, ParseError>`, use the canonical builtin surface | None | Done |
+| `examples/service_errors/` | Replace 4 custom result enums with `Result<T, E>`, keep explicit conversion matches until helper coverage grows | `map_err` still pending as a preferred cleanup path | Done |
 | `examples/grep/` | Use `std.ascii`, `String` methods instead of magic constants | None | Not started |
 | `examples/fixed_capacity/` | Replace `ValidateResult` with `Result`, keep ring buffer | None | Not started |
 | One string-heavy workload | `grep` or `policy_engine` validates formatting/text APIs | None | `grep` covers this |

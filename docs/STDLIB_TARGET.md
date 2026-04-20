@@ -566,8 +566,8 @@ Each Phase 2 pressure category exposed specific stdlib gaps. This section maps t
 
 The stdlib target is validated when:
 
-1. `examples/parse_validate/` works with `std.result` and `std.option` instead of custom `ParseResult`/`ParseError` Copy enums.
-2. `examples/service_errors/` works with `std.result` for all error propagation.
+1. `examples/parse_validate/` works with builtin `Result`/`Option` instead of custom `ParseResult`-style enums.
+2. `examples/service_errors/` works with builtin `Result` for all error propagation.
 3. `examples/grep/` (or equivalent) uses `std.string`, `std.bytes`, and `std.fs` for a real text-search task.
 4. `pressure_parse_dns_packet.con` can be rewritten using `std.numeric` endian readers instead of hand-rolled `read_u16_be`.
 5. `pressure_fixcap_ring_buffer.con` can be replaced or simplified using `std.deque`.

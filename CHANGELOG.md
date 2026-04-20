@@ -10,6 +10,16 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Canonical Result/Option surface and `Type::Variant` qualification
+
+Concrete now has one public `Result`/`Option` story and one enum/static qualification syntax:
+
+- **Canonical builtins**: `Result<T, E>` and `Option<T>` are the language-level builtins; `std.result` and `std.option` now provide helper impls on those builtins instead of redefining duplicate public enums
+- **Canonical `Result` shape**: builtin `Result` now uses `Ok { value }` and `Err { error }` everywhere, matching the stdlib helper surface and the `?` operator
+- **Canonical qualification syntax**: enum construction, enum patterns, and static method calls now use `Type::Variant` / `Type::method(...)`; the compiler, formatter, interpreter pretty-printer, examples, stdlib, tests, and docs were migrated off `#`
+- **Canonical examples updated**: `parse_validate` and `service_errors` now use builtin `Result` directly; the old `ParseResult`, `ValidateResult`, `AuthResult`, `RateResult`, and `ServiceResult` surfaces are gone from the shipped examples
+- **Follow-on roadmap honesty**: the roadmap and phase checklist now track only the remaining syntax work honestly — field punning, ignore/rest patterns, and destructuring forms are still pending
+
 ### Source-level interpreter / semantic oracle (Phase 1, item 31)
 
 `Concrete/Interp.lean` — source-level interpreter operating on validated Core IR. CLI: `concrete <file.con> --interp`. Evaluates the predictable/core subset without codegen (no LLVM, no clang).
@@ -67,7 +77,7 @@ Three documentation items establishing governance for the example set:
 
 - **4-stage pipeline**: validate → authorize → rate-limit → process, each with its own error enum
 - **3 stage-specific error enums**: `ValidateError` (BadUserId, BadAction, PayloadTooLarge), `AuthError` (InvalidToken, InsufficientPermission), `RateLimitError` (QuotaExceeded), plus unified `ServiceError` with deterministic error codes (101-103, 201-202, 301)
-- **Custom types**: `Request` struct, `Response` struct, `ServiceResult` enum (Ok/Err)
+- **Public surface**: `Request` struct, `Response` struct, stage-specific error enums, unified `ServiceError`, and builtin `Result<T, E>` for every stage/pipeline return
 - **Pure functions**: 12 functions, all `caps: (pure)`, `evidence: enforced`, zero trusted, zero allocation
 - **Policy enforced**: `predictable = true` in Concrete.toml, all functions pass `--check predictable`
 - **9 runtime tests**: success path, 3 validation failures, 2 auth failures, 1 rate limit, admin action, action-2 path
@@ -80,7 +90,7 @@ Three documentation items establishing governance for the example set:
 
 `examples/parse_validate/` — canonical error-flow example for the predictable subset:
 
-- **Custom error types**: `enum Copy ParseError` (6 categories: TooShort, BadVersion, BadType, PayloadTooBig, Truncated, BadChecksum), `struct Copy Header`, `enum Copy ParseResult { Ok { header }, Err { error } }`
+- **Public surface**: `enum Copy ParseError` (6 categories: TooShort, BadVersion, BadType, PayloadTooBig, Truncated, BadChecksum), `struct Copy Header`, and builtin `Result<Header, ParseError>`
 - **Explicit propagation**: match-based error handling, every error path visible in source, no hidden control flow
 - **Pure functions**: 9 functions, all `caps: (pure)`, `evidence: enforced`, zero trusted, zero allocation
 - **Bounded**: `compute_checksum` XOR fold over fixed-size array with bounded loop; all others loop-free

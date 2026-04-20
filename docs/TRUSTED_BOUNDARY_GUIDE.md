@@ -36,7 +36,7 @@ trusted fn read_u16_be(data: *const u8, offset: u64) -> u16 {
 
 // Pure validation core — NOT trusted, proof-eligible
 fn decode_header(data: *const u8, len: u64) -> DecodeResult {
-    if len < 8 { return DecodeResult#TooShort; }
+    if len < 8 { return DecodeResult::TooShort; }
     let version: u8 = read_u8(data, 0);
     // ... pure validation logic
 }

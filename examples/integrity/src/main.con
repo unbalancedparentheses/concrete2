@@ -6,7 +6,6 @@
 
 mod fcheck {
     import std.fs.{read_file, read_to_string, write_file, FsError};
-    import std.result.{Result};
     import std.bytes.{Bytes};
     import std.args.{count, get};
     import std.map.{HashMap};
@@ -26,11 +25,11 @@ mod fcheck {
     trusted fn read_file_raw(path: &String) with(File, Alloc) -> FileData {
         let result: Result<Bytes, FsError> = read_file(path);
         match result {
-            Result#Ok { value } => {
+            Result::Ok { value } => {
                 let fd: FileData = FileData { ptr: value.ptr, len: value.len };
                 return fd;
             },
-            Result#Err { error } => {
+            Result::Err { error } => {
                 return FileData { ptr: 0 as *mut u8, len: 0 };
             }
         }
@@ -69,8 +68,8 @@ mod fcheck {
     trusted fn write_bytes_to_file(mpath: &String, data: &Bytes) with(File, Alloc) -> bool {
         let result: Result<u64, FsError> = write_file(mpath, data);
         match result {
-            Result#Ok { value } => { return true; },
-            Result#Err { error } => { return false; }
+            Result::Ok { value } => { return true; },
+            Result::Err { error } => { return false; }
         }
     }
 
@@ -108,10 +107,10 @@ mod fcheck {
     fn read_manifest_file(path: &String) with(File, Alloc) -> String {
         let result: Result<String, FsError> = read_to_string(path);
         match result {
-            Result#Ok { value } => {
+            Result::Ok { value } => {
                 return value;
             },
-            Result#Err { error } => {
+            Result::Err { error } => {
                 return "";
             }
         }
@@ -250,11 +249,11 @@ mod fcheck {
                     } else {
                         let stored_opt: Option<&String> = manifest_map.get(&cpath);
                         match stored_opt {
-                            Option#None => {
+                            Option::None => {
                                 report_status(&"ADDED    ", &cpath);
                                 cnt_add = cnt_add + 1;
                             },
-                            Option#Some { value } => {
+                            Option::Some { value } => {
                                 let cpath_copy: String = cpath.clone();
                                 checked.insert(cpath_copy);
 
