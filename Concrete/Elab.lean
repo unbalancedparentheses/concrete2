@@ -141,6 +141,40 @@ private def isPointerType : Ty → Bool
   | .ptrMut _ | .ptrConst _ => true
   | _ => false
 
+/-- Pure newtype erasure: resolve any `.named` / `.generic` whose name matches a newtype
+    to its (possibly substituted) inner type. Used when building Core struct/enum definitions
+    so that layout, copy-checking, and lowering see the erased type. -/
+private partial def eraseNewtypeTy (newtypes : List NewtypeDef) : Ty → Ty
+  | .named name =>
+    match newtypes.find? fun nt => nt.name == name with
+    | some nt => eraseNewtypeTy newtypes nt.innerTy
+    | none => .named name
+  | .generic name args =>
+    let args' := args.map (eraseNewtypeTy newtypes)
+    match newtypes.find? fun nt => nt.name == name with
+    | some nt =>
+      let mapping := nt.typeParams.zip args'
+      let rec subst : Ty → Ty
+        | .named n => match mapping.lookup n with | some t => t | none => .named n
+        | .typeVar n => match mapping.lookup n with | some t => t | none => .typeVar n
+        | .ref i => .ref (subst i)
+        | .refMut i => .refMut (subst i)
+        | .ptrMut i => .ptrMut (subst i)
+        | .ptrConst i => .ptrConst (subst i)
+        | .array e n => .array (subst e) n
+        | .generic n as => .generic n (as.map subst)
+        | .fn_ ps c r => .fn_ (ps.map subst) c (subst r)
+        | t => t
+      eraseNewtypeTy newtypes (subst nt.innerTy)
+    | none => .generic name args'
+  | .ref inner => .ref (eraseNewtypeTy newtypes inner)
+  | .refMut inner => .refMut (eraseNewtypeTy newtypes inner)
+  | .ptrMut inner => .ptrMut (eraseNewtypeTy newtypes inner)
+  | .ptrConst inner => .ptrConst (eraseNewtypeTy newtypes inner)
+  | .array elem n => .array (eraseNewtypeTy newtypes elem) n
+  | .fn_ ps c r => .fn_ (ps.map (eraseNewtypeTy newtypes)) c (eraseNewtypeTy newtypes r)
+  | t => t
+
 /-- Substitute type variables in a type. -/
 private def substTy (mapping : List (String × Ty)) : Ty → Ty
   | .named name => match mapping.lookup name with | some t => t | none => .named name
@@ -399,6 +433,7 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
   | .structLit _ name typeArgs fields =>
     match ← lookupStruct name with
     | some sd =>
+      let typeArgs ← typeArgs.mapM resolveTypeE
       let mapping := sd.typeParams.zip typeArgs
       let mut cFields : List (String × CExpr) := []
       for sf in sd.fields do
@@ -442,6 +477,7 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
   | .enumLit _ enumName variant typeArgs fields =>
     match ← lookupEnum enumName with
     | some ed =>
+      let typeArgs ← typeArgs.mapM resolveTypeE
       let effectiveTypeArgs := if typeArgs.isEmpty && !ed.typeParams.isEmpty then
         match hint with
         | some (.generic n args) => if n == enumName then args else []
@@ -603,6 +639,7 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
 
   | .methodCall _ obj methodName typeArgs args =>
     -- Desugar: obj.method(args) → Type_method(&obj, args) or Type_method(&mut obj, args)
+    let typeArgs ← typeArgs.mapM resolveTypeE
     let cObj ← elabExpr obj
     let objTy := cObj.ty
     let innerTy := match objTy with
@@ -682,6 +719,7 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
 /-- Elaborate a function call (regular, builtins, intercepted). -/
 partial def elabCall (fnName : String) (typeArgs : List Ty) (args : List Expr)
     (_hint : Option Ty) (span : Option Span := none) : ElabM CExpr := do
+  let typeArgs ← typeArgs.mapM resolveTypeE
   let intrinsic := resolveIntrinsic fnName
   -- Intercept abort()
   if intrinsic == some .abort then
@@ -707,9 +745,10 @@ partial def elabCall (fnName : String) (typeArgs : List Ty) (args : List Expr)
   -- Intercept newtype constructor: erase to inner expression
   let env ← getEnv
   match env.newtypes.find? fun nt => nt.name == fnName with
-  | some _nt =>
+  | some nt =>
     let arg := match args with | a :: _ => a | [] => Expr.intLit default 0
-    let cArg ← elabExpr arg
+    let innerTy ← resolveTypeE nt.innerTy
+    let cArg ← elabExpr arg (some innerTy)
     return cArg  -- newtype erasure: just return the inner value
   | none => pure ()
   -- Intercept unwrap(x): erase to inner expression (only if not a user-defined function)
@@ -1404,10 +1443,12 @@ partial def elabModule (m : Module) (summary : FileSummary)
   ) (([] : List CFnDef), ([] : Diagnostics), initEnv)
   if !fnErrors.isEmpty then .error fnErrors
   else
-  -- Build Core structs (local definitions)
+  -- Build Core structs (local definitions). Erase newtypes in field types so that
+  -- layout, copy-checking, and lowering see the wrapper's inner type.
+  let eraseTy := eraseNewtypeTy m.newtypes
   let cStructs := m.structs.map fun sd =>
     { name := sd.name, typeParams := sd.typeParams,
-      fields := sd.fields.map fun f => (f.name, f.ty),
+      fields := sd.fields.map fun f => (f.name, eraseTy f.ty),
       isPublic := sd.isPublic, isCopy := sd.isCopy, isReprC := sd.isReprC,
       isPacked := sd.isPacked, reprAlign := sd.reprAlign : CStructDef }
   -- Also convert imported structs so cross-module field offsets work in Lower/Layout
@@ -1415,7 +1456,7 @@ partial def elabModule (m : Module) (summary : FileSummary)
   let cImportedStructs := (imports.structs.filter fun sd =>
       !(localStructNames.contains sd.name)).map fun sd =>
     { name := sd.name, typeParams := sd.typeParams,
-      fields := sd.fields.map fun f => (f.name, f.ty),
+      fields := sd.fields.map fun f => (f.name, eraseTy f.ty),
       isPublic := sd.isPublic, isCopy := sd.isCopy, isReprC := sd.isReprC,
       isPacked := sd.isPacked, reprAlign := sd.reprAlign : CStructDef }
   -- Build extern fns
@@ -1508,7 +1549,7 @@ partial def elabModule (m : Module) (summary : FileSummary)
     enums := allEnums.map fun ed =>
       { name := ed.name, typeParams := ed.typeParams,
         variants := ed.variants.map fun v =>
-          (v.name, v.fields.map fun f => (f.name, f.ty)),
+          (v.name, v.fields.map fun f => (f.name, eraseTy f.ty)),
         isPublic := ed.isPublic, isCopy := ed.isCopy, builtinId := ed.builtinId : CEnumDef }
     functions := fns
     externFns := cExterns

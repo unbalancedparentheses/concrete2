@@ -73,3 +73,4 @@ scripts/check_ll1_rs
 # Generated paper artifacts
 paper/*.pdf
 site/public/
+tmp/

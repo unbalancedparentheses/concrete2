@@ -1604,6 +1604,8 @@ run_ok "$TESTDIR/newtype_copy.con" 20
 run_ok "$TESTDIR/newtype_linear.con" 7
 run_ok "$TESTDIR/newtype_generic.con" 100
 run_ok "$TESTDIR/newtype_validated.con" 8081
+run_ok "$TESTDIR/newtype_enum_payload.con" 8080
+run_ok "$TESTDIR/newtype_struct_copy_field.con" 443
 run_err "$TESTDIR/error_newtype_no_implicit.con" "type mismatch"
 run_err "$TESTDIR/error_newtype_wrong_inner.con" "type mismatch"
 
@@ -6878,6 +6880,8 @@ run_ok_O2 "$TESTDIR/phase3_state_machine.con" 42
 
 # Newtype/repr under O2
 run_ok_O2 "$TESTDIR/newtype_basic.con" 42
+run_ok_O2 "$TESTDIR/newtype_enum_payload.con" 8080
+run_ok_O2 "$TESTDIR/newtype_struct_copy_field.con" 443
 run_ok_O2 "$TESTDIR/repr_c_basic.con" 42
 run_ok_O2 "$TESTDIR/union_basic.con" 42
 
