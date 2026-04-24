@@ -664,7 +664,8 @@ def ccCheckModuleDecls (m : CModule)
     (allStructs : List CStructDef) (allEnums : List CEnumDef) : Diagnostics :=
   Id.run do
   let mut errors : Diagnostics := []
-  let lctx : Layout.Ctx := { structDefs := allStructs, enumDefs := allEnums }
+  let allNewtypes := m.newtypes
+  let lctx : Layout.Ctx := { structDefs := allStructs, enumDefs := allEnums, newtypes := allNewtypes }
   -- 1. Copy/Destroy conflict + Copy field check for structs
   for sd in m.structs do
     if sd.isCopy then

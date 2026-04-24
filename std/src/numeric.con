@@ -1,5 +1,51 @@
 mod numeric {
 
+    // ============================================================
+    // Canonical validated wrappers — see docs/VALIDATED_WRAPPERS.md §4.
+    //
+    // Static-only API: construct with try_new / try_from_*, read with .0.
+    // Instance methods on newtypes are deliberately omitted because method
+    // dispatch resolves to the inner type rather than the wrapper
+    // (docs/VALIDATED_WRAPPERS.md §8 gap 1).
+    // ============================================================
+
+    pub newtype NonZeroU32 = u32;
+    pub newtype NonZeroU64 = u64;
+    pub newtype Port = u16;
+
+    impl NonZeroU32 {
+        pub fn try_new(value: u32) -> Option<NonZeroU32> {
+            if value == 0 { return Option::<NonZeroU32>::None; }
+            return Option::<NonZeroU32>::Some { value: NonZeroU32(value) };
+        }
+
+        pub fn try_from_u64(value: u64) -> Option<NonZeroU32> {
+            if value == 0 { return Option::<NonZeroU32>::None; }
+            if value > 4294967295 { return Option::<NonZeroU32>::None; }
+            return Option::<NonZeroU32>::Some { value: NonZeroU32(value as u32) };
+        }
+    }
+
+    impl NonZeroU64 {
+        pub fn try_new(value: u64) -> Option<NonZeroU64> {
+            if value == 0 { return Option::<NonZeroU64>::None; }
+            return Option::<NonZeroU64>::Some { value: NonZeroU64(value) };
+        }
+    }
+
+    impl Port {
+        pub fn try_new(value: u16) -> Option<Port> {
+            if value == 0 { return Option::<Port>::None; }
+            return Option::<Port>::Some { value: Port(value) };
+        }
+
+        pub fn try_from_u32(value: u32) -> Option<Port> {
+            if value == 0 { return Option::<Port>::None; }
+            if value > 65535 { return Option::<Port>::None; }
+            return Option::<Port>::Some { value: Port(value as u16) };
+        }
+    }
+
     // ---- CursorError ----
 
     pub enum Copy CursorError {
@@ -568,5 +614,82 @@ mod numeric {
 
         if !assert_eq::<u64>(cur.pos(), 7, "pos should be 7") { return 7; }
         return 0;
+    }
+
+    // ============================================================
+    // Validated wrapper tests (NonZeroU32, NonZeroU64, Port)
+    // ============================================================
+
+    #[test]
+    fn test_non_zero_u32_try_new_happy() -> i32 {
+        match NonZeroU32::try_new(42) {
+            Option::Some { value } => {
+                if !assert_eq::<u32>(value.0, 42, "NonZeroU32(42).0 should be 42") { return 1; }
+                return 0;
+            }
+            Option::None => { return 2; }
+        }
+    }
+
+    #[test]
+    fn test_non_zero_u32_try_new_zero() -> i32 {
+        match NonZeroU32::try_new(0) {
+            Option::Some { value } => { return 1; }
+            Option::None => { return 0; }
+        }
+    }
+
+    #[test]
+    fn test_non_zero_u32_try_from_u64_overflow() -> i32 {
+        match NonZeroU32::try_from_u64(4294967296) {
+            Option::Some { value } => { return 1; }
+            Option::None => { return 0; }
+        }
+    }
+
+    #[test]
+    fn test_non_zero_u64_try_new_happy() -> i32 {
+        match NonZeroU64::try_new(1000000000000) {
+            Option::Some { value } => {
+                if !assert_eq::<u64>(value.0, 1000000000000, "round-trip") { return 1; }
+                return 0;
+            }
+            Option::None => { return 2; }
+        }
+    }
+
+    #[test]
+    fn test_non_zero_u64_try_new_zero() -> i32 {
+        match NonZeroU64::try_new(0) {
+            Option::Some { value } => { return 1; }
+            Option::None => { return 0; }
+        }
+    }
+
+    #[test]
+    fn test_port_try_new_happy() -> i32 {
+        match Port::try_new(8080) {
+            Option::Some { value } => {
+                if !assert_eq::<u16>(value.0, 8080, "Port round-trip") { return 1; }
+                return 0;
+            }
+            Option::None => { return 2; }
+        }
+    }
+
+    #[test]
+    fn test_port_try_new_zero() -> i32 {
+        match Port::try_new(0) {
+            Option::Some { value } => { return 1; }
+            Option::None => { return 0; }
+        }
+    }
+
+    #[test]
+    fn test_port_try_from_u32_overflow() -> i32 {
+        match Port::try_from_u32(70000) {
+            Option::Some { value } => { return 1; }
+            Option::None => { return 0; }
+        }
     }
 }

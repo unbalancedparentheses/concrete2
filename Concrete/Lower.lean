@@ -64,6 +64,7 @@ structure LowerState where
   stringLits : List (String × String)
   structDefs : List CStructDef
   enumDefs : List CEnumDef
+  newtypes : List NewtypeDef := []
   loopStack : List LoopInfo
   constants : List (String × Ty × CExpr) := []
   /-- Allocas that must be hoisted to the function entry block.
@@ -239,7 +240,7 @@ private def structNameFromTy (ty : Ty) : LowerM String :=
 /-- Build a Layout.Ctx from the current LowerState. -/
 private def getLayoutCtx : LowerM Layout.Ctx := do
   let s ← getState
-  return { structDefs := s.structDefs, enumDefs := s.enumDefs }
+  return { structDefs := s.structDefs, enumDefs := s.enumDefs, newtypes := s.newtypes }
 
 /-- Compute byte size of a type (for malloc). Delegates to Layout.tySize. -/
 private def computeTySize (ty : Ty) : LowerM Nat := do
@@ -1755,7 +1756,8 @@ end
 -- ============================================================
 
 def lowerFn (f : CFnDef) (structDefs : List CStructDef) (enumDefs : List CEnumDef)
-    (constants : List (String × Ty × CExpr) := []) : Except Diagnostics (SFnDef × List (String × String)) :=
+    (constants : List (String × Ty × CExpr) := [])
+    (newtypes : List NewtypeDef := []) : Except Diagnostics (SFnDef × List (String × String)) :=
   let initState : LowerState := {
     blocks := []
     currentLabel := "entry"
@@ -1766,6 +1768,7 @@ def lowerFn (f : CFnDef) (structDefs : List CStructDef) (enumDefs : List CEnumDe
     stringLits := []
     structDefs := structDefs
     enumDefs := enumDefs
+    newtypes := newtypes
     loopStack := []
     constants := constants
     scopeStack := [{ kind := .function }]
@@ -1834,6 +1837,11 @@ private partial def collectAllLinkerAliases (m : CModule) : List (String × Stri
   let sub := m.submodules.foldl (fun acc s => acc ++ collectAllLinkerAliases s) []
   m.linkerAliases ++ sub
 
+private partial def collectAllNewtypes (m : CModule) : List NewtypeDef :=
+  let own := m.newtypes
+  let sub := m.submodules.foldl (fun acc s => acc ++ collectAllNewtypes s) []
+  own ++ sub
+
 private def renameSVal (rmap : List (String × String)) : SVal → SVal
   | .strConst name => match rmap.lookup name with
     | some newName => .strConst newName
@@ -1868,11 +1876,12 @@ def lowerModule (m : CModule) : Except Diagnostics SModule := do
   let allEnums := collectAllEnums m
   let allExterns := collectAllExterns m
   let allConstants := collectAllConstants m
+  let allNewtypes := collectAllNewtypes m
   -- Skip generic functions (non-empty typeParams); only their monomorphized
   -- specializations should be lowered.
   let concreteFns := allFunctionsWithPath.filter fun (f, _) => f.typeParams.isEmpty
   let results ← concreteFns.foldlM (init := []) fun acc (f, path) =>
-    match lowerFn f allStructs allEnums allConstants with
+    match lowerFn f allStructs allEnums allConstants allNewtypes with
     | .ok (sfn, lits) => .ok (acc ++ [({ sfn with modulePath := path }, lits)])
     | .error ds => .error (ds.map (·.addContext s!"while lowering function '{f.name}'"))
   -- Build deduplicated globals list (by string value)
@@ -1904,6 +1913,7 @@ def lowerModule (m : CModule) : Except Diagnostics SModule := do
     externFns := allExterns
     globals := globals
     linkerAliases := collectAllLinkerAliases m
+    newtypes := allNewtypes
   }
   return result
 

@@ -1555,6 +1555,7 @@ partial def elabModule (m : Module) (summary : FileSummary)
     externFns := cExterns
     constants := cConstants
     submodules := subs
+    newtypes := m.newtypes
     traitDefs := m.traits.map fun td =>
       { name := td.name,
         methods := td.methods.map fun sig =>

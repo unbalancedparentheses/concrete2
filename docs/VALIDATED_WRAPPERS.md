@@ -204,7 +204,8 @@ Until such evidence lands, the convention here is frozen.
 These are compiler bugs, not language design holes. The convention above is the target; the implementation needs to catch up before the freeze checklist in section 6 passes.
 
 - **Instance methods on newtypes dispatch as inner-type methods.** `good.value()` where `good: Port` and `Port = u16` resolves against `u16`, not `Port`. Static methods (`Port::try_new(...)`) work today because the explicit qualifier carries the newtype name through dispatch. Closing this gap means letting method resolution see the wrapper first and fall through to the inner only when no inherent impl matches.
-- **`Layout.tySize` / `Layout.tyAlign` do not resolve newtype names.** When a newtype appears inside an enum payload (e.g., `Option<Port>` with `Port = u16`), native/SSA codegen emits a panic trace and produces a binary whose behavior does not match the interpreter. The interpreter path works; the SSA path needs to look through newtype names before querying primitive layout.
 
-Both gaps are tracked as compiler bugs, not design revisions.
+Remaining gap is tracked as a compiler bug, not a design revision.
+
+**Resolved:** the prior native/SSA layout gap (where `Layout.tySize`/`Layout.tyAlign` panicked on newtypes that survived as enum payloads, e.g. `Option<Port>`) is now fixed. `Layout.Ctx` carries a newtypes list; the size/alignment/pass-by-ptr/LLVM-type paths resolve named/generic types through `resolveNewtype` before querying primitive layout, threaded through `CModule` → `SModule` → `EmitSSA`/`Lower`/`CoreCheck`/`Report`. Native and interp agree on enum-payload newtypes.
 

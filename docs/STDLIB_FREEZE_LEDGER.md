@@ -65,10 +65,10 @@ Interpreter workload runs end-to-end. The frozen direction ([RUNTIME_COLLECTIONS
 |---|---|---|---|
 | Formatting / print / append | Yes ([FORMATTING_OUTPUT.md](FORMATTING_OUTPUT.md)) | Complete — `print`/`println` and variadic `append` all wired | `grep` exercises existing surface; `tests/programs/variadic_append.con` covers the new desugar |
 | Runtime collections | Yes ([RUNTIME_COLLECTIONS.md](RUNTIME_COLLECTIONS.md)) | Partial — `HashMap::get_mut`, `insert` return value missing | `lox` runs but does not use canonical HashMap shape yet |
-| Validated wrappers | Yes ([VALIDATED_WRAPPERS.md](VALIDATED_WRAPPERS.md)) | Partial — newtype mechanism works at interp; native/SSA layout bug on enum-payload newtypes (tracked in doc §8) | `tests/programs/newtype_validated.con` exercises convention |
+| Validated wrappers | Yes ([VALIDATED_WRAPPERS.md](VALIDATED_WRAPPERS.md)) | Complete on the layout/codegen path — native/SSA layout resolves enum-payload newtypes; canonical stdlib wrappers landed (`std.numeric.NonZeroU32`/`NonZeroU64`/`Port`, `std.text.AsciiText`). Instance-method dispatch on newtypes still resolves to inner-type methods (doc §8 remaining gap); static-only API is the convention until that closes | `tests/programs/newtype_validated.con` plus `AsciiText` stdlib tests exercise convention |
 | Layout / ABI contract | Yes ([LAYOUT_CONTRACT.md](LAYOUT_CONTRACT.md)) | Implementation already accepts the four stable forms; freeze checklist items around report fact set and `#[repr(transparent)]` rejection remain | `pressure_ffi_*` programs exercise existing surface |
 
-No design decision is blocked by a missing workload. Two small implementation tasks remain between the current state and the freeze checklist being green: `HashMap::get_mut` + `insert` return value, and newtype layout lookup in SSA codegen. Variadic `append` (G-1) landed 2026-04-20.
+No design decision is blocked by a missing workload. One small implementation task remains between the current state and the freeze checklist being green: `HashMap::get_mut` + `insert` return value. Newtype layout lookup in SSA codegen landed 2026-04-24 (`Layout.Ctx` now carries a newtypes list and resolves through `resolveNewtype` at the layout boundary), paired with canonical stdlib wrappers (`NonZeroU32`, `NonZeroU64`, `Port`, `AsciiText`) and `OrderedMap::get_mut`. Variadic `append` (G-1) landed 2026-04-20.
 
 ---
 

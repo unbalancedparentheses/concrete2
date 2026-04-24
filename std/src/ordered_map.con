@@ -62,6 +62,23 @@ mod ordered_map {
             return Option::<&V>::Some { value: v as &V };
         }
 
+        pub fn get_mut(&mut self, key: &K) -> Option<&mut V> {
+            let cmp: fn(&K, &K) -> i32 = self.cmp_fn;
+            if self.len == 0 {
+                return Option::<&mut V>::None;
+            }
+            let idx: u64 = self.find_index(key);
+            if idx >= self.len {
+                return Option::<&mut V>::None;
+            }
+            let k: *mut K = self.keys + idx;
+            if cmp(key, k as &K) != 0 {
+                return Option::<&mut V>::None;
+            }
+            let v: *mut V = self.values + idx;
+            return Option::<&mut V>::Some { value: v as &mut V };
+        }
+
         pub fn contains(&self, key: &K) -> bool {
             let cmp: fn(&K, &K) -> i32 = self.cmp_fn;
             if self.len == 0 {

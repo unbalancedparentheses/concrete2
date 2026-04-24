@@ -434,10 +434,14 @@ private partial def collectSubStructs (m : CModule) : List CStructDef :=
 private partial def collectSubEnums (m : CModule) : List CEnumDef :=
   m.submodules.foldl (fun acc sub => acc ++ sub.enums ++ collectSubEnums sub) []
 
+private partial def collectSubNewtypes (m : CModule) : List NewtypeDef :=
+  m.submodules.foldl (fun acc sub => acc ++ sub.newtypes ++ collectSubNewtypes sub) []
+
 private def buildLayoutCtx (modules : List CModule) : Layout.Ctx :=
   let structs := modules.foldl (fun acc m => acc ++ m.structs ++ collectSubStructs m) []
   let enums := modules.foldl (fun acc m => acc ++ m.enums ++ collectSubEnums m) []
-  { structDefs := structs, enumDefs := enums }
+  let newtypes := modules.foldl (fun acc m => acc ++ m.newtypes ++ collectSubNewtypes m) []
+  { structDefs := structs, enumDefs := enums, newtypes := newtypes }
 
 private def layoutStructReport (ctx : Layout.Ctx) (sd : CStructDef) : Option String :=
   if !sd.typeParams.isEmpty then none

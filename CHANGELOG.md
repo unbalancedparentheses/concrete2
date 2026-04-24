@@ -10,6 +10,17 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Validated wrappers land in stdlib; newtype layout threads through codegen
+
+The newtype surface designed in `docs/VALIDATED_WRAPPERS.md` is now usable on the native/SSA path, and the first canonical wrappers ship in stdlib.
+
+- **Stdlib wrappers**: `std.numeric.NonZeroU32`, `std.numeric.NonZeroU64`, `std.numeric.Port`, and `std.text.AsciiText` land as canonical validated wrappers. Each exposes static-only `try_new` / `try_from_<src>` constructors returning `Option<T>` and preserves the zero-cost `.0` extraction contract. `AsciiText` wraps `String` with the invariant that every byte is in `0..=127`, validated once in `try_new`. 3 new `AsciiText` tests (happy path, empty-OK, reject non-ASCII).
+- **Newtype layout fix (native/SSA)**: `Layout.tySize` / `Layout.tyAlign` / `Layout.isPassByPtr` / `Layout.tyToLLVM` previously panicked with `unknown named type 'Port'` whenever a newtype survived Elab's struct/enum-field erasure — for example as the payload of `Option<Port>` or `Option<AsciiText>`. `Layout.Ctx` now carries a `newtypes` list and resolves named/generic types through `resolveNewtype` before querying layout; recurses to handle newtype-of-newtype and substitutes generic args. `CModule` gains a `newtypes : List NewtypeDef` field populated by Elab; `SModule` carries the same, collected across submodules in Lower; EmitSSA state threads newtypes into the Layout context used by `scanBuiltinEnumArgs` and the rest of codegen. `CoreCheck` and `Report` build Layout.Ctx with newtypes too. Check.lean and FileSummary.lean are intentionally untouched — the type-check layer still rejects `Port` vs `u16` without implicit coercion (`tests/programs/error_newtype_no_implicit.con` still rejects).
+- **Inherent-impl path now native-clean**: the note in `tests/programs/newtype_validated.con` flagged `impl Port { fn try_new ... }` returning `Option<Port>` as a known layout-bug trigger. That path now lowers, links, and runs; it is the shape the stdlib wrappers use.
+- **`std.ordered_map` gains `get_mut`**: paired with the wrapper work because both are part of the Phase 3 stdlib-freeze checklist for runtime collections.
+- **Regression coverage**: `std/src/lib.con --test` runs 248/248 including the new `AsciiText` tests; `pipeline-test` 32/32 layout/ABI cases still green; 8 newtype `.con` test programs compile and run; 3 error-path tests (`error_newtype_no_implicit`, `error_newtype_double_unwrap`, `error_newtype_wrong_inner`) still reject as expected.
+- **Freeze-ledger update**: `docs/STDLIB_FREEZE_LEDGER.md` validated-wrapper row flips from "Partial — newtype mechanism works at interp; native/SSA layout bug on enum-payload newtypes" to "Complete"; `docs/VALIDATED_WRAPPERS.md §8` drops the `Layout.tySize`/`Layout.tyAlign` gap (the instance-method-dispatch gap remains, by design).
+
 ### Canonical Result/Option surface and `Type::Variant` qualification
 
 Concrete now has one public `Result`/`Option` story and one enum/static qualification syntax:
