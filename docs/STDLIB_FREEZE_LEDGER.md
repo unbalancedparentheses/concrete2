@@ -48,14 +48,14 @@ String-heavy workload runs end-to-end on today's surface. The frozen direction (
 | Tag | Classification | Finding | Resolution path |
 |---|---|---|---|
 | L-1 | Missing pattern | lox rolls its own `Vec<NumEntry>` / `Vec<Binding>` / tag-indexed object store instead of `HashMap<String, Value>` + `Vec<Frame>`. [RUNTIME_COLLECTIONS.md §3.1](RUNTIME_COLLECTIONS.md) commits to the HashMap+frame shape as the canonical idiom. | lox predates the frozen direction. Rewriting it onto the canonical shape is the definitive evidence for item 67 section 6 freeze checklist. Not required before freeze, but scheduled for the freeze checklist close-out. |
-| L-2 | Missing API | `HashMap::get_mut(&mut self, key: &K) -> Option<&mut V>` does not exist in `std.map`. It is required for in-place value mutation ([RUNTIME_COLLECTIONS.md §4](RUNTIME_COLLECTIONS.md) "Mutating lookup" row). | Add before freeze. Small addition in `std/src/map.con` mirroring `get`. |
-| L-3 | Missing API | `HashMap::insert` currently does not return the displaced value (ownership of the prior entry is lost / the implementation is silent on the return). Freeze checklist requires `Option<V>` return. | Verify and patch in `std/src/map.con`. Small, localized. |
+| L-2 | Resolved | `HashMap::get_mut(&mut self, key: &K) -> Option<&mut V>` landed in `std/src/map.con:66`, mirroring `get`. Required for in-place value mutation ([RUNTIME_COLLECTIONS.md §4](RUNTIME_COLLECTIONS.md) "Mutating lookup" row). | Closed. |
+| L-3 | Resolved | `HashMap::insert` returns `Option<V>`: `None` on fresh insert, `Some { value: old }` when overwriting an existing key (`std/src/map.con:77`). | Closed. |
 | L-4 | Deferred | No priority queue / heap type in stdlib. lox does not need one; no scheduler example forces it yet. | Deferred per [RUNTIME_COLLECTIONS.md §2](RUNTIME_COLLECTIONS.md) "Not in the stable surface". |
 | L-5 | Missing pattern | lox has no `Env` / `Frame` struct factored out; scope handling is threaded through free functions (`lox_env_get`, etc.). | Example-shape, not stdlib. Promote to stdlib only if two unrelated examples arrive at the same shape ([RUNTIME_COLLECTIONS.md §6](RUNTIME_COLLECTIONS.md) promotion rules). |
 | L-6 | Compiler gap | Large monolithic file (1 183 lines) suggests module boundaries are not ergonomic for runtime-heavy programs. Not a stdlib gap; a module-hygiene gap. | Tracked separately under [VISIBILITY_AND_MODULE_HYGIENE.md](VISIBILITY_AND_MODULE_HYGIENE.md). |
 
 ### Verdict
-Interpreter workload runs end-to-end. The frozen direction ([RUNTIME_COLLECTIONS.md](RUNTIME_COLLECTIONS.md)) matches the shape a canonical lox *would* have. Before the stdlib freeze, `std.map` must close L-2 and L-3 (small, mechanical), and the project must decide whether to rewrite lox onto the canonical shape (L-1) as freeze evidence or accept the pattern-as-documented without a reference implementation.
+Interpreter workload runs end-to-end. The frozen direction ([RUNTIME_COLLECTIONS.md](RUNTIME_COLLECTIONS.md)) matches the shape a canonical lox *would* have. `std.map` already exposes the frozen surface (L-2 and L-3 resolved). The remaining decision is whether to rewrite lox onto the canonical shape (L-1) as freeze evidence or accept the pattern-as-documented without a reference implementation.
 
 ---
 
@@ -64,11 +64,11 @@ Interpreter workload runs end-to-end. The frozen direction ([RUNTIME_COLLECTIONS
 | Domain | Design frozen | Implementation complete | Workload evidence |
 |---|---|---|---|
 | Formatting / print / append | Yes ([FORMATTING_OUTPUT.md](FORMATTING_OUTPUT.md)) | Complete — `print`/`println` and variadic `append` all wired | `grep` exercises existing surface; `tests/programs/variadic_append.con` covers the new desugar |
-| Runtime collections | Yes ([RUNTIME_COLLECTIONS.md](RUNTIME_COLLECTIONS.md)) | Partial — `HashMap::get_mut`, `insert` return value missing | `lox` runs but does not use canonical HashMap shape yet |
+| Runtime collections | Yes ([RUNTIME_COLLECTIONS.md](RUNTIME_COLLECTIONS.md)) | Complete — `HashMap::get_mut` and `insert`-returning-`Option<V>` land in `std/src/map.con`; `OrderedMap::get_mut` added in parallel | `lox` runs but does not use canonical HashMap shape yet (tracked as L-1, optional freeze evidence) |
 | Validated wrappers | Yes ([VALIDATED_WRAPPERS.md](VALIDATED_WRAPPERS.md)) | Complete on the layout/codegen path — native/SSA layout resolves enum-payload newtypes; canonical stdlib wrappers landed (`std.numeric.NonZeroU32`/`NonZeroU64`/`Port`, `std.text.AsciiText`). Instance-method dispatch on newtypes still resolves to inner-type methods (doc §8 remaining gap); static-only API is the convention until that closes | `tests/programs/newtype_validated.con` plus `AsciiText` stdlib tests exercise convention |
 | Layout / ABI contract | Yes ([LAYOUT_CONTRACT.md](LAYOUT_CONTRACT.md)) | Implementation already accepts the four stable forms; freeze checklist items around report fact set and `#[repr(transparent)]` rejection remain | `pressure_ffi_*` programs exercise existing surface |
 
-No design decision is blocked by a missing workload. One small implementation task remains between the current state and the freeze checklist being green: `HashMap::get_mut` + `insert` return value. Newtype layout lookup in SSA codegen landed 2026-04-24 (`Layout.Ctx` now carries a newtypes list and resolves through `resolveNewtype` at the layout boundary), paired with canonical stdlib wrappers (`NonZeroU32`, `NonZeroU64`, `Port`, `AsciiText`) and `OrderedMap::get_mut`. Variadic `append` (G-1) landed 2026-04-20.
+No design decision is blocked by a missing workload. The implementation tasks flagged in this ledger have landed: `HashMap::get_mut` and `insert`-returning-`Option<V>` are in `std/src/map.con`; newtype layout lookup in SSA codegen landed 2026-04-24 (`Layout.Ctx` now carries a newtypes list and resolves through `resolveNewtype` at the layout boundary), paired with canonical stdlib wrappers (`NonZeroU32`, `NonZeroU64`, `Port`, `AsciiText`) and `OrderedMap::get_mut`; variadic `append` (G-1) landed 2026-04-20. The one documented remaining gap is instance-method dispatch on newtypes, which resolves to inner-type methods; the convention is static-only (`T::try_new(...)`) until that closes.
 
 ---
 
