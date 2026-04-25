@@ -124,10 +124,10 @@ enum PortError { Zero, OutOfRange }
 impl Port {
     pub fn try_from_u32(value: u32) -> Result<Port, PortError> {
         if value == 0 {
-            return Result::<Port, PortError>::Err { value: PortError::Zero };
+            return Result::<Port, PortError>::Err { error: PortError::Zero };
         }
         if value > 65535 {
-            return Result::<Port, PortError>::Err { value: PortError::OutOfRange };
+            return Result::<Port, PortError>::Err { error: PortError::OutOfRange };
         }
         return Result::<Port, PortError>::Ok { value: Port(value as u16) };
     }

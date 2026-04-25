@@ -1,10 +1,9 @@
 // Test: validated-wrapper convention per docs/VALIDATED_WRAPPERS.md
-// Demonstrates the free-function try_new shape without inherent impl, which
-// works identically on both interp and native paths.
-//
-// NOTE: inherent `impl Port { fn try_new ... }` also parses and interprets,
-// but currently exposes a layout bug in native/SSA codegen (tracked separately).
-// The convention is the same either way: return Option / Result, never panic.
+// Demonstrates the free-function try_new shape without inherent impl.
+// Both this shape and the inherent `impl Port { fn try_new ... }` shape
+// (used by std.numeric / std.text) lower cleanly on the native/SSA path
+// after the 2026-04-24 newtype layout fix. The convention is the same
+// either way: return Option / Result, never panic.
 
 newtype Port = u16;
 

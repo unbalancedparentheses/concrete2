@@ -83,7 +83,8 @@ Each phase has a "phase closes when..." list tied to concrete outputs. A phase i
   - 38 modules exist in std/src/; audit in STDLIB_AUDIT.md; Tier 1 helpers added to option/result/bytes/math (98d2cbc)
 - [ ] Runtime-oriented collection maturity is demonstrated for interpreter/runtime-style workloads
   - Design frozen: `docs/RUNTIME_COLLECTIONS.md` (2026-04-20). Stdlib surface committed (Vec, HashMap, OrderedMap, OrderedSet, Set, Deque, Bytes, String); environments/intern pools/multimaps stay example-only.
-  - Demo partial: `lox` runs but still uses ad hoc `Vec<Binding>` tables. Rewrite onto canonical `HashMap<String, Value>` + `Vec<Frame>` shape remains, plus `HashMap::get_mut` / `insert` return value in `std.map`. See `docs/STDLIB_FREEZE_LEDGER.md` L-1..L-3.
+  - Stdlib surface complete: `HashMap::get_mut` and `insert`-returning-`Option<V>` land in `std/src/map.con` (L-2 and L-3 closed); `OrderedMap::get_mut` added in parallel.
+  - Demo partial: `lox` runs but still uses ad hoc `Vec<Binding>` tables. Rewrite onto canonical `HashMap<String, Value>` + `Vec<Frame>` shape remains as the optional freeze evidence (L-1).
 - [x] Arithmetic policy is explicit in source, reports, and proof boundaries
   - `docs/ARITHMETIC_POLICY.md` (98d2cbc)
 - [x] Formatting and text-output ergonomics are good enough for string-heavy real programs without hidden magic
@@ -91,9 +92,11 @@ Each phase has a "phase closes when..." list tied to concrete outputs. A phase i
   - Shipped: variadic `append` desugar in Elab + Check intercept + `IntrinsicId.append`. Test: `tests/programs/variadic_append.con`. grep migration to variadic append is a follow-up cleanup (not freeze-blocking).
 - [x] Error ergonomics settled (`?` operator, Result methods, conversion traits)
   - `docs/ERROR_HANDLING_DESIGN.md`; `?` already parsed/lowered; Tier 1 helpers added (98d2cbc)
-- [ ] Opaque validated wrapper types and fallible conversions settled
+- [x] Opaque validated wrapper types and fallible conversions settled
   - Design frozen: `docs/VALIDATED_WRAPPERS.md` (2026-04-20). `PascalCase` names, `try_new` / `try_from_<src>` / `.0`, no implicit coercion, module-local error enums.
-  - Demo: `tests/programs/newtype_validated.con` (Port over u16). Known compiler gaps (doc §8): method dispatch on newtypes resolves to inner type; `Layout.tySize`/`tyAlign` don't resolve newtype names inside enum payloads. Both block the canonical-wrappers-in-stdlib requirement.
+  - Layout fix landed (2026-04-24): `Layout.Ctx` carries a newtypes list and resolves through `resolveNewtype` at the named/generic boundary, unblocking enum-payload newtypes (`Option<Port>`, `Option<AsciiText>`) on the native/SSA path.
+  - Canonical stdlib wrappers shipped: `std.numeric.NonZeroU32`, `std.numeric.NonZeroU64`, `std.numeric.Port`, `std.text.AsciiText`. Demos: `tests/programs/newtype_validated.con` plus 3 `AsciiText` `#[test]` cases.
+  - One documented sub-gap remaining: instance-method dispatch on newtypes still resolves to inner-type methods (`docs/VALIDATED_WRAPPERS.md §8`); the canonical convention is static-only (`T::try_new(...)`) until that closes. Cross-module import of newtypes also has a known boundary issue (newtype names not in `publicNames`; imported signatures erase newtypes via `FileSummary` alias map) — tracked separately, not freeze-blocking for in-module use.
 - [x] Enum/static qualification syntax is finalized and documented
   - `Type::Variant` / `Type::method(...)` is the only shipped qualification surface; `#` is gone from the compiler, formatter, stdlib, examples, and canonical docs
 - [x] Remaining constructor/pattern ergonomics are settled
