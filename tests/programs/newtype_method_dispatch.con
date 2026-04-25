@@ -15,10 +15,11 @@ impl Port {
     }
 }
 
-fn main() with(Console) -> Int {
+fn main() -> Int {
     let p: Port = Port(8080);
     let v: u16 = p.value();
-    print_int(v as Int);
-    print_char(10);
+    if p.is_privileged() {
+        return 0;
+    }
     return v as Int;
 }

@@ -462,19 +462,42 @@ partial def ccCheckExpr (e : CExpr) : StateM CoreCheckEnv Unit := do
       (isPtr innerTy && isRef targetTy) ||
       (isRef innerTy && isPtr targetTy) ||
       (innerTy == targetTy)
-    -- Skip cast validation for type variables / named generic params
-    let hasTypeVar := fun (t : Ty) => match t with | .typeVar _ | .named _ => true | _ => false
-    -- Skip cast validation when either side is a newtype: the cast is the
-    -- type-level wrapper/unwrapper that Elab inserts at constructor sites
-    -- and `.0` field access. Layout resolves the newtype to its inner type,
-    -- so the cast is always a representation no-op at codegen.
+    -- Skip cast validation for true type parameters and unresolved names.
+    -- A `.named n` is a concrete user-defined type when `n` matches a known
+    -- struct, enum, or newtype — those participate in the validity table and
+    -- must not get a free pass. The historical broad skip on `.named _` was
+    -- a loophole that made every newtype-involving cast accepted.
     let env ← getEnv
-    let isNewtype := fun (t : Ty) => match t with
-      | .named n => env.newtypes.any fun nt => nt.name == n
-      | .generic n _ => env.newtypes.any fun nt => nt.name == n
+    let isKnownConcrete := fun (n : String) =>
+      env.structDefs.any (fun sd => sd.name == n)
+        || env.enumDefs.any (fun ed => ed.name == n)
+        || env.newtypes.any (fun nt => nt.name == n)
+    let hasTypeVar := fun (t : Ty) => match t with
+      | .typeVar _ => true
+      | .named n => !isKnownConcrete n
       | _ => false
-    if !valid && !hasTypeVar innerTy && !hasTypeVar targetTy
-       && !isNewtype innerTy && !isNewtype targetTy then
+    -- Newtype wrap/unwrap: Elab inserts a `.cast` at the newtype constructor
+    -- and at `.0` field access to carry the wrapper name through type-level
+    -- without changing the runtime representation. Allow those — and ONLY
+    -- those — past the cast-validity table. Specifically: one side must
+    -- name a newtype, and the other side must equal that newtype's resolved
+    -- inner type (after generic substitution). This rejects user-level
+    -- casts like `p as bool` or `b as Port` that would otherwise bypass
+    -- the validated-wrapper contract (docs/VALIDATED_WRAPPERS.md §2).
+    let lctx : Layout.Ctx := { structDefs := env.structDefs, enumDefs := env.enumDefs, newtypes := env.newtypes }
+    let isNewtypeRebrand :=
+      let resolveOne (t : Ty) : Option Ty := match t with
+        | .named _ | .generic _ _ =>
+          let resolved := Layout.resolveNewtype lctx t
+          if resolved == t then none else some resolved
+        | _ => none
+      match resolveOne targetTy with
+      | some innerOfTarget => innerOfTarget == innerTy
+      | none =>
+        match resolveOne innerTy with
+        | some innerOfInner => innerOfInner == targetTy
+        | none => false
+    if !valid && !hasTypeVar innerTy && !hasTypeVar targetTy && !isNewtypeRebrand then
       addCCError (.cannotCast (toString (repr innerTy)) (toString (repr targetTy)))
     -- Unsafe capability check for pointer-involving casts (except safe ref-to-ptr)
     let isRefToPtr := isRef innerTy && isPtr targetTy

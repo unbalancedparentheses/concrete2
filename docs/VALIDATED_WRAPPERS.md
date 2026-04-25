@@ -201,11 +201,13 @@ Until such evidence lands, the convention here is frozen.
 
 ## 8. Known Implementation Gaps
 
-No known compiler-level gaps remain against the convention above. Both gaps that previously blocked the freeze checklist are now closed:
+No known compiler-level gaps remain against the convention. Each was tracked, fixed, and is now covered by regressions.
 
 **Resolved (2026-04-24):** native/SSA layout on enum-payload newtypes. `Layout.tySize`/`Layout.tyAlign`/`isPassByPtr`/`tyToLLVM` previously panicked on newtypes that survived to codegen (e.g. `Option<Port>`). `Layout.Ctx` now carries a newtypes list; the size/alignment/pass-by-ptr/LLVM-type paths resolve named/generic types through `resolveNewtype` before querying primitive layout, threaded through `CModule` → `SModule` → `EmitSSA`/`Lower`/`CoreCheck`/`Report`. Native and interp agree on enum-payload newtypes.
 
 **Resolved (2026-04-25):** cross-module newtype identity. Pub newtypes are importable as types, imported function signatures preserve newtype identity (no inner-type erasure at the boundary), and inherent impl methods come along with the import. Demos: `tests/programs/adversarial_module_newtype_across.con`, `tests/programs/summary_import_pub_newtype.con`.
 
 **Resolved (2026-04-25):** instance-method dispatch on newtypes. `p.value()` where `p: Port` now resolves against `Port`'s inherent impl; previously the type was erased to `u16` in elaboration so dispatch landed on the inner type. `resolveTypeE` no longer erases newtypes; the newtype constructor and `.0` field access carry the wrapper name through as a representation no-op cast (Layout sees the same LLVM type either way). Demo: `tests/programs/newtype_method_dispatch.con`.
+
+**Resolved (2026-04-25):** narrow cast exemption — guards the wrapper contract from `as`-bypass. The first cut of the dispatch fix exempted *any* cast where either side named a newtype, which made `p as bool` and `b as Port` compile and bypass the smart-constructor contract in §2. The exemption is now precise: a cast is allowed past the validity table only when one side is a newtype `N` and the other side equals `N`'s resolved inner type (after generic substitution) — i.e., exactly the wrap/unwrap representation cast that Elab inserts. The previously-overbroad `hasTypeVar` check (which treated every `.named _` as a type parameter) is also tightened to recognise concrete user-defined struct/enum/newtype names. Negative regressions: `tests/programs/error_newtype_cast_to_unrelated.con`, `tests/programs/error_newtype_cast_from_unrelated.con`.
 

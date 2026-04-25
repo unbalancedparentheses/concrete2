@@ -10,6 +10,14 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Newtype-cast exemption narrowed to wrap/unwrap pairs
+
+The first cut of the instance-method-dispatch fix exempted *any* `.cast` where either side named a newtype from CoreCheck's cast-validity table. Reviewer caught the regression: `let x: bool = p as bool` and `let p: Port = b as Port` both compiled, bypassing the validated-wrapper contract in `docs/VALIDATED_WRAPPERS.md §2`. This narrows the exemption to the exact pattern Elab actually inserts: one side is a newtype `N`, and the other side equals `N`'s resolved inner type (after generic-arg substitution). Anything else falls through to the standard validity table and gets E0553 if it's not a legitimate cast on its own.
+
+- **Precise wrapper-pair check**: `Concrete/CoreCheck.lean` builds a `Layout.Ctx` from its newtypes list and uses `Layout.resolveNewtype` to compute the inner type for either side; the cast is exempt only when one resolved side equals the other side. Direction-symmetric (covers both wrap and unwrap).
+- **`hasTypeVar` loophole closed**: the cast-validity skip on type variables also matched any `.named _`, including newtypes. Now `.named n` is treated as a type parameter only when `n` is *not* a known struct, enum, or newtype. This was a pre-existing overbroad skip that the dispatch fix surfaced.
+- **Negative regressions**: `tests/programs/error_newtype_cast_to_unrelated.con` (Port→bool) and `tests/programs/error_newtype_cast_from_unrelated.con` (bool→Port) now reject at E0553. All 11 positive newtype programs still compile and run; all 5 newtype error tests reject; std/pipeline-test/full-suite baselines unchanged.
+
 ### Newtype instance-method dispatch resolves against the wrapper
 
 Calling an instance method on a newtype now resolves against the newtype's inherent impl, not the inner type. This closes the last documented gap in `docs/VALIDATED_WRAPPERS.md §8` and means the static-only `T::try_new(...)` convention is now a stylistic preference rather than a workaround.

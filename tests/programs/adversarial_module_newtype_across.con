@@ -19,12 +19,10 @@ mod Wrap {
 mod App {
     import Wrap.{Port};
 
-    pub fn run() with(Console) -> Int {
+    pub fn run() -> Int {
         let maybe: Option<Port> = Port::try_new(8080);
         match maybe {
             Option::Some { value } => {
-                print_int(value.0 as Int);
-                print_char(10);
                 return value.0 as Int;
             }
             Option::None => { return 0; }
@@ -34,6 +32,6 @@ mod App {
 
 import App.{run};
 
-fn main() with(Console) -> Int {
+fn main() -> Int {
     return run();
 }

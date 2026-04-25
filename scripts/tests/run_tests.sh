@@ -1606,8 +1606,12 @@ run_ok "$TESTDIR/newtype_generic.con" 100
 run_ok "$TESTDIR/newtype_validated.con" 8081
 run_ok "$TESTDIR/newtype_enum_payload.con" 8080
 run_ok "$TESTDIR/newtype_struct_copy_field.con" 443
+run_ok "$TESTDIR/newtype_method_dispatch.con" 8080
+run_ok "$TESTDIR/adversarial_module_newtype_across.con" 8080
 run_err "$TESTDIR/error_newtype_no_implicit.con" "type mismatch"
 run_err "$TESTDIR/error_newtype_wrong_inner.con" "type mismatch"
+run_err "$TESTDIR/error_newtype_cast_to_unrelated.con" "cannot cast"
+run_err "$TESTDIR/error_newtype_cast_from_unrelated.con" "cannot cast"
 
 # === ABI / Layout tests ===
 run_ok "$TESTDIR/sizeof_basic.con" 12
