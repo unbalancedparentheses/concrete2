@@ -140,10 +140,16 @@ partial def tyToLLVMTy (s : EmitSSAState) : Ty → LLVMTy
   | .generic "HeapArray" _ | .heapArray _ => .ptr
   | .generic "Vec" _ => .struct_ "Vec"
   | .generic "HashMap" _ => .struct_ "HashMap"
-  | .generic name _ =>
+  | .generic name args =>
     match ssaLookupEnum s name with
     | some _ => .enum_ name
-    | none => .struct_ name
+    | none =>
+      match ssaLookupStruct s name with
+      | some _ => .struct_ name
+      | none =>
+        match Layout.lookupNewtype (layoutCtxOf s) name with
+        | some _ => tyToLLVMTy s (Layout.resolveNewtype (layoutCtxOf s) (.generic name args))
+        | none => .struct_ name
   | .typeVar _ => .i64
   | .array elem n => .array n (tyToLLVMTy s elem)
   | .fn_ _ _ _ => .ptr
@@ -155,7 +161,10 @@ partial def tyToLLVMTy (s : EmitSSAState) : Ty → LLVMTy
       match ssaLookupEnum s name with
       | some _ => .enum_ name
       | none =>
-        panic! s!"EmitSSA.tyToLLVMTy: unknown named type '{name}'"
+        match Layout.lookupNewtype (layoutCtxOf s) name with
+        | some _ => tyToLLVMTy s (Layout.resolveNewtype (layoutCtxOf s) (.named name))
+        | none =>
+          panic! s!"EmitSSA.tyToLLVMTy: unknown named type '{name}'"
 
 /-- Map integer Concrete type to structured LLVM type. -/
 private def intTyToLLVMTy : Ty → LLVMTy

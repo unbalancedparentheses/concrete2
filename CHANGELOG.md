@@ -10,6 +10,15 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Cross-module newtype import preserves identity end-to-end
+
+Newtypes now cross module boundaries cleanly, with no inner-type erasure and no special-casing required from callers. This closes the second of the two boundary gaps tracked against `docs/VALIDATED_WRAPPERS.md` (only the inherent-method-dispatch gap remains).
+
+- **Public newtypes are importable**: `pub newtype Port = u16;` now lands in the exporting module's `publicNames` (`Concrete/FileSummary.lean`); `import Wrap.{Port};` resolves and brings inherent impl methods along, mirroring the struct path.
+- **No erasure at the boundary**: `resolveImports` previously fed newtypes into the alias map alongside type aliases, which substituted the inner type into every imported signature — so a downstream `Port::try_new` returned `Option<u16>` instead of `Option<Port>`. The alias map is now type-aliases-only; newtype identity is preserved across the boundary, and Layout resolves through `Layout.Ctx.newtypes` natively (the 2026-04-24 fix).
+- **Imported newtypes reach Layout**: `ResolvedImports` gains a `newtypes` field; Check, Elab, and the elaborated `CModule.newtypes` all consume it. EmitSSA's `tyToLLVMTy` (a separate path from `Layout.tyToLLVM`) also resolves through newtypes now, fixing a panic that surfaced once the boundary stopped erasing.
+- **Test identity preserved**: `tests/programs/adversarial_module_newtype_across.con` exercises the full path (cross-module `Port::try_new`, `Option<Port>` pattern match, `.0` extraction); `tests/programs/summary_import_pub_newtype.con` (previously dead) now runs and returns 42; a new negative repro confirms passing a bare `u16` where `Port` is expected still fails type-check across the boundary.
+
 ### Validated wrappers land in stdlib; newtype layout threads through codegen
 
 The newtype surface designed in `docs/VALIDATED_WRAPPERS.md` is now usable on the native/SSA path, and the first canonical wrappers ship in stdlib.

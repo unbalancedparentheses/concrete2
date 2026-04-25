@@ -2375,8 +2375,11 @@ def checkModule (m : Module) (summary : FileSummary)
   let constantsMap : List (String × Ty) := m.constants.map fun c => (c.name, c.ty)
   -- Build trait impl pairs for bound checking
   let traitImplPairs : List (String × String) := allTraitImpls.map fun tb => (tb.typeName, tb.traitName)
-  -- Collect newtypes from module and submodules
-  let allNewtypes := m.newtypes ++ m.submodules.foldl (fun acc sub => acc ++ sub.newtypes) []
+  -- Collect newtypes from module, submodules, and imports.
+  -- Imported newtypes participate in type identity (Port ≠ u16 must hold
+  -- across module boundaries) and reach Layout via the elaborated CModule.
+  let allNewtypes := m.newtypes ++ imports.newtypes
+                     ++ m.submodules.foldl (fun acc sub => acc ++ sub.newtypes) []
   let initEnv : TypeEnv :=
     { vars := [], structs := allStructs, enums := allEnums, functions := allSigs,
       fnNames := allNames, loopDepth := 0, typeAliases := typeAliasMap, constants := constantsMap,

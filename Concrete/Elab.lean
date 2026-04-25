@@ -1401,7 +1401,7 @@ partial def elabModule (m : Module) (summary : FileSummary)
     constants := constantsMap
     traits := allTraits
     allFnSigPairs := fnSigPairs
-    newtypes := m.newtypes
+    newtypes := m.newtypes ++ imports.newtypes
   }
   -- Elaborate only LOCAL functions (imported impl bodies are already elaborated in their module)
   let regularFns := m.functions.map fun f => (f, (none : Option Ty))
@@ -1555,7 +1555,7 @@ partial def elabModule (m : Module) (summary : FileSummary)
     externFns := cExterns
     constants := cConstants
     submodules := subs
-    newtypes := m.newtypes
+    newtypes := m.newtypes ++ imports.newtypes
     traitDefs := m.traits.map fun td =>
       { name := td.name,
         methods := td.methods.map fun sig =>
