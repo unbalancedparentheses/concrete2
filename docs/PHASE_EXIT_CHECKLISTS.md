@@ -8,8 +8,8 @@ Each phase has a "phase closes when..." list tied to concrete outputs. A phase i
 
 **Closes when all of the following are true:**
 
-- [ ] 5+ canonical examples are trust-gate tested with `--check predictable` passing
-  - `fixed_capacity` (12 tests), `parse_validate` (10 tests), `service_errors` (10 tests), `thesis_demo` (8+ tests), `packet` (4 tests)
+- [ ] 5+ canonical examples are trust-gate tested. The validation core of each example passes `--check predictable`; an outer hosted `main` / shell may use I/O capabilities (e.g. Console, File) and fail predictable by design — that split is the point.
+  - `fixed_capacity` (12 tests, fully predictable), `parse_validate` (10 tests, fully predictable), `service_errors` (10 tests, fully predictable), `thesis_demo` (8+ tests, predictable validation core + hosted shell), `packet` (4 tests, predictable validation core + hosted shell)
 - [x] Predictable boundaries explicitly documented
   - `docs/PREDICTABLE_BOUNDARIES.md` (host calls, cleanup, determinism, failure, memory)
   - `docs/PREDICTABLE_FAILURE_DISCIPLINE.md` (allowed/excluded failure modes)
@@ -97,7 +97,7 @@ Each phase has a "phase closes when..." list tied to concrete outputs. A phase i
   - Layout fix landed (2026-04-24): `Layout.Ctx` carries a newtypes list and resolves through `resolveNewtype` at the named/generic boundary, unblocking enum-payload newtypes (`Option<Port>`, `Option<AsciiText>`) on the native/SSA path.
   - Canonical stdlib wrappers shipped: `std.numeric.NonZeroU32`, `std.numeric.NonZeroU64`, `std.numeric.Port`, `std.text.AsciiText`. Demos: `tests/programs/newtype_validated.con` plus 3 `AsciiText` `#[test]` cases.
   - Cross-module newtype import works (2026-04-25): pub newtypes flow through `publicNames`, imported signatures preserve newtype identity (no inner-type erasure at the boundary), inherent impl methods come along, and Layout sees imported newtypes via the elaborated CModule. Demo: `tests/programs/adversarial_module_newtype_across.con` and `tests/programs/summary_import_pub_newtype.con`.
-  - One documented sub-gap remaining: instance-method dispatch on newtypes still resolves to inner-type methods (`docs/VALIDATED_WRAPPERS.md §8`); the canonical convention is static-only (`T::try_new(...)`) until that closes.
+  - Instance-method dispatch on newtypes works (2026-04-25): `p.value()` on `p: Port` resolves against `Port`'s inherent impl. `resolveTypeE` no longer erases newtypes; the newtype constructor and `.0` field access carry the wrapper name through as a representation no-op cast. Demo: `tests/programs/newtype_method_dispatch.con`.
 - [x] Enum/static qualification syntax is finalized and documented
   - `Type::Variant` / `Type::method(...)` is the only shipped qualification surface; `#` is gone from the compiler, formatter, stdlib, examples, and canonical docs
 - [x] Remaining constructor/pattern ergonomics are settled
@@ -123,7 +123,7 @@ Each phase has a "phase closes when..." list tied to concrete outputs. A phase i
 
 **Verification**: `examples/parse_validate/` and `examples/service_errors/` work with stdlib types (not custom Copy enums), one fixed-capacity example uses the checked indexing/slice surface, one string-heavy medium workload such as `grep` or `policy_engine` uses the intended formatting/text APIs, and one interpreter/runtime-heavy workload such as `mal` or `lox` exercises the intended collection/runtime surface.
 
-**Current status**: 17/19 exit criteria done. 2 remaining: runtime-oriented collection demonstration (design frozen; lox rewrite + `HashMap::get_mut`/`insert` return pending) and opaque wrappers (design frozen; compiler gaps on newtype method dispatch and enum-payload layout still block canonical stdlib wrappers).
+**Current status**: 18/19 exit criteria done. 1 remaining: runtime-oriented collection demonstration. The stdlib surface is complete (`HashMap::get_mut` and `insert`-returning-`Option<V>` shipped); only the optional lox rewrite onto the canonical `HashMap<String, Value>` + `Vec<Frame>` shape remains as freeze-checklist evidence (L-1 in `STDLIB_FREEZE_LEDGER.md`). Opaque wrappers are fully closed: layout fix + canonical stdlib wrappers (`NonZeroU32`, `NonZeroU64`, `Port`, `AsciiText`) + cross-module identity at the import boundary + instance-method dispatch on newtypes; the static-only convention still applies but is now a stylistic choice, not a workaround.
 
 ## Phase 4: Tooling, Tests, Wrong-Code Corpus
 

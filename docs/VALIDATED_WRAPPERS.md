@@ -201,11 +201,11 @@ Until such evidence lands, the convention here is frozen.
 
 ## 8. Known Implementation Gaps
 
-These are compiler bugs, not language design holes. The convention above is the target; the implementation needs to catch up before the freeze checklist in section 6 passes.
+No known compiler-level gaps remain against the convention above. Both gaps that previously blocked the freeze checklist are now closed:
 
-- **Instance methods on newtypes dispatch as inner-type methods.** `good.value()` where `good: Port` and `Port = u16` resolves against `u16`, not `Port`. Static methods (`Port::try_new(...)`) work today because the explicit qualifier carries the newtype name through dispatch. Closing this gap means letting method resolution see the wrapper first and fall through to the inner only when no inherent impl matches.
+**Resolved (2026-04-24):** native/SSA layout on enum-payload newtypes. `Layout.tySize`/`Layout.tyAlign`/`isPassByPtr`/`tyToLLVM` previously panicked on newtypes that survived to codegen (e.g. `Option<Port>`). `Layout.Ctx` now carries a newtypes list; the size/alignment/pass-by-ptr/LLVM-type paths resolve named/generic types through `resolveNewtype` before querying primitive layout, threaded through `CModule` → `SModule` → `EmitSSA`/`Lower`/`CoreCheck`/`Report`. Native and interp agree on enum-payload newtypes.
 
-Remaining gap is tracked as a compiler bug, not a design revision.
+**Resolved (2026-04-25):** cross-module newtype identity. Pub newtypes are importable as types, imported function signatures preserve newtype identity (no inner-type erasure at the boundary), and inherent impl methods come along with the import. Demos: `tests/programs/adversarial_module_newtype_across.con`, `tests/programs/summary_import_pub_newtype.con`.
 
-**Resolved:** the prior native/SSA layout gap (where `Layout.tySize`/`Layout.tyAlign` panicked on newtypes that survived as enum payloads, e.g. `Option<Port>`) is now fixed. `Layout.Ctx` carries a newtypes list; the size/alignment/pass-by-ptr/LLVM-type paths resolve named/generic types through `resolveNewtype` before querying primitive layout, threaded through `CModule` → `SModule` → `EmitSSA`/`Lower`/`CoreCheck`/`Report`. Native and interp agree on enum-payload newtypes.
+**Resolved (2026-04-25):** instance-method dispatch on newtypes. `p.value()` where `p: Port` now resolves against `Port`'s inherent impl; previously the type was erased to `u16` in elaboration so dispatch landed on the inner type. `resolveTypeE` no longer erases newtypes; the newtype constructor and `.0` field access carry the wrapper name through as a representation no-op cast (Layout sees the same LLVM type either way). Demo: `tests/programs/newtype_method_dispatch.con`.
 

@@ -10,6 +10,16 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Newtype instance-method dispatch resolves against the wrapper
+
+Calling an instance method on a newtype now resolves against the newtype's inherent impl, not the inner type. This closes the last documented gap in `docs/VALIDATED_WRAPPERS.md §8` and means the static-only `T::try_new(...)` convention is now a stylistic preference rather than a workaround.
+
+- **Type identity flows through elaboration**: `resolveTypeE` no longer erases newtype names. A `let p: Port = ...` binding now keeps `p` typed as `.named "Port"` through the rest of Elab, so `p.value()` mangles to `Port_value` and finds the inherent impl. Layout already resolves named types through `Layout.Ctx.newtypes`, so codegen still sees the right size/alignment.
+- **Constructor and `.0` carry the wrapper**: `Port(8080)` now produces a CExpr with type `.named "Port"` (via a representation no-op `.cast`); `p.0` unwraps back to the inner type. For generic newtypes, type args flow from explicit `::<T>` first, otherwise from the call hint (`let w: Wrapper<Int> = Wrapper(100);`).
+- **CoreCheck cast policy newtype-aware**: the cast-validity check in `Concrete/CoreCheck.lean` previously rejected `Int → Wrapper<Int>` at E0553. It now skips validation when either side names a newtype — Layout makes the cast a representation no-op, so the cast-policy table doesn't need to enumerate newtype-vs-inner combinations.
+- **Aggregate same-type cast lowering**: surfaced as a regression once newtype-over-`String` (`AsciiText`) started flowing through casts. EmitSSA's same-LLVM-type alias path was emitting `add %struct.X, 0` (invalid LLVM) for first-class aggregates. The same-type case now matches on LLVM kind and round-trips structs/arrays/enums through a stack slot.
+- **Test**: `tests/programs/newtype_method_dispatch.con` exercises both `p.value()` and `p.is_privileged()` on a `Port`. All 11 newtype regression programs (basic, copy, enum_payload, generic, linear, struct_copy_field, validated, adversarial_consume, module_across, summary_import, method_dispatch) compile and run with correct output. All 3 newtype error tests still reject as expected.
+
 ### Cross-module newtype import preserves identity end-to-end
 
 Newtypes now cross module boundaries cleanly, with no inner-type erasure and no special-casing required from callers. This closes the second of the two boundary gaps tracked against `docs/VALIDATED_WRAPPERS.md` (only the inherent-method-dispatch gap remains).

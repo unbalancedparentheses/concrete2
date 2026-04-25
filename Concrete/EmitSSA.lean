@@ -766,9 +766,21 @@ private def emitSInst (s : EmitSSAState) (inst : SInst) : EmitSSAState :=
     let dstLLTy := tyToLLVMTy s targetTy
     let valOp := svalToOperand s val
     if srcLLTy == dstLLTy then
-      -- Same type, just alias
-      if srcLLTy == .ptr then emitStructured s (.gep dst .i8 valOp [(.i32, .intLit 0)])
-      else emitStructured s (.binOp dst .add srcLLTy valOp (.intLit 0))
+      -- Same LLVM type, just alias. The `add 0` trick works for scalar
+      -- numeric types but not for first-class aggregates (struct/array/enum):
+      -- LLVM rejects `add %struct.X, 0`. For aggregates, round-trip through
+      -- a stack slot. For pointers, an offset-0 gep is the canonical alias.
+      match srcLLTy with
+      | .ptr =>
+        emitStructured s (.gep dst .i8 valOp [(.i32, .intLit 0)])
+      | .struct_ _ | .array _ _ | .enum_ _ =>
+        let (s, tmp) := freshLocal s
+        let tmpName := (tmp.drop 1).toString
+        let s := emitEntryAlloca s (.alloca tmpName srcLLTy)
+        let s := emitStructured s (.store srcLLTy valOp (.reg tmpName))
+        emitStructured s (.load dst dstLLTy (.reg tmpName))
+      | _ =>
+        emitStructured s (.binOp dst .add srcLLTy valOp (.intLit 0))
     else if srcLLTy == .ptr || dstLLTy == .ptr then
       if srcLLTy == .ptr && isIntegerTy targetTy then
         emitStructured s (.cast dst .ptrtoint .ptr valOp dstLLTy)

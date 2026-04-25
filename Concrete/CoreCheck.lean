@@ -32,6 +32,7 @@ structure CoreCheckEnv where
   fnSigs : List (String × CapSet × List (String × Ty) × Ty)
   structDefs : List CStructDef
   enumDefs : List CEnumDef
+  newtypes : List NewtypeDef := []
   vars : List (String × Ty)
   currentCapSet : CapSet
   currentRetTy : Ty
@@ -463,7 +464,17 @@ partial def ccCheckExpr (e : CExpr) : StateM CoreCheckEnv Unit := do
       (innerTy == targetTy)
     -- Skip cast validation for type variables / named generic params
     let hasTypeVar := fun (t : Ty) => match t with | .typeVar _ | .named _ => true | _ => false
-    if !valid && !hasTypeVar innerTy && !hasTypeVar targetTy then
+    -- Skip cast validation when either side is a newtype: the cast is the
+    -- type-level wrapper/unwrapper that Elab inserts at constructor sites
+    -- and `.0` field access. Layout resolves the newtype to its inner type,
+    -- so the cast is always a representation no-op at codegen.
+    let env ← getEnv
+    let isNewtype := fun (t : Ty) => match t with
+      | .named n => env.newtypes.any fun nt => nt.name == n
+      | .generic n _ => env.newtypes.any fun nt => nt.name == n
+      | _ => false
+    if !valid && !hasTypeVar innerTy && !hasTypeVar targetTy
+       && !isNewtype innerTy && !isNewtype targetTy then
       addCCError (.cannotCast (toString (repr innerTy)) (toString (repr targetTy)))
     -- Unsafe capability check for pointer-involving casts (except safe ref-to-ptr)
     let isRefToPtr := isRef innerTy && isPtr targetTy
@@ -769,6 +780,7 @@ partial def ccCheckModule (m : CModule)
     fnSigs := fnSigs ++ externSigs
     structDefs := m.structs
     enumDefs := m.enums
+    newtypes := m.newtypes
     vars := []
     currentCapSet := .empty
     currentRetTy := .unit

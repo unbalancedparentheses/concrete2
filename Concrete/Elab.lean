@@ -203,10 +203,14 @@ private partial def resolveTypeE (ty : Ty) : ElabM Ty := do
       match env.typeAliases.lookup name with
       | some resolved => return resolved
       | none =>
-        -- Erase newtypes: resolve to inner type
-        match env.newtypes.find? fun nt => nt.name == name with
-        | some nt => resolveTypeE nt.innerTy
-        | none => return ty
+        -- Newtypes are NOT erased here: type identity is preserved through
+        -- elaboration so `p.value()` on `p: Port` resolves against `Port`'s
+        -- inherent impl, not the inner `u16`. Layout resolves through
+        -- newtypes natively (Layout.Ctx.newtypes), so codegen still sees
+        -- the right size/alignment. eraseNewtypeTy is still applied at
+        -- module-build time to struct/enum field types so CoreCheck's
+        -- Copy/repr invariants run on the inner type as before.
+        return ty
   | .ref inner => return .ref (← resolveTypeE inner)
   | .refMut inner => return .refMut (← resolveTypeE inner)
   | .ptrMut inner => return .ptrMut (← resolveTypeE inner)
@@ -215,13 +219,9 @@ private partial def resolveTypeE (ty : Ty) : ElabM Ty := do
   | .generic "Heap" [inner] => return .heap (← resolveTypeE inner)
   | .generic "HeapArray" [inner] => return .heapArray (← resolveTypeE inner)
   | .generic name args =>
-    let env ← getEnv
-    match env.newtypes.find? fun nt => nt.name == name with
-    | some nt =>
-      let resolvedArgs ← args.mapM resolveTypeE
-      let mapping := nt.typeParams.zip resolvedArgs
-      resolveTypeE (substTy mapping nt.innerTy)
-    | none => return .generic name (← args.mapM resolveTypeE)
+    -- Same: newtype generics survive here so method dispatch on
+    -- e.g. `Wrapper<T>` instances reaches `Wrapper`'s inherent impls.
+    return .generic name (← args.mapM resolveTypeE)
   | .fn_ params capSet retTy =>
     return .fn_ (← params.mapM resolveTypeE) capSet (← resolveTypeE retTy)
   | _ => return ty
@@ -466,12 +466,28 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
         let fieldTy ← resolveTypeE fieldTy
         return .fieldAccess cObj field fieldTy
       | none =>
-        -- Erased newtype wrapping a struct: .0 is identity
-        if field == newtypeFieldName then return cObj
+        -- Newtype wrapping a struct: .0 unwraps to the inner type.
+        if field == newtypeFieldName then
+          let env ← getEnv
+          match env.newtypes.find? fun nt => nt.name == structName with
+          | some nt =>
+            let mapping := nt.typeParams.zip typeArgs
+            let innerTy ← resolveTypeE (substTy mapping nt.innerTy)
+            return .cast cObj innerTy
+          | none => return cObj
         else throwElab (.structHasNoField structName field) (some e.getSpan)
     | none =>
-      -- Erased newtype: .0 on a primitive type is identity
-      if field == newtypeFieldName then return cObj
+      -- Newtype over a primitive (or any non-struct inner type): .0 unwraps.
+      -- For generic newtypes (`Wrapper<T> = T;`), substitute the obj's
+      -- type args so the unwrapped value carries the concrete inner type.
+      if field == newtypeFieldName then
+        let env ← getEnv
+        match env.newtypes.find? fun nt => nt.name == structName with
+        | some nt =>
+          let mapping := nt.typeParams.zip typeArgs
+          let innerTy ← resolveTypeE (substTy mapping nt.innerTy)
+          return .cast cObj innerTy
+        | none => return cObj
       else throwElab .fieldAccessNonStruct (some e.getSpan)
 
   | .enumLit _ enumName variant typeArgs fields =>
@@ -718,7 +734,7 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
 
 /-- Elaborate a function call (regular, builtins, intercepted). -/
 partial def elabCall (fnName : String) (typeArgs : List Ty) (args : List Expr)
-    (_hint : Option Ty) (span : Option Span := none) : ElabM CExpr := do
+    (hint : Option Ty) (span : Option Span := none) : ElabM CExpr := do
   let typeArgs ← typeArgs.mapM resolveTypeE
   let intrinsic := resolveIntrinsic fnName
   -- Intercept abort()
@@ -742,14 +758,28 @@ partial def elabCall (fnName : String) (typeArgs : List Ty) (args : List Expr)
     let cArg ← elabExpr arg
     let innerTy := match cArg.ty with | .heap t => t | _ => .placeholder
     return .call "free" [] [cArg] innerTy
-  -- Intercept newtype constructor: erase to inner expression
+  -- Intercept newtype constructor: keep the wrapper's name in the type so
+  -- `obj.method()` later resolves against the wrapper's inherent impl, not
+  -- the inner type. The runtime representation is identical to the inner
+  -- value (.cast is a no-op at codegen time once Layout resolves through
+  -- the newtype), so this is purely a type-level distinction. For generic
+  -- newtypes, infer type args from explicit `::<...>` first, otherwise
+  -- from the call hint (`let w: Wrapper<Int> = Wrapper(100);`).
   let env ← getEnv
   match env.newtypes.find? fun nt => nt.name == fnName with
   | some nt =>
     let arg := match args with | a :: _ => a | [] => Expr.intLit default 0
-    let innerTy ← resolveTypeE nt.innerTy
+    let effectiveTypeArgs :=
+      if !typeArgs.isEmpty then typeArgs
+      else match hint with
+        | some (.generic n args) => if n == fnName then args else []
+        | _ => []
+    let mapping := nt.typeParams.zip effectiveTypeArgs
+    let innerTy ← resolveTypeE (substTy mapping nt.innerTy)
     let cArg ← elabExpr arg (some innerTy)
-    return cArg  -- newtype erasure: just return the inner value
+    let resultTy := if effectiveTypeArgs.isEmpty then Ty.named fnName
+                     else Ty.generic fnName effectiveTypeArgs
+    return .cast cArg resultTy
   | none => pure ()
   -- Intercept unwrap(x): erase to inner expression (only if not a user-defined function)
   if intrinsic == some .unwrap && args.length == 1 then

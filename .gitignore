@@ -57,6 +57,7 @@ tests/programs/newtype_copy
 tests/programs/newtype_enum_payload
 tests/programs/newtype_generic
 tests/programs/newtype_linear
+tests/programs/newtype_method_dispatch
 tests/programs/newtype_struct_copy_field
 tests/programs/newtype_validated
 tests/programs/summary_import_pub_newtype
