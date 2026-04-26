@@ -480,23 +480,39 @@ partial def ccCheckExpr (e : CExpr) : StateM CoreCheckEnv Unit := do
     -- and at `.0` field access to carry the wrapper name through type-level
     -- without changing the runtime representation. Allow those — and ONLY
     -- those — past the cast-validity table. Specifically: one side must
-    -- name a newtype, and the other side must equal that newtype's resolved
-    -- inner type (after generic substitution). This rejects user-level
-    -- casts like `p as bool` or `b as Port` that would otherwise bypass
-    -- the validated-wrapper contract (docs/VALIDATED_WRAPPERS.md §2).
-    let lctx : Layout.Ctx := { structDefs := env.structDefs, enumDefs := env.enumDefs, newtypes := env.newtypes }
-    let isNewtypeRebrand :=
-      let resolveOne (t : Ty) : Option Ty := match t with
-        | .named _ | .generic _ _ =>
-          let resolved := Layout.resolveNewtype lctx t
-          if resolved == t then none else some resolved
-        | _ => none
-      match resolveOne targetTy with
+    -- name a newtype `N`, and the other side must equal `N`'s ONE-STEP
+    -- inner type (after generic substitution) — not the fully resolved
+    -- primitive. For chained newtypes (`Outer = Middle = Inner = i32`)
+    -- the constructor `Middle(Inner(...))` is one rep step from Inner to
+    -- Middle, not all the way from i32 to Outer. Using full resolution
+    -- here would either accept everything across the chain (loose) or
+    -- reject only the single-step constructors Elab actually emits (tight
+    -- and incorrect). The single-step rule is the precise match.
+    let oneStepInner := fun (t : Ty) => match t with
+      | .named n =>
+        match env.newtypes.find? fun nt => nt.name == n with
+        | some nt => some nt.innerTy
+        | none => none
+      | .generic n args =>
+        match env.newtypes.find? fun nt => nt.name == n with
+        | some nt =>
+          let mapping := nt.typeParams.zip args
+          some (Layout.ntSubstTy mapping nt.innerTy)
+        | none => none
+      | _ => none
+    -- Try both directions independently: a rep cast is `Inner → Newtype`
+    -- (constructor) OR `Newtype → Inner` (`.0` unwrap). When both sides
+    -- name a newtype (e.g. `Outer → Middle`, where Outer wraps Middle),
+    -- only one direction matches but the other still has to be tried.
+    let wrapMatches :=
+      match oneStepInner targetTy with
       | some innerOfTarget => innerOfTarget == innerTy
-      | none =>
-        match resolveOne innerTy with
-        | some innerOfInner => innerOfInner == targetTy
-        | none => false
+      | none => false
+    let unwrapMatches :=
+      match oneStepInner innerTy with
+      | some innerOfInner => innerOfInner == targetTy
+      | none => false
+    let isNewtypeRebrand := wrapMatches || unwrapMatches
     if !valid && !hasTypeVar innerTy && !hasTypeVar targetTy && !isNewtypeRebrand then
       addCCError (.cannotCast (toString (repr innerTy)) (toString (repr targetTy)))
     -- Unsafe capability check for pointer-involving casts (except safe ref-to-ptr)

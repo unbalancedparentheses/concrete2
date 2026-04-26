@@ -10,6 +10,16 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Adversarial test sweep across language features finds three compiler bugs
+
+A breadth-first set of adversarial tests organised under `tests/programs/adversarial/<area>/` (newtype, enum_match, borrow, defer, generic, linear, trait_dispatch) exposed three unrelated compiler bugs. Each bug ships with a named regression test under either the area folder or `tests/programs/bug_*.con`, all wired into `make test`.
+
+- **Bug 1 — chained newtypes broke the cast-validity exemption.** `Outer = Middle = Inner = i32` rejected `Middle(Inner(...))` at E0553 because the exemption used `Layout.resolveNewtype` (recurses to the primitive) instead of one-step unwrapping. The constructor wraps one step at a time, so the inner-vs-resolved comparison must be one-step too. Fix in `Concrete/CoreCheck.lean`: replaced the recursing check with a `oneStepInner` helper that finds the immediate inner type only, and try both wrap and unwrap directions independently. `Layout.ntSubstTy` was also promoted from `private` so CoreCheck can reuse it for generic newtypes. Regression: `tests/programs/adversarial/newtype/chained.con`.
+- **Bug 2 — `.0` on a borrowed newtype produced `&Newtype → Inner`.** `&self.0` (and `&mut self.0`) in an inherent impl method emitted a `.cast` from `.ref Newtype` to the inner primitive. CoreCheck's exemption (matching only direct `Newtype ↔ Inner` pairs) rejected it, and codegen would have mishandled the ref→value transition. Fix in `Concrete/Elab.lean`'s field-access path: when the receiver is a ref/refMut, emit `.deref cObj newtypeTy` first so the rebrand cast is `Newtype → Inner` as expected. Regression: `tests/programs/adversarial/newtype/borrow.con`.
+- **Bug 3 — narrow-int field assign elaborated the RHS as `Int`.** `c.n = 100` where `n: i32` elaborated `100` as `Int` (i64) because `elabExpr value` was called with no type hint. Codegen emitted `store i64 100` to a 4-byte field — undefined behaviour that the LLVM optimiser deletes at `-O2`. The bug masked itself under `lli` (which honours the low 4 bytes) and only surfaced when reading back via the native binary. Fix in `Concrete/Elab.lean`'s `.fieldAssign` path: look up the field's declared type from the struct definition and pass it as the value hint, so `100` is elaborated as `i32` directly. Regression: `tests/programs/bug_field_assign_narrow_field.con`.
+
+Coverage added: 15 new adversarial tests across newtype (9), enum_match, borrow, defer, generic, linear, trait_dispatch (1 each), plus the dedicated bug regression. `make test` 771 → 787 pass / 0 fail.
+
 ### Phase 3 stdlib and syntax freeze closes
 
 The canonical Phase 3 exit checklist is now 19/19 complete. The first-release stdlib/syntax surface is treated as freeze-ready on current evidence rather than on aspirational follow-up rewrites.

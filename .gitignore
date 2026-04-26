@@ -52,6 +52,7 @@ examples/policy_engine/bench_c
 tests/programs/builtin_method_no_import/builtin_method_no_import
 tests/programs/adversarial_module_newtype_across
 tests/programs/adversarial_newtype_consume
+tests/programs/bug_field_assign_narrow_field
 tests/programs/newtype_basic
 tests/programs/newtype_copy
 tests/programs/newtype_enum_payload
@@ -61,6 +62,9 @@ tests/programs/newtype_method_dispatch
 tests/programs/newtype_struct_copy_field
 tests/programs/newtype_validated
 tests/programs/summary_import_pub_newtype
+# Compiled adversarial test binaries (one per .con under each area folder)
+tests/programs/adversarial/*/[!.]*
+!tests/programs/adversarial/*/*.con
 
 lean_tests/trait_numeric_abs
 lean_tests/cap_alias_basic

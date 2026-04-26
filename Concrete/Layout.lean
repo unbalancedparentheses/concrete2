@@ -32,7 +32,7 @@ def lookupNewtype (ctx : Ctx) (name : String) : Option NewtypeDef :=
   ctx.newtypes.find? fun nt => nt.name == name
 
 /-- Substitute type variables inside a newtype's inner type. -/
-private partial def ntSubstTy (mapping : List (String × Ty)) : Ty → Ty
+partial def ntSubstTy (mapping : List (String × Ty)) : Ty → Ty
   | .named n => match mapping.lookup n with | some t => t | none => .named n
   | .typeVar n => match mapping.lookup n with | some t => t | none => .typeVar n
   | .ref i => .ref (ntSubstTy mapping i)

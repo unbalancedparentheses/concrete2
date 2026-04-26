@@ -1611,10 +1611,28 @@ run_ok "$TESTDIR/newtype_enum_payload.con" 8080
 run_ok "$TESTDIR/newtype_struct_copy_field.con" 443
 run_ok "$TESTDIR/newtype_method_dispatch.con" 8080
 run_ok "$TESTDIR/adversarial_module_newtype_across.con" 8080
+run_ok "$TESTDIR/bug_field_assign_narrow_field.con" 100
 run_err "$TESTDIR/error_newtype_no_implicit.con" "type mismatch"
 run_err "$TESTDIR/error_newtype_wrong_inner.con" "type mismatch"
 run_err "$TESTDIR/error_newtype_cast_to_unrelated.con" "cannot cast"
 run_err "$TESTDIR/error_newtype_cast_from_unrelated.con" "cannot cast"
+
+# === Adversarial tests by feature area ===
+run_ok "$TESTDIR/adversarial/newtype/chained.con" 42
+run_ok "$TESTDIR/adversarial/newtype/struct_field.con" 88
+run_ok "$TESTDIR/adversarial/newtype/borrow.con" 8080
+run_ok "$TESTDIR/adversarial/newtype/generic_method.con" 99
+run_ok "$TESTDIR/adversarial/newtype/in_option_chain.con" 200
+run_ok "$TESTDIR/adversarial/newtype/heap_pattern.con" 7777
+run_ok "$TESTDIR/adversarial/newtype/function_pingpong.con" 168
+run_ok "$TESTDIR/adversarial/newtype/array_index.con" 30
+run_ok "$TESTDIR/adversarial/newtype/match_payload_use.con" 2046
+run_ok "$TESTDIR/adversarial/enum_match/copy_enum_in_struct.con" 5
+run_ok "$TESTDIR/adversarial/borrow/mut_borrow_through_match.con" 100
+run_ok "$TESTDIR/adversarial/defer/lifo_with_early_return.con" 333
+run_ok "$TESTDIR/adversarial/generic/generic_struct_copy.con" 30
+run_ok "$TESTDIR/adversarial/linear/linear_through_branches.con" 5
+run_ok "$TESTDIR/adversarial/trait_dispatch/trait_method_via_bound.con" 84
 
 # === ABI / Layout tests ===
 run_ok "$TESTDIR/sizeof_basic.con" 12

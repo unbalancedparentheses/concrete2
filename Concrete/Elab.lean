@@ -457,6 +457,12 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
       | .generic n args => (n, args)
       | .string => ("String", [])
       | _ => ("", [])
+    -- For `.0` on a borrowed newtype (`&Port`, `&mut Port`), deref to the
+    -- newtype value first so the rebrand cast is `Newtype -> Inner`, not
+    -- `&Newtype -> Inner` (which fails CoreCheck and confuses codegen).
+    let isBorrowed := match objTy with | .ref _ | .refMut _ => true | _ => false
+    let derefIfBorrowed (cObj : CExpr) (newtypeTy : Ty) : CExpr :=
+      if isBorrowed then CExpr.deref cObj newtypeTy else cObj
     match ← lookupStruct structName with
     | some sd =>
       let mapping := sd.typeParams.zip typeArgs
@@ -473,7 +479,9 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
           | some nt =>
             let mapping := nt.typeParams.zip typeArgs
             let innerTy ← resolveTypeE (substTy mapping nt.innerTy)
-            return .cast cObj innerTy
+            let newtypeTy : Ty := if typeArgs.isEmpty then .named structName
+                                   else .generic structName typeArgs
+            return .cast (derefIfBorrowed cObj newtypeTy) innerTy
           | none => return cObj
         else throwElab (.structHasNoField structName field) (some e.getSpan)
     | none =>
@@ -486,7 +494,9 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
         | some nt =>
           let mapping := nt.typeParams.zip typeArgs
           let innerTy ← resolveTypeE (substTy mapping nt.innerTy)
-          return .cast cObj innerTy
+          let newtypeTy : Ty := if typeArgs.isEmpty then .named structName
+                                 else .generic structName typeArgs
+          return .cast (derefIfBorrowed cObj newtypeTy) innerTy
         | none => return cObj
       else throwElab .fieldAccessNonStruct (some e.getSpan)
 
@@ -1093,7 +1103,28 @@ partial def elabStmt (stmt : Stmt) : ElabM (List CStmt) := do
 
   | .fieldAssign _ obj field value =>
     let cObj ← elabExpr obj
-    let cVal ← elabExpr value
+    -- Pass the field's declared type as the value hint so integer literals
+    -- pick the right width. Without this, `c.n = 100` where `n: i32` would
+    -- elaborate `100` as `Int` (i64) and codegen would emit `store i64 100`
+    -- to a 4-byte field — UB that the LLVM optimiser deletes at -O2.
+    let innerObjTy := match cObj.ty with
+      | .ref t | .refMut t | .ptrMut t | .ptrConst t => t
+      | t => t
+    let (sName, tArgs) := match innerObjTy with
+      | .named n => (n, ([] : List Ty))
+      | .generic n a => (n, a)
+      | _ => ("", [])
+    let env ← getEnv
+    let fieldTy : Option Ty :=
+      match env.structs.find? fun s => s.name == sName with
+      | some sd =>
+        match sd.fields.find? fun f => f.name == field with
+        | some f =>
+          let mapping := sd.typeParams.zip tArgs
+          some (substTy mapping f.ty)
+        | none => none
+      | none => none
+    let cVal ← elabExpr value fieldTy
     return [.fieldAssign cObj field cVal]
 
   | .derefAssign _ target value =>
