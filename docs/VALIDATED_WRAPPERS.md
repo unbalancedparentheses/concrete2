@@ -1,6 +1,6 @@
 # Opaque Validated Wrappers and Fallible Conversions
 
-Status: stable direction (pre-freeze)
+Status: stable reference (Phase 3 item 72 closed)
 
 This document is the stable-direction counterpart to [../research/language/opaque-validated-types.md](../research/language/opaque-validated-types.md). It settles the question posed by ROADMAP item 72:
 

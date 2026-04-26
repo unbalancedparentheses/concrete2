@@ -5,7 +5,8 @@ mod text {
     //
     // Invariant: every byte in the inner String is in 0..=127. Validation
     // runs once in try_new; .0 extraction is zero-cost after that.
-    // Static-only API per docs/VALIDATED_WRAPPERS.md §8 gap 1.
+    // Instance methods on newtypes now work, but AsciiText keeps the
+    // constructor-only public surface intentionally small.
     // ============================================================
 
     pub newtype AsciiText = String;

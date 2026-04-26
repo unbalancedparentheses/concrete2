@@ -1,6 +1,6 @@
 # Arithmetic Policy
 
-Status: design — Phase 3 pre-freeze decision (roadmap items 58-59)
+Status: stable policy reference (Phase 3 items 60-61)
 
 This document defines Concrete's arithmetic overflow policy as a public language surface. It specifies what happens on integer overflow, division by zero, shift overflow, and narrowing for each profile, and how the active policy is made visible in source, reports, and proof artifacts.
 

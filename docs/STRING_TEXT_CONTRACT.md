@@ -1,6 +1,6 @@
 # String and Text Encoding Contract
 
-Status: design reference (pre-freeze)
+Status: reference with follow-up hardening notes (Phase 3 items 51-52 closed)
 
 This document defines the encoding contract for strings and text in Concrete. It exists to prevent drift between the stdlib, docs, codegen, and FFI surfaces before the stable subset freeze.
 
@@ -19,7 +19,7 @@ This is the same choice Rust and Go make. It is not the same as C (unspecified e
 
 **Invariant:** Every `String` value reachable through safe code contains valid UTF-8. Code that constructs a `String` from arbitrary bytes must validate or is responsible for maintaining the invariant (see section 6 on boundaries).
 
-**Current reality:** The compiler and stdlib do not yet enforce the UTF-8 invariant at runtime. `String` is currently `{ ptr: *mut u8, len: u64, cap: u64 }` and its methods operate at the byte level. `get(index)` returns a byte cast to `char`, not a Unicode scalar value. `to_lower`/`to_upper` operate on ASCII ranges only. The contract described here is the target; the implementation must converge to it before the stdlib freeze.
+**Current reality:** `String` is currently `{ ptr: *mut u8, len: u64, cap: u64 }` and its methods operate at the byte level. `get(index)` returns a byte-oriented `char`, not a Unicode scalar value. `to_lower`/`to_upper` operate on ASCII ranges only. That byte-oriented behavior is the shipped first-release surface; stricter UTF-8 validation and richer text helpers remain follow-up hardening work around it.
 
 ---
 
@@ -57,8 +57,8 @@ This is the same choice Rust and Go make. It is not the same as C (unspecified e
 ### `char`
 
 - Currently `i8` in LLVM IR (1 byte).
-- Represents a single byte, not a Unicode scalar value.
-- This is a known gap. Before the stdlib freeze, `char` should either be renamed to reflect its byte nature or widened to represent a Unicode scalar value (4 bytes, like Rust's `char`). The decision is deferred but the contract must be settled before freeze.
+- Represents the first-release byte-oriented character/code-unit surface, not a Unicode scalar value.
+- Renaming or widening it would be a later explicit surface revision, not something left ambient or unresolved.
 
 ---
 
@@ -133,7 +133,7 @@ String literal globals are emitted with a trailing `\00` byte. The `len` field d
 - **Internal representation:** `String` is length-delimited, not null-terminated. The `len` field is authoritative. Embedded null bytes are permitted in the byte sequence.
 - **Global constants:** Null-terminated in the LLVM IR for C interop convenience. This is a codegen detail, not a semantic guarantee.
 - **Heap-allocated strings:** May or may not have a trailing null. Code that passes `String.ptr` to C functions requiring null termination (like `fopen`, `puts`) must ensure the buffer is null-terminated. The current `fs` module does this implicitly for `read_to_string` but not for all paths.
-- **Before freeze:** The stdlib should provide an explicit `as_c_str` or `to_c_str` function that guarantees null termination, rather than relying on callers to know which strings happen to be null-terminated. This is part of the FFI boundary contract (item 69).
+- **Follow-up hardening:** the stdlib should eventually provide an explicit `as_c_str` or `to_c_str` function that guarantees null termination, rather than relying on callers to know which strings happen to be null-terminated. This is part of the FFI boundary contract (item 75).
 
 ---
 
@@ -230,7 +230,7 @@ This is the same stance as Rust (which defers normalization, collation, and rege
 
 ## 10. Interaction With Other Contracts
 
-### Checked indexing (item 54)
+### Checked indexing (item 55)
 
 String indexing follows the same checked/unchecked split as arrays and slices:
 
@@ -239,7 +239,7 @@ String indexing follows the same checked/unchecked split as arrays and slices:
 
 The vocabulary should be consistent across `String`, `Bytes`, `Vec`, `Slice`, and any future view types.
 
-### FFI and layout (item 69)
+### FFI and layout (item 75)
 
 - `String` is not FFI-safe. It cannot be passed directly to C functions.
 - Passing string data to C requires extracting the pointer (`s.ptr`) and ensuring null termination.
@@ -274,14 +274,14 @@ The vocabulary should be consistent across `String`, `Bytes`, `Vec`, `Slice`, an
 | Unicode normalization | Out of scope |
 | Locale-aware operations | Out of scope |
 | Invalid UTF-8 at FFI boundary | Reject or return `Bytes`; never silently accept into `String` |
-| `char` type | Open: either rename to byte or widen to Unicode scalar. Must resolve before freeze. |
+| `char` type | Byte-oriented first-release surface. Any rename/widening is an explicit future revision. |
 | Indexing | Byte-level O(1). Character-level access is separate and O(n). |
 
 ---
 
-## 12. Open Questions Before Freeze
+## 12. Follow-Up Hardening Questions After Freeze
 
-1. **`char` semantics.** Is `char` a byte (rename to `byte` or keep as-is) or a Unicode scalar value (widen to 4 bytes)? The current i8 representation called `char` is misleading. Rust chose Unicode scalar; Zig chose `u8`; Go has `byte` and `rune`. Concrete should pick one and be explicit.
+1. **`char` follow-up.** The first release keeps the shipped byte-oriented `char` surface. If this proves too misleading in real workloads, the future question is whether to rename it or widen it under an explicit surface revision.
 
 2. **`Bytes::to_string` validation.** Should there be both a checked (`to_string_checked -> Result`) and unchecked (`to_string` in trusted code) path? Current `to_string` is unchecked. At minimum the documentation must be honest about what it does.
 
@@ -291,4 +291,4 @@ The vocabulary should be consistent across `String`, `Bytes`, `Vec`, `Slice`, an
 
 5. **`Text` vs `&str`.** Is `Text` the right borrowed-view type, or should there be a more integrated borrowed string slice (like Rust's `&str`)? `Text` currently has no connection to the type system's borrow checker -- it is a plain struct with a raw pointer. A language-level borrowed slice would be safer but requires deeper compiler support.
 
-6. **Escape sequence completeness.** `\xHH` and `\u{HHHH}` should be added before freeze. The current passthrough of unrecognized escapes should become an error.
+6. **Escape sequence completeness.** `\xHH` and `\u{HHHH}` remain approved additions. Tightening unknown escapes into a compile error is follow-up lexer hardening, not a sign that the frozen surface is undefined.

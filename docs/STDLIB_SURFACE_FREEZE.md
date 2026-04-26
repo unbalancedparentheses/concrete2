@@ -1,6 +1,6 @@
 # Stdlib Surface Freeze: First-Release Record
 
-Status: authoritative freeze record (Phase 3, item 69)
+Status: authoritative freeze record (Phase 3, item 79)
 
 Date: 2026-04-19
 
@@ -625,7 +625,7 @@ These are designed, LL(1)-verified, and approved. They may be implemented before
 | `f32` | 32-bit | IEEE 754 | `Float32` |
 | `f64` | 64-bit | IEEE 754 | `Float64` |
 | `bool` | 1-bit | -- | -- |
-| `char` | 8-bit | -- | See open questions (section 6) |
+| `char` | 8-bit | -- | Byte-oriented first-release surface; see section 6 |
 
 Source: [ARITHMETIC_POLICY.md](ARITHMETIC_POLICY.md)
 
@@ -708,81 +708,29 @@ Source: [HOSTED_STDLIB_SPLIT.md](HOSTED_STDLIB_SPLIT.md), [ANTI_FEATURES.md](ANT
 
 ---
 
-## 6. Open Questions That MUST Be Resolved Before Release
+## 6. Post-Freeze Follow-Up Questions and Approved Additions
 
-These are unresolved design decisions identified across the Phase 3 documents. Each must have a recorded answer before the first binary ships.
+Phase 3 is closed. The items below are no longer "must resolve before release" blockers; they are the follow-up questions, hardening steps, and approved additions that may still grow around the frozen surface.
 
-### 6.1 `char` semantics
+### 6.1 Byte/text hardening
 
-**Status**: unresolved.
-**Question**: Is `char` a byte (like Zig's `u8`) or a Unicode scalar value (like Rust's 4-byte `char`)?
-**Current**: `char` is `i8` in LLVM IR. `String.get` returns a byte cast to `char`. This is misleading.
-**Options**: (a) Rename to `byte` and keep as 1-byte. (b) Widen to 4 bytes as a Unicode scalar. (c) Keep `char` as a byte and document honestly.
-**Impact**: affects `String.get` return type, `push_char` semantics, character literal semantics.
-**Source**: [STRING_TEXT_CONTRACT.md](STRING_TEXT_CONTRACT.md) section 12, question 1.
+- `char` is frozen today as the shipped 8-bit character/byte surface. Renaming it or widening it to a Unicode scalar would be an explicit future surface revision, not an unrecorded drift.
+- `Bytes::to_string` validation, `read_to_string` UTF-8 validation, stricter escape handling, and explicit C-string helper APIs remain worthwhile hardening work around the frozen text boundary. They are approved additions or tightening work, not evidence that the current surface is undefined.
 
-### 6.2 `Bytes::to_string` validation
+### 6.2 Numeric and arithmetic follow-up
 
-**Status**: unresolved.
-**Question**: Should there be both a checked path (`to_string_checked -> Result`) and an unchecked path (`to_string` / `into_string_unchecked`)?
-**Current**: `to_string` performs zero UTF-8 validation. The name does not signal this.
-**Source**: [STRING_TEXT_CONTRACT.md](STRING_TEXT_CONTRACT.md) section 12, question 2; [STDLIB_API_REVIEW.md](STDLIB_API_REVIEW.md) recommendation 9.
+- `std.numeric` is shipped: `ByteCursor`, `ByteWriter`, endian reads/writes, and the parser-facing binary helpers are part of the current surface.
+- Signed cursor helpers, additional narrowing helpers, and any shift from today's arithmetic implementation to fully enforced checked-by-default semantics remain explicit follow-up work around the published arithmetic policy.
 
-### 6.3 `read_to_string` UTF-8 validation
+### 6.3 Collection and slice polish
 
-**Status**: unresolved.
-**Question**: Must `read_to_string` validate UTF-8 before returning `String`?
-**Current**: No validation. Invalid UTF-8 from the filesystem silently enters `String`.
-**Required**: validation or rejection per the encoding contract.
-**Source**: [STRING_TEXT_CONTRACT.md](STRING_TEXT_CONTRACT.md) section 6.
+- Checked `get` on `Slice<T>` and `MutSlice<T>` is shipped.
+- Additional slice/view APIs (`subslice`, broader view helpers) and allocation-visibility cleanups like a lazier `HashMap::new` remain post-freeze API polish, not missing definition of the frozen core.
 
-### 6.4 Escape sequence completeness
+### 6.4 Result/Option Tier 2 helpers
 
-**Status**: unresolved.
-**Question**: Add `\xHH` (hex byte escape) and `\u{HHHH}` (Unicode scalar escape) before release? Make unrecognized escape sequences a compile error?
-**Current**: unrecognized `\c` passes through as literal `c`.
-**Source**: [STRING_TEXT_CONTRACT.md](STRING_TEXT_CONTRACT.md) section 4.
-
-### 6.5 `std.numeric` implementation
-
-**Status**: not started.
-**Question**: Implement the ByteCursor, ByteWriter, endian functions, checked arithmetic, and checked narrowing.
-**Blocks**: all 5 parser pressure programs.
-**Source**: [BYTE_CURSOR_API.md](BYTE_CURSOR_API.md), [STDLIB_TARGET.md](STDLIB_TARGET.md) priority gap #1.
-
-### 6.6 Checked arithmetic as default
-
-**Status**: designed but not implemented.
-**Question**: Switch default `+`, `-`, `*` to checked (trap on overflow). Division-by-zero check. Shift-range check.
-**Current**: all arithmetic wraps silently; division by zero is UB.
-**Source**: [ARITHMETIC_POLICY.md](ARITHMETIC_POLICY.md) section 12.
-
-### 6.7 `std.slice` checked access
-
-**Status**: not implemented.
-**Question**: Add `get(at) -> Option<&T>` to `Slice<T>` and `MutSlice<T>`.
-**Current**: only `get_unchecked` exists.
-**Source**: [STDLIB_AUDIT.md](STDLIB_AUDIT.md) gap #2.
-
-### 6.8 `HashMap::new` hidden allocation
-
-**Status**: identified.
-**Question**: Make `HashMap::new` and `HashSet::new` zero-capacity (no allocation until first insert)?
-**Current**: allocates 16-slot backing arrays immediately, violating Principle 5 (no hidden allocation).
-**Source**: [STDLIB_API_REVIEW.md](STDLIB_API_REVIEW.md) section 2.10.
-
-### 6.9 Null termination guarantee for C interop
-
-**Status**: unresolved.
-**Question**: Should `String` always maintain a trailing null byte? Or provide an explicit `as_c_str` function?
-**Source**: [STRING_TEXT_CONTRACT.md](STRING_TEXT_CONTRACT.md) section 12, question 4.
-
-### 6.10 Result Tier 2 helpers
-
-**Status**: designed, blocked on compiler validation.
-**Question**: Do function pointers in generic method signatures work? (`map<U>(self, f: fn(T) -> U)`)
-**Blocks**: `map`, `map_err`, `and_then`, `or_else`, `unwrap_or_else` on Result and Option.
-**Source**: [ERROR_HANDLING_DESIGN.md](ERROR_HANDLING_DESIGN.md) Wave 2.
+- Tier 1 helpers are frozen and shipped.
+- Tier 2 helpers (`map`, `map_err`, `and_then`, `or_else`, `unwrap_or_else`) remain approved additions pending function-pointer-in-generic validation. Their absence is deliberate and documented.
 
 ---
 
@@ -950,8 +898,7 @@ mod std {
     mod process;       // stable: fork, spawn, kill, exit
     mod net;           // stable: TcpListener, TcpStream
 
-    // --- Not yet present ---
-    // mod numeric;    // experimental (planned): ByteCursor, endian, checked arith
+    mod numeric;       // experimental: ByteCursor, endian, checked arithmetic helpers
 }
 ```
 
@@ -961,11 +908,11 @@ mod std {
 
 This freeze records:
 
-- **36 existing modules** in `std/src/lib.con`. 26 are stable, 2 are experimental (`slice`, `text`), 4 are internal (`libc`, `ptr`, `alloc`, `writer`). 1 planned module (`numeric`) is experimental and not yet implemented.
+- **The current stdlib module set** in `std/src/lib.con`, including shipped experimental modules such as `slice`, `text`, and `numeric`, plus the explicitly internal support modules.
 - **24 stable syntax forms**. 4 forms approved for implementation. 17+ forms explicitly deferred.
 - **15 frozen type families** spanning scalars, strings, generics, arrays, references, and function pointers.
 - **10 frozen capabilities** covering file, network, clock, env, random, process, console, allocation, unsafe, and the std alias.
-- **10 open questions** that must be resolved before the first release ships.
+- **A small set of documented post-freeze follow-up questions** around text hardening, arithmetic enforcement, and Tier 2 helper growth.
 - **14 permanent exclusions** and **20 deferred features** with documented conditions for reconsideration.
 - **A change process** requiring written proposal, review, and migration for any frozen surface modification.
 

@@ -3,10 +3,10 @@ mod numeric {
     // ============================================================
     // Canonical validated wrappers — see docs/VALIDATED_WRAPPERS.md §4.
     //
-    // Static-only API: construct with try_new / try_from_*, read with .0.
-    // Instance methods on newtypes are deliberately omitted because method
-    // dispatch resolves to the inner type rather than the wrapper
-    // (docs/VALIDATED_WRAPPERS.md §8 gap 1).
+    // Canonical construction is try_new / try_from_*; .0 remains the
+    // representation-level extraction path. Instance methods on newtypes
+    // are now supported, but these wrappers intentionally keep a small,
+    // explicit surface.
     // ============================================================
 
     pub newtype NonZeroU32 = u32;

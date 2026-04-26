@@ -6,13 +6,13 @@ enum Color {
 
 fn pick(c: Color) -> Int {
     let r: Int = match c {
-        Color#Red => {
+        Color::Red => {
             return 1;
         },
-        Color#Green => {
+        Color::Green => {
             return 2;
         },
-        Color#Blue => {
+        Color::Blue => {
             return 3;
         },
     };

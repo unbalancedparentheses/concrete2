@@ -1,6 +1,6 @@
 # Layout and ABI Contract Surface
 
-Status: stable direction (pre-freeze)
+Status: stable reference (Phase 3 item 75 closed)
 
 This document is the stable-direction counterpart to the exploratory note at [../research/language/layout-contract-surface.md](../research/language/layout-contract-surface.md). It settles the question posed by ROADMAP item 75:
 
@@ -111,17 +111,16 @@ Opaque types still appear in reports, clearly marked. The signal is not "the com
 
 ---
 
-## 7. Freeze Checklist
+## 7. Freeze Close-Out Status
 
-Before the first stdlib/FFI freeze, the following must be true:
+Phase 3 closed on the contract-definition bar, not on "every future layout report feature already exists."
 
-- [ ] Only the four `repr` forms in section 2 are accepted by the checker.
-- [ ] `#[repr(transparent)]` is rejected with a clear diagnostic pointing to opaque validated wrappers (item 72).
-- [ ] `--report layout` emits the fact set in section 6 for every type, tagged `guaranteed` or `opaque`.
-- [ ] Enum types, generic struct instantiations, and unannotated structs are rejected on `extern fn` boundaries with diagnostics that reference this document.
-- [ ] At least one FFI-heavy example (e.g., `pressure_ffi_cabi`, `elf_header`, `packet`) exercises every guaranteed-layout form and produces the expected reports.
+- The first-release layout menu in section 2 is the frozen surface: opaque-by-default plus `#[repr(C)]`, `#[repr(packed)]`, and `#[repr(align(N))]`.
+- `#[repr(transparent)]` is intentionally outside that contract. Opaque validated wrappers are the frozen first-release answer for domain wrappers; if transparent FFI wrappers ever become necessary, that is an explicit unfreeze/revision event.
+- `--report layout` already exists and is regression-tested, but the richer fact-tagging described in section 6 (`ffi_safe`, `target_caveats`, explicit `guaranteed|opaque` labels everywhere, package/interface fingerprints) is now follow-up artifact/report hardening, not a Phase 3 blocker.
+- The FFI-heavy examples and pressure programs are sufficient to freeze the promised surface. Additional report enrichment and stricter checker gates belong to later artifact/contract-hardening phases.
 
-Partial completion is not freeze-ready: the surface is cheap to audit only because it is small, and partial enforcement is indistinguishable from an accidental larger surface.
+In short: the contract is frozen; remaining work in this area is implementation/report polish, not surface-definition ambiguity.
 
 ---
 

@@ -1,6 +1,6 @@
 # Formatting and Text-Output Ergonomics
 
-Status: design reference (pre-freeze)
+Status: stable reference (Phase 3 item 62 closed)
 
 This document defines the direction for formatting and text output in Concrete before the stdlib freeze. It exists to settle the question posed by ROADMAP item 62:
 
@@ -95,7 +95,7 @@ Rationale: reporters can be composed, buffers can be reused across many errors, 
 
 ## 6. Reconsideration Triggers
 
-The design in section 2 is the pre-freeze target. It is reconsidered only if item-67 medium-workload evidence produces any of the following findings:
+The design in section 2 is the frozen first-release target. It is reconsidered only if post-freeze workload evidence produces any of the following findings:
 
 - **Dispatch explosion.** A real workload requires appending many user-defined types, and the `append` variadic cannot dispatch them without a trait.
 - **Width/padding pressure.** Aligned tabular output is unavoidable in a workload (e.g., `ls`-style columns) and cannot be built from primitives without excessive verbosity.

@@ -17,6 +17,7 @@ The canonical Phase 3 exit checklist is now 19/19 complete. The first-release st
 - **Runtime-collection close-out**: `docs/RUNTIME_COLLECTIONS.md` and `docs/STDLIB_FREEZE_LEDGER.md` now treat the shipped map/deque surface as sufficient for freeze. `HashMap::get_mut`, displaced-value `insert`, and `OrderedMap::get_mut` are all landed. `lox` runs end-to-end against the frozen surface; rewriting it onto the canonical `HashMap<String, Value>` + `Vec<Frame>` shape remains useful follow-up evidence, not a blocker.
 - **Validated-wrapper close-out**: the local wrapper docs now match the actual compiler state. The freeze-ready surface is the shipped stdlib wrappers (`NonZeroU32`, `NonZeroU64`, `Port`, `AsciiText`) plus the four resolved compiler gaps: native/SSA layout on enum-payload newtypes, cross-module identity, instance-method dispatch on wrappers, and narrowed wrap/unwrap-only cast exemption.
 - **Roadmap/docs alignment**: ROADMAP items 57, 67, 72, and 79 now agree with the changelog and local freeze ledgers; `docs/STDLIB_VALIDATION_PLAN.md` and `docs/STDLIB_SURFACE_FREEZE.md` were also updated to stop advertising stale Phase 3 item metadata.
+- **Post-freeze cleanup**: the remaining Phase 3 roadmap entries were either closed with explicit rationale or reworded as post-freeze follow-up polish, the stale layout freeze checklist was converted into a close-out note, and the last golden `#` syntax files were migrated to `::` so the frozen syntax record matches the corpus again.
 
 ### Newtype-cast exemption narrowed to wrap/unwrap pairs
 

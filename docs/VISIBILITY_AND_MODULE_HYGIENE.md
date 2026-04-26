@@ -1,6 +1,6 @@
 # Visibility and Module Hygiene
 
-Status: design reference (Phase 3, items 64 and 68)
+Status: stable reference (Phase 3, items 73 and 78)
 
 This document defines Concrete's visibility model and the module hygiene guarantees that must hold before stdlib freeze and package management. It covers the current state, the target rules, what the compiler must enforce, and how to validate that modules expose clean, stable interfaces.
 
@@ -12,7 +12,7 @@ For the stdlib API audit, see [STDLIB_API_REVIEW.md](STDLIB_API_REVIEW.md).
 
 ---
 
-## Part 1: Visibility Rules (Item 64)
+## Part 1: Visibility Rules (Item 73)
 
 ### 1. Current State
 
@@ -167,7 +167,7 @@ When package management is implemented, the following changes complete the visib
 
 ---
 
-## Part 2: Module Hygiene (Item 68)
+## Part 2: Module Hygiene (Item 78)
 
 ### 1. Interface Drift Detection
 

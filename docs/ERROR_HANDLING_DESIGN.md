@@ -1,11 +1,11 @@
 # Error Handling Design: Result/Error-Flow Ergonomics and Helper APIs
 
-Status: design document (Phase 3, items 58 and 63)
+Status: design/freeze reference (Phase 3, items 63 and 71)
 
 This document covers two tightly coupled items:
 
-- **Item 58**: Make Result/error-flow ergonomics a first-class stdlib quality target.
-- **Item 63**: Add Result/error helper APIs before considering new syntax.
+- **Item 63**: Make Result/error-flow ergonomics a first-class stdlib quality target.
+- **Item 71**: Define the library helper floor before considering more syntax.
 
 Both items share a single constraint: Concrete's error handling must remain explicit, auditable, and free of hidden control flow. The improvements proposed here are library-only. No new syntax is introduced beyond the `?` operator that already exists.
 
@@ -502,7 +502,7 @@ The current `?` is well-defined, well-tested, and sufficient. It handles the com
 
 Extending `?` to support automatic error conversion would require either:
 - Implicit trait resolution (permanently excluded)
-- An explicit `into` annotation on the `?` site (new syntax, against item 63's mandate)
+- An explicit `into` annotation on the `?` site (new syntax, against item 71's mandate)
 - A special-case conversion lookup (ad hoc, fragile)
 
 None of these are worth the complexity. `map_err` + `?` is explicit, auditable, and sufficient.

@@ -1,11 +1,11 @@
 # Syntax Freeze Review
 
-Status: review (Phase 3, items 66 and 67)
+Status: freeze close-out review (Phase 3, items 76 and 77)
 
 This document covers two items before syntax freeze:
 
-- **Item 66**: Syntax friction review -- LL(1)-preserving changes only.
-- **Item 67**: Syntax/ergonomics kill list -- every known pain point with a disposition.
+- **Item 76**: Syntax friction review -- LL(1)-preserving changes only.
+- **Item 77**: Syntax/ergonomics kill list -- every known pain point with a disposition.
 
 All proposals in this document must preserve LL(1). Anything requiring backtracking, context-sensitivity, or lookahead > 1 is explicitly rejected.
 
