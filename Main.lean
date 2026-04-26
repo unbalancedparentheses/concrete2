@@ -293,25 +293,6 @@ def compileAndEmit (inputPath : String) (mode : String) : IO UInt32 := do
         IO.println (ppSModule sm)
       return 0
 
-/-- Run pipeline and check a profile constraint. -/
-def compileAndCheck (inputPath : String) (checkType : String) : IO UInt32 := do
-  let source ← readFile inputPath
-  match ← Pipeline.runFrontend inputPath source resolveAllModules with
-  | .error ds =>
-    IO.eprintln (renderDiagnostics ds (sourceMap := [(inputPath, source)]))
-    return 1
-  | .ok (parsed, _, validCore, _) =>
-    let locMap := Report.buildFnLocMap parsed.modules inputPath
-    let simpleLocMap := locMap.map fun e => (e.qualName, (e.file, e.fnSpan.line))
-    let pc := extractProofCore validCore simpleLocMap
-    let srcMap : SourceMap := [(inputPath, source)]
-    if checkType == "predictable" then
-      let (pass, report) := Report.checkPredictable validCore.coreModules locMap srcMap pc
-      IO.println report
-      return if pass then 0 else 1
-    IO.eprintln s!"Unknown check type: {checkType}. Use: predictable"
-    return 1
-
 /-- Try to load a proof registry from proof-registry.json next to the input file.
     Returns (entries, warnings). Missing file is not a warning; corrupt file is. -/
 def loadRegistry (inputPath : String) : IO (Concrete.ProofRegistry × List String) := do
@@ -846,6 +827,46 @@ partial def loadProject (projectRoot : String) (stripTestFns : Bool := false) : 
       return Except.error 1
     | .ok validCore =>
     return Except.ok { validCore, parsed := merged, allSrcMap, tomlContent, mainPath, depNames }
+
+/-- Run pipeline and check a profile constraint.
+    If the input file lives inside a `Concrete.toml` project, route
+    through project mode so std and other dependencies resolve. -/
+def compileAndCheck (inputPath : String) (checkType : String) : IO UInt32 := do
+  if checkType != "predictable" then
+    IO.eprintln s!"Unknown check type: {checkType}. Use: predictable"
+    return 1
+  let inputDir := dirOf inputPath
+  match ← findProjectRoot inputDir with
+  | some root =>
+    match ← loadProject root with
+    | .error exitCode => return exitCode
+    | .ok ctx =>
+      let { validCore, parsed, allSrcMap, depNames, .. } := ctx
+      -- Scope the predictable check to user-package modules so dependency
+      -- code (e.g. std) doesn't drown the report in unrelated entries.
+      let userModules := validCore.coreModules.filter fun m => !depNames.contains m.name
+      let userValidCore : ValidatedCore := { validCore with coreModules := userModules }
+      let locMap := Report.buildFnLocMap parsed.modules inputPath
+      let simpleLocMap := locMap.map fun (e : Report.FnLocEntry) => (e.qualName, (e.file, e.fnSpan.line))
+      let pc := extractProofCore userValidCore simpleLocMap
+      let (pass, report) := Report.checkPredictable userModules locMap allSrcMap pc
+      IO.println report
+      return if pass then 0 else 1
+  | none =>
+    -- Standalone mode (no Concrete.toml in the ancestor chain).
+    let source ← readFile inputPath
+    match ← Pipeline.runFrontend inputPath source resolveAllModules with
+    | .error ds =>
+      IO.eprintln (renderDiagnostics ds (sourceMap := [(inputPath, source)]))
+      return 1
+    | .ok (parsed, _, validCore, _) =>
+      let locMap := Report.buildFnLocMap parsed.modules inputPath
+      let simpleLocMap := locMap.map fun (e : Report.FnLocEntry) => (e.qualName, (e.file, e.fnSpan.line))
+      let pc := extractProofCore validCore simpleLocMap
+      let srcMap : SourceMap := [(inputPath, source)]
+      let (pass, report) := Report.checkPredictable validCore.coreModules locMap srcMap pc
+      IO.println report
+      return if pass then 0 else 1
 
 /-- Compile a project from Concrete.toml. -/
 def compileBuild (projectRoot : String) (outputPath : Option String) (emitLLVM : Bool) (quiet : Bool := false) : IO UInt32 := do
