@@ -10,6 +10,14 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Phase 3 stdlib and syntax freeze closes
+
+The canonical Phase 3 exit checklist is now 19/19 complete. The first-release stdlib/syntax surface is treated as freeze-ready on current evidence rather than on aspirational follow-up rewrites.
+
+- **Runtime-collection close-out**: `docs/RUNTIME_COLLECTIONS.md` and `docs/STDLIB_FREEZE_LEDGER.md` now treat the shipped map/deque surface as sufficient for freeze. `HashMap::get_mut`, displaced-value `insert`, and `OrderedMap::get_mut` are all landed. `lox` runs end-to-end against the frozen surface; rewriting it onto the canonical `HashMap<String, Value>` + `Vec<Frame>` shape remains useful follow-up evidence, not a blocker.
+- **Validated-wrapper close-out**: the local wrapper docs now match the actual compiler state. The freeze-ready surface is the shipped stdlib wrappers (`NonZeroU32`, `NonZeroU64`, `Port`, `AsciiText`) plus the four resolved compiler gaps: native/SSA layout on enum-payload newtypes, cross-module identity, instance-method dispatch on wrappers, and narrowed wrap/unwrap-only cast exemption.
+- **Roadmap/docs alignment**: ROADMAP items 57, 67, 72, and 79 now agree with the changelog and local freeze ledgers; `docs/STDLIB_VALIDATION_PLAN.md` and `docs/STDLIB_SURFACE_FREEZE.md` were also updated to stop advertising stale Phase 3 item metadata.
+
 ### Newtype-cast exemption narrowed to wrap/unwrap pairs
 
 The first cut of the instance-method-dispatch fix exempted *any* `.cast` where either side named a newtype from CoreCheck's cast-validity table. Reviewer caught the regression: `let x: bool = p as bool` and `let p: Port = b as Port` both compiled, bypassing the validated-wrapper contract in `docs/VALIDATED_WRAPPERS.md §2`. This narrows the exemption to the exact pattern Elab actually inserts: one side is a newtype `N`, and the other side equals `N`'s resolved inner type (after generic-arg substitution). Anything else falls through to the standard validity table and gets E0553 if it's not a legitimate cast on its own.

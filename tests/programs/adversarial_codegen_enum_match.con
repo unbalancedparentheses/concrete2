@@ -15,18 +15,18 @@ enum Copy Direction {
 
 fn travel_cost(d: Direction) -> Int {
     match d {
-        Direction#North { speed } => { return speed * 1; },
-        Direction#South { speed } => { return speed * 5; },
-        Direction#East { speed } => { return speed * 3; },
-        Direction#West { speed } => { return speed * 42; },
+        Direction::North { speed } => { return speed * 1; },
+        Direction::South { speed } => { return speed * 5; },
+        Direction::East { speed } => { return speed * 3; },
+        Direction::West { speed } => { return speed * 42; },
     }
 }
 
 pub fn main() with(Std) {
-    let n: Direction = Direction#North { speed: 10 };
-    let s: Direction = Direction#South { speed: 5 };
-    let e: Direction = Direction#East { speed: 10 };
-    let w: Direction = Direction#West { speed: 1 };
+    let n: Direction = Direction::North { speed: 10 };
+    let s: Direction = Direction::South { speed: 5 };
+    let e: Direction = Direction::East { speed: 10 };
+    let w: Direction = Direction::West { speed: 1 };
 
     println(travel_cost(n));
     println(travel_cost(s));

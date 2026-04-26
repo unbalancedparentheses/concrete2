@@ -66,32 +66,32 @@ fn check_bounds(score: i32, bounds: &Bounds) -> bool {
 fn apply_filter(m: &Measurement, bounds: &Bounds) -> FilterResult {
     let s: i32 = compute_score::<Measurement>(m);
     if check_bounds(s, bounds) {
-        return FilterResult#Keep { score: s };
+        return FilterResult::Keep { score: s };
     }
-    return FilterResult#Discard { reason: s };
+    return FilterResult::Discard { reason: s };
 }
 
 // Layer 3: process a single data point (deep nested match)
 fn process_point(dp: &DataPoint, bounds: &Bounds) -> i32 {
     match *dp {
-        DataPoint#Numeric { m } => {
+        DataPoint::Numeric { m } => {
             let fr: FilterResult = apply_filter(&m, bounds);
             match fr {
-                FilterResult#Keep { score } => { return score; },
-                FilterResult#Discard { reason } => { return 0; }
+                FilterResult::Keep { score } => { return score; },
+                FilterResult::Discard { reason } => { return 0; }
             }
         },
-        DataPoint#Flagged { m, flag } => {
+        DataPoint::Flagged { m, flag } => {
             if flag > 0 {
                 let fr: FilterResult = apply_filter(&m, bounds);
                 match fr {
-                    FilterResult#Keep { score } => { return score * 2; },
-                    FilterResult#Discard { reason } => { return 0; }
+                    FilterResult::Keep { score } => { return score * 2; },
+                    FilterResult::Discard { reason } => { return 0; }
                 }
             }
             return 0;
         },
-        DataPoint#Empty {} => {
+        DataPoint::Empty {} => {
             return 0;
         }
     }
@@ -120,22 +120,22 @@ fn run_pipeline(d0: &DataPoint, d1: &DataPoint, d2: &DataPoint,
 fn main() -> Int {
     // Point 0: Numeric, value=3, weight=2 => score=6 (in range 1..20 => keep => 6)
     let m0: Measurement = Measurement { value: 3, weight: 2 };
-    let d0: DataPoint = DataPoint#Numeric { m: m0 };
+    let d0: DataPoint = DataPoint::Numeric { m: m0 };
 
     // Point 1: Flagged, value=4, weight=3, flag=1 => score=12 => keep => 12*2=24
     let m1: Measurement = Measurement { value: 4, weight: 3 };
-    let d1: DataPoint = DataPoint#Flagged { m: m1, flag: 1 };
+    let d1: DataPoint = DataPoint::Flagged { m: m1, flag: 1 };
 
     // Point 2: Numeric, value=100, weight=1 => score=100 (out of range => discard => 0)
     let m2: Measurement = Measurement { value: 100, weight: 1 };
-    let d2: DataPoint = DataPoint#Numeric { m: m2 };
+    let d2: DataPoint = DataPoint::Numeric { m: m2 };
 
     // Point 3: Empty => 0
-    let d3: DataPoint = DataPoint#Empty {};
+    let d3: DataPoint = DataPoint::Empty {};
 
     // Point 4: Flagged, value=2, weight=3, flag=0 => flag=0 => 0
     let m4: Measurement = Measurement { value: 2, weight: 3 };
-    let d4: DataPoint = DataPoint#Flagged { m: m4, flag: 0 };
+    let d4: DataPoint = DataPoint::Flagged { m: m4, flag: 0 };
 
     // Pipeline: bounds [1, 20]
     // Expected: 6 + 24 + 0 + 0 + 0 = 30

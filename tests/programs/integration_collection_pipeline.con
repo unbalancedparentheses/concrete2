@@ -18,12 +18,12 @@ pub enum Copy Classification {
 // Pure: classify a value into a bucket
 pub fn classify(val: i32) -> Classification {
     if val < 10 {
-        return Classification#Small {};
+        return Classification::Small {};
     }
     if val < 100 {
-        return Classification#Medium {};
+        return Classification::Medium {};
     }
-    return Classification#Large {};
+    return Classification::Large {};
 }
 
 // Generic: apply a function pointer to each element, collecting results
@@ -84,11 +84,11 @@ fn collect_classified(n: i32) with(Alloc) -> Vec<i32> {
     while i < n {
         let val: i32 = i * 7 + 3;
         match classify(val) {
-            Classification#Small {} => {
+            Classification::Small {} => {
                 vec_push::<i32>(&mut smalls, val);
             },
-            Classification#Medium {} => {},
-            Classification#Large {} => {},
+            Classification::Medium {} => {},
+            Classification::Large {} => {},
         }
         i = i + 1;
     }

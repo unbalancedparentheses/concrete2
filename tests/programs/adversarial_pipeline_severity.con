@@ -5,10 +5,10 @@ enum Copy ErrCategory { InputBad, AuthFail, QuotaHit, SystemDown }
 
 fn severity(e: ErrCategory) -> i32 {
     match e {
-        ErrCategory#InputBad => { return 1; },
-        ErrCategory#AuthFail => { return 3; },
-        ErrCategory#QuotaHit => { return 2; },
-        ErrCategory#SystemDown => { return 4; },
+        ErrCategory::InputBad => { return 1; },
+        ErrCategory::AuthFail => { return 3; },
+        ErrCategory::QuotaHit => { return 2; },
+        ErrCategory::SystemDown => { return 4; },
     }
 }
 
@@ -29,46 +29,46 @@ enum Copy StageResult {
 }
 
 fn stage_a(x: i32) -> StageResult {
-    if x < 0 { return StageResult#Err { cat: ErrCategory#InputBad }; }
-    return StageResult#Ok { val: x + 10 };
+    if x < 0 { return StageResult::Err { cat: ErrCategory::InputBad }; }
+    return StageResult::Ok { val: x + 10 };
 }
 
 fn stage_b(x: i32) -> StageResult {
-    if x == 42 { return StageResult#Err { cat: ErrCategory#AuthFail }; }
-    return StageResult#Ok { val: x + 20 };
+    if x == 42 { return StageResult::Err { cat: ErrCategory::AuthFail }; }
+    return StageResult::Ok { val: x + 20 };
 }
 
 fn stage_c(x: i32) -> StageResult {
-    if x > 200 { return StageResult#Err { cat: ErrCategory#QuotaHit }; }
-    if x > 500 { return StageResult#Err { cat: ErrCategory#SystemDown }; }
-    return StageResult#Ok { val: x + 30 };
+    if x > 200 { return StageResult::Err { cat: ErrCategory::QuotaHit }; }
+    if x > 500 { return StageResult::Err { cat: ErrCategory::SystemDown }; }
+    return StageResult::Ok { val: x + 30 };
 }
 
 fn main() -> i32 {
     // InputBad: severity 1, retriable
-    if severity(ErrCategory#InputBad) != 1 { return 1; }
-    if is_retriable(ErrCategory#InputBad) != 1 { return 2; }
-    if is_fatal(ErrCategory#InputBad) != 0 { return 3; }
+    if severity(ErrCategory::InputBad) != 1 { return 1; }
+    if is_retriable(ErrCategory::InputBad) != 1 { return 2; }
+    if is_fatal(ErrCategory::InputBad) != 0 { return 3; }
 
     // AuthFail: severity 3, not retriable, not fatal
-    if severity(ErrCategory#AuthFail) != 3 { return 4; }
-    if is_retriable(ErrCategory#AuthFail) != 0 { return 5; }
-    if is_fatal(ErrCategory#AuthFail) != 0 { return 6; }
+    if severity(ErrCategory::AuthFail) != 3 { return 4; }
+    if is_retriable(ErrCategory::AuthFail) != 0 { return 5; }
+    if is_fatal(ErrCategory::AuthFail) != 0 { return 6; }
 
     // SystemDown: severity 4, fatal
-    if severity(ErrCategory#SystemDown) != 4 { return 7; }
-    if is_fatal(ErrCategory#SystemDown) != 1 { return 8; }
+    if severity(ErrCategory::SystemDown) != 4 { return 7; }
+    if is_fatal(ErrCategory::SystemDown) != 1 { return 8; }
 
     // Pipeline success
     match stage_a(5) {
-        StageResult#Err { cat } => { return 9; },
-        StageResult#Ok { val } => { if val != 15 { return 10; } },
+        StageResult::Err { cat } => { return 9; },
+        StageResult::Ok { val } => { if val != 15 { return 10; } },
     }
 
     // Pipeline error at stage_a
     match stage_a(0 - 1) {
-        StageResult#Ok { val } => { return 11; },
-        StageResult#Err { cat } => {
+        StageResult::Ok { val } => { return 11; },
+        StageResult::Err { cat } => {
             if severity(cat) != 1 { return 12; }
         },
     }

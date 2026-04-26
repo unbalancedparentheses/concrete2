@@ -5,26 +5,26 @@ enum Copy Step { A, B, C, D, Done }
 
 fn advance(s: Step) -> Step {
     match s {
-        Step#A => { return Step#B; },
-        Step#B => { return Step#C; },
-        Step#C => { return Step#D; },
-        Step#D => { return Step#Done; },
-        Step#Done => { return Step#Done; },
+        Step::A => { return Step::B; },
+        Step::B => { return Step::C; },
+        Step::C => { return Step::D; },
+        Step::D => { return Step::Done; },
+        Step::Done => { return Step::Done; },
     }
 }
 
 fn step_value(s: Step) -> i32 {
     match s {
-        Step#A => { return 1; },
-        Step#B => { return 2; },
-        Step#C => { return 3; },
-        Step#D => { return 4; },
-        Step#Done => { return 5; },
+        Step::A => { return 1; },
+        Step::B => { return 2; },
+        Step::C => { return 3; },
+        Step::D => { return 4; },
+        Step::Done => { return 5; },
     }
 }
 
 fn main() -> i32 {
-    let s0: Step = Step#A;
+    let s0: Step = Step::A;
     let s1: Step = advance(s0);
     let s2: Step = advance(s1);
     let s3: Step = advance(s2);

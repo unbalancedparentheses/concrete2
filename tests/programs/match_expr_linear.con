@@ -6,10 +6,10 @@ mod test {
 
     fn main() with(Alloc) -> i32 {
         // Linear value returned from match arm
-        let r: Result = Result#Ok { value: "hello" };
+        let r: Result = Result::Ok { value: "hello" };
         let s: String = match r {
-            Result#Ok { value } => value,
-            Result#Err { code } => {
+            Result::Ok { value } => value,
+            Result::Err { code } => {
                 let msg: String = "error";
                 msg
             }

@@ -36,8 +36,8 @@ fn uses_while(n: Int) -> Int {
 
 fn uses_match(c: Choice) -> Int {
     match c {
-        Choice#Left => { return 1; },
-        Choice#Right => { return 2; },
+        Choice::Left => { return 1; },
+        Choice::Right => { return 2; },
     }
 }
 

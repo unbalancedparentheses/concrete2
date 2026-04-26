@@ -34,30 +34,30 @@ enum Copy ValidResult {
 // Validate config: min < max, scale > 0
 fn validate_config(cfg: Config) -> ValidResult {
     if cfg.min_value >= cfg.max_value {
-        return ValidResult#Bad { err: ParseError#InvalidFormat {} };
+        return ValidResult::Bad { err: ParseError::InvalidFormat {} };
     }
     if cfg.scale <= 0 {
-        return ValidResult#Bad { err: ParseError#Overflow {} };
+        return ValidResult::Bad { err: ParseError::Overflow {} };
     }
-    return ValidResult#Good { value: 1 };
+    return ValidResult::Good { value: 1 };
 }
 
 // Validate a single value against config bounds, scale it
 fn validate_and_scale(val: i32, cfg: &Config) -> ValidResult {
     if val < cfg.min_value {
-        return ValidResult#Bad { err: ParseError#Overflow {} };
+        return ValidResult::Bad { err: ParseError::Overflow {} };
     }
     if val > cfg.max_value {
-        return ValidResult#Bad { err: ParseError#Overflow {} };
+        return ValidResult::Bad { err: ParseError::Overflow {} };
     }
-    return ValidResult#Good { value: val * cfg.scale };
+    return ValidResult::Good { value: val * cfg.scale };
 }
 
 // Chain: validate config then process value
 fn process_value(val: i32, cfg: Config) -> ValidResult {
     match validate_config(cfg) {
-        ValidResult#Bad { err } => { return ValidResult#Bad { err: err }; },
-        ValidResult#Good { value } => {},
+        ValidResult::Bad { err } => { return ValidResult::Bad { err: err }; },
+        ValidResult::Good { value } => {},
     }
     return validate_and_scale(val, &cfg);
 }
@@ -71,10 +71,10 @@ fn process_batch(values: &Vec<i32>, cfg: Config) with(Alloc) -> Vec<i32> {
     while i < n {
         let val: i32 = vec_get::<i32>(values, i);
         match process_value(val, cfg) {
-            ValidResult#Good { value } => {
+            ValidResult::Good { value } => {
                 vec_push::<i32>(&mut results, value);
             },
-            ValidResult#Bad { err } => {},
+            ValidResult::Bad { err } => {},
         }
         i = i + 1;
     }
@@ -148,8 +148,8 @@ enum Copy PipelineResult {
 fn run_pipeline(cfg: Config) with(Alloc) -> PipelineResult {
     // Validate config first
     match validate_config(cfg) {
-        ValidResult#Bad { err } => { return PipelineResult#Failure { err: err }; },
-        ValidResult#Good { value } => {},
+        ValidResult::Bad { err } => { return PipelineResult::Failure { err: err }; },
+        ValidResult::Good { value } => {},
     }
 
     // Build input data
@@ -176,7 +176,7 @@ fn run_pipeline(cfg: Config) with(Alloc) -> PipelineResult {
     vec_free::<i32>(input);
     vec_free::<i32>(results);
 
-    return PipelineResult#Success { stats: BatchStats {
+    return PipelineResult::Success { stats: BatchStats {
         total_input: total_input,
         valid_count: valid_count,
         sum: sum,
@@ -191,7 +191,7 @@ fn main() with(Std) -> Int {
     let result: PipelineResult = run_pipeline(cfg);
 
     match result {
-        PipelineResult#Success { stats } => {
+        PipelineResult::Success { stats } => {
             if stats.total_input != 8 { return 1; }
             // 5 valid: 5, 15, 25, 35, 45
             if stats.valid_count != 5 { return 2; }
@@ -202,7 +202,7 @@ fn main() with(Std) -> Int {
             // in [20, 80]: 30, 50, 70 => 3
             if stats.in_range != 3 { return 5; }
         },
-        PipelineResult#Failure { err } => {
+        PipelineResult::Failure { err } => {
             return 10;
         },
     }
@@ -211,12 +211,12 @@ fn main() with(Std) -> Int {
     let bad_cfg: Config = Config { max_value: 10, min_value: 20, scale: 1 };
     let bad_result: PipelineResult = run_pipeline(bad_cfg);
     match bad_result {
-        PipelineResult#Success { stats } => { return 20; },
-        PipelineResult#Failure { err } => {
+        PipelineResult::Success { stats } => { return 20; },
+        PipelineResult::Failure { err } => {
             match err {
-                ParseError#InvalidFormat {} => {},
-                ParseError#Empty {} => { return 21; },
-                ParseError#Overflow {} => { return 22; },
+                ParseError::InvalidFormat {} => {},
+                ParseError::Empty {} => { return 21; },
+                ParseError::Overflow {} => { return 22; },
             }
         },
     }
@@ -225,12 +225,12 @@ fn main() with(Std) -> Int {
     let bad_cfg2: Config = Config { max_value: 100, min_value: 0, scale: 0 };
     let bad_result2: PipelineResult = run_pipeline(bad_cfg2);
     match bad_result2 {
-        PipelineResult#Success { stats } => { return 30; },
-        PipelineResult#Failure { err } => {
+        PipelineResult::Success { stats } => { return 30; },
+        PipelineResult::Failure { err } => {
             match err {
-                ParseError#Overflow {} => {},
-                ParseError#Empty {} => { return 31; },
-                ParseError#InvalidFormat {} => { return 32; },
+                ParseError::Overflow {} => {},
+                ParseError::Empty {} => { return 31; },
+                ParseError::InvalidFormat {} => { return 32; },
             }
         },
     }

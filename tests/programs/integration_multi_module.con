@@ -80,16 +80,16 @@ mod Classification {
 
     pub fn classify_value(sk: &ShapeKind) -> i32 {
         match *sk {
-            ShapeKind#RectKind { w, h } => {
+            ShapeKind::RectKind { w, h } => {
                 return w * h;
             },
-            ShapeKind#CircleKind { radius } => {
+            ShapeKind::CircleKind { radius } => {
                 return radius * radius * 3;
             },
-            ShapeKind#PointKind { x, y } => {
+            ShapeKind::PointKind { x, y } => {
                 return x + y;
             },
-            ShapeKind#Unknown {} => {
+            ShapeKind::Unknown {} => {
                 return 0;
             }
         }
@@ -127,10 +127,10 @@ mod Main {
         let pd: i32 = point_distance_sq(&p);   // 25
 
         // Cross-module enum matching
-        let sk1: ShapeKind = ShapeKind#RectKind { w: 3, h: 4 };
-        let sk2: ShapeKind = ShapeKind#CircleKind { radius: 2 };
-        let sk3: ShapeKind = ShapeKind#PointKind { x: 10, y: 20 };
-        let sk4: ShapeKind = ShapeKind#Unknown {};
+        let sk1: ShapeKind = ShapeKind::RectKind { w: 3, h: 4 };
+        let sk2: ShapeKind = ShapeKind::CircleKind { radius: 2 };
+        let sk3: ShapeKind = ShapeKind::PointKind { x: 10, y: 20 };
+        let sk4: ShapeKind = ShapeKind::Unknown {};
 
         let v1: i32 = classify_value(&sk1);          // 12
         let v2: i32 = classify_value(&sk2);          // 12

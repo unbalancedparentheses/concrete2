@@ -9,7 +9,7 @@ fn main() -> Int {
     let r: Result<Int, Int> = string_to_int(&s);
     drop_string(s);
     match r {
-        Result#Ok { value } => { return value; },
-        Result#Err { error } => { return error; },
+        Result::Ok { value } => { return value; },
+        Result::Err { error } => { return error; },
     }
 }

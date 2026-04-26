@@ -4,7 +4,7 @@ Status: authoritative freeze record (Phase 3, item 69)
 
 Date: 2026-04-19
 
-This document freezes the first-release stdlib surface. It records which modules, syntax forms, types, and capabilities are stable, which remain experimental, and which are intentionally deferred. It consolidates the design decisions from Phase 3 items 52-68 into a single reference.
+This document freezes the first-release stdlib surface. It records which modules, syntax forms, types, and capabilities are stable, which remain experimental, and which are intentionally deferred. It consolidates the design decisions from the Phase 3 stdlib/syntax-freeze work into a single reference.
 
 Nothing in this document introduces new design. Every entry points back to the design document where the decision was made. The purpose is to draw a line: after this freeze, changes to the recorded surface require the explicit unfreeze process described in section 8.
 

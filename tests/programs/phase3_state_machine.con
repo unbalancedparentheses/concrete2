@@ -44,142 +44,142 @@ mod Protocol {
 
     pub fn state_code(s: &State) -> i32 {
         match *s {
-            State#Listen {} => { return 0; },
-            State#SynReceived { attempts } => { return 1; },
-            State#Established { bytes_sent } => { return 2; },
-            State#Closing { pending } => { return 3; },
-            State#Closed {} => { return 4; }
+            State::Listen {} => { return 0; },
+            State::SynReceived { attempts } => { return 1; },
+            State::Established { bytes_sent } => { return 2; },
+            State::Closing { pending } => { return 3; },
+            State::Closed {} => { return 4; }
         }
     }
 
     pub fn transition(state: &State, event: &Event) -> TransResult {
         match *state {
-            State#Listen {} => {
+            State::Listen {} => {
                 match *event {
-                    Event#Connect {} => {
+                    Event::Connect {} => {
                         return TransResult {
-                            new_state: State#SynReceived { attempts: 1 },
-                            action: Action#Transmit { bytes: 1 },
+                            new_state: State::SynReceived { attempts: 1 },
+                            action: Action::Transmit { bytes: 1 },
                         };
                     },
-                    Event#Accept {} => {
-                        return TransResult { new_state: State#Listen {}, action: Action#NoAction {} };
+                    Event::Accept {} => {
+                        return TransResult { new_state: State::Listen {}, action: Action::NoAction {} };
                     },
-                    Event#Send { amount } => {
-                        return TransResult { new_state: State#Listen {}, action: Action#NoAction {} };
+                    Event::Send { amount } => {
+                        return TransResult { new_state: State::Listen {}, action: Action::NoAction {} };
                     },
-                    Event#Close {} => {
-                        return TransResult { new_state: State#Closed {}, action: Action#NoAction {} };
+                    Event::Close {} => {
+                        return TransResult { new_state: State::Closed {}, action: Action::NoAction {} };
                     },
-                    Event#Timeout {} => {
-                        return TransResult { new_state: State#Listen {}, action: Action#NoAction {} };
+                    Event::Timeout {} => {
+                        return TransResult { new_state: State::Listen {}, action: Action::NoAction {} };
                     }
                 }
             },
-            State#SynReceived { attempts } => {
+            State::SynReceived { attempts } => {
                 match *event {
-                    Event#Accept {} => {
+                    Event::Accept {} => {
                         return TransResult {
-                            new_state: State#Established { bytes_sent: 0 },
-                            action: Action#Transmit { bytes: 1 },
+                            new_state: State::Established { bytes_sent: 0 },
+                            action: Action::Transmit { bytes: 1 },
                         };
                     },
-                    Event#Timeout {} => {
+                    Event::Timeout {} => {
                         if attempts < 3 {
                             return TransResult {
-                                new_state: State#SynReceived { attempts: attempts + 1 },
-                                action: Action#Transmit { bytes: 1 },
+                                new_state: State::SynReceived { attempts: attempts + 1 },
+                                action: Action::Transmit { bytes: 1 },
                             };
                         }
                         return TransResult {
-                            new_state: State#Closed {},
-                            action: Action#Reset {},
+                            new_state: State::Closed {},
+                            action: Action::Reset {},
                         };
                     },
-                    Event#Close {} => {
-                        return TransResult { new_state: State#Closed {}, action: Action#Reset {} };
+                    Event::Close {} => {
+                        return TransResult { new_state: State::Closed {}, action: Action::Reset {} };
                     },
-                    Event#Connect {} => {
-                        return TransResult { new_state: *state, action: Action#NoAction {} };
+                    Event::Connect {} => {
+                        return TransResult { new_state: *state, action: Action::NoAction {} };
                     },
-                    Event#Send { amount } => {
-                        return TransResult { new_state: *state, action: Action#NoAction {} };
+                    Event::Send { amount } => {
+                        return TransResult { new_state: *state, action: Action::NoAction {} };
                     }
                 }
             },
-            State#Established { bytes_sent } => {
+            State::Established { bytes_sent } => {
                 match *event {
-                    Event#Send { amount } => {
+                    Event::Send { amount } => {
                         return TransResult {
-                            new_state: State#Established { bytes_sent: bytes_sent + amount },
-                            action: Action#Transmit { bytes: amount },
+                            new_state: State::Established { bytes_sent: bytes_sent + amount },
+                            action: Action::Transmit { bytes: amount },
                         };
                     },
-                    Event#Close {} => {
+                    Event::Close {} => {
                         return TransResult {
-                            new_state: State#Closing { pending: bytes_sent },
-                            action: Action#Transmit { bytes: 1 },
+                            new_state: State::Closing { pending: bytes_sent },
+                            action: Action::Transmit { bytes: 1 },
                         };
                     },
-                    Event#Timeout {} => {
+                    Event::Timeout {} => {
                         return TransResult {
-                            new_state: State#Established { bytes_sent: bytes_sent },
-                            action: Action#NoAction {},
+                            new_state: State::Established { bytes_sent: bytes_sent },
+                            action: Action::NoAction {},
                         };
                     },
-                    Event#Connect {} => {
-                        return TransResult { new_state: *state, action: Action#NoAction {} };
+                    Event::Connect {} => {
+                        return TransResult { new_state: *state, action: Action::NoAction {} };
                     },
-                    Event#Accept {} => {
-                        return TransResult { new_state: *state, action: Action#NoAction {} };
+                    Event::Accept {} => {
+                        return TransResult { new_state: *state, action: Action::NoAction {} };
                     }
                 }
             },
-            State#Closing { pending } => {
+            State::Closing { pending } => {
                 match *event {
-                    Event#Accept {} => {
+                    Event::Accept {} => {
                         return TransResult {
-                            new_state: State#Closed {},
-                            action: Action#Transmit { bytes: 1 },
+                            new_state: State::Closed {},
+                            action: Action::Transmit { bytes: 1 },
                         };
                     },
-                    Event#Timeout {} => {
+                    Event::Timeout {} => {
                         return TransResult {
-                            new_state: State#Closed {},
-                            action: Action#Reset {},
+                            new_state: State::Closed {},
+                            action: Action::Reset {},
                         };
                     },
-                    Event#Connect {} => {
-                        return TransResult { new_state: *state, action: Action#NoAction {} };
+                    Event::Connect {} => {
+                        return TransResult { new_state: *state, action: Action::NoAction {} };
                     },
-                    Event#Send { amount } => {
-                        return TransResult { new_state: *state, action: Action#NoAction {} };
+                    Event::Send { amount } => {
+                        return TransResult { new_state: *state, action: Action::NoAction {} };
                     },
-                    Event#Close {} => {
-                        return TransResult { new_state: *state, action: Action#NoAction {} };
+                    Event::Close {} => {
+                        return TransResult { new_state: *state, action: Action::NoAction {} };
                     }
                 }
             },
-            State#Closed {} => {
+            State::Closed {} => {
                 // Terminal state, ignore all events
-                return TransResult { new_state: State#Closed {}, action: Action#NoAction {} };
+                return TransResult { new_state: State::Closed {}, action: Action::NoAction {} };
             }
         }
     }
 
     pub fn action_bytes(a: &Action) -> i32 {
         match *a {
-            Action#Transmit { bytes } => { return bytes; },
-            Action#NoAction {} => { return 0; },
-            Action#Reset {} => { return 0; }
+            Action::Transmit { bytes } => { return bytes; },
+            Action::NoAction {} => { return 0; },
+            Action::Reset {} => { return 0; }
         }
     }
 
     pub fn is_reset(a: &Action) -> bool {
         match *a {
-            Action#Reset {} => { return true; },
-            Action#NoAction {} => { return false; },
-            Action#Transmit { bytes } => { return false; }
+            Action::Reset {} => { return true; },
+            Action::NoAction {} => { return false; },
+            Action::Transmit { bytes } => { return false; }
         }
     }
 }
@@ -208,7 +208,7 @@ mod Main {
 
     fn main() -> Int {
         // Initial state
-        let mut state: State = State#Listen {};
+        let mut state: State = State::Listen {};
         let mut total_bytes: i32 = 0;
         let mut transitions: i32 = 0;
         let mut resets: i32 = 0;
@@ -224,7 +224,7 @@ mod Main {
         //   -> Send(10) -> Send(15) -> Send(12) -> Close -> Closing -> Accept -> Closed
 
         // Event 1: Connect
-        let e1: Event = Event#Connect {};
+        let e1: Event = Event::Connect {};
         let r1: TransResult = transition(&state, &e1);
         state = r1.new_state;
         total_bytes = total_bytes + action_bytes(&r1.action);
@@ -236,7 +236,7 @@ mod Main {
         if code1 != 1 { return 2; }
 
         // Event 2: Accept
-        let e2: Event = Event#Accept {};
+        let e2: Event = Event::Accept {};
         let r2: TransResult = transition(&state, &e2);
         state = r2.new_state;
         total_bytes = total_bytes + action_bytes(&r2.action);
@@ -248,7 +248,7 @@ mod Main {
         if code2 != 2 { return 3; }
 
         // Event 3: Send(10)
-        let e3: Event = Event#Send { amount: 10 };
+        let e3: Event = Event::Send { amount: 10 };
         let r3: TransResult = transition(&state, &e3);
         state = r3.new_state;
         total_bytes = total_bytes + action_bytes(&r3.action);
@@ -257,7 +257,7 @@ mod Main {
         // state = Established{10}, bytes += 10
 
         // Event 4: Send(15)
-        let e4: Event = Event#Send { amount: 15 };
+        let e4: Event = Event::Send { amount: 15 };
         let r4: TransResult = transition(&state, &e4);
         state = r4.new_state;
         total_bytes = total_bytes + action_bytes(&r4.action);
@@ -266,7 +266,7 @@ mod Main {
         // state = Established{25}, bytes += 15
 
         // Event 5: Send(12)
-        let e5: Event = Event#Send { amount: 12 };
+        let e5: Event = Event::Send { amount: 12 };
         let r5: TransResult = transition(&state, &e5);
         state = r5.new_state;
         total_bytes = total_bytes + action_bytes(&r5.action);
@@ -279,7 +279,7 @@ mod Main {
         if code5 != 2 { return 4; }
 
         // Event 6: Close
-        let e6: Event = Event#Close {};
+        let e6: Event = Event::Close {};
         let r6: TransResult = transition(&state, &e6);
         state = r6.new_state;
         total_bytes = total_bytes + action_bytes(&r6.action);
@@ -291,7 +291,7 @@ mod Main {
         if code6 != 3 { return 5; }
 
         // Event 7: Accept (ACK of FIN)
-        let e7: Event = Event#Accept {};
+        let e7: Event = Event::Accept {};
         let r7: TransResult = transition(&state, &e7);
         state = r7.new_state;
         total_bytes = total_bytes + action_bytes(&r7.action);
@@ -304,7 +304,7 @@ mod Main {
         if code7 != 4 { return 6; }
 
         // Event 8: Send in Closed state (should be ignored)
-        let e8: Event = Event#Send { amount: 999 };
+        let e8: Event = Event::Send { amount: 999 };
         let r8: TransResult = transition(&state, &e8);
         state = r8.new_state;
         total_bytes = total_bytes + action_bytes(&r8.action);
@@ -322,8 +322,8 @@ mod Main {
         if total_bytes != 41 { return 10; }
 
         // Test a timeout-reset scenario separately
-        let syn_state: State = State#SynReceived { attempts: 3 };
-        let timeout_event: Event = Event#Timeout {};
+        let syn_state: State = State::SynReceived { attempts: 3 };
+        let timeout_event: Event = Event::Timeout {};
         let tr: TransResult = transition(&syn_state, &timeout_event);
         if is_reset(&tr.action) { resets = resets + 1; }
         let reset_code: i32 = state_code(&tr.new_state);

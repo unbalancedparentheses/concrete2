@@ -26,9 +26,9 @@ fn make_point(x: i32, y: i32) -> Point {
 
 fn color_value(c: Color) -> i32 {
     match c {
-        Color#Red => { return 1; },
-        Color#Green => { return 2; },
-        Color#Blue => { return 3; },
+        Color::Red => { return 1; },
+        Color::Green => { return 2; },
+        Color::Blue => { return 3; },
     }
 }
 
@@ -36,7 +36,7 @@ fn main() with(Std) -> i32 {
     let p: Point = make_point(3, 4);
     let sum: i32 = add(p.x, p.y);
     let prod: i32 = multiply(sum, 2);
-    let c: Color = Color#Green;
+    let c: Color = Color::Green;
     let cv: i32 = color_value(c);
     return prod + cv;
 }

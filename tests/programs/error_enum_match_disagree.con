@@ -16,12 +16,12 @@ fn consume(r: Resource) -> Int {
 fn bad_enum_disagree(c: Choice) -> Int {
     let r: Resource = Resource { value: 42 };
     match c {
-        Choice#A => { let _x: Int = consume(r); },
-        Choice#B => { let _x: Int = 0; },
+        Choice::A => { let _x: Int = consume(r); },
+        Choice::B => { let _x: Int = 0; },
     }
     return 0;
 }
 
 fn main() -> Int {
-    return bad_enum_disagree(Choice#A);
+    return bad_enum_disagree(Choice::A);
 }

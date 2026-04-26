@@ -4,23 +4,23 @@ enum Inner { Up {}, Down {} }
 
 fn nested(o: Outer, i: Inner) -> Int {
     match o {
-        Outer#Left {} => {
+        Outer::Left {} => {
             match i {
-                Inner#Up {} => { return 10; },
-                Inner#Down {} => { return 20; },
+                Inner::Up {} => { return 10; },
+                Inner::Down {} => { return 20; },
             }
         },
-        Outer#Right {} => {
+        Outer::Right {} => {
             match i {
-                Inner#Up {} => { return 30; },
-                Inner#Down {} => { return 42; },
+                Inner::Up {} => { return 30; },
+                Inner::Down {} => { return 42; },
             }
         },
     }
 }
 
 fn main() -> Int {
-    let o: Outer = Outer#Right {};
-    let i: Inner = Inner#Down {};
+    let o: Outer = Outer::Right {};
+    let i: Inner = Inner::Down {};
     return nested(o, i);
 }

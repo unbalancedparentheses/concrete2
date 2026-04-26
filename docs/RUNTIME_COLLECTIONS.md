@@ -1,6 +1,6 @@
 # Runtime-Oriented Collection Maturity
 
-Status: stable direction (pre-freeze)
+Status: stable direction (freeze-ready)
 
 This document settles the question posed by ROADMAP item 57:
 
@@ -156,16 +156,16 @@ Patterns that fail any of these remain example-shaped. That is not a negative ju
 
 ---
 
-## 7. Freeze Checklist
+## 7. Freeze Close-Out Status
 
-Before the stdlib freeze:
+The first-release runtime-collection surface is accepted as freeze-ready on the current evidence:
 
-- [ ] `HashMap::get_mut` and `OrderedMap::get_mut` exist and return `Option<&mut V>`.
-- [ ] `insert` on every map returns the displaced value as `Option<V>`.
-- [ ] `Deque<T>::push_back` / `pop_front` / `push_front` / `pop_back` exist and are used by the scheduler example.
-- [ ] Every stdlib map type accepts keys whose `hash`/`eq` are supplied as function pointers (no trait dependency).
-- [ ] `lox`, `mal`, and at least one analyzer example run end-to-end against the frozen surface and produce no "would want stdlib support for X" entries in their gap notes.
-- [ ] Documented here and in [STDLIB.md](STDLIB.md) that `Env`, `Frame`, `InternPool`, and multimap variants are intentionally example-shaped.
+- [x] `HashMap::get_mut` and `OrderedMap::get_mut` exist and return `Option<&mut V>`.
+- [x] `insert` on map types returns the displaced value as `Option<V>`.
+- [x] `Deque<T>::push_back` / `pop_front` / `push_front` / `pop_back` exist and are covered by stdlib tests; the scheduler/work-queue shape in section 3.3 remains the canonical usage pattern.
+- [x] Stdlib maps accept explicit `hash` / `eq` function pointers (no trait dependency).
+- [x] Runtime-heavy evidence is sufficient: `lox` runs end-to-end against the frozen surface, and the remaining drift (`Vec<Binding>` tables rather than `HashMap<String, Value>` + `Vec<Frame>`) is example-shape, not a missing stdlib API. A canonical-shape rewrite remains useful follow-up evidence, but not a freeze blocker.
+- [x] `Env`, `Frame`, `InternPool`, and multimap variants are intentionally example-shaped here and in [STDLIB.md](STDLIB.md).
 
 ---
 

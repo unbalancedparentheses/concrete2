@@ -69,11 +69,11 @@ mod Expr {
         let kind: i32 = vec_get::<i32>(arena, base);
         let p1: i32 = vec_get::<i32>(arena, base + 1);
         let p2: i32 = vec_get::<i32>(arena, base + 2);
-        if kind == 0 { return ExprNode#Lit { value: p1 }; }
-        if kind == 1 { return ExprNode#Add { left: p1, right: p2 }; }
-        if kind == 2 { return ExprNode#Mul { left: p1, right: p2 }; }
-        if kind == 3 { return ExprNode#Neg { inner: p1 }; }
-        return ExprNode#Const { tag: p1 };
+        if kind == 0 { return ExprNode::Lit { value: p1 }; }
+        if kind == 1 { return ExprNode::Add { left: p1, right: p2 }; }
+        if kind == 2 { return ExprNode::Mul { left: p1, right: p2 }; }
+        if kind == 3 { return ExprNode::Neg { inner: p1 }; }
+        return ExprNode::Const { tag: p1 };
     }
 
     pub fn node_count(arena: &Vec<i32>) -> i32 {
@@ -116,24 +116,24 @@ mod Eval {
 
     fn eval_node(node: &ExprNode, results: &Vec<i32>) -> i32 {
         match *node {
-            ExprNode#Lit { value } => {
+            ExprNode::Lit { value } => {
                 return value;
             },
-            ExprNode#Add { left, right } => {
+            ExprNode::Add { left, right } => {
                 let lv: i32 = vec_get::<i32>(results, left as Int);
                 let rv: i32 = vec_get::<i32>(results, right as Int);
                 return lv + rv;
             },
-            ExprNode#Mul { left, right } => {
+            ExprNode::Mul { left, right } => {
                 let lv: i32 = vec_get::<i32>(results, left as Int);
                 let rv: i32 = vec_get::<i32>(results, right as Int);
                 return lv * rv;
             },
-            ExprNode#Neg { inner } => {
+            ExprNode::Neg { inner } => {
                 let iv: i32 = vec_get::<i32>(results, inner as Int);
                 return 0 - iv;
             },
-            ExprNode#Const { tag } => {
+            ExprNode::Const { tag } => {
                 return resolve_const(tag);
             }
         }
@@ -168,23 +168,23 @@ mod Format {
     pub fn node_depth(arena: &Vec<i32>, idx: i32) -> i32 {
         let node: ExprNode = decode_node(arena, idx);
         match node {
-            ExprNode#Lit { value } => { return 1; },
-            ExprNode#Add { left, right } => {
+            ExprNode::Lit { value } => { return 1; },
+            ExprNode::Add { left, right } => {
                 let ld: i32 = node_depth(arena, left);
                 let rd: i32 = node_depth(arena, right);
                 if ld > rd { return ld + 1; }
                 return rd + 1;
             },
-            ExprNode#Mul { left, right } => {
+            ExprNode::Mul { left, right } => {
                 let ld: i32 = node_depth(arena, left);
                 let rd: i32 = node_depth(arena, right);
                 if ld > rd { return ld + 1; }
                 return rd + 1;
             },
-            ExprNode#Neg { inner } => {
+            ExprNode::Neg { inner } => {
                 return node_depth(arena, inner) + 1;
             },
-            ExprNode#Const { tag } => { return 1; }
+            ExprNode::Const { tag } => { return 1; }
         }
     }
 

@@ -2,14 +2,14 @@
 // Expected output: 2
 fn main() -> Int {
     let s: String = "hi";
-    let some_val: Option<String> = Option#Some { value: s };
+    let some_val: Option<String> = Option::Some { value: s };
     match some_val {
-        Option#Some { value } => {
+        Option::Some { value } => {
             let len: Int = string_length(&value);
             drop_string(value);
             return len;
         },
-        Option#None {} => {
+        Option::None {} => {
             return 0;
         },
     }

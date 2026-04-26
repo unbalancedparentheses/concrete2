@@ -29,11 +29,11 @@ pub enum Copy Op {
 
 fn eval_op(op: &Op) -> i32 {
     match *op {
-        Op#Lit { val } => { return val; },
-        Op#Add { a, b } => { return a + b; },
-        Op#Mul { a, b } => { return a * b; },
-        Op#Neg { val } => { return 0 - val; },
-        Op#Sub { a, b } => { return a - b; }
+        Op::Lit { val } => { return val; },
+        Op::Add { a, b } => { return a + b; },
+        Op::Mul { a, b } => { return a * b; },
+        Op::Neg { val } => { return 0 - val; },
+        Op::Sub { a, b } => { return a - b; }
     }
 }
 
@@ -86,33 +86,33 @@ fn stack_pop(st: &Stack) -> Stack {
 
 fn execute_cmd(st: &Stack, cmd: &StackCmd) -> Stack {
     match *cmd {
-        StackCmd#Push { val } => {
+        StackCmd::Push { val } => {
             return stack_push(st, val);
         },
-        StackCmd#DupTop {} => {
+        StackCmd::DupTop {} => {
             let top: i32 = stack_top(st);
             return stack_push(st, top);
         },
-        StackCmd#AddTop {} => {
+        StackCmd::AddTop {} => {
             let a: i32 = st.s0;
             let b: i32 = st.s1;
             let popped: Stack = stack_pop(st);
             let popped2: Stack = stack_pop(&popped);
             return stack_push(&popped2, a + b);
         },
-        StackCmd#MulTop {} => {
+        StackCmd::MulTop {} => {
             let a: i32 = st.s0;
             let b: i32 = st.s1;
             let popped: Stack = stack_pop(st);
             let popped2: Stack = stack_pop(&popped);
             return stack_push(&popped2, a * b);
         },
-        StackCmd#NegTop {} => {
+        StackCmd::NegTop {} => {
             let top: i32 = st.s0;
             let popped: Stack = stack_pop(st);
             return stack_push(&popped, 0 - top);
         },
-        StackCmd#SwapTop {} => {
+        StackCmd::SwapTop {} => {
             return Stack {
                 s0: st.s1,
                 s1: st.s0,
@@ -128,18 +128,18 @@ fn execute_cmd(st: &Stack, cmd: &StackCmd) -> Stack {
 // Evaluate: ((3 + 4) * (2 + 1)) - (5 - 2) = 7 * 3 - 3 = 21 - 3 = 18
 
 fn eval_tree() -> i32 {
-    let add1: Op = Op#Add { a: 3, b: 4 };
-    let add2: Op = Op#Add { a: 2, b: 1 };
+    let add1: Op = Op::Add { a: 3, b: 4 };
+    let add2: Op = Op::Add { a: 2, b: 1 };
     let v1: i32 = eval_op(&add1);
     let v2: i32 = eval_op(&add2);
 
-    let mul: Op = Op#Mul { a: v1, b: v2 };
+    let mul: Op = Op::Mul { a: v1, b: v2 };
     let v3: i32 = eval_op(&mul);
 
-    let sub: Op = Op#Sub { a: 5, b: 2 };
+    let sub: Op = Op::Sub { a: 5, b: 2 };
     let v4: i32 = eval_op(&sub);
 
-    let final_sub: Op = Op#Sub { a: v3, b: v4 };
+    let final_sub: Op = Op::Sub { a: v3, b: v4 };
     return eval_op(&final_sub);
 }
 
@@ -147,13 +147,13 @@ fn eval_tree() -> i32 {
 // Compute: push 4, push 6, add (=10), push 2, mul (=20), push 4, add (=24)
 
 fn compute_stack() -> i32 {
-    let c0: StackCmd = StackCmd#Push { val: 4 };
-    let c1: StackCmd = StackCmd#Push { val: 6 };
-    let c2: StackCmd = StackCmd#AddTop {};
-    let c3: StackCmd = StackCmd#Push { val: 2 };
-    let c4: StackCmd = StackCmd#MulTop {};
-    let c5: StackCmd = StackCmd#Push { val: 4 };
-    let c6: StackCmd = StackCmd#AddTop {};
+    let c0: StackCmd = StackCmd::Push { val: 4 };
+    let c1: StackCmd = StackCmd::Push { val: 6 };
+    let c2: StackCmd = StackCmd::AddTop {};
+    let c3: StackCmd = StackCmd::Push { val: 2 };
+    let c4: StackCmd = StackCmd::MulTop {};
+    let c5: StackCmd = StackCmd::Push { val: 4 };
+    let c6: StackCmd = StackCmd::AddTop {};
 
     let s0: Stack = stack_new();
     let s1: Stack = execute_cmd(&s0, &c0);

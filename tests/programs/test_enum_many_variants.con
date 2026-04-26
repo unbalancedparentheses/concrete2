@@ -12,18 +12,18 @@ enum Octet {
 
 fn to_int(o: Octet) -> Int {
     match o {
-        Octet#V0 {} => { return 0; },
-        Octet#V1 {} => { return 1; },
-        Octet#V2 {} => { return 2; },
-        Octet#V3 {} => { return 3; },
-        Octet#V4 {} => { return 4; },
-        Octet#V5 {} => { return 5; },
-        Octet#V6 {} => { return 6; },
-        Octet#V7 {} => { return 42; },
+        Octet::V0 {} => { return 0; },
+        Octet::V1 {} => { return 1; },
+        Octet::V2 {} => { return 2; },
+        Octet::V3 {} => { return 3; },
+        Octet::V4 {} => { return 4; },
+        Octet::V5 {} => { return 5; },
+        Octet::V6 {} => { return 6; },
+        Octet::V7 {} => { return 42; },
     }
 }
 
 fn main() -> Int {
-    let o: Octet = Octet#V7 {};
+    let o: Octet = Octet::V7 {};
     return to_int(o);
 }

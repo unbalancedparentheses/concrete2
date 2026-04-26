@@ -33,48 +33,48 @@ mod Opcode {
 
     pub fn tag_of(op: &Op) -> i32 {
         match *op {
-            Op#Push { val }       => { return 0; },
-            Op#Pop {}             => { return 1; },
-            Op#Add {}             => { return 2; },
-            Op#Sub {}             => { return 3; },
-            Op#Mul {}             => { return 4; },
-            Op#Dup {}             => { return 5; },
-            Op#Swap {}            => { return 6; },
-            Op#LoadConst { c }    => { return 7; },
-            Op#Store { slot }     => { return 8; },
-            Op#Load { slot }      => { return 9; },
-            Op#Halt {}            => { return 10; }
+            Op::Push { val }       => { return 0; },
+            Op::Pop {}             => { return 1; },
+            Op::Add {}             => { return 2; },
+            Op::Sub {}             => { return 3; },
+            Op::Mul {}             => { return 4; },
+            Op::Dup {}             => { return 5; },
+            Op::Swap {}            => { return 6; },
+            Op::LoadConst { c }    => { return 7; },
+            Op::Store { slot }     => { return 8; },
+            Op::Load { slot }      => { return 9; },
+            Op::Halt {}            => { return 10; }
         }
     }
 
     pub fn operand_of(op: &Op) -> i32 {
         match *op {
-            Op#Push { val }       => { return val; },
-            Op#Pop {}             => { return 0; },
-            Op#Add {}             => { return 0; },
-            Op#Sub {}             => { return 0; },
-            Op#Mul {}             => { return 0; },
-            Op#Dup {}             => { return 0; },
-            Op#Swap {}            => { return 0; },
-            Op#LoadConst { c }    => { return c; },
-            Op#Store { slot }     => { return slot; },
-            Op#Load { slot }      => { return slot; },
-            Op#Halt {}            => { return 0; }
+            Op::Push { val }       => { return val; },
+            Op::Pop {}             => { return 0; },
+            Op::Add {}             => { return 0; },
+            Op::Sub {}             => { return 0; },
+            Op::Mul {}             => { return 0; },
+            Op::Dup {}             => { return 0; },
+            Op::Swap {}            => { return 0; },
+            Op::LoadConst { c }    => { return c; },
+            Op::Store { slot }     => { return slot; },
+            Op::Load { slot }      => { return slot; },
+            Op::Halt {}            => { return 0; }
         }
     }
 
     pub fn decode(tag: i32, operand: i32) -> Op {
-        if tag == 0  { return Op#Push { val: operand }; }
-        if tag == 1  { return Op#Pop {}; }
-        if tag == 2  { return Op#Add {}; }
-        if tag == 3  { return Op#Sub {}; }
-        if tag == 4  { return Op#Mul {}; }
-        if tag == 5  { return Op#Dup {}; }
-        if tag == 6  { return Op#Swap {}; }
-        if tag == 7  { return Op#LoadConst { c: operand }; }
-        if tag == 8  { return Op#Store { slot: operand }; }
-        if tag == 9  { return Op#Load { slot: operand }; }
-        return Op#Halt {};
+        if tag == 0  { return Op::Push { val: operand }; }
+        if tag == 1  { return Op::Pop {}; }
+        if tag == 2  { return Op::Add {}; }
+        if tag == 3  { return Op::Sub {}; }
+        if tag == 4  { return Op::Mul {}; }
+        if tag == 5  { return Op::Dup {}; }
+        if tag == 6  { return Op::Swap {}; }
+        if tag == 7  { return Op::LoadConst { c: operand }; }
+        if tag == 8  { return Op::Store { slot: operand }; }
+        if tag == 9  { return Op::Load { slot: operand }; }
+        return Op::Halt {};
     }
 }
 
@@ -108,39 +108,39 @@ mod Verify {
     pub fn verify_opcodes() -> i32 {
         let ops_ok: i32 = 0;
 
-        let op0: Op = Op#Push { val: 42 };
+        let op0: Op = Op::Push { val: 42 };
         if tag_of(&op0) != 0 { return 1; }
         if operand_of(&op0) != 42 { return 2; }
 
-        let op1: Op = Op#Pop {};
+        let op1: Op = Op::Pop {};
         if tag_of(&op1) != 1 { return 3; }
 
-        let op2: Op = Op#Add {};
+        let op2: Op = Op::Add {};
         if tag_of(&op2) != 2 { return 4; }
 
-        let op3: Op = Op#Sub {};
+        let op3: Op = Op::Sub {};
         if tag_of(&op3) != 3 { return 5; }
 
-        let op4: Op = Op#Mul {};
+        let op4: Op = Op::Mul {};
         if tag_of(&op4) != 4 { return 6; }
 
-        let op5: Op = Op#Dup {};
+        let op5: Op = Op::Dup {};
         if tag_of(&op5) != 5 { return 7; }
 
-        let op6: Op = Op#Swap {};
+        let op6: Op = Op::Swap {};
         if tag_of(&op6) != 6 { return 8; }
 
-        let op7: Op = Op#LoadConst { c: 99 };
+        let op7: Op = Op::LoadConst { c: 99 };
         if tag_of(&op7) != 7 { return 9; }
         if operand_of(&op7) != 99 { return 10; }
 
-        let op8: Op = Op#Store { slot: 1 };
+        let op8: Op = Op::Store { slot: 1 };
         if tag_of(&op8) != 8 { return 11; }
 
-        let op9: Op = Op#Load { slot: 0 };
+        let op9: Op = Op::Load { slot: 0 };
         if tag_of(&op9) != 9 { return 12; }
 
-        let op10: Op = Op#Halt {};
+        let op10: Op = Op::Halt {};
         if tag_of(&op10) != 10 { return 13; }
 
         return 0;

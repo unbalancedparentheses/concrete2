@@ -8,22 +8,22 @@ enum Copy ErrKind {
 
 fn error_code(e: ErrKind) -> i32 {
     match e {
-        ErrKind#E1 => { return 1; },
-        ErrKind#E2 => { return 2; },
-        ErrKind#E3 => { return 3; },
-        ErrKind#E4 => { return 4; },
-        ErrKind#E5 => { return 5; },
-        ErrKind#E6 => { return 6; },
-        ErrKind#E7 => { return 7; },
-        ErrKind#E8 => { return 8; },
-        ErrKind#E9 => { return 9; },
-        ErrKind#E10 => { return 10; },
+        ErrKind::E1 => { return 1; },
+        ErrKind::E2 => { return 2; },
+        ErrKind::E3 => { return 3; },
+        ErrKind::E4 => { return 4; },
+        ErrKind::E5 => { return 5; },
+        ErrKind::E6 => { return 6; },
+        ErrKind::E7 => { return 7; },
+        ErrKind::E8 => { return 8; },
+        ErrKind::E9 => { return 9; },
+        ErrKind::E10 => { return 10; },
     }
 }
 
 fn main() -> i32 {
-    if error_code(ErrKind#E1) != 1 { return 1; }
-    if error_code(ErrKind#E5) != 5 { return 2; }
-    if error_code(ErrKind#E10) != 10 { return 3; }
+    if error_code(ErrKind::E1) != 1 { return 1; }
+    if error_code(ErrKind::E5) != 5 { return 2; }
+    if error_code(ErrKind::E10) != 10 { return 3; }
     return 0;
 }

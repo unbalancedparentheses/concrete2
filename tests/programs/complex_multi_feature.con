@@ -7,9 +7,9 @@ enum Copy Rank { Low {}, Mid {}, High {} }
 
 fn rank_value(r: Rank) -> Int {
     match r {
-        Rank#Low {} => { return 1; },
-        Rank#Mid {} => { return 5; },
-        Rank#High {} => { return 10; },
+        Rank::Low {} => { return 1; },
+        Rank::Mid {} => { return 5; },
+        Rank::High {} => { return 10; },
     }
 }
 
@@ -26,8 +26,8 @@ fn weighted<T: Scorable>(item: T, mult: Int) -> Int {
 }
 
 fn main() -> Int {
-    let e1: Entry = Entry { rank: Rank#High {}, weight: 3 };
-    let e2: Entry = Entry { rank: Rank#Mid {}, weight: 2 };
+    let e1: Entry = Entry { rank: Rank::High {}, weight: 3 };
+    let e2: Entry = Entry { rank: Rank::Mid {}, weight: 2 };
     let s1: Int = weighted(e1, 3);
     let s2: Int = weighted(e2, 2);
     return s1 + s2;

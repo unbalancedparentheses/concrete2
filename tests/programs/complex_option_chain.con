@@ -1,16 +1,16 @@
 // Chain of Option operations: tests Result/Option ergonomics
 fn safe_div(a: Int, b: Int) -> Option<Int> {
     if b == 0 {
-        return Option#None {};
+        return Option::None {};
     } else {
-        return Option#Some { value: a / b };
+        return Option::Some { value: a / b };
     }
 }
 
 fn unwrap_or(opt: Option<Int>, default: Int) -> Int {
     match opt {
-        Option#Some { value } => { return value; },
-        Option#None {} => { return default; },
+        Option::Some { value } => { return value; },
+        Option::None {} => { return default; },
     }
 }
 

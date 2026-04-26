@@ -2,7 +2,7 @@
 struct Copy Point { x: Int, y: Int }
 
 fn main() -> Int {
-    match Point#Foo {} {
-        Point#Foo {} => { return 1; },
+    match Point::Foo {} {
+        Point::Foo {} => { return 1; },
     }
 }

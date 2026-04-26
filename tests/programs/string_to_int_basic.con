@@ -4,7 +4,7 @@ fn main() -> Int {
     let result: Result<Int, Int> = string_to_int(&s);
     drop_string(s);
     match result {
-        Result#Ok { value } => { return value; },
-        Result#Err { value } => { return value; },
+        Result::Ok { value } => { return value; },
+        Result::Err { value } => { return value; },
     }
 }

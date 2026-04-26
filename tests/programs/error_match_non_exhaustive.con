@@ -3,12 +3,12 @@ enum Direction { North {}, South {}, East {}, West {} }
 
 fn go(d: Direction) -> Int {
     match d {
-        Direction#North {} => { return 1; },
-        Direction#South {} => { return 2; },
+        Direction::North {} => { return 1; },
+        Direction::South {} => { return 2; },
     }
 }
 
 fn main() -> Int {
-    let d: Direction = Direction#West {};
+    let d: Direction = Direction::West {};
     return go(d);
 }

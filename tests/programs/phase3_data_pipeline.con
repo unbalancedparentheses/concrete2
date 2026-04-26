@@ -116,7 +116,7 @@ mod Aggregate {
 
     pub fn aggregate(data: &Vec<i32>) -> AggResult {
         let count: i32 = record_count(data);
-        if count == 0 { return AggResult#Empty {}; }
+        if count == 0 { return AggResult::Empty {}; }
 
         let mut sum: i32 = 0;
         let mut min_val: i32 = get_value(data, 0);
@@ -129,7 +129,7 @@ mod Aggregate {
             if v > max_val { max_val = v; }
             i = i + 1;
         }
-        return AggResult#Summary { sum: sum, count: count, min: min_val, max: max_val };
+        return AggResult::Summary { sum: sum, count: count, min: min_val, max: max_val };
     }
 
     pub fn sum_keys(data: &Vec<i32>) -> i32 {
@@ -178,14 +178,14 @@ mod Main {
         let agg: AggResult = aggregate(&clamped);
         let mut agg_sum: i32 = 0;
         match agg {
-            AggResult#Summary { sum, count, min, max } => {
+            AggResult::Summary { sum, count, min, max } => {
                 // sum=120, count=6, min=20, max=20
                 if count != 6 { agg_sum = 0 - 1; }
                 else if min != 20 { agg_sum = 0 - 2; }
                 else if max != 20 { agg_sum = 0 - 3; }
                 else { agg_sum = sum; }
             },
-            AggResult#Empty {} => { agg_sum = 0 - 4; },
+            AggResult::Empty {} => { agg_sum = 0 - 4; },
         }
         if agg_sum != 120 { vec_free::<i32>(data); vec_free::<i32>(doubled); vec_free::<i32>(clamped); return 4; }
 
@@ -193,12 +193,12 @@ mod Main {
         let orig_agg: AggResult = aggregate(&data);
         let mut orig_sum: i32 = 0;
         match orig_agg {
-            AggResult#Summary { sum, count, min, max } => {
+            AggResult::Summary { sum, count, min, max } => {
                 // sum=10+12+14+16+18+20=90, min=10, max=20
                 if sum != 90 { orig_sum = 0 - 1; }
                 else { orig_sum = max - min; }
             },
-            AggResult#Empty {} => { orig_sum = 0 - 2; },
+            AggResult::Empty {} => { orig_sum = 0 - 2; },
         }
         if orig_sum != 10 { vec_free::<i32>(data); vec_free::<i32>(doubled); vec_free::<i32>(clamped); return 5; }
 

@@ -9,21 +9,21 @@ enum Node {
 fn sum_list(head: Heap<Node>) with(Alloc) -> Int {
     let node: Node = *head;
     match node {
-        Node#Cons { value, next } => {
+        Node::Cons { value, next } => {
             let rest: Int = sum_list(next);
             return value + rest;
         },
-        Node#Nil {} => {
+        Node::Nil {} => {
             return 0;
         },
     }
 }
 
 fn main() with(Std) -> Int {
-    let n3: Heap<Node> = alloc(Node#Nil {});
-    let n2: Heap<Node> = alloc(Node#Cons { value: 12, next: n3 });
-    let n1: Heap<Node> = alloc(Node#Cons { value: 20, next: n2 });
-    let head: Heap<Node> = alloc(Node#Cons { value: 10, next: n1 });
+    let n3: Heap<Node> = alloc(Node::Nil {});
+    let n2: Heap<Node> = alloc(Node::Cons { value: 12, next: n3 });
+    let n1: Heap<Node> = alloc(Node::Cons { value: 20, next: n2 });
+    let head: Heap<Node> = alloc(Node::Cons { value: 10, next: n1 });
     let result: Int = sum_list(head);
     return result;
 }

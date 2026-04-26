@@ -15,9 +15,9 @@ enum Result {
 
 fn might_fail(succeed: Bool) -> Result {
     if succeed {
-        return Result#Ok { value: 42 };
+        return Result::Ok { value: 42 };
     } else {
-        return Result#Err { code: 1 };
+        return Result::Err { code: 1 };
     }
 }
 
@@ -25,13 +25,13 @@ fn use_with_defer() -> Result {
     let mut r: Resource = Resource { value: 10 };
     defer destroy(r);
     let v: Int = might_fail(true)?;
-    return Result#Ok { value: v };
+    return Result::Ok { value: v };
 }
 
 fn main() -> Int {
     let result: Result = use_with_defer();
     match result {
-        Result#Ok { value } -> { return value; }
-        Result#Err { code } -> { return code; }
+        Result::Ok { value } -> { return value; }
+        Result::Err { code } -> { return code; }
     }
 }

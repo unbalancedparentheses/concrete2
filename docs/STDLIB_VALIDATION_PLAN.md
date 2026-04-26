@@ -1,6 +1,6 @@
 # Stdlib Validation Plan: Canonical Examples Against Stdlib APIs
 
-Status: Phase 3, item 61
+Status: Phase 3 support document (items 66-68)
 
 This document maps each canonical example and pressure test to the stdlib APIs it should use, identifies which programs can be rewritten to use stdlib types instead of ad hoc copies, and defines what "validated" means.
 

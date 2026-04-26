@@ -2,8 +2,8 @@
 
 fn extract_ok(result: Result<Int, Int>) -> Int {
     match result {
-        Result#Ok { value } => { return value; },
-        Result#Err { value } => { return -999999; },
+        Result::Ok { value } => { return value; },
+        Result::Err { value } => { return -999999; },
     }
 }
 

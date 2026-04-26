@@ -12,17 +12,17 @@ mod Shapes {
 
     pub fn area(s: &Shape) -> i32 {
         match *s {
-            Shape#Circle { radius } => { return radius * radius * 3; },
-            Shape#Rect { width, height } => { return width * height; },
-            Shape#Triangle { base, height } => { return base * height / 2; }
+            Shape::Circle { radius } => { return radius * radius * 3; },
+            Shape::Rect { width, height } => { return width * height; },
+            Shape::Triangle { base, height } => { return base * height / 2; }
         }
     }
 
     pub fn get_radius(s: &Shape) -> i32 {
         match *s {
-            Shape#Circle { radius } => { return radius; },
-            Shape#Rect { width, height } => { return 0; },
-            Shape#Triangle { base, height } => { return 0; }
+            Shape::Circle { radius } => { return radius; },
+            Shape::Rect { width, height } => { return 0; },
+            Shape::Triangle { base, height } => { return 0; }
         }
     }
 }
@@ -32,9 +32,9 @@ mod Main {
 
     fn main() with(Std) -> Int {
         // Construct enums from imported type in consuming module
-        let c: Shape = Shape#Circle { radius: 2 };
-        let r: Shape = Shape#Rect { width: 3, height: 5 };
-        let t: Shape = Shape#Triangle { base: 6, height: 4 };
+        let c: Shape = Shape::Circle { radius: 2 };
+        let r: Shape = Shape::Rect { width: 3, height: 5 };
+        let t: Shape = Shape::Triangle { base: 6, height: 4 };
 
         // Call cross-module function that matches on the enum
         let ca: i32 = area(&c);   // 2*2*3 = 12

@@ -11,34 +11,34 @@ enum Copy ParseErr {
 
 fn get_line(e: ParseErr) -> i32 {
     match e {
-        ParseErr#UnexpectedChar { pos, found } => { return pos.line; },
-        ParseErr#UnexpectedEof { pos } => { return pos.line; },
-        ParseErr#BadNumber { pos, digit } => { return pos.line; },
+        ParseErr::UnexpectedChar { pos, found } => { return pos.line; },
+        ParseErr::UnexpectedEof { pos } => { return pos.line; },
+        ParseErr::BadNumber { pos, digit } => { return pos.line; },
     }
 }
 
 fn get_col(e: ParseErr) -> i32 {
     match e {
-        ParseErr#UnexpectedChar { pos, found } => { return pos.col; },
-        ParseErr#UnexpectedEof { pos } => { return pos.col; },
-        ParseErr#BadNumber { pos, digit } => { return pos.col; },
+        ParseErr::UnexpectedChar { pos, found } => { return pos.col; },
+        ParseErr::UnexpectedEof { pos } => { return pos.col; },
+        ParseErr::BadNumber { pos, digit } => { return pos.col; },
     }
 }
 
 fn main() -> i32 {
-    let e1: ParseErr = ParseErr#UnexpectedChar {
+    let e1: ParseErr = ParseErr::UnexpectedChar {
         pos: Position { line: 10, col: 5 },
         found: 42,
     };
     if get_line(e1) != 10 { return 1; }
     if get_col(e1) != 5 { return 2; }
 
-    let e2: ParseErr = ParseErr#UnexpectedEof {
+    let e2: ParseErr = ParseErr::UnexpectedEof {
         pos: Position { line: 20, col: 1 },
     };
     if get_line(e2) != 20 { return 3; }
 
-    let e3: ParseErr = ParseErr#BadNumber {
+    let e3: ParseErr = ParseErr::BadNumber {
         pos: Position { line: 3, col: 15 },
         digit: 99,
     };

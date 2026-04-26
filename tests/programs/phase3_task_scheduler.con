@@ -31,25 +31,25 @@ mod TaskDefs {
 
     pub fn state_to_tag(s: &TaskState) -> i32 {
         match *s {
-            TaskState#Pending {} => { return 0; },
-            TaskState#Running {} => { return 1; },
-            TaskState#Done { result } => { return 2; },
-            TaskState#Failed { error_code } => { return 3; }
+            TaskState::Pending {} => { return 0; },
+            TaskState::Running {} => { return 1; },
+            TaskState::Done { result } => { return 2; },
+            TaskState::Failed { error_code } => { return 3; }
         }
     }
 
     pub fn tag_to_state(tag: i32, result_val: i32) -> TaskState {
-        if tag == 0 { return TaskState#Pending {}; }
-        if tag == 1 { return TaskState#Running {}; }
-        if tag == 2 { return TaskState#Done { result: result_val }; }
-        return TaskState#Failed { error_code: result_val };
+        if tag == 0 { return TaskState::Pending {}; }
+        if tag == 1 { return TaskState::Running {}; }
+        if tag == 2 { return TaskState::Done { result: result_val }; }
+        return TaskState::Failed { error_code: result_val };
     }
 
     pub fn priority_to_tag(p: &Priority) -> i32 {
         match *p {
-            Priority#Low {} => { return 0; },
-            Priority#Normal {} => { return 1; },
-            Priority#High {} => { return 2; }
+            Priority::Low {} => { return 0; },
+            Priority::Normal {} => { return 1; },
+            Priority::High {} => { return 2; }
         }
     }
 

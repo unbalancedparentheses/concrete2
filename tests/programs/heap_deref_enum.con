@@ -5,13 +5,13 @@ enum Shape {
 }
 
 fn main() with(Std) -> Int {
-    let hs: Heap<Shape> = alloc(Shape#Circle { radius: 21 });
+    let hs: Heap<Shape> = alloc(Shape::Circle { radius: 21 });
     let s: Shape = *hs;
     match s {
-        Shape#Circle { radius } => {
+        Shape::Circle { radius } => {
             return radius * 2;
         },
-        Shape#Rect { w, h } => {
+        Shape::Rect { w, h } => {
             return w + h;
         },
     }

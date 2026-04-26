@@ -46,21 +46,21 @@ mod Types {
 
     pub fn get_kind(kind_tag: i32, p1: i32, p2: i32) -> TypeKind {
         if kind_tag == 0 {
-            return TypeKind#Scalar { bits: p1 };
+            return TypeKind::Scalar { bits: p1 };
         }
         if kind_tag == 1 {
-            return TypeKind#Aggregate { field_count: p1, total_bits: p2 };
+            return TypeKind::Aggregate { field_count: p1, total_bits: p2 };
         }
-        return TypeKind#Special { tag: p1 };
+        return TypeKind::Special { tag: p1 };
     }
 
     pub fn kind_complexity(kind: &TypeKind) -> i32 {
         match *kind {
-            TypeKind#Scalar { bits } => { return bits / 8; },
-            TypeKind#Aggregate { field_count, total_bits } => {
+            TypeKind::Scalar { bits } => { return bits / 8; },
+            TypeKind::Aggregate { field_count, total_bits } => {
                 return field_count * 3 + total_bits / 8;
             },
-            TypeKind#Special { tag } => { return tag * 5; }
+            TypeKind::Special { tag } => { return tag * 5; }
         }
     }
 
@@ -157,13 +157,13 @@ mod Registry {
     }
 
     pub fn validate_entry(size: i32, alignment: i32) -> Severity {
-        if size <= 0 { return Severity#Error { code: 1 }; }
-        if alignment <= 0 { return Severity#Error { code: 2 }; }
-        if !is_power_of_two(alignment) { return Severity#Warning { code: 3 }; }
+        if size <= 0 { return Severity::Error { code: 1 }; }
+        if alignment <= 0 { return Severity::Error { code: 2 }; }
+        if !is_power_of_two(alignment) { return Severity::Warning { code: 3 }; }
         if size / alignment * alignment != size {
-            return Severity#Warning { code: 4 };
+            return Severity::Warning { code: 4 };
         }
-        return Severity#Ok {};
+        return Severity::Ok {};
     }
 
     pub fn count_issues(reg: &Vec<i32>) -> i32 {
@@ -177,9 +177,9 @@ mod Registry {
             let a: i32 = vec_get::<i32>(reg, base + 2);
             let sev: Severity = validate_entry(s, a);
             match sev {
-                Severity#Error { code } => { errors = errors + 1; },
-                Severity#Warning { code } => { warnings = warnings + 1; },
-                Severity#Ok {} => {},
+                Severity::Error { code } => { errors = errors + 1; },
+                Severity::Warning { code } => { warnings = warnings + 1; },
+                Severity::Ok {} => {},
             }
             i = i + 1;
         }

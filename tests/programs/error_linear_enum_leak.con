@@ -6,7 +6,7 @@ enum Outcome {
 }
 
 fn bad_enum_leak() -> Int {
-    let o: Outcome = Outcome#Success { value: 42 };
+    let o: Outcome = Outcome::Success { value: 42 };
     // o is never consumed
     return 0;
 }

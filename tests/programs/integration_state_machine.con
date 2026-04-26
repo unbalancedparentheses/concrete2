@@ -34,94 +34,94 @@ pub struct Copy Transition {
 
 fn transition(state: &State, cmd: &Command) -> Transition {
     match *state {
-        State#Idle { acc } => {
+        State::Idle { acc } => {
             match *cmd {
-                Command#Start {} => {
+                Command::Start {} => {
                     return Transition {
-                        new_state: State#Running { acc: acc, step: 0 },
+                        new_state: State::Running { acc: acc, step: 0 },
                         output: 0,
                     };
                 },
-                Command#Advance { amount } => {
+                Command::Advance { amount } => {
                     return Transition {
-                        new_state: State#Idle { acc: acc + amount },
+                        new_state: State::Idle { acc: acc + amount },
                         output: 0,
                     };
                 },
-                Command#Pause {} => {
+                Command::Pause {} => {
                     return Transition { new_state: *state, output: 0 };
                 },
-                Command#Resume {} => {
+                Command::Resume {} => {
                     return Transition { new_state: *state, output: 0 };
                 },
-                Command#Finish {} => {
+                Command::Finish {} => {
                     return Transition {
-                        new_state: State#Done { result: acc },
+                        new_state: State::Done { result: acc },
                         output: acc,
                     };
                 }
             }
         },
-        State#Running { acc, step } => {
+        State::Running { acc, step } => {
             match *cmd {
-                Command#Advance { amount } => {
+                Command::Advance { amount } => {
                     return Transition {
-                        new_state: State#Running { acc: acc + amount, step: step + 1 },
+                        new_state: State::Running { acc: acc + amount, step: step + 1 },
                         output: amount,
                     };
                 },
-                Command#Pause {} => {
+                Command::Pause {} => {
                     return Transition {
-                        new_state: State#Paused { acc: acc, saved_step: step },
+                        new_state: State::Paused { acc: acc, saved_step: step },
                         output: 0,
                     };
                 },
-                Command#Finish {} => {
+                Command::Finish {} => {
                     return Transition {
-                        new_state: State#Done { result: acc },
+                        new_state: State::Done { result: acc },
                         output: acc,
                     };
                 },
-                Command#Start {} => {
+                Command::Start {} => {
                     return Transition { new_state: *state, output: 0 };
                 },
-                Command#Resume {} => {
+                Command::Resume {} => {
                     return Transition { new_state: *state, output: 0 };
                 }
             }
         },
-        State#Paused { acc, saved_step } => {
+        State::Paused { acc, saved_step } => {
             match *cmd {
-                Command#Resume {} => {
+                Command::Resume {} => {
                     return Transition {
-                        new_state: State#Running { acc: acc, step: saved_step },
+                        new_state: State::Running { acc: acc, step: saved_step },
                         output: 0,
                     };
                 },
-                Command#Advance { amount } => {
+                Command::Advance { amount } => {
                     return Transition {
-                        new_state: State#Paused { acc: acc + amount, saved_step: saved_step },
+                        new_state: State::Paused { acc: acc + amount, saved_step: saved_step },
                         output: 0,
                     };
                 },
-                Command#Finish {} => {
+                Command::Finish {} => {
                     return Transition {
-                        new_state: State#Done { result: acc },
+                        new_state: State::Done { result: acc },
                         output: acc,
                     };
                 },
-                Command#Start {} => {
+                Command::Start {} => {
                     return Transition { new_state: *state, output: 0 };
                 },
-                Command#Pause {} => {
+                Command::Pause {} => {
                     return Transition { new_state: *state, output: 0 };
                 }
             }
         },
-        State#Done { result } => {
+        State::Done { result } => {
             // Terminal state — ignore all commands
             return Transition {
-                new_state: State#Done { result: result },
+                new_state: State::Done { result: result },
                 output: 0,
             };
         }
@@ -132,10 +132,10 @@ fn transition(state: &State, cmd: &Command) -> Transition {
 
 fn get_acc(state: &State) -> i32 {
     match *state {
-        State#Idle { acc } => { return acc; },
-        State#Running { acc, step } => { return acc; },
-        State#Paused { acc, saved_step } => { return acc; },
-        State#Done { result } => { return result; }
+        State::Idle { acc } => { return acc; },
+        State::Running { acc, step } => { return acc; },
+        State::Paused { acc, saved_step } => { return acc; },
+        State::Done { result } => { return result; }
     }
 }
 
@@ -159,16 +159,16 @@ fn main() -> Int {
     //   Running{42,3} --Finish--> Done{42}
     // Final acc = 42
 
-    let c0: Command = Command#Start {};
-    let c1: Command = Command#Advance { amount: 10 };
-    let c2: Command = Command#Advance { amount: 5 };
-    let c3: Command = Command#Pause {};
-    let c4: Command = Command#Advance { amount: 7 };
-    let c5: Command = Command#Resume {};
-    let c6: Command = Command#Advance { amount: 20 };
-    let c7: Command = Command#Finish {};
+    let c0: Command = Command::Start {};
+    let c1: Command = Command::Advance { amount: 10 };
+    let c2: Command = Command::Advance { amount: 5 };
+    let c3: Command = Command::Pause {};
+    let c4: Command = Command::Advance { amount: 7 };
+    let c5: Command = Command::Resume {};
+    let c6: Command = Command::Advance { amount: 20 };
+    let c7: Command = Command::Finish {};
 
-    let s0: State = State#Idle { acc: 0 };
+    let s0: State = State::Idle { acc: 0 };
     let s1: State = step(&s0, &c0);
     let s2: State = step(&s1, &c1);
     let s3: State = step(&s2, &c2);

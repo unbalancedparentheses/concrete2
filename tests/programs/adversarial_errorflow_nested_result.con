@@ -18,52 +18,52 @@ enum Copy OuterResult {
 }
 
 fn inner_op(x: i32) -> InnerResult {
-    if x < 0 { return InnerResult#Err { error: InnerError#BadInput }; }
-    if x > 100 { return InnerResult#Err { error: InnerError#Overflow }; }
-    return InnerResult#Ok { val: x * 2 };
+    if x < 0 { return InnerResult::Err { error: InnerError::BadInput }; }
+    if x > 100 { return InnerResult::Err { error: InnerError::Overflow }; }
+    return InnerResult::Ok { val: x * 2 };
 }
 
 fn outer_op(x: i32, timeout: i32) -> OuterResult {
-    if timeout <= 0 { return OuterResult#Err { error: OuterError#Timeout }; }
+    if timeout <= 0 { return OuterResult::Err { error: OuterError::Timeout }; }
     let inner: InnerResult = inner_op(x);
-    return OuterResult#Ok { result: inner };
+    return OuterResult::Ok { result: inner };
 }
 
 fn main() -> i32 {
     // Success path
     match outer_op(5, 10) {
-        OuterResult#Ok { result } => {
+        OuterResult::Ok { result } => {
             match result {
-                InnerResult#Ok { val } => {
+                InnerResult::Ok { val } => {
                     if val != 10 { return 1; }
                 },
-                InnerResult#Err { error } => { return 2; },
+                InnerResult::Err { error } => { return 2; },
             }
         },
-        OuterResult#Err { error } => { return 3; },
+        OuterResult::Err { error } => { return 3; },
     }
     // Inner error propagated through outer Ok
     match outer_op(200, 10) {
-        OuterResult#Ok { result } => {
+        OuterResult::Ok { result } => {
             match result {
-                InnerResult#Ok { val } => { return 4; },
-                InnerResult#Err { error } => {
+                InnerResult::Ok { val } => { return 4; },
+                InnerResult::Err { error } => {
                     match error {
-                        InnerError#Overflow => {},
-                        InnerError#BadInput => { return 5; },
+                        InnerError::Overflow => {},
+                        InnerError::BadInput => { return 5; },
                     }
                 },
             }
         },
-        OuterResult#Err { error } => { return 6; },
+        OuterResult::Err { error } => { return 6; },
     }
     // Outer error (timeout)
     match outer_op(5, 0) {
-        OuterResult#Ok { result } => { return 7; },
-        OuterResult#Err { error } => {
+        OuterResult::Ok { result } => { return 7; },
+        OuterResult::Err { error } => {
             match error {
-                OuterError#Timeout => {},
-                OuterError#InnerFailed => { return 8; },
+                OuterError::Timeout => {},
+                OuterError::InnerFailed => { return 8; },
             }
         },
     }

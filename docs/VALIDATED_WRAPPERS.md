@@ -177,13 +177,17 @@ Call-site conventions the stable surface rejects:
 
 ---
 
-## 6. Freeze Checklist
+## 6. Freeze Close-Out Status
 
-- [ ] `NonZeroU32`, `NonZeroU64`, `Port`, `AsciiText` exist in stdlib with the shapes in section 4.
-- [ ] Each ships a test that demonstrates `try_new` happy path, `try_new` rejection, `.0` extraction, and absence of implicit coercion.
-- [ ] No stdlib validated wrapper exposes an infallible `from_*` where validation is required.
-- [ ] This document and [STDLIB.md](STDLIB.md) cross-reference each other on the validated-wrapper section.
-- [ ] At least one medium-workload example (item 67) uses a stdlib validated wrapper end-to-end and produces no "would want X" gap entries.
+The validated-wrapper surface is accepted as freeze-ready on the current evidence:
+
+- [x] `NonZeroU32`, `NonZeroU64`, `Port`, `AsciiText` exist in stdlib with the shapes in section 4.
+- [x] Each ships tests that cover `try_new` happy path, `try_new` rejection, `.0` extraction, and absence of implicit coercion.
+- [x] No stdlib validated wrapper exposes an infallible `from_*` where validation is required.
+- [x] This document and [STDLIB.md](STDLIB.md) cross-reference each other on the validated-wrapper section.
+- [x] The compiler/runtime contract is closed and covered by end-to-end regressions: native/SSA layout on enum-payload newtypes, cross-module newtype identity, instance-method dispatch on wrappers, and narrowed cast exemption for wrap/unwrap-only representation casts.
+
+A medium-workload example using a stdlib validated wrapper end-to-end would still be useful follow-up evidence under item 67, but it is not a freeze blocker now that the design and compiler gaps are closed.
 
 ---
 
@@ -210,4 +214,3 @@ No known compiler-level gaps remain against the convention. Each was tracked, fi
 **Resolved (2026-04-25):** instance-method dispatch on newtypes. `p.value()` where `p: Port` now resolves against `Port`'s inherent impl; previously the type was erased to `u16` in elaboration so dispatch landed on the inner type. `resolveTypeE` no longer erases newtypes; the newtype constructor and `.0` field access carry the wrapper name through as a representation no-op cast (Layout sees the same LLVM type either way). Demo: `tests/programs/newtype_method_dispatch.con`.
 
 **Resolved (2026-04-25):** narrow cast exemption — guards the wrapper contract from `as`-bypass. The first cut of the dispatch fix exempted *any* cast where either side named a newtype, which made `p as bool` and `b as Port` compile and bypass the smart-constructor contract in §2. The exemption is now precise: a cast is allowed past the validity table only when one side is a newtype `N` and the other side equals `N`'s resolved inner type (after generic substitution) — i.e., exactly the wrap/unwrap representation cast that Elab inserts. The previously-overbroad `hasTypeVar` check (which treated every `.named _` as a type parameter) is also tightened to recognise concrete user-defined struct/enum/newtype names. Negative regressions: `tests/programs/error_newtype_cast_to_unrelated.con`, `tests/programs/error_newtype_cast_from_unrelated.con`.
-

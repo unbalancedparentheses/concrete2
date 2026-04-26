@@ -22,16 +22,16 @@ struct Copy Rule {
 
 fn color_tag(c: &Color) -> i32 {
     match *c {
-        Color#Red {} => { return 0; },
-        Color#Green {} => { return 1; },
-        Color#Blue {} => { return 2; }
+        Color::Red {} => { return 0; },
+        Color::Green {} => { return 1; },
+        Color::Blue {} => { return 2; }
     }
 }
 
 fn verdict_tag(v: &Verdict) -> i32 {
     match *v {
-        Verdict#Allow {} => { return 0; },
-        Verdict#Deny {} => { return 1; }
+        Verdict::Allow {} => { return 0; },
+        Verdict::Deny {} => { return 1; }
     }
 }
 
@@ -43,17 +43,17 @@ fn check_rule(r: &Rule, exp_color: i32, exp_verdict: i32, exp_prio: i32) -> bool
 
 fn main() with(Std) -> Int {
     // Basic struct with enum fields
-    let r1: Rule = Rule { color: Color#Red {}, verdict: Verdict#Allow {}, priority: 10 };
+    let r1: Rule = Rule { color: Color::Red {}, verdict: Verdict::Allow {}, priority: 10 };
     if !check_rule(&r1, 0, 0, 10) { return 1; }
 
-    let r2: Rule = Rule { color: Color#Blue {}, verdict: Verdict#Deny {}, priority: 5 };
+    let r2: Rule = Rule { color: Color::Blue {}, verdict: Verdict::Deny {}, priority: 5 };
     if !check_rule(&r2, 2, 1, 5) { return 2; }
 
     // Vec<Rule> — the collection-oriented pressure that originally triggered Bug 005
     let mut rules: Vec<Rule> = vec_new::<Rule>();
     vec_push::<Rule>(&mut rules, r1);
     vec_push::<Rule>(&mut rules, r2);
-    vec_push::<Rule>(&mut rules, Rule { color: Color#Green {}, verdict: Verdict#Allow {}, priority: 7 });
+    vec_push::<Rule>(&mut rules, Rule { color: Color::Green {}, verdict: Verdict::Allow {}, priority: 7 });
 
     let len: Int = vec_len::<Rule>(&mut rules) as Int;
     if len != 3 { vec_free::<Rule>(rules); return 3; }

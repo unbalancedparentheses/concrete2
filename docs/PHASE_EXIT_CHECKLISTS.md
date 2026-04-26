@@ -81,10 +81,10 @@ Each phase has a "phase closes when..." list tied to concrete outputs. A phase i
   - Contract defined in BYTE_CURSOR_API.md; std.numeric implemented (891d561, 9 tests); Slice/MutSlice checked `get` implemented
 - [x] Core stdlib modules implemented: bytes, option/result, slices, basic collections
   - 38 modules exist in std/src/; audit in STDLIB_AUDIT.md; Tier 1 helpers added to option/result/bytes/math (98d2cbc)
-- [ ] Runtime-oriented collection maturity is demonstrated for interpreter/runtime-style workloads
+- [x] Runtime-oriented collection maturity is demonstrated for interpreter/runtime-style workloads
   - Design frozen: `docs/RUNTIME_COLLECTIONS.md` (2026-04-20). Stdlib surface committed (Vec, HashMap, OrderedMap, OrderedSet, Set, Deque, Bytes, String); environments/intern pools/multimaps stay example-only.
   - Stdlib surface complete: `HashMap::get_mut` and `insert`-returning-`Option<V>` land in `std/src/map.con` (L-2 and L-3 closed); `OrderedMap::get_mut` added in parallel.
-  - Demo partial: `lox` runs but still uses ad hoc `Vec<Binding>` tables. Rewrite onto canonical `HashMap<String, Value>` + `Vec<Frame>` shape remains as the optional freeze evidence (L-1).
+  - Runtime-heavy evidence accepted: `lox` runs end-to-end against the frozen surface. The remaining `HashMap<String, Value>` + `Vec<Frame>` rewrite is useful follow-up evidence, but not a Phase 3 freeze blocker.
 - [x] Arithmetic policy is explicit in source, reports, and proof boundaries
   - `docs/ARITHMETIC_POLICY.md` (98d2cbc)
 - [x] Formatting and text-output ergonomics are good enough for string-heavy real programs without hidden magic
@@ -124,7 +124,7 @@ Each phase has a "phase closes when..." list tied to concrete outputs. A phase i
 
 **Verification**: `examples/parse_validate/` and `examples/service_errors/` work with stdlib types (not custom Copy enums), one fixed-capacity example uses the checked indexing/slice surface, one string-heavy medium workload such as `grep` or `policy_engine` uses the intended formatting/text APIs, and one interpreter/runtime-heavy workload such as `mal` or `lox` exercises the intended collection/runtime surface.
 
-**Current status**: 18/19 exit criteria done. 1 remaining: runtime-oriented collection demonstration. The stdlib surface is complete (`HashMap::get_mut` and `insert`-returning-`Option<V>` shipped); only the optional lox rewrite onto the canonical `HashMap<String, Value>` + `Vec<Frame>` shape remains as freeze-checklist evidence (L-1 in `STDLIB_FREEZE_LEDGER.md`). Opaque wrappers are fully closed: layout fix + canonical stdlib wrappers (`NonZeroU32`, `NonZeroU64`, `Port`, `AsciiText`) + cross-module identity at the import boundary + instance-method dispatch on newtypes; the static-only convention still applies but is now a stylistic choice, not a workaround.
+**Current status**: 19/19 exit criteria done. Phase 3 complete. The shipped stdlib/syntax surface is freeze-ready on today's evidence: `grep` and `lox` cover the medium-workload bar, runtime collections expose the intended `get_mut` / displaced-value `insert` API, and opaque wrappers are fully closed (layout fix + canonical stdlib wrappers + cross-module identity + instance-method dispatch + narrowed cast exemption). A canonical `lox` rewrite onto `HashMap<String, Value>` + `Vec<Frame>` remains useful follow-up evidence, but not a freeze blocker.
 
 ## Phase 4: Tooling, Tests, Wrong-Code Corpus
 

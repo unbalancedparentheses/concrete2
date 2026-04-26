@@ -15,7 +15,7 @@ fn consume_counter(c: Counter) -> Int {
 }
 
 fn main() -> Int {
-    let c: Counter = Counter#new(42);
+    let c: Counter = Counter::new(42);
     let v: Int = c.get();
     let dummy: Int = consume_counter(c);
     return v;

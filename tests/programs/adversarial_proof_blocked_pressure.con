@@ -26,8 +26,8 @@ fn uses_struct(x: Int, y: Int) -> Point {
 
 fn uses_match(c: Color) -> Int {
     match c {
-        Color#Red => { return 1; },
-        Color#Blue => { return 2; },
+        Color::Red => { return 1; },
+        Color::Blue => { return 2; },
     }
 }
 

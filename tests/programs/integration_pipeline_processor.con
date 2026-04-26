@@ -67,13 +67,13 @@ mod Pipeline {
 
     pub fn apply_stage_value(value: i32, stage: &Stage) -> i32 {
         match *stage {
-            Stage#ScaleStage { factor } => {
+            Stage::ScaleStage { factor } => {
                 return scale(value, factor);
             },
-            Stage#ClampStage { lo, hi } => {
+            Stage::ClampStage { lo, hi } => {
                 return clamp(value, lo, hi);
             },
-            Stage#FullStage { factor, lo, hi } => {
+            Stage::FullStage { factor, lo, hi } => {
                 return full_transform(value, factor, lo, hi);
             }
         }
@@ -170,9 +170,9 @@ mod Main {
         if sc != 50 { vec_free::<i32>(data); return 3; }
 
         // Pipeline: scale*2 -> clamp[0,50] -> full(factor=1, clamp[0,50])
-        let s1: Stage = Stage#ScaleStage { factor: 2 };
-        let s2: Stage = Stage#ClampStage { lo: 0, hi: 50 };
-        let s3: Stage = Stage#FullStage { factor: 1, lo: 0, hi: 50 };
+        let s1: Stage = Stage::ScaleStage { factor: 2 };
+        let s2: Stage = Stage::ClampStage { lo: 0, hi: 50 };
+        let s3: Stage = Stage::FullStage { factor: 1, lo: 0, hi: 50 };
 
         // After s1 (scale*2): 10,30,50,16,110,240,70,150,6,84
         // After s2 (clamp 0-50): 10,30,50,16,50,50,50,50,6,50

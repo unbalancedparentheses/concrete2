@@ -24,17 +24,17 @@ mod Types {
         TError { code: i32 },
     }
 
-    pub fn make_int() -> TypeTag { return TypeTag#TInt {}; }
-    pub fn make_bool() -> TypeTag { return TypeTag#TBool {}; }
-    pub fn make_fun(p: i32, r: i32) -> TypeTag { return TypeTag#TFun { param: p, ret: r }; }
-    pub fn make_error(code: i32) -> TypeTag { return TypeTag#TError { code: code }; }
+    pub fn make_int() -> TypeTag { return TypeTag::TInt {}; }
+    pub fn make_bool() -> TypeTag { return TypeTag::TBool {}; }
+    pub fn make_fun(p: i32, r: i32) -> TypeTag { return TypeTag::TFun { param: p, ret: r }; }
+    pub fn make_error(code: i32) -> TypeTag { return TypeTag::TError { code: code }; }
 
     pub fn type_tag_id(t: &TypeTag) -> i32 {
         match *t {
-            TypeTag#TInt {} => { return 0; },
-            TypeTag#TBool {} => { return 1; },
-            TypeTag#TFun { param, ret } => { return 2; },
-            TypeTag#TError { code } => { return 3; }
+            TypeTag::TInt {} => { return 0; },
+            TypeTag::TBool {} => { return 1; },
+            TypeTag::TFun { param, ret } => { return 2; },
+            TypeTag::TError { code } => { return 3; }
         }
     }
 
@@ -53,38 +53,38 @@ mod Types {
 
     pub fn get_fun_param(t: &TypeTag) -> i32 {
         match *t {
-            TypeTag#TFun { param, ret } => { return param; },
-            TypeTag#TInt {} => { return -1; },
-            TypeTag#TBool {} => { return -1; },
-            TypeTag#TError { code } => { return -1; }
+            TypeTag::TFun { param, ret } => { return param; },
+            TypeTag::TInt {} => { return -1; },
+            TypeTag::TBool {} => { return -1; },
+            TypeTag::TError { code } => { return -1; }
         }
     }
 
     pub fn get_fun_ret(t: &TypeTag) -> i32 {
         match *t {
-            TypeTag#TFun { param, ret } => { return ret; },
-            TypeTag#TInt {} => { return -1; },
-            TypeTag#TBool {} => { return -1; },
-            TypeTag#TError { code } => { return -1; }
+            TypeTag::TFun { param, ret } => { return ret; },
+            TypeTag::TInt {} => { return -1; },
+            TypeTag::TBool {} => { return -1; },
+            TypeTag::TError { code } => { return -1; }
         }
     }
 
     pub fn is_error(t: &TypeTag) -> bool {
         match *t {
-            TypeTag#TError { code } => { return true; },
-            TypeTag#TInt {} => { return false; },
-            TypeTag#TBool {} => { return false; },
-            TypeTag#TFun { param, ret } => { return false; }
+            TypeTag::TError { code } => { return true; },
+            TypeTag::TInt {} => { return false; },
+            TypeTag::TBool {} => { return false; },
+            TypeTag::TFun { param, ret } => { return false; }
         }
     }
 
     pub fn type_name_code(t: &TypeTag) -> i32 {
         // Return a numeric code for display: int=10, bool=20, fun=30, error=99
         match *t {
-            TypeTag#TInt {} => { return 10; },
-            TypeTag#TBool {} => { return 20; },
-            TypeTag#TFun { param, ret } => { return 30; },
-            TypeTag#TError { code } => { return 99; }
+            TypeTag::TInt {} => { return 10; },
+            TypeTag::TBool {} => { return 20; },
+            TypeTag::TFun { param, ret } => { return 30; },
+            TypeTag::TError { code } => { return 99; }
         }
     }
 }

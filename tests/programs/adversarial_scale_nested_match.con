@@ -7,33 +7,33 @@ enum Copy Inner { X {}, Y {}, Z {} }
 
 fn classify(o: Outer, i: Inner) -> Int {
     match o {
-        Outer#A {} => {
+        Outer::A {} => {
             match i {
-                Inner#X {} => { return 1; },
-                Inner#Y {} => { return 2; },
-                Inner#Z {} => { return 3; },
+                Inner::X {} => { return 1; },
+                Inner::Y {} => { return 2; },
+                Inner::Z {} => { return 3; },
             }
         },
-        Outer#B {} => {
+        Outer::B {} => {
             match i {
-                Inner#X {} => { return 10; },
-                Inner#Y {} => { return 20; },
-                Inner#Z {} => { return 30; },
+                Inner::X {} => { return 10; },
+                Inner::Y {} => { return 20; },
+                Inner::Z {} => { return 30; },
             }
         },
-        Outer#C {} => {
+        Outer::C {} => {
             match i {
-                Inner#X {} => { return 100; },
-                Inner#Y {} => { return 200; },
-                Inner#Z {} => { return 300; },
+                Inner::X {} => { return 100; },
+                Inner::Y {} => { return 200; },
+                Inner::Z {} => { return 300; },
             }
         },
     }
 }
 
 pub fn main() -> Int {
-    return classify(Outer#B {}, Inner#Y {}) + classify(Outer#B {}, Inner#X {}) +
-           classify(Outer#A {}, Inner#Z {}) + classify(Outer#A {}, Inner#Y {}) +
-           classify(Outer#A {}, Inner#X {}) + classify(Outer#A {}, Inner#Z {}) +
-           classify(Outer#A {}, Inner#Z {});
+    return classify(Outer::B {}, Inner::Y {}) + classify(Outer::B {}, Inner::X {}) +
+           classify(Outer::A {}, Inner::Z {}) + classify(Outer::A {}, Inner::Y {}) +
+           classify(Outer::A {}, Inner::X {}) + classify(Outer::A {}, Inner::Z {}) +
+           classify(Outer::A {}, Inner::Z {});
 }

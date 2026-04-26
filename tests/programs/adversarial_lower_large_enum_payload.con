@@ -18,16 +18,16 @@ enum Copy Packet {
 
 fn extract(p: Packet) -> Int {
     match p {
-        Packet#Empty {} => { return 0; },
-        Packet#Small { v } => { return v; },
-        Packet#Large { payload } => { return payload.a + payload.b + payload.c + payload.d + payload.e; },
+        Packet::Empty {} => { return 0; },
+        Packet::Small { v } => { return v; },
+        Packet::Large { payload } => { return payload.a + payload.b + payload.c + payload.d + payload.e; },
     }
 }
 
 pub fn main() -> Int {
-    let p1: Packet = Packet#Empty {};
-    let p2: Packet = Packet#Small { v: 12 };
-    let p3: Packet = Packet#Large { payload: BigPayload { a: 1, b: 2, c: 3, d: 4, e: 20 } };
+    let p1: Packet = Packet::Empty {};
+    let p2: Packet = Packet::Small { v: 12 };
+    let p3: Packet = Packet::Large { payload: BigPayload { a: 1, b: 2, c: 3, d: 4, e: 20 } };
     // 0 + 12 + 30 = 42
     return extract(p1) + extract(p2) + extract(p3);
 }

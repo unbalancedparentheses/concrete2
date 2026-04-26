@@ -8,9 +8,9 @@ enum Result {
 
 fn might_fail(succeed: bool) -> Result {
     if succeed {
-        return Result#Ok { value: 10 };
+        return Result::Ok { value: 10 };
     }
-    return Result#Err { code: 99 };
+    return Result::Err { code: 99 };
 }
 
 fn work(succeed: bool) with(Console, Alloc) -> Result {
@@ -24,15 +24,15 @@ fn work(succeed: bool) with(Console, Alloc) -> Result {
         print_char(32);
         print_string(&a);
         print_char(10);
-        return Result#Ok { value: v };
+        return Result::Ok { value: v };
     }
-    return Result#Ok { value: 0 };
+    return Result::Ok { value: 0 };
 }
 
 fn extract(r: Result) -> i32 {
     match r {
-        Result#Ok { value } -> { return value; }
-        Result#Err { code } -> { return code; }
+        Result::Ok { value } -> { return value; }
+        Result::Err { code } -> { return code; }
     }
 }
 
