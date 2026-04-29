@@ -301,7 +301,12 @@ cached_output() {
         cat "$cache_file"
     else
         echo $(( $(cat "$CACHE_MISSES_FILE") + 1 )) > "$CACHE_MISSES_FILE"
-        $COMPILER "$file" $flags 2>&1 | tee "$cache_file"
+        # Tolerate non-zero exit: some tests (e.g. proof-status with a
+        # corrupt registry) intentionally exercise reports that exit 1.
+        # The assertions below grep the captured output, so the exit
+        # code itself is not the signal here. Without `|| true`,
+        # `set -e` + `$(...)` would abort the whole runner.
+        { $COMPILER "$file" $flags 2>&1 || true; } | tee "$cache_file"
     fi
 }
 
@@ -1612,6 +1617,7 @@ run_ok "$TESTDIR/newtype_struct_copy_field.con" 443
 run_ok "$TESTDIR/newtype_method_dispatch.con" 8080
 run_ok "$TESTDIR/adversarial_module_newtype_across.con" 8080
 run_ok "$TESTDIR/bug_field_assign_narrow_field.con" 100
+run_ok "$TESTDIR/bug_arrow_assign_narrow_field.con" 107
 run_err "$TESTDIR/error_newtype_no_implicit.con" "type mismatch"
 run_err "$TESTDIR/error_newtype_wrong_inner.con" "type mismatch"
 run_err "$TESTDIR/error_newtype_cast_to_unrelated.con" "cannot cast"
@@ -3670,15 +3676,20 @@ else
     FAIL=$((FAIL + 1))
 fi
 
-# Test 3: Trusted function produces trusted diagnostic
+# Test 3: Trusted function produces trusted diagnostic.
+# The adversarial registry intentionally contains a bad entry pointing
+# at trusted_helper, so an attachment_integrity diagnostic is also
+# emitted alongside the trusted one — filter to the trusted kind.
 if python3 -c "
 import json
 with open('$TMPDIR/diag_adv.json') as f:
     data = json.load(f)
-diags = [f for f in data['facts'] if f['kind'] == 'proof_diagnostic' and f['function'] == 'main.trusted_helper']
-assert len(diags) == 1, f'expected 1 diagnostic, got {len(diags)}'
+diags = [f for f in data['facts']
+         if f['kind'] == 'proof_diagnostic'
+         and f['function'] == 'main.trusted_helper'
+         and f['diagnostic_kind'] == 'trusted']
+assert len(diags) == 1, f'expected 1 trusted diagnostic, got {len(diags)}'
 d = diags[0]
-assert d['diagnostic_kind'] == 'trusted', f'expected trusted, got {d[\"diagnostic_kind\"]}'
 assert d['severity'] == 'info', f'expected info, got {d[\"severity\"]}'
 " 2>/dev/null; then
     echo "  ok  proof-diag: trusted function has trusted diagnostic"
@@ -5648,7 +5659,7 @@ SNAP_DIR="/tmp/concrete_snap_test"
 mkdir -p "$SNAP_DIR"
 
 # Basic snapshot generation
-snap_out=$($COMPILER snapshot "$REGISTRY_DIR/test_proof_registry.con" -o "$SNAP_DIR/proved.facts.json" 2>&1)
+snap_out=$($COMPILER snapshot "$REGISTRY_DIR/test_proof_registry.con" -o "$SNAP_DIR/proved.facts.json" 2>&1 || true)
 if echo "$snap_out" | grep -q "Snapshot written" && [ -f "$SNAP_DIR/proved.facts.json" ]; then
     echo "  ok  snapshot: generates file with success message"
     PASS=$((PASS + 1))
@@ -5780,7 +5791,7 @@ else
 fi
 
 # Complex program snapshot
-snap_complex=$($COMPILER snapshot "$TESTDIR/report_integration.con" -o "$SNAP_DIR/complex.facts.json" 2>&1)
+snap_complex=$($COMPILER snapshot "$TESTDIR/report_integration.con" -o "$SNAP_DIR/complex.facts.json" 2>&1 || true)
 if echo "$snap_complex" | grep -q "Snapshot written" && \
    python3 -c "
 import json
@@ -5810,7 +5821,7 @@ CRYPTO_SNAP_DIR=$(mktemp -d)
 # --- Snapshot tests ---
 
 # Snapshot generates correct fact count
-snap_crypto=$($COMPILER snapshot "$CRYPTO_DIR/main.con" -o "$CRYPTO_SNAP_DIR/good.facts.json" 2>&1)
+snap_crypto=$($COMPILER snapshot "$CRYPTO_DIR/main.con" -o "$CRYPTO_SNAP_DIR/good.facts.json" 2>&1 || true)
 if echo "$snap_crypto" | grep -q "29 facts"; then
     echo "  ok  crypto_verify: snapshot produces 29 facts"
     PASS=$((PASS + 1))
@@ -5929,7 +5940,7 @@ fi
 # --- Report tests ---
 
 # Proof status report shows 3 proved
-report_out=$($COMPILER "$CRYPTO_DIR/main.con" --report proof-status 2>&1)
+report_out=$($COMPILER "$CRYPTO_DIR/main.con" --report proof-status 2>&1 || true)
 if echo "$report_out" | grep -q "3 proved" && echo "$report_out" | grep -q "0 unproved" && echo "$report_out" | grep -q "1 ineligible"; then
     echo "  ok  crypto_verify: proof-status report shows 3 proved, 0 unproved, 1 ineligible"
     PASS=$((PASS + 1))
@@ -6048,7 +6059,7 @@ FIXTURE_DIR="$ROOT_DIR/tests/fixtures"
 
 # --- Snapshot tests ---
 
-snap_elf=$($COMPILER snapshot "$ELF_DIR/main.con" -o "$ELF_SNAP_DIR/good.json" 2>&1)
+snap_elf=$($COMPILER snapshot "$ELF_DIR/main.con" -o "$ELF_SNAP_DIR/good.json" 2>&1 || true)
 if echo "$snap_elf" | grep -q "76 facts"; then
     echo "  ok  elf_header: snapshot produces 76 facts"
     PASS=$((PASS + 1))
@@ -6151,7 +6162,7 @@ fi
 
 # --- Report tests ---
 
-elf_report=$($COMPILER "$ELF_DIR/main.con" --report proof-status 2>&1)
+elf_report=$($COMPILER "$ELF_DIR/main.con" --report proof-status 2>&1 || true)
 if echo "$elf_report" | grep -q "5 proved" && echo "$elf_report" | grep -q "1 ineligible" && echo "$elf_report" | grep -q "2 trusted"; then
     echo "  ok  elf_header: proof-status report shows 5 proved, 1 ineligible, 2 trusted"
     PASS=$((PASS + 1))
@@ -6172,7 +6183,7 @@ for fn in check_magic check_class check_data check_version validate_header; do
 done
 
 # Effects report shows correct evidence levels
-elf_effects=$($COMPILER "$ELF_DIR/main.con" --report effects 2>&1)
+elf_effects=$($COMPILER "$ELF_DIR/main.con" --report effects 2>&1 || true)
 if echo "$elf_effects" | grep -q "5 proved" && echo "$elf_effects" | grep -q "2 trusted-assumption" && echo "$elf_effects" | grep -q "1 reported"; then
     echo "  ok  elf_header: effects report evidence levels correct"
     PASS=$((PASS + 1))
@@ -6368,7 +6379,7 @@ ADV_DIR="$TESTDIR"
 # Registry gives pure_mul the fingerprint of pure_add.
 # pure_mul must NOT be proved — the fingerprint doesn't match its body.
 
-swap_out=$($COMPILER "$ADV_DIR/adversarial_proof_swap/test_proof_registry.con" --report proof-status 2>&1)
+swap_out=$($COMPILER "$ADV_DIR/adversarial_proof_swap/test_proof_registry.con" --report proof-status 2>&1 || true)
 if echo "$swap_out" | grep -q "1 proved" && echo "$swap_out" | grep -q "1 stale"; then
     echo "  ok  adversarial: cross-function fingerprint swap → 1 proved, 1 stale"
     PASS=$((PASS + 1))
@@ -6401,7 +6412,7 @@ fi
 # System currently grants "proved" because it only checks fingerprints.
 # This test DOCUMENTS the limitation — it asserts the current (wrong) behavior.
 
-fab_out=$($COMPILER "$ADV_DIR/adversarial_proof_fabricated/test_proof_registry.con" --report proof-status 2>&1)
+fab_out=$($COMPILER "$ADV_DIR/adversarial_proof_fabricated/test_proof_registry.con" --report proof-status 2>&1 || true)
 if echo "$fab_out" | grep -q "1 proved"; then
     echo "  ok  adversarial: fabricated proof name with valid fingerprint → proved (KNOWN LIMITATION: proof names are not validated against Lean)"
     PASS=$((PASS + 1))
@@ -6443,8 +6454,10 @@ fi
 # --- 4. Malformed registry JSON ---
 # Broken JSON must not crash and must not grant proved status.
 
-mal_out=$($COMPILER "$ADV_DIR/adversarial_proof_malformed_registry/test_proof_registry.con" --report proof-status 2>&1)
-if ! echo "$mal_out" | grep -q "proved.*proof matches"; then
+mal_out=$($COMPILER "$ADV_DIR/adversarial_proof_malformed_registry/test_proof_registry.con" --report proof-status 2>&1 || true)
+# Sentinel: report header must be present, otherwise the absence check
+# below would silently pass on a compiler crash (empty output).
+if echo "$mal_out" | grep -q "Proof Status Report" && ! echo "$mal_out" | grep -q "proved.*proof matches"; then
     echo "  ok  adversarial: malformed registry does not grant proved status"
     PASS=$((PASS + 1))
 else
@@ -6501,7 +6514,7 @@ fi
 # Verify main.parse_byte is proved but inner.parse_byte is NOT proved.
 
 if [ -f "$ADV_DIR/adversarial_proof_cross_module.con" ]; then
-    cross_out=$($COMPILER "$ADV_DIR/adversarial_proof_cross_module.con" --report proof-status 2>&1)
+    cross_out=$($COMPILER "$ADV_DIR/adversarial_proof_cross_module.con" --report proof-status 2>&1 || true)
     if echo "$cross_out" | grep -q "main.parse_byte.*proof matches" 2>/dev/null; then
         echo "  ok  adversarial: cross-module proof isolation — main.parse_byte proved"
         PASS=$((PASS + 1))
@@ -6516,7 +6529,7 @@ fi
 # Function with different param count must show stale.
 
 if [ -f "$ADV_DIR/adversarial_proof_wrong_arity.con" ]; then
-    arity_out=$($COMPILER "$ADV_DIR/adversarial_proof_wrong_arity.con" --report proof-status 2>&1)
+    arity_out=$($COMPILER "$ADV_DIR/adversarial_proof_wrong_arity.con" --report proof-status 2>&1 || true)
     if echo "$arity_out" | grep -q "stale\|body changed"; then
         echo "  ok  adversarial: wrong-arity function shows stale/body changed"
         PASS=$((PASS + 1))
@@ -6531,7 +6544,7 @@ fi
 # Multiply instead of add must show stale.
 
 if [ -f "$ADV_DIR/adversarial_proof_wrong_semantics.con" ]; then
-    sem_out=$($COMPILER "$ADV_DIR/adversarial_proof_wrong_semantics.con" --report proof-status 2>&1)
+    sem_out=$($COMPILER "$ADV_DIR/adversarial_proof_wrong_semantics.con" --report proof-status 2>&1 || true)
     if echo "$sem_out" | grep -q "stale\|body changed"; then
         echo "  ok  adversarial: wrong-semantics function shows stale/body changed"
         PASS=$((PASS + 1))
@@ -6546,8 +6559,10 @@ fi
 # Function with capabilities must not be proved.
 
 if [ -f "$ADV_DIR/adversarial_proof_impure.con" ]; then
-    impure_out=$($COMPILER "$ADV_DIR/adversarial_proof_impure.con" --report proof-status 2>&1)
-    if ! echo "$impure_out" | grep -q "proved.*proof matches.*impure\|✓.*impure"; then
+    impure_out=$($COMPILER "$ADV_DIR/adversarial_proof_impure.con" --report proof-status 2>&1 || true)
+    # Sentinel: report header must be present so a compiler crash (empty
+    # output) doesn't satisfy the absence check below.
+    if echo "$impure_out" | grep -q "Proof Status Report" && ! echo "$impure_out" | grep -q "proved.*proof matches.*impure\|✓.*impure"; then
         echo "  ok  adversarial: impure function not granted proved status"
         PASS=$((PASS + 1))
     else
@@ -6583,7 +6598,7 @@ fi
 # Existing test dir: proof_registry_miss has entry for nonexistent function.
 
 if [ -d "$ADV_DIR/proof_registry_miss" ]; then
-    miss_out=$($COMPILER "$ADV_DIR/proof_registry_miss/test_proof_registry.con" --report proof-status 2>&1)
+    miss_out=$($COMPILER "$ADV_DIR/proof_registry_miss/test_proof_registry.con" --report proof-status 2>&1 || true)
     if echo "$miss_out" | grep -q "0 proved"; then
         echo "  ok  adversarial: registry entry for nonexistent function grants 0 proved"
         PASS=$((PASS + 1))
@@ -6787,6 +6802,12 @@ run_ok_O2 "$TESTDIR/struct_loop_break.con"        42
 run_ok_O2 "$TESTDIR/struct_nested_loop.con"        42
 run_ok_O2 "$TESTDIR/struct_if_else_merge.con"      42
 run_ok_O2 "$TESTDIR/struct_match_merge.con"        42
+
+# Narrow-int field-assign bugs: emit `store i64` to an i32/u32/i16/...
+# field, which clang -O2 deletes as dead UB. Cover both the direct
+# (.fieldAssign) and arrow (.arrowAssign) paths.
+run_ok_O2 "$TESTDIR/bug_field_assign_narrow_field.con" 100
+run_ok_O2 "$TESTDIR/bug_arrow_assign_narrow_field.con" 107
 
 # O2 variants for optimization-sensitive codegen tests
 run_ok_O2 "$TESTDIR/test_dead_code_after_return.con" 42
@@ -7364,7 +7385,7 @@ fi
 mkdir -p "$MAL_DIR/reg_corrupt"
 cp "$TESTDIR/adversarial_proof_malformed_registry/test_proof_registry.con" "$MAL_DIR/reg_corrupt/"
 echo '{"TOTALLY BROKEN' > "$MAL_DIR/reg_corrupt/proof-registry.json"
-mal_reg=$($COMPILER "$MAL_DIR/reg_corrupt/test_proof_registry.con" --report proof-status 2>&1)
+mal_reg=$($COMPILER "$MAL_DIR/reg_corrupt/test_proof_registry.con" --report proof-status 2>&1 || true)
 if echo "$mal_reg" | grep -q "warning.*malformed\|warning.*proof-registry"; then
     echo "  ok  malformed: corrupted registry produces explicit warning"
     mal_pass=$((mal_pass + 1))
@@ -7386,7 +7407,7 @@ fi
 mkdir -p "$MAL_DIR/reg_empty"
 cp "$TESTDIR/adversarial_proof_malformed_registry/test_proof_registry.con" "$MAL_DIR/reg_empty/"
 printf '' > "$MAL_DIR/reg_empty/proof-registry.json"
-mal_empty=$($COMPILER "$MAL_DIR/reg_empty/test_proof_registry.con" --report proof-status 2>&1)
+mal_empty=$($COMPILER "$MAL_DIR/reg_empty/test_proof_registry.con" --report proof-status 2>&1 || true)
 if echo "$mal_empty" | grep -q "warning.*empty"; then
     echo "  ok  malformed: empty registry produces explicit warning"
     mal_pass=$((mal_pass + 1))
@@ -7404,7 +7425,7 @@ cat > "$MAL_DIR/reg_dupes/proof-registry.json" << 'REGEOF'
   {"function":"main.pure_add","body_fingerprint":"fp2","proof":"P2","spec":"S2"}
 ]
 REGEOF
-mal_dupes=$($COMPILER "$MAL_DIR/reg_dupes/test_proof_registry.con" --report proof-status 2>&1)
+mal_dupes=$($COMPILER "$MAL_DIR/reg_dupes/test_proof_registry.con" --report proof-status 2>&1 || true)
 if echo "$mal_dupes" | grep -q "warning.*duplicate"; then
     echo "  ok  malformed: duplicate registry entries produce warning"
     mal_pass=$((mal_pass + 1))
@@ -7461,7 +7482,7 @@ fi
 
 # --- 9. Snapshot facts with missing required fields → warnings ---
 echo '[{"kind":"effects"},{"function":"bar"}]' > "$MAL_DIR/missing_fields.json"
-mal_fields=$($COMPILER diff "$MAL_DIR/missing_fields.json" "$MAL_DIR/good.json" 2>&1)
+mal_fields=$($COMPILER diff "$MAL_DIR/missing_fields.json" "$MAL_DIR/good.json" 2>&1 || true)
 if echo "$mal_fields" | grep -q "warning.*missing required.*function" && echo "$mal_fields" | grep -q "warning.*missing required.*kind"; then
     echo "  ok  malformed: snapshot facts with missing fields produce warnings"
     mal_pass=$((mal_pass + 1))
@@ -7498,7 +7519,7 @@ cp "$TESTDIR/adversarial_proof_malformed_registry/test_proof_registry.con" "$MAL
 cat > "$MAL_DIR/reg_empty_fp/proof-registry.json" << 'REGEOF'
 [{"function":"main.pure_add","body_fingerprint":"","proof":"P1","spec":"S1"}]
 REGEOF
-mal_fp=$($COMPILER "$MAL_DIR/reg_empty_fp/test_proof_registry.con" --report proof-status 2>&1)
+mal_fp=$($COMPILER "$MAL_DIR/reg_empty_fp/test_proof_registry.con" --report proof-status 2>&1 || true)
 if echo "$mal_fp" | grep -q "warning.*empty body_fingerprint"; then
     echo "  ok  malformed: registry with empty fingerprint produces warning"
     mal_pass=$((mal_pass + 1))
@@ -7536,7 +7557,7 @@ fi
 mkdir -p "$MAL_DIR/bundle_partial/source"
 echo 'fn main() -> i32 { return 0; }' > "$MAL_DIR/bundle_partial/source/main.con"
 echo '{"version": 1}' > "$MAL_DIR/bundle_partial/manifest.json"
-bun_part=$($COMPILER validate-bundle "$MAL_DIR/bundle_partial" 2>&1)
+bun_part=$($COMPILER validate-bundle "$MAL_DIR/bundle_partial" 2>&1 || true)
 if echo "$bun_part" | grep -q "warning.*missing.*source_path" && echo "$bun_part" | grep -q "warning.*missing.*artifacts"; then
     echo "  ok  malformed: bundle with partial manifest produces field warnings"
     mal_pass=$((mal_pass + 1))
@@ -7547,7 +7568,7 @@ fi
 
 # --- 16. Bundle validation: valid bundle passes ---
 $COMPILER debug-bundle "$TESTDIR/bug_if_expression.con" -o "$MAL_DIR/valid_bundle" > /dev/null 2>&1
-bun_ok=$($COMPILER validate-bundle "$MAL_DIR/valid_bundle" 2>&1)
+bun_ok=$($COMPILER validate-bundle "$MAL_DIR/valid_bundle" 2>&1 || true)
 if echo "$bun_ok" | grep -q "is valid"; then
     echo "  ok  malformed: valid bundle passes validation"
     mal_pass=$((mal_pass + 1))
@@ -7622,8 +7643,10 @@ fi
 mkdir -p "$MAL_DIR/reg_valid_empty"
 cp "$TESTDIR/adversarial_proof_malformed_registry/test_proof_registry.con" "$MAL_DIR/reg_valid_empty/"
 echo '{"version":1,"proofs":[]}' > "$MAL_DIR/reg_valid_empty/proof-registry.json"
-reg_ve=$($COMPILER "$MAL_DIR/reg_valid_empty/test_proof_registry.con" --report proof-status 2>&1)
-if ! echo "$reg_ve" | grep -q "warning.*malformed"; then
+reg_ve=$($COMPILER "$MAL_DIR/reg_valid_empty/test_proof_registry.con" --report proof-status 2>&1 || true)
+# Sentinel: report header must be present (else a crash with empty
+# output trivially satisfies "no malformed warning").
+if echo "$reg_ve" | grep -q "Proof Status Report" && ! echo "$reg_ve" | grep -q "warning.*malformed"; then
     echo "  ok  malformed: valid empty registry (object form) produces no malformed warning"
     mal_pass=$((mal_pass + 1))
 else
@@ -7634,8 +7657,10 @@ fi
 
 # --- 21. Valid empty registry (array form) → no warning ---
 echo '[]' > "$MAL_DIR/reg_valid_empty/proof-registry.json"
-reg_va=$($COMPILER "$MAL_DIR/reg_valid_empty/test_proof_registry.con" --report proof-status 2>&1)
-if ! echo "$reg_va" | grep -q "warning.*malformed"; then
+reg_va=$($COMPILER "$MAL_DIR/reg_valid_empty/test_proof_registry.con" --report proof-status 2>&1 || true)
+# Sentinel: report header must be present (else a crash with empty
+# output trivially satisfies "no malformed warning").
+if echo "$reg_va" | grep -q "Proof Status Report" && ! echo "$reg_va" | grep -q "warning.*malformed"; then
     echo "  ok  malformed: valid empty registry (array form) produces no malformed warning"
     mal_pass=$((mal_pass + 1))
 else
@@ -7647,7 +7672,7 @@ fi
 mkdir -p "$MAL_DIR/reg_nodup"
 cp "$TESTDIR/adversarial_proof_malformed_registry/test_proof_registry.con" "$MAL_DIR/reg_nodup/"
 echo '{"BROKEN' > "$MAL_DIR/reg_nodup/proof-registry.json"
-reg_nd=$($COMPILER "$MAL_DIR/reg_nodup/test_proof_registry.con" --report proof-status 2>&1)
+reg_nd=$($COMPILER "$MAL_DIR/reg_nodup/test_proof_registry.con" --report proof-status 2>&1 || true)
 warn_count=$(echo "$reg_nd" | grep -c "warning:" || true)
 if [ "$warn_count" -eq 1 ]; then
     echo "  ok  malformed: registry warning emitted exactly once (not duplicated)"
@@ -7885,7 +7910,7 @@ cp "$DESYNC_DIR/desync_base.con" "$DESYNC_DIR/stale_fp/"
 cat > "$DESYNC_DIR/stale_fp/proof-registry.json" << 'REGEOF'
 [{"function":"main.pure_add","body_fingerprint":"WRONG_FINGERPRINT_12345","proof":"P1","spec":"S1"}]
 REGEOF
-stale_out=$($COMPILER "$DESYNC_DIR/stale_fp/desync_base.con" --report proof-status 2>&1)
+stale_out=$($COMPILER "$DESYNC_DIR/stale_fp/desync_base.con" --report proof-status 2>&1 || true)
 if echo "$stale_out" | grep -q "stale"; then
     echo "  ok  desync: registry fingerprint vs code fingerprint → stale detected"
     desync_pass=$((desync_pass + 1))
@@ -7997,8 +8022,8 @@ cp "$DESYNC_DIR/desync_base.con" "$DESYNC_DIR/cross_check/"
 cat > "$DESYNC_DIR/cross_check/proof-registry.json" << 'REGEOF'
 [{"function":"main.pure_add","body_fingerprint":"WRONG_FP","proof":"P1","spec":"S1"}]
 REGEOF
-obl_out=$($COMPILER "$DESYNC_DIR/cross_check/desync_base.con" --report obligations 2>&1)
-diag_out=$($COMPILER "$DESYNC_DIR/cross_check/desync_base.con" --report proof-diagnostics 2>&1)
+obl_out=$($COMPILER "$DESYNC_DIR/cross_check/desync_base.con" --report obligations 2>&1 || true)
+diag_out=$($COMPILER "$DESYNC_DIR/cross_check/desync_base.con" --report proof-diagnostics 2>&1 || true)
 # Obligation should say stale, diagnostics should also say stale
 obl_stale=$(echo "$obl_out" | grep -c "status:.*stale" || true)
 diag_stale=$(echo "$diag_out" | grep -ci "stale" || true)
@@ -8736,7 +8761,7 @@ rm -f "$REG_DIR/proof-registry.json"
 # --- Lean kernel checking (item 7) ---
 
 # 41. check-proofs: hardcoded proofs are kernel-verified
-cp_out=$($COMPILER tests/programs/proof_decode_header.con --report check-proofs 2>&1)
+cp_out=$($COMPILER tests/programs/proof_decode_header.con --report check-proofs 2>&1 || true)
 if echo "$cp_out" | grep -q "Kernel-verified" && echo "$cp_out" | grep -q "parse_byte"; then
     echo "  ok  check-proofs: hardcoded proofs kernel-verified"
     evidence_pass=$((evidence_pass + 1))
@@ -8810,8 +8835,8 @@ rm -rf "$CP_DIR"
 # --- End-to-end Lean attachment workflow (item 8) ---
 
 # 47. E2E: proved function has correct proof-status + obligations + check-proofs
-e2e_ps=$($COMPILER tests/programs/proof_decode_header.con --report proof-status 2>&1)
-e2e_ob=$($COMPILER tests/programs/proof_decode_header.con --report obligations 2>&1)
+e2e_ps=$($COMPILER tests/programs/proof_decode_header.con --report proof-status 2>&1 || true)
+e2e_ob=$($COMPILER tests/programs/proof_decode_header.con --report obligations 2>&1 || true)
 if echo "$e2e_ps" | grep -q "proved" && echo "$e2e_ob" | grep -q "status:.*proved" && echo "$cp_out" | grep -q "Kernel-verified"; then
     echo "  ok  e2e-lean: proved function consistent across proof-status, obligations, and check-proofs"
     evidence_pass=$((evidence_pass + 1))
@@ -8863,7 +8888,7 @@ fn pure_add(a: Int, b: Int) -> Int {
 fn main() -> i32 { return 0; }
 CONEOF
 # Get the fingerprint
-repair_fp=$($COMPILER "$REPAIR_DIR/repair.con" --report fingerprints 2>&1)
+repair_fp=$($COMPILER "$REPAIR_DIR/repair.con" --report fingerprints 2>&1 || true)
 orig_fp=$(echo "$repair_fp" | grep "pure_add" | grep -o '\[.*\]')
 
 # Create registry with correct fingerprint
@@ -8872,7 +8897,7 @@ cat > "$REPAIR_DIR/proof-registry.json" <<REGEOF
 REGEOF
 
 # 51. Repair: initially proved
-repair_ps=$($COMPILER "$REPAIR_DIR/repair.con" --report proof-status 2>&1)
+repair_ps=$($COMPILER "$REPAIR_DIR/repair.con" --report proof-status 2>&1 || true)
 if echo "$repair_ps" | grep -q "proved"; then
     echo "  ok  stale-repair: function initially proved"
     evidence_pass=$((evidence_pass + 1))
@@ -8888,7 +8913,7 @@ fn pure_add(a: Int, b: Int) -> Int {
 }
 fn main() -> i32 { return 0; }
 CONEOF
-repair_stale=$($COMPILER "$REPAIR_DIR/repair.con" --report proof-status 2>&1)
+repair_stale=$($COMPILER "$REPAIR_DIR/repair.con" --report proof-status 2>&1 || true)
 if echo "$repair_stale" | grep -q "proof stale\|stale"; then
     echo "  ok  stale-repair: mutated function detected as stale"
     evidence_pass=$((evidence_pass + 1))
@@ -8911,7 +8936,7 @@ new_fp=$($COMPILER "$REPAIR_DIR/repair.con" --report fingerprints 2>&1 | grep "p
 cat > "$REPAIR_DIR/proof-registry.json" <<REGEOF
 {"version":1,"proofs":[{"function":"main.pure_add","body_fingerprint":"$new_fp","proof":"Concrete.Proof.parse_byte_correct","spec":"s"}]}
 REGEOF
-repair_fixed=$($COMPILER "$REPAIR_DIR/repair.con" --report proof-status 2>&1)
+repair_fixed=$($COMPILER "$REPAIR_DIR/repair.con" --report proof-status 2>&1 || true)
 if echo "$repair_fixed" | grep -q "proved.*proof matches\|-- proved"; then
     echo "  ok  stale-repair: updated fingerprint restores proved status"
     evidence_pass=$((evidence_pass + 1))
@@ -8931,7 +8956,7 @@ CONEOF
 cat > "$REPAIR_DIR/proof-registry.json" <<REGEOF
 {"version":1,"proofs":[{"function":"main.pure_add","body_fingerprint":"$orig_fp","proof":"Concrete.Proof.parse_byte_correct","spec":"s"}]}
 REGEOF
-repair_restored=$($COMPILER "$REPAIR_DIR/repair.con" --report proof-status 2>&1)
+repair_restored=$($COMPILER "$REPAIR_DIR/repair.con" --report proof-status 2>&1 || true)
 if echo "$repair_restored" | grep -q "proved"; then
     echo "  ok  stale-repair: restoring original body restores proved status"
     evidence_pass=$((evidence_pass + 1))
@@ -8941,7 +8966,7 @@ else
 fi
 
 # 56. Repair: kernel check on repaired function
-repair_check=$($COMPILER "$REPAIR_DIR/repair.con" --report check-proofs 2>&1)
+repair_check=$($COMPILER "$REPAIR_DIR/repair.con" --report check-proofs 2>&1 || true)
 if echo "$repair_check" | grep -q "Kernel-verified"; then
     echo "  ok  stale-repair: repaired function passes kernel check"
     evidence_pass=$((evidence_pass + 1))
@@ -8959,11 +8984,11 @@ BLOCKED_SRC="tests/programs/adversarial_proof_blocked_pressure.con"
 BOUNDARY_SRC="tests/programs/adversarial_proof_boundary_pressure.con"
 
 # Collect outputs
-inelig_ps=$($COMPILER "$INELIG_SRC" --report proof-status 2>&1)
-inelig_ob=$($COMPILER "$INELIG_SRC" --report obligations 2>&1)
-blocked_ps=$($COMPILER "$BLOCKED_SRC" --report proof-status 2>&1)
-blocked_ob=$($COMPILER "$BLOCKED_SRC" --report obligations 2>&1)
-boundary_ps=$($COMPILER "$BOUNDARY_SRC" --report proof-status 2>&1)
+inelig_ps=$($COMPILER "$INELIG_SRC" --report proof-status 2>&1 || true)
+inelig_ob=$($COMPILER "$INELIG_SRC" --report obligations 2>&1 || true)
+blocked_ps=$($COMPILER "$BLOCKED_SRC" --report proof-status 2>&1 || true)
+blocked_ob=$($COMPILER "$BLOCKED_SRC" --report obligations 2>&1 || true)
+boundary_ps=$($COMPILER "$BOUNDARY_SRC" --report proof-status 2>&1 || true)
 
 # 57. Ineligible: File capability named in reasons
 if echo "$inelig_ps" | grep -A6 "caps_file" | grep -q "has capabilities: File"; then
@@ -9211,7 +9236,7 @@ else
 fi
 
 # 82. Boundary: consistency check passes for ineligible pressure set
-inelig_con=$($COMPILER "$INELIG_SRC" --report consistency 2>&1)
+inelig_con=$($COMPILER "$INELIG_SRC" --report consistency 2>&1 || true)
 if echo "$inelig_con" | grep -q "All.*pass\|0 failures"; then
     echo "  ok  boundary-pressure: consistency check passes for ineligible functions"
     evidence_pass=$((evidence_pass + 1))
@@ -9222,7 +9247,7 @@ else
 fi
 
 # 83. Boundary: consistency check passes for blocked functions
-blocked_con=$($COMPILER "$BLOCKED_SRC" --report consistency 2>&1)
+blocked_con=$($COMPILER "$BLOCKED_SRC" --report consistency 2>&1 || true)
 if echo "$blocked_con" | grep -q "All.*pass\|0 failures"; then
     echo "  ok  boundary-pressure: consistency check passes for blocked functions"
     evidence_pass=$((evidence_pass + 1))
@@ -10059,7 +10084,7 @@ wf_fp=$($COMPILER "$WF_DIR/wf.con" --report extraction 2>&1 | grep -A5 "pure_dou
 cat > "$WF_DIR/proof-registry.json" <<REGEOF
 {"version":1,"proofs":[{"function":"main.pure_double","body_fingerprint":"$wf_fp","proof":"Concrete.Proof.parse_byte_correct","spec":"s"}]}
 REGEOF
-wf_proved=$($COMPILER "$WF_DIR/wf.con" --report proof-status 2>&1)
+wf_proved=$($COMPILER "$WF_DIR/wf.con" --report proof-status 2>&1 || true)
 # Mutate the body
 cat > "$WF_DIR/wf.con" <<'CONEOF'
 fn pure_double(x: Int) -> Int {
@@ -10067,13 +10092,13 @@ fn pure_double(x: Int) -> Int {
 }
 fn main() -> i32 { return 0; }
 CONEOF
-wf_stale_out=$($COMPILER "$WF_DIR/wf.con" --report proof-status 2>&1)
+wf_stale_out=$($COMPILER "$WF_DIR/wf.con" --report proof-status 2>&1 || true)
 # Repair: update fingerprint
 wf_new_fp=$($COMPILER "$WF_DIR/wf.con" --report extraction 2>&1 | grep -A5 "pure_double" | grep -o '\[.*\]' | head -1)
 cat > "$WF_DIR/proof-registry.json" <<REGEOF
 {"version":1,"proofs":[{"function":"main.pure_double","body_fingerprint":"$wf_new_fp","proof":"Concrete.Proof.parse_byte_correct","spec":"s"}]}
 REGEOF
-wf_repaired=$($COMPILER "$WF_DIR/wf.con" --report proof-status 2>&1)
+wf_repaired=$($COMPILER "$WF_DIR/wf.con" --report proof-status 2>&1 || true)
 if echo "$wf_proved" | grep -q "proved" && echo "$wf_stale_out" | grep -q "stale\|proof stale" && echo "$wf_repaired" | grep -q "proved"; then
     echo "  ok  workflow: end-to-end stale repair cycle (proved → stale → repaired)"
     wf_pass=$((wf_pass + 1))
@@ -11392,6 +11417,78 @@ fi # end section: interp
 
 echo ""
 flush_jobs
+
+# --- Per-file scoping regressions inside Concrete.toml projects ---
+# These exercise compileAndCheck/compileAndReport's project-mode
+# routing: invoking on a sibling/nested file must scope the report to
+# that file (count of functions checked) without leaking into registry
+# validation (no spurious "unknown function" for sibling-file entries).
+echo "=== Project-mode per-file scoping ==="
+
+# examples/project: main.con declares the package's top-level module
+# (sees all 3 user functions); sibling files scope to their own count.
+ep_main=$($COMPILER examples/project/src/main.con --check predictable 2>&1 || true)
+if echo "$ep_main" | grep -q "pass (3 functions checked)"; then
+    echo "  ok  scoping: main.con sees all 3 package functions"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  scoping: main.con should see 3 functions, got: $ep_main"
+    FAIL=$((FAIL + 1))
+fi
+
+ep_other=$($COMPILER examples/project/src/other.con --check predictable 2>&1 || true)
+if echo "$ep_other" | grep -q "pass (1 functions checked)"; then
+    echo "  ok  scoping: other.con scopes to its 1 function"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  scoping: other.con should see 1 function, got: $ep_other"
+    FAIL=$((FAIL + 1))
+fi
+
+ep_sub=$($COMPILER examples/project/src/mymod/submodule.con --check predictable 2>&1 || true)
+if echo "$ep_sub" | grep -q "pass (1 functions checked)"; then
+    echo "  ok  scoping: nested submodule.con (3 levels deep) finds project + scopes to its 1 function"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  scoping: submodule.con should see 1 function, got: $ep_sub"
+    FAIL=$((FAIL + 1))
+fi
+
+# duplicate_basename: src/a/foo.con and src/b/foo.con both declare
+# `mod foo`. Path-derived scoping must distinguish them — bare-name
+# matching merges both into 2 functions per file (regression).
+db_a=$($COMPILER tests/programs/duplicate_basename/src/a/foo.con --check predictable 2>&1 || true)
+if echo "$db_a" | grep -q "pass (1 functions checked)"; then
+    echo "  ok  scoping: a/foo.con disambiguates from b/foo.con (1 function)"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  scoping: a/foo.con should disambiguate to 1 function, got: $db_a"
+    FAIL=$((FAIL + 1))
+fi
+
+db_b=$($COMPILER tests/programs/duplicate_basename/src/b/foo.con --check predictable 2>&1 || true)
+if echo "$db_b" | grep -q "pass (1 functions checked)"; then
+    echo "  ok  scoping: b/foo.con disambiguates from a/foo.con (1 function)"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  scoping: b/foo.con should disambiguate to 1 function, got: $db_b"
+    FAIL=$((FAIL + 1))
+fi
+
+# multi_file_registry: registry has an entry for a function defined in
+# main.con. Querying a sibling file's report must NOT raise an
+# "unknown function" error — registry validation runs against the
+# full user package, only the report output is scoped.
+mfr_other=$($COMPILER tests/programs/multi_file_registry/src/other.con --report proof-status 2>&1 || true)
+if echo "$mfr_other" | grep -q "Proof Status Report" && \
+   ! echo "$mfr_other" | grep -q "registry entry for unknown function"; then
+    echo "  ok  scoping: sibling-file --report proof-status doesn't fault sibling registry entries"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  scoping: sibling-file query leaked into registry validation"
+    echo "$mfr_other" | head -3
+    FAIL=$((FAIL + 1))
+fi
 
 # --- Project-level tests (require Concrete.toml + std) ---
 echo "=== Project-level tests ==="

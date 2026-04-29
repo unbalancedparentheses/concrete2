@@ -1251,8 +1251,10 @@ def renderRegistryIssue : RegistryIssue → String
     s!"error: registry entry for '{re.function}' targets extraction-blocked function (unsupported: {", ".intercalate unsupported})"
 
 /-- Convert registry validation issues into proof diagnostics with
-    the attachment_integrity failure class. -/
-def registryIssuesToDiagnostics (issues : List RegistryIssue) : List ProofDiagnostic :=
+    the attachment_integrity failure class. The `locMap` lets us populate
+    `loc` from the target function's source position when available. -/
+def registryIssuesToDiagnostics (issues : List RegistryIssue)
+    (locMap : List (String × SourceLoc) := []) : List ProofDiagnostic :=
   issues.filterMap fun issue =>
     let sev := if issue.isError then ProofDiagnosticSeverity.error else .warning
     let det : List String := match issue with
@@ -1270,6 +1272,7 @@ def registryIssuesToDiagnostics (issues : List RegistryIssue) : List ProofDiagno
       | .ineligibleFunction re _ | .emptyProofName re | .emptySpecName re
       | .extractionBlocked re _ => re.function
       | .duplicateEntry f _ | .conflictingEntry f _ => f
+    let loc := (locMap.find? fun e => e.1 == fn).map (·.2)
     some { kind := .attachmentIntegrity, severity := sev, function := fn
          , message := renderRegistryIssue issue
          , hint := match issue with
@@ -1291,7 +1294,7 @@ def registryIssuesToDiagnostics (issues : List RegistryIssue) : List ProofDiagno
          , expectedFp := match issue with
            | .staleFingerprint re _ => re.bodyFingerprint
            | _ => ""
-         , loc := none }
+         , loc }
 
 /-- Convert check-proofs results into proof diagnostics. Each failed
     theorem produces either a theorem_lookup or lean_check_failure diagnostic. -/
@@ -1554,7 +1557,7 @@ def extractProofCore (vc : ValidatedCore)
     { entries, excluded, structs := [], enums := [], traitDefs := []
     , callGraph := graph, recMap, externNames, obligations := [], diagnostics := [] }
     registry
-  let regDiags := registryIssuesToDiagnostics regIssues
+  let regDiags := registryIssuesToDiagnostics regIssues locMap
   let diagnostics := oblDiags ++ regDiags
   -- Collect eligible types
   let sts := List.flatten (allModules.map (·.structs)) |>.filter CStructDef.isProofEligible

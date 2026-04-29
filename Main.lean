@@ -316,6 +316,391 @@ def loadRegistryWarn (inputPath : String) : IO Concrete.ProofRegistry := do
   return registry
 
 /-- Run pipeline to needed depth and produce a report. -/
+def compileAndQuery (inputPath : String) (query : String) : IO UInt32 := do
+  let source ← readFile inputPath
+  let mainSrcMap : SourceMap := [(inputPath, source)]
+  match ← Pipeline.runFrontend inputPath source resolveAllModules with
+  | .error ds =>
+    IO.eprintln (renderDiagnostics ds (sourceMap := mainSrcMap))
+    return 1
+  | .ok (parsed, _, validCore, srcMap) =>
+    let locMap := Report.buildFnLocMap parsed.modules inputPath
+    let simpleLocMap := locMap.map fun e => (e.qualName, (e.file, e.fnSpan.line))
+    let registry ← loadRegistryWarn inputPath
+    let pc := extractProofCore validCore simpleLocMap registry
+    -- Traceability queries need the backend pipeline
+    let parts := query.splitOn ":"
+    if parts[0]! == "traceability" then
+      match Pipeline.monomorphize validCore with
+      | .error ds =>
+        IO.eprintln (renderDiagnostics ds (sourceMap := srcMap))
+        return 1
+      | .ok mono =>
+        match Pipeline.lower mono with
+        | .error ds =>
+          IO.eprintln (renderDiagnostics ds (sourceMap := srcMap))
+          return 1
+        | .ok ssa =>
+          let fnFilter := if parts.length == 2 then some parts[1]! else none
+          IO.println (Report.queryTraceability validCore.coreModules mono.coreModules ssa.ssaModules locMap fnFilter (registry := registry) (pc := pc))
+          return 0
+    else
+      match Report.queryFacts validCore.coreModules locMap query (registry := registry) (pc := pc) with
+      | .ok result =>
+        IO.println result
+        return 0
+      | .error msg =>
+        IO.eprintln s!"error: {msg}"
+        return 1
+
+-- ============================================================
+-- Concrete.toml project support
+-- ============================================================
+
+/-- Minimal TOML parser for Concrete.toml: extracts dependency paths.
+    Only handles the format: `name = { path = "...", ... }` under `[dependencies]`.
+    Returns (entries, warnings) — warnings are non-empty for unparseable lines. -/
+def parseDependencies (content : String) : List (String × String) × List String :=
+  let lines := content.splitOn "\n"
+  let rec go (ls : List String) (inDeps : Bool) (acc : List (String × String))
+      (warns : List String) :=
+    match ls with
+    | [] => (acc, warns)
+    | l :: rest =>
+      let trimmed := l.trimAscii.toString
+      if trimmed.startsWith "[dependencies]" then
+        go rest true acc warns
+      else if trimmed.startsWith "[" then
+        go rest false acc warns
+      else if inDeps && trimmed.length > 0 && !trimmed.startsWith "#" then
+        match trimmed.splitOn "=" with
+        | name :: valParts =>
+          let depName := name.trimAscii.toString
+          let valStr := "=".intercalate valParts
+          match valStr.splitOn "path" with
+          | _ :: pathRest :: _ =>
+            let afterPath := ("path".intercalate [pathRest])
+            match afterPath.splitOn "\"" with
+            | _ :: pathVal :: _ =>
+              go rest true (acc ++ [(depName, pathVal)]) warns
+            | _ => go rest true acc
+              (warns ++ [s!"warning: Concrete.toml [dependencies]: could not parse path in '{trimmed}'"])
+          | _ => go rest true acc
+            (warns ++ [s!"warning: Concrete.toml [dependencies]: missing 'path' in '{trimmed}'"])
+        | _ => go rest true acc
+          (warns ++ [s!"warning: Concrete.toml [dependencies]: could not parse line '{trimmed}'"])
+      else
+        go rest inDeps acc warns
+  go lines false [] []
+
+/-- Validate Concrete.toml content and return warnings for structural issues. -/
+def validateToml (content : String) : List String :=
+  let lines := content.splitOn "\n"
+  let trimmedLines := lines.map (·.trimAscii.toString)
+  let hasPackage := trimmedLines.any (·.startsWith "[package]")
+  -- Check [package] section
+  let pkgWarns := if !hasPackage then
+    ["warning: Concrete.toml missing [package] section"]
+  else
+    let inPkg := lines.foldl (fun (acc : Bool × Bool) l =>
+      let t := l.trimAscii.toString
+      if t.startsWith "[package]" then (true, acc.2)
+      else if t.startsWith "[" then (false, acc.2)
+      else if acc.1 && t.startsWith "name" then (acc.1, true)
+      else acc
+    ) (false, false)
+    if !inPkg.2 then ["warning: Concrete.toml [package] missing 'name' field"]
+    else []
+  -- Warn about unknown top-level sections
+  let knownSections := ["[package]", "[dependencies]", "[policy]"]
+  let sectionWarns := trimmedLines.filterMap fun l =>
+    if l.startsWith "[" && !l.startsWith "#" then
+      if knownSections.any (l.startsWith ·) then none
+      else some s!"warning: Concrete.toml has unrecognized section '{l}'"
+    else none
+  pkgWarns ++ sectionWarns
+
+/-- Empty-content stand-in for a CModule, used to preserve a parent
+    wrapper (and thus the qualified-name prefix) without dragging in
+    sibling functions when scoping. -/
+private def emptyWrapper (m : CModule) (subs : List CModule) : CModule :=
+  { m with functions := [], structs := [], enums := []
+         , externFns := [], constants := []
+         , traitDefs := [], traitImpls := [], newtypes := []
+         , submodules := subs }
+
+/-- Match a single subtree by bare name, preserving parent wrappers so
+    downstream iteration produces fully-qualified names like
+    `pkg.<sub>.<leaf>` instead of just `<leaf>`. -/
+partial def scopeSubtreeByName
+    (m : CModule) (targetNames : List String) : Option CModule :=
+  if targetNames.contains m.name then some m
+  else
+    let scopedSubs := m.submodules.filterMap fun sm => scopeSubtreeByName sm targetNames
+    if scopedSubs.isEmpty then none
+    else some (emptyWrapper m scopedSubs)
+
+/-- Find any nested CModule subtree whose `name` matches one of `targetNames`.
+    Bare-name fallback used when a path-derived module path isn't available
+    (e.g. when inputPath lives outside `<projectRoot>/src/`). Note: this
+    fallback merges duplicate basenames across subtrees; prefer
+    `findMatchingSubtreesByPath` whenever a project root is known. -/
+def findMatchingSubtrees (mods : List CModule) (targetNames : List String) : List CModule :=
+  mods.filterMap fun m => scopeSubtreeByName m targetNames
+
+/-- Match a single subtree by qualified path suffix, preserving parent
+    wrappers so qualified names retain their full prefix. -/
+partial def scopeSubtreeByPath
+    (m : CModule) (targetPath : List String) (currentPath : List String)
+    : Option CModule :=
+  let p := currentPath ++ [m.name]
+  let isMatch :=
+    if targetPath.length > p.length then false
+    else (p.drop (p.length - targetPath.length)) == targetPath
+  if isMatch then some m
+  else
+    let scopedSubs := m.submodules.filterMap fun sm => scopeSubtreeByPath sm targetPath p
+    if scopedSubs.isEmpty then none
+    else some (emptyWrapper m scopedSubs)
+
+/-- Find subtrees whose qualified path (root → leaf) ends with `targetPath`.
+    Disambiguates duplicate basenames in different subtrees: with
+    `targetPath := ["a", "foo"]`, `pkg.a.foo` matches but `pkg.b.foo`
+    does not. Preserves the qualified-name prefix via empty parent
+    wrappers (so iteration yields `pkg.a.foo.<fn>`, not `foo.<fn>`). -/
+def findMatchingSubtreesByPath
+    (mods : List CModule) (targetPath : List String) : List CModule :=
+  mods.filterMap fun m => scopeSubtreeByPath m targetPath []
+
+/-- Convert a source file path to its package-relative module path
+    segments, given the project root. Returns `none` when the file is
+    not under `<projectRoot>/src/`. The package entries `src/main.con`
+    and `src/lib.con` map to `[]` (use the parsed top-level name to
+    locate the package's root module). `src/foo/mod.con` maps to
+    `["foo"]` (the file declares the parent directory's module). -/
+def filePathToModulePath (projectRoot inputPath : String) : Option (List String) :=
+  let srcPrefix := projectRoot ++ "/src/"
+  if !inputPath.startsWith srcPrefix then none
+  else
+    let chars := inputPath.toList
+    let rel := String.ofList (chars.drop srcPrefix.length)
+    if !rel.endsWith ".con" then none
+    else
+      let stripped := String.ofList (rel.toList.take (rel.length - 4))
+      let parts := stripped.splitOn "/"
+      let parts := if parts.length > 1 && parts.getLast? == some "mod"
+                   then parts.dropLast else parts
+      some parts
+
+/-- Scope `userModules` (a project's full user-package set) to the modules
+    declared in `inputPath`. Uses path-derived qualified module paths to
+    disambiguate duplicate basenames across subtrees; falls back to bare
+    parsed-name matching when the file is outside `<projectRoot>/src/`. -/
+def scopeUserModulesToFile (userModules : List CModule) (inputPath projectRoot : String)
+    : IO (List CModule) := do
+  let source ← try readFile inputPath catch _ => pure ""
+  if source.isEmpty then return userModules
+  match Pipeline.parse source with
+  | .error _ => return userModules
+  | .ok parsedFile =>
+    let parsedNames := parsedFile.modules.map (·.name)
+    -- Path-derived match (preferred — handles duplicate basenames).
+    let pathMatched : List CModule :=
+      match filePathToModulePath projectRoot inputPath with
+      | none => []
+      | some [] => []  -- File isn't under src/; nothing to do.
+      -- src/main.con and src/lib.con are package entries: the file's
+      -- parsed top-level module names ARE the package's top-level
+      -- modules, so bare-name lookup is correct here.
+      | some ["main"] | some ["lib"] => findMatchingSubtrees userModules parsedNames
+      | some path => findMatchingSubtreesByPath userModules path
+    if !pathMatched.isEmpty then return pathMatched
+    -- Fallback: bare-name match. Used when inputPath isn't under
+    -- `<projectRoot>/src/` (e.g. exotic layouts or symlinked files).
+    let nameMatched := findMatchingSubtrees userModules parsedNames
+    if nameMatched.isEmpty then return userModules else return nameMatched
+
+/-- Find Concrete.toml by walking up from a directory. -/
+partial def findProjectRoot (startDir : String) : IO (Option String) := do
+  let tomlPath := startDir ++ "/Concrete.toml"
+  let tomlExists ← try
+    let _ ← IO.FS.readFile ⟨tomlPath⟩
+    pure true
+  catch _ => pure false
+  if tomlExists then
+    return some startDir
+  -- Walk up the ancestor chain until we hit the filesystem root.
+  let parent := dirOf startDir
+  if parent == startDir then return none
+  findProjectRoot parent
+
+/-- Resolve a dependency path relative to the project root. -/
+def resolveDependencyPath (projectRoot : String) (depPath : String) : String :=
+  if depPath.startsWith "/" then depPath
+  else projectRoot ++ "/" ++ depPath
+
+/-- Check if a path contains a valid std library (has src/lib.con). -/
+def hasStdLib (path : String) : IO Bool := do
+  let libPath := path ++ "/src/lib.con"
+  try let _ ← IO.FS.readFile ⟨libPath⟩; pure true catch _ => pure false
+
+/-- Find the builtin std library relative to the compiler binary.
+    Searches common relative paths from the executable location.
+    Falls back to CONCRETE_STD environment variable. -/
+def findBuiltinStd : IO (Option String) := do
+  -- Try CONCRETE_STD environment variable first
+  let envStd ← IO.getEnv "CONCRETE_STD"
+  match envStd with
+  | some stdPath =>
+    let ok ← hasStdLib stdPath
+    if ok then return some stdPath
+  | none => pure ()
+  -- Find relative to compiler binary
+  let exePath ← IO.appPath
+  let exeDir := dirOf exePath.toString
+  -- Try common relative paths:
+  -- .lake/build/bin/concrete → ../../.. → repo root → std/
+  -- build/bin/concrete → ../.. → repo root → std/
+  -- bin/concrete → .. → repo root → std/
+  let candidates := [
+    exeDir ++ "/../../../std",   -- .lake/build/bin/
+    exeDir ++ "/../../std",      -- build/bin/
+    exeDir ++ "/../std",         -- bin/
+    exeDir ++ "/std"             -- same dir
+  ]
+  for candidate in candidates do
+    let ok ← hasStdLib candidate
+    if ok then return some candidate
+  return none
+
+/-- Load and parse a dependency's lib.con, resolving its submodules. -/
+partial def loadDependency (depName : String) (depPath : String)
+    : IO (Except String (List Module × SourceMap)) := do
+  let libPath := depPath ++ "/src/lib.con"
+  let source ← try
+    readFile libPath
+  catch _ =>
+    return .error s!"error: dependency '{depName}': cannot read {libPath}\nhint: check the path in [dependencies] or ensure the dependency has src/lib.con"
+  match parse source with
+  | .error e => return .error s!"dependency '{depName}': parse error: {renderDiagnostics e}"
+  | .ok modules =>
+    let baseDir := depPath ++ "/src"
+    match ← resolveAllModules baseDir modules libPath with
+    | .error e => return .error s!"dependency '{depName}': {e}"
+    | .ok (resolved, srcMap) =>
+      let srcMap := [(libPath, source)] ++ srcMap
+      return .ok (resolved, srcMap)
+
+/-- Shared context produced by loading a project from Concrete.toml. -/
+structure ProjectContext where
+  validCore   : ValidatedCore
+  parsed      : ParsedProgram      -- merged modules (deps + project)
+  allSrcMap   : SourceMap
+  tomlContent : String
+  mainPath    : String
+  depNames    : List String
+
+/-- Load a project to ValidatedCore. Shared by build, test, and check. -/
+partial def loadProject (projectRoot : String) (stripTestFns : Bool := false) : IO (Except UInt32 ProjectContext) := do
+  let tomlPath := projectRoot ++ "/Concrete.toml"
+  let tomlContent ← readFile tomlPath
+  let tomlWarnings := validateToml tomlContent
+  for w in tomlWarnings do IO.eprintln w
+  let (userDeps, depWarnings) := parseDependencies tomlContent
+  for w in depWarnings do IO.eprintln w
+
+  -- Inject builtin std if user didn't declare it explicitly
+  let hasStdDep := userDeps.any fun (name, _) => name == "std"
+  let deps ← if hasStdDep then
+    pure userDeps
+  else
+    match ← findBuiltinStd with
+    | some stdPath => pure (("std", stdPath) :: userDeps)
+    | none =>
+      IO.eprintln "warning: builtin std not found\nhint: set CONCRETE_STD=/path/to/std or add std = { path = \"...\" } to [dependencies]"
+      pure userDeps
+
+  -- Load all dependencies
+  let mut depModules : List Module := []
+  let mut depSrcMap : SourceMap := []
+  for (depName, depPath) in deps do
+    let resolvedPath := if depPath.startsWith "/" then depPath
+      else resolveDependencyPath projectRoot depPath
+    match ← loadDependency depName resolvedPath with
+    | .error e =>
+      IO.eprintln e
+      return Except.error 1  -- early exit
+    | .ok (modules, srcMap) =>
+      depModules := depModules ++ modules
+      depSrcMap := depSrcMap ++ srcMap
+
+  -- Load project's main source
+  let mainPath := projectRoot ++ "/src/main.con"
+  let sourceResult ← try
+    let s ← readFile mainPath
+    pure (some s)
+  catch _ => pure none
+  match sourceResult with
+  | none =>
+    IO.eprintln s!"error: cannot read {mainPath}\nhint: projects need a src/main.con entry point"
+    return Except.error 1
+  | some source =>
+
+  -- Parse the project source
+  match Pipeline.parse source with
+  | .error ds =>
+    IO.eprintln (renderDiagnostics ds (sourceMap := [(mainPath, source)]))
+    return Except.error 1
+  | .ok parsed =>
+  let baseDir := projectRoot ++ "/src"
+  match ← Pipeline.resolveFiles baseDir parsed mainPath resolveAllModules with
+  | .error ds =>
+    IO.eprintln (renderDiagnostics ds (sourceMap := [(mainPath, source)]))
+    return Except.error 1
+  | .ok (resolvedParsed, subSrcMap) =>
+    -- Optionally strip #[test] functions from dependency modules
+    let depModulesUsed := if stripTestFns then
+      let stripTests : Module → Module := fun m =>
+        { m with
+          functions := m.functions.filter fun f => !f.isTest
+          submodules := m.submodules.map fun sub =>
+            { sub with functions := sub.functions.filter fun f => !f.isTest }
+        }
+      depModules.map stripTests
+    else depModules
+    let allModules : List Module := depModulesUsed ++ resolvedParsed.modules
+    let allSrcMap : SourceMap := [(mainPath, source)] ++ subSrcMap ++ depSrcMap
+    let merged : ParsedProgram := { modules := allModules }
+    let summary := Pipeline.buildSummary merged
+    match Pipeline.resolve merged summary with
+    | .error ds =>
+      IO.eprintln (renderDiagnostics ds (sourceMap := allSrcMap))
+      return Except.error 1
+    | .ok resolvedProg =>
+    let depNames := depModules.map (·.name)
+    let projectResolved : List ResolvedModule :=
+      resolvedProg.modules.filter fun rm => !depNames.contains rm.module.name
+    let projectResolvedProg : ResolvedProgram := { modules := projectResolved }
+    match Pipeline.check projectResolvedProg summary with
+    | .error ds =>
+      IO.eprintln (renderDiagnostics ds (sourceMap := allSrcMap))
+      return Except.error 1
+    | .ok () =>
+    match Pipeline.elaborate resolvedProg summary with
+    | .error ds =>
+      IO.eprintln (renderDiagnostics ds (sourceMap := allSrcMap))
+      return Except.error 1
+    | .ok elabProg =>
+    match Pipeline.coreCheck elabProg with
+    | .error ds =>
+      IO.eprintln (renderDiagnostics ds (sourceMap := allSrcMap))
+      return Except.error 1
+    | .ok validCore =>
+    return Except.ok { validCore, parsed := merged, allSrcMap, tomlContent, mainPath, depNames }
+
+/-- Run pipeline and check a profile constraint.
+    If the input file lives inside a `Concrete.toml` project, route
+    through project mode so std and other dependencies resolve. -/
 def compileAndReport (inputPath : String) (reportType : String) : IO UInt32 := do
   let source ← readFile inputPath
   let mainSrcMap : SourceMap := [(inputPath, source)]
@@ -334,16 +719,46 @@ def compileAndReport (inputPath : String) (reportType : String) : IO UInt32 := d
       let summary := Pipeline.buildSummary resolved
       IO.println (Report.interfaceReport summary.entries)
       return 0
-  -- All other reports need the full frontend
-  match ← Pipeline.runFrontend inputPath source resolveAllModules with
-  | .error ds =>
-    IO.eprintln (renderDiagnostics ds (sourceMap := mainSrcMap))
-    return 1
-  | .ok (parsed, _, validCore, srcMap) =>
+  -- All other reports need the full frontend. If the file is inside a
+  -- Concrete.toml project, route through project mode so dependency imports
+  -- (e.g. std) resolve; mirrors compileAndCheck.
+  let inputDir := dirOf inputPath
+  -- Returns (parsed, fullValidCore, scopedValidCore, srcMap). In project
+  -- mode the two validCores differ: full covers the entire user package
+  -- (used for pc/registry validation, so sibling-file entries don't
+  -- appear "unknown"), scoped covers just the file the user invoked
+  -- (used to drive report output). In standalone mode they're identical.
+  let frontendResult : Except UInt32 (ParsedProgram × ValidatedCore × ValidatedCore × SourceMap) ←
+    match ← findProjectRoot inputDir with
+    | some root =>
+      match ← loadProject root with
+      | .error ec => pure (Except.error ec)
+      | .ok ctx =>
+        let { validCore, parsed, allSrcMap, depNames, .. } := ctx
+        let userModules := validCore.coreModules.filter fun m => !depNames.contains m.name
+        let fullValidCore : ValidatedCore := { validCore with coreModules := userModules }
+        let scopedModules ← scopeUserModulesToFile userModules inputPath root
+        let scopedValidCore : ValidatedCore := { validCore with coreModules := scopedModules }
+        pure (Except.ok (parsed, fullValidCore, scopedValidCore, allSrcMap))
+    | none =>
+      match ← Pipeline.runFrontend inputPath source resolveAllModules with
+      | .error ds =>
+        IO.eprintln (renderDiagnostics ds (sourceMap := mainSrcMap))
+        pure (Except.error 1)
+      | .ok (parsed, _, validCore, srcMap) =>
+        pure (Except.ok (parsed, validCore, validCore, srcMap))
+  match frontendResult with
+  | .error ec => return ec
+  | .ok (parsed, fullValidCore, scopedValidCore, srcMap) =>
     let locMap := Report.buildFnLocMap parsed.modules inputPath
     let simpleLocMap := locMap.map fun e => (e.qualName, (e.file, e.fnSpan.line))
     let registry ← loadRegistryWarn inputPath
-    let pc := extractProofCore validCore simpleLocMap registry
+    -- pc and registry validation run on the FULL user package: a
+    -- registry entry naming a function defined in a sibling file must
+    -- still validate when the user is querying just one file.
+    let pc := extractProofCore fullValidCore simpleLocMap registry
+    -- Report output still iterates only the scoped modules.
+    let validCore := scopedValidCore
     -- Validate registry against ProofCore and surface warnings/errors
     let regIssues := Concrete.validateRegistry pc registry
     for issue in regIssues do
@@ -539,298 +954,6 @@ def compileAndReport (inputPath : String) (reportType : String) : IO UInt32 := d
     IO.eprintln s!"Unknown report type: {reportType}. Use: caps, unsafe, layout, interface, alloc, mono, authority, proof, eligibility, proof-status, obligations, extraction, proof-diagnostics, proof-deps, proof-bundle, lean-stubs, check-proofs, traceability, diagnostics-json, schema, diagnostic-codes, effects, recursion, fingerprints, consistency, verify"
     return 1
 
-def compileAndQuery (inputPath : String) (query : String) : IO UInt32 := do
-  let source ← readFile inputPath
-  let mainSrcMap : SourceMap := [(inputPath, source)]
-  match ← Pipeline.runFrontend inputPath source resolveAllModules with
-  | .error ds =>
-    IO.eprintln (renderDiagnostics ds (sourceMap := mainSrcMap))
-    return 1
-  | .ok (parsed, _, validCore, srcMap) =>
-    let locMap := Report.buildFnLocMap parsed.modules inputPath
-    let simpleLocMap := locMap.map fun e => (e.qualName, (e.file, e.fnSpan.line))
-    let registry ← loadRegistryWarn inputPath
-    let pc := extractProofCore validCore simpleLocMap registry
-    -- Traceability queries need the backend pipeline
-    let parts := query.splitOn ":"
-    if parts[0]! == "traceability" then
-      match Pipeline.monomorphize validCore with
-      | .error ds =>
-        IO.eprintln (renderDiagnostics ds (sourceMap := srcMap))
-        return 1
-      | .ok mono =>
-        match Pipeline.lower mono with
-        | .error ds =>
-          IO.eprintln (renderDiagnostics ds (sourceMap := srcMap))
-          return 1
-        | .ok ssa =>
-          let fnFilter := if parts.length == 2 then some parts[1]! else none
-          IO.println (Report.queryTraceability validCore.coreModules mono.coreModules ssa.ssaModules locMap fnFilter (registry := registry) (pc := pc))
-          return 0
-    else
-      match Report.queryFacts validCore.coreModules locMap query (registry := registry) (pc := pc) with
-      | .ok result =>
-        IO.println result
-        return 0
-      | .error msg =>
-        IO.eprintln s!"error: {msg}"
-        return 1
-
--- ============================================================
--- Concrete.toml project support
--- ============================================================
-
-/-- Minimal TOML parser for Concrete.toml: extracts dependency paths.
-    Only handles the format: `name = { path = "...", ... }` under `[dependencies]`.
-    Returns (entries, warnings) — warnings are non-empty for unparseable lines. -/
-def parseDependencies (content : String) : List (String × String) × List String :=
-  let lines := content.splitOn "\n"
-  let rec go (ls : List String) (inDeps : Bool) (acc : List (String × String))
-      (warns : List String) :=
-    match ls with
-    | [] => (acc, warns)
-    | l :: rest =>
-      let trimmed := l.trimAscii.toString
-      if trimmed.startsWith "[dependencies]" then
-        go rest true acc warns
-      else if trimmed.startsWith "[" then
-        go rest false acc warns
-      else if inDeps && trimmed.length > 0 && !trimmed.startsWith "#" then
-        match trimmed.splitOn "=" with
-        | name :: valParts =>
-          let depName := name.trimAscii.toString
-          let valStr := "=".intercalate valParts
-          match valStr.splitOn "path" with
-          | _ :: pathRest :: _ =>
-            let afterPath := ("path".intercalate [pathRest])
-            match afterPath.splitOn "\"" with
-            | _ :: pathVal :: _ =>
-              go rest true (acc ++ [(depName, pathVal)]) warns
-            | _ => go rest true acc
-              (warns ++ [s!"warning: Concrete.toml [dependencies]: could not parse path in '{trimmed}'"])
-          | _ => go rest true acc
-            (warns ++ [s!"warning: Concrete.toml [dependencies]: missing 'path' in '{trimmed}'"])
-        | _ => go rest true acc
-          (warns ++ [s!"warning: Concrete.toml [dependencies]: could not parse line '{trimmed}'"])
-      else
-        go rest inDeps acc warns
-  go lines false [] []
-
-/-- Validate Concrete.toml content and return warnings for structural issues. -/
-def validateToml (content : String) : List String :=
-  let lines := content.splitOn "\n"
-  let trimmedLines := lines.map (·.trimAscii.toString)
-  let hasPackage := trimmedLines.any (·.startsWith "[package]")
-  -- Check [package] section
-  let pkgWarns := if !hasPackage then
-    ["warning: Concrete.toml missing [package] section"]
-  else
-    let inPkg := lines.foldl (fun (acc : Bool × Bool) l =>
-      let t := l.trimAscii.toString
-      if t.startsWith "[package]" then (true, acc.2)
-      else if t.startsWith "[" then (false, acc.2)
-      else if acc.1 && t.startsWith "name" then (acc.1, true)
-      else acc
-    ) (false, false)
-    if !inPkg.2 then ["warning: Concrete.toml [package] missing 'name' field"]
-    else []
-  -- Warn about unknown top-level sections
-  let knownSections := ["[package]", "[dependencies]", "[policy]"]
-  let sectionWarns := trimmedLines.filterMap fun l =>
-    if l.startsWith "[" && !l.startsWith "#" then
-      if knownSections.any (l.startsWith ·) then none
-      else some s!"warning: Concrete.toml has unrecognized section '{l}'"
-    else none
-  pkgWarns ++ sectionWarns
-
-/-- Find Concrete.toml by walking up from a directory. -/
-def findProjectRoot (startDir : String) : IO (Option String) := do
-  let tomlPath := startDir ++ "/Concrete.toml"
-  let tomlExists ← try
-    let _ ← IO.FS.readFile ⟨tomlPath⟩
-    pure true
-  catch _ => pure false
-  if tomlExists then
-    return some startDir
-  -- Try parent directory (one level up)
-  let parent := dirOf startDir
-  if parent == startDir then return none
-  let parentToml := parent ++ "/Concrete.toml"
-  let parentExists ← try
-    let _ ← IO.FS.readFile ⟨parentToml⟩
-    pure true
-  catch _ => pure false
-  if parentExists then
-    return some parent
-  return none
-
-/-- Resolve a dependency path relative to the project root. -/
-def resolveDependencyPath (projectRoot : String) (depPath : String) : String :=
-  if depPath.startsWith "/" then depPath
-  else projectRoot ++ "/" ++ depPath
-
-/-- Check if a path contains a valid std library (has src/lib.con). -/
-def hasStdLib (path : String) : IO Bool := do
-  let libPath := path ++ "/src/lib.con"
-  try let _ ← IO.FS.readFile ⟨libPath⟩; pure true catch _ => pure false
-
-/-- Find the builtin std library relative to the compiler binary.
-    Searches common relative paths from the executable location.
-    Falls back to CONCRETE_STD environment variable. -/
-def findBuiltinStd : IO (Option String) := do
-  -- Try CONCRETE_STD environment variable first
-  let envStd ← IO.getEnv "CONCRETE_STD"
-  match envStd with
-  | some stdPath =>
-    let ok ← hasStdLib stdPath
-    if ok then return some stdPath
-  | none => pure ()
-  -- Find relative to compiler binary
-  let exePath ← IO.appPath
-  let exeDir := dirOf exePath.toString
-  -- Try common relative paths:
-  -- .lake/build/bin/concrete → ../../.. → repo root → std/
-  -- build/bin/concrete → ../.. → repo root → std/
-  -- bin/concrete → .. → repo root → std/
-  let candidates := [
-    exeDir ++ "/../../../std",   -- .lake/build/bin/
-    exeDir ++ "/../../std",      -- build/bin/
-    exeDir ++ "/../std",         -- bin/
-    exeDir ++ "/std"             -- same dir
-  ]
-  for candidate in candidates do
-    let ok ← hasStdLib candidate
-    if ok then return some candidate
-  return none
-
-/-- Load and parse a dependency's lib.con, resolving its submodules. -/
-partial def loadDependency (depName : String) (depPath : String)
-    : IO (Except String (List Module × SourceMap)) := do
-  let libPath := depPath ++ "/src/lib.con"
-  let source ← try
-    readFile libPath
-  catch _ =>
-    return .error s!"error: dependency '{depName}': cannot read {libPath}\nhint: check the path in [dependencies] or ensure the dependency has src/lib.con"
-  match parse source with
-  | .error e => return .error s!"dependency '{depName}': parse error: {renderDiagnostics e}"
-  | .ok modules =>
-    let baseDir := depPath ++ "/src"
-    match ← resolveAllModules baseDir modules libPath with
-    | .error e => return .error s!"dependency '{depName}': {e}"
-    | .ok (resolved, srcMap) =>
-      let srcMap := [(libPath, source)] ++ srcMap
-      return .ok (resolved, srcMap)
-
-/-- Shared context produced by loading a project from Concrete.toml. -/
-structure ProjectContext where
-  validCore   : ValidatedCore
-  parsed      : ParsedProgram      -- merged modules (deps + project)
-  allSrcMap   : SourceMap
-  tomlContent : String
-  mainPath    : String
-  depNames    : List String
-
-/-- Load a project to ValidatedCore. Shared by build, test, and check. -/
-partial def loadProject (projectRoot : String) (stripTestFns : Bool := false) : IO (Except UInt32 ProjectContext) := do
-  let tomlPath := projectRoot ++ "/Concrete.toml"
-  let tomlContent ← readFile tomlPath
-  let tomlWarnings := validateToml tomlContent
-  for w in tomlWarnings do IO.eprintln w
-  let (userDeps, depWarnings) := parseDependencies tomlContent
-  for w in depWarnings do IO.eprintln w
-
-  -- Inject builtin std if user didn't declare it explicitly
-  let hasStdDep := userDeps.any fun (name, _) => name == "std"
-  let deps ← if hasStdDep then
-    pure userDeps
-  else
-    match ← findBuiltinStd with
-    | some stdPath => pure (("std", stdPath) :: userDeps)
-    | none =>
-      IO.eprintln "warning: builtin std not found\nhint: set CONCRETE_STD=/path/to/std or add std = { path = \"...\" } to [dependencies]"
-      pure userDeps
-
-  -- Load all dependencies
-  let mut depModules : List Module := []
-  let mut depSrcMap : SourceMap := []
-  for (depName, depPath) in deps do
-    let resolvedPath := if depPath.startsWith "/" then depPath
-      else resolveDependencyPath projectRoot depPath
-    match ← loadDependency depName resolvedPath with
-    | .error e =>
-      IO.eprintln e
-      return Except.error 1  -- early exit
-    | .ok (modules, srcMap) =>
-      depModules := depModules ++ modules
-      depSrcMap := depSrcMap ++ srcMap
-
-  -- Load project's main source
-  let mainPath := projectRoot ++ "/src/main.con"
-  let sourceResult ← try
-    let s ← readFile mainPath
-    pure (some s)
-  catch _ => pure none
-  match sourceResult with
-  | none =>
-    IO.eprintln s!"error: cannot read {mainPath}\nhint: projects need a src/main.con entry point"
-    return Except.error 1
-  | some source =>
-
-  -- Parse the project source
-  match Pipeline.parse source with
-  | .error ds =>
-    IO.eprintln (renderDiagnostics ds (sourceMap := [(mainPath, source)]))
-    return Except.error 1
-  | .ok parsed =>
-  let baseDir := projectRoot ++ "/src"
-  match ← Pipeline.resolveFiles baseDir parsed mainPath resolveAllModules with
-  | .error ds =>
-    IO.eprintln (renderDiagnostics ds (sourceMap := [(mainPath, source)]))
-    return Except.error 1
-  | .ok (resolvedParsed, subSrcMap) =>
-    -- Optionally strip #[test] functions from dependency modules
-    let depModulesUsed := if stripTestFns then
-      let stripTests : Module → Module := fun m =>
-        { m with
-          functions := m.functions.filter fun f => !f.isTest
-          submodules := m.submodules.map fun sub =>
-            { sub with functions := sub.functions.filter fun f => !f.isTest }
-        }
-      depModules.map stripTests
-    else depModules
-    let allModules : List Module := depModulesUsed ++ resolvedParsed.modules
-    let allSrcMap : SourceMap := [(mainPath, source)] ++ subSrcMap ++ depSrcMap
-    let merged : ParsedProgram := { modules := allModules }
-    let summary := Pipeline.buildSummary merged
-    match Pipeline.resolve merged summary with
-    | .error ds =>
-      IO.eprintln (renderDiagnostics ds (sourceMap := allSrcMap))
-      return Except.error 1
-    | .ok resolvedProg =>
-    let depNames := depModules.map (·.name)
-    let projectResolved : List ResolvedModule :=
-      resolvedProg.modules.filter fun rm => !depNames.contains rm.module.name
-    let projectResolvedProg : ResolvedProgram := { modules := projectResolved }
-    match Pipeline.check projectResolvedProg summary with
-    | .error ds =>
-      IO.eprintln (renderDiagnostics ds (sourceMap := allSrcMap))
-      return Except.error 1
-    | .ok () =>
-    match Pipeline.elaborate resolvedProg summary with
-    | .error ds =>
-      IO.eprintln (renderDiagnostics ds (sourceMap := allSrcMap))
-      return Except.error 1
-    | .ok elabProg =>
-    match Pipeline.coreCheck elabProg with
-    | .error ds =>
-      IO.eprintln (renderDiagnostics ds (sourceMap := allSrcMap))
-      return Except.error 1
-    | .ok validCore =>
-    return Except.ok { validCore, parsed := merged, allSrcMap, tomlContent, mainPath, depNames }
-
-/-- Run pipeline and check a profile constraint.
-    If the input file lives inside a `Concrete.toml` project, route
-    through project mode so std and other dependencies resolve. -/
 def compileAndCheck (inputPath : String) (checkType : String) : IO UInt32 := do
   if checkType != "predictable" then
     IO.eprintln s!"Unknown check type: {checkType}. Use: predictable"
@@ -842,14 +965,21 @@ def compileAndCheck (inputPath : String) (checkType : String) : IO UInt32 := do
     | .error exitCode => return exitCode
     | .ok ctx =>
       let { validCore, parsed, allSrcMap, depNames, .. } := ctx
-      -- Scope the predictable check to user-package modules so dependency
-      -- code (e.g. std) doesn't drown the report in unrelated entries.
+      -- Drop dependency modules (std etc.) so the report focuses on
+      -- user-package code.
       let userModules := validCore.coreModules.filter fun m => !depNames.contains m.name
-      let userValidCore : ValidatedCore := { validCore with coreModules := userModules }
+      -- Build the ProofCore from the FULL user package: recursion
+      -- classification, call graph, and extern info must reflect every
+      -- caller — even ones in sibling files — for a per-file query to
+      -- be accurate.
+      let fullUserValidCore : ValidatedCore := { validCore with coreModules := userModules }
       let locMap := Report.buildFnLocMap parsed.modules inputPath
       let simpleLocMap := locMap.map fun (e : Report.FnLocEntry) => (e.qualName, (e.file, e.fnSpan.line))
-      let pc := extractProofCore userValidCore simpleLocMap
-      let (pass, report) := Report.checkPredictable userModules locMap allSrcMap pc
+      let pc := extractProofCore fullUserValidCore simpleLocMap
+      -- Scope to the specific file the user invoked for the report
+      -- output itself.
+      let scopedModules ← scopeUserModulesToFile userModules inputPath root
+      let (pass, report) := Report.checkPredictable scopedModules locMap allSrcMap pc
       IO.println report
       return if pass then 0 else 1
   | none =>

@@ -1174,7 +1174,26 @@ partial def elabStmt (stmt : Stmt) : ElabM (List CStmt) := do
       | .ref (.heap t) => t | .refMut (.heap t) => t
       | _ => .placeholder
     let cDeref := CExpr.deref cObj innerTy
-    let cVal ← elabExpr value
+    -- Pass the field's declared type as the value hint so integer literals
+    -- pick the right width (mirrors the direct .fieldAssign path above).
+    -- Without this, `p->n = 100` with `n: i32` elaborates `100` as Int (i64)
+    -- and codegen emits `store i64 100` to a 4-byte field, clobbering the
+    -- adjacent field at -O2.
+    let (sName, tArgs) := match innerTy with
+      | .named n => (n, ([] : List Ty))
+      | .generic n a => (n, a)
+      | _ => ("", [])
+    let env ← getEnv
+    let fieldTy : Option Ty :=
+      match env.structs.find? fun s => s.name == sName with
+      | some sd =>
+        match sd.fields.find? fun f => f.name == field with
+        | some f =>
+          let mapping := sd.typeParams.zip tArgs
+          some (substTy mapping f.ty)
+        | none => none
+      | none => none
+    let cVal ← elabExpr value fieldTy
     return [.fieldAssign cDeref field cVal]
 
   -- These are desugared by desugarStmts before elabStmt is called.
