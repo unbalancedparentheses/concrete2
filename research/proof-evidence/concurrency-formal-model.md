@@ -170,6 +170,8 @@ reads as "expression e has type τ and requires capability set C in context Γ; 
 
 The capability context Γ_C lists capabilities the surrounding function holds. The required set C must be a subset (after lattice expansion) of Γ_C.
 
+**Important framing.** Γ_C is a static permission context, not a handler stack. Capabilities in Concrete are gates that are checked at the call site; they are never handled, transformed, or reified at the term level. A reader coming from Koka, Effekt, or OCaml 5 should resist the urge to interpret Γ_C as effect handlers in scope. There are none. The only operations on Γ_C are: extend (when entering a scope that introduces capabilities), check subset (at call sites), and expand through the lattice. There is no resume, no continue, no replay. See [../language/capability-polymorphism.md](../language/capability-polymorphism.md) for the broader framing.
+
 **Scope rule.**
 
 ```

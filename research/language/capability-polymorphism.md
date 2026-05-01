@@ -10,6 +10,14 @@ This note defines how higher-order code in Concrete should remain usable when ca
 
 This is a prerequisite for the structured concurrency direction in [async-concurrency-evidence.md](../stdlib-runtime/async-concurrency-evidence.md). Scope methods like `s.spawn(f, ...)` and combinators like `iter.map(f)` need a single signature that works whether `f` is pure, does I/O, spawns tasks, or holds `with(Concurrent)`.
 
+## Framing
+
+Concrete's capabilities are static permission gates, not algebraic effects. A `with(File)` annotation on a function is a check at the call site that the calling context holds the `File` permission. There is no handler, no resume, no continuation capture, and no runtime semantics associated with the capability itself.
+
+This note is therefore about **permission-set polymorphism**, not effect-row polymorphism. The mathematical structure is sets of permissions with union, subset, and lattice subsumption — closer to Rust `where` bounds, modular implicits, and capability-calculus prior art than to Koka's effect rows or Effekt's effect handlers. Languages that handle effects (Koka, Effekt, Frank, OCaml 5) face elaboration questions that do not arise here, because permissions are checked, not handled.
+
+Keep this distinction visible throughout the design. Treating capabilities as a kind of effect imports complexity Concrete deliberately does not need.
+
 ## The Problem
 
 A simple `map` looks like:
@@ -82,7 +90,7 @@ For library authors, this means the polymorphic parameter `C` is usually elidabl
 fn map<T, U>(xs: List<T>, f: fn(T) -> U) with(f) -> List<U>
 ```
 
-Where `with(f)` reads as "with whatever capabilities `f` requires." This is a notational shortcut for the explicit `<C>` form. It mirrors how Effekt and Koka handle effect-polymorphic signatures.
+Where `with(f)` reads as "with whatever capabilities `f` requires." This is a notational shortcut for the explicit `<C>` form. The mechanism is set propagation: take the union of the capability sets of all callbacks called inside the function body and require that union on the function itself.
 
 ## Bounds On Capability Sets
 
@@ -122,13 +130,30 @@ This matters because polymorphic capability sets compose through type checking, 
 
 The two systems are independent. Capabilities track *what authority* is required; linearity tracks *what values* must be consumed.
 
-## Effects Versus Capabilities
+## Capabilities Are Not Effects
 
-Concrete's capability system is closer to second-class capabilities (Effekt) than to first-class algebraic effects (Koka). Capabilities are statically required permissions, not user-handleable effects.
+This is the most important framing point in the note, worth stating directly.
 
-This note does not propose adding effect handlers. Capability polymorphism is enough to solve the higher-order combinator problem. Algebraic effects would be a much larger commitment with a different audit story, and the simpler capability model fits Concrete's evidence-bearing direction better.
+Concrete's capabilities are not effects. The differences:
 
-If effect handlers are ever added, they should be a separate construct on top of capabilities, not a replacement for them.
+| Property | Algebraic effects | Concrete's gated capabilities |
+|---|---|---|
+| Term-level reification | Effects are values; operations of an effect can be invoked | Capabilities are static markers; never appear as runtime values |
+| Handlers | Effects can be handled, transformed, intercepted | Capabilities cannot be handled; they are checked or rejected |
+| Continuations | Handlers may capture or resume continuations | No continuation machinery |
+| Runtime cost | Possible (handler dispatch, continuation allocation) | None; capabilities are compile-time only |
+| Polymorphism | Effect rows with row variables, often with row inference | Permission sets with subset/union and lattice subsumption |
+| Audit surface | Larger; handler resolution depends on lexical and dynamic context | Smaller; static check at the call site |
+
+This means polymorphism over capability sets is a strictly simpler problem than polymorphism over effect rows. The elaboration is set propagation, not row unification. Error messages can name the missing capability rather than explaining why an effect variable failed to instantiate.
+
+The simpler model is the right fit for Concrete's evidence-bearing positioning. There is no plan to add effect handlers, and this note does not assume them as a future direction.
+
+When this note refers to combinators like `map` or scope methods like `spawn`, the polymorphism is over the *permission set* the callback requires, full stop. Anything that would be called an "effect" in Koka or Effekt is, in Concrete, either:
+
+1. A capability the function requires (permission, no runtime semantics), or
+2. A linear value it consumes (resource, no permission semantics), or
+3. Both, independently tracked by separate parts of the type system.
 
 ## What Concrete Should Ship First
 
@@ -147,16 +172,28 @@ What can wait:
 1. Bounds on capability sets (`where C ⊆ {...}`).
 2. Capability-set difference / subtraction.
 3. First-class capability values at runtime.
-4. Effect handlers.
+
+Effect handlers are not on the list; they are not a planned future direction.
 
 ## Prior Art
 
-- **Effekt** (Brachthäuser et al.) treats capabilities as second-class with lexical scoping. Function signatures carry an effect set; effect polymorphism is the default. This is the closest theoretical match for Concrete's capability model.
-- **Koka** (Daan Leijen / Microsoft Research) has row-polymorphic effects with full algebraic-effect machinery. More expressive than Concrete needs, and the polymorphism story is mature.
-- **Frank** (Lindley / McBride / Hammond) has effect polymorphism via "effect ability." Smaller surface than Koka, more research-oriented.
-- **Roc** has abilities and is exploring capability propagation through generic code.
+The closest matches operate on permissions or aliasing capabilities, not effects:
 
-Concrete should study how these languages handle inference and error messages, because those are where effect-polymorphic systems most often fail in practice. A capability-polymorphic stdlib that produces unintelligible type errors when callers misalign is worse than one that requires explicit annotations.
+- **Capability calculus** (Walker, Crary, Morrisett, and successors) formalizes static capabilities as permission tokens that can be required, granted, and consumed in well-typed code. The polymorphism story uses set operations rather than row machinery. This is the closest theoretical match.
+- **Wyvern** (Aldrich's group at CMU) is a capability-safe object language. Its capability-passing discipline is similar to Concrete's gated capabilities, including the no-ambient-authority position.
+- **Pony** has reference capabilities (`iso`, `ref`, `val`, `tag`) that gate aliasing and cross-actor transfer. The domain is different from authority capabilities, but the static-gate-with-lattice-subsumption shape is the same.
+- **Modular implicits** (Carette, Kiselyov, White) and **Scala implicits** show how to elaborate generic code that requires implicit context without effect-handler machinery. This is the right kind of polymorphism inference for Concrete.
+- **Rust's `where` bounds** provide the user-facing surface analog: a function declares a constraint on its type parameters; the compiler checks at the call site. Capability bounds in Concrete should feel similar.
+
+Adjacent but different — these handle effects rather than gating permissions:
+
+- **Effekt** (Brachthäuser et al.) — second-class capabilities with handlers and lexical scoping. Closer to Concrete than Koka, but still effect-handler-based.
+- **Koka** (Daan Leijen / Microsoft Research) — row-polymorphic algebraic effects.
+- **Frank** (Lindley / McBride / Hammond) — effect polymorphism via "effect ability."
+- **OCaml 5** — effect handlers without static checking.
+- **Roc** — abilities; exploring effect-style propagation.
+
+These are worth reading for inference and error-message techniques, but their elaboration concerns (handler resolution, effect-row unification) do not arise in Concrete. A capability-polymorphic stdlib that produces unintelligible type errors when callers misalign is worse than one that requires explicit annotations; the lessons about diagnostics transfer even when the underlying mechanism does not.
 
 ## What Not To Add
 
@@ -174,7 +211,7 @@ For each higher-order signature, the compiler should be able to report:
 3. Whether the inferred set matches the declared set (mismatch is an error).
 4. For each call site, the capability set required at that site after substitution.
 
-This connects capability polymorphism to the broader evidence story: a function's effect surface is a reportable fact, not a hidden implementation detail.
+This connects capability polymorphism to the broader evidence story: a function's permission surface is a reportable fact, not a hidden implementation detail.
 
 ## One-Line Test
 
