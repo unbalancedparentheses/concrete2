@@ -162,7 +162,7 @@ Reference: [PROFILES.md](PROFILES.md)
 | Finished high-integrity profile | Named direction, not a completed profile |
 | Finished predictable profile | Partially real, still being tightened |
 | Stabilized first public release surface | Still evolving |
-| Concurrency safety | Single-threaded model assumed; concurrency is explicitly deferred |
+| Concurrency safety | Single-threaded model assumed; concurrency is explicitly deferred. Async/concurrency capabilities, structured scopes, linear task handles, and simulation-backed evidence are research directions, not current claims. |
 | Cross-package guarantees | Single-compilation-unit model today |
 
 ---

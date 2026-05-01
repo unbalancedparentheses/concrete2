@@ -15,7 +15,7 @@ These files are exploratory unless they explicitly say otherwise. Once a design 
 ## Directory Layout
 
 - `research/language/` — language-surface decisions, exclusions, and evidence-gated language ideas
-- `research/stdlib-runtime/` — stdlib shape, text/string direction, collections, execution/runtime pressure, targets, and resource models
+- `research/stdlib-runtime/` — stdlib shape, text/string direction, collections, execution/runtime pressure, targets, resource models, and concurrency research
 - `research/compiler/` — compiler architecture, backend direction, artifact/dataflow work, semantic diffing, and performance/backend research
 - `research/proof-evidence/` — formalization, proof workflows, evidence artifacts, trust bundles, and review/report direction
 - `research/packages-tooling/` — package model, testing workflow, developer tooling, authority budgets, and project/workspace UX
@@ -59,6 +59,7 @@ If you want the highest-leverage current research first:
 15. [proof-evidence/evidence-review-workflows.md](proof-evidence/evidence-review-workflows.md) — evidence bundles, machine-readable reports, and review workflows (`P0`, `Open`)
 16. [meta/ai-assisted-optimization.md](meta/ai-assisted-optimization.md) — optimization/refactoring loops driven by structured compiler reports (`P1`, `Research`)
 17. [proof-evidence/vericoding-and-evidence-product.md](proof-evidence/vericoding-and-evidence-product.md) — how Concrete should compete on reviewable verification products rather than NL-to-spec hype (`P0`, `Open`)
+18. [stdlib-runtime/async-concurrency-evidence.md](stdlib-runtime/async-concurrency-evidence.md) — research direction for evidence-bearing structured concurrency; not implemented (`P1`, `Open`)
 
 ## Language
 
@@ -101,6 +102,7 @@ If you want the highest-leverage current research first:
 - [stdlib-runtime/layout-reports.md](stdlib-runtime/layout-reports.md) — layout/ABI audit report improvements (`P1`, `Open`)
 - [stdlib-runtime/concurrency.md](stdlib-runtime/concurrency.md) — near-term concurrency direction (`P1`, `Open`)
 - [stdlib-runtime/long-term-concurrency.md](stdlib-runtime/long-term-concurrency.md) — long-horizon layered concurrency model (`P1`, `Open`)
+- [stdlib-runtime/async-concurrency-evidence.md](stdlib-runtime/async-concurrency-evidence.md) — `Async` versus `Concurrent`, structured scopes, linear handles, simulation-backed evidence; not implemented (`P1`, `Open`)
 - [stdlib-runtime/no-std-freestanding.md](stdlib-runtime/no-std-freestanding.md) — hosted vs freestanding / `no_std` split (`P1`, `Open`)
 - [stdlib-runtime/runtime-execution-pressure.md](stdlib-runtime/runtime-execution-pressure.md) — runtime/stack pressure from deep-recursive workloads (`P1`, `Open`)
 - [stdlib-runtime/target-platform-policy.md](stdlib-runtime/target-platform-policy.md) — support tiers, ABI promises, and target policy (`P1`, `Open`)

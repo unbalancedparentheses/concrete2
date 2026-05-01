@@ -78,10 +78,18 @@ Concrete takes:
 - no hidden GC
 - straightforward systems programming feel
 - preference for visible boundaries over language magic
+- the recent I/O design lesson that runtime choice should belong to the
+  application rather than splitting libraries into sync and async ecosystems
+
+Concrete is researching a related async/concurrency direction, but adapting it
+into capabilities, structured scopes, linear handles, and evidence reports
+rather than a pervasive `io` parameter or generic async/await color. See
+[../research/stdlib-runtime/async-concurrency-evidence.md](../research/stdlib-runtime/async-concurrency-evidence.md).
 
 Concrete does not take:
 
 - "manual control first, proof/evidence later" as the whole philosophy
+- async/evented I/O as an implemented feature today
 
 ### Austral
 
