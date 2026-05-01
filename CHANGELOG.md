@@ -10,6 +10,23 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Completed roadmap tasks moved out of the active roadmap
+
+The active roadmap now lists remaining work only. Completed Phase A/B/C task lines were removed from `ROADMAP.md`, summarized here, and the remaining phase task numbers were renumbered.
+
+- **Predictable-core foundation**: fixed-capacity examples, safe fixed-array Copy support, stack-depth reporting, predictable-boundary docs, failure strategy, failure-only discipline, parse/validate and service-style error-flow examples, the first predictable/core interpreter, diagnostic UX standards, trusted-boundary guide, freestanding split, standalone/project UX notes, project bootstrap design, example inventory/lifecycle/no-duplicate policy, and phase exit checklists are treated as completed history.
+- **Pre-stdlib pressure workloads**: parser/decoder, ownership-heavy structure, borrow/aliasing, trusted-wrapper/FFI, fixed-capacity/no-alloc, and cleanup/leak-boundary pressure sets are complete and now live as historical evidence rather than active roadmap tasks.
+- **Stdlib and syntax freeze history**: string/text/bytes contracts, stdlib target/audit/surface freeze, design principles, checked indexing, foundational modules, runtime collections, hosted/core split, anti-features, arithmetic policy, formatting/output, Result/error-flow ergonomics, module layout polish, docs/examples, workload-backed freeze evidence, LL(1) pattern cleanup, validated wrappers/newtypes, visibility/module hygiene, endian byte cursor APIs, layout contract, syntax review, and first-release surface freeze are now recorded as completed milestones instead of active tasks.
+
+### Concurrency research direction and lettered roadmap land
+
+The roadmap now uses lettered phases (`A`-`N`) with task numbering restarting inside each phase, and the concurrency/parallelism direction is documented as research rather than shipped behavior.
+
+- **Evidence-bearing concurrency direction**: `research/stdlib-runtime/async-concurrency-evidence.md` defines the long-term target: capability-gated structured concurrency, optional-overlap versus required concurrent progress, linear task handles, bounded channels, deterministic simulation, and concurrency evidence reports. README links the direction while explicitly saying async/concurrency is not implemented.
+- **Supporting research notes**: added focused notes for permission-set polymorphism (`research/language/capability-polymorphism.md`), bounded channels (`research/stdlib-runtime/channel-model.md`), FFI/cancellation boundaries (`research/stdlib-runtime/ffi-cancellation-boundary.md`), per-task stack analysis (`research/predictable-execution/concurrent-stack-analysis.md`), a concurrency formal model (`research/proof-evidence/concurrency-formal-model.md`), and a worked `--report concurrency` example (`research/proof-evidence/concurrency-evidence-example.md`).
+- **Gated capability framing**: capability polymorphism is now framed as static permission-set polymorphism, not effect-row polymorphism. Capabilities are documented as permission gates checked at call sites, with no handlers, resume semantics, continuation capture, or runtime capability values.
+- **Roadmap cleanup**: `ROADMAP.md` now has Phases `A`-`N`, per-phase task numbering, and a linear Phase L concurrency track. The active concurrency work starts with a pressure-test suite and v1 design freeze before any compiler implementation.
+
 ### Adversarial test sweep across language features finds three compiler bugs
 
 A breadth-first set of adversarial tests organised under `tests/programs/adversarial/<area>/` (newtype, enum_match, borrow, defer, generic, linear, trait_dispatch) exposed three unrelated compiler bugs. Each bug ships with a named regression test under either the area folder or `tests/programs/bug_*.con`, all wired into `make test`.
