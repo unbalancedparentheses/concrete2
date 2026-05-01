@@ -58,6 +58,24 @@ The intended shape is a small auditable core over feature growth:
 - explicit authority and trust markers
 - real Lean 4 proofs where the proof subset permits them
 
+## Research Direction: Evidence-Bearing Concurrency
+
+Concrete does **not** implement async, threads, channels, structured concurrency, or an evented I/O runtime yet. This is active research, not a shipped feature.
+
+The direction being explored is not Rust-style async/await or a global executor. The interesting target is **evidence-bearing structured concurrency**:
+
+- `with(Async)` for order-independent work that may safely run sequentially
+- `with(Concurrent)` for work that requires real concurrent progress for correctness
+- structured scopes where child tasks cannot outlive their parent scope
+- linear task handles, so task results must be joined or canceled and tasks cannot leak
+- owned-value transfer across task boundaries instead of Rust-style `Send` contagion
+- bounded channels, race/select, deadlines, and cooperative cancellation only if they fit the linear/evidence model
+- deterministic simulation as a future backend, so scheduler-dependent bugs can be reproduced from a seed and reported as evidence
+
+The key distinction is `Async` versus `Concurrent`. If two operations are merely independent, sequential fallback is correct and the code should only need `Async`. If two operations must both make progress or the program can deadlock, the code should require `Concurrent`. That makes "missing concurrency" a capability/type-system issue instead of a scheduler accident.
+
+The intended evidence story is that future reports could say which concurrent properties are compiler-enforced, which are only reported, which were simulation-tested, and which remain trusted assumptions. For the current design note, see [research/stdlib-runtime/async-concurrency-evidence.md](research/stdlib-runtime/async-concurrency-evidence.md).
+
 ## What This Looks Like
 
 The clearest example is [examples/thesis_demo/src/main.con](examples/thesis_demo/src/main.con):
@@ -185,8 +203,9 @@ What does not exist yet:
 1. broad proof coverage
 2. bounded-capacity types
 3. stack-depth reporting
-4. incremental compilation and package architecture
-5. backend plurality
+4. async/concurrency primitives or runtime backends
+5. incremental compilation and package architecture
+6. backend plurality
 
 For priorities, see [ROADMAP.md](ROADMAP.md). For landed milestones, see [CHANGELOG.md](CHANGELOG.md).
 
@@ -224,6 +243,7 @@ make clean
 - [research/thesis-validation/core-thesis.md](research/thesis-validation/core-thesis.md) — the clearest statement of the thesis
 - [research/thesis-validation/objective-matrix.md](research/thesis-validation/objective-matrix.md) — what the flagship examples are meant to prove
 - [research/proof-evidence/provable-properties.md](research/proof-evidence/provable-properties.md) — what Concrete should try to prove
+- [research/stdlib-runtime/async-concurrency-evidence.md](research/stdlib-runtime/async-concurrency-evidence.md) — research direction for evidence-bearing structured concurrency; not implemented
 - [research/](research/) — design research and future directions
 - [docs/](docs/README.md) — full documentation index
 

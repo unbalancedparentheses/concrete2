@@ -359,10 +359,25 @@ Expected outcome example: hovering over `fn check_nonce(...) -> Bool` in an edit
 
 Expected outcome example: a bounded queue or parser helper can carry claims like “no allocation” or “bounded allocation,” explicit overflow policy, and explicit failure-path assumptions rather than hand-wavy runtime promises.
 
-229. decide the analyzable-concurrency / predictable-execution subset before implementing general concurrency
-230. define the async/evented-I/O stance explicitly before deep runtime work: whether evented I/O stays library-level, whether async/await is intentionally out of scope, and what concurrency/runtime promises Concrete will or will not make
+229. decide the analyzable-concurrency / predictable-execution subset before implementing general concurrency; current research anchors are `research/predictable-execution/analyzable-concurrency.md` and `research/stdlib-runtime/async-concurrency-evidence.md`
+230. define the async/evented-I/O stance explicitly before deep runtime work: whether evented I/O stays library-level, whether async/await is intentionally out of scope, and what concurrency/runtime promises Concrete will or will not make; evaluate the `Async` versus `Concurrent` capability split, structured scopes, linear handles, and simulation-backed evidence before committing syntax
 231. implement OS threads + typed channels only after the concurrency stance is documented
 232. keep evented I/O as a later opt-in model, not the default concurrency story
+
+Concurrency research checkpoints before implementation:
+
+- define the capability lattice for `Async`, `Concurrent`, `Sync`, `Clock`, `Cancellable`, and future bounded-resource capabilities such as `Tasks(N)`
+- specify the semantic difference between optional overlap (`Async`) and required concurrent progress (`Concurrent`)
+- define structured concurrency scopes, scope exit behavior, child failure propagation, cancellation, and deadline inheritance
+- define linear task handles: join, cancel, race/select, handle ownership, and the rule that handles cannot escape their owning scope
+- define cross-task transfer rules: owned linear values may move, borrowed references may not cross task boundaries, and shared mutable state requires explicit synchronized types
+- decide the first channel model, including bounded capacity, close behavior, send/receive ownership transfer, and whether unbounded channels are permitted at all
+- define the first report-only concurrency facts: spawn sites, joins, waits, channels, shared synchronization, task counts, and possible blocking points
+- define which concurrency facts can become compiler-enforced evidence versus report-only evidence versus trusted assumptions
+- define deterministic simulation requirements: virtual clock, seeded scheduler, simulated I/O boundaries, replay artifacts, and CI seed reporting
+- define the restricted analyzable-concurrent profile separately from the default model: fixed task set, fixed-capacity channels, bounded waits, no shared mutable state, and explicit scheduler assumptions
+- keep evented I/O behind the same capability/scope model if it is added later; do not let it introduce a second async culture or global executor
+
 233. explicitly defer inline assembly until the backend contract, target/toolchain model, and trust-boundary story are strong enough to contain it honestly
 234. strengthen `--report alloc` so every user-visible allocation is attributed to a source location and call path
 235. add structural bounded-allocation reports where the compiler can explain the bound
@@ -415,7 +430,7 @@ The thesis references are [core-thesis](research/thesis-validation/core-thesis.m
 
 The proof/evidence references are [concrete-to-lean-pipeline](research/proof-evidence/concrete-to-lean-pipeline.md), [proving-concrete-functions-in-lean](research/proof-evidence/proving-concrete-functions-in-lean.md), [spec-attachment](research/proof-evidence/spec-attachment.md), [effectful-proofs](research/proof-evidence/effectful-proofs.md), [provable-systems-subset](research/proof-evidence/provable-systems-subset.md), [proof-addon-architecture](research/proof-evidence/proof-addon-architecture.md), [proof-ux-and-verification-influences](research/proof-evidence/proof-ux-and-verification-influences.md), [proof-ux-and-authoring-loop](research/proof-evidence/proof-ux-and-authoring-loop.md), [verification-product-model](research/proof-evidence/verification-product-model.md), [vericoding-and-evidence-product](research/proof-evidence/vericoding-and-evidence-product.md), [evidence-review-workflows](research/proof-evidence/evidence-review-workflows.md), and [proof-evidence-artifacts](research/proof-evidence/proof-evidence-artifacts.md).
 
-The language/runtime references are [checked-indexing-and-slice-views](research/language/checked-indexing-and-slice-views.md), [arithmetic-overflow-policy](research/language/arithmetic-overflow-policy.md), [opaque-validated-types](research/language/opaque-validated-types.md), [layout-contract-surface](research/language/layout-contract-surface.md), [failure-semantics](research/language/failure-semantics.md), [high-integrity-profile](research/language/high-integrity-profile.md), [memory-ub-boundary](research/language/memory-ub-boundary.md), [trusted-code-policy](research/language/trusted-code-policy.md), [contracts-and-invariants-gating](research/language/contracts-and-invariants-gating.md), [interrupt-signal-model](research/language/interrupt-signal-model.md), [allocation-budgets](research/stdlib-runtime/allocation-budgets.md), [arena-allocation](research/stdlib-runtime/arena-allocation.md), [execution-cost](research/stdlib-runtime/execution-cost.md), and [long-term-concurrency](research/stdlib-runtime/long-term-concurrency.md).
+The language/runtime references are [checked-indexing-and-slice-views](research/language/checked-indexing-and-slice-views.md), [arithmetic-overflow-policy](research/language/arithmetic-overflow-policy.md), [opaque-validated-types](research/language/opaque-validated-types.md), [layout-contract-surface](research/language/layout-contract-surface.md), [failure-semantics](research/language/failure-semantics.md), [high-integrity-profile](research/language/high-integrity-profile.md), [memory-ub-boundary](research/language/memory-ub-boundary.md), [trusted-code-policy](research/language/trusted-code-policy.md), [contracts-and-invariants-gating](research/language/contracts-and-invariants-gating.md), [interrupt-signal-model](research/language/interrupt-signal-model.md), [allocation-budgets](research/stdlib-runtime/allocation-budgets.md), [arena-allocation](research/stdlib-runtime/arena-allocation.md), [execution-cost](research/stdlib-runtime/execution-cost.md), [long-term-concurrency](research/stdlib-runtime/long-term-concurrency.md), and [async-concurrency-evidence](research/stdlib-runtime/async-concurrency-evidence.md).
 
 The compiler/package references are [semantic-diff-and-trust-drift](research/compiler/semantic-diff-and-trust-drift.md), [miri-style-interpreter](research/compiler/miri-style-interpreter.md), [persistent-equality-and-rewrite-state](research/compiler/persistent-equality-and-rewrite-state.md), [package-model](research/packages-tooling/package-model.md), and [proof-aware-package-boundaries](research/packages-tooling/proof-aware-package-boundaries.md).
 
