@@ -244,6 +244,12 @@ make clean
 - [research/thesis-validation/objective-matrix.md](research/thesis-validation/objective-matrix.md) — what the flagship examples are meant to prove
 - [research/proof-evidence/provable-properties.md](research/proof-evidence/provable-properties.md) — what Concrete should try to prove
 - [research/stdlib-runtime/async-concurrency-evidence.md](research/stdlib-runtime/async-concurrency-evidence.md) — research direction for evidence-bearing structured concurrency; not implemented
+- [research/stdlib-runtime/channel-model.md](research/stdlib-runtime/channel-model.md) — first channel model; capacity-typed, ownership-transferring, linear handles
+- [research/stdlib-runtime/ffi-cancellation-boundary.md](research/stdlib-runtime/ffi-cancellation-boundary.md) — cancellation semantics across FFI and trusted regions
+- [research/language/capability-polymorphism.md](research/language/capability-polymorphism.md) — polymorphism over capability sets; prerequisite for usable higher-order stdlib
+- [research/predictable-execution/concurrent-stack-analysis.md](research/predictable-execution/concurrent-stack-analysis.md) — per-task stack bounds; prerequisite for evented backend
+- [research/proof-evidence/concurrency-formal-model.md](research/proof-evidence/concurrency-formal-model.md) — operational semantics, typing rules, Lean mechanization plan
+- [research/proof-evidence/concurrency-evidence-example.md](research/proof-evidence/concurrency-evidence-example.md) — worked example with `--report concurrency` output
 - [research/](research/) — design research and future directions
 - [docs/](docs/README.md) — full documentation index
 

@@ -141,6 +141,19 @@ This makes transferability a consequence of ownership, not a second structural p
 
 `Shared<T>` is the risk point. If it becomes too convenient, it becomes the new contagion mechanism. The design should keep shared mutable state visible, capability-gated, and uncommon.
 
+### Borrows Across Cancellation Checkpoints
+
+Cross-task transfer rules cover what crosses scope boundaries. A separate question is what may be held across cancellation checkpoints (`await`, blocking channel ops, `check_cancel`) within a single task.
+
+The intended rule depends on the runtime backend:
+
+- **Stackful coroutines.** Each task has its own stack. Borrows from the task's own stack are stable across checkpoints because the stack persists. This is the simpler model and is likely the first implementation.
+- **Stackless coroutines.** The compiler transforms the task into a state machine; locals that span checkpoints become fields of a generated struct. Borrows into stack-allocated locals do not cross checkpoints in general; references must be reified or moved into the state.
+
+The first model is the target. Stackless coroutines are out of scope for the initial implementation; if they are added later, the rules for borrows across checkpoints must be tightened to match the state-machine transform.
+
+This is a real difference from Rust async, which uses stackless coroutines and has complex rules about what may be held across `await`. Concrete's structured-concurrency story is simpler if it commits to stackful coroutines for the evented backend.
+
 ## Race And Select
 
 Race/select should be linear-aware from the beginning.
@@ -261,19 +274,70 @@ The important design principle is that each resource claim must say what evidenc
 
 Do not add `Tasks(N)`, `Heap(N)`, or `Time(N)` as syntax until the checker/report pipeline can explain the source of the bound.
 
+## No Syntactic Async Color
+
+A practical consequence of the design: there should be no `async` keyword on functions, and no async-specific call syntax inside scopes.
+
+A function that takes a capability parameter is just a function. A call inside a scope is a normal call:
+
+```con
+scope s with(Async) {
+    s.spawn(save_file, "a.txt", data);
+    process(other_data);  // ordinary call, no async marker
+}
+```
+
+`save_file` itself has no `async` keyword anywhere in its definition. The same `save_file` is callable outside any scope as a sequential operation:
+
+```con
+save_file("a.txt", data);  // sequential, same function
+```
+
+The library author never chooses async or sync. The application author chooses by deciding whether to call inside a scope. This is a stronger position than Zig's design, which still has `io.async` as a syntactic marker at the call site. Concrete should avoid even that residual coloring.
+
+The only async-specific syntax in the language is the `scope` block itself.
+
+## Test As Capability Instantiation
+
+The capability model enables a clean test story without runtime dependency injection. A test substitutes capability implementations at compile time:
+
+```con
+#[test]
+fn test_handler() {
+    let mock_clock = MockClock::at(t0);
+    let mock_file = MockFile::with_contents("hello");
+    handle_request(req) with mock_file, mock_clock
+}
+```
+
+This subsumes:
+
+- mocking frameworks (compile-time substitution rather than runtime patching)
+- time abstraction libraries (`with(Clock)` instantiated with virtual time)
+- filesystem abstraction (same mechanism)
+- property-based testing of I/O (instantiate the capability with a fuzzed implementation)
+
+Combined with the `Sim` backend, this becomes the highest-confidence test surface available in any production systems language: every external dependency is a typed capability, every capability has a test instantiation, every test has deterministic execution.
+
+The test instantiation pipeline does not require new language machinery beyond capability polymorphism. It is a stdlib pattern enabled by the existing capability surface.
+
 ## What Not To Add
 
 To keep this coherent:
 
 - no detached spawn outside a scope
 - no global executor
-- no async function color
+- no async function color (no `async` keyword, no async-specific call syntax)
 - no actor model as the core language model
 - no software transactional memory
 - no broad dynamic dispatch over async functions
 - no evented runtime as the first concurrency milestone
 
 The runtime capability is the executor. The scope is the lifecycle boundary. The evidence report is the audit surface.
+
+## One-Line Test
+
+A Concrete concurrency feature is good if it makes concurrent code easier to audit than the equivalent Rust code, not merely shorter to write. Every primitive in this note should pass that bar; primitives that fail it should be cut.
 
 ## Implementation Order
 
@@ -294,6 +358,12 @@ This sequencing preserves the current pragmatic path while giving the long-term 
 
 - [concurrency.md](concurrency.md): near-term implementation direction, still threads-first
 - [long-term-concurrency.md](long-term-concurrency.md): broader structured-concurrency direction
+- [channel-model.md](channel-model.md): first channel design; capacity-typed, ownership-transferring, linear handles
+- [ffi-cancellation-boundary.md](ffi-cancellation-boundary.md): how cancellation interacts with FFI and trusted regions
+- [../language/capability-polymorphism.md](../language/capability-polymorphism.md): polymorphism over capability sets, prerequisite for usable higher-order stdlib
 - [../predictable-execution/analyzable-concurrency.md](../predictable-execution/analyzable-concurrency.md): predictable-profile restrictions
+- [../predictable-execution/concurrent-stack-analysis.md](../predictable-execution/concurrent-stack-analysis.md): per-task stack bounds, prerequisite for evented backend
 - [allocation-budgets.md](allocation-budgets.md): future bounded-resource capability direction
+- [../proof-evidence/concurrency-formal-model.md](../proof-evidence/concurrency-formal-model.md): operational semantics, typing rules, theorems, Lean mechanization plan
+- [../proof-evidence/concurrency-evidence-example.md](../proof-evidence/concurrency-evidence-example.md): worked example program with `--report concurrency` output
 - [../proof-evidence/evidence-review-workflows.md](../proof-evidence/evidence-review-workflows.md): evidence artifacts and review workflow
