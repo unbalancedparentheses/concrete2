@@ -17,6 +17,8 @@ Concrete is a small systems programming language for evidence-carrying software.
 
 It is built in Lean 4 and aims to make authority, predictable execution, resource risk, trust boundaries, and proof evidence visible to the compiler, reviewers, CI, and AI tools.
 
+The core pitch is: **systems code with explicit authority, bounded behavior, small trusted boundaries, and a path from compiler-enforced properties to Lean-backed proof, while keeping backend, compiler, toolchain, and target assumptions honest.**
+
 Concrete is designed for human auditability first. A useful side effect is that the same explicit boundaries and compiler facts make it unusually legible to LLM-assisted coding and review, because the model can ask the compiler what code is allowed to do instead of guessing from source alone.
 
 ## The Language

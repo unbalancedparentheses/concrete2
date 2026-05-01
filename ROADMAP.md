@@ -2,6 +2,8 @@
 
 This document is the active execution plan. It answers one question: **what should happen next, in what order?**
 
+North star: **systems code with explicit authority, bounded behavior, small trusted boundaries, and a path from compiler-enforced properties to Lean-backed proof, while keeping backend, compiler, toolchain, and target assumptions honest.**
+
 Read the active list with the explicit **Active Dependency Order** below rather than assuming phase letters are a strict execution sequence. The 14 phase letters below are thematic buckets for remaining work, and task numbering restarts inside each phase.
 
 For landed work, see [CHANGELOG.md](CHANGELOG.md). For detailed design, see `docs/` and `research/`.
@@ -50,14 +52,14 @@ For fast scanning, the remaining major missing feature surfaces are:
 | A. Predictable Core | 1-3 | Make bounded, predictable, failure-aware code usable before broadening scope. |
 | B. Pre-Stdlib Pressure Workloads | closed | Use real workloads to discover what the stdlib must actually provide. |
 | C. Stdlib and Syntax Freeze | 1-3 | Define, build, polish, and freeze the first-release stdlib, visibility, error, binary parsing, and LL(1) syntax surface. |
-| D. Tooling, Tests, and Wrong-Code Corpus | 1-21 | Make examples, docs, formatting, fuzzing, wrong-code capture, minimization, and instant feedback normal workflow. |
-| E. Performance, Artifacts, and Contract Hardening | 1-22 | Put budgets, reports, artifacts, and explicit failure behavior around the compiler. |
-| F. Release Credibility and Showcase | 1-23 | Prepare honest public positioning, C-replacement validation, and release packaging only after the broader proof/toolchain surface is stable enough to defend publicly. |
+| D. Tooling, Tests, and Wrong-Code Corpus | 1-22 | Make examples, docs, formatting, fuzzing, wrong-code capture, minimization, and instant feedback normal workflow. |
+| E. Performance, Artifacts, and Contract Hardening | 1-25 | Put budgets, reports, artifacts, and explicit failure behavior around the compiler. |
+| F. Release Credibility and Showcase | 1-24 | Prepare honest public positioning, C-replacement validation, and release packaging only after the broader proof/toolchain surface is stable enough to defend publicly. |
 | G. Proof Expansion and Provable Subset | 1-25 | Grow ProofCore, obligations, and provable-subset claims only after the surrounding language, stdlib, tooling, and runtime-profile surface is stable enough that the new proofs mean something durable. |
 | H. Backend, Target, and Incremental Pipeline | 1-20 | Stabilize backend contracts, targets, incremental builds, and semantic regression coverage. |
 | I. Compiler Verification and Preservation Proofs | 1-10 | Scope and prove selected compiler properties only after the proof workflow, backend contract, and artifact semantics are stable enough to justify them. |
 | J. Package System and Dependency Trust | 1-16 | Add packages only after artifacts, visibility, and trust summaries know what they must carry. |
-| K. Editor, Artifact UX, and Compatibility | 1-12 | Expose facts, diagnostics, refactoring, proof state, artifacts, compatibility tests, and stability policy to users and tools. |
+| K. Editor, Artifact UX, and Compatibility | 1-13 | Expose facts, diagnostics, refactoring, proof state, artifacts, compatibility tests, and stability policy to users and tools. |
 | L. Runtime Profiles, Allocation, and Predictability | 1-16 | Define concurrency, allocation, stack, failure, timing, and overflow boundaries early enough that proof and release claims do not outrun the runtime model. |
 | M. Public Readiness and User Tooling | 1-13 | Make the language easier to adopt, audit, govern, and evolve publicly. |
 | N. Long-Horizon Research Backlog | 1-12 | Keep speculative language/runtime/research ideas visible but clearly gated. |
@@ -141,6 +143,7 @@ Expected outcome example: a proved parser helper and an ownership-heavy negative
 19. add docs/CLI truthfulness gates: every documented command in the book and top-level docs should have a smoke test or an explicit "design only" label, so surfaces like `concrete new` cannot be presented as real before implementation lands
 20. quarantine known external toolchain/interpreter bugs from the default developer workflow while retaining named reproductions and native/compiler-level checks; external failures such as `lli` crashes should not make the normal fast path look like a Concrete miscompile
 21. make example metadata machine-readable and generate the inventory/lifecycle/no-duplicate docs from it so example status, oracle strategy, promotion state, and phase ownership cannot drift across docs and roadmap
+22. make negative examples first-class documentation and regression material: every major checker, capability, ownership, predictable, proof, FFI, and concurrency rule should have at least one small rejected example that explains what Concrete refuses and why
 
 ### Phase E: Performance, Artifacts, and Contract Hardening
 
@@ -168,6 +171,9 @@ Expected outcome example: a proof-bearing function ships with stable report arti
 20. give modules, declarations, obligations, diagnostics, reports, and proof subjects stable identities and deterministic fingerprints so cache keys, diffs, artifact viewers, and external tools are not forced to key off ephemeral pass-local structure
 21. define deterministic artifact serialization and compatibility rules before dumps/JSON become product dependencies: canonical ordering, hashing scope, schema/version rules, reproducibility expectations, and explicit allowances for redacted or host-specific fields
 22. add end-to-end source traceability across the important IR boundaries: source -> resolved names -> checked/elaborated forms -> Core/ProofCore -> lowered/SSA/report artifacts, with enough links that a reviewer can connect diagnostics, proof obligations, and codegen behavior back to source without guesswork
+23. add authority/evidence diffing as a first-class artifact workflow: show when a function, module, package, or commit gains capabilities such as `File`, `Alloc`, `Unsafe`, trusted assumptions, allocation, proof obligations, or weaker evidence levels
+24. add explicit assumption files as machine-readable artifacts: target, compiler, backend, OS, toolchain, FFI contracts, external libraries, trusted regions, and proof/evidence assumptions should be versioned and diffable
+25. add project policy files for enforceable authority and evidence budgets: examples include no `Unsafe`, no `Alloc`, max stack, only these capabilities, no trusted functions outside `trusted/`, and required proof/evidence levels for selected modules
 
 ### Phase F: Release Credibility and Showcase
 
@@ -189,13 +195,14 @@ Expected outcome example: a flagship packet/header validator has explicit author
 14. build a named big-workload flagship set, not just small pressure examples: at minimum one real protocol/parser security example, one crypto/security proof example, one privilege-separated tool, one ownership-heavy medium program, and one bounded/no-alloc medium program; the set should be explicit enough that no core thesis area is represented only by snippets
 15. require each big-workload flagship to have honest proof/trust boundary framing, report/snapshot/diff coverage, and an oracle when possible (fuzzing, differential testing, round-trip properties, or model-based checks) so they function as real validation workloads instead of marketing demos
 16. define first public release criteria: the first stable supported subset, required examples across small, medium, and big workloads, required diagnostics, required proof workflow, required stdlib/project UX, and the minimum evidence/policy/tooling story for outsiders; the example bar must explicitly include parser/decoder, ownership-heavy, borrow/aliasing, trusted-wrapper/FFI, fixed-capacity, cleanup/leak-boundary, the named big-workload programs, the named profile surfaces, and a release evidence contract for each flagship example (proof/report/diff artifacts plus explicit assumptions)
-17. define a public security and soundness disclosure policy before first release: how users report compiler soundness bugs, miscompiles, stdlib safety bugs, proof-evidence bugs, and trusted-boundary issues, plus expected triage and embargo handling
+17. define a public security and soundness disclosure policy before first release: compiler soundness bugs are security bugs, and users need a clear process for reporting miscompiles, stdlib safety bugs, proof-evidence bugs, trusted-boundary issues, plus expected triage and embargo handling
 18. define the release/install distribution matrix before the first real public release: release binaries, supported host triples, checksums/signing, install paths, and which distribution channels are first-class versus deferred
 19. define reproducible release-build expectations for the compiler and distribution artifacts: what must be bit-for-bit reproducible, what may vary, how rebuilds are verified, and how non-reproducible components are documented
 20. define compiler-release supply-chain provenance: signed release binaries, checksums, source commit identity, Lean/toolchain identity, build environment metadata, and verification instructions for users
 21. ship the first real public language release once those criteria are actually met: version the release honestly, publish the supported subset and known limits, ship installable artifacts, and make the release promise narrower than the full roadmap
 22. write the real language book/tutorial path only after the first stable supported subset and first public release criteria are concrete enough that teaching the language will not churn with every compiler refactor
 23. add a REPL and lightweight playground workflow once the parser/checker diagnostics and project UX are stable enough that quick experimentation will reflect the real language instead of a toy front-end
+24. add a focused "Concrete catches this" showcase: examples where C, Rust, Zig, or SPARK/Ada would rely on convention, review discipline, or external tooling, while Concrete rejects the program or reports the authority/trust/evidence boundary directly; include matching "why not" docs for rejected language directions such as GC, actors, STM, hidden async, effect handlers, broad inference, and detached tasks
 
 ### Phase G: Proof Expansion and Provable Subset
 
@@ -296,7 +303,7 @@ Expected outcome example: hovering over `fn check_nonce(...) -> Bool` in an edit
 2. define the LSP/editor feature scope explicitly: go-to-definition, hover/type info, diagnostics, formatting, rename, code actions, and fact/proof-aware language features
 3. treat refactoring support as an explicit product goal, not an incidental side effect of LSP work: rename, move, extract-helper, interface extraction, and dead-code cleanup should preserve or clearly update facts/proofs where possible; examples should include moving a parser helper between modules, renaming a proof-attached validator, and extracting a capability-free core from an effectful shell
 4. add fact/proof-aware editor UX: capability/evidence hover, predictable/proof status per function, and jump/link surfaces for obligations, extraction, and traceability
-5. add a small human-friendly artifact viewer UX (CLI/TUI/web) for facts, diff, evidence, and proof state once the JSON/schema surfaces stabilize
+5. add a small human-friendly artifact viewer UX (CLI/TUI/web) for facts, diff, evidence, and proof state once the JSON/schema surfaces stabilize; reports must be readable enough for a security reviewer or systems engineer, not only JSON for tools
 6. add dependency auditing for capability, allocation, FFI, trust, evidence, predictability, and proof-obligation drift
 7. set a stronger docs/tooling UX bar for external users: generated docs, language-server quality, newcomer navigation, and project-level discoverability must be treated as first-class deliverables rather than polish work
 8. add one canonical “how to use Result well” docs-and-examples surface so explicit error handling stays teachable, consistent, and visible in user-facing tooling
@@ -304,13 +311,14 @@ Expected outcome example: hovering over `fn check_nonce(...) -> Bool` in an edit
 10. build a backwards-compatibility regression corpus once public users exist: old accepted programs, old facts/reports, old proof artifacts, deprecated syntax/API examples, and expected migration diagnostics should remain testable across releases
 11. define explicit language/versioning/deprecation policy across syntax, stdlib APIs, and proof/fact artifacts so users know what stability guarantees exist and how removals happen
 12. add stdlib quality gates for the bounded systems surface: API stability expectations, allocation/capability discipline, proof/predictability friendliness for core modules, and compatibility rules for example-grade helper APIs
+13. add a tiny `concrete audit` bundle command after the underlying reports are stable: produce one human-readable and machine-readable package of capabilities, unsafe/trusted boundaries, allocation, stack, proof/evidence, FFI, backend/target assumptions, policy violations, and authority/evidence drift
 
 ### Phase L: Runtime Profiles, Allocation, and Predictability
 
 Expected outcome example: a bounded queue or parser helper can carry claims like “no allocation” or “bounded allocation,” explicit overflow policy, and explicit failure-path assumptions rather than hand-wavy runtime promises.
 
 1. decide the analyzable-concurrency / predictable-execution subset before implementing general concurrency; current research anchors are `research/predictable-execution/analyzable-concurrency.md`, `research/predictable-execution/concurrent-stack-analysis.md`, `research/stdlib-runtime/async-concurrency-evidence.md`, `research/stdlib-runtime/channel-model.md`, `research/stdlib-runtime/ffi-cancellation-boundary.md`, `research/language/capability-polymorphism.md`, `research/proof-evidence/concurrency-formal-model.md`, and `research/proof-evidence/concurrency-evidence-example.md`
-2. build the concurrency pressure-test suite before implementation: design-only `.con` sketches plus expected reports for optional overlap, required concurrent progress, race/select, bounded channels, scope return values, nested scopes, cancellation edges, FFI blocking edges, and rejected misuse cases; use this suite to push the proposed language model before adding compiler support
+2. build the concurrency pressure-test suite before implementation: design-only `.con` sketches plus expected reports for optional overlap, required concurrent progress, race/select, bounded channels, scope return values, nested scopes, cancellation edges, FFI blocking edges, and rejected misuse cases such as leaked handles, borrows crossing task boundaries, detached spawn, unbounded channels in bounded profiles, and `Concurrent` use without required authority; use this suite to push the proposed language model before adding compiler support
 3. freeze the v1 concurrency surface before implementation: capability names/lattice, lexical scope rules, spawn/join signatures, linear handle rules, bounded channel shape, result-flow rules, ownership-transfer rules, rejected forms, and `--report concurrency` schema
 4. implement OS threads + structured scopes + typed bounded channels only after the concurrency stance is documented, pressure-tested, and formalized enough to support evidence claims
 
