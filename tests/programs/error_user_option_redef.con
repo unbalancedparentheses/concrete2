@@ -1,0 +1,19 @@
+// Bug 056 reproducer (open_with_reproducer): a user module redefining
+// `enum Option<T>` with a DIVERGENT payload is silently shadowed by the builtin
+// Option — the user's `extra` field is resolved against the builtin Some (which
+// has no `extra`), producing a confusing-but-stable E0253. This pins the
+// name-as-identity defect. When R-0001's containment slice replaces the
+// bare-name Option/Result exclusion with resolved builtin origin, change the
+// expectation to the purpose-built "cannot redefine builtin Option" diagnostic;
+// Phase 8 (canonical identity) changes it again to valid coexistence.
+// See docs/bugs/056_user_option_redefinition_shadowed.md.
+mod m {
+    enum Option<T> { Some { value: T, extra: i64 }, None }
+    pub fn main() -> i64 {
+        let a: Option<i64> = Option::<i64>::Some { value: 7, extra: 100 };
+        match a {
+            Option::Some { value, extra } => { return value + extra; },
+            Option::None => { return 0; }
+        }
+    }
+}

@@ -313,6 +313,109 @@ def check(src, tmp):
         return None
     return ("TRAP-DIVERGENCE", f"compiled={cstat}:{cout}", f"interp={istat}:{iout}")
 
+# ============================================================
+# Generic-enum shape fuzzing (R-0001 / bug 051). The general fuzzer treats a
+# checker rejection as "invalid program, not a bug" — WRONG for generic enums,
+# where a SUPPORTED flat/mixed-width instantiation being rejected (E0808) is a
+# regression. So generic-enum shapes carry an explicit classification:
+#   flat   -> must compile AND match interp; E0808 (or any reject) is a failure.
+#   nested -> temporarily unsupported: may produce EXACTLY E0808; if it instead
+#             compiles, it must match interp; any OTHER rejection is a failure.
+# Always-failures (both classes): compiler_bug/LLVM/link/panic/crash, hang,
+# interp gap on a program the compiler accepted, and output mismatch.
+# When the joint struct+enum fixpoint lands, nested shapes start compiling; the
+# fixture inventory (not this stochastic pass) enforces promoting them from
+# e0808_pending to must_execute.
+# ============================================================
+
+def gen_flat_ge(rng):
+    """A generic enum instantiated at 2-3 DIFFERENT widths (the mixed-layout
+    bug-051 class). Copy types keep it linearity-noise-free."""
+    widths = rng.sample(["i16", "i32", "i64", "u32"], rng.randint(2, 3))
+    lines = ["        let mut d: i64 = 0;"]
+    for i, w in enumerate(widths):
+        val = rng.randint(0, 100)  # small: fits every width
+        if rng.random() < 0.8:
+            lines.append(f"        let e{i}: W<{w}> = W::<{w}>::V {{ x: {val} }};")
+        else:
+            lines.append(f"        let e{i}: W<{w}> = W::<{w}>::N;")
+        lines.append(f"        match e{i} {{ W::V {{ x }} => {{ d = d + (x as i64); }}, W::N => {{}} }}")
+    lines.append("        println(d % 100000);")
+    src = ("mod m {\n    enum Copy W<T> { V { x: T }, N }\n"
+           "    fn main() with(Console) {\n" + "\n".join(lines) + "\n    }\n}\n")
+    return src, "flat"
+
+def gen_nested_ge(rng):
+    """Struct-in-enum or enum-in-enum payload — the nested case pending the
+    fixpoint (currently a clean E0808 residual)."""
+    w = rng.choice(["i32", "i64"])
+    if rng.random() < 0.5:
+        a, b = rng.randint(0, 50), rng.randint(0, 50)
+        src = ("mod m {\n    struct Copy Pair<T> { a: T, b: T }\n"
+               "    enum Copy Box<T> { B { p: Pair<T> }, E }\n"
+               "    fn main() with(Console) {\n"
+               f"        let x: Box<{w}> = Box::<{w}>::B {{ p: Pair::<{w}> {{ a: {a}, b: {b} }} }};\n"
+               "        match x { Box::B { p } => { println(((p.a as Int) + (p.b as Int)) % 100000); }, Box::E => { println(0); } }\n"
+               "    }\n}\n")
+    else:
+        v = rng.randint(0, 100)
+        src = ("mod m {\n    enum Copy Inner<T> { I { v: T }, X }\n"
+               "    enum Copy Outer<T> { O { inner: Inner<T> }, Y }\n"
+               "    fn main() with(Console) {\n"
+               f"        let x: Outer<{w}> = Outer::<{w}>::O {{ inner: Inner::<{w}>::I {{ v: {v} }} }};\n"
+               "        match x { Outer::O { inner } => { match inner { Inner::I { v } => { println((v as Int) % 100000); }, Inner::X => { println(0); } } }, Outer::Y => { println(0); } }\n"
+               "    }\n}\n")
+    return src, "nested"
+
+GE_STATS = {"flat_exec": 0, "nested_e0808": 0, "nested_exec": 0}
+
+def check_ge(src, shape, tmp):
+    """Shape-aware differential check. Returns a failure tuple or None."""
+    path = os.path.join(tmp, "ge.con")
+    with open(path, "w") as fh:
+        fh.write(src)
+    cstat, cout = run(path, "compiled")
+    if cstat == "compiler_bug":
+        return ("GE-COMPILER-BUG", f"{shape}", cout)  # LLVM/panic/crash always fail
+    if cstat == "rejected":
+        if shape == "flat":
+            return ("GE-FLAT-REJECTED", "supported flat/mixed generic enum was rejected (E0808 regression?)", cout)
+        # nested: only an EXACT E0808 residual is acceptable
+        if "(E0808)" in cout:
+            GE_STATS["nested_e0808"] += 1
+            return None
+        return ("GE-NESTED-WRONG-REJECT", "nested generic enum rejected WITHOUT E0808 (parser/other diagnostic)", cout)
+    # compiled produced a value or a trap -> it MUST match interp
+    istat, iout = run(path, "interp")
+    if cstat == "timeout" or istat == "timeout":
+        return ("GE-HANG", f"compiled={cstat}", f"interp={istat}")
+    if istat == "pending":
+        return ("GE-INTERP-GAP", f"compiled={cstat}:{cout}", "interp pending on an accepted generic-enum program")
+    if cstat == "value" and istat == "value":
+        if cout != iout:
+            return ("GE-MISMATCH", cout, iout)
+        GE_STATS["flat_exec" if shape == "flat" else "nested_exec"] += 1
+        return None
+    if cstat == "trap" and istat == "trap":
+        return None
+    return ("GE-DIVERGENCE", f"compiled={cstat}:{cout}", f"interp={istat}:{iout}")
+
+def fuzz_generic_enums(n, seed, tmp):
+    rng = random.Random(seed)
+    for i in range(n):
+        src, shape = (gen_flat_ge(rng) if rng.random() < 0.5 else gen_nested_ge(rng))
+        res = check_ge(src, shape, tmp)
+        if res:
+            print(f"\n=== GENERIC-ENUM FUZZ FAILURE (seed {seed}, case {i}, shape {shape}) ===")
+            print(f"{res[0]}: {res[1]!r} / {res[2]!r}")
+            print("--- program ---\n" + src)
+            with open(os.path.join(ROOT, "fuzz_fail.con"), "w") as fh:
+                fh.write(src)
+            sys.exit(1)
+    print(f"FUZZ-GENERIC-ENUMS: {n} programs, 0 failures "
+          f"(flat_exec={GE_STATS['flat_exec']} nested_e0808={GE_STATS['nested_e0808']} "
+          f"nested_exec={GE_STATS['nested_exec']}; seed {seed})")
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--n", type=int, default=300)
@@ -322,10 +425,17 @@ def main():
     ap.add_argument("--no-loops", action="store_true",
                     help="don't generate while-loops (debugging aid; the H7 loop-SSA bug "
                          "it once exposed is now fixed)")
+    ap.add_argument("--generic-enums", type=int, default=0, metavar="N",
+                    help="run N classified generic-enum shape cases (R-0001/bug 051): flat "
+                         "mixed-width instantiations must compile & match interp; nested may "
+                         "be exact E0808. Runs this pass INSTEAD of the general fuzzer.")
     args = ap.parse_args()
     if not os.access(CC, os.X_OK):
         print(f"error: build first ({CC} missing)", file=sys.stderr); sys.exit(2)
     tmp = tempfile.mkdtemp()
+    if args.generic_enums > 0:
+        fuzz_generic_enums(args.generic_enums, args.seed, tmp)
+        return
     rng = random.Random(args.seed)
     checked = 0
     for i in range(args.n):

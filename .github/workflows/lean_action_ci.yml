@@ -199,6 +199,9 @@ jobs:
           echo "seed: $SEED"
           python3 scripts/tests/fuzz_differential.py --n 2000 --seed "$SEED" --depth 3
           python3 scripts/tests/fuzz_differential.py --n 500 --seed "$SEED" --depth 4
+          # R-0001 / bug 051: classified generic-enum shapes — flat mixed-width
+          # instantiations must compile & match interp; nested may be exact E0808.
+          python3 scripts/tests/fuzz_differential.py --generic-enums 400 --seed "$SEED"
 
       - name: Linearity fuzz campaign (ground-truth conservation oracle, rotating seed)
         run: |

@@ -1305,6 +1305,7 @@ flush_jobs
 if section_active negative; then
 echo "=== Negative tests (expected errors) ==="
 run_err "$TESTDIR/error_generic_enum_051.con"  "(E0808)"  # R-0001 containment: E0808 specifically
+run_err "$TESTDIR/error_user_option_redef.con" "E0253"    # bug 056 open_with_reproducer: user Option redef silently shadowed by builtin (name-as-identity). Change to purpose-built diagnostic when R-0001 step 5 lands.
 run_err "$TESTDIR/error_unconsumed.con"        "was never consumed"
 run_err "$TESTDIR/error_use_after_move.con"    "used after move"
 run_err "$TESTDIR/error_branch_disagree.con"   "consumed in one branch"
