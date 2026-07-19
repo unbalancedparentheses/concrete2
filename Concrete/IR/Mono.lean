@@ -978,6 +978,22 @@ private partial def monoEnumsInProgram (modules : List CModule) : List CModule :
     let first' := { first' with enums := first'.enums ++ newEnums }
     first' :: rest.map rewriteModule
 
+/-- Post-mono residual scan (R-0001 keystone). Collect every `.generic <user-type>`
+    that survived BOTH mono passes anywhere — function signatures/bodies, struct
+    fields, and enum payloads. `gn` is the set of user generic type names;
+    builtins (Vec/HashMap/…) are excluded inside `collectGenericTyInstances` and
+    Option/Result are kept out of `gn`. `dedupInstances` drops any instance still
+    carrying a type variable, so what remains is a genuine un-monomorphized
+    CONCRETE instantiation that must NOT reach codegen. -/
+private def collectModuleResidualGenerics (gn : List String) (m : CModule) : List (String × List Ty) :=
+  let fnInsts := (collectAllModuleFns m).foldl (fun acc f => acc ++ collectFnInstances gn f) []
+  let structInsts := (collectAllModuleStructs m).foldl (fun acc sd =>
+    sd.fields.foldl (fun acc (_, ft) => acc ++ collectGenericTyInstances gn ft) acc) []
+  let enumInsts := (collectAllModuleEnums m).foldl (fun acc ed =>
+    ed.variants.foldl (fun acc (_, fields) =>
+      fields.foldl (fun acc (_, ft) => acc ++ collectGenericTyInstances gn ft) acc) acc) []
+  fnInsts ++ structInsts ++ enumInsts
+
 -- ============================================================
 -- Entry point
 -- ============================================================
@@ -994,38 +1010,31 @@ def monoProgram (modules : List CModule) : Except Diagnostics (List CModule) :=
   match result with
   | .ok ms =>
     let ms := monoStructsInProgram ms
-    -- R-0001 root: monomorphize user generic enums per instantiation. Supported
-    -- instantiations become `.named <mangled>` and drop out of the containment
-    -- scan below; only genuinely-unresolved residuals still trip E0808.
+    -- R-0001 root: monomorphize user generic enums per instantiation (mirrors the
+    -- struct pass). Supported instantiations become `.named <mangled>`.
     let ms := monoEnumsInProgram ms
-    -- R-0001 / bug 051 containment: any user generic enum still un-monomorphized
-    -- here would let EmitSSA emit
-    -- ONE LLVM type per enum name from the FIRST instantiation while Lower writes
-    -- each instantiation's real payload — so two instantiations of different
-    -- sizes (Wrap<[i64;3]> vs Wrap<[i32;4]>) silently corrupt the stack. Until
-    -- real per-instantiation enum mono lands, reject any generic user-enum
-    -- instantiation FAIL-CLOSED rather than emit corrupt code. Builtin
-    -- Option/Result are safe (EmitSSA gives them a program-wide alignment-aware
-    -- canonical union) and are excluded by name.
-    let genericEnumNames := (ms.foldl (fun acc m => acc ++ collectAllModuleEnums m) [])
-      |>.filterMap fun ed =>
-        if ed.typeParams.isEmpty || ed.name == "Option" || ed.name == "Result"
-        then none else some ed.name
-    if genericEnumNames.isEmpty then .ok ms
-    else
-      let insts := dedupInstances (ms.foldl (fun acc m =>
-        (collectAllModuleFns m).foldl (fun acc f =>
-          acc ++ collectFnInstances genericEnumNames f) acc) [])
-      match insts with
-      | [] => .ok ms
-      | (name, _) :: _ =>
-        .error [{
-          severity := .error
-          message := s!"generic enum '{name}' cannot be compiled yet — user-defined generic enums are not monomorphized, so instantiations of different sizes would silently corrupt memory (bug 051)"
-          pass := "mono"
-          span := none
-          hint := some "until per-instantiation enum monomorphization lands, use a non-generic enum (one concrete variant set) or wrap the payload in a struct; builtin Option/Result are unaffected. Tracking: docs/bugs/051_generic_enums_not_monomorphized.md"
-          code := "E0808" }]
+    -- R-0001 residual verifier (the keystone). After BOTH mono passes, NO user
+    -- generic type may survive as a CONCRETE `.generic` — that would let EmitSSA
+    -- emit a wrong/undersized aggregate (bug 051). Fail closed at the Mono
+    -- boundary with E0808 rather than let an un-monomorphized instantiation reach
+    -- codegen — never an llvm-as error, never corruption. Today the only residual
+    -- is the nested case (a generic struct inside a generic-enum payload, or vice
+    -- versa); it is refused cleanly until the joint struct+enum monomorphization
+    -- fixpoint lands (R-0001 slice c). Builtins (Vec/HashMap/…) and Option/Result
+    -- are union-handled by EmitSSA and excluded from the scan.
+    let gn := collectGenericStructNames ms ++ collectGenericEnumNames ms
+    let residuals := dedupInstances (ms.foldl (fun acc m =>
+      acc ++ collectModuleResidualGenerics gn m) [])
+    match residuals with
+    | [] => .ok ms
+    | (name, _) :: _ =>
+      .error [{
+        severity := .error
+        message := s!"generic type '{name}' reached codegen un-monomorphized — an unspecialized instantiation would produce a wrong aggregate layout and corrupt memory (bug 051). This is the nested-generic case (a generic type inside a generic enum/struct payload) pending the joint struct+enum monomorphization fixpoint."
+        pass := "mono"
+        span := none
+        hint := some "until per-instantiation monomorphization covers the nested case, avoid nesting a generic struct inside a generic enum payload (or vice versa); non-nested generic enums/structs and builtin Option/Result/Vec are fine. Tracking: docs/bugs/051_generic_enums_not_monomorphized.md"
+        code := "E0808" }]
   | .error e => .error e
 
 end Concrete
