@@ -66,6 +66,43 @@ generics (generic struct in an enum payload, generic enum in a struct/array).
 9. E0808 RETAINED fail-closed for any genuinely unsupported residual
    (e.g. instantiations the pass cannot resolve).
 
+### Implementation map (investigated 2026-07-18 — exact sites)
+
+Mirror the struct pass, but enums need TWO extra rewrites the struct pass
+didn't (construction/match carry a raw `en` name, not just a `ty`):
+
+1. `collectGenericEnumNames` — new, mirror `collectGenericStructNames`
+   (Mono.lean:611) over `m.enums` with non-empty `typeParams`.
+2. `monoEnumsInProgram` — new, mirror `monoStructsInProgram` (Mono.lean:838):
+   collect instances via `collectFnInstances`, mangle via `monoStructName`
+   (reusable), build concrete defs via `Layout.substEnumTypeArgs` (ALREADY
+   EXISTS) + `rewriteTy` on payloads, add to first module's `m.enums`,
+   `rewriteFnTys` over all functions.
+3. **`rewriteExprTys` `.enumLit` (Mono.lean:768-769) currently keeps `en`
+   unchanged** — must compute `en'` from the rewritten `ty` exactly like
+   `.structLit` does (760-766: `match ty' with | .named n => n`). Without this,
+   construction still resolves to the unmangled "Maybe" and finds no def.
+4. **`rewriteArmTys` `.enumArm` (Mono.lean:785-786) keeps `en` unchanged** —
+   OPEN: confirm whether EmitSSA/Lower resolve a `match` by the SCRUTINEE's
+   `ty` (rewritten already) or by the arm's `en`. If by `en`, thread the
+   scrutinee's mangled enum name into `rewriteArmTys` (signature change).
+5. Conditional `Copy` demotion for enum specializations (mirror the struct
+   fixpoint demote at 888-898): a `enum Copy E<T>` specialization is Copy iff
+   every substituted payload is Copy.
+6. Wire into `monoProgram` BEFORE the E0808 containment scan, so supported
+   instantiations are mangled (no E0808) and only genuinely-unresolved
+   residuals still trip it (criterion #9).
+7. NESTED (criterion #2): struct+enum instances are mutually dependent
+   (generic struct in an enum payload, generic enum in a struct field). The
+   two passes must share ONE instance mapping and/or iterate to a fixpoint —
+   the current struct pass collects instances from FUNCTIONS only, so an
+   instance appearing solely inside another specialized def is missed. This is
+   the main correctness risk and needs its own tests.
+8. Then: EmitSSA emits each mangled enum via its non-generic branch; verify
+   Lower offsets + drop-glue; restore adversarial to `run_ok 42`; add positive
+   two-instantiation differential fixtures (interp == compiled); layout
+   verifier that every payload write fits its emitted aggregate.
+
 ## Candidate fix
 
 Either monomorphize generic enums per instantiation (mirroring the struct

@@ -766,9 +766,19 @@ private partial def rewriteExprTys (m : List (String × List Ty × String)) : CE
     .structLit name' (targs.map (rewriteTy m)) (fields.map fun (n, e) => (n, rewriteExprTys m e)) ty'
   | .fieldAccess obj f ty => .fieldAccess (rewriteExprTys m obj) f (rewriteTy m ty)
   | .enumLit en v targs fields ty =>
-    .enumLit en v (targs.map (rewriteTy m)) (fields.map fun (n, e) => (n, rewriteExprTys m e)) (rewriteTy m ty)
+    -- R-0001: when this enum is being monomorphized, the rewritten result type
+    -- is `.named <mangled>`; carry the mangled identity on the constructor too
+    -- (mirrors `.structLit` above), so codegen resolves the per-instantiation
+    -- def rather than the unmangled generic name.
+    let ty' := rewriteTy m ty
+    let en' := match ty' with | .named n => n | _ => en
+    .enumLit en' v (targs.map (rewriteTy m)) (fields.map fun (n, e) => (n, rewriteExprTys m e)) ty'
   | .match_ scrut arms ty =>
-    .match_ (rewriteExprTys m scrut) (arms.map (rewriteArmTys m)) (rewriteTy m ty)
+    -- Rewrite arm enum identities from the (rewritten) scrutinee type so a
+    -- match on a monomorphized enum resolves the mangled def.
+    let scrut' := rewriteExprTys m scrut
+    let scrutEnum := match cexprTy scrut' with | .named n => some n | _ => none
+    .match_ scrut' (arms.map (rewriteArmTys m scrutEnum)) (rewriteTy m ty)
   | .borrow inner ty => .borrow (rewriteExprTys m inner) (rewriteTy m ty)
   | .borrowMut inner ty => .borrowMut (rewriteExprTys m inner) (rewriteTy m ty)
   | .deref inner ty => .deref (rewriteExprTys m inner) (rewriteTy m ty)
@@ -781,9 +791,12 @@ private partial def rewriteExprTys (m : List (String × List Ty × String)) : CE
   | .ifExpr cond then_ else_ ty =>
     .ifExpr (rewriteExprTys m cond) (rewriteStmtsTys m then_) (rewriteStmtsTys m else_) (rewriteTy m ty)
 
-private partial def rewriteArmTys (m : List (String × List Ty × String)) : CMatchArm → CMatchArm
+private partial def rewriteArmTys (m : List (String × List Ty × String)) (scrutEnum : Option String) : CMatchArm → CMatchArm
   | .enumArm en v binds guard body =>
-    .enumArm en v (binds.map fun (n, t) => (n, rewriteTy m t)) (guard.map (rewriteExprTys m)) (rewriteStmtsTys m body)
+    -- R-0001: adopt the mangled enum identity from the monomorphized scrutinee
+    -- (falls back to the original name when the scrutinee is not a `.named` enum).
+    let en' := scrutEnum.getD en
+    .enumArm en' v (binds.map fun (n, t) => (n, rewriteTy m t)) (guard.map (rewriteExprTys m)) (rewriteStmtsTys m body)
   | .litArm val guard body => .litArm (rewriteExprTys m val) (guard.map (rewriteExprTys m)) (rewriteStmtsTys m body)
   | .varArm b ty guard body => .varArm b (rewriteTy m ty) (guard.map (rewriteExprTys m)) (rewriteStmtsTys m body)
   | .rangeArm lo hi incl guard body => .rangeArm (rewriteExprTys m lo) (rewriteExprTys m hi) incl (guard.map (rewriteExprTys m)) (rewriteStmtsTys m body)
@@ -908,6 +921,63 @@ private partial def monoStructsInProgram (modules : List CModule) : List CModule
     let first' := { first' with structs := first'.structs ++ newStructs }
     first' :: rest.map rewriteModule
 
+/-- Collect all USER generic enum names (non-empty typeParams), across
+    submodules. Builtin Option/Result (which carry a `builtinId`) are EXCLUDED:
+    EmitSSA gives them a program-wide alignment-aware canonical union, so
+    monomorphizing them into `Option_i64`/… would break that treatment (and
+    all Vec/Option codegen). -/
+private partial def collectGenericEnumNames (modules : List CModule) : List String :=
+  let rec go (m : CModule) : List String :=
+    let own := m.enums.filter (fun ed =>
+      !ed.typeParams.isEmpty && ed.builtinId.isNone
+      -- EmitSSA's canonical-union treatment keys on the NAME Option/Result, so
+      -- even a user-defined `enum Option<T>` must NOT be monomorphized (it goes
+      -- through the union). Exclude by name as well as builtinId.
+      && ed.name != "Option" && ed.name != "Result") |>.map (·.name)
+    let sub := m.submodules.foldl (fun acc s => acc ++ go s) []
+    own ++ sub
+  modules.foldl (fun acc m => acc ++ go m) []
+
+/-- R-0001 / bug 051: per-instantiation monomorphization of user generic ENUMS.
+    Mirror of `monoStructsInProgram`. Each `(enum, typeArgs)` instantiation gets
+    its own INJECTIVE mangled concrete `CEnumDef` with an exact layout;
+    `.generic Enum args` references — and the `enumLit`/`enumArm` identities, via
+    `rewriteExprTys` — become `.named <mangled>`. Runs AFTER struct mono so
+    struct refs inside payloads are already mangled. Builtin `Option`/`Result`
+    are not in `m.enums` and keep their EmitSSA canonical-union treatment. -/
+private partial def monoEnumsInProgram (modules : List CModule) : List CModule :=
+  let genericNames := collectGenericEnumNames modules
+  if genericNames.isEmpty then modules else
+  let allEnums := modules.foldl (fun acc m => acc ++ collectAllModuleEnums m) []
+  let allInsts := modules.foldl (fun acc m =>
+    (collectAllModuleFns m).foldl (fun acc f => acc ++ collectFnInstances genericNames f) acc) []
+  let uniqueInsts := dedupInstances allInsts
+  if uniqueInsts.isEmpty then modules else
+  let mapping := uniqueInsts.filterMap fun (name, args) =>
+    match allEnums.find? (fun ed => ed.name == name) with
+    | some _ => some (name, args, monoStructName name args)
+    | none => none
+  let newEnums := mapping.filterMap fun (name, args, mangledName) =>
+    match allEnums.find? (fun ed => ed.name == name) with
+    | some ed =>
+      let substEd := Layout.substEnumTypeArgs ed args
+      let rewrittenVariants := substEd.variants.map fun (vn, fields) =>
+        (vn, fields.map fun (fn, ft) => (fn, rewriteTy mapping ft))
+      some ({ name := mangledName, typeParams := [], variants := rewrittenVariants,
+              isPublic := ed.isPublic, isCopy := ed.isCopy,
+              builtinId := ed.builtinId, declSpan := ed.declSpan } : CEnumDef)
+    | none => none
+  let rec rewriteModule (m : CModule) : CModule :=
+    { m with
+      functions := m.functions.map (rewriteFnTys mapping)
+      submodules := m.submodules.map rewriteModule }
+  match modules with
+  | [] => []
+  | first :: rest =>
+    let first' := rewriteModule first
+    let first' := { first' with enums := first'.enums ++ newEnums }
+    first' :: rest.map rewriteModule
+
 -- ============================================================
 -- Entry point
 -- ============================================================
@@ -924,8 +994,12 @@ def monoProgram (modules : List CModule) : Except Diagnostics (List CModule) :=
   match result with
   | .ok ms =>
     let ms := monoStructsInProgram ms
-    -- R-0001 / bug 051 containment: user-defined generic enums are NOT yet
-    -- monomorphized (monoStructsInProgram handles only structs). EmitSSA emits
+    -- R-0001 root: monomorphize user generic enums per instantiation. Supported
+    -- instantiations become `.named <mangled>` and drop out of the containment
+    -- scan below; only genuinely-unresolved residuals still trip E0808.
+    let ms := monoEnumsInProgram ms
+    -- R-0001 / bug 051 containment: any user generic enum still un-monomorphized
+    -- here would let EmitSSA emit
     -- ONE LLVM type per enum name from the FIRST instantiation while Lower writes
     -- each instantiation's real payload — so two instantiations of different
     -- sizes (Wrap<[i64;3]> vs Wrap<[i32;4]>) silently corrupt the stack. Until
