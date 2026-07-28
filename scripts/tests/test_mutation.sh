@@ -341,6 +341,36 @@ MUT_NEW+=("    | none   => .value (maskWidth ty (-n)) ty -- MUTATION: wrap, do n
 MUT_DESC+=("IntArith: checked negation wraps at MIN instead of trapping (bug 053)")
 gate_for_last "scripts/tests/check_trap_inventory.sh"
 
+# 28. SSACleanup: the indirect call target is not substituted (R-0436 / bug 056)
+# Restores the pre-fix behaviour at the exact spot: the callee operand is left
+# alone while every other operand is rewritten. Folding a fn-pointer phi then
+# leaves a call through a value nothing defines.
+MUT_FILE+=("Concrete/IR/SSACleanup.lean")
+MUT_OLD+=("      | .indirect target => .indirect (r target)")
+MUT_NEW+=("      | .indirect target => .indirect target -- MUTATION: callee not substituted")
+MUT_DESC+=("SSACleanup: indirect call target escapes substitution (bug 056)")
+gate_for_last "scripts/tests/check_fnptr_values.sh"
+
+# 29. SSAVerify: the indirect call target is not a use (R-0436 / bug 056)
+# This is the state the String callee forced — the verifier could not see a call
+# target at all, so a call through an undefined register passed verification and
+# was caught by llvm-as instead. DCE may also delete the producing instruction.
+MUT_FILE+=("Concrete/IR/SSAVerify.lean")
+MUT_OLD+=("    | .indirect target => svalRegs target ++ argRegs")
+MUT_NEW+=("    | .indirect target => argRegs -- MUTATION: callee is not a use")
+MUT_DESC+=("SSAVerify: indirect call target invisible to use-checking (bug 056)")
+gate_for_last "scripts/tests/check_fnptr_values.sh"
+
+# 30. Lower: a statically-known target stops devirtualizing (R-0436)
+# The correctness legs all still pass — the program runs and agrees with the
+# interpreter — so this mutation is caught ONLY by the direct-call assertions.
+# It is here to prove those assertions are load-bearing rather than decorative.
+MUT_FILE+=("Concrete/IR/Lower.lean")
+MUT_OLD+=("        | some (.fnRef fnName (.fn_ _ _ _)) => pure (.direct fnName)")
+MUT_NEW+=("        | some (v@(.fnRef _ (.fn_ _ _ _))) => pure (.indirect v) -- MUTATION: never devirtualize")
+MUT_DESC+=("Lower: known fn target no longer devirtualized (R-0436)")
+gate_for_last "scripts/tests/check_fnptr_values.sh"
+
 NUM_MUTATIONS=${#MUT_FILE[@]}
 
 # ============================================================
