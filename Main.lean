@@ -817,52 +817,159 @@ def commandAvailable (cmd : String) : IO Bool := do
 /-- Where prover verdicts are cached (gitignored). -/
 def proverCacheDir : String := ".concrete-cache/provers"
 
-/-- Memoize a boolean prover verdict on disk, keyed on `(tag, script)`. `tag` MUST
-    encode the prover name AND version, so a tool upgrade invalidates the cache. A
-    hit returns instantly (the 30s/goal Isabelle session build is the adoption
-    blocker this removes); a miss runs `run`, stores the verdict, and returns it.
-    Any cache I/O error falls back to recomputation — the cache can only speed
-    things up, never change a verdict. -/
-def cachedVerdict (tag src : String) (run : IO Bool) : IO Bool := do
-  let key := toString (hash (tag ++ " " ++ src))
-  let path : System.FilePath := ⟨proverCacheDir ++ "/" ++ key⟩
-  let cached ← (try pure (some (← IO.FS.readFile path)) catch _ => pure none)
-  match cached with
-  | some c => pure (c.trimAscii.toString == "1")
+/-- Does `pat` occur in `s`? (`splitOn` on a non-empty needle yields >1 piece iff
+    the needle occurs.) Used to classify prover output by message, not exit code. -/
+def strContains (s pat : String) : Bool := (s.splitOn pat).length > 1
+
+/-- What an external kernel actually said about one goal. THREE-valued, because
+    exit-code-only classification lies: `coqc` exits 1 both when `lia` genuinely
+    cannot prove the goal and when our emitted script is malformed. Reporting the
+    latter as `refused` claims an independent kernel DISAGREES with Lean when in
+    truth our own lowering is broken — the most misleading thing an evidence report
+    can do, because it looks like exactly the signal the report exists to find.
+
+    Empirically determined (coqc 9.0.1 / Isabelle2025-2), see `classifyRocqFailure`
+    and `classifyIsabelleFailure` for the message markers. -/
+inductive KernelVerdict where
+  /-- The kernel checked a proof term for the goal. -/
+  | closed
+  /-- The kernel was asked and its decision procedure could not close the goal.
+      This is the only verdict that means "the kernel says no". -/
+  | refused
+  /-- No verdict was obtained: malformed script, missing library, timeout, or an
+      infrastructure failure. OUR problem, not a statement about the goal. -/
+  | error (detail : String)
+deriving Inhabited, BEq
+
+/-- Report-cell spelling of a verdict. -/
+def KernelVerdict.cell : KernelVerdict → String
+  | .closed => "closed"
+  | .refused => "refused"
+  | .error _ => "error"
+
+/-- Is this a statement ABOUT THE GOAL (so safe to cache and to count as evidence)?
+    An `error` is not: it says nothing about the goal and must never persist. -/
+def KernelVerdict.isDefinitive : KernelVerdict → Bool
+  | .error _ => false
+  | _ => true
+
+/-- Memoize a prover verdict on disk, keyed on `(tag, script)`. `tag` MUST encode
+    the prover name AND version, so a tool upgrade invalidates the key.
+
+    Two properties this cache must have, both of which a naive version gets wrong:
+
+    * Only DEFINITIVE verdicts are stored. Caching an `error` would turn a transient
+      failure (mktemp failure, OOM-killed prover, full disk) into a PERMANENT
+      "this kernel refuses this goal" — and since neither the tool version nor the
+      script changes on a re-run, the key never changes, so it would never
+      self-heal. A release gate would then fail forever for a reason that has
+      nothing to do with the proof.
+    * The full key WITNESS is stored alongside the verdict and compared on read. A
+      64-bit `hash` as the filename is not collision-free, and a collision on a
+      stored `closed` would FABRICATE evidence that a kernel proved a goal it never
+      saw. On witness mismatch we treat the entry as a miss and recompute.
+
+    Any cache I/O error falls back to recomputation: the cache can only make things
+    faster, never change a verdict. -/
+def cachedKernelVerdict (tag src : String) (run : IO KernelVerdict) : IO KernelVerdict := do
+  -- `\n` separates the two fields; the witness is stored verbatim so an exact
+  -- comparison on read is possible.
+  let witness := tag ++ "\n" ++ src
+  let path : System.FilePath := ⟨proverCacheDir ++ "/" ++ toString (hash witness)⟩
+  let hit ← (try
+      let contents ← IO.FS.readFile path
+      match contents.splitOn "\n" with
+      | verdict :: rest =>
+        -- witness mismatch ⇒ hash collision ⇒ not our entry ⇒ recompute
+        if "\n".intercalate rest == witness then
+          pure (match verdict with
+                | "closed"  => some KernelVerdict.closed
+                | "refused" => some KernelVerdict.refused
+                | _         => none)
+        else pure none
+      | [] => pure none
+    catch _ => pure none)
+  match hit with
+  | some v => pure v
   | none =>
     let v ← run
-    (try
-       IO.FS.createDirAll proverCacheDir
-       IO.FS.writeFile path (if v then "1" else "0")
-     catch _ => pure ())
+    if v.isDefinitive then
+      try
+        IO.FS.createDirAll proverCacheDir
+        IO.FS.writeFile path (v.cell ++ "\n" ++ witness)
+      catch _ => pure ()
     pure v
+
+/-- Classify a nonzero-exit `coqc` run. Verified against coqc 9.0.1:
+
+    * `lia` cannot prove it      → `Error: Tactic failure:  Cannot find witness.`
+    * our lowering is malformed  → `Error: Syntax error: ...`
+    * bad/missing import         → `Error: Cannot find a physical path bound to ...`
+
+    All three exit 1, so ONLY the tactic-failure marker counts as the kernel saying
+    no; anything else is our bug and must surface as `error`. -/
+def classifyRocqFailure (output : String) : KernelVerdict :=
+  if strContains output "Tactic failure" then .refused
+  else .error (firstDiagnosticLine output)
+where
+  /-- First `Error:`-bearing line, trimmed, for a short report detail. -/
+  firstDiagnosticLine (s : String) : String :=
+    let errLines := (s.splitOn "\n").filter (fun l => strContains l "Error")
+    let line := (errLines.head?.getD "unclassified prover failure").trimAscii.toString
+    if line.length > 160 then String.ofList (line.toList.take 160) ++ "..." else line
+
+/-- Classify a nonzero-exit `isabelle build` run. Verified against Isabelle2025-2
+    (markers appear on STDOUT, and stderr additionally carries unrelated fontconfig
+    noise, so match markers rather than "did it print anything"):
+
+    * `presburger` cannot prove it → `*** Failed to apply initial proof method`
+    * our lowering is malformed    → `*** Inner syntax error` / `Failed to parse prop`
+
+    Both exit 1. `Failed to finish proof` covers the multi-step-proof form. -/
+def classifyIsabelleFailure (output : String) : KernelVerdict :=
+  if strContains output "Failed to apply initial proof method"
+     || strContains output "Failed to finish proof" then .refused
+  else .error (firstDiagnosticLine output)
+where
+  firstDiagnosticLine (s : String) : String :=
+    let errLines := (s.splitOn "\n").filter (fun l => strContains l "***")
+    let line := (errLines.head?.getD "unclassified prover failure").trimAscii.toString
+    if line.length > 160 then String.ofList (line.toList.take 160) ++ "..." else line
 
 /-- Second-kernel discharge (Rocq/`coqc`). Given `(vcKey, coqSource)` pairs, write
     each `.v` and run `coqc` on it. Returns `none` if `coqc` is NOT on PATH (the
-    kernel was never asked — no honest verdict), else `some closed` where `closed`
-    are the keys `coqc` INDEPENDENTLY accepted (exit 0: `lia` closed the goal and the
-    kernel checked the term). A key in the input but not in `closed` means coqc was
-    asked and REFUSED — distinct from a key never emitted (outside the fragment) and
-    from `none` (absent). No VC is ever fabricated. Only called behind `--rocq`. -/
-def rocqDischarge (goals : List (String × String)) : IO (Option (List String)) := do
+    kernel was never asked — no honest verdict), else a per-goal `KernelVerdict`:
+
+    * `closed`  — exit 0: `lia` closed the goal and the kernel checked the term.
+    * `refused` — coqc reported a TACTIC FAILURE: the decision procedure said no.
+    * `error`   — nonzero exit for any other reason (malformed script, missing
+                  library, tool failure). Says nothing about the goal.
+
+    A key absent from the result was never emitted (outside the fragment). No VC is
+    ever fabricated. Only called behind `--rocq`. -/
+def rocqDischarge (goals : List (String × String)) : IO (Option (List (String × KernelVerdict))) := do
   if !(← commandAvailable "coqc") then return none
   let version ← coqVersionId
-  let mut closed : List String := []
+  let mut out : List (String × KernelVerdict) := []
   for (k, src) in goals do
-    let ok ← cachedVerdict s!"rocq|{version}" src (do
+    let v ← cachedKernelVerdict s!"rocq|{version}" src (do
       try
         let tmpDir ← IO.Process.output { cmd := "mktemp", args := #["-d"] }
         let dir := tmpDir.stdout.trimAscii.toString
-        if dir.isEmpty then pure false else do
+        if dir.isEmpty then
+          pure (.error "could not create a temp dir for the Rocq script")
+        else do
           IO.FS.writeFile ⟨dir ++ "/vc_rocq.v"⟩ src
           -- `-native-compiler no` skips a native `.vo` (faster); `cwd := dir` keeps
           -- coqc's `.lia.cache` scratch inside the temp dir, removed below.
           let r ← IO.Process.output { cmd := "coqc", args := #["-native-compiler", "no", dir ++ "/vc_rocq.v"], cwd := some dir }
           let _ ← IO.Process.output { cmd := "rm", args := #["-rf", dir] }
-          pure (r.exitCode == 0)
-      catch _ => pure false)
-    if ok then closed := closed ++ [k]
-  return some closed
+          -- coqc reports diagnostics on stderr; check both streams.
+          pure (if r.exitCode == 0 then .closed
+                else classifyRocqFailure (r.stdout ++ "\n" ++ r.stderr))
+      catch e => pure (.error s!"coqc could not be run: {e}"))
+    out := out ++ [(k, v)]
+  return some out
 
 /-- Isabelle (HOL kernel) identity + version, e.g. "isabelle Isabelle2025", or
     "isabelle (unavailable)" when not on PATH. `isabelle version` prints "Isabelle2025". -/
@@ -873,31 +980,36 @@ def isabelleVersionId : IO String := do
     return s!"isabelle {o.stdout.trimAscii.toString}"
   catch _ => return "isabelle (unavailable)"
 
-/-- Independent-kernel discharge (Isabelle/HOL). Same three-valued contract as
-    `rocqDischarge`: `none` if `isabelle` is absent, else `some closed`. Writes each
+/-- Independent-kernel discharge (Isabelle/HOL). Same contract as `rocqDischarge`:
+    `none` if `isabelle` is absent, else a per-goal `KernelVerdict`. Writes each
     `(vcKey, theorySource)` as `VC.thy` + a minimal `ROOT` and runs `isabelle build`
     — exit 0 iff `presburger` closed the lemma and the HOL kernel checked it. HOL
     (not CIC), so agreement with Lean/Rocq spans logics. Only called behind
     `--isabelle`; slower than coqc (session build), so opt-in. -/
-def isabelleDischarge (goals : List (String × String)) : IO (Option (List String)) := do
+def isabelleDischarge (goals : List (String × String)) : IO (Option (List (String × KernelVerdict))) := do
   if !(← commandAvailable "isabelle") then return none
   let version ← isabelleVersionId
-  let mut closed : List String := []
+  let mut out : List (String × KernelVerdict) := []
   for (k, src) in goals do
-    let ok ← cachedVerdict s!"isabelle|{version}" src (do
+    let v ← cachedKernelVerdict s!"isabelle|{version}" src (do
       try
         let tmpDir ← IO.Process.output { cmd := "mktemp", args := #["-d"] }
         let dir := tmpDir.stdout.trimAscii.toString
-        if dir.isEmpty then pure false else do
+        if dir.isEmpty then
+          pure (.error "could not create a temp dir for the Isabelle theory")
+        else do
           IO.FS.writeFile ⟨dir ++ "/VC.thy"⟩ src
           IO.FS.writeFile ⟨dir ++ "/ROOT"⟩ "session VCsess = HOL +\n  theories VC\n"
           -- build the one-theory session; the prebuilt HOL heap is reused.
           let r ← IO.Process.output { cmd := "isabelle", args := #["build", "-D", dir], cwd := some dir }
           let _ ← IO.Process.output { cmd := "rm", args := #["-rf", dir] }
-          pure (r.exitCode == 0)
-      catch _ => pure false)
-    if ok then closed := closed ++ [k]
-  return some closed
+          -- Isabelle prints proof/syntax diagnostics on STDOUT; stderr additionally
+          -- carries unrelated fontconfig noise, so classify on markers, not streams.
+          pure (if r.exitCode == 0 then .closed
+                else classifyIsabelleFailure (r.stdout ++ "\n" ++ r.stderr))
+      catch e => pure (.error s!"isabelle could not be run: {e}"))
+    out := out ++ [(k, v)]
+  return some out
 
 /-- Run the enabled external kernels over the multi-kernel obligation goals and
     return the VC ids each independently closed (empty when the flag is off or the
@@ -905,10 +1017,14 @@ def isabelleDischarge (goals : List (String × String)) : IO (Option (List Strin
     surfaces agree. -/
 def externalClosedSets (modules : List Concrete.Module) (rocqRun isaRun : Bool)
     : IO (List String × List String) := do
+  -- Only `closed` counts as evidence: `refused` and `error` both contribute nothing
+  -- to the ledger (and `error` is not even a statement about the goal).
+  let closedOf (r : Option (List (String × KernelVerdict))) : List String :=
+    (r.getD []).filterMap (fun (k, v) => if v == .closed then some k else none)
   let rocqClosed ← if rocqRun then do
-      let r ← rocqDischarge (Report.rocqReplayGoals modules); pure (r.getD []) else pure []
+      let r ← rocqDischarge (Report.rocqReplayGoals modules); pure (closedOf r) else pure []
   let isaClosed ← if isaRun then do
-      let r ← isabelleDischarge (Report.isabelleReplayGoals modules); pure (r.getD []) else pure []
+      let r ← isabelleDischarge (Report.isabelleReplayGoals modules); pure (closedOf r) else pure []
   pure (rocqClosed, isaClosed)
 
 /-- Phase 3 #14: policy inputs derived from the ONE obligation ledger. Builds the
@@ -1389,16 +1505,33 @@ def compileAndReport (inputPath : String) (reportType : String)
       let rocqRes ← if rocqRun then rocqDischarge rocqGoals else pure none
       let isaId ← if isaRun then isabelleVersionId else pure "not run (pass --isabelle)"
       let isaRes ← if isaRun then isabelleDischarge isaGoals else pure none
-      let kernels : List (String × String × Bool × String × List String × Option (List String)) :=
+      let kernels : List (String × String × Bool × String × List String × Option (List (String × KernelVerdict))) :=
         [ ("rocq", "rocq:lia", rocqRun, rocqId, rocqGoals.map (·.1), rocqRes),
           ("isabelle", "isabelle:presburger", isaRun, isaId, isaGoals.map (·.1), isaRes) ]
-      -- cell verdict for obligation key `k` under one external kernel
-      let cellOf := fun (en : Bool) (emitted : List String) (res : Option (List String)) (k : String) =>
+      -- cell verdict for obligation key `k` under one external kernel. `error` is
+      -- kept DISTINCT from `refused`: both come from a nonzero prover exit, but only
+      -- `refused` is the kernel saying no about the goal — `error` means the script
+      -- we emitted was malformed / the tool broke, i.e. OUR bug. Collapsing them
+      -- would report a fake kernel disagreement, which reads exactly like the
+      -- genuine signal this report exists to surface.
+      let cellOf := fun (en : Bool) (emitted : List String)
+                        (res : Option (List (String × KernelVerdict))) (k : String) =>
         if !en then "off"
         else match res with
           | none => "unavailable"
-          | some closed => if !emitted.contains k then "not-asked"
-                           else if closed.contains k then "closed" else "refused"
+          | some verdicts =>
+            if !emitted.contains k then "not-asked"
+            else match verdicts.lookup k with
+              | none => "not-asked"
+              | some v => v.cell
+      -- error details, surfaced separately so a broken lowering is loud, not a cell.
+      let kernelErrors : List (String × String × String) :=
+        kernels.flatMap (fun (_, label, en, _, _, res) =>
+          if !en then [] else
+          match res with
+          | none => []
+          | some verdicts => verdicts.filterMap (fun (k, v) =>
+              match v with | .error d => some (label, k, d) | _ => none))
       let mut out := "=== Multi-kernel evidence (spike: prover-neutral obligation layer) ==="
       let mut belowTwo := 0
       out := out ++ "\n  lean:omega (in-toolchain kernel)"
@@ -1410,7 +1543,9 @@ def compileAndReport (inputPath : String) (reportType : String)
       out := out ++ "\n  attests: N independent kernels each accept a lowering of the OBLIGATION."
       out := out ++ "\n  does NOT attest: that the Core->obligation lowering is faithful, nor that"
       out := out ++ "\n                   the per-kernel lowerings spell the same proposition.\n"
-      out := out ++ "\n  cell legend: closed | refused | not-asked (outside fragment) | unavailable (no tool) | off (flag not set)\n"
+      out := out ++ "\n  cell legend: closed | refused (kernel says no) | error (OUR script/tool broke —"
+      out := out ++ "\n               NOT a kernel disagreement) | not-asked (outside fragment) |"
+      out := out ++ "\n               unavailable (no tool) | off (flag not set)\n"
       if linear.isEmpty then
         out := out ++ "\n(no linear runtime-safety obligations in this file)\n"
       for o in linear do
@@ -1432,6 +1567,14 @@ def compileAndReport (inputPath : String) (reportType : String)
         out := out ++ s!"\n      lean:omega = {if leanOk then "closed" else "refused"}"
         for (_, label, en, _, em, res) in kernels do out := out ++ s!"   {label} = {cellOf en em res o.key}"
         out := out ++ s!"\n      => {cls}"
+      -- A kernel `error` is a defect in THIS tool (a malformed emitted script, a
+      -- missing library, a broken install), never evidence about the program. Print
+      -- the diagnostics so it gets fixed instead of silently degrading the report to
+      -- "that kernel didn't attest".
+      if !kernelErrors.isEmpty then
+        out := out ++ s!"\n\n  ERRORS ({kernelErrors.length}) — these are OUR bugs, not kernel disagreements:"
+        for (label, k, d) in kernelErrors do
+          out := out ++ s!"\n    {label} [{k}]: {d}"
       -- Release gate: with --require-two-kernels, fail if any in-scope obligation
       -- did not reach ≥2 independent kernels. A genuine CI gate, not just a report.
       if reqTwoKernels && belowTwo > 0 then
@@ -1499,10 +1642,24 @@ def compileAndReport (inputPath : String) (reportType : String)
       for (k, cls, _) in z3res do
         let niaCell := match niaClosed with
           | none => "unavailable"
-          | some c => if !niaEmitted.contains k then "not-asked"
-                      else if c.contains k then "closed" else "refused"
+          | some verdicts =>
+            if !niaEmitted.contains k then "not-asked"
+            else match verdicts.lookup k with
+              | none => "not-asked"
+              | some v => v.cell
+        -- Only a genuine `closed` graduates the class. An `error` cell must never
+        -- graduate (and never silently read as `refused`).
         let final := if cls == "solver_trusted" && niaCell == "closed" then "solver_checked" else cls
         out := out ++ s!"\n  [{k}]\n      z3 = {cls}   rocq:nia = {niaCell}   => {final}"
+      -- Loud on our own bugs, as in the multi-kernel report.
+      match niaClosed with
+      | some verdicts =>
+        let errs := verdicts.filterMap (fun (k, v) =>
+          match v with | .error d => some (k, d) | _ => none)
+        if !errs.isEmpty then
+          out := out ++ s!"\n\n  ERRORS ({errs.length}) — OUR bugs, not kernel disagreements:"
+          for (k, d) in errs do out := out ++ s!"\n    rocq:nia [{k}]: {d}"
+      | none => pure ()
       IO.println (out ++ "\n")
       return 0
     if reportType == "caps" then
