@@ -814,6 +814,29 @@ def commandAvailable (cmd : String) : IO Bool := do
     pure (o.exitCode == 0)
   catch _ => pure false
 
+/-- Where prover verdicts are cached (gitignored). -/
+def proverCacheDir : String := ".concrete-cache/provers"
+
+/-- Memoize a boolean prover verdict on disk, keyed on `(tag, script)`. `tag` MUST
+    encode the prover name AND version, so a tool upgrade invalidates the cache. A
+    hit returns instantly (the 30s/goal Isabelle session build is the adoption
+    blocker this removes); a miss runs `run`, stores the verdict, and returns it.
+    Any cache I/O error falls back to recomputation — the cache can only speed
+    things up, never change a verdict. -/
+def cachedVerdict (tag src : String) (run : IO Bool) : IO Bool := do
+  let key := toString (hash (tag ++ " " ++ src))
+  let path : System.FilePath := ⟨proverCacheDir ++ "/" ++ key⟩
+  let cached ← (try pure (some (← IO.FS.readFile path)) catch _ => pure none)
+  match cached with
+  | some c => pure (c.trimAscii.toString == "1")
+  | none =>
+    let v ← run
+    (try
+       IO.FS.createDirAll proverCacheDir
+       IO.FS.writeFile path (if v then "1" else "0")
+     catch _ => pure ())
+    pure v
+
 /-- Second-kernel discharge (Rocq/`coqc`). Given `(vcKey, coqSource)` pairs, write
     each `.v` and run `coqc` on it. Returns `none` if `coqc` is NOT on PATH (the
     kernel was never asked — no honest verdict), else `some closed` where `closed`
@@ -823,9 +846,11 @@ def commandAvailable (cmd : String) : IO Bool := do
     from `none` (absent). No VC is ever fabricated. Only called behind `--rocq`. -/
 def rocqDischarge (goals : List (String × String)) : IO (Option (List String)) := do
   if !(← commandAvailable "coqc") then return none
+  let version ← coqVersionId
   let mut closed : List String := []
   for (k, src) in goals do
-    let ok ← (try
+    let ok ← cachedVerdict s!"rocq|{version}" src (do
+      try
         let tmpDir ← IO.Process.output { cmd := "mktemp", args := #["-d"] }
         let dir := tmpDir.stdout.trimAscii.toString
         if dir.isEmpty then pure false else do
@@ -856,9 +881,11 @@ def isabelleVersionId : IO String := do
     `--isabelle`; slower than coqc (session build), so opt-in. -/
 def isabelleDischarge (goals : List (String × String)) : IO (Option (List String)) := do
   if !(← commandAvailable "isabelle") then return none
+  let version ← isabelleVersionId
   let mut closed : List String := []
   for (k, src) in goals do
-    let ok ← (try
+    let ok ← cachedVerdict s!"isabelle|{version}" src (do
+      try
         let tmpDir ← IO.Process.output { cmd := "mktemp", args := #["-d"] }
         let dir := tmpDir.stdout.trimAscii.toString
         if dir.isEmpty then pure false else do

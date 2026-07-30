@@ -88,6 +88,7 @@ scripts/check_ll1_rs
 .test-failures/
 
 # Second-kernel (Rocq/Isabelle) scratch artifacts, if a checker runs in-tree
+.concrete-cache/
 .lia.cache
 *.vo
 *.vok
