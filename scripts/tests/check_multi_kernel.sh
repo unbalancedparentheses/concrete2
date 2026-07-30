@@ -202,6 +202,48 @@ if command -v isabelle >/dev/null 2>&1; then
   printf '%s' "$BLK" | grep -q "E0616" \
     && ok "rejection carries the policy code E0616" || no "expected E0616"
 
+  echo "=== certificate REPLAY: the solver's proof is kernel-checked, not stamped ==="
+  # The solver-cert report can only ever show `solver_replayed` if this mechanism
+  # works, and `solver_replayed` must be REACHABLE or the class is dead code. The
+  # nonlinear VCs the report selects cannot be reconstructed (asserted below), so the
+  # mechanism is exercised here directly, in the exact shape the driver emits.
+  RTMP="$(mktemp -d)"
+  printf 'session VCsess = HOL +\n  theories VC\n' > "$RTMP/ROOT"
+  write_replay_thy() {  # $1 = oracle flag, $2 = goal body
+    cat > "$RTMP/VC.thy" <<EOF
+theory VC imports Main begin
+declare [[smt_oracle = $1, smt_timeout = 60]]
+lemma replayed: "$2"
+  by (smt (verit))
+ML \\<open>
+  val n = length (Thm_Deps.all_oracles [@{thm replayed}]);
+  val _ = if n = 0 then writeln "REPLAY-VERIFIED: no oracle"
+          else error "ORACLE PRESENT - proof was stamped, not checked";
+\\<close>
+end
+EOF
+  }
+  LINEAR_GOAL='ALL a b::int. (0 <= a & a <= 100) --> (0 <= b & b <= 100) --> a + b <= 200'
+  write_replay_thy false "$LINEAR_GOAL"
+  ( cd "$RTMP" && isabelle build -D . >/dev/null 2>&1 )
+  [ $? -eq 0 ] && ok "a LINEAR goal replays: veriT's proof reconstructed, asserted oracle-free" \
+                || no "linear replay should succeed (is VERIT_SOLVER set? see flake.nix)"
+  # Teeth: with smt_oracle = true the method STAMPS the goal instead of checking it.
+  # That is the exact trust leak replay exists to close, so it must FAIL here.
+  write_replay_thy true "$LINEAR_GOAL"
+  ORC="$( cd "$RTMP" && isabelle build -D . 2>&1 )"
+  printf '%s' "$ORC" | grep -q "ORACLE PRESENT" \
+    && ok "smt_oracle = true is DETECTED and rejected (stamping cannot pass as replay)" \
+    || no "oracle mode must be rejected — the no-oracle assertion has no teeth"
+  # Locks the measured limitation. If Isabelle ever reconstructs nonlinear
+  # arithmetic, this fails loudly and solver_replayed becomes reachable for the
+  # nonlinear VCs — which is a capability upgrade we want to be told about.
+  write_replay_thy false 'ALL a::int. 0 <= a --> 0 <= a * a'
+  ( cd "$RTMP" && isabelle build -D . >/dev/null 2>&1 )
+  [ $? -ne 0 ] && ok "NONLINEAR replay still unsupported (documented ceiling holds)" \
+                || no "nonlinear replay now WORKS — upgrade solver-cert to reach solver_replayed"
+  rm -rf "$RTMP"
+
   echo "=== isabelle refusal vs malformed-theory markers (classifier assumption) ==="
   ITMP="$(mktemp -d)"
   printf 'session VCsess = HOL +\n  theories VC\n' > "$ITMP/ROOT"

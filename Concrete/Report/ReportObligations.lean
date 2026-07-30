@@ -1303,6 +1303,79 @@ def rocqNiaGoals (modules : List Module) : List (String × String) := Id.run do
     | _, _ => pure ()
   return out
 
+/-! ### Certificate REPLAY (as opposed to kernel corroboration)
+
+`solver_checked` means an independent decision procedure (Rocq `nia`) reached the
+same verdict as the SMT solver. That removes the solver from the trusted base, but
+it is corroboration: nothing checked the solver's own reasoning.
+
+Replay is strictly stronger. Isabelle's `smt` method, with `smt_oracle = false`,
+asks a proof-producing solver for its proof and RECONSTRUCTS every inference in the
+HOL kernel — the solver's argument itself is checked, not merely its answer. Two
+things make that claim auditable rather than aspirational:
+
+  * `smt_oracle = false` is declared explicitly. Under `smt_oracle = true` the
+    method stamps the goal instead of checking it, which is precisely the trust leak
+    replay exists to close.
+  * the emitted theory ASSERTS the resulting theorem carries no oracle
+    (`Thm_Deps.all_oracles`), so a stamped proof fails the build rather than passing
+    as a replayed one. Verified in both directions: the assertion passes under
+    `smt_oracle = false` and fires under `smt_oracle = true`.
+
+Measured limitation, and the reason this does not simply replace `solver_checked`:
+reconstruction handles LINEAR integer arithmetic but not nonlinear. Checked against
+all three proof-producing solvers reachable here — z3 4.4.0pre (bundled with
+Isabelle for exactly this purpose), cvc5, and veriT 2021.06.2 — every one
+reconstructs a linear goal and every one fails on `0 ≤ a ⟹ 0 ≤ a * a`, at a 120s
+timeout. Since the SMT path exists precisely for the nonlinear VCs the kernel tiers
+cannot close, replay currently cannot upgrade them, and `solver_checked` remains
+the ceiling for that family. The machinery is wired anyway: it reports the honest
+status per goal today, and any goal that becomes replayable graduates on its own. -/
+
+/-- Isabelle driver that REPLAYS a proof-producing solver's proof through the HOL
+    kernel, rather than re-deciding the goal with another decision procedure. -/
+def isabelleSmtReplayLowering : ProverLowering where
+  name := "isabelle-smt-verit"
+  binop := isabelleBinOp
+  render := fun vars hyps concl =>
+    let binder := if vars.isEmpty then "" else s!"ALL {" ".intercalate vars}::int. "
+    let arrows := String.join (hyps.map (fun h => s!"({h}) --> "))
+    "\n".intercalate
+      [ "theory VC imports Main begin",
+        "(* certificate REPLAY: the solver's proof is reconstructed in the HOL kernel. *)",
+        "declare [[smt_oracle = false, smt_timeout = 60]]",
+        s!"lemma replayed: \"{binder}{arrows}{concl}\"",
+        "  by (smt (verit))",
+        "(* A replayed proof must carry NO oracle. Under smt_oracle = true the method",
+        "   stamps the result instead of checking it; that must fail, not pass. *)",
+        "ML \\<open>",
+        "  val n = length (Thm_Deps.all_oracles [@{thm replayed}]);",
+        "  val _ = if n = 0 then writeln \"REPLAY-VERIFIED: no oracle\"",
+        "          else error \"ORACLE PRESENT - proof was stamped, not checked\";",
+        "\\<close>",
+        "end" ]
+  arrow := "-->"
+  binder := fun vars =>
+    if vars.isEmpty then "" else s!"ALL {" ".intercalate vars}::int. "
+
+/-- `(vcKey, isabelleTheorySource)` replaying each SMT-eligible NONLINEAR overflow
+    obligation through the HOL kernel. Same selection as `rocqNiaGoals`, so the
+    `solver-cert` report can show corroboration and replay side by side on one goal. -/
+def isabelleSmtReplayGoals (modules : List Module) : List (String × String) := Id.run do
+  let mut out : List (String × String) := []
+  for o in smtEligibleOverflow modules do
+    let concl : Option String := do
+      let e ← exprToProver isabelleBinOp o.opExpr
+      let lo ← isabelleBinOp .leq (toString o.lo) e
+      let hi ← isabelleBinOp .leq e (toString o.hi)
+      isabelleBinOp .and_ lo hi
+    match concl, o.hyps.mapM (exprToProver isabelleBinOp) with
+    | some c, some hyps =>
+      let vars := (collectIdents o.opExpr ++ o.hyps.flatMap collectIdents).eraseDups
+      out := out ++ [(o.key, isabelleSmtReplayLowering.render vars hyps c)]
+    | _, _ => pure ()
+  return out
+
 /-- `(vcKey, coqSource)` for each linear overflow obligation (Rocq driver). -/
 def rocqReplayGoals (modules : List Module) : List (String × String) :=
   proverReplayGoals rocqLowering modules

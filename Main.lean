@@ -1712,9 +1712,22 @@ def compileAndReport (inputPath : String) (reportType : String)
       let niaGoals := Report.rocqNiaGoals parsed.modules
       let niaEmitted := niaGoals.map (·.1)
       let niaClosed ← rocqDischarge niaGoals
-      let mut out := "=== Solver certificate-check (SMT solver + independent Rocq nia kernel) ==="
-      out := out ++ s!"\n  solver: {solverId}   kernel: Rocq nia"
-      out := out ++ "\n  solver_trusted = solver in TCB; solver_checked = a kernel corroborated it (solver drops out).\n"
+      -- Certificate REPLAY (strictly stronger than corroboration): Isabelle's `smt`
+      -- with smt_oracle=false reconstructs the solver's proof in the HOL kernel, and
+      -- the emitted theory asserts the result carries no oracle.
+      let replayGoals := Report.isabelleSmtReplayGoals parsed.modules
+      let replayEmitted := replayGoals.map (·.1)
+      let replayRes ← isabelleDischarge replayGoals
+      let mut out := "=== Solver certificate-check (SMT solver + independent kernel corroboration + REPLAY) ==="
+      out := out ++ s!"\n  solver: {solverId}   corroborating kernel: Rocq nia   replay: Isabelle smt(verit), smt_oracle=false"
+      out := out ++ "\n  solver_trusted  = solver in the TCB."
+      out := out ++ "\n  solver_checked  = an independent decision procedure reached the same verdict"
+      out := out ++ "\n                    (solver drops out of the TCB, but its reasoning was not checked)."
+      out := out ++ "\n  solver_replayed = the solver's PROOF was reconstructed inference-by-inference in a"
+      out := out ++ "\n                    kernel, and asserted oracle-free. Strictly stronger."
+      out := out ++ "\n  NOTE: reconstruction supports LINEAR integer arithmetic only — z3, cvc5 and"
+      out := out ++ "\n        veriT all fail on nonlinear goals. These VCs are nonlinear by selection,"
+      out := out ++ "\n        so `refused` in the replay column is the expected status today, not a bug.\n"
       if smtGoals.isEmpty then
         out := out ++ "\n(no SMT-eligible nonlinear obligations in this file)\n"
       for (k, cls, _) in z3res do
@@ -1725,10 +1738,21 @@ def compileAndReport (inputPath : String) (reportType : String)
             else match verdicts.lookup k with
               | none => "not-asked"
               | some v => v.cell
+        let replayCell := match replayRes with
+          | none => "unavailable"
+          | some verdicts =>
+            if !replayEmitted.contains k then "not-asked"
+            else match verdicts.lookup k with
+              | none => "not-asked"
+              | some v => v.cell
         -- Only a genuine `closed` graduates the class. An `error` cell must never
-        -- graduate (and never silently read as `refused`).
-        let final := if cls == "solver_trusted" && niaCell == "closed" then "solver_checked" else cls
-        out := out ++ s!"\n  [{k}]\n      z3 = {cls}   rocq:nia = {niaCell}   => {final}"
+        -- graduate (and never silently read as `refused`). Replay outranks
+        -- corroboration: a checked proof is stronger than a matching verdict.
+        let final :=
+          if cls == "solver_trusted" && replayCell == "closed" then "solver_replayed"
+          else if cls == "solver_trusted" && niaCell == "closed" then "solver_checked"
+          else cls
+        out := out ++ s!"\n  [{k}]\n      z3 = {cls}   rocq:nia = {niaCell}   isabelle:smt(verit) = {replayCell}   => {final}"
       -- Loud on our own bugs, as in the multi-kernel report.
       match niaClosed with
       | some verdicts =>

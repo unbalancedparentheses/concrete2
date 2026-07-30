@@ -39,9 +39,15 @@ def statusVocabulary : List String :=
     "proved_by_two_kernels", "proved_by_multi_kernel",
     -- `solver_checked` = an external SMT solver reported unsat AND an independent
     -- kernel (Rocq `nia`) also closed the goal, so the solver leaves the TCB —
-    -- strictly stronger than `solver_trusted` (solver-in-TCB). The kernel proof is
-    -- the certificate check of the solver's verdict.
+    -- strictly stronger than `solver_trusted` (solver-in-TCB). This corroborates the
+    -- solver's VERDICT; it does not check the solver's reasoning.
     "solver_checked",
+    -- `solver_replayed` = the solver's PROOF was reconstructed inference-by-inference
+    -- in a kernel (Isabelle `smt` with `smt_oracle = false`, asserted oracle-free),
+    -- not merely corroborated by a second decision procedure. Strictly stronger than
+    -- `solver_checked`. Reconstruction covers linear integer arithmetic only, so a
+    -- nonlinear VC cannot currently reach this class — see docs/SMT_SOUNDNESS.md.
+    "solver_replayed",
     "arithmetic_proved", "solver_trusted", "tested_by_oracle", "runtime_checked",
     "enforced", "assumed", "trusted", "partial", "stale", "vacuous", "missing",
     "unproven", "planned", "counterexample", "unknown", "timeout", "solver_error",
