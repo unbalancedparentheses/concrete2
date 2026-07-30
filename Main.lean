@@ -82,7 +82,7 @@ def helpText : String := String.intercalate "\n" [
   ""]
 
 def usage : String :=
-  "Usage: concrete <file.con> [-o output] [--emit-llvm] [--emit-core] [--emit-ssa] [--emit-trace-json] [--trace-pipeline] [--test] [--test --module <name>] [--interp] [--report caps|unsafe|layout|interface|alloc|mono|authority|proof|eligibility|proof-status|obligations|extraction|lean-stubs|check-proofs|proof-diagnostics|proof-deps|proof-bundle|traceability|diagnostics-json|effects|recursion|stack-depth|fingerprints|consistency|contracts|vcs|obligation-ledger|compiler-ledger|verify|audit|arithmetic|multi-kernel|bridge-check|solver-cert|lowering-agreement] [--report multi-kernel [--rocq] [--isabelle] [--all-provers] [--require-two-kernels]] [--query KIND|KIND:FUNCTION|fn:FUNCTION] [--fmt (legacy; use `concrete fmt`)]\n       concrete build [-o output] [--emit-llvm]\n       concrete check\n       concrete fmt <file.con> [--check | --write | --stdin]\n       concrete audit <file.con>\n       concrete prove <file.con> <module.function> [--json] [--out <path>] [--force] [--emit-link] [--emit-lean] [--emit-artifacts] [--out-dir <dir>] [--show-obligation <id>] [--replay] [--nearest-lemmas] [--check] [--workspace <dir>]\n       concrete prove --help=agent | --capabilities | --schema\n       concrete run [-- args...]\n       concrete test [--module <name>]\n       concrete diff <old.json> <new.json> [--json]\n       concrete snapshot <file.con> [-o output.json]\n       concrete debug-bundle <file.con> [-o dir]\n       concrete reduce <file.con> --predicate <pred> [-o output] [--verbose]\n       concrete --version"
+  "Usage: concrete <file.con> [-o output] [--emit-llvm] [--emit-core] [--emit-ssa] [--emit-trace-json] [--trace-pipeline] [--test] [--test --module <name>] [--interp] [--report caps|unsafe|layout|interface|alloc|mono|authority|proof|eligibility|proof-status|obligations|extraction|lean-stubs|check-proofs|proof-diagnostics|proof-deps|proof-bundle|traceability|diagnostics-json|effects|recursion|stack-depth|fingerprints|consistency|contracts|vcs|obligation-ledger|compiler-ledger|verify|audit|arithmetic|multi-kernel|bridge-check|solver-cert|lowering-agreement|bridge-diversity] [--report multi-kernel [--rocq] [--isabelle] [--all-provers] [--require-two-kernels]] [--query KIND|KIND:FUNCTION|fn:FUNCTION] [--fmt (legacy; use `concrete fmt`)]\n       concrete build [-o output] [--emit-llvm]\n       concrete check\n       concrete fmt <file.con> [--check | --write | --stdin]\n       concrete audit <file.con>\n       concrete prove <file.con> <module.function> [--json] [--out <path>] [--force] [--emit-link] [--emit-lean] [--emit-artifacts] [--out-dir <dir>] [--show-obligation <id>] [--replay] [--nearest-lemmas] [--check] [--workspace <dir>]\n       concrete prove --help=agent | --capabilities | --schema\n       concrete run [-- args...]\n       concrete test [--module <name>]\n       concrete diff <old.json> <new.json> [--json]\n       concrete snapshot <file.con> [-o output.json]\n       concrete debug-bundle <file.con> [-o dir]\n       concrete reduce <file.con> --predicate <pred> [-o output] [--verbose]\n       concrete --version"
 
 /-- Capture compiler identity: version, git commit, lean toolchain. -/
 def compilerIdentity : IO String := do
@@ -1648,6 +1648,117 @@ def compileAndReport (inputPath : String) (reportType : String)
       out := out ++ "\n\nBRIDGE-CHECK: no proved obligation refuted by concrete evaluation."
       IO.println (out ++ "\n")
       return 0
+    if reportType == "bridge-diversity" then
+      -- BRIDGE diversity, the gap `--report multi-kernel` names as a
+      -- non-attestation: all kernels check their own lowering of an obligation
+      -- produced by ONE Core→VC bridge, so a bridge bug is invisible to every one of
+      -- them. Here Core takes a SECOND, independent path — extracted to Rocq
+      -- (Gallina) as a computation — and the two are differential-tested:
+      --   * Concrete's Lean interpreter evaluates f(args)   (the existing oracle)
+      --   * Rocq's kernel evaluates the extracted definition, by checking
+      --     `Goal f args = <interpreter result>. Proof. reflexivity. Qed.`
+      -- Agreement means two independently-implemented evaluators computed the same
+      -- value. A mismatch is a real bridge-level defect.
+      let fns := Concrete.Interp.collectFns validCore.coreModules
+      let enums := Concrete.Interp.collectEnums validCore.coreModules
+      let extractable := Concrete.CoreExtract.extractableFns fns
+      let missed := Concrete.CoreExtract.unextractableFns fns
+      let allDefs := "\n".intercalate (extractable.map (·.2))
+      -- Probe values: small magnitudes plus negatives, because the truncating-vs-
+      -- flooring division difference (Z.quot vs Z.div) only shows on negatives.
+      let probes : List Int := [-7, -3, -1, 0, 1, 2, 3, 7]
+      let perFnCap := 24
+      let mut out := "=== Bridge diversity (Core→Rocq extraction vs the interpreter) ==="
+      out := out ++ "\n  Two INDEPENDENT paths from Core to a value:"
+      out := out ++ "\n    (1) Concrete's Lean interpreter — the existing differential-testing oracle"
+      out := out ++ "\n    (2) a Rocq/Gallina extraction of the same function, evaluated by Rocq's kernel"
+      out := out ++ "\n  agree    = both evaluators computed the same value on every sampled input"
+      out := out ++ "\n  DISAGREE = the two paths differ — a Core-level bridge defect"
+      out := out ++ "\n  Differential test, not a proof of equivalence: it covers sampled inputs only.\n"
+      if extractable.isEmpty then
+        out := out ++ "\n  (no function in this file is inside the extractable fragment)"
+      let mut disagree := 0
+      let mut checked := 0
+      let mut errored := 0
+      for (f, _) in extractable do
+        -- Only integer parameters can be sampled with literals.
+        let intParams := f.params.all (fun (_, t) => Concrete.CoreExtract.isIntTy t)
+        if !intParams then
+          out := out ++ s!"\n  [{f.name}]  extracted, but not sampled (non-integer parameter)"
+        else
+          -- cartesian product of probes over the parameters, capped
+          let mut product : List (List Int) := [[]]
+          for _ in f.params do
+            product := product.flatMap (fun a => probes.map (fun v => a ++ [v]))
+          let argSets := product.take perFnCap
+          let mut goals : List String := []
+          let mut skipped := 0
+          for args in argSets do
+            -- Build `f(a, b, ...)` in Core and evaluate it with the interpreter.
+            let argExprs := (args.zip f.params).map
+              (fun (v, (_, t)) => Concrete.CExpr.intLit v t)
+            let callExpr := Concrete.CExpr.call (.direct f.name) [] argExprs f.retTy
+            match Concrete.Interp.evalExprVal fns enums [] callExpr with
+            | .error _ => skipped := skipped + 1   -- trap or unsupported: never counted
+            | .ok (_, v) =>
+              let expected : Option String := match v with
+                | .int n _ => some (if n < 0 then s!"({n})" else s!"{n}")
+                | .bool b => some (if b then "true" else "false")
+                | _ => none
+              match expected with
+              | none => skipped := skipped + 1
+              | some e =>
+                let argStr := " ".intercalate
+                  (args.map (fun v => if v < 0 then s!"({v})" else s!"{v}"))
+                let app := if argStr.isEmpty then f.name else s!"{f.name} {argStr}"
+                goals := goals ++ [s!"Goal {app} = {e}. Proof. reflexivity. Qed."]
+          if goals.isEmpty then
+            out := out ++ s!"\n  [{f.name}]  no comparable input (all {skipped} probes trapped or were unsupported)"
+          else
+            let src := Concrete.CoreExtract.extractPreamble ++ allDefs ++ "\n"
+                       ++ "\n".intercalate goals ++ "\n"
+            let res ← rocqDischarge [(f.name, src)]
+            let cell := match res with
+              | none => "unavailable (coqc not on PATH)"
+              | some verdicts => match verdicts.lookup f.name with
+                | none => "not-asked"
+                -- coqc accepted every equation: the two evaluators agree.
+                | some .closed => s!"agree ({goals.length} inputs, {skipped} skipped)"
+                -- `reflexivity` failing means the two computed DIFFERENT values.
+                -- classifyRocqFailure calls that an `error` because it is not a
+                -- tactic-failure marker, so re-read it here where a non-unifying
+                -- equation is precisely the signal we are looking for.
+                | some (.error d) =>
+                  if strContains d "Unable to unify" || strContains d "Not convertible"
+                  then s!"DISAGREE — {d}"
+                  else s!"error — {d}"
+                | some .refused => "DISAGREE — Rocq could not verify the equation"
+            -- Count only genuine agreement as agreement. Counting an `error` here
+            -- would let a broken emitted script read as a checked function, which is
+            -- the same class of lie as calling it `refused`.
+            if strContains cell "DISAGREE" then disagree := disagree + 1
+            else if strContains cell "error" then errored := errored + 1
+            else if strContains cell "agree" then checked := checked + 1
+            out := out ++ s!"\n  [{f.name}]  {cell}"
+      if !missed.isEmpty then
+        out := out ++ s!"\n\n  OUTSIDE the extractable fragment ({missed.length}), so NOT bridge-checked:"
+        out := out ++ s!"\n    {", ".intercalate missed}"
+        out := out ++ "\n  (loops, structs, enums, arrays, matches, borrows, casts, generics, floats,"
+        out := out ++ "\n   strings — named rather than silently skipped, so coverage is not overstated)"
+      if disagree > 0 then
+        out := out ++ s!"\n\nBRIDGE-DIVERSITY FAILED — {disagree} function(s) where the interpreter and the"
+        out := out ++ "\n  Rocq extraction compute different values. One of the two mis-models Core."
+        IO.println (out ++ "\n")
+        return 1
+      if errored > 0 then
+        out := out ++ s!"\n\nBRIDGE-DIVERSITY FAILED — {errored} function(s) produced an unusable extraction"
+        out := out ++ "\n  (a malformed or non-self-contained Gallina script). That is a defect in the"
+        out := out ++ "\n  extractor, not evidence about the program, so it is not reported as agreement."
+        IO.println (out ++ "\n")
+        return 1
+      out := out ++ s!"\n\nBRIDGE-DIVERSITY: {checked} function(s) agree across two independent evaluators."
+      IO.println (out ++ "\n")
+      return 0
     if reportType == "lowering-agreement" then
       -- Closes the hole `--report multi-kernel` states as a non-attestation: that the
       -- per-kernel lowerings spell the SAME proposition. For each obligation we emit
@@ -2884,6 +2995,22 @@ def main (args : List String) : IO UInt32 := do
     | .ok modules =>
       IO.print (formatProgram modules)
       return 0
+  -- General prover-flag parsing for the multi-kernel family: ANY subset, ANY order.
+  -- The exact-match patterns above enumerate combinations one by one, so a perfectly
+  -- valid request like `--rocq --isabelle --require-two-kernels` fell through to the
+  -- usage dump — and a caller checking only the exit code would read that usage error
+  -- as a failed evidence gate. Placed after the specific patterns so they still win.
+  | inputPath :: "--report" :: reportType :: rest =>
+    let proverFlags := ["--rocq", "--isabelle", "--all-provers", "--require-two-kernels"]
+    if !rest.isEmpty && rest.all (fun a => proverFlags.contains a) then
+      let allProvers := rest.contains "--all-provers"
+      compileAndReport inputPath reportType
+        (rocqRun := allProvers || rest.contains "--rocq")
+        (isaRun := allProvers || rest.contains "--isabelle")
+        (reqTwoKernels := rest.contains "--require-two-kernels")
+    else do
+      IO.eprintln usage
+      return 1
   | _ =>
     IO.eprintln usage
     return 1

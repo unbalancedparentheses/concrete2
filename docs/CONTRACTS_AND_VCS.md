@@ -761,6 +761,48 @@ diagnostic points at the missing toolchain (`nix develop .#provers`) rather than
 blaming the proof. `examples/multi_kernel_policy/` has both halves: `allow/`
 builds, `blocked/` contains an obligation no kernel can close and is rejected.
 
+### Shipped: bridge diversity (`--report bridge-diversity`)
+
+Multi-kernel evidence has a structural blind spot, which the report states as a
+non-attestation: every kernel checks a lowering produced by **one** Core→VC bridge.
+If that bridge mis-lowers `a - b` as `b - a`, all three kernels prove the wrong
+obligation and the badge still reads `proved_by_multi_kernel`. Checker diversity
+cannot detect a bridge bug, because the bridge is upstream of every checker.
+
+`--report bridge-diversity` adds a **second, independent path from Core to a value**
+and differential-tests the two:
+
+1. Concrete's Lean interpreter evaluates `f(args)` — the oracle already trusted as
+   the differential-testing reference for codegen.
+2. `Concrete/Report/CoreExtract.lean` extracts the same function to Rocq (Gallina) as
+   a *computation*, and Rocq's kernel evaluates it by checking
+   `Goal f args = <interpreter result>. Proof. reflexivity. Qed.`
+
+Agreement means two independently-implemented evaluators computed the same value.
+A mismatch is a genuine Core-level defect. This is a differential test over sampled
+inputs, not a proof of equivalence — what it buys is that the bridge is no longer a
+single unchecked implementation.
+
+Two semantic details the extraction gets right on purpose, and which the test
+enforces:
+
+- **Division truncates toward zero.** Concrete follows `Int.tdiv`/`Int.tmod` (LLVM
+  `sdiv`/`srem`). Coq's `Z.div`/`Z.modulo` are *flooring* and differ on negatives, so
+  the extraction emits `Z.quot`/`Z.rem`. Substituting `Z.div` makes `div_safe`
+  disagree at `(-7)/2` — the probe set includes negatives for exactly this reason,
+  and a gate assertion locks the distinction.
+- **Fixed-width arithmetic traps.** The interpreter traps on overflow as the compiled
+  binary does, while Gallina `Z` is unbounded. Rather than model traps, inputs on
+  which the interpreter fails are *skipped*, never counted as agreement.
+
+Coverage is stated rather than implied: functions outside the extractable fragment
+are **named** in the report, so "N functions agree" cannot be misread as "everything
+agrees". The fragment is integer/boolean locals, `let`/assignment, `if`/`else`,
+`return`, and direct calls; it excludes loops (Gallina needs a termination argument),
+structs, enums, arrays, matches, borrows, casts, generics, floats and strings.
+Extraction is also **closed under calling** — a function whose callee is outside the
+fragment is excluded, since otherwise the emitted Gallina references an unbound name.
+
 Two caveats on what the badge means, both checkable:
 
 - Kernels are matched on the obligation **key**, and each prover driver re-spells

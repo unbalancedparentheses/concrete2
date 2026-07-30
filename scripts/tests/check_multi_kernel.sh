@@ -118,6 +118,85 @@ EOF
     && ok "un-requested kernel reads 'off', not 'agrees'" \
     || no "un-requested kernel should read 'off'"
 
+  echo "=== bridge DIVERSITY: Core->Rocq extraction vs the interpreter ==="
+  # The gap multi-kernel names as a non-attestation: every kernel checks a lowering
+  # produced by ONE Core->VC bridge, so a bridge bug is invisible to all of them.
+  # This takes a SECOND independent path from Core to a value and compares.
+  for f in "$DEMO" "$FAMILIES"; do
+    "$COMPILER" "$f" --report bridge-diversity >/dev/null 2>&1
+    [ $? -eq 0 ] && ok "bridge-diversity agrees on $(basename "$f")" \
+                  || no "bridge-diversity should agree on $(basename "$f")"
+  done
+  BD="$("$COMPILER" "$FAMILIES" --report bridge-diversity 2>/dev/null)"
+  # Coverage must be stated, not implied: a function outside the fragment is NAMED
+  # rather than silently skipped, so "N agree" cannot be read as "everything agrees".
+  printf '%s' "$BD" | grep -q "OUTSIDE the extractable fragment" \
+    && ok "functions outside the fragment are named, not silently skipped" \
+    || no "unextractable functions should be reported"
+  printf '%s' "$BD" | grep -q "read_at" \
+    && ok "array-indexing function correctly reported as outside the fragment" \
+    || no "read_at should be outside the fragment"
+
+  echo "=== extraction semantics: truncating vs flooring division really differ ==="
+  # The extraction maps `/` to Z.quot (truncating, matching Int.tdiv), NOT Z.div
+  # (flooring). This locks the fact that the distinction is real, so the choice
+  # cannot be "simplified" to Z.div without a gate failing. Injecting Z.div for
+  # Z.quot makes div_safe DISAGREE on (-7)/2 — that is what this protects.
+  DTMP="$(mktemp -d)"
+  cat > "$DTMP/d.v" <<'EOF'
+From Stdlib Require Import ZArith.
+Open Scope Z_scope.
+Goal Z.quot (-7) 2 = -3. Proof. reflexivity. Qed.
+Goal Z.div  (-7) 2 = -4. Proof. reflexivity. Qed.
+EOF
+  ( cd "$DTMP" && coqc -native-compiler no d.v >/dev/null 2>&1 )
+  [ $? -eq 0 ] && ok "Z.quot truncates and Z.div floors — the mapping choice matters" \
+                || no "division semantics changed — revisit extractBinOp"
+  # And lock the marker the disagreement classifier reads.
+  cat > "$DTMP/u.v" <<'EOF'
+From Stdlib Require Import ZArith.
+Open Scope Z_scope.
+Definition f (a : Z) : Z := Z.add a 1.
+Goal f 1 = 3. Proof. reflexivity. Qed.
+EOF
+  U_OUT="$( cd "$DTMP" && coqc -native-compiler no u.v 2>&1 )"
+  printf '%s' "$U_OUT" | grep -q "Unable to unify" \
+    && ok "a mismatched equation still prints 'Unable to unify' (DISAGREE marker)" \
+    || no "reflexivity-mismatch marker changed — bridge-diversity classifier needs updating"
+  rm -rf "$DTMP"
+
+  echo "=== FLAGSHIP: elf_header carries every evidence surface at once ==="
+  # The "really works on non-toy code" proof: a 244-line example that is
+  # multi-kernel proved, bridge-fuzzed, lowering-checked AND extraction-checked.
+  ELF="examples/elf_header/src/main.con"
+  "$COMPILER" "$ELF" --report bridge-check >/dev/null 2>&1
+  [ $? -eq 0 ] && ok "elf_header: bridge-check (concrete fuzz vs VC) passes" \
+                || no "elf_header bridge-check should pass"
+  "$COMPILER" "$ELF" --report bridge-diversity >/dev/null 2>&1
+  [ $? -eq 0 ] && ok "elf_header: Core->Rocq extraction agrees with the interpreter" \
+                || no "elf_header bridge-diversity should agree"
+  "$COMPILER" "$ELF" --report lowering-agreement --rocq >/dev/null 2>&1
+  [ $? -eq 0 ] && ok "elf_header: rocq lowering means the same proposition" \
+                || no "elf_header lowering-agreement should pass"
+  EBD="$("$COMPILER" "$ELF" --report bridge-diversity 2>/dev/null)"
+  for fn in check_magic check_class check_data check_version validate_header; do
+    printf '%s' "$EBD" | grep -q "\[$fn\]  agree" \
+      && ok "elf_header: $fn agrees across both evaluators" \
+      || no "elf_header: $fn should agree"
+  done
+  CV="$("$COMPILER" examples/crypto_verify/src/main.con --report bridge-diversity 2>/dev/null)"
+  printf '%s' "$CV" | grep -q "\[compute_tag\]  agree" \
+    && ok "crypto_verify: compute_tag agrees across both evaluators" \
+    || no "crypto_verify compute_tag should agree"
+
+  echo "=== flag parsing: a valid flag COMBINATION is not a usage error ==="
+  # `--rocq --isabelle --require-two-kernels` used to fall through to the usage dump,
+  # so a caller checking only the exit code read a usage error as a failed gate.
+  "$COMPILER" "$DEMO" --report multi-kernel --rocq --isabelle >/dev/null 2>&1
+  [ $? -eq 0 ] && ok "--rocq --isabelle is accepted" || no "--rocq --isabelle should work"
+  "$COMPILER" "$DEMO" --report multi-kernel --bogus-flag >/dev/null 2>&1
+  [ $? -eq 1 ] && ok "an unknown flag is still rejected" || no "unknown flags must be rejected"
+
   echo "=== verdict classification: 'refused' vs 'error' rests on real coqc markers ==="
   # The classifier calls a nonzero coqc exit `refused` ONLY on a tactic-failure
   # marker; anything else is `error` (our bug). Both exit 1, so this locks the
