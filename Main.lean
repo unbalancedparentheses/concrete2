@@ -82,7 +82,7 @@ def helpText : String := String.intercalate "\n" [
   ""]
 
 def usage : String :=
-  "Usage: concrete <file.con> [-o output] [--emit-llvm] [--emit-core] [--emit-ssa] [--emit-trace-json] [--trace-pipeline] [--test] [--test --module <name>] [--interp] [--report caps|unsafe|layout|interface|alloc|mono|authority|proof|eligibility|proof-status|obligations|extraction|lean-stubs|check-proofs|proof-diagnostics|proof-deps|proof-bundle|traceability|diagnostics-json|effects|recursion|stack-depth|fingerprints|consistency|contracts|vcs|obligation-ledger|compiler-ledger|verify|audit|arithmetic|multi-kernel] [--report multi-kernel [--rocq] [--isabelle] [--all-provers]] [--query KIND|KIND:FUNCTION|fn:FUNCTION] [--fmt (legacy; use `concrete fmt`)]\n       concrete build [-o output] [--emit-llvm]\n       concrete check\n       concrete fmt <file.con> [--check | --write | --stdin]\n       concrete audit <file.con>\n       concrete prove <file.con> <module.function> [--json] [--out <path>] [--force] [--emit-link] [--emit-lean] [--emit-artifacts] [--out-dir <dir>] [--show-obligation <id>] [--replay] [--nearest-lemmas] [--check] [--workspace <dir>]\n       concrete prove --help=agent | --capabilities | --schema\n       concrete run [-- args...]\n       concrete test [--module <name>]\n       concrete diff <old.json> <new.json> [--json]\n       concrete snapshot <file.con> [-o output.json]\n       concrete debug-bundle <file.con> [-o dir]\n       concrete reduce <file.con> --predicate <pred> [-o output] [--verbose]\n       concrete --version"
+  "Usage: concrete <file.con> [-o output] [--emit-llvm] [--emit-core] [--emit-ssa] [--emit-trace-json] [--trace-pipeline] [--test] [--test --module <name>] [--interp] [--report caps|unsafe|layout|interface|alloc|mono|authority|proof|eligibility|proof-status|obligations|extraction|lean-stubs|check-proofs|proof-diagnostics|proof-deps|proof-bundle|traceability|diagnostics-json|effects|recursion|stack-depth|fingerprints|consistency|contracts|vcs|obligation-ledger|compiler-ledger|verify|audit|arithmetic|multi-kernel|bridge-check|solver-cert] [--report multi-kernel [--rocq] [--isabelle] [--all-provers] [--require-two-kernels]] [--query KIND|KIND:FUNCTION|fn:FUNCTION] [--fmt (legacy; use `concrete fmt`)]\n       concrete build [-o output] [--emit-llvm]\n       concrete check\n       concrete fmt <file.con> [--check | --write | --stdin]\n       concrete audit <file.con>\n       concrete prove <file.con> <module.function> [--json] [--out <path>] [--force] [--emit-link] [--emit-lean] [--emit-artifacts] [--out-dir <dir>] [--show-obligation <id>] [--replay] [--nearest-lemmas] [--check] [--workspace <dir>]\n       concrete prove --help=agent | --capabilities | --schema\n       concrete run [-- args...]\n       concrete test [--module <name>]\n       concrete diff <old.json> <new.json> [--json]\n       concrete snapshot <file.con> [-o output.json]\n       concrete debug-bundle <file.con> [-o dir]\n       concrete reduce <file.con> --predicate <pred> [-o output] [--verbose]\n       concrete --version"
 
 /-- Capture compiler identity: version, git commit, lean toolchain. -/
 def compilerIdentity : IO String := do
@@ -872,6 +872,18 @@ def isabelleDischarge (goals : List (String × String)) : IO (Option (List Strin
     if ok then closed := closed ++ [k]
   return some closed
 
+/-- Run the enabled external kernels over the multi-kernel obligation goals and
+    return the VC ids each independently closed (empty when the flag is off or the
+    tool is absent). Shared by the multi-kernel report and the ledger fold so both
+    surfaces agree. -/
+def externalClosedSets (modules : List Concrete.Module) (rocqRun isaRun : Bool)
+    : IO (List String × List String) := do
+  let rocqClosed ← if rocqRun then do
+      let r ← rocqDischarge (Report.rocqReplayGoals modules); pure (r.getD []) else pure []
+  let isaClosed ← if isaRun then do
+      let r ← isabelleDischarge (Report.isabelleReplayGoals modules); pure (r.getD []) else pure []
+  pure (rocqClosed, isaClosed)
+
 /-- Phase 3 #14: policy inputs derived from the ONE obligation ledger. Builds the
     discharged ledger (folding the external-SMT path when a solver-evidence stance
     is set, so `solver_trusted` is present), then projects the vacuous / assume /
@@ -974,7 +986,7 @@ def compileAndReport (inputPath : String) (reportType : String)
     (smtRun : Bool := false) (smtEmit : Bool := false)
     (smtReplay : Bool := false) (emitLeanReplay : Bool := false)
     (smtTimeoutMs : Option Nat := none) (rocqRun : Bool := false)
-    (isaRun : Bool := false) : IO UInt32 := do
+    (isaRun : Bool := false) (reqTwoKernels : Bool := false) : IO UInt32 := do
   -- The second-kernel flags only affect the multi-kernel report; warn rather than
   -- silently ignore them elsewhere (finding: silent no-op reads as "it ran").
   if (rocqRun || isaRun) && reportType != "multi-kernel" && reportType != "two-kernels" then
@@ -1271,6 +1283,13 @@ def compileAndReport (inputPath : String) (reportType : String)
       -- (runtime-safety, contracts incl. clause diagnostics) PLUS the proof-link
       -- freshness family (#11), projected into the one schema.
       let dvcs ← computeVCsDischarged parsed.modules locMap registry
+      -- Opt-in: with --rocq/--isabelle, fold independent-kernel agreement into the
+      -- ONE ledger so `proved_by_two_kernels`/`proved_by_multi_kernel` are produced
+      -- by a real ledger path (not only the multi-kernel report). Default unchanged.
+      let dvcs ← if rocqRun || isaRun then do
+          let (rc, ic) ← externalClosedSets parsed.modules rocqRun isaRun
+          pure (Report.foldMultiKernelResults dvcs rc ic)
+        else pure dvcs
       let vcLedger := Concrete.ObligationCore.ledgerOfVCs dvcs
       let proofLinks := Concrete.ObligationCore.proofLinkLedger
         (Report.proofStatusEntries validCore.coreModules locMap registry pc)
@@ -1354,6 +1373,7 @@ def compileAndReport (inputPath : String) (reportType : String)
           | some closed => if !emitted.contains k then "not-asked"
                            else if closed.contains k then "closed" else "refused"
       let mut out := "=== Multi-kernel evidence (spike: prover-neutral obligation layer) ==="
+      let mut belowTwo := 0
       out := out ++ "\n  lean:omega (in-toolchain kernel)"
       for (_, label, _, id, _, _) in kernels do out := out ++ s!"\n  {label}:  {id}"
       -- Honesty boundary: CHECKER diversity, not BRIDGE diversity. All kernels check
@@ -1373,6 +1393,7 @@ def compileAndReport (inputPath : String) (reportType : String)
           ++ kernels.filterMap (fun (name, _, en, _, em, res) =>
                 if cellOf en em res o.key == "closed" then some name else none)
         let n := attest.length
+        if n < 2 then belowTwo := belowTwo + 1
         let cls :=
           if n ≥ 3 then s!"proved_by_multi_kernel ({n}: {", ".intercalate attest})"
           else if n == 2 then s!"proved_by_two_kernels ({", ".intercalate attest})"
@@ -1384,6 +1405,77 @@ def compileAndReport (inputPath : String) (reportType : String)
         out := out ++ s!"\n      lean:omega = {if leanOk then "closed" else "refused"}"
         for (_, label, en, _, em, res) in kernels do out := out ++ s!"   {label} = {cellOf en em res o.key}"
         out := out ++ s!"\n      => {cls}"
+      -- Release gate: with --require-two-kernels, fail if any in-scope obligation
+      -- did not reach ≥2 independent kernels. A genuine CI gate, not just a report.
+      if reqTwoKernels && belowTwo > 0 then
+        out := out ++ s!"\n\nGATE: --require-two-kernels FAILED — {belowTwo} obligation(s) below 2 independent kernels."
+        IO.println (out ++ "\n")
+        return 1
+      if reqTwoKernels then out := out ++ "\n\nGATE: --require-two-kernels PASSED — every obligation has ≥2 independent kernels."
+      IO.println (out ++ "\n")
+      return 0
+    if reportType == "bridge-check" then
+      -- Feature #1: differential-test the Core→VC BRIDGE against an INDEPENDENT
+      -- concrete evaluator. For each linear obligation, fuzz hypothesis-satisfying
+      -- assignments and look for one that refutes the safety conclusion. A
+      -- counterexample under a PROVED obligation is a bridge/discharge unsoundness
+      -- (exit 1). A counterexample under an UNPROVED one is expected and shows the
+      -- fuzzer has teeth. This checks a different axis than multi-kernel: not "do N
+      -- kernels agree the VC is valid" but "does the VC actually match execution".
+      let omegaProved ← kernelDischargeLoopVCs
+        (Report.overflowGoals parsed.modules ++ Report.boundsGoals parsed.modules ++ Report.divGoals parsed.modules)
+      let results := Report.bridgeFuzz parsed.modules
+      let mut out := "=== Bridge differential-check (concrete evaluation vs the VC) ==="
+      out := out ++ "\n  tests whether a PROVED obligation is ever refuted by a concrete, hypothesis-"
+      out := out ++ "\n  satisfying input (would mean the Core→VC bridge or discharge is unsound).\n"
+      let mut unsound := 0
+      for r in results do
+        let proved := omegaProved.contains r.key
+        let verdict ←
+          match r.counterexample with
+          | some env =>
+            let e := ", ".intercalate (env.map (fun (n, v) => s!"{n}={v}"))
+            if proved then do
+              unsound := unsound + 1
+              pure s!"UNSOUND — proved, but refuted by [{e}]"
+            else pure s!"violation found by fuzzer (expected: unproved) [{e}]"
+          | none =>
+            if r.hypSat == 0 then pure "inconclusive (no hypothesis-satisfying inputs in grid)"
+            else if proved then pure s!"ok — proved; {r.hypSat} inputs checked, no counterexample"
+            else pure s!"no counterexample in grid ({r.hypSat} inputs); unproved"
+        out := out ++ s!"\n  [{r.key}]  {r.desc}\n      {verdict}"
+      if unsound > 0 then
+        out := out ++ s!"\n\nBRIDGE-CHECK FAILED — {unsound} proved obligation(s) refuted by concrete inputs."
+        IO.println (out ++ "\n"); return 1
+      out := out ++ "\n\nBRIDGE-CHECK: no proved obligation refuted by concrete evaluation."
+      IO.println (out ++ "\n")
+      return 0
+    if reportType == "solver-cert" then
+      -- Feature #2: certificate-check the SMT solver. Nonlinear overflow VCs the
+      -- kernel tiers can't close go to an external solver (`solver_trusted` — solver
+      -- in the TCB). Here we ALSO hand each to Rocq's `nia`: a VC the solver reports
+      -- unsat AND `nia` independently closes graduates to `solver_checked` — a kernel
+      -- corroborated the solver, so the solver drops out of the trusted base. Honest
+      -- boundary: this is kernel corroboration, not literal LRAT/Alethe proof-term
+      -- replay (that needs a certified SAT/SMT checker — future work).
+      let smtGoals := Report.overflowSmtGoals parsed.modules
+      let solverId ← z3VersionId
+      let z3res ← smtDischarge smtGoals 5
+      let niaGoals := Report.rocqNiaGoals parsed.modules
+      let niaEmitted := niaGoals.map (·.1)
+      let niaClosed ← rocqDischarge niaGoals
+      let mut out := "=== Solver certificate-check (SMT solver + independent Rocq nia kernel) ==="
+      out := out ++ s!"\n  solver: {solverId}   kernel: Rocq nia"
+      out := out ++ "\n  solver_trusted = solver in TCB; solver_checked = a kernel corroborated it (solver drops out).\n"
+      if smtGoals.isEmpty then
+        out := out ++ "\n(no SMT-eligible nonlinear obligations in this file)\n"
+      for (k, cls, _) in z3res do
+        let niaCell := match niaClosed with
+          | none => "unavailable"
+          | some c => if !niaEmitted.contains k then "not-asked"
+                      else if c.contains k then "closed" else "refused"
+        let final := if cls == "solver_trusted" && niaCell == "closed" then "solver_checked" else cls
+        out := out ++ s!"\n  [{k}]\n      z3 = {cls}   rocq:nia = {niaCell}   => {final}"
       IO.println (out ++ "\n")
       return 0
     if reportType == "caps" then
@@ -2469,6 +2561,10 @@ def main (args : List String) : IO UInt32 := do
     compileAndReport inputPath reportType (rocqRun := true) (isaRun := true)
   | [inputPath, "--report", reportType, "--all-provers"] =>
     compileAndReport inputPath reportType (rocqRun := true) (isaRun := true)
+  | [inputPath, "--report", reportType, "--all-provers", "--require-two-kernels"] =>
+    compileAndReport inputPath reportType (rocqRun := true) (isaRun := true) (reqTwoKernels := true)
+  | [inputPath, "--report", reportType, "--rocq", "--require-two-kernels"] =>
+    compileAndReport inputPath reportType (rocqRun := true) (reqTwoKernels := true)
   | [inputPath, "--report", reportType, "--smt"] =>
     compileAndReport inputPath reportType (smtRun := true)
   | [inputPath, "--report", reportType, "--smt", "--json"] =>

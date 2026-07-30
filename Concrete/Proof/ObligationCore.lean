@@ -37,6 +37,11 @@ def statusVocabulary : List String :=
     -- a `trusted` boundary.
     "proved_by_rocq", "proved_by_isabelle",
     "proved_by_two_kernels", "proved_by_multi_kernel",
+    -- `solver_checked` = an external SMT solver reported unsat AND an independent
+    -- kernel (Rocq `nia`) also closed the goal, so the solver leaves the TCB —
+    -- strictly stronger than `solver_trusted` (solver-in-TCB). The kernel proof is
+    -- the certificate check of the solver's verdict.
+    "solver_checked",
     "arithmetic_proved", "solver_trusted", "tested_by_oracle", "runtime_checked",
     "enforced", "assumed", "trusted", "partial", "stale", "vacuous", "missing",
     "unproven", "planned", "counterexample", "unknown", "timeout", "solver_error",

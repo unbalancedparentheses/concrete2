@@ -41,6 +41,18 @@ has "mul_unbounded" "=> unproven"         "$BASE"
 # externals not requested -> off, never a false verdict
 has "off-cells" "rocq:lia = off"          "$BASE"
 
+echo "=== bridge differential-check (feature #1): fuzzer teeth + soundness ==="
+BC="$("$COMPILER" "$DEMO" --report bridge-check 2>/dev/null)"
+# proved obligation: no counterexample
+printf '%s' "$BC" | grep -A2 "add_bounded" | grep -q "no counterexample" \
+  && ok "proved add_bounded: no concrete counterexample" || no "add_bounded should have no counterexample"
+# unproved obligation: fuzzer finds a real overflow (teeth)
+printf '%s' "$BC" | grep -A2 "mul_unbounded" | grep -q "violation found by fuzzer" \
+  && ok "unproved mul_unbounded: fuzzer finds a real overflow (teeth)" || no "fuzzer should find mul_unbounded overflow"
+# no PROVED obligation is ever refuted -> exit 0
+"$COMPILER" "$DEMO" --report bridge-check >/dev/null 2>&1
+[ $? -eq 0 ] && ok "bridge-check exits 0 (no proved obligation refuted)" || no "bridge-check should exit 0 here"
+
 echo "=== all runtime-safety families flow through the layer (overflow/bounds/div) ==="
 FAM="$("$COMPILER" "$FAMILIES" --report multi-kernel 2>/dev/null)"
 has "bounds" "#bounds0"                    "$FAM"
@@ -79,6 +91,21 @@ EOF
     && ok "array-bounds obligation closed by Rocq" || no "bounds should close in Rocq"
   printf '%s' "$FR" | grep -A2 "#div0" | grep -q "rocq:lia = closed" \
     && ok "div-nonzero obligation closed by Rocq" || no "div should close in Rocq"
+
+  echo "=== release gate: --require-two-kernels FAILS on an unprovable obligation (#4) ==="
+  "$COMPILER" "$DEMO" --report multi-kernel --rocq --require-two-kernels >/dev/null 2>&1
+  [ $? -eq 1 ] && ok "gate exits 1 when an obligation is below 2 kernels" \
+                || no "gate should exit 1 on failure"
+
+  if command -v z3 >/dev/null 2>&1; then
+    echo "=== solver certificate-check (#2): solver_trusted -> solver_checked ==="
+    SC="$("$COMPILER" examples/contract_negatives/lowering_operators/src/main.con --report solver-cert 2>/dev/null)"
+    printf '%s' "$SC" | grep -q "=> solver_checked" \
+      && ok "nonlinear VC: z3 corroborated by Rocq nia -> solver_checked" \
+      || no "expected a solver_checked graduation"
+  else
+    echo "=== z3 absent — skipping solver-cert assertion ==="
+  fi
 else
   echo "=== Rocq absent — skipping coqc assertions ==="
 fi
@@ -88,6 +115,16 @@ if command -v isabelle >/dev/null 2>&1; then
   A="$("$COMPILER" "$DEMO" --report multi-kernel --all-provers 2>/dev/null)"
   has "add_bounded" "isabelle:presburger = closed" "$A"
   has "add_bounded" "=> proved_by_multi_kernel"    "$A"
+
+  echo "=== ledger fold: obligation-ledger produces the multi-kernel class (#4) ==="
+  L="$("$COMPILER" "$FAMILIES" --report obligation-ledger --all-provers 2>/dev/null)"
+  printf '%s' "$L" | grep -q "proved_by_multi_kernel" \
+    && ok "obligation-ledger folds proved_by_multi_kernel via a real ledger path" \
+    || no "ledger should show proved_by_multi_kernel under --all-provers"
+  echo "=== release gate PASSES when every obligation reaches >=2 kernels (#4) ==="
+  "$COMPILER" "$FAMILIES" --report multi-kernel --all-provers --require-two-kernels >/dev/null 2>&1
+  [ $? -eq 0 ] && ok "gate exits 0 when all obligations have >=2 kernels" \
+                || no "gate should exit 0 when all pass"
 else
   echo "=== Isabelle absent — skipping isabelle assertions ==="
 fi

@@ -2016,6 +2016,9 @@ structure Obligation where
   allowedEngines : List String := []   -- which backends may discharge it
   replay         : String := ""        -- human replay hint
   policyImpact   : String := ""        -- release-policy consequence of `status`
+  -- independent kernels that each accepted a lowering of this obligation (spike
+  -- multi-prover-evidence); set by foldMultiKernelResults, e.g. ["lean","rocq"].
+  attestingKernels : List String := []
 
 /-- Compatibility alias: `VC` is the obligation record, kept for the existing
     discharge/schema/render call sites. -/
@@ -2406,6 +2409,30 @@ def markSmtEligible (vcs : List VC) (smtGoals : List (String × String))
     exactly as is, so the class boundary stays crisp. -/
 def foldReplayResults (vcs : List VC) (replayed : List String) : List VC :=
   replayAdapter.fold "" vcs (replayed.map (fun k => (k, "replayed", [])))
+
+/-- Fold independent-kernel (Rocq/Isabelle) agreement into the ledger (spike
+    multi-prover-evidence). ONLY enriches VCs Lean already kernel-proved
+    (`proved_by_kernel_decision` / `proved_by_lean` / `proved_by_lean_replay`): a
+    VC an external kernel ALSO closed graduates to `proved_by_two_kernels` (one
+    external) or `proved_by_multi_kernel` (≥2), recording the attesters. It never
+    upgrades an unproved VC, never downgrades, and — per the honesty boundary —
+    attests only that each kernel accepted its OWN lowering (no digest cross-check).
+    `rocqClosed`/`isaClosed` are VC ids the external kernels independently closed.
+    Applied only behind the explicit prover flags, so the default ledger is
+    unchanged. -/
+def foldMultiKernelResults (vcs : List VC) (rocqClosed isaClosed : List String) : List VC :=
+  vcs.map fun v =>
+    if v.status == "proved_by_kernel_decision" || v.status == "proved_by_lean"
+       || v.status == "proved_by_lean_replay" then
+      let ext := (if rocqClosed.contains v.id then ["rocq"] else [])
+              ++ (if isaClosed.contains v.id then ["isabelle"] else [])
+      if ext.isEmpty then v
+      else
+        let attest := "lean" :: ext
+        let status := if attest.length ≥ 3 then "proved_by_multi_kernel" else "proved_by_two_kernels"
+        { v with status := status, attestingKernels := attest,
+                 engine := "+".intercalate (v.engine :: ext) }
+    else v
 
 /-- Fold external-solver results into the VC schedule. A result class
     (`solver_trusted` / `counterexample` / `unknown` / `timeout` / `solver_error`)

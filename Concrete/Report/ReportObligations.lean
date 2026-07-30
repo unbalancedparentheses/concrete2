@@ -923,6 +923,47 @@ partial def exprToProver (binop : BinOp → String → String → Option String)
     | _ => binop op L R
   | _ => none
 
+/-! ### Bridge differential-check (feature #1)
+
+An INDEPENDENT concrete evaluator for the contract fragment, used to fuzz proved
+obligations: sample variable assignments, and check that no hypothesis-satisfying
+assignment refutes the obligation's safety conclusion. A counterexample under a
+*proved* obligation would mean the Core→VC bridge (or the discharge) claimed
+something concretely false — the one thing "proved" must never do. Independent of
+`exprToProver`/omega: it evaluates the arithmetic directly (truncating `/`,`%`,
+matching Concrete's `IntArith`), so agreement is a real cross-check, not a tautology. -/
+
+/-- Evaluate a contract `Expr` to an unbounded `Int` under a variable environment.
+    `none` if outside the fragment or a `/`/`%` by zero. Truncating division. -/
+partial def evalIntEnv (env : List (String × Int)) : Expr → Option Int
+  | .intLit _ v => some v
+  | .ident _ n => env.lookup n
+  | .paren _ e => evalIntEnv env e
+  | .unaryOp _ .neg e => (evalIntEnv env e).map (- ·)
+  | .binOp _ op l r => do
+    let a ← evalIntEnv env l; let b ← evalIntEnv env r
+    match op with
+    | .add => some (a + b) | .sub => some (a - b) | .mul => some (a * b)
+    | .div => if b == 0 then none else some (a.tdiv b)
+    | .mod => if b == 0 then none else some (a.tmod b)
+    | _ => none
+  | _ => none
+
+/-- Evaluate a contract `Expr` to a `Bool` under an environment (hypotheses and
+    safety conclusions). `none` if outside the fragment. -/
+partial def evalBoolEnv (env : List (String × Int)) : Expr → Option Bool
+  | .paren _ e => evalBoolEnv env e
+  | .unaryOp _ .not_ e => (evalBoolEnv env e).map (! ·)
+  | .binOp _ .and_ l r => do let a ← evalBoolEnv env l; let b ← evalBoolEnv env r; some (a && b)
+  | .binOp _ .or_  l r => do let a ← evalBoolEnv env l; let b ← evalBoolEnv env r; some (a || b)
+  | .binOp _ op l r => do
+    let a ← evalIntEnv env l; let b ← evalIntEnv env r
+    match op with
+    | .leq => some (a ≤ b) | .lt => some (a < b) | .geq => some (a ≥ b)
+    | .gt => some (a > b)  | .eq => some (a == b) | .neq => some (a != b)
+    | _ => none
+  | _ => none
+
 /-- A family-neutral view of one linear obligation, so every runtime-safety family
     (overflow / array-bounds / div-nonzero, and any future family) flows through the
     SAME prover-neutral lowering instead of each re-implementing it. `mainExpr` is the
@@ -937,6 +978,9 @@ structure MultiKernelObl where
   hyps     : List Expr
   mainExpr : Expr
   mkConcl  : (BinOp → String → String → Option String) → String → Option String
+  -- concrete safety check for the bridge fuzzer (feature #1): does the obligation's
+  -- conclusion hold under this environment? `none` if it can't be evaluated.
+  safeOn   : List (String × Int) → Option Bool
 
 /-- Collect the linear runtime-safety obligations of every family into the neutral
     view. Adding a family is a new block here, not a new lowering. -/
@@ -946,17 +990,64 @@ def multiKernelObligations (modules : List Module) : List MultiKernelObl := Id.r
     if o.closedVerdict.isNone && o.leanGoal.isSome then
       let mk : (BinOp → String → String → Option String) → String → Option String :=
         fun bop e => do let lo ← bop .leq (toString o.lo) e; let hi ← bop .leq e (toString o.hi); bop .and_ lo hi
-      out := out ++ [{ key := o.key, desc := s!"{Concrete.fmtExpr o.opExpr} ∈ [{o.lo}, {o.hi}]", hyps := o.hyps, mainExpr := o.opExpr, mkConcl := mk }]
+      let safe : List (String × Int) → Option Bool :=
+        fun env => (evalIntEnv env o.opExpr).map (fun v => o.lo ≤ v && v ≤ o.hi)
+      out := out ++ [{ key := o.key, desc := s!"{Concrete.fmtExpr o.opExpr} ∈ [{o.lo}, {o.hi}]", hyps := o.hyps, mainExpr := o.opExpr, mkConcl := mk, safeOn := safe }]
   for o in boundsObligations modules do
     if o.closedVerdict.isNone && o.leanGoal.isSome then
       let mk : (BinOp → String → String → Option String) → String → Option String :=
         fun bop e => do let lo ← bop .leq "0" e; let hi ← bop .lt e (toString o.size); bop .and_ lo hi
-      out := out ++ [{ key := o.key, desc := s!"0 ≤ {Concrete.fmtExpr o.idxExpr} < {o.size} (bounds of {o.arrName})", hyps := o.hyps, mainExpr := o.idxExpr, mkConcl := mk }]
+      let safe : List (String × Int) → Option Bool :=
+        fun env => (evalIntEnv env o.idxExpr).map (fun v => 0 ≤ v && v < (Int.ofNat o.size))
+      out := out ++ [{ key := o.key, desc := s!"0 ≤ {Concrete.fmtExpr o.idxExpr} < {o.size} (bounds of {o.arrName})", hyps := o.hyps, mainExpr := o.idxExpr, mkConcl := mk, safeOn := safe }]
   for o in divObligations modules do
     if o.closedVerdict.isNone && o.leanGoal.isSome then
       let mk : (BinOp → String → String → Option String) → String → Option String :=
         fun bop e => bop .neq e "0"
-      out := out ++ [{ key := o.key, desc := s!"{Concrete.fmtExpr o.divExpr} ≠ 0 (divisor)", hyps := o.hyps, mainExpr := o.divExpr, mkConcl := mk }]
+      let safe : List (String × Int) → Option Bool :=
+        fun env => (evalIntEnv env o.divExpr).map (fun v => v != 0)
+      out := out ++ [{ key := o.key, desc := s!"{Concrete.fmtExpr o.divExpr} ≠ 0 (divisor)", hyps := o.hyps, mainExpr := o.divExpr, mkConcl := mk, safeOn := safe }]
+  return out
+
+/-- Result of fuzzing one obligation against the concrete evaluator (feature #1). -/
+structure BridgeFuzzResult where
+  key            : String
+  desc           : String
+  hypSat         : Nat                              -- assignments satisfying every hypothesis
+  counterexample : Option (List (String × Int))     -- a hyp-satisfying assignment that REFUTES safety
+
+/-- Integer probes, including i32 extremes and 46341 (≈√(2^31), where `a*a`
+    overflows i32) so the fuzzer actually finds real violations. -/
+def fuzzGrid : List Int := [-2147483648, -100, -3, -1, 0, 1, 3, 100, 46341, 2147483647]
+
+/-- Cartesian product of `vals` over `vars` (all assignments). Callers bound `vars`
+    and shrink `vals` to keep this finite. -/
+partial def cartesianEnvs (vars : List String) (vals : List Int) : List (List (String × Int)) :=
+  match vars with
+  | [] => [[]]
+  | v :: rest =>
+    let restEnvs := cartesianEnvs rest vals
+    vals.flatMap (fun x => restEnvs.map (fun e => (v, x) :: e))
+
+/-- Fuzz every linear obligation against the INDEPENDENT concrete evaluator: over a
+    grid of assignments, keep those satisfying all hypotheses, and look for one that
+    refutes the safety conclusion. A counterexample under a *proved* obligation is a
+    bridge/discharge unsoundness; a counterexample under an *unproved* one validates
+    that the fuzzer has teeth. Assignments where a hypothesis can't be evaluated are
+    conservatively excluded (never tested against). -/
+def bridgeFuzz (modules : List Module) : List BridgeFuzzResult := Id.run do
+  let mut out : List BridgeFuzzResult := []
+  for o in multiKernelObligations modules do
+    let vars := (collectIdents o.mainExpr ++ o.hyps.flatMap collectIdents).eraseDups
+    -- keep the grid finite: shrink to extremes when there are many variables.
+    let grid := if vars.length ≥ 4 then [(-2147483648 : Int), -1, 0, 1, 46341, 2147483647] else fuzzGrid
+    let mut hypSat := 0
+    let mut cex : Option (List (String × Int)) := none
+    for env in cartesianEnvs vars grid do
+      if o.hyps.all (fun h => evalBoolEnv env h == some true) then
+        hypSat := hypSat + 1
+        if o.safeOn env == some false && cex.isNone then cex := some env
+    out := out ++ [{ key := o.key, desc := o.desc, hypSat, counterexample := cex }]
   return out
 
 /-- `(vcKey, proofScript)` for each linear obligation (ALL families), lowered through
@@ -1000,6 +1091,46 @@ def isabelleLowering : ProverLowering where
     "\n".intercalate
       [ "theory VC imports Main begin",
         s!"lemma \"{binder}{arrows}{concl}\"", "  by presburger", "end" ]
+
+/-- Rocq driver using `nia` (nonlinear integer arithmetic) instead of `lia`. Used to
+    CERTIFICATE-CHECK the solver: a nonlinear VC an external SMT solver reports `unsat`
+    (`solver_trusted`, solver in the TCB) that Rocq's `nia` ALSO closes graduates to
+    `solver_checked` — an independent kernel corroborated the solver, so the solver
+    drops out of the trusted base. `nia` ships with `Require Import Lia` (micromega). -/
+def rocqNiaLowering : ProverLowering where
+  name := "rocq-nia"
+  binop := rocqBinOp
+  render := fun vars hyps concl =>
+    let binder := if vars.isEmpty then "" else s!"forall ({" ".intercalate vars} : Z), "
+    let arrows := String.join (hyps.map (fun h => s!"({h}) -> "))
+    "\n".intercalate
+      [ "(* certificate-check (Rocq/nia) of a solver-trusted nonlinear obligation *)",
+        "From Stdlib Require Import ZArith.", "From Stdlib Require Import Lia.",
+        "Open Scope Z_scope.", s!"Goal {binder}{arrows}{concl}.", "Proof. nia. Qed." ]
+
+/-- SMT-eligible overflow obligations (the genuinely NONLINEAR ones the kernel tiers
+    left open — same selection as `overflowSmtGoals`), as structured obligations so
+    they can be lowered to Rocq `nia` for certificate-checking. -/
+def smtEligibleOverflow (modules : List Module) : List OverflowObl :=
+  (overflowObligations modules).filter fun o =>
+    o.closedVerdict.isNone && o.bvGoal.isNone && exprHasNonlinMul o.opExpr
+
+/-- `(vcKey, coqSource)` lowering each SMT-eligible nonlinear overflow obligation to a
+    Rocq `nia` goal — the certificate-check of the solver's `unsat` verdict. -/
+def rocqNiaGoals (modules : List Module) : List (String × String) := Id.run do
+  let mut out : List (String × String) := []
+  for o in smtEligibleOverflow modules do
+    let concl : Option String := do
+      let e ← exprToProver rocqBinOp o.opExpr
+      let lo ← rocqBinOp .leq (toString o.lo) e
+      let hi ← rocqBinOp .leq e (toString o.hi)
+      rocqBinOp .and_ lo hi
+    match concl, o.hyps.mapM (exprToProver rocqBinOp) with
+    | some c, some hyps =>
+      let vars := (collectIdents o.opExpr ++ o.hyps.flatMap collectIdents).eraseDups
+      out := out ++ [(o.key, rocqNiaLowering.render vars hyps c)]
+    | _, _ => pure ()
+  return out
 
 /-- `(vcKey, coqSource)` for each linear overflow obligation (Rocq driver). -/
 def rocqReplayGoals (modules : List Module) : List (String × String) :=

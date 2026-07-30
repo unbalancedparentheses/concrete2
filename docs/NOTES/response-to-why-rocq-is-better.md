@@ -131,6 +131,29 @@ Notes that make this honest rather than decorative:
   `proved_by_multi_kernel` are added to the one `statusVocabulary` and do not launder
   past a `trusted` boundary.
 
+Follow-on work landed on the branch (all with skip-if-absent tests in
+`scripts/tests/check_multi_kernel.sh`):
+
+- **All runtime-safety families, not just overflow.** A prover-neutral
+  `MultiKernelObl` routes overflow / array-bounds / division-by-zero obligations
+  through one lowering; each graduates across Lean/Rocq/Isabelle.
+- **Real ledger + release gate.** `foldMultiKernelResults` folds independent-kernel
+  agreement into the one `ObligationCore` ledger (so `proved_by_two_kernels` /
+  `proved_by_multi_kernel` are produced by a real path, not only the report), and
+  `--report multi-kernel --require-two-kernels` is a CI gate that exits non-zero when
+  any obligation falls below two kernels.
+- **Bridge differential-check** (`--report bridge-check`). An independent concrete
+  evaluator fuzzes hypothesis-satisfying inputs; a proved obligation refuted by a
+  concrete input would expose a Core→VC bridge/discharge unsoundness (exit 1). It has
+  teeth: on an unproved obligation (`a*b` with only sign bounds) it finds the real
+  overflow. This directly targets the *bridge*-vs-*checker* gap above — still
+  single-sourced bridge, but now continuously cross-checked against execution.
+- **Solver certificate-check** (`--report solver-cert`). A nonlinear VC an SMT solver
+  reports `unsat` (`solver_trusted`, solver in the TCB) that Rocq's `nia` also closes
+  graduates to `solver_checked` — a kernel corroborates the solver, dropping it from
+  the trusted base. Honest boundary: kernel corroboration, not literal LRAT/Alethe
+  proof-term replay (that needs a certified SAT/SMT checker — future work).
+
 Scope caveat: today the shared fragment is linear integer arithmetic (the favorable
 slice) over `#[overflow_checked]` obligations. It proves the *mechanism* — same
 obligation, N independent kernels, graded evidence — not the hard deferred features
