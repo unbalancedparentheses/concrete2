@@ -30,7 +30,10 @@
             gnumake
             gnugrep
             coreutils
-            python3
+            # pyyaml so scripts/tests/check_workflow_yaml.sh can actually run: it
+            # needs pyyaml or ruby and FAILS (rather than skips) without either, so
+            # the gate was red in this shell for everyone.
+            (python3.withPackages (ps: [ ps.pyyaml ]))
             rustc
             typst
             zola

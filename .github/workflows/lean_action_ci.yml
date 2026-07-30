@@ -922,3 +922,49 @@ jobs:
 
       - name: string_char_at differential
         run: bash ./scripts/tests/check_string_char_at.sh
+
+  # Independent-kernel evidence (Rocq + Isabelle). Deliberately NOT on every PR:
+  # Isabelle is a multi-GB closure and cold proof runs cost ~30s/goal, so this job
+  # is opt-in — on demand, on the weekly schedule, or on a PR labelled
+  # `multi-kernel`. Everything it checks is skip-if-absent in the default shell, so
+  # the ordinary jobs stay fast and green without these tools.
+  #
+  # Nix is used because the prover toolchain is pinned in flake.nix (Rocq 9.0.1,
+  # Isabelle2025-2, veriT, cvc5, drat-trim); reproducing that with apt would fork the
+  # definition of "which kernels attested this".
+  multi-kernel:
+    name: Multi-kernel evidence (Rocq + Isabelle)
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'schedule' ||
+      contains(github.event.pull_request.labels.*.name, 'multi-kernel')
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v27
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      # No /nix/store cache here on purpose: actions/cache cannot round-trip
+      # root-owned store paths reliably, and cache.nixos.org already serves these
+      # closures. Expect a few minutes of substitution on a cold run.
+      - name: Build the compiler in the provers shell
+        run: nix develop .#provers --command lake build
+
+      - name: Report which kernels are actually present
+        run: |
+          nix develop .#provers --command bash -c '
+            echo "coqc:     $(coqc --version 2>/dev/null | head -1)"
+            echo "isabelle: $(isabelle version 2>/dev/null)"
+            echo "z3:       $(z3 --version 2>/dev/null)"
+            echo "veriT:    ${VERIT_SOLVER:-ABSENT}"'
+
+      # The full gate: multi-kernel classes, the release gate, lowering agreement,
+      # bridge diversity (Core->Rocq extraction vs the interpreter), certificate
+      # replay, and the flagship (elf_header) carrying every surface at once.
+      - name: Multi-kernel evidence gate
+        run: nix develop .#provers --command bash ./scripts/tests/check_multi_kernel.sh
