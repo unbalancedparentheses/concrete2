@@ -139,6 +139,49 @@ itself still requires a qualified Rocq artifact; the spike proves the plumbing t
 carry it. Toolchain is provided via the flake devShell (`coq` + `coqPackages.stdlib`,
 `isabelle`).
 
+### Checker diversity vs. bridge diversity (what the badge does *not* attest)
+
+The pipeline has two translation steps, and the spike only diversifies the second:
+
+```
+Concrete Core IR
+   │  Core -> obligation   (overflowObligations / toLeanProp)   <- THE BRIDGE
+   ▼                                                               single-sourced, TRUSTED
+obligation Expr   ∀ vars, hyps -> (lo <= e <= hi)               <- THE SPEC (one object)
+   ├─ to Lean ─ omega (CIC)
+   ├─ to Rocq ─ lia   (CIC)     <- three independent CHECKERS
+   └─ to Isabelle ─ presburger (HOL)                             genuinely diverse
+```
+
+- **What it buys: checker diversity.** Independent kernels + decision procedures, spanning
+  CIC *and* HOL, each confirm the *same* obligation `Expr`. This hardens the "is the
+  formula true?" step — a soundness bug in one kernel/decision procedure is caught.
+- **What it does NOT buy: bridge diversity.** The `Core -> obligation` lowering that
+  connects the *program's semantics* to that formula is produced once by Concrete and is
+  identical for all N kernels. A bug there — wrong integer width, a dropped `#[requires]`
+  conjunct, wrong overflow semantics for `+` — yields the same poisoned obligation to
+  every kernel; all N prove it and agree, and the badge fires with false confidence.
+- **Not even spec diversity, strictly.** The obligation `Expr` is a single object; the
+  three per-prover renderers re-*spell* it but do not re-*derive* it. Their agreement is on
+  the boolean "closed?", not "closed the same formula?", so a transcription bug that maps
+  to a different-but-provable goal is invisible. The renderers are a weak sanity check, not
+  independent specs.
+
+So the honest reading of the badge is **"N independent kernels confirm this VC is valid,"
+never "N kernels confirm the program is correct."** The HOL-vs-CIC independence is real but
+sits *entirely downstream of the bridge*; it does nothing for the trust-critical question
+of whether the VC is the *right* VC. The report prints this boundary inline.
+
+Genuine bridge diversity is a much larger effort (roughly the size of the existing
+`ProofCore` embedding, ~2–4k lines, vs. this spike's ~300): re-encode Core's `eval`
+semantics in each prover and *re-derive* the obligation there, then either differentially
+test the re-encoded semantics against the reference interpreter (pragmatic, evidence-grade)
+or prove agreement (research-grade). And if both encodings are *emitted* from one Concrete
+generator, that generator is a shared bug surface — bridge diversity requires genuinely
+independent derivations, not one generator with two backends. See the Core->Rocq
+extraction / "Realization" row in
+[`why3-architecture-and-positioning.md`](why3-architecture-and-positioning.md).
+
 ## Summary
 
 The article is right that Lean is weaker than Rocq on coinduction, `partial def`

@@ -1339,7 +1339,14 @@ def compileAndReport (inputPath : String) (reportType : String)
       let mut out := "=== Multi-kernel evidence (spike: prover-neutral obligation layer) ==="
       out := out ++ "\n  lean:   omega (in-toolchain kernel)"
       for (label, _, id, _) in kernels do out := out ++ s!"\n  {label}:  via {id}"
-      out := out ++ "\n"
+      -- Honesty boundary: this attests CHECKER diversity, not BRIDGE diversity. All
+      -- kernels check the SAME obligation Expr produced by Concrete's single
+      -- Core->VC lowering; that bridge is not diversified and stays trusted. N
+      -- kernels agreeing means "this VC is valid", NOT "this VC faithfully captures
+      -- the program". A bug in the Core->obligation lowering poisons all N alike.
+      out := out ++ "\n  attests: the OBLIGATION is valid in N independent kernels."
+      out := out ++ "\n  does NOT attest: that the Core->obligation lowering is faithful"
+      out := out ++ "\n                   (single-sourced, trusted — the same for every kernel).\n"
       if linear.isEmpty then
         out := out ++ "\n(no linear no-overflow obligations in this file)\n"
       for o in linear do
