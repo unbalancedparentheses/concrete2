@@ -872,6 +872,112 @@ partial def exprToLeanProp : Expr → Option String
     | _ => leanBinOp op L R
   | _ => none
 
+/-! ## Prover-neutral multi-kernel path — the `proved_by_two_kernels` beachhead
+
+The evidence thesis says independence is the trust value: an obligation a
+Lean-hosted compiler discharges with `omega` should ALSO be dischargeable by
+OTHER, independently-implemented kernels. We lower the SAME structured obligation
+`Expr` through a prover-neutral DRIVER (`ProverLowering`) and hand the script to
+that kernel's linear-arithmetic decision procedure:
+
+  * Rocq / `coqc`  — `lia`        (CIC kernel; certification lineage)
+  * Isabelle / HOL — `presburger` (HOL kernel; FOUNDATIONAL independence from CIC)
+
+A VC that Lean's `omega` AND ≥1 external kernel independently close on the same
+subject graduates `proved_by_kernel_decision` → `proved_by_two_kernels` (or, with
+≥2 externals, `proved_by_multi_kernel`). If a kernel is absent, the honest verdict
+is "it did not run" — the VC keeps its class, never a fabricated upgrade. Adding a
+new prover ("any useful cool language") is a new `ProverLowering` value plus its
+binop column in `ReportVC`, not new plumbing. -/
+
+/-- A prover-neutral lowering DRIVER (the Why3 "driver" idea): everything needed to
+    turn a structured obligation into a self-contained proof script for one external
+    kernel. `binop` is the prover's row of the shared lowering table; `render vars
+    hyps concl` wraps the lowered pieces in that prover's goal/quantifier/proof
+    syntax. Adding a prover is a new value of this record, not new code paths. -/
+structure ProverLowering where
+  name  : String
+  binop : BinOp → String → String → Option String
+  /-- `render quantifiedVars loweredHyps loweredConclusion → full source file`. -/
+  render : List String → List String → String → String
+
+/-- Lower a contract `Expr` through an arbitrary prover's binop column. Same linear
+    fragment as `exprToLeanProp` (int literals/vars, `+`/`-`/`*`, comparisons,
+    connectives, unary `-`/`~`); `div`/`mod` dropped as in `toLeanProp`. Structured
+    (not a string rewrite), so the emitted script is well-formed by construction.
+    Coq and Isabelle share this: both spell unary neg `(- e)`, `not` `~`, and a
+    negative literal `(-k)`; only the binary-op column and wrapper differ. -/
+partial def exprToProver (binop : BinOp → String → String → Option String) : Expr → Option String
+  | .intLit _ v => some (if v < 0 then s!"({v})" else s!"{v}")
+  | .ident _ n => some n
+  | .paren _ e => exprToProver binop e
+  | .unaryOp _ op e => do
+    let E ← exprToProver binop e
+    match op with | .neg => some s!"(- {E})" | .not_ => some s!"(~ {E})" | _ => none
+  | .binOp _ op l r => do
+    let L ← exprToProver binop l; let R ← exprToProver binop r
+    match op with
+    | .div | .mod => none
+    | _ => binop op L R
+  | _ => none
+
+/-- `(vcKey, proofScript)` for each linear overflow obligation, lowered through the
+    given driver. Selection mirrors `overflowGoals` (the omega domain): non-constant
+    obligations carrying a linear `leanGoal`. The conclusion `lo <= e AND e <= hi` is
+    itself built through the driver's binop column, so `<=` / conjunction are spelled
+    the prover's way. Soundness: if the operand OR any hypothesis OR the conclusion
+    falls outside the fragment we DROP the whole goal (never emit a partial one). -/
+def proverReplayGoals (pl : ProverLowering) (modules : List Module) : List (String × String) := Id.run do
+  let mut out : List (String × String) := []
+  for o in overflowObligations modules do
+    if o.closedVerdict.isSome then continue          -- constant tier owns it
+    if o.leanGoal.isNone then continue               -- only the omega/linear domain
+    let concl : Option String := do
+      let e ← exprToProver pl.binop o.opExpr
+      let lo ← pl.binop .leq (toString o.lo) e
+      let hi ← pl.binop .leq e (toString o.hi)
+      pl.binop .and_ lo hi
+    match concl, o.hyps.mapM (exprToProver pl.binop) with
+    | some c, some hyps =>
+      let vars := (collectIdents o.opExpr ++ o.hyps.flatMap collectIdents).eraseDups
+      out := out ++ [(o.key, pl.render vars hyps c)]
+    | _, _ => pure ()
+  return out
+
+/-- Rocq/`coqc` driver: `Goal forall (vars : Z), h1 -> ... -> concl. Proof. lia. Qed.`
+    `lia` is Coq's linear-integer-arithmetic decision procedure (CIC kernel). -/
+def rocqLowering : ProverLowering where
+  name := "rocq"
+  binop := rocqBinOp
+  render := fun vars hyps concl =>
+    let binder := if vars.isEmpty then "" else s!"forall ({" ".intercalate vars} : Z), "
+    let arrows := String.join (hyps.map (fun h => s!"({h}) -> "))
+    "\n".intercalate
+      [ "(* second-kernel (Rocq/lia) check of a linear no-overflow obligation *)",
+        "From Stdlib Require Import ZArith.", "From Stdlib Require Import Lia.",
+        "Open Scope Z_scope.", s!"Goal {binder}{arrows}{concl}.", "Proof. lia. Qed." ]
+
+/-- Isabelle/HOL driver: `lemma "ALL vars::int. h1 --> ... --> concl" by presburger`.
+    `presburger` decides linear integer arithmetic in a HOL kernel — independent of
+    CIC, so agreement with Lean/Rocq is FOUNDATIONAL cross-logic independence. -/
+def isabelleLowering : ProverLowering where
+  name := "isabelle"
+  binop := isabelleBinOp
+  render := fun vars hyps concl =>
+    let binder := if vars.isEmpty then "" else s!"ALL {" ".intercalate vars}::int. "
+    let arrows := String.join (hyps.map (fun h => s!"({h}) --> "))
+    "\n".intercalate
+      [ "theory VC imports Main begin",
+        s!"lemma \"{binder}{arrows}{concl}\"", "  by presburger", "end" ]
+
+/-- `(vcKey, coqSource)` for each linear overflow obligation (Rocq driver). -/
+def rocqReplayGoals (modules : List Module) : List (String × String) :=
+  proverReplayGoals rocqLowering modules
+
+/-- `(vcKey, isabelleTheorySource)` for each linear overflow obligation (Isabelle). -/
+def isabelleReplayGoals (modules : List Module) : List (String × String) :=
+  proverReplayGoals isabelleLowering modules
+
 /-- `(vcKey, leanTheoremSource)` for each SMT-eligible VC: a self-contained Lean
     theorem restating the obligation, with a `by omega` proof attempt. Same
     selection as `overflowSmtGoals`. -/

@@ -24,6 +24,15 @@ namespace Concrete.ObligationCore
     `proved_by_kernel_decision`; an external solver only the solver classes. -/
 def statusVocabulary : List String :=
   [ "proved_by_lean", "proved_by_kernel_decision", "proved_by_lean_replay",
+    -- Second-kernel classes: `proved_by_rocq` = an independent kernel (coqc/lia)
+    -- closed it; `proved_by_two_kernels` = Lean AND Rocq independently closed the
+    -- SAME subject digest. Strictly stronger than either single-kernel class; it
+    -- attests IMPLEMENTATION independence (two codebases agree), NOT foundational
+    -- independence (both are CIC-flavored). `proved_by_multi_kernel` = Lean + ≥2
+    -- external kernels; when Isabelle (HOL) is among them the agreement is
+    -- FOUNDATIONAL cross-logic independence, not just implementation independence.
+    -- Never launders past a `trusted` boundary.
+    "proved_by_rocq", "proved_by_two_kernels", "proved_by_multi_kernel",
     "arithmetic_proved", "solver_trusted", "tested_by_oracle", "runtime_checked",
     "enforced", "assumed", "trusted", "partial", "stale", "vacuous", "missing",
     "unproven", "planned", "counterexample", "unknown", "timeout", "solver_error",

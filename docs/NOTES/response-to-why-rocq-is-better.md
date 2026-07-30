@@ -96,6 +96,49 @@ without rewriting the compiler or abandoning the evidence model. See
 [`why3-architecture-and-positioning.md`](why3-architecture-and-positioning.md) and
 [`lean-vs-rocq-tradeoffs.md`](lean-vs-rocq-tradeoffs.md).
 
+### Prototype status (2026-07-30, branch `spike/multi-prover-evidence`)
+
+The multi-kernel argument is no longer just a claim — there is a working spike. A
+prover-neutral driver (`Report.ProverLowering`: a binop column plus a goal template)
+lowers the *same* structured obligation to multiple independent kernels, dispatched
+behind opt-in flags:
+
+```
+concrete <file>.con --report multi-kernel --rocq --isabelle
+```
+
+On a linear no-overflow obligation (`a + b` with both operands bounded), all three
+kernels independently discharge it and the evidence graduates:
+
+```
+[demo.add_bounded#ovf0]  a + b  (range [-2147483648, 2147483647])
+    lean:omega = true   rocq:lia = true   isabelle:presburger = true
+    => proved_by_multi_kernel (3: lean, rocq:lia, isabelle:presburger)
+```
+
+Notes that make this honest rather than decorative:
+
+- **Foundational independence, demonstrated.** Two kernels are CIC (Lean `omega`, Rocq
+  `lia`) and one is HOL (Isabelle `presburger`). Agreement across CIC *and* HOL is the
+  strong form of the independence argument — a shared CIC soundness bug cannot explain
+  a HOL kernel also accepting the goal.
+- **The badge has teeth.** A weakly-bounded `a * b` (only `0 <= a, 0 <= b`) is closed by
+  *no* kernel and honestly stays `unproven` — the class is earned, not stamped.
+- **Absent kernels never attest.** Without `--rocq`/`--isabelle` (or when the tool is off
+  PATH) the kernel column reads "not run" and nothing graduates; an unavailable checker
+  cannot manufacture evidence.
+- **New classes are distinct.** `proved_by_rocq` / `proved_by_two_kernels` /
+  `proved_by_multi_kernel` are added to the one `statusVocabulary` and do not launder
+  past a `trusted` boundary.
+
+Scope caveat: today the shared fragment is linear integer arithmetic (the favorable
+slice) over `#[overflow_checked]` obligations. It proves the *mechanism* — same
+obligation, N independent kernels, graded evidence — not the hard deferred features
+(heap, coinduction) where the provers would diverge in capability. Certification lineage
+itself still requires a qualified Rocq artifact; the spike proves the plumbing that would
+carry it. Toolchain is provided via the flake devShell (`coq` + `coqPackages.stdlib`,
+`isabelle`).
+
 ## Summary
 
 The article is right that Lean is weaker than Rocq on coinduction, `partial def`
