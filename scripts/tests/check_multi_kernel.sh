@@ -97,6 +97,57 @@ EOF
   [ $? -eq 1 ] && ok "gate exits 1 when an obligation is below 2 kernels" \
                 || no "gate should exit 1 on failure"
 
+  echo "=== lowering agreement: each kernel's rendering means the SAME proposition ==="
+  # Ground-pinned instances of the driver's own rendering, decided by the prover and
+  # compared against the independent concrete evaluator. Exit 0 = every rendering
+  # checked has the reference truth table.
+  "$COMPILER" "$DEMO" --report lowering-agreement --rocq >/dev/null 2>&1
+  [ $? -eq 0 ] && ok "demo: rocq lowering agrees with the reference evaluator" \
+                || no "demo: rocq lowering should agree"
+  "$COMPILER" "$FAMILIES" --report lowering-agreement --rocq >/dev/null 2>&1
+  [ $? -eq 0 ] && ok "families (overflow+bounds+div): rocq lowerings all agree" \
+                || no "families: rocq lowerings should agree"
+  AG="$("$COMPILER" "$FAMILIES" --report lowering-agreement --rocq 2>/dev/null)"
+  # every family must actually be CHECKED, not silently skipped
+  for k in "#ovf0" "#bounds0" "#div0"; do
+    printf '%s' "$AG" | grep -q -- "$k" \
+      && ok "agreement check covers $k" || no "agreement check should cover $k"
+  done
+  # a kernel not requested must not be silently reported as agreeing
+  printf '%s' "$AG" | grep -q "isabelle:presburger: off" \
+    && ok "un-requested kernel reads 'off', not 'agrees'" \
+    || no "un-requested kernel should read 'off'"
+
+  echo "=== verdict classification: 'refused' vs 'error' rests on real coqc markers ==="
+  # The classifier calls a nonzero coqc exit `refused` ONLY on a tactic-failure
+  # marker; anything else is `error` (our bug). Both exit 1, so this locks the
+  # empirical assumption — if Rocq renames these messages, this fails loudly rather
+  # than silently turning our own broken scripts into "the kernel disagrees".
+  MKTMP="$(mktemp -d)"
+  cat > "$MKTMP/refuse.v" <<'EOF'
+From Stdlib Require Import ZArith.
+From Stdlib Require Import Lia.
+Open Scope Z_scope.
+Goal forall (a b : Z), (-2147483648 <= (a * b) /\ (a * b) <= 2147483647).
+Proof. lia. Qed.
+EOF
+  cat > "$MKTMP/broken.v" <<'EOF'
+From Stdlib Require Import ZArith.
+From Stdlib Require Import Lia.
+Open Scope Z_scope.
+Goal forall (a b : Z), (a ~= b).
+Proof. lia. Qed.
+EOF
+  R_OUT="$(cd "$MKTMP" && coqc -native-compiler no refuse.v 2>&1)"
+  printf '%s' "$R_OUT" | grep -q "Tactic failure" \
+    && ok "a genuine lia refusal still prints 'Tactic failure'" \
+    || no "lia refusal marker changed — classifyRocqFailure needs updating"
+  B_OUT="$(cd "$MKTMP" && coqc -native-compiler no broken.v 2>&1)"
+  printf '%s' "$B_OUT" | grep -q "Tactic failure" \
+    && no "a malformed script must NOT look like a tactic failure" \
+    || ok "a malformed script does not print 'Tactic failure' (reads as error)"
+  rm -rf "$MKTMP"
+
   if command -v z3 >/dev/null 2>&1; then
     echo "=== solver certificate-check (#2): solver_trusted -> solver_checked ==="
     SC="$("$COMPILER" examples/contract_negatives/lowering_operators/src/main.con --report solver-cert 2>/dev/null)"
@@ -125,6 +176,33 @@ if command -v isabelle >/dev/null 2>&1; then
   "$COMPILER" "$FAMILIES" --report multi-kernel --all-provers --require-two-kernels >/dev/null 2>&1
   [ $? -eq 0 ] && ok "gate exits 0 when all obligations have >=2 kernels" \
                 || no "gate should exit 0 when all pass"
+
+  echo "=== lowering agreement holds for the HOL kernel too ==="
+  # Isabelle is the case that motivated pinning variables rather than substituting
+  # literals: an unquantified proposition gets a fresh free type variable per numeral
+  # (0 <= (100::'b)), so the lemma stops being about integers and presburger cannot
+  # prove it. This asserts the typed binder survives into the agreement instances.
+  "$COMPILER" "$FAMILIES" --report lowering-agreement --isabelle >/dev/null 2>&1
+  [ $? -eq 0 ] && ok "families: isabelle lowerings agree with the reference evaluator" \
+                || no "families: isabelle lowerings should agree (typed binder retained?)"
+  "$COMPILER" "$DEMO" --report lowering-agreement --rocq --isabelle >/dev/null 2>&1
+  [ $? -eq 0 ] && ok "demo: rocq AND isabelle lowerings both agree" \
+                || no "demo: both lowerings should agree"
+
+  echo "=== isabelle refusal vs malformed-theory markers (classifier assumption) ==="
+  ITMP="$(mktemp -d)"
+  printf 'session VCsess = HOL +\n  theories VC\n' > "$ITMP/ROOT"
+  printf 'theory VC imports Main begin\nlemma "ALL a b::int. (-2147483648 <= (a * b) & (a * b) <= 2147483647)"\n  by presburger\nend\n' > "$ITMP/VC.thy"
+  I_OUT="$(cd "$ITMP" && isabelle build -D . 2>&1)"
+  printf '%s' "$I_OUT" | grep -q "Failed to apply initial proof method" \
+    && ok "a genuine presburger refusal still prints 'Failed to apply initial proof method'" \
+    || no "isabelle refusal marker changed — classifyIsabelleFailure needs updating"
+  printf 'theory VC imports Main begin\nlemma "ALL a b::int. (a <=> b)"\n  by presburger\nend\n' > "$ITMP/VC.thy"
+  I_BAD="$(cd "$ITMP" && isabelle build -D . 2>&1)"
+  printf '%s' "$I_BAD" | grep -q "Failed to apply initial proof method" \
+    && no "a malformed theory must NOT look like a proof-method failure" \
+    || ok "a malformed theory does not print the refusal marker (reads as error)"
+  rm -rf "$ITMP"
 else
   echo "=== Isabelle absent — skipping isabelle assertions ==="
 fi

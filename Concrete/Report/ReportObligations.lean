@@ -902,6 +902,24 @@ structure ProverLowering where
   binop : BinOp → String → String → Option String
   /-- `render quantifiedVars loweredHyps loweredConclusion → full source file`. -/
   render : List String → List String → String → String
+  /-- This prover's implication arrow (Rocq `->`, Isabelle `-->`). Needed to build a
+      GROUND implication for the lowering-agreement check, which cannot reuse
+      `render`'s hypothesis handling because it must also negate the whole thing. -/
+  arrow : String := "->"
+  /-- This prover's typed quantifier prefix for `vars` (Rocq `forall (a b : Z), `,
+      Isabelle `ALL a b::int. `). The agreement check MUST keep this even though its
+      instances are ground: Isabelle infers a fresh free type variable per numeral in
+      an unquantified proposition (`0 ≤ (100::'b)`), so the lemma stops being about
+      integers and `presburger` cannot prove it. Variables are therefore pinned by
+      equality hypotheses rather than substituted away. -/
+  binder : List String → String := fun _ => ""
+  /-- Wrap a proposition in this prover's negation. Both Rocq and Isabelle spell it
+      `~`, matching `exprToProver`'s `.not_` case. -/
+  negate : String → String := fun p => s!"~ ({p})"
+  /-- `batchRender closedPropositions → one source file asserting ALL of them`.
+      Batching matters: the agreement check emits one lemma per grid assignment, and
+      a fresh Isabelle session build per lemma would cost ~30s each. -/
+  batchRender : List String → String := fun _ => ""
 
 /-- Lower a contract `Expr` through an arbitrary prover's binop column. Same linear
     fragment as `exprToLeanProp` (int literals/vars, `+`/`-`/`*`, comparisons,
@@ -1050,6 +1068,141 @@ def bridgeFuzz (modules : List Module) : List BridgeFuzzResult := Id.run do
     out := out ++ [{ key := o.key, desc := o.desc, hypSat, counterexample := cex }]
   return out
 
+/-! ### Lowering-agreement check — closing the "same proposition?" hole
+
+`proved_by_two_kernels` matches kernels on the obligation KEY, and each driver
+re-spells the obligation in its own syntax. Nothing so far checks that those
+spellings mean the SAME thing, which the multi-kernel report states outright as a
+non-attestation. So two kernels could each close a DIFFERENT (possibly weaker)
+proposition and the report would still read `proved_by_two_kernels` — the badge
+would be measuring agreement it never established.
+
+This closes that hole without writing a parser per prover syntax: use each prover
+as the evaluator of its OWN output. We take the driver's rendering of the obligation
+verbatim — the same string the multi-kernel path sends the kernel — and PIN its
+variables to one grid assignment with equality hypotheses, giving a proposition
+whose truth value is decided (`lia`/`presburger` both decide ground linear
+arithmetic either way). We compare that against the reference truth value from
+`evalBoolEnv`, the independent concrete evaluator already used by the bridge fuzzer:
+
+  * reference TRUE  → the prover must prove the ground implication
+  * reference FALSE → the prover must prove its NEGATION
+
+If every instance checks, the driver's rendering has the same truth table as the
+reference on the grid — so precedence bugs, a wrong operator column (`~=` vs `<>`),
+and mangled hypotheses all surface. Mapping onto `KernelVerdict` is exact: a
+malformed rendering is a syntax `error`, while a well-formed rendering that means
+something else is a `refused` — a real DISAGREEMENT.
+
+Honest limits. This is a differential test, not a proof of equivalence: it certifies
+agreement on the SAMPLED assignments only. A rendering that differs only at values
+the hypotheses make unreachable will (correctly) read as agreeing, and one that
+differs only outside the grid will be missed — hence `agreementGrid` seeds the
+literals appearing in the obligation and their ±1 neighbours, which is where
+comparison-operator errors live. -/
+
+/-- How many ground instances to check per obligation. Bounded because each instance
+    is a lemma in the emitted script; hypothesis-satisfying assignments are taken
+    first since they are the informative ones (a vacuous instance is trivially true
+    for the prover, though it still catches a hypothesis rendered too weakly). -/
+def agreementInstanceCap : Nat := 24
+
+/-- Every integer literal occurring in an expression. Used to derive BOUNDARY probe
+    values, because an off-by-one operator bug (`<=` rendered as `<`) only shows up
+    at a value where the two differ — a fixed grid can miss it entirely. -/
+partial def collectIntLits : Expr → List Int
+  | .intLit _ v => [v]
+  | .paren _ e => collectIntLits e
+  | .unaryOp _ _ e => collectIntLits e
+  | .binOp _ _ l r => collectIntLits l ++ collectIntLits r
+  | _ => []
+
+/-- Probe values for one obligation: the shared grid plus each literal appearing in
+    the obligation or its hypotheses, and each literal ±1. Those neighbours are what
+    make a comparison-operator error observable. -/
+def agreementGrid (o : MultiKernelObl) (base : List Int) : List Int :=
+  let lits := (o.hyps.flatMap collectIntLits ++ collectIntLits o.mainExpr)
+  let withNeighbours := lits.flatMap (fun v => [v - 1, v, v + 1])
+  (base ++ withNeighbours).eraseDups
+
+/-- One `(vcKey, proofScript)` per obligation: a single batched script whose lemmas
+    are the ground instances described above. A `refused` verdict on that script
+    means this obligation's lowering DISAGREES with the reference evaluator.
+    Obligations whose lowering is outside the fragment are skipped (never asked). -/
+def loweringAgreementScripts (pl : ProverLowering) (modules : List Module)
+    : List (String × String) := Id.run do
+  let mut out : List (String × String) := []
+  for o in multiKernelObligations modules do
+    let vars := (collectIdents o.mainExpr ++ o.hyps.flatMap collectIdents).eraseDups
+    -- Boundary-aware grid. With ≥3 variables the cartesian product explodes, so use
+    -- the bare extremes there and reserve the literal-derived neighbours (which is
+    -- what catches an off-by-one operator column) for the small-arity cases.
+    let base := if vars.length ≥ 4 then [(-2147483648 : Int), -1, 0, 1, 46341, 2147483647]
+                else fuzzGrid
+    let grid := if vars.length ≥ 3 then base else agreementGrid o base
+    -- partition the grid by whether the hypotheses hold, preferring the informative
+    -- (hypothesis-satisfying) assignments up to the cap.
+    let envs := cartesianEnvs vars grid
+    let sat := envs.filter (fun e => o.hyps.all (fun h => evalBoolEnv e h == some true))
+    let unsat := envs.filter (fun e => !(o.hyps.all (fun h => evalBoolEnv e h == some true)))
+    -- Implication instances want hypothesis-SATISFYING assignments: those are where
+    -- the implication is not vacuous.
+    let implEnvs := (sat.take agreementInstanceCap)
+                    ++ (unsat.take (agreementInstanceCap - min agreementInstanceCap sat.length))
+    -- Conclusion-only instances must span the WHOLE grid, hypotheses or not. Taking
+    -- only hypothesis-satisfying points here would defeat the purpose: a weakened
+    -- conclusion is invisible on the domain the hypotheses carve out (see below), so
+    -- half the budget is spent on assignments the hypotheses reject.
+    let half := agreementInstanceCap / 2
+    let conclEnvs := (sat.take half) ++ (unsat.take half)
+    -- The driver's rendering of the obligation itself, rendered ONCE: this is the
+    -- very string the multi-kernel path sends the kernel, so we are checking the
+    -- production lowering, not a special variant of it.
+    let concl := (exprToProver pl.binop o.mainExpr).bind (o.mkConcl pl.binop)
+    let loweredHyps := o.hyps.mapM (exprToProver pl.binop)
+    match concl, loweredHyps with
+    | some c, some hs =>
+      let body := String.join (hs.map (fun h => s!"({h}) {pl.arrow} ")) ++ c
+      -- Pin each variable to an assignment with an equality hypothesis instead of
+      -- substituting a literal, so the prover's TYPED binder is retained. Returns
+      -- `none` if some variable has no value in this environment.
+      let pinnedClaim := fun (env : List (String × Int)) (claim : String) (truth : Bool) =>
+        let pins := vars.filterMap (fun v => do
+          let value ← env.lookup v
+          let lit := if value < 0 then s!"({value})" else s!"{value}"
+          pl.binop .eq v lit)
+        if pins.length != vars.length then none
+        else
+          let pinArrows := String.join (pins.map (fun p => s!"({p}) {pl.arrow} "))
+          some s!"{pl.binder vars}{pinArrows}{if truth then claim else pl.negate claim}"
+      let mut props : List String := []
+      -- (a) the WHOLE implication, which exercises the hypothesis rendering.
+      for env in implEnvs do
+        match o.safeOn env with
+        | none => pure ()   -- no reference obtainable; never guess
+        | some cv =>
+          let hypsHold := o.hyps.all (fun h => evalBoolEnv env h == some true)
+          match pinnedClaim env body (!hypsHold || cv) with
+          | some p => props := props ++ [p]
+          | none => pure ()
+      -- (b) the CONCLUSION alone, over a spread of the grid and ignoring whether the
+      -- hypotheses hold. This is what catches a WEAKENED conclusion: rendering
+      -- `A ∧ B` as `A ∨ B` has the same truth value everywhere the hypotheses hold
+      -- (both conjuncts are true there), so (a) alone provably cannot see it. The two
+      -- differ only where exactly one side holds — assignments the hypotheses reject,
+      -- but still perfectly good tests of the RENDERING itself.
+      for env in conclEnvs do
+        match o.safeOn env with
+        | none => pure ()
+        | some cv =>
+          match pinnedClaim env c cv with
+          | some p => props := props ++ [p]
+          | none => pure ()
+      if !props.isEmpty then
+        out := out ++ [(o.key, pl.batchRender props)]
+    | _, _ => pure ()   -- outside the fragment: never asked
+  return out
+
 /-- `(vcKey, proofScript)` for each linear obligation (ALL families), lowered through
     the given driver. The conclusion is built via the driver's binop column, so `<=` /
     `<` / `<>` / conjunction are spelled the prover's way. Soundness: if the main expr,
@@ -1078,6 +1231,15 @@ def rocqLowering : ProverLowering where
       [ "(* second-kernel (Rocq/lia) check of a linear runtime-safety obligation *)",
         "From Stdlib Require Import ZArith.", "From Stdlib Require Import Lia.",
         "Open Scope Z_scope.", s!"Goal {binder}{arrows}{concl}.", "Proof. lia. Qed." ]
+  arrow := "->"
+  binder := fun vars =>
+    if vars.isEmpty then "" else s!"forall ({" ".intercalate vars} : Z), "
+  batchRender := fun props =>
+    "\n".intercalate
+      ([ "(* lowering-agreement check: pinned instances of ONE obligation *)",
+         "From Stdlib Require Import ZArith.", "From Stdlib Require Import Lia.",
+         "Open Scope Z_scope." ]
+       ++ props.map (fun p => s!"Goal {p}.\nProof. lia. Qed."))
 
 /-- Isabelle/HOL driver: `lemma "ALL vars::int. h1 --> ... --> concl" by presburger`.
     `presburger` decides linear integer arithmetic in a HOL kernel — independent of
@@ -1091,6 +1253,15 @@ def isabelleLowering : ProverLowering where
     "\n".intercalate
       [ "theory VC imports Main begin",
         s!"lemma \"{binder}{arrows}{concl}\"", "  by presburger", "end" ]
+  arrow := "-->"
+  binder := fun vars =>
+    if vars.isEmpty then "" else s!"ALL {" ".intercalate vars}::int. "
+  batchRender := fun props =>
+    -- each lemma needs a distinct name, hence the index
+    "\n".intercalate
+      ([ "theory VC imports Main begin" ]
+       ++ (props.zipIdx.map (fun (p, i) => s!"lemma agree{i}: \"{p}\"\n  by presburger"))
+       ++ [ "end" ])
 
 /-- Rocq driver using `nia` (nonlinear integer arithmetic) instead of `lia`. Used to
     CERTIFICATE-CHECK the solver: a nonlinear VC an external SMT solver reports `unsat`
@@ -1139,6 +1310,14 @@ def rocqReplayGoals (modules : List Module) : List (String × String) :=
 /-- `(vcKey, isabelleTheorySource)` for each linear overflow obligation (Isabelle). -/
 def isabelleReplayGoals (modules : List Module) : List (String × String) :=
   proverReplayGoals isabelleLowering modules
+
+/-- `(vcKey, coqSource)` ground-instance agreement scripts for the Rocq driver. -/
+def rocqAgreementGoals (modules : List Module) : List (String × String) :=
+  loweringAgreementScripts rocqLowering modules
+
+/-- `(vcKey, isabelleTheorySource)` ground-instance agreement scripts (Isabelle). -/
+def isabelleAgreementGoals (modules : List Module) : List (String × String) :=
+  loweringAgreementScripts isabelleLowering modules
 
 /-- `(vcKey, leanTheoremSource)` for each SMT-eligible VC: a self-contained Lean
     theorem restating the obligation, with a `by omega` proof attempt. Same

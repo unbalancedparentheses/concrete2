@@ -82,7 +82,7 @@ def helpText : String := String.intercalate "\n" [
   ""]
 
 def usage : String :=
-  "Usage: concrete <file.con> [-o output] [--emit-llvm] [--emit-core] [--emit-ssa] [--emit-trace-json] [--trace-pipeline] [--test] [--test --module <name>] [--interp] [--report caps|unsafe|layout|interface|alloc|mono|authority|proof|eligibility|proof-status|obligations|extraction|lean-stubs|check-proofs|proof-diagnostics|proof-deps|proof-bundle|traceability|diagnostics-json|effects|recursion|stack-depth|fingerprints|consistency|contracts|vcs|obligation-ledger|compiler-ledger|verify|audit|arithmetic|multi-kernel|bridge-check|solver-cert] [--report multi-kernel [--rocq] [--isabelle] [--all-provers] [--require-two-kernels]] [--query KIND|KIND:FUNCTION|fn:FUNCTION] [--fmt (legacy; use `concrete fmt`)]\n       concrete build [-o output] [--emit-llvm]\n       concrete check\n       concrete fmt <file.con> [--check | --write | --stdin]\n       concrete audit <file.con>\n       concrete prove <file.con> <module.function> [--json] [--out <path>] [--force] [--emit-link] [--emit-lean] [--emit-artifacts] [--out-dir <dir>] [--show-obligation <id>] [--replay] [--nearest-lemmas] [--check] [--workspace <dir>]\n       concrete prove --help=agent | --capabilities | --schema\n       concrete run [-- args...]\n       concrete test [--module <name>]\n       concrete diff <old.json> <new.json> [--json]\n       concrete snapshot <file.con> [-o output.json]\n       concrete debug-bundle <file.con> [-o dir]\n       concrete reduce <file.con> --predicate <pred> [-o output] [--verbose]\n       concrete --version"
+  "Usage: concrete <file.con> [-o output] [--emit-llvm] [--emit-core] [--emit-ssa] [--emit-trace-json] [--trace-pipeline] [--test] [--test --module <name>] [--interp] [--report caps|unsafe|layout|interface|alloc|mono|authority|proof|eligibility|proof-status|obligations|extraction|lean-stubs|check-proofs|proof-diagnostics|proof-deps|proof-bundle|traceability|diagnostics-json|effects|recursion|stack-depth|fingerprints|consistency|contracts|vcs|obligation-ledger|compiler-ledger|verify|audit|arithmetic|multi-kernel|bridge-check|solver-cert|lowering-agreement] [--report multi-kernel [--rocq] [--isabelle] [--all-provers] [--require-two-kernels]] [--query KIND|KIND:FUNCTION|fn:FUNCTION] [--fmt (legacy; use `concrete fmt`)]\n       concrete build [-o output] [--emit-llvm]\n       concrete check\n       concrete fmt <file.con> [--check | --write | --stdin]\n       concrete audit <file.con>\n       concrete prove <file.con> <module.function> [--json] [--out <path>] [--force] [--emit-link] [--emit-lean] [--emit-artifacts] [--out-dir <dir>] [--show-obligation <id>] [--replay] [--nearest-lemmas] [--check] [--workspace <dir>]\n       concrete prove --help=agent | --capabilities | --schema\n       concrete run [-- args...]\n       concrete test [--module <name>]\n       concrete diff <old.json> <new.json> [--json]\n       concrete snapshot <file.con> [-o output.json]\n       concrete debug-bundle <file.con> [-o dir]\n       concrete reduce <file.con> --predicate <pred> [-o output] [--verbose]\n       concrete --version"
 
 /-- Capture compiler identity: version, git commit, lean toolchain. -/
 def compilerIdentity : IO String := do
@@ -1132,8 +1132,9 @@ def compileAndReport (inputPath : String) (reportType : String)
     (isaRun : Bool := false) (reqTwoKernels : Bool := false) : IO UInt32 := do
   -- The second-kernel flags only affect the multi-kernel report; warn rather than
   -- silently ignore them elsewhere (finding: silent no-op reads as "it ran").
-  if (rocqRun || isaRun) && reportType != "multi-kernel" && reportType != "two-kernels" then
-    IO.eprintln s!"warning: --rocq/--isabelle only apply to `--report multi-kernel`; ignored for `--report {reportType}`"
+  if (rocqRun || isaRun) && reportType != "multi-kernel" && reportType != "two-kernels"
+     && reportType != "obligation-ledger" && reportType != "lowering-agreement" then
+    IO.eprintln s!"warning: --rocq/--isabelle only apply to `--report multi-kernel|lowering-agreement|obligation-ledger`; ignored for `--report {reportType}`"
   let source ← readFile inputPath
   let mainSrcMap : SourceMap := [(inputPath, source)]
   -- Interface report only needs parse + resolveFiles + summary
@@ -1618,6 +1619,56 @@ def compileAndReport (inputPath : String) (reportType : String)
         out := out ++ s!"\n\nBRIDGE-CHECK FAILED — {unsound} proved obligation(s) refuted by concrete inputs."
         IO.println (out ++ "\n"); return 1
       out := out ++ "\n\nBRIDGE-CHECK: no proved obligation refuted by concrete evaluation."
+      IO.println (out ++ "\n")
+      return 0
+    if reportType == "lowering-agreement" then
+      -- Closes the hole `--report multi-kernel` states as a non-attestation: that the
+      -- per-kernel lowerings spell the SAME proposition. For each obligation we emit
+      -- GROUND instances of that prover's own rendering and make the prover decide
+      -- them, comparing against the independent concrete evaluator. `refused` here
+      -- means the rendering has a different truth table than the reference — a real
+      -- disagreement, and grounds to distrust that kernel's cell in the badge.
+      let drivers : List (String × String × Bool × List (String × String)) :=
+        [ ("rocq:lia", "rocq", rocqRun, Report.rocqAgreementGoals parsed.modules),
+          ("isabelle:presburger", "isabelle", isaRun, Report.isabelleAgreementGoals parsed.modules) ]
+      let mut out := "=== Lowering-agreement check (does each kernel's rendering mean the SAME thing?) ==="
+      out := out ++ "\n  method: substitute literals -> the driver renders a CLOSED proposition ->"
+      out := out ++ "\n          the prover decides it -> compare against the independent evaluator."
+      out := out ++ s!"\n  up to {Report.agreementInstanceCap} ground instances per obligation,"
+      out := out ++ " hypothesis-satisfying ones first.\n"
+      out := out ++ "\n  agrees   = same truth table as the reference evaluator on the grid"
+      out := out ++ "\n  DISAGREES = the rendering means something else (do not trust that cell)"
+      out := out ++ "\n  error    = the rendering is malformed (our bug)\n"
+      let mut disagreements := 0
+      let mut ran := false
+      for (label, _, enabled, goals) in drivers do
+        if !enabled then
+          out := out ++ s!"\n  {label}: off (flag not set)"
+        else
+          ran := true
+          let res ← if label == "isabelle:presburger"
+                    then isabelleDischarge goals else rocqDischarge goals
+          match res with
+          | none => out := out ++ s!"\n  {label}: unavailable (tool not on PATH)"
+          | some verdicts =>
+            out := out ++ s!"\n  {label}:"
+            if verdicts.isEmpty then
+              out := out ++ "\n      (no obligation lowerable to this prover in this file)"
+            for (k, v) in verdicts do
+              let cell := match v with
+                | .closed => "agrees"
+                | .refused => "DISAGREES — rendering differs from the reference evaluator"
+                | .error d => s!"error — {d}"
+              if v == .refused then disagreements := disagreements + 1
+              out := out ++ s!"\n      [{k}]  {cell}"
+      if !ran then
+        out := out ++ "\n\n  (pass --rocq and/or --isabelle to actually check a kernel's lowering)"
+      if disagreements > 0 then
+        out := out ++ s!"\n\nLOWERING-AGREEMENT FAILED — {disagreements} lowering(s) do not mean what the"
+        out := out ++ "\n  obligation means. Any multi-kernel badge resting on them is unearned."
+        IO.println (out ++ "\n")
+        return 1
+      out := out ++ "\n\nLOWERING-AGREEMENT: every checked rendering matches the reference evaluator."
       IO.println (out ++ "\n")
       return 0
     if reportType == "solver-cert" then
