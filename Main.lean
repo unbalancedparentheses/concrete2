@@ -806,35 +806,38 @@ def coqVersionId : IO String := do
     | _ => return "coqc"
   catch _ => return "coqc (unavailable)"
 
+/-- Is a command on PATH? Used to distinguish "kernel absent" from "kernel refused"
+    in the discharge functions — the difference between "not asked" and "said no". -/
+def commandAvailable (cmd : String) : IO Bool := do
+  try
+    let o ← IO.Process.output { cmd := "bash", args := #["-c", s!"command -v {cmd}"] }
+    pure (o.exitCode == 0)
+  catch _ => pure false
+
 /-- Second-kernel discharge (Rocq/`coqc`). Given `(vcKey, coqSource)` pairs, write
-    each `.v` and run `coqc` on it. Returns the keys `coqc` INDEPENDENTLY accepted
-    (exit 0) — i.e. `lia` closed the goal and the kernel checked the proof term.
-    Honest degradation: if `coqc` is not on PATH, NO key is returned, so no VC can
-    be fabricated into `proved_by_two_kernels` — an absent second kernel never
-    attests. Only ever called behind the explicit `--rocq` flag. Mirrors
-    `leanReplayCheck`. -/
-def rocqDischarge (goals : List (String × String)) : IO (List String) := do
-  if goals.isEmpty then return []
-  let haveCoq ← (try
-      let o ← IO.Process.output { cmd := "bash", args := #["-c", "command -v coqc"] }
-      pure (o.exitCode == 0)
-    catch _ => pure false)
-  if !haveCoq then return []
+    each `.v` and run `coqc` on it. Returns `none` if `coqc` is NOT on PATH (the
+    kernel was never asked — no honest verdict), else `some closed` where `closed`
+    are the keys `coqc` INDEPENDENTLY accepted (exit 0: `lia` closed the goal and the
+    kernel checked the term). A key in the input but not in `closed` means coqc was
+    asked and REFUSED — distinct from a key never emitted (outside the fragment) and
+    from `none` (absent). No VC is ever fabricated. Only called behind `--rocq`. -/
+def rocqDischarge (goals : List (String × String)) : IO (Option (List String)) := do
+  if !(← commandAvailable "coqc") then return none
   let mut closed : List String := []
   for (k, src) in goals do
     let ok ← (try
         let tmpDir ← IO.Process.output { cmd := "mktemp", args := #["-d"] }
         let dir := tmpDir.stdout.trimAscii.toString
-        IO.FS.writeFile ⟨dir ++ "/vc_rocq.v"⟩ src
-        -- `-native-compiler no` skips emitting a native `.vo` (faster; not needed —
-        -- we rely on the exit code). `cwd := dir` keeps coqc's `.lia.cache` scratch
-        -- file inside the temp dir (removed below) instead of the caller's cwd.
-        let r ← IO.Process.output { cmd := "coqc", args := #["-native-compiler", "no", dir ++ "/vc_rocq.v"], cwd := some dir }
-        let _ ← IO.Process.output { cmd := "rm", args := #["-rf", dir] }
-        pure (r.exitCode == 0)
+        if dir.isEmpty then pure false else do
+          IO.FS.writeFile ⟨dir ++ "/vc_rocq.v"⟩ src
+          -- `-native-compiler no` skips a native `.vo` (faster); `cwd := dir` keeps
+          -- coqc's `.lia.cache` scratch inside the temp dir, removed below.
+          let r ← IO.Process.output { cmd := "coqc", args := #["-native-compiler", "no", dir ++ "/vc_rocq.v"], cwd := some dir }
+          let _ ← IO.Process.output { cmd := "rm", args := #["-rf", dir] }
+          pure (r.exitCode == 0)
       catch _ => pure false)
     if ok then closed := closed ++ [k]
-  return closed
+  return some closed
 
 /-- Isabelle (HOL kernel) identity + version, e.g. "isabelle Isabelle2025", or
     "isabelle (unavailable)" when not on PATH. `isabelle version` prints "Isabelle2025". -/
@@ -845,33 +848,29 @@ def isabelleVersionId : IO String := do
     return s!"isabelle {o.stdout.trimAscii.toString}"
   catch _ => return "isabelle (unavailable)"
 
-/-- Independent-kernel discharge (Isabelle/HOL). Given `(vcKey, theorySource)` pairs,
-    write each as `VC.thy` with a minimal `ROOT`, and run `isabelle build` — exit 0
-    iff `presburger` closed the lemma and the HOL kernel checked it. Because Isabelle
-    is HOL (not CIC like Lean/Rocq), agreement is FOUNDATIONAL cross-logic evidence.
-    Honest degradation: if `isabelle` is absent, NO key is returned. Only ever called
-    behind `--isabelle`. Slower than coqc (session build), so run opt-in. -/
-def isabelleDischarge (goals : List (String × String)) : IO (List String) := do
-  if goals.isEmpty then return []
-  let haveIsa ← (try
-      let o ← IO.Process.output { cmd := "bash", args := #["-c", "command -v isabelle"] }
-      pure (o.exitCode == 0)
-    catch _ => pure false)
-  if !haveIsa then return []
+/-- Independent-kernel discharge (Isabelle/HOL). Same three-valued contract as
+    `rocqDischarge`: `none` if `isabelle` is absent, else `some closed`. Writes each
+    `(vcKey, theorySource)` as `VC.thy` + a minimal `ROOT` and runs `isabelle build`
+    — exit 0 iff `presburger` closed the lemma and the HOL kernel checked it. HOL
+    (not CIC), so agreement with Lean/Rocq spans logics. Only called behind
+    `--isabelle`; slower than coqc (session build), so opt-in. -/
+def isabelleDischarge (goals : List (String × String)) : IO (Option (List String)) := do
+  if !(← commandAvailable "isabelle") then return none
   let mut closed : List String := []
   for (k, src) in goals do
     let ok ← (try
         let tmpDir ← IO.Process.output { cmd := "mktemp", args := #["-d"] }
         let dir := tmpDir.stdout.trimAscii.toString
-        IO.FS.writeFile ⟨dir ++ "/VC.thy"⟩ src
-        IO.FS.writeFile ⟨dir ++ "/ROOT"⟩ "session VCsess = HOL +\n  theories VC\n"
-        -- build the one-theory session; the prebuilt HOL heap is reused.
-        let r ← IO.Process.output { cmd := "isabelle", args := #["build", "-D", dir], cwd := some dir }
-        let _ ← IO.Process.output { cmd := "rm", args := #["-rf", dir] }
-        pure (r.exitCode == 0)
+        if dir.isEmpty then pure false else do
+          IO.FS.writeFile ⟨dir ++ "/VC.thy"⟩ src
+          IO.FS.writeFile ⟨dir ++ "/ROOT"⟩ "session VCsess = HOL +\n  theories VC\n"
+          -- build the one-theory session; the prebuilt HOL heap is reused.
+          let r ← IO.Process.output { cmd := "isabelle", args := #["build", "-D", dir], cwd := some dir }
+          let _ ← IO.Process.output { cmd := "rm", args := #["-rf", dir] }
+          pure (r.exitCode == 0)
       catch _ => pure false)
     if ok then closed := closed ++ [k]
-  return closed
+  return some closed
 
 /-- Phase 3 #14: policy inputs derived from the ONE obligation ledger. Builds the
     discharged ledger (folding the external-SMT path when a solver-evidence stance
@@ -976,6 +975,10 @@ def compileAndReport (inputPath : String) (reportType : String)
     (smtReplay : Bool := false) (emitLeanReplay : Bool := false)
     (smtTimeoutMs : Option Nat := none) (rocqRun : Bool := false)
     (isaRun : Bool := false) : IO UInt32 := do
+  -- The second-kernel flags only affect the multi-kernel report; warn rather than
+  -- silently ignore them elsewhere (finding: silent no-op reads as "it ran").
+  if (rocqRun || isaRun) && reportType != "multi-kernel" && reportType != "two-kernels" then
+    IO.eprintln s!"warning: --rocq/--isabelle only apply to `--report multi-kernel`; ignored for `--report {reportType}`"
   let source ← readFile inputPath
   let mainSrcMap : SourceMap := [(inputPath, source)]
   -- Interface report only needs parse + resolveFiles + summary
@@ -1323,47 +1326,63 @@ def compileAndReport (inputPath : String) (reportType : String)
       -- Lean + ≥1 external kernel independently close on the same subject graduates
       -- to `proved_by_two_kernels` (n=2) / `proved_by_multi_kernel` (n≥3). Externals
       -- are OPT-IN (`--rocq`, `--isabelle`); an absent/off kernel never attests.
-      let linear := (Report.overflowObligations parsed.modules).filter
-        (fun o => o.closedVerdict.isNone && o.leanGoal.isSome)
-      let omegaProved ← kernelDischargeLoopVCs (Report.overflowGoals parsed.modules)
-      -- external-kernel drivers: (label, enabled, versionId, closed-key set)
-      let mut kernels : List (String × Bool × String × List String) := []
-      let (rocqId, rocqClosed) ← if rocqRun
-        then do let id ← coqVersionId; let c ← rocqDischarge (Report.rocqReplayGoals parsed.modules); pure (id, c)
-        else pure ("coqc (not run; pass --rocq)", ([] : List String))
-      kernels := kernels ++ [("rocq:lia", rocqRun, rocqId, rocqClosed)]
-      let (isaId, isaClosed) ← if isaRun
-        then do let id ← isabelleVersionId; let c ← isabelleDischarge (Report.isabelleReplayGoals parsed.modules); pure (id, c)
-        else pure ("isabelle (not run; pass --isabelle)", ([] : List String))
-      kernels := kernels ++ [("isabelle:presburger", isaRun, isaId, isaClosed)]
+      -- ALL linear runtime-safety families (overflow / bounds / div), not just
+      -- overflow — the prover-neutral layer covers every family via multiKernelObligations.
+      let linear := Report.multiKernelObligations parsed.modules
+      let omegaProved ← kernelDischargeLoopVCs
+        (Report.overflowGoals parsed.modules ++ Report.boundsGoals parsed.modules ++ Report.divGoals parsed.modules)
+      -- External-kernel drivers, each: (name, displayLabel, enabled, versionId,
+      -- emittedKeys, result). `emittedKeys` are the obligations the driver COULD
+      -- lower (others are dropped as outside the fragment — "not asked"); `result`
+      -- is `none` when the tool is absent (also "not asked") vs. `some closedKeys`
+      -- when it ran. This three-valued model is what keeps "refused" distinct from
+      -- "never asked" — the one thing a graded-evidence report must not conflate.
+      let rocqGoals := Report.rocqReplayGoals parsed.modules
+      let isaGoals := Report.isabelleReplayGoals parsed.modules
+      let rocqId ← if rocqRun then coqVersionId else pure "not run (pass --rocq)"
+      let rocqRes ← if rocqRun then rocqDischarge rocqGoals else pure none
+      let isaId ← if isaRun then isabelleVersionId else pure "not run (pass --isabelle)"
+      let isaRes ← if isaRun then isabelleDischarge isaGoals else pure none
+      let kernels : List (String × String × Bool × String × List String × Option (List String)) :=
+        [ ("rocq", "rocq:lia", rocqRun, rocqId, rocqGoals.map (·.1), rocqRes),
+          ("isabelle", "isabelle:presburger", isaRun, isaId, isaGoals.map (·.1), isaRes) ]
+      -- cell verdict for obligation key `k` under one external kernel
+      let cellOf := fun (en : Bool) (emitted : List String) (res : Option (List String)) (k : String) =>
+        if !en then "off"
+        else match res with
+          | none => "unavailable"
+          | some closed => if !emitted.contains k then "not-asked"
+                           else if closed.contains k then "closed" else "refused"
       let mut out := "=== Multi-kernel evidence (spike: prover-neutral obligation layer) ==="
-      out := out ++ "\n  lean:   omega (in-toolchain kernel)"
-      for (label, _, id, _) in kernels do out := out ++ s!"\n  {label}:  via {id}"
-      -- Honesty boundary: this attests CHECKER diversity, not BRIDGE diversity. All
-      -- kernels check the SAME obligation Expr produced by Concrete's single
-      -- Core->VC lowering; that bridge is not diversified and stays trusted. N
-      -- kernels agreeing means "this VC is valid", NOT "this VC faithfully captures
-      -- the program". A bug in the Core->obligation lowering poisons all N alike.
-      out := out ++ "\n  attests: the OBLIGATION is valid in N independent kernels."
-      out := out ++ "\n  does NOT attest: that the Core->obligation lowering is faithful"
-      out := out ++ "\n                   (single-sourced, trusted — the same for every kernel).\n"
+      out := out ++ "\n  lean:omega (in-toolchain kernel)"
+      for (_, label, _, id, _, _) in kernels do out := out ++ s!"\n  {label}:  {id}"
+      -- Honesty boundary: CHECKER diversity, not BRIDGE diversity. All kernels check
+      -- their own lowering of the SAME obligation Expr from Concrete's single
+      -- Core->VC bridge; that bridge is not diversified and stays trusted. There is
+      -- no digest cross-check that the lowerings spell the same proposition.
+      out := out ++ "\n  attests: N independent kernels each accept a lowering of the OBLIGATION."
+      out := out ++ "\n  does NOT attest: that the Core->obligation lowering is faithful, nor that"
+      out := out ++ "\n                   the per-kernel lowerings spell the same proposition.\n"
+      out := out ++ "\n  cell legend: closed | refused | not-asked (outside fragment) | unavailable (no tool) | off (flag not set)\n"
       if linear.isEmpty then
-        out := out ++ "\n(no linear no-overflow obligations in this file)\n"
+        out := out ++ "\n(no linear runtime-safety obligations in this file)\n"
       for o in linear do
         let leanOk := omegaProved.contains o.key
-        -- kernels (incl. lean) that INDEPENDENTLY closed this obligation
+        -- attesting kernels = lean (if omega closed) + externals whose cell is "closed"
         let attest := (if leanOk then ["lean"] else [])
-          ++ kernels.filterMap (fun (label, _, _, closed) =>
-                if closed.contains o.key then some label else none)
+          ++ kernels.filterMap (fun (name, _, en, _, em, res) =>
+                if cellOf en em res o.key == "closed" then some name else none)
         let n := attest.length
         let cls :=
           if n ≥ 3 then s!"proved_by_multi_kernel ({n}: {", ".intercalate attest})"
           else if n == 2 then s!"proved_by_two_kernels ({", ".intercalate attest})"
-          else if n == 1 then s!"proved_by_{attest.head!} (single kernel)"
+          else if n == 1 then
+            let only := attest.head!
+            s!"proved_by_{only}" ++ (if only == "lean" then "" else " (external-only — lean did not close; investigate)")
           else "unproven"
-        out := out ++ s!"\n  [{o.key}]  {Concrete.fmtExpr o.opExpr}  (range [{o.lo}, {o.hi}])"
-        out := out ++ s!"\n      lean:omega = {leanOk}"
-        for (label, _, _, closed) in kernels do out := out ++ s!"   {label} = {closed.contains o.key}"
+        out := out ++ s!"\n  [{o.key}]  {o.desc}"
+        out := out ++ s!"\n      lean:omega = {if leanOk then "closed" else "refused"}"
+        for (_, label, en, _, em, res) in kernels do out := out ++ s!"   {label} = {cellOf en em res o.key}"
         out := out ++ s!"\n      => {cls}"
       IO.println (out ++ "\n")
       return 0
@@ -2443,7 +2462,10 @@ def main (args : List String) : IO UInt32 := do
     compileAndReport inputPath reportType (rocqRun := true)
   | [inputPath, "--report", reportType, "--isabelle"] =>
     compileAndReport inputPath reportType (isaRun := true)
+  -- both orders accepted so flag order is not load-bearing
   | [inputPath, "--report", reportType, "--rocq", "--isabelle"] =>
+    compileAndReport inputPath reportType (rocqRun := true) (isaRun := true)
+  | [inputPath, "--report", reportType, "--isabelle", "--rocq"] =>
     compileAndReport inputPath reportType (rocqRun := true) (isaRun := true)
   | [inputPath, "--report", reportType, "--all-provers"] =>
     compileAndReport inputPath reportType (rocqRun := true) (isaRun := true)
