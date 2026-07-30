@@ -82,7 +82,7 @@ def helpText : String := String.intercalate "\n" [
   ""]
 
 def usage : String :=
-  "Usage: concrete <file.con> [-o output] [--emit-llvm] [--emit-core] [--emit-ssa] [--emit-trace-json] [--trace-pipeline] [--test] [--test --module <name>] [--interp] [--report caps|unsafe|layout|interface|alloc|mono|authority|proof|eligibility|proof-status|obligations|extraction|lean-stubs|check-proofs|proof-diagnostics|proof-deps|proof-bundle|traceability|diagnostics-json|effects|recursion|stack-depth|fingerprints|consistency|contracts|vcs|obligation-ledger|compiler-ledger|verify|audit|arithmetic] [--query KIND|KIND:FUNCTION|fn:FUNCTION] [--fmt (legacy; use `concrete fmt`)]\n       concrete build [-o output] [--emit-llvm]\n       concrete check\n       concrete fmt <file.con> [--check | --write | --stdin]\n       concrete audit <file.con>\n       concrete prove <file.con> <module.function> [--json] [--out <path>] [--force] [--emit-link] [--emit-lean] [--emit-artifacts] [--out-dir <dir>] [--show-obligation <id>] [--replay] [--nearest-lemmas] [--check] [--workspace <dir>]\n       concrete prove --help=agent | --capabilities | --schema\n       concrete run [-- args...]\n       concrete test [--module <name>]\n       concrete diff <old.json> <new.json> [--json]\n       concrete snapshot <file.con> [-o output.json]\n       concrete debug-bundle <file.con> [-o dir]\n       concrete reduce <file.con> --predicate <pred> [-o output] [--verbose]\n       concrete --version"
+  "Usage: concrete <file.con> [-o output] [--emit-llvm] [--emit-core] [--emit-ssa] [--emit-trace-json] [--trace-pipeline] [--test] [--test --module <name>] [--interp] [--report caps|unsafe|layout|interface|alloc|mono|authority|proof|eligibility|proof-status|obligations|extraction|lean-stubs|check-proofs|proof-diagnostics|proof-deps|proof-bundle|traceability|diagnostics-json|effects|recursion|stack-depth|fingerprints|consistency|contracts|vcs|obligation-ledger|compiler-ledger|verify|audit|arithmetic|multi-kernel] [--report multi-kernel [--rocq] [--isabelle] [--all-provers]] [--query KIND|KIND:FUNCTION|fn:FUNCTION] [--fmt (legacy; use `concrete fmt`)]\n       concrete build [-o output] [--emit-llvm]\n       concrete check\n       concrete fmt <file.con> [--check | --write | --stdin]\n       concrete audit <file.con>\n       concrete prove <file.con> <module.function> [--json] [--out <path>] [--force] [--emit-link] [--emit-lean] [--emit-artifacts] [--out-dir <dir>] [--show-obligation <id>] [--replay] [--nearest-lemmas] [--check] [--workspace <dir>]\n       concrete prove --help=agent | --capabilities | --schema\n       concrete run [-- args...]\n       concrete test [--module <name>]\n       concrete diff <old.json> <new.json> [--json]\n       concrete snapshot <file.con> [-o output.json]\n       concrete debug-bundle <file.con> [-o dir]\n       concrete reduce <file.con> --predicate <pred> [-o output] [--verbose]\n       concrete --version"
 
 /-- Capture compiler identity: version, git commit, lean toolchain. -/
 def compilerIdentity : IO String := do
@@ -790,6 +790,89 @@ def leanReplayCheck (goals : List (String × String)) : IO (List String) := do
     if ok then closed := closed ++ [k]
   return closed
 
+/-- Rocq (second-kernel) identity + version for provenance, e.g. "coqc 8.20.1", or
+    "coqc (unavailable)" when Coq is not on PATH. `coqc --version` prints
+    "The Coq Proof Assistant, version X.Y.Z". -/
+def coqVersionId : IO String := do
+  try
+    let o ← IO.Process.output { cmd := "coqc", args := #["--version"] }
+    if o.exitCode != 0 then return "coqc (unavailable)"
+    -- `coqc --version` prints two lines ("The Rocq Prover, version X.Y.Z" then
+    -- "compiled with OCaml ..."); parse the FIRST line only so the version token
+    -- does not swallow the newline + "compiled".
+    let firstLine := ((o.stdout.splitOn "\n").head?.getD "").trimAscii.toString
+    match (firstLine.splitOn " ").dropWhile (· != "version") with
+    | _ :: v :: _ => return s!"coqc {v.trimAscii.toString}"
+    | _ => return "coqc"
+  catch _ => return "coqc (unavailable)"
+
+/-- Second-kernel discharge (Rocq/`coqc`). Given `(vcKey, coqSource)` pairs, write
+    each `.v` and run `coqc` on it. Returns the keys `coqc` INDEPENDENTLY accepted
+    (exit 0) — i.e. `lia` closed the goal and the kernel checked the proof term.
+    Honest degradation: if `coqc` is not on PATH, NO key is returned, so no VC can
+    be fabricated into `proved_by_two_kernels` — an absent second kernel never
+    attests. Only ever called behind the explicit `--rocq` flag. Mirrors
+    `leanReplayCheck`. -/
+def rocqDischarge (goals : List (String × String)) : IO (List String) := do
+  if goals.isEmpty then return []
+  let haveCoq ← (try
+      let o ← IO.Process.output { cmd := "bash", args := #["-c", "command -v coqc"] }
+      pure (o.exitCode == 0)
+    catch _ => pure false)
+  if !haveCoq then return []
+  let mut closed : List String := []
+  for (k, src) in goals do
+    let ok ← (try
+        let tmpDir ← IO.Process.output { cmd := "mktemp", args := #["-d"] }
+        let dir := tmpDir.stdout.trimAscii.toString
+        IO.FS.writeFile ⟨dir ++ "/vc_rocq.v"⟩ src
+        -- `-native-compiler no` skips emitting a native `.vo` (faster; not needed —
+        -- we rely on the exit code). `cwd := dir` keeps coqc's `.lia.cache` scratch
+        -- file inside the temp dir (removed below) instead of the caller's cwd.
+        let r ← IO.Process.output { cmd := "coqc", args := #["-native-compiler", "no", dir ++ "/vc_rocq.v"], cwd := some dir }
+        let _ ← IO.Process.output { cmd := "rm", args := #["-rf", dir] }
+        pure (r.exitCode == 0)
+      catch _ => pure false)
+    if ok then closed := closed ++ [k]
+  return closed
+
+/-- Isabelle (HOL kernel) identity + version, e.g. "isabelle Isabelle2025", or
+    "isabelle (unavailable)" when not on PATH. `isabelle version` prints "Isabelle2025". -/
+def isabelleVersionId : IO String := do
+  try
+    let o ← IO.Process.output { cmd := "isabelle", args := #["version"] }
+    if o.exitCode != 0 then return "isabelle (unavailable)"
+    return s!"isabelle {o.stdout.trimAscii.toString}"
+  catch _ => return "isabelle (unavailable)"
+
+/-- Independent-kernel discharge (Isabelle/HOL). Given `(vcKey, theorySource)` pairs,
+    write each as `VC.thy` with a minimal `ROOT`, and run `isabelle build` — exit 0
+    iff `presburger` closed the lemma and the HOL kernel checked it. Because Isabelle
+    is HOL (not CIC like Lean/Rocq), agreement is FOUNDATIONAL cross-logic evidence.
+    Honest degradation: if `isabelle` is absent, NO key is returned. Only ever called
+    behind `--isabelle`. Slower than coqc (session build), so run opt-in. -/
+def isabelleDischarge (goals : List (String × String)) : IO (List String) := do
+  if goals.isEmpty then return []
+  let haveIsa ← (try
+      let o ← IO.Process.output { cmd := "bash", args := #["-c", "command -v isabelle"] }
+      pure (o.exitCode == 0)
+    catch _ => pure false)
+  if !haveIsa then return []
+  let mut closed : List String := []
+  for (k, src) in goals do
+    let ok ← (try
+        let tmpDir ← IO.Process.output { cmd := "mktemp", args := #["-d"] }
+        let dir := tmpDir.stdout.trimAscii.toString
+        IO.FS.writeFile ⟨dir ++ "/VC.thy"⟩ src
+        IO.FS.writeFile ⟨dir ++ "/ROOT"⟩ "session VCsess = HOL +\n  theories VC\n"
+        -- build the one-theory session; the prebuilt HOL heap is reused.
+        let r ← IO.Process.output { cmd := "isabelle", args := #["build", "-D", dir], cwd := some dir }
+        let _ ← IO.Process.output { cmd := "rm", args := #["-rf", dir] }
+        pure (r.exitCode == 0)
+      catch _ => pure false)
+    if ok then closed := closed ++ [k]
+  return closed
+
 /-- Phase 3 #14: policy inputs derived from the ONE obligation ledger. Builds the
     discharged ledger (folding the external-SMT path when a solver-evidence stance
     is set, so `solver_trusted` is present), then projects the vacuous / assume /
@@ -891,7 +974,8 @@ def compileAndReport (inputPath : String) (reportType : String)
     (proveNearestId : Option String := none) (reportJson : Bool := false)
     (smtRun : Bool := false) (smtEmit : Bool := false)
     (smtReplay : Bool := false) (emitLeanReplay : Bool := false)
-    (smtTimeoutMs : Option Nat := none) : IO UInt32 := do
+    (smtTimeoutMs : Option Nat := none) (rocqRun : Bool := false)
+    (isaRun : Bool := false) : IO UInt32 := do
   let source ← readFile inputPath
   let mainSrcMap : SourceMap := [(inputPath, source)]
   -- Interface report only needs parse + resolveFiles + summary
@@ -1229,6 +1313,52 @@ def compileAndReport (inputPath : String) (reportType : String)
         IO.println (Report.vcsJson dvcs 1)
       else
         IO.println (Report.vcsReport dvcs)
+      return 0
+    if reportType == "two-kernels" || reportType == "multi-kernel" then
+      -- Spike (branch spike/multi-prover-evidence): the prover-neutral obligation
+      -- layer. The SAME linear no-overflow obligations are discharged by Lean's
+      -- in-toolchain `omega` AND by each enabled EXTERNAL kernel — Rocq's `lia`
+      -- (CIC) and Isabelle's `presburger` (HOL). Each kernel is a driver
+      -- (`Report.ProverLowering`); adding a prover is data, not new plumbing. A VC
+      -- Lean + ≥1 external kernel independently close on the same subject graduates
+      -- to `proved_by_two_kernels` (n=2) / `proved_by_multi_kernel` (n≥3). Externals
+      -- are OPT-IN (`--rocq`, `--isabelle`); an absent/off kernel never attests.
+      let linear := (Report.overflowObligations parsed.modules).filter
+        (fun o => o.closedVerdict.isNone && o.leanGoal.isSome)
+      let omegaProved ← kernelDischargeLoopVCs (Report.overflowGoals parsed.modules)
+      -- external-kernel drivers: (label, enabled, versionId, closed-key set)
+      let mut kernels : List (String × Bool × String × List String) := []
+      let (rocqId, rocqClosed) ← if rocqRun
+        then do let id ← coqVersionId; let c ← rocqDischarge (Report.rocqReplayGoals parsed.modules); pure (id, c)
+        else pure ("coqc (not run; pass --rocq)", ([] : List String))
+      kernels := kernels ++ [("rocq:lia", rocqRun, rocqId, rocqClosed)]
+      let (isaId, isaClosed) ← if isaRun
+        then do let id ← isabelleVersionId; let c ← isabelleDischarge (Report.isabelleReplayGoals parsed.modules); pure (id, c)
+        else pure ("isabelle (not run; pass --isabelle)", ([] : List String))
+      kernels := kernels ++ [("isabelle:presburger", isaRun, isaId, isaClosed)]
+      let mut out := "=== Multi-kernel evidence (spike: prover-neutral obligation layer) ==="
+      out := out ++ "\n  lean:   omega (in-toolchain kernel)"
+      for (label, _, id, _) in kernels do out := out ++ s!"\n  {label}:  via {id}"
+      out := out ++ "\n"
+      if linear.isEmpty then
+        out := out ++ "\n(no linear no-overflow obligations in this file)\n"
+      for o in linear do
+        let leanOk := omegaProved.contains o.key
+        -- kernels (incl. lean) that INDEPENDENTLY closed this obligation
+        let attest := (if leanOk then ["lean"] else [])
+          ++ kernels.filterMap (fun (label, _, _, closed) =>
+                if closed.contains o.key then some label else none)
+        let n := attest.length
+        let cls :=
+          if n ≥ 3 then s!"proved_by_multi_kernel ({n}: {", ".intercalate attest})"
+          else if n == 2 then s!"proved_by_two_kernels ({", ".intercalate attest})"
+          else if n == 1 then s!"proved_by_{attest.head!} (single kernel)"
+          else "unproven"
+        out := out ++ s!"\n  [{o.key}]  {Concrete.fmtExpr o.opExpr}  (range [{o.lo}, {o.hi}])"
+        out := out ++ s!"\n      lean:omega = {leanOk}"
+        for (label, _, _, closed) in kernels do out := out ++ s!"   {label} = {closed.contains o.key}"
+        out := out ++ s!"\n      => {cls}"
+      IO.println (out ++ "\n")
       return 0
     if reportType == "caps" then
       IO.println (Report.capabilityReport validCore.coreModules)
@@ -2302,6 +2432,14 @@ def main (args : List String) : IO UInt32 := do
     compileAndReport inputPath reportType (smtEmit := true)
   | [inputPath, "--report", reportType, "--emit-lean-replay"] =>
     compileAndReport inputPath reportType (emitLeanReplay := true)
+  | [inputPath, "--report", reportType, "--rocq"] =>
+    compileAndReport inputPath reportType (rocqRun := true)
+  | [inputPath, "--report", reportType, "--isabelle"] =>
+    compileAndReport inputPath reportType (isaRun := true)
+  | [inputPath, "--report", reportType, "--rocq", "--isabelle"] =>
+    compileAndReport inputPath reportType (rocqRun := true) (isaRun := true)
+  | [inputPath, "--report", reportType, "--all-provers"] =>
+    compileAndReport inputPath reportType (rocqRun := true) (isaRun := true)
   | [inputPath, "--report", reportType, "--smt"] =>
     compileAndReport inputPath reportType (smtRun := true)
   | [inputPath, "--report", reportType, "--smt", "--json"] =>

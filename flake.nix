@@ -25,6 +25,10 @@
             lean4
             clang
             llvmPackages.llvm  # provides lli for fast test execution
+            coq                # independent CIC kernel (coqc/lia) — a second-kernel driver
+            coqPackages.stdlib # Rocq 9.0 stdlib (ZArith, Lia) — split out of coq-core
+            isabelle           # independent HOL kernel (presburger) — foundational independence
+            z3                 # external SMT solver for the solver_trusted path
             bash
             gnumake
             gnugrep
