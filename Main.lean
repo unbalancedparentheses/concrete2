@@ -3019,12 +3019,14 @@ def main (args : List String) : IO UInt32 := do
     -- the JSON artifact, so asking for both at once is the natural request.
     let proverFlags := ["--rocq", "--isabelle", "--all-provers", "--require-two-kernels", "--json"]
     if !rest.isEmpty && rest.all (fun a => proverFlags.contains a) then
-      let allProvers := rest.contains "--all-provers"
+      -- Flags go through Cli.hasFlag, not an inline `contains`: one definition of what
+      -- a boolean flag means (ROADMAP Phase 4 #14b, enforced by check_cli_plumbing).
+      let allProvers := Cli.hasFlag rest "--all-provers"
       compileAndReport inputPath reportType
-        (rocqRun := allProvers || rest.contains "--rocq")
-        (isaRun := allProvers || rest.contains "--isabelle")
-        (reqTwoKernels := rest.contains "--require-two-kernels")
-        (reportJson := rest.contains "--json")
+        (rocqRun := allProvers || Cli.hasFlag rest "--rocq")
+        (isaRun := allProvers || Cli.hasFlag rest "--isabelle")
+        (reqTwoKernels := Cli.hasFlag rest "--require-two-kernels")
+        (reportJson := Cli.hasFlag rest "--json")
     else do
       IO.eprintln usage
       return 1
