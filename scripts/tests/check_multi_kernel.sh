@@ -189,6 +189,19 @@ if command -v isabelle >/dev/null 2>&1; then
   [ $? -eq 0 ] && ok "demo: rocq AND isabelle lowerings both agree" \
                 || no "demo: both lowerings should agree"
 
+  echo "=== [policy] require-two-kernels is first-class, not just a CLI flag ==="
+  # The release requirement lives in the package's Concrete.toml, so it holds for
+  # `concrete build` regardless of which flags a CI job happens to pass.
+  ( cd examples/multi_kernel_policy/allow && "$ROOT_DIR/$COMPILER" build -o /tmp/mkp_allow_gate >/dev/null 2>&1 )
+  [ $? -eq 0 ] && ok "policy project whose obligations all reach 2 kernels BUILDS" \
+                || no "allow project should build under require-two-kernels"
+  BLK="$( cd examples/multi_kernel_policy/blocked && "$ROOT_DIR/$COMPILER" build -o /tmp/mkp_blocked_gate 2>&1 )"
+  rc=$?
+  [ $rc -ne 0 ] && ok "policy project with an unprovable obligation is REJECTED" \
+                || no "blocked project should be rejected under require-two-kernels"
+  printf '%s' "$BLK" | grep -q "E0616" \
+    && ok "rejection carries the policy code E0616" || no "expected E0616"
+
   echo "=== isabelle refusal vs malformed-theory markers (classifier assumption) ==="
   ITMP="$(mktemp -d)"
   printf 'session VCsess = HOL +\n  theories VC\n' > "$ITMP/ROOT"

@@ -36,13 +36,20 @@ structure ProjectPolicy where
   /-- Named provenance/assumption justifying `solver_trusted` under the
       `"assumptions"` stance (e.g. "z3-4.16-QF_NIA-trusted"). -/
   solverAssumption : String := ""
+  /-- Require every eligible runtime-safety obligation to be closed by at least TWO
+      independent kernels (Lean's `omega` plus Rocq `lia` and/or Isabelle
+      `presburger`). The CLI has `--report multi-kernel --require-two-kernels`, but a
+      release requirement belongs in the package's policy, not in whatever flags the
+      CI job happens to pass. Fails CLOSED: if no external kernel actually ran, the
+      requirement is unverified and that is a blocker, never a silent pass. -/
+  requireTwoKernels : Bool := false
 
 instance : Inhabited ProjectPolicy := ⟨{}⟩
 
 /-- True when no policy constraints are set. -/
 def ProjectPolicy.isEmpty (p : ProjectPolicy) : Bool :=
   !p.predictable && p.deny.isEmpty && !p.requireProofs && !p.forbidAssume
-    && p.solverEvidence.isEmpty
+    && p.solverEvidence.isEmpty && !p.requireTwoKernels
 
 -- ============================================================
 -- TOML parsing
@@ -91,6 +98,8 @@ def parsePolicy (content : String) : ProjectPolicy × List String :=
           go rest true { p with solverEvidence := (parseValue trimmed).replace "\"" "" } warns
         else if trimmed.startsWith "solver-assumption" then
           go rest true { p with solverAssumption := (parseValue trimmed).replace "\"" "" } warns
+        else if trimmed.startsWith "require-two-kernels" then
+          go rest true { p with requireTwoKernels := parseValue trimmed == "true" } warns
         else if trimmed.startsWith "deny" then
           go rest true { p with deny := parseDenyList trimmed } warns
         else
@@ -250,12 +259,40 @@ def enforceSolverEvidence (solverTrustedQuals : List String) (policy : ProjectPo
       else []
     | _ => []  -- "allow" or unset
 
+/-- Release-policy gate on multi-kernel evidence (`require-two-kernels = true`).
+    `belowTwoQuals` are the obligation ids that did NOT reach two independent kernels.
+    `externalKernelRan` says whether any external kernel was actually consulted; when
+    it is false the requirement could not be checked at all, so the diagnostic points
+    at the missing toolchain rather than blaming the proof. Either way this fails
+    closed — an unverified requirement is not a satisfied one. -/
+def enforceRequireTwoKernels (belowTwoQuals : List String) (externalKernelRan : Bool)
+    : Diagnostics :=
+  if belowTwoQuals.isEmpty then [] else
+  belowTwoQuals.eraseDups.map fun q =>
+    { severity := .error
+      message :=
+        if externalKernelRan then
+          s!"policy violation: obligation '{q}' is closed by fewer than two independent kernels"
+        else
+          s!"policy violation: obligation '{q}' has no independent-kernel evidence — no external kernel could be run"
+      pass := "policy"
+      span := none
+      hint := some (
+        if externalKernelRan then
+          "prove it in a second kernel, or change [policy] require-two-kernels"
+        else
+          "install Rocq (coqc) and/or Isabelle — `nix develop .#provers` — or change [policy] require-two-kernels")
+      code := "E0616"
+      file := ""
+      context := [] }
+
 /-- Enforce policy constraints on compiled modules. Returns diagnostics for violations.
     Runs after CoreCheck (on ValidatedCore) so all type information is available. -/
 def enforcePolicy (policy : ProjectPolicy) (modules : List CModule)
     (locMap : Report.FnLocMap := []) (pc : ProofCore)
     (depNames : List String := []) (vacuousQuals : List String := [])
-    (assumeQuals : List String := []) (solverTrustedQuals : List String := []) : Diagnostics :=
+    (assumeQuals : List String := []) (solverTrustedQuals : List String := [])
+    (belowTwoKernelQuals : List String := []) (externalKernelRan : Bool := false) : Diagnostics :=
   if policy.isEmpty then [] else
   let projectModules := modules.filter fun m => !depNames.contains m.name
   let ds1 := if policy.predictable then enforcePredictable projectModules pc locMap else []
@@ -265,6 +302,8 @@ def enforcePolicy (policy : ProjectPolicy) (modules : List CModule)
   let ds4 := enforceNoVacuous vacuousQuals
   let ds5 := if policy.forbidAssume then enforceNoAssume assumeQuals else []
   let ds6 := enforceSolverEvidence solverTrustedQuals policy
-  ds1 ++ ds2 ++ ds3 ++ ds4 ++ ds5 ++ ds6
+  let ds7 := if policy.requireTwoKernels
+             then enforceRequireTwoKernels belowTwoKernelQuals externalKernelRan else []
+  ds1 ++ ds2 ++ ds3 ++ ds4 ++ ds5 ++ ds6 ++ ds7
 
 end Concrete

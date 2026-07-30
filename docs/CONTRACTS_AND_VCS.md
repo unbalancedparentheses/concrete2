@@ -738,6 +738,42 @@ non-proofs regardless of policy and are never counted as evidence. When Lean
 replay (item 12) lands, a replayed fragment graduates from `solver_trusted` to a
 kernel-checked class and is no longer subject to this gate.
 
+### Shipped: the multi-kernel release-policy gate
+
+Independent-kernel agreement is also a release stance, not just a report. The
+compiler's own kernel is Lean; requiring a *second, independently implemented*
+kernel to close the same obligation is what turns "our prover says so" into
+evidence that does not rest on one implementation:
+
+```toml
+[policy]
+require-two-kernels = true   # every obligation needs >= 2 independent kernels (E0616)
+```
+
+`Policy.enforceRequireTwoKernels` receives the obligation ids that did not reach
+two kernels (`Main.computeBelowTwoKernels`, run only when the policy asks for it,
+since `coqc`/`isabelle` are slow) and rejects the build with E0616. Lean's `omega`
+plus *either* Rocq's `lia` or Isabelle's `presburger` satisfies it.
+
+It **fails closed**. If no external kernel can be run at all, the requirement is
+unverified, which is not the same as satisfied — the build is rejected, and the
+diagnostic points at the missing toolchain (`nix develop .#provers`) rather than
+blaming the proof. `examples/multi_kernel_policy/` has both halves: `allow/`
+builds, `blocked/` contains an obligation no kernel can close and is rejected.
+
+Two caveats on what the badge means, both checkable:
+
+- Kernels are matched on the obligation **key**, and each prover driver re-spells
+  the obligation in its own syntax. `--report lowering-agreement` verifies those
+  spellings actually denote the same proposition, by pinning the variables of the
+  driver's own rendering to concrete assignments, making the prover decide the
+  result, and comparing against an independent concrete evaluator. Without it,
+  two kernels could each close a *different* proposition under one badge.
+- A kernel that exits nonzero has either **refused** (its decision procedure said
+  no) or **errored** (our emitted script was malformed, a library was missing, the
+  tool broke). These are reported as distinct cells, because calling the second
+  one "refused" invents a kernel disagreement out of our own bug.
+
 ## Threat Model
 
 The SMT/contract path adds new trust surfaces.

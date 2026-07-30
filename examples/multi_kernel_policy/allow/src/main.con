@@ -1,0 +1,18 @@
+// Every obligation here is LINEAR, so a second independent kernel can close it and
+// `[policy] require-two-kernels = true` is satisfied.
+mod allow {
+    // overflow: operands bounded, so a + b is in range
+    #[overflow_checked]
+    #[requires(0 <= a && a <= 100 && 0 <= b && b <= 100)]
+    fn add_bounded(a: i32, b: i32) -> i32 { return a + b; }
+
+    // array-bounds: index proven in [0, 4)
+    #[requires(0 <= i && i < 4)]
+    fn read_at(xs: [i32; 4], i: i32) -> i32 { return xs[i]; }
+
+    // division-by-zero: divisor proven != 0
+    #[requires(d > 0)]
+    fn div_safe(a: i32, d: i32) -> i32 { return a / d; }
+
+    pub fn main() -> i32 { return add_bounded(2, 3); }
+}

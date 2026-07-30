@@ -1058,6 +1058,33 @@ def computePolicyQuals (policy : Concrete.ProjectPolicy) (modules : List Concret
   let st := Concrete.ObligationCore.solverTrustedIds ledger
   return (vac, asm, st)
 
+/-- Obligations that did NOT reach two independent kernels, for
+    `[policy] require-two-kernels`. Also returns whether any external kernel was
+    actually consulted, so the diagnostic can distinguish "the second kernel could
+    not close it" from "no second kernel was available at all" — collapsing those
+    would blame the proof for a missing toolchain.
+
+    Both external kernels are attempted (Lean + one external already satisfies the
+    requirement, so this is not `--all-provers` semantics — it is "find a second
+    kernel"). Only run when the policy asks for it: coqc/isabelle are slow and a
+    normal build must not silently start invoking them. -/
+def computeBelowTwoKernels (modules : List Concrete.Module)
+    : IO (List String × Bool) := do
+  let linear := Report.multiKernelObligations modules
+  if linear.isEmpty then return ([], true)
+  let omegaProved ← kernelDischargeLoopVCs
+    (Report.overflowGoals modules ++ Report.boundsGoals modules ++ Report.divGoals modules)
+  let rocqAvail ← commandAvailable "coqc"
+  let isaAvail ← commandAvailable "isabelle"
+  let (rocqClosed, isaClosed) ← externalClosedSets modules rocqAvail isaAvail
+  let mut below : List String := []
+  for o in linear do
+    let n := (if omegaProved.contains o.key then 1 else 0)
+           + (if rocqClosed.contains o.key then 1 else 0)
+           + (if isaClosed.contains o.key then 1 else 0)
+    if n < 2 then below := below ++ [o.key]
+  return (below, rocqAvail || isaAvail)
+
 /-- Render the contracts report plus the call-site obligation section AS A VIEW
     over the one discharged ObligationCore ledger (Phase 3 #15 / #18e).
 
@@ -2066,9 +2093,11 @@ def compileBuild (projectRoot : String) (outputPath : Option String) (emitLLVM :
       return 1
     if !policy.isEmpty then
       let (vac, asm, st) ← computePolicyQuals policy parsed.modules depNames policyLocMap registry
+      let (btk, ekr) ← if policy.requireTwoKernels then computeBelowTwoKernels parsed.modules else pure ([], false)
       let policyDs := enforcePolicy policy validCore.coreModules
         (locMap := policyLocMap) (pc := pc) (depNames := depNames) (vacuousQuals := vac)
         (assumeQuals := asm) (solverTrustedQuals := st)
+        (belowTwoKernelQuals := btk) (externalKernelRan := ekr)
       if hasErrors policyDs then
         IO.eprintln (renderDiagnostics policyDs (sourceMap := allSrcMap))
         return 1
@@ -2130,9 +2159,11 @@ partial def compileTestBuild (projectRoot : String) (moduleFilter : Option Strin
       return 1
     if !policy.isEmpty then
       let (vac, asm, st) ← computePolicyQuals policy parsed.modules depNames policyLocMap registry
+      let (btk, ekr) ← if policy.requireTwoKernels then computeBelowTwoKernels parsed.modules else pure ([], false)
       let policyDs := enforcePolicy policy validCore.coreModules
         (locMap := policyLocMap) (pc := pc) (depNames := depNames) (vacuousQuals := vac)
         (assumeQuals := asm) (solverTrustedQuals := st)
+        (belowTwoKernelQuals := btk) (externalKernelRan := ekr)
       if hasErrors policyDs then
         IO.eprintln (renderDiagnostics policyDs (sourceMap := allSrcMap))
         return 1
@@ -2393,9 +2424,11 @@ def main (args : List String) : IO UInt32 := do
           if d.code == "registry" then IO.eprintln d.message
         if !policy.isEmpty then
           let (vac, asm, st) ← computePolicyQuals policy parsed.modules depNames policyLocMap registry
+          let (btk, ekr) ← if policy.requireTwoKernels then computeBelowTwoKernels parsed.modules else pure ([], false)
           let policyDs := enforcePolicy policy validCore.coreModules
             (locMap := policyLocMap) (pc := pc) (depNames := depNames) (vacuousQuals := vac)
             (assumeQuals := asm) (solverTrustedQuals := st)
+            (belowTwoKernelQuals := btk) (externalKernelRan := ekr)
           if hasErrors policyDs then
             IO.eprintln (renderDiagnostics policyDs (sourceMap := allSrcMap))
             return 1

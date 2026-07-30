@@ -1,0 +1,9 @@
+[package]
+name = "multi_kernel_policy_blocked"
+version = "0.1.0"
+
+# Same stance as ../allow, but this package contains an obligation NO kernel can
+# close, so the requirement is genuinely unmet and the build must be rejected
+# (E0616). This is the negative half: the policy has teeth.
+[policy]
+require-two-kernels = true
