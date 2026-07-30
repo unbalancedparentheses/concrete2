@@ -234,6 +234,13 @@ def toJson (o : Obligation) : String :=
     s!"{q "dependencies"}: {jarrStr o.dependencies}",
     s!"{q "allowed_engines"}: {jarrStr o.allowedEngines}",
     s!"{q "status"}: {q o.status}", s!"{q "engine"}: {q o.engine}",
+    -- Multi-kernel provenance: which kernels attested, at which VERSIONS. Empty
+    -- arrays when no external kernel ran, so the default ledger is unchanged. A
+    -- stored `proved_by_two_kernels` without versions cannot be re-audited — the
+    -- reader cannot tell which prover builds agreed, nor invalidate the claim if one
+    -- is later found buggy.
+    s!"{q "attesting_kernels"}: {jarrStr o.attestingKernels}",
+    s!"{q "attesting_kernel_versions"}: {jarrStr o.attestingKernelVersions}",
     s!"{q "counterexample"}: {jobjStr o.counterexample}",
     s!"{q "replay"}: {q o.replay}", s!"{q "policy_impact"}: {q o.policyImpact}" ]
     |> (fun body => "{" ++ body ++ "}")

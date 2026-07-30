@@ -798,10 +798,39 @@ enforces:
 Coverage is stated rather than implied: functions outside the extractable fragment
 are **named** in the report, so "N functions agree" cannot be misread as "everything
 agrees". The fragment is integer/boolean locals, `let`/assignment, `if`/`else`,
-`return`, and direct calls; it excludes loops (Gallina needs a termination argument),
-structs, enums, arrays, matches, borrows, casts, generics, floats and strings.
-Extraction is also **closed under calling** — a function whose callee is outside the
-fragment is excluded, since otherwise the emitted Gallina references an unbound name.
+`return`, early-return guards, and direct calls; it excludes loops (Gallina needs a
+termination argument), structs, enums, arrays, matches, borrows, casts, generics,
+floats and strings. Extraction is also **closed under calling** — a function whose
+callee is outside the fragment is excluded, since otherwise the emitted Gallina
+references an unbound name.
+
+Across the example corpus this covers **50 functions in 20 files**, with no
+disagreements. `examples/crypto_verify` is covered *completely* — every function
+including `verify_message` and `main`. `examples/elf_header` covers its whole
+**provable core** (the five pure, zero-capability functions the file itself
+identifies as such); what remains outside is exactly its `trusted` I/O boundary
+(`fopen`/`fread`, raw pointer dereference), which has no pure semantics to extract.
+
+The early-return guard (`if !ok { return 0; } ...`) is what unlocked most of that,
+and it is only sound because `blockTerminates` checks the `then` branch really leaves
+the function. `if c { x = 1; } rest` is deliberately **refused**: both paths continue
+into `rest` with different state, which a `let`-chain cannot express, and extracting
+it anyway would silently check a different function than the one written. A gate
+asserts both halves — the real guard is extracted, the fall-through is refused.
+
+### Why loops are not next
+
+Adding fuel-parameterised loop extraction would gain **zero** coverage on the current
+corpus: every loop in `examples/` also indexes arrays or pushes to strings
+(`data.get_unchecked`, `line.push_char`), so those functions stay outside the fragment
+on the array/string restriction regardless of loop support. Arrays, not loops, are the
+binding constraint.
+
+Loops would also need care to avoid *false* disagreements: the interpreter's loop fuel
+is 10,000,000, which cannot be encoded as a Coq unary `nat`, so a smaller Gallina fuel
+would report a semantic mismatch where there is only a bound mismatch. Any loop
+support therefore has to distinguish "fuel exhausted, not compared" from "the two
+evaluators disagree" before it can be trusted.
 
 Two caveats on what the badge means, both checkable:
 

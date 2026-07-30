@@ -100,6 +100,18 @@ def extractPreamble : String :=
       "Definition negb_Z_eqb (a b : Z) : bool := negb (Z.eqb a b).",
       "" ]
 
+/-- Does this block always leave the function (its last reachable statement is a
+    `return`, or an `if`/`else` whose branches both do)? Required before modelling a
+    guard as a Gallina `if`: `if c { return a; } rest` is `if c then a else rest` ONLY
+    when the `then` branch cannot fall through into `rest`. If it could, the two paths
+    would have to merge with mutated state, which the `let`-chain encoding cannot
+    express — and assuming otherwise would silently extract the WRONG function. -/
+partial def blockTerminates : List CStmt → Bool
+  | [] => false
+  | [.return_ _ _] => true
+  | [.ifElse _ t (some e)] => blockTerminates t && blockTerminates e
+  | _ :: rest => blockTerminates rest
+
 mutual
 /-- Extract a Core expression to a Gallina term. `none` if outside the fragment —
     callers must DROP the whole function rather than emit a partial body, so a
@@ -142,6 +154,31 @@ partial def extractStmts : List CStmt → Option String
   | [] => none
   | [.return_ (some e) _] => extractExpr e
   | [.expr e true] => extractExpr e
+  -- A `return` mid-block makes everything after it dead code.
+  | .return_ (some e) _ :: _ => extractExpr e
+  -- GUARD / early-return: `if c { return a; } rest`. Extremely common in
+  -- verification code (`if !ok { return 0; }` chains), and the single construct that
+  -- kept crypto_verify's verify_message outside the fragment. Sound only when the
+  -- `then` branch always leaves the function, so `rest` really is the else-path —
+  -- hence the blockTerminates guard rather than an assumption.
+  | .ifElse c t none :: rest => do
+    if !blockTerminates t then none else do
+      let C ← extractExpr c
+      let T ← extractStmts t
+      let R ← extractStmts rest
+      some s!"(if {C} then {T} else {R})"
+  -- Both branches leave the function, so `rest` is unreachable.
+  | .ifElse c t (some e) :: rest => do
+    let C ← extractExpr c
+    if blockTerminates t && blockTerminates e then do
+      let T ← extractStmts t
+      let E ← extractStmts e
+      some s!"(if {C} then {T} else {E})"
+    else if rest.isEmpty then do
+      let T ← extractStmts t
+      let E ← extractStmts e
+      some s!"(if {C} then {T} else {E})"
+    else none
   | .letDecl n _ _ v :: rest => do
     let V ← extractExpr v
     let R ← extractStmts rest
@@ -153,11 +190,6 @@ partial def extractStmts : List CStmt → Option String
     let V ← extractExpr v
     let R ← extractStmts rest
     some s!"(let {n} := {V} in {R})"
-  | [.ifElse c t (some e)] => do
-    let C ← extractExpr c
-    let T ← extractStmts t
-    let E ← extractStmts e
-    some s!"(if {C} then {T} else {E})"
   | _ => none
 end
 

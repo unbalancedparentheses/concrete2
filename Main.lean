@@ -790,6 +790,16 @@ def leanReplayCheck (goals : List (String × String)) : IO (List String) := do
     if ok then closed := closed ++ [k]
   return closed
 
+/-- Identity of the IN-TOOLCHAIN kernel (Lean), read from `lean-toolchain`, e.g.
+    "lean leanprover/lean4:v4.28.0". Recorded alongside the external kernels so a
+    stored multi-kernel claim names every attester, not only the external ones. -/
+def leanToolchainId : IO String := do
+  try
+    let tc ← IO.FS.readFile ⟨"lean-toolchain"⟩
+    let t := tc.trimAscii.toString
+    pure (if t.isEmpty then "lean (unknown)" else s!"lean {t}")
+  catch _ => pure "lean (unknown)"
+
 /-- Rocq (second-kernel) identity + version for provenance, e.g. "coqc 8.20.1", or
     "coqc (unavailable)" when Coq is not on PATH. `coqc --version` prints
     "The Coq Proof Assistant, version X.Y.Z". -/
@@ -1459,7 +1469,11 @@ def compileAndReport (inputPath : String) (reportType : String)
       -- by a real ledger path (not only the multi-kernel report). Default unchanged.
       let dvcs ← if rocqRun || isaRun then do
           let (rc, ic) ← externalClosedSets parsed.modules rocqRun isaRun
-          pure (Report.foldMultiKernelResults dvcs rc ic)
+          -- Record WHICH prover builds attested, not just that some did.
+          let lv ← leanToolchainId
+          let rv ← if rocqRun then coqVersionId else pure "rocq (not run)"
+          let iv ← if isaRun then isabelleVersionId else pure "isabelle (not run)"
+          pure (Report.foldMultiKernelResults dvcs rc ic lv rv iv)
         else pure dvcs
       let vcLedger := Concrete.ObligationCore.ledgerOfVCs dvcs
       let proofLinks := Concrete.ObligationCore.proofLinkLedger
@@ -3001,13 +3015,16 @@ def main (args : List String) : IO UInt32 := do
   -- usage dump — and a caller checking only the exit code would read that usage error
   -- as a failed evidence gate. Placed after the specific patterns so they still win.
   | inputPath :: "--report" :: reportType :: rest =>
-    let proverFlags := ["--rocq", "--isabelle", "--all-provers", "--require-two-kernels"]
+    -- `--json` is accepted alongside them: the multi-kernel provenance is recorded in
+    -- the JSON artifact, so asking for both at once is the natural request.
+    let proverFlags := ["--rocq", "--isabelle", "--all-provers", "--require-two-kernels", "--json"]
     if !rest.isEmpty && rest.all (fun a => proverFlags.contains a) then
       let allProvers := rest.contains "--all-provers"
       compileAndReport inputPath reportType
         (rocqRun := allProvers || rest.contains "--rocq")
         (isaRun := allProvers || rest.contains "--isabelle")
         (reqTwoKernels := rest.contains "--require-two-kernels")
+        (reportJson := rest.contains "--json")
     else do
       IO.eprintln usage
       return 1

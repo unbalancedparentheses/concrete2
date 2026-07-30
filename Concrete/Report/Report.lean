@@ -2019,6 +2019,13 @@ structure Obligation where
   -- independent kernels that each accepted a lowering of this obligation (spike
   -- multi-prover-evidence); set by foldMultiKernelResults, e.g. ["lean","rocq"].
   attestingKernels : List String := []
+  -- The SAME attesters with their tool versions, e.g.
+  -- ["lean 4.28.0", "coqc 9.0.1", "isabelle Isabelle2025-2"]. Recorded because a
+  -- STORED `proved_by_two_kernels` claim is otherwise un-auditable: months later the
+  -- artifact says two kernels agreed but not which builds, so the claim cannot be
+  -- reproduced or invalidated by a known-buggy prover release. Versions are exactly
+  -- what the verdict cache keys on, so both come from one source.
+  attestingKernelVersions : List String := []
 
 /-- Compatibility alias: `VC` is the obligation record, kept for the existing
     discharge/schema/render call sites. -/
@@ -2419,8 +2426,15 @@ def foldReplayResults (vcs : List VC) (replayed : List String) : List VC :=
     attests only that each kernel accepted its OWN lowering (no digest cross-check).
     `rocqClosed`/`isaClosed` are VC ids the external kernels independently closed.
     Applied only behind the explicit prover flags, so the default ledger is
-    unchanged. -/
-def foldMultiKernelResults (vcs : List VC) (rocqClosed isaClosed : List String) : List VC :=
+    unchanged.
+
+    `leanVer`/`rocqVer`/`isaVer` are the tool identities of the kernels that ran, so
+    the stored claim records WHICH builds attested it. Without them the artifact says
+    "two kernels agreed" but not which ones, and the claim cannot be reproduced later
+    or invalidated when a prover release turns out to be buggy. -/
+def foldMultiKernelResults (vcs : List VC) (rocqClosed isaClosed : List String)
+    (leanVer : String := "lean") (rocqVer : String := "rocq") (isaVer : String := "isabelle")
+    : List VC :=
   vcs.map fun v =>
     if v.status == "proved_by_kernel_decision" || v.status == "proved_by_lean"
        || v.status == "proved_by_lean_replay" then
@@ -2429,8 +2443,11 @@ def foldMultiKernelResults (vcs : List VC) (rocqClosed isaClosed : List String) 
       if ext.isEmpty then v
       else
         let attest := "lean" :: ext
+        let versionOf := fun (n : String) =>
+          if n == "rocq" then rocqVer else if n == "isabelle" then isaVer else leanVer
         let status := if attest.length ≥ 3 then "proved_by_multi_kernel" else "proved_by_two_kernels"
         { v with status := status, attestingKernels := attest,
+                 attestingKernelVersions := attest.map versionOf,
                  engine := "+".intercalate (v.engine :: ext) }
     else v
 
@@ -3782,6 +3799,18 @@ def vcToJson (v : VC) : Val :=
     ("expected_discharge", .str v.dischargeMode),
     ("status", .str v.status),
     ("engine", .str v.engine),
+    -- Multi-kernel provenance. `null` unless an external kernel actually attested,
+    -- so the default artifact is unchanged. Present WITH versions, because a stored
+    -- `proved_by_two_kernels` is otherwise un-auditable — the reader could not tell
+    -- which prover builds agreed, nor invalidate the claim if one is later found
+    -- buggy. This is the same (tool, version) tuple the verdict cache keys on.
+    ("multi_kernel", if v.attestingKernels.isEmpty then Json.Val.null else .obj [
+      ("attesting_kernels", .arr (v.attestingKernels.map (.str ·))),
+      ("attesting_kernel_versions", .arr (v.attestingKernelVersions.map (.str ·))),
+      ("attests",
+        .str "each listed kernel accepted ITS OWN lowering of this obligation"),
+      ("does_not_attest",
+        .str "that the Core->obligation lowering is faithful (see --report bridge-diversity), nor that the per-kernel lowerings denote the same proposition (see --report lowering-agreement)")]),
     ("counterexample", .obj (v.counterexample.map (fun (n, x) => (n, Json.Val.str x)))),
     -- SMT provenance (determinism / replay). Present only for SMT-routed VCs;
     -- `null` otherwise, so the default report carries no solver data.

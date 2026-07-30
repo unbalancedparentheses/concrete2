@@ -185,9 +185,49 @@ EOF
       || no "elf_header: $fn should agree"
   done
   CV="$("$COMPILER" examples/crypto_verify/src/main.con --report bridge-diversity 2>/dev/null)"
-  printf '%s' "$CV" | grep -q "\[compute_tag\]  agree" \
-    && ok "crypto_verify: compute_tag agrees across both evaluators" \
-    || no "crypto_verify compute_tag should agree"
+  for fn in compute_tag verify_tag check_nonce verify_message main; do
+    printf '%s' "$CV" | grep -q "\[$fn\]  agree" \
+      && ok "crypto_verify: $fn agrees across both evaluators" \
+      || no "crypto_verify: $fn should agree"
+  done
+  # crypto_verify is FULLY covered — no function falls outside the fragment. That
+  # depends on the early-return guard pattern (`if !ok { return 0; } ...`), which
+  # verify_message uses and which is only sound because blockTerminates checks the
+  # `then` branch really leaves the function.
+  printf '%s' "$CV" | grep -q "OUTSIDE the extractable fragment" \
+    && no "crypto_verify should have NO function outside the fragment" \
+    || ok "crypto_verify is fully covered (every function bridge-checked)"
+
+  echo "=== guard soundness: a non-terminating then-branch is NOT modelled as if/else ==="
+  # `if c { x = 1; } rest` must NOT extract: both paths continue into `rest` with
+  # different state, which the let-chain encoding cannot express. Extracting it as
+  # `if c then 1 else rest` would silently check the WRONG function, which is worse
+  # than not checking it.
+  GTMP="$(mktemp -d)"; mkdir -p "$GTMP/src"
+  cat > "$GTMP/src/main.con" <<'EOF'
+mod guard {
+    // then-branch FALLS THROUGH (no return): must be refused by the fragment
+    fn fallthrough(a: i32) -> i32 {
+        let mut x: i32 = a;
+        if a > 0 { x = 1; }
+        return x;
+    }
+    // then-branch RETURNS: a real guard, must be extracted
+    fn realguard(a: i32) -> i32 {
+        if a > 0 { return 1; }
+        return 0;
+    }
+}
+EOF
+  GD="$("$COMPILER" "$GTMP/src/main.con" --report bridge-diversity 2>/dev/null)"
+  printf '%s' "$GD" | grep -q "\[realguard\]  agree" \
+    && ok "a real early-return guard IS extracted and agrees" \
+    || no "realguard should be extracted"
+  printf '%s' "$GD" | grep -qE "fallthrough" \
+    && printf '%s' "$GD" | grep -A3 "OUTSIDE" | grep -q "fallthrough" \
+    && ok "a fall-through then-branch is refused, not silently mis-extracted" \
+    || no "fallthrough must be OUTSIDE the fragment"
+  rm -rf "$GTMP"
 
   echo "=== flag parsing: a valid flag COMBINATION is not a usage error ==="
   # `--rocq --isabelle --require-two-kernels` used to fall through to the usage dump,
