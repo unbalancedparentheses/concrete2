@@ -968,3 +968,9 @@ jobs:
       # replay, and the flagship (elf_header) carrying every surface at once.
       - name: Multi-kernel evidence gate
         run: nix develop .#provers --command bash ./scripts/tests/check_multi_kernel.sh
+
+      # Corroborates the Tier-1 native-trust step recorded in docs/AXIOMS.md:
+      # bv_decide's LRAT checker runs as compiled Lean, so this re-checks the same
+      # bit-blasting with an independently implemented checker (drat-trim).
+      - name: Independent DRAT check of bv_decide bit-blasting
+        run: nix develop .#provers --command bash ./scripts/tests/check_bv_certificates.sh
