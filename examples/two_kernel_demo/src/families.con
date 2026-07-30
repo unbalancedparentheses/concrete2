@@ -1,0 +1,16 @@
+// All runtime-safety families through the prover-neutral layer (feature #3):
+// overflow, array-bounds, and division-by-zero — each lowered to every kernel.
+mod families {
+    // overflow: a + b bounded
+    #[overflow_checked]
+    #[requires(0 <= a && a <= 100 && 0 <= b && b <= 100)]
+    fn add_bounded(a: i32, b: i32) -> i32 { return a + b; }
+
+    // array-bounds: index proven in [0, 4)
+    #[requires(0 <= i && i < 4)]
+    fn read_at(xs: [i32; 4], i: i32) -> i32 { return xs[i]; }
+
+    // division-by-zero: divisor proven != 0
+    #[requires(d > 0)]
+    fn div_safe(a: i32, d: i32) -> i32 { return a / d; }
+}

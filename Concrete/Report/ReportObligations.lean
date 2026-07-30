@@ -334,6 +334,7 @@ structure BoundsObl where
   size          : Nat
   closedVerdict : Option Bool
   leanGoal      : Option String
+  hyps          : List Expr := []   -- in-scope #[requires]/guards (for prover-neutral lowering)
 
 /-- Identifier → fixed-array size, from array-typed params and annotated lets. -/
 def arraySizeMap (f : FnDef) : List (String × Nat) :=
@@ -355,19 +356,19 @@ def boundsObligations (modules : List Module) : List BoundsObl := Id.run do
       | none => pure ()
       | some (_, n) =>
         let key := s!"{fq}#bounds{i}"
+        let obHyps := f.requires ++ scope
         let cv : Option Bool × Option String := match cEvalInt idx with
           | some k => (some (decide (0 ≤ k) && decide (k < (Int.ofNat n))), none)
           | none => match toLeanProp idx with
             | none => (none, none)
             | some idxStr =>
-              let hyps := f.requires ++ scope
-              let vars := (collectIdents idx ++ hyps.flatMap collectIdents).eraseDups
-              let reqs := hyps.filterMap toLeanProp
+              let vars := (collectIdents idx ++ obHyps.flatMap collectIdents).eraseDups
+              let reqs := obHyps.filterMap toLeanProp
               let binder := if vars.isEmpty then "" else s!"∀ ({" ".intercalate vars} : Int), "
               let hyp := if reqs.isEmpty then "" else s!"({" ∧ ".intercalate reqs}) → "
               (none, some s!"{binder}{hyp}(0 ≤ {idxStr} ∧ {idxStr} < {n})")
         out := out ++ [{ fnQual := fq, key, arrName := arr, idxExpr := idx, size := n
-                        , closedVerdict := cv.1, leanGoal := cv.2 }]
+                        , closedVerdict := cv.1, leanGoal := cv.2, hyps := obHyps }]
         i := i + 1
   return out
 
@@ -471,6 +472,7 @@ structure DivObl where
   isMod         : Bool
   closedVerdict : Option Bool
   leanGoal      : Option String
+  hyps          : List Expr := []   -- in-scope #[requires]/guards (for prover-neutral lowering)
 
 /-- Generate `divisor ≠ 0` obligations for every `/` and `%`. -/
 def divObligations (modules : List Module) : List DivObl := Id.run do
@@ -480,18 +482,18 @@ def divObligations (modules : List Module) : List DivObl := Id.run do
     let mut i := 0
     for (isMod, dv, scope) in scopedDivB f.loopContracts [] f.body do
       let key := s!"{fq}#div{i}"
+      let obHyps := f.requires ++ scope
       let cv : Option Bool × Option String := match cEvalInt dv with
         | some k => (some (decide (k ≠ 0)), none)
         | none => match toLeanProp dv with
           | none => (none, none)
           | some dStr =>
-            let hyps := f.requires ++ scope
-            let vars := (collectIdents dv ++ hyps.flatMap collectIdents).eraseDups
-            let reqs := hyps.filterMap toLeanProp
+            let vars := (collectIdents dv ++ obHyps.flatMap collectIdents).eraseDups
+            let reqs := obHyps.filterMap toLeanProp
             let binder := if vars.isEmpty then "" else s!"∀ ({" ".intercalate vars} : Int), "
             let hyp := if reqs.isEmpty then "" else s!"({" ∧ ".intercalate reqs}) → "
             (none, some s!"{binder}{hyp}({dStr} ≠ 0)")
-      out := out ++ [{ fnQual := fq, key, divExpr := dv, isMod, closedVerdict := cv.1, leanGoal := cv.2 }]
+      out := out ++ [{ fnQual := fq, key, divExpr := dv, isMod, closedVerdict := cv.1, leanGoal := cv.2, hyps := obHyps }]
       i := i + 1
   return out
 
@@ -921,25 +923,54 @@ partial def exprToProver (binop : BinOp → String → String → Option String)
     | _ => binop op L R
   | _ => none
 
-/-- `(vcKey, proofScript)` for each linear overflow obligation, lowered through the
-    given driver. Selection mirrors `overflowGoals` (the omega domain): non-constant
-    obligations carrying a linear `leanGoal`. The conclusion `lo <= e AND e <= hi` is
-    itself built through the driver's binop column, so `<=` / conjunction are spelled
-    the prover's way. Soundness: if the operand OR any hypothesis OR the conclusion
-    falls outside the fragment we DROP the whole goal (never emit a partial one). -/
+/-- A family-neutral view of one linear obligation, so every runtime-safety family
+    (overflow / array-bounds / div-nonzero, and any future family) flows through the
+    SAME prover-neutral lowering instead of each re-implementing it. `mainExpr` is the
+    operand/index/divisor to lower; `mkConcl` builds the obligation's conclusion from
+    the driver's binop column and the lowered `mainExpr` — so each family states its
+    own shape (`lo<=e<=hi`, `0<=i<n`, `d<>0`) in the prover's syntax. `desc` is the
+    human display; `hyps` are the in-scope assumptions. Selection is the omega domain:
+    non-constant obligations carrying a linear `leanGoal`, matched to omega by `key`. -/
+structure MultiKernelObl where
+  key      : String
+  desc     : String
+  hyps     : List Expr
+  mainExpr : Expr
+  mkConcl  : (BinOp → String → String → Option String) → String → Option String
+
+/-- Collect the linear runtime-safety obligations of every family into the neutral
+    view. Adding a family is a new block here, not a new lowering. -/
+def multiKernelObligations (modules : List Module) : List MultiKernelObl := Id.run do
+  let mut out : List MultiKernelObl := []
+  for o in overflowObligations modules do
+    if o.closedVerdict.isNone && o.leanGoal.isSome then
+      let mk : (BinOp → String → String → Option String) → String → Option String :=
+        fun bop e => do let lo ← bop .leq (toString o.lo) e; let hi ← bop .leq e (toString o.hi); bop .and_ lo hi
+      out := out ++ [{ key := o.key, desc := s!"{Concrete.fmtExpr o.opExpr} ∈ [{o.lo}, {o.hi}]", hyps := o.hyps, mainExpr := o.opExpr, mkConcl := mk }]
+  for o in boundsObligations modules do
+    if o.closedVerdict.isNone && o.leanGoal.isSome then
+      let mk : (BinOp → String → String → Option String) → String → Option String :=
+        fun bop e => do let lo ← bop .leq "0" e; let hi ← bop .lt e (toString o.size); bop .and_ lo hi
+      out := out ++ [{ key := o.key, desc := s!"0 ≤ {Concrete.fmtExpr o.idxExpr} < {o.size} (bounds of {o.arrName})", hyps := o.hyps, mainExpr := o.idxExpr, mkConcl := mk }]
+  for o in divObligations modules do
+    if o.closedVerdict.isNone && o.leanGoal.isSome then
+      let mk : (BinOp → String → String → Option String) → String → Option String :=
+        fun bop e => bop .neq e "0"
+      out := out ++ [{ key := o.key, desc := s!"{Concrete.fmtExpr o.divExpr} ≠ 0 (divisor)", hyps := o.hyps, mainExpr := o.divExpr, mkConcl := mk }]
+  return out
+
+/-- `(vcKey, proofScript)` for each linear obligation (ALL families), lowered through
+    the given driver. The conclusion is built via the driver's binop column, so `<=` /
+    `<` / `<>` / conjunction are spelled the prover's way. Soundness: if the main expr,
+    ANY hypothesis, or the conclusion falls outside the fragment we DROP the whole goal
+    (never emit a partial one — a dropped goal reads `not-asked`, never a false verdict). -/
 def proverReplayGoals (pl : ProverLowering) (modules : List Module) : List (String × String) := Id.run do
   let mut out : List (String × String) := []
-  for o in overflowObligations modules do
-    if o.closedVerdict.isSome then continue          -- constant tier owns it
-    if o.leanGoal.isNone then continue               -- only the omega/linear domain
-    let concl : Option String := do
-      let e ← exprToProver pl.binop o.opExpr
-      let lo ← pl.binop .leq (toString o.lo) e
-      let hi ← pl.binop .leq e (toString o.hi)
-      pl.binop .and_ lo hi
+  for o in multiKernelObligations modules do
+    let concl : Option String := (exprToProver pl.binop o.mainExpr).bind (o.mkConcl pl.binop)
     match concl, o.hyps.mapM (exprToProver pl.binop) with
     | some c, some hyps =>
-      let vars := (collectIdents o.opExpr ++ o.hyps.flatMap collectIdents).eraseDups
+      let vars := (collectIdents o.mainExpr ++ o.hyps.flatMap collectIdents).eraseDups
       out := out ++ [(o.key, pl.render vars hyps c)]
     | _, _ => pure ()
   return out
@@ -953,7 +984,7 @@ def rocqLowering : ProverLowering where
     let binder := if vars.isEmpty then "" else s!"forall ({" ".intercalate vars} : Z), "
     let arrows := String.join (hyps.map (fun h => s!"({h}) -> "))
     "\n".intercalate
-      [ "(* second-kernel (Rocq/lia) check of a linear no-overflow obligation *)",
+      [ "(* second-kernel (Rocq/lia) check of a linear runtime-safety obligation *)",
         "From Stdlib Require Import ZArith.", "From Stdlib Require Import Lia.",
         "Open Scope Z_scope.", s!"Goal {binder}{arrows}{concl}.", "Proof. lia. Qed." ]
 
