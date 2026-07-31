@@ -34,11 +34,18 @@ lean_probe() {
   local label="$1" want="$2" body="$3"
   cat > "$TMP/p.lean" <<LEAN
 import Concrete
+import Examples
 open Concrete Concrete.Proof
 $body
 LEAN
   local out; out="$(lake env lean "$TMP/p.lean" 2>&1 || true)"
-  if grep -qF -- "$want" <<<"$out"; then ok "$label"
+  # AN ERROR IS A FAILURE, whatever the text happens to contain. Checking only for
+  # the wanted substring let a probe pass on Lean's own error output: the "3 of the
+  # nine are still legacy" leg matched the "3" inside a line:column in
+  # `unknown identifier`, so a probe that could not even elaborate reported ok.
+  if grep -qE "error" <<<"$out"; then
+    no "$label — probe did not elaborate: $(printf '%s' "$out" | tr '\n' ' ' | cut -c1-200)"
+  elif grep -qF -- "$want" <<<"$out"; then ok "$label"
   else no "$label — got: $(printf '%s' "$out" | tr '\n' ' ' | cut -c1-200)"; fi
 }
 
