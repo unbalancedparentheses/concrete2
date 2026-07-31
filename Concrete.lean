@@ -31,6 +31,8 @@ import Concrete.Report.Diff
 import Concrete.Pipeline.Pipeline
 import Concrete.Proof.ProofCore
 import Concrete.Proof.Proof
+import Concrete.Proof.DependencyEdge
+import Concrete.Proof.DependencyEdges
 import Concrete.ProofKit
 import Concrete.Proof.ProofSoundness
 import Concrete.Proof.Sha256Spec
