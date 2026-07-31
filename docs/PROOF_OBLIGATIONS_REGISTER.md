@@ -1,6 +1,6 @@
 # ProofCore Pass Contracts and Phase 10 Obligations Register
 
-Status: contract document (compiler soundness bridge input; see ROADMAP Phase 10).
+Status: contract document (compiler soundness bridge input; see ROADMAP Phase 14).
 
 This document is the **per-rule register** of the ProofCore extraction
 surface.  For every PExpr construct, evaluator rule,

@@ -57,6 +57,10 @@ PRESENT_DOCS=(
   docs/SMT_SOUNDNESS.md
   docs/AXIOMS.md
   docs/TRUSTED_COMPUTING_BASE.md
+  # Normative architecture for the prover-neutral obligation layer. Gated on arrival:
+  # its predecessors live in docs/NOTES/, which is outside this list, and that is
+  # precisely why the design in them was re-derived more than once.
+  docs/PROVER_NEUTRAL_OBLIGATIONS.md
 )
 REPORT_DOCS=(  # --report claims here describe the current CLI
   docs/CLAIMS_TODAY.md

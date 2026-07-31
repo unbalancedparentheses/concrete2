@@ -5253,6 +5253,31 @@ the smaller boundary.
 
  users actually run.
 
+### Task R-0458
+
+**Objective:** Split the evidence vocabulary into two independent coordinates and make
+every attestation carry its own re-check procedure.
+
+`proved_by_two_kernels` currently fuses two unrelated facts into one string: how a claim
+was established, and how many independent implementations established it. Fused, it
+reads stronger than it is. Replace it with `strength` (per attestation) and
+`independence` (`implementations`, `foundations`, `bridge`), plus `statable_in` /
+`proved_in` for portability, and demote the composite name to a display label over the
+tuple as R-0440 requires.
+
+Two additions the current ledger lacks. `keep`: retain the certificate artifact, because
+"coqc exited 0 at time T on machine M" is neither re-checkable nor shippable in a proof
+bundle. `attest`: the emitted script must assert its own integrity rather than have the
+driver infer belief from an exit code — `coqc` exits 0 on `Admitted.`, and the Isabelle
+driver already demonstrates the pattern with `Thm_Deps.all_oracles`.
+
+The re-check ladder must stay honest: where a transferable certificate exists (LRAT,
+Alethe) a third party re-checks independently of our toolchain; where none exists
+(`omega`, `lia`, `presburger`) the claim is `trusted_modulo_toolchain`, because `lia` has
+no certificate export and a `.vo` is re-checkable only by the same Rocq version.
+
+Normative shape in [docs/PROVER_NEUTRAL_OBLIGATIONS.md](docs/PROVER_NEUTRAL_OBLIGATIONS.md).
+
 ## Phase 12: Provable And Predictable Subsets
 
 Goal: give users a named small subset they can rely on for serious
@@ -5416,6 +5441,41 @@ bounds, explicit backend timing assumptions.
  passing expectation is never reported as `proved` and that a release/high-
  integrity profile cannot silently rely on it.
 
+### Task R-0459
+
+**Objective:** Add obligation families that are not arithmetic, so the ledger can demand
+non-arithmetic proofs instead of merely accepting them.
+
+Every family the compiler generates today is arithmetic: overflow, bounds, div,
+call-site preconditions, asserts. There is no family for exhaustiveness, termination,
+determinism, relational properties or refinement. That is why a 772-line parser produces
+zero obligations — nothing is looking for anything it could be wrong about. The
+non-arithmetic proofs that do exist are opt-in `#[proof_by]` attachments, so nothing
+enumerates them and nothing reports them missing.
+
+Two families first, chosen because neither needs new logic nor the typed obligation IR:
+
+- **Exhaustiveness** — every reachable `(state, opcode)` pair has a defined transition.
+  Finite case analysis, decidable, closable by all three hosts. `examples/vm` is the
+  corpus. This is the plumbing proof that a non-arithmetic kind flows through
+  obligations, ledger, reports and policy.
+- **Relational (2-safety)** — constant-time and determinism via a Core-to-Core
+  self-composition transform: two renamed copies, equal public inputs, assert equal
+  observable trace. Not expressible as a single-execution VC at all. Bounded, so it
+  unrolls to a bitvector query with a retained LRAT certificate checked by two
+  independent checkers. `ct_compare_32` is the target, and today that property is only
+  *enforced by a tag* — proving it is the `enforced -> proved` upgrade.
+
+Prerequisite discovered by inspection, not assumption: `arithToBVW` handles `.add` and
+`.mul` only, so the bitvector path drops xor/and/or/shift entirely. `ct_compare_32` is
+xor-and-or. The bitvector sort and those operators must land as a slice of the typed
+term IR (R-0454's substrate) rather than as another column in the abstraction that slice
+replaces.
+
+Also add `proved_by_hand` as a first-class strength, reusing the existing
+proof-fingerprint freshness machinery — the piece that usually kills hand-proof
+approaches and which already exists here.
+
 ## Phase 13: Runtime Safety Obligations
 
 Goal: generate SPARK-like obligations for boring runtime failures instead of
@@ -5576,6 +5636,32 @@ target byte claims distinct in the resulting evidence.
 
 **Objective:** Add the Phase 13 validation artifact: a runtime-safety corpus covering bounds, div/mod-zero, overflow, casts, panic/abort/assert, byte/text/path boundaries, stack/recursion, inferred invariant candidates, newtype invariant hypotheses, arithmetic-site evidence mismatches, and obligation suppression. Each case must show one of `proved`, `enforced`, `assumed`, `missing`, or `blocked`, include a negative variant, and run through policy gates plus human/JSON reports.
 
+
+### Task R-0460
+
+**Objective:** Discharge the obligation-sufficiency register — *if the flat goal holds,
+the runtime property holds* — rule by rule.
+
+[docs/VC_BRIDGE_REGISTER.md](docs/VC_BRIDGE_REGISTER.md) enumerates the `Core ->
+obligation` lowering as four rows with the theorem each owes. Zero are discharged. This
+is the ceiling on every runtime-safety claim and every multi-kernel badge: adding kernels
+cannot detect a fault here, because all of them check the *same* lowered proposition, so
+a mis-lowering yields unanimous agreement on the wrong formula.
+
+Distinct from R-0455. That register asserts *transformed goal implies input goal*; this
+one asserts *flat goal implies runtime property*. A transformation register cannot
+discharge a row here, and conflating them loses the distinction the architecture rests
+on.
+
+Choose the first row on lemma shape rather than conclusion shape. `d /= 0` is the
+simplest conclusion to state but its lemma must relate the flat fact to the interpreter's
+division semantics, where truncation-versus-flooring and trap-on-zero live. Bounds has a
+duller conclusion but a cleaner definedness step, and far more real instances — though it
+carries an extra premise about `arraySizeMap` soundness, which is a fact about name
+resolution rather than semantics. Sketch both before committing.
+
+Exit criterion names rows, not a count: a bare "two rows discharged" is satisfiable by
+two rewriting arguments while the non-arithmetic ceiling does not move at all.
 
 ## Phase 14: Compiler Soundness Bridge
 
@@ -5933,6 +6019,89 @@ compiler’s authority-report implementation.
 
 **Objective:** Add the Phase 14 validation artifact: a compiler-soundness dashboard with one witness program per shipped ProofCore construct, one status per R-rule, replay commands for proved/mechanically-validated facts, and regressions proving report facts (`proved`, `stale`, `blocked`, `missing`, `ineligible`, `trusted`) agree with compiler state. Include the `CoreCertificateV1` predicate/rule-set version, checker binary/source hash, soundness theorem names, independent receipt per artifact, mutation corpus, cache-off/on receipt parity, and a machine-readable list of every boundary V1 still leaves producer/compiler-trusted.
 
+
+### Task R-0454
+
+**Objective:** Encode obligations in a neutral term form and compute
+`ProofSubjectDigest` over that neutral term rather than over any host AST.
+
+**This belongs immediately after R-0004's remaining slices, and before the prover-neutral
+evidence work merges.** The reason is a closing window, not importance: digests are
+*stored*. Once artifacts carry a digest computed over a Lean AST, changing the basis
+invalidates every stored claim simultaneously and forces migrating every fingerprint in
+`examples/`. No `subjectDigest` field exists in `Concrete/` yet, so the migration cost is
+currently zero and only grows.
+
+It is R-0004's decoupling and is valuable even if no second prover ever ships: freshness
+becomes host-independent by construction, so every prover agrees on staleness without any
+of them seeing another's AST. It also closes a live defect — the multi-kernel fold matches
+kernels on the obligation *id*, not on a subject digest, which is precisely the gap the
+graduation criteria named.
+
+Scope: the neutral term encoding (`PExpr`/`PVal`/`PMatchPat` are already prover-agnostic;
+serialize versioned), the `NeutralObligation` and `HostAttestation` records, and
+`checkedAgainstDigest` such that a mismatch reads `stale`. Two encoding invariants must
+survive serialization: `.call` and `.applyVar` stay distinct (the two-namespace
+resolution that closed bug 061), and `displayName` is excluded from the digest because
+identity is `CallableId`.
+
+Do not widen R-0004 to absorb this. That task is mid-flight; this is its successor.
+
+Normative rule and record shapes in
+[docs/PROVER_NEUTRAL_OBLIGATIONS.md](docs/PROVER_NEUTRAL_OBLIGATIONS.md).
+
+### Task R-0455
+
+**Objective:** Replace per-prover string printing with a transformation pipeline, and
+give each transformation a soundness register row.
+
+The current lowering fuses three jobs into string templates plus an exit code: how to say
+the obligation, how to try to prove it, and how to believe the answer. The defects follow
+from that fusion. `div`/`mod` are excluded because the operator table can express only
+infix forms and `Z.quot` is prefix — the code comment says so. Spec-function calls are
+dropped because there are no uninterpreted symbols. The tactic is hardcoded, so `nia` is
+unreachable.
+
+Adopt the Why3 shape: a typed term IR (sorts including bitvectors, operators carrying
+arity *and* fixity, binders, uninterpreted symbols) plus goal-to-goal transformations
+selected by declarative per-prover drivers. A driver states what a target *cannot*
+express so the pipeline transforms instead of silently dropping. Backends become
+`print` / `tactics` (ordered, budgeted) / `attest` / `keep`, with a batch interface so a
+session-building prover amortizes startup instead of paying it per goal.
+
+Concrete's improvement over Why3, and the reason this is a register and not just a
+refactor: Why3's transformations are trusted. Each pass here owes *transformed goal
+implies input goal*, recorded per row with a fingerprint of the transformation it
+justifies so a discharged row fails loudly rather than going vacuous when its subject
+changes.
+
+Difficulty is skewed and the register must record it: `eliminate_div_mod` is a rewriting
+argument, while `eliminate_algebraic` requires the axiomatization be conservative over the
+datatype theory, which is model-theoretic.
+
+### Task R-0456
+
+**Objective:** Port `eval` to a second host and relate the two semantics by an
+adversarial conformance vector suite.
+
+The honest constraint, and it is permanent: **no single kernel can bridge two kernels** —
+no checker sees both. So relating Lean's `eval` to another host's cannot be a proof. It
+is a spec plus a conformance suite of `(neutral program, neutral input) -> expected PVal`
+vectors that every host's `eval` must reproduce, and the resulting cross-semantics step is
+`tested_by_oracle`. The composition rule folds that in explicitly rather than laundering
+it as kernel evidence.
+
+Isabelle/HOL is the target, and the port is tractable by design rather than by luck:
+`PExpr`/`PVal` are simple inductive datatypes with no dependent types, partiality is
+`Option`, and recursion is fuel-structural, which is `primrec` on `nat` — the easiest case
+in a logic with no built-in general recursion. Its job afterwards is the one only it does
+well: `sledgehammer` on datatype and quantifier goals, plus `smt` proof reconstruction.
+
+Named risk: the `eval` port is where a subtle semantic divergence could silently weaken a
+two-host claim, so the conformance suite must be adversarial rather than illustrative.
+
+Depends on R-0454 for the neutral encoding and on R-0455 for the shared-versus-per-host
+split, without which this arrives as a second extractor and the factoring never happens.
 
 ## Phase 15: Backend, Target, And Stdlib Contracts
 
