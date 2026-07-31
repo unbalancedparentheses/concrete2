@@ -49,6 +49,14 @@ PRESENT_DOCS=(
   docs/PHASE3_OBLIGATION_CORE_AUDIT.md
   docs/PHASE4_COMPILER_LEDGER_AUDIT.md
   CHANGELOG.md
+  # Evidence-surface docs. They make present-tense claims about --report modes,
+  # policy keys, gates and trust boundaries, so they drift exactly like the four
+  # above. They were outside this gate while carrying that content, which is the
+  # same failure this gate exists to catch, one level up.
+  docs/CONTRACTS_AND_VCS.md
+  docs/SMT_SOUNDNESS.md
+  docs/AXIOMS.md
+  docs/TRUSTED_COMPUTING_BASE.md
 )
 REPORT_DOCS=(  # --report claims here describe the current CLI
   docs/CLAIMS_TODAY.md

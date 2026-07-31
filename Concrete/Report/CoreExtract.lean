@@ -4,33 +4,45 @@ namespace Concrete.CoreExtract
 
 open Concrete
 
-/-! # Core → Rocq extraction, for BRIDGE diversity
+/-! # Core → Rocq extraction: a DIFFERENTIAL TEST of Core semantics
 
-`--report multi-kernel` gives CHECKER diversity: N independently-implemented
-kernels each accept a lowering of the same obligation. It states plainly what it
-does not give — that the Core→obligation lowering is FAITHFUL. That bridge is a
-single implementation, and every kernel downstream of it inherits its bugs. If the
-bridge mis-lowers `a - b` as `b - a`, all three kernels will happily prove the
-wrong obligation and the badge says `proved_by_multi_kernel`.
+What this is, stated narrowly on purpose. It extracts a Core function into a Rocq
+(Gallina) computation and cross-checks it against Concrete's Lean interpreter:
 
-Closing that requires a second, independent path from Core to a semantics, and a
-way to detect when the two disagree. This module is that second path: it extracts
-a Core function into a Rocq (Gallina) definition, translating the SEMANTICS rather
-than the obligation. `--report bridge-diversity` then differential-tests the two:
+  * the interpreter evaluates `f(args)` — the existing oracle, already trusted enough
+    to be the differential-testing reference for codegen;
+  * the extracted definition is evaluated by Rocq's kernel, by asking it to check
+    `Goal f_ext args = <interpreter's result>. Proof. reflexivity. Qed.`
 
-  * Concrete's Lean interpreter evaluates `f(args)` — the existing oracle, already
-    trusted enough to be the differential-testing reference for codegen.
-  * the extracted Gallina definition is evaluated by Rocq's kernel, by asking it to
-    check `Goal f_ext args = <interpreter's result>. Proof. reflexivity. Qed.`
+`reflexivity` on closed integer arithmetic is decided by Rocq's own kernel reduction,
+so agreement means two independently-implemented evaluators computed the same value,
+and disagreement is a defect in one of them.
 
-Rocq's `reflexivity` on closed integer arithmetic is decided by its own kernel
-reduction, so agreement means two independently-implemented evaluators computed the
-same value. A mismatch is a genuine bridge-level defect: one of the two paths
-mis-models Concrete's semantics.
+## What it does NOT establish
 
-This is a differential test, not a proof of equivalence — it certifies agreement on
-the sampled inputs. What it buys is that the bridge is no longer a single unchecked
-implementation.
+It is NOT bridge diversity, and earlier drafts of this module oversold it as such.
+`--report multi-kernel` declines to attest that the **Core→obligation lowering** is
+faithful — that lowering turns a Core body into a proposition like
+`a+b ∈ [-2³¹, 2³¹-1]`, including collecting hypotheses. Nothing here checks that the
+emitted obligation is the right safety condition for that site, or that its
+hypotheses were gathered correctly. This module cross-checks Core's SEMANTICS; the
+obligation-derivation step is attacked separately, and only partially, by the
+`bridge-check` fuzzer (does a *proved* obligation get refuted by concrete execution).
+Together they narrow the gap from two sides; neither proves faithfulness.
+
+Nor is it a second bridge whose agreement reduces trust: two unverified translators
+agreeing is evidence, not proof, and this one is a real component that can itself be
+wrong — two bugs were found in it during development (definitions referencing
+unextractable callees; and, in the sibling agreement check, Isabelle inferring a
+fresh type variable per numeral). The sanctioned path to bridge trust is realization
+proofs / a discharged bridge register, not extraction.
+
+What it IS worth: a cheap, falsifiable net that catches semantic modelling errors no
+amount of kernel agreement can, because every kernel would agree on a consistently
+mis-lowered obligation. Demonstrated: swapping `Z.quot` for `Z.div` (truncating →
+flooring division) yields `DISAGREE — Unable to unify "-3" with "div_safe (-7) 2"`.
+It covers the sampled inputs only, and it can be demoted or deleted once bridge
+register rows are discharged.
 
 ## Deliberate semantic care
 
@@ -92,7 +104,7 @@ def extractBinOp : BinOp → Option String
     Rocq stdlib does not provide directly. Emitted once per extracted file. -/
 def extractPreamble : String :=
   "\n".intercalate
-    [ "(* Core -> Rocq extraction (bridge diversity). Integer values are Z; division",
+    [ "(* Core -> Rocq extraction (Core-semantics differential test). Values are Z; division",
       "   truncates toward zero (Z.quot/Z.rem), matching Concrete's Int.tdiv/Int.tmod",
       "   rather than Coq's flooring Z.div/Z.modulo. *)",
       "From Stdlib Require Import ZArith.",

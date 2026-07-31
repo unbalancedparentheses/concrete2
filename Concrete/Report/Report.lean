@@ -1981,6 +1981,53 @@ what stops a solver from silently becoming a "proved" path. -/
 
 def vcSchemaVersion : Nat := 1
 
+/-- What ONE kernel reported about ONE obligation: the auditable unit the
+    multi-kernel classes are composed from.
+
+    `verdict` is the kernel's own cell (`closed` / `refused` / `error` /
+    `not-asked`); `loweringAgreed` records whether the goal that kernel was handed
+    was verified to denote the obligation. BOTH are required for the receipt to count
+    as evidence — a kernel that closed a goal denoting something else proved a
+    different proposition. `replay` is the command an outsider runs to re-derive this
+    receipt, which is what makes the evidence portable rather than merely asserted. -/
+structure KernelReceipt where
+  kernel         : String        -- "lean" | "rocq" | "isabelle"
+  version        : String        -- exact tool identity, e.g. "coqc 9.0.1"
+  verdict        : String        -- "closed" | "refused" | "error" | "not-asked"
+  loweringAgreed : Bool          -- did its rendering denote the obligation?
+  replay         : String := ""  -- how to re-check this receipt independently
+  deriving Inhabited, BEq
+
+/-- Does this receipt count toward the multi-kernel class? -/
+def KernelReceipt.attests (r : KernelReceipt) : Bool :=
+  r.verdict == "closed" && r.loweringAgreed
+
+/-- The independence axes a multi-kernel claim spans, stated structurally so a stale
+    claim fails a gate instead of merely reading oddly in a comment.
+
+    `bridge` is the honest "no": every kernel checks a lowering produced by ONE
+    Core→obligation bridge, so agreement says nothing about that bridge's
+    faithfulness until realization proofs or a discharged bridge register exist. -/
+structure IndependenceFacts where
+  specFormalization    : String  -- "no" — one spec, one formalization
+  kernelImplementation : String  -- "yes" once an external kernel attests
+  kernelFoundations    : String  -- "no" | "partial (CIC×CIC)" | "yes (CIC×HOL)"
+  bridge               : String  -- "no (single shared Core→obligation bridge)"
+  deriving Inhabited, BEq
+
+/-- Derive the independence axes from the set of attesting kernels. Isabelle is HOL
+    rather than a CIC-family type theory, so its presence is what turns foundational
+    independence from `partial` into `yes`. -/
+def independenceOf (attest : List String) : IndependenceFacts :=
+  { specFormalization := "no (one spec, one formalization)"
+    kernelImplementation :=
+      if attest.any (fun k => k != "lean") then "yes" else "no (lean only)"
+    kernelFoundations :=
+      if attest.contains "isabelle" then "yes (CIC×HOL)"
+      else if attest.contains "rocq" then "partial (CIC×CIC)"
+      else "no (single foundation)"
+    bridge := "no (single shared Core→obligation bridge; see --report core-semantics-diff)" }
+
 /-- The ONE obligation record (Phase 3 #18d). Formerly two types — `Report.VC`
     and `ObligationCore.Obligation` — now a single struct hosted here (the module
     `collectVCs` lives in; `ObligationCore` imports `Report`, so the canonical
@@ -2026,6 +2073,17 @@ structure Obligation where
   -- reproduced or invalidated by a known-buggy prover release. Versions are exactly
   -- what the verdict cache keys on, so both come from one source.
   attestingKernelVersions : List String := []
+  /-- One RECEIPT per kernel that was consulted. The multi-kernel class is COMPOSED
+      from these (count the receipts that both closed and agreed), never decided by a
+      coordinator that holds its own opinion about what agreement means. That
+      direction matters: a class computed from receipts cannot drift from the receipts,
+      whereas a separately-maintained class can — and did, until the badge was
+      composed with lowering agreement. -/
+  kernelReceipts : List KernelReceipt := []
+  /-- Which axes of independence this obligation's evidence actually spans. Structured
+      rather than prose, because a prose non-attestation is the drift class this
+      project keeps rediscovering: comments do not fail a gate when they go stale. -/
+  independence : Option IndependenceFacts := none
 
 /-- Compatibility alias: `VC` is the obligation record, kept for the existing
     discharge/schema/render call sites. -/
@@ -2438,17 +2496,33 @@ def foldMultiKernelResults (vcs : List VC) (rocqClosed isaClosed : List String)
   vcs.map fun v =>
     if v.status == "proved_by_kernel_decision" || v.status == "proved_by_lean"
        || v.status == "proved_by_lean_replay" then
-      let ext := (if rocqClosed.contains v.id then ["rocq"] else [])
-              ++ (if isaClosed.contains v.id then ["isabelle"] else [])
-      if ext.isEmpty then v
+      -- One RECEIPT per kernel consulted. `rocqClosed`/`isaClosed` arrive already
+      -- filtered to kernels whose lowering agreed (see Main.externalClosedSets), so a
+      -- receipt here is `attests` by construction; the field is explicit anyway so the
+      -- artifact records WHY it counted rather than leaving it to be re-derived.
+      let receipts : List KernelReceipt :=
+        [{ kernel := "lean", version := leanVer, verdict := "closed", loweringAgreed := true
+         , replay := "concrete <file> --report multi-kernel" }]
+        ++ (if rocqClosed.contains v.id then
+              [{ kernel := "rocq", version := rocqVer, verdict := "closed", loweringAgreed := true
+               , replay := "concrete <file> --report multi-kernel --rocq" }] else [])
+        ++ (if isaClosed.contains v.id then
+              [{ kernel := "isabelle", version := isaVer, verdict := "closed", loweringAgreed := true
+               , replay := "concrete <file> --report multi-kernel --isabelle" }] else [])
+      let attesting := receipts.filter (·.attests)
+      if attesting.length < 2 then v
       else
-        let attest := "lean" :: ext
+        let attest := attesting.map (·.kernel)
         let versionOf := fun (n : String) =>
           if n == "rocq" then rocqVer else if n == "isabelle" then isaVer else leanVer
-        let status := if attest.length ≥ 3 then "proved_by_multi_kernel" else "proved_by_two_kernels"
+        -- COMPOSED from the receipts, not decided alongside them.
+        let status := if attesting.length ≥ 3 then "proved_by_multi_kernel" else "proved_by_two_kernels"
         { v with status := status, attestingKernels := attest,
+                 kernelReceipts := receipts,
+                 independence := some (independenceOf attest),
                  attestingKernelVersions := attest.map versionOf,
-                 engine := "+".intercalate (v.engine :: ext) }
+                 -- engine string lists the EXTERNAL attesters (lean is already there)
+                 engine := "+".intercalate (v.engine :: attest.filter (· != "lean")) }
     else v
 
 /-- Fold external-solver results into the VC schedule. A result class
@@ -3807,10 +3881,24 @@ def vcToJson (v : VC) : Val :=
     ("multi_kernel", if v.attestingKernels.isEmpty then Json.Val.null else .obj [
       ("attesting_kernels", .arr (v.attestingKernels.map (.str ·))),
       ("attesting_kernel_versions", .arr (v.attestingKernelVersions.map (.str ·))),
-      ("attests",
-        .str "each listed kernel accepted ITS OWN lowering of this obligation"),
-      ("does_not_attest",
-        .str "that the Core->obligation lowering is faithful (see --report bridge-diversity), nor that the per-kernel lowerings denote the same proposition (see --report lowering-agreement)")]),
+      -- One receipt per kernel consulted. The class above is COMPOSED from these, so
+      -- a reader can recompute it rather than trust it, and each receipt carries the
+      -- command to re-derive it independently.
+      ("receipts", .arr (v.kernelReceipts.map (fun r => Json.Val.obj [
+        ("kernel", .str r.kernel), ("version", .str r.version),
+        ("verdict", .str r.verdict),
+        ("lowering_agreed", .str (if r.loweringAgreed then "yes" else "no")),
+        ("attests", .str (if r.attests then "yes" else "no")),
+        ("replay", .str r.replay)]))),
+      -- STRUCTURED independence, not a prose sentence: a stale field can be gated, a
+      -- stale comment cannot. `bridge: no` is the standing honest disclaimer.
+      ("independent_of", match v.independence with
+        | none => Json.Val.null
+        | some i => .obj [
+            ("spec_formalization", .str i.specFormalization),
+            ("kernel_implementation", .str i.kernelImplementation),
+            ("kernel_foundations", .str i.kernelFoundations),
+            ("bridge", .str i.bridge)])]),
     ("counterexample", .obj (v.counterexample.map (fun (n, x) => (n, Json.Val.str x)))),
     -- SMT provenance (determinism / replay). Present only for SMT-routed VCs;
     -- `null` otherwise, so the default report carries no solver data.

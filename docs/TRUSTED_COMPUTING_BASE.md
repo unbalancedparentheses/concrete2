@@ -241,6 +241,44 @@ Not yet defined. The intended shape is to inherit all three TCBs (safe + predict
 
 ---
 
+## What multi-kernel agreement does and does not remove from the TCB
+
+`proved_by_two_kernels` / `proved_by_multi_kernel` move exactly one thing out of the
+trusted base, and leave one conspicuous thing in it. Both directions belong here,
+because the badge is easy to read as stronger than it is.
+
+**Removed: sole dependence on one kernel's soundness.** An obligation closed by Lean's
+`omega` *and* by Rocq's `lia` (and/or Isabelle's `presburger`) no longer rests on any
+single prover implementation being correct. With Isabelle among the attesters the
+agreement also spans logics — HOL rather than a CIC-family type theory — so a
+foundational error in one family does not silently carry the claim. Each attestation
+is recorded as a receipt carrying the exact tool version, so a claim can be
+re-audited, or invalidated, when a specific prover release is later found buggy.
+
+**NOT removed: the Core→obligation bridge.** Every kernel checks a lowering produced
+by ONE shared bridge. If that bridge emits the wrong proposition, all kernels agree on
+the wrong proposition and the badge still appears. Bridge trust is therefore
+untouched by adding kernels, and stays untouched until realization proofs or a
+discharged per-rule bridge register exist. The obligation record states this
+structurally rather than in prose — `independent_of.bridge` is `"no"` — so the
+disclaimer cannot quietly go stale.
+
+Two narrower guarantees, both gate-enforced rather than asserted:
+
+- A kernel that closed a goal whose *lowering* does not denote the obligation is
+  excluded from the badge and named in the report. Closing a different proposition is
+  not evidence about this one.
+- Agreement never launders past a `trusted` boundary. A trusted obligation stays
+  trusted however many kernels run, so a consumer filtering for `proved_by_*` cannot
+  mistake a conditional claim for an unconditional one.
+
+Separately, the bit-blasting path's certificate check is corroborated by an
+independently implemented checker (drat-trim) — see [AXIOMS.md](AXIOMS.md). That does
+not remove the `Lean.trustCompiler` extension; it means a single checker bug cannot
+carry an unsound bit-blasting claim unnoticed.
+
+---
+
 ## Practical Rule
 
 When a claim gets stronger, ask:

@@ -82,7 +82,7 @@ def helpText : String := String.intercalate "\n" [
   ""]
 
 def usage : String :=
-  "Usage: concrete <file.con> [-o output] [--emit-llvm] [--emit-core] [--emit-ssa] [--emit-trace-json] [--trace-pipeline] [--test] [--test --module <name>] [--interp] [--report caps|unsafe|layout|interface|alloc|mono|authority|proof|eligibility|proof-status|obligations|extraction|lean-stubs|check-proofs|proof-diagnostics|proof-deps|proof-bundle|traceability|diagnostics-json|effects|recursion|stack-depth|fingerprints|consistency|contracts|vcs|obligation-ledger|compiler-ledger|verify|audit|arithmetic|multi-kernel|bridge-check|solver-cert|lowering-agreement|bridge-diversity] [--report multi-kernel [--rocq] [--isabelle] [--all-provers] [--require-two-kernels]] [--query KIND|KIND:FUNCTION|fn:FUNCTION] [--fmt (legacy; use `concrete fmt`)]\n       concrete build [-o output] [--emit-llvm]\n       concrete check\n       concrete fmt <file.con> [--check | --write | --stdin]\n       concrete audit <file.con>\n       concrete prove <file.con> <module.function> [--json] [--out <path>] [--force] [--emit-link] [--emit-lean] [--emit-artifacts] [--out-dir <dir>] [--show-obligation <id>] [--replay] [--nearest-lemmas] [--check] [--workspace <dir>]\n       concrete prove --help=agent | --capabilities | --schema\n       concrete run [-- args...]\n       concrete test [--module <name>]\n       concrete diff <old.json> <new.json> [--json]\n       concrete snapshot <file.con> [-o output.json]\n       concrete debug-bundle <file.con> [-o dir]\n       concrete reduce <file.con> --predicate <pred> [-o output] [--verbose]\n       concrete --version"
+  "Usage: concrete <file.con> [-o output] [--emit-llvm] [--emit-core] [--emit-ssa] [--emit-trace-json] [--trace-pipeline] [--test] [--test --module <name>] [--interp] [--report caps|unsafe|layout|interface|alloc|mono|authority|proof|eligibility|proof-status|obligations|extraction|lean-stubs|check-proofs|proof-diagnostics|proof-deps|proof-bundle|traceability|diagnostics-json|effects|recursion|stack-depth|fingerprints|consistency|contracts|vcs|obligation-ledger|compiler-ledger|verify|audit|arithmetic|multi-kernel|bridge-check|solver-cert|lowering-agreement|core-semantics-diff] [--report multi-kernel [--rocq] [--isabelle] [--all-provers] [--require-two-kernels]] [--query KIND|KIND:FUNCTION|fn:FUNCTION] [--fmt (legacy; use `concrete fmt`)]\n       concrete build [-o output] [--emit-llvm]\n       concrete check\n       concrete fmt <file.con> [--check | --write | --stdin]\n       concrete audit <file.con>\n       concrete prove <file.con> <module.function> [--json] [--out <path>] [--force] [--emit-link] [--emit-lean] [--emit-artifacts] [--out-dir <dir>] [--show-obligation <id>] [--replay] [--nearest-lemmas] [--check] [--workspace <dir>]\n       concrete prove --help=agent | --capabilities | --schema\n       concrete run [-- args...]\n       concrete test [--module <name>]\n       concrete diff <old.json> <new.json> [--json]\n       concrete snapshot <file.con> [-o output.json]\n       concrete debug-bundle <file.con> [-o dir]\n       concrete reduce <file.con> --predicate <pred> [-o output] [--verbose]\n       concrete --version"
 
 /-- Capture compiler identity: version, git commit, lean toolchain. -/
 def compilerIdentity : IO String := do
@@ -1631,7 +1631,7 @@ def compileAndReport (inputPath : String) (reportType : String)
       out := out ++ "\n  attests: N independent kernels each closed a lowering of the OBLIGATION whose"
       out := out ++ "\n           truth table matches the reference evaluator (composed here, per kernel)."
       out := out ++ "\n  does NOT attest: that the Core->obligation lowering itself is faithful —"
-      out := out ++ "\n                   see `--report bridge-diversity` for that axis.\n"
+      out := out ++ "\n                   see `--report core-semantics-diff` for that axis.\n"
       out := out ++ "\n  cell legend: closed | refused (kernel says no) | error (OUR script/tool broke —"
       out := out ++ "\n               NOT a kernel disagreement) | not-asked (outside fragment) |"
       out := out ++ "\n               unavailable (no tool) | off (flag not set)"
@@ -1727,7 +1727,7 @@ def compileAndReport (inputPath : String) (reportType : String)
       out := out ++ "\n\nBRIDGE-CHECK: no proved obligation refuted by concrete evaluation."
       IO.println (out ++ "\n")
       return 0
-    if reportType == "bridge-diversity" then
+    if reportType == "core-semantics-diff" then
       -- BRIDGE diversity, the gap `--report multi-kernel` names as a
       -- non-attestation: all kernels check their own lowering of an obligation
       -- produced by ONE Core→VC bridge, so a bridge bug is invisible to every one of
@@ -1747,7 +1747,7 @@ def compileAndReport (inputPath : String) (reportType : String)
       -- flooring division difference (Z.quot vs Z.div) only shows on negatives.
       let probes : List Int := [-7, -3, -1, 0, 1, 2, 3, 7]
       let perFnCap := 24
-      let mut out := "=== Bridge diversity (Core→Rocq extraction vs the interpreter) ==="
+      let mut out := "=== Core-semantics differential test (Rocq extraction vs the interpreter) ==="
       out := out ++ "\n  Two INDEPENDENT paths from Core to a value:"
       out := out ++ "\n    (1) Concrete's Lean interpreter — the existing differential-testing oracle"
       out := out ++ "\n    (2) a Rocq/Gallina extraction of the same function, evaluated by Rocq's kernel"
@@ -1825,17 +1825,17 @@ def compileAndReport (inputPath : String) (reportType : String)
         out := out ++ "\n  (loops, structs, enums, arrays, matches, borrows, casts, generics, floats,"
         out := out ++ "\n   strings — named rather than silently skipped, so coverage is not overstated)"
       if disagree > 0 then
-        out := out ++ s!"\n\nBRIDGE-DIVERSITY FAILED — {disagree} function(s) where the interpreter and the"
+        out := out ++ s!"\n\nCORE-SEMANTICS-DIFF FAILED — {disagree} function(s) where the interpreter and the"
         out := out ++ "\n  Rocq extraction compute different values. One of the two mis-models Core."
         IO.println (out ++ "\n")
         return 1
       if errored > 0 then
-        out := out ++ s!"\n\nBRIDGE-DIVERSITY FAILED — {errored} function(s) produced an unusable extraction"
+        out := out ++ s!"\n\nCORE-SEMANTICS-DIFF FAILED — {errored} function(s) produced an unusable extraction"
         out := out ++ "\n  (a malformed or non-self-contained Gallina script). That is a defect in the"
         out := out ++ "\n  extractor, not evidence about the program, so it is not reported as agreement."
         IO.println (out ++ "\n")
         return 1
-      out := out ++ s!"\n\nBRIDGE-DIVERSITY: {checked} function(s) agree across two independent evaluators."
+      out := out ++ s!"\n\nCORE-SEMANTICS-DIFF: {checked} function(s) agree across two independent evaluators."
       IO.println (out ++ "\n")
       return 0
     if reportType == "lowering-agreement" then

@@ -761,7 +761,7 @@ diagnostic points at the missing toolchain (`nix develop .#provers`) rather than
 blaming the proof. `examples/multi_kernel_policy/` has both halves: `allow/`
 builds, `blocked/` contains an obligation no kernel can close and is rejected.
 
-### Shipped: bridge diversity (`--report bridge-diversity`)
+### Shipped: the Core-semantics differential test (`--report core-semantics-diff`)
 
 Multi-kernel evidence has a structural blind spot, which the report states as a
 non-attestation: every kernel checks a lowering produced by **one** Core→VC bridge.
@@ -769,7 +769,7 @@ If that bridge mis-lowers `a - b` as `b - a`, all three kernels prove the wrong
 obligation and the badge still reads `proved_by_multi_kernel`. Checker diversity
 cannot detect a bridge bug, because the bridge is upstream of every checker.
 
-`--report bridge-diversity` adds a **second, independent path from Core to a value**
+`--report core-semantics-diff` adds a **second, independent path from Core to a value**
 and differential-tests the two:
 
 1. Concrete's Lean interpreter evaluates `f(args)` — the oracle already trusted as

@@ -164,6 +164,34 @@ EOF
   [ $? -eq 1 ] && ok "gate exits 1 when an obligation is below 2 kernels" \
                 || no "gate should exit 1 on failure"
 
+  echo "=== no laundering past a \`trusted\` boundary ==="
+  # statusVocabulary claims "Never launders past a `trusted` boundary" — a PROSE claim
+  # with no gate, which is the drift class this project keeps rediscovering. A trusted
+  # obligation must stay trusted no matter how many kernels run: a consumer filtering
+  # for proved_by_* would otherwise count a conditional claim as unconditional.
+  ELF_L="examples/elf_header/src/main.con"
+  TR_BEFORE="$("$COMPILER" "$ELF_L" --report obligation-ledger 2>/dev/null | grep -c 'trusted')"
+  TR_AFTER="$("$COMPILER" "$ELF_L" --report obligation-ledger --all-provers 2>/dev/null | grep -c 'trusted')"
+  # Non-vacuity first: with no trusted obligation present the check proves nothing.
+  [ "$TR_BEFORE" -ge 1 ] \
+    && ok "laundering probe is non-vacuous ($TR_BEFORE trusted obligation(s) present)" \
+    || no "no trusted obligation in $ELF_L — laundering check would be vacuous"
+  [ "$TR_BEFORE" = "$TR_AFTER" ] \
+    && ok "trusted obligations stay trusted under --all-provers (no laundering)" \
+    || no "trusted count changed ($TR_BEFORE -> $TR_AFTER) — a kernel laundered past trust"
+
+  echo "=== the badge DISAPPEARS when a kernel leaves the agreement set ==="
+  # The badge must be earned per-run, not sticky. Same obligation, same file: with
+  # Rocq it reaches two kernels; without Rocq it must fall back, not retain the class.
+  WITH_R="$("$COMPILER" "$DEMO" --report multi-kernel --rocq 2>/dev/null)"
+  WITHOUT_R="$("$COMPILER" "$DEMO" --report multi-kernel 2>/dev/null)"
+  printf '%s' "$WITH_R" | grep -A3 "add_bounded" | grep -q "proved_by_two_kernels" \
+    && ok "with Rocq: add_bounded reaches two kernels" \
+    || no "with Rocq: add_bounded should reach two kernels"
+  printf '%s' "$WITHOUT_R" | grep -A3 "add_bounded" | grep -q "proved_by_two_kernels" \
+    && no "badge PERSISTED with the kernel absent — it is sticky, not earned" \
+    || ok "without Rocq: the two-kernel badge is gone (earned per run)"
+
   echo "=== lowering agreement: each kernel's rendering means the SAME proposition ==="
   # Ground-pinned instances of the driver's own rendering, decided by the prover and
   # compared against the independent concrete evaluator. Exit 0 = every rendering
@@ -190,11 +218,11 @@ EOF
   # produced by ONE Core->VC bridge, so a bridge bug is invisible to all of them.
   # This takes a SECOND independent path from Core to a value and compares.
   for f in "$DEMO" "$FAMILIES"; do
-    "$COMPILER" "$f" --report bridge-diversity >/dev/null 2>&1
-    [ $? -eq 0 ] && ok "bridge-diversity agrees on $(basename "$f")" \
-                  || no "bridge-diversity should agree on $(basename "$f")"
+    "$COMPILER" "$f" --report core-semantics-diff >/dev/null 2>&1
+    [ $? -eq 0 ] && ok "core-semantics-diff agrees on $(basename "$f")" \
+                  || no "core-semantics-diff should agree on $(basename "$f")"
   done
-  BD="$("$COMPILER" "$FAMILIES" --report bridge-diversity 2>/dev/null)"
+  BD="$("$COMPILER" "$FAMILIES" --report core-semantics-diff 2>/dev/null)"
   # Coverage must be stated, not implied: a function outside the fragment is NAMED
   # rather than silently skipped, so "N agree" cannot be read as "everything agrees".
   printf '%s' "$BD" | grep -q "OUTSIDE the extractable fragment" \
@@ -229,7 +257,7 @@ EOF
   U_OUT="$( cd "$DTMP" && coqc -native-compiler no u.v 2>&1 )"
   printf '%s' "$U_OUT" | grep -q "Unable to unify" \
     && ok "a mismatched equation still prints 'Unable to unify' (DISAGREE marker)" \
-    || no "reflexivity-mismatch marker changed — bridge-diversity classifier needs updating"
+    || no "reflexivity-mismatch marker changed — core-semantics-diff classifier needs updating"
   rm -rf "$DTMP"
 
   echo "=== FLAGSHIP: elf_header carries every evidence surface at once ==="
@@ -239,19 +267,19 @@ EOF
   "$COMPILER" "$ELF" --report bridge-check >/dev/null 2>&1
   [ $? -eq 0 ] && ok "elf_header: bridge-check (concrete fuzz vs VC) passes" \
                 || no "elf_header bridge-check should pass"
-  "$COMPILER" "$ELF" --report bridge-diversity >/dev/null 2>&1
+  "$COMPILER" "$ELF" --report core-semantics-diff >/dev/null 2>&1
   [ $? -eq 0 ] && ok "elf_header: Core->Rocq extraction agrees with the interpreter" \
-                || no "elf_header bridge-diversity should agree"
+                || no "elf_header core-semantics-diff should agree"
   "$COMPILER" "$ELF" --report lowering-agreement --rocq >/dev/null 2>&1
   [ $? -eq 0 ] && ok "elf_header: rocq lowering means the same proposition" \
                 || no "elf_header lowering-agreement should pass"
-  EBD="$("$COMPILER" "$ELF" --report bridge-diversity 2>/dev/null)"
+  EBD="$("$COMPILER" "$ELF" --report core-semantics-diff 2>/dev/null)"
   for fn in check_magic check_class check_data check_version validate_header; do
     printf '%s' "$EBD" | grep -q "\[$fn\]  agree" \
       && ok "elf_header: $fn agrees across both evaluators" \
       || no "elf_header: $fn should agree"
   done
-  CV="$("$COMPILER" examples/crypto_verify/src/main.con --report bridge-diversity 2>/dev/null)"
+  CV="$("$COMPILER" examples/crypto_verify/src/main.con --report core-semantics-diff 2>/dev/null)"
   for fn in compute_tag verify_tag check_nonce verify_message main; do
     printf '%s' "$CV" | grep -q "\[$fn\]  agree" \
       && ok "crypto_verify: $fn agrees across both evaluators" \
@@ -286,7 +314,7 @@ mod guard {
     }
 }
 EOF
-  GD="$("$COMPILER" "$GTMP/src/main.con" --report bridge-diversity 2>/dev/null)"
+  GD="$("$COMPILER" "$GTMP/src/main.con" --report core-semantics-diff 2>/dev/null)"
   printf '%s' "$GD" | grep -q "\[realguard\]  agree" \
     && ok "a real early-return guard IS extracted and agrees" \
     || no "realguard should be extracted"
