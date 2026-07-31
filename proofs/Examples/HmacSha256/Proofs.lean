@@ -353,9 +353,8 @@ def sha256kExpr : PExpr := .arrayLit [.lit (.int 0x428a2f98), .lit (.int 0x71374
 -- source loop variable is `k` and the offset index is lit-first
 -- (`bIdxO o = add (lit o) (add off (mul k 4))`).
 
-/-- The SHA-256 helper function table: the extracted bodies of `rotr`,
-    `ch`, `maj`, the four sigmas, and the compression `round`, keyed by
-    their source names. -/
+-- The SHA-256 helper function table: the extracted bodies of `rotr`, `ch`,
+-- `maj`, the four sigmas, and the compression `round`, keyed by their source names.
 -- `assignsC`, `condC`, `aw2`, `ix`, `feedforwardExpr`, `compressBodyExpr`,
 -- `sha256_compressExpr`, `sha256_compressAtExpr` relocated to `Concrete.Proof`
 -- (task #22, verbatim). The compress body is shared by both variants.
@@ -367,26 +366,120 @@ def sha256kExpr : PExpr := .arrayLit [.lit (.int 0x428a2f98), .lit (.int 0x71374
 -- `lenStoreS`, `sha256_hashExpr` (sha256_hash) relocated to `Concrete.Proof`
 -- (task #22, verbatim).
 
-def shaFnsGlobals : String → Option PFnDef
-  | "rotr"         => some { displayName := "rotr", params := ["x", "n"], body := rotrExpr }
-  | "ch"           => some { displayName := "ch", params := ["x", "y", "z"], body := chExpr }
-  | "maj"          => some { displayName := "maj", params := ["x", "y", "z"], body := majExpr }
-  | "big_sigma0"   => some { displayName := "big_sigma0", params := ["x"], body := bigSigma0Expr }
-  | "big_sigma1"   => some { displayName := "big_sigma1", params := ["x"], body := bigSigma1Expr }
-  | "small_sigma0" => some { displayName := "small_sigma0", params := ["x"], body := smallSigma0Expr }
-  | "small_sigma1" => some { displayName := "small_sigma1", params := ["x"], body := smallSigma1Expr }
-  | "sha256_round"    => some { displayName := "sha256_round", params := ["state", "k", "w"], body := roundExpr }
-  | "block_to_words"  => some { displayName := "block_to_words", params := ["block"], body := blockToWordsExpr }
-  | "sha256_schedule" => some { displayName := "sha256_schedule", params := ["w16"], body := scheduleExpr }
-  | "sha256_k"          => some { displayName := "sha256_k", params := [], body := sha256kExpr }
-  | "block_to_words_at" => some { displayName := "block_to_words_at", params := ["buf", "off"], body := blockToWordsAtExpr }
-  | "sha256_compress_at" => some { displayName := "sha256_compress_at", params := ["state", "buf", "off"], body := sha256_compressAtExpr }
-  | "sha256_init"        => some { displayName := "sha256_init", params := [], body := sha256_initExpr }
-  | "state_to_bytes"     => some { displayName := "state_to_bytes", params := ["state"], body := stateToBytesExpr }
-  | "sha256_hash"        => some { displayName := "sha256_hash", params := ["data", "len"], body := sha256_hashExpr }
-  | _                   => none
+/-- MIGRATED (R-0004 step 5, the sixteen-entry table). Each entry is a NAMED def
+    referenced by BOTH `shaFnsGlobals` and `entries`. The records used to be inline
+    in the dispatch function; duplicating them into `entries` would state the same
+    entry twice and let the two drift — the defect class this task exists to close.
 
-def shaFns : FnTable := FnTable.ofGlobals shaFnsGlobals
+    Identity, operational key and digest are adopted from
+    `concrete examples/hmac_sha256/src/main.con --report lean-stubs`. All sixteen
+    committed specs hash to the compiler's digests under normalization (measured,
+    0 divergences), so populating `entries` cannot change what any of the eleven
+    HMAC theorems prove. -/
+abbrev shaRotrFn : PFnDef :=
+  { identity := .semantic (Concrete.CallableId.ofUser "hmac_sha256" "rotr")
+    operationalKey := "rotr"
+    sourceBodyDigest := some { value := "c930744af4cdf9af471921965c0991a2" }
+    displayName := "rotr", params := ["x", "n"], body := rotrExpr }
+abbrev shaChFn : PFnDef :=
+  { identity := .semantic (Concrete.CallableId.ofUser "hmac_sha256" "ch")
+    operationalKey := "ch"
+    sourceBodyDigest := some { value := "81002eaa06b8442660382499ad6b3a51" }
+    displayName := "ch", params := ["x", "y", "z"], body := chExpr }
+abbrev shaMajFn : PFnDef :=
+  { identity := .semantic (Concrete.CallableId.ofUser "hmac_sha256" "maj")
+    operationalKey := "maj"
+    sourceBodyDigest := some { value := "3e7f5397ade0a4c3d133d5f48328de94" }
+    displayName := "maj", params := ["x", "y", "z"], body := majExpr }
+abbrev shaBigSigma0Fn : PFnDef :=
+  { identity := .semantic (Concrete.CallableId.ofUser "hmac_sha256" "big_sigma0")
+    operationalKey := "big_sigma0"
+    sourceBodyDigest := some { value := "3ab667a7aa7008cf6f2b0410906846fc" }
+    displayName := "big_sigma0", params := ["x"], body := bigSigma0Expr }
+abbrev shaBigSigma1Fn : PFnDef :=
+  { identity := .semantic (Concrete.CallableId.ofUser "hmac_sha256" "big_sigma1")
+    operationalKey := "big_sigma1"
+    sourceBodyDigest := some { value := "5eba5036845c396a1525f1552acc5ce9" }
+    displayName := "big_sigma1", params := ["x"], body := bigSigma1Expr }
+abbrev shaSmallSigma0Fn : PFnDef :=
+  { identity := .semantic (Concrete.CallableId.ofUser "hmac_sha256" "small_sigma0")
+    operationalKey := "small_sigma0"
+    sourceBodyDigest := some { value := "346c88e7b30d01981384dc8ddd142835" }
+    displayName := "small_sigma0", params := ["x"], body := smallSigma0Expr }
+abbrev shaSmallSigma1Fn : PFnDef :=
+  { identity := .semantic (Concrete.CallableId.ofUser "hmac_sha256" "small_sigma1")
+    operationalKey := "small_sigma1"
+    sourceBodyDigest := some { value := "9b64d43896c89316c83ac438d21f9b92" }
+    displayName := "small_sigma1", params := ["x"], body := smallSigma1Expr }
+abbrev shaRoundFn : PFnDef :=
+  { identity := .semantic (Concrete.CallableId.ofUser "hmac_sha256" "sha256_round")
+    operationalKey := "sha256_round"
+    sourceBodyDigest := some { value := "13fe613e1d54ede8cacb86345780b26b" }
+    displayName := "sha256_round", params := ["state", "k", "w"], body := roundExpr }
+abbrev shaBlockToWordsFn : PFnDef :=
+  { identity := .semantic (Concrete.CallableId.ofUser "hmac_sha256" "block_to_words")
+    operationalKey := "block_to_words"
+    sourceBodyDigest := some { value := "224375466a2d80c59a71920a1caf490e" }
+    displayName := "block_to_words", params := ["block"], body := blockToWordsExpr }
+abbrev shaScheduleFn : PFnDef :=
+  { identity := .semantic (Concrete.CallableId.ofUser "hmac_sha256" "sha256_schedule")
+    operationalKey := "sha256_schedule"
+    sourceBodyDigest := some { value := "0d08dda9f27ef3f7d9de6b9a8a0e2442" }
+    displayName := "sha256_schedule", params := ["w16"], body := scheduleExpr }
+abbrev shaKFn : PFnDef :=
+  { identity := .semantic (Concrete.CallableId.ofUser "hmac_sha256" "sha256_k")
+    operationalKey := "sha256_k"
+    sourceBodyDigest := some { value := "a4726fb469497e7733a03c39ed145ff2" }
+    displayName := "sha256_k", params := [], body := sha256kExpr }
+abbrev shaBlockToWordsAtFn : PFnDef :=
+  { identity := .semantic (Concrete.CallableId.ofUser "hmac_sha256" "block_to_words_at")
+    operationalKey := "block_to_words_at"
+    sourceBodyDigest := some { value := "f3752e9a1e0c1684752788d52f862e2e" }
+    displayName := "block_to_words_at", params := ["buf", "off"], body := blockToWordsAtExpr }
+abbrev shaCompressAtFn : PFnDef :=
+  { identity := .semantic (Concrete.CallableId.ofUser "hmac_sha256" "sha256_compress_at")
+    operationalKey := "sha256_compress_at"
+    sourceBodyDigest := some { value := "41a4d518a4d1c212fe9497b2cf258e7b" }
+    displayName := "sha256_compress_at", params := ["state", "buf", "off"], body := sha256_compressAtExpr }
+abbrev shaInitFn : PFnDef :=
+  { identity := .semantic (Concrete.CallableId.ofUser "hmac_sha256" "sha256_init")
+    operationalKey := "sha256_init"
+    sourceBodyDigest := some { value := "6a966052949f39009ae27d6e18fbb38e" }
+    displayName := "sha256_init", params := [], body := sha256_initExpr }
+abbrev shaStateToBytesFn : PFnDef :=
+  { identity := .semantic (Concrete.CallableId.ofUser "hmac_sha256" "state_to_bytes")
+    operationalKey := "state_to_bytes"
+    sourceBodyDigest := some { value := "00bb5f1fe704e930efbb13c7755c353c" }
+    displayName := "state_to_bytes", params := ["state"], body := stateToBytesExpr }
+abbrev shaHashFn : PFnDef :=
+  { identity := .semantic (Concrete.CallableId.ofUser "hmac_sha256" "sha256_hash")
+    operationalKey := "sha256_hash"
+    sourceBodyDigest := some { value := "0df3d0146c48c1d9feefaf63c7355ee9" }
+    displayName := "sha256_hash", params := ["data", "len"], body := sha256_hashExpr }
+
+def shaFnsGlobals : String → Option PFnDef
+  | "rotr" => some shaRotrFn
+  | "ch" => some shaChFn
+  | "maj" => some shaMajFn
+  | "big_sigma0" => some shaBigSigma0Fn
+  | "big_sigma1" => some shaBigSigma1Fn
+  | "small_sigma0" => some shaSmallSigma0Fn
+  | "small_sigma1" => some shaSmallSigma1Fn
+  | "sha256_round" => some shaRoundFn
+  | "block_to_words" => some shaBlockToWordsFn
+  | "sha256_schedule" => some shaScheduleFn
+  | "sha256_k" => some shaKFn
+  | "block_to_words_at" => some shaBlockToWordsAtFn
+  | "sha256_compress_at" => some shaCompressAtFn
+  | "sha256_init" => some shaInitFn
+  | "state_to_bytes" => some shaStateToBytesFn
+  | "sha256_hash" => some shaHashFn
+  | _ => none
+
+/-- MIGRATED: entries populated, canonical order (alphabetical by declName,
+    which is rendered-CallableId order within one module). -/
+def shaFns : FnTable :=
+  { entries := #[shaBigSigma0Fn, shaBigSigma1Fn, shaBlockToWordsFn, shaBlockToWordsAtFn, shaChFn, shaMajFn, shaRotrFn, shaCompressAtFn, shaHashFn, shaInitFn, shaKFn, shaRoundFn, shaScheduleFn, shaSmallSigma0Fn, shaSmallSigma1Fn, shaStateToBytesFn], globals := shaFnsGlobals }
 
 -- Keeps `simp only [eval, shaFns_globals, shaFnsGlobals]` working WITHOUT delta-unfolding
 -- the bare `shaFns`. The old `def shaFns : FnTable | "x" => …` produced equation lemmas
@@ -715,9 +808,9 @@ theorem expansion_value (wf : Nat → BitVec 32) (k : Nat) (hk : k < 48) (fuel :
     wread wf (16+k) (st2 wf k) (fuel+4) k (by omega) (by omega) hw _
       (by have h := hx16; rw [show 16+k-16 = k by omega] at h; exact h)
   -- sigma calls
-  have hsm1 := unary_call shaFns "small_sigma1" smallSigma1Expr Sha256Spec.smallSigma1 rfl
+  have hsm1 := unary_call shaFns "small_sigma1" smallSigma1Expr Sha256Spec.smallSigma1 _ rfl rfl rfl
     small_sigma1_refines (swd wf (14+k)) (st2 wf k) (wIdx 2) (fuel+2) ra2
-  have hsm0 := unary_call shaFns "small_sigma0" smallSigma0Expr Sha256Spec.smallSigma0 rfl
+  have hsm0 := unary_call shaFns "small_sigma0" smallSigma0Expr Sha256Spec.smallSigma0 _ rfl rfl rfl
     small_sigma0_refines (swd wf (1+k)) (st2 wf k) (wIdx 15) (fuel+2) ra15
   -- combine
   simp only [expansionExpr, addwS, eval, hsm1, ra7, hsm0, ra16, evalBinOp,

@@ -108,17 +108,23 @@ migrated parseValidateFns examples/parse_validate/src/main.con parse_header pars
 migrated parseValidateFns examples/parse_validate/src/main.con compute_checksum parse_validate no_such_fn
 migrated fixedCapacityFns examples/fixed_capacity/src/main.con ring_push fixed_capacity no_such_fn
 migrated fixedCapacityFns examples/fixed_capacity/src/main.con compute_tag fixed_capacity no_such_fn
+migrated Examples.HmacSha256.Proofs.shaFns examples/hmac_sha256/src/main.con sha256_hash hmac_sha256 no_such_fn
+migrated Examples.HmacSha256.Proofs.shaFns examples/hmac_sha256/src/main.con rotr hmac_sha256 no_such_fn
+migrated Examples.ProofPatterns.Proofs.combineFns examples/proof_patterns/composition/src/main.con inc calls no_such_fn
 
 echo ""
 echo "=== inventory: how many of the nine are still legacy? ==="
 # A legacy table has EMPTY entries: it evaluates and has no root, so it mints
 # nothing. Counting them makes "step 5 is finished" a measurable claim.
-lean_probe "6 of the nine are migrated" "6" \
+lean_probe "7 of the nine are migrated" "7" \
 '#eval ([ctTagFns, elfFns, cryptoFns, parseValidateFns, fixedCapacityFns,
-        Examples.ProofPatterns.Proofs.combineFns].filter (fun t => !t.entries.isEmpty)).length'
-lean_probe "3 of the nine are still legacy" "3" \
-'#eval ([proofFns, proofFnsExt,
-        Examples.HmacSha256.Proofs.shaFns].filter (fun t => t.entries.isEmpty)).length'
+        Examples.ProofPatterns.Proofs.combineFns,
+        Examples.HmacSha256.Proofs.shaFns].filter (fun t => !t.entries.isEmpty)).length'
+lean_probe "2 of the nine are still legacy" "2" \
+'#eval ([proofFns, proofFnsExt].filter (fun t => t.entries.isEmpty)).length'
+# the 16-entry table is the one where duplication would have been tempting
+lean_probe "shaFns carries all sixteen entries" "16" \
+'#eval Examples.HmacSha256.Proofs.shaFns.entries.size'
 
 echo ""
 echo "TABLE-MIGRATION: PASS=$PASS FAIL=$FAIL"
