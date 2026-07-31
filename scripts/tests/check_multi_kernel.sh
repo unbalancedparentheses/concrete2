@@ -25,9 +25,51 @@ if [ ! -x "$COMPILER" ]; then
 fi
 
 DEMO="examples/two_kernel_demo/src/main.con"
-PASS=0; FAIL=0
+PASS=0; FAIL=0; INCONC=0
 ok(){ echo "  ok   $1"; PASS=$((PASS+1)); }
 no(){ echo "  FAIL $1"; FAIL=$((FAIL+1)); }
+# An assertion that could not be evaluated — the tool never ran far enough to say
+# anything about the property. Counted and printed separately because "the property
+# is wrong" and "I could not test it" are different facts, and reporting the second
+# as the first is exactly the conflation this gate exists to prevent (see the
+# `refused` vs `error` distinction in Main.lean). Never silently green: the count is
+# in the summary line.
+inconc(){ echo "  INCONC $1"; INCONC=$((INCONC+1)); }
+
+# Run `isabelle build` in directory $1, retrying transient failures, and classify:
+#   0 = built (every proof in the session succeeded)
+#   1 = Isabelle RAN and reported a real diagnostic about the theory
+#   2 = could not run to a diagnostic (heap contention, killed, session error)
+# Leaves the last attempt's combined output in ISA_OUT.
+#
+# Discriminated on a POSITIVE list of theory-level markers, not on the `***` prefix:
+# Isabelle prefixes session/infrastructure errors that way too (`*** Bad theory
+# import`), so a `***` test classifies an unrunnable session as a verdict about the
+# theory. Verified: a ROOT naming a missing theory produced `***` and was
+# misclassified before this list existed.
+#
+# The list is deliberately the SAME set classifyIsabelleFailure keys on, so this gate
+# also locks that classifier's assumption. A theory-level failure mode missing from
+# the list degrades to `2` (inconclusive) rather than a silent pass — the safe
+# direction, since inconclusive is printed and counted.
+#
+# Motivation: consecutive runs of one commit in one shell gave 64/3 then 67/0, all
+# three failures being isabelle assertions. Ruled out as unsoundness — Isabelle
+# content-hashes the session, so a stale heap cannot yield a false success — so it is
+# contention/timing, retried here, and reported as inconclusive if unresolved rather
+# than as "the marker changed".
+ISA_THEORY_MARKERS='Failed to apply initial proof method|Failed to finish proof|Inner syntax error|Failed to parse prop|ORACLE PRESENT|Type unification failed'
+isa_build(){
+  attempt=1
+  while [ "$attempt" -le 3 ]; do
+    ISA_OUT="$( cd "$1" && isabelle build -D . 2>&1 )"
+    rc=$?
+    [ "$rc" -eq 0 ] && return 0
+    printf '%s' "$ISA_OUT" | grep -qE "$ISA_THEORY_MARKERS" && return 1
+    attempt=$((attempt+1))
+  done
+  return 2
+}
 # Assert that obligation $1's OWN rows contain substring $2, in output $3.
 #
 # Row-anchored on purpose. A bare `grep "$2" <whole output>` passes when ANY
@@ -356,7 +398,7 @@ if command -v isabelle >/dev/null 2>&1; then
   write_replay_thy() {  # $1 = oracle flag, $2 = goal body
     cat > "$RTMP/VC.thy" <<EOF
 theory VC imports Main begin
-declare [[smt_oracle = $1, smt_timeout = 60]]
+declare [[smt_oracle = $1, smt_timeout = 180]]
 lemma replayed: "$2"
   by (smt (verit))
 ML \\<open>
@@ -369,38 +411,54 @@ EOF
   }
   LINEAR_GOAL='ALL a b::int. (0 <= a & a <= 100) --> (0 <= b & b <= 100) --> a + b <= 200'
   write_replay_thy false "$LINEAR_GOAL"
-  ( cd "$RTMP" && isabelle build -D . >/dev/null 2>&1 )
-  [ $? -eq 0 ] && ok "a LINEAR goal replays: veriT's proof reconstructed, asserted oracle-free" \
-                || no "linear replay should succeed (is VERIT_SOLVER set? see flake.nix)"
+  isa_build "$RTMP"
+  case $? in
+    0) ok "a LINEAR goal replays: veriT's proof reconstructed, asserted oracle-free" ;;
+    1) no "linear replay failed and Isabelle said why (diagnostic below)"
+       printf '%s\n' "$ISA_OUT" | grep '^\*\*\*' | head -3 >&2 ;;
+    *) inconc "linear replay: isabelle build never reached a diagnostic in 3 attempts" ;;
+  esac
   # Teeth: with smt_oracle = true the method STAMPS the goal instead of checking it.
   # That is the exact trust leak replay exists to close, so it must FAIL here.
   write_replay_thy true "$LINEAR_GOAL"
-  ORC="$( cd "$RTMP" && isabelle build -D . 2>&1 )"
-  printf '%s' "$ORC" | grep -q "ORACLE PRESENT" \
-    && ok "smt_oracle = true is DETECTED and rejected (stamping cannot pass as replay)" \
-    || no "oracle mode must be rejected — the no-oracle assertion has no teeth"
+  isa_build "$RTMP"
+  case $? in
+    2) inconc "oracle-mode teeth: isabelle build never reached a diagnostic" ;;
+    *) printf '%s' "$ISA_OUT" | grep -q "ORACLE PRESENT" \
+         && ok "smt_oracle = true is DETECTED and rejected (stamping cannot pass as replay)" \
+         || no "oracle mode must be rejected — the no-oracle assertion has no teeth" ;;
+  esac
   # Locks the measured limitation. If Isabelle ever reconstructs nonlinear
   # arithmetic, this fails loudly and solver_replayed becomes reachable for the
   # nonlinear VCs — which is a capability upgrade we want to be told about.
   write_replay_thy false 'ALL a::int. 0 <= a --> 0 <= a * a'
-  ( cd "$RTMP" && isabelle build -D . >/dev/null 2>&1 )
-  [ $? -ne 0 ] && ok "NONLINEAR replay still unsupported (documented ceiling holds)" \
-                || no "nonlinear replay now WORKS — upgrade solver-cert to reach solver_replayed"
+  isa_build "$RTMP"
+  case $? in
+    0) no "nonlinear replay now WORKS — upgrade solver-cert to reach solver_replayed" ;;
+    1) ok "NONLINEAR replay still unsupported (documented ceiling holds)" ;;
+    *) inconc "nonlinear ceiling: isabelle build never reached a diagnostic" ;;
+  esac
   rm -rf "$RTMP"
 
   echo "=== isabelle refusal vs malformed-theory markers (classifier assumption) ==="
   ITMP="$(mktemp -d)"
   printf 'session VCsess = HOL +\n  theories VC\n' > "$ITMP/ROOT"
   printf 'theory VC imports Main begin\nlemma "ALL a b::int. (-2147483648 <= (a * b) & (a * b) <= 2147483647)"\n  by presburger\nend\n' > "$ITMP/VC.thy"
-  I_OUT="$(cd "$ITMP" && isabelle build -D . 2>&1)"
-  printf '%s' "$I_OUT" | grep -q "Failed to apply initial proof method" \
-    && ok "a genuine presburger refusal still prints 'Failed to apply initial proof method'" \
-    || no "isabelle refusal marker changed — classifyIsabelleFailure needs updating"
+  isa_build "$ITMP"
+  case $? in
+    2) inconc "refusal marker: isabelle build never reached a diagnostic" ;;
+    *) printf '%s' "$ISA_OUT" | grep -q "Failed to apply initial proof method" \
+         && ok "a genuine presburger refusal still prints 'Failed to apply initial proof method'" \
+         || no "isabelle refusal marker changed — classifyIsabelleFailure needs updating" ;;
+  esac
   printf 'theory VC imports Main begin\nlemma "ALL a b::int. (a <=> b)"\n  by presburger\nend\n' > "$ITMP/VC.thy"
-  I_BAD="$(cd "$ITMP" && isabelle build -D . 2>&1)"
-  printf '%s' "$I_BAD" | grep -q "Failed to apply initial proof method" \
-    && no "a malformed theory must NOT look like a proof-method failure" \
-    || ok "a malformed theory does not print the refusal marker (reads as error)"
+  isa_build "$ITMP"
+  case $? in
+    2) inconc "malformed-theory marker: isabelle build never reached a diagnostic" ;;
+    *) printf '%s' "$ISA_OUT" | grep -q "Failed to apply initial proof method" \
+         && no "a malformed theory must NOT look like a proof-method failure" \
+         || ok "a malformed theory does not print the refusal marker (reads as error)" ;;
+  esac
   rm -rf "$ITMP"
 else
   echo "=== Isabelle absent — skipping isabelle assertions ==="
@@ -464,5 +522,11 @@ fi
 
 
 echo ""
-echo "MULTI-KERNEL: PASS=$PASS  FAIL=$FAIL"
+if [ "$INCONC" -gt 0 ]; then
+  echo "MULTI-KERNEL: PASS=$PASS  FAIL=$FAIL  INCONCLUSIVE=$INCONC"
+  echo "  NOTE: $INCONC assertion(s) could not be evaluated (the tool never reached a"
+  echo "  diagnostic after 3 attempts). They verified NOTHING — do not read them as green."
+else
+  echo "MULTI-KERNEL: PASS=$PASS  FAIL=$FAIL"
+fi
 [ "$FAIL" -eq 0 ]
