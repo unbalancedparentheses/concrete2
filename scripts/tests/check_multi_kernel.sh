@@ -468,6 +468,60 @@ EOF
   esac
   rm -rf "$RTMP"
 
+  echo "=== ceiling: SMT datatype reasoning is PROVABLE but not CERTIFIABLE ==="
+  # Why this is locked, and why it is not merely trivia: it is the reason the
+  # non-arithmetic tier is `proved` (hand/kernel) rather than `decided` (automatic).
+  #
+  # Measured: cvc5 finds these proofs — including a genuine inductive refinement lemma
+  # over a recursive datatype, with --conjecture-gen --quant-ind. What it cannot do is
+  # emit a replayable certificate for ANY datatype-bearing proof: Alethe rejects even a
+  # trivial ground selector goal with `DUMMY_SKOLEM`. Quantified INTEGER goals certify
+  # fine, so this is datatypes specifically — not quantifiers, not induction.
+  #
+  # Routing refinement to SMT would therefore trade a kernel-checked proof for an
+  # unreplayable `solver_trusted` verdict, violating the re-check invariant. If Alethe
+  # ever gains datatype support this gate fails loudly, and refinement plus
+  # exhaustiveness become certifiably automatic — a sequencing change we want told.
+  CVC5="${CVC5_SOLVER:-$(command -v cvc5 2>/dev/null)}"
+  if [ -z "$CVC5" ] || [ ! -x "$CVC5" ]; then
+    echo "  (skipped — no cvc5 on PATH or in CVC5_SOLVER)"
+  else
+    CTMP="$(mktemp -d)"
+    # Baseline: a quantified INTEGER goal must both prove and certify. If this breaks,
+    # the finding below is about our invocation, not about datatype support.
+    cat > "$CTMP/int.smt2" <<'EOF'
+(set-logic ALL)
+(assert (not (forall ((x Int)) (=> (> x 0) (>= x 0)))))
+(check-sat)
+(get-proof)
+EOF
+    INT_OUT="$("$CVC5" --produce-proofs --proof-format-mode=alethe "$CTMP/int.smt2" 2>&1)"
+    if printf '%s' "$INT_OUT" | grep -q '^unsat' \
+       && ! printf '%s' "$INT_OUT" | grep -q 'unsupported by Alethe'; then
+      ok "quantified integer goal: proved AND Alethe-certifiable (baseline holds)"
+    else
+      no "quantified integer goal no longer certifies — check the cvc5 invocation first"
+    fi
+    # The ceiling: a GROUND datatype goal. Trivial, no quantifier, no recursion.
+    cat > "$CTMP/adt.smt2" <<'EOF'
+(set-logic ALL)
+(declare-datatypes ((Pair 0)) (((mk (fst Int) (snd Int)))))
+(assert (not (= (fst (mk 1 2)) 1)))
+(check-sat)
+(get-proof)
+EOF
+    ADT_OUT="$("$CVC5" --produce-proofs --proof-format-mode=alethe "$CTMP/adt.smt2" 2>&1)"
+    printf '%s' "$ADT_OUT" | grep -q '^unsat' \
+      && ok "ground datatype goal: cvc5 PROVES it (capability is not the barrier)" \
+      || no "ground datatype goal no longer proves — revisit the two-speed rationale"
+    if printf '%s' "$ADT_OUT" | grep -q 'unsupported by Alethe'; then
+      ok "ground datatype goal: NOT Alethe-certifiable (ceiling holds; non-arith stays kernel-proved)"
+    else
+      no "Alethe now certifies datatype proofs — refinement/exhaustiveness can become certifiably automatic; move them earlier"
+    fi
+    rm -rf "$CTMP"
+  fi
+
   echo "=== isabelle refusal vs malformed-theory markers (classifier assumption) ==="
   ITMP="$(mktemp -d)"
   printf 'session VCsess = HOL +\n  theories VC\n' > "$ITMP/ROOT"

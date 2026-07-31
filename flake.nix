@@ -54,6 +54,14 @@
               # Certificate-replay toolchain (see docs/SMT_SOUNDNESS.md). Makes a
               # solver's PROOF checkable rather than its verdict merely corroborated.
               drat-trim          # DRAT/LRAT checker for bit-blasted (SAT) certificates
+              # cvc5 is here because check_multi_kernel.sh CONSUMES it: it locks the
+              # measured ceiling that SMT datatype reasoning is provable but not
+              # Alethe-certifiable, which is the reason the non-arithmetic tier stays
+              # kernel-proved. It was previously dropped as unused — correct then, wrong
+              # now. Isabelle's own CVC5_SOLVER is internal to its settings and is NOT
+              # exported to the shell, so relying on that left the check silently
+              # skipping with no change in the assertion count.
+              cvc5
             ]);
             # No veriT/cvc5 here on purpose. Isabelle's nix package already bundles
             # `contrib/verit-2021.06.2-rmx-3`, registers it in etc/components, and sets

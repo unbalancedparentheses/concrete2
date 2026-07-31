@@ -191,24 +191,47 @@ what keeps the per-PR/periodic split from looking arbitrary.
 These are places where the architecture above made a choice by default rather than by
 argument. Written down so the choice is revisitable instead of invisible.
 
-### 1. Is the two-speed model too pessimistic? (test this first — cheapest to resolve)
+### 1. Two-speed model: RESOLVED by measurement — it stands, for a different reason
 
-The claim above is: arithmetic obligations are *decided*, non-arithmetic ones are
-*proved* by hand, because `lia` cannot see through `eval`.
+The original justification given for the two-speed model was "`lia` cannot see through
+`eval`". That is a claim about `lia`, and it was the wrong argument. Measured against
+cvc5 1.3.4 and z3:
 
-That is true of `lia`. It is **not** obviously true of a modern SMT solver: cvc5 and z3
-have native algebraic-datatype, array and quantifier support. Why3's
-`eliminate_algebraic` exists precisely because many targets *lack* datatypes — but the
-solvers already wired here do not.
+| goal | proved? | Alethe certificate? |
+|---|---|---|
+| ground integer | yes | **yes** |
+| quantified integer (`∀x. x>0 → x≥0`) | yes | **yes** |
+| ground **datatype** (`fst (mk 1 2) = 1`) | yes | **no** — `DUMMY_SKOLEM` |
+| quantified datatype (exhaustiveness) | yes | **no** |
+| recursive datatype, needs induction (`len (app a b) = len a + len b`) | yes, with `--conjecture-gen --quant-ind` | **no** |
 
-So a chunk of what this document files as hand-proof work — functional refinement over
-datatypes, parser round-trips — may be **automatically dischargeable** by routing to
-cvc5 with an ADT encoding rather than compiling datatypes away. If so, refinement moves
-from the far end of the plan to near the non-arithmetic milestone, which is a material
-change to sequencing.
+Two findings, and the second is the load-bearing one:
 
-Untested. The experiment is half a day: hand cvc5 a datatype refinement goal directly
-and see whether it closes. Do that before committing to the hand-proof tier.
+1. **Solvers CAN find these proofs.** cvc5 discharged a genuine inductive refinement
+   lemma over a recursive datatype automatically. Expressibility and ADT support are not
+   the barrier, and `eliminate_algebraic` is not required to make the goal reach a
+   solver.
+2. **They cannot CERTIFY them.** cvc5's Alethe output rejects *any* datatype-bearing
+   proof — a trivial ground selector goal with no quantifier and no recursion already
+   fails. Quantified integer goals certify fine, so this is datatypes specifically, not
+   quantifiers and not induction.
+
+So the two-speed model stands, restated correctly: **non-arithmetic obligations are
+`proved` rather than `decided` because a solver's datatype reasoning cannot be replayed,
+not because a solver cannot do it.** Routing refinement to cvc5 would buy automation by
+trading a kernel-checked proof for an unreplayable `solver_trusted` verdict — which
+violates the invariant at the top of this document and is strictly worse for the thesis
+even though it is cheaper.
+
+Consequence for the exhaustiveness family: cvc5 and z3 both prove it, but neither can
+certify it, so it should be discharged by a **kernel** (Lean `decide`, Rocq case
+analysis, Isabelle) rather than by SMT. That is cheap anyway — it is decidable finite
+case analysis — so the route is unchanged; only the reason is now correct.
+
+Watch item, gate-locked in `check_multi_kernel.sh`: if Alethe gains datatype support,
+refinement and exhaustiveness both become *certifiably* automatic, and the plan should
+move them earlier. Measured on cvc5 1.3.4; stated as a version fact, not a permanent
+one.
 
 ### 2. Deep or shallow embedding for non-arithmetic proofs?
 
