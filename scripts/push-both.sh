@@ -52,7 +52,13 @@ printf 'pid=%s worktree=%s\n' "$$" "$(pwd)" > "$PUSH_LOCK/owner" 2>/dev/null || 
 trap 'rm -f "$PUSH_LOCK/owner" 2>/dev/null; rmdir "$PUSH_LOCK" 2>/dev/null || true' EXIT
 
 PRIMARY="${PRIMARY:-origin}"
-MIRROR="${MIRROR:-lambdaclass}"
+# NO MIRROR BY DEFAULT (changed 2026-07-31 on the owner's instruction: "stop
+# pushing to lambdaclass"). `origin` is unbalancedparentheses/concrete2 and is the
+# only publication target; `lambdaclass` points at lambdaclass/concrete, a
+# DIFFERENT repository. Set MIRROR=<remote> to re-enable mirroring; everything
+# below — the CI wait, the ancestry check, the parity check — still applies when
+# it is set, so turning it back on does not turn the safeguards off.
+MIRROR="${MIRROR:-}"
 BRANCH="${BRANCH:-main}"
 LOCAL="$(git rev-parse HEAD)"
 CI_WAIT=1
@@ -157,6 +163,12 @@ head_now="$(git rev-parse HEAD)"
 if [ "$head_now" != "$LOCAL" ]; then
   echo "push-both: NOTE HEAD has moved to ${head_now:0:8} since this run began." >&2
   echo "push-both: mirroring ${LOCAL:0:8} — the commit the primary accepted and CI validated." >&2
+fi
+
+if [ -z "$MIRROR" ]; then
+  echo "push-both: no mirror configured — $PRIMARY is the only publication target."
+  echo "push-both: published ${LOCAL:0:8}"
+  exit 0
 fi
 
 # RE-VERIFY THE PRIMARY. The CI wait is ~45 minutes, and the primary is shared:

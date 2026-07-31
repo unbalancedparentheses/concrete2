@@ -1301,17 +1301,52 @@ incremental; that internal order does not duplicate slices 5-7.
       and mutation coverage. It refuses type-erased generic entries rather than
       emitting a false identity; positive specialized entries remain blocked
       until Mono supplies `typeArgs`. R-0447 owns moving generated output under
-      `.build/proofs/`. Step 5 remains unstarted.
+      `.build/proofs/`.
    5. **Migrate the nine**, one at a time, with dual comparison: same theorem
       results, same evaluation behaviour, stable generated root, kernel replay,
       and no new hand-written entries.
+
+      **State: 8 of 9 migrated, 1 BLOCKED — 42 entries migrated of 45
+      inventoried.** The three-entry `proofFnsExt` is the difference; it is
+      blocked, not partially done, and must not be counted as either.
+
+      `ctTagFns` 1, `elfFns` 5, `cryptoFns` 4, `parseValidateFns` 8,
+      `fixedCapacityFns` 4, `combineFns` 2, `shaFns` 16, `proofFns` 2 = 42.
+      Every committed spec was verified to hash to the compiler's digest UNDER
+      NORMALIZATION before adoption; no spec was edited to make a digest agree.
+      Kernel replay unchanged across all eight examples (31 theorems, 0 failures).
+      Gated by `check_table_migration.sh` (declared-key resolution with an
+      undeclared-key control, identity match, digest match, dispatch agreement,
+      root presence, kernel replay, and an inventory leg).
+
+      **The ninth, and its precise prerequisite.** `proofFnsExt` is `proofFns`'
+      two entries plus `decode_header` — `packet.decode_header`, which the
+      compiler reports `eligible (extraction failed) — unsupported: mutable
+      borrow`. With no generated body there is nothing to compare the committed
+      spec against, and adopting an identity and digest anyway would assert a
+      correspondence nobody checked. Partial migration is unavailable by design:
+      one unidentified entry disqualifies the whole table (`allIdentified`).
+      UNBLOCKS ON mutable-borrow support in ProofCore extraction. A tripwire
+      asserts it is still unextractable, so that day fails the gate.
    6. **Enable typed classification** (§1.1-1.2). Classify the ELABORATED
       theorem type, never source text: an `FnTable` represented by a bound
       theorem variable is a `contract` dependency (the theorem holds for any
       table), while a named table constant or an inline expression whose type
       returns `FnTable` is a `body` dependency. A 2026-07-31 metaprogram spike
       measured 271 corpus theorems that mention `FnTable`: 113 contract, 158
-      body, and zero mixed. The basic discriminator is therefore small and
+      body, and zero mixed. LANDED as `Concrete/Proof/DependencyEdge.lean`
+      (vocabulary) and `DependencyEdges.lean` (classifier), gated by
+      `check_dependency_edges.sh`; the shipped classifier measures **113 contract
+      / 166 body / 0 ambiguous**.
+
+      **Reconciling 158 -> 166.** The spike's count used the narrow "constant
+      whose TYPE is `FnTable`" test — the very one flagged below as failing open.
+      Widening it to "returns `FnTable` after any number of arguments" moved
+      exactly the eight table-producing/metatheory cases named as that latent
+      boundary, 158 + 8 = 166. They are structural metatheory about `FnTable`
+      itself, so `body` OVER-approximates them deliberately: a needless recheck,
+      never a false claim. The two numbers describe the same corpus under the
+      unsafe and the safe test respectively. The basic discriminator is therefore small and
       unambiguous on the live corpus. Preserve the hostile control: checking
       only constants *of* type `FnTable` misses inline constructors/combinators
       and fails open. Four table-producing constants and eight current
