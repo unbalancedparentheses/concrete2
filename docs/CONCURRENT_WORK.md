@@ -80,3 +80,19 @@ Long-running work does not always require an idle tree. Distinguish the phases:
 The CI wait touches no files, so work can continue during it — in another
 worktree. Treating the whole publish as tree-freezing is over-caution; treating
 the hook phase as safe is the error that costs a run.
+
+## Killing a publish does not un-publish it
+
+`push-both.sh` runs `git push` as a CHILD process. Killing the script does not
+kill that child, and a `git push` already in flight will complete.
+
+Measured 2026-07-31: a publish was killed during its pre-push hook, `git ls-remote`
+showed the primary unchanged, and that was read as "nothing was published". The
+`git push` child was still running; it finished moments later and advanced the
+primary. The next publish was then rejected as non-fast-forward — harmless here,
+but the reasoning behind the kill was a race read as a guarantee.
+
+So: a ref check taken *at* the moment of the kill proves nothing about a push
+that has already started. If a publish must be abandoned, re-check the remote
+AFTER the process tree is gone (`pgrep -f "git push"` clear), and treat the
+remote's actual state as the answer rather than the state you saw before killing.
