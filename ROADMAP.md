@@ -1382,7 +1382,36 @@ incremental; that internal order does not duplicate slices 5-7.
    canonical `ProofSubjectDigest` covering qualified semantic identity, full
    typed signature and generic constraints, capabilities, normalized typed
    body, requires/ensures/invariants, the normalized selected specification and
-   claim scope/coverage, and extraction/schema version. The theorem and
+   claim scope/coverage, and extraction/schema version.
+
+   **Where it can be computed, established 2026-07-31 and load-bearing for how
+   this slice is built.** `CFnDef` does NOT carry `requires`/`ensures`: contracts
+   are erased at the AST→Core boundary, and `ProofCore` extraction runs over Core.
+   The Report layer still has the AST (it already looks functions up that way for
+   obligation TODOs), so today only Report can see signature-plus-contract facts
+   together. Three options, and the choice is not obvious:
+
+   * compute the digest in Report, where all the facts happen to be reachable —
+     cheapest, but puts an evidence-bearing computation in the presentation layer,
+     the same inversion that put `CallableId` in the resolve layer rather than in
+     Proof;
+   * carry contracts across the AST→Core boundary on `CFnDef` — the digest is then
+     computable where extraction happens, at the cost of widening Core with data
+     no codegen path consumes;
+   * mint the digest in `ProofCore` from a facts record threaded in alongside the
+     Core function, keeping Core narrow and the digest out of Report.
+
+   The third looks right by the same argument that placed `CallableId` — a digest
+   minted by its consumer is that consumer's opinion — but it needs the facts
+   record designed. Do not start by picking the cheap option; `sourceBodyDigestV1`
+   is already emitted from Report and that is defensible only because it is
+   explicitly NOT receipt-eligible.
+
+   Closing bugs 059 and 060 means wiring the digest into the FRESHNESS COMPARISON,
+   not merely emitting it. Their tripwires in `check_proof_freshness.sh` still pass
+   — a whole-signature `i32 -> u32` change and a TRUE-vs-FALSE `#[ensures]` are
+   both still indistinguishable to the stored fingerprint — and they are the
+   signal that this slice is done. The theorem and
    toolchain are evidence about that subject; their identities belong in the
    receipt, not in the semantic subject digest.
 6. **Dependency root.** Compute freshness transitively using a deterministic
