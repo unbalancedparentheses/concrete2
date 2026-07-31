@@ -116,12 +116,39 @@ echo ""
 echo "=== inventory: how many of the nine are still legacy? ==="
 # A legacy table has EMPTY entries: it evaluates and has no root, so it mints
 # nothing. Counting them makes "step 5 is finished" a measurable claim.
-lean_probe "7 of the nine are migrated" "7" \
-'#eval ([ctTagFns, elfFns, cryptoFns, parseValidateFns, fixedCapacityFns,
+migrated proofFns examples/thesis_demo/src/main.con parse_byte main no_such_fn
+migrated proofFns examples/thesis_demo/src/main.con check_length main no_such_fn
+
+echo ""
+echo "=== the ninth table, and why it is not migrated ==="
+# proofFnsExt adds `decode_header` to proofFns' two entries. That is
+# `packet.decode_header`, which the compiler reports as
+# `eligible (extraction failed) — unsupported: mutable borrow`. With no generated
+# body there is nothing to compare the committed spec against, and adopting an
+# identity and digest anyway would assert a correspondence nobody checked — the
+# move that would have silently redefined four crypto_verify theorems earlier in
+# this migration. A partial migration is not available: one unidentified entry
+# disqualifies the whole table, which is the correct fail-closed behaviour.
+#
+# TRIPWIRE: this passes BECAUSE decode_header is still unextractable, and FAILS
+# when it becomes extractable — which is the signal to finish the ninth table.
+if "$CC" examples/packet/src/main.con --report extraction 2>/dev/null \
+   | grep -A2 "packet.decode_header" | grep -q "extraction failed"; then
+  ok "TRIPWIRE: decode_header is still unextractable (mutable borrow), so proofFnsExt stays legacy"
+else
+  no "decode_header now extracts — migrate proofFnsExt and replace this tripwire with real coverage"
+fi
+lean_probe "proofFnsExt is still legacy, so it mints nothing" "true" \
+'#eval proofFnsExt.entries.isEmpty && proofFnsExt.root.isNone'
+
+echo ""
+echo "=== inventory ==="
+lean_probe "8 of the nine are migrated" "8" \
+'#eval ([ctTagFns, elfFns, cryptoFns, parseValidateFns, fixedCapacityFns, proofFns,
         Examples.ProofPatterns.Proofs.combineFns,
         Examples.HmacSha256.Proofs.shaFns].filter (fun t => !t.entries.isEmpty)).length'
-lean_probe "2 of the nine are still legacy" "2" \
-'#eval ([proofFns, proofFnsExt].filter (fun t => t.entries.isEmpty)).length'
+lean_probe "exactly 1 of the nine is still legacy" "1" \
+'#eval ([proofFnsExt].filter (fun t => t.entries.isEmpty)).length'
 # the 16-entry table is the one where duplication would have been tempting
 lean_probe "shaFns carries all sixteen entries" "16" \
 '#eval Examples.HmacSha256.Proofs.shaFns.entries.size'

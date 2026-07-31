@@ -1241,7 +1241,11 @@ where
 def parseByteExpr : PExpr :=
   .binOp .add (.var "data") (.var "offset")
 
-def parseByteFn : PFnDef := { displayName := "parse_byte", params := ["data", "offset"], body := parseByteExpr }
+def parseByteFn : PFnDef :=
+  { identity := .semantic (CallableId.ofUser "main" "parse_byte")
+    operationalKey := "parse_byte"
+    sourceBodyDigest := some { value := "314d8160dbe1d21a697ef7d858cac7d0" }
+    displayName := "parse_byte", params := ["data", "offset"], body := parseByteExpr }
 
 /-- `fn check_length(len: Int) -> Int { if len < 10 { return 1; } return 0; }`
     Bounds guard from decode_header — rejects packets shorter than the header. -/
@@ -1252,7 +1256,10 @@ def checkLengthExpr : PExpr :=
     (.lit (.int 0))
 
 def checkLengthFn : PFnDef :=
-  { displayName := "check_length", params := ["len"], body := checkLengthExpr }
+  { identity := .semantic (CallableId.ofUser "main" "check_length")
+    operationalKey := "check_length"
+    sourceBodyDigest := some { value := "34041a6ae6346f734e5ba502c2b1b816" }
+    displayName := "check_length", params := ["len"], body := checkLengthExpr }
 
 /-- Function table for proofs. -/
 def proofFnsGlobals : String → Option PFnDef
@@ -1260,7 +1267,10 @@ def proofFnsGlobals : String → Option PFnDef
   | "check_length" => some checkLengthFn
   | _ => none
 
-def proofFns : FnTable := FnTable.ofGlobals proofFnsGlobals
+/-- MIGRATED (R-0004 step 5, 8 of 9). Both entries verified against
+    `examples/thesis_demo` before adoption. -/
+def proofFns : FnTable :=
+  { entries := #[checkLengthFn, parseByteFn], globals := proofFnsGlobals }
 
 -- Keeps `simp only [eval, proofFns_globals, proofFnsGlobals]` working WITHOUT delta-unfolding
 -- the bare `proofFns`. The old `def proofFns : FnTable | "x" => …` produced equation lemmas
@@ -1476,6 +1486,22 @@ def proofFnsExtGlobals : String → Option PFnDef
   | "decode_header" => some decodeHeaderFn
   | _ => none
 
+/-- NOT MIGRATED, and this is the honest answer rather than a gap left silent.
+
+    `proofFnsExt` adds `decode_header` to the two entries `proofFns` carries. That
+    function is `packet.decode_header`, and the compiler reports it as
+    `eligible (extraction failed) — unsupported: mutable borrow`. So there is NO
+    generated body to compare the committed spec against, and adopting an identity
+    and a digest for it would be asserting a correspondence nobody checked — the
+    exact move that would have silently redefined four crypto_verify theorems
+    earlier in this migration.
+
+    A partial migration is not available either: one unidentified entry disqualifies
+    the whole table (`allIdentified`), which is the correct fail-closed behaviour.
+
+    This unblocks when `decode_header` becomes extractable (mutable borrow support
+    in extraction). `check_table_migration.sh` carries a TRIPWIRE asserting it is
+    still unextractable, so that day fails the gate instead of passing unnoticed. -/
 def proofFnsExt : FnTable := FnTable.ofGlobals proofFnsExtGlobals
 
 -- Keeps `simp only [eval, proofFnsExt_globals, proofFnsExtGlobals]` working WITHOUT delta-unfolding
