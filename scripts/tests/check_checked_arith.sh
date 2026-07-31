@@ -22,6 +22,26 @@ PASS=0; FAIL=0
 ok(){ echo "  ok   $1"; PASS=$((PASS+1)); }
 no(){ echo "  FAIL $1"; FAIL=$((FAIL+1)); }
 
+# Did the process die from a SIGNAL (a real trap), as opposed to returning a nonzero
+# status of its own accord?
+#
+# This distinction is the whole gate. Every probe below deliberately returns a nonzero
+# SENTINEL (9) on the wrap path so a wrap is visible — but the assertions used to be
+# `exit != 0`, which the sentinel satisfies. With the trap removed, `255 + 1` wrapped
+# to 0, `main` returned 9, and the gate reported "aborts (exit 9)": a wrap was
+# indistinguishable from an abort, so the gate could not detect the removal of the
+# very property it guards. Verified by mutation — check_gate_mutation_coverage.sh's
+# `checked-arith-trap` family SURVIVED against this file until this check existed.
+#
+# A shell reports a signal death as 128+signum; abort() is SIGABRT (6) => 134.
+# Accepting any >=128 keeps this robust if the trap mechanism changes signal.
+died_by_signal(){ [ "$1" -ge 128 ]; }
+# Assert a trap, naming the wrap sentinel explicitly when that is what happened.
+expect_trap(){ local code="$1" what="$2"
+  if died_by_signal "$code"; then ok "$what aborts (signal exit $code)"
+  elif [ "$code" = 9 ]; then no "$what WRAPPED instead of trapping (sentinel exit 9)"
+  else no "$what did not trap (exit $code, expected a signal >=128)"; fi; }
+
 # Oracle: self-checking program must compile, run to 0, AND interp to 0.
 oracle(){ local n="$1"
   if ! "$C" "$TMP/$n.con" -o "$TMP/$n.bin" >"$TMP/$n.err" 2>&1; then
@@ -39,7 +59,7 @@ pub fn main() -> Int { let x: u8 = add(255, 1); if x == 0 { return 9; } return 7
 EOF
 "$C" "$TMP/trap.con" -o "$TMP/trap.bin" >/dev/null 2>&1
 "$TMP/trap.bin" >/dev/null 2>&1; tc=$?
-if [ "$tc" -ne 0 ]; then ok "compiled: u8 255+1 aborts (exit $tc)"; else no "compiled: u8 255+1 did NOT trap (exit $tc)"; fi
+expect_trap "$tc" "compiled: u8 255+1"
 # NB: the interp EXITS NONZERO when it traps, so capture first (pipefail would
 # otherwise propagate that nonzero and defeat the grep).
 itrap="$("$C" "$TMP/trap.con" --interp 2>&1 || true)"
@@ -51,13 +71,13 @@ fn sub(a: u8, b: u8) -> u8 { return a - b; }
 pub fn main() -> Int { let x: u8 = sub(0, 1); if x == 255 { return 9; } return 7; }
 EOF
 "$C" "$TMP/subtrap.con" -o "$TMP/subtrap.bin" >/dev/null 2>&1; "$TMP/subtrap.bin" >/dev/null 2>&1; sc=$?
-if [ "$sc" -ne 0 ]; then ok "compiled: u8 0-1 underflow aborts (exit $sc)"; else no "compiled: u8 0-1 did NOT trap"; fi
+expect_trap "$sc" "compiled: u8 0-1 underflow"
 cat > "$TMP/multrap.con" <<'EOF'
 fn mul(a: i32, b: i32) -> i32 { return a * b; }
 pub fn main() -> Int { let x: i32 = mul(100000, 100000); if x == 1410065408 { return 9; } return 7; }
 EOF
 "$C" "$TMP/multrap.con" -o "$TMP/multrap.bin" >/dev/null 2>&1; "$TMP/multrap.bin" >/dev/null 2>&1; mc=$?
-if [ "$mc" -ne 0 ]; then ok "compiled: i32 100000*100000 overflow aborts (exit $mc)"; else no "compiled: i32 mul did NOT trap"; fi
+expect_trap "$mc" "compiled: i32 100000*100000 overflow"
 
 # div-by-zero (was UB/SIGFPE) and over-width shift now ABORT (Stage 2.4/2.5).
 cat > "$TMP/dz.con" <<'EOF'
@@ -65,7 +85,7 @@ fn dv(a: i32, b: i32) -> i32 { return a / b; }
 pub fn main() -> Int { let x: i32 = dv(10, 0); return 0; }
 EOF
 "$C" "$TMP/dz.con" -o "$TMP/dz.bin" >/dev/null 2>&1; "$TMP/dz.bin" >/dev/null 2>&1; dc=$?
-if [ "$dc" -ne 0 ]; then ok "compiled: div-by-zero aborts (exit $dc, was UB)"; else no "compiled: div-by-zero did NOT trap"; fi
+expect_trap "$dc" "compiled: div-by-zero (was UB)"
 dzi="$("$C" "$TMP/dz.con" --interp 2>&1 || true)"
 if grep <<<"$dzi" -qi "division by zero"; then ok "interp: div-by-zero traps"; else no "interp: div-by-zero did NOT trap"; fi
 cat > "$TMP/sh.con" <<'EOF'
@@ -73,7 +93,7 @@ fn sh(a: u32, b: u32) -> u32 { return a << b; }
 pub fn main() -> Int { let x: u32 = sh(1, 40); return 0; }
 EOF
 "$C" "$TMP/sh.con" -o "$TMP/sh.bin" >/dev/null 2>&1; "$TMP/sh.bin" >/dev/null 2>&1; hc=$?
-if [ "$hc" -ne 0 ]; then ok "compiled: u32 1<<40 over-width shift aborts (exit $hc, was UB)"; else no "compiled: over-width shift did NOT trap"; fi
+expect_trap "$hc" "compiled: u32 1<<40 over-width shift (was UB)"
 
 echo "=== in-range + unchanged, interp == compiled ==="
 cat > "$TMP/inrange.con" <<'EOF'
