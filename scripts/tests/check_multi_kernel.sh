@@ -48,7 +48,7 @@ has "add_bounded" "lean:omega = closed"   "$BASE"
 has "add_bounded" "=> proved_by_lean"     "$BASE"
 has "mul_unbounded" "=> unproven"         "$BASE"
 # externals not requested -> off, never a false verdict
-has "off-cells" "rocq:lia = off"          "$BASE"
+has "add_bounded" "rocq:lia = off"        "$BASE"   # externals not requested -> off
 
 echo "=== bridge differential-check (feature #1): fuzzer teeth + soundness ==="
 BC="$("$COMPILER" "$DEMO" --report bridge-check 2>/dev/null)"
@@ -101,10 +101,10 @@ EOF
   P="$("$COMPILER" "$TMP/src/main.con" --report multi-kernel --rocq 2>/dev/null)"
   # a div hypothesis is outside the fragment -> the Rocq goal is dropped, so the
   # kernel is NOT asked. Must NOT read as a false disagreement ("refused").
-  has "div-hyp" "rocq:lia = not-asked" "$P"
+  has "add_with_div_hyp" "rocq:lia = not-asked" "$P"
   # the load-bearing half: Lean DID close it, so a `refused` here would read as the
   # second kernel contradicting the first.
-  has "div-hyp" "lean:omega = closed" "$P"
+  has "add_with_div_hyp" "lean:omega = closed" "$P"
   printf '%s' "$P" | grep -A2 "add_with_div_hyp" | grep -q "=> proved_by_lean" \
     && ok "div-hyp: lean-proved obligation keeps its class when Rocq is not asked" \
     || no "div-hyp should be proved_by_lean, not unproven"
@@ -262,48 +262,6 @@ EOF
   "$COMPILER" "$DEMO" --report multi-kernel --bogus-flag >/dev/null 2>&1
   [ $? -eq 1 ] && ok "an unknown flag is still rejected" || no "unknown flags must be rejected"
 
-  echo "=== COMPOSITION: a disagreeing lowering must not earn the badge or pass the gate ==="
-  # The gate previously tested lowering-agreement and the release gate as SEPARATE
-  # assertions, never a corrupted lowering against the gate — so the composition hole
-  # was invisible: agreement caught the corruption, and the badge/gate never asked it.
-  # This mutates the Rocq operator column (<= rendered as <), rebuilds, and asserts the
-  # badge drops that kernel AND --require-two-kernels fails. Same shape as the original
-  # finding: a surface asserting more than it checked.
-  #
-  # HEAVY (one rebuild). Skipped unless MULTI_KERNEL_MUTATE=1, matching the
-  # nightly-only convention of check_gate_mutation_coverage.sh.
-  if [ "${MULTI_KERNEL_MUTATE:-0}" = "1" ]; then
-    MUT="Concrete/Report/ReportVC.lean"
-    cp "$MUT" "$MUT.compose.bak"
-    awk '/^def obBinOpRocq/{f=1} f&&/\.leq => some \("<=", false\)/{sub(/some \("<=", false\)/, "some (\"<\", false)"); f=0} {print}' \
-      "$MUT.compose.bak" > "$MUT"
-    if ! grep -q 'some ("<", false) | .lt' "$MUT"; then
-      no "composition mutation did not apply (obBinOpRocq shape changed?)"
-      cp "$MUT.compose.bak" "$MUT"; rm -f "$MUT.compose.bak"
-    else
-      rm -rf .concrete-cache
-      if lake build >/dev/null 2>&1; then
-        MB="$("$COMPILER" "$FAMILIES" --report multi-kernel --rocq 2>/dev/null)"
-        printf '%s' "$MB" | grep -q "LOWERING DISAGREES" \
-          && ok "corrupted lowering is NAMED in the multi-kernel report" \
-          || no "multi-kernel report should name the disagreeing lowering"
-        printf '%s' "$MB" | grep -A4 "add_bounded" | grep -q "proved_by_two_kernels" \
-          && no "badge still claims two kernels on a disagreeing lowering" \
-          || ok "badge drops the disagreeing kernel (no proved_by_two_kernels)"
-        "$COMPILER" "$FAMILIES" --report multi-kernel --rocq --require-two-kernels >/dev/null 2>&1
-        [ $? -eq 1 ] && ok "--require-two-kernels FAILS on a disagreeing lowering" \
-                      || no "release gate must not pass a disagreeing lowering"
-      else
-        no "composition mutation broke the build"
-      fi
-      cp "$MUT.compose.bak" "$MUT"; rm -f "$MUT.compose.bak"
-      rm -rf .concrete-cache
-      lake build >/dev/null 2>&1 || no "restore rebuild failed"
-    fi
-  else
-    echo "  (skipped — set MULTI_KERNEL_MUTATE=1; needs two rebuilds)"
-  fi
-
   echo "=== verdict classification: 'refused' vs 'error' rests on real coqc markers ==="
   # The classifier calls a nonzero coqc exit `refused` ONLY on a tactic-failure
   # marker; anything else is `error` (our bug). Both exit 1, so this locks the
@@ -447,6 +405,63 @@ EOF
 else
   echo "=== Isabelle absent — skipping isabelle assertions ==="
 fi
+
+echo "=== COMPOSITION: a disagreeing lowering must not earn the badge or pass the gate ==="
+# The gate previously tested lowering-agreement and the release gate as SEPARATE
+# assertions, never a corrupted lowering against the gate — so the composition hole
+# was invisible: agreement caught the corruption, and the badge/gate never asked it.
+# This mutates the Rocq operator column (<= rendered as <), rebuilds, and asserts the
+# badge drops that kernel AND --require-two-kernels fails. Same shape as the original
+# finding: a surface asserting more than it checked.
+#
+# HEAVY (two rebuilds) and it MUTATES TRACKED SOURCE, so it runs LAST and only under
+# MULTI_KERNEL_MUTATE=1 — the nightly-only convention of
+# check_gate_mutation_coverage.sh. Both properties are load-bearing: an earlier
+# version of this block sat mid-suite and its rebuild poisoned every assertion after
+# it (67/0 became 61/9), and an abort mid-mutation left the mutated file in the tree,
+# where the next run backed THAT up and "restored" to it.
+if [ "${MULTI_KERNEL_MUTATE:-0}" = "1" ]; then
+  MUT="Concrete/Report/ReportVC.lean"
+  # Refuse to run on an already-modified file: backing up a dirty (possibly
+  # already-mutated) copy and restoring it is how a mutation becomes permanent.
+  if ! git diff --quiet -- "$MUT" 2>/dev/null; then
+    no "composition mutation skipped — $MUT has uncommitted changes (clean it first)"
+  else
+  # Restore from git on ANY exit path, not just the happy one.
+  trap 'git checkout -- "$MUT" 2>/dev/null; rm -f "$MUT.compose.bak"; (lake build >/dev/null 2>&1 || true)' EXIT
+  cp "$MUT" "$MUT.compose.bak"
+  awk '/^def obBinOpRocq/{f=1} f&&/\.leq => some \("<=", false\)/{sub(/some \("<=", false\)/, "some (\"<\", false)"); f=0} {print}' \
+    "$MUT.compose.bak" > "$MUT"
+  if ! grep -q 'some ("<", false) | .lt' "$MUT"; then
+    no "composition mutation did not apply (obBinOpRocq shape changed?)"
+    cp "$MUT.compose.bak" "$MUT"; rm -f "$MUT.compose.bak"
+  else
+    rm -rf .concrete-cache
+    if lake build >/dev/null 2>&1; then
+      MB="$("$COMPILER" "$FAMILIES" --report multi-kernel --rocq 2>/dev/null)"
+      printf '%s' "$MB" | grep -q "LOWERING DISAGREES" \
+        && ok "corrupted lowering is NAMED in the multi-kernel report" \
+        || no "multi-kernel report should name the disagreeing lowering"
+      printf '%s' "$MB" | grep -A4 "add_bounded" | grep -q "proved_by_two_kernels" \
+        && no "badge still claims two kernels on a disagreeing lowering" \
+        || ok "badge drops the disagreeing kernel (no proved_by_two_kernels)"
+      "$COMPILER" "$FAMILIES" --report multi-kernel --rocq --require-two-kernels >/dev/null 2>&1
+      [ $? -eq 1 ] && ok "--require-two-kernels FAILS on a disagreeing lowering" \
+                    || no "release gate must not pass a disagreeing lowering"
+    else
+      no "composition mutation broke the build"
+    fi
+    git checkout -- "$MUT" 2>/dev/null || cp "$MUT.compose.bak" "$MUT"
+    rm -f "$MUT.compose.bak"
+    rm -rf .concrete-cache
+    lake build >/dev/null 2>&1 || no "restore rebuild failed"
+  fi
+  trap - EXIT
+  fi
+else
+  echo "  (skipped — set MULTI_KERNEL_MUTATE=1; mutates tracked source, needs 2 rebuilds)"
+fi
+
 
 echo ""
 echo "MULTI-KERNEL: PASS=$PASS  FAIL=$FAIL"
