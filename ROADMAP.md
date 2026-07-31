@@ -1242,7 +1242,13 @@ already produced rework. The order below is argued from the 2026-07-31 audit of
 `spike/multi-prover-evidence`, not from phase numbering — several of these sit in
 later phases and should still be pulled in this sequence.
 
-1. **R-0454 (neutral digest) first, because its window is closing.** Digests are
+0. **R-0461 before all of it, because the arc is currently decorating a defect.**
+   H23: an obligation may assume a loop invariant whose preservation VC is unproven, and
+   nothing composes the two statuses — so a guaranteed out-of-bounds access reports
+   `proved_by_multi_kernel (3: lean, rocq, isabelle)` and `require-two-kernels` builds it.
+   Every surface above this inherits the error. Reproduced in
+   `examples/unsound_hypothesis/`. Nothing else on this list is worth doing first.
+1. **R-0454 (neutral digest) next, because its window is closing.** Digests are
    *stored*. No `subjectDigest` field exists in `Concrete/` yet, so migration cost is
    zero today and rises with every artifact written. It also closes the substantive
    gap in R-0448: kernels currently agree on an obligation *id*, so "two kernels
@@ -1263,8 +1269,10 @@ later phases and should still be pulled in this sequence.
 
 The governing principle, measured rather than assumed: kernel diversity is a
 *portability* property for auditors, not a bug-finding strategy. Zero real defects on
-this arc came from kernel agreement; the one real fault came from a differential test.
-Sequence accordingly.
+this arc came from kernel agreement; the faults came from differential tests, and H23 —
+the worst of them — was found by writing a wrong program and reading the report, while
+every kernel-side surface reported success. Sequence accordingly, and note that R-0462
+(fuzz the compiled binary against the safety claims) would have caught H23 in seconds.
 
 ### Task R-0450
 
@@ -5790,6 +5798,104 @@ belongs to Phase 15.75's machinery rather than to a hand-timed claim here.
 
 **Objective:** Add the Phase 13 validation artifact: a runtime-safety corpus covering bounds, div/mod-zero, overflow, casts, panic/abort/assert, byte/text/path boundaries, stack/recursion, inferred invariant candidates, newtype invariant hypotheses, arithmetic-site evidence mismatches, and obligation suppression. Each case must show one of `proved`, `enforced`, `assumed`, `missing`, or `blocked`, include a negative variant, and run through policy gates plus human/JSON reports.
 
+
+### Task R-0461
+
+**Objective:** Give hypotheses provenance, and compose obligation status across the
+assumption edge. **Closes H23, which is live: a guaranteed out-of-bounds access currently
+reports `proved_by_multi_kernel (3: lean, rocq, isabelle)`.**
+
+Do this before any further evidence-surface work. It is not a refinement of the
+multi-kernel story; it is the defect that story is currently decorating.
+
+The mechanism, not just the symptom. `hyps : List Expr` erases where a fact came from,
+and the three sources have entirely different justification status:
+
+| Origin | What justifies it |
+|---|---|
+| control-flow guard | sound by construction (the branch was taken) |
+| `#[requires]` | discharged at every call site by `callSiteObligations` |
+| loop `#[invariant]` | owes O1 (init) **and** O2 (preservation) for that loop |
+| explicit `#[assume]` | nothing — must downgrade the conclusion, permanently |
+
+So hypotheses become records carrying `origin` and an optional `justifiedBy` obligation
+reference, and status composes:
+
+```
+status(O)  ≤  min( status of O's own proof,
+                   min over h ∈ hyps(O) of status(justifiedBy(h)) )
+```
+
+This is the same discipline already applied to proof dependencies (`staleDeps`) and to the
+`trusted` boundary. Hypotheses are simply a dependency edge that was never modelled — which
+is why the fix is a record change plus a fold, not new proof machinery.
+
+Reporting consequence, and the reason this is not merely a downgrade: the honest status of
+`bounds0` in the fixture is not `unproven`, it is *proved conditional on invariant@6*. That
+is real, useful evidence — it says the remaining work is exactly one VC. Erasing it to
+`unproven` would lose information; reporting it as `proved` is false. The claim record needs
+the conditional form, which also gives R-0458's `strength` coordinate its first real
+consumer.
+
+Gate over `examples/unsound_hypothesis/src/main.con`: the bounds obligation must NOT read
+proved while O2 is unproven, the fixture must stay non-vacuous (assert O2 really is
+undischarged, so the gate cannot pass by the invariant becoming provable), and a mutation
+must show the gate detects removal of the composition.
+
+Widen beyond loops once the mechanism exists: any obligation resting on an `#[assume]`,
+and any call-site precondition whose caller-side discharge is itself conditional.
+
+### Task R-0462
+
+**Objective:** Fuzz the *compiled binary* against the safety claims — the empirical shadow
+of Register A.
+
+Register A asserts *if the obligation holds, the runtime property holds*. That is a
+proof obligation, and R-0460 discharges it row by row over years. There is a cheap
+continuous check of the same statement available now, and it is missing: **for every
+function whose runtime-safety obligations all read `proved`, generate inputs satisfying
+its `#[requires]`, run the COMPILED binary, and assert it does not trap.** Any trap is a
+counterexample to Register A, to the obligation generator, or to the lowering — and it
+is found in seconds rather than argued about.
+
+Distinct from `--report bridge-check`, which fuzzes concrete inputs against the
+*obligation* as evaluated by the interpreter. That tests the obligation against a model.
+This tests the *claim* against the artifact that ships, and so also crosses the
+surface→Core→SSA→LLVM lowering that no register row covers today.
+
+H23 is the existence proof: a program whose bounds obligation reads
+`proved_by_multi_kernel` aborts on the first run. Any fuzzer pointed at the binary would
+have caught it immediately; every kernel-side surface reported success.
+
+This is the highest fault-finding value per unit of work available, and it is the
+project's own doctrine applied consistently — differential against the real artifact
+outranks agreement between checkers of a model.
+
+### Task R-0463
+
+**Objective:** Make the linear-arithmetic tier certificate-bearing, and reconsider whether
+a second kernel is the right spend at that tier at all.
+
+The tier that produces most claims — linear integer arithmetic via `omega` / `lia` /
+`presburger` — is currently `trusted_modulo_toolchain`: no transferable certificate, a
+`.vo` re-checkable only by the same Rocq version. That is also, not coincidentally, the
+tier where multi-kernel evidence is deployed.
+
+But linear arithmetic is the tier where certificates are *most* feasible. Rocq's
+`micromega` already builds a Positivstellensatz/Farkas witness and validates it by
+reflection against a checker with a soundness theorem; the witness is a first-class object,
+not a byproduct. If it can be extracted and checked by a small independent checker, the
+majority of claims move from `trusted_modulo_toolchain` to `replayed_certificate` — a far
+larger trust gain than a fourth prover, and the thing that makes the auditor story real:
+they run a few hundred lines of checker, not a multi-gigabyte Isabelle.
+
+The strategic point this raises, which belongs in the record even if the extraction proves
+impractical: **a certificate makes the second kernel unnecessary at that tier.** Multi-kernel
+evidence is currently spent where certificates would serve better, and it is the
+non-arithmetic tiers — where certification is measured to be impossible today (Alethe rejects
+any datatype-bearing proof) — that actually need independent kernels. The allocation is
+inverted. Probe the extraction before committing; kill criterion is a measured "the witness
+cannot be got out of micromega in a stable form".
 
 ### Task R-0460
 

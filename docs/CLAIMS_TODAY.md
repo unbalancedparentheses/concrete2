@@ -157,6 +157,16 @@ What these do **not** mean:
 Each attestation is recorded as a receipt carrying the exact tool version, so a stored
 claim can be re-audited or invalidated when a prover release is found buggy.
 
+> **CAVEAT THAT OVERRIDES THIS WHOLE SECTION — H23, reproduced 2026-07-31.** A
+> runtime-safety obligation inside a loop may assume that loop's `#[invariant]` without
+> the invariant's preservation VC being discharged, and no status composition relates
+> them. A guaranteed out-of-bounds access therefore reports
+> `proved_by_multi_kernel (3: lean, rocq, isabelle)`, and `require-two-kernels` builds it
+> with exit 0. See `examples/unsound_hypothesis/`. Until R-0461 lands, treat every
+> `proved` runtime-safety obligation on a function **containing a loop** as conditional on
+> that loop's O1/O2, and verify them by hand in `--report vcs`. Obligations in
+> loop-free functions are unaffected.
+
 **Scope of what actually carries a badge today (measured 2026-07-31).** Every obligation
 family the compiler generates is arithmetic, so the badge lands where linear arithmetic
 does — overflow, bounds, divisor-nonzero, call-site preconditions. On the flagship

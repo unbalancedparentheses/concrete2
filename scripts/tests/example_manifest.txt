@@ -222,6 +222,12 @@ examples/thesis_demo/src/main_drifted.con compile
 examples/toml/src/main.con project-build
 examples/two_kernel_demo/src/families.con skip
 examples/two_kernel_demo/src/main.con skip
+# H23 counterexample: compiles and reports its bounds obligation PROVED (three
+# kernels) while the invariant it assumes is unproven, and the binary then aborts.
+# `skip` because the corpus checks compile-and-run success and this is deliberately
+# a program whose evidence is wrong — R-0461's gate owns it and asserts the
+# obligation must NOT read proved.
+examples/unsound_hypothesis/src/main.con skip
 examples/vc_discharge/assumed.con skip
 examples/vc_discharge/bv_decide.con skip
 examples/vc_discharge/counterexample.con skip

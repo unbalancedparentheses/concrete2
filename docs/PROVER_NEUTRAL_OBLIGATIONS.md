@@ -350,6 +350,69 @@ consequence for planning: the differential surfaces (`core-semantics-diff`,
 two compete. Kernel diversity exists to serve the auditor who does not trust Lean. It is
 a *portability* property, not a *bug-finding* one, and conflating the two overvalues it.
 
+### Four structural changes the H23 audit argues for
+
+H23 — an unproven loop invariant laundering into a `proved_by_multi_kernel` bounds
+obligation on a program that aborts — is not only a missing fold. Reading the generator
+that produced it surfaces three more design-level issues, and one addition. Ordered by
+how much they remove rather than add.
+
+**1. Hypotheses are a dependency edge, and must be modelled as one.** `hyps : List Expr`
+erases provenance, so the system cannot ask what justifies a fact. Guards are sound by
+construction, `#[requires]` is discharged at every call site, invariants owe O1 ∧ O2, and
+`#[assume]` owes nothing — four justification statuses collapsed into one list of
+propositions. Give hypotheses `origin` and `justifiedBy`, and status composition becomes a
+fold rather than a new subsystem (R-0461).
+
+**2. Generate obligations from SSA, not the surface AST.** Today the walker threads
+hypotheses forward over mutable surface syntax, which forces `dropStaleHyps` to *delete*
+any fact mentioning a just-assigned variable — a conservative stand-in for renaming. The
+whole staleness problem is an artifact of the input representation. In SSA (or any ANF
+Core) each assignment binds a fresh name, so a fact about `i₃` cannot be invalidated by a
+later write, and path conditions are just branch predicates. `dropStaleHyps`,
+`assignedScalarsS`, and the reasoning about what a store can invalidate all *delete*
+rather than get fixed.
+
+The compiler already has SSA, and the shipped binary is built from it — so this also
+narrows the gap between the representation that is proved about and the one that runs.
+Deferred obligations generated over surface syntax are proofs about a *different artifact*
+than the executable.
+
+**3. Soundness-critical analyses must fail closed.** `assignedScalarsS` ends in
+`| _ => []` — an unrecognised statement form is treated as assigning nothing, so
+hypotheses survive it. That is fail-OPEN in exactly the place where being wrong is
+unsound, and it silently misclassifies any statement form added to the AST later. The
+default must be "unknown construct invalidates everything in scope" (or refuses to emit
+obligations there). This generalises: every syntactic analysis feeding a proof should be
+total over its input type with an unsafe-by-default fallback, and the exhaustiveness
+should be a gate.
+
+**4. Fuzz the compiled binary against the safety claims.** Register A says *obligation ⇒
+runtime property*. Discharging its rows is years of work; testing the same statement is
+cheap and continuous: take every function whose safety obligations read `proved`, generate
+inputs satisfying its `#[requires]`, run the **binary**, assert no trap. H23 aborts on the
+first run. This is distinct from `--report bridge-check`, which fuzzes the obligation
+against the interpreter — a model against a model. Pointing the fuzzer at the artifact also
+crosses the surface→Core→SSA→LLVM lowering that no register row covers (R-0462).
+
+### Reconsidering where multi-kernel is spent
+
+The linear-integer tier is where multi-kernel evidence is deployed, and it is also the
+tier where transferable certificates are most feasible: Rocq's `micromega` already
+constructs a Positivstellensatz witness and validates it by reflection against a checker
+carrying a soundness theorem. If that witness can be extracted, most claims move from
+`trusted_modulo_toolchain` to `replayed_certificate`, checkable by a few hundred lines
+rather than a multi-gigabyte prover — and **a certificate makes the second kernel
+unnecessary at that tier**.
+
+Meanwhile the tiers that genuinely cannot be certified — datatype-bearing proofs, where
+Alethe rejects even a ground selector goal — are the ones with no independent-kernel
+coverage, because they fall outside the linear fragment the drivers support.
+
+So the current allocation is inverted: kernels where certificates would serve better,
+nothing where kernels are the only option. R-0463 probes the extraction; the strategic
+observation stands regardless of whether it succeeds.
+
 ### Consequence for the product thesis
 
 "Replay our claims with the kernel you trust" is better served by **statement

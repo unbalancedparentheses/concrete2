@@ -28,6 +28,54 @@ freshness (bugs 058–060 / R-0004), and ProofCore callable identity (bug 061 /
 R-0442). R-0010 will replace the legacy skip-based audit with mechanically
 checked per-bug states.
 
+### H23. An unproven hypothesis launders into a proved obligation — OPEN, reproduced
+
+**This is the most severe hole in this file. A guaranteed out-of-bounds access is
+reported `proved_by_multi_kernel (3: lean, rocq, isabelle)`.**
+
+Runtime-safety obligations inside a loop may assume the loop's `#[invariant]`
+(`loopHypsAt`, `Concrete/Report/ReportObligations.lean:80`). Whether that invariant is
+*established* (O1) and *preserved* (O2) is computed as a separate VC — and the two
+statuses are never composed. An obligation is reported at the strength of its own proof,
+ignoring the strength of the facts it assumed.
+
+Reproduce with `examples/unsound_hypothesis/src/main.con` — a 4-element array indexed by
+a counter running to 99:
+
+```
+[lam.bad#bounds0]  array_bounds             ->  proved_by_kernel_decision (omega)
+                     --all-provers          ->  proved_by_multi_kernel (3: lean, rocq, isabelle)
+                     hypotheses: ((0 ≤ i ∧ i ≤ 3) ∧ i < 100)
+[lam.bad@6#O2]     invariant_preservation   ->  unproven
+[lam.bad@6#inv_vac0] vacuity                ->  unproven
+```
+
+Both lines appear in the *same* `--report obligation-ledger` output, adjacent, unrelated.
+The compiled binary aborts (SIGABRT, exit 134) on the access reported proved; the runtime
+bounds check is what actually prevents the memory error. `[policy] require-two-kernels =
+true` **builds this program with exit 0** — the strongest release stance in the system
+green-lights it.
+
+Three things this demonstrates, beyond the specific bug:
+
+1. **Kernel multiplicity offers no protection here and actively amplifies the error.**
+   Three kernels across two logics (CIC and HOL) agree, because they are all handed the
+   same unsound hypothesis. This is the concrete instance of H19's "hypothesis soundness"
+   clause, and it needed no exotic program to trigger.
+2. **The missing rule is compositional, not local.** Every individual VC is computed
+   correctly. What is absent is `status(O) ≤ min(status(O), min over h ∈ hyps(O)
+   status(h))` — the same discipline already applied to proof *dependencies* (staleDeps)
+   and to the `trusted` boundary, but never to hypotheses.
+3. **Hypotheses have no provenance.** `hyps : List Expr` is a bare list of propositions,
+   so the system cannot even ask what justifies one. Guards are sound by construction,
+   `#[requires]` is discharged at every call site, and invariants owe O1 ∧ O2 — three very
+   different justification statuses, all erased into one list.
+
+Owned by **R-0461**, which specifies the fix (hypothesis provenance + status composition)
+and the gate over this fixture. Until then, read any `proved` runtime-safety obligation on
+a function containing a loop as *conditional on that loop's invariant VCs*, and check them
+by hand in `--report vcs`.
+
 ### H19. The Core→obligation bridge is unproven — OPEN
 
 Every runtime-safety claim, and every `proved_by_two_kernels` badge, rests on the
