@@ -1797,8 +1797,32 @@ partial def elabModule (m : Module) (summary : FileSummary)
   let subs := subs.map fun csub =>
     { csub with functions := csub.functions.map fun f =>
         { f with body := renameFnStmts crossModuleRenames f.body } }
+  -- SUBJECT FACTS, captured HERE because this is the last point at which they all
+  -- exist: `requires`/`ensures`, type bounds and capability parameters are on the
+  -- AST `FnDef` and are gone from `CFnDef` below. Computing them downstream would
+  -- mean either widening Core with data codegen never reads, or defining a
+  -- semantic fact inside the layer that only renders semantic facts.
+  --
+  -- Keyed by `CallableId`, not by name: two callables can share a name, and a
+  -- rename must not move a subject.
+  let declFacts : List Proof.CheckedDeclFacts :=
+    m.functions.map fun f =>
+      let (concreteCaps, capVars) := f.capSet.normalize
+      { id := CallableId.ofUser m.name f.name f.typeParams.length
+        params := f.params.map fun p => (p.name, tyCanonical p.ty)
+        retTy := tyCanonical f.retTy
+        typeParams := f.typeParams
+        typeBounds := f.typeBounds
+        -- Both capability lists normalized, so `with(File, Net)` and
+        -- `with(Net) ∪ with(File)` cannot yield two facts for one declaration.
+        capParams := f.capParams.eraseDups.mergeSort (· ≤ ·)
+        capSet := (concreteCaps ++ capVars)
+        contracts := Proof.ContractFacts.of f.requires f.ensures
+        isTrusted := f.isTrusted
+        overflowChecked := f.overflowChecked }
   .ok {
     name := m.name
+    declFacts := declFacts
     structs := cStructs ++ cImportedStructs
     enums := allEnums.map fun ed =>
       { name := ed.name, typeParams := ed.typeParams,

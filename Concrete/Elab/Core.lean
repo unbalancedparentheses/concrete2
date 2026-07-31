@@ -1,4 +1,5 @@
 import Concrete.Frontend.AST
+import Concrete.Proof.SubjectFacts
 
 namespace Concrete
 
@@ -187,6 +188,15 @@ structure CTraitImpl where
 
 structure CModule where
   name : String
+  /-- Facts the AST→Core boundary would otherwise ERASE — full typed signature,
+      generics and bounds, capabilities, and normalized contracts — captured
+      before erasure and keyed by `CallableId`.
+
+      A PARALLEL record, deliberately not fields on `CFnDef`: Core excludes
+      contracts on purpose and no codegen path consumes them, so widening the
+      function type for proof bookkeeping would be the wrong trade. Proof
+      consumers read this; codegen never sees it. -/
+  declFacts : List Proof.CheckedDeclFacts := []
   structs : List CStructDef
   enums : List CEnumDef
   functions : List CFnDef
