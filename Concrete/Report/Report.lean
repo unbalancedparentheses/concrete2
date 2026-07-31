@@ -1558,7 +1558,18 @@ private def renderCallableId (cid : Concrete.CallableId) : String :=
     `scope := "body_only"` for exactly that reason — it is a comparison key for
     step 5, not evidence, and it covers no signature, capability or contract. -/
 private def renderSourceBodyDigest (pexpr : Proof.PExpr) : String :=
-  let v := Concrete.shortHash (Proof.pexprCanonical pexpr)
+  -- NORMALIZE FIRST, so the digest is invariant under commutative reordering.
+  -- Two bodies differing only in the order of `+`'s operands denote the SAME
+  -- subject, and a digest that separates them would report drift where there is
+  -- none. Extraction already normalizes, so this changes no generated value — it
+  -- makes the property hold BY CONSTRUCTION rather than by coincidence, which
+  -- matters because the other side of the comparison is a hand-written spec
+  -- written in source order.
+  --
+  -- Measured while migrating: `crypto_verify.compute_tag` is `key * message +
+  -- nonce` in source and normalizes to `nonce + key * message`. Its committed
+  -- spec looked like a mismatch against the generated digest and was not one.
+  let v := Concrete.shortHash (Proof.pexprCanonical (normalizePExpr pexpr))
   s!"some \{ value := \"{v}\" }"
 
 /-- Generate Lean theorem stubs for all extracted functions. -/

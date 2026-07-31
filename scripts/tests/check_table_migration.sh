@@ -74,9 +74,15 @@ migrated() {
   else
     # The committed spec must hash to the compiler's digest. This is the leg that
     # makes the migration sound rather than merely type-correct.
+    # NORMALIZE before hashing. A committed spec is written in SOURCE order while
+    # extraction canonicalizes commutative operands, so `key * message + nonce`
+    # and the extracted `nonce + key * message` are the same subject spelled two
+    # ways. Comparing raw forms reported drift on crypto_verify.compute_tag and
+    # verify_message where there was none — and the wrong repair there would have
+    # been to overwrite the spec.
     lean_probe "the committed spec for $decl hashes to the compiler's digest" "true" \
       "#eval ($tbl.entries.toList.find? (fun d => d.operationalKey == \"$decl\")).any
-         (fun d => Concrete.shortHash (pexprCanonical d.body) == \"$gendig\")"
+         (fun d => Concrete.shortHash (pexprCanonical (normalizePExpr d.body)) == \"$gendig\")"
   fi
 
   # 6. Kernel replay of that example's proofs must still succeed.
@@ -87,16 +93,20 @@ migrated() {
 
 echo "=== migrated tables (dual comparison) ==="
 migrated ctTagFns examples/constant_time_tag/src/main.con ct_compare constant_time_tag no_such_fn
+migrated elfFns examples/elf_header/src/main.con check_magic main no_such_fn
+migrated elfFns examples/elf_header/src/main.con validate_header main no_such_fn
+migrated cryptoFns examples/crypto_verify/src/main.con compute_tag main no_such_fn
+migrated cryptoFns examples/crypto_verify/src/main.con verify_message main no_such_fn
 
 echo ""
 echo "=== inventory: how many of the nine are still legacy? ==="
 # A legacy table has EMPTY entries: it evaluates and has no root, so it mints
 # nothing. Counting them makes "step 5 is finished" a measurable claim.
-lean_probe "the migrated tables report their own count" "1" \
-'#eval ([ctTagFns].filter (fun t => !t.entries.isEmpty)).length'
-lean_probe "the not-yet-migrated tables are still exactly 8" "8" \
-'#eval ([proofFns, proofFnsExt, cryptoFns, elfFns, parseValidateFns,
-        fixedCapacityFns, Examples.ProofPatterns.Proofs.combineFns,
+lean_probe "3 of the nine are migrated" "3" \
+'#eval ([ctTagFns, elfFns, cryptoFns].filter (fun t => !t.entries.isEmpty)).length'
+lean_probe "6 of the nine are still legacy" "6" \
+'#eval ([proofFns, proofFnsExt, parseValidateFns, fixedCapacityFns,
+        Examples.ProofPatterns.Proofs.combineFns,
         Examples.HmacSha256.Proofs.shaFns].filter (fun t => t.entries.isEmpty)).length'
 
 echo ""
