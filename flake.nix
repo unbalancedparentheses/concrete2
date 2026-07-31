@@ -63,13 +63,18 @@
               # skipping with no change in the assertion count.
               cvc5
             ]);
-            # No veriT/cvc5 here on purpose. Isabelle's nix package already bundles
-            # `contrib/verit-2021.06.2-rmx-3`, registers it in etc/components, and sets
-            # ISABELLE_VERIT — verified by running `smt (verit)` under plain
-            # `nix shell nixpkgs#isabelle`, where it closes a linear goal oracle-free.
-            # (`VERIT_SOLVER` is empty there, which is misleading: the component
-            # variable Isabelle actually reads is ISABELLE_VERIT.) cvc5 likewise comes
-            # via CVC5_SOLVER, and nothing in this repo invokes it directly.
+            # No veriT here on purpose (cvc5 IS listed above — see its comment).
+            # Isabelle's nix package already bundles `contrib/verit-2021.06.2-rmx-3`,
+            # registers it in etc/components, and sets ISABELLE_VERIT — verified by
+            # running `smt (verit)` under plain `nix shell nixpkgs#isabelle`, where it
+            # closes a linear goal oracle-free. (`VERIT_SOLVER` is empty there, which is
+            # misleading: the component variable Isabelle actually reads is
+            # ISABELLE_VERIT, visible only via `isabelle getenv`.)
+            #
+            # Isabelle's bundled CVC5_SOLVER is a DIFFERENT build from the cvc5 above
+            # (measured 2026-07-31: contrib 1.2.0 vs shell 1.3.2). Anything asserting a
+            # version-scoped fact about cvc5 must therefore report which one it ran;
+            # check_multi_kernel.sh prints it for exactly this reason.
           };
         });
     };

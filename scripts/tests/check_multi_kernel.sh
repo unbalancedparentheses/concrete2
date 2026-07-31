@@ -260,9 +260,20 @@ EOF
     || no "reflexivity-mismatch marker changed — core-semantics-diff classifier needs updating"
   rm -rf "$DTMP"
 
-  echo "=== FLAGSHIP: elf_header carries every evidence surface at once ==="
-  # The "really works on non-toy code" proof: a 244-line example that is
-  # multi-kernel proved, bridge-fuzzed, lowering-checked AND extraction-checked.
+  echo "=== FLAGSHIP: elf_header carries the bridge/extraction surfaces on real code ==="
+  # A 244-line example that is bridge-fuzzed, lowering-checked AND
+  # extraction-checked. Deliberately NOT described as "multi-kernel proved": it
+  # asserts the three surfaces below and no badge.
+  #
+  # Measured 2026-07-31, and it is the reason the wording is narrow: the only
+  # `proved_by_two_kernels` row reachable on elf_header is
+  # `rand.random_range#div0` — a STDLIB divisor obligation pulled in as a
+  # dependency, not anything elf_header itself asserts. crypto_verify is the same,
+  # and vc_suite has no linear runtime-safety obligations at all. Every family
+  # generated today is arithmetic, so a flagship's own code produces nothing to
+  # badge (R-0459). R-0448's credibility criterion — "one flagship row showing
+  # proved_by_two_kernels" — is therefore UNSATISFIABLE until non-arithmetic
+  # families exist, and must not be simulated here by asserting a stdlib row.
   ELF="examples/elf_header/src/main.con"
   "$COMPILER" "$ELF" --report bridge-check >/dev/null 2>&1
   [ $? -eq 0 ] && ok "elf_header: bridge-check (concrete fuzz vs VC) passes" \
@@ -486,6 +497,14 @@ EOF
   if [ -z "$CVC5" ] || [ ! -x "$CVC5" ]; then
     echo "  (skipped — no cvc5 on PATH or in CVC5_SOLVER)"
   else
+    # PRINT THE VERSION. This locks a fact that is explicitly version-scoped
+    # ("Alethe cannot certify datatype proofs in cvc5 <v>"), and more than one cvc5
+    # is reachable here: the provers shell pins one, while Isabelle's bundled
+    # CVC5_SOLVER is a different, older build (measured: 1.2.0 vs 1.3.2). Without
+    # this line the suite silently attributes the finding to whichever binary the
+    # environment happened to resolve, which is how the design doc came to cite a
+    # version the pinned shell does not provide.
+    echo "  cvc5 under test: $("$CVC5" --version 2>/dev/null | head -1) [$CVC5]"
     CTMP="$(mktemp -d)"
     # Baseline: a quantified INTEGER goal must both prove and certify. If this breaks,
     # the finding below is about our invocation, not about datatype support.
@@ -544,6 +563,39 @@ EOF
   rm -rf "$ITMP"
 else
   echo "=== Isabelle absent — skipping isabelle assertions ==="
+fi
+
+# ---------------------------------------------------------------------------
+# FAILS CLOSED with NO external kernel. This runs in the DEFAULT shell, and it
+# has to: the property is that `require-two-kernels` treats "could not check"
+# as "not satisfied", and the only place that state naturally occurs is where
+# no prover is installed. Asserting it inside the isabelle-present branch would
+# assert the opposite case and leave this one uncovered — which is what happened
+# until now, so a regression to fail-OPEN would have kept the suite green at
+# 74/74 and been invisible in the default shell too. Same shape as H22: a gate
+# that cannot detect removal of the property it guards.
+#
+# `allow` is used deliberately. Its obligations DO all reach two kernels when
+# provers exist (asserted above), so a rejection here can only come from the
+# missing-kernel path, never from an unprovable obligation. Using `blocked`
+# would pass for the wrong reason.
+if ! command -v coqc >/dev/null 2>&1 && ! command -v isabelle >/dev/null 2>&1; then
+  echo "=== fail-closed: require-two-kernels rejects when NO external kernel exists ==="
+  FC="$( cd examples/multi_kernel_policy/allow && "$ROOT_DIR/$COMPILER" build -o /tmp/mkp_failclosed 2>&1 )"
+  if [ $? -eq 0 ]; then
+    no "allow project BUILT with no external kernel — require-two-kernels failed OPEN"
+  else
+    ok "allow project is REJECTED with no external kernel (unverified is not satisfied)"
+    printf '%s' "$FC" | grep -q "E0616" \
+      && ok "fail-closed rejection carries E0616" || no "fail-closed rejection should carry E0616"
+    # The diagnostic must name the missing toolchain, not blame the proof: a user
+    # whose obligations are fine needs to be told to install a prover.
+    printf '%s' "$FC" | grep -q "no external kernel could be run" \
+      && ok "fail-closed diagnostic blames the missing kernel, not the obligation" \
+      || no "fail-closed diagnostic should say 'no external kernel could be run'"
+  fi
+else
+  echo "=== fail-closed check skipped (a prover IS present; see the policy assertions above) ==="
 fi
 
 echo "=== COMPOSITION: a disagreeing lowering must not earn the badge or pass the gate ==="

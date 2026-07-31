@@ -58,8 +58,11 @@ discharge it — because that bridge is shared by every kernel and so cannot be 
 by adding more of them. **0 of 4 rows are discharged**; the register is gated so a new
 obligation family cannot ship unregistered. Holes H19–H22 in
 [KNOWN_HOLES.md](docs/KNOWN_HOLES.md) record the unproven bridge, the native-code
-certificate check, the linear-only reconstruction ceiling, and one pre-existing
-decorative gate.
+certificate check, and the linear-only reconstruction ceiling. H22 recorded a
+pre-existing decorative gate — `check_checked_arith.sh` could not detect removal of the
+checked-arithmetic trap it guards, because a wrap sentinel satisfied its `exit != 0`
+assertion — since fixed by requiring death by signal; it stays listed until the nightly
+mutation job confirms the kill.
 
 Provers are an opt-in shell (`nix develop .#provers`); the evidence gate is
 skip-if-absent, so no contributor pays the Isabelle closure for a flagged-off feature.

@@ -964,7 +964,12 @@ jobs:
             echo "coqc:     $(coqc --version 2>/dev/null | head -1)"
             echo "isabelle: $(isabelle version 2>/dev/null)"
             echo "z3:       $(z3 --version 2>/dev/null)"
-            echo "veriT:    ${VERIT_SOLVER:-ABSENT}"'
+            echo "cvc5:     $(cvc5 --version 2>/dev/null | head -1)"
+            # NOT $VERIT_SOLVER: that variable is empty in this shell even though
+            # veriT is present and used for certificate replay, so printing it
+            # reports ABSENT for a working prover. Isabelle bundles veriT as a
+            # COMPONENT, readable only from inside its own settings environment.
+            echo "veriT:    $(isabelle getenv -b ISABELLE_VERIT 2>/dev/null || echo ABSENT)"'
 
       # The full gate: multi-kernel classes, the release gate, lowering agreement,
       # bridge diversity (Core->Rocq extraction vs the interpreter), certificate

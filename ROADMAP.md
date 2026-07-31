@@ -1237,10 +1237,25 @@ these new evidence gates.
 
 ### Task R-0450
 
-**Objective:** Unify obligation lowering into one prover-neutral IR with per-backend drivers (Why3 shape) — implementation already in progress off-repo; land it in a worktree and merge once green per the operating rules. Today `toLeanProp` (Lean path) and `exprToSmt` (solver path) are two hard-coded, monolithic lowerings of the same obligation expressions: two answers to one question, free to drift — and drift here means the Lean proof and the SMT check silently prove DIFFERENT obligations, an evidence-integrity defect in the system R-0004 is hardening. Define one typed obligation IR (linear integer arithmetic, bitvectors, bools, arrays: the deliberate intersection fragment; everything else `not_supported`), one semantics (a single `eval` in Lean, the IntArith single-source discipline), lowering as small named transforms, and per-backend drivers that select which transforms run.
+**Objective:** Unify obligation lowering into one prover-neutral IR with per-backend drivers (Why3 shape) — implementation already in progress off-repo; land it in a worktree and merge once green per the operating rules. The problem is duplicated expression lowerings of the same obligations: several answers to one question, free to drift — and drift here means the Lean proof and the external check silently prove DIFFERENT obligations, an evidence-integrity defect in the system R-0004 is hardening. Define one typed obligation IR (linear integer arithmetic, bitvectors, bools, arrays: the deliberate intersection fragment; everything else `not_supported`), one semantics (a single `eval` in Lean, the IntArith single-source discipline), lowering as small named transforms, and per-backend drivers that select which transforms run.
 
-   Slice 1 unifies the two existing backends only — no new provers; the diff
-   should be net-negative in lowering code. Gates: constructor coverage
+   **The count has grown since this task was written, and the growth is the
+   argument.** It was two lowerings (`toLeanProp`, `exprToSmt`). Today there are
+   three expression lowerings — `toLeanProp`
+   (`Concrete/Report/ReportVC.lean:592`), `exprToSmt`
+   (`ReportObligations.lean:791`), `exprToLeanProp` (`:863`) — plus
+   `exprToProver` (`:930`) with four driver instances (`rocqLowering`,
+   `isabelleLowering`, `rocqNiaLowering`, `isabelleSmtReplayLowering`).
+   `exprToProver`'s own comment reads "Same linear fragment as
+   `exprToLeanProp`": the fragment is now *defined twice*, in prose, in two
+   functions that must agree. That is the exact drift this task exists to
+   remove, and every kernel added before it lands adds another copy.
+
+   Slice 1 unifies the *existing* backends only — no further provers; the diff
+   should be net-negative in lowering code. Note the original "two existing
+   backends" framing was overtaken by R-0448's spike, which landed four prover
+   drivers ahead of the IR: absorbing them is now part of slice 1's scope, not
+   a follow-on. Gates: constructor coverage
    (every transform/emitter handles or explicitly rejects every IR
    constructor, fail-closed), Lean/SMT verdict agreement on generated
    obligations including identical `unsupported`s, and identity carried as
@@ -1248,6 +1263,20 @@ these new evidence gates.
    R-0170's auto-discharge must generate INTO the IR, not the ad-hoc
    lowerings. Version-stamp the IR in every emitted artifact so R-0004
    receipts record what produced them.
+
+   **Point the agreement technique at the older paths.** R-0448 invented a way
+   to test that a rendering denotes the obligation without writing a parser per
+   target: pin the driver's own output to ground assignments, make the target
+   decide it, compare against `evalBoolEnv` (`ReportObligations.lean:1071`).
+   It is currently wired only to the `ProverLowering` drivers. Neither
+   `exprToSmt` nor `exprToLeanProp` is checked this way — including the SMT
+   path, whose verdict enters the TCB as `solver_trusted`, and where a
+   mis-rendering is therefore worse than in any kernel path. Two asymmetries to
+   close with it: the SMT lowering, and Lean's own rendering, which the
+   multi-kernel fold currently records as `loweringAgreed := true` by
+   construction (`Report.lean:2519`) — the reference evaluator validates the
+   copies and never the original. Both are cheap, both are pre-IR, and doing
+   them first tells the IR work what the fragment actually has to preserve.
 
 ### Task R-0448
 
@@ -1267,7 +1296,15 @@ these new evidence gates.
    fragment boundary stays a gate, with scope growth only through R-0450's
    named transforms. Dependencies: R-0450 (the IR), R-0004 (receipts),
    R-0440 (the independence field ships inline here as its first consumer
-   if the full model has not landed). On merge, TRUSTED_COMPUTING_BASE.md
+   if the full model has not landed), and **R-0459 for the credibility gate
+   specifically** — measured 2026-07-31: `vc_suite` produces *no* linear
+   runtime-safety obligations at all, and `elf_header`/`crypto_verify` produce
+   exactly one badged row between them, `rand.random_range#div0`, which is a
+   stdlib divisor obligation rather than anything the flagship itself asserts.
+   Every family generated today is arithmetic (R-0459's diagnosis), so the
+   flagship row this criterion asks for cannot exist until non-arithmetic
+   families do. Do not read the criterion as merely un-run: it is currently
+   unsatisfiable. On merge, TRUSTED_COMPUTING_BASE.md
    records both trust directions: agreement reduces kernel-soundness
    trust; bridge trust is untouched until realization (R-0449).
 
@@ -5295,9 +5332,18 @@ every attestation carry its own re-check procedure.
 `proved_by_two_kernels` currently fuses two unrelated facts into one string: how a claim
 was established, and how many independent implementations established it. Fused, it
 reads stronger than it is. Replace it with `strength` (per attestation) and
-`independence` (`implementations`, `foundations`, `bridge`), plus `statable_in` /
-`proved_in` for portability, and demote the composite name to a display label over the
-tuple as R-0440 requires.
+`independence`, plus `statable_in` / `proved_in` for portability, and demote the composite
+name to a display label over the tuple as R-0440 requires.
+
+**Partially landed — scope this task to the remainder.** R-0448's spike already ships the
+independence coordinate as `independent_of` in the VC artifact
+(`Concrete/Report/Report.lean:3895`), with four fields rather than the three sketched here:
+`spec_formalization`, `kernel_implementation`, `kernel_foundations`, `bridge`. Per-kernel
+receipts carrying kernel, version, verdict, `lowering_agreed` and a replay command also
+exist, and the composite string is already display-only in the artifact. What remains is
+the `strength` coordinate, `statable_in` / `proved_in`, and removing the composite from
+the *human report* line (`Main.lean:1677` still intercalates it), plus the `keep`/`attest`
+additions below.
 
 Two additions the current ledger lacks. `keep`: retain the certificate artifact, because
 "coqc exited 0 at time T on machine M" is neither re-checkable nor shippable in a proof
@@ -5740,6 +5786,19 @@ resolution rather than semantics. Sketch both before committing.
 Exit criterion names rows, not a count: a bare "two rows discharged" is satisfiable by
 two rewriting arguments while the non-arithmetic ceiling does not move at all.
 
+**Priority argument, from the only fault this arc has actually caught.** R-0448 added two
+independent kernels and, to date, kernel agreement has surfaced zero defects — every
+disagreement observed was synthetic, injected by the gate's own mutation. The one real
+fault the work found was `Z.div` vs `Z.quot` disagreeing at `(-7)/2`, and it was found by
+`--report core-semantics-diff`: a *differential* test against an independent evaluator, not
+by a second kernel. That is the expected result rather than bad luck. Adding kernels buys
+independence on kernel implementation and kernel foundations — the axes where failure was
+already least likely — and buys nothing on the bridge, where our own code is the thing
+that can be wrong. So the differential surfaces (`core-semantics-diff`, `bridge-check`,
+`lowering-agreement`) and the rows in this register are where fault-finding actually lives,
+and they should outrank prover count N+1 when the two compete for the same week. Kernel
+diversity is for the auditor who does not trust Lean; it is not a bug-finding strategy.
+
 ## Phase 14: Compiler Soundness Bridge
 
 Goal: move the flagship-used `Core -> ProofCore` rules from "extracts to the
@@ -6134,10 +6193,25 @@ give each transformation a soundness register row.
 
 The current lowering fuses three jobs into string templates plus an exit code: how to say
 the obligation, how to try to prove it, and how to believe the answer. The defects follow
-from that fusion. `div`/`mod` are excluded because the operator table can express only
-infix forms and `Z.quot` is prefix — the code comment says so. Spec-function calls are
-dropped because there are no uninterpreted symbols. The tactic is hardcoded, so `nia` is
-unreachable.
+from that fusion.
+
+`div`/`mod` sub-terms are dropped from the prover lowering (`exprToProver`,
+`Concrete/Report/ReportObligations.lean:930`, "`div`/`mod` dropped as in `toLeanProp`" —
+the comment states the fact without a reason). The operator table is infix-only, which is
+why a prefix form has nowhere to go; note this is a limit of the *table*, not of the
+targets, since `CoreExtract.lean:96` renders the same operators as prefix `Z.quot`/`Z.rem`
+in the extraction path. The divisor-nonzero *obligation* is unaffected and does flow
+through — only div/mod appearing inside a larger expression is lost.
+
+Spec-function calls are dropped because there are no uninterpreted symbols.
+
+The tactic is hardcoded **per driver**, so reaching a different one costs a cloned driver.
+This branch measured that cost rather than predicting it: `rocqNiaLowering`
+(`ReportObligations.lean:1277`) exists solely to reach `nia`, duplicating the whole
+`ProverLowering` record to change one word in a proof script, and
+`isabelleSmtReplayLowering` (`:1344`) is a third clone. Four drivers now differ mostly in
+a binop column and a tactic name. That is the argument for `tactics` (ordered, budgeted)
+being a driver *field* instead of a template literal.
 
 Adopt the Why3 shape: a typed term IR (sorts including bitvectors, operators carrying
 arity *and* fixity, binders, uninterpreted symbols) plus goal-to-goal transformations

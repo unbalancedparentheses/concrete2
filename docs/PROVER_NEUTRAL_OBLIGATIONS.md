@@ -195,7 +195,8 @@ argument. Written down so the choice is revisitable instead of invisible.
 
 The original justification given for the two-speed model was "`lia` cannot see through
 `eval`". That is a claim about `lia`, and it was the wrong argument. Measured against
-cvc5 1.3.4 and z3:
+cvc5 and z3 (see the version note below — more than one cvc5 is reachable here, so the
+gate now prints the one it ran):
 
 | goal | proved? | Alethe certificate? |
 |---|---|---|
@@ -230,8 +231,16 @@ case analysis — so the route is unchanged; only the reason is now correct.
 
 Watch item, gate-locked in `check_multi_kernel.sh`: if Alethe gains datatype support,
 refinement and exhaustiveness both become *certifiably* automatic, and the plan should
-move them earlier. Measured on cvc5 1.3.4; stated as a version fact, not a permanent
-one.
+move them earlier. Stated as a version fact, not a permanent one.
+
+**Version provenance.** This finding was first recorded against cvc5 1.3.4, and
+re-measured 2026-07-31 on **cvc5 1.3.2** — the build `nix develop .#provers` actually
+pins — where every row above reproduces unchanged. The discrepancy matters more than the
+number: three cvc5 builds are reachable from this repo (the provers shell; Isabelle's
+bundled `CVC5_SOLVER`, measured at 1.2.0; and whatever a contributor has on PATH), and the
+gate resolves `CVC5_SOLVER:-$(command -v cvc5)`. A version-scoped claim whose gate does not
+report the version it ran cannot be audited, so the gate now prints `cvc5 under test:`
+with the resolved path. Cite versions from that line rather than from memory.
 
 ### 2. Deep vs shallow embedding: RESOLVED by measurement — use both, for disjoint jobs
 
