@@ -186,6 +186,52 @@ latent `omega` bug. That is a cost-and-unmeasured-risk argument, **not** a measu
 independence argument — divergence measured zero for Rocq too. Stating it honestly is
 what keeps the per-PR/periodic split from looking arbitrary.
 
+## Open questions — recorded because they are not settled
+
+These are places where the architecture above made a choice by default rather than by
+argument. Written down so the choice is revisitable instead of invisible.
+
+### 1. Is the two-speed model too pessimistic? (test this first — cheapest to resolve)
+
+The claim above is: arithmetic obligations are *decided*, non-arithmetic ones are
+*proved* by hand, because `lia` cannot see through `eval`.
+
+That is true of `lia`. It is **not** obviously true of a modern SMT solver: cvc5 and z3
+have native algebraic-datatype, array and quantifier support. Why3's
+`eliminate_algebraic` exists precisely because many targets *lack* datatypes — but the
+solvers already wired here do not.
+
+So a chunk of what this document files as hand-proof work — functional refinement over
+datatypes, parser round-trips — may be **automatically dischargeable** by routing to
+cvc5 with an ADT encoding rather than compiling datatypes away. If so, refinement moves
+from the far end of the plan to near the non-arithmetic milestone, which is a material
+change to sequencing.
+
+Untested. The experiment is half a day: hand cvc5 a datatype refinement goal directly
+and see whether it closes. Do that before committing to the hand-proof tier.
+
+### 2. Deep or shallow embedding for non-arithmetic proofs?
+
+This document privileges the **deep** embedding (`PExpr` plus `eval`) as the substrate,
+because that is where the existing theorems live. But the **shallow** embedding —
+`CoreExtract`'s Gallina functions — is generally *easier to prove about*, since you
+reason about a function rather than about an interpreter applied to a term. Verified
+compiler practice uses both, for different purposes.
+
+Choosing wrong is expensive: the second `eval` port is the largest single item in the
+plan, and it only pays off if deep is the right substrate. Neither option has been
+argued here; deep won by inertia.
+
+### 3. Proof UX is absent from this architecture
+
+Nothing above addresses what it is like to *write* a proof against this system:
+~30s/goal on the Isabelle path, no counterexample surfaced from a failed obligation, and
+a failure that reports `unproven` without saying why. Every item in this document is
+about the integrity of evidence, none about the ergonomics of producing it.
+
+For a language that wants users rather than only auditors, that may matter more than an
+additional kernel. It is an omission, not a considered tradeoff.
+
 ## What this architecture does not claim
 
 - Not that the compiled binary is correct. Proofs are over Core; codegen is a separate

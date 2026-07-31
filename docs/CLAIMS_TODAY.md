@@ -102,6 +102,18 @@ expressions remain excluded. `PROVABLE_V1.md` is the canonical construct list.
 Every function has exactly one status: `proved`, `unbound`, `stale`, `missing`,
 `blocked`, `ineligible`, or `trusted`.
 
+**`unbound` is not `proved`, and `--report check-proofs` counts it separately.** An
+unbound link names a real theorem that really type-checks, but carries no stored
+proof-subject digest — so the freshness check would compare the current body against
+itself and could never detect a changed body. Its theorem being kernel-checked says
+nothing about whether it still describes the code.
+
+The report therefore reads `N verified, M failed; K unbound (type-checked, NOT proved)`
+rather than folding unbound into the verified count. `[policy] require-proofs` rejects
+unbound claims outright (E0612), which is where enforcement lives — a `check-proofs`
+exit of 0 with a nonzero unbound count means "nothing failed to type-check", not
+"shippable".
+
 ### What "proved" does NOT mean
 
 - Does not mean the compiled binary is correct (proof is over PExpr with unbounded integers, not the binary)

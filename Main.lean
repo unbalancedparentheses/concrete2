@@ -975,8 +975,21 @@ def rocqDischarge (goals : List (String × String)) : IO (Option (List (String �
           let r ← IO.Process.output { cmd := "coqc", args := #["-native-compiler", "no", dir ++ "/vc_rocq.v"], cwd := some dir }
           let _ ← IO.Process.output { cmd := "rm", args := #["-rf", dir] }
           -- coqc reports diagnostics on stderr; check both streams.
-          pure (if r.exitCode == 0 then .closed
-                else classifyRocqFailure (r.stdout ++ "\n" ++ r.stderr))
+          let combined := r.stdout ++ "\n" ++ r.stderr
+          -- ATTEST before believing exit 0. `coqc` exits 0 on `Admitted.` as well as
+          -- `Qed.` — verified — so the exit code alone cannot distinguish a closed proof
+          -- from a merely stated one. The emitted script ends in `Print Assumptions`,
+          -- which prints "Closed under the global context" for a Qed-closed proof and
+          -- lists the constant under "Axioms:" otherwise. An unattested exit 0 is OUR
+          -- problem (a malformed or non-closing script), never a statement about the
+          -- goal, so it classifies as `error` rather than `closed` or `refused`.
+          pure (if r.exitCode == 0 then
+                  if strContains combined "Axioms:" then
+                    .error "proof not closed: `Print Assumptions` reports axioms (admitted, not proved)"
+                  else if !strContains combined "Closed under the global context" then
+                    .error "proof unattested: no `Print Assumptions` confirmation in coqc output"
+                  else .closed
+                else classifyRocqFailure combined)
       catch e => pure (.error s!"coqc could not be run: {e}"))
     out := out ++ [(k, v)]
   return some out
@@ -1201,9 +1214,18 @@ def compileAndReport (inputPath : String) (reportType : String)
     (isaRun : Bool := false) (reqTwoKernels : Bool := false) : IO UInt32 := do
   -- The second-kernel flags only affect the multi-kernel report; warn rather than
   -- silently ignore them elsewhere (finding: silent no-op reads as "it ran").
-  if (rocqRun || isaRun) && reportType != "multi-kernel"
-     && reportType != "obligation-ledger" && reportType != "lowering-agreement" then
-    IO.eprintln s!"warning: --rocq/--isabelle only apply to `--report multi-kernel|lowering-agreement|obligation-ledger`; ignored for `--report {reportType}`"
+  -- Three cases, not two. Saying "ignored" for a report that then visibly runs coqc
+  -- misinforms about the very thing this warning exists to prevent.
+  let flagSelected := ["multi-kernel", "obligation-ledger", "lowering-agreement"]
+  -- These invoke an external prover UNCONDITIONALLY, so the flag is redundant rather
+  -- than ignored: `core-semantics-diff` discharges its equations with coqc, and
+  -- `solver-cert` corroborates with Rocq `nia`, whether or not --rocq was passed.
+  let proverAlways := ["core-semantics-diff", "solver-cert"]
+  if (rocqRun || isaRun) && !flagSelected.contains reportType then
+    if proverAlways.contains reportType then
+      IO.eprintln s!"note: `--report {reportType}` already uses an external prover unconditionally; --rocq/--isabelle are redundant here, not ignored"
+    else
+      IO.eprintln s!"warning: --rocq/--isabelle select kernels for `--report {"|".intercalate flagSelected}`; ignored for `--report {reportType}`"
   let source ← readFile inputPath
   let mainSrcMap : SourceMap := [(inputPath, source)]
   -- Interface report only needs parse + resolveFiles + summary
@@ -1790,7 +1812,15 @@ def compileAndReport (inputPath : String) (reportType : String)
                 let argStr := " ".intercalate
                   (args.map (fun v => if v < 0 then s!"({v})" else s!"{v}"))
                 let app := if argStr.isEmpty then f.name else s!"{f.name} {argStr}"
-                goals := goals ++ [s!"Goal {app} = {e}. Proof. reflexivity. Qed."]
+                -- Named lemma + `Print Assumptions` so this script attests its own
+                -- integrity like every other Rocq script we emit. rocqDischarge
+                -- requires that attestation before believing exit 0, because `coqc`
+                -- exits 0 on `Admitted.` as well as `Qed.`; an unattested script is
+                -- classified `error`, so every emitter must opt in or its results stop
+                -- counting. Uniform by construction rather than per-call-site.
+                let nm := s!"diff{goals.length}"
+                goals := goals ++
+                  [s!"Lemma {nm} : {app} = {e}. Proof. reflexivity. Qed.\nPrint Assumptions {nm}."]
           if goals.isEmpty then
             out := out ++ s!"\n  [{f.name}]  no comparable input (all {skipped} probes trapped or were unsupported)"
           else
@@ -2085,13 +2115,24 @@ def compileAndReport (inputPath : String) (reportType : String)
       let combined := result.stdout.trimAscii.toString ++ "\n" ++ result.stderr.trimAscii.toString
       let mut verified : List String := []
       let mut failed : List (String × String) := []
-      for (fn, proofName, _, _) in proofNames do
+      -- `unbound` links are deliberately INCLUDED above (kernel replay is how a link
+      -- without a stored subject earns one), but a type-checking theorem does not make
+      -- the CLAIM proved: with no stored proof-subject digest the freshness check
+      -- compares the body with itself, so nothing detects a changed body. Counting
+      -- those as "verified" is the claim outrunning its evidence — on
+      -- examples/hmac_sha256 it read "11 verified" while ProofCore was simultaneously
+      -- emitting 11 "this claim is unbound, not proved" errors. Bucketed separately so
+      -- the summary cannot say verified when it means only type-checked.
+      let mut unboundChecked : List String := []
+      for (fn, proofName, _, oblStatus) in proofNames do
         -- Check if this proof name produced an error (Lean uses backticks in error messages)
         let errNeedle := s!"`{proofName}`"
         let stderrParts := combined.splitOn errNeedle
         let hasError := stderrParts.length != 1
         if hasError then
           failed := failed ++ [(fn, proofName)]
+        else if oblStatus.canonical == "unbound" then
+          unboundChecked := unboundChecked ++ [fn]
         else
           verified := verified ++ [fn]
       -- If exit code non-zero but no specific failures found, mark all as failed
@@ -2131,7 +2172,8 @@ def compileAndReport (inputPath : String) (reportType : String)
           ",\n  \"all_checked\": ", (if failed.isEmpty && !generalFailure then "true" else "false"),
           ",\n  \"checks\": [\n", ",\n".intercalate allObjs, "\n  ],\n",
           "  \"lean_error\": ", q leanErr,
-          ",\n  \"summary\": {\"verified\": ", toString verified.length, ", \"failed\": ", toString failed.length,
+          ",\n  \"summary\": {\"verified\": ", toString verified.length,
+          ", \"unbound\": ", toString unboundChecked.length, ", \"failed\": ", toString failed.length,
           ", \"total\": ", toString (proofNames.length + ensuresThms.length), "}\n}"])
         let _ ← IO.Process.output { cmd := "rm", args := #["-rf", tmpDir.stdout.trimAscii.toString] }
         return (if failed.isEmpty && !generalFailure then 0 else 1)
@@ -2151,6 +2193,11 @@ def compileAndReport (inputPath : String) (reportType : String)
           let source := (proofNames.find? fun (f, _, _, _) => f == fn).map (·.2.2.1) |>.getD .hardcoded
           let sourceTag := if source == .registry then "registry" else "hardcoded"
           out := out ++ s!"    ✓ {fn} — {proofName} ({sourceTag})\n"
+      if !unboundChecked.isEmpty then
+        out := out ++ s!"\n  Type-checked but UNBOUND — not proved ({unboundChecked.length}):\n"
+        for fn in unboundChecked do
+          let proofName := (proofNames.find? fun (f, _, _, _) => f == fn).map (·.2.1) |>.getD "?"
+          out := out ++ s!"    ? {fn} — {proofName} (no stored proof-subject digest; add #[proof_fingerprint(\"...\")])\n"
       if !failed.isEmpty then
         out := out ++ s!"\n  Failed ({failed.length}):\n"
         for (fn, proofName) in failed do
@@ -2170,9 +2217,22 @@ def compileAndReport (inputPath : String) (reportType : String)
         out := out ++ s!"\n  Diagnostics ({checkDiags.length}):\n"
         for d in checkDiags do
           out := out ++ s!"    [{d.kind.code}] {d.function}: failure={d.failureClass}, repair={d.repairClass}\n"
+      -- Keep `N verified, M failed` CONTIGUOUS: check_proof_freshness.sh extracts
+      -- exactly that substring to compare verdicts across working directories, and
+      -- because it compares two extracted strings, breaking the pattern would make
+      -- both empty and the assertion pass VACUOUSLY rather than fail. The unbound
+      -- count is appended after, so the honest number is present without silently
+      -- disarming an existing gate.
       out := out ++ s!"\nSummary: {verified.length} verified, {failed.length} failed"
+      if !unboundChecked.isEmpty then
+        out := out ++ s!"; {unboundChecked.length} unbound (type-checked, NOT proved)"
       if generalFailure then
         out := out ++ " (general compilation error)"
+      if !unboundChecked.isEmpty then
+        -- Enforcement lives in the policy gate, which fails closed on `.unbound`
+        -- (E0612). Say so, so a reader does not mistake exit 0 here for "shippable".
+        out := out ++ "\n  NOTE: an unbound claim is not evidence. `[policy] require-proofs`"
+        out := out ++ " rejects these (E0612)."
       -- Clean up temp dir
       let _ ← IO.Process.output { cmd := "rm", args := #["-rf", tmpDir.stdout.trimAscii.toString] }
       IO.println out

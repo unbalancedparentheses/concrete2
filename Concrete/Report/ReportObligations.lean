@@ -1230,7 +1230,12 @@ def rocqLowering : ProverLowering where
     "\n".intercalate
       [ "(* second-kernel (Rocq/lia) check of a linear runtime-safety obligation *)",
         "From Stdlib Require Import ZArith.", "From Stdlib Require Import Lia.",
-        "Open Scope Z_scope.", s!"Goal {binder}{arrows}{concl}.", "Proof. lia. Qed." ]
+        "Open Scope Z_scope.", s!"Lemma vc : {binder}{arrows}{concl}.", "Proof. lia. Qed.",
+        -- ATTEST: `coqc` exits 0 on `Admitted.` too, so the exit code cannot tell a
+        -- closed proof from a stated one. `Print Assumptions` can: a Qed-closed proof
+        -- prints "Closed under the global context", an admitted one lists it under
+        -- "Axioms:". The script therefore asserts its own integrity.
+        "Print Assumptions vc." ]
   arrow := "->"
   binder := fun vars =>
     if vars.isEmpty then "" else s!"forall ({" ".intercalate vars} : Z), "
@@ -1239,7 +1244,8 @@ def rocqLowering : ProverLowering where
       ([ "(* lowering-agreement check: pinned instances of ONE obligation *)",
          "From Stdlib Require Import ZArith.", "From Stdlib Require Import Lia.",
          "Open Scope Z_scope." ]
-       ++ props.map (fun p => s!"Goal {p}.\nProof. lia. Qed."))
+       ++ props.zipIdx.map (fun (p, i) =>
+            s!"Lemma agree{i} : {p}.\nProof. lia. Qed.\nPrint Assumptions agree{i}."))
 
 /-- Isabelle/HOL driver: `lemma "ALL vars::int. h1 --> ... --> concl" by presburger`.
     `presburger` decides linear integer arithmetic in a HOL kernel — independent of
@@ -1277,7 +1283,8 @@ def rocqNiaLowering : ProverLowering where
     "\n".intercalate
       [ "(* certificate-check (Rocq/nia) of a solver-trusted nonlinear obligation *)",
         "From Stdlib Require Import ZArith.", "From Stdlib Require Import Lia.",
-        "Open Scope Z_scope.", s!"Goal {binder}{arrows}{concl}.", "Proof. nia. Qed." ]
+        "Open Scope Z_scope.", s!"Lemma vc : {binder}{arrows}{concl}.", "Proof. nia. Qed.",
+        "Print Assumptions vc." ]
 
 /-- SMT-eligible overflow obligations (the genuinely NONLINEAR ones the kernel tiers
     left open — same selection as `overflowSmtGoals`), as structured obligations so
