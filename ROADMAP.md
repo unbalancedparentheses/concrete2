@@ -5493,6 +5493,15 @@ Two families first, chosen because neither needs new logic nor the typed obligat
   Finite case analysis, decidable, closable by all three hosts. `examples/vm` is the
   corpus. This is the plumbing proof that a non-arithmetic kind flows through
   obligations, ledger, reports and policy.
+
+  Discharge it with a **kernel** (Lean `decide`, Rocq case analysis, Isabelle), not with
+  SMT — and for a measured reason, not a stylistic one. cvc5 and z3 both *prove* datatype
+  goals of this shape, but cvc5's Alethe output cannot *certify* any datatype-bearing
+  proof: a trivial ground selector goal already fails with `DUMMY_SKOLEM`. Routing here to
+  SMT would therefore yield an unreplayable `solver_trusted` verdict, violating the
+  re-check invariant, in exchange for automation a kernel supplies anyway on a decidable
+  finite problem. Locked by `check_multi_kernel.sh`; if Alethe gains datatype support that
+  gate fails and this route should be revisited.
 - **Relational (2-safety)** — constant-time and determinism via a Core-to-Core
   self-composition transform: two renamed copies, equal public inputs, assert equal
   observable trace. Not expressible as a single-execution VC at all. Bounded, so it
@@ -6162,8 +6171,23 @@ it as kernel evidence.
 Isabelle/HOL is the target, and the port is tractable by design rather than by luck:
 `PExpr`/`PVal` are simple inductive datatypes with no dependent types, partiality is
 `Option`, and recursion is fuel-structural, which is `primrec` on `nat` — the easiest case
-in a logic with no built-in general recursion. Its job afterwards is the one only it does
-well: `sledgehammer` on datatype and quantifier goals, plus `smt` proof reconstruction.
+in a logic with no built-in general recursion.
+
+**DE-PRIORITISED by measurement — read this before scheduling it.** This task was
+originally justified partly on non-arithmetic proof ergonomics: port `eval` so another
+host can prove refinement and functional-correctness properties. That justification does
+not survive the deep-vs-shallow measurement recorded in
+[docs/PROVER_NEUTRAL_OBLIGATIONS.md](docs/PROVER_NEUTRAL_OBLIGATIONS.md): per-function
+properties are *cheaper* proved against the SHALLOW extraction, because symbolic fuel in
+the deep embedding forces a case split per AST level before anything computes, and that
+cost grows with expression depth. Shallow extraction to another host is a **printer** —
+R-0455's factoring — not an `eval` port.
+
+So porting `eval` buys exactly one thing: **meta-theory in that host**, i.e. letting
+Isabelle check the preservation and transformation-soundness theorems itself. That is a
+real benefit and a much narrower one than "Isabelle can prove non-arithmetic properties",
+which the printer already delivers. Schedule this on meta-theory grounds or defer it;
+do not schedule it to unlock per-function proofs.
 
 Named risk: the `eval` port is where a subtle semantic divergence could silently weaken a
 two-host claim, so the conformance suite must be adversarial rather than illustrative.
