@@ -1021,21 +1021,50 @@ def isabelleDischarge (goals : List (String × String)) : IO (Option (List (Stri
     out := out ++ [(k, v)]
   return some out
 
+/-- Only `closed` counts as evidence: `refused` and `error` both contribute nothing
+    (and `error` is not even a statement about the goal). -/
+def closedKeysOf (r : Option (List (String × KernelVerdict))) : List String :=
+  (r.getD []).filterMap (fun (k, v) => if v == .closed then some k else none)
+
+/-- Obligation ids whose LOWERING for this driver disagreed with the reference
+    evaluator — i.e. the emitted goal does not denote the obligation. A kernel
+    closing such a goal proved something else, so it must not attest. -/
+def disagreeingKeysOf (r : Option (List (String × KernelVerdict))) : List String :=
+  (r.getD []).filterMap (fun (k, v) => if v == .refused then some k else none)
+
 /-- Run the enabled external kernels over the multi-kernel obligation goals and
-    return the VC ids each independently closed (empty when the flag is off or the
-    tool is absent). Shared by the multi-kernel report and the ledger fold so both
-    surfaces agree. -/
+    return the VC ids each independently closed, PLUS the ids whose lowering failed
+    the agreement check. Shared by the multi-kernel report, the ledger fold and the
+    release gate so every surface composes the same two facts.
+
+    Why both: closing a goal is only evidence about the OBLIGATION if the goal
+    actually denotes the obligation. Those are separate checks, and running the first
+    without the second is how a corrupted operator column earns
+    `proved_by_two_kernels` — the kernel really did close a proposition, just not this
+    one. `--report lowering-agreement` existed for this; nothing consulted it, so the
+    badge and the release gate certified lowerings they had never validated. -/
+def externalKernelFacts (modules : List Concrete.Module) (rocqRun isaRun : Bool)
+    : IO ((List String × List String) × (List String × List String)) := do
+  let rocqClosed ← if rocqRun then do
+      let r ← rocqDischarge (Report.rocqReplayGoals modules); pure (closedKeysOf r) else pure []
+  let isaClosed ← if isaRun then do
+      let r ← isabelleDischarge (Report.isabelleReplayGoals modules); pure (closedKeysOf r) else pure []
+  -- Agreement is checked with the SAME discharge path, so a malformed agreement
+  -- script reads as `error` (our bug) and never as a lowering disagreement.
+  let rocqBad ← if rocqRun then do
+      let r ← rocqDischarge (Report.rocqAgreementGoals modules); pure (disagreeingKeysOf r)
+    else pure []
+  let isaBad ← if isaRun then do
+      let r ← isabelleDischarge (Report.isabelleAgreementGoals modules); pure (disagreeingKeysOf r)
+    else pure []
+  pure ((rocqClosed, isaClosed), (rocqBad, isaBad))
+
+/-- Attestation sets with unvalidated lowerings REMOVED — the composed fact every
+    badge and gate should rest on. -/
 def externalClosedSets (modules : List Concrete.Module) (rocqRun isaRun : Bool)
     : IO (List String × List String) := do
-  -- Only `closed` counts as evidence: `refused` and `error` both contribute nothing
-  -- to the ledger (and `error` is not even a statement about the goal).
-  let closedOf (r : Option (List (String × KernelVerdict))) : List String :=
-    (r.getD []).filterMap (fun (k, v) => if v == .closed then some k else none)
-  let rocqClosed ← if rocqRun then do
-      let r ← rocqDischarge (Report.rocqReplayGoals modules); pure (closedOf r) else pure []
-  let isaClosed ← if isaRun then do
-      let r ← isabelleDischarge (Report.isabelleReplayGoals modules); pure (closedOf r) else pure []
-  pure (rocqClosed, isaClosed)
+  let ((rc, ic), (rb, ib)) ← externalKernelFacts modules rocqRun isaRun
+  pure (rc.filter (fun k => !rb.contains k), ic.filter (fun k => !ib.contains k))
 
 /-- Phase 3 #14: policy inputs derived from the ONE obligation ledger. Builds the
     discharged ledger (folding the external-SMT path when a solver-evidence stance
@@ -1086,6 +1115,9 @@ def computeBelowTwoKernels (modules : List Concrete.Module)
     (Report.overflowGoals modules ++ Report.boundsGoals modules ++ Report.divGoals modules)
   let rocqAvail ← commandAvailable "coqc"
   let isaAvail ← commandAvailable "isabelle"
+  -- externalClosedSets already excludes kernels whose lowering disagreed with the
+  -- reference evaluator, so this release gate cannot certify a kernel that closed a
+  -- different proposition than the obligation.
   let (rocqClosed, isaClosed) ← externalClosedSets modules rocqAvail isaAvail
   let mut below : List String := []
   for o in linear do
@@ -1169,7 +1201,7 @@ def compileAndReport (inputPath : String) (reportType : String)
     (isaRun : Bool := false) (reqTwoKernels : Bool := false) : IO UInt32 := do
   -- The second-kernel flags only affect the multi-kernel report; warn rather than
   -- silently ignore them elsewhere (finding: silent no-op reads as "it ran").
-  if (rocqRun || isaRun) && reportType != "multi-kernel" && reportType != "two-kernels"
+  if (rocqRun || isaRun) && reportType != "multi-kernel"
      && reportType != "obligation-ledger" && reportType != "lowering-agreement" then
     IO.eprintln s!"warning: --rocq/--isabelle only apply to `--report multi-kernel|lowering-agreement|obligation-ledger`; ignored for `--report {reportType}`"
   let source ← readFile inputPath
@@ -1521,7 +1553,7 @@ def compileAndReport (inputPath : String) (reportType : String)
       else
         IO.println (Report.vcsReport dvcs)
       return 0
-    if reportType == "two-kernels" || reportType == "multi-kernel" then
+    if reportType == "multi-kernel" then
       -- Spike (branch spike/multi-prover-evidence): the prover-neutral obligation
       -- layer. The SAME linear no-overflow obligations are discharged by Lean's
       -- in-toolchain `omega` AND by each enabled EXTERNAL kernel — Rocq's `lia`
@@ -1547,6 +1579,20 @@ def compileAndReport (inputPath : String) (reportType : String)
       let rocqRes ← if rocqRun then rocqDischarge rocqGoals else pure none
       let isaId ← if isaRun then isabelleVersionId else pure "not run (pass --isabelle)"
       let isaRes ← if isaRun then isabelleDischarge isaGoals else pure none
+      -- COMPOSITION: closing a goal is evidence about the obligation only if the goal
+      -- denotes the obligation. Both facts are computed here and the badge rests on
+      -- their conjunction. Previously `--report lowering-agreement` checked the second
+      -- fact and nothing consulted it, so a corrupted operator column still earned
+      -- `proved_by_two_kernels` — the kernel did close a proposition, just not this one.
+      let rocqBad ← if rocqRun then do
+          let r ← rocqDischarge (Report.rocqAgreementGoals parsed.modules)
+          pure (disagreeingKeysOf r)
+        else pure []
+      let isaBad ← if isaRun then do
+          let r ← isabelleDischarge (Report.isabelleAgreementGoals parsed.modules)
+          pure (disagreeingKeysOf r)
+        else pure []
+      let badOf := fun (name : String) => if name == "rocq" then rocqBad else isaBad
       let kernels : List (String × String × Bool × String × List String × Option (List (String × KernelVerdict))) :=
         [ ("rocq", "rocq:lia", rocqRun, rocqId, rocqGoals.map (·.1), rocqRes),
           ("isabelle", "isabelle:presburger", isaRun, isaId, isaGoals.map (·.1), isaRes) ]
@@ -1582,20 +1628,27 @@ def compileAndReport (inputPath : String) (reportType : String)
       -- their own lowering of the SAME obligation Expr from Concrete's single
       -- Core->VC bridge; that bridge is not diversified and stays trusted. There is
       -- no digest cross-check that the lowerings spell the same proposition.
-      out := out ++ "\n  attests: N independent kernels each accept a lowering of the OBLIGATION."
-      out := out ++ "\n  does NOT attest: that the Core->obligation lowering is faithful, nor that"
-      out := out ++ "\n                   the per-kernel lowerings spell the same proposition.\n"
+      out := out ++ "\n  attests: N independent kernels each closed a lowering of the OBLIGATION whose"
+      out := out ++ "\n           truth table matches the reference evaluator (composed here, per kernel)."
+      out := out ++ "\n  does NOT attest: that the Core->obligation lowering itself is faithful —"
+      out := out ++ "\n                   see `--report bridge-diversity` for that axis.\n"
       out := out ++ "\n  cell legend: closed | refused (kernel says no) | error (OUR script/tool broke —"
       out := out ++ "\n               NOT a kernel disagreement) | not-asked (outside fragment) |"
-      out := out ++ "\n               unavailable (no tool) | off (flag not set)\n"
+      out := out ++ "\n               unavailable (no tool) | off (flag not set)"
+      out := out ++ "\n  a kernel whose lowering DISAGREES with the reference evaluator does not attest,"
+      out := out ++ "\n  even when it closed its goal: it proved a different proposition.\n"
       if linear.isEmpty then
         out := out ++ "\n(no linear runtime-safety obligations in this file)\n"
+      let mut lowerBad := 0
       for o in linear do
         let leanOk := omegaProved.contains o.key
-        -- attesting kernels = lean (if omega closed) + externals whose cell is "closed"
+        -- Attesting kernels = lean (if omega closed) + externals that BOTH closed
+        -- their goal AND whose lowering agreed with the reference evaluator. A kernel
+        -- that closed a goal denoting something else contributes nothing.
         let attest := (if leanOk then ["lean"] else [])
           ++ kernels.filterMap (fun (name, _, en, _, em, res) =>
-                if cellOf en em res o.key == "closed" then some name else none)
+                if cellOf en em res o.key == "closed" && !(badOf name).contains o.key
+                then some name else none)
         let n := attest.length
         if n < 2 then belowTwo := belowTwo + 1
         let cls :=
@@ -1608,6 +1661,14 @@ def compileAndReport (inputPath : String) (reportType : String)
         out := out ++ s!"\n  [{o.key}]  {o.desc}"
         out := out ++ s!"\n      lean:omega = {if leanOk then "closed" else "refused"}"
         for (_, label, en, _, em, res) in kernels do out := out ++ s!"   {label} = {cellOf en em res o.key}"
+        -- Name the disqualified kernels explicitly. A silently-dropped attester would
+        -- look identical to a kernel that simply could not close the goal.
+        let disq := kernels.filterMap (fun (name, label, en, _, _, _) =>
+          if en && (badOf name).contains o.key then some label else none)
+        if !disq.isEmpty then
+          lowerBad := lowerBad + 1
+          out := out ++ s!"\n      LOWERING DISAGREES ({", ".intercalate disq}) — closed a different"
+          out := out ++ " proposition, so it does NOT attest"
         out := out ++ s!"\n      => {cls}"
       -- A kernel `error` is a defect in THIS tool (a malformed emitted script, a
       -- missing library, a broken install), never evidence about the program. Print
@@ -1617,6 +1678,10 @@ def compileAndReport (inputPath : String) (reportType : String)
         out := out ++ s!"\n\n  ERRORS ({kernelErrors.length}) — these are OUR bugs, not kernel disagreements:"
         for (label, k, d) in kernelErrors do
           out := out ++ s!"\n    {label} [{k}]: {d}"
+      if lowerBad > 0 then
+        out := out ++ s!"\n\n  LOWERING DISAGREEMENTS: {lowerBad} obligation(s) where a kernel's rendering"
+        out := out ++ "\n  does not denote the obligation. Those kernels were excluded from the badge."
+        out := out ++ "\n  Run `--report lowering-agreement` for the per-instance detail."
       -- Release gate: with --require-two-kernels, fail if any in-scope obligation
       -- did not reach ≥2 independent kernels. A genuine CI gate, not just a report.
       if reqTwoKernels && belowTwo > 0 then

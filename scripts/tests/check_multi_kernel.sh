@@ -28,8 +28,17 @@ DEMO="examples/two_kernel_demo/src/main.con"
 PASS=0; FAIL=0
 ok(){ echo "  ok   $1"; PASS=$((PASS+1)); }
 no(){ echo "  FAIL $1"; FAIL=$((FAIL+1)); }
-# assert the report line for obligation $1 contains substring $2, in output $3
-has(){ printf '%s' "$3" | grep -q -- "$2" && ok "$1: $2" || no "$1: expected '$2'"; }
+# Assert that obligation $1's OWN rows contain substring $2, in output $3.
+#
+# Row-anchored on purpose. A bare `grep "$2" <whole output>` passes when ANY
+# obligation in the file has the cell, so with several obligations it can confirm a
+# claim about the wrong row — e.g. "add_bounded: rocq:lia = closed" would pass on a
+# file where only div_safe closed. `grep -A3 "[$1]"` restricts the match to the
+# obligation's own key line and the cell/class lines that follow it.
+has(){
+  printf '%s' "$3" | grep -A3 -- "$1" | grep -q -- "$2" \
+    && ok "$1: $2" || no "$1: expected '$2' in its own row"
+}
 
 FAMILIES="examples/two_kernel_demo/src/families.con"
 
@@ -74,8 +83,18 @@ if command -v coqc >/dev/null 2>&1; then
   TMP="$(mktemp -d)"; mkdir -p "$TMP/src"
   cat > "$TMP/src/main.con" <<'EOF'
 mod probe {
+    // SEPARATE clauses on purpose. Conjoined into one #[requires], the div term drops
+    // the LEAN goal too, so the row reads `lean:omega = refused` => `unproven` and the
+    // dangerous case is never exercised. The bug this guards is a dropped Rocq goal
+    // reported as `refused` on an obligation LEAN PROVED — which looks like Rocq
+    // contradicting Lean. That needs lean = closed AND rocq = not-asked, i.e. a div
+    // hypothesis that only the Rocq lowering drops.
     #[overflow_checked]
-    #[requires(0 <= a && a <= 100 && 0 <= b && b <= 100 && a / 2 <= 50)]
+    #[requires(0 <= a)]
+    #[requires(a <= 100)]
+    #[requires(0 <= b)]
+    #[requires(b <= 100)]
+    #[requires(a / 2 <= 50)]
     fn add_with_div_hyp(a: i32, b: i32) -> i32 { return a + b; }
 }
 EOF
@@ -83,6 +102,12 @@ EOF
   # a div hypothesis is outside the fragment -> the Rocq goal is dropped, so the
   # kernel is NOT asked. Must NOT read as a false disagreement ("refused").
   has "div-hyp" "rocq:lia = not-asked" "$P"
+  # the load-bearing half: Lean DID close it, so a `refused` here would read as the
+  # second kernel contradicting the first.
+  has "div-hyp" "lean:omega = closed" "$P"
+  printf '%s' "$P" | grep -A2 "add_with_div_hyp" | grep -q "=> proved_by_lean" \
+    && ok "div-hyp: lean-proved obligation keeps its class when Rocq is not asked" \
+    || no "div-hyp should be proved_by_lean, not unproven"
   rm -rf "$TMP"
 
   echo "=== bounds + div families reach Rocq too ==="
@@ -236,6 +261,48 @@ EOF
   [ $? -eq 0 ] && ok "--rocq --isabelle is accepted" || no "--rocq --isabelle should work"
   "$COMPILER" "$DEMO" --report multi-kernel --bogus-flag >/dev/null 2>&1
   [ $? -eq 1 ] && ok "an unknown flag is still rejected" || no "unknown flags must be rejected"
+
+  echo "=== COMPOSITION: a disagreeing lowering must not earn the badge or pass the gate ==="
+  # The gate previously tested lowering-agreement and the release gate as SEPARATE
+  # assertions, never a corrupted lowering against the gate — so the composition hole
+  # was invisible: agreement caught the corruption, and the badge/gate never asked it.
+  # This mutates the Rocq operator column (<= rendered as <), rebuilds, and asserts the
+  # badge drops that kernel AND --require-two-kernels fails. Same shape as the original
+  # finding: a surface asserting more than it checked.
+  #
+  # HEAVY (one rebuild). Skipped unless MULTI_KERNEL_MUTATE=1, matching the
+  # nightly-only convention of check_gate_mutation_coverage.sh.
+  if [ "${MULTI_KERNEL_MUTATE:-0}" = "1" ]; then
+    MUT="Concrete/Report/ReportVC.lean"
+    cp "$MUT" "$MUT.compose.bak"
+    awk '/^def obBinOpRocq/{f=1} f&&/\.leq => some \("<=", false\)/{sub(/some \("<=", false\)/, "some (\"<\", false)"); f=0} {print}' \
+      "$MUT.compose.bak" > "$MUT"
+    if ! grep -q 'some ("<", false) | .lt' "$MUT"; then
+      no "composition mutation did not apply (obBinOpRocq shape changed?)"
+      cp "$MUT.compose.bak" "$MUT"; rm -f "$MUT.compose.bak"
+    else
+      rm -rf .concrete-cache
+      if lake build >/dev/null 2>&1; then
+        MB="$("$COMPILER" "$FAMILIES" --report multi-kernel --rocq 2>/dev/null)"
+        printf '%s' "$MB" | grep -q "LOWERING DISAGREES" \
+          && ok "corrupted lowering is NAMED in the multi-kernel report" \
+          || no "multi-kernel report should name the disagreeing lowering"
+        printf '%s' "$MB" | grep -A4 "add_bounded" | grep -q "proved_by_two_kernels" \
+          && no "badge still claims two kernels on a disagreeing lowering" \
+          || ok "badge drops the disagreeing kernel (no proved_by_two_kernels)"
+        "$COMPILER" "$FAMILIES" --report multi-kernel --rocq --require-two-kernels >/dev/null 2>&1
+        [ $? -eq 1 ] && ok "--require-two-kernels FAILS on a disagreeing lowering" \
+                      || no "release gate must not pass a disagreeing lowering"
+      else
+        no "composition mutation broke the build"
+      fi
+      cp "$MUT.compose.bak" "$MUT"; rm -f "$MUT.compose.bak"
+      rm -rf .concrete-cache
+      lake build >/dev/null 2>&1 || no "restore rebuild failed"
+    fi
+  else
+    echo "  (skipped — set MULTI_KERNEL_MUTATE=1; needs two rebuilds)"
+  fi
 
   echo "=== verdict classification: 'refused' vs 'error' rests on real coqc markers ==="
   # The classifier calls a nonzero coqc exit `refused` ONLY on a tactic-failure

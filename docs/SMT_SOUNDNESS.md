@@ -112,8 +112,8 @@ reconstructs a linear goal and fails on a nonlinear one — including the trivia
 | solver | provenance | linear goal | nonlinear goal |
 |---|---|---|---|
 | z3 4.4.0pre | bundled with Isabelle for reconstruction | reconstructs | fails |
-| cvc5 | `CVC5_SOLVER`, Alethe proofs | reconstructs | fails |
-| veriT 2021.06.2 | wired via `flake.nix` (`VERIT_SOLVER`) | reconstructs | fails |
+| cvc5 | bundled, via `CVC5_SOLVER` | reconstructs | fails |
+| veriT 2021.06.2 | bundled, via `ISABELLE_VERIT` | reconstructs | fails |
 
 The SMT path exists *precisely* for the nonlinear VCs the kernel tiers cannot close.
 So replay cannot currently upgrade them, and `solver_checked` remains the ceiling for
@@ -124,9 +124,13 @@ any goal that becomes replayable graduates on its own. A gate assertion locks th
 limitation, so if Isabelle gains nonlinear reconstruction it fails loudly and tells
 us the ceiling has moved.
 
-Note that Isabelle's nix package does **not** ship veriT, despite shipping z3 for
-reconstruction — `VERIT_SOLVER` is empty by default, silently making `smt (verit)`
-unavailable. `flake.nix` points it at nixpkgs' veriT.
+All three proof-producing solvers come **bundled** with Isabelle's nix package; no
+flake wiring is needed. One trap worth recording, because it cost a wrong conclusion
+here: `isabelle getenv VERIT_SOLVER` returns *empty*, which reads as "veriT is
+missing." It is not — the component variable Isabelle actually reads is
+`ISABELLE_VERIT`, and `contrib/verit-2021.06.2-rmx-3` is bundled and registered in
+`etc/components`. Verified by running `smt (verit)` under a plain
+`nix shell nixpkgs#isabelle`, where it closes a linear goal oracle-free.
 
 ## How a solver bug affects each claim class
 

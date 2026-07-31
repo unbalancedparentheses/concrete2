@@ -51,19 +51,17 @@
               coq                # independent CIC kernel (coqc/lia)
               coqPackages.stdlib # Rocq 9.0 stdlib (ZArith, Lia) — split out of coq-core
               isabelle           # independent HOL kernel (presburger) — foundational independence
-              # Certificate-replay toolchain (see docs/SMT_SOUNDNESS.md). These make a
+              # Certificate-replay toolchain (see docs/SMT_SOUNDNESS.md). Makes a
               # solver's PROOF checkable rather than its verdict merely corroborated.
-              veriT              # Alethe-proof-producing SMT solver for Isabelle's `smt` method
-              cvc5               # Alethe-proof-producing SMT solver (newer than Isabelle's bundled one)
               drat-trim          # DRAT/LRAT checker for bit-blasted (SAT) certificates
             ]);
-            # Isabelle locates SMT solvers through these. Its nix package ships z3
-            # 4.4.0pre (the version its reconstruction supports) but NOT veriT, so
-            # `smt (verit)` is unavailable unless we point it at one.
-            shellHook = ''
-              export VERIT_SOLVER="${pkgs.veriT}/bin/veriT"
-              export ISABELLE_VERIT="${pkgs.veriT}/bin/veriT"
-            '';
+            # No veriT/cvc5 here on purpose. Isabelle's nix package already bundles
+            # `contrib/verit-2021.06.2-rmx-3`, registers it in etc/components, and sets
+            # ISABELLE_VERIT — verified by running `smt (verit)` under plain
+            # `nix shell nixpkgs#isabelle`, where it closes a linear goal oracle-free.
+            # (`VERIT_SOLVER` is empty there, which is misleading: the component
+            # variable Isabelle actually reads is ISABELLE_VERIT.) cvc5 likewise comes
+            # via CVC5_SOLVER, and nothing in this repo invokes it directly.
           };
         });
     };
