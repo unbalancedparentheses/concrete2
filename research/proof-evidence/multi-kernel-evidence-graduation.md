@@ -133,3 +133,30 @@ Affects main today, independent of this spike: `check_docs_drift.sh`'s
 design notes are accumulating there. Either expand the gate's doc list or
 write the convention that NOTES/research are non-normative; the former fits
 the project's drift history.
+
+RESOLVED 2026-07-31, splitting the difference on evidence rather than taste:
+`docs/NOTES/*.md` is now globbed into `PRESENT_DOCS` (all four files already
+passed the path and `--report` checks, so gating them cost nothing and stops
+the next one from drifting). `research/` stays out and is declared
+non-normative in `research/README.md` — it holds dated investigation records
+whose value is that they say what was believed *then*, and gating those would
+either force rewriting history or freeze it.
+
+## Measured status of the merge bar (2026-07-31)
+
+The criteria above were checked by running the branch, not by reading it. Full
+gate under `nix develop .#provers`: **74/74**; default shell **14/14**.
+
+| # | Criterion | Status |
+|---|---|---|
+| 1 | Status derived by composing receipts, never a coordinator | **Met in form, not in substance.** `kernelReceipts` compose the class (`Report.lean:2519`), but receipts are matched on obligation **id**, not on a subject digest — so "the same obligation" is by name. R-0454. |
+| 2 | Structured independence field | **Met**, and wider than specified: four axes, with `bridge: "no"` standing. |
+| 3 | Emitter-agreement differential, disagreement as signal | **Met.** Disagreeing kernels are excluded from the badge and named in the report. |
+| 4 | Flagship row (`hmac_sha256` / `vc_suite`) showing `proved_by_two_kernels` | **UNSATISFIABLE today.** `vc_suite` produces no linear runtime-safety obligations at all; `elf_header` and `crypto_verify` produce one badged row between them, `rand.random_range#div0` — a stdlib divisor obligation, not the flagship's own code. Every family generated today is arithmetic, so a flagship has nothing to badge. Blocked on R-0459, now recorded as a dependency of R-0448. |
+| 5 | Realization / bridge trust converted to evidence | **Not started** (R-0449 research; Register A discharge is R-0460, 0 of 4 rows). |
+| 6 | Fragment boundary is a gate | **Met.** |
+| 7 | Provers optional; absent kernel never fabricates | **Met**, and the fail-closed direction is now gated too — it previously had no assertion anywhere, since the policy checks all sat inside the isabelle-present branch. |
+
+Addendum items 1–4 above: all met, except that the composite string still
+appears in the human report line (`Main.lean:1677`) while the artifact carries
+the structured form — acceptable under "display only", tracked in R-0458.

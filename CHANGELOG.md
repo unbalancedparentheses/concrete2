@@ -67,6 +67,19 @@ mutation job confirms the kill.
 Provers are an opt-in shell (`nix develop .#provers`); the evidence gate is
 skip-if-absent, so no contributor pays the Isabelle closure for a flagged-off feature.
 
+Audited 2026-07-31 by running the evidence rather than reading it, and the audit is
+recorded where it changes decisions. Two conclusions worth carrying forward. First, the
+`require-two-kernels` fail-closed path had no assertion anywhere — every policy check sat
+inside the isabelle-present branch, so the direction that matters was untested in both
+shells; it is now gated in the prover-absent branch. Second, kernel agreement has surfaced
+no real defects on this arc, while the one real fault (`Z.div` vs `Z.quot` at `(-7)/2`)
+came from `--report core-semantics-diff`, a differential test. Kernel diversity is
+therefore recorded throughout as a *portability* property for auditors, not a bug-finding
+strategy, and the differential surfaces plus
+[VC_BRIDGE_REGISTER.md](docs/VC_BRIDGE_REGISTER.md)'s rows are sequenced ahead of a third
+kernel. As-built-versus-as-specified for the whole layer is tabulated in
+[PROVER_NEUTRAL_OBLIGATIONS.md](docs/PROVER_NEUTRAL_OBLIGATIONS.md).
+
 ### Early Source-Resource Certificate Sequencing
 
 _Docs/roadmap only, 2026-07-25. No compiler, report, or language behavior

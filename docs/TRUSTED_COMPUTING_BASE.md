@@ -258,10 +258,18 @@ re-audited, or invalidated, when a specific prover release is later found buggy.
 **NOT removed: the Core→obligation bridge.** Every kernel checks a lowering produced
 by ONE shared bridge. If that bridge emits the wrong proposition, all kernels agree on
 the wrong proposition and the badge still appears. Bridge trust is therefore
-untouched by adding kernels, and stays untouched until realization proofs or a
-discharged per-rule bridge register exist. The obligation record states this
-structurally rather than in prose — `independent_of.bridge` is `"no"` — so the
-disclaimer cannot quietly go stale.
+untouched by adding kernels, and stays untouched until the per-rule bridge register is
+discharged (R-0460; 0 of 4 rows today) or realization proofs exist (R-0449). The
+obligation record states this structurally rather than in prose —
+`independent_of.bridge` is `"no"` — so the disclaimer cannot quietly go stale.
+
+The asymmetry is worth stating plainly, because it inverts the intuition the badge
+creates: kernels are redundant checkers of the bridge's *output*, so they are strongest
+exactly where failure was least likely (a prover implementation being unsound) and blind
+exactly where our own code is (the lowering). Measured over this arc, kernel agreement
+found no faults; the one real fault was found by a differential test against an
+independent evaluator. Read the badge as reducing *whose* soundness you must assume, not
+as reducing *how much* is assumed.
 
 Two narrower guarantees, both gate-enforced rather than asserted:
 

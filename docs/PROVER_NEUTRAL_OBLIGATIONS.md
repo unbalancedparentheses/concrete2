@@ -293,6 +293,73 @@ about the integrity of evidence, none about the ergonomics of producing it.
 For a language that wants users rather than only auditors, that may matter more than an
 additional kernel. It is an omission, not a considered tradeoff.
 
+## As-built versus as-specified (audited 2026-07-31)
+
+Everything above is the target. The spike on `spike/multi-prover-evidence` implements
+part of it, and the difference is large enough that reading this document as a
+description of the code would mislead. Audited by running the evidence, not by reading it.
+
+| Element specified above | As built |
+|---|---|
+| Composition on `subjectDigest` (§Composition) | Matches kernels on the obligation **id**. Two kernels can attest to different content filed under one key. R-0454; called a live defect there. |
+| `checkedAgainstDigest` | No `subjectDigest` field exists in `Concrete/` yet — which is why R-0454 is a closing window, not a cleanup. |
+| Conformance-vectors clause | Not implemented; no second `eval` port exists, so the clause is currently vacuous rather than satisfied. |
+| `trustedDeps` identical | Not checked by the fold. |
+| `independence` as a 3-tuple | Ships as **four** fields (`spec_formalization`, `kernel_implementation`, `kernel_foundations`, `bridge`) in `Report.lean:3895`. The doc is the stale one here, not the code. |
+| Register A rows | Enumerated in [VC_BRIDGE_REGISTER.md](VC_BRIDGE_REGISTER.md); **0 of 4 discharged**. Owned by R-0460. |
+| Register B rows | Not started; the transformation pipeline it registers does not exist yet (R-0455). |
+| "Lowering agreed with the reference evaluator" | Real, and the best-built part — but applied to the *external* drivers only. See below. |
+
+### What scales to more languages, and what does not
+
+**Scales: the agreement technique.** Pinning a driver's own rendering to ground
+assignments, making the target decide it, and comparing against `evalBoolEnv` tests that
+a rendering *denotes the obligation* without writing a parser per target language. That
+is the difference between adding a language for O(1) trusted code and O(N). It is the
+most reusable idea the spike produced.
+
+**Does not scale: the drivers themselves.** Four `ProverLowering` records now differ
+essentially by a binop column and a hardcoded tactic, and the linear fragment is defined
+twice — `exprToProver`'s comment says "Same linear fragment as `exprToLeanProp`", which
+is a prose invariant between two functions that must agree. Language N+1 costs a cloned
+driver. This is the gap between "prover-neutral" and "N printers with a shared comment",
+and closing it is R-0455.
+
+### The technique is not yet pointed at the paths that need it most
+
+`exprToSmt` has **no** agreement check, and its verdict enters the TCB as
+`solver_trusted` — a mis-rendering there is worse than in any kernel path, because no
+kernel re-derives it. Lean's own rendering is likewise unchecked: the fold records
+`loweringAgreed := true` for Lean by construction (`Report.lean:2519`), so the reference
+evaluator validates the copies and never the original. Both are cheap, both are pre-IR,
+and both are recorded under R-0450.
+
+### Kernel count is not a fault-finding strategy
+
+Stated here because it should govern sequencing, and because the measurement is
+counterintuitive. Across this arc, kernel agreement has surfaced **zero** real defects —
+every disagreement observed was injected by the gate's own mutation test. The one real
+fault found was `Z.div` vs `Z.quot` disagreeing at `(-7)/2`, caught by
+`--report core-semantics-diff`: a differential test against an independent evaluator.
+
+That is the expected outcome, not bad luck. Adding kernels buys independence on kernel
+implementation and kernel foundations — the axes where failure was least likely — and
+buys nothing on the bridge, which is the shared component our own code writes. The
+consequence for planning: the differential surfaces (`core-semantics-diff`,
+`bridge-check`, `lowering-agreement`) and Register A rows outrank prover N+1 whenever the
+two compete. Kernel diversity exists to serve the auditor who does not trust Lean. It is
+a *portability* property, not a *bug-finding* one, and conflating the two overvalues it.
+
+### Consequence for the product thesis
+
+"Replay our claims with the kernel you trust" is better served by **statement
+portability** — a faithful printer plus a digest the auditor can recompute — than by
+running N provers in our own CI. What an auditor is owed is a faithful statement and a
+re-check procedure. Running the provers ourselves is how we test that the statement is
+faithful; it is not the deliverable. This is the same conclusion the deep-vs-shallow
+measurement reached from the other direction (§2 above: shallow extraction to another
+host is a *printer*, not an `eval` port), and the two should be read together.
+
 ## What this architecture does not claim
 
 - Not that the compiled binary is correct. Proofs are over Core; codegen is a separate

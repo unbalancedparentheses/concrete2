@@ -28,6 +28,19 @@ an open-ended aspiration.
 exists in `Concrete/Report/ReportObligations.lean` without a row here. A new
 obligation family cannot ship undocumented.
 
+**Owned by R-0460**, which discharges these rows one at a time. Not R-0449: realization
+proves a *target prover's* theories sound in its own model, which is a different axis and
+cannot close a row here. Not R-0455 either — that register asserts *transformed goal
+implies input goal*, while every row here asserts *flat goal implies runtime property*.
+
+**Why this register outranks another kernel.** Across the multi-kernel arc, agreement
+between kernels surfaced zero real defects; every disagreement seen was injected by a
+mutation test. The one real fault found — `Z.div` vs `Z.quot` disagreeing at `(-7)/2`,
+recorded in the div row below — came from a differential test against an independent
+evaluator. That is structural, not luck: kernels are redundant checkers of *this
+register's output*, so they cannot see a fault in the register itself. Each row
+discharged here removes trust that no number of kernels can remove.
+
 ## What "faithful" means for a row
 
 A lowering rule is faithful when, for every program the rule fires on:

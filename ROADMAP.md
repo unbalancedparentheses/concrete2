@@ -1235,6 +1235,37 @@ proving no old body-only or advisory-`staleDeps` path can emit
 std fingerprints in their already-landed commit; do not mix that repair with
 these new evidence gates.
 
+### Sequencing note: the prover-neutral arc (R-0450, R-0448, R-0454–R-0456, R-0458–R-0460)
+
+These tasks are entangled enough that picking one without reading the others has
+already produced rework. The order below is argued from the 2026-07-31 audit of
+`spike/multi-prover-evidence`, not from phase numbering — several of these sit in
+later phases and should still be pulled in this sequence.
+
+1. **R-0454 (neutral digest) first, because its window is closing.** Digests are
+   *stored*. No `subjectDigest` field exists in `Concrete/` yet, so migration cost is
+   zero today and rises with every artifact written. It also closes the substantive
+   gap in R-0448: kernels currently agree on an obligation *id*, so "two kernels
+   agreed" means "two kernels each closed something filed under the same key".
+2. **Point the existing agreement technique at `exprToSmt` and Lean's own rendering**
+   (recorded under R-0450). Cheap, needs no IR, and it tells the IR work what the
+   fragment actually has to preserve. The SMT path matters most: its verdict enters
+   the TCB as `solver_trusted`, and no kernel re-derives it.
+3. **R-0455 (term IR + Register B), absorbing the four drivers that landed ahead of
+   it.** Every further kernel added before this multiplies the thing being removed.
+4. **R-0460 (Register A rows).** One discharged row moves the ceiling further than a
+   third kernel does — see the priority argument recorded in that task.
+5. **R-0459 before R-0448's credibility gate**, because that gate is currently
+   unsatisfiable rather than merely un-run: every obligation family is arithmetic, so
+   flagship code produces nothing to badge.
+6. **R-0456 and R-0449 last, and only on their own merits** — meta-theory in a second
+   host, and realization — both explicitly de-prioritised or pull-gated.
+
+The governing principle, measured rather than assumed: kernel diversity is a
+*portability* property for auditors, not a bug-finding strategy. Zero real defects on
+this arc came from kernel agreement; the one real fault came from a differential test.
+Sequence accordingly.
+
 ### Task R-0450
 
 **Objective:** Unify obligation lowering into one prover-neutral IR with per-backend drivers (Why3 shape) — implementation already in progress off-repo; land it in a worktree and merge once green per the operating rules. The problem is duplicated expression lowerings of the same obligations: several answers to one question, free to drift — and drift here means the Lean proof and the external check silently prove DIFFERENT obligations, an evidence-integrity defect in the system R-0004 is hardening. Define one typed obligation IR (linear integer arithmetic, bitvectors, bools, arrays: the deliberate intersection fragment; everything else `not_supported`), one semantics (a single `eval` in Lean, the IntArith single-source discipline), lowering as small named transforms, and per-backend drivers that select which transforms run.

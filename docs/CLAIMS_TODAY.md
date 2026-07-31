@@ -157,6 +157,19 @@ What these do **not** mean:
 Each attestation is recorded as a receipt carrying the exact tool version, so a stored
 claim can be re-audited or invalidated when a prover release is found buggy.
 
+**Scope of what actually carries a badge today (measured 2026-07-31).** Every obligation
+family the compiler generates is arithmetic, so the badge lands where linear arithmetic
+does — overflow, bounds, divisor-nonzero, call-site preconditions. On the flagship
+examples this currently means one row, `rand.random_range#div0`, reached via the stdlib;
+`vc_suite` produces no linear runtime-safety obligations at all. Do not read
+"multi-kernel evidence exists" as "the flagships are multi-kernel proved". Non-arithmetic
+families are R-0459.
+
+**Kernel agreement is a portability property, not a bug-finding one.** It lets an auditor
+who does not trust Lean re-derive the claim in a kernel they do. It has surfaced no real
+defects; the faults on this path have come from the differential surfaces below, which
+compare against an independent evaluator rather than against another kernel.
+
 **Claim class:** Proved, with the independence axes stated per obligation.
 
 Related report surfaces: `--report multi-kernel`, `--report lowering-agreement`
