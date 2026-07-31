@@ -5198,6 +5198,40 @@ the smaller boundary.
  `scripts/tests/check_solver_portfolio.sh`; the gate must prove no external
  solver result can overwrite kernel evidence and that disagreement blocks
  release claims unless explicitly assumed.
+
+### Task R-0451
+
+**Objective:** Reduce what `solver_trusted` actually asks a reviewer to trust by
+making refutation *certificates* replayable in code the project controls: port a
+CDCL SAT solver to Concrete, emit and consume DRAT, and gate that a corrupted
+certificate is rejected. Staged — microsat (251 lines, upstream `26985d9b`) as
+the probe that the port shape works, then MiniSat (5,296 lines, `37dc6c67`) as
+the real solver. Fit analysis is in
+[research/workloads/port-candidates.md](research/workloads/port-candidates.md).
+
+Why it belongs in this phase rather than the port ladder: its value is a change
+to the trust model, not a workload lesson. R-0214 defines `solver_trusted` and
+`solver_cross_checked` as classes that record *which* external binary was
+believed; a Concrete checker that replays a DRAT certificate converts part of
+that belief into a mechanical check whose implementation is auditable in-tree.
+It executes after R-0214 because the class boundaries must exist before anything
+can strengthen a result inside them.
+
+**Definition of done.** The solver decides a pinned benchmark set with results
+matching MiniSat, emits DRAT for every `unsat`, and the in-tree checker accepts
+those certificates while rejecting mutated ones — certificate mutation is the
+red-team guard, and a checker that accepts a corrupted proof is the failure mode
+the gate exists to catch. Wire `scripts/tests/check_sat_certificate_replay.sh`,
+and cross-check the checker against `drat-trim` on the same certificates so a
+bug in the port cannot silently manufacture agreement.
+
+**Claim discipline.** A Concrete SAT solver produces **no kernel evidence**. Its
+own correctness rests on Concrete's compiler and Lean's kernel, so replaying a
+certificate with it yields at most a new distinctly-named class (a checked
+refutation certificate) that sits beside `solver_trusted` under R-0440's
+orthogonal-fields model — never `proved_by_lean`, and never a silent upgrade of
+an existing solver result. If the port cannot be given a class that is honestly
+weaker than kernel evidence, it does not ship.
 ### Task R-0215
 
 **Objective:** Add spec/proof mutation testing to prove evidence is load-bearing. Command surface: `concrete mutate-evidence --target <example> --json` creates controlled mutants: change a function body under a proof link, weaken or delete an `#[ensures]` clause, strengthen an impossible `#[requires]`, remove a loop invariant, alter a spec PExpr/table entry, change a theorem name, and perturb a trusted assumption. Expected outcomes must be explicit:
@@ -5632,6 +5666,40 @@ target byte claims distinct in the resulting evidence.
  prove constructor checks create reusable hypotheses, invalid constructors
  are rejected or return `Result`, raw/trusted paths do not silently inject
  facts, and obligation reports name the type invariant source.
+
+### Task R-0452
+
+**Objective:** Prove the obligation machinery survives obligation *density* on
+code that was written for speed, by porting zlib's inflate path (2,365 lines:
+`inflate.c`, `inftrees.c`, `inffast.c` plus headers, upstream `e3dc0a85`).
+Deflate (3,687 lines) is a second stage, admitted only if inflate's obligation
+story lands. Measurements and fit analysis are in
+[research/workloads/port-candidates.md](research/workloads/port-candidates.md).
+
+Why this phase and this program: a bit reader plus a 32 KB sliding window is
+almost nothing but bounds, shift, and cast obligations, over the historically
+most CVE-dense shape in systems code, with a bit-exact oracle available for any
+corpus. The existing parser/security examples show that obligations *can* be
+reported; this shows what the ledger and the discharge path do when a single
+function carries dozens of them and the code was not written to be provable. It
+executes after the invariant/frame connection (R-0257) and newtype hypotheses
+(R-0258) because those are the facts the window and table indices need.
+
+**Definition of done.** The port round-trips a pinned corpus bit-exactly against
+zlib, as a regression gate, with malformed/truncated/adversarial streams as
+negative fixtures and fuzz counterexamples persisted. Every bounds, cast, and
+overflow obligation on the bit reader and window indexing carries a status from
+R-0241's schema, and the phase report names how many reached
+`proved_by_kernel_decision` versus `runtime_checked` — the ratio is the result
+this task is measuring, and a corpus that only shows `runtime_checked` is a
+finding, not a pass.
+
+**Claim discipline.** `inffast.c` exists because of pointer-arithmetic fast
+paths. Re-expressing them as index arithmetic under checked obligations is the
+point of the exercise; admitting them as a trusted island passes the gate while
+defeating its purpose, so any trusted island must be named in the audit bundle
+with the reason it could not be indexed, and performance evidence for the port
+belongs to Phase 15.75's machinery rather than to a hand-timed claim here.
 ### Task R-0259
 
 **Objective:** Add the Phase 13 validation artifact: a runtime-safety corpus covering bounds, div/mod-zero, overflow, casts, panic/abort/assert, byte/text/path boundaries, stack/recursion, inferred invariant candidates, newtype invariant hypotheses, arithmetic-site evidence mismatches, and obligation suppression. Each case must show one of `proved`, `enforced`, `assumed`, `missing`, or `blocked`, include a negative variant, and run through policy gates plus human/JSON reports.
@@ -6841,6 +6909,38 @@ backend/toolchain boundary.
 
 **Objective:** Add the Phase 16 validation artifact: one freestanding demo project plus an MMIO/device-profile mock audit bundle. The demo must build with no hosted APIs, name allocator/startup/linker assumptions, reject hidden libc or allocation, and report `with(Device)`/`with(Mmio)`/`with(Unsafe)` evidence classes without pretending hardware behavior is proved.
 
+
+### Task R-0453
+
+**Objective:** Extend the freestanding story from "no libc" to "no libc, plus a
+device and a crash model" by porting littlefs, the power-loss-resilient flash
+filesystem: 7,633 lines (`lfs.c` 6,558 plus headers, upstream `6cb4e865`), zero
+dynamic allocation, fixed buffers, and an explicit `lfs_t` context over a
+block-device interface. Fit analysis is in
+[research/workloads/port-candidates.md](research/workloads/port-candidates.md).
+
+Why it belongs after R-0448 rather than beside it: MM0's verifier discharges this
+phase's trigger with a syscall surface and a single-bit output, which is the
+cheapest honest freestanding claim. littlefs adds the two things that claim does
+not reach — a block-device capability (the `with(Device)`/MMIO evidence decision
+this phase already owns) and correctness that spans *interrupted* runs. It should
+not start before the freestanding profiles, profile-split stdlib, and
+freestanding diagnostics exist, for the same reason R-0448 does not.
+
+**Definition of done.** The freestanding build passes the upstream test runner,
+and the red-team guard is `lfs_emubd` power-loss injection: for a recorded set of
+interruption points across mount/write/rename/remove, the filesystem must remain
+mountable with no lost committed operation, run as a regression gate rather than
+a transcript. The audit bundle reports the zero-allocation claim (no
+`with(Alloc)`), the device capability, the block-device trust boundary, and every
+remaining trusted island.
+
+**Claim discipline.** Crash consistency is a relational property across runs —
+every interrupted prefix leaves a mountable filesystem — and `#[requires]` /
+`#[ensures]` cannot state it today. The honest class is `tested_by_oracle` under
+adversarial power-loss injection, with the interruption-point coverage reported
+as a number rather than implied by a green gate. Do not describe the port as a
+verified or crash-safe filesystem; describe what the injection harness covered.
 
 ## Phase 17: Public Release Bar
 
