@@ -593,6 +593,43 @@ else
 fi
 
 echo ""
+echo "=== generated artifacts have a home, and it is not the tracked tree ==="
+# THE DECISION, recorded because it is a naming choice with a wrong answer
+# available. Generated proof artifacts written to disk go under `.build/prove/`,
+# which already exists (prove --emit-artifacts, --workspace) and is gitignored. A
+# second `.build/proofs/` was the obvious move and is the wrong one: two homes for
+# one concept is the drift this tree keeps paying for.
+#
+# Report surfaces keep printing to STDOUT. `--report lean-stubs` is a report, 15
+# call sites read it on stdout, and a report that silently writes a file is a
+# surprise — not a default worth breaking them for.
+[ -d "$ROOT_DIR/.build" ] || mkdir -p "$ROOT_DIR/.build" 2>/dev/null || true
+if grep -qE '^\.?build/' "$ROOT_DIR/.gitignore"; then
+  ok ".build/ is gitignored, so written artifacts cannot be committed by accident"
+else
+  no ".build/ is not gitignored — generated artifacts could be committed"
+fi
+
+# THE REAL RISK, and it arrives with step 5. The nine tracked Proofs.lean files are
+# HAND-WRITTEN today and hold the nine hand-written FnTables that step 5 migrates.
+# When those tables become generated, a generated artifact committed as though it
+# were hand-written erases the distinction between what a human asserted and what a
+# tool emitted — and every provenance claim rests on that distinction. Anchored to a
+# real `namespace` declaration so the generator's own string literals do not match.
+gen_tracked="$(git -C "$ROOT_DIR" grep -ln "^namespace Concrete.Proof.Generated" -- '*.lean' 2>/dev/null || true)"
+if [ -z "$gen_tracked" ]; then
+  ok "no tracked file declares the generated namespace"
+else
+  no "tracked generated artifact(s): $gen_tracked — generated output must not be committed as source"
+fi
+stub_tracked="$(git -C "$ROOT_DIR" grep -ln "^-- Lean proof stub for" -- '*.lean' 2>/dev/null || true)"
+if [ -z "$stub_tracked" ]; then
+  ok "no tracked file is an emit-lean stub"
+else
+  no "tracked emit-lean stub(s): $stub_tracked"
+fi
+
+echo ""
 echo "=== each identity sits on the body that belongs to it ==="
 # WHY THIS EXISTS. Every other identity leg checks that the EXPECTED identities are
 # PRESENT. A swap — entry A carrying B's identity and B carrying A's — leaves the

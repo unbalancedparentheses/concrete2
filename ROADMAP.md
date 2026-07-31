@@ -1081,8 +1081,23 @@ Land this task in seven explicit slices:
         generator bug — a wrong body plus a digest over that same wrong body
         agrees with itself — which is why it is a step-5 comparison key and not
         evidence;
-      - generated artifacts still go to stdout/caller-chosen paths, not
-        `.build/proofs/`;
+      - ~~generated artifacts still go to stdout/caller-chosen paths~~ RESOLVED,
+        with the naming decided rather than assumed. The canonical home for
+        generated proof artifacts written to disk is `.build/prove/`, which
+        already exists (`prove --emit-artifacts`, `--workspace`) and is
+        gitignored; a second `.build/proofs/` was the obvious move and is the
+        wrong one, because two homes for one concept is the drift this tree keeps
+        paying for. Report surfaces keep printing to STDOUT: `--report lean-stubs`
+        is a report, 15 call sites read it there, and a report that silently
+        writes a file is a surprise — not a default worth breaking them for. The
+        risk actually worth gating is different and arrives with step 5: the nine
+        tracked `Proofs.lean` files are HAND-WRITTEN today and hold the nine
+        hand-written tables, so once those become generated, a generated artifact
+        committed as though it were source erases the distinction between what a
+        human asserted and what a tool emitted — which every provenance claim
+        rests on. Gated: no tracked file declares the generated namespace or is an
+        emit-lean stub (anchored to real declarations, so the generator's own
+        string literals do not match);
       - ~~globally-polluting simp lemmas~~ FIXED: generated lemmas are tagged
         `@[proofTable]`, a scoped set declared in `Concrete/Proof/SimpAttr.lean`
         (its own module because `register_simp_attr` needs `import Lean` and must
@@ -1105,12 +1120,25 @@ Land this task in seven explicit slices:
         callee identity, which is step 6/7. A TRIPWIRE leg asserts the absence of
         any producer, so it fails the moment one appears and this coverage stops
         being owed silently;
-      - mutations now cover deleting an entry (46), duplicating an ID (38) or a
-        key (41), emitting an incorrect lemma (45), unbinding bodies from the root
-        (43), accepting an incomplete identity (44) and a body digest that does
-        not depend on the body (47). Still missing: SWAPPING an ID between two
-        entries, which duplicate-detection does not catch because both identities
-        remain present and distinct;
+      - ~~no mutations yet for deleting an entry, swapping an ID/body, duplicating
+        an ID/key, or emitting an incorrect lemma~~ FIXED: mutations cover
+        deleting an entry (46), duplicating an ID (38) or a key (41), emitting an
+        incorrect lemma (45), unbinding bodies from the root (43), accepting an
+        incomplete identity (44), a body digest that does not depend on the body
+        (47), and PERMUTING identities among entries (48).
+
+        The swap is the instructive one. A permutation survives every cheap
+        check: the SET of identities is unchanged, so "the expected identities are
+        present" passes; both remain distinct, so duplicate detection passes; and
+        the Id definition and the lookup lemma name the same symbol, so the file
+        stays internally consistent and the kernel objects to nothing. Only
+        CORRESPONDENCE catches it — the identity must sit on the body that belongs
+        to it — so that check now exists, fixture-scoped over the three same-named
+        functions whose bodies differ (+10/+20/+12), with a guard asserting those
+        bodies stay distinct or the instrument silently stops working. This is the
+        first concrete instance of the source-correspondence check step 4 owes in
+        general, and the one thing `isEvidenceBearing := by decide` structurally
+        cannot supply;
       - ~~generator coverage tests today's TWO emission surfaces by name~~
         FIXED: the number of `renderCallableId` references is pinned, so a third
         emission surface fails the gate until its author extends the coverage to
