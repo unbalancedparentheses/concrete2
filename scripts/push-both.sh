@@ -138,6 +138,12 @@ fi
 # The mirror gets exactly the primary's tip. Gates are skipped because they
 # already ran for this exact commit on the primary; running them twice proves
 # nothing and doubles the wait.
+if [ -z "$MIRROR" ]; then
+  echo "push-both: no mirror configured — $PRIMARY is the only publication target."
+  echo "push-both: published ${LOCAL:0:8}"
+  exit 0
+fi
+
 # Fast-forward ONLY, and say so before attempting it. If the mirror holds a
 # commit we do not contain, that is the exact anomaly this script was written
 # after — a mirror carrying work the primary never accepted. Report it as such
@@ -163,12 +169,6 @@ head_now="$(git rev-parse HEAD)"
 if [ "$head_now" != "$LOCAL" ]; then
   echo "push-both: NOTE HEAD has moved to ${head_now:0:8} since this run began." >&2
   echo "push-both: mirroring ${LOCAL:0:8} — the commit the primary accepted and CI validated." >&2
-fi
-
-if [ -z "$MIRROR" ]; then
-  echo "push-both: no mirror configured — $PRIMARY is the only publication target."
-  echo "push-both: published ${LOCAL:0:8}"
-  exit 0
 fi
 
 # RE-VERIFY THE PRIMARY. The CI wait is ~45 minutes, and the primary is shared:
