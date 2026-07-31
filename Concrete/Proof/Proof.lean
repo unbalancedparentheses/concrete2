@@ -2303,15 +2303,33 @@ def ctCompareExpr : PExpr :=
           (.lit (.int 1))
           (.lit (.int 0)))))
 
+/-- MIGRATED (R-0004 step 5, table 1 of 9). Identity, operational key and body
+    digest are ADOPTED FROM THE GENERATOR, not invented here: `concrete
+    examples/constant_time_tag/src/main.con --report lean-stubs` emits exactly this
+    identity and this digest.
+
+    The adoption was earned, not assumed. The hand-written `ctCompareExpr` below
+    hashes to `d0019cee08c5091696df3f7bee5ece3c`, byte-identical to the digest the
+    compiler computes from source extraction — so this table's spec provably IS the
+    compiler's extraction, and populating `entries` cannot change what any existing
+    theorem proves. That equality is asserted by a gate, not left as a comment. -/
 def ctCompareFn : PFnDef :=
-  { displayName := "ct_compare", params := ["a", "b"], body := ctCompareExpr }
+  { identity := .semantic (CallableId.ofUser "constant_time_tag" "ct_compare")
+    operationalKey := "ct_compare"
+    sourceBodyDigest := some { value := "d0019cee08c5091696df3f7bee5ece3c" }
+    displayName := "ct_compare", params := ["a", "b"], body := ctCompareExpr }
 
 /-- Function table for constant_time_tag proofs. -/
 def ctTagFnsGlobals : String → Option PFnDef
   | "ct_compare" => some ctCompareFn
   | _            => none
 
-def ctTagFns : FnTable := FnTable.ofGlobals ctTagFnsGlobals
+/-- MIGRATED: `entries` populated, so this table has a ROOT and can bear evidence.
+    `globals` is kept because `PExpr.call` still selects by string and every
+    existing proof rewrites with `ctTagFnsGlobals`; `dispatchResolves` checks the
+    two agree, so the root commits to the mapping evaluation actually uses. -/
+def ctTagFns : FnTable :=
+  { entries := #[ctCompareFn], globals := ctTagFnsGlobals }
 
 -- Keeps `simp only [eval, ctTagFns_globals, ctTagFnsGlobals]` working WITHOUT delta-unfolding
 -- the bare `ctTagFns`. The old `def ctTagFns : FnTable | "x" => …` produced equation lemmas
