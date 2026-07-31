@@ -115,6 +115,44 @@ Every function has exactly one status: `proved`, `unbound`, `stale`, `missing`,
 
 References: [PROOF_CONTRACT.md](PROOF_CONTRACT.md), [PROOF_THEOREM_SHAPES.md](PROOF_THEOREM_SHAPES.md), [PROVABLE_V1.md](PROVABLE_V1.md), [PROVABLE_SUBSET.md](PROVABLE_SUBSET.md), [PROOF_SEMANTICS_BOUNDARY.md](PROOF_SEMANTICS_BOUNDARY.md)
 
+### Independent-kernel evidence (opt-in)
+
+A runtime-safety obligation in the linear-integer fragment can be discharged by
+kernels other than Lean's. This is opt-in (`--rocq`, `--isabelle`, `--all-provers`)
+and absent tooling never fabricates an attestation.
+
+| Class | Means |
+|-------|-------|
+| `proved_by_two_kernels` | Lean's `omega` **and** one external kernel each closed a lowering of the obligation whose truth table matches an independent reference evaluator |
+| `proved_by_multi_kernel` | The same with ≥2 external kernels; with Isabelle among them the agreement spans logics (HOL, not a CIC-family type theory) |
+| `solver_checked` | An external SMT solver reported unsat **and** an independent decision procedure (Rocq `nia`) reached the same verdict — corroboration of the verdict, not of the reasoning |
+| `solver_replayed` | The solver's **proof** was reconstructed inference-by-inference in a kernel and asserted oracle-free — strictly stronger than `solver_checked` |
+
+What these do **not** mean:
+
+- **Not bridge-verified.** Every kernel checks a lowering produced by ONE shared
+  Core→obligation bridge. A mis-lowering yields unanimous agreement on the wrong
+  formula. The obligation record states this structurally as
+  `independent_of.bridge = "no"`, and [VC_BRIDGE_REGISTER.md](VC_BRIDGE_REGISTER.md)
+  enumerates that bridge rule by rule — **0 of 4 rows discharged today**.
+- **Not laundering past trust.** A `trusted` obligation stays trusted however many
+  kernels run (gate-enforced).
+- **Not sticky.** The badge is earned per run; with the kernel absent it disappears.
+- `solver_replayed` is currently **unreachable for the nonlinear VCs** the SMT path
+  exists to serve — proof reconstruction is linear-only across z3, cvc5 and veriT.
+  See [SMT_SOUNDNESS.md](SMT_SOUNDNESS.md).
+
+Each attestation is recorded as a receipt carrying the exact tool version, so a stored
+claim can be re-audited or invalidated when a prover release is found buggy.
+
+**Claim class:** Proved, with the independence axes stated per obligation.
+
+Related report surfaces: `--report multi-kernel`, `--report lowering-agreement`
+(does each kernel's rendering denote the obligation?), `--report solver-cert`,
+`--report core-semantics-diff` (differential test of Core semantics against a Rocq
+extraction), `--report bridge-check` (concrete-input fuzz of a *proved* obligation).
+Release stance: `[policy] require-two-kernels = true` (E0616, fails closed).
+
 ---
 
 ## 3. Proof Workflow and Evidence Pipeline

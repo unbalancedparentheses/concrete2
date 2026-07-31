@@ -10,6 +10,60 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Independent-Kernel Evidence (Rocq + Isabelle), Certificate Replay, And The VC-Bridge Register
+
+_Branch `spike/multi-prover-evidence`, 2026-07-31. Opt-in: nothing in the default
+dev shell or the default report changes._
+
+A runtime-safety obligation in the linear-integer fragment can now be discharged by
+kernels other than Lean's, and the resulting claim states precisely which axes of
+independence it spans. `proved_by_two_kernels` / `proved_by_multi_kernel` are
+**composed from per-kernel receipts** — each carrying kernel, exact tool version,
+verdict, whether its lowering was validated, and the command to re-derive it — rather
+than decided by a coordinator, so the class cannot drift from its evidence. A stored
+claim is therefore re-auditable, and invalidatable when a prover release is found
+buggy. Independence is recorded structurally (`independent_of`), not in prose.
+
+Five report surfaces, each answering a different question:
+
+- `--report multi-kernel` — which kernels closed this obligation (Rocq `lia`,
+  Isabelle `presburger`), with three-valued cells that keep `refused` (the kernel
+  said no) distinct from `error` (our emitted script broke) and `not-asked` (outside
+  the fragment).
+- `--report lowering-agreement` — does each kernel's *rendering* actually denote the
+  obligation? Pins the driver's own output to concrete assignments, makes the prover
+  decide it, and compares against an independent evaluator. The badge and the release
+  gate consume this: a kernel whose lowering disagrees is excluded and named.
+- `--report solver-cert` — `solver_checked` (an independent decision procedure
+  corroborated the solver's verdict) and the strictly stronger `solver_replayed` (the
+  solver's proof reconstructed in a kernel, asserted oracle-free).
+- `--report core-semantics-diff` — differential test of Core's semantics against a
+  Rocq/Gallina extraction, evaluated by Rocq's kernel against Concrete's interpreter.
+  Catches semantic modelling errors no amount of kernel agreement can, because every
+  kernel would agree on a consistently mis-lowered obligation.
+- `--report bridge-check` — fuzzes concrete inputs against a *proved* obligation.
+
+Release stance: `[policy] require-two-kernels = true` (E0616). It **fails closed** —
+if no external kernel can run, the requirement is unverified, and unverified is not
+satisfied.
+
+The bit-blasting path's certificate check is now corroborated by an independently
+implemented checker: `make test-bv-certificates` captures the CNF `bv_decide`
+bit-blasted, re-solves it, and verifies a DRAT certificate with drat-trim.
+
+Most importantly, the honest boundary is now enumerated rather than disclaimed.
+[VC_BRIDGE_REGISTER.md](docs/VC_BRIDGE_REGISTER.md) inventories the Core→obligation
+lowering rule by rule — what each emits, assumes, rejects, and the theorem that will
+discharge it — because that bridge is shared by every kernel and so cannot be checked
+by adding more of them. **0 of 4 rows are discharged**; the register is gated so a new
+obligation family cannot ship unregistered. Holes H19–H22 in
+[KNOWN_HOLES.md](docs/KNOWN_HOLES.md) record the unproven bridge, the native-code
+certificate check, the linear-only reconstruction ceiling, and one pre-existing
+decorative gate.
+
+Provers are an opt-in shell (`nix develop .#provers`); the evidence gate is
+skip-if-absent, so no contributor pays the Isabelle closure for a flagged-off feature.
+
 ### Early Source-Resource Certificate Sequencing
 
 _Docs/roadmap only, 2026-07-25. No compiler, report, or language behavior

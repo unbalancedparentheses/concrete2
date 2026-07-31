@@ -28,6 +28,71 @@ freshness (bugs 058–060 / R-0004), and ProofCore callable identity (bug 061 /
 R-0442). R-0010 will replace the legacy skip-based audit with mechanically
 checked per-bug states.
 
+### H19. The Core→obligation bridge is unproven — OPEN
+
+Every runtime-safety claim, and every `proved_by_two_kernels` badge, rests on the
+lowering that turns a function body into a proposition (`overflowObligations`,
+`boundsObligations`, `divObligations`, `callSiteObligations`). That lowering has no
+soundness proof. Adding kernels cannot detect a fault in it: all kernels check the
+SAME lowered proposition, so a mis-lowering produces unanimous agreement on the wrong
+formula.
+
+Consequence, stated concretely: if a rule emits an obligation that is *weaker* than
+the runtime property, a program can be reported `proved_by_multi_kernel` and still
+fault. If it attaches a hypothesis not actually established at that program point,
+the obligation is trivially dischargeable and the proof is vacuous.
+
+Enumerated rule-by-rule in [VC_BRIDGE_REGISTER.md](VC_BRIDGE_REGISTER.md) with the
+theorem that will discharge each: **0 of 4 rows discharged**. Partially probed today
+by `--report bridge-check` (fuzzes concrete inputs against a *proved* obligation —
+tests sufficiency on sampled inputs) and `--report core-semantics-diff` (cross-checks
+the arithmetic model). Neither covers hypothesis soundness or applicability, which
+need the proofs. `independent_of.bridge = "no"` reports this per obligation rather
+than leaving it to prose.
+
+### H20. `bv_decide`'s certificate check runs as native code — OPEN
+
+Bit-blasting proofs extend trust to `Lean.ofReduceBool` / `Lean.trustCompiler`,
+because the LRAT certificate checker executes as compiled Lean rather than by kernel
+reduction. Six named theorems in the SHA-256 refinement stack rest on this; the list
+is in [AXIOMS.md](AXIOMS.md) and gate-enforced against
+`scripts/tests/axiom_native_trust.txt`.
+
+Mitigated, not closed: `make test-bv-certificates` captures the CNF Lean bit-blasted,
+re-solves it independently, and verifies a DRAT certificate with drat-trim — a
+separately implemented checker. A single checker bug can therefore no longer carry an
+unsound bit-blasting claim unnoticed. drat-trim is itself unverified C, so this is two
+independent checkers agreeing, not one proved correct.
+
+Two closure paths: a verified checker (`cake_lpr`; not packaged in nixpkgs, and
+building it means trusting a prebuilt CakeML binary), or — fully within our control —
+decomposing those goals until kernel-reduction LRAT checking is practical, which
+AXIOMS.md records as the reason the extension exists.
+
+### H21. Nonlinear SMT results cannot be certificate-replayed — OPEN (upstream)
+
+`solver_checked` (kernel corroboration) is the ceiling for nonlinear obligations.
+`solver_replayed` requires reconstructing the solver's proof in a kernel, and
+reconstruction is **linear-only**: z3 4.4.0pre, cvc5 and veriT 2021.06.2 each
+reconstruct a linear goal and each fail on `0 ≤ a ⟹ 0 ≤ a * a` at a 120s timeout.
+Since the SMT path exists precisely for the nonlinear VCs the kernel tiers cannot
+close, `refused` in the replay column is expected, not a defect.
+
+Not fixable in this repo: it needs upstream reconstruction support or a certified
+nonlinear checker. A gate assertion locks the measured limitation, so if Isabelle
+gains nonlinear reconstruction the gate fails loudly and the class becomes reachable.
+
+### H22. `check_checked_arith.sh` is decorative — OPEN (predates the multi-kernel work)
+
+The gate-mutation harness reports `checked-arith-trap (SURVIVED — gate stayed green)`:
+replacing the checked-arithmetic call in `Concrete/Backend/EmitSSA.lean` with a plain
+`add` does **not** turn `check_checked_arith.sh` red. A gate that cannot detect the
+removal of the property it guards provides no protection.
+
+Reproduced on a clean worktree of `main`, so it is independent of the multi-kernel
+branch. Note that `check_gate_mutation_coverage.sh` runs only in the nightly job,
+which is deliberately pinned to the canonical repo, so this had never executed here.
+
 ### Policy (not a hole): HashMap/HashSet traversal is UNORDERED — permanent
 
 `for_each`/`fold` walk raw slot order: reproducible within a build, NOT a
