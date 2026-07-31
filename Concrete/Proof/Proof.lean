@@ -1842,7 +1842,10 @@ def validateVersionExpr : PExpr :=
     (.lit (.int 1))
 
 def validateVersionFn : PFnDef :=
-  { displayName := "validate_version", params := ["v"], body := validateVersionExpr }
+  { identity := .semantic (CallableId.ofUser "parse_validate" "validate_version")
+    operationalKey := "validate_version"
+    sourceBodyDigest := some { value := "bae419f8b3b19c7738eb88d25593e4a5" }
+    displayName := "validate_version", params := ["v"], body := validateVersionExpr }
 
 /-- `fn validate_msg_type(t: i32) -> i32` — checks 1 ≤ t ≤ 4. -/
 def validateMsgTypeExpr : PExpr :=
@@ -1853,7 +1856,10 @@ def validateMsgTypeExpr : PExpr :=
     (.lit (.int 1))
 
 def validateMsgTypeFn : PFnDef :=
-  { displayName := "validate_msg_type", params := ["t"], body := validateMsgTypeExpr }
+  { identity := .semantic (CallableId.ofUser "parse_validate" "validate_msg_type")
+    operationalKey := "validate_msg_type"
+    sourceBodyDigest := some { value := "40966c54506558240514467ddad025f3" }
+    displayName := "validate_msg_type", params := ["t"], body := validateMsgTypeExpr }
 
 /-- `fn validate_payload_len(plen, max_len: i32) -> i32` —
     checks 0 ≤ plen ≤ max_len. -/
@@ -1865,7 +1871,10 @@ def validatePayloadLenExpr : PExpr :=
     (.lit (.int 1))
 
 def validatePayloadLenFn : PFnDef :=
-  { displayName := "validate_payload_len", params := ["plen", "max_len"], body := validatePayloadLenExpr }
+  { identity := .semantic (CallableId.ofUser "parse_validate" "validate_payload_len")
+    operationalKey := "validate_payload_len"
+    sourceBodyDigest := some { value := "fe45cee5d4f7b03340be2c88a41de344" }
+    displayName := "validate_payload_len", params := ["plen", "max_len"], body := validatePayloadLenExpr }
 
 /-- `fn validate_total_len(actual, needed: i32) -> i32` —
     checks actual ≥ needed. -/
@@ -1875,7 +1884,10 @@ def validateTotalLenExpr : PExpr :=
     (.lit (.int 1))
 
 def validateTotalLenFn : PFnDef :=
-  { displayName := "validate_total_len", params := ["actual", "needed"], body := validateTotalLenExpr }
+  { identity := .semantic (CallableId.ofUser "parse_validate" "validate_total_len")
+    operationalKey := "validate_total_len"
+    sourceBodyDigest := some { value := "915a625bd310d8d2afe60786fdb348c3" }
+    displayName := "validate_total_len", params := ["actual", "needed"], body := validateTotalLenExpr }
 
 /-- `fn validate_checksum(expected, computed: i32) -> i32` —
     checks expected == computed. -/
@@ -1885,7 +1897,10 @@ def validateChecksumExpr : PExpr :=
     (.lit (.int 1))
 
 def validateChecksumFn : PFnDef :=
-  { displayName := "validate_checksum", params := ["expected", "computed"], body := validateChecksumExpr }
+  { identity := .semantic (CallableId.ofUser "parse_validate" "validate_checksum")
+    operationalKey := "validate_checksum"
+    sourceBodyDigest := some { value := "e55ddbb920bb3426b5820aceef127dae" }
+    displayName := "validate_checksum", params := ["expected", "computed"], body := validateChecksumExpr }
 
 /-- `fn compute_checksum(data: [i32; 8], count: i32) -> i32` —
     XOR fold of `data[0..count)` at i32 width.  Source:
@@ -1921,7 +1936,10 @@ def computeChecksumExpr : PExpr :=
         (.var "acc")))
 
 def computeChecksumFn : PFnDef :=
-  { displayName := "compute_checksum", params := ["data", "count"], body := computeChecksumExpr }
+  { identity := .semantic (CallableId.ofUser "parse_validate" "compute_checksum")
+    operationalKey := "compute_checksum"
+    sourceBodyDigest := some { value := "45fde59dd3b43fb11ac8341c064e7da7" }
+    displayName := "compute_checksum", params := ["data", "count"], body := computeChecksumExpr }
 
 /-- `fn validate_header_fields(v, t, plen, total_len, cs_expected, cs_computed) -> i32`
     — composes the five validators. Returns 0 on success or the
@@ -1942,7 +1960,10 @@ def validateHeaderFieldsExpr : PExpr :=
               (.lit (.int 0)))))))
 
 def validateHeaderFieldsFn : PFnDef :=
-  { displayName := "validate_header_fields", params := ["v", "t", "plen", "total_len", "cs_expected", "cs_computed"],
+  { identity := .semantic (CallableId.ofUser "parse_validate" "validate_header_fields")
+    operationalKey := "validate_header_fields"
+    sourceBodyDigest := some { value := "a5d590db87bc54cb19ca011b73c98346" }
+    displayName := "validate_header_fields", params := ["v", "t", "plen", "total_len", "cs_expected", "cs_computed"],
     body := validateHeaderFieldsExpr }
 
 -- Helpers for parse_header construction (PExpr layer, not Concrete source).
@@ -2010,7 +2031,10 @@ def parseHeaderExpr : PExpr :=
                 okHeaderExpr))))))
 
 def parseHeaderFn : PFnDef :=
-  { displayName := "parse_header", params := ["data", "len"], body := parseHeaderExpr }
+  { identity := .semantic (CallableId.ofUser "parse_validate" "parse_header")
+    operationalKey := "parse_header"
+    sourceBodyDigest := some { value := "2b151225316f2a5e9eb18e9ae1dc4f06" }
+    displayName := "parse_header", params := ["data", "len"], body := parseHeaderExpr }
 
 /-- Function table for parse_validate proofs. -/
 def parseValidateFnsGlobals : String → Option PFnDef
@@ -2024,7 +2048,10 @@ def parseValidateFnsGlobals : String → Option PFnDef
   | "parse_header" => some parseHeaderFn
   | _ => none
 
-def parseValidateFns : FnTable := FnTable.ofGlobals parseValidateFnsGlobals
+/-- MIGRATED (R-0004 step 5). Identity/key/digest adopted from the generator;
+    entries in canonical order (asserted by `entriesSorted`, not imposed). -/
+def parseValidateFns : FnTable :=
+  { entries := #[computeChecksumFn, parseHeaderFn, validateChecksumFn, validateHeaderFieldsFn, validateMsgTypeFn, validatePayloadLenFn, validateTotalLenFn, validateVersionFn], globals := parseValidateFnsGlobals }
 
 -- Keeps `simp only [eval, parseValidateFns_globals, parseValidateFnsGlobals]` working WITHOUT delta-unfolding
 -- the bare `parseValidateFns`. The old `def parseValidateFns : FnTable | "x" => …` produced equation lemmas
@@ -2073,7 +2100,10 @@ def fcTagExpr : PExpr :=
         (.var "acc")))
 
 def fcTagFn : PFnDef :=
-  { displayName := "compute_tag", params := ["buf"], body := fcTagExpr }
+  { identity := .semantic (CallableId.ofUser "fixed_capacity" "compute_tag")
+    operationalKey := "compute_tag"
+    sourceBodyDigest := some { value := "fe55b50d3fca30c4cffe988b2bbb7fea" }
+    displayName := "compute_tag", params := ["buf"], body := fcTagExpr }
 
 /-- `fn ring_new() -> RingBuf` — returns a fresh RingBuf with a
     16-element data array zeroed, head = 0, count = 0. -/
@@ -2086,7 +2116,10 @@ def ringNewExpr : PExpr :=
       ])
 
 def ringNewFn : PFnDef :=
-  { displayName := "ring_new", params := [], body := ringNewExpr }
+  { identity := .semantic (CallableId.ofUser "fixed_capacity" "ring_new")
+    operationalKey := "ring_new"
+    sourceBodyDigest := some { value := "b37a2218caee8f0dfa4ad3e51a28c62a" }
+    displayName := "ring_new", params := [], body := ringNewExpr }
 
 /-- `fn ring_push(rb: RingBuf, val: i32) -> RingBuf` — push `val`
     at the current head slot, advance head by 1 mod 16, bump count
@@ -2121,7 +2154,10 @@ def ringPushExpr : PExpr :=
               ])))))
 
 def ringPushFn : PFnDef :=
-  { displayName := "ring_push", params := ["rb", "val"], body := ringPushExpr }
+  { identity := .semantic (CallableId.ofUser "fixed_capacity" "ring_push")
+    operationalKey := "ring_push"
+    sourceBodyDigest := some { value := "bdd5f35bd8d52c02a06eeb4e6b6fb318" }
+    displayName := "ring_push", params := ["rb", "val"], body := ringPushExpr }
 
 /-- `fn ring_contains(rb: RingBuf, val: i32) -> i32` — scans the
     ring (up to `rb.count` entries, capped at 16) and returns 1 if
@@ -2165,7 +2201,10 @@ def ringContainsExpr : PExpr :=
           (.lit (.int 0)))))
 
 def ringContainsFn : PFnDef :=
-  { displayName := "ring_contains", params := ["rb", "val"], body := ringContainsExpr }
+  { identity := .semantic (CallableId.ofUser "fixed_capacity" "ring_contains")
+    operationalKey := "ring_contains"
+    sourceBodyDigest := some { value := "b0d47d6eb1a041583ca1a98d7ce7fca4" }
+    displayName := "ring_contains", params := ["rb", "val"], body := ringContainsExpr }
 
 /-- Function table for fixed_capacity proofs.  Each new proof
     extends this table with the function it targets. -/
@@ -2176,7 +2215,10 @@ def fixedCapacityFnsGlobals : String → Option PFnDef
   | "ring_contains" => some ringContainsFn
   | _               => none
 
-def fixedCapacityFns : FnTable := FnTable.ofGlobals fixedCapacityFnsGlobals
+/-- MIGRATED (R-0004 step 5). Identity/key/digest adopted from the generator;
+    entries in canonical order (asserted by `entriesSorted`, not imposed). -/
+def fixedCapacityFns : FnTable :=
+  { entries := #[fcTagFn, ringContainsFn, ringNewFn, ringPushFn], globals := fixedCapacityFnsGlobals }
 
 -- Keeps `simp only [eval, fixedCapacityFns_globals, fixedCapacityFnsGlobals]` working WITHOUT delta-unfolding
 -- the bare `fixedCapacityFns`. The old `def fixedCapacityFns : FnTable | "x" => …` produced equation lemmas

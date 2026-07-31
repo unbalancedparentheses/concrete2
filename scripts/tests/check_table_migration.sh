@@ -97,16 +97,20 @@ migrated elfFns examples/elf_header/src/main.con check_magic main no_such_fn
 migrated elfFns examples/elf_header/src/main.con validate_header main no_such_fn
 migrated cryptoFns examples/crypto_verify/src/main.con compute_tag main no_such_fn
 migrated cryptoFns examples/crypto_verify/src/main.con verify_message main no_such_fn
+migrated parseValidateFns examples/parse_validate/src/main.con parse_header parse_validate no_such_fn
+migrated parseValidateFns examples/parse_validate/src/main.con compute_checksum parse_validate no_such_fn
+migrated fixedCapacityFns examples/fixed_capacity/src/main.con ring_push fixed_capacity no_such_fn
+migrated fixedCapacityFns examples/fixed_capacity/src/main.con compute_tag fixed_capacity no_such_fn
 
 echo ""
 echo "=== inventory: how many of the nine are still legacy? ==="
 # A legacy table has EMPTY entries: it evaluates and has no root, so it mints
 # nothing. Counting them makes "step 5 is finished" a measurable claim.
-lean_probe "3 of the nine are migrated" "3" \
-'#eval ([ctTagFns, elfFns, cryptoFns].filter (fun t => !t.entries.isEmpty)).length'
-lean_probe "6 of the nine are still legacy" "6" \
-'#eval ([proofFns, proofFnsExt, parseValidateFns, fixedCapacityFns,
-        Examples.ProofPatterns.Proofs.combineFns,
+lean_probe "6 of the nine are migrated" "6" \
+'#eval ([ctTagFns, elfFns, cryptoFns, parseValidateFns, fixedCapacityFns,
+        Examples.ProofPatterns.Proofs.combineFns].filter (fun t => !t.entries.isEmpty)).length'
+lean_probe "3 of the nine are still legacy" "3" \
+'#eval ([proofFns, proofFnsExt,
         Examples.HmacSha256.Proofs.shaFns].filter (fun t => t.entries.isEmpty)).length'
 
 echo ""
