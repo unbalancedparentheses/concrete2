@@ -235,6 +235,20 @@ npush="$(grep -c 'git push .*"\$LOCAL:\$BRANCH"' "$ROOT_DIR/scripts/push-both.sh
   || no "expected 2 pushes naming \$LOCAL, found $npush"
 
 echo ""
+echo "=== no conflict markers are committed ==="
+# `git add -A` after a FAILED merge stages the conflicted file markers and all,
+# and the next commit records them. That happened here: a ROADMAP.md merge
+# conflicted, `git add -A` swept it up, and three markers landed in a merge
+# commit. Nothing else would have caught it — the file still parses as Markdown.
+markers="$(git -C "$ROOT_DIR" grep -lE '^(<<<<<<< |>>>>>>> |={7}$)' -- . 2>/dev/null \
+  | grep -v 'check_gate_hygiene.sh' || true)"
+if [ -z "$markers" ]; then
+  ok "no tracked file contains merge conflict markers"
+else
+  no "conflict markers committed in: $(tr '\n' ' ' <<<"$markers")"
+fi
+
+echo ""
 echo "=== the pre-push hook is installed in this clone ==="
 # Advisory, not a failure: core.hooksPath is per-clone local config and cannot be
 # versioned, so a gate cannot assert it for anyone else. It CAN tell the person
