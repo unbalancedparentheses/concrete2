@@ -233,17 +233,46 @@ refinement and exhaustiveness both become *certifiably* automatic, and the plan 
 move them earlier. Measured on cvc5 1.3.4; stated as a version fact, not a permanent
 one.
 
-### 2. Deep or shallow embedding for non-arithmetic proofs?
+### 2. Deep vs shallow embedding: RESOLVED by measurement — use both, for disjoint jobs
 
-This document privileges the **deep** embedding (`PExpr` plus `eval`) as the substrate,
-because that is where the existing theorems live. But the **shallow** embedding —
-`CoreExtract`'s Gallina functions — is generally *easier to prove about*, since you
-reason about a function rather than about an interpreter applied to a term. Verified
-compiler practice uses both, for different purposes.
+Measured in Rocq by stating the *same* obligation each way, plus one meta-theorem:
 
-Choosing wrong is expensive: the second `eval` port is the largest single item in the
-plan, and it only pays off if deep is the right substrate. Neither option has been
-argued here; deep won by inertia.
+| case | shallow | deep |
+|---|---|---|
+| per-function obligation, concrete fuel | `unfold; lia` | closes (the AST just computes) |
+| per-function obligation, **symbolic** fuel | n/a — shallow has no fuel | needs `destruct` on fuel **once per AST level** before it computes |
+| **meta-theorem** — fuel monotonicity over *all* programs | **not expressible** | `induction` on fuel, closes |
+
+They are not competitors. The cost structure is the argument:
+
+- **Deep is required for meta-theory.** A statement quantified over programs — every
+  preservation theorem, register B's transformation soundness, bridge soundness — cannot
+  be written over a shallow embedding, because shallow gives one function at a time and
+  no way to range over programs.
+- **Shallow is cheaper for per-function properties**, and the gap *grows with AST
+  depth*: symbolic fuel forces a case split per level before anything computes. Refinement,
+  constant-time and functional-correctness proofs all pay that tax deep and avoid it
+  shallow, because they are properties of one function rather than of the semantics.
+
+**The resolution.** Deep (`PExpr` + `eval`) remains the definition of meaning. Shallow
+(`CoreExtract`) is a *derived per-function view*. Each function's shallow form owes one
+obligation — *the shallow extraction agrees with `eval` on this function* — which is
+exactly what `--report core-semantics-diff` differentially tests today, and which should
+become a **register row per extraction rule** so it is proved rather than sampled. Per-
+function properties are then proved on the shallow view and transported to the deep one
+across that agreement.
+
+**Consequence, and it de-prioritises the largest item in the plan.** The second `eval`
+port was justified partly by non-arithmetic proof ergonomics. That justification does not
+survive this measurement: per-function proofs are *better* done shallow, and shallow
+extraction to another host is a **printer** (the P3 factoring), not an `eval` port. Porting
+`eval` buys exactly one thing — meta-theory *in that host*, i.e. letting Isabelle check
+the preservation theorems itself. That is a real but much narrower benefit than "Isabelle
+can prove non-arithmetic properties", which the printer already delivers.
+
+So the ordering changes: **statement portability via shallow printers comes before the
+`eval` port**, and the `eval` port should be justified on meta-theory grounds alone or
+deferred.
 
 ### 3. Proof UX is absent from this architecture
 
