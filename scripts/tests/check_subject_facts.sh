@@ -282,7 +282,11 @@ if grep -q "identityKey == id.render" "$ROOT_DIR/Concrete/Proof/Proof.lean"; the
 else
   ok "FnTable.lookupById matches on the identity itself"
 fi
-probe "lookupById distinguishes ids that differ only in type-param arity" "true" \
+# SEMANTIC SANITY CHECK, not proof that lookup avoids rendering: `render` includes
+# the type-parameter arity (`/1`), so a rendered comparison would pass this too.
+# The cross-file structural guard above is what enforces the architectural rule;
+# this only confirms the two identities are genuinely distinct subjects.
+probe "sanity: lookupById treats a differing type-param arity as a different subject" "true" \
 'def gA : CallableId := CallableId.ofUser "m" "g"
 def gB : CallableId := CallableId.ofUser "m" "g" 1
 def geA : PFnDef := { identity := .semantic gA, operationalKey := "g", displayName := "g", params := ["x"], body := .lit (.int 1) }
