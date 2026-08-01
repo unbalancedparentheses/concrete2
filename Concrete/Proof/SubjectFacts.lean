@@ -138,7 +138,24 @@ partial def contractCanonicalIn
       if allowResult && n == "result" then some "q:result"
       else match binderIndex? termBinders n with
         | some i => some s!"p:{i}"
-        | none => some s!"g{n.length}:{n}"
+        | none =>
+          -- A NON-BINDER identifier — a module constant such as `LIMIT`, or
+          -- anything else the declaration does not bind. This used to emit
+          -- `g<len>:<name>`, putting a raw source name straight into evidence
+          -- bytes: the defect class R-0004 exists to close, one layer below the
+          -- call names that `resolveCall` already fixed.
+          --
+          -- Resolved through the same resolver when it knows the name; otherwise
+          -- UNCOVERED. A textual fallback would let two different constants that
+          -- happen to share a spelling digest alike, and would silently survive a
+          -- constant being redefined elsewhere.
+          --
+          -- Semantic constant identity is the follow-up that restores coverage
+          -- for these; until it exists, refusing is the only answer that does not
+          -- overstate what the digest saw.
+          match resolveCall n with
+          | some id => some s!"k{id.render.length}:{id.render}"
+          | none    => none
   | .paren _ e       => contractCanonicalIn termBinders typeBinders capBinders allowResult resolveCall e
   | .binOp _ op l r  => do
     let a ← contractCanonicalIn termBinders typeBinders capBinders allowResult resolveCall l
@@ -244,10 +261,19 @@ def ContractFacts.ofResolved
   -- field existed here before anything read `f.loopContracts`, so an invariant
   -- edit was invisible to the subject exactly as a contract edit had been.
   let loopEnc : List (Option String) := loops.zipIdx.flatMap fun (lc, i) =>
+    -- A loop's invariant and variant may name the loop's OWN bound variables,
+    -- which are binders just as parameters are. Encoding them with only the
+    -- function's parameters in scope made `#[invariant(0 <= i && i <= 16)]` an
+    -- unresolved free identifier, so the whole subject went uncovered — measured
+    -- on constant_time_tag. The loop's binders are appended AFTER the parameters
+    -- so a parameter keeps its index and only the loop's own names extend the
+    -- scope.
+    let loopBinders := (lc.entrySubst.map Prod.fst ++ lc.body.map Prod.fst).eraseDups
+    let encL := contractCanonicalIn (params ++ loopBinders) typeParams capParams
     let invs := lc.invariants.map fun e =>
-      (enc false resolveCall e).map fun c => s!"i{i}:{c}"
+      (encL false resolveCall e).map fun c => s!"i{i}:{c}"
     let var := match lc.variant with
-      | some v => [(enc false resolveCall v).map fun c => s!"v{i}:{c}"]
+      | some v => [(encL false resolveCall v).map fun c => s!"v{i}:{c}"]
       | none   => []
     invs ++ var
   if rs.any (·.isNone) || es.any (·.isNone) || loopEnc.any (·.isNone) then

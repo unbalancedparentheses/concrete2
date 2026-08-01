@@ -41,8 +41,10 @@ probe "a TRUE and a FALSE ensures encode differently" "true" \
     != (contractCanonical (.binOp sp .eq (.ident sp "result") (.intLit sp 0)))'
 # Operand order is semantic for comparisons — a < b is not b < a.
 probe "operand order is preserved for a non-commutative comparison" "true" \
-'#eval (contractCanonical (.binOp sp .lt (.ident sp "a") (.ident sp "b")))
-    != (contractCanonical (.binOp sp .lt (.ident sp "b") (.ident sp "a")))'
+'#eval
+  let e := contractCanonicalIn ["a", "b"] [] [] false (fun _ => none)
+  (e (.binOp sp .lt (.ident sp "a") (.ident sp "b")))
+    != (e (.binOp sp .lt (.ident sp "b") (.ident sp "a")))'
 # Width variants are different OPERATIONS, not spellings.
 probe "wrapping and saturating add are different operations" "true" \
 '#eval binOpTag BinOp.wrappingAdd != binOpTag BinOp.saturatingAdd'
@@ -56,7 +58,8 @@ probe "an out-of-fragment expression does not encode" "none" \
 probe "one unencodable contract makes the whole set uncovered" "false" \
 '#eval (ContractFacts.of [] [.arrayLit sp [.intLit sp 1]]).covered'
 probe "an encodable set stays covered" "true" \
-'#eval (ContractFacts.of [] [.binOp sp .eq (.ident sp "r") (.intLit sp 1)]).covered'
+'#eval (ContractFacts.ofResolved ["r"] [] [] (fun _ => none) []
+        [.binOp sp .eq (.ident sp "r") (.intLit sp 1)]).covered'
 # "could not read the contracts" and "there are no contracts" are DIFFERENT
 # states; a digest that merges them lets an unreadable contract pass as absent.
 probe "uncovered and genuinely-absent contracts do not digest alike" "true" \
@@ -245,6 +248,31 @@ probe "a spec fn gets its own namespace" "false" \
 probe "the namespace list covers every constructor" "true" \
 '#eval CallableNamespace.all.length == 5
   && (CallableNamespace.all.map CallableNamespace.canonical).eraseDups.length == 5'
+
+echo ""
+echo "=== a free identifier is not a name in the bytes ==="
+# `.ident` used to emit `g<len>:<name>` for anything the declaration did not
+# bind — a raw source name straight into evidence, the same defect class as the
+# call names `resolveCall` already fixed, one layer down. Two constants sharing a
+# spelling would have digested alike.
+FID="tests/programs/subject_free_identifier.con"
+[ -f "$FID" ] && ok "the free-identifier fixture is committed" || no "free-identifier fixture missing"
+fid_cov=$("$CC" "$FID" --report subject-facts 2>/dev/null | grep -A7 "fid.clamp" | grep -oE "covered: (true|false)" | head -1 || true)
+[ "$fid_cov" = "covered: false" ] \
+  && ok "a contract naming an unresolved constant is UNCOVERED, not textual" \
+  || no "a free identifier is '$fid_cov' — a source name may be entering the digest"
+# LOOP BINDERS ARE BINDERS. Encoding a loop's clauses with only the function's
+# parameters in scope made `#[invariant(0 <= i && i <= 16)]` an unresolved free
+# identifier and took the whole subject out — measured on constant_time_tag.
+for ex in constant_time_tag hmac_sha256 crypto_verify elf_header parse_validate fixed_capacity; do
+  n=$("$CC" "examples/$ex/src/main.con" --report subject-facts 2>/dev/null | grep -cE "INCOMPLETE" || true)
+  [ "$n" = "0" ] || no "$ex has $n incomplete subjects"
+done
+allz=$(for ex in constant_time_tag hmac_sha256 crypto_verify elf_header parse_validate fixed_capacity; do
+  "$CC" "examples/$ex/src/main.con" --report subject-facts 2>/dev/null | grep -cE "INCOMPLETE" || true; done | paste -sd+ - | bc)
+[ "$allz" = "0" ] \
+  && ok "no flagship example has an incomplete subject (loop binders in scope)" \
+  || no "$allz incomplete subjects across the flagships"
 
 echo ""
 echo "=== loop contracts reach the subject FROM SOURCE ==="

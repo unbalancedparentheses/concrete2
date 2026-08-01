@@ -1,0 +1,6 @@
+mod fid {
+    const LIMIT: Int = 10;
+    #[ensures(result <= LIMIT)]
+    fn clamp(x: Int) -> Int { if x > 10 { return 10; } return x; }
+    pub fn main() -> Int { return clamp(3); }
+}
