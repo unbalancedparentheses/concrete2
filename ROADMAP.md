@@ -129,6 +129,44 @@ contradiction survived. [docs/KNOWN_HOLES.md](docs/KNOWN_HOLES.md) remains the a
 on hole status; this table is a reference to it and
 `scripts/tests/check_hole_status_consistency.sh` fails if the two disagree.
 
+### The next 20 tasks, in execution order
+
+**This overrides file position.** The roadmap groups tasks by PHASE — a topical grouping,
+which the header already calls a milestone label rather than a queue — so the task that
+owns a reproduced soundness hole can sit five thousand lines below the task you should do
+first. It does: R-0461 and R-0464 are in Phase 13 because that is where they belong
+topically, and they are items 2 and 3 below because that is when they should be done. The
+task bodies are deliberately NOT reordered; moving them would put runtime-safety
+obligations inside "Phase 7: Standard Library And Core APIs" and destroy the only
+organizing principle the file has. This list is the queue; the phases are the filing
+system.
+
+| # | Task | Why here |
+|---|---|---|
+| 1 | **R-0004** slices 4–7 | mid-flight; R-0454 depends on its receipt envelope, and slice 3 is the template R-0461 must reuse |
+| 2 | **R-0461** | H23 — reproduced unsoundness, fixture written, Register C makes it wiring |
+| 3 | **R-0464** | H24 — reproduced unsoundness, fixture written |
+| 4 | **R-0466** | the measurement block begins; measuring a surface that reports `proved` for trapping operations had to wait for 2–3 |
+| 5 | **R-0471** | the work R-0466 needs in order to have anything to move |
+| 6 | **R-0470** | bug 063 — capability inference manufactures an empty capability set |
+| 7 | **R-0469** | bug 065 — stack unboundedness propagation |
+| 8 | **R-0458** | strength/independence split; R-0461 is its first real consumer |
+| 9 | **R-0454** | neutral digest — closing window, alpha-normalized |
+| 10 | **R-0467** | multi-kernel on the merge commit |
+| 11 | **R-0468** | nightly reachability in this repository |
+| 12 | **R-0450** (agreement slice) | point the agreement technique at `exprToSmt` and Lean's own rendering |
+| 13 | **R-0462** | fuzz the binary — the only item testing a claim against the artifact |
+| 14 | **R-0455** | term IR + Register B, absorbing the four drivers |
+| 15 | **R-0460** | Register A rows |
+| 16 | **R-0459** | non-arithmetic families |
+| 17 | **R-0463** | Farkas-witness probe — before any further prover, never after |
+| 18 | **R-0448** | graduate the arc, once the above hold |
+| 19 | **R-0456** | eval port, on meta-theory grounds only |
+| 20 | **R-0449** | realization research, pull-gated |
+
+After 20, file order resumes at R-0440, R-0435, R-0006–R-0010. The argument for each
+position is in the sequencing note below; this table is the index, not the reasoning.
+
 ### Open holes, owners, acceptance tests
 
 | Hole | Owner | Reproduce | Done when |
@@ -193,6 +231,164 @@ bash scripts/tests/run_ci_gates_local.sh <area>       # the gates CI runs for an
 tree and restores on EXIT/INT/TERM — but bash defers a trap until the current foreground
 command returns, so a kill during `lake build` is not prompt. **After interrupting it, run
 `git status` before doing anything else.**
+
+### Sequencing note: the prover-neutral arc (R-0004, R-0450, R-0448, R-0454–R-0456, R-0458–R-0464, R-0467, R-0468)
+
+These tasks are entangled enough that picking one without reading the others has
+already produced rework. The order below is argued from the 2026-07-31 audit of
+`spike/multi-prover-evidence`, not from phase numbering — several of these sit in
+later phases and should still be pulled in this sequence.
+
+**Why this note is load-bearing, stated plainly.** The roadmap advances by FILE POSITION,
+and every task below except R-0459 sits between lines ~6100 and ~6900 — roughly five
+thousand lines after R-0004. A reader following file order does twenty other things and
+never reaches them. That is the same failure the R-0466 block's paragraph names about
+unreferenced ledger bugs, and as of 2026-08-01 it was true of **R-0464, which owns a
+reproduced soundness hole and had no stated position at all.** Anything pulled forward
+here must say so here; a task whose urgency lives only in its own body is not sequenced.
+
+0. **R-0004's remaining slices come first, and are not optional to this arc.** R-0454
+   states in its own body that it belongs immediately after them, and slice 4 (the receipt
+   envelope with typed dependency edges) is what R-0454's digest attaches to. Slices 1–3
+   have landed; 4–7 have not.
+
+   **Slice 3 is also the template for R-0461, which is why R-0004 leads rather than
+   merely precedes.** It closed bug 062 by making a not-current dependency downgrade its
+   dependent, transitively, with which statuses count decided in ONE place
+   (`ObligationStatus.isCurrentForDependents`). H23 is that identical defect one dimension
+   over: bug 062 was "dependency statuses are computed and never consulted to downgrade
+   the caller"; H23 is "hypothesis statuses are attached and never consulted to downgrade
+   the conclusion". The project found this class, fixed it once, and shipped the second
+   dimension without it. R-0461 must reuse slice 3's shape rather than invent one — if the
+   hypothesis-currency predicate and `isCurrentForDependents` ever disagree, that
+   disagreement is the next bug.
+
+1. **R-0461, because the arc is currently decorating a defect.**
+   H23: an obligation may assume a loop invariant whose preservation VC is unproven, and
+   nothing composes the two statuses — so a guaranteed out-of-bounds access reports
+   `proved_by_multi_kernel (3: lean, rocq, isabelle)` and `require-two-kernels` builds it.
+   Every surface above this inherits the error. Reproduced in
+   `examples/unsound_hypothesis/`; Register C already proves the composition, so this is
+   wiring. **Precedes the R-0466–R-0469 block.**
+
+1b. **R-0464 immediately after, on the same grounds. Also precedes the R-0466–R-0469
+   block.** H24: obligation generation restates `IntArith`'s trap conditions and states
+   them weaker, so a division reports proved and aborts on signed `MIN / -1`, and shifts
+   generate no obligation at all. Reproduced in `examples/trap_semantics_gap/`. Paired
+   with R-0461 because both are reproduced holes with failing fixtures already written,
+   and because a reader who fixes only the first still ships a compiler that reports
+   `proved` for an operation that traps.
+
+   **Why this one outranks the block while the rest of the arc does not.** The block's
+   argument is that continuous measurement of the language surface beats further agreement
+   between checkers of a model — and that argument is right about *arc work*. H24 is not
+   arc work. It is a live unsoundness in what the compiler already claims: a `proved`
+   division that aborts, and a shift family that claims nothing at all. Measurement of a
+   surface that reports `proved` for a trapping operation measures the wrong thing until
+   this is fixed. Everything from 1c down stays behind the block, because vocabulary,
+   digests and IRs are exactly the "more arc work" the block was sequenced ahead of.
+
+1c. **R-0458 alongside R-0461, because R-0461 is what finally forces it.** A claim capped
+   by an outstanding hypothesis is *proved conditional on invariant@6* — real evidence
+   naming exactly one remaining VC, which the current vocabulary cannot express. That is
+   `strength` and `independence` as separate coordinates, and R-0461 is their first real
+   consumer rather than a hypothetical one. Note the part already landed (the four-field
+   `independent_of`, per-kernel receipts, display-only composite) so this is scoped to the
+   remainder; see its body.
+2. **R-0454 (neutral digest), because its window is closing.** Digests are
+   *stored*. No `subjectDigest` field exists in `Concrete/` yet, so migration cost is
+   zero today and rises with every artifact written. It also closes the substantive
+   gap in R-0448: kernels currently agree on an obligation *id*, so "two kernels
+   agreed" means "two kernels each closed something filed under the same key".
+   Alpha-normalize before hashing — the third encoding invariant, added from the R-0464
+   cross-check, without which R-0464 invalidates every stored digest.
+3. **R-0467 and R-0468 here, not later, because everything above is unverified on the
+   merge commit without them.** The multi-kernel job runs on dispatch, schedule or a
+   label, so a regression in R-0461's or R-0464's work merges green; and the scheduled
+   jobs are pinned to `lambdaclass/concrete`, so in this repository the nightly can never
+   fire. Both are hours, not weeks, and they are what stops the rest of this list from
+   being verified by hand each time. Sequenced after the two hole fixes only because
+   there is no point automating the verification of work not yet done.
+4. **Point the existing agreement technique at `exprToSmt` and Lean's own rendering**
+   (recorded under R-0450). Cheap, needs no IR, and it tells the IR work what the
+   fragment actually has to preserve. The SMT path matters most: its verdict enters
+   the TCB as `solver_trusted`, and no kernel re-derives it.
+5. **R-0462 (fuzz the compiled binary against the safety claims).** Placed above the IR
+   and the register rows deliberately: it is the highest fault-finding value per unit of
+   work on this list, it would have caught H24 in seconds, and it is the only item here
+   that tests a claim against the ARTIFACT rather than against another model of it. Every
+   static surface reported success on `examples/trap_semantics_gap/`.
+6. **R-0455 (term IR + Register B), absorbing the four drivers that landed ahead of
+   it.** Every further kernel added before this multiplies the thing being removed.
+7. **R-0460 (Register A rows).** One discharged row moves the ceiling further than a
+   third kernel does — see the priority argument recorded in that task.
+8. **R-0459 before R-0448's credibility gate**, because that gate is currently
+   unsatisfiable rather than merely un-run: every obligation family is arithmetic, so
+   flagship code produces nothing to badge.
+9. **R-0463 (probe whether a Farkas witness extracts from `micromega`).** Timeboxed, and
+   scheduled late only because its result changes strategy rather than unblocking work: a
+   positive result deletes the case for a second kernel at the linear tier, which is where
+   multi-kernel evidence is currently deployed. Do it before any further prover, never
+   after.
+10. **R-0448 (graduate the arc) once the above hold**, and not before — its own merge bar
+   already names H23 as blocking.
+11. **R-0456 and R-0449 last, and only on their own merits** — meta-theory in a second
+   host, and realization — both explicitly de-prioritised or pull-gated.
+
+The governing principle, measured rather than assumed: kernel diversity is a
+*portability* property for auditors, not a bug-finding strategy. Zero real defects on
+this arc came from kernel agreement; the faults came from differential tests, and H23 —
+the worst of them — was found by writing a wrong program and reading the report, while
+every kernel-side surface reported success. Sequence accordingly, and note that R-0462
+(fuzz the compiled binary against the safety claims) would have caught H23 in seconds.
+
+The same principle applied one level out, added 2026-07-31: this arc strengthens claims
+the language already makes, and nothing on it widens what the language can claim or makes
+a rejection legible to the model that has to act on it. R-0459 is the first of those and
+is already sequenced above; **R-0466, R-0471, R-0470 and R-0469 are the rest and sit ahead
+of this arc by file position**, on the argument that a continuous empirical measurement of
+the language surface outranks further agreement between checkers of a model — the same
+trade R-0462 represents against R-0460. None is a substitute for the arc; all are cheaper,
+and all fail loudly in places the arc reports success.
+
+**Two exceptions, and only two: R-0461 and R-0464 precede this block.** Both own
+reproduced unsoundness — a bounds obligation reported `proved_by_multi_kernel` on a
+program that aborts, and a division reported `proved` that aborts on signed `MIN / -1`.
+The argument above holds against *arc work*; it does not hold against a compiler that
+currently reports `proved` for operations that trap, because measuring a surface in that
+state measures the wrong thing. Everything else in the arc — vocabulary (R-0458), digests
+(R-0454), CI reachability (R-0467/R-0468), the IR (R-0455), register rows (R-0460) — stays
+behind this block, which is precisely the "more arc work" it was sequenced ahead of.
+
+That block is four tasks, so state what earns each position rather than leaving the
+count to look like drift. R-0466 is the measurement. R-0471 is hours of work the
+measurement needs in order to have anything to move, and it pulls three defects out
+from behind R-0137's Phase 8 dashboard. R-0470 closes a capability-inference path that
+manufactures an empty capability set and is caught today only by a type mismatch —
+authority visibility is a pillar claim, so it is worth closing while still a false
+rejection. R-0469 is the least urgent and says so in its own body; it is here because
+its trigger is unpredictable and it must precede any stack-budget work. Two of the four
+(R-0470, R-0469) are ledger bugs that had no roadmap owner at all, which is the actual
+defect being corrected: an unreferenced ledger bug is invisible to a sequence that
+advances by file position.
+
+**R-0461 comes before all four, and file position says otherwise — read this before
+starting the block.** H23 is open, and R-0461 sits at a much later file position than
+these tasks purely because it was allocated after them. Item 0 above already places it
+ahead of the arc; it is ahead of this block too, on the one criterion that separates
+them: **R-0461 is the only item in either group where a shipped claim is currently
+false.** A guaranteed out-of-bounds access reports
+`proved_by_multi_kernel (3: lean, rocq, isabelle)` and the binary aborts. Against that,
+R-0466 is a measurement, R-0471 is legibility, R-0470 is a false *rejection* (no wrong
+code), and R-0469 is latent — no budgeted project is recursive today. A false `proved`
+outranks all four, and the block was inserted without saying so, which is the gap this
+paragraph closes rather than a change of plan.
+
+The general rule this instance illustrates, since it will recur every time an urgent
+defect gets a late ID: file position is the default order, not an argument. Where a
+later-positioned task fixes a live false claim and an earlier-positioned one does not,
+the false claim goes first, and the override is written here rather than left for the
+next reader to rediscover.
 
 ## Inherited Scheduling Constraints From Earlier Phases
 
@@ -1523,144 +1719,6 @@ cross-check needs both reports; a negative budgeted project with recursion that
 bundle consumers tolerate a non-numeric `evidence.max_stack_bytes` — the fallback
 is `"?"` today, so prefer an explicit `"unbounded"`. A mutation restoring the
 `!isRecursive c` filter must fail the gate.
-
-### Sequencing note: the prover-neutral arc (R-0004, R-0450, R-0448, R-0454–R-0456, R-0458–R-0464, R-0467, R-0468)
-
-These tasks are entangled enough that picking one without reading the others has
-already produced rework. The order below is argued from the 2026-07-31 audit of
-`spike/multi-prover-evidence`, not from phase numbering — several of these sit in
-later phases and should still be pulled in this sequence.
-
-**Why this note is load-bearing, stated plainly.** The roadmap advances by FILE POSITION,
-and every task below except R-0459 sits between lines ~6100 and ~6900 — roughly five
-thousand lines after R-0004. A reader following file order does twenty other things and
-never reaches them. That is the same failure the R-0466 block's paragraph names about
-unreferenced ledger bugs, and as of 2026-08-01 it was true of **R-0464, which owns a
-reproduced soundness hole and had no stated position at all.** Anything pulled forward
-here must say so here; a task whose urgency lives only in its own body is not sequenced.
-
-0. **R-0004's remaining slices come first, and are not optional to this arc.** R-0454
-   states in its own body that it belongs immediately after them, and slice 4 (the receipt
-   envelope with typed dependency edges) is what R-0454's digest attaches to. Slices 1–3
-   have landed; 4–7 have not.
-
-   **Slice 3 is also the template for R-0461, which is why R-0004 leads rather than
-   merely precedes.** It closed bug 062 by making a not-current dependency downgrade its
-   dependent, transitively, with which statuses count decided in ONE place
-   (`ObligationStatus.isCurrentForDependents`). H23 is that identical defect one dimension
-   over: bug 062 was "dependency statuses are computed and never consulted to downgrade
-   the caller"; H23 is "hypothesis statuses are attached and never consulted to downgrade
-   the conclusion". The project found this class, fixed it once, and shipped the second
-   dimension without it. R-0461 must reuse slice 3's shape rather than invent one — if the
-   hypothesis-currency predicate and `isCurrentForDependents` ever disagree, that
-   disagreement is the next bug.
-
-1. **R-0461, because the arc is currently decorating a defect.**
-   H23: an obligation may assume a loop invariant whose preservation VC is unproven, and
-   nothing composes the two statuses — so a guaranteed out-of-bounds access reports
-   `proved_by_multi_kernel (3: lean, rocq, isabelle)` and `require-two-kernels` builds it.
-   Every surface above this inherits the error. Reproduced in
-   `examples/unsound_hypothesis/`; Register C already proves the composition, so this is
-   wiring. **Precedes the R-0466–R-0469 block.**
-
-1b. **R-0464 immediately after, on the same grounds.** H24: obligation generation restates
-   `IntArith`'s trap conditions and states them weaker, so a division reports proved and
-   aborts on signed `MIN / -1`, and shifts generate no obligation at all. Reproduced in
-   `examples/trap_semantics_gap/`. Paired with R-0461 because both are reproduced holes
-   with failing fixtures already written, and because a reader who fixes only the first
-   still ships a compiler that reports `proved` for an operation that traps.
-1c. **R-0458 alongside R-0461, because R-0461 is what finally forces it.** A claim capped
-   by an outstanding hypothesis is *proved conditional on invariant@6* — real evidence
-   naming exactly one remaining VC, which the current vocabulary cannot express. That is
-   `strength` and `independence` as separate coordinates, and R-0461 is their first real
-   consumer rather than a hypothetical one. Note the part already landed (the four-field
-   `independent_of`, per-kernel receipts, display-only composite) so this is scoped to the
-   remainder; see its body.
-2. **R-0454 (neutral digest), because its window is closing.** Digests are
-   *stored*. No `subjectDigest` field exists in `Concrete/` yet, so migration cost is
-   zero today and rises with every artifact written. It also closes the substantive
-   gap in R-0448: kernels currently agree on an obligation *id*, so "two kernels
-   agreed" means "two kernels each closed something filed under the same key".
-   Alpha-normalize before hashing — the third encoding invariant, added from the R-0464
-   cross-check, without which R-0464 invalidates every stored digest.
-3. **R-0467 and R-0468 here, not later, because everything above is unverified on the
-   merge commit without them.** The multi-kernel job runs on dispatch, schedule or a
-   label, so a regression in R-0461's or R-0464's work merges green; and the scheduled
-   jobs are pinned to `lambdaclass/concrete`, so in this repository the nightly can never
-   fire. Both are hours, not weeks, and they are what stops the rest of this list from
-   being verified by hand each time. Sequenced after the two hole fixes only because
-   there is no point automating the verification of work not yet done.
-4. **Point the existing agreement technique at `exprToSmt` and Lean's own rendering**
-   (recorded under R-0450). Cheap, needs no IR, and it tells the IR work what the
-   fragment actually has to preserve. The SMT path matters most: its verdict enters
-   the TCB as `solver_trusted`, and no kernel re-derives it.
-5. **R-0462 (fuzz the compiled binary against the safety claims).** Placed above the IR
-   and the register rows deliberately: it is the highest fault-finding value per unit of
-   work on this list, it would have caught H24 in seconds, and it is the only item here
-   that tests a claim against the ARTIFACT rather than against another model of it. Every
-   static surface reported success on `examples/trap_semantics_gap/`.
-6. **R-0455 (term IR + Register B), absorbing the four drivers that landed ahead of
-   it.** Every further kernel added before this multiplies the thing being removed.
-7. **R-0460 (Register A rows).** One discharged row moves the ceiling further than a
-   third kernel does — see the priority argument recorded in that task.
-8. **R-0459 before R-0448's credibility gate**, because that gate is currently
-   unsatisfiable rather than merely un-run: every obligation family is arithmetic, so
-   flagship code produces nothing to badge.
-9. **R-0463 (probe whether a Farkas witness extracts from `micromega`).** Timeboxed, and
-   scheduled late only because its result changes strategy rather than unblocking work: a
-   positive result deletes the case for a second kernel at the linear tier, which is where
-   multi-kernel evidence is currently deployed. Do it before any further prover, never
-   after.
-10. **R-0448 (graduate the arc) once the above hold**, and not before — its own merge bar
-   already names H23 as blocking.
-11. **R-0456 and R-0449 last, and only on their own merits** — meta-theory in a second
-   host, and realization — both explicitly de-prioritised or pull-gated.
-
-The governing principle, measured rather than assumed: kernel diversity is a
-*portability* property for auditors, not a bug-finding strategy. Zero real defects on
-this arc came from kernel agreement; the faults came from differential tests, and H23 —
-the worst of them — was found by writing a wrong program and reading the report, while
-every kernel-side surface reported success. Sequence accordingly, and note that R-0462
-(fuzz the compiled binary against the safety claims) would have caught H23 in seconds.
-
-The same principle applied one level out, added 2026-07-31: this arc strengthens claims
-the language already makes, and nothing on it widens what the language can claim or makes
-a rejection legible to the model that has to act on it. R-0459 is the first of those and
-is already sequenced above; **R-0466, R-0471, R-0470 and R-0469 are the rest and sit ahead
-of this arc by file position**, on the argument that a continuous empirical measurement of
-the language surface outranks further agreement between checkers of a model — the same
-trade R-0462 represents against R-0460. None is a substitute for the arc; all are cheaper,
-and all fail loudly in places the arc reports success.
-
-That block is four tasks, so state what earns each position rather than leaving the
-count to look like drift. R-0466 is the measurement. R-0471 is hours of work the
-measurement needs in order to have anything to move, and it pulls three defects out
-from behind R-0137's Phase 8 dashboard. R-0470 closes a capability-inference path that
-manufactures an empty capability set and is caught today only by a type mismatch —
-authority visibility is a pillar claim, so it is worth closing while still a false
-rejection. R-0469 is the least urgent and says so in its own body; it is here because
-its trigger is unpredictable and it must precede any stack-budget work. Two of the four
-(R-0470, R-0469) are ledger bugs that had no roadmap owner at all, which is the actual
-defect being corrected: an unreferenced ledger bug is invisible to a sequence that
-advances by file position.
-
-**R-0461 comes before all four, and file position says otherwise — read this before
-starting the block.** H23 is open, and R-0461 sits at a much later file position than
-these tasks purely because it was allocated after them. Item 0 above already places it
-ahead of the arc; it is ahead of this block too, on the one criterion that separates
-them: **R-0461 is the only item in either group where a shipped claim is currently
-false.** A guaranteed out-of-bounds access reports
-`proved_by_multi_kernel (3: lean, rocq, isabelle)` and the binary aborts. Against that,
-R-0466 is a measurement, R-0471 is legibility, R-0470 is a false *rejection* (no wrong
-code), and R-0469 is latent — no budgeted project is recursive today. A false `proved`
-outranks all four, and the block was inserted without saying so, which is the gap this
-paragraph closes rather than a change of plan.
-
-The general rule this instance illustrates, since it will recur every time an urgent
-defect gets a late ID: file position is the default order, not an argument. Where a
-later-positioned task fixes a live false claim and an earlier-positioned one does not,
-the false claim goes first, and the override is written here rather than left for the
-next reader to rediscover.
 
 ### Task R-0450
 
