@@ -1582,7 +1582,13 @@ partial def prefixModuleFnNames (pfx : String) (cm : CModule) : CModule :=
 partial def elabModule (m : Module) (summary : FileSummary)
     (imports : ResolvedImports := {})
     (summaryTable : List (String × FileSummary) := [])
-    (prefixSubs : Bool := true) : Except Diagnostics CModule :=
+    (prefixSubs : Bool := true)
+    (proofModulePath : String := "")
+    (proofFnPrefix : String := "") : Except Diagnostics CModule :=
+  -- The final definition path/name used by ProofCore. Recursive elaboration
+  -- happens before `prefixModuleFnNames`, so carrying these two facts explicitly
+  -- prevents declaration facts from being keyed under the pre-prefix spelling.
+  let thisProofPath := if proofModulePath.isEmpty then m.name else proofModulePath
   -- Use pre-built summaries from FileSummary
   let userFnSigs := summary.functions
   let externSigs := summary.externFnSigs
@@ -1757,7 +1763,12 @@ partial def elabModule (m : Module) (summary : FileSummary)
         structs := subImports.structs ++ filteredStructs
         enums := subImports.enums ++ filteredEnums
         implMethodSigs := subImports.implMethodSigs ++ siblingImplMethodSigs }
-      match elabModule sub subSummary subImports summaryTable (prefixSubs := false) with
+      let childPath := thisProofPath ++ "." ++ sub.name
+      let childPrefix := if proofFnPrefix.isEmpty then sub.name
+                         else proofFnPrefix ++ "_" ++ sub.name
+      match elabModule sub subSummary subImports summaryTable
+          (prefixSubs := false) (proofModulePath := childPath)
+          (proofFnPrefix := childPrefix) with
       | .ok csub => .ok (lst ++ [{ csub with sourceFile := sub.sourceFile }])
       | .error ds => .error (Diagnostics.stampFile (ds.map fun d => { d with message := s!"in submodule '{sub.name}': {d.message}" }) sub.sourceFile)
   match cSubmodules with
@@ -1805,19 +1816,81 @@ partial def elabModule (m : Module) (summary : FileSummary)
   --
   -- Keyed by `CallableId`, not by name: two callables can share a name, and a
   -- rename must not move a subject.
+  let finalDeclName := fun (f : FnDef) (implTy : Option Ty) =>
+    let localName := match implTy with
+      | some it =>
+        let tn := tyName it
+        if tn != "" then tn ++ "_" ++ f.name else f.name
+      | none => f.name
+    if proofFnPrefix.isEmpty then localName else proofFnPrefix ++ "_" ++ localName
+  -- Resolve contract calls at the same point. A textual call name is never put
+  -- directly into evidence bytes: unresolved means uncovered, not guessed.
+  let localCallIds : List (String × CallableId) := allFnPairs.map fun (f, implTy) =>
+    let localKey := match implTy with
+      | some it =>
+        let tn := tyName it
+        if tn != "" then tn ++ "_" ++ f.name else f.name
+      | none => f.name
+    (localKey, CallableId.ofUser thisProofPath (finalDeclName f implTy) f.typeParams.length)
+  let importedCallIds : List (String × CallableId) := m.imports.flatMap fun imp =>
+    let summary? := match summary.submoduleSummaries.find? fun (n, _) => n == imp.moduleName with
+      | some (_, s) => some (s, true)
+      | none => (summaryTable.lookup imp.moduleName).map fun s => (s, false)
+    match summary? with
+    | none => []
+    | some (s, isLocalSubmodule) => imp.symbols.filterMap fun sym =>
+      let localName := sym.effectiveName
+      match s.functions.find? fun (n, _) => n == sym.name with
+      | some (_, sig) =>
+        let defModule := if isLocalSubmodule then thisProofPath ++ "." ++ imp.moduleName else s.name
+        let declName := if isLocalSubmodule then
+            let p := if proofFnPrefix.isEmpty then imp.moduleName
+                     else proofFnPrefix ++ "_" ++ imp.moduleName
+            p ++ "_" ++ sym.name
+          else sym.name
+        some (localName, CallableId.ofUser defModule declName sig.typeParams.length)
+      | none =>
+        if s.externFnSigs.any fun (n, _) => n == sym.name then
+          some (localName, CallableId.ofExtern sym.name)
+        else none
+  let resolveContractCall : String → Option CallableId := fun name =>
+    match localCallIds.lookup name with
+    | some id => some id
+    | none => match importedCallIds.lookup name with
+      | some id => some id
+      -- INTRINSICS BEFORE BUILTINS. Many names (`string_length` among them) appear
+      -- in both tables, and builtins-first classified compiler intrinsics as
+      -- `.builtin` — a wrong NAMESPACE in the identity, which is the one field
+      -- that exists to keep two same-named callables apart.
+      | none => match resolveIntrinsic name with
+        | some iid => some (CallableId.ofIntrinsic iid.canonicalName)
+        | none => match builtinFnSigs.find? fun (n, _) => n == name with
+          | some (_, sig) => some { CallableId.ofBuiltin name with typeParams := sig.typeParams.length }
+          | none => if m.externFns.any fun ef => ef.name == name
+                    then some (CallableId.ofExtern name) else none
   let declFacts : List Proof.CheckedDeclFacts :=
-    m.functions.map fun f =>
+    allFnPairs.map fun (f, implTy) =>
       let (concreteCaps, capVars) := f.capSet.normalize
-      { id := CallableId.ofUser m.name f.name f.typeParams.length
-        params := f.params.map fun p => (p.name, tyCanonical p.ty)
-        retTy := tyCanonical f.retTy
+      let capParamNames := f.capParams.eraseDups
+      let capVarCanonical := capVars.map fun v =>
+        match capParamNames.findIdx? fun n => n == v with
+        | some i => s!"var:{i}"
+        | none => "free:" ++ v
+      let bounds := f.typeParams.map fun tp =>
+        let bs := (f.typeBounds.find? fun (n, _) => n == tp).map Prod.snd |>.getD []
+        ("", bs.eraseDups.mergeSort (· ≤ ·))
+      { id := CallableId.ofUser thisProofPath (finalDeclName f implTy) f.typeParams.length
+        params := f.params.map fun p =>
+          (p.name, Proof.boundTyCanonical f.typeParams capParamNames p.ty)
+        retTy := Proof.boundTyCanonical f.typeParams capParamNames f.retTy
         typeParams := f.typeParams
-        typeBounds := f.typeBounds
+        typeBounds := bounds
         -- Both capability lists normalized, so `with(File, Net)` and
         -- `with(Net) ∪ with(File)` cannot yield two facts for one declaration.
-        capParams := f.capParams.eraseDups.mergeSort (· ≤ ·)
-        capSet := (concreteCaps ++ capVars)
-        contracts := Proof.ContractFacts.of f.requires f.ensures
+        capParams := capParamNames
+        capSet := (concreteCaps.map ("cap:" ++ ·)) ++ capVarCanonical
+        contracts := Proof.ContractFacts.ofResolved (f.params.map (·.name))
+          f.typeParams capParamNames resolveContractCall f.requires f.ensures
         isTrusted := f.isTrusted
         overflowChecked := f.overflowChecked }
   .ok {

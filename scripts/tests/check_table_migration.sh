@@ -43,7 +43,10 @@ LEAN
   # the wanted substring let a probe pass on Lean's own error output: the "3 of the
   # nine are still legacy" leg matched the "3" inside a line:column in
   # `unknown identifier`, so a probe that could not even elaborate reported ok.
-  if grep -qE "error" <<<"$out"; then
+  # Match a LEAN DIAGNOSTIC, not the bare word: `Except.error` is a legitimate
+  # value and matching "error" made every probe of a refusal a false negative —
+  # the vacuity guard corrupting the measurement it exists to protect.
+  if grep -qE "error:|error\(lean" <<<"$out"; then
     no "$label — probe did not elaborate: $(printf '%s' "$out" | tr '\n' ' ' | cut -c1-200)"
   elif grep -qF -- "$want" <<<"$out"; then ok "$label"
   else no "$label — got: $(printf '%s' "$out" | tr '\n' ' ' | cut -c1-200)"; fi

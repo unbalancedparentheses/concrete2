@@ -72,7 +72,7 @@ def unaryOpTag : UnaryOp → String
 private def binderIndex? (binders : List String) (name : String) : Option Nat :=
   binders.findIdx? fun n => n == name
 
-/-- Canonical type rendering relative to declaration binders.
+/- Canonical type rendering relative to declaration binders.
 
     `tyCanonical` is the right rendering for a closed `CallableId`; declaration
     facts are different because their signature may still contain bound type and
@@ -202,6 +202,14 @@ partial def contractCanonical : Expr → Option String
 structure ContractFacts where
   requires  : List String := []
   ensures   : List String := []
+  /-- Loop invariants and variants, canonically encoded per loop and ordered by
+      the loop's position in the body — which is semantic: the first loop's
+      invariant is not the second's.
+
+      Erased at the AST→Core boundary exactly like requires/ensures, and named
+      explicitly by R-0004, so leaving them out would make an invariant edit
+      invisible to the subject in the same way a contract edit was. -/
+  loops     : List String := []
   /-- False when any contract was unencodable. See the module header. -/
   covered   : Bool := true
 deriving Repr, BEq, Inhabited
@@ -271,6 +279,7 @@ def CheckedDeclFacts.canonical (f : CheckedDeclFacts) : String :=
               lp "B" (String.intercalate "," bs))
   let cs := String.join (f.contracts.requires.map (lp "R"))
           ++ String.join (f.contracts.ensures.map (lp "E"))
+          ++ String.join (f.contracts.loops.map (lp "L"))
   String.join
     [ "subjectFactsV1:"
     , lp "I" f.id.render

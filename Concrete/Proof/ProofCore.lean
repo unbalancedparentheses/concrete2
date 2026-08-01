@@ -1765,10 +1765,11 @@ structure ProofCoreEntry where
       rebuilt. `none` only if the module carried no facts for this identity,
       which is itself a fault worth seeing rather than papering over. -/
   declFacts   : Option Proof.CheckedDeclFacts := none
-  /-- `proofSubjectDigestV2` over those facts and the body fingerprint. Empty when
-      no facts were found, so an absent subject cannot masquerade as a computed
-      one. -/
-  subjectDigest : String := ""
+  /-- `proofSubjectDigestV2` over those facts and the body fingerprint. `none`
+      when the facts are absent or INCOMPLETE — an incomplete subject must not be
+      representable as a digest string, or it becomes comparable as though it
+      were complete. -/
+  subjectDigest : Option String := none
   fn          : CFnDef
   extracted   : Option Proof.PExpr
   unsupported : List String
@@ -1911,8 +1912,16 @@ def shortHash (fingerprint : String) : String :=
     changed, not necessarily the program, so such an entry is `needs_recheck`, not
     `stale`. Wiring that distinction into the freshness decision is the remaining
     step; this function only defines the value. -/
-def proofSubjectDigestV2 (facts : Proof.CheckedDeclFacts) (bodyFp : String) : String :=
-  shortHash ("subjectV2:" ++ facts.canonical ++ "|body:" ++ shortHash bodyFp)
+def proofSubjectDigestV2 (facts : Proof.CheckedDeclFacts) (bodyFp : String)
+    : Option String :=
+  -- ENFORCED, not advisory. `isComplete` existed and nothing consulted it, so an
+  -- uncovered subject — a contract the encoder could not read, an incomplete
+  -- identity — still received an ordinary-looking digest. A digest that cannot be
+  -- told from a complete one IS a claim of completeness, whatever a neighbouring
+  -- flag says. Returning `none` makes the incomplete case unrepresentable rather
+  -- than merely discouraged.
+  if !facts.isComplete then none
+  else some (shortHash ("subjectV2:" ++ facts.canonical ++ "|body:" ++ shortHash bodyFp))
 
 /-- Validate a proof registry against a ProofCore artifact. -/
 def validateRegistry (pc : ProofCore) (registry : ProofRegistry) : List RegistryIssue :=
@@ -2194,10 +2203,9 @@ private partial def extractModule
     -- travel on the module as a parallel record, so nothing is recomputed here
     -- and nothing was added to CFnDef to carry them.
     let facts? := (m.declFacts.find? fun d => d.id.render == cid.render)
-    let subjDigest := match facts? with
-      | some fx => proofSubjectDigestV2 fx fp
-      | none    => ""   -- absent, and visibly so; never a body-only value wearing
-                        -- the name of a subject digest
+    -- `none` when the facts are absent OR incomplete. Never a string, so an
+    -- absent subject cannot be compared as though it were a computed one.
+    let subjDigest : Option String := facts?.bind (fun fx => proofSubjectDigestV2 fx fp)
     let elig := assessEligibility f qualName externNames recMap locMap
     let sa := resolveSpec qualName registry
     if elig.isTrusted then

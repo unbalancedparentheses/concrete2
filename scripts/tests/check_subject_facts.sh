@@ -22,7 +22,10 @@ def sp : Span := default
 $body
 LEAN
   local out; out="$(lake env lean "$TMP/p.lean" 2>&1 || true)"
-  if grep -qE "error" <<<"$out"; then
+  # Match a LEAN DIAGNOSTIC, not the bare word: `Except.error` is a legitimate
+  # value and matching "error" made every probe of a refusal a false negative —
+  # the vacuity guard corrupting the measurement it exists to protect.
+  if grep -qE "error:|error\(lean" <<<"$out"; then
     no "$label — probe did not elaborate: $(printf '%s' "$out" | tr '\n' ' ' | cut -c1-160)"
   elif grep -qF -- "$want" <<<"$out"; then ok "$label"
   else no "$label — got: $(printf '%s' "$out" | tr '\n' ' ' | cut -c1-160)"; fi
@@ -146,6 +149,32 @@ probe "the subject digest is not the bare body hash" "true" \
 '#eval
   let a : CheckedDeclFacts := { id := CallableId.ofUser "m" "f" }
   proofSubjectDigestV2 a "B" != shortHash "B"'
+
+echo ""
+echo "=== completeness is ENFORCED, not advisory ==="
+# isComplete existed and nothing consulted it: an uncovered subject still got an
+# ordinary-looking digest. A digest indistinguishable from a complete one IS a
+# claim of completeness, whatever a neighbouring flag says.
+probe "an uncovered contract yields NO digest" "none" \
+'#eval
+  let f : CheckedDeclFacts := { id := CallableId.ofUser "m" "f", contracts := ContractFacts.of [] [.arrayLit sp [.intLit sp 1]] }
+  proofSubjectDigestV2 f "B"'
+probe "a complete subject yields a digest" "some" \
+'#eval
+  let f : CheckedDeclFacts := { id := CallableId.ofUser "m" "f" }
+  proofSubjectDigestV2 f "B"'
+# an incomplete IDENTITY (type-erased generic) must refuse too
+probe "an incomplete identity yields NO digest" "none" \
+'#eval
+  let f : CheckedDeclFacts := { id := CallableId.ofUser "m" "f" 1 }
+  proofSubjectDigestV2 f "B"'
+# loop contracts are part of the subject: R-0004 names them, and they are erased
+# with requires/ensures
+probe "a loop invariant change moves the subject" "true" \
+'#eval
+  let a : CheckedDeclFacts := { id := CallableId.ofUser "m" "f", contracts := { loops := ["inv:A"] } }
+  let b : CheckedDeclFacts := { id := CallableId.ofUser "m" "f", contracts := { loops := ["inv:B"] } }
+  a.canonical != b.canonical'
 
 echo ""
 echo "=== threaded, not recomputed ==="

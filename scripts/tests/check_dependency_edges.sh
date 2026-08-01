@@ -24,7 +24,10 @@ LEAN
   local out; out="$(lake env lean "$TMP/p.lean" 2>&1 || true)"
   # An error is a failure whatever the text says — a probe that cannot elaborate
   # must not pass on a digit inside "line:col" (that happened in the migration gate).
-  if grep -qE "error" <<<"$out"; then
+  # Match a LEAN DIAGNOSTIC, not the bare word: `Except.error` is a legitimate
+  # value and matching "error" made every probe of a refusal a false negative —
+  # the vacuity guard corrupting the measurement it exists to protect.
+  if grep -qE "error:|error\(lean" <<<"$out"; then
     no "$label — probe did not elaborate: $(printf '%s' "$out" | tr '\n' ' ' | cut -c1-180)"
   elif grep -qF -- "$want" <<<"$out"; then ok "$label"
   else no "$label — got: $(printf '%s' "$out" | tr '\n' ' ' | cut -c1-180)"; fi
@@ -113,36 +116,57 @@ probe "the corpus splits 113 contract / 166 body" "113/166" \
    IO.println s!"{nc}/{nb}"'
 
 echo ""
-echo "=== dependency roots: transitive, finite, and never under-approximating ==="
+echo "=== dependency roots: fail closed on every incomplete input ==="
 GRAPH='def g : List DepNode :=
-  [ { id := "a", digest := "DA", callees := ["b"] }
-  , { id := "b", digest := "DB", callees := ["c"] }
-  , { id := "c", digest := "DC", callees := [] }
-  , { id := "d", digest := "DD", callees := ["e"] }
-  , { id := "e", digest := "DE", callees := ["d"] } ]
-def g2 : List DepNode := g.map fun n => if n.id == "c" then { n with digest := "X" } else n
+  [ { id := "a", digest := some "DA", edges := [(DependencyEdge.body, "b")] }
+  , { id := "b", digest := some "DB", edges := [(DependencyEdge.body, "c")] }
+  , { id := "c", digest := some "DC", edges := [] }
+  , { id := "d", digest := some "DD", edges := [(DependencyEdge.body, "e")] }
+  , { id := "e", digest := some "DE", edges := [(DependencyEdge.body, "d")] } ]
+def g2 : List DepNode := g.map fun n => if n.id == "c" then { n with digest := some "X" } else n
 '
-# Mutual recursion must terminate rather than diverge: the closure is bounded by
-# the node count.
-probe "a mutual cycle terminates" "true" "$GRAPH"'#eval decide ((dependencyRoot g "d").length > 0)'
-# The SCC-equivalent property, stated honestly: cycle members share a CLOSURE (so
-# the entry point is not semantic). Their roots differ, because a root also binds
-# the node own subject and two functions in a cycle are two subjects.
+probe "a mutual cycle terminates" "true" "$GRAPH"'#eval (dependencyRootPreimage g "d").toOption.isSome'
 probe "cycle members share a closure (entry point is not semantic)" "true" "$GRAPH"'#eval
   (reachableFrom g "d").mergeSort (· ≤ ·) == (reachableFrom g "e").mergeSort (· ≤ ·)'
-probe "but cycle members do NOT share a root" "true" "$GRAPH"'#eval dependencyRoot g "d" != dependencyRoot g "e"'
-# The point of the whole slice: an edit two hops away stales the dependent.
-probe "a deep callee edit moves the dependent root" "true" "$GRAPH"'#eval dependencyRoot g "a" != dependencyRoot g2 "a"'
-probe "an unrelated subtree is unaffected" "true" "$GRAPH"'#eval dependencyRoot g "d" == dependencyRoot g2 "d"'
-# NEVER UNDER-APPROXIMATE: an unresolved callee is bound as unknown, not dropped.
-# Dropping it would make the less complete graph yield the more confident answer.
-probe "an unknown callee is bound, not skipped" "true" \
-'#eval
-  let gu : List DepNode := [{ id := "a", digest := "DA", callees := ["ghost"] }]
-  let gk : List DepNode := [{ id := "a", digest := "DA", callees := [] }]
-  dependencyRoot gu "a" != dependencyRoot gk "a"'
-probe "and the closure reports itself incompletely known" "false" \
-'#eval closureFullyKnown [{ id := "a", digest := "DA", callees := ["ghost"] }] "a"'
+probe "cycle members do NOT share a root (they are different subjects)" "true" "$GRAPH"'#eval
+  (dependencyRootPreimage g "d").toOption != (dependencyRootPreimage g "e").toOption'
+probe "a deep callee edit moves the dependent root" "true" "$GRAPH"'#eval
+  (dependencyRootPreimage g "a").toOption != (dependencyRootPreimage g2 "a").toOption'
+probe "an unrelated subtree is unaffected" "true" "$GRAPH"'#eval
+  (dependencyRootPreimage g "d").toOption == (dependencyRootPreimage g2 "d").toOption'
+
+# FAIL-CLOSED CONDITIONS. Each previously produced a confident value from
+# incomplete information; each must now REFUSE, with the reason carried.
+probe "a missing start is refused" "missingStart" \
+'#eval repr (dependencyRootPreimage [] "ghost")'
+probe "an unresolved edge is refused, not bound as unknown" "unresolvedEdge" \
+'#eval repr (dependencyRootPreimage [{ id := "a", digest := some "DA", edges := [(DependencyEdge.body, "ghost")] }] "a")'
+probe "a duplicate identity is refused" "duplicateId" \
+'#eval repr (dependencyRootPreimage [{ id := "a", digest := some "1", edges := [] }, { id := "a", digest := some "2", edges := [] }] "a")'
+probe "an absent subject digest is refused" "incompleteDigest" \
+'#eval repr (dependencyRootPreimage [{ id := "a", digest := none, edges := [] }] "a")'
+probe "a `missing` typed edge is refused" "missingEdge" \
+'#eval repr (dependencyRootPreimage [{ id := "a", digest := some "DA", edges := [(DependencyEdge.missing, "b")] }, { id := "b", digest := some "DB", edges := [] }] "a")'
+# trust must be visible, and separately from the root
+probe "a trusted edge in the closure is reported" "true" \
+'#eval closureCarriesTrust [{ id := "a", digest := some "DA", edges := [(DependencyEdge.trusted, "b")] }, { id := "b", digest := some "DB", edges := [] }] "a"'
+
+echo ""
+echo "=== NOT YET INTEGRATED — tripwires, so this cannot read as slice 6 done ==="
+# The root is a standalone function. Until ProofCore builds nodes from real
+# entries and freshness consumes the result, a deep edit does not stale any real
+# claim through it. These fail when that changes, which is the signal to replace
+# them with real coverage.
+if grep -rq "dependencyRootPreimage" "$ROOT_DIR/Concrete/Proof/ProofCore.lean" 2>/dev/null; then
+  no "ProofCore now consumes dependency roots — replace this tripwire with integration coverage"
+else
+  ok "TRIPWIRE: ProofCore does NOT consume dependency roots yet (slice 6 integration open)"
+fi
+if grep -rq "dependencyRootPreimage" "$ROOT_DIR/Concrete/Report" 2>/dev/null; then
+  no "reports now consume dependency roots — replace this tripwire with integration coverage"
+else
+  ok "TRIPWIRE: no report consumes dependency roots yet"
+fi
 
 echo ""
 echo "DEPENDENCY-EDGES: PASS=$PASS FAIL=$FAIL"
