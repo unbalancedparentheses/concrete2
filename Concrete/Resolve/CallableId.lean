@@ -99,6 +99,16 @@ inductive CallableNamespace where
   | intrinsic
   /-- Foreign declaration reached through FFI. -/
   | extern
+  /-- A `spec fn`: DECLARED in Concrete source, with no body, its meaning supplied
+      by a model outside the program (typically Lean).
+
+      Its own namespace rather than `.user`, because it is not a user function in
+      the sense that matters to evidence: it cannot be called at runtime, it has
+      no body to digest, and a proof that mentions it depends on a MODEL rather
+      than on an implementation. Folding it into `.user` would let a contract
+      reference to an abstract spec look identical to a reference to something
+      implemented — the conflation the namespace field exists to prevent. -/
+  | spec
 deriving BEq, Repr, DecidableEq, Inhabited
 
 def CallableNamespace.canonical : CallableNamespace → String
@@ -106,11 +116,12 @@ def CallableNamespace.canonical : CallableNamespace → String
   | .builtin   => "builtin"
   | .intrinsic => "intrinsic"
   | .extern    => "extern"
+  | .spec      => "spec"
 
 /-- All namespaces, so a consumer that must handle each one can be checked
     against the list rather than hand-maintaining a copy of it. -/
 def CallableNamespace.all : List CallableNamespace :=
-  [.user, .builtin, .intrinsic, .extern]
+  [.user, .builtin, .intrinsic, .extern, .spec]
 
 /-- The semantic identity of one callable.
 
@@ -182,6 +193,12 @@ def CallableId.ofIntrinsic (declName : String) : CallableId :=
 
 def CallableId.ofExtern (declName : String) : CallableId :=
   { ns := .extern, defModule := "", declName := declName }
+
+/-- A `spec fn` declared at `defModule.declName`. Carries its defining module,
+    because two modules may each declare a spec of the same name and they are not
+    the same abstraction. -/
+def CallableId.ofSpec (defModule declName : String) : CallableId :=
+  { ns := .spec, defModule := defModule, declName := declName }
 
 /-- Is this a specialization of a generic callable? -/
 def CallableId.isSpecialized (id : CallableId) : Bool :=

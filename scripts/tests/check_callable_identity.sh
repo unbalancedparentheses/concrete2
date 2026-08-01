@@ -690,14 +690,14 @@ echo "=== namespaces and specializations: the TYPE distinguishes them ==="
 # distinction is load-bearing the moment a producer exists.
 probe "a builtin and a user callable of the same name are different identities" "false" \
 '#eval (CallableId.ofUser "" "len").render == (CallableId.ofBuiltin "len").render'
-probe "all four namespaces render distinctly for one declName" "4" \
+probe "all five namespaces render distinctly for one declName" "5" \
 '#eval ((CallableNamespace.all.map fun ns =>
     ({ ns := ns, defModule := "", declName := "len" } : CallableId).render).eraseDups).length'
 # The namespace list is the checkable copy: a new namespace that no consumer
 # handles would otherwise be invisible.
 probe "CallableNamespace.all covers every constructor" "true" \
-'#eval CallableNamespace.all.length == 4
-  && (CallableNamespace.all.map CallableNamespace.canonical).eraseDups.length == 4'
+'#eval CallableNamespace.all.length == 5
+  && (CallableNamespace.all.map CallableNamespace.canonical).eraseDups.length == 5'
 probe "a specialization differs from its generic" "false" \
 '#eval (CallableId.ofUser "m" "id" 1).render == ((CallableId.ofUser "m" "id" 1).specialize [.int]).render'
 probe "two specializations at different types differ" "false" \
@@ -740,13 +740,23 @@ def bE2 : Proof.PFnDef := { identity := .semantic bId2, operationalKey := "built
 # present, and FAILS when a producer appears — at which point a generated table
 # must exercise it and this note must be replaced by that coverage. Without a
 # tripwire, "representable" quietly reads as "covered".
-minters=$(grep -rn "ofBuiltin\|ofIntrinsic\|ofExtern\|CallableId.specialize" \
-  --include="*.lean" "$ROOT_DIR/Concrete" 2>/dev/null \
-  | grep -v "Resolve/CallableId.lean" | wc -l | tr -d ' ')
-if [ "$minters" = "0" ]; then
-  ok "TRIPWIRE: no compiler code mints a non-user identity yet — generated-table coverage is still owed (step 4)"
+# REAL COVERAGE for the producer that now exists: Elab mints `.spec` identities
+# for contract targets, so that path is exercised by a real program rather than
+# tripwired. hmac_sha256's `result == ch_spec(x, y, z)` is the case.
+if grep -q "CallableId.ofSpec" "$ROOT_DIR/Concrete/Elab/Elab.lean"; then
+  ok "Elab mints .spec identities for contract targets"
 else
-  no "a producer of non-user identities now exists ($minters sites): a GENERATED table must exercise it, and this tripwire must become real coverage"
+  no "no producer of .spec identities — contracts naming a spec fn would go uncovered"
+fi
+# The ENTRY tripwire, narrowed. A spec fn is a contract target and never a table
+# entry; the open question is still whether a generated TABLE ever carries a
+# non-user entry, which needs callee identity (step 6/7).
+entry_minters=$(grep -rn "ofBuiltin\|ofIntrinsic\|CallableId.specialize" \
+  --include="*.lean" "$ROOT_DIR/Concrete/Proof/ProofCore.lean" 2>/dev/null | wc -l | tr -d ' ')
+if [ "$entry_minters" = "0" ]; then
+  ok "TRIPWIRE: no generated table ENTRY is non-user yet — that coverage is still owed"
+else
+  no "generated table entries now carry non-user identities ($entry_minters sites): exercise them in a generated table"
 fi
 
 echo ""

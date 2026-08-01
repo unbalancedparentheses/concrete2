@@ -167,9 +167,29 @@ probe "trust is carried in the returned structure" "true" \
 '#eval
   let g : List DepNode := [{ id := "a", digest := some "DA", edges := [(DependencyEdge.trusted, "b")] }, { id := "b", digest := some "DB", edges := [] }]
   ((dependencyRootMaterial g "a").toOption.map (·.carriesTrust)) == some true'
+# CANONICAL SET SEMANTICS. reachableFrom returns the start when the start is in a
+# cycle, and `id :: closure` then listed it twice — a self-recursive subject got a
+# different preimage for the same dependency set.
+probe "a self-recursive node is serialized exactly once" "true" \
+'#eval
+  let g : List DepNode := [{ id := "a", digest := some "DA", edges := [(DependencyEdge.body, "a")] }]
+  match (dependencyRootMaterial g "a").toOption with
+  | some m => ((m.preimage.splitOn "N1:a:").length - 1) == 1
+  | none   => false'
+# Calling one callee twice does not change the dependency SET, so it must not
+# change the root.
+probe "a duplicated edge does not change the root" "true" \
+'#eval
+  let one : List DepNode := [{ id := "a", digest := some "DA", edges := [(DependencyEdge.body, "b")] }, { id := "b", digest := some "DB", edges := [] }]
+  let two : List DepNode := [{ id := "a", digest := some "DA", edges := [(DependencyEdge.body, "b"), (DependencyEdge.body, "b")] }, { id := "b", digest := some "DB", edges := [] }]
+  (dependencyRootMaterial one "a").toOption == (dependencyRootMaterial two "a").toOption'
+# There must be no public fail-OPEN way to ask the trust question.
+if grep -q "def closureCarriesTrust" "$ROOT_DIR/Concrete/Proof/DependencyRoot.lean"; then
+  no "closureCarriesTrust still answers over an unvalidated graph — a fail-open twin of the validated path"
+else
+  ok "trust is only answerable from validated material"
+fi
 # trust must be visible, and separately from the root
-probe "a trusted edge in the closure is reported" "true" \
-'#eval closureCarriesTrust [{ id := "a", digest := some "DA", edges := [(DependencyEdge.trusted, "b")] }, { id := "b", digest := some "DB", edges := [] }] "a"'
 
 echo ""
 echo "=== NOT YET INTEGRATED — tripwires, so this cannot read as slice 6 done ==="

@@ -179,16 +179,46 @@ probe "a loop invariant change moves the subject" "true" \
   a.canonical != b.canonical'
 
 echo ""
+echo "=== spec fns are resolvable contract targets, in their own namespace ==="
+# `spec fn` declarations are bodyless abstractions whose meaning comes from Lean.
+# They were in none of the resolution tables, so every contract mentioning one
+# resolved to nothing and made the whole subject UNCOVERED — measured on
+# hmac_sha256, a flagship, whose `result == ch_spec(x, y, z)` put two entries
+# outside the digest entirely.
+CC=".lake/build/bin/concrete"
+HM="examples/hmac_sha256/src/main.con"
+inc=$("$CC" "$HM" --report subject-facts 2>/dev/null | grep -cE "INCOMPLETE|ABSENT" || true)
+[ "$inc" = "0" ] \
+  && ok "hmac_sha256 has no incomplete or absent subjects" \
+  || no "$inc hmac_sha256 subjects are incomplete/absent — contracts are escaping the digest"
+withc=$("$CC" "$HM" --report subject-facts 2>/dev/null | grep -c "ens: 1" || true)
+[ "${withc:-0}" -gt 0 ] \
+  && ok "hmac_sha256 contracts are captured ($withc entries)" \
+  || no "no hmac_sha256 contracts captured, though the source has #[ensures]"
+# A spec fn is NOT a user function: no body, not callable at runtime, meaning
+# supplied by a model. Folding it into `.user` would make a reference to an
+# abstraction look like a reference to an implementation.
+probe "a spec fn gets its own namespace" "false" \
+'#eval (CallableId.ofSpec "m" "f").render == (CallableId.ofUser "m" "f").render'
+probe "the namespace list covers every constructor" "true" \
+'#eval CallableNamespace.all.length == 5
+  && (CallableNamespace.all.map CallableNamespace.canonical).eraseDups.length == 5'
+
+echo ""
 echo "=== loop contracts reach the subject FROM SOURCE ==="
 # The field existed and nothing read `f.loopContracts`, so the earlier check only
 # proved the field affects canonicalization — not that a source invariant reaches
 # it. This drives a real program and edits a real invariant.
 CC=".lake/build/bin/concrete"
 CT="examples/constant_time_tag/src/main.con"
-nloops=$("$CC" "$CT" --report subject-facts 2>/dev/null | grep -oE "loops: [0-9]+" | head -1 | grep -oE "[0-9]+")
-[ "${nloops:-0}" -gt 0 ] \
-  && ok "source loop contracts are captured (loops: $nloops)" \
-  || no "no loop contracts captured from a program that has them"
+nloops=$("$CC" "$CT" --report subject-facts 2>/dev/null | grep -oE "loopClauses: [0-9]+" | head -1 | grep -oE "[0-9]+")
+# EXACT structure, not "> 0". constant_time_tag's ct_compare has ONE loop with
+# ONE invariant and ONE variant, so the encoded clause count is 2 — "loops: 2" is
+# a count of CLAUSES, not of loops, and reading it as two loops was my
+# mislabelling. A `> 0` assertion would pass on any miscount.
+[ "${nloops:-0}" = "2" ] \
+  && ok "ct_compare contributes exactly 2 loop clauses (1 invariant + 1 variant)" \
+  || no "expected 2 loop clauses for ct_compare, got ${nloops:-0}"
 WORK="$TMP/ctedit"; mkdir -p "$WORK"; cp -r examples/constant_time_tag "$WORK/ct"
 D1=$("$CC" "$WORK/ct/src/main.con" --report subject-facts 2>/dev/null | grep "subject digest" | head -1)
 python3 - "$WORK/ct/src/main.con" <<'PYEOF'

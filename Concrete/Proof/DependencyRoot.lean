@@ -40,10 +40,11 @@ rediscovered.
 
 ## Never under-approximate
 
-An edge to a callee with no known digest does not silently drop out of the
-closure. `unknown:<id>` enters it instead, so a root over an incompletely known
-graph cannot equal a root over a fully known one. Dropping the edge would produce
-the more confident answer from the less complete information.
+An edge to a callee with no known digest is REFUSED. An earlier version bound it
+as `unknown:<id>` and reported completeness through a separate flag; that let a
+root be minted over a partly unknown graph, and a flag beside a value invites
+comparing the value and ignoring the flag. Refusing is the only answer that
+cannot be misread.
 -/
 
 namespace Concrete.Proof
@@ -147,10 +148,15 @@ def dependencyRootMaterial (nodes : List DepNode) (id : String)
       | some v => if v.isEmpty then throw (.incompleteDigest n) else pure v
       | none   => throw (.incompleteDigest n)
   let ownDigest ← digestOf start.id
-  let closure := (reachableFrom nodes id).mergeSort (· ≤ ·)
+  -- Each node EXACTLY ONCE. `reachableFrom` returns the start itself when the
+  -- start is in a cycle, so `id :: closure` listed it twice and a self- or
+  -- mutually-recursive subject got a different preimage for the same dependency
+  -- set. A canonical set must not depend on how a member was discovered.
+  let allNodes := (id :: reachableFrom nodes id).eraseDups.mergeSort (· ≤ ·)
+  let closure := allNodes.filter (· != id)
   let mut parts : List String := []
   let mut trust := false
-  for n in (id :: closure) do
+  for n in allNodes do
     let node ← match nodes.find? (fun d => d.id == n) with
       | some d => pure d
       | none   => throw (.unresolvedEdge id n)
@@ -158,7 +164,9 @@ def dependencyRootMaterial (nodes : List DepNode) (id : String)
     parts := parts ++ [s!"N{n.length}:{n}:{nDigest.length}:{nDigest}"]
     -- edges sorted by (kind, target) so the preimage cannot depend on the order
     -- they were discovered in
-    let sorted := node.edges.mergeSort fun a b =>
+    -- Edges deduplicated as well as sorted: calling one callee twice does not
+    -- change the DEPENDENCY SET, so it must not change the root.
+    let sorted := node.edges.eraseDups.mergeSort fun a b =>
       (a.1.canonical ++ a.2) ≤ (b.1.canonical ++ b.2)
     for (k, tgt) in sorted do
       if k == DependencyEdge.missing then throw (.missingEdge n tgt)
@@ -170,15 +178,15 @@ def dependencyRootMaterial (nodes : List DepNode) (id : String)
                         ++ s!"n{closure.length}" ++ String.join parts
          , carriesTrust := trust }
 
-/-- Does any edge in the closure carry trust, so a claim resting on this root must
-    say `proved_by_lean_modulo_trusted` rather than `proved_by_lean`?
+/-- Trust for an ALREADY-VALIDATED material. Takes the material rather than the
+    raw graph, so there is no public path that answers the trust question over an
+    unvalidated graph.
 
-    Separate from the root because it is a different question: the root says WHAT
-    the claim rests on, this says what QUALIFICATION the claim must carry. -/
-def closureCarriesTrust (nodes : List DepNode) (id : String) : Bool :=
-  (id :: reachableFrom nodes id).any fun n =>
-    match nodes.find? (fun d => d.id == n) with
-    | some d => d.edges.any fun (k, _) => k == DependencyEdge.trusted
-    | none   => false
+    A previous `closureCarriesTrust (nodes) (id)` existed beside
+    `dependencyRootMaterial` and would happily answer for a graph the material
+    would have refused — a fail-open alternative sitting next to the fail-closed
+    one, which is the more attractive of the two to call. -/
+def DependencyRootMaterial.requiresTrustQualification (m : DependencyRootMaterial) : Bool :=
+  m.carriesTrust
 
 end Concrete.Proof

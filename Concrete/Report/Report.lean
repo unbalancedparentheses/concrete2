@@ -1521,6 +1521,7 @@ private def renderCallableId (cid : Concrete.CallableId) : String :=
   let nsLit := match cid.ns with
     | .user => ".user" | .builtin => ".builtin"
     | .intrinsic => ".intrinsic" | .extern => ".extern"
+    | .spec => ".spec"
   let argsLit :=
     if cid.typeArgs.isEmpty then ""
     else ", typeArgs := [" ++ ", ".intercalate (cid.typeArgs.map reprStr) ++ "]"
@@ -1595,7 +1596,7 @@ def subjectFactsReport (pc : Concrete.ProofCore) : String :=
         , s!"  typeParams: {fx.typeParams.length} bounds: {fx.typeBounds}\n"
         , s!"  caps: {fx.capSet} capParams: {fx.capParams.length}\n"
         , s!"  contracts covered: {fx.contracts.covered} "
-        , s!"reqs: {fx.contracts.requires.length} ens: {fx.contracts.ensures.length} loops: {fx.contracts.loops.length}\n"
+        , s!"reqs: {fx.contracts.requires.length} ens: {fx.contracts.ensures.length} loopClauses: {fx.contracts.loops.length}\n"
         , s!"  trusted: {fx.isTrusted}\n"
         , s!"  subject digest: {dig}"
         ]

@@ -1853,7 +1853,22 @@ partial def elabModule (m : Module) (summary : FileSummary)
         if s.externFnSigs.any fun (n, _) => n == sym.name then
           some (localName, CallableId.ofExtern sym.name)
         else none
+  -- `spec fn` declarations are resolvable targets in contracts. They were in none
+  -- of the tables below, so every contract mentioning one (hmac_sha256's
+  -- `result == ch_spec(x, y, z)`, for instance) resolved to nothing and made the
+  -- whole subject UNCOVERED — a flagship's contracts silently outside the digest.
+  let specCallIds : List (String × CallableId) :=
+    m.specFns.map fun sf => (sf.name, CallableId.ofSpec thisProofPath sf.name)
   let resolveContractCall : String → Option CallableId := fun name =>
+    -- AMBIGUITY FAILS CLOSED. A spec fn and a function of the same name are two
+    -- different callables, and preferring one by list order would silently pick
+    -- an abstraction over an implementation (or the reverse) inside evidence
+    -- bytes. Unresolvable is the honest answer; it makes the subject uncovered
+    -- rather than confidently wrong.
+    match specCallIds.lookup name, localCallIds.lookup name with
+    | some _, some _ => none
+    | some id, none  => some id
+    | none, _ =>
     match localCallIds.lookup name with
     | some id => some id
     | none => match importedCallIds.lookup name with
