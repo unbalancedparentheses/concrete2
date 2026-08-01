@@ -121,5 +121,52 @@ else
 fi
 
 echo ""
+echo "=== the digest is defined ONCE, and sees what the legacy hash cannot ==="
+# Side by side with the defect. The legacy body fingerprint is blind to both of
+# these; that blindness IS bugs 059 and 060.
+probe "059: a signature change moves the subject digest with an identical body" "true" \
+'#eval
+  let a : CheckedDeclFacts := { id := CallableId.ofUser "m" "f", retTy := "i32" }
+  let b : CheckedDeclFacts := { id := CallableId.ofUser "m" "f", retTy := "u32" }
+  proofSubjectDigestV2 a "SAME" != proofSubjectDigestV2 b "SAME"'
+probe "060: a TRUE/FALSE ensures flip moves it with an identical body" "true" \
+'#eval
+  let t : CheckedDeclFacts := { id := CallableId.ofUser "m" "f", contracts := ContractFacts.of [] [.binOp sp .eq (.ident sp "result") (.intLit sp 1)] }
+  let f : CheckedDeclFacts := { id := CallableId.ofUser "m" "f", contracts := ContractFacts.of [] [.binOp sp .eq (.ident sp "result") (.intLit sp 0)] }
+  proofSubjectDigestV2 t "SAME" != proofSubjectDigestV2 f "SAME"'
+# It must not LOSE what the legacy hash did catch.
+probe "a body change is still detected" "true" \
+'#eval
+  let a : CheckedDeclFacts := { id := CallableId.ofUser "m" "f" }
+  proofSubjectDigestV2 a "ONE" != proofSubjectDigestV2 a "TWO"'
+# The schema tag must be in the bytes, so a stored v1 hash is recognisable as a
+# DIFFERENT SCHEMA rather than as a mismatch — that is what makes `needs_recheck`
+# possible instead of a false `stale`.
+probe "the subject digest is not the bare body hash" "true" \
+'#eval
+  let a : CheckedDeclFacts := { id := CallableId.ofUser "m" "f" }
+  proofSubjectDigestV2 a "B" != shortHash "B"'
+
+echo ""
+echo "=== threaded, not recomputed ==="
+if grep -q "declFacts.find?" "$ROOT_DIR/Concrete/Proof/ProofCore.lean"; then
+  ok "ProofCore reads the facts off the module by IDENTITY"
+else
+  no "ProofCore does not read threaded facts — they would have to be rebuilt"
+fi
+if grep -q "subjectDigest" "$ROOT_DIR/Concrete/Proof/ProofCore.lean"; then
+  ok "entries carry the subject digest"
+else
+  no "entries do not carry a subject digest"
+fi
+# STILL OPEN, asserted as a tripwire so "the digest exists" cannot read as "the
+# bugs are closed". The freshness decision still compares the BODY fingerprint.
+if grep -q "if shortHash currentFp != h then" "$ROOT_DIR/Concrete/Proof/ProofCore.lean"; then
+  ok "TRIPWIRE: freshness still compares the body fingerprint — 059/060 remain OPEN"
+else
+  no "the freshness comparison changed: v1 stored hashes must become needs_recheck, never stale, and backfill only from kernel replay"
+fi
+
+echo ""
 echo "SUBJECT-FACTS: PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]
