@@ -1524,36 +1524,96 @@ bundle consumers tolerate a non-numeric `evidence.max_stack_bytes` — the fallb
 is `"?"` today, so prefer an explicit `"unbounded"`. A mutation restoring the
 `!isRecursive c` filter must fail the gate.
 
-### Sequencing note: the prover-neutral arc (R-0450, R-0448, R-0454–R-0456, R-0458–R-0460)
+### Sequencing note: the prover-neutral arc (R-0004, R-0450, R-0448, R-0454–R-0456, R-0458–R-0464, R-0467, R-0468)
 
 These tasks are entangled enough that picking one without reading the others has
 already produced rework. The order below is argued from the 2026-07-31 audit of
 `spike/multi-prover-evidence`, not from phase numbering — several of these sit in
 later phases and should still be pulled in this sequence.
 
-0. **R-0461 before all of it, because the arc is currently decorating a defect.**
+**Why this note is load-bearing, stated plainly.** The roadmap advances by FILE POSITION,
+and every task below except R-0459 sits between lines ~6100 and ~6900 — roughly five
+thousand lines after R-0004. A reader following file order does twenty other things and
+never reaches them. That is the same failure the R-0466 block's paragraph names about
+unreferenced ledger bugs, and as of 2026-08-01 it was true of **R-0464, which owns a
+reproduced soundness hole and had no stated position at all.** Anything pulled forward
+here must say so here; a task whose urgency lives only in its own body is not sequenced.
+
+0. **R-0004's remaining slices come first, and are not optional to this arc.** R-0454
+   states in its own body that it belongs immediately after them, and slice 4 (the receipt
+   envelope with typed dependency edges) is what R-0454's digest attaches to. Slices 1–3
+   have landed; 4–7 have not.
+
+   **Slice 3 is also the template for R-0461, which is why R-0004 leads rather than
+   merely precedes.** It closed bug 062 by making a not-current dependency downgrade its
+   dependent, transitively, with which statuses count decided in ONE place
+   (`ObligationStatus.isCurrentForDependents`). H23 is that identical defect one dimension
+   over: bug 062 was "dependency statuses are computed and never consulted to downgrade
+   the caller"; H23 is "hypothesis statuses are attached and never consulted to downgrade
+   the conclusion". The project found this class, fixed it once, and shipped the second
+   dimension without it. R-0461 must reuse slice 3's shape rather than invent one — if the
+   hypothesis-currency predicate and `isCurrentForDependents` ever disagree, that
+   disagreement is the next bug.
+
+1. **R-0461, because the arc is currently decorating a defect.**
    H23: an obligation may assume a loop invariant whose preservation VC is unproven, and
    nothing composes the two statuses — so a guaranteed out-of-bounds access reports
    `proved_by_multi_kernel (3: lean, rocq, isabelle)` and `require-two-kernels` builds it.
    Every surface above this inherits the error. Reproduced in
-   `examples/unsound_hypothesis/`. Nothing else on this list is worth doing first.
-1. **R-0454 (neutral digest) next, because its window is closing.** Digests are
+   `examples/unsound_hypothesis/`; Register C already proves the composition, so this is
+   wiring. **Precedes the R-0466–R-0469 block.**
+
+1b. **R-0464 immediately after, on the same grounds.** H24: obligation generation restates
+   `IntArith`'s trap conditions and states them weaker, so a division reports proved and
+   aborts on signed `MIN / -1`, and shifts generate no obligation at all. Reproduced in
+   `examples/trap_semantics_gap/`. Paired with R-0461 because both are reproduced holes
+   with failing fixtures already written, and because a reader who fixes only the first
+   still ships a compiler that reports `proved` for an operation that traps.
+1c. **R-0458 alongside R-0461, because R-0461 is what finally forces it.** A claim capped
+   by an outstanding hypothesis is *proved conditional on invariant@6* — real evidence
+   naming exactly one remaining VC, which the current vocabulary cannot express. That is
+   `strength` and `independence` as separate coordinates, and R-0461 is their first real
+   consumer rather than a hypothetical one. Note the part already landed (the four-field
+   `independent_of`, per-kernel receipts, display-only composite) so this is scoped to the
+   remainder; see its body.
+2. **R-0454 (neutral digest), because its window is closing.** Digests are
    *stored*. No `subjectDigest` field exists in `Concrete/` yet, so migration cost is
    zero today and rises with every artifact written. It also closes the substantive
    gap in R-0448: kernels currently agree on an obligation *id*, so "two kernels
    agreed" means "two kernels each closed something filed under the same key".
-2. **Point the existing agreement technique at `exprToSmt` and Lean's own rendering**
+   Alpha-normalize before hashing — the third encoding invariant, added from the R-0464
+   cross-check, without which R-0464 invalidates every stored digest.
+3. **R-0467 and R-0468 here, not later, because everything above is unverified on the
+   merge commit without them.** The multi-kernel job runs on dispatch, schedule or a
+   label, so a regression in R-0461's or R-0464's work merges green; and the scheduled
+   jobs are pinned to `lambdaclass/concrete`, so in this repository the nightly can never
+   fire. Both are hours, not weeks, and they are what stops the rest of this list from
+   being verified by hand each time. Sequenced after the two hole fixes only because
+   there is no point automating the verification of work not yet done.
+4. **Point the existing agreement technique at `exprToSmt` and Lean's own rendering**
    (recorded under R-0450). Cheap, needs no IR, and it tells the IR work what the
    fragment actually has to preserve. The SMT path matters most: its verdict enters
    the TCB as `solver_trusted`, and no kernel re-derives it.
-3. **R-0455 (term IR + Register B), absorbing the four drivers that landed ahead of
+5. **R-0462 (fuzz the compiled binary against the safety claims).** Placed above the IR
+   and the register rows deliberately: it is the highest fault-finding value per unit of
+   work on this list, it would have caught H24 in seconds, and it is the only item here
+   that tests a claim against the ARTIFACT rather than against another model of it. Every
+   static surface reported success on `examples/trap_semantics_gap/`.
+6. **R-0455 (term IR + Register B), absorbing the four drivers that landed ahead of
    it.** Every further kernel added before this multiplies the thing being removed.
-4. **R-0460 (Register A rows).** One discharged row moves the ceiling further than a
+7. **R-0460 (Register A rows).** One discharged row moves the ceiling further than a
    third kernel does — see the priority argument recorded in that task.
-5. **R-0459 before R-0448's credibility gate**, because that gate is currently
+8. **R-0459 before R-0448's credibility gate**, because that gate is currently
    unsatisfiable rather than merely un-run: every obligation family is arithmetic, so
    flagship code produces nothing to badge.
-6. **R-0456 and R-0449 last, and only on their own merits** — meta-theory in a second
+9. **R-0463 (probe whether a Farkas witness extracts from `micromega`).** Timeboxed, and
+   scheduled late only because its result changes strategy rather than unblocking work: a
+   positive result deletes the case for a second kernel at the linear tier, which is where
+   multi-kernel evidence is currently deployed. Do it before any further prover, never
+   after.
+10. **R-0448 (graduate the arc) once the above hold**, and not before — its own merge bar
+   already names H23 as blocking.
+11. **R-0456 and R-0449 last, and only on their own merits** — meta-theory in a second
    host, and realization — both explicitly de-prioritised or pull-gated.
 
 The governing principle, measured rather than assumed: kernel diversity is a
