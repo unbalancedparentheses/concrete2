@@ -191,15 +191,20 @@ the right reason (SIGABRT ⇒ 134), which is why it stayed hidden.
 Fixed in `1497c689`: all five trap assertions now require death by *signal* (`>= 128`) via
 an `expect_trap` helper that names the wrap case explicitly. Verified in both directions —
 with the mutation applied the gate goes red with that message; restored, it is 10/10 green.
-Remaining step before this entry is deleted: the nightly
-`check_gate_mutation_coverage.sh` must report the `checked-arith-trap` family as KILLED
-rather than SURVIVED. It is listed here rather than in the changelog only because that
-confirmation has not run yet.
+Remaining step before this entry is deleted: `check_gate_mutation_coverage.sh` must report
+the `checked-arith-trap` family as KILLED rather than SURVIVED.
+
+**That step must be run by MANUAL `workflow_dispatch`, not waited for.** An earlier
+version of this entry said "pending nightly confirmation", which is unsatisfiable here:
+the scheduled jobs are gated on `github.repository == 'lambdaclass/concrete'` and this
+repository is `unbalancedparentheses/concrete2`, so the schedule can never fire. Waiting
+would have left the entry open forever while reading as merely pending. R-0468 fixes the
+reachability; until then, dispatch the job by hand and close this.
 
 Reproduced on a clean worktree of `main`, so it was independent of the multi-kernel
-branch. Note that `check_gate_mutation_coverage.sh` runs only in the nightly job,
-which is deliberately pinned to the canonical repo, so this had never executed here —
-the reason a decorative gate could persist undetected.
+branch. Note that `check_gate_mutation_coverage.sh` runs only in that repo-pinned job, so
+it had never executed here — the reason a decorative gate could persist undetected, and
+the reason to assume there are more until the gate has run clean once.
 
 ### Policy (not a hole): HashMap/HashSet traversal is UNORDERED — permanent
 

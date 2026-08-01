@@ -6177,6 +6177,65 @@ Two pieces:
 Register C (2026-07-31) supplies the representation this needs; this task is the wiring
 that makes the guarantee structural at every backend rather than at the surfaces alone.
 
+### Task R-0467
+
+**Objective:** Run the multi-kernel evidence job on merges to `main`, not only on
+dispatch, schedule, or a PR label.
+
+`.github/workflows/lean_action_ci.yml`'s `multi-kernel` job is gated on
+`workflow_dispatch || schedule || contains(labels, 'multi-kernel')`. Everything the
+multi-kernel arc built — the badge classes, lowering agreement, certificate replay, the
+release-gate composition, `kernel_disagreement` — is therefore unverified on the commit
+that actually lands. A regression merges green and is discovered whenever someone next
+remembers to dispatch the job.
+
+This is the pinning that let H22 survive: `check_gate_mutation_coverage.sh` was
+nightly-only, so a gate that could not detect removal of the property it guarded stayed
+green for months. Same shape, newer subsystem.
+
+The cost is real and is why this is a task rather than a one-line edit: the job installs a
+multi-gigabyte Isabelle closure and cold proof runs cost roughly 30s per goal, with a
+90-minute timeout. Options, cheapest first:
+
+1. `push: branches: [main]` only — pays the cost once per merge, not per PR push. The
+   recommended default; merges are rare relative to pushes.
+2. Split the job — the Rocq half (`coqc` is a small closure) on every PR, the Isabelle
+   half on merge. Most of the evidence surface at a fraction of the cost.
+3. Keep opt-in but make the label mandatory for PRs touching
+   `Concrete/Report/Evidence.lean`, `ReportObligations.lean` or the multi-kernel gate —
+   enforceable with a path filter, and it fails closed rather than relying on memory.
+
+Whichever is chosen, record it: an evidence gate that does not run on the merge commit
+should say so where readers of the evidence will see it, not only in the workflow file.
+
+### Task R-0468
+
+**Objective:** Make the nightly-pinned gates reachable in this repository, and fix the
+hole-closure conditions that currently depend on them.
+
+The scheduled jobs are gated on `github.repository == 'lambdaclass/concrete'`. This
+repository is `unbalancedparentheses/concrete2`, so **the scheduled path can never fire
+here** — `proof-replay`, the fuzz campaigns and `check_gate_mutation_coverage.sh` are
+reachable only by manual `workflow_dispatch`. The pin is correct in intent (a fork should
+not run the canonical nightly) and wrong in effect (the fork where the work happens gets
+no nightly at all).
+
+Two consequences, the second worse than the first:
+
+- **H22's closure condition is unsatisfiable as written.** It says the entry can be
+  deleted "once the nightly confirms the `checked-arith-trap` family reports KILLED". No
+  nightly will run. Either dispatch `check_gate_mutation_coverage.sh` manually and close
+  it, or restate the condition against something that can actually happen here. Corrected
+  in `KNOWN_HOLES.md` to say "manual dispatch" pending this task.
+- **Nobody knows what else the nightly would have caught.** `check_gate_mutation_coverage.sh`
+  is the gate that finds decorative gates — it is how H22 was found in the first place, on
+  a run someone did by hand. It has run in this repository approximately never. Assume
+  more H22s until it has run clean once.
+
+Minimum fix: make the repository pin a variable, or add this fork to it. Better fix: run
+the mutation-coverage gate on merges to `main` here, since it is the gate whose absence is
+self-concealing — a decorative gate stays green, so nothing else will report its absence.
+
 ### Task R-0460
 
 **Objective:** Discharge the obligation-sufficiency register — *if the flat goal holds,
