@@ -1,0 +1,33 @@
+// R-0004: a `spec fn` and an ordinary function sharing ONE name.
+//
+// `dup` is declared both ways. A contract naming `dup` cannot say which it means,
+// and resolving by table order would silently put an abstraction where an
+// implementation was meant (or the reverse) inside evidence bytes. The subject
+// must go UNCOVERED instead.
+//
+// `only_spec` and `only_fn` are the controls: each name is unambiguous, so each
+// must stay covered. Without them, "uncovered" could be an artifact of the
+// fixture rather than of the ambiguity.
+mod amb {
+    spec fn dup(x: Int) -> Int;
+
+    fn dup(x: Int) -> Int { return x; }
+
+    spec fn only_spec(x: Int) -> Int;
+
+    fn only_fn(x: Int) -> Int { return x + 1; }
+
+    // AMBIGUOUS: `dup` names two different callables.
+    #[ensures(result == dup(x))]
+    fn uses_ambiguous(x: Int) -> Int { return x; }
+
+    // CONTROL: resolves to the spec fn alone.
+    #[ensures(result == only_spec(x))]
+    fn uses_spec(x: Int) -> Int { return x; }
+
+    // CONTROL: resolves to the ordinary function alone.
+    #[ensures(result == only_fn(x))]
+    fn uses_fn(x: Int) -> Int { return x + 1; }
+
+    pub fn main() -> Int { return uses_ambiguous(0) + uses_spec(0) + uses_fn(0); }
+}

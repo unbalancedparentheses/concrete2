@@ -187,17 +187,59 @@ echo "=== spec fns are resolvable contract targets, in their own namespace ==="
 # outside the digest entirely.
 CC=".lake/build/bin/concrete"
 HM="examples/hmac_sha256/src/main.con"
-inc=$("$CC" "$HM" --report subject-facts 2>/dev/null | grep -cE "INCOMPLETE|ABSENT" || true)
+# CAPTURE stderr and CLASSIFY it. The earlier version used 2>/dev/null, so a run
+# emitting 11 diagnostics still read as clean. Hiding a channel is not the same as
+# knowing what is on it.
+HM_OUT="$TMP/hm.out"; HM_ERR="$TMP/hm.err"
+"$CC" "$HM" --report subject-facts >"$HM_OUT" 2>"$HM_ERR"
+n_entries=$(grep -c '^v1:' "$HM_OUT" || true)
+[ "$n_entries" = "23" ] \
+  && ok "hmac_sha256 reports exactly 23 subjects" \
+  || no "expected exactly 23 hmac_sha256 subjects, got $n_entries"
+inc=$(grep -cE "INCOMPLETE|ABSENT" "$HM_OUT" || true)
 [ "$inc" = "0" ] \
   && ok "hmac_sha256 has no incomplete or absent subjects" \
   || no "$inc hmac_sha256 subjects are incomplete/absent — contracts are escaping the digest"
-withc=$("$CC" "$HM" --report subject-facts 2>/dev/null | grep -c "ens: 1" || true)
-[ "${withc:-0}" -gt 0 ] \
-  && ok "hmac_sha256 contracts are captured ($withc entries)" \
-  || no "no hmac_sha256 contracts captured, though the source has #[ensures]"
-# A spec fn is NOT a user function: no body, not callable at runtime, meaning
-# supplied by a model. Folding it into `.user` would make a reference to an
-# abstraction look like a reference to an implementation.
+withc=$(grep -c "ens: 1" "$HM_OUT" || true)
+[ "$withc" = "2" ] \
+  && ok "hmac_sha256 has exactly 2 contract-bearing subjects" \
+  || no "expected exactly 2 contract-bearing hmac_sha256 subjects, got $withc"
+# Every stderr line must be an EXPECTED kind. The unbound-proof-subject errors are
+# bug 058's containment working (a #[proof_by] with no #[proof_fingerprint] is
+# unbound, not proved); anything else is unclassified and must fail.
+tot_err=$(grep -c "^error:" "$HM_ERR" || true)
+unbound=$(grep -c "has no stored proof subject" "$HM_ERR" || true)
+if [ "$tot_err" = "$unbound" ]; then
+  ok "all $tot_err stderr diagnostics are the expected unbound-proof-subject kind (bug 058 containment)"
+else
+  no "stderr carries $((tot_err - unbound)) UNCLASSIFIED diagnostic(s) beyond the $unbound expected"
+fi
+
+echo ""
+echo "=== a name meaning two callables fails closed, with controls ==="
+# Ambiguity was implemented but only inspection-verified. This fixture declares
+# `dup` as BOTH a spec fn and an ordinary function; a contract naming it cannot
+# say which, and resolving by table order would put an abstraction where an
+# implementation was meant. The controls are what stop "uncovered" from being an
+# artifact of the fixture.
+AMB="tests/programs/subject_spec_name_ambiguity.con"
+[ -f "$AMB" ] && ok "the ambiguity fixture is committed" || no "ambiguity fixture missing"
+AMB_OUT="$TMP/amb.out"
+"$CC" "$AMB" --report subject-facts >"$AMB_OUT" 2>/dev/null
+amb_cov=$(grep -A7 '^v1:user:amb.uses_ambiguous$' "$AMB_OUT" 2>/dev/null | grep -oE "covered: (true|false)" | head -1 || true)
+[ "$amb_cov" = "covered: false" ] \
+  && ok "a contract naming an ambiguous callable is UNCOVERED" \
+  || no "the ambiguous case is '$amb_cov' — order-dependent resolution is back"
+for ctl in uses_spec uses_fn; do
+  c=$(grep -A7 "^v1:user:amb.$ctl\$" "$AMB_OUT" | grep -oE "covered: (true|false)" | head -1)
+  e=$(grep -A7 "^v1:user:amb.$ctl\$" "$AMB_OUT" | grep -oE "ens: [0-9]+" | head -1)
+  if [ "$c" = "covered: true" ] && [ "$e" = "ens: 1" ]; then
+    ok "control $ctl resolves unambiguously and stays covered"
+  else
+    no "control $ctl is '$c'/'$e' — uncovered may be an artifact, not the ambiguity"
+  fi
+done
+
 probe "a spec fn gets its own namespace" "false" \
 '#eval (CallableId.ofSpec "m" "f").render == (CallableId.ofUser "m" "f").render'
 probe "the namespace list covers every constructor" "true" \
