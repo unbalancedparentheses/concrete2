@@ -45,6 +45,11 @@ jobs:
       - name: Register C gate (evidence is never stronger than its inputs)
         run: bash scripts/tests/check_evidence_algebra.sh
 
+      # Source-level too: compares hole status across documents and against the corpus
+      # gate's fixture list. No build needed.
+      - name: Hole-status consistency (no document contradicts KNOWN_HOLES)
+        run: bash scripts/tests/check_hole_status_consistency.sh
+
       - name: Run Python LL(1) checker
         run: python3 scripts/check_ll1.py grammar/concrete.ebnf
 

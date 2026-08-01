@@ -2414,8 +2414,14 @@ def proofClasses : List String :=
 /-- Register C companion to `Evidence.c3_caps_to_assumed`, kept here because this is
     where `proofClasses` lives. C3 proves a claim with outstanding assumptions presents
     as exactly `"assumed"`; this proves `"assumed"` is not a proof class. Together:
-    **a claim resting on an unestablished hypothesis can never present as proved** —
-    which is H23, closed as a compile-time fact rather than a gate.
+    **a claim resting on an unestablished hypothesis can never present as proved** — the
+    H23 *class*, as a compile-time fact rather than a gate.
+
+    Not H23 itself, which stays OPEN: nothing populates an assumption set until R-0461,
+    so the fixture still reports proved and `check_known_wrong_corpus.sh` asserts that it
+    does. `docs/KNOWN_HOLES.md` is the authority on hole status; this comment is a
+    reference to it, and `check_hole_status_consistency.sh` now fails if a reference
+    disagrees — which is how this sentence's earlier, wrong version was found.
 
     The two halves are deliberately in different modules. Evidence.lean must not import
     the report layer, and putting the list here keeps one definition of what counts as a
