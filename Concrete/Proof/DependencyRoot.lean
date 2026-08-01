@@ -59,10 +59,22 @@ namespace Concrete.Proof
     Edges carry their kind, so the root can refuse to rest on a `missing` one
     rather than treating every callee as equivalent. -/
 structure DepNode where
-  id      : String
+  /-- The compiler-minted semantic identity, NOT a name.
+
+      This was a raw `String`, which is the defect class R-0004 exists to close
+      appearing inside the dependency material itself: a name is a
+      representation, two callables can share one, and a rename must not move a
+      node. Keyed on the canonical rendering so comparison is the identity's own
+      notion of equality rather than an arbitrary string's. -/
+  id      : CallableId
   digest  : Option String
-  edges   : List (DependencyEdge × String)
+  /-- Typed edges to semantic identities, for the same reason. -/
+  edges   : List (DependencyEdge × CallableId)
 deriving Repr, Inhabited
+
+/-- Canonical key for lookup and ordering. One function, so no consumer invents a
+    second notion of when two nodes are the same. -/
+def DepNode.key (d : DepNode) : String := d.id.render
 
 /-- Why a root could not be built. Carried rather than collapsed to `none`, so a
     caller can say WHICH fail-closed condition fired instead of reporting a
@@ -89,8 +101,8 @@ def DepRootError.explain : DepRootError → String
     than diverge. -/
 def reachableFrom (nodes : List DepNode) (start : String) : List String :=
   let succs := fun (n : String) =>
-    match nodes.find? (fun d => d.id == n) with
-    | some d => d.edges.map Prod.snd
+    match nodes.find? (fun d => d.key == n) with
+    | some d => d.edges.map (fun e => e.2.render)
     | none   => []
   let rec go (fuel : Nat) (frontier acc : List String) : List String :=
     match fuel with
@@ -132,22 +144,22 @@ deriving Repr, BEq, Inhabited
     `missing`. -/
 def dependencyRootMaterial (nodes : List DepNode) (id : String)
     : Except DepRootError DependencyRootMaterial := do
-  let ids := nodes.map (·.id)
+  let ids := nodes.map (·.key)
   match ids.find? (fun n => (ids.filter (· == n)).length > 1) with
   | some dup => throw (.duplicateId dup)
   | none => pure ()
-  let start ← match nodes.find? (fun d => d.id == id) with
+  let start ← match nodes.find? (fun d => d.key == id) with
     | some d => pure d
     | none   => throw (.missingStart id)
   -- `some ""` is as incomplete as `none`: an empty digest is a computed-looking
   -- value derived from nothing.
   let digestOf := fun (n : String) => do
-    match nodes.find? (fun d => d.id == n) with
+    match nodes.find? (fun d => d.key == n) with
     | none   => throw (.unresolvedEdge id n)
     | some d => match d.digest with
       | some v => if v.isEmpty then throw (.incompleteDigest n) else pure v
       | none   => throw (.incompleteDigest n)
-  let ownDigest ← digestOf start.id
+  let ownDigest ← digestOf start.key
   -- Each node EXACTLY ONCE. `reachableFrom` returns the start itself when the
   -- start is in a cycle, so `id :: closure` listed it twice and a self- or
   -- mutually-recursive subject got a different preimage for the same dependency
@@ -157,7 +169,7 @@ def dependencyRootMaterial (nodes : List DepNode) (id : String)
   let mut parts : List String := []
   let mut trust := false
   for n in allNodes do
-    let node ← match nodes.find? (fun d => d.id == n) with
+    let node ← match nodes.find? (fun d => d.key == n) with
       | some d => pure d
       | none   => throw (.unresolvedEdge id n)
     let nDigest ← digestOf n
@@ -166,8 +178,8 @@ def dependencyRootMaterial (nodes : List DepNode) (id : String)
     -- they were discovered in
     -- Edges deduplicated as well as sorted: calling one callee twice does not
     -- change the DEPENDENCY SET, so it must not change the root.
-    let sorted := node.edges.eraseDups.mergeSort fun a b =>
-      (a.1.canonical ++ a.2) ≤ (b.1.canonical ++ b.2)
+    let sorted := (node.edges.map (fun e => (e.1, e.2.render))).eraseDups.mergeSort
+      fun a b => (a.1.canonical ++ a.2) ≤ (b.1.canonical ++ b.2)
     for (k, tgt) in sorted do
       if k == DependencyEdge.missing then throw (.missingEdge n tgt)
       let tgtDigest ← digestOf tgt
