@@ -1,0 +1,46 @@
+// R-0004: producer and invariance cases for CheckedDeclFacts.
+//
+// Each pair is designed so that ONE property differs and everything else is held
+// fixed, so a passing gate cannot be explained by an unrelated difference.
+mod inner {
+    pub fn shared_name(x: Int) -> Int { return x + 1; }
+    pub fn aliased(x: Int) -> Int { return x + 2; }
+}
+
+mod deep {
+    mod nested {
+        pub fn buried(x: Int) -> Int { return x + 3; }
+    }
+    pub fn reach(x: Int) -> Int { return x + 4; }
+}
+
+mod other {
+    // SAME spelling as inner.shared_name, different defining module.
+    pub fn shared_name(x: Int) -> Int { return x + 1; }
+}
+
+struct Copy Holder { v: Int }
+
+impl Holder {
+    // impl method: ProofCore names it Holder_get.
+    pub fn get(self) -> Int { return self.v; }
+}
+
+mod alpha {
+    // ALPHA-RENAMING pair: same types, same structure, different binder SPELLINGS.
+    pub fn named_ab(a: Int, b: Int) -> Int { return a; }
+    pub fn named_xy(x: Int, y: Int) -> Int { return x; }
+}
+
+mod boundpos {
+    // Same bound, different POSITION of the bounded parameter. Position is
+    // semantic (`<T, Int>` is not `<Int, T>`); the parameter's spelling is not.
+    // Both bounded Copy so the values are discardable under linear ownership.
+    pub fn bounded_first<T: Copy>(t: T, n: Int) -> Int { return n; }
+    pub fn bounded_second<T: Copy>(n: Int, t: T) -> Int { return n; }
+}
+
+mod main {
+    import inner.{ aliased as renamed };
+    pub fn main() -> Int { return renamed(0); }
+}

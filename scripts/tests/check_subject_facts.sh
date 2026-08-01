@@ -250,6 +250,70 @@ probe "the namespace list covers every constructor" "true" \
   && (CallableNamespace.all.map CallableNamespace.canonical).eraseDups.length == 5'
 
 echo ""
+echo "=== producer and invariance cases, on one committed program ==="
+INV="tests/programs/subject_invariance.con"
+[ -f "$INV" ] && ok "the invariance fixture is committed" || no "invariance fixture missing"
+INV_OUT="$TMP/inv.out"; "$CC" "$INV" --report subject-facts >"$INV_OUT" 2>/dev/null
+idsOf() { grep -c "^v1:user:$1\$" "$INV_OUT" 2>/dev/null || true; }
+
+# (1) SAME SPELLING, DIFFERENT MODULE -> different identities. The case a
+# name-keyed table gets wrong.
+if [ "$(idsOf 'inner.shared_name')" = "1" ] && [ "$(idsOf 'other.shared_name')" = "1" ]; then
+  ok "same declName in two modules yields two distinct subjects"
+else
+  no "inner.shared_name / other.shared_name did not both appear as distinct subjects"
+fi
+
+# (2) IMPORTED ALIAS. `import inner.{ aliased as renamed }` must NOT mint a
+# subject under the alias: identity belongs to the DEFINITION site, so a rename at
+# the use site cannot move it.
+[ "$(idsOf 'main.renamed')" = "0" ] && [ "$(idsOf 'inner.aliased')" = "1" ] \
+  && ok "an import alias mints no subject; identity stays at the definition site" \
+  || no "the alias 'renamed' produced its own subject — identity followed the use site"
+
+# (3) NESTED and DOUBLY NESTED modules receive facts, keyed under the full path.
+[ "$(idsOf 'deep.reach')" = "1" ] \
+  && ok "a nested module function receives facts" \
+  || no "deep.reach has no facts"
+[ "$(idsOf 'deep.nested.nested_buried')" = "1" ] \
+  && ok "a DOUBLY nested module function receives facts under its full path" \
+  || no "deep.nested.nested_buried has no facts — the pre-prefix keying bug is back"
+
+# (4) IMPL METHODS receive facts, under the TypeName_method naming ProofCore uses.
+[ "$(idsOf 'main.Holder_get')" = "1" ] \
+  && ok "an impl method receives facts" \
+  || no "Holder.get has no facts — impl methods are being skipped"
+
+# (5) ALPHA-RENAMING. Type and capability binders are rendered BY INDEX, so their
+# spelling is not semantic. VALUE binders are deliberately NOT invariant: a
+# contract names its parameters, so renaming one changes what the contracts
+# denote. Asserted as it is, rather than claimed invariant.
+probe "renaming a TYPE binder does not change a signature rendering" "true" \
+'#eval boundTyCanonical ["T"] [] (Ty.typeVar "T") == boundTyCanonical ["U"] [] (Ty.typeVar "U")'
+probe "renaming a CAPABILITY binder does not change a fn-type rendering" "true" \
+'#eval
+  let f := fun (c : String) => boundTyCanonical [] [c] (Ty.fn_ [] (CapSet.var c) Ty.int)
+  f "C" == f "D"'
+ab=$(grep -A1 "^v1:user:main.alpha.alpha_named_ab\$" "$INV_OUT" 2>/dev/null | grep -oE "params: .*" | head -1 || true)
+xy=$(grep -A1 "^v1:user:main.alpha.alpha_named_xy\$" "$INV_OUT" 2>/dev/null | grep -oE "params: .*" | head -1 || true)
+[ -n "$ab" ] && [ "$ab" != "$xy" ] \
+  && ok "renaming a VALUE binder DOES change the facts (contracts name parameters)" \
+  || no "value-binder renaming was invisible — a contract referring to 'a' would survive a rename to 'x'"
+
+# (6) BOUND POSITION is semantic: the same bound on a different parameter
+# position is a different signature.
+bf=$(grep -A2 "^v1:user:main.boundpos.boundpos_bounded_first/1\$" "$INV_OUT" 2>/dev/null | grep -oE "params: .*" | head -1 || true)
+bs=$(grep -A2 "^v1:user:main.boundpos.boundpos_bounded_second/1\$" "$INV_OUT" 2>/dev/null | grep -oE "params: .*" | head -1 || true)
+[ -n "$bf" ] && [ "$bf" != "$bs" ] \
+  && ok "moving a bounded parameter to another position changes the facts" \
+  || no "bound position is invisible ($bf vs $bs)"
+probe "changing a bound itself moves the facts" "true" \
+'#eval
+  let a : CheckedDeclFacts := { id := CallableId.ofUser "m" "f" 1, typeBounds := [("", ["Copy"])] }
+  let b : CheckedDeclFacts := { id := CallableId.ofUser "m" "f" 1, typeBounds := [("", ["Destroy"])] }
+  a.canonical != b.canonical'
+
+echo ""
 echo "=== a free identifier is not a name in the bytes ==="
 # `.ident` used to emit `g<len>:<name>` for anything the declaration did not
 # bind — a raw source name straight into evidence, the same defect class as the
