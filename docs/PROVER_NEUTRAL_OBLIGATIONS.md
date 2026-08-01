@@ -350,6 +350,44 @@ consequence for planning: the differential surfaces (`core-semantics-diff`,
 two compete. Kernel diversity exists to serve the auditor who does not trust Lean. It is
 a *portability* property, not a *bug-finding* one, and conflating the two overvalues it.
 
+### DECIDED (2026-07-31): what a badge means once status composes
+
+R-0461 caps an obligation's status by the weakest fact it rests on, which raises the
+question the vocabulary had no answer for: what is the status of something *proved by
+three kernels, under an invariant nobody established*? Decided, because R-0461 cannot be
+implemented until it is:
+
+> **Cap to the existing `assumed` status. Do not invent a conditional badge.** Record
+> what is outstanding in a structured `conditions : [{ref, status}]` field. Independence
+> and receipts are unchanged — three kernels really did close the goal, and that stays
+> in the record.
+
+The rule that makes it enforceable, and the one to gate:
+
+> **No status string containing `proved` may be emitted for a claim with an
+> undischarged condition.**
+
+Three reasons this beats a `proved_by_two_kernels (conditional on …)` form:
+
+1. **It is safe for a consumer that only pattern-matches the status.** That is precisely
+   how H23 fooled everything: a policy gate, a dashboard, and a human skim all read
+   `proved_by_multi_kernel` and were wrong. A conditional badge that still contains the
+   substring `proved` reproduces the failure for every naive reader.
+2. **The precedent already exists, twice.** `assumed` is the status for `#[assume]`
+   (rule 10 of [CONTRACTS_AND_VCS.md](CONTRACTS_AND_VCS.md)), and `#[requires]` already
+   displays as `assumed_at_entry (each call site checked separately)` — conditional,
+   discharged elsewhere, tracked. Loop invariants are the third instance of a shape the
+   system already has, not a new concept.
+3. **It plugs into enforcement that already works end to end.** `assumed` is
+   gate-forbiddable in release: `ProjectPolicy.forbidAssume` / `enforceNoAssume` exist
+   and are wired. So capping makes H23 catchable **today** by an existing policy knob,
+   with no new gate machinery.
+
+**Independence does not interact with this.** The two coordinates answer different
+questions — independence is *how many separate things checked it*, conditions are *what
+it rests on* — and a claim can be high on one and empty on the other. Never fuse them
+into one label; the badge string derives from status alone.
+
 ### Four structural changes the H23 audit argues for
 
 H23 — an unproven loop invariant laundering into a `proved_by_multi_kernel` bounds
@@ -394,6 +432,31 @@ inputs satisfying its `#[requires]`, run the **binary**, assert no trap. H23 abo
 first run. This is distinct from `--report bridge-check`, which fuzzes the obligation
 against the interpreter — a model against a model. Pointing the fuzzer at the artifact also
 crosses the surface→Core→SSA→LLVM lowering that no register row covers (R-0462).
+
+### Which tier is multi-kernel FOR — the table that decides it
+
+Do not settle this by argument. For each tier, ask what the strongest achievable evidence
+is and what the cheapest route to it is. Three of the four rows are already measured, and
+they point the same way.
+
+| Tier | Strongest achievable evidence | Measured? | Is a second kernel the right spend? |
+|---|---|---|---|
+| Bitvector | LRAT certificate, checked by an independent implementation | **yes** — drat-trim ships and runs | **No.** Already replayable; a kernel adds nothing a certificate does not. |
+| Linear integer | Farkas / Positivstellensatz witness from `micromega`? | **open** — R-0463 probes it | Probably not, if the witness extracts. |
+| Nonlinear | corroboration only; no proof reconstruction | **yes** — z3, cvc5, veriT all fail at 120s | **Yes** — an independent decision procedure is the ceiling. |
+| Datatype | kernel proof only | **yes** — Alethe rejects a ground selector goal | **Yes** — but the drivers' fragment excludes these entirely. |
+
+Read the deployment against the table: multi-kernel evidence is implemented on row 2 and
+absent from rows 3 and 4. It is spent where a certificate would serve better and missing
+where it is the only option.
+
+Two consequences worth stating, because they change what to build:
+
+- **The valuable move for multi-kernel is widening the fragment (R-0455), not adding a
+  prover.** Rows 3 and 4 need kernels and cannot be reached today; a fourth prover on row 2
+  would deepen the misallocation.
+- **Only one cell is open.** R-0463 is a timeboxed probe, not a strategy debate, and its
+  result decides whether the linear tier keeps its kernels or trades them for certificates.
 
 ### Reconsidering where multi-kernel is spent
 

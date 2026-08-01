@@ -1662,6 +1662,7 @@ def compileAndReport (inputPath : String) (reportType : String)
       if linear.isEmpty then
         out := out ++ "\n(no linear runtime-safety obligations in this file)\n"
       let mut lowerBad := 0
+      let mut disagreed := 0
       for o in linear do
         let leanOk := omegaProved.contains o.key
         -- Attesting kernels = lean (if omega closed) + externals that BOTH closed
@@ -1673,12 +1674,37 @@ def compileAndReport (inputPath : String) (reportType : String)
                 then some name else none)
         let n := attest.length
         if n < 2 then belowTwo := belowTwo + 1
+        -- VERDICT disagreement, as distinct from LOWERING disagreement below. Two
+        -- kernels that render the SAME proposition (lowering agrees) and return
+        -- OPPOSITE verdicts have told us something no amount of agreement can: either
+        -- this driver renders that goal wrongly for that kernel, or a decision
+        -- procedure is wrong. For the linear fragment both `omega` and `lia`/
+        -- `presburger` are COMPLETE, so a disagreement here is nearly always our bug —
+        -- which is exactly why it must be loud rather than absorbed.
+        --
+        -- Only `closed`/`refused` count: those are verdicts. `off`, `unavailable`,
+        -- `not-asked` and `error` are absences, and treating an absence as dissent is
+        -- the conflation this report exists to prevent.
+        --
+        -- Kernels whose LOWERING disagreed are excluded — their verdict is about a
+        -- different proposition, so it is not evidence about this one, and it is
+        -- already reported on its own line.
+        let dissent := kernels.filterMap (fun (name, label, en, _, em, res) =>
+          let c := cellOf en em res o.key
+          if (badOf name).contains o.key then none
+          else if c == "closed" && !leanOk then some (label, "closed while lean refused")
+          else if c == "refused" && leanOk then some (label, "refused while lean closed")
+          else none)
+        if !dissent.isEmpty then disagreed := disagreed + 1
+        -- A disagreement CAPS the class. It is not `proved_by_*` — one of the kernels
+        -- says it is not proved, and we do not yet know which one is right. It is not
+        -- `unproven` either, which would discard the fact that a kernel closed it.
         let cls :=
-          if n ≥ 3 then s!"proved_by_multi_kernel ({n}: {", ".intercalate attest})"
+          if !dissent.isEmpty then
+            s!"kernel_disagreement ({"; ".intercalate (dissent.map (fun (l, w) => s!"{l} {w}"))})"
+          else if n ≥ 3 then s!"proved_by_multi_kernel ({n}: {", ".intercalate attest})"
           else if n == 2 then s!"proved_by_two_kernels ({", ".intercalate attest})"
-          else if n == 1 then
-            let only := attest.head!
-            s!"proved_by_{only}" ++ (if only == "lean" then "" else " (external-only — lean did not close; investigate)")
+          else if n == 1 then s!"proved_by_{attest.head!}"
           else "unproven"
         out := out ++ s!"\n  [{o.key}]  {o.desc}"
         out := out ++ s!"\n      lean:omega = {if leanOk then "closed" else "refused"}"
@@ -1704,10 +1730,24 @@ def compileAndReport (inputPath : String) (reportType : String)
         out := out ++ s!"\n\n  LOWERING DISAGREEMENTS: {lowerBad} obligation(s) where a kernel's rendering"
         out := out ++ "\n  does not denote the obligation. Those kernels were excluded from the badge."
         out := out ++ "\n  Run `--report lowering-agreement` for the per-instance detail."
+      -- A verdict disagreement is the single most informative thing this report can
+      -- produce, so it gets its own block and its own exit code rather than being a
+      -- missing badge. `omega` and `lia`/`presburger` are all complete for linear
+      -- integer arithmetic: if they differ, something here is WRONG, and shipping while
+      -- it is unexplained means shipping a claim we cannot account for.
+      if disagreed > 0 then
+        out := out ++ s!"\n\n  KERNEL DISAGREEMENTS: {disagreed} obligation(s) where kernels rendering the"
+        out := out ++ "\n  SAME proposition returned OPPOSITE verdicts. All these kernels are complete for"
+        out := out ++ "\n  linear integer arithmetic, so this is a defect — most likely in our driver for"
+        out := out ++ "\n  the dissenting kernel, possibly in a decision procedure. Investigate before"
+        out := out ++ "\n  trusting any badge in this file: the same driver produced them all."
       -- Release gate: with --require-two-kernels, fail if any in-scope obligation
       -- did not reach ≥2 independent kernels. A genuine CI gate, not just a report.
-      if reqTwoKernels && belowTwo > 0 then
-        out := out ++ s!"\n\nGATE: --require-two-kernels FAILED — {belowTwo} obligation(s) below 2 independent kernels."
+      if reqTwoKernels && (belowTwo > 0 || disagreed > 0) then
+        if disagreed > 0 then
+          out := out ++ s!"\n\nGATE: --require-two-kernels FAILED — {disagreed} kernel disagreement(s)."
+        if belowTwo > 0 then
+          out := out ++ s!"\n\nGATE: --require-two-kernels FAILED — {belowTwo} obligation(s) below 2 independent kernels."
         IO.println (out ++ "\n")
         return 1
       if reqTwoKernels then out := out ++ "\n\nGATE: --require-two-kernels PASSED — every obligation has ≥2 independent kernels."

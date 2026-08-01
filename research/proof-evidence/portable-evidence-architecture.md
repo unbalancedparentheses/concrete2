@@ -216,7 +216,26 @@ the left-hand columns are where everyone else is ahead. The interesting claim is
 "more provers". It is that **the trusted parts are enumerated, gated, and paid down on a
 schedule**, and that the output is an artifact an outsider can act on.
 
-### 4.3 What is genuinely novel here
+### 4.3 Which tier should carry kernels — the table that decides it
+
+The question "is multi-prover worth it?" has no single answer; it has one answer per
+obligation tier, and three of the four are already measured.
+
+| Tier | Strongest achievable evidence | Measured? | Second kernel the right spend? |
+|---|---|---|---|
+| Bitvector | LRAT certificate, independently checked | yes — drat-trim ships | **No** — a certificate already does it |
+| Linear integer | Farkas witness from `micromega`? | **open** | probably not, if it extracts |
+| Nonlinear | corroboration only | yes — reconstruction fails everywhere | **Yes** — kernels are the ceiling |
+| Datatype | kernel proof only | yes — Alethe rejects a ground selector goal | **Yes**, but outside the driver fragment |
+
+The deployment is the inverse of the table: kernels are implemented on row 2 and absent
+from rows 3 and 4. Which yields the sharpest single conclusion in this note —
+**the valuable next move for multi-kernel evidence is widening the fragment, not adding a
+prover.** Rows 3 and 4 need kernels and cannot be reached; a fourth prover on row 2 would
+deepen a misallocation. And exactly one cell is open, so this is a timeboxed probe rather
+than a debate.
+
+### 4.4 What is genuinely novel here
 
 1. **Evidence as a compiler output, gated by project policy.** `[policy] require-proofs`,
    `require-two-kernels` (E0616, fails closed) make evidence a *release stance* enforced

@@ -5837,12 +5837,18 @@ This is the same discipline already applied to proof dependencies (`staleDeps`) 
 `trusted` boundary. Hypotheses are simply a dependency edge that was never modelled — which
 is why the fix is a record change plus a fold, not new proof machinery.
 
-Reporting consequence, and the reason this is not merely a downgrade: the honest status of
-`bounds0` in the fixture is not `unproven`, it is *proved conditional on invariant@6*. That
-is real, useful evidence — it says the remaining work is exactly one VC. Erasing it to
-`unproven` would lose information; reporting it as `proved` is false. The claim record needs
-the conditional form, which also gives R-0458's `strength` coordinate its first real
-consumer.
+**Reporting: DECIDED 2026-07-31, do not re-open when implementing.** The capped status is
+the EXISTING `assumed`, plus a structured `conditions : [{ref, status}]` naming what is
+outstanding. Not a new conditional badge, and specifically **no status string containing
+`proved` may be emitted for a claim with an undischarged condition** — that rule is the
+gate. Rationale in [docs/PROVER_NEUTRAL_OBLIGATIONS.md](docs/PROVER_NEUTRAL_OBLIGATIONS.md):
+a conditional badge still containing `proved` reproduces H23 for every consumer that
+pattern-matches the status, which is how H23 fooled the policy gate and the report reader
+alike. The precedent exists twice already (`assumed` for `#[assume]`, `assumed_at_entry`
+for `#[requires]`), and `assumed` is already gate-forbiddable via
+`ProjectPolicy.forbidAssume`, so the cap makes H23 catchable by machinery that is already
+wired. Independence is orthogonal and unchanged: the receipts still record that three
+kernels closed the goal.
 
 Gate over `examples/unsound_hypothesis/src/main.con`: the bounds obligation must NOT read
 proved while O2 is unproven, the fixture must stay non-vacuous (assert O2 really is

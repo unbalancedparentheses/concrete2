@@ -139,6 +139,7 @@ and absent tooling never fabricates an attestation.
 | `proved_by_multi_kernel` | The same with ≥2 external kernels; with Isabelle among them the agreement spans logics (HOL, not a CIC-family type theory) |
 | `solver_checked` | An external SMT solver reported unsat **and** an independent decision procedure (Rocq `nia`) reached the same verdict — corroboration of the verdict, not of the reasoning |
 | `solver_replayed` | The solver's **proof** was reconstructed inference-by-inference in a kernel and asserted oracle-free — strictly stronger than `solver_checked` |
+| `kernel_disagreement` | Kernels rendering the **same** proposition returned **opposite** verdicts. Not a badge and not `unproven`: it is a defect report. All these kernels are complete for linear integer arithmetic, so a disagreement is most likely a bug in our driver for the dissenting kernel. Fails `--require-two-kernels`. |
 
 What these do **not** mean:
 

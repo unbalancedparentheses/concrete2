@@ -650,6 +650,59 @@ if [ "${MULTI_KERNEL_MUTATE:-0}" = "1" ]; then
   fi
   trap - EXIT
   fi
+
+  echo "=== VERDICT DISAGREEMENT: opposite verdicts on the SAME proposition are loud ==="
+  # The other half of the doctrine. The graduation note says a disagreement signals
+  # "a lowering defect OR A DECISION-PROCEDURE DISCREPANCY" — only the first was ever
+  # implemented. A kernel REFUSING what Lean proved used to read `proved_by_lean`,
+  # textually identical to "no external kernel was asked".
+  #
+  # Injected by mutating the TACTIC, not the operator column: the lowering still
+  # denotes the obligation (so this is not the case above), the kernel simply says no.
+  # `fail` is chosen because Coq reports it as `Tactic failure`, the marker
+  # classifyRocqFailure keys on for a GENUINE refusal — `reflexivity` was tried first
+  # and classifies as `error` (our bug), which is the correct reading of a malformed
+  # script but tests a different path.
+  MUT2="Concrete/Report/ReportObligations.lean"
+  if ! git diff --quiet -- "$MUT2" 2>/dev/null; then
+    no "verdict-disagreement mutation skipped — $MUT2 has uncommitted changes"
+  else
+  trap 'git checkout -- "$MUT2" 2>/dev/null; (lake build >/dev/null 2>&1 || true)' EXIT
+  sed -i 's/"Proof. lia. Qed.",/"Proof. fail. Qed.",/' "$MUT2"
+  if ! grep -q '"Proof. fail. Qed.",' "$MUT2"; then
+    no "verdict mutation did not apply (rocqLowering proof template changed?)"
+    git checkout -- "$MUT2" 2>/dev/null
+  else
+    rm -rf .concrete-cache
+    if lake build >/dev/null 2>&1; then
+      VD="$("$COMPILER" "$DEMO" --report multi-kernel --rocq 2>/dev/null)"
+      # add_bounded: lean closes, rocq now refuses. That is a disagreement.
+      printf '%s' "$VD" | grep -A3 "add_bounded" | grep -q "kernel_disagreement" \
+        && ok "lean-proves / rocq-refuses is classed kernel_disagreement" \
+        || no "a refusing kernel must not be absorbed into proved_by_lean"
+      printf '%s' "$VD" | grep -A3 "add_bounded" | grep -q "proved_by_lean" \
+        && no "disagreement still reads proved_by_lean (the old silent path)" \
+        || ok "disagreement does NOT read as a plain single-kernel proof"
+      printf '%s' "$VD" | grep -q "KERNEL DISAGREEMENTS:" \
+        && ok "disagreements get their own summary block" \
+        || no "report should summarise kernel disagreements"
+      # mul_unbounded: BOTH refuse. Agreement on refusal is not dissent — this is the
+      # assertion that keeps the check from firing on every unproved obligation.
+      printf '%s' "$VD" | grep -A3 "mul_unbounded" | grep -q "kernel_disagreement" \
+        && no "both-refused must NOT be reported as a disagreement" \
+        || ok "both kernels refusing is agreement, not dissent"
+      "$COMPILER" "$DEMO" --report multi-kernel --rocq --require-two-kernels >/dev/null 2>&1
+      [ $? -eq 1 ] && ok "--require-two-kernels FAILS on a kernel disagreement" \
+                    || no "release gate must not pass an unexplained disagreement"
+    else
+      no "verdict mutation broke the build"
+    fi
+    git checkout -- "$MUT2" 2>/dev/null
+    rm -rf .concrete-cache
+    lake build >/dev/null 2>&1 || no "restore rebuild failed"
+  fi
+  trap - EXIT
+  fi
 else
   echo "  (skipped — set MULTI_KERNEL_MUTATE=1; mutates tracked source, needs 2 rebuilds)"
 fi
