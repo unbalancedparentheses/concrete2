@@ -332,6 +332,21 @@ fi
   && ok "an impl method receives facts" \
   || no "Holder.get has no facts — impl methods are being skipped"
 
+# (4b) TRAIT-IMPL METHODS take a different declaration path from inherent ones,
+# so they need their own coverage rather than being assumed to follow.
+[ "$(idsOf 'main.Holder_size')" = "1" ] \
+  && ok "a trait-impl method receives facts" \
+  || no "Sized for Holder :: size has no facts — trait-impl methods are being skipped"
+
+# (2b) ALIAS USE SITE. Proving no alias SUBJECT was minted is not the same as
+# proving a USE through the alias resolves to the definition-site identity. The
+# contract in `via_alias` names `renamed`; if that failed to resolve, the subject
+# would be uncovered.
+alias_cov=$(grep -A7 "^v1:user:main.main.main_via_alias\$" "$INV_OUT" 2>/dev/null | grep -oE "covered: (true|false)" | head -1 || true)
+[ "$alias_cov" = "covered: true" ] \
+  && ok "a contract USING an import alias resolves (definition-site identity)" \
+  || no "a use through the alias did not resolve ('$alias_cov')"
+
 # (5) ALPHA-RENAMING. Type and capability binders are rendered BY INDEX, so their
 # spelling is not semantic. VALUE binders are deliberately NOT invariant: a
 # contract names its parameters, so renaming one changes what the contracts
@@ -350,11 +365,27 @@ xy=$(grep -A1 "^v1:user:main.alpha.alpha_named_xy\$" "$INV_OUT" 2>/dev/null | gr
 
 # (6) BOUND POSITION is semantic: the same bound on a different parameter
 # position is a different signature.
-bf=$(grep -A2 "^v1:user:main.boundpos.boundpos_bounded_first/1\$" "$INV_OUT" 2>/dev/null | grep -oE "params: .*" | head -1 || true)
-bs=$(grep -A2 "^v1:user:main.boundpos.boundpos_bounded_second/1\$" "$INV_OUT" 2>/dev/null | grep -oE "params: .*" | head -1 || true)
-[ -n "$bf" ] && [ "$bf" != "$bs" ] \
-  && ok "moving a bounded parameter to another position changes the facts" \
-  || no "bound position is invisible ($bf vs $bs)"
+# Compared on SUBJECT DIGESTS, not on `params:` diagnostic output. Diagnostics
+# intentionally keep names and would differ for reasons unrelated to the digest,
+# so comparing them proved nothing about what evidence actually binds.
+# POSITION IS SEMANTIC, asserted on SUBJECT DIGESTS rather than on `params:`
+# diagnostic output, which intentionally keeps names and would differ for reasons
+# unrelated to what evidence binds.
+#
+# The GENERIC bound-position pair cannot witness this at the digest level: a
+# generic with no recorded instantiation is refused by `isComplete`, so neither
+# mints a digest. That refusal is correct, so the witness is a NON-GENERIC pair
+# differing only in the order of their parameter types.
+bf=$(grep -A12 "^v1:user:main.boundpos.boundpos_pos_int_bool\$" "$INV_OUT" 2>/dev/null | grep -oE "subject digest: [0-9a-f]+" | head -1 || true)
+bs=$(grep -A12 "^v1:user:main.boundpos.boundpos_pos_bool_int\$" "$INV_OUT" 2>/dev/null | grep -oE "subject digest: [0-9a-f]+" | head -1 || true)
+[ -n "$bf" ] && [ -n "$bs" ] && [ "$bf" != "$bs" ] \
+  && ok "swapping parameter type positions moves the SUBJECT DIGEST" \
+  || no "parameter position does not move the digest ($bf vs $bs)"
+# And the generic pair must be refused rather than silently digested.
+gf=$(grep -A12 "^v1:user:main.boundpos.boundpos_bounded_first/1\$" "$INV_OUT" 2>/dev/null | grep -c "INCOMPLETE" || true)
+[ "${gf:-0}" = "1" ] \
+  && ok "a generic with no instantiation mints no digest (refused, not guessed)" \
+  || no "a type-erased generic produced a digest"
 probe "changing a bound itself moves the facts" "true" \
 '#eval
   let a : CheckedDeclFacts := { id := CallableId.ofUser "m" "f" 1, typeBounds := [("", ["Copy"])] }
