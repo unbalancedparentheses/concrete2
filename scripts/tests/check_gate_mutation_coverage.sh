@@ -85,8 +85,18 @@ if [ -n "$DIRTY" ]; then
 fi
 
 TMP=$(mktemp -d)
-# INT/TERM as well as EXIT: a Ctrl-C or `kill` must restore the tree, which plain EXIT
-# does not guarantee. The handler re-raises so the exit status still reflects the signal.
+# INT/TERM as well as EXIT: plain EXIT did not restore the tree when this script was
+# killed (observed 2026-07-31, Layout.lean left mutated). The handler re-raises so the
+# exit status still reflects the signal.
+#
+# KNOWN LIMIT, measured rather than assumed: bash defers a trap until the current
+# foreground command returns, so a TERM delivered while `lake build` is running does not
+# take effect for however long that build has left — verified by sending TERM to a run
+# mid-build and watching it continue. Restoration is therefore reliable but NOT prompt.
+# If you must stop a run immediately, kill the build too, then check `git status` before
+# doing anything else; the dirty-tree guard above will refuse the next run rather than
+# silently treating a stranded mutation as pristine source, which is the failure this
+# pair of mechanisms exists to prevent.
 restore_all(){ rm -rf "$TMP"; git checkout -- $(printf "%s " "${FILE[@]}" | tr " " "\n" | sort -u) 2>/dev/null; }
 trap 'restore_all' EXIT
 trap 'restore_all; trap - INT TERM; kill -s INT $$' INT
