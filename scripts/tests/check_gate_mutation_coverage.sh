@@ -57,7 +57,40 @@ add "report-schema-row" "Concrete/Report/Report.lean" "check_vc_schema.sh" yes \
 
 N=${#NAME[@]}
 PASS=0; FAIL=0
-TMP=$(mktemp -d); trap 'rm -rf "$TMP"; git checkout -- $(printf "%s " "${FILE[@]}" | tr " " "\n" | sort -u) 2>/dev/null' EXIT
+
+# PRECONDITION: every file this run will mutate must be clean.
+#
+# Restore is `git checkout --`, which discards whatever is in the working tree. If a file
+# is already modified when we start — by a previous run that died, or by someone's
+# in-progress edit — this script silently destroys that work, and worse, a mutation
+# stranded by an earlier abort is treated as pristine source. The later families then run
+# their gates against a doubly-mutated tree and their KILLED/SURVIVED verdicts are wrong
+# without saying so.
+#
+# Observed 2026-07-31: a `pkill` of this script left Concrete/Check/Layout.lean mutated,
+# because the EXIT trap does not fire on signal-based termination (now also trapped
+# below). Recovery depended on someone running `git status`, not on the tooling.
+# check_multi_kernel.sh already refuses to run dirty for exactly this reason; this is the
+# same guard.
+DIRTY=""
+for f in $(printf "%s\n" "${FILE[@]}" | sort -u); do
+  git diff --quiet -- "$f" 2>/dev/null || DIRTY="$DIRTY $f"
+done
+if [ -n "$DIRTY" ]; then
+  echo "error: refusing to run — these files have uncommitted changes and would be" >&2
+  echo "       DESTROYED by the restore step:$DIRTY" >&2
+  echo "       Commit, stash, or 'git checkout --' them first. If a previous run was" >&2
+  echo "       killed, verify the diff is yours before discarding it." >&2
+  exit 2
+fi
+
+TMP=$(mktemp -d)
+# INT/TERM as well as EXIT: a Ctrl-C or `kill` must restore the tree, which plain EXIT
+# does not guarantee. The handler re-raises so the exit status still reflects the signal.
+restore_all(){ rm -rf "$TMP"; git checkout -- $(printf "%s " "${FILE[@]}" | tr " " "\n" | sort -u) 2>/dev/null; }
+trap 'restore_all' EXIT
+trap 'restore_all; trap - INT TERM; kill -s INT $$' INT
+trap 'restore_all; trap - INT TERM; kill -s TERM $$' TERM
 
 apply(){ # file oldfile newfile
   python3 - "$1" "$2" "$3" <<'PY'
