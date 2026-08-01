@@ -1318,6 +1318,111 @@ mutation that blanks a populated `hint` must make the repair number visibly
 worse. Report both numbers with the corpus size, and never a single green badge —
 same no-erased-dimensions rule as R-0440.
 
+### Task R-0471
+
+**Objective:** Close the diagnostic-legibility defects the 2026-07-31 surface
+audit reproduced, as the early slice of R-0137's diagnostics bar rather than
+behind its Phase 8 dashboard.
+
+R-0137 owns the full bar and the measured baseline (12 of 15 rejected programs in
+`tests/invalid_programs/` emit an empty `hint`; ~25 `hint :=` sites against 215
+`E0NNN` codes). But R-0137 is a Phase 8 validation artifact, and these three are
+hours of work that R-0466 needs in place to have anything to measure. Pulling
+them forward is the point of this task; it does not narrow R-0137.
+
+- **Bug 064 — the rejection that cannot be acted on.** Every bare semantic
+  `--query KIND` exits 1 with `unknown query kind 'predictable'` and then lists
+  `predictable` first among known kinds. The arity is wrong, not the spelling:
+  the bare-form branch validates against `knownFactKinds`
+  (`Concrete/Report/Report.lean:4430`) while the message renders both lists
+  (`:4383`). Split the two cases, and give `traceability` — currently a fact
+  filter AND a separate backend path under one name — either one meaning or two
+  names. The gate is class-level: every member of both kind lists, in bare and
+  argument form, asserting the message never lists the rejected token as known.
+  That catches the next kind added to one list and not the other, which is the
+  mechanism that produced this bug.
+- **Retired syntax gets a generic parse error.**
+  `tests/invalid_programs/missing_variant.con` uses the DELETED `#` enum
+  qualifier and gets `E0001 expected ;, got #`, with no statement that the
+  separator was retired or that `Option::<i32>::Some` replaces it. This is the
+  error a model trained on older material will hit most. The class gate is a
+  corpus grep for fixtures exercising retired surface forms — the class size is
+  unmeasured, so measure it before fixing instances, and the fixture has also
+  drifted from its own name.
+- **Populate `hint` where the candidate set is already in hand.** `E0100`
+  prints no candidates although the resolver holds the in-scope set; the
+  field-not-found and missing-variant codes likewise know the legal set they
+  choose from. The field is already wired end to end and reaches
+  `--diagnostics-json`, so this is population, not plumbing. Gate that every code
+  reachable from the corpus carries a non-empty next action, with a mutation
+  blanking one hint.
+
+### Task R-0470
+
+**Objective:** Fix bug 063 — capability-variable inference reads "unknown
+argument type" as "no capabilities", so a stored or derived function pointer
+cannot reach a `cap C` parameter.
+
+Filed 2026-07-27 and reproduced on four derived argument forms; it had no roadmap
+owner until now, which is why it is here rather than later. A
+capability-polymorphic combinator accepts a function pointer written as a bare
+name or an annotated local, but rejects `apply(ops.op, 4)` — a fn pointer read
+from a struct field, a call result, or an array element — as an E0220 type
+mismatch against a `with()` the program never wrote.
+
+This is a rejected-valid-program defect today, not wrong code. It is scheduled
+early anyway because of what the repro shows about the mechanism: the authority
+check already passes on the fabricated empty capability set, and only `expectTy`
+stops the program. Authority visibility in the signature is a load-bearing pillar
+claim, so an inference path that silently manufactures an empty capset is worth
+closing while it is still merely a false rejection. See the repro table in
+[the bug](docs/bugs/063_cap_inference_defaults_derived_fnptr_to_empty.md); there
+is no fixture yet, and the four derived forms are the negative corpus.
+
+### Task R-0469
+
+**Objective:** Fix bug 065 — make stack unboundedness propagate through the call
+graph, and give `--report stack-depth` and `--report recursion` the gate neither
+has.
+
+`computeCallDepths` filters recursive callees out of every caller's callee set
+(`Concrete/Report/Report.lean:496`), so a `main` calling recursive code reports
+`depth: 0  stack: 8 bytes` and the summary prints `Max stack bound: 8 bytes` as
+the program maximum. A function is unbounded if it is itself recursive OR reaches
+anything unbounded; render the reached callee by name, and report the summary
+maximum as `unbounded` rather than maximizing over the bounded subset.
+
+**The number is a policy verdict and a published evidence field, which is why
+this is not cosmetic.** `scripts/tests/check_policy.sh:161` greps
+`Max stack bound:` and enforces `[policy] max_stack_bytes`;
+`check_assumptions.sh:128` does the same for `[allocation] stack_max_bytes`; and
+`capture_release_bundle.sh:128` publishes it as `evidence.max_stack_bytes`. The
+fail-closed branch that should catch this cannot fire — it triggers when the
+report has NO numeric max, and the defect guarantees a finite one is always
+printed. So a budget would pass on unbounded stack rather than refuse it.
+
+Not live: all five budgeted projects (`crypto_verify`, `parse_validate`,
+`fixed_capacity`, `hmac_sha256`, `constant_time_tag` — three flagships) are
+recursion-free, so every enforced number is currently correct. That is a property
+of the corpus, not the mechanism, and it is the reason this sits after R-0471 and
+R-0470 rather than at the front: lowest urgency of the three, but an unpredictable
+trigger, so not late either. **It must precede any work that implements or
+tightens a stack budget.** If a recursive function lands in one of those five
+first, this becomes an H-numbered evidence hole with no further investigation
+needed.
+
+Gates, since `scripts/tests/check_stack_depth.sh` does not exist and that absence
+is how the defect shipped: a fixture with direct recursion, mutual recursion, and
+a bounded caller of each; a class-level assertion that no function reported with a
+finite `stack:` can reach one reported `unbounded`, cross-checked against
+`--report recursion` — which is itself currently ungated, has zero references in
+`scripts/tests/`, and is folded in here because it is the same script and the
+cross-check needs both reports; a negative budgeted project with recursion that
+`check_policy.sh` and `check_assumptions.sh` must REFUSE; and confirmation that
+bundle consumers tolerate a non-numeric `evidence.max_stack_bytes` — the fallback
+is `"?"` today, so prefer an explicit `"unbounded"`. A mutation restoring the
+`!isRecursive c` filter must fail the gate.
+
 ### Sequencing note: the prover-neutral arc (R-0450, R-0448, R-0454–R-0456, R-0458–R-0460)
 
 These tasks are entangled enough that picking one without reading the others has
@@ -1360,11 +1465,23 @@ every kernel-side surface reported success. Sequence accordingly, and note that 
 The same principle applied one level out, added 2026-07-31: this arc strengthens claims
 the language already makes, and nothing on it widens what the language can claim or makes
 a rejection legible to the model that has to act on it. R-0459 is the first of those and
-is already sequenced above; **R-0466 is the second and sits ahead of this arc by file
-position**, on the argument that a continuous empirical measurement of the language
-surface outranks further agreement between checkers of a model — the same trade R-0462
-represents against R-0460. Neither is a substitute for the arc; both are cheaper, and both
-fail loudly in places the arc reports success.
+is already sequenced above; **R-0466, R-0471, R-0470 and R-0469 are the rest and sit ahead
+of this arc by file position**, on the argument that a continuous empirical measurement of
+the language surface outranks further agreement between checkers of a model — the same
+trade R-0462 represents against R-0460. None is a substitute for the arc; all are cheaper,
+and all fail loudly in places the arc reports success.
+
+That block is four tasks, so state what earns each position rather than leaving the
+count to look like drift. R-0466 is the measurement. R-0471 is hours of work the
+measurement needs in order to have anything to move, and it pulls three defects out
+from behind R-0137's Phase 8 dashboard. R-0470 closes a capability-inference path that
+manufactures an empty capability set and is caught today only by a type mismatch —
+authority visibility is a pillar claim, so it is worth closing while still a false
+rejection. R-0469 is the least urgent and says so in its own body; it is here because
+its trigger is unpredictable and it must precede any stack-budget work. Two of the four
+(R-0470, R-0469) are ledger bugs that had no roadmap owner at all, which is the actual
+defect being corrected: an unreferenced ledger bug is invisible to a sequence that
+advances by file position.
 
 ### Task R-0450
 
