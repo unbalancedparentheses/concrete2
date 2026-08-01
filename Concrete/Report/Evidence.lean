@@ -126,12 +126,25 @@ def proved (cls : String) (attestations : List String := []) : Evidence :=
 def assuming (e : Evidence) (ref : ObligationRef) : Evidence :=
   { e with assumes := e.assumes ++ [ref] }
 
-/-- Combine two pieces of evidence: the assumption sets UNION.
+/-- Combine two pieces of evidence: the assumption sets and attestations UNION, and the
+    class is taken from the LEFT.
 
-    Union rather than intersection or replacement is the entire point. There is no
-    argument order and no branch in which an assumption is dropped, so the C1/C2
-    theorems below are immediate — which is the design working, not the proofs being
-    weak. -/
+    Union rather than intersection or replacement is the entire point for `assumes`. No
+    branch drops an assumption, so C1/C2 below are immediate — the design working, not the
+    proofs being weak.
+
+    **The class is deliberately NOT merged, and this asymmetry is load-bearing.** An
+    earlier design note described this as "class = meet of classes"; there is no meet to
+    take. R-0440 ratified that evidence is multidimensional and explicitly NOT a ladder, so
+    `proved_by_lean` and `solver_checked` have no ordering between them and inventing one
+    here would smuggle a ranking into the layer least able to justify it. `combine` is
+    therefore an operation on the *debt and attestation* dimensions only; the caller states
+    the class, because the caller is the only party that knows what the combined claim is
+    about.
+
+    Consequence for callers, since silently keeping the left class would otherwise be a
+    trap: do not use `combine` to merge two claims about DIFFERENT propositions. It is for
+    folding additional debt or attestations into one claim. -/
 def combine (a b : Evidence) : Evidence :=
   { cls          := a.cls
   , assumes      := a.assumes ++ b.assumes
@@ -199,7 +212,9 @@ theorem c2_under_hypotheses_proved (e : Evidence) (hyps : List Hypothesis) :
 
 /-- **C3 — a claim with outstanding assumptions presents as exactly `assumed`.**
 
-    H23 as a theorem. It cannot present as any `proved_*` class because it presents as a
+    The H23 *class* as a theorem — not H23 itself, which stays open until R-0461
+    populates `assumes` (see `underHypotheses`, defined and proved here but not yet wired
+    into any generator). It cannot present as any `proved_*` class because it presents as a
     single fixed literal — and that literal is proved to be outside `proofClasses` by a
     companion `example` next to the discharge-adapter firewall in `Report.lean`, which is
     where that list lives. The two together are the full statement: capped claims land on

@@ -48,7 +48,10 @@ done
 
 echo "=== C3's companion: the capped status is not a proof class ==="
 # C3 proves a claim with outstanding assumptions presents as exactly "assumed".
-# This proves "assumed" is outside proofClasses. Together they are H23 closed.
+# This proves "assumed" is outside proofClasses. Together they close the H23 CLASS —
+# a capped claim can never read as proved. They do NOT close H23 itself: nothing
+# populates `assumes` until R-0461, so the H23 fixture still reports proved, which
+# check_known_wrong_corpus.sh asserts. Do not read this gate as evidence the hole is shut.
 grep -q 'example : (!proofClasses.contains "assumed") = true := rfl' Concrete/Report/Report.lean \
   && ok "compile-time proof that the capped status is not a proof class" \
   || no "missing companion example tying C3 to proofClasses"

@@ -128,7 +128,22 @@ dischargeable immediately — and they are discharged as compile-time theorems i
 
 C3's companion, `example : (!proofClasses.contains "assumed") = true := rfl`, lives beside
 the discharge-adapter firewall in `Report.lean` because that is where `proofClasses` is
-defined. C3 and it together are **H23 closed as a compile-time fact**.
+defined.
+
+**What C3 does and does not close — corrected on re-review 2026-07-31.** An earlier
+version of this section said C3 and its companion were "H23 closed as a compile-time
+fact". They are not. C3 is a conditional: *if* a claim carries outstanding assumptions,
+*then* it presents as `assumed`. Nothing populates `assumes` yet — `underHypotheses` is
+defined and proved but not wired into any generator — so the H23 obligation still has an
+empty assumption set and still reports `proved_by_multi_kernel`. **H23 remains OPEN**, as
+`KNOWN_HOLES.md` says and as `check_known_wrong_corpus.sh` asserts by reproducing it.
+
+What is closed is the *mechanism*: once R-0461 populates the set, the cap applies by
+construction rather than by a fold someone must remember to write. That is worth having —
+it is why R-0461 is wiring rather than design — but it is a smaller claim than the one
+this document made, and stating it as "H23 closed" was precisely the failure this whole
+branch documents: a surface asserting more than it checks, written in the commit that
+discharged the register meant to prevent it.
 
 Why a representation rather than a check: a check for "did we remember to consult the
 hypotheses?" is one more surface that can be weaker than the property it guards — the
