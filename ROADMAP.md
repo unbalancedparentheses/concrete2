@@ -1578,6 +1578,75 @@ the probe: which typed identities the parallel body needs for constants, functio
 references, types, fields and enum variants, and where each is still available at
 the point Elab builds it.
 
+**SPIKE RESULT (step 3, measured 2026-08-01) — the V2 input surface is now
+known, not assumed.**
+
+| identity kind | reachable where Elab builds the parallel body? |
+| --- | --- |
+| constants | LOCAL ones YES, proven end to end and then REVERTED — `m.constants` is in scope; a distinct `ConstId` resolves and `LIMIT` yielded a covered subject. Scope of the proof: LOCAL constants only, with ambiguity checked against local functions and specs — NOT against the imported / builtin / intrinsic / extern universe. |
+| fields / enum variants | UNKNOWN — `cStructs` and `allEnums` being in scope proves the DECLARATIONS are available, NOT that a use site's identity is. The missing fact is which declaration a particular access resolved to, which aliases and repeated field names make non-obvious. Still needs its own measurement. |
+| direct calls | YES — already resolved via `CallableId` |
+| local binders | NOT at that point — `elabFn : FnDef → ElabM CFnDef` returns only the Core function, so the scope it computed is gone |
+
+**The binder-scope change is smaller than it looks, for two measured reasons.**
+`elabFn` has exactly ONE caller. And `addVar` PREPENDS to `env.vars` without ever
+popping, so the environment accumulates monotonically through a function rather
+than behaving as a lexically-scoped stack — the value at the end of `elabFn`
+already contains every binder the function introduced. Shadowing, which would
+otherwise make a flat list ambiguous, is already resolved upstream: Elab
+alpha-renames shadowing binders to Core-unique names (`value` -> `value.b7`, the
+bug-045 fix), so names are unique within a function by construction.
+
+So surfacing binder scope is: change `elabFn`'s return to carry the accumulated
+environment, update its one caller. What still needs checking before relying on
+it is whether the accumulated list is sufficient for RELATIVE POSITION — it gives
+the set of binders, not their nesting — and whether alpha-renaming covers `let`
+and loop binders as well as match binders.
+
+`ConstId` is deliberately not a `CallableId`: a constant has no parameters,
+capabilities or arity, and sharing the type is what let a constant borrow a
+same-named function's identity. Ambiguity — a name that is both — resolves to
+neither.
+
+**THE SPIKE WAS REVERTED, per the probe contract.** Its code was minimal and
+worked, which is exactly why it had to go: it had quietly become production —
+`ConstId` in the resolve layer, a resolver threaded through `SubjectFacts`, gate
+legs rewritten — while still labelled disposable. The contract in step 6 says a
+spike is discarded or explicitly promoted, because a spike silently promoted is
+how the measurement gets skipped. Promotion would have required final identity
+ownership, imported/submodule constant support, classified stderr and real
+alias/collision controls; none of that was done, so it was discarded and the
+FINDING kept. V1 golden still 77/77 after the revert.
+
+**What the spike did NOT establish, recorded so the next one is aimed correctly:**
+there is still no parallel typed evidence body — the spike fed the EXISTING
+subject-digest path; no local binder was carried through any new representation;
+and field/variant USE-SITE identity remains unmeasured.
+
+**The architectural lesson is sharper than "produce it in Elab".** The parallel
+evidence body must be produced DURING ELABORATION, where use-site resolution and
+lexical binding are known — not reconstructed afterwards from `m.constants`,
+`cStructs` or textual expressions. Reconstruction is what the reverted spike did,
+and it is why it could only answer for local constants.
+
+**NEXT BOUNDED SPIKE — and how to run it so it stays a spike.** On a DISPOSABLE
+branch or worktree, whose implementation commit is NEVER merged; only
+measurements and the proven implementation sequence come back. The last one was
+minimal and worked, and that is exactly how it ended up in the production tree
+while still labelled disposable.
+
+Produce a tiny parallel evidence EXPRESSION during elaboration carrying:
+
+* one binder reference by BINDING POSITION;
+* one resolved constant identity;
+* one resolved field or variant identity;
+* one construct that RESOLVES NORMALLY but whose EVIDENCE MAPPING is
+  unavailable. Not an invalid source reference — that fails during ordinary
+  resolution and never reaches evidence's fail-closed path, so it would test the
+  compiler's error handling instead of the property in question.
+
+The V1 77/77 golden is the immovable boundary throughout.
+
 **V1 stays frozen byte-for-byte, with a golden proving it.** The existing
 `#[proof_fingerprint]` corpus is the migration input; a test must show those
 bytes are unchanged, so "V1 is untouched" is checked rather than intended.
