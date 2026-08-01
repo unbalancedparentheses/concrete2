@@ -1483,6 +1483,24 @@ its trigger is unpredictable and it must precede any stack-budget work. Two of t
 defect being corrected: an unreferenced ledger bug is invisible to a sequence that
 advances by file position.
 
+**R-0461 comes before all four, and file position says otherwise — read this before
+starting the block.** H23 is open, and R-0461 sits at a much later file position than
+these tasks purely because it was allocated after them. Item 0 above already places it
+ahead of the arc; it is ahead of this block too, on the one criterion that separates
+them: **R-0461 is the only item in either group where a shipped claim is currently
+false.** A guaranteed out-of-bounds access reports
+`proved_by_multi_kernel (3: lean, rocq, isabelle)` and the binary aborts. Against that,
+R-0466 is a measurement, R-0471 is legibility, R-0470 is a false *rejection* (no wrong
+code), and R-0469 is latent — no budgeted project is recursive today. A false `proved`
+outranks all four, and the block was inserted without saying so, which is the gap this
+paragraph closes rather than a change of plan.
+
+The general rule this instance illustrates, since it will recur every time an urgent
+defect gets a late ID: file position is the default order, not an argument. Where a
+later-positioned task fixes a live false claim and an earlier-positioned one does not,
+the false claim goes first, and the override is written here rather than left for the
+next reader to rediscover.
+
 ### Task R-0450
 
 **Objective:** Unify obligation lowering into one prover-neutral IR with per-backend drivers (Why3 shape) — implementation already in progress off-repo; land it in a worktree and merge once green per the operating rules. The problem is duplicated expression lowerings of the same obligations: several answers to one question, free to drift — and drift here means the Lean proof and the external check silently prove DIFFERENT obligations, an evidence-integrity defect in the system R-0004 is hardening. Define one typed obligation IR (linear integer arithmetic, bitvectors, bools, arrays: the deliberate intersection fragment; everything else `not_supported`), one semantics (a single `eval` in Lean, the IntArith single-source discipline), lowering as small named transforms, and per-backend drivers that select which transforms run.
