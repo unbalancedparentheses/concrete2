@@ -1452,6 +1452,42 @@ incremental; that internal order does not duplicate slices 5-7.
    SCC/Merkle root so recursion is finite and a deep callee edit stales every
    dependent claim without making source location or alpha-renaming noise
    semantic.
+**Slice status, corrected 2026-08-01.** An earlier summary claimed slices 1-4
+complete; that was wrong and is recorded here so the next reader starts from the
+actual state rather than the claim:
+
+| slice | state |
+| --- | --- |
+| 1-3 | done |
+| 4 | ACTIVE — 8/9 tables; never-under-approximate enforcement and receipt-envelope plumbing remain |
+| 5 | ACTIVE — facts exist and are threaded, but the BODY component is still the legacy fingerprint and freshness is unwired |
+| 6 | ACTIVE — a standalone, fail-closed, typed dependency root exists; nothing in ProofCore or Report consumes it |
+| 7 | untouched |
+
+**V2 body representation — design constraints, before any code.** The facts are
+already alpha-invariant (parameters render as types by position); it is
+`bodyFingerprint` alone that makes a capture-avoiding rename visible. The fix is
+NOT another name-based normalization heuristic layered on top. It needs:
+
+* ONE typed binder environment covering parameters, `let` bindings, match
+  patterns and loop-carried values — not per-construct reconstruction. The
+  loop-scope approximation currently in `ContractFacts.ofResolved`, which infers
+  binders from a loop's assignments, is exactly the shape to avoid: it misses a
+  read-only outer local and can treat an assignment target as a declaration.
+* Semantic identities for direct calls, so a call in a body is not a name.
+* Binders rendered by RELATIVE POSITION, which is what makes a capture-avoiding
+  rename invisible.
+
+`bodyFingerprint` must be preserved BYTE-FOR-BYTE as the V1 migration input.
+Every stored `#[proof_fingerprint]` was computed under it, so changing it in
+place would report the corpus stale and invite the backfill that is forbidden
+until kernel replay issues a trustworthy receipt.
+
+**Sequence.** (1) define the typed binder/value inputs V2 needs; (2) build and
+gate an alpha-invariant `ProofBodyDigestV2`; (3) semantic constant identity and
+elaborated lexical scope; (4) integrate subject and dependency material into
+freshness; (5) receipts last.
+
 7. **Issue receipts and migrate honestly.** Only after the final subject digest
    and dependency root exist may successful kernel replay issue a receipt. It
    binds the subject digest and dependency root to theorem identity plus theorem
