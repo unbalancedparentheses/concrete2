@@ -1483,10 +1483,34 @@ Every stored `#[proof_fingerprint]` was computed under it, so changing it in
 place would report the corpus stale and invite the backfill that is forbidden
 until kernel replay issues a trustworthy receipt.
 
-**Sequence.** (1) define the typed binder/value inputs V2 needs; (2) build and
-gate an alpha-invariant `ProofBodyDigestV2`; (3) semantic constant identity and
-elaborated lexical scope; (4) integrate subject and dependency material into
+**Core does not carry the identities V2 needs — verified 2026-08-01, and this is
+what decides the order.** A traversal over `CStmt`/`CExpr` cannot recover them,
+so it would either serialize names again or fail closed across most of the
+corpus:
+
+* `CExpr.ident (name : String) (ty : Ty)` — one constructor for BOTH locals and
+  constants, so a traversal cannot tell a binder reference from a constant
+  reference, which is the distinction the whole encoding turns on;
+* `Callee.direct (name : String)` — a call target is a name, not a `CallableId`;
+* labels are `Option String`, and pattern binders and loop-carried bindings are
+  textual too.
+
+So the typed inputs come FIRST, produced in Elab where the information still
+exists, either by enriching these constructors or by carrying a parallel
+evidence-body representation alongside Core. Writing the canonicalizer before
+them would produce exactly the temporary name-normalization layer the identity
+work then has to delete.
+
+**Sequence.** (1) introduce the typed inputs — `ConstId`, binder-relative
+identities, and `CallableId` for direct references — or a parallel evidence-body
+representation carrying them from Elab; (2) capture elaborated lexical scope;
+(3) build an EXHAUSTIVE, alpha-invariant `ProofBodyCanonicalV2` over that typed
+representation; (4) feed it into the subject digest and integrate dependency
 freshness; (5) receipts last.
+
+**V1 stays frozen byte-for-byte, with a golden proving it.** The existing
+`#[proof_fingerprint]` corpus is the migration input; a test must show those
+bytes are unchanged, so "V1 is untouched" is checked rather than intended.
 
 7. **Issue receipts and migrate honestly.** Only after the final subject digest
    and dependency root exist may successful kernel replay issue a receipt. It
