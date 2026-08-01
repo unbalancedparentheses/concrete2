@@ -120,6 +120,80 @@ Phases 1–6E and completed Phase 7 foundations/workloads 1–8 are historical a
 live in [CHANGELOG.md](CHANGELOG.md). Phase 7.5's QBE backend is specified but
 has not started.
 
+## Current Execution State (2026-08-01)
+
+Not a second task queue — a map from *what is broken* to *who owns it* to *how you know
+when it is fixed*. Added because the information existed only as prose spread across
+KNOWN_HOLES, the gate scripts and commit messages, which is how the H23 status
+contradiction survived. [docs/KNOWN_HOLES.md](docs/KNOWN_HOLES.md) remains the authority
+on hole status; this table is a reference to it and
+`scripts/tests/check_hole_status_consistency.sh` fails if the two disagree.
+
+### Open holes, owners, acceptance tests
+
+| Hole | Owner | Reproduce | Done when |
+|---|---|---|---|
+| **H23** unproven invariant launders into a proved obligation | **R-0461** | `examples/unsound_hypothesis/` — `--report vcs` shows `bounds0` proved while `O2` is unproven; binary aborts | `bounds0` reads `assumed` (not `proved`) while O2 is undischarged, and `check_known_wrong_corpus.sh`'s assertion is inverted |
+| **H24** obligation generation restates trap rules, weaker | **R-0464** | `examples/trap_semantics_gap/` — div reports proved and aborts on `MIN / -1`; shift generates no obligation | div obligation covers signed `MIN / -1`, a shift family exists, both derived from `IntArith` |
+| **H19** the Core→obligation bridge is unproven | **R-0460** | — (structural; 0 of 4 register rows) | rows in `VC_BRIDGE_REGISTER.md` discharged, named individually |
+| **H20** `bv_decide`'s certificate check runs as native code | unowned; see [docs/AXIOMS.md](docs/AXIOMS.md) | `make test-bv-certificates` | a verified checker, or decomposition until kernel-reduction LRAT is practical |
+| **H21** nonlinear SMT results cannot be certificate-replayed | **R-0451** (upstream-blocked) | gate assertion in `check_multi_kernel.sh` | upstream reconstruction support, or a certified nonlinear checker |
+
+**Read the two reproduced holes as scope limits on every claim this compiler makes.**
+Until R-0461, a `proved` runtime-safety obligation on a function *containing a loop* is
+conditional on that loop's O1/O2. Until R-0464, `proved` on a division means "the divisor
+is nonzero", not "this division cannot trap", and shifts claim nothing at all.
+
+### Gate inventory — what was added, and what each actually guards
+
+| Gate | Guards | Build? | CI job |
+|---|---|---|---|
+| `check_evidence_algebra.sh` | Register C rows present, no `sorry`/`native_decide`, one construction site per badge string, all consumers share the derivation | no | `grammar` |
+| `check_known_wrong_corpus.sh` | H23/H24 fixtures still reproduce — a counterexample that stops demonstrating its hole is worse than none | **yes** | `extra-gates` |
+| `check_hole_status_consistency.sh` | no document contradicts KNOWN_HOLES; every fixtured hole is marked OPEN | no | `grammar` |
+| `check_multi_kernel.sh` | 14 assertions bare, 74 with provers, 82 with `MULTI_KERNEL_MUTATE=1` | yes | `multi-kernel` (opt-in — **R-0467**) |
+| `check_vc_bridge_register.sh` | every family *generator* has a register row — **cannot detect a missing family**, which is how H24's shift gap hid | no | `grammar` |
+
+### Mutation coverage: 10 of 10 families KILLED (2026-08-01, this repository)
+
+Every gate in `check_gate_mutation_coverage.sh` detects removal of the property it guards.
+The run was manual — the scheduled job is pinned to `lambdaclass/concrete` and cannot fire
+here (**R-0468**).
+
+This retires the standing suspicion R-0468 recorded ("assume more H22s until the gate has
+run clean once"). It has run clean.
+
+**But note precisely what a KILLED verdict means, because it is narrower than it feels.**
+Family 9 `fact-invalidation` is KILLED — removing fact invalidation turns
+`check_scoped_collector.sh` red — and H23 lives in that exact machinery, untouched. The
+gate guards *staleness* (does a mutated variable drop its facts?); H23 is *composition* (is
+the invariant that supplied the fact itself established?). A fully load-bearing gate,
+adjacent to the bug, blind to it.
+
+> **Mutation coverage proves a gate detects the removal of what it tests. It never shows
+> the gate tests the right thing.** Both H22 and H23 were invisible to gate suites that
+> were green — H22 because its gate was decorative, H23 because no gate had the property
+> in scope at all. The second failure mode is not detectable by mutation testing and needs
+> counterexample fixtures instead, which is what `check_known_wrong_corpus.sh` is for.
+
+### Running things
+
+```
+lake build                                            # required by any gate marked Build? yes
+bash scripts/tests/check_known_wrong_corpus.sh        # both live holes, ~1 min
+bash scripts/tests/check_hole_status_consistency.sh   # doc/behaviour agreement, instant
+bash scripts/tests/check_multi_kernel.sh              # 14 assertions without provers
+nix develop .#provers --command bash scripts/tests/check_multi_kernel.sh    # 74
+MULTI_KERNEL_MUTATE=1 nix develop .#provers --command bash scripts/tests/check_multi_kernel.sh   # 82, ~40 min
+FAMILY=<n> bash scripts/tests/check_gate_mutation_coverage.sh   # one family, ~15 min if it rebuilds
+bash scripts/tests/run_ci_gates_local.sh <area>       # the gates CI runs for an area
+```
+
+`check_gate_mutation_coverage.sh` mutates tracked source. It refuses to start on a dirty
+tree and restores on EXIT/INT/TERM — but bash defers a trap until the current foreground
+command returns, so a kill during `lake build` is not prompt. **After interrupting it, run
+`git status` before doing anything else.**
+
 ## Inherited Scheduling Constraints From Earlier Phases
 
 These are not a second task queue. They constrain the stable-ID task
