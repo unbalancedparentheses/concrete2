@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Hole-status consistency gate.
 #
-# WHY THIS EXISTS. On 2026-07-31 three files said "H23 closed as a compile-time fact"
+# WHY THIS EXISTS. On 2026-07-31 three files said "H23 closed as a compile-time fact"  HOLE-STATUS-OK: quoting the wrong claim
 # while docs/KNOWN_HOLES.md said "H23 — OPEN, reproduced" and
 # check_known_wrong_corpus.sh ASSERTED it still reproduces. Every gate was green. The
 # contradiction survived because the claims live in different files and nothing compared

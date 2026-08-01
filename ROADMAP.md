@@ -68,6 +68,33 @@ Deferred work stays in the phase where its trigger lives. Do not build machinery
 because the roadmap can imagine it; build it when a workload, proof, failing gate,
 or public API forces it.
 
+### Cross-Document Consistency (pull-gated note, 2026-07-31)
+
+**Trigger to build on: a second instance of two documents contradicting each other where
+both pass their gates.** There is one instance so far, and it now has a specific gate; do
+not generalize until a second one bites.
+
+The instance: three files said "H23 closed as a compile-time fact" while <!-- HOLE-STATUS-OK: quoting the wrong claim -->
+[docs/KNOWN_HOLES.md](docs/KNOWN_HOLES.md) said OPEN and
+`check_known_wrong_corpus.sh` asserted it still reproduces. All green. `check_docs_drift.sh`
+verifies that referenced artifacts *exist*, not that statements *agree* — a limitation its
+own commit named (`5a0c4e3e`) before the contradiction recurred. Closed for hole status by
+`check_hole_status_consistency.sh`.
+
+The template, if a second instance appears: name ONE authority file, give the fact a
+machine-readable form in it, and check that every reference agrees — plus, where possible,
+tie the authority to *observed behaviour* rather than to other prose, which is the check
+with teeth. Candidate pairs already visible: `CLAIMS_TODAY.md` against the report
+vocabulary in `ObligationCore.statusVocabulary`, and `VC_BRIDGE_REGISTER.md`'s rows against
+the family generators (the register gate checks generators have rows, not that the rows
+describe what the generators emit — H24's insufficient div row passed it).
+
+Why this is a note and not a task: a general "documents must agree" checker greps English
+and would be mostly false positives, which is how a gate becomes something people learn to
+ignore. The hole-status gate is narrow enough to be exact about the part that matters and
+heuristic-with-an-escape-hatch about the rest, and that ratio is what a second instance
+should be judged against before any machinery is built.
+
 ### Spike-First / Kill Criteria
 
 Large investments are validated before they are built. Any task whose cost is
