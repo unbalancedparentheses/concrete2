@@ -96,3 +96,25 @@ So: a ref check taken *at* the moment of the kill proves nothing about a push
 that has already started. If a publish must be abandoned, re-check the remote
 AFTER the process tree is gone (`pgrep -f "git push"` clear), and treat the
 remote's actual state as the answer rather than the state you saw before killing.
+
+## Orchestrating a publish: never infer state from process names
+
+`pgrep -f "push-both"` matches the WAITER'S OWN command line, which contains that
+string. Every `until ! pgrep -f "push-both"; do sleep 30; done` loop therefore
+waits on itself forever, and a status check written the same way reports "publish
+running" when nothing is. Measured 2026-08-01: six background tasks were stuck on
+this at once, and the reported state was wrong for as long as they ran. It is the
+same failure as counting `pgrep -lf "codex|claude"` and getting 115 — a
+process-name match catches the matcher.
+
+Do this instead:
+
+* capture the launched PID and `wait "$pid"`;
+* verify completion by checking the EXACT REMOTE SHA (`git ls-remote`), which is
+  the fact you actually care about;
+* query CI for that SHA (`gh run list --commit <full-sha>` — the full SHA; the
+  short form returns nothing);
+* never infer state from a process-name match.
+
+For a one-off inspection, `ps -eo command | grep -c "[p]ush-both.sh"` excludes
+itself via the bracket, but a ref check is still the better answer.

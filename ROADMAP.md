@@ -1516,9 +1516,19 @@ nothing — while still treating DECLARATION spellings as identity, which is the
 same defect wearing the opposite disguise: invariant where it should be, and
 name-keyed exactly where identity matters.
 
-So the rule for V2 is: a name may appear in the bytes only when it is a BINDER
-rendered by relative position. Every other reference resolves to a semantic
-identity or the encoding is uncovered.
+So the rule for V2 is:
+
+> No raw source, import-alias, or display spelling is used as identity. Bound
+> references encode relative binder positions; declaration references encode
+> versioned semantic IDs, whose canonical serialization may include
+> definition-site names. Literal strings remain ordinary program data.
+
+An earlier phrasing here — "a name may appear only as a binder rendered by
+relative position" — was self-contradictory in both directions: a binder rendered
+by position carries NO name, and a semantic ID's canonical serialization DOES
+carry a definition-site name (`CallableId.render` is `v1:user:mod.decl`). The
+distinction that matters is not whether a name appears in the bytes, but whether
+a spelling is being used AS IDENTITY.
 
 **V1 stays frozen byte-for-byte, with a golden proving it.** The existing
 `#[proof_fingerprint]` corpus is the migration input; a test must show those
