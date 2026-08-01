@@ -7,6 +7,8 @@
 # in Report, which would define a semantic fact inside the layer that renders
 # semantic facts.
 set -uo pipefail
+trap 'rc=$?; if [ "$rc" -ne 0 ] && [ "${GATE_DONE:-0}" -ne 1 ]; then
+  echo "FATAL: unexpected shell failure (exit $rc) — the verdict below is not trustworthy" >&2; exit "$rc"; fi' ERR
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
@@ -177,6 +179,30 @@ probe "a loop invariant change moves the subject" "true" \
   a.canonical != b.canonical'
 
 echo ""
+echo "=== loop contracts reach the subject FROM SOURCE ==="
+# The field existed and nothing read `f.loopContracts`, so the earlier check only
+# proved the field affects canonicalization — not that a source invariant reaches
+# it. This drives a real program and edits a real invariant.
+CC=".lake/build/bin/concrete"
+CT="examples/constant_time_tag/src/main.con"
+nloops=$("$CC" "$CT" --report subject-facts 2>/dev/null | grep -oE "loops: [0-9]+" | head -1 | grep -oE "[0-9]+")
+[ "${nloops:-0}" -gt 0 ] \
+  && ok "source loop contracts are captured (loops: $nloops)" \
+  || no "no loop contracts captured from a program that has them"
+WORK="$TMP/ctedit"; mkdir -p "$WORK"; cp -r examples/constant_time_tag "$WORK/ct"
+D1=$("$CC" "$WORK/ct/src/main.con" --report subject-facts 2>/dev/null | grep "subject digest" | head -1)
+python3 - "$WORK/ct/src/main.con" <<'PYEOF'
+import sys,re
+p=sys.argv[1]; s=open(p).read()
+s2=re.sub(r'(#\[invariant\([^)]*?)0 <= i', r'\g<1>1 <= i', s, count=1)
+open(p,'w').write(s2)
+PYEOF
+D2=$("$CC" "$WORK/ct/src/main.con" --report subject-facts 2>/dev/null | grep "subject digest" | head -1)
+[ -n "$D1" ] && [ "$D1" != "$D2" ] \
+  && ok "editing a source invariant moves the subject digest" \
+  || no "a source invariant edit did NOT move the digest ($D1 vs $D2)"
+
+echo ""
 echo "=== threaded, not recomputed ==="
 if grep -q "declFacts.find?" "$ROOT_DIR/Concrete/Proof/ProofCore.lean"; then
   ok "ProofCore reads the facts off the module by IDENTITY"
@@ -196,6 +222,7 @@ else
   no "the freshness comparison changed: v1 stored hashes must become needs_recheck, never stale, and backfill only from kernel replay"
 fi
 
+GATE_DONE=1
 echo ""
 echo "SUBJECT-FACTS: PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]

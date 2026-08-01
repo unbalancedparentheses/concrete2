@@ -101,31 +101,36 @@ def reachableFrom (nodes : List DepNode) (start : String) : List String :=
   let seed := (succs start).eraseDups
   (go nodes.length seed seed).eraseDups
 
-/-- The canonical PREIMAGE of a dependency root: own subject digest, then the
-    closure's digests sorted by identity.
+/-- One validated result: the preimage and the trust qualification together.
 
-    This is a serialization, NOT a compact hash and NOT a Merkle root — it shares
-    no structure and does not shrink. A consumer that wants a fixed-width value
-    hashes this; naming it a root would have oversold what it is.
+    Returned as a STRUCTURE rather than a preimage plus a separate boolean,
+    because a flag beside a value is an invitation to compare the value and
+    ignore the flag — which is precisely how an unqualified `proved_by_lean`
+    would get minted over a trust boundary. -/
+structure DependencyRootMaterial where
+  preimage     : String
+  carriesTrust : Bool
+deriving Repr, BEq, Inhabited
 
-    FAIL CLOSED, with the reason carried. Every one of these would otherwise
-    produce a confident value from incomplete information:
+/-- The canonical PREIMAGE of a dependency root, plus its trust qualification.
 
-      * the start has no node — a root for a subject that does not exist;
-      * two nodes share an identity — first-match lookup would silently pick one
-        and hide the conflict;
-      * any node in the closure has no subject digest;
-      * an edge points at an identity with no node — the graph is not fully known;
-      * an edge is typed `missing` — nothing validated it, so nothing may rest
-        on it.
+    A serialization, NOT a compact hash and NOT a Merkle root — it shares no
+    structure and does not shrink. A consumer wanting a fixed-width value hashes
+    it; calling it a root oversold what it is.
 
-    An earlier version bound unresolved callees as `unknown:<id>` and reported
-    completeness through a separate flag. That let a root be MINTED over a partly
-    unknown graph, and a flag beside a value is an invitation to compare the value
-    and ignore the flag. -/
-def dependencyRootPreimage (nodes : List DepNode) (id : String)
-    : Except DepRootError String := do
-  -- duplicate identities first: every later lookup is meaningless without this
+    THE EDGES ARE IN THE BYTES. An earlier version serialized only reachable
+    identities and their digests, so changing an edge from `contract` to `body`
+    produced the SAME preimage — the typed edges were traversed and then thrown
+    away, which defeats the point of typing them. Each edge now contributes its
+    canonical kind, its target identity and that target's length-prefixed digest.
+
+    FAIL CLOSED, reason carried. Every one of these would otherwise yield a
+    confident value from incomplete information: a missing start; a duplicate
+    identity (first-match lookup would hide the conflict); an absent OR EMPTY
+    subject digest; an edge to an identity with no node; an edge typed
+    `missing`. -/
+def dependencyRootMaterial (nodes : List DepNode) (id : String)
+    : Except DepRootError DependencyRootMaterial := do
   let ids := nodes.map (·.id)
   match ids.find? (fun n => (ids.filter (· == n)).length > 1) with
   | some dup => throw (.duplicateId dup)
@@ -133,28 +138,37 @@ def dependencyRootPreimage (nodes : List DepNode) (id : String)
   let start ← match nodes.find? (fun d => d.id == id) with
     | some d => pure d
     | none   => throw (.missingStart id)
-  let ownDigest ← match start.digest with
-    | some v => pure v
-    | none   => throw (.incompleteDigest id)
-  -- no edge in the whole reachable region may be `missing`
-  let closure := (reachableFrom nodes id).mergeSort (· ≤ ·)
-  for n in (id :: closure) do
+  -- `some ""` is as incomplete as `none`: an empty digest is a computed-looking
+  -- value derived from nothing.
+  let digestOf := fun (n : String) => do
     match nodes.find? (fun d => d.id == n) with
-    | some d =>
-      for (k, tgt) in d.edges do
-        if k == DependencyEdge.missing then throw (.missingEdge n tgt)
-        if (nodes.find? (fun x => x.id == tgt)).isNone then throw (.unresolvedEdge n tgt)
-    | none => throw (.unresolvedEdge id n)
+    | none   => throw (.unresolvedEdge id n)
+    | some d => match d.digest with
+      | some v => if v.isEmpty then throw (.incompleteDigest n) else pure v
+      | none   => throw (.incompleteDigest n)
+  let ownDigest ← digestOf start.id
+  let closure := (reachableFrom nodes id).mergeSort (· ≤ ·)
   let mut parts : List String := []
-  for c in closure do
-    match nodes.find? (fun d => d.id == c) with
-    | some d =>
-      match d.digest with
-      | some v => parts := parts ++ [s!"d{c.length}:{c}:{v}"]
-      | none   => throw (.incompleteDigest c)
-    | none => throw (.unresolvedEdge id c)
-  return "depRootPreimageV1:" ++ s!"o{ownDigest.length}:{ownDigest}"
-       ++ s!"n{closure.length}" ++ String.join parts
+  let mut trust := false
+  for n in (id :: closure) do
+    let node ← match nodes.find? (fun d => d.id == n) with
+      | some d => pure d
+      | none   => throw (.unresolvedEdge id n)
+    let nDigest ← digestOf n
+    parts := parts ++ [s!"N{n.length}:{n}:{nDigest.length}:{nDigest}"]
+    -- edges sorted by (kind, target) so the preimage cannot depend on the order
+    -- they were discovered in
+    let sorted := node.edges.mergeSort fun a b =>
+      (a.1.canonical ++ a.2) ≤ (b.1.canonical ++ b.2)
+    for (k, tgt) in sorted do
+      if k == DependencyEdge.missing then throw (.missingEdge n tgt)
+      let tgtDigest ← digestOf tgt
+      if k == DependencyEdge.trusted then trust := true
+      parts := parts ++
+        [s!"E{k.canonical.length}:{k.canonical}:{tgt.length}:{tgt}:{tgtDigest.length}:{tgtDigest}"]
+  return { preimage := "depRootPreimageV2:" ++ s!"o{ownDigest.length}:{ownDigest}"
+                        ++ s!"n{closure.length}" ++ String.join parts
+         , carriesTrust := trust }
 
 /-- Does any edge in the closure carry trust, so a claim resting on this root must
     say `proved_by_lean_modulo_trusted` rather than `proved_by_lean`?

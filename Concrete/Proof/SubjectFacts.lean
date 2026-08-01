@@ -231,13 +231,30 @@ def ContractFacts.of (reqs ens : List Expr) : ContractFacts :=
 def ContractFacts.ofResolved
     (params typeParams capParams : List String)
     (resolveCall : String → Option CallableId)
-    (reqs ens : List Expr) : ContractFacts :=
-  let rs := reqs.map (contractCanonicalIn params typeParams capParams false resolveCall)
-  let es := ens.map (contractCanonicalIn params typeParams capParams true resolveCall)
-  if rs.any (·.isNone) || es.any (·.isNone) then
-    { requires := [], ensures := [], covered := false }
+    (reqs ens : List Expr)
+    (loops : List LoopContract := []) : ContractFacts :=
+  let enc := contractCanonicalIn params typeParams capParams
+  let rs := reqs.map (enc false resolveCall)
+  let es := ens.map (enc true resolveCall)
+  -- LOOP CONTRACTS, indexed by the loop's POSITION in the body — semantic, since
+  -- the first loop's invariant is not the second's. A variant is encoded
+  -- distinctly from an invariant: they are different obligations.
+  --
+  -- These are erased with requires/ensures and named explicitly by R-0004. The
+  -- field existed here before anything read `f.loopContracts`, so an invariant
+  -- edit was invisible to the subject exactly as a contract edit had been.
+  let loopEnc : List (Option String) := loops.zipIdx.flatMap fun (lc, i) =>
+    let invs := lc.invariants.map fun e =>
+      (enc false resolveCall e).map fun c => s!"i{i}:{c}"
+    let var := match lc.variant with
+      | some v => [(enc false resolveCall v).map fun c => s!"v{i}:{c}"]
+      | none   => []
+    invs ++ var
+  if rs.any (·.isNone) || es.any (·.isNone) || loopEnc.any (·.isNone) then
+    { requires := [], ensures := [], loops := [], covered := false }
   else
-    { requires := rs.filterMap id, ensures := es.filterMap id, covered := true }
+    { requires := rs.filterMap id, ensures := es.filterMap id,
+      loops := loopEnc.filterMap id, covered := true }
 
 /-- Everything a proof subject is defined from, for ONE declaration, captured
     before contract erasure.

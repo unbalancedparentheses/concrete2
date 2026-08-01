@@ -6,6 +6,11 @@
 # unfolds a concrete table, and an implementation change that preserved the
 # contract would then fail to stale a caller that really depends on the body.
 set -uo pipefail
+# An unexpected command failure must not sit beside a green total. A backtick in a
+# probe label once executed `missing` as a command and the gate still reported
+# 26/0 — the error was visible and the verdict said otherwise.
+trap 'rc=$?; if [ "$rc" -ne 0 ] && [ "${GATE_DONE:-0}" -ne 1 ]; then
+  echo "FATAL: unexpected shell failure (exit $rc) — the verdict below is not trustworthy" >&2; exit "$rc"; fi' ERR
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
@@ -125,28 +130,43 @@ GRAPH='def g : List DepNode :=
   , { id := "e", digest := some "DE", edges := [(DependencyEdge.body, "d")] } ]
 def g2 : List DepNode := g.map fun n => if n.id == "c" then { n with digest := some "X" } else n
 '
-probe "a mutual cycle terminates" "true" "$GRAPH"'#eval (dependencyRootPreimage g "d").toOption.isSome'
+probe "a mutual cycle terminates" "true" "$GRAPH"'#eval (dependencyRootMaterial g "d").toOption.isSome'
 probe "cycle members share a closure (entry point is not semantic)" "true" "$GRAPH"'#eval
   (reachableFrom g "d").mergeSort (· ≤ ·) == (reachableFrom g "e").mergeSort (· ≤ ·)'
 probe "cycle members do NOT share a root (they are different subjects)" "true" "$GRAPH"'#eval
-  (dependencyRootPreimage g "d").toOption != (dependencyRootPreimage g "e").toOption'
+  (dependencyRootMaterial g "d").toOption != (dependencyRootMaterial g "e").toOption'
 probe "a deep callee edit moves the dependent root" "true" "$GRAPH"'#eval
-  (dependencyRootPreimage g "a").toOption != (dependencyRootPreimage g2 "a").toOption'
+  (dependencyRootMaterial g "a").toOption != (dependencyRootMaterial g2 "a").toOption'
 probe "an unrelated subtree is unaffected" "true" "$GRAPH"'#eval
-  (dependencyRootPreimage g "d").toOption == (dependencyRootPreimage g2 "d").toOption'
+  (dependencyRootMaterial g "d").toOption == (dependencyRootMaterial g2 "d").toOption'
 
 # FAIL-CLOSED CONDITIONS. Each previously produced a confident value from
 # incomplete information; each must now REFUSE, with the reason carried.
 probe "a missing start is refused" "missingStart" \
-'#eval repr (dependencyRootPreimage [] "ghost")'
+'#eval repr (dependencyRootMaterial [] "ghost")'
 probe "an unresolved edge is refused, not bound as unknown" "unresolvedEdge" \
-'#eval repr (dependencyRootPreimage [{ id := "a", digest := some "DA", edges := [(DependencyEdge.body, "ghost")] }] "a")'
+'#eval repr (dependencyRootMaterial [{ id := "a", digest := some "DA", edges := [(DependencyEdge.body, "ghost")] }] "a")'
 probe "a duplicate identity is refused" "duplicateId" \
-'#eval repr (dependencyRootPreimage [{ id := "a", digest := some "1", edges := [] }, { id := "a", digest := some "2", edges := [] }] "a")'
+'#eval repr (dependencyRootMaterial [{ id := "a", digest := some "1", edges := [] }, { id := "a", digest := some "2", edges := [] }] "a")'
 probe "an absent subject digest is refused" "incompleteDigest" \
-'#eval repr (dependencyRootPreimage [{ id := "a", digest := none, edges := [] }] "a")'
-probe "a `missing` typed edge is refused" "missingEdge" \
-'#eval repr (dependencyRootPreimage [{ id := "a", digest := some "DA", edges := [(DependencyEdge.missing, "b")] }, { id := "b", digest := some "DB", edges := [] }] "a")'
+'#eval repr (dependencyRootMaterial [{ id := "a", digest := none, edges := [] }] "a")'
+probe 'a missing-typed edge is refused' "missingEdge" \
+'#eval repr (dependencyRootMaterial [{ id := "a", digest := some "DA", edges := [(DependencyEdge.missing, "b")] }, { id := "b", digest := some "DB", edges := [] }] "a")'
+# THE EDGE KIND IS IN THE BYTES. Traversing typed edges and then serializing only
+# identities threw the typing away: contract and body produced the same preimage.
+probe "changing an edge kind changes the preimage" "true" \
+'#eval
+  let c : List DepNode := [{ id := "a", digest := some "DA", edges := [(DependencyEdge.contract, "b")] }, { id := "b", digest := some "DB", edges := [] }]
+  let b : List DepNode := [{ id := "a", digest := some "DA", edges := [(DependencyEdge.body, "b")] }, { id := "b", digest := some "DB", edges := [] }]
+  (dependencyRootMaterial c "a").toOption != (dependencyRootMaterial b "a").toOption'
+# an EMPTY digest is as incomplete as an absent one
+probe "an empty-string digest is refused" "incompleteDigest" \
+'#eval repr (dependencyRootMaterial [{ id := "a", digest := some "", edges := [] }] "a")'
+# trust travels WITH the material, not beside it
+probe "trust is carried in the returned structure" "true" \
+'#eval
+  let g : List DepNode := [{ id := "a", digest := some "DA", edges := [(DependencyEdge.trusted, "b")] }, { id := "b", digest := some "DB", edges := [] }]
+  ((dependencyRootMaterial g "a").toOption.map (·.carriesTrust)) == some true'
 # trust must be visible, and separately from the root
 probe "a trusted edge in the closure is reported" "true" \
 '#eval closureCarriesTrust [{ id := "a", digest := some "DA", edges := [(DependencyEdge.trusted, "b")] }, { id := "b", digest := some "DB", edges := [] }] "a"'
@@ -168,6 +188,7 @@ else
   ok "TRIPWIRE: no report consumes dependency roots yet"
 fi
 
+GATE_DONE=1
 echo ""
 echo "DEPENDENCY-EDGES: PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]

@@ -1572,6 +1572,35 @@ private def renderSourceBodyDigest (pexpr : Proof.PExpr) : String :=
   let v := Concrete.shortHash (Proof.pexprCanonical (normalizePExpr pexpr))
   s!"some \{ value := \"{v}\" }"
 
+/-- INSPECTION surface for captured declaration facts. Deliberately not evidence:
+    it renders what was captured so a gate can check the producer against real
+    programs, which is otherwise unobservable outside Lean.
+
+    One line per entry, identity first, then whether a complete subject digest
+    could be minted. An entry whose facts are absent or incomplete says so rather
+    than printing a plausible-looking row. -/
+def subjectFactsReport (pc : Concrete.ProofCore) : String :=
+  let rows := pc.entries.map fun e =>
+    let idr := e.callableId.render
+    match e.declFacts with
+    | none => s!"{idr}\n  facts: ABSENT"
+    | some fx =>
+      let dig := match e.subjectDigest with
+        | some d => d
+        | none   => "INCOMPLETE (no digest minted)"
+      String.join
+        [ s!"{idr}\n"
+        , s!"  params: {fx.params}\n"
+        , s!"  ret: {fx.retTy}\n"
+        , s!"  typeParams: {fx.typeParams.length} bounds: {fx.typeBounds}\n"
+        , s!"  caps: {fx.capSet} capParams: {fx.capParams.length}\n"
+        , s!"  contracts covered: {fx.contracts.covered} "
+        , s!"reqs: {fx.contracts.requires.length} ens: {fx.contracts.ensures.length} loops: {fx.contracts.loops.length}\n"
+        , s!"  trusted: {fx.isTrusted}\n"
+        , s!"  subject digest: {dig}"
+        ]
+  s!"=== Subject facts ({pc.entries.length} entries) ===\n" ++ "\n".intercalate rows ++ "\n"
+
 /-- Generate Lean theorem stubs for all extracted functions. -/
 def leanStubsReport (pc : Concrete.ProofCore)
     (registry : ProofRegistry := []) : String :=

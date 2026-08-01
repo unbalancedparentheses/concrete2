@@ -1891,6 +1891,7 @@ partial def elabModule (m : Module) (summary : FileSummary)
         capSet := (concreteCaps.map ("cap:" ++ ·)) ++ capVarCanonical
         contracts := Proof.ContractFacts.ofResolved (f.params.map (·.name))
           f.typeParams capParamNames resolveContractCall f.requires f.ensures
+          f.loopContracts
         isTrusted := f.isTrusted
         overflowChecked := f.overflowChecked }
   .ok {
