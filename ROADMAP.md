@@ -1549,6 +1549,35 @@ first:
    V2 code. A spike that is silently promoted to the implementation is how the
    measurement gets skipped.
 
+**PROBE RESULT (steps 1-2 and 4, measured 2026-08-01).** The parallel
+representation wins, and not marginally — the measurement decides it:
+
+* Modifying `CExpr.ident` to carry typed identity breaks every pattern match on
+  it. 17 files touch `CExpr`; ~47 `.ident` sites, of which **16 sit on
+  codegen/runtime paths** — Lower 7, Mono 5, Interp 3, CoreCanonicalize 1.
+  Adding a field to an inductive CONSTRUCTOR (unlike a structure field with a
+  default) breaks all matches at once, so compatibility defaults do NOT permit an
+  incremental migration here. It is a flag day.
+* Worse, it is a flag day across exactly the paths step 5 forbids disturbing: a
+  proof-bookkeeping change that edits Lower/Mono/Interp puts Core/SSA/runtime
+  artifacts at risk, and "unchanged" would then have to be established by testing
+  rather than by construction.
+* A PARALLEL evidence-body representation, built in Elab and consumed only by
+  proof code, touches none of them. The existing `CheckedDeclFacts` record is the
+  precedent and the proof of shape: it reaches SubjectFacts, DependencyRoot,
+  ProofCore, Core and Elab — and Lower, Mono and Interp appear nowhere in that
+  list. Artifacts are unchanged BY CONSTRUCTION.
+
+So: build V2 over a parallel typed evidence body produced in Elab. Do not widen
+`CExpr`. Step 3's spike is unnecessary for the decision — the constructor-vs-
+structure distinction settles it without one — and step 5's requirement is met
+structurally rather than by measurement.
+
+The remaining open question is narrower and belongs to the implementation, not
+the probe: which typed identities the parallel body needs for constants, function
+references, types, fields and enum variants, and where each is still available at
+the point Elab builds it.
+
 **V1 stays frozen byte-for-byte, with a golden proving it.** The existing
 `#[proof_fingerprint]` corpus is the migration input; a test must show those
 bytes are unchanged, so "V1 is untouched" is checked rather than intended.
