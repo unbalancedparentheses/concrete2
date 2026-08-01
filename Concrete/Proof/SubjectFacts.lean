@@ -67,46 +67,104 @@ def binOpTag : BinOp → String
 def unaryOpTag : UnaryOp → String
   | .neg => "neg" | .not_ => "not" | .bitnot => "bnot"
 
-/-- Canonical encoding of a contract expression, or `none` when the expression
-    falls outside the encodable fragment.
+/-- The stable position of a bound name. Subject bytes use binder positions,
+    never source spellings, so capture-avoiding alpha-renaming is invisible. -/
+private def binderIndex? (binders : List String) (name : String) : Option Nat :=
+  binders.findIdx? fun n => n == name
 
-    `none` is load-bearing: it makes the containing facts record declare its
-    contracts UNCOVERED rather than digesting a partial reading. Silently skipping
-    an unencodable node would produce a digest that cannot see the very edit it is
-    supposed to detect.
+/-- Canonical type rendering relative to declaration binders.
 
-    Length-prefixed and tagged, like `pexprCanonical`, so two structurally
-    different expressions cannot render alike. -/
-partial def contractCanonical : Expr → Option String
+    `tyCanonical` is the right rendering for a closed `CallableId`; declaration
+    facts are different because their signature may still contain bound type and
+    capability variables. Those variables are identified by position, not by the
+    spelling chosen in source. -/
+mutual
+def boundTyCanonical (typeBinders capBinders : List String) : Ty → String
+  | .int => "Int" | .uint => "Uint"
+  | .i8 => "i8" | .i16 => "i16" | .i32 => "i32"
+  | .u8 => "u8" | .u16 => "u16" | .u32 => "u32"
+  | .bool => "Bool" | .char => "Char" | .unit => "Unit"
+  | .float64 => "Float64" | .float32 => "Float32"
+  | .string => "String" | .never => "Never" | .placeholder => "?"
+  | .named n =>
+      match binderIndex? typeBinders n with
+      | some i => s!"'t{i}"
+      | none => n
+  | .typeVar n =>
+      match binderIndex? typeBinders n with
+      | some i => s!"'t{i}"
+      | none => "'free:" ++ n
+  | .ref t => "&" ++ boundTyCanonical typeBinders capBinders t
+  | .refMut t => "&mut " ++ boundTyCanonical typeBinders capBinders t
+  | .ptrMut t => "*mut " ++ boundTyCanonical typeBinders capBinders t
+  | .ptrConst t => "*const " ++ boundTyCanonical typeBinders capBinders t
+  | .heap t => "Heap<" ++ boundTyCanonical typeBinders capBinders t ++ ">"
+  | .heapArray t => "HeapArray<" ++ boundTyCanonical typeBinders capBinders t ++ ">"
+  | .array t n => "[" ++ boundTyCanonical typeBinders capBinders t ++ ";" ++ toString n ++ "]"
+  | .generic n args => n ++ "<" ++ boundTyListCanonical typeBinders capBinders args ++ ">"
+  | .fn_ params caps ret =>
+      let (concrete, vars) := caps.normalize
+      let cs := String.intercalate "+" concrete
+      let vs := vars.map fun v =>
+        match binderIndex? capBinders v with
+        | some i => s!"c{i}"
+        | none => "free:" ++ v
+      "fn(" ++ boundTyListCanonical typeBinders capBinders params ++ ")with("
+        ++ cs ++ (if vs.isEmpty then "" else "|" ++ String.intercalate "+" vs)
+        ++ ")->" ++ boundTyCanonical typeBinders capBinders ret
+
+def boundTyListCanonical (typeBinders capBinders : List String) : List Ty → String
+  | [] => ""
+  | [t] => boundTyCanonical typeBinders capBinders t
+  | t :: ts => boundTyCanonical typeBinders capBinders t ++ ","
+      ++ boundTyListCanonical typeBinders capBinders ts
+end
+
+/-- Canonical encoding of a contract relative to its declaration.
+
+    Local variables are de-Bruijn-like parameter positions. A definition call
+    must be resolved to a compiler-minted `CallableId`; an unresolved textual
+    name makes the contract unavailable rather than entering evidence bytes.
+    Generic call arguments are included and must complete the callee identity. -/
+partial def contractCanonicalIn
+    (termBinders typeBinders capBinders : List String)
+    (allowResult : Bool)
+    (resolveCall : String → Option CallableId) : Expr → Option String
   | .intLit _ v      => some s!"i:{v}"
   | .boolLit _ b     => some (if b then "b:1" else "b:0")
   | .charLit _ c     => some s!"c:{c.toNat}"
   | .strLit _ s      => some s!"s{s.length}:{s}"
-  | .ident _ n       => some s!"v{n.length}:{n}"
-  | .paren _ e       => contractCanonical e   -- grouping is syntax, not semantics
+  | .ident _ n       =>
+      if allowResult && n == "result" then some "q:result"
+      else match binderIndex? termBinders n with
+        | some i => some s!"p:{i}"
+        | none => some s!"g{n.length}:{n}"
+  | .paren _ e       => contractCanonicalIn termBinders typeBinders capBinders allowResult resolveCall e
   | .binOp _ op l r  => do
-    let a ← contractCanonical l
-    let b ← contractCanonical r
-    -- Explicit operator tag, never `repr`: this feeds a digest, and `repr` is
-    -- derived formatting that a Lean or printer change can move.
+    let a ← contractCanonicalIn termBinders typeBinders capBinders allowResult resolveCall l
+    let b ← contractCanonicalIn termBinders typeBinders capBinders allowResult resolveCall r
     some s!"B{binOpTag op}l{a.length}:{a}r{b.length}:{b}"
   | .unaryOp _ op e  => do
-    let a ← contractCanonical e
+    let a ← contractCanonicalIn termBinders typeBinders capBinders allowResult resolveCall e
     some s!"U{unaryOpTag op}o{a.length}:{a}"
-  | .call _ f _ args => do
-    let parts ← args.mapM contractCanonical
-    let joined := String.join (parts.map fun p => s!"a{p.length}:{p}")
-    some s!"C{f.length}:{f}n{args.length}{joined}"
+  | .call _ f typeArgs args => do
+    let base ← resolveCall f
+    let canonicalArgs := typeArgs.map fun t => boundTyCanonical typeBinders capBinders t
+    -- Render the resolved BASE plus binder-relative arguments. Constructing a
+    -- specialized `CallableId` here would render a bound `T` by its source
+    -- spelling and reintroduce alpha sensitivity through `CallableId.render`.
+    if typeArgs.length != base.typeParams then none else
+      let parts ← args.mapM (contractCanonicalIn termBinders typeBinders capBinders allowResult resolveCall)
+      let joined := String.join (parts.map fun p => s!"a{p.length}:{p}")
+      let tys := String.join (canonicalArgs.map fun t => s!"t{t.length}:{t}")
+      some s!"C{base.render.length}:{base.render}n{typeArgs.length}{tys}m{args.length}{joined}"
   | .fieldAccess _ o fld => do
-    let a ← contractCanonical o
+    let a ← contractCanonicalIn termBinders typeBinders capBinders allowResult resolveCall o
     some s!"F{fld.length}:{fld}o{a.length}:{a}"
   | .arrayIndex _ a i => do
-    let x ← contractCanonical a
-    let y ← contractCanonical i
+    let x ← contractCanonicalIn termBinders typeBinders capBinders allowResult resolveCall a
+    let y ← contractCanonicalIn termBinders typeBinders capBinders allowResult resolveCall i
     some s!"Xa{x.length}:{x}i{y.length}:{y}"
-  -- Everything else is OUTSIDE the fragment. Enumerated rather than caught by a
-  -- wildcard so a NEW Expr constructor fails to compile here and has to be
-  -- classified deliberately — a wildcard would silently place it out of scope.
   | .floatLit _ _ => none
   | .structLit _ _ _ _ _ => none
   | .enumLit _ _ _ _ _ => none
@@ -122,8 +180,19 @@ partial def contractCanonical : Expr → Option String
   | .fnRef _ _ => none
   | .allocCall _ _ _ => none
   | .ifExpr _ _ _ _ => none
-  -- `mk`/`litArm`/`varArm`/`rangeArm` are MatchArm constructors, not Expr ones;
-  -- they sit in the same mutual block and are easy to mistake for Expr cases.
+
+/-- Canonical encoding of a contract expression, or `none` when the expression
+    falls outside the encodable fragment.
+
+    `none` is load-bearing: it makes the containing facts record declare its
+    contracts UNCOVERED rather than digesting a partial reading. Silently skipping
+    an unencodable node would produce a digest that cannot see the very edit it is
+    supposed to detect.
+
+    Length-prefixed and tagged, like `pexprCanonical`, so two structurally
+    different expressions cannot render alike. -/
+partial def contractCanonical : Expr → Option String
+  | e => contractCanonicalIn [] [] [] true (fun _ => none) e
 
 /-- Contracts attached to a declaration, with an explicit coverage flag.
 
@@ -149,6 +218,19 @@ def ContractFacts.of (reqs ens : List Expr) : ContractFacts :=
   else
     { requires := rs.filterMap id, ensures := es.filterMap id, covered := true }
 
+/-- Build contract facts in their declaration environment. This is the producer
+    used by Elab; the binder-free `of` above remains useful for closed probes. -/
+def ContractFacts.ofResolved
+    (params typeParams capParams : List String)
+    (resolveCall : String → Option CallableId)
+    (reqs ens : List Expr) : ContractFacts :=
+  let rs := reqs.map (contractCanonicalIn params typeParams capParams false resolveCall)
+  let es := ens.map (contractCanonicalIn params typeParams capParams true resolveCall)
+  if rs.any (·.isNone) || es.any (·.isNone) then
+    { requires := [], ensures := [], covered := false }
+  else
+    { requires := rs.filterMap id, ensures := es.filterMap id, covered := true }
+
 /-- Everything a proof subject is defined from, for ONE declaration, captured
     before contract erasure.
 
@@ -158,8 +240,8 @@ def ContractFacts.of (reqs ens : List Expr) : ContractFacts :=
 structure CheckedDeclFacts where
   /-- The compiler-minted identity. The KEY, not the name. -/
   id          : CallableId
-  /-- Parameter names paired with canonical types. Names are included because a
-      contract mentions them, so a rename changes what the contracts denote. -/
+  /-- Source parameter names paired with binder-relative canonical types.
+      Names are diagnostic only; `canonical` uses position and type. -/
   params      : List (String × String) := []
   retTy       : String := ""
   /-- Type parameters and their bounds, canonically ordered by the parameter's
@@ -184,9 +266,9 @@ deriving Repr, BEq, Inhabited
     absent. Those are different states and a digest must not merge them. -/
 def CheckedDeclFacts.canonical (f : CheckedDeclFacts) : String :=
   let lp := fun (tag s : String) => s!"{tag}{s.length}:{s}"
-  let ps := String.join (f.params.map fun (n, t) => lp "n" n ++ lp "t" t)
-  let tb := String.join (f.typeBounds.map fun (n, bs) =>
-              lp "g" n ++ lp "B" (String.intercalate "," bs))
+  let ps := String.join (f.params.map fun (_, t) => lp "t" t)
+  let tb := String.join (f.typeBounds.map fun (_, bs) =>
+              lp "B" (String.intercalate "," bs))
   let cs := String.join (f.contracts.requires.map (lp "R"))
           ++ String.join (f.contracts.ensures.map (lp "E"))
   String.join
@@ -194,15 +276,20 @@ def CheckedDeclFacts.canonical (f : CheckedDeclFacts) : String :=
     , lp "I" f.id.render
     , lp "P" ps
     , lp "r" f.retTy
-    , lp "T" (String.intercalate "," f.typeParams)
+    , lp "T" (toString f.typeParams.length)
     , lp "G" tb
-    , lp "c" (String.intercalate "," f.capParams)
+    , lp "c" (toString f.capParams.length)
     , lp "C" (String.intercalate "," f.capSet)
     , lp "K" cs
     , "cov:" ++ (if f.contracts.covered then "1" else "0")
     , "tr:" ++ (if f.isTrusted then "1" else "0")
     , "ov:" ++ (if f.overflowChecked then "1" else "0")
     ]
+
+/-- A declaration is eligible to mint a complete subject only when every
+    required component was captured and its callable identity is complete. -/
+def CheckedDeclFacts.isComplete (f : CheckedDeclFacts) : Bool :=
+  f.id.isComplete && f.contracts.covered
 
 /-- All declarations' facts for one program, keyed by identity.
 

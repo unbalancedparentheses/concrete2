@@ -113,5 +113,37 @@ probe "the corpus splits 113 contract / 166 body" "113/166" \
    IO.println s!"{nc}/{nb}"'
 
 echo ""
+echo "=== dependency roots: transitive, finite, and never under-approximating ==="
+GRAPH='def g : List DepNode :=
+  [ { id := "a", digest := "DA", callees := ["b"] }
+  , { id := "b", digest := "DB", callees := ["c"] }
+  , { id := "c", digest := "DC", callees := [] }
+  , { id := "d", digest := "DD", callees := ["e"] }
+  , { id := "e", digest := "DE", callees := ["d"] } ]
+def g2 : List DepNode := g.map fun n => if n.id == "c" then { n with digest := "X" } else n
+'
+# Mutual recursion must terminate rather than diverge: the closure is bounded by
+# the node count.
+probe "a mutual cycle terminates" "true" "$GRAPH"'#eval decide ((dependencyRoot g "d").length > 0)'
+# The SCC-equivalent property, stated honestly: cycle members share a CLOSURE (so
+# the entry point is not semantic). Their roots differ, because a root also binds
+# the node own subject and two functions in a cycle are two subjects.
+probe "cycle members share a closure (entry point is not semantic)" "true" "$GRAPH"'#eval
+  (reachableFrom g "d").mergeSort (· ≤ ·) == (reachableFrom g "e").mergeSort (· ≤ ·)'
+probe "but cycle members do NOT share a root" "true" "$GRAPH"'#eval dependencyRoot g "d" != dependencyRoot g "e"'
+# The point of the whole slice: an edit two hops away stales the dependent.
+probe "a deep callee edit moves the dependent root" "true" "$GRAPH"'#eval dependencyRoot g "a" != dependencyRoot g2 "a"'
+probe "an unrelated subtree is unaffected" "true" "$GRAPH"'#eval dependencyRoot g "d" == dependencyRoot g2 "d"'
+# NEVER UNDER-APPROXIMATE: an unresolved callee is bound as unknown, not dropped.
+# Dropping it would make the less complete graph yield the more confident answer.
+probe "an unknown callee is bound, not skipped" "true" \
+'#eval
+  let gu : List DepNode := [{ id := "a", digest := "DA", callees := ["ghost"] }]
+  let gk : List DepNode := [{ id := "a", digest := "DA", callees := [] }]
+  dependencyRoot gu "a" != dependencyRoot gk "a"'
+probe "and the closure reports itself incompletely known" "false" \
+'#eval closureFullyKnown [{ id := "a", digest := "DA", callees := ["ghost"] }] "a"'
+
+echo ""
 echo "DEPENDENCY-EDGES: PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]

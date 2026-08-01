@@ -240,7 +240,7 @@ echo "=== no conflict markers are committed ==="
 # and the next commit records them. That happened here: a ROADMAP.md merge
 # conflicted, `git add -A` swept it up, and three markers landed in a merge
 # commit. Nothing else would have caught it — the file still parses as Markdown.
-markers="$(git -C "$ROOT_DIR" grep -lE '^(<<<<<<< |>>>>>>> |={7}$)' -- . 2>/dev/null \
+markers="$(git -C "$ROOT_DIR" grep -lE '^(<<<<<<< |>>>>>>> |\|{7}( |$)|={7}$)' -- . 2>/dev/null \
   | grep -v 'check_gate_hygiene.sh' || true)"
 if [ -z "$markers" ]; then
   ok "no tracked file contains merge conflict markers"

@@ -1179,7 +1179,6 @@ incremental; that internal order does not duplicate slices 5-7.
         many-instantiations fixtures, with determinism, path-independence and
         one-lemma-per-entry asserted, and positive controls so the "exactly one
         error" legs cannot pass vacuously.
-||||||| e00fbf2f
       - ~~provenance from a report entry~~ FIXED: `ProofCoreEntry.callableId` is
         minted where the resolved module path and the checked declaration name are
         FACTS, and carried through `ExtractionEntry` to the generator, which now
