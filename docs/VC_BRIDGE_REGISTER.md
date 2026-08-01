@@ -94,7 +94,7 @@ proofs are needed, since no test enumerates program points.
 
 | | |
 |---|---|
-| **Emits** | For each `/` and `%`: `divisor ≠ 0`. |
+| **Emits** | For each `/` and `%`: `divisor ≠ 0`. **INSUFFICIENT — H24, reproduced.** `IntArith` also traps on signed `MIN / -1`, and this row does not emit it, so `a / b` reports `proved_by_kernel_decision` under `b ≠ 0` and the binary aborts on `(i32::MIN, -1)`. The condition must be DERIVED from `IntArith` rather than restated here. Owned by R-0464. |
 | **Assumes** | The divisor expression is evaluated exactly once at that point (no side-effecting re-evaluation); truncating semantics (`Int.tdiv`/`Int.tmod`) — the sign convention does not affect the obligation, but it does affect any model built alongside it. |
 | **Rejects** | Divisors outside the linear fragment (dropped, reads `not-asked`). |
 | **Forced by** | `examples/two_kernel_demo/src/families.con` (`div_safe`). |
@@ -129,3 +129,17 @@ Rows discharged: **0 of 4**. Every row is currently trusted, which is what
 (`bridge-check`, `core-semantics-diff`) probe sufficiency on sampled inputs for two of
 the four rows and cover neither hypothesis soundness nor applicability — those need
 the theorems.
+
+**The register is also INCOMPLETE, and its gate cannot say so.** Two gaps found 2026-07-31
+(H24), both reproduced in `examples/trap_semantics_gap/`:
+
+- The div row's `Emits` is **insufficient** — it omits signed `MIN / -1`, which
+  `IntArith` traps on. A program is reported proved and aborts.
+- There is **no shift row, because there is no shift family**, while `IntArith` traps on
+  out-of-range shifts. Nothing generates an obligation, so nothing can fail.
+
+`check_vc_bridge_register.sh` asserts every family *generator* has a row. It therefore
+cannot detect a missing family — there is no generator to notice. Registering rows against
+the **trap definition** (`IntArith`) rather than against the existing generators is what
+would make that detectable, and is R-0464's first objective. Until then, read "0 of 4" as
+counting the rows we know to write, not the rows that exist.

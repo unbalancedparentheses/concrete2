@@ -1312,6 +1312,13 @@ every kernel-side surface reported success. Sequence accordingly, and note that 
    functions that must agree. That is the exact drift this task exists to
    remove, and every kernel added before it lands adds another copy.
 
+   **The generator feeding this IR may change under it (R-0464).** That task moves
+   obligation generation from the surface AST to SSA. It does not alter this
+   task's shape — the IR still receives an obligation and lowers it — but the
+   terms arriving will be over SSA names, so do not bake source-level naming
+   assumptions into the transforms. Landing this IR first is preferable, so the
+   SSA generator emits into it rather than into today's ad-hoc lowerings.
+
    Slice 1 unifies the *existing* backends only — no further provers; the diff
    should be net-negative in lowering code. Note the original "two existing
    backends" framing was overtaken by R-0448's spike, which landed four prover
@@ -4116,6 +4123,22 @@ lifecycle/owner record.
  the large proof-automation investment, so external evidence can redirect
  that investment rather than merely evaluate it afterward.
 
+ **Amended 2026-07-31: the authoring consumer is a language model, and the
+ primary trial is R-0466's, not this one.** Concrete's code is written by
+ models, so the ergonomic cost this trial was designed to price is largely not
+ charged: a model does not mind `defer x.drop()` or `with(Console)`, because
+ keystrokes are the cheapest thing it spends. Explicitness is what it cannot
+ substitute for — it cannot fall back on guessing, so any rule not stated in the
+ source, and any rejection that does not name its own repair, is a defect rather
+ than friction. That reorders this task's own contents: the diagnostics bar below
+ stops being an adoption prerequisite and becomes the primary correctness
+ surface, because a diagnostic is the model's only feedback channel.
+
+ This does **not** retire the three human sessions or the alpha bar's one
+ completed non-author workflow; a diagnostic that defeats a model defeats a
+ newcomer too, so R-0466 front-runs the human trial rather than replacing it,
+ and it is cheap enough to run per commit where recruiting is not.
+
  This task owns the minimum diagnostics bar rather than depending on an
  unowned notion of “usable.” For the first-session high-friction cases—an
  unconsumed linear value (E0208), a missing capability declaration (E0240), an
@@ -4127,6 +4150,24 @@ lifecycle/owner record.
  that explains the obligation. Gate the checked message structure and spans,
  not one brittle prose sentence. This is the bounded adoption prerequisite;
  general IDE quick-fixes remain later tooling work.
+
+ **Measured 2026-07-31, so the bar has a starting number rather than a
+ judgement.** Over `tests/invalid_programs/`, 12 of 15 rejected programs emit an
+ EMPTY `hint` in `--diagnostics-json`; roughly 25 `hint :=` sites exist against
+ 215 `E0NNN` codes. The field is already wired end-to-end and reaches the JSON,
+ so this is population work, not plumbing — and the facts are in hand at every
+ empty site measured: `E0100 undeclared variable 'b'` prints no candidates
+ although the resolver holds the in-scope set, and the field/variant cases
+ likewise know the legal set they are choosing from. Two findings from the same
+ pass belong to this bar: bug 064 (a `--query` rejection that lists the rejected
+ kind as known — a message from which no repair is derivable at all, the limiting
+ case of a missing next action), and `tests/invalid_programs/missing_variant.con`,
+ which exercises the DELETED `#` enum qualifier and gets a generic
+ `E0001 expected ;, got #` — the migration case a model trained on older material
+ will hit most, with no statement that the separator was retired or that
+ `Option::<i32>::Some` replaces it. That fixture has also drifted from its own
+ name. Fix the class, not the instance: a gate asserting every code carries a
+ non-empty next action, and a corpus grep for fixtures testing retired syntax.
 
  R-0445's focused non-author resource-report session counts as one recorded
  attempt here. It is an early pressure test, not a substitute for recruiting
@@ -5941,9 +5982,41 @@ cannot be got out of micromega in a stable form".
 
 ### Task R-0464
 
-**Objective:** Generate runtime-safety obligations from SSA rather than the surface AST,
-and make every syntactic analysis feeding a proof total with an unsafe-by-default
-fallback.
+**Objective:** ONE trap-semantics definition, consumed by SSA construction,
+interpretation, optimization, obligation generation and the backends — and, second,
+generate obligations from SSA rather than the surface AST.
+
+**The order here is deliberate and was corrected 2026-07-31.** Moving obligation
+generation to SSA fixes *staleness* (facts about a mutable `i`), which is real. It does
+nothing about *rule duplication*, and on its own it merely relocates a second copy of the
+trap rules onto a new representation. The single definition is the primary objective; the
+representation change is the secondary one.
+
+The evidence that this is the live problem, not a theoretical one — H24, reproduced in
+`examples/trap_semantics_gap/`. `IntArith` already IS the single source: it makes `trap` a
+first-class result and defines checked division as trapping on divide-by-zero, signed
+`MIN / -1`, and shift out of range. Interp, EmitSSA, SSAVerify, SSACleanup and
+TypeJudgment consume it. Obligation generation imports it for range constants and then
+states its own weaker conditions, so:
+
+- `a / b` reports `div_nonzero → proved_by_kernel_decision` under `b ≠ 0` and the binary
+  **aborts** on `(i32::MIN, -1)` — `divObligations` emits only `divisor ≠ 0` (insufficient);
+- `a << b` generates **no obligation at all** and the binary **aborts** on `(1, 40)` —
+  there is no shift family (inapplicable).
+
+So the concrete work is: derive each family's trap condition FROM `IntArith` rather than
+restating it, which closes both gaps at once and makes the next trap rule added to
+`IntArith` propagate to obligations by construction instead of by someone remembering.
+`VC_BRIDGE_REGISTER.md`'s div row must be corrected (its "Emits" is provably insufficient)
+and a shift row added.
+
+Note the gate-coverage lesson: `check_vc_bridge_register.sh` asserts every family
+*generator* has a row, so it cannot detect a **missing family** — there is no generator to
+notice. Registering families against the trap definition rather than against the existing
+generators is what makes that detectable.
+
+Second objective, and make every syntactic analysis feeding a proof total with an
+unsafe-by-default fallback:
 
 The hypothesis walker threads facts forward over MUTABLE surface syntax, so the name `i`
 denotes different values at different program points. That forces `dropStaleHyps` to
@@ -5978,6 +6051,30 @@ Separately and cheaply, as the general rule this instance illustrates: every syn
 analysis feeding a proof must be total over its input type with an unsafe default —
 unknown construct invalidates everything in scope, or refuses to emit obligations there.
 Gate the exhaustiveness.
+
+**Relationship to R-0450 and R-0454 — read before scheduling.** These are three stages of
+one pipeline and they are easy to mistake for overlapping work:
+
+```
+  program  --[R-0464: which representation?]-->  obligation
+           --[R-0454: how is it identified?]-->  digest
+           --[R-0450: how is it said?]------->   prover syntax
+```
+
+- **R-0450 does not subsume this.** It unifies the *lowering* (obligation → prover
+  syntax); R-0464 changes the *input* obligations are generated from. Different stages,
+  neither one's IR fixes the other's problem. But sequencing matters: the SSA generator
+  should emit INTO R-0450's typed IR, so doing R-0464 first means writing the generator
+  against today's ad-hoc lowerings and migrating it later. Prefer R-0450 first, or accept
+  the rework knowingly.
+- **R-0454 must land first, and must alpha-normalize.** Obligations generated from SSA
+  mention `i₁` where AST-generated ones mention `i`. If variable names are in the digest
+  basis, this task invalidates every stored digest. The invariant is now recorded in
+  R-0454; this is the task that would otherwise pay for its absence.
+- **Register A rows are re-anchored, not invalidated.** The rows in
+  `VC_BRIDGE_REGISTER.md` state *if the flat goal holds, the runtime property holds*. The
+  goal's subject changes representation here, so each row's "Assumes" clause must be
+  restated against SSA — cheaper before R-0460 discharges rows than after.
 
 ### Task R-0465
 
@@ -6426,10 +6523,20 @@ graduation criteria named.
 
 Scope: the neutral term encoding (`PExpr`/`PVal`/`PMatchPat` are already prover-agnostic;
 serialize versioned), the `NeutralObligation` and `HostAttestation` records, and
-`checkedAgainstDigest` such that a mismatch reads `stale`. Two encoding invariants must
+`checkedAgainstDigest` such that a mismatch reads `stale`. Three encoding invariants must
 survive serialization: `.call` and `.applyVar` stay distinct (the two-namespace
-resolution that closed bug 061), and `displayName` is excluded from the digest because
-identity is `CallableId`.
+resolution that closed bug 061); `displayName` is excluded from the digest because
+identity is `CallableId`; and — **added 2026-07-31 from the R-0464 cross-check** —
+**variable naming must not affect the digest**, so the term is alpha-normalized (de Bruijn
+or a canonical renaming) before hashing.
+
+That third invariant is this task's own closing-window argument turned on itself. R-0464
+moves obligation generation from the surface AST to SSA, where the same obligation is
+spelled over `i₁` instead of `i`. If names are in the digest basis, R-0464 invalidates
+every stored digest — precisely the mass migration this task exists to avoid, arriving one
+task later. Alpha-normalizing now makes the AST→SSA move digest-neutral and costs nothing
+today. Getting this wrong is not detectable until R-0464 lands, which is exactly when it
+is expensive.
 
 Do not widen R-0004 to absorb this. That task is mid-flight; this is its successor.
 

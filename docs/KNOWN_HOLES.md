@@ -28,6 +28,39 @@ freshness (bugs 058–060 / R-0004), and ProofCore callable identity (bug 061 /
 R-0442). R-0010 will replace the legacy skip-based audit with mechanically
 checked per-bug states.
 
+### H24. Obligation generation keeps its own weaker copy of the trap rules — OPEN, reproduced
+
+`Concrete.Semantics.IntArith` is the single-source trap semantics: it makes `trap` a
+first-class result and defines checked division as trapping on *divide-by-zero, signed
+`MIN / -1`, and shift out of range*. The interpreter, `EmitSSA`, `SSAVerify`,
+`SSACleanup` and `TypeJudgment` all consume it. Obligation generation imports it for
+range constants and then states its **own** trap conditions, which are weaker.
+
+Two live consequences, both reproduced in `examples/trap_semantics_gap/`:
+
+| | Obligation | Runtime |
+|---|---|---|
+| `a / b` at `(i32::MIN, -1)` | `div_nonzero` → **`proved_by_kernel_decision (omega)`** under `b ≠ 0` | **aborts, exit 134** |
+| `a << b` at `(1, 40)` | **none generated** — `--report vcs` is empty for it | **aborts, exit 134** |
+
+These are the two failure modes [VC_BRIDGE_REGISTER.md](VC_BRIDGE_REGISTER.md) names under
+"what faithful means", and both are live: the first is **insufficiency** (`divObligations`
+emits only `divisor ≠ 0`), the second is **inapplicability** (there is no shift family at
+all, so nothing looks for the fault).
+
+Note what this is *not*. It is not H23 — every hypothesis here is sound, and the div
+obligation is correctly proved; it simply does not say enough. And it is **not fixed by
+moving obligation generation to SSA**: relocating a rule does not merge it with the
+definition it should have been derived from. The fix is one trap-semantics definition
+consumed by SSA construction, interpretation, optimization, obligation generation *and*
+the backends — otherwise each new consumer is another independent copy of the rules.
+
+Gate-coverage note worth recording: `check_vc_bridge_register.sh` asserts every family
+*generator* has a register row. It cannot detect a **missing family**, because there is no
+generator to notice. The shift gap was invisible to it for exactly that reason.
+
+Owned by **R-0464**.
+
 ### H23. An unproven hypothesis launders into a proved obligation — OPEN, reproduced
 
 **This is the most severe hole in this file. A guaranteed out-of-bounds access is
