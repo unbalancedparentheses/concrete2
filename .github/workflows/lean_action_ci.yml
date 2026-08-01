@@ -42,6 +42,9 @@ jobs:
       - name: Register C gate (evidence is never stronger than its inputs)
         run: bash scripts/tests/check_evidence_algebra.sh
 
+      - name: Known-wrong corpus (open holes still reproduce)
+        run: bash scripts/tests/check_known_wrong_corpus.sh
+
       - name: Run Python LL(1) checker
         run: python3 scripts/check_ll1.py grammar/concrete.ebnf
 

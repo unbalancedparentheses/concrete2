@@ -91,6 +91,28 @@ divergence introduced days earlier, where `kernel_disagreement` existed in the r
 not in the stored artifact. The ledger stores a canonical vocabulary word while the
 parenthetical stays display-only, per R-0440.
 
+**A second defect, H24 — and the one that says most about the architecture.** `IntArith`
+is the single-source trap semantics and is consumed by the interpreter, `EmitSSA`,
+`SSAVerify`, `SSACleanup` and `TypeJudgment`. Obligation generation imports it for range
+constants and then states its **own**, weaker trap conditions. So a division reports
+`proved_by_kernel_decision` under `divisor ≠ 0` and aborts on signed `MIN / -1`, and an
+over-width shift generates **no obligation at all** and aborts — the sufficiency and
+applicability failure modes [VC_BRIDGE_REGISTER.md](docs/VC_BRIDGE_REGISTER.md) names, both
+live. Reproduced in `examples/trap_semantics_gap/`.
+
+It also forced a correction to this project's own claims: the register said the
+differential surfaces "probe sufficiency". They do not. `bridge-check` evaluates the
+obligation against an evaluator of the *same* obligation, so on the aborting function it
+reports `ok — proved; 9 inputs checked, no counterexample`. It tests lowering fidelity;
+sufficiency needs the theorems (R-0460) or the artifact (R-0462). H24 is consequently the
+clearest argument for R-0462: **every** static surface reports success on that fixture and
+the binary aborts on the first run.
+
+Both holes now have a `check_known_wrong_corpus.sh` gate asserting their fixtures still
+reproduce — a counterexample that silently stops demonstrating its hole is worse than
+none, and these were `skip` in the example manifest precisely because they are meant to
+fail. Its assertions are written to be inverted when the fixes land.
+
 **The audit's most important result is a defect, not a feature: H23.** An obligation
 inside a loop may assume that loop's `#[invariant]` whether or not the invariant's
 preservation VC is discharged, and nothing composes the two statuses. A guaranteed

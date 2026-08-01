@@ -135,7 +135,8 @@ R-0449 is a different axis — realizing the *theories* in each target prover �
 close this. Enumerated rule-by-rule in [VC_BRIDGE_REGISTER.md](VC_BRIDGE_REGISTER.md) with
 the theorem that will discharge each: **0 of 4 rows discharged**. Partially probed today
 by `--report bridge-check` (fuzzes concrete inputs against a *proved* obligation —
-tests sufficiency on sampled inputs) and `--report core-semantics-diff` (cross-checks
+does NOT test sufficiency — see H24; it checks the obligation against an evaluator of the
+*same* obligation, so it tests lowering fidelity) and `--report core-semantics-diff` (cross-checks
 the arithmetic model). Neither covers hypothesis soundness or applicability, which
 need the proofs. `independent_of.bridge = "no"` reports this per obligation rather
 than leaving it to prose.

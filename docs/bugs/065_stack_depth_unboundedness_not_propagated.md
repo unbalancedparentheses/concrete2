@@ -74,23 +74,59 @@ computed with the missing edges.
 
 ## Severity
 
-Contained to this report. `stackBound` has exactly one consumer — the report
-string itself:
+**Corrected 2026-07-31, same day as filing: an earlier draft of this section
+called the defect "contained to the report". That was wrong.** It rested on
 
 ```
 $ grep -rn 'stackBound\|stack_bound' Concrete/ Main.lean
 Main.lean:2299:      IO.println (Report.stackDepthReport validCore.coreModules locMap pc)
 ```
 
-It reaches no claim record, no policy decision, no release bundle, and no
-evidence class. So this is a false user-facing number, **not** laundered
-evidence, and it does not belong in `docs/KNOWN_HOLES.md`.
+which scoped the search to Lean sources. Enforcement of this number lives in
+**shell**, and there are three consumers:
 
-The profile gate is also unaffected: `--check predictable` rejects recursion
-outright (`Report.lean:585` onward), so a program in the predictable profile has
-no recursive functions and therefore no dropped edges. The defect is only
-reachable on programs that the predictable profile already refuses — which is
-precisely why it survived: the report is exercised most where it is right.
+| Consumer | What it does with the max |
+|---|---|
+| `scripts/tests/check_policy.sh:161` | greps `Max stack bound:\s*[0-9]+` and enforces `[policy] max_stack_bytes = N` against it |
+| `scripts/tests/check_assumptions.sh:128` | same, for `[allocation] stack_max_bytes = N` |
+| `scripts/tests/capture_release_bundle.sh:128` | greps the same line into the release bundle as `evidence.max_stack_bytes` |
+
+So the number is a **policy verdict** and a **published evidence field**, not
+report-only. `docs/POLICY_FILES.md:74` and `docs/ASSUMPTION_FILES.md:95` both
+list it under "Enforced fields" — correctly, since the gates implement it; the
+key is simply absent from `Concrete/`, which is what the first grep saw.
+
+The guard that should catch this cannot fire. `check_policy.sh` fails closed when
+the report has **no** max bound:
+
+```bash
+if [ -z "$actual_max" ]; then
+  echo "  FAIL max_stack_bytes=$max_stack but stack-depth report has no max bound"
+```
+
+but the defect's effect is that a finite `Max stack bound:` is *always* printed —
+the summary maximizes over the bounded subset, which is never empty. So the
+fail-closed branch is unreachable on precisely the programs that need it, and a
+budget would pass on a program with unbounded stack rather than refuse it.
+
+Not live today, and the reason matters: all five projects that set the budget —
+`crypto_verify`, `parse_validate`, `fixed_capacity`, `hmac_sha256`,
+`constant_time_tag`, three of them flagships — are recursion-free
+(`--report recursion` reports 0 direct and 0 mutual for each), so every enforced
+number is currently correct. But that is a property of the corpus, not of the
+mechanism: the first recursive function to enter a budgeted project converts a
+silent pass into a published `evidence.max_stack_bytes` that is false.
+
+Still not filed in `docs/KNOWN_HOLES.md`, because no shipped claim is false
+today. The judgement call is narrow and worth stating plainly rather than
+burying: if a recursive function ever lands in one of those five projects before
+this is fixed, this becomes an H-numbered evidence hole with no further
+investigation required.
+
+The profile gate is unaffected for the same corpus reason: `--check predictable`
+refuses recursion outright (`Report.lean:585` onward), so a predictable-profile
+program has no dropped edges. That is also why the defect survived — the report
+is exercised most where it happens to be right.
 
 What makes it worth a number rather than a silent fix is that `stack:` is
 evidence-shaped output on a project whose stated rule is that every construct is
@@ -115,3 +151,14 @@ reach a function reported `unbounded`. That assertion is checkable from the
 report text against `--report recursion` output, and it catches the whole class
 rather than this one call shape. A mutation restoring the `!isRecursive c`
 filter must make the gate fail.
+
+The policy path needs its own leg, because fixing the report alone would trip it:
+once an unbounded program prints no numeric max, `check_policy.sh`'s
+`-z "$actual_max"` branch fires and the budget fails closed — which is the
+correct behaviour and must be asserted deliberately rather than discovered by a
+red release gate. Add a negative project that sets `max_stack_bytes` and contains
+recursion, and assert `check_policy.sh` REFUSES it. Assert the same for
+`check_assumptions.sh`, and that `capture_release_bundle.sh` writes something
+other than a number for `evidence.max_stack_bytes` — its fallback is already
+`"?"`, so confirm consumers of the bundle tolerate it, or give the field an
+explicit `"unbounded"` value rather than a punctuation mark.

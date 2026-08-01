@@ -76,7 +76,7 @@ proofs are needed, since no test enumerates program points.
 | **Assumes** | The operand type's `lo`/`hi` match `Concrete.Semantics.IntArith`'s range for that width; the surrounding `#[requires]` and enclosing guards are all sound at the operation's program point. |
 | **Rejects** | Non-`#[overflow_checked]` arithmetic (no obligation — the wrapping/saturating forms are separate ops); `div`/`mod` sub-terms (dropped from the lowering, so the goal reads `not-asked`, never a false verdict). |
 | **Forced by** | `examples/two_kernel_demo/src/main.con` (`add_bounded` graduates, `mul_unbounded` must not). |
-| **Cross-checked today** | `--report bridge-check` fuzzes concrete inputs against a *proved* obligation (probes sufficiency); `--report core-semantics-diff` cross-checks the arithmetic model used to build it. |
+| **Cross-checked today** | `--report bridge-check` fuzzes concrete inputs against a *proved* obligation; `--report core-semantics-diff` cross-checks the arithmetic model used to build it. **Neither probes sufficiency** — see the correction below. On the H24 fixture `bridge-check` reports `ok — proved; 9 inputs checked, no counterexample` for the very function that aborts. |
 | **Discharging theorem (TODO)** | `overflow_obligation_sufficient`: if the emitted bounds hold for every reachable assignment, `IntArith.checked{Add,Sub,Mul}` does not trap at that site. |
 
 ### `boundsObligations` — array indexing is in range
@@ -125,10 +125,31 @@ separately by construction rather than by proof.
 ## Status
 
 Rows discharged: **0 of 4**. Every row is currently trusted, which is what
-`independent_of.bridge = "no"` reports. The differential surfaces
-(`bridge-check`, `core-semantics-diff`) probe sufficiency on sampled inputs for two of
-the four rows and cover neither hypothesis soundness nor applicability — those need
-the theorems.
+`independent_of.bridge = "no"` reports.
+
+**Correction, 2026-07-31: the differential surfaces do NOT probe sufficiency.** This
+document previously said they did, for two of the four rows. They cannot, and H24 shows it
+concretely: `bridge-check` evaluates the *obligation* on sampled inputs and looks for an
+input where the obligation is false. On `a / b` the obligation is `b ≠ 0`, which is true
+at `(i32::MIN, -1)` — so it reports `ok — proved; 9 inputs checked, no counterexample`
+about a function that aborts on that input.
+
+The distinction matters for what these surfaces are worth: `bridge-check` tests **lowering
+fidelity** — does the printed obligation mean what the obligation means — by checking the
+obligation against an evaluator of the *same* obligation. Sufficiency asks a different
+question, *does the obligation imply the runtime property*, and nothing in the loop is a
+witness to the runtime property. So sufficiency needs either the theorems (R-0460) or the
+artifact itself (R-0462), and no amount of fuzzing the obligation substitutes.
+
+H24 is therefore also the clearest validation of R-0462's priority: **every** static
+surface reports success on `examples/trap_semantics_gap/` — `vcs` says
+`proved_by_kernel_decision`, `bridge-check` says no counterexample, `core-semantics-diff`
+says nothing (both functions are outside the extractable fragment, correctly named rather
+than silently skipped) — and the binary aborts on the first run. Fuzzing the compiled
+artifact would have found both gaps immediately.
+
+The rows still cover neither hypothesis soundness (H23) nor applicability (H24's shift
+gap) — those need the theorems.
 
 **The register is also INCOMPLETE, and its gate cannot say so.** Two gaps found 2026-07-31
 (H24), both reproduced in `examples/trap_semantics_gap/`:

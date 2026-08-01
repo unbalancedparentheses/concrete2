@@ -158,6 +158,20 @@ What these do **not** mean:
 Each attestation is recorded as a receipt carrying the exact tool version, so a stored
 claim can be re-audited or invalidated when a prover release is found buggy.
 
+> **SECOND CAVEAT — H24, reproduced 2026-07-31.** A `proved` runtime-safety obligation
+> does not mean the operation cannot trap, because obligation generation states its own
+> trap conditions instead of deriving them from `IntArith`, and they are weaker.
+> Concretely: a division obligation covers `divisor ≠ 0` but **not** signed `MIN / -1`, so
+> `a / b` reports `proved_by_kernel_decision` and aborts on `(i32::MIN, -1)`; and
+> **shifts generate no obligation at all**, so an over-width shift aborts with nothing
+> having been claimed about it. See `examples/trap_semantics_gap/`, owned by R-0464.
+>
+> Note that `--report bridge-check` does **not** catch this and reports
+> `ok — proved; 9 inputs checked, no counterexample` on the aborting function: it checks
+> the obligation against an evaluator of the same obligation, which tests lowering
+> fidelity, not sufficiency. Until R-0464, read `proved` on a division as "the divisor is
+> nonzero", not "this division cannot trap".
+
 > **CAVEAT THAT OVERRIDES THIS WHOLE SECTION — H23, reproduced 2026-07-31.** A
 > runtime-safety obligation inside a loop may assume that loop's `#[invariant]` without
 > the invariant's preservation VC being discharged, and no status composition relates

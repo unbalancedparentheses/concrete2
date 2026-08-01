@@ -1257,6 +1257,63 @@ proving no old body-only or advisory-`staleDeps` path can emit
 std fingerprints in their already-landed commit; do not mix that repair with
 these new evidence gates.
 
+### Task R-0466
+
+**Objective:** Measure whether the language is legible to the consumer that
+actually writes it — a language model — by gating two numbers in CI: can a model
+author correct Concrete from the documentation alone, and can it repair a
+rejected program from the diagnostic alone.
+
+The premise, stated because it reorders other tasks: Concrete's code is written
+by models, so the ergonomic cost the external-validation trial was designed to
+price is largely not charged. A model does not resent `defer x.drop()` or
+`with(Console)` — keystrokes are the cheapest thing it spends, and linearity plus
+capability headers are close to free on the consumer side. What a model cannot do
+is guess. So explicitness is not one virtue among several here; it is the whole
+adoption surface, and every rule that lives only in a maintainer's head, and
+every rejection that does not name its own repair, is a defect rather than
+friction.
+
+Two measurements, both regression-tracked so a change can be shown to move them:
+
+- **Authoring.** Give a model the language reference and stdlib manifest and
+  nothing else; ask for N programs against fixed prompts; record the fraction
+  that compile and, for each failure, which invariant was violated. The output
+  that matters is not the score but the histogram: an invariant that models
+  breach repeatedly is one the documentation does not state, and that is a
+  reference defect with a named location.
+- **Repair.** For each rejected program, feed back ONLY the diagnostic — never
+  the fix — and measure rounds to green. One round is the bar. A diagnostic that
+  cannot close the loop at all is the strongest possible finding, and bug 064 is
+  the existence proof: it names a token unknown while displaying that token among
+  the known set, so no repair is derivable from it in any number of rounds.
+
+Seed the corpus from what exists rather than inventing one: `tests/wrong-code/`,
+`tests/invalid_programs/`, and the `docs/bugs/` repros are already
+rejected-program sets with known intended causes.
+
+Why this sits here, ahead of the prover-neutral arc: it is the cheap empirical
+check on the language surface, in the same relation to R-0137 that R-0462 has to
+R-0460 — an afternoon-scale continuous measurement standing in for an argument
+that would otherwise be settled by assertion. It also front-runs R-0137's three
+human sessions without replacing them (a diagnostic that defeats a model defeats
+a newcomer), and unlike recruiting, it runs per commit. R-0137 owns the
+diagnostics bar itself and the measured 12-of-15 empty-hint baseline; this task
+owns the harness and the two numbers.
+
+Kill criterion, per the spike-first rule: if authoring failures cluster on
+prompt-shape or harness artifacts rather than on identifiable language or
+documentation facts, the trial is measuring the harness and should be stopped
+rather than tuned.
+
+Definition of done: the harness is deterministic enough to gate (pinned model
+version and prompts recorded in the artifact, so a number is comparable across
+runs or is explicitly marked incomparable); the repair number is reported per
+diagnostic code, not as one average, so a regression names its own code; and a
+mutation that blanks a populated `hint` must make the repair number visibly
+worse. Report both numbers with the corpus size, and never a single green badge —
+same no-erased-dimensions rule as R-0440.
+
 ### Sequencing note: the prover-neutral arc (R-0450, R-0448, R-0454–R-0456, R-0458–R-0460)
 
 These tasks are entangled enough that picking one without reading the others has
@@ -1295,6 +1352,15 @@ this arc came from kernel agreement; the faults came from differential tests, an
 the worst of them — was found by writing a wrong program and reading the report, while
 every kernel-side surface reported success. Sequence accordingly, and note that R-0462
 (fuzz the compiled binary against the safety claims) would have caught H23 in seconds.
+
+The same principle applied one level out, added 2026-07-31: this arc strengthens claims
+the language already makes, and nothing on it widens what the language can claim or makes
+a rejection legible to the model that has to act on it. R-0459 is the first of those and
+is already sequenced above; **R-0466 is the second and sits ahead of this arc by file
+position**, on the argument that a continuous empirical measurement of the language
+surface outranks further agreement between checkers of a model — the same trade R-0462
+represents against R-0460. Neither is a substitute for the arc; both are cheaper, and both
+fail loudly in places the arc reports success.
 
 ### Task R-0450
 
