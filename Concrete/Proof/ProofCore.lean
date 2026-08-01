@@ -2202,7 +2202,11 @@ private partial def extractModule
     -- The facts captured before contract erasure, looked up BY IDENTITY. They
     -- travel on the module as a parallel record, so nothing is recomputed here
     -- and nothing was added to CFnDef to carry them.
-    let facts? := (m.declFacts.find? fun d => d.id.render == cid.render)
+    -- Compare IDENTITIES. This compared renderings while the helper API in
+    -- SubjectFacts was being corrected to compare identities — so the fix reached
+    -- the function nobody calls and missed the one that mints every subject
+    -- digest.
+    let facts? := (m.declFacts.find? fun d => d.id == cid)
     -- `none` when the facts are absent OR incomplete. Never a string, so an
     -- absent subject cannot be compared as though it were a computed one.
     let subjDigest : Option String := facts?.bind (fun fx => proofSubjectDigestV2 fx fp)

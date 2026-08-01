@@ -364,7 +364,8 @@ def CheckedDeclFacts.isComplete (f : CheckedDeclFacts) : Bool :=
 /-- All declarations' facts for one program, keyed by identity.
 
     A list rather than a map so it can be ordered canonically and digested; lookup
-    goes through `find?` on the rendered identity, never on a name. -/
+    goes through `find?`, which compares the IDENTITY itself — never a name, and
+    never a rendering of the identity either. -/
 structure ProgramFacts where
   schemaVersion : Nat := 1
   decls : List CheckedDeclFacts := []

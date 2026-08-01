@@ -262,11 +262,40 @@ probe "ProgramFacts.find? resolves by CallableId value" "true" \
   (p.find? (CallableId.ofUser "m" "f")).isSome
     && (p.find? (CallableId.ofUser "other" "f")).isNone
     && (p.find? (CallableId.ofUser "m" "f" 1)).isNone'
-if grep -q "d.id.render == id.render" "$ROOT_DIR/Concrete/Proof/SubjectFacts.lean"; then
-  no "ProgramFacts.find? still compares renderings"
+# SCOPED TO THE PRODUCTION FILES, not just the helper. The previous version
+# grepped only SubjectFacts.lean, so it reported "no lookup routes through
+# .render" while ProofCore's actual subject-digest lookup did exactly that — the
+# gate gave assurance about the API nobody calls.
+# `|| true` INSIDE the substitution: under pipefail a no-match grep returns 1,
+# and NO MATCHES is the passing case here — so the guard would abort exactly
+# when the code is correct.
+render_lookups=$( { grep -rnE "\.render *== *[a-zA-Z_]+\.render" \
+  "$ROOT_DIR/Concrete/Proof/ProofCore.lean" "$ROOT_DIR/Concrete/Proof/SubjectFacts.lean" \
+  "$ROOT_DIR/Concrete/Proof/Proof.lean" 2>/dev/null || true; } | wc -l | tr -d " ")
+[ "$render_lookups" = "0" ] \
+  && ok "no lookup in the production proof path compares renderings" \
+  || no "$render_lookups lookup(s) still compare renderings in the production path"
+# FnTable.lookupById must match on the identity, not on identityKey (which is the
+# canonical serialization and belongs in the ROOT).
+if grep -q "identityKey == id.render" "$ROOT_DIR/Concrete/Proof/Proof.lean"; then
+  no "FnTable.lookupById still matches on the rendered identityKey"
 else
-  ok "no lookup in SubjectFacts routes through .render"
+  ok "FnTable.lookupById matches on the identity itself"
 fi
+probe "lookupById distinguishes ids that differ only in type-param arity" "true" \
+'def gA : CallableId := CallableId.ofUser "m" "g"
+def gB : CallableId := CallableId.ofUser "m" "g" 1
+def geA : PFnDef := { identity := .semantic gA, operationalKey := "g", displayName := "g", params := ["x"], body := .lit (.int 1) }
+def tblA : FnTable := { entries := #[geA], globals := fun n => if n == "g" then some geA else none }
+#eval (tblA.lookupById gA).isSome && (tblA.lookupById gB).isNone'
+
+# THE REAL PATH: a ProofCoreEntry must actually carry facts and a digest for a
+# program, which is what the rendering comparison would have silently broken had
+# the two spellings ever diverged.
+real=$("$CC" "examples/crypto_verify/src/main.con" --report subject-facts 2>/dev/null | grep -c "subject digest: [0-9a-f]" || true)
+[ "${real:-0}" -ge 4 ] \
+  && ok "ProofCore's own declFacts lookup yields digests for a real program ($real)" \
+  || no "ProofCore produced ${real:-0} real subject digests — the production lookup is not resolving"
 
 echo ""
 echo "=== producer and invariance cases, on one committed program ==="

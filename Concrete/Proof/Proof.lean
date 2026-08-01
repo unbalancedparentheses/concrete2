@@ -734,7 +734,13 @@ by its own key and no key reaches two entries. -/
     By IDENTITY, never by name or position — the two things step 3 exists to
     stop being identity. -/
 def FnTable.lookupById (t : FnTable) (id : CallableId) : Option IdentifiedPFnDef :=
-  (t.entries.find? fun d => d.identityKey == id.render).bind PFnDef.identified?
+  -- Match on the IDENTITY, not on its rendering. `identityKey` is the canonical
+  -- serialization and belongs in the table ROOT; using it to decide whether two
+  -- callables are the same makes the rendered string the operational identity.
+  (t.entries.find? fun d =>
+    match d.identity with
+    | .semantic cid => cid == id
+    | .legacy       => false).bind PFnDef.identified?
 
 /-- A table binding locally bound callables as well. Used by theorems about
 higher-order specs, where the callback is the thing under discussion. -/
