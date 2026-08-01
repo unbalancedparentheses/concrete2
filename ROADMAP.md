@@ -1508,6 +1508,18 @@ representation carrying them from Elab; (2) capture elaborated lexical scope;
 representation; (4) feed it into the subject digest and integrate dependency
 freshness; (5) receipts last.
 
+**Typed identity is required for EVERY non-binder semantic reference, not only
+direct calls.** Constants, function references, types, fields and enum variants
+all enter canonical bytes, and each is currently a spelling. Covering only calls
+would produce an encoder that is alpha-invariant — renaming a local changes
+nothing — while still treating DECLARATION spellings as identity, which is the
+same defect wearing the opposite disguise: invariant where it should be, and
+name-keyed exactly where identity matters.
+
+So the rule for V2 is: a name may appear in the bytes only when it is a BINDER
+rendered by relative position. Every other reference resolves to a semantic
+identity or the encoding is uncovered.
+
 **V1 stays frozen byte-for-byte, with a golden proving it.** The existing
 `#[proof_fingerprint]` corpus is the migration input; a test must show those
 bytes are unchanged, so "V1 is untouched" is checked rather than intended.
