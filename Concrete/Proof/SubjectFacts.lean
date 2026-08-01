@@ -153,9 +153,16 @@ partial def contractCanonicalIn
           -- Semantic constant identity is the follow-up that restores coverage
           -- for these; until it exists, refusing is the only answer that does not
           -- overstate what the digest saw.
-          match resolveCall n with
-          | some id => some s!"k{id.render.length}:{id.render}"
-          | none    => none
+          -- NOT `resolveCall`. That resolver answers for CALLABLES, so a constant
+          -- sharing a spelling with a function would be encoded under that
+          -- FUNCTION's CallableId — a confidently wrong identity, strictly worse
+          -- than the textual fallback it replaced. A constant is not a callable
+          -- and has no CallableId to borrow.
+          --
+          -- Until a semantic constant identity (`ConstId`) exists, every
+          -- non-binder identifier is UNCOVERED. That is the only answer available
+          -- that is neither a name in the bytes nor someone else's identity.
+          none
   | .paren _ e       => contractCanonicalIn termBinders typeBinders capBinders allowResult resolveCall e
   | .binOp _ op l r  => do
     let a ← contractCanonicalIn termBinders typeBinders capBinders allowResult resolveCall l
@@ -268,6 +275,17 @@ def ContractFacts.ofResolved
     -- on constant_time_tag. The loop's binders are appended AFTER the parameters
     -- so a parameter keeps its index and only the loop's own names extend the
     -- scope.
+    -- APPROXIMATE, and knowingly so: this reconstructs the loop's scope from its
+    -- ASSIGNMENTS, not from checked lexical binders. It catches an induction
+    -- variable, but it misses a read-only outer local an invariant reads, and it
+    -- can treat an assignment TARGET as a declaration. Both directions are wrong
+    -- in principle; the read-only miss shows up as an unresolved identifier and
+    -- so fails CLOSED (uncovered), which is the safe direction, while the
+    -- over-inclusion could let a non-binder be indexed as one.
+    --
+    -- The lasting fix is elaborated lexical binder scope, not a better guess from
+    -- assignments. Recorded here so the approximation is not mistaken for the
+    -- scope itself.
     let loopBinders := (lc.entrySubst.map Prod.fst ++ lc.body.map Prod.fst).eraseDups
     let encL := contractCanonicalIn (params ++ loopBinders) typeParams capParams
     let invs := lc.invariants.map fun e =>

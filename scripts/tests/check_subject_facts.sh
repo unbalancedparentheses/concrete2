@@ -322,21 +322,49 @@ echo "=== a free identifier is not a name in the bytes ==="
 FID="tests/programs/subject_free_identifier.con"
 [ -f "$FID" ] && ok "the free-identifier fixture is committed" || no "free-identifier fixture missing"
 fid_cov=$("$CC" "$FID" --report subject-facts 2>/dev/null | grep -A7 "fid.clamp" | grep -oE "covered: (true|false)" | head -1 || true)
+# A CONSTANT IS NOT A CALLABLE. Routing an unbound identifier through the CALLABLE
+# resolver would encode a constant under a same-named FUNCTION's CallableId — a
+# confidently wrong identity, worse than the textual fallback it replaced.
+COLL="tests/programs/subject_const_fn_collision.con"
+[ -f "$COLL" ] && ok "the constant/function collision witness is committed" || no "collision witness missing"
+coll_cov=$("$CC" "$COLL" --report subject-facts 2>/dev/null | grep -A7 "coll.uses_const" | grep -oE "covered: (true|false)" | head -1 || true)
+[ "$coll_cov" = "covered: false" ] \
+  && ok "a constant sharing a function's spelling does NOT borrow its identity" \
+  || no "the collision case is '$coll_cov' — a constant may be encoded as a function"
 [ "$fid_cov" = "covered: false" ] \
   && ok "a contract naming an unresolved constant is UNCOVERED, not textual" \
   || no "a free identifier is '$fid_cov' — a source name may be entering the digest"
 # LOOP BINDERS ARE BINDERS. Encoding a loop's clauses with only the function's
 # parameters in scope made `#[invariant(0 <= i && i <= 16)]` an unresolved free
 # identifier and took the whole subject out — measured on constant_time_tag.
+#
+# NOT A COUNT OF ZEROES. The earlier version discarded stderr and counted
+# INCOMPLETE lines, so a compiler failure that produced NO report yielded zero and
+# passed — the vacuity this suite guards against elsewhere. Each example must now
+# produce a report SUCCESSFULLY, with a positive subject inventory, and its stderr
+# must be classifiable.
 for ex in constant_time_tag hmac_sha256 crypto_verify elf_header parse_validate fixed_capacity; do
-  n=$("$CC" "examples/$ex/src/main.con" --report subject-facts 2>/dev/null | grep -cE "INCOMPLETE" || true)
-  [ "$n" = "0" ] || no "$ex has $n incomplete subjects"
+  out="$TMP/$ex.out"; err="$TMP/$ex.err"
+  if ! "$CC" "examples/$ex/src/main.con" --report subject-facts >"$out" 2>"$err"; then
+    no "$ex: the compiler failed to produce a subject-facts report"
+    continue
+  fi
+  n_sub=$(grep -c '^v1:' "$out" || true)
+  if [ "${n_sub:-0}" -lt 1 ]; then
+    no "$ex: report produced but contains NO subjects — a zero here is vacuous"
+    continue
+  fi
+  n_inc=$(grep -cE "INCOMPLETE|ABSENT" "$out" || true)
+  tot_e=$(grep -c "^error:" "$err" || true)
+  unb_e=$(grep -c "has no stored proof subject" "$err" || true)
+  if [ "$n_inc" != "0" ]; then
+    no "$ex: $n_inc of $n_sub subjects incomplete"
+  elif [ "$tot_e" != "$unb_e" ]; then
+    no "$ex: $((tot_e - unb_e)) unclassified stderr diagnostic(s) beyond $unb_e expected unbound-proof errors"
+  else
+    ok "$ex: $n_sub subjects, 0 incomplete, $tot_e stderr diagnostics all expected"
+  fi
 done
-allz=$(for ex in constant_time_tag hmac_sha256 crypto_verify elf_header parse_validate fixed_capacity; do
-  "$CC" "examples/$ex/src/main.con" --report subject-facts 2>/dev/null | grep -cE "INCOMPLETE" || true; done | paste -sd+ - | bc)
-[ "$allz" = "0" ] \
-  && ok "no flagship example has an incomplete subject (loop binders in scope)" \
-  || no "$allz incomplete subjects across the flagships"
 
 echo ""
 echo "=== loop contracts reach the subject FROM SOURCE ==="

@@ -1,0 +1,15 @@
+// R-0004 witness: a CONSTANT and a FUNCTION sharing one spelling.
+//
+// Routing a constant's name through the CALLABLE resolver would encode `LIMIT`
+// the constant under `LIMIT` the function's CallableId — a confidently wrong
+// identity. The contract must go uncovered instead.
+mod coll {
+    const LIMIT: Int = 10;
+
+    pub fn LIMIT_fn(x: Int) -> Int { return x; }
+
+    #[ensures(result <= LIMIT)]
+    pub fn uses_const(x: Int) -> Int { if x > 10 { return 10; } return x; }
+
+    pub fn main() -> Int { return uses_const(3) + LIMIT_fn(0); }
+}
