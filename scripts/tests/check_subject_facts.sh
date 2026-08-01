@@ -250,6 +250,25 @@ probe "the namespace list covers every constructor" "true" \
   && (CallableNamespace.all.map CallableNamespace.canonical).eraseDups.length == 5'
 
 echo ""
+echo "=== facts lookup compares identity, not a rendering ==="
+# `find?` keyed on `.render`, which keeps the rendered string as operational
+# identity underneath a typed field — the same defect corrected in the dependency
+# graph, where storing CallableId and then comparing renderings made the type
+# cosmetic.
+probe "ProgramFacts.find? resolves by CallableId value" "true" \
+'#eval
+  let d : CheckedDeclFacts := { id := CallableId.ofUser "m" "f" }
+  let p : ProgramFacts := { decls := [d] }
+  (p.find? (CallableId.ofUser "m" "f")).isSome
+    && (p.find? (CallableId.ofUser "other" "f")).isNone
+    && (p.find? (CallableId.ofUser "m" "f" 1)).isNone'
+if grep -q "d.id.render == id.render" "$ROOT_DIR/Concrete/Proof/SubjectFacts.lean"; then
+  no "ProgramFacts.find? still compares renderings"
+else
+  ok "no lookup in SubjectFacts routes through .render"
+fi
+
+echo ""
 echo "=== producer and invariance cases, on one committed program ==="
 INV="tests/programs/subject_invariance.con"
 [ -f "$INV" ] && ok "the invariance fixture is committed" || no "invariance fixture missing"
@@ -322,18 +341,22 @@ echo "=== a free identifier is not a name in the bytes ==="
 FID="tests/programs/subject_free_identifier.con"
 [ -f "$FID" ] && ok "the free-identifier fixture is committed" || no "free-identifier fixture missing"
 fid_cov=$("$CC" "$FID" --report subject-facts 2>/dev/null | grep -A7 "fid.clamp" | grep -oE "covered: (true|false)" | head -1 || true)
+[ "$fid_cov" = "covered: false" ] \
+  && ok "a contract naming an unresolved constant is UNCOVERED, not textual" \
+  || no "a free identifier is '$fid_cov' — a source name may be entering the digest"
+
 # A CONSTANT IS NOT A CALLABLE. Routing an unbound identifier through the CALLABLE
-# resolver would encode a constant under a same-named FUNCTION's CallableId — a
-# confidently wrong identity, worse than the textual fallback it replaced.
+# resolver encoded a constant under a same-named FUNCTION's CallableId — a
+# confidently wrong identity, worse than the textual fallback it replaced because
+# it looks resolved. The witness declares `LIMIT` as BOTH, which the language
+# permits; an earlier version used `LIMIT` and `LIMIT_fn`, two different
+# spellings, and so exercised no collision at all.
 COLL="tests/programs/subject_const_fn_collision.con"
 [ -f "$COLL" ] && ok "the constant/function collision witness is committed" || no "collision witness missing"
 coll_cov=$("$CC" "$COLL" --report subject-facts 2>/dev/null | grep -A7 "coll.uses_const" | grep -oE "covered: (true|false)" | head -1 || true)
 [ "$coll_cov" = "covered: false" ] \
   && ok "a constant sharing a function's spelling does NOT borrow its identity" \
   || no "the collision case is '$coll_cov' — a constant may be encoded as a function"
-[ "$fid_cov" = "covered: false" ] \
-  && ok "a contract naming an unresolved constant is UNCOVERED, not textual" \
-  || no "a free identifier is '$fid_cov' — a source name may be entering the digest"
 # LOOP BINDERS ARE BINDERS. Encoding a loop's clauses with only the function's
 # parameters in scope made `#[invariant(0 <= i && i <= 16)]` an unresolved free
 # identifier and took the whole subject out — measured on constant_time_tag.

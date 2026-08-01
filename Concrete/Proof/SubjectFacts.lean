@@ -372,6 +372,11 @@ deriving Repr, Inhabited
 
 /-- Facts for one identity, resolved by IDENTITY rather than by name. -/
 def ProgramFacts.find? (p : ProgramFacts) (id : CallableId) : Option CheckedDeclFacts :=
-  p.decls.find? fun d => d.id.render == id.render
+  -- Compare the IDENTITY, not a rendering of it. Routing lookup through `.render`
+  -- keeps the rendered string as the operational identity underneath a typed
+  -- field — the same defect corrected in the dependency graph, where storing
+  -- `CallableId` and then keying every lookup on `.render` made the type
+  -- cosmetic.
+  p.decls.find? fun d => d.id == id
 
 end Concrete.Proof
