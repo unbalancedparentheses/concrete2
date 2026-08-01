@@ -1530,6 +1530,25 @@ carry a definition-site name (`CallableId.render` is `v1:user:mod.decl`). The
 distinction that matters is not whether a name appears in the bytes, but whether
 a spelling is being used AS IDENTITY.
 
+**FIRST TASK IS A BOUNDED PROBE, not the V2 implementation.** Whether the typed
+inputs can land incrementally or force a flag-day across Core is unknown, and it
+is the difference between roughly four and roughly eight sessions of remaining
+work. It is cheap to find out relative to committing to either path, so find out
+first:
+
+1. Land the V1 byte-for-byte golden (below) — the probe needs a tripwire proving
+   it changed nothing before it starts changing things.
+2. Inventory every consumer of `CExpr.ident`, `Callee.direct`, labels and
+   binders. The count and their shape decide whether step 4 is even possible.
+3. Spike ONE typed reference end to end: Elab -> Core -> ProofCore.
+4. Measure whether compatibility fields with defaults permit an incremental
+   migration, or whether every consumer must change together.
+5. Require Core/SSA/runtime artifacts to be UNCHANGED — a proof-bookkeeping
+   change that moves codegen output has escaped its remit.
+6. Discard the spike, or record the proven migration sequence, before writing any
+   V2 code. A spike that is silently promoted to the implementation is how the
+   measurement gets skipped.
+
 **V1 stays frozen byte-for-byte, with a golden proving it.** The existing
 `#[proof_fingerprint]` corpus is the migration input; a test must show those
 bytes are unchanged, so "V1 is untouched" is checked rather than intended.
