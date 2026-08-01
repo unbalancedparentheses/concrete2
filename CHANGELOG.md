@@ -67,8 +67,19 @@ mutation job confirms the kill.
 Provers are an opt-in shell (`nix develop .#provers`); the evidence gate is
 skip-if-absent, so no contributor pays the Isabelle closure for a flagged-off feature.
 
+**The audit's most important result is a defect, not a feature: H23.** An obligation
+inside a loop may assume that loop's `#[invariant]` whether or not the invariant's
+preservation VC is discharged, and nothing composes the two statuses. A guaranteed
+out-of-bounds access therefore reports `proved_by_multi_kernel (3: lean, rocq, isabelle)`,
+`[policy] require-two-kernels = true` builds it with exit 0, and the compiled binary
+aborts on the access reported safe. Reproduced in `examples/unsound_hypothesis/`; owned by
+R-0461, which blocks graduation (R-0448). Nothing in this milestone should be read as
+sound for a function containing a loop until that lands. It is also the sharpest evidence
+for the point below: three kernels across two logics agreed, because all three were handed
+the same unsound hypothesis.
+
 Audited 2026-07-31 by running the evidence rather than reading it, and the audit is
-recorded where it changes decisions. Two conclusions worth carrying forward. First, the
+recorded where it changes decisions. Two further conclusions worth carrying forward. First, the
 `require-two-kernels` fail-closed path had no assertion anywhere — every policy check sat
 inside the isabelle-present branch, so the direction that matters was untested in both
 shells; it is now gated in the prover-absent branch. Second, kernel agreement has surfaced

@@ -1321,6 +1321,13 @@ every kernel-side surface reported success. Sequence accordingly, and note that 
 
 **Objective:** Graduate multi-kernel evidence from `spike/multi-prover-evidence` to a supported feature, per `research/proof-evidence/multi-kernel-evidence-graduation.md`. The product is portable evidence — "replay our claims with the kernel you trust" — not agreement for its own sake. Status is DERIVED by composing per-kernel receipts on one obligation digest (R-0004's receipt mechanism), never emitted by a coordinator code path. The claim record carries structured per-kernel `validated_by` entries plus the independence field (`independent_of`: spec / kernel implementation / foundations / bridge); the composite badge string is display only (R-0440's no-erased-dimensions rule). Positioned immediately after R-0450 because the owner is executing it now to test the idea; the spike branch is the experiment vehicle, this task is its graduation bar.
 
+   **Blocking merge item added 2026-07-31: H23 must be closed first (R-0461).**
+   The badge is currently attachable to a vacuous obligation — an unproven loop
+   invariant is assumed without composition, so a guaranteed out-of-bounds
+   access reports `proved_by_multi_kernel (3: lean, rocq, isabelle)` and the
+   binary aborts. Graduating a badge with that property would ship the defect
+   with a stronger name on it. Reproduced in `examples/unsound_hypothesis/`.
+
    Merge bar (the graduation note's verified list): badge-teeth negative
    case (a weakly-bounded `a * b` closes with no kernel and stays
    `unproven`), kernel-absent honesty (no `coqc` → no attestation), class

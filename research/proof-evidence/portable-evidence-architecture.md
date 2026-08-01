@@ -45,8 +45,21 @@ are performed by code we wrote last month, and *every kernel checks the same out
 (A) and (B)*. A fault there produces unanimous agreement on the wrong formula.
 
 The empirical result on this branch matches exactly: kernel agreement surfaced **zero**
-real defects, while the one real fault found — `Z.div` vs `Z.quot` disagreeing at
-`(-7)/2` — was caught by a *differential test* against an independent evaluator.
+real defects, while the faults that were found came from differential tests and from
+reading reports — `Z.div` vs `Z.quot` disagreeing at `(-7)/2`, caught by comparing against
+an independent evaluator.
+
+And the strongest version of the argument is not an absence but a reproduction. **H23**:
+an obligation may assume a loop invariant whose preservation VC is unproven, so a
+guaranteed out-of-bounds access reports `proved_by_multi_kernel (3: lean, rocq, isabelle)`
+while the compiled binary aborts on the very access. Three kernels, two logics (CIC and
+HOL), unanimous — because all three were handed the same unsound hypothesis. Multiplicity
+did not merely fail to catch the fault; it *upgraded the badge* on a vacuous goal.
+
+There is a third link the diagram above hides, and H23 lives in it: the hypotheses. Every
+obligation is discharged *under assumptions*, and a conclusion cannot be stronger than the
+weakest thing it assumes. That composition rule is the cheapest and most valuable piece of
+this entire architecture, and it is the piece that was missing.
 
 So the architecture should be organized around (A) and (B), with (C) treated as a
 *portability* feature for auditors rather than a bug-finding mechanism. That single
@@ -249,7 +262,12 @@ independence and foundational diversity, not confidence.
 
 ## 6. The future, in order
 
-**Now → next.** Neutral digest before any artifact stores one (a closing window: no
+**First, before anything else.** Compose status across the assumption edge (R-0461).
+Hypotheses carry `origin` and `justifiedBy`; a conclusion is capped by the weakest fact it
+rests on. H23 makes this urgent rather than tidy, and the fix is a record change plus a
+fold, not new proof machinery. Everything below inherits the error until it lands.
+
+**Then.** Neutral digest before any artifact stores one (a closing window: no
 `subjectDigest` field exists yet, so migration cost is zero and only grows). Then point
 the agreement differential at the paths that lack it — the SMT lowering, whose verdict
 enters the TCB with no kernel re-deriving it, and Lean's own rendering, currently marked

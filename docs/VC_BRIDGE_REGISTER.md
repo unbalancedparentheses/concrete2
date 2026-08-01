@@ -51,6 +51,15 @@ A lowering rule is faithful when, for every program the rule fires on:
 2. **Hypothesis soundness** — every hypothesis attached to the obligation is actually
    established at that program point. An unsound extra hypothesis makes the obligation
    trivially dischargeable and the proof vacuous.
+
+   > **This clause has a live, reproduced instance: H23.** A loop `#[invariant]` is
+   > attached as a hypothesis whether or not its preservation VC (O2) is discharged, and
+   > no status composition relates them — so a guaranteed out-of-bounds access reports
+   > `proved_by_multi_kernel (3: lean, rocq, isabelle)` and the binary then aborts. See
+   > `examples/unsound_hypothesis/`, owned by R-0461. Note what this means for the rows
+   > below: their "Assumes" clauses say the enclosing guards and `#[requires]` are sound
+   > at the operation's program point, and that assumption is currently **false in the
+   > presence of loop invariants** — so every row inherits the defect, not just one.
 3. **Applicability** — the rule fires wherever the property can be violated. A rule
    that silently declines to fire produces no obligation and therefore no failure.
 

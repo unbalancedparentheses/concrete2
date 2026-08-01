@@ -36,6 +36,18 @@ that `concrete audit`, CI, and release bundles can inspect.
 10. `assume` is a controlled trapdoor: it taints its obligation to `assumed`
     (never `proved`), flows into the same audit ledger as `assumptions.toml`,
     and is gate-forbiddable in release.
+11. **Every hypothesis taints its conclusion by the strength of its own
+    justification.** Rule 10 states this for `assume`; it holds for *all* four
+    hypothesis sources, and generalizing it is the whole content of R-0461. A
+    control-flow guard is sound by construction and taints nothing. A
+    `#[requires]` is discharged at each call site, so it taints only as much as
+    that discharge. A loop `#[invariant]` is justified by O1 ∧ O2 and taints
+    exactly as much as those. Today the rule is enforced for `assume` and **not**
+    for invariants, which is H23 in [KNOWN_HOLES.md](KNOWN_HOLES.md): an
+    obligation assuming an unproven invariant is reported `proved`, and with
+    external kernels `proved_by_multi_kernel`. Reproduced in
+    `examples/unsound_hypothesis/`; the compiled program aborts on the access
+    reported safe.
 
 **Build order — the proof teaches the syntax.** This document is a *design
 proposal*; the contract syntax and VC shapes are not frozen. They must be

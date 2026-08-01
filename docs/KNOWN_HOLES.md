@@ -90,6 +90,13 @@ the runtime property, a program can be reported `proved_by_multi_kernel` and sti
 fault. If it attaches a hypothesis not actually established at that program point,
 the obligation is trivially dischargeable and the proof is vacuous.
 
+**The second clause is no longer hypothetical — see H23**, which reproduces exactly that
+sentence with a ten-line program: an unproven loop invariant is attached as a hypothesis,
+the bounds obligation reports `proved_by_multi_kernel`, and the binary aborts. H19 remains
+the broader hole (the *rules* are unproven); H23 is the specific, fixable instance of its
+hypothesis-soundness clause, and is owned separately by R-0461 because the fix is a
+composition rule rather than a soundness proof.
+
 Owned by **R-0460** (discharge the obligation-sufficiency register, rule by rule);
 R-0449 is a different axis — realizing the *theories* in each target prover — and cannot
 close this. Enumerated rule-by-rule in [VC_BRIDGE_REGISTER.md](VC_BRIDGE_REGISTER.md) with

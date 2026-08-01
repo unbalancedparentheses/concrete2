@@ -147,6 +147,21 @@ either force rewriting history or freeze it.
 The criteria above were checked by running the branch, not by reading it. Full
 gate under `nix develop .#provers`: **74/74**; default shell **14/14**.
 
+> **A criterion the note never wrote down, and the one that now blocks merge.**
+> Every criterion above asks whether the badge is *earned* — teeth, kernel
+> absence, no laundering past `trusted`, disagreement as signal. None asks
+> whether the *obligation being badged is worth badging*. H23 exploits exactly
+> that gap: the badge machinery behaves perfectly while attesting to a vacuous
+> goal, because an unproven loop invariant is assumed without composition. A
+> guaranteed out-of-bounds access earns `proved_by_multi_kernel (3: lean, rocq,
+> isabelle)` and the binary aborts. Every teeth-check in the list passes on that
+> program. Add as criterion 0: **no badge may be stronger than the weakest
+> hypothesis it rests on** — R-0461, blocking.
+>
+> Worth naming the lesson for future merge bars: a list of criteria testing that
+> a mechanism is honest cannot detect that the mechanism is pointed at the wrong
+> thing.
+
 | # | Criterion | Status |
 |---|---|---|
 | 1 | Status derived by composing receipts, never a coordinator | **Met in form, not in substance.** `kernelReceipts` compose the class (`Report.lean:2519`), but receipts are matched on obligation **id**, not on a subject digest — so "the same obligation" is by name. R-0454. |

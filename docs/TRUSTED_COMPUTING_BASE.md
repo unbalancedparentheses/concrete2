@@ -267,9 +267,23 @@ The asymmetry is worth stating plainly, because it inverts the intuition the bad
 creates: kernels are redundant checkers of the bridge's *output*, so they are strongest
 exactly where failure was least likely (a prover implementation being unsound) and blind
 exactly where our own code is (the lowering). Measured over this arc, kernel agreement
-found no faults; the one real fault was found by a differential test against an
-independent evaluator. Read the badge as reducing *whose* soundness you must assume, not
-as reducing *how much* is assumed.
+found no faults; the faults were found by differential tests and by reading reports. Read
+the badge as reducing *whose* soundness you must assume, not as reducing *how much* is
+assumed.
+
+**ALSO NOT REMOVED, and currently unsound: the hypothesis set.** Every obligation is
+discharged *under hypotheses*, and those hypotheses are part of the trusted base whenever
+their own justification is weaker than the conclusion drawn from them. Today that is not
+merely a boundary but a defect: a loop `#[invariant]` is attached as a hypothesis
+regardless of whether its preservation VC is discharged, so a badge can rest on a fact
+nothing established. H23 in [KNOWN_HOLES.md](KNOWN_HOLES.md) reproduces it — three
+kernels, two logics, unanimous, on a program that aborts. Until R-0461 composes status
+across the assumption edge, the TCB for any `proved` runtime-safety obligation on a
+function containing a loop silently includes **that loop's invariants as unverified
+assumptions**.
+
+This is the clearest illustration of the section's point. Adding kernels did nothing about
+it, because all three were handed the same hypothesis.
 
 Two narrower guarantees, both gate-enforced rather than asserted:
 
