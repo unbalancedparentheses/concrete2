@@ -130,50 +130,51 @@ GRAPH='def g : List DepNode :=
   , { id := CallableId.ofUser "m" "e", digest := some "DE", edges := [(DependencyEdge.body, CallableId.ofUser "m" "d")] } ]
 def g2 : List DepNode := g.map fun n => if n.id.declName == "c" then { n with digest := some "X" } else n
 '
-probe "a mutual cycle terminates" "true" "$GRAPH"'#eval (dependencyRootMaterial g ((CallableId.ofUser "m" "d").render)).toOption.isSome'
+probe "a mutual cycle terminates" "true" "$GRAPH"'#eval (dependencyRootMaterial g (CallableId.ofUser "m" "d")).toOption.isSome'
 probe "cycle members share a closure (entry point is not semantic)" "true" "$GRAPH"'#eval
-  (reachableFrom g ((CallableId.ofUser "m" "d").render)).mergeSort (· ≤ ·) == (reachableFrom g ((CallableId.ofUser "m" "e").render)).mergeSort (· ≤ ·)'
+  ((reachableFrom g (CallableId.ofUser "m" "d")).map (·.render)).mergeSort (· ≤ ·)
+    == ((reachableFrom g (CallableId.ofUser "m" "e")).map (·.render)).mergeSort (· ≤ ·)'
 probe "cycle members do NOT share a root (they are different subjects)" "true" "$GRAPH"'#eval
-  (dependencyRootMaterial g ((CallableId.ofUser "m" "d").render)).toOption != (dependencyRootMaterial g ((CallableId.ofUser "m" "e").render)).toOption'
+  (dependencyRootMaterial g (CallableId.ofUser "m" "d")).toOption != (dependencyRootMaterial g (CallableId.ofUser "m" "e")).toOption'
 probe "a deep callee edit moves the dependent root" "true" "$GRAPH"'#eval
-  (dependencyRootMaterial g ((CallableId.ofUser "m" "a").render)).toOption != (dependencyRootMaterial g2 ((CallableId.ofUser "m" "a").render)).toOption'
+  (dependencyRootMaterial g (CallableId.ofUser "m" "a")).toOption != (dependencyRootMaterial g2 (CallableId.ofUser "m" "a")).toOption'
 probe "an unrelated subtree is unaffected" "true" "$GRAPH"'#eval
-  (dependencyRootMaterial g ((CallableId.ofUser "m" "d").render)).toOption == (dependencyRootMaterial g2 ((CallableId.ofUser "m" "d").render)).toOption'
+  (dependencyRootMaterial g (CallableId.ofUser "m" "d")).toOption == (dependencyRootMaterial g2 (CallableId.ofUser "m" "d")).toOption'
 
 # FAIL-CLOSED CONDITIONS. Each previously produced a confident value from
 # incomplete information; each must now REFUSE, with the reason carried.
 probe "a missing start is refused" "missingStart" \
-'#eval repr (dependencyRootMaterial [] ((CallableId.ofUser "m" "ghost").render))'
+'#eval repr (dependencyRootMaterial [] (CallableId.ofUser "m" "ghost"))'
 probe "an unresolved edge is refused, not bound as unknown" "unresolvedEdge" \
-'#eval repr (dependencyRootMaterial [{ id := CallableId.ofUser "m" "a", digest := some "DA", edges := [(DependencyEdge.body, CallableId.ofUser "m" "ghost")] }] ((CallableId.ofUser "m" "a").render))'
+'#eval repr (dependencyRootMaterial [{ id := CallableId.ofUser "m" "a", digest := some "DA", edges := [(DependencyEdge.body, CallableId.ofUser "m" "ghost")] }] (CallableId.ofUser "m" "a"))'
 probe "a duplicate identity is refused" "duplicateId" \
-'#eval repr (dependencyRootMaterial [{ id := CallableId.ofUser "m" "a", digest := some "1", edges := [] }, { id := CallableId.ofUser "m" "a", digest := some "2", edges := [] }] "a")'
+'#eval repr (dependencyRootMaterial [{ id := CallableId.ofUser "m" "a", digest := some "1", edges := [] }, { id := CallableId.ofUser "m" "a", digest := some "2", edges := [] }] (CallableId.ofUser "m" "a"))'
 probe "an absent subject digest is refused" "incompleteDigest" \
-'#eval repr (dependencyRootMaterial [{ id := CallableId.ofUser "m" "a", digest := none, edges := [] }] ((CallableId.ofUser "m" "a").render))'
+'#eval repr (dependencyRootMaterial [{ id := CallableId.ofUser "m" "a", digest := none, edges := [] }] (CallableId.ofUser "m" "a"))'
 probe 'a missing-typed edge is refused' "missingEdge" \
-'#eval repr (dependencyRootMaterial [{ id := CallableId.ofUser "m" "a", digest := some "DA", edges := [(DependencyEdge.missing, CallableId.ofUser "m" "b")] }, { id := CallableId.ofUser "m" "b", digest := some "DB", edges := [] }] ((CallableId.ofUser "m" "a").render))'
+'#eval repr (dependencyRootMaterial [{ id := CallableId.ofUser "m" "a", digest := some "DA", edges := [(DependencyEdge.missing, CallableId.ofUser "m" "b")] }, { id := CallableId.ofUser "m" "b", digest := some "DB", edges := [] }] (CallableId.ofUser "m" "a"))'
 # THE EDGE KIND IS IN THE BYTES. Traversing typed edges and then serializing only
 # identities threw the typing away: contract and body produced the same preimage.
 probe "changing an edge kind changes the preimage" "true" \
 '#eval
   let c : List DepNode := [{ id := CallableId.ofUser "m" "a", digest := some "DA", edges := [(DependencyEdge.contract, CallableId.ofUser "m" "b")] }, { id := CallableId.ofUser "m" "b", digest := some "DB", edges := [] }]
   let b : List DepNode := [{ id := CallableId.ofUser "m" "a", digest := some "DA", edges := [(DependencyEdge.body, CallableId.ofUser "m" "b")] }, { id := CallableId.ofUser "m" "b", digest := some "DB", edges := [] }]
-  (dependencyRootMaterial c ((CallableId.ofUser "m" "a").render)).toOption != (dependencyRootMaterial b ((CallableId.ofUser "m" "a").render)).toOption'
+  (dependencyRootMaterial c (CallableId.ofUser "m" "a")).toOption != (dependencyRootMaterial b (CallableId.ofUser "m" "a")).toOption'
 # an EMPTY digest is as incomplete as an absent one
 probe "an empty-string digest is refused" "incompleteDigest" \
-'#eval repr (dependencyRootMaterial [{ id := CallableId.ofUser "m" "a", digest := some "", edges := [] }] ((CallableId.ofUser "m" "a").render))'
+'#eval repr (dependencyRootMaterial [{ id := CallableId.ofUser "m" "a", digest := some "", edges := [] }] (CallableId.ofUser "m" "a"))'
 # trust travels WITH the material, not beside it
 probe "trust is carried in the returned structure" "true" \
 '#eval
   let g : List DepNode := [{ id := CallableId.ofUser "m" "a", digest := some "DA", edges := [(DependencyEdge.trusted, CallableId.ofUser "m" "b")] }, { id := CallableId.ofUser "m" "b", digest := some "DB", edges := [] }]
-  ((dependencyRootMaterial g ((CallableId.ofUser "m" "a").render)).toOption.map (·.carriesTrust)) == some true'
+  ((dependencyRootMaterial g (CallableId.ofUser "m" "a")).toOption.map (·.carriesTrust)) == some true'
 # CANONICAL SET SEMANTICS. reachableFrom returns the start when the start is in a
 # cycle, and `id :: closure` then listed it twice — a self-recursive subject got a
 # different preimage for the same dependency set.
 probe "a self-recursive node is serialized exactly once" "true" \
 '#eval
   let g : List DepNode := [{ id := CallableId.ofUser "m" "a", digest := some "DA", edges := [(DependencyEdge.body, CallableId.ofUser "m" "a")] }]
-  match (dependencyRootMaterial g ((CallableId.ofUser "m" "a").render)).toOption with
+  match (dependencyRootMaterial g (CallableId.ofUser "m" "a")).toOption with
   | some m => ((m.preimage.splitOn ("N" ++ toString (CallableId.ofUser "m" "a").render.length ++ ":" ++ (CallableId.ofUser "m" "a").render ++ ":")).length - 1) == 1
   | none   => false'
 # Calling one callee twice does not change the dependency SET, so it must not
@@ -182,21 +183,44 @@ probe "a duplicated edge does not change the root" "true" \
 '#eval
   let one : List DepNode := [{ id := CallableId.ofUser "m" "a", digest := some "DA", edges := [(DependencyEdge.body, CallableId.ofUser "m" "b")] }, { id := CallableId.ofUser "m" "b", digest := some "DB", edges := [] }]
   let two : List DepNode := [{ id := CallableId.ofUser "m" "a", digest := some "DA", edges := [(DependencyEdge.body, CallableId.ofUser "m" "b"), (DependencyEdge.body, CallableId.ofUser "m" "b")] }, { id := CallableId.ofUser "m" "b", digest := some "DB", edges := [] }]
-  (dependencyRootMaterial one ((CallableId.ofUser "m" "a").render)).toOption == (dependencyRootMaterial two ((CallableId.ofUser "m" "a").render)).toOption'
+  (dependencyRootMaterial one (CallableId.ofUser "m" "a")).toOption == (dependencyRootMaterial two (CallableId.ofUser "m" "a")).toOption'
 # IDENTITY, NOT SPELLING. Two callables with the same declName in different
 # modules are different nodes; a raw-string graph could not tell them apart.
 probe "same declName in different modules are different nodes" "duplicateId" \
 '#eval repr (dependencyRootMaterial
   [{ id := CallableId.ofUser "m1" "f", digest := some "D1", edges := [] }
   ,{ id := CallableId.ofUser "m1" "f", digest := some "D2", edges := [] }]
-  ((CallableId.ofUser "m1" "f").render))'
+  (CallableId.ofUser "m1" "f"))'
 probe "...and distinct modules do NOT collide" "true" \
 '#eval
   let g : List DepNode :=
     [{ id := CallableId.ofUser "m1" "f", digest := some "D1", edges := [] }
     ,{ id := CallableId.ofUser "m2" "f", digest := some "D2", edges := [] }]
-  (dependencyRootMaterial g ((CallableId.ofUser "m1" "f").render)).toOption
-    != (dependencyRootMaterial g ((CallableId.ofUser "m2" "f").render)).toOption'
+  (dependencyRootMaterial g (CallableId.ofUser "m1" "f")).toOption
+    != (dependencyRootMaterial g (CallableId.ofUser "m2" "f")).toOption'
+# THE PUBLIC API MUST REJECT A STRING START AT COMPILE TIME. Storing CallableId
+# while keying every lookup on `.render` would keep rendered strings as the
+# operational identity under a typed wrapper — the defect the type exists to
+# remove. A probe that passes a String must NOT elaborate.
+cat > "$TMP/strstart.lean" <<'LEAN'
+import Concrete
+open Concrete Concrete.Proof
+#eval (dependencyRootMaterial [] "v1:user:m.a").toOption.isSome
+LEAN
+if lake env lean "$TMP/strstart.lean" >/dev/null 2>&1; then
+  no "a String start identity still compiles — rendered strings remain the operational identity"
+else
+  ok "a String start identity does not compile; the API takes CallableId"
+fi
+# ...and traversal returns identities, not renderings.
+probe "reachableFrom returns CallableIds" "true" "$GRAPH"'#eval
+  ((reachableFrom g (CallableId.ofUser "m" "a")).map (·.declName)).contains "c"'
+# Lookup must compare identities. Two ids equal as VALUES must resolve to the
+# same node even when constructed separately.
+probe "lookup is by identity value, not by a shared rendering" "true" \
+'#eval
+  let g : List DepNode := [{ id := CallableId.ofUser "m" "a", digest := some "DA", edges := [] }]
+  (dependencyRootMaterial g (CallableId.ofUser "m" "a")).toOption.isSome'
 # There must be no public fail-OPEN way to ask the trust question.
 if grep -q "def closureCarriesTrust" "$ROOT_DIR/Concrete/Proof/DependencyRoot.lean"; then
   no "closureCarriesTrust still answers over an unvalidated graph — a fail-open twin of the validated path"

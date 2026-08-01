@@ -72,39 +72,42 @@ structure DepNode where
   edges   : List (DependencyEdge × CallableId)
 deriving Repr, Inhabited
 
-/-- Canonical key for lookup and ordering. One function, so no consumer invents a
-    second notion of when two nodes are the same. -/
-def DepNode.key (d : DepNode) : String := d.id.render
+/-- Canonical rendering, for SERIALIZATION and DIAGNOSTICS only. Lookup and
+    deduplication compare `CallableId` directly; routing them through this would
+    reinstate the rendered string as operational identity. -/
+def DepNode.render (d : DepNode) : String := d.id.render
 
 /-- Why a root could not be built. Carried rather than collapsed to `none`, so a
     caller can say WHICH fail-closed condition fired instead of reporting a
     generic absence. -/
 inductive DepRootError where
-  | missingStart (id : String)
-  | duplicateId (id : String)
-  | incompleteDigest (id : String)
-  | unresolvedEdge (from_ to_ : String)
-  | missingEdge (from_ to_ : String)
-deriving Repr, BEq
+  | missingStart (id : CallableId)
+  | duplicateId (id : CallableId)
+  | incompleteDigest (id : CallableId)
+  | unresolvedEdge (from_ to_ : CallableId)
+  | missingEdge (from_ to_ : CallableId)
+deriving Repr
 
+/-- Rendering happens HERE and nowhere else in this module: a diagnostic is the
+    one place a name is the right answer. -/
 def DepRootError.explain : DepRootError → String
-  | .missingStart id      => s!"no node for start identity '{id}'"
-  | .duplicateId id       => s!"duplicate node identity '{id}'"
-  | .incompleteDigest id  => s!"'{id}' has no subject digest"
-  | .unresolvedEdge f t   => s!"'{f}' depends on '{t}', which has no node"
-  | .missingEdge f t      => s!"'{f}' has a `missing` edge to '{t}'"
+  | .missingStart id      => s!"no node for start identity '{id.render}'"
+  | .duplicateId id       => s!"duplicate node identity '{id.render}'"
+  | .incompleteDigest id  => s!"'{id.render}' has no subject digest"
+  | .unresolvedEdge f t   => s!"'{f.render}' depends on '{t.render}', which has no node"
+  | .missingEdge f t      => s!"'{f.render}' has a `missing` edge to '{t.render}'"
 
 /-- Identities reachable from `start` over typed edges.
 
     Bounded by the node count: each round adds at least one identity or stops, and
     there are finitely many. That bound is what makes recursion terminate rather
     than diverge. -/
-def reachableFrom (nodes : List DepNode) (start : String) : List String :=
-  let succs := fun (n : String) =>
-    match nodes.find? (fun d => d.key == n) with
-    | some d => d.edges.map (fun e => e.2.render)
+def reachableFrom (nodes : List DepNode) (start : CallableId) : List CallableId :=
+  let succs := fun (n : CallableId) =>
+    match nodes.find? (fun d => d.id == n) with
+    | some d => d.edges.map Prod.snd
     | none   => []
-  let rec go (fuel : Nat) (frontier acc : List String) : List String :=
+  let rec go (fuel : Nat) (frontier acc : List CallableId) : List CallableId :=
     match fuel with
     | 0 => acc
     | Nat.succ f =>
@@ -142,50 +145,50 @@ deriving Repr, BEq, Inhabited
     identity (first-match lookup would hide the conflict); an absent OR EMPTY
     subject digest; an edge to an identity with no node; an edge typed
     `missing`. -/
-def dependencyRootMaterial (nodes : List DepNode) (id : String)
+def dependencyRootMaterial (nodes : List DepNode) (id : CallableId)
     : Except DepRootError DependencyRootMaterial := do
-  let ids := nodes.map (·.key)
+  -- Comparison and deduplication are on the IDENTITY, not on a rendering. An
+  -- earlier version stored `CallableId` and then keyed every lookup on
+  -- `.render`, which kept rendered strings as the operational identity under a
+  -- typed wrapper — the very thing the type was introduced to remove.
+  let ids := nodes.map (·.id)
   match ids.find? (fun n => (ids.filter (· == n)).length > 1) with
   | some dup => throw (.duplicateId dup)
   | none => pure ()
-  let start ← match nodes.find? (fun d => d.key == id) with
+  let start ← match nodes.find? (fun d => d.id == id) with
     | some d => pure d
     | none   => throw (.missingStart id)
-  -- `some ""` is as incomplete as `none`: an empty digest is a computed-looking
-  -- value derived from nothing.
-  let digestOf := fun (n : String) => do
-    match nodes.find? (fun d => d.key == n) with
+  let digestOf := fun (n : CallableId) => do
+    match nodes.find? (fun d => d.id == n) with
     | none   => throw (.unresolvedEdge id n)
     | some d => match d.digest with
       | some v => if v.isEmpty then throw (.incompleteDigest n) else pure v
       | none   => throw (.incompleteDigest n)
-  let ownDigest ← digestOf start.key
-  -- Each node EXACTLY ONCE. `reachableFrom` returns the start itself when the
-  -- start is in a cycle, so `id :: closure` listed it twice and a self- or
-  -- mutually-recursive subject got a different preimage for the same dependency
-  -- set. A canonical set must not depend on how a member was discovered.
-  let allNodes := (id :: reachableFrom nodes id).eraseDups.mergeSort (· ≤ ·)
+  let ownDigest ← digestOf start.id
+  -- `.render` appears from here on ONLY to impose a total order and to build the
+  -- serialization. Those are the two places a canonical spelling is the point.
+  let allNodes := (id :: reachableFrom nodes id).eraseDups.mergeSort
+    (fun a b => a.render ≤ b.render)
   let closure := allNodes.filter (· != id)
   let mut parts : List String := []
   let mut trust := false
   for n in allNodes do
-    let node ← match nodes.find? (fun d => d.key == n) with
+    let node ← match nodes.find? (fun d => d.id == n) with
       | some d => pure d
       | none   => throw (.unresolvedEdge id n)
     let nDigest ← digestOf n
-    parts := parts ++ [s!"N{n.length}:{n}:{nDigest.length}:{nDigest}"]
-    -- edges sorted by (kind, target) so the preimage cannot depend on the order
-    -- they were discovered in
-    -- Edges deduplicated as well as sorted: calling one callee twice does not
-    -- change the DEPENDENCY SET, so it must not change the root.
-    let sorted := (node.edges.map (fun e => (e.1, e.2.render))).eraseDups.mergeSort
-      fun a b => (a.1.canonical ++ a.2) ≤ (b.1.canonical ++ b.2)
+    let nr := n.render
+    parts := parts ++ [s!"N{nr.length}:{nr}:{nDigest.length}:{nDigest}"]
+    -- edges deduplicated as TYPED pairs, then ordered for serialization
+    let sorted := node.edges.eraseDups.mergeSort
+      fun a b => (a.1.canonical ++ a.2.render) ≤ (b.1.canonical ++ b.2.render)
     for (k, tgt) in sorted do
       if k == DependencyEdge.missing then throw (.missingEdge n tgt)
       let tgtDigest ← digestOf tgt
       if k == DependencyEdge.trusted then trust := true
+      let tr := tgt.render
       parts := parts ++
-        [s!"E{k.canonical.length}:{k.canonical}:{tgt.length}:{tgt}:{tgtDigest.length}:{tgtDigest}"]
+        [s!"E{k.canonical.length}:{k.canonical}:{tr.length}:{tr}:{tgtDigest.length}:{tgtDigest}"]
   return { preimage := "depRootPreimageV2:" ++ s!"o{ownDigest.length}:{ownDigest}"
                         ++ s!"n{closure.length}" ++ String.join parts
          , carriesTrust := trust }
