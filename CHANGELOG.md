@@ -58,11 +58,20 @@ discharge it — because that bridge is shared by every kernel and so cannot be 
 by adding more of them. **0 of 4 rows are discharged**; the register is gated so a new
 obligation family cannot ship unregistered. Holes H19–H22 in
 [KNOWN_HOLES.md](docs/KNOWN_HOLES.md) record the unproven bridge, the native-code
-certificate check, and the linear-only reconstruction ceiling. H22 recorded a
-pre-existing decorative gate — `check_checked_arith.sh` could not detect removal of the
+certificate check, and the linear-only reconstruction ceiling. **H22 is CLOSED.** It recorded a pre-existing
+decorative gate — `check_checked_arith.sh` could not detect removal of the
 checked-arithmetic trap it guards, because a wrap sentinel satisfied its `exit != 0`
-assertion — since fixed by requiring death by signal; it stays listed until the nightly
-mutation job confirms the kill.
+assertion — fixed by requiring death by signal, and confirmed 2026-07-31 by the harness
+that found it: `check_gate_mutation_coverage.sh` now reports `checked-arith-trap KILLED`
+where it previously reported SURVIVED.
+
+Worth recording what closing it revealed. The confirmation had to be run by hand: the
+scheduled jobs are pinned to `github.repository == 'lambdaclass/concrete'` and this is a
+different repository, so the nightly can never fire here — the entry would have sat open
+forever while reading as merely pending (R-0468). And only 2 of the 10 mutation families
+have now been run here at all. H22's closure says that one gate is load-bearing; it says
+nothing about the other eight, and the gate that would answer that is precisely the one
+whose absence is self-concealing.
 
 Provers are an opt-in shell (`nix develop .#provers`); the evidence gate is
 skip-if-absent, so no contributor pays the Isabelle closure for a flagged-off feature.

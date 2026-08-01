@@ -175,7 +175,7 @@ gains nonlinear reconstruction the gate fails loudly and the class becomes reach
 Related roadmap work: R-0451 (port a refutation-certificate checker into code the
 project controls).
 
-### H22. `check_checked_arith.sh` was decorative — FIXED, pending nightly confirmation
+### H22. `check_checked_arith.sh` was decorative — CLOSED 2026-07-31
 
 The gate-mutation harness reported `checked-arith-trap (SURVIVED — gate stayed green)`:
 replacing the checked-arithmetic call in `Concrete/Backend/EmitSSA.lean` with a plain
@@ -189,22 +189,32 @@ the trap removed, `255 + 1` wrapped, `main` returned 9, and the gate printed "ab
 the right reason (SIGABRT ⇒ 134), which is why it stayed hidden.
 
 Fixed in `1497c689`: all five trap assertions now require death by *signal* (`>= 128`) via
-an `expect_trap` helper that names the wrap case explicitly. Verified in both directions —
-with the mutation applied the gate goes red with that message; restored, it is 10/10 green.
-Remaining step before this entry is deleted: `check_gate_mutation_coverage.sh` must report
-the `checked-arith-trap` family as KILLED rather than SURVIVED.
+an `expect_trap` helper that names the wrap case explicitly.
 
-**That step must be run by MANUAL `workflow_dispatch`, not waited for.** An earlier
-version of this entry said "pending nightly confirmation", which is unsatisfiable here:
-the scheduled jobs are gated on `github.repository == 'lambdaclass/concrete'` and this
-repository is `unbalancedparentheses/concrete2`, so the schedule can never fire. Waiting
-would have left the entry open forever while reading as merely pending. R-0468 fixes the
-reachability; until then, dispatch the job by hand and close this.
+**Closure confirmed by the harness that found it, 2026-07-31.**
+`FAMILY=3 check_gate_mutation_coverage.sh` — the same mutation that produced the original
+SURVIVED — now reports:
 
-Reproduced on a clean worktree of `main`, so it was independent of the multi-kernel
-branch. Note that `check_gate_mutation_coverage.sh` runs only in that repo-pinned job, so
-it had never executed here — the reason a decorative gate could persist undetected, and
-the reason to assume there are more until the gate has run clean once.
+```
+--- family 3/10: checked-arith-trap (Concrete/Backend/EmitSSA.lean -> check_checked_arith.sh) ---
+  ok   checked-arith-trap KILLED (killed by check_checked_arith.sh)
+```
+
+The confirmation was run by manual dispatch, because waiting was not an option: the
+scheduled jobs are gated on `github.repository == 'lambdaclass/concrete'` and this
+repository is `unbalancedparentheses/concrete2`, so the schedule can never fire here. An
+earlier version of this entry said "pending nightly confirmation", which would have left
+it open forever while reading as merely pending. R-0468 owns making that path reachable.
+
+Reproduced originally on a clean worktree of `main`, so it was independent of the
+multi-kernel branch. The reason it could persist: `check_gate_mutation_coverage.sh` runs
+only in that repo-pinned job and had never executed here.
+
+**Still true after closure, and the reason R-0468 matters:** only families 1 and 3 of 10
+have been run in this repository. `corecheck-unsafe-op` also KILLED; the other eight
+families are unverified here, and the gate that would verify them is the gate whose
+absence is self-concealing. Do not read H22's closure as evidence that the other gates are
+load-bearing.
 
 ### Policy (not a hole): HashMap/HashSet traversal is UNORDERED — permanent
 
