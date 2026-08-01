@@ -1288,9 +1288,13 @@ Two measurements, both regression-tracked so a change can be shown to move them:
   the existence proof: it names a token unknown while displaying that token among
   the known set, so no repair is derivable from it in any number of rounds.
 
-Seed the corpus from what exists rather than inventing one: `tests/wrong-code/`,
-`tests/invalid_programs/`, and the `docs/bugs/` repros are already
-rejected-program sets with known intended causes.
+Seed the corpus from what exists rather than inventing one, and it is already
+large enough to start: measured 2026-07-31, `tests/wrong-code/cases/` holds 23
+documented WC cases and `tests/invalid_programs/` holds 15 programs, plus the
+`docs/bugs/` repros — roughly 38 rejected programs with known intended causes
+before anything is written. Report that denominator with both numbers; a repair
+rate without its corpus size is the single-badge failure this project refuses
+everywhere else.
 
 Why this sits here, ahead of the prover-neutral arc: it is the cheap empirical
 check on the language surface, in the same relation to R-0137 that R-0462 has to
