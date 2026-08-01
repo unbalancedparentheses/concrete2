@@ -67,6 +67,30 @@ mutation job confirms the kill.
 Provers are an opt-in shell (`nix develop .#provers`); the evidence gate is
 skip-if-absent, so no contributor pays the Isabelle closure for a flagged-off feature.
 
+**Register C — evidence composition soundness — is DISCHARGED.** The first discharged
+soundness register in the project, and the answer to H23 below. `Evidence`
+(`Concrete/Report/Evidence.lean`) carries the assumption set a claim rests on; the only
+combining operation takes the union; `proved` is *defined* as the set being empty. Six
+compile-time theorems, so a green build is the proof rather than a test passing: a
+combination is proved iff every part is (C2), a claim folded with its hypotheses is proved
+iff none carry debt (C2′ — the exact statement H23 violated), a claim with outstanding
+assumptions presents as exactly `assumed` and never a `proved_*` class (C3), discharge is
+the only operation that shrinks an assumption set (C4), and guards and `#[requires]` never
+cap a claim (C5 — the modularity guarantee, load-bearing in the opposite direction).
+
+Registers A and B are about program semantics and are years of work; C is about the
+evidence data structure, which is why it was reachable in a day. It is the de Bruijn
+discipline the project already applied to other people's proofs and not to its own — the
+emitted Rocq scripts run `Print Assumptions`, and now Concrete's own claims carry their
+assumption set too.
+
+The multi-kernel report, the ledger fold and the `require-two-kernels` release policy now
+share ONE derivation (`multiKernelVerdict`), so they cannot disagree about an obligation —
+gated by asserting each badge string has exactly one construction site. That closes a
+divergence introduced days earlier, where `kernel_disagreement` existed in the report and
+not in the stored artifact. The ledger stores a canonical vocabulary word while the
+parenthetical stays display-only, per R-0440.
+
 **The audit's most important result is a defect, not a feature: H23.** An obligation
 inside a loop may assume that loop's `#[invariant]` whether or not the invariant's
 preservation VC is discharged, and nothing composes the two statuses. A guaranteed

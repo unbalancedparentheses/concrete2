@@ -1039,6 +1039,14 @@ def isabelleDischarge (goals : List (String × String)) : IO (Option (List (Stri
 def closedKeysOf (r : Option (List (String × KernelVerdict))) : List String :=
   (r.getD []).filterMap (fun (k, v) => if v == .closed then some k else none)
 
+/-- Obligation ids the kernel actively REFUSED — it rendered the goal, decided it, and
+    said no. Distinct from `error` (our script broke) and from absence (never asked),
+    and the distinction is the whole point: only a refusal can dissent from Lean.
+    Kept separate from `closedKeysOf` because "did not attest" and "said no" are
+    different facts and collapsing them is what hid verdict disagreement. -/
+def refusedKeysOf (r : Option (List (String × KernelVerdict))) : List String :=
+  (r.getD []).filterMap (fun (k, v) => if v == .refused then some k else none)
+
 /-- Obligation ids whose LOWERING for this driver disagreed with the reference
     evaluator — i.e. the emitted goal does not denote the obligation. A kernel
     closing such a goal proved something else, so it must not attest. -/
@@ -1057,11 +1065,18 @@ def disagreeingKeysOf (r : Option (List (String × KernelVerdict))) : List Strin
     one. `--report lowering-agreement` existed for this; nothing consulted it, so the
     badge and the release gate certified lowerings they had never validated. -/
 def externalKernelFacts (modules : List Concrete.Module) (rocqRun isaRun : Bool)
-    : IO ((List String × List String) × (List String × List String)) := do
-  let rocqClosed ← if rocqRun then do
-      let r ← rocqDischarge (Report.rocqReplayGoals modules); pure (closedKeysOf r) else pure []
-  let isaClosed ← if isaRun then do
-      let r ← isabelleDischarge (Report.isabelleReplayGoals modules); pure (closedKeysOf r) else pure []
+    : IO (((List String × List String) × (List String × List String))
+           × (List String × List String)) := do
+  -- Bind each discharge ONCE and derive both fact sets from it. Refusals are needed so
+  -- the LEDGER can express a verdict disagreement rather than only the report; running
+  -- the discharge a second time to collect them would double the prover cost for facts
+  -- already in hand.
+  let rocqRes ← if rocqRun then rocqDischarge (Report.rocqReplayGoals modules) else pure none
+  let isaRes ← if isaRun then isabelleDischarge (Report.isabelleReplayGoals modules) else pure none
+  let rocqClosed := closedKeysOf rocqRes
+  let isaClosed := closedKeysOf isaRes
+  let rocqRefused := refusedKeysOf rocqRes
+  let isaRefused := refusedKeysOf isaRes
   -- Agreement is checked with the SAME discharge path, so a malformed agreement
   -- script reads as `error` (our bug) and never as a lowering disagreement.
   let rocqBad ← if rocqRun then do
@@ -1070,14 +1085,17 @@ def externalKernelFacts (modules : List Concrete.Module) (rocqRun isaRun : Bool)
   let isaBad ← if isaRun then do
       let r ← isabelleDischarge (Report.isabelleAgreementGoals modules); pure (disagreeingKeysOf r)
     else pure []
-  pure ((rocqClosed, isaClosed), (rocqBad, isaBad))
+  pure (((rocqClosed, isaClosed), (rocqBad, isaBad)), (rocqRefused, isaRefused))
 
 /-- Attestation sets with unvalidated lowerings REMOVED — the composed fact every
-    badge and gate should rest on. -/
+    badge and gate should rest on. Refusals are filtered the same way and returned
+    alongside: a kernel whose lowering disagreed did not dissent about THIS obligation
+    either, so its refusal is no more admissible than its closure. -/
 def externalClosedSets (modules : List Concrete.Module) (rocqRun isaRun : Bool)
-    : IO (List String × List String) := do
-  let ((rc, ic), (rb, ib)) ← externalKernelFacts modules rocqRun isaRun
-  pure (rc.filter (fun k => !rb.contains k), ic.filter (fun k => !ib.contains k))
+    : IO ((List String × List String) × (List String × List String)) := do
+  let (((rc, ic), (rb, ib)), (rr, ir)) ← externalKernelFacts modules rocqRun isaRun
+  pure ((rc.filter (fun k => !rb.contains k), ic.filter (fun k => !ib.contains k)),
+        (rr.filter (fun k => !rb.contains k), ir.filter (fun k => !ib.contains k)))
 
 /-- Phase 3 #14: policy inputs derived from the ONE obligation ledger. Builds the
     discharged ledger (folding the external-SMT path when a solver-evidence stance
@@ -1131,13 +1149,23 @@ def computeBelowTwoKernels (modules : List Concrete.Module)
   -- externalClosedSets already excludes kernels whose lowering disagreed with the
   -- reference evaluator, so this release gate cannot certify a kernel that closed a
   -- different proposition than the obligation.
-  let (rocqClosed, isaClosed) ← externalClosedSets modules rocqAvail isaAvail
+  let ((rocqClosed, isaClosed), (rocqRefused, isaRefused)) ←
+    externalClosedSets modules rocqAvail isaAvail
   let mut below : List String := []
   for o in linear do
-    let n := (if omegaProved.contains o.key then 1 else 0)
-           + (if rocqClosed.contains o.key then 1 else 0)
-           + (if isaClosed.contains o.key then 1 else 0)
-    if n < 2 then below := below ++ [o.key]
+    -- Same derivation as the report and the ledger fold. Routing the POLICY through it
+    -- matters most: this is the gate a release actually depends on, and it previously
+    -- counted kernels without noticing that one of them had said no.
+    let mk := fun (name label : String) (cl rf : List String) =>
+      if cl.contains o.key then [({ name, label, cell := .closed, loweringAgreed := true } : Report.KernelInput)]
+      else if rf.contains o.key then [({ name, label, cell := .refused, loweringAgreed := true } : Report.KernelInput)]
+      else []
+    let verdict := Report.multiKernelVerdict (omegaProved.contains o.key)
+      (mk "rocq" "rocq:lia" rocqClosed rocqRefused
+        ++ mk "isabelle" "isabelle:presburger" isaClosed isaRefused)
+    -- A dissent blocks as surely as a missing kernel: an unexplained disagreement means
+    -- one of the two is wrong and we do not know which.
+    if verdict.attest.length < 2 || !verdict.dissent.isEmpty then below := below ++ [o.key]
   return (below, rocqAvail || isaAvail)
 
 /-- Render the contracts report plus the call-site obligation section AS A VIEW
@@ -1522,12 +1550,12 @@ def compileAndReport (inputPath : String) (reportType : String)
       -- ONE ledger so `proved_by_two_kernels`/`proved_by_multi_kernel` are produced
       -- by a real ledger path (not only the multi-kernel report). Default unchanged.
       let dvcs ← if rocqRun || isaRun then do
-          let (rc, ic) ← externalClosedSets parsed.modules rocqRun isaRun
+          let ((rc, ic), (rr, ir)) ← externalClosedSets parsed.modules rocqRun isaRun
           -- Record WHICH prover builds attested, not just that some did.
           let lv ← leanToolchainId
           let rv ← if rocqRun then coqVersionId else pure "rocq (not run)"
           let iv ← if isaRun then isabelleVersionId else pure "isabelle (not run)"
-          pure (Report.foldMultiKernelResults dvcs rc ic lv rv iv)
+          pure (Report.foldMultiKernelResults dvcs rc ic lv rv iv rr ir)
         else pure dvcs
       let vcLedger := Concrete.ObligationCore.ledgerOfVCs dvcs
       let proofLinks := Concrete.ObligationCore.proofLinkLedger
@@ -1668,10 +1696,18 @@ def compileAndReport (inputPath : String) (reportType : String)
         -- Attesting kernels = lean (if omega closed) + externals that BOTH closed
         -- their goal AND whose lowering agreed with the reference evaluator. A kernel
         -- that closed a goal denoting something else contributes nothing.
-        let attest := (if leanOk then ["lean"] else [])
-          ++ kernels.filterMap (fun (name, _, en, _, em, res) =>
-                if cellOf en em res o.key == "closed" && !(badOf name).contains o.key
-                then some name else none)
+        -- ONE derivation, shared with the ledger fold (Report.multiKernelVerdict), so
+        -- this report and the stored artifact cannot disagree about the same
+        -- obligation. They used to compute the class independently.
+        let inputs : List Report.KernelInput := kernels.map (fun (name, label, en, _, em, res) =>
+          { name, label
+          , cell := match cellOf en em res o.key with
+              | "closed"  => .closed
+              | "refused" => .refused
+              | _         => .absent      -- off / unavailable / not-asked / error
+          , loweringAgreed := !(badOf name).contains o.key })
+        let verdict := Report.multiKernelVerdict leanOk inputs
+        let attest := verdict.attest
         let n := attest.length
         if n < 2 then belowTwo := belowTwo + 1
         -- VERDICT disagreement, as distinct from LOWERING disagreement below. Two
@@ -1689,23 +1725,13 @@ def compileAndReport (inputPath : String) (reportType : String)
         -- Kernels whose LOWERING disagreed are excluded — their verdict is about a
         -- different proposition, so it is not evidence about this one, and it is
         -- already reported on its own line.
-        let dissent := kernels.filterMap (fun (name, label, en, _, em, res) =>
-          let c := cellOf en em res o.key
-          if (badOf name).contains o.key then none
-          else if c == "closed" && !leanOk then some (label, "closed while lean refused")
-          else if c == "refused" && leanOk then some (label, "refused while lean closed")
-          else none)
-        if !dissent.isEmpty then disagreed := disagreed + 1
-        -- A disagreement CAPS the class. It is not `proved_by_*` — one of the kernels
-        -- says it is not proved, and we do not yet know which one is right. It is not
-        -- `unproven` either, which would discard the fact that a kernel closed it.
-        let cls :=
-          if !dissent.isEmpty then
-            s!"kernel_disagreement ({"; ".intercalate (dissent.map (fun (l, w) => s!"{l} {w}"))})"
-          else if n ≥ 3 then s!"proved_by_multi_kernel ({n}: {", ".intercalate attest})"
-          else if n == 2 then s!"proved_by_two_kernels ({", ".intercalate attest})"
-          else if n == 1 then s!"proved_by_{attest.head!}"
-          else "unproven"
+        if !verdict.dissent.isEmpty then disagreed := disagreed + 1
+        -- `present`, not `cls`: Register C's C3 guarantees a claim with outstanding
+        -- assumptions renders as `assumed` rather than any `proved_*` string. Empty
+        -- today (this layer has no hypothesis provenance yet — R-0461), so this reads
+        -- exactly as before; going through `present` means the cap applies to this
+        -- surface automatically the moment hypotheses carry their debt.
+        let cls := verdict.displayStatus
         out := out ++ s!"\n  [{o.key}]  {o.desc}"
         out := out ++ s!"\n      lean:omega = {if leanOk then "closed" else "refused"}"
         for (_, label, en, _, em, res) in kernels do out := out ++ s!"   {label} = {cellOf en em res o.key}"

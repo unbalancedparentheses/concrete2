@@ -79,12 +79,18 @@ Two encoding invariants that must survive serialization:
 
 ```
 runtime property
-      ^   (1) obligation sufficiency        PROVABLE      -> register A
+      ^   (1) obligation sufficiency        PROVABLE      -> register A   (0/4)
    obligation
-      ^   (2) transformation soundness      PROVABLE      -> register B
+      ^   (2) transformation soundness      PROVABLE      -> register B   (not started)
    transformed goal
       ^   (3) cross-semantics agreement     NOT PROVABLE  -> conformance vectors
    host eval ports
+
+  and, orthogonal to all three — the axis H23 lived in:
+
+   reported claim
+      ^   (4) evidence composition          PROVABLE      -> register C   DISCHARGED
+   the claim's own proof + everything it assumed
 ```
 
 **(1) Register A — obligation sufficiency.** *If the flat goal holds, the semantic
@@ -104,6 +110,49 @@ therefore **cannot be a proof**. It is a spec plus an adversarial conformance ve
 suite: `(neutral program, neutral input) -> expected PVal`, which every host's `eval`
 must reproduce. This is `tested_by_oracle`, and the composition rule below folds it in
 explicitly rather than laundering it as kernel evidence.
+
+**Register C — evidence composition soundness. DISCHARGED 2026-07-31.** *Evidence is
+never reported as stronger than its inputs.* Unlike A and B this register is about the
+evidence data structure rather than about program semantics, so its rows were
+dischargeable immediately — and they are discharged as compile-time theorems in
+`Concrete/Report/Evidence.lean`, not as tests. A green build is the proof.
+
+| Row | Statement |
+|---|---|
+| C1 | combining evidence never drops an assumption |
+| C2 | a combination is proved **iff** every part is proved |
+| C2′ | a claim folded with its hypotheses is proved iff none of them carry debt — *the exact statement H23 violated* |
+| C3 | a claim with outstanding assumptions presents as exactly `assumed`, never a `proved_*` class |
+| C4 | discharge is the only operation that shrinks an assumption set |
+| C5 | guards and `#[requires]` never cap a claim — the modularity guarantee |
+
+C3's companion, `example : (!proofClasses.contains "assumed") = true := rfl`, lives beside
+the discharge-adapter firewall in `Report.lean` because that is where `proofClasses` is
+defined. C3 and it together are **H23 closed as a compile-time fact**.
+
+Why a representation rather than a check: a check for "did we remember to consult the
+hypotheses?" is one more surface that can be weaker than the property it guards — the
+failure this codebase keeps finding. Making the assumption set a field and the only
+combinator a union means losing an assumption requires *removing* an element, a visible
+act. H23 was an omission, and this shape has no omission that loses information.
+
+This is the de Bruijn discipline the project already applies to other people's proofs and
+not to its own: the emitted Rocq scripts run `Print Assumptions` and
+[AXIOMS.md](AXIOMS.md) gates Lean's axiom set. A theorem carries its axioms and "proved"
+means the axiom set is empty; `Evidence` applies exactly that to Concrete's own claims.
+
+C5 is load-bearing in the opposite direction from C3 and worth stating separately: a
+`#[requires]` belongs to what the claim **says** ("for all inputs satisfying P …"), not to
+what it owes, and every call site carries its own obligation to establish P. Treating a
+precondition as debt would make every function conditional on all of its callers,
+transitively, and destroy modular verification. A loop `#[invariant]` is the opposite —
+internal, discharged by nothing external, so it is genuine debt. **Statement versus
+assumption** is the distinction, and getting it backwards fails in one direction or the
+other.
+
+What Register C does NOT do: decide whether an obligation is *sufficient* (A) or a
+transformation *sound* (B). It guarantees only that evidence is never reported as
+stronger than its inputs — a smaller claim than it sounds, and the one H23 violated.
 
 Registers A and B carry a **fingerprint of the generator or transformation they
 justify** and fail loudly on drift. Without it a discharged row silently goes vacuous

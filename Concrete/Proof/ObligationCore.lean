@@ -37,6 +37,14 @@ def statusVocabulary : List String :=
     -- a `trusted` boundary.
     "proved_by_rocq", "proved_by_isabelle",
     "proved_by_two_kernels", "proved_by_multi_kernel",
+    -- `kernel_disagreement` = kernels rendering the SAME proposition (lowering agreed)
+    -- returned OPPOSITE verdicts. Neither a badge nor `unproven`: every kernel here is
+    -- complete for linear integer arithmetic, so a disagreement is a defect report,
+    -- most likely about our driver for the dissenting kernel. It CAPS the claim and
+    -- fails the two-kernel release gate. Distinct from a lowering disagreement, where
+    -- the kernels decided different propositions and the dissenter simply does not
+    -- attest.
+    "kernel_disagreement",
     -- `solver_checked` = an external SMT solver reported unsat AND an independent
     -- kernel (Rocq `nia`) also closed the goal, so the solver leaves the TCB —
     -- strictly stronger than `solver_trusted` (solver-in-TCB). This corroborates the

@@ -12,6 +12,7 @@ import Concrete.Report.Json
 import Concrete.Report.ReportBase
 import Concrete.Report.ReportInterface
 import Concrete.Report.ReportObligations
+import Concrete.Report.Evidence
 
 namespace Concrete
 namespace Report
@@ -2410,6 +2411,17 @@ def dischargeAdapters : List DischargeAdapter :=
 def proofClasses : List String :=
   ["proved_by_kernel_decision", "proved_by_lean", "proved_by_lean_replay", "arithmetic_proved"]
 
+/-- Register C companion to `Evidence.c3_caps_to_assumed`, kept here because this is
+    where `proofClasses` lives. C3 proves a claim with outstanding assumptions presents
+    as exactly `"assumed"`; this proves `"assumed"` is not a proof class. Together:
+    **a claim resting on an unestablished hypothesis can never present as proved** —
+    which is H23, closed as a compile-time fact rather than a gate.
+
+    The two halves are deliberately in different modules. Evidence.lean must not import
+    the report layer, and putting the list here keeps one definition of what counts as a
+    proof class for both the adapter firewall and the assumption cap. -/
+example : (!proofClasses.contains "assumed") = true := rfl
+
 /-! ### The evidence-class firewall, proved at compile time (Phase 3 #13)
 
 These `example`s are kernel-checked proofs that no adapter can emit a class it
@@ -2492,6 +2504,7 @@ def foldReplayResults (vcs : List VC) (replayed : List String) : List VC :=
     or invalidated when a prover release turns out to be buggy. -/
 def foldMultiKernelResults (vcs : List VC) (rocqClosed isaClosed : List String)
     (leanVer : String := "lean") (rocqVer : String := "rocq") (isaVer : String := "isabelle")
+    (rocqRefused isaRefused : List String := [])
     : List VC :=
   vcs.map fun v =>
     if v.status == "proved_by_kernel_decision" || v.status == "proved_by_lean"
@@ -2509,15 +2522,46 @@ def foldMultiKernelResults (vcs : List VC) (rocqClosed isaClosed : List String)
         ++ (if isaClosed.contains v.id then
               [{ kernel := "isabelle", version := isaVer, verdict := "closed", loweringAgreed := true
                , replay := "concrete <file> --report multi-kernel --isabelle" }] else [])
+      -- A kernel that RENDERED this obligation and said no is a dissenter, not an
+      -- absence. It gets a receipt too, with `verdict := "refused"`, so the artifact
+      -- records that a kernel was consulted and disagreed — previously the stored
+      -- claim was indistinguishable from one where no external kernel ran.
+      let dissentReceipts : List KernelReceipt :=
+        (if rocqRefused.contains v.id then
+           [{ kernel := "rocq", version := rocqVer, verdict := "refused", loweringAgreed := true
+            , replay := "concrete <file> --report multi-kernel --rocq" }] else [])
+        ++ (if isaRefused.contains v.id then
+              [{ kernel := "isabelle", version := isaVer, verdict := "refused", loweringAgreed := true
+               , replay := "concrete <file> --report multi-kernel --isabelle" }] else [])
+      let receipts := receipts ++ dissentReceipts
       let attesting := receipts.filter (·.attests)
-      if attesting.length < 2 then v
+      let versionOf := fun (n : String) =>
+        if n == "rocq" then rocqVer else if n == "isabelle" then isaVer else leanVer
+      -- Derived by the SAME function the multi-kernel report uses, so the ledger and
+      -- the report cannot disagree about one obligation. `v.status` being a kernel
+      -- proof class means Lean closed it, hence `leanClosed := true`.
+      let verdict := multiKernelVerdict true (
+        (if rocqClosed.contains v.id then
+           [{ name := "rocq", label := "rocq:lia", cell := .closed, loweringAgreed := true }]
+         else if rocqRefused.contains v.id then
+           [{ name := "rocq", label := "rocq:lia", cell := .refused, loweringAgreed := true }]
+         else [])
+        ++ (if isaClosed.contains v.id then
+              [{ name := "isabelle", label := "isabelle:presburger", cell := .closed, loweringAgreed := true }]
+            else if isaRefused.contains v.id then
+              [{ name := "isabelle", label := "isabelle:presburger", cell := .refused, loweringAgreed := true }]
+            else []))
+      if !verdict.dissent.isEmpty then
+        -- Dissent CAPS the stored claim exactly as it caps the report. Receipts and
+        -- independence are still recorded: what a kernel said stays in the artifact
+        -- even when what it said blocks the badge.
+        { v with status := verdict.evidence.present, kernelReceipts := receipts,
+                 attestingKernels := verdict.attest,
+                 attestingKernelVersions := verdict.attest.map versionOf }
+      else if attesting.length < 2 then v
       else
         let attest := attesting.map (·.kernel)
-        let versionOf := fun (n : String) =>
-          if n == "rocq" then rocqVer else if n == "isabelle" then isaVer else leanVer
-        -- COMPOSED from the receipts, not decided alongside them.
-        let status := if attesting.length ≥ 3 then "proved_by_multi_kernel" else "proved_by_two_kernels"
-        { v with status := status, attestingKernels := attest,
+        { v with status := verdict.evidence.present, attestingKernels := attest,
                  kernelReceipts := receipts,
                  independence := some (independenceOf attest),
                  attestingKernelVersions := attest.map versionOf,

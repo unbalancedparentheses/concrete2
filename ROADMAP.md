@@ -40,6 +40,28 @@ main-return / exit-code model across the whole fixture corpus) done commit-by-
 commit on `main` has produced multi-commit red streaks; isolate it, finish it to
 green, and merge once.
 
+### Evidence Debt Rule
+
+**Every new evidence surface must retire a register row or close a hole.**
+
+The failure this rule exists to prevent is not any single defect — it is that evidence
+infrastructure grows faster than the debt it accounts for, because infrastructure is more
+fun to build than proofs are. The 2026-07-31 state that prompted the rule: four kernels,
+five report surfaces and a receipt schema, sitting above a Register A with **0 of 4 rows
+discharged** — and, as H23 showed, above an obligation layer that could hand all four
+kernels a hypothesis nothing had established.
+
+Two corollaries, both measured rather than asserted:
+
+- **No further prover before the first Register A row is discharged.** Kernel agreement
+  has surfaced zero real defects on this arc; the faults came from differential tests and
+  from reading reports. A discharged row moves the ceiling further than a fourth kernel.
+- **A surface that only renders is not a payment.** Register C counts because it made a
+  bug class unrepresentable; a new report view does not, however useful it is.
+
+The rule is deliberately cheap to satisfy and hard to ignore: it does not forbid building
+surfaces, it forbids building them *for free*.
+
 ### Pull-Gated Work
 
 Deferred work stays in the phase where its trigger lives. Do not build machinery
@@ -5815,6 +5837,13 @@ reports `proved_by_multi_kernel (3: lean, rocq, isabelle)`.**
 Do this before any further evidence-surface work. It is not a refinement of the
 multi-kernel story; it is the defect that story is currently decorating.
 
+**The substrate now exists.** Register C shipped 2026-07-31 as
+`Concrete/Report/Evidence.lean`: `Evidence` carries an assumption set, `underHypotheses`
+folds a claim together with its hypotheses' debt, and `HypOrigin` already encodes the four
+sources below with `debt` total over them. C2′ and C3 are compile-time theorems, so once
+this task populates `assumes` the cap applies **by construction** — R-0461 is now wiring
+provenance into the generators, not designing a mechanism.
+
 The mechanism, not just the symptom. `hyps : List Expr` erases where a fact came from,
 and the three sources have entirely different justification status:
 
@@ -5909,6 +5938,77 @@ non-arithmetic tiers — where certification is measured to be impossible today 
 any datatype-bearing proof) — that actually need independent kernels. The allocation is
 inverted. Probe the extraction before committing; kill criterion is a measured "the witness
 cannot be got out of micromega in a stable form".
+
+### Task R-0464
+
+**Objective:** Generate runtime-safety obligations from SSA rather than the surface AST,
+and make every syntactic analysis feeding a proof total with an unsafe-by-default
+fallback.
+
+The hypothesis walker threads facts forward over MUTABLE surface syntax, so the name `i`
+denotes different values at different program points. That forces `dropStaleHyps` to
+*delete* every fact mentioning a just-assigned variable, driven by `assignedScalarsS` — a
+syntactic mutation analysis whose last case is `| _ => []`, i.e. an unrecognised statement
+is assumed to assign nothing. Fail-OPEN, exactly where being wrong is unsound, and any
+statement form added to the AST later is silently misclassified.
+
+In SSA each assignment binds a fresh name, so a fact about `i₁` cannot be invalidated by
+`i₂ = i₁ + 1`. The entire staleness problem is an artifact of the input representation.
+This task therefore **deletes** `dropStaleHyps`, `assignedScalarsS` and all reasoning about
+what a store, a call, or a nested loop can invalidate, rather than hardening them — the
+same "make the bad state unrepresentable" move Register C made for status composition.
+
+Two further wins. Path conditions become branch predicates on CFG edges, which fixes a
+known incompleteness: in `if a != 0 && b / a > 1` the divisor obligation inside the
+condition currently gets no `a != 0` hypothesis, because only the whole condition is added
+to the then-branch. And the shipped binary is compiled FROM SSA, so obligations move
+closer to the artifact that runs instead of describing a representation that does not.
+
+Costs, named because they are real: obligations mention `i₁` and need a mapping back to
+source names for diagnostics; a loop `#[invariant]` must be placed at the header and refer
+to the φ version — which is precisely where H23 lived, so it needs care rather than
+assumed ease; and an obligation mentioning a φ needs the invariant or a case split, the
+one genuinely new piece of work.
+
+Choose the SSA stage deliberately: generate BEFORE `SSACleanup`, so optimisation changes
+do not invalidate every stored claim, and make the cleanup→binary step its own register
+row rather than folding it in silently.
+
+Separately and cheaply, as the general rule this instance illustrates: every syntactic
+analysis feeding a proof must be total over its input type with an unsafe default —
+unknown construct invalidates everything in scope, or refuses to emit obligations there.
+Gate the exhaustiveness.
+
+### Task R-0465
+
+**Objective:** Extend the discharge-adapter firewall to the assumption axis, and bring the
+multi-kernel path inside it.
+
+`DischargeAdapter` is the right shape and is genuinely well built: one choke point, a
+declared `actsOn` precondition, a declared `allowed` output set, and compile-time
+`example`s proving untrusted backends cannot emit a proof class. But it governs one axis —
+*who may claim what* — and evidence has two. The other is *what the claim rests on*, and
+it had no framework at all until Register C. H23 lived entirely in the second axis, which
+is why a well-designed firewall did not catch it: the fold correctly refuses to upgrade an
+`assumed` VC, but a VC proved under an unestablished invariant carries
+`proved_by_kernel_decision` and sails straight through.
+
+Two pieces:
+
+1. **Adapters declare assumption propagation**, defaulting to UNION and never to reset —
+   same choke point, one more field, with a compile-time example per adapter alongside the
+   existing `proofClasses` ones.
+2. **Make the multi-kernel path a real adapter.** `foldMultiKernelResults` assigns its
+   status by direct record update; there is no `multiKernelAdapter` in
+   `dischargeAdapters`, no `allowed` list constraining `proved_by_two_kernels` /
+   `proved_by_multi_kernel` / `kernel_disagreement`, and no compile-time example covering
+   them. The newest and strongest classes in the system are the only ones outside the
+   firewall built to govern exactly that. It has a hand-rolled `actsOn`, so it is not
+   unsound today — but the protection is convention where everything around it is
+   structure, and that distinction is the point of the firewall.
+
+Register C (2026-07-31) supplies the representation this needs; this task is the wiring
+that makes the guarantee structural at every backend rather than at the surfaces alone.
 
 ### Task R-0460
 

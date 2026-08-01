@@ -26,6 +26,7 @@ import Concrete.IR.SSACleanup
 import Concrete.Backend.EmitSSA
 import Concrete.Backend.LLVM
 import Concrete.Backend.EmitLLVM
+import Concrete.Report.Evidence
 import Concrete.Report.Report
 import Concrete.Report.CoreExtract
 import Concrete.Report.Diff
