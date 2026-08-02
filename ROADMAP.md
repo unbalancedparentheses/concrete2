@@ -1698,9 +1698,26 @@ type while `resolveImports` appends the original `sd`/`ed` unchanged, so
 This fails during ordinary elaboration, LONG before any evidence path — so it
 blocks the imported field/variant measurement outright and must be fixed first.
 
-**OTHER PROVENANCE INGRESS PATHS, none yet inventoried:** transitive import
-closure, sibling-module injection, local declarations, and compiler-built enums.
-The explicit-import copy site is ONE of them.
+**COMPLETE TYPE-INGRESS INVENTORY (measured 2026-08-02).** There are FIVE paths,
+not one, and they do not share the same facts — which is why "the copy site" was
+the wrong model and why `TypeId` needs a rule per path:
+
+| # | path | site | provenance available |
+| --- | --- | --- | --- |
+| 1 | local declarations | `FileSummary` 199-200 | `m.name` |
+| 2 | explicit import (aliasable) | `FileSummary` 296, 302 | `summary.name`, `origName`, `localName` |
+| 3 | transitive closure | `FileSummary` 386, 398 | `summary.name` (loop binds `for summary in importedModules`); no alias exists on this path, types arrive under their original name |
+| 4 | sibling / submodule injection | `Elab` 1763-4 | carries an already-resolved `subImports` set — provenance must survive from wherever those entries were built, i.e. it INHERITS from 1-3 rather than having its own |
+| 5 | compiler-built enums | `Elab` 1632 | NONE — `builtinOptionEnum` / `builtinResultEnum` are synthesized and have no defining module at all |
+
+So four of five can produce a `TypeId` from facts already in scope. Path 5 cannot,
+and needs a NAMESPACE rather than a module — exactly as `CallableId` needed
+`.builtin` / `.intrinsic` beside `.user`. That is a missing case in the design,
+not missing data.
+
+Path 4 is the subtle one: it does not introduce provenance, it PROPAGATES it, so
+it is correct only if 1-3 record theirs. A design that fixed the explicit-import
+path alone would leave sibling-injected types carrying whatever path 3 dropped.
 
 `ResolvedImports.structs : List StructDef` / `.enums : List EnumDef` store bare
 declarations with no origin, which is why imported field/variant identity is
