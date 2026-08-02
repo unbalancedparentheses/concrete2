@@ -1611,25 +1611,10 @@ partial def elabModule (m : Module) (summary : FileSummary)
   let allSigs := imports.functions ++ userFnSigs ++ builtinFnSigs ++ externSigs
                  ++ submoduleSigs ++ implMethodSigs ++ traitImplMethodSigs
   -- Build structs / enums
-  let builtinOptionEnum : EnumDef := {
-    name := optionEnumName, typeParams := ["T"],
-    variants := [
-      { name := "Some", fields := [{ name := "value", ty := .typeVar "T" }] },
-      { name := "None", fields := [] }
-    -- Conditionally Copy: `Option<T>` is Copy iff `T` is Copy (Phase 7 #3).
-    ], isCopy := true, builtinId := some .option
-  }
-  let builtinResultEnum : EnumDef := {
-    name := resultEnumName, typeParams := ["T", "E"],
-    variants := [
-      { name := okVariantName, fields := [{ name := "value", ty := .typeVar "T" }] },
-      { name := errVariantName, fields := [{ name := "error", ty := .typeVar "E" }] }
-    -- Conditionally Copy: `Result<T, E>` is Copy iff `T` and `E` are (Phase 7 #3).
-    ], isCopy := true, builtinId := some .result
-  }
-  let hasUserResult := m.enums.any fun ed => ed.name == resultEnumName
-    || imports.enums.any fun ed => ed.name == resultEnumName
-  let builtinEnumList := [builtinOptionEnum] ++ (if hasUserResult then [] else [builtinResultEnum])
+  -- One owner in Resolve.Intrinsic (bug 065): the builtin enums and the
+  -- shadowing rule were each stated twice, with Check consulting different
+  -- inputs than Elab.
+  let builtinEnumList := builtinEnums m.enums imports.enums
   let allStructs := imports.structs ++ m.structs
   let allEnums := builtinEnumList ++ imports.enums ++ m.enums
   let localTypeAliases := m.typeAliases.map fun ta => (ta.name, ta.targetTy)

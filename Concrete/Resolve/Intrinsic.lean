@@ -268,6 +268,7 @@ def optionEnumName : String := "Option"
 /-- The name of the builtin Result enum. -/
 def resultEnumName : String := "Result"
 
+
 /-- Variant name for the success case of Result. -/
 def okVariantName : String := "Ok"
 

@@ -2095,30 +2095,10 @@ def checkModule (m : Module) (summary : FileSummary)
     summary.functions ++ (implMethodSigs ++ traitImplMethodSigs)
   let allStructs := imports.structs ++ m.structs
   -- Built-in Option<T> enum (Some { value: T }, None {})
-  let builtinOptionEnum : EnumDef := {
-    name := optionEnumName
-    typeParams := ["T"]
-    variants := [
-      { name := "Some", fields := [{ name := "value", ty := .typeVar "T" }] },
-      { name := "None", fields := [] }
-    ]
-    -- Conditionally Copy: `Option<T>` is Copy iff `T` is Copy (Phase 7 #3).
-    isCopy := true
-    builtinId := some .option
-  }
-  let builtinResultEnum : EnumDef := {
-    name := resultEnumName
-    typeParams := ["T", "E"]
-    variants := [
-      { name := okVariantName, fields := [{ name := "value", ty := .typeVar "T" }] },
-      { name := errVariantName, fields := [{ name := "error", ty := .typeVar "E" }] }
-    ]
-    -- Conditionally Copy: `Result<T, E>` is Copy iff `T` and `E` are (Phase 7 #3).
-    isCopy := true
-    builtinId := some .result
-  }
-  let hasUserResult := m.enums.any fun ed => ed.name == resultEnumName
-  let builtinEnumList := [builtinOptionEnum] ++ (if hasUserResult then [] else [builtinResultEnum])
+  -- One owner in Resolve.Intrinsic (bug 065). This site previously omitted
+  -- `imports.enums` from the shadowing test, so an IMPORTED user `Result` was
+  -- invisible here while Elab saw it.
+  let builtinEnumList := builtinEnums m.enums imports.enums
   let allEnums := builtinEnumList ++ imports.enums ++ m.enums
   -- Build type aliases map
   let localTypeAliases : List (String × Ty) := m.typeAliases.map fun ta => (ta.name, ta.targetTy)

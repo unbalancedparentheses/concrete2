@@ -1,6 +1,6 @@
 # Bug 065 — `builtinEnumList` is constructed in two places
 
-**Status:** OPEN
+**Status:** FIXED 2026-08-02
 **Found:** 2026-08-02, while inventorying type-ingress paths for R-0004.
 
 ## Symptom
@@ -26,7 +26,19 @@ The `hasUserResult` shadowing rule makes divergence more likely than a plain
 constant would: it is a CONDITIONAL, so a change to when a user `Result` shadows
 the builtin has to be made twice.
 
-## Fix shape
+## Fixed
+
+One owner: `builtinOptionEnum`, `builtinResultEnum`, `hasUserResultEnum` and
+`builtinEnums` now live in `Concrete/Frontend/AST.lean`, consumed by both passes.
+
+Placed in AST rather than `Resolve/Intrinsic` — the obvious home, since that is
+where `resultEnumName` lives — because these are `EnumDef` VALUES and AST imports
+Intrinsic, not the reverse. Putting them there cycles.
+
+`hasUserResultEnum` takes BOTH the module's enums and its imported ones, so the
+input asymmetry is gone by construction rather than by both sites remembering.
+
+## Original fix shape
 
 One owner. A single `builtinEnums (hasUserResult : Bool)` consumed by both passes,
 so the shadowing rule is stated once.
@@ -55,7 +67,19 @@ Recorded this way deliberately: "the inputs differ" is measured, "it produces a
 wrong answer" is not, and stating the second would be the overreach this bug is
 an instance of.
 
-## Fix shape
+## Fixed
+
+One owner: `builtinOptionEnum`, `builtinResultEnum`, `hasUserResultEnum` and
+`builtinEnums` now live in `Concrete/Frontend/AST.lean`, consumed by both passes.
+
+Placed in AST rather than `Resolve/Intrinsic` — the obvious home, since that is
+where `resultEnumName` lives — because these are `EnumDef` VALUES and AST imports
+Intrinsic, not the reverse. Putting them there cycles.
+
+`hasUserResultEnum` takes BOTH the module's enums and its imported ones, so the
+input asymmetry is gone by construction rather than by both sites remembering.
+
+## Original fix shape
 
 One owner. A single `builtinEnums (hasUserResult : Bool)` plus one shared
 `hasUserResult` computation consumed by both passes, so the shadowing rule and
