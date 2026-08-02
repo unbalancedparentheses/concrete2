@@ -31,7 +31,33 @@ the builtin has to be made twice.
 One owner. A single `builtinEnums (hasUserResult : Bool)` consumed by both passes,
 so the shadowing rule is stated once.
 
-## Not urgent, but not cosmetic
+## The inputs ALREADY differ — but no symptom is demonstrated
 
-No divergence exists today — this is filed before it becomes a bug rather than
-after, which is the cheap moment.
+The two sites do not merely duplicate the list; they compute `hasUserResult` from
+DIFFERENT inputs:
+
+```
+Elab.lean:1630   m.enums.any (== Result) || imports.enums.any (== Result)
+Check.lean:2120  m.enums.any (== Result)                    -- imports NOT consulted
+```
+
+So an IMPORTED user `Result` suppresses the builtin in Elab and does not in
+Check. That is a genuine disagreement in the code.
+
+**It is not yet a demonstrated defect.** A program importing a user `Result`
+compiles cleanly, so the differing belief does not surface as wrong behaviour in
+the obvious case — probably because a duplicate name in `allEnums` resolves to
+the first entry and the two orders happen to agree here. A witness would need a
+case where resolution order or exhaustiveness actually depends on which `Result`
+is present.
+
+Recorded this way deliberately: "the inputs differ" is measured, "it produces a
+wrong answer" is not, and stating the second would be the overreach this bug is
+an instance of.
+
+## Fix shape
+
+One owner. A single `builtinEnums (hasUserResult : Bool)` plus one shared
+`hasUserResult` computation consumed by both passes, so the shadowing rule and
+its inputs are each stated once. Worth doing regardless of whether a witness is
+found: the value of one owner is that the question stops being askable.
