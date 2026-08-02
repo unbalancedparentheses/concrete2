@@ -1647,22 +1647,38 @@ Produce a tiny parallel evidence EXPRESSION during elaboration carrying:
 
 The V1 77/77 golden is the immovable boundary throughout.
 
-**SPIKE 2 RESULT (measured 2026-08-01, on a disposable worktree; no code merged).**
-The remaining two unknowns are resolved, and the V2 input surface is fully
-characterised. Every answer is "during elaboration" — which is why the evidence
-body must be produced there rather than reconstructed:
+**SPIKE 2 RESULT — AMENDED. The correct heading is "lookup sites located;
+identity provenance remains", NOT "input surface fully characterised".**
+
+The amendment matters because the original conflated two different things:
+DECLARATION SELECTION (which declaration shape matched) with DEFINITION-SITE
+IDENTITY (a stable name for that declaration across imports and aliases).
+Verified: `StructDef` and `EnumDef` carry only `name : String` — no defining
+module, no origin — and imported definitions are copied into `ResolvedImports`
+WITHOUT provenance. So Elab knows which declaration matched and cannot yet say
+which module defined it. Two same-spelled types in different modules are
+indistinguishable at that point, which is precisely the property an identity has
+to provide.
 
 | input | availability at the USE SITE, during elaboration |
 | --- | --- |
-| field identity | AVAILABLE. `lookupStruct structName` returns the struct DECLARATION `sd`, and the access is checked with `sd.fields.find?` — the resolved declaration is in hand, not just a name, so aliases and repeated field names are already disambiguated by the object's type. |
-| enum-variant identity | AVAILABLE. `lookupEnum enumName` returns the enum declaration `ed` at the literal's elaboration site. |
-| binder position | DERIVABLE with a one-helper change. `lookupVar : String → ElabM (Option Ty)` finds the binding in `env.vars` and then DISCARDS which entry matched, returning only the type. The index is exactly the position needed; returning it alongside the type is a change to one private helper. |
+| field/variant declaration SELECTION | AVAILABLE — `lookupStruct` / `lookupEnum` return the matching declaration at the use site. |
+| LOCAL field/variant identity | probably constructible from the current module plus the declaration; not yet demonstrated. |
+| IMPORTED field/variant identity | UNAVAILABLE. Needs definition-site provenance — a `TypeId` carried through imports, and then `FieldId` / `VariantId` derived from it. This is the real gap. |
+| binder position | MECHANICALLY retrievable — `lookupVar` finds the entry in `env.vars` and discards which one matched. But whether a raw `env.vars` position is the correct STABLE LEXICAL identity is untested across parameters, lets, loops, patterns and temporary scopes; a monotonically accumulating list is not obviously a lexical numbering. |
 | constant identity | AVAILABLE (spike 1), for local constants; imported / builtin / intrinsic / extern still unmeasured. |
 
-So nothing in the V2 input surface requires new resolution machinery — it
-requires not THROWING AWAY resolution the elaborator already performs. That is
-the same shape as every other defect in this task: the information exists at the
-point of use and is discarded before the point of record.
+"No new resolution machinery" was too strong. The LOOKUP ALGORITHM exists and is
+already run at every use site; what does not exist is SEMANTIC PROVENANCE carried
+through imports. Some of the V2 input surface is recoverable by not discarding
+what the elaborator computes; the imported-type case additionally requires a
+`TypeId` to be introduced and threaded.
+
+**NEXT DISPOSABLE SPIKE:** a field or variant IMPORTED from another module,
+preferably behind an alias and alongside a same-spelled local type. That is the
+case that shows exactly where definition-site `TypeId` must enter the pipeline —
+and it cannot be answered by a local-only example, which is how the previous
+spike overreached.
 
 **Still unmeasured:** constant identity for imported/builtin/intrinsic/extern
 references, and the fail-closed path for a construct that resolves normally but
