@@ -1674,8 +1674,33 @@ through imports. Some of the V2 input surface is recoverable by not discarding
 what the elaborator computes; the imported-type case additionally requires a
 `TypeId` to be introduced and threaded.
 
-**SPIKE 3 RESULT (measured 2026-08-02, disposable worktree, no code merged) —
-`TypeId` has an exact insertion point, and the facts it needs are already there.**
+**SPIKE 3 RESULT — SCOPED. The correct heading is "ONE provenance insertion point
+located, and an aliased-type Elab gap found", not "TypeId has an exact insertion
+point". The generalization outran the measurement again, and this time the
+falsifying fixture had not been RUN at all — only code was inspected.**
+
+**BUG FOUND by finally executing it (file it before any TypeId work).** An
+imported struct behind an ALIAS does not resolve as a struct in Elab:
+
+```
+mod lib { pub struct Copy Point { x: Int, y: Int } }
+mod app { import lib.{ Point as Coord };
+          fn f(c: Coord) -> Int { return c.x; } }     -- E0254 non-struct type
+```
+
+The CONTROL is what makes this conclusive: the same import WITHOUT the alias
+gives `E0298 field 'x' is private to its defining module` — a different and
+sensible error, so the type resolves fine unaliased. The alias alone breaks type
+resolution. Cause, from the code: Resolve registers `localName` for the aliased
+type while `resolveImports` appends the original `sd`/`ed` unchanged, so
+`StructDef.name` stays `origName` and `lookupStruct(alias)` finds nothing.
+
+This fails during ordinary elaboration, LONG before any evidence path — so it
+blocks the imported field/variant measurement outright and must be fixed first.
+
+**OTHER PROVENANCE INGRESS PATHS, none yet inventoried:** transitive import
+closure, sibling-module injection, local declarations, and compiler-built enums.
+The explicit-import copy site is ONE of them.
 
 `ResolvedImports.structs : List StructDef` / `.enums : List EnumDef` store bare
 declarations with no origin, which is why imported field/variant identity is
@@ -1687,8 +1712,9 @@ in scope and simply discarded:
 * `origName = sym.name` — the DEFINITION-SITE name, captured before aliasing
   (`localName = sym.effectiveName` is the alias).
 
-The copy is `acc.structs ++ [sd]`, which drops both. So introducing `TypeId` is
-recording `(summary.name, origName)` at the point they are already known — the
+The copy is `acc.structs ++ [sd]`, which drops both. At THIS path, introducing
+`TypeId` is recording `(summary.name, origName)` at the point they are already
+known — the
 same shape as every other defect in this task: information present at the point
 of use, discarded before the point of record. It is NOT a new resolution
 algorithm; the alias-versus-definition distinction is already computed here.
