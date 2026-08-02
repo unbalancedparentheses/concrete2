@@ -1707,9 +1707,19 @@ have taken the harder path for a reason that does not apply here.
 
 Remaining for the implementation: populate `definedIn` at the copy site from
 `summary.name`, derive `TypeId` from `(definedIn, name)`, then `FieldId` /
-`VariantId` from it — and decide what a LOCAL declaration's `definedIn` should be
-(the current module, presumably, but an `Option` that is `none` for local and
-`some m` for imported would make two spellings of one fact).
+`VariantId` from it — and populate `definedIn` UNIFORMLY, local and imported alike.
+
+**That last point is measured, not assumed.** `m.name` is in scope at the LOCAL
+population site (`FileSummary.lean`, where the summary is built with
+`name := m.name` two lines above `structs := m.structs`), exactly as
+`summary.name` is at the import copy site. So both paths can record the defining
+module, and the field should be `String`, not `Option String`.
+
+An `Option` that is `none` locally and `some m` when imported would give one
+declaration TWO identities depending on which side of an import it was observed
+from — the same declaration, two spellings. That is the defect class this whole
+task exists to remove, and it would have been introduced by the convenient
+default rather than by any missing information.
 
 **PREVIOUS NEXT-SPIKE NOTE (now answered by the above):** a field or variant
 IMPORTED from another module,
