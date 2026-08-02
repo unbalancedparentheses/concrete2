@@ -280,13 +280,26 @@ def resolveImports (imports : List ImportDecl)
               ns ++ (tb.methods.filter (·.isPublic)).map fun f => tb.typeName ++ "_" ++ f.name) []
             let matchingSigs := summary.implMethodSigs.filter fun (name, _) =>
               mangledNames.contains name
-            .ok { acc with structs := acc.structs ++ [sd],
+            -- Bug 064: register under the name the IMPORTER uses. The original
+            -- `sd` kept `name = origName`, so `lookupStruct alias` found nothing
+            -- and a field access on an aliased imported type was rejected as
+            -- E0254 "non-struct type" — while the SAME import unaliased reached
+            -- E0298 (a privacy answer), proving the type resolved fine and the
+            -- alias alone broke resolution.
+            --
+            -- A no-op when unaliased, since `localName == origName` there.
+            --
+            -- NOTE for R-0004: this makes `name` the LOCAL spelling, so the
+            -- definition-site name is not recoverable from the declaration alone.
+            -- Provenance (`definedIn` + origName) has to be captured here too;
+            -- that is the V2 work, deliberately not smuggled into a bug fix.
+            .ok { acc with structs := acc.structs ++ [{ sd with name := localName }],
                            implBlocks := acc.implBlocks ++ structImpls,
                            traitImpls := acc.traitImpls ++ structTraitImpls,
                            implMethodSigs := acc.implMethodSigs ++ matchingSigs }
           | none =>
             match summary.enums.find? fun ed => ed.name == origName with
-            | some ed => .ok { acc with enums := acc.enums ++ [ed] }
+            | some ed => .ok { acc with enums := acc.enums ++ [{ ed with name := localName }] }
             | none =>
               match summary.typeAliases.find? fun ta => ta.isPublic && ta.name == origName with
               | some ta => .ok { acc with typeAliases := acc.typeAliases ++ [(localName, ta.targetTy)] }
@@ -378,6 +391,10 @@ def resolveImports (imports : List ImportDecl)
           | none =>
             match summary.enums.find? fun ed => ed.name == n with
             | some ed =>
+              -- Transitive-closure ingress: keyed by `n`, with NO alias in scope.
+              -- A DIFFERENT provenance path from the explicit-import copy above,
+              -- and evidence that "the copy site" is not singular (bug 064's fix
+              -- covers the explicit-import path only).
               acc := { acc with enums := acc.enums ++ [ed] }
               grew := true
             | none =>

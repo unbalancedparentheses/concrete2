@@ -1,0 +1,10 @@
+// Bug 064: an imported type behind an ALIAS must resolve as that type.
+// Currently E0254 "field access on non-struct type" — see docs/bugs/064.
+mod lib {
+    pub struct Copy Point { pub x: Int, pub y: Int }
+}
+mod app {
+    import lib.{ Point as Coord };
+    fn use_alias(c: Coord) -> Int { return c.x; }
+    pub fn main() -> Int { return use_alias(Coord { x: 1, y: 2 }); }
+}
