@@ -2498,8 +2498,16 @@ def foldReplayResults (vcs : List VC) (replayed : List String) : List VC :=
     (`proved_by_kernel_decision` / `proved_by_lean` / `proved_by_lean_replay`): a
     VC an external kernel ALSO closed graduates to `proved_by_two_kernels` (one
     external) or `proved_by_multi_kernel` (≥2), recording the attesters. It never
-    upgrades an unproved VC, never downgrades, and — per the honesty boundary —
-    attests only that each kernel accepted its OWN lowering (no digest cross-check).
+    upgrades an unproved VC, and — per the honesty boundary — attests only that each
+    kernel accepted its OWN lowering (no digest cross-check).
+
+    **It CAN downgrade, and that is deliberate.** An earlier version of this comment said
+    "never downgrades"; the dissent path added later makes that false, and an external
+    review caught the stale claim. A VC Lean proved that an external kernel then REFUSED
+    becomes `kernel_disagreement`: every kernel here is complete for linear integer
+    arithmetic, so opposite verdicts on the same rendering mean something is wrong, and
+    reporting the Lean proof unqualified would hide it. Downgrading on dissent is the
+    only status reduction this fold performs.
     `rocqClosed`/`isaClosed` are VC ids the external kernels independently closed.
     Applied only behind the explicit prover flags, so the default ledger is
     unchanged.
@@ -2558,11 +2566,19 @@ def foldMultiKernelResults (vcs : List VC) (rocqClosed isaClosed : List String)
               [{ name := "isabelle", label := "isabelle:presburger", cell := .refused, loweringAgreed := true }]
             else []))
       if !verdict.dissent.isEmpty then
-        -- Dissent CAPS the stored claim exactly as it caps the report. Receipts and
-        -- independence are still recorded: what a kernel said stays in the artifact
-        -- even when what it said blocks the badge.
+        -- Dissent CAPS the stored claim exactly as it caps the report, and everything a
+        -- kernel said stays in the artifact even when what it said blocks the badge:
+        -- receipts (including the dissenter's, with verdict "refused"), the attesters,
+        -- their versions, AND the independence axes.
+        --
+        -- Independence is recorded over the kernels that were CONSULTED, not the ones
+        -- that agreed — a disagreement between a CIC kernel and a HOL kernel is a
+        -- different and more interesting fact than one within a single family, and
+        -- dropping the axes would erase that. An external review found this branch
+        -- silently leaving `independence := none` while the comment claimed otherwise.
         { v with status := verdict.evidence.present, kernelReceipts := receipts,
                  attestingKernels := verdict.attest,
+                 independence := some (independenceOf (receipts.map (·.kernel)).eraseDups),
                  attestingKernelVersions := verdict.attest.map versionOf }
       else if attesting.length < 2 then v
       else

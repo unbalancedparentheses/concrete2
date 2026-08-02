@@ -1053,6 +1053,21 @@ def refusedKeysOf (r : Option (List (String × KernelVerdict))) : List String :=
 def disagreeingKeysOf (r : Option (List (String × KernelVerdict))) : List String :=
   (r.getD []).filterMap (fun (k, v) => if v == .refused then some k else none)
 
+/-- Obligation ids whose lowering was POSITIVELY VALIDATED: the agreement lemma was
+    closed, so the emitted goal provably has the same truth table as the reference
+    evaluator on the sampled grid.
+
+    Validation must be asserted, never inferred from the absence of a refusal. An
+    agreement run can end in `error` (our emitted script was malformed, a library was
+    missing, the tool died) or omit a key entirely, and in both cases we know NOTHING
+    about whether that rendering denotes the obligation. Treating "no refusal" as
+    "validated" hands the badge to a lowering whose check never ran — fail-open in the
+    one place the composition exists to fail closed. Found by an external review,
+    2026-08-01; the previous code keyed only on `.refused` while the comment beside it
+    claimed unvalidated lowerings were excluded. -/
+def validatedKeysOf (r : Option (List (String × KernelVerdict))) : List String :=
+  (r.getD []).filterMap (fun (k, v) => if v == .closed then some k else none)
+
 /-- Run the enabled external kernels over the multi-kernel obligation goals and
     return the VC ids each independently closed, PLUS the ids whose lowering failed
     the agreement check. Shared by the multi-kernel report, the ledger fold and the
@@ -1077,25 +1092,38 @@ def externalKernelFacts (modules : List Concrete.Module) (rocqRun isaRun : Bool)
   let isaClosed := closedKeysOf isaRes
   let rocqRefused := refusedKeysOf rocqRes
   let isaRefused := refusedKeysOf isaRes
-  -- Agreement is checked with the SAME discharge path, so a malformed agreement
-  -- script reads as `error` (our bug) and never as a lowering disagreement.
-  let rocqBad ← if rocqRun then do
-      let r ← rocqDischarge (Report.rocqAgreementGoals modules); pure (disagreeingKeysOf r)
+  -- Agreement is checked with the SAME discharge path, so a malformed agreement script
+  -- reads as `error` (our bug). We therefore collect what was POSITIVELY VALIDATED
+  -- rather than what was refused: an `error`, or a key the agreement run never reached,
+  -- leaves us knowing nothing about that rendering, and "we did not learn it is wrong"
+  -- is not "we checked it". Returning the validated set makes the caller's filter
+  -- fail closed by construction.
+  let rocqOk ← if rocqRun then do
+      let r ← rocqDischarge (Report.rocqAgreementGoals modules); pure (validatedKeysOf r)
     else pure []
-  let isaBad ← if isaRun then do
-      let r ← isabelleDischarge (Report.isabelleAgreementGoals modules); pure (disagreeingKeysOf r)
+  let isaOk ← if isaRun then do
+      let r ← isabelleDischarge (Report.isabelleAgreementGoals modules); pure (validatedKeysOf r)
     else pure []
-  pure (((rocqClosed, isaClosed), (rocqBad, isaBad)), (rocqRefused, isaRefused))
+  pure (((rocqClosed, isaClosed), (rocqOk, isaOk)), (rocqRefused, isaRefused))
 
-/-- Attestation sets with unvalidated lowerings REMOVED — the composed fact every
-    badge and gate should rest on. Refusals are filtered the same way and returned
-    alongside: a kernel whose lowering disagreed did not dissent about THIS obligation
-    either, so its refusal is no more admissible than its closure. -/
+/-- Attestation sets restricted to lowerings that were POSITIVELY VALIDATED — the
+    composed fact every badge and gate should rest on.
+
+    Note the direction: keep what was validated, rather than drop what was refused. The
+    two differ exactly on the cases where validation did not produce an answer (`error`,
+    a key the agreement run never reached), and those are the cases where we know
+    nothing. Keeping-what-was-validated is fail-closed; dropping-what-was-refused was
+    fail-open and is what this function used to do.
+
+    Refusals are filtered the same way: a kernel whose lowering was never validated did
+    not dissent about THIS obligation either, so its refusal is no more admissible than
+    its closure. Such a kernel neither attests nor dissents, which is the honest
+    reading. -/
 def externalClosedSets (modules : List Concrete.Module) (rocqRun isaRun : Bool)
     : IO ((List String × List String) × (List String × List String)) := do
-  let (((rc, ic), (rb, ib)), (rr, ir)) ← externalKernelFacts modules rocqRun isaRun
-  pure ((rc.filter (fun k => !rb.contains k), ic.filter (fun k => !ib.contains k)),
-        (rr.filter (fun k => !rb.contains k), ir.filter (fun k => !ib.contains k)))
+  let (((rc, ic), (rok, iok)), (rr, ir)) ← externalKernelFacts modules rocqRun isaRun
+  pure ((rc.filter (fun k => rok.contains k), ic.filter (fun k => iok.contains k)),
+        (rr.filter (fun k => rok.contains k), ir.filter (fun k => iok.contains k)))
 
 /-- Phase 3 #14: policy inputs derived from the ONE obligation ledger. Builds the
     discharged ledger (folding the external-SMT path when a solver-evidence stance
