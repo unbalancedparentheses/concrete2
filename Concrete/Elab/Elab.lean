@@ -4,6 +4,7 @@ import Concrete.Elab.Core
 import Concrete.Report.Diagnostic
 import Concrete.Resolve.FileSummary
 import Concrete.Resolve.Intrinsic
+import Concrete.Resolve.BuiltinEnums
 import Concrete.Resolve.Resolve
 import Concrete.Resolve.Shared
 import Concrete.Semantics.TypeJudgment
@@ -1611,9 +1612,9 @@ partial def elabModule (m : Module) (summary : FileSummary)
   let allSigs := imports.functions ++ userFnSigs ++ builtinFnSigs ++ externSigs
                  ++ submoduleSigs ++ implMethodSigs ++ traitImplMethodSigs
   -- Build structs / enums
-  -- One owner in Resolve.Intrinsic (bug 065): the builtin enums and the
-  -- shadowing rule were each stated twice, with Check consulting different
-  -- inputs than Elab.
+  -- One owner: `Concrete.Resolve.BuiltinEnums` (bug 065). Both the builtin
+  -- enums and the shadowing rule were stated twice, and Check consulted
+  -- different inputs than Elab.
   let builtinEnumList := builtinEnums m.enums imports.enums
   let allStructs := imports.structs ++ m.structs
   let allEnums := builtinEnumList ++ imports.enums ++ m.enums

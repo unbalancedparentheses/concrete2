@@ -714,6 +714,18 @@ MUT_NEW+=("    let rotIdx := (((extracted.findIdx? (·.qualName == e.qualName)).
 MUT_DESC+=("Generator: identities permuted among entries (ID swap)")
 gate_for_last "scripts/tests/check_callable_identity.sh"
 
+# 49. The shadowing rule ignores IMPORTED enums (bug 065's original divergence)
+# Elab consulted `imports.enums` and Check did not, so an imported user `Result`
+# was visible to one pass and not the other. Now that the rule has one owner, this
+# mutation reinstates exactly that asymmetry — a structural check would not notice,
+# because the code is still centralised.
+MUT_FILE+=("Concrete/Resolve/BuiltinEnums.lean")
+MUT_OLD+=("  moduleEnums.any (fun ed => ed.name == resultEnumName)
+    || importedEnums.any (fun ed => ed.name == resultEnumName)")
+MUT_NEW+=("  moduleEnums.any (fun ed => ed.name == resultEnumName) -- MUTATION: imported enums ignored")
+MUT_DESC+=("BuiltinEnums: shadowing rule ignores imported enums (bug 065)")
+gate_for_last "scripts/tests/check_builtin_enum_owner.sh"
+
 NUM_MUTATIONS=${#MUT_FILE[@]}
 
 # ============================================================

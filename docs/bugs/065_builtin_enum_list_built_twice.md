@@ -29,19 +29,17 @@ the builtin has to be made twice.
 ## Fixed
 
 One owner: `builtinOptionEnum`, `builtinResultEnum`, `hasUserResultEnum` and
-`builtinEnums` now live in `Concrete/Frontend/AST.lean`, consumed by both passes.
+`builtinEnums` now live in `Concrete/Resolve/BuiltinEnums.lean`, consumed by both passes.
 
-Placed in AST rather than `Resolve/Intrinsic` — the obvious home, since that is
-where `resultEnumName` lives — because these are `EnumDef` VALUES and AST imports
-Intrinsic, not the reverse. Putting them there cycles.
+Not in `Resolve/Intrinsic` (the obvious home, where `resultEnumName` lives): these
+are `EnumDef` VALUES and AST imports Intrinsic, so it would cycle. Not in
+`Frontend/AST` either, which was the first attempt — AST declares what a program
+CAN say, whereas which builtins are in scope and when a user declaration shadows
+one is construction POLICY. A dedicated module imports AST without cycling and
+keeps the two kinds of fact apart.
 
 `hasUserResultEnum` takes BOTH the module's enums and its imported ones, so the
 input asymmetry is gone by construction rather than by both sites remembering.
-
-## Original fix shape
-
-One owner. A single `builtinEnums (hasUserResult : Bool)` consumed by both passes,
-so the shadowing rule is stated once.
 
 ## The inputs ALREADY differ — but no symptom is demonstrated
 
@@ -70,11 +68,14 @@ an instance of.
 ## Fixed
 
 One owner: `builtinOptionEnum`, `builtinResultEnum`, `hasUserResultEnum` and
-`builtinEnums` now live in `Concrete/Frontend/AST.lean`, consumed by both passes.
+`builtinEnums` now live in `Concrete/Resolve/BuiltinEnums.lean`, consumed by both passes.
 
-Placed in AST rather than `Resolve/Intrinsic` — the obvious home, since that is
-where `resultEnumName` lives — because these are `EnumDef` VALUES and AST imports
-Intrinsic, not the reverse. Putting them there cycles.
+Not in `Resolve/Intrinsic` (the obvious home, where `resultEnumName` lives): these
+are `EnumDef` VALUES and AST imports Intrinsic, so it would cycle. Not in
+`Frontend/AST` either, which was the first attempt — AST declares what a program
+CAN say, whereas which builtins are in scope and when a user declaration shadows
+one is construction POLICY. A dedicated module imports AST without cycling and
+keeps the two kinds of fact apart.
 
 `hasUserResultEnum` takes BOTH the module's enums and its imported ones, so the
 input asymmetry is gone by construction rather than by both sites remembering.

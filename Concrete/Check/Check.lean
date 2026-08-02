@@ -3,6 +3,7 @@ import Concrete.Resolve.BuiltinSigs
 import Concrete.Report.Diagnostic
 import Concrete.Resolve.FileSummary
 import Concrete.Resolve.Intrinsic
+import Concrete.Resolve.BuiltinEnums
 import Concrete.Resolve.Resolve
 import Concrete.Resolve.Shared
 import Concrete.Semantics.TypeJudgment
@@ -2095,9 +2096,9 @@ def checkModule (m : Module) (summary : FileSummary)
     summary.functions ++ (implMethodSigs ++ traitImplMethodSigs)
   let allStructs := imports.structs ++ m.structs
   -- Built-in Option<T> enum (Some { value: T }, None {})
-  -- One owner in Resolve.Intrinsic (bug 065). This site previously omitted
-  -- `imports.enums` from the shadowing test, so an IMPORTED user `Result` was
-  -- invisible here while Elab saw it.
+  -- One owner: `Concrete.Resolve.BuiltinEnums` (bug 065). Both the builtin
+  -- enums and the shadowing rule were stated twice, and Check consulted
+  -- different inputs than Elab.
   let builtinEnumList := builtinEnums m.enums imports.enums
   let allEnums := builtinEnumList ++ imports.enums ++ m.enums
   -- Build type aliases map
