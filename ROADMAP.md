@@ -1693,11 +1693,23 @@ same shape as every other defect in this task: information present at the point
 of use, discarded before the point of record. It is NOT a new resolution
 algorithm; the alias-versus-definition distinction is already computed here.
 
-What this does NOT settle: whether `StructDef`/`EnumDef` should GAIN a provenance
-field (touching every construction site) or whether `ResolvedImports` should hold
-a parallel `List (TypeId × StructDef)` — the same constructor-versus-parallel
-choice the `CExpr` probe already answered in favour of parallel, and likely for
-the same reason. That comparison is the next thing to measure, not assume.
+**And the constructor-versus-parallel question is now MEASURED, with the opposite
+answer to `CExpr` — which is why the analogy had to be tested rather than
+reused.** `StructDef` and `EnumDef` are STRUCTURES, not inductives. Adding
+`definedIn : Option String := none` to both compiled with ZERO errors across 23
+files and 44 construction sites: a structure field with a default is backward
+compatible, whereas adding a field to an inductive CONSTRUCTOR (the `CExpr` case)
+breaks every match at once.
+
+So provenance belongs ON the declarations, not in a parallel `ResolvedImports`
+list. Had the `CExpr` conclusion been carried over by analogy, the design would
+have taken the harder path for a reason that does not apply here.
+
+Remaining for the implementation: populate `definedIn` at the copy site from
+`summary.name`, derive `TypeId` from `(definedIn, name)`, then `FieldId` /
+`VariantId` from it — and decide what a LOCAL declaration's `definedIn` should be
+(the current module, presumably, but an `Option` that is `none` for local and
+`some m` for imported would make two spellings of one fact).
 
 **PREVIOUS NEXT-SPIKE NOTE (now answered by the above):** a field or variant
 IMPORTED from another module,
