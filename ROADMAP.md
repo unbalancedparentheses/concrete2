@@ -1674,7 +1674,33 @@ through imports. Some of the V2 input surface is recoverable by not discarding
 what the elaborator computes; the imported-type case additionally requires a
 `TypeId` to be introduced and threaded.
 
-**NEXT DISPOSABLE SPIKE:** a field or variant IMPORTED from another module,
+**SPIKE 3 RESULT (measured 2026-08-02, disposable worktree, no code merged) —
+`TypeId` has an exact insertion point, and the facts it needs are already there.**
+
+`ResolvedImports.structs : List StructDef` / `.enums : List EnumDef` store bare
+declarations with no origin, which is why imported field/variant identity is
+unavailable. But at the COPY SITE in `FileSummary.lean` both required facts are
+in scope and simply discarded:
+
+* `summary.name` — `FileSummary` carries the DEFINING MODULE of the imported
+  declaration;
+* `origName = sym.name` — the DEFINITION-SITE name, captured before aliasing
+  (`localName = sym.effectiveName` is the alias).
+
+The copy is `acc.structs ++ [sd]`, which drops both. So introducing `TypeId` is
+recording `(summary.name, origName)` at the point they are already known — the
+same shape as every other defect in this task: information present at the point
+of use, discarded before the point of record. It is NOT a new resolution
+algorithm; the alias-versus-definition distinction is already computed here.
+
+What this does NOT settle: whether `StructDef`/`EnumDef` should GAIN a provenance
+field (touching every construction site) or whether `ResolvedImports` should hold
+a parallel `List (TypeId × StructDef)` — the same constructor-versus-parallel
+choice the `CExpr` probe already answered in favour of parallel, and likely for
+the same reason. That comparison is the next thing to measure, not assume.
+
+**PREVIOUS NEXT-SPIKE NOTE (now answered by the above):** a field or variant
+IMPORTED from another module,
 preferably behind an alias and alongside a same-spelled local type. That is the
 case that shows exactly where definition-site `TypeId` must enter the pipeline —
 and it cannot be answered by a local-only example, which is how the previous
