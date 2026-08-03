@@ -1054,6 +1054,43 @@ def refusedKeysOf (r : Option (List (String × KernelVerdict))) : List String :=
 -- badge to an unvalidated lowering. If a future caller genuinely needs "which renderings
 -- were refused" — for a diagnostic, not for a badge — reintroduce it with that use named.
 
+/-- Run the SMT rendering-validation queries and classify each instance.
+
+    Expected answer is ALWAYS `unsat` — see `smtAgreementGoals`: the query asserts the
+    negation when the reference says true and the formula itself when it says false, so
+    agreement means unsat either way. `sat` is therefore a real disagreement (the rendering
+    denotes something else), and `unknown`/timeout/absence is OUR problem, classified as
+    `error` so it can never pass as validation.
+
+    Deliberately NOT reusing `smtDischarge`: that maps answers onto solver-evidence classes
+    (`solver_trusted` / `counterexample`), which is a statement about the OBLIGATION. Here
+    the same answers mean something different — a statement about the RENDERING — and
+    collapsing the two is how a validation result would end up read as a proof result. -/
+def smtAgreementCheck (queries : List (String × String)) : IO (Option (List (String × KernelVerdict))) := do
+  if queries.isEmpty then return some []
+  let haveZ3 ← (try
+      let o ← IO.Process.output { cmd := "bash", args := #["-c", "command -v z3"] }
+      pure (o.exitCode == 0)
+    catch _ => pure false)
+  if !haveZ3 then return none          -- absent tool: no verdicts, never a false pass
+  let dir ← IO.Process.run { cmd := "mktemp", args := #["-d"] }
+  let dir := dir.trimAscii.toString
+  let mut out : List (String × KernelVerdict) := []
+  for (k, q) in queries do
+    let f := s!"{dir}/q.smt2"
+    IO.FS.writeFile f q
+    let r ← (try
+        IO.Process.output { cmd := "z3", args := #["-T:5", f] }
+      catch _ => pure { exitCode := 1, stdout := "", stderr := "" })
+    let o := r.stdout.trimAscii.toString
+    let v : KernelVerdict :=
+      if o.startsWith "unsat" then .closed
+      else if o.startsWith "sat" then .refused
+      else .error s!"z3 said '{o}' (expected unsat)"
+    out := out ++ [(k, v)]
+  _ ← (try IO.Process.run { cmd := "rm", args := #["-rf", dir] } catch _ => pure "")
+  return some out
+
 /-- Obligation ids whose lowering was POSITIVELY VALIDATED: the agreement lemma was
     closed, so the emitted goal provably has the same truth table as the reference
     evaluator on the sampled grid.
@@ -2047,6 +2084,29 @@ def compileAndReport (inputPath : String) (reportType : String)
               out := out ++ s!"\n      [{k}]  {cell}"
       if !ran then
         out := out ++ "\n\n  (pass --rocq and/or --isabelle to actually check a kernel's lowering)"
+      -- The SMT rendering is checked ALWAYS, with no flag, because unlike the external
+      -- kernels it needs no extra toolchain (z3 is in the base dev shell) and unlike them
+      -- its verdict enters the TCB as `solver_trusted` with no kernel re-deriving it. It
+      -- was the only lowering with no agreement check at all — the cheapest diversity in
+      -- the system (one printer, every SMT-LIB consumer) and the least validated.
+      let smtGoals := Report.smtAgreementGoals parsed.modules
+      if smtGoals.isEmpty then
+        out := out ++ "\n\n  smt (exprToSmt): no obligation renders into the SMT column"
+      else
+        match ← smtAgreementCheck smtGoals with
+        | none =>
+          out := out ++ "\n\n  smt (exprToSmt): unavailable (no z3) — NOT validated"
+        | some verdicts =>
+          let bad := verdicts.filter (fun (_, v) => v == .refused)
+          let errs := verdicts.filter (fun (_, v) => match v with | .error _ => true | _ => false)
+          out := out ++ s!"\n\n  smt (exprToSmt): {verdicts.length - bad.length - errs.length}/{verdicts.length} ground instances agree"
+          for (k, _) in bad do
+            out := out ++ s!"\n      [{k}]  DISAGREES — exprToSmt renders a different proposition"
+            disagreements := disagreements + 1
+          for (k, v) in errs do
+            match v with
+            | .error d => out := out ++ s!"\n      [{k}]  error — {d}"
+            | _ => pure ()
       if disagreements > 0 then
         out := out ++ s!"\n\nLOWERING-AGREEMENT FAILED — {disagreements} lowering(s) do not mean what the"
         out := out ++ "\n  obligation means. Any multi-kernel badge resting on them is unearned."

@@ -1391,6 +1391,84 @@ def rocqReplayGoals (modules : List Module) : List (String × String) :=
 def isabelleReplayGoals (modules : List Module) : List (String × String) :=
   proverReplayGoals isabelleLowering modules
 
+/-! ### SMT rendering validation — the one-printer-many-tools path, finally checked
+
+`exprToSmt` renders an obligation once and feeds z3, cvc5, veriT and any other SMT-LIB
+consumer. That makes it the CHEAPEST diversity in the system — one printer, N tools —
+and it was the only lowering with no agreement check at all, while its verdict enters the
+TCB as `solver_trusted` with no kernel re-deriving it. R-0450 named the gap; this closes
+the rendering half of it.
+
+Same method as the prover drivers, adapted to SMT's shape. Variables are PINNED with
+equality assertions rather than substituted away, so `exprToSmt` is exercised verbatim —
+the point is to test the printer we actually use, not a variant of it. Each instance is
+its own query because `(check-sat)` is per-script: batching would ask one question about a
+conjunction and lose which instance disagreed.
+
+Truth-table comparison, not provability: for a ground instance the reference evaluator says
+TRUE or FALSE, and the solver must AGREE. Reference true → asserting the negation must be
+`unsat`. Reference false → asserting the formula itself must be `unsat`. Either way the
+expected answer is `unsat`, so `sat` is a genuine disagreement and `unknown` is our problem
+rather than the printer's. -/
+
+/-- SMT-LIB operator column, so the family-neutral `mkConcl` can render a conclusion in
+    prefix form exactly as `exprToSmt` would. Deliberately partial: an operator with no
+    entry yields `none` and the obligation is skipped rather than rendered approximately.
+    A wrong column here would make the check pass against a formula the solver never
+    sees, which is the failure this whole mechanism exists to detect. -/
+def smtBinOpColumn : BinOp → String → String → Option String
+  | .leq,  l, r => some s!"(<= {l} {r})"
+  | .lt,   l, r => some s!"(< {l} {r})"
+  | .geq,  l, r => some s!"(>= {l} {r})"
+  | .gt,   l, r => some s!"(> {l} {r})"
+  | .eq,   l, r => some s!"(= {l} {r})"
+  | .neq,  l, r => some s!"(not (= {l} {r}))"
+  | .and_, l, r => some s!"(and {l} {r})"
+  | .or_,  l, r => some s!"(or {l} {r})"
+  | _,     _, _ => none
+
+/-- `(instanceKey, smtLibQuery)` validating that `exprToSmt`'s rendering of each obligation
+    denotes the obligation. Keys are `{obligationKey}#smtagree{i}` so a disagreement names
+    the instance; `validatedKeysOf`-style consumers strip the suffix. -/
+def smtAgreementGoals (modules : List Module) : List (String × String) := Id.run do
+  let mut out : List (String × String) := []
+  for o in multiKernelObligations modules do
+    let vars := (collectIdents o.mainExpr ++ o.hyps.flatMap collectIdents).eraseDups
+    match exprToSmt o.mainExpr, o.hyps.mapM exprToSmt with
+    | some eSmt, some hypSmts =>
+      match o.mkConcl smtBinOpColumn eSmt with
+      | none => pure ()          -- conclusion outside the SMT column: skip, never guess
+      | some conclSmt =>
+        let base := if vars.length ≥ 4 then [(-2147483648 : Int), -1, 0, 1, 46341, 2147483647]
+                    else fuzzGrid
+        let grid := if vars.length ≥ 3 then base else agreementGrid o base
+        let mut i := 0
+        for env in (cartesianEnvs vars grid).take agreementInstanceCap do
+          -- Reference value of the WHOLE obligation under this assignment. Vacuous when
+          -- the hypotheses do not hold, which is still a row worth checking: a rendering
+          -- that mangles a hypothesis shows up as disagreement exactly there.
+          let hypsTrue := o.hyps.all (fun h => evalBoolEnv env h == some true)
+          let refVal := if hypsTrue then o.safeOn env else some true
+          match refVal with
+          | none => pure ()      -- not evaluable: no reference to compare against
+          | some rv =>
+            let impl := if hypSmts.isEmpty then conclSmt
+                        else s!"(=> (and {" ".intercalate hypSmts}) {conclSmt})"
+            -- Reference TRUE  => negation must be unsat.
+            -- Reference FALSE => the formula itself must be unsat.
+            let asserted := if rv then s!"(not {impl})" else impl
+            let decls := vars.map (fun v => s!"(declare-const {v} Int)")
+            let pins := env.map (fun (v, k) =>
+              s!"(assert (= {v} {if k < 0 then s!"(- {-k})" else toString k}))")
+            let q := "(set-logic ALL)\n"
+              ++ String.intercalate "\n" decls ++ "\n"
+              ++ String.intercalate "\n" pins ++ "\n"
+              ++ s!"(assert {asserted})\n(check-sat)\n"
+            out := out ++ [(s!"{o.key}#smtagree{i}", q)]
+            i := i + 1
+    | _, _ => pure ()
+  return out
+
 /-- `(vcKey, coqSource)` ground-instance agreement scripts for the Rocq driver. -/
 def rocqAgreementGoals (modules : List Module) : List (String × String) :=
   loweringAgreementScripts rocqLowering modules

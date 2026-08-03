@@ -92,6 +92,21 @@ has "mul_unbounded" "=> unproven"         "$BASE"
 # externals not requested -> off, never a false verdict
 has "add_bounded" "rocq:lia = off"        "$BASE"   # externals not requested -> off
 
+echo "=== SMT rendering is validated (the one-printer-many-tools path) ==="
+# `exprToSmt` renders once and feeds every SMT-LIB consumer — the cheapest diversity in the
+# system — and until 2026-08-03 it was the ONLY lowering with no agreement check, while its
+# verdict enters the TCB as `solver_trusted` with no kernel re-deriving it. Checked here
+# without any prover flag because z3 is in the base dev shell.
+SA="$("$COMPILER" "$FAMILIES" --report lowering-agreement 2>/dev/null)"
+printf '%s' "$SA" | grep -qE "smt \(exprToSmt\): [0-9]+/[0-9]+ ground instances agree" \
+  && ok "exprToSmt's rendering is validated against the reference evaluator" \
+  || no "SMT rendering validation did not run — the SMT path is unchecked again"
+# Non-vacuity: a count of 0/0 would satisfy the pattern above while checking nothing.
+INST="$(printf '%s' "$SA" | sed -nE 's/.*smt \(exprToSmt\): [0-9]+\/([0-9]+) ground.*/\1/p' | head -1)"
+[ -n "$INST" ] && [ "$INST" -gt 0 ] \
+  && ok "SMT validation is non-vacuous ($INST ground instances)" \
+  || no "SMT validation ran on ZERO instances — the check is vacuous"
+
 echo "=== bridge differential-check (feature #1): fuzzer teeth + soundness ==="
 BC="$("$COMPILER" "$DEMO" --report bridge-check 2>/dev/null)"
 # proved obligation: no counterexample
