@@ -179,10 +179,13 @@ populates the set — and once it does, the cap applies by construction rather t
 fold someone must remember to write. That is the whole value, and it is entirely
 prospective.
 
-Two things do bite immediately, both added after that review: the private constructor
-means `{ e with assumes := [] }` is a compile error rather than a forged discharge, and
-six `example`s pin the verdict truth table by `rfl` so that deleting the `loweringAgreed`
-filter fails the build.
+Three things do bite immediately, all added after that review. The private constructor
+means `{ e with assumes := [] }` is a compile error rather than a forged discharge. Eight
+`example`s pin the verdict truth table by `rfl`, so weakening the validation filter fails
+the build. And validation is carried by a `LoweringValidated` witness rather than a
+`Bool` — minted only from the set of obligations whose agreement lemma CLOSED, and bound
+to the kernel and obligation it validates, so a caller can neither assert a check it did
+not perform nor reuse another obligation's result.
 
 Registers A and B carry a **fingerprint of the generator or transformation they
 justify** and fail loudly on drift. Without it a discharged row silently goes vacuous
@@ -408,10 +411,13 @@ and closing it is R-0455.
 
 `exprToSmt` has **no** agreement check, and its verdict enters the TCB as
 `solver_trusted` — a mis-rendering there is worse than in any kernel path, because no
-kernel re-derives it. Lean's own rendering is likewise unchecked: the fold records
-`loweringAgreed := true` for Lean by construction (`Report.lean:2519`), so the reference
-evaluator validates the copies and never the original. Both are cheap, both are pre-IR,
-and both are recorded under R-0450.
+kernel re-derives it. Lean's own rendering is likewise unchecked, and after the witness
+change it is the ONLY remaining literal: every external kernel must present a minted
+witness, while Lean's receipt still records `loweringAgreed := true` by construction. The
+reason is real rather than an oversight — Lean's rendering *is* the reference the others
+are validated against, so nothing exists to validate it with — but it means the reference
+evaluator validates the copies and never the original. Both gaps are cheap, both are
+pre-IR, and both are recorded under R-0450.
 
 ### Kernel count is not a fault-finding strategy
 

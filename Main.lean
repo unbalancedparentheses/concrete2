@@ -1047,11 +1047,12 @@ def closedKeysOf (r : Option (List (String × KernelVerdict))) : List String :=
 def refusedKeysOf (r : Option (List (String × KernelVerdict))) : List String :=
   (r.getD []).filterMap (fun (k, v) => if v == .refused then some k else none)
 
-/-- Obligation ids whose LOWERING for this driver disagreed with the reference
-    evaluator — i.e. the emitted goal does not denote the obligation. A kernel
-    closing such a goal proved something else, so it must not attest. -/
-def disagreeingKeysOf (r : Option (List (String × KernelVerdict))) : List String :=
-  (r.getD []).filterMap (fun (k, v) => if v == .refused then some k else none)
+-- REMOVED 2026-08-03: `disagreeingKeysOf`, which returned the ids whose agreement lemma
+-- was REFUSED. Every consumer now uses `validatedKeysOf` instead, and leaving the old
+-- function in place would be worse than dead code: it is the fail-open shape, sitting one
+-- identifier away from the fail-closed one, in the file where confusing them awards a
+-- badge to an unvalidated lowering. If a future caller genuinely needs "which renderings
+-- were refused" — for a diagnostic, not for a badge — reintroduce it with that use named.
 
 /-- Obligation ids whose lowering was POSITIVELY VALIDATED: the agreement lemma was
     closed, so the emitted goal provably has the same truth table as the reference

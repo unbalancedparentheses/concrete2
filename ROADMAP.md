@@ -1789,10 +1789,13 @@ is `"?"` today, so prefer an explicit `"unbounded"`. A mutation restoring the
    `exprToSmt` nor `exprToLeanProp` is checked this way — including the SMT
    path, whose verdict enters the TCB as `solver_trusted`, and where a
    mis-rendering is therefore worse than in any kernel path. Two asymmetries to
-   close with it: the SMT lowering, and Lean's own rendering, which the
-   multi-kernel fold currently records as `loweringAgreed := true` by
-   construction (`Report.lean:2519`) — the reference evaluator validates the
-   copies and never the original. Both are cheap, both are pre-IR, and doing
+   close with it: the SMT lowering, and Lean's own rendering. As of 2026-08-03
+   every EXTERNAL kernel must present a minted `LoweringValidated` witness, so
+   Lean's receipt is the only place validation is still asserted by
+   construction — for a real reason (its rendering is the reference the others
+   are validated against, so nothing exists to validate it with), but the
+   consequence stands: the reference evaluator validates the copies and never
+   the original. Both are cheap, both are pre-IR, and doing
    them first tells the IR work what the fragment actually has to preserve.
 
 ### Task R-0448
