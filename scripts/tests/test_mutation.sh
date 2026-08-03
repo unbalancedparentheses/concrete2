@@ -641,8 +641,8 @@ gate_for_last "scripts/tests/check_callable_identity.sh"
 # exactly the keyed identity the finite table exists to remove, and it makes a
 # same-named callable in another module answer for this one.
 MUT_FILE+=("Concrete/Proof/Proof.lean")
-MUT_OLD+=("  (t.entries.find? fun d => d.identityKey == id.render).bind PFnDef.identified?")
-MUT_NEW+=("  (t.entries.find? fun d => d.displayName == id.declName).bind PFnDef.identified? -- MUTATION: lookup by name")
+MUT_OLD+=("    | .semantic cid => cid == id")
+MUT_NEW+=("    | .semantic cid => cid.declName == id.declName -- MUTATION: lookup by NAME, ignoring module and arity")
 MUT_DESC+=("FnTable: lookupById resolves by display name, not identity (step 3)")
 gate_for_last "scripts/tests/check_callable_identity.sh"
 
@@ -693,8 +693,8 @@ gate_for_last "scripts/tests/check_callable_identity.sh"
 # representable but never emitted for a while; this keeps "emitted" from decaying
 # back into "emitted, but meaningless".
 MUT_FILE+=("Concrete/Report/Report.lean")
-MUT_OLD+=("  let v := Concrete.shortHash (Proof.pexprCanonical pexpr)")
-MUT_NEW+=("  let v := Concrete.shortHash (toString (Proof.pexprCanonical pexpr).length) -- MUTATION: digest sees only the body LENGTH")
+MUT_OLD+=("  let v := Concrete.shortHash (Proof.pexprCanonical (normalizePExpr pexpr))")
+MUT_NEW+=("  let v := Concrete.shortHash (toString (Proof.pexprCanonical (normalizePExpr pexpr)).length) -- MUTATION: digest sees only the body LENGTH")
 MUT_DESC+=("Generator: body digest does not depend on the body")
 gate_for_last "scripts/tests/check_callable_identity.sh"
 
