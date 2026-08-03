@@ -999,6 +999,14 @@ structure MultiKernelObl where
   -- concrete safety check for the bridge fuzzer (feature #1): does the obligation's
   -- conclusion hold under this environment? `none` if it can't be evaluated.
   safeOn   : List (String × Int) → Option Bool
+  -- The obligation's OWN boundary values — the type range for overflow, `0` and the
+  -- length for bounds, `0` for a divisor. These are where a comparison-operator error
+  -- lives: `<=` rendered as `<` differs from the reference ONLY at a boundary, and
+  -- nowhere else. They were previously captured inside `mkConcl`/`safeOn` and invisible
+  -- to the grid, so whether the mutation was detected depended on the boundary happening
+  -- to appear as a literal in the hypotheses. Measured: `fuzzGrid` contains 3 and 100 but
+  -- not 4, so a `[i32; 4]` bounds obligation caught it only incidentally.
+  boundaryVals : List Int := []
 
 /-- Collect the linear runtime-safety obligations of every family into the neutral
     view. Adding a family is a new block here, not a new lowering. -/
@@ -1011,21 +1019,21 @@ def multiKernelObligations (modules : List Module) (requireLeanGoal : Bool := tr
         fun bop e => do let lo ← bop .leq (toString o.lo) e; let hi ← bop .leq e (toString o.hi); bop .and_ lo hi
       let safe : List (String × Int) → Option Bool :=
         fun env => (evalIntEnv env o.opExpr).map (fun v => o.lo ≤ v && v ≤ o.hi)
-      out := out ++ [{ key := o.key, desc := s!"{Concrete.fmtExpr o.opExpr} ∈ [{o.lo}, {o.hi}]", hyps := o.hyps, mainExpr := o.opExpr, mkConcl := mk, safeOn := safe }]
+      out := out ++ [{ boundaryVals := [o.lo, o.hi], key := o.key, desc := s!"{Concrete.fmtExpr o.opExpr} ∈ [{o.lo}, {o.hi}]", hyps := o.hyps, mainExpr := o.opExpr, mkConcl := mk, safeOn := safe }]
   for o in boundsObligations modules do
     if o.closedVerdict.isNone && (!requireLeanGoal || o.leanGoal.isSome) then
       let mk : (BinOp → String → String → Option String) → String → Option String :=
         fun bop e => do let lo ← bop .leq "0" e; let hi ← bop .lt e (toString o.size); bop .and_ lo hi
       let safe : List (String × Int) → Option Bool :=
         fun env => (evalIntEnv env o.idxExpr).map (fun v => 0 ≤ v && v < (Int.ofNat o.size))
-      out := out ++ [{ key := o.key, desc := s!"0 ≤ {Concrete.fmtExpr o.idxExpr} < {o.size} (bounds of {o.arrName})", hyps := o.hyps, mainExpr := o.idxExpr, mkConcl := mk, safeOn := safe }]
+      out := out ++ [{ boundaryVals := [0, Int.ofNat o.size], key := o.key, desc := s!"0 ≤ {Concrete.fmtExpr o.idxExpr} < {o.size} (bounds of {o.arrName})", hyps := o.hyps, mainExpr := o.idxExpr, mkConcl := mk, safeOn := safe }]
   for o in divObligations modules do
     if o.closedVerdict.isNone && (!requireLeanGoal || o.leanGoal.isSome) then
       let mk : (BinOp → String → String → Option String) → String → Option String :=
         fun bop e => bop .neq e "0"
       let safe : List (String × Int) → Option Bool :=
         fun env => (evalIntEnv env o.divExpr).map (fun v => v != 0)
-      out := out ++ [{ key := o.key, desc := s!"{Concrete.fmtExpr o.divExpr} ≠ 0 (divisor)", hyps := o.hyps, mainExpr := o.divExpr, mkConcl := mk, safeOn := safe }]
+      out := out ++ [{ boundaryVals := [0], key := o.key, desc := s!"{Concrete.fmtExpr o.divExpr} ≠ 0 (divisor)", hyps := o.hyps, mainExpr := o.divExpr, mkConcl := mk, safeOn := safe }]
   return out
 
 /-- Result of fuzzing one obligation against the concrete evaluator (feature #1). -/
@@ -1122,7 +1130,12 @@ partial def collectIntLits : Expr → List Int
     the obligation or its hypotheses, and each literal ±1. Those neighbours are what
     make a comparison-operator error observable. -/
 def agreementGrid (o : MultiKernelObl) (base : List Int) : List Int :=
-  let lits := (o.hyps.flatMap collectIntLits ++ collectIntLits o.mainExpr)
+  -- Seed from the literals appearing in the obligation AND from the obligation's own
+  -- boundary values, each with its ±1 neighbours. The boundaries are the load-bearing
+  -- addition: a comparison-operator error differs from the reference only there, so a grid
+  -- that does not reach them cannot detect one. Relying on the boundary appearing as a
+  -- literal made detection incidental.
+  let lits := (o.hyps.flatMap collectIntLits ++ collectIntLits o.mainExpr ++ o.boundaryVals)
   let withNeighbours := lits.flatMap (fun v => [v - 1, v, v + 1])
   (base ++ withNeighbours).eraseDups
 

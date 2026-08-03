@@ -107,6 +107,19 @@ INST="$(printf '%s' "$SA" | sed -nE 's/.*smt \(exprToSmt\): [0-9]+\/([0-9]+) gro
   && ok "SMT validation is non-vacuous ($INST ground instances)" \
   || no "SMT validation ran on ZERO instances — the check is vacuous"
 
+# A solver verdict must not survive an unvalidated rendering. Both fold sites are asserted
+# because either one left ungated reintroduces the hole on that path only, and the policy
+# path is the one a release depends on. Behaviourally verified by mutation: making the SMT
+# operator column unrenderable drops the verdict with a warning and the VC falls back to
+# `unproven` instead of `solver_trusted`.
+SITES="$(grep -c "gateSmtOnValidation" Main.lean)"
+[ "$SITES" -ge 3 ] \
+  && ok "both SMT fold sites gate verdicts on rendering validation ($SITES refs)" \
+  || no "an SMT fold site is ungated — solver_trusted can rest on an unvalidated rendering"
+grep -q "!mine.isEmpty && mine.all" Main.lean \
+  && ok "validation requires ALL instances to agree, and at least one (non-vacuous)" \
+  || no "SMT validation no longer requires all-instances-agree — one pass would suffice"
+
 echo "=== bridge differential-check (feature #1): fuzzer teeth + soundness ==="
 BC="$("$COMPILER" "$DEMO" --report bridge-check 2>/dev/null)"
 # proved obligation: no counterexample

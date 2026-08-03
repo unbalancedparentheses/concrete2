@@ -1091,6 +1091,47 @@ def smtAgreementCheck (queries : List (String × String)) : IO (Option (List (St
   _ ← (try IO.Process.run { cmd := "rm", args := #["-rf", dir] } catch _ => pure "")
   return some out
 
+/-- Obligation ids whose SMT RENDERING is validated: EVERY ground instance agreed, and
+    there was at least one.
+
+    Keys arrive as `{obligationId}#smtagree{N}` — one per instance — so they are grouped
+    back to the obligation. `all` rather than `any` is the whole point: one disagreeing
+    instance means the rendering denotes something else, and a single agreeing instance
+    proves nothing about the rest. The non-empty check blocks the vacuous case, where an
+    obligation contributed no instances and would otherwise pass `all` trivially.
+
+    `none` (no agreement run — no z3) yields `[]`: nothing validated, so nothing folds.
+    Fail closed, same direction as `validatedKeysOf`. -/
+def smtValidatedObligations (r : Option (List (String × KernelVerdict))) : List String :=
+  match r with
+  | none => []
+  | some vs =>
+    let base := fun (k : String) => match k.splitOn "#smtagree" with | h :: _ => h | [] => k
+    let ids := (vs.map (fun (k, _) => base k)).eraseDups
+    ids.filter (fun id =>
+      let mine := vs.filter (fun (k, _) => base k == id)
+      !mine.isEmpty && mine.all (fun (_, v) => v == .closed))
+
+/-- Keep only the SMT results whose rendering was validated, and say how many were dropped.
+
+    Without this an obligation could be marked `solver_trusted` — a verdict that enters the
+    TCB with no kernel re-deriving it — on a rendering nobody checked. It is the same
+    composition the witness change closed for the kernel path: closing a goal is evidence
+    about the OBLIGATION only if the goal denotes the obligation.
+
+    Dropped verdicts are reported rather than silently discarded. A VC that quietly stays
+    `unproven` because its rendering failed validation is indistinguishable from one the
+    solver could not close, and those are different facts. -/
+def gateSmtOnValidation (results : List (String × String × List (String × String)))
+    (validated : List String) : IO (List (String × String × List (String × String))) := do
+  let kept := results.filter (fun (k, _, _) => validated.contains k)
+  let dropped := results.length - kept.length
+  if dropped > 0 then
+    IO.eprintln s!"warning: {dropped} SMT verdict(s) DROPPED — rendering not validated \
+(run `--report lowering-agreement` for the disagreeing instances). A solver verdict on an \
+unvalidated rendering is not evidence about the obligation."
+  pure kept
+
 /-- Obligation ids whose lowering was POSITIVELY VALIDATED: the agreement lemma was
     closed, so the emitted goal provably has the same truth table as the reference
     evaluator on the sampled grid.
@@ -1205,6 +1246,11 @@ def computePolicyQuals (policy : Concrete.ProjectPolicy) (modules : List Concret
       let dvcs := Report.markSmtEligible dvcs smtGoals replayGoals
       let solverId ← z3VersionId
       let results ← smtDischarge smtGoals 5
+      -- A solver verdict counts only if the rendering it answered about denotes the
+      -- obligation. Same composition as the kernel path; this is the release-policy side,
+      -- so an unvalidated rendering must not reach `solver_trusted`.
+      let agree ← smtAgreementCheck (Report.smtAgreementGoals modules)
+      let results ← gateSmtOnValidation results (smtValidatedObligations agree)
       let dvcs := Report.foldSmtResults dvcs results solverId
       let trusted := dvcs.filterMap fun v => if v.status == "solver_trusted" then some v.id else none
       let rg := replayGoals.filter (fun (k, _) => trusted.contains k)
@@ -1683,6 +1729,9 @@ def compileAndReport (inputPath : String) (reportType : String)
       let dvcs ← if smtRun then do
           let solverId ← z3VersionId
           let results ← smtDischarge smtGoals 5 smtTimeoutMs
+          -- Same gate as the policy path: no verdict without a validated rendering.
+          let agree ← smtAgreementCheck (Report.smtAgreementGoals parsed.modules)
+          let results ← gateSmtOnValidation results (smtValidatedObligations agree)
           let dvcs := Report.foldSmtResults dvcs results solverId
           -- --replay: try to kernel-check each solver_trusted VC in Lean; a success
           -- graduates it to proved_by_lean_replay (solver dropped from the claim).
