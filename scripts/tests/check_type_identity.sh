@@ -103,10 +103,121 @@ def nestedId (root : String) : Option TypeId :=
   | some (_, summary) => (summary.structs.head?).bind StructDef.typeId?
   | none => none
 
+def frontendModules (source : String) : Except Diagnostics (List CModule) := do
+  let parsed ← Pipeline.parse source
+  let summary := Pipeline.buildSummary parsed
+  let resolved ← Pipeline.resolve parsed summary
+  Pipeline.check resolved summary
+  let elaborated ← Pipeline.elaborate resolved summary
+  pure elaborated.coreModules
+
+def bodyUseSource : String :=
+  "struct Copy Point { x: Int, y: Int }
+   enum Copy Direction { North { speed: Int }, South { speed: Int } }
+   fn observe() -> Int {
+     let q: Point = Point { x: 1, y: 2 };
+     let d: Direction = Direction::North { speed: q.x };
+     match d {
+       Direction::North { speed } => { return speed; },
+       Direction::South { speed } => { return speed; }
+     }
+   }"
+
+def bodyUsesAreTyped : Bool :=
+  match frontendModules bodyUseSource with
+  | .error _ => false
+  | .ok [m] =>
+      match m.declFacts.head? with
+      | none => false
+      | some facts =>
+          let pointId := TypeId.user "main" "Point"
+          let directionId := TypeId.user "main" "Direction"
+          facts.bodyIdentityInputs.covered
+            && facts.bodyIdentityInputs.uses.length == 7
+            && facts.bodyIdentityInputs.uses.contains (.typeRef pointId)
+            && facts.bodyIdentityInputs.uses.contains
+              (.field { owner := pointId, field := "x" })
+            && facts.bodyIdentityInputs.uses.contains
+              (.field { owner := pointId, field := "y" })
+            && facts.bodyIdentityInputs.uses.contains
+              (.variant { owner := directionId, variant := "North" })
+            && facts.bodyIdentityInputs.uses.contains
+              (.variant { owner := directionId, variant := "South" })
+  | .ok _ => false
+
+def aliasBodySource : String :=
+  "mod lib { pub struct Copy Point { pub x: Int } }
+   mod app {
+     import lib.{ Point as Coord };
+     fn observe(c: Coord) -> Int { return c.x; }
+   }"
+
+def aliasBodyUsesDefinitionId : Bool :=
+  match frontendModules aliasBodySource with
+  | .error _ => false
+  | .ok modules =>
+      match modules.find? (fun m => m.name == "app") with
+      | none => false
+      | some app =>
+          match app.declFacts.head? with
+          | none => false
+          | some facts =>
+              facts.bodyIdentityInputs.covered
+                && facts.bodyIdentityInputs.uses == [
+                  .field { owner := TypeId.user "lib" "Point", field := "x" }
+                ]
+
+def resolvedButUnmappedFailsClosed : Bool :=
+  match Pipeline.parse bodyUseSource with
+  | .error _ => false
+  | .ok parsed =>
+      match parsed.modules with
+      | [m] =>
+          -- A deliberately raw summary: language resolution still finds Point
+          -- and Direction, but their evidence provenance is absent.
+          let resolved := buildFileSummary m
+          let raw := { resolved with structs := m.structs, enums := m.enums }
+          match elabModule m raw with
+          | .error _ => false
+          | .ok cm =>
+              match cm.declFacts.head? with
+              | some facts => !facts.bodyIdentityInputs.covered
+              | none => false
+      | _ => false
+
 def ownerA : TypeId := TypeId.user "m" "A"
 def ownerB : TypeId := TypeId.user "m" "B"
 
+-- ProofBodyIdentityInputsV2 documents itself as EXCLUDED from today's digest,
+-- because ProofBodyCanonicalV2 is incomplete and V1 must stay byte-frozen. That
+-- claim was prose only. If a later change folds these uses into `canonical`, the
+-- V1 fingerprints move and every stored proof link silently goes stale — the
+-- failure this whole slice exists to prevent. Gate the exclusion directly rather
+-- than relying on the extraction golden to notice from a distance.
+def factsNoUses : Proof.CheckedDeclFacts :=
+  { id := CallableId.ofUser "m" "f", retTy := "unit" }
+def factsWithUses : Proof.CheckedDeclFacts :=
+  { factsNoUses with bodyIdentityInputs :=
+      { uses := [.typeRef ownerA, .field { owner := ownerA, field := "x" },
+                 .variant { owner := ownerB, variant := "V" }] } }
+-- The uncovered case must ALSO leave the digest alone. Otherwise "we could not
+-- read the body's identities" would start moving V1 bytes, which is the same
+-- staleness by a different route.
+def factsUncovered : Proof.CheckedDeclFacts :=
+  { factsNoUses with bodyIdentityInputs := { uses := [], covered := false } }
+
 #eval do
+  assertTypeIdentity "body-identity uses are excluded from the V1 canonical bytes"
+    (Proof.CheckedDeclFacts.canonical factsNoUses
+      == Proof.CheckedDeclFacts.canonical factsWithUses)
+  assertTypeIdentity "an uncovered body-identity input does not move V1 bytes either"
+    (Proof.CheckedDeclFacts.canonical factsNoUses
+      == Proof.CheckedDeclFacts.canonical factsUncovered)
+  -- Belt and braces: the records themselves must still DIFFER, or the two legs
+  -- above would pass vacuously by comparing a record to itself.
+  assertTypeIdentity "the three facts records are genuinely distinct values"
+    (factsNoUses != factsWithUses && factsNoUses != factsUncovered
+      && factsWithUses != factsUncovered)
   assertTypeIdentity "same spelling in two modules gives different TypeIds"
     (TypeId.ofUser "m1" "Point" != TypeId.ofUser "m2" "Point")
   assertTypeIdentity "builtin identity requires and preserves BuiltinEnumId"
@@ -135,6 +246,12 @@ def ownerB : TypeId := TypeId.user "m" "B"
   assertTypeIdentity "variant identity is owner-relative and domain-separated from fields"
     (({ owner := ownerA, variant := "x" } : VariantId).render
       != ({ owner := ownerA, field := "x" } : FieldId).render)
+  assertTypeIdentity "Elab records every resolved field/variant use as typed V2 input"
+    bodyUsesAreTyped
+  assertTypeIdentity "aliased field use records the definition-site TypeId"
+    aliasBodyUsesDefinitionId
+  assertTypeIdentity "resolved language construct with no evidence mapping fails closed"
+    resolvedButUnmappedFailsClosed
 LEAN
 
 echo "=== semantic type identity through the production resolver ==="
@@ -152,8 +269,10 @@ if printf '%s\n' "$LEAN_OUT" | grep -Eq 'error:|error\(lean'; then
   exit 1
 fi
 OK_COUNT="$(printf '%s\n' "$LEAN_OUT" | grep -c '^  ok   ' || true)"
-if [ "$OK_COUNT" -ne 12 ]; then
-  echo "FATAL: expected 12 semantic controls, saw $OK_COUNT" >&2
+# Raised 15 -> 18 for the three digest-exclusion legs. This count is a tripwire:
+# it must only move alongside a deliberate change to the leg inventory.
+if [ "$OK_COUNT" -ne 18 ]; then
+  echo "FATAL: expected 18 semantic controls, saw $OK_COUNT" >&2
   exit 1
 fi
 
@@ -177,7 +296,8 @@ echo "  ok   raw strings cannot mint builtin TypeIds"
 
 echo ""
 echo "=== ordinary compiler path ==="
-if .lake/build/bin/concrete tests/programs/bug_064_aliased_imported_type.con \
+cp tests/programs/bug_064_aliased_imported_type.con "$TMP_DIR/bug064.con"
+if .lake/build/bin/concrete "$TMP_DIR/bug064.con" \
     >"$TMP_DIR/bug064.out" 2>"$TMP_DIR/bug064.err"; then
   echo "  ok   aliased imported type still compiles (bug 064)"
 else
@@ -187,4 +307,4 @@ else
 fi
 
 echo ""
-echo "TYPE-IDENTITY: PASS=14 FAIL=0"
+echo "TYPE-IDENTITY: PASS=20 FAIL=0"
