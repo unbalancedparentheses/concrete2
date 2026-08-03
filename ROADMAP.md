@@ -7118,6 +7118,47 @@ Difficulty is skewed and the register must record it: `eliminate_div_mod` is a r
 argument, while `eliminate_algebraic` requires the axiomatization be conservative over the
 datatype theory, which is model-theoretic.
 
+**A PRINTER SOUNDNESS ROW DELETES THE VALIDATION LAYER. This is the strongest argument for
+this task and it was previously missing.** Register B reads as bookkeeping — one more row
+per pass — when it is actually what removes an entire runtime mechanism.
+
+Today a rendering is *validated*, per obligation, per kernel: pin the driver's own output
+to a grid of ground instances, make the prover decide each, compare against `evalBoolEnv`.
+That is where the ~30s/goal comes from, and it is a TEST, so it covers the sampled grid
+only. A *verified* printer — "this printer maps obligation terms to Coq syntax denoting the
+same proposition" — replaces all of it:
+
+| | validated (today) | verified printer |
+|---|---|---|
+| work | per obligation × per kernel | once per driver |
+| strength | test on a sampled grid | proof, all inputs |
+| runtime cost | a prover run per obligation | zero |
+
+And it is far more tractable than Register A. Sufficiency is a *semantic* claim about
+program execution; printer correctness is a *syntactic* claim relating two representations
+of the same term over a deliberately small fragment. That is the kind of statement that
+gets proved rather than deferred.
+
+So the honest ranking of ways to reach N provers, cheapest-and-strongest first:
+
+1. **Verified printer** (this task) — no per-obligation validation at all.
+2. **A standard interchange format where one exists.** The per-kernel cost comes from
+   choosing prover-NATIVE syntax; SMT-LIB feeds z3, cvc5, veriT, Alt-Ergo and Yices from
+   ONE printer. Note `exprToSmt` already exists — the codebase already has the
+   one-renderer-many-tools path, and it is the path with NO agreement check, whose verdict
+   enters the TCB as `solver_trusted`. Validating it is sequenced above under R-0450's
+   agreement slice. Caveat: solvers are oracles, so this is implementation diversity, not
+   kernel diversity, unless certificates are replayed.
+3. **Certificates where they exist** — nothing to render per target, so nothing to validate.
+4. **Per-kernel native rendering plus per-obligation differential validation** — what is
+   built today.
+
+The spike built option 4 because it was reachable without an IR, which was the right call
+for a spike and is not the destination. Recording the ranking here so the printer row is
+scheduled as *deleting the validation layer* rather than as bookkeeping — and so a future
+reader does not add a fifth prover under option 4 believing the marginal cost is a driver,
+when it is a driver plus a validator plus a prover run per obligation.
+
 ### Task R-0456
 
 **Objective:** Port `eval` to a second host and relate the two semantics by an
