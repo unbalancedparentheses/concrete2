@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+# R-0004: corpus-wide inventory of subject-facts coverage, grouped by cause.
+#
+# A subject digest is only produced when a declaration's contracts are fully
+# encodable. An UNCOVERED declaration is fail-closed and correct, but it also
+# cannot participate in V2 freshness: replay can never establish a V2 claim for
+# it. So before freshness is activated authoritatively, the uncovered set must be
+# a known, named inventory rather than a number nobody has looked at.
+#
+# This gate pins that inventory. It fails when coverage REGRESSES (a new uncovered
+# declaration appears) and equally when it silently IMPROVES, because a drop must
+# come with a deliberate update naming which cause was closed.
+set -Eeuo pipefail
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+cd "$ROOT_DIR"
+
+fatal() {
+  local rc=$?
+  echo "FATAL: check_subject_coverage stopped at line ${BASH_LINENO[0]} (exit $rc)" >&2
+  exit "$rc"
+}
+trap fatal ERR
+
+CC=".lake/build/bin/concrete"
+[ -x "$CC" ] || { echo "error: build first" >&2; exit 2; }
+
+PASS=0; FAIL=0
+ok() { echo "  ok   $1"; PASS=$((PASS+1)); }
+no() { echo "  FAIL $1"; FAIL=$((FAIL+1)); }
+
+# Measured 2026-08-03 over examples/ at 6576864a. The proof corpus, not the whole
+# test tree: tests/programs/ holds deliberate uncovered probes whose whole purpose
+# is to be uncovered, and mixing them in would hide a real regression in the noise.
+EXPECT_COVERED=415
+EXPECT_UNCOVERED=5
+
+# The uncovered set, by cause. Both causes are OPEN work, tracked here because a
+# bare count would not say what closing them requires.
+#
+#   const  — a contract names a module constant (e.g. `hi < LIMIT`). Non-binder
+#            identifiers resolve to no identity: a constant is not a callable and
+#            must not borrow a same-spelled function's CallableId. Needs ConstId.
+#   ghost  — a contract names a `ghost let` binding. These ARE binders, but
+#            proof-only ones that never enter the value environment, so the
+#            encoder sees a free identifier. Needs scoped binder frames, NOT
+#            ConstId — a distinction a count alone would have hidden, and the
+#            reason ghost-assisted proofs cannot produce a subject digest today.
+#   invalid — a deliberate negative example; uncovered is the correct verdict.
+EXPECT_CONST="examples/contract_positive/valid_complex_contract_scope/src/main.con"
+EXPECT_GHOST="examples/ghost_state/src/main.con examples/proof_patterns/ghost/src/main.con"
+EXPECT_INVALID="examples/contract_negatives/invalid_contract_expression/src/main.con"
+
+covered=0; uncovered=0; offenders=""
+while IFS= read -r f; do
+  out="$("$CC" "$f" --report subject-facts 2>/dev/null)" || continue
+  c="$(printf '%s\n' "$out" | grep -c "contracts covered: true"  || true)"
+  u="$(printf '%s\n' "$out" | grep -c "contracts covered: false" || true)"
+  covered=$((covered+c)); uncovered=$((uncovered+u))
+  [ "$u" -gt 0 ] && offenders="$offenders $f"
+done <<< "$(find examples -name '*.con' | sort)"
+
+# Vacuity control FIRST. A zero-uncovered result is indistinguishable from a
+# report that stopped emitting the field at all, and that exact shape has produced
+# a false pass in this repo before.
+if [ "$covered" -gt 0 ]; then
+  ok "the coverage field is present ($covered covered declarations observed)"
+else
+  no "no covered declarations seen at all — the report field may have moved; every other leg here would be vacuous"
+fi
+
+if [ "$uncovered" -eq "$EXPECT_UNCOVERED" ]; then
+  ok "uncovered declarations = $EXPECT_UNCOVERED, matching the recorded inventory"
+else
+  no "uncovered = $uncovered, expected $EXPECT_UNCOVERED. A RISE is a coverage regression; a DROP means a cause was closed and this inventory plus its cause notes must be updated deliberately. Offenders:$offenders"
+fi
+
+if [ "$covered" -eq "$EXPECT_COVERED" ]; then
+  ok "covered declarations = $EXPECT_COVERED"
+else
+  echo "  note covered = $covered (recorded $EXPECT_COVERED); corpus size changes are expected as examples are added"
+  PASS=$((PASS+1))
+fi
+
+for f in $EXPECT_CONST $EXPECT_GHOST $EXPECT_INVALID; do
+  if printf '%s' "$offenders" | grep -qF "$f"; then
+    ok "known uncovered program still accounted for: $f"
+  else
+    no "$f is no longer uncovered — if its cause was closed, update the inventory and cause notes here"
+  fi
+done
+
+for f in $offenders; do
+  case " $EXPECT_CONST $EXPECT_GHOST $EXPECT_INVALID " in
+    *" $f "*) ;;
+    *) no "UNACCOUNTED uncovered program: $f — a declaration lost its subject digest and no recorded cause explains it" ;;
+  esac
+done
+[ -n "$offenders" ] && ok "every uncovered program maps to a recorded cause"
+
+echo "SUBJECT-COVERAGE: PASS=$PASS FAIL=$FAIL"
+[ "$FAIL" -eq 0 ] || exit 1

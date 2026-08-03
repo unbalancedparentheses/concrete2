@@ -457,6 +457,9 @@ jobs:
       - name: "Callable identity (R-0004 step 1 — CallableId is constructed from a resolved declaration, never recovered from text)"
         run: bash scripts/tests/check_callable_identity.sh
 
+      - name: "Subject coverage (R-0004 — corpus inventory of which declarations can produce a subject digest, grouped by cause)"
+        run: bash scripts/tests/check_subject_coverage.sh
+
       - name: "Type identity (R-0004 V2 input — aliases, transport, nesting, builtins, and Elab use sites)"
         run: bash scripts/tests/check_type_identity.sh
 
