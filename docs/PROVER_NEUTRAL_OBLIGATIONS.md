@@ -452,11 +452,26 @@ and closing it is R-0455.
 `solver_trusted` — a mis-rendering there is worse than in any kernel path, because no
 kernel re-derives it. Lean's own rendering is likewise unchecked, and after the witness
 change it is the ONLY remaining literal: every external kernel must present a minted
-witness, while Lean's receipt still records `loweringAgreed := true` by construction. The
-reason is real rather than an oversight — Lean's rendering *is* the reference the others
-are validated against, so nothing exists to validate it with — but it means the reference
-evaluator validates the copies and never the original. Both gaps are cheap, both are
-pre-IR, and both are recorded under R-0450.
+witness, while Lean's receipt still records `loweringAgreed := true` by construction.
+
+**The reason previously given for that exemption was wrong, and the correction changes what
+kind of gap it is** (2026-08-03). This section said Lean's rendering *is* the reference the
+others are validated against, so nothing exists to validate it with. It is not: the
+agreement check validates a rendering against the reference **evaluator**
+(`safeOn`/`evalBoolEnv`, which walk the AST and know nothing about Lean). Rocq's and
+Isabelle's renderings are not compared to Lean's — they are compared to what the expression
+*means*. Lean's rendering could be measured against the same yardstick.
+
+The actual obstacle was narrower: Lean's lowering was not expressible as a driver, because
+`exprToProver` hard-coded `~` for negation, so `exprToLeanProp` existed as a separate
+recursion and the agreement machinery had nothing to point at it with. R-0450's slice
+removed that — the fragment is now lowered by one parameterised function and
+`exprToLeanProp` delegates to it. What remains is to run the agreement scripts through a
+Lean driver and mint the witness, which deletes the last literal.
+
+Worth stating plainly because the wrong version was load-bearing for planning: this was
+being treated as an asymmetry that could not be closed, and it is a TODO. Both gaps are
+cheap, both are pre-IR, and both are recorded under R-0450.
 
 ### Kernel count is not a fault-finding strategy
 

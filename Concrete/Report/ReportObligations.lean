@@ -1041,23 +1041,6 @@ attempt does not close and the VC honestly stays `solver_trusted`. The artifact 
 still emitted so a reviewer — or a Mathlib-enabled build that swaps `omega` for
 `nlinarith` — can check it and graduate the evidence. -/
 
-/-- Lower a contract `Expr` to Lean `Prop`/`Int` syntax for the replay theorem.
-    Same fragment as `toLeanProp` but ALSO handles unary negation (`-30000`) — the
-    signed bounds that make a VC SMT-eligible in the first place. Kept local to the
-    replay path so `toLeanProp`'s callers are unaffected. -/
-partial def exprToLeanProp : Expr → Option String
-  | .intLit _ v => some s!"{v}"
-  | .ident _ n => some n
-  | .paren _ e => exprToLeanProp e
-  | .unaryOp _ op e => do
-    let E ← exprToLeanProp e
-    match op with | .neg => some s!"(-{E})" | .not_ => some s!"(¬ {E})" | _ => none
-  | .binOp _ op l r => do
-    let L ← exprToLeanProp l; let R ← exprToLeanProp r
-    match op with
-    | .div | .mod => none
-    | _ => leanBinOp op L R
-  | _ => none
 
 /-! ## Prover-neutral multi-kernel path — the `proved_by_two_kernels` beachhead
 
@@ -1112,19 +1095,52 @@ structure ProverLowering where
     (not a string rewrite), so the emitted script is well-formed by construction.
     Coq and Isabelle share this: both spell unary neg `(- e)`, `not` `~`, and a
     negative literal `(-k)`; only the binary-op column and wrapper differ. -/
-partial def exprToProver (binop : BinOp → String → String → Option String) : Expr → Option String
+partial def exprToProverU (binop : BinOp → String → String → Option String)
+    (notSym : String) : Expr → Option String
   | .intLit _ v => some (if v < 0 then s!"({v})" else s!"{v}")
   | .ident _ n => some n
-  | .paren _ e => exprToProver binop e
+  | .paren _ e => exprToProverU binop notSym e
   | .unaryOp _ op e => do
-    let E ← exprToProver binop e
-    match op with | .neg => some s!"(- {E})" | .not_ => some s!"(~ {E})" | _ => none
+    let E ← exprToProverU binop notSym e
+    match op with
+    | .neg  => some s!"(- {E})"
+    | .not_ => some s!"({notSym} {E})"
+    | _ => none
   | .binOp _ op l r => do
-    let L ← exprToProver binop l; let R ← exprToProver binop r
+    let L ← exprToProverU binop notSym l; let R ← exprToProverU binop notSym r
     match op with
     | .div | .mod => none
     | _ => binop op L R
   | _ => none
+
+/-- The linear fragment, lowered for a driver. `~` is the default because Rocq and Isabelle
+    both spell negation that way; Lean passes `¬`.
+
+    R-0450 (partial): negation used to be HARD-CODED to `~` here, which is the one thing that
+    stopped this function from also being Lean's lowering — so `exprToLeanProp` existed as a
+    near-copy, and the fragment was defined twice in two functions that had to agree. It is
+    now defined once and `exprToLeanProp` delegates. -/
+partial def exprToProver (binop : BinOp → String → String → Option String) : Expr → Option String :=
+  exprToProverU binop "~"
+
+/-- Lean's lowering of the linear fragment, for the replay theorem. Handles unary negation
+    (`-30000`) — the signed bounds that make a VC SMT-eligible in the first place.
+
+    **R-0450 (partial): this is now the SAME function as every other driver's**, specialised
+    to `leanBinOp` and Lean's negation. It used to be an independent recursion that happened
+    to match `exprToProver` case for case, differing only in negative-literal parentheses,
+    a space, and `¬` versus `~` — which is exactly the "fragment defined twice, in two
+    functions that must agree" that R-0450 exists to remove. Two of those three differences
+    were cosmetic; the third is now a parameter.
+
+    Why this matters beyond tidiness: the lowering-agreement check validates a rendering
+    against the reference EVALUATOR (`safeOn`/`evalBoolEnv` on the AST), not against Lean.
+    The standing justification for Lean being the one kernel whose rendering is unvalidated —
+    "its rendering IS the reference, so there is nothing to validate it with" — was therefore
+    wrong. The real obstacle was that Lean's lowering was not expressible as a driver, so the
+    machinery could not be pointed at it. That obstacle is what this removes. -/
+partial def exprToLeanProp (e : Expr) : Option String :=
+  exprToProverU leanBinOp "¬" e
 
 /-! ### Bridge differential-check (feature #1)
 

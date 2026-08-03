@@ -155,7 +155,7 @@ system.
 | 8 | **R-0454** | neutral digest — closing window, alpha-normalized |
 | — | ~~**R-0467**~~ | **DONE 2026-08-03.** Multi-kernel runs on merges to main; mutation coverage moved to the scheduled path |
 | 10 | **R-0468** | nightly reachability in this repository |
-| 11 | **R-0450** (agreement slice) | point the agreement technique at `exprToSmt` and Lean's own rendering |
+| 11 | **R-0450** (agreement slice) | **partly done 2026-08-03**: the linear fragment is now lowered by ONE function (`exprToProverU`), so `exprToLeanProp` is a delegation rather than a near-copy. Remaining: run the agreement scripts through a Lean driver and mint its witness. **The recorded justification for Lean being exempt was wrong** — see below. Also `exprToSmt` |
 | 12 | **R-0462** | fuzz the binary — the only item testing a claim against the artifact |
 | 13 | **R-0455** | term IR + Register B, absorbing the four drivers |
 | 14 | **R-0460** | Register A rows |
@@ -186,6 +186,16 @@ Read that precisely: R-0464 proves every trap condition in the semantics has an 
 family, **not** that the families' propositions are strong enough. Sufficiency is Register A
 (0 of 4 rows), and `VC_BRIDGE_REGISTER.md`'s per-family `Discharging theorem (TODO)` entries
 are the list of what is still owed.
+
+**Correction worth carrying (2026-08-03).** Four places recorded that Lean's rendering
+cannot be validated because "its rendering IS the reference the others are validated
+against, so there is nothing to validate it with". That is false. The lowering-agreement
+check validates a rendering against the reference **evaluator** (`safeOn`/`evalBoolEnv`,
+walking the AST) — Lean's rendering is not the yardstick, it is simply the one never
+measured. The actual obstacle was that Lean's lowering was not expressible as a driver, so
+the existing machinery could not be pointed at it; R-0450's slice removed that. The gap is a
+TODO, not an asymmetry that cannot be closed, and the difference matters for planning: it
+was being treated as unfixable-in-principle.
 
 H23 no longer needs such a caveat: an obligation resting on an unproved invariant now
 reports `assumed` on every surface and fails `[policy] forbid-assume` with `E0617`. What it

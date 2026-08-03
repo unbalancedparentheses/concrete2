@@ -94,9 +94,13 @@ grep -qE "w.kernel == k.name && w.obligation == ob" "$EV" \
 # check flagged its own explanatory comments — a gate whose failure mode is describing
 # the defect it guards against is noise, and noise is how gates get ignored.
 #
-# `lean` is the one permitted literal and the reason is in Report.lean: Lean's rendering
-# IS the reference the others are validated against, so nothing exists to validate it
-# with. That asymmetry is a real gap, filed under R-0450.
+# `lean` is the one permitted literal, and the reason once recorded for it was WRONG. The
+# claim was that Lean's rendering IS the reference the others are validated against, so
+# nothing exists to validate it with. The agreement check actually validates a rendering
+# against the reference EVALUATOR (safeOn/evalBoolEnv, walking the AST) — Lean's rendering is
+# not the yardstick, it is simply the one never measured. The real obstacle was that Lean's
+# lowering was not expressible as a driver, which R-0450's slice (2026-08-03) removed. Still
+# a real gap, still R-0450, but a TODO rather than an asymmetry that cannot be closed.
 if grep -rn "loweringAgreed := true" Main.lean Concrete/Report/Report.lean 2>/dev/null \
      | grep "kernel :=" | grep -v 'kernel := "lean"' | grep -q .; then
   no "a consumer still writes 'loweringAgreed := true' for an EXTERNAL kernel"
@@ -242,6 +246,34 @@ grep -q 'example : foundationSummary \["lean", "mystery"\] = (2, "CIC×?") := rf
 grep -q 'example : foundationSummary \["lean", "rocq"\] = (1, "CIC") := rfl' "$EV" \
   && ok "compile-time proof that lean+rocq span ONE foundation" \
   || no "the CIC×CIC case is unpinned — the badge could over-claim again"
+
+echo "=== R-0450 (partial): the linear fragment is lowered by ONE function ==="
+# `exprToLeanProp` used to be an independent recursion that happened to match
+# `exprToProver` case for case — differing only in negative-literal parentheses, a space,
+# and `¬` vs `~`. Two functions that must agree, which is R-0450's stated defect. Two of
+# those differences were cosmetic; the third is now a driver parameter.
+RO="Concrete/Report/ReportObligations.lean"
+grep -q "def exprToProverU" "$RO" \
+  && ok "one parameterised lowering (exprToProverU) exists" \
+  || no "exprToProverU missing — the fragment may be duplicated again"
+grep -qE "^  exprToProverU leanBinOp \"¬\" e$" "$RO" \
+  && ok "exprToLeanProp DELEGATES rather than re-implementing the recursion" \
+  || no "exprToLeanProp is not a delegation — the fragment is defined twice"
+# A RATCHET, not a claim of victory. R-0450 is only partly done: the module still contains
+# several `.binOp` recursions, and they are not all duplicates —
+#   exprToProverU   the one string lowering (Rocq / Isabelle / Lean)
+#   exprToSmt       SMT-LIB, a genuinely different target syntax
+#   arithToBVW      bit-vector widening for bv_decide
+#   exprIntervalMax interval analysis, not a lowering at all
+#   evalIntEnv      the reference EVALUATOR — must stay independent, since it is what
+#                   renderings are validated against; merging it would be circular
+#   evalBoolEnv     ditto, boolean
+# Six today. Removing exprToLeanProp took it from seven. The number may only go DOWN: a new
+# recursion is either a new duplicate or a change that should update this bound deliberately.
+N="$(grep -c "| .binOp _ op l r => do" "$RO" || true)"
+[ "$N" -le 6 ] \
+  && ok "$N expression recursions over .binOp (ratchet: <=6; was 7 before R-0450's slice)" \
+  || no "$N separate .binOp recursions — one was ADDED; R-0450 exists to reduce this"
 
 echo ""
 echo "EVIDENCE-ALGEBRA: PASS=$PASS  FAIL=$FAIL"

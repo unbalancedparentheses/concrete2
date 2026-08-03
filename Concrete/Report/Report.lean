@@ -2696,9 +2696,16 @@ def foldMultiKernelResults (vcs : List VC)
       -- written as a literal. It used to be `true` at five sites, which was accidentally
       -- correct because the caller had filtered — the same assert-instead-of-derive shape
       -- that let an errored agreement check pass as a passed one. Lean is the exception
-      -- and says why: its rendering IS the reference the others are validated against, so
-      -- there is nothing to validate it with. That asymmetry is a known gap, filed under
-      -- R-0450 (point the agreement technique at Lean's own rendering).
+      -- and says why — but the REASON on record was wrong, and R-0450's slice (2026-08-03)
+      -- corrected it. The claim was "Lean's rendering IS the reference the others are
+      -- validated against, so there is nothing to validate it with". The agreement check
+      -- actually validates a rendering against the reference EVALUATOR (`safeOn` /
+      -- `evalBoolEnv`, which walk the AST), not against Lean. The real obstacle was that
+      -- Lean's lowering was not expressible as a driver, so the machinery could not be
+      -- pointed at it. That obstacle is now gone (`exprToLeanProp` delegates to
+      -- `exprToProverU`); running the agreement scripts through a Lean driver and minting a
+      -- witness here is the remaining work, still filed under R-0450. The literal stays
+      -- until then — but it is a TODO, not a fundamental asymmetry.
       let rocqW := LoweringValidated.mint "rocq" v.id rocqValidated
       let isaW  := LoweringValidated.mint "isabelle" v.id isaValidated
       -- R-0465: ONE lookup per kernel, so an obligation has exactly one verdict from each.
