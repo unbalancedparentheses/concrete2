@@ -2515,26 +2515,44 @@ def foldReplayResults (vcs : List VC) (replayed : List String) : List VC :=
     `leanVer`/`rocqVer`/`isaVer` are the tool identities of the kernels that ran, so
     the stored claim records WHICH builds attested it. Without them the artifact says
     "two kernels agreed" but not which ones, and the claim cannot be reproduced later
-    or invalidated when a prover release turns out to be buggy. -/
+    or invalidated when a prover release turns out to be buggy.
+
+    **`rocqValidated`/`isaValidated` carry the validation.** They are the obligation
+    ids whose agreement lemma each kernel positively CLOSED, and a witness is minted per
+    obligation from them. This fold used to write `loweringAgreed := true` literally,
+    trusting the caller to have filtered — which is a claim about a check rather than a
+    product of one, and is how an agreement run that ended in `error` still produced a
+    badge. Defaulting these to `[]` would restore that hazard silently, so they default to
+    `[]` meaning NOTHING is validated: a caller that forgets them gets no attestations
+    rather than unchecked ones. Fail closed on the caller's mistake too. -/
 def foldMultiKernelResults (vcs : List VC) (rocqClosed isaClosed : List String)
     (leanVer : String := "lean") (rocqVer : String := "rocq") (isaVer : String := "isabelle")
     (rocqRefused isaRefused : List String := [])
+    (rocqValidated isaValidated : List String := [])
     : List VC :=
   vcs.map fun v =>
     if v.status == "proved_by_kernel_decision" || v.status == "proved_by_lean"
        || v.status == "proved_by_lean_replay" then
-      -- One RECEIPT per kernel consulted. `rocqClosed`/`isaClosed` arrive already
-      -- filtered to kernels whose lowering agreed (see Main.externalClosedSets), so a
-      -- receipt here is `attests` by construction; the field is explicit anyway so the
-      -- artifact records WHY it counted rather than leaving it to be re-derived.
+      -- One RECEIPT per kernel consulted. `loweringAgreed` is DERIVED from whether a
+      -- validation witness could be minted for this kernel and this obligation, never
+      -- written as a literal. It used to be `true` at five sites, which was accidentally
+      -- correct because the caller had filtered — the same assert-instead-of-derive shape
+      -- that let an errored agreement check pass as a passed one. Lean is the exception
+      -- and says why: its rendering IS the reference the others are validated against, so
+      -- there is nothing to validate it with. That asymmetry is a known gap, filed under
+      -- R-0450 (point the agreement technique at Lean's own rendering).
+      let rocqW := LoweringValidated.mint "rocq" v.id rocqValidated
+      let isaW  := LoweringValidated.mint "isabelle" v.id isaValidated
       let receipts : List KernelReceipt :=
         [{ kernel := "lean", version := leanVer, verdict := "closed", loweringAgreed := true
          , replay := "concrete <file> --report multi-kernel" }]
         ++ (if rocqClosed.contains v.id then
-              [{ kernel := "rocq", version := rocqVer, verdict := "closed", loweringAgreed := true
+              [{ kernel := "rocq", version := rocqVer, verdict := "closed"
+               , loweringAgreed := rocqW.isSome
                , replay := "concrete <file> --report multi-kernel --rocq" }] else [])
         ++ (if isaClosed.contains v.id then
-              [{ kernel := "isabelle", version := isaVer, verdict := "closed", loweringAgreed := true
+              [{ kernel := "isabelle", version := isaVer, verdict := "closed"
+               , loweringAgreed := isaW.isSome
                , replay := "concrete <file> --report multi-kernel --isabelle" }] else [])
       -- A kernel that RENDERED this obligation and said no is a dissenter, not an
       -- absence. It gets a receipt too, with `verdict := "refused"`, so the artifact
@@ -2542,10 +2560,12 @@ def foldMultiKernelResults (vcs : List VC) (rocqClosed isaClosed : List String)
       -- claim was indistinguishable from one where no external kernel ran.
       let dissentReceipts : List KernelReceipt :=
         (if rocqRefused.contains v.id then
-           [{ kernel := "rocq", version := rocqVer, verdict := "refused", loweringAgreed := true
+           [{ kernel := "rocq", version := rocqVer, verdict := "refused"
+            , loweringAgreed := rocqW.isSome
             , replay := "concrete <file> --report multi-kernel --rocq" }] else [])
         ++ (if isaRefused.contains v.id then
-              [{ kernel := "isabelle", version := isaVer, verdict := "refused", loweringAgreed := true
+              [{ kernel := "isabelle", version := isaVer, verdict := "refused"
+               , loweringAgreed := isaW.isSome
                , replay := "concrete <file> --report multi-kernel --isabelle" }] else [])
       let receipts := receipts ++ dissentReceipts
       let attesting := receipts.filter (·.attests)
@@ -2554,17 +2574,16 @@ def foldMultiKernelResults (vcs : List VC) (rocqClosed isaClosed : List String)
       -- Derived by the SAME function the multi-kernel report uses, so the ledger and
       -- the report cannot disagree about one obligation. `v.status` being a kernel
       -- proof class means Lean closed it, hence `leanClosed := true`.
-      let verdict := multiKernelVerdict true (
-        (if rocqClosed.contains v.id then
-           [{ name := "rocq", label := "rocq:lia", cell := .closed, loweringAgreed := true }]
-         else if rocqRefused.contains v.id then
-           [{ name := "rocq", label := "rocq:lia", cell := .refused, loweringAgreed := true }]
-         else [])
-        ++ (if isaClosed.contains v.id then
-              [{ name := "isabelle", label := "isabelle:presburger", cell := .closed, loweringAgreed := true }]
-            else if isaRefused.contains v.id then
-              [{ name := "isabelle", label := "isabelle:presburger", cell := .refused, loweringAgreed := true }]
-            else []))
+      -- Witnesses are MINTED per obligation from the validated sets, never asserted. If
+      -- the agreement lemma did not close for this kernel and this id, `mint` yields
+      -- `none` and multiKernelVerdict excludes the kernel entirely.
+      let mk := fun (name label : String) (cl rf : List String) (w : Option LoweringValidated) =>
+        if cl.contains v.id then [({ name, label, cell := .closed, validated := w } : KernelInput)]
+        else if rf.contains v.id then [({ name, label, cell := .refused, validated := w } : KernelInput)]
+        else []
+      let verdict := multiKernelVerdict v.id true (
+        mk "rocq" "rocq:lia" rocqClosed rocqRefused rocqW
+        ++ mk "isabelle" "isabelle:presburger" isaClosed isaRefused isaW)
       if !verdict.dissent.isEmpty then
         -- Dissent CAPS the stored claim exactly as it caps the report, and everything a
         -- kernel said stays in the artifact even when what it said blocks the badge:

@@ -298,16 +298,48 @@ inductive KernelCell where
   | absent   -- off / unavailable / not-asked / error: no verdict was given
   deriving Repr, DecidableEq, Inhabited
 
+/-- Proof that ONE kernel's rendering of ONE obligation was positively validated against
+    the reference evaluator.
+
+    **Why a witness and not a `Bool`.** This field used to be `loweringAgreed : Bool`, and
+    a bool is a claim *about* a check rather than a product *of* one — any caller can write
+    `true`. Two of the three consumers did exactly that, relying on an upstream filter, and
+    the third derived it from a set that failed open (an agreement run ending in `error`
+    produced no refusal, so nothing marked it false, so the badge was awarded on a
+    rendering nobody validated). Both defects were possible only because the type let a
+    caller assert the check instead of performing it.
+
+    The constructor is private, so the only way to obtain one is `mint`, which requires the
+    set of obligations whose agreement lemma actually closed. And the witness is BOUND to
+    the kernel and obligation it validates, so `multiKernelVerdict` can reject a witness
+    minted for a different kernel or a different obligation — reuse across obligations was
+    the other way `true` could be locally correct and globally wrong. -/
+structure LoweringValidated where
+  private mk ::
+  kernel     : String
+  obligation : ObligationRef
+  deriving Repr, DecidableEq, Inhabited
+
+/-- Mint a validation witness, or nothing. `agreementClosed` is the set of obligation ids
+    whose agreement lemma the kernel CLOSED — positively validated, never "was not
+    refused". Absence yields `none`, which is what makes the whole path fail closed. -/
+def LoweringValidated.mint (kernel : String) (ob : ObligationRef)
+    (agreementClosed : List ObligationRef) : Option LoweringValidated :=
+  if agreementClosed.contains ob then some { kernel := kernel, obligation := ob } else none
+
 /-- One kernel's contribution to an obligation.
 
     `name` is the identity recorded in the badge (`rocq`); `label` is the display form
     used in diagnostics (`rocq:lia`). Both are needed: the badge string is consumed by
-    gates and must stay stable, while a disagreement message should name the tactic. -/
+    gates and must stay stable, while a disagreement message should name the tactic.
+
+    `validated` is `none` unless the agreement check positively closed for THIS kernel and
+    THIS obligation. A kernel without a witness neither attests nor dissents. -/
 structure KernelInput where
-  name           : String
-  label          : String
-  cell           : KernelCell
-  loweringAgreed : Bool
+  name      : String
+  label     : String
+  cell      : KernelCell
+  validated : Option LoweringValidated
   deriving Repr, Inhabited
 
 /-- Everything both the report and the ledger fold need about one obligation, derived
@@ -334,10 +366,17 @@ structure MultiKernelVerdict where
 def MultiKernelVerdict.displayStatus (v : MultiKernelVerdict) : String :=
   if v.evidence.assumes.isEmpty then v.display else v.evidence.present
 
-/-- Derive the multi-kernel verdict for one obligation.
+/-- Derive the multi-kernel verdict for ONE obligation, named by `ob`.
 
-    `loweringAgreed = false` excludes a kernel entirely: it closed or refused a DIFFERENT
-    proposition, so its verdict is not evidence about this one.
+    A kernel is usable only if it carries a `LoweringValidated` witness minted for THIS
+    kernel and THIS obligation. Anything else — no witness, or a witness bound to another
+    kernel or another obligation — excludes it entirely: it closed or refused a DIFFERENT
+    proposition, or we never established which proposition it closed, and in both cases its
+    verdict is not evidence about this one. It neither attests nor dissents.
+
+    `ob` exists precisely so the binding can be checked. Without it a witness minted for
+    one obligation could be reused across all of them, which is how a locally-correct
+    `true` became globally wrong in the version this replaced.
 
     A verdict disagreement — kernels rendering the same proposition returning opposite
     verdicts — is neither a badge nor `unproven`. Every kernel here is complete for
@@ -348,9 +387,11 @@ def MultiKernelVerdict.displayStatus (v : MultiKernelVerdict) : String :=
     obligation was discharged under. R-0461 supplies them via `underHypotheses`, and by
     C2′ the resulting claim is proved only if those are discharged too. Kernel count
     never overrides that — which is the H23 lesson expressed in the type. -/
-def multiKernelVerdict (leanClosed : Bool) (externals : List KernelInput)
+def multiKernelVerdict (ob : ObligationRef) (leanClosed : Bool) (externals : List KernelInput)
     : MultiKernelVerdict :=
-  let usable := externals.filter (·.loweringAgreed)
+  let usable := externals.filter (fun k => match k.validated with
+    | some w => w.kernel == k.name && w.obligation == ob
+    | none   => false)
   let dissent := usable.filterMap (fun k =>
     if k.cell == .closed && !leanClosed then some s!"{k.label} closed while lean refused"
     else if k.cell == .refused && leanClosed then some s!"{k.label} refused while lean closed"
@@ -374,47 +415,76 @@ def multiKernelVerdict (leanClosed : Bool) (externals : List KernelInput)
 /-! ### Behavioural locks — the verdict's truth table, kernel-checked
 
 `check_evidence_algebra.sh` asserts that theorems and construction sites EXIST. An
-external review showed that is not enough: deleting `.filter (·.loweringAgreed)` from
+external review showed that is not enough: deleting the validation filter from
 `multiKernelVerdict` — which lets a kernel whose rendering denotes a DIFFERENT proposition
 attest to this one — left that gate green at 24/24, because the gate checks names and call
 counts and never behaviour.
 
-These `example`s close that. Each pins one row of the truth table by `rfl`, so the
+These `example`s close that. Each pins one row of the truth table by `rfl`, so such a
 mutation is a BUILD failure rather than something a gate might notice. Same discipline as
 the discharge-adapter firewall in Report.lean: a green build is the guarantee, and the
 shell gate's job is only to prove these locks were not deleted.
 
-Written as the four cases that were actually confusable, not as coverage for its own sake:
-a disagreeing lowering must not attest; absence is not dissent; a refusal against a Lean
-closure IS dissent; and two kernels refusing together is agreement, not dissent. -/
+Written as the cases that were actually confusable, not as coverage for its own sake, and
+now including the two the WITNESS makes expressible: a witness bound to a different kernel,
+and one bound to a different obligation. Neither was representable when this was a `Bool`,
+which is the point of the change. -/
 
-private def probe (c : KernelCell) (agreed : Bool) : KernelInput :=
-  { name := "rocq", label := "rocq:lia", cell := c, loweringAgreed := agreed }
+private def OB : ObligationRef := "f#ovf0"
+private def OTHER : ObligationRef := "g#ovf0"
 
-/-- A kernel that CLOSED its goal but whose lowering did not agree must not attest: it
-    proved a different proposition. Deleting the `loweringAgreed` filter breaks this. -/
-example : (multiKernelVerdict true [probe .closed false]).attest = ["lean"] := rfl
+/-- A kernel with a validated rendering for THIS obligation. -/
+private def ok (c : KernelCell) : KernelInput :=
+  { name := "rocq", label := "rocq:lia", cell := c
+  , validated := LoweringValidated.mint "rocq" OB [OB] }
 
-/-- The same kernel must not dissent either — an unvalidated rendering is not evidence
-    about this obligation in either direction. -/
-example : (multiKernelVerdict true [probe .closed false]).dissent = [] := rfl
+/-- A kernel whose agreement check did not close — `mint` returns `none`. -/
+private def unvalidated (c : KernelCell) : KernelInput :=
+  { name := "rocq", label := "rocq:lia", cell := c
+  , validated := LoweringValidated.mint "rocq" OB [] }
+
+/-- A witness minted for a DIFFERENT obligation, reused here. -/
+private def wrongObligation (c : KernelCell) : KernelInput :=
+  { name := "rocq", label := "rocq:lia", cell := c
+  , validated := LoweringValidated.mint "rocq" OTHER [OTHER] }
+
+/-- A witness minted for a DIFFERENT kernel, reused here. -/
+private def wrongKernel (c : KernelCell) : KernelInput :=
+  { name := "rocq", label := "rocq:lia", cell := c
+  , validated := LoweringValidated.mint "isabelle" OB [OB] }
+
+/-- A validated closure alongside Lean earns exactly two kernels. -/
+example : (multiKernelVerdict OB true [ok .closed]).evidence.cls
+            = "proved_by_two_kernels" := rfl
+
+/-- UNVALIDATED: the agreement check did not close, so the kernel must not attest even
+    though it closed its own goal. This is the fail-open defect, now unrepresentable —
+    `mint` returned `none` and there is no other way to obtain a witness. -/
+example : (multiKernelVerdict OB true [unvalidated .closed]).attest = ["lean"] := rfl
+
+/-- UNVALIDATED must not dissent either: an unestablished rendering is not evidence about
+    this obligation in either direction. -/
+example : (multiKernelVerdict OB true [unvalidated .refused]).dissent = [] := rfl
+
+/-- A witness for another OBLIGATION does not transfer. Reuse across obligations was the
+    second way a locally-correct `true` was globally wrong. -/
+example : (multiKernelVerdict OB true [wrongObligation .closed]).attest = ["lean"] := rfl
+
+/-- A witness for another KERNEL does not transfer either. -/
+example : (multiKernelVerdict OB true [wrongKernel .closed]).attest = ["lean"] := rfl
 
 /-- Absence is NOT dissent. `off` / `unavailable` / `not-asked` / `error` are non-answers,
     and reading a non-answer as disagreement is the conflation this report exists to
     prevent. -/
-example : (multiKernelVerdict true [probe .absent true]).dissent = [] := rfl
+example : (multiKernelVerdict OB true [ok .absent]).dissent = [] := rfl
 
 /-- A refusal against a Lean closure IS dissent, and caps the class. -/
-example : (multiKernelVerdict true [probe .refused true]).evidence.cls
+example : (multiKernelVerdict OB true [ok .refused]).evidence.cls
             = "kernel_disagreement" := rfl
 
 /-- Both kernels refusing is AGREEMENT on refusal, not dissent — without this the check
     would fire on every unproved obligation. -/
-example : (multiKernelVerdict false [probe .refused true]).dissent = [] := rfl
-
-/-- A validated closure alongside Lean earns exactly two kernels. -/
-example : (multiKernelVerdict true [probe .closed true]).evidence.cls
-            = "proved_by_two_kernels" := rfl
+example : (multiKernelVerdict OB false [ok .refused]).dissent = [] := rfl
 
 end Report
 end Concrete

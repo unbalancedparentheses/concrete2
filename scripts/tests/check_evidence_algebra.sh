@@ -47,22 +47,65 @@ for bad in sorry admit native_decide; do
 done
 
 echo "=== behaviour is locked at COMPILE time, not by this gate ==="
-# An external review defeated the earlier version of this gate: deleting
-# `.filter (·.loweringAgreed)` from multiKernelVerdict — which lets a kernel whose
-# rendering denotes a DIFFERENT proposition attest to this one — left it green at 24/24,
-# because everything here checks names, counts and construction sites, never behaviour.
+# An external review defeated the earlier version of this gate: deleting the validation
+# filter from multiKernelVerdict — which lets a kernel whose rendering denotes a DIFFERENT
+# proposition attest to this one — left it green at 24/24, because everything here checks
+# names, counts and construction sites, never behaviour.
 #
-# The fix is not more grepping. Six `example`s in Evidence.lean pin the verdict truth
-# table by `rfl`, so that mutation is now a BUILD failure. This gate's job is only to
-# prove the locks were not deleted; the build is what proves they hold. Verified by
-# re-applying the review's mutation: `lean Concrete/Report/Evidence.lean` exits 1.
-for lock in "probe .closed false" "probe .absent true" "probe .refused true"; do
+# The fix is not more grepping. `example`s in Evidence.lean pin the verdict truth table by
+# `rfl`, so such a mutation is a BUILD failure. This gate's job is only to prove the locks
+# were not deleted; the build is what proves they hold.
+for lock in "unvalidated .closed" "wrongObligation .closed" "wrongKernel .closed" "ok .absent" "ok .refused"; do
   grep -q "$lock" "$EV" && ok "behavioural lock present: $lock" \
                         || no "behavioural lock MISSING: $lock — a truth-table row is unpinned"
 done
-grep -c "^example : (multiKernelVerdict" "$EV" | grep -qE "^[6-9]|^[1-9][0-9]" \
-  && ok "verdict truth table pinned by >=6 compile-time examples" \
-  || no "fewer than 6 verdict examples — rows were removed"
+LOCKS="$(grep -c "^example : (multiKernelVerdict" "$EV")"
+[ "$LOCKS" -ge 8 ] && ok "verdict truth table pinned by $LOCKS compile-time examples" \
+                   || no "only $LOCKS verdict examples (expected >=8) — rows were removed"
+
+echo "=== validation is a WITNESS, not a boolean claim ==="
+# The deepest fix from that review. `loweringAgreed : Bool` was a claim ABOUT a check
+# rather than a product OF one: any caller could write `true`, and two of the three
+# consumers did exactly that, relying on an upstream filter. The third derived it from a
+# set that failed open. Both were possible only because the type let a caller assert the
+# check instead of performing it.
+#
+# `LoweringValidated` has a private constructor and is minted only from the set of
+# obligations whose agreement lemma CLOSED, and it is bound to the kernel and obligation it
+# validates so it cannot be reused across either.
+grep -q "structure LoweringValidated where" "$EV" \
+  && ok "LoweringValidated exists" || no "LoweringValidated missing — validation is a bare Bool again"
+awk '/structure LoweringValidated where/,/deriving/' "$EV" | grep -q "private mk ::" \
+  && ok "LoweringValidated constructor is private (cannot be fabricated)" \
+  || no "LoweringValidated constructor is PUBLIC — a caller can fabricate a witness"
+grep -q "def LoweringValidated.mint" "$EV" \
+  && ok "the only route to a witness is mint (requires the agreement-closed set)" \
+  || no "no mint function — how is a witness obtained?"
+grep -q "validated : Option LoweringValidated" "$EV" \
+  && ok "KernelInput carries a witness, not a Bool" \
+  || no "KernelInput does not carry Option LoweringValidated"
+grep -qE "w.kernel == k.name && w.obligation == ob" "$EV" \
+  && ok "the witness is checked against THIS kernel and THIS obligation (no reuse)" \
+  || no "witness binding not checked — a witness could be reused across kernels/obligations"
+# And no consumer may assert validation as a literal, which is what this replaced.
+#
+# Match CODE, not prose: require `kernel :=` on the same line so a receipt literal is
+# matched and the comments explaining this history are not. The first version of this
+# check flagged its own explanatory comments — a gate whose failure mode is describing
+# the defect it guards against is noise, and noise is how gates get ignored.
+#
+# `lean` is the one permitted literal and the reason is in Report.lean: Lean's rendering
+# IS the reference the others are validated against, so nothing exists to validate it
+# with. That asymmetry is a real gap, filed under R-0450.
+if grep -rn "loweringAgreed := true" Main.lean Concrete/Report/Report.lean 2>/dev/null \
+     | grep "kernel :=" | grep -v 'kernel := "lean"' | grep -q .; then
+  no "a consumer still writes 'loweringAgreed := true' for an EXTERNAL kernel"
+else
+  ok "external validation is never asserted as a literal (lean excepted, see R-0450)"
+fi
+grep -q "loweringAgreed := rocqW.isSome" Concrete/Report/Report.lean \
+  && ok "receipts DERIVE loweringAgreed from the minted witness" \
+  || no "receipts no longer derive loweringAgreed from a witness"
 
 echo "=== C4 is enforced by the TYPE, not only by the theorem ==="
 # C4 says discharge is the only operation that shrinks an assumption set. That constrains
