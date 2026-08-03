@@ -151,9 +151,9 @@ system.
 | 5 | **R-0470** | bug 063 — capability inference manufactures an empty capability set |
 | 6 | **R-0469** | bug 065 — stack unboundedness propagation |
 | — | ~~**R-0465**~~ | **DONE 2026-08-03.** Promoted ahead of R-0464 because R-0461 measured the cost of not having it. All five parts, incl. the release gate now reading badges off the one ledger — which also made `require-two-kernels` reject the H23 fixture |
-| 7 | **R-0458** | strength/independence split; R-0461 was its first real consumer and shipped without it |
+| — | ~~**R-0458**~~ | **DONE 2026-08-03.** The badge states both coordinates: `proved_by_two_kernels (lean, rocq) [1 foundation: CIC]`. `independenceOf` derives from the same function, so the CIC/HOL knowledge exists once |
 | 8 | **R-0454** | neutral digest — closing window, alpha-normalized |
-| 9 | **R-0467** | multi-kernel on the merge commit |
+| — | ~~**R-0467**~~ | **DONE 2026-08-03.** Multi-kernel runs on merges to main; mutation coverage moved to the scheduled path |
 | 10 | **R-0468** | nightly reachability in this repository |
 | 11 | **R-0450** (agreement slice) | point the agreement technique at `exprToSmt` and Lean's own rendering |
 | 12 | **R-0462** | fuzz the binary — the only item testing a claim against the artifact |

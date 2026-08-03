@@ -177,9 +177,22 @@ for o in guard statement invariant assumed; do
   grep -q "| \.$o" "$EV" && ok "HypOrigin.debt handles .$o explicitly" \
                          || no "HypOrigin.debt missing case: .$o"
 done
-grep -qE "^\s*\|\s*_\s*=>" "$EV" \
-  && no "evidence algebra contains a catch-all pattern (fail-open default)" \
-  || ok "no catch-all pattern — a new origin is a missing-case ERROR, not silent"
+# A catch-all over one of the algebra's own INDUCTIVES is the fail-open shape this forbids:
+# add a constructor, and it silently inherits someone else's answer instead of failing to
+# compile. A catch-all over a `String` is a different thing — String cannot be exhausted, so
+# the question is only whether the default is fail-closed.
+#
+# Rather than weaken the rule to accommodate the second case, a catch-all may opt out with
+# `CATCH-ALL-OK: <reason>` on the same line. `foundationOf` uses it: its input is a kernel
+# NAME, and its default (`other`) counts an unrecognised kernel as its own foundation, which
+# withholds independence credit rather than granting it. An unjustified catch-all still fails.
+BAD_CATCHALL="$(grep -nE "^\s*\|\s*_\s*=>" "$EV" | grep -v "CATCH-ALL-OK" || true)"
+if [ -n "$BAD_CATCHALL" ]; then
+  no "evidence algebra has an UNJUSTIFIED catch-all (fail-open default):"
+  printf '%s\n' "$BAD_CATCHALL" | head -3 | sed 's/^/         /'
+else
+  ok "no unjustified catch-all — a new constructor is a missing-case ERROR, not silent"
+fi
 
 echo "=== R-0461: the cap is wired, and enforced as well as displayed ==="
 # Register C only stops being decorative if something populates `assumes` from real
@@ -201,6 +214,34 @@ grep -q "def enforceNoCappedHypotheses" Concrete/Check/Policy.lean \
 grep -q "cappedObligations := cap" Main.lean \
   && ok "the policy gate is fed from the same discharged ledger as the reports" \
   || no "capped obligations are not threaded to the policy — the gate sees an empty list"
+
+echo "=== R-0458: the badge states its INDEPENDENCE, not just its count ==="
+# The badge's value rests on the word "independent". Lean and Rocq are both CIC-family, so
+# `proved_by_two_kernels (lean, rocq)` read as two chances to catch a foundational error when
+# it was one. The count is STRENGTH; the foundation span is INDEPENDENCE; R-0440 forbids
+# collapsing one into the other, so both are displayed.
+grep -q "inductive Foundation" "$EV" \
+  && ok "Foundation is a named axis, not an ad-hoc string test" \
+  || no "no Foundation type — kernel independence is implicit again"
+grep -q "def foundationOf" "$EV" && grep -q "def foundationSummary" "$EV" \
+  && ok "one definition of which kernel rests on which foundation" \
+  || no "foundationOf/foundationSummary missing"
+# The duplicate this replaced: independenceOf had its own contains-chain in another module.
+if grep -q 'attest.contains "isabelle"' Concrete/Report/Report.lean; then
+  no "independenceOf still hard-codes kernel foundations — two copies can disagree"
+else
+  ok "independenceOf derives from foundationSummary (no second copy)"
+fi
+grep -q "foundationSummary attest" Concrete/Report/Report.lean \
+  && ok "the ledger's independence facts and the badge share one derivation" \
+  || no "independenceOf does not call foundationSummary"
+# `other` must count as its OWN foundation: fail-open here flatters the badge.
+grep -q 'example : foundationSummary \["lean", "mystery"\] = (2, "CIC×?") := rfl' "$EV" \
+  && ok "an unclassified kernel counts as a separate foundation (no flattering default)" \
+  || no "missing the unclassified-kernel lock — independence could be over-claimed"
+grep -q 'example : foundationSummary \["lean", "rocq"\] = (1, "CIC") := rfl' "$EV" \
+  && ok "compile-time proof that lean+rocq span ONE foundation" \
+  || no "the CIC×CIC case is unpinned — the badge could over-claim again"
 
 echo ""
 echo "EVIDENCE-ALGEBRA: PASS=$PASS  FAIL=$FAIL"

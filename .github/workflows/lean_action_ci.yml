@@ -954,7 +954,20 @@ jobs:
   # definition of "which kernels attested this".
   multi-kernel:
     name: Multi-kernel evidence (Rocq + Isabelle)
+    # R-0467: runs on MERGES TO MAIN, not only on dispatch/schedule/label.
+    #
+    # Everything the multi-kernel arc built — the badge classes, the discharge-adapter
+    # firewall, lowering agreement, certificate replay, the release-gate composition,
+    # kernel_disagreement — was verified only when someone remembered to ask for it. A
+    # label-gated job does not protect main; it protects the PRs whose authors already
+    # suspected they needed it. The 78 prover assertions were green all session and would
+    # have stayed green through a merge that broke them.
+    #
+    # `push` here means post-merge on main (see the `on:` block). PRs still need the label,
+    # which keeps a 90-minute Rocq+Isabelle job off every unrelated pull request while
+    # guaranteeing main is never left unverified.
     if: >-
+      github.event_name == 'push' ||
       github.event_name == 'workflow_dispatch' ||
       github.event_name == 'schedule' ||
       contains(github.event.pull_request.labels.*.name, 'multi-kernel')
@@ -992,6 +1005,17 @@ jobs:
       # bridge diversity (Core->Rocq extraction vs the interpreter), certificate
       # replay, and the flagship (elf_header) carrying every surface at once.
       - name: Multi-kernel evidence gate
+        run: nix develop .#provers --command bash ./scripts/tests/check_multi_kernel.sh
+
+      # The composition assertions — a lowering that DISAGREES must not earn the badge and
+      # must not pass the release gate — are the strongest thing this suite checks, and they
+      # were the least often run: MULTI_KERNEL_MUTATE=1 is opt-in because it mutates tracked
+      # source and needs two extra rebuilds. Opt-in plus label-gated meant approximately
+      # never. Scheduled runs can afford it, so that is where it lives.
+      - name: Multi-kernel mutation coverage (scheduled only — mutates source, 2 rebuilds)
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        env:
+          MULTI_KERNEL_MUTATE: "1"
         run: nix develop .#provers --command bash ./scripts/tests/check_multi_kernel.sh
 
       # Corroborates the Tier-1 native-trust step recorded in docs/AXIOMS.md:

@@ -369,6 +369,51 @@ structure MultiKernelVerdict where
 def MultiKernelVerdict.displayStatus (v : MultiKernelVerdict) : String :=
   if v.evidence.assumes.isEmpty then v.display else v.evidence.present
 
+/-- **R-0458: the proof-theoretic foundation a kernel rests on.**
+
+    The multi-kernel badge counts ATTESTERS, and a count is a statement about strength. The
+    word carrying the badge's actual value is *independent*, and that is a statement about
+    foundations — two CIC kernels checking the same proposition share a metatheory, so they
+    are not two chances to catch a foundational error. `proved_by_two_kernels (lean, rocq)`
+    read as more independence than it had.
+
+    One definition, consumed by both the display here and `independenceOf` in `Report.lean`,
+    which previously carried its own `contains "isabelle"` / `contains "rocq"` chain. Two
+    copies of which kernel is which foundation is the shape this codebase keeps finding. -/
+inductive Foundation where
+  | cic    -- Lean 4 and Rocq: Calculus of Inductive Constructions family
+  | hol    -- Isabelle/HOL: higher-order logic, a genuinely different metatheory
+  | other
+  deriving DecidableEq, Repr, Inhabited
+
+/-- Total: an unrecognised kernel is `other`, which counts as its OWN foundation rather than
+    silently joining one. Fail-open here would mean over-claiming independence for a kernel
+    nobody classified, which is the direction that flatters the badge. -/
+def foundationOf : String → Foundation
+  | "lean" => .cic
+  | "rocq" => .cic
+  | "isabelle" => .hol
+  | _ => .other   -- CATCH-ALL-OK: the input is a kernel NAME (String, not exhaustible), and
+                  -- `other` is fail-CLOSED — an unrecognised kernel counts as its own
+                  -- foundation, withholding independence credit rather than granting it.
+
+/-- How many DISTINCT foundations a set of attesters spans, with a readable name. This is
+    the independence coordinate; `attest.length` is the strength coordinate. R-0440 forbids a
+    composite label that erases a dimension, so both are shown rather than multiplied into
+    one number. -/
+def foundationSummary (attest : List String) : Nat × String :=
+  let fs := (attest.map foundationOf).eraseDups
+  let name := fun (f : Foundation) => match f with
+    | .cic => "CIC" | .hol => "HOL" | .other => "?"
+  (fs.length, "×".intercalate (fs.map name))
+
+/-- The display suffix. Appended AFTER the existing `(kernels…)` parenthetical rather than
+    folded into it, so the substring surfaces and gates already match on is unchanged — the
+    honesty is added without silently invalidating every assertion that reads the badge. -/
+def foundationTag (attest : List String) : String :=
+  let (n, names) := foundationSummary attest
+  s!" [{n} foundation{if n == 1 then "" else "s"}: {names}]"
+
 /-- **R-0465: the one place a kernel's word becomes a firewall input.**
 
     Three consumers feed `multiKernelVerdict` — the multi-kernel report, the ledger fold,
@@ -431,13 +476,36 @@ def multiKernelVerdict (ob : ObligationRef) (leanClosed : Bool) (externals : Lis
     if !dissent.isEmpty then
       ("kernel_disagreement", s!"kernel_disagreement ({"; ".intercalate dissent})")
     else if attest.length ≥ 3 then
-      ("proved_by_multi_kernel", s!"proved_by_multi_kernel ({attest.length}: {", ".intercalate attest})")
+      ("proved_by_multi_kernel",
+       s!"proved_by_multi_kernel ({attest.length}: {", ".intercalate attest}){foundationTag attest}")
     else if attest.length == 2 then
-      ("proved_by_two_kernels", s!"proved_by_two_kernels ({", ".intercalate attest})")
+      ("proved_by_two_kernels",
+       s!"proved_by_two_kernels ({", ".intercalate attest}){foundationTag attest}")
     else if attest.length == 1 then
       (s!"proved_by_{attest.head!}", s!"proved_by_{attest.head!}")
     else ("unproven", "unproven")
   { evidence := { cls, assumes := [], attestations := attest }, display, dissent, attest }
+
+/-! #### R-0458: the independence coordinate, kernel-checked
+
+The badge's value rests on the word *independent*. These pin what it may claim. -/
+
+-- Lean and Rocq are BOTH CIC. Two kernels, ONE foundation — the case the flat count
+-- overstated, and the reason this coordinate exists.
+example : foundationSummary ["lean", "rocq"] = (1, "CIC") := rfl
+example : foundationTag ["lean", "rocq"] = " [1 foundation: CIC]" := rfl
+-- Isabelle is what actually buys foundational independence.
+example : foundationSummary ["lean", "isabelle"] = (2, "CIC×HOL") := rfl
+example : foundationSummary ["lean", "rocq", "isabelle"] = (2, "CIC×HOL") := rfl
+-- Three kernels still span only two foundations: strength 3, independence 2. Both are
+-- reported because R-0440 forbids collapsing a dimension into a friendlier number.
+example : (["lean", "rocq", "isabelle"].length, (foundationSummary ["lean","rocq","isabelle"]).1)
+    = (3, 2) := rfl
+-- An unclassified kernel counts as its OWN foundation. Fail-open here would flatter the
+-- badge by crediting independence nobody established.
+example : foundationSummary ["lean", "mystery"] = (2, "CIC×?") := rfl
+-- A single kernel spans one foundation, and the tag says so rather than staying silent.
+example : foundationSummary ["lean"] = (1, "CIC") := rfl
 
 /-! ### Behavioural locks — the verdict's truth table, kernel-checked
 

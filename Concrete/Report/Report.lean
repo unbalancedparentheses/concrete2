@@ -2016,16 +2016,21 @@ structure IndependenceFacts where
   bridge               : String  -- "no (single shared Core→obligation bridge)"
   deriving Inhabited, BEq
 
-/-- Derive the independence axes from the set of attesting kernels. Isabelle is HOL
-    rather than a CIC-family type theory, so its presence is what turns foundational
-    independence from `partial` into `yes`. -/
+/-- Derive the independence axes from the set of attesting kernels.
+
+    R-0458: `kernelFoundations` now comes from `Evidence.foundationSummary` rather than from
+    a local `contains "isabelle"` / `contains "rocq"` chain. The old chain was a SECOND copy
+    of which kernel belongs to which foundation, sitting in a different module from the badge
+    that reports it — so adding a fourth kernel meant remembering to edit both, and the two
+    could disagree about the same attester set. One definition, two consumers. -/
 def independenceOf (attest : List String) : IndependenceFacts :=
+  let (n, names) := foundationSummary attest
   { specFormalization := "no (one spec, one formalization)"
     kernelImplementation :=
       if attest.any (fun k => k != "lean") then "yes" else "no (lean only)"
     kernelFoundations :=
-      if attest.contains "isabelle" then "yes (CIC×HOL)"
-      else if attest.contains "rocq" then "partial (CIC×CIC)"
+      if n ≥ 2 then s!"yes ({names})"
+      else if attest.length ≥ 2 then s!"partial ({names}×{names} — {attest.length} kernels, one foundation)"
       else "no (single foundation)"
     bridge := "no (single shared Core→obligation bridge; see --report core-semantics-diff)" }
 
