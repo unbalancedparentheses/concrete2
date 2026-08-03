@@ -726,6 +726,44 @@ MUT_NEW+=("  moduleEnums.any (fun ed => ed.name == resultEnumName) -- MUTATION: 
 MUT_DESC+=("BuiltinEnums: shadowing rule ignores imported enums (bug 065)")
 gate_for_last "scripts/tests/check_builtin_enum_owner.sh"
 
+# 50. Import alias becomes the type's DEFINITION identity (R-0004 V2 input)
+# Bug 064 requires `.name` to become the importer-visible alias, but TypeId must
+# continue to name the defining declaration. This mutation makes `Coord` a new
+# type identity instead of another spelling of `lib.Point`.
+MUT_FILE+=("Concrete/Resolve/FileSummary.lean")
+MUT_OLD+=("            .ok { acc with structs := acc.structs ++ [{ sd with name := localName }],")
+MUT_NEW+=("            .ok { acc with structs := acc.structs ++ [{ sd with name := localName, definitionName := localName }], -- MUTATION: alias becomes identity")
+MUT_DESC+=("TypeId: import alias replaces definition-site name")
+gate_for_last "scripts/tests/check_type_identity.sh"
+
+# 51. Nested type identity drops its parent module (R-0004 V2 input)
+# `a.sub.Point` and `b.sub.Point` must not become the same `sub.Point`.
+MUT_FILE+=("Concrete/Resolve/FileSummary.lean")
+MUT_OLD+=("      let childPath := if thisDefinitionPath.isEmpty then sub.name
+                       else thisDefinitionPath ++ \".\" ++ sub.name")
+MUT_NEW+=("      let childPath := sub.name -- MUTATION: enclosing definition path dropped")
+MUT_DESC+=("TypeId: nested identity drops enclosing module")
+gate_for_last "scripts/tests/check_type_identity.sh"
+
+# 52. Elab resolves a field but silently drops it from the V2 input.
+MUT_FILE+=("Concrete/Elab/Elab.lean")
+MUT_OLD+=("      | some f =>
+        recordFieldUse sd field")
+MUT_NEW+=("      | some f =>
+        pure () -- MUTATION: resolved field omitted from evidence input")
+MUT_DESC+=("Elab V2 input: resolved field use omitted")
+gate_for_last "scripts/tests/check_type_identity.sh"
+
+# 53. A normally resolved declaration with missing provenance reads as covered.
+MUT_FILE+=("Concrete/Elab/Elab.lean")
+MUT_OLD+=("private def markBodyIdentityUncovered : ElabM Unit := do
+  let env ← getEnv
+  setEnv { env with bodyIdentityCovered := false }")
+MUT_NEW+=("private def markBodyIdentityUncovered : ElabM Unit :=
+  pure () -- MUTATION: missing identity silently treated as covered")
+MUT_DESC+=("Elab V2 input: missing identity fails open")
+gate_for_last "scripts/tests/check_type_identity.sh"
+
 NUM_MUTATIONS=${#MUT_FILE[@]}
 
 # ============================================================

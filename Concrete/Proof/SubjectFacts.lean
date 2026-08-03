@@ -1,5 +1,6 @@
 import Concrete.Frontend.AST
 import Concrete.Resolve.CallableId
+import Concrete.Resolve.TypeId
 
 /-! # Checked declaration facts (R-0004 slice 5, step 1)
 
@@ -300,6 +301,27 @@ def ContractFacts.ofResolved
     { requires := rs.filterMap id, ensures := es.filterMap id,
       loops := loopEnc.filterMap id, covered := true }
 
+/-- A typed, definition-resolved type reference observed while elaborating a
+    function body. This is an INPUT to the eventual exhaustive body V2, not that
+    body representation itself. Occurrences and traversal order are preserved. -/
+inductive BodyIdentityUse where
+  | typeRef (id : TypeId)
+  | field   (id : FieldId)
+  | variant (id : VariantId)
+deriving Repr, BEq
+
+/-- The part of ProofBodyCanonicalV2's input surface wired so far.
+
+    `covered = false` means ordinary elaboration resolved the construct but no
+    semantic evidence identity was available. Such a body must fail closed when
+    V2 canonicalization begins; silently omitting the use would under-approximate
+    the subject. This field is intentionally EXCLUDED from today's digest until
+    the exhaustive body representation lands. -/
+structure ProofBodyIdentityInputsV2 where
+  uses    : List BodyIdentityUse := []
+  covered : Bool := true
+deriving Repr, BEq, Inhabited
+
 /-- Everything a proof subject is defined from, for ONE declaration, captured
     before contract erasure.
 
@@ -322,6 +344,9 @@ structure CheckedDeclFacts where
   capParams   : List String := []
   capSet      : List String := []
   contracts   : ContractFacts := {}
+  /-- Typed body-identity inputs captured during elaboration. Not yet part of
+      `canonical`; V1 remains frozen while ProofBodyCanonicalV2 is incomplete. -/
+  bodyIdentityInputs : ProofBodyIdentityInputsV2 := {}
   /-- Declaration-level flags that change what a proof may assume. `isTrusted` in
       particular is a trust boundary and must not be invisible to a subject. -/
   isTrusted   : Bool := false

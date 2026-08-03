@@ -1764,6 +1764,17 @@ the real summary/import pipeline for local, aliased, transitive, nested and
 builtin cases. This supplies the V2 input; it does not yet create the parallel
 evidence body or close freshness.
 
+**ELAB USE-SITE WIRING LANDED.** Field accesses, struct literals/updates,
+field assignments, enum construction and resolved enum-pattern arms now append
+typed `TypeId` / `FieldId` / `VariantId` values to a parallel per-function V2
+input record while the elaborator still holds the resolved declaration. If
+ordinary language resolution succeeds but the declaration has no evidence
+identity, that record becomes `covered = false`; the use is never omitted.
+Branch-scope restoration preserves the append-only record. These inputs are
+deliberately not part of `CheckedDeclFacts.canonical` yet: they are one typed
+surface of the eventual exhaustive `ProofBodyCanonicalV2`, not a partial body
+digest that may mint freshness. Binder positions remain unmeasured and absent.
+
 **That last point is measured, not assumed.** `m.name` is in scope at the LOCAL
 population site (`FileSummary.lean`, where the summary is built with
 `name := m.name` two lines above `structs := m.structs`), exactly as

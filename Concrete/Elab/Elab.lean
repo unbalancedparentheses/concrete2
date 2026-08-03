@@ -5,6 +5,7 @@ import Concrete.Report.Diagnostic
 import Concrete.Resolve.FileSummary
 import Concrete.Resolve.Intrinsic
 import Concrete.Resolve.BuiltinEnums
+import Concrete.Resolve.TypeId
 import Concrete.Resolve.Resolve
 import Concrete.Resolve.Shared
 import Concrete.Semantics.TypeJudgment
@@ -51,6 +52,11 @@ structure ElabEnv where
   -- both this list and `vars` are snapshot-restored around each arm.
   renames : List (String × String) := []
   freshBinder : Nat := 0
+  /-- Parallel V2 input gathered at resolved use sites. Kept out of Core runtime
+      artifacts; `covered = false` records a normal language resolution whose
+      evidence identity could not be produced. -/
+  bodyIdentityUses : List Proof.BodyIdentityUse := []
+  bodyIdentityCovered : Bool := true
 
 abbrev ElabM := ExceptT Diagnostics (StateM ElabEnv)
 
@@ -138,6 +144,29 @@ def throwElab (e : ElabError) (span : Option Span := none) : ElabM α :=
 
 private def getEnv : ElabM ElabEnv := get
 private def setEnv (env : ElabEnv) : ElabM Unit := set env
+
+private def recordBodyIdentityUse (use : Proof.BodyIdentityUse) : ElabM Unit := do
+  let env ← getEnv
+  setEnv { env with bodyIdentityUses := use :: env.bodyIdentityUses }
+
+private def markBodyIdentityUncovered : ElabM Unit := do
+  let env ← getEnv
+  setEnv { env with bodyIdentityCovered := false }
+
+private def recordStructTypeUse (sd : StructDef) : ElabM Unit :=
+  match sd.typeId? with
+  | some id => recordBodyIdentityUse (.typeRef id)
+  | none => markBodyIdentityUncovered
+
+private def recordFieldUse (sd : StructDef) (field : String) : ElabM Unit :=
+  match sd.typeId? with
+  | some owner => recordBodyIdentityUse (.field { owner := owner, field := field })
+  | none => markBodyIdentityUncovered
+
+private def recordVariantUse (ed : EnumDef) (variant : String) : ElabM Unit :=
+  match ed.typeId? with
+  | some owner => recordBodyIdentityUse (.variant { owner := owner, variant := variant })
+  | none => markBodyIdentityUncovered
 
 -- ============================================================
 -- Helpers
@@ -284,7 +313,13 @@ private def coreNameOf (name : String) : ElabM String := do
     is function-flat, which is the whole reason bug 045 existed). -/
 private def restoreScope (saved : ElabEnv) : ElabM Unit := do
   let cur ← getEnv
-  setEnv { saved with freshBinder := cur.freshBinder }
+  -- Identity inputs are an append-only elaboration artifact, not lexical
+  -- scope. Restoring an arm/branch environment must not erase uses observed in
+  -- that arm; preserve the accumulator alongside the fresh-name counter.
+  setEnv { saved with
+    freshBinder := cur.freshBinder
+    bodyIdentityUses := cur.bodyIdentityUses
+    bodyIdentityCovered := cur.bodyIdentityCovered }
 
 private def addGhostVar (name : String) : ElabM Unit := do
   let env ← getEnv
@@ -440,6 +475,7 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
   | .structLit _ name typeArgs fields base =>
     match ← lookupStruct name with
     | some sd =>
+      recordStructTypeUse sd
       let typeArgs ← typeArgs.mapM resolveTypeE
       let mapping := sd.typeParams.zip typeArgs
       let resultTy := if typeArgs.isEmpty then Ty.named name else Ty.generic name typeArgs
@@ -452,11 +488,14 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
         let fieldTy := substTy mapping sf.ty
         match fields.find? fun (fn, _) => fn == sf.name with
         | some (_, expr) =>
+          recordFieldUse sd sf.name
           let cExpr ← elabExpr expr (some fieldTy)
           cFields := cFields ++ [(sf.name, cExpr)]
         | none =>
           match cBase with
-          | some cb => cFields := cFields ++ [(sf.name, .fieldAccess cb sf.name fieldTy)]
+          | some cb =>
+            recordFieldUse sd sf.name
+            cFields := cFields ++ [(sf.name, .fieldAccess cb sf.name fieldTy)]
           | none => pure ()  -- union partial init
       return .structLit name typeArgs cFields resultTy
     | none => throwElab (.unknownStructType name) (some e.getSpan)
@@ -488,6 +527,7 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
       let mapping := sd.typeParams.zip typeArgs
       match sd.fields.find? fun f => f.name == field with
       | some f =>
+        recordFieldUse sd field
         let fieldTy := substTy mapping f.ty
         let fieldTy ← resolveTypeE fieldTy
         return .fieldAccess cObj field fieldTy
@@ -533,6 +573,7 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
       let mapping := ed.typeParams.zip effectiveTypeArgs
       match ed.variants.find? fun v => v.name == variant with
       | some ev =>
+        recordVariantUse ed variant
         let mut cFields : List (String × CExpr) := []
         for sf in ev.fields do
           let fieldTy := substTy mapping sf.ty
@@ -566,8 +607,10 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
           restoreScope envBefore
           match arm with
           | .mk _ _armEnum armVariant bindings guard body =>
-            let ev := (ed.variants.find? fun v => v.name == armVariant).getD
-              { name := armVariant, fields := [] }
+            let ev ← match ed.variants.find? fun v => v.name == armVariant with
+              | some ev => pure ev
+              | none => throwElab (.unknownVariant armVariant enumName) (some e.getSpan)
+            recordVariantUse ed armVariant
             let typeMapping := ed.typeParams.zip enumTypeArgs
             let mut typedBindings : List (String × Ty) := []
             for (binding, sf) in bindings.zip ev.fields do
@@ -1264,15 +1307,16 @@ partial def elabStmt (stmt : Stmt) : ElabM (List CStmt) := do
       | .generic n a => (n, a)
       | _ => ("", [])
     let env ← getEnv
-    let fieldTy : Option Ty :=
+    let fieldTy ←
       match env.structs.find? fun s => s.name == sName with
       | some sd =>
         match sd.fields.find? fun f => f.name == field with
         | some f =>
+          recordFieldUse sd field
           let mapping := sd.typeParams.zip tArgs
-          some (substTy mapping f.ty)
-        | none => none
-      | none => none
+          pure (some (substTy mapping f.ty))
+        | none => pure none
+      | none => pure none
     let cVal ← elabExpr value fieldTy
     return [.fieldAssign cObj field cVal]
 
@@ -1386,7 +1430,8 @@ end
 -- Function and module elaboration
 -- ============================================================
 
-def elabFn (f : FnDef) (implTy : Option Ty := none) : ElabM CFnDef := do
+def elabFn (f : FnDef) (implTy : Option Ty := none)
+    : ElabM (CFnDef × Proof.ProofBodyIdentityInputsV2) := do
   let env ← getEnv
   -- Set up type params and return type
   let allTypeParams := f.typeParams
@@ -1417,7 +1462,9 @@ def elabFn (f : FnDef) (implTy : Option Ty := none) : ElabM CFnDef := do
     currentTypeParams := allTypeParams
     currentTypeBounds := f.typeBounds
     currentRetTy := retTy
-    currentImplType := implTy }
+    currentImplType := implTy
+    bodyIdentityUses := []
+    bodyIdentityCovered := true }
   -- Add parameters to scope (resolve type aliases so params don't carry unresolved alias names)
   for (pname, pty) in params do
     let resolvedPty ← resolveTypeE pty
@@ -1426,16 +1473,21 @@ def elabFn (f : FnDef) (implTy : Option Ty := none) : ElabM CFnDef := do
   let cBody ← elabStmts f.body
   -- Restore env
   let envAfter ← getEnv
+  let bodyIdentityInputs : Proof.ProofBodyIdentityInputsV2 :=
+    { uses := envAfter.bodyIdentityUses.reverse
+      covered := envAfter.bodyIdentityCovered }
   setEnv { envAfter with
     vars := env.vars
     currentTypeParams := env.currentTypeParams
     currentTypeBounds := env.currentTypeBounds
     currentRetTy := env.currentRetTy
-    currentImplType := env.currentImplType }
+    currentImplType := env.currentImplType
+    bodyIdentityUses := env.bodyIdentityUses
+    bodyIdentityCovered := env.bodyIdentityCovered }
   -- Resolve type aliases in output param/return types so Core IR doesn't carry alias names
   let resolvedParams ← params.mapM fun (n, t) => do pure (n, ← resolveTypeE t)
   let resolvedRetTy ← resolveTypeE retTy
-  return {
+  let cfn : CFnDef := {
     name := f.name
     typeParams := allTypeParams
     params := resolvedParams
@@ -1448,6 +1500,7 @@ def elabFn (f : FnDef) (implTy : Option Ty := none) : ElabM CFnDef := do
     capSet := f.capSet
     declSpan := some f.span
   }
+  return (cfn, bodyIdentityInputs)
 
 -- ============================================================
 -- Submodule function name prefixing
@@ -1663,10 +1716,10 @@ partial def elabModule (m : Module) (summary : FileSummary)
                 isTrusted := f.isTrusted || tb.isTrusted }, some implTy)
   ) ([] : List (FnDef × Option Ty))
   let allFnPairs := regularFns ++ implMethodPairs ++ traitImplMethodPairs
-  let (fns, fnErrors, _) := allFnPairs.foldl (fun (acc, errs, env) (f, implTy) =>
+  let (fnResults, fnErrors, _) := allFnPairs.foldl (fun (acc, errs, env) (f, implTy) =>
     let env' := { env with currentImplType := implTy, traits := allTraits }
     let result := (do
-      let cfn ← elabFn f implTy
+      let (cfn, bodyIdentityInputs) ← elabFn f implTy
       let finalName := match implTy with
         | some it =>
           let tn := tyName it
@@ -1679,13 +1732,17 @@ partial def elabModule (m : Module) (summary : FileSummary)
           if tn != "" then some tn else none
         | none => none
       else none
-      pure { cfn with name := finalName, trustedImplOrigin := implOrigin } : ElabM CFnDef).run env' |>.run
+      pure ({ cfn with name := finalName, trustedImplOrigin := implOrigin }, bodyIdentityInputs)
+        : ElabM (CFnDef × Proof.ProofBodyIdentityInputsV2)).run env' |>.run
     match result with
-    | (.ok cfn, finalEnv) => (acc ++ [cfn], errs, finalEnv)
+    | (.ok (cfn, bodyIdentityInputs), finalEnv) =>
+        (acc ++ [((f, implTy), cfn, bodyIdentityInputs)], errs, finalEnv)
     | (.error ds, _) => (acc, errs ++ ds.addContext s!"while elaborating function '{f.name}'", env)
-  ) (([] : List CFnDef), ([] : Diagnostics), initEnv)
+  ) (([] : List ((FnDef × Option Ty) × CFnDef × Proof.ProofBodyIdentityInputsV2)),
+     ([] : Diagnostics), initEnv)
   if !fnErrors.isEmpty then .error fnErrors
   else
+  let fns := fnResults.map fun (_, cfn, _) => cfn
   -- Build Core structs (local definitions). Expand type aliases AND erase
   -- newtypes in field types so that layout, copy-checking, and lowering see the
   -- underlying type — a `Copy` struct field typed by an alias to a Copy type
@@ -1872,7 +1929,7 @@ partial def elabModule (m : Module) (summary : FileSummary)
           | none => if m.externFns.any fun ef => ef.name == name
                     then some (CallableId.ofExtern name) else none
   let declFacts : List Proof.CheckedDeclFacts :=
-    allFnPairs.map fun (f, implTy) =>
+    fnResults.map fun ((f, implTy), _cfn, bodyIdentityInputs) =>
       let (concreteCaps, capVars) := f.capSet.normalize
       let capParamNames := f.capParams.eraseDups
       let capVarCanonical := capVars.map fun v =>
@@ -1895,6 +1952,7 @@ partial def elabModule (m : Module) (summary : FileSummary)
         contracts := Proof.ContractFacts.ofResolved (f.params.map (·.name))
           f.typeParams capParamNames resolveContractCall f.requires f.ensures
           f.loopContracts
+        bodyIdentityInputs := bodyIdentityInputs
         isTrusted := f.isTrusted
         overflowChecked := f.overflowChecked }
   .ok {
