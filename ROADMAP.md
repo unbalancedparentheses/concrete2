@@ -7118,40 +7118,52 @@ Difficulty is skewed and the register must record it: `eliminate_div_mod` is a r
 argument, while `eliminate_algebraic` requires the axiomatization be conservative over the
 datatype theory, which is model-theoretic.
 
-**A PRINTER SOUNDNESS ROW DELETES THE VALIDATION LAYER. This is the strongest argument for
-this task and it was previously missing.** Register B reads as bookkeeping — one more row
-per pass — when it is actually what removes an entire runtime mechanism.
+**REGISTER B COVERS TRANSFORMATIONS, NOT THE PRINT STEP — and that distinction is the
+point of this task.** An earlier version of this section claimed a printer soundness row
+"deletes the validation layer" and ranked four options linearly. Both were wrong, corrected
+2026-08-03, and the correction changes what this task should promise.
 
-Today a rendering is *validated*, per obligation, per kernel: pin the driver's own output
-to a grid of ground instances, make the prover decide each, compare against `evalBoolEnv`.
-That is where the ~30s/goal comes from, and it is a TEST, so it covers the sampled grid
-only. A *verified* printer — "this printer maps obligation terms to Coq syntax denoting the
-same proposition" — replaces all of it:
+Proving "this printer emits syntax denoting the same proposition" requires a formal
+semantics of the TARGET syntax. There is none for SMT-LIB or Coq's parser, and neither is
+ours; formalising them means trusting that our formalisation matches the real parser — the
+same trust relocated. Why3 does not prove its printers either. So the honest split is:
 
-| | validated (today) | verified printer |
+| step | ours? | status |
 |---|---|---|
-| work | per obligation × per kernel | once per driver |
-| strength | test on a sampled grid | proof, all inputs |
-| runtime cost | a prover run per obligation | zero |
+| obligation → transformed goal | both sides | **provable** — this is Register B's real scope |
+| transformed goal → target text | target is not | **validated, plausibly forever** |
 
-And it is far more tractable than Register A. Sufficiency is a *semantic* claim about
-program execution; printer correctness is a *syntactic* claim relating two representations
-of the same term over a deliberately small fragment. That is the kind of statement that
-gets proved rather than deferred.
+That inverts how to treat the validation cost. It is not a temporary embarrassment to be
+proved away; it is a permanent cost whose only lever is having ONE printer instead of N. A
+standard interchange format is therefore not a convenience but the architecture: SMT-LIB
+reaches z3, cvc5, veriT, Alt-Ergo and Yices from a single printer, so there is one thing to
+validate rather than one per target.
 
-So the honest ranking of ways to reach N provers, cheapest-and-strongest first:
+**And the earlier ranking conflated two orthogonal axes.** Print fidelity and answer trust
+remove different things from the trusted path — a verified printer feeding a trusted solver
+still trusts the solver; a replayed certificate from a mis-rendered goal still proves the
+wrong thing. The best position is both, not one ranked above the other. See the corrected
+boundary model in
+[docs/PROVER_NEUTRAL_OBLIGATIONS.md](docs/PROVER_NEUTRAL_OBLIGATIONS.md).
 
-1. **Verified printer** (this task) — no per-obligation validation at all.
-2. **A standard interchange format where one exists.** The per-kernel cost comes from
-   choosing prover-NATIVE syntax; SMT-LIB feeds z3, cvc5, veriT, Alt-Ergo and Yices from
-   ONE printer. Note `exprToSmt` already exists — the codebase already has the
-   one-renderer-many-tools path, and it is the path with NO agreement check, whose verdict
-   enters the TCB as `solver_trusted`. Validating it is sequenced above under R-0450's
-   agreement slice. Caveat: solvers are oracles, so this is implementation diversity, not
-   kernel diversity, unless certificates are replayed.
-3. **Certificates where they exist** — nothing to render per target, so nothing to validate.
-4. **Per-kernel native rendering plus per-obligation differential validation** — what is
-   built today.
+What this task should therefore deliver, in order of value:
+
+1. **A typed IR and Register B rows over the TRANSFORMATIONS** — genuinely provable,
+   because both sides are ours, and far more tractable than Register A: syntactic claims
+   relating two representations of the same term over a small fragment, not semantic claims
+   about program execution.
+2. **Collapse N printers to one standard-format printer** where the fragment allows,
+   because the print step's validation cost is per-printer and permanent. `exprToSmt`
+   already is that printer for the arithmetic tier, and its rendering is validated as of
+   2026-08-03 (`smtAgreementGoals`, 46/46 on the families fixture, mutation-verified).
+3. **Keep per-obligation print validation and make it non-vacuous**, rather than treating
+   it as debt. Gate the instance count; a `0/0` "all agree" is the failure mode.
+
+The consequence for kernel diversity, which belongs here because this is where the cost
+lives: a native driver per kernel is another printer to validate forever. Kernels address
+answer trust only, and only where certificates are impossible, while multiplying print
+validation. That is the case against adding a fifth prover, stated as a cost rather than a
+preference.
 
 The spike built option 4 because it was reachable without an IR, which was the right call
 for a spike and is not the destination. Recording the ranking here so the printer row is

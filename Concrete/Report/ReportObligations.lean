@@ -1002,24 +1002,25 @@ structure MultiKernelObl where
 
 /-- Collect the linear runtime-safety obligations of every family into the neutral
     view. Adding a family is a new block here, not a new lowering. -/
-def multiKernelObligations (modules : List Module) : List MultiKernelObl := Id.run do
+def multiKernelObligations (modules : List Module) (requireLeanGoal : Bool := true)
+    : List MultiKernelObl := Id.run do
   let mut out : List MultiKernelObl := []
   for o in overflowObligations modules do
-    if o.closedVerdict.isNone && o.leanGoal.isSome then
+    if o.closedVerdict.isNone && (!requireLeanGoal || o.leanGoal.isSome) then
       let mk : (BinOp → String → String → Option String) → String → Option String :=
         fun bop e => do let lo ← bop .leq (toString o.lo) e; let hi ← bop .leq e (toString o.hi); bop .and_ lo hi
       let safe : List (String × Int) → Option Bool :=
         fun env => (evalIntEnv env o.opExpr).map (fun v => o.lo ≤ v && v ≤ o.hi)
       out := out ++ [{ key := o.key, desc := s!"{Concrete.fmtExpr o.opExpr} ∈ [{o.lo}, {o.hi}]", hyps := o.hyps, mainExpr := o.opExpr, mkConcl := mk, safeOn := safe }]
   for o in boundsObligations modules do
-    if o.closedVerdict.isNone && o.leanGoal.isSome then
+    if o.closedVerdict.isNone && (!requireLeanGoal || o.leanGoal.isSome) then
       let mk : (BinOp → String → String → Option String) → String → Option String :=
         fun bop e => do let lo ← bop .leq "0" e; let hi ← bop .lt e (toString o.size); bop .and_ lo hi
       let safe : List (String × Int) → Option Bool :=
         fun env => (evalIntEnv env o.idxExpr).map (fun v => 0 ≤ v && v < (Int.ofNat o.size))
       out := out ++ [{ key := o.key, desc := s!"0 ≤ {Concrete.fmtExpr o.idxExpr} < {o.size} (bounds of {o.arrName})", hyps := o.hyps, mainExpr := o.idxExpr, mkConcl := mk, safeOn := safe }]
   for o in divObligations modules do
-    if o.closedVerdict.isNone && o.leanGoal.isSome then
+    if o.closedVerdict.isNone && (!requireLeanGoal || o.leanGoal.isSome) then
       let mk : (BinOp → String → String → Option String) → String → Option String :=
         fun bop e => bop .neq e "0"
       let safe : List (String × Int) → Option Bool :=
@@ -1432,7 +1433,12 @@ def smtBinOpColumn : BinOp → String → String → Option String
     the instance; `validatedKeysOf`-style consumers strip the suffix. -/
 def smtAgreementGoals (modules : List Module) : List (String × String) := Id.run do
   let mut out : List (String × String) := []
-  for o in multiKernelObligations modules do
+  -- `requireLeanGoal := false` is essential, not incidental. The default view is the OMEGA
+  -- domain (linear); the SMT VERDICT path is the complement — it takes only obligations with
+  -- a nonlinear multiplication, because omega owns the linear case. Validating the default
+  -- view would therefore check `exprToSmt` on exactly the obligations SMT never renders for
+  -- a verdict, and the two key sets would be disjoint. Measured before this was fixed.
+  for o in multiKernelObligations modules (requireLeanGoal := false) do
     let vars := (collectIdents o.mainExpr ++ o.hyps.flatMap collectIdents).eraseDups
     match exprToSmt o.mainExpr, o.hyps.mapM exprToSmt with
     | some eSmt, some hypSmts =>

@@ -75,23 +75,52 @@ Two encoding invariants that must survive serialization:
 - **`displayName` is excluded from the digest.** Identity is `CallableId`; the display
   name is explicitly not identity.
 
-## The three trust boundaries
+## The trust boundaries
+
+Corrected 2026-08-03. This was "three boundaries" and folded the PRINT step into
+transformation soundness, marking the whole thing PROVABLE. It is not: the print step
+crosses into syntax we do not own, and separating it changes what the roadmap should
+promise.
 
 ```
 runtime property
-      ^   (1) obligation sufficiency        PROVABLE      -> register A   (0/4)
+      ^  (1) obligation sufficiency     PROVABLE      -> register A   (0/4)
    obligation
-      ^   (2) transformation soundness      PROVABLE      -> register B   (not started)
+      ^  (2) transformation soundness   PROVABLE      -> register B   (not started)
    transformed goal
-      ^   (3) cross-semantics agreement     NOT PROVABLE  -> conformance vectors
-   host eval ports
+      ^  (3) PRINT FIDELITY             NOT PROVABLE  -> differential validation
+   target syntax (SMT-LIB / Coq / Isabelle text)
+      ^  (4) answer trust               reducible     -> certificate replay, else kernels
+   the prover's verdict
 
-  and, orthogonal to all three — the axis H23 lived in:
+  and orthogonal to all four — the axis H23 lived in:
 
    reported claim
-      ^   (4) evidence composition          PROVABLE      -> register C   DISCHARGED
+      ^  (5) evidence composition       PROVABLE      -> register C   DISCHARGED
    the claim's own proof + everything it assumed
 ```
+
+**(3) is the correction, and it is load-bearing.** Proving "this printer emits syntax
+denoting the same proposition" requires a formal semantics of the TARGET syntax. We have
+none for SMT-LIB or for Coq's parser, and we do not own either; formalising them means
+trusting that our formalisation matches the real parser — the same trust, moved somewhere
+less visible. This is likely why Why3 does not prove its printers either.
+
+So per-obligation differential validation of the print step is plausibly the **ceiling,
+not a stopgap**. That inverts how to treat its cost: not a temporary embarrassment to be
+proved away, but a permanent cost to be MINIMISED — and the only lever is having ONE
+printer rather than N. A standard interchange format (SMT-LIB) is therefore not a
+convenience, it is the architecture: one thing to validate, many tools reached.
+
+**(4) is a separate axis from (3), and conflating them is a mistake this document made.**
+A verified printer feeding a trusted solver still trusts the solver; a replayed
+certificate from a mis-rendered goal still proves the wrong thing. They remove different
+things from the trusted path and the best position is both.
+
+**Consequence for kernel diversity, stated once.** It addresses (4) only, and only where
+certificates are impossible — and it MULTIPLIES (3), because each native target is another
+printer to validate forever. That is the whole case in one line: kernels are a fallback for
+one link, at a recurring cost on another.
 
 **(1) Register A — obligation sufficiency.** *If the flat goal holds, the semantic
 obligation holds.* One row per obligation family. See
