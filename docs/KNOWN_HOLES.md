@@ -89,8 +89,11 @@ a counter running to 99:
 Both lines appear in the *same* `--report obligation-ledger` output, adjacent, unrelated.
 The compiled binary aborts (SIGABRT, exit 134) on the access reported proved; the runtime
 bounds check is what actually prevents the memory error. `[policy] require-two-kernels =
-true` **builds this program with exit 0** — the strongest release stance in the system
-green-lights it.
+true` **built this program with exit 0** — the strongest release stance in the system
+green-lit it. (No longer: R-0461 blocks it with `E0617` under `forbid-assume`, and R-0465's
+5th part blocks it with `E0616` under `require-two-kernels` too, because the gate now reads
+badges off the capped ledger instead of recounting kernels from a second prover run. Both
+stances reject it; `check_known_wrong_corpus.sh` asserts both.)
 
 Three things this demonstrates, beyond the specific bug:
 

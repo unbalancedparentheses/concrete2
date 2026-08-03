@@ -1243,6 +1243,42 @@ def externalClosedSets (modules : List Concrete.Module) (rocqRun isaRun : Bool)
        , rocqRefused := e.rocqRefused.filter (fun k => e.rocqValidated.contains k)
        , isaRefused  := e.isaRefused.filter  (fun k => e.isaValidated.contains k) }
 
+/-- **R-0465 (5th part): the two-kernel release gate, read OFF the ledger.**
+
+    `computeBelowTwoKernels` used to run its own prover discharge and rebuild the verdicts
+    itself. Two consequences, and the second is the one that matters:
+
+    - The provers ran twice per release build, once for the artifact and once for the gate.
+    - The gate and the stored artifact could be built from SEPARATE prover runs. Nothing
+      forced their transient results to agree — a timeout, a flaky `isabelle build`, or a
+      version skew between the two runs and the release ships an artifact whose badges the
+      gate never actually checked. Unifying the input is the only fix that scales; keeping
+      two derivations in step by inspection is what R-0461 measured the cost of.
+
+    So this folds multi-kernel results into the SAME ledger the policy quals come from, and
+    reads the answer out of the resulting statuses. An obligation is below two kernels unless
+    its VC carries a two-or-more badge. That follows from the firewall rather than from a
+    reimplementation of the counting: `multiKernelAdapter.allowed` contains exactly the
+    badges, so a VC holding one is a VC that passed admission with ≥2 attesters.
+
+    Three cases fall out for free, each of which the old recount had to state:
+    - `kernel_disagreement` is not a badge, so a dissent blocks. An unexplained disagreement
+      means one of the two kernels is wrong and we do not know which.
+    - A VC Lean never proved was outside `actsOn`, so it holds no badge and blocks.
+    - A VC R-0461 CAPPED reads `assumed`, is outside `actsOn`, and blocks — so an obligation
+      resting on an unproved invariant now fails `require-two-kernels` as well, which is the
+      composition H23 was missing, arriving here at no extra cost.
+
+    An obligation with no VC at all counts as below: fail-closed, because "we could not find
+    what this claim is" is not evidence that two kernels agreed on it. -/
+def belowTwoKernelsOf (modules : List Concrete.Module) (folded : List Report.VC) : List String :=
+  (Report.multiKernelObligations modules).filterMap fun o =>
+    match folded.find? (·.id == o.key) with
+    | some v =>
+      if v.status == "proved_by_two_kernels" || v.status == "proved_by_multi_kernel"
+      then none else some o.key
+    | none => some o.key
+
 /-- Phase 3 #14: policy inputs derived from the ONE obligation ledger. Builds the
     discharged ledger (folding the external-SMT path when a solver-evidence stance
     is set, so `solver_trusted` is present), then projects the vacuous / assume /
@@ -1251,7 +1287,8 @@ def externalClosedSets (modules : List Concrete.Module) (rocqRun isaRun : Bool)
     solverTrustedQuals)`, dep-filtered exactly as before. -/
 def computePolicyQuals (policy : Concrete.ProjectPolicy) (modules : List Concrete.Module)
     (depNames : List String) (locMap : Report.FnLocMap) (registry : Concrete.ProofRegistry) :
-    IO (List String × List String × List String × List (String × List String)) := do
+    IO (List String × List String × List String × List (String × List String)
+        × List String × Bool) := do
   let dvcs ← computeVCsDischarged modules locMap registry
   -- fold the external-SMT path into the ledger only when a stance is set (matches
   -- the old computeSolverTrustedQuals gating; otherwise no solver runs).
@@ -1272,6 +1309,27 @@ def computePolicyQuals (policy : Concrete.ProjectPolicy) (modules : List Concret
       let rg := replayGoals.filter (fun (k, _) => trusted.contains k)
       let replayed ← leanReplayCheck rg
       pure (Report.foldReplayResults dvcs replayed)
+  -- R-0465 (5th part): fold multi-kernel evidence into THIS ledger when the policy needs
+  -- it, so `require-two-kernels` is answered from the same VCs the rest of the gate reads
+  -- instead of from a second prover run. Only under the policy: coqc/isabelle are slow and
+  -- a normal build must not silently start invoking them.
+  let mut externalRan := false
+  let dvcs ← if !policy.requireTwoKernels then pure dvcs else do
+    let rocqAvail ← commandAvailable "coqc"
+    let isaAvail ← commandAvailable "isabelle"
+    externalRan := rocqAvail || isaAvail
+    if !externalRan then pure dvcs else do
+      -- externalClosedSets already drops kernels whose lowering disagreed with the
+      -- reference evaluator, so the gate cannot certify a kernel that closed a different
+      -- proposition than the obligation.
+      let ev ← externalClosedSets modules rocqAvail isaAvail
+      let lv ← leanToolchainId
+      let rv ← if rocqAvail then coqVersionId else pure "rocq (not run)"
+      let iv ← if isaAvail then isabelleVersionId else pure "isabelle (not run)"
+      pure (Report.foldMultiKernelResults dvcs
+              (kernelCells ev.rocqClosed ev.rocqRefused)
+              (kernelCells ev.isaClosed ev.isaRefused)
+              lv rv iv ev.rocqValidated ev.isaValidated)
   let ledger := Concrete.ObligationCore.ledgerOfVCs dvcs
   let keep := fun (q : String) => !depNames.any (fun d => q.startsWith (d ++ "."))
   let vac := (Concrete.ObligationCore.vacuousFunctions ledger).filter keep
@@ -1281,51 +1339,24 @@ def computePolicyQuals (policy : Concrete.ProjectPolicy) (modules : List Concret
   -- discharged ledger as the other three, so the gate and the reports cannot disagree.
   let cap := dvcs.filterMap (fun v =>
     if v.status == "assumed" && !v.hypDebt.isEmpty then some (v.id, v.hypDebt) else none)
-  return (vac, asm, st, cap)
+  let btk := if policy.requireTwoKernels then belowTwoKernelsOf modules dvcs else []
+  return (vac, asm, st, cap, btk, externalRan)
 
-/-- Obligations that did NOT reach two independent kernels, for
-    `[policy] require-two-kernels`. Also returns whether any external kernel was
-    actually consulted, so the diagnostic can distinguish "the second kernel could
-    not close it" from "no second kernel was available at all" — collapsing those
-    would blame the proof for a missing toolchain.
 
-    Both external kernels are attempted (Lean + one external already satisfies the
-    requirement, so this is not `--all-provers` semantics — it is "find a second
-    kernel"). Only run when the policy asks for it: coqc/isabelle are slow and a
-    normal build must not silently start invoking them. -/
-def computeBelowTwoKernels (modules : List Concrete.Module)
-    : IO (List String × Bool) := do
-  let linear := Report.multiKernelObligations modules
-  if linear.isEmpty then return ([], true)
-  let omegaProved ← kernelDischargeLoopVCs
-    (Report.overflowGoals modules ++ Report.boundsGoals modules ++ Report.divGoals modules)
-  let rocqAvail ← commandAvailable "coqc"
-  let isaAvail ← commandAvailable "isabelle"
-  -- externalClosedSets already excludes kernels whose lowering disagreed with the
-  -- reference evaluator, so this release gate cannot certify a kernel that closed a
-  -- different proposition than the obligation.
-  let ev ← externalClosedSets modules rocqAvail isaAvail
-  let mut below : List String := []
-  for o in linear do
-    -- Same derivation as the report and the ledger fold. Routing the POLICY through it
-    -- matters most: this is the gate a release actually depends on, and it previously
-    -- counted kernels without noticing that one of them had said no.
-    --
-    -- The witness is MINTED from the validated set, per obligation. This call site used to
-    -- write `loweringAgreed := true` — asserting a check it had not performed and relying
-    -- on an upstream filter — which the type no longer permits.
-    -- R-0465: cells and the shared constructor, exactly as the ledger fold uses. This
-    -- site had its own copy of "closed else refused else nothing" over parallel lists —
-    -- the third such copy, and the one a release actually depends on.
-    let verdict := Report.multiKernelVerdict o.key (omegaProved.contains o.key)
-      (Report.kernelInputOf o.key "rocq" "rocq:lia"
-          (Report.cellFor (kernelCells ev.rocqClosed ev.rocqRefused) o.key) ev.rocqValidated
-        ++ Report.kernelInputOf o.key "isabelle" "isabelle:presburger"
-          (Report.cellFor (kernelCells ev.isaClosed ev.isaRefused) o.key) ev.isaValidated)
-    -- A dissent blocks as surely as a missing kernel: an unexplained disagreement means
-    -- one of the two is wrong and we do not know which.
-    if verdict.attest.length < 2 || !verdict.dissent.isEmpty then below := below ++ [o.key]
-  return (below, rocqAvail || isaAvail)
+-- REMOVED 2026-08-03 (R-0465, 5th part): `computeBelowTwoKernels`, which ran its own
+-- prover discharge and rebuilt the multi-kernel verdicts to answer
+-- `[policy] require-two-kernels`. `computePolicyQuals` now folds multi-kernel evidence into
+-- the one ledger and `belowTwoKernelsOf` reads the answer off the resulting statuses.
+--
+-- Deleted rather than left unused, for the reason `disagreeingKeysOf` was: a second
+-- derivation of the same fact, sitting one identifier away from the one in use, is worse
+-- than dead code. The whole defect this closes is that a release gate and a stored artifact
+-- could be computed from separate prover runs; keeping a function that does exactly that
+-- available to the next caller re-arms it.
+--
+-- It also halves the prover cost of a `require-two-kernels` build, which used to invoke
+-- coqc and isabelle twice.
+
 
 /-- Render the contracts report plus the call-site obligation section AS A VIEW
     over the one discharged ObligationCore ledger (Phase 3 #15 / #18e).
@@ -2650,8 +2681,7 @@ def compileBuild (projectRoot : String) (outputPath : Option String) (emitLLVM :
     if !(← enforceProvenRuntimeViolations parsed.modules allSrcMap) then
       return 1
     if !policy.isEmpty then
-      let (vac, asm, st, cap) ← computePolicyQuals policy parsed.modules depNames policyLocMap registry
-      let (btk, ekr) ← if policy.requireTwoKernels then computeBelowTwoKernels parsed.modules else pure ([], false)
+      let (vac, asm, st, cap, btk, ekr) ← computePolicyQuals policy parsed.modules depNames policyLocMap registry
       let policyDs := enforcePolicy policy validCore.coreModules
         (locMap := policyLocMap) (pc := pc) (depNames := depNames) (vacuousQuals := vac)
         (assumeQuals := asm) (solverTrustedQuals := st) (cappedObligations := cap)
@@ -2716,8 +2746,7 @@ partial def compileTestBuild (projectRoot : String) (moduleFilter : Option Strin
     if !(← enforceProvenRuntimeViolations parsed.modules allSrcMap) then
       return 1
     if !policy.isEmpty then
-      let (vac, asm, st, cap) ← computePolicyQuals policy parsed.modules depNames policyLocMap registry
-      let (btk, ekr) ← if policy.requireTwoKernels then computeBelowTwoKernels parsed.modules else pure ([], false)
+      let (vac, asm, st, cap, btk, ekr) ← computePolicyQuals policy parsed.modules depNames policyLocMap registry
       let policyDs := enforcePolicy policy validCore.coreModules
         (locMap := policyLocMap) (pc := pc) (depNames := depNames) (vacuousQuals := vac)
         (assumeQuals := asm) (solverTrustedQuals := st) (cappedObligations := cap)
@@ -2981,8 +3010,7 @@ def main (args : List String) : IO UInt32 := do
         for d in ledger.diagnostics do
           if d.code == "registry" then IO.eprintln d.message
         if !policy.isEmpty then
-          let (vac, asm, st, cap) ← computePolicyQuals policy parsed.modules depNames policyLocMap registry
-          let (btk, ekr) ← if policy.requireTwoKernels then computeBelowTwoKernels parsed.modules else pure ([], false)
+          let (vac, asm, st, cap, btk, ekr) ← computePolicyQuals policy parsed.modules depNames policyLocMap registry
           let policyDs := enforcePolicy policy validCore.coreModules
             (locMap := policyLocMap) (pc := pc) (depNames := depNames) (vacuousQuals := vac)
             (assumeQuals := asm) (solverTrustedQuals := st) (cappedObligations := cap)

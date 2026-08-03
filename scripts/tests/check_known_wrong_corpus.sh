@@ -69,6 +69,25 @@ P23="$( cd "$H23DIR" && "$COMPILER" check src/main.con 2>&1 )"
 printf '%s' "$P23" | grep -q "E0617" \
   && ok "release policy rejects the capped obligation (E0617 under forbid-assume)" \
   || no "forbid-assume does NOT reject a capped obligation — the cap is display-only"
+# The OTHER release stance. KNOWN_HOLES recorded that `require-two-kernels = true` built
+# this program with exit 0 — "the strongest release stance in the system green-lights it".
+# R-0465's 5th part made the gate read badges off the capped ledger rather than recount
+# kernels from a second prover run, so the cap now propagates here too. Asserted because
+# this composition is emergent, not designed: nothing in R-0465 set out to close it.
+#
+# Runs only where an external kernel exists; without one the gate reports the missing
+# toolchain instead, which is a different (correct) message.
+if command -v coqc >/dev/null 2>&1 || command -v isabelle >/dev/null 2>&1; then
+  H23TK="$TMP/h23twokernel"; mkdir -p "$H23TK/src"; cp "$H23" "$H23TK/src/main.con"
+  printf '[policy]\nrequire-two-kernels = true\n' > "$H23TK/Concrete.toml"
+  T23="$( cd "$H23TK" && "$COMPILER" check src/main.con 2>&1 )"
+  printf '%s' "$T23" | grep -q "E0616" \
+    && ok "require-two-kernels also rejects the capped obligation (E0616)" \
+    || no "require-two-kernels accepts the H23 fixture — the cap does not reach this gate"
+else
+  echo "  (skipped require-two-kernels assertion — no external kernel on PATH)"
+fi
+
 "$COMPILER" "$H23" -o "$TMP/h23" >/dev/null 2>&1
 "$TMP/h23" >/dev/null 2>&1; expect_trap $? "H23 fixture still traps (the runtime check is correct)"
 
