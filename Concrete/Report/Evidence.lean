@@ -103,6 +103,20 @@ structure Hypothesis where
     evidence is multidimensional and this module deliberately does NOT impose a ladder on
     classes. The only ordering asserted anywhere here is on assumption sets, by inclusion. -/
 structure Evidence where
+  /-- PRIVATE CONSTRUCTOR — the C4 guarantee is otherwise unenforceable.
+
+      C4 proves `discharge` is the only operation that shrinks an assumption set. An
+      external review showed that constrains the FUNCTION and not the TYPE: with a public
+      constructor, `{ e with assumes := [] }` forges a discharge and
+      `forged.present` returns `"proved_by_multi_kernel"` for a claim that discharged
+      nothing. Verified before this change.
+
+      Making the constructor private means `assumes` can only move through `assuming`,
+      `discharge`, `underHypotheses` and `combine`, all defined below and all covered by
+      C1–C5. Reading stays public — `e.assumes`, `e.present` and the rest work anywhere.
+      This is the difference Register C claims to make: not defending against the bad
+      state, making it unrepresentable. -/
+  private mk ::
   /-- The evidence class as recorded (`proved_by_lean`, `solver_checked`, …). A label
       over the other fields; never the source of truth for whether something is proved. -/
   cls          : String
@@ -233,7 +247,14 @@ theorem c3_present_unchanged_when_proved (e : Evidence) (h : e.assumes = []) :
   simp [present, h]
 
 /-- **C4 — discharge only ever shrinks an assumption set.** No path adds debt while
-    claiming to remove it. -/
+    claiming to remove it.
+
+    C4 constrains this FUNCTION. What makes it a guarantee about the TYPE is the private
+    constructor on `Evidence`: without it `{ e with assumes := [] }` forges a discharge and
+    the claim presents as proved, which an external review demonstrated before the
+    constructor was closed. The theorem and the privacy are two halves of one property —
+    deleting either reopens the hole, which is why `check_evidence_algebra.sh` asserts
+    both. -/
 theorem c4_discharge_shrinks (e : Evidence) (refs : List ObligationRef) :
     ∀ r ∈ (e.discharge refs).assumes, r ∈ e.assumes := by
   intro r hr; simp [discharge, List.mem_filter] at hr; exact hr.1
@@ -349,6 +370,51 @@ def multiKernelVerdict (leanClosed : Bool) (externals : List KernelInput)
       (s!"proved_by_{attest.head!}", s!"proved_by_{attest.head!}")
     else ("unproven", "unproven")
   { evidence := { cls, assumes := [], attestations := attest }, display, dissent, attest }
+
+/-! ### Behavioural locks — the verdict's truth table, kernel-checked
+
+`check_evidence_algebra.sh` asserts that theorems and construction sites EXIST. An
+external review showed that is not enough: deleting `.filter (·.loweringAgreed)` from
+`multiKernelVerdict` — which lets a kernel whose rendering denotes a DIFFERENT proposition
+attest to this one — left that gate green at 24/24, because the gate checks names and call
+counts and never behaviour.
+
+These `example`s close that. Each pins one row of the truth table by `rfl`, so the
+mutation is a BUILD failure rather than something a gate might notice. Same discipline as
+the discharge-adapter firewall in Report.lean: a green build is the guarantee, and the
+shell gate's job is only to prove these locks were not deleted.
+
+Written as the four cases that were actually confusable, not as coverage for its own sake:
+a disagreeing lowering must not attest; absence is not dissent; a refusal against a Lean
+closure IS dissent; and two kernels refusing together is agreement, not dissent. -/
+
+private def probe (c : KernelCell) (agreed : Bool) : KernelInput :=
+  { name := "rocq", label := "rocq:lia", cell := c, loweringAgreed := agreed }
+
+/-- A kernel that CLOSED its goal but whose lowering did not agree must not attest: it
+    proved a different proposition. Deleting the `loweringAgreed` filter breaks this. -/
+example : (multiKernelVerdict true [probe .closed false]).attest = ["lean"] := rfl
+
+/-- The same kernel must not dissent either — an unvalidated rendering is not evidence
+    about this obligation in either direction. -/
+example : (multiKernelVerdict true [probe .closed false]).dissent = [] := rfl
+
+/-- Absence is NOT dissent. `off` / `unavailable` / `not-asked` / `error` are non-answers,
+    and reading a non-answer as disagreement is the conflation this report exists to
+    prevent. -/
+example : (multiKernelVerdict true [probe .absent true]).dissent = [] := rfl
+
+/-- A refusal against a Lean closure IS dissent, and caps the class. -/
+example : (multiKernelVerdict true [probe .refused true]).evidence.cls
+            = "kernel_disagreement" := rfl
+
+/-- Both kernels refusing is AGREEMENT on refusal, not dissent — without this the check
+    would fire on every unproved obligation. -/
+example : (multiKernelVerdict false [probe .refused true]).dissent = [] := rfl
+
+/-- A validated closure alongside Lean earns exactly two kernels. -/
+example : (multiKernelVerdict true [probe .closed true]).evidence.cls
+            = "proved_by_two_kernels" := rfl
 
 end Report
 end Concrete

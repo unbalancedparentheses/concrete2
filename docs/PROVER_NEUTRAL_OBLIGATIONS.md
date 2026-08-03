@@ -169,6 +169,21 @@ What Register C does NOT do: decide whether an obligation is *sufficient* (A) or
 transformation *sound* (B). It guarantees only that evidence is never reported as
 stronger than its inputs — a smaller claim than it sounds, and the one H23 violated.
 
+**And stated bluntly, because an external review measured it: Register C currently
+protects no runtime verdict.** `combine` and `underHypotheses` have zero production call
+sites, and every real multi-kernel verdict is constructed with `assumes := []`, so C1/C2
+never govern a real combination, C2′/C5 never govern real hypotheses, and C3's cap never
+fires. The rows are mathematically non-vacuous over arbitrary `Evidence` and
+*operationally* vacuous today. It is substrate awaiting R-0461, which is the task that
+populates the set — and once it does, the cap applies by construction rather than by a
+fold someone must remember to write. That is the whole value, and it is entirely
+prospective.
+
+Two things do bite immediately, both added after that review: the private constructor
+means `{ e with assumes := [] }` is a compile error rather than a forged discharge, and
+six `example`s pin the verdict truth table by `rfl` so that deleting the `loweringAgreed`
+filter fails the build.
+
 Registers A and B carry a **fingerprint of the generator or transformation they
 justify** and fail loudly on drift. Without it a discharged row silently goes vacuous
 when its subject changes — the `#[proof_fingerprint]` defect one layer up, at the layer

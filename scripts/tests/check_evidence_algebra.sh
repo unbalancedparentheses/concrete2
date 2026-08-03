@@ -46,6 +46,34 @@ for bad in sorry admit native_decide; do
     || ok "no '$bad' in the evidence algebra"
 done
 
+echo "=== behaviour is locked at COMPILE time, not by this gate ==="
+# An external review defeated the earlier version of this gate: deleting
+# `.filter (·.loweringAgreed)` from multiKernelVerdict — which lets a kernel whose
+# rendering denotes a DIFFERENT proposition attest to this one — left it green at 24/24,
+# because everything here checks names, counts and construction sites, never behaviour.
+#
+# The fix is not more grepping. Six `example`s in Evidence.lean pin the verdict truth
+# table by `rfl`, so that mutation is now a BUILD failure. This gate's job is only to
+# prove the locks were not deleted; the build is what proves they hold. Verified by
+# re-applying the review's mutation: `lean Concrete/Report/Evidence.lean` exits 1.
+for lock in "probe .closed false" "probe .absent true" "probe .refused true"; do
+  grep -q "$lock" "$EV" && ok "behavioural lock present: $lock" \
+                        || no "behavioural lock MISSING: $lock — a truth-table row is unpinned"
+done
+grep -c "^example : (multiKernelVerdict" "$EV" | grep -qE "^[6-9]|^[1-9][0-9]" \
+  && ok "verdict truth table pinned by >=6 compile-time examples" \
+  || no "fewer than 6 verdict examples — rows were removed"
+
+echo "=== C4 is enforced by the TYPE, not only by the theorem ==="
+# C4 says discharge is the only operation that shrinks an assumption set. That constrains
+# the function; the private constructor is what constrains the type. Without it,
+# `{ e with assumes := [] }` forges a discharge and the claim presents as proved — the
+# review demonstrated exactly that. Both halves are asserted because deleting either
+# reopens the hole.
+grep -q "private mk ::" "$EV" \
+  && ok "Evidence has a private constructor (record-update forgery is a compile error)" \
+  || no "Evidence constructor is PUBLIC — '{ e with assumes := [] }' forges a discharge"
+
 echo "=== C3's companion: the capped status is not a proof class ==="
 # C3 proves a claim with outstanding assumptions presents as exactly "assumed".
 # This proves "assumed" is outside proofClasses. Together they close the H23 CLASS —
