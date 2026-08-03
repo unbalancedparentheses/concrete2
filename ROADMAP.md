@@ -150,6 +150,7 @@ system.
 | 4 | **R-0471** | the work R-0466 needs in order to have anything to move |
 | 5 | **R-0470** | bug 063 — capability inference manufactures an empty capability set |
 | 6 | **R-0469** | bug 065 — stack unboundedness propagation |
+| — | ~~**R-0465**~~ | **MOSTLY DONE 2026-08-03** (4 of 5 parts). Promoted ahead of R-0464 because R-0461 measured the cost of not having it. Remaining: the release gate still recomputes evidence instead of reading the folded ledger |
 | 7 | **R-0458** | strength/independence split; R-0461 was its first real consumer and shipped without it |
 | 8 | **R-0454** | neutral digest — closing window, alpha-normalized |
 | 9 | **R-0467** | multi-kernel on the merge commit |

@@ -1166,6 +1166,19 @@ structure ExternalKernelEvidence where
   rocqValidated : List String := []
   isaValidated  : List String := []
 
+/-- R-0465: collapse one kernel's two id lists into per-obligation cells, which is what
+    `foldMultiKernelResults` now takes. The lists are disjoint by construction upstream —
+    both come from a single `List (String × KernelVerdict)`, and a verdict is one or the
+    other — but that fact lived in the producer, not the type.
+
+    **Refusals are listed FIRST, so `find?` resolves any overlap to `.refused`.** The order
+    only matters if the upstream invariant is ever broken, which is exactly when a default
+    must be chosen deliberately: a kernel that said no is the safety-relevant fact, and
+    resolving to `.closed` would turn a broken invariant into a badge. Fail-closed. -/
+def kernelCells (closed refused : List String) : List (String × Report.KernelCell) :=
+  refused.map (fun k => (k, Report.KernelCell.refused))
+    ++ closed.map (fun k => (k, Report.KernelCell.closed))
+
 /-- Run the enabled external kernels over the multi-kernel obligation goals and
     return the VC ids each independently closed, PLUS the ids whose lowering failed
     the agreement check. Shared by the multi-kernel report, the ledger fold and the
@@ -1301,14 +1314,14 @@ def computeBelowTwoKernels (modules : List Concrete.Module)
     -- The witness is MINTED from the validated set, per obligation. This call site used to
     -- write `loweringAgreed := true` — asserting a check it had not performed and relying
     -- on an upstream filter — which the type no longer permits.
-    let mk := fun (name label : String) (cl rf vd : List String) =>
-      let w := Report.LoweringValidated.mint name o.key vd
-      if cl.contains o.key then [({ name, label, cell := .closed, validated := w } : Report.KernelInput)]
-      else if rf.contains o.key then [({ name, label, cell := .refused, validated := w } : Report.KernelInput)]
-      else []
+    -- R-0465: cells and the shared constructor, exactly as the ledger fold uses. This
+    -- site had its own copy of "closed else refused else nothing" over parallel lists —
+    -- the third such copy, and the one a release actually depends on.
     let verdict := Report.multiKernelVerdict o.key (omegaProved.contains o.key)
-      (mk "rocq" "rocq:lia" ev.rocqClosed ev.rocqRefused ev.rocqValidated
-        ++ mk "isabelle" "isabelle:presburger" ev.isaClosed ev.isaRefused ev.isaValidated)
+      (Report.kernelInputOf o.key "rocq" "rocq:lia"
+          (Report.cellFor (kernelCells ev.rocqClosed ev.rocqRefused) o.key) ev.rocqValidated
+        ++ Report.kernelInputOf o.key "isabelle" "isabelle:presburger"
+          (Report.cellFor (kernelCells ev.isaClosed ev.isaRefused) o.key) ev.isaValidated)
     -- A dissent blocks as surely as a missing kernel: an unexplained disagreement means
     -- one of the two is wrong and we do not know which.
     if verdict.attest.length < 2 || !verdict.dissent.isEmpty then below := below ++ [o.key]
@@ -1704,8 +1717,10 @@ def compileAndReport (inputPath : String) (reportType : String)
           -- Validated sets are passed EXPLICITLY: the fold mints witnesses from them and
           -- attests nothing without one. Omitting them yields no attestations rather than
           -- unchecked ones.
-          pure (Report.foldMultiKernelResults dvcs ev.rocqClosed ev.isaClosed lv rv iv
-                  ev.rocqRefused ev.isaRefused ev.rocqValidated ev.isaValidated)
+          pure (Report.foldMultiKernelResults dvcs
+                  (kernelCells ev.rocqClosed ev.rocqRefused)
+                  (kernelCells ev.isaClosed ev.isaRefused)
+                  lv rv iv ev.rocqValidated ev.isaValidated)
         else pure dvcs
       let vcLedger := Concrete.ObligationCore.ledgerOfVCs dvcs
       let proofLinks := Concrete.ObligationCore.proofLinkLedger
@@ -1864,15 +1879,17 @@ def compileAndReport (inputPath : String) (reportType : String)
         -- ONE derivation, shared with the ledger fold (Report.multiKernelVerdict), so
         -- this report and the stored artifact cannot disagree about the same
         -- obligation. They used to compute the class independently.
-        let inputs : List Report.KernelInput := kernels.map (fun (name, label, en, _, em, res) =>
-          { name, label
-          , cell := match cellOf en em res o.key with
+        -- R-0465: one shared constructor with the other two consumers. This surface learns
+        -- what a kernel said from a driver result string rather than a verdict list, which is
+        -- its own business; what happens NEXT — absent contributes nothing, the witness is
+        -- minted — is not, and is no longer restated here.
+        let inputs : List Report.KernelInput := kernels.flatMap (fun (name, label, en, _, em, res) =>
+          Report.kernelInputOf o.key name label
+            (match cellOf en em res o.key with
               | "closed"  => .closed
               | "refused" => .refused
-              | _         => .absent      -- off / unavailable / not-asked / error
-          -- Minted, not asserted: no witness unless this kernel's agreement lemma closed
-          -- for THIS obligation.
-          , validated := Report.LoweringValidated.mint name o.key (validatedOf name) })
+              | _         => .absent)     -- off / unavailable / not-asked / error
+            (validatedOf name))
         -- A capped obligation earns no badge, whatever the kernels said. The kernels did
         -- close their goals; the goals rest on something unestablished. Recorded as
         -- `assumed` for the same reason the ledger does — it is gate-forbiddable.

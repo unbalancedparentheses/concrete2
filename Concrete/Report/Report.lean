@@ -2322,12 +2322,42 @@ a class it does not own (the evidence-class firewall is structural, not a
 convention). omega/bv_decide own the kernel classes, external SMT owns only the
 solver classes, Lean-replay owns only `proved_by_lean_replay`. -/
 
+/-- **R-0465: how a backend may treat what a claim RESTS ON — the firewall's second axis.**
+
+    `allowed` governs *who may claim what*. Evidence has a second axis, *what the claim
+    rests on*, and it had no framework until Register C. H23 lived entirely in the second
+    one, which is why a well-built firewall did not catch it: the fold correctly refuses to
+    upgrade an `assumed` VC, but a VC proved under an unestablished invariant carries
+    `proved_by_kernel_decision` and sailed straight through.
+
+    `union` is the only sound default. A backend that closes a goal has learned something
+    about the goal, not about the hypotheses it was handed — so discharging a proof
+    obligation must never shrink the assumption set. `reset` exists to be *named and
+    unused*: it is what a backend that genuinely discharges assumptions would declare, and
+    having the case forces a new adapter to state its choice rather than inherit silence.
+    The compile-time example below pins that no adapter selects it today. -/
+inductive AssumptionPolicy where
+  | union
+  | reset
+  deriving DecidableEq, Repr
+
 structure DischargeAdapter where
   engine     : String              -- the engine string stamped on a touched VC
   allowed    : List String         -- the ONLY statuses this backend may assign
   actsOn     : String → Bool       -- precondition: which CURRENT status it may act on
   finalize   : String → String → String  -- (vcKind, rawResultClass) → final status
   setsSolver : Bool := false       -- whether to stamp the solver-identity field
+  assumptions : AssumptionPolicy := .union  -- R-0465: never `reset` without saying so
+
+/-- The firewall's admission test: may this adapter move a VC in `curStatus` to `cls`?
+
+    Extracted from `fold` so a backend that cannot use `fold` still passes the SAME test.
+    `foldMultiKernelResults` is that backend — it computes a rich verdict (receipts,
+    attesters, independence axes) rather than a bare class, so it cannot be expressed as a
+    `results` list, and it therefore assigned its status by direct record update, outside
+    the firewall built to govern exactly that. R-0465 routes it through here instead. -/
+def DischargeAdapter.admits (a : DischargeAdapter) (curStatus cls : String) : Bool :=
+  a.actsOn curStatus && a.allowed.contains cls
 
 /-- Apply a backend's `(id, rawClass, model)` results through the adapter
     firewall. A result is applied to VC `v` only when `v.id` matches, `actsOn
@@ -2341,10 +2371,18 @@ def DischargeAdapter.fold (a : DischargeAdapter) (solverId : String)
     | none => v
     | some (_, raw, model) =>
       let cls := a.finalize v.kind raw
-      if a.actsOn v.status && a.allowed.contains cls then
+      if a.admits v.status cls then
         { v with status := cls, engine := a.engine,
                  counterexample := if cls == "counterexample" then model else v.counterexample,
-                 solver := if a.setsSolver then solverId else v.solver }
+                 solver := if a.setsSolver then solverId else v.solver,
+                 -- EXPLICIT, not incidental. Record-update already preserved `hypDebt`, so
+                 -- this line changes no behaviour — and that is the point: the preservation
+                 -- was an accident of syntax that any future rewrite of this branch could
+                 -- drop without a single gate noticing. Stating it makes the second axis a
+                 -- declared property of the choke point.
+                 hypDebt := match a.assumptions with
+                   | .union => v.hypDebt
+                   | .reset => [] }
       else v
 
 /-- omega: a kernel decision procedure. Owns `proved_by_kernel_decision`, plus
@@ -2408,15 +2446,39 @@ def assumptionAdapter : DischargeAdapter :=
   { engine := "assumed", allowed := ["assumed", "trusted"],
     actsOn := fun _ => true, finalize := fun _ raw => raw }
 
+/-- **Multi-kernel attestation (R-0465).** Owns the three classes produced by consulting
+    independent kernels on an obligation Lean already closed: the two badges and the
+    downgrade. Acts ONLY on a VC that Lean has proved — external attestation is a strengthening
+    of an existing Lean proof, never a way to obtain one, so a `planned` or `unproven` VC is
+    outside its precondition and stays untouched.
+
+    `kernel_disagreement` is in `allowed` because this adapter is the thing that assigns it;
+    it is deliberately NOT in `proofClasses`, being a downgrade rather than a claim.
+
+    These were the newest and strongest classes in the system and the only ones outside the
+    firewall — protected by a hand-rolled `actsOn` in `foldMultiKernelResults`, which was
+    not unsound but was convention where everything around it was structure. -/
+def multiKernelAdapter : DischargeAdapter :=
+  { engine := "multi-kernel",
+    allowed := ["proved_by_two_kernels", "proved_by_multi_kernel", "kernel_disagreement"],
+    actsOn := fun s => s == "proved_by_kernel_decision" || s == "proved_by_lean"
+                       || s == "proved_by_lean_replay",
+    finalize := fun _ raw => raw }
+
 /-- Every backend adapter, for the firewall properties below and documentation. -/
 def dischargeAdapters : List DischargeAdapter :=
   [constantFoldAdapter, omegaAdapter, bvAdapter, linkedLeanAdapter, replayAdapter,
-   smtAdapter, oracleAdapter, runtimeAdapter, assumptionAdapter]
+   smtAdapter, oracleAdapter, runtimeAdapter, assumptionAdapter, multiKernelAdapter]
 
 /-- The static-proof evidence classes — the ones an untrusted backend (SMT,
     runtime, oracle, assumption) must NEVER be able to emit. -/
 def proofClasses : List String :=
-  ["proved_by_kernel_decision", "proved_by_lean", "proved_by_lean_replay", "arithmetic_proved"]
+  ["proved_by_kernel_decision", "proved_by_lean", "proved_by_lean_replay", "arithmetic_proved",
+   -- R-0465: the multi-kernel badges belong here. Their absence meant the four
+   -- "untrusted backends emit no proof class" examples below would have stayed GREEN if an
+   -- untrusted adapter had listed `proved_by_multi_kernel` — the strongest claim the system
+   -- can make was the one the firewall did not defend.
+   "proved_by_two_kernels", "proved_by_multi_kernel"]
 
 /-- Register C companion to `Evidence.c3_caps_to_assumed`, kept here because this is
     where `proofClasses` lives. C3 proves a claim with outstanding assumptions presents
@@ -2468,6 +2530,60 @@ example : (omegaAdapter.fold "" [fwVC "planned"]
 -- replay acts ONLY on solver_trusted: a planned VC is untouched.
 example : (replayAdapter.fold "" [fwVC "planned"]
     [("f#x", "x", [])]).map (·.status) = ["planned"] := rfl
+
+/-! #### R-0465: the multi-kernel classes, and the assumption axis
+
+The badges were the strongest claims in the system and the only ones the firewall did not
+govern. These pin both halves of that fix. -/
+
+-- Untrusted backends cannot emit a multi-kernel badge either. This is the check whose
+-- ABSENCE was the hole: before `proved_by_two_kernels`/`proved_by_multi_kernel` were added
+-- to `proofClasses`, the four examples above passed while saying nothing about them —
+-- widening the list is what gave them teeth, and this one states the property directly for
+-- EVERY adapter rather than the four that were spelled out by hand.
+example : dischargeAdapters.all (fun a =>
+  a.engine == "multi-kernel" || a.allowed.all (fun c =>
+    c != "proved_by_two_kernels" && c != "proved_by_multi_kernel")) = true := rfl
+
+-- Attestation STRENGTHENS an existing Lean proof; it is never a route to one. A VC the
+-- kernels never proved cannot be badged, whatever the external kernels claim.
+example : multiKernelAdapter.admits "planned" "proved_by_multi_kernel" = false := rfl
+example : multiKernelAdapter.admits "unproven" "proved_by_two_kernels" = false := rfl
+example : multiKernelAdapter.admits "assumed" "proved_by_multi_kernel" = false := rfl
+example : multiKernelAdapter.admits "solver_trusted" "proved_by_multi_kernel" = false := rfl
+-- ...and cannot mint a class it does not own, even from a legitimate precondition.
+example : multiKernelAdapter.admits "proved_by_kernel_decision" "proved_by_lean_replay" = false := rfl
+example : multiKernelAdapter.admits "proved_by_kernel_decision" "trusted" = false := rfl
+-- What it MAY do: strengthen a Lean-proved VC, or downgrade one on disagreement.
+example : multiKernelAdapter.admits "proved_by_kernel_decision" "proved_by_multi_kernel" = true := rfl
+example : multiKernelAdapter.admits "proved_by_lean" "proved_by_two_kernels" = true := rfl
+example : multiKernelAdapter.admits "proved_by_kernel_decision" "kernel_disagreement" = true := rfl
+-- The downgrade is not a proof class, so nothing above lets it launder into one.
+example : (!proofClasses.contains "kernel_disagreement") = true := rfl
+
+-- The assumption axis. No backend discharges assumptions, so every adapter unions; a new
+-- adapter selecting `.reset` is a deliberate, visible act that breaks this line.
+example : dischargeAdapters.all (fun a => a.assumptions == .union) = true := rfl
+
+-- One obligation, one verdict per kernel: the shape that replaced parallel closed/refused
+-- lists. `find?` cannot report both, so `proved_by_two_kernels` beside a stored refusal is
+-- now unrepresentable rather than merely unreachable.
+example : (([("k", KernelCell.refused), ("k", KernelCell.closed)].find? (·.1 == "k")).map (·.2))
+    = some KernelCell.refused := rfl
+
+private def debtVC (st : String) : VC :=
+  { fwVC st with hypDebt := ["g@1#O2"] }
+
+-- Behavioural: discharging a goal does not shrink what the goal RESTS ON. This is the H23
+-- axis, and it is the lock that a rewrite of `fold` would otherwise silently drop — the
+-- preservation used to be an accident of record-update syntax.
+example : (omegaAdapter.fold "" [debtVC "planned"]
+    [("f#x", "proved_by_kernel_decision", [])]).map (·.hypDebt) = [["g@1#O2"]] := rfl
+example : (smtAdapter.fold "z3" [debtVC "unproven"]
+    [("f#x", "solver_trusted", [])]).map (·.hypDebt) = [["g@1#O2"]] := rfl
+-- ...and a REFUSED fold leaves the debt alone too, rather than clearing it on the way out.
+example : (smtAdapter.fold "z3" [debtVC "unproven"]
+    [("f#x", "proved_by_kernel_decision", [])]).map (·.hypDebt) = [["g@1#O2"]] := rfl
 
 def dischargeVCs (vcs : List VC) (omegaProved bvProved : List String) : List VC :=
   -- omega then bv_decide through the adapter firewall; whatever stays `planned`
@@ -2534,9 +2650,9 @@ def foldReplayResults (vcs : List VC) (replayed : List String) : List VC :=
     badge. Defaulting these to `[]` would restore that hazard silently, so they default to
     `[]` meaning NOTHING is validated: a caller that forgets them gets no attestations
     rather than unchecked ones. Fail closed on the caller's mistake too. -/
-def foldMultiKernelResults (vcs : List VC) (rocqClosed isaClosed : List String)
+def foldMultiKernelResults (vcs : List VC)
+    (rocqVerdicts isaVerdicts : List (String × KernelCell))
     (leanVer : String := "lean") (rocqVer : String := "rocq") (isaVer : String := "isabelle")
-    (rocqRefused isaRefused : List String := [])
     (rocqValidated isaValidated : List String := [])
     : List VC :=
   vcs.map fun v =>
@@ -2552,14 +2668,24 @@ def foldMultiKernelResults (vcs : List VC) (rocqClosed isaClosed : List String)
       -- R-0450 (point the agreement technique at Lean's own rendering).
       let rocqW := LoweringValidated.mint "rocq" v.id rocqValidated
       let isaW  := LoweringValidated.mint "isabelle" v.id isaValidated
+      -- R-0465: ONE lookup per kernel, so an obligation has exactly one verdict from each.
+      -- This replaced parallel `closed`/`refused` lists whose type could not say they were
+      -- disjoint: given `rocqClosed = ["k"]` and `rocqRefused = ["k"]`, both receipts were
+      -- written while the `if closed … else if refused` chain passed only `.closed` to
+      -- `multiKernelVerdict`, yielding `proved_by_two_kernels` beside a stored refusal. It
+      -- was unreachable — both lists came from one verdict list upstream — but the API could
+      -- not express that, and an invariant held only by its producer is one refactor from
+      -- being lost. `find?` makes the question unaskable rather than answered.
+      let rocqCell := cellFor rocqVerdicts v.id
+      let isaCell  := cellFor isaVerdicts v.id
       let receipts : List KernelReceipt :=
         [{ kernel := "lean", version := leanVer, verdict := "closed", loweringAgreed := true
          , replay := "concrete <file> --report multi-kernel" }]
-        ++ (if rocqClosed.contains v.id then
+        ++ (if rocqCell == .closed then
               [{ kernel := "rocq", version := rocqVer, verdict := "closed"
                , loweringAgreed := rocqW.isSome
                , replay := "concrete <file> --report multi-kernel --rocq" }] else [])
-        ++ (if isaClosed.contains v.id then
+        ++ (if isaCell == .closed then
               [{ kernel := "isabelle", version := isaVer, verdict := "closed"
                , loweringAgreed := isaW.isSome
                , replay := "concrete <file> --report multi-kernel --isabelle" }] else [])
@@ -2568,11 +2694,11 @@ def foldMultiKernelResults (vcs : List VC) (rocqClosed isaClosed : List String)
       -- records that a kernel was consulted and disagreed — previously the stored
       -- claim was indistinguishable from one where no external kernel ran.
       let dissentReceipts : List KernelReceipt :=
-        (if rocqRefused.contains v.id then
+        (if rocqCell == .refused then
            [{ kernel := "rocq", version := rocqVer, verdict := "refused"
             , loweringAgreed := rocqW.isSome
             , replay := "concrete <file> --report multi-kernel --rocq" }] else [])
-        ++ (if isaRefused.contains v.id then
+        ++ (if isaCell == .refused then
               [{ kernel := "isabelle", version := isaVer, verdict := "refused"
                , loweringAgreed := isaW.isSome
                , replay := "concrete <file> --report multi-kernel --isabelle" }] else [])
@@ -2586,13 +2712,9 @@ def foldMultiKernelResults (vcs : List VC) (rocqClosed isaClosed : List String)
       -- Witnesses are MINTED per obligation from the validated sets, never asserted. If
       -- the agreement lemma did not close for this kernel and this id, `mint` yields
       -- `none` and multiKernelVerdict excludes the kernel entirely.
-      let mk := fun (name label : String) (cl rf : List String) (w : Option LoweringValidated) =>
-        if cl.contains v.id then [({ name, label, cell := .closed, validated := w } : KernelInput)]
-        else if rf.contains v.id then [({ name, label, cell := .refused, validated := w } : KernelInput)]
-        else []
       let verdict := multiKernelVerdict v.id true (
-        mk "rocq" "rocq:lia" rocqClosed rocqRefused rocqW
-        ++ mk "isabelle" "isabelle:presburger" isaClosed isaRefused isaW)
+        kernelInputOf v.id "rocq" "rocq:lia" rocqCell rocqValidated
+        ++ kernelInputOf v.id "isabelle" "isabelle:presburger" isaCell isaValidated)
       if !verdict.dissent.isEmpty then
         -- Dissent CAPS the stored claim exactly as it caps the report, and everything a
         -- kernel said stays in the artifact even when what it said blocks the badge:
@@ -2604,19 +2726,28 @@ def foldMultiKernelResults (vcs : List VC) (rocqClosed isaClosed : List String)
         -- different and more interesting fact than one within a single family, and
         -- dropping the axes would erase that. An external review found this branch
         -- silently leaving `independence := none` while the comment claimed otherwise.
-        { v with status := verdict.evidence.present, kernelReceipts := receipts,
-                 attestingKernels := verdict.attest,
-                 independence := some (independenceOf (receipts.map (·.kernel)).eraseDups),
-                 attestingKernelVersions := verdict.attest.map versionOf }
+        -- R-0465: the status passes the SAME admission test as every other backend's.
+        -- Everything else the kernels said is recorded regardless — refusing the status
+        -- change must not silently discard receipts, which are the audit trail.
+        let base :=
+          { v with kernelReceipts := receipts,
+                   attestingKernels := verdict.attest,
+                   independence := some (independenceOf (receipts.map (·.kernel)).eraseDups),
+                   attestingKernelVersions := verdict.attest.map versionOf }
+        if multiKernelAdapter.admits v.status verdict.evidence.present
+        then { base with status := verdict.evidence.present } else base
       else if attesting.length < 2 then v
       else
         let attest := attesting.map (·.kernel)
-        { v with status := verdict.evidence.present, attestingKernels := attest,
-                 kernelReceipts := receipts,
-                 independence := some (independenceOf attest),
-                 attestingKernelVersions := attest.map versionOf,
-                 -- engine string lists the EXTERNAL attesters (lean is already there)
-                 engine := "+".intercalate (v.engine :: attest.filter (· != "lean")) }
+        let base :=
+          { v with attestingKernels := attest,
+                   kernelReceipts := receipts,
+                   independence := some (independenceOf attest),
+                   attestingKernelVersions := attest.map versionOf,
+                   -- engine lists the EXTERNAL attesters (lean is already there)
+                   engine := "+".intercalate (v.engine :: attest.filter (· != "lean")) }
+        if multiKernelAdapter.admits v.status verdict.evidence.present
+        then { base with status := verdict.evidence.present } else base
     else v
 
 /-- **R-0461 / H23: cap a VC by the weakest thing its hypotheses rest on.**

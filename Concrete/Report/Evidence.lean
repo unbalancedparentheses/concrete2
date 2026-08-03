@@ -369,6 +369,30 @@ structure MultiKernelVerdict where
 def MultiKernelVerdict.displayStatus (v : MultiKernelVerdict) : String :=
   if v.evidence.assumes.isEmpty then v.display else v.evidence.present
 
+/-- **R-0465: the one place a kernel's word becomes a firewall input.**
+
+    Three consumers feed `multiKernelVerdict` — the multi-kernel report, the ledger fold,
+    and the release gate — and each built its `KernelInput`s itself. They agreed, but by
+    three call sites staying in step rather than by construction, and each independently
+    had to remember two things: that `.absent` contributes no input (a kernel that was not
+    asked must not read as one that refused), and that the witness is MINTED from the
+    validated set rather than asserted. The second is the rule whose earlier violation —
+    `loweringAgreed := true` at five sites — is why `LoweringValidated` exists at all.
+
+    Taking the cell as an argument rather than deriving it keeps this total: each consumer
+    learns what a kernel said in a different way (a verdict list, a filtered id set, a
+    driver result string), and that is legitimately their business. What must not vary is
+    what happens next. -/
+def kernelInputOf (ob : ObligationRef) (name label : String) (cell : KernelCell)
+    (validated : List String) : List KernelInput :=
+  if cell == .absent then []
+  else [{ name, label, cell, validated := LoweringValidated.mint name ob validated }]
+
+/-- The cell a kernel's verdict list assigns to one obligation. `find?`, so an obligation
+    has exactly ONE verdict per kernel and "closed and refused" is unrepresentable. -/
+def cellFor (verdicts : List (String × KernelCell)) (ob : ObligationRef) : KernelCell :=
+  ((verdicts.find? (·.1 == ob)).map (·.2)).getD .absent
+
 /-- Derive the multi-kernel verdict for ONE obligation, named by `ob`.
 
     A kernel is usable only if it carries a `LoweringValidated` witness minted for THIS
