@@ -71,9 +71,15 @@ if [ -f "$CORPUS" ]; then
   # because it verified anything. Unclassifiable headings are therefore a FAILURE, not a skip.
   HEADINGS="$(grep -oE '^echo "=== H[0-9]+[^"]*' "$CORPUS")"
   ALL_IDS="$(printf '%s' "$HEADINGS" | grep -oE 'H[0-9]+' | sort -u)"
-  REPRO="$(printf '%s\n' "$HEADINGS" | grep -E '^echo "=== H[0-9]+:' | grep -oE 'H[0-9]+' | sort -u)"
+  # `tr` to SPACES, not newlines. The `case " $REPRO " in *" $h "*` tests below match on
+  # space-delimited words; `sort -u` emits newline-delimited ones. With a single id per
+  # category the two forms coincide and this was invisible — it broke the moment H24 joined
+  # H23 as a guarded hole, reporting BOTH as unclassifiable. A check whose correctness
+  # depends on how many items it is checking is one that passes for the wrong reason.
+  REPRO="$(printf '%s\n' "$HEADINGS" | grep -E '^echo "=== H[0-9]+:' | grep -oE 'H[0-9]+' \
+           | sort -u | tr '\n' ' ')"
   GUARD="$(printf '%s\n' "$HEADINGS" | grep -E '^echo "=== H[0-9]+ \(CLOSED [0-9]{4}-[0-9]{2}-[0-9]{2}\):' \
-           | grep -oE 'H[0-9]+' | sort -u)"
+           | grep -oE 'H[0-9]+' | sort -u | tr '\n' ' ')"
   if [ -z "$ALL_IDS" ]; then
     no "could not parse hole ids from $CORPUS — the link between behaviour and status is broken"
   else
@@ -141,7 +147,7 @@ done
 # trustworthy if BOTH kinds of drift are loud.
 #
 # The exclusion list here is deliberately NARROWER than check 3's above: only genuine
-# past-tense markers. `until`/`before` are excluded up there because "H24 is open until
+# past-tense markers. `until`/`before` are excluded up there because "H24 is open until  HOLE-STATUS-OK: quoting the phrasing pattern, not asserting a status
 # R-0464" is a legitimate future condition; down here "H23 stays OPEN ... until R-0461" is  HOLE-STATUS-OK: quoting the stale form to explain it
 # the STALE form itself, and filtering on `until` is what hid Report.lean:2427 on this
 # check's first run. Same word, opposite meaning, depending on the hole's status.

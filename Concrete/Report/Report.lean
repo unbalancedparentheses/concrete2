@@ -2249,6 +2249,34 @@ def collectVCs (modules : List Module) (locMap : FnLocMap)
     out := out ++ [{ mkVC o.key "div_nonzero" o.fnQual file line hyps concl
       s!"{if o.isMod then "%" else "/"} divisor {Concrete.fmtExpr o.divExpr} in {o.fnQual}" [] profile mode status engine
       with hypDebt := o.hypDebt }]
+    -- R-0464 / H24: the SECOND condition `IntArith.trapConditions` lists for `/` and `%`.
+    -- A separate VC with its own key, because a division can discharge `divisor ≠ 0` and
+    -- still trap on signed `MIN / -1` — one status for two conditions is how the weaker one
+    -- masked the stronger. Emitted only where the operand type has a signed minimum to
+    -- exclude; unsigned and unknown-width operands cannot hit the quotient overflow.
+    match o.quotGoal, o.quotMin with
+    | some g, some m =>
+      let (qh, qc) := splitVCGoal g
+      out := out ++ [{ mkVC (o.key ++ "q") "div_quotient_in_range" o.fnQual file line qh qc
+        s!"{if o.isMod then "%" else "/"} quotient of {Concrete.fmtExpr o.numExpr} by {Concrete.fmtExpr o.divExpr} in {o.fnQual} (excludes {m} / -1)"
+        [] "linear" "omega" "planned" ""
+        with hypDebt := o.hypDebt }]
+    | _, _ => pure ()
+  -- R-0464 / H24: shift amounts. A family that did not exist, so `<<`/`>>` produced no VC
+  -- at all and `--report vcs` was silent about an operation that aborts.
+  for o in shiftObligations modules do
+    let (file, line) := loc o.fnQual
+    let (hyps, concl, profile, mode, status, engine) := match o.leanGoal with
+      | some g => let (h, c) := splitVCGoal g; (h, c, "linear", "omega", "planned", "")
+      | none =>
+        let c := s!"0 ≤ {Concrete.fmtExpr o.amountExpr} ∧ {Concrete.fmtExpr o.amountExpr} < {o.width}"
+        let (st, en) := constStatus o.closedVerdict
+        if o.closedVerdict.isSome then ([], c, "constant", "constant_fold", st, en)
+        else ([], c, "unsupported", "none", "ineligible", "")
+    out := out ++ [{ mkVC o.key "shift_amount_in_range" o.fnQual file line hyps concl
+      s!"shift of {Concrete.fmtExpr o.shiftedExpr} by {Concrete.fmtExpr o.amountExpr} in {o.fnQual} (width {o.width})"
+      [] profile mode status engine
+      with hypDebt := o.hypDebt }]
   -- overflow (omega tier, then the interval-gated bv_decide fallback, then const).
   for o in overflowObligations modules do
     let (file, line) := loc o.fnQual

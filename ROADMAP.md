@@ -145,7 +145,7 @@ system.
 |---|---|---|
 | — | ~~**R-0461**~~ | **DONE 2026-08-03.** H23 closed: provenance + cap + `E0617` enforcement. See the execution note below — the cap turned out to be the cheap third of it |
 | 1 | **R-0004** slices 4–7 | mid-flight; R-0454 depends on its receipt envelope |
-| 2 | **R-0464** | H24 — reproduced unsoundness, fixture written; now the only reproduced unsoundness left |
+| — | ~~**R-0464**~~ | **DONE 2026-08-03.** H24 closed: trap conditions are enumerated once in `IntArith` and tied to families by a totality proof. **No reproduced unsoundness remains in KNOWN_HOLES.** |
 | 3 | **R-0466** | the measurement block begins; measuring a surface that reports `proved` for trapping operations had to wait for 2–3 |
 | 4 | **R-0471** | the work R-0466 needs in order to have anything to move |
 | 5 | **R-0470** | bug 063 — capability inference manufactures an empty capability set |
@@ -177,9 +177,15 @@ position is in the sequencing note below; this table is the index, not the reaso
 | **H20** `bv_decide`'s certificate check runs as native code | unowned; see [docs/AXIOMS.md](docs/AXIOMS.md) | `make test-bv-certificates` | a verified checker, or decomposition until kernel-reduction LRAT is practical |
 | **H21** nonlinear SMT results cannot be certificate-replayed | **R-0451** (upstream-blocked) | gate assertion in `check_multi_kernel.sh` | upstream reconstruction support, or a certified nonlinear checker |
 
-**Read the remaining reproduced hole as a scope limit on every claim this compiler makes.**
-Until R-0464, `proved` on a division means "the divisor is nonzero", not "this division
-cannot trap", and shifts claim nothing at all.
+**No reproduced unsoundness remains** (2026-08-03). H23 and H24 are both closed and both
+fixtures are retained as regression guards. The scope limits that remain are *structural*
+rather than reproduced — H19 (the Core→obligation bridge is unproven), H20, H21 — and they
+are bounded by Register A, not by anything a fixture currently demonstrates.
+
+Read that precisely: R-0464 proves every trap condition in the semantics has an obligation
+family, **not** that the families' propositions are strong enough. Sufficiency is Register A
+(0 of 4 rows), and `VC_BRIDGE_REGISTER.md`'s per-family `Discharging theorem (TODO)` entries
+are the list of what is still owed.
 
 H23 no longer needs such a caveat: an obligation resting on an unproved invariant now
 reports `assumed` on every surface and fails `[policy] forbid-assume` with `E0617`. What it

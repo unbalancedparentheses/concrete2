@@ -70,6 +70,13 @@ mod sha256 {
         return 0xc67178f2;
     }
 
+    // R-0464 surfaced this contract by generating the shift-range obligation that had never
+    // existed. `n` must be a strict rotation: at n == 0 the second shift is `x << 32`, which
+    // is out of range for u32 and TRAPS (verified: exit 134). Every caller here passes a
+    // constant in 2..25, so this was never reachable — but the precondition was real and
+    // unstated, which is precisely what an obligation is for.
+    #[requires(n > 0)]
+    #[requires(n < 32)]
     fn rotr(x: u32, n: u32) -> u32 {
         return (x >> n) | (x << (32 - n));
     }

@@ -443,9 +443,12 @@ def renderBounds (obls : List BoundsObl) (provedKeys : List String) : String := 
 
 mutual
 /-- `(isMod, divisorExpr)` for every `/` and `%` in an expression. -/
-partial def collectDivisorsE : Expr → List (Bool × Expr)
-  | .binOp _ .div l r => (false, r) :: (collectDivisorsE l ++ collectDivisorsE r)
-  | .binOp _ .mod l r => (true, r) :: (collectDivisorsE l ++ collectDivisorsE r)
+partial def collectDivisorsE : Expr → List (Bool × Expr × Expr)
+  -- R-0464: the DIVIDEND travels with the divisor now. `divisor ≠ 0` needs only `r`, which
+  -- is why `l` was dropped — and dropping it is what made the signed `MIN / -1` quotient
+  -- overflow inexpressible at this layer rather than merely unstated.
+  | .binOp _ .div l r => (false, l, r) :: (collectDivisorsE l ++ collectDivisorsE r)
+  | .binOp _ .mod l r => (true, l, r) :: (collectDivisorsE l ++ collectDivisorsE r)
   | .binOp _ _ l r => collectDivisorsE l ++ collectDivisorsE r
   | .unaryOp _ _ x | .paren _ x | .borrow _ x | .borrowMut _ x | .deref _ x
   | .try_ _ x | .cast _ x _ | .fieldAccess _ x _ => collectDivisorsE x
@@ -461,7 +464,7 @@ partial def collectDivisorsE : Expr → List (Bool × Expr)
       collectDivisorsE c ++ t.flatMap collectDivisorsS ++ el.flatMap collectDivisorsS
   | .match_ _ s _ => collectDivisorsE s
   | _ => []
-partial def collectDivisorsS : Stmt → List (Bool × Expr)
+partial def collectDivisorsS : Stmt → List (Bool × Expr × Expr)
   | .letDecl _ _ _ _ v _ | .assign _ _ v | .expr _ v _ | .defer _ v => collectDivisorsE v
   | .return_ _ (some v) => collectDivisorsE v
   | .ifElse _ c t el => collectDivisorsE c ++ t.flatMap collectDivisorsS ++ (el.getD []).flatMap collectDivisorsS
@@ -478,17 +481,17 @@ end
     (the walker owns recursion into branches/loops/init/step, so
     `.ifElse`/`.while_`/`.forLoop` contribute only their condition's divisors).
     Each item is `(isMod, divisorExpr, scope)`. -/
-def divLeaf (scope : List Expr) : Stmt → List (Bool × Expr × List Expr)
+def divLeaf (scope : List Expr) : Stmt → List (Bool × Expr × Expr × List Expr)
   | .letDecl _ _ _ _ v _ | .assign _ _ v | .expr _ v _ | .defer _ v =>
-      (collectDivisorsE v).map fun (m, e) => (m, e, scope)
-  | .return_ _ (some v) => (collectDivisorsE v).map fun (m, e) => (m, e, scope)
-  | .ifElse _ c _ _ => (collectDivisorsE c).map fun (m, e) => (m, e, scope)
-  | .while_ _ c _ _ => (collectDivisorsE c).map fun (m, e) => (m, e, scope)
-  | .forLoop _ _ c _ _ _ => (collectDivisorsE c).map fun (m, e) => (m, e, scope)
+      (collectDivisorsE v).map fun (m, n, e) => (m, n, e, scope)
+  | .return_ _ (some v) => (collectDivisorsE v).map fun (m, n, e) => (m, n, e, scope)
+  | .ifElse _ c _ _ => (collectDivisorsE c).map fun (m, n, e) => (m, n, e, scope)
+  | .while_ _ c _ _ => (collectDivisorsE c).map fun (m, n, e) => (m, n, e, scope)
+  | .forLoop _ _ c _ _ _ => (collectDivisorsE c).map fun (m, n, e) => (m, n, e, scope)
   | .fieldAssign _ o _ v | .derefAssign _ o v =>
-      (collectDivisorsE o ++ collectDivisorsE v).map fun (m, e) => (m, e, scope)
+      (collectDivisorsE o ++ collectDivisorsE v).map fun (m, n, e) => (m, n, e, scope)
   | .arrayIndexAssign _ a i v =>
-      (collectDivisorsE a ++ collectDivisorsE i ++ collectDivisorsE v).map fun (m, e) => (m, e, scope)
+      (collectDivisorsE a ++ collectDivisorsE i ++ collectDivisorsE v).map fun (m, n, e) => (m, n, e, scope)
   | _ => []
 
 /-- Divisor uses paired with the hypotheses in scope at the `/`/`%` (Phase 3 #6 —
@@ -500,78 +503,8 @@ def divLeaf (scope : List Expr) : Stmt → List (Bool × Expr × List Expr)
     E-division ONLY when the dividend is provably non-negative — keeping Concrete's
     truncating semantics from being confused with Lean's floor division. -/
 def scopedDivB (lcs : List LoopContract) (scope : List Expr) (body : List Stmt) :
-    List (Bool × Expr × List Expr) :=
+    List (Bool × Expr × Expr × List Expr) :=
   scopedWalkB divLeaf lcs scope body
-
-/-- One division-by-zero obligation. -/
-structure DivObl where
-  fnQual        : String
-  key           : String
-  divExpr       : Expr
-  isMod         : Bool
-  closedVerdict : Option Bool
-  leanGoal      : Option String
-  hyps          : List Expr := []   -- in-scope #[requires]/guards (for prover-neutral lowering)
-  -- Loop VCs these hypotheses owe (R-0461). Non-empty means the obligation was discharged
-  -- under an invariant whose own O1/O2 must hold; the ledger caps the status accordingly.
-  hypDebt       : List String := []
-
-/-- Generate `divisor ≠ 0` obligations for every `/` and `%`. -/
-def divObligations (modules : List Module) : List DivObl := Id.run do
-  let mut out : List DivObl := []
-  for (pfx, f) in modules.flatMap allFunctions do
-    let fq := pfx ++ f.name
-    let mut i := 0
-    for (isMod, dv, scope) in scopedDivB f.loopContracts [] f.body do
-      let key := s!"{fq}#div{i}"
-      let obHyps := f.requires ++ scope
-      let cv : Option Bool × Option String := match cEvalInt dv with
-        | some k => (some (decide (k ≠ 0)), none)
-        | none => match toLeanProp dv with
-          | none => (none, none)
-          | some dStr =>
-            let vars := (collectIdents dv ++ obHyps.flatMap collectIdents).eraseDups
-            let reqs := obHyps.filterMap toLeanProp
-            let binder := if vars.isEmpty then "" else s!"∀ ({" ".intercalate vars} : Int), "
-            let hyp := if reqs.isEmpty then "" else s!"({" ∧ ".intercalate reqs}) → "
-            (none, some s!"{binder}{hyp}({dStr} ≠ 0)")
-      out := out ++ [{ fnQual := fq, key, divExpr := dv, isMod, closedVerdict := cv.1
-                     , leanGoal := cv.2, hyps := obHyps
-                     , hypDebt := loopInvariantDebt f fq obHyps }]
-      i := i + 1
-  return out
-
-/-- Lean goals for the non-constant divisor obligations, for omega discharge. -/
-def divGoals (modules : List Module) : List (String × String) :=
-  (divObligations modules).filterMap fun o => o.leanGoal.map (fun g => (o.key, g))
-
-/-- Render the division-by-zero section. -/
-def renderDiv (obls : List DivObl) (provedKeys : List String) : String := Id.run do
-  if obls.isEmpty then return ""
-  let mut out := "\n\n=== Runtime-safety obligations (division: non-zero divisor) ==="
-  let mut cur := ""
-  for o in obls do
-    if o.fnQual != cur then out := out ++ s!"\n\n{o.fnQual}"; cur := o.fnQual
-    let opname := if o.isMod then "%" else "/"
-    let status := match o.closedVerdict with
-      | some true  => "checked: divisor is a nonzero constant"
-      | some false => "VIOLATION: division by zero (constant divisor)"
-      | none => match o.leanGoal with
-        | some _ =>
-          if provedKeys.contains o.key
-          then "proved_by_kernel_decision (omega) — divisor nonzero, no runtime check needed"
-          else "unproven — require the divisor nonzero (#[requires]), or insert a runtime check"
-        | none => "unproven — divisor not statically analyzable; needs a runtime check"
-    out := out ++ s!"\n  {opname} divisor {Concrete.fmtExpr o.divExpr}\n    status: {status}"
-  return out ++ "\n"
-
--- ============================================================
--- Runtime-safety obligations: integer overflow (opt-in)
--- ============================================================
--- Under `#[overflow_checked]`, each fixed-width `+`/`-`/`*` generates
--- `MIN ≤ result ≤ MAX` for that width. Opt-in, because Concrete's default
--- integer overflow semantics are profile-dependent and emitting this for every
--- arithmetic op would flood the audit. Same disposition shape as bounds/div.
 
 /-- Inclusive value range of a *fixed-width* integer type (none = arbitrary/
     `Int`). The range values come from the arithmetic reference
@@ -683,6 +616,210 @@ partial def collectLetTys : Stmt → List (String × Ty)
     `collectLetTys`). -/
 def varTyMap (f : FnDef) : List (String × Ty) :=
   f.params.map (fun p => (p.name, p.ty)) ++ f.body.flatMap collectLetTys
+
+/-- One division-by-zero obligation. -/
+structure DivObl where
+  fnQual        : String
+  key           : String
+  divExpr       : Expr              -- the DIVISOR (meaning unchanged; 6 consumers rely on it)
+  numExpr       : Expr              -- the DIVIDEND (R-0464: needed to state MIN / -1)
+  isMod         : Bool
+  closedVerdict : Option Bool
+  leanGoal      : Option String
+  -- R-0464 / H24: the `quotientInRange` half of what `IntArith.trapConditions` says `/` and
+  -- `%` owe. `leanGoal` above is the `divisorNonZero` half, and shipping only that half is
+  -- why `examples/trap_semantics_gap/` reported `proved_by_kernel_decision` for a division
+  -- that aborts. `none` when the operand type is not a known-width integer, in which case
+  -- there is no MIN to state and the condition is vacuous.
+  quotGoal      : Option String := none
+  -- The signed minimum this obligation excludes, for the report. `none` for unsigned and
+  -- unknown-width types, which cannot hit the quotient overflow at all.
+  quotMin       : Option Int := none
+  hyps          : List Expr := []   -- in-scope #[requires]/guards (for prover-neutral lowering)
+  -- Loop VCs these hypotheses owe (R-0461). Non-empty means the obligation was discharged
+  -- under an invariant whose own O1/O2 must hold; the ledger caps the status accordingly.
+  hypDebt       : List String := []
+
+/-- Generate `divisor ≠ 0` obligations for every `/` and `%`. -/
+def divObligations (modules : List Module) : List DivObl := Id.run do
+  let mut out : List DivObl := []
+  for (pfx, f) in modules.flatMap allFunctions do
+    let fq := pfx ++ f.name
+    let vt := varTyMap f
+    let mut i := 0
+    for (isMod, nv, dv, scope) in scopedDivB f.loopContracts [] f.body do
+      let key := s!"{fq}#div{i}"
+      let obHyps := f.requires ++ scope
+      let cv : Option Bool × Option String := match cEvalInt dv with
+        | some k => (some (decide (k ≠ 0)), none)
+        | none => match toLeanProp dv with
+          | none => (none, none)
+          | some dStr =>
+            let vars := (collectIdents dv ++ obHyps.flatMap collectIdents).eraseDups
+            let reqs := obHyps.filterMap toLeanProp
+            let binder := if vars.isEmpty then "" else s!"∀ ({" ".intercalate vars} : Int), "
+            let hyp := if reqs.isEmpty then "" else s!"({" ∧ ".intercalate reqs}) → "
+            (none, some s!"{binder}{hyp}({dStr} ≠ 0)")
+      -- R-0464: the SECOND condition `IntArith.trapConditions` lists for `/` and `%`.
+      -- Signed only, and type-relative: the bound is THIS type's minimum, which is exactly
+      -- what a hand-written rule gets wrong at one width or another.
+      let quot : Option String × Option Int :=
+        match (exprIntTy vt (if isMod then nv else nv)).bind intRange with
+        | some (lo, _) =>
+          if !(IntArith.isSignedInt ((exprIntTy vt nv).getD .i32)) then (none, none)
+          else match toLeanProp nv, toLeanProp dv with
+            | some nStr, some dStr =>
+              let vars := (collectIdents nv ++ collectIdents dv
+                           ++ obHyps.flatMap collectIdents).eraseDups
+              let reqs := obHyps.filterMap toLeanProp
+              let binder := if vars.isEmpty then "" else s!"∀ ({" ".intercalate vars} : Int), "
+              let hyp := if reqs.isEmpty then "" else s!"({" ∧ ".intercalate reqs}) → "
+              (some s!"{binder}{hyp}(¬({nStr} = {lo} ∧ {dStr} = -1))", some lo)
+            | _, _ => (none, some lo)
+        | none => (none, none)
+      out := out ++ [{ fnQual := fq, key, divExpr := dv, numExpr := nv, isMod
+                     , closedVerdict := cv.1
+                     , leanGoal := cv.2, hyps := obHyps
+                     , quotGoal := quot.1, quotMin := quot.2
+                     , hypDebt := loopInvariantDebt f fq obHyps }]
+      i := i + 1
+  return out
+
+/-! ### Shift-amount obligations (R-0464 / H24)
+
+The third condition `IntArith.trapConditions` lists, and the one no family generated. This
+was not a weak rule but an ABSENT one: `collectArithE` matches `.add | .sub | .mul`, so `<<`
+and `>>` were collected by nothing, `--report vcs` was empty for them, and
+`examples/trap_semantics_gap/`'s `1 << 40` aborted with no obligation having been stated.
+
+Worth recording why the gate suite could not see it: `check_vc_bridge_register.sh` asserts
+every family GENERATOR has a register row. A missing family has no generator, so there is
+nothing for it to notice — the same blind spot mutation coverage has, one level up. What
+closes it is the totality lock against `allTrapConditions`, which fails when a condition in
+`IntArith` is claimed by no family. -/
+
+partial def collectShiftsE : Expr → List (Expr × Expr)
+  | .binOp _ .shl l r => (l, r) :: (collectShiftsE l ++ collectShiftsE r)
+  | .binOp _ .shr l r => (l, r) :: (collectShiftsE l ++ collectShiftsE r)
+  | .binOp _ _ l r => collectShiftsE l ++ collectShiftsE r
+  | .unaryOp _ _ x | .paren _ x | .borrow _ x | .borrowMut _ x | .deref _ x
+  | .try_ _ x | .cast _ x _ | .fieldAccess _ x _ => collectShiftsE x
+  | .arrayLit _ es => es.flatMap collectShiftsE
+  | .arrayIndex _ a i => collectShiftsE a ++ collectShiftsE i
+  | .call _ _ _ args => args.flatMap collectShiftsE
+  | .methodCall _ o _ _ args => collectShiftsE o ++ args.flatMap collectShiftsE
+  | .staticMethodCall _ _ _ _ args => args.flatMap collectShiftsE
+  | .structLit _ _ _ fs base =>
+      fs.flatMap (fun (_, fe) => collectShiftsE fe) ++ (base.map collectShiftsE).getD []
+  | .enumLit _ _ _ _ fs => fs.flatMap (fun (_, fe) => collectShiftsE fe)
+  | .allocCall _ x a => collectShiftsE x ++ collectShiftsE a
+  | .match_ _ sc _ => collectShiftsE sc
+  | _ => []
+
+def shiftLeaf (scope : List Expr) : Stmt → List (Expr × Expr × List Expr)
+  | .letDecl _ _ _ _ v _ | .assign _ _ v | .expr _ v _ | .defer _ v =>
+      (collectShiftsE v).map fun (l, r) => (l, r, scope)
+  | .return_ _ (some v) => (collectShiftsE v).map fun (l, r) => (l, r, scope)
+  | .ifElse _ c _ _ => (collectShiftsE c).map fun (l, r) => (l, r, scope)
+  | .while_ _ c _ _ => (collectShiftsE c).map fun (l, r) => (l, r, scope)
+  | .forLoop _ _ c _ _ _ => (collectShiftsE c).map fun (l, r) => (l, r, scope)
+  | .fieldAssign _ o _ v | .derefAssign _ o v =>
+      (collectShiftsE o ++ collectShiftsE v).map fun (l, r) => (l, r, scope)
+  | .arrayIndexAssign _ a i v =>
+      (collectShiftsE a ++ collectShiftsE i ++ collectShiftsE v).map fun (l, r) => (l, r, scope)
+  | _ => []
+
+/-- One shift-amount obligation: `0 ≤ amount < bitWidth(ty)`. -/
+structure ShiftObl where
+  fnQual        : String
+  key           : String
+  shiftedExpr   : Expr
+  amountExpr    : Expr
+  width         : Nat
+  closedVerdict : Option Bool
+  leanGoal      : Option String
+  hyps          : List Expr := []
+  hypDebt       : List String := []
+
+/-- Generate `0 ≤ amount < width` obligations for every `<<` and `>>`.
+
+    The width comes from the SHIFTED operand's type, matching
+    `IntArith.shiftAmountInRange`, which takes the value's type — not the amount's. Getting
+    that backwards would state a condition about the wrong width and pass. -/
+def shiftObligations (modules : List Module) : List ShiftObl := Id.run do
+  let mut out : List ShiftObl := []
+  for (pfx, f) in modules.flatMap allFunctions do
+    let fq := pfx ++ f.name
+    let vt := varTyMap f
+    let mut i := 0
+    for (sv, amt, scope) in scopedWalkB shiftLeaf f.loopContracts [] f.body do
+      match (exprIntTy vt sv).bind IntArith.intBitWidth with
+      | some (w, _) =>
+        let key := s!"{fq}#shift{i}"
+        let obHyps := f.requires ++ scope
+        let cv : Option Bool × Option String := match cEvalInt amt with
+          | some k => (some (decide (0 ≤ k ∧ k < Int.ofNat w)), none)
+          | none => match toLeanProp amt with
+            | none => (none, none)
+            | some aStr =>
+              let vars := (collectIdents amt ++ obHyps.flatMap collectIdents).eraseDups
+              let reqs := obHyps.filterMap toLeanProp
+              let binder := if vars.isEmpty then "" else s!"∀ ({" ".intercalate vars} : Int), "
+              let hyp := if reqs.isEmpty then "" else s!"({" ∧ ".intercalate reqs}) → "
+              (none, some s!"{binder}{hyp}(0 ≤ {aStr} ∧ {aStr} < {w})")
+        out := out ++ [{ fnQual := fq, key, shiftedExpr := sv, amountExpr := amt, width := w
+                       , closedVerdict := cv.1, leanGoal := cv.2, hyps := obHyps
+                       , hypDebt := loopInvariantDebt f fq obHyps }]
+        i := i + 1
+      | none => pure ()
+  return out
+
+/-- Lean goals for the non-constant shift-amount obligations, for omega discharge. -/
+def shiftGoals (modules : List Module) : List (String × String) :=
+  (shiftObligations modules).filterMap fun o => o.leanGoal.map (fun g => (o.key, g))
+
+/-- Lean goals for the non-constant divisor obligations, for omega discharge. -/
+def divGoals (modules : List Module) : List (String × String) :=
+  (divObligations modules).filterMap fun o => o.leanGoal.map (fun g => (o.key, g))
+
+/-- **R-0464: the quotient-overflow goals, keyed separately from `divGoals`.**
+
+    A distinct key (`…#divq{n}` rather than `…#div{n}`) because it is a distinct obligation:
+    a division can discharge `divisor ≠ 0` and fail `quotientInRange`, which is exactly the
+    case `examples/trap_semantics_gap/` reproduces. Sharing one key would let the stronger
+    condition's failure be masked by the weaker one's success — the same collapsing of two
+    facts into one status that H23 was. -/
+def divQuotGoals (modules : List Module) : List (String × String) :=
+  (divObligations modules).filterMap fun o => o.quotGoal.map (fun g => (o.key ++ "q", g))
+
+/-- Render the division-by-zero section. -/
+def renderDiv (obls : List DivObl) (provedKeys : List String) : String := Id.run do
+  if obls.isEmpty then return ""
+  let mut out := "\n\n=== Runtime-safety obligations (division: non-zero divisor) ==="
+  let mut cur := ""
+  for o in obls do
+    if o.fnQual != cur then out := out ++ s!"\n\n{o.fnQual}"; cur := o.fnQual
+    let opname := if o.isMod then "%" else "/"
+    let status := match o.closedVerdict with
+      | some true  => "checked: divisor is a nonzero constant"
+      | some false => "VIOLATION: division by zero (constant divisor)"
+      | none => match o.leanGoal with
+        | some _ =>
+          if provedKeys.contains o.key
+          then "proved_by_kernel_decision (omega) — divisor nonzero, no runtime check needed"
+          else "unproven — require the divisor nonzero (#[requires]), or insert a runtime check"
+        | none => "unproven — divisor not statically analyzable; needs a runtime check"
+    out := out ++ s!"\n  {opname} divisor {Concrete.fmtExpr o.divExpr}\n    status: {status}"
+  return out ++ "\n"
+
+-- ============================================================
+-- Runtime-safety obligations: integer overflow (opt-in)
+-- ============================================================
+-- Under `#[overflow_checked]`, each fixed-width `+`/`-`/`*` generates
+-- `MIN ≤ result ≤ MAX` for that width. Opt-in, because Concrete's default
+-- integer overflow semantics are profile-dependent and emitting this for every
+-- arithmetic op would flood the audit. Same disposition shape as bounds/div.
+
 
 -- ============================================================
 -- Nonlinear overflow discharge: interval analysis + bv_decide

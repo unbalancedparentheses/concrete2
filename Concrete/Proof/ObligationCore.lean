@@ -70,6 +70,12 @@ def statusVocabulary : List String :=
 def kindVocabulary : List String :=
   [ "requires_at_entry", "postcondition", "precondition", "array_bounds",
     "div_nonzero", "no_overflow", "assert", "assume", "vacuity",
+    -- R-0464 / H24: the two trap conditions obligation generation used to omit.
+    -- `div_quotient_in_range` is signed `MIN / -1`, which `div_nonzero` does not imply;
+    -- `shift_amount_in_range` had no family at all. Both are tied to
+    -- `IntArith.allTrapConditions` by a totality example in Report.lean, so a condition
+    -- added to the semantics cannot be left unclaimed by a family.
+    "div_quotient_in_range", "shift_amount_in_range",
     "loop_invariant_init", "loop_invariant_preservation", "loop_exit_implies_post",
     "variant_nonnegative", "variant_decreases", "invalid_contract_expression",
     "impure_contract_call", "source_proof_link", "proof_fingerprint", "spec_drift",
@@ -78,6 +84,41 @@ def kindVocabulary : List String :=
     -- Companion kind for the `unbound` status above; distinct from `spec_drift`
     -- so a release gate can tell "the subject moved" from "there is no subject".
     "unbound_proof_link" ]
+
+/-! ### Trap conditions ↔ obligation families (R-0464 / H24)
+
+`IntArith.trapConditions` says what a checked op owes. This says which obligation family
+discharges each, and the example below makes the correspondence TOTAL: a condition added to
+the semantics has no family until someone names one here, and naming a family that emits no
+such VC kind fails too.
+
+That totality is the part `check_vc_bridge_register.sh` structurally could not provide. It
+asserts every family GENERATOR has a register row, so a family that does not exist has no
+generator to notice — which is exactly how the shift gap stayed invisible while the gate
+suite was green. The direction matters: this walks from the SEMANTICS to the families, so
+absence is what it detects. -/
+
+/-- The VC kind that discharges each trap condition. Total by construction — a new
+    `TrapCondition` constructor makes this a missing-case error, which is the point. -/
+def familyForTrapCondition : IntArith.TrapCondition → String
+  | .divisorNonZero     => "div_nonzero"
+  | .quotientInRange    => "div_quotient_in_range"
+  | .resultInRange      => "no_overflow"
+  | .shiftAmountInRange => "shift_amount_in_range"
+
+/-- Every trap condition in the semantics is claimed by a real obligation kind. Fails if a
+    condition is added to `IntArith` without a family, or if `familyForTrapCondition` names
+    a kind that is not in the canonical vocabulary. -/
+example : IntArith.allTrapConditions.all
+    (fun c => kindVocabulary.contains (familyForTrapCondition c)) = true := rfl
+
+/-- And the map is injective: two conditions must not be answered by ONE obligation, which is
+    the specific defect H24 was. `div_nonzero` covered `divisorNonZero` and was treated as if
+    it also covered `quotientInRange`; a division discharged `b ≠ 0`, reported
+    `proved_by_kernel_decision`, and aborted on `MIN / -1`. Distinct conditions, distinct
+    obligations, distinct keys. -/
+example : (IntArith.allTrapConditions.map familyForTrapCondition).eraseDups.length
+    = IntArith.allTrapConditions.length := rfl
 
 /-- ObligationCore schema — the one typed obligation record (Phase 3 #18d). It is
     now an `abbrev` of `Report.Obligation`: there is a SINGLE record type, hosted

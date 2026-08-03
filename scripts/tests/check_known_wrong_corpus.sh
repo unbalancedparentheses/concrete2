@@ -91,20 +91,35 @@ fi
 "$COMPILER" "$H23" -o "$TMP/h23" >/dev/null 2>&1
 "$TMP/h23" >/dev/null 2>&1; expect_trap $? "H23 fixture still traps (the runtime check is correct)"
 
-echo "=== H24: trap conditions are still weaker than IntArith's ==="
+echo "=== H24 (CLOSED 2026-08-03): both trap conditions are now stated ==="
+# Was: "trap conditions are still weaker than IntArith's". R-0464 closed it, so these are
+# INVERTED — they guard the fix. The fixture stays for exactly that reason.
+#
+# As with H23, what changed is the CLAIM, not the program: both functions still trap,
+# because the inputs really are out of range. The obligations now say so beforehand.
 H24="examples/trap_semantics_gap/src/main.con"
 V24="$("$COMPILER" "$H24" --report vcs 2>/dev/null)"
-printf '%s' "$V24" | grep -A2 "#div0" | grep -q "proved" \
-  && ok "div obligation still reads proved (R-0464 must cover signed MIN / -1)" \
-  || no "div0 no longer proved — H24's insufficiency half may be FIXED; update the docs"
-# The applicability half: shifts generate NOTHING. Asserted by absence, which is exactly
-# why it was invisible — there is no obligation to inspect, so only a test that looks for
-# the ABSENCE can see it.
-printf '%s' "$V24" | grep -qi "shift" \
-  && no "a shift obligation now exists — H24's applicability half may be FIXED" \
-  || ok "shifts still generate NO obligation at all (applicability gap)"
+# 1. INSUFFICIENCY: div emitted only `divisor != 0`, missing signed MIN / -1.
+printf '%s' "$V24" | grep -q "div_quotient_in_range" \
+  && ok "the quotient-overflow obligation exists (was: never generated)" \
+  || no "no div_quotient_in_range VC — H24's insufficiency half has REGRESSED"
+printf '%s' "$V24" | grep -A2 "#div0q" | grep -q "unproven" \
+  && ok "and it is unproven under (b != 0) alone, which is the honest answer" \
+  || no "div0q is not unproven — either the fixture changed or the obligation is too weak"
+# It must be a SEPARATE key: one status for two conditions is how the weaker one masked
+# the stronger. div0 may legitimately stay proved; div0q must not be folded into it.
+printf '%s' "$V24" | grep -A2 "#div0\]" | grep -q "proved" \
+  && ok "the nonzero obligation still proves separately (two conditions, two VCs)" \
+  || no "div0 changed status — the two conditions may have been collapsed into one"
+# 2. INAPPLICABILITY: no shift family existed at all, so nothing looked for the fault.
+printf '%s' "$V24" | grep -q "shift_amount_in_range" \
+  && ok "the shift family exists (was: no obligation generated at all)" \
+  || no "no shift_amount_in_range VC — H24's applicability half has REGRESSED"
+printf '%s' "$V24" | grep -A4 "#shift0" | grep -q "0 ≤ b ∧ b < 32" \
+  && ok "the shift obligation uses the SHIFTED operand's width (32 for u32)" \
+  || no "the shift bound is wrong or missing — width must come from the value, not the amount"
 "$COMPILER" "$H24" -o "$TMP/h24" >/dev/null 2>&1
-"$TMP/h24" >/dev/null 2>&1; expect_trap $? "H24 fixture (proved division, MIN / -1)"
+"$TMP/h24" >/dev/null 2>&1; expect_trap $? "H24 fixture still traps (the inputs are genuinely out of range)"
 
 echo "=== the differential surfaces still do not catch H24 ==="
 # Recorded as an assertion because the register USED to claim bridge-check probes

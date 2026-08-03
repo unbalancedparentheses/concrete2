@@ -94,12 +94,30 @@ proofs are needed, since no test enumerates program points.
 
 | | |
 |---|---|
-| **Emits** | For each `/` and `%`: `divisor ≠ 0`. **INSUFFICIENT — H24, reproduced.** `IntArith` also traps on signed `MIN / -1`, and this row does not emit it, so `a / b` reports `proved_by_kernel_decision` under `b ≠ 0` and the binary aborts on `(i32::MIN, -1)`. The condition must be DERIVED from `IntArith` rather than restated here. Owned by R-0464. |
+| **Emits** | For each `/` and `%`, **two** obligations, one per condition in `IntArith.trapConditions .div`: `divisor ≠ 0` (`div_nonzero`) and `¬(dividend = MIN ∧ divisor = -1)` (`div_quotient_in_range`, key `…#div{n}q`). Separate VCs deliberately — a division can discharge the first and fail the second, and folding them into one status is how the weaker condition masked the stronger (H24, closed R-0464 2026-08-03). The quotient row is emitted only for signed operand types, which are the only ones with a MIN to exclude. |
 | **Assumes** | The divisor expression is evaluated exactly once at that point (no side-effecting re-evaluation); truncating semantics (`Int.tdiv`/`Int.tmod`) — the sign convention does not affect the obligation, but it does affect any model built alongside it. |
 | **Rejects** | Divisors outside the linear fragment (dropped, reads `not-asked`). |
 | **Forced by** | `examples/two_kernel_demo/src/families.con` (`div_safe`). |
 | **Cross-checked today** | `bridge-check` fuzz; `core-semantics-diff` cross-checks the truncating-division model — and caught a real fault there (`Z.div` vs `Z.quot` disagreeing at `(-7)/2`). |
-| **Discharging theorem (TODO)** | `div_obligation_sufficient`: `divisor ≠ 0` implies `IntArith.tdiv`/`tmod` do not trap at that site. |
+| **Discharging theorem (TODO)** | `div_obligation_sufficient`: the two conditions TOGETHER imply `IntArith.evalIntBinOp .div`/`.mod` does not trap at that site. Still a TODO — `familyForTrapCondition`'s totality proves every condition has a family, not that the families' propositions are strong enough. That is Register A's job, and this row is why the distinction matters. |
+
+### `shiftObligations` — shift amounts in range
+
+| | |
+|---|---|
+| **Emits** | For each `<<` and `>>`: `0 ≤ amount ∧ amount < bitWidth(ty)`, where `ty` is the **shifted operand's** type — matching `IntArith.shiftAmountInRange`, which takes the value's type, not the amount's. Taking the amount's type would state a condition about the wrong width and pass while checking nothing. |
+| **Assumes** | The amount expression is evaluated exactly once at that point; the shifted operand's type is a known fixed width (an unknown width emits nothing — see Rejects). |
+| **Rejects** | Shifts whose shifted operand has no resolvable integer type, and amounts outside the linear fragment (dropped, reads `not-asked`). |
+| **Forced by** | `examples/trap_semantics_gap/src/main.con` (`tg::s`, `1 << 40`). |
+| **Cross-checked today** | `check_known_wrong_corpus.sh` asserts the family exists and uses the shifted operand's width; `IntArith`'s `shiftAmountInRange` examples pin the boundary (31 ok, 32 not, negative not). |
+| **Discharging theorem (TODO)** | `shift_obligation_sufficient`: `0 ≤ n < w` implies `IntArith.evalIntBinOp .shl`/`.shr` does not trap at that site. |
+
+**Provenance of this row.** The family did not exist until R-0464 (2026-08-03), and its
+absence was invisible to this document's own gate: `check_vc_bridge_register.sh` walks from
+generators to rows, so a family with no generator has nothing to be missing. The totality
+example against `IntArith.allTrapConditions` walks the other way — from the semantics to the
+families — which is the direction that detects absence. Both directions are needed, and this
+row exists because the second one was added.
 
 ### `callSiteObligations` — callee preconditions hold at each call
 

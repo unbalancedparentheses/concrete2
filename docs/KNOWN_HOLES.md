@@ -28,7 +28,7 @@ freshness (bugs 058–060 / R-0004), and ProofCore callable identity (bug 061 /
 R-0442). R-0010 will replace the legacy skip-based audit with mechanically
 checked per-bug states.
 
-### H24. Obligation generation keeps its own weaker copy of the trap rules — OPEN, reproduced
+### H24. Obligation generation keeps its own weaker copy of the trap rules — CLOSED 2026-08-03 (R-0464)
 
 `Concrete.Semantics.IntArith` is the single-source trap semantics: it makes `trap` a
 first-class result and defines checked division as trapping on *divide-by-zero, signed
@@ -59,7 +59,51 @@ Gate-coverage note worth recording: `check_vc_bridge_register.sh` asserts every 
 *generator* has a register row. It cannot detect a **missing family**, because there is no
 generator to notice. The shift gap was invisible to it for exactly that reason.
 
-Owned by **R-0464**.
+**How it was closed (R-0464).** The fix is the one this entry demanded: not a more careful
+copy of the rules, but a single place that names them.
+
+1. `IntArith.TrapCondition` enumerates what a checked op owes — `divisorNonZero`,
+   `quotientInRange`, `resultInRange`, `shiftAmountInRange` — with `trapConditions : BinOp →
+   List TrapCondition` reading them off `evalIntBinOp`'s trap branches. Held to the evaluator
+   by 18 kernel-checked examples at the exact inputs the gap was reproduced at, including the
+   type-relativity that a hand-written rule gets wrong: `MIN / -1` fires at `i32` and not at
+   `.int` for the same literal operands.
+2. `divObligations` now emits `quotientInRange` as a SEPARATE VC (`…#div0q`,
+   `div_quotient_in_range`) alongside `divisor ≠ 0`. Separate because a division can
+   discharge one and fail the other, which is precisely how the weaker condition masked the
+   stronger. The dividend is threaded through the collector to make it expressible at all.
+3. A shift family exists (`shift_amount_in_range`), taking its width from the **shifted
+   operand's** type, matching `IntArith.shiftAmountInRange` — the amount's type is the wrong
+   one and would pass while stating nothing.
+4. `familyForTrapCondition` (in `ObligationCore.lean`, the only module that can see both
+   `IntArith` and `kindVocabulary`) maps each condition to the kind that discharges it, with
+   compile-time proofs of **totality** and **injectivity**. Adding a condition to the
+   semantics without a family is a missing-cases build error — verified by mutation, not
+   assumed. Injectivity is the H24 defect stated as a property: two conditions must not be
+   answered by one obligation.
+
+Why the gate suite could not have found this: `check_vc_bridge_register.sh` asserts every
+family *generator* has a register row, so a family that does not exist has no generator to
+notice. The totality lock closes that by walking from the SEMANTICS to the families, so
+**absence** is what it detects.
+
+**What generating the missing obligations immediately surfaced**, none of which was known:
+
+- `examples/hmac_sha256`'s `rotr` carried `#[requires(0 <= n && n < 32)]` — **too weak**. At
+  `n == 0` the body computes `x << 32`, out of range for `u32`, which traps. A hand-written
+  contract admitting an input its body cannot handle, found by generating the obligation
+  rather than by reading the contract. Tightened to `0 < n`.
+- `std`'s `sha256.rotr` had the same shape with no precondition at all. Not reachable — every
+  caller passes a constant in 2..25 — but the contract was real and unstated. Verified the
+  trap directly at `n == 0` (exit 134) before adding `#[requires]`.
+- Two obligations remain honestly unproven and are NOT bugs papered over:
+  `sha256.hash_raw#shift0` (`shift = (7 - li) * 8` needs `li`'s loop bound) and
+  `rand.random_range#div0q` (`r / range` at `range == -1` needs `libc_rand`'s range, which
+  its signature does not state). Both are now visible obligations where before there was
+  nothing; discharging them is follow-on work.
+
+The fixture still traps, and should: the inputs are genuinely out of range. R-0464 made the
+obligations state that in advance. `check_known_wrong_corpus.sh` asserts the fix.
 
 ### H23. An unproven hypothesis launders into a proved obligation — CLOSED 2026-08-03 (R-0461)
 

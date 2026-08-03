@@ -172,6 +172,12 @@ inductive ArithResult where
   | notApplicable
   deriving Repr, BEq, Inhabited
 
+/-- Did this evaluation trap? Used by the trap-condition locks below, which check the
+    `TrapCondition` enumeration against this evaluator on concrete inputs. -/
+def ArithResult.isTrap : ArithResult → Bool
+  | .trap _ => true
+  | _       => false
+
 /-- Evaluate a binary op on two integer operands under the result type `ty`
     (the LHS/value type). This is the single arithmetic evaluator: the
     interpreter calls it directly, and the constant folder calls it (via
@@ -270,6 +276,108 @@ def unaryOpCanTrap (op : UnaryOp) (ty : Ty) : Bool :=
   -- Integer negation only. Float negation is total, and `~`/`!` cannot fail.
   | .neg => isIntTy ty
   | .bitnot | .not_ => false
+
+/-! ### Trap conditions as first-class data (R-0464 / H24)
+
+`evalIntBinOp` above is the authority on *whether* a checked op traps at given values.
+Obligation generation cannot call it — an obligation is a proposition about symbolic
+operands, not a computation on two `Int`s — so it stated its own trap conditions, and stated
+them weaker: `divObligations` emitted only `divisor ≠ 0`, missing the signed `MIN / -1`
+quotient overflow, and no family collected shifts at all. `collectArithE` matches only
+`.add | .sub | .mul`, so nothing else covered them either. Both faults are reproduced in
+`examples/trap_semantics_gap/`.
+
+The fix is not to duplicate the rules more carefully. It is to name, in ONE place, which
+conditions a checked op owes — then hold that enumeration to `evalIntBinOp` by kernel-checked
+example, and hold obligation generation to the enumeration by totality. A new trap rule then
+cannot be added to the evaluator without breaking a lock here, and cannot be listed here
+without a family claiming it.
+-/
+
+/-- One condition a checked operation must discharge to be trap-free. Data, not a
+    proposition, so both the evaluator lock below and obligation generation can pattern
+    match on it exhaustively — the same discipline as `HypOrigin` in Register C, and for the
+    same reason: a catch-all would give a newly added condition zero obligations, silently. -/
+inductive TrapCondition where
+  /-- `b ≠ 0` for `/` and `%`. -/
+  | divisorNonZero
+  /-- The quotient fits the type: excludes signed `MIN / -1` (and `MIN % -1`, whose implied
+      quotient overflows identically). This is the one `divObligations` omitted. -/
+  | quotientInRange
+  /-- The result fits the type: `+ - *` overflow. -/
+  | resultInRange
+  /-- `0 ≤ b < bitWidth` for `<<` and `>>`. No family generated this at all. -/
+  | shiftAmountInRange
+  deriving DecidableEq, Repr, Inhabited
+
+/-- Every trap condition, for the totality checks that keep families honest. -/
+def allTrapConditions : List TrapCondition :=
+  [.divisorNonZero, .quotientInRange, .resultInRange, .shiftAmountInRange]
+
+/-- **The complete set of trap conditions a CHECKED binary op owes.**
+
+    Read off `evalIntBinOp`'s trap branches, and locked to them by the examples below rather
+    than by trust. `wrapping_*` and `saturating_*` are absent because they are defined not to
+    trap; comparison and boolean ops carry no integer trap.
+
+    `bitand`/`bitor`/`bitxor` are total on in-range operands and appear with `[]` for the same
+    reason — stated explicitly rather than falling into a catch-all, so that adding a trapping
+    bitwise op forces a decision here. -/
+def trapConditions : BinOp → List TrapCondition
+  | .div | .mod => [.divisorNonZero, .quotientInRange]
+  | .add | .sub | .mul => [.resultInRange]
+  | .shl | .shr => [.shiftAmountInRange]
+  | .wrappingAdd | .wrappingSub | .wrappingMul => []
+  | .saturatingAdd | .saturatingSub | .saturatingMul => []
+  | .bitand | .bitor | .bitxor => []
+  | .eq | .neq | .lt | .gt | .leq | .geq | .and_ | .or_ => []
+
+/-- Does this specific condition hold at these values, for this type? The decidable
+    counterpart of what an obligation says symbolically — the bridge that lets the examples
+    below check the enumeration against `evalIntBinOp` on concrete inputs. -/
+def trapConditionHolds (c : TrapCondition) (ty : Ty) (a b : Int) : Bool :=
+  match c with
+  | .divisorNonZero => b != 0
+  | .quotientInRange => b == 0 || (checkedToType ty (tdiv a b)).isSome
+  | .resultInRange => true   -- op-specific; the op's own range check covers it
+  | .shiftAmountInRange => shiftAmountInRange ty b
+
+/-! #### The lock: the enumeration agrees with the evaluator
+
+If `evalIntBinOp` traps on a `/` or `%` at these inputs, some condition in
+`trapConditions` must be false there. These are the exact inputs the gap was reproduced at,
+so a regression is a build failure. -/
+
+-- i32 MIN / -1 traps, and `divisorNonZero` alone does NOT explain it — this is the pair
+-- whose second element `divObligations` was missing. If `quotientInRange` were dropped from
+-- `trapConditions .div`, the first line would still hold and the second would fail.
+example : (evalIntBinOp .div (-2147483648) (.i32) (-1)).isTrap = true := rfl
+example : trapConditionHolds .divisorNonZero (.i32) (-2147483648) (-1) = true := rfl
+example : trapConditionHolds .quotientInRange (.i32) (-2147483648) (-1) = false := rfl
+-- the same for `%`, whose implied quotient overflows identically
+example : (evalIntBinOp .mod (-2147483648) (.i32) (-1)).isTrap = true := rfl
+example : trapConditionHolds .quotientInRange (.i32) (-2147483648) (-1) = false := rfl
+-- divide by zero is still caught by the condition that was already there
+example : (evalIntBinOp .div 1 (.i32) 0).isTrap = true := rfl
+example : trapConditionHolds .divisorNonZero (.i32) 1 0 = false := rfl
+-- an ordinary division trips neither condition
+example : (evalIntBinOp .div 7 (.i32) 2).isTrap = false := rfl
+example : trapConditionHolds .divisorNonZero (.i32) 7 2 = true := rfl
+example : trapConditionHolds .quotientInRange (.i32) 7 2 = true := rfl
+-- MIN / -1 is type-relative: at 64-bit (`.int`) the same literal operands are fine, and the
+-- condition fires only at THAT type's minimum. A rule stated without the type — which is
+-- what a hand-written obligation is tempted to do — is wrong at one width or the other.
+example : trapConditionHolds .quotientInRange (.int) (-2147483648) (-1) = true := rfl
+example : trapConditionHolds .quotientInRange (.int) (-9223372036854775808) (-1) = false := rfl
+-- shift amounts: in range, at the boundary, and over-width (the fixture's `1 << 40`)
+example : trapConditionHolds .shiftAmountInRange (.i32) 1 31 = true := rfl
+example : trapConditionHolds .shiftAmountInRange (.i32) 1 32 = false := rfl
+example : trapConditionHolds .shiftAmountInRange (.i32) 1 40 = false := rfl
+example : trapConditionHolds .shiftAmountInRange (.i32) 1 (-1) = false := rfl
+-- the checked ops all owe something; the non-trapping families owe nothing
+example : trapConditions .div = [.divisorNonZero, .quotientInRange] := rfl
+example : trapConditions .wrappingAdd = [] := rfl
+example : (trapConditions .shl).length = 1 := rfl
 
 end IntArith
 end Concrete

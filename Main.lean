@@ -678,7 +678,7 @@ def computeVCsDischarged (modules : List Concrete.Module) (locMap : Report.FnLoc
   let vcs := Report.collectVCs modules locMap registry
   let omegaGoals := Report.callPrecondGoals modules ++ Report.assertGoals modules
     ++ Report.vacuityGoals modules ++ Report.loopVCGoals modules
-    ++ Report.boundsGoals modules ++ Report.divGoals modules ++ Report.overflowGoals modules
+    ++ Report.boundsGoals modules ++ Report.divGoals modules ++ Report.divQuotGoals modules ++ Report.shiftGoals modules ++ Report.overflowGoals modules
   let omegaProved ← kernelDischargeLoopVCs omegaGoals
   let obs := Report.callSiteObligations modules
   let cands := ((List.range obs.length).zip obs).filterMap fun (i, o) => o.leanGoal.map (fun g => (i, g))
@@ -1823,7 +1823,7 @@ def compileAndReport (inputPath : String) (reportType : String)
       let cappedKeys := cappedVCs.filterMap (fun v =>
         if v.status == "assumed" && !v.hypDebt.isEmpty then some (v.id, v.hypDebt) else none)
       let omegaProved ← kernelDischargeLoopVCs
-        (Report.overflowGoals parsed.modules ++ Report.boundsGoals parsed.modules ++ Report.divGoals parsed.modules)
+        (Report.overflowGoals parsed.modules ++ Report.boundsGoals parsed.modules ++ Report.divGoals parsed.modules ++ Report.divQuotGoals parsed.modules ++ Report.shiftGoals parsed.modules)
       -- External-kernel drivers, each: (name, displayLabel, enabled, versionId,
       -- emittedKeys, result). `emittedKeys` are the obligations the driver COULD
       -- lower (others are dropped as outside the fragment — "not asked"); `result`
@@ -2014,7 +2014,7 @@ def compileAndReport (inputPath : String) (reportType : String)
       -- fuzzer has teeth. This checks a different axis than multi-kernel: not "do N
       -- kernels agree the VC is valid" but "does the VC actually match execution".
       let omegaProved ← kernelDischargeLoopVCs
-        (Report.overflowGoals parsed.modules ++ Report.boundsGoals parsed.modules ++ Report.divGoals parsed.modules)
+        (Report.overflowGoals parsed.modules ++ Report.boundsGoals parsed.modules ++ Report.divGoals parsed.modules ++ Report.divQuotGoals parsed.modules ++ Report.shiftGoals parsed.modules)
       let results := Report.bridgeFuzz parsed.modules
       let mut out := "=== Bridge differential-check (concrete evaluation vs the VC) ==="
       out := out ++ "\n  tests whether a PROVED obligation is ever refuted by a concrete, hypothesis-"
