@@ -124,7 +124,26 @@ if [ "$CI_WAIT" -eq 1 ]; then
     status="$(sed -n 's/.*"status":"\([^"]*\)".*/\1/p' <<<"$row")"
     conclusion="$(sed -n 's/.*"conclusion":"\([^"]*\)".*/\1/p' <<<"$row")"
     if [ "$status" = "completed" ]; then break; fi
+    # An empty result is NOT a status. `gh run list --commit` requires the full
+    # 40-char SHA: given an abbreviation it returns [] instead of erroring, so an
+    # empty list is indistinguishable from "the run has not been created yet" and
+    # from "the workflow name is wrong". Distinguish them explicitly rather than
+    # letting all three fall through to a 'pending'-looking timeout.
+    if [ -z "$status" ]; then
+      if [ "${#LOCAL}" -ne 40 ]; then
+        echo "push-both: internal error — CI query needs a full 40-char SHA, got '${LOCAL}'." >&2
+        exit 1
+      fi
+      saw_no_run=1
+    else
+      saw_no_run=0
+    fi
     if [ "$(date +%s)" -ge "$deadline" ]; then
+      if [ "${saw_no_run:-0}" -eq 1 ]; then
+        echo "push-both: no CI run found for ${LOCAL:0:8} on workflow '$CI_WORKFLOW' (event=push) within ${CI_TIMEOUT}s." >&2
+        echo "push-both: treating absence as UNVERIFIED, not as success — mirror NOT touched." >&2
+        exit 1
+      fi
       echo "push-both: CI for ${LOCAL:0:8} did not conclude within ${CI_TIMEOUT}s (status='${status:-none}') — mirror NOT touched." >&2
       exit 1
     fi

@@ -221,9 +221,43 @@ else
   ok "push-both pushes only the recorded SHA, not HEAD"
 fi
 # Both pushes, primary and mirror, must name it.
+# No COMPILED OUTPUT may be tracked. tests/programs/bug_064_aliased_imported_type
+# (a 35KB Mach-O) reached origin because a broad `git add -A` swept the compiler's
+# output in beside its .con source. .gitignore carries 16 one-off lines for exactly
+# this, which is the fact-restated-where-it-can-drift shape: every new fixture needs
+# a new line, and forgetting one is silent. gitignore globs cannot express "has no
+# extension", and a glob that guessed wrong would silently hide a real fixture — the
+# worse failure — so enforcement lives here instead.
+#
+# Scoped to EXTENSIONLESS files under tests/programs/, which is what the compiler
+# emits beside foo.con. A first attempt at "no binary anywhere under tests/" failed
+# on tests/fixtures/*.bin — those are deliberate ELF inputs for the ELF-parser
+# tests, i.e. program data, not build output. Binary-ness alone does not identify
+# an artifact; being an unextensioned sibling of a source program does.
+artifacts=""
+while IFS= read -r f; do
+  [ -n "$f" ] || continue
+  case "${f##*/}" in *.*) continue ;; esac
+  artifacts="$artifacts $f"
+done <<< "$(cd "$ROOT_DIR" && git ls-files 'tests/programs/*' 2>/dev/null)"
+if [ -z "$artifacts" ]; then
+  ok "no compiled output is tracked under tests/programs/"
+else
+  no "compiled outputs are tracked under tests/programs/:$artifacts"
+fi
+
 # The CI query must be scoped to the PUSH event. `--commit` alone also matches
 # schedule-triggered runs, and a nightly run pending on the same tip made a wait
 # time out while the push run had already succeeded.
+# An empty run list must not read as a verdict. `gh run list --commit` requires the
+# FULL 40-char SHA: given an abbreviation it returns [] rather than erroring, which
+# is indistinguishable from "CI never ran".
+if grep -q 'no CI run found' "$ROOT_DIR/scripts/push-both.sh"; then
+  ok "the CI wait fails closed when no run matches the SHA"
+else
+  no "push-both does not handle an empty run list; an unresolvable SHA would read as a verdict"
+fi
+
 if grep -q 'gh run list .*--event push' "$ROOT_DIR/scripts/push-both.sh"; then
   ok "the CI wait filters to push-triggered runs"
 else
