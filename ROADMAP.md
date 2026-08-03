@@ -1748,9 +1748,21 @@ So provenance belongs ON the declarations, not in a parallel `ResolvedImports`
 list. Had the `CExpr` conclusion been carried over by analogy, the design would
 have taken the harder path for a reason that does not apply here.
 
-Remaining for the implementation: populate `definedIn` at the copy site from
-`summary.name`, derive `TypeId` from `(definedIn, name)`, then `FieldId` /
-`VariantId` from it — and populate `definedIn` UNIFORMLY, local and imported alike.
+The implementation must preserve THREE distinct facts: the local lookup
+spelling (`name`), definition module (`definedIn`), and definition-site spelling
+(`definitionName`). Bug 064 deliberately changes `name` to an import alias; using
+`(definedIn, name)` would therefore mint a new identity for the alias. `TypeId`
+is derived only from `(definedIn, definitionName)`, then `FieldId` / `VariantId`
+from that owner. Nested summaries carry their full definition path, while
+transport paths preserve an already-minted identity rather than reminting it.
+
+**TYPE-IDENTITY FOUNDATION LANDED.** `TypeId` has typed user/builtin constructors;
+the builtin constructor accepts `BuiltinEnumId`, never display text. Parsed or
+manually built declarations have no identity until their summary stamps both
+definition-site components, and accessors fail closed on absence. The gate runs
+the real summary/import pipeline for local, aliased, transitive, nested and
+builtin cases. This supplies the V2 input; it does not yet create the parallel
+evidence body or close freshness.
 
 **That last point is measured, not assumed.** `m.name` is in scope at the LOCAL
 population site (`FileSummary.lean`, where the summary is built with

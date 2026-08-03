@@ -221,6 +221,15 @@ else
   ok "push-both pushes only the recorded SHA, not HEAD"
 fi
 # Both pushes, primary and mirror, must name it.
+# The CI query must be scoped to the PUSH event. `--commit` alone also matches
+# schedule-triggered runs, and a nightly run pending on the same tip made a wait
+# time out while the push run had already succeeded.
+if grep -q 'gh run list .*--event push' "$ROOT_DIR/scripts/push-both.sh"; then
+  ok "the CI wait filters to push-triggered runs"
+else
+  no "push-both's CI query is not scoped to --event push; a scheduled run on the same SHA can mask the real verdict"
+fi
+
 # The primary must be re-checked after the CI wait, not only before it: the wait is
 # ~45min and the primary is shared, so it can advance in that window.
 if grep -q 'pnow=' "$ROOT_DIR/scripts/push-both.sh" \

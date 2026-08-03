@@ -162,7 +162,11 @@ private def resolveAliasesInSig (aliases : List (String × Ty)) (sig : FnSummary
     params := sig.params.map fun (n, ty) => (n, resolveAliasesInTy aliases ty)
     retTy := resolveAliasesInTy aliases sig.retTy }
 
-partial def buildFileSummary (m : Module) : FileSummary :=
+partial def buildFileSummary (m : Module) (definitionPath : String := "") : FileSummary :=
+  -- `FileSummary.name` remains the module's local name for the existing lookup
+  -- table. Type identity needs the full definition path, including every
+  -- enclosing module, so carry that separately through recursive summaries.
+  let thisDefinitionPath := if definitionPath.isEmpty then m.name else definitionPath
   -- Build alias map for resolving type aliases in signatures
   let aliasMap := m.typeAliases.map fun ta => (ta.name, ta.targetTy)
   let functions := m.functions.map fun f =>
@@ -196,10 +200,12 @@ partial def buildFileSummary (m : Module) : FileSummary :=
                      (n, resolveAliasesInSig aliasMap sig)
   { name := m.name
     functions := functions
-    -- R-0004 path 1 (local): stamp the defining module here, where `m.name` is
-    -- already bound two lines above as the summary's own name.
-    structs := m.structs.map (fun sd => { sd with definedIn := m.name })
-    enums := m.enums.map (fun ed => { ed with definedIn := m.name })
+    -- R-0004 path 1 (local): stamp both definition-site components once.
+    -- Import aliases may later change `.name`; they never change these fields.
+    structs := m.structs.map (fun sd =>
+      { sd with definedIn := thisDefinitionPath, definitionName := sd.name })
+    enums := m.enums.map (fun ed =>
+      { ed with definedIn := thisDefinitionPath, definitionName := ed.name })
     implBlocks := m.implBlocks
     traitImpls := m.traitImpls
     publicNames := publicNames
@@ -211,7 +217,10 @@ partial def buildFileSummary (m : Module) : FileSummary :=
     externFnSigs := externFnSigs
     implMethodSigs := implMethodSigs
     imports := m.imports
-    submoduleSummaries := m.submodules.map fun sub => (sub.name, buildFileSummary sub) }
+    submoduleSummaries := m.submodules.map fun sub =>
+      let childPath := if thisDefinitionPath.isEmpty then sub.name
+                       else thisDefinitionPath ++ "." ++ sub.name
+      (sub.name, buildFileSummary sub childPath) }
 
 /-- Recursively collect all submodule entries with all qualification prefixes.
     For each submodule, we register it under every suffix of its fully qualified path.
@@ -291,20 +300,16 @@ def resolveImports (imports : List ImportDecl)
             --
             -- A no-op when unaliased, since `localName == origName` there.
             --
-            -- NOTE for R-0004: this makes `name` the LOCAL spelling, so the
-            -- definition-site name is not recoverable from the declaration alone.
-            -- Provenance (`definedIn` + origName) has to be captured here too;
-            -- that is the V2 work, deliberately not smuggled into a bug fix.
-            -- R-0004 path 2 (explicit import). `name` is the LOCAL spelling so
-            -- lookup works (bug 064); `definedIn` keeps the origin, which that fix
-            -- would otherwise have made unrecoverable from the declaration alone.
-            .ok { acc with structs := acc.structs ++ [{ sd with name := localName, definedIn := summary.name }],
+            -- R-0004 path 2 (explicit import). Change only the lookup spelling.
+            -- `definedIn` and `definitionName` were minted by the defining
+            -- summary and must survive aliases and re-exports unchanged.
+            .ok { acc with structs := acc.structs ++ [{ sd with name := localName }],
                            implBlocks := acc.implBlocks ++ structImpls,
                            traitImpls := acc.traitImpls ++ structTraitImpls,
                            implMethodSigs := acc.implMethodSigs ++ matchingSigs }
           | none =>
             match summary.enums.find? fun ed => ed.name == origName with
-            | some ed => .ok { acc with enums := acc.enums ++ [{ ed with name := localName, definedIn := summary.name }] }
+            | some ed => .ok { acc with enums := acc.enums ++ [{ ed with name := localName }] }
             | none =>
               match summary.typeAliases.find? fun ta => ta.isPublic && ta.name == origName with
               | some ta => .ok { acc with typeAliases := acc.typeAliases ++ [(localName, ta.targetTy)] }
@@ -388,9 +393,10 @@ def resolveImports (imports : List ImportDecl)
               ++ traitImpls.foldl (fun ns tb =>
               ns ++ (tb.methods.filter (·.isPublic)).map fun f => tb.typeName ++ "_" ++ f.name) []
             let sigs := summary.implMethodSigs.filter fun (name, _) => mangled.contains name
-            -- R-0004 path 3 (transitive closure): no alias on this path, so the
-            -- name stays as declared; only the origin needs recording.
-            acc := { acc with structs := acc.structs ++ [{ sd with definedIn := summary.name }],
+            -- R-0004 path 3 (transitive closure): preserve the identity already
+            -- minted by the defining summary. Reminting from this traversal's
+            -- module would turn a transport path into an identity owner.
+            acc := { acc with structs := acc.structs ++ [sd],
                               implBlocks := acc.implBlocks ++ impls,
                               traitImpls := acc.traitImpls ++ traitImpls,
                               implMethodSigs := acc.implMethodSigs ++ sigs }
@@ -398,11 +404,7 @@ def resolveImports (imports : List ImportDecl)
           | none =>
             match summary.enums.find? fun ed => ed.name == n with
             | some ed =>
-              -- Transitive-closure ingress: keyed by `n`, with NO alias in scope.
-              -- A DIFFERENT provenance path from the explicit-import copy above,
-              -- and evidence that "the copy site" is not singular (bug 064's fix
-              -- covers the explicit-import path only).
-              acc := { acc with enums := acc.enums ++ [{ ed with definedIn := summary.name }] }
+              acc := { acc with enums := acc.enums ++ [ed] }
               grew := true
             | none =>
               match summary.newtypes.find? fun nt => nt.isPublic && nt.name == n with

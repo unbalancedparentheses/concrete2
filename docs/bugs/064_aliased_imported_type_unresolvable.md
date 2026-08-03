@@ -1,6 +1,6 @@
 # Bug 064 — an imported type behind an alias does not resolve as that type
 
-**Status:** OPEN
+**Status:** FIXED 2026-08-02
 **Found:** 2026-08-02, by running the falsifying fixture specified for the R-0004
 V2 provenance spike. Code inspection alone had missed it twice.
 
@@ -52,6 +52,17 @@ this concerns TYPE aliases and name resolution.
 
 Imported field/variant identity cannot be measured until an aliased imported type
 elaborates at all. The V2 provenance work is behind this.
+
+## Fixed
+
+`resolveImports` now registers imported structs and enums under the importer's
+local spelling, so `Coord` resolves as the imported `Point`. The regression
+keeps the unaliased privacy control: it must still reach E0298, proving the fix
+preserves type resolution rather than merely suppressing E0254.
+
+R-0004's follow-on TypeId work keeps that local lookup spelling separate from
+the definition-site module and declaration name, so aliasing does not mint a
+new semantic type identity.
 
 ## Regression witness
 

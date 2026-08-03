@@ -1615,9 +1615,11 @@ partial def elabModule (m : Module) (summary : FileSummary)
   -- One owner: `Concrete.Resolve.BuiltinEnums` (bug 065). Both the builtin
   -- enums and the shadowing rule were stated twice, and Check consulted
   -- different inputs than Elab.
-  let builtinEnumList := builtinEnums m.enums imports.enums
-  let allStructs := imports.structs ++ m.structs
-  let allEnums := builtinEnumList ++ imports.enums ++ m.enums
+  let builtinEnumList := builtinEnums summary.enums imports.enums
+  -- The summary carries definition-site TypeId provenance. Raw parsed
+  -- declarations deliberately do not: absence before resolution fails closed.
+  let allStructs := imports.structs ++ summary.structs
+  let allEnums := builtinEnumList ++ imports.enums ++ summary.enums
   let localTypeAliases := m.typeAliases.map fun ta => (ta.name, ta.targetTy)
   -- Transitively close alias chains (see closeAliasMap); cycles rejected upstream.
   let typeAliasMap := closeAliasMap (imports.typeAliases ++ localTypeAliases)

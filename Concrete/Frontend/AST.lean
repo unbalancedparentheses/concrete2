@@ -281,15 +281,12 @@ structure EnumVariant where
 
 structure EnumDef where
   name : String
-  /-- Defining module. Populated at every ingress path (R-0004 V2): the
-      declaration site and both import paths. A `String`, not an
-      `Option` — `none` locally and `some m` when imported would give one
-      declaration two identities depending on which side of an import it
-      was seen from, and the module name is in scope on every path.
-
-      Empty only for compiler-synthesized declarations, which have no
-      defining module; those are identified by `builtinId` instead. -/
+  /-- Definition-site module, stamped by `buildFileSummary`. Empty means the
+      parsed declaration has not passed through semantic resolution yet. -/
   definedIn : String := ""
+  /-- Definition-site name. This remains `Point` when an importer binds the
+      declaration locally as `Coord`; `name` is the local lookup spelling. -/
+  definitionName : String := ""
   typeParams : List String := []
   typeBounds : List (String × List String) := []  -- type param bounds
   variants : List EnumVariant
@@ -301,15 +298,11 @@ structure EnumDef where
 
 structure StructDef where
   name : String
-  /-- Defining module. Populated at every ingress path (R-0004 V2): the
-      declaration site and both import paths. A `String`, not an
-      `Option` — `none` locally and `some m` when imported would give one
-      declaration two identities depending on which side of an import it
-      was seen from, and the module name is in scope on every path.
-
-      Empty only for compiler-synthesized declarations, which have no
-      defining module; those are identified by `builtinId` instead. -/
+  /-- Definition-site module, stamped by `buildFileSummary`. Empty means the
+      parsed declaration has not passed through semantic resolution yet. -/
   definedIn : String := ""
+  /-- Definition-site name, kept distinct from an importer's local alias. -/
+  definitionName : String := ""
   typeParams : List String := []
   typeBounds : List (String × List String) := []  -- type param bounds: T -> [Trait1, Trait2]
   fields : List StructField

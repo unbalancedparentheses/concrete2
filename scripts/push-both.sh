@@ -114,7 +114,12 @@ if [ "$CI_WAIT" -eq 1 ]; then
   while :; do
     # Query by COMMIT, not by branch: a branch query races with anyone else's
     # push and could report a green run for a different tip.
-    row="$(gh run list --workflow "$CI_WORKFLOW" --commit "$LOCAL" \
+    # FILTER TO THE PUSH EVENT. `--commit` alone matches ANY run for that SHA,
+    # including `schedule`-triggered ones — and a nightly run sitting `pending`
+    # on the same tip made this wait time out at 4200s while the push run had
+    # already finished SUCCESS. Measured on efafe5e2: two schedule runs
+    # (pending, in_progress) ahead of a completed push run in the same list.
+    row="$(gh run list --workflow "$CI_WORKFLOW" --commit "$LOCAL" --event push \
              --limit 1 --json status,conclusion,url 2>/dev/null || true)"
     status="$(sed -n 's/.*"status":"\([^"]*\)".*/\1/p' <<<"$row")"
     conclusion="$(sed -n 's/.*"conclusion":"\([^"]*\)".*/\1/p' <<<"$row")"

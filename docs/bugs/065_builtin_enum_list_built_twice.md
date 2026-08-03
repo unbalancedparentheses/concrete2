@@ -64,25 +64,3 @@ is present.
 Recorded this way deliberately: "the inputs differ" is measured, "it produces a
 wrong answer" is not, and stating the second would be the overreach this bug is
 an instance of.
-
-## Fixed
-
-One owner: `builtinOptionEnum`, `builtinResultEnum`, `hasUserResultEnum` and
-`builtinEnums` now live in `Concrete/Resolve/BuiltinEnums.lean`, consumed by both passes.
-
-Not in `Resolve/Intrinsic` (the obvious home, where `resultEnumName` lives): these
-are `EnumDef` VALUES and AST imports Intrinsic, so it would cycle. Not in
-`Frontend/AST` either, which was the first attempt — AST declares what a program
-CAN say, whereas which builtins are in scope and when a user declaration shadows
-one is construction POLICY. A dedicated module imports AST without cycling and
-keeps the two kinds of fact apart.
-
-`hasUserResultEnum` takes BOTH the module's enums and its imported ones, so the
-input asymmetry is gone by construction rather than by both sites remembering.
-
-## Original fix shape
-
-One owner. A single `builtinEnums (hasUserResult : Bool)` plus one shared
-`hasUserResult` computation consumed by both passes, so the shadowing rule and
-its inputs are each stated once. Worth doing regardless of whether a witness is
-found: the value of one owner is that the question stops being askable.

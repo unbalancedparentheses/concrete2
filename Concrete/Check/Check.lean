@@ -2094,13 +2094,15 @@ def checkModule (m : Module) (summary : FileSummary)
   -- Build named function signature map for fnRef resolution
   let fnSigPairs : List (String × FnSummary) :=
     summary.functions ++ (implMethodSigs ++ traitImplMethodSigs)
-  let allStructs := imports.structs ++ m.structs
+  -- Use resolved declarations so definition-site type provenance is present on
+  -- the same lookup path Elab and the evidence producer consume.
+  let allStructs := imports.structs ++ summary.structs
   -- Built-in Option<T> enum (Some { value: T }, None {})
   -- One owner: `Concrete.Resolve.BuiltinEnums` (bug 065). Both the builtin
   -- enums and the shadowing rule were stated twice, and Check consulted
   -- different inputs than Elab.
-  let builtinEnumList := builtinEnums m.enums imports.enums
-  let allEnums := builtinEnumList ++ imports.enums ++ m.enums
+  let builtinEnumList := builtinEnums summary.enums imports.enums
+  let allEnums := builtinEnumList ++ imports.enums ++ summary.enums
   -- Build type aliases map
   let localTypeAliases : List (String × Ty) := m.typeAliases.map fun ta => (ta.name, ta.targetTy)
   -- Transitively close so chains (`type B = A; type A = i32`) resolve in one lookup.

@@ -1,86 +1,190 @@
 #!/usr/bin/env bash
-# R-0004 V2 input — TypeId / FieldId / VariantId, and `definedIn` provenance.
+# R-0004 V2 input: definition-site TypeId / FieldId / VariantId.
 #
-# A type reference in evidence must name the DECLARATION it resolved to, not the
-# spelling at the use site. Two same-named types in different modules are two
-# types; an import alias is not a third.
-set -uo pipefail
+# These checks exercise buildFileSummary and resolveImports. Constructor-only
+# probes are insufficient: the dangerous failure is a sound identity type fed
+# the importer's alias, a bare nested-module name, or a transport module.
+set -Eeuo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
+
+fatal() {
+  local rc=$?
+  echo "FATAL: check_type_identity stopped at line ${BASH_LINENO[0]} (exit $rc)" >&2
+  exit "$rc"
+}
+trap fatal ERR
+
 [ -x ".lake/build/bin/concrete" ] || { echo "error: build first" >&2; exit 2; }
-TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
-PASS=0; FAIL=0
-ok(){ echo "  ok   $1"; PASS=$((PASS+1)); }
-no(){ echo "  FAIL $1"; FAIL=$((FAIL+1)); }
-probe() {
-  local label="$1" want="$2" body="$3"
-  printf 'import Concrete\nopen Concrete\n%s\n' "$body" > "$TMP/p.lean"
-  local out; out="$(lake env lean "$TMP/p.lean" 2>&1 || true)"
-  if grep -qE "error:|error\(lean" <<<"$out"; then
-    no "$label — probe did not elaborate: $(printf '%s' "$out" | tr '\n' ' ' | cut -c1-150)"
-  elif grep -qF -- "$want" <<<"$out"; then ok "$label"
-  else no "$label — got: $(printf '%s' "$out" | tr '\n' ' ' | cut -c1-150)"; fi
-}
+TMP_DIR="$(mktemp -d)"
+trap 'rm -rf "$TMP_DIR"' EXIT
 
-echo "=== identity, not spelling ==="
-probe "same type name in two modules are different types" "false" \
-'#eval (TypeId.ofUser "m1" "Point").render == (TypeId.ofUser "m2" "Point").render'
-probe "a builtin is not a user type of the same name" "false" \
-'#eval (TypeId.ofBuiltin "Option").render == (TypeId.ofUser "m" "Option").render'
-# A builtin has NO defining module. Empty must mean "none exists", not "unknown".
-probe "a builtin carries no defining module" "true" \
-'#eval (TypeId.ofBuiltin "Option").defModule.isEmpty && (TypeId.ofBuiltin "Option").ns == TypeNamespace.builtin'
-probe "the namespace list covers every constructor" "true" \
-'#eval TypeNamespace.all.length == 2
-  && (TypeNamespace.all.map TypeNamespace.canonical).eraseDups.length == 2'
+cat > "$TMP_DIR/type_identity.lean" <<'LEAN'
+import Concrete
 
-echo ""
-echo "=== a field/variant is named by its OWNER, not by its own name ==="
-# Two structs may both have `x`; the field name alone is not an identity.
-probe "same field name on different types differs" "false" \
-'#eval ({ owner := TypeId.ofUser "m" "A", field := "x" } : FieldId).render
-     == ({ owner := TypeId.ofUser "m" "B", field := "x" } : FieldId).render'
-probe "same variant name on different enums differs" "false" \
-'#eval ({ owner := TypeId.ofUser "m" "A", variant := "Yes" } : VariantId).render
-     == ({ owner := TypeId.ofUser "m" "B", variant := "Yes" } : VariantId).render'
-probe "a field and a variant of one name do not collide" "false" \
-'#eval ({ owner := TypeId.ofUser "m" "A", field := "x" } : FieldId).render
-     == ({ owner := TypeId.ofUser "m" "A", variant := "x" } : VariantId).render'
+open Concrete
 
-echo ""
-echo "=== definedIn is populated at every ingress path ==="
-CC=".lake/build/bin/concrete"
-# The ALIASED import is the case that separates real provenance from a name copy:
-# bug 064's fix makes `name` the local spelling, so origin must come from
-# definedIn or it is lost.
-cat > "$TMP/prov.con" <<'CON'
-mod lib { pub struct Copy Point { pub x: Int, pub y: Int } }
-mod app {
-    import lib.{ Point as Coord };
-    fn use_alias(c: Coord) -> Int { return c.x; }
-    pub fn main() -> Int { return use_alias(Coord { x: 1, y: 2 }); }
-}
-CON
-if "$CC" "$TMP/prov.con" >/dev/null 2>&1; then
-  ok "an aliased imported type still compiles (bug 064 stays fixed)"
+def assertTypeIdentity (label : String) (condition : Bool) : IO Unit :=
+  if condition then IO.println ("  ok   " ++ label)
+  else throw (IO.userError ("FAILED: " ++ label))
+
+def point (name : String := "Point") : StructDef :=
+  { name := name
+    fields := [{ name := "x", ty := .int, isPublic := true }]
+    isPublic := true }
+
+def choice (name : String := "Choice") : EnumDef :=
+  { name := name
+    variants := [{ name := "Yes", fields := [] }]
+    isPublic := true }
+
+def emptyModule (name : String) : Module :=
+  { name := name, structs := [], enums := [], functions := [] }
+
+def libModule : Module :=
+  { name := "lib", structs := [point], enums := [choice], functions := [] }
+
+def aliasImports : List ImportDecl :=
+  [{ moduleName := "lib"
+     symbols := [
+       { name := "Point", alias := some "Coord" },
+       { name := "Choice", alias := some "Decision" }
+     ] }]
+
+def resolveAlias : Except Diagnostics ResolvedImports :=
+  resolveImports aliasImports [("lib", buildFileSummary libModule)]
+    (fun m => "unknown " ++ m) (fun s m => s ++ " not public in " ++ m)
+
+def aliasKeepsDefinitionSite : Bool :=
+  match resolveAlias with
+  | .error _ => false
+  | .ok ri =>
+      match ri.structs, ri.enums with
+      | [sd], [ed] =>
+          sd.name == "Coord"
+            && sd.typeId? == some (TypeId.user "lib" "Point")
+            && ed.name == "Decision"
+            && ed.typeId? == some (TypeId.user "lib" "Choice")
+      | _, _ => false
+
+def transitiveModule : Module :=
+  { name := "transitive"
+    structs := [
+      point "Leaf",
+      { name := "Outer"
+        fields := [{ name := "leaf", ty := .named "Leaf", isPublic := true }]
+        isPublic := true }
+    ]
+    enums := []
+    functions := [] }
+
+def transitiveImports : List ImportDecl :=
+  [{ moduleName := "transitive", symbols := [{ name := "Outer" }] }]
+
+def transitiveKeepsDefinitionSite : Bool :=
+  match resolveImports transitiveImports
+      [("transitive", buildFileSummary transitiveModule)]
+      (fun m => "unknown " ++ m) (fun s m => s ++ " not public in " ++ m) with
+  | .error _ => false
+  | .ok ri =>
+      match ri.structs.find? (fun sd => sd.name == "Leaf") with
+      | some sd => sd.typeId? == some (TypeId.user "transitive" "Leaf")
+      | none => false
+
+def nestedRoot (root : String) : Module :=
+  { (emptyModule root) with
+    submodules := [
+      { (emptyModule "sub") with structs := [point] }
+    ] }
+
+def nestedId (root : String) : Option TypeId :=
+  let table := buildSummaryTable [nestedRoot root]
+  match table.find? (fun (key, _) => key == root ++ ".sub") with
+  | some (_, summary) => (summary.structs.head?).bind StructDef.typeId?
+  | none => none
+
+def ownerA : TypeId := TypeId.user "m" "A"
+def ownerB : TypeId := TypeId.user "m" "B"
+
+#eval do
+  assertTypeIdentity "same spelling in two modules gives different TypeIds"
+    (TypeId.ofUser "m1" "Point" != TypeId.ofUser "m2" "Point")
+  assertTypeIdentity "builtin identity requires and preserves BuiltinEnumId"
+    (TypeId.ofBuiltin .option != TypeId.ofBuiltin .result)
+  assertTypeIdentity "builtin and same-spelled user type are distinct"
+    (TypeId.ofBuiltin .option != TypeId.ofUser "m" "Option")
+  assertTypeIdentity "raw unresolved declarations fail closed"
+    ((point).typeId?.isNone && (choice).typeId?.isNone)
+  assertTypeIdentity "local summaries mint user identities"
+    (((buildFileSummary libModule).structs.head?).bind StructDef.typeId?
+      == some (TypeId.user "lib" "Point"))
+  assertTypeIdentity "aliases change lookup spelling but not definition identity"
+    aliasKeepsDefinitionSite
+  assertTypeIdentity "transitive closure transports rather than remints identity"
+    transitiveKeepsDefinitionSite
+  assertTypeIdentity "nested modules carry their fully-qualified definition path"
+    (nestedId "a" == some (TypeId.user "a.sub" "Point"))
+  assertTypeIdentity "same nested spelling under different parents stays distinct"
+    (nestedId "a" != nestedId "b")
+  assertTypeIdentity "compiler enums derive identity from builtinId"
+    (builtinOptionEnum.typeId? == some (TypeId.builtin .option)
+      && builtinResultEnum.typeId? == some (TypeId.builtin .result))
+  assertTypeIdentity "field identity is owner-relative"
+    (({ owner := ownerA, field := "x" } : FieldId)
+      != ({ owner := ownerB, field := "x" } : FieldId))
+  assertTypeIdentity "variant identity is owner-relative and domain-separated from fields"
+    (({ owner := ownerA, variant := "x" } : VariantId).render
+      != ({ owner := ownerA, field := "x" } : FieldId).render)
+LEAN
+
+echo "=== semantic type identity through the production resolver ==="
+if LEAN_OUT="$(lake env lean "$TMP_DIR/type_identity.lean" 2>&1)"; then
+  :
 else
-  no "the aliased-import program regressed"
+  rc=$?
+  printf '%s\n' "$LEAN_OUT" >&2
+  echo "FATAL: semantic TypeId probe did not elaborate" >&2
+  exit "$rc"
 fi
-# Structural: no ingress path may drop provenance.
-paths=$( { grep -c "definedIn :=" "$ROOT_DIR/Concrete/Resolve/FileSummary.lean" || true; } )
-[ "${paths:-0}" -ge 5 ] \
-  && ok "all ingress paths stamp definedIn ($paths sites)" \
-  || no "only ${paths:-0} definedIn sites in FileSummary — an ingress path drops provenance"
-# definedIn must be a String, not an Option: one declaration, one identity,
-# regardless of which side of an import it is seen from.
-probe "definedIn is not optional" "true" \
-'#eval ({ name := "S", fields := [] } : StructDef).definedIn == ""'
+printf '%s\n' "$LEAN_OUT"
+if printf '%s\n' "$LEAN_OUT" | grep -Eq 'error:|error\(lean'; then
+  echo "FATAL: Lean probe emitted a diagnostic" >&2
+  exit 1
+fi
+OK_COUNT="$(printf '%s\n' "$LEAN_OUT" | grep -c '^  ok   ' || true)"
+if [ "$OK_COUNT" -ne 12 ]; then
+  echo "FATAL: expected 12 semantic controls, saw $OK_COUNT" >&2
+  exit 1
+fi
 
 echo ""
-echo "BUILTIN types have no module, so they need the namespace, not a blank one"
-probe "a blank-module USER type is distinguishable from a builtin" "false" \
-'#eval (TypeId.ofUser "" "Option").render == (TypeId.ofBuiltin "Option").render'
+echo "=== builtin identity cannot be minted from display text ==="
+cat > "$TMP_DIR/raw_builtin.lean" <<'LEAN'
+import Concrete
+open Concrete
+#check TypeId.ofBuiltin "Option"
+LEAN
+if RAW_OUT="$(lake env lean "$TMP_DIR/raw_builtin.lean" 2>&1)"; then
+  echo "FATAL: TypeId.ofBuiltin accepted a raw String" >&2
+  exit 1
+fi
+if ! printf '%s\n' "$RAW_OUT" | grep -q 'BuiltinEnumId'; then
+  echo "FATAL: raw-builtin rejection was not the expected type mismatch" >&2
+  printf '%s\n' "$RAW_OUT" >&2
+  exit 1
+fi
+echo "  ok   raw strings cannot mint builtin TypeIds"
 
 echo ""
-echo "TYPE-IDENTITY: PASS=$PASS FAIL=$FAIL"
-[ "$FAIL" -eq 0 ]
+echo "=== ordinary compiler path ==="
+if .lake/build/bin/concrete tests/programs/bug_064_aliased_imported_type.con \
+    >"$TMP_DIR/bug064.out" 2>"$TMP_DIR/bug064.err"; then
+  echo "  ok   aliased imported type still compiles (bug 064)"
+else
+  echo "FATAL: bug 064 regressed" >&2
+  sed -n '1,120p' "$TMP_DIR/bug064.err" >&2
+  exit 1
+fi
+
+echo ""
+echo "TYPE-IDENTITY: PASS=14 FAIL=0"
