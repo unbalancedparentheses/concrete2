@@ -232,6 +232,31 @@ tree and restores on EXIT/INT/TERM — but bash defers a trap until the current 
 command returns, so a kill during `lake build` is not prompt. **After interrupting it, run
 `git status` before doing anything else.**
 
+### External review
+
+`.claude/codex-review-prompt.md` holds the review criteria as a versioned file — its seven
+checks each correspond to a defect this codebase actually shipped, so it is project
+knowledge rather than a one-off prompt. Run it read-only:
+
+```
+codex exec --sandbox read-only -c model_reasoning_effort="xhigh" \
+  "$(cat .claude/codex-review-prompt.md)" < /dev/null > review.md
+```
+
+Three things that cost a run each: `codex exec` hangs without `< /dev/null`; the default
+reasoning effort is `none`, which produces a near-worthless review; and `codex resume`
+needs a TTY, so a truncated non-interactive run must be restarted rather than continued —
+give the prompt a tool-call budget and pre-seed established findings instead.
+
+`--sandbox read-only` is deliberate: the reviewer reports, it does not edit. The cost is
+that it cannot mutation-test, which is where its sharpest finding came from — it deleted a
+filter and showed the gate stayed green. Preserve that by asking it to NAME the mutation
+and its prediction; apply and verify the mutation yourself.
+
+Its 2026-08-01 findings landed in `0281890d` and `037e9616`; two structural ones are filed
+under R-0465, and one reported divergence was a false positive (it compared different
+inputs) and is recorded as such rather than left to be re-found.
+
 ### Sequencing note: the prover-neutral arc (R-0004, R-0450, R-0448, R-0454–R-0456, R-0458–R-0464, R-0467, R-0468)
 
 These tasks are entangled enough that picking one without reading the others has
@@ -6530,6 +6555,26 @@ Two pieces:
 
 Register C (2026-07-31) supplies the representation this needs; this task is the wiring
 that makes the guarantee structural at every backend rather than at the surfaces alone.
+
+**Two more instances of the same shape, from the 2026-08-01 external review.** Neither is
+reachable today; both are invariants held by convention where the type could hold them,
+which is precisely this task's subject.
+
+- **`foldMultiKernelResults` does not enforce that the closed and refused ID lists are
+  disjoint.** Given `rocqClosed = ["k"]` and `rocqRefused = ["k"]`, both receipts are
+  written but the `if closed … else if refused` chain passes only `.closed` to
+  `multiKernelVerdict`, so the result is `proved_by_two_kernels` beside a stored refusal.
+  Not reachable now — both sets are derived from one verdict list, and a verdict is either
+  closed or refused — but the bare `List String × List String` API cannot say so. Passing
+  the verdict list, or a type that makes the two mutually exclusive, removes the question.
+- **The three consumers share the final function, not one typed input.** The report and the
+  release policy each supply `leanClosed` independently; the ledger fold infers it from an
+  existing status and applies its own extra guard. They agree today — verified on identical
+  inputs, and a claimed divergence in that review turned out to compare different ones —
+  but agreement rests on three call sites staying in step rather than on a shared value.
+  Relatedly, `computeBelowTwoKernels` recomputes the evidence instead of reading the folded
+  ledger, so the release gate and the stored artifact can be built from separate prover
+  runs whose transient results differ.
 
 ### Task R-0467
 
