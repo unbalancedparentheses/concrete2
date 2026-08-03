@@ -244,4 +244,76 @@ def CallableId.render (id : CallableId) : String :=
   let arity := if id.typeParams == 0 then "" else "/" ++ toString id.typeParams
   s!"v{id.schemaVersion}:{id.ns.canonical}:{qual}{args}{arity}"
 
+/-! ## Semantic identity of a TYPE (R-0004 V2 input)
+
+    A `TypeId` names a struct or enum DECLARATION, so a field or variant access
+    can be recorded as what it resolved to rather than as the spelling used at
+    the use site. Two same-named types in different modules are different types;
+    an import alias does not create a new one.
+
+    Separate from `CallableId` for the same reason `ConstId` is: a type has no
+    parameters, capabilities or arity, and sharing the structure would let a type
+    reference and a callable reference of one spelling be interchangeable.
+
+    The BUILTIN namespace is not a convenience. `Option` and `Result` are
+    synthesized by the compiler and have no defining module at all — measured
+    while inventorying the five type-ingress paths — so a module-based identity
+    cannot name them. `builtinId` already distinguishes them and is stable
+    against renaming, which a string would not be. -/
+inductive TypeNamespace where
+  /-- Declared in Concrete source, in `defModule`. -/
+  | user
+  /-- Compiler-synthesized (`Option`, `Result`). No defining module exists. -/
+  | builtin
+deriving BEq, Repr, DecidableEq, Inhabited
+
+def TypeNamespace.canonical : TypeNamespace → String
+  | .user    => "user"
+  | .builtin => "builtin"
+
+/-- Every namespace, checkable against the constructor list rather than a
+    hand-maintained copy. -/
+def TypeNamespace.all : List TypeNamespace := [.user, .builtin]
+
+structure TypeId where
+  schemaVersion : Nat := 1
+  ns            : TypeNamespace := .user
+  /-- Defining module. EMPTY for `.builtin`, which has none — not "unknown". -/
+  defModule     : String := ""
+  /-- Declaration name at the DEFINITION site, never an import alias. -/
+  declName      : String
+deriving BEq, Repr, Inhabited
+
+/-- A type declared at `defModule.declName`. -/
+def TypeId.ofUser (defModule declName : String) : TypeId :=
+  { ns := .user, defModule := defModule, declName := declName }
+
+/-- A compiler-synthesized type. Named by its `BuiltinEnumId`'s canonical tag
+    rather than by its source spelling, so renaming the surface syntax cannot
+    move the identity. -/
+def TypeId.ofBuiltin (tag : String) : TypeId :=
+  { ns := .builtin, defModule := "", declName := tag }
+
+def TypeId.render (t : TypeId) : String :=
+  s!"v{t.schemaVersion}:type:{t.ns.canonical}:{if t.defModule.isEmpty then "" else t.defModule ++ "."}{t.declName}"
+
+/-- A FIELD of a struct, identified by the type that declares it. The field name
+    is meaningful only relative to that type — two structs may both have `x`. -/
+structure FieldId where
+  owner : TypeId
+  field : String
+deriving BEq, Repr, Inhabited
+
+def FieldId.render (f : FieldId) : String :=
+  s!"{f.owner.render}#field:{f.field}"
+
+/-- A VARIANT of an enum, identified by the enum that declares it. -/
+structure VariantId where
+  owner   : TypeId
+  variant : String
+deriving BEq, Repr, Inhabited
+
+def VariantId.render (v : VariantId) : String :=
+  s!"{v.owner.render}#variant:{v.variant}"
+
 end Concrete

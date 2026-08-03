@@ -281,6 +281,15 @@ structure EnumVariant where
 
 structure EnumDef where
   name : String
+  /-- Defining module. Populated at every ingress path (R-0004 V2): the
+      declaration site and both import paths. A `String`, not an
+      `Option` — `none` locally and `some m` when imported would give one
+      declaration two identities depending on which side of an import it
+      was seen from, and the module name is in scope on every path.
+
+      Empty only for compiler-synthesized declarations, which have no
+      defining module; those are identified by `builtinId` instead. -/
+  definedIn : String := ""
   typeParams : List String := []
   typeBounds : List (String × List String) := []  -- type param bounds
   variants : List EnumVariant
@@ -292,6 +301,15 @@ structure EnumDef where
 
 structure StructDef where
   name : String
+  /-- Defining module. Populated at every ingress path (R-0004 V2): the
+      declaration site and both import paths. A `String`, not an
+      `Option` — `none` locally and `some m` when imported would give one
+      declaration two identities depending on which side of an import it
+      was seen from, and the module name is in scope on every path.
+
+      Empty only for compiler-synthesized declarations, which have no
+      defining module; those are identified by `builtinId` instead. -/
+  definedIn : String := ""
   typeParams : List String := []
   typeBounds : List (String × List String) := []  -- type param bounds: T -> [Trait1, Trait2]
   fields : List StructField
