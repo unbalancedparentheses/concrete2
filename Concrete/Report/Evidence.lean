@@ -228,9 +228,10 @@ theorem c2_under_hypotheses_proved (e : Evidence) (hyps : List Hypothesis) :
 
 /-- **C3 — a claim with outstanding assumptions presents as exactly `assumed`.**
 
-    The H23 *class* as a theorem — not H23 itself, which stays open until R-0461
-    populates `assumes` (see `underHypotheses`, defined and proved here but not yet wired
-    into any generator). It cannot present as any `proved_*` class because it presents as a
+    The H23 *class* as a theorem. R-0461 (2026-08-03) then closed H23 itself by populating
+    `assumes` from real hypothesis provenance, so this row now fires on live verdicts rather
+    than standing as proved substrate — `docs/KNOWN_HOLES.md` is the authority on that
+    status. It cannot present as any `proved_*` class because it presents as a
     single fixed literal — and that literal is proved to be outside `proofClasses` by a
     companion `example` next to the discharge-adapter firewall in `Report.lean`, which is
     where that list lives. The two together are the full statement: capped claims land on

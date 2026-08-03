@@ -427,13 +427,14 @@ its trigger is unpredictable and it must precede any stack-budget work. Two of t
 defect being corrected: an unreferenced ledger bug is invisible to a sequence that
 advances by file position.
 
-**R-0461 comes before all four, and file position says otherwise — read this before
-starting the block.** H23 is open, and R-0461 sits at a much later file position than
-these tasks purely because it was allocated after them. Item 0 above already places it
-ahead of the arc; it is ahead of this block too, on the one criterion that separates
-them: **R-0461 is the only item in either group where a shipped claim is currently
-false.** A guaranteed out-of-bounds access reports
-`proved_by_multi_kernel (3: lean, rocq, isabelle)` and the binary aborts. Against that,
+**R-0461 came before all four, and file position said otherwise — kept as the worked
+example of this override.** R-0461 landed 2026-08-03 and H23 is closed; R-0464 now holds
+the position this paragraph argued for, on the same criterion. R-0461 sat at a much later
+file position than these tasks purely because it was allocated after them. Item 0 above
+already placed it ahead of the arc; it was ahead of this block too, on the one criterion
+that separates them: **it was the only item in either group where a shipped claim was
+false.** A guaranteed out-of-bounds access reported
+`proved_by_multi_kernel (3: lean, rocq, isabelle)` and the binary aborted. Against that,
 R-0466 is a measurement, R-0471 is legibility, R-0470 is a false *rejection* (no wrong
 code), and R-0469 is latent — no budgeted project is recursive today. A false `proved`
 outranks all four, and the block was inserted without saying so, which is the gap this

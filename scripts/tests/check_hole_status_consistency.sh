@@ -129,6 +129,35 @@ for h in $OPEN_HOLES; do
 done
 [ "$VIOL" -eq 0 ] && ok "no file claims an OPEN hole is closed"
 
+# The OTHER direction, which this gate lacked until 2026-08-03. Closing H23 left
+# `Report.lean` still saying "Not H23 itself, which stays OPEN: nothing populates an   HOLE-STATUS-OK: quoting the wrong claim to correct it
+# assumption set until R-0461" — an assertion that had become false, sitting in the exact
+# module the fix landed in. Check 3 above only looked for open-claimed-closed, so it passed.
+#
+# This direction matters MORE than it sounds, because its failure mode is the inverse of the
+# one this gate was built for: prose that understates what the compiler now guarantees
+# teaches a reader to distrust a check that works, and the next person to touch that code
+# reads the comment, not KNOWN_HOLES. Symmetry here is not tidiness — a status is only
+# trustworthy if BOTH kinds of drift are loud.
+#
+# The exclusion list here is deliberately NARROWER than check 3's above: only genuine
+# past-tense markers. `until`/`before` are excluded up there because "H24 is open until
+# R-0464" is a legitimate future condition; down here "H23 stays OPEN ... until R-0461" is  HOLE-STATUS-OK: quoting the stale form to explain it
+# the STALE form itself, and filtering on `until` is what hid Report.lean:2427 on this
+# check's first run. Same word, opposite meaning, depending on the hole's status.
+VIOL2=0
+for h in $CLOSED_HOLES; do
+  HITS="$(grep -rniE "\b$h\b[^.]{0,40}(is |remains |stays )(still )?(OPEN|unfixed|not fixed|reproduced)" $SCAN 2>/dev/null \
+          | grep -viE "(was|were|had been|used to be|previously|formerly|no longer)" \
+          | grep -v "HOLE-STATUS-OK" || true)"
+  if [ -n "$HITS" ]; then
+    VIOL2=1
+    no "$h is CLOSED in $KH but claimed still open elsewhere:"
+    printf '%s\n' "$HITS" | head -4 | sed 's/^/         /'
+  fi
+done
+[ "$VIOL2" -eq 0 ] && ok "no file claims a CLOSED hole is still open"
+
 echo ""
 echo "HOLE-STATUS-CONSISTENCY: PASS=$PASS  FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]

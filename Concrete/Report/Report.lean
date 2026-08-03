@@ -2424,11 +2424,13 @@ def proofClasses : List String :=
     **a claim resting on an unestablished hypothesis can never present as proved** — the
     H23 *class*, as a compile-time fact rather than a gate.
 
-    Not H23 itself, which stays OPEN: nothing populates an assumption set until R-0461,
-    so the fixture still reports proved and `check_known_wrong_corpus.sh` asserts that it
-    does. `docs/KNOWN_HOLES.md` is the authority on hole status; this comment is a
-    reference to it, and `check_hole_status_consistency.sh` now fails if a reference
-    disagrees — which is how this sentence's earlier, wrong version was found.
+    R-0461 (2026-08-03) closed H23 itself: `capOnHypothesisDebt` populates the assumption
+    set from loop-invariant provenance, so this example now constrains live verdicts. The
+    fixture in `check_known_wrong_corpus.sh` asserts the cap rather than the hole.
+    `docs/KNOWN_HOLES.md` is the authority on hole status; this comment is a reference to
+    it, and `check_hole_status_consistency.sh` fails if a reference disagrees in EITHER
+    direction — the stale-open form that replaced this sentence's stale-closed predecessor
+    was found by exactly that check.
 
     The two halves are deliberately in different modules. Evidence.lean must not import
     the report layer, and putting the list here keeps one definition of what counts as a
