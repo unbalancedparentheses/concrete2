@@ -60,15 +60,43 @@ echo "=== 1. behaviour vs status: a hole with a live fixture must be OPEN ==="
 # their hole; if one is reproducing, the hole is by definition not closed, whatever any
 # document says. This is the check that would have caught the H23 contradiction.
 if [ -f "$CORPUS" ]; then
-  FIXTURED="$(grep -oE '^echo "=== (H[0-9]+):' "$CORPUS" | grep -oE 'H[0-9]+' | sort -u)"
-  if [ -z "$FIXTURED" ]; then
+  # A corpus block is one of two kinds, and its heading must say which:
+  #   `=== Hnn: ...`                  the fixture REPRODUCES the hole      -> must be OPEN
+  #   `=== Hnn (CLOSED <date>): ...`  the fixture GUARDS the fix           -> must be CLOSED
+  # Both are legitimate — a closed hole keeps its fixture precisely so a regression is red.
+  #
+  # Every hole id mentioned in a corpus heading must match one of the two forms. The
+  # earlier version parsed only the first, so renaming H23's block to `=== H23 (CLOSED ...)`
+  # silently removed it from this check: the gate went green because it stopped looking, not
+  # because it verified anything. Unclassifiable headings are therefore a FAILURE, not a skip.
+  HEADINGS="$(grep -oE '^echo "=== H[0-9]+[^"]*' "$CORPUS")"
+  ALL_IDS="$(printf '%s' "$HEADINGS" | grep -oE 'H[0-9]+' | sort -u)"
+  REPRO="$(printf '%s\n' "$HEADINGS" | grep -E '^echo "=== H[0-9]+:' | grep -oE 'H[0-9]+' | sort -u)"
+  GUARD="$(printf '%s\n' "$HEADINGS" | grep -E '^echo "=== H[0-9]+ \(CLOSED [0-9]{4}-[0-9]{2}-[0-9]{2}\):' \
+           | grep -oE 'H[0-9]+' | sort -u)"
+  if [ -z "$ALL_IDS" ]; then
     no "could not parse hole ids from $CORPUS — the link between behaviour and status is broken"
   else
-    for h in $FIXTURED; do
-      case " $OPEN_HOLES " in
-        *" $h "*) ok "$h has a reproducing fixture and is marked OPEN" ;;
-        *) no "$h has a REPRODUCING fixture in $CORPUS but is not marked OPEN in $KH" ;;
-      esac
+    for h in $ALL_IDS; do
+      IS_REPRO=0; IS_GUARD=0
+      case " $REPRO " in *" $h "*) IS_REPRO=1 ;; esac
+      case " $GUARD " in *" $h "*) IS_GUARD=1 ;; esac
+      if [ "$IS_REPRO" = 1 ] && [ "$IS_GUARD" = 1 ]; then
+        no "$h has BOTH a reproducing and a regression-guard block in $CORPUS — which is it?"
+      elif [ "$IS_REPRO" = 1 ]; then
+        case " $OPEN_HOLES " in
+          *" $h "*) ok "$h has a reproducing fixture and is marked OPEN" ;;
+          *) no "$h has a REPRODUCING fixture in $CORPUS but is not marked OPEN in $KH" ;;
+        esac
+      elif [ "$IS_GUARD" = 1 ]; then
+        case " $CLOSED_HOLES " in
+          *" $h "*) ok "$h has a regression-guard fixture and is marked CLOSED" ;;
+          *) no "$h's fixture claims the hole is CLOSED but $KH does not mark it closed" ;;
+        esac
+      else
+        no "$h appears in a $CORPUS heading that matches neither form — coverage is silently lost;\
+ use '=== $h: ...' (reproduces) or '=== $h (CLOSED YYYY-MM-DD): ...' (guards the fix)"
+      fi
     done
   fi
 else

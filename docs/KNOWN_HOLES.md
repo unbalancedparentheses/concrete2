@@ -61,10 +61,13 @@ generator to notice. The shift gap was invisible to it for exactly that reason.
 
 Owned by **R-0464**.
 
-### H23. An unproven hypothesis launders into a proved obligation — OPEN, reproduced
+### H23. An unproven hypothesis launders into a proved obligation — CLOSED 2026-08-03 (R-0461)
 
-**This is the most severe hole in this file. A guaranteed out-of-bounds access is
-reported `proved_by_multi_kernel (3: lean, rocq, isabelle)`.**
+**Was the most severe hole in this file: a guaranteed out-of-bounds access reported
+`proved_by_multi_kernel (3: lean, rocq, isabelle)`.** Closed by R-0461. The fixture stays
+in `examples/unsound_hypothesis/` and `check_known_wrong_corpus.sh` now asserts the *cap*
+rather than the hole, so a regression is a red gate. The description below is retained
+because the three lessons under it outlived the bug.
 
 Runtime-safety obligations inside a loop may assume the loop's `#[invariant]`
 (`loopHypsAt`, `Concrete/Report/ReportObligations.lean:80`). Whether that invariant is
@@ -104,10 +107,36 @@ Three things this demonstrates, beyond the specific bug:
    `#[requires]` is discharged at every call site, and invariants owe O1 ∧ O2 — three very
    different justification statuses, all erased into one list.
 
-Owned by **R-0461**, which specifies the fix (hypothesis provenance + status composition)
-and the gate over this fixture. Until then, read any `proved` runtime-safety obligation on
-a function containing a loop as *conditional on that loop's invariant VCs*, and check them
-by hand in `--report vcs`.
+**How it was closed (R-0461).** Three parts, because two of them alone would each have
+left a hole with better manners:
+
+1. *Provenance.* `loopInvariantDebt` (`ReportObligations.lean`) matches an obligation's
+   hypotheses against the enclosing loop's `#[invariant]` list and records the O1/O2 VC ids
+   it therefore owes. Carried as `hypDebt` on the family obligations and on `VC`.
+2. *Composition.* `capOnHypothesisDebt` (`Report.lean`) runs **after** `dischargeVCs` —
+   necessarily, since whether O2 is proved is only known once every status is final — and
+   demotes any `proved*` obligation with outstanding debt to `assumed` via Register C's
+   `Evidence.present`. C3 is what guarantees the demoted value is never a `proved_*` string;
+   this pass is what made C3 fire on live verdicts instead of sitting as proved substrate.
+   `--report vcs` names the outstanding VCs (`rests on (unproved): …`), so the reader gets an
+   action, not just a verdict.
+3. *Enforcement.* Display is not a gate. The first two parts made the fixture report
+   `assumed` everywhere while `concrete check` still exited 0, because `enforceNoAssume`
+   keys on the `assume(...)` **construct** and a capped obligation has none. `E0617`
+   (`enforceNoCappedHypotheses`, under `[policy] forbid-assume`) closes that: a release now
+   fails on an obligation resting on an unproved invariant. Gated under `forbid-assume`
+   because an obligation silently leaning on an unestablished invariant *is* the trust
+   escape hatch, taken implicitly rather than written down.
+
+The **multi-kernel report needed fixing separately** from the ledger, and this is the
+generalisable lesson: it re-derived its class from `omegaProved` instead of consulting the
+discharged ledger, so capping the ledger left the louder surface still badging the
+obligation `proved_by_multi_kernel`. Two surfaces, two derivations, and the wrong one was
+the one users read. It now reads `cappedKeys` off the same ledger.
+
+What R-0461 did **not** change: the compiled binary still traps (SIGABRT) on the access.
+That is correct — the index really is out of range and the runtime bounds check is doing
+its job. R-0461 fixed the *claim* and the *gate*, not the program.
 
 ### H19. The Core→obligation bridge is unproven — OPEN
 

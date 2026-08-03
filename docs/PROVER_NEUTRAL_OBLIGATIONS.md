@@ -159,20 +159,30 @@ C3's companion, `example : (!proofClasses.contains "assumed") = true := rfl`, li
 the discharge-adapter firewall in `Report.lean` because that is where `proofClasses` is
 defined.
 
-**What C3 does and does not close — corrected on re-review 2026-07-31.** An earlier
-version of this section said C3 and its companion were "H23 closed as a compile-time <!-- HOLE-STATUS-OK: quoting the wrong claim in order to correct it -->
-fact". They are not. C3 is a conditional: *if* a claim carries outstanding assumptions,
-*then* it presents as `assumed`. Nothing populates `assumes` yet — `underHypotheses` is
-defined and proved but not wired into any generator — so the H23 obligation still has an
-empty assumption set and still reports `proved_by_multi_kernel`. **H23 remains OPEN**, as
-`KNOWN_HOLES.md` says and as `check_known_wrong_corpus.sh` asserts by reproducing it.
+**What C3 does and does not close — corrected twice, and the second correction is the
+interesting one.** An earlier version said C3 and its companion were "H23 closed as a
+compile-time fact". <!-- HOLE-STATUS-OK: quoting the wrong claim in order to correct it -->
+They were not: C3 is a *conditional* — if a claim carries outstanding assumptions, it
+presents as `assumed` — and on 2026-07-31 nothing populated `assumes`, so the H23
+obligation had an empty assumption set and still reported `proved_by_multi_kernel`.
 
-What is closed is the *mechanism*: once R-0461 populates the set, the cap applies by
-construction rather than by a fold someone must remember to write. That is worth having —
-it is why R-0461 is wiring rather than design — but it is a smaller claim than the one
-this document made, and stating it as "H23 closed" was precisely the failure this whole <!-- HOLE-STATUS-OK: quoting the wrong claim in order to correct it -->
-branch documents: a surface asserting more than it checks, written in the commit that
-discharged the register meant to prevent it.
+**R-0461 (2026-08-03) populated the set, and H23 is now closed** — see `KNOWN_HOLES.md`,
+whose H23 entry is the authority, and `check_known_wrong_corpus.sh`, which now asserts the
+cap rather than the hole.
+
+The lesson worth keeping is about the size of the gap between the two states. C3 made the
+cap apply *by construction* once the set was populated, and that was real: no fold had to
+be remembered. But "the mechanism is closed, populating it is wiring" still understated the
+work by two thirds. Populating the set needed hypothesis *provenance* that did not exist
+(`loopInvariantDebt`, matching an obligation's hypotheses back to the enclosing loop's
+`#[invariant]`). And a correct `assumed` on every report surface still let `concrete check`
+exit 0, because the release gate keyed on the `assume(...)` construct rather than the
+status — enforcement needed its own diagnostic (`E0617`).
+
+So the general form: **a proved algebra tells you the composition is sound, not that any
+value flows through it.** C1–C5 were discharged and simultaneously vacuous, and the gate
+that asserted the rows was green throughout. What made them load-bearing was a generator
+feeding real facts in at one end and a policy failing on the result at the other.
 
 Why a representation rather than a check: a check for "did we remember to consult the
 hypotheses?" is one more surface that can be weaker than the property it guards — the

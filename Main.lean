@@ -686,7 +686,10 @@ def computeVCsDischarged (modules : List Concrete.Module) (locMap : Report.FnLoc
   let bvCallKeys := bvIdx.filterMap fun i => obs[i]?.map (·.key)
   let ovfBV := (Report.overflowBVGoals modules).filter (fun (k, _) => !omegaProved.contains k)
   let bvOvfKeys ← bvDischargeOverflow ovfBV
-  return Report.dischargeVCs vcs omegaProved (bvCallKeys ++ bvOvfKeys)
+  -- R-0461: cap each obligation by the weakest thing its hypotheses rest on. LAST, because
+  -- whether a loop's O1/O2 is proved is only known once every VC has a final status — the
+  -- ordering is the reason this is a pass rather than a check inside the collectors.
+  return Report.capOnHypothesisDebt (Report.dischargeVCs vcs omegaProved (bvCallKeys ++ bvOvfKeys))
 
 /-- Read the value Z3 assigned to variable `v` from `(get-model)` output. Handles
     both `... Int 100000)` and the negative `... Int (- 5))` shapes, across lines.
@@ -1235,7 +1238,7 @@ def externalClosedSets (modules : List Concrete.Module) (rocqRun isaRun : Bool)
     solverTrustedQuals)`, dep-filtered exactly as before. -/
 def computePolicyQuals (policy : Concrete.ProjectPolicy) (modules : List Concrete.Module)
     (depNames : List String) (locMap : Report.FnLocMap) (registry : Concrete.ProofRegistry) :
-    IO (List String × List String × List String) := do
+    IO (List String × List String × List String × List (String × List String)) := do
   let dvcs ← computeVCsDischarged modules locMap registry
   -- fold the external-SMT path into the ledger only when a stance is set (matches
   -- the old computeSolverTrustedQuals gating; otherwise no solver runs).
@@ -1261,7 +1264,11 @@ def computePolicyQuals (policy : Concrete.ProjectPolicy) (modules : List Concret
   let vac := (Concrete.ObligationCore.vacuousFunctions ledger).filter keep
   let asm := (Concrete.ObligationCore.assumeFunctions ledger).filter keep
   let st := Concrete.ObligationCore.solverTrustedIds ledger
-  return (vac, asm, st)
+  -- R-0461: obligations the cap demoted, with what they still owe. Projected from the SAME
+  -- discharged ledger as the other three, so the gate and the reports cannot disagree.
+  let cap := dvcs.filterMap (fun v =>
+    if v.status == "assumed" && !v.hypDebt.isEmpty then some (v.id, v.hypDebt) else none)
+  return (vac, asm, st, cap)
 
 /-- Obligations that did NOT reach two independent kernels, for
     `[policy] require-two-kernels`. Also returns whether any external kernel was
@@ -1761,6 +1768,14 @@ def compileAndReport (inputPath : String) (reportType : String)
       -- ALL linear runtime-safety families (overflow / bounds / div), not just
       -- overflow — the prover-neutral layer covers every family via multiKernelObligations.
       let linear := Report.multiKernelObligations parsed.modules
+      -- R-0461 / H23: the badge must not outrank the LEDGER. This report used to recompute
+      -- its class from `omegaProved` alone, so an obligation the ledger had capped to
+      -- `assumed` — because it rests on a loop invariant whose O1/O2 is unproven — still
+      -- displayed `proved_by_multi_kernel` here. Two surfaces, two answers, and the wrong
+      -- one was the louder. Consult the discharged ledger instead of re-deriving.
+      let cappedVCs ← computeVCsDischarged parsed.modules locMap registry
+      let cappedKeys := cappedVCs.filterMap (fun v =>
+        if v.status == "assumed" && !v.hypDebt.isEmpty then some (v.id, v.hypDebt) else none)
       let omegaProved ← kernelDischargeLoopVCs
         (Report.overflowGoals parsed.modules ++ Report.boundsGoals parsed.modules ++ Report.divGoals parsed.modules)
       -- External-kernel drivers, each: (name, displayLabel, enabled, versionId,
@@ -1858,6 +1873,9 @@ def compileAndReport (inputPath : String) (reportType : String)
           -- Minted, not asserted: no witness unless this kernel's agreement lemma closed
           -- for THIS obligation.
           , validated := Report.LoweringValidated.mint name o.key (validatedOf name) })
+        -- A capped obligation earns no badge, whatever the kernels said. The kernels did
+        -- close their goals; the goals rest on something unestablished. Recorded as
+        -- `assumed` for the same reason the ledger does — it is gate-forbiddable.
         let verdict := Report.multiKernelVerdict o.key leanOk inputs
         let attest := verdict.attest
         let n := attest.length
@@ -1880,10 +1898,13 @@ def compileAndReport (inputPath : String) (reportType : String)
         if !verdict.dissent.isEmpty then disagreed := disagreed + 1
         -- `present`, not `cls`: Register C's C3 guarantees a claim with outstanding
         -- assumptions renders as `assumed` rather than any `proved_*` string. Empty
-        -- today (this layer has no hypothesis provenance yet — R-0461), so this reads
-        -- exactly as before; going through `present` means the cap applies to this
-        -- surface automatically the moment hypotheses carry their debt.
-        let cls := verdict.displayStatus
+        -- R-0461 made this non-empty: the ledger's outstanding debt is loaded into the
+        -- verdict's evidence, so C3 does the capping and this surface cannot disagree
+        -- with the ledger about whether the obligation is proved.
+        let cls := match cappedKeys.find? (fun p => p.1 == o.key) with
+          | some (_, debt) => (debt.foldl (fun (e : Report.Evidence) r => e.assuming r)
+                                 verdict.evidence).present
+          | none => verdict.displayStatus
         out := out ++ s!"\n  [{o.key}]  {o.desc}"
         out := out ++ s!"\n      lean:omega = {if leanOk then "closed" else "refused"}"
         for (_, label, en, _, em, res) in kernels do out := out ++ s!"   {label} = {cellOf en em res o.key}"
@@ -2612,11 +2633,11 @@ def compileBuild (projectRoot : String) (outputPath : Option String) (emitLLVM :
     if !(← enforceProvenRuntimeViolations parsed.modules allSrcMap) then
       return 1
     if !policy.isEmpty then
-      let (vac, asm, st) ← computePolicyQuals policy parsed.modules depNames policyLocMap registry
+      let (vac, asm, st, cap) ← computePolicyQuals policy parsed.modules depNames policyLocMap registry
       let (btk, ekr) ← if policy.requireTwoKernels then computeBelowTwoKernels parsed.modules else pure ([], false)
       let policyDs := enforcePolicy policy validCore.coreModules
         (locMap := policyLocMap) (pc := pc) (depNames := depNames) (vacuousQuals := vac)
-        (assumeQuals := asm) (solverTrustedQuals := st)
+        (assumeQuals := asm) (solverTrustedQuals := st) (cappedObligations := cap)
         (belowTwoKernelQuals := btk) (externalKernelRan := ekr)
       if hasErrors policyDs then
         IO.eprintln (renderDiagnostics policyDs (sourceMap := allSrcMap))
@@ -2678,11 +2699,11 @@ partial def compileTestBuild (projectRoot : String) (moduleFilter : Option Strin
     if !(← enforceProvenRuntimeViolations parsed.modules allSrcMap) then
       return 1
     if !policy.isEmpty then
-      let (vac, asm, st) ← computePolicyQuals policy parsed.modules depNames policyLocMap registry
+      let (vac, asm, st, cap) ← computePolicyQuals policy parsed.modules depNames policyLocMap registry
       let (btk, ekr) ← if policy.requireTwoKernels then computeBelowTwoKernels parsed.modules else pure ([], false)
       let policyDs := enforcePolicy policy validCore.coreModules
         (locMap := policyLocMap) (pc := pc) (depNames := depNames) (vacuousQuals := vac)
-        (assumeQuals := asm) (solverTrustedQuals := st)
+        (assumeQuals := asm) (solverTrustedQuals := st) (cappedObligations := cap)
         (belowTwoKernelQuals := btk) (externalKernelRan := ekr)
       if hasErrors policyDs then
         IO.eprintln (renderDiagnostics policyDs (sourceMap := allSrcMap))
@@ -2943,11 +2964,11 @@ def main (args : List String) : IO UInt32 := do
         for d in ledger.diagnostics do
           if d.code == "registry" then IO.eprintln d.message
         if !policy.isEmpty then
-          let (vac, asm, st) ← computePolicyQuals policy parsed.modules depNames policyLocMap registry
+          let (vac, asm, st, cap) ← computePolicyQuals policy parsed.modules depNames policyLocMap registry
           let (btk, ekr) ← if policy.requireTwoKernels then computeBelowTwoKernels parsed.modules else pure ([], false)
           let policyDs := enforcePolicy policy validCore.coreModules
             (locMap := policyLocMap) (pc := pc) (depNames := depNames) (vacuousQuals := vac)
-            (assumeQuals := asm) (solverTrustedQuals := st)
+            (assumeQuals := asm) (solverTrustedQuals := st) (cappedObligations := cap)
             (belowTwoKernelQuals := btk) (externalKernelRan := ekr)
           if hasErrors policyDs then
             IO.eprintln (renderDiagnostics policyDs (sourceMap := allSrcMap))

@@ -120,9 +120,12 @@ grep -q "private mk ::" "$EV" \
 echo "=== C3's companion: the capped status is not a proof class ==="
 # C3 proves a claim with outstanding assumptions presents as exactly "assumed".
 # This proves "assumed" is outside proofClasses. Together they close the H23 CLASS —
-# a capped claim can never read as proved. They do NOT close H23 itself: nothing
-# populates `assumes` until R-0461, so the H23 fixture still reports proved, which
-# check_known_wrong_corpus.sh asserts. Do not read this gate as evidence the hole is shut.
+# a capped claim can never read as proved.
+#
+# R-0461 (2026-08-03) closed H23 ITSELF by populating `assumes` from real hypothesis
+# provenance, which is what turned these rows from proved substrate into rows that fire on
+# live verdicts. The fixture assertions in check_known_wrong_corpus.sh are now inverted and
+# guard the fix; that gate, not this one, is what proves the hole is shut.
 grep -q 'example : (!proofClasses.contains "assumed") = true := rfl' Concrete/Report/Report.lean \
   && ok "compile-time proof that the capped status is not a proof class" \
   || no "missing companion example tying C3 to proofClasses"
@@ -177,6 +180,27 @@ done
 grep -qE "^\s*\|\s*_\s*=>" "$EV" \
   && no "evidence algebra contains a catch-all pattern (fail-open default)" \
   || ok "no catch-all pattern — a new origin is a missing-case ERROR, not silent"
+
+echo "=== R-0461: the cap is wired, and enforced as well as displayed ==="
+# Register C only stops being decorative if something populates `assumes` from real
+# provenance and something acts on the result. Both halves are asserted because H23's
+# first fix had the display and not the enforcement, and a report that reads `assumed`
+# while `check` exits 0 is a hole with better manners.
+grep -q "def capOnHypothesisDebt" Concrete/Report/Report.lean \
+  && ok "capOnHypothesisDebt exists" \
+  || no "capOnHypothesisDebt MISSING — nothing populates Evidence.assumes (H23 reopens)"
+grep -q "Report.capOnHypothesisDebt (Report.dischargeVCs" Main.lean \
+  && ok "the cap runs AFTER discharge (statuses are final when it reads them)" \
+  || no "the cap is not composed with dischargeVCs — it would read non-final statuses"
+grep -q "def loopInvariantDebt" Concrete/Report/ReportObligations.lean \
+  && ok "hypothesis debt is derived from loop contracts, not asserted" \
+  || no "loopInvariantDebt MISSING — hypDebt would be empty and the cap vacuous"
+grep -q "def enforceNoCappedHypotheses" Concrete/Check/Policy.lean \
+  && ok "a capped obligation is release-BLOCKING, not merely displayed (E0617)" \
+  || no "no enforcement for capped obligations — the cap is display-only"
+grep -q "cappedObligations := cap" Main.lean \
+  && ok "the policy gate is fed from the same discharged ledger as the reports" \
+  || no "capped obligations are not threaded to the policy — the gate sees an empty list"
 
 echo ""
 echo "EVIDENCE-ALGEBRA: PASS=$PASS  FAIL=$FAIL"

@@ -134,8 +134,8 @@ on hole status; this table is a reference to it and
 **This overrides file position.** The roadmap groups tasks by PHASE — a topical grouping,
 which the header already calls a milestone label rather than a queue — so the task that
 owns a reproduced soundness hole can sit five thousand lines below the task you should do
-first. It does: R-0461 and R-0464 are in Phase 13 because that is where they belong
-topically, and they are items 2 and 3 below because that is when they should be done. The
+first. It did: R-0461 (now done) and R-0464 are in Phase 13 because that is where they
+belong topically, while the sequencing table below is what actually said when to do them. The
 task bodies are deliberately NOT reordered; moving them would put runtime-safety
 obligations inside "Phase 7: Standard Library And Core APIs" and destroy the only
 organizing principle the file has. This list is the queue; the phases are the filing
@@ -143,26 +143,26 @@ system.
 
 | # | Task | Why here |
 |---|---|---|
-| 1 | **R-0004** slices 4–7 | mid-flight; R-0454 depends on its receipt envelope, and slice 3 is the template R-0461 must reuse |
-| 2 | **R-0461** | H23 — reproduced unsoundness, fixture written, Register C makes it wiring |
-| 3 | **R-0464** | H24 — reproduced unsoundness, fixture written |
-| 4 | **R-0466** | the measurement block begins; measuring a surface that reports `proved` for trapping operations had to wait for 2–3 |
-| 5 | **R-0471** | the work R-0466 needs in order to have anything to move |
-| 6 | **R-0470** | bug 063 — capability inference manufactures an empty capability set |
-| 7 | **R-0469** | bug 065 — stack unboundedness propagation |
-| 8 | **R-0458** | strength/independence split; R-0461 is its first real consumer |
-| 9 | **R-0454** | neutral digest — closing window, alpha-normalized |
-| 10 | **R-0467** | multi-kernel on the merge commit |
-| 11 | **R-0468** | nightly reachability in this repository |
-| 12 | **R-0450** (agreement slice) | point the agreement technique at `exprToSmt` and Lean's own rendering |
-| 13 | **R-0462** | fuzz the binary — the only item testing a claim against the artifact |
-| 14 | **R-0455** | term IR + Register B, absorbing the four drivers |
-| 15 | **R-0460** | Register A rows |
-| 16 | **R-0459** | non-arithmetic families |
-| 17 | **R-0463** | Farkas-witness probe — before any further prover, never after |
-| 18 | **R-0448** | graduate the arc, once the above hold |
-| 19 | **R-0456** | eval port, on meta-theory grounds only |
-| 20 | **R-0449** | realization research, pull-gated |
+| — | ~~**R-0461**~~ | **DONE 2026-08-03.** H23 closed: provenance + cap + `E0617` enforcement. See the execution note below — the cap turned out to be the cheap third of it |
+| 1 | **R-0004** slices 4–7 | mid-flight; R-0454 depends on its receipt envelope |
+| 2 | **R-0464** | H24 — reproduced unsoundness, fixture written; now the only reproduced unsoundness left |
+| 3 | **R-0466** | the measurement block begins; measuring a surface that reports `proved` for trapping operations had to wait for 2–3 |
+| 4 | **R-0471** | the work R-0466 needs in order to have anything to move |
+| 5 | **R-0470** | bug 063 — capability inference manufactures an empty capability set |
+| 6 | **R-0469** | bug 065 — stack unboundedness propagation |
+| 7 | **R-0458** | strength/independence split; R-0461 was its first real consumer and shipped without it |
+| 8 | **R-0454** | neutral digest — closing window, alpha-normalized |
+| 9 | **R-0467** | multi-kernel on the merge commit |
+| 10 | **R-0468** | nightly reachability in this repository |
+| 11 | **R-0450** (agreement slice) | point the agreement technique at `exprToSmt` and Lean's own rendering |
+| 12 | **R-0462** | fuzz the binary — the only item testing a claim against the artifact |
+| 13 | **R-0455** | term IR + Register B, absorbing the four drivers |
+| 14 | **R-0460** | Register A rows |
+| 15 | **R-0459** | non-arithmetic families |
+| 16 | **R-0463** | Farkas-witness probe — before any further prover, never after |
+| 17 | **R-0448** | graduate the arc, once the above hold |
+| 18 | **R-0456** | eval port, on meta-theory grounds only |
+| 19 | **R-0449** | realization research, pull-gated |
 
 After 20, file order resumes at R-0440, R-0435, R-0006–R-0010. The argument for each
 position is in the sequencing note below; this table is the index, not the reasoning.
@@ -171,24 +171,38 @@ position is in the sequencing note below; this table is the index, not the reaso
 
 | Hole | Owner | Reproduce | Done when |
 |---|---|---|---|
-| **H23** unproven invariant launders into a proved obligation | **R-0461** | `examples/unsound_hypothesis/` — `--report vcs` shows `bounds0` proved while `O2` is unproven; binary aborts | `bounds0` reads `assumed` (not `proved`) while O2 is undischarged, and `check_known_wrong_corpus.sh`'s assertion is inverted |
 | **H24** obligation generation restates trap rules, weaker | **R-0464** | `examples/trap_semantics_gap/` — div reports proved and aborts on `MIN / -1`; shift generates no obligation | div obligation covers signed `MIN / -1`, a shift family exists, both derived from `IntArith` |
 | **H19** the Core→obligation bridge is unproven | **R-0460** | — (structural; 0 of 4 register rows) | rows in `VC_BRIDGE_REGISTER.md` discharged, named individually |
 | **H20** `bv_decide`'s certificate check runs as native code | unowned; see [docs/AXIOMS.md](docs/AXIOMS.md) | `make test-bv-certificates` | a verified checker, or decomposition until kernel-reduction LRAT is practical |
 | **H21** nonlinear SMT results cannot be certificate-replayed | **R-0451** (upstream-blocked) | gate assertion in `check_multi_kernel.sh` | upstream reconstruction support, or a certified nonlinear checker |
 
-**Read the two reproduced holes as scope limits on every claim this compiler makes.**
-Until R-0461, a `proved` runtime-safety obligation on a function *containing a loop* is
-conditional on that loop's O1/O2. Until R-0464, `proved` on a division means "the divisor
-is nonzero", not "this division cannot trap", and shifts claim nothing at all.
+**Read the remaining reproduced hole as a scope limit on every claim this compiler makes.**
+Until R-0464, `proved` on a division means "the divisor is nonzero", not "this division
+cannot trap", and shifts claim nothing at all.
+
+H23 no longer needs such a caveat: an obligation resting on an unproved invariant now
+reports `assumed` on every surface and fails `[policy] forbid-assume` with `E0617`. What it
+leaves behind is a **method**, recorded here because R-0464 and R-0460 will hit it too:
+
+- *Fixing the derivation is not fixing the report.* The ledger and the multi-kernel report
+  each computed the class, so capping the ledger left the badge surface still printing
+  `proved_by_multi_kernel`. Any status change must be checked on **every** surface that
+  renders it, and R-0465's firewall is what would make that structural rather than diligent.
+- *Display is not enforcement.* The cap read `assumed` while `concrete check` exited 0,
+  because the existing `forbid-assume` gate keys on the `assume(...)` construct, not on the
+  status. A status is only load-bearing once a policy fails on it.
+- *Renaming a gate block can silently drop its coverage.* Relabelling the corpus heading to
+  `=== H23 (CLOSED …)` removed H23 from `check_hole_status_consistency.sh`'s checked set —
+  it went green by no longer looking. That gate now rejects an unclassifiable heading
+  instead of skipping it, and the mutation is verified to be caught.
 
 ### Gate inventory — what was added, and what each actually guards
 
 | Gate | Guards | Build? | CI job |
 |---|---|---|---|
 | `check_evidence_algebra.sh` | Register C rows present, no `sorry`/`native_decide`, one construction site per badge string, all consumers share the derivation | no | `grammar` |
-| `check_known_wrong_corpus.sh` | H23/H24 fixtures still reproduce — a counterexample that stops demonstrating its hole is worse than none | **yes** | `extra-gates` |
-| `check_hole_status_consistency.sh` | no document contradicts KNOWN_HOLES; every fixtured hole is marked OPEN | no | `grammar` |
+| `check_known_wrong_corpus.sh` | H24's fixture still reproduces; H23's now guards its fix (`assumed` on both surfaces + `E0617`) — a counterexample that stops demonstrating its hole is worse than none | **yes** | `extra-gates` |
+| `check_hole_status_consistency.sh` | no document contradicts KNOWN_HOLES; every fixtured hole's corpus heading declares reproduces-vs-guards and matches its documented status (an unclassifiable heading FAILS rather than skipping — see R-0461's note) | no | `grammar` |
 | `check_multi_kernel.sh` | 14 assertions bare, 74 with provers, 82 with `MULTI_KERNEL_MUTATE=1` | yes | `multi-kernel` (opt-in — **R-0467**) |
 | `check_vc_bridge_register.sh` | every family *generator* has a register row — **cannot detect a missing family**, which is how H24's shift gap hid | no | `grammar` |
 
@@ -284,17 +298,31 @@ here must say so here; a task whose urgency lives only in its own body is not se
    over: bug 062 was "dependency statuses are computed and never consulted to downgrade
    the caller"; H23 is "hypothesis statuses are attached and never consulted to downgrade
    the conclusion". The project found this class, fixed it once, and shipped the second
-   dimension without it. R-0461 must reuse slice 3's shape rather than invent one — if the
-   hypothesis-currency predicate and `isCurrentForDependents` ever disagree, that
-   disagreement is the next bug.
+   dimension without it.
 
-1. **R-0461, because the arc is currently decorating a defect.**
-   H23: an obligation may assume a loop invariant whose preservation VC is unproven, and
-   nothing composes the two statuses — so a guaranteed out-of-bounds access reports
-   `proved_by_multi_kernel (3: lean, rocq, isabelle)` and `require-two-kernels` builds it.
-   Every surface above this inherits the error. Reproduced in
-   `examples/unsound_hypothesis/`; Register C already proves the composition, so this is
-   wiring. **Precedes the R-0466–R-0469 block.**
+   **What R-0461 actually did with this instruction (2026-08-03), since it qualifies the
+   advice for R-0464.** It reused slice 3's *shape* and could not reuse its *code*:
+   `ObligationStatus.isCurrentForDependents` ranges over function qualNames (proof links),
+   while hypothesis debt ranges over VC ids (`fn@line#O2`). The two are disjoint key spaces,
+   so `capOnHypothesisDebt` is a separate VC-level composition that mirrors the discipline —
+   compute the weakest input, cap the output, decide "counts as proved" in one place — rather
+   than calling into it. The stated risk stands and is now real: two predicates decide what
+   counts as proved, and if they diverge that divergence is the next bug. Unifying them is
+   the honest content of a future slice; pretending one call site covered both would have
+   been the wrong fix.
+
+1. ~~**R-0461, because the arc is currently decorating a defect.**~~ **DONE 2026-08-03.**
+   H23 was: an obligation may assume a loop invariant whose preservation VC is unproven, and
+   nothing composes the two statuses — so a guaranteed out-of-bounds access reported
+   `proved_by_multi_kernel (3: lean, rocq, isabelle)` and `require-two-kernels` built it.
+
+   Closed in three parts, and the estimate of "Register C already proves the composition, so
+   this is wiring" was **wrong in an instructive way**: the algebra was indeed ready, and the
+   cap that used it was the cheapest third. The other two thirds were the ones this arc keeps
+   underestimating — deriving real provenance (`loopInvariantDebt`), and making the resulting
+   status *enforced* (`E0617`) rather than merely displayed, on *every* surface that renders
+   it. Full account in `docs/KNOWN_HOLES.md` under H23, and the transferable method is in the
+   scope-limits section above.
 
 1b. **R-0464 immediately after, on the same grounds. Also precedes the R-0466–R-0469
    block.** H24: obligation generation restates `IntArith`'s trap conditions and states
@@ -302,7 +330,9 @@ here must say so here; a task whose urgency lives only in its own body is not se
    generate no obligation at all. Reproduced in `examples/trap_semantics_gap/`. Paired
    with R-0461 because both are reproduced holes with failing fixtures already written,
    and because a reader who fixes only the first still ships a compiler that reports
-   `proved` for an operation that traps.
+   `proved` for an operation that traps. R-0461 having landed, **H24 is the only reproduced
+   unsoundness left**, and R-0461's three-part shape is the checklist: derive the fact,
+   compose it into the status on every surface, then make a policy fail on it.
 
    **Why this one outranks the block while the rest of the arc does not.** The block's
    argument is that continuous measurement of the language surface beats further agreement
@@ -313,7 +343,7 @@ here must say so here; a task whose urgency lives only in its own body is not se
    this is fixed. Everything from 1c down stays behind the block, because vocabulary,
    digests and IRs are exactly the "more arc work" the block was sequenced ahead of.
 
-1c. **R-0458 alongside R-0461, because R-0461 is what finally forces it.** A claim capped
+1c. **R-0458, which R-0461 forced and then shipped without.** A claim capped
    by an outstanding hypothesis is *proved conditional on invariant@6* — real evidence
    naming exactly one remaining VC, which the current vocabulary cannot express. That is
    `strength` and `independence` as separate coordinates, and R-0461 is their first real
@@ -376,7 +406,7 @@ the language surface outranks further agreement between checkers of a model — 
 trade R-0462 represents against R-0460. None is a substitute for the arc; all are cheaper,
 and all fail loudly in places the arc reports success.
 
-**Two exceptions, and only two: R-0461 and R-0464 precede this block.** Both own
+**Two exceptions, and only two: R-0461 (done 2026-08-03) and R-0464 precede this block.** Both own
 reproduced unsoundness — a bounds obligation reported `proved_by_multi_kernel` on a
 program that aborts, and a division reported `proved` that aborts on signed `MIN / -1`.
 The argument above holds against *arc work*; it does not hold against a compiler that

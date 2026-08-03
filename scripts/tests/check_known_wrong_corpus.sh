@@ -32,19 +32,45 @@ expect_trap(){ local code="$1" what="$2"
   if [ "$code" -ge 128 ]; then ok "$what traps at runtime (signal exit $code)"
   else no "$what did NOT trap (exit $code) — if the fix landed, update KNOWN_HOLES"; fi; }
 
-echo "=== H23: an unproven invariant still launders into a proved obligation ==="
+echo "=== H23 (CLOSED 2026-08-03): the cap holds, on every surface ==="
+# Was: "an unproven invariant still launders into a proved obligation". R-0461 closed it,
+# so these assertions are INVERTED — they now guard the fix against regression rather than
+# document the hole. The fixture stays in the corpus for exactly that reason.
+#
+# What R-0461 fixed is the CLAIM and the GATE, not the program. The binary still traps, and
+# it should: the bounds check is the runtime doing its job on an index that really is out of
+# range. A cap that silenced the trap would be a worse bug than the one it replaced.
 H23="examples/unsound_hypothesis/src/main.con"
 V23="$("$COMPILER" "$H23" --report vcs 2>/dev/null)"
-# Both halves matter. Asserting only "bounds0 is proved" would keep passing if the
-# invariant ever became provable — the fixture would then be vacuous while still green.
-printf '%s' "$V23" | grep -A2 "#bounds0" | grep -q "proved" \
-  && ok "bounds obligation still reads proved (R-0461 must make this 'assumed')" \
-  || no "bounds0 no longer proved — H23 may be FIXED; update KNOWN_HOLES and flip this"
+printf '%s' "$V23" | grep -A2 "#bounds0" | grep -q "assumed" \
+  && ok "bounds obligation is capped to 'assumed' (R-0461)" \
+  || no "bounds0 is NOT capped — H23 has REGRESSED; capOnHypothesisDebt is not firing"
+printf '%s' "$V23" | grep -A3 "#bounds0" | grep -q "rests on (unproved).*#O2" \
+  && ok "the report names the unproved VC the cap rests on" \
+  || no "bounds0 does not name its outstanding debt — the cap fired without saying why"
+# Non-vacuity, unchanged in spirit: if the invariant ever became provable the cap would
+# correctly stop firing, and the two assertions above would then be testing nothing.
 printf '%s' "$V23" | grep -A2 "#O2" | grep -q "unproven" \
   && ok "the invariant it rests on is still unproven (fixture is non-vacuous)" \
-  || no "O2 is no longer unproven — the fixture stopped demonstrating H23"
+  || no "O2 is no longer unproven — the fixture stopped exercising the cap"
+# The badge surface, which is where H23's headline actually appeared. The ledger and the
+# multi-kernel report derived their class separately, so fixing one left the other lying.
+printf '%s' "$("$COMPILER" "$H23" --report multi-kernel 2>/dev/null)" \
+  | grep -A3 "#bounds0" | grep -q "=> assumed" \
+  && ok "the multi-kernel badge is capped too (no proved_by_* on this obligation)" \
+  || no "the multi-kernel report still badges bounds0 as proved — surfaces disagree"
+# And the release gate. Display without enforcement is how the first fix would have been
+# half a fix: the report read 'assumed' while `check` still exited 0.
+H23DIR="$TMP/h23policy"; mkdir -p "$H23DIR/src"; cp "$H23" "$H23DIR/src/main.con"
+printf '[policy]\nforbid-assume = true\n' > "$H23DIR/Concrete.toml"
+# Captured, not piped: `check` exits non-zero BECAUSE the gate fired, and under
+# `set -o pipefail` that non-zero propagates past a matching grep and reads as FAIL.
+P23="$( cd "$H23DIR" && "$COMPILER" check src/main.con 2>&1 )"
+printf '%s' "$P23" | grep -q "E0617" \
+  && ok "release policy rejects the capped obligation (E0617 under forbid-assume)" \
+  || no "forbid-assume does NOT reject a capped obligation — the cap is display-only"
 "$COMPILER" "$H23" -o "$TMP/h23" >/dev/null 2>&1
-"$TMP/h23" >/dev/null 2>&1; expect_trap $? "H23 fixture (proved bounds, out-of-range index)"
+"$TMP/h23" >/dev/null 2>&1; expect_trap $? "H23 fixture still traps (the runtime check is correct)"
 
 echo "=== H24: trap conditions are still weaker than IntArith's ==="
 H24="examples/trap_semantics_gap/src/main.con"

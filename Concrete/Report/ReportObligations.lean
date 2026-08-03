@@ -100,6 +100,41 @@ partial def assignedScalarsS : Stmt → List String
 def dropStaleHyps (scope : List Expr) (assigned : List String) : List Expr :=
   scope.filter fun h => (collectIdents h).all (fun v => !assigned.contains v)
 
+/-- `{fnQual}@{line}#{obl}` — the loop VC id. Duplicated from `loopVCKey` below only
+    because that definition appears later in the file than its first use here; the gate
+    asserts the two formats stay identical. -/
+def loopVCKeyFwd (fnQual : String) (line : Nat) (obl : String) : String :=
+  s!"{fnQual}@{line}#{obl}"
+
+/-- The loop VCs an obligation's hypotheses OWE — R-0461, closing H23.
+
+    `loopHypsAt` puts a loop's `#[invariant]` expressions verbatim into scope, so an
+    obligation discharged inside that loop was proved ASSUMING them. Whether they hold is a
+    separate question answered by that loop's O1 (init) and O2 (preservation), and until
+    2026-08-03 nothing related the two: a bounds obligation could read
+    `proved_by_multi_kernel` while the invariant it rested on read `unproven` in the same
+    report, and the compiled program aborted. See `examples/unsound_hypothesis/`.
+
+    Recovered by MATCHING rather than by threading a second value through `scopedWalk`. The
+    walker inserts the invariant `Expr` unchanged, so an obligation owes a loop exactly when
+    its hypotheses still contain one of that loop's invariants — and `dropStaleHyps` having
+    removed it means the obligation no longer assumes it and correctly owes nothing.
+
+    Compared on `fmtExpr` because `Expr` derives only `Repr`: it carries spans, so structural
+    equality would distinguish two occurrences of the same invariant. Over-matching is the
+    safe direction here (extra debt is conservative); under-matching would be unsound, which
+    is why the comparison is on the normalised form rather than on span-bearing terms.
+
+    Only O1 and O2 are owed. O3 (exit implies post) is about the function's `#[ensures]`, and
+    O4/O5 are the variant's termination argument — neither is what makes an in-loop
+    hypothesis true at the point the obligation is discharged. -/
+def loopInvariantDebt (f : FnDef) (fq : String) (hyps : List Expr) : List String :=
+  let hypForms := hyps.map Concrete.fmtExpr
+  f.loopContracts.flatMap fun lc =>
+    if lc.invariants.any (fun inv => hypForms.contains (Concrete.fmtExpr inv))
+    then [loopVCKeyFwd fq lc.line "O1", loopVCKeyFwd fq lc.line "O2"]
+    else []
+
 -- ────────────────────────────────────────────────────────────────────────────
 -- The ONE scoped context collector (ROADMAP Phase 3 #3).
 --
@@ -335,6 +370,9 @@ structure BoundsObl where
   closedVerdict : Option Bool
   leanGoal      : Option String
   hyps          : List Expr := []   -- in-scope #[requires]/guards (for prover-neutral lowering)
+  -- Loop VCs these hypotheses owe (R-0461). Non-empty means the obligation was discharged
+  -- under an invariant whose own O1/O2 must hold; the ledger caps the status accordingly.
+  hypDebt       : List String := []
 
 /-- Identifier → fixed-array size, from array-typed params and annotated lets. -/
 def arraySizeMap (f : FnDef) : List (String × Nat) :=
@@ -368,7 +406,8 @@ def boundsObligations (modules : List Module) : List BoundsObl := Id.run do
               let hyp := if reqs.isEmpty then "" else s!"({" ∧ ".intercalate reqs}) → "
               (none, some s!"{binder}{hyp}(0 ≤ {idxStr} ∧ {idxStr} < {n})")
         out := out ++ [{ fnQual := fq, key, arrName := arr, idxExpr := idx, size := n
-                        , closedVerdict := cv.1, leanGoal := cv.2, hyps := obHyps }]
+                        , closedVerdict := cv.1, leanGoal := cv.2, hyps := obHyps
+                        , hypDebt := loopInvariantDebt f fq obHyps }]
         i := i + 1
   return out
 
@@ -473,6 +512,9 @@ structure DivObl where
   closedVerdict : Option Bool
   leanGoal      : Option String
   hyps          : List Expr := []   -- in-scope #[requires]/guards (for prover-neutral lowering)
+  -- Loop VCs these hypotheses owe (R-0461). Non-empty means the obligation was discharged
+  -- under an invariant whose own O1/O2 must hold; the ledger caps the status accordingly.
+  hypDebt       : List String := []
 
 /-- Generate `divisor ≠ 0` obligations for every `/` and `%`. -/
 def divObligations (modules : List Module) : List DivObl := Id.run do
@@ -493,7 +535,9 @@ def divObligations (modules : List Module) : List DivObl := Id.run do
             let binder := if vars.isEmpty then "" else s!"∀ ({" ".intercalate vars} : Int), "
             let hyp := if reqs.isEmpty then "" else s!"({" ∧ ".intercalate reqs}) → "
             (none, some s!"{binder}{hyp}({dStr} ≠ 0)")
-      out := out ++ [{ fnQual := fq, key, divExpr := dv, isMod, closedVerdict := cv.1, leanGoal := cv.2, hyps := obHyps }]
+      out := out ++ [{ fnQual := fq, key, divExpr := dv, isMod, closedVerdict := cv.1
+                     , leanGoal := cv.2, hyps := obHyps
+                     , hypDebt := loopInvariantDebt f fq obHyps }]
       i := i + 1
   return out
 
@@ -620,6 +664,9 @@ structure OverflowObl where
   leanGoal      : Option String           -- omega goal (linear)
   bvGoal        : Option String := none    -- widened bv_decide goal (nonlinear, interval-gated)
   hyps          : List Expr := []          -- the in-scope #[requires]/guards (for the SMT query)
+  -- Loop VCs these hypotheses owe (R-0461). Non-empty means the obligation was discharged
+  -- under an invariant whose own O1/O2 must hold; the ledger caps the status accordingly.
+  hypDebt       : List String := []
 
 /-- All annotated `let` bindings in a statement tree, including those declared
     inside loop inits/steps/bodies (so a loop counter `i` from a `for`-init is
@@ -759,7 +806,8 @@ def overflowObligations (modules : List Module) : List OverflowObl := Id.run do
         -- omega's linear goal won't close it — i.e. the constant case is skipped).
         let bvGoal := if cv.1.isSome then none else overflowBVGoal e lo hi hyps
         out := out ++ [{ fnQual := fq, key, opExpr := e, lo, hi
-                       , closedVerdict := cv.1, leanGoal := cv.2, bvGoal, hyps }]
+                       , closedVerdict := cv.1, leanGoal := cv.2, bvGoal, hyps
+                       , hypDebt := loopInvariantDebt f fq hyps }]
         i := i + 1
       | _, _ => pure ()
   return out

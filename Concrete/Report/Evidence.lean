@@ -180,7 +180,9 @@ def discharge (e : Evidence) (dischargedRefs : List ObligationRef) : Evidence :=
     A claim with outstanding assumptions presents as `assumed`, never as a `proved_*`
     class. `assumed` is deliberate reuse rather than a new conditional badge: it is
     already in the status vocabulary, already what `#[assume]` produces, and already
-    gate-forbiddable through `ProjectPolicy.forbidAssume` — so capping here makes H23
+    gate-forbiddable through `ProjectPolicy.forbidAssume` (as `E0617`, once R-0461 wired
+    `enforceNoCappedHypotheses` — the *status* needed its own enforcement because
+    `enforceNoAssume` keys on the `assume(...)` construct, which a capped obligation lacks) — so capping here makes H23
     catchable by enforcement that already exists. A conditional badge still containing
     the substring `proved` would reproduce H23 for every consumer that pattern-matches
     the status, which is exactly how H23 passed the policy gate. -/

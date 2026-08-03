@@ -2047,6 +2047,10 @@ structure Obligation where
   conclusion    : String
   origin        : String
   dependencies  : List String
+  -- Loop VCs this obligation's HYPOTHESES owe (R-0461). Distinct from `dependencies`,
+  -- which is the function-level proof-dependency edge: this is the VC-level hypothesis
+  -- edge, and H23 was exactly the absence of a composition along it.
+  hypDebt       : List String := []
   arithProfile  : String       -- constant | linear | bitvector | nonlinear | refinement | operational | unsupported
   dischargeMode : String       -- constant_fold | omega | bv_decide | lean | smt | none
   -- discharge OUTCOME (filled in by `dischargeVCs` after the backends run):
@@ -2230,8 +2234,9 @@ def collectVCs (modules : List Module) (locMap : FnLocMap)
         let c := s!"0 ≤ {Concrete.fmtExpr o.idxExpr} ∧ {Concrete.fmtExpr o.idxExpr} < {o.size}"
         let (st, en) := constStatus o.closedVerdict
         if o.closedVerdict.isSome then ([], c, "constant", "constant_fold", st, en) else ([], c, "unsupported", "none", st, en)
-    out := out ++ [mkVC o.key "array_bounds" o.fnQual file line hyps concl
-      s!"index {o.arrName}[{Concrete.fmtExpr o.idxExpr}] (size {o.size}) in {o.fnQual}" [] profile mode status engine]
+    out := out ++ [{ mkVC o.key "array_bounds" o.fnQual file line hyps concl
+      s!"index {o.arrName}[{Concrete.fmtExpr o.idxExpr}] (size {o.size}) in {o.fnQual}" [] profile mode status engine
+      with hypDebt := o.hypDebt }]
   -- div/mod nonzero.
   for o in divObligations modules do
     let (file, line) := loc o.fnQual
@@ -2241,8 +2246,9 @@ def collectVCs (modules : List Module) (locMap : FnLocMap)
         let c := s!"{Concrete.fmtExpr o.divExpr} ≠ 0"
         let (st, en) := constStatus o.closedVerdict
         if o.closedVerdict.isSome then ([], c, "constant", "constant_fold", st, en) else ([], c, "unsupported", "none", st, en)
-    out := out ++ [mkVC o.key "div_nonzero" o.fnQual file line hyps concl
-      s!"{if o.isMod then "%" else "/"} divisor {Concrete.fmtExpr o.divExpr} in {o.fnQual}" [] profile mode status engine]
+    out := out ++ [{ mkVC o.key "div_nonzero" o.fnQual file line hyps concl
+      s!"{if o.isMod then "%" else "/"} divisor {Concrete.fmtExpr o.divExpr} in {o.fnQual}" [] profile mode status engine
+      with hypDebt := o.hypDebt }]
   -- overflow (omega tier, then the interval-gated bv_decide fallback, then const).
   for o in overflowObligations modules do
     let (file, line) := loc o.fnQual
@@ -2253,8 +2259,9 @@ def collectVCs (modules : List Module) (locMap : FnLocMap)
         let c := s!"{o.lo} ≤ {Concrete.fmtExpr o.opExpr} ∧ {Concrete.fmtExpr o.opExpr} ≤ {o.hi}"
         let (st, en) := constStatus o.closedVerdict
         if o.closedVerdict.isSome then ([], c, "constant", "constant_fold", st, en) else ([], c, "unsupported", "none", st, en)
-    out := out ++ [mkVC o.key "no_overflow" o.fnQual file line hyps concl
-      s!"no-overflow of {Concrete.fmtExpr o.opExpr} in [{o.lo}, {o.hi}] in {o.fnQual}" [] profile mode status engine]
+    out := out ++ [{ mkVC o.key "no_overflow" o.fnQual file line hyps concl
+      s!"no-overflow of {Concrete.fmtExpr o.opExpr} in [{o.lo}, {o.hi}] in {o.fnQual}" [] profile mode status engine
+      with hypDebt := o.hypDebt }]
   -- loop obligations (reuse loopObInfo for kind/hyps/conclusion). Discharge is
   -- decided by omega (O1/O3/O4/O5) or stays operational/lean (O2) → planned here.
   for (pfx, f) in (modules.flatMap allFunctions).filter (fun (_, f) => !f.loopContracts.isEmpty) do
@@ -2610,6 +2617,50 @@ def foldMultiKernelResults (vcs : List VC) (rocqClosed isaClosed : List String)
                  engine := "+".intercalate (v.engine :: attest.filter (· != "lean")) }
     else v
 
+/-- **R-0461 / H23: cap a VC by the weakest thing its hypotheses rest on.**
+
+    An obligation discharged inside a loop may assume that loop's `#[invariant]`. Whether
+    the invariant holds is answered by that loop's O1 (init) and O2 (preservation), and until
+    this pass existed nothing related the two statuses: a bounds obligation reported
+    `proved_by_multi_kernel (3: lean, rocq, isabelle)` while its O2 read `unproven` in the
+    same report, and the compiled program aborted on the access. See
+    `examples/unsound_hypothesis/`.
+
+    Runs AFTER discharge, necessarily: whether O2 is proved is only known once every VC has
+    a final status. That ordering is the reason this is a separate pass rather than a check
+    inside the family collectors.
+
+    The capped status is `assumed`, via `Evidence.present` — not a new conditional badge.
+    `assumed` is already in `statusVocabulary`, already what `#[assume]` produces, and
+    already gate-forbiddable through `ProjectPolicy.forbidAssume` — via `E0617`
+    (`enforceNoCappedHypotheses`), which R-0461 had to add because `enforceNoAssume` keys on
+    the `assume(...)` construct and a capped obligation has none — so capping makes H23
+    catchable by enforcement that already exists. Register C's C3 is what guarantees the
+    capped value is never a `proved_*` string, and this is the pass that finally makes C3
+    fire on real verdicts rather than sit as proved substrate.
+
+    A VC that is not otherwise proved keeps its own more specific status: replacing
+    `unproven` with `assumed` would trade a fact about this obligation for a fact about
+    someone else's, which is the same rule R-0004 slice 3 applies to dependencies. -/
+def capOnHypothesisDebt (vcs : List VC) : List VC :=
+  let provedIds := vcs.filterMap (fun v =>
+    if v.status.startsWith "proved" || v.status == "trusted" then some v.id else none)
+  -- POST-CONDITION: `hypDebt` holds exactly the OUTSTANDING refs. Before this pass it holds
+  -- every invariant the obligation leans on, proved or not. Keeping the raw list here made
+  -- `constant_time_tag` print `rests on (unproved): ...@52#O1, ...#O2` for two obligations
+  -- whose O1 AND O2 were both proved — the cap correctly declined to fire and the render
+  -- said otherwise. Narrowing to `outstanding` on every branch is what keeps the field's
+  -- meaning the same as its label, and the same as what the policy gate projects.
+  vcs.map fun v =>
+    if v.hypDebt.isEmpty then v else
+    let outstanding := v.hypDebt.filter (fun r => !provedIds.contains r)
+    if outstanding.isEmpty then { v with hypDebt := [] } else
+    if !(v.status.startsWith "proved") then { v with hypDebt := outstanding } else
+      -- Build the claim's evidence and let Register C decide how it presents.
+      let ev := outstanding.foldl (fun (e : Evidence) r => e.assuming r)
+                  (Evidence.proved v.status)
+      { v with status := ev.present, hypDebt := ev.conditions }
+
 /-- Fold external-solver results into the VC schedule. A result class
     (`solver_trusted` / `counterexample` / `unknown` / `timeout` / `solver_error`)
     is applied ONLY to a VC the kernel-checked tiers left `unproven` — so an
@@ -2638,8 +2689,13 @@ def vcsReport (vcs : List VC) : String := Id.run do
       let prov := if v.smtHash.isEmpty then ""
         else s!"\n      solver:  {if v.solver.isEmpty then "(not run)" else v.solver} | logic QF_NIA | timeout 5s | smtlib-sha {v.smtHash}"
           ++ (if v.leanReplay.isEmpty then "" else "\n      lean-replay:  artifact emitted (check with `--emit-lean-replay`); kernel-checks → proved_by_lean_replay")
+      -- R-0461: name what the cap rests on. `assumed` alone tells a reader the obligation
+      -- is unproved but not what would prove it; the outstanding refs point at the exact
+      -- loop VCs to go fix, which is the difference between a verdict and an action.
+      let rests := if v.hypDebt.isEmpty then ""
+        else s!"\n      rests on (unproved):  {", ".intercalate v.hypDebt}"
       out := out ++ s!"\n  [{v.id}]  {v.kind}"
-        ++ s!"\n      status:  {v.status}{eng}"
+        ++ s!"\n      status:  {v.status}{eng}{rests}"
         ++ s!"\n      profile/expected:  {v.arithProfile} / {v.dischargeMode}"
         ++ s!"\n      hypotheses:  {hyps}"
         ++ s!"\n      conclusion:  {v.conclusion}{deps}{cex}{prov}"
