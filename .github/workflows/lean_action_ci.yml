@@ -457,6 +457,9 @@ jobs:
       - name: "Callable identity (R-0004 step 1 — CallableId is constructed from a resolved declaration, never recovered from text)"
         run: bash scripts/tests/check_callable_identity.sh
 
+      - name: "Body scope (R-0004 — scoped lexical binder frames: relative positions, shadowing, refusal)"
+        run: bash scripts/tests/check_body_scope.sh
+
       - name: "Subject coverage (R-0004 — corpus inventory of which declarations can produce a subject digest, grouped by cause)"
         run: bash scripts/tests/check_subject_coverage.sh
 
