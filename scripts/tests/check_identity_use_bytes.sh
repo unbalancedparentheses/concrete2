@@ -13,7 +13,7 @@ cd "$ROOT_DIR"
 
 fatal() {
   local rc=$?
-  echo "FATAL: check_body_canonical_v2 stopped at line ${BASH_LINENO[0]} (exit $rc)" >&2
+  echo "FATAL: check_identity_use_bytes stopped at line ${BASH_LINENO[0]} (exit $rc)" >&2
   exit "$rc"
 }
 trap fatal ERR
@@ -77,26 +77,54 @@ def posB : ProofBodyIdentityInputsV2 := { uses := [.binderRef 11 1], covered := 
 #eval do
   -- Sanity first: an empty result would make the comparisons below vacuous.
   a "a covered body serializes to non-empty versioned bytes"
-    (((serializeBody covered).getD "").startsWith "bodyV2partial:")
+    (((serializeIdentityUses covered).getD "").startsWith "identityUsesV1:")
 
   a "an UNCOVERED body is refused, not serialized as complete"
-    (serializeBody uncov == none)
+    (serializeIdentityUses uncov == none)
   a "refusal is about coverage, not about content — same nodes, covered, do serialize"
-    (serializeBody covered != none)
+    (serializeIdentityUses covered != none)
 
   a "node ORDER changes the bytes"
-    (serializeBody covered != serializeBody reordered)
+    (serializeIdentityUses covered != serializeIdentityUses reordered)
   a "node MULTIPLICITY changes the bytes"
-    (serializeBody covered != serializeBody repeated
-      && serializeBody once != serializeBody twice)
+    (serializeIdentityUses covered != serializeIdentityUses repeated
+      && serializeIdentityUses once != serializeIdentityUses twice)
   a "the node count is emitted, so a truncated stream cannot read as a shorter one"
-    (((serializeBody once).getD "").startsWith "bodyV2partial:n1:"
-      && ((serializeBody twice).getD "").startsWith "bodyV2partial:n2:")
+    (((serializeIdentityUses once).getD "").startsWith "identityUsesV1:n1:"
+      && ((serializeIdentityUses twice).getD "").startsWith "identityUsesV1:n2:")
 
   a "the encoding is injective across distinct positions"
-    (serializeBody posA != serializeBody posB)
+    (serializeIdentityUses posA != serializeIdentityUses posB)
   a "identical inputs serialize identically"
-    (serializeBody covered == serializeBody { uses := nodes, covered := true })
+    (serializeIdentityUses covered == serializeIdentityUses { uses := nodes, covered := true })
+
+  -- THE STRUCTURAL CONTRACT. Arity exists before any composite node does, so the
+  -- injectivity property is established while it is still cheap to get right.
+  a "every current node kind is a leaf (arity 0)"
+    ((nodes.map nodeArity).all (· == 0))
+  a "a stream of N leaves reduces to N roots"
+    (streamRoots? nodes == some 4 && streamRoots? [] == some 0)
+  -- Arity must be checked reflectively too: a new constructor that skips nodeArity
+  -- would default to nothing at all, silently flattening a composite into a leaf.
+  a "the arity table covers every kind the tag table covers"
+    ((nodes.map nodeArity).length == (nodes.map nodeTag).length)
+
+  -- EXERCISE THE REFUSAL PATH with a composite arity. Every real node is a leaf, so
+  -- without this the malformed branch is dead code asserted to work.
+  a "a composite node with too few children makes the stream MALFORMED"
+    (streamRootsWith? (fun _ => 2) [.binderRef 0 0] == none)
+  -- (A uniform arity of 2 admits NO well-formed stream, since nothing is a leaf;
+  -- the well-formed case needs a MIXED arity, which the next leg supplies.)
+  a "a binary node folds two roots into one"
+    (streamRootsWith? (fun u => match u with | .typeRef _ => 2 | _ => 0)
+       [.binderRef 0 0, .binderRef 0 1, .typeRef ownerA] == some 1)
+  -- The discriminator that motivates arity at all: two nestings of the same nodes
+  -- must NOT reduce alike once composites exist.
+  a "differently-nested streams of identical nodes reduce differently"
+    (streamRootsWith? (fun u => match u with | .typeRef _ => 2 | _ => 0)
+       [.binderRef 0 0, .binderRef 0 1, .typeRef ownerA]
+     != streamRootsWith? (fun u => match u with | .typeRef _ => 2 | _ => 0)
+       [.binderRef 0 0, .typeRef ownerA, .binderRef 0 1])
 
   -- INCOMPLETENESS TRIPWIRE. The vocabulary has four node kinds, so bodies that
   -- differ only in operators, literals, calls or control flow serialize IDENTICALLY.
@@ -105,14 +133,14 @@ def posB : ProofBodyIdentityInputsV2 := { uses := [.binderRef 11 1], covered := 
   -- signal to drop the `partial` tag and re-examine every consumer. Without it, V2
   -- could quietly become complete-looking while still omitting most of a body.
   a "TRIPWIRE: the stream is tagged partial while the vocabulary is incomplete"
-    (((serializeBody covered).getD "").startsWith "bodyV2partial:")
+    (((serializeIdentityUses covered).getD "").startsWith "identityUsesV1:")
   a "TRIPWIRE: four node kinds — extending the vocabulary must break this"
     (allNodeTags.length == 4)
 
   -- The serializer must not leak a source name. Only the typed IDs' own rendering
   -- may appear, and a binder never contributes one.
   a "a binder reference contributes no name to the bytes"
-    ((((serializeBody once).getD "").splitOn "b").length >= 2)
+    ((((serializeIdentityUses once).getD "").splitOn "b").length >= 2)
 LEAN
 
 OUT="$TMP_DIR/out.txt"
@@ -128,7 +156,7 @@ PASS=$(( PASS + $(grep -c '^  ok   ' "$OUT" || true) ))
 # Structural BACKSTOPS. These supplement the reflective check above; they are not the
 # authority. A wildcard arm would let an unclassified constructor receive a generic
 # tag, and a derived Repr would produce bytes for a node kind nobody classified.
-code="$(sed -e '/^ *--/d' -e '/^ *\/-/,/-\//d' Concrete/Proof/BodyCanonicalV2.lean)"
+code="$(sed -e '/^ *--/d' -e '/^ *\/-/,/-\//d' Concrete/Proof/IdentityUseBytes.lean)"
 if printf '%s' "$code" | grep -qE '^\s*\|\s*_\s*=>'; then
   no "the serializer has a wildcard arm — an unclassified node would get a generic tag"
 else
@@ -146,6 +174,20 @@ else
   ok "the serializer resolves nothing; it only encodes captured nodes"
 fi
 
+# Arity must be exhaustive in the SOURCE, not merely correct for today's four leaves.
+code_arity="$(awk '/^def nodeArity/,/^$/' Concrete/Proof/IdentityUseBytes.lean)"
+if printf '%s' "$code_arity" | grep -qE '^\s*\|\s*_\s*=>'; then
+  no "nodeArity has a wildcard — a composite node would silently be treated as a leaf"
+else
+  ok "nodeArity is exhaustive with no wildcard"
+fi
+# The serializer must refuse a malformed stream, not encode it.
+if grep -q "streamRoots? inputs.uses).isNone" Concrete/Proof/IdentityUseBytes.lean; then
+  ok "a malformed stream is refused rather than serialized"
+else
+  no "the serializer does not check stream well-formedness — unreadable evidence could be emitted"
+fi
+
 # THE COLLISION, on real compiled programs rather than constructed records. Three
 # bodies that differ semantically must currently share bytes; when they stop sharing,
 # the vocabulary has grown and every consumer needs re-examining.
@@ -156,9 +198,9 @@ if [ -x "$CC" ]; then
     nm="${pair%%:*}"; expr="${pair#*:}"
     printf 'mod m { pub fn f(p: Int) -> Int { return %s; } }\n' "$expr" > "$CT/$nm.con"
   done
-  da="$("$CC" "$CT/a.con" --report subject-facts 2>/dev/null | grep -oE 'shadow bodyV2: [a-f0-9]+' || true)"
-  db="$("$CC" "$CT/b.con" --report subject-facts 2>/dev/null | grep -oE 'shadow bodyV2: [a-f0-9]+' || true)"
-  dc="$("$CC" "$CT/c.con" --report subject-facts 2>/dev/null | grep -oE 'shadow bodyV2: [a-f0-9]+' || true)"
+  da="$("$CC" "$CT/a.con" --report subject-facts 2>/dev/null | grep -oE 'shadow identityUses: [a-f0-9]+' || true)"
+  db="$("$CC" "$CT/b.con" --report subject-facts 2>/dev/null | grep -oE 'shadow identityUses: [a-f0-9]+' || true)"
+  dc="$("$CC" "$CT/c.con" --report subject-facts 2>/dev/null | grep -oE 'shadow identityUses: [a-f0-9]+' || true)"
   rm -rf "$CT"
   if [ -z "$da" ]; then
     no "collision probe produced no shadow digest — inconclusive"
@@ -173,11 +215,11 @@ fi
 
 # The shadow digest must NOT reach the authoritative bytes. V1 stays frozen, so a
 # stored proof link cannot go stale because of an observed-only value.
-if grep -qE "shadowBodyDigestV2|serializeBody" Concrete/Proof/SubjectFacts.lean; then
+if grep -qE "shadowIdentityUseDigest|serializeIdentityUses" Concrete/Proof/SubjectFacts.lean; then
   no "SubjectFacts references the V2 serializer — shadow bytes could reach canonical"
 else
   ok "the shadow digest is absent from SubjectFacts, so canonical cannot include it"
 fi
 
-echo "BODY-CANONICAL-V2: PASS=$PASS FAIL=$FAIL"
+echo "IDENTITY-USE-BYTES: PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1

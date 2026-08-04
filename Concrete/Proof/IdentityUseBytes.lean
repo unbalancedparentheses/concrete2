@@ -1,6 +1,20 @@
 import Concrete.Proof.SubjectFacts
 
-/-! # ProofBodyCanonicalV2 — serialization only
+/-! # Identity-use serialization — NOT ProofBodyCanonicalV2
+
+RENAMED deliberately. This serializes the flat list of typed identity USES that
+elaboration accumulates. It is not a body representation and must not be mistaken for
+one: measured on the corpus, `p + 1`, `p * 2` and `p - 9` all serialize identically,
+because the vocabulary is four leaf reference kinds and operators, literals, calls and
+control flow are absent.
+
+ProofBodyCanonicalV2 will serialize a typed evidence TREE produced by elaboration.
+A tree makes malformed nesting UNREPRESENTABLE, which is strictly stronger than the
+arity-tagged stream below: an arity stream can be injective, but it lets the producer
+emit a malformed stream that the serializer must then reconstruct and validate —
+duplicating structure the elaborator already knows. The arity machinery here is
+retained as the STACK-VALIDATION layer for that eventual tree's flat encoding, not as
+the IR's shape.
 
 This module SERIALIZES the typed evidence nodes elaboration produced. It resolves
 nothing: no name lookup, no scope reconstruction, no type inference. Those belong to
@@ -29,6 +43,55 @@ def nodeTag : BodyIdentityUse → String
   | .typeRef _     => "t"
   | .field _       => "f"
   | .variant _     => "v"
+
+/-- How many preceding nodes this node consumes as children.
+
+    THE STRUCTURAL CONTRACT, established before any composite node exists. The
+    evidence stream is a flat list, which works today only because all four kinds are
+    leaf references. The moment operators and calls become nodes, nesting turns
+    semantic: `(p + q) * r` and `p + (q * r)` would emit the SAME node sequence, as
+    would `f(g(x))` and `g(f(x))`. That collision passes any order-and-multiplicity
+    check, because the order genuinely is identical — it is the shadow collision one
+    level deeper.
+
+    Rather than convert the IR to a tree, each node declares its arity and the stream
+    is read as POSTFIX. Injectivity then becomes checkable (see `streamRoots?`)
+    instead of merely structural, and the producer keeps the flat accumulator that
+    `restoreScope` semantics already depend on.
+
+    EXHAUSTIVE, no wildcard: a new constructor must state its arity here. Defaulting
+    an unknown node to 0 would silently flatten a composite back into a leaf.
+    Retrofitting structure onto a published vocabulary is the expensive version of
+    this decision, which is why it lands while every arity is still 0. -/
+def nodeArity : BodyIdentityUse → Nat
+  | .binderRef _ _ => 0
+  | .typeRef _     => 0
+  | .field _       => 0
+  | .variant _     => 0
+
+/-- Postfix well-formedness: the number of roots the stream reduces to, or `none` if
+    it is malformed.
+
+    Simulates a stack. Each node pops `nodeArity` children and pushes itself; a node
+    demanding more children than are available makes the stream malformed rather than
+    silently truncating. A serializer that trusted its input would encode a stream no
+    reader could interpret, which is the "looks authoritative" failure again. -/
+def streamRootsWith? (arity : BodyIdentityUse → Nat) (uses : List BodyIdentityUse)
+    : Option Nat :=
+  uses.foldl (init := some 0) fun acc u =>
+    match acc with
+    | none => none
+    | some depth =>
+      let need := arity u
+      if need > depth then none else some (depth - need + 1)
+
+/-- The arity function is a PARAMETER above so this refusal path is testable now.
+    Every current node is a leaf, so no real stream can be malformed yet, and a check
+    that cannot be exercised is not a check — it is a claim. A gate supplies a
+    composite arity to prove the detection works before the first composite node
+    exists, rather than discovering it does not when one arrives. -/
+def streamRoots? (uses : List BodyIdentityUse) : Option Nat :=
+  streamRootsWith? nodeArity uses
 
 /-- Every tag the serializer knows how to emit.
 
@@ -71,8 +134,13 @@ def serializeNode : BodyIdentityUse → String
     it could not give a semantic identity; serializing what it DID capture would
     present a partial body as a complete one, which is worse than having no bytes at
     all because it looks authoritative. -/
-def serializeBody (inputs : ProofBodyIdentityInputsV2) : Option String :=
+def serializeIdentityUses (inputs : ProofBodyIdentityInputsV2) : Option String :=
   if !inputs.covered then none
+  else if (streamRoots? inputs.uses).isNone then
+    -- MALFORMED. A composite node demanding more children than precede it cannot be
+    -- read back by anyone, so emitting bytes for it would produce evidence that only
+    -- looks authoritative. Refuse, exactly as for an uncovered body.
+    none
   else
     let body := String.join (inputs.uses.map serializeNode)
     -- TAGGED PARTIAL, and it must stay that way until the node vocabulary covers the
@@ -87,7 +155,7 @@ def serializeBody (inputs : ProofBodyIdentityInputsV2) : Option String :=
     -- complete body digest, and check_body_canonical_v2 carries a TRIPWIRE that
     -- fails once the vocabulary grows, forcing this decision to be revisited rather
     -- than silently outgrown.
-    some ("bodyV2partial:n" ++ toString inputs.uses.length ++ ":" ++ body)
+    some ("identityUsesV1:n" ++ toString inputs.uses.length ++ ":" ++ body)
 
 /-- SHADOW digest of a body's typed evidence: the V2 bytes, hashed, or refusal.
 
@@ -100,9 +168,9 @@ def serializeBody (inputs : ProofBodyIdentityInputsV2) : Option String :=
     field is one refactor away from being folded into `canonical` by someone
     threading "all the facts" into the digest, whereas a call site has to be written
     deliberately. -/
-def shadowBodyDigestV2 (inputs : ProofBodyIdentityInputsV2) (hash : String → String)
+def shadowIdentityUseDigest (inputs : ProofBodyIdentityInputsV2) (hash : String → String)
     : Option String :=
-  (serializeBody inputs).map hash
+  (serializeIdentityUses inputs).map hash
 
 end Concrete.Proof
 

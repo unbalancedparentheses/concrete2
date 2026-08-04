@@ -3,7 +3,7 @@ import Concrete.Check.Layout
 import Concrete.Resolve.FileSummary
 import Concrete.Frontend.AST
 import Concrete.Resolve.Intrinsic
-import Concrete.Proof.BodyCanonicalV2
+import Concrete.Proof.IdentityUseBytes
 import Concrete.Proof.Proof
 import Concrete.Proof.ProofCore
 import Concrete.IR.SSA
@@ -1603,7 +1603,7 @@ def subjectFactsReport (pc : Concrete.ProofCore) : String :=
         -- SHADOW. Reported so V1 and V2 can be compared on the real corpus before
         -- either is trusted, and deliberately NOT part of `dig` above: the
         -- authoritative digest stays V1-frozen while this is observed.
-        , s!"  shadow bodyV2: {(Proof.shadowBodyDigestV2 fx.bodyIdentityInputs shortHash).getD "REFUSED (uncovered)"}"
+        , s!"  shadow identityUses: {(Proof.shadowIdentityUseDigest fx.bodyIdentityInputs shortHash).getD "REFUSED (uncovered)"}"
         ]
   s!"=== Subject facts ({pc.entries.length} entries) ===\n" ++ "\n".intercalate rows ++ "\n"
 
