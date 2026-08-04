@@ -202,16 +202,14 @@ def evalBinOp (op : BinOp) (lhs rhs : IVal) : Except String IVal :=
   -- checked shift: amount >= bit width traps (matches the compiled abort).
   -- Shift-range is decided by the reference (`IntArith.shiftAmountInRange`); the
   -- width-masking of the result uses the reference's `maskWidth`.
-  | .shl, .int a ty, .int b _ =>
-    if IntArith.isIntTy ty && !IntArith.shiftAmountInRange ty b then .error "interp: shift amount out of range"
-    -- The shifted value can exceed the SIGNED width (`100 << 1` at i8 = 200),
-    -- so wrap two's-complement into the width — `maskWidth` only wraps unsigned
-    -- and would leave a signed overflow un-truncated, diverging from the
-    -- compiled `shl` (which truncates: 200 -> -56).
-    else .ok (.int (IntArith.wrapToWidth ty (a * (2 ^ b.toNat))) ty)
-  | .shr, .int a ty, .int b _ =>
-    if IntArith.isIntTy ty && !IntArith.shiftAmountInRange ty b then .error "interp: shift amount out of range"
-    else .ok (.int (IntArith.maskWidth ty (a / (2 ^ b.toNat))) ty)
+  -- Shifts go through the reference too (R-0460). The rule used to live inline here, which
+  -- made the interpreter its own definition of when a shift traps — one of three consumers
+  -- with no shared source, alongside `SSACleanup` and (once R-0464 added it) obligation
+  -- generation. `IntArith.evalIntShift` is that source, transcribed from this code so
+  -- behaviour is unchanged, and `shift_amount_sufficient` is proved against it: the width
+  -- wrapping, the `isIntTy` guard, and the trap message are all preserved exactly.
+  | .shl, .int a ty, .int b _ => arithOut (IntArith.evalIntShift op a ty b)
+  | .shr, .int a ty, .int b _ => arithOut (IntArith.evalIntShift op a ty b)
   | _, _, _ => .error "interp: unsupported binop on given value types"
 
 -- ============================================================

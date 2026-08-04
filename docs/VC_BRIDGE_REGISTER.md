@@ -115,7 +115,7 @@ proofs are needed, since no test enumerates program points.
 | **Rejects** | Shifts whose shifted operand has no resolvable integer type, and amounts outside the linear fragment (dropped, reads `not-asked`). |
 | **Forced by** | `examples/trap_semantics_gap/src/main.con` (`tg::s`, `1 << 40`). |
 | **Cross-checked today** | `check_known_wrong_corpus.sh` asserts the family exists and uses the shifted operand's width; `IntArith`'s `shiftAmountInRange` examples pin the boundary (31 ok, 32 not, negative not). |
-| **Discharging theorem (TODO — and the statement needs care)** | `IntArith.trapConditions_sufficient` covers `.shl`/`.shr` only VACUOUSLY: `evalIntBinOp` does not handle shifts at all (it returns `notApplicable`, so `isTrap` is trivially false), because the reference keeps shifts in the small helpers `shiftAmountInRange`/`maskWidth` rather than threading a shift-result formula through `ArithResult`. The honest row is therefore still open: it must be stated against those helpers, not against `evalIntBinOp`. Recorded rather than counted as discharged — a theorem that is true because its subject is absent proves nothing about shifts. |
+| **Discharging theorem (HALF DISCHARGED 2026-08-04)** | `IntArith.shift_amount_sufficient` is proved: if `shiftAmountInRange ty b` holds, `evalIntShift` does not trap. Stated against `evalIntShift` — a NEW definition transcribed from the interpreter, which the interpreter now consumes — and deliberately NOT against `evalIntBinOp`, which does not model shifts and would have made the theorem true vacuously. `IntArith.shift_amount_necessary` proves the converse for integer types, so the condition cannot be strengthened to `False` and still pass: sufficiency alone cannot tell a useful rule from a vacuous one. The remaining half is the same one every row owes — that the emitted obligation *denotes* the condition (the lowering, H19). |
 
 **Provenance of this row.** The family did not exist until R-0464 (2026-08-03), and its
 absence was invisible to this document's own gate: `check_vc_bridge_register.sh` walks from
@@ -147,8 +147,21 @@ separately by construction rather than by proof.
 
 ## Status
 
-Rows discharged: **0 of 4**. Every row is currently trusted, which is what
-`independent_of.bridge = "no"` reports.
+Rows: **5 lowering rules** (overflow, bounds, div, shift, call-site) plus one projection
+(`multiKernelObligations`, which owes nothing of its own). Rows discharged: **0 of 5**.
+Half discharged: **2 of 5** — `divObligations` and `shiftObligations`, whose *semantics*
+half is proved (`IntArith.trapConditions_sufficient`, `shift_amount_sufficient`,
+`shift_amount_necessary`) while the *lowering* half is not.
+
+`independent_of.bridge = "no"` still reports correctly, and the reason is worth stating
+precisely rather than softening: a half-discharged row is still a trusted row. Proving the
+conditions suffice removes one of two ways the row can be wrong. The other — that the
+emitted obligation denotes those conditions — is H19, and it is the half no theorem here
+touches.
+
+*(Counts are gated: `check_vc_bridge_register.sh` fails if this line disagrees with the
+rows, in either direction. It said "0 of 4" for a day after the first row was
+half-discharged, which is the understating drift that gate now catches.)*
 
 **Correction, 2026-07-31: the differential surfaces do NOT probe sufficiency.** This
 document previously said they did, for two of the four rows. They cannot, and H24 shows it

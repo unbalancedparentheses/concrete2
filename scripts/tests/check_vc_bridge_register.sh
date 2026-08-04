@@ -135,6 +135,87 @@ grep -q "VACUOUS" "$IA" \
   && ok "the vacuity of the shift case is stated where the theorem lives" \
   || no "nothing warns that the theorem's shift case is vacuous — it reads as covering shifts"
 
+echo "=== the register's ROWS are checked, not just its row COUNT (2026-08-04) ==="
+# Until now this gate checked that every generator HAS a row and that no row is stale about
+# its generator. It never checked what the rows SAY. Two defects got through that gap in two
+# days: the Sufficiency section declared every row's Assumes clause "currently **false** in
+# the presence of loop invariants" a day after H23 was closed, and the shift row was one
+# edit away from being recorded as discharged by a theorem that holds only because
+# `evalIntBinOp` does not model shifts.
+#
+# This file is load-bearing for Register A — it is the list of what the compiler still owes —
+# and it had no gate over its claims at all.
+REG="docs/VC_BRIDGE_REGISTER.md"
+
+# Structure is ALREADY gated above (per-row Emits/Assumes/Rejects/Discharging-theorem, with
+# a projection exemption). My first version of this block duplicated it and omitted the
+# exemption, so it failed the one row legitimately without a lowering contract. What was
+# genuinely ungated is what the rows CLAIM — the checks below.
+
+# A cell marked DISCHARGED must name theorems that EXIST; a cell marked TODO must name
+# theorems that do NOT (a TODO naming a proved theorem is the understating drift). Splitting
+# on the marker is the whole point — the first version of this check demanded existence
+# everywhere and flagged three legitimate TODOs, which is a gate calling correct
+# documentation wrong.
+PHANTOM=0
+while IFS= read -r cell; do
+  IDS="$(printf '%s' "$cell" | grep -oE '[A-Za-z][A-Za-z_]*_(sufficient|necessary)' | sort -u)"
+  if printf '%s' "$cell" | grep -q "DISCHARGED"; then
+    for name in $IDS; do
+      grep -rqE "^(private )?theorem $name" Concrete/ 2>/dev/null \
+        || { no "a DISCHARGED cell names theorem '$name', which does not exist in Concrete/"; PHANTOM=1; }
+    done
+  elif printf '%s' "$cell" | grep -q "TODO"; then
+    for name in $IDS; do
+      if grep -rqE "^(private )?theorem $name" Concrete/ 2>/dev/null; then
+        no "a TODO cell names theorem '$name', which IS proved — the row understates the compiler"
+        PHANTOM=1
+      fi
+    done
+  fi
+done < <(grep "Discharging theorem" "$REG")
+[ "$PHANTOM" = "0" ] && ok "DISCHARGED cells name real theorems; TODO cells name unproved ones"
+
+# 3. NO UNRECORDED DISCHARGE. A proved sufficiency/necessity theorem that no row mentions is
+# drift in the understating direction — the compiler is stronger than its own register says,
+# and the next reader plans around the register.
+UNREC=0
+for t in $(grep -rhoE "^(private )?theorem [A-Za-z_]+_(sufficient|necessary)" Concrete/ 2>/dev/null \
+           | awk '{print $NF}' | sort -u); do
+  grep -q "$t" "$REG" || { no "theorem '$t' is proved but no register row mentions it"; UNREC=1; }
+done
+[ "$UNREC" = "0" ] && ok "every proved sufficiency/necessity theorem is recorded in a row"
+
+# 3b. THE HEADLINE COUNT. The Status line is what a reader takes away, and it said "0 of 4"
+# for a day after the first row was half-discharged. Derive both numbers and compare.
+LOWERING_ROWS="$(awk '/^### `/{r=$0} /\*\*Kind\*\*: projection/{next} /^### `/{n++} END{print n}' "$REG")"
+HALF="$(grep -c "Discharging theorem (HALF DISCHARGED" "$REG" || true)"
+STATED_HALF="$(grep -oE "Half discharged: \*\*[0-9]+ of [0-9]+\*\*" "$REG" | grep -oE "[0-9]+ of" | head -1 | tr -d ' of')"
+if [ "$HALF" = "$STATED_HALF" ]; then
+  ok "the Status line's half-discharged count ($STATED_HALF) matches the rows ($HALF)"
+else
+  no "Status says $STATED_HALF half-discharged; the rows say $HALF — the headline is stale"
+fi
+
+# 4. FIXTURES EXIST. "Forced by" names the program that makes the row non-hypothetical; a
+# path that has been moved or deleted turns the strongest column into decoration.
+MISSINGFX=0
+for f in $(grep -oE '`(examples|tests|std)/[A-Za-z0-9_./-]+`' "$REG" | tr -d '`' | sort -u); do
+  [ -e "$f" ] || { no "the register cites '$f', which does not exist"; MISSINGFX=1; }
+done
+[ "$MISSINGFX" = "0" ] && ok "every fixture path the register cites exists on disk"
+
+# 5. NO UNQUALIFIED "currently false". The H23 instance: a row asserted its own Assumes
+# clause was false, and stayed that way after the cause was fixed. Such a claim is allowed,
+# but it must name the hole it refers to, so the hole-status gate can catch it going stale.
+BADCLAIM="$(grep -nE "currently \*\*?false|is currently false" "$REG" | grep -vE "H[0-9]+" || true)"
+if [ -n "$BADCLAIM" ]; then
+  no "a row claims something is 'currently false' without naming a hole (unauditable):"
+  printf '%s\n' "$BADCLAIM" | head -3 | sed 's/^/         /'
+else
+  ok "no unqualified 'currently false' claim (any such claim must name its hole)"
+fi
+
 echo ""
 echo "VC-BRIDGE-REGISTER: PASS=$PASS  FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]

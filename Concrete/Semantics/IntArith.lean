@@ -277,6 +277,34 @@ def unaryOpCanTrap (op : UnaryOp) (ty : Ty) : Bool :=
   | .neg => isIntTy ty
   | .bitnot | .not_ => false
 
+/-- **Evaluate a checked SHIFT — the shift arm of the reference (R-0460).**
+
+    `evalIntBinOp` deliberately omits shifts, and the omission had a cost: there was no
+    single definition of when a shift traps, so the interpreter carried the rule inline,
+    `SSACleanup` consulted `shiftAmountInRange` directly, and obligation generation had no
+    shift family at all until R-0464. Three consumers, no shared definition — the exact
+    shape H24 was.
+
+    This is that definition, and it is what the sufficiency theorem below is proved against.
+    Transcribed from the interpreter (the reference semantics, Principle 1) rather than
+    invented, including two details that are easy to get wrong:
+
+    * the trap is guarded by `isIntTy ty`, so a non-integer type does NOT trap even though
+      `shiftAmountInRange` is `false` for it;
+    * `shl` wraps with `wrapToWidth`, not `maskWidth` — the shifted value can exceed the
+      SIGNED width (`100 << 1` at `i8` is 200), and `maskWidth` only wraps unsigned, which
+      would leave a signed overflow untruncated and diverge from the compiled `shl`
+      (which truncates 200 to -56). -/
+def evalIntShift (op : BinOp) (a : Int) (ty : Ty) (b : Int) : ArithResult :=
+  match op with
+  | .shl =>
+    if isIntTy ty && !shiftAmountInRange ty b then .trap "shift amount out of range"
+    else .value (wrapToWidth ty (a * (2 ^ b.toNat))) ty
+  | .shr =>
+    if isIntTy ty && !shiftAmountInRange ty b then .trap "shift amount out of range"
+    else .value (maskWidth ty (a / (2 ^ b.toNat))) ty
+  | _ => .notApplicable
+
 /-! ### Trap conditions as first-class data (R-0464 / H24)
 
 `evalIntBinOp` above is the authority on *whether* a checked op traps at given values.
@@ -423,6 +451,33 @@ theorem trapConditions_sufficient (op : BinOp) (ty : Ty) (a b : Int)
   -- Everything else is total, saturating, wrapping, or not handled by this evaluator
   -- (shifts and bitwise ops use the small helpers directly — see `evalIntBinOp`'s note).
   all_goals rfl
+
+/-- **R-0460: the shift-amount condition is SUFFICIENT.**
+
+    `VC_BRIDGE_REGISTER.md`'s `shift_obligation_sufficient` row. Stated against
+    `evalIntShift` — the definition the interpreter now consumes — and NOT against
+    `evalIntBinOp`, which does not model shifts and would make this true vacuously. That
+    distinction is the whole reason this row stayed open when `trapConditions_sufficient`
+    landed: a theorem that holds because its subject is absent proves nothing.
+
+    Hypothesis is `shiftAmountInRange`, which is exactly what `shiftObligations` emits
+    (`0 ≤ amount < bitWidth`), taking the width from the SHIFTED operand's type. -/
+theorem shift_amount_sufficient (op : BinOp) (ty : Ty) (a b : Int)
+    (hop : op = .shl ∨ op = .shr)
+    (h : shiftAmountInRange ty b = true) :
+    (evalIntShift op a ty b).isTrap = false := by
+  rcases hop with rfl | rfl <;> simp [evalIntShift, h, ArithResult.isTrap]
+
+/-- And it is NECESSARY as well as sufficient, for integer types: an out-of-range amount
+    does trap. Without this the condition could be strengthened to `False` and the
+    sufficiency theorem would still hold — the direction that makes a rule useless rather
+    than unsound, and the one a sufficiency proof alone cannot see. -/
+theorem shift_amount_necessary (op : BinOp) (ty : Ty) (a b : Int)
+    (hop : op = .shl ∨ op = .shr)
+    (hty : isIntTy ty = true)
+    (h : shiftAmountInRange ty b = false) :
+    (evalIntShift op a ty b).isTrap = true := by
+  rcases hop with rfl | rfl <;> simp [evalIntShift, h, hty, ArithResult.isTrap]
 
 /-! #### The lock: the enumeration agrees with the evaluator
 
