@@ -1410,8 +1410,8 @@ structure ArtifactFuzzCase where
 
     The filter is narrow, and every clause is a callability requirement rather than a taste:
     * `isPublic` — a private function cannot be called from a generated driver;
-    * defined in the file the driver is appended to — `parsed.modules` includes the resolved
-      standard library, and a driver calling `math::abs` does not resolve;
+    * in the SCOPE of the file the driver is appended to (`scopedValidCore`) — `parsed.modules`
+      includes the resolved standard library, and a driver calling into std does not resolve;
     * params are integers or fixed-size integer arrays — the driver passes literals;
     * return type an integer — so the driver can bind and accumulate the result;
     * `capSet` empty and no capability params — a function needing `with(Std)` would force the
@@ -1426,8 +1426,8 @@ structure ArtifactFuzzCase where
 
     Every exclusion is counted and printed by `--report artifact-fuzz`, because a fuzzer that
     reports "no traps" while silently testing nothing is worse than no fuzzer. -/
-def artifactFuzzCases (modules : List Module) (ownFile : String)
-    (locMap : FnLocMap) (claimOf : String → String) : List ArtifactFuzzCase := Id.run do
+def artifactFuzzCases (modules : List Module) (ownFns : List String)
+    (claimOf : String → String) : List ArtifactFuzzCase := Id.run do
   let mut out : List ArtifactFuzzCase := []
   for (pfx, f) in modules.flatMap allFunctions do
     if !f.isPublic then continue
@@ -1435,7 +1435,7 @@ def artifactFuzzCases (modules : List Module) (ownFile : String)
     if !f.typeParams.isEmpty || !f.capParams.isEmpty then continue
     if f.capSet != .empty then continue
     if f.params.isEmpty then continue
-    if !(locMap.any (fun e => e.qualName == pfx ++ f.name && e.file == ownFile)) then continue
+    if !(ownFns.contains (pfx ++ f.name)) then continue
     if !f.params.all (fun p => fuzzablePassableTy p.ty) then continue
     if (IntArith.intBitWidth f.retTy).isNone then continue
     let intNames := f.params.filterMap (fun p =>

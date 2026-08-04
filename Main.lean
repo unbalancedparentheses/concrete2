@@ -2184,9 +2184,12 @@ def compileAndReport (inputPath : String) (reportType : String)
         if mine.isEmpty then "unclaimed"
         else if mine.all (fun v => v.status.startsWith "proved" || v.status == "arithmetic_proved")
         then "claimed" else "unproved"
-      let cases := Report.artifactFuzzCases parsed.modules inputPath locMap claimOf
+      -- The invoked file's own functions, from the SCOPED Core rather than from `locMap`
+      -- (whose `file` field is stamped uniformly and cannot distinguish dependencies).
+      let ownFns := (scopedValidCore.coreModules.flatMap Report.coreFnFingerprints).map (·.1)
+      let cases := Report.artifactFuzzCases parsed.modules ownFns claimOf
       let total := cases.foldl (fun n c => n + c.argRows.length) 0
-      let allFns := (locMap.filter (fun e => e.file == inputPath)).length
+      let allFns := ownFns.length
       IO.println "=== Artifact fuzz plan (R-0462: run the BINARY against the safety claims) ==="
       IO.println "  Register A says: if the obligation holds, the runtime property holds."
       IO.println "  This tests that empirically against the artifact that ships, so it also"

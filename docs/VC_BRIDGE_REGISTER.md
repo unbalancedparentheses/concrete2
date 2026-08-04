@@ -199,9 +199,11 @@ fuzzed; a trap is expected and the compiler never claimed otherwise). **In `exam
 there are zero `claimed` or `unclaimed` fuzzable functions**, so the soundness check is
 vacuous, and the gate says so rather than reporting green as evidence. What it does assert
 non-vacuously is a MECHANISM case: the `unproved` fixtures trap and the harness detects it, so
-a future clean result will mean something. Coverage is limited by callability — public,
-integer-or-integer-array parameters, integer return, no capabilities, and a contract checkable
-over the integer parameters.
+a future clean result will mean something. Coverage is limited by callability, and the measured number is **4 of 356** own functions
+across `examples/` — public, integer-or-integer-array parameters, integer return, no
+capabilities, and a contract checkable over the integer parameters. Widening it (capability
+holders, struct parameters, non-integer returns) is where the fault-finding value would come
+from; this pass built the machinery and proved it works, not coverage.
 
 H24 is therefore also the clearest validation of R-0462's priority: **every** static
 surface reports success on `examples/trap_semantics_gap/` — `vcs` says
