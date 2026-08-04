@@ -133,12 +133,12 @@ end
     an `if` keeps a position determined by where it is written. Shadowing is NOT
     resolved here: duplicates are preserved so the encoder can see the ambiguity
     and refuse rather than silently binding to the first occurrence. -/
-partial def ghostBindersOf : List Stmt → List String
+partial def ghostBindersOf : List Stmt → List (String × Expr)
   | [] => []
   | st :: rest =>
-    let here : List String :=
+    let here : List (String × Expr) :=
       match st with
-      | .letDecl _ n _ _ _ true  => [n]
+      | .letDecl _ n _ _ v true  => [(n, v)]
       | .letDecl _ _ _ _ _ false => []
       | .ifElse _ _ t e          => ghostBindersOf t ++ ghostBindersOf (e.getD [])
       | .while_ _ _ b _          => ghostBindersOf b
@@ -278,6 +278,16 @@ structure ContractFacts where
       explicitly by R-0004, so leaving them out would make an invariant edit
       invisible to the subject in the same way a contract edit was. -/
   loops     : List String := []
+  /-- Canonically encoded INITIALIZERS of the declaration's ghost bindings, in
+      source order, as `h<i>=<expr>`.
+
+      The binder's name is deliberately absent — `h:<i>` in a contract already
+      refers to it by position, so a rename must not move the digest. But its VALUE
+      is part of what the contract asserts: `#[invariant(i <= bound)]` with
+      `ghost let bound = 8` is a different claim than with `= 9`, and encoding only
+      the position made those two byte-identical. Measured before this field
+      existed. -/
+  ghosts    : List String := []
   /-- False when any contract was unencodable. See the module header. -/
   covered   : Bool := true
 deriving Repr, BEq, Inhabited
@@ -298,10 +308,21 @@ def ContractFacts.of (reqs ens : List Expr) : ContractFacts :=
     used by Elab; the binder-free `of` above remains useful for closed probes. -/
 def ContractFacts.ofResolved
     (params typeParams capParams : List String)
-    (ghostBinders : List String)
+    (ghosts : List (String × Expr))
     (resolveCall : String → Option CallableId)
     (reqs ens : List Expr)
     (loops : List LoopContract := []) : ContractFacts :=
+  let ghostBinders := ghosts.map Prod.fst
+  -- A ghost binder's MEANING, not only its position. `h:<i>` alone made the frame
+  -- alpha-invariant but semantically blind: changing `ghost let bound = 8` to `= 9`
+  -- alters what `#[invariant(i <= bound)]` asserts, yet produced a byte-identical
+  -- subject. Encoding each initializer closes that, while the name still never
+  -- appears. Ghost i is encoded with the params and the ghosts BEFORE it in scope,
+  -- since a later ghost may be defined in terms of an earlier one; an unencodable
+  -- initializer makes the subject uncovered rather than silently partial.
+  let ghostEnc : List (Option String) := ghosts.zipIdx.map fun ((_, v), i) =>
+    (contractCanonicalIn params typeParams capParams
+       (ghostBinders.take i) false resolveCall v).map fun c => s!"h{i}={c}"
   let enc := contractCanonicalIn params typeParams capParams ghostBinders
   let rs := reqs.map (enc false resolveCall)
   let es := ens.map (enc true resolveCall)
@@ -346,11 +367,13 @@ def ContractFacts.ofResolved
       | some v => [(encL false resolveCall v).map fun c => s!"v{i}:{c}"]
       | none   => []
     invs ++ var
-  if rs.any (·.isNone) || es.any (·.isNone) || loopEnc.any (·.isNone) then
-    { requires := [], ensures := [], loops := [], covered := false }
+  if rs.any (·.isNone) || es.any (·.isNone) || loopEnc.any (·.isNone)
+     || ghostEnc.any (·.isNone) then
+    { requires := [], ensures := [], loops := [], ghosts := [], covered := false }
   else
     { requires := rs.filterMap id, ensures := es.filterMap id,
-      loops := loopEnc.filterMap id, covered := true }
+      loops := loopEnc.filterMap id, ghosts := ghostEnc.filterMap id,
+      covered := true }
 
 /-- A typed, definition-resolved type reference observed while elaborating a
     function body. This is an INPUT to the eventual exhaustive body V2, not that
@@ -417,6 +440,7 @@ def CheckedDeclFacts.canonical (f : CheckedDeclFacts) : String :=
   let cs := String.join (f.contracts.requires.map (lp "R"))
           ++ String.join (f.contracts.ensures.map (lp "E"))
           ++ String.join (f.contracts.loops.map (lp "L"))
+          ++ String.join (f.contracts.ghosts.map (lp "H"))
   String.join
     [ "subjectFactsV1:"
     , lp "I" f.id.render

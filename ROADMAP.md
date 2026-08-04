@@ -908,6 +908,36 @@ Land this task in seven explicit slices:
 | 6 | deterministic transitive dependency material/root | ACTIVE |
 | 7 | receipt issuance, honest corpus migration, and coverage baseline | PENDING |
 
+#### Binder frames: position and meaning are separate obligations
+
+A contract may name binders the value environment never holds. `ghost let` is the
+case in the corpus: proof-only, erased before Core, referenced only from contracts.
+Ghost binders therefore form their OWN frame, collected from the AST in source
+order and rendered `h:<i>`.
+
+Two properties must hold at once, and each is repository-gated in
+`scripts/tests/check_subject_coverage.sh`:
+
+- Renaming a ghost binder must NOT move the subject digest. Otherwise `h:<i>` is a
+  source name with extra steps.
+- Changing a ghost's INITIALIZER MUST move it. `#[invariant(i <= bound)]` with
+  `ghost let bound = 8` is a different claim than with `= 9`. Encoding only the
+  position made those byte-identical — measured, then closed by encoding each
+  initializer as `h<i>=<expr>` in the scope of the params and the ghosts before it.
+
+**Source order, not elaboration order.** Raw `env.vars` positions shift across
+branch and loop elaboration, so an index derived from them would move a digest when
+nothing semantic changed. The AST's order is fixed by the program text.
+
+**The loop-invariant asymmetry, recorded because it cost a wrong first fix.**
+Threading the ghost frame through `requires`/`ensures` alone changes nothing. Ghosts
+are named from LOOP INVARIANTS — that is the purpose of `ghost let`, to snapshot a
+bound so the invariant can refer to it — and the loop encoder reconstructs its
+binder list from ASSIGNMENTS. That approximation finds an induction variable and
+structurally cannot find a ghost, which is exactly why `plain`'s `i <= 4` was
+covered while `with_ghost`'s `i <= n` was not. Any future binder frame must be
+threaded into the loop encoder too, not only the contract encoder.
+
 This table is the only top-level progress numbering for R-0004. Slice 4 has a
 normative internal build order because its representation migration must be
 incremental; that internal order does not duplicate slices 5-7. `ACTIVE` means

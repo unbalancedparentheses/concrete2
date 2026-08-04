@@ -114,6 +114,26 @@ elif [ "$ga" = "$gb" ]; then
 else
   no "a ghost binder's NAME reaches the digest ($ga vs $gb) — the frame is not alpha-invariant"
 fi
+# Identity WITHOUT meaning is not enough. A ghost's position is what the contract
+# refers to, but its VALUE is part of what the contract asserts: `i <= bound` with
+# `bound = 8` is a different claim than with `= 9`. Before ghost initializers were
+# encoded, those two produced byte-identical subjects — a hole the alpha-invariance
+# leg above could never catch, because both properties must hold AT ONCE.
+sed 's/ghost let bound: i32 = 8;/ghost let bound: i32 = 9;/' "$GT/a.con" > "$GT/c.con"
+if diff -q "$GT/a.con" "$GT/c.con" >/dev/null 2>&1; then
+  no "the initializer probe did not change the program — it would pass vacuously"
+else
+  ok "the initializer probe genuinely changed the initializer"
+fi
+gc="$("$CC" "$GT/c.con" --report subject-facts 2>/dev/null | grep -oE 'subject digest: [a-f0-9]+' || true)"
+if [ -z "$gc" ]; then
+  no "initializer probe produced no digest — inconclusive"
+elif [ "$ga" != "$gc" ]; then
+  ok "changing a ghost initializer moves the subject digest"
+else
+  no "a ghost initializer change leaves the digest identical — the subject is blind to what the contract asserts"
+fi
+
 if grep -q "bound" "$GT/b.con"; then
   no "the rename probe did not actually rename anything — it would pass vacuously"
 else
