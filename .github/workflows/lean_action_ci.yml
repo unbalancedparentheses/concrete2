@@ -457,6 +457,9 @@ jobs:
       - name: "Callable identity (R-0004 step 1 — CallableId is constructed from a resolved declaration, never recovered from text)"
         run: bash scripts/tests/check_callable_identity.sh
 
+      - name: "Body canonical V2 (R-0004 — serialization only: reflective node completeness, order, multiplicity, refusal)"
+        run: bash scripts/tests/check_body_canonical_v2.sh
+
       - name: "Binder refs (R-0004 — elaboration emits relative lexical positions; empty scopes, binding timing, uncovered fallback)"
         run: bash scripts/tests/check_binder_refs.sh
 

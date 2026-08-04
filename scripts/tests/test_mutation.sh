@@ -802,6 +802,41 @@ MUT_NEW+=("  setEnv { env with bodyIdentityUses := (use :: env.bodyIdentityUses)
 MUT_DESC+=("Elab V2 input: repeated identity uses collapsed")
 gate_for_last "scripts/tests/check_binder_refs.sh"
 
+# 58. An unclassified node constructor. Adding one to BodyIdentityUse must be
+# REJECTED, and this mutation adds a fallback arm at the same time so the exhaustive
+# match still compiles — the case a type-checker alone cannot catch. The reflective
+# constructor-count check is what must object.
+MUT_FILE+=("Concrete/Proof/BodyCanonicalV2.lean")
+MUT_OLD+=("def allNodeTags : List String := [\"b\", \"t\", \"f\", \"v\"]")
+MUT_NEW+=("def allNodeTags : List String := [\"b\", \"t\", \"f\"] -- MUTATION: a node kind left unclassified")
+MUT_DESC+=("V2 serializer: a node kind is left out of the tag inventory")
+gate_for_last "scripts/tests/check_body_canonical_v2.sh"
+
+# 59. The serializer emits nodes without their count, so a truncated stream reads as
+# a shorter complete one.
+MUT_FILE+=("Concrete/Proof/BodyCanonicalV2.lean")
+MUT_OLD+=("    some (\"bodyV2:n\" ++ toString inputs.uses.length ++ \":\" ++ body)")
+MUT_NEW+=("    some (\"bodyV2:\" ++ body) -- MUTATION: no node count")
+MUT_DESC+=("V2 serializer: node count omitted from the stream")
+gate_for_last "scripts/tests/check_body_canonical_v2.sh"
+
+# 60. An UNCOVERED body is serialized anyway, presenting a partial body as complete —
+# worse than no bytes, because it looks authoritative.
+MUT_FILE+=("Concrete/Proof/BodyCanonicalV2.lean")
+MUT_OLD+=("  if !inputs.covered then none")
+MUT_NEW+=("  if false then none -- MUTATION: serialize an uncovered body as complete")
+MUT_DESC+=("V2 serializer: uncovered body serialized as complete")
+gate_for_last "scripts/tests/check_body_canonical_v2.sh"
+
+# 61. Length prefixes dropped, so the concatenated stream stops being injective.
+MUT_FILE+=("Concrete/Proof/BodyCanonicalV2.lean")
+MUT_OLD+=("      let p := s!\"{out}:{idx}\"
+      \"b\" ++ toString p.length ++ \":\" ++ p")
+MUT_NEW+=("      let p := s!\"{out}{idx}\"
+      \"b\" ++ p -- MUTATION: no length prefix, no separator")
+MUT_DESC+=("V2 serializer: binder encoding loses its length prefix")
+gate_for_last "scripts/tests/check_body_canonical_v2.sh"
+
 NUM_MUTATIONS=${#MUT_FILE[@]}
 
 # ============================================================

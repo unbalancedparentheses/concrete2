@@ -34,6 +34,7 @@ import Concrete.Pipeline.Pipeline
 import Concrete.Proof.ProofCore
 import Concrete.Proof.Proof
 import Concrete.Proof.SubjectFacts
+import Concrete.Proof.BodyCanonicalV2
 import Concrete.Proof.DependencyRoot
 import Concrete.Proof.DependencyEdge
 import Concrete.Proof.DependencyEdges
