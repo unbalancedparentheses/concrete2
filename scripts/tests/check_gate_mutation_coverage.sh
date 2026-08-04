@@ -12,6 +12,24 @@
 # mutated files); a final clean rebuild is done at the end.
 #
 # Most families' gates are OUTSIDE run_tests.sh --fast, so we invoke each gate directly.
+#
+# COVERAGE, stated because this harness is the thing that stops gates being decorative and
+# its own coverage was never written down (2026-08-04 sweep):
+#
+#   180 gate scripts in scripts/tests/
+#    55 guard a SOUNDNESS claim — breaking the rule would let the compiler assert something
+#       false about a program (a missing trap, a false `proved`, a laundered axiom)
+#    17 of those 55 now have a negative control here
+#    38 of those 55 have NONE
+#
+# The 42 are not known to be decorative. They are UNMEASURED, which is a different claim
+# from safe, and the distinction is the whole reason this file exists: for a week, every
+# defect found landed in the unmeasured set while the suite was green.
+#
+# Selection rule for extending this list: a gate qualifies if breaking the rule it guards
+# would let the compiler assert something FALSE. Gates over formatting, naming, docs hygiene
+# or CI plumbing are out of scope — they matter, but their failure mode is noise rather than
+# a wrong claim.
 
 set -uo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -104,6 +122,51 @@ add "reference-division" "Concrete/Report/ReportObligations.lean" "check_vc_brid
 add "fuzz-claim-classes" "Concrete/Report/ReportObligations.lean" "check_artifact_fuzz.sh" yes \
   'artifactFuzzDriverFor (cases.filter (fun c => c.claim != "unproved")) "artifact_fuzz_all"' \
   'artifactFuzzDriverFor cases "artifact_fuzz_all"'
+
+# ---------------------------------------------------------------------------
+# 2026-08-04, second pass: a sweep of the SOUNDNESS gates that had no control.
+#
+# Selection rule, so the next person can extend it the same way: a gate qualifies
+# if breaking the rule it guards would let the compiler assert something FALSE
+# about a program — a missing trap, a false `proved`, a laundered axiom. Gates over
+# formatting, naming, docs hygiene or CI plumbing are out of scope; they matter, but
+# their failure mode is noise, not a wrong claim.
+# ---------------------------------------------------------------------------
+
+# Bug 053, restored exactly: make every unary op read as non-side-effecting and a
+# DISCARDED integer negation is deleted, taking the documented MIN trap with it. The
+# compiled program exits 0 where the interpreter aborts.
+add "trap-preservation-unary" "Concrete/IR/SSACleanup.lean" "check_trap_inventory.sh" yes \
+  'if !(IntArith.unaryOpCanTrap op ty) then false' \
+  'if true then false'
+
+# NO FALSE GREEN, the obligation red-team's first clause: make the constant-divisor
+# verdict unconditionally true and `x / 0` at compile time reads proved.
+add "const-divisor-verdict" "Concrete/Report/ReportObligations.lean" "check_obligation_redteam.sh" yes \
+  '| some k => (some (decide (k ≠ 0)), none)' \
+  '| some k => (some (decide (k == k)), none)'
+
+# The same false-green in the bounds family: a constant index outside the array
+# reads proved.
+add "const-bounds-verdict" "Concrete/Report/ReportObligations.lean" "check_obligation_redteam.sh" yes \
+  '| some k => (some (decide (0 ≤ k) && decide (k < (Int.ofNat n))), none)' \
+  '| some k => (some (decide (k == k)), none)'
+
+# The FOLD path, which is what check_int_arith_semantics.sh actually guards:
+# interpret == fold-then-interpret == compiled. Make a trapping constant operation fold
+# to a value and the trap disappears under constant folding — the interpreter aborts
+# while the folded/compiled program returns 0.
+#
+# Chosen after a first attempt failed for an INSTRUCTIVE reason. Removing the div
+# overflow trap from `evalIntBinOp` does not compile: `div_obligation_necessary`
+# (R-0460) rejects it. That is stronger protection than a gate — but it meant the
+# family proved the THEOREM was load-bearing while claiming to prove the gate was, and
+# a control that validates something other than its stated subject is exactly the
+# false-green this harness exists to prevent. `foldIntBinOp` is covered by no theorem,
+# so a mutation there reaches the gate.
+add "fold-drops-trap" "Concrete/Semantics/IntArith.lean" "check_int_arith_semantics.sh" yes \
+  '| .trap _    => some none' \
+  '| .trap _    => some (some 0)'
 
 N=${#NAME[@]}
 PASS=0; FAIL=0

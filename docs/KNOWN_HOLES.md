@@ -935,8 +935,22 @@ a test that cannot execute, a gate outside the defect's scope.
 The antidote that has actually worked here is a **negative control**: for every check, a case
 where it MUST fail, asserted to fail. That is what `check_gate_mutation_coverage.sh` does, and
 on 2026-08-04 it covered **11 of 180 gates** — none of them the R-0460..R-0465 gates doing the
-newest and most load-bearing work, which is precisely where the week's failures landed. Six
-families were added for them.
+newest and most load-bearing work, which is precisely where the week's failures landed.
+
+Ten families were added that day, in two passes: six for the new evidence gates, then four from
+a sweep of the **soundness** gates (a gate qualifies if breaking the rule it guards would let
+the compiler assert something FALSE — a missing trap, a false `proved`, a laundered axiom).
+Current coverage: **17 of the 55 soundness gates; 38 have none.** Those 38 are not known to be
+decorative — they are *unmeasured*, which is a different claim from safe.
+
+One of the four needed replacing, and the reason is the lesson in miniature. The first
+`checked-div-overflow` mutation removed the signed `MIN / -1` trap from `evalIntBinOp` — and
+did not compile, because `div_obligation_necessary` rejects it. Stronger protection than a
+gate, and a *worse* negative control: the family reported KILLED while proving the THEOREM was
+load-bearing, not the gate it named. A control that validates something other than its stated
+subject is the same false green this harness exists to prevent, arriving inside the harness.
+Replaced with a mutation to `foldIntBinOp`, which no theorem covers, and re-verified: killed by
+`check_int_arith_semantics.sh` itself.
 
 The rule worth keeping: **a new gate is not finished until a mutation kills it, and the mutation
 is registered rather than run once by hand.** Verified-by-hand means verified once, by whoever
