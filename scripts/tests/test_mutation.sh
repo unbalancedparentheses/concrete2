@@ -764,6 +764,44 @@ MUT_NEW+=("private def markBodyIdentityUncovered : ElabM Unit :=
 MUT_DESC+=("Elab V2 input: missing identity fails open")
 gate_for_last "scripts/tests/check_type_identity.sh"
 
+# 54. A local reference is resolved but emits no node. The binder vanishes from the
+# body, which UNDER-APPROXIMATES the subject — worse than uncovered, because the
+# subject then looks complete.
+MUT_FILE+=("Concrete/Elab/Elab.lean")
+MUT_OLD+=("      match env.bodyScope.resolve? name with
+      | some (out, idx) => recordBodyIdentityUse (.binderRef out idx)
+      | none            => markBodyIdentityUncovered")
+MUT_NEW+=("      pure () -- MUTATION: local reference emits no V2 node")
+MUT_DESC+=("Elab V2 input: local binder references silently dropped")
+gate_for_last "scripts/tests/check_binder_refs.sh"
+
+# 55. Frames open EAGERLY. Every positional leg still passes; only the empty-scope
+# property breaks, so this is the mutation that proves that leg is load-bearing.
+MUT_FILE+=("Concrete/Elab/Elab.lean")
+MUT_OLD+=("  setEnv { env with bodyScope := extendFrame env.bodyScope env.pendingFrame name
+                    pendingFrame := false }")
+MUT_NEW+=("  setEnv { env with bodyScope := extendFrame env.bodyScope true name
+                    pendingFrame := false } -- MUTATION: eager frames")
+MUT_DESC+=("Elab V2 input: binder frames open eagerly, not on first binder")
+gate_for_last "scripts/tests/check_binder_refs.sh"
+
+# 56. The relative position is emitted with its components SWAPPED. A wrong
+# semantic position looks resolved, which is the confidently-wrong-identity failure
+# this task exists to remove.
+MUT_FILE+=("Concrete/Elab/Elab.lean")
+MUT_OLD+=("      | some (out, idx) => recordBodyIdentityUse (.binderRef out idx)")
+MUT_NEW+=("      | some (out, idx) => recordBodyIdentityUse (.binderRef idx out) -- MUTATION: swapped")
+MUT_DESC+=("Elab V2 input: binder position components swapped")
+gate_for_last "scripts/tests/check_binder_refs.sh"
+
+# 57. Repeated uses are DEDUPLICATED. Occurrence count and order are semantic: a
+# body reading a binder twice is not the same body as one reading it once.
+MUT_FILE+=("Concrete/Elab/Elab.lean")
+MUT_OLD+=("  setEnv { env with bodyIdentityUses := use :: env.bodyIdentityUses }")
+MUT_NEW+=("  setEnv { env with bodyIdentityUses := (use :: env.bodyIdentityUses).eraseDups } -- MUTATION: drop repetitions")
+MUT_DESC+=("Elab V2 input: repeated identity uses collapsed")
+gate_for_last "scripts/tests/check_binder_refs.sh"
+
 NUM_MUTATIONS=${#MUT_FILE[@]}
 
 # ============================================================
