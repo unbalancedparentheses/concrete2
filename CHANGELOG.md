@@ -10,6 +10,34 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Test Harness: `lli` Is Probed For Function, Not Just Presence
+
+_Branch `spike/multi-prover-evidence`, 2026-08-04._
+
+`make test` reported **1653 passed / 49 failed** on affected machines. All 49 were the same
+LLVM/ORC fault, not compiler bugs:
+
+```
+lli: Symbol "orc_rt_alt_UnwindInfoManager_register" not found in bootstrap symbols map
+```
+
+`lli` runs a trivial hand-written module fine, so a `command -v lli` check passes, but it
+cannot execute the IR this compiler emits. The harness discarded lli's stderr, so every
+affected test surfaced as the generic `expected printed '...', got rc 1 ''`.
+
+Confirmed environmental, not ours: `origin/main` built in a clean worktree emits
+**byte-identical IR** (45620 bytes) and fails identically, with the same 1653/49/2 split.
+
+The harness now probes `lli` on real emitted IR at startup and, on this failure, falls back
+to the native-clang path it already had for when `lli` is absent — printing what happened
+and why. **Result on an affected machine: 1702 passed, 0 failed.**
+
+The reason this mattered more than a confusing error message: the fallback existed, so a
+broken `lli` silently converted 49 real tests into 49 that checked nothing, while still
+reporting a failure count stable enough to be mistaken for a baseline. It was — repeatedly,
+in this session, by me. A test that cannot run should not be indistinguishable from a test
+that runs and fails.
+
 ### Independent-Kernel Evidence (Rocq + Isabelle), Certificate Replay, And The VC-Bridge Register
 
 _Branch `spike/multi-prover-evidence`, 2026-07-31. Opt-in: nothing in the default

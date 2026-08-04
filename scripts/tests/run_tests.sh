@@ -493,6 +493,47 @@ elif [ -x "${LLI_PATH:-}" ]; then
     LLI="$LLI_PATH"
 fi
 
+# --- lli FUNCTIONAL probe (added 2026-08-04) ---
+# Being on PATH is not the same as working. Measured on LLVM 21.1.8: `lli` runs a trivial
+# hand-written module fine, but fails on the IR this compiler emits with
+#
+#     lli: Symbol "orc_rt_alt_UnwindInfoManager_register" not found in bootstrap symbols map
+#
+# exiting 1 with empty stdout. The harness discards lli's stderr, so every affected test
+# reported the generic "expected printed '...', got rc 1 ''" and 49 of them looked like
+# compiler bugs. They were not: verified against origin/main in a clean worktree, which
+# emits byte-identical IR and fails identically, with the same 1653/49/2 split.
+#
+# The cost of not detecting this is worse than a confusing message. The harness ALREADY has
+# a native-clang fallback for when lli is absent, so a broken lli silently converted 49 real
+# tests into 49 that check nothing — while still reporting a failure count that looked like
+# a baseline. Probe once, and on failure fall back to the path that works.
+if [ -n "$LLI" ] && [ -x "$COMPILER" ]; then
+    _probe_dir="$(mktemp -d)"
+    cat > "$_probe_dir/probe.con" <<'PROBE_EOF'
+pub fn main() with(Std) -> Int {
+    print_int(7);
+    return 0;
+}
+PROBE_EOF
+    if "$COMPILER" "$_probe_dir/probe.con" --emit-llvm > "$_probe_dir/probe.ll" 2>/dev/null; then
+        _probe_err="$("$LLI" "$_probe_dir/probe.ll" 2>&1 >/dev/null)" || true
+        _probe_rc=$?
+        if printf '%s' "$_probe_err" | grep -q "not found in bootstrap symbols map"; then
+            echo ""
+            echo "  WARNING: '$LLI' cannot execute this compiler's IR on this machine."
+            echo "           $(printf '%s' "$_probe_err" | head -1)"
+            echo "           This is an LLVM/ORC toolchain issue, NOT a compiler bug — it"
+            echo "           reproduces on origin/main with byte-identical IR."
+            echo "           Falling back to native clang so these tests actually run."
+            echo "           (Without this fallback ~49 tests fail with 'rc 1' and empty output.)"
+            echo ""
+            LLI=""
+        fi
+    fi
+    rm -rf "$_probe_dir"
+fi
+
 PASS=0
 FAIL=0
 SKIP=0
