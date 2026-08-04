@@ -82,7 +82,7 @@ proofs are needed, since no test enumerates program points.
 | **Rejects** | Non-`#[overflow_checked]` arithmetic (no obligation — the wrapping/saturating forms are separate ops); `div`/`mod` sub-terms (dropped from the lowering, so the goal reads `not-asked`, never a false verdict). |
 | **Forced by** | `examples/two_kernel_demo/src/main.con` (`add_bounded` graduates, `mul_unbounded` must not). |
 | **Cross-checked today** | `--report bridge-check` fuzzes concrete inputs against a *proved* obligation; `--report core-semantics-diff` cross-checks the arithmetic model used to build it. **Neither probes sufficiency** — see the correction below. On the H24 fixture `bridge-check` reports `ok — proved; 9 inputs checked, no counterexample` for the very function that aborts. |
-| **Discharging theorem (TODO)** | `overflow_obligation_sufficient`: if the emitted bounds hold for every reachable assignment, `IntArith.checked{Add,Sub,Mul}` does not trap at that site. |
+| **Discharging theorem (HALF DISCHARGED 2026-08-04)** | `IntArith.overflow_obligation_sufficient` is proved: if the emitted bounds `lo ≤ e ∧ e ≤ hi` hold for the computed value, `evalIntBinOp` does not trap for `+ - *`. `IntArith.overflow_obligation_necessary` proves the converse, so the bounds are TIGHT — without it the emitted range could be strengthened to something unsatisfiable and sufficiency would still hold. Stated over `rawResult` so all three ops share one statement, and over `intRange`'s own bounds rather than literals so it holds at every width; `checkedToType_isSome_of_inRange` is the bridge between how the obligation states the property (explicit bounds) and how the evaluator decides it (`checkedToType` returning `some`). The generator uses `Report.intRange`, which returns `none` for `Int`/`Uint` — so it emits FEWER obligations than this theorem covers, which is the safe direction. Remaining half, as everywhere: "for every reachable assignment" is a claim about the *lowering and the scope of the hypotheses*, not about arithmetic — H19. |
 
 ### `boundsObligations` — array indexing is in range
 
@@ -93,7 +93,7 @@ proofs are needed, since no test enumerates program points.
 | **Rejects** | Indices into non-fixed-size or dynamically-sized containers; index expressions outside the linear fragment. |
 | **Forced by** | `examples/two_kernel_demo/src/families.con` (`read_at`). |
 | **Cross-checked today** | `bridge-check` fuzz; NOT covered by `core-semantics-diff` — array indexing is outside the extractable fragment. |
-| **Discharging theorem (TODO)** | `bounds_obligation_sufficient`: the emitted range implies the interpreter's `arrayIndex` never faults, and `arraySizeMap` is sound w.r.t. declared sizes. |
+| **Discharging theorem (HALF DISCHARGED 2026-08-04)** | `Interp.bounds_obligation_sufficient` is proved: `0 ≤ i ∧ i < elems.size` implies the interpreter's positional lookup succeeds, so the access does not fault. `Interp.bounds_obligation_necessary` proves the converse (at or past the element count the lookup fails), so the range is tight rather than merely safe. Lives in `Interp` rather than `IntArith` because the property is about `arrayGet`, and `IntArith` has no notion of an array — a sufficiency theorem must be stated against whatever decides the outcome. **The second clause of this row is NOT proved and is the harder one:** the theorem's bound is the RUNTIME element count, while the obligation uses the *declared* size from `arraySizeMap`. That those agree is this row's "Assumes" clause, and it is H19. |
 
 ### `divObligations` — no division by zero
 
@@ -133,7 +133,7 @@ row exists because the second one was added.
 | **Rejects** | Indirect calls through function pointers (no statically-known callee contract). |
 | **Forced by** | `examples/contract_negatives/` (call-precondition negatives). |
 | **Cross-checked today** | Not covered by either differential surface. |
-| **Discharging theorem (TODO)** | `call_obligation_sufficient`: discharging the instantiated preconditions establishes the callee's `#[requires]` on entry. |
+| **Discharging theorem (TODO — different in kind from the other four)** | `call_obligation_sufficient`: discharging the instantiated preconditions establishes the callee's `#[requires]` on entry. The other four rows had the shape "this condition implies this evaluator does not fault", which is a statement about arithmetic or about a lookup, and each fell to a short proof once stated against the right subject. This one's CONTENT is substitution correctness: that the report layer's syntactic substitution of actuals for formals means the same thing as the interpreter binding formals to actual values. That is a bridge property — the same kind of claim H19 names — not a semantics property, so it is not a short proof waiting to be written, and it should not be attempted as one. Recorded this way so the remaining 1-of-5 is not mistaken for more of the same work. |
 
 ### `multiKernelObligations` — the prover-neutral view
 
@@ -149,9 +149,18 @@ separately by construction rather than by proof.
 
 Rows: **5 lowering rules** (overflow, bounds, div, shift, call-site) plus one projection
 (`multiKernelObligations`, which owes nothing of its own). Rows discharged: **0 of 5**.
-Half discharged: **2 of 5** — `divObligations` and `shiftObligations`, whose *semantics*
-half is proved (`IntArith.trapConditions_sufficient`, `shift_amount_sufficient`,
-`shift_amount_necessary`) while the *lowering* half is not.
+Half discharged: **4 of 5** — `overflowObligations`, `boundsObligations`, `divObligations`
+and `shiftObligations`, whose *semantics* half is proved
+(`IntArith.overflow_obligation_sufficient`, `Interp.bounds_obligation_sufficient`,
+`trapConditions_sufficient`, `shift_amount_sufficient`, `shift_amount_necessary`) while the
+*lowering* half is not, and for the two arithmetic rows the condition is proved TIGHT as well
+as sufficient (`overflow_obligation_necessary`, `bounds_obligation_necessary`,
+`shift_amount_necessary`) — necessity is what distinguishes a useful rule from one
+strengthened until it is vacuous.
+
+Only `callSiteObligations` has neither half, and it is **different in kind**: its content is
+substitution correctness, a bridge property rather than a semantics one. The remaining 1-of-5
+is not more of the same work.
 
 `independent_of.bridge = "no"` still reports correctly, and the reason is worth stating
 precisely rather than softening: a half-discharged row is still a trusted row. Proving the

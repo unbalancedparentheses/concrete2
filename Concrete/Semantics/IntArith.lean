@@ -479,6 +479,67 @@ theorem shift_amount_necessary (op : BinOp) (ty : Ty) (a b : Int)
     (evalIntShift op a ty b).isTrap = true := by
   rcases hop with rfl | rfl <;> simp [evalIntShift, h, hty, ArithResult.isTrap]
 
+/-- The value a checked arithmetic op computes, BEFORE the range check — which is exactly
+    the expression `overflowObligations` renders and states bounds about. `none` for ops
+    whose obligation is not a range check. -/
+def rawResult (op : BinOp) (a b : Int) : Option Int :=
+  match op with
+  | .add => some (a + b)
+  | .sub => some (a - b)
+  | .mul => some (a * b)
+  | _    => none
+
+/-- In-range implies the checked conversion succeeds. The bridge between how the OBLIGATION
+    states the property (explicit bounds from `intRange`) and how the EVALUATOR decides it
+    (`checkedToType` returning `some`). Two spellings of one fact, and the row below needs
+    them related rather than assumed related. -/
+theorem checkedToType_isSome_of_inRange {ty : Ty} {n lo hi : Int}
+    (hr : intRange ty = some (lo, hi)) (hlo : lo ≤ n) (hhi : n ≤ hi) :
+    (checkedToType ty n).isSome = true := by
+  simp [checkedToType, hr, Int.not_lt.mpr hlo, Int.not_lt.mpr hhi]
+
+/-- **R-0460: `overflowObligations`'s condition is SUFFICIENT.**
+
+    `VC_BRIDGE_REGISTER.md`'s `overflow_obligation_sufficient` row. The obligation emitted for
+    a checked `+ - *` is `lo ≤ e ∧ e ≤ hi` with `(lo, hi)` from the operand type's range; this
+    proves that discharging it means the operation does not trap.
+
+    Stated over `rawResult` so the three ops share one statement, and over `intRange`'s own
+    bounds rather than literals so it holds at every width. Note the obligation generator
+    uses `Report.intRange`, which deliberately returns `none` for `Int`/`Uint` (their overflow
+    is profile-dependent) — that narrowing means the generator emits FEWER obligations than
+    this theorem covers, which is the safe direction: every obligation it does emit is one
+    this theorem discharges. -/
+theorem overflow_obligation_sufficient {op : BinOp} {ty : Ty} {a b lo hi v : Int}
+    (hraw : rawResult op a b = some v)
+    (hr : intRange ty = some (lo, hi)) (hlo : lo ≤ v) (hhi : v ≤ hi) :
+    (evalIntBinOp op a ty b).isTrap = false := by
+  cases op <;> simp [rawResult] at hraw <;> subst hraw <;>
+    exact isTrap_checked (checkedToType_isSome_of_inRange hr hlo hhi)
+
+/-- Out of range implies the checked conversion fails — the converse of
+    `checkedToType_isSome_of_inRange`. -/
+theorem checkedToType_eq_none_of_outOfRange {ty : Ty} {n lo hi : Int}
+    (hr : intRange ty = some (lo, hi)) (h : n < lo ∨ hi < n) :
+    checkedToType ty n = none := by
+  rcases h with h | h
+  · simp [checkedToType, hr, h]
+  · simp [checkedToType, hr, h]
+
+/-- **The overflow condition is NECESSARY as well as sufficient.**
+
+    Sufficiency alone cannot tell a useful rule from a vacuous one: strengthen the emitted
+    bounds to something unsatisfiable and `overflow_obligation_sufficient` still holds. This
+    says the bounds are TIGHT — outside them the operation really does trap — so the rule is
+    not over-restrictive either. Same reason `shift_amount_necessary` exists. -/
+theorem overflow_obligation_necessary {op : BinOp} {ty : Ty} {a b lo hi v : Int}
+    (hraw : rawResult op a b = some v)
+    (hr : intRange ty = some (lo, hi)) (h : v < lo ∨ hi < v) :
+    (evalIntBinOp op a ty b).isTrap = true := by
+  have hn := checkedToType_eq_none_of_outOfRange hr h
+  cases op <;> simp [rawResult] at hraw <;>
+    simp [evalIntBinOp, hraw, hn, ArithResult.isTrap]
+
 /-! #### The lock: the enumeration agrees with the evaluator
 
 If `evalIntBinOp` traps on a `/` or `%` at these inputs, some condition in

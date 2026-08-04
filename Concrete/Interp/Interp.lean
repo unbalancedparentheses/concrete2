@@ -148,6 +148,54 @@ private def listGet (xs : List IVal) (n : Nat) : Option IVal :=
 private def arrayGet (elems : Array IVal) (n : Nat) : Option IVal :=
   listGet elems.toList n
 
+/-- A positional lookup inside the list's length succeeds. -/
+private theorem listGet_isSome : ∀ {xs : List IVal} {n : Nat}, n < xs.length →
+    (listGet xs n).isSome = true
+  | [], _, h => absurd h (by simp)
+  | _ :: _, 0, _ => rfl
+  | _ :: rest, n + 1, h => listGet_isSome (xs := rest) (n := n) (by simpa using h)
+
+/-- **R-0460: `boundsObligations`'s condition is SUFFICIENT.**
+
+    `VC_BRIDGE_REGISTER.md`'s `bounds_obligation_sufficient` row. The obligation emitted for a
+    fixed-size array index is `0 ≤ i ∧ i < n`; this proves that discharging it means the
+    interpreter's index lookup succeeds, so the access does not fault.
+
+    Lives here rather than in `IntArith` because the property is about `arrayGet`, not
+    arithmetic — `IntArith` has no notion of an array and cannot state it. Same reason the
+    shift row needed `evalIntShift`: a sufficiency theorem has to be stated against whatever
+    actually decides the outcome, or it proves something about the wrong subject.
+
+    The remaining half is `n`: this takes the bound as the RUNTIME element count, while the
+    obligation uses the *declared* size resolved by `arraySizeMap`. That those agree is the
+    row's "Assumes" clause and part of H19, not proved here. -/
+theorem bounds_obligation_sufficient (elems : Array IVal) {i : Int}
+    (hlo : 0 ≤ i) (hhi : i < elems.size) :
+    (arrayGet elems i.toNat).isSome = true := by
+  refine listGet_isSome ?_
+  have : (i.toNat : Int) < (elems.size : Int) := by
+    rw [Int.toNat_of_nonneg hlo]; exact hhi
+  simpa using Int.ofNat_lt.mp this
+
+/-- A positional lookup at or past the length fails. -/
+private theorem listGet_isNone : ∀ {xs : List IVal} {n : Nat}, xs.length ≤ n →
+    listGet xs n = none
+  | [], _, _ => rfl
+  | _ :: _, 0, h => absurd h (by simp)
+  | _ :: rest, n + 1, h => listGet_isNone (xs := rest) (n := n) (by simpa using h)
+
+/-- **The bounds condition is NECESSARY as well as sufficient.**
+
+    Same argument as `overflow_obligation_necessary`: without this, the emitted range could be
+    strengthened to something unsatisfiable and sufficiency would still hold. This says the
+    range is tight — at or past the element count the lookup really does fail. -/
+theorem bounds_obligation_necessary (elems : Array IVal) {i : Int}
+    (hlo : 0 ≤ i) (hhi : (elems.size : Int) ≤ i) :
+    arrayGet elems i.toNat = none := by
+  refine listGet_isNone ?_
+  have : (elems.size : Int) ≤ (i.toNat : Int) := by rw [Int.toNat_of_nonneg hlo]; exact hhi
+  simpa using Int.ofNat_le.mp this
+
 -- ============================================================
 -- Binary operations
 -- ============================================================
