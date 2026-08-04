@@ -448,9 +448,20 @@ and closing it is R-0455.
 
 ### The technique is not yet pointed at the paths that need it most
 
-`exprToSmt` has **no** agreement check, and its verdict enters the TCB as
-`solver_trusted` — a mis-rendering there is worse than in any kernel path, because no
-kernel re-derives it. Lean's own rendering is likewise unchecked, and after the witness
+~~`exprToSmt` has **no** agreement check~~ — **stale as of 2026-07-31; corrected
+2026-08-03.** It does: `smtAgreementGoals` validates `exprToSmt`'s rendering against the
+reference evaluator and is wired at all three consumers (the release-policy path, the report
+path, and the standalone check), with `requireLeanGoal := false` so it covers the nonlinear
+obligations SMT actually renders for a verdict rather than the disjoint linear set. The
+concern behind the sentence was right — an SMT mis-rendering is worse than a kernel one,
+because no kernel re-derives it — which is why it was fixed. The sentence was left behind.
+
+Recording the staleness rather than deleting it, because it did damage: this section was
+read on 2026-08-03 while ranking what to do next, and `exprToSmt` was nominated as the
+highest-value remaining gap on the strength of a claim that had been false for days. A stale
+doc is not inert; it redirects work.
+
+Lean's own rendering, by contrast, IS still unchecked, and after the witness
 change it is the ONLY remaining literal: every external kernel must present a minted
 witness, while Lean's receipt still records `loweringAgreed := true` by construction.
 
