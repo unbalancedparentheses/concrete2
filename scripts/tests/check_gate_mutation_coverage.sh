@@ -19,8 +19,8 @@
 #   180 gate scripts in scripts/tests/
 #    55 guard a SOUNDNESS claim — breaking the rule would let the compiler assert something
 #       false about a program (a missing trap, a false `proved`, a laundered axiom)
-#    13 of those 55 have a negative control here
-#    42 of those 55 have NONE
+#    16 of those 55 have a negative control here
+#    39 of those 55 have NONE
 #
 # Those figures are RECOMPUTED, not derived by arithmetic. A first version of this header
 # said 17/38, reached by adding the four families of that pass to a previous count — wrong,
@@ -174,6 +174,39 @@ add "const-bounds-verdict" "Concrete/Report/ReportObligations.lean" "check_oblig
 add "fold-drops-trap" "Concrete/Semantics/IntArith.lean" "check_int_arith_semantics.sh" yes \
   '| .trap _    => some none' \
   '| .trap _    => some (some 0)'
+
+# ---------------------------------------------------------------------------
+# 2026-08-04, third pass: the remaining soundness gates, batch 1.
+# Each mutation removes a RUNTIME CHECK or a trust boundary, so the compiled program
+# does something the compiler said it would not.
+# ---------------------------------------------------------------------------
+
+# H8's check: stop emitting the array bounds check and an out-of-range index reads
+# and writes past the array instead of aborting. The obligation layer is untouched,
+# so this is the pure lowering failure — proved obligation, unchecked artifact.
+# INFLATE the length rather than deleting the call or replacing the length outright. Two
+# earlier attempts died on a lint, not on the check: `pure ()` left `idxI64` unused, and a
+# constant length left `len` unused, and this project treats an unused binding as a build
+# error. A mutation that cannot compile proves nothing about the gate (see fold-drops-trap).
+# `len + 999999999` keeps both bindings live and makes the check pass for every real index.
+add "bounds-check-emission" "Concrete/IR/Lower.lean" "check_array_bounds.sh" yes \
+  '[idxI64, .intConst (Int.ofNat len) .int] .unit)' \
+  '[idxI64, .intConst (Int.ofNat len + 999999999) .int] .unit)'
+
+# H2's check: route float→int through a raw `fptosi` instead of the checked helper.
+# LLVM says raw fptosi is POISON on NaN/±inf/out-of-range, so this is undefined
+# behaviour reachable from safe source.
+add "checked-float-cast" "Concrete/Backend/EmitSSA.lean" "check_float_cast.sh" yes \
+  'emitStructured s (.call (some dst) dstLLTy (.global (checkedF2ICallName srcTy targetTy)) [(srcLLTy, valOp)])' \
+  'emitStructured s (.cast dst .fptosi srcLLTy valOp dstLLTy)'
+
+# Wrapping arithmetic must NOT trap: make `wrapping_add` emit the CHECKED add and a
+# documented-wrapping operation aborts instead of wrapping. The inverse direction of
+# the checked-arith family — that one removes a trap, this one adds one where the
+# language promises none.
+add "wrapping-stays-unchecked" "Concrete/Backend/EmitSSA.lean" "check_wrapping_arith.sh" yes \
+  '| .wrappingAdd => emitStructured s (.binOp dst .add iTy lOp rOp)' \
+  '| .wrappingAdd => emitStructured s (.call (some dst) iTy (.global (checkedCallName "sadd" operandTy)) [(iTy, lOp), (iTy, rOp)])'
 
 N=${#NAME[@]}
 PASS=0; FAIL=0
