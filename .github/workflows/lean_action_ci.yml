@@ -940,6 +940,12 @@ jobs:
       - name: Artifact fuzz (the binary vs the safety claims)
         run: bash ./scripts/tests/check_artifact_fuzz.sh
 
+      # R-0455 Register B: transformation soundness. Cheap (grep + the build is the proof),
+      # but it lives here rather than in the build-free job because it asserts theorems exist
+      # in a compiled module.
+      - name: Transformation register (Register B rows)
+        run: bash ./scripts/tests/check_transform_register.sh
+
       - name: Reducer smoke
         run: bash ./scripts/tests/test_reducer_smoke.sh
 

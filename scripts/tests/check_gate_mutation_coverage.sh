@@ -295,6 +295,16 @@ add "shared-type-judgment" "Concrete/Check/Check.lean" "check_type_agreement.sh"
   'let d := TypeJudgment.intLitDecision hintR' \
   'let d := TypeJudgment.intLitDecision (if hintR.isSome then none else hintR)'
 
+# R-0455 Register B row 1. Making the transformation a NO-OP still preserves meaning — the
+# soundness theorem holds — so the thing that must fail is the non-vacuity lock. It does, at
+# BUILD time, because those locks are `rfl` examples: for a compile-time lock, "killed by
+# build" is the correct mechanism rather than the weak one, unlike a mutation that dies on an
+# unrelated lint. This family records that the vacuity guard, not just the soundness proof,
+# is load-bearing.
+add "transform-has-effect" "Concrete/Semantics/TermIR.lean" "check_transform_register.sh" yes \
+  $'    | .bin .tmod l r =>\n      let l\' := elimTmod l\n      let r\' := elimTmod r\n      .bin .sub l\' (.bin .mul r\' (.bin .tdiv l\' r\'))' \
+  $'    | .bin .tmod l r => .bin .tmod (elimTmod l) (elimTmod r)'
+
 N=${#NAME[@]}
 PASS=0; FAIL=0
 

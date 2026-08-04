@@ -158,7 +158,7 @@ system.
 | 10 | **R-0468** | nightly reachability in this repository |
 | 11 | **R-0450** (agreement slice) | **agreement half DONE 2026-08-03** — every lowering (Rocq, Isabelle, SMT, and now Lean itself) is validated against the reference evaluator; the IR unification remains. Previously: the linear fragment is now lowered by ONE function (`exprToProverU`), so `exprToLeanProp` is a delegation rather than a near-copy. Remaining: run the agreement scripts through a Lean driver and mint its witness. **The recorded justification for Lean being exempt was wrong** — see below. Also `exprToSmt` |
 | — | ~~**R-0462**~~ | **DONE 2026-08-04.** `--report artifact-fuzz` + `check_artifact_fuzz.sh`: runs the compiled binary against the safety claims, classified by what the obligation layer claims. Mechanism proven; soundness check currently vacuous in `examples/` (0 claimed functions) and says so |
-| 13 | **R-0455** | term IR + Register B, absorbing the four drivers |
+| 13 | **R-0455** | term IR + Register B — **slice 1 DONE 2026-08-04**: typed IR (`Concrete/Semantics/TermIR.lean`) with sorts, arity/fixity, binders-free terms, uninterpreted symbols, and a STRUCTURAL evaluator; Register B row 1 (`eliminate_tmod`) discharged with non-vacuity locks. Remaining: rows 2–3, absorbing the four drivers, one-printer collapse |
 | 14 | **R-0460** | Register A rows — **4 of 5 half-discharged 2026-08-04** (div/mod and shift; shifts also became single-source, the interpreter now consumes `evalIntShift`) (`trapConditions_sufficient`: the div/mod conditions are strong enough, proved for all inputs). The lowering half stays open (H19), and the shift row is untouched: `evalIntBinOp` does not model shifts, so the theorem covers them only vacuously |
 | 15 | **R-0459** | non-arithmetic families |
 | 16 | **R-0463** | Farkas-witness probe — before any further prover, never after |
@@ -466,6 +466,87 @@ defect gets a late ID: file position is the default order, not an argument. Wher
 later-positioned task fixes a live false claim and an earlier-positioned one does not,
 the false claim goes first, and the override is written here rather than left for the
 next reader to rediscover.
+
+## Outstanding work recorded 2026-08-04
+
+Everything below was found or deferred during the R-0460..R-0465 arc and is filed here so it
+is not carried in someone's head. Each entry says what is *measured* rather than what is
+hoped, because several of these exist precisely because a number was restated instead of
+recomputed.
+
+### From R-0455 (term IR + Register B) — slice 1 landed, three things remain
+
+- **Register B row 2, `eliminate_div_mod` (fresh-variable form).** Two concrete blockers, in
+  `docs/TRANSFORM_REGISTER.md`: it needs hand-written `DecidableEq` on `Term` (Lean cannot
+  derive it through the nested `List Term` in `sym`), and its real content is the magnitude
+  bound `|r| < |b|`, which needs `Int.natAbs` reasoning with **no Mathlib in this repo**.
+  Recorded there: comparing terms by their `repr` STRINGS was tried and is the wrong answer.
+  Also recorded: the identity `q*b + r = a` alone is true for *any* `q` and constrains
+  nothing, so a row adding only it would be sound and useless.
+- **Register B row 3, `eliminate_algebraic`.** Different in kind — requires the
+  axiomatization be conservative over the datatype theory, which is model-theoretic rather
+  than a rewriting argument. Not a longer row 2.
+- **Absorb the four drivers into the IR** (`rocqLowering`, `isabelleLowering`,
+  `rocqNiaLowering`, `isabelleSmtReplayLowering`) with `tactics` as an ordered, budgeted
+  driver FIELD. Measured cost of not doing it: `rocqNiaLowering` is a whole cloned
+  `ProverLowering` record existing to change one word in a proof script.
+- **Collapse N printers to one.** The print step is validated, not provable (the target
+  syntax is not ours), so its cost is per-printer and permanent. `exprToSmt` already is that
+  printer for the arithmetic tier and is validated as of 2026-08-03.
+- **`evalIntEnv` is a `partial def`** and therefore outside the reach of proof — the evaluator
+  every lowering-agreement check measures against cannot be reasoned about. `TermIR`'s
+  evaluators are structural specifically to fix this; replacing `evalIntEnv` with them is the
+  remaining step, and `check_transform_register.sh` fails if they ever become `partial`.
+
+### From R-0462 (artifact fuzz) — works, covers almost nothing
+
+- **Measured coverage: 4 of 356 own functions across `examples/`.** The machinery is proven
+  able to find real traps (three fixtures, exit 134) but its useful coverage is ~1%. Widening
+  it — capability-holding functions, struct parameters, non-integer returns — is where the
+  fault-finding value actually is. This pass built the tool, not the coverage.
+- **Zero `claimed` functions in `examples/`**, so the soundness half of the gate is currently
+  vacuous and says so. That is a *consequence* of R-0461/R-0464 having closed H23/H24, not a
+  defect, but it means a future clean result only means something because of the separate
+  mechanism assertion.
+
+### From R-0460 (Register A) — 0 of 5 fully discharged, 4 of 5 half
+
+- **`callSiteObligations` is the remaining row and is different in kind:** its content is
+  substitution correctness — that the report layer's syntactic substitution of actuals for
+  formals means what the interpreter's binding of formals to values means. That is a bridge
+  property (H19), not a short proof.
+- **Every discharged row is only half done.** The *semantics* half is proved and proved tight;
+  the *lowering* half — that the emitted obligation denotes the condition — is H19 and no
+  theorem in the repo touches it. A half-discharged row is still a TRUSTED row.
+
+### From the gate-control sweep — 18 of 55 soundness gates
+
+- **37 soundness gates have no negative control.** Run
+  `check_gate_mutation_coverage.sh --coverage` for the list; do NOT grep the harness for gate
+  names, which counts prose and inflated the figure to 20.
+- **8 of the 37 are migration-shaped** (`check_*_migration.sh`): they assert a refactor
+  preserved behaviour and largely re-test rules the family gates already control. Deprioritise
+  explicitly rather than padding the count.
+- **~10 are genuinely distinct** and worth doing: `check_axiom_inventory`,
+  `check_bv_certificates`, `check_smt_redteam`, `check_smt_replay`, `check_evidence_corpus`,
+  `check_contract_negatives`, `check_codegen_differential`, `check_codegen_execution`,
+  `check_differential_positions`, `check_subject_facts`.
+- **`check_totality_judgment.sh`'s stated scope is wrong.** Its header names `blockDiverges`
+  among the facts it covers; no fixture in it exercises divergence detection. The rule IS
+  guarded — with divergence detection disabled, `make test` goes 1702/0 → 1315/76 — but by
+  the main suite, not by that gate. Fixing the gate means giving it a divergence fixture.
+- **Measured rate, for planning:** a family touching `EmitSSA`, `Lower` or `ProofCore`
+  rebuilds most of the compiler and then runs a gate that compiles and executes programs —
+  10–25 min each, and roughly a third of mutations need rework before they test their stated
+  subject. The remaining 37 are 8–15 hours of machine time.
+
+### Environmental, not ours
+
+- **`lli` 21.1.8 cannot JIT this compiler's IR** (`orc_rt_alt_UnwindInfoManager_register` not
+  in its bootstrap symbols map). Verified against `origin/main` in a clean worktree:
+  byte-identical `.ll`, identical failure. `run_tests.sh` now probes `lli` for FUNCTION and
+  falls back to native clang, which turned 49 silently-skipped tests back into real coverage
+  (1653/49 → 1702/0 on an affected machine).
 
 ## Inherited Scheduling Constraints From Earlier Phases
 
