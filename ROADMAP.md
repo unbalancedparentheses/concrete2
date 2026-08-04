@@ -904,13 +904,15 @@ Land this task in seven explicit slices:
 | 2 | missing-fingerprint containment | LANDED |
 | 3 | dependency containment | LANDED |
 | 4 | replay/table foundation and receipt-envelope plumbing | ACTIVE |
-| 5 | complete semantic `ProofSubjectDigest` | PENDING |
-| 6 | deterministic SCC/Merkle dependency root | PENDING |
+| 5 | complete semantic `ProofSubjectDigest` | ACTIVE |
+| 6 | deterministic transitive dependency material/root | ACTIVE |
 | 7 | receipt issuance, honest corpus migration, and coverage baseline | PENDING |
 
 This table is the only top-level progress numbering for R-0004. Slice 4 has a
 normative internal build order because its representation migration must be
-incremental; that internal order does not duplicate slices 5-7.
+incremental; that internal order does not duplicate slices 5-7. `ACTIVE` means
+implementation has landed but the slice's user-visible outcome is not complete;
+it must not be reported as done from the presence of its intermediate data.
 
 1. **Executable witnesses first.** This slice has landed:
    `scripts/tests/check_proof_freshness.sh` drives copies of the real
@@ -942,7 +944,8 @@ incremental; that internal order does not duplicate slices 5-7.
    `staleDeps` was renamed `notCurrentDeps` — its meaning widened past its name.
    Measured effect: only `examples/parse_validate` changes, where two claims
    reach `missing` callees. Slice 6 replaces this conservative closure with the
-   deterministic SCC/Merkle root; this containment does not wait for it.
+   deterministic typed dependency material; this containment does not wait for
+   it.
 4. **Replay foundation and receipt envelope.** The envelope must carry TYPED
    DEPENDENCY EDGES, derived from what the theorem actually uses — not a
    manually selected mode, and not merely the call graph:
@@ -962,8 +965,11 @@ incremental; that internal order does not duplicate slices 5-7.
    from the theorem is what makes the distinction honest — a mode flag would let
    an author assert a relationship the proof does not have.
 
-   Cycles are represented through a versioned SCC/Merkle dependency root (slice
-   6), not by special-casing recursion at each consumer.
+   Cycles are represented through versioned canonical transitive dependency
+   material (slice 6), not by special-casing recursion at each consumer. The
+   current design hashes the validated reachability closure as a set. It
+   deliberately does not claim Merkle-DAG incremental sharing; revisit that
+   representation only if corpus scale makes the simpler witness expensive.
 
    **Ownership.** The edge vocabulary and the theorem-expression metaprogram
    belong under Proof extraction, NOT in ProofKit, examples, reports or the CLI:
@@ -1448,11 +1454,15 @@ incremental; that internal order does not duplicate slices 5-7.
    signal that this slice is done. The theorem and
    toolchain are evidence about that subject; their identities belong in the
    receipt, not in the semantic subject digest.
-6. **Dependency root.** Compute freshness transitively using a deterministic
-   SCC/Merkle root so recursion is finite and a deep callee edit stales every
-   dependent claim without making source location or alpha-renaming noise
-   semantic.
-**Slice status, corrected 2026-08-01.** An earlier summary claimed slices 1-4
+6. **Dependency root.** Compute freshness transitively from deterministic,
+   validated reachability-closure material so recursion is finite and a deep
+   callee edit stales every dependent claim without making source location or
+   alpha-renaming noise semantic. Cycle members share the same reachable
+   closure but retain distinct roots because each root also binds its own
+   subject. This is intentionally simpler to audit than a Merkle-DAG-on-SCC at
+   the current corpus size; incremental sharing is a measured future
+   optimization, not part of R-0004's soundness claim.
+**Detailed slice state, corrected 2026-08-01.** An earlier summary claimed slices 1-4
 complete; that was wrong and is recorded here so the next reader starts from the
 actual state rather than the claim:
 
@@ -1773,7 +1783,51 @@ identity, that record becomes `covered = false`; the use is never omitted.
 Branch-scope restoration preserves the append-only record. These inputs are
 deliberately not part of `CheckedDeclFacts.canonical` yet: they are one typed
 surface of the eventual exhaustive `ProofBodyCanonicalV2`, not a partial body
-digest that may mint freshness. Binder positions remain unmeasured and absent.
+digest that may mint freshness. Raw `env.vars` positions were measured to shift
+across branches and loops, so they are forbidden as canonical binder identity;
+the general proof-point-scoped push/pop binder stack remains absent.
+
+**CURRENT COVERAGE RATCHET (measured 2026-08-04).**
+`scripts/tests/check_subject_coverage.sh` fails on both a rise and an unexplained
+drop, so improvement requires the cause inventory to change in the same commit.
+The examples corpus currently has 417 covered declarations and exactly 3
+uncovered declarations: 2 caused by module constants in one program (the open
+`ConstId` work), plus 1 deliberate negative that must remain uncovered. The two
+previously uncovered ghost programs are now covered by a ghost-specific binder
+frame, and renaming a ghost binder is gated as digest-invariant. That closes the
+measured ghost cause; it does NOT stand in for the general scoped lexical binder
+stack that `ProofBodyCanonicalV2` still needs across parameters, lets, patterns,
+branches, loops and temporary scopes. `ConstId` should deliberately move this
+inventory from 3 to 1; authoritative activation requires zero unexplained
+uncovered proof subjects, while retaining the named negative control.
+
+**V2 producer-completeness and semantic-binding gates.** R-0004 owns an
+immediate, production-path gate with the following acceptance contract; R-0438
+later generalizes the same inventory machinery across all claims and consumers:
+
+- every proof-relevant source/evidence constructor produces an exhaustive typed
+  V2 node or explicitly makes the enclosing subject `covered = false`; adding a
+  constructor or emission surface fails CI until it is classified;
+- the inventory is generated or reflection-backed from the real producer and
+  evidence datatypes, not a deny-list or grep over a nearby file, and contains a
+  mutation that omits one constructor to prove the gate is load-bearing;
+- changing a referenced constant initializer or ghost initializer moves the
+  subject digest, while capture-avoiding ghost-binder renaming and importing the
+  same constant through an alias do not; and
+- each assertion exercises the ProofCore path that mints the digest. A helper,
+  report renderer, diagnostic string, or synthetic empty result cannot stand in
+  for the production consumer.
+
+**Authoritative V2 activation gate.** Before V2 changes any user-visible proof
+status, run it in shadow mode over the complete proof corpus and publish a
+per-subject comparison of V1 status, V2 completeness/digest, dependency
+material, and replay readiness. Activation requires every required subject to
+be complete, every V1/V2 disagreement to have a stable classification, and the
+unexplained count to be exactly zero. The deliberate uncovered negative stays a
+control, not a claim to migrate. Shadow mode may collect facts and receipts but
+may not emit a friendlier verdict than V1. R-0215/R-0217/R-0219 own the later
+general mutation, clean-replay and end-to-end validation suites; this is the
+R-0004 forcing gate that must exist before those downstream tasks.
 
 **That last point is measured, not assumed.** `m.name` is in scope at the LOCAL
 population site (`FileSummary.lean`, where the summary is built with
@@ -1819,6 +1873,17 @@ bytes are unchanged, so "V1 is untouched" is checked rather than intended.
    opportunity; it does not make auto-discharge a prerequisite for replaying
    existing Lean artifacts.
 
+   Before switching freshness authority, check in a DRY-RUN MIGRATION MANIFEST
+   with one row for every stored legacy proof link. The measured 2026-08-04
+   baseline is 44 stored `#[proof_fingerprint]` values; the separate V1 golden
+   covers 77 extracted functions across all eight examples and must remain
+   byte-for-byte stable. Each of the 44 rows records stable subject/claim
+   identity, legacy schema/value, V2 completeness and blocker, replay result,
+   intended final status, and issued receipt (when successful). Missing,
+   duplicate, silently skipped, or hash-copied rows fail the migration. If the
+   stored corpus changes before activation, update the manifest baseline and
+   explain the delta rather than weakening the exact inventory.
+
 Keep the axes explicit: subject freshness, dependency freshness, kernel replay,
 producer/toolchain identity, and coverage are separate facts under R-0440. A
 friendly `proved_by_lean` claim requires a current subject, a current dependency
@@ -1849,14 +1914,20 @@ true together:
   contracts, selected specification, or claim scope move the subject digest,
   while comments, formatting, source paths, spans, and capture-avoiding alpha
   renaming do not;
+- every proof-relevant producer/evidence constructor is exhaustively classified
+  as a typed V2 node or fail-closed uncovered, and a mutation proves an omitted
+  constructor or emission surface is detected on the production ProofCore path;
 - direct, transitive, and recursive dependencies produce the correct typed
-  edges and deterministic SCC/Merkle root, with dynamic access binding the
-  whole canonical table rather than a guessed subset;
+  edges and deterministic validated dependency material/root, with dynamic
+  access binding the whole canonical table rather than a guessed subset;
 - every friendly `proved_by_lean` claim has a current complete subject, a
   current dependency root, and a successful replay receipt with theorem,
   toolchain, schema, and workspace/import-closure identity;
 - legacy body fingerprints and old receipt schemas become `needs_recheck` and
   cannot upgrade themselves by copying a newly computed hash;
+- shadow-mode comparison has zero unexplained V1/V2 disagreements, every
+  required subject is complete, and the exact legacy-migration manifest accounts
+  for every stored proof link before V2 becomes authoritative;
 - repository proofs are replayed into receipts or remain honestly classified as
   missing, unbound, stale, dependency-not-current, failed, or trusted;
 - root/project-directory invocation and clean-machine replay agree, generated
@@ -2651,6 +2722,16 @@ layout contract and prevents parallel registries. Dead performance harnesses
 remain owned by R-0416–R-0419; this task does not delete tracked or untracked
 research notes merely because they are at repository root.
 
+**Worktree and publication invariants.** The operating rules in
+`docs/CONCURRENT_WORK.md` are part of this ownership contract, not advisory
+prose. One writer owns one worktree; verification runs from a clean tree at an
+exact commit; the verified SHA must equal the push target immediately before
+publication; hosted CI is selected by the full 40-character SHA and `push`
+event; and an empty CI result means UNVERIFIED, never success. Publication code
+must wait on the actual lock/PID/remote ref it owns rather than infer state from
+process-name matching. Add executable controls for each invariant so a warning
+cannot be ignored and an adjacent-but-wrong object cannot satisfy the check.
+
 **Completion state for R-0447:** close this task only when:
 
 - every new file class has a machine-readable owner and lifecycle;
@@ -2662,6 +2743,9 @@ research notes merely because they are at repository root.
   is owned, central consumers fan out explicitly, and local/hosted job
   membership, command identity, and liveness agree without workflow-text
   scraping;
+- concurrent work and publication are fail-closed: one writer per worktree,
+  clean exact-SHA verification, verified SHA equal to the push target, CI queried
+  by full SHA plus `push` event, and an empty CI result rejected as unverified;
 - generated output has one enforced artifact root and a clean build leaves
   source directories unchanged;
 - source-mutating mutation suites execute in disposable worktrees and cannot
