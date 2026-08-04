@@ -19,8 +19,15 @@
 #   180 gate scripts in scripts/tests/
 #    55 guard a SOUNDNESS claim — breaking the rule would let the compiler assert something
 #       false about a program (a missing trap, a false `proved`, a laundered axiom)
-#    17 of those 55 now have a negative control here
-#    38 of those 55 have NONE
+#    13 of those 55 have a negative control here
+#    42 of those 55 have NONE
+#
+# Those figures are RECOMPUTED, not derived by arithmetic. A first version of this header
+# said 17/38, reached by adding the four families of that pass to a previous count — wrong,
+# because six of the covered gates (source-maps, copy-judgment, corecheck-boundary,
+# diagnostics-quality, mono-name-collision, constructor-coverage) are not soundness gates at
+# all, so "covered" and "covered AND soundness" are different sets. Same defect class this
+# file exists to catch: a number restated instead of measured.
 #
 # The 42 are not known to be decorative. They are UNMEASURED, which is a different claim
 # from safe, and the distinction is the whole reason this file exists: for a week, every

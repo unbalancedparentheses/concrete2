@@ -940,7 +940,9 @@ newest and most load-bearing work, which is precisely where the week's failures 
 Ten families were added that day, in two passes: six for the new evidence gates, then four from
 a sweep of the **soundness** gates (a gate qualifies if breaking the rule it guards would let
 the compiler assert something FALSE — a missing trap, a false `proved`, a laundered axiom).
-Current coverage: **17 of the 55 soundness gates; 38 have none.** Those 38 are not known to be
+Current coverage: **13 of the 55 soundness gates; 42 have none** (recomputed — a first
+version of this line said 17/38, obtained by adding that pass's four families to an earlier
+count, which double-counted six covered gates that are not soundness gates). Those 38 are not known to be
 decorative — they are *unmeasured*, which is a different claim from safe.
 
 One of the four needed replacing, and the reason is the lesson in miniature. The first
