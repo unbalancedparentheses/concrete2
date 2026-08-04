@@ -1748,10 +1748,18 @@ def compileAndReport (inputPath : String) (reportType : String)
           -- Validated sets are passed EXPLICITLY: the fold mints witnesses from them and
           -- attests nothing without one. Omitting them yields no attestations rather than
           -- unchecked ones.
+          -- R-0450: validate Lean's OWN rendering before trusting the badges it underwrites.
+          -- Costs an omega pass, no external toolchain, and it is the rendering every other
+          -- kernel's goal is derived from — so it is the one whose fault no amount of
+          -- kernel agreement could reveal.
+          let leanAgree := Report.leanAgreementGoals parsed.modules
+          let leanOk ← if leanAgree.isEmpty then pure none else do
+            let closed ← kernelDischargeLoopVCs leanAgree
+            pure (some (Report.leanValidatedObligations leanAgree closed))
           pure (Report.foldMultiKernelResults dvcs
                   (kernelCells ev.rocqClosed ev.rocqRefused)
                   (kernelCells ev.isaClosed ev.isaRefused)
-                  lv rv iv ev.rocqValidated ev.isaValidated)
+                  lv rv iv ev.rocqValidated ev.isaValidated leanOk)
         else pure dvcs
       let vcLedger := Concrete.ObligationCore.ledgerOfVCs dvcs
       let proofLinks := Concrete.ObligationCore.proofLinkLedger
@@ -2207,6 +2215,21 @@ def compileAndReport (inputPath : String) (reportType : String)
       -- its verdict enters the TCB as `solver_trusted` with no kernel re-deriving it. It
       -- was the only lowering with no agreement check at all — the cheapest diversity in
       -- the system (one printer, every SMT-LIB consumer) and the least validated.
+      -- R-0450: Lean's OWN rendering, checked on the same scale as everyone else's and
+      -- with no flag, because omega needs no extra toolchain. Lean was the last unchecked
+      -- lowering, and the reason recorded for that — "its rendering IS the reference, so
+      -- nothing exists to validate it with" — was wrong: the reference is the EVALUATOR,
+      -- and Lean's rendering is measured against it exactly as Rocq's and Isabelle's are.
+      let leanGoals := Report.leanAgreementGoals parsed.modules
+      if leanGoals.isEmpty then
+        out := out ++ "\n\n  lean:omega (exprToLeanProp): no obligation lowerable"
+      else
+        let closed ← kernelDischargeLoopVCs leanGoals
+        out := out ++ s!"\n\n  lean:omega (exprToLeanProp): {closed.length}/{leanGoals.length} agree"
+        for (k, _) in leanGoals do
+          if !closed.contains k then
+            disagreements := disagreements + 1
+            out := out ++ s!"\n      [{k}]  DISAGREES — rendering differs from the reference evaluator"
       let smtGoals := Report.smtAgreementGoals parsed.modules
       if smtGoals.isEmpty then
         out := out ++ "\n\n  smt (exprToSmt): no obligation renders into the SMT column"

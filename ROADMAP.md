@@ -155,7 +155,7 @@ system.
 | 8 | **R-0454** | neutral digest — closing window, alpha-normalized |
 | — | ~~**R-0467**~~ | **DONE 2026-08-03.** Multi-kernel runs on merges to main; mutation coverage moved to the scheduled path |
 | 10 | **R-0468** | nightly reachability in this repository |
-| 11 | **R-0450** (agreement slice) | **partly done 2026-08-03**: the linear fragment is now lowered by ONE function (`exprToProverU`), so `exprToLeanProp` is a delegation rather than a near-copy. Remaining: run the agreement scripts through a Lean driver and mint its witness. **The recorded justification for Lean being exempt was wrong** — see below. Also `exprToSmt` |
+| 11 | **R-0450** (agreement slice) | **agreement half DONE 2026-08-03** — every lowering (Rocq, Isabelle, SMT, and now Lean itself) is validated against the reference evaluator; the IR unification remains. Previously: the linear fragment is now lowered by ONE function (`exprToProverU`), so `exprToLeanProp` is a delegation rather than a near-copy. Remaining: run the agreement scripts through a Lean driver and mint its witness. **The recorded justification for Lean being exempt was wrong** — see below. Also `exprToSmt` |
 | 12 | **R-0462** | fuzz the binary — the only item testing a claim against the artifact |
 | 13 | **R-0455** | term IR + Register B, absorbing the four drivers |
 | 14 | **R-0460** | Register A rows |

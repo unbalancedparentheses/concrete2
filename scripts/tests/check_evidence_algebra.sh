@@ -102,11 +102,14 @@ grep -qE "w.kernel == k.name && w.obligation == ob" "$EV" \
 # lowering was not expressible as a driver, which R-0450's slice (2026-08-03) removed. Still
 # a real gap, still R-0450, but a TODO rather than an asymmetry that cannot be closed.
 if grep -rn "loweringAgreed := true" Main.lean Concrete/Report/Report.lean 2>/dev/null \
-     | grep "kernel :=" | grep -v 'kernel := "lean"' | grep -q .; then
-  no "a consumer still writes 'loweringAgreed := true' for an EXTERNAL kernel"
+     | grep "kernel :=" | grep -q .; then
+  no "a consumer writes 'loweringAgreed := true' — validation asserted, not derived"
 else
-  ok "external validation is never asserted as a literal (lean excepted, see R-0450)"
+  ok "NO kernel asserts validation as a literal — lean included, since R-0450"
 fi
+grep -q "loweringAgreed := if leanChecked then leanW.isSome else true" Concrete/Report/Report.lean \
+  && ok "lean's receipt DERIVES from a minted witness when the check ran" \
+  || no "lean's receipt no longer derives from a witness"
 grep -q "loweringAgreed := rocqW.isSome" Concrete/Report/Report.lean \
   && ok "receipts DERIVE loweringAgreed from the minted witness" \
   || no "receipts no longer derive loweringAgreed from a witness"
@@ -274,6 +277,33 @@ N="$(grep -c "| .binOp _ op l r => do" "$RO" || true)"
 [ "$N" -le 6 ] \
   && ok "$N expression recursions over .binOp (ratchet: <=6; was 7 before R-0450's slice)" \
   || no "$N separate .binOp recursions — one was ADDED; R-0450 exists to reduce this"
+
+echo "=== R-0450: Lean's own rendering is validated, and it is ENFORCED ==="
+# Lean was the last unvalidated rendering, and the one that matters most: every other
+# kernel checks a goal derived from it, so a fault there produces unanimous agreement on the
+# wrong proposition — the single failure mode kernel multiplicity provably cannot detect.
+grep -q "def leanLowering" "$RO" \
+  && ok "a Lean driver exists (its lowering is expressible like any other)" \
+  || no "no leanLowering — Lean's rendering cannot be put on the agreement scale"
+grep -q "notSym : String" "$RO" \
+  && ok "expression-level negation is driver-supplied (the blocker that kept Lean out)" \
+  || no "notSym gone — exprToProver hard-codes negation again"
+grep -q "def leanAgreementGoals" "$RO" && grep -q "def leanValidatedObligations" "$RO" \
+  && ok "Lean agreement goals and the all-instances-closed rule exist" \
+  || no "leanAgreementGoals/leanValidatedObligations missing"
+# The domain restriction is load-bearing: omega is LINEAR, and the in-process path reports
+# only the closed set, so an undecided nonlinear instance is indistinguishable from a
+# refusal. Measured: without this, 48 of 96 instances read as DISAGREES with no real fault.
+grep -q "exprHasNonlinMul o.mainExpr then none" "$RO" \
+  && ok "restricted to omega's linear domain (no false 'disagrees' on nonlinear)" \
+  || no "the nonlinear filter is gone — this check will cry wolf and be ignored"
+# Enforcement, not display. This is the H23 lesson applied in advance.
+grep -q "if leanChecked && leanW.isNone then base" Concrete/Report/Report.lean \
+  && ok "an unvalidated Lean rendering earns NO badge (enforced, not just reported)" \
+  || no "a faulty Lean rendering would still be badged — display without enforcement"
+grep -q "engine := if leanChecked && leanW.isNone then v.engine" Concrete/Report/Report.lean \
+  && ok "and the engine field does not advertise kernels whose badge was withheld" \
+  || no "engine still lists attesters beside a deliberately withheld badge"
 
 echo ""
 echo "EVIDENCE-ALGEBRA: PASS=$PASS  FAIL=$FAIL"

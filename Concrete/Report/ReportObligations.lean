@@ -1084,6 +1084,11 @@ structure ProverLowering where
   /-- Wrap a proposition in this prover's negation. Both Rocq and Isabelle spell it
       `~`, matching `exprToProver`'s `.not_` case. -/
   negate : String → String := fun p => s!"~ ({p})"
+  /-- This prover's spelling of negation INSIDE an expression (`.not_`). Distinct from
+      `negate`, which wraps a whole proposition. Rocq and Isabelle both use `~`; Lean uses
+      `¬`, and that single character was what kept Lean's lowering from being a driver —
+      and therefore what kept the agreement machinery from being pointable at it. -/
+  notSym : String := "~"
   /-- `batchRender closedPropositions → one source file asserting ALL of them`.
       Batching matters: the agreement check emits one lemma per grid assignment, and
       a fresh Isabelle session build per lemma would cost ~30s each. -/
@@ -1344,9 +1349,9 @@ def agreementGrid (o : MultiKernelObl) (base : List Int) : List Int :=
     are the ground instances described above. A `refused` verdict on that script
     means this obligation's lowering DISAGREES with the reference evaluator.
     Obligations whose lowering is outside the fragment are skipped (never asked). -/
-def loweringAgreementScripts (pl : ProverLowering) (modules : List Module)
-    : List (String × String) := Id.run do
-  let mut out : List (String × String) := []
+def loweringAgreementProps (pl : ProverLowering) (modules : List Module)
+    : List (String × List String) := Id.run do
+  let mut out : List (String × List String) := []
   for o in multiKernelObligations modules do
     let vars := (collectIdents o.mainExpr ++ o.hyps.flatMap collectIdents).eraseDups
     -- Boundary-aware grid. With ≥3 variables the cartesian product explodes, so use
@@ -1373,8 +1378,8 @@ def loweringAgreementScripts (pl : ProverLowering) (modules : List Module)
     -- The driver's rendering of the obligation itself, rendered ONCE: this is the
     -- very string the multi-kernel path sends the kernel, so we are checking the
     -- production lowering, not a special variant of it.
-    let concl := (exprToProver pl.binop o.mainExpr).bind (o.mkConcl pl.binop)
-    let loweredHyps := o.hyps.mapM (exprToProver pl.binop)
+    let concl := (exprToProverU pl.binop pl.notSym o.mainExpr).bind (o.mkConcl pl.binop)
+    let loweredHyps := o.hyps.mapM (exprToProverU pl.binop pl.notSym)
     match concl, loweredHyps with
     | some c, some hs =>
       let body := String.join (hs.map (fun h => s!"({h}) {pl.arrow} ")) ++ c
@@ -1414,9 +1419,15 @@ def loweringAgreementScripts (pl : ProverLowering) (modules : List Module)
           | some p => props := props ++ [p]
           | none => pure ()
       if !props.isEmpty then
-        out := out ++ [(o.key, pl.batchRender props)]
+        out := out ++ [(o.key, props)]
     | _, _ => pure ()   -- outside the fragment: never asked
   return out
+
+/-- One batched source file per obligation, for the drivers that shell out to a prover
+    binary. Batching matters: a fresh Isabelle session per lemma costs ~30s. -/
+def loweringAgreementScripts (pl : ProverLowering) (modules : List Module)
+    : List (String × String) :=
+  (loweringAgreementProps pl modules).map (fun (k, ps) => (k, pl.batchRender ps))
 
 /-- `(vcKey, proofScript)` for each linear obligation (ALL families), lowered through
     the given driver. The conclusion is built via the driver's binop column, so `<=` /
@@ -1426,13 +1437,86 @@ def loweringAgreementScripts (pl : ProverLowering) (modules : List Module)
 def proverReplayGoals (pl : ProverLowering) (modules : List Module) : List (String × String) := Id.run do
   let mut out : List (String × String) := []
   for o in multiKernelObligations modules do
-    let concl : Option String := (exprToProver pl.binop o.mainExpr).bind (o.mkConcl pl.binop)
-    match concl, o.hyps.mapM (exprToProver pl.binop) with
+    let concl : Option String := (exprToProverU pl.binop pl.notSym o.mainExpr).bind (o.mkConcl pl.binop)
+    match concl, o.hyps.mapM (exprToProverU pl.binop pl.notSym) with
     | some c, some hyps =>
       let vars := (collectIdents o.mainExpr ++ o.hyps.flatMap collectIdents).eraseDups
       out := out ++ [(o.key, pl.render vars hyps c)]
     | _, _ => pure ()
   return out
+
+/-- **Lean driver — R-0450: the reference kernel's OWN rendering, made checkable.**
+
+    Lean was the one kernel whose lowering was never validated, and the reason on record was
+    that its rendering *is* the reference the others are measured against. That was false.
+    The agreement check measures a rendering against the reference EVALUATOR
+    (`safeOn`/`evalBoolEnv`, which walk the AST and know nothing about Lean); Rocq and
+    Isabelle are compared to what the expression MEANS, not to Lean. Lean's rendering was
+    simply never put on the same scale, because it was not expressible as a driver.
+
+    It is now. `binop := leanBinOp` and `notSym := "¬"` are exactly what `exprToLeanProp`
+    uses — the same function, since `exprToLeanProp` delegates to `exprToProverU` — so this
+    validates the PRODUCTION lowering rather than a special variant built for the check.
+    That property is the whole point; a driver that rendered differently would prove
+    something true about a string nobody sends to a kernel.
+
+    `batchRender` emits a CONJUNCTION rather than a source file: the other drivers shell out
+    to `coqc`/`isabelle`, while Lean's instances are discharged in-process by the existing
+    omega path (`kernelDischargeLoopVCs`), which wraps a goal string in
+    `theorem … := by intros; omega`. One conjunction per obligation means one closed goal
+    answers "does this rendering agree with the evaluator on every sampled assignment". -/
+def leanLowering : ProverLowering where
+  name := "lean"
+  binop := leanBinOp
+  notSym := "¬"
+  arrow := "→"
+  negate := fun p => s!"¬ ({p})"
+  binder := fun vars => if vars.isEmpty then "" else s!"∀ ({" ".intercalate vars} : Int), "
+  render := fun vars hyps concl =>
+    let binder := if vars.isEmpty then "" else s!"∀ ({" ".intercalate vars} : Int), "
+    let arrows := String.join (hyps.map (fun h => s!"({h}) → "))
+    s!"theorem vc : {binder}{arrows}{concl} := by intros; omega"
+  batchRender := fun props => " ∧ ".intercalate (props.map (fun p => s!"({p})"))
+
+/-- `(obligationKey, goal)` validating that **Lean's own** rendering denotes the obligation.
+
+    Discharged by the ordinary omega path; a key that closes is an obligation whose Lean
+    rendering agreed with the reference evaluator on every sampled assignment, and is
+    therefore eligible to mint a `LoweringValidated` witness — the same standard every
+    external kernel has had to meet since the witness change. -/
+def leanAgreementGoals (modules : List Module) : List (String × String) :=
+  -- LINEAR obligations only, and the restriction is a soundness point rather than a
+  -- convenience. The other drivers get a three-valued answer from their prover — closed,
+  -- refused, error — so `refused` genuinely means "this rendering has a different truth
+  -- table". The in-process Lean path returns only the CLOSED set, so a goal that fails to
+  -- close is indistinguishable from one omega cannot decide. omega decides linear integer
+  -- arithmetic; handed a pinned instance of `a * b` it fails on both counts at once.
+  --
+  -- Measured before this filter existed: 48 of 96 instances "DISAGREED" on
+  -- `two_kernel_demo`, all of them the nonlinear `mul_unbounded`, none of them an actual
+  -- rendering fault. Reporting those as disagreement would be a false alarm in the one
+  -- check whose entire job is to be believed when it cries wolf.
+  --
+  -- This is not a coverage hole in disguise: the linear fragment is exactly where omega is
+  -- the discharging kernel, so it is exactly where Lean's rendering is load-bearing.
+  -- Nonlinear obligations are answered by bv_decide or SMT, whose renderings have their own
+  -- agreement checks. Widening this needs a Lean discharge that reports refusal distinctly.
+  let linearKeys := (multiKernelObligations modules).filterMap (fun o =>
+    if exprHasNonlinMul o.mainExpr then none else some o.key)
+  (loweringAgreementProps leanLowering modules).flatMap fun (k, ps) =>
+    if !linearKeys.contains k then [] else
+    ps.zipIdx.map fun (p, i) => (s!"{k}#leanagree{i}", p)
+
+/-- Obligations whose Lean rendering agreed with the reference evaluator on EVERY sampled
+    assignment. Mirrors `smtValidatedObligations`: all instances must close, and an
+    obligation with no instances is not validated — "we never checked" is not "it agreed". -/
+def leanValidatedObligations (goals : List (String × String)) (closed : List String)
+    : List String :=
+  let keyOf := fun (k : String) => (k.splitOn "#leanagree").headD k
+  let obligations := (goals.map (fun (k, _) => keyOf k)).eraseDups
+  obligations.filter fun ob =>
+    let mine := goals.filter (fun (k, _) => keyOf k == ob)
+    !mine.isEmpty && mine.all (fun (k, _) => closed.contains k)
 
 /-- Rocq/`coqc` driver: `Goal forall (vars : Z), h1 -> ... -> concl. Proof. lia. Qed.`
     `lia` is Coq's linear-integer-arithmetic decision procedure (CIC kernel). -/

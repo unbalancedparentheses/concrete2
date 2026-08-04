@@ -461,9 +461,31 @@ read on 2026-08-03 while ranking what to do next, and `exprToSmt` was nominated 
 highest-value remaining gap on the strength of a claim that had been false for days. A stale
 doc is not inert; it redirects work.
 
-Lean's own rendering, by contrast, IS still unchecked, and after the witness
-change it is the ONLY remaining literal: every external kernel must present a minted
-witness, while Lean's receipt still records `loweringAgreed := true` by construction.
+~~Lean's own rendering, by contrast, IS still unchecked~~ — **closed 2026-08-03.** Lean now
+presents a minted witness like every other kernel: `leanLowering` puts its production
+lowering on the agreement scale, `leanAgreementGoals` measures it against the reference
+evaluator, and an obligation whose Lean rendering fails to agree **earns no badge** — the
+receipt's `loweringAgreed` is derived, and there is no `loweringAgreed := true` literal
+left anywhere.
+
+Two details that make it honest rather than decorative:
+
+- **It is the production lowering being checked.** `leanLowering.binop` is `leanBinOp` and
+  its `notSym` is `¬`, which is exactly what `exprToLeanProp` uses — the same function,
+  since `exprToLeanProp` delegates to `exprToProverU`. A driver that rendered differently
+  would prove something true about a string nobody sends to a kernel.
+- **It covers omega's LINEAR domain only, deliberately.** The external drivers get three
+  answers from their prover (closed / refused / error), so `refused` means the truth tables
+  differ. The in-process Lean path returns only the closed set, so a goal that fails to
+  close is indistinguishable from one omega cannot decide. Measured before this restriction
+  existed: 48 of 96 instances on `two_kernel_demo` read as DISAGREES, all of them the
+  nonlinear `mul_unbounded`, none an actual fault. That is not a coverage hole in disguise —
+  the linear fragment is exactly where omega is the discharging kernel, so it is exactly
+  where Lean's rendering is load-bearing.
+
+Mutation-verified: rendering `≤` as `<` in Lean's operator table is caught at one boundary
+instance, and the badge disappears (`proved_by_multi_kernel` → `proved_by_kernel_decision`).
+Enforcement, not display.
 
 **The reason previously given for that exemption was wrong, and the correction changes what
 kind of gap it is** (2026-08-03). This section said Lean's rendering *is* the reference the

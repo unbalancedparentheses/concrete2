@@ -2728,6 +2728,7 @@ def foldMultiKernelResults (vcs : List VC)
     (rocqVerdicts isaVerdicts : List (String × KernelCell))
     (leanVer : String := "lean") (rocqVer : String := "rocq") (isaVer : String := "isabelle")
     (rocqValidated isaValidated : List String := [])
+    (leanValidated : Option (List String) := none)
     : List VC :=
   vcs.map fun v =>
     if v.status == "proved_by_kernel_decision" || v.status == "proved_by_lean"
@@ -2749,6 +2750,12 @@ def foldMultiKernelResults (vcs : List VC)
       -- until then — but it is a TODO, not a fundamental asymmetry.
       let rocqW := LoweringValidated.mint "rocq" v.id rocqValidated
       let isaW  := LoweringValidated.mint "isabelle" v.id isaValidated
+      -- R-0450: Lean's rendering is validated on the same terms as everyone else's now.
+      -- `none` means the check was not run (the caller had no Lean agreement pass), and
+      -- gating on a check nobody performed would silently delete every badge. `some ks`
+      -- means it RAN, and then absence from `ks` is a real negative.
+      let leanW := leanValidated.bind (fun ks => LoweringValidated.mint "lean" v.id ks)
+      let leanChecked := leanValidated.isSome
       -- R-0465: ONE lookup per kernel, so an obligation has exactly one verdict from each.
       -- This replaced parallel `closed`/`refused` lists whose type could not say they were
       -- disjoint: given `rocqClosed = ["k"]` and `rocqRefused = ["k"]`, both receipts were
@@ -2760,7 +2767,12 @@ def foldMultiKernelResults (vcs : List VC)
       let rocqCell := cellFor rocqVerdicts v.id
       let isaCell  := cellFor isaVerdicts v.id
       let receipts : List KernelReceipt :=
-        [{ kernel := "lean", version := leanVer, verdict := "closed", loweringAgreed := true
+        -- DERIVED, not asserted. This was the last `loweringAgreed := true` literal in the
+        -- system, kept because Lean's rendering had no agreement check — for a reason that
+        -- turned out to be wrong (the check measures a rendering against the reference
+        -- EVALUATOR, not against Lean). With `leanAgreementGoals` it has one.
+        [{ kernel := "lean", version := leanVer, verdict := "closed"
+         , loweringAgreed := if leanChecked then leanW.isSome else true
          , replay := "concrete <file> --report multi-kernel" }]
         ++ (if rocqCell == .closed then
               [{ kernel := "rocq", version := rocqVer, verdict := "closed"
@@ -2825,9 +2837,21 @@ def foldMultiKernelResults (vcs : List VC)
                    kernelReceipts := receipts,
                    independence := some (independenceOf attest),
                    attestingKernelVersions := attest.map versionOf,
-                   -- engine lists the EXTERNAL attesters (lean is already there)
-                   engine := "+".intercalate (v.engine :: attest.filter (· != "lean")) }
-        if multiKernelAdapter.admits v.status verdict.evidence.present
+                   -- engine lists the EXTERNAL attesters (lean is already there) — but ONLY
+                   -- when their attestation is being honoured. With Lean's rendering
+                   -- unvalidated the kernels closed goals derived from a lowering we do not
+                   -- trust, so advertising `omega+rocq+isabelle` beside a status that
+                   -- deliberately withholds the badge states the opposite of the finding.
+                   -- Receipts still record everything; the summary field must not oversell.
+                   engine := if leanChecked && leanW.isNone then v.engine
+                             else "+".intercalate (v.engine :: attest.filter (· != "lean")) }
+        -- If the Lean agreement check RAN and this obligation's Lean rendering did not
+        -- agree, no badge. Every kernel here closed a goal that Lean's lowering produced,
+        -- so a faulty Lean rendering means they all agreed about the wrong proposition —
+        -- the one failure mode kernel multiplicity provably cannot detect. Display without
+        -- enforcement was the H23 mistake; this is the enforcement.
+        if leanChecked && leanW.isNone then base
+        else if multiKernelAdapter.admits v.status verdict.evidence.present
         then { base with status := verdict.evidence.present } else base
     else v
 
