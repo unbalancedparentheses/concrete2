@@ -493,6 +493,15 @@ recomputed.
 - **Collapse N printers to one.** The print step is validated, not provable (the target
   syntax is not ours), so its cost is per-printer and permanent. `exprToSmt` already is that
   printer for the arithmetic tier and is validated as of 2026-08-03.
+- **Model casts in the IR, or record why not.** Measured 2026-08-04: the IR recovers ZERO
+  dropped obligations on this corpus, because every obligation carrying a division subterm
+  also carries a `cast` (`arr[(a / b) as Int]`) and neither layer models casts. `ofExpr`
+  rejects casts deliberately — a cast truncates, so carrying it as transparent would be a
+  silent misinterpretation. **R-0455's div/mod complaint is therefore latent, not live**, and
+  the IR's value today is the transformations and their proofs rather than recovered
+  obligations. `--report term-ir` prints all three buckets so a zero cannot be misread.
+- **`exprToProver` is also a `partial def`**, found while trying to lock "the string layer
+  drops this term" by `rfl` — it cannot be. Same class as `evalIntEnv` below.
 - **`evalIntEnv` is a `partial def`** and therefore outside the reach of proof — the evaluator
   every lowering-agreement check measures against cannot be reasoned about. `TermIR`'s
   evaluators are structural specifically to fix this; replacing `evalIntEnv` with them is the

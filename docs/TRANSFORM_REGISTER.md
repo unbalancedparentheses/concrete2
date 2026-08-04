@@ -71,6 +71,34 @@ Measured constraint on the same tier (2026-07-31): SMT datatype reasoning is pro
 
 ---
 
+## The IR is on the production path (`Expr → Term`), and what measuring it showed
+
+`Concrete/Report/TermOfExpr.lean` translates obligation expressions into the IR, so Register B
+row 1 is a theorem about a transformation real obligations can now enter. `--report term-ir`
+reports three buckets.
+
+**Measured result, and it corrects what R-0455 implies.** R-0455 describes `div`/`mod`
+subterms being *dropped* from the prover lowering. That is true of `exprToProver`, but on this
+corpus the IR recovers **zero** of them — because the obligations that carry a division also
+carry a **cast** (`arr[(a / b) as Int]`), and neither layer models casts. They land in
+"dropped by both".
+
+`ofExpr` rejects casts deliberately: a cast **truncates**, so carrying it as if transparent
+would be a silent misinterpretation — the exact failure this IR exists to remove. Modelling
+casts is future work; pretending they are identity would be worse than dropping them.
+
+So the IR's div/mod advantage is **latent, not live**, and the report prints all three buckets
+so that a zero cannot be read as "the string layer loses nothing". The IR's value today is the
+transformations and their proofs, not recovered obligations.
+
+Two things this also established, both by trying and failing:
+
+- **`exprToProver` cannot be locked by `rfl`** — it is a `partial def`, so the kernel cannot
+  reduce it. The same limitation as `evalIntEnv`, met while trying to write the lock that the
+  string layer drops a term. Measured at runtime instead.
+- **`hasTmod ∘ elimTmod` composes with the translation**, pinned by `rfl`: a real obligation
+  expression carrying `mod` is translated and then eliminated.
+
 ## Drivers as data (R-0455, same slice)
 
 `tactics` is now a **field** on `ProverLowering`, ordered for cheap-then-expensive attempts.

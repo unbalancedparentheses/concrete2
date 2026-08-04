@@ -115,6 +115,34 @@ for d in rocqLowering isabelleLowering; do
     || no "$d has NO batchRender — its lowering-agreement check would have nothing to check"
 done
 
+echo "=== the IR is FED by real obligations, and the measurement is honest ==="
+# Row 1 was a true theorem about a transformation nothing ran. `ofExpr` is the producer.
+OF="Concrete/Report/TermOfExpr.lean"
+[ -f "$OF" ] && ok "Expr -> Term translation exists" \
+             || no "$OF missing — the IR has no producer and row 1 is idle"
+grep -q "def ofExpr" "$OF" \
+  && ok "ofExpr present" || no "ofExpr missing"
+# Casts must be REJECTED, not treated as identity. A cast truncates; carrying it as
+# transparent is the silent misinterpretation the IR exists to remove.
+if grep -qE "^\s*\| \.cast" "$OF"; then
+  no "ofExpr handles .cast — verify it models truncation rather than treating it as identity"
+else
+  ok "casts are rejected, not silently treated as identity"
+fi
+# Out-of-fragment operators rejected rather than approximated.
+grep -q "example : irBinOp .geq = none := rfl" "$OF" \
+  && ok "out-of-fragment operators are pinned as REJECTED (geq is not aliased to le)" \
+  || no "the operator-rejection lock is gone — an operator could be silently aliased"
+# The measurement must report all three buckets, so a zero cannot read as "nothing is lost".
+for b in "carried by both layers" "DROPPED by the string layer only" "dropped by BOTH"; do
+  grep -q "$b" Main.lean \
+    && ok "term-ir reports: $b" \
+    || no "term-ir does not report '$b' — a zero would be unreadable"
+done
+grep -q "latent here, not live" Main.lean \
+  && ok "the report states the div/mod advantage is latent on this corpus, not live" \
+  || no "the report no longer qualifies the zero — it would over-claim the IR's benefit"
+
 echo ""
 echo "TRANSFORM-REGISTER: PASS=$PASS  FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]

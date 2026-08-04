@@ -82,7 +82,7 @@ def helpText : String := String.intercalate "\n" [
   ""]
 
 def usage : String :=
-  "Usage: concrete <file.con> [-o output] [--emit-llvm] [--emit-core] [--emit-ssa] [--emit-trace-json] [--trace-pipeline] [--test] [--test --module <name>] [--interp] [--report caps|unsafe|layout|interface|alloc|mono|authority|proof|eligibility|proof-status|obligations|extraction|subject-facts|lean-stubs|check-proofs|proof-diagnostics|proof-deps|proof-bundle|traceability|diagnostics-json|effects|recursion|stack-depth|fingerprints|consistency|contracts|vcs|obligation-ledger|compiler-ledger|verify|audit|arithmetic|multi-kernel|bridge-check|solver-cert|lowering-agreement|artifact-fuzz|core-semantics-diff] [--report multi-kernel [--rocq] [--isabelle] [--all-provers] [--require-two-kernels]] [--query KIND|KIND:FUNCTION|fn:FUNCTION] [--fmt (legacy; use `concrete fmt`)]\n       concrete build [-o output] [--emit-llvm]\n       concrete check\n       concrete fmt <file.con> [--check | --write | --stdin]\n       concrete audit <file.con>\n       concrete prove <file.con> <module.function> [--json] [--out <path>] [--force] [--emit-link] [--emit-lean] [--emit-artifacts] [--out-dir <dir>] [--show-obligation <id>] [--replay] [--nearest-lemmas] [--check] [--workspace <dir>]\n       concrete prove --help=agent | --capabilities | --schema\n       concrete run [-- args...]\n       concrete test [--module <name>]\n       concrete diff <old.json> <new.json> [--json]\n       concrete snapshot <file.con> [-o output.json]\n       concrete debug-bundle <file.con> [-o dir]\n       concrete reduce <file.con> --predicate <pred> [-o output] [--verbose]\n       concrete --version"
+  "Usage: concrete <file.con> [-o output] [--emit-llvm] [--emit-core] [--emit-ssa] [--emit-trace-json] [--trace-pipeline] [--test] [--test --module <name>] [--interp] [--report caps|unsafe|layout|interface|alloc|mono|authority|proof|eligibility|proof-status|obligations|extraction|subject-facts|lean-stubs|check-proofs|proof-diagnostics|proof-deps|proof-bundle|traceability|diagnostics-json|effects|recursion|stack-depth|fingerprints|consistency|contracts|vcs|obligation-ledger|compiler-ledger|verify|audit|arithmetic|multi-kernel|bridge-check|solver-cert|lowering-agreement|artifact-fuzz|term-ir|core-semantics-diff] [--report multi-kernel [--rocq] [--isabelle] [--all-provers] [--require-two-kernels]] [--query KIND|KIND:FUNCTION|fn:FUNCTION] [--fmt (legacy; use `concrete fmt`)]\n       concrete build [-o output] [--emit-llvm]\n       concrete check\n       concrete fmt <file.con> [--check | --write | --stdin]\n       concrete audit <file.con>\n       concrete prove <file.con> <module.function> [--json] [--out <path>] [--force] [--emit-link] [--emit-lean] [--emit-artifacts] [--out-dir <dir>] [--show-obligation <id>] [--replay] [--nearest-lemmas] [--check] [--workspace <dir>]\n       concrete prove --help=agent | --capabilities | --schema\n       concrete run [-- args...]\n       concrete test [--module <name>]\n       concrete diff <old.json> <new.json> [--json]\n       concrete snapshot <file.con> [-o output.json]\n       concrete debug-bundle <file.con> [-o dir]\n       concrete reduce <file.con> --predicate <pred> [-o output] [--verbose]\n       concrete --version"
 
 /-- Capture compiler identity: version, git commit, lean toolchain. -/
 def compilerIdentity : IO String := do
@@ -2167,6 +2167,37 @@ def compileAndReport (inputPath : String) (reportType : String)
         return 1
       out := out ++ s!"\n\nCORE-SEMANTICS-DIFF: {checked} function(s) agree across two independent evaluators."
       IO.println (out ++ "\n")
+      return 0
+    if reportType == "term-ir" then
+      -- R-0455: how much the STRING lowering loses, as a number. `exprToProver` drops any
+      -- term containing `div`/`mod` or a spec call; `ofExpr` carries both. The two therefore
+      -- disagree on exactly the obligations the prover path silently loses today, which is
+      -- the defect R-0455 describes in prose.
+      let dropped := Report.droppedByStringLayer parsed.modules
+      let carried := Report.carriedByBoth parsed.modules
+      let both := Report.droppedByBoth parsed.modules
+      IO.println "=== Term IR coverage vs the string lowering (R-0455) ==="
+      IO.println "  `exprToProver` renders an obligation to a prover's syntax and returns"
+      IO.println "  `none` for anything outside an infix-only operator table — div/mod inside a"
+      IO.println "  larger term, and spec-function calls. Those obligations are DROPPED from the"
+      IO.println "  prover path. The IR carries them."
+      IO.println ""
+      IO.println s!"  obligations examined:              {carried.length + dropped.length + both.length}"
+      IO.println s!"    carried by both layers:          {carried.length}"
+      IO.println s!"    DROPPED by the string layer only: {dropped.length}   <- the IR's win"
+      IO.println s!"    dropped by BOTH:                 {both.length}   <- outside the IR's fragment too"
+      IO.println ""
+      IO.println "  A zero in the third row does not mean the string layer loses nothing: an"
+      IO.println "  obligation like `arr[(a / b) as Int]` carries a division AND a cast, and"
+      IO.println "  neither layer models casts, so it lands in the last bucket. `ofExpr` rejects"
+      IO.println "  casts on purpose — a cast truncates, so treating it as identity would be a"
+      IO.println "  silent misinterpretation. The IR's div/mod advantage is latent here, not live."
+      if carried.isEmpty && dropped.isEmpty && both.isEmpty then
+        IO.println ""
+        IO.println "  (no linear obligations in this file — the comparison examined nothing,"
+        IO.println "   which is not the same as nothing being dropped)"
+      for (k, e) in dropped do
+        IO.println s!"    [{k}]  {e}"
       return 0
     if reportType == "artifact-fuzz" then
       -- R-0462: emit a driver that exercises every fuzzable function with contract-satisfying
