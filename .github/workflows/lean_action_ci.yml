@@ -934,6 +934,12 @@ jobs:
       - name: Known-wrong corpus (open holes still reproduce)
         run: bash ./scripts/tests/check_known_wrong_corpus.sh
 
+      # R-0462: run the compiled BINARY against the safety claims. Here, not in the
+      # build-free job, because it compiles and executes generated drivers — that is the
+      # point: it crosses surface -> Core -> SSA -> LLVM, which no register row covers.
+      - name: Artifact fuzz (the binary vs the safety claims)
+        run: bash ./scripts/tests/check_artifact_fuzz.sh
+
       - name: Reducer smoke
         run: bash ./scripts/tests/test_reducer_smoke.sh
 

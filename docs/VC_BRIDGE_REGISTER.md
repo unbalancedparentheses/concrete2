@@ -186,6 +186,23 @@ question, *does the obligation imply the runtime property*, and nothing in the l
 witness to the runtime property. So sufficiency needs either the theorems (R-0460) or the
 artifact itself (R-0462), and no amount of fuzzing the obligation substitutes.
 
+**Both now exist** (2026-08-04). R-0460 supplies the theorems for four rows. R-0462 supplies
+the artifact check: `--report artifact-fuzz` emits a `#[test]` driver calling every fuzzable
+function with inputs its `#[requires]` admits, and `check_artifact_fuzz.sh` compiles and runs
+it — so it also crosses surface → Core → SSA → LLVM, which no row here covers.
+
+Read its current result carefully, because it is easy to over-read in either direction. The
+fuzzer classifies each function by what the obligation layer CLAIMS: `claimed` (all safety
+obligations proved — a trap is a Register A counterexample), `unclaimed` (no safety obligation
+at all — a trap means one should have existed, the applicability half of H24), `unproved` (not
+fuzzed; a trap is expected and the compiler never claimed otherwise). **In `examples/` today
+there are zero `claimed` or `unclaimed` fuzzable functions**, so the soundness check is
+vacuous, and the gate says so rather than reporting green as evidence. What it does assert
+non-vacuously is a MECHANISM case: the `unproved` fixtures trap and the harness detects it, so
+a future clean result will mean something. Coverage is limited by callability — public,
+integer-or-integer-array parameters, integer return, no capabilities, and a contract checkable
+over the integer parameters.
+
 H24 is therefore also the clearest validation of R-0462's priority: **every** static
 surface reports success on `examples/trap_semantics_gap/` — `vcs` says
 `proved_by_kernel_decision`, `bridge-check` says no counterexample, `core-semantics-diff`

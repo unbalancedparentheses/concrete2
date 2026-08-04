@@ -157,7 +157,7 @@ system.
 | — | ~~**R-0467**~~ | **DONE 2026-08-03.** Multi-kernel runs on merges to main; mutation coverage moved to the scheduled path |
 | 10 | **R-0468** | nightly reachability in this repository |
 | 11 | **R-0450** (agreement slice) | **agreement half DONE 2026-08-03** — every lowering (Rocq, Isabelle, SMT, and now Lean itself) is validated against the reference evaluator; the IR unification remains. Previously: the linear fragment is now lowered by ONE function (`exprToProverU`), so `exprToLeanProp` is a delegation rather than a near-copy. Remaining: run the agreement scripts through a Lean driver and mint its witness. **The recorded justification for Lean being exempt was wrong** — see below. Also `exprToSmt` |
-| 12 | **R-0462** | fuzz the binary — the only item testing a claim against the artifact |
+| — | ~~**R-0462**~~ | **DONE 2026-08-04.** `--report artifact-fuzz` + `check_artifact_fuzz.sh`: runs the compiled binary against the safety claims, classified by what the obligation layer claims. Mechanism proven; soundness check currently vacuous in `examples/` (0 claimed functions) and says so |
 | 13 | **R-0455** | term IR + Register B, absorbing the four drivers |
 | 14 | **R-0460** | Register A rows — **4 of 5 half-discharged 2026-08-04** (div/mod and shift; shifts also became single-source, the interpreter now consumes `evalIntShift`) (`trapConditions_sufficient`: the div/mod conditions are strong enough, proved for all inputs). The lowering half stays open (H19), and the shift row is untouched: `evalIntBinOp` does not model shifts, so the theorem covers them only vacuously |
 | 15 | **R-0459** | non-arithmetic families |

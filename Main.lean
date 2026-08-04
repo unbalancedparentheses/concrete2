@@ -82,7 +82,7 @@ def helpText : String := String.intercalate "\n" [
   ""]
 
 def usage : String :=
-  "Usage: concrete <file.con> [-o output] [--emit-llvm] [--emit-core] [--emit-ssa] [--emit-trace-json] [--trace-pipeline] [--test] [--test --module <name>] [--interp] [--report caps|unsafe|layout|interface|alloc|mono|authority|proof|eligibility|proof-status|obligations|extraction|subject-facts|lean-stubs|check-proofs|proof-diagnostics|proof-deps|proof-bundle|traceability|diagnostics-json|effects|recursion|stack-depth|fingerprints|consistency|contracts|vcs|obligation-ledger|compiler-ledger|verify|audit|arithmetic|multi-kernel|bridge-check|solver-cert|lowering-agreement|core-semantics-diff] [--report multi-kernel [--rocq] [--isabelle] [--all-provers] [--require-two-kernels]] [--query KIND|KIND:FUNCTION|fn:FUNCTION] [--fmt (legacy; use `concrete fmt`)]\n       concrete build [-o output] [--emit-llvm]\n       concrete check\n       concrete fmt <file.con> [--check | --write | --stdin]\n       concrete audit <file.con>\n       concrete prove <file.con> <module.function> [--json] [--out <path>] [--force] [--emit-link] [--emit-lean] [--emit-artifacts] [--out-dir <dir>] [--show-obligation <id>] [--replay] [--nearest-lemmas] [--check] [--workspace <dir>]\n       concrete prove --help=agent | --capabilities | --schema\n       concrete run [-- args...]\n       concrete test [--module <name>]\n       concrete diff <old.json> <new.json> [--json]\n       concrete snapshot <file.con> [-o output.json]\n       concrete debug-bundle <file.con> [-o dir]\n       concrete reduce <file.con> --predicate <pred> [-o output] [--verbose]\n       concrete --version"
+  "Usage: concrete <file.con> [-o output] [--emit-llvm] [--emit-core] [--emit-ssa] [--emit-trace-json] [--trace-pipeline] [--test] [--test --module <name>] [--interp] [--report caps|unsafe|layout|interface|alloc|mono|authority|proof|eligibility|proof-status|obligations|extraction|subject-facts|lean-stubs|check-proofs|proof-diagnostics|proof-deps|proof-bundle|traceability|diagnostics-json|effects|recursion|stack-depth|fingerprints|consistency|contracts|vcs|obligation-ledger|compiler-ledger|verify|audit|arithmetic|multi-kernel|bridge-check|solver-cert|lowering-agreement|artifact-fuzz|core-semantics-diff] [--report multi-kernel [--rocq] [--isabelle] [--all-provers] [--require-two-kernels]] [--query KIND|KIND:FUNCTION|fn:FUNCTION] [--fmt (legacy; use `concrete fmt`)]\n       concrete build [-o output] [--emit-llvm]\n       concrete check\n       concrete fmt <file.con> [--check | --write | --stdin]\n       concrete audit <file.con>\n       concrete prove <file.con> <module.function> [--json] [--out <path>] [--force] [--emit-link] [--emit-lean] [--emit-artifacts] [--out-dir <dir>] [--show-obligation <id>] [--replay] [--nearest-lemmas] [--check] [--workspace <dir>]\n       concrete prove --help=agent | --capabilities | --schema\n       concrete run [-- args...]\n       concrete test [--module <name>]\n       concrete diff <old.json> <new.json> [--json]\n       concrete snapshot <file.con> [-o output.json]\n       concrete debug-bundle <file.con> [-o dir]\n       concrete reduce <file.con> --predicate <pred> [-o output] [--verbose]\n       concrete --version"
 
 /-- Capture compiler identity: version, git commit, lean toolchain. -/
 def compilerIdentity : IO String := do
@@ -2167,6 +2167,50 @@ def compileAndReport (inputPath : String) (reportType : String)
         return 1
       out := out ++ s!"\n\nCORE-SEMANTICS-DIFF: {checked} function(s) agree across two independent evaluators."
       IO.println (out ++ "\n")
+      return 0
+    if reportType == "artifact-fuzz" then
+      -- R-0462: emit a driver that exercises every fuzzable function with contract-satisfying
+      -- inputs. Compiling and running it is `check_artifact_fuzz.sh`'s job — the compiler
+      -- cannot re-invoke itself, and keeping the plan separate makes it deterministic and
+      -- diffable rather than hidden inside a process the gate spawns.
+      -- Classify each function by what the obligation layer CLAIMS about its runtime safety.
+      -- Derived from the SAME discharged ledger the reports and the release gate read, so the
+      -- fuzzer cannot disagree with them about whether something was proved.
+      let dvcs ← computeVCsDischarged parsed.modules locMap registry
+      let safetyKinds := ["no_overflow", "array_bounds", "div_nonzero",
+                          "div_quotient_in_range", "shift_amount_in_range"]
+      let claimOf : String → String := fun fq =>
+        let mine := dvcs.filter (fun v => v.fn == fq && safetyKinds.contains v.kind)
+        if mine.isEmpty then "unclaimed"
+        else if mine.all (fun v => v.status.startsWith "proved" || v.status == "arithmetic_proved")
+        then "claimed" else "unproved"
+      let cases := Report.artifactFuzzCases parsed.modules inputPath locMap claimOf
+      let total := cases.foldl (fun n c => n + c.argRows.length) 0
+      let allFns := (locMap.filter (fun e => e.file == inputPath)).length
+      IO.println "=== Artifact fuzz plan (R-0462: run the BINARY against the safety claims) ==="
+      IO.println "  Register A says: if the obligation holds, the runtime property holds."
+      IO.println "  This tests that empirically against the artifact that ships, so it also"
+      IO.println "  crosses surface -> Core -> SSA -> LLVM, which no register row covers."
+      IO.println ""
+      IO.println s!"  fuzzable functions: {cases.length} of {allFns}   argument tuples: {total}"
+      if cases.isEmpty then
+        IO.println ""
+        IO.println "  (nothing fuzzable here — see the exclusion rules on `artifactFuzzCases`:"
+        IO.println "   public, integer params and result, no capabilities, no type params)"
+      let byClaim := fun (k : String) => cases.filter (fun c => c.claim == k)
+      IO.println s!"  claimed   (all safety obligations proved): {(byClaim "claimed").length}"
+      IO.println s!"  unclaimed (no safety obligation at all):   {(byClaim "unclaimed").length}"
+      IO.println s!"  unproved  (NOT fuzzed — a trap is expected): {(byClaim "unproved").length}"
+      IO.println ""
+      for c in cases do
+        IO.println s!"    [{c.claim}] {c.fnQual}  ({c.argRows.length} rows)"
+      IO.println ""
+      IO.println "--- BEGIN DRIVER ---"
+      IO.print (Report.artifactFuzzDriver cases)
+      IO.println "--- END DRIVER ---"
+      IO.println "--- BEGIN MECHANISM DRIVER ---"
+      IO.print (Report.artifactFuzzMechanismDriver cases)
+      IO.println "--- END MECHANISM DRIVER ---"
       return 0
     if reportType == "lowering-agreement" then
       -- Closes the hole `--report multi-kernel` states as a non-attestation: that the

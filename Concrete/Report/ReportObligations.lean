@@ -1302,6 +1302,15 @@ partial def cartesianEnvs (vars : List String) (vals : List Int) : List (List (S
     let restEnvs := cartesianEnvs rest vals
     vals.flatMap (fun x => restEnvs.map (fun e => (v, x) :: e))
 
+/-- Cartesian product over a PER-VARIABLE grid. `cartesianEnvs` shares one value list across
+    every variable, which is wrong whenever the variables have different domains — a `u32`
+    parameter and an `i32` parameter do not accept the same literals. -/
+partial def cartesianEnvsPer : List (String × List Int) → List (List (String × Int))
+  | [] => [[]]
+  | (v, vals) :: rest =>
+    let restEnvs := cartesianEnvsPer rest
+    vals.flatMap (fun x => restEnvs.map (fun e => (v, x) :: e))
+
 /-- Fuzz every linear obligation against the INDEPENDENT concrete evaluator: over a
     grid of assignments, keep those satisfying all hypotheses, and look for one that
     refutes the safety conclusion. A counterexample under a *proved* obligation is a
@@ -1322,6 +1331,203 @@ def bridgeFuzz (modules : List Module) : List BridgeFuzzResult := Id.run do
         if o.safeOn env == some false && cex.isNone then cex := some env
     out := out ++ [{ key := o.key, desc := o.desc, hypSat, counterexample := cex }]
   return out
+
+/-! ### R-0462: fuzz the compiled ARTIFACT against the safety claims
+
+Register A asserts *if the obligation holds, the runtime property holds*. R-0460 discharges
+that row by row as theorems. This is the empirical shadow of the same statement, and it tests
+something no theorem here reaches: for a function whose runtime-safety obligations all read
+`proved`, generate inputs satisfying its `#[requires]`, run the **compiled binary**, and
+assert it does not trap.
+
+Distinct from `bridge-check`, and the distinction is the point. `bridge-check` evaluates the
+*obligation* on sampled inputs and looks for one that refutes it — obligation against a
+model. This runs the *artifact*, so it also crosses surface → Core → SSA → LLVM, which no
+register row covers at all.
+
+H23 is the existence proof: a bounds obligation read `proved_by_multi_kernel` and the binary
+aborted on its first run. Every kernel-side surface reported success; a fuzzer pointed at the
+binary would have caught it in seconds.
+
+This module produces the PLAN — candidate functions and hypothesis-satisfying argument
+tuples — and emits a driver program that exercises them. Compiling and running that driver is
+the gate's job (`check_artifact_fuzz.sh`), because the compiler cannot re-invoke itself.
+Keeping the split here means the plan is deterministic and testable on its own. -/
+
+/-- Can the driver pass a literal of this type? Integers, and fixed-size arrays of them.
+
+    Arrays matter specifically: H23 — the hole this whole task cites as its existence proof —
+    lives in `pub fn bad(a: [i32; 4]) -> i32`. An int-only fuzzer excludes the one function it
+    most needed to reach, which is how a coverage limit becomes a blind spot. -/
+private def fuzzablePassableTy : Ty → Bool
+  | .array elem _ => (IntArith.intBitWidth elem).isSome
+  | ty            => (IntArith.intBitWidth ty).isSome
+
+/-- Argument spellings for one parameter. An integer contributes its grid; a fixed-size array
+    contributes a few UNIFORM fills rather than the cartesian product over its elements —
+    `[i32; 4]` over a 12-value grid would be 20736 arrays for one parameter alone. Uniform
+    fills at the extremes and zero are what expose an index/bounds fault, which is what the
+    array case is here for. -/
+private def fuzzArgSpellings (ty : Ty) (grid : List Int) : List String :=
+  let lit := fun (v : Int) => if v < 0 then s!"({v})" else s!"{v}"
+  match ty with
+  | .array elem n =>
+    let evs := match IntArith.intRange elem with
+      | some (lo, hi) => ([lo, 0, 1, hi].filter (fun v => lo ≤ v && v ≤ hi)).eraseDups
+      | none => [0]
+    evs.map fun v => "[" ++ ", ".intercalate (List.replicate n (lit v)) ++ "]"
+  | _ => grid.map lit
+
+/-- One function the artifact fuzzer can exercise, with the argument rows to try. -/
+structure ArtifactFuzzCase where
+  /-- How the driver spells the call, e.g. `tg::d`. -/
+  callPath : String
+  /-- Dotted name, matching obligation keys' `fnQual`. -/
+  fnQual   : String
+  /-- Argument rows, already rendered as source literals. Strings rather than `Int`s because
+      an array argument has no `Int` spelling. -/
+  argRows  : List (List String)
+  /-- What the obligation layer CLAIMS about this function's runtime safety, which decides
+      what a trap means:
+
+      * `"claimed"`  — it has runtime-safety obligations and they all read proved. A trap is a
+        counterexample to Register A, to the obligation generator, or to the lowering. This is
+        the case the task exists to find.
+      * `"unclaimed"` — it has NO runtime-safety obligations at all. A trap means an obligation
+        should have existed and did not: the *applicability* half of H24, where the shift family
+        was simply absent and the binary aborted with nothing having been stated.
+      * `"unproved"`  — at least one obligation is unproved or capped. A trap is EXPECTED and
+        is not a finding; the compiler never claimed otherwise.
+
+      Fuzzing without this distinction makes every trap ambiguous. Measured: `sum_all` in
+      `examples/error_conventions/` traps on four `i32::MIN`s, and its bounds obligation reads
+      `unproven` — reporting that as a Register A counterexample would be a false alarm in the
+      first run of the tool. -/
+  claim    : String
+  deriving Repr
+
+/-- Candidate functions for artifact fuzzing, with contract-satisfying argument rows.
+
+    The filter is narrow, and every clause is a callability requirement rather than a taste:
+    * `isPublic` — a private function cannot be called from a generated driver;
+    * defined in the file the driver is appended to — `parsed.modules` includes the resolved
+      standard library, and a driver calling `math::abs` does not resolve;
+    * params are integers or fixed-size integer arrays — the driver passes literals;
+    * return type an integer — so the driver can bind and accumulate the result;
+    * `capSet` empty and no capability params — a function needing `with(Std)` would force the
+      driver to hold capabilities it may not be able to grant;
+    * no type params — no instantiation to choose here.
+
+    **A `#[requires]` this layer cannot evaluate excludes the function.** Preconditions are
+    checked with `evalBoolEnv` over the integer parameters; if a precondition mentions anything
+    else (an array element, a field), it cannot be verified here, and calling anyway would feed
+    the function inputs it never promised to handle and then blame the compiler for the trap.
+    Fail closed: skip it.
+
+    Every exclusion is counted and printed by `--report artifact-fuzz`, because a fuzzer that
+    reports "no traps" while silently testing nothing is worse than no fuzzer. -/
+def artifactFuzzCases (modules : List Module) (ownFile : String)
+    (locMap : FnLocMap) (claimOf : String → String) : List ArtifactFuzzCase := Id.run do
+  let mut out : List ArtifactFuzzCase := []
+  for (pfx, f) in modules.flatMap allFunctions do
+    if !f.isPublic then continue
+    if f.isTest || f.isEntryPoint then continue
+    if !f.typeParams.isEmpty || !f.capParams.isEmpty then continue
+    if f.capSet != .empty then continue
+    if f.params.isEmpty then continue
+    if !(locMap.any (fun e => e.qualName == pfx ++ f.name && e.file == ownFile)) then continue
+    if !f.params.all (fun p => fuzzablePassableTy p.ty) then continue
+    if (IntArith.intBitWidth f.retTy).isNone then continue
+    let intNames := f.params.filterMap (fun p =>
+      if (IntArith.intBitWidth p.ty).isSome then some p.name else none)
+    -- Contract must be checkable over the integer params alone, or we do not fuzz it.
+    let reqIdents := (f.requires.flatMap collectIdents).eraseDups
+    if !reqIdents.all (fun n => intNames.contains n) then continue
+    let baseGrid := if f.params.length ≥ 3 then [(-2147483648 : Int), -1, 0, 1, 46341, 2147483647]
+                    else fuzzGrid
+    -- PER-PARAMETER grids, clamped to each parameter's own type range plus that type's own
+    -- boundaries. Not an optimisation: a `u32` parameter handed `-1` produces a driver that
+    -- does not COMPILE, so a shared grid yielded a fuzzer that could never run. Seeding each
+    -- type's `lo`/`hi` also puts the boundary in the grid by construction rather than by luck.
+    let intGrids : List (String × List Int) := f.params.filterMap fun p =>
+      match IntArith.intRange p.ty with
+      | some (lo, hi) =>
+        some (p.name, ((baseGrid ++ [lo, hi]).filter (fun v => lo ≤ v && v ≤ hi)).eraseDups)
+      | none => none
+    let satEnvs := (cartesianEnvsPer intGrids).filter (fun env =>
+      f.requires.all (fun h => evalBoolEnv env h == some true))
+    if satEnvs.isEmpty then continue
+    -- Build one row per (satisfying integer assignment × array fill), rendering each argument
+    -- in parameter order.
+    let mut rows : List (List String) := []
+    for env in satEnvs do
+      let mut acc : List (List String) := [[]]
+      for p in f.params do
+        let spellings :=
+          if (IntArith.intBitWidth p.ty).isSome then
+            match env.lookup p.name with
+            | some v => [if v < 0 then s!"({v})" else s!"{v}"]
+            | none => []
+          else fuzzArgSpellings p.ty baseGrid
+        acc := acc.flatMap (fun pre => spellings.map (fun sp => pre ++ [sp]))
+      rows := rows ++ acc
+    if rows.isEmpty then continue
+    let fq := pfx ++ f.name
+    let callPath := (fq.splitOn ".").intersperse "::" |>.foldl (· ++ ·) ""
+    out := out ++ [{ callPath, fnQual := fq, argRows := rows, claim := claimOf fq }]
+  return out
+
+/-- Emit a driver for the given cases under the given test-function name.
+
+    Results are accumulated into a value the driver returns, so nothing is dead-code
+    eliminated: a call whose result is discarded could in principle be optimized away, and
+    then the fuzzer would run a program that never performs the operation it is testing. -/
+def artifactFuzzDriverFor (cases : List ArtifactFuzzCase) (fnName : String) : String :=
+  -- `unproved` functions are NOT called. A trap there is expected and would drown the signal
+  -- the tool exists to produce; the compiler never claimed they were safe.
+  let lines := cases.flatMap fun c =>
+    c.argRows.zipIdx.map fun (r, i) =>
+      s!"    acc = acc + (({c.callPath}({", ".intercalate r})) as Int);   // {c.claim} {c.fnQual}#{i}"
+  let body := "\n".intercalate lines
+  -- A `#[test]` function inside a module, because that is the shape `--test` accepts and
+  -- `--test` COMPILES and runs (via clang) rather than interpreting — which is the whole
+  -- point: an interpreted driver would test a model again, not the artifact that ships.
+  --
+  -- `acc` is returned (as `acc - acc`, so the result is always 0 and the test passes unless
+  -- the program TRAPS) specifically so no call can be dead-code eliminated. A driver whose
+  -- calls are optimized away runs a program that never performs the operation under test.
+  "// GENERATED by `--report artifact-fuzz` (R-0462). Do not edit.\n" ++
+  "// Appended to the file under test and run with `--test`, which COMPILES and executes.\n" ++
+  "// A TRAP here is a counterexample to Register A, to the obligation generator, or to the\n" ++
+  "// lowering — the binary did what no kernel-side surface reported.\n" ++
+  -- TOP LEVEL, not inside a wrapper module. A `mod artifact_fuzz { … }` cannot see sibling
+  -- top-level modules — `tg::d` fails to resolve from inside it with "call to undeclared
+  -- function 'tg_d'" — whereas the file's own `main` calls exactly that path successfully.
+  -- The driver therefore lives where the callers it imitates live.
+  "#[test]\n" ++
+  s!"fn {fnName}() -> i32 \{\n" ++
+  "    let mut acc: Int = 0;\n" ++
+  body ++ "\n" ++
+  "    return (acc - acc) as i32;\n" ++
+  "}\n"
+
+/-- The driver that MATTERS: functions the obligation layer claims are safe, plus functions it
+    stated nothing about. A trap in the first group is a Register A counterexample; a trap in
+    the second means an obligation should have existed and did not. -/
+def artifactFuzzDriver (cases : List ArtifactFuzzCase) : String :=
+  artifactFuzzDriverFor (cases.filter (fun c => c.claim != "unproved")) "artifact_fuzz_all"
+
+/-- A driver over the `unproved` functions, emitted separately and for ONE purpose: proving the
+    harness can detect a trap at all.
+
+    Needed because of an outcome that is good news read carelessly: after R-0461 and R-0464 no
+    fixture in this repo claims a proved obligation on a function that traps — which is exactly
+    what those fixes accomplished. So the soundness check finds nothing, and a check that finds
+    nothing is indistinguishable from a check that cannot find anything. This driver is the
+    distinguishing experiment: these functions are KNOWN to trap, the compiler never claimed
+    otherwise, and the harness must report it. A trap here is not a defect; its ABSENCE is. -/
+def artifactFuzzMechanismDriver (cases : List ArtifactFuzzCase) : String :=
+  artifactFuzzDriverFor (cases.filter (fun c => c.claim == "unproved")) "artifact_fuzz_mechanism"
 
 /-! ### Lowering-agreement check — closing the "same proposition?" hole
 
