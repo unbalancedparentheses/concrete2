@@ -19,8 +19,8 @@
 #   180 gate scripts in scripts/tests/
 #    55 guard a SOUNDNESS claim — breaking the rule would let the compiler assert something
 #       false about a program (a missing trap, a false `proved`, a laundered axiom)
-#    16 of those 55 have a negative control here
-#    39 of those 55 have NONE
+#    18 of those 55 have a negative control here
+#    37 of those 55 have NONE
 #
 # Those figures are RECOMPUTED, not derived by arithmetic. A first version of this header
 # said 17/38, reached by adding the four families of that pass to a previous count — wrong,
@@ -192,6 +192,26 @@ add "fold-drops-trap" "Concrete/Semantics/IntArith.lean" "check_int_arith_semant
 add "bounds-check-emission" "Concrete/IR/Lower.lean" "check_array_bounds.sh" yes \
   '[idxI64, .intConst (Int.ofNat len) .int] .unit)' \
   '[idxI64, .intConst (Int.ofNat len + 999999999) .int] .unit)'
+
+# ---------------------------------------------------------------------------
+# 2026-08-04, batch 2 of the remaining soundness gates.
+# ---------------------------------------------------------------------------
+
+# Checked integer NEGATION: make `-x` compute `0 - 0` so it neither traps at MIN nor
+# returns the right value. Bug 053's sibling — that one deleted a discarded negation,
+# this one keeps it and makes it wrong. Operands changed rather than the call replaced,
+# because dropping the call leaves `mnem` unused and this project errors on that.
+add "checked-negation" "Concrete/Backend/EmitSSA.lean" "check_arith_redteam.sh" yes \
+  '[(iTy, .intLit 0), (iTy, valOp)]' \
+  '[(iTy, .intLit 0), (iTy, .intLit 0)]'
+
+# Proof FRESHNESS (bugs 059/060): make staleness detection always answer "fresh", so a
+# proof whose subject has changed underneath it keeps reading proved. The stored digest
+# is still there and still compared — the comparison just always agrees, which is the
+# shape a real staleness bug takes.
+add "proof-staleness" "Concrete/Proof/ProofCore.lean" "check_proof_freshness.sh" yes \
+  $'    | some h => shortHash currentFp != h\n    | none   => a.expectedFp != currentFp' \
+  $'    | some h => shortHash currentFp == shortHash currentFp && h != h\n    | none   => a.expectedFp != a.expectedFp'
 
 # H2's check: route float→int through a raw `fptosi` instead of the checked helper.
 # LLVM says raw fptosi is POISON on NaN/±inf/out-of-range, so this is undefined
