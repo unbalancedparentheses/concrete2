@@ -207,5 +207,5 @@ gap) — those need the theorems.
 `check_vc_bridge_register.sh` asserts every family *generator* has a row. It therefore
 cannot detect a missing family — there is no generator to notice. Registering rows against
 the **trap definition** (`IntArith`) rather than against the existing generators is what
-would make that detectable, and is R-0464's first objective. Until then, read "0 of 4" as
+would make that detectable, and is R-0464's first objective. Until then, read the discharge count as
 counting the rows we know to write, not the rows that exist.

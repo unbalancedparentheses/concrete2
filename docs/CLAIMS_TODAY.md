@@ -147,7 +147,9 @@ What these do **not** mean:
   Core→obligation bridge. A mis-lowering yields unanimous agreement on the wrong
   formula. The obligation record states this structurally as
   `independent_of.bridge = "no"`, and [VC_BRIDGE_REGISTER.md](VC_BRIDGE_REGISTER.md)
-  enumerates that bridge rule by rule — **0 of 4 rows discharged today**.
+  enumerates that bridge rule by rule — **0 of 5 rows fully discharged today; 4 of 5
+  half-discharged** (semantics half proved and tight; lowering half open, and the lowering
+  half is the bridge).
 - **Not laundering past trust.** A `trusted` obligation stays trusted however many
   kernels run (gate-enforced).
 - **Not sticky.** The badge is earned per run; with the kernel absent it disappears.

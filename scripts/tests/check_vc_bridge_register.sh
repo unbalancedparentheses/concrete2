@@ -246,6 +246,37 @@ grep -q 'example : (-7 : Int).fdiv 2 = -4 := rfl' "$RO" \
   && ok "the divergent spellings are pinned at compile time (tdiv vs fdiv vs emod)" \
   || no "the division-convention examples were removed — a swap becomes invisible again"
 
+echo "=== dependent documents agree with the register's count (2026-08-04) ==="
+# The register's OWN Status line has been gated since yesterday. That was not enough: eight
+# other documents carried "**0 of 4 rows discharged**" — including TRUSTED_COMPUTING_BASE.md,
+# CLAIMS_TODAY.md and KNOWN_HOLES.md, the three most likely to be read as authoritative — and
+# the number was doubly wrong, because the row TOTAL was also four rather than five.
+#
+# Gating one file's summary while eight files restate it is the same mistake as gating
+# KNOWN_HOLES while four modules described H23 in prose. The count has one source; every
+# restatement must either match it or be explicitly dated.
+CANON_HALF="$(grep -c "Discharging theorem (HALF DISCHARGED" "$REG" || true)"
+CANON_FULL=0   # no row is fully discharged while every lowering half is open (H19)
+CANON_TOTAL="$(grep -cE '^### `[a-zA-Z]+Obligations`' "$REG" || true)"
+CANON_TOTAL=$((CANON_TOTAL - 1))   # multiKernelObligations is a projection, not a lowering row
+DRIFT=0
+while IFS= read -r hit; do
+  # A restatement is fine if it is DATED ("as of", "2026-..-..", "at this entry") — a record
+  # of a moment is not a claim about now.
+  printf '%s' "$hit" | grep -qiE "as of|as of this entry|20[0-9]{2}-[0-9]{2}-[0-9]{2}" && continue
+  N="$(printf '%s' "$hit" | grep -oE '[0-9]+ of [0-9]+' | head -1)"
+  FULLN="${N%% of *}"; TOTN="${N##* of }"
+  if [ "$FULLN" != "$CANON_FULL" ] || [ "$TOTN" != "$CANON_TOTAL" ]; then
+    no "a document states '$N rows discharged'; the register says $CANON_FULL of $CANON_TOTAL:"
+    printf '%s\n' "$hit" | sed 's/^/         /' | cut -c1-110
+    DRIFT=1
+  fi
+done < <(grep -rniE "[0-9]+ of [0-9]+ (rows?|register rows?)[^.]{0,30}discharged" \
+           --include=*.md . 2>/dev/null | grep -v "^./research/" || true)
+[ "$DRIFT" = "0" ] \
+  && ok "every undated restatement of the discharge count matches the register ($CANON_FULL of $CANON_TOTAL, $CANON_HALF half)" \
+  || no "dependent documents disagree with the register about Register A"
+
 echo ""
 echo "VC-BRIDGE-REGISTER: PASS=$PASS  FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]

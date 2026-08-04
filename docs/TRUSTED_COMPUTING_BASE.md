@@ -259,7 +259,10 @@ re-audited, or invalidated, when a specific prover release is later found buggy.
 by ONE shared bridge. If that bridge emits the wrong proposition, all kernels agree on
 the wrong proposition and the badge still appears. Bridge trust is therefore
 untouched by adding kernels, and stays untouched until the per-rule bridge register is
-discharged (R-0460; 0 of 4 rows today) or realization proofs exist (R-0449). The
+discharged (R-0460; **0 of 5 rows fully discharged today, 4 of 5 half** — the semantics
+half of overflow/bounds/div/shift is proved and proved tight, while the lowering half, which
+is precisely the trust this paragraph is about, is untouched) or realization proofs exist
+(R-0449). The
 obligation record states this structurally rather than in prose —
 `independent_of.bridge` is `"no"` — so the disclaimer cannot quietly go stale.
 

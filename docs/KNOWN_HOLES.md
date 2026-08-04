@@ -209,7 +209,9 @@ composition rule rather than a soundness proof.
 Owned by **R-0460** (discharge the obligation-sufficiency register, rule by rule);
 R-0449 is a different axis — realizing the *theories* in each target prover — and cannot
 close this. Enumerated rule-by-rule in [VC_BRIDGE_REGISTER.md](VC_BRIDGE_REGISTER.md) with
-the theorem that will discharge each: **0 of 4 rows discharged**. Partially probed today
+the theorem that will discharge each: **0 of 5 rows fully discharged; 4 of 5 half**
+(2026-08-04 — semantics half proved and tight for overflow, bounds, div/mod, shift; the
+lowering half of every row is this hole). Partially probed today
 by `--report bridge-check` (fuzzes concrete inputs against a *proved* obligation —
 does NOT test sufficiency — see H24; it checks the obligation against an evaluator of the
 *same* obligation, so it tests lowering fidelity) and `--report core-semantics-diff` (cross-checks

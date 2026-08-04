@@ -427,7 +427,7 @@ description of the code would mislead. Audited by running the evidence, not by r
 | Conformance-vectors clause | Not implemented; no second `eval` port exists, so the clause is currently vacuous rather than satisfied. |
 | `trustedDeps` identical | Not checked by the fold. |
 | `independence` as a 3-tuple | Ships as **four** fields (`spec_formalization`, `kernel_implementation`, `kernel_foundations`, `bridge`) in `Report.lean:3895`. The doc is the stale one here, not the code. |
-| Register A rows | Enumerated in [VC_BRIDGE_REGISTER.md](VC_BRIDGE_REGISTER.md); **0 of 4 discharged**. Owned by R-0460. |
+| Register A rows | Enumerated in [VC_BRIDGE_REGISTER.md](VC_BRIDGE_REGISTER.md); **0 of 5 fully discharged, 4 of 5 half** (semantics half proved and tight; lowering half open). Owned by R-0460. |
 | Register B rows | Not started; the transformation pipeline it registers does not exist yet (R-0455). |
 | "Lowering agreed with the reference evaluator" | Real, and the best-built part — but applied to the *external* drivers only. See below. |
 

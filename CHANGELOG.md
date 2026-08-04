@@ -83,7 +83,9 @@ Most importantly, the honest boundary is now enumerated rather than disclaimed.
 [VC_BRIDGE_REGISTER.md](docs/VC_BRIDGE_REGISTER.md) inventories the Core→obligation
 lowering rule by rule — what each emits, assumes, rejects, and the theorem that will
 discharge it — because that bridge is shared by every kernel and so cannot be checked
-by adding more of them. **0 of 4 rows are discharged**; the register is gated so a new
+by adding more of them. **0 of 4 rows are discharged** *(as of this entry, 2026-07-31; see
+VC_BRIDGE_REGISTER.md for the current count — 4 of 5 rows had their semantics half proved on
+2026-08-04, and the row total was corrected to five)*; the register is gated so a new
 obligation family cannot ship unregistered. Holes H19–H22 in
 [KNOWN_HOLES.md](docs/KNOWN_HOLES.md) record the unproven bridge, the native-code
 certificate check, and the linear-only reconstruction ceiling. **H22 is CLOSED.** It recorded a pre-existing

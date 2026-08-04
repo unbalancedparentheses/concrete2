@@ -48,7 +48,8 @@ The failure this rule exists to prevent is not any single defect — it is that 
 infrastructure grows faster than the debt it accounts for, because infrastructure is more
 fun to build than proofs are. The 2026-07-31 state that prompted the rule: four kernels,
 five report surfaces and a receipt schema, sitting above a Register A with **0 of 4 rows
-discharged** — and, as H23 showed, above an obligation layer that could hand all four
+discharged** (as of that date; 2026-08-04: **0 of 5 fully discharged, 4 of 5 half** — the
+count was also wrong, there are five lowering rows plus a projection) — and, as H23 showed, above an obligation layer that could hand all four
 kernels a hypothesis nothing had established.
 
 Two corollaries, both measured rather than asserted:
@@ -173,7 +174,7 @@ position is in the sequencing note below; this table is the index, not the reaso
 | Hole | Owner | Reproduce | Done when |
 |---|---|---|---|
 | **H24** obligation generation restates trap rules, weaker | **R-0464** | `examples/trap_semantics_gap/` — div reports proved and aborts on `MIN / -1`; shift generates no obligation | div obligation covers signed `MIN / -1`, a shift family exists, both derived from `IntArith` |
-| **H19** the Core→obligation bridge is unproven | **R-0460** | — (structural; 0 of 4 register rows) | rows in `VC_BRIDGE_REGISTER.md` discharged, named individually |
+| **H19** the Core→obligation bridge is unproven | **R-0460** | — (structural; 0 of 5 register rows fully discharged, 4 of 5 half — the *semantics* half of each is proved, the *lowering* half IS H19) | rows in `VC_BRIDGE_REGISTER.md` discharged, named individually |
 | **H20** `bv_decide`'s certificate check runs as native code | unowned; see [docs/AXIOMS.md](docs/AXIOMS.md) | `make test-bv-certificates` | a verified checker, or decomposition until kernel-reduction LRAT is practical |
 | **H21** nonlinear SMT results cannot be certificate-replayed | **R-0451** (upstream-blocked) | gate assertion in `check_multi_kernel.sh` | upstream reconstruction support, or a certified nonlinear checker |
 
@@ -183,9 +184,12 @@ rather than reproduced — H19 (the Core→obligation bridge is unproven), H20, 
 are bounded by Register A, not by anything a fixture currently demonstrates.
 
 Read that precisely: R-0464 proves every trap condition in the semantics has an obligation
-family, **not** that the families' propositions are strong enough. Sufficiency is Register A
-(0 of 4 rows), and `VC_BRIDGE_REGISTER.md`'s per-family `Discharging theorem (TODO)` entries
-are the list of what is still owed.
+family, **not** that the families' propositions are strong enough. Sufficiency is Register A, where as of
+2026-08-04 **4 of 5 rows have their semantics half proved and proved tight** — overflow,
+bounds, div/mod and shift. That is genuine progress and it does not touch H19: every one of
+those theorems says the CONDITIONS suffice, never that the emitted obligation denotes them.
+`VC_BRIDGE_REGISTER.md`'s rows are the list of what is still owed, and the remaining row
+(`callSiteObligations`) is different in kind — its content is substitution correctness.
 
 **Correction worth carrying (2026-08-03).** Four places recorded that Lean's rendering
 cannot be validated because "its rendering IS the reference the others are validated
