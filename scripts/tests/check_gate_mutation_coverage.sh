@@ -11,7 +11,7 @@
 # (default). Restore is via `git checkout --` (assumes a clean tree for the
 # mutated files); a final clean rebuild is done at the end.
 #
-# 7 of 10 gates are OUTSIDE run_tests.sh --fast, so we invoke each gate directly.
+# Most families' gates are OUTSIDE run_tests.sh --fast, so we invoke each gate directly.
 
 set -uo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -54,6 +54,56 @@ add "fact-invalidation" "Concrete/Report/ReportObligations.lean" "check_scoped_c
 add "report-schema-row" "Concrete/Report/Report.lean" "check_vc_schema.sh" yes \
   '("kind", .str v.kind),' \
   '("knd", .str v.kind),'
+
+# ---------------------------------------------------------------------------
+# 2026-08-04: the R-0460..R-0465 gates. Registered because they were NOT here, and
+# every failure of the past week landed in exactly the uncovered set: a gate that
+# passed while the thing it guarded was broken. 11 of 180 gates had negative
+# controls; the newest and most load-bearing had none.
+#
+# Each mutation below was verified by hand when the gate was written. Verified by
+# hand means verified once, by whoever remembered. These entries make it repeat.
+# ---------------------------------------------------------------------------
+
+# H23's composition: drop the cap and a proved obligation resting on an unproved
+# invariant reads proved again. This is the defect, restored exactly.
+add "hypothesis-cap" "Main.lean" "check_known_wrong_corpus.sh" yes \
+  'return Report.capOnHypothesisDebt (Report.dischargeVCs vcs omegaProved (bvCallKeys ++ bvOvfKeys))' \
+  'return Report.dischargeVCs vcs omegaProved (bvCallKeys ++ bvOvfKeys)'
+
+# H24's insufficiency: drop the quotient condition and a division reports proved
+# while trapping on signed MIN / -1. Also breaks trapConditions_sufficient, so this
+# one is expected to fail the BUILD as well as the gate — recorded because a
+# mutation that cannot compile is a stronger result than a gate going red.
+add "trap-quotient-condition" "Concrete/Semantics/IntArith.lean" "check_known_wrong_corpus.sh" yes \
+  '| .div | .mod => [.divisorNonZero, .quotientInRange]' \
+  '| .div | .mod => [.divisorNonZero]'
+
+# The multi-kernel firewall: let attestation act on an unproved VC and a badge can be
+# minted for something no kernel proved.
+add "attestation-precondition" "Concrete/Report/Report.lean" "check_discharge_adapters.sh" yes \
+  $'    actsOn := fun s => s == "proved_by_kernel_decision" || s == "proved_by_lean"\n                       || s == "proved_by_lean_replay",' \
+  $'    actsOn := fun _ => true,'
+
+# The independence coordinate: collapse Isabelle into CIC and the badge overstates
+# foundational independence — two CIC kernels reported as two foundations.
+add "kernel-foundation" "Concrete/Report/Evidence.lean" "check_evidence_algebra.sh" yes \
+  '| "isabelle" => .hol' \
+  '| "isabelle" => .cic'
+
+# The reference evaluator's division convention: swap truncating for Lean's `/` and
+# every lowering-agreement check is validated against the wrong reference at
+# negative operands.
+add "reference-division" "Concrete/Report/ReportObligations.lean" "check_vc_bridge_register.sh" no \
+  '| .div => if b == 0 then none else some (a.tdiv b)' \
+  '| .div => if b == 0 then none else some (a / b)'
+
+# The artifact fuzzer's claim classification: treat every function as claimed and a
+# trap in an admittedly-unproved function is reported as a Register A counterexample —
+# a false alarm, which is how a fuzzer gets switched off.
+add "fuzz-claim-classes" "Concrete/Report/ReportObligations.lean" "check_artifact_fuzz.sh" yes \
+  'artifactFuzzDriverFor (cases.filter (fun c => c.claim != "unproved")) "artifact_fuzz_all"' \
+  'artifactFuzzDriverFor cases "artifact_fuzz_all"'
 
 N=${#NAME[@]}
 PASS=0; FAIL=0

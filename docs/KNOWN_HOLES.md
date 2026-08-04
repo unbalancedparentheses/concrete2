@@ -908,3 +908,37 @@ whole picture is in one place.
 - The `check_docs_drift` gate (ROADMAP Phase 4 #44) should treat this file as
   claim-bearing: an OPEN entry whose gate no longer reproduces the hole, or a
   CLOSED entry whose regression fixture is missing, is drift.
+
+---
+
+## Why these holes were found late, and the one mechanism that catches the class
+
+Every hole in this file was found by *behaviour* — a fixture that trapped, a number that looked
+implausible, a mutation that stayed green. None was found by reading code, and several sat under
+a **passing gate suite** for days.
+
+The unifying cause is not carelessness. It is that a check can pass because it did not look:
+
+| What passed | What was broken |
+|---|---|
+| gate mutation coverage 10/10 | two live holes outside every family's scope (H23, H24) |
+| `make test` 1653/49/2, stable | 49 tests could not run at all; `lli` could not JIT our IR |
+| `check_evidence_algebra` green | `loweringAgreed := true` asserted a check nobody performed |
+| `check_artifact_fuzz` 7/0 | its coverage metric was wrong by 70× |
+| a "restrict to this file" filter | always true — `buildFnLocMap` stamps one file on everything |
+| `trapConditionHolds .resultInRange` | the constant `true`, making a sufficiency claim false |
+
+Each is the same shape: **the check verified that something was DONE, not that it had EFFECT.**
+A filter that filters nothing, a predicate that cannot be false, a metric nobody cross-checked,
+a test that cannot execute, a gate outside the defect's scope.
+
+The antidote that has actually worked here is a **negative control**: for every check, a case
+where it MUST fail, asserted to fail. That is what `check_gate_mutation_coverage.sh` does, and
+on 2026-08-04 it covered **11 of 180 gates** — none of them the R-0460..R-0465 gates doing the
+newest and most load-bearing work, which is precisely where the week's failures landed. Six
+families were added for them.
+
+The rule worth keeping: **a new gate is not finished until a mutation kills it, and the mutation
+is registered rather than run once by hand.** Verified-by-hand means verified once, by whoever
+remembered. Every hand-verified mutation in this session was correct and none of them would
+have run again.
