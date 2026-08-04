@@ -52,14 +52,19 @@ A lowering rule is faithful when, for every program the rule fires on:
    established at that program point. An unsound extra hypothesis makes the obligation
    trivially dischargeable and the proof vacuous.
 
-   > **This clause has a live, reproduced instance: H23.** A loop `#[invariant]` is
-   > attached as a hypothesis whether or not its preservation VC (O2) is discharged, and
-   > no status composition relates them — so a guaranteed out-of-bounds access reports
-   > `proved_by_multi_kernel (3: lean, rocq, isabelle)` and the binary then aborts. See
-   > `examples/unsound_hypothesis/`, owned by R-0461. Note what this means for the rows
-   > below: their "Assumes" clauses say the enclosing guards and `#[requires]` are sound
-   > at the operation's program point, and that assumption is currently **false in the
-   > presence of loop invariants** — so every row inherits the defect, not just one.
+   > **This clause had a reproduced instance, H23 — CLOSED 2026-08-03 (R-0461).** A loop
+   > `#[invariant]` was attached as a hypothesis whether or not its preservation VC (O2)
+   > was discharged, and no status composition related them, so a guaranteed out-of-bounds
+   > access reported `proved_by_multi_kernel (3: lean, rocq, isabelle)` and the binary
+   > aborted. `capOnHypothesisDebt` now composes them: an obligation resting on an unproved
+   > invariant caps to `assumed` on every surface and fails both release stances (`E0617`,
+   > `E0616`). `examples/unsound_hypothesis/` is retained as a regression guard.
+   >
+   > What that does and does not do for the rows below. Their "Assumes" clauses say the
+   > enclosing guards and `#[requires]` are sound at the operation's program point. That
+   > assumption is no longer falsified by loop invariants specifically — the composition
+   > exists — but it remains **unproven in general**, which is what these rows are for. The
+   > fix removed a known counterexample; it did not discharge the clause.
 3. **Applicability** — the rule fires wherever the property can be violated. A rule
    that silently declines to fire produces no obligation and therefore no failure.
 

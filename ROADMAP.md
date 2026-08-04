@@ -7186,8 +7186,9 @@ nothing about *rule duplication*, and on its own it merely relocates a second co
 trap rules onto a new representation. The single definition is the primary objective; the
 representation change is the secondary one.
 
-The evidence that this is the live problem, not a theoretical one — H24, reproduced in
-`examples/trap_semantics_gap/`. `IntArith` already IS the single source: it makes `trap` a
+The evidence that this was the live problem, not a theoretical one — H24, reproduced in
+`examples/trap_semantics_gap/` and CLOSED 2026-08-03 by the single-definition fix this task
+describes (`IntArith.TrapCondition` plus the totality lock tying it to families). `IntArith` already IS the single source: it makes `trap` a
 first-class result and defines checked division as trapping on divide-by-zero, signed
 `MIN / -1`, and shift out of range. Interp, EmitSSA, SSAVerify, SSACleanup and
 TypeJudgment consume it. Obligation generation imports it for range constants and then

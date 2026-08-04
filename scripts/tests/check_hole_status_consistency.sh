@@ -151,11 +151,31 @@ done
 # R-0464" is a legitimate future condition; down here "H23 stays OPEN ... until R-0461" is  HOLE-STATUS-OK: quoting the stale form to explain it
 # the STALE form itself, and filtering on `until` is what hid Report.lean:2427 on this
 # check's first run. Same word, opposite meaning, depending on the hole's status.
+# BOTH WORD ORDERS. The first pattern catches "H23 is still open"; the second catches   HOLE-STATUS-OK
+# "a live, reproduced instance: H23" — status word FIRST, hole id second. The second order  HOLE-STATUS-OK
+# was missing until 2026-08-04 and two stale claims were sitting in it: VC_BRIDGE_REGISTER.md
+# still called H23 "a live, reproduced instance" and declared every row's Assumes clause
+# "currently false in the presence of loop invariants", and ROADMAP.md still called H24 "the
+# live problem". Both had been false for a day, in the two documents most likely to be read
+# as authoritative about what is broken.
+#
+# The lesson generalises past this gate: a prose check written against one phrasing tests
+# that phrasing, not the claim. Widen on evidence, which is what this is.
+#
+# But widen CAREFULLY. The first version of the reverse pattern used bare `live|open`, and
+# both words are heavily overloaded in this repo: "live at the loop boundary" is liveness
+# analysis, and "the last open half of H1" describes a decision's scope. It produced four
+# false positives across CHANGELOG.md and CALLABLE_VALUES_AND_CAPABILITIES.md. A gate whose
+# failures are usually noise gets ignored, which costs more than the drift it catches — so
+# the reverse direction matches only words that assert a hole is CURRENTLY defective
+# (`reproduced`, `unfixed`, `live problem/instance/defect/counterexample`) and drops bare
+# `open` entirely. Both stale claims that motivated this are still caught.  HOLE-STATUS-OK
 VIOL2=0
 for h in $CLOSED_HOLES; do
-  HITS="$(grep -rniE "\b$h\b[^.]{0,40}(is |remains |stays )(still )?(OPEN|unfixed|not fixed|reproduced)" $SCAN 2>/dev/null \
-          | grep -viE "(was|were|had been|used to be|previously|formerly|no longer)" \
-          | grep -v "HOLE-STATUS-OK" || true)"
+  HITS="$( { grep -rniE "\b$h\b[^.]{0,40}(is |remains |stays )(still )?(OPEN|unfixed|not fixed|reproduced)" $SCAN 2>/dev/null;
+             grep -rniE "(reproduced|unfixed|live (problem|instance|defect|counterexample))[^.]{0,60}\b$h\b" $SCAN 2>/dev/null; } \
+          | grep -viE "(was|were|had been|used to be|previously|formerly|no longer|CLOSED)" \
+          | grep -v "HOLE-STATUS-OK" | sort -u || true)"
   if [ -n "$HITS" ]; then
     VIOL2=1
     no "$h is CLOSED in $KH but claimed still open elsewhere:"
