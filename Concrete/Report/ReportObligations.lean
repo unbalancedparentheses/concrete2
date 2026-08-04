@@ -1173,6 +1173,46 @@ partial def evalIntEnv (env : List (String × Int)) : Expr → Option Int
     | _ => none
   | _ => none
 
+/-! #### The reference evaluator's division must match the runtime's (2026-08-04)
+
+`evalIntEnv` is what every lowering-agreement check measures a rendering against — Rocq's,
+Isabelle's, the SMT column's, and now Lean's own. If its arithmetic disagrees with the
+runtime's, then "validated" means validated against the wrong thing, and no amount of kernel
+agreement would reveal it.
+
+It computes over unbounded ℤ deliberately: an obligation like `lo ≤ a + b ≤ hi` IS a
+statement about the mathematical value, and the width check is what the obligation exists to
+demand rather than something it may assume. That difference is intended.
+
+The division CONVENTION is a different matter, and it is a live hazard rather than a
+hypothetical one: `VC_BRIDGE_REGISTER.md` records `core-semantics-diff` catching a real
+fault of exactly this shape (`Z.div` vs `Z.quot` disagreeing at `(-7)/2`). Lean offers three
+spellings that agree on positives and diverge on negatives, so a plausible-looking "cleanup"
+from `.tdiv` to `/` would pass every positive test and silently re-point the reference. These
+`example`s make the three distinguishable at compile time, and pin the one this file uses. -/
+
+-- The three spellings, distinguished where they actually differ.
+example : (-7 : Int).tdiv 2 = -3 := rfl   -- truncate toward zero — what Concrete means
+example : (-7 : Int).fdiv 2 = -4 := rfl   -- floor — a DIFFERENT answer
+example : (-7 : Int).tmod 2 = -1 := rfl   -- remainder follows the dividend's sign
+example : (-7 : Int).emod 2 =  1 := rfl   -- Euclidean — also different
+
+-- And the reference evaluator agrees with `IntArith`'s convention, which is what the runtime
+-- uses. Stated on the negative case, because that is the only place a swap would show.
+example : ((-7 : Int).tdiv 2, (-7 : Int).tmod 2)
+        = (IntArith.tdiv (-7) 2, IntArith.tmod (-7) 2) := rfl
+
+-- A behavioural lock on `evalIntEnv` itself is NOT AVAILABLE, and the reason is worth
+-- recording rather than working around: it is a `partial def`, so the kernel cannot reduce
+-- it and `rfl`/`simp` prove nothing about it. The evaluator that every lowering-agreement
+-- check measures against — Rocq's, Isabelle's, the SMT column's, Lean's own — is therefore
+-- outside the reach of proof, which is a real limit on what "validated" can mean here.
+--
+-- What remains checkable is that this function SPELLS the convention the examples above pin,
+-- and that is a grep, enforced by `check_vc_bridge_register.sh` rather than pretended to be
+-- a theorem. Filed under R-0455 (term IR), which would replace the partial recursion with a
+-- structural one and make the behavioural lock possible.
+
 /-- Evaluate a contract `Expr` to a `Bool` under an environment (hypotheses and
     safety conclusions). `none` if outside the fragment. -/
 partial def evalBoolEnv (env : List (String × Int)) : Expr → Option Bool

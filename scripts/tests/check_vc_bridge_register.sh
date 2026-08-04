@@ -216,6 +216,36 @@ else
   ok "no unqualified 'currently false' claim (any such claim must name its hole)"
 fi
 
+echo "=== the reference evaluator's division convention (2026-08-04) ==="
+# `evalIntEnv` is what EVERY lowering-agreement check measures a rendering against. If its
+# arithmetic disagrees with the runtime's, "validated" means validated against the wrong
+# thing, and no amount of kernel agreement would reveal it.
+#
+# The live hazard is the division convention, not the width: computing over unbounded Z is
+# intended (an obligation `lo <= a+b <= hi` IS about the mathematical value), but Lean's
+# `.tdiv` / `/` / `.fdiv` agree on positives and diverge on negatives, so a plausible cleanup
+# would pass every positive test and silently re-point the reference. VC_BRIDGE_REGISTER
+# records core-semantics-diff catching exactly this shape before (Z.div vs Z.quot at (-7)/2).
+#
+# This is a GREP and says so: `evalIntEnv` is a `partial def`, so the kernel cannot reduce it
+# and no `rfl` example can pin its behaviour. That limit is recorded at the definition and
+# filed under R-0455; until it is a structural recursion, spelling is what can be checked.
+RO="Concrete/Report/ReportObligations.lean"
+if grep -A 12 "partial def evalIntEnv" "$RO" | grep -q "a.tdiv b"; then
+  ok "evalIntEnv divides with .tdiv (truncating, matching IntArith and the runtime)"
+else
+  no "evalIntEnv does not use .tdiv — the agreement reference may have been re-pointed"
+fi
+if grep -A 12 "partial def evalIntEnv" "$RO" | grep -q "a.tmod b"; then
+  ok "evalIntEnv takes remainder with .tmod (dividend's sign)"
+else
+  no "evalIntEnv does not use .tmod — remainder convention may diverge from the runtime"
+fi
+# The convention examples must survive: they are what make the three spellings distinguishable.
+grep -q 'example : (-7 : Int).fdiv 2 = -4 := rfl' "$RO" \
+  && ok "the divergent spellings are pinned at compile time (tdiv vs fdiv vs emod)" \
+  || no "the division-convention examples were removed — a swap becomes invisible again"
+
 echo ""
 echo "VC-BRIDGE-REGISTER: PASS=$PASS  FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]

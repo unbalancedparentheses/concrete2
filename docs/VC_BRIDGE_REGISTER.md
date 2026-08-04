@@ -104,7 +104,7 @@ proofs are needed, since no test enumerates program points.
 | **Rejects** | Divisors outside the linear fragment (dropped, reads `not-asked`). |
 | **Forced by** | `examples/two_kernel_demo/src/families.con` (`div_safe`). |
 | **Cross-checked today** | `bridge-check` fuzz; `core-semantics-diff` cross-checks the truncating-division model — and caught a real fault there (`Z.div` vs `Z.quot` disagreeing at `(-7)/2`). |
-| **Discharging theorem (HALF DISCHARGED 2026-08-04)** | `IntArith.trapConditions_sufficient` is proved: for EVERY op, if all conditions `trapConditions` lists hold, `evalIntBinOp` does not trap — so for `/` and `%` the two conditions together are strong enough, at any inputs. That is the **semantics** half. The remaining half is that the emitted obligation *denotes* those conditions, which is the lowering: validated by agreement checks against a reference evaluator on sampled assignments, not proven. H19 is that gap. `familyForTrapCondition`'s totality proves every condition has a family; this proves the conditions suffice; neither proves the rendering is faithful. |
+| **Discharging theorem (HALF DISCHARGED 2026-08-04)** | `IntArith.trapConditions_sufficient` is proved: for EVERY op, if all conditions `trapConditions` lists hold, `evalIntBinOp` does not trap — so for `/` and `%` the two conditions together are strong enough, at any inputs. `IntArith.div_obligation_necessary` proves the converse: violating EITHER condition traps, which is the same fact H24 was the negative instance of — shipping only `divisorNonZero` left a real trap unstated. That is the **semantics** half. The remaining half is that the emitted obligation *denotes* those conditions, which is the lowering: validated by agreement checks against a reference evaluator on sampled assignments, not proven. H19 is that gap. `familyForTrapCondition`'s totality proves every condition has a family; this proves the conditions suffice; neither proves the rendering is faithful. |
 
 ### `shiftObligations` — shift amounts in range
 
@@ -153,9 +153,9 @@ Half discharged: **4 of 5** — `overflowObligations`, `boundsObligations`, `div
 and `shiftObligations`, whose *semantics* half is proved
 (`IntArith.overflow_obligation_sufficient`, `Interp.bounds_obligation_sufficient`,
 `trapConditions_sufficient`, `shift_amount_sufficient`, `shift_amount_necessary`) while the
-*lowering* half is not, and for the two arithmetic rows the condition is proved TIGHT as well
+*lowering* half is not, and for ALL FOUR the condition is proved TIGHT as well
 as sufficient (`overflow_obligation_necessary`, `bounds_obligation_necessary`,
-`shift_amount_necessary`) — necessity is what distinguishes a useful rule from one
+`div_obligation_necessary`, `shift_amount_necessary`) — necessity is what distinguishes a useful rule from one
 strengthened until it is vacuous.
 
 Only `callSiteObligations` has neither half, and it is **different in kind**: its content is

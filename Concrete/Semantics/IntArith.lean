@@ -540,6 +540,27 @@ theorem overflow_obligation_necessary {op : BinOp} {ty : Ty} {a b lo hi v : Int}
   cases op <;> simp [rawResult] at hraw <;>
     simp [evalIntBinOp, hraw, hn, ArithResult.isTrap]
 
+/-- **The div/mod conditions are NECESSARY as well as sufficient.**
+
+    Completes the tightness story for the four half-discharged rows. Two ways a division
+    traps, one per condition, so violating EITHER is enough — which is the same fact H24 was
+    the negative instance of: shipping only `divisorNonZero` left a real trap unstated. -/
+theorem div_obligation_necessary {op : BinOp} {ty : Ty} {a b : Int}
+    (hop : op = .div ∨ op = .mod)
+    (h : b = 0 ∨ checkedToType ty (tdiv a b) = none) :
+    (evalIntBinOp op a ty b).isTrap = true := by
+  rcases hop with rfl | rfl
+  · by_cases hb : b = 0
+    · subst hb; rfl
+    · rcases h with hz | hc
+      · exact absurd hz hb
+      · simp [evalIntBinOp, hb, hc, ArithResult.isTrap]
+  · by_cases hb : b = 0
+    · subst hb; rfl
+    · rcases h with hz | hc
+      · exact absurd hz hb
+      · simp [evalIntBinOp, hb, hc, ArithResult.isTrap]
+
 /-! #### The lock: the enumeration agrees with the evaluator
 
 If `evalIntBinOp` traps on a `/` or `%` at these inputs, some condition in
