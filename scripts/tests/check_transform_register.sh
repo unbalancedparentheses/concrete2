@@ -84,6 +84,37 @@ grep -q "validated, plausibly forever" "$REG" \
   && ok "the print step is excluded explicitly (not silently in scope)" \
   || no "the print/target-text boundary is gone — Register B would appear to cover printing"
 
+echo "=== R-0455: tactics are DATA, and no driver silently loses a field ==="
+# R-0455's measured defect: `rocqNiaLowering` was a full clone of `rocqLowering` whose only
+# substantive difference was `lia` becoming `nia`. Reaching a different tactic cost a driver.
+RO="Concrete/Report/ReportObligations.lean"
+grep -q "tactics : List String" "$RO" \
+  && ok "ProverLowering carries tactics as a field" \
+  || no "no tactics field — the tactic is a template literal again and a clone is the only way to change it"
+grep -q "def rocqNiaLowering : ProverLowering :=" "$RO" \
+  && ok "rocqNiaLowering is a field override, not a cloned record" \
+  || no "rocqNiaLowering is a full record again — the duplication R-0455 measured has returned"
+grep -q "def rocqScript" "$RO" \
+  && ok "one shared Rocq script builder" \
+  || no "rocqScript gone — each Rocq driver templates its own script"
+# Inline render literals: the count that measures the duplication. 5 before this slice, 3 now.
+N="$(grep -c "render := fun vars hyps concl =>" "$RO" || true)"
+[ "$N" -le 3 ] \
+  && ok "$N inline render literals (was 5 before R-0455's slice; ratchet <=3)" \
+  || no "$N inline render literals — a driver went back to templating its own script"
+
+# THE FIELD THAT MATTERS MOST, and the reason this block exists. Collapsing the Rocq clone
+# dropped `batchRender` from rocqLowering. That does not fail the build and does not stop
+# `coqc` closing the proof — it leaves the AGREEMENT check with nothing to check, so every
+# Rocq cell read "LOWERING DISAGREES" and the badge silently vanished: 78/78 became three
+# failures with `rocq:lia = closed` sitting beside a refused attestation.
+for d in rocqLowering isabelleLowering; do
+  BLOCK="$(awk -v pat="def $d" 'index($0,pat){f=1} f{print} f&&/^$/{exit}' "$RO")"
+  printf '%s' "$BLOCK" | grep -q "batchRender" \
+    && ok "$d keeps batchRender (the agreement script, distinct from render)" \
+    || no "$d has NO batchRender — its lowering-agreement check would have nothing to check"
+done
+
 echo ""
 echo "TRANSFORM-REGISTER: PASS=$PASS  FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]

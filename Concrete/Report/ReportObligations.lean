@@ -1084,6 +1084,17 @@ structure ProverLowering where
   /-- Wrap a proposition in this prover's negation. Both Rocq and Isabelle spell it
       `~`, matching `exprToProver`'s `.not_` case. -/
   negate : String → String := fun p => s!"~ ({p})"
+  /-- **R-0455: the tactic is DATA, not a template literal.**
+
+      Ordered attempts, tried in sequence. Measured cost of not having this field:
+      `rocqNiaLowering` existed as a full clone of `rocqLowering` — a duplicated
+      `ProverLowering` record whose only substantive difference was the word `lia` becoming
+      `nia`. Reaching a different tactic cost a whole driver, which is the argument R-0455
+      makes for `tactics` being a field.
+
+      Ordered rather than a single value because a real pipeline tries cheap-then-expensive;
+      budgeting them is future work and is why this is a list now rather than a `String`. -/
+  tactics : List String := []
   /-- This prover's spelling of negation INSIDE an expression (`.not_`). Distinct from
       `negate`, which wraps a whole proposition. Rocq and Isabelle both use `~`; Lean uses
       `¬`, and that single character was what kept Lean's lowering from being a driver —
@@ -1764,26 +1775,43 @@ def leanValidatedObligations (goals : List (String × String)) (closed : List St
     let mine := goals.filter (fun (k, _) => keyOf k == ob)
     !mine.isEmpty && mine.all (fun (k, _) => closed.contains k)
 
-/-- Rocq/`coqc` driver: `Goal forall (vars : Z), h1 -> ... -> concl. Proof. lia. Qed.`
-    `lia` is Coq's linear-integer-arithmetic decision procedure (CIC kernel). -/
+/-- The one Rocq script shape, parameterised by tactic and header comment. Both Rocq drivers
+    are now this function plus two fields, instead of two records that had to be kept in step.
+
+    The `Print Assumptions` line is emitted here, once, and that placement is deliberate:
+    `coqc` exits 0 on `Admitted.` too, so the exit code cannot distinguish a closed proof from
+    a stated one. A per-driver template made this an attestation each clone had to remember —
+    both happened to keep it, but "happened to" is the property this removes. -/
+def rocqScript (tactic hdr : String) (vars hyps : List String) (concl : String) : String :=
+  let binder := if vars.isEmpty then "" else s!"forall ({" ".intercalate vars} : Z), "
+  let arrows := String.join (hyps.map (fun h => s!"({h}) -> "))
+  "\n".intercalate
+    [ hdr,
+      "From Stdlib Require Import ZArith.", "From Stdlib Require Import Lia.",
+      "Open Scope Z_scope.", s!"Lemma vc : {binder}{arrows}{concl}.",
+      s!"Proof. {tactic}. Qed.",
+      -- ATTEST: see `rocqScript`'s docstring — the exit code alone cannot tell a Qed-closed
+      -- proof from an `Admitted.` one, so the script asserts its own integrity.
+      "Print Assumptions vc." ]
+
+/-- Rocq/`coqc` driver: `lia` is Coq's linear-integer-arithmetic decision procedure
+    (CIC kernel). -/
 def rocqLowering : ProverLowering where
   name := "rocq"
   binop := rocqBinOp
-  render := fun vars hyps concl =>
-    let binder := if vars.isEmpty then "" else s!"forall ({" ".intercalate vars} : Z), "
-    let arrows := String.join (hyps.map (fun h => s!"({h}) -> "))
-    "\n".intercalate
-      [ "(* second-kernel (Rocq/lia) check of a linear runtime-safety obligation *)",
-        "From Stdlib Require Import ZArith.", "From Stdlib Require Import Lia.",
-        "Open Scope Z_scope.", s!"Lemma vc : {binder}{arrows}{concl}.", "Proof. lia. Qed.",
-        -- ATTEST: `coqc` exits 0 on `Admitted.` too, so the exit code cannot tell a
-        -- closed proof from a stated one. `Print Assumptions` can: a Qed-closed proof
-        -- prints "Closed under the global context", an admitted one lists it under
-        -- "Axioms:". The script therefore asserts its own integrity.
-        "Print Assumptions vc." ]
+  tactics := ["lia"]
+  render := rocqScript "lia"
+    "(* second-kernel (Rocq/lia) check of a linear runtime-safety obligation *)"
   arrow := "->"
   binder := fun vars =>
     if vars.isEmpty then "" else s!"forall ({" ".intercalate vars} : Z), "
+  -- The AGREEMENT script, and it is a different shape from `render`: N pinned instances of
+  -- ONE obligation, each its own lemma with its own `Print Assumptions`. Dropping this field
+  -- does not fail the build and does not stop `coqc` closing the proof — it makes the
+  -- agreement check have nothing to check, so every Rocq cell reads
+  -- "LOWERING DISAGREES" and the badge silently vanishes. Which is exactly what happened
+  -- when this refactor first landed: 78/78 became three failures with `rocq:lia = closed`
+  -- sitting next to a refused attestation.
   batchRender := fun props =>
     "\n".intercalate
       ([ "(* lowering-agreement check: pinned instances of ONE obligation *)",
@@ -1794,10 +1822,17 @@ def rocqLowering : ProverLowering where
 
 /-- Isabelle/HOL driver: `lemma "ALL vars::int. h1 --> ... --> concl" by presburger`.
     `presburger` decides linear integer arithmetic in a HOL kernel — independent of
-    CIC, so agreement with Lean/Rocq is FOUNDATIONAL cross-logic independence. -/
+    CIC, so agreement with Lean/Rocq is FOUNDATIONAL cross-logic independence.
+
+    `tactics` carries `presburger` as data for the same reason the Rocq drivers do; the
+    Isabelle scripts are not yet derived from a shared builder because the batch form
+    (one theory, N indexed lemmas) differs structurally from the single form, and collapsing
+    them without changing emitted output needs the batch/single split handled first. Recorded
+    rather than half-done. -/
 def isabelleLowering : ProverLowering where
   name := "isabelle"
   binop := isabelleBinOp
+  tactics := ["presburger"]
   render := fun vars hyps concl =>
     let binder := if vars.isEmpty then "" else s!"ALL {" ".intercalate vars}::int. "
     let arrows := String.join (hyps.map (fun h => s!"({h}) --> "))
@@ -1817,19 +1852,18 @@ def isabelleLowering : ProverLowering where
 /-- Rocq driver using `nia` (nonlinear integer arithmetic) instead of `lia`. Used to
     CERTIFICATE-CHECK the solver: a nonlinear VC an external SMT solver reports `unsat`
     (`solver_trusted`, solver in the TCB) that Rocq's `nia` ALSO closes graduates to
-    `solver_checked` — an independent kernel corroborated the solver, so the solver
-    drops out of the trusted base. `nia` ships with `Require Import Lia` (micromega). -/
-def rocqNiaLowering : ProverLowering where
-  name := "rocq-nia"
-  binop := rocqBinOp
-  render := fun vars hyps concl =>
-    let binder := if vars.isEmpty then "" else s!"forall ({" ".intercalate vars} : Z), "
-    let arrows := String.join (hyps.map (fun h => s!"({h}) -> "))
-    "\n".intercalate
-      [ "(* certificate-check (Rocq/nia) of a solver-trusted nonlinear obligation *)",
-        "From Stdlib Require Import ZArith.", "From Stdlib Require Import Lia.",
-        "Open Scope Z_scope.", s!"Lemma vc : {binder}{arrows}{concl}.", "Proof. nia. Qed.",
-        "Print Assumptions vc." ]
+    `solver_checked` — an independent kernel corroborated the solver, so the solver drops out
+    of the trusted base. `nia` ships with `Require Import Lia` (micromega).
+
+    **This is now a two-field override of `rocqLowering`, not a cloned record.** That is the
+    whole point of `tactics` being data: before R-0455's slice, reaching `nia` cost a
+    duplicated driver that had to be kept in step with its twin. -/
+def rocqNiaLowering : ProverLowering :=
+  { rocqLowering with
+    name := "rocq-nia"
+    tactics := ["nia"]
+    render := rocqScript "nia"
+      "(* certificate-check (Rocq/nia) of a solver-trusted nonlinear obligation *)" }
 
 /-- SMT-eligible overflow obligations (the genuinely NONLINEAR ones the kernel tiers
     left open — same selection as `overflowSmtGoals`), as structured obligations so

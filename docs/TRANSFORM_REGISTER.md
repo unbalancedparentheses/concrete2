@@ -71,6 +71,28 @@ Measured constraint on the same tier (2026-07-31): SMT datatype reasoning is pro
 
 ---
 
+## Drivers as data (R-0455, same slice)
+
+`tactics` is now a **field** on `ProverLowering`, ordered for cheap-then-expensive attempts.
+Measured cost of it having been a template literal: `rocqNiaLowering` was a full clone of
+`rocqLowering` whose only substantive difference was the word `lia` becoming `nia`. Reaching
+a different tactic cost an entire driver that then had to be kept in step with its twin.
+
+It is now a two-field override, and both Rocq drivers share one `rocqScript` builder. Inline
+`render` literals: **5 → 3**, ratcheted by the gate.
+
+**One thing this refactor got wrong, recorded because the failure mode is invisible.**
+Collapsing the clone dropped `batchRender` from `rocqLowering`. That does not fail the build
+and does not stop `coqc` closing the proof — `batchRender` builds the *agreement* script (N
+pinned instances of one obligation), which is a different shape from `render`. Losing it left
+the agreement check with nothing to check, so every Rocq cell read `LOWERING DISAGREES` and
+the badge silently vanished: 78/78 became three failures with `rocq:lia = closed` sitting
+beside a refused attestation. The gate now asserts each driver keeps it, mutation-verified.
+
+Isabelle's scripts are deliberately **not** yet derived from a shared builder: its batch form
+(one theory, N indexed lemmas) differs structurally from its single form, and collapsing them
+without changing emitted output needs that split handled first.
+
 ## Gate
 
 `scripts/tests/check_transform_register.sh` asserts every discharged row names a theorem that
