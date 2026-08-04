@@ -42,7 +42,7 @@ probe "a TRUE and a FALSE ensures encode differently" "true" \
 # Operand order is semantic for comparisons — a < b is not b < a.
 probe "operand order is preserved for a non-commutative comparison" "true" \
 '#eval
-  let e := contractCanonicalIn ["a", "b"] [] [] [] false (fun _ => none)
+  let e := contractCanonicalIn ["a", "b"] [] [] [] [] false (fun _ => none)
   (e (.binOp sp .lt (.ident sp "a") (.ident sp "b")))
     != (e (.binOp sp .lt (.ident sp "b") (.ident sp "a")))'
 # Width variants are different OPERATIONS, not spellings.
@@ -58,7 +58,7 @@ probe "an out-of-fragment expression does not encode" "none" \
 probe "one unencodable contract makes the whole set uncovered" "false" \
 '#eval (ContractFacts.of [] [.arrayLit sp [.intLit sp 1]]).covered'
 probe "an encodable set stays covered" "true" \
-'#eval (ContractFacts.ofResolved ["r"] [] [] [] (fun _ => none) []
+'#eval (ContractFacts.ofResolved ["r"] [] [] [] [] (fun _ => none) []
         [.binOp sp .eq (.ident sp "r") (.intLit sp 1)]).covered'
 # "could not read the contracts" and "there are no contracts" are DIFFERENT
 # states; a digest that merges them lets an unreadable contract pass as absent.
@@ -404,10 +404,33 @@ echo "=== a free identifier is not a name in the bytes ==="
 # spelling would have digested alike.
 FID="tests/programs/subject_free_identifier.con"
 [ -f "$FID" ] && ok "the free-identifier fixture is committed" || no "free-identifier fixture missing"
+# TRIPWIRE CONVERTED. This leg asserted `covered: false` while a constant had no
+# semantic identity to encode. ConstId closed that: this fixture's `LIMIT` is an
+# unambiguous module constant, so refusing is no longer the honest answer — it now
+# encodes as `k:<ConstId>=<initializer>` and the subject is legitimately covered.
+# The property that mattered is unchanged and asserted below: the constant's NAME
+# must not be in the bytes, and its VALUE must be.
 fid_cov=$("$CC" "$FID" --report subject-facts 2>/dev/null | grep -A7 "fid.clamp" | grep -oE "covered: (true|false)" | head -1 || true)
-[ "$fid_cov" = "covered: false" ] \
-  && ok "a contract naming an unresolved constant is UNCOVERED, not textual" \
-  || no "a free identifier is '$fid_cov' — a source name may be entering the digest"
+[ "$fid_cov" = "covered: true" ] \
+  && ok "a contract naming a resolved local constant is COVERED via ConstId" \
+  || no "a resolved constant is '$fid_cov' — ConstId did not reach this contract"
+
+# The rename/meaning pair, on the constant instead of the ghost. Identity without
+# meaning was the ghost-frame mistake; do not repeat it one entity over.
+FT="$(mktemp -d)"
+sed 's/const LIMIT: Int = 10;/const LIMIT: Int = 20;/' "$FID" > "$FT/v.con"
+fid_a=$("$CC" "$FID"      --report subject-facts 2>/dev/null | grep -oE "subject digest: [a-f0-9]+" | head -1 || true)
+fid_b=$("$CC" "$FT/v.con" --report subject-facts 2>/dev/null | grep -oE "subject digest: [a-f0-9]+" | head -1 || true)
+if [ -z "$fid_a" ] || [ -z "$fid_b" ]; then
+  no "constant-initializer probe produced no digest — inconclusive"
+elif [ "$fid_a" != "$fid_b" ]; then
+  ok "changing a constant's initializer invalidates the dependent subject"
+else
+  no "a constant initializer change leaves the dependent subject identical"
+fi
+grep -q "= 20" "$FT/v.con" && ok "the constant-initializer probe genuinely changed the value" \
+  || no "the constant-initializer probe changed nothing — it would pass vacuously"
+rm -rf "$FT"
 
 # A CONSTANT IS NOT A CALLABLE. Routing an unbound identifier through the CALLABLE
 # resolver encoded a constant under a same-named FUNCTION's CallableId — a

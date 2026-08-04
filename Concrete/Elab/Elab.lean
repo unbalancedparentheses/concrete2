@@ -1928,6 +1928,17 @@ partial def elabModule (m : Module) (summary : FileSummary)
           | some (_, sig) => some { CallableId.ofBuiltin name with typeParams := sig.typeParams.length }
           | none => if m.externFns.any fun ef => ef.name == name
                     then some (CallableId.ofExtern name) else none
+  -- Constant environment for contracts: identity AND meaning, built once per
+  -- module. Only the module's OWN constants: `ConstSummary` carries no initializer
+  -- and no defining module, so an imported constant has neither half available and
+  -- stays UNCOVERED — refusing rather than encoding a local guess about a foreign
+  -- definition. Declaration order lets a constant's initializer name an earlier
+  -- constant; a forward reference is not resolved and so fails closed.
+  let constEnv : List (String × ConstId × String) :=
+    m.constants.foldl (init := []) fun acc c =>
+      match Proof.contractCanonicalIn [] [] [] [] acc false (fun _ => none) c.value with
+      | some enc => acc ++ [(c.name, { defModule := m.name, declName := c.name }, enc)]
+      | none     => acc
   let declFacts : List Proof.CheckedDeclFacts :=
     fnResults.map fun ((f, implTy), _cfn, bodyIdentityInputs) =>
       let (concreteCaps, capVars) := f.capSet.normalize
@@ -1950,7 +1961,7 @@ partial def elabModule (m : Module) (summary : FileSummary)
         capParams := capParamNames
         capSet := (concreteCaps.map ("cap:" ++ ·)) ++ capVarCanonical
         contracts := Proof.ContractFacts.ofResolved (f.params.map (·.name))
-          f.typeParams capParamNames (Proof.ghostBindersOf f.body)
+          f.typeParams capParamNames (Proof.ghostBindersOf f.body) constEnv
           resolveContractCall f.requires f.ensures
           f.loopContracts
         bodyIdentityInputs := bodyIdentityInputs

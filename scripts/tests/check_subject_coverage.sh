@@ -31,22 +31,25 @@ no() { echo "  FAIL $1"; FAIL=$((FAIL+1)); }
 # Measured 2026-08-03 over examples/; covered count updated when the ghost cause closed. The proof corpus, not the whole
 # test tree: tests/programs/ holds deliberate uncovered probes whose whole purpose
 # is to be uncovered, and mixing them in would hide a real regression in the noise.
-EXPECT_COVERED=417
-EXPECT_UNCOVERED=3
+EXPECT_COVERED=419
+EXPECT_UNCOVERED=1
 
 # The uncovered set, by cause. Both causes are OPEN work, tracked here because a
 # bare count would not say what closing them requires.
 #
-#   const  — a contract names a module constant (e.g. `hi < LIMIT`). Non-binder
-#            identifiers resolve to no identity: a constant is not a callable and
-#            must not borrow a same-spelled function's CallableId. Needs ConstId.
+#   const  — CLOSED. A module constant now encodes as `k:<ConstId>=<initializer>`:
+#            semantic identity so it cannot be confused with a same-spelled
+#            function, AND its value so that changing `const LIMIT = 16` to `= 32`
+#            invalidates dependent subjects. LOCAL constants only — ConstSummary
+#            carries neither an initializer nor a defining module, so an IMPORTED
+#            constant has neither half and still fails closed.
 #   ghost  — CLOSED. Ghost bindings now form their own binder frame, collected
 #            from the AST in source order and rendered `h:<i>`, so a contract may
 #            name them without going uncovered. Both ghost programs are covered as
 #            of this change; the cause is retained here as a record of what the
 #            count used to include.
 #   invalid — a deliberate negative example; uncovered is the correct verdict.
-EXPECT_CONST="examples/contract_positive/valid_complex_contract_scope/src/main.con"
+EXPECT_CONST=""   # cause closed for local constants; see the note above
 EXPECT_GHOST=""   # cause closed; see the note above
 EXPECT_INVALID="examples/contract_negatives/invalid_contract_expression/src/main.con"
 

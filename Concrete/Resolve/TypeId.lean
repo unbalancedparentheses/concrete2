@@ -48,6 +48,23 @@ def render : TypeId → String
 
 end TypeId
 
+/-- Identity of a module constant.
+
+    Separate from `TypeId` and `CallableId` for the same reason those are separate
+    from each other: a constant sharing a spelling with a function must not be
+    encoded under that function's identity. Earlier, free identifiers in contracts
+    were resolved through the CALLABLE resolver, so `LIMIT` could borrow a
+    same-spelled function's `CallableId` — a confidently wrong identity. -/
+structure ConstId where
+  defModule : String
+  declName  : String
+deriving BEq, Repr
+
+/-- Versioned, length-prefixed so `("a.b","c")` and `("a","b.c")` cannot collide. -/
+def ConstId.render (c : ConstId) : String :=
+  "v1:const:" ++ "module" ++ toString c.defModule.length ++ ":" ++ c.defModule
+    ++ "decl" ++ toString c.declName.length ++ ":" ++ c.declName
+
 /-- A field is identified relative to the declaration that owns it. -/
 structure FieldId where
   owner : TypeId

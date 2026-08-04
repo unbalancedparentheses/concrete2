@@ -158,6 +158,7 @@ partial def ghostBindersOf : List Stmt → List (String × Expr)
 partial def contractCanonicalIn
     (termBinders typeBinders capBinders : List String)
     (ghostBinders : List String := [])
+    (constEnv : List (String × ConstId × String) := [])
     (allowResult : Bool)
     (resolveCall : String → Option CallableId) : Expr → Option String
   | .intLit _ v      => some s!"i:{v}"
@@ -183,6 +184,24 @@ partial def contractCanonicalIn
         -- branches and loops and so is not a stable lexical identity.
         | some i => some s!"h:{i}"
         | none =>
+          -- AMBIGUITY FIRST. The language permits one spelling to name both a
+          -- constant and a function, and `tests/programs/subject_const_fn_collision`
+          -- exists for exactly this: the subject must go UNCOVERED rather than pick
+          -- one. Looking the constant up without this check silently chose the
+          -- constant — the same confidently-wrong-identity failure as the original
+          -- defect, just reaching for a different entity. Caught by that fixture.
+          if (constEnv.find? (fun (n', _, _) => n' == n)).isSome
+             && (resolveCall n).isSome then none
+          else match constEnv.find? (fun (n', _, _) => n' == n) with
+        -- A resolved module CONSTANT. Both halves are encoded: the semantic
+        -- identity, so a rename or a same-spelled constant elsewhere cannot be
+        -- confused with it, and the initializer's canonical form, so that changing
+        -- `const LIMIT = 16` to `= 32` invalidates every subject whose contract
+        -- depends on it. Identity alone would repeat the ghost-frame mistake:
+        -- knowing WHICH constant a contract names while staying blind to what it
+        -- means.
+        | some (_, cid, initEnc) => some s!"k:{cid.render}={initEnc}"
+        | none =>
           -- A NON-BINDER identifier — a module constant such as `LIMIT`, or
           -- anything else the declaration does not bind. This used to emit
           -- `g<len>:<name>`, putting a raw source name straight into evidence
@@ -207,13 +226,13 @@ partial def contractCanonicalIn
           -- non-binder identifier is UNCOVERED. That is the only answer available
           -- that is neither a name in the bytes nor someone else's identity.
           none
-  | .paren _ e       => contractCanonicalIn termBinders typeBinders capBinders ghostBinders allowResult resolveCall e
+  | .paren _ e       => contractCanonicalIn termBinders typeBinders capBinders ghostBinders constEnv allowResult resolveCall e
   | .binOp _ op l r  => do
-    let a ← contractCanonicalIn termBinders typeBinders capBinders ghostBinders allowResult resolveCall l
-    let b ← contractCanonicalIn termBinders typeBinders capBinders ghostBinders allowResult resolveCall r
+    let a ← contractCanonicalIn termBinders typeBinders capBinders ghostBinders constEnv allowResult resolveCall l
+    let b ← contractCanonicalIn termBinders typeBinders capBinders ghostBinders constEnv allowResult resolveCall r
     some s!"B{binOpTag op}l{a.length}:{a}r{b.length}:{b}"
   | .unaryOp _ op e  => do
-    let a ← contractCanonicalIn termBinders typeBinders capBinders ghostBinders allowResult resolveCall e
+    let a ← contractCanonicalIn termBinders typeBinders capBinders ghostBinders constEnv allowResult resolveCall e
     some s!"U{unaryOpTag op}o{a.length}:{a}"
   | .call _ f typeArgs args => do
     let base ← resolveCall f
@@ -222,16 +241,16 @@ partial def contractCanonicalIn
     -- specialized `CallableId` here would render a bound `T` by its source
     -- spelling and reintroduce alpha sensitivity through `CallableId.render`.
     if typeArgs.length != base.typeParams then none else
-      let parts ← args.mapM (contractCanonicalIn termBinders typeBinders capBinders ghostBinders allowResult resolveCall)
+      let parts ← args.mapM (contractCanonicalIn termBinders typeBinders capBinders ghostBinders constEnv allowResult resolveCall)
       let joined := String.join (parts.map fun p => s!"a{p.length}:{p}")
       let tys := String.join (canonicalArgs.map fun t => s!"t{t.length}:{t}")
       some s!"C{base.render.length}:{base.render}n{typeArgs.length}{tys}m{args.length}{joined}"
   | .fieldAccess _ o fld => do
-    let a ← contractCanonicalIn termBinders typeBinders capBinders ghostBinders allowResult resolveCall o
+    let a ← contractCanonicalIn termBinders typeBinders capBinders ghostBinders constEnv allowResult resolveCall o
     some s!"F{fld.length}:{fld}o{a.length}:{a}"
   | .arrayIndex _ a i => do
-    let x ← contractCanonicalIn termBinders typeBinders capBinders ghostBinders allowResult resolveCall a
-    let y ← contractCanonicalIn termBinders typeBinders capBinders ghostBinders allowResult resolveCall i
+    let x ← contractCanonicalIn termBinders typeBinders capBinders ghostBinders constEnv allowResult resolveCall a
+    let y ← contractCanonicalIn termBinders typeBinders capBinders ghostBinders constEnv allowResult resolveCall i
     some s!"Xa{x.length}:{x}i{y.length}:{y}"
   | .floatLit _ _ => none
   | .structLit _ _ _ _ _ => none
@@ -260,7 +279,7 @@ partial def contractCanonicalIn
     Length-prefixed and tagged, like `pexprCanonical`, so two structurally
     different expressions cannot render alike. -/
 partial def contractCanonical : Expr → Option String
-  | e => contractCanonicalIn [] [] [] [] true (fun _ => none) e
+  | e => contractCanonicalIn [] [] [] [] [] true (fun _ => none) e
 
 /-- Contracts attached to a declaration, with an explicit coverage flag.
 
@@ -309,6 +328,7 @@ def ContractFacts.of (reqs ens : List Expr) : ContractFacts :=
 def ContractFacts.ofResolved
     (params typeParams capParams : List String)
     (ghosts : List (String × Expr))
+    (constEnv : List (String × ConstId × String))
     (resolveCall : String → Option CallableId)
     (reqs ens : List Expr)
     (loops : List LoopContract := []) : ContractFacts :=
@@ -322,8 +342,8 @@ def ContractFacts.ofResolved
   -- initializer makes the subject uncovered rather than silently partial.
   let ghostEnc : List (Option String) := ghosts.zipIdx.map fun ((_, v), i) =>
     (contractCanonicalIn params typeParams capParams
-       (ghostBinders.take i) false resolveCall v).map fun c => s!"h{i}={c}"
-  let enc := contractCanonicalIn params typeParams capParams ghostBinders
+       (ghostBinders.take i) constEnv false resolveCall v).map fun c => s!"h{i}={c}"
+  let enc := contractCanonicalIn params typeParams capParams ghostBinders constEnv
   let rs := reqs.map (enc false resolveCall)
   let es := ens.map (enc true resolveCall)
   -- LOOP CONTRACTS, indexed by the loop's POSITION in the body — semantic, since
@@ -360,7 +380,7 @@ def ContractFacts.ofResolved
     -- while plain's `i <= 4` passed, because `i` is an assignment target the
     -- approximation finds and `n` is a ghost it never could.
     let encL := contractCanonicalIn (params ++ loopBinders) typeParams capParams
-                  ghostBinders
+                  ghostBinders constEnv
     let invs := lc.invariants.map fun e =>
       (encL false resolveCall e).map fun c => s!"i{i}:{c}"
     let var := match lc.variant with
