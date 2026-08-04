@@ -61,6 +61,8 @@ partial def shape : EvidenceExprV2 → String
   | .index c i     => s!"X({shape c},{shape i})"
   | .cast t x      => s!"A({t.render},{shape x})"
   | .fnRef id      => s!"F({id.render})"
+  | .arrayLit t els => s!"AR({t.render},[{",".intercalate (els.map shape)}])"
+  | .tryProp x t   => s!"TRY({shape x},{t.render})"
   | .gap _         => "GAP"
 
 partial def sshape : EvidenceStmtV2 → String
@@ -74,6 +76,9 @@ partial def sshape : EvidenceStmtV2 → String
   | .exprStmt e v     => s!"E({shape e},{v})"
   | .breakStmt t v    => s!"BR({t},{(v.map shape).getD "-"})"
   | .continueStmt t   => s!"CO({t})"
+  | .deferStmt x      => s!"DF({shape x})"
+  | .assertStmt x     => s!"AS({shape x})"
+  | .assumeStmt x     => s!"AM({shape x})"
   | .gap _            => "sGAP"
 
 partial def pshape : EvidencePatternV2 → String
@@ -93,6 +98,7 @@ def q : EvidenceExprV2 := .binderRef 0 1
 def rr : EvidenceExprV2 := .binderRef 0 2
 def fid : CallableId := CallableId.ofUser "m" "f"
 def limitId : ConstId := { defModule := "m", declName := "LIMIT" }
+def tid : TypeId := TypeId.user "m" "T"
 
 #eval show Lean.MetaM Unit from do
   let ex ← ctorsOf ``Concrete.Proof.EvidenceExprV2
@@ -198,6 +204,46 @@ def limitId : ConstId := { defModule := "m", declName := "LIMIT" }
        { statements := [.loop p [.constRef limitId] none []] } []
      sc.unboundConsts.length == 1)
 
+  -- THE FIVE DECIDED CASES.
+  a "array element ORDER is semantic"
+    (shape (.arrayLit tid [p, q]) != shape (.arrayLit tid [q, p]))
+  a "array element MULTIPLICITY is semantic"
+    (shape (.arrayLit tid [p, p]) != shape (.arrayLit tid [p]))
+  a "`x?` differs from evaluating x normally"
+    (shape (.tryProp p tid) != shape p)
+  a "reordering defers changes the body"
+    (sshape (.block [.deferStmt p, .deferStmt q])
+      != sshape (.block [.deferStmt q, .deferStmt p]))
+  -- assert and assume must NEVER collide: one is discharged, the other is relied upon.
+  a "assert and assume never collide in the bytes"
+    (sshape (.assertStmt p) != sshape (.assumeStmt p))
+
+  -- THE ASSUMPTION AXIS. Bytes alone are insufficient — a proof leaning on an
+  -- assumption must not surface unqualified.
+  a "a body with no assume is UNQUALIFIED"
+    ((SubjectQualificationV2.of { statements := [.ret (some p)] }).isUnqualified)
+  a "a single assume qualifies the claim"
+    (let q := SubjectQualificationV2.of { statements := [.assumeStmt p] }
+     !q.isUnqualified && q.assumptionCount == 1)
+  a "an assert does NOT qualify — it is discharged, not assumed"
+    ((SubjectQualificationV2.of { statements := [.assertStmt p] }).isUnqualified)
+  a "assumptions nested in a branch or loop are still collected"
+    ((SubjectQualificationV2.of
+       { statements := [.branch p [.assumeStmt q] [.loop p [] none [.assumeStmt p]]] }
+     ).assumptionCount == 2)
+  a "CHANGING an assumption changes both the body bytes and the axis content"
+    (let b1 : EvidenceBodyDraftV2 := { statements := [.assumeStmt p] }
+     let b2 : EvidenceBodyDraftV2 := { statements := [.assumeStmt q] }
+     (String.join (b1.statements.map sshape) != String.join (b2.statements.map sshape))
+       && (shape ((SubjectQualificationV2.of b1).assumptions.headD p)
+             != shape ((SubjectQualificationV2.of b2).assumptions.headD p)))
+  a "REMOVING an assumption changes both the bytes and the axis"
+    (let b1 : EvidenceBodyDraftV2 := { statements := [.assumeStmt p] }
+     let b2 : EvidenceBodyDraftV2 := { statements := [.exprStmt p false] }
+     (String.join (b1.statements.map sshape) != String.join (b2.statements.map sshape))
+       && (SubjectQualificationV2.of b1).assumptionCount
+            != (SubjectQualificationV2.of b2).assumptionCount)
+
   -- Gap CODES are stable and comparable, so blocker classes can be counted across
   -- versions; free-form strings could not be.
   a "gap codes are comparable as classes, independent of detail"
@@ -272,7 +318,7 @@ else
   no "validate does not report the gaps it found — an incomplete body would be undiagnosable"
 fi
 # The gap-walkers must be exhaustive; a wildcard would report a new construct gap-free.
-for fn in exprGaps patternGaps stmtGaps armGaps patternBindingCount exprConstRefs stmtConstRefs armConstRefs patternConstRefs; do
+for fn in exprGaps patternGaps stmtGaps armGaps patternBindingCount exprConstRefs stmtConstRefs armConstRefs patternConstRefs stmtAssumptions armAssumptions; do
   body="$(awk "/^partial def $fn/,/^\$/" Concrete/Proof/EvidenceTree.lean)"
   if printf '%s' "$body" | grep -qE '^\s*\|\s*_\s*=>'; then
     no "$fn has a wildcard — a new constructor would be reported as gap-free"

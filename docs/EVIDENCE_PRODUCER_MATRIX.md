@@ -39,8 +39,8 @@ Columns:
 | `match_` | via `EvidenceStmtV2.match_` | `VariantId` per arm | arm opens a frame | `unhandledPattern` | outer-from-arm |
 | `borrow` / `borrowMut` | `borrow isMut x` | — | — | — | `&p` vs `&mut p` differ |
 | `deref` | `deref x` | — | — | — | `*p` vs `p` differ |
-| `try_` | **undecided** — desugars | callee of the `?` path | — | `unhandledExpr` | open |
-| `arrayLit` | **undecided** | element `TypeId` | — | `unhandledExpr` | open |
+| `try_` | `tryProp operand residualTy` | residual `TypeId` | — | `unresolvedType` | `x?` differs from `x` |
+| `arrayLit` | `arrayLit elemTy elements` | element `TypeId` | — | `unresolvedType` | order + multiplicity |
 | `arrayIndex` | `index c i` | — | — | — | `a[i]` vs `a[j]` differ |
 | `cast` | `cast target x` | `TypeId` | — | `unresolvedType` | width-changing cast |
 | `ifExpr` | via `EvidenceStmtV2.branch` | — | branches bind nothing | — | empty-scope leg |
@@ -61,21 +61,60 @@ Columns:
 | `arrayIndexAssign` | `assign (index …) value` | — | — | — | `a[i] = v` |
 | `break_` | `breakStmt target value` | relative loop depth | — | `unresolvedLoopTarget` | label → depth |
 | `continue_` | `continueStmt target` | relative loop depth | — | `unresolvedLoopTarget` | label → depth |
-| `defer` | **undecided** — runs at scope exit | — | — | `unhandledStmt` | open |
-| `assert_` / `assume_` | **undecided** — proof-relevant | — | — | `unhandledStmt` | open |
+| `defer` | `deferStmt action` | — | — | — | reordering defers changes body |
+| `assert_` | `assertStmt predicate` | — | — | — | assert ≠ assume |
+| `assume_` | `assumeStmt predicate` | — | — | — | assumption axis, qualification |
 | `borrowIn` | `block` + binder | — | binds 1 for its body | — | region binder |
 | `letDestructure` | `match_` with one arm | `VariantId` + `FieldId` | binds N from pattern | `unresolvedVariant` | else-branch |
 | `letStructDestructure` | `letBind` + field reads | `TypeId` + `FieldId` | binds N from pattern | `unresolvedField` | field order |
 
-## Open decisions
+## Patterns
 
-Five constructors are deliberately **undecided** rather than guessed: `try_`,
-`arrayLit`, `defer`, `assert_`, `assume_`. Each gets its gap code until decided, so an
-unfinished decision is a refused subject rather than a silently thin body.
+`MatchArm` is the source pattern vocabulary. Constructor-complete, because the body
+producer being exhaustive at the arm level says nothing about the nested pattern choice
+inside it.
 
-`assert_`/`assume_` need the most thought: an `assume` is proof-relevant in a way a
-runtime statement is not, and treating it as an ordinary expression statement would let
-a proof lean on an assumption the subject does not record.
+| Constructor | Node | Identity | Binding | Gap code | Fixture |
+|---|---|---|---|---|---|
+| `mk` (variant) | `variant id fields` | `VariantId` + `FieldId` per field | binds N, derived from the pattern | `unresolvedVariant` / `unresolvedField` | `E::A{v}` vs `E::B{v}` |
+| `litArm` | `intLit` / `boolLit` / `strLit` / `charLit` | — (width from Check) | binds 0 | `unhandledPattern` | literal patterns differ |
+| `varArm` | `binder` | — | binds 1 | — | wildcard vs binder |
+| `rangeArm` | `range lo hi inclusive` | — | binds 0 | `unhandledPattern` | inclusive vs exclusive |
+| *(`_`)* | `wildcard` | — | binds 0 | — | wildcard binds nothing |
+
+`bindingCount` is DERIVED from the pattern by `patternBindingCount`, never stored: a
+frame built with the wrong slot count shifts every relative binder position inside the
+arm.
+
+## Callees and assignment places
+
+Inventoried, and neither has its own inductive in the AST:
+
+- **Callees** are source NAMES on `call` / `methodCall` / `staticMethodCall`, resolved to
+  `CallableId` by the producer. There is no `Callee` type to classify, so the identity
+  work lives in resolution, not in a vocabulary — which is why the three call forms are
+  the pressure points below.
+- **Assignment places** are not a `Place` inductive either; they are four distinct `Stmt`
+  constructors (`assign`, `fieldAssign`, `derefAssign`, `arrayIndexAssign`), each already
+  classified above. Evidence represents them uniformly as `assign place value`, where
+  `place` is an ordinary expression subtree, so nesting inside a place is covered by the
+  expression table rather than by a separate one.
+
+## Decided (previously open)
+
+All five formerly-undecided constructors are now classified above. The reasoning that
+mattered:
+
+- **`try_`** must differ from its operand: `x?` short-circuits on the error path and `x`
+  does not, so collapsing them would make adding or removing a `?` invisible.
+- **`defer`** registration order IS its list position, and cleanup is LIFO, so
+  reordering two defers changes the program.
+- **`assert_` vs `assume_`** must never collide. An assert is DISCHARGED; an assume is
+  RELIED UPON.
+- **`assume_`** is the critical one, and bytes alone are insufficient. Its predicate also
+  feeds the ASSUMPTION AXIS (`SubjectQualificationV2`), so a claim over a body that
+  assumes anything cannot be reported unqualified. That axis belongs beside trust
+  propagation and must reach the receipt and status.
 
 ## Pressure points
 

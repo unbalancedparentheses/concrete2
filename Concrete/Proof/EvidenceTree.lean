@@ -102,6 +102,16 @@ inductive EvidenceExprV2 where
   | index (collection index : EvidenceExprV2)
   | cast (target : TypeId) (inner : EvidenceExprV2)
   | fnRef (id : CallableId)
+  /-- An array literal: element type, and EVERY element subtree in order. Length is
+      `elements.length`, derived rather than stored. Order and repetition are semantic —
+      `[a, b]` is not `[b, a]`, and `[a, a]` is not `[a]`. -/
+  | arrayLit (elemTy : TypeId) (elements : List EvidenceExprV2)
+  /-- `expr?` — ERROR PROPAGATION, a distinct node from evaluating its operand.
+
+      It must differ from the operand alone: `x?` short-circuits on the error path and
+      `x` does not, so collapsing them would make adding or removing a `?` invisible to
+      the subject. Carries the resolved residual type. -/
+  | tryProp (operand : EvidenceExprV2) (residualTy : TypeId)
   /-- FAIL CLOSED — draft only. -/
   | gap (reason : EvidenceGap)
 deriving Inhabited
@@ -149,6 +159,24 @@ inductive EvidenceStmtV2 where
       move the digest without changing the program. -/
   | breakStmt (target : Nat) (value : Option EvidenceExprV2)
   | continueStmt (target : Nat)
+  /-- `defer expr` — scoped cleanup. Its position in the statement list IS its
+      registration order, and cleanup runs LIFO, so reordering two defers changes the
+      program and must change the body. It remains visible across every exit path —
+      return, break, continue, error propagation — because it runs on all of them. -/
+  | deferStmt (action : EvidenceExprV2)
+  /-- `assert cond` — a RUNTIME CHECK. Changes body semantics (it can abort) and links
+      an obligation, so it is a distinct node rather than an expression statement. -/
+  | assertStmt (predicate : EvidenceExprV2)
+  /-- `assume cond` — an ASSUMPTION the proof may rely on.
+
+      The critical case. Recording it in the bytes is necessary but NOT sufficient: a
+      proof leaning on an assumption must never surface as unqualified. The predicate
+      therefore also feeds the ASSUMPTION AXIS (`SubjectQualificationV2`), which sits
+      beside trust propagation and must reach the eventual receipt and status. Treating
+      `assume` as an ordinary expression statement would let a proof depend on something
+      the subject never records — unsound in the same direction as an operator
+      collision, but harder to see, because the body would look complete. -/
+  | assumeStmt (predicate : EvidenceExprV2)
   /-- FAIL CLOSED — draft only. -/
   | gap (reason : EvidenceGap)
 deriving Inhabited
@@ -203,6 +231,8 @@ partial def exprGaps : EvidenceExprV2 → List EvidenceGap
   | .field _ o => exprGaps o
   | .structLit _ fs => fs.flatMap fun fe => exprGaps fe.2
   | .variantLit _ fs => fs.flatMap fun fe => exprGaps fe.2
+  | .arrayLit _ els => els.flatMap exprGaps
+  | .tryProp x _ => exprGaps x
 
 partial def patternGaps : EvidencePatternV2 → List EvidenceGap
   | .gap r => [r]
@@ -224,6 +254,8 @@ partial def stmtGaps : EvidenceStmtV2 → List EvidenceGap
       exprGaps c ++ invs.flatMap exprGaps ++ (var.map exprGaps).getD []
         ++ body.flatMap stmtGaps
   | .block sts => sts.flatMap stmtGaps
+  | .deferStmt a => exprGaps a
+  | .assertStmt pr | .assumeStmt pr => exprGaps pr
 
 partial def armGaps : EvidenceArmV2 → List EvidenceGap
   | .gap r => [r]
@@ -272,6 +304,8 @@ partial def exprConstRefs : EvidenceExprV2 → List ConstId
   | .field _ o => exprConstRefs o
   | .structLit _ fs => fs.flatMap fun fe => exprConstRefs fe.2
   | .variantLit _ fs => fs.flatMap fun fe => exprConstRefs fe.2
+  | .arrayLit _ els => els.flatMap exprConstRefs
+  | .tryProp x _ => exprConstRefs x
 
 mutual
 
@@ -290,6 +324,8 @@ partial def stmtConstRefs : EvidenceStmtV2 → List ConstId
       exprConstRefs c ++ invs.flatMap exprConstRefs
         ++ (var.map exprConstRefs).getD [] ++ body.flatMap stmtConstRefs
   | .block sts => sts.flatMap stmtConstRefs
+  | .deferStmt a => exprConstRefs a
+  | .assertStmt pr | .assumeStmt pr => exprConstRefs pr
 
 partial def armConstRefs : EvidenceArmV2 → List ConstId
   | .gap _ => []
@@ -305,6 +341,58 @@ partial def patternConstRefs : EvidencePatternV2 → List ConstId
   | .range lo hi _ => exprConstRefs lo ++ exprConstRefs hi
 
 end
+
+mutual
+
+/-- Assumptions a statement introduces, in source order. Exhaustive with no wildcard: a
+    new statement form must say whether it can introduce an assumption, because a missed
+    `assume` would let a proof lean on something the subject never records. -/
+partial def stmtAssumptions : EvidenceStmtV2 → List EvidenceExprV2
+  | .assumeStmt pr => [pr]
+  | .gap _ | .continueStmt _ | .breakStmt _ _ => []
+  | .letBind _ _ | .exprStmt _ _ | .assign _ _ | .ret _ => []
+  | .assertStmt _ => []   -- a runtime CHECK, not an assumption: it is discharged, not assumed
+  | .deferStmt _ => []
+  | .branch _ t e => t.flatMap stmtAssumptions ++ e.flatMap stmtAssumptions
+  | .match_ _ arms => arms.flatMap armAssumptions
+  | .loop _ _ _ body => body.flatMap stmtAssumptions
+  | .block sts => sts.flatMap stmtAssumptions
+
+partial def armAssumptions : EvidenceArmV2 → List EvidenceExprV2
+  | .gap _ => []
+  | .arm _ _ body => body.flatMap stmtAssumptions
+
+end
+
+/-- The ASSUMPTION AXIS: what a proof over this body would be relying on.
+
+    Separate from completeness, because an assumption does not make a body incomplete —
+    it QUALIFIES any claim about it. A body full of `assume` can be perfectly complete
+    and perfectly serialized; what must not happen is a proof over it surfacing as
+    unqualified. This sits beside trust propagation and must reach the eventual receipt
+    and status.
+
+    Non-forgeable for the same reason as completeness: `of` derives the set from the
+    body, so a caller cannot declare a body assumption-free. -/
+structure SubjectQualificationV2 where
+  private mk ::
+  /-- Assumption predicates in source order. Order and multiplicity are kept: two
+      `assume`s are not one, and reordering them changes the body. -/
+  assumptions : List EvidenceExprV2
+
+namespace SubjectQualificationV2
+
+/-- Derive the assumption set from a body. The ONLY constructor. -/
+def of (body : EvidenceBodyDraftV2) : SubjectQualificationV2 :=
+  { assumptions := body.statements.flatMap stmtAssumptions }
+
+/-- A claim over this body may be reported UNQUALIFIED only when nothing is assumed. -/
+def isUnqualified (q : SubjectQualificationV2) : Bool := q.assumptions.isEmpty
+
+/-- How many assumptions qualify a claim. -/
+def assumptionCount (q : SubjectQualificationV2) : Nat := q.assumptions.length
+
+end SubjectQualificationV2
 
 /-- Which axis blocks a subject. Named rather than counted, because the two have
     different remedies: a body gap means the PRODUCER is unfinished, an unbound
