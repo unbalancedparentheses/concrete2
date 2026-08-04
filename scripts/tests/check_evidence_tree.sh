@@ -162,17 +162,26 @@ def fid : CallableId := CallableId.ofUser "m" "f"
   a "a literal pattern binds nothing"
     (patternBindingCount (.intLit 3 .i32) == 0)
 
-  -- SUBJECT completeness is not BODY completeness. A resolved constRef makes a
-  -- perfectly complete body while the subject stays incomplete until dependency
-  -- material binds the constant to its initializer digest.
-  a "a complete body with an unbound constant is NOT a complete subject"
-    (({ bodyComplete := true,
-        unboundConsts := [{ defModule := "m", declName := "LIMIT" }] }
-        : SubjectCompletenessV2).isComplete == false)
-  a "both conditions together make the subject complete"
-    (({ bodyComplete := true, unboundConsts := [] } : SubjectCompletenessV2).isComplete)
-  a "an incomplete body is never a complete subject"
-    (({ bodyComplete := false, unboundConsts := [] } : SubjectCompletenessV2).isComplete == false)
+  -- SEPARATE AXES. The point is not just that both must hold, but that a caller can
+  -- tell WHICH one blocks: a body gap means finish the producer, an unbound constant
+  -- means bind dependency material. One boolean would send the reader to the wrong work.
+  a "a complete body with an unbound constant blocks on DEPENDENCIES, not the body"
+    (let sc : SubjectCompletenessV2 :=
+       { unboundConsts := [{ defModule := "m", declName := "LIMIT" }] }
+     sc.bodyComplete && !sc.dependenciesComplete && !sc.isComplete
+       && sc.blockers.length == 1)
+  a "a gap-bearing body with bound dependencies blocks on the BODY axis"
+    (let sc : SubjectCompletenessV2 := { bodyGaps := [{ code := .unhandledExpr }] }
+     !sc.bodyComplete && sc.dependenciesComplete && !sc.isComplete
+       && sc.blockers.length == 1)
+  a "both axes blocked reports BOTH blockers, not one"
+    (let sc : SubjectCompletenessV2 :=
+       { bodyGaps := [{ code := .unhandledStmt }],
+         unboundConsts := [{ defModule := "m", declName := "K" }] }
+     sc.blockers.length == 2)
+  a "nothing blocking means complete, and isComplete is DERIVED from the axes"
+    (let sc : SubjectCompletenessV2 := {}
+     sc.isComplete && sc.blockers.isEmpty && sc.bodyComplete && sc.dependenciesComplete)
   a "a body referencing a constant reports it for binding"
     ((exprConstRefs (.binary "lt" p (.constRef { defModule := "m", declName := "LIMIT" }))).length == 1)
 

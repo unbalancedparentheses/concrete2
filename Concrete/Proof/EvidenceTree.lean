@@ -258,27 +258,54 @@ partial def exprConstRefs : EvidenceExprV2 → List ConstId
   | .structLit _ fs => fs.flatMap fun fe => exprConstRefs fe.2
   | .variantLit _ fs => fs.flatMap fun fe => exprConstRefs fe.2
 
-/-- BODY completeness is NOT SUBJECT completeness.
-
-    A body containing `constRef c` can be a perfectly complete body tree: the
-    reference is fully resolved and nothing is missing structurally. The proof SUBJECT
-    it feeds is still incomplete until dependency material binds `c` to its
-    initializer digest — otherwise the subject names a constant without binding its
-    meaning, and editing that constant's initializer would not invalidate the proof.
-
-    Two predicates, deliberately separate, because collapsing them would let a
-    complete-looking body imply a complete subject. -/
-structure SubjectCompletenessV2 where
-  /-- The body tree validated: no gaps. -/
-  bodyComplete : Bool
-  /-- Constants referenced but not yet bound to an initializer digest. NON-EMPTY means
-      the subject is incomplete even when `bodyComplete` holds. -/
-  unboundConsts : List ConstId
+/-- Which axis blocks a subject. Named rather than counted, because the two have
+    different remedies: a body gap means the PRODUCER is unfinished, an unbound
+    constant means DEPENDENCY MATERIAL has not been resolved. A single boolean would
+    make those indistinguishable and send the reader to the wrong work. -/
+inductive SubjectBlockerV2 where
+  | bodyIncomplete (gaps : List EvidenceGap)
+  | dependenciesUnbound (consts : List ConstId)
 deriving Repr, Inhabited
 
-/-- The subject is complete only when BOTH hold. -/
-def SubjectCompletenessV2.isComplete (s : SubjectCompletenessV2) : Bool :=
-  s.bodyComplete && s.unboundConsts.isEmpty
+/-- BODY completeness and DEPENDENCY completeness as SEPARATE AXES.
+
+    A body containing `constRef c` can be a fully complete body tree: the reference is
+    resolved and nothing is missing structurally. The proof subject is still incomplete
+    until dependency material binds `c` to its initializer digest — otherwise the
+    subject names a constant without binding its meaning, and editing that constant's
+    initializer would not invalidate the proof.
+
+    The axes are stored independently and the combined verdict is DERIVED from them,
+    not the reverse. An earlier version stored one `bodyComplete : Bool` beside the
+    unbound list and combined them in `isComplete`; that lost which axis was
+    responsible, so a caller could see "incomplete" without learning whether to finish
+    the producer or bind a dependency. -/
+structure SubjectCompletenessV2 where
+  /-- Gaps in the body tree. Empty means the BODY axis is complete. -/
+  bodyGaps      : List EvidenceGap := []
+  /-- Constants referenced but not bound to an initializer digest. Empty means the
+      DEPENDENCY axis is complete. -/
+  unboundConsts : List ConstId := []
+deriving Repr, Inhabited
+
+namespace SubjectCompletenessV2
+
+/-- The body axis alone. -/
+def bodyComplete (s : SubjectCompletenessV2) : Bool := s.bodyGaps.isEmpty
+
+/-- The dependency axis alone. -/
+def dependenciesComplete (s : SubjectCompletenessV2) : Bool := s.unboundConsts.isEmpty
+
+/-- Every axis that blocks, in a fixed order so a report is deterministic. Empty means
+    the subject is complete. -/
+def blockers (s : SubjectCompletenessV2) : List SubjectBlockerV2 :=
+  (if s.bodyComplete then [] else [.bodyIncomplete s.bodyGaps])
+    ++ (if s.dependenciesComplete then [] else [.dependenciesUnbound s.unboundConsts])
+
+/-- DERIVED from the axes: complete exactly when nothing blocks. -/
+def isComplete (s : SubjectCompletenessV2) : Bool := s.blockers.isEmpty
+
+end SubjectCompletenessV2
 
 /-- The sole bridge from draft to complete. Returns the gaps found, so an incomplete
     body is DIAGNOSABLE rather than merely refused. -/
