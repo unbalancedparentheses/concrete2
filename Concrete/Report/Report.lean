@@ -1522,6 +1522,7 @@ private def renderCallableId (cid : Concrete.CallableId) : String :=
   let nsLit := match cid.ns with
     | .user => ".user" | .builtin => ".builtin"
     | .intrinsic => ".intrinsic" | .extern => ".extern"
+    | .spec => ".spec"
   let argsLit :=
     if cid.typeArgs.isEmpty then ""
     else ", typeArgs := [" ++ ", ".intercalate (cid.typeArgs.map reprStr) ++ "]"
@@ -1559,8 +1560,48 @@ private def renderCallableId (cid : Concrete.CallableId) : String :=
     `scope := "body_only"` for exactly that reason — it is a comparison key for
     step 5, not evidence, and it covers no signature, capability or contract. -/
 private def renderSourceBodyDigest (pexpr : Proof.PExpr) : String :=
-  let v := Concrete.shortHash (Proof.pexprCanonical pexpr)
+  -- NORMALIZE FIRST, so the digest is invariant under commutative reordering.
+  -- Two bodies differing only in the order of `+`'s operands denote the SAME
+  -- subject, and a digest that separates them would report drift where there is
+  -- none. Extraction already normalizes, so this changes no generated value — it
+  -- makes the property hold BY CONSTRUCTION rather than by coincidence, which
+  -- matters because the other side of the comparison is a hand-written spec
+  -- written in source order.
+  --
+  -- Measured while migrating: `crypto_verify.compute_tag` is `key * message +
+  -- nonce` in source and normalizes to `nonce + key * message`. Its committed
+  -- spec looked like a mismatch against the generated digest and was not one.
+  let v := Concrete.shortHash (Proof.pexprCanonical (normalizePExpr pexpr))
   s!"some \{ value := \"{v}\" }"
+
+/-- INSPECTION surface for captured declaration facts. Deliberately not evidence:
+    it renders what was captured so a gate can check the producer against real
+    programs, which is otherwise unobservable outside Lean.
+
+    One line per entry, identity first, then whether a complete subject digest
+    could be minted. An entry whose facts are absent or incomplete says so rather
+    than printing a plausible-looking row. -/
+def subjectFactsReport (pc : Concrete.ProofCore) : String :=
+  let rows := pc.entries.map fun e =>
+    let idr := e.callableId.render
+    match e.declFacts with
+    | none => s!"{idr}\n  facts: ABSENT"
+    | some fx =>
+      let dig := match e.subjectDigest with
+        | some d => d
+        | none   => "INCOMPLETE (no digest minted)"
+      String.join
+        [ s!"{idr}\n"
+        , s!"  params: {fx.params}\n"
+        , s!"  ret: {fx.retTy}\n"
+        , s!"  typeParams: {fx.typeParams.length} bounds: {fx.typeBounds}\n"
+        , s!"  caps: {fx.capSet} capParams: {fx.capParams.length}\n"
+        , s!"  contracts covered: {fx.contracts.covered} "
+        , s!"reqs: {fx.contracts.requires.length} ens: {fx.contracts.ensures.length} loopClauses: {fx.contracts.loops.length}\n"
+        , s!"  trusted: {fx.isTrusted}\n"
+        , s!"  subject digest: {dig}"
+        ]
+  s!"=== Subject facts ({pc.entries.length} entries) ===\n" ++ "\n".intercalate rows ++ "\n"
 
 /-- Generate Lean theorem stubs for all extracted functions. -/
 def leanStubsReport (pc : Concrete.ProofCore)

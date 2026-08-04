@@ -1761,6 +1761,15 @@ structure ProofCoreEntry where
       a rendering, which is the drift `CallableId` exists to remove. The generator
       reads this field; it does not compute one. -/
   callableId  : CallableId
+  /-- The facts Core erased, captured in Elab and threaded here rather than
+      rebuilt. `none` only if the module carried no facts for this identity,
+      which is itself a fault worth seeing rather than papering over. -/
+  declFacts   : Option Proof.CheckedDeclFacts := none
+  /-- `proofSubjectDigestV2` over those facts and the body fingerprint. `none`
+      when the facts are absent or INCOMPLETE — an incomplete subject must not be
+      representable as a digest string, or it becomes comparable as though it
+      were complete. -/
+  subjectDigest : Option String := none
   fn          : CFnDef
   extracted   : Option Proof.PExpr
   unsupported : List String
@@ -1881,6 +1890,38 @@ def shortHash (fingerprint : String) : String :=
     fingerprint.toUTF8.toList.map fun b => BitVec.ofNat 8 b.toNat
   let digest := (Sha256Spec.hash bytes).take 16
   String.join (digest.map byteToHex)
+
+/-- The versioned proof-subject digest, defined ONCE from the captured facts and
+    the body fingerprint.
+
+    This is what bugs 059 and 060 need and the legacy body fingerprint is not:
+    that hashes statements only, so a whole-signature `i32 -> u32` change and a
+    TRUE-versus-FALSE `#[ensures]` are both invisible to it.
+
+    Two components, both required:
+      * `CheckedDeclFacts.canonical` — identity, full typed signature, generics
+        and bounds, capabilities, contracts, trust boundary. Captured in Elab
+        BEFORE contract erasure, because Core drops them.
+      * the body fingerprint — what the legacy hash already covered.
+
+    The facts' canonical form carries its own contract-COVERAGE flag, so a subject
+    whose contracts could not be read cannot digest as one that has none.
+
+    `v2:` is in the bytes. A stored `v1` (body-only) hash must therefore be
+    recognised as a DIFFERENT SCHEMA rather than as a mismatch — the format
+    changed, not necessarily the program, so such an entry is `needs_recheck`, not
+    `stale`. Wiring that distinction into the freshness decision is the remaining
+    step; this function only defines the value. -/
+def proofSubjectDigestV2 (facts : Proof.CheckedDeclFacts) (bodyFp : String)
+    : Option String :=
+  -- ENFORCED, not advisory. `isComplete` existed and nothing consulted it, so an
+  -- uncovered subject — a contract the encoder could not read, an incomplete
+  -- identity — still received an ordinary-looking digest. A digest that cannot be
+  -- told from a complete one IS a claim of completeness, whatever a neighbouring
+  -- flag says. Returning `none` makes the incomplete case unrepresentable rather
+  -- than merely discouraged.
+  if !facts.isComplete then none
+  else some (shortHash ("subjectV2:" ++ facts.canonical ++ "|body:" ++ shortHash bodyFp))
 
 /-- Validate a proof registry against a ProofCore artifact. -/
 def validateRegistry (pc : ProofCore) (registry : ProofRegistry) : List RegistryIssue :=
@@ -2158,6 +2199,17 @@ private partial def extractModule
     -- makes `CallableId.isComplete` refuse it instead.
     let cid : CallableId := CallableId.ofUser qualPrefix f.name f.typeParams.length
     let fp := bodyFingerprint f.body
+    -- The facts captured before contract erasure, looked up BY IDENTITY. They
+    -- travel on the module as a parallel record, so nothing is recomputed here
+    -- and nothing was added to CFnDef to carry them.
+    -- Compare IDENTITIES. This compared renderings while the helper API in
+    -- SubjectFacts was being corrected to compare identities — so the fix reached
+    -- the function nobody calls and missed the one that mints every subject
+    -- digest.
+    let facts? := (m.declFacts.find? fun d => d.id == cid)
+    -- `none` when the facts are absent OR incomplete. Never a string, so an
+    -- absent subject cannot be compared as though it were a computed one.
+    let subjDigest : Option String := facts?.bind (fun fx => proofSubjectDigestV2 fx fp)
     let elig := assessEligibility f qualName externNames recMap locMap
     let sa := resolveSpec qualName registry
     if elig.isTrusted then
@@ -2181,7 +2233,8 @@ private partial def extractModule
           | [] => ["unmodelled statement or control-flow structure (no ProofCore form)"]
           | rs => rs
         else []
-      (accE ++ [{ qualName, bareName, callableId := cid, fn := f, extracted
+      (accE ++ [{ qualName, bareName, callableId := cid,
+                   declFacts := facts?, subjectDigest := subjDigest, fn := f, extracted
                  , unsupported := unsup
                  , fingerprint := fp, params := f.params.map Prod.fst
                  , eligibility := elig, loc := elig.loc

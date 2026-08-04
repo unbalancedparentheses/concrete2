@@ -124,8 +124,20 @@ def incExpr : PExpr := .binOp .add (.var "x") (.lit (.int 1))
 /-- `dbl(x) = x * 2`. -/
 def dblExpr : PExpr := .binOp .mul (.var "x") (.lit (.int 2))
 
-def incFn : PFnDef := { displayName := "inc", params := ["x"], body := incExpr }
-def dblFn : PFnDef := { displayName := "dbl", params := ["x"], body := dblExpr }
+-- MIGRATED (R-0004 step 5). Identity, operational key and body digest adopted from
+-- `concrete examples/proof_patterns/composition/src/main.con --report lean-stubs`.
+-- Both committed specs hash to the generated digests, so populating `entries`
+-- cannot change what the composition theorems prove.
+def incFn : PFnDef :=
+  { identity := .semantic (Concrete.CallableId.ofUser "calls" "inc")
+    operationalKey := "inc"
+    sourceBodyDigest := some { value := "547e67b5f2b072131034d8cec278c032" }
+    displayName := "inc", params := ["x"], body := incExpr }
+def dblFn : PFnDef :=
+  { identity := .semantic (Concrete.CallableId.ofUser "calls" "dbl")
+    operationalKey := "dbl"
+    sourceBodyDigest := some { value := "b78225e71dcabeba3282cf29cdc93ef5" }
+    displayName := "dbl", params := ["x"], body := dblExpr }
 
 /-- Function table the composition resolves its calls against. -/
 def combineFnsGlobals : String → Option PFnDef
@@ -133,7 +145,11 @@ def combineFnsGlobals : String → Option PFnDef
   | "dbl" => some dblFn
   | _     => none
 
-def combineFns : FnTable := FnTable.ofGlobals combineFnsGlobals
+/-- MIGRATED: entries populated, canonical order (dbl before inc, by rendered
+    CallableId). `globals` kept so the existing `simp [combineFnsGlobals]` proofs
+    still rewrite. -/
+def combineFns : FnTable :=
+  { entries := #[dblFn, incFn], globals := combineFnsGlobals }
 
 -- Keeps `simp only [eval, combineFns_globals, combineFnsGlobals]` working WITHOUT delta-unfolding
 -- the bare `combineFns`. The old `def combineFns : FnTable | "x" => …` produced equation lemmas

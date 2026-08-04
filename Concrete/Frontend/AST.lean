@@ -281,6 +281,12 @@ structure EnumVariant where
 
 structure EnumDef where
   name : String
+  /-- Definition-site module, stamped by `buildFileSummary`. Empty means the
+      parsed declaration has not passed through semantic resolution yet. -/
+  definedIn : String := ""
+  /-- Definition-site name. This remains `Point` when an importer binds the
+      declaration locally as `Coord`; `name` is the local lookup spelling. -/
+  definitionName : String := ""
   typeParams : List String := []
   typeBounds : List (String × List String) := []  -- type param bounds
   variants : List EnumVariant
@@ -292,6 +298,11 @@ structure EnumDef where
 
 structure StructDef where
   name : String
+  /-- Definition-site module, stamped by `buildFileSummary`. Empty means the
+      parsed declaration has not passed through semantic resolution yet. -/
+  definedIn : String := ""
+  /-- Definition-site name, kept distinct from an importer's local alias. -/
+  definitionName : String := ""
   typeParams : List String := []
   typeBounds : List (String × List String) := []  -- type param bounds: T -> [Trait1, Trait2]
   fields : List StructField

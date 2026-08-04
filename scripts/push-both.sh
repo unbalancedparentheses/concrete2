@@ -52,7 +52,13 @@ printf 'pid=%s worktree=%s\n' "$$" "$(pwd)" > "$PUSH_LOCK/owner" 2>/dev/null || 
 trap 'rm -f "$PUSH_LOCK/owner" 2>/dev/null; rmdir "$PUSH_LOCK" 2>/dev/null || true' EXIT
 
 PRIMARY="${PRIMARY:-origin}"
-MIRROR="${MIRROR:-lambdaclass}"
+# NO MIRROR BY DEFAULT (changed 2026-07-31 on the owner's instruction: "stop
+# pushing to lambdaclass"). `origin` is unbalancedparentheses/concrete2 and is the
+# only publication target; `lambdaclass` points at lambdaclass/concrete, a
+# DIFFERENT repository. Set MIRROR=<remote> to re-enable mirroring; everything
+# below — the CI wait, the ancestry check, the parity check — still applies when
+# it is set, so turning it back on does not turn the safeguards off.
+MIRROR="${MIRROR:-}"
 BRANCH="${BRANCH:-main}"
 LOCAL="$(git rev-parse HEAD)"
 CI_WAIT=1
@@ -108,12 +114,36 @@ if [ "$CI_WAIT" -eq 1 ]; then
   while :; do
     # Query by COMMIT, not by branch: a branch query races with anyone else's
     # push and could report a green run for a different tip.
-    row="$(gh run list --workflow "$CI_WORKFLOW" --commit "$LOCAL" \
+    # FILTER TO THE PUSH EVENT. `--commit` alone matches ANY run for that SHA,
+    # including `schedule`-triggered ones — and a nightly run sitting `pending`
+    # on the same tip made this wait time out at 4200s while the push run had
+    # already finished SUCCESS. Measured on efafe5e2: two schedule runs
+    # (pending, in_progress) ahead of a completed push run in the same list.
+    row="$(gh run list --workflow "$CI_WORKFLOW" --commit "$LOCAL" --event push \
              --limit 1 --json status,conclusion,url 2>/dev/null || true)"
     status="$(sed -n 's/.*"status":"\([^"]*\)".*/\1/p' <<<"$row")"
     conclusion="$(sed -n 's/.*"conclusion":"\([^"]*\)".*/\1/p' <<<"$row")"
     if [ "$status" = "completed" ]; then break; fi
+    # An empty result is NOT a status. `gh run list --commit` requires the full
+    # 40-char SHA: given an abbreviation it returns [] instead of erroring, so an
+    # empty list is indistinguishable from "the run has not been created yet" and
+    # from "the workflow name is wrong". Distinguish them explicitly rather than
+    # letting all three fall through to a 'pending'-looking timeout.
+    if [ -z "$status" ]; then
+      if [ "${#LOCAL}" -ne 40 ]; then
+        echo "push-both: internal error — CI query needs a full 40-char SHA, got '${LOCAL}'." >&2
+        exit 1
+      fi
+      saw_no_run=1
+    else
+      saw_no_run=0
+    fi
     if [ "$(date +%s)" -ge "$deadline" ]; then
+      if [ "${saw_no_run:-0}" -eq 1 ]; then
+        echo "push-both: no CI run found for ${LOCAL:0:8} on workflow '$CI_WORKFLOW' (event=push) within ${CI_TIMEOUT}s." >&2
+        echo "push-both: treating absence as UNVERIFIED, not as success — mirror NOT touched." >&2
+        exit 1
+      fi
       echo "push-both: CI for ${LOCAL:0:8} did not conclude within ${CI_TIMEOUT}s (status='${status:-none}') — mirror NOT touched." >&2
       exit 1
     fi
@@ -132,6 +162,12 @@ fi
 # The mirror gets exactly the primary's tip. Gates are skipped because they
 # already ran for this exact commit on the primary; running them twice proves
 # nothing and doubles the wait.
+if [ -z "$MIRROR" ]; then
+  echo "push-both: no mirror configured — $PRIMARY is the only publication target."
+  echo "push-both: published ${LOCAL:0:8}"
+  exit 0
+fi
+
 # Fast-forward ONLY, and say so before attempting it. If the mirror holds a
 # commit we do not contain, that is the exact anomaly this script was written
 # after — a mirror carrying work the primary never accepted. Report it as such

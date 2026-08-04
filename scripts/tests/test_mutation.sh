@@ -641,8 +641,8 @@ gate_for_last "scripts/tests/check_callable_identity.sh"
 # exactly the keyed identity the finite table exists to remove, and it makes a
 # same-named callable in another module answer for this one.
 MUT_FILE+=("Concrete/Proof/Proof.lean")
-MUT_OLD+=("  (t.entries.find? fun d => d.identityKey == id.render).bind PFnDef.identified?")
-MUT_NEW+=("  (t.entries.find? fun d => d.displayName == id.declName).bind PFnDef.identified? -- MUTATION: lookup by name")
+MUT_OLD+=("    | .semantic cid => cid == id")
+MUT_NEW+=("    | .semantic cid => cid.declName == id.declName -- MUTATION: lookup by NAME, ignoring module and arity")
 MUT_DESC+=("FnTable: lookupById resolves by display name, not identity (step 3)")
 gate_for_last "scripts/tests/check_callable_identity.sh"
 
@@ -693,8 +693,8 @@ gate_for_last "scripts/tests/check_callable_identity.sh"
 # representable but never emitted for a while; this keeps "emitted" from decaying
 # back into "emitted, but meaningless".
 MUT_FILE+=("Concrete/Report/Report.lean")
-MUT_OLD+=("  let v := Concrete.shortHash (Proof.pexprCanonical pexpr)")
-MUT_NEW+=("  let v := Concrete.shortHash (toString (Proof.pexprCanonical pexpr).length) -- MUTATION: digest sees only the body LENGTH")
+MUT_OLD+=("  let v := Concrete.shortHash (Proof.pexprCanonical (normalizePExpr pexpr))")
+MUT_NEW+=("  let v := Concrete.shortHash (toString (Proof.pexprCanonical (normalizePExpr pexpr)).length) -- MUTATION: digest sees only the body LENGTH")
 MUT_DESC+=("Generator: body digest does not depend on the body")
 gate_for_last "scripts/tests/check_callable_identity.sh"
 
@@ -713,6 +713,56 @@ MUT_NEW+=("    let rotIdx := (((extracted.findIdx? (·.qualName == e.qualName)).
     let idLit := match (extracted[rotIdx]?).bind (·.callableId) with -- MUTATION: identities rotated among entries")
 MUT_DESC+=("Generator: identities permuted among entries (ID swap)")
 gate_for_last "scripts/tests/check_callable_identity.sh"
+
+# 49. The shadowing rule ignores IMPORTED enums (bug 065's original divergence)
+# Elab consulted `imports.enums` and Check did not, so an imported user `Result`
+# was visible to one pass and not the other. Now that the rule has one owner, this
+# mutation reinstates exactly that asymmetry — a structural check would not notice,
+# because the code is still centralised.
+MUT_FILE+=("Concrete/Resolve/BuiltinEnums.lean")
+MUT_OLD+=("  moduleEnums.any (fun ed => ed.name == resultEnumName)
+    || importedEnums.any (fun ed => ed.name == resultEnumName)")
+MUT_NEW+=("  moduleEnums.any (fun ed => ed.name == resultEnumName) -- MUTATION: imported enums ignored")
+MUT_DESC+=("BuiltinEnums: shadowing rule ignores imported enums (bug 065)")
+gate_for_last "scripts/tests/check_builtin_enum_owner.sh"
+
+# 50. Import alias becomes the type's DEFINITION identity (R-0004 V2 input)
+# Bug 064 requires `.name` to become the importer-visible alias, but TypeId must
+# continue to name the defining declaration. This mutation makes `Coord` a new
+# type identity instead of another spelling of `lib.Point`.
+MUT_FILE+=("Concrete/Resolve/FileSummary.lean")
+MUT_OLD+=("            .ok { acc with structs := acc.structs ++ [{ sd with name := localName }],")
+MUT_NEW+=("            .ok { acc with structs := acc.structs ++ [{ sd with name := localName, definitionName := localName }], -- MUTATION: alias becomes identity")
+MUT_DESC+=("TypeId: import alias replaces definition-site name")
+gate_for_last "scripts/tests/check_type_identity.sh"
+
+# 51. Nested type identity drops its parent module (R-0004 V2 input)
+# `a.sub.Point` and `b.sub.Point` must not become the same `sub.Point`.
+MUT_FILE+=("Concrete/Resolve/FileSummary.lean")
+MUT_OLD+=("      let childPath := if thisDefinitionPath.isEmpty then sub.name
+                       else thisDefinitionPath ++ \".\" ++ sub.name")
+MUT_NEW+=("      let childPath := sub.name -- MUTATION: enclosing definition path dropped")
+MUT_DESC+=("TypeId: nested identity drops enclosing module")
+gate_for_last "scripts/tests/check_type_identity.sh"
+
+# 52. Elab resolves a field but silently drops it from the V2 input.
+MUT_FILE+=("Concrete/Elab/Elab.lean")
+MUT_OLD+=("      | some f =>
+        recordFieldUse sd field")
+MUT_NEW+=("      | some f =>
+        pure () -- MUTATION: resolved field omitted from evidence input")
+MUT_DESC+=("Elab V2 input: resolved field use omitted")
+gate_for_last "scripts/tests/check_type_identity.sh"
+
+# 53. A normally resolved declaration with missing provenance reads as covered.
+MUT_FILE+=("Concrete/Elab/Elab.lean")
+MUT_OLD+=("private def markBodyIdentityUncovered : ElabM Unit := do
+  let env ← getEnv
+  setEnv { env with bodyIdentityCovered := false }")
+MUT_NEW+=("private def markBodyIdentityUncovered : ElabM Unit :=
+  pure () -- MUTATION: missing identity silently treated as covered")
+MUT_DESC+=("Elab V2 input: missing identity fails open")
+gate_for_last "scripts/tests/check_type_identity.sh"
 
 NUM_MUTATIONS=${#MUT_FILE[@]}
 

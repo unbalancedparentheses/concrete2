@@ -80,3 +80,41 @@ Long-running work does not always require an idle tree. Distinguish the phases:
 The CI wait touches no files, so work can continue during it — in another
 worktree. Treating the whole publish as tree-freezing is over-caution; treating
 the hook phase as safe is the error that costs a run.
+
+## Killing a publish does not un-publish it
+
+`push-both.sh` runs `git push` as a CHILD process. Killing the script does not
+kill that child, and a `git push` already in flight will complete.
+
+Measured 2026-07-31: a publish was killed during its pre-push hook, `git ls-remote`
+showed the primary unchanged, and that was read as "nothing was published". The
+`git push` child was still running; it finished moments later and advanced the
+primary. The next publish was then rejected as non-fast-forward — harmless here,
+but the reasoning behind the kill was a race read as a guarantee.
+
+So: a ref check taken *at* the moment of the kill proves nothing about a push
+that has already started. If a publish must be abandoned, re-check the remote
+AFTER the process tree is gone (`pgrep -f "git push"` clear), and treat the
+remote's actual state as the answer rather than the state you saw before killing.
+
+## Orchestrating a publish: never infer state from process names
+
+`pgrep -f "push-both"` matches the WAITER'S OWN command line, which contains that
+string. Every `until ! pgrep -f "push-both"; do sleep 30; done` loop therefore
+waits on itself forever, and a status check written the same way reports "publish
+running" when nothing is. Measured 2026-08-01: six background tasks were stuck on
+this at once, and the reported state was wrong for as long as they ran. It is the
+same failure as counting `pgrep -lf "codex|claude"` and getting 115 — a
+process-name match catches the matcher.
+
+Do this instead:
+
+* capture the launched PID and `wait "$pid"`;
+* verify completion by checking the EXACT REMOTE SHA (`git ls-remote`), which is
+  the fact you actually care about;
+* query CI for that SHA (`gh run list --commit <full-sha>` — the full SHA; the
+  short form returns nothing);
+* never infer state from a process-name match.
+
+For a one-off inspection, `ps -eo command | grep -c "[p]ush-both.sh"` excludes
+itself via the bracket, but a ref check is still the better answer.

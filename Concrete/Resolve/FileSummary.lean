@@ -162,7 +162,11 @@ private def resolveAliasesInSig (aliases : List (String × Ty)) (sig : FnSummary
     params := sig.params.map fun (n, ty) => (n, resolveAliasesInTy aliases ty)
     retTy := resolveAliasesInTy aliases sig.retTy }
 
-partial def buildFileSummary (m : Module) : FileSummary :=
+partial def buildFileSummary (m : Module) (definitionPath : String := "") : FileSummary :=
+  -- `FileSummary.name` remains the module's local name for the existing lookup
+  -- table. Type identity needs the full definition path, including every
+  -- enclosing module, so carry that separately through recursive summaries.
+  let thisDefinitionPath := if definitionPath.isEmpty then m.name else definitionPath
   -- Build alias map for resolving type aliases in signatures
   let aliasMap := m.typeAliases.map fun ta => (ta.name, ta.targetTy)
   let functions := m.functions.map fun f =>
@@ -196,8 +200,12 @@ partial def buildFileSummary (m : Module) : FileSummary :=
                      (n, resolveAliasesInSig aliasMap sig)
   { name := m.name
     functions := functions
-    structs := m.structs
-    enums := m.enums
+    -- R-0004 path 1 (local): stamp both definition-site components once.
+    -- Import aliases may later change `.name`; they never change these fields.
+    structs := m.structs.map (fun sd =>
+      { sd with definedIn := thisDefinitionPath, definitionName := sd.name })
+    enums := m.enums.map (fun ed =>
+      { ed with definedIn := thisDefinitionPath, definitionName := ed.name })
     implBlocks := m.implBlocks
     traitImpls := m.traitImpls
     publicNames := publicNames
@@ -209,7 +217,10 @@ partial def buildFileSummary (m : Module) : FileSummary :=
     externFnSigs := externFnSigs
     implMethodSigs := implMethodSigs
     imports := m.imports
-    submoduleSummaries := m.submodules.map fun sub => (sub.name, buildFileSummary sub) }
+    submoduleSummaries := m.submodules.map fun sub =>
+      let childPath := if thisDefinitionPath.isEmpty then sub.name
+                       else thisDefinitionPath ++ "." ++ sub.name
+      (sub.name, buildFileSummary sub childPath) }
 
 /-- Recursively collect all submodule entries with all qualification prefixes.
     For each submodule, we register it under every suffix of its fully qualified path.
@@ -280,13 +291,25 @@ def resolveImports (imports : List ImportDecl)
               ns ++ (tb.methods.filter (·.isPublic)).map fun f => tb.typeName ++ "_" ++ f.name) []
             let matchingSigs := summary.implMethodSigs.filter fun (name, _) =>
               mangledNames.contains name
-            .ok { acc with structs := acc.structs ++ [sd],
+            -- Bug 064: register under the name the IMPORTER uses. The original
+            -- `sd` kept `name = origName`, so `lookupStruct alias` found nothing
+            -- and a field access on an aliased imported type was rejected as
+            -- E0254 "non-struct type" — while the SAME import unaliased reached
+            -- E0298 (a privacy answer), proving the type resolved fine and the
+            -- alias alone broke resolution.
+            --
+            -- A no-op when unaliased, since `localName == origName` there.
+            --
+            -- R-0004 path 2 (explicit import). Change only the lookup spelling.
+            -- `definedIn` and `definitionName` were minted by the defining
+            -- summary and must survive aliases and re-exports unchanged.
+            .ok { acc with structs := acc.structs ++ [{ sd with name := localName }],
                            implBlocks := acc.implBlocks ++ structImpls,
                            traitImpls := acc.traitImpls ++ structTraitImpls,
                            implMethodSigs := acc.implMethodSigs ++ matchingSigs }
           | none =>
             match summary.enums.find? fun ed => ed.name == origName with
-            | some ed => .ok { acc with enums := acc.enums ++ [ed] }
+            | some ed => .ok { acc with enums := acc.enums ++ [{ ed with name := localName }] }
             | none =>
               match summary.typeAliases.find? fun ta => ta.isPublic && ta.name == origName with
               | some ta => .ok { acc with typeAliases := acc.typeAliases ++ [(localName, ta.targetTy)] }
@@ -370,6 +393,9 @@ def resolveImports (imports : List ImportDecl)
               ++ traitImpls.foldl (fun ns tb =>
               ns ++ (tb.methods.filter (·.isPublic)).map fun f => tb.typeName ++ "_" ++ f.name) []
             let sigs := summary.implMethodSigs.filter fun (name, _) => mangled.contains name
+            -- R-0004 path 3 (transitive closure): preserve the identity already
+            -- minted by the defining summary. Reminting from this traversal's
+            -- module would turn a transport path into an identity owner.
             acc := { acc with structs := acc.structs ++ [sd],
                               implBlocks := acc.implBlocks ++ impls,
                               traitImpls := acc.traitImpls ++ traitImpls,

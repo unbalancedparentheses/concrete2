@@ -221,6 +221,49 @@ else
   ok "push-both pushes only the recorded SHA, not HEAD"
 fi
 # Both pushes, primary and mirror, must name it.
+# No COMPILED OUTPUT may be tracked. tests/programs/bug_064_aliased_imported_type
+# (a 35KB Mach-O) reached origin because a broad `git add -A` swept the compiler's
+# output in beside its .con source. .gitignore carries 16 one-off lines for exactly
+# this, which is the fact-restated-where-it-can-drift shape: every new fixture needs
+# a new line, and forgetting one is silent. gitignore globs cannot express "has no
+# extension", and a glob that guessed wrong would silently hide a real fixture — the
+# worse failure — so enforcement lives here instead.
+#
+# Scoped to EXTENSIONLESS files under tests/programs/, which is what the compiler
+# emits beside foo.con. A first attempt at "no binary anywhere under tests/" failed
+# on tests/fixtures/*.bin — those are deliberate ELF inputs for the ELF-parser
+# tests, i.e. program data, not build output. Binary-ness alone does not identify
+# an artifact; being an unextensioned sibling of a source program does.
+artifacts=""
+while IFS= read -r f; do
+  [ -n "$f" ] || continue
+  case "${f##*/}" in *.*) continue ;; esac
+  artifacts="$artifacts $f"
+done <<< "$(cd "$ROOT_DIR" && git ls-files 'tests/programs/*' 2>/dev/null)"
+if [ -z "$artifacts" ]; then
+  ok "no compiled output is tracked under tests/programs/"
+else
+  no "compiled outputs are tracked under tests/programs/:$artifacts"
+fi
+
+# The CI query must be scoped to the PUSH event. `--commit` alone also matches
+# schedule-triggered runs, and a nightly run pending on the same tip made a wait
+# time out while the push run had already succeeded.
+# An empty run list must not read as a verdict. `gh run list --commit` requires the
+# FULL 40-char SHA: given an abbreviation it returns [] rather than erroring, which
+# is indistinguishable from "CI never ran".
+if grep -q 'no CI run found' "$ROOT_DIR/scripts/push-both.sh"; then
+  ok "the CI wait fails closed when no run matches the SHA"
+else
+  no "push-both does not handle an empty run list; an unresolvable SHA would read as a verdict"
+fi
+
+if grep -q 'gh run list .*--event push' "$ROOT_DIR/scripts/push-both.sh"; then
+  ok "the CI wait filters to push-triggered runs"
+else
+  no "push-both's CI query is not scoped to --event push; a scheduled run on the same SHA can mask the real verdict"
+fi
+
 # The primary must be re-checked after the CI wait, not only before it: the wait is
 # ~45min and the primary is shared, so it can advance in that window.
 if grep -q 'pnow=' "$ROOT_DIR/scripts/push-both.sh" \
@@ -233,6 +276,20 @@ npush="$(grep -c 'git push .*"\$LOCAL:\$BRANCH"' "$ROOT_DIR/scripts/push-both.sh
 [ "$npush" = "2" ] \
   && ok "both the primary and mirror push name the recorded SHA" \
   || no "expected 2 pushes naming \$LOCAL, found $npush"
+
+echo ""
+echo "=== no conflict markers are committed ==="
+# `git add -A` after a FAILED merge stages the conflicted file markers and all,
+# and the next commit records them. That happened here: a ROADMAP.md merge
+# conflicted, `git add -A` swept it up, and three markers landed in a merge
+# commit. Nothing else would have caught it — the file still parses as Markdown.
+markers="$(git -C "$ROOT_DIR" grep -lE '^(<<<<<<< |>>>>>>> |\|{7}( |$)|={7}$)' -- . 2>/dev/null \
+  | grep -v 'check_gate_hygiene.sh' || true)"
+if [ -z "$markers" ]; then
+  ok "no tracked file contains merge conflict markers"
+else
+  no "conflict markers committed in: $(tr '\n' ' ' <<<"$markers")"
+fi
 
 echo ""
 echo "=== the pre-push hook is installed in this clone ==="

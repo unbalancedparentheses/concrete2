@@ -1,0 +1,73 @@
+// R-0004: producer and invariance cases for CheckedDeclFacts.
+//
+// Each pair is designed so that ONE property differs and everything else is held
+// fixed, so a passing gate cannot be explained by an unrelated difference.
+mod inner {
+    pub fn shared_name(x: Int) -> Int { return x + 1; }
+    pub fn aliased(x: Int) -> Int { return x + 2; }
+}
+
+mod deep {
+    mod nested {
+        pub fn buried(x: Int) -> Int { return x + 3; }
+    }
+    pub fn reach(x: Int) -> Int { return x + 4; }
+}
+
+mod other {
+    // SAME spelling as inner.shared_name, different defining module.
+    pub fn shared_name(x: Int) -> Int { return x + 1; }
+}
+
+struct Copy Holder { v: Int }
+
+impl Holder {
+    // inherent impl method: ProofCore names it Holder_get.
+    pub fn get(self) -> Int { return self.v; }
+}
+
+trait Sized {
+    fn size(self) -> Int;
+}
+
+impl Sized for Holder {
+    // TRAIT-impl method — a different declaration path from an inherent one, so
+    // it needs its own coverage rather than being assumed to follow.
+    fn size(self) -> Int { return 1; }
+}
+
+mod alpha {
+    // ALPHA-RENAMING pair: same types, same structure, different binder SPELLINGS.
+    pub fn named_ab(a: Int, b: Int) -> Int { return a; }
+    pub fn named_xy(x: Int, y: Int) -> Int { return x; }
+}
+
+mod boundpos {
+    // Same bound, different POSITION of the bounded parameter. Position is
+    // semantic (`<T, Int>` is not `<Int, T>`); the parameter's spelling is not.
+    // Both bounded Copy so the values are discardable under linear ownership.
+    pub fn bounded_first<T: Copy>(t: T, n: Int) -> Int { return n; }
+    pub fn bounded_second<T: Copy>(n: Int, t: T) -> Int { return n; }
+
+    // NON-GENERIC position pair. The generic pair above cannot be compared at the
+    // DIGEST level: a generic with no recorded instantiation is refused by
+    // `isComplete`, so neither mints a digest — correct behaviour, but it means
+    // they cannot witness position sensitivity there. These two differ only in
+    // the ORDER of their parameter types, which is semantic, and both are
+    // complete subjects.
+    pub fn pos_int_bool(a: Int, b: Bool) -> Int { return a; }
+    pub fn pos_bool_int(a: Bool, b: Int) -> Int { return b; }
+}
+
+mod main {
+    import inner.{ aliased as renamed };
+
+    // ALIAS USE SITE. The contract names `renamed`, which is an import alias for
+    // inner.aliased. Identity belongs to the DEFINITION site, so this must
+    // resolve to inner.aliased — proving no alias subject was minted is not the
+    // same as proving a USE through the alias resolves correctly.
+    #[ensures(result == renamed(x))]
+    pub fn via_alias(x: Int) -> Int { return renamed(x); }
+
+    pub fn main() -> Int { return via_alias(0); }
+}

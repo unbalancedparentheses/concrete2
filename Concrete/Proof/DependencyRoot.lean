@@ -1,0 +1,207 @@
+import Concrete.Proof.SubjectFacts
+import Concrete.Proof.DependencyEdge
+
+/-! # Deterministic dependency roots (R-0004 slice 6)
+
+Freshness computed TRANSITIVELY, so that a deep callee edit stales every claim
+that depends on it, while recursion stays finite and nothing about source
+location or alpha-renaming becomes semantic.
+
+## The shape chosen, and the one rejected
+
+A Merkle DAG over the SCC condensation is the textbook answer: condense cycles,
+then hash each node from its own content plus its children's roots. It shares
+structure, so a root can be recomputed incrementally.
+
+This uses a REACHABILITY-CLOSURE digest instead: a node's root is its own subject
+digest plus the sorted subject digests of everything reachable from it. The two
+agree on the properties that matter here —
+
+* deterministic (the reachable set is sorted by identity, never by insertion
+  order or source position);
+* finite under recursion (a reachable set cannot grow past the node count, so
+  mutual recursion terminates rather than diverging);
+* every member of a cycle gets the SAME CLOSURE — they are mutually reachable, so
+  the set is entry-point-independent, which is the property SCC condensation
+  provides. Their ROOTS still differ, because a root binds the node's own subject
+  as well as its closure and two functions in a cycle are two different subjects.
+  (An earlier draft of this header claimed cycle members share a root. They do
+  not, and should not; the test that asserts closure agreement is the honest form
+  of the property.);
+* a deep callee edit moves every dependent's root.
+
+— and the closure form is materially easier to check: the root is a function of a
+SET, so verifying "this root binds exactly these subjects" needs no reasoning
+about traversal order or condensation correctness. What it gives up is incremental
+sharing: recomputing one root costs its whole closure. That is the right trade
+while the corpus is dozens of functions, and the wrong one if it becomes
+thousands — recorded here so the decision is revisited on evidence rather than
+rediscovered.
+
+## Never under-approximate
+
+An edge to a callee with no known digest is REFUSED. An earlier version bound it
+as `unknown:<id>` and reported completeness through a separate flag; that let a
+root be minted over a partly unknown graph, and a flag beside a value invites
+comparing the value and ignoring the flag. Refusing is the only answer that
+cannot be misread.
+-/
+
+namespace Concrete.Proof
+
+/-- One node: an identity, the subject digest of that declaration, and its TYPED
+    outgoing edges.
+
+    `digest` is an `Option`, never a string that may be empty. An empty digest is
+    indistinguishable from a computed one at the type level, and a root built over
+    "" would be a confident value derived from a missing subject.
+
+    Edges carry their kind, so the root can refuse to rest on a `missing` one
+    rather than treating every callee as equivalent. -/
+structure DepNode where
+  /-- The compiler-minted semantic identity, NOT a name.
+
+      This was a raw `String`, which is the defect class R-0004 exists to close
+      appearing inside the dependency material itself: a name is a
+      representation, two callables can share one, and a rename must not move a
+      node. Keyed on the canonical rendering so comparison is the identity's own
+      notion of equality rather than an arbitrary string's. -/
+  id      : CallableId
+  digest  : Option String
+  /-- Typed edges to semantic identities, for the same reason. -/
+  edges   : List (DependencyEdge × CallableId)
+deriving Repr, Inhabited
+
+/-- Canonical rendering, for SERIALIZATION and DIAGNOSTICS only. Lookup and
+    deduplication compare `CallableId` directly; routing them through this would
+    reinstate the rendered string as operational identity. -/
+def DepNode.render (d : DepNode) : String := d.id.render
+
+/-- Why a root could not be built. Carried rather than collapsed to `none`, so a
+    caller can say WHICH fail-closed condition fired instead of reporting a
+    generic absence. -/
+inductive DepRootError where
+  | missingStart (id : CallableId)
+  | duplicateId (id : CallableId)
+  | incompleteDigest (id : CallableId)
+  | unresolvedEdge (from_ to_ : CallableId)
+  | missingEdge (from_ to_ : CallableId)
+deriving Repr
+
+/-- Rendering happens HERE and nowhere else in this module: a diagnostic is the
+    one place a name is the right answer. -/
+def DepRootError.explain : DepRootError → String
+  | .missingStart id      => s!"no node for start identity '{id.render}'"
+  | .duplicateId id       => s!"duplicate node identity '{id.render}'"
+  | .incompleteDigest id  => s!"'{id.render}' has no subject digest"
+  | .unresolvedEdge f t   => s!"'{f.render}' depends on '{t.render}', which has no node"
+  | .missingEdge f t      => s!"'{f.render}' has a `missing` edge to '{t.render}'"
+
+/-- Identities reachable from `start` over typed edges.
+
+    Bounded by the node count: each round adds at least one identity or stops, and
+    there are finitely many. That bound is what makes recursion terminate rather
+    than diverge. -/
+def reachableFrom (nodes : List DepNode) (start : CallableId) : List CallableId :=
+  let succs := fun (n : CallableId) =>
+    match nodes.find? (fun d => d.id == n) with
+    | some d => d.edges.map Prod.snd
+    | none   => []
+  let rec go (fuel : Nat) (frontier acc : List CallableId) : List CallableId :=
+    match fuel with
+    | 0 => acc
+    | Nat.succ f =>
+      let next := (frontier.flatMap succs).eraseDups
+      let fresh := next.filter (fun n => !acc.contains n)
+      if fresh.isEmpty then acc else go f fresh (acc ++ fresh)
+  let seed := (succs start).eraseDups
+  (go nodes.length seed seed).eraseDups
+
+/-- One validated result: the preimage and the trust qualification together.
+
+    Returned as a STRUCTURE rather than a preimage plus a separate boolean,
+    because a flag beside a value is an invitation to compare the value and
+    ignore the flag — which is precisely how an unqualified `proved_by_lean`
+    would get minted over a trust boundary. -/
+structure DependencyRootMaterial where
+  preimage     : String
+  carriesTrust : Bool
+deriving Repr, BEq, Inhabited
+
+/-- The canonical PREIMAGE of a dependency root, plus its trust qualification.
+
+    A serialization, NOT a compact hash and NOT a Merkle root — it shares no
+    structure and does not shrink. A consumer wanting a fixed-width value hashes
+    it; calling it a root oversold what it is.
+
+    THE EDGES ARE IN THE BYTES. An earlier version serialized only reachable
+    identities and their digests, so changing an edge from `contract` to `body`
+    produced the SAME preimage — the typed edges were traversed and then thrown
+    away, which defeats the point of typing them. Each edge now contributes its
+    canonical kind, its target identity and that target's length-prefixed digest.
+
+    FAIL CLOSED, reason carried. Every one of these would otherwise yield a
+    confident value from incomplete information: a missing start; a duplicate
+    identity (first-match lookup would hide the conflict); an absent OR EMPTY
+    subject digest; an edge to an identity with no node; an edge typed
+    `missing`. -/
+def dependencyRootMaterial (nodes : List DepNode) (id : CallableId)
+    : Except DepRootError DependencyRootMaterial := do
+  -- Comparison and deduplication are on the IDENTITY, not on a rendering. An
+  -- earlier version stored `CallableId` and then keyed every lookup on
+  -- `.render`, which kept rendered strings as the operational identity under a
+  -- typed wrapper — the very thing the type was introduced to remove.
+  let ids := nodes.map (·.id)
+  match ids.find? (fun n => (ids.filter (· == n)).length > 1) with
+  | some dup => throw (.duplicateId dup)
+  | none => pure ()
+  let start ← match nodes.find? (fun d => d.id == id) with
+    | some d => pure d
+    | none   => throw (.missingStart id)
+  let digestOf := fun (n : CallableId) => do
+    match nodes.find? (fun d => d.id == n) with
+    | none   => throw (.unresolvedEdge id n)
+    | some d => match d.digest with
+      | some v => if v.isEmpty then throw (.incompleteDigest n) else pure v
+      | none   => throw (.incompleteDigest n)
+  let ownDigest ← digestOf start.id
+  -- `.render` appears from here on ONLY to impose a total order and to build the
+  -- serialization. Those are the two places a canonical spelling is the point.
+  let allNodes := (id :: reachableFrom nodes id).eraseDups.mergeSort
+    (fun a b => a.render ≤ b.render)
+  let closure := allNodes.filter (· != id)
+  let mut parts : List String := []
+  let mut trust := false
+  for n in allNodes do
+    let node ← match nodes.find? (fun d => d.id == n) with
+      | some d => pure d
+      | none   => throw (.unresolvedEdge id n)
+    let nDigest ← digestOf n
+    let nr := n.render
+    parts := parts ++ [s!"N{nr.length}:{nr}:{nDigest.length}:{nDigest}"]
+    -- edges deduplicated as TYPED pairs, then ordered for serialization
+    let sorted := node.edges.eraseDups.mergeSort
+      fun a b => (a.1.canonical ++ a.2.render) ≤ (b.1.canonical ++ b.2.render)
+    for (k, tgt) in sorted do
+      if k == DependencyEdge.missing then throw (.missingEdge n tgt)
+      let tgtDigest ← digestOf tgt
+      if k == DependencyEdge.trusted then trust := true
+      let tr := tgt.render
+      parts := parts ++
+        [s!"E{k.canonical.length}:{k.canonical}:{tr.length}:{tr}:{tgtDigest.length}:{tgtDigest}"]
+  return { preimage := "depRootPreimageV2:" ++ s!"o{ownDigest.length}:{ownDigest}"
+                        ++ s!"n{closure.length}" ++ String.join parts
+         , carriesTrust := trust }
+
+/-- Trust for an ALREADY-VALIDATED material. Takes the material rather than the
+    raw graph, so there is no public path that answers the trust question over an
+    unvalidated graph.
+
+    A previous `closureCarriesTrust (nodes) (id)` existed beside
+    `dependencyRootMaterial` and would happily answer for a graph the material
+    would have refused — a fail-open alternative sitting next to the fail-closed
+    one, which is the more attractive of the two to call. -/
+def DependencyRootMaterial.requiresTrustQualification (m : DependencyRootMaterial) : Bool :=
+  m.carriesTrust
+
+end Concrete.Proof

@@ -734,7 +734,13 @@ by its own key and no key reaches two entries. -/
     By IDENTITY, never by name or position — the two things step 3 exists to
     stop being identity. -/
 def FnTable.lookupById (t : FnTable) (id : CallableId) : Option IdentifiedPFnDef :=
-  (t.entries.find? fun d => d.identityKey == id.render).bind PFnDef.identified?
+  -- Match on the IDENTITY, not on its rendering. `identityKey` is the canonical
+  -- serialization and belongs in the table ROOT; using it to decide whether two
+  -- callables are the same makes the rendered string the operational identity.
+  (t.entries.find? fun d =>
+    match d.identity with
+    | .semantic cid => cid == id
+    | .legacy       => false).bind PFnDef.identified?
 
 /-- A table binding locally bound callables as well. Used by theorems about
 higher-order specs, where the callback is the thing under discussion. -/
@@ -1241,7 +1247,11 @@ where
 def parseByteExpr : PExpr :=
   .binOp .add (.var "data") (.var "offset")
 
-def parseByteFn : PFnDef := { displayName := "parse_byte", params := ["data", "offset"], body := parseByteExpr }
+def parseByteFn : PFnDef :=
+  { identity := .semantic (CallableId.ofUser "main" "parse_byte")
+    operationalKey := "parse_byte"
+    sourceBodyDigest := some { value := "314d8160dbe1d21a697ef7d858cac7d0" }
+    displayName := "parse_byte", params := ["data", "offset"], body := parseByteExpr }
 
 /-- `fn check_length(len: Int) -> Int { if len < 10 { return 1; } return 0; }`
     Bounds guard from decode_header — rejects packets shorter than the header. -/
@@ -1252,7 +1262,10 @@ def checkLengthExpr : PExpr :=
     (.lit (.int 0))
 
 def checkLengthFn : PFnDef :=
-  { displayName := "check_length", params := ["len"], body := checkLengthExpr }
+  { identity := .semantic (CallableId.ofUser "main" "check_length")
+    operationalKey := "check_length"
+    sourceBodyDigest := some { value := "34041a6ae6346f734e5ba502c2b1b816" }
+    displayName := "check_length", params := ["len"], body := checkLengthExpr }
 
 /-- Function table for proofs. -/
 def proofFnsGlobals : String → Option PFnDef
@@ -1260,7 +1273,10 @@ def proofFnsGlobals : String → Option PFnDef
   | "check_length" => some checkLengthFn
   | _ => none
 
-def proofFns : FnTable := FnTable.ofGlobals proofFnsGlobals
+/-- MIGRATED (R-0004 step 5, 8 of 9). Both entries verified against
+    `examples/thesis_demo` before adoption. -/
+def proofFns : FnTable :=
+  { entries := #[checkLengthFn, parseByteFn], globals := proofFnsGlobals }
 
 -- Keeps `simp only [eval, proofFns_globals, proofFnsGlobals]` working WITHOUT delta-unfolding
 -- the bare `proofFns`. The old `def proofFns : FnTable | "x" => …` produced equation lemmas
@@ -1476,6 +1492,22 @@ def proofFnsExtGlobals : String → Option PFnDef
   | "decode_header" => some decodeHeaderFn
   | _ => none
 
+/-- NOT MIGRATED, and this is the honest answer rather than a gap left silent.
+
+    `proofFnsExt` adds `decode_header` to the two entries `proofFns` carries. That
+    function is `packet.decode_header`, and the compiler reports it as
+    `eligible (extraction failed) — unsupported: mutable borrow`. So there is NO
+    generated body to compare the committed spec against, and adopting an identity
+    and a digest for it would be asserting a correspondence nobody checked — the
+    exact move that would have silently redefined four crypto_verify theorems
+    earlier in this migration.
+
+    A partial migration is not available either: one unidentified entry disqualifies
+    the whole table (`allIdentified`), which is the correct fail-closed behaviour.
+
+    This unblocks when `decode_header` becomes extractable (mutable borrow support
+    in extraction). `check_table_migration.sh` carries a TRIPWIRE asserting it is
+    still unextractable, so that day fails the gate instead of passing unnoticed. -/
 def proofFnsExt : FnTable := FnTable.ofGlobals proofFnsExtGlobals
 
 -- Keeps `simp only [eval, proofFnsExt_globals, proofFnsExtGlobals]` working WITHOUT delta-unfolding
@@ -1578,7 +1610,10 @@ def computeTagExpr : PExpr :=
   .binOp .add (.binOp .mul (.var "key") (.var "message")) (.var "nonce")
 
 def computeTagFn : PFnDef :=
-  { displayName := "compute_tag", params := ["key", "message", "nonce"], body := computeTagExpr }
+  { identity := .semantic (CallableId.ofUser "main" "compute_tag")
+    operationalKey := "compute_tag"
+    sourceBodyDigest := some { value := "4a152a2d16c99501665e2cba7a2910a1" }
+    displayName := "compute_tag", params := ["key", "message", "nonce"], body := computeTagExpr }
 
 /-- `fn verify_tag(key, message, nonce, expected_tag) -> Int {
        let computed = compute_tag(key, message, nonce);
@@ -1592,7 +1627,10 @@ def verifyTagExpr : PExpr :=
       (.lit (.int 0)))
 
 def verifyTagFn : PFnDef :=
-  { displayName := "verify_tag", params := ["key", "message", "nonce", "expected_tag"], body := verifyTagExpr }
+  { identity := .semantic (CallableId.ofUser "main" "verify_tag")
+    operationalKey := "verify_tag"
+    sourceBodyDigest := some { value := "574f017b82f8ec2e8a96f3a02a49d1cd" }
+    displayName := "verify_tag", params := ["key", "message", "nonce", "expected_tag"], body := verifyTagExpr }
 
 /-- `fn check_nonce(nonce, max_nonce) -> Int {
        if nonce > 0 { if nonce <= max_nonce { return 1; } else { return 0; } }
@@ -1608,7 +1646,10 @@ def checkNonceExpr : PExpr :=
     (.lit (.int 0))
 
 def checkNonceFn : PFnDef :=
-  { displayName := "check_nonce", params := ["nonce", "max_nonce"], body := checkNonceExpr }
+  { identity := .semantic (CallableId.ofUser "main" "check_nonce")
+    operationalKey := "check_nonce"
+    sourceBodyDigest := some { value := "01aa5d81c104c6a205a28852bd825b95" }
+    displayName := "check_nonce", params := ["nonce", "max_nonce"], body := checkNonceExpr }
 
 /-- `fn verify_message(key, message, nonce, expected_tag, max_nonce) -> Int {
        if verify_tag(key, message, nonce, expected_tag) != 1 { return 0; }
@@ -1630,7 +1671,10 @@ def verifyMessageExpr : PExpr :=
       (.lit (.int 1)))
 
 def verifyMessageFn : PFnDef :=
-  { displayName := "verify_message", params := ["key", "message", "nonce", "expected_tag", "max_nonce"],
+  { identity := .semantic (CallableId.ofUser "main" "verify_message")
+    operationalKey := "verify_message"
+    sourceBodyDigest := some { value := "405b50465d34ee67641bacb19e43f057" }
+    displayName := "verify_message", params := ["key", "message", "nonce", "expected_tag", "max_nonce"],
     body := verifyMessageExpr }
 
 /-- Function table for crypto verification proofs. -/
@@ -1641,7 +1685,12 @@ def cryptoFnsGlobals : String → Option PFnDef
   | "verify_message" => some verifyMessageFn
   | _ => none
 
-def cryptoFns : FnTable := FnTable.ofGlobals cryptoFnsGlobals
+/-- MIGRATED (R-0004 step 5). Identity/key/digest adopted from the generator;
+    entries in CANONICAL order (by rendered CallableId), since `entriesSorted`
+    is asserted rather than imposed. `globals` kept so existing proofs still
+    rewrite, and `dispatchResolves` checks the two agree. -/
+def cryptoFns : FnTable :=
+  { entries := #[checkNonceFn, computeTagFn, verifyMessageFn, verifyTagFn], globals := cryptoFnsGlobals }
 
 -- Keeps `simp only [eval, cryptoFns_globals, cryptoFnsGlobals]` working WITHOUT delta-unfolding
 -- the bare `cryptoFns`. The old `def cryptoFns : FnTable | "x" => …` produced equation lemmas
@@ -1700,7 +1749,10 @@ def checkMagicExpr : PExpr :=
     (.lit (.int 0))
 
 def checkMagicFn : PFnDef :=
-  { displayName := "check_magic", params := ["b0", "b1", "b2", "b3"], body := checkMagicExpr }
+  { identity := .semantic (CallableId.ofUser "main" "check_magic")
+    operationalKey := "check_magic"
+    sourceBodyDigest := some { value := "17d8ab0be07223a73a5e1507aafd5e4d" }
+    displayName := "check_magic", params := ["b0", "b1", "b2", "b3"], body := checkMagicExpr }
 
 /-- `fn check_class(cls) -> Int` — checks 1 (32-bit) or 2 (64-bit) -/
 def checkClassExpr : PExpr :=
@@ -1711,7 +1763,10 @@ def checkClassExpr : PExpr :=
       (.lit (.int 0)))
 
 def checkClassFn : PFnDef :=
-  { displayName := "check_class", params := ["cls"], body := checkClassExpr }
+  { identity := .semantic (CallableId.ofUser "main" "check_class")
+    operationalKey := "check_class"
+    sourceBodyDigest := some { value := "ebd1b1ca35adf407143b2220e7e9921d" }
+    displayName := "check_class", params := ["cls"], body := checkClassExpr }
 
 /-- `fn check_data(encoding) -> Int` — checks 1 (little) or 2 (big) -/
 def checkDataExpr : PExpr :=
@@ -1722,7 +1777,10 @@ def checkDataExpr : PExpr :=
       (.lit (.int 0)))
 
 def checkDataFn : PFnDef :=
-  { displayName := "check_data", params := ["encoding"], body := checkDataExpr }
+  { identity := .semantic (CallableId.ofUser "main" "check_data")
+    operationalKey := "check_data"
+    sourceBodyDigest := some { value := "f5ed9c79607fbc0d64ef723c703aa299" }
+    displayName := "check_data", params := ["encoding"], body := checkDataExpr }
 
 /-- `fn check_version(ver) -> Int` — checks ver == 1 (EV_CURRENT) -/
 def checkVersionExpr : PExpr :=
@@ -1731,7 +1789,10 @@ def checkVersionExpr : PExpr :=
     (.lit (.int 0))
 
 def checkVersionFn : PFnDef :=
-  { displayName := "check_version", params := ["ver"], body := checkVersionExpr }
+  { identity := .semantic (CallableId.ofUser "main" "check_version")
+    operationalKey := "check_version"
+    sourceBodyDigest := some { value := "f42ef4400948bbdb10ccb19733cd0993" }
+    displayName := "check_version", params := ["ver"], body := checkVersionExpr }
 
 /-- `fn validate_header(b0, b1, b2, b3, cls, encoding, ver) -> Int` -/
 def validateHeaderExpr : PExpr :=
@@ -1750,7 +1811,10 @@ def validateHeaderExpr : PExpr :=
       (.lit (.int 0)))
 
 def validateHeaderFn : PFnDef :=
-  { displayName := "validate_header", params := ["b0", "b1", "b2", "b3", "cls", "encoding", "ver"],
+  { identity := .semantic (CallableId.ofUser "main" "validate_header")
+    operationalKey := "validate_header"
+    sourceBodyDigest := some { value := "adbcf58c39059203cf4296adbceab87a" }
+    displayName := "validate_header", params := ["b0", "b1", "b2", "b3", "cls", "encoding", "ver"],
     body := validateHeaderExpr }
 
 /-- Function table for ELF header validator proofs. -/
@@ -1762,7 +1826,12 @@ def elfFnsGlobals : String → Option PFnDef
   | "validate_header" => some validateHeaderFn
   | _ => none
 
-def elfFns : FnTable := FnTable.ofGlobals elfFnsGlobals
+/-- MIGRATED (R-0004 step 5). Identity/key/digest adopted from the generator;
+    entries in CANONICAL order (by rendered CallableId), since `entriesSorted`
+    is asserted rather than imposed. `globals` kept so existing proofs still
+    rewrite, and `dispatchResolves` checks the two agree. -/
+def elfFns : FnTable :=
+  { entries := #[checkClassFn, checkDataFn, checkMagicFn, checkVersionFn, validateHeaderFn], globals := elfFnsGlobals }
 
 -- Keeps `simp only [eval, elfFns_globals, elfFnsGlobals]` working WITHOUT delta-unfolding
 -- the bare `elfFns`. The old `def elfFns : FnTable | "x" => …` produced equation lemmas
@@ -1805,7 +1874,10 @@ def validateVersionExpr : PExpr :=
     (.lit (.int 1))
 
 def validateVersionFn : PFnDef :=
-  { displayName := "validate_version", params := ["v"], body := validateVersionExpr }
+  { identity := .semantic (CallableId.ofUser "parse_validate" "validate_version")
+    operationalKey := "validate_version"
+    sourceBodyDigest := some { value := "bae419f8b3b19c7738eb88d25593e4a5" }
+    displayName := "validate_version", params := ["v"], body := validateVersionExpr }
 
 /-- `fn validate_msg_type(t: i32) -> i32` — checks 1 ≤ t ≤ 4. -/
 def validateMsgTypeExpr : PExpr :=
@@ -1816,7 +1888,10 @@ def validateMsgTypeExpr : PExpr :=
     (.lit (.int 1))
 
 def validateMsgTypeFn : PFnDef :=
-  { displayName := "validate_msg_type", params := ["t"], body := validateMsgTypeExpr }
+  { identity := .semantic (CallableId.ofUser "parse_validate" "validate_msg_type")
+    operationalKey := "validate_msg_type"
+    sourceBodyDigest := some { value := "40966c54506558240514467ddad025f3" }
+    displayName := "validate_msg_type", params := ["t"], body := validateMsgTypeExpr }
 
 /-- `fn validate_payload_len(plen, max_len: i32) -> i32` —
     checks 0 ≤ plen ≤ max_len. -/
@@ -1828,7 +1903,10 @@ def validatePayloadLenExpr : PExpr :=
     (.lit (.int 1))
 
 def validatePayloadLenFn : PFnDef :=
-  { displayName := "validate_payload_len", params := ["plen", "max_len"], body := validatePayloadLenExpr }
+  { identity := .semantic (CallableId.ofUser "parse_validate" "validate_payload_len")
+    operationalKey := "validate_payload_len"
+    sourceBodyDigest := some { value := "fe45cee5d4f7b03340be2c88a41de344" }
+    displayName := "validate_payload_len", params := ["plen", "max_len"], body := validatePayloadLenExpr }
 
 /-- `fn validate_total_len(actual, needed: i32) -> i32` —
     checks actual ≥ needed. -/
@@ -1838,7 +1916,10 @@ def validateTotalLenExpr : PExpr :=
     (.lit (.int 1))
 
 def validateTotalLenFn : PFnDef :=
-  { displayName := "validate_total_len", params := ["actual", "needed"], body := validateTotalLenExpr }
+  { identity := .semantic (CallableId.ofUser "parse_validate" "validate_total_len")
+    operationalKey := "validate_total_len"
+    sourceBodyDigest := some { value := "915a625bd310d8d2afe60786fdb348c3" }
+    displayName := "validate_total_len", params := ["actual", "needed"], body := validateTotalLenExpr }
 
 /-- `fn validate_checksum(expected, computed: i32) -> i32` —
     checks expected == computed. -/
@@ -1848,7 +1929,10 @@ def validateChecksumExpr : PExpr :=
     (.lit (.int 1))
 
 def validateChecksumFn : PFnDef :=
-  { displayName := "validate_checksum", params := ["expected", "computed"], body := validateChecksumExpr }
+  { identity := .semantic (CallableId.ofUser "parse_validate" "validate_checksum")
+    operationalKey := "validate_checksum"
+    sourceBodyDigest := some { value := "e55ddbb920bb3426b5820aceef127dae" }
+    displayName := "validate_checksum", params := ["expected", "computed"], body := validateChecksumExpr }
 
 /-- `fn compute_checksum(data: [i32; 8], count: i32) -> i32` —
     XOR fold of `data[0..count)` at i32 width.  Source:
@@ -1884,7 +1968,10 @@ def computeChecksumExpr : PExpr :=
         (.var "acc")))
 
 def computeChecksumFn : PFnDef :=
-  { displayName := "compute_checksum", params := ["data", "count"], body := computeChecksumExpr }
+  { identity := .semantic (CallableId.ofUser "parse_validate" "compute_checksum")
+    operationalKey := "compute_checksum"
+    sourceBodyDigest := some { value := "45fde59dd3b43fb11ac8341c064e7da7" }
+    displayName := "compute_checksum", params := ["data", "count"], body := computeChecksumExpr }
 
 /-- `fn validate_header_fields(v, t, plen, total_len, cs_expected, cs_computed) -> i32`
     — composes the five validators. Returns 0 on success or the
@@ -1905,7 +1992,10 @@ def validateHeaderFieldsExpr : PExpr :=
               (.lit (.int 0)))))))
 
 def validateHeaderFieldsFn : PFnDef :=
-  { displayName := "validate_header_fields", params := ["v", "t", "plen", "total_len", "cs_expected", "cs_computed"],
+  { identity := .semantic (CallableId.ofUser "parse_validate" "validate_header_fields")
+    operationalKey := "validate_header_fields"
+    sourceBodyDigest := some { value := "a5d590db87bc54cb19ca011b73c98346" }
+    displayName := "validate_header_fields", params := ["v", "t", "plen", "total_len", "cs_expected", "cs_computed"],
     body := validateHeaderFieldsExpr }
 
 -- Helpers for parse_header construction (PExpr layer, not Concrete source).
@@ -1973,7 +2063,10 @@ def parseHeaderExpr : PExpr :=
                 okHeaderExpr))))))
 
 def parseHeaderFn : PFnDef :=
-  { displayName := "parse_header", params := ["data", "len"], body := parseHeaderExpr }
+  { identity := .semantic (CallableId.ofUser "parse_validate" "parse_header")
+    operationalKey := "parse_header"
+    sourceBodyDigest := some { value := "2b151225316f2a5e9eb18e9ae1dc4f06" }
+    displayName := "parse_header", params := ["data", "len"], body := parseHeaderExpr }
 
 /-- Function table for parse_validate proofs. -/
 def parseValidateFnsGlobals : String → Option PFnDef
@@ -1987,7 +2080,10 @@ def parseValidateFnsGlobals : String → Option PFnDef
   | "parse_header" => some parseHeaderFn
   | _ => none
 
-def parseValidateFns : FnTable := FnTable.ofGlobals parseValidateFnsGlobals
+/-- MIGRATED (R-0004 step 5). Identity/key/digest adopted from the generator;
+    entries in canonical order (asserted by `entriesSorted`, not imposed). -/
+def parseValidateFns : FnTable :=
+  { entries := #[computeChecksumFn, parseHeaderFn, validateChecksumFn, validateHeaderFieldsFn, validateMsgTypeFn, validatePayloadLenFn, validateTotalLenFn, validateVersionFn], globals := parseValidateFnsGlobals }
 
 -- Keeps `simp only [eval, parseValidateFns_globals, parseValidateFnsGlobals]` working WITHOUT delta-unfolding
 -- the bare `parseValidateFns`. The old `def parseValidateFns : FnTable | "x" => …` produced equation lemmas
@@ -2036,7 +2132,10 @@ def fcTagExpr : PExpr :=
         (.var "acc")))
 
 def fcTagFn : PFnDef :=
-  { displayName := "compute_tag", params := ["buf"], body := fcTagExpr }
+  { identity := .semantic (CallableId.ofUser "fixed_capacity" "compute_tag")
+    operationalKey := "compute_tag"
+    sourceBodyDigest := some { value := "fe55b50d3fca30c4cffe988b2bbb7fea" }
+    displayName := "compute_tag", params := ["buf"], body := fcTagExpr }
 
 /-- `fn ring_new() -> RingBuf` — returns a fresh RingBuf with a
     16-element data array zeroed, head = 0, count = 0. -/
@@ -2049,7 +2148,10 @@ def ringNewExpr : PExpr :=
       ])
 
 def ringNewFn : PFnDef :=
-  { displayName := "ring_new", params := [], body := ringNewExpr }
+  { identity := .semantic (CallableId.ofUser "fixed_capacity" "ring_new")
+    operationalKey := "ring_new"
+    sourceBodyDigest := some { value := "b37a2218caee8f0dfa4ad3e51a28c62a" }
+    displayName := "ring_new", params := [], body := ringNewExpr }
 
 /-- `fn ring_push(rb: RingBuf, val: i32) -> RingBuf` — push `val`
     at the current head slot, advance head by 1 mod 16, bump count
@@ -2084,7 +2186,10 @@ def ringPushExpr : PExpr :=
               ])))))
 
 def ringPushFn : PFnDef :=
-  { displayName := "ring_push", params := ["rb", "val"], body := ringPushExpr }
+  { identity := .semantic (CallableId.ofUser "fixed_capacity" "ring_push")
+    operationalKey := "ring_push"
+    sourceBodyDigest := some { value := "bdd5f35bd8d52c02a06eeb4e6b6fb318" }
+    displayName := "ring_push", params := ["rb", "val"], body := ringPushExpr }
 
 /-- `fn ring_contains(rb: RingBuf, val: i32) -> i32` — scans the
     ring (up to `rb.count` entries, capped at 16) and returns 1 if
@@ -2128,7 +2233,10 @@ def ringContainsExpr : PExpr :=
           (.lit (.int 0)))))
 
 def ringContainsFn : PFnDef :=
-  { displayName := "ring_contains", params := ["rb", "val"], body := ringContainsExpr }
+  { identity := .semantic (CallableId.ofUser "fixed_capacity" "ring_contains")
+    operationalKey := "ring_contains"
+    sourceBodyDigest := some { value := "b0d47d6eb1a041583ca1a98d7ce7fca4" }
+    displayName := "ring_contains", params := ["rb", "val"], body := ringContainsExpr }
 
 /-- Function table for fixed_capacity proofs.  Each new proof
     extends this table with the function it targets. -/
@@ -2139,7 +2247,10 @@ def fixedCapacityFnsGlobals : String → Option PFnDef
   | "ring_contains" => some ringContainsFn
   | _               => none
 
-def fixedCapacityFns : FnTable := FnTable.ofGlobals fixedCapacityFnsGlobals
+/-- MIGRATED (R-0004 step 5). Identity/key/digest adopted from the generator;
+    entries in canonical order (asserted by `entriesSorted`, not imposed). -/
+def fixedCapacityFns : FnTable :=
+  { entries := #[fcTagFn, ringContainsFn, ringNewFn, ringPushFn], globals := fixedCapacityFnsGlobals }
 
 -- Keeps `simp only [eval, fixedCapacityFns_globals, fixedCapacityFnsGlobals]` working WITHOUT delta-unfolding
 -- the bare `fixedCapacityFns`. The old `def fixedCapacityFns : FnTable | "x" => …` produced equation lemmas
@@ -2303,15 +2414,33 @@ def ctCompareExpr : PExpr :=
           (.lit (.int 1))
           (.lit (.int 0)))))
 
+/-- MIGRATED (R-0004 step 5, table 1 of 9). Identity, operational key and body
+    digest are ADOPTED FROM THE GENERATOR, not invented here: `concrete
+    examples/constant_time_tag/src/main.con --report lean-stubs` emits exactly this
+    identity and this digest.
+
+    The adoption was earned, not assumed. The hand-written `ctCompareExpr` below
+    hashes to `d0019cee08c5091696df3f7bee5ece3c`, byte-identical to the digest the
+    compiler computes from source extraction — so this table's spec provably IS the
+    compiler's extraction, and populating `entries` cannot change what any existing
+    theorem proves. That equality is asserted by a gate, not left as a comment. -/
 def ctCompareFn : PFnDef :=
-  { displayName := "ct_compare", params := ["a", "b"], body := ctCompareExpr }
+  { identity := .semantic (CallableId.ofUser "constant_time_tag" "ct_compare")
+    operationalKey := "ct_compare"
+    sourceBodyDigest := some { value := "d0019cee08c5091696df3f7bee5ece3c" }
+    displayName := "ct_compare", params := ["a", "b"], body := ctCompareExpr }
 
 /-- Function table for constant_time_tag proofs. -/
 def ctTagFnsGlobals : String → Option PFnDef
   | "ct_compare" => some ctCompareFn
   | _            => none
 
-def ctTagFns : FnTable := FnTable.ofGlobals ctTagFnsGlobals
+/-- MIGRATED: `entries` populated, so this table has a ROOT and can bear evidence.
+    `globals` is kept because `PExpr.call` still selects by string and every
+    existing proof rewrites with `ctTagFnsGlobals`; `dispatchResolves` checks the
+    two agree, so the root commits to the mapping evaluation actually uses. -/
+def ctTagFns : FnTable :=
+  { entries := #[ctCompareFn], globals := ctTagFnsGlobals }
 
 -- Keeps `simp only [eval, ctTagFns_globals, ctTagFnsGlobals]` working WITHOUT delta-unfolding
 -- the bare `ctTagFns`. The old `def ctTagFns : FnTable | "x" => …` produced equation lemmas

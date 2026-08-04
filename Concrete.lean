@@ -7,6 +7,7 @@ import Concrete.Resolve.FileSummary
 import Concrete.Resolve.BuiltinSigs
 import Concrete.Proof.SimpAttr
 import Concrete.Resolve.CallableId
+import Concrete.Resolve.TypeId
 import Concrete.Resolve.Shared
 import Concrete.Resolve.Resolve
 import Concrete.Semantics.TypeJudgment
@@ -33,6 +34,10 @@ import Concrete.Report.Diff
 import Concrete.Pipeline.Pipeline
 import Concrete.Proof.ProofCore
 import Concrete.Proof.Proof
+import Concrete.Proof.SubjectFacts
+import Concrete.Proof.DependencyRoot
+import Concrete.Proof.DependencyEdge
+import Concrete.Proof.DependencyEdges
 import Concrete.ProofKit
 import Concrete.Proof.ProofSoundness
 import Concrete.Proof.Sha256Spec

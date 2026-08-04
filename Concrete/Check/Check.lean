@@ -3,6 +3,7 @@ import Concrete.Resolve.BuiltinSigs
 import Concrete.Report.Diagnostic
 import Concrete.Resolve.FileSummary
 import Concrete.Resolve.Intrinsic
+import Concrete.Resolve.BuiltinEnums
 import Concrete.Resolve.Resolve
 import Concrete.Resolve.Shared
 import Concrete.Semantics.TypeJudgment
@@ -2093,33 +2094,15 @@ def checkModule (m : Module) (summary : FileSummary)
   -- Build named function signature map for fnRef resolution
   let fnSigPairs : List (String × FnSummary) :=
     summary.functions ++ (implMethodSigs ++ traitImplMethodSigs)
-  let allStructs := imports.structs ++ m.structs
+  -- Use resolved declarations so definition-site type provenance is present on
+  -- the same lookup path Elab and the evidence producer consume.
+  let allStructs := imports.structs ++ summary.structs
   -- Built-in Option<T> enum (Some { value: T }, None {})
-  let builtinOptionEnum : EnumDef := {
-    name := optionEnumName
-    typeParams := ["T"]
-    variants := [
-      { name := "Some", fields := [{ name := "value", ty := .typeVar "T" }] },
-      { name := "None", fields := [] }
-    ]
-    -- Conditionally Copy: `Option<T>` is Copy iff `T` is Copy (Phase 7 #3).
-    isCopy := true
-    builtinId := some .option
-  }
-  let builtinResultEnum : EnumDef := {
-    name := resultEnumName
-    typeParams := ["T", "E"]
-    variants := [
-      { name := okVariantName, fields := [{ name := "value", ty := .typeVar "T" }] },
-      { name := errVariantName, fields := [{ name := "error", ty := .typeVar "E" }] }
-    ]
-    -- Conditionally Copy: `Result<T, E>` is Copy iff `T` and `E` are (Phase 7 #3).
-    isCopy := true
-    builtinId := some .result
-  }
-  let hasUserResult := m.enums.any fun ed => ed.name == resultEnumName
-  let builtinEnumList := [builtinOptionEnum] ++ (if hasUserResult then [] else [builtinResultEnum])
-  let allEnums := builtinEnumList ++ imports.enums ++ m.enums
+  -- One owner: `Concrete.Resolve.BuiltinEnums` (bug 065). Both the builtin
+  -- enums and the shadowing rule were stated twice, and Check consulted
+  -- different inputs than Elab.
+  let builtinEnumList := builtinEnums summary.enums imports.enums
+  let allEnums := builtinEnumList ++ imports.enums ++ summary.enums
   -- Build type aliases map
   let localTypeAliases : List (String × Ty) := m.typeAliases.map fun ta => (ta.name, ta.targetTy)
   -- Transitively close so chains (`type B = A; type A = i32`) resolve in one lookup.

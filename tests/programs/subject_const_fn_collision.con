@@ -1,0 +1,23 @@
+// R-0004 witness: a CONSTANT and a FUNCTION sharing ONE spelling.
+//
+// The language permits this — `LIMIT` is both a constant and a function here —
+// so a resolver keyed on the spelling has two different entities to choose
+// between. Routing the constant through the CALLABLE resolver encoded it under
+// the FUNCTION's CallableId: a confidently wrong identity in evidence bytes,
+// worse than a textual name because it looks resolved.
+//
+// An earlier version of this witness used `LIMIT` and `LIMIT_fn` — two DIFFERENT
+// spellings, so it exercised no collision at all and would have passed against
+// the bug it was written for.
+mod coll {
+    const LIMIT: Int = 10;
+
+    pub fn LIMIT(x: Int) -> Int { return x; }
+
+    // Names `LIMIT`. Which one? Unanswerable from the spelling, so the subject
+    // must go uncovered rather than pick one.
+    #[ensures(result <= LIMIT)]
+    pub fn uses_const(x: Int) -> Int { if x > 10 { return 10; } return x; }
+
+    pub fn main() -> Int { return uses_const(3); }
+}

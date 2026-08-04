@@ -593,6 +593,43 @@ else
 fi
 
 echo ""
+echo "=== generated artifacts have a home, and it is not the tracked tree ==="
+# THE DECISION, recorded because it is a naming choice with a wrong answer
+# available. Generated proof artifacts written to disk go under `.build/prove/`,
+# which already exists (prove --emit-artifacts, --workspace) and is gitignored. A
+# second `.build/proofs/` was the obvious move and is the wrong one: two homes for
+# one concept is the drift this tree keeps paying for.
+#
+# Report surfaces keep printing to STDOUT. `--report lean-stubs` is a report, 15
+# call sites read it on stdout, and a report that silently writes a file is a
+# surprise — not a default worth breaking them for.
+[ -d "$ROOT_DIR/.build" ] || mkdir -p "$ROOT_DIR/.build" 2>/dev/null || true
+if grep -qE '^\.?build/' "$ROOT_DIR/.gitignore"; then
+  ok ".build/ is gitignored, so written artifacts cannot be committed by accident"
+else
+  no ".build/ is not gitignored — generated artifacts could be committed"
+fi
+
+# THE REAL RISK, and it arrives with step 5. The nine tracked Proofs.lean files are
+# HAND-WRITTEN today and hold the nine hand-written FnTables that step 5 migrates.
+# When those tables become generated, a generated artifact committed as though it
+# were hand-written erases the distinction between what a human asserted and what a
+# tool emitted — and every provenance claim rests on that distinction. Anchored to a
+# real `namespace` declaration so the generator's own string literals do not match.
+gen_tracked="$(git -C "$ROOT_DIR" grep -ln "^namespace Concrete.Proof.Generated" -- '*.lean' 2>/dev/null || true)"
+if [ -z "$gen_tracked" ]; then
+  ok "no tracked file declares the generated namespace"
+else
+  no "tracked generated artifact(s): $gen_tracked — generated output must not be committed as source"
+fi
+stub_tracked="$(git -C "$ROOT_DIR" grep -ln "^-- Lean proof stub for" -- '*.lean' 2>/dev/null || true)"
+if [ -z "$stub_tracked" ]; then
+  ok "no tracked file is an emit-lean stub"
+else
+  no "tracked emit-lean stub(s): $stub_tracked"
+fi
+
+echo ""
 echo "=== each identity sits on the body that belongs to it ==="
 # WHY THIS EXISTS. Every other identity leg checks that the EXPECTED identities are
 # PRESENT. A swap — entry A carrying B's identity and B carrying A's — leaves the
@@ -653,14 +690,14 @@ echo "=== namespaces and specializations: the TYPE distinguishes them ==="
 # distinction is load-bearing the moment a producer exists.
 probe "a builtin and a user callable of the same name are different identities" "false" \
 '#eval (CallableId.ofUser "" "len").render == (CallableId.ofBuiltin "len").render'
-probe "all four namespaces render distinctly for one declName" "4" \
+probe "all five namespaces render distinctly for one declName" "5" \
 '#eval ((CallableNamespace.all.map fun ns =>
     ({ ns := ns, defModule := "", declName := "len" } : CallableId).render).eraseDups).length'
 # The namespace list is the checkable copy: a new namespace that no consumer
 # handles would otherwise be invisible.
 probe "CallableNamespace.all covers every constructor" "true" \
-'#eval CallableNamespace.all.length == 4
-  && (CallableNamespace.all.map CallableNamespace.canonical).eraseDups.length == 4'
+'#eval CallableNamespace.all.length == 5
+  && (CallableNamespace.all.map CallableNamespace.canonical).eraseDups.length == 5'
 probe "a specialization differs from its generic" "false" \
 '#eval (CallableId.ofUser "m" "id" 1).render == ((CallableId.ofUser "m" "id" 1).specialize [.int]).render'
 probe "two specializations at different types differ" "false" \
@@ -703,13 +740,23 @@ def bE2 : Proof.PFnDef := { identity := .semantic bId2, operationalKey := "built
 # present, and FAILS when a producer appears — at which point a generated table
 # must exercise it and this note must be replaced by that coverage. Without a
 # tripwire, "representable" quietly reads as "covered".
-minters=$(grep -rn "ofBuiltin\|ofIntrinsic\|ofExtern\|CallableId.specialize" \
-  --include="*.lean" "$ROOT_DIR/Concrete" 2>/dev/null \
-  | grep -v "Resolve/CallableId.lean" | wc -l | tr -d ' ')
-if [ "$minters" = "0" ]; then
-  ok "TRIPWIRE: no compiler code mints a non-user identity yet — generated-table coverage is still owed (step 4)"
+# REAL COVERAGE for the producer that now exists: Elab mints `.spec` identities
+# for contract targets, so that path is exercised by a real program rather than
+# tripwired. hmac_sha256's `result == ch_spec(x, y, z)` is the case.
+if grep -q "CallableId.ofSpec" "$ROOT_DIR/Concrete/Elab/Elab.lean"; then
+  ok "Elab mints .spec identities for contract targets"
 else
-  no "a producer of non-user identities now exists ($minters sites): a GENERATED table must exercise it, and this tripwire must become real coverage"
+  no "no producer of .spec identities — contracts naming a spec fn would go uncovered"
+fi
+# The ENTRY tripwire, narrowed. A spec fn is a contract target and never a table
+# entry; the open question is still whether a generated TABLE ever carries a
+# non-user entry, which needs callee identity (step 6/7).
+entry_minters=$(grep -rn "ofBuiltin\|ofIntrinsic\|CallableId.specialize" \
+  --include="*.lean" "$ROOT_DIR/Concrete/Proof/ProofCore.lean" 2>/dev/null | wc -l | tr -d ' ')
+if [ "$entry_minters" = "0" ]; then
+  ok "TRIPWIRE: no generated table ENTRY is non-user yet — that coverage is still owed"
+else
+  no "generated table entries now carry non-user identities ($entry_minters sites): exercise them in a generated table"
 fi
 
 echo ""
