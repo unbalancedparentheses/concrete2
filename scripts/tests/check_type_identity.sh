@@ -132,8 +132,16 @@ def bodyUsesAreTyped : Bool :=
       | some facts =>
           let pointId := TypeId.user "main" "Point"
           let directionId := TypeId.user "main" "Direction"
+          -- Filter to the node kinds this leg is ABOUT. It previously counted the
+          -- whole list, so adding `binderRef` broke it even though no field or
+          -- variant had changed — a coupling between unrelated properties. The
+          -- count still guards against a LOST field/variant, which is the point.
+          let typed := facts.bodyIdentityInputs.uses.filter fun u =>
+            match u with
+            | .binderRef _ _ => false
+            | _ => true
           facts.bodyIdentityInputs.covered
-            && facts.bodyIdentityInputs.uses.length == 7
+            && typed.length == 7
             && facts.bodyIdentityInputs.uses.contains (.typeRef pointId)
             && facts.bodyIdentityInputs.uses.contains
               (.field { owner := pointId, field := "x" })
@@ -162,8 +170,12 @@ def aliasBodyUsesDefinitionId : Bool :=
           match app.declFacts.head? with
           | none => false
           | some facts =>
+              let typed := facts.bodyIdentityInputs.uses.filter fun u =>
+                match u with
+                | .binderRef _ _ => false
+                | _ => true
               facts.bodyIdentityInputs.covered
-                && facts.bodyIdentityInputs.uses == [
+                && typed == [
                   .field { owner := TypeId.user "lib" "Point", field := "x" }
                 ]
 
