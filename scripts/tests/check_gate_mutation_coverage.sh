@@ -228,6 +228,43 @@ add "wrapping-stays-unchecked" "Concrete/Backend/EmitSSA.lean" "check_wrapping_a
   '| .wrappingAdd => emitStructured s (.binOp dst .add iTy lOp rOp)' \
   '| .wrappingAdd => emitStructured s (.call (some dst) iTy (.global (checkedCallName "sadd" operandTy)) [(iTy, lOp), (iTy, rOp)])'
 
+# ---------------------------------------------------------------------------
+# 2026-08-04, batch 3. APPENDED at the end deliberately: family numbers are
+# positional, and inserting mid-list earlier today renumbered everything below and
+# sent a validation run at two already-covered families.
+# ---------------------------------------------------------------------------
+
+# A SURVIVOR that turned into a finding about the GATE, not about the rule.
+#
+# Making `blockDiverges` always answer false — so code after a `return` reads as
+# reachable — leaves `check_totality_judgment.sh` GREEN. That gate's header names
+# `blockDiverges` among the single-sourced facts it covers, but what it actually tests is
+# arithmetic traps and interp/compiled value agreement; no fixture in it exercises
+# divergence detection. Its scope is narrower than its name and header claim, and that is
+# worth knowing on its own.
+#
+# The RULE is guarded, though, and decisively: measured with the mutation applied,
+# `make test` goes from 1702/0 to **1315 passed / 76 failed** — E0213 linear-variable
+# errors, because divergence detection is what allows an `if` without `else` whose
+# then-branch returns. So this family targets `run_tests.sh`, the check that actually
+# kills it, rather than the gate whose name suggested it should.
+#
+# Recorded this way because the first instinct — delete the family, or leave it aimed at a
+# gate it does not exercise — would have converted a measurement into either silence or a
+# false green.
+add "divergence-detection" "Concrete/Check/CheckHelpers.lean" "run_tests.sh" yes \
+  $'partial def blockDiverges (stmts : List Stmt) : Bool :=\n  match stmts.getLast? with\n  | none => false\n  | some s => stmtDiverges s' \
+  $'partial def blockDiverges (stmts : List Stmt) : Bool :=\n  match stmts.getLast? with\n  | none => false\n  | some _ => false'
+
+# Check and Elab must route integer-literal typing through the ONE shared judgment.
+# Make Check DISCARD a hint Elab still honours and the E0228/E0715 bug class returns:
+# two passes inferring a source type independently and disagreeing. Phrased to keep
+# `hintR` live — dropping it outright leaves it unused, which this project treats as a
+# build error, and a mutation that cannot compile tests nothing.
+add "shared-type-judgment" "Concrete/Check/Check.lean" "check_type_agreement.sh" yes \
+  'let d := TypeJudgment.intLitDecision hintR' \
+  'let d := TypeJudgment.intLitDecision (if hintR.isSome then none else hintR)'
+
 N=${#NAME[@]}
 PASS=0; FAIL=0
 
