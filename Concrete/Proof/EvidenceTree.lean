@@ -168,6 +168,21 @@ deriving Inhabited
 
 end
 
+/-- An elaborated expression: Core output plus its evidence draft.
+
+    A NAMED structure rather than a tuple. Positional construction has already cost
+    this project real defects, and a tuple makes discarding the evidence half invisible
+    — `let (c, _) := ...` reads as ordinary destructuring, whereas dropping a named
+    `evidence` field is conspicuous. -/
+structure ElaboratedExprV2 where
+  core     : CExpr
+  evidence : EvidenceExprV2
+
+/-- An elaborated statement and its evidence draft. -/
+structure ElaboratedStmtV2 where
+  core     : List CStmt
+  evidence : EvidenceStmtV2
+
 /-- A declaration's evidence body, possibly incomplete. -/
 structure EvidenceBodyDraftV2 where
   statements : List EvidenceStmtV2 := []
@@ -258,6 +273,39 @@ partial def exprConstRefs : EvidenceExprV2 → List ConstId
   | .structLit _ fs => fs.flatMap fun fe => exprConstRefs fe.2
   | .variantLit _ fs => fs.flatMap fun fe => exprConstRefs fe.2
 
+mutual
+
+/-- Constants referenced by a statement, for dependency binding. Exhaustive with no
+    wildcard: a new statement form must say whether it can carry a constant reference,
+    or a dependency would go unbound while the subject read as complete. -/
+partial def stmtConstRefs : EvidenceStmtV2 → List ConstId
+  | .gap _ | .continueStmt _ => []
+  | .letBind _ e | .exprStmt e _ => exprConstRefs e
+  | .assign p v => exprConstRefs p ++ exprConstRefs v
+  | .ret v => (v.map exprConstRefs).getD []
+  | .breakStmt _ v => (v.map exprConstRefs).getD []
+  | .branch c t e => exprConstRefs c ++ t.flatMap stmtConstRefs ++ e.flatMap stmtConstRefs
+  | .match_ s arms => exprConstRefs s ++ arms.flatMap armConstRefs
+  | .loop c invs var body =>
+      exprConstRefs c ++ invs.flatMap exprConstRefs
+        ++ (var.map exprConstRefs).getD [] ++ body.flatMap stmtConstRefs
+  | .block sts => sts.flatMap stmtConstRefs
+
+partial def armConstRefs : EvidenceArmV2 → List ConstId
+  | .gap _ => []
+  | .arm pat guard body =>
+      patternConstRefs pat ++ (guard.map exprConstRefs).getD []
+        ++ body.flatMap stmtConstRefs
+
+partial def patternConstRefs : EvidencePatternV2 → List ConstId
+  | .gap _ | .wildcard | .binder => []
+  | .intLit _ _ | .boolLit _ | .strLit _ | .charLit _ => []
+  | .variant _ fs => fs.flatMap fun fp => patternConstRefs fp.2
+  | .structPat _ fs => fs.flatMap fun fp => patternConstRefs fp.2
+  | .range lo hi _ => exprConstRefs lo ++ exprConstRefs hi
+
+end
+
 /-- Which axis blocks a subject. Named rather than counted, because the two have
     different remedies: a body gap means the PRODUCER is unfinished, an unbound
     constant means DEPENDENCY MATERIAL has not been resolved. A single boolean would
@@ -279,16 +327,34 @@ deriving Repr, Inhabited
     not the reverse. An earlier version stored one `bodyComplete : Bool` beside the
     unbound list and combined them in `isComplete`; that lost which axis was
     responsible, so a caller could see "incomplete" without learning whether to finish
-    the producer or bind a dependency. -/
+    the producer or bind a dependency.
+
+    NON-FORGEABLE. The constructor is private, so both fields can only come from
+    `of`, which derives them from the body tree and the set of bound constants.
+    Deriving the SUMMARY from the axes stops the verdict drifting from the axes; making
+    the axes themselves underivable-by-hand stops the inputs drifting from the body. A
+    caller who could write `{ bodyGaps := [] }` beside a gap-bearing body would restate
+    a fact where it can disagree, which is the defect class this task exists to close. -/
 structure SubjectCompletenessV2 where
+  private mk ::
   /-- Gaps in the body tree. Empty means the BODY axis is complete. -/
-  bodyGaps      : List EvidenceGap := []
+  bodyGaps      : List EvidenceGap
   /-- Constants referenced but not bound to an initializer digest. Empty means the
       DEPENDENCY axis is complete. -/
-  unboundConsts : List ConstId := []
+  unboundConsts : List ConstId
 deriving Repr, Inhabited
 
 namespace SubjectCompletenessV2
+
+/-- THE ONLY constructor. Both axes are derived here:
+    `bodyGaps` from the draft itself, and `unboundConsts` from the constants the body
+    references minus those dependency material has bound. Deduplicated and ordered so
+    the result is a function of its inputs alone. -/
+def of (body : EvidenceBodyDraftV2) (boundConsts : List ConstId)
+    : SubjectCompletenessV2 :=
+  let referenced := (body.statements.flatMap stmtConstRefs).eraseDups
+  { bodyGaps := draftGaps body
+    unboundConsts := referenced.filter fun c => !boundConsts.contains c }
 
 /-- The body axis alone. -/
 def bodyComplete (s : SubjectCompletenessV2) : Bool := s.bodyGaps.isEmpty
@@ -296,8 +362,8 @@ def bodyComplete (s : SubjectCompletenessV2) : Bool := s.bodyGaps.isEmpty
 /-- The dependency axis alone. -/
 def dependenciesComplete (s : SubjectCompletenessV2) : Bool := s.unboundConsts.isEmpty
 
-/-- Every axis that blocks, in a fixed order so a report is deterministic. Empty means
-    the subject is complete. -/
+/-- Every axis that blocks, in a FIXED order and deduplicated, so two runs over the
+    same subject produce identical reports. Empty means the subject is complete. -/
 def blockers (s : SubjectCompletenessV2) : List SubjectBlockerV2 :=
   (if s.bodyComplete then [] else [.bodyIncomplete s.bodyGaps])
     ++ (if s.dependenciesComplete then [] else [.dependenciesUnbound s.unboundConsts])

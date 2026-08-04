@@ -92,6 +92,7 @@ def p : EvidenceExprV2 := .binderRef 0 0
 def q : EvidenceExprV2 := .binderRef 0 1
 def rr : EvidenceExprV2 := .binderRef 0 2
 def fid : CallableId := CallableId.ofUser "m" "f"
+def limitId : ConstId := { defModule := "m", declName := "LIMIT" }
 
 #eval show Lean.MetaM Unit from do
   let ex ← ctorsOf ``Concrete.Proof.EvidenceExprV2
@@ -162,28 +163,40 @@ def fid : CallableId := CallableId.ofUser "m" "f"
   a "a literal pattern binds nothing"
     (patternBindingCount (.intLit 3 .i32) == 0)
 
-  -- SEPARATE AXES. The point is not just that both must hold, but that a caller can
-  -- tell WHICH one blocks: a body gap means finish the producer, an unbound constant
-  -- means bind dependency material. One boolean would send the reader to the wrong work.
+  -- SEPARATE AXES, built only through `of`. The structure's constructor is private,
+  -- so these cannot be forged: a caller who could write `{ bodyGaps := [] }` beside a
+  -- gap-bearing body would restate a fact where it can disagree.
   a "a complete body with an unbound constant blocks on DEPENDENCIES, not the body"
-    (let sc : SubjectCompletenessV2 :=
-       { unboundConsts := [{ defModule := "m", declName := "LIMIT" }] }
+    (let sc := SubjectCompletenessV2.of
+       { statements := [.ret (some (.constRef limitId))] } []
      sc.bodyComplete && !sc.dependenciesComplete && !sc.isComplete
        && sc.blockers.length == 1)
-  a "a gap-bearing body with bound dependencies blocks on the BODY axis"
-    (let sc : SubjectCompletenessV2 := { bodyGaps := [{ code := .unhandledExpr }] }
+  a "binding that constant clears the dependency axis"
+    (let sc := SubjectCompletenessV2.of
+       { statements := [.ret (some (.constRef limitId))] } [limitId]
+     sc.isComplete && sc.blockers.isEmpty)
+  a "a gap-bearing body blocks on the BODY axis"
+    (let sc := SubjectCompletenessV2.of
+       { statements := [.gap { code := .unhandledStmt }] } []
      !sc.bodyComplete && sc.dependenciesComplete && !sc.isComplete
        && sc.blockers.length == 1)
   a "both axes blocked reports BOTH blockers, not one"
-    (let sc : SubjectCompletenessV2 :=
-       { bodyGaps := [{ code := .unhandledStmt }],
-         unboundConsts := [{ defModule := "m", declName := "K" }] }
+    (let sc := SubjectCompletenessV2.of
+       { statements := [.gap { code := .unhandledStmt },
+                        .ret (some (.constRef limitId))] } []
      sc.blockers.length == 2)
-  a "nothing blocking means complete, and isComplete is DERIVED from the axes"
-    (let sc : SubjectCompletenessV2 := {}
-     sc.isComplete && sc.blockers.isEmpty && sc.bodyComplete && sc.dependenciesComplete)
-  a "a body referencing a constant reports it for binding"
-    ((exprConstRefs (.binary "lt" p (.constRef { defModule := "m", declName := "LIMIT" }))).length == 1)
+  a "a clean body with no constants is complete"
+    (let sc := SubjectCompletenessV2.of { statements := [.ret (some p)] } []
+     sc.isComplete && sc.blockers.isEmpty)
+  -- Determinism: repeated references must not multiply the blocker list.
+  a "a constant referenced twice is reported once"
+    (let sc := SubjectCompletenessV2.of
+       { statements := [.ret (some (.binary "add" (.constRef limitId) (.constRef limitId)))] } []
+     sc.unboundConsts.length == 1)
+  a "constants nested in a loop invariant are collected"
+    (let sc := SubjectCompletenessV2.of
+       { statements := [.loop p [.constRef limitId] none []] } []
+     sc.unboundConsts.length == 1)
 
   -- Gap CODES are stable and comparable, so blocker classes can be counted across
   -- versions; free-form strings could not be.
@@ -259,7 +272,7 @@ else
   no "validate does not report the gaps it found — an incomplete body would be undiagnosable"
 fi
 # The gap-walkers must be exhaustive; a wildcard would report a new construct gap-free.
-for fn in exprGaps patternGaps stmtGaps armGaps patternBindingCount exprConstRefs; do
+for fn in exprGaps patternGaps stmtGaps armGaps patternBindingCount exprConstRefs stmtConstRefs armConstRefs patternConstRefs; do
   body="$(awk "/^partial def $fn/,/^\$/" Concrete/Proof/EvidenceTree.lean)"
   if printf '%s' "$body" | grep -qE '^\s*\|\s*_\s*=>'; then
     no "$fn has a wildcard — a new constructor would be reported as gap-free"
@@ -267,6 +280,38 @@ for fn in exprGaps patternGaps stmtGaps armGaps patternBindingCount exprConstRef
     ok "$fn is exhaustive with no wildcard"
   fi
 done
+
+# THE MATRIX MUST COVER EVERY AST CONSTRUCTOR. A classification that silently omits a
+# constructor is how a producer ends up with an unclassified case, so the coverage is
+# checked against the AST rather than trusted.
+MATRIX="docs/EVIDENCE_PRODUCER_MATRIX.md"
+if [ -f "$MATRIX" ]; then
+  missing=""
+  for ctor in $(awk '/^inductive Stmt where/,/^$/' Concrete/Frontend/AST.lean \
+                  | sed -n 's/^  | \([a-zA-Z_]*\).*/\1/p'); do
+    grep -q "\`$ctor\`" "$MATRIX" || missing="$missing $ctor"
+  done
+  if [ -z "$missing" ]; then
+    ok "every Stmt constructor is classified in the producer matrix"
+  else
+    no "producer matrix omits Stmt constructors:$missing"
+  fi
+  # Undecided cases must be explicit, not absent.
+  if grep -q "undecided" "$MATRIX"; then
+    ok "the matrix marks undecided constructors explicitly rather than omitting them"
+  else
+    no "the matrix has no undecided marker — an unfinished decision would be invisible"
+  fi
+else
+  no "producer matrix is missing; producer cases would be decided ad hoc"
+fi
+
+# NON-FORGEABLE. A private constructor is what stops the axes being written by hand.
+if grep -q "private mk ::" Concrete/Proof/EvidenceTree.lean; then
+  ok "SubjectCompletenessV2 has a private constructor; axes come only from `of`"
+else
+  no "SubjectCompletenessV2 can be constructed by hand — its inputs could contradict the body"
+fi
 
 # No derived Repr/BEq across the MUTUAL tree. Scoped to the mutual block: EvidenceGap
 # is a flat enum outside it and derives BEq/Repr legitimately — a first version of
