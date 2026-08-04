@@ -103,6 +103,38 @@ grep -qE 'Rows discharged: \*\*[0-9]+ of [0-9]+\*\*' "$REG" \
   && ok "register states an explicit discharged-row count" \
   || no "register must state 'Rows discharged: **N of M**'"
 
+echo "=== R-0460: the sufficiency theorem exists and is actually proved ==="
+# A register row is discharged by a THEOREM, not by a row saying so. The build being green
+# is the proof; this only checks the row was not quietly emptied.
+IA="Concrete/Semantics/IntArith.lean"
+grep -q "^theorem trapConditions_sufficient" "$IA" \
+  && ok "trapConditions_sufficient is present" \
+  || no "trapConditions_sufficient MISSING — the div/mod row is undischarged again"
+for bad in sorry admit native_decide; do
+  grep -qE "\b$bad\b" "$IA" \
+    && no "$IA contains '$bad' — the sufficiency theorem is not actually proved" \
+    || ok "no '$bad' in the trap semantics"
+done
+# The defect the theorem caught. `resultInRange` shipped as the constant `true`, which made
+# the statement false for + - * while the row looked one step from discharged.
+if grep -qE "^\s*\|\s*\.resultInRange => true" "$IA"; then
+  no "resultInRange is the constant 'true' again — the sufficiency claim is vacuous for + - *"
+else
+  ok "resultInRange is op-specific (not the vacuous placeholder it shipped as)"
+fi
+# And the honest limit: shifts are covered only vacuously, so the row must NOT read discharged.
+# A DECLARATION, not a mention: the docstring legitimately discusses the shift row in order
+# to say the theorem does not cover it. Matching bare text flagged that explanation — the
+# same "gate describes the defect it guards against" noise this suite has hit before.
+if grep -qE "^(private )?theorem shift_obligation_sufficient" "$IA"; then
+  no "a shift sufficiency theorem is DECLARED — but evalIntBinOp does not model shifts, so it would be vacuous"
+else
+  ok "no shift sufficiency theorem is declared (evalIntBinOp does not model shifts)"
+fi
+grep -q "VACUOUS" "$IA" \
+  && ok "the vacuity of the shift case is stated where the theorem lives" \
+  || no "nothing warns that the theorem's shift case is vacuous — it reads as covering shifts"
+
 echo ""
 echo "VC-BRIDGE-REGISTER: PASS=$PASS  FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]

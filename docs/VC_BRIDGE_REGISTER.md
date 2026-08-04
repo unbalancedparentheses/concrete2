@@ -104,7 +104,7 @@ proofs are needed, since no test enumerates program points.
 | **Rejects** | Divisors outside the linear fragment (dropped, reads `not-asked`). |
 | **Forced by** | `examples/two_kernel_demo/src/families.con` (`div_safe`). |
 | **Cross-checked today** | `bridge-check` fuzz; `core-semantics-diff` cross-checks the truncating-division model — and caught a real fault there (`Z.div` vs `Z.quot` disagreeing at `(-7)/2`). |
-| **Discharging theorem (TODO)** | `div_obligation_sufficient`: the two conditions TOGETHER imply `IntArith.evalIntBinOp .div`/`.mod` does not trap at that site. Still a TODO — `familyForTrapCondition`'s totality proves every condition has a family, not that the families' propositions are strong enough. That is Register A's job, and this row is why the distinction matters. |
+| **Discharging theorem (HALF DISCHARGED 2026-08-04)** | `IntArith.trapConditions_sufficient` is proved: for EVERY op, if all conditions `trapConditions` lists hold, `evalIntBinOp` does not trap — so for `/` and `%` the two conditions together are strong enough, at any inputs. That is the **semantics** half. The remaining half is that the emitted obligation *denotes* those conditions, which is the lowering: validated by agreement checks against a reference evaluator on sampled assignments, not proven. H19 is that gap. `familyForTrapCondition`'s totality proves every condition has a family; this proves the conditions suffice; neither proves the rendering is faithful. |
 
 ### `shiftObligations` — shift amounts in range
 
@@ -115,7 +115,7 @@ proofs are needed, since no test enumerates program points.
 | **Rejects** | Shifts whose shifted operand has no resolvable integer type, and amounts outside the linear fragment (dropped, reads `not-asked`). |
 | **Forced by** | `examples/trap_semantics_gap/src/main.con` (`tg::s`, `1 << 40`). |
 | **Cross-checked today** | `check_known_wrong_corpus.sh` asserts the family exists and uses the shifted operand's width; `IntArith`'s `shiftAmountInRange` examples pin the boundary (31 ok, 32 not, negative not). |
-| **Discharging theorem (TODO)** | `shift_obligation_sufficient`: `0 ≤ n < w` implies `IntArith.evalIntBinOp .shl`/`.shr` does not trap at that site. |
+| **Discharging theorem (TODO — and the statement needs care)** | `IntArith.trapConditions_sufficient` covers `.shl`/`.shr` only VACUOUSLY: `evalIntBinOp` does not handle shifts at all (it returns `notApplicable`, so `isTrap` is trivially false), because the reference keeps shifts in the small helpers `shiftAmountInRange`/`maskWidth` rather than threading a shift-result formula through `ArithResult`. The honest row is therefore still open: it must be stated against those helpers, not against `evalIntBinOp`. Recorded rather than counted as discharged — a theorem that is true because its subject is absent proves nothing about shifts. |
 
 **Provenance of this row.** The family did not exist until R-0464 (2026-08-03), and its
 absence was invisible to this document's own gate: `check_vc_bridge_register.sh` walks from
