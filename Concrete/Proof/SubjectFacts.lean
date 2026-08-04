@@ -399,6 +399,10 @@ def ContractFacts.ofResolved
     function body. This is an INPUT to the eventual exhaustive body V2, not that
     body representation itself. Occurrences and traversal order are preserved. -/
 inductive BodyIdentityUse where
+  /-- A local variable reference, as a RELATIVE lexical position: frames crossed
+      outward, then index within that frame. Never the name — renaming a local must
+      not move the body, while resolving to a different binder must. -/
+  | binderRef (framesOut idx : Nat)
   | typeRef (id : TypeId)
   | field   (id : FieldId)
   | variant (id : VariantId)

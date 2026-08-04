@@ -1,4 +1,5 @@
 import Concrete.Frontend.AST
+import Concrete.Proof.BodyScope
 import Concrete.Resolve.BuiltinSigs
 import Concrete.Elab.Core
 import Concrete.Report.Diagnostic
@@ -41,6 +42,16 @@ structure ElabEnv where
   -- nothing — we report it as a ghost-in-runtime leak rather than a generic
   -- undeclared variable.
   ghostVars : List String := []
+  -- Lexical frame stack for ProofBodyCanonicalV2. PARALLEL to `vars`, and
+  -- deliberately not derived from it: `vars` is a flat list whose indices shift as
+  -- branches and loops push and pop, so a position read off it is not a stable
+  -- lexical identity. `restoreScope` restores this from the saved env, which gives
+  -- frame POP for free and matches the language's own scoping.
+  bodyScope : Proof.BodyScope := {}
+  -- A scope has been ENTERED but no frame materialized yet. Frames open LAZILY on
+  -- the first binder, so a scope that binds nothing does not shift `framesOut` for
+  -- references inside it — an empty `if` must not move a digest.
+  pendingFrame : Bool := false
   -- Bug 045: match payload binders are ALPHA-RENAMED to unique Core names
   -- (`value` → `value.b7`). Surface identifiers cannot contain '.', so the
   -- fresh names never collide with user names. Without this, every stage
@@ -283,7 +294,29 @@ private def lookupEnum (name : String) : ElabM (Option EnumDef) := do
   let env ← getEnv
   return env.enums.find? fun ed => ed.name == name
 
+/-- Record `name` as a binder. `pending` means a scope was entered and its frame has
+    not been materialized: open it now, with this binder first. Otherwise extend the
+    innermost live frame in source order. -/
+private def extendFrame (sc : Proof.BodyScope) (pending : Bool) (name : String)
+    : Proof.BodyScope :=
+  if pending then sc.push [name]
+  else match sc.frames with
+    | []      => sc.push [name]
+    | f :: fs => { frames := (f.concat name) :: fs }
+
+private def addBinder (name : String) : ElabM Unit := do
+  let env ← getEnv
+  setEnv { env with bodyScope := extendFrame env.bodyScope env.pendingFrame name
+                    pendingFrame := false }
+
+/-- Mark a scope as entered. Idempotent, and cheap: nothing is allocated until a
+    binder actually arrives. -/
+private def openScope : ElabM Unit := do
+  let env ← getEnv
+  setEnv { env with pendingFrame := true }
+
 private def addVar (name : String) (ty : Ty) : ElabM Unit := do
+  addBinder name
   let env ← getEnv
   setEnv { env with vars := (name, ty) :: env.vars }
 
@@ -298,6 +331,8 @@ private def bindArmVar (binding : String) (ty : Ty) : ElabM String := do
   let fresh := s!"{binding}.b{env.freshBinder}"
   setEnv { env with
     vars := (binding, ty) :: env.vars
+    bodyScope := extendFrame env.bodyScope env.pendingFrame binding
+    pendingFrame := false
     renames := (binding, fresh) :: env.renames
     freshBinder := env.freshBinder + 1 }
   return fresh
@@ -395,7 +430,14 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
     | some ty => return .ident name ty
     | none =>
     match env.vars.lookup name with
-    | some ty => return .ident (← coreNameOf name) ty
+    | some ty => do
+      -- A local reference is a BINDER reference: record where it resolves, never
+      -- its spelling. If the frame stack cannot place it, the body is uncovered
+      -- rather than encoded against a guessed position.
+      match env.bodyScope.resolve? name with
+      | some (out, idx) => recordBodyIdentityUse (.binderRef out idx)
+      | none            => markBodyIdentityUncovered
+      return .ident (← coreNameOf name) ty
     | none =>
       match ← lookupFnSig name with
       | some sig =>
@@ -605,6 +647,9 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
         let envBefore ← getEnv
         for arm in arms do
           restoreScope envBefore
+          -- An arm's pattern bindings are their OWN construct, so each arm enters a
+          -- scope. Lazy: an arm with no bindings materializes no frame.
+          openScope
           match arm with
           | .mk _ _armEnum armVariant bindings guard body =>
             let ev ← match ed.variants.find? fun v => v.name == armVariant with
@@ -644,6 +689,9 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
         let envBefore ← getEnv
         for arm in arms do
           restoreScope envBefore
+          -- An arm's pattern bindings are their OWN construct, so each arm enters a
+          -- scope. Lazy: an arm with no bindings materializes no frame.
+          openScope
           match arm with
           | .litArm _ val guard body =>
             let cVal ← elabExpr val
@@ -670,6 +718,7 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
       let envBefore ← getEnv
       for arm in arms do
         restoreScope envBefore
+        openScope
         match arm with
         | .litArm _ val guard body =>
           let cVal ← elabExpr val (some innerTyR)

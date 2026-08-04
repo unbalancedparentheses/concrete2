@@ -457,6 +457,9 @@ jobs:
       - name: "Callable identity (R-0004 step 1 — CallableId is constructed from a resolved declaration, never recovered from text)"
         run: bash scripts/tests/check_callable_identity.sh
 
+      - name: "Binder refs (R-0004 — elaboration emits relative lexical positions; empty scopes, binding timing, uncovered fallback)"
+        run: bash scripts/tests/check_binder_refs.sh
+
       - name: "Body scope (R-0004 — scoped lexical binder frames: relative positions, shadowing, refusal)"
         run: bash scripts/tests/check_body_scope.sh
 
