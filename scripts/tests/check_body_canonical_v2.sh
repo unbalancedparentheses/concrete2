@@ -77,7 +77,7 @@ def posB : ProofBodyIdentityInputsV2 := { uses := [.binderRef 11 1], covered := 
 #eval do
   -- Sanity first: an empty result would make the comparisons below vacuous.
   a "a covered body serializes to non-empty versioned bytes"
-    (((serializeBody covered).getD "").startsWith "bodyV2:")
+    (((serializeBody covered).getD "").startsWith "bodyV2partial:")
 
   a "an UNCOVERED body is refused, not serialized as complete"
     (serializeBody uncov == none)
@@ -90,13 +90,24 @@ def posB : ProofBodyIdentityInputsV2 := { uses := [.binderRef 11 1], covered := 
     (serializeBody covered != serializeBody repeated
       && serializeBody once != serializeBody twice)
   a "the node count is emitted, so a truncated stream cannot read as a shorter one"
-    (((serializeBody once).getD "").startsWith "bodyV2:n1:"
-      && ((serializeBody twice).getD "").startsWith "bodyV2:n2:")
+    (((serializeBody once).getD "").startsWith "bodyV2partial:n1:"
+      && ((serializeBody twice).getD "").startsWith "bodyV2partial:n2:")
 
   a "the encoding is injective across distinct positions"
     (serializeBody posA != serializeBody posB)
   a "identical inputs serialize identically"
     (serializeBody covered == serializeBody { uses := nodes, covered := true })
+
+  -- INCOMPLETENESS TRIPWIRE. The vocabulary has four node kinds, so bodies that
+  -- differ only in operators, literals, calls or control flow serialize IDENTICALLY.
+  -- This leg asserts the CURRENT, INCOMPLETE behaviour on purpose: it passes because
+  -- V2 is partial, and it FAILS once the vocabulary is extended — which is the
+  -- signal to drop the `partial` tag and re-examine every consumer. Without it, V2
+  -- could quietly become complete-looking while still omitting most of a body.
+  a "TRIPWIRE: the stream is tagged partial while the vocabulary is incomplete"
+    (((serializeBody covered).getD "").startsWith "bodyV2partial:")
+  a "TRIPWIRE: four node kinds — extending the vocabulary must break this"
+    (allNodeTags.length == 4)
 
   -- The serializer must not leak a source name. Only the typed IDs' own rendering
   -- may appear, and a binder never contributes one.
@@ -133,6 +144,39 @@ if printf '%s' "$code" | grep -qE "lookup|resolve|Elab|find\?"; then
   no "the serializer performs resolution — that belongs to the producer, which alone has the information"
 else
   ok "the serializer resolves nothing; it only encodes captured nodes"
+fi
+
+# THE COLLISION, on real compiled programs rather than constructed records. Three
+# bodies that differ semantically must currently share bytes; when they stop sharing,
+# the vocabulary has grown and every consumer needs re-examining.
+CC=".lake/build/bin/concrete"
+if [ -x "$CC" ]; then
+  CT="$(mktemp -d)"
+  for pair in "a:p + 1" "b:p * 2" "c:p - 9"; do
+    nm="${pair%%:*}"; expr="${pair#*:}"
+    printf 'mod m { pub fn f(p: Int) -> Int { return %s; } }\n' "$expr" > "$CT/$nm.con"
+  done
+  da="$("$CC" "$CT/a.con" --report subject-facts 2>/dev/null | grep -oE 'shadow bodyV2: [a-f0-9]+' || true)"
+  db="$("$CC" "$CT/b.con" --report subject-facts 2>/dev/null | grep -oE 'shadow bodyV2: [a-f0-9]+' || true)"
+  dc="$("$CC" "$CT/c.con" --report subject-facts 2>/dev/null | grep -oE 'shadow bodyV2: [a-f0-9]+' || true)"
+  rm -rf "$CT"
+  if [ -z "$da" ]; then
+    no "collision probe produced no shadow digest — inconclusive"
+  elif [ "$da" = "$db" ] && [ "$da" = "$dc" ]; then
+    ok "TRIPWIRE: operator-only body edits do NOT move the partial stream (expected while incomplete)"
+  else
+    no "operator edits now move the V2 stream — the vocabulary grew; drop the 'partial' tag, update this leg, and re-examine every consumer"
+  fi
+else
+  no "compiler not built — the corpus-level collision leg could not run"
+fi
+
+# The shadow digest must NOT reach the authoritative bytes. V1 stays frozen, so a
+# stored proof link cannot go stale because of an observed-only value.
+if grep -qE "shadowBodyDigestV2|serializeBody" Concrete/Proof/SubjectFacts.lean; then
+  no "SubjectFacts references the V2 serializer — shadow bytes could reach canonical"
+else
+  ok "the shadow digest is absent from SubjectFacts, so canonical cannot include it"
 fi
 
 echo "BODY-CANONICAL-V2: PASS=$PASS FAIL=$FAIL"

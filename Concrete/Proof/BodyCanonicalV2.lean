@@ -57,7 +57,10 @@ def serializeNode : BodyIdentityUse → String
       let p := id.render
       "v" ++ toString p.length ++ ":" ++ p
 
-/-- Canonical bytes for a body's typed evidence, or refusal.
+/-- PARTIAL canonical bytes for a body's typed evidence, or refusal.
+
+    NOT a complete body representation — see the prefix comment below. This is the
+    typed-reference stream, which is a strict subset of the body's meaning.
 
     ORDER AND MULTIPLICITY ARE SEMANTIC. A body reading a binder twice is not the
     body that reads it once, and a body that reads `x` then `y` is not the one that
@@ -72,6 +75,34 @@ def serializeBody (inputs : ProofBodyIdentityInputsV2) : Option String :=
   if !inputs.covered then none
   else
     let body := String.join (inputs.uses.map serializeNode)
-    some ("bodyV2:n" ++ toString inputs.uses.length ++ ":" ++ body)
+    -- TAGGED PARTIAL, and it must stay that way until the node vocabulary covers the
+    -- whole expression language. MEASURED on the corpus: `p + 1`, `p * 2` and
+    -- `p - 9` all serialize IDENTICALLY, because the vocabulary has four kinds
+    -- (binder, type, field, variant) and operators, literals, calls and control flow
+    -- are not among them. `covered = true` therefore means "every reference we
+    -- attempted to identify was identifiable", NOT "this body is described".
+    --
+    -- If freshness consumed these bytes today, editing `p + 1` to `p * 2` would not
+    -- invalidate the proof. The prefix makes that impossible to mistake for a
+    -- complete body digest, and check_body_canonical_v2 carries a TRIPWIRE that
+    -- fails once the vocabulary grows, forcing this decision to be revisited rather
+    -- than silently outgrown.
+    some ("bodyV2partial:n" ++ toString inputs.uses.length ++ ":" ++ body)
+
+/-- SHADOW digest of a body's typed evidence: the V2 bytes, hashed, or refusal.
+
+    Shadow means OBSERVED, NOT AUTHORITATIVE. This value is reported so the two
+    representations can be compared on the real corpus before either is trusted; it
+    is deliberately absent from `CheckedDeclFacts.canonical`, so V1 stays byte-frozen
+    and no stored proof link can go stale because of it.
+
+    It is a separate function rather than a field on the facts record on purpose: a
+    field is one refactor away from being folded into `canonical` by someone
+    threading "all the facts" into the digest, whereas a call site has to be written
+    deliberately. -/
+def shadowBodyDigestV2 (inputs : ProofBodyIdentityInputsV2) (hash : String → String)
+    : Option String :=
+  (serializeBody inputs).map hash
 
 end Concrete.Proof
+

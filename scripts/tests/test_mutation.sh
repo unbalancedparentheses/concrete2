@@ -815,8 +815,8 @@ gate_for_last "scripts/tests/check_body_canonical_v2.sh"
 # 59. The serializer emits nodes without their count, so a truncated stream reads as
 # a shorter complete one.
 MUT_FILE+=("Concrete/Proof/BodyCanonicalV2.lean")
-MUT_OLD+=("    some (\"bodyV2:n\" ++ toString inputs.uses.length ++ \":\" ++ body)")
-MUT_NEW+=("    some (\"bodyV2:\" ++ body) -- MUTATION: no node count")
+MUT_OLD+=("    some (\"bodyV2partial:n\" ++ toString inputs.uses.length ++ \":\" ++ body)")
+MUT_NEW+=("    some (\"bodyV2partial:\" ++ body) -- MUTATION: no node count")
 MUT_DESC+=("V2 serializer: node count omitted from the stream")
 gate_for_last "scripts/tests/check_body_canonical_v2.sh"
 
