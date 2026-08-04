@@ -1934,11 +1934,17 @@ partial def elabModule (m : Module) (summary : FileSummary)
   -- stays UNCOVERED — refusing rather than encoding a local guess about a foreign
   -- definition. Declaration order lets a constant's initializer name an earlier
   -- constant; a forward reference is not resolved and so fails closed.
+  -- Accumulated by PREPEND and reversed once. Appending a singleton to the
+  -- accumulator inside a fold over the module's constants is quadratic, which the
+  -- quadratic-append ratchet correctly rejected. Lookup here is by name, so prepend
+  -- order does not affect resolution; the single reverse restores declaration order
+  -- for anything that iterates. (Phrased without the literal operator: that ratchet
+  -- counts textual occurrences, so a comment naming the pattern trips it.)
   let constEnv : List (String × ConstId × String) :=
-    m.constants.foldl (init := []) fun acc c =>
+    (m.constants.foldl (init := []) fun acc c =>
       match Proof.contractCanonicalIn [] [] [] [] acc false (fun _ => none) c.value with
-      | some enc => acc ++ [(c.name, { defModule := m.name, declName := c.name }, enc)]
-      | none     => acc
+      | some enc => (c.name, { defModule := m.name, declName := c.name }, enc) :: acc
+      | none     => acc).reverse
   let declFacts : List Proof.CheckedDeclFacts :=
     fnResults.map fun ((f, implTy), _cfn, bodyIdentityInputs) =>
       let (concreteCaps, capVars) := f.capSet.normalize
