@@ -19,8 +19,18 @@
 #   180 gate scripts in scripts/tests/
 #    55 guard a SOUNDNESS claim — breaking the rule would let the compiler assert something
 #       false about a program (a missing trap, a false `proved`, a laundered axiom)
-#    18 of those 55 have a negative control here
+#    18 of those 55 are the GATE FIELD of a family here
 #    37 of those 55 have NONE
+#
+# Count coverage from the GATE FIELD of `add` lines, never by grepping this file for gate
+# names. Two gates read as covered for a while because their names appear only in prose:
+# `check_multi_kernel.sh` (mentioned in a note about dirty-tree refusal) and
+# `check_totality_judgment.sh` (mentioned in the survivor note below, which says explicitly
+# that it does NOT cover its rule). The name-grep figure was 20; the real figure is 18, and
+# the inherited "11 of 180" was inflated the same way.
+#
+# `--coverage` prints the real numbers so nobody has to grep. Third instance today of a
+# metric measuring a proxy instead of the thing, and this file exists to prevent that class.
 #
 # Those figures are RECOMPUTED, not derived by arithmetic. A first version of this header
 # said 17/38, reached by adding the four families of that pass to a previous count — wrong,
@@ -43,6 +53,26 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 LAKE="${LAKE:-lake}"
 ONLY="${FAMILY:-}"
+
+# `--coverage`: report which soundness gates have a control, computed from the GATE FIELD of
+# the `add` lines below — not from a grep for gate names, which counts prose.
+if [ "${1:-}" = "--coverage" ]; then
+  SELF="$0"
+  TARGETED="$(grep -E '^add "' "$SELF" | awk '{print $4}' | tr -d '"' | sort -u)"
+  sound=0; cov=0; missing=""
+  for f in scripts/tests/check_*.sh; do
+    b="$(basename "$f")"
+    k="$(grep -ciE 'unsound|must never|false green|no false|trap|proved|axiom|forge|launder' "$f")"
+    [ "$k" -ge 4 ] || continue
+    sound=$((sound+1))
+    if printf '%s\n' "$TARGETED" | grep -qx "$b"; then cov=$((cov+1)); else missing="$missing $b"; fi
+  done
+  echo "soundness gates: $sound"
+  echo "  with a negative control: $cov"
+  echo "  without: $((sound-cov))"
+  echo "uncovered:"; printf '%s\n' $missing | sed 's/^/  /'
+  exit 0
+fi
 
 # family i: NAME FILE GATE NEEDS_BUILD ; OLD/NEW written to temp files per family.
 NAME=();  FILE=();  GATE=();  BUILD=()
