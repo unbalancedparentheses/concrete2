@@ -42,7 +42,7 @@ probe "a TRUE and a FALSE ensures encode differently" "true" \
 # Operand order is semantic for comparisons — a < b is not b < a.
 probe "operand order is preserved for a non-commutative comparison" "true" \
 '#eval
-  let e := contractCanonicalIn ["a", "b"] [] [] false (fun _ => none)
+  let e := contractCanonicalIn ["a", "b"] [] [] [] false (fun _ => none)
   (e (.binOp sp .lt (.ident sp "a") (.ident sp "b")))
     != (e (.binOp sp .lt (.ident sp "b") (.ident sp "a")))'
 # Width variants are different OPERATIONS, not spellings.
@@ -58,7 +58,7 @@ probe "an out-of-fragment expression does not encode" "none" \
 probe "one unencodable contract makes the whole set uncovered" "false" \
 '#eval (ContractFacts.of [] [.arrayLit sp [.intLit sp 1]]).covered'
 probe "an encodable set stays covered" "true" \
-'#eval (ContractFacts.ofResolved ["r"] [] [] (fun _ => none) []
+'#eval (ContractFacts.ofResolved ["r"] [] [] [] (fun _ => none) []
         [.binOp sp .eq (.ident sp "r") (.intLit sp 1)]).covered'
 # "could not read the contracts" and "there are no contracts" are DIFFERENT
 # states; a digest that merges them lets an unreadable contract pass as absent.

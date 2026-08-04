@@ -1950,7 +1950,8 @@ partial def elabModule (m : Module) (summary : FileSummary)
         capParams := capParamNames
         capSet := (concreteCaps.map ("cap:" ++ ·)) ++ capVarCanonical
         contracts := Proof.ContractFacts.ofResolved (f.params.map (·.name))
-          f.typeParams capParamNames resolveContractCall f.requires f.ensures
+          f.typeParams capParamNames (Proof.ghostBindersOf f.body)
+          resolveContractCall f.requires f.ensures
           f.loopContracts
         bodyIdentityInputs := bodyIdentityInputs
         isTrusted := f.isTrusted
