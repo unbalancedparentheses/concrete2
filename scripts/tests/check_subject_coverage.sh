@@ -28,11 +28,11 @@ PASS=0; FAIL=0
 ok() { echo "  ok   $1"; PASS=$((PASS+1)); }
 no() { echo "  FAIL $1"; FAIL=$((FAIL+1)); }
 
-# Measured 2026-08-03 over examples/ at 6576864a. The proof corpus, not the whole
+# Measured 2026-08-03 over examples/; covered count updated when the ghost cause closed. The proof corpus, not the whole
 # test tree: tests/programs/ holds deliberate uncovered probes whose whole purpose
 # is to be uncovered, and mixing them in would hide a real regression in the noise.
-EXPECT_COVERED=415
-EXPECT_UNCOVERED=5
+EXPECT_COVERED=417
+EXPECT_UNCOVERED=3
 
 # The uncovered set, by cause. Both causes are OPEN work, tracked here because a
 # bare count would not say what closing them requires.
@@ -40,14 +40,14 @@ EXPECT_UNCOVERED=5
 #   const  — a contract names a module constant (e.g. `hi < LIMIT`). Non-binder
 #            identifiers resolve to no identity: a constant is not a callable and
 #            must not borrow a same-spelled function's CallableId. Needs ConstId.
-#   ghost  — a contract names a `ghost let` binding. These ARE binders, but
-#            proof-only ones that never enter the value environment, so the
-#            encoder sees a free identifier. Needs scoped binder frames, NOT
-#            ConstId — a distinction a count alone would have hidden, and the
-#            reason ghost-assisted proofs cannot produce a subject digest today.
+#   ghost  — CLOSED. Ghost bindings now form their own binder frame, collected
+#            from the AST in source order and rendered `h:<i>`, so a contract may
+#            name them without going uncovered. Both ghost programs are covered as
+#            of this change; the cause is retained here as a record of what the
+#            count used to include.
 #   invalid — a deliberate negative example; uncovered is the correct verdict.
 EXPECT_CONST="examples/contract_positive/valid_complex_contract_scope/src/main.con"
-EXPECT_GHOST="examples/ghost_state/src/main.con examples/proof_patterns/ghost/src/main.con"
+EXPECT_GHOST=""   # cause closed; see the note above
 EXPECT_INVALID="examples/contract_negatives/invalid_contract_expression/src/main.con"
 
 covered=0; uncovered=0; offenders=""
@@ -96,6 +96,29 @@ for f in $offenders; do
   esac
 done
 [ -n "$offenders" ] && ok "every uncovered program maps to a recorded cause"
+
+# The ghost frame's whole claim is that a ghost binding is a BINDER, so renaming it
+# must not move the subject digest — otherwise `h:<i>` would just be a source name
+# with extra steps. Derived from a real example rather than a synthetic one: a
+# hand-written probe produced "0 entries" and would have compared two empty strings
+# to each other and called that invariance.
+GT="$(mktemp -d)"; trap 'rm -rf "$GT"' EXIT
+cp examples/ghost_state/src/main.con "$GT/a.con"
+sed 's/\bbound\b/snapshot/g' "$GT/a.con" > "$GT/b.con"
+ga="$("$CC" "$GT/a.con" --report subject-facts 2>/dev/null | grep -oE 'subject digest: [a-f0-9]+' || true)"
+gb="$("$CC" "$GT/b.con" --report subject-facts 2>/dev/null | grep -oE 'subject digest: [a-f0-9]+' || true)"
+if [ -z "$ga" ] || [ -z "$gb" ]; then
+  no "ghost-rename probe produced no digest — inconclusive, not invariant"
+elif [ "$ga" = "$gb" ]; then
+  ok "renaming a ghost binder does not move the subject digest"
+else
+  no "a ghost binder's NAME reaches the digest ($ga vs $gb) — the frame is not alpha-invariant"
+fi
+if grep -q "bound" "$GT/b.con"; then
+  no "the rename probe did not actually rename anything — it would pass vacuously"
+else
+  ok "the rename probe genuinely changed the program text"
+fi
 
 echo "SUBJECT-COVERAGE: PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1

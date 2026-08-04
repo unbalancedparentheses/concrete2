@@ -121,6 +121,34 @@ def boundTyListCanonical (typeBinders capBinders : List String) : List Ty → St
       ++ boundTyListCanonical typeBinders capBinders ts
 end
 
+/-- Ghost binders of a function body, in SOURCE order.
+
+    Deliberately read from the AST rather than from elaboration state. Raw
+    `env.vars` positions are not stable lexical identities — branch and loop
+    elaboration shift them — so an index derived from elaboration order would make
+    a digest move when nothing semantic changed. Source order is fixed by the
+    program text and survives any traversal strategy.
+
+    Nested blocks are traversed in the order they appear, so a ghost binding inside
+    an `if` keeps a position determined by where it is written. Shadowing is NOT
+    resolved here: duplicates are preserved so the encoder can see the ambiguity
+    and refuse rather than silently binding to the first occurrence. -/
+partial def ghostBindersOf : List Stmt → List String
+  | [] => []
+  | st :: rest =>
+    let here : List String :=
+      match st with
+      | .letDecl _ n _ _ _ true  => [n]
+      | .letDecl _ _ _ _ _ false => []
+      | .ifElse _ _ t e          => ghostBindersOf t ++ ghostBindersOf (e.getD [])
+      | .while_ _ _ b _          => ghostBindersOf b
+      | .forLoop _ i _ sp b _    => ghostBindersOf (i.toList) ++ ghostBindersOf (sp.toList)
+                                      ++ ghostBindersOf b
+      | .borrowIn _ _ _ _ _ b    => ghostBindersOf b
+      | .letDestructure _ _ _ _ _ eb => ghostBindersOf (eb.getD [])
+      | _                        => []
+    here ++ ghostBindersOf rest
+
 /-- Canonical encoding of a contract relative to its declaration.
 
     Local variables are de-Bruijn-like parameter positions. A definition call
@@ -129,6 +157,7 @@ end
     Generic call arguments are included and must complete the callee identity. -/
 partial def contractCanonicalIn
     (termBinders typeBinders capBinders : List String)
+    (ghostBinders : List String := [])
     (allowResult : Bool)
     (resolveCall : String → Option CallableId) : Expr → Option String
   | .intLit _ v      => some s!"i:{v}"
@@ -137,8 +166,22 @@ partial def contractCanonicalIn
   | .strLit _ s      => some s!"s{s.length}:{s}"
   | .ident _ n       =>
       if allowResult && n == "result" then some "q:result"
+      else if (binderIndex? termBinders n).isSome
+              && (binderIndex? ghostBinders n).isSome then
+        -- A name that is BOTH a parameter and a ghost binding is ambiguous here.
+        -- Picking either frame would encode one binder under the other's index,
+        -- which is the confidently-wrong-identity failure, so refuse.
+        none
       else match binderIndex? termBinders n with
         | some i => some s!"p:{i}"
+        | none => match binderIndex? ghostBinders n with
+        -- A `ghost let` IS a binder, just a proof-only one that never enters the
+        -- value environment — which is why it used to read as a free identifier
+        -- and make the whole contract uncovered. Its own frame tag keeps it from
+        -- colliding with parameter index i, and the index comes from SOURCE order
+        -- (see ghostBindersOf) rather than elaboration order, which shifts across
+        -- branches and loops and so is not a stable lexical identity.
+        | some i => some s!"h:{i}"
         | none =>
           -- A NON-BINDER identifier — a module constant such as `LIMIT`, or
           -- anything else the declaration does not bind. This used to emit
@@ -164,13 +207,13 @@ partial def contractCanonicalIn
           -- non-binder identifier is UNCOVERED. That is the only answer available
           -- that is neither a name in the bytes nor someone else's identity.
           none
-  | .paren _ e       => contractCanonicalIn termBinders typeBinders capBinders allowResult resolveCall e
+  | .paren _ e       => contractCanonicalIn termBinders typeBinders capBinders ghostBinders allowResult resolveCall e
   | .binOp _ op l r  => do
-    let a ← contractCanonicalIn termBinders typeBinders capBinders allowResult resolveCall l
-    let b ← contractCanonicalIn termBinders typeBinders capBinders allowResult resolveCall r
+    let a ← contractCanonicalIn termBinders typeBinders capBinders ghostBinders allowResult resolveCall l
+    let b ← contractCanonicalIn termBinders typeBinders capBinders ghostBinders allowResult resolveCall r
     some s!"B{binOpTag op}l{a.length}:{a}r{b.length}:{b}"
   | .unaryOp _ op e  => do
-    let a ← contractCanonicalIn termBinders typeBinders capBinders allowResult resolveCall e
+    let a ← contractCanonicalIn termBinders typeBinders capBinders ghostBinders allowResult resolveCall e
     some s!"U{unaryOpTag op}o{a.length}:{a}"
   | .call _ f typeArgs args => do
     let base ← resolveCall f
@@ -179,16 +222,16 @@ partial def contractCanonicalIn
     -- specialized `CallableId` here would render a bound `T` by its source
     -- spelling and reintroduce alpha sensitivity through `CallableId.render`.
     if typeArgs.length != base.typeParams then none else
-      let parts ← args.mapM (contractCanonicalIn termBinders typeBinders capBinders allowResult resolveCall)
+      let parts ← args.mapM (contractCanonicalIn termBinders typeBinders capBinders ghostBinders allowResult resolveCall)
       let joined := String.join (parts.map fun p => s!"a{p.length}:{p}")
       let tys := String.join (canonicalArgs.map fun t => s!"t{t.length}:{t}")
       some s!"C{base.render.length}:{base.render}n{typeArgs.length}{tys}m{args.length}{joined}"
   | .fieldAccess _ o fld => do
-    let a ← contractCanonicalIn termBinders typeBinders capBinders allowResult resolveCall o
+    let a ← contractCanonicalIn termBinders typeBinders capBinders ghostBinders allowResult resolveCall o
     some s!"F{fld.length}:{fld}o{a.length}:{a}"
   | .arrayIndex _ a i => do
-    let x ← contractCanonicalIn termBinders typeBinders capBinders allowResult resolveCall a
-    let y ← contractCanonicalIn termBinders typeBinders capBinders allowResult resolveCall i
+    let x ← contractCanonicalIn termBinders typeBinders capBinders ghostBinders allowResult resolveCall a
+    let y ← contractCanonicalIn termBinders typeBinders capBinders ghostBinders allowResult resolveCall i
     some s!"Xa{x.length}:{x}i{y.length}:{y}"
   | .floatLit _ _ => none
   | .structLit _ _ _ _ _ => none
@@ -217,7 +260,7 @@ partial def contractCanonicalIn
     Length-prefixed and tagged, like `pexprCanonical`, so two structurally
     different expressions cannot render alike. -/
 partial def contractCanonical : Expr → Option String
-  | e => contractCanonicalIn [] [] [] true (fun _ => none) e
+  | e => contractCanonicalIn [] [] [] [] true (fun _ => none) e
 
 /-- Contracts attached to a declaration, with an explicit coverage flag.
 
@@ -255,10 +298,11 @@ def ContractFacts.of (reqs ens : List Expr) : ContractFacts :=
     used by Elab; the binder-free `of` above remains useful for closed probes. -/
 def ContractFacts.ofResolved
     (params typeParams capParams : List String)
+    (ghostBinders : List String)
     (resolveCall : String → Option CallableId)
     (reqs ens : List Expr)
     (loops : List LoopContract := []) : ContractFacts :=
-  let enc := contractCanonicalIn params typeParams capParams
+  let enc := contractCanonicalIn params typeParams capParams ghostBinders
   let rs := reqs.map (enc false resolveCall)
   let es := ens.map (enc true resolveCall)
   -- LOOP CONTRACTS, indexed by the loop's POSITION in the body — semantic, since
@@ -288,7 +332,14 @@ def ContractFacts.ofResolved
     -- assignments. Recorded here so the approximation is not mistaken for the
     -- scope itself.
     let loopBinders := (lc.entrySubst.map Prod.fst ++ lc.body.map Prod.fst).eraseDups
+    -- The ghost frame must reach HERE too, not only requires/ensures. A loop
+    -- invariant is the most common place a ghost binding is named — that is the
+    -- point of `ghost let`: snapshot a bound so the invariant can refer to it.
+    -- Measured: with_ghost's `#[invariant(0 <= i && i <= n)]` stayed uncovered
+    -- while plain's `i <= 4` passed, because `i` is an assignment target the
+    -- approximation finds and `n` is a ghost it never could.
     let encL := contractCanonicalIn (params ++ loopBinders) typeParams capParams
+                  ghostBinders
     let invs := lc.invariants.map fun e =>
       (encL false resolveCall e).map fun c => s!"i{i}:{c}"
     let var := match lc.variant with
