@@ -235,7 +235,7 @@ example : hasIndex (.arrayIndex spD (.paren spD (.ident spD "arr")) (.ident spD 
 --
 -- An array reached through a FIELD (`b.data[i]`) still records nothing, and this is ordinary
 -- code, not a corner case. It is not the same oversight: the length lookup that turns a
--- recorded access into `0 ≤ i < len` is keyed by variable NAME (`varTyMap`), so a field path
+-- recorded access into `0 ≤ i < len` is keyed by variable NAME (`ScopeDecls`), so a field path
 -- has no name to look up. Peeling `.fieldAccess` the way `.paren` is peeled would produce an
 -- obligation about the WRONG array — a wrong obligation is worse than a missing one, so the
 -- fix is a real change (resolve the type of an arbitrary array expression), not a wider peel.

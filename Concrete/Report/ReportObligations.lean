@@ -28,7 +28,7 @@ namespace Report
     answer was narrower than anyone had assumed.
 
     Only `.paren` is peeled. It is meaning- AND type-preserving, so the enclosing
-    length lookup (`varTyMap`, keyed by name) stays correct. `.deref`/`.fieldAccess` are NOT
+    length lookup (`ScopeDecls.sizes`, keyed by name) stays correct. `.deref`/`.fieldAccess` are NOT
     peeled: they change the type at which the length must be read, so treating them as the
     same name would trade a missing obligation for a WRONG one. -/
 def arrayRootName : Expr → Option String
@@ -210,44 +210,74 @@ def loopInvariantDebt (f : FnDef) (fq : String) (hyps : List Expr) : List String
 -- own (non-recursive) obligations; the walker owns ALL recursion into branches,
 -- loop bodies, and for-loop init/step, so no family can drift in how it threads
 -- scope. Migrated families instantiate this with their own leaf (Phase 3 #4-9).
-/-- The array size THIS statement declares — deliberately NOT recursive.
+/-- Declarations in scope at a program point: variable types and fixed array lengths.
 
-    Scoping is the walker's job. An earlier version collected every binding in the function
-    into one flat map and resolved accesses against it by name, which is what made shadowing
-    produce a bound from the wrong binding. -/
-def arraySizeOwn : Stmt → List (String × Nat)
-  | .letDecl _ nm _ (some (.array _ n)) _ _ => [(nm, n)]
-  | .letDecl _ nm _ none (.arrayLit _ es) _ => [(nm, es.length)]
-  | _ => []
+    Both were previously flat per-function maps (`varTyMap`, `arraySizeMap`) resolved by NAME,
+    which meant a shadowed variable was resolved from the wrong binding. For array sizes that
+    produced a bound about the wrong array; for types it produced a shift-width obligation
+    about the wrong width — `x << 40` on an `i8` was reported PROVED because an earlier
+    `x : i64` supplied the width. Threading them per scope is what makes the answer correspond
+    to the code.
+
+    Kept as one record rather than two threaded parameters so a future declaration kind cannot
+    be added to one and forgotten in the other. -/
+structure ScopeDecls where
+  /-- Variable → declared type: parameters and ANNOTATED lets. Unannotated lets are absent
+      deliberately — inferring a type here risks disagreeing with the checker, and a wrong
+      type is exactly the defect being fixed. Their obligations are dropped and named. -/
+  tys   : List (String × Ty) := []
+  /-- Variable → fixed array length. Includes lengths inferred from an array-literal
+      initialiser, which needs no type inference to be certain of. -/
+  sizes : List (String × Nat) := []
+  deriving Inhabited
+
+/-- Declarations introduced by THIS statement — deliberately not recursive; scoping is the
+    walker's job. -/
+def declsOwn : Stmt → ScopeDecls
+  | .letDecl _ nm _ (some t) _ _ =>
+      { tys := [(nm, t)]
+      , sizes := match t with | .array _ n => [(nm, n)] | _ => [] }
+  | .letDecl _ nm _ none (.arrayLit _ es) _ => { sizes := [(nm, es.length)] }
+  | _ => {}
+
+/-- Inner declarations shadow outer ones: prepended, and every lookup takes the first match. -/
+def ScopeDecls.extend (inner outer : ScopeDecls) : ScopeDecls :=
+  { tys := inner.tys ++ outer.tys, sizes := inner.sizes ++ outer.sizes }
+
+/-- The declarations a function body starts from. -/
+def paramDecls (f : FnDef) : ScopeDecls :=
+  { tys := f.params.map (fun p => (p.name, p.ty))
+  , sizes := f.params.filterMap fun p =>
+      match p.ty with | .array _ n => some (p.name, n) | _ => none }
 
 mutual
 partial def scopedWalkSizedS {α}
-    (leaf : List Expr → List (String × Nat) → Stmt → List α)
-    (lcs : List LoopContract) (scope : List Expr) (sizes : List (String × Nat)) :
+    (leaf : List Expr → ScopeDecls → Stmt → List α)
+    (lcs : List LoopContract) (scope : List Expr) (decls : ScopeDecls) :
     Stmt → List α
   | s@(.ifElse _ c t el) =>
-      leaf scope sizes s
-        ++ scopedWalkSizedB leaf lcs (scope ++ [c]) sizes t
-        ++ scopedWalkSizedB leaf lcs (scope ++ (negateGuard c).toList) sizes (el.getD [])
+      leaf scope decls s
+        ++ scopedWalkSizedB leaf lcs (scope ++ [c]) decls t
+        ++ scopedWalkSizedB leaf lcs (scope ++ (negateGuard c).toList) decls (el.getD [])
   | s@(.while_ sp _ b _) =>
-      leaf scope sizes s
-        ++ scopedWalkSizedB leaf lcs (scope ++ loopHypsAt lcs sp.line) sizes b
+      leaf scope decls s
+        ++ scopedWalkSizedB leaf lcs (scope ++ loopHypsAt lcs sp.line) decls b
   | s@(.forLoop sp init _ step b _) =>
       -- init, then this statement's own leaves (the loop condition), then step,
       -- then body — the traversal ORDER every family's old walker used, so the
       -- positional `#idx`/`#pre`/… keys are preserved across the migration.
       -- Anything `init` declares is visible to the condition, step and body.
-      let sizes' := (init.map arraySizeOwn).getD [] ++ sizes
-      ((init.map (scopedWalkSizedS leaf lcs scope sizes)).getD [])
-        ++ leaf scope sizes' s
-        ++ ((step.map (scopedWalkSizedS leaf lcs scope sizes')).getD [])
-        ++ scopedWalkSizedB leaf lcs (scope ++ loopHypsAt lcs sp.line) sizes' b
+      let decls' := ((init.map declsOwn).getD {}).extend decls
+      ((init.map (scopedWalkSizedS leaf lcs scope decls)).getD [])
+        ++ leaf scope decls' s
+        ++ ((step.map (scopedWalkSizedS leaf lcs scope decls')).getD [])
+        ++ scopedWalkSizedB leaf lcs (scope ++ loopHypsAt lcs sp.line) decls' b
   | s@(.borrowIn _ _ _ _ _ b) =>
-      leaf scope sizes s ++ scopedWalkSizedB leaf lcs scope sizes b
-  | s => leaf scope sizes s
+      leaf scope decls s ++ scopedWalkSizedB leaf lcs scope decls b
+  | s => leaf scope decls s
 partial def scopedWalkSizedB {α}
-    (leaf : List Expr → List (String × Nat) → Stmt → List α)
-    (lcs : List LoopContract) (scope : List Expr) (sizes : List (String × Nat)) :
+    (leaf : List Expr → ScopeDecls → Stmt → List α)
+    (lcs : List LoopContract) (scope : List Expr) (decls : ScopeDecls) :
     List Stmt → List α
   | [] => []
   | s :: rest =>
@@ -258,31 +288,31 @@ partial def scopedWalkSizedB {α}
       -- A declaration is visible to what FOLLOWS it, and shadows an outer binding of the
       -- same name because it is prepended and lookups take the first match. Bindings made
       -- inside `s` (a block) do not reach `rest`: only `s`'s own declaration does.
-      let restSizes := arraySizeOwn s ++ sizes
-      scopedWalkSizedS leaf lcs scope sizes s
-        ++ scopedWalkSizedB leaf lcs restScope restSizes rest
+      let restDecls := (declsOwn s).extend decls
+      scopedWalkSizedS leaf lcs scope decls s
+        ++ scopedWalkSizedB leaf lcs restScope restDecls rest
 end
 
-/-- Size-agnostic walk, for the four families that do not need array sizes. Identical
+/-- Declaration-agnostic walk, for the families that resolve nothing by name. Identical
     traversal, so positional keys are shared. -/
 def scopedWalkS {α} (leaf : List Expr → Stmt → List α)
     (lcs : List LoopContract) (scope : List Expr) (st : Stmt) : List α :=
-  scopedWalkSizedS (fun sc _ s => leaf sc s) lcs scope [] st
+  scopedWalkSizedS (fun sc _ s => leaf sc s) lcs scope {} st
 
 /-- See `scopedWalkS`. -/
 def scopedWalkB {α} (leaf : List Expr → Stmt → List α)
     (lcs : List LoopContract) (scope : List Expr) (body : List Stmt) : List α :=
-  scopedWalkSizedB (fun sc _ s => leaf sc s) lcs scope [] body
+  scopedWalkSizedB (fun sc _ s => leaf sc s) lcs scope {} body
 
 /-- Array-index leaf: the index uses in a statement's OWN expression positions
     (the walker owns recursion into branches/loops/init/step, so
     `.ifElse`/`.while_`/`.forLoop` contribute only their condition's index uses).
     A store `a[idx] = v` carries its target bound `(a, idx)` FIRST, matching the
     old walker's ordering exactly. -/
-def boundsLeaf (scope : List Expr) (sizes : List (String × Nat)) :
+def boundsLeaf (scope : List Expr) (decls : ScopeDecls) :
     Stmt → List (String × Expr × List Expr × Option Nat) :=
   let mk : (String × Expr) → (String × Expr × List Expr × Option Nat) :=
-    fun (a, i) => (a, i, scope, (sizes.find? (·.1 == a)).map (·.2))
+    fun (a, i) => (a, i, scope, (decls.sizes.find? (·.1 == a)).map (·.2))
   fun
   | .letDecl _ _ _ _ v _ | .assign _ _ v | .expr _ v _ | .defer _ v =>
       (collectIndexUsesE v).map mk
@@ -308,13 +338,9 @@ def boundsLeaf (scope : List Expr) (sizes : List (String × Nat)) :
     `unproven → proved_by_kernel_decision` (e.g. `if 0 ≤ i && i < n { a[i] }`),
     never the reverse, and a reassigned index still drops its stale guard. -/
 def scopedBoundsB (lcs : List LoopContract) (scope : List Expr)
-    (paramSizes : List (String × Nat)) (body : List Stmt) :
+    (decls : ScopeDecls) (body : List Stmt) :
     List (String × Expr × List Expr × Option Nat) :=
-  scopedWalkSizedB boundsLeaf lcs scope paramSizes body
-
-/-- Array-typed parameters: the outermost size bindings a function body starts from. -/
-def paramArraySizes (f : FnDef) : List (String × Nat) :=
-  f.params.filterMap fun p => match p.ty with | .array _ n => some (p.name, n) | _ => none
+  scopedWalkSizedB boundsLeaf lcs scope decls body
 
 /-- Call-site leaf: the calls in a statement's OWN expression positions (the
     walker owns recursion into branches, loop bodies, and for-loop init/step, so
@@ -499,7 +525,7 @@ def unresolvedBoundsAccesses (modules : List Module) : List (String × String) :
   let mut out : List (String × String) := []
   for (pfx, f) in modules.flatMap allFunctions do
     let fq := pfx ++ f.name
-    for (arr, _, _, msize) in scopedBoundsB f.loopContracts [] (paramArraySizes f) f.body do
+    for (arr, _, _, msize) in scopedBoundsB f.loopContracts [] (paramDecls f) f.body do
       if msize.isNone then
         out := out ++ [(fq, arr)]
   return out.eraseDups
@@ -511,7 +537,7 @@ def boundsObligations (modules : List Module) : List BoundsObl := Id.run do
   for (pfx, f) in modules.flatMap allFunctions do
     let fq := pfx ++ f.name
     let mut i := 0
-    for (arr, idx, scope, msize) in scopedBoundsB f.loopContracts [] (paramArraySizes f) f.body do
+    for (arr, idx, scope, msize) in scopedBoundsB f.loopContracts [] (paramDecls f) f.body do
       match msize with
       | none => pure ()   -- named by `unresolvedBoundsAccesses`, which walks identically
       | some n =>
@@ -619,35 +645,6 @@ decreasing_by
       | (rename_i h; subst h; simp +arith)
 end
 
-/-- Divisor leaf: the `/`/`%` divisors in a statement's OWN expression positions
-    (the walker owns recursion into branches/loops/init/step, so
-    `.ifElse`/`.while_`/`.forLoop` contribute only their condition's divisors).
-    Each item is `(isMod, divisorExpr, scope)`. -/
-def divLeaf (scope : List Expr) : Stmt → List (Bool × Expr × Expr × List Expr)
-  | .letDecl _ _ _ _ v _ | .assign _ _ v | .expr _ v _ | .defer _ v =>
-      (collectDivisorsE v).map fun (m, n, e) => (m, n, e, scope)
-  | .return_ _ (some v) => (collectDivisorsE v).map fun (m, n, e) => (m, n, e, scope)
-  | .ifElse _ c _ _ => (collectDivisorsE c).map fun (m, n, e) => (m, n, e, scope)
-  | .while_ _ c _ _ => (collectDivisorsE c).map fun (m, n, e) => (m, n, e, scope)
-  | .forLoop _ _ c _ _ _ => (collectDivisorsE c).map fun (m, n, e) => (m, n, e, scope)
-  | .fieldAssign _ o _ v | .derefAssign _ o v =>
-      (collectDivisorsE o ++ collectDivisorsE v).map fun (m, n, e) => (m, n, e, scope)
-  | .arrayIndexAssign _ a i v =>
-      (collectDivisorsE a ++ collectDivisorsE i ++ collectDivisorsE v).map fun (m, n, e) => (m, n, e, scope)
-  | _ => []
-
-/-- Divisor uses paired with the hypotheses in scope at the `/`/`%` (Phase 3 #6 —
-    migrated onto the unified `scopedWalk`). The collector threads enclosing
-    guards / negated guards / fall-through / loop invariants, so a `divisor ≠ 0`
-    obligation can only move `unproven → proved` (e.g. `if d != 0 { n / d }`),
-    never the reverse. The SOUND division/modulo lowering is unchanged: it still
-    flows through `divSound`/`toLeanPropSound`, which lower `/`/`%` to Lean
-    E-division ONLY when the dividend is provably non-negative — keeping Concrete's
-    truncating semantics from being confused with Lean's floor division. -/
-def scopedDivB (lcs : List LoopContract) (scope : List Expr) (body : List Stmt) :
-    List (Bool × Expr × Expr × List Expr) :=
-  scopedWalkB divLeaf lcs scope body
-
 /-- Inclusive value range of a *fixed-width* integer type (none = arbitrary/
     `Int`). The range values come from the arithmetic reference
     (`IntArith.intRange`); this deliberately keeps `Int`/`Uint` as `none` (an
@@ -665,6 +662,39 @@ def exprIntTy (vt : List (String × Ty)) : Expr → Option Ty
   | .cast _ _ t => some t
   | .binOp _ _ l r => match exprIntTy vt l with | some t => some t | none => exprIntTy vt r
   | _ => none
+
+/-- Divisor leaf: the `/`/`%` divisors in a statement's OWN expression positions
+    (the walker owns recursion into branches/loops/init/step, so
+    `.ifElse`/`.while_`/`.forLoop` contribute only their condition's divisors).
+    Each item is `(isMod, divisorExpr, scope)`. -/
+def divLeaf (scope : List Expr) (decls : ScopeDecls) :
+    Stmt → List (Bool × Expr × Expr × List Expr × Option Ty) :=
+  let mk : (Bool × Expr × Expr) → (Bool × Expr × Expr × List Expr × Option Ty) :=
+    fun (m, n, e) => (m, n, e, scope, exprIntTy decls.tys n)
+  fun
+  | .letDecl _ _ _ _ v _ | .assign _ _ v | .expr _ v _ | .defer _ v =>
+      (collectDivisorsE v).map mk
+  | .return_ _ (some v) => (collectDivisorsE v).map mk
+  | .ifElse _ c _ _ => (collectDivisorsE c).map mk
+  | .while_ _ c _ _ => (collectDivisorsE c).map mk
+  | .forLoop _ _ c _ _ _ => (collectDivisorsE c).map mk
+  | .fieldAssign _ o _ v | .derefAssign _ o v =>
+      (collectDivisorsE o ++ collectDivisorsE v).map mk
+  | .arrayIndexAssign _ a i v =>
+      (collectDivisorsE a ++ collectDivisorsE i ++ collectDivisorsE v).map mk
+  | _ => []
+
+/-- Divisor uses paired with the hypotheses in scope at the `/`/`%` (Phase 3 #6 —
+    migrated onto the unified `scopedWalk`). The collector threads enclosing
+    guards / negated guards / fall-through / loop invariants, so a `divisor ≠ 0`
+    obligation can only move `unproven → proved` (e.g. `if d != 0 { n / d }`),
+    never the reverse. The SOUND division/modulo lowering is unchanged: it still
+    flows through `divSound`/`toLeanPropSound`, which lower `/`/`%` to Lean
+    E-division ONLY when the dividend is provably non-negative — keeping Concrete's
+    truncating semantics from being confused with Lean's floor division. -/
+def scopedDivB (lcs : List LoopContract) (scope : List Expr) (decls : ScopeDecls)
+    (body : List Stmt) : List (Bool × Expr × Expr × List Expr × Option Ty) :=
+  scopedWalkSizedB divLeaf lcs scope decls body
 
 mutual
 /-- Every `+`/`-`/`*` binop node in an expression (the whole `a op b`). -/
@@ -722,17 +752,21 @@ end
 /-- Arithmetic-op leaf: the `+`/`-`/`*` op nodes in a statement's OWN expression
     positions (the walker owns recursion into branches/loops/init/step, so
     `.ifElse`/`.while_`/`.forLoop` contribute only their condition's op nodes). -/
-def arithLeaf (scope : List Expr) : Stmt → List (Expr × List Expr)
+def arithLeaf (scope : List Expr) (decls : ScopeDecls) :
+    Stmt → List (Expr × List Expr × Option Ty) :=
+  let mk : Expr → (Expr × List Expr × Option Ty) :=
+    fun e => (e, scope, exprIntTy decls.tys e)
+  fun
   | .letDecl _ _ _ _ v _ | .assign _ _ v | .expr _ v _ | .defer _ v =>
-      (collectArithE v).map fun e => (e, scope)
-  | .return_ _ (some v) => (collectArithE v).map fun e => (e, scope)
-  | .ifElse _ c _ _ => (collectArithE c).map fun e => (e, scope)
-  | .while_ _ c _ _ => (collectArithE c).map fun e => (e, scope)
-  | .forLoop _ _ c _ _ _ => (collectArithE c).map fun e => (e, scope)
+      (collectArithE v).map mk
+  | .return_ _ (some v) => (collectArithE v).map mk
+  | .ifElse _ c _ _ => (collectArithE c).map mk
+  | .while_ _ c _ _ => (collectArithE c).map mk
+  | .forLoop _ _ c _ _ _ => (collectArithE c).map mk
   | .fieldAssign _ o _ v | .derefAssign _ o v =>
-      (collectArithE o ++ collectArithE v).map fun e => (e, scope)
+      (collectArithE o ++ collectArithE v).map mk
   | .arrayIndexAssign _ a i v =>
-      (collectArithE a ++ collectArithE i ++ collectArithE v).map fun e => (e, scope)
+      (collectArithE a ++ collectArithE i ++ collectArithE v).map mk
   | _ => []
 
 /-- Arithmetic-op nodes paired with the hypotheses in scope (Phase 3 #7 —
@@ -744,9 +778,9 @@ def arithLeaf (scope : List Expr) : Stmt → List (Expr × List Expr)
     unchanged: omega/interval/`bv_decide` are kernel-owned, external SMT remains
     opt-in (`--smt`) and may only touch obligations the kernel tiers left
     unproved; stale bounds are still dropped by the shared invalidation rule. -/
-def scopedArithB (lcs : List LoopContract) (scope : List Expr) (body : List Stmt) :
-    List (Expr × List Expr) :=
-  scopedWalkB arithLeaf lcs scope body
+def scopedArithB (lcs : List LoopContract) (scope : List Expr) (decls : ScopeDecls)
+    (body : List Stmt) : List (Expr × List Expr × Option Ty) :=
+  scopedWalkSizedB arithLeaf lcs scope decls body
 
 /-- One integer-overflow obligation. -/
 structure OverflowObl where
@@ -762,22 +796,6 @@ structure OverflowObl where
   -- Loop VCs these hypotheses owe (R-0461). Non-empty means the obligation was discharged
   -- under an invariant whose own O1/O2 must hold; the ledger caps the status accordingly.
   hypDebt       : List String := []
-
-/-- All annotated `let` bindings in a statement tree, including those declared
-    inside loop inits/steps/bodies (so a loop counter `i` from a `for`-init is
-    typed for the overflow check). -/
-partial def collectLetTys : Stmt → List (String × Ty)
-  | .letDecl _ n _ (some t) _ _ => [(n, t)]
-  | .ifElse _ _ t el => t.flatMap collectLetTys ++ (el.getD []).flatMap collectLetTys
-  | .while_ _ _ b _ => b.flatMap collectLetTys
-  | .forLoop _ init _ step b _ =>
-      (init.map collectLetTys).getD [] ++ (step.map collectLetTys).getD [] ++ b.flatMap collectLetTys
-  | _ => []
-
-/-- Var→type map from params and annotated lets (recursively, see
-    `collectLetTys`). -/
-def varTyMap (f : FnDef) : List (String × Ty) :=
-  f.params.map (fun p => (p.name, p.ty)) ++ f.body.flatMap collectLetTys
 
 /-- One division-by-zero obligation. -/
 structure DivObl where
@@ -807,9 +825,8 @@ def divObligations (modules : List Module) : List DivObl := Id.run do
   let mut out : List DivObl := []
   for (pfx, f) in modules.flatMap allFunctions do
     let fq := pfx ++ f.name
-    let vt := varTyMap f
     let mut i := 0
-    for (isMod, nv, dv, scope) in scopedDivB f.loopContracts [] f.body do
+    for (isMod, nv, dv, scope, nvTy) in scopedDivB f.loopContracts [] (paramDecls f) f.body do
       let key := s!"{fq}#div{i}"
       let obHyps := f.requires ++ scope
       let cv : Option Bool × Option String := match cEvalInt dv with
@@ -826,9 +843,9 @@ def divObligations (modules : List Module) : List DivObl := Id.run do
       -- Signed only, and type-relative: the bound is THIS type's minimum, which is exactly
       -- what a hand-written rule gets wrong at one width or another.
       let quot : Option String × Option Int :=
-        match (exprIntTy vt (if isMod then nv else nv)).bind intRange with
+        match nvTy.bind intRange with
         | some (lo, _) =>
-          if !(IntArith.isSignedInt ((exprIntTy vt nv).getD .i32)) then (none, none)
+          if !(IntArith.isSignedInt (nvTy.getD .i32)) then (none, none)
           else match toLeanProp nv, toLeanProp dv with
             | some nStr, some dStr =>
               let vars := (collectIdents nv ++ collectIdents dv
@@ -890,17 +907,21 @@ decreasing_by
       | (rename_i h; subst h; simp +arith; omega)
       | (rename_i h; subst h; simp +arith)
 
-def shiftLeaf (scope : List Expr) : Stmt → List (Expr × Expr × List Expr)
+def shiftLeaf (scope : List Expr) (decls : ScopeDecls) :
+    Stmt → List (Expr × Expr × List Expr × Option Ty) :=
+  let mk : (Expr × Expr) → (Expr × Expr × List Expr × Option Ty) :=
+    fun (l, r) => (l, r, scope, exprIntTy decls.tys l)
+  fun
   | .letDecl _ _ _ _ v _ | .assign _ _ v | .expr _ v _ | .defer _ v =>
-      (collectShiftsE v).map fun (l, r) => (l, r, scope)
-  | .return_ _ (some v) => (collectShiftsE v).map fun (l, r) => (l, r, scope)
-  | .ifElse _ c _ _ => (collectShiftsE c).map fun (l, r) => (l, r, scope)
-  | .while_ _ c _ _ => (collectShiftsE c).map fun (l, r) => (l, r, scope)
-  | .forLoop _ _ c _ _ _ => (collectShiftsE c).map fun (l, r) => (l, r, scope)
+      (collectShiftsE v).map mk
+  | .return_ _ (some v) => (collectShiftsE v).map mk
+  | .ifElse _ c _ _ => (collectShiftsE c).map mk
+  | .while_ _ c _ _ => (collectShiftsE c).map mk
+  | .forLoop _ _ c _ _ _ => (collectShiftsE c).map mk
   | .fieldAssign _ o _ v | .derefAssign _ o v =>
-      (collectShiftsE o ++ collectShiftsE v).map fun (l, r) => (l, r, scope)
+      (collectShiftsE o ++ collectShiftsE v).map mk
   | .arrayIndexAssign _ a i v =>
-      (collectShiftsE a ++ collectShiftsE i ++ collectShiftsE v).map fun (l, r) => (l, r, scope)
+      (collectShiftsE a ++ collectShiftsE i ++ collectShiftsE v).map mk
   | _ => []
 
 /-- One shift-amount obligation: `0 ≤ amount < bitWidth(ty)`. -/
@@ -924,10 +945,10 @@ def shiftObligations (modules : List Module) : List ShiftObl := Id.run do
   let mut out : List ShiftObl := []
   for (pfx, f) in modules.flatMap allFunctions do
     let fq := pfx ++ f.name
-    let vt := varTyMap f
     let mut i := 0
-    for (sv, amt, scope) in scopedWalkB shiftLeaf f.loopContracts [] f.body do
-      match (exprIntTy vt sv).bind IntArith.intBitWidth with
+    for (sv, amt, scope, svTy) in
+        scopedWalkSizedB shiftLeaf f.loopContracts [] (paramDecls f) f.body do
+      match svTy.bind IntArith.intBitWidth with
       | some (w, _) =>
         let key := s!"{fq}#shift{i}"
         let obHyps := f.requires ++ scope
@@ -1098,10 +1119,9 @@ def overflowObligations (modules : List Module) : List OverflowObl := Id.run do
   for (pfx, f) in modules.flatMap allFunctions do
     if !f.overflowChecked then continue
     let fq := pfx ++ f.name
-    let vt := varTyMap f
     let mut i := 0
-    for (e, scope) in scopedArithB f.loopContracts [] f.body do
-      match (exprIntTy vt e).bind intRange, toLeanProp e with
+    for (e, scope, eTy) in scopedArithB f.loopContracts [] (paramDecls f) f.body do
+      match eTy.bind intRange, toLeanProp e with
       | some (lo, hi), some eStr =>
         let key := s!"{fq}#ovf{i}"
         let hyps := f.requires ++ scope

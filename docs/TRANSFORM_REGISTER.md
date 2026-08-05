@@ -226,6 +226,33 @@ or an array declared in a nested block. That is why the regression guards for al
 end-to-end in the gate rather than `rfl` locks: the defects lived precisely where no example
 looked, and a lock only protects code someone thought to exercise.
 
+### The same root cause was in three families, not one
+
+`varTyMap` was the identical construct for TYPES: one flat, per-function, name-keyed map. Asking
+the same question there found two more defects, with different symptoms:
+
+- **shift — a WRONG obligation.** `x << 40` where `x : i8` took its width from a shadowed
+  earlier `x : i64` and generated `40 < 64`, which is true, so the report read **proved**. The
+  compiler certified a 40-bit shift of an 8-bit value. Now `40 < 8`, refuted.
+- **overflow — a MISSING obligation.** Shadowing made type resolution fail on the mismatch, so
+  an addition inside an explicitly `#[overflow_checked]` function produced **no VC at all** and
+  nothing said so. Now covered at the correct `i8` range.
+
+Both are fixed the same way as bounds: types and array lengths are threaded together through
+`scopedWalkSized{S,B}` as one `ScopeDecls` record, resolved at the access. `varTyMap`,
+`arraySizeMap` and `collectLetTys` are all deleted — there is no flat name-keyed map left in
+this layer to resolve the wrong binding from.
+
+One record rather than two threaded parameters, deliberately: a future declaration kind cannot
+be added to types and forgotten in sizes. That has already paid for itself in the gate — a
+single mutation reversing shadowing precedence in `ScopeDecls.extend` now fails **8**
+assertions across all three families, because they share one environment instead of three.
+
+**What is deliberately NOT done:** unannotated `let`s still contribute no type. Inferring one
+here risks disagreeing with the checker, and a wrong type is precisely the defect being fixed —
+so those obligations are dropped rather than guessed. Array *lengths* are the exception, since
+`let a = [0; 16]` fixes the length without any inference.
+
 Two smaller lessons from mutating the per-scope version:
 
 - **A gate can encode the workaround instead of the goal.** The refusal-era assertions
@@ -234,7 +261,10 @@ Two smaller lessons from mutating the per-scope version:
   the refutation, which the correct implementation satisfies and both wrong ones do not.
 - **One mutation survived**: dropping `for`-init bindings from the threaded sizes passed this
   gate AND the full 1702-test suite, because nothing in the corpus declares an array in a
-  for-init. A fixture now covers it. A separate mutation — making a declaration visible to its
+  for-init. A fixture now covers it.
+- **A third assertion pinned an argument list** rather than a property (`scopedWalkSizedB
+  boundsLeaf lcs scope paramSizes body`) and reported a regression when a parameter was merely
+  renamed. It now counts shared call sites instead. A separate mutation — making a declaration visible to its
   own statement — is an EQUIVALENT mutant, not a survivor: a `let` initialiser cannot index the
   name being declared, so the change is unobservable.
 

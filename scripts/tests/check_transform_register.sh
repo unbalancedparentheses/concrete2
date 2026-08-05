@@ -397,9 +397,68 @@ else
 fi
 # Generation and gap-reporting must walk IDENTICALLY, or an access can fall between them --
 # counted by neither, which is the silence this whole cluster was about.
-grep -q "scopedWalkSizedB boundsLeaf lcs scope paramSizes body" "$RO" \
-  && ok "bounds obligations and the unresolved list share one walk" \
-  || no "the two consumers no longer share a walk — accesses can fall between them"
+# Both consumers must go through the SAME walk, or an access can fall between them and be
+# counted by neither. Asserted by counting call sites rather than matching an argument list --
+# the previous version pinned the exact arguments and broke when a parameter was renamed,
+# reporting a regression where there was none.
+SHARED="$(grep -c 'scopedBoundsB f.loopContracts \[\] (paramDecls f) f.body' "$RO")"
+[ "$SHARED" = "2" ] \
+  && ok "bounds obligations and the unresolved list share one walk (2 call sites)" \
+  || no "expected 2 shared scopedBoundsB call sites, found $SHARED — accesses can fall between them"
+
+echo "=== shift/overflow widths come from the binding IN EFFECT, not a flat map ==="
+# Same defect as the bounds one, same root cause (`varTyMap`, a flat per-function name-keyed
+# map), found by asking the same question one layer over. Two different symptoms:
+#   shift    -- WRONG obligation: `x << 40` on an i8 got width 64 from a shadowed `x : i64`
+#               and was reported PROVED. Certifying a 40-bit shift of an 8-bit value.
+#   overflow -- MISSING obligation: the type mismatch made resolution fail, so an addition in
+#               an explicitly #[overflow_checked] function got no VC and no mention.
+if [ -n "${TMPD:-}" ]; then
+  cat > "$TMPD/shiftshadow.con" <<'CON'
+mod shiftwidth {
+    fn certified_bad() -> i8 {
+        let x: i64 = 1;
+        let a: i64 = x << 3;
+        let x: i8 = 1;
+        let b: i8 = x << 40;
+        return b;
+    }
+}
+CON
+  SW="$("$BIN" "$TMPD/shiftshadow.con" --report vcs 2>/dev/null)"
+  printf '%s' "$SW" | grep -q "40 < 8" \
+    && ok "the i8 shift uses width 8 (the binding in effect)" \
+    || no "the shift width does not come from the binding in effect"
+  printf '%s' "$SW" | grep -q "40 < 64" \
+    && no "width 64 from the shadowed i64 again — a 40-bit shift of an i8 reads as in-range" \
+    || ok "the shadowed i64 width is not used"
+  printf '%s' "$SW" | grep -q "1 counterexample" \
+    && ok "the over-width shift is REFUTED, not proved" \
+    || no "shifting an i8 by 40 is not being refuted"
+
+  cat > "$TMPD/ovfshadow.con" <<'CON'
+mod ovfwidth {
+    #[overflow_checked]
+    fn shadowed(n: i8) -> i8 {
+        let x: i64 = 0;
+        let a: i64 = x + 1;
+        let x: i8 = 100;
+        return x + n;
+    }
+}
+CON
+  OW="$("$BIN" "$TMPD/ovfshadow.con" --report vcs 2>/dev/null)"
+  printf '%s' "$OW" | grep -q -- "-128 ≤ (x + n)" \
+    && ok "the shadowed i8 addition gets an overflow VC at the i8 range" \
+    || no "an addition in an #[overflow_checked] function silently has no obligation again"
+fi
+grep -q "def varTyMap" "$RO" \
+  && no "the flat varTyMap is back — shift/overflow widths can come from the wrong binding" \
+  || ok "varTyMap is gone; types are threaded per scope"
+# One environment, so a new declaration kind cannot be added to types and forgotten in sizes.
+grep -q "structure ScopeDecls" "$RO" \
+  && ok "types and array sizes are threaded as one record" \
+  || no "ScopeDecls is gone — the two environments can drift apart again"
 
 echo ""
 echo "TRANSFORM-REGISTER: PASS=$PASS  FAIL=$FAIL"
