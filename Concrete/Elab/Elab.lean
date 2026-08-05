@@ -1086,7 +1086,7 @@ partial def elabCallEv (fnName : String) (typeArgs : List Ty) (args : List Expr)
     let cArgEv ← elabExprEv arg
     let cArg := cArgEv.core
     return ElaboratedExprV2.mk (CExpr.call "alloc" [] [cArg] (.heap cArg.ty))
-      (Proof.evCall (CallableId.ofIntrinsic "alloc") [])
+      (Proof.evCall (CallableId.ofIntrinsic "alloc") [cArgEv.evidence])
   -- Intercept free(ptr)
   if intrinsic == some .free then
     let arg := match args with | a :: _ => a | [] => Expr.intLit default 0
@@ -1094,7 +1094,7 @@ partial def elabCallEv (fnName : String) (typeArgs : List Ty) (args : List Expr)
     let cArg := cArgEv.core
     let innerTy := match cArg.ty with | .heap t => t | _ => .placeholder
     return ElaboratedExprV2.mk (CExpr.call "free" [] [cArg] innerTy)
-      (Proof.evCall (CallableId.ofIntrinsic "free") [])
+      (Proof.evCall (CallableId.ofIntrinsic "free") [cArgEv.evidence])
   -- Intercept newtype constructor: keep the wrapper's name in the type so
   -- `obj.method()` later resolves against the wrapper's inherent impl, not
   -- the inner type. The runtime representation is identical to the inner
@@ -1168,7 +1168,7 @@ partial def elabCallEv (fnName : String) (typeArgs : List Ty) (args : List Expr)
       cArgs := cArgs ++ [cArg]
       argEvs := cArgEv.evidence :: argEvs
     return ElaboratedExprV2.mk (CExpr.call "string_push_char" [] cArgs .unit)
-      (Proof.evCall (CallableId.ofIntrinsic "string_push_char") [])
+      (Proof.evCall (CallableId.ofIntrinsic "string_push_char") argEvs.reverse)
   -- Intercept string_append(&mut s, other)
   if intrinsic == some .stringAppend then
     let mut cArgs : List CExpr := []
@@ -1179,7 +1179,7 @@ partial def elabCallEv (fnName : String) (typeArgs : List Ty) (args : List Expr)
       cArgs := cArgs ++ [cArg]
       argEvs := cArgEv.evidence :: argEvs
     return ElaboratedExprV2.mk (CExpr.call "string_append" [] cArgs .unit)
-      (Proof.evCall (CallableId.ofIntrinsic "string_append") [])
+      (Proof.evCall (CallableId.ofIntrinsic "string_append") argEvs.reverse)
   -- Intercept string_append_int(&mut s, n)
   if intrinsic == some .stringAppendInt then
     let mut cArgs : List CExpr := []
@@ -1190,7 +1190,7 @@ partial def elabCallEv (fnName : String) (typeArgs : List Ty) (args : List Expr)
       cArgs := cArgs ++ [cArg]
       argEvs := cArgEv.evidence :: argEvs
     return ElaboratedExprV2.mk (CExpr.call "string_append_int" [] cArgs .unit)
-      (Proof.evCall (CallableId.ofIntrinsic "string_append_int") [])
+      (Proof.evCall (CallableId.ofIntrinsic "string_append_int") argEvs.reverse)
   -- Intercept string_append_bool(&mut s, b)
   if intrinsic == some .stringAppendBool then
     let mut cArgs : List CExpr := []
@@ -1201,7 +1201,7 @@ partial def elabCallEv (fnName : String) (typeArgs : List Ty) (args : List Expr)
       cArgs := cArgs ++ [cArg]
       argEvs := cArgEv.evidence :: argEvs
     return ElaboratedExprV2.mk (CExpr.call "string_append_bool" [] cArgs .unit)
-      (Proof.evCall (CallableId.ofIntrinsic "string_append_bool") [])
+      (Proof.evCall (CallableId.ofIntrinsic "string_append_bool") argEvs.reverse)
   -- Intercept string_reserve(&mut s, cap)
   if intrinsic == some .stringReserve then
     let mut cArgs : List CExpr := []
@@ -1212,7 +1212,7 @@ partial def elabCallEv (fnName : String) (typeArgs : List Ty) (args : List Expr)
       cArgs := cArgs ++ [cArg]
       argEvs := cArgEv.evidence :: argEvs
     return ElaboratedExprV2.mk (CExpr.call "string_reserve" [] cArgs .unit)
-      (Proof.evCall (CallableId.ofIntrinsic "string_reserve") [])
+      (Proof.evCall (CallableId.ofIntrinsic "string_reserve") argEvs.reverse)
   -- Intercept vec_push
   if intrinsic == some .vecPush then
     -- Elaborate vec arg first to extract element type for value hint
@@ -1224,9 +1224,11 @@ partial def elabCallEv (fnName : String) (typeArgs : List Ty) (args : List Expr)
       let cVecEv ← elabExprEv vecArg
       let cVec := cVecEv.core
       cArgs := cArgs ++ [cVec]
+      argEvs := cVecEv.evidence :: argEvs
       let cValEv ← elabExprEv valArg (some elemTy)
       let cVal := cValEv.core
       cArgs := cArgs ++ [cVal]
+      argEvs := cValEv.evidence :: argEvs
       for arg in rest do
         let cArgEv ← elabExprEv arg
         let cArg := cArgEv.core
@@ -1239,7 +1241,7 @@ partial def elabCallEv (fnName : String) (typeArgs : List Ty) (args : List Expr)
         cArgs := cArgs ++ [cArg]
         argEvs := cArgEv.evidence :: argEvs
     return ElaboratedExprV2.mk (CExpr.call "vec_push" [] cArgs .unit)
-      (Proof.evCall (CallableId.ofIntrinsic "vec_push") [])
+      (Proof.evCall (CallableId.ofIntrinsic "vec_push") argEvs.reverse)
   -- Intercept vec_get
   if intrinsic == some .vecGet then
     let mut cArgs : List CExpr := []
@@ -1249,9 +1251,11 @@ partial def elabCallEv (fnName : String) (typeArgs : List Ty) (args : List Expr)
       let cVecEv ← elabExprEv vecArg
       let cVec := cVecEv.core
       cArgs := cArgs ++ [cVec]
+      argEvs := cVecEv.evidence :: argEvs
       let cIdxEv ← elabExprEv idxArg (some .int)
       let cIdx := cIdxEv.core
       cArgs := cArgs ++ [cIdx]
+      argEvs := cIdxEv.evidence :: argEvs
       for arg in rest do
         let cArgEv ← elabExprEv arg
         let cArg := cArgEv.core
@@ -1268,7 +1272,7 @@ partial def elabCallEv (fnName : String) (typeArgs : List Ty) (args : List Expr)
       | some (.refMut (.generic "Vec" [et])) => et
       | _ => .placeholder
     return ElaboratedExprV2.mk (CExpr.call "vec_get" [] cArgs elemTy)
-      (Proof.evCall (CallableId.ofIntrinsic "vec_get") [])
+      (Proof.evCall (CallableId.ofIntrinsic "vec_get") argEvs.reverse)
   -- Intercept vec_set
   if intrinsic == some .vecSet then
     let elemTy := match typeArgs with | t :: _ => t | [] => .int
@@ -1279,12 +1283,15 @@ partial def elabCallEv (fnName : String) (typeArgs : List Ty) (args : List Expr)
       let cVecEv ← elabExprEv vecArg
       let cVec := cVecEv.core
       cArgs := cArgs ++ [cVec]
+      argEvs := cVecEv.evidence :: argEvs
       let cIdxEv ← elabExprEv idxArg (some .int)
       let cIdx := cIdxEv.core
       cArgs := cArgs ++ [cIdx]
+      argEvs := cIdxEv.evidence :: argEvs
       let cValEv ← elabExprEv valArg (some elemTy)
       let cVal := cValEv.core
       cArgs := cArgs ++ [cVal]
+      argEvs := cValEv.evidence :: argEvs
       for arg in rest do
         let cArgEv ← elabExprEv arg
         let cArg := cArgEv.core
@@ -1297,7 +1304,7 @@ partial def elabCallEv (fnName : String) (typeArgs : List Ty) (args : List Expr)
         cArgs := cArgs ++ [cArg]
         argEvs := cArgEv.evidence :: argEvs
     return ElaboratedExprV2.mk (CExpr.call "vec_set" [] cArgs .unit)
-      (Proof.evCall (CallableId.ofIntrinsic "vec_set") [])
+      (Proof.evCall (CallableId.ofIntrinsic "vec_set") argEvs.reverse)
   -- Intercept vec_len
   if intrinsic == some .vecLen then
     let mut cArgs : List CExpr := []
@@ -1308,7 +1315,7 @@ partial def elabCallEv (fnName : String) (typeArgs : List Ty) (args : List Expr)
       cArgs := cArgs ++ [cArg]
       argEvs := cArgEv.evidence :: argEvs
     return ElaboratedExprV2.mk (CExpr.call "vec_len" [] cArgs .int)
-      (Proof.evCall (CallableId.ofIntrinsic "vec_len") [])
+      (Proof.evCall (CallableId.ofIntrinsic "vec_len") argEvs.reverse)
   -- Intercept vec_pop
   if intrinsic == some .vecPop then
     let mut cArgs : List CExpr := []
@@ -1322,7 +1329,7 @@ partial def elabCallEv (fnName : String) (typeArgs : List Ty) (args : List Expr)
       | some (.refMut (.generic "Vec" [et])) => et
       | _ => .placeholder
     return ElaboratedExprV2.mk (CExpr.call "vec_pop" [] cArgs (.generic optionEnumName [elemTy]))
-      (Proof.evCall (CallableId.ofIntrinsic "vec_pop") [])
+      (Proof.evCall (CallableId.ofIntrinsic "vec_pop") argEvs.reverse)
   -- Intercept vec_free
   if intrinsic == some .vecFree then
     let mut cArgs : List CExpr := []
@@ -1333,7 +1340,7 @@ partial def elabCallEv (fnName : String) (typeArgs : List Ty) (args : List Expr)
       cArgs := cArgs ++ [cArg]
       argEvs := cArgEv.evidence :: argEvs
     return ElaboratedExprV2.mk (CExpr.call "vec_free" [] cArgs .unit)
-      (Proof.evCall (CallableId.ofIntrinsic "vec_free") [])
+      (Proof.evCall (CallableId.ofIntrinsic "vec_free") argEvs.reverse)
   -- Call through a fn-typed LOCAL or parameter. This is the one place that knows
   -- the callee is a value in scope rather than a global definition, so it is the
   -- one place that can record it (bug 050): downstream passes must never

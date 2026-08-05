@@ -267,5 +267,50 @@ else
   no "convergence probe was inconclusive ([$cmpout]) — neither AGREE nor DIVERGE"
 fi
 
+# PRODUCTION CALL CAPTURE. The tree must contain EVERY intrinsic argument in
+# evaluation order. The first elabCall evidence pass accumulated these arguments
+# and then passed [] to evCall; Vec branches additionally omitted their leading
+# vec/index/value operands. A well-formed call node with an empty/subset argument
+# list is worse than a gap because it looks complete while under-approximating the
+# executed expression.
+CALLS="$(mktemp -d)"
+cat > "$CALLS/p.lean" <<'LEAN'
+import Concrete
+open Concrete Concrete.Proof
+
+def callShape (src : String) : String :=
+  match (do
+    let pa ← Pipeline.parse src
+    let sm := Pipeline.buildSummary pa
+    let r ← Pipeline.resolve pa sm
+    Pipeline.check r sm
+    let el ← Pipeline.elaborate r sm
+    pure el.coreModules : Except Diagnostics (List CModule)) with
+  | .error _ => "ERR"
+  | .ok ms =>
+    match (ms.map CModule.evidenceBodies).flatten.head? with
+    | none => "NO-BODY"
+    | some (_, body) =>
+      match body.statements with
+      | _ :: .exprStmt (.call pushId pushArgs) _ ::
+          .exprStmt (.call freeId freeArgs) _ :: _ =>
+        match pushArgs, freeArgs with
+        | [.borrow true (.binderRef 0 1), .binderRef 0 0], [.binderRef 0 1] =>
+          if pushId == CallableId.ofIntrinsic "vec_push" &&
+             freeId == CallableId.ofIntrinsic "vec_free" then "OK" else "WRONG-ID"
+        | _, _ => "WRONG-ARGS"
+      | _ => "WRONG-BODY"
+
+#eval IO.println (callShape
+  "mod m { pub fn f(p: Int) with(Std) -> Int { let mut v: Vec<Int> = vec_new::<Int>(); vec_push(&mut v, p); vec_free(v); return p; } }")
+LEAN
+callout="$(lake env lean "$CALLS/p.lean" 2>/dev/null | tr -d '\n' || true)"
+rm -rf "$CALLS"
+if [ "$callout" = "OK" ]; then
+  ok "intrinsic calls retain every argument in evaluation order"
+else
+  no "intrinsic call evidence lost/reordered an argument ([$callout])"
+fi
+
 echo "IDENTITY-USE-BYTES: PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1
