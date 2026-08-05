@@ -10244,13 +10244,21 @@ else
     sd_fail=$((sd_fail + 1))
 fi
 
-# 18. Mixed recursion: 3 bounded, 3 recursive (unbounded)
+# 18. Mixed recursion: 2 bounded, 4 recursive (unbounded).
+#
+# UPDATED with the transitive recursion-admission fix (spike/multi-prover-evidence). This
+# expected 3 bounded / 3 recursive, which encoded a FAIL-OPEN: the fixture's `main` calls
+# recurse(5) and mutual_a(3), so its stack usage IS unbounded, yet it was counted bounded
+# because only DIRECT recursion was admitted. Transitive admission classifies it correctly,
+# so the count moved 3/3 -> 2/4 and the old expectation was asserting the defect.
+#
+# pure_leaf and pure_caller remain the only genuinely bounded functions.
 sd_mixed=$("$COMPILER" tests/programs/adversarial_stackdepth_mixed_recursion.con --report stack-depth 2>&1)
-if grep <<<"$sd_mixed" -q "3 bounded, 3 recursive (unbounded)"; then
-    echo "  ok  stackdepth: mixed has 3 bounded, 3 recursive"
+if grep <<<"$sd_mixed" -q "2 bounded, 4 recursive (unbounded)"; then
+    echo "  ok  stackdepth: mixed has 2 bounded, 4 recursive (main is transitively unbounded)"
     sd_pass=$((sd_pass + 1))
 else
-    echo "  FAIL stackdepth: mixed should have 3 bounded, 3 recursive"
+    echo "  FAIL stackdepth: mixed should have 2 bounded, 4 recursive (main calls recurse/mutual_a)"
     sd_fail=$((sd_fail + 1))
 fi
 

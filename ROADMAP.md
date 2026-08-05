@@ -123,32 +123,51 @@ has not started.
 
 ## Current Execution State (2026-08-01)
 
-### MERGE BLOCKER: the pinned spike is red on its own (found 2026-08-05)
+### Merge blocker RESOLVED: the spike fixed a fail-open, the test asserted the defect
 
-`scripts/tests/run_tests.sh --trust-gate` at the pin `80be5368`, with NO merge involved:
+The pin `80be5368` failed one trust-gate case on its own (1500/1), identically on the
+quarantine merge:
 
     FAIL stackdepth: mixed should have 3 bounded, 3 recursive
-    passed: 1500   failed: 1
 
-Measured on a detached worktree at the pin, and identically on the quarantine merge — so
-the merge does not introduce it and fixing the merge cannot remove it. Merging as-is would
-IMPORT a known failure into main, which is why step 5 ("make the full compiler, corpus,
-trust and multi-kernel CI green") has to be satisfied at the pin and not waived.
+Diagnosed rather than skipped. `adversarial_stackdepth_mixed_recursion.con` has six
+functions; `main` calls `recurse(5)` and `mutual_a(3)`, so **main's stack usage IS
+unbounded**. Pre-spike it was counted BOUNDED because only DIRECT recursion was admitted —
+a fail-open. The spike's transitive recursion admission classifies it correctly, moving the
+totals 3 bounded/3 recursive → 2 bounded/4 recursive.
 
-Two acceptable resolutions, both deliberate:
+So the expectation encoded the defect, and the spike is more correct than main was. Fixed
+by correcting the expected counts with that reason recorded inline, NOT by skip-listing:
+trust gate now 1501 passed / 0 failed, oracle 70/0.
 
-1. Fix the stack-depth classification on the spike, re-pin to the fixed SHA, and merge
-   that. Preferred: the pin should name a green commit.
-2. Decide the case is a stale expectation rather than a defect, correct the expected
-   counts with a recorded reason, and re-pin.
+Worth stating plainly: main has been fail-open on transitive stack depth, and merging the
+spike fixes that.
 
-What must NOT happen is merging the current pin and adding the failure to a skip list,
-which would convert a red gate into permanent silence.
+### Multi-prover work that remains AFTER R-0004
 
-Everything else on the quarantine merge is green: builds (178 jobs), examples 141/0, oracle
-70/0, and all eight R-0004 gates including V1 frozen at 77/77.
+Recorded so the dependency is explicit rather than discovered later. The spike's own comment
+in `ObligationCore.lean` states that `proved_by_two_kernels` / `proved_by_multi_kernel`
+attest CHECKER diversity, not agreement on one proposition, because *"there is no
+subject-digest cross-check — that is future work"*. That cross-check IS R-0004's subject
+digest, so these statuses cannot become authoritative until R-0004 lands.
 
-> **RECONCILIATION NOTE (merge of spike/multi-prover-evidence @ 80be5368).** This section
+1. **Subject-digest cross-check across kernels.** Each per-prover renderer re-spells the
+   obligation with nothing verifying they spell the SAME proposition. Until the subject
+   digest is authoritative, N kernels accepting N lowerings is not N kernels agreeing.
+2. **Graduate the statuses.** `proved_by_rocq`, `proved_by_isabelle`,
+   `proved_by_two_kernels`, `proved_by_multi_kernel` stay EXPERIMENTAL and
+   non-authoritative: they must not drive badges or release policy while the receipt and
+   status model is unfinished.
+3. **`kernel_disagreement` handling** — currently caps the claim and fails the two-kernel
+   release gate. Its interaction with V2 freshness (a disagreement on a STALE subject is a
+   different fact from one on a fresh subject) is undefined.
+4. **Receipts must bind the kernel set.** A receipt naming a subject digest and dependency
+   root must also record WHICH kernels attested and at what versions, or replay cannot
+   reproduce the verdict.
+5. **Re-pin, do not track a moving head.** Later spike deltas integrate as new pinned
+   epochs against a green pin, with the convergence inventory updated each time.
+
+> **RECONCILIATION NOTE (merge of spike/multi-prover-evidence @ 80be5368).**> **RECONCILIATION NOTE (merge of spike/multi-prover-evidence @ 80be5368).** This section
 > is dated 2026-08-01 and is STALE for R-0004: it predates the evidence-producer work of
 > 2026-08-04/05. Git auto-merged the two roadmaps without a textual conflict, so nothing
 > flagged the staleness — it is recorded here rather than silently inherited.
