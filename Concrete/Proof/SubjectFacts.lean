@@ -443,7 +443,12 @@ structure CheckedDeclFacts where
   capSet      : List String := []
   contracts   : ContractFacts := {}
   /-- Typed body-identity inputs captured during elaboration. Not yet part of
-      `canonical`; V1 remains frozen while ProofBodyCanonicalV2 is incomplete. -/
+      `canonical`; V1 remains frozen while ProofBodyCanonicalV2 is incomplete.
+
+      LEGACY VIEW. To be DERIVED from the structural evidence body (stored parallel on
+      CModule, since EvidenceTree imports this file and cannot be referenced from it)
+      and this independent accumulator then removed. Until that happens the two are
+      separate producers of one fact — the defect class this task exists to close. -/
   bodyIdentityInputs : ProofBodyIdentityInputsV2 := {}
   /-- Declaration-level flags that change what a proof may assume. `isTrusted` in
       particular is a trust boundary and must not be invisible to a subject. -/

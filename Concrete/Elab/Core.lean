@@ -1,5 +1,6 @@
 import Concrete.Frontend.AST
 import Concrete.Proof.SubjectFacts
+import Concrete.Proof.EvidenceTree
 
 namespace Concrete
 
@@ -197,6 +198,13 @@ structure CModule where
       function type for proof bookkeeping would be the wrong trade. Proof
       consumers read this; codegen never sees it. -/
   declFacts : List Proof.CheckedDeclFacts := []
+  /-- STRUCTURAL evidence bodies, keyed by the same CallableId as `declFacts`.
+
+      Parallel rather than a field on CheckedDeclFacts because EvidenceTree imports
+      SubjectFacts, so the facts record cannot reference the tree. Keyed by identity, not
+      by position: a positional pairing with declFacts would be a second fact that can
+      drift out of alignment. -/
+  evidenceBodies : List (CallableId × Proof.EvidenceBodyDraftV2) := []
   structs : List CStructDef
   enums : List CEnumDef
   functions : List CFnDef

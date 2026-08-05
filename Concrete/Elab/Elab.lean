@@ -545,8 +545,10 @@ partial def elabExprEv (e : Expr) (hint : Option Ty := none) : ElabM ElaboratedE
     let cCond := cCondEv.core
     -- Flow the if-expression's own hint into each branch so a flexible
     -- literal/binop trailing value adopts the result width (matches Check).
-    let cThen ← elabStmts then_ (valueHint := hint)
-    let cElse ← elabStmts else_ (valueHint := hint)
+    let cThenEv ← elabStmtsEv then_ (valueHint := hint)
+    let cThen := cThenEv.flatMap (·.core)
+    let cElseEv ← elabStmtsEv else_ (valueHint := hint)
+    let cElse := cElseEv.flatMap (·.core)
     -- Result type: an explicit hint wins (the branches were just typed under it);
     -- otherwise infer from a branch's elaborated TRAILING VALUE type. Use the
     -- stamped Core type (`e.ty`), NOT a shallow surface `peekExprType`, so Elab's
@@ -724,18 +726,21 @@ partial def elabExprEv (e : Expr) (hint : Option Ty := none) : ElabM ElaboratedE
               let coreBinding ← bindArmVar binding bty
               typedBindings := typedBindings ++ [(coreBinding, bty)]
             let cGuard ← guard.mapM (fun g => do pure (← elabExprEv g (some Ty.bool)).core)
-            let cBody ← elabStmts body (valueHint := hint)
+            let cBodyEv ← elabStmtsEv body (valueHint := hint)
+            let cBody := cBodyEv.flatMap (·.core)
             cArms := cArms ++ [.enumArm enumName armVariant typedBindings cGuard cBody]
           | .litArm _ val guard body =>
             let cValEv ← elabExprEv val
             let cVal := cValEv.core
             let cGuard ← guard.mapM (fun g => do pure (← elabExprEv g (some Ty.bool)).core)
-            let cBody ← elabStmts body (valueHint := hint)
+            let cBodyEv ← elabStmtsEv body (valueHint := hint)
+            let cBody := cBodyEv.flatMap (·.core)
             cArms := cArms ++ [.litArm cVal cGuard cBody]
           | .varArm _ binding guard body =>
             let coreBinding ← bindArmVar binding innerTyR
             let cGuard ← guard.mapM (fun g => do pure (← elabExprEv g (some Ty.bool)).core)
-            let cBody ← elabStmts body (valueHint := hint)
+            let cBodyEv ← elabStmtsEv body (valueHint := hint)
+            let cBody := cBodyEv.flatMap (·.core)
             cArms := cArms ++ [.varArm coreBinding innerTyR cGuard cBody]
           | .rangeArm _ lo hi incl guard body =>
             let cLoEv ← elabExprEv lo (some innerTyR)
@@ -743,7 +748,8 @@ partial def elabExprEv (e : Expr) (hint : Option Ty := none) : ElabM ElaboratedE
             let cHiEv ← elabExprEv hi (some innerTyR)
             let cHi := cHiEv.core
             let cGuard ← guard.mapM (fun g => do pure (← elabExprEv g (some Ty.bool)).core)
-            let cBody ← elabStmts body (valueHint := hint)
+            let cBodyEv ← elabStmtsEv body (valueHint := hint)
+            let cBody := cBodyEv.flatMap (·.core)
             cArms := cArms ++ [.rangeArm cLo cHi incl cGuard cBody]
         restoreScope envBefore
       | none =>
@@ -758,16 +764,19 @@ partial def elabExprEv (e : Expr) (hint : Option Ty := none) : ElabM ElaboratedE
             let cValEv ← elabExprEv val
             let cVal := cValEv.core
             let cGuard ← guard.mapM (fun g => do pure (← elabExprEv g (some Ty.bool)).core)
-            let cBody ← elabStmts body (valueHint := hint)
+            let cBodyEv ← elabStmtsEv body (valueHint := hint)
+            let cBody := cBodyEv.flatMap (·.core)
             cArms := cArms ++ [.litArm cVal cGuard cBody]
           | .varArm _ binding guard body =>
             let coreBinding ← bindArmVar binding innerTyR
             let cGuard ← guard.mapM (fun g => do pure (← elabExprEv g (some Ty.bool)).core)
-            let cBody ← elabStmts body (valueHint := hint)
+            let cBodyEv ← elabStmtsEv body (valueHint := hint)
+            let cBody := cBodyEv.flatMap (·.core)
             cArms := cArms ++ [.varArm coreBinding innerTyR cGuard cBody]
           | .mk _ en v _ guard body =>
             let cGuard ← guard.mapM (fun g => do pure (← elabExprEv g (some Ty.bool)).core)
-            let cBody ← elabStmts body (valueHint := hint)
+            let cBodyEv ← elabStmtsEv body (valueHint := hint)
+            let cBody := cBodyEv.flatMap (·.core)
             cArms := cArms ++ [.enumArm en v [] cGuard cBody]
           | .rangeArm _ lo hi incl guard body =>
             let cLoEv ← elabExprEv lo (some innerTyR)
@@ -775,7 +784,8 @@ partial def elabExprEv (e : Expr) (hint : Option Ty := none) : ElabM ElaboratedE
             let cHiEv ← elabExprEv hi (some innerTyR)
             let cHi := cHiEv.core
             let cGuard ← guard.mapM (fun g => do pure (← elabExprEv g (some Ty.bool)).core)
-            let cBody ← elabStmts body (valueHint := hint)
+            let cBodyEv ← elabStmtsEv body (valueHint := hint)
+            let cBody := cBodyEv.flatMap (·.core)
             cArms := cArms ++ [.rangeArm cLo cHi incl cGuard cBody]
         restoreScope envBefore
     else
@@ -788,16 +798,19 @@ partial def elabExprEv (e : Expr) (hint : Option Ty := none) : ElabM ElaboratedE
           let cValEv ← elabExprEv val (some innerTyR)
           let cVal := cValEv.core
           let cGuard ← guard.mapM (fun g => do pure (← elabExprEv g (some Ty.bool)).core)
-          let cBody ← elabStmts body (valueHint := hint)
+          let cBodyEv ← elabStmtsEv body (valueHint := hint)
+          let cBody := cBodyEv.flatMap (·.core)
           cArms := cArms ++ [.litArm cVal cGuard cBody]
         | .varArm _ binding guard body =>
           let coreBinding ← bindArmVar binding innerTyR
           let cGuard ← guard.mapM (fun g => do pure (← elabExprEv g (some Ty.bool)).core)
-          let cBody ← elabStmts body (valueHint := hint)
+          let cBodyEv ← elabStmtsEv body (valueHint := hint)
+          let cBody := cBodyEv.flatMap (·.core)
           cArms := cArms ++ [.varArm coreBinding innerTyR cGuard cBody]
         | .mk _ en v _ guard body =>
           let cGuard ← guard.mapM (fun g => do pure (← elabExprEv g (some Ty.bool)).core)
-          let cBody ← elabStmts body (valueHint := hint)
+          let cBodyEv ← elabStmtsEv body (valueHint := hint)
+          let cBody := cBodyEv.flatMap (·.core)
           cArms := cArms ++ [.enumArm en v [] cGuard cBody]
         | .rangeArm _ lo hi incl guard body =>
           let cLoEv ← elabExprEv lo (some innerTyR)
@@ -805,7 +818,8 @@ partial def elabExprEv (e : Expr) (hint : Option Ty := none) : ElabM ElaboratedE
           let cHiEv ← elabExprEv hi (some innerTyR)
           let cHi := cHiEv.core
           let cGuard ← guard.mapM (fun g => do pure (← elabExprEv g (some Ty.bool)).core)
-          let cBody ← elabStmts body (valueHint := hint)
+          let cBodyEv ← elabStmtsEv body (valueHint := hint)
+          let cBody := cBodyEv.flatMap (·.core)
           cArms := cArms ++ [.rangeArm cLo cHi incl cGuard cBody]
       restoreScope envBefore
     -- Result type: prefer the caller's hint; otherwise infer it from the arm
@@ -1322,7 +1336,7 @@ partial def elabCall (fnName : String) (typeArgs : List Ty) (args : List Expr)
     return .call callName inferredTypeArgs cArgs retTy
   | none => throwElab (.undeclaredFunction fnName) span
 
-partial def elabStmt (stmt : Stmt) : ElabM (List CStmt) := do
+partial def elabStmtEv (stmt : Stmt) : ElabM ElaboratedStmtV2 := do
   match stmt with
   | .letDecl _ name mutable ty value isGhost =>
     let valHint ← match ty with
@@ -1338,27 +1352,28 @@ partial def elabStmt (stmt : Stmt) : ElabM (List CStmt) := do
       | none => pure cVal.ty
     if isGhost then
       addGhostVar name
-      return []
+      return ElaboratedStmtV2.mk [] (Proof.EvidenceStmtV2.letBind none cValEv.evidence)
     addVar name finalTy
-    return [.letDecl name mutable finalTy cVal]
+    return ElaboratedStmtV2.mk [.letDecl name mutable finalTy cVal] (Proof.EvidenceStmtV2.letBind none cValEv.evidence)
 
   | .assign _ name value =>
     match ← lookupVar name with
     | some varTy =>
       let cValEv ← elabExprEv value (some varTy)
       let cVal := cValEv.core
-      return [.assign (← coreNameOf name) cVal]
+      return ElaboratedStmtV2.mk [.assign (← coreNameOf name) cVal]
+        (Proof.EvidenceStmtV2.assign (Proof.evBinderRef (← getEnv).bodyScope name) cValEv.evidence)
     | none => throwElab (.assignToUndeclaredVariable name) (some stmt.getSpan)
 
   | .return_ _ (some value) =>
     let env ← getEnv
     let cValEv ← elabExprEv value (some env.currentRetTy)
     let cVal := cValEv.core
-    return [.return_ (some cVal) env.currentRetTy]
+    return ElaboratedStmtV2.mk [.return_ (some cVal) env.currentRetTy] (Proof.EvidenceStmtV2.ret (some cValEv.evidence))
 
   | .return_ _ none =>
     let env ← getEnv
-    return [.return_ none env.currentRetTy]
+    return ElaboratedStmtV2.mk [.return_ none env.currentRetTy] (Proof.EvidenceStmtV2.ret none)
 
   | .expr sp (.call _sp fnName _typeArgs args) iv =>
     -- Desugar print/println into individual typed print calls
@@ -1387,7 +1402,7 @@ partial def elabStmt (stmt : Stmt) : ElabM (List CStmt) := do
         stmts := stmts ++ [printCall]
       if fnName == "println" then
         stmts := stmts ++ [CStmt.expr (CExpr.call "print_char" [] [CExpr.intLit 10 .int] .unit) false]
-      return stmts
+      return ElaboratedStmtV2.mk stmts (Proof.evUnhandledStmt "desugared statement sequence")
     -- Desugar variadic append(&mut buf, ...) into typed string_append calls.
     -- Only fires if (a) not shadowed by a user fn, (b) at least one arg,
     -- (c) first arg elaborates to &mut String. Otherwise fall through and
@@ -1424,33 +1439,37 @@ partial def elabStmt (stmt : Stmt) : ElabM (List CStmt) := do
                      , hint := some "pass primitive values or string references; complex values must be formatted first"
                      , code := "E0420" }]
           stmts := stmts ++ [call]
-        return stmts
+        return ElaboratedStmtV2.mk stmts (Proof.evUnhandledStmt "desugared statement sequence")
       | _ =>
         let cEEv ← elabExprEv (.call _sp fnName _typeArgs args)
         let cE := cEEv.core
-        return [.expr cE iv]
+        return ElaboratedStmtV2.mk [.expr cE iv] (Proof.EvidenceStmtV2.exprStmt cEEv.evidence iv)
     | [] =>
       let cEEv ← elabExprEv (.call _sp fnName _typeArgs args)
       let cE := cEEv.core
-      return [.expr cE iv]
+      return ElaboratedStmtV2.mk [.expr cE iv] (Proof.EvidenceStmtV2.exprStmt cEEv.evidence iv)
     else
       let cEEv ← elabExprEv (.call _sp fnName _typeArgs args)
       let cE := cEEv.core
-      return [.expr cE iv]
+      return ElaboratedStmtV2.mk [.expr cE iv] (Proof.EvidenceStmtV2.exprStmt cEEv.evidence iv)
 
   | .expr _ e iv =>
     let cEEv ← elabExprEv e
     let cE := cEEv.core
-    return [.expr cE iv]
+    return ElaboratedStmtV2.mk [.expr cE iv] (Proof.EvidenceStmtV2.exprStmt cEEv.evidence iv)
 
   | .ifElse _ cond then_ else_ =>
     let cCondEv ← elabExprEv cond (some .bool)
     let cCond := cCondEv.core
-    let cThen ← elabStmts then_
-    let cElse ← match else_ with
-      | some stmts => do let cs ← elabStmts stmts; pure (some cs)
+    let cThenEv ← elabStmtsEv then_
+    let cThen := cThenEv.flatMap (·.core)
+    let cElseEv ← match else_ with
+      | some stmts => do let cs ← elabStmtsEv stmts; pure (some cs)
       | none => pure none
-    return [.ifElse cCond cThen cElse]
+    let cElse := cElseEv.map (fun l => l.flatMap (·.core))
+    return ElaboratedStmtV2.mk [.ifElse cCond cThen cElse]
+      (Proof.EvidenceStmtV2.branch cCondEv.evidence (cThenEv.map (·.evidence))
+        ((cElseEv.map (fun l => l.map (·.evidence))).getD []))
 
   | .while_ _ cond body label =>
     let cCondEv ← elabExprEv cond (some .bool)
@@ -1459,28 +1478,31 @@ partial def elabStmt (stmt : Stmt) : ElabM (List CStmt) := do
     -- this loop, and pushing before the condition would mis-target it.
     let outer ← getEnv
     setEnv { outer with loopFrames := label :: outer.loopFrames }
-    let cBody ← elabStmts body
+    let cBodyEv ← elabStmtsEv body
+    let cBody := cBodyEv.flatMap (·.core)
     let inner ← getEnv
     setEnv { inner with loopFrames := outer.loopFrames }
-    return [.while_ cCond cBody label []]
+    return ElaboratedStmtV2.mk [.while_ cCond cBody label []]
+      (Proof.EvidenceStmtV2.loop cCondEv.evidence [] none (cBodyEv.map (·.evidence)))
 
   | .forLoop _ init cond step body label =>
     -- Desugar: for (init; cond; step) { body } → init; while cond { body; step }
     let mut result : List CStmt := []
     match init with
     | some initStmt =>
-      let cInit ← elabStmt initStmt
-      result := result ++ cInit
+      let cInitEv ← elabStmtEv initStmt
+      result := result ++ cInitEv.core
     | none => pure ()
     let cCondEv ← elabExprEv cond (some .bool)
     let cCond := cCondEv.core
-    let cBody ← elabStmts body
+    let cBodyEv ← elabStmtsEv body
+    let cBody := cBodyEv.flatMap (·.core)
     let cStep ← match step with
-      | some stepStmt => elabStmt stepStmt
+      | some stepStmt => do let e ← elabStmtEv stepStmt; pure e.core
       | none => pure []
     let whileBody := cBody ++ cStep
     result := result ++ [.while_ cCond whileBody label cStep]
-    return result
+    return ElaboratedStmtV2.mk result (Proof.evUnhandledStmt "desugared for-loop")
 
   | .fieldAssign _ obj field value =>
     let cObjEv ← elabExprEv obj
@@ -1515,7 +1537,8 @@ partial def elabStmt (stmt : Stmt) : ElabM (List CStmt) := do
       | none => pure none
     let cValEv ← elabExprEv value fieldTy
     let cVal := cValEv.core
-    return [.fieldAssign cObj field cVal]
+    return ElaboratedStmtV2.mk [.fieldAssign cObj field cVal]
+      (Proof.EvidenceStmtV2.assign (Proof.evUnhandledExpr "field place: FieldId not minted here") cValEv.evidence)
 
   | .derefAssign _ target value =>
     let cTargetEv ← elabExprEv target
@@ -1526,7 +1549,8 @@ partial def elabStmt (stmt : Stmt) : ElabM (List CStmt) := do
       | _ => .placeholder
     let cValEv ← elabExprEv value (some innerTy)
     let cVal := cValEv.core
-    return [.derefAssign cTarget cVal]
+    return ElaboratedStmtV2.mk [.derefAssign cTarget cVal]
+      (Proof.EvidenceStmtV2.assign (Proof.evDeref cTargetEv.evidence) cValEv.evidence)
 
   | .arrayIndexAssign _ arr index value =>
     let cArrEv ← elabExprEv arr
@@ -1535,23 +1559,34 @@ partial def elabStmt (stmt : Stmt) : ElabM (List CStmt) := do
     let cIdx := cIdxEv.core
     let cValEv ← elabExprEv value
     let cVal := cValEv.core
-    return [.arrayIndexAssign cArr cIdx cVal]
+    return ElaboratedStmtV2.mk [.arrayIndexAssign cArr cIdx cVal]
+      (Proof.EvidenceStmtV2.assign (Proof.evIndex cArrEv.evidence cIdxEv.evidence) cValEv.evidence)
 
   | .break_ _ value label =>
     match value with
     | some v =>
       let cVEv ← elabExprEv v
       let cV := cVEv.core
-      return [.break_ (some cV) label]
-    | none => return [.break_ none label]
+      return ElaboratedStmtV2.mk [.break_ (some cV) label]
+        (match Proof.evLoopTarget? (← getEnv).loopFrames label with
+         | some t => Proof.EvidenceStmtV2.breakStmt t (some cVEv.evidence)
+         | none   => Proof.evUnhandledStmt "break with no resolvable loop target")
+    | none =>
+      return ElaboratedStmtV2.mk [.break_ none label]
+        (match Proof.evLoopTarget? (← getEnv).loopFrames label with
+         | some t => Proof.EvidenceStmtV2.breakStmt t none
+         | none   => Proof.evUnhandledStmt "break with no resolvable loop target")
 
   | .continue_ _ label =>
-    return [.continue_ label]
+    return ElaboratedStmtV2.mk [.continue_ label]
+      (match Proof.evLoopTarget? (← getEnv).loopFrames label with
+       | some t => Proof.EvidenceStmtV2.continueStmt t
+       | none   => Proof.evUnhandledStmt "continue with no resolvable loop target")
 
   | .defer _ body =>
     let cBodyEv ← elabExprEv body
     let cBody := cBodyEv.core
-    return [.defer cBody]
+    return ElaboratedStmtV2.mk [.defer cBody] (Proof.EvidenceStmtV2.deferStmt cBodyEv.evidence)
 
   | .borrowIn _ var ref region isMut body =>
     let varTy ← match ← lookupVar var with
@@ -1559,11 +1594,13 @@ partial def elabStmt (stmt : Stmt) : ElabM (List CStmt) := do
       | none => throwElab (.borrowUndeclaredVariable var) (some stmt.getSpan)
     let refTy := if isMut then Ty.refMut varTy else Ty.ref varTy
     addVar ref refTy
-    let cBody ← elabStmts body
-    return [.borrowIn var ref region isMut refTy cBody]
+    let cBodyEv ← elabStmtsEv body
+    let cBody := cBodyEv.flatMap (·.core)
+    return ElaboratedStmtV2.mk [.borrowIn var ref region isMut refTy cBody]
+      (Proof.EvidenceStmtV2.block (cBodyEv.map (·.evidence)))
 
 
-  -- These are desugared by desugarStmts before elabStmt is called.
+  -- These are desugared by desugarStmts before elabStmtEv is called.
   -- Catch-all for exhaustiveness — should never fire.
   | .letDestructure sp _ _ _ _ _ =>
     throwElab (.unknownEnumType "internal: letDestructure not desugared") (some sp)
@@ -1576,15 +1613,30 @@ partial def elabStmt (stmt : Stmt) : ElabM (List CStmt) := do
     let tmpLet := Stmt.letDecl sp tmpName false none value false
     let fieldLets := bindings.map fun b =>
       Stmt.letDecl sp b false none (Expr.fieldAccess sp (Expr.ident sp tmpName) b) false
-    elabStmts ([tmpLet] ++ fieldLets)
+    -- A destructure desugars to several statements; evidence keeps them as ONE block so
+    -- the tree mirrors the source construct rather than the desugaring.
+    let parts ← elabStmtsEv ([tmpLet] ++ fieldLets)
+    return ElaboratedStmtV2.mk (parts.flatMap (·.core))
+      (Proof.EvidenceStmtV2.block (parts.map (·.evidence)))
   -- assert(e)/assume(e): proof-only, ERASED before Core (like contracts/ghost).
   -- Not elaborated — the condition may legally read ghost bindings (it is a proof
   -- context), which elabExprEv would otherwise reject as a runtime ghost leak. The
   -- condition is type-checked in Check and scope/purity-checked in the report.
-  | .assert_ _ _ | .assume_ _ _ => return []
+  -- assert/assume are ERASED and deliberately NOT elaborated (their condition may read
+  -- ghost bindings legally). So no evidence exists for the predicate, and both must
+  -- REFUSE rather than emit an empty statement: an `assume` that the subject does not
+  -- record would let a proof lean on it and still report unqualified. A gap makes the
+  -- subject incomplete, which is the honest answer until the predicate is encodable in
+  -- a proof context.
+  | .assert_ _ _ =>
+    return ElaboratedStmtV2.mk []
+      (Proof.evUnhandledStmt "assert: predicate not elaborated, so no evidence exists")
+  | .assume_ _ _ =>
+    return ElaboratedStmtV2.mk []
+      (Proof.evUnhandledStmt "assume: predicate not elaborated; must not yield an unqualified claim")
 
-partial def elabStmts (stmts : List Stmt) (valueHint : Option Ty := none) : ElabM (List CStmt) := do
-  let mut result : List CStmt := []
+partial def elabStmtsEv (stmts : List Stmt) (valueHint : Option Ty := none) : ElabM (List ElaboratedStmtV2) := do
+  let mut result : List ElaboratedStmtV2 := []
   let mut accumulated : Diagnostics := []
   let lastIdx := stmts.length - 1
   let mut idx := 0
@@ -1601,18 +1653,21 @@ partial def elabStmts (stmts : List Stmt) (valueHint : Option Ty := none) : Elab
     -- and the compiled binary (i32 slot, truncates) diverged. Calls keep their
     -- own elaboration path (print/append desugaring); their type is fixed by the
     -- signature, so no hint is needed.
-    let action : ElabM (List CStmt) :=
+    let action : ElabM ElaboratedStmtV2 :=
       match s, valueHint, isLast with
       | .expr _ e true, some h, true =>
         match e with
-        | .call .. => elabStmt s
-        | _ => do let cEEv ← elabExprEv e (some h); pure [CStmt.expr cEEv.core true]
-      | _, _, _ => elabStmt s
+        | .call .. => elabStmtEv s
+        | _ => do
+          let cEEv ← elabExprEv e (some h)
+          pure (ElaboratedStmtV2.mk [CStmt.expr cEEv.core true]
+                  (Proof.EvidenceStmtV2.exprStmt cEEv.evidence true))
+      | _, _, _ => elabStmtEv s
     let r := action.run envBefore |>.run
     match r with
     | (.ok cs, envAfter) =>
       setEnv envAfter
-      result := result ++ cs
+      result := result ++ [cs]
     | (.error ds, _) =>
       accumulated := accumulated ++ ds
       -- Restore env so subsequent statements see a consistent state.
@@ -1635,7 +1690,7 @@ end
 -- ============================================================
 
 def elabFn (f : FnDef) (implTy : Option Ty := none)
-    : ElabM (CFnDef × Proof.ProofBodyIdentityInputsV2) := do
+    : ElabM (CFnDef × Proof.ProofBodyIdentityInputsV2 × Proof.EvidenceBodyDraftV2) := do
   let env ← getEnv
   -- Set up type params and return type
   let allTypeParams := f.typeParams
@@ -1674,7 +1729,14 @@ def elabFn (f : FnDef) (implTy : Option Ty := none)
     let resolvedPty ← resolveTypeE pty
     addVar pname resolvedPty
   -- Elaborate body
-  let cBody ← elabStmts f.body
+  -- THE COLLECTION POINT. The function's evidence body is assembled STRUCTURALLY here,
+  -- from the same traversal that produced Core — not accumulated into a side channel,
+  -- which would lose branch, loop, pattern and defer nesting and so fix only the
+  -- shallow collisions while the structural ones survive invisibly.
+  let cBodyEv ← elabStmtsEv f.body
+  let cBody := cBodyEv.flatMap (·.core)
+  let evidenceBody : Proof.EvidenceBodyDraftV2 :=
+    { statements := cBodyEv.map (·.evidence) }
   -- Restore env
   let envAfter ← getEnv
   let bodyIdentityInputs : Proof.ProofBodyIdentityInputsV2 :=
@@ -1704,7 +1766,7 @@ def elabFn (f : FnDef) (implTy : Option Ty := none)
     capSet := f.capSet
     declSpan := some f.span
   }
-  return (cfn, bodyIdentityInputs)
+  return (cfn, bodyIdentityInputs, evidenceBody)
 
 -- ============================================================
 -- Submodule function name prefixing
@@ -2009,7 +2071,7 @@ partial def elabModule (m : Module) (summary : FileSummary)
   let (fnResults, fnErrors, _) := allFnPairs.foldl (fun (acc, errs, env) (f, implTy) =>
     let env' := { env with currentImplType := implTy, traits := allTraits }
     let result := (do
-      let (cfn, bodyIdentityInputs) ← elabFn f implTy
+      let (cfn, bodyIdentityInputs, evidenceBody) ← elabFn f implTy
       let finalName := match implTy with
         | some it =>
           let tn := tyName it
@@ -2022,13 +2084,14 @@ partial def elabModule (m : Module) (summary : FileSummary)
           if tn != "" then some tn else none
         | none => none
       else none
-      pure ({ cfn with name := finalName, trustedImplOrigin := implOrigin }, bodyIdentityInputs)
-        : ElabM (CFnDef × Proof.ProofBodyIdentityInputsV2)).run env' |>.run
+      pure ({ cfn with name := finalName, trustedImplOrigin := implOrigin },
+             bodyIdentityInputs, evidenceBody)
+        : ElabM (CFnDef × Proof.ProofBodyIdentityInputsV2 × Proof.EvidenceBodyDraftV2)).run env' |>.run
     match result with
-    | (.ok (cfn, bodyIdentityInputs), finalEnv) =>
-        (acc ++ [((f, implTy), cfn, bodyIdentityInputs)], errs, finalEnv)
+    | (.ok (cfn, bodyIdentityInputs, evidenceBody), finalEnv) =>
+        (acc ++ [((f, implTy), cfn, bodyIdentityInputs, evidenceBody)], errs, finalEnv)
     | (.error ds, _) => (acc, errs ++ ds.addContext s!"while elaborating function '{f.name}'", env)
-  ) (([] : List ((FnDef × Option Ty) × CFnDef × Proof.ProofBodyIdentityInputsV2)),
+  ) (([] : List ((FnDef × Option Ty) × CFnDef × Proof.ProofBodyIdentityInputsV2 × Proof.EvidenceBodyDraftV2)),
      ([] : Diagnostics), initEnv)
   if !fnErrors.isEmpty then .error fnErrors
   else
@@ -2163,7 +2226,7 @@ partial def elabModule (m : Module) (summary : FileSummary)
       | some enc => (c.name, { defModule := m.name, declName := c.name }, enc) :: acc
       | none     => acc).reverse
   let declFacts : List Proof.CheckedDeclFacts :=
-    fnResults.map fun ((f, implTy), _cfn, bodyIdentityInputs) =>
+    fnResults.map fun ((f, implTy), _cfn, bodyIdentityInputs, _evidenceBody) =>
       let (concreteCaps, capVars) := f.capSet.normalize
       let capParamNames := f.capParams.eraseDups
       let capVarCanonical := capVars.map fun v =>
@@ -2193,6 +2256,9 @@ partial def elabModule (m : Module) (summary : FileSummary)
   .ok {
     name := m.name
     declFacts := declFacts
+    evidenceBodies := fnResults.map fun ((f, implTy), _cfn, _bii, evidenceBody) =>
+      (CallableId.ofUser thisProofPath (finalDeclName f implTy) f.typeParams.length,
+       evidenceBody)
     structs := cStructs ++ cImportedStructs
     enums := allEnums.map fun ed =>
       { name := ed.name, typeParams := ed.typeParams,
