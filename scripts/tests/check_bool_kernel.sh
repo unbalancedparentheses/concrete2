@@ -398,6 +398,83 @@ printf '%s' "$DC" | grep -qE "[1-9][0-9]* reached a tier" \
   && ok "a demo file reaches tiers (the coverage metric is not stuck at zero)" \
   || no "no file reaches a tier — the metric is measuring nothing"
 
+# ================= REFINEMENT against a DEFINED spec =================
+echo "=== refinement against a defined spec — the coverage fix ==="
+# The measured problem: these tiers reached ZERO of the corpus's real contracts, because those are
+# refinement obligations and a body-less `spec fn` is uninterpreted, so `result == spec(args)` is
+# unprovable outside Lean (where the spec's meaning lives). A `spec fn` may now carry a
+# definitional body in Concrete, making the obligation an equation between two expressions of THIS
+# language -- visible to every kernel.
+RFDEMO="examples/refine_kernel_demo/src/main.con"
+if [ ! -f "$RFDEMO" ]; then
+  no "$RFDEMO missing"
+else
+RW="$WORK/rf"; mkdir -p "$RW/n"
+"$BIN" "$RFDEMO" --report bool-kernel > "$RW/report.txt" 2>&1
+
+# The coverage number must MOVE. If a new tier does not change it, the metric is decorative.
+grep -qE "COVERAGE: [0-9]+ contract clause\(s\).*[1-9][0-9]* reached a tier" "$RW/report.txt" \
+  && ok "refinement obligations now reach a tier (the coverage number moved)" \
+  || no "the coverage metric did not move — a new tier is not being counted"
+# And an UNDEFINED spec must stay named as unreachable, not quietly counted as covered.
+grep -q "has no definitional body" "$RW/report.txt" \
+  && ok "a body-less spec is still named unreachable (uninterpreted, only Lean can discharge it)" \
+  || no "an undefined spec is no longer reported — the remaining gap became invisible"
+
+python3 - "$RW/report.txt" "$RW" <<'PYRF'
+import re, sys
+report, work = sys.argv[1], sys.argv[2]
+txt = open(report).read()
+for b in re.split(r"\n  \[", txt)[1:]:
+    if "#refine" not in b.split("]")[0]: continue
+    name = b.split("]")[0].split(".")[1].split("#")[0]
+    def sect(mk):
+        m = re.search(r"--- " + mk + r" ---\n(.*?)(?=\n    ---|\n\nREFINEMENT|\Z)", b, re.S)
+        return m.group(1).rstrip() if m else None
+    for mk, ext in [(r"lean:omega \(refine\)", ".lean"), (r"rocq:lia \(refine\)", ".v")]:
+        v = sect(mk)
+        if v: open(f"{work}/{name}{ext}", "w").write(v + "\n")
+    iv = sect(r"isabelle:simp \(refine\)")
+    if iv:
+        d = work + "/n" if name == "bad_refine" else work
+        open(f"{d}/Thy_{name}.thy", "w").write(iv.replace("theory Refines", f"theory Thy_{name}") + "\n")
+open(f"{work}/ROOT", "w").write("session RF = HOL +\n  theories\n    Thy_double\n    Thy_triple\n")
+open(f"{work}/n/ROOT", "w").write("session RFN = HOL +\n  theories\n    Thy_bad_refine\n")
+PYRF
+
+RLC=0
+for t in double triple; do timeout 300 lake env lean "$RW/$t.lean" >/dev/null 2>&1 && RLC=$((RLC+1)); done
+[ "$RLC" = "2" ] && ok "lean proved both refinements" || no "lean proved only $RLC of 2 refinements"
+if timeout 300 lake env lean "$RW/bad_refine.lean" >/dev/null 2>&1; then
+  no "lean CLOSED a body that does NOT refine its spec — portability made refinement lax"
+else
+  ok "lean refuses a body that does not refine its spec"
+fi
+if command -v coqc >/dev/null 2>&1; then
+  RRC=0; RAX=0
+  for t in double triple; do
+    O="$( cd "$RW" && coqc "$t.v" 2>&1 )"
+    echo "$O" | grep -q "Closed under the global context" && RAX=$((RAX+1))
+    echo "$O" | grep -qiE "^error|error:" || RRC=$((RRC+1))
+  done
+  [ "$RRC" = "2" ] && ok "rocq proved both refinements" || no "rocq proved only $RRC of 2"
+  [ "$RAX" = "2" ] && ok "and both are axiom-free" || no "only $RAX of 2 axiom-free"
+  RBO="$( cd "$RW" && coqc bad_refine.v 2>&1 )"
+  echo "$RBO" | grep -qiE "Tactic failure|cannot" \
+    && ok "rocq refuses the non-refining body" || no "rocq did not refuse the non-refining body"
+else
+  inconc "coqc absent — refinement Rocq assertions not run"
+fi
+if command -v isabelle >/dev/null 2>&1; then
+  printf '%s' "$( cd "$RW" && isabelle build -D . 2>&1 )" | grep -q "^Finished" \
+    && ok "isabelle proved both refinements" || no "isabelle did not finish the refinement session"
+  printf '%s' "$( cd "$RW/n" && isabelle build -D . 2>&1 )" | grep -qE "Failed to finish proof|FAILED" \
+    && ok "isabelle refuses the non-refining body" || no "isabelle did not refuse it"
+else
+  inconc "isabelle absent — refinement HOL assertions not run"
+fi
+fi
+
 echo ""
 echo "BOOL-KERNEL: PASS=$PASS  FAIL=$FAIL  INCONC=$INCONC"
 [ "$FAIL" -eq 0 ]

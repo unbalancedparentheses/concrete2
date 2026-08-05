@@ -1894,6 +1894,32 @@ def compileAndReport (inputPath : String) (reportType : String)
           match o.isabelleTheory "StructGoal" with
           | some th => IO.println s!"    --- isabelle:record ---\n{th}"
           | none => IO.println "    isabelle: outside the fragment"
+      -- REFINEMENT against a DEFINED spec. This is the coverage fix: a body-less `spec fn` is
+      -- uninterpreted, so `result == spec(args)` is unprovable outside Lean, where the spec's
+      -- meaning lives. With a definitional body the obligation is an equation between two
+      -- expressions of THIS language and every kernel can see it.
+      let refs := Report.refineObligations parsed.modules
+      let refSkip := Report.refineSkipped parsed.modules
+      if !refs.isEmpty || !refSkip.isEmpty then
+        IO.println ""
+        IO.println "=== REFINEMENT against a defined spec ==="
+        for o in refs do
+          IO.println ""
+          IO.println s!"  [{o.key}]  spec: {o.specName} (defined)"
+          match o.leanScript with
+          | some sc => IO.println s!"    --- lean:omega (refine) ---\n{sc}"
+          | none => IO.println "    lean: outside the fragment"
+          match o.rocqScript with
+          | some sc => IO.println s!"    --- rocq:lia (refine) ---\n{sc}"
+          | none => IO.println "    rocq: outside the fragment"
+          match o.isabelleTheory "Refines" with
+          | some th => IO.println s!"    --- isabelle:simp (refine) ---\n{th}"
+          | none => IO.println "    isabelle: outside the fragment"
+        if !refSkip.isEmpty then
+          IO.println ""
+          IO.println "REFINEMENT OBLIGATIONS NOT REACHABLE (coverage stated, not implied):"
+          for (fn, why) in refSkip do
+            IO.println s!"  {fn}: {why}"
       return 0
     if reportType == "multi-kernel" then
       -- Spike (branch spike/multi-prover-evidence): the prover-neutral obligation

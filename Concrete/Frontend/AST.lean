@@ -401,15 +401,28 @@ structure ExternFnDecl where
   deriving Repr
 
 /-- `spec fn name(params) -> ret;` — an erased pure specification function:
-    no body, no codegen, no runtime. Names a mathematical spec that source
-    contracts (`#[ensures(...)]`) can refer to. Source-contracts thin slice. -/
+    no codegen, no runtime. Names a mathematical spec that source contracts
+    (`#[ensures(...)]`) can refer to.
+
+    Optionally DEFINED in Concrete itself: `spec fn f(x: i32) -> i32 = x + 1;`.
+
+    Why that matters beyond convenience. Without a body a spec is an uninterpreted symbol whose
+    meaning exists only in Lean (via `#[spec(...)]`), so Rocq and Isabelle can never see it and a
+    refinement obligation (`result == f(x)`) is unprovable outside Lean — measured: the
+    non-arithmetic multi-kernel tiers reach ZERO of the corpus's real contracts for exactly this
+    reason. A definitional body makes the spec's meaning portable to every kernel, because it is
+    an ordinary expression in the language rather than a name pointing into one prover. -/
 structure SpecFnDecl where
   name : String
   params : List Param
   retTy : Ty
+  /-- Definitional body, if given. Pure and total by the same rules that already apply to spec
+      expressions; `none` keeps the old uninterpreted-symbol meaning. -/
+  body : Option Expr := none
   isPublic : Bool := false
   span : Span := default
-  deriving Repr
+  -- No `deriving Repr`: `Expr` sits in a mutual inductive block with no `Repr` instance,
+  -- which is also why `FnDef` -- holding `requires`/`ensures : List Expr` -- derives none.
 
 inductive SelfKind where
   | value    -- self

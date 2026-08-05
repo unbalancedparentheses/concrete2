@@ -774,6 +774,126 @@ def StructObl.abstractionVerdict (o : StructObl) : Option Unit := Id.run do
   return if taut then some () else none
 
 
+/-! # Refinement against a DEFINED spec — the coverage fix
+
+The measured problem: these tiers reach **zero** of the corpus's real contracts, because those are
+refinement obligations (`result == spec(args)`) and a body-less `spec fn` is uninterpreted — so the
+claim "this body equals that spec" is unprovable by construction. The repo discharges them by
+linking to a Lean proof where the spec has a definition, which means Rocq and Isabelle can never
+see the spec at all.
+
+A `spec fn` may now carry a definitional body in Concrete itself:
+
+```
+spec fn double_spec(x: i32) -> i32 = x + x;
+```
+
+Then a refinement obligation becomes an ordinary equation between two expressions of this
+language — `2 * x == x + x` — and every kernel can prove it. The spec's meaning stops being a name
+pointing into one prover.
+
+**What this does and does not change.** It makes refinement PORTABLE, not easier: the obligation is
+still exactly "body equals spec", and if the two genuinely differ every kernel refuses it (gated).
+A spec left body-less keeps its old uninterpreted meaning, so nothing existing shifts. -/
+
+/-- Substitute `params := args` throughout an expression. -/
+partial def substExpr (env : List (String × Expr)) : Expr → Expr
+  | .ident sp n => match env.lookup n with | some e => e | none => .ident sp n
+  | .paren sp e => .paren sp (substExpr env e)
+  | .unaryOp sp op e => .unaryOp sp op (substExpr env e)
+  | .binOp sp op l r => .binOp sp op (substExpr env l) (substExpr env r)
+  | .cast sp e t => .cast sp (substExpr env e) t
+  | .call sp f ts args => .call sp f ts (args.map (substExpr env))
+  | .fieldAccess sp o f => .fieldAccess sp (substExpr env o) f
+  | .arrayIndex sp a i => .arrayIndex sp (substExpr env a) (substExpr env i)
+  | e => e
+
+/-- `body == spec(args)` with the spec's definition substituted in. -/
+structure RefineObl where
+  fnQual   : String
+  key      : String
+  specName : String
+  intVars  : List String
+  /-- The function's returned expression. -/
+  lhs      : Expr
+  /-- The spec's body with its parameters replaced by the call's arguments. -/
+  rhs      : Expr
+
+/-- Collect refinement obligations whose spec has a DEFINITION. A body-less spec is skipped and
+    reported, since substituting nothing would silently produce a different obligation. -/
+def refineObligations (modules : List Module) : List RefineObl := Id.run do
+  let specs := modules.flatMap (·.specFns)
+  let mut out : List RefineObl := []
+  for (pfx, f) in modules.flatMap allFunctions do
+    match soleReturnOf f.body with
+    | none => pure ()
+    | some body =>
+      let mut i := 0
+      for ens in f.ensures do
+        match resultEquivOf ens with
+        | some (.call _ sn _ args) =>
+          match specs.find? (fun sd => sd.name == sn) with
+          | some sd =>
+            match sd.body with
+            | some sb =>
+              let env := (sd.params.map (·.name)).zip args
+              out := out ++ [{ fnQual := pfx ++ f.name, key := s!"{pfx}{f.name}#refine{i}"
+                             , specName := sn, intVars := f.params.map (·.name)
+                             , lhs := body, rhs := substExpr env sb }]
+              i := i + 1
+            | none => pure ()
+          | none => pure ()
+        | _ => pure ()
+  return out
+
+/-- Refinement obligations skipped because the spec has no body — the coverage gap, named. -/
+def refineSkipped (modules : List Module) : List (String × String) := Id.run do
+  let specs := modules.flatMap (·.specFns)
+  let mut out : List (String × String) := []
+  for (pfx, f) in modules.flatMap allFunctions do
+    for ens in f.ensures do
+      match resultEquivOf ens with
+      | some (.call _ sn _ _) =>
+        if (specs.find? (fun sd => sd.name == sn && sd.body.isSome)).isNone then
+          out := out ++ [(pfx ++ f.name, s!"spec `{sn}` has no definitional body — meaning lives outside this language, so only Lean can discharge it")]
+      | _ => pure ()
+  return out
+
+/-- The equation, at proposition level. -/
+def RefineObl.prop (o : RefineObl) (ops : PropOps) : Option String := do
+  let l ← renderTerm ops o.lhs
+  let r ← renderTerm ops o.rhs
+  some s!"({l}) = ({r})"
+
+/-- Rocq: `lia` closes a linear equation; `ring` would too but `lia` is already the repo's
+    arithmetic tactic and keeps the tactic set small. -/
+def RefineObl.rocqScript (o : RefineObl) : Option String := do
+  let p ← o.prop rocqPropOps
+  let vb := if o.intVars.isEmpty then "" else s!"forall ({" ".intercalate o.intVars} : Z), "
+  some <| "\n".intercalate
+    [ "(* refinement against a DEFINED spec: an equation between two expressions of the"
+    , "   source language, so every kernel can see it. *)"
+    , "From Stdlib Require Import ZArith.", "From Stdlib Require Import Lia."
+    , "Open Scope Z_scope."
+    , s!"Lemma refines : {vb}{p}."
+    , "Proof. intros; lia. Qed."
+    , "Print Assumptions refines." ]
+
+/-- Isabelle/HOL. -/
+def RefineObl.isabelleTheory (o : RefineObl) (thyName : String) : Option String := do
+  let p ← o.prop isaPropOps
+  let vb := if o.intVars.isEmpty then "" else s!"ALL {" ".intercalate (o.intVars.map (fun v => s!"({v}::int)"))}. "
+  some <| "\n".intercalate
+    [ s!"theory {thyName}", "imports Main", "begin"
+    , s!"lemma refines: \"{vb}{p}\""
+    , "  by (simp add: algebra_simps)", "end" ]
+
+/-- Lean: `omega` handles linear integer equations and is in core (no Mathlib `ring` here). -/
+def RefineObl.leanScript (o : RefineObl) : Option String := do
+  let p ← o.prop leanPropOps
+  let vb := if o.intVars.isEmpty then "" else s!"∀ ({" ".intercalate o.intVars} : Int), "
+  some s!"theorem refines : {vb}{p} := by\n  intro {" ".intercalate o.intVars}\n  omega"
+
 /-! ## Coverage, as a number rather than a claim
 
 These tiers are real capability with **no instances in the existing corpus**, which is easy to
@@ -788,16 +908,16 @@ uninterpreted spec makes them unprovable by construction. -/
     because its imports have them. Labelling it per-file was wrong and would have made the
     coverage number quietly meaningless for any file that imports anything. -/
 def coverageSummary (modules : List Module) : Nat × Nat × Nat :=
-  let specNames := modules.flatMap (fun m => m.specFns.map (·.name))
   let fns := modules.flatMap allFunctions
   let clauses := fns.foldl (fun n (_, f) => n + f.requires.length + f.ensures.length) 0
-  let refinement := fns.foldl (fun n (_, f) =>
-    n + (f.ensures.filter (fun e =>
-      ((Concrete.fmtExpr e).splitOn "result").length > 1
-        && !(specCallsOf specNames e).isEmpty)).length) 0
+  -- Refinement obligations that remain UNREACHABLE, i.e. whose spec has no definitional body.
+  -- Counting all refinement clauses here was wrong once the refinement tier existed: three of the
+  -- four in the demo do reach a tier, and the metric still reported "0 reached, 4 refinement".
+  let refinement := (refineSkipped modules).length
   let reached := (boolPostObligations modules).length + (eufObligations modules).length
-                   + (structObligations modules).length
+                   + (structObligations modules).length + (refineObligations modules).length
   (clauses, refinement, reached)
+
 
 end Report
 end Concrete

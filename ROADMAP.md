@@ -658,14 +658,33 @@ was correct, and it is also why the tier finds nothing here.
 of the existing corpus**. Every instance is a purpose-built demo. The rungs are what the pipeline
 *could* prove non-arithmetically, not what it currently does.
 
-**The blocker for real coverage is structural, not incidental.** Concrete's `spec fn` is always
-body-less, so a spec's meaning lives in Lean, never in Concrete source. A three-kernel refinement
-proof therefore needs the spec's DEFINITION in Rocq and Isabelle too — i.e. a Lean-definition →
-Gallina/HOL bridge. That is a larger and different piece of work from any rung on the ladder, and
-it is the honest prerequisite for these tiers to touch real code. Until it exists, the
-non-arithmetic multi-kernel story is a capability demonstration.
+**The blocker was structural — and is now FIXED at the language level rather than bridged.**
+Concrete's `spec fn` was always body-less, so a spec's meaning lived in Lean and never in Concrete
+source. The obvious fix was a Lean-definition → Gallina/HOL bridge: translate a Lean definition
+into two more provers. That would have been large, fragile (it means parsing Lean), and would have
+left the spec language permanently Lean-shaped.
 
-**Cheapest path to genuine coverage,** if that is wanted before the bridge: add contract-to-contract
+**A `spec fn` may now carry a definitional body instead:**
+
+```
+spec fn double_spec(x: i32) -> i32 = x + x;
+```
+
+A refinement obligation is then an equation between two expressions of *this* language
+(`2 * x = x + x`), which every kernel can already see — no bridge, no Lean parsing. Parser change is
+additive: the body-less form still parses identically and keeps its uninterpreted meaning, so
+nothing existing shifts (`make test` unchanged at 1703/0).
+
+Gated in all three kernels, with the negative control: a body that does NOT refine its spec is
+refused by each, so portability did not make refinement lax. `--report bool-kernel` also names
+refinement obligations whose spec is still body-less, so the residual gap stays visible.
+
+**What remains a capability demonstration** is coverage of the EXISTING corpus: `hmac_sha256`'s
+specs are still Lean-linked, and giving them bodies would duplicate a definition that already lives
+in Lean — which is a decision about where specs should be authored, not a technical gap. The
+mechanism for real coverage now exists; adopting it is a separate call.
+
+**Cheapest path to coverage of existing code:** add contract-to-contract
 clauses (`requires -> ensures` over fields, arrays and opaque symbols) to a flagship example. Those
 are exactly what the tiers prove, and `elf_header`'s header-validation invariants are naturally of
 that shape — but they would be contracts written FOR the tier, which is coverage of a kind worth

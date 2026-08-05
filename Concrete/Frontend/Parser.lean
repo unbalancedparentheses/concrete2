@@ -2294,8 +2294,20 @@ partial def parseModuleBody (stopToken : TokenKind) : ParseM Module := do
             expect .rparen
             let tkr ← peek
             let retTy ← if tkr == .arrow then advance; parseType else pure .unit
+            -- Optional DEFINITIONAL body: `spec fn f(x: i32) -> i32 = x + 1;`
+            -- Additive: the body-less form still parses exactly as before, so every existing
+            -- `spec fn` declaration is unaffected. A defined spec's meaning is an expression in
+            -- this language rather than a name pointing into Lean, which is what lets Rocq and
+            -- Isabelle see it at all.
+            let tkb ← peek
+            let body ← if tkb == .assign then do
+                advance
+                let e ← parseExpr
+                pure (some e)
+              else pure none
             expect .semicolon
-            specFns := specFns ++ [{ name, params, retTy, isPublic := isPub, span := sp }]
+            specFns := specFns ++
+              [{ name, params, retTy, body, isPublic := isPub, span := sp }]
           else if tk == .fn then
             -- Check if function has a body or is body-less (intrinsic/declaration)
             let f ← parseFnDefOrDecl
