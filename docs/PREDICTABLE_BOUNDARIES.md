@@ -167,6 +167,32 @@ Unboundedness also **propagates to callers** now. `computeCallDepths` filtered r
 out of each chain, so a function calling an unbounded one still received a finite bound; the
 edge was dropped rather than the answer declined.
 
+### Transitivity, gate by gate
+
+The five gates did not agree on this, and the disagreement was not deliberate.
+
+| Gate | Transitive? | Mechanism |
+|------|-------------|-----------|
+| No allocation | **Yes** | `E0520: requires Alloc but caller has (none)` — a caller must declare the capability, so the effects report sees it on the signature |
+| No blocking I/O | **Yes** | same, for `File` / `Network` / `Process` |
+| No FFI | **Yes, as of 2026-08-05** | closed over the call graph; previously a direct-callee check only |
+| No recursion | Per-function | see the gap below |
+| Bounded iteration | Per-function by nature | a loop is in one body |
+
+Alloc and blocking get transitivity for free from the capability system, and it cannot be
+laundered through a combinator either: a function-pointer type carries its capset, so passing an
+`with(Alloc)` function where a pure `fn(i32) -> i32` is expected is an `E0220` type error.
+
+FFI had no capability behind it. `f` calling `g` calling an extern reported `ffi: no` and
+`evidence: enforced` while transitively crossing FFI. Closing it over the call graph reclassified
+three real examples (`http`, `integrity`, `verify`, 1 → 3 FFI-crossing functions each) and all
+were true positives — in `http` the chain is `send_string` → `handle_client` → `main`.
+
+One imprecision worth stating: the call graph resolves callees to qualified names while the
+effects report compares raw ones, so the closed set carries both the qualified name and its final
+component. A same-named function in another module can therefore be over-flagged. That direction
+refuses a function rather than admitting one, which is the side to err on for an admission gate.
+
 ### Known gap: the profile is NOT transitive
 
 A function that calls a non-predictable function is still reported `enforced`:

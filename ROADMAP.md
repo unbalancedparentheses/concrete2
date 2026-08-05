@@ -494,6 +494,16 @@ reported that the property held.
   function also kept a finite bound. A false NUMBER is worse than a missing one. Unboundedness
   now propagates to callers.
 
+- **The remaining two gates, audited 2026-08-05.** **Alloc and blocking are sound** — the
+  compiler already refuses `E0520: requires Alloc but caller has (none)`, so capabilities are
+  transitive by enforcement, and a fn-pointer type carries its capset (passing an `with(Alloc)`
+  function as a pure `fn(i32) -> i32` is an `E0220` type error), so a combinator cannot launder
+  one. Nothing to fix. **FFI was the odd one out**: no capability behind it, only a direct-callee
+  check, so `f` calling `g` calling an extern reported `ffi: no` and `evidence: enforced`. Now
+  closed over the call graph, which makes FFI agree with the two gates that already were.
+  Reclassified three real examples (`http`, `integrity`, `verify`) and all were true positives —
+  in `http` the chain is `send_string` → `handle_client` → `main`.
+
 **Why the obligation work could not have found these:** they are LIVENESS claims. Every proof
 obligation rules out a bad *event*; a program that hangs or overflows the stack performs no bad
 event, so no obligation and no register could notice. This is the first defect cluster this

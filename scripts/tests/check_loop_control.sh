@@ -167,6 +167,57 @@ CON
     || ok "calling an unbounded function removes the caller's bound"
 fi
 
+echo "=== 7. the five profile gates agree on TRANSITIVITY ==="
+# Audit result. Alloc and the blocking caps were already transitive for free: the compiler
+# refuses `E0520: requires Alloc but caller has (none)`, so a caller must declare the capability
+# and the effects report sees it on the signature. A fn-pointer type carries its capset, so
+# passing an `with(Alloc)` function where a pure `fn(i32) -> i32` is expected is an E0220 type
+# error -- the capability cannot be laundered through a combinator either.
+#
+# FFI had NO capability behind it, only a direct-callee check, so `f` calling `g` calling an
+# extern reported `ffi: no` and `evidence: enforced` while transitively crossing FFI. Now closed
+# over the call graph, which makes FFI agree with the two gates that already were.
+if [ -z "${TD_LC:-}" ]; then
+  no "build failed or temp dir unavailable; the transitivity checks did NOT run"
+else
+  cat > "$TD_LC/ffi.con" <<'CON'
+mod ffitrans {
+    trusted extern fn c_abs(x: i32) -> i32;
+    fn direct(x: i32) -> i32 { return c_abs(x); }
+    fn reaches(x: i32) -> i32 { return direct(x); }
+}
+CON
+  FF="$("$BIN_LC" "$TD_LC/ffi.con" --report effects 2>/dev/null)"
+  NFFI="$(printf '%s' "$FF" | grep -c 'ffi: yes')"
+  [ "$NFFI" = "2" ] \
+    && ok "a function that reaches an extern THROUGH another function crosses FFI (got $NFFI)" \
+    || no "expected 2 FFI-crossing functions, got $NFFI — transitive FFI reads as ffi: no again"
+
+  # Capability laundering through a fn pointer must stay a type error, or the alloc and blocking
+  # gates lose the mechanism that makes them transitive in the first place.
+  cat > "$TD_LC/launder.con" <<'CON'
+mod capldr {
+    fn needs_alloc(x: i32) with(Alloc) -> i32 { return x + 1; }
+    fn apply_pure(f: fn(i32) -> i32, x: i32) -> i32 { return f(x); }
+    fn launder(x: i32) -> i32 { return apply_pure(needs_alloc, x); }
+}
+CON
+  "$BIN_LC" "$TD_LC/launder.con" --report effects >/dev/null 2>&1 \
+    && no "an Alloc-requiring function can be passed as a PURE fn pointer — capability laundering" \
+    || ok "a fn-pointer type carries its capset (laundering is a type error)"
+
+  # And the capability itself must remain required of the caller.
+  cat > "$TD_LC/captrans.con" <<'CON'
+mod captrans {
+    fn reads(x: i32) with(File) -> i32 { return x; }
+    fn caller_nocap(x: i32) -> i32 { return reads(x); }
+}
+CON
+  "$BIN_LC" "$TD_LC/captrans.con" --report effects >/dev/null 2>&1 \
+    && no "a File-requiring function is callable without the capability — blocking gate is fooled" \
+    || ok "capabilities are required of callers (E0520), so alloc/blocking stay transitive"
+fi
+
 echo ""
 echo "LOOP-CONTROL: PASS=$PASS  FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]

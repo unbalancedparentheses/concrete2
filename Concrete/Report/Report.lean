@@ -216,6 +216,31 @@ def authorityReport (modules : List CModule) : String :=
 -- Determines which functions could be extracted for ProofCore
 -- (pure, no trusted, no extern calls, no raw pointer ops).
 
+/-- Close a set of function names BACKWARDS over the call graph: every caller that can reach a
+    member is added, to a fixpoint.
+
+    Used for the two profile properties that are not backed by a capability. Alloc and the
+    blocking caps are transitive for free — the compiler already refuses `E0520: requires Alloc
+    but caller has (none)`, so a caller must declare the capability and the effects report sees
+    it. FFI has no capability behind it, only a direct-callee check, so `f` calling `g` calling
+    an extern reported `ffi: no` and `evidence: enforced` while transitively crossing FFI. This
+    makes FFI agree with the two gates that were already transitive. -/
+private partial def closeBackward (callGraph : CallGraph) (seed : List String) (fuel : Nat) :
+    List String :=
+  match fuel with
+  | 0 => seed
+  | fuel + 1 =>
+    let more := callGraph.filterMap fun (n, cs) =>
+      if !seed.contains n && cs.any (fun c => seed.contains c) then some n else none
+    if more.isEmpty then seed else
+      -- Both the qualified node name AND its final component. The call graph resolves callees
+      -- to qualified names, but the effects report compares against RAW callee names, so a
+      -- qualified-only set never matches there. Carrying the bare form can over-flag a
+      -- same-named function in another module; that direction refuses a function rather than
+      -- admitting one, which is the side to err on for a profile.
+      let bare := more.map fun n => (n.splitOn ".").getLast!
+      closeBackward callGraph (seed ++ (more ++ bare).eraseDups) fuel
+
 /-- Reasons a function is excluded from ProofCore. -/
 private def proofExclusionReasons (externNames : List String) (f : CFnDef) : List String :=
   let reasons : List String := []
@@ -367,7 +392,8 @@ def effectsReport (modules : List CModule) (locMap : FnLocMap := [])
   let header := "=== Combined Effects Report ==="
   -- Use shared analysis results from ProofCore
   let recMap := pc.recMap
-  let externNames := pc.externNames
+  -- Transitively closed: reaching an extern through another function still crosses FFI.
+  let externNames := closeBackward pc.callGraph pc.externNames (pc.callGraph.length + 1)
   -- Collect per-function effects
   let allEffects := modules.foldl (fun acc m =>
     acc ++ effectsForModule externNames recMap locMap pc m) []
@@ -558,14 +584,9 @@ private partial def collectStackFns
     reported as `depth: 1, stack: 32 bytes`, and that number became the program's
     `Max stack bound`. Dropping the edge understates the answer instead of declining to give
     one. Unboundedness has to propagate to callers, which is what this does. -/
-private partial def closeUnbounded (callGraph : CallGraph) (seed : List String) (fuel : Nat) :
+private def closeUnbounded (callGraph : CallGraph) (seed : List String) (fuel : Nat) :
     List String :=
-  match fuel with
-  | 0 => seed
-  | fuel + 1 =>
-    let more := callGraph.filterMap fun (n, cs) =>
-      if !seed.contains n && cs.any (fun c => seed.contains c) then some n else none
-    if more.isEmpty then seed else closeUnbounded callGraph (seed ++ more.eraseDups) fuel
+  closeBackward callGraph seed fuel
 
 /-- Stack-depth report for functions passing the no-recursion profile. -/
 def stackDepthReport (modules : List CModule) (locMap : FnLocMap := [])
@@ -770,7 +791,7 @@ private def renderViolation (v : ProfileViolation) (sourceMap : SourceMap) : Str
 def checkPredictable (modules : List CModule) (locMap : FnLocMap := [])
     (sourceMap : SourceMap := []) (pc : Concrete.ProofCore) : Bool × String :=
   let recMap := pc.recMap
-  let externNames := pc.externNames
+  let externNames := closeBackward pc.callGraph pc.externNames (pc.callGraph.length + 1)
   let violations := modules.foldl (fun acc m =>
     acc ++ checkPredictableModule recMap externNames locMap m) []
   let allFns := modules.foldl (fun acc m => acc ++ collectAllFnDefs m) []
@@ -3947,7 +3968,7 @@ open Json in
 def collectPredictableFacts (modules : List CModule) (locMap : FnLocMap := [])
     (pc : Concrete.ProofCore) : List Val :=
   let recMap := pc.recMap
-  let externNames := pc.externNames
+  let externNames := closeBackward pc.callGraph pc.externNames (pc.callGraph.length + 1)
   let violations := modules.foldl (fun acc m =>
     acc ++ checkPredictableModule recMap externNames locMap m) []
   violations.map violationToFact
@@ -4581,7 +4602,7 @@ open Json in
 def predictableQuery (modules : List CModule) (locMap : FnLocMap)
     (fnName : String) (pc : Concrete.ProofCore) : String :=
   let recMap := pc.recMap
-  let externNames := pc.externNames
+  let externNames := closeBackward pc.callGraph pc.externNames (pc.callGraph.length + 1)
   let violations := modules.foldl (fun acc m =>
     acc ++ checkPredictableModule recMap externNames locMap m) []
   let fnViolations := violations.filter fun v =>
