@@ -123,6 +123,31 @@ has not started.
 
 ## Current Execution State (2026-08-01)
 
+### MERGE BLOCKER: the pinned spike is red on its own (found 2026-08-05)
+
+`scripts/tests/run_tests.sh --trust-gate` at the pin `80be5368`, with NO merge involved:
+
+    FAIL stackdepth: mixed should have 3 bounded, 3 recursive
+    passed: 1500   failed: 1
+
+Measured on a detached worktree at the pin, and identically on the quarantine merge — so
+the merge does not introduce it and fixing the merge cannot remove it. Merging as-is would
+IMPORT a known failure into main, which is why step 5 ("make the full compiler, corpus,
+trust and multi-kernel CI green") has to be satisfied at the pin and not waived.
+
+Two acceptable resolutions, both deliberate:
+
+1. Fix the stack-depth classification on the spike, re-pin to the fixed SHA, and merge
+   that. Preferred: the pin should name a green commit.
+2. Decide the case is a stale expectation rather than a defect, correct the expected
+   counts with a recorded reason, and re-pin.
+
+What must NOT happen is merging the current pin and adding the failure to a skip list,
+which would convert a red gate into permanent silence.
+
+Everything else on the quarantine merge is green: builds (178 jobs), examples 141/0, oracle
+70/0, and all eight R-0004 gates including V1 frozen at 77/77.
+
 > **RECONCILIATION NOTE (merge of spike/multi-prover-evidence @ 80be5368).** This section
 > is dated 2026-08-01 and is STALE for R-0004: it predates the evidence-producer work of
 > 2026-08-04/05. Git auto-merged the two roadmaps without a textual conflict, so nothing
