@@ -68,6 +68,14 @@ mutual
       let b ← ofExpr r
       some (.bin o a b)
     | .call _ f _ args => (ofExprs args).map (.sym f)
+    -- Casts are CARRIED now, as a wrap at the target's width — not dropped, and not treated
+    -- as identity. A cast whose target has no fixed width (`Int`/`Uint`, whose overflow is
+    -- profile-dependent) is still rejected: there is no width to wrap at, so modelling it
+    -- would mean inventing one.
+    | .cast _ e ty => do
+      let (w, signed) ← IntArith.intBitWidth ty
+      let t ← ofExpr e
+      some (.cast w signed t)
     | _ => none
 
   def ofExprs : List Expr → Option (List TermIR.Term)
@@ -124,6 +132,7 @@ def droppedByBoth (modules : List Module) : List String :=
 so weakening the translation is a build failure. -/
 
 private def sp : Span := default
+private def eSymR : TermIR.SymEnv := fun _ _ => none
 
 -- `a / b` as a SUBTERM: dropped by the string layer, carried here. The obligation this
 -- appears in is exactly the case R-0455 names.
@@ -142,6 +151,22 @@ example : ofExpr (.call sp "f" [] [.ident sp "x"]) = some (.sym "f" [.var "x"]) 
 -- Unary negation is normalised to `0 - x`, so the IR needs no unary-minus operator and every
 -- transformation has one fewer case to be sound for.
 example : ofExpr (.unaryOp sp .neg (.ident sp "x")) = some (.bin .sub (.lit 0) (.var "x")) := rfl
+
+-- CASTS: carried as a wrap at the target width, matching `Interp.evalCast`'s
+-- `IntArith.wrapToType`. This is what unblocks the div/mod case measured as latent: an
+-- obligation like `arr[(a / b) as Int]` was previously dropped by the IR too.
+example : ofExpr (.cast sp (.ident sp "x") .i32) = some (.cast 32 true (.var "x")) := rfl
+example : ofExpr (.cast sp (.ident sp "x") .u8) = some (.cast 8 false (.var "x")) := rfl
+-- The wrap is the REFERENCE's, not a re-derivation: truncation at i8 agrees with
+-- `IntArith.wrapToType`, checked on a value that actually wraps.
+example : TermIR.evalInt [("x", 200)] eSymR (.cast 8 true (.var "x"))
+        = some (IntArith.wrapToType .i8 200) := rfl
+example : TermIR.evalInt [("x", 200)] eSymR (.cast 8 true (.var "x")) = some (-56) := rfl
+-- A cast is NOT identity, and that is pinned so nobody "simplifies" it away.
+example : TermIR.evalInt [("x", 200)] eSymR (.cast 8 true (.var "x"))
+        ≠ TermIR.evalInt [("x", 200)] eSymR (.var "x") := by decide
+-- Widths the IR cannot model are still rejected rather than guessed.
+example : ofExpr (.cast sp (.ident sp "x") .bool) = none := rfl
 
 -- Out-of-fragment operators are REJECTED, not approximated. `geq` is representable by
 -- swapping operands; admitting it as `le` with the arguments in the wrong order is the

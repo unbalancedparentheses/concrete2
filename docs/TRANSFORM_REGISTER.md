@@ -77,21 +77,29 @@ Measured constraint on the same tier (2026-07-31): SMT datatype reasoning is pro
 row 1 is a theorem about a transformation real obligations can now enter. `--report term-ir`
 reports three buckets.
 
-**Measured result, and it corrects what R-0455 implies.** R-0455 describes `div`/`mod`
-subterms being *dropped* from the prover lowering. That is true of `exprToProver`, but on this
-corpus the IR recovers **zero** of them — because the obligations that carry a division also
-carry a **cast** (`arr[(a / b) as Int]`), and neither layer models casts. They land in
-"dropped by both".
+**Casts are modelled** (2026-08-04), as a wrap at the target width matching the reference
+(`Interp.evalCast` → `IntArith.wrapToType`) — **not** as identity. A cast truncates, so
+treating it as transparent would make the IR denote a different value than the program
+computes, which is the silent misinterpretation this IR exists to remove. Unknown-width
+targets (`Int`/`Uint`, whose overflow is profile-dependent) are still rejected rather than
+given a guessed width.
 
-`ofExpr` rejects casts deliberately: a cast **truncates**, so carrying it as if transparent
-would be a silent misinterpretation — the exact failure this IR exists to remove. Modelling
-casts is future work; pretending they are identity would be worse than dropping them.
+That was the unblocking step. Before it, R-0455's headline defect could not be demonstrated
+at all: every obligation carrying a division subterm also carried a cast
+(`arr[(a / b) as Int]`), so it was dropped by BOTH layers and the IR recovered nothing.
+With casts carried, the IR recovers it.
 
-So the IR's div/mod advantage is **latent, not live**, and the report prints all three buckets
-so that a zero cannot be read as "the string layer loses nothing". The IR's value today is the
-transformations and their proofs, not recovered obligations.
+**Measured honestly across `examples/`: the IR recovers 0.** Not because cast support is
+broken — because the corpus contains no obligation with a division inside a cast. The
+capability is exercised by a constructed fixture in `check_transform_register.sh`, which is
+the difference between "recovers 0 because there is nothing to recover" and "recovers 0
+because it regressed". The report says so in those terms, so a zero cannot be read as either
+over- or under-claiming.
 
-Two things this also established, both by trying and failing:
+One remaining `dropped by both` in the corpus, in `fixed_capacity` — outside the IR's
+fragment for a different reason, not yet classified.
+
+Two things this also established, both by trying and failing:Two things this also established, both by trying and failing:
 
 - **`exprToProver` cannot be locked by `rfl`** — it is a `partial def`, so the kernel cannot
   reduce it. The same limitation as `evalIntEnv`, met while trying to write the lock that the

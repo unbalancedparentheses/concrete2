@@ -98,6 +98,18 @@ inductive Term where
   | sym  (n : String) (args : List Term)
   | bin  (op : Op) (l r : Term)
   | un   (op : Op) (a : Term)
+  /-- A width-changing cast, carrying the TARGET's width and signedness.
+
+      Modelled rather than dropped, and modelled as a WRAP rather than as identity. The
+      reference (`Interp.evalCast`) is `IntArith.wrapToType`: `as` keeps the low bits, a
+      silent two's-complement truncation. Treating a cast as transparent would make the IR
+      denote a different value than the program computes — the silent misinterpretation this
+      IR exists to remove — so it is carried with the parameters that decide the wrap.
+
+      Measured motivation: before this node existed, every obligation carrying a division
+      subterm ALSO carried a cast (`arr[(a / b) as Int]`), so it was dropped by the IR too and
+      the IR recovered nothing. -/
+  | cast (w : Nat) (signed : Bool) (a : Term)
   deriving Repr, Inhabited
 
 /-- A goal: hypotheses and a conclusion, both over the same term language. -/
@@ -130,6 +142,13 @@ mutual
     | .var n => env.lookup n
     | .sym n args => (evalIntArgs env se args).bind (se n)
     | .un _ _ => none
+    | .cast w signed a =>
+      -- EXACTLY the reference's wrap, not a re-derivation: `BitVec.ofInt` at the target
+      -- width, read back signed or unsigned. `IntArith.wrapToType` is the same expression
+      -- keyed by `Ty`; this one is keyed by the width the IR carries.
+      (evalInt env se a).map (fun n =>
+        let bv := BitVec.ofInt w n
+        if signed then bv.toInt else Int.ofNat bv.toNat)
     | .bin op l r => do
       let a ← evalInt env se l
       let b ← evalInt env se r
@@ -160,6 +179,7 @@ def evalBool (env : List (String × Int)) (se : SymEnv) : Term → Option Bool
   | .sym _ _ => none
   | .un .not_ a => (evalBool env se a).map (! ·)
   | .un _ _ => none
+  | .cast _ _ _ => none
   | .bin op l r =>
     match op with
     | .and_ => do let a ← evalBool env se l; let b ← evalBool env se r; some (a && b)
@@ -240,6 +260,7 @@ mutual
     | .bin .tmod _ _ => true
     | .bin _ l r => hasTmod l || hasTmod r
     | .un _ a => hasTmod a
+    | .cast _ _ a => hasTmod a
     | .sym _ args => hasTmodArgs args
     | _ => false
   def hasTmodArgs : List Term → Bool
@@ -257,6 +278,7 @@ mutual
       .bin .sub l' (.bin .mul r' (.bin .tdiv l' r'))
     | .bin op l r => .bin op (elimTmod l) (elimTmod r)
     | .un op a => .un op (elimTmod a)
+    | .cast w sg a => .cast w sg (elimTmod a)
     | .sym n args => .sym n (elimTmodArgs args)
     | t => t
   def elimTmodArgs : List Term → List Term
@@ -281,6 +303,10 @@ mutual
     match t with
     | .lit _ | .blit _ | .var _ => rfl
     | .un _ _ => rfl
+    | .cast w sg a =>
+      -- The proof obligation the new node creates, and it is not free: the wrap is applied to
+      -- the TRANSFORMED operand, so preservation has to be threaded through it.
+      simp only [elimTmod, evalInt, evalInt_elimTmod env se a]
     | .sym n args =>
       simp only [elimTmod, evalInt, evalIntArgs_elimTmodArgs env se args]
     | .bin op l r =>
@@ -326,6 +352,7 @@ theorem evalBool_elimTmod (env : List (String × Int)) (se : SymEnv) :
   intro t
   match t with
   | .lit _ | .blit _ | .var _ | .sym _ _ => rfl
+  | .cast _ _ _ => rfl
   | .un op a =>
     match op with
     | .not_ => simp only [elimTmod, evalBool, evalBool_elimTmod env se a]

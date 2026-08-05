@@ -122,13 +122,25 @@ OF="Concrete/Report/TermOfExpr.lean"
              || no "$OF missing — the IR has no producer and row 1 is idle"
 grep -q "def ofExpr" "$OF" \
   && ok "ofExpr present" || no "ofExpr missing"
-# Casts must be REJECTED, not treated as identity. A cast truncates; carrying it as
-# transparent is the silent misinterpretation the IR exists to remove.
-if grep -qE "^\s*\| \.cast" "$OF"; then
-  no "ofExpr handles .cast — verify it models truncation rather than treating it as identity"
-else
-  ok "casts are rejected, not silently treated as identity"
-fi
+# Casts are now MODELLED (2026-08-04). The property that matters is not whether they are
+# handled but HOW: a cast truncates, so passing the operand through unchanged would make the
+# IR denote a different value than the program computes. This assertion previously forbade
+# handling `.cast` at all, which was right while they were rejected and became exactly
+# backwards once they were modelled — it fired on the improvement.
+grep -qE "^\s*\| \.cast _ e ty" "$OF" \
+  && ok "ofExpr carries casts (they are no longer dropped)" \
+  || no "ofExpr no longer handles .cast — div-inside-cast obligations are dropped again"
+grep -q "some (.cast w signed t)" "$OF" \
+  && ok "a cast becomes a CAST node carrying width and signedness, not a pass-through" \
+  || no "ofExpr does not build a .cast node — a cast may be being treated as identity"
+grep -q "IntArith.intBitWidth ty" "$OF" \
+  && ok "unknown-width targets (Int/Uint) are still rejected rather than given a made-up width" \
+  || no "the width guard is gone — a cast with no fixed width would be modelled at a guess"
+# And the evaluation must be the REFERENCE's wrap, pinned against IntArith on a value that
+# actually wraps, so "modelled" cannot drift into "modelled differently".
+grep -q "= some (IntArith.wrapToType .i8 200)" "$OF" \
+  && ok "the IR's cast agrees with IntArith.wrapToType on a wrapping value" \
+  || no "the wrap is no longer pinned to the reference — the IR could denote a different value"
 # Out-of-fragment operators rejected rather than approximated.
 grep -q "example : irBinOp .geq = none := rfl" "$OF" \
   && ok "out-of-fragment operators are pinned as REJECTED (geq is not aliased to le)" \
@@ -139,9 +151,40 @@ for b in "carried by both layers" "DROPPED by the string layer only" "dropped by
     && ok "term-ir reports: $b" \
     || no "term-ir does not report '$b' — a zero would be unreadable"
 done
-grep -q "latent here, not live" Main.lean \
-  && ok "the report states the div/mod advantage is latent on this corpus, not live" \
-  || no "the report no longer qualifies the zero — it would over-claim the IR's benefit"
+grep -q "fact about this corpus rather than about the IR" Main.lean \
+  && ok "the report says a corpus zero is about the corpus, not about the IR" \
+  || no "the report no longer qualifies the zero — it would under- or over-claim"
+
+# THE CAPABILITY ITSELF, exercised rather than asserted. `examples/` contains no obligation
+# with a division inside a cast, so the corpus number is 0 and would stay 0 if cast support
+# regressed. This fixture is the difference between "recovers 0 because nothing to recover"
+# and "recovers 0 because it is broken".
+COMPILER="$ROOT_DIR/.lake/build/bin/concrete"
+if [ -x "$COMPILER" ]; then
+  T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
+  cat > "$T/divcast.con" <<'FIXTURE'
+mod ds {
+    #[requires(b != 0)]
+    #[requires(a / b < 10)]
+    pub fn f(a: i32, b: i32) -> i32 {
+        let arr: [i32; 4] = [1, 2, 3, 4];
+        return arr[(a / b) as Int];
+    }
+}
+pub fn main() with(Std) -> Int { return 0; }
+FIXTURE
+  OUT="$("$COMPILER" "$T/divcast.con" --report term-ir 2>/dev/null)"
+  W="$(printf '%s' "$OUT" | grep -oE 'string layer only: [0-9]+' | grep -oE '[0-9]+')"
+  B="$(printf '%s' "$OUT" | grep -oE 'by BOTH: *[0-9]+' | grep -oE '[0-9]+')"
+  [ "${W:-0}" -ge 1 ] \
+    && ok "the IR RECOVERS a division-inside-cast obligation the string layer drops (${W})" \
+    || no "the IR recovers 0 on the div-inside-cast fixture — cast modelling has regressed"
+  [ "${B:-1}" = "0" ] \
+    && ok "and that obligation is no longer dropped by both layers" \
+    || no "the fixture's obligation is still dropped by both (${B}) — casts are not carried"
+else
+  echo "  (skip capability fixture — compiler not built)"
+fi
 
 echo ""
 echo "TRANSFORM-REGISTER: PASS=$PASS  FAIL=$FAIL"

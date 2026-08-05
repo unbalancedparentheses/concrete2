@@ -493,13 +493,14 @@ recomputed.
 - **Collapse N printers to one.** The print step is validated, not provable (the target
   syntax is not ours), so its cost is per-printer and permanent. `exprToSmt` already is that
   printer for the arithmetic tier and is validated as of 2026-08-03.
-- **Model casts in the IR, or record why not.** Measured 2026-08-04: the IR recovers ZERO
-  dropped obligations on this corpus, because every obligation carrying a division subterm
-  also carries a `cast` (`arr[(a / b) as Int]`) and neither layer models casts. `ofExpr`
-  rejects casts deliberately — a cast truncates, so carrying it as transparent would be a
-  silent misinterpretation. **R-0455's div/mod complaint is therefore latent, not live**, and
-  the IR's value today is the transformations and their proofs rather than recovered
-  obligations. `--report term-ir` prints all three buckets so a zero cannot be misread.
+- ~~Model casts in the IR~~ **DONE 2026-08-04.** Carried as a wrap at the target width
+  matching `Interp.evalCast`/`IntArith.wrapToType`, not as identity; unknown-width targets
+  still rejected. This unblocked R-0455's headline defect, which previously could not be
+  demonstrated at all because every division-carrying obligation also carried a cast and was
+  dropped by both layers. Measured: the IR now recovers such an obligation, and
+  `examples/` contains none, so the corpus number is 0 for a reason about the corpus — a
+  constructed fixture in the gate exercises the capability.
+  **Remaining:** one `dropped by both` in `fixed_capacity`, unclassified.
 - **`exprToProver` is also a `partial def`**, found while trying to lock "the string layer
   drops this term" by `rfl` — it cannot be. Same class as `evalIntEnv` below.
 - **`evalIntEnv` is a `partial def`** and therefore outside the reach of proof — the evaluator
