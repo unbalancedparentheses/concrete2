@@ -324,7 +324,11 @@ private partial def effectsForModule
     let loopClass := classifyLoops f.body
     -- Evidence level: enforced if passes all 5 predictable gates
     let (concreteCaps, _) := f.capSet.normalize
-    let hasRecursion := rec_ != "none"
+    -- An indirect call means the callee set is not statically known, so this function cannot
+    -- be shown acyclic. Treated as recursion for admission purposes: the profile's claim is
+    -- "no recursion", and "we could not tell" does not support it.
+    let hasIndirect := hasIndirectCallStmts f.body
+    let hasRecursion := rec_ != "none" || hasIndirect
     let hasUnboundedLoops := loopClass == "unbounded" || loopClass == "mixed"
     let hasAllocEvidence := !allocs.isEmpty || concreteCaps.any (· == "Alloc")
     let hasFfi := crossesFfi
@@ -534,13 +538,34 @@ private partial def collectStackFns
   let fns := m.functions.map fun f =>
     let qualName := qualPrefix ++ "." ++ f.name
     let frame := computeFrameBytes ctx f
-    let isRec := match recMap.find? (fun (n, _, _) => n == qualName) with
+    -- An indirect call contributes no call-graph edge, so the deepest chain through this body
+    -- looks like one frame and the report would state a specific byte bound for a function that
+    -- may recurse arbitrarily deep. A false NUMBER is worse than a missing one: it is quotable.
+    -- Grouped with the recursive functions, which is where "no bound established" already lives.
+    let isRec := if hasIndirectCallStmts f.body then true else
+      match recMap.find? (fun (n, _, _) => n == qualName) with
       | some (_, .none, _) => false
       | some _ => true
       | none => false
     (qualName, f.name, frame, isRec, lookupLoc locMap qualName)
   fns ++ m.submodules.foldl (fun acc sub =>
     acc ++ collectStackFns ctx recMap locMap sub qualPrefix) []
+
+/-- Close a set of "no bound established" functions backwards over the call graph.
+
+    `computeCallDepths` FILTERED recursive callees out of each chain, so a function calling an
+    unbounded one still received a finite byte bound: `ping` calling `apply` (unbounded) was
+    reported as `depth: 1, stack: 32 bytes`, and that number became the program's
+    `Max stack bound`. Dropping the edge understates the answer instead of declining to give
+    one. Unboundedness has to propagate to callers, which is what this does. -/
+private partial def closeUnbounded (callGraph : CallGraph) (seed : List String) (fuel : Nat) :
+    List String :=
+  match fuel with
+  | 0 => seed
+  | fuel + 1 =>
+    let more := callGraph.filterMap fun (n, cs) =>
+      if !seed.contains n && cs.any (fun c => seed.contains c) then some n else none
+    if more.isEmpty then seed else closeUnbounded callGraph (seed ++ more.eraseDups) fuel
 
 /-- Stack-depth report for functions passing the no-recursion profile. -/
 def stackDepthReport (modules : List CModule) (locMap : FnLocMap := [])
@@ -553,9 +578,12 @@ def stackDepthReport (modules : List CModule) (locMap : FnLocMap := [])
   let frameSizes := allFns.map fun (qn, _, frame, _, _) => (qn, frame)
   -- Compute call depths
   let depths := computeCallDepths frameSizes callGraph recMap
+  -- Anything that can REACH a function with no bound has no bound either.
+  let seed := (allFns.filter (fun (_, _, _, isRec, _) => isRec)).map (fun (qn, _, _, _, _) => qn)
+  let unbounded := closeUnbounded callGraph seed (frameSizes.length + 1)
   -- Build FnStackInfo records
   let infos := allFns.map fun (qn, name, frame, isRec, loc) =>
-    if isRec then
+    if isRec || unbounded.contains qn then
       { qualName := qn, name := name, frameBytes := frame,
         callDepth := 0, stackBound := 0, isRecursive := true, loc := loc : FnStackInfo }
     else
@@ -637,6 +665,19 @@ partial def checkPredictableModule
          , hint := "Break the cycle by restructuring into a loop or state machine."
          , loc := fnLoc }]
       | _ => []
+    -- 1b. Indirect calls. The call graph records only DIRECT callees, so a cycle that passes
+    -- through a function pointer produces no edge and SCC finds nothing: `ping` calling
+    -- `apply(ping, …)` reported `recursion: none` and passed this gate, and `--report
+    -- stack-depth` stated a specific byte bound for it. The callee set is not statically known,
+    -- so acyclicity cannot be established -- and "could not tell" does not support a
+    -- `no recursion` claim.
+    let indirectViolations :=
+      if hasIndirectCallStmts f.body then
+        [{ fnName := f.name, qualName := qualName
+         , reason := "indirect call (callee not statically known, so recursion cannot be ruled out)"
+         , hint := "Call a named function directly, or keep this function out of the predictable profile."
+         , loc := fnLoc }]
+      else []
     -- 2. Loop boundedness — point at the offending loop
     let loopClass := classifyLoops f.body
     let loopSpan := findLoopSpan astBody
@@ -683,7 +724,7 @@ partial def checkPredictableModule
       else [{ fnName := f.name, qualName := qualName, reason := s!"may block ({", ".intercalate blockingUsed})"
             , hint := s!"Remove {", ".intercalate blockingUsed} from with(...) or move I/O to a non-predictable caller."
             , loc := fnLoc, violationSpan := match entry with | some e => some e.fnSpan | none => none }]
-    acc ++ recViolations ++ loopViolations ++ allocViolations ++ ffiViolations ++ blockViolations) []
+    acc ++ recViolations ++ indirectViolations ++ loopViolations ++ allocViolations ++ ffiViolations ++ blockViolations) []
   fnViolations ++ m.submodules.foldl (fun acc sub =>
     acc ++ checkPredictableModule recMap externNames locMap sub qualPrefix) []
 

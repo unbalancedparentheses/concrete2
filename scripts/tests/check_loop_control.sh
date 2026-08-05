@@ -116,6 +116,57 @@ else
   no "build failed or binary missing; the loop-classifier checks did not run"
 fi
 
+echo "=== 6. an INDIRECT call cannot claim no-recursion or a stack bound ==="
+# The call graph records only DIRECT callees -- correct for extraction, wrong for two guarantees
+# built on the same graph. A cycle through a function pointer produces no edge, so SCC found no
+# cycle: `ping` calling `apply(ping, …)` reported `recursion: none`, PASSED
+# `--check predictable`, and `--report stack-depth` stated `depth: 1, stack: 32 bytes` for a
+# function that recurses arbitrarily deep. A false NUMBER, which is worse than a missing one
+# because it is quotable.
+# Must FAIL rather than skip when the build is broken: an earlier version guarded on TD_LC
+# being set, which is exactly what an unbuildable tree leaves unset -- so a mutation that failed
+# to compile silently bypassed this whole section instead of failing it.
+if [ -z "${TD_LC:-}" ]; then
+  no "build failed or temp dir unavailable; the indirect-call checks did NOT run"
+else
+  cat > "$TD_LC/indirect.con" <<'CON'
+mod indirect {
+    fn apply(f: fn(i32) -> i32, x: i32) -> i32 { return f(x); }
+    fn ping(x: i32) -> i32 {
+        if x <= 0 { return 0; }
+        return apply(ping, x - 1);
+    }
+}
+CON
+  "$BIN_LC" "$TD_LC/indirect.con" --check predictable >/dev/null 2>&1 \
+    && no "--check predictable ADMITS a module whose recursion goes through a function pointer" \
+    || ok "an indirect call is refused by the predictable profile"
+  SD="$("$BIN_LC" "$TD_LC/indirect.con" --report stack-depth 2>/dev/null)"
+  printf '%s' "$SD" | grep -qE "Max stack bound: [1-9]" \
+    && no "a byte-exact stack bound is still claimed where recursion cannot be ruled out" \
+    || ok "no stack bound is claimed when the callee set is unknown"
+  UNB="$(printf '%s' "$SD" | grep -c 'stack: unbounded')"
+  [ "$UNB" = "2" ] \
+    && ok "unboundedness propagates to the CALLER too (both functions, got $UNB)" \
+    || no "expected both functions unbounded, got $UNB — a caller of an unbounded fn kept a bound"
+
+  # Transitive case with ordinary direct recursion: the caller of a recursive function had a
+  # finite bound because recursive callees were filtered out of the chain entirely.
+  cat > "$TD_LC/transdepth.con" <<'CON'
+mod transdepth {
+    fn recurses(x: i32) -> i32 {
+        if x <= 0 { return 0; }
+        return recurses(x - 1);
+    }
+    fn caller(x: i32) -> i32 { return recurses(x); }
+}
+CON
+  TD2="$("$BIN_LC" "$TD_LC/transdepth.con" --report stack-depth 2>/dev/null)"
+  printf '%s' "$TD2" | grep -qE "Max stack bound: [1-9]" \
+    && no "a caller of a directly-recursive function still gets a finite stack bound" \
+    || ok "calling an unbounded function removes the caller's bound"
+fi
+
 echo ""
 echo "LOOP-CONTROL: PASS=$PASS  FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]

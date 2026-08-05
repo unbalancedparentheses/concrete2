@@ -2740,10 +2740,20 @@ check_report "$TESTDIR/adversarial_fn_ptr_indirect.con" effects \
     "adversarial: fn pointer apply not proved" \
     "adversarial: fn pointer apply should not be proved" "!"
 
+# Was "0 proved, 3 enforced". The fixture's own comment says an indirect callee "cannot be
+# statically resolved", and this assertion checked only that it does not claim PROVED -- while
+# `enforced` means "passes all five predictable gates", which was equally unwarranted: the call
+# graph records no edge for an indirect call, so no-recursion could not be established either.
+# `apply` is now `reported`, which is what the fixture always intended.
 check_report "$TESTDIR/adversarial_fn_ptr_indirect.con" effects \
-    "0 proved, 3 enforced" \
+    "0 proved, 2 enforced" \
     "adversarial: fn pointer file has 0 proved (no registered proof)" \
     "adversarial: fn pointer file wrong evidence counts"
+
+check_report "$TESTDIR/adversarial_fn_ptr_indirect.con" effects \
+    "1 reported" \
+    "adversarial: the indirect-calling function is reported, not enforced" \
+    "adversarial: an indirect call still claims the predictable profile"
 
 # --- Linear type system: compiler rejects violations ---
 run_err "$TESTDIR/adversarial_linear_double_use.con" "used after move"

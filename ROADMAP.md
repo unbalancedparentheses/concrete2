@@ -474,6 +474,37 @@ is not carried in someone's head. Each entry says what is *measured* rather than
 hoped, because several of these exist precisely because a number was restated instead of
 recomputed.
 
+### The `predictable` profile audit (2026-08-05) — three fail-open gates
+
+Same bug class as the obligation layer, in the checker analyses that back
+`--check predictable`. All were **fail-open**: an analysis that could not establish a property
+reported that the property held.
+
+- **Bounded iteration admitted non-terminating loops.** The rule asked "is the condition a
+  comparison?" and "is the step list non-empty?" and tied them to nothing, so
+  `for (let mut i = 0; i < n; z = z + 1)` and `for (…; i < n; i = i - 1)` were both `bounded`,
+  the module PASSED, and the report said `0 unbounded loops`. Now a variable in the condition
+  must be stepped toward the bound by a constant; everything else is refused. Zero corpus
+  change — all 31 previously-`bounded` loops use the `i = i + 1` idiom.
+- **An indirect call could claim no-recursion.** The call graph has no edge for `f(x)`, so
+  recursion through a function pointer was invisible: `ping` calling `apply(ping, …)` reported
+  `recursion: none` and passed. Now refused.
+- **`--report stack-depth` stated a byte-exact bound for unbounded recursion** — `32 bytes` for
+  the above, and recursive callees were filtered out of every chain so a caller of an unbounded
+  function also kept a finite bound. A false NUMBER is worse than a missing one. Unboundedness
+  now propagates to callers.
+
+**Why the obligation work could not have found these:** they are LIVENESS claims. Every proof
+obligation rules out a bad *event*; a program that hangs or overflows the stack performs no bad
+event, so no obligation and no register could notice. This is the first defect cluster this
+week that no amount of work on the obligation layer would have reached.
+
+**Still open, deliberately:** the profile is not transitive — `caller` calling a directly
+recursive `recurses` is still `enforced`, though module-level `--check predictable` does fail.
+Making admission transitive is a semantics change that would reclassify existing code, so it is
+a decision to take explicitly rather than as a side effect. The stack-depth report, which makes
+a numeric rather than a label claim, IS transitive as of this change.
+
 ### From R-0455 (term IR + Register B) — slices 1–2 landed, four things remain
 
 - **Register B row 2, `eliminate_div_mod` (fresh-variable form).** Two concrete blockers, in

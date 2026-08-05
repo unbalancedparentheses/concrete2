@@ -90,6 +90,81 @@ partial def collectCallsStmts (ss : List CStmt) : List String :=
   ss.foldl (fun acc s => acc ++ collectCallsStmt s) []
 end
 
+/-! ### Indirect calls
+
+`collectCalls*` above records only DIRECT callees, and says so: an indirect callee is a fn-typed
+binding whose statically-known target set is empty, so it contributes no dependency edge. That
+is the right call for extraction. It is the WRONG call for two guarantees that were quietly
+built on the same call graph:
+
+* **`no recursion`** — a cycle that passes through a function pointer has no edge, so SCC finds
+  no cycle, so the function reports `recursion: none` and `--check predictable` admits it. A
+  genuinely recursive program passes the no-recursion gate.
+* **`--report stack-depth`** — with no edge, the deepest chain is one frame, so the report
+  states a specific `Max stack bound` in bytes for a function that recurses to an arbitrary
+  depth. A false NUMBER, not merely a missing warning.
+
+Both are fixed by refusing to certify: a body containing an indirect call cannot be shown
+acyclic here, so it is excluded rather than assumed acyclic. Resolving the target set (every
+call site of a combinator passes a known function) is a whole-program analysis and a real
+project; assuming it is empty is not a conservative approximation of it, it is the opposite. -/
+mutual
+partial def hasIndirectCallExpr (e : CExpr) : Bool :=
+  match e with
+  | .call callee _ args _ =>
+    callee.directName?.isNone || args.any hasIndirectCallExpr
+  | .binOp _ l r _ => hasIndirectCallExpr l || hasIndirectCallExpr r
+  | .unaryOp _ e _ => hasIndirectCallExpr e
+  | .structLit _ _ fields _ => fields.any (fun (_, v) => hasIndirectCallExpr v)
+  | .fieldAccess obj _ _ => hasIndirectCallExpr obj
+  | .enumLit _ _ _ fields _ => fields.any (fun (_, v) => hasIndirectCallExpr v)
+  | .match_ scrut arms _ => hasIndirectCallExpr scrut || arms.any hasIndirectCallArm
+  | .borrow inner _ | .borrowMut inner _ | .deref inner _ => hasIndirectCallExpr inner
+  | .arrayLit elems _ => elems.any hasIndirectCallExpr
+  | .arrayIndex arr idx _ => hasIndirectCallExpr arr || hasIndirectCallExpr idx
+  | .cast inner _ | .try_ inner _ => hasIndirectCallExpr inner
+  | .allocCall inner alloc _ => hasIndirectCallExpr inner || hasIndirectCallExpr alloc
+  | .ifExpr cond th el _ =>
+    hasIndirectCallExpr cond || hasIndirectCallStmts th || hasIndirectCallStmts el
+  | _ => false
+
+partial def hasIndirectCallArm (arm : CMatchArm) : Bool :=
+  match arm with
+  | .enumArm _ _ _ guard body =>
+    (guard.map hasIndirectCallExpr).getD false || hasIndirectCallStmts body
+  | .litArm v guard body =>
+    hasIndirectCallExpr v || (guard.map hasIndirectCallExpr).getD false || hasIndirectCallStmts body
+  | .varArm _ _ guard body =>
+    (guard.map hasIndirectCallExpr).getD false || hasIndirectCallStmts body
+  | .rangeArm lo hi _ guard body =>
+    hasIndirectCallExpr lo || hasIndirectCallExpr hi
+      || (guard.map hasIndirectCallExpr).getD false || hasIndirectCallStmts body
+
+partial def hasIndirectCallStmt (s : CStmt) : Bool :=
+  match s with
+  | .letDecl _ _ _ v => hasIndirectCallExpr v
+  | .assign _ v => hasIndirectCallExpr v
+  | .return_ (some v) _ => hasIndirectCallExpr v
+  | .return_ none _ => false
+  | .expr e _ => hasIndirectCallExpr e
+  | .ifElse c t el =>
+    hasIndirectCallExpr c || hasIndirectCallStmts t
+      || (match el with | some ss => hasIndirectCallStmts ss | none => false)
+  | .while_ cond body _ step =>
+    hasIndirectCallExpr cond || hasIndirectCallStmts body || hasIndirectCallStmts step
+  | .fieldAssign obj _ v => hasIndirectCallExpr obj || hasIndirectCallExpr v
+  | .derefAssign t v => hasIndirectCallExpr t || hasIndirectCallExpr v
+  | .arrayIndexAssign arr idx v =>
+    hasIndirectCallExpr arr || hasIndirectCallExpr idx || hasIndirectCallExpr v
+  | .break_ (some v) _ => hasIndirectCallExpr v
+  | .break_ none _ | .continue_ _ => false
+  | .defer body => hasIndirectCallExpr body
+  | .borrowIn _ _ _ _ _ body => hasIndirectCallStmts body
+
+partial def hasIndirectCallStmts (ss : List CStmt) : Bool :=
+  ss.any hasIndirectCallStmt
+end
+
 -- Defer collection
 
 mutual

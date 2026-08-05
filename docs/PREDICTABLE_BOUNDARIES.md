@@ -86,13 +86,13 @@ The only resources predictable code may hold are file descriptors from Console (
 
 | Property | Guarantee level | Mechanism |
 |----------|----------------|-----------|
-| No recursion | Source-level | Call graph SCC analysis |
+| No recursion | Source-level | Call graph SCC analysis; an **indirect call is refused**, see below |
 | Bounded iteration | Source-level | Loop bound classification (see **What "bounded" means** below) |
 | No allocation | Source-level | Alloc capability + intrinsic detection |
 | No FFI | Source-level | Extern function detection |
 | No blocking I/O | Source-level | Capability gate (File, Network, Process) |
 | Acyclic call graph | Source-level | SCC analysis + recursion gate |
-| Bounded stack depth | Source-level | `--report stack-depth` (item 25), not gated |
+| Bounded stack depth | Source-level | `--report stack-depth` (item 25), not gated; a bound is claimed **only where establishable**, see below |
 | Report/IR determinism | Compiler | No HashMap in output paths, monotonic counters |
 
 ### What "bounded" means (and what it does not)
@@ -137,6 +137,54 @@ of iterations, or that its bound relates to anything else in the program. `i < n
 `i = i + 1` terminates for every fixed `n`, and that is the whole of the claim. Bounding
 iteration COUNTS would need the measure supplied and proved, which is termination proof proper
 and is not attempted here.
+
+### Indirect calls cannot be certified acyclic
+
+The call graph records only DIRECT callees. That is deliberate and right for extraction — an
+indirect callee is a fn-typed binding whose statically-known target set is empty. But two
+guarantees were built on the same graph without revisiting that choice:
+
+```
+fn apply(f: fn(i32) -> i32, x: i32) -> i32 { return f(x); }
+fn ping(x: i32) -> i32 {
+    if x <= 0 { return 0; }
+    return apply(ping, x - 1);      // recursion, through a function pointer
+}
+```
+
+There is no edge for `f(x)`, so SCC found no cycle. `ping` reported `recursion: none`,
+`--check predictable` **passed** the module, and `--report stack-depth` stated
+`depth: 1, stack: 32 bytes` with `Max stack bound: 32 bytes` — a byte-exact figure for a
+function that recurses to an arbitrary depth. **A false number is worse than a missing one,
+because it is quotable.**
+
+Now: a body containing an indirect call is refused by the profile, and gets no stack bound.
+Resolving the target set — proving every call site of a combinator passes a known function — is
+a whole-program analysis and a real project. Assuming the set is empty is not a conservative
+approximation of that; it is the opposite.
+
+Unboundedness also **propagates to callers** now. `computeCallDepths` filtered recursive callees
+out of each chain, so a function calling an unbounded one still received a finite bound; the
+edge was dropped rather than the answer declined.
+
+### Known gap: the profile is NOT transitive
+
+A function that calls a non-predictable function is still reported `enforced`:
+
+```
+fn recurses(x: i32) -> i32 { if x <= 0 { return 0; } return recurses(x - 1); }
+fn caller(x: i32)   -> i32 { return recurses(x); }     // evidence: enforced
+```
+
+`recurses` is correctly rejected; `caller` passes. Since `caller`'s own execution is unbounded,
+its "predictable execution" claim is not supported. Module-level `--check predictable` still
+fails (because `recurses` fails), so a whole-program gate is not fooled — but the per-function
+evidence level is.
+
+This is left as-is deliberately: making admission transitive is a semantics change that would
+reclassify existing code, and it is a decision to take explicitly rather than as a side effect
+of a bug fix. The stack-depth report, which makes a numeric claim rather than a label, IS
+transitive as of this change.
 
 ### Planned unified resource certificate
 
