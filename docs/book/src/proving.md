@@ -75,16 +75,16 @@ concrete examples/proof_pressure/src/main.con --report proof-status
   Function `main.compute_checksum` has a registered proof, but the body changed.
 
 -- not eligible -- main.con:78
-  `main.format_result` cannot be proved: fails predictable profile (has capabilities: Console).
+  `main.format_result` cannot be proved: fails the proof-eligibility gates (has capabilities: Console).
 
 -- no proof ------ main.con:90
-  `main.clamp_value` passes the predictable profile but has no registered proof.
+  `main.clamp_value` is eligible for proof but has no registered proof.
 
 -- blocked ------- main.con:109
   `main.classify_range` is eligible but uses unsupported constructs — extraction failed.
 
 -- not eligible -- main.con:123
-  `main.main` cannot be proved: fails predictable profile (has capabilities: Console, is entry point).
+  `main.main` cannot be proved: fails the proof-eligibility gates (has capabilities: Console, is entry point).
 
 Totals: 7 functions — 2 proved, 1 stale, 1 unproved, 1 blocked, 2 ineligible, 0 trusted
 ```
@@ -283,7 +283,7 @@ the in-source `#[proof_fingerprint]` with `--emit-link`.
 
 ```
 -- not eligible -- main.con:78
-  `main.format_result` cannot be proved: fails predictable profile (has capabilities: Console).
+  `main.format_result` cannot be proved: fails the proof-eligibility gates (has capabilities: Console).
 ```
 
 The function has capabilities (I/O). Remove them to make it eligible — or accept that it is outside the proof boundary by design.

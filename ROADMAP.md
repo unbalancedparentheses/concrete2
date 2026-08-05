@@ -467,6 +467,83 @@ later-positioned task fixes a live false claim and an earlier-positioned one doe
 the false claim goes first, and the override is written here rather than left for the
 next reader to rediscover.
 
+## PRE-MERGE STATE of `spike/multi-prover-evidence` (recorded 2026-08-05)
+
+Written for a merge performed on a different machine. Everything below is either a
+**behaviour change a reviewer should expect**, or **work not done**.
+
+### Behaviour changes that reclassify existing code
+
+These change reports and profile admission. None is a type error; nothing stops compiling. Each
+was measured against the corpus before landing, and the measured number is given.
+
+| Change | Effect | Measured impact |
+|---|---|---|
+| Loop classifier is fail-closed | a loop is `bounded` only if a condition variable is stepped toward the bound by a constant | **zero** — all 31 previously-`bounded` loops use `i = i + 1` |
+| Indirect calls refused by the profile | a body calling through a fn pointer cannot be certified acyclic | 1 test golden |
+| FFI admission is transitive | reaching an extern through another function crosses FFI | 3 examples (`http`, `integrity`, `verify`), all true positives |
+| Recursion admission is transitive | a caller of a recursive function is not predictable | **14 functions in 10 examples**, all true positives; 4 goldens |
+| Stack-depth unboundedness propagates | no byte-exact bound where recursion cannot be ruled out | `Max stack bound` is now `0 bytes (none)` on affected programs |
+| Bounds/shift sizing is per-scope | shadowed arrays and variables are sized from the binding in effect | 4 goldens; **two certified-false claims removed** |
+| Proof-surface wording | "passes the predictable profile" → "is eligible for proof" | 1 test golden, 4 book transcripts |
+
+**The two that were unsound, for the changelog:** a shadowed array gave `a[10] → 10 < 16` on a
+4-element array (kernel-**proved**), and a shadowed variable gave `x << 40 → 40 < 64` on an `i8`
+(kernel-**proved**). Both are now refuted. Memory safety was never affected — codegen
+bounds-checks and traps regardless — but the proof REPORT was false.
+
+### Not done — ranked
+
+1. **Div/shift/overflow do not name their gaps.** Bounds prints
+   `ARRAY ACCESSES OUTSIDE the bounds fragment`; the other three families drop an obligation
+   silently when a type cannot be resolved. `#[overflow_checked]` on a function with an
+   unannotated `let` yields `(no VCs generated)` and no explanation. Cheap: the reporting hook
+   exists, this is the last inconsistency in that cluster.
+2. **~10 soundness gates have no negative controls.** This session's tally: **six** of my own
+   gate assertions fired on non-regressions, **two** silently tested nothing (one interrogated a
+   stale binary, one skipped its whole section when the build broke). Green counts overstate what
+   is pinned. Highest-value non-feature work on this list.
+3. **Register A: 0 of 5 rows discharged, 4 half.** A half-discharged row is still a *trusted*
+   row. This is the branch's stated goal and it did not move this week.
+4. **H19 — the Core→obligation bridge is unproven.** Obligations are computed from the surface
+   AST; nothing proves they correspond to what is compiled. This week's defect class one layer
+   down. A project, not a task.
+5. **Register B rows 2 and 3.** Row 2 (`eliminate_div_mod`) needs `DecidableEq` on `Term` plus
+   signed `|r| < |b|` with no Mathlib. Row 3 is model-theoretic, not a longer row 2.
+6. **A non-arithmetic multi-prover example** (requested 2026-08-05). Every kernel-agreement
+   demo today is linear integer arithmetic. A datatype/structure example across Lean + Rocq +
+   Isabelle would exercise the one-printer-many-tools claim where it is weakest. Note the known
+   ceiling: SMT datatype goals are provable but **not** Alethe-certifiable, so such an example
+   would be kernel-proved rather than certificate-replayed.
+
+### Not done — smaller, each with a reason
+
+- **`MIN` negation and float→int cast** trap at runtime but have no obligation kind at all.
+- **Unannotated `let`s contribute no type**, so shift/overflow obligations for them are dropped.
+  Deliberate: inferring a type here risks disagreeing with the checker, and a wrong type is the
+  defect that was just fixed. Needs the checker's real types threaded in.
+- **The FFI closure carries bare names alongside qualified ones**, because the call graph resolves
+  callees and the effects report does not. A same-named function in another module can be
+  over-flagged (which refuses rather than admits — the safe side). Resolving callees properly
+  removes it.
+- **`proofReport`'s extraction eligibility is still direct**, not transitive. Different question
+  (can this body reach Gallina), and changing it would alter which proofs are attempted.
+- **Stack depth is reported, not gated** — `PREDICTABLE_BOUNDARIES.md` says so explicitly.
+- **5 `partial def`s** remain in the report layer (traversal drivers, not discovery).
+- **Isabelle builder collapse** needs the batch/single split.
+- **R-0462 widening**: capability holders, struct params, non-integer returns.
+- **One unclassified `dropped by both`** in `fixed_capacity`.
+
+### Merge mechanics
+
+- Branch was **191 commits ahead of `main`, 1 behind** at the time of writing.
+- **The `lli` failure is environmental, not ours.** LLVM 21.1.8 cannot JIT on some hosts; 49
+  tests fail locally on an affected machine. `run_tests.sh` probes `lli` functionally and falls
+  back to clang. If the merging machine shows ~49 failures in that shape, check this first.
+- Two of this week's clusters are **independent of the multi-prover spike** — the
+  bounds/shift/overflow sizing fixes and the predictable-profile fixes. If the whole branch is
+  too large to land at once, those are separable and carry the unsoundness fixes.
+
 ## Outstanding work recorded 2026-08-04
 
 Everything below was found or deferred during the R-0460..R-0465 arc and is filed here so it
