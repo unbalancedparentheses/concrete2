@@ -1,0 +1,44 @@
+// RUNGS 6 + 7: algebraic datatypes and arrays across Rocq, Isabelle/HOL and Lean.
+//
+//   concrete src/main.con --report bool-kernel
+//
+// Nothing previously told any prover that a Concrete struct exists — `CoreExtract`
+// emits Gallina `Definition`s and no `Inductive`/`Record` at all. These obligations
+// emit the DECLARATION alongside the lemma (`Record` / `record` / `structure`).
+//
+// Arrays come free. A fixed-size array whose every index is already proved in range
+// by the bounds family is a total `index -> value` function, so it reuses rung 5's
+// uninterpreted-symbol machinery and needs no new theory.
+//
+// Field projection is the one place the three kernels genuinely differ in syntax:
+// Rocq and Isabelle put the field first (`magic h`), Lean puts it last (`h.magic`).
+mod dtdemo {
+    struct Hdr { magic: i32, ver: i32 }
+
+    // STRUCT FIELDS: a header invariant, stated over projections.
+    #[requires(h.magic == 127 && h.ver == 1)]
+    #[ensures(h.magic == 127)]
+    fn magic_kept(h: &Hdr) -> i32 { return 0; }
+
+    // Both fields, and the conclusion reorders the conjunction — so this is not
+    // syntactic identity, it needs the propositional structure.
+    #[requires(h.magic == 127 && h.ver == 1)]
+    #[ensures(h.ver == 1 && h.magic == 127)]
+    fn both_fields(h: &Hdr) -> i32 { return 0; }
+
+    // ARRAYS as total functions: reading the same index twice gives the same value.
+    // Opaque-term reasoning, exactly like an uninterpreted spec function.
+    #[requires(a[i] == v)]
+    #[ensures(v == a[i])]
+    fn array_read_stable(a: [i32; 16], i: i32, v: i32) -> i32 { return 0; }
+
+    // STRUCT AND ARRAY TOGETHER, with boolean structure over both kinds of atom.
+    #[requires(!((h.magic == 127) && (a[i] == 0)))]
+    #[ensures(!(h.magic == 127) || !(a[i] == 0))]
+    fn mixed_demorgan(h: &Hdr, a: [i32; 16], i: i32) -> i32 { return 0; }
+
+    // NEGATIVE CONTROL: FALSE. Two different array reads need not agree, and nothing
+    // in scope says they do. Every kernel must REFUSE this.
+    #[ensures(a[i] == a[j])]
+    fn bad_array(a: [i32; 16], i: i32, j: i32) -> i32 { return 0; }
+}

@@ -276,6 +276,102 @@ else
 fi
 fi
 
+# ====================== RUNGS 6+7: DATATYPES + ARRAYS ======================
+echo "=== rungs 6+7: struct declarations and array reads in three kernels ==="
+DTDEMO="examples/datatype_kernel_demo/src/main.con"
+if [ ! -f "$DTDEMO" ]; then
+  no "$DTDEMO missing"
+else
+DW="$WORK/dt"; mkdir -p "$DW/n"
+"$BIN" "$DTDEMO" --report bool-kernel > "$DW/report.txt" 2>&1
+
+# The DECLARATION must be emitted. Nothing told a prover a Concrete struct existed before this
+# tier: CoreExtract emits Gallina Definitions and zero Inductive/Record.
+grep -q "^Record Hdr" "$DW/report.txt" \
+  && ok "Rocq Record declaration is emitted with the goal" \
+  || no "no Record declaration — the lemma would reference an unknown type"
+grep -q "^record Hdr" "$DW/report.txt" \
+  && ok "Isabelle record declaration is emitted" || no "no Isabelle record declaration"
+grep -q "^structure Hdr" "$DW/report.txt" \
+  && ok "Lean structure declaration is emitted" || no "no Lean structure declaration"
+# Field projection is the one genuine syntax difference: field-first vs field-last.
+grep -q "(magic h)" "$DW/report.txt" && grep -q "h.magic" "$DW/report.txt" \
+  && ok "field projection is rendered per kernel (magic h vs h.magic)" \
+  || no "field projection is not being rendered per kernel"
+# Arrays as total functions, sound because bounds are proved elsewhere.
+grep -qE "\(a : Z -> Z\)" "$DW/report.txt" \
+  && ok "an array is modelled as a total index -> value function" \
+  || no "arrays are not modelled as functions"
+
+python3 - "$DW/report.txt" "$DW" <<'PYDT'
+import re, sys
+report, work = sys.argv[1], sys.argv[2]
+txt = open(report).read()
+for b in re.split(r"\n  \[", txt)[1:]:
+    if "#struct" not in b.split("]")[0]: continue
+    name = b.split("]")[0].split(".")[1].split("#")[0]
+    def sect(mk):
+        m = re.search(r"--- " + mk + r" ---\n(.*?)(?=\n    ---|\Z)", b, re.S)
+        return m.group(1).rstrip() if m else None
+    for mk, ext in [(r"lean:by_cases \(struct\)", ".lean"), ("rocq:record", ".v")]:
+        v = sect(mk)
+        if v: open(f"{work}/{name}{ext}", "w").write(v + "\n")
+    iv = sect("isabelle:record")
+    if iv:
+        d = work + "/n" if name == "bad_array" else work
+        open(f"{d}/Thy_{name}.thy", "w").write(iv.replace("theory StructGoal", f"theory Thy_{name}") + "\n")
+good = ["magic_kept", "both_fields", "array_read_stable", "mixed_demorgan"]
+open(f"{work}/ROOT", "w").write("session DT = HOL +\n  theories\n" + "".join(f"    Thy_{n}\n" for n in good))
+open(f"{work}/n/ROOT", "w").write("session DTN = HOL +\n  theories\n    Thy_bad_array\n")
+PYDT
+
+DT_TRUE="magic_kept both_fields array_read_stable mixed_demorgan"
+DLC=0
+for t in $DT_TRUE; do timeout 300 lake env lean "$DW/$t.lean" >/dev/null 2>&1 && DLC=$((DLC+1)); done
+[ "$DLC" = "4" ] && ok "lean closed all 4 struct/array goals" || no "lean closed only $DLC of 4"
+if timeout 300 lake env lean "$DW/bad_array.lean" >/dev/null 2>&1; then
+  no "lean CLOSED \`a i = a j\` — two different array reads are being conflated"
+else
+  ok "lean refuses \`a i = a j\` (different indices need not agree)"
+fi
+
+if command -v coqc >/dev/null 2>&1; then
+  DRC=0; DAX=0
+  for t in $DT_TRUE; do
+    O="$( cd "$DW" && coqc "$t.v" 2>&1 )"
+    echo "$O" | grep -q "Closed under the global context" && DAX=$((DAX+1))
+    echo "$O" | grep -qiE "^error|error:" || DRC=$((DRC+1))
+  done
+  [ "$DRC" = "4" ] && ok "rocq closed all 4 struct/array goals" || no "rocq closed only $DRC of 4"
+  [ "$DAX" = "4" ] \
+    && ok "all 4 axiom-free — Record declarations add nothing to the trusted base" \
+    || no "only $DAX of 4 axiom-free"
+  BAO="$( cd "$DW" && coqc bad_array.v 2>&1 )"
+  if echo "$BAO" | grep -qiE "congruence failed|Tactic failure|No applicable"; then
+    ok "rocq refuses \`a i = a j\`"
+  else
+    no "rocq did not refuse \`a i = a j\`"
+  fi
+else
+  inconc "coqc absent — struct/array Rocq assertions not run"
+fi
+
+if command -v isabelle >/dev/null 2>&1; then
+  DIO="$( cd "$DW" && isabelle build -D . 2>&1 )"
+  printf '%s' "$DIO" | grep -q "^Finished" \
+    && ok "isabelle closed all 4 struct/array goals" \
+    || no "isabelle did not finish the struct session"
+  DIN="$( cd "$DW/n" && isabelle build -D . 2>&1 )"
+  if printf '%s' "$DIN" | grep -qE "Failed to finish proof|FAILED"; then
+    ok "isabelle refuses \`a i = a j\`"
+  else
+    no "isabelle did not refuse \`a i = a j\`"
+  fi
+else
+  inconc "isabelle absent — struct/array HOL assertions not run"
+fi
+fi
+
 echo ""
 echo "BOOL-KERNEL: PASS=$PASS  FAIL=$FAIL  INCONC=$INCONC"
 [ "$FAIL" -eq 0 ]

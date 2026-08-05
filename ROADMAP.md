@@ -496,8 +496,8 @@ by one tactic call. That shape is what makes rungs 1–7 reachable and rung 8 a 
 | 3. Nonlinear arithmetic | `nia`/`polyrith` | partial: `rocqNiaLowering`; H21 blocks SMT replay |
 | 4. Bitvectors | `bv_decide`, Rocq/Isabelle Word libs | Lean only; H20 — native checker |
 | 5. Uninterpreted functions (EUF) | quantified function variables | **done, this branch** |
-| 6. Algebraic datatypes | datatype *declarations* per prover | nothing emitted |
-| 7. Arrays | select/store | nothing |
+| 6. Algebraic datatypes | datatype *declarations* per prover | **done, this branch** |
+| 7. Arrays | total `index -> value` model | **done, this branch** |
 | 8. Induction over recursion | measure + induction scripts | see below |
 | 9. Full functional correctness | 6+7+8 | needs 8 |
 
@@ -578,7 +578,28 @@ that the model is equivalent to fixed-width semantics — a Register-B-style tra
 obligation, not merely a lowering. **That equivalence proof is the actual work of rung 4**, and
 `bv_decide`'s native checker (H20) caps the evidence quality of the Lean column regardless.
 
-#### Rungs 6 + 7 — datatypes and arrays: **no tool blocker, real work**
+#### Rungs 6 + 7 — **DONE 2026-08-05.** The ceiling is reached
+
+Struct declarations are now emitted alongside the goal (`Record` / `record` / `structure`) and
+arrays are modelled as total `index -> value` functions. `--report bool-kernel`, gated at 38/0/0
+with real Rocq 9.0.1 and Isabelle2025-2.
+
+**Four theories, three kernels, no arithmetic and no induction** — booleans, EUF, datatypes and
+arrays in one report, with a negative control per tier refused by every kernel. That combination
+is what the ladder called the ceiling of this architecture.
+
+Two things that made it cheaper than expected:
+
+- **Arrays needed no theory.** The bounds family already proves every index in range, so a
+  fixed-size array is a *total* function and there is no partiality story — usually the hard part
+  of an array encoding. Rung 7 was a renderer case, not a theory.
+- **Rocq's `Record` adds nothing to the trusted base**: all four goals still report
+  "Closed under the global context", gated.
+
+The one genuine three-way syntax split is **field projection**: Rocq and Isabelle put the field
+first (`magic h`), Lean puts it last (`h.magic`). Everything else about the proposition is shared.
+
+##### Original assessment, kept for the reasoning
 
 - `CoreExtract` emits Gallina `Definition`s but **zero** `Inductive`/`Record` declarations
   (grepped). Nothing currently tells any prover that a Concrete struct or enum exists.

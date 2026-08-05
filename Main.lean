@@ -1869,6 +1869,29 @@ def compileAndReport (inputPath : String) (reportType : String)
           match o.isabelleTheory "EufGoal" with
           | some th => IO.println s!"    --- isabelle:auto (euf) ---\n{th}"
           | none => IO.println "    isabelle: outside the EUF fragment"
+      -- Rungs 6+7: struct declarations are EMITTED with the goal (nothing told a prover a
+      -- Concrete struct existed before), and arrays are total index -> value functions, which is
+      -- sound because the bounds family proves every index in range.
+      let sts := Report.structObligations parsed.modules
+      if !sts.isEmpty then
+        IO.println ""
+        IO.println "=== DATATYPES + ARRAYS: struct fields and array reads (rungs 6+7) ==="
+        for o in sts do
+          let verdict := match o.abstractionVerdict with
+            | some () => "tautology under abstraction — valid for EVERY interpretation"
+            | none => "inconclusive (abstraction can confirm, never refute)"
+          IO.println ""
+          IO.println s!"  [{o.key}]  structs: {", ".intercalate (o.structs.map (·.1))}  arrays: {", ".intercalate o.arrays}"
+          IO.println s!"    abstraction: {verdict}"
+          match o.leanScript with
+          | some sc => IO.println s!"    --- lean:by_cases (struct) ---\n{sc}"
+          | none => IO.println "    lean: outside the fragment"
+          match o.rocqScript with
+          | some sc => IO.println s!"    --- rocq:record ---\n{sc}"
+          | none => IO.println "    rocq: outside the fragment"
+          match o.isabelleTheory "StructGoal" with
+          | some th => IO.println s!"    --- isabelle:record ---\n{th}"
+          | none => IO.println "    isabelle: outside the fragment"
       return 0
     if reportType == "multi-kernel" then
       -- Spike (branch spike/multi-prover-evidence): the prover-neutral obligation

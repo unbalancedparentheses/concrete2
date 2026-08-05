@@ -382,8 +382,13 @@ private structure PropOps where
   cmp   : BinOp → String → String → Option String
   /-- Bi-implication. -/
   iff   : String
-  /-- `f a b` application. -/
+  /-- `f a b` application. Also used for ARRAY INDEXING: with the bounds family already proving
+      every index in range, a fixed-size array is a total `index -> value` function, so it needs
+      no new theory — it is rung 5's machinery reused (rung 7). -/
   app   : String → List String → String
+  /-- Field projection. Rocq and Isabelle put the field first (`magic h`), Lean puts it last
+      (`h.magic`) — the one place the three genuinely disagree on syntax. -/
+  proj  : String → String → String
 
 private def rocqCmp : BinOp → String → String → Option String
   | .eq, a, b => some s!"({a} = {b})"
@@ -414,13 +419,16 @@ private def leanCmp : BinOp → String → String → Option String
 
 private def rocqPropOps : PropOps :=
   { and_ := "/\\", or_ := "\\/", not_ := "~", cmp := rocqCmp, iff := "<->"
-  , app := fun f as => s!"({f} {" ".intercalate as})" }
+  , app := fun f as => s!"({f} {" ".intercalate as})"
+  , proj := fun fld o => s!"({fld} {o})" }
 private def isaPropOps : PropOps :=
   { and_ := "&", or_ := "|", not_ := "~", cmp := isaCmp, iff := "="
-  , app := fun f as => s!"({f} {" ".intercalate as})" }
+  , app := fun f as => s!"({f} {" ".intercalate as})"
+  , proj := fun fld o => s!"({fld} {o})" }
 private def leanPropOps : PropOps :=
   { and_ := "∧", or_ := "∨", not_ := "¬", cmp := leanCmp, iff := "↔"
-  , app := fun f as => s!"({f} {" ".intercalate as})" }
+  , app := fun f as => s!"({f} {" ".intercalate as})"
+  , proj := fun fld o => s!"{o}.{fld}" }
 
 /-- Integer-level term (inside a comparison): variables, literals, spec applications. -/
 private partial def renderTerm (ops : PropOps) : Expr → Option String
@@ -433,6 +441,12 @@ private partial def renderTerm (ops : PropOps) : Expr → Option String
   | .binOp _ .add l r => do let a ← renderTerm ops l; let b ← renderTerm ops r; some s!"({a} + {b})"
   | .binOp _ .sub l r => do let a ← renderTerm ops l; let b ← renderTerm ops r; some s!"({a} - {b})"
   | .binOp _ .mul l r => do let a ← renderTerm ops l; let b ← renderTerm ops r; some s!"({a} * {b})"
+  -- rung 6: struct field projection.
+  | .fieldAccess _ o f => do let x ← renderTerm ops o; some (ops.proj f x)
+  -- rung 7: array indexing as function application. Sound because the bounds family already
+  -- proves the index in range, so the model needs no partiality.
+  | .arrayIndex _ a i => do
+      let arr ← renderTerm ops a; let idx ← renderTerm ops i; some (ops.app arr [idx])
   | _ => none
 
 /-- Proposition-level formula: boolean structure over integer comparisons. -/
@@ -608,6 +622,156 @@ def EufObl.leanScript (o : EufObl) : Option String := do
     ([ s!"theorem eufgoal : {g} := by"
      , s!"  intro {" ".intercalate names}" ] ++ cases ++ [ "  all_goals simp_all" ])
 
+
+
+/-! # Rungs 6 + 7 — algebraic datatypes and arrays
+
+Nothing currently tells any prover that a Concrete struct exists: `CoreExtract` emits Gallina
+`Definition`s and no `Inductive`/`Record` at all. This tier emits the DECLARATION alongside the
+lemma, so a structural obligation can be stated.
+
+**Arrays come free.** A fixed-size Concrete array with every index already proved in range by the
+bounds family is a total `index -> value` function, so it is rung 5's uninterpreted-symbol
+machinery with no new theory. That is why rungs 6 and 7 land together: the array half needs a
+renderer case, not a theory.
+
+**Where the three kernels genuinely differ:** field projection. Rocq and Isabelle put the field
+first (`magic h`), Lean puts it last (`h.magic`), and the declaration syntax differs three ways
+(`Record` / `record` / `structure`). The proposition itself is otherwise shared.
+-/
+
+/-- A struct obligation: `requires -> ensures` over field projections and array indexing, with
+    the struct declarations the goal needs. -/
+structure StructObl where
+  fnQual  : String
+  key     : String
+  /-- Struct declarations to emit: `(name, [(field, isInt)])`. Only integer fields are modelled;
+      a struct with a field this tier cannot render is skipped rather than half-declared. -/
+  structs : List (String × List String)
+  /-- Array parameters, modelled as uninterpreted `index -> value` functions (rung 7). -/
+  arrays  : List String
+  /-- Struct-typed variables to quantify, as `(name, structName)`. -/
+  objs    : List (String × String)
+  intVars : List String
+  hyps    : List Expr
+  concl   : Expr
+
+/-- Struct-typed and array-typed parameters of a function, with their integer fields. -/
+private def structParamsOf (structs : StructFieldEnv) (f : FnDef) :
+    List (String × String) × List String :=
+  let objs := f.params.filterMap fun p =>
+    match namedStructOf p.ty with
+    | some sn => if (structs.lookup sn).isSome then some (p.name, sn) else none
+    | none => none
+  let arrs := f.params.filterMap fun p =>
+    match p.ty with | .array _ _ => some p.name | _ => none
+  (objs, arrs)
+
+/-- Collect datatype/array obligations from contracts, same `requires -> ensures` shape as EUF. -/
+def structObligations (modules : List Module) : List StructObl := Id.run do
+  let senv := structFieldEnv modules
+  let mut out : List StructObl := []
+  for (pfx, f) in modules.flatMap allFunctions do
+    let (objs, arrs) := structParamsOf senv f
+    if !objs.isEmpty || !arrs.isEmpty then
+      let mentionsResult : Expr → Bool := fun e =>
+        ((Concrete.fmtExpr e).splitOn "result").length > 1
+      let hyps := f.requires.filter (fun h => !mentionsResult h)
+      let mut i := 0
+      for ens in f.ensures do
+        if !mentionsResult ens then
+          -- integer fields only: a field this tier cannot render must not be declared as if it
+          -- could, or the emitted declaration would not match the obligation.
+          let decls := objs.map (fun (_, sn) =>
+            (sn, ((senv.lookup sn).getD []).filterMap (fun (fn, ty) =>
+                    if (IntArith.intBitWidth ty).isSome || ty == .int then some fn else none)))
+          out := out ++ [{ fnQual := pfx ++ f.name, key := s!"{pfx}{f.name}#struct{i}"
+                         , structs := decls.eraseDups, arrays := arrs, objs := objs
+                         , intVars := f.params.filterMap (fun p =>
+                             match p.ty with
+                             | .array _ _ => none
+                             | t => if (namedStructOf t).isSome then none else some p.name)
+                         , hyps := hyps, concl := ens }]
+          i := i + 1
+  return out
+
+/-- Same `h1 -> … -> concl` shape as EUF. Separate from `EufObl.prop` because the two carry
+    different binder sets, not because the proposition differs. -/
+def StructObl.prop (o : StructObl) (ops : PropOps) (arrow : String) : Option String := do
+  let hs ← o.hyps.mapM (renderProp ops)
+  let c ← renderProp ops o.concl
+  some (String.join (hs.map (fun h => s!"({h}) {arrow} ")) ++ s!"({c})")
+
+/-- Rocq: `Record` declarations, then the lemma. Decidable case analysis keeps it axiom-free. -/
+def StructObl.rocqScript (o : StructObl) : Option String := do
+  let p ← o.prop rocqPropOps "->"
+  let decls := o.structs.map fun (sn, flds) =>
+    let fieldsStr := " ; ".intercalate (flds.map (fun f => s!"{f} : Z"))
+    -- built separately: Rocq's record braces need literal `{`/`}`, and nesting an
+    -- interpolation inside escaped braces does not parse.
+    "Record " ++ sn ++ " : Set := mk" ++ sn ++ " { " ++ fieldsStr ++ " }."
+  let arrBinders := o.arrays.map (fun a => s!"({a} : Z -> Z)")
+  let objBinders := o.objs.map (fun (n, sn) => s!"({n} : {sn})")
+  let varBinder := if o.intVars.isEmpty then "" else s!"({" ".intercalate o.intVars} : Z) "
+  let pairs := ((o.hyps.flatMap (eqPairs rocqPropOps)) ++ eqPairs rocqPropOps o.concl).eraseDups
+  let dests := pairs.map fun (a, b) => s!"destruct (Z.eq_dec {a} {b})"
+  some <| "\n".intercalate
+    ([ "(* rungs 6+7: struct declarations emitted with the goal; arrays are total"
+     , "   index -> value functions, sound because bounds are proved elsewhere. *)"
+     , "From Stdlib Require Import ZArith."
+     , "Open Scope Z_scope." ] ++ decls ++
+     [ s!"Lemma structgoal : forall {" ".intercalate (arrBinders ++ objBinders)} {varBinder}, {p}."
+     , "Proof."
+     , "  intros."
+     , s!"  {String.join (dests.map (fun d => d ++ "; "))}solve [ tauto | congruence ]."
+     , "Qed."
+     , "Print Assumptions structgoal." ])
+
+/-- Isabelle/HOL: `record` declarations, then the lemma. -/
+def StructObl.isabelleTheory (o : StructObl) (thyName : String) : Option String := do
+  let p ← o.prop isaPropOps "-->"
+  let decls := o.structs.map fun (sn, flds) =>
+    s!"record {sn} = {"  ".intercalate (flds.map (fun f => s!"{f} :: int"))}"
+  let binders := o.arrays.map (fun a => s!"({a}::int => int)")
+                  ++ o.objs.map (fun (n, sn) => s!"({n}::{sn})")
+                  ++ o.intVars.map (fun v => s!"({v}::int)")
+  some <| "\n".intercalate
+    ([ s!"theory {thyName}", "imports Main", "begin" ] ++ decls ++
+     [ s!"lemma structgoal: \"ALL {" ".intercalate binders}. {p}\""
+     , "  by auto", "end" ])
+
+/-- Lean: `structure` declarations, then the theorem. -/
+def StructObl.leanScript (o : StructObl) : Option String := do
+  let p ← o.prop leanPropOps "→"
+  let decls := o.structs.map fun (sn, flds) =>
+    s!"structure {sn} where\n" ++ "\n".intercalate (flds.map (fun f => s!"  {f} : Int"))
+  let binders := o.arrays.map (fun a => s!"({a} : Int → Int)")
+                  ++ o.objs.map (fun (n, sn) => s!"({n} : {sn})")
+                  ++ (if o.intVars.isEmpty then [] else [s!"({" ".intercalate o.intVars} : Int)"])
+  let names := o.arrays ++ o.objs.map (·.1) ++ o.intVars
+                ++ (List.range o.hyps.length).map (fun i => s!"h{i}")
+  let atoms := ((o.hyps.flatMap (atomsOf leanPropOps)) ++ atomsOf leanPropOps o.concl).eraseDups
+  let cases := atoms.zipIdx.map fun (a, i) =>
+    if i == 0 then s!"  by_cases c{i} : {a}" else s!"  all_goals by_cases c{i} : {a}"
+  some <| "\n".intercalate
+    (decls ++
+     [ s!"theorem structgoal : ∀ {" ".intercalate binders} , {p} := by"
+     , s!"  intro {" ".intercalate names}" ] ++ cases ++ [ "  all_goals simp_all" ])
+
+/-- Propositional-abstraction verdict, same soundness caveat as EUF: it can confirm, never
+    refute. Field projections and array reads are atoms like any other opaque term. -/
+def StructObl.abstractionVerdict (o : StructObl) : Option Unit := Id.run do
+  let atoms := ((o.hyps.flatMap (atomsOf leanPropOps)) ++ atomsOf leanPropOps o.concl).eraseDups
+  if atoms.length > 12 then return none
+  let mut taut := true
+  for bits in allAssignments atoms do
+    let hs := o.hyps.map (evalAbstract leanPropOps bits)
+    match evalAbstract leanPropOps bits o.concl with
+    | none => taut := false
+    | some c =>
+      if hs.any (·.isNone) then taut := false
+      else if (hs.all (· == some true)) && !c then taut := false
+  return if taut then some () else none
 
 end Report
 end Concrete
