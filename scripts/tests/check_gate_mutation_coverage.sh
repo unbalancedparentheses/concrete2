@@ -149,9 +149,18 @@ add "kernel-foundation" "Concrete/Report/Evidence.lean" "check_evidence_algebra.
 # The reference evaluator's division convention: swap truncating for Lean's `/` and
 # every lowering-agreement check is validated against the wrong reference at
 # negative operands.
-add "reference-division" "Concrete/Report/ReportObligations.lean" "check_vc_bridge_register.sh" no \
-  '| .div => if b == 0 then none else some (a.tdiv b)' \
-  '| .div => if b == 0 then none else some (a / b)'
+# Re-pointed 2026-08-04: the reference evaluator moved into the term IR when `evalIntEnv`
+# stopped being a `partial def`, so the division convention now lives in `TermIR.evalInt`.
+# The mutation is meaningful — Lean's `/` on Int is FLOORED (`-7 / 2 = -4`) while `.tdiv`
+# truncates (`-3`), so swapping them silently re-points the reference every rendering is
+# validated against, at exactly the inputs positive tests never reach.
+#
+# Expect "killed by build": the convention is now pinned by `rfl` examples, and for a
+# compile-time lock a build failure IS the correct kill — which this harness can finally say,
+# as of the invalid-mutation split above.
+add "reference-division" "Concrete/Semantics/TermIR.lean" "check_vc_bridge_register.sh" yes \
+  '| .tdiv => if b == 0 then none else some (IntArith.tdiv a b)' \
+  '| .tdiv => if b == 0 then none else some (a / b)'
 
 # The artifact fuzzer's claim classification: treat every function as claimed and a
 # trap in an admittedly-unproved function is reported as a Register A counterexample —
@@ -372,11 +381,49 @@ run_one(){
   if ! apply "$file" "$TMP/old" "$TMP/new" 2>"$TMP/aerr"; then
     echo "  FAIL $nm: could not apply mutation ($(cat "$TMP/aerr"))"; FAIL=$((FAIL+1)); git checkout -- "$file" 2>/dev/null; return
   fi
-  local killed=0 note=""
+  local killed=0 note="" invalid=0
   if [ "$needs" = yes ]; then
     if ! "$LAKE" build >"$TMP/build.log" 2>&1; then
-      killed=1; note="(killed by build — type system rejected the mutation)"
+      # A build failure is NOT automatically a kill. Distinguish two very different things:
+      #
+      #   * the type system (or a proof) REJECTED the mutation — a real and strong result,
+      #     stronger than a gate going red, because the defect is unrepresentable; versus
+      #   * the mutation is simply BROKEN — most often an unused binding, which this project
+      #     treats as an error, so replacing `emit (...)` with `pure ()` or dropping a use of
+      #     `len`/`mnem`/`hintR` fails to compile for a reason that has nothing to do with the
+      #     rule under test.
+      #
+      # The second case reported KILLED four times this week. Each time the family passed
+      # while testing NOTHING, and once the gate silently ran the previous binary. A harness
+      # that cannot tell "unrepresentable" from "my patch is malformed" manufactures exactly
+      # the false green it exists to prevent.
+      # ORDER MATTERS, and getting it wrong is easy: a genuine rejection often emits a lint
+      # warning ALONGSIDE the real error (removing the div range check breaks
+      # `div_obligation_necessary` AND leaves a simp argument unused). Checking for the lint
+      # first therefore misclassifies real kills as invalid — which my first version did,
+      # caught by self-testing both directions instead of only the one I was fixing.
+      #
+      # So: look for a GENUINE error first. Only a failure that is lint-and-nothing-else is
+      # an invalid mutation.
+      if grep -qE "unsolved goals|[Tt]ype mismatch|Unknown identifier|Unknown constant|\
+failed to synthesize|Missing cases|declaration uses 'sorry'" "$TMP/build.log"; then
+        killed=1
+        note="(killed by build — type system or a proof rejected the mutation)"
+      elif grep -qE "unused variable|This simp argument is unused|unused binding" "$TMP/build.log"; then
+        invalid=1
+        note="(INVALID mutation — build failed on an unused-binding lint, not on the rule; \
+rewrite it so every binding stays live, e.g. change an operand rather than deleting a call)"
+      else
+        invalid=1
+        note="(INVALID mutation — build failed for an unrecognised reason; inspect the log \
+rather than counting it as a kill)"
+      fi
     fi
+  fi
+  if [ "$invalid" -eq 1 ]; then
+    echo "  FAIL $nm $note"; FAIL=$((FAIL+1))
+    git checkout -- "$file" 2>/dev/null
+    return
   fi
   if [ "$killed" -eq 0 ]; then
     if bash "$gate" >"$TMP/gate.log" 2>&1; then
