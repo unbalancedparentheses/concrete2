@@ -707,6 +707,8 @@ partial def elabExprEv (e : Expr) (hint : Option Ty := none) : ElabM ElaboratedE
       | .generic n args => (n, args)
       | _ => ("", [])
     let mut cArms : List CMatchArm := []
+    -- Arm evidence, PREPENDED and reversed once: arm ORDER is semantic (first match wins).
+    let mut armEvsRev : List Proof.EvidenceArmV2 := []
     if enumName != "" then
       match ← lookupEnum enumName with
       | some ed =>
@@ -731,29 +733,45 @@ partial def elabExprEv (e : Expr) (hint : Option Ty := none) : ElabM ElaboratedE
               -- Bug 045: the arm carries the FRESH (alpha-renamed) name.
               let coreBinding ← bindArmVar binding bty
               typedBindings := typedBindings ++ [(coreBinding, bty)]
-            let cGuard ← guard.mapM (fun g => do pure (← elabExprEv g (some Ty.bool)).core)
+            let cGuardEv ← guard.mapM (fun g => elabExprEv g (some Ty.bool))
+            let cGuard := cGuardEv.map (·.core)
             let cBodyEv ← elabStmtsEv body (valueHint := hint)
             let cBody := cBodyEv.flatMap (·.core)
             cArms := cArms ++ [.enumArm enumName armVariant typedBindings cGuard cBody]
+            armEvsRev := (match ed.typeId? with
+              | some owner =>
+                .arm (Proof.evVariantPattern { owner := owner, variant := armVariant }
+                        (ev.fields.zip bindings |>.map fun fb =>
+                           ({ owner := owner, field := fb.1.name }, fb.2 != "_")))
+                     (cGuardEv.map (·.evidence)) (cBodyEv.map (·.evidence))
+              | none => .gap { code := .unresolvedVariant,
+                               detail := "arm owner declaration has no identity" }) :: armEvsRev
           | .litArm _ val guard body =>
             let cValEv ← elabExprEv val
             let cVal := cValEv.core
-            let cGuard ← guard.mapM (fun g => do pure (← elabExprEv g (some Ty.bool)).core)
+            let cGuardEv ← guard.mapM (fun g => elabExprEv g (some Ty.bool))
+            let cGuard := cGuardEv.map (·.core)
             let cBodyEv ← elabStmtsEv body (valueHint := hint)
             let cBody := cBodyEv.flatMap (·.core)
             cArms := cArms ++ [.litArm cVal cGuard cBody]
+            armEvsRev := (.arm (Proof.evLitPattern cValEv.evidence)
+                            (cGuardEv.map (·.evidence)) (cBodyEv.map (·.evidence))) :: armEvsRev
           | .varArm _ binding guard body =>
             let coreBinding ← bindArmVar binding innerTyR
-            let cGuard ← guard.mapM (fun g => do pure (← elabExprEv g (some Ty.bool)).core)
+            let cGuardEv ← guard.mapM (fun g => elabExprEv g (some Ty.bool))
+            let cGuard := cGuardEv.map (·.core)
             let cBodyEv ← elabStmtsEv body (valueHint := hint)
             let cBody := cBodyEv.flatMap (·.core)
             cArms := cArms ++ [.varArm coreBinding innerTyR cGuard cBody]
+            armEvsRev := (.arm (if binding == "_" then .wildcard else .binder)
+                            (cGuardEv.map (·.evidence)) (cBodyEv.map (·.evidence))) :: armEvsRev
           | .rangeArm _ lo hi incl guard body =>
             let cLoEv ← elabExprEv lo (some innerTyR)
             let cLo := cLoEv.core
             let cHiEv ← elabExprEv hi (some innerTyR)
             let cHi := cHiEv.core
-            let cGuard ← guard.mapM (fun g => do pure (← elabExprEv g (some Ty.bool)).core)
+            let cGuardEv ← guard.mapM (fun g => elabExprEv g (some Ty.bool))
+            let cGuard := cGuardEv.map (·.core)
             let cBodyEv ← elabStmtsEv body (valueHint := hint)
             let cBody := cBodyEv.flatMap (·.core)
             cArms := cArms ++ [.rangeArm cLo cHi incl cGuard cBody]
@@ -769,18 +787,21 @@ partial def elabExprEv (e : Expr) (hint : Option Ty := none) : ElabM ElaboratedE
           | .litArm _ val guard body =>
             let cValEv ← elabExprEv val
             let cVal := cValEv.core
-            let cGuard ← guard.mapM (fun g => do pure (← elabExprEv g (some Ty.bool)).core)
+            let cGuardEv ← guard.mapM (fun g => elabExprEv g (some Ty.bool))
+            let cGuard := cGuardEv.map (·.core)
             let cBodyEv ← elabStmtsEv body (valueHint := hint)
             let cBody := cBodyEv.flatMap (·.core)
             cArms := cArms ++ [.litArm cVal cGuard cBody]
           | .varArm _ binding guard body =>
             let coreBinding ← bindArmVar binding innerTyR
-            let cGuard ← guard.mapM (fun g => do pure (← elabExprEv g (some Ty.bool)).core)
+            let cGuardEv ← guard.mapM (fun g => elabExprEv g (some Ty.bool))
+            let cGuard := cGuardEv.map (·.core)
             let cBodyEv ← elabStmtsEv body (valueHint := hint)
             let cBody := cBodyEv.flatMap (·.core)
             cArms := cArms ++ [.varArm coreBinding innerTyR cGuard cBody]
           | .mk _ en v _ guard body =>
-            let cGuard ← guard.mapM (fun g => do pure (← elabExprEv g (some Ty.bool)).core)
+            let cGuardEv ← guard.mapM (fun g => elabExprEv g (some Ty.bool))
+            let cGuard := cGuardEv.map (·.core)
             let cBodyEv ← elabStmtsEv body (valueHint := hint)
             let cBody := cBodyEv.flatMap (·.core)
             cArms := cArms ++ [.enumArm en v [] cGuard cBody]
@@ -789,7 +810,8 @@ partial def elabExprEv (e : Expr) (hint : Option Ty := none) : ElabM ElaboratedE
             let cLo := cLoEv.core
             let cHiEv ← elabExprEv hi (some innerTyR)
             let cHi := cHiEv.core
-            let cGuard ← guard.mapM (fun g => do pure (← elabExprEv g (some Ty.bool)).core)
+            let cGuardEv ← guard.mapM (fun g => elabExprEv g (some Ty.bool))
+            let cGuard := cGuardEv.map (·.core)
             let cBodyEv ← elabStmtsEv body (valueHint := hint)
             let cBody := cBodyEv.flatMap (·.core)
             cArms := cArms ++ [.rangeArm cLo cHi incl cGuard cBody]
@@ -803,18 +825,21 @@ partial def elabExprEv (e : Expr) (hint : Option Ty := none) : ElabM ElaboratedE
         | .litArm _ val guard body =>
           let cValEv ← elabExprEv val (some innerTyR)
           let cVal := cValEv.core
-          let cGuard ← guard.mapM (fun g => do pure (← elabExprEv g (some Ty.bool)).core)
+          let cGuardEv ← guard.mapM (fun g => elabExprEv g (some Ty.bool))
+          let cGuard := cGuardEv.map (·.core)
           let cBodyEv ← elabStmtsEv body (valueHint := hint)
           let cBody := cBodyEv.flatMap (·.core)
           cArms := cArms ++ [.litArm cVal cGuard cBody]
         | .varArm _ binding guard body =>
           let coreBinding ← bindArmVar binding innerTyR
-          let cGuard ← guard.mapM (fun g => do pure (← elabExprEv g (some Ty.bool)).core)
+          let cGuardEv ← guard.mapM (fun g => elabExprEv g (some Ty.bool))
+          let cGuard := cGuardEv.map (·.core)
           let cBodyEv ← elabStmtsEv body (valueHint := hint)
           let cBody := cBodyEv.flatMap (·.core)
           cArms := cArms ++ [.varArm coreBinding innerTyR cGuard cBody]
         | .mk _ en v _ guard body =>
-          let cGuard ← guard.mapM (fun g => do pure (← elabExprEv g (some Ty.bool)).core)
+          let cGuardEv ← guard.mapM (fun g => elabExprEv g (some Ty.bool))
+          let cGuard := cGuardEv.map (·.core)
           let cBodyEv ← elabStmtsEv body (valueHint := hint)
           let cBody := cBodyEv.flatMap (·.core)
           cArms := cArms ++ [.enumArm en v [] cGuard cBody]
@@ -823,7 +848,8 @@ partial def elabExprEv (e : Expr) (hint : Option Ty := none) : ElabM ElaboratedE
           let cLo := cLoEv.core
           let cHiEv ← elabExprEv hi (some innerTyR)
           let cHi := cHiEv.core
-          let cGuard ← guard.mapM (fun g => do pure (← elabExprEv g (some Ty.bool)).core)
+          let cGuardEv ← guard.mapM (fun g => elabExprEv g (some Ty.bool))
+          let cGuard := cGuardEv.map (·.core)
           let cBodyEv ← elabStmtsEv body (valueHint := hint)
           let cBody := cBodyEv.flatMap (·.core)
           cArms := cArms ++ [.rangeArm cLo cHi incl cGuard cBody]
@@ -848,7 +874,12 @@ partial def elabExprEv (e : Expr) (hint : Option Ty := none) : ElabM ElaboratedE
         let armTys := (cArms.map (fun a => armValueTy (armBodyStmts a))).filter
           (fun t => t != .unit && t != .never)
         armTys.head?.getD .unit
-    return ElaboratedExprV2.mk (CExpr.match_ cScrut cArms resultTy) (Proof.evUnhandledExpr "match: arm evidence not wired")
+    return ElaboratedExprV2.mk (CExpr.match_ cScrut cArms resultTy) -- DESIGN GAP, not missing plumbing: the arms' evidence is built (armEvsRev) but
+       -- EvidenceExprV2 has no match constructor — the tree models match only at STATEMENT
+       -- level, while Concrete allows match as an EXPRESSION. Adding EvidenceExprV2.matchExpr
+       -- is a vocabulary change, so this refuses until that decision is made rather than
+       -- discarding the arms silently.
+       (Proof.evUnhandledExpr "match expression: EvidenceExprV2 has no match node")
 
   | .borrow _ inner =>
     let cInnerEv ← elabExprEv inner

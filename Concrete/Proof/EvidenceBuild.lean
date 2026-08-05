@@ -141,6 +141,24 @@ def evLoopTarget? (frames : List (Option String)) (label : Option String) : Opti
   | none   => if frames.isEmpty then none else some 0
   | some l => frames.findIdx? fun f => f == some l
 
+/-- A literal PATTERN from the literal expression's evidence.
+
+    Patterns and expressions are different types, so a literal arm cannot reuse the
+    expression node. Only literal forms convert; anything else is a gap rather than a
+    silent wildcard, which would make two different arms select alike. -/
+def evLitPattern (e : EvidenceExprV2) : EvidencePatternV2 :=
+  match e with
+  | .intLit v t  => .intLit v t
+  | .boolLit v   => .boolLit v
+  | .strLit v    => .strLit v
+  | .charLit v   => .charLit v
+  | _ => .gap { code := .unhandledPattern, detail := "literal arm with a non-literal value" }
+
+/-- A variant arm's pattern: the variant identity, with each binding as a positional
+    binder and `_` as a wildcard. Names are absent; the position is the identity. -/
+def evVariantPattern (id : VariantId) (fields : List (FieldId × Bool)) : EvidencePatternV2 :=
+  .variant id (fields.map fun fb => (fb.1, if fb.2 then .binder else .wildcard))
+
 /-- Parentheses are TRANSPARENT: they emit no node. `(p)` and `p` are the same program,
     so an extra wrapper would make a purely syntactic edit move the digest. -/
 def evParen (inner : EvidenceExprV2) : EvidenceExprV2 := inner
