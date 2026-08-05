@@ -519,8 +519,16 @@ recomputed.
   generated `0 ≤ 10 ∧ 10 < 16`, which the kernel PROVED. The report read `2 proved, 0
   outstanding` for a program that traps. Every other bug in this cluster was a missing claim;
   this was a false claim, certified. Fixed by refusing to answer when a name has conflicting
-  sizes. **Follow-up:** recover the lost coverage with per-scope sizing, threading declared
-  sizes the way `scopedWalk` already threads hypotheses.
+  sizes, then **DONE properly 2026-08-05**: sizes are threaded per SCOPE through
+  `scopedWalkSized{S,B}`, next to the hypothesis scope that walker already carried. The
+  shadowed access now yields `10 < 4` and is reported as a **counterexample** — the compiler
+  detects an out-of-bounds access it previously certified as proved. Declarations shadow
+  outward, do not escape their block, and a `for`-init binding reaches condition/step/body.
+  Generation and gap-reporting share one walk so nothing falls between them.
+  **Two lessons from mutating it:** the refusal-era gate assertions FAILED on the correct
+  implementation because they pinned the mechanism ("refuses to answer") rather than the
+  property (the right bound) — rewritten. And dropping `for`-init bindings survived both the
+  gate and all 1702 tests, since no fixture declares an array in a for-init; now covered.
 - **Two more silent bounds gaps, closed.** `let a = [0; 16]` (unannotated — the size sits in
   the initialiser, but only annotations were read) and arrays declared inside an
   `if`/`while`/`for` body (only the flat top-level statement list was scanned).

@@ -186,10 +186,22 @@ for a program that traps at runtime. Every earlier bug in this file was a *missi
 This one was a **false claim, certified** — the failure mode the whole pipeline exists to
 prevent, sitting in the layer that generates what everything else then proves.
 
-Fixed by refusing to answer: a name bound at two different sizes is dropped from the map
-rather than guessed. That trades coverage for honesty, and the coverage is recoverable later
-(per-scope sizes, the way `scopedWalk` already threads hypotheses) whereas a certified
-falsehood is not.
+First fixed by refusing to answer — a name bound at two different sizes was dropped rather
+than guessed — which traded coverage for honesty. **Then fixed properly:** sizes are threaded
+per SCOPE through `scopedWalkSized{S,B}`, alongside the hypothesis scope that walker already
+carried. A declaration is visible to what follows it and shadows an outer binding of the same
+name; declarations inside a block do not escape it; a `for`-init binding reaches the
+condition, step and body.
+
+So the same access has had three verdicts, and only the last is both honest and useful:
+
+| | `a[10]` on the shadowed 4-element array |
+|---|---|
+| flat map, first match wins | `10 < 16` — **proved**. A false claim, certified. |
+| refuse on conflict | no obligation; access named as outside the fragment |
+| per-scope sizing | `10 < 4` — **counterexample**. The bug is caught. |
+
+The compiler now *detects* an out-of-bounds access it once certified as safe.
 
 Two coverage gaps found in the same pass, both silent, both now closed:
 
@@ -197,6 +209,9 @@ Two coverage gaps found in the same pass, both silent, both now closed:
   only explicit annotations, so an entirely ordinary array had no bounds obligation.
 - an array declared **inside** an `if`/`while`/`for` body — the map scanned only the flat
   top-level statement list.
+
+Generation and gap-reporting now share one walk, so an access cannot fall between them and be
+counted by neither — which is the shape of every bug in this cluster.
 
 And the silence itself is now a reported thing: `--report vcs` prints
 `ARRAY ACCESSES OUTSIDE the bounds fragment`, naming each access that reached no obligation,
@@ -210,6 +225,18 @@ fixes. No fixture used a parenthesised access, a shadowed array, an unannotated 
 or an array declared in a nested block. That is why the regression guards for all of them are
 end-to-end in the gate rather than `rfl` locks: the defects lived precisely where no example
 looked, and a lock only protects code someone thought to exercise.
+
+Two smaller lessons from mutating the per-scope version:
+
+- **A gate can encode the workaround instead of the goal.** The refusal-era assertions
+  (`the access is NAMED`, `the conflicting-size filter is present`) FAILED once sizing became
+  correct — they pinned the mechanism, not the property. They now assert the right bound and
+  the refutation, which the correct implementation satisfies and both wrong ones do not.
+- **One mutation survived**: dropping `for`-init bindings from the threaded sizes passed this
+  gate AND the full 1702-test suite, because nothing in the corpus declares an array in a
+  for-init. A fixture now covers it. A separate mutation — making a declaration visible to its
+  own statement — is an EQUIVALENT mutant, not a survivor: a `let` initialiser cannot index the
+  name being declared, so the change is unobservable.
 
 ## Drivers as data (R-0455, same slice)
 

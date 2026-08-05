@@ -210,56 +210,94 @@ def loopInvariantDebt (f : FnDef) (fq : String) (hyps : List Expr) : List String
 -- own (non-recursive) obligations; the walker owns ALL recursion into branches,
 -- loop bodies, and for-loop init/step, so no family can drift in how it threads
 -- scope. Migrated families instantiate this with their own leaf (Phase 3 #4-9).
+/-- The array size THIS statement declares — deliberately NOT recursive.
+
+    Scoping is the walker's job. An earlier version collected every binding in the function
+    into one flat map and resolved accesses against it by name, which is what made shadowing
+    produce a bound from the wrong binding. -/
+def arraySizeOwn : Stmt → List (String × Nat)
+  | .letDecl _ nm _ (some (.array _ n)) _ _ => [(nm, n)]
+  | .letDecl _ nm _ none (.arrayLit _ es) _ => [(nm, es.length)]
+  | _ => []
+
 mutual
-partial def scopedWalkS {α} (leaf : List Expr → Stmt → List α)
-    (lcs : List LoopContract) (scope : List Expr) : Stmt → List α
+partial def scopedWalkSizedS {α}
+    (leaf : List Expr → List (String × Nat) → Stmt → List α)
+    (lcs : List LoopContract) (scope : List Expr) (sizes : List (String × Nat)) :
+    Stmt → List α
   | s@(.ifElse _ c t el) =>
-      leaf scope s
-        ++ scopedWalkB leaf lcs (scope ++ [c]) t
-        ++ scopedWalkB leaf lcs (scope ++ (negateGuard c).toList) (el.getD [])
+      leaf scope sizes s
+        ++ scopedWalkSizedB leaf lcs (scope ++ [c]) sizes t
+        ++ scopedWalkSizedB leaf lcs (scope ++ (negateGuard c).toList) sizes (el.getD [])
   | s@(.while_ sp _ b _) =>
-      leaf scope s ++ scopedWalkB leaf lcs (scope ++ loopHypsAt lcs sp.line) b
+      leaf scope sizes s
+        ++ scopedWalkSizedB leaf lcs (scope ++ loopHypsAt lcs sp.line) sizes b
   | s@(.forLoop sp init _ step b _) =>
       -- init, then this statement's own leaves (the loop condition), then step,
       -- then body — the traversal ORDER every family's old walker used, so the
       -- positional `#idx`/`#pre`/… keys are preserved across the migration.
-      ((init.map (scopedWalkS leaf lcs scope)).getD [])
-        ++ leaf scope s
-        ++ ((step.map (scopedWalkS leaf lcs scope)).getD [])
-        ++ scopedWalkB leaf lcs (scope ++ loopHypsAt lcs sp.line) b
-  | s@(.borrowIn _ _ _ _ _ b) => leaf scope s ++ scopedWalkB leaf lcs scope b
-  | s => leaf scope s
-partial def scopedWalkB {α} (leaf : List Expr → Stmt → List α)
-    (lcs : List LoopContract) (scope : List Expr) : List Stmt → List α
+      -- Anything `init` declares is visible to the condition, step and body.
+      let sizes' := (init.map arraySizeOwn).getD [] ++ sizes
+      ((init.map (scopedWalkSizedS leaf lcs scope sizes)).getD [])
+        ++ leaf scope sizes' s
+        ++ ((step.map (scopedWalkSizedS leaf lcs scope sizes')).getD [])
+        ++ scopedWalkSizedB leaf lcs (scope ++ loopHypsAt lcs sp.line) sizes' b
+  | s@(.borrowIn _ _ _ _ _ b) =>
+      leaf scope sizes s ++ scopedWalkSizedB leaf lcs scope sizes b
+  | s => leaf scope sizes s
+partial def scopedWalkSizedB {α}
+    (leaf : List Expr → List (String × Nat) → Stmt → List α)
+    (lcs : List LoopContract) (scope : List Expr) (sizes : List (String × Nat)) :
+    List Stmt → List α
   | [] => []
   | s :: rest =>
       let restScope := match s with
         | .ifElse _ c t none => if blockTerminates t then scope ++ (negateGuard c).toList
                                 else dropStaleHyps scope (assignedScalarsS s)
         | _ => dropStaleHyps scope (assignedScalarsS s)
-      scopedWalkS leaf lcs scope s ++ scopedWalkB leaf lcs restScope rest
+      -- A declaration is visible to what FOLLOWS it, and shadows an outer binding of the
+      -- same name because it is prepended and lookups take the first match. Bindings made
+      -- inside `s` (a block) do not reach `rest`: only `s`'s own declaration does.
+      let restSizes := arraySizeOwn s ++ sizes
+      scopedWalkSizedS leaf lcs scope sizes s
+        ++ scopedWalkSizedB leaf lcs restScope restSizes rest
 end
+
+/-- Size-agnostic walk, for the four families that do not need array sizes. Identical
+    traversal, so positional keys are shared. -/
+def scopedWalkS {α} (leaf : List Expr → Stmt → List α)
+    (lcs : List LoopContract) (scope : List Expr) (st : Stmt) : List α :=
+  scopedWalkSizedS (fun sc _ s => leaf sc s) lcs scope [] st
+
+/-- See `scopedWalkS`. -/
+def scopedWalkB {α} (leaf : List Expr → Stmt → List α)
+    (lcs : List LoopContract) (scope : List Expr) (body : List Stmt) : List α :=
+  scopedWalkSizedB (fun sc _ s => leaf sc s) lcs scope [] body
 
 /-- Array-index leaf: the index uses in a statement's OWN expression positions
     (the walker owns recursion into branches/loops/init/step, so
     `.ifElse`/`.while_`/`.forLoop` contribute only their condition's index uses).
     A store `a[idx] = v` carries its target bound `(a, idx)` FIRST, matching the
     old walker's ordering exactly. -/
-def boundsLeaf (scope : List Expr) : Stmt → List (String × Expr × List Expr)
+def boundsLeaf (scope : List Expr) (sizes : List (String × Nat)) :
+    Stmt → List (String × Expr × List Expr × Option Nat) :=
+  let mk : (String × Expr) → (String × Expr × List Expr × Option Nat) :=
+    fun (a, i) => (a, i, scope, (sizes.find? (·.1 == a)).map (·.2))
+  fun
   | .letDecl _ _ _ _ v _ | .assign _ _ v | .expr _ v _ | .defer _ v =>
-      (collectIndexUsesE v).map fun (a, i) => (a, i, scope)
-  | .return_ _ (some v) => (collectIndexUsesE v).map fun (a, i) => (a, i, scope)
-  | .ifElse _ c _ _ => (collectIndexUsesE c).map fun (a, i) => (a, i, scope)
-  | .while_ _ c _ _ => (collectIndexUsesE c).map fun (a, i) => (a, i, scope)
-  | .forLoop _ _ c _ _ _ => (collectIndexUsesE c).map fun (a, i) => (a, i, scope)
+      (collectIndexUsesE v).map mk
+  | .return_ _ (some v) => (collectIndexUsesE v).map mk
+  | .ifElse _ c _ _ => (collectIndexUsesE c).map mk
+  | .while_ _ c _ _ => (collectIndexUsesE c).map mk
+  | .forLoop _ _ c _ _ _ => (collectIndexUsesE c).map mk
   | .fieldAssign _ o _ v | .derefAssign _ o v =>
-      (collectIndexUsesE o ++ collectIndexUsesE v).map fun (a, i) => (a, i, scope)
+      (collectIndexUsesE o ++ collectIndexUsesE v).map mk
   | .arrayIndexAssign _ a idx v =>
       match arrayRootName a with
       | some arr =>
-          (arr, idx, scope) :: (collectIndexUsesE idx ++ collectIndexUsesE v).map fun (x, i) => (x, i, scope)
+          mk (arr, idx) :: (collectIndexUsesE idx ++ collectIndexUsesE v).map mk
       | none =>
-          (collectIndexUsesE a ++ collectIndexUsesE idx ++ collectIndexUsesE v).map fun (x, j) => (x, j, scope)
+          (collectIndexUsesE a ++ collectIndexUsesE idx ++ collectIndexUsesE v).map mk
   | _ => []
 
 /-- Index uses paired with the hypotheses in scope at the access (Phase 3 #5 —
@@ -269,9 +307,14 @@ def boundsLeaf (scope : List Expr) : Stmt → List (String × Expr × List Expr)
     sound context than the old bounds walker, so a bounds obligation can only move
     `unproven → proved_by_kernel_decision` (e.g. `if 0 ≤ i && i < n { a[i] }`),
     never the reverse, and a reassigned index still drops its stale guard. -/
-def scopedBoundsB (lcs : List LoopContract) (scope : List Expr) (body : List Stmt) :
-    List (String × Expr × List Expr) :=
-  scopedWalkB boundsLeaf lcs scope body
+def scopedBoundsB (lcs : List LoopContract) (scope : List Expr)
+    (paramSizes : List (String × Nat)) (body : List Stmt) :
+    List (String × Expr × List Expr × Option Nat) :=
+  scopedWalkSizedB boundsLeaf lcs scope paramSizes body
+
+/-- Array-typed parameters: the outermost size bindings a function body starts from. -/
+def paramArraySizes (f : FnDef) : List (String × Nat) :=
+  f.params.filterMap fun p => match p.ty with | .array _ n => some (p.name, n) | _ => none
 
 /-- Call-site leaf: the calls in a statement's OWN expression positions (the
     walker owns recursion into branches, loop bodies, and for-loop init/step, so
@@ -434,60 +477,6 @@ structure BoundsObl where
   -- under an invariant whose own O1/O2 must hold; the ledger caps the status accordingly.
   hypDebt       : List String := []
 
-/-- Every array-size BINDING in a statement, recursively.
-
-    Recursive because the flat version missed any array declared inside an `if`/`while`/`for`
-    body, and inferring from an array-literal initialiser because `let a = [0; 16]` carries the
-    size in plain sight while the old map read only explicit annotations. Both were silent:
-    an unresolvable size produced no obligation and no mention of one. -/
-def arraySizesS : Stmt → List (String × Nat)
-  | .letDecl _ nm _ (some (.array _ n)) _ _ => [(nm, n)]
-  | .letDecl _ nm _ none (.arrayLit _ es) _ => [(nm, es.length)]
-  | .ifElse _ _ t el =>
-      t.attach.flatMap (fun ⟨s, _⟩ => arraySizesS s)
-        ++ (el.getD []).attach.flatMap (fun ⟨s, _⟩ => arraySizesS s)
-  | .while_ _ _ b _ => b.attach.flatMap (fun ⟨s, _⟩ => arraySizesS s)
-  | .forLoop _ init _ step b _ =>
-      (init.attach.map (fun ⟨s, _⟩ => arraySizesS s)).getD []
-        ++ (step.attach.map (fun ⟨s, _⟩ => arraySizesS s)).getD []
-        ++ b.attach.flatMap (fun ⟨s, _⟩ => arraySizesS s)
-  | .borrowIn _ _ _ _ _ b => b.attach.flatMap (fun ⟨s, _⟩ => arraySizesS s)
-  | _ => []
-termination_by x => sizeOf x
-decreasing_by
-  all_goals simp_wf
-  all_goals
-    first
-      | omega
-      | (rename_i h; have := List.sizeOf_lt_of_mem h; simp +arith at this ⊢; omega)
-      | (rename_i h; have := sizeOf_mem_getD h; simp +arith at this ⊢; omega)
-      | (rename_i h; subst h; simp +arith; omega)
-      | (rename_i h; subst h; simp +arith)
-
-/-- Identifier → fixed-array size — only where the size is UNAMBIGUOUS.
-
-    A name bound twice at different sizes is dropped rather than guessed. That is not
-    conservatism for its own sake: the previous version took the FIRST binding via `find?`, so
-
-        let a: [i32; 16] = [0; 16];
-        let a: [i32; 4]  = [7; 4];
-        return a[10];
-
-    generated `0 ≤ 10 ∧ 10 < 16` for an access into a FOUR-element array — and that obligation
-    is TRUE, so the report read `2 proved, 0 outstanding` for a program that traps at runtime.
-    A wrong obligation is worse than a missing one: a missing one leaves the claim unmade,
-    while this one made a false claim and had it certified.
-
-    Dropping the name turns that into no obligation, which `unresolvedBoundsAccesses` then
-    NAMES rather than passing over in silence. Resolving shadowing properly (per-scope sizes,
-    the way `scopedWalk` already threads hypotheses) would recover the coverage; refusing to
-    answer is what makes the report honest in the meantime. -/
-def arraySizeMap (f : FnDef) : List (String × Nat) :=
-  let ps := f.params.filterMap fun p => match p.ty with | .array _ n => some (p.name, n) | _ => none
-  let ls := f.body.flatMap arraySizesS
-  let all := ps ++ ls
-  all.filter fun (nm, n) => all.all fun (nm', n') => nm' != nm || n' == n
-
 /-- Array accesses that reach NO bounds obligation, named so coverage cannot be over-read.
 
     `N VCs, all proved` must not be readable as `every array access is checked`. This is the
@@ -496,9 +485,12 @@ def arraySizeMap (f : FnDef) : List (String × Nat) :=
 
     Two causes reach here, both real gaps rather than errors:
 
-    * **conflicting sizes** — the name is bound at two different sizes, so `arraySizeMap`
-      refuses to guess (it used to guess, and guessed WRONG; see there);
-    * **no statically known size** — nothing in the function fixes a length for that name.
+    * **no statically known size** — nothing in scope at the access fixes a length for that
+      name (e.g. an array returned from a call, or a `let` with a non-literal initialiser).
+
+    Shadowing is no longer a cause: sizes are resolved per SCOPE, so a redeclared array is
+    sized from the binding actually in effect. That replaced a conservative refusal, which had
+    in turn replaced a wrong answer.
 
     A third cause does not reach here and is listed in `DiscoveryComplete.lean`: an array
     reached through a field (`b.data[i]`) is never RECORDED, so there is no name to report.
@@ -507,9 +499,8 @@ def unresolvedBoundsAccesses (modules : List Module) : List (String × String) :
   let mut out : List (String × String) := []
   for (pfx, f) in modules.flatMap allFunctions do
     let fq := pfx ++ f.name
-    let sizes := arraySizeMap f
-    for (arr, _, _) in scopedBoundsB f.loopContracts [] f.body do
-      if (sizes.find? (·.1 == arr)).isNone then
+    for (arr, _, _, msize) in scopedBoundsB f.loopContracts [] (paramArraySizes f) f.body do
+      if msize.isNone then
         out := out ++ [(fq, arr)]
   return out.eraseDups
 
@@ -519,12 +510,11 @@ def boundsObligations (modules : List Module) : List BoundsObl := Id.run do
   let mut out : List BoundsObl := []
   for (pfx, f) in modules.flatMap allFunctions do
     let fq := pfx ++ f.name
-    let sizes := arraySizeMap f
     let mut i := 0
-    for (arr, idx, scope) in scopedBoundsB f.loopContracts [] f.body do
-      match sizes.find? (·.1 == arr) with
-      | none => pure ()
-      | some (_, n) =>
+    for (arr, idx, scope, msize) in scopedBoundsB f.loopContracts [] (paramArraySizes f) f.body do
+      match msize with
+      | none => pure ()   -- named by `unresolvedBoundsAccesses`, which walks identically
+      | some n =>
         let key := s!"{fq}#bounds{i}"
         let obHyps := f.requires ++ scope
         let cv : Option Bool × Option String := match cEvalInt idx with

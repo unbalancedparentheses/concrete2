@@ -2920,7 +2920,7 @@ def vcsReport (vcs : List VC) (unresolvedBounds : List (String × String) := [])
     if unresolvedBounds.isEmpty then "" else
       let rows := unresolvedBounds.map fun (fq, arr) => s!"\n  {fq}: {arr}[…]"
       "\n\nARRAY ACCESSES OUTSIDE the bounds fragment — no obligation generated"
-        ++ " (conflicting or unknown array size):"
+        ++ " (no statically known array size at the access):"
         ++ String.join rows
         ++ "\n  (these are NOT covered by the counts above; runtime bounds checks still apply)"
   if vcs.isEmpty then

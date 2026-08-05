@@ -299,13 +299,17 @@ grep -qE "^  \| \.fieldAccess" "$RO" && grep -A6 "def arrayRootName" "$RO" | gre
   && no "arrayRootName peels .fieldAccess — the length lookup would read the WRONG array" \
   || ok "arrayRootName stops at .paren (no wrong-array obligations)"
 
-echo "=== bounds: a WRONG obligation is worse than a missing one (shadowing) ==="
-# The severe one. `arraySizeMap` used to take the FIRST binding of a name, so
-#     let a: [i32; 16] = [0; 16];  let a: [i32; 4] = [7; 4];  return a[10];
-# produced `0 <= 10 AND 10 < 16` for a FOUR-element array. That obligation is TRUE, so the
-# report read "2 proved, 0 outstanding" for a program that traps at runtime -- a false claim,
-# certified. The map now refuses to answer when a name has conflicting sizes, and the access is
-# NAMED instead of silently dropped.
+echo "=== bounds: shadowing is sized from the binding actually IN EFFECT ==="
+# History of this one assertion, in three steps:
+#   1. sizes came from a flat per-function map resolved by `find?` -- first match won, so
+#      `a[10]` on a 4-element array generated `10 < 16`, which the kernel PROVED. A false
+#      claim, certified.
+#   2. names with conflicting sizes were dropped -- honest, but no coverage.
+#   3. sizes are threaded per SCOPE, so the access is sized correctly and the bad index is
+#      REFUTED. Coverage and honesty at once.
+# The assertions below pin the PROPERTY (the right bound, and refutation) rather than the
+# mechanism, because step 2's assertions failed on step 3 -- they had encoded "refuses to
+# answer" as if that were the goal.
 if [ -n "${TMPD:-}" ]; then
   cat > "$TMPD/shadow.con" <<'CON'
 mod shadowbounds {
@@ -318,18 +322,49 @@ mod shadowbounds {
 }
 CON
   SH="$("$BIN" "$TMPD/shadow.con" --report vcs 2>/dev/null)"
+  printf '%s' "$SH" | grep -q "10 < 4" \
+    && ok "the shadowed access is sized from the INNER binding (10 < 4)" \
+    || no "the shadowed access is not sized from the binding in effect"
   printf '%s' "$SH" | grep -q "10 < 16" \
-    && no "the shadowed access is STILL sized from the wrong binding (10 < 16 on a 4-element array)" \
-    || ok "no obligation is generated from the wrong binding"
-  printf '%s' "$SH" | grep -q "OUTSIDE the bounds fragment" \
-    && ok "the unresolvable access is NAMED, not silently dropped" \
-    || no "the access vanished silently — coverage can be over-read again"
-  # And the naming must survive the zero-VC path, which returns early.
-  printf '%s' "$SH" | grep -q "shadowbounds.shadow: a" \
-    && ok "naming works on the empty-VC path too" \
-    || no "a function with only unresolvable accesses reports nothing at all"
+    && no "the WRONG binding is being used again (10 < 16 on a 4-element array)" \
+    || ok "the outer binding is not used for the inner access"
+  printf '%s' "$SH" | grep -q "1 counterexample" \
+    && ok "the out-of-bounds access is REFUTED, not proved" \
+    || no "an access at index 10 into a 4-element array is not being refuted"
 
-  echo "=== bounds: sizes the old map could not see ==="
+  echo "=== bounds: per-scope sizing, both directions ==="
+  cat > "$TMPD/scope.con" <<'CON'
+mod scopebounds {
+    fn nested_shadow(i: i32) -> i32 {
+        let a: [i32; 16] = [0; 16];
+        if i > 0 { let a: [i32; 8] = [0; 8]; return a[i]; }
+        return a[i];
+    }
+}
+CON
+  SC="$("$BIN" "$TMPD/scope.con" --report vcs 2>/dev/null)"
+  printf '%s' "$SC" | grep -q "i < 8" && printf '%s' "$SC" | grep -q "i < 16" \
+    && ok "the inner access uses 8 and the outer uses 16 (no leak either way)" \
+    || no "a block-local array size leaks out of its scope, or the inner access is mis-sized"
+
+  # A for-INIT declaration must be visible to the condition, step and body. Found by mutation:
+  # dropping init's bindings from the threaded sizes survived both this gate and the full
+  # suite, because nothing in the corpus declared an array in a for-init.
+  cat > "$TMPD/forinit.con" <<'CON'
+mod forinitbounds {
+    fn loop_arr() -> i32 {
+        let mut z: i32 = 0;
+        for (let a: [i32; 4] = [5; 4]; z < 1; z = z + 1) { z = a[3]; }
+        return z;
+    }
+}
+CON
+  FI="$("$BIN" "$TMPD/forinit.con" --report vcs 2>/dev/null)"
+  printf '%s' "$FI" | grep -q "3 < 4" \
+    && ok "a for-init array declaration is visible to the loop body" \
+    || no "for-init declarations do not reach the body — that access gets no obligation"
+
+  echo "=== bounds: sizes the old flat map could not see ==="
   cat > "$TMPD/sizes.con" <<'CON'
 mod sizecov {
     fn let_inferred(i: i32) -> i64 { let a = [0; 16]; return a[i]; }
@@ -340,12 +375,31 @@ CON
   [ "$NS" = "2" ] \
     && ok "unannotated-let and nested-let arrays both get bounds VCs (got $NS)" \
     || no "expected 2 array-bounds VCs, got $NS — an array size the compiler can see is being ignored"
+
+  echo "=== bounds: what remains unresolvable is still NAMED ==="
+  # An array from a call has no statically known size. It must be listed rather than passed
+  # over, or "N VCs, all proved" reads as "every access is checked".
+  cat > "$TMPD/unres.con" <<'CON'
+mod unresbounds {
+    fn mk() -> [i32; 16] { let a: [i32; 16] = [0; 16]; return a; }
+    fn from_call(i: i32) -> i32 { let a = mk(); return a[i]; }
+}
+CON
+  UR="$("$BIN" "$TMPD/unres.con" --report vcs 2>/dev/null)"
+  printf '%s' "$UR" | grep -q "OUTSIDE the bounds fragment" \
+    && ok "an access with no statically known size is NAMED" \
+    || no "the access vanished silently — coverage can be over-read again"
+  printf '%s' "$UR" | grep -q "unresbounds.from_call: a" \
+    && ok "naming works on the empty-VC path too" \
+    || no "a function with only unresolvable accesses reports nothing at all"
 else
   no "temp dir unavailable; the bounds obligation checks did not run"
 fi
-grep -q "all.filter fun (nm, n) => all.all" "$RO" \
-  && ok "arraySizeMap drops names with conflicting sizes rather than guessing" \
-  || no "the conflicting-size filter is gone — wrong-array obligations can return"
+# Generation and gap-reporting must walk IDENTICALLY, or an access can fall between them --
+# counted by neither, which is the silence this whole cluster was about.
+grep -q "scopedWalkSizedB boundsLeaf lcs scope paramSizes body" "$RO" \
+  && ok "bounds obligations and the unresolved list share one walk" \
+  || no "the two consumers no longer share a walk — accesses can fall between them"
 
 echo ""
 echo "TRANSFORM-REGISTER: PASS=$PASS  FAIL=$FAIL"
