@@ -2300,11 +2300,11 @@ spelling or reintroduce the old ambiguous `PExpr.call` representation.
 
 **Objective:** Graduate multi-kernel evidence from `spike/multi-prover-evidence` to a supported feature, per `research/proof-evidence/multi-kernel-evidence-graduation.md`. The product is portable evidence — "replay our claims with the kernel you trust" — not agreement for its own sake. Status is DERIVED by composing per-kernel receipts on one obligation digest (R-0004's receipt mechanism), never emitted by a coordinator code path. The claim record carries structured per-kernel `validated_by` entries plus the independence field (`independent_of`: spec / kernel implementation / foundations / bridge); the composite badge string is display only (R-0440's no-erased-dimensions rule). The spike branch may continue as an experiment, but supported-feature graduation follows R-0004, R-0450, R-0440, and the pulled-forward correctness queue; active ownership is not permission to displace known semantic defects.
 
-**Spike disposition — measured 2026-08-05 at remote tip `728e8fa0`.** Do NOT
+**Spike disposition — measured 2026-08-05 at remote tip `3c85d988`.** Do NOT
 merge `origin/spike/multi-prover-evidence` during R-0004, and do not merge that
 branch wholesale later. It is an extraction source and research record, not the
-integration vehicle. At this snapshot it was 99 commits ahead and 29 behind
-the R-0004 integration head, changed 68 files (`+13,713/-289`), and had six textual conflict
+integration vehicle. At this snapshot it was 104 commits ahead and 32 behind
+the R-0004 integration head, changed 71 files (`+14,334/-306`), and had six textual conflict
 areas, including `Report.lean`, CI, this roadmap, and bug-corpus machinery. It
 also mixed the multi-prover experiment with later obligation-discovery work,
 interpreter fixes, policy, and soundness-register changes. Re-measure those
@@ -2340,12 +2340,12 @@ do not preserve them by merging unrelated history.
 
 "Do not merge wholesale" must not become "silently lose most of the work."
 Before the first port, R-0448 creates a VERSIONED, MACHINE-CHECKED extraction
-manifest pinned to the measured source range (`0f92b387..728e8fa0` at this
+manifest pinned to the measured source range (`0f92b387..3c85d988` at this
 snapshot). The manifest is checked against the COMMIT RANGE, not only the net
 diff: work added and later reverted or replaced is still a measured finding and
 must not disappear merely because its final textual diff is empty. It accounts
-for all 99 branch-side commits (merge commits may point at their covered child
-range), all 68 net-touched paths, and every independently named capability,
+for all 104 branch-side commits (merge commits may point at their covered child
+range), all 71 net-touched paths, and every independently named capability,
 defect, fixture, negative control, mutation, and measured limitation.
 
 Each manifest row carries at least:
@@ -2379,6 +2379,12 @@ list is a minimum review checklist, not a substitute for commit/path coverage.
 It explicitly includes the post-`ccc53d44` `varTyMap` findings and fixes
 (`34dab5d9`, `728e8fa0`): binding-sensitive shift/overflow widths, the affected
 discovery/obligation paths, and the strengthened transformation-register gate.
+It also includes the subsequent field-rooted/nested array-bounds closure and the
+`predictable`-profile audit through `3c85d988`: non-terminating loops previously
+classified bounded, indirect recursion omitted from the call graph, finite stack
+bounds reported through recursive callees, and FFI propagation that was uniquely
+non-transitive. These are independent correctness findings to port or explicitly
+supersede, not incidental multi-kernel code.
 
 | spike material | disposition | earliest landing point |
 | --- | --- | --- |
@@ -2442,7 +2448,7 @@ following 20 task IDs that were absent from `main`. They are copied here as
 durable owners so abandoning or rewriting the research branch cannot delete the
 plan. Their presence is NOT approval to merge the branch, activate a status, or
 skip R-0004/R-0440/R-0450. Before the spike is rewritten, deleted, or archived,
-preserve `728e8fa0` in an immutable repository tag or bundle; the extraction
+preserve `3c85d988` in an immutable repository tag or bundle; the extraction
 manifest then reconciles the full source text, fixtures, gates, and findings for
 each record against current `main`. A task already satisfied on `main` receives
 `superseded` or the real target commit in that manifest rather than being
