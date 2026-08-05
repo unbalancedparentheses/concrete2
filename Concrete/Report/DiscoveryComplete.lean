@@ -122,32 +122,23 @@ theorem collectArithE_complete : ∀ e : Expr, hasArith e = true → collectArit
       simp only [hasArith] at h; simpa [collectArithE] using collectArithE_complete x h
 termination_by e => sizeOf e
 
-/-- Syntactic "indexes an array through a named variable".
+/-- Syntactic "contains an array index".
 
-    Narrower than the other three by necessity, not by choice: `collectIndexUsesE` only
-    RECORDS a bound when the indexed expression is an `.ident`, because the obligation it
-    feeds names the array. An index into a computed array value is traversed but not
-    recorded, so the predicate must not claim it. -/
+    No longer restricted to a named variable. Discovery records the array EXPRESSION, so every
+    indexed access is recorded regardless of how the array is reached — the earlier version of
+    this predicate had to exclude field paths because discovery itself dropped them, which is
+    the defect it made visible. Whether a LENGTH can be resolved for the access is a separate
+    question (`arrayAccessOf`), and one that is now reported rather than silent. -/
 def hasIndex : Expr → Bool
-  | .arrayIndex _ a i => (arrayRootName a).isSome || hasIndex i
+  | .arrayIndex _ _ _ => true
   | .binOp _ _ l r => hasIndex l || hasIndex r
   | .unaryOp _ _ x | .paren _ x | .cast _ x _ => hasIndex x
   | _ => false
 
-/-- **Bounds discovery is complete** on the arithmetic fragment. -/
+/-- **Bounds discovery is complete** on the arithmetic fragment, for ALL array accesses. -/
 theorem collectIndexUsesE_complete :
     ∀ e : Expr, hasIndex e = true → collectIndexUsesE e ≠ []
-  | .arrayIndex _ a i, h => by
-      simp only [hasIndex] at h
-      simp only [collectIndexUsesE]
-      cases hr : arrayRootName a with
-      | some arr => simp
-      | none =>
-          rw [hr] at h
-          simp only [Option.isSome_none, Bool.false_or] at h
-          intro hc
-          simp only [List.append_eq_nil_iff] at hc
-          exact absurd hc.2 (collectIndexUsesE_complete i h)
+  | .arrayIndex _ _ _, _ => by simp [collectIndexUsesE]
   | .binOp _ _ l r, h => by
       simp [hasIndex] at h
       simp only [collectIndexUsesE, ne_eq, List.append_eq_nil_iff, not_and]
@@ -214,35 +205,45 @@ example : hasArith (.call spD "f" [] [.binOp spD .add (.ident spD "a") (.ident s
 -- BOUNDS: satisfiable and discriminating.
 example : hasIndex (.binOp spD .add (.intLit spD 1)
             (.arrayIndex spD (.ident spD "arr") (.ident spD "i"))) = true := by
-  simp [hasIndex, arrayRootName]
+  simp [hasIndex]
 example : collectIndexUsesE (.binOp spD .add (.ident spD "a") (.intLit spD 1)) = [] := by
   simp [collectIndexUsesE]
 
--- REGRESSION LOCK for the bug this file FOUND rather than assumed.
+-- REGRESSION LOCKS for the two bugs this file FOUND rather than assumed. Both were the same
+-- mistake — discovery required the array to be a bare `.ident` — with different symptoms:
 --
--- `(a)[i]` used to produce NO array-bounds obligation at all: not an unproven VC, not a
--- warning — absent from the report entirely, while the semantically identical `a[i]` got
--- one. Writing `hasIndex` is what surfaced it; the predicate could not be stated without
--- answering "which array expressions are actually recorded?", and the answer was a bare
--- `.ident`. Confirmed end-to-end on a real program (`--report vcs` showed 1 VC where 2 were
--- due), then fixed by rooting the access through `arrayRootName`.
+--   `(a)[i]`      no obligation, while the identical `a[i]` got one
+--   `b.data[i]`   no obligation, and this is ordinary code rather than a corner case
+--
+-- Discovery now records the array EXPRESSION, so every indexed access is recorded however the
+-- array is reached. Resolving a LENGTH is a separate step (`arrayAccessOf`, which follows
+-- field paths via `placeTy`), and an unresolvable one is named in `--report vcs` rather than
+-- dropped. Both confirmed end-to-end on real programs before being believed.
 example : collectIndexUsesE (.arrayIndex spD (.paren spD (.ident spD "arr")) (.ident spD "i"))
-        = [("arr", .ident spD "i")] := by simp [collectIndexUsesE, arrayRootName]
-example : hasIndex (.arrayIndex spD (.paren spD (.ident spD "arr")) (.ident spD "i"))
-        = true := by simp [hasIndex, arrayRootName]
-
--- THE GAP THAT REMAINS, deliberately open rather than papered over.
---
--- An array reached through a FIELD (`b.data[i]`) still records nothing, and this is ordinary
--- code, not a corner case. It is not the same oversight: the length lookup that turns a
--- recorded access into `0 ≤ i < len` is keyed by variable NAME (`ScopeDecls`), so a field path
--- has no name to look up. Peeling `.fieldAccess` the way `.paren` is peeled would produce an
--- obligation about the WRONG array — a wrong obligation is worse than a missing one, so the
--- fix is a real change (resolve the type of an arbitrary array expression), not a wider peel.
--- Runtime memory safety does NOT depend on this: codegen emits `__cc_bounds_check` at every
--- access regardless. What is missing is the PROOF, and until now also any sign it was missing.
+        = [(.paren spD (.ident spD "arr"), .ident spD "i")] := by simp [collectIndexUsesE]
 example : collectIndexUsesE (.arrayIndex spD (.fieldAccess spD (.ident spD "b") "data")
-            (.ident spD "i")) = [] := by simp [collectIndexUsesE, arrayRootName]
+            (.ident spD "i"))
+        = [(.fieldAccess spD (.ident spD "b") "data", .ident spD "i")] := by
+  simp [collectIndexUsesE]
+example : hasIndex (.arrayIndex spD (.fieldAccess spD (.ident spD "b") "data")
+            (.ident spD "i")) = true := by simp [hasIndex]
+
+-- A NESTED access records BOTH levels: `m[i][j]` used to record only the inner `m[i]`,
+-- because the outer array expression was not an `.ident`.
+example : (collectIndexUsesE (.arrayIndex spD
+            (.arrayIndex spD (.ident spD "m") (.ident spD "i")) (.ident spD "j"))).length
+        = 2 := by simp [collectIndexUsesE]
+
+-- And the length resolver follows a field path to the array's declared size, which is what
+-- makes `b.data[i]` produce a real bound rather than an unresolved mention.
+example : placeTy [("Buf", [("data", .array .i32 16)])] [("b", .named "Buf")]
+            (.fieldAccess spD (.ident spD "b") "data") = some (.array .i32 16) := rfl
+-- Through a reference, too — `&Buf` is how such a struct is usually passed.
+example : placeTy [("Buf", [("data", .array .i32 16)])] [("b", .ref (.named "Buf"))]
+            (.fieldAccess spD (.ident spD "b") "data") = some (.array .i32 16) := rfl
+-- An unknown struct resolves to nothing rather than guessing.
+example : placeTy [] [("b", .named "Buf")]
+            (.fieldAccess spD (.ident spD "b") "data") = none := rfl
 
 end Report
 end Concrete

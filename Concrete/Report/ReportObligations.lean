@@ -63,11 +63,12 @@ theorem sizeOf_mem_getD {α} [SizeOf α] {o : Option (List α)} {x : α}
 
 mutual
 /-- `(arrayName, indexExpr)` for every `arr[idx]` with an identifier base. -/
-def collectIndexUsesE : Expr → List (String × Expr)
-  | .arrayIndex _ a idx =>
-      match arrayRootName a with
-      | some arr => (arr, idx) :: collectIndexUsesE idx
-      | none => collectIndexUsesE a ++ collectIndexUsesE idx
+def collectIndexUsesE : Expr → List (Expr × Expr)
+  -- EVERY indexed access is recorded, as the array EXPRESSION rather than a name. Requiring
+  -- a bare `.ident` here is what made `b.data[i]` invisible to bounds discovery: not an
+  -- unproven VC, absent entirely. Whether a length can be resolved is a separate question,
+  -- answered by `arrayAccessOf` and reported when the answer is no.
+  | .arrayIndex _ a idx => (a, idx) :: (collectIndexUsesE a ++ collectIndexUsesE idx)
   | .binOp _ _ l r => collectIndexUsesE l ++ collectIndexUsesE r
   | .unaryOp _ _ x | .paren _ x | .borrow _ x | .borrowMut _ x | .deref _ x
   | .try_ _ x | .cast _ x _ | .fieldAccess _ x _ => collectIndexUsesE x
@@ -92,7 +93,7 @@ decreasing_by
       | (rename_i h; have := sizeOf_mem_getD h; simp +arith at this ⊢; omega)
       | (rename_i h; subst h; simp +arith; omega)
       | (rename_i h; subst h; simp +arith)
-def collectIndexUsesS : Stmt → List (String × Expr)
+def collectIndexUsesS : Stmt → List (Expr × Expr)
   | .letDecl _ _ _ _ v _ | .assign _ _ v | .expr _ v _ | .defer _ v => collectIndexUsesE v
   | .return_ _ (some v) => collectIndexUsesE v
   | .ifElse _ c t el => collectIndexUsesE c ++ t.attach.flatMap (fun ⟨e, _⟩ => collectIndexUsesS e) ++ (el.getD []).attach.flatMap (fun ⟨e, _⟩ => collectIndexUsesS e)
@@ -102,9 +103,7 @@ def collectIndexUsesS : Stmt → List (String × Expr)
         ++ (step.attach.map (fun ⟨e, _⟩ => collectIndexUsesS e)).getD [] ++ b.attach.flatMap (fun ⟨e, _⟩ => collectIndexUsesS e)
   | .fieldAssign _ o _ v | .derefAssign _ o v => collectIndexUsesE o ++ collectIndexUsesE v
   | .arrayIndexAssign _ a idx v =>
-      match arrayRootName a with
-      | some arr => (arr, idx) :: (collectIndexUsesE idx ++ collectIndexUsesE v)
-      | none => collectIndexUsesE a ++ collectIndexUsesE idx ++ collectIndexUsesE v
+      (a, idx) :: (collectIndexUsesE a ++ collectIndexUsesE idx ++ collectIndexUsesE v)
   | _ => []
 termination_by x => sizeOf x
 decreasing_by
@@ -210,6 +209,48 @@ def loopInvariantDebt (f : FnDef) (fq : String) (hyps : List Expr) : List String
 -- own (non-recursive) obligations; the walker owns ALL recursion into branches,
 -- loop bodies, and for-loop init/step, so no family can drift in how it threads
 -- scope. Migrated families instantiate this with their own leaf (Phase 3 #4-9).
+/-- Collect every struct in a module tree, submodules included. -/
+def allStructsOf (m : Module) : List StructDef :=
+  m.structs ++ m.submodules.attach.flatMap (fun ⟨sub, _⟩ => allStructsOf sub)
+termination_by sizeOf m
+decreasing_by
+  all_goals simp_wf
+  all_goals
+    (rename_i h
+     have := List.sizeOf_lt_of_mem h
+     cases m
+     simp +arith at this ⊢
+     omega)
+
+/-- Struct name → its field types. Global, not scoped, so it is passed alongside `ScopeDecls`
+    rather than inside it. -/
+abbrev StructFieldEnv := List (String × List (String × Ty))
+
+/-- Struct field types for a whole program, keyed by struct name. -/
+def structFieldEnv (modules : List Module) : StructFieldEnv :=
+  (modules.flatMap allStructsOf).map fun sd =>
+    (sd.name, sd.fields.map (fun f => (f.name, f.ty)))
+
+/-- Peel references/pointers to reach a named struct. -/
+def namedStructOf : Ty → Option String
+  | .named n => some n
+  | .ref t | .refMut t | .ptrMut t | .ptrConst t | .heap t => namedStructOf t
+  | _ => none
+
+/-- Type of a PLACE expression, following field paths through struct definitions.
+
+    `exprIntTy` deliberately stops at integer-typed leaves; this one exists to answer "what
+    array is `b.data`?", which is what bounds discovery could not previously ask. -/
+def placeTy (structs : StructFieldEnv) (tys : List (String × Ty)) : Expr → Option Ty
+  | .ident _ n => tys.lookup n
+  | .paren _ e | .borrow _ e | .borrowMut _ e | .deref _ e => placeTy structs tys e
+  | .fieldAccess _ o f => do
+      let ot ← placeTy structs tys o
+      let sname ← namedStructOf ot
+      let fields ← structs.lookup sname
+      fields.lookup f
+  | _ => none
+
 /-- Declarations in scope at a program point: variable types and fixed array lengths.
 
     Both were previously flat per-function maps (`varTyMap`, `arraySizeMap`) resolved by NAME,
@@ -304,15 +345,43 @@ def scopedWalkB {α} (leaf : List Expr → Stmt → List α)
     (lcs : List LoopContract) (scope : List Expr) (body : List Stmt) : List α :=
   scopedWalkSizedB (fun sc _ s => leaf sc s) lcs scope {} body
 
+/-- The array an access refers to: a display name and its fixed length.
+
+    Two routes, and both are needed:
+
+    * the scoped size map, keyed by the root NAME — this is the only route that knows a length
+      inferred from an array-literal initialiser (`let a = [0; 16]`, no annotation);
+    * `placeTy`, which follows field paths — the only route that can answer `b.data[i]`, which
+      previously produced no obligation at all because discovery required a bare `.ident`.
+
+    The name is display-only (`BoundsObl.arrName` is interpolated into messages, never
+    resolved), so a field path can carry `b.data` without anything downstream needing to
+    parse it. -/
+def arrayAccessOf (structs : StructFieldEnv) (decls : ScopeDecls) (a : Expr) :
+    Option (String × Nat) :=
+  match arrayRootName a with
+  | some nm =>
+      match decls.sizes.find? (·.1 == nm) with
+      | some (_, sz) => some (nm, sz)
+      | none => match placeTy structs decls.tys a with
+        | some (.array _ n) => some (nm, n)
+        | _ => none
+  | none =>
+      match placeTy structs decls.tys a with
+      | some (.array _ n) => some (Concrete.fmtExpr a, n)
+      | _ => none
+
 /-- Array-index leaf: the index uses in a statement's OWN expression positions
     (the walker owns recursion into branches/loops/init/step, so
     `.ifElse`/`.while_`/`.forLoop` contribute only their condition's index uses).
     A store `a[idx] = v` carries its target bound `(a, idx)` FIRST, matching the
     old walker's ordering exactly. -/
-def boundsLeaf (scope : List Expr) (decls : ScopeDecls) :
+def boundsLeaf (structs : StructFieldEnv) (scope : List Expr) (decls : ScopeDecls) :
     Stmt → List (String × Expr × List Expr × Option Nat) :=
-  let mk : (String × Expr) → (String × Expr × List Expr × Option Nat) :=
-    fun (a, i) => (a, i, scope, (decls.sizes.find? (·.1 == a)).map (·.2))
+  let mk : (Expr × Expr) → (String × Expr × List Expr × Option Nat) :=
+    fun (a, i) => match arrayAccessOf structs decls a with
+      | some (nm, sz) => (nm, i, scope, some sz)
+      | none => (Concrete.fmtExpr a, i, scope, none)
   fun
   | .letDecl _ _ _ _ v _ | .assign _ _ v | .expr _ v _ | .defer _ v =>
       (collectIndexUsesE v).map mk
@@ -323,11 +392,7 @@ def boundsLeaf (scope : List Expr) (decls : ScopeDecls) :
   | .fieldAssign _ o _ v | .derefAssign _ o v =>
       (collectIndexUsesE o ++ collectIndexUsesE v).map mk
   | .arrayIndexAssign _ a idx v =>
-      match arrayRootName a with
-      | some arr =>
-          mk (arr, idx) :: (collectIndexUsesE idx ++ collectIndexUsesE v).map mk
-      | none =>
-          (collectIndexUsesE a ++ collectIndexUsesE idx ++ collectIndexUsesE v).map mk
+      mk (a, idx) :: (collectIndexUsesE a ++ collectIndexUsesE idx ++ collectIndexUsesE v).map mk
   | _ => []
 
 /-- Index uses paired with the hypotheses in scope at the access (Phase 3 #5 —
@@ -337,10 +402,10 @@ def boundsLeaf (scope : List Expr) (decls : ScopeDecls) :
     sound context than the old bounds walker, so a bounds obligation can only move
     `unproven → proved_by_kernel_decision` (e.g. `if 0 ≤ i && i < n { a[i] }`),
     never the reverse, and a reassigned index still drops its stale guard. -/
-def scopedBoundsB (lcs : List LoopContract) (scope : List Expr)
+def scopedBoundsB (structs : StructFieldEnv) (lcs : List LoopContract) (scope : List Expr)
     (decls : ScopeDecls) (body : List Stmt) :
     List (String × Expr × List Expr × Option Nat) :=
-  scopedWalkSizedB boundsLeaf lcs scope decls body
+  scopedWalkSizedB (boundsLeaf structs) lcs scope decls body
 
 /-- Call-site leaf: the calls in a statement's OWN expression positions (the
     walker owns recursion into branches, loop bodies, and for-loop init/step, so
@@ -525,7 +590,7 @@ def unresolvedBoundsAccesses (modules : List Module) : List (String × String) :
   let mut out : List (String × String) := []
   for (pfx, f) in modules.flatMap allFunctions do
     let fq := pfx ++ f.name
-    for (arr, _, _, msize) in scopedBoundsB f.loopContracts [] (paramDecls f) f.body do
+    for (arr, _, _, msize) in scopedBoundsB (structFieldEnv modules) f.loopContracts [] (paramDecls f) f.body do
       if msize.isNone then
         out := out ++ [(fq, arr)]
   return out.eraseDups
@@ -537,7 +602,7 @@ def boundsObligations (modules : List Module) : List BoundsObl := Id.run do
   for (pfx, f) in modules.flatMap allFunctions do
     let fq := pfx ++ f.name
     let mut i := 0
-    for (arr, idx, scope, msize) in scopedBoundsB f.loopContracts [] (paramDecls f) f.body do
+    for (arr, idx, scope, msize) in scopedBoundsB (structFieldEnv modules) f.loopContracts [] (paramDecls f) f.body do
       match msize with
       | none => pure ()   -- named by `unresolvedBoundsAccesses`, which walks identically
       | some n =>

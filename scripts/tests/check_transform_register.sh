@@ -401,7 +401,10 @@ fi
 # counted by neither. Asserted by counting call sites rather than matching an argument list --
 # the previous version pinned the exact arguments and broke when a parameter was renamed,
 # reporting a regression where there was none.
-SHARED="$(grep -c 'scopedBoundsB f.loopContracts \[\] (paramDecls f) f.body' "$RO")"
+# Matched on the CALL, not its arguments. Pinning the argument list broke twice in a row when
+# a parameter changed -- each time reporting a regression where there was none. The property is
+# "both consumers iterate the same walk", and that is what this counts.
+SHARED="$(grep -c 'in scopedBoundsB' "$RO")"
 [ "$SHARED" = "2" ] \
   && ok "bounds obligations and the unresolved list share one walk (2 call sites)" \
   || no "expected 2 shared scopedBoundsB call sites, found $SHARED — accesses can fall between them"
@@ -459,6 +462,35 @@ grep -q "def varTyMap" "$RO" \
 grep -q "structure ScopeDecls" "$RO" \
   && ok "types and array sizes are threaded as one record" \
   || no "ScopeDecls is gone — the two environments can drift apart again"
+
+echo "=== bounds through a FIELD path (b.data[i]) — the last silent drop in this cluster ==="
+# `b.data[i]` produced no array-bounds obligation at all, because discovery required the array
+# to be a bare `.ident`. Ordinary code, absent from the report. Discovery now records the array
+# EXPRESSION and `arrayAccessOf` follows field paths via `placeTy` to the declared length.
+if [ -n "${TMPD:-}" ]; then
+  cat > "$TMPD/fieldbounds.con" <<'CON'
+mod fieldb {
+    struct Buf { data: [i32; 16] }
+    fn viafield(b: &Buf, i: i32) -> i32 { return b.data[i]; }
+    fn oob(b: &Buf) -> i32 { return b.data[99]; }
+}
+CON
+  FB="$("$BIN" "$TMPD/fieldbounds.con" --report vcs 2>/dev/null)"
+  printf '%s' "$FB" | grep -q "i < 16" \
+    && ok "an array reached through a field gets a bounds obligation" \
+    || no "b.data[i] has no bounds obligation again — ordinary code, silently unchecked"
+  printf '%s' "$FB" | grep -q "99 < 16" \
+    && ok "and a constant out-of-range field access is REFUTED" \
+    || no "b.data[99] is not being refuted — the field length is not resolved"
+  NFB="$(printf '%s' "$FB" | grep -c 'array_bounds')"
+  [ "$NFB" = "2" ] \
+    && ok "both field accesses are covered (got $NFB)" \
+    || no "expected 2 array-bounds VCs for field accesses, got $NFB"
+fi
+# `placeTy` must not invent a struct it has never seen.
+grep -q "let fields ← structs.lookup sname" "$RO" \
+  && ok "placeTy resolves fields only through known struct definitions" \
+  || no "placeTy no longer looks the struct up — it could resolve a field of an unknown type"
 
 echo ""
 echo "TRANSFORM-REGISTER: PASS=$PASS  FAIL=$FAIL"
