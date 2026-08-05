@@ -609,8 +609,7 @@ first (`magic h`), Lean puts it last (`h.magic`). Everything else about the prop
   already proves every index in range, so a total `index → value` function model is sound — there
   is no partiality story to build, which is usually the hard part of array theories.
 - This remains the stated ceiling: rungs 5 + 6 + 7 in one obligation (EUF + datatypes + arrays,
-  quantifier-free, case-analysed in three kernels). `crypto_verify` and `elf_header` are the real
-  instances.
+  quantifier-free, case-analysed in three kernels).
 
 **Order followed:** 6 + 7 landed (see above — the ceiling). Rungs 3 and 4 are deliberately NOT
 implemented, and the reasons are different:
@@ -625,6 +624,49 @@ implemented, and the reasons are different:
   Register-B-style transformation obligation and the actual content of the rung; the lowering is
   the easy half. `bv_decide`'s native checker (H20) also caps the Lean column's evidence quality
   regardless of how the model question is settled.
+
+### CAPABILITY vs COVERAGE — the rungs have zero instances in the existing corpus
+
+Measured after landing rungs 2/5/6/7, and it corrects two claims I had written into this document
+without checking them.
+
+**`crypto_verify` and `elf_header` are NOT instances of anything.** I named them as the real
+instances of the ceiling. They have **zero** `#[requires]`/`#[ensures]` clauses — nothing for any
+tier to prove. The claim was made from the shape of the code, not from its contracts.
+
+**`hmac_sha256` has 14 contracts, and none of them are reachable by these tiers either.** They
+look like exactly what rung 5 should handle:
+
+```
+spec fn ch_spec(x: u32, y: u32, z: u32) -> u32;
+#[ensures(result == ch_spec(x, y, z))]
+#[ensures_proof(Examples.HmacSha256.Proofs.ch_refines)]
+fn ch(x: u32, y: u32, z: u32) -> u32 { return (x & y) ^ ((x ^ 0xFFFFFFFF) & z); }
+```
+
+But this is a **refinement** obligation, not an EUF one, and the difference is decisive: with
+`ch_spec` uninterpreted it is **unprovable** — nothing licenses the claim that an opaque function
+equals that expression. The repo discharges it by linking to a registered Lean proof where the
+spec HAS a definition (`Concrete.Proof.chExpr`). So excluding `result` clauses from the EUF tier
+was correct, and it is also why the tier finds nothing here.
+
+**What this means, stated plainly:** rungs 2, 5, 6 and 7 are real, verified CAPABILITY —
+38 gate assertions across three kernels with negative controls each — and they have **no coverage
+of the existing corpus**. Every instance is a purpose-built demo. The rungs are what the pipeline
+*could* prove non-arithmetically, not what it currently does.
+
+**The blocker for real coverage is structural, not incidental.** Concrete's `spec fn` is always
+body-less, so a spec's meaning lives in Lean, never in Concrete source. A three-kernel refinement
+proof therefore needs the spec's DEFINITION in Rocq and Isabelle too — i.e. a Lean-definition →
+Gallina/HOL bridge. That is a larger and different piece of work from any rung on the ladder, and
+it is the honest prerequisite for these tiers to touch real code. Until it exists, the
+non-arithmetic multi-kernel story is a capability demonstration.
+
+**Cheapest path to genuine coverage,** if that is wanted before the bridge: add contract-to-contract
+clauses (`requires -> ensures` over fields, arrays and opaque symbols) to a flagship example. Those
+are exactly what the tiers prove, and `elf_header`'s header-validation invariants are naturally of
+that shape — but they would be contracts written FOR the tier, which is coverage of a kind worth
+labelling as such.
 
 ### Lifting the recursion ban — how, and what it costs
 
