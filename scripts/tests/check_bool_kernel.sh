@@ -372,6 +372,32 @@ else
 fi
 fi
 
+echo "=== coverage is REPORTED, so 'capability' cannot be read as 'covered' ==="
+# These tiers are verified capability with no instances in the existing corpus. I overstated that
+# in the roadmap twice before measuring it, so the number is now derived from the AST and printed.
+HM="examples/hmac_sha256/src/main.con"
+if [ -f "$HM" ]; then
+  HC="$("$BIN" "$HM" --report bool-kernel 2>/dev/null | grep -oE 'COVERAGE:.*')"
+  printf '%s' "$HC" | grep -q "0 reached a tier" \
+    && ok "hmac_sha256's contracts reach NO tier, and the report says so" \
+    || no "the coverage line no longer reports hmac_sha256 as unreached"
+  # Its contracts are refinement obligations: unprovable with an opaque spec, which is why they
+  # are excluded rather than attempted.
+  printf '%s' "$HC" | grep -qE "[1-9][0-9]* are refinement obligations" \
+    && ok "and identifies them as refinement obligations needing the spec's definition" \
+    || no "refinement obligations are not being identified — the gap becomes invisible"
+  # The label must not claim to be per-file: elf_header's own source has no contracts yet the
+  # count is nonzero, because imports have them.
+  printf '%s' "$HC" | grep -q "IMPORTS INCLUDED" \
+    && ok "the count is labelled as program-wide, not per-file" \
+    || no "the coverage count is mislabelled as per-file"
+fi
+# And a demo file DOES reach tiers, so the measurement discriminates.
+DC="$("$BIN" "$DTDEMO" --report bool-kernel 2>/dev/null | grep -oE 'COVERAGE:.*')"
+printf '%s' "$DC" | grep -qE "[1-9][0-9]* reached a tier" \
+  && ok "a demo file reaches tiers (the coverage metric is not stuck at zero)" \
+  || no "no file reaches a tier — the metric is measuring nothing"
+
 echo ""
 echo "BOOL-KERNEL: PASS=$PASS  FAIL=$FAIL  INCONC=$INCONC"
 [ "$FAIL" -eq 0 ]

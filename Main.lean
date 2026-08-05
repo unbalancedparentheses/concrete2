@@ -1818,6 +1818,8 @@ def compileAndReport (inputPath : String) (reportType : String)
       -- `nix develop .#provers`.
       let obls := Report.boolPostObligations parsed.modules
       let skipped := Report.boolKernelSkipped parsed.modules
+      let (nClauses, nRefine, nReached) := Report.coverageSummary parsed.modules
+      IO.println s!"  COVERAGE: {nClauses} contract clause(s) in the parsed program (IMPORTS INCLUDED — not just this file), {nReached} reached a tier, {nRefine} are refinement obligations (`result == spec(…)`) that need the spec's DEFINITION and cannot be discharged with an opaque symbol."
       IO.println "=== Non-arithmetic multi-kernel evidence (boolean postconditions) ==="
       IO.println "  reference-evaluator agreement is EXHAUSTIVE here (all 2^n assignments),"
       IO.println "  not sampled as in the arithmetic tier."

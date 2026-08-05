@@ -634,7 +634,10 @@ without checking them.
 instances of the ceiling. They have **zero** `#[requires]`/`#[ensures]` clauses — nothing for any
 tier to prove. The claim was made from the shape of the code, not from its contracts.
 
-**`hmac_sha256` has 14 contracts, and none of them are reachable by these tiers either.** They
+**`hmac_sha256` has 6 contract clauses, and none of them are reachable by these tiers either.**
+(My first count said 14 — a grep for `#[requires|#[ensures` that also matched `#[ensures_proof(`.
+The AST-derived count is 6. Both of my grep-based numbers in this section were wrong, in opposite
+directions, which is why the report now derives the number from the AST instead.) They
 look like exactly what rung 5 should handle:
 
 ```

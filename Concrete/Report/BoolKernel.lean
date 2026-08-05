@@ -773,5 +773,31 @@ def StructObl.abstractionVerdict (o : StructObl) : Option Unit := Id.run do
       else if (hs.all (· == some true)) && !c then taut := false
   return if taut then some () else none
 
+
+/-! ## Coverage, as a number rather than a claim
+
+These tiers are real capability with **no instances in the existing corpus**, which is easy to
+forget and easy to overstate — I overstated it in the roadmap twice before measuring. So the report
+counts it per file: how many contract clauses exist, how many reached a tier, and how many are
+REFINEMENT obligations (`result == spec(…)`) that no tier here can discharge because an
+uninterpreted spec makes them unprovable by construction. -/
+
+/-- `(clauses, refinementClauses, reachedTiers)` for the PARSED PROGRAM, imports included.
+
+    Not "for this file": `elf_header`'s own source has no contracts at all, yet this counts 2,
+    because its imports have them. Labelling it per-file was wrong and would have made the
+    coverage number quietly meaningless for any file that imports anything. -/
+def coverageSummary (modules : List Module) : Nat × Nat × Nat :=
+  let specNames := modules.flatMap (fun m => m.specFns.map (·.name))
+  let fns := modules.flatMap allFunctions
+  let clauses := fns.foldl (fun n (_, f) => n + f.requires.length + f.ensures.length) 0
+  let refinement := fns.foldl (fun n (_, f) =>
+    n + (f.ensures.filter (fun e =>
+      ((Concrete.fmtExpr e).splitOn "result").length > 1
+        && !(specCallsOf specNames e).isEmpty)).length) 0
+  let reached := (boolPostObligations modules).length + (eufObligations modules).length
+                   + (structObligations modules).length
+  (clauses, refinement, reached)
+
 end Report
 end Concrete
