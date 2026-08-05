@@ -474,7 +474,7 @@ is not carried in someone's head. Each entry says what is *measured* rather than
 hoped, because several of these exist precisely because a number was restated instead of
 recomputed.
 
-### From R-0455 (term IR + Register B) — slice 1 landed, three things remain
+### From R-0455 (term IR + Register B) — slices 1–2 landed, four things remain
 
 - **Register B row 2, `eliminate_div_mod` (fresh-variable form).** Two concrete blockers, in
   `docs/TRANSFORM_REGISTER.md`: it needs hand-written `DecidableEq` on `Term` (Lean cannot
@@ -483,6 +483,25 @@ recomputed.
   Recorded there: comparing terms by their `repr` STRINGS was tried and is the wrong answer.
   Also recorded: the identity `q*b + r = a` alone is true for *any* `q` and constrains
   nothing, so a row adding only it would be sound and useless.
+- ~~The remaining `partial def`s in the report layer~~ **PARTLY DONE 2026-08-05.** Of 17,
+  four (`exprIntTy`, `exprIntervalMax`, `cartesianEnvs`, `cartesianEnvsPer`) recovered
+  structural recursion by deleting the keyword. The rest recurse under `List.flatMap` over a
+  nested-inductive list, which the termination checker cannot see through; `collectShiftsE`
+  was converted with `attach` + `decreasing_by` and the pattern generalises.
+  **Two corrections to earlier claims, both found by testing rather than reasoning:**
+  a first sweep reported "green" from a loop whose exit condition grepped only for
+  *termination* errors, so a `cannot mix partial and non-partial definitions` failure read as
+  success — `partial` is all-or-nothing inside a `mutual` block, so the four S/E walker pairs
+  cannot be split. And a well-founded definition does **not** become `rfl`-reducible; the
+  kernel will not unfold `WellFounded.fix`. It becomes reasoning-accessible (equation lemmas,
+  recursion principle), which is a different and smaller gain than the seven structural ones.
+- **NEW: obligation discovery completeness.** `collectShiftsE_complete` proves a present shift
+  is always found — the first statement about whether an obligation gets *generated* at all,
+  which Registers A/B/C are all structurally unable to ask. **Its antecedent is narrow**
+  (`hasShift` misses a shift under a call argument, which the walker does traverse) and that
+  gap is pinned by a build-enforced example so the theorem is not over-read.
+  **Remaining:** the same treatment for `collectDivisorsE`, `collectIndexUsesE` and
+  `collectArithE` — div-by-zero, bounds and overflow discovery — each inside a `mutual` block.
 - **Register B row 3, `eliminate_algebraic`.** Different in kind — requires the
   axiomatization be conservative over the datatype theory, which is model-theoretic rather
   than a rewriting argument. Not a longer row 2.

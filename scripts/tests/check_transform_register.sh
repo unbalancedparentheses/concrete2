@@ -219,6 +219,36 @@ grep -q "= some \"a < 10\" := rfl" "$LK" \
   && ok "and a term inside the fragment still renders (the drop lock is not vacuous)" \
   || no "no positive rendering lock — 'returns none' could hold for everything"
 
+echo "=== obligation DISCOVERY is complete on the arithmetic fragment ==="
+# Registers A/B/C all begin AFTER an obligation exists. None of them can notice an obligation
+# that was never generated — a missed shift is a green report, not a failed proof. This is the
+# first statement about the prior question, and it exists only because `collectShiftsE` stopped
+# being `partial`.
+DC="Concrete/Report/DiscoveryComplete.lean"
+if grep -qE "^partial def collectShiftsE\b" "$RO"; then
+  no "collectShiftsE is 'partial' again — the discovery-completeness theorem cannot be stated"
+else
+  ok "collectShiftsE is total (the theorem is expressible)"
+fi
+grep -q "theorem collectShiftsE_complete" "$DC" \
+  && ok "discovery completeness is a theorem: a present shift is always found" \
+  || no "the discovery-completeness theorem is gone — missed obligations are unconstrained again"
+# A completeness theorem is only as strong as its antecedent. `hasShift` is narrow, and a
+# reader who checks the theorem NAME rather than the predicate will over-read it. Both the
+# non-vacuity witness and the honest boundary must stay in the build.
+grep -q "hasShift (.binOp spD .add" "$DC" \
+  && ok "the antecedent is satisfiable (theorem is not vacuous)" \
+  || no "no non-vacuity witness — 'complete' could hold because hasShift is never true"
+grep -q "= false := by simp \[hasShift\]" "$DC" \
+  && ok "the coverage GAP (shift under a call) is pinned, not left to be discovered" \
+  || no "the boundary example is gone — the theorem reads as global completeness"
+# The four walkers that recovered structural recursion outright.
+for f in exprIntTy exprIntervalMax cartesianEnvs cartesianEnvsPer; do
+  grep -qE "^partial def $f\b" "$RO" \
+    && no "$f is 'partial' again" \
+    || ok "$f is structural"
+done
+
 echo ""
 echo "TRANSFORM-REGISTER: PASS=$PASS  FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]

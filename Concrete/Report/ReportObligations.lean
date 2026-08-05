@@ -517,7 +517,7 @@ def intRange : Ty → Option (Int × Int)
   | ty => IntArith.intRange ty
 
 /-- Best-effort fixed-width int type of an expression, from a var→type map. -/
-partial def exprIntTy (vt : List (String × Ty)) : Expr → Option Ty
+def exprIntTy (vt : List (String × Ty)) : Expr → Option Ty
   | .ident _ n => vt.lookup n
   | .paren _ e => exprIntTy vt e
   | .unaryOp _ _ e => exprIntTy vt e
@@ -699,23 +699,34 @@ nothing for it to notice — the same blind spot mutation coverage has, one leve
 closes it is the totality lock against `allTrapConditions`, which fails when a condition in
 `IntArith` is claimed by no family. -/
 
-partial def collectShiftsE : Expr → List (Expr × Expr)
+def collectShiftsE : Expr → List (Expr × Expr)
   | .binOp _ .shl l r => (l, r) :: (collectShiftsE l ++ collectShiftsE r)
   | .binOp _ .shr l r => (l, r) :: (collectShiftsE l ++ collectShiftsE r)
   | .binOp _ _ l r => collectShiftsE l ++ collectShiftsE r
   | .unaryOp _ _ x | .paren _ x | .borrow _ x | .borrowMut _ x | .deref _ x
   | .try_ _ x | .cast _ x _ | .fieldAccess _ x _ => collectShiftsE x
-  | .arrayLit _ es => es.flatMap collectShiftsE
+  | .arrayLit _ es => es.attach.flatMap (fun ⟨e, _⟩ => collectShiftsE e)
   | .arrayIndex _ a i => collectShiftsE a ++ collectShiftsE i
-  | .call _ _ _ args => args.flatMap collectShiftsE
-  | .methodCall _ o _ _ args => collectShiftsE o ++ args.flatMap collectShiftsE
-  | .staticMethodCall _ _ _ _ args => args.flatMap collectShiftsE
+  | .call _ _ _ args => args.attach.flatMap (fun ⟨e, _⟩ => collectShiftsE e)
+  | .methodCall _ o _ _ args =>
+      collectShiftsE o ++ args.attach.flatMap (fun ⟨e, _⟩ => collectShiftsE e)
+  | .staticMethodCall _ _ _ _ args => args.attach.flatMap (fun ⟨e, _⟩ => collectShiftsE e)
   | .structLit _ _ _ fs base =>
-      fs.flatMap (fun (_, fe) => collectShiftsE fe) ++ (base.map collectShiftsE).getD []
-  | .enumLit _ _ _ _ fs => fs.flatMap (fun (_, fe) => collectShiftsE fe)
+      fs.attach.flatMap (fun ⟨(_, fe), _⟩ => collectShiftsE fe)
+        ++ (base.attach.map (fun ⟨e, _⟩ => collectShiftsE e)).getD []
+  | .enumLit _ _ _ _ fs => fs.attach.flatMap (fun ⟨(_, fe), _⟩ => collectShiftsE fe)
   | .allocCall _ x a => collectShiftsE x ++ collectShiftsE a
   | .match_ _ sc _ => collectShiftsE sc
   | _ => []
+termination_by e => sizeOf e
+decreasing_by
+  all_goals simp_wf
+  all_goals
+    first
+      | omega
+      | (rename_i h; have := List.sizeOf_lt_of_mem h; simp +arith at this ⊢; omega)
+      | (rename_i h; subst h; simp +arith; omega)
+      | (rename_i h; subst h; simp +arith)
 
 def shiftLeaf (scope : List Expr) : Stmt → List (Expr × Expr × List Expr)
   | .letDecl _ _ _ _ v _ | .assign _ _ v | .expr _ v _ | .defer _ v =>
@@ -865,7 +876,7 @@ def varBoundsFromHyps (hyps : List Expr) : List (String × (Int × Int)) := Id.r
 /-- Conservative interval `(lo, hi)` of an arithmetic expr plus the maximum
     magnitude seen across the whole subtree (to choose a wrap-free bit width).
     `none` if any operand is unbounded or the op is outside `+`/`-`/`*`. -/
-partial def exprIntervalMax (bounds : List (String × (Int × Int))) : Expr → Option (Int × Int × Nat)
+def exprIntervalMax (bounds : List (String × (Int × Int))) : Expr → Option (Int × Int × Nat)
   | .intLit _ k => some (k, k, k.natAbs)
   | .paren _ e => exprIntervalMax bounds e
   | .ident _ v => (bounds.lookup v).map fun (l, h) => (l, h, max l.natAbs h.natAbs)
@@ -1316,7 +1327,7 @@ def fuzzGrid : List Int := [-2147483648, -100, -3, -1, 0, 1, 3, 100, 46341, 2147
 
 /-- Cartesian product of `vals` over `vars` (all assignments). Callers bound `vars`
     and shrink `vals` to keep this finite. -/
-partial def cartesianEnvs (vars : List String) (vals : List Int) : List (List (String × Int)) :=
+def cartesianEnvs (vars : List String) (vals : List Int) : List (List (String × Int)) :=
   match vars with
   | [] => [[]]
   | v :: rest =>
@@ -1326,7 +1337,7 @@ partial def cartesianEnvs (vars : List String) (vals : List Int) : List (List (S
 /-- Cartesian product over a PER-VARIABLE grid. `cartesianEnvs` shares one value list across
     every variable, which is wrong whenever the variables have different domains — a `u32`
     parameter and an `i32` parameter do not accept the same literals. -/
-partial def cartesianEnvsPer : List (String × List Int) → List (List (String × Int))
+def cartesianEnvsPer : List (String × List Int) → List (List (String × Int))
   | [] => [[]]
   | (v, vals) :: rest =>
     let restEnvs := cartesianEnvsPer rest

@@ -99,7 +99,7 @@ over- or under-claiming.
 One remaining `dropped by both` in the corpus, in `fixed_capacity` — outside the IR's
 fragment for a different reason, not yet classified.
 
-Two things this also established, both by trying and failing:Two things this also established, both by trying and failing:
+Two things this also established, both by trying and failing:
 
 - **`exprToProver` CAN be locked by `rfl`** — after removing a `partial` keyword it never
   needed. This bullet previously said the opposite, which was true of the code and false
@@ -110,6 +110,36 @@ Two things this also established, both by trying and failing:Two things this als
   is not ours — but the printer's own behaviour no longer sits outside the kernel.
 - **`hasTmod ∘ elimTmod` composes with the translation**, pinned by `rfl`: a real obligation
   expression carrying `mod` is translated and then eliminated.
+
+## Obligation DISCOVERY, the question the three registers never asked
+
+Registers A, B and C all begin *after* an obligation exists. None of them can observe an
+obligation that was **never generated** — a missed shift produces no failed proof and no
+`unproven` marker, just a green report. It is the pipeline's worst failure mode precisely
+because nothing downstream is capable of noticing it.
+
+`collectShiftsE_complete` (`Concrete/Report/DiscoveryComplete.lean`) is the first statement
+about that prior question: if a shift is present in the arithmetic fragment, the walker that
+feeds shift-amount obligation generation finds it. Contrapositive: an empty result means
+there was nothing to find, not that the walker looked past it.
+
+Three qualifications, all load-bearing:
+
+- **It exists only because the walker stopped being `partial`.** Unlike the seven functions
+  above, `collectShiftsE` recurses under `List.flatMap`, so deleting the keyword is not
+  enough — it needs `attach` plus a `decreasing_by` discharging a list-membership size bound.
+- **Well-founded ≠ kernel-reducible.** A WF definition does *not* reduce by `rfl`; the kernel
+  will not unfold `WellFounded.fix`. It gains equation lemmas and a recursion principle, so it
+  becomes reasoning-accessible — enough for a theorem, not enough for `decide`. This was
+  checked by trying `rfl` and watching it fail, not assumed.
+- **The antecedent is narrow, and that is pinned.** `hasShift` is false for a shift nested in
+  a call argument, which the walker *does* traverse. A completeness theorem is only as strong
+  as its predicate, and `∀ e, P e → Q e` reads like global completeness to anyone who checks
+  the theorem's name instead of `P`. The gap is a build-enforced example rather than a remark.
+
+The other three discovery walkers (`collectDivisorsE`, `collectIndexUsesE`, `collectArithE` —
+div-by-zero, bounds, overflow) are still `partial` and each sits in a `mutual` block, where
+`partial` is all-or-nothing. Same treatment, not yet done.
 
 ## Drivers as data (R-0455, same slice)
 
