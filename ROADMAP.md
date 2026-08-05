@@ -544,6 +544,57 @@ repo: `crypto_verify`'s `verify_tag(msg, tag) ↔ compute_tag(msg) = tag` with `
 uninterpreted (EUF + booleans), and `elf_header`'s `validate_header` (struct fields + array
 indexing).
 
+### Rungs 3, 4, 6, 7 — measured feasibility (probed 2026-08-05, real tools)
+
+Each was probed against the actual toolchain rather than assumed. Two turn out to be blocked in
+ways worth knowing before anyone budgets for them.
+
+#### Rung 3 — nonlinear arithmetic: **2 of 3 kernels, and that is a ceiling**
+
+| kernel | result |
+|---|---|
+| Rocq | `nia` closes `0 ≤ a → 0 ≤ b → 0 ≤ a*b`, **axiom-free**; refuses `0 ≤ a → 0 ≤ a*b` with "Cannot find witness" — teeth confirmed |
+| Isabelle | `by (simp add: mult_nonneg_nonneg)` closes it |
+| Lean | **no general nonlinear procedure.** `nlinarith` is an unknown tactic, and Mathlib is **not a dependency of this project at all** |
+
+Lean core can only apply a hand-picked lemma per shape (`Int.mul_nonneg` for that one goal), which
+does not generalise. So a nonlinear tier can attest at most **two** independent kernels unless
+Mathlib is added — and adding Mathlib is a large dependency decision, not a tactic choice.
+
+Combined with H21 (nonlinear SMT results cannot be certificate-replayed), nonlinear is the weakest
+rung on evidence quality overall: fewest kernels AND no certificate path.
+
+#### Rung 4 — bitvectors: **the three kernels do not share a type**
+
+| kernel | result |
+|---|---|
+| Lean | `bv_decide` works with `import Std.Tactic.BVDecide`. H20: its checker runs as native code |
+| Rocq | stdlib has only `Z`-level bitwise (`Z.land`, axiom-free). **No fixed-width word type.** A faithful 8-bit model needs an external library (bbv / coq-bits — absent) or `Z`-with-modulus |
+| Isabelle | `HOL-Library.Word` exists, but the session must be `= "HOL-Library"` (not `HOL`), and it builds in ~1:27 wall / 8:09 CPU — too slow for a per-run gate without a prebuilt heap |
+
+This is the one rung where the kernels would not be proving the same thing. Modelling Rocq's side
+as `Z`-with-modulus makes the three lowerings *different theories*, so the tier would need a proof
+that the model is equivalent to fixed-width semantics — a Register-B-style transformation
+obligation, not merely a lowering. **That equivalence proof is the actual work of rung 4**, and
+`bv_decide`'s native checker (H20) caps the evidence quality of the Lean column regardless.
+
+#### Rungs 6 + 7 — datatypes and arrays: **no tool blocker, real work**
+
+- `CoreExtract` emits Gallina `Definition`s but **zero** `Inductive`/`Record` declarations
+  (grepped). Nothing currently tells any prover that a Concrete struct or enum exists.
+- Needs: per-kernel declaration emission (`Inductive` / `datatype` / `inductive`), and the
+  constructor injectivity + disjointness facts made available to the tactics.
+- **Arrays are easier than they look here:** Concrete's arrays are fixed-size and the bounds family
+  already proves every index in range, so a total `index → value` function model is sound — there
+  is no partiality story to build, which is usually the hard part of array theories.
+- This remains the stated ceiling: rungs 5 + 6 + 7 in one obligation (EUF + datatypes + arrays,
+  quantifier-free, case-analysed in three kernels). `crypto_verify` and `elf_header` are the real
+  instances.
+
+**Recommended order given the above:** 6 + 7 first (no blockers, highest value, reaches the
+ceiling), then rung 4 only if the model-equivalence proof is wanted, and rung 3 only alongside a
+decision about Mathlib.
+
 ### Lifting the recursion ban — how, and what it costs
 
 The ban does **two unrelated jobs**, and separating them is the whole design:
