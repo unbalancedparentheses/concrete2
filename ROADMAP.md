@@ -513,6 +513,20 @@ recomputed.
   because the length lookup is keyed by variable name and a field path has none. Peeling
   `.fieldAccess` would manufacture an obligation about the wrong array, so this needs type
   resolution for arbitrary array expressions.
+- **The same defect was in TWO more families, via `varTyMap` — DONE 2026-08-05.** That was the
+  identical construct for TYPES: one flat, per-function, name-keyed map. **shift** produced a
+  WRONG obligation — `x << 40` on an `i8` took width 64 from a shadowed `x : i64`, generating
+  `0 ≤ 40 ∧ 40 < 64`, reported **proved**: a certified 40-bit shift of an 8-bit value. Now
+  `40 < 8`, refuted. **overflow** produced a MISSING obligation — shadowing broke type
+  resolution, so an addition inside an explicitly `#[overflow_checked]` function had no VC and
+  no mention of one. Now covered at the `i8` range. Fixed by threading types and array lengths
+  together as one `ScopeDecls` record through `scopedWalkSized{S,B}`. `varTyMap`,
+  `arraySizeMap` and `collectLetTys` are deleted — no flat name-keyed map remains in this
+  layer. A single mutation reversing shadowing precedence now fails 8 gate assertions across
+  all three families, because they share one environment.
+  **Deliberately not done:** unannotated `let`s contribute no type — inferring one could
+  disagree with the checker, and a wrong type is the defect being fixed. Array lengths are the
+  exception, since `let a = [0; 16]` fixes the length with no inference.
 - **A WRONG obligation, found by the same question and more serious than the missing ones.**
   `boundsObligations` resolved an array's length by NAME with `find?` — first match wins — so a
   shadowed array produced a bound from the wrong binding: `a[10]` on a 4-element array
