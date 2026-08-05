@@ -218,6 +218,50 @@ CON
     || ok "capabilities are required of callers (E0520), so alloc/blocking stay transitive"
 fi
 
+echo "=== 8. recursion admission is TRANSITIVE (all five gates now agree) ==="
+# "Predictable execution" is a property of RUNNING a function: if it calls something whose
+# recursion cannot be ruled out, its own execution inherits that. The label used to be computed
+# from each body in isolation, so a `main` calling a directly recursive `fib` was `enforced`.
+# Alloc and blocking never had this problem (the compiler forces the caller to declare the
+# capability); FFI was closed earlier. Recursion was the last gate asking "is it written here?"
+# rather than "can you reach it?".
+if [ -z "${TD_LC:-}" ]; then
+  no "build failed or temp dir unavailable; the transitive-recursion checks did NOT run"
+else
+  cat > "$TD_LC/transrec.con" <<'CON'
+mod transrec {
+    fn recurses(x: i32) -> i32 {
+        if x <= 0 { return 0; }
+        return recurses(x - 1);
+    }
+    fn caller(x: i32) -> i32 { return recurses(x); }
+    fn unrelated(x: i32) -> i32 { return x + 1; }
+}
+CON
+  TR="$("$BIN_LC" "$TD_LC/transrec.con" --check predictable 2>/dev/null)"
+  printf '%s' "$TR" | grep -q "2 function(s) failed" \
+    && ok "a caller of a recursive function fails the profile too" \
+    || no "transitive recursion is not rejected — a caller of unbounded recursion is admitted"
+  # And it must not reject everything: a function reaching nothing recursive still passes.
+  printf '%s' "$TR" | grep -q "1 passed" \
+    && ok "an unrelated function still passes (the closure is not swallowing the module)" \
+    || no "the transitive closure is over-broad — unrelated functions are being rejected"
+  TRE="$("$BIN_LC" "$TD_LC/transrec.con" --report effects 2>/dev/null)"
+  printf '%s' "$TRE" | grep -q "1 enforced" \
+    && ok "exactly one function is enforced in the effects report" \
+    || no "the effects report disagrees with the profile gate on who is enforced"
+fi
+# The gate that REJECTS builds must use the same closed sets. It did not, for FFI, between the
+# commit that closed FFI and the one that added this: six consumers were updated and the policy
+# path was not. `profileClosures` now returns both sets together so a consumer cannot take one
+# without the other.
+grep -q "Report.profileClosures projectModules pc" Concrete/Check/Policy.lean \
+  && ok "the policy enforcement path uses the transitively-closed sets" \
+  || no "policy enforcement is back on the direct-callee check — it rejects builds, so this matters most"
+grep -qE "^def profileClosures" Concrete/Report/Report.lean \
+  && ok "both closures come from one place (cannot obtain one without the other)" \
+  || no "profileClosures is gone — consumers can drift apart again"
+
 echo ""
 echo "LOOP-CONTROL: PASS=$PASS  FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]

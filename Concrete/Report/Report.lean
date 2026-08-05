@@ -241,6 +241,52 @@ private partial def closeBackward (callGraph : CallGraph) (seed : List String) (
       let bare := more.map fun n => (n.splitOn ".").getLast!
       closeBackward callGraph (seed ++ (more ++ bare).eraseDups) fuel
 
+/-- Functions that cannot be certified acyclic, closed over callers.
+
+    "Predictable execution" is a property of RUNNING a function: if `f` calls `g`, running `f`
+    runs `g`, so `f` can only be predictable if `g` is. The label was computed from `f`'s own
+    body alone, so this was `enforced`:
+
+        fn recurses(x: i32) -> i32 { if x <= 0 { return 0; } return recurses(x - 1); }
+        fn caller(x: i32)   -> i32 { return recurses(x); }        -- enforced
+
+    `caller` contains no recursion textually and unbounded recursion in practice.
+
+    The other gates never had this problem, and not by design: alloc and the blocking caps are
+    transitive because the COMPILER forces it (`E0520: requires Alloc but caller has (none)`), and
+    FFI was closed over the call graph earlier. Recursion was the last gate detected by a graph
+    walk rather than by types, and the only one still asking "is it written in your body?"
+    instead of "can you reach it?".
+
+    The seed includes bodies containing an INDIRECT call: with no edge for `f(x)` the callee set
+    is unknown, so acyclicity is not established there either. -/
+private def recursionUncertain (callGraph : CallGraph)
+    (recMap : List (String × RecursionKind × List String))
+    (indirectFns : List String) : List String :=
+  let seed := (recMap.filterMap fun (n, k, _) =>
+    match k with | .none => none | _ => some n) ++ indirectFns
+  closeBackward callGraph seed.eraseDups (callGraph.length + 1)
+
+/-- Qualified names of functions whose body contains an indirect call. -/
+private partial def indirectCallFns (m : CModule) (pfx : String := "") : List String :=
+  let qualPrefix := if pfx == "" then m.name else pfx ++ "." ++ m.name
+  (m.functions.filterMap fun f =>
+      if hasIndirectCallStmts f.body then some (qualPrefix ++ "." ++ f.name) else none)
+    ++ m.submodules.foldl (fun acc sub => acc ++ indirectCallFns sub qualPrefix) []
+
+/-- The two transitively-closed sets every profile consumer needs, from one place.
+
+    Returned together deliberately. When FFI was closed over the call graph, three of the six
+    consumers kept passing the UNCLOSED set and stayed non-transitive — the same
+    "one path updated, the rest silently not" defect this session keeps turning up, introduced
+    by the fix for it. Computing both here means a consumer cannot obtain one without the
+    other. -/
+def profileClosures (modules : List CModule) (pc : Concrete.ProofCore) :
+    List String × List String :=
+  let indirect := modules.foldl (fun acc m => acc ++ indirectCallFns m) []
+  ( closeBackward pc.callGraph pc.externNames (pc.callGraph.length + 1)
+  , recursionUncertain pc.callGraph pc.recMap indirect )
+
 /-- Reasons a function is excluded from ProofCore. -/
 private def proofExclusionReasons (externNames : List String) (f : CFnDef) : List String :=
   let reasons : List String := []
@@ -328,6 +374,7 @@ private def fmtEffectsRow (e : FnEffects) : String :=
 
 private partial def effectsForModule
     (externNames : List String)
+    (recUncertain : List String)
     (recMap : List (String × RecursionKind × List String))
     (locMap : FnLocMap)
     (pc : Concrete.ProofCore)
@@ -353,7 +400,8 @@ private partial def effectsForModule
     -- be shown acyclic. Treated as recursion for admission purposes: the profile's claim is
     -- "no recursion", and "we could not tell" does not support it.
     let hasIndirect := hasIndirectCallStmts f.body
-    let hasRecursion := rec_ != "none" || hasIndirect
+    -- Transitive: reaching a function that cannot be certified acyclic is enough.
+    let hasRecursion := rec_ != "none" || hasIndirect || recUncertain.contains qualName
     let hasUnboundedLoops := loopClass == "unbounded" || loopClass == "mixed"
     let hasAllocEvidence := !allocs.isEmpty || concreteCaps.any (· == "Alloc")
     let hasFfi := crossesFfi
@@ -385,7 +433,7 @@ private partial def effectsForModule
       evidence := evidenceLevel
       loc := lookupLoc locMap qualName }
   fns ++ m.submodules.foldl (fun acc sub =>
-    acc ++ effectsForModule externNames recMap locMap pc sub qualPrefix) []
+    acc ++ effectsForModule externNames recUncertain recMap locMap pc sub qualPrefix) []
 
 def effectsReport (modules : List CModule) (locMap : FnLocMap := [])
     (pc : Concrete.ProofCore) : String :=
@@ -393,13 +441,13 @@ def effectsReport (modules : List CModule) (locMap : FnLocMap := [])
   -- Use shared analysis results from ProofCore
   let recMap := pc.recMap
   -- Transitively closed: reaching an extern through another function still crosses FFI.
-  let externNames := closeBackward pc.callGraph pc.externNames (pc.callGraph.length + 1)
+  let (externNames, recUncertain) := profileClosures modules pc
   -- Collect per-function effects
   let allEffects := modules.foldl (fun acc m =>
-    acc ++ effectsForModule externNames recMap locMap pc m) []
+    acc ++ effectsForModule externNames recUncertain recMap locMap pc m) []
   -- Format per-module
   let body := modules.map fun m =>
-    let modEffects := effectsForModule externNames recMap locMap pc m
+    let modEffects := effectsForModule externNames recUncertain recMap locMap pc m
     let fnLines := modEffects.map fmtEffectsRow
     s!"module {m.name}:\n{"\n".intercalate fnLines}"
   -- Summary counts
@@ -662,6 +710,7 @@ structure ProfileViolation where
 
 partial def checkPredictableModule
     (recMap : List (String × RecursionKind × List String))
+    (recUncertain : List String)
     (externNames : List String)
     (locMap : FnLocMap)
     (m : CModule) (modulePath : String := "") : List ProfileViolation :=
@@ -692,6 +741,20 @@ partial def checkPredictableModule
     -- stack-depth` stated a specific byte bound for it. The callee set is not statically known,
     -- so acyclicity cannot be established -- and "could not tell" does not support a
     -- `no recursion` claim.
+    -- 1c. TRANSITIVE recursion. "Predictable execution" is a property of RUNNING the function:
+    -- if it calls something that cannot be certified acyclic, its own execution inherits that.
+    -- `caller` calling a directly recursive `recurses` was `enforced` because the label was
+    -- computed from its own body alone. Alloc and the blocking caps never had this problem --
+    -- the compiler forces a caller to declare the capability -- and FFI was closed earlier, so
+    -- recursion was the last gate asking "is it written here?" instead of "can you reach it?".
+    let transRecViolations :=
+      if recUncertain.contains qualName && (recMap.find? (fun (n, k, _) => n == qualName && k != .none)).isNone
+         && !hasIndirectCallStmts f.body then
+        [{ fnName := f.name, qualName := qualName
+         , reason := "reaches a function whose recursion cannot be ruled out"
+         , hint := "Predictable execution is transitive: the callee must itself pass the profile."
+         , loc := fnLoc }]
+      else []
     let indirectViolations :=
       if hasIndirectCallStmts f.body then
         [{ fnName := f.name, qualName := qualName
@@ -745,9 +808,9 @@ partial def checkPredictableModule
       else [{ fnName := f.name, qualName := qualName, reason := s!"may block ({", ".intercalate blockingUsed})"
             , hint := s!"Remove {", ".intercalate blockingUsed} from with(...) or move I/O to a non-predictable caller."
             , loc := fnLoc, violationSpan := match entry with | some e => some e.fnSpan | none => none }]
-    acc ++ recViolations ++ indirectViolations ++ loopViolations ++ allocViolations ++ ffiViolations ++ blockViolations) []
+    acc ++ recViolations ++ transRecViolations ++ indirectViolations ++ loopViolations ++ allocViolations ++ ffiViolations ++ blockViolations) []
   fnViolations ++ m.submodules.foldl (fun acc sub =>
-    acc ++ checkPredictableModule recMap externNames locMap sub qualPrefix) []
+    acc ++ checkPredictableModule recMap recUncertain externNames locMap sub qualPrefix) []
 
 /-- Extract a 1-indexed line from source text. Returns "" if out of bounds. -/
 private def getSourceLine (source : String) (lineNum : Nat) : String :=
@@ -791,9 +854,9 @@ private def renderViolation (v : ProfileViolation) (sourceMap : SourceMap) : Str
 def checkPredictable (modules : List CModule) (locMap : FnLocMap := [])
     (sourceMap : SourceMap := []) (pc : Concrete.ProofCore) : Bool × String :=
   let recMap := pc.recMap
-  let externNames := closeBackward pc.callGraph pc.externNames (pc.callGraph.length + 1)
+  let (externNames, recUncertain) := profileClosures modules pc
   let violations := modules.foldl (fun acc m =>
-    acc ++ checkPredictableModule recMap externNames locMap m) []
+    acc ++ checkPredictableModule recMap recUncertain externNames locMap m) []
   let allFns := modules.foldl (fun acc m => acc ++ collectAllFnDefs m) []
   let violatingFns := (violations.map (·.fnName)).eraseDups
   let passingFns := allFns.length - violatingFns.length
@@ -3968,9 +4031,9 @@ open Json in
 def collectPredictableFacts (modules : List CModule) (locMap : FnLocMap := [])
     (pc : Concrete.ProofCore) : List Val :=
   let recMap := pc.recMap
-  let externNames := closeBackward pc.callGraph pc.externNames (pc.callGraph.length + 1)
+  let (externNames, recUncertain) := profileClosures modules pc
   let violations := modules.foldl (fun acc m =>
-    acc ++ checkPredictableModule recMap externNames locMap m) []
+    acc ++ checkPredictableModule recMap recUncertain externNames locMap m) []
   violations.map violationToFact
 
 open Json in
@@ -4146,9 +4209,9 @@ open Json in
 def collectEffectsFacts (modules : List CModule) (locMap : FnLocMap := [])
     (pc : Concrete.ProofCore) : List Val :=
   let recMap := pc.recMap
-  let externNames := pc.externNames
+  let (externNames, recUncertain) := profileClosures modules pc
   let allEffects := modules.foldl (fun acc m =>
-    acc ++ effectsForModule externNames recMap locMap pc m) []
+    acc ++ effectsForModule externNames recUncertain recMap locMap pc m) []
   allEffects.map effectsToFact
 
 open Json in
@@ -4602,9 +4665,9 @@ open Json in
 def predictableQuery (modules : List CModule) (locMap : FnLocMap)
     (fnName : String) (pc : Concrete.ProofCore) : String :=
   let recMap := pc.recMap
-  let externNames := closeBackward pc.callGraph pc.externNames (pc.callGraph.length + 1)
+  let (externNames, recUncertain) := profileClosures modules pc
   let violations := modules.foldl (fun acc m =>
-    acc ++ checkPredictableModule recMap externNames locMap m) []
+    acc ++ checkPredictableModule recMap recUncertain externNames locMap m) []
   let fnViolations := violations.filter fun v =>
     v.fnName == fnName
   let answer := if fnViolations.isEmpty then "pass" else "fail"
@@ -4674,15 +4737,15 @@ def evidenceQuery (modules : List CModule) (locMap : FnLocMap)
     (fnName : String) (registry : ProofRegistry := [])
     (pc : Concrete.ProofCore) : String :=
   let recMap := pc.recMap
-  let externNames := pc.externNames
+  let (externNames, recUncertain) := profileClosures modules pc
   -- Get effects for evidence level
   let allEffects := modules.foldl (fun acc m =>
-    acc ++ effectsForModule externNames recMap locMap pc m) []
+    acc ++ effectsForModule externNames recUncertain recMap locMap pc m) []
   let matchFn (e : FnEffects) := e.name == fnName || e.qualName == fnName || e.qualName.endsWith ("." ++ fnName)
   let fnEffects := allEffects.find? matchFn
   -- Get violations
   let violations := modules.foldl (fun acc m =>
-    acc ++ checkPredictableModule recMap externNames locMap m) []
+    acc ++ checkPredictableModule recMap recUncertain externNames locMap m) []
   let fnViolations := violations.filter fun v => v.fnName == fnName || v.qualName == fnName || v.qualName.endsWith ("." ++ fnName)
   -- Get proof status
   let entries := modules.foldl (fun acc m =>
@@ -4723,13 +4786,13 @@ def auditQuery (modules : List CModule) (locMap : FnLocMap)
     (fnName : String) (registry : ProofRegistry := [])
     (pc : Concrete.ProofCore) : String :=
   let recMap := pc.recMap
-  let externNames := pc.externNames
+  let (externNames, recUncertain) := profileClosures modules pc
   let capLookup := buildCapLookup modules
   let fnLookup := buildFnLookup modules
   let externLookup := buildExternLookup modules
   -- Effects
   let allEffects := modules.foldl (fun acc m =>
-    acc ++ effectsForModule externNames recMap locMap pc m) []
+    acc ++ effectsForModule externNames recUncertain recMap locMap pc m) []
   let fnEffects := allEffects.find? fun e => e.name == fnName || e.qualName == fnName || e.qualName.endsWith ("." ++ fnName)
   match fnEffects with
   | none =>
@@ -4756,7 +4819,7 @@ def auditQuery (modules : List CModule) (locMap : FnLocMap)
       .obj [("capability", .str cap), ("origin", .str origin), ("trace", .arr trace)]
     -- Predictable
     let violations := modules.foldl (fun acc m =>
-      acc ++ checkPredictableModule recMap externNames locMap m) []
+      acc ++ checkPredictableModule recMap recUncertain externNames locMap m) []
     let fnViolations := violations.filter fun v => v.fnName == fnName || v.qualName == fnName || v.qualName.endsWith ("." ++ fnName)
     let violationFacts := fnViolations.map fun v =>
       .obj ([("gate", .str v.reason), ("hint", .str v.hint)]

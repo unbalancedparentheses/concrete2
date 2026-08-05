@@ -122,9 +122,12 @@ private partial def collectModuleFnDefs (m : CModule) : List CFnDef :=
 private def enforcePredictable (projectModules : List CModule) (pc : ProofCore)
     (locMap : Report.FnLocMap) : Diagnostics :=
   let recMap := pc.recMap
-  let externNames := pc.externNames
+  -- Both sets transitively closed. This is the path that REJECTS a build, so it must not be the
+  -- one left on the direct-callee check: it was, for FFI, between the commit that closed FFI and
+  -- this one -- six other consumers were updated and this was not.
+  let (externNames, recUncertain) := Report.profileClosures projectModules pc
   let violations := projectModules.foldl (fun acc m =>
-    acc ++ Report.checkPredictableModule recMap externNames locMap m) []
+    acc ++ Report.checkPredictableModule recMap recUncertain externNames locMap m) []
   violations.map fun v =>
     let file := match v.loc with | some (f, _) => f | none => ""
     { severity := .error

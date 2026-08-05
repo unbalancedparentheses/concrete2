@@ -2417,9 +2417,12 @@ check_profile "$TESTDIR/report_check_predictable_fail_recursion.con" predictable
     "predictable rejects direct recursion" \
     "predictable should reject recursion"
 
+# Was "1 function(s) failed". Now 2: `main` calls `countdown`, so main's own execution is
+# unbounded recursion. Predictable execution is a property of RUNNING a function, and the label
+# used to be computed from each body in isolation.
 check_profile "$TESTDIR/report_check_predictable_fail_recursion.con" predictable \
-    "1 function(s) failed" \
-    "predictable recursion: 1 failed" \
+    "2 function(s) failed" \
+    "predictable recursion: caller of a recursive fn fails too (transitive)" \
     "predictable recursion: wrong fail count"
 
 # --- Gate 2: unbounded loop rejection ---
@@ -2643,9 +2646,10 @@ check_profile "$TESTDIR/adversarial_profile_mutual_recursion.con" predictable \
     "adversarial: mutual recursion detected by profile" \
     "adversarial: mutual recursion not caught"
 
+# Was "2 function(s) failed" (ping + pong). Now 3, including whatever calls into the cycle.
 check_profile "$TESTDIR/adversarial_profile_mutual_recursion.con" predictable \
-    "2 function(s) failed" \
-    "adversarial: both ping and pong flagged" \
+    "3 function(s) failed" \
+    "adversarial: the mutual cycle AND its caller are flagged" \
     "adversarial: mutual recursion wrong fail count"
 
 # --- Profile: hidden Alloc capability caught ---
@@ -2745,14 +2749,17 @@ check_report "$TESTDIR/adversarial_fn_ptr_indirect.con" effects \
 # `enforced` means "passes all five predictable gates", which was equally unwarranted: the call
 # graph records no edge for an indirect call, so no-recursion could not be established either.
 # `apply` is now `reported`, which is what the fixture always intended.
+# 2 enforced -> 1: `apply` is `reported` because it calls through a fn pointer (the callee set
+# is unknown, so acyclicity is not established), and `main` is `reported` because it calls
+# `apply`. Only `add_one` is genuinely predictable.
 check_report "$TESTDIR/adversarial_fn_ptr_indirect.con" effects \
-    "0 proved, 2 enforced" \
+    "0 proved, 1 enforced" \
     "adversarial: fn pointer file has 0 proved (no registered proof)" \
     "adversarial: fn pointer file wrong evidence counts"
 
 check_report "$TESTDIR/adversarial_fn_ptr_indirect.con" effects \
-    "1 reported" \
-    "adversarial: the indirect-calling function is reported, not enforced" \
+    "2 reported" \
+    "adversarial: the indirect call AND its caller are reported, not enforced" \
     "adversarial: an indirect call still claims the predictable profile"
 
 # --- Linear type system: compiler rejects violations ---

@@ -509,7 +509,21 @@ obligation rules out a bad *event*; a program that hangs or overflows the stack 
 event, so no obligation and no register could notice. This is the first defect cluster this
 week that no amount of work on the obligation layer would have reached.
 
-**Still open, deliberately:** the profile is not transitive — `caller` calling a directly
+- **Recursion admission is now TRANSITIVE — DONE 2026-08-05**, on an explicit decision rather
+  than as a side effect. `main` calling a directly recursive `fib` was `enforced` because the
+  label came from each body in isolation; predictable execution is a property of running the
+  function, so it now closes over the call graph like FFI, alloc and blocking already did.
+  Recursion was the last gate asking "is it written here?" instead of "can you reach it?".
+  **Measured:** 14 functions across 10 examples moved `enforced` → `reported`, all true
+  positives; four goldens updated. Nothing stops compiling — it is an admission/label change,
+  and module-level `--check predictable` already failed these programs.
+  **A consumer was silently left behind, twice:** of seven call sites, the FFI closure reached
+  only four — missing the `Check/Policy.lean` path that REJECTS builds. `profileClosures` now
+  returns both closed sets together so one cannot be taken without the other.
+  **Still direct, deliberately:** extraction eligibility (`proofExclusionReasons`) answers a
+  different question and would change which proofs are attempted.
+
+**Superseded note — the profile is not transitive — `caller` calling a directly
 recursive `recurses` is still `enforced`, though module-level `--check predictable` does fail.
 Making admission transitive is a semantics change that would reclassify existing code, so it is
 a decision to take explicitly rather than as a side effect. The stack-depth report, which makes

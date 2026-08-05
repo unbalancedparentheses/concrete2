@@ -193,24 +193,51 @@ effects report compares raw ones, so the closed set carries both the qualified n
 component. A same-named function in another module can therefore be over-flagged. That direction
 refuses a function rather than admitting one, which is the side to err on for an admission gate.
 
-### Known gap: the profile is NOT transitive
+### Admission is transitive (all five gates, as of 2026-08-05)
 
-A function that calls a non-predictable function is still reported `enforced`:
+"Predictable execution" is a property of RUNNING a function. If `f` calls `g`, running `f` runs
+`g`, so `f` can only be predictable if `g` is. The label used to be computed from each body in
+isolation, so this was `enforced`:
 
 ```
-fn recurses(x: i32) -> i32 { if x <= 0 { return 0; } return recurses(x - 1); }
-fn caller(x: i32)   -> i32 { return recurses(x); }     // evidence: enforced
+fn fib(n: Int)  -> Int { if n <= 1 { return n; } return fib(n - 1) + fib(n - 2); }
+fn main() -> Int { return fib(10); }          // enforced — contained no recursion textually
 ```
 
-`recurses` is correctly rejected; `caller` passes. Since `caller`'s own execution is unbounded,
-its "predictable execution" claim is not supported. Module-level `--check predictable` still
-fails (because `recurses` fails), so a whole-program gate is not fooled — but the per-function
-evidence level is.
+`main` contains no recursion in its own body and unbounded recursion in practice.
 
-This is left as-is deliberately: making admission transitive is a semantics change that would
-reclassify existing code, and it is a decision to take explicitly rather than as a side effect
-of a bug fix. The stack-depth report, which makes a numeric claim rather than a label, IS
-transitive as of this change.
+| Gate | Mechanism |
+|------|-----------|
+| No allocation | capability: `E0520: requires Alloc but caller has (none)` |
+| No blocking I/O | capability, same |
+| No FFI | call-graph closure |
+| **No recursion** | **call-graph closure** — direct, mutual, and *reaching* either |
+| Bounded iteration | per body; a loop lives in one function |
+
+Recursion was the last gate asking "is it written in your body?" rather than "can you reach
+it?", and the difference was never designed — it is what you get when one property is enforced
+by types and another by a graph walk. A body containing an **indirect** call seeds the closure
+too: with no edge for `f(x)` the callee set is unknown, so acyclicity is not established there
+either, and callers inherit that.
+
+**Measured impact:** 14 functions across 10 examples moved from `enforced` to `reported`, and
+they are true positives — mostly a `main` calling a recursive `fib`/`factorial`/`gcd`, plus
+`lox` and `toml` (3 each). Four test goldens were counting the old behaviour and now assert the
+new one. Nothing stops compiling: this is an admission and label change, not a type error, and
+module-level `--check predictable` already failed these programs because the recursive function
+itself failed. What was fooled was anyone reading the per-function evidence level.
+
+**One consumer was silently left behind, twice over.** There are seven call sites of the
+predictable check, including `predictableQuery`, `evidenceQuery`, `auditQuery`, and the policy
+path in `Check/Policy.lean` that REJECTS builds. When FFI was closed over the call graph, three
+of them kept passing the unclosed set — including the policy path — so the gate that actually
+rejects a build was the one still on the direct-callee check. `Report.profileClosures` now
+returns both closed sets together, so a consumer cannot obtain one without the other.
+
+**Still not transitive, deliberately:** `proofReport`'s extraction eligibility
+(`proofExclusionReasons`). That answers a different question — can this body be extracted to
+Gallina — and changing it would affect which proofs are attempted, so it is a separate decision
+rather than part of this one.
 
 ### Planned unified resource certificate
 
