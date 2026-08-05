@@ -48,6 +48,12 @@ structure ElabEnv where
   -- lexical identity. `restoreScope` restores this from the saved env, which gives
   -- frame POP for free and matches the language's own scoping.
   bodyScope : Proof.BodyScope := {}
+  -- The declaration's own proof path, needed to MINT identities inside expression
+  -- elaboration. `thisProofPath` is computed in elabModule, so without threading it
+  -- here a constant or function reference has no defining module and cannot become a
+  -- ConstId or CallableId — it would have to be emitted as a gap purely for want of
+  -- context it could have had.
+  proofPath : String := ""
   -- A scope has been ENTERED but no frame materialized yet. Frames open LAZILY on
   -- the first binder, so a scope that binds nothing does not shift `framesOut` for
   -- references inside it — an empty `if` must not move a digest.
@@ -1737,6 +1743,7 @@ partial def elabModule (m : Module) (summary : FileSummary)
     userFnSigs ++ implMethodSigs ++ traitImplMethodSigs
   let initEnv : ElabEnv := {
     vars := []
+    proofPath := thisProofPath
     structs := allStructs
     enums := allEnums
     fnSigs := allSigs

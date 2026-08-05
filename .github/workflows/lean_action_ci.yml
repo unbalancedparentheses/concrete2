@@ -457,6 +457,9 @@ jobs:
       - name: "Callable identity (R-0004 step 1 — CallableId is constructed from a resolved declaration, never recovered from text)"
         run: bash scripts/tests/check_callable_identity.sh
 
+      - name: "Evidence builders (R-0004 — semantic decisions tested before the producer cutover)"
+        run: bash scripts/tests/check_evidence_build.sh
+
       - name: "Evidence tree (R-0004 — typed evidence IR: nesting representable, gaps mandatory, no bound names)"
         run: bash scripts/tests/check_evidence_tree.sh
 

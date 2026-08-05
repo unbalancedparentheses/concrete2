@@ -35,6 +35,7 @@ import Concrete.Proof.ProofCore
 import Concrete.Proof.Proof
 import Concrete.Proof.SubjectFacts
 import Concrete.Proof.EvidenceTree
+import Concrete.Proof.EvidenceBuild
 import Concrete.Proof.IdentityUseBytes
 import Concrete.Proof.DependencyRoot
 import Concrete.Proof.DependencyEdge
