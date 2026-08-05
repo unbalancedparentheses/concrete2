@@ -120,13 +120,18 @@ PASS=$(( PASS + $(grep -c '^  ok   ' "$OUT" || true) ))
 # the frame stack cannot place would silently vanish from the body — an
 # under-approximated subject, which is worse than an uncovered one because it looks
 # complete.
-ident_arm="$(awk '/A local reference is a BINDER reference/,/return \.ident/' Concrete/Elab/Elab.lean)"
-if printf '%s' "$ident_arm" | grep -q "markBodyIdentityUncovered"; then
+# Searched DIRECTLY, not via an awk range. These legs used `awk '/comment/,/return \.ident/'`
+# and the cutover changed `return .ident` to `return ElaboratedExprV2.mk (CExpr.ident ...)`,
+# so the range's end pattern stopped matching. An unterminated awk range runs to EOF, which
+# happened to still contain both strings on macOS and did not on CI's awk — so the gate
+# passed locally and failed remotely on the same SHA. A range whose end can be edited away
+# is a false-pass waiting to happen; the exact code shapes are the durable thing to assert.
+if grep -q "markBodyIdentityUncovered" Concrete/Elab/Elab.lean; then
   ok "an unplaceable local marks the subject uncovered rather than emitting nothing"
 else
   no "the local-reference path has no uncovered branch — a missing binder would vanish silently"
 fi
-if printf '%s' "$ident_arm" | grep -q "recordBodyIdentityUse (.binderRef"; then
+if grep -q "recordBodyIdentityUse (.binderRef out idx)" Concrete/Elab/Elab.lean; then
   ok "a placeable local emits a typed binderRef node"
 else
   no "the local-reference path does not emit a binderRef"
