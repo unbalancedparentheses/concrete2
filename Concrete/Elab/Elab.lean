@@ -874,12 +874,7 @@ partial def elabExprEv (e : Expr) (hint : Option Ty := none) : ElabM ElaboratedE
         let armTys := (cArms.map (fun a => armValueTy (armBodyStmts a))).filter
           (fun t => t != .unit && t != .never)
         armTys.head?.getD .unit
-    return ElaboratedExprV2.mk (CExpr.match_ cScrut cArms resultTy) -- DESIGN GAP, not missing plumbing: the arms' evidence is built (armEvsRev) but
-       -- EvidenceExprV2 has no match constructor — the tree models match only at STATEMENT
-       -- level, while Concrete allows match as an EXPRESSION. Adding EvidenceExprV2.matchExpr
-       -- is a vocabulary change, so this refuses until that decision is made rather than
-       -- discarding the arms silently.
-       (Proof.evUnhandledExpr "match expression: EvidenceExprV2 has no match node")
+    return ElaboratedExprV2.mk (CExpr.match_ cScrut cArms resultTy) (Proof.EvidenceExprV2.matchExpr cScrutEv.evidence armEvsRev.reverse)
 
   | .borrow _ inner =>
     let cInnerEv ← elabExprEv inner

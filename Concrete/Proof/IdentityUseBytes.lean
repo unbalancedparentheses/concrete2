@@ -215,6 +215,8 @@ partial def exprBytes : EvidenceExprV2 → String
   | .arrayLit t els  => lp "R" (t.render ++ "|" ++ toString els.length ++ ":"
                                  ++ String.join (els.map exprBytes))
   | .tryProp x t     => lp "T" (t.render ++ "|" ++ exprBytes x)
+  | .matchExpr sc arms => lp "Q" (exprBytes sc ++ "|" ++ toString arms.length ++ ":"
+                                   ++ String.join (arms.map armBytes))
   -- A gap must never be serialized: CompleteEvidenceBodyV2 cannot contain one, so this
   -- arm exists only for totality and emits a form no complete body can produce.
   | .gap _           => lp "!" "gap"
@@ -293,6 +295,7 @@ partial def exprFlatUses : EvidenceExprV2 → List BodyIdentityUse
   | .cast t x        => [.typeRef t] ++ exprFlatUses x
   | .arrayLit t els  => [.typeRef t] ++ els.flatMap exprFlatUses
   | .tryProp x t     => [.typeRef t] ++ exprFlatUses x
+  | .matchExpr sc arms => exprFlatUses sc ++ arms.flatMap armFlatUses
 
 partial def patternFlatUses : EvidencePatternV2 → List BodyIdentityUse
   | .wildcard | .binder | .gap _ => []

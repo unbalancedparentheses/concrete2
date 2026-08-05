@@ -124,6 +124,13 @@ inductive EvidenceExprV2 where
       `x` does not, so collapsing them would make adding or removing a `?` invisible to
       the subject. Carries the resolved residual type. -/
   | tryProp (operand : EvidenceExprV2) (residualTy : TypeId)
+  /-- `match` used as an EXPRESSION.
+
+      Concrete's match IS an expression — a match statement is `exprStmt (match ...)` — so
+      the statement-level `match_` cannot represent it, and without this constructor every
+      function containing a match has an incomplete subject. Arm ORDER is semantic: the
+      first matching arm wins. -/
+  | matchExpr (scrutinee : EvidenceExprV2) (arms : List EvidenceArmV2)
   /-- FAIL CLOSED — draft only. -/
   | gap (reason : EvidenceGap)
 deriving Inhabited
@@ -239,6 +246,7 @@ partial def exprGaps : EvidenceExprV2 → List EvidenceGap
   | .variantLit _ fs => fs.flatMap fun fe => exprGaps fe.2
   | .arrayLit _ els => els.flatMap exprGaps
   | .tryProp x _ => exprGaps x
+  | .matchExpr sc arms => exprGaps sc ++ arms.flatMap armGaps
 
 partial def patternGaps : EvidencePatternV2 → List EvidenceGap
   | .gap r => [r]
@@ -297,6 +305,7 @@ def draftGaps (d : EvidenceBodyDraftV2) : List EvidenceGap :=
     digest bytes" is a type error rather than a rule someone must remember. -/
 def CompleteEvidenceBodyV2 := { d : EvidenceBodyDraftV2 // draftGaps d = [] }
 
+mutual
 /-- Constants a body references. Collected so subject completeness can be checked
     against dependency material. -/
 partial def exprConstRefs : EvidenceExprV2 → List ConstId
@@ -312,8 +321,9 @@ partial def exprConstRefs : EvidenceExprV2 → List ConstId
   | .variantLit _ fs => fs.flatMap fun fe => exprConstRefs fe.2
   | .arrayLit _ els => els.flatMap exprConstRefs
   | .tryProp x _ => exprConstRefs x
+  | .matchExpr sc arms => exprConstRefs sc ++ arms.flatMap armConstRefs
 
-mutual
+
 
 /-- Constants referenced by a statement, for dependency binding. Exhaustive with no
     wildcard: a new statement form must say whether it can carry a constant reference,

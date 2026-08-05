@@ -63,6 +63,7 @@ partial def shape : EvidenceExprV2 → String
   | .fnRef id      => s!"F({id.render})"
   | .arrayLit t els => s!"AR({t.render},[{",".intercalate (els.map shape)}])"
   | .tryProp x t   => s!"TRY({shape x},{t.render})"
+  | .matchExpr sc arms => s!"Q({shape sc},{arms.length})"
   | .gap _         => "GAP"
 
 partial def sshape : EvidenceStmtV2 → String
