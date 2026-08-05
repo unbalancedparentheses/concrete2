@@ -55,8 +55,11 @@ deriving BEq, Repr, Inhabited
     `1i32` and `1i64` are different program data, and a bare `1` that Check resolved
     to a width must record that width, not the source spelling. -/
 inductive EvidenceIntTy where
-  | i8 | i16 | i32 | i64 | int
-  | u8 | u16 | u32 | u64 | uint
+  /-- `int` IS the 64-bit signed width and `uint` the 64-bit unsigned one — the
+      surface has no separate i64/u64 constructor. Listing both would give one
+      semantic width two encodings, which is the collision this whole task removes. -/
+  | i8 | i16 | i32 | int
+  | u8 | u16 | u32 | uint
 deriving BEq, Repr, Inhabited
 
 /-- Semantic width of a float literal. -/
@@ -195,6 +198,15 @@ inductive EvidenceArmV2 where
 deriving Inhabited
 
 end
+
+/-- Semantic integer width from a resolved `Ty`, or `none` when the type is not an
+    integer at all. Exhaustive over the integer constructors; a non-integer type is a
+    caller error and becomes a gap rather than a guessed width. -/
+def evIntTyOf? : Ty → Option EvidenceIntTy
+  | .int => some .int  | .uint => some .uint
+  | .i8 => some .i8    | .i16 => some .i16  | .i32 => some .i32
+  | .u8 => some .u8    | .u16 => some .u16  | .u32 => some .u32
+  | _ => none
 
 /-- An elaborated expression: Core output plus its evidence draft.
 

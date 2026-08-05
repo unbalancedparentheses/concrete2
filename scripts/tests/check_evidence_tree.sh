@@ -137,7 +137,7 @@ def tid : TypeId := TypeId.user "m" "T"
   -- LITERAL TYPE IS SEMANTIC. `1i32` and `1i64` are different program data; a shape
   -- that ignored width would merge them.
   a "a literal's semantic width is part of its evidence"
-    (shape (.intLit 1 .i32) != shape (.intLit 1 .i64))
+    (shape (.intLit 1 .i32) != shape (.intLit 1 .int))
   -- FLOAT BITS, deliberately: distinct NaN payloads and signed zeros stay distinct.
   a "float evidence is a bit pattern, so -0.0 and 0.0 differ"
     (shape (.floatLit 0 .f64) != shape (.floatLit 0x8000000000000000 .f64))
