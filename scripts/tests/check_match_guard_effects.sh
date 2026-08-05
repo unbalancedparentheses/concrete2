@@ -20,9 +20,11 @@ T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 differential() {
   local name="$1" label="$2"
   local i c
-  # `|| true` on both: a grep that filters every line exits 1, and pipefail would
-  # abort the gate on a program whose output is entirely numeric.
-  i="$( { "$CC" "$T/$name.con" --interp 2>&1 | grep -v '^[0-9]*$' || true; } | tr '\n' ',')"
+  # The interpreter appends the return value as a final line; the compiled binary does
+  # not. Drop exactly that LAST line rather than filtering numeric lines — a numeric
+  # filter also ate legitimate print_int output and made two real legs read as empty.
+  # `|| true` guards pipefail when a program prints nothing at all.
+  i="$( { "$CC" "$T/$name.con" --interp 2>&1 || true; } | sed '$d' | tr '\n' ',')"
   if ! "$CC" "$T/$name.con" -o "$T/$name.bin" >/dev/null 2>&1; then
     no "$label — compile failed"; return
   fi
@@ -96,6 +98,104 @@ if { "$CC" "$T/nomatch.con" --interp 2>&1 || true; } | grep -q "T1"; then
   no "a guard ran for a pattern that did not match"
 else
   ok "no guard effect leaked from a non-matching pattern"
+fi
+
+# 5. SCOPE DISCIPLINE across a failed guard. Two halves that must BOTH hold, and a
+#    fix can easily get one right and the other wrong:
+#      - a mutation the guard makes to an OUTER variable must persist;
+#      - a mutation to an ARM-LOCAL pattern binding must vanish with the arm.
+#    Restoring by dropping to the outer length gives both, because interpreter stdout
+#    and outer bindings live outside the dropped region while arm bindings live inside
+#    it. Leaking the whole arm environment would pass the first and fail the second.
+cat > "$T/outer.con" <<'EOF'
+mod g {
+    enum Copy E { A { v: Int }, B { v: Int } }
+    fn bump(o: &mut Int) -> Bool { *o = *o + 5; return false; }
+    pub fn main() with(Console) -> Int {
+        let mut outer: Int = 0;
+        let e: E = E::A { v: 7 };
+        match e { E::A { v } if bump(&mut outer) => { return 1; },
+                  E::A { v } => { print_int(outer); print("\n"); return 2; },
+                  E::B { v } => { return 0; } }
+    }
+}
+EOF
+differential outer "a failed guard's mutation of an OUTER variable persists"
+
+cat > "$T/local.con" <<'EOF'
+mod g {
+    enum Copy E { A { v: Int }, B { v: Int } }
+    fn bumpLocal(o: &mut Int) -> Bool { *o = *o + 100; return false; }
+    pub fn main() with(Console) -> Int {
+        let e: E = E::A { v: 7 };
+        match e { E::A { v } if bumpLocal(&mut v) => { return 1; },
+                  E::A { v } => { print_int(v); print("\n"); return 2; },
+                  E::B { v } => { return 0; } }
+    }
+}
+EOF
+differential local "an ARM-LOCAL mutation does NOT leak into the next arm"
+if { "$CC" "$T/local.con" --interp 2>&1 || true; } | grep -q "^107$"; then
+  no "arm-local binding leaked across the failed guard (saw 107, expected 7)"
+else
+  ok "the arm's pattern bindings did not leak past its failed guard"
+fi
+
+# 6. BINDER-FRAME RESTORATION, measured rather than inspected.
+#
+#    The arm-local leg above cannot see a leak: the next arm rebinds the same name, so
+#    a leaked binding is shadowed and invisible. Leaking the whole arm environment
+#    survived that leg. The observable case is a fallback that READS the name WITHOUT
+#    binding it — then a leaked payload wins over the outer variable.
+cat > "$T/restore.con" <<'EOF'
+mod g {
+    enum Copy E { A { v: Int }, B { v: Int } }
+    fn eff(o: &mut Int) -> Bool { *o = *o + 5; return false; }
+    pub fn main() with(Console) -> Int {
+        let x: Int = 1;
+        let mut outer: Int = 0;
+        let e: E = E::A { v: 99 };
+        match e {
+            E::A { x } if eff(&mut outer) => { return 0; },
+            E::A { w } => { print_int(x); print("\n"); print_int(outer); print("\n"); return 1; },
+            E::B { w } => { return 2; }
+        }
+    }
+}
+EOF
+differential restore "a failed arm's binding does not shadow the outer variable (expect 1 then 5)"
+rout="$( { "$CC" "$T/restore.con" --interp 2>&1 || true; } | sed '$d' | tr '\n' ',')"
+if [ "$rout" = "1,5," ]; then
+  ok "binder frame restored: outer x=1 survives, and the failed guard's outer mutation=5 persists"
+elif [ "$rout" = "99,5," ]; then
+  no "the failed arm's payload LEAKED — x read as 99 instead of the outer 1"
+else
+  no "restoration probe gave [$rout], expected [1,5,] — inconclusive"
+fi
+
+# CONTROL: when the fallback DOES bind the same spelling it must see its own payload,
+# so the leg above is testing restoration and not merely that x is always outer.
+cat > "$T/rebind.con" <<'EOF'
+mod g {
+    enum Copy E { A { v: Int }, B { v: Int } }
+    fn no1() -> Bool { return false; }
+    pub fn main() with(Console) -> Int {
+        let x: Int = 1;
+        let e: E = E::A { v: 99 };
+        match e {
+            E::A { x } if no1() => { return 0; },
+            E::A { x } => { print_int(x); print("\n"); return 1; },
+            E::B { w } => { return 2; }
+        }
+    }
+}
+EOF
+differential rebind "CONTROL: a rebinding fallback sees its OWN payload, not the outer value"
+bout="$( { "$CC" "$T/rebind.con" --interp 2>&1 || true; } | sed '$d' | tr -d '\n')"
+if [ "$bout" = "99" ]; then
+  ok "CONTROL: the rebinding arm reads 99, so the leg above is not vacuously reading outer"
+else
+  no "CONTROL failed: rebinding arm read [$bout], expected 99"
 fi
 
 echo "MATCH-GUARD-EFFECTS: PASS=$PASS FAIL=$FAIL"

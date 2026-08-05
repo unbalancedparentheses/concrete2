@@ -64,6 +64,26 @@ forward after dropping only the arm's own bindings. Gated by
 `scripts/tests/check_match_guard_effects.sh` (5/5), which is mutation-verified —
 restoring the discard fails three legs with the exact divergence.
 
+## The two axes, and why only one is mutation-killable
+
+**Axis 1 — discarded effects.** Real, fixed, and killed behaviorally: threading the
+env only on the success path fails three legs.
+
+**Axis 2 — leaked arm bindings.** Structurally prevented UPSTREAM, not by this fix.
+Bug 045 alpha-renames every match payload binder to a fresh Core name (`x` becomes
+`x.b0`, verified with `--emit-core`), so a leaked arm binding cannot shadow an outer
+variable of the same spelling — the names differ. Leaking the whole arm environment on
+failure therefore SURVIVES mutation: it is not behaviorally observable.
+
+The `drop`-to-outer-length restoration is kept as environment hygiene and as defence if
+that upstream property ever changes, but it must not be described as gated. If match
+binders ever stop being alpha-renamed, this mutation becomes killable and the leg
+`a failed arm's binding does not shadow the outer variable` starts doing real work —
+today it passes for the upstream reason, not because of the restoration.
+
+This is a genuine coupling between bug 045 and bug 066, recorded so a future change to
+either does not silently weaken the other.
+
 ## Fix shape (as diagnosed)
 
 `guardOk` must return the updated environment alongside the boolean
