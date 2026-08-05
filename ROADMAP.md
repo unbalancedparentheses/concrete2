@@ -503,10 +503,16 @@ recomputed.
   **Remaining:** one `dropped by both` in `fixed_capacity`, unclassified.
 - **`exprToProver` is also a `partial def`**, found while trying to lock "the string layer
   drops this term" by `rfl` — it cannot be. Same class as `evalIntEnv` below.
-- **`evalIntEnv` is a `partial def`** and therefore outside the reach of proof — the evaluator
-  every lowering-agreement check measures against cannot be reasoned about. `TermIR`'s
-  evaluators are structural specifically to fix this; replacing `evalIntEnv` with them is the
-  remaining step, and `check_transform_register.sh` fails if they ever become `partial`.
+- ~~`evalIntEnv` is a `partial def`~~ **DONE 2026-08-04.** `evalIntEnv`/`evalBoolEnv` are now
+  thin wrappers over `ofExpr` + `TermIR.eval*`, both structural, so the yardstick every
+  lowering-agreement check measures against is kernel-reducible and its behaviour is pinned by
+  `rfl` — including the truncating-division convention, which `check_vc_bridge_register.sh`
+  previously could only GREP for and now asserts as real locks. Two behaviour changes, both
+  gains: casts now have a reference value (previously `none`, so the instance was skipped),
+  and `geq`/`gt`/`neq` are canonicalised rather than special-cased. Verified identical on the
+  provers: multi-kernel 78/78.
+  **Remaining in this area:** `exprToProver` is still `partial`, so "the string layer drops
+  this term" cannot be locked by `rfl` either; it is measured at runtime instead.
 
 ### From R-0462 (artifact fuzz) — works, covers almost nothing
 

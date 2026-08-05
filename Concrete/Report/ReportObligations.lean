@@ -10,6 +10,7 @@ import Concrete.Report.Diagnostic
 import Concrete.Frontend.Format
 import Concrete.Report.ReportBase
 import Concrete.Semantics.IntArith
+import Concrete.Report.TermTranslate
 import Concrete.Semantics.Capabilities
 -- Obligation collectors need only the contract/VC helper cluster, not the
 -- capability/arith/unsafe/layout report renderers (pipeline #34).
@@ -1168,76 +1169,85 @@ something concretely false — the one thing "proved" must never do. Independent
 `exprToProver`/omega: it evaluates the arithmetic directly (truncating `/`,`%`,
 matching Concrete's `IntArith`), so agreement is a real cross-check, not a tautology. -/
 
-/-- Evaluate a contract `Expr` to an unbounded `Int` under a variable environment.
-    `none` if outside the fragment or a `/`/`%` by zero. Truncating division. -/
-partial def evalIntEnv (env : List (String × Int)) : Expr → Option Int
-  | .intLit _ v => some v
-  | .ident _ n => env.lookup n
-  | .paren _ e => evalIntEnv env e
-  | .unaryOp _ .neg e => (evalIntEnv env e).map (- ·)
-  | .binOp _ op l r => do
-    let a ← evalIntEnv env l; let b ← evalIntEnv env r
-    match op with
-    | .add => some (a + b) | .sub => some (a - b) | .mul => some (a * b)
-    | .div => if b == 0 then none else some (a.tdiv b)
-    | .mod => if b == 0 then none else some (a.tmod b)
-    | _ => none
-  | _ => none
+/-! ### The reference evaluator (R-0455: no longer `partial`)
 
-/-! #### The reference evaluator's division must match the runtime's (2026-08-04)
+`evalIntEnv`/`evalBoolEnv` are what EVERY lowering-agreement check measures a rendering
+against — Rocq's, Isabelle's, the SMT column's and Lean's own. They used to be `partial def`s,
+which meant the kernel could not reduce them: the yardstick for every rendering was itself
+outside the reach of proof, and no `rfl` example or theorem could say anything about it. That
+limitation was hit three times while writing locks elsewhere in this arc.
 
-`evalIntEnv` is what every lowering-agreement check measures a rendering against — Rocq's,
-Isabelle's, the SMT column's, and now Lean's own. If its arithmetic disagrees with the
-runtime's, then "validated" means validated against the wrong thing, and no amount of kernel
-agreement would reveal it.
+They are now thin wrappers over `ofExpr` + `TermIR.eval*`, both structural. The behaviour is
+the same fragment plus two gains that fall out of the IR:
 
-It computes over unbounded ℤ deliberately: an obligation like `lo ≤ a + b ≤ hi` IS a
-statement about the mathematical value, and the width check is what the obligation exists to
-demand rather than something it may assume. That difference is intended.
+* **casts evaluate** (as the reference's wrap) where they previously yielded `none`, so
+  obligations like `arr[(a / b) as Int]` now have a reference value instead of being skipped;
+* `geq`/`gt`/`neq` are canonicalised rather than special-cased, so the relation set is
+  minimal without narrowing what can be evaluated.
 
-The division CONVENTION is a different matter, and it is a live hazard rather than a
-hypothetical one: `VC_BRIDGE_REGISTER.md` records `core-semantics-diff` catching a real
-fault of exactly this shape (`Z.div` vs `Z.quot` disagreeing at `(-7)/2`). Lean offers three
-spellings that agree on positives and diverge on negatives, so a plausible-looking "cleanup"
-from `.tdiv` to `/` would pass every positive test and silently re-point the reference. These
-`example`s make the three distinguishable at compile time, and pin the one this file uses. -/
+Spec-function calls still evaluate to `none`: `noSyms` gives uninterpreted symbols no meaning,
+which is the honest default — the agreement machinery must not invent a value for a function
+it knows nothing about. -/
 
--- The three spellings, distinguished where they actually differ.
+/-- No oracle for uninterpreted symbols. A spec call has no reference value, so an agreement
+    instance mentioning one is SKIPPED rather than answered — the fail-closed direction. -/
+def noSyms : TermIR.SymEnv := fun _ _ => none
+
+/-- Integer-valued reference evaluation of a contract expression. -/
+def evalIntEnv (env : List (String × Int)) (e : Expr) : Option Int :=
+  (ofExpr e).bind (TermIR.evalInt env noSyms)
+
+/-- Boolean-valued reference evaluation of a contract expression. -/
+def evalBoolEnv (env : List (String × Int)) (e : Expr) : Option Bool :=
+  (ofExpr e).bind (TermIR.evalBool env noSyms)
+
+/-! #### Behavioural locks on the reference evaluator — **newly possible**
+
+None of these could exist while `evalIntEnv` was `partial`: the kernel could not reduce it, so
+its behaviour was only ever assertable by grep. `check_vc_bridge_register.sh` said so in its
+own comment. These are the locks that grep stood in for.
+
+The division convention is the one that matters. Lean's `.tdiv`, `/` and `.fdiv` agree on
+positives and diverge on negatives, so a plausible "cleanup" would pass every positive test
+and silently re-point the reference every rendering is validated against. -/
+
+-- The three spellings, distinguished where they actually differ. Restored here after the
+-- evaluator rewrite removed them along with the old `partial` definition: they pin the
+-- CONVENTION, while the `evalIntEnv` examples below pin which convention this code uses, and
+-- both halves are needed. A swap from `.tdiv` to `/` passes every positive test.
 example : (-7 : Int).tdiv 2 = -3 := rfl   -- truncate toward zero — what Concrete means
 example : (-7 : Int).fdiv 2 = -4 := rfl   -- floor — a DIFFERENT answer
 example : (-7 : Int).tmod 2 = -1 := rfl   -- remainder follows the dividend's sign
 example : (-7 : Int).emod 2 =  1 := rfl   -- Euclidean — also different
 
--- And the reference evaluator agrees with `IntArith`'s convention, which is what the runtime
--- uses. Stated on the negative case, because that is the only place a swap would show.
-example : ((-7 : Int).tdiv 2, (-7 : Int).tmod 2)
-        = (IntArith.tdiv (-7) 2, IntArith.tmod (-7) 2) := rfl
+private def spR : Span := default
 
--- A behavioural lock on `evalIntEnv` itself is NOT AVAILABLE, and the reason is worth
--- recording rather than working around: it is a `partial def`, so the kernel cannot reduce
--- it and `rfl`/`simp` prove nothing about it. The evaluator that every lowering-agreement
--- check measures against — Rocq's, Isabelle's, the SMT column's, Lean's own — is therefore
--- outside the reach of proof, which is a real limit on what "validated" can mean here.
---
--- What remains checkable is that this function SPELLS the convention the examples above pin,
--- and that is a grep, enforced by `check_vc_bridge_register.sh` rather than pretended to be
--- a theorem. Filed under R-0455 (term IR), which would replace the partial recursion with a
--- structural one and make the behavioural lock possible.
+-- TRUNCATING division and remainder, pinned on the negative case where the spellings differ.
+example : evalIntEnv [("a", -7), ("b", 2)]
+    (.binOp spR .div (.ident spR "a") (.ident spR "b")) = some (-3) := rfl
+example : evalIntEnv [("a", -7), ("b", 2)]
+    (.binOp spR .mod (.ident spR "a") (.ident spR "b")) = some (-1) := rfl
+-- Division by zero has NO reference value; it is never guessed.
+example : evalIntEnv [("a", -7), ("b", 0)]
+    (.binOp spR .div (.ident spR "a") (.ident spR "b")) = none := rfl
+-- An unbound variable propagates `none` rather than defaulting to 0.
+example : evalIntEnv [] (.binOp spR .add (.ident spR "x") (.intLit spR 1)) = none := rfl
+-- A spec-function call has no reference value: `noSyms` refuses to invent one.
+example : evalIntEnv [] (.call spR "f" [] [.intLit spR 1]) = none := rfl
 
-/-- Evaluate a contract `Expr` to a `Bool` under an environment (hypotheses and
-    safety conclusions). `none` if outside the fragment. -/
-partial def evalBoolEnv (env : List (String × Int)) : Expr → Option Bool
-  | .paren _ e => evalBoolEnv env e
-  | .unaryOp _ .not_ e => (evalBoolEnv env e).map (! ·)
-  | .binOp _ .and_ l r => do let a ← evalBoolEnv env l; let b ← evalBoolEnv env r; some (a && b)
-  | .binOp _ .or_  l r => do let a ← evalBoolEnv env l; let b ← evalBoolEnv env r; some (a || b)
-  | .binOp _ op l r => do
-    let a ← evalIntEnv env l; let b ← evalIntEnv env r
-    match op with
-    | .leq => some (a ≤ b) | .lt => some (a < b) | .geq => some (a ≥ b)
-    | .gt => some (a > b)  | .eq => some (a == b) | .neq => some (a != b)
-    | _ => none
-  | _ => none
+-- Relations the old evaluator special-cased are canonicalised, and still evaluate the same.
+example : evalBoolEnv [("a", 3), ("b", 5)]
+    (.binOp spR .geq (.ident spR "a") (.ident spR "b")) = some false := rfl
+example : evalBoolEnv [("a", 5), ("b", 3)]
+    (.binOp spR .gt (.ident spR "a") (.ident spR "b")) = some true := rfl
+example : evalBoolEnv [("a", 3), ("b", 3)]
+    (.binOp spR .neq (.ident spR "a") (.ident spR "b")) = some false := rfl
+
+-- GAINED by going through the IR: a cast now has a reference value, where the old evaluator
+-- returned `none` and the agreement instance was skipped. 200 at i8 wraps to -56.
+example : evalIntEnv [("x", 200)] (.cast spR (.ident spR "x") .i8) = some (-56) := rfl
+example : evalBoolEnv [("x", 200)]
+    (.binOp spR .lt (.cast spR (.ident spR "x") .i8) (.intLit spR 0)) = some true := rfl
 
 /-- A family-neutral view of one linear obligation, so every runtime-safety family
     (overflow / array-bounds / div-nonzero, and any future family) flows through the

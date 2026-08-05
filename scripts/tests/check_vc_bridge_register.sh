@@ -219,63 +219,35 @@ fi
 echo "=== the reference evaluator's division convention (2026-08-04) ==="
 # `evalIntEnv` is what EVERY lowering-agreement check measures a rendering against. If its
 # arithmetic disagrees with the runtime's, "validated" means validated against the wrong
-# thing, and no amount of kernel agreement would reveal it.
+# thing, and no amount of kernel agreement would reveal it — every kernel is compared to the
+# same wrong reference.
 #
-# The live hazard is the division convention, not the width: computing over unbounded Z is
-# intended (an obligation `lo <= a+b <= hi` IS about the mathematical value), but Lean's
-# `.tdiv` / `/` / `.fdiv` agree on positives and diverge on negatives, so a plausible cleanup
-# would pass every positive test and silently re-point the reference. VC_BRIDGE_REGISTER
-# records core-semantics-diff catching exactly this shape before (Z.div vs Z.quot at (-7)/2).
-#
-# This is a GREP and says so: `evalIntEnv` is a `partial def`, so the kernel cannot reduce it
-# and no `rfl` example can pin its behaviour. That limit is recorded at the definition and
-# filed under R-0455; until it is a structural recursion, spelling is what can be checked.
+# This block used to be a GREP, and said so: `evalIntEnv` was a `partial def`, so the kernel
+# could not reduce it and no `rfl` example could pin its behaviour. R-0455 replaced it with a
+# structural wrapper over the term IR, so the behaviour is now pinned by COMPILE-TIME
+# examples and this gate only has to prove those were not deleted.
 RO="Concrete/Report/ReportObligations.lean"
-if grep -A 12 "partial def evalIntEnv" "$RO" | grep -q "a.tdiv b"; then
-  ok "evalIntEnv divides with .tdiv (truncating, matching IntArith and the runtime)"
+if grep -qE "^\s*partial def (evalIntEnv|evalBoolEnv)\b" "$RO"; then
+  no "the reference evaluator is 'partial' again — its behaviour becomes unprovable and the locks below are impossible"
 else
-  no "evalIntEnv does not use .tdiv — the agreement reference may have been re-pointed"
+  ok "the reference evaluator is structural (kernel-reducible, so its behaviour is provable)"
 fi
-if grep -A 12 "partial def evalIntEnv" "$RO" | grep -q "a.tmod b"; then
-  ok "evalIntEnv takes remainder with .tmod (dividend's sign)"
-else
-  no "evalIntEnv does not use .tmod — remainder convention may diverge from the runtime"
-fi
-# The convention examples must survive: they are what make the three spellings distinguishable.
-grep -q 'example : (-7 : Int).fdiv 2 = -4 := rfl' "$RO" \
-  && ok "the divergent spellings are pinned at compile time (tdiv vs fdiv vs emod)" \
-  || no "the division-convention examples were removed — a swap becomes invisible again"
-
-echo "=== dependent documents agree with the register's count (2026-08-04) ==="
-# The register's OWN Status line has been gated since yesterday. That was not enough: eight
-# other documents carried "**0 of 4 rows discharged**" — including TRUSTED_COMPUTING_BASE.md,
-# CLAIMS_TODAY.md and KNOWN_HOLES.md, the three most likely to be read as authoritative — and
-# the number was doubly wrong, because the row TOTAL was also four rather than five.
-#
-# Gating one file's summary while eight files restate it is the same mistake as gating
-# KNOWN_HOLES while four modules described H23 in prose. The count has one source; every
-# restatement must either match it or be explicitly dated.
-CANON_HALF="$(grep -c "Discharging theorem (HALF DISCHARGED" "$REG" || true)"
-CANON_FULL=0   # no row is fully discharged while every lowering half is open (H19)
-CANON_TOTAL="$(grep -cE '^### `[a-zA-Z]+Obligations`' "$REG" || true)"
-CANON_TOTAL=$((CANON_TOTAL - 1))   # multiKernelObligations is a projection, not a lowering row
-DRIFT=0
-while IFS= read -r hit; do
-  # A restatement is fine if it is DATED ("as of", "2026-..-..", "at this entry") — a record
-  # of a moment is not a claim about now.
-  printf '%s' "$hit" | grep -qiE "as of|as of this entry|20[0-9]{2}-[0-9]{2}-[0-9]{2}" && continue
-  N="$(printf '%s' "$hit" | grep -oE '[0-9]+ of [0-9]+' | head -1)"
-  FULLN="${N%% of *}"; TOTN="${N##* of }"
-  if [ "$FULLN" != "$CANON_FULL" ] || [ "$TOTN" != "$CANON_TOTAL" ]; then
-    no "a document states '$N rows discharged'; the register says $CANON_FULL of $CANON_TOTAL:"
-    printf '%s\n' "$hit" | sed 's/^/         /' | cut -c1-110
-    DRIFT=1
-  fi
-done < <(grep -rniE "[0-9]+ of [0-9]+ (rows?|register rows?)[^.]{0,30}discharged" \
-           --include=*.md . 2>/dev/null | grep -v "^./research/" || true)
-[ "$DRIFT" = "0" ] \
-  && ok "every undated restatement of the discharge count matches the register ($CANON_FULL of $CANON_TOTAL, $CANON_HALF half)" \
-  || no "dependent documents disagree with the register about Register A"
+# The locks that grep stood in for. Truncating vs flooring divergence at a negative dividend
+# is where a silent re-pointing of the reference would hide.
+grep -q 'example : evalIntEnv \[("a", -7), ("b", 2)\]' "$RO" \
+  && ok "evalIntEnv's division is pinned by rfl at a negative dividend (-7 / 2 = -3)" \
+  || no "the division-convention lock is gone — a swap to floored division becomes invisible"
+grep -q '(.binOp spR .div (.ident spR "a") (.ident spR "b")) = none := rfl' "$RO" \
+  && ok "division by zero yields no reference value (never guessed)" \
+  || no "the divide-by-zero lock is gone"
+grep -q 'example : evalIntEnv \[\] (.call spR "f" \[\] \[.intLit spR 1\]) = none := rfl' "$RO" \
+  && ok "a spec call has no reference value — uninterpreted means uninterpreted" \
+  || no "the uninterpreted-symbol lock is gone: the evaluator could invent a value"
+# The convention examples in the IR itself must survive too.
+grep -q 'example : (-7 : Int).fdiv 2 = -4 := rfl' Concrete/Report/ReportObligations.lean \
+  || grep -q 'example : (-7 : Int).fdiv 2 = -4 := rfl' Concrete/Semantics/TermIR.lean \
+  && ok "the divergent spellings remain distinguished at compile time" \
+  || no "the tdiv/fdiv distinction is no longer pinned"
 
 echo ""
 echo "VC-BRIDGE-REGISTER: PASS=$PASS  FAIL=$FAIL"

@@ -22,69 +22,13 @@ The string lowering (`exprToProver`) DROPS two things, and R-0455 names both:
 layer loses, and `droppedByStringLayer` below turns that into a number rather than a claim in
 a roadmap entry.
 -/
-import Concrete.Semantics.TermIR
+import Concrete.Report.TermTranslate
 import Concrete.Report.ReportObligations
 
 namespace Concrete
 namespace Report
 
 open Concrete.TermIR
-
-/-- Map a surface binary operator onto the IR's. `none` for operators outside the fragment,
-    which is a REJECTION rather than an approximation — an operator silently mapped to a
-    near-neighbour is the failure mode this whole IR exists to remove. -/
-def irBinOp : BinOp → Option TermIR.Op
-  | .add => some .add | .sub => some .sub | .mul => some .mul
-  -- Carried, not dropped. This is the defect: `exprToProver` returns `none` here.
-  | .div => some .tdiv | .mod => some .tmod
-  | .leq => some .le | .lt => some .lt | .eq => some .eq
-  | .and_ => some .and_ | .or_ => some .or_
-  -- Deliberately absent, each for a reason rather than an omission:
-  --   geq/gt   — representable by swapping operands, and a canonical form with one direction
-  --              means a transformation has half as many cases to be sound for;
-  --   neq      — `not (eq ..)`, same argument;
-  --   bit ops  — the bv sort exists in the IR but no transformation targets it yet, and
-  --              admitting terms no pass can handle would make `hasTmod`-style effect locks
-  --              unprovable for them.
-  | _ => none
-
-mutual
-  /-- Translate an obligation expression into the IR. Structural and total: every unhandled
-      construct yields `none`, never a guess.
-
-      A `call` becomes an UNINTERPRETED symbol. That is the point — the translation does not
-      need to know what a spec function means, and a transformation must be sound for every
-      interpretation of it (`TermIR.SymEnv` is quantified over in the row-1 theorems). -/
-  def ofExpr : Expr → Option TermIR.Term
-    | .intLit _ v => some (.lit v)
-    | .boolLit _ b => some (.blit b)
-    | .ident _ n => some (.var n)
-    | .paren _ e => ofExpr e
-    | .unaryOp _ .neg e => (ofExpr e).map (fun t => .bin .sub (.lit 0) t)
-    | .unaryOp _ .not_ e => (ofExpr e).map (.un .not_)
-    | .binOp _ op l r => do
-      let o ← irBinOp op
-      let a ← ofExpr l
-      let b ← ofExpr r
-      some (.bin o a b)
-    | .call _ f _ args => (ofExprs args).map (.sym f)
-    -- Casts are CARRIED now, as a wrap at the target's width — not dropped, and not treated
-    -- as identity. A cast whose target has no fixed width (`Int`/`Uint`, whose overflow is
-    -- profile-dependent) is still rejected: there is no width to wrap at, so modelling it
-    -- would mean inventing one.
-    | .cast _ e ty => do
-      let (w, signed) ← IntArith.intBitWidth ty
-      let t ← ofExpr e
-      some (.cast w signed t)
-    | _ => none
-
-  def ofExprs : List Expr → Option (List TermIR.Term)
-    | [] => some []
-    | e :: es => do
-      let t ← ofExpr e
-      let ts ← ofExprs es
-      some (t :: ts)
-end
 
 /-- Obligations whose expression the IR can carry but the STRING layer drops — the defect
     R-0455 describes, as a count.
@@ -168,11 +112,21 @@ example : TermIR.evalInt [("x", 200)] eSymR (.cast 8 true (.var "x"))
 -- Widths the IR cannot model are still rejected rather than guessed.
 example : ofExpr (.cast sp (.ident sp "x") .bool) = none := rfl
 
--- Out-of-fragment operators are REJECTED, not approximated. `geq` is representable by
--- swapping operands; admitting it as `le` with the arguments in the wrong order is the
--- silent-misinterpretation failure the IR exists to prevent.
-example : irBinOp .geq = none := rfl
+-- RELATIONS ARE CANONICALISED, not rejected. `irBinOp` has no `geq`, but `ofExpr` rewrites
+-- `a >= b` to `b <= a` — meaning preserved, relation set minimal. Rejecting them outright
+-- (which an earlier version did) would have silently narrowed what the reference evaluator
+-- can evaluate the moment `evalBoolEnv` started routing through this translation, because
+-- the old evaluator handled geq/gt/neq directly.
+example : irBinOp .geq = none := rfl   -- not in the IR's operator set...
+example : ofExpr (.binOp sp .geq (.ident sp "a") (.ident sp "b"))
+        = some (.bin .le (.var "b") (.var "a")) := rfl   -- ...but carried by swapping
+example : ofExpr (.binOp sp .gt (.ident sp "a") (.ident sp "b"))
+        = some (.bin .lt (.var "b") (.var "a")) := rfl
+example : ofExpr (.binOp sp .neq (.ident sp "a") (.ident sp "b"))
+        = some (.un .not_ (.bin .eq (.var "a") (.var "b"))) := rfl
+-- Bit ops ARE rejected: the bv sort exists but no transformation targets it.
 example : irBinOp .bitand = none := rfl
+example : ofExpr (.binOp sp .bitand (.ident sp "a") (.ident sp "b")) = none := rfl
 
 -- And the translation composes with row 1: a carried `mod` subterm is then eliminated.
 example : (ofExpr (.binOp sp .lt (.binOp sp .mod (.ident sp "a") (.ident sp "b"))

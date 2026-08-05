@@ -117,7 +117,9 @@ done
 
 echo "=== the IR is FED by real obligations, and the measurement is honest ==="
 # Row 1 was a true theorem about a transformation nothing ran. `ofExpr` is the producer.
-OF="Concrete/Report/TermOfExpr.lean"
+# The translation moved to its own module so ReportObligations can import it (evalIntEnv is
+# now a wrapper over it). The measurement report stayed in TermOfExpr.lean.
+OF="Concrete/Report/TermTranslate.lean"
 [ -f "$OF" ] && ok "Expr -> Term translation exists" \
              || no "$OF missing — the IR has no producer and row 1 is idle"
 grep -q "def ofExpr" "$OF" \
@@ -138,13 +140,20 @@ grep -q "IntArith.intBitWidth ty" "$OF" \
   || no "the width guard is gone — a cast with no fixed width would be modelled at a guess"
 # And the evaluation must be the REFERENCE's wrap, pinned against IntArith on a value that
 # actually wraps, so "modelled" cannot drift into "modelled differently".
-grep -q "= some (IntArith.wrapToType .i8 200)" "$OF" \
+grep -q "= some (IntArith.wrapToType .i8 200)" "Concrete/Report/TermOfExpr.lean" \
   && ok "the IR's cast agrees with IntArith.wrapToType on a wrapping value" \
   || no "the wrap is no longer pinned to the reference — the IR could denote a different value"
 # Out-of-fragment operators rejected rather than approximated.
-grep -q "example : irBinOp .geq = none := rfl" "$OF" \
-  && ok "out-of-fragment operators are pinned as REJECTED (geq is not aliased to le)" \
-  || no "the operator-rejection lock is gone — an operator could be silently aliased"
+# Relations are CANONICALISED (geq -> swapped le), not rejected: rejecting them would have
+# narrowed what the reference evaluator can evaluate the moment evalBoolEnv started routing
+# through this translation, since the old evaluator handled geq/gt/neq directly.
+LK="Concrete/Report/TermOfExpr.lean"
+grep -q "= some (.bin .le (.var \"b\") (.var \"a\")) := rfl" "$LK" \
+  && ok "geq is canonicalised by swapping operands (meaning preserved, relation set minimal)" \
+  || no "the geq canonicalisation lock is gone — geq is either dropped or aliased wrongly"
+grep -q "example : ofExpr (.binOp sp .bitand (.ident sp \"a\") (.ident sp \"b\")) = none := rfl" "$LK" \
+  && ok "bit ops are still REJECTED (no transformation targets the bv sort yet)" \
+  || no "bit ops are no longer pinned as rejected"
 # The measurement must report all three buckets, so a zero cannot read as "nothing is lost".
 for b in "carried by both layers" "DROPPED by the string layer only" "dropped by BOTH"; do
   grep -q "$b" Main.lean \
