@@ -814,14 +814,24 @@ partial def evalMatch (fns : List CFnDef) (enums : List CEnumDef) (env : Env) (s
   | arm :: rest =>
     -- A guard (if present) is evaluated in the arm's bound env; a false guard
     -- falls through to the next arm.
+    -- Bug 066: the guard's ENVIRONMENT must come back with its verdict. Interpreter
+    -- stdout is a reserved outermost binding inside `Env`, so discarding the env after
+    -- evaluating a guard threw away everything the guard printed or mutated while
+    -- still using its value to pick the arm. Measured against the compiled binary,
+    -- which performed the effects.
     let guardOk := fun (armEnv : Env) (guard : Option CExpr) =>
       match guard with
-      | none => Except.ok true
+      | none => Except.ok (armEnv, true)
       | some g => do
-        let (_, gv) ← evalExprVal fns enums armEnv g
+        let (gEnv, gv) ← evalExprVal fns enums armEnv g
         match gv with
-        | .bool b => Except.ok b
+        | .bool b => Except.ok (gEnv, b)
         | _ => Except.error "interp: match guard is not a bool"
+    -- Falling through after a FAILED guard must keep its effects: drop only the arm's
+    -- own bindings and carry the rest forward. Threading the env on the success path
+    -- alone would silently keep discarding every failed guard — the subtle half.
+    let fallThrough := fun (gEnv : Env) (outerLen : Nat) =>
+      gEnv.drop (gEnv.length - outerLen)
     match arm with
     | .enumArm enumName variant bindings guard body =>
       match scrutinee with
@@ -829,12 +839,13 @@ partial def evalMatch (fns : List CFnDef) (enums : List CEnumDef) (env : Env) (s
         if sEnum == enumName && sVariant == variant then do
           let outerLen := env.length
           let armEnv := bindEnumFields env bindings sFields
-          if ← guardOk armEnv guard then
-            let (bodyEnv, flow) ← evalStmts fns enums armEnv body
+          let (gEnv, ok) ← guardOk armEnv guard
+          if ok then
+            let (bodyEnv, flow) ← evalStmts fns enums gEnv body
             let restored := bodyEnv.drop (bodyEnv.length - outerLen)
             return (restored, flow)
           else
-            evalMatch fns enums env scrutinee rest
+            evalMatch fns enums (fallThrough gEnv outerLen) scrutinee rest
         else
           evalMatch fns enums env scrutinee rest
       | _ => evalMatch fns enums env scrutinee rest
@@ -842,23 +853,25 @@ partial def evalMatch (fns : List CFnDef) (enums : List CEnumDef) (env : Env) (s
       let (env, litVal) ← evalExprVal fns enums env value
       if matchLit scrutinee litVal then do
         let outerLen := env.length
-        if ← guardOk env guard then
-          let (bodyEnv, flow) ← evalStmts fns enums env body
+        let (gEnv, ok) ← guardOk env guard
+        if ok then
+          let (bodyEnv, flow) ← evalStmts fns enums gEnv body
           let restored := bodyEnv.drop (bodyEnv.length - outerLen)
           return (restored, flow)
         else
-          evalMatch fns enums env scrutinee rest
+          evalMatch fns enums (fallThrough gEnv outerLen) scrutinee rest
       else
         evalMatch fns enums env scrutinee rest
     | .varArm binding _ guard body => do
       let outerLen := env.length
       let armEnv := if binding == "_" then env else envBind env binding scrutinee
-      if ← guardOk armEnv guard then
-        let (bodyEnv, flow) ← evalStmts fns enums armEnv body
+      let (gEnv, ok) ← guardOk armEnv guard
+      if ok then
+        let (bodyEnv, flow) ← evalStmts fns enums gEnv body
         let restored := bodyEnv.drop (bodyEnv.length - outerLen)
         return (restored, flow)
       else
-        evalMatch fns enums env scrutinee rest
+        evalMatch fns enums (fallThrough gEnv outerLen) scrutinee rest
     | .rangeArm lo hi inclusive guard body => do
       let (env, loVal) ← evalExprVal fns enums env lo
       let (env, hiVal) ← evalExprVal fns enums env hi
@@ -867,12 +880,13 @@ partial def evalMatch (fns : List CFnDef) (enums : List CEnumDef) (env : Env) (s
         | _, _, _ => false
       if inRange then do
         let outerLen := env.length
-        if ← guardOk env guard then
-          let (bodyEnv, flow) ← evalStmts fns enums env body
+        let (gEnv, ok) ← guardOk env guard
+        if ok then
+          let (bodyEnv, flow) ← evalStmts fns enums gEnv body
           let restored := bodyEnv.drop (bodyEnv.length - outerLen)
           return (restored, flow)
         else
-          evalMatch fns enums env scrutinee rest
+          evalMatch fns enums (fallThrough gEnv outerLen) scrutinee rest
       else
         evalMatch fns enums env scrutinee rest
 

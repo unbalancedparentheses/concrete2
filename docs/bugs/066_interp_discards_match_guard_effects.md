@@ -1,6 +1,6 @@
 # Bug 066 — the interpreter discards a match guard's effects
 
-**Status:** OPEN
+**Status:** FIXED 2026-08-04
 **Found:** 2026-08-04, while measuring match evaluation order for R-0004's evidence
 producer (guards evaluated only after the pattern matches; first successful guarded arm
 wins).
@@ -56,7 +56,15 @@ increments a counter, or whose call mutates through a `&mut`, leaves no trace �
 the compiled binary performs it. The interpreter is the differential oracle, so a
 divergence here weakens every differential test that involves a guarded arm.
 
-## Fix shape
+## Fixed
+
+`guardOk` now returns `(Env × Bool)` and all four arm forms thread it: the success path
+evaluates the body in the guard's environment, and the FALL-THROUGH path carries it
+forward after dropping only the arm's own bindings. Gated by
+`scripts/tests/check_match_guard_effects.sh` (5/5), which is mutation-verified —
+restoring the discard fails three legs with the exact divergence.
+
+## Fix shape (as diagnosed)
 
 `guardOk` must return the updated environment alongside the boolean
 (`Except String (Env × Bool)`), and each arm must thread it into the body's evaluation —
